@@ -14,21 +14,23 @@ pub async fn health_check(
                     "database": "connected"
                 })),
             ),
-            Err(e) => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({
-                    "status": "degraded",
-                    "database": "disconnected",
-                    "error": e.to_string()
-                })),
-            ),
+            Err(e) => {
+                // Log l'erreur détaillée côté serveur, pas dans la réponse
+                tracing::warn!("Healthcheck DB échoué: {}", e);
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({
+                        "status": "degraded",
+                        "database": "disconnected"
+                    })),
+                )
+            }
         },
         None => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
                 "status": "degraded",
-                "database": "unavailable",
-                "error": "Pool de connexion non initialisé"
+                "database": "disconnected"
             })),
         ),
     }

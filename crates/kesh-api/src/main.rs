@@ -3,7 +3,6 @@ mod routes;
 
 use axum::{routing::get, Router};
 use sqlx::mysql::MySqlPoolOptions;
-use std::net::SocketAddr;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
@@ -26,6 +25,7 @@ async fn main() {
     // Connexion à la base de données (gracieuse si indisponible — FR89)
     let pool = match MySqlPoolOptions::new()
         .max_connections(5)
+        .acquire_timeout(config.db_connect_timeout)
         .connect(&config.database_url)
         .await
     {
@@ -33,8 +33,8 @@ async fn main() {
             tracing::info!("Base de données : connectée");
             Some(pool)
         }
-        Err(e) => {
-            tracing::warn!("Base de données : indisponible ({})", e);
+        Err(_) => {
+            tracing::warn!("Base de données : indisponible");
             tracing::warn!("L'application démarre sans connexion DB — healthcheck retournera 503");
             None
         }
@@ -53,13 +53,16 @@ async fn main() {
         .with_state(pool);
 
     // Démarrer le serveur
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
-    tracing::info!("Kesh démarré sur http://{}:{}", config.host, config.port);
-    tracing::info!("Healthcheck : http://{}:{}/health", config.host, config.port);
+    let bind_addr = format!("{}:{}", config.host, config.port);
+    tracing::info!("Kesh démarré sur http://{}", bind_addr);
+    tracing::info!("Healthcheck : http://{}/health", bind_addr);
 
-    let listener = tokio::net::TcpListener::bind(addr)
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
-        .expect("Impossible de bind le port");
+        .unwrap_or_else(|e| {
+            tracing::error!("Impossible de bind sur {} : {}", bind_addr, e);
+            std::process::exit(1);
+        });
 
     axum::serve(listener, app)
         .await
