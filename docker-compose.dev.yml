@@ -4,7 +4,7 @@ services:
     container_name: kesh-mariadb-dev
     restart: unless-stopped
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     environment:
       MARIADB_ROOT_PASSWORD: kesh_dev_root
       MARIADB_DATABASE: kesh
