@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.050.001.05.ch.01">
+	<LqdtyCdtTrf>
+		<MsgHdr>
+			<MsgId>MSG-001</MsgId>
+			<CreDtTm>2025-12-18T11:30:20.008+01:00</CreDtTm>
+		</MsgHdr>
+		<LqdtyCdtTrf>
+			<LqdtyTrfId>
+				<InstrId>+2023012500001</InstrId>
+				<EndToEndId>NOTPROVIDED</EndToEndId>
+			</LqdtyTrfId>
+			<Cdtr>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<MmbId>001008</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</Cdtr>
+			<TrfdAmt>
+				<AmtWthCcy Ccy="CHF">3342534064.00</AmtWthCcy>
+			</TrfdAmt>
+			<Dbtr>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<MmbId>002301</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</Dbtr>
+			<SttlmDt>2025-12-18</SttlmDt>
+		</LqdtyCdtTrf>
+	</LqdtyCdtTrf>
+</Document>

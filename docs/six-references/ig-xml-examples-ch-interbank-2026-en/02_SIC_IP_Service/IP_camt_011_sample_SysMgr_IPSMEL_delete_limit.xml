@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.011.001.07.ch.01">
+	<ModfyLmt>
+		<MsgHdr>
+			<MsgId>xyz-20231122-1102</MsgId>
+			<CreDtTm>2023-11-22T16:35:25.910+01:00</CreDtTm>
+		</MsgHdr>
+		<LmtDtls>
+			<LmtId>
+				<Cur>
+					<SysId>
+						<MktInfrstrctrId>
+							<Cd>SIP</Cd>
+						</MktInfrstrctrId>
+					</SysId>
+					<Tp>
+						<Prtry>IPSMEL</Prtry>
+					</Tp>
+					<AcctOwnr>
+						<FinInstnId>
+							<ClrSysMmbId>
+								<MmbId>001273</MmbId>
+							</ClrSysMmbId>
+						</FinInstnId>
+					</AcctOwnr>
+				</Cur>
+			</LmtId>
+			<NewLmtValSet>
+				<Amt>
+					<AmtWthCcy Ccy="CHF">999999999999999999</AmtWthCcy>
+				</Amt>
+			</NewLmtValSet>
+		</LmtDtls>
+	</ModfyLmt>
+</Document>

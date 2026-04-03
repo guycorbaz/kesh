@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.008.001.08.ch.01">
+	<CclTx>
+		<MsgHdr>
+			<MsgId>SIC4-123458</MsgId>
+			<CreDtTm>2025-12-15T07:12:12.303+03:00</CreDtTm>
+			<ReqTp>
+				<Prtry>
+					<Id>SIC</Id>
+				</Prtry>
+			</ReqTp>
+		</MsgHdr>
+		<PmtId>
+			<LngBizId>
+				<TxId>124/5/7-1234</TxId>
+				<IntrBkSttlmAmt>1200.00</IntrBkSttlmAmt>
+				<IntrBkSttlmDt>2025-12-15</IntrBkSttlmDt>
+				<InstgAgt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>090002</MmbId>
+						</ClrSysMmbId>
+					</FinInstnId>
+				</InstgAgt>
+				<InstdAgt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>098064</MmbId>
+						</ClrSysMmbId>
+					</FinInstnId>
+				</InstdAgt>
+			</LngBizId>
+		</PmtId>
+		<CxlRsn>
+			<Rsn>
+				<Prtry>Storno wg. Doppelzahlung</Prtry>
+			</Rsn>
+		</CxlRsn>
+	</CclTx>
+</Document>

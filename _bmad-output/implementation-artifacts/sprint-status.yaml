@@ -1,0 +1,147 @@
+# generated: 2026-04-03
+# last_updated: 2026-04-03
+# project: kesh
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-03
+last_updated: 2026-04-03
+project: kesh
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # === v0.1 — Cœur comptable + facturation ===
+
+  # Epic 1: Fondations & Authentification
+  epic-1: in-progress
+  1-1-scaffold-cargo-workspace-sveltekit: done
+  1-2-docker-configuration: done
+  1-3-types-core-newtypes-validation: backlog
+  1-4-schema-de-base-repository-pattern: backlog
+  1-5-authentification-login-logout-jwt: backlog
+  1-6-refresh-token-gestion-de-session: backlog
+  1-7-gestion-des-utilisateurs-crud: backlog
+  1-8-rbac-verrouillage-optimiste: backlog
+  1-9-design-system-tokens: backlog
+  1-10-layout-page-de-login: backlog
+  1-11-wrapper-fetch-accessibilite: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Onboarding & Configuration
+  epic-2: backlog
+  2-1-internationalisation-i18n-backend: backlog
+  2-2-flux-onboarding-chemin-a-exploration: backlog
+  2-3-flux-onboarding-chemin-b-production: backlog
+  2-4-page-accueil-navigation: backlog
+  2-5-mode-guide-expert: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Plan Comptable & Écritures
+  epic-3: backlog
+  3-1-plan-comptable-chargement-gestion: backlog
+  3-2-saisie-ecritures-en-partie-double: backlog
+  3-3-modification-suppression-ecritures: backlog
+  3-4-recherche-pagination-tri: backlog
+  3-5-notifications-aide-contextuelle-audit: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Carnet d'Adresses & Catalogue
+  epic-4: backlog
+  4-1-carnet-adresses-crud-contacts: backlog
+  4-2-conditions-paiement-catalogue-produits: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Facturation QR Bill
+  epic-5: backlog
+  5-1-creation-factures-brouillon: backlog
+  5-2-validation-numerotation-factures: backlog
+  5-3-generation-pdf-qr-bill: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Import Bancaire & Réconciliation
+  epic-6: backlog
+  6-1-import-camt053: backlog
+  6-2-import-csv-multi-encodage-profils-banque: backlog
+  6-3-detection-doublons-rejet-partiel: backlog
+  6-4-reconciliation-matching-automatique: backlog
+  6-5-reconciliation-manuelle-regles-affectation: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Rapports & Exports
+  epic-7: backlog
+  7-1-rapports-comptables-bilan-resultat-balance-journaux: backlog
+  7-2-export-pdf-csv: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: Déploiement & Opérations
+  epic-8: backlog
+  8-1-docker-compose-dockerfile-production: backlog
+  8-2-migrations-automatiques-detection-version: backlog
+  8-3-resilience-frontend-db-inaccessible: backlog
+  8-4-ci-cd-github-actions: backlog
+  8-5-guide-installation-pdf: backlog
+  epic-8-retrospective: optional
+
+  # === v0.2 — Complétude comptable ===
+
+  # Epic 9: TVA Suisse
+  epic-9: backlog
+  9-1-configuration-taux-tva: backlog
+  9-2-calcul-tva-rapport-par-periode: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10: Avoirs & Paiements
+  epic-10: backlog
+  10-1-avoirs-notes-de-credit: backlog
+  10-2-generation-fichiers-paiement-pain001: backlog
+  10-3-flux-paiement-en-deux-temps: backlog
+  epic-10-retrospective: optional
+
+  # Epic 11: Budgets
+  epic-11: backlog
+  11-1-budgets-annuels-suivi: backlog
+  epic-11-retrospective: optional
+
+  # Epic 12: Clôture d'Exercice
+  epic-12: backlog
+  12-1-cloture-report-des-soldes: backlog
+  epic-12-retrospective: optional
+
+  # Epic 13: Justificatifs, Lettrage & Compléments v0.2
+  epic-13: backlog
+  13-1-pieces-justificatives: backlog
+  13-2-lettrage: backlog
+  13-3-versioning-parseurs-modeles-manuels: backlog
+  epic-13-retrospective: optional

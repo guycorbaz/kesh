@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/reda.015.001.01.ch.01">
+	<PtyQry>
+		<MsgHdr>
+			<MsgId>20241120-AnyId01</MsgId>
+			<CreDtTm>2024-11-20T13:17:17.007+01:00</CreDtTm>
+			<ReqTp>
+				<Prtry>
+					<Id>SIP</Id>
+					<SchmeNm>IPPTQY</SchmeNm>
+				</Prtry>
+			</ReqTp>
+		</MsgHdr>
+		<SchCrit>
+			<PtyId>
+				<Id>
+					<PrtryId>
+						<Id>092050</Id>
+						<Issr>CHSIC</Issr>
+					</PrtryId>
+				</Id>
+			</PtyId>
+		</SchCrit>
+	</PtyQry>
+</Document>

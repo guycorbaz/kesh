@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02">
+	<PmtRtr>
+		<GrpHdr>
+			<MsgId>MSGID-pacs004-mini-20251203-0001</MsgId>
+			<CreDtTm>2025-12-03T13:13:13.040+02:00</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIC</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<TxInf>
+			<RtrId>1234</RtrId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>MsgXYZ_0815</OrgnlMsgId>
+				<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlTxId>TxXYZ_0815</OrgnlTxId>
+			<OrgnlIntrBkSttlmAmt Ccy="CHF">1203.00</OrgnlIntrBkSttlmAmt>
+			<OrgnlIntrBkSttlmDt>2025-12-02</OrgnlIntrBkSttlmDt>
+			<RtrdIntrBkSttlmAmt Ccy="CHF">1203.00</RtrdIntrBkSttlmAmt>
+			<IntrBkSttlmDt>2025-12-03</IntrBkSttlmDt>
+			<ClrSysRef>CSTRTN</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<RtrChain>
+				<Dbtr>
+					<Pty>
+						<Nm>Horlogerie du Joux</Nm>
+					</Pty>
+				</Dbtr>
+				<Cdtr>
+					<Pty>
+						<Nm>Uhrengrosshandel Buxtehude</Nm>
+					</Pty>
+				</Cdtr>
+			</RtrChain>
+			<RtrRsnInf>
+				<Rsn>
+					<Cd>MS03</Cd>
+				</Rsn>
+			</RtrRsnInf>
+		</TxInf>
+	</PmtRtr>
+</Document>

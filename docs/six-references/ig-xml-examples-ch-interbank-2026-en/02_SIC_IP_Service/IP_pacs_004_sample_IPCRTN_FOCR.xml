@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02 pacs.004.001.09.ch.02.xsd">
+	<PmtRtr>
+		<GrpHdr>
+			<MsgId>MSGID-IP-pacs004-20241122-0401</MsgId>
+			<CreDtTm>2024-11-22T11:22:33.001Z</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<TtlRtrdIntrBkSttlmAmt Ccy="CHF">1111.00</TtlRtrdIntrBkSttlmAmt>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIP</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<TxInf>
+			<RtrId>IP-20241122-0401</RtrId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>MSGID-IP-pacs008-20241120-0801</OrgnlMsgId>
+				<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlTxId>IP-20241120-0801</OrgnlTxId>
+			<OrgnlUETR>939088c8-6068-497e-8e4e-5d79dc4ffbf9</OrgnlUETR>
+			<OrgnlIntrBkSttlmAmt Ccy="CHF">1111.00</OrgnlIntrBkSttlmAmt>
+			<OrgnlIntrBkSttlmDt>2024-11-20</OrgnlIntrBkSttlmDt>
+			<RtrdIntrBkSttlmAmt Ccy="CHF">1111.00</RtrdIntrBkSttlmAmt>
+			<IntrBkSttlmDt>2024-11-22</IntrBkSttlmDt>
+			<ClrSysRef>IPCRTN</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<RtrChain>
+				<Dbtr>
+					<Pty>
+						<Nm>Horlogerie du Joux</Nm>
+						<PstlAdr>
+							<PstCd>1111</PstCd>
+							<TwnNm>Les Huits</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Dbtr>
+				<Cdtr>
+					<Pty>
+						<Nm>Uhrengrosshandel Müller</Nm>
+						<PstlAdr>
+							<PstCd>9999</PstCd>
+							<TwnNm>Gänswil</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Cdtr>
+			</RtrChain>
+			<RtrRsnInf>
+				<Rsn>
+					<Cd>FOCR</Cd>
+				</Rsn>
+				<AddtlInf>CXLID-IP-camt056-20241121-5601</AddtlInf>
+			</RtrRsnInf>
+		</TxInf>
+	</PmtRtr>
+</Document>

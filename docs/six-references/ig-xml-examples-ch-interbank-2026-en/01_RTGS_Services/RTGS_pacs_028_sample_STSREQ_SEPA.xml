@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.028.001.03.ch.01" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pacs.028.001.03.ch.01 pacs.028.001.03.ch.01.xsd">
+	<FIToFIPmtStsReq>
+		<GrpHdr>
+			<MsgId>MSGID-pacs028-20251220-1</MsgId>
+			<CreDtTm>2025-12-20T09:30:47Z</CreDtTm>
+		</GrpHdr>
+		<TxInf>
+			<StsReqId>STSREQID-pacs028StatusReqId4713</StsReqId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>MSGID-camt056-20251206-2-SEPA</OrgnlMsgId>
+				<OrgnlMsgNmId>camt.056.001.08</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlInstrId>CXLID-camt056CancelIdRef4712</OrgnlInstrId>
+			<OrgnlEndToEndId>1234567890</OrgnlEndToEndId>
+			<OrgnlTxId>20251201000004</OrgnlTxId>
+			<ClrSysRef>STSREQ</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<BICFI>BCFRCHBBXXX</BICFI>
+					<Othr>
+						<Id>SEU</Id>
+					</Othr>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<BICFI>SECGDEFFXXX</BICFI>
+				</FinInstnId>
+			</InstdAgt>
+			<OrgnlTxRef>
+				<IntrBkSttlmAmt Ccy="EUR">98765.00</IntrBkSttlmAmt>
+				<IntrBkSttlmDt>2025-12-01</IntrBkSttlmDt>
+				<SttlmInf>
+					<SttlmMtd>CLRG</SttlmMtd>
+					<ClrSys>
+						<Prtry>ABE</Prtry>
+					</ClrSys>
+				</SttlmInf>
+				<PmtTpInf>
+					<SvcLvl>
+						<Cd>SEPA</Cd>
+					</SvcLvl>
+				</PmtTpInf>
+				<Dbtr>
+					<Pty>
+						<Nm>Horlogerie du Joux, Mueller et Cie.</Nm>
+						<PstlAdr>
+							<StrtNm>Rue d'exemple</StrtNm>
+							<BldgNb>99</BldgNb>
+							<TwnNm>Echantillon</TwnNm>
+							<Ctry>CH</Ctry>							
+						</PstlAdr>
+					</Pty>
+				</Dbtr>
+				<DbtrAcct>
+					<Id>
+						<IBAN>CH5598064001234567890</IBAN>
+					</Id>
+				</DbtrAcct>
+				<DbtrAgt>
+					<FinInstnId>
+						<BICFI>BCFRCHBBXXX</BICFI>
+					</FinInstnId>
+				</DbtrAgt>
+				<CdtrAgt>
+					<FinInstnId>
+						<BICFI>RMTBDEFFXXX</BICFI>
+					</FinInstnId>
+				</CdtrAgt>
+				<Cdtr>
+					<Pty>
+						<Nm>Uhrengrosshandel Buxtehude, Peter Maier und Co.</Nm>
+					</Pty>
+				</Cdtr>
+				<CdtrAcct>
+					<Id>
+						<IBAN>DE47100100001234567890</IBAN>
+					</Id>
+				</CdtrAcct>
+			</OrgnlTxRef>
+		</TxInf>
+	</FIToFIPmtStsReq>
+</Document>

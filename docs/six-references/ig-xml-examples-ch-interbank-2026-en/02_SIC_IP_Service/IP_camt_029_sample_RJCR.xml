@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.029.001.09.ch.03" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/camt.029.001.09.ch.03">
+	<RsltnOfInvstgtn>
+		<Assgnmt>
+			<Id>MSGID-IP-camt029-20231124-2901</Id>
+			<Assgnr>
+				<Agt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>092052</MmbId>
+						</ClrSysMmbId>
+						<Othr>
+							<Id>SIP</Id>
+						</Othr>
+					</FinInstnId>
+				</Agt>
+			</Assgnr>
+			<Assgne>
+				<Agt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>098064</MmbId>
+						</ClrSysMmbId>
+					</FinInstnId>
+				</Agt>
+			</Assgne>
+			<CreDtTm>2024-11-23T11:22:33.001Z</CreDtTm>
+		</Assgnmt>
+		<Sts>
+			<Conf>RJCR</Conf>
+		</Sts>
+		<CxlDtls>
+			<TxInfAndSts>
+				<CxlStsId>CXSID-IP-camt029-20241123-2901</CxlStsId>
+				<OrgnlGrpInf>
+					<OrgnlMsgId>MSGID-IP-pacs008-20241120-0801</OrgnlMsgId>
+					<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+				</OrgnlGrpInf>
+				<OrgnlTxId>IP-20231120-0801</OrgnlTxId>
+				<OrgnlUETR>939088c8-6068-497e-8e4e-5d79dc4ffbf9</OrgnlUETR>
+				<TxCxlSts>RJCR</TxCxlSts>
+				<CxlStsRsnInf>
+					<Orgtr>
+						<Nm>Horlogerie du Joux</Nm>
+						<PstlAdr>
+							<PstCd>1111</PstCd>
+							<TwnNm>Les Huits</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Orgtr>
+					<Rsn>
+						<Cd>CUST</Cd>
+					</Rsn>
+					<AddtlInf>ATR072/CXLID-IP-camt056-20241121-5601</AddtlInf>
+				</CxlStsRsnInf>
+			</TxInfAndSts>
+		</CxlDtls>
+	</RsltnOfInvstgtn>
+</Document>

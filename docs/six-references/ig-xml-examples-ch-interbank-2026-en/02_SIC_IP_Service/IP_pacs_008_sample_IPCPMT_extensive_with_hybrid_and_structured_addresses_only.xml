@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.008.001.08.ch.02">
+	<FIToFICstmrCdtTrf>
+		<GrpHdr>
+			<MsgId>AGH-Msg-1369</MsgId>
+			<CreDtTm>2025-12-20T19:18:17.000Z</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<TtlIntrBkSttlmAmt Ccy="CHF">13467.98</TtlIntrBkSttlmAmt>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIP</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<CdtTrfTxInf>
+			<PmtId>
+				<InstrId>ABC998877</InstrId>
+				<EndToEndId>WWW987654321</EndToEndId>
+				<TxId>1369</TxId>
+				<UETR>d6147b44-023b-458d-9dd8-33dd5b86853e</UETR>
+			</PmtId>
+			<PmtTpInf>
+				<LclInstrm>
+					<Prtry>IPCPMT</Prtry>
+				</LclInstrm>
+				<CtgyPurp>
+					<Cd>GP2P</Cd>
+				</CtgyPurp>
+			</PmtTpInf>
+			<IntrBkSttlmAmt Ccy="CHF">13467.98</IntrBkSttlmAmt>
+			<IntrBkSttlmDt>2025-12-22</IntrBkSttlmDt>
+			<AccptncDtTm>2025-12-20T19:18:16.123Z</AccptncDtTm>
+			<InstdAmt Ccy="EUR">14339.00</InstdAmt>
+			<XchgRate>0.94</XchgRate>
+			<ChrgBr>DEBT</ChrgBr>
+			<ChrgsInf>
+				<Amt Ccy="CHF">1</Amt>
+				<Agt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>098064</MmbId>
+						</ClrSysMmbId>
+					</FinInstnId>
+				</Agt>
+			</ChrgsInf>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<UltmtDbtr>
+				<Nm>John Smith</Nm>
+				<PstlAdr>
+					<TwnNm>Brussels</TwnNm>
+					<Ctry>BE</Ctry>
+					<AdrLine>Hoogstraat 6, 18th Floor</AdrLine>
+				</PstlAdr>
+			</UltmtDbtr>
+			<Dbtr>
+				<Nm>Max Mustermann</Nm>
+				<PstlAdr>
+					<StrtNm>Beispielstrasse 99</StrtNm>
+					<PstCd>9898</PstCd>
+					<TwnNm>Musterhausen</TwnNm>
+					<Ctry>CH</Ctry>
+				</PstlAdr>
+			</Dbtr>
+			<DbtrAcct>
+				<Id>
+					<IBAN>CH4089999001234567890</IBAN>
+				</Id>
+			</DbtrAcct>
+			<DbtrAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</DbtrAgt>
+			<CdtrAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</CdtrAgt>
+			<Cdtr>
+				<Nm>Martha Müller</Nm>
+				<PstlAdr>
+					<StrtNm>Musterstrasse</StrtNm>
+					<BldgNb>99</BldgNb>
+					<TwnNm>Beispieldorf</TwnNm>
+					<Ctry>CH</Ctry>
+					<AdrLine>Gebäude C, Ostflügel</AdrLine>
+				</PstlAdr>
+			</Cdtr>
+			<CdtrAcct>
+				<Id>
+					<IBAN>CH1708841000987654321</IBAN>
+				</Id>
+			</CdtrAcct>
+			<UltmtCdtr>
+				<Nm>Hans Schmied</Nm>
+				<PstlAdr>
+					<TwnNm>Wien</TwnNm>
+					<Ctry>AT</Ctry>
+				</PstlAdr>
+			</UltmtCdtr>
+			<Purp>
+				<Cd>RELG</Cd>
+			</Purp>
+			<RmtInf>
+				<Strd>
+					<CdtrRefInf>
+						<Tp>
+							<CdOrPrtry>
+								<Cd>SCOR</Cd>
+							</CdOrPrtry>
+							<Issr>ISO</Issr>
+						</Tp>
+						<Ref>RF3620210917084619IQF0838</Ref>
+					</CdtrRefInf>
+					<AddtlRmtInf>Sublet for 2nd semester, sorry for the delay</AddtlRmtInf>
+				</Strd>
+			</RmtInf>
+		</CdtTrfTxInf>
+	</FIToFICstmrCdtTrf>
+</Document>

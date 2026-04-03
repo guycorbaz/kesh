@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.056.001.08.ch.04" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/camt.056.001.08.ch.04 camt.056.001.08.ch.04.xsd">
+	<FIToFIPmtCxlReq>
+		<Assgnmt>
+			<Id>MSGID-camt056-20251206-2-SEPA</Id>
+			<Assgnr>
+				<Agt>
+					<FinInstnId>
+						<BICFI>BCFRCHBBXXX</BICFI>
+						<Othr>
+							<Id>SEU</Id>
+						</Othr>
+					</FinInstnId>
+				</Agt>
+			</Assgnr>
+			<Assgne>
+				<Agt>
+					<FinInstnId>
+						<BICFI>SECGDEFFXXX</BICFI>
+					</FinInstnId>
+				</Agt>
+			</Assgne>
+			<CreDtTm>2025-12-06T15:10:10.210+01:00</CreDtTm>
+		</Assgnmt>
+		<Undrlyg>
+			<TxInf>
+				<CxlId>CXLID-camt056CancelIdRef4712</CxlId>
+				<OrgnlGrpInf>
+					<OrgnlMsgId>MSGID-20251201-090615-01</OrgnlMsgId>
+					<OrgnlMsgNmId>pacs.008.001.09</OrgnlMsgNmId>
+				</OrgnlGrpInf>
+				<OrgnlEndToEndId>1234567890</OrgnlEndToEndId>
+				<OrgnlTxId>20251201000004</OrgnlTxId>
+				<OrgnlIntrBkSttlmAmt Ccy="EUR">98765.00</OrgnlIntrBkSttlmAmt>
+				<OrgnlIntrBkSttlmDt>2025-12-01</OrgnlIntrBkSttlmDt>
+				<CxlRsnInf>
+					<Orgtr>
+						<Nm>Horlogerie du Joux, Mueller et Cie.</Nm>
+					</Orgtr>
+					<Rsn>
+						<Cd>DUPL</Cd>
+					</Rsn>
+				</CxlRsnInf>
+				<OrgnlTxRef>
+					<SttlmInf>
+						<SttlmMtd>CLRG</SttlmMtd>
+						<ClrSys>
+							<Prtry>ABE</Prtry>
+						</ClrSys>
+					</SttlmInf>
+					<PmtTpInf>
+						<SvcLvl>
+							<Cd>SEPA</Cd>
+						</SvcLvl>
+					</PmtTpInf>
+					<Dbtr>
+						<Pty>
+							<Nm>Horlogerie du Joux, Mueller et Cie.</Nm>
+							<PstlAdr>
+								<StrtNm>Rue d'exemple</StrtNm>
+								<BldgNb>99</BldgNb>
+								<TwnNm>Echantillon</TwnNm>
+								<Ctry>CH</Ctry>							
+							</PstlAdr>
+						</Pty>
+					</Dbtr>
+					<DbtrAcct>
+						<Id>
+							<IBAN>CH5598064001234567890</IBAN>
+						</Id>
+					</DbtrAcct>
+					<DbtrAgt>
+						<FinInstnId>
+							<BICFI>BCFRCHBBXXX</BICFI>
+						</FinInstnId>
+					</DbtrAgt>
+					<CdtrAgt>
+						<FinInstnId>
+							<BICFI>RMTBDEFFXXX</BICFI>
+						</FinInstnId>
+					</CdtrAgt>
+					<Cdtr>
+						<Pty>
+							<Nm>Uhrengrosshandel Buxtehude, Peter Maier und Co.</Nm>
+						</Pty>
+					</Cdtr>
+					<CdtrAcct>
+						<Id>
+							<IBAN>DE47100100001234567890</IBAN>
+						</Id>
+					</CdtrAcct>
+				</OrgnlTxRef>
+			</TxInf>
+		</Undrlyg>
+	</FIToFIPmtCxlReq>
+</Document>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.025.001.05.ch.02">
+	<Rct>
+		<MsgHdr>
+			<MsgId>MSGID-IP-camt025-20241121-2503</MsgId>
+			<CreDtTm>2024-11-21T12:23:05.001+01:00</CreDtTm>
+			<ReqTp>
+				<Prtry>
+					<Id>SIP</Id>
+				</Prtry>
+			</ReqTp>
+		</MsgHdr>
+		<RctDtls>
+			<OrgnlMsgId>
+				<MsgId>MSGID-IP-camt056-20241121-5601</MsgId>
+				<MsgNmId>camt.056</MsgNmId>
+				<OrgtrNm>098064</OrgtrNm>
+			</OrgnlMsgId>
+			<ReqHdlg>
+				<StsCd>RJCT</StsCd>
+			</ReqHdlg>
+			<ReqHdlg>
+				<StsCd>209</StsCd>
+				<Desc>/Document/FIToFIPmtCxlReq/Assgnmt/Assgne/Agt/FinInstnId/ClrSysMmbId/MmbId</Desc>
+			</ReqHdlg>
+		</RctDtls>
+	</Rct>
+</Document>

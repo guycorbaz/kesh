@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.056.001.08.ch.04" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/camt.056.001.08.ch.04 camt.056.001.08.ch.04.xsd">
+	<FIToFIPmtCxlReq>
+		<Assgnmt>
+			<Id>MSGID-camt056-20251205-1</Id>
+			<Assgnr>
+				<Agt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>098064</MmbId>
+						</ClrSysMmbId>
+						<Othr>
+							<Id>SIC</Id>
+						</Othr>
+					</FinInstnId>
+				</Agt>
+			</Assgnr>
+			<Assgne>
+				<Agt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>092052</MmbId>
+						</ClrSysMmbId>
+					</FinInstnId>
+				</Agt>
+			</Assgne>
+			<CreDtTm>2025-12-05T15:10:10.819+01:00</CreDtTm>
+		</Assgnmt>
+		<Undrlyg>
+			<TxInf>
+				<CxlId>CXLID-Camt056CancelIdRef4711</CxlId>
+				<OrgnlGrpInf>
+					<OrgnlMsgId>MSGID-pacs008-20251201-0001</OrgnlMsgId>
+					<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+				</OrgnlGrpInf>
+				<OrgnlTxId>20251201-1-0001</OrgnlTxId>
+				<OrgnlUETR>eb6305c9-1f7f-49de-aed0-16487c27b42d</OrgnlUETR>
+				<OrgnlIntrBkSttlmAmt Ccy="CHF">1111.00</OrgnlIntrBkSttlmAmt>
+				<OrgnlIntrBkSttlmDt>2025-12-01</OrgnlIntrBkSttlmDt>
+				<CxlRsnInf>
+					<Orgtr>
+						<Nm>Uhrengrosshandel Müller</Nm>
+					</Orgtr>
+					<Rsn>
+						<Cd>CUST</Cd>
+					</Rsn>
+				</CxlRsnInf>
+			</TxInf>
+		</Undrlyg>
+	</FIToFIPmtCxlReq>
+</Document>

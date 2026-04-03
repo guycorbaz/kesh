@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02 pacs.004.001.09.ch.02.xsd">
+	<PmtRtr>
+		<GrpHdr>
+			<MsgId>MSGID-pacs004-FOCR-20251222-0002</MsgId>
+			<CreDtTm>2025-12-22T15:20:41.020+01:00</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<TtlRtrdIntrBkSttlmAmt Ccy="CHF">1111.00</TtlRtrdIntrBkSttlmAmt>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIC</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<TxInf>
+			<RtrId>1</RtrId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>MSGID-pacs008-20251201-0001</OrgnlMsgId>
+				<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlTxId>20251201-1-0001</OrgnlTxId>
+			<OrgnlUETR>eb6305c9-1f7f-49de-aed0-16487c27b42d</OrgnlUETR>
+			<OrgnlIntrBkSttlmAmt Ccy="CHF">1111.00</OrgnlIntrBkSttlmAmt>
+			<OrgnlIntrBkSttlmDt>2025-12-01</OrgnlIntrBkSttlmDt>
+			<RtrdIntrBkSttlmAmt Ccy="CHF">1111.00</RtrdIntrBkSttlmAmt>
+			<IntrBkSttlmDt>2025-12-22</IntrBkSttlmDt>
+			<ClrSysRef>CSTRTN</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<RtrChain>
+				<Dbtr>
+					<Pty>
+						<Nm>Horlogerie du Joux</Nm>
+						<PstlAdr>
+							<PstCd>1111</PstCd>
+							<TwnNm>Les Huits</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Dbtr>
+				<Cdtr>
+					<Pty>
+						<Nm>Uhrengrosshandel Müller</Nm>
+					</Pty>
+				</Cdtr>
+			</RtrChain>
+			<RtrRsnInf>
+				<Orgtr>
+					<Nm>Banque Commerciale</Nm>
+				</Orgtr>
+				<Rsn>
+					<Cd>FOCR</Cd>
+				</Rsn>
+				<AddtlInf>CXLID-Camt056CancelIdRef4711</AddtlInf>
+			</RtrRsnInf>
+		</TxInf>
+	</PmtRtr>
+</Document>

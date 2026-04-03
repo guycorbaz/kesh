@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02">
+	<PmtRtr>
+		<GrpHdr>
+			<MsgId>MSGID-pacs004-NARR-20251222-0001</MsgId>
+			<CreDtTm>2025-12-22T13:20:41.080Z</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<TtlRtrdIntrBkSttlmAmt Ccy="CHF">1111.00</TtlRtrdIntrBkSttlmAmt>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIC</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<TxInf>
+			<RtrId>1</RtrId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>MSGID-pacs008-20251201-0002</OrgnlMsgId>
+				<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlTxId>20251201-1-0002</OrgnlTxId>
+			<OrgnlUETR>9d8ea53e-4189-454b-8907-d52b57d5ac6a</OrgnlUETR>
+			<OrgnlIntrBkSttlmAmt Ccy="CHF">1111.00</OrgnlIntrBkSttlmAmt>
+			<OrgnlIntrBkSttlmDt>2025-12-01</OrgnlIntrBkSttlmDt>
+			<RtrdIntrBkSttlmAmt Ccy="CHF">1111.00</RtrdIntrBkSttlmAmt>
+			<IntrBkSttlmDt>2025-12-22</IntrBkSttlmDt>
+			<ClrSysRef>CSTRTN</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<RtrChain>
+				<Dbtr>
+					<Pty>
+						<Nm>Horlogerie du Joux</Nm>
+						<PstlAdr>
+							<PstCd>1111</PstCd>
+							<TwnNm>Les Huits</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Dbtr>
+				<Cdtr>
+					<Pty>
+						<Nm>Uhrengrosshandel Buxtehude</Nm>
+						<PstlAdr>
+							<PstCd>9999</PstCd>
+							<TwnNm>Buxtehude</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Cdtr>
+			</RtrChain>
+			<RtrRsnInf>
+				<Orgtr>
+					<Nm>Banque Commerciale</Nm>
+				</Orgtr>
+				<Rsn>
+					<Cd>NARR</Cd>
+				</Rsn>
+				<AddtlInf>RETOUR pacs.008 VAL 01.12.2025 KONTO UNBEKANNT</AddtlInf>
+			</RtrRsnInf>
+		</TxInf>
+	</PmtRtr>
+</Document>

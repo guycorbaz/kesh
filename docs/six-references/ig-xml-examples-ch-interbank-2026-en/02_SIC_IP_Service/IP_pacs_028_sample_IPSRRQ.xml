@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.028.001.03.ch.01" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pacs.028.001.03.ch.01 pacs.028.001.03.ch.01.xsd">
+	<FIToFIPmtStsReq>
+		<GrpHdr>
+			<MsgId>MSGID-IP-pacs028-20241210-2802</MsgId>
+			<CreDtTm>2024-12-10T11:23:00.001Z</CreDtTm>
+		</GrpHdr>
+		<TxInf>
+			<StsReqId>IP-20241210-2802</StsReqId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>MSGID-IP-camt056-20241121-5601</OrgnlMsgId>
+				<OrgnlMsgNmId>camt.056</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlInstrId>CXLID-IP-camt056-20241121-5601</OrgnlInstrId>
+			<OrgnlTxId>IP-20241120-0801</OrgnlTxId>
+			<ClrSysRef>IPSRRQ</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+					<Othr>
+						<Id>SIP</Id>
+					</Othr>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+		</TxInf>
+	</FIToFIPmtStsReq>
+</Document>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.008.001.08.ch.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pacs.008.001.08.ch.02 pacs.008.001.08.ch.02.xsd">
+	<FIToFICstmrCdtTrf>
+		<GrpHdr>
+			<MsgId>MSGID-IP-pacs008-20231120-0804</MsgId>
+			<CreDtTm>2023-11-20T11:22:33.004Z</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<TtlIntrBkSttlmAmt Ccy="CHF">4444.44</TtlIntrBkSttlmAmt>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIP</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<CdtTrfTxInf>
+			<PmtId>
+				<InstrId>ABC112233</InstrId>
+				<EndToEndId>XYZ998877</EndToEndId>
+				<TxId>IP-20231120-0804</TxId>
+				<UETR>53911488-031e-4c11-bc75-c7859de9f6c4</UETR>
+			</PmtId>
+			<PmtTpInf>
+				<LclInstrm>
+					<Prtry>IPCPMT</Prtry>
+				</LclInstrm>
+				<CtgyPurp>
+					<Cd>SALA</Cd>
+				</CtgyPurp>
+			</PmtTpInf>
+			<IntrBkSttlmAmt Ccy="CHF">4444.44</IntrBkSttlmAmt>
+			<IntrBkSttlmDt>2023-11-20</IntrBkSttlmDt>
+			<AccptncDtTm>2023-11-20T11:22:33.004Z</AccptncDtTm>
+			<InstdAmt Ccy="EUR">4489.33</InstdAmt>
+			<XchgRate>0.99</XchgRate>
+			<ChrgBr>CRED</ChrgBr>
+			<ChrgsInf>
+				<Amt Ccy="EUR">1</Amt>
+				<Agt>
+					<FinInstnId>
+						<ClrSysMmbId>
+							<ClrSysId>
+								<Cd>CHSIC</Cd>
+							</ClrSysId>
+							<MmbId>098064</MmbId>
+						</ClrSysMmbId>
+					</FinInstnId>
+				</Agt>
+			</ChrgsInf>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<UltmtDbtr>
+				<Nm>John Smith</Nm>
+				<PstlAdr>
+					<AdrLine>Sampleroad 1</AdrLine>
+					<AdrLine>Sampletown</AdrLine>
+				</PstlAdr>
+			</UltmtDbtr>
+			<Dbtr>
+				<Nm>Max Mustermann</Nm>
+				<PstlAdr>
+					<Ctry>CH</Ctry>
+					<AdrLine>Beispielstrasse</AdrLine>
+					<AdrLine>9898 Musterhausen</AdrLine>
+				</PstlAdr>
+			</Dbtr>
+			<DbtrAcct>
+				<Id>
+					<IBAN>CH4089999001234567890</IBAN>
+				</Id>
+			</DbtrAcct>
+			<DbtrAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</DbtrAgt>
+			<CdtrAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</CdtrAgt>
+			<Cdtr>
+				<Nm>Martha Müller</Nm>
+				<PstlAdr>
+					<AdrLine>Musterstrasse 99</AdrLine>
+					<AdrLine>CH-8989 Beispieldorf</AdrLine>
+				</PstlAdr>
+			</Cdtr>
+			<CdtrAcct>
+				<Id>
+					<IBAN>CH1708841000987654321</IBAN>
+				</Id>
+			</CdtrAcct>
+			<UltmtCdtr>
+				<Nm>Hans Müller</Nm>
+			</UltmtCdtr>
+			<Purp>
+				<Cd>SPSP</Cd>
+			</Purp>
+			<RmtInf>
+				<Ustrd>Lohnzahlung 3. Quartal</Ustrd>
+			</RmtInf>
+		</CdtTrfTxInf>
+	</FIToFICstmrCdtTrf>
+</Document>

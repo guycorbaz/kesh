@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pacs.004.001.09.ch.02 pacs.004.001.09.ch.02.xsd">
+	<PmtRtr>
+		<GrpHdr>
+			<MsgId>123456789ABC</MsgId>
+			<CreDtTm>2025-11-25T13:14:15.000+00:00</CreDtTm>
+			<NbOfTxs>1</NbOfTxs>
+			<TtlRtrdIntrBkSttlmAmt Ccy="CHF">546.30</TtlRtrdIntrBkSttlmAmt>
+			<SttlmInf>
+				<SttlmMtd>CLRG</SttlmMtd>
+				<ClrSys>
+					<Cd>SIC</Cd>
+				</ClrSys>
+			</SttlmInf>
+		</GrpHdr>
+		<TxInf>
+			<RtrId>AbC149-5</RtrId>
+			<OrgnlGrpInf>
+				<OrgnlMsgId>56X</OrgnlMsgId>
+				<OrgnlMsgNmId>pacs.008</OrgnlMsgNmId>
+			</OrgnlGrpInf>
+			<OrgnlTxId>56X-No1</OrgnlTxId>
+			<OrgnlUETR>7ab7ff8d-f2ef-4456-9f38-c0381595fb0b</OrgnlUETR>
+			<OrgnlIntrBkSttlmAmt Ccy="CHF">546.30</OrgnlIntrBkSttlmAmt>
+			<OrgnlIntrBkSttlmDt>2025-11-18</OrgnlIntrBkSttlmDt>
+			<RtrdIntrBkSttlmAmt Ccy="CHF">546.30</RtrdIntrBkSttlmAmt>
+			<IntrBkSttlmDt>2025-11-25</IntrBkSttlmDt>
+			<ClrSysRef>CSTRTN</ClrSysRef>
+			<InstgAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>092052</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstgAgt>
+			<InstdAgt>
+				<FinInstnId>
+					<ClrSysMmbId>
+						<ClrSysId>
+							<Cd>CHSIC</Cd>
+						</ClrSysId>
+						<MmbId>098064</MmbId>
+					</ClrSysMmbId>
+				</FinInstnId>
+			</InstdAgt>
+			<RtrChain>
+				<Dbtr>
+					<Pty>
+						<Nm>Horlogerie du Joux</Nm>
+						<PstlAdr>
+							<TwnNm>Les Huits</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Dbtr>
+				<Cdtr>
+					<Pty>
+						<Nm>Uhrengrosshandel Buxtehude</Nm>
+						<PstlAdr>
+							<PstCd>9999</PstCd>
+							<TwnNm>Buxtehude</TwnNm>
+							<Ctry>CH</Ctry>
+						</PstlAdr>
+					</Pty>
+				</Cdtr>
+			</RtrChain>
+			<RtrRsnInf>
+				<Orgtr>
+					<Nm>Horlogerie du Joux</Nm>
+				</Orgtr>
+				<Rsn>
+					<Cd>CUST</Cd>
+				</Rsn>
+			</RtrRsnInf>
+		</TxInf>
+	</PmtRtr>
+</Document>

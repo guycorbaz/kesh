@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.003.001.07.ch.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/camt.003.001.07.ch.02 camt.003.001.07.ch.02.xsd">
+	<GetAcct>
+		<MsgHdr>
+			<MsgId>MSGID-IP-camt003-20231120-0301</MsgId>
+			<CreDtTm>2023-11-20T13:15:15.005Z</CreDtTm>
+			<ReqTp>
+				<Prtry>
+					<Id>SIP</Id>
+				</Prtry>
+			</ReqTp>
+		</MsgHdr>
+		<AcctQryDef>
+			<AcctCrit>
+				<NewCrit>
+					<NewQryNm>IPACQY</NewQryNm>
+					<SchCrit>
+						<AcctId>
+							<EQ>
+								<Othr>
+									<Id>092052</Id>
+								</Othr>
+							</EQ>
+						</AcctId>
+						<Bal>
+							<CtrPtyTp>MULT</CtrPtyTp>
+							<ValDt>
+								<Dt>
+									<EQDt>2023-11-20</EQDt>
+								</Dt>
+							</ValDt>
+						</Bal>
+						<AcctOwnr>
+							<Id>
+								<OrgId>
+									<Othr>
+										<Id>092050</Id>
+									</Othr>
+								</OrgId>
+							</Id>
+						</AcctOwnr>
+					</SchCrit>
+				</NewCrit>
+			</AcctCrit>
+		</AcctQryDef>
+	</GetAcct>
+</Document>

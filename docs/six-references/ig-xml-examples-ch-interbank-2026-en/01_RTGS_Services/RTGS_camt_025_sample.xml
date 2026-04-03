@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/camt.025.001.05.ch.02">
+	<Rct>
+		<MsgHdr>
+			<MsgId>MSG-0001</MsgId>
+			<CreDtTm>2025-12-15T05:12:15.080+01:00</CreDtTm>
+			<ReqTp>
+				<Prtry>
+					<Id>SIC</Id>
+				</Prtry>
+			</ReqTp>
+		</MsgHdr>
+		<RctDtls>
+			<OrgnlMsgId>
+				<MsgId>SIC4-123458</MsgId>
+				<MsgNmId>camt.008</MsgNmId>
+				<OrgtrNm>090002</OrgtrNm>
+			</OrgnlMsgId>
+			<ReqHdlg>
+				<StsCd>ACCP</StsCd>
+			</ReqHdlg>
+		</RctDtls>
+	</Rct>
+</Document>

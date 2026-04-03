@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="http://www.six-interbank-clearing.com/de/acmt.010.001.03.ch.01">
+  <AcctReqAck>
+    <Refs>
+      <ReqTp>MNTN</ReqTp>
+      <MsgId>
+        <Id>MsgID-IP-acmt010-222222</Id>
+        <CreDtTm>2023-12-17T10:42:07.784+01:00</CreDtTm>
+      </MsgId>
+      <PrcId>
+        <Id>SIP</Id>
+        <CreDtTm>2023-12-17T10:42:07.784+01:00</CreDtTm>
+      </PrcId>
+      <AckdMsgId>
+        <Id>MsgID-IP-acmt015-0815</Id>
+        <CreDtTm>2023-12-17T09:31:07.006Z</CreDtTm>
+      </AckdMsgId>
+      <Sts>COMP</Sts>
+    </Refs>
+    <OrgId>
+		<Othr>
+			<Id>099990</Id>
+		</Othr>
+    </OrgId>
+    <AcctSvcrId>
+      <FinInstnId>
+		<ClrSysMmbId>
+			<MmbId>082310</MmbId>
+		</ClrSysMmbId>
+      </FinInstnId>
+    </AcctSvcrId>
+  </AcctReqAck>
+</Document>
+
