@@ -1,4 +1,33 @@
+# Mode dev : MariaDB + kesh-api (mode test intégration)
+# Pour le développement quotidien avec hot reload : cargo run + MariaDB seule
+# Pour la production : voir docker-compose.yml (Story 8.1)
+
 services:
+  kesh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kesh-dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: mysql://kesh:kesh_dev@mariadb:3306/kesh
+      KESH_PORT: "3000"
+      KESH_HOST: "0.0.0.0"
+      KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-changeme}
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   mariadb:
     image: mariadb:11.4
     container_name: kesh-mariadb-dev
