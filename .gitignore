@@ -1,0 +1,32 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

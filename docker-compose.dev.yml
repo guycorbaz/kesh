@@ -1,0 +1,23 @@
+services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: kesh-mariadb-dev
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: kesh_dev_root
+      MARIADB_DATABASE: kesh
+      MARIADB_USER: kesh
+      MARIADB_PASSWORD: kesh_dev
+    volumes:
+      - kesh-mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  kesh-mariadb-data:

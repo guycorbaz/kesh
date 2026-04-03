@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/kesh-core",
+    "crates/kesh-db",
+    "crates/kesh-api",
+    "crates/kesh-reconciliation",
+    "crates/kesh-i18n",
+    "crates/kesh-report",
+    "crates/kesh-seed",
+    "crates/kesh-import",
+    "crates/kesh-payment",
+    "crates/kesh-qrbill",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "EUPL-1.2"
+repository = "https://github.com/gcorbaz/kesh"
