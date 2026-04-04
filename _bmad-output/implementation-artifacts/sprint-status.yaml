@@ -1,5 +1,5 @@
 # generated: 2026-04-03
-# last_updated: 2026-04-03
+# last_updated: 2026-04-04
 # project: kesh
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-03
+last_updated: 2026-04-04
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -48,7 +48,7 @@ development_status:
   epic-1: in-progress
   1-1-scaffold-cargo-workspace-sveltekit: done
   1-2-docker-configuration: done
-  1-3-types-core-newtypes-validation: backlog
+  1-3-types-core-newtypes-validation: done
   1-4-schema-de-base-repository-pattern: backlog
   1-5-authentification-login-logout-jwt: backlog
   1-6-refresh-token-gestion-de-session: backlog
