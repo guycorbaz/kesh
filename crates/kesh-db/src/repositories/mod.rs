@@ -6,6 +6,7 @@
 
 pub mod companies;
 pub mod fiscal_years;
+pub mod refresh_tokens;
 pub mod users;
 
 /// Limite haute pour les appels `list()` : évite les OOM par `fetch_all`

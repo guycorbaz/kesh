@@ -53,6 +53,37 @@ transaction). La base est clonée puis détruite automatiquement.
 DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh' cargo test -p kesh-db
 ```
 
+### Flakiness connue — `#[sqlx::test]` en mode workspace parallèle
+
+Sur MySQL/MariaDB, `#[sqlx::test]` crée une **base de données temporaire
+par test** via un meta-système (`_sqlx_test`). Quand `cargo test --workspace`
+lance plusieurs binaires de tests en parallèle (unit tests de `kesh-db`,
+tests d'intégration `kesh-db/tests/*.rs`, tests de `kesh-api`, E2E
+`kesh-api/tests/auth_e2e.rs`), tous ces binaires partagent le même meta-système
+SQLx et peuvent entrer en contention sur la création/destruction des DBs
+temporaires.
+
+**Symptôme observé** : 1 échec intermittent sur ~4 runs de
+`cargo test --workspace` (reproductible < 25 % du temps), typiquement
+sur un test de bootstrap ou d'un autre test qui fait `SELECT COUNT(*)`
+puis lit/écrit immédiatement. Les runs isolés
+(`cargo test -p kesh-db` ou `cargo test -p kesh-api`) ne montrent
+**jamais** cette flakiness.
+
+**Contournement** si le flake bloque un CI :
+
+```bash
+# Sérialiser la création/exécution des test binaries
+DATABASE_URL='...' cargo test --workspace -- --test-threads=1
+# OU limiter le parallélisme côté cargo lui-même
+DATABASE_URL='...' cargo test --workspace -j1
+```
+
+**Ne pas** chercher à corriger le code applicatif sur cette base — c'est
+un problème connu du test runner `sqlx::test` sur MySQL, pas un bug
+produit. À réévaluer si SQLx ajoute un support transactionnel pour
+MySQL (comme sur Postgres).
+
 ## Types enum stockés en VARCHAR
 
 Les enums (`OrgType`, `Language`, `Role`, `FiscalYearStatus`) implémentent

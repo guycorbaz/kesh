@@ -1,20 +1,32 @@
-mod config;
-mod routes;
+//! Point d'entrée du serveur kesh-api.
+//!
+//! Ordre de démarrage :
+//! 1. Logging (tracing)
+//! 2. Config (échec fatal si `KESH_JWT_SECRET` absent ou trop court)
+//! 3. Pool MariaDB **obligatoire** — revirement story 1.5 vs 1.2 :
+//!    sans DB, l'auth ne peut pas fonctionner, le serveur refuse de
+//!    démarrer. Le healthcheck `/health` conserve son comportement
+//!    dégradé (503) pour les pertes de DB **après** démarrage.
+//! 4. Migrations (`MIGRATOR.run()`) — avance partielle de la story 8.2,
+//!    strictement limitée à `run()`.
+//! 5. Bootstrap admin (`ensure_admin_user`) si la table users est vide.
+//! 6. Build router + axum::serve.
 
-use axum::{routing::get, Router};
+use std::sync::Arc;
+
+use kesh_api::{auth::bootstrap, build_router, config::Config, AppState};
 use sqlx::mysql::MySqlPoolOptions;
-use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    // Initialiser le logging
+    // 1. Logging
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    // Charger la configuration
-    let config = match config::Config::from_env() {
+    // 2. Config
+    let config = match Config::from_env() {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Erreur de configuration: {}", e);
@@ -22,7 +34,7 @@ async fn main() {
         }
     };
 
-    // Connexion à la base de données (gracieuse si indisponible — FR89)
+    // 3. Pool MariaDB — obligatoire (story 1.5)
     let pool = match MySqlPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(config.db_connect_timeout)
@@ -31,29 +43,46 @@ async fn main() {
     {
         Ok(pool) => {
             tracing::info!("Base de données : connectée");
-            Some(pool)
+            pool
         }
-        Err(_) => {
-            tracing::warn!("Base de données : indisponible");
-            tracing::warn!("L'application démarre sans connexion DB — healthcheck retournera 503");
-            None
+        Err(e) => {
+            tracing::error!(
+                "Base de données indisponible au démarrage — l'authentification ne peut pas fonctionner sans DB. Arrêt. Erreur : {}",
+                e
+            );
+            std::process::exit(1);
         }
     };
 
-    // Construire le routeur
-    let static_dir =
-        std::env::var("KESH_STATIC_DIR").unwrap_or_else(|_| "frontend/build".into());
+    // 4. Migrations
+    if let Err(e) = kesh_db::MIGRATOR.run(&pool).await {
+        tracing::error!("Échec des migrations : {}", e);
+        std::process::exit(1);
+    }
+    tracing::info!("Migrations appliquées");
 
-    let app = Router::new()
-        .route("/health", get(routes::health::health_check))
-        .fallback_service(
-            ServeDir::new(&static_dir)
-                .fallback(ServeFile::new(format!("{}/index.html", static_dir))),
-        )
-        .with_state(pool);
+    // 5. Bootstrap admin
+    if let Err(e) = bootstrap::ensure_admin_user(&pool, &config).await {
+        tracing::error!("Échec du bootstrap admin : {}", e);
+        std::process::exit(1);
+    }
 
-    // Démarrer le serveur
+    // 5b. Pré-chauffage du DUMMY_HASH — fait au démarrage pour que toute
+    // défaillance d'Argon2 (OsRng indisponible) apparaisse ici et pas
+    // dans le handler du premier login.
+    kesh_api::auth::password::warm_up_dummy_hash();
+
+    // 6. Build router + serve
+    let static_dir = std::env::var("KESH_STATIC_DIR").unwrap_or_else(|_| "frontend/build".into());
     let bind_addr = format!("{}:{}", config.host, config.port);
+
+    let state = AppState {
+        pool,
+        config: Arc::new(config),
+    };
+
+    let app = build_router(state, static_dir);
+
     tracing::info!("Kesh démarré sur http://{}", bind_addr);
     tracing::info!("Healthcheck : http://{}/health", bind_addr);
 
@@ -64,7 +93,5 @@ async fn main() {
             std::process::exit(1);
         });
 
-    axum::serve(listener, app)
-        .await
-        .expect("Erreur serveur");
+    axum::serve(listener, app).await.expect("Erreur serveur");
 }

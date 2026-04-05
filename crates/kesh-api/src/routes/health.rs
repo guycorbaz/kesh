@@ -1,37 +1,39 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use serde_json::json;
-use sqlx::MySqlPool;
+//! Healthcheck endpoint (`GET /health`).
+//!
+//! Story 1.2 : réponse 200 si la DB est joignable, 503 sinon. Reste
+//! public (pas de JWT requis).
+//!
+//! Story 1.5 : refactor vers `State<AppState>`. Le pool est désormais
+//! toujours présent au démarrage (l'application refuse de démarrer sans
+//! DB), donc plus de gestion `Option<MySqlPool>`. Le comportement dégradé
+//! 503 reste déclenché uniquement par l'échec du `SELECT 1`.
 
-pub async fn health_check(
-    State(pool): State<Option<MySqlPool>>,
-) -> impl IntoResponse {
-    match &pool {
-        Some(pool) => match sqlx::query("SELECT 1").execute(pool).await {
-            Ok(_) => (
-                StatusCode::OK,
-                Json(json!({
-                    "status": "ok",
-                    "database": "connected"
-                })),
-            ),
-            Err(e) => {
-                // Log l'erreur détaillée côté serveur, pas dans la réponse
-                tracing::warn!("Healthcheck DB échoué: {}", e);
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({
-                        "status": "degraded",
-                        "database": "disconnected"
-                    })),
-                )
-            }
-        },
-        None => (
-            StatusCode::SERVICE_UNAVAILABLE,
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::Json;
+use serde_json::json;
+
+use crate::AppState;
+
+pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    match sqlx::query("SELECT 1").execute(&state.pool).await {
+        Ok(_) => (
+            StatusCode::OK,
             Json(json!({
-                "status": "degraded",
-                "database": "disconnected"
+                "status": "ok",
+                "database": "connected"
             })),
         ),
+        Err(e) => {
+            tracing::warn!("Healthcheck DB échoué: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({
+                    "status": "degraded",
+                    "database": "disconnected"
+                })),
+            )
+        }
     }
 }

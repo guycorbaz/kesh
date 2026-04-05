@@ -7,8 +7,10 @@
 
 pub mod company;
 pub mod fiscal_year;
+pub mod refresh_token;
 pub mod user;
 
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+pub use refresh_token::{NewRefreshToken, RefreshToken};
 pub use user::{NewUser, Role, User, UserUpdate};
