@@ -61,3 +61,24 @@ BMAD module config: `_bmad/bmm/config.yaml` — defines project name, user name,
 - **Documentation** — Source code must be documented following best practices: public APIs, complex logic, module-level docs. Rust: use `///` doc comments. Svelte: use JSDoc where appropriate.
 - **Testing** — Test everything that can be tested. Unit tests for all business logic (especially the accounting engine, VAT calculations, and financial computations). Integration tests for parsers (CAMT.053, QR Bill, pain.001).
 - **E2E Testing** — Use Playwright for all end-to-end tests. Each user journey from the PRD maps to a Playwright test scenario.
+
+## Review Iteration Rule
+
+**Règle de remédiation des revues (code review et spec validate)** :
+
+Tant qu'une passe de revue remonte **au moins un finding de sévérité supérieure à LOW** (c'est-à-dire `CRITICAL`, `HIGH`, ou `MEDIUM`), on **relance une nouvelle passe de revue** après application des patches. Le critère d'arrêt est :
+
+- **Zéro finding**, OU
+- **Uniquement des findings de sévérité `LOW`** (nits cosmétiques, améliorations de lisibilité, documentation mineure)
+
+Pour chaque nouvelle passe de revue sur la même story :
+- **Utiliser un LLM différent** de la passe précédente si possible (Opus ↔ Sonnet ↔ Haiku), afin de contourner le biais d'auteur sur les patches qu'on vient d'appliquer. Les régressions introduites par la remédiation ne sont souvent détectables que par un modèle orthogonal.
+- **Fenêtre de contexte fraîche** — ne pas réutiliser le contexte de la passe précédente.
+- **Documenter dans le Change Log** les findings trouvés, les patches appliqués, et le modèle utilisé.
+
+Cette règle s'applique à :
+- `bmad-create-story validate` (revue de spec multi-passes)
+- `bmad-code-review` (revue de code adversariale)
+- Toute revue adversariale similaire où le budget LLM le permet
+
+**Exception** : si un finding `MEDIUM+` est explicitement reclassé en **dette technique documentée** (dans une section `Security debt` / `Performance debt` / équivalente du story file ou des Dev Notes) avec un propriétaire et une story de remédiation planifiée, il compte comme « résolu » pour cette itération.
