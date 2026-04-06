@@ -341,15 +341,8 @@ pub async fn change_password(
     axum::Extension(current_user): axum::Extension<CurrentUser>,
     Json(req): Json<ChangePasswordRequest>,
 ) -> Result<Json<RefreshResponse>, AppError> {
-    // Validation du nouveau mot de passe
-    if req.new_password.is_empty()
-        || req.new_password.chars().all(char::is_whitespace)
-        || req.new_password.chars().count() < 12
-    {
-        return Err(AppError::Validation(
-            "Le nouveau mot de passe doit contenir au moins 12 caractères".into(),
-        ));
-    }
+    // Validation du nouveau mot de passe (politique configurable — story 1.7)
+    password::validate_password(&req.new_password, state.config.password_min_length)?;
 
     // Charger le user pour vérifier le mot de passe courant
     let user = match users::find_by_id(&state.pool, current_user.user_id).await? {

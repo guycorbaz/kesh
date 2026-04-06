@@ -114,6 +114,29 @@ pub async fn find_by_username(
         .map_err(map_db_error)
 }
 
+/// Compte le nombre total d'utilisateurs (pour la pagination).
+pub async fn count(pool: &MySqlPool) -> Result<i64, DbError> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await
+        .map_err(map_db_error)?;
+    Ok(row.0)
+}
+
+/// Compte le nombre d'utilisateurs actifs avec un rôle donné.
+pub async fn count_active_by_role(
+    pool: &MySqlPool,
+    role: crate::entities::Role,
+) -> Result<i64, DbError> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = ? AND active = TRUE")
+            .bind(role)
+            .fetch_one(pool)
+            .await
+            .map_err(map_db_error)?;
+    Ok(row.0)
+}
+
 /// Liste les utilisateurs avec pagination offset/limit.
 ///
 /// `limit` est clampé dans `[0, MAX_LIST_LIMIT]`, `offset` à `>= 0`.

@@ -105,6 +105,26 @@ pub fn dummy_verify() {
     let _ = std::hint::black_box(result);
 }
 
+/// Valide un mot de passe selon la politique configurable.
+///
+/// Vérifie : non-vide, pas uniquement whitespace, longueur >= `min_length`
+/// sur la valeur **brute** (pas de trim). Ce qui est validé est ce qui
+/// sera hashé — pas de divergence entre validation et stockage.
+pub fn validate_password(password: &str, min_length: u32) -> Result<(), AppError> {
+    if password.is_empty() || password.chars().all(char::is_whitespace) {
+        return Err(AppError::Validation(
+            "Le mot de passe ne peut pas être vide".into(),
+        ));
+    }
+    if password.chars().count() < min_length as usize {
+        return Err(AppError::Validation(format!(
+            "Le mot de passe doit contenir au moins {} caractères",
+            min_length
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +155,48 @@ mod tests {
             "malformed PHC should return AppError::Internal, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn validate_password_rejects_empty() {
+        assert!(matches!(
+            validate_password("", 12),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn validate_password_rejects_whitespace_only() {
+        assert!(matches!(
+            validate_password("   \t\n  ", 12),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn validate_password_rejects_too_short() {
+        assert!(matches!(
+            validate_password("short", 12),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn validate_password_accepts_exactly_min() {
+        assert!(validate_password("123456789012", 12).is_ok());
+    }
+
+    #[test]
+    fn validate_password_accepts_above_min() {
+        assert!(validate_password("long-enough-password-here", 12).is_ok());
+    }
+
+    #[test]
+    fn validate_password_leading_trailing_spaces_count() {
+        // "  12345678  " has 12 chars total — should pass with min_length=12
+        assert!(validate_password("  12345678  ", 12).is_ok());
+        // "  1234567  " has 11 chars — should fail with min_length=12
+        assert!(validate_password("  1234567  ", 12).is_err());
     }
 
     #[test]

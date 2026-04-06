@@ -42,6 +42,20 @@ pub enum AppError {
     #[error("Erreur base de données : {0}")]
     Database(#[from] DbError),
 
+    // --- Story 1.7 ---
+
+    /// Accès interdit — rôle insuffisant (403).
+    #[error("Accès interdit")]
+    Forbidden,
+
+    /// L'administrateur tente de désactiver son propre compte (400).
+    #[error("Impossible de désactiver son propre compte")]
+    CannotDisableSelf,
+
+    /// Tentative de désactivation du dernier administrateur actif (400).
+    #[error("Impossible de désactiver le dernier administrateur")]
+    CannotDisableLastAdmin,
+
     // --- Story 1.6 ---
 
     /// Rate limiting déclenché : trop de tentatives de login depuis cette IP.
@@ -103,6 +117,22 @@ impl IntoResponse for AppError {
             AppError::Validation(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)
             }
+
+            AppError::Forbidden => {
+                build_response(StatusCode::FORBIDDEN, "FORBIDDEN", "Accès interdit")
+            }
+
+            AppError::CannotDisableSelf => build_response(
+                StatusCode::BAD_REQUEST,
+                "CANNOT_DISABLE_SELF",
+                "Impossible de désactiver son propre compte",
+            ),
+
+            AppError::CannotDisableLastAdmin => build_response(
+                StatusCode::BAD_REQUEST,
+                "CANNOT_DISABLE_LAST_ADMIN",
+                "Impossible de désactiver le dernier administrateur",
+            ),
 
             AppError::Internal(detail) => {
                 tracing::error!("internal: {detail}");

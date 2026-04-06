@@ -54,6 +54,23 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // Routes protégées (nécessitent un JWT valide)
     let protected = Router::new()
         .route("/api/v1/auth/password", put(routes::auth::change_password))
+        // Story 1.7 : CRUD utilisateurs
+        .route(
+            "/api/v1/users",
+            get(routes::users::list_users).post(routes::users::create_user),
+        )
+        .route(
+            "/api/v1/users/:id",
+            get(routes::users::get_user).put(routes::users::update_user),
+        )
+        .route(
+            "/api/v1/users/:id/disable",
+            put(routes::users::disable_user),
+        )
+        .route(
+            "/api/v1/users/:id/reset-password",
+            put(routes::users::reset_password),
+        )
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::auth::require_auth,

@@ -1,0 +1,326 @@
+//! Handlers HTTP pour `/api/v1/users/*` (story 1.7).
+//!
+//! Tous les endpoints requièrent le rôle `Admin`. Le middleware
+//! `require_auth` injecte `CurrentUser` ; le guard `require_admin`
+//! vérifie le rôle dans chaque handler.
+
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::Json;
+use chrono::NaiveDateTime;
+use kesh_db::entities::{NewUser, Role, User, UserUpdate};
+use kesh_db::repositories::{refresh_tokens, users};
+use serde::{Deserialize, Serialize};
+
+use crate::auth::password;
+use crate::errors::AppError;
+use crate::middleware::auth::CurrentUser;
+use crate::AppState;
+
+// === DTOs ===
+
+/// Corps de `POST /api/v1/users`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub password: String,
+    pub role: Role,
+}
+
+impl std::fmt::Debug for CreateUserRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateUserRequest")
+            .field("username", &self.username)
+            .field("password", &"***")
+            .field("role", &self.role)
+            .finish()
+    }
+}
+
+/// Corps de `PUT /api/v1/users/:id`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateUserRequest {
+    pub role: Role,
+    pub active: bool,
+    pub version: i32,
+}
+
+/// Corps de `PUT /api/v1/users/:id/reset-password`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPasswordRequest {
+    pub new_password: String,
+}
+
+impl std::fmt::Debug for ResetPasswordRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResetPasswordRequest")
+            .field("new_password", &"***")
+            .finish()
+    }
+}
+
+/// Réponse utilisateur (jamais de `password_hash`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserResponse {
+    pub id: i64,
+    pub username: String,
+    pub role: Role,
+    pub active: bool,
+    pub version: i32,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+impl From<User> for UserResponse {
+    fn from(u: User) -> Self {
+        Self {
+            id: u.id,
+            username: u.username,
+            role: u.role,
+            active: u.active,
+            version: u.version,
+            created_at: u.created_at,
+            updated_at: u.updated_at,
+        }
+    }
+}
+
+/// Réponse paginée pour `GET /api/v1/users`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserListResponse {
+    pub items: Vec<UserResponse>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+}
+
+/// Paramètres de pagination pour `GET /api/v1/users`.
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+// === Guard ===
+
+/// Vérifie que l'utilisateur courant a le rôle `Admin`.
+fn require_admin(current_user: &CurrentUser) -> Result<(), AppError> {
+    if current_user.role != Role::Admin {
+        return Err(AppError::Forbidden);
+    }
+    Ok(())
+}
+
+// === Handlers ===
+
+/// `POST /api/v1/users` — Création d'utilisateur (Admin uniquement).
+pub async fn create_user(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Json(req): Json<CreateUserRequest>,
+) -> Result<(StatusCode, Json<UserResponse>), AppError> {
+    require_admin(&current_user)?;
+
+    // Validation username : trim + longueur [1, 64]
+    let username = req.username.trim().to_string();
+    if username.is_empty() {
+        return Err(AppError::Validation(
+            "Le nom d'utilisateur ne peut pas être vide".into(),
+        ));
+    }
+    if username.chars().count() > 64 {
+        return Err(AppError::Validation(
+            "Le nom d'utilisateur ne doit pas dépasser 64 caractères".into(),
+        ));
+    }
+
+    // Validation mot de passe (politique configurable)
+    password::validate_password(&req.password, state.config.password_min_length)?;
+
+    // Hash Argon2id (async via spawn_blocking)
+    let password_hash = password::hash_password_async(req.password).await?;
+
+    let new_user = NewUser {
+        username,
+        password_hash,
+        role: req.role,
+        active: true,
+    };
+
+    let user = users::create(&state.pool, new_user).await?;
+    tracing::info!(user_id = user.id, role = ?user.role, "user created");
+
+    Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
+}
+
+/// `PUT /api/v1/users/:id` — Modification d'utilisateur (Admin uniquement).
+pub async fn update_user(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateUserRequest>,
+) -> Result<Json<UserResponse>, AppError> {
+    require_admin(&current_user)?;
+
+    // Vérifier que l'utilisateur existe
+    let user = users::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    // Gardes pour protéger le pool d'admins actifs (F1+F3+P1 code review).
+    // Deux cas à bloquer :
+    //   a) Désactivation (active true→false) d'un admin actif
+    //   b) Demotion de rôle (Admin→non-Admin) d'un admin actif
+    // Les deux retirent un admin du pool actif et peuvent causer un lockout.
+    let is_deactivating = user.active && !req.active;
+    let is_demoting_admin = user.role == Role::Admin && req.role != Role::Admin && user.active;
+    let removes_active_admin = is_deactivating && user.role == Role::Admin || is_demoting_admin;
+
+    if is_deactivating {
+        if id == current_user.user_id {
+            return Err(AppError::CannotDisableSelf);
+        }
+    }
+
+    if removes_active_admin {
+        let admin_count = users::count_active_by_role(&state.pool, Role::Admin).await?;
+        if admin_count <= 1 {
+            return Err(AppError::CannotDisableLastAdmin);
+        }
+    }
+
+    let changes = UserUpdate {
+        role: req.role,
+        active: req.active,
+    };
+
+    let updated = users::update_role_and_active(&state.pool, id, req.version, changes).await?;
+
+    // Révoquer les sessions si désactivation (F3 code review)
+    if is_deactivating {
+        refresh_tokens::revoke_all_for_user(&state.pool, id, "admin_disable").await?;
+    }
+
+    tracing::info!(user_id = id, role = ?updated.role, active = updated.active, "user updated");
+
+    Ok(Json(UserResponse::from(updated)))
+}
+
+/// `PUT /api/v1/users/:id/disable` — Désactivation de compte (Admin uniquement).
+pub async fn disable_user(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<UserResponse>, AppError> {
+    require_admin(&current_user)?;
+
+    // Self-disable interdit
+    if id == current_user.user_id {
+        return Err(AppError::CannotDisableSelf);
+    }
+
+    let user = users::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    // Protection du dernier admin
+    if user.role == Role::Admin {
+        let admin_count = users::count_active_by_role(&state.pool, Role::Admin).await?;
+        if admin_count <= 1 {
+            return Err(AppError::CannotDisableLastAdmin);
+        }
+    }
+
+    let changes = UserUpdate {
+        role: user.role,
+        active: false,
+    };
+
+    let updated = users::update_role_and_active(&state.pool, id, user.version, changes).await?;
+
+    // Invalider toutes les sessions
+    refresh_tokens::revoke_all_for_user(&state.pool, id, "admin_disable").await?;
+    tracing::info!(user_id = id, "user disabled + sessions revoked");
+
+    Ok(Json(UserResponse::from(updated)))
+}
+
+/// `PUT /api/v1/users/:id/reset-password` — Réinitialisation mot de passe (Admin).
+pub async fn reset_password(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<Json<UserResponse>, AppError> {
+    require_admin(&current_user)?;
+
+    // Vérifier que l'utilisateur cible existe
+    users::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    // Validation mot de passe
+    password::validate_password(&req.new_password, state.config.password_min_length)?;
+
+    // Hash + update
+    let new_hash = password::hash_password_async(req.new_password).await?;
+    users::update_password(&state.pool, id, &new_hash).await?;
+
+    // Invalider toutes les sessions de l'utilisateur cible
+    refresh_tokens::revoke_all_for_user(&state.pool, id, "password_change").await?;
+
+    // Re-fetch pour avoir la version mise à jour
+    let user = users::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    tracing::info!(user_id = id, "password reset by admin + sessions revoked");
+
+    Ok(Json(UserResponse::from(user)))
+}
+
+/// `GET /api/v1/users` — Liste paginée des utilisateurs (Admin uniquement).
+pub async fn list_users(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<UserListResponse>, AppError> {
+    require_admin(&current_user)?;
+
+    let limit = params.limit.unwrap_or(50).clamp(1, 1000);
+    let offset = params.offset.unwrap_or(0).max(0);
+
+    let total = users::count(&state.pool).await?;
+    let items: Vec<UserResponse> = users::list(&state.pool, limit, offset)
+        .await?
+        .into_iter()
+        .map(UserResponse::from)
+        .collect();
+
+    Ok(Json(UserListResponse {
+        items,
+        total,
+        offset,
+        limit,
+    }))
+}
+
+/// `GET /api/v1/users/:id` — Détail d'un utilisateur (Admin uniquement).
+pub async fn get_user(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<UserResponse>, AppError> {
+    require_admin(&current_user)?;
+
+    let user = users::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    Ok(Json(UserResponse::from(user)))
+}

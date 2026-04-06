@@ -79,6 +79,11 @@ pub struct Config {
     pub rate_limit_max_attempts: u32,
     /// Durée de blocage d'une IP après dépassement du seuil de rate limiting (défaut 30 min).
     pub rate_limit_block_duration: TimeDelta,
+
+    // --- Story 1.7 : politique de mot de passe ---
+    /// Longueur minimale des mots de passe (défaut 12, borne [8, 128]).
+    /// Appliquée à la création d'utilisateur, au changement et à la réinitialisation.
+    pub password_min_length: u32,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -98,6 +103,7 @@ impl std::fmt::Debug for Config {
             .field("rate_limit_window", &self.rate_limit_window)
             .field("rate_limit_max_attempts", &self.rate_limit_max_attempts)
             .field("rate_limit_block_duration", &self.rate_limit_block_duration)
+            .field("password_min_length", &self.password_min_length)
             .finish()
     }
 }
@@ -148,6 +154,7 @@ impl Config {
         rate_limit_window: TimeDelta,
         rate_limit_max_attempts: u32,
         rate_limit_block_duration: TimeDelta,
+        password_min_length: u32,
     ) -> Self {
         assert!(
             jwt_secret.len() >= 32,
@@ -186,6 +193,10 @@ impl Config {
                 && rate_limit_block_duration <= TimeDelta::hours(24),
             "from_fields_for_test: rate_limit_block_duration must be in (0, 24h], got {rate_limit_block_duration}"
         );
+        assert!(
+            (8..=128).contains(&password_min_length),
+            "from_fields_for_test: password_min_length must be in [8, 128], got {password_min_length}"
+        );
 
         Config {
             database_url,
@@ -201,6 +212,7 @@ impl Config {
             rate_limit_window,
             rate_limit_max_attempts,
             rate_limit_block_duration,
+            password_min_length,
         }
     }
 
@@ -409,6 +421,28 @@ impl Config {
         };
         let rate_limit_block_duration = TimeDelta::minutes(rate_limit_block_minutes);
 
+        // --- Story 1.7 : politique de mot de passe ---
+        let password_min_length = match env::var("KESH_PASSWORD_MIN_LENGTH") {
+            Ok(val) => match val.parse::<u32>() {
+                Ok(n) if (8..=128).contains(&n) => n,
+                Ok(n) => {
+                    tracing::warn!(
+                        "KESH_PASSWORD_MIN_LENGTH={} hors borne [8, 128], utilisation du défaut 12",
+                        n
+                    );
+                    12
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_PASSWORD_MIN_LENGTH='{}' invalide, utilisation du défaut 12",
+                        val
+                    );
+                    12
+                }
+            },
+            Err(_) => 12,
+        };
+
         Ok(Config {
             database_url,
             port,
@@ -423,6 +457,7 @@ impl Config {
             rate_limit_window,
             rate_limit_max_attempts,
             rate_limit_block_duration,
+            password_min_length,
         })
     }
 }
@@ -457,6 +492,7 @@ pub(crate) mod test_helpers {
             rate_limit_window: TimeDelta::minutes(15),
             rate_limit_max_attempts: 5,
             rate_limit_block_duration: TimeDelta::minutes(30),
+            password_min_length: 12,
         }
     }
 }
@@ -499,6 +535,7 @@ mod tests {
             env::remove_var("KESH_RATE_LIMIT_WINDOW_MINUTES");
             env::remove_var("KESH_RATE_LIMIT_MAX_ATTEMPTS");
             env::remove_var("KESH_RATE_LIMIT_BLOCK_MINUTES");
+            env::remove_var("KESH_PASSWORD_MIN_LENGTH");
         }
     }
 
@@ -777,5 +814,56 @@ mod tests {
         let config = Config::from_env().expect("Config should load");
         assert_eq!(config.rate_limit_max_attempts, 5);
         assert_eq!(config.rate_limit_block_duration, TimeDelta::minutes(30));
+    }
+
+    // --- Story 1.7 : password_min_length ---
+
+    #[test]
+    fn config_password_min_length_defaults_to_12() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.password_min_length, 12);
+    }
+
+    #[test]
+    fn config_password_min_length_respects_env() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_PASSWORD_MIN_LENGTH", "20");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.password_min_length, 20);
+    }
+
+    #[test]
+    fn config_password_min_length_out_of_bounds_falls_back() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_PASSWORD_MIN_LENGTH", "5");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.password_min_length, 12);
+    }
+
+    #[test]
+    fn config_password_min_length_too_high_falls_back() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_PASSWORD_MIN_LENGTH", "200");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.password_min_length, 12);
     }
 }

@@ -66,6 +66,7 @@ fn test_config() -> Config {
         TimeDelta::minutes(15),
         100, // High threshold for non-rate-limit tests (timing test does 30+ attempts)
         TimeDelta::minutes(30),
+        12,
     )
 }
 
@@ -82,6 +83,7 @@ fn test_config_rate_limit(max_attempts: u32, block_secs: i64) -> Config {
         TimeDelta::minutes(15),
         max_attempts,
         TimeDelta::seconds(block_secs),
+        12,
     )
 }
 
@@ -799,6 +801,7 @@ async fn bootstrap_creates_admin_and_login_works_end_to_end(pool: MySqlPool) {
         TimeDelta::minutes(15),
         5,
         TimeDelta::minutes(30),
+        12,
     );
 
     // Bootstrap sur DB vide
@@ -858,6 +861,7 @@ async fn bootstrap_is_idempotent_at_e2e_level(pool: MySqlPool) {
         TimeDelta::minutes(15),
         5,
         TimeDelta::minutes(30),
+        12,
     );
 
     // Trois appels consécutifs : le premier crée, les suivants sont no-op

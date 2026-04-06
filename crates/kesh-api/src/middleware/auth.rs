@@ -134,6 +134,7 @@ mod tests {
             TimeDelta::minutes(15),
             5,
             TimeDelta::minutes(30),
+            12,
         );
         let rate_limiter = crate::middleware::rate_limit::RateLimiter::new(&config);
         AppState {
