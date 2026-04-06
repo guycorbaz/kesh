@@ -1,1 +1,62 @@
 @import 'tailwindcss';
+
+/* Police Inter self-hosted via @fontsource (UX spec: pas de chargement externe) */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+
+/* === Design tokens Kesh (Story 1.9) === */
+
+@theme {
+  /* Couleurs — Source: UX spec §Système de Couleurs */
+  --color-primary: #1e40af;
+  --color-primary-light: #3b82f6;
+  --color-success: #16a34a;
+  --color-error: #dc2626;
+  --color-warning: #d97706;
+  --color-info: #0ea5e9;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8fafc;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-border: #e2e8f0;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1e293b;
+
+  /* Typographie — Inter comme police unique */
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+/* === Styles globaux === */
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background-color: var(--color-surface);
+}
+
+/* === Système d'espacement Guidé / Expert === */
+
+:root,
+[data-mode='guided'] {
+  --kesh-gap: 1rem; /* 16px = gap-4 */
+  --kesh-padding: 1.5rem; /* 24px = p-6 */
+  --kesh-section-margin: 2rem; /* 32px = my-8 */
+  --kesh-table-row-height: 48px;
+  --kesh-target-min-height: 44px;
+}
+
+[data-mode='expert'] {
+  --kesh-gap: 0.5rem; /* 8px = gap-2 */
+  --kesh-padding: 1rem; /* 16px = p-4 */
+  --kesh-section-margin: 1rem; /* 16px = my-4 */
+  --kesh-table-row-height: 36px;
+  --kesh-target-min-height: 32px;
+}
+
+/* === Accessibilité — Focus ring WCAG AA === */
+
+:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
