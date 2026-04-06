@@ -63,15 +63,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             get(routes::users::list_users).post(routes::users::create_user),
         )
         .route(
-            "/api/v1/users/:id",
+            "/api/v1/users/{id}",
             get(routes::users::get_user).put(routes::users::update_user),
         )
         .route(
-            "/api/v1/users/:id/disable",
+            "/api/v1/users/{id}/disable",
             put(routes::users::disable_user),
         )
         .route(
-            "/api/v1/users/:id/reset-password",
+            "/api/v1/users/{id}/reset-password",
             put(routes::users::reset_password),
         )
         .route_layer(axum::middleware::from_fn(

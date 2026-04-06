@@ -16,7 +16,8 @@ services:
       KESH_PORT: "3000"
       KESH_HOST: "0.0.0.0"
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
-      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-changeme}
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}
+      KESH_JWT_SECRET: ${KESH_JWT_SECRET:-dev-secret-at-least-32-bytes-long-for-testing}
       RUST_LOG: ${RUST_LOG:-info}
     depends_on:
       mariadb:
