@@ -26,6 +26,9 @@ pub struct RefreshToken {
     pub expires_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub revoked_at: Option<NaiveDateTime>,
+    /// Raison de la révocation : "logout", "rotation", "password_change",
+    /// "admin_disable", "theft_detected". `None` = non révoqué ou pré-migration.
+    pub revoked_reason: Option<String>,
 }
 
 impl std::fmt::Debug for RefreshToken {
@@ -37,6 +40,7 @@ impl std::fmt::Debug for RefreshToken {
             .field("expires_at", &self.expires_at)
             .field("created_at", &self.created_at)
             .field("revoked_at", &self.revoked_at)
+            .field("revoked_reason", &self.revoked_reason)
             .finish()
     }
 }

@@ -44,6 +44,21 @@ pub fn verify_password(plain: &str, phc: &str) -> Result<bool, AppError> {
     }
 }
 
+/// Wrapper async pour `hash_password`, utilisant `spawn_blocking`
+/// pour ne pas bloquer le runtime tokio (~50ms par appel Argon2).
+pub async fn hash_password_async(plain: String) -> Result<String, AppError> {
+    tokio::task::spawn_blocking(move || hash_password(&plain))
+        .await
+        .map_err(|_| AppError::Internal("argon2 hash thread panic".into()))?
+}
+
+/// Wrapper async pour `verify_password`, utilisant `spawn_blocking`.
+pub async fn verify_password_async(plain: String, phc: String) -> Result<bool, AppError> {
+    tokio::task::spawn_blocking(move || verify_password(&plain, &phc))
+        .await
+        .map_err(|_| AppError::Internal("argon2 verify thread panic".into()))?
+}
+
 /// PHC string statique consommé par `dummy_verify` pour normaliser la
 /// durée de login quand l'utilisateur n'existe pas ou est inactif.
 ///

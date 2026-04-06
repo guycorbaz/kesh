@@ -14,7 +14,9 @@
 
 use std::sync::Arc;
 
-use kesh_api::{auth::bootstrap, build_router, config::Config, AppState};
+use std::net::SocketAddr;
+
+use kesh_api::{auth::bootstrap, build_router, config::Config, middleware::rate_limit::RateLimiter, AppState};
 use sqlx::mysql::MySqlPoolOptions;
 use tracing_subscriber::EnvFilter;
 
@@ -72,13 +74,40 @@ async fn main() {
     // dans le handler du premier login.
     kesh_api::auth::password::warm_up_dummy_hash();
 
+    // 5c. Nettoyage des refresh tokens expirés/révoqués > 7 jours (story 1.6)
+    let cleanup_cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(7)).naive_utc();
+    match kesh_db::repositories::refresh_tokens::delete_expired_and_revoked(&pool, cleanup_cutoff)
+        .await
+    {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!("startup cleanup: {} expired/revoked tokens removed", count);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("startup cleanup failed (non-fatal): {}", e);
+        }
+    }
+
+    // 5d. Vérification de cohérence refresh_inactivity vs max_lifetime (story 1.6)
+    if config.refresh_inactivity > config.refresh_token_max_lifetime {
+        tracing::warn!(
+            "refresh_inactivity ({:?}) exceeds max_lifetime ({:?}), sessions will expire by inactivity only",
+            config.refresh_inactivity,
+            config.refresh_token_max_lifetime
+        );
+    }
+
     // 6. Build router + serve
     let static_dir = std::env::var("KESH_STATIC_DIR").unwrap_or_else(|_| "frontend/build".into());
     let bind_addr = format!("{}:{}", config.host, config.port);
 
+    let rate_limiter = RateLimiter::new(&config);
+
     let state = AppState {
         pool,
         config: Arc::new(config),
+        rate_limiter: Arc::new(rate_limiter),
     };
 
     let app = build_router(state, static_dir);
@@ -93,5 +122,10 @@ async fn main() {
             std::process::exit(1);
         });
 
-    axum::serve(listener, app).await.expect("Erreur serveur");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .expect("Erreur serveur");
 }

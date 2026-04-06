@@ -1,3 +1,4 @@
-//! Middlewares HTTP : auth (JWT), (futur : rate limiting, tracing).
+//! Middlewares HTTP : auth (JWT), rate limiting.
 
 pub mod auth;
+pub mod rate_limit;

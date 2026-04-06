@@ -68,6 +68,17 @@ pub struct Config {
     pub jwt_expiry: TimeDelta,
     /// Lifetime absolu d'un refresh token (défaut 30 jours).
     pub refresh_token_max_lifetime: TimeDelta,
+
+    // --- Story 1.6 : session & rate limiting ---
+    /// Durée d'inactivité avant expiration du refresh token (défaut 15 min).
+    /// Sliding expiration : chaque refresh remet le compteur à zéro.
+    pub refresh_inactivity: TimeDelta,
+    /// Fenêtre de temps pour compter les tentatives de login échouées (défaut 15 min).
+    pub rate_limit_window: TimeDelta,
+    /// Nombre maximal de tentatives de login échouées par IP avant blocage (défaut 5).
+    pub rate_limit_max_attempts: u32,
+    /// Durée de blocage d'une IP après dépassement du seuil de rate limiting (défaut 30 min).
+    pub rate_limit_block_duration: TimeDelta,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -83,6 +94,10 @@ impl std::fmt::Debug for Config {
             .field("jwt_secret", &"***")
             .field("jwt_expiry", &self.jwt_expiry)
             .field("refresh_token_max_lifetime", &self.refresh_token_max_lifetime)
+            .field("refresh_inactivity", &self.refresh_inactivity)
+            .field("rate_limit_window", &self.rate_limit_window)
+            .field("rate_limit_max_attempts", &self.rate_limit_max_attempts)
+            .field("rate_limit_block_duration", &self.rate_limit_block_duration)
             .finish()
     }
 }
@@ -121,6 +136,7 @@ impl Config {
     /// tests, la panique est le bon signal pour un setup de test
     /// incorrect.
     #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_fields_for_test(
         database_url: String,
         admin_username: String,
@@ -128,6 +144,10 @@ impl Config {
         jwt_secret: String,
         jwt_expiry: TimeDelta,
         refresh_token_max_lifetime: TimeDelta,
+        refresh_inactivity: TimeDelta,
+        rate_limit_window: TimeDelta,
+        rate_limit_max_attempts: u32,
+        rate_limit_block_duration: TimeDelta,
     ) -> Self {
         assert!(
             jwt_secret.len() >= 32,
@@ -147,6 +167,25 @@ impl Config {
                 && refresh_token_max_lifetime <= TimeDelta::days(365),
             "from_fields_for_test: refresh_token_max_lifetime must be in (0, 365d], got {refresh_token_max_lifetime}"
         );
+        assert!(
+            refresh_inactivity > TimeDelta::zero()
+                && refresh_inactivity <= TimeDelta::hours(24),
+            "from_fields_for_test: refresh_inactivity must be in (0, 24h], got {refresh_inactivity}"
+        );
+        assert!(
+            rate_limit_window > TimeDelta::zero()
+                && rate_limit_window <= TimeDelta::hours(24),
+            "from_fields_for_test: rate_limit_window must be in (0, 24h], got {rate_limit_window}"
+        );
+        assert!(
+            (1..=100).contains(&rate_limit_max_attempts),
+            "from_fields_for_test: rate_limit_max_attempts must be in [1, 100], got {rate_limit_max_attempts}"
+        );
+        assert!(
+            rate_limit_block_duration > TimeDelta::zero()
+                && rate_limit_block_duration <= TimeDelta::hours(24),
+            "from_fields_for_test: rate_limit_block_duration must be in (0, 24h], got {rate_limit_block_duration}"
+        );
 
         Config {
             database_url,
@@ -158,6 +197,10 @@ impl Config {
             jwt_secret,
             jwt_expiry,
             refresh_token_max_lifetime,
+            refresh_inactivity,
+            rate_limit_window,
+            rate_limit_max_attempts,
+            rate_limit_block_duration,
         }
     }
 
@@ -277,6 +320,95 @@ impl Config {
         };
         let refresh_token_max_lifetime = TimeDelta::days(refresh_token_days);
 
+        // --- Story 1.6 : session & rate limiting ---
+
+        let refresh_inactivity_minutes = match env::var("KESH_REFRESH_INACTIVITY_MINUTES") {
+            Ok(val) => match val.parse::<i64>() {
+                Ok(m) if (1..=1440).contains(&m) => m,
+                Ok(m) => {
+                    tracing::warn!(
+                        "KESH_REFRESH_INACTIVITY_MINUTES={} hors borne [1, 1440], utilisation du défaut 15",
+                        m
+                    );
+                    15
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_REFRESH_INACTIVITY_MINUTES='{}' invalide, utilisation du défaut 15",
+                        val
+                    );
+                    15
+                }
+            },
+            Err(_) => 15,
+        };
+        let refresh_inactivity = TimeDelta::minutes(refresh_inactivity_minutes);
+
+        let rate_limit_window_minutes = match env::var("KESH_RATE_LIMIT_WINDOW_MINUTES") {
+            Ok(val) => match val.parse::<i64>() {
+                Ok(m) if (1..=1440).contains(&m) => m,
+                Ok(m) => {
+                    tracing::warn!(
+                        "KESH_RATE_LIMIT_WINDOW_MINUTES={} hors borne [1, 1440], utilisation du défaut 15",
+                        m
+                    );
+                    15
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_RATE_LIMIT_WINDOW_MINUTES='{}' invalide, utilisation du défaut 15",
+                        val
+                    );
+                    15
+                }
+            },
+            Err(_) => 15,
+        };
+        let rate_limit_window = TimeDelta::minutes(rate_limit_window_minutes);
+
+        let rate_limit_max_attempts = match env::var("KESH_RATE_LIMIT_MAX_ATTEMPTS") {
+            Ok(val) => match val.parse::<u32>() {
+                Ok(n) if (1..=100).contains(&n) => n,
+                Ok(n) => {
+                    tracing::warn!(
+                        "KESH_RATE_LIMIT_MAX_ATTEMPTS={} hors borne [1, 100], utilisation du défaut 5",
+                        n
+                    );
+                    5
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_RATE_LIMIT_MAX_ATTEMPTS='{}' invalide, utilisation du défaut 5",
+                        val
+                    );
+                    5
+                }
+            },
+            Err(_) => 5,
+        };
+
+        let rate_limit_block_minutes = match env::var("KESH_RATE_LIMIT_BLOCK_MINUTES") {
+            Ok(val) => match val.parse::<i64>() {
+                Ok(m) if (1..=1440).contains(&m) => m,
+                Ok(m) => {
+                    tracing::warn!(
+                        "KESH_RATE_LIMIT_BLOCK_MINUTES={} hors borne [1, 1440], utilisation du défaut 30",
+                        m
+                    );
+                    30
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_RATE_LIMIT_BLOCK_MINUTES='{}' invalide, utilisation du défaut 30",
+                        val
+                    );
+                    30
+                }
+            },
+            Err(_) => 30,
+        };
+        let rate_limit_block_duration = TimeDelta::minutes(rate_limit_block_minutes);
+
         Ok(Config {
             database_url,
             port,
@@ -287,6 +419,10 @@ impl Config {
             jwt_secret,
             jwt_expiry,
             refresh_token_max_lifetime,
+            refresh_inactivity,
+            rate_limit_window,
+            rate_limit_max_attempts,
+            rate_limit_block_duration,
         })
     }
 }
@@ -317,6 +453,10 @@ pub(crate) mod test_helpers {
             jwt_secret: "test-secret-32-bytes-minimum-test-secret-padding".to_string(),
             jwt_expiry: TimeDelta::minutes(15),
             refresh_token_max_lifetime: TimeDelta::days(30),
+            refresh_inactivity: TimeDelta::minutes(15),
+            rate_limit_window: TimeDelta::minutes(15),
+            rate_limit_max_attempts: 5,
+            rate_limit_block_duration: TimeDelta::minutes(30),
         }
     }
 }
@@ -355,6 +495,10 @@ mod tests {
             env::remove_var("KESH_JWT_SECRET");
             env::remove_var("KESH_JWT_EXPIRY_MINUTES");
             env::remove_var("KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS");
+            env::remove_var("KESH_REFRESH_INACTIVITY_MINUTES");
+            env::remove_var("KESH_RATE_LIMIT_WINDOW_MINUTES");
+            env::remove_var("KESH_RATE_LIMIT_MAX_ATTEMPTS");
+            env::remove_var("KESH_RATE_LIMIT_BLOCK_MINUTES");
         }
     }
 
@@ -551,5 +695,87 @@ mod tests {
 
         let config = Config::from_env().expect("Config should load");
         assert_eq!(config.refresh_token_max_lifetime, TimeDelta::days(7));
+    }
+
+    // --- Story 1.6 : tests config session & rate limiting ---
+
+    #[test]
+    fn config_refresh_inactivity_defaults_to_15_min() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.refresh_inactivity, TimeDelta::minutes(15));
+    }
+
+    #[test]
+    fn config_refresh_inactivity_respects_env() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_REFRESH_INACTIVITY_MINUTES", "5");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.refresh_inactivity, TimeDelta::minutes(5));
+    }
+
+    #[test]
+    fn config_refresh_inactivity_out_of_bounds_falls_back() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_REFRESH_INACTIVITY_MINUTES", "9999");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.refresh_inactivity, TimeDelta::minutes(15));
+    }
+
+    #[test]
+    fn config_rate_limit_defaults() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.rate_limit_window, TimeDelta::minutes(15));
+        assert_eq!(config.rate_limit_max_attempts, 5);
+        assert_eq!(config.rate_limit_block_duration, TimeDelta::minutes(30));
+    }
+
+    #[test]
+    fn config_rate_limit_respects_env_overrides() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_RATE_LIMIT_WINDOW_MINUTES", "10");
+            env::set_var("KESH_RATE_LIMIT_MAX_ATTEMPTS", "3");
+            env::set_var("KESH_RATE_LIMIT_BLOCK_MINUTES", "60");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.rate_limit_window, TimeDelta::minutes(10));
+        assert_eq!(config.rate_limit_max_attempts, 3);
+        assert_eq!(config.rate_limit_block_duration, TimeDelta::minutes(60));
+    }
+
+    #[test]
+    fn config_rate_limit_out_of_bounds_falls_back() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_RATE_LIMIT_MAX_ATTEMPTS", "999");
+            env::set_var("KESH_RATE_LIMIT_BLOCK_MINUTES", "0");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.rate_limit_max_attempts, 5);
+        assert_eq!(config.rate_limit_block_duration, TimeDelta::minutes(30));
     }
 }

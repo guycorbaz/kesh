@@ -10,7 +10,7 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::users;
 use sqlx::MySqlPool;
 
-use crate::auth::password::hash_password;
+use crate::auth::password::hash_password_async;
 use crate::config::Config;
 use crate::errors::AppError;
 
@@ -32,7 +32,7 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
         return Ok(());
     }
 
-    let hash = hash_password(&config.admin_password)?;
+    let hash = hash_password_async(config.admin_password.clone()).await?;
 
     let result = users::create(
         pool,

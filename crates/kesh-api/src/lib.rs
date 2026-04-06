@@ -12,18 +12,20 @@ pub mod routes;
 
 use std::sync::Arc;
 
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 use sqlx::MySqlPool;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::config::Config;
+use crate::middleware::rate_limit::RateLimiter;
 
 /// État partagé injecté dans tous les handlers via `State<AppState>`.
 #[derive(Clone)]
 pub struct AppState {
     pub pool: MySqlPool,
     pub config: Arc<Config>,
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 /// Construit le routeur principal de l'application (routes publiques
@@ -49,10 +51,20 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     let fallback = ServeDir::new(&static_dir)
         .fallback(ServeFile::new(format!("{}/index.html", static_dir)));
 
+    // Routes protégées (nécessitent un JWT valide)
+    let protected = Router::new()
+        .route("/api/v1/auth/password", put(routes::auth::change_password))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::middleware::auth::require_auth,
+        ));
+
     Router::new()
         .route("/health", get(routes::health::health_check))
         .route("/api/v1/auth/login", post(routes::auth::login))
         .route("/api/v1/auth/logout", post(routes::auth::logout))
+        .route("/api/v1/auth/refresh", post(routes::auth::refresh))
+        .merge(protected)
         .fallback_service(fallback)
         .with_state(state)
 }

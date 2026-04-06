@@ -16,10 +16,11 @@ src/
 │   ├── jwt.rs       # Claims HS256 + encode/decode (leeway 60s)
 │   └── bootstrap.rs # ensure_admin_user (FR3 : admin auto au démarrage)
 ├── middleware/
-│   └── auth.rs      # require_auth (from_fn_with_state) + CurrentUser
+│   ├── auth.rs      # require_auth (from_fn_with_state) + CurrentUser
+│   └── rate_limit.rs # RateLimiter in-memory par IP (story 1.6)
 └── routes/
     ├── health.rs    # GET /health (DB check)
-    └── auth.rs      # POST /api/v1/auth/{login,logout}
+    └── auth.rs      # POST /api/v1/auth/{login,logout,refresh}, PUT /api/v1/auth/password
 tests/
 └── auth_e2e.rs      # Tests E2E spawn_app avec reqwest
 ```
@@ -36,6 +37,10 @@ tests/
 | `KESH_ADMIN_PASSWORD` | non | `changeme` | Mot de passe admin bootstrap (logué en warning s'il vaut `changeme`) |
 | `KESH_JWT_EXPIRY_MINUTES` | non | `15` | Durée de vie de l'access token, borné `[1, 1440]` |
 | `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` | non | `30` | Lifetime absolu du refresh token, borné `[1, 365]` |
+| `KESH_REFRESH_INACTIVITY_MINUTES` | non | `15` | Sliding expiration : inactivité avant expiration du refresh token `[1, 1440]` |
+| `KESH_RATE_LIMIT_WINDOW_MINUTES` | non | `15` | Fenêtre de comptage des tentatives de login échouées `[1, 1440]` |
+| `KESH_RATE_LIMIT_MAX_ATTEMPTS` | non | `5` | Nombre max de tentatives échouées par IP `[1, 100]` |
+| `KESH_RATE_LIMIT_BLOCK_MINUTES` | non | `30` | Durée de blocage après dépassement du seuil `[1, 1440]` |
 | `KESH_STATIC_DIR` | non | `frontend/build` | Répertoire du SPA SvelteKit buildé |
 | `RUST_LOG` | non | `info` | Filtre `tracing_subscriber::EnvFilter` |
 
@@ -85,6 +90,49 @@ Erreurs :
 - `400 VALIDATION_ERROR` — username/password vide
 - `401 INVALID_CREDENTIALS` — user inconnu, mot de passe incorrect, ou compte inactif (même code par design anti-enumeration)
 
+### `POST /api/v1/auth/refresh`
+
+```json
+// Request
+{ "refreshToken": "0a0f5c91-..." }
+
+// Response 200
+{
+  "accessToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refreshToken": "new-uuid-v4...",
+  "expiresIn": 900
+}
+```
+
+Token rotation : l'ancien refresh token est révoqué (`revoked_reason = "rotation"`),
+un nouveau est émis. Si un token déjà révoqué par rotation est re-présenté →
+détection de vol → mass revoke de toutes les sessions de l'utilisateur.
+
+Erreurs : `401 INVALID_REFRESH_TOKEN` (code unique, anti-enumeration — couvre
+token inconnu, expiré, révoqué, ou utilisateur inactif).
+
+### `PUT /api/v1/auth/password` (protégé)
+
+```json
+// Request (nécessite Bearer JWT)
+{ "currentPassword": "old-pass", "newPassword": "new-12-chars-min" }
+
+// Response 200
+{
+  "accessToken": "...",
+  "refreshToken": "...",
+  "expiresIn": 900
+}
+```
+
+Change le mot de passe de l'utilisateur authentifié. Révoque tous les refresh
+tokens existants (`revoked_reason = "password_change"`), émet une nouvelle paire.
+Validation : nouveau mot de passe ≥ 12 caractères Unicode, non vide, non whitespace-only.
+
+Erreurs :
+- `400 VALIDATION_ERROR` — nouveau mot de passe trop court
+- `401 INVALID_CREDENTIALS` — ancien mot de passe incorrect
+
 ### `POST /api/v1/auth/logout`
 
 ```json
@@ -105,7 +153,7 @@ Réponse :
 ## Authentification — flux
 
 - **Access token** : JWT HS256, `sub` (user_id String), `role`, `iat`, `exp`. Durée 15 min par défaut. `leeway = 60s` au decode pour absorber le clock drift NTP.
-- **Refresh token** : UUID v4 opaque persisté en base (`refresh_tokens`). Lifetime absolu 30 jours par défaut. La sliding expiration « 15 min d'inactivité » sera ajoutée en story 1.6.
+- **Refresh token** : UUID v4 opaque persisté en base (`refresh_tokens`). Sliding expiration : 15 min d'inactivité par défaut (story 1.6). Token rotation à chaque refresh avec détection de vol.
 - **Middleware `require_auth`** : pattern Axum 0.8 `from_fn_with_state` qui décode le JWT et injecte un `CurrentUser { user_id, role }` dans les `Extensions` de la requête. Les handlers protégés le récupèrent via `Extension<CurrentUser>`.
 - **Bootstrap admin** : au premier démarrage sur une DB vide, un compte `KESH_ADMIN_USERNAME` avec mot de passe `KESH_ADMIN_PASSWORD` est créé. Log explicite « CHANGEZ LE MOT DE PASSE ».
 
@@ -121,8 +169,10 @@ DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh' cargo test -p kesh-api 
 
 Voir `crates/kesh-db/README.md` pour les prérequis DB (privilèges `CREATE DATABASE` nécessaires pour `#[sqlx::test]`) et la section « Flakiness connue » sur les tests workspace parallèles.
 
-## Dettes techniques documentées (story 1.5)
+## Dettes techniques documentées
 
-1. **Argon2 sync dans les handlers async** — blocage des workers tokio ~50 ms par login. À wrapper dans `tokio::task::spawn_blocking` post-MVP. Le rate limiting de la story 1.6 est un prérequis dur avant toute mise en production.
-2. **`refresh_tokens.token` stocké en clair** — remplacement par `SHA-256(token)` + rotation à chaque refresh planifié pour la story 1.6.
-3. **Migrations au démarrage** — `MIGRATOR.run()` seulement, la détection de version/rollback sophistiquée reste pour la story 8.2.
+1. **`refresh_tokens.token` stocké en clair** — le hashing SHA-256 avant stockage est souhaitable mais hors scope MVP. Risque mitigé par la sliding expiration courte (15 min).
+2. **`refresh_token_max_lifetime` non enforced** — la session peut vivre indéfiniment si le client refresh régulièrement. Story future pour token families / absolute lifetime.
+3. **Rate limiter in-memory** — reset au redémarrage, single-instance, HashMap non borné. Acceptable pour MVP 2-5 users.
+4. **TOCTOU sur refresh concurrent** — deux refresh simultanés avec le même token peuvent émettre deux sessions. Fix via token families hors scope MVP.
+5. **Migrations au démarrage** — `MIGRATOR.run()` seulement, la détection de version/rollback sophistiquée reste pour la story 8.2.

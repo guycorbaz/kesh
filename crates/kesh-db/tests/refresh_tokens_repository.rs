@@ -108,7 +108,7 @@ async fn find_active_by_token_returns_none_for_revoked_token(pool: MySqlPool) {
     .await
     .expect("create should succeed");
 
-    let revoked = refresh_tokens::revoke_by_token(&pool, &token_value)
+    let revoked = refresh_tokens::revoke_by_token(&pool, &token_value, "logout")
         .await
         .expect("revoke should succeed");
     assert!(revoked, "first revoke should return true");
@@ -136,12 +136,12 @@ async fn revoke_by_token_is_idempotent(pool: MySqlPool) {
     .await
     .expect("create should succeed");
 
-    let first = refresh_tokens::revoke_by_token(&pool, &token_value)
+    let first = refresh_tokens::revoke_by_token(&pool, &token_value, "logout")
         .await
         .expect("first revoke should succeed");
     assert!(first);
 
-    let second = refresh_tokens::revoke_by_token(&pool, &token_value)
+    let second = refresh_tokens::revoke_by_token(&pool, &token_value, "logout")
         .await
         .expect("second revoke should not error");
     assert!(!second, "second revoke should return false (idempotent)");
@@ -150,7 +150,7 @@ async fn revoke_by_token_is_idempotent(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn revoke_by_token_unknown_returns_false(pool: MySqlPool) {
     let unknown = make_token_uuid();
-    let result = refresh_tokens::revoke_by_token(&pool, &unknown)
+    let result = refresh_tokens::revoke_by_token(&pool, &unknown, "logout")
         .await
         .expect("revoke should not error on unknown token");
     assert!(!result);
@@ -175,13 +175,13 @@ async fn revoke_all_for_user_revokes_all_active_tokens(pool: MySqlPool) {
         .expect("create should succeed");
     }
 
-    let revoked_count = refresh_tokens::revoke_all_for_user(&pool, user_id)
+    let revoked_count = refresh_tokens::revoke_all_for_user(&pool, user_id, "password_change")
         .await
         .expect("revoke_all should succeed");
     assert_eq!(revoked_count, 3);
 
     // Un second appel ne doit rien révoquer
-    let second_call = refresh_tokens::revoke_all_for_user(&pool, user_id)
+    let second_call = refresh_tokens::revoke_all_for_user(&pool, user_id, "password_change")
         .await
         .expect("second revoke_all should succeed");
     assert_eq!(second_call, 0);

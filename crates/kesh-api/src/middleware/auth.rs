@@ -130,10 +130,16 @@ mod tests {
             String::from_utf8(TEST_JWT_SECRET.to_vec()).unwrap(),
             TimeDelta::minutes(15),
             TimeDelta::days(30),
+            TimeDelta::minutes(15),
+            TimeDelta::minutes(15),
+            5,
+            TimeDelta::minutes(30),
         );
+        let rate_limiter = crate::middleware::rate_limit::RateLimiter::new(&config);
         AppState {
             pool: stub_pool(),
             config: Arc::new(config),
+            rate_limiter: std::sync::Arc::new(rate_limiter),
         }
     }
 

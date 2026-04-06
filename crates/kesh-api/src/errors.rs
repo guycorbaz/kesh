@@ -41,6 +41,19 @@ pub enum AppError {
     /// contente de wrapper pour le mapping HTTP.
     #[error("Erreur base de données : {0}")]
     Database(#[from] DbError),
+
+    // --- Story 1.6 ---
+
+    /// Rate limiting déclenché : trop de tentatives de login depuis cette IP.
+    /// `retry_after` = secondes avant déblocage, transmis dans le header `Retry-After`.
+    #[error("Rate limited, retry after {retry_after}s")]
+    RateLimited { retry_after: u64 },
+
+    /// Refresh token invalide (expiré, révoqué, inconnu, user inactif).
+    /// Code client unique `INVALID_REFRESH_TOKEN` (anti-enumeration).
+    /// Le `String` porte le détail pour les logs serveur.
+    #[error("Refresh token invalide : {0}")]
+    InvalidRefreshToken(String),
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -97,6 +110,29 @@ impl IntoResponse for AppError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "INTERNAL_ERROR",
                     "Erreur interne",
+                )
+            }
+
+            AppError::RateLimited { retry_after } => {
+                let mut resp = build_response(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "RATE_LIMITED",
+                    "Trop de tentatives",
+                );
+                resp.headers_mut().insert(
+                    "Retry-After",
+                    axum::http::HeaderValue::from_str(&retry_after.to_string())
+                        .unwrap_or_else(|_| axum::http::HeaderValue::from_static("60")),
+                );
+                resp
+            }
+
+            AppError::InvalidRefreshToken(detail) => {
+                tracing::warn!("invalid refresh token: {detail}");
+                build_response(
+                    StatusCode::UNAUTHORIZED,
+                    "INVALID_REFRESH_TOKEN",
+                    "Session expirée",
                 )
             }
 

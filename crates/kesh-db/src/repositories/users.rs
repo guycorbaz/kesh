@@ -128,6 +128,31 @@ pub async fn list(pool: &MySqlPool, limit: i64, offset: i64) -> Result<Vec<User>
         .map_err(map_db_error)
 }
 
+/// Met à jour le hash du mot de passe d'un utilisateur (story 1.6).
+///
+/// Incrémente aussi la `version` (optimistic lock). Retourne une erreur
+/// `NotFound` si l'utilisateur n'existe pas.
+pub async fn update_password(
+    pool: &MySqlPool,
+    user_id: i64,
+    new_password_hash: &str,
+) -> Result<(), DbError> {
+    let rows_affected = sqlx::query(
+        "UPDATE users SET password_hash = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(new_password_hash)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
 /// Met à jour le rôle et/ou l'activation d'un utilisateur avec verrouillage optimiste.
 ///
 /// Le `password_hash` et le `username` ne sont PAS modifiables ici — story 1.7
