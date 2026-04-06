@@ -1,8 +1,8 @@
-//! Handlers HTTP pour `/api/v1/users/*` (story 1.7).
+//! Handlers HTTP pour `/api/v1/users/*` (story 1.7, refactored story 1.8).
 //!
-//! Tous les endpoints requièrent le rôle `Admin`. Le middleware
-//! `require_auth` injecte `CurrentUser` ; le guard `require_admin`
-//! vérifie le rôle dans chaque handler.
+//! Tous les endpoints requièrent le rôle `Admin`. L'enforcement est fait
+//! par le middleware RBAC (`require_admin_role`) appliqué via `route_layer`
+//! sur le sous-routeur `/users/*` dans `build_router()`.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -106,26 +106,17 @@ pub struct PaginationParams {
     pub offset: Option<i64>,
 }
 
-// === Guard ===
-
-/// Vérifie que l'utilisateur courant a le rôle `Admin`.
-fn require_admin(current_user: &CurrentUser) -> Result<(), AppError> {
-    if current_user.role != Role::Admin {
-        return Err(AppError::Forbidden);
-    }
-    Ok(())
-}
-
 // === Handlers ===
+// Note: require_admin() supprimé en story 1.8 — le middleware RBAC
+// (require_admin_role) appliqué via route_layer sur le sous-routeur
+// /users/* s'en charge. Les handlers qui utilisent encore current_user
+// le font pour des gardes métier (self-disable, last-admin).
 
-/// `POST /api/v1/users` — Création d'utilisateur (Admin uniquement).
+/// `POST /api/v1/users` — Création d'utilisateur (Admin via middleware RBAC).
 pub async fn create_user(
     State(state): State<AppState>,
-    axum::Extension(current_user): axum::Extension<CurrentUser>,
     Json(req): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<UserResponse>), AppError> {
-    require_admin(&current_user)?;
-
     // Validation username : trim + longueur [1, 64]
     let username = req.username.trim().to_string();
     if username.is_empty() {
@@ -158,33 +149,27 @@ pub async fn create_user(
     Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
 }
 
-/// `PUT /api/v1/users/:id` — Modification d'utilisateur (Admin uniquement).
+/// `PUT /api/v1/users/:id` — Modification d'utilisateur (Admin via middleware RBAC).
+///
+/// Garde `Extension<CurrentUser>` pour les gardes métier (self-disable, last-admin).
 pub async fn update_user(
     State(state): State<AppState>,
     axum::Extension(current_user): axum::Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    require_admin(&current_user)?;
-
     // Vérifier que l'utilisateur existe
     let user = users::find_by_id(&state.pool, id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
     // Gardes pour protéger le pool d'admins actifs (F1+F3+P1 code review).
-    // Deux cas à bloquer :
-    //   a) Désactivation (active true→false) d'un admin actif
-    //   b) Demotion de rôle (Admin→non-Admin) d'un admin actif
-    // Les deux retirent un admin du pool actif et peuvent causer un lockout.
     let is_deactivating = user.active && !req.active;
     let is_demoting_admin = user.role == Role::Admin && req.role != Role::Admin && user.active;
-    let removes_active_admin = is_deactivating && user.role == Role::Admin || is_demoting_admin;
+    let removes_active_admin = (is_deactivating && user.role == Role::Admin) || is_demoting_admin;
 
-    if is_deactivating {
-        if id == current_user.user_id {
-            return Err(AppError::CannotDisableSelf);
-        }
+    if is_deactivating && id == current_user.user_id {
+        return Err(AppError::CannotDisableSelf);
     }
 
     if removes_active_admin {
@@ -201,7 +186,7 @@ pub async fn update_user(
 
     let updated = users::update_role_and_active(&state.pool, id, req.version, changes).await?;
 
-    // Révoquer les sessions si désactivation (F3 code review)
+    // Révoquer les sessions si désactivation
     if is_deactivating {
         refresh_tokens::revoke_all_for_user(&state.pool, id, "admin_disable").await?;
     }
@@ -211,14 +196,14 @@ pub async fn update_user(
     Ok(Json(UserResponse::from(updated)))
 }
 
-/// `PUT /api/v1/users/:id/disable` — Désactivation de compte (Admin uniquement).
+/// `PUT /api/v1/users/:id/disable` — Désactivation de compte (Admin via middleware RBAC).
+///
+/// Garde `Extension<CurrentUser>` pour le self-disable check.
 pub async fn disable_user(
     State(state): State<AppState>,
     axum::Extension(current_user): axum::Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<UserResponse>, AppError> {
-    require_admin(&current_user)?;
-
     // Self-disable interdit
     if id == current_user.user_id {
         return Err(AppError::CannotDisableSelf);
@@ -250,15 +235,12 @@ pub async fn disable_user(
     Ok(Json(UserResponse::from(updated)))
 }
 
-/// `PUT /api/v1/users/:id/reset-password` — Réinitialisation mot de passe (Admin).
+/// `PUT /api/v1/users/:id/reset-password` — Réinitialisation mot de passe (Admin via middleware RBAC).
 pub async fn reset_password(
     State(state): State<AppState>,
-    axum::Extension(current_user): axum::Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ResetPasswordRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    require_admin(&current_user)?;
-
     // Vérifier que l'utilisateur cible existe
     users::find_by_id(&state.pool, id)
         .await?
@@ -284,14 +266,11 @@ pub async fn reset_password(
     Ok(Json(UserResponse::from(user)))
 }
 
-/// `GET /api/v1/users` — Liste paginée des utilisateurs (Admin uniquement).
+/// `GET /api/v1/users` — Liste paginée des utilisateurs (Admin via middleware RBAC).
 pub async fn list_users(
     State(state): State<AppState>,
-    axum::Extension(current_user): axum::Extension<CurrentUser>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<UserListResponse>, AppError> {
-    require_admin(&current_user)?;
-
     let limit = params.limit.unwrap_or(50).clamp(1, 1000);
     let offset = params.offset.unwrap_or(0).max(0);
 
@@ -310,14 +289,11 @@ pub async fn list_users(
     }))
 }
 
-/// `GET /api/v1/users/:id` — Détail d'un utilisateur (Admin uniquement).
+/// `GET /api/v1/users/:id` — Détail d'un utilisateur (Admin via middleware RBAC).
 pub async fn get_user(
     State(state): State<AppState>,
-    axum::Extension(current_user): axum::Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<UserResponse>, AppError> {
-    require_admin(&current_user)?;
-
     let user = users::find_by_id(&state.pool, id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;

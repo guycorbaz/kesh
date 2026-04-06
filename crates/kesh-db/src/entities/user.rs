@@ -36,6 +36,30 @@ impl Role {
             Self::Consultation => "Consultation",
         }
     }
+
+    /// Niveau hiérarchique du rôle (0 = le plus bas).
+    ///
+    /// Utilisé par `Ord` pour implémenter la hiérarchie RBAC :
+    /// `Consultation(0) < Comptable(1) < Admin(2)`.
+    pub fn level(&self) -> u8 {
+        match self {
+            Self::Consultation => 0,
+            Self::Comptable => 1,
+            Self::Admin => 2,
+        }
+    }
+}
+
+impl PartialOrd for Role {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Role {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.level().cmp(&other.level())
+    }
 }
 
 impl std::str::FromStr for Role {
@@ -130,6 +154,68 @@ impl std::fmt::Debug for NewUser {
             .field("role", &self.role)
             .field("active", &self.active)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_hierarchy_consultation_less_than_comptable() {
+        assert!(Role::Consultation < Role::Comptable);
+    }
+
+    #[test]
+    fn role_hierarchy_comptable_less_than_admin() {
+        assert!(Role::Comptable < Role::Admin);
+    }
+
+    #[test]
+    fn role_hierarchy_consultation_less_than_admin() {
+        assert!(Role::Consultation < Role::Admin);
+    }
+
+    #[test]
+    fn role_hierarchy_admin_ge_comptable() {
+        assert!(Role::Admin >= Role::Comptable);
+    }
+
+    #[test]
+    fn role_hierarchy_comptable_ge_consultation() {
+        assert!(Role::Comptable >= Role::Consultation);
+    }
+
+    #[test]
+    fn role_hierarchy_self_equality() {
+        assert!(Role::Consultation <= Role::Consultation);
+        assert!(Role::Comptable >= Role::Comptable);
+        assert!(Role::Admin == Role::Admin);
+    }
+
+    #[test]
+    fn role_ord_consistent_with_partial_eq() {
+        // Vérifie que Ord et PartialEq sont cohérents :
+        // a == b ssi a.cmp(b) == Equal (contrat Rust std)
+        let roles = [Role::Consultation, Role::Comptable, Role::Admin];
+        for a in &roles {
+            for b in &roles {
+                assert_eq!(
+                    a == b,
+                    a.cmp(b) == std::cmp::Ordering::Equal,
+                    "Ord/PartialEq inconsistency for {:?} vs {:?}",
+                    a,
+                    b
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn role_levels() {
+        assert_eq!(Role::Consultation.level(), 0);
+        assert_eq!(Role::Comptable.level(), 1);
+        assert_eq!(Role::Admin.level(), 2);
     }
 }
 

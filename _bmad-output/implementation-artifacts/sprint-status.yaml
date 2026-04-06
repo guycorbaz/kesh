@@ -54,7 +54,7 @@ development_status:
   1-5-authentification-login-logout-jwt: done
   1-6-refresh-token-gestion-de-session: done
   1-7-gestion-des-utilisateurs-crud: done
-  1-8-rbac-verrouillage-optimiste: backlog
+  1-8-rbac-verrouillage-optimiste: done
   1-9-design-system-tokens: backlog
   1-10-layout-page-de-login: backlog
   1-11-wrapper-fetch-accessibilite: backlog

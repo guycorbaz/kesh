@@ -51,10 +51,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     let fallback = ServeDir::new(&static_dir)
         .fallback(ServeFile::new(format!("{}/index.html", static_dir)));
 
-    // Routes protégées (nécessitent un JWT valide)
-    let protected = Router::new()
-        .route("/api/v1/auth/password", put(routes::auth::change_password))
-        // Story 1.7 : CRUD utilisateurs
+    // Story 1.8 : sous-routeurs par niveau de rôle (RBAC)
+    //
+    // Ordre de construction : require_role (inner) → merge → require_auth (outer)
+    // Ordre d'exécution (oignon) : require_auth EN PREMIER → require_role EN SECOND → handler
+
+    // Admin-only routes : gestion des utilisateurs
+    let admin_routes = Router::new()
         .route(
             "/api/v1/users",
             get(routes::users::list_users).post(routes::users::create_user),
@@ -71,6 +74,18 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/users/:id/reset-password",
             put(routes::users::reset_password),
         )
+        .route_layer(axum::middleware::from_fn(
+            crate::middleware::rbac::require_admin_role,
+        ));
+
+    // Routes authentifiées (tout rôle) : changement de mot de passe
+    let authenticated_routes = Router::new()
+        .route("/api/v1/auth/password", put(routes::auth::change_password));
+
+    // Merge + auth JWT (couche de base pour toutes les routes protégées)
+    let protected = Router::new()
+        .merge(admin_routes)
+        .merge(authenticated_routes)
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::auth::require_auth,
