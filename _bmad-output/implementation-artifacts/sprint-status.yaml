@@ -58,6 +58,7 @@ development_status:
   1-9-design-system-tokens: done
   1-10-layout-page-de-login: done
   1-11-wrapper-fetch-accessibilite: done
+  1-12-gestion-utilisateurs-ui: review
   epic-1-retrospective: optional
 
   # Epic 2: Onboarding & Configuration

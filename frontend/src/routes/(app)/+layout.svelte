@@ -16,6 +16,8 @@
 		}
 	}
 
+	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
+
 	const navGroups = [
 		{
 			label: 'Quotidien',
@@ -39,6 +41,10 @@
 			items: [{ label: 'Paramètres', href: '/settings' }],
 		},
 	];
+
+	let adminNavItems = $derived(
+		isAdmin ? [{ label: 'Utilisateurs', href: '/users' }] : []
+	);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -141,6 +147,25 @@
 					{/each}
 				</ul>
 			{/each}
+			{#if adminNavItems.length > 0}
+				<Separator class="my-2" />
+				<span class="mb-1 text-xs font-medium uppercase tracking-wider text-text-muted">
+					Administration
+				</span>
+				<ul class="flex flex-col" style="gap: 2px;">
+					{#each adminNavItems as item}
+						<li>
+							<a
+								href={item.href}
+								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
+								style="min-height: var(--kesh-target-min-height);"
+							>
+								{item.label}
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		</nav>
 
 		<!-- Zone contenu fluide -->
