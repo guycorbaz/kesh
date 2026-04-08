@@ -26,6 +26,7 @@ pub struct AppState {
     pub pool: MySqlPool,
     pub config: Arc<Config>,
     pub rate_limiter: Arc<RateLimiter>,
+    pub i18n: Arc<kesh_i18n::I18nBundle>,
 }
 
 /// Construit le routeur principal de l'application (routes publiques
@@ -78,9 +79,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             crate::middleware::rbac::require_admin_role,
         ));
 
-    // Routes authentifiées (tout rôle) : changement de mot de passe
+    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n
     let authenticated_routes = Router::new()
-        .route("/api/v1/auth/password", put(routes::auth::change_password));
+        .route("/api/v1/auth/password", put(routes::auth::change_password))
+        .route("/api/v1/i18n/messages", get(routes::i18n::get_messages));
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)
     let protected = Router::new()

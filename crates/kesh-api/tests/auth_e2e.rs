@@ -92,10 +92,12 @@ fn test_config_rate_limit(max_attempts: u32, block_secs: i64) -> Config {
 async fn spawn_app(pool: MySqlPool) -> TestApp {
     let config = test_config();
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
+    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
     let state = AppState {
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        i18n: i18n.clone(),
     };
 
     // Sous-routeur de test protégé : route AVANT layer (Axum 0.8 exige
@@ -888,10 +890,12 @@ async fn bootstrap_is_idempotent_at_e2e_level(pool: MySqlPool) {
 /// Spawn app avec une config custom (pour tests rate limiting).
 async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
+    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
     let state = AppState {
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        i18n: i18n.clone(),
     };
 
     // build_router already includes login, logout, refresh (public) and

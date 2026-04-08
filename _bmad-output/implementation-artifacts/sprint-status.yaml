@@ -46,7 +46,7 @@ development_status:
   # === v0.1 — Cœur comptable + facturation ===
 
   # Epic 1: Fondations & Authentification
-  epic-1: in-progress
+  epic-1: done
   1-1-scaffold-cargo-workspace-sveltekit: done
   1-2-docker-configuration: done
   1-3-types-core-newtypes-validation: done
@@ -58,12 +58,12 @@ development_status:
   1-9-design-system-tokens: done
   1-10-layout-page-de-login: done
   1-11-wrapper-fetch-accessibilite: done
-  1-12-gestion-utilisateurs-ui: review
-  epic-1-retrospective: optional
+  1-12-gestion-utilisateurs-ui: done
+  epic-1-retrospective: done
 
   # Epic 2: Onboarding & Configuration
-  epic-2: backlog
-  2-1-internationalisation-i18n-backend: backlog
+  epic-2: in-progress
+  2-1-internationalisation-i18n-backend: review
   2-2-flux-onboarding-chemin-a-exploration: backlog
   2-3-flux-onboarding-chemin-b-production: backlog
   2-4-page-accueil-navigation: backlog

@@ -121,12 +121,14 @@ pub async fn create_user(
     let username = req.username.trim().to_string();
     if username.is_empty() {
         return Err(AppError::Validation(
-            "Le nom d'utilisateur ne peut pas être vide".into(),
+            state.i18n.format(&state.config.locale, "error-username-empty", None),
         ));
     }
     if username.chars().count() > 64 {
+        let mut args = kesh_i18n::FluentArgs::new();
+        args.set("max", 64_i64);
         return Err(AppError::Validation(
-            "Le nom d'utilisateur ne doit pas dépasser 64 caractères".into(),
+            state.i18n.format(&state.config.locale, "error-username-too-long", Some(&args)),
         ));
     }
 

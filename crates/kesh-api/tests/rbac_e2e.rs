@@ -61,10 +61,12 @@ async fn test_comptable_handler(
 async fn spawn_app(pool: MySqlPool) -> TestApp {
     let config = test_config();
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
+    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
     let state = AppState {
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        i18n: i18n.clone(),
     };
 
     // Route de test protégée par require_comptable_role (inner) + require_auth (outer)

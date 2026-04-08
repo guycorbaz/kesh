@@ -84,6 +84,10 @@ pub struct Config {
     /// Longueur minimale des mots de passe (défaut 12, borne [8, 128]).
     /// Appliquée à la création d'utilisateur, au changement et à la réinitialisation.
     pub password_min_length: u32,
+
+    // --- Story 2.1 : internationalisation ---
+    /// Locale de l'instance (défaut FrCh). Configure la langue des messages d'erreur API.
+    pub locale: kesh_i18n::Locale,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -104,6 +108,7 @@ impl std::fmt::Debug for Config {
             .field("rate_limit_max_attempts", &self.rate_limit_max_attempts)
             .field("rate_limit_block_duration", &self.rate_limit_block_duration)
             .field("password_min_length", &self.password_min_length)
+            .field("locale", &self.locale)
             .finish()
     }
 }
@@ -213,7 +218,14 @@ impl Config {
             rate_limit_max_attempts,
             rate_limit_block_duration,
             password_min_length,
+            locale: kesh_i18n::Locale::FrCh,
         }
+    }
+
+    /// Retourne une copie avec la locale modifiée (builder pattern pour tests).
+    pub fn with_locale(mut self, locale: kesh_i18n::Locale) -> Self {
+        self.locale = locale;
+        self
     }
 
     /// Charge la configuration depuis les variables d'environnement.
@@ -443,6 +455,11 @@ impl Config {
             Err(_) => 12,
         };
 
+        // --- Story 2.1 : internationalisation ---
+        let locale_str = env::var("KESH_LANG").unwrap_or_else(|_| "fr".into());
+        let locale = kesh_i18n::Locale::from(locale_str.as_str());
+        tracing::info!("Locale instance : {}", locale);
+
         Ok(Config {
             database_url,
             port,
@@ -458,6 +475,7 @@ impl Config {
             rate_limit_max_attempts,
             rate_limit_block_duration,
             password_min_length,
+            locale,
         })
     }
 }
@@ -493,6 +511,7 @@ pub(crate) mod test_helpers {
             rate_limit_max_attempts: 5,
             rate_limit_block_duration: TimeDelta::minutes(30),
             password_min_length: 12,
+            locale: kesh_i18n::Locale::FrCh,
         }
     }
 }

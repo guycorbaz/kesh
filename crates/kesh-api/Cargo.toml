@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 kesh-db = { path = "../kesh-db" }
+kesh-i18n = { path = "../kesh-i18n" }
 
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }

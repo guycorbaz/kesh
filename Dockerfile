@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY --from=rust-builder /app/target/release/kesh-api ./kesh-api
 COPY --from=frontend-builder /app/frontend/build ./static
+COPY crates/kesh-i18n/locales ./locales
 ENV KESH_STATIC_DIR=/app/static
+ENV KESH_LOCALES_DIR=/app/locales
 EXPOSE 3000
 CMD ["./kesh-api"]

@@ -137,10 +137,14 @@ mod tests {
             12,
         );
         let rate_limiter = crate::middleware::rate_limit::RateLimiter::new(&config);
+        let i18n = kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()
+        ).expect("load test i18n");
         AppState {
             pool: stub_pool(),
             config: Arc::new(config),
             rate_limiter: std::sync::Arc::new(rate_limiter),
+            i18n: std::sync::Arc::new(i18n),
         }
     }
 

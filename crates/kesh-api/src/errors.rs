@@ -5,12 +5,34 @@
 //! HTTP avec un code d'erreur structuré et un message générique côté
 //! client (les détails internes vont exclusivement au logger).
 
+use std::sync::RwLock;
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use kesh_db::errors::DbError;
+use kesh_i18n::{I18nBundle, Locale};
 use serde::Serialize;
 use thiserror::Error;
+
+/// Bundle i18n global pour les messages d'erreur.
+/// `RwLock` au lieu de `OnceLock` pour permettre la réinitialisation en tests.
+static I18N: RwLock<Option<(std::sync::Arc<I18nBundle>, Locale)>> = RwLock::new(None);
+
+/// Initialise (ou remplace) le bundle i18n global pour les messages d'erreur.
+pub fn init_error_i18n(bundle: std::sync::Arc<I18nBundle>, locale: Locale) {
+    let mut guard = I18N.write().expect("I18N write lock");
+    *guard = Some((bundle, locale));
+}
+
+/// Résout un message d'erreur via i18n, avec fallback sur le message par défaut.
+fn t(key: &str, default: &str) -> String {
+    let guard = I18N.read().expect("I18N read lock");
+    match guard.as_ref() {
+        Some((bundle, locale)) => bundle.format(locale, key, None),
+        None => default.to_string(),
+    }
+}
 
 /// Erreurs applicatives de kesh-api.
 #[derive(Debug, Error)]
@@ -102,7 +124,7 @@ impl IntoResponse for AppError {
             AppError::InvalidCredentials => build_response(
                 StatusCode::UNAUTHORIZED,
                 "INVALID_CREDENTIALS",
-                "Identifiants invalides",
+                &t("error-invalid-credentials", "Identifiants invalides"),
             ),
 
             AppError::Unauthenticated(detail) => {
@@ -110,7 +132,7 @@ impl IntoResponse for AppError {
                 build_response(
                     StatusCode::UNAUTHORIZED,
                     "UNAUTHENTICATED",
-                    "Non authentifié",
+                    &t("error-unauthenticated", "Non authentifié"),
                 )
             }
 
@@ -119,19 +141,19 @@ impl IntoResponse for AppError {
             }
 
             AppError::Forbidden => {
-                build_response(StatusCode::FORBIDDEN, "FORBIDDEN", "Accès interdit")
+                build_response(StatusCode::FORBIDDEN, "FORBIDDEN", &t("error-forbidden", "Accès interdit"))
             }
 
             AppError::CannotDisableSelf => build_response(
                 StatusCode::BAD_REQUEST,
                 "CANNOT_DISABLE_SELF",
-                "Impossible de désactiver son propre compte",
+                &t("error-cannot-disable-self", "Impossible de désactiver son propre compte"),
             ),
 
             AppError::CannotDisableLastAdmin => build_response(
                 StatusCode::BAD_REQUEST,
                 "CANNOT_DISABLE_LAST_ADMIN",
-                "Impossible de désactiver le dernier administrateur",
+                &t("error-cannot-disable-last-admin", "Impossible de désactiver le dernier administrateur"),
             ),
 
             AppError::Internal(detail) => {
@@ -139,7 +161,7 @@ impl IntoResponse for AppError {
                 build_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "INTERNAL_ERROR",
-                    "Erreur interne",
+                    &t("error-internal", "Erreur interne"),
                 )
             }
 
@@ -147,7 +169,7 @@ impl IntoResponse for AppError {
                 let mut resp = build_response(
                     StatusCode::TOO_MANY_REQUESTS,
                     "RATE_LIMITED",
-                    "Trop de tentatives",
+                    &t("error-rate-limited", "Trop de tentatives"),
                 );
                 resp.headers_mut().insert(
                     "Retry-After",
@@ -162,7 +184,7 @@ impl IntoResponse for AppError {
                 build_response(
                     StatusCode::UNAUTHORIZED,
                     "INVALID_REFRESH_TOKEN",
-                    "Session expirée",
+                    &t("error-invalid-refresh-token", "Session expirée"),
                 )
             }
 
@@ -171,19 +193,19 @@ impl IntoResponse for AppError {
             // ici (propriété désirée).
             AppError::Database(db_err) => match db_err {
                 DbError::NotFound => {
-                    build_response(StatusCode::NOT_FOUND, "NOT_FOUND", "Ressource introuvable")
+                    build_response(StatusCode::NOT_FOUND, "NOT_FOUND", &t("error-not-found", "Ressource introuvable"))
                 }
                 DbError::OptimisticLockConflict => build_response(
                     StatusCode::CONFLICT,
                     "OPTIMISTIC_LOCK_CONFLICT",
-                    "Conflit de version — la ressource a été modifiée",
+                    &t("error-optimistic-lock", "Conflit de version — la ressource a été modifiée"),
                 ),
                 DbError::UniqueConstraintViolation(m) => {
                     tracing::warn!("unique violation: {m}");
                     build_response(
                         StatusCode::CONFLICT,
                         "RESOURCE_CONFLICT",
-                        "Ressource déjà existante",
+                        &t("error-conflict", "Ressource déjà existante"),
                     )
                 }
                 DbError::ForeignKeyViolation(m) => {
@@ -191,7 +213,7 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::BAD_REQUEST,
                         "FOREIGN_KEY_VIOLATION",
-                        "Référence invalide",
+                        &t("error-foreign-key", "Référence invalide"),
                     )
                 }
                 DbError::CheckConstraintViolation(m) => {
@@ -199,7 +221,7 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::BAD_REQUEST,
                         "CHECK_CONSTRAINT_VIOLATION",
-                        "Valeur invalide",
+                        &t("error-check-constraint", "Valeur invalide"),
                     )
                 }
                 DbError::IllegalStateTransition(m) => {
@@ -207,7 +229,7 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::CONFLICT,
                         "ILLEGAL_STATE_TRANSITION",
-                        "Transition d'état interdite",
+                        &t("error-illegal-state", "Transition d'état interdite"),
                     )
                 }
                 DbError::ConnectionUnavailable(m) => {
@@ -215,7 +237,7 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "SERVICE_UNAVAILABLE",
-                        "Service temporairement indisponible",
+                        &t("error-service-unavailable", "Service temporairement indisponible"),
                     )
                 }
                 DbError::Invariant(m) => {
@@ -223,7 +245,7 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "INTERNAL_ERROR",
-                        "Erreur interne",
+                        &t("error-internal", "Erreur interne"),
                     )
                 }
                 DbError::Sqlx(e) => {
@@ -231,7 +253,7 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "INTERNAL_ERROR",
-                        "Erreur interne",
+                        &t("error-internal", "Erreur interne"),
                     )
                 }
             },

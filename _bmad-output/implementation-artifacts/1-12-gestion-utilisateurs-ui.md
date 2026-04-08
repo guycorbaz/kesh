@@ -1,6 +1,6 @@
 # Story 1.12 : Page de gestion des utilisateurs
 
-Status: review
+Status: done
 
 ## Story
 
