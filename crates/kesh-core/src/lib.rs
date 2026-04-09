@@ -4,5 +4,6 @@
 //! comptables. Il n'a aucune dépendance sur la base de données, le réseau
 //! ou le filesystem.
 
+pub mod chart_of_accounts;
 pub mod errors;
 pub mod types;

@@ -79,8 +79,30 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             crate::middleware::rbac::require_admin_role,
         ));
 
-    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies
+    // Routes comptable+ (Admin + Comptable) : modification du plan comptable
+    let comptable_routes = Router::new()
+        .route(
+            "/api/v1/accounts",
+            post(routes::accounts::create_account),
+        )
+        .route(
+            "/api/v1/accounts/{id}",
+            put(routes::accounts::update_account),
+        )
+        .route(
+            "/api/v1/accounts/{id}/archive",
+            put(routes::accounts::archive_account),
+        )
+        .route_layer(axum::middleware::from_fn(
+            crate::middleware::rbac::require_comptable_role,
+        ));
+
+    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies, consultation plan comptable
     let authenticated_routes = Router::new()
+        .route(
+            "/api/v1/accounts",
+            get(routes::accounts::list_accounts),
+        )
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(
@@ -139,6 +161,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // Merge + auth JWT (couche de base pour toutes les routes protégées)
     let protected = Router::new()
         .merge(admin_routes)
+        .merge(comptable_routes)
         .merge(authenticated_routes)
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),

@@ -113,6 +113,22 @@ settings-manage = Verwalten
 settings-no-bank = Kein Bankkonto konfiguriert.
 settings-no-company = Keine Organisation konfiguriert. Schliessen Sie das Onboarding ab.
 
+# Kontenplan (Story 3.1)
+accounts-title = Kontenplan
+accounts-add = Neues Konto
+accounts-edit = Konto bearbeiten
+accounts-archive = Archivieren
+accounts-archive-confirm = Das Konto wird in zukünftigen Auswahlen nicht mehr verfügbar sein, bleibt aber in bestehenden Buchungen sichtbar.
+account-field-number = Nummer
+account-field-name = Name
+account-field-type = Typ
+account-field-parent = Übergeordnetes Konto
+account-type-asset = Aktiv
+account-type-liability = Passiv
+account-type-revenue = Ertrag
+account-type-expense = Aufwand
+account-archived-label = Archiviert
+
 # Mode Geführt/Experte (Story 2.5)
 mode-guided-label = Geführt
 mode-expert-label = Experte

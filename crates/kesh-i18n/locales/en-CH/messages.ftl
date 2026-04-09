@@ -113,6 +113,22 @@ settings-manage = Manage
 settings-no-bank = No bank account configured.
 settings-no-company = No organisation configured. Complete onboarding first.
 
+# Chart of Accounts (Story 3.1)
+accounts-title = Chart of accounts
+accounts-add = New account
+accounts-edit = Edit account
+accounts-archive = Archive
+accounts-archive-confirm = The account will no longer be available in future selections, but will remain visible in existing entries.
+account-field-number = Number
+account-field-name = Name
+account-field-type = Type
+account-field-parent = Parent account
+account-type-asset = Asset
+account-type-liability = Liability
+account-type-revenue = Revenue
+account-type-expense = Expense
+account-archived-label = Archived
+
 # Mode Guided/Expert (Story 2.5)
 mode-guided-label = Guided
 mode-expert-label = Expert

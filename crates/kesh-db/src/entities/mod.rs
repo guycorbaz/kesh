@@ -5,6 +5,7 @@
 //! modifiables par le client — l'id, la version et les timestamps sont
 //! gérés par la base.
 
+pub mod account;
 pub mod bank_account;
 pub mod company;
 pub mod fiscal_year;
@@ -12,6 +13,7 @@ pub mod onboarding;
 pub mod refresh_token;
 pub mod user;
 
+pub use account::{Account, AccountType, AccountUpdate, NewAccount};
 pub use bank_account::{BankAccount, NewBankAccount};
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};

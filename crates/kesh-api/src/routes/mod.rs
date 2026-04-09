@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod auth;
 pub mod companies;
 pub mod health;

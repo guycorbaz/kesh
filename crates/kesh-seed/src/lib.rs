@@ -81,6 +81,13 @@ pub async fn seed_demo(
     )
     .await?;
 
+    // Plan comptable PME dans la langue comptable de la company démo
+    let chart = kesh_core::chart_of_accounts::load_chart(company.org_type.as_str())
+        .map_err(|e| SeedError::Db(kesh_db::errors::DbError::Invariant(format!("chart load: {e}"))))?;
+    let lang_key = company.accounting_language.as_str().to_lowercase();
+    kesh_db::repositories::accounts::bulk_create_from_chart(pool, company.id, &chart, &lang_key)
+        .await?;
+
     // Exercice fiscal (année courante) — un seul appel Utc::now()
     let current_year = Utc::now().naive_utc().date().year();
     let start = chrono::NaiveDate::from_ymd_opt(current_year, 1, 1)
@@ -123,7 +130,13 @@ pub async fn reset_demo(pool: &MySqlPool) -> Result<(), SeedError> {
         .await?;
 
     let result = async {
+        sqlx::query("DELETE FROM accounts")
+            .execute(&mut *conn)
+            .await?;
         sqlx::query("DELETE FROM fiscal_years")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DELETE FROM bank_accounts")
             .execute(&mut *conn)
             .await?;
         sqlx::query("DELETE FROM companies")

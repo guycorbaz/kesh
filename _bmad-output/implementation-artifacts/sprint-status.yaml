@@ -37,7 +37,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-09
-# (story 2-2 implémentation principale complète, tests intégration DB restants)
+# (story 3-1 done, 2 passes de revue adversariale)
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -63,17 +63,17 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: Onboarding & Configuration
-  epic-2: in-progress
+  epic-2: done
   2-1-internationalisation-i18n-backend: done
   2-2-flux-onboarding-chemin-a-exploration: done
   2-3-flux-onboarding-chemin-b-production: done
   2-4-page-accueil-navigation: done
-  2-5-mode-guide-expert: review
-  epic-2-retrospective: optional
+  2-5-mode-guide-expert: done
+  epic-2-retrospective: done
 
   # Epic 3: Plan Comptable & Écritures
-  epic-3: backlog
-  3-1-plan-comptable-chargement-gestion: backlog
+  epic-3: in-progress
+  3-1-plan-comptable-chargement-gestion: done
   3-2-saisie-ecritures-en-partie-double: backlog
   3-3-modification-suppression-ecritures: backlog
   3-4-recherche-pagination-tri: backlog

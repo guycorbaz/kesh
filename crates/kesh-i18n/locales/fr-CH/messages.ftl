@@ -113,6 +113,22 @@ settings-manage = Gérer
 settings-no-bank = Aucun compte bancaire configuré.
 settings-no-company = Aucune organisation configurée. Complétez l'onboarding.
 
+# Plan comptable (Story 3.1)
+accounts-title = Plan comptable
+accounts-add = Nouveau compte
+accounts-edit = Modifier le compte
+accounts-archive = Archiver
+accounts-archive-confirm = Le compte ne sera plus disponible dans les sélections futures, mais restera visible dans les écritures existantes.
+account-field-number = Numéro
+account-field-name = Nom
+account-field-type = Type
+account-field-parent = Compte parent
+account-type-asset = Actif
+account-type-liability = Passif
+account-type-revenue = Produit
+account-type-expense = Charge
+account-archived-label = Archivé
+
 # Mode Guidé/Expert (Story 2.5)
 mode-guided-label = Guidé
 mode-expert-label = Expert

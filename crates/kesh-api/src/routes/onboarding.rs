@@ -200,7 +200,6 @@ pub async fn set_org_type(
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    // TODO(story 3-1): installer le plan comptable adapté au org_type choisi
     update_company_org_type(&state, org_type).await?;
 
     let updated = onboarding::update_step(
@@ -237,6 +236,24 @@ pub async fn set_accounting_language(
     }
 
     update_company_accounting_language(&state, lang).await?;
+
+    // Story 3-1 (FR5) : charger le plan comptable adapté au org_type + accounting_language.
+    // À ce stade (step 4→5), org_type ET accounting_language sont tous deux connus.
+    // Guard idempotence : ne pas recharger si des comptes existent déjà (retry/navigation arrière).
+    let company = get_company(&state).await?;
+    let existing = kesh_db::repositories::accounts::count_by_company(&state.pool, company.id).await?;
+    if existing == 0 {
+        let chart = kesh_core::chart_of_accounts::load_chart(company.org_type.as_str())
+            .map_err(|e| AppError::Internal(format!("Chargement plan comptable : {e}")))?;
+        let lang_key = lang.as_str().to_lowercase();
+        kesh_db::repositories::accounts::bulk_create_from_chart(
+            &state.pool,
+            company.id,
+            &chart,
+            &lang_key,
+        )
+        .await?;
+    }
 
     let updated = onboarding::update_step(
         &state.pool,

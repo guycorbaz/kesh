@@ -23,6 +23,14 @@ pub enum CoreError {
     /// Le numéro IDE (CHE) fourni est invalide (format ou checksum incorrect).
     #[error("Numéro IDE invalide : {0}")]
     InvalidCheNumber(String),
+
+    /// Le type d'organisation ne correspond à aucun plan comptable connu.
+    #[error("Type d'organisation inconnu pour le plan comptable : {0}")]
+    UnknownChartType(String),
+
+    /// Le fichier JSON du plan comptable contient des données invalides.
+    #[error("Plan comptable invalide : {0}")]
+    InvalidChart(String),
 }
 
 impl CoreError {
@@ -35,6 +43,8 @@ impl CoreError {
             Self::InvalidIban(_) => "INVALID_IBAN",
             Self::InvalidQrIban(_) => "INVALID_QR_IBAN",
             Self::InvalidCheNumber(_) => "INVALID_CHE_NUMBER",
+            Self::UnknownChartType(_) => "UNKNOWN_CHART_TYPE",
+            Self::InvalidChart(_) => "INVALID_CHART",
         }
     }
 }
