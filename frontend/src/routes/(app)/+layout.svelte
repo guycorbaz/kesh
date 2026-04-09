@@ -27,6 +27,11 @@
 			e.preventDefault();
 			window.dispatchEvent(new CustomEvent('kesh:save'));
 		}
+		// Ctrl+N : nouvelle écriture (Expert mode uniquement, onboarding complété)
+		if ((e.ctrlKey || e.metaKey) && e.key === 'n' && modeState.value === 'expert' && onboardingState.loaded && onboardingState.stepCompleted >= 3) {
+			e.preventDefault();
+			import('$app/navigation').then(({ goto }) => goto('/journal-entries'));
+		}
 	}
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
@@ -108,7 +113,7 @@
 
 					<!-- Bascule mode -->
 					<DropdownMenu.Item onclick={toggleMode}>
-						Mode : {modeState.value === 'guided' ? 'Guidé' : 'Expert'}
+						Mode : {modeState.value === 'guided' ? i18nMsg('mode-guided-label', 'Guidé') : i18nMsg('mode-expert-label', 'Expert')}
 					</DropdownMenu.Item>
 					<DropdownMenu.Separator />
 
@@ -195,5 +200,8 @@
 	<!-- Footer discret -->
 	<footer class="border-t border-border px-4 py-2 text-center text-xs text-text-muted">
 		Kesh v0.1.0 &mdash; Logiciel libre (EUPL 1.2). Les données ne remplacent pas un fiduciaire.
+		{#if modeState.value === 'expert'}
+			<span class="ml-4">{i18nMsg('shortcut-new-entry', 'Ctrl+N : Nouvelle écriture')}</span>
+		{/if}
 	</footer>
 </div>

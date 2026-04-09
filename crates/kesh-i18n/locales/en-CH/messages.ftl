@@ -112,3 +112,8 @@ settings-edit-coming-soon = Editing coming soon
 settings-manage = Manage
 settings-no-bank = No bank account configured.
 settings-no-company = No organisation configured. Complete onboarding first.
+
+# Mode Guided/Expert (Story 2.5)
+mode-guided-label = Guided
+mode-expert-label = Expert
+shortcut-new-entry = Ctrl+N : New entry

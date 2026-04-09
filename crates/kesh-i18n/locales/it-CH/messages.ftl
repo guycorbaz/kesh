@@ -112,3 +112,8 @@ settings-edit-coming-soon = Modifica presto disponibile
 settings-manage = Gestire
 settings-no-bank = Nessun conto bancario configurato.
 settings-no-company = Nessuna organizzazione configurata. Completare l'onboarding.
+
+# Modalità Guidato/Esperto (Story 2.5)
+mode-guided-label = Guidato
+mode-expert-label = Esperto
+shortcut-new-entry = Ctrl+N : Nuova registrazione

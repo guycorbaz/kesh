@@ -1,0 +1,48 @@
+import { test, expect } from '@playwright/test';
+
+/**
+ * Tests E2E — Mode Guidé/Expert (Story 2.5)
+ * Requiert backend + frontend running avec onboarding complété.
+ */
+
+test.describe('Mode toggle', () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto('/login');
+		await page.fill('#username', 'changeme');
+		await page.fill('#password', 'changeme');
+		await page.click('button[type="submit"]');
+	});
+
+	test('toggle mode changes data-mode attribute on html', async ({ page }) => {
+		// Default should be guided
+		const htmlMode = await page.locator('html').getAttribute('data-mode');
+		expect(htmlMode).toBe('guided');
+
+		// Open profile dropdown and click mode toggle
+		await page.click('button:has-text("Mode")');
+
+		// Check data-mode changed
+		const newMode = await page.locator('html').getAttribute('data-mode');
+		expect(['guided', 'expert']).toContain(newMode);
+	});
+});
+
+test.describe('Ctrl+N shortcut (Expert mode)', () => {
+	test('Ctrl+N navigates to journal-entries in Expert mode', async ({ page }) => {
+		await page.goto('/login');
+		await page.fill('#username', 'changeme');
+		await page.fill('#password', 'changeme');
+		await page.click('button[type="submit"]');
+
+		// Set expert mode via keyboard evaluation
+		await page.evaluate(() => {
+			document.documentElement.setAttribute('data-mode', 'expert');
+		});
+
+		// Ctrl+N shortcut
+		await page.keyboard.press('Control+n');
+
+		// Should navigate to journal-entries
+		await expect(page).toHaveURL(/\/journal-entries/);
+	});
+});

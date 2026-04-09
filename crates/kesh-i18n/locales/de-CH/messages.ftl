@@ -112,3 +112,8 @@ settings-edit-coming-soon = Bearbeitung bald verfügbar
 settings-manage = Verwalten
 settings-no-bank = Kein Bankkonto konfiguriert.
 settings-no-company = Keine Organisation konfiguriert. Schliessen Sie das Onboarding ab.
+
+# Mode Geführt/Experte (Story 2.5)
+mode-guided-label = Geführt
+mode-expert-label = Experte
+shortcut-new-entry = Ctrl+N : Neue Buchung

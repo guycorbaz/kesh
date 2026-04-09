@@ -88,6 +88,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             get(routes::companies::get_current),
         )
         .route(
+            "/api/v1/profile/mode",
+            put(routes::profile::set_mode),
+        )
+        .route(
             "/api/v1/onboarding/state",
             get(routes::onboarding::get_state),
         )

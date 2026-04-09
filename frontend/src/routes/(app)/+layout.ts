@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { redirect } from '@sveltejs/kit';
 import { authState } from '$lib/app/stores/auth.svelte';
+import { syncModeFromServer } from '$lib/app/stores/mode.svelte';
 import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
 
 export const ssr = false;
@@ -21,6 +22,11 @@ export async function load() {
 			console.error('[onboarding guard] fetchState failed:', err);
 			return;
 		}
+	}
+
+	// Sync mode Guidé/Expert depuis le serveur (Story 2.5)
+	if (browser && onboardingState.loaded && onboardingState.uiMode) {
+		syncModeFromServer(onboardingState.uiMode);
 	}
 
 	// Seuil d'accès conditionnel Path A / Path B
