@@ -90,6 +90,12 @@ pub enum AppError {
     /// Le `String` porte le détail pour les logs serveur.
     #[error("Refresh token invalide : {0}")]
     InvalidRefreshToken(String),
+
+    // --- Story 2.2 ---
+
+    /// Tentative de progression sur un step d'onboarding déjà complété (400).
+    #[error("Étape d'onboarding déjà complétée")]
+    OnboardingStepAlreadyCompleted,
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -187,6 +193,15 @@ impl IntoResponse for AppError {
                     &t("error-invalid-refresh-token", "Session expirée"),
                 )
             }
+
+            AppError::OnboardingStepAlreadyCompleted => build_response(
+                StatusCode::BAD_REQUEST,
+                "ONBOARDING_STEP_ALREADY_COMPLETED",
+                &t(
+                    "error-onboarding-step-already-completed",
+                    "Cette étape de configuration a déjà été complétée",
+                ),
+            ),
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation

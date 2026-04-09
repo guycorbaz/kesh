@@ -1,0 +1,178 @@
+//! kesh-seed — Génération de données de démonstration pour Kesh.
+//!
+//! Ce crate est une lib, pas un binaire. Appelé via l'endpoint API
+//! `POST /api/v1/onboarding/seed-demo`.
+
+use chrono::{Datelike, Utc};
+use kesh_db::entities::{Language, NewCompany, NewFiscalYear, OrgType};
+use kesh_db::entities::onboarding::UiMode;
+use kesh_db::repositories::{companies, fiscal_years, onboarding};
+use kesh_i18n::Locale;
+use sqlx::MySqlPool;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum SeedError {
+    #[error("Erreur base de données : {0}")]
+    Db(#[from] kesh_db::errors::DbError),
+
+    #[error("Erreur SQL brute : {0}")]
+    Sqlx(#[from] sqlx::Error),
+}
+
+/// Convertit un `Locale` (kesh-i18n) en `Language` (kesh-db).
+///
+/// Fonction libre (pas un trait `From`) car la règle des orphelins Rust
+/// interdit l'impl dans ce crate (ni `Locale` ni `Language` n'y sont définis).
+pub fn locale_to_language(locale: &Locale) -> Language {
+    match locale {
+        Locale::FrCh => Language::Fr,
+        Locale::DeCh => Language::De,
+        Locale::ItCh => Language::It,
+        Locale::EnCh => Language::En,
+    }
+}
+
+/// Noms de la company démo selon la locale.
+fn demo_company_name(locale: &Locale) -> &'static str {
+    match locale {
+        Locale::FrCh => "Démo SA",
+        Locale::DeCh => "Demo AG",
+        Locale::ItCh => "Demo SA",
+        Locale::EnCh => "Demo Ltd",
+    }
+}
+
+/// Adresse fictive suisse selon la locale.
+fn demo_address(locale: &Locale) -> &'static str {
+    match locale {
+        Locale::FrCh => "Rue de la Démo 1, 1000 Lausanne",
+        Locale::DeCh => "Demostrasse 1, 3000 Bern",
+        Locale::ItCh => "Via Demo 1, 6500 Bellinzona",
+        Locale::EnCh => "Demo Street 1, 8000 Zürich",
+    }
+}
+
+/// Charge les données de démonstration.
+///
+/// Crée une company, un exercice fiscal, et met `onboarding_state` à step=3, is_demo=true.
+/// Passe par les repositories kesh-db pour respecter les contraintes DB.
+/// `onboarding_version` est la version actuelle de l'onboarding_state,
+/// passée par le handler pour éviter une double lecture (TOCTOU).
+pub async fn seed_demo(
+    pool: &MySqlPool,
+    locale: &Locale,
+    ui_mode: UiMode,
+    onboarding_version: i32,
+) -> Result<(), SeedError> {
+    let lang = locale_to_language(locale);
+
+    // Company démo
+    let company = companies::create(
+        pool,
+        NewCompany {
+            name: demo_company_name(locale).to_string(),
+            address: demo_address(locale).to_string(),
+            ide_number: Some("CHE109322551".to_string()),
+            org_type: OrgType::Pme,
+            accounting_language: lang,
+            instance_language: lang,
+        },
+    )
+    .await?;
+
+    // Exercice fiscal (année courante) — un seul appel Utc::now()
+    let current_year = Utc::now().naive_utc().date().year();
+    let start = chrono::NaiveDate::from_ymd_opt(current_year, 1, 1)
+        .expect("valid date");
+    let end = chrono::NaiveDate::from_ymd_opt(current_year, 12, 31)
+        .expect("valid date");
+
+    fiscal_years::create(
+        pool,
+        NewFiscalYear {
+            company_id: company.id,
+            name: format!("Exercice {current_year}"),
+            start_date: start,
+            end_date: end,
+        },
+    )
+    .await?;
+
+    // Mettre à jour onboarding_state → step=3, is_demo=true
+    onboarding::update_step(pool, 3, true, Some(ui_mode), onboarding_version).await?;
+
+    tracing::info!("Données de démonstration chargées (locale: {locale})");
+    Ok(())
+}
+
+/// Supprime toutes les données de démonstration et remet l'onboarding à zéro.
+///
+/// Orchestration FK-safe : désactive les checks FK, nettoie les tables dans
+/// l'ordre correct, puis réinitialise onboarding_state.
+/// Préserve les users et refresh_tokens.
+pub async fn reset_demo(pool: &MySqlPool) -> Result<(), SeedError> {
+    // Connexion dédiée : SET FOREIGN_KEY_CHECKS est une variable de session
+    // MariaDB — sur un pool partagé, chaque execute() peut utiliser une
+    // connexion différente. On acquiert une connexion unique pour garantir
+    // que le flag reste actif pendant les DELETEs.
+    let mut conn = pool.acquire().await.map_err(sqlx::Error::from)?;
+
+    sqlx::query("SET FOREIGN_KEY_CHECKS=0")
+        .execute(&mut *conn)
+        .await?;
+
+    let result = async {
+        sqlx::query("DELETE FROM fiscal_years")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DELETE FROM companies")
+            .execute(&mut *conn)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    }
+    .await;
+
+    // Toujours réactiver FK checks, même en cas d'erreur.
+    if let Err(e) = sqlx::query("SET FOREIGN_KEY_CHECKS=1")
+        .execute(&mut *conn)
+        .await
+    {
+        tracing::warn!("Failed to re-enable FK checks: {e}");
+    }
+
+    // Libérer la connexion (drop implicite) avant les appels au pool
+    drop(conn);
+
+    result?;
+
+    // Reset onboarding state — DELETE + INSERT dans un seul appel pour
+    // éviter un état vide transitoire si init_state échoue.
+    onboarding::delete_state(pool).await?;
+    if let Err(e) = onboarding::init_state(pool).await {
+        tracing::error!("Failed to re-init onboarding after delete: {e}");
+        return Err(e.into());
+    }
+
+    tracing::info!("Données de démonstration supprimées, onboarding réinitialisé");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locale_to_language_maps_correctly() {
+        assert_eq!(locale_to_language(&Locale::FrCh), Language::Fr);
+        assert_eq!(locale_to_language(&Locale::DeCh), Language::De);
+        assert_eq!(locale_to_language(&Locale::ItCh), Language::It);
+        assert_eq!(locale_to_language(&Locale::EnCh), Language::En);
+    }
+
+    #[test]
+    fn demo_names_are_locale_specific() {
+        assert_eq!(demo_company_name(&Locale::FrCh), "Démo SA");
+        assert_eq!(demo_company_name(&Locale::DeCh), "Demo AG");
+    }
+}

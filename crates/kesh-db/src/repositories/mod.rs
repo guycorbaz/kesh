@@ -6,6 +6,7 @@
 
 pub mod companies;
 pub mod fiscal_years;
+pub mod onboarding;
 pub mod refresh_tokens;
 pub mod users;
 

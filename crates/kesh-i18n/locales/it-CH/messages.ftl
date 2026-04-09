@@ -27,3 +27,26 @@ error-username-too-long = Il nome utente non deve superare { $max } caratteri
 # Errori di sistema
 error-internal = Errore interno
 error-service-unavailable = Servizio temporaneamente non disponibile
+
+# Errori onboarding (Story 2.2)
+error-onboarding-step-already-completed = Questo passaggio di configurazione è già stato completato
+
+# Onboarding — procedura guidata
+onboarding-choose-mode = Scegli la tua modalità di utilizzo
+onboarding-mode-guided = Guidato
+onboarding-mode-guided-desc = Spaziature generose, aiuto contestuale, conferme prima delle azioni
+onboarding-mode-expert = Esperto
+onboarding-mode-expert-desc = Interfaccia compatta, scorciatoie da tastiera, azioni dirette
+onboarding-choose-path = Come vuoi iniziare?
+onboarding-path-demo = Esplora con dati dimostrativi
+onboarding-path-demo-desc = Scopri Kesh con dati fittizi realistici
+onboarding-path-production = Configura per la produzione
+onboarding-path-production-desc = Configura la tua organizzazione per iniziare a lavorare
+
+# Banner demo
+demo-banner-text = Istanza dimostrativa — dati fittizi
+demo-banner-reset = Reimposta per la produzione
+demo-reset-confirm-title = Reimposta l'istanza
+demo-reset-confirm-body = Tutti i dati dimostrativi verranno eliminati. Vuoi continuare?
+demo-reset-confirm-ok = Conferma
+demo-reset-confirm-cancel = Annulla

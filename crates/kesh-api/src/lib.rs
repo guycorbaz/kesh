@@ -79,10 +79,30 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             crate::middleware::rbac::require_admin_role,
         ));
 
-    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n
+    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding
     let authenticated_routes = Router::new()
         .route("/api/v1/auth/password", put(routes::auth::change_password))
-        .route("/api/v1/i18n/messages", get(routes::i18n::get_messages));
+        .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
+        .route(
+            "/api/v1/onboarding/state",
+            get(routes::onboarding::get_state),
+        )
+        .route(
+            "/api/v1/onboarding/language",
+            post(routes::onboarding::set_language),
+        )
+        .route(
+            "/api/v1/onboarding/mode",
+            post(routes::onboarding::set_mode),
+        )
+        .route(
+            "/api/v1/onboarding/seed-demo",
+            post(routes::onboarding::seed_demo),
+        )
+        .route(
+            "/api/v1/onboarding/reset",
+            post(routes::onboarding::reset),
+        );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)
     let protected = Router::new()

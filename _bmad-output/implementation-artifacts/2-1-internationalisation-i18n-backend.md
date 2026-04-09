@@ -1,6 +1,6 @@
 # Story 2.1: Internationalisation (i18n) backend
 
-Status: review
+Status: done
 
 ## Story
 

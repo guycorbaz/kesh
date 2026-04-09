@@ -5,3 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+kesh-db = { path = "../kesh-db" }
+kesh-i18n = { path = "../kesh-i18n" }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql"] }
+chrono = { version = "0.4" }
+tracing = "0.1"
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+dotenvy = "0.15"

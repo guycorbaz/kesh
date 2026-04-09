@@ -1143,6 +1143,7 @@ dependencies = [
  "jsonwebtoken",
  "kesh-db",
  "kesh-i18n",
+ "kesh-seed",
  "reqwest",
  "serde",
  "serde_json",
@@ -1217,6 +1218,16 @@ version = "0.1.0"
 [[package]]
 name = "kesh-seed"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dotenvy",
+ "kesh-db",
+ "kesh-i18n",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "lazy_static"

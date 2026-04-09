@@ -5,6 +5,8 @@
 	import { Input } from '$lib/components/ui/input';
 	import { modeState, toggleMode } from '$lib/app/stores/mode.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
+	import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
+	import DemoBanner from '$lib/shared/components/DemoBanner.svelte';
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
 
 	let { children } = $props();
@@ -113,8 +115,10 @@
 		</div>
 	</header>
 
-	<!-- Espace bannières contextuelles (contenu Epic 2) -->
-	<div id="banner-slot"></div>
+	<!-- Bannière démo (Story 2.2) -->
+	{#if onboardingState.isDemo}
+		<DemoBanner />
+	{/if}
 
 	<!-- Corps : sidebar + contenu -->
 	<div class="flex flex-1">
