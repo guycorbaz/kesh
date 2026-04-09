@@ -74,3 +74,41 @@ onboarding-skip-bank = Configure later
 onboarding-next = Continue
 incomplete-banner-text = Configuration incomplete — Complete setup
 incomplete-banner-cta = Complete setup
+
+# Homepage (Story 2.4)
+homepage-title = Dashboard
+homepage-entries-title = Recent entries
+homepage-entries-empty = No entries.
+homepage-entries-empty-guided = No entries yet. Start by recording your first journal entry.
+homepage-entries-action = Record an entry
+homepage-invoices-title = Open invoices
+homepage-invoices-empty = No open invoices.
+homepage-invoices-empty-guided = No open invoices. Create your first invoice to bill your clients.
+homepage-invoices-action = Create an invoice
+homepage-bank-title = Bank accounts
+homepage-bank-empty = No bank account.
+homepage-bank-empty-guided = No bank account configured. Add your account to import statements.
+homepage-bank-no-transactions = No imported transactions
+homepage-bank-action = Configure
+
+# Settings (Story 2.4)
+settings-title = Settings
+settings-org-title = Organisation
+settings-accounting-title = Accounting
+settings-bank-title = Bank accounts
+settings-users-title = Users
+settings-field-name = Name
+settings-field-address = Address
+settings-field-ide = UID
+settings-field-org-type = Organisation type
+settings-field-instance-language = Interface language
+settings-field-accounting-language = Accounting language
+search-coming-soon = Search coming soon
+
+# Misc i18n (Story 2.4 review)
+loading = Loading...
+settings-edit = Edit
+settings-edit-coming-soon = Editing coming soon
+settings-manage = Manage
+settings-no-bank = No bank account configured.
+settings-no-company = No organisation configured. Complete onboarding first.

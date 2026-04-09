@@ -66,8 +66,8 @@ development_status:
   epic-2: in-progress
   2-1-internationalisation-i18n-backend: done
   2-2-flux-onboarding-chemin-a-exploration: done
-  2-3-flux-onboarding-chemin-b-production: review
-  2-4-page-accueil-navigation: backlog
+  2-3-flux-onboarding-chemin-b-production: done
+  2-4-page-accueil-navigation: review
   2-5-mode-guide-expert: backlog
   epic-2-retrospective: optional
 

@@ -1,6 +1,6 @@
 # Story 2.3: Flux d'onboarding — Chemin B (Production)
 
-Status: review
+Status: done
 
 ## Story
 

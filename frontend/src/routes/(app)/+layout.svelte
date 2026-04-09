@@ -9,8 +9,18 @@
 	import DemoBanner from '$lib/shared/components/DemoBanner.svelte';
 	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
+	import { toast } from 'svelte-sonner';
+	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 
 	let { children } = $props();
+
+	let searchToastShown = false;
+	function handleSearchFocus() {
+		if (!searchToastShown) {
+			toast.info(i18nMsg('search-coming-soon', 'Recherche bientôt disponible'));
+			searchToastShown = true;
+		}
+	}
 
 	function handleKeydown(e: KeyboardEvent) {
 		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -70,7 +80,8 @@
 				type="search"
 				placeholder="Rechercher..."
 				class="pl-10"
-				disabled
+				readonly
+				onfocus={handleSearchFocus}
 			/>
 		</div>
 

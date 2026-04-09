@@ -74,3 +74,41 @@ onboarding-skip-bank = Configurer plus tard
 onboarding-next = Continuer
 incomplete-banner-text = Configuration incomplète — Terminer la configuration
 incomplete-banner-cta = Terminer la configuration
+
+# Page d'accueil (Story 2.4)
+homepage-title = Tableau de bord
+homepage-entries-title = Dernières écritures
+homepage-entries-empty = Aucune écriture.
+homepage-entries-empty-guided = Aucune écriture pour le moment. Commencez par saisir votre première écriture comptable.
+homepage-entries-action = Saisir une écriture
+homepage-invoices-title = Factures ouvertes
+homepage-invoices-empty = Aucune facture ouverte.
+homepage-invoices-empty-guided = Aucune facture ouverte. Créez votre première facture pour facturer vos clients.
+homepage-invoices-action = Créer une facture
+homepage-bank-title = Comptes bancaires
+homepage-bank-empty = Aucun compte bancaire.
+homepage-bank-empty-guided = Aucun compte bancaire configuré. Ajoutez votre compte pour importer vos relevés.
+homepage-bank-no-transactions = Aucune transaction importée
+homepage-bank-action = Configurer
+
+# Paramètres (Story 2.4)
+settings-title = Paramètres
+settings-org-title = Organisation
+settings-accounting-title = Comptabilité
+settings-bank-title = Comptes bancaires
+settings-users-title = Utilisateurs
+settings-field-name = Nom
+settings-field-address = Adresse
+settings-field-ide = IDE
+settings-field-org-type = Type d'organisation
+settings-field-instance-language = Langue de l'interface
+settings-field-accounting-language = Langue comptable
+search-coming-soon = Recherche bientôt disponible
+
+# Misc i18n (Story 2.4 review)
+loading = Chargement...
+settings-edit = Modifier
+settings-edit-coming-soon = Édition bientôt disponible
+settings-manage = Gérer
+settings-no-bank = Aucun compte bancaire configuré.
+settings-no-company = Aucune organisation configurée. Complétez l'onboarding.

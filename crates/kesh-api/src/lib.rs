@@ -79,10 +79,14 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             crate::middleware::rbac::require_admin_role,
         ));
 
-    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding
+    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies
     let authenticated_routes = Router::new()
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
+        .route(
+            "/api/v1/companies/current",
+            get(routes::companies::get_current),
+        )
         .route(
             "/api/v1/onboarding/state",
             get(routes::onboarding::get_state),

@@ -74,3 +74,41 @@ onboarding-skip-bank = Später konfigurieren
 onboarding-next = Weiter
 incomplete-banner-text = Konfiguration unvollständig — Einrichtung abschliessen
 incomplete-banner-cta = Einrichtung abschliessen
+
+# Startseite (Story 2.4)
+homepage-title = Übersicht
+homepage-entries-title = Letzte Buchungen
+homepage-entries-empty = Keine Buchungen.
+homepage-entries-empty-guided = Noch keine Buchungen. Erfassen Sie Ihre erste Buchung.
+homepage-entries-action = Buchung erfassen
+homepage-invoices-title = Offene Rechnungen
+homepage-invoices-empty = Keine offenen Rechnungen.
+homepage-invoices-empty-guided = Keine offenen Rechnungen. Erstellen Sie Ihre erste Rechnung.
+homepage-invoices-action = Rechnung erstellen
+homepage-bank-title = Bankkonten
+homepage-bank-empty = Kein Bankkonto.
+homepage-bank-empty-guided = Kein Bankkonto konfiguriert. Fügen Sie Ihr Konto hinzu, um Kontoauszüge zu importieren.
+homepage-bank-no-transactions = Keine importierten Transaktionen
+homepage-bank-action = Konfigurieren
+
+# Einstellungen (Story 2.4)
+settings-title = Einstellungen
+settings-org-title = Organisation
+settings-accounting-title = Buchhaltung
+settings-bank-title = Bankkonten
+settings-users-title = Benutzer
+settings-field-name = Name
+settings-field-address = Adresse
+settings-field-ide = UID
+settings-field-org-type = Organisationstyp
+settings-field-instance-language = Oberflächensprache
+settings-field-accounting-language = Buchhaltungssprache
+search-coming-soon = Suche bald verfügbar
+
+# Misc i18n (Story 2.4 review)
+loading = Laden...
+settings-edit = Bearbeiten
+settings-edit-coming-soon = Bearbeitung bald verfügbar
+settings-manage = Verwalten
+settings-no-bank = Kein Bankkonto konfiguriert.
+settings-no-company = Keine Organisation konfiguriert. Schliessen Sie das Onboarding ab.
