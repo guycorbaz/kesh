@@ -50,3 +50,27 @@ demo-reset-confirm-title = Reset instance
 demo-reset-confirm-body = All demo data will be deleted. Do you want to continue?
 demo-reset-confirm-ok = Confirm
 demo-reset-confirm-cancel = Cancel
+
+# Onboarding — Path B (Story 2.3)
+onboarding-choose-org-type = Organisation type
+onboarding-org-independant = Independent
+onboarding-org-independant-desc = Self-employed, freelancer
+onboarding-org-association = Association
+onboarding-org-association-desc = Non-profit association
+onboarding-org-pme = SME
+onboarding-org-pme-desc = Small and medium enterprise (Ltd, LLC)
+onboarding-choose-accounting-lang = Accounting language
+onboarding-accounting-lang-desc = Language of chart of accounts labels (independent of interface language)
+onboarding-coordinates-title = Your organisation details
+onboarding-field-name = Name / Company name
+onboarding-field-address = Address
+onboarding-field-ide = UID number
+onboarding-field-ide-hint = optional, format CHE-xxx.xxx.xxx
+onboarding-bank-title = Primary bank account
+onboarding-field-bank-name = Bank name
+onboarding-field-iban = IBAN
+onboarding-field-qr-iban = QR-IBAN
+onboarding-skip-bank = Configure later
+onboarding-next = Continue
+incomplete-banner-text = Configuration incomplete — Complete setup
+incomplete-banner-cta = Complete setup

@@ -102,6 +102,30 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/onboarding/reset",
             post(routes::onboarding::reset),
+        )
+        .route(
+            "/api/v1/onboarding/start-production",
+            post(routes::onboarding::start_production),
+        )
+        .route(
+            "/api/v1/onboarding/org-type",
+            post(routes::onboarding::set_org_type),
+        )
+        .route(
+            "/api/v1/onboarding/accounting-language",
+            post(routes::onboarding::set_accounting_language),
+        )
+        .route(
+            "/api/v1/onboarding/coordinates",
+            post(routes::onboarding::set_coordinates),
+        )
+        .route(
+            "/api/v1/onboarding/bank-account",
+            post(routes::onboarding::set_bank_account),
+        )
+        .route(
+            "/api/v1/onboarding/skip-bank",
+            post(routes::onboarding::skip_bank),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

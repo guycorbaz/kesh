@@ -50,3 +50,27 @@ demo-reset-confirm-title = Instanz zurücksetzen
 demo-reset-confirm-body = Alle Demonstrationsdaten werden gelöscht. Möchten Sie fortfahren?
 demo-reset-confirm-ok = Bestätigen
 demo-reset-confirm-cancel = Abbrechen
+
+# Onboarding — Pfad B (Story 2.3)
+onboarding-choose-org-type = Organisationstyp
+onboarding-org-independant = Selbstständig
+onboarding-org-independant-desc = Freiberufler, selbstständig Erwerbender
+onboarding-org-association = Verein
+onboarding-org-association-desc = Gemeinnütziger Verein
+onboarding-org-pme = KMU
+onboarding-org-pme-desc = Klein- und mittelständisches Unternehmen (AG, GmbH)
+onboarding-choose-accounting-lang = Buchhaltungssprache
+onboarding-accounting-lang-desc = Sprache der Kontenplan-Bezeichnungen (unabhängig von der Oberflächensprache)
+onboarding-coordinates-title = Angaben zu Ihrer Organisation
+onboarding-field-name = Name / Firma
+onboarding-field-address = Adresse
+onboarding-field-ide = UID-Nummer
+onboarding-field-ide-hint = optional, Format CHE-xxx.xxx.xxx
+onboarding-bank-title = Hauptbankkonto
+onboarding-field-bank-name = Bankname
+onboarding-field-iban = IBAN
+onboarding-field-qr-iban = QR-IBAN
+onboarding-skip-bank = Später konfigurieren
+onboarding-next = Weiter
+incomplete-banner-text = Konfiguration unvollständig — Einrichtung abschliessen
+incomplete-banner-cta = Einrichtung abschliessen

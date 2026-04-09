@@ -20,3 +20,45 @@ export async function seedDemo(): Promise<OnboardingState> {
 export async function resetDemo(): Promise<OnboardingState> {
 	return apiClient.post<OnboardingState>('/api/v1/onboarding/reset');
 }
+
+// --- Path B (Story 2.3) ---
+
+export async function startProduction(): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/start-production');
+}
+
+export async function setOrgType(orgType: string): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/org-type', { orgType });
+}
+
+export async function setAccountingLanguage(language: string): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/accounting-language', { language });
+}
+
+export async function setCoordinates(
+	name: string,
+	address: string,
+	ideNumber: string | null
+): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/coordinates', {
+		name,
+		address,
+		ideNumber,
+	});
+}
+
+export async function setBankAccount(
+	bankName: string,
+	iban: string,
+	qrIban: string | null
+): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/bank-account', {
+		bankName,
+		iban,
+		qrIban,
+	});
+}
+
+export async function skipBank(): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/skip-bank');
+}

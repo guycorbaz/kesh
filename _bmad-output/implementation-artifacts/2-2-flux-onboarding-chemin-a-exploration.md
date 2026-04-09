@@ -1,6 +1,6 @@
 # Story 2.2: Flux d'onboarding — Chemin A (Exploration)
 
-Status: review
+Status: done
 
 ## Story
 

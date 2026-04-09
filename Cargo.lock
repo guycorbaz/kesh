@@ -1141,6 +1141,7 @@ dependencies = [
  "dotenvy",
  "http-body-util",
  "jsonwebtoken",
+ "kesh-core",
  "kesh-db",
  "kesh-i18n",
  "kesh-seed",

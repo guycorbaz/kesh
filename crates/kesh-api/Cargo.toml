@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+kesh-core = { path = "../kesh-core" }
 kesh-db = { path = "../kesh-db" }
 kesh-i18n = { path = "../kesh-i18n" }
 kesh-seed = { path = "../kesh-seed" }

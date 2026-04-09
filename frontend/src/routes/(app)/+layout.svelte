@@ -7,6 +7,7 @@
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
 	import DemoBanner from '$lib/shared/components/DemoBanner.svelte';
+	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
 
 	let { children } = $props();
@@ -115,9 +116,11 @@
 		</div>
 	</header>
 
-	<!-- Bannière démo (Story 2.2) -->
+	<!-- Bannières contextuelles (mutuellement exclusives) -->
 	{#if onboardingState.isDemo}
 		<DemoBanner />
+	{:else if !onboardingState.isDemo && onboardingState.loaded && onboardingState.stepCompleted >= 6 && onboardingState.stepCompleted < 7}
+		<IncompleteBanner />
 	{/if}
 
 	<!-- Corps : sidebar + contenu -->

@@ -98,4 +98,60 @@ export const onboardingState = {
 			_loading = false;
 		}
 	},
+
+	// --- Path B (Story 2.3) ---
+
+	async startProduction() {
+		_loading = true;
+		try {
+			_state = await api.startProduction();
+		} finally {
+			_loading = false;
+		}
+	},
+
+	async setOrgType(orgType: string) {
+		_loading = true;
+		try {
+			_state = await api.setOrgType(orgType);
+		} finally {
+			_loading = false;
+		}
+	},
+
+	async setAccountingLanguage(language: string) {
+		_loading = true;
+		try {
+			_state = await api.setAccountingLanguage(language);
+		} finally {
+			_loading = false;
+		}
+	},
+
+	async setCoordinates(name: string, address: string, ideNumber: string | null) {
+		_loading = true;
+		try {
+			_state = await api.setCoordinates(name, address, ideNumber);
+		} finally {
+			_loading = false;
+		}
+	},
+
+	async setBankAccount(bankName: string, iban: string, qrIban: string | null) {
+		_loading = true;
+		try {
+			_state = await api.setBankAccount(bankName, iban, qrIban);
+		} finally {
+			_loading = false;
+		}
+	},
+
+	async skipBank() {
+		_loading = true;
+		try {
+			_state = await api.skipBank();
+		} finally {
+			_loading = false;
+		}
+	},
 };

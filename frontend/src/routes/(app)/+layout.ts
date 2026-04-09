@@ -10,26 +10,31 @@ export async function load() {
 		throw redirect(302, '/login');
 	}
 
-	// Check onboarding après auth — si pas complété, redirect wizard.
-	// Court-circuit si déjà chargé (évite double fetch sur navigation intra-app).
+	// Check onboarding après auth — court-circuit si déjà chargé
 	if (browser && authState.isAuthenticated && !onboardingState.loaded) {
 		try {
 			await onboardingState.fetchState();
 		} catch (err) {
-			// Si c'est un redirect SvelteKit (throw redirect()), le re-throw
 			if (err && typeof err === 'object' && 'status' in err && 'location' in err) {
 				throw err;
 			}
-			// Erreur réseau/API — ne pas bloquer l'accès, logguer et continuer.
-			// Le apiClient gère 401 (refresh + redirect login) automatiquement.
-			// Pour 503/timeout : on laisse l'app charger, la page affichera son
-			// propre état d'erreur si nécessaire.
 			console.error('[onboarding guard] fetchState failed:', err);
 			return;
 		}
 	}
 
-	if (browser && onboardingState.loaded && onboardingState.stepCompleted < 3) {
-		throw redirect(302, '/onboarding');
+	// Seuil d'accès conditionnel Path A / Path B
+	if (browser && onboardingState.loaded) {
+		const step = onboardingState.stepCompleted;
+		const isDemo = onboardingState.isDemo;
+
+		// Path A (demo) : step < 3 → wizard obligatoire
+		// Path B (production) : step < 6 → wizard obligatoire (banque optionnelle)
+		if (isDemo && step < 3) {
+			throw redirect(302, '/onboarding');
+		}
+		if (!isDemo && step < 6) {
+			throw redirect(302, '/onboarding');
+		}
 	}
 }

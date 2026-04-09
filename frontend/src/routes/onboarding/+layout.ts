@@ -17,15 +17,23 @@ export async function load() {
 			if (!onboardingState.loaded) {
 				await onboardingState.fetchState();
 			}
-			if (onboardingState.stepCompleted >= 3) {
+
+			const step = onboardingState.stepCompleted;
+			const isDemo = onboardingState.isDemo;
+
+			// Path A (demo) : step >= 3 → onboarding terminé
+			if (isDemo && step >= 3) {
+				throw redirect(302, '/');
+			}
+			// Path B (production) : step >= 7 → onboarding terminé
+			// step 6 = coordonnées saisies → app accessible avec bannière bleue
+			if (!isDemo && step >= 7) {
 				throw redirect(302, '/');
 			}
 		} catch (err) {
-			// Re-throw SvelteKit redirects
 			if (err && typeof err === 'object' && 'status' in err && 'location' in err) {
 				throw err;
 			}
-			// API error — rester sur le wizard, l'utilisateur peut réessayer
 			console.error('[onboarding layout] fetchState failed:', err);
 		}
 	}

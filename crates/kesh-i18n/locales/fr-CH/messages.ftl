@@ -50,3 +50,27 @@ demo-reset-confirm-title = Réinitialiser l'instance
 demo-reset-confirm-body = Toutes les données de démonstration seront supprimées. Voulez-vous continuer ?
 demo-reset-confirm-ok = Confirmer
 demo-reset-confirm-cancel = Annuler
+
+# Onboarding — Chemin B (Story 2.3)
+onboarding-choose-org-type = Type d'organisation
+onboarding-org-independant = Indépendant
+onboarding-org-independant-desc = Travailleur indépendant, freelance
+onboarding-org-association = Association
+onboarding-org-association-desc = Association à but non lucratif
+onboarding-org-pme = PME
+onboarding-org-pme-desc = Petite et moyenne entreprise (SA, Sàrl)
+onboarding-choose-accounting-lang = Langue comptable
+onboarding-accounting-lang-desc = Langue des libellés du plan comptable (découplée de la langue de l'interface)
+onboarding-coordinates-title = Coordonnées de votre organisation
+onboarding-field-name = Nom / Raison sociale
+onboarding-field-address = Adresse
+onboarding-field-ide = Numéro IDE
+onboarding-field-ide-hint = optionnel, format CHE-xxx.xxx.xxx
+onboarding-bank-title = Compte bancaire principal
+onboarding-field-bank-name = Nom de la banque
+onboarding-field-iban = IBAN
+onboarding-field-qr-iban = QR-IBAN
+onboarding-skip-bank = Configurer plus tard
+onboarding-next = Continuer
+incomplete-banner-text = Configuration incomplète — Terminer la configuration
+incomplete-banner-cta = Terminer la configuration
