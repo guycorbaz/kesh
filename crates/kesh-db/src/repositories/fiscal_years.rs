@@ -6,6 +6,7 @@
 //! `close`. La ré-ouverture d'un exercice clos n'est **pas** autorisée
 //! au niveau du repository (garde-fou DB).
 
+use chrono::NaiveDate;
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::{FiscalYear, NewFiscalYear};
@@ -80,6 +81,32 @@ pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<FiscalYear>,
         .fetch_optional(pool)
         .await
         .map_err(map_db_error)
+}
+
+/// Retourne l'exercice (ouvert OU clos) qui couvre une date donnée pour
+/// une company, ou `None` si aucun exercice ne correspond.
+///
+/// **Lock-free** : cette fonction est utilisée comme pré-check côté
+/// route handler pour distinguer les erreurs `NO_FISCAL_YEAR` et
+/// `FISCAL_YEAR_CLOSED`. Le vrai lock contre les clôtures concurrentes
+/// est repris dans `journal_entries::create` via `SELECT ... FOR UPDATE`.
+pub async fn find_covering_date(
+    pool: &MySqlPool,
+    company_id: i64,
+    date: NaiveDate,
+) -> Result<Option<FiscalYear>, DbError> {
+    sqlx::query_as::<_, FiscalYear>(
+        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+         FROM fiscal_years \
+         WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
+         LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(date)
+    .bind(date)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
 }
 
 /// Liste les exercices d'une company, triés par date de début.

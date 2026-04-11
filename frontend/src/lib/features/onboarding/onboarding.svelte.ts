@@ -7,7 +7,10 @@
 
 import type { OnboardingState } from './onboarding.types';
 import * as api from './onboarding.api';
-import { apiClient } from '$lib/shared/utils/api-client';
+
+// Re-export canonique depuis le module partagé — évite un couplage transverse
+// où des composants `shared/` importeraient depuis `features/onboarding/`.
+export { i18nMsg, loadI18nMessages } from '$lib/shared/utils/i18n.svelte';
 
 let _state = $state<OnboardingState>({
 	stepCompleted: 0,
@@ -16,25 +19,6 @@ let _state = $state<OnboardingState>({
 });
 let _loaded = $state(false);
 let _loading = $state(false);
-
-let _i18nMessages = $state<Record<string, string>>({});
-
-/** Résout un message i18n avec fallback. Exporté pour DemoBanner et wizard. */
-export function i18nMsg(key: string, fallback: string): string {
-	return _i18nMessages[key] || fallback;
-}
-
-/** Charge les traductions depuis l'API. */
-export async function loadI18nMessages() {
-	try {
-		const data = await apiClient.get<{ locale: string; messages: Record<string, string> }>(
-			'/api/v1/i18n/messages'
-		);
-		_i18nMessages = data.messages;
-	} catch {
-		// Fallback silencieux — les labels par défaut sont en français
-	}
-}
 
 export const onboardingState = {
 	get stepCompleted(): number {

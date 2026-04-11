@@ -130,6 +130,24 @@ pub async fn reset_demo(pool: &MySqlPool) -> Result<(), SeedError> {
         .await?;
 
     let result = async {
+        // Story 3.3 — audit_log en premier : sous FK_CHECKS=0 l'ordre
+        // importe peu, mais le DELETE explicite est plus safe si le
+        // flag est un jour retiré. Les entrées d'audit FK vers users
+        // RESTRICT — elles DOIVENT disparaître avant toute tentative
+        // de suppression d'un user (bien que reset_demo préserve users).
+        sqlx::query("DELETE FROM audit_log")
+            .execute(&mut *conn)
+            .await?;
+        // Story 3.2 — écritures comptables.
+        // Sous FOREIGN_KEY_CHECKS=0 le CASCADE sur journal_entry_lines
+        // est techniquement inutile, mais on supprime explicitement
+        // pour rester safe si le flag est un jour retiré.
+        sqlx::query("DELETE FROM journal_entry_lines")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DELETE FROM journal_entries")
+            .execute(&mut *conn)
+            .await?;
         sqlx::query("DELETE FROM accounts")
             .execute(&mut *conn)
             .await?;

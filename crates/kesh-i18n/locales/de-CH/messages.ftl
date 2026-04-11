@@ -133,3 +133,86 @@ account-archived-label = Archiviert
 mode-guided-label = Geführt
 mode-expert-label = Experte
 shortcut-new-entry = Ctrl+N : Neue Buchung
+
+# Buchungen (Story 3.2)
+error-entry-unbalanced = Unausgeglichene Buchung — die Summe der Soll-Beträge ({ $debit }) entspricht nicht der Summe der Haben-Beträge ({ $credit })
+error-no-fiscal-year = Kein Geschäftsjahr existiert für das Datum { $date }. Erstellen Sie ein Geschäftsjahr, bevor Sie Buchungen erfassen.
+error-fiscal-year-closed = Das Geschäftsjahr für das Datum { $date } ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
+journal-entries-title = Buchungen
+journal-entries-new = Neue Buchung
+journal-entries-empty-list = Noch keine Buchungen erfasst
+journal-entries-col-number = Nr.
+journal-entries-col-date = Datum
+journal-entries-col-journal = Journal
+journal-entries-col-description = Beschreibung
+journal-entries-col-total = Betrag
+journal-entry-form-title = Buchungserfassung
+journal-entry-form-date = Datum
+journal-entry-form-journal = Journal
+journal-entry-form-description = Beschreibung
+journal-entry-form-add-line = + Zeile hinzufügen
+journal-entry-form-remove-line = Zeile entfernen
+journal-entry-form-col-account = Konto
+journal-entry-form-col-debit = Soll
+journal-entry-form-col-credit = Haben
+journal-entry-form-total-debit = Summe Soll
+journal-entry-form-total-credit = Summe Haben
+journal-entry-form-diff = Differenz
+journal-entry-form-balanced = Ausgeglichen
+journal-entry-form-unbalanced = Unausgeglichen
+journal-entry-form-submit = Speichern
+journal-entry-form-cancel = Abbrechen
+journal-entry-form-incomplete-line = Unvollständige Zeile
+journal-entry-form-max-decimals = Maximal 4 Nachkommastellen
+journal-entry-form-amount-too-large = Betrag zu hoch
+account-autocomplete-unavailable = Autovervollständigung nicht verfügbar — Konto-ID eingeben
+journal-achats = Einkäufe
+journal-ventes = Verkäufe
+journal-banque = Bank
+journal-caisse = Kasse
+journal-od = Diverse Operationen
+journal-entry-saved = Buchung gespeichert
+error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
+error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
+
+# Buchung bearbeiten & löschen (Story 3.3)
+journal-entry-edit = Bearbeiten
+journal-entry-delete = Löschen
+journal-entry-delete-confirm-title = Buchung Nr.{ $number } löschen?
+journal-entry-delete-confirm-message = Diese Aktion ist unwiderruflich. Die Aktion wird im Prüfprotokoll gespeichert.
+journal-entry-delete-confirm-cancel = Abbrechen
+journal-entry-delete-confirm-delete = Löschen
+journal-entry-deleted = Buchung gelöscht
+journal-entry-conflict-title = Versionskonflikt
+journal-entry-conflict-message = Diese Buchung wurde von einem anderen Benutzer geändert. Neu laden?
+journal-entry-conflict-reload = Neu laden
+journal-entry-conflict-reloaded = Liste aktualisiert — klicken Sie erneut auf Bearbeiten
+error-date-outside-fiscal-year = Das Datum { $date } liegt nicht im aktuellen Geschäftsjahr dieser Buchung
+error-date-outside-fiscal-year-generic = Das Datum liegt nicht im aktuellen Geschäftsjahr dieser Buchung
+
+# Suche, Paginierung, Sortierung (Story 3.4)
+journal-entries-filter-description = Beschreibung
+journal-entries-filter-amount-min = Betrag min
+journal-entries-filter-amount-max = Betrag max
+journal-entries-filter-date-from = Von Datum
+journal-entries-filter-date-to = Bis Datum
+journal-entries-filter-journal = Journal
+journal-entries-filter-journal-all = Alle
+journal-entries-filter-reset = Zurücksetzen
+journal-entries-pagination-on = von
+journal-entries-pagination-prev = Zurück
+journal-entries-pagination-next = Weiter
+journal-entries-pagination-page-size = Pro Seite
+journal-entries-sort-asc-indicator = aufsteigend sortiert
+journal-entries-sort-desc-indicator = absteigend sortiert
+journal-entries-loading = Wird geladen…
+
+# Zweisprachige Tooltips Buchhaltungsbegriffe (Story 3.5)
+tooltip-debit-natural = Geld kommt auf dieses Konto
+tooltip-debit-technical = Soll — linke Spalte
+tooltip-credit-natural = Geld geht von diesem Konto ab
+tooltip-credit-technical = Haben — rechte Spalte
+tooltip-journal-natural = Register, in dem ähnliche Buchungen gruppiert sind
+tooltip-journal-technical = Buchhaltungsjournal (Einkäufe, Verkäufe, Bank, Kasse, Diverse)
+tooltip-balanced-natural = Die Summe der Eingänge entspricht der Summe der Ausgänge
+tooltip-balanced-technical = Doppelte Buchführung im Gleichgewicht (Soll = Haben)

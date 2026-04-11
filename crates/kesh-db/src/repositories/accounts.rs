@@ -1,17 +1,48 @@
 //! Repository CRUD pour `Account`.
+//!
+//! **Story 3.5** : toutes les fonctions CRUD (`create`, `update`, `archive`)
+//! enregistrent une entrée d'audit dans la même transaction. La signature
+//! accepte un `user_id` pour identifier l'auteur de l'action.
+//!
+//! **Exception** : `bulk_create_from_chart` (utilisée par le seed) ne
+//! génère PAS d'entrée d'audit — contexte système, pas action utilisateur.
 
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::account::{Account, AccountUpdate, NewAccount};
+use crate::entities::audit_log::NewAuditLogEntry;
 use crate::errors::{map_db_error, DbError};
+use crate::repositories::audit_log;
 
 const COLUMNS: &str = "id, company_id, number, name, account_type, parent_id, active, version, created_at, updated_at";
 
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, number, name, account_type, parent_id, \
      active, version, created_at, updated_at FROM accounts WHERE id = ?";
 
-/// Crée un compte et retourne l'entité persistée.
-pub async fn create(pool: &MySqlPool, new: NewAccount) -> Result<Account, DbError> {
+/// Snapshot JSON d'un compte pour l'audit log (Story 3.5).
+///
+/// Contient les champs essentiels pour reconstituer l'état du compte
+/// au moment de l'action. Les dates ne sont pas incluses car non
+/// pertinentes pour l'audit (l'entrée d'audit a son propre `created_at`).
+fn account_snapshot_json(account: &Account) -> serde_json::Value {
+    serde_json::json!({
+        "id": account.id,
+        "companyId": account.company_id,
+        "number": account.number,
+        "name": account.name,
+        "accountType": account.account_type.as_str(),
+        "parentId": account.parent_id,
+        "active": account.active,
+        "version": account.version,
+    })
+}
+
+/// Crée un compte et retourne l'entité persistée, avec audit log atomique (Story 3.5).
+pub async fn create(
+    pool: &MySqlPool,
+    user_id: i64,
+    new: NewAccount,
+) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = sqlx::query(
@@ -43,6 +74,25 @@ pub async fn create(pool: &MySqlPool, new: NewAccount) -> Result<Account, DbErro
         .await
         .map_err(map_db_error)?
         .ok_or_else(|| DbError::Invariant(format!("account {id} introuvable après INSERT")))?;
+
+    // Story 3.5 : audit log AVANT commit (snapshot direct, cohérent
+    // avec la convention projet documentée en spec 3.5).
+    // Rollback explicite pour cohérence avec les autres branches d'erreur.
+    if let Err(e) = audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "account.created".to_string(),
+            entity_type: "account".to_string(),
+            entity_id: account.id,
+            details_json: Some(account_snapshot_json(&account)),
+        },
+    )
+    .await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
+    }
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(account)
@@ -96,15 +146,41 @@ pub async fn list_by_company(
     }
 }
 
-/// Met à jour un compte actif (nom et type). Verrouillage optimiste.
+/// Met à jour un compte actif (nom et type). Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte est archivé.
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
     version: i32,
+    user_id: i64,
     changes: AccountUpdate,
 ) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Snapshot "before" AVANT l'UPDATE, dans la même transaction.
+    let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    let before = match before_opt {
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+        Some(a) if !a.active => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::IllegalStateTransition(
+                "impossible de modifier un compte archivé".into(),
+            ));
+        }
+        Some(a) if a.version != version => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::OptimisticLockConflict);
+        }
+        Some(a) => a,
+    };
 
     let rows = sqlx::query(
         "UPDATE accounts SET name = ?, account_type = ?, version = version + 1 \
@@ -120,34 +196,54 @@ pub async fn update(
     .rows_affected();
 
     if rows == 0 {
+        // Défensif : ne devrait pas arriver puisqu'on a vérifié avant,
+        // mais garde-fou contre une race theoretically possible entre
+        // le SELECT et l'UPDATE (lecture repeatable InnoDB).
         tx.rollback().await.map_err(map_db_error)?;
-        let exists = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-            .map_err(map_db_error)?;
-        return match exists {
-            None => Err(DbError::NotFound),
-            Some(a) if !a.active => Err(DbError::IllegalStateTransition(
-                "impossible de modifier un compte archivé".into(),
-            )),
-            Some(_) => Err(DbError::OptimisticLockConflict),
-        };
+        return Err(DbError::OptimisticLockConflict);
     }
 
-    let account = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
+    let after = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_one(&mut *tx)
         .await
         .map_err(map_db_error)?;
 
+    // Story 3.5 : audit log avec wrapper {before, after} pour update
+    // (cohérent avec journal_entries::update).
+    // Rollback explicite pour cohérence avec les autres branches d'erreur.
+    let audit_details = serde_json::json!({
+        "before": account_snapshot_json(&before),
+        "after": account_snapshot_json(&after),
+    });
+    if let Err(e) = audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "account.updated".to_string(),
+            entity_type: "account".to_string(),
+            entity_id: id,
+            details_json: Some(audit_details),
+        },
+    )
+    .await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
+    }
+
     tx.commit().await.map_err(map_db_error)?;
-    Ok(account)
+    Ok(after)
 }
 
-/// Archive un compte (active = false). Verrouillage optimiste.
+/// Archive un compte (active = false). Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte a des sous-comptes actifs.
-pub async fn archive(pool: &MySqlPool, id: i64, version: i32) -> Result<Account, DbError> {
+pub async fn archive(
+    pool: &MySqlPool,
+    id: i64,
+    version: i32,
+    user_id: i64,
+) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     // Vérifier que le compte n'a pas d'enfants actifs
@@ -195,6 +291,26 @@ pub async fn archive(pool: &MySqlPool, id: i64, version: i32) -> Result<Account,
         .fetch_one(&mut *tx)
         .await
         .map_err(map_db_error)?;
+
+    // Story 3.5 : audit log (snapshot direct, cohérent avec create/delete).
+    // Rollback explicite en cas d'erreur pour cohérence stylistique avec
+    // les autres branches de la fonction (le Drop de tx rollback déjà
+    // implicitement, mais être explicite évite tout ambiguïté).
+    if let Err(e) = audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "account.archived".to_string(),
+            entity_type: "account".to_string(),
+            entity_id: id,
+            details_json: Some(account_snapshot_json(&account)),
+        },
+    )
+    .await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
+    }
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(account)
@@ -271,6 +387,10 @@ pub async fn bulk_create(
 /// en insérant en ordre topologique (tri par longueur de numéro, puis numéro).
 ///
 /// `lang` : code langue lowercase (ex: "fr") pour extraire le nom du compte.
+///
+/// **Cette fonction ne génère PAS d'entrées d'audit log** (contexte seed
+/// système, pas action utilisateur). Elle n'emprunte pas le chemin
+/// `create` audité — c'est volontaire et conforme à FR88 (Story 3.5).
 pub async fn bulk_create_from_chart(
     pool: &MySqlPool,
     company_id: i64,
@@ -395,6 +515,15 @@ mod tests {
         row.0
     }
 
+    /// Helper : obtient un user_id admin pour les appels write qui exigent un acteur audité.
+    async fn get_admin_user_id(pool: &MySqlPool) -> i64 {
+        let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE role = 'Admin' LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .expect("need at least one Admin user in DB for tests");
+        row.0
+    }
+
     /// Helper : nettoie les comptes de test (numéros commençant par "T").
     async fn cleanup_test_accounts(pool: &MySqlPool, company_id: i64) {
         // Détacher les parents d'abord
@@ -416,6 +545,7 @@ mod tests {
     async fn test_create_and_find() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
         cleanup_test_accounts(&pool, company_id).await;
 
         let new = NewAccount {
@@ -425,7 +555,7 @@ mod tests {
             account_type: AccountType::Asset,
             parent_id: None,
         };
-        let account = create(&pool, new).await.unwrap();
+        let account = create(&pool, admin_user_id, new).await.unwrap();
         assert_eq!(account.number, "T100");
         assert_eq!(account.name, "Test Create");
         assert_eq!(account.account_type, AccountType::Asset);
@@ -443,11 +573,13 @@ mod tests {
     async fn test_list_by_company_filters_archived() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
         cleanup_test_accounts(&pool, company_id).await;
 
         // Créer un compte actif et un archivé
         let active = create(
             &pool,
+            admin_user_id,
             NewAccount {
                 company_id,
                 number: "T200".into(),
@@ -461,6 +593,7 @@ mod tests {
 
         let archived = create(
             &pool,
+            admin_user_id,
             NewAccount {
                 company_id,
                 number: "T201".into(),
@@ -471,7 +604,9 @@ mod tests {
         )
         .await
         .unwrap();
-        archive(&pool, archived.id, archived.version).await.unwrap();
+        archive(&pool, archived.id, archived.version, admin_user_id)
+            .await
+            .unwrap();
 
         // Sans archivés
         let without = list_by_company(&pool, company_id, false).await.unwrap();
@@ -490,10 +625,12 @@ mod tests {
     async fn test_update_optimistic_locking() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
         cleanup_test_accounts(&pool, company_id).await;
 
         let account = create(
             &pool,
+            admin_user_id,
             NewAccount {
                 company_id,
                 number: "T300".into(),
@@ -510,6 +647,7 @@ mod tests {
             &pool,
             account.id,
             account.version,
+            admin_user_id,
             AccountUpdate {
                 name: "Updated".into(),
                 account_type: AccountType::Liability,
@@ -526,6 +664,7 @@ mod tests {
             &pool,
             account.id,
             account.version, // version 1, mais en DB c'est 2
+            admin_user_id,
             AccountUpdate {
                 name: "Should Fail".into(),
                 account_type: AccountType::Asset,
@@ -542,10 +681,12 @@ mod tests {
     async fn test_archive_sets_inactive() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
         cleanup_test_accounts(&pool, company_id).await;
 
         let account = create(
             &pool,
+            admin_user_id,
             NewAccount {
                 company_id,
                 number: "T400".into(),
@@ -558,7 +699,9 @@ mod tests {
         .unwrap();
         assert!(account.active);
 
-        let archived = archive(&pool, account.id, account.version).await.unwrap();
+        let archived = archive(&pool, account.id, account.version, admin_user_id)
+            .await
+            .unwrap();
         assert!(!archived.active);
         assert_eq!(archived.version, 2);
 
@@ -569,10 +712,12 @@ mod tests {
     async fn test_unique_constraint_on_company_number() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
         cleanup_test_accounts(&pool, company_id).await;
 
         create(
             &pool,
+            admin_user_id,
             NewAccount {
                 company_id,
                 number: "T500".into(),
@@ -587,6 +732,7 @@ mod tests {
         // Duplicate number → UniqueConstraintViolation
         let err = create(
             &pool,
+            admin_user_id,
             NewAccount {
                 company_id,
                 number: "T500".into(),
@@ -598,6 +744,174 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, DbError::UniqueConstraintViolation(_)));
+
+        cleanup_test_accounts(&pool, company_id).await;
+    }
+
+    /// Story 3.5 — vérifie que `create` insère une entrée `audit_log` avec
+    /// `action = "account.created"` et un snapshot direct (pas de wrapper).
+    #[tokio::test]
+    async fn test_create_account_writes_audit_log() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_accounts(&pool, company_id).await;
+
+        let account = create(
+            &pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: "T600".into(),
+                name: "Audit Create".into(),
+                account_type: AccountType::Asset,
+                parent_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let entries = audit_log::find_by_entity(&pool, "account", account.id, 10)
+            .await
+            .unwrap();
+        let created_audit = entries
+            .iter()
+            .find(|e| e.action == "account.created")
+            .expect("audit entry with action account.created must exist");
+
+        assert_eq!(created_audit.user_id, admin_user_id);
+        assert_eq!(created_audit.entity_type, "account");
+        assert_eq!(created_audit.entity_id, account.id);
+
+        let details = created_audit
+            .details_json
+            .as_ref()
+            .expect("details_json must be present");
+        // Convention projet : snapshot direct pour create (pas de wrapper).
+        assert!(details.get("before").is_none());
+        assert!(details.get("after").is_none());
+        assert_eq!(details.get("number").and_then(|v| v.as_str()), Some("T600"));
+        assert_eq!(details.get("name").and_then(|v| v.as_str()), Some("Audit Create"));
+
+        cleanup_test_accounts(&pool, company_id).await;
+    }
+
+    /// Story 3.5 — vérifie que `update` insère une entrée `audit_log` avec
+    /// `action = "account.updated"` et un wrapper `{before, after}`.
+    #[tokio::test]
+    async fn test_update_account_writes_audit_log() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_accounts(&pool, company_id).await;
+
+        let account = create(
+            &pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: "T601".into(),
+                name: "Before Name".into(),
+                account_type: AccountType::Asset,
+                parent_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let updated = update(
+            &pool,
+            account.id,
+            account.version,
+            admin_user_id,
+            AccountUpdate {
+                name: "After Name".into(),
+                account_type: AccountType::Liability,
+            },
+        )
+        .await
+        .unwrap();
+
+        let entries = audit_log::find_by_entity(&pool, "account", updated.id, 10)
+            .await
+            .unwrap();
+        let update_audit = entries
+            .iter()
+            .find(|e| e.action == "account.updated")
+            .expect("audit entry with action account.updated must exist");
+
+        let details = update_audit
+            .details_json
+            .as_ref()
+            .expect("details_json must be present");
+
+        // Convention projet : update utilise un wrapper {before, after}.
+        let before = details
+            .get("before")
+            .expect("update audit must wrap snapshot in {{before, after}}");
+        let after = details
+            .get("after")
+            .expect("update audit must wrap snapshot in {{before, after}}");
+
+        assert_eq!(before.get("name").and_then(|v| v.as_str()), Some("Before Name"));
+        assert_eq!(after.get("name").and_then(|v| v.as_str()), Some("After Name"));
+        assert_eq!(
+            before.get("accountType").and_then(|v| v.as_str()),
+            Some("Asset")
+        );
+        assert_eq!(
+            after.get("accountType").and_then(|v| v.as_str()),
+            Some("Liability")
+        );
+
+        cleanup_test_accounts(&pool, company_id).await;
+    }
+
+    /// Story 3.5 — vérifie que `archive` insère une entrée `audit_log` avec
+    /// `action = "account.archived"` et un snapshot direct.
+    #[tokio::test]
+    async fn test_archive_account_writes_audit_log() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_accounts(&pool, company_id).await;
+
+        let account = create(
+            &pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: "T602".into(),
+                name: "To Archive Audit".into(),
+                account_type: AccountType::Asset,
+                parent_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let archived = archive(&pool, account.id, account.version, admin_user_id)
+            .await
+            .unwrap();
+
+        let entries = audit_log::find_by_entity(&pool, "account", archived.id, 10)
+            .await
+            .unwrap();
+        let archive_audit = entries
+            .iter()
+            .find(|e| e.action == "account.archived")
+            .expect("audit entry with action account.archived must exist");
+
+        assert_eq!(archive_audit.user_id, admin_user_id);
+
+        let details = archive_audit
+            .details_json
+            .as_ref()
+            .expect("details_json must be present");
+        // Snapshot direct (pas de wrapper).
+        assert!(details.get("before").is_none());
+        assert!(details.get("after").is_none());
+        assert_eq!(details.get("active").and_then(|v| v.as_bool()), Some(false));
 
         cleanup_test_accounts(&pool, company_id).await;
     }

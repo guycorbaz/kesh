@@ -1,7 +1,7 @@
 //! Routes CRUD pour les comptes du plan comptable.
 
 use axum::extract::{Path, Query, State};
-use axum::Json;
+use axum::{Extension, Json};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,7 @@ use kesh_db::entities::account::{Account, AccountType, AccountUpdate, NewAccount
 use kesh_db::repositories::{accounts, companies};
 
 use crate::errors::AppError;
+use crate::middleware::auth::CurrentUser;
 use crate::AppState;
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ pub async fn list_accounts(
 /// POST /api/v1/accounts — crée un compte.
 pub async fn create_account(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<(axum::http::StatusCode, Json<AccountResponse>), AppError> {
     let company = get_company(&state).await?;
@@ -145,7 +147,7 @@ pub async fn create_account(
         parent_id: req.parent_id,
     };
 
-    let account = accounts::create(&state.pool, new).await?;
+    let account = accounts::create(&state.pool, current_user.user_id, new).await?;
     Ok((
         axum::http::StatusCode::CREATED,
         Json(AccountResponse::from(account)),
@@ -155,6 +157,7 @@ pub async fn create_account(
 /// PUT /api/v1/accounts/{id} — modifie un compte (nom et type).
 pub async fn update_account(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
@@ -171,16 +174,17 @@ pub async fn update_account(
         account_type: req.account_type,
     };
 
-    let account = accounts::update(&state.pool, id, req.version, changes).await?;
+    let account = accounts::update(&state.pool, id, req.version, current_user.user_id, changes).await?;
     Ok(Json(AccountResponse::from(account)))
 }
 
 /// PUT /api/v1/accounts/{id}/archive — archive un compte.
 pub async fn archive_account(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ArchiveAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
-    let account = accounts::archive(&state.pool, id, req.version).await?;
+    let account = accounts::archive(&state.pool, id, req.version, current_user.user_id).await?;
     Ok(Json(AccountResponse::from(account)))
 }

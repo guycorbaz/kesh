@@ -79,7 +79,8 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             crate::middleware::rbac::require_admin_role,
         ));
 
-    // Routes comptable+ (Admin + Comptable) : modification du plan comptable
+    // Routes comptable+ (Admin + Comptable) : modification du plan comptable,
+    // saisie d'écritures en partie double
     let comptable_routes = Router::new()
         .route(
             "/api/v1/accounts",
@@ -93,15 +94,28 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/accounts/{id}/archive",
             put(routes::accounts::archive_account),
         )
+        .route(
+            "/api/v1/journal-entries",
+            post(routes::journal_entries::create_journal_entry),
+        )
+        .route(
+            "/api/v1/journal-entries/{id}",
+            put(routes::journal_entries::update_journal_entry)
+                .delete(routes::journal_entries::delete_journal_entry),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
 
-    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies, consultation plan comptable
+    // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies, consultation plan comptable, lecture écritures
     let authenticated_routes = Router::new()
         .route(
             "/api/v1/accounts",
             get(routes::accounts::list_accounts),
+        )
+        .route(
+            "/api/v1/journal-entries",
+            get(routes::journal_entries::list_journal_entries),
         )
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))

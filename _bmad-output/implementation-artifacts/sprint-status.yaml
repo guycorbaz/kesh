@@ -36,8 +36,8 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-09
-# (story 3-1 done, 2 passes de revue adversariale)
+last_updated: 2026-04-10
+# (story 3-5 done — 4 passes de code review convergées 2026-04-11, P1-P12 appliqués, Epic 3 terminé)
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -72,12 +72,12 @@ development_status:
   epic-2-retrospective: done
 
   # Epic 3: Plan Comptable & Écritures
-  epic-3: in-progress
+  epic-3: done
   3-1-plan-comptable-chargement-gestion: done
-  3-2-saisie-ecritures-en-partie-double: backlog
-  3-3-modification-suppression-ecritures: backlog
-  3-4-recherche-pagination-tri: backlog
-  3-5-notifications-aide-contextuelle-audit: backlog
+  3-2-saisie-ecritures-en-partie-double: done
+  3-3-modification-suppression-ecritures: done
+  3-4-recherche-pagination-tri: done
+  3-5-notifications-aide-contextuelle-audit: done
   epic-3-retrospective: optional
 
   # Epic 4: Carnet d'Adresses & Catalogue

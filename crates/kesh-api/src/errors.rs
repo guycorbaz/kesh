@@ -96,6 +96,46 @@ pub enum AppError {
     /// Tentative de progression sur un step d'onboarding déjà complété (400).
     #[error("Étape d'onboarding déjà complétée")]
     OnboardingStepAlreadyCompleted,
+
+    // --- Story 3.2 ---
+
+    /// Écriture comptable déséquilibrée (FR21).
+    /// Les totaux (format string décimal) sont inclus dans le message
+    /// client pour respecter exactement le wording du PRD.
+    #[error("Écriture déséquilibrée : débits={debit}, crédits={credit}")]
+    EntryUnbalanced {
+        /// Total des débits formaté en string décimal.
+        debit: String,
+        /// Total des crédits formaté en string décimal.
+        credit: String,
+    },
+
+    /// Aucun exercice comptable n'existe pour la date fournie.
+    /// À distinguer de `FiscalYearClosed` pour l'UX : le message invite
+    /// l'utilisateur à créer un exercice plutôt qu'à chercher un exercice
+    /// existant fermé.
+    #[error("Aucun exercice pour la date {date}")]
+    NoFiscalYear {
+        /// Date au format ISO (YYYY-MM-DD).
+        date: String,
+    },
+
+    /// L'exercice pour cette date est clôturé (FR24, CO art. 957-964).
+    /// Aucune écriture ne peut être ajoutée ou modifiée dans un exercice clos.
+    #[error("Exercice clôturé pour la date {date}")]
+    FiscalYearClosed {
+        /// Date au format ISO (YYYY-MM-DD).
+        date: String,
+    },
+
+    /// La nouvelle date d'une écriture ne tombe pas dans l'exercice courant
+    /// de l'entité (story 3.3). Empêche le déplacement cross-exercice via
+    /// simple édition.
+    #[error("Date hors exercice courant : {date}")]
+    DateOutsideFiscalYear {
+        /// Date au format ISO (YYYY-MM-DD).
+        date: String,
+    },
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -203,6 +243,41 @@ impl IntoResponse for AppError {
                 ),
             ),
 
+            AppError::EntryUnbalanced { debit, credit } => {
+                // FR21 : le wording exact vient du PRD. La version i18n
+                // inclut les placeholders via Fluent ; à défaut, on
+                // construit la version française à la volée.
+                let fallback = format!(
+                    "Écriture déséquilibrée — le total des débits ({debit}) ne correspond pas au total des crédits ({credit})"
+                );
+                build_response(StatusCode::BAD_REQUEST, "ENTRY_UNBALANCED", &fallback)
+            }
+
+            AppError::NoFiscalYear { date } => {
+                let fallback = format!(
+                    "Aucun exercice n'existe pour la date {date}. Créez un exercice comptable avant de saisir des écritures."
+                );
+                build_response(StatusCode::BAD_REQUEST, "NO_FISCAL_YEAR", &fallback)
+            }
+
+            AppError::FiscalYearClosed { date } => {
+                let fallback = format!(
+                    "L'exercice pour la date {date} est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964)."
+                );
+                build_response(StatusCode::BAD_REQUEST, "FISCAL_YEAR_CLOSED", &fallback)
+            }
+
+            AppError::DateOutsideFiscalYear { date } => {
+                let fallback = format!(
+                    "La date {date} n'est pas dans l'exercice courant de cette écriture."
+                );
+                build_response(
+                    StatusCode::BAD_REQUEST,
+                    "DATE_OUTSIDE_FISCAL_YEAR",
+                    &fallback,
+                )
+            }
+
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation
             // ici (propriété désirée).
@@ -247,6 +322,30 @@ impl IntoResponse for AppError {
                         &t("error-illegal-state", "Transition d'état interdite"),
                     )
                 }
+                DbError::FiscalYearClosed => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "FISCAL_YEAR_CLOSED",
+                    &t(
+                        "error-fiscal-year-closed-generic",
+                        "L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).",
+                    ),
+                ),
+                DbError::InactiveOrInvalidAccounts => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "INACTIVE_OR_INVALID_ACCOUNTS",
+                    &t(
+                        "error-inactive-accounts",
+                        "Un ou plusieurs comptes sont archivés ou invalides.",
+                    ),
+                ),
+                DbError::DateOutsideFiscalYear => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "DATE_OUTSIDE_FISCAL_YEAR",
+                    &t(
+                        "error-date-outside-fiscal-year-generic",
+                        "La date n'est pas dans l'exercice courant de cette écriture.",
+                    ),
+                ),
                 DbError::ConnectionUnavailable(m) => {
                     tracing::warn!("db connection unavailable: {m}");
                     build_response(

@@ -133,3 +133,86 @@ account-archived-label = Archivé
 mode-guided-label = Guidé
 mode-expert-label = Expert
 shortcut-new-entry = Ctrl+N : Nouvelle écriture
+
+# Écritures comptables (Story 3.2)
+error-entry-unbalanced = Écriture déséquilibrée — le total des débits ({ $debit }) ne correspond pas au total des crédits ({ $credit })
+error-no-fiscal-year = Aucun exercice n'existe pour la date { $date }. Créez un exercice comptable avant de saisir des écritures.
+error-fiscal-year-closed = L'exercice pour la date { $date } est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).
+journal-entries-title = Écritures comptables
+journal-entries-new = Nouvelle écriture
+journal-entries-empty-list = Aucune écriture saisie pour l'instant
+journal-entries-col-number = N°
+journal-entries-col-date = Date
+journal-entries-col-journal = Journal
+journal-entries-col-description = Libellé
+journal-entries-col-total = Total
+journal-entry-form-title = Saisie d'écriture
+journal-entry-form-date = Date
+journal-entry-form-journal = Journal
+journal-entry-form-description = Libellé
+journal-entry-form-add-line = + Ajouter une ligne
+journal-entry-form-remove-line = Retirer cette ligne
+journal-entry-form-col-account = Compte
+journal-entry-form-col-debit = Débit
+journal-entry-form-col-credit = Crédit
+journal-entry-form-total-debit = Total débits
+journal-entry-form-total-credit = Total crédits
+journal-entry-form-diff = Différence
+journal-entry-form-balanced = Équilibré
+journal-entry-form-unbalanced = Déséquilibré
+journal-entry-form-submit = Valider
+journal-entry-form-cancel = Annuler
+journal-entry-form-incomplete-line = Ligne incomplète
+journal-entry-form-max-decimals = Maximum 4 décimales
+journal-entry-form-amount-too-large = Montant trop élevé
+account-autocomplete-unavailable = Autocomplétion indisponible — saisir l'ID du compte
+journal-achats = Achats
+journal-ventes = Ventes
+journal-banque = Banque
+journal-caisse = Caisse
+journal-od = OD
+journal-entry-saved = Écriture enregistrée
+error-fiscal-year-closed-generic = L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).
+error-inactive-accounts = Un ou plusieurs comptes sont archivés ou invalides.
+
+# Modification & suppression d'écritures (Story 3.3)
+journal-entry-edit = Modifier
+journal-entry-delete = Supprimer
+journal-entry-delete-confirm-title = Supprimer l'écriture N°{ $number } ?
+journal-entry-delete-confirm-message = Cette action est irréversible. L'action sera enregistrée dans le journal d'audit.
+journal-entry-delete-confirm-cancel = Annuler
+journal-entry-delete-confirm-delete = Supprimer
+journal-entry-deleted = Écriture supprimée
+journal-entry-conflict-title = Conflit de version
+journal-entry-conflict-message = Cette écriture a été modifiée par un autre utilisateur. Voulez-vous recharger ?
+journal-entry-conflict-reload = Recharger
+journal-entry-conflict-reloaded = Liste rechargée — cliquez à nouveau sur modifier pour reprendre
+error-date-outside-fiscal-year = La date { $date } n'est pas dans l'exercice courant de cette écriture
+error-date-outside-fiscal-year-generic = La date n'est pas dans l'exercice courant de cette écriture
+
+# Recherche, pagination, tri (Story 3.4)
+journal-entries-filter-description = Libellé
+journal-entries-filter-amount-min = Montant min
+journal-entries-filter-amount-max = Montant max
+journal-entries-filter-date-from = Date début
+journal-entries-filter-date-to = Date fin
+journal-entries-filter-journal = Journal
+journal-entries-filter-journal-all = Tous
+journal-entries-filter-reset = Réinitialiser
+journal-entries-pagination-on = sur
+journal-entries-pagination-prev = Précédent
+journal-entries-pagination-next = Suivant
+journal-entries-pagination-page-size = Par page
+journal-entries-sort-asc-indicator = tri ascendant
+journal-entries-sort-desc-indicator = tri descendant
+journal-entries-loading = Chargement…
+
+# Tooltips bilingues termes comptables (Story 3.5)
+tooltip-debit-natural = L'argent entre dans ce compte
+tooltip-debit-technical = Débit — colonne de gauche
+tooltip-credit-natural = L'argent sort de ce compte
+tooltip-credit-technical = Crédit — colonne de droite
+tooltip-journal-natural = Registre où sont groupées les écritures similaires
+tooltip-journal-technical = Journal comptable (Achats, Ventes, Banque, Caisse, OD)
+tooltip-balanced-natural = Le total des entrées égale le total des sorties
+tooltip-balanced-technical = Équilibre partie double (débit = crédit)

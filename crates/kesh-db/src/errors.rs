@@ -38,6 +38,25 @@ pub enum DbError {
     #[error("Transition d'état interdite : {0}")]
     IllegalStateTransition(String),
 
+    /// L'exercice comptable est clôturé (FR24, CO art. 957-964) — aucune
+    /// écriture ne peut y être ajoutée, modifiée ou supprimée. Variante
+    /// dédiée (séparée d'`IllegalStateTransition`) pour permettre un
+    /// mapping API stable, non dépendant du contenu du message texte.
+    #[error("Exercice clôturé — modification interdite (CO art. 957-964)")]
+    FiscalYearClosed,
+
+    /// Un ou plusieurs comptes référencés sont archivés ou n'appartiennent
+    /// pas à la company courante. Variante dédiée pour exposer un message
+    /// UX clair sans leak du détail interne.
+    #[error("Un ou plusieurs comptes sont archivés ou invalides")]
+    InactiveOrInvalidAccounts,
+
+    /// La date fournie ne tombe pas dans l'exercice courant de l'entité
+    /// modifiée. Story 3.3 : empêche le déplacement d'une écriture vers
+    /// un autre exercice via un simple changement de date.
+    #[error("La date n'est pas dans l'exercice courant de cette écriture")]
+    DateOutsideFiscalYear,
+
     /// Pool épuisé ou timeout d'acquisition (retry-able côté API → 503).
     #[error("Pool de connexions épuisé ou timeout : {0}")]
     ConnectionUnavailable(String),
@@ -66,6 +85,9 @@ impl DbError {
             Self::ForeignKeyViolation(_) => "FOREIGN_KEY_VIOLATION",
             Self::CheckConstraintViolation(_) => "CHECK_CONSTRAINT_VIOLATION",
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
+            Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
+            Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
+            Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::Invariant(_) => "INVARIANT_VIOLATION",
             Self::Sqlx(_) => "DATABASE_ERROR",

@@ -3,6 +3,7 @@
 //! Chaque variante représente une violation de règle métier détectée
 //! lors de la validation des types domaine.
 
+use crate::types::Money;
 use thiserror::Error;
 
 /// Erreurs de validation des types métier kesh-core.
@@ -31,6 +32,44 @@ pub enum CoreError {
     /// Le fichier JSON du plan comptable contient des données invalides.
     #[error("Plan comptable invalide : {0}")]
     InvalidChart(String),
+
+    /// Une écriture doit contenir au moins deux lignes (partie double).
+    #[error("Écriture invalide : au moins deux lignes requises")]
+    EntryNeedsTwoLines,
+
+    /// Le libellé de l'écriture est vide ou ne contient que des espaces.
+    #[error("Écriture invalide : le libellé est obligatoire")]
+    EntryDescriptionEmpty,
+
+    /// Une ligne d'écriture contient un montant négatif (non permis en
+    /// saisie directe ; les avoirs sont gérés par des écritures de
+    /// contre-passation dans la story 3.3 et l'epic 10).
+    #[error("Écriture invalide : montant négatif non permis en saisie directe")]
+    EntryNegativeAmount,
+
+    /// Une ligne doit avoir EXACTEMENT un des deux montants (débit ou
+    /// crédit) strictement positif. Les cas rejetés : les deux à zéro,
+    /// les deux positifs simultanément.
+    #[error(
+        "Écriture invalide : chaque ligne doit avoir soit un débit soit un crédit (exclusif)"
+    )]
+    EntryLineDebitCreditExclusive,
+
+    /// Le total des débits ne correspond pas au total des crédits.
+    ///
+    /// FR21 : message utilisateur construit à partir des montants par
+    /// `kesh-api` via `AppError::EntryUnbalanced { debit, credit }`.
+    #[error("Écriture déséquilibrée : débits={debit}, crédits={credit}")]
+    EntryUnbalanced {
+        /// Total des débits de l'écriture.
+        debit: Money,
+        /// Total des crédits de l'écriture.
+        credit: Money,
+    },
+
+    /// Une écriture dont le total est zéro n'est pas persistée.
+    #[error("Écriture invalide : le total ne peut pas être nul")]
+    EntryZeroTotal,
 }
 
 impl CoreError {
@@ -45,6 +84,12 @@ impl CoreError {
             Self::InvalidCheNumber(_) => "INVALID_CHE_NUMBER",
             Self::UnknownChartType(_) => "UNKNOWN_CHART_TYPE",
             Self::InvalidChart(_) => "INVALID_CHART",
+            Self::EntryNeedsTwoLines => "ENTRY_NEEDS_TWO_LINES",
+            Self::EntryDescriptionEmpty => "ENTRY_DESCRIPTION_EMPTY",
+            Self::EntryNegativeAmount => "ENTRY_NEGATIVE_AMOUNT",
+            Self::EntryLineDebitCreditExclusive => "ENTRY_LINE_DEBIT_CREDIT_EXCLUSIVE",
+            Self::EntryUnbalanced { .. } => "ENTRY_UNBALANCED",
+            Self::EntryZeroTotal => "ENTRY_ZERO_TOTAL",
         }
     }
 }
