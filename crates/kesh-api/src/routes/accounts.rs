@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use kesh_db::entities::account::{Account, AccountType, AccountUpdate, NewAccount};
 use kesh_db::repositories::{accounts, companies};
 
+use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
-use crate::AppState;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -118,13 +118,17 @@ pub async fn create_account(
         return Err(AppError::Validation("number must not be empty".into()));
     }
     if trimmed_number.len() > 10 {
-        return Err(AppError::Validation("number must not exceed 10 characters".into()));
+        return Err(AppError::Validation(
+            "number must not exceed 10 characters".into(),
+        ));
     }
     if trimmed_name.is_empty() {
         return Err(AppError::Validation("name must not be empty".into()));
     }
     if trimmed_name.len() > 255 {
-        return Err(AppError::Validation("name must not exceed 255 characters".into()));
+        return Err(AppError::Validation(
+            "name must not exceed 255 characters".into(),
+        ));
     }
 
     // Valider que le parent existe et est actif
@@ -133,7 +137,7 @@ pub async fn create_account(
         match parent {
             None => return Err(AppError::Validation("parent account not found".into())),
             Some(p) if !p.active => {
-                return Err(AppError::Validation("parent account is archived".into()))
+                return Err(AppError::Validation("parent account is archived".into()));
             }
             _ => {}
         }
@@ -166,7 +170,9 @@ pub async fn update_account(
         return Err(AppError::Validation("name must not be empty".into()));
     }
     if trimmed_name.len() > 255 {
-        return Err(AppError::Validation("name must not exceed 255 characters".into()));
+        return Err(AppError::Validation(
+            "name must not exceed 255 characters".into(),
+        ));
     }
 
     let changes = AccountUpdate {
@@ -174,7 +180,8 @@ pub async fn update_account(
         account_type: req.account_type,
     };
 
-    let account = accounts::update(&state.pool, id, req.version, current_user.user_id, changes).await?;
+    let account =
+        accounts::update(&state.pool, id, req.version, current_user.user_id, changes).await?;
     Ok(Json(AccountResponse::from(account)))
 }
 

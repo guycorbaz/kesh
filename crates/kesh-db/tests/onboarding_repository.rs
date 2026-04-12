@@ -13,7 +13,9 @@ async fn get_state_returns_none_when_empty(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn init_state_creates_row_with_defaults(pool: MySqlPool) {
-    let state = onboarding::init_state(&pool).await.expect("init should succeed");
+    let state = onboarding::init_state(&pool)
+        .await
+        .expect("init should succeed");
     assert!(state.id > 0);
     assert_eq!(state.step_completed, 0);
     assert!(!state.is_demo);

@@ -17,6 +17,4 @@
 
 pub mod balance;
 
-pub use balance::{
-    validate, BalancedEntry, Journal, JournalEntryDraft, JournalEntryLineDraft,
-};
+pub use balance::{BalancedEntry, Journal, JournalEntryDraft, JournalEntryLineDraft, validate};

@@ -47,7 +47,9 @@ async fn find_by_id_returns_none_for_missing(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn update_succeeds_with_current_version(pool: MySqlPool) {
-    let created = companies::create(&pool, sample_new_company()).await.unwrap();
+    let created = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
 
     let changes = CompanyUpdate {
         name: "Test SA (renamed)".into(),
@@ -69,7 +71,9 @@ async fn update_succeeds_with_current_version(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn update_fails_on_stale_version(pool: MySqlPool) {
-    let created = companies::create(&pool, sample_new_company()).await.unwrap();
+    let created = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
 
     // Premier update : version 1 → 2
     let changes = CompanyUpdate {
@@ -80,7 +84,9 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
     };
-    companies::update(&pool, created.id, 1, changes).await.unwrap();
+    companies::update(&pool, created.id, 1, changes)
+        .await
+        .unwrap();
 
     // Deuxième update avec version 1 stale → conflict
     let stale_changes = CompanyUpdate {
@@ -139,7 +145,9 @@ async fn list_with_pagination(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn unique_constraint_on_ide_number(pool: MySqlPool) {
-    companies::create(&pool, sample_new_company()).await.unwrap();
+    companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
 
     // Tentative de créer une seconde company avec le même IDE
     let result = companies::create(&pool, sample_new_company()).await;
@@ -174,7 +182,9 @@ async fn invalid_ide_format_rejected(pool: MySqlPool) {
 async fn list_limit_clamped_to_max(pool: MySqlPool) {
     // Un limit très grand (i64::MAX) doit être clampé à MAX_LIST_LIMIT sans
     // provoquer d'erreur SQL — validation du clamp pre-query.
-    companies::create(&pool, sample_new_company()).await.unwrap();
+    companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
     let list = companies::list(&pool, i64::MAX, 0).await.unwrap();
     assert_eq!(list.len(), 1);
 
@@ -185,7 +195,9 @@ async fn list_limit_clamped_to_max(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn list_negative_values_normalized(pool: MySqlPool) {
-    companies::create(&pool, sample_new_company()).await.unwrap();
+    companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
     // Limite négative → clamped à 0 → liste vide
     let empty = companies::list(&pool, -5, 0).await.unwrap();
     assert!(empty.is_empty());

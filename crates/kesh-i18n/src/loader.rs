@@ -7,10 +7,13 @@ use fluent_bundle::{FluentArgs, FluentResource};
 use fluent_syntax::ast;
 
 /// Type alias pour le FluentBundle concurrent (Send + Sync).
-type ConcurrentBundle = fluent_bundle::bundle::FluentBundle<FluentResource, intl_memoizer::concurrent::IntlLangMemoizer>;
+type ConcurrentBundle = fluent_bundle::bundle::FluentBundle<
+    FluentResource,
+    intl_memoizer::concurrent::IntlLangMemoizer,
+>;
 
-use crate::error::I18nError;
 use crate::Locale;
+use crate::error::I18nError;
 
 /// Bundle i18n contenant les traductions pour toutes les locales.
 pub struct I18nBundle {
@@ -31,9 +34,8 @@ impl I18nBundle {
 
         for locale in Locale::ALL {
             let ftl_path = locales_dir.join(locale.dir_name()).join("messages.ftl");
-            let source = std::fs::read_to_string(&ftl_path).map_err(|_| {
-                I18nError::MissingResource(ftl_path.display().to_string())
-            })?;
+            let source = std::fs::read_to_string(&ftl_path)
+                .map_err(|_| I18nError::MissingResource(ftl_path.display().to_string()))?;
 
             // Extraire les clés via fluent-syntax avant de consommer la source
             let parsed = fluent_syntax::parser::parse(source.as_str()).map_err(|(_, errs)| {
@@ -56,32 +58,32 @@ impl I18nBundle {
                 .collect();
             keys.insert(locale, msg_keys);
 
-            let resource = FluentResource::try_new(source).map_err(|(_, errs)| {
-                I18nError::FluentParse {
+            let resource =
+                FluentResource::try_new(source).map_err(|(_, errs)| I18nError::FluentParse {
                     locale: locale.to_string(),
                     detail: errs
                         .iter()
                         .map(|e| format!("{e:?}"))
                         .collect::<Vec<_>>()
                         .join("; "),
-                }
-            })?;
+                })?;
 
-            let lang_id = locale.dir_name().parse().unwrap_or_else(|_| {
-                "fr".parse().expect("'fr' is a valid language identifier")
-            });
+            let lang_id = locale
+                .dir_name()
+                .parse()
+                .unwrap_or_else(|_| "fr".parse().expect("'fr' is a valid language identifier"));
 
             let mut bundle = ConcurrentBundle::new_concurrent(vec![lang_id]);
-            bundle.add_resource(resource).map_err(|errs| {
-                I18nError::FluentParse {
+            bundle
+                .add_resource(resource)
+                .map_err(|errs| I18nError::FluentParse {
                     locale: locale.to_string(),
                     detail: errs
                         .iter()
                         .map(|e| format!("{e:?}"))
                         .collect::<Vec<_>>()
                         .join("; "),
-                }
-            })?;
+                })?;
 
             bundles.insert(locale, bundle);
         }
@@ -129,8 +131,12 @@ impl I18nBundle {
 
     /// Collecte les messages d'une locale dans un HashMap.
     fn collect_messages(&self, locale: &Locale, out: &mut HashMap<String, String>) {
-        let Some(bundle) = self.bundles.get(locale) else { return };
-        let Some(locale_keys) = self.keys.get(locale) else { return };
+        let Some(bundle) = self.bundles.get(locale) else {
+            return;
+        };
+        let Some(locale_keys) = self.keys.get(locale) else {
+            return;
+        };
 
         for key in locale_keys {
             if let Some(msg) = bundle.get_message(key) {
@@ -147,7 +153,12 @@ impl I18nBundle {
     }
 
     /// Tente de résoudre un message dans un bundle spécifique.
-    fn try_format(&self, locale: &Locale, key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
+    fn try_format(
+        &self,
+        locale: &Locale,
+        key: &str,
+        args: Option<&FluentArgs<'_>>,
+    ) -> Option<String> {
         let bundle = self.bundles.get(locale)?;
         let msg = bundle.get_message(key)?;
         let pattern = msg.value()?;
@@ -198,10 +209,16 @@ mod tests {
         let de_msg = bundle.format(&Locale::DeCh, "error-invalid-credentials", None);
         let fr_msg = bundle.format(&Locale::FrCh, "error-invalid-credentials", None);
         // DE should have its own translation, different from FR
-        assert_ne!(de_msg, fr_msg, "DE and FR should have different translations");
+        assert_ne!(
+            de_msg, fr_msg,
+            "DE and FR should have different translations"
+        );
         // Now test actual fallback: a key that doesn't exist → returns raw key
         let missing = bundle.format(&Locale::DeCh, "only-in-fr-test-key", None);
-        assert_eq!(missing, "only-in-fr-test-key", "missing key should return raw key");
+        assert_eq!(
+            missing, "only-in-fr-test-key",
+            "missing key should return raw key"
+        );
     }
 
     #[test]

@@ -7,40 +7,33 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::{NewRefreshToken, RefreshToken};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 
-const FIND_BY_ID_SQL: &str =
-    "SELECT id, user_id, token, expires_at, created_at, revoked_at, revoked_reason \
+const FIND_BY_ID_SQL: &str = "SELECT id, user_id, token, expires_at, created_at, revoked_at, revoked_reason \
      FROM refresh_tokens WHERE id = ?";
 
-const FIND_ACTIVE_BY_TOKEN_SQL: &str =
-    "SELECT id, user_id, token, expires_at, created_at, revoked_at, revoked_reason \
+const FIND_ACTIVE_BY_TOKEN_SQL: &str = "SELECT id, user_id, token, expires_at, created_at, revoked_at, revoked_reason \
      FROM refresh_tokens \
      WHERE token = ? AND revoked_at IS NULL AND expires_at > NOW(3)";
 
-const FIND_BY_TOKEN_INCLUDE_REVOKED_SQL: &str =
-    "SELECT id, user_id, token, expires_at, created_at, revoked_at, revoked_reason \
+const FIND_BY_TOKEN_INCLUDE_REVOKED_SQL: &str = "SELECT id, user_id, token, expires_at, created_at, revoked_at, revoked_reason \
      FROM refresh_tokens WHERE token = ?";
 
 /// Crée un refresh token et retourne l'entité persistée.
 ///
 /// Pattern transaction INSERT+SELECT pour compatibilité MySQL
 /// (pas de `RETURNING`).
-pub async fn create(
-    pool: &MySqlPool,
-    new: NewRefreshToken,
-) -> Result<RefreshToken, DbError> {
+pub async fn create(pool: &MySqlPool, new: NewRefreshToken) -> Result<RefreshToken, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let result = sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-    )
-    .bind(new.user_id)
-    .bind(&new.token)
-    .bind(new.expires_at)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let result =
+        sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
+            .bind(new.user_id)
+            .bind(&new.token)
+            .bind(new.expires_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
 
     let last_id = result.last_insert_id();
     if last_id == 0 {
@@ -115,11 +108,7 @@ pub async fn find_by_token_include_revoked(
 /// existait, était actif), `false` sinon (token inexistant, déjà révoqué,
 /// ou expiré). Cette sémantique rend le logout **idempotent** : un
 /// double appel ne produit pas d'erreur.
-pub async fn revoke_by_token(
-    pool: &MySqlPool,
-    token: &str,
-    reason: &str,
-) -> Result<bool, DbError> {
+pub async fn revoke_by_token(pool: &MySqlPool, token: &str, reason: &str) -> Result<bool, DbError> {
     let rows_affected = sqlx::query(
         "UPDATE refresh_tokens \
          SET revoked_at = NOW(3), revoked_reason = ? \

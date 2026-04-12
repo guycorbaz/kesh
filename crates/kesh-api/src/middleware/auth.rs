@@ -18,9 +18,9 @@ use axum::response::Response;
 use kesh_db::entities::Role;
 use std::str::FromStr;
 
+use crate::AppState;
 use crate::auth::jwt;
 use crate::errors::AppError;
-use crate::AppState;
 
 /// Identité extraite du JWT valide, injectée dans la requête.
 #[derive(Debug, Clone)]
@@ -97,8 +97,8 @@ mod tests {
     use axum::routing::get;
     use axum::{Extension, Router};
     use chrono::TimeDelta;
-    use sqlx::mysql::MySqlPoolOptions;
     use sqlx::MySqlPool;
+    use sqlx::mysql::MySqlPoolOptions;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -138,8 +138,13 @@ mod tests {
         );
         let rate_limiter = crate::middleware::rate_limit::RateLimiter::new(&config);
         let i18n = kesh_i18n::I18nBundle::load(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()
-        ).expect("load test i18n");
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n");
         AppState {
             pool: stub_pool(),
             config: Arc::new(config),
@@ -238,13 +243,8 @@ mod tests {
 
     #[tokio::test]
     async fn valid_jwt_returns_200_and_injects_current_user() {
-        let token = jwt::encode(
-            1234,
-            Role::Admin,
-            TEST_JWT_SECRET,
-            TimeDelta::minutes(15),
-        )
-        .expect("encode");
+        let token = jwt::encode(1234, Role::Admin, TEST_JWT_SECRET, TimeDelta::minutes(15))
+            .expect("encode");
 
         let app = protected_router(test_state());
         let req = Request::builder()
@@ -281,13 +281,8 @@ mod tests {
     #[tokio::test]
     async fn wrong_signature_returns_401() {
         let other_secret = b"other-secret-32-bytes-minimum-padding-long-enough";
-        let token = jwt::encode(
-            1,
-            Role::Admin,
-            other_secret,
-            TimeDelta::minutes(15),
-        )
-        .expect("encode");
+        let token =
+            jwt::encode(1, Role::Admin, other_secret, TimeDelta::minutes(15)).expect("encode");
 
         let app = protected_router(test_state());
         let req = Request::builder()

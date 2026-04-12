@@ -7,19 +7,16 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::{NewUser, User, UserUpdate};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
-const FIND_BY_ID_SQL: &str =
-    "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
      FROM users WHERE id = ?";
 
-const FIND_BY_USERNAME_SQL: &str =
-    "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
+const FIND_BY_USERNAME_SQL: &str = "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
      FROM users WHERE username = ?";
 
-const LIST_SQL: &str =
-    "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
+const LIST_SQL: &str = "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
      FROM users ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée un nouvel utilisateur et retourne l'entité persistée.
@@ -103,10 +100,7 @@ pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<User>, DbErr
 /// **Responsabilité story 1.5** : côté `kesh-api`, le handler de login DOIT
 /// exécuter un Argon2id `verify` factice (dummy hash) quand `find_by_username`
 /// retourne `None`, afin de normaliser les durées de réponse.
-pub async fn find_by_username(
-    pool: &MySqlPool,
-    username: &str,
-) -> Result<Option<User>, DbError> {
+pub async fn find_by_username(pool: &MySqlPool, username: &str) -> Result<Option<User>, DbError> {
     sqlx::query_as::<_, User>(FIND_BY_USERNAME_SQL)
         .bind(username)
         .fetch_optional(pool)
@@ -128,12 +122,11 @@ pub async fn count_active_by_role(
     pool: &MySqlPool,
     role: crate::entities::Role,
 ) -> Result<i64, DbError> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = ? AND active = TRUE")
-            .bind(role)
-            .fetch_one(pool)
-            .await
-            .map_err(map_db_error)?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = ? AND active = TRUE")
+        .bind(role)
+        .fetch_one(pool)
+        .await
+        .map_err(map_db_error)?;
     Ok(row.0)
 }
 
@@ -160,15 +153,14 @@ pub async fn update_password(
     user_id: i64,
     new_password_hash: &str,
 ) -> Result<(), DbError> {
-    let rows_affected = sqlx::query(
-        "UPDATE users SET password_hash = ?, version = version + 1 WHERE id = ?",
-    )
-    .bind(new_password_hash)
-    .bind(user_id)
-    .execute(pool)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let rows_affected =
+        sqlx::query("UPDATE users SET password_hash = ?, version = version + 1 WHERE id = ?")
+            .bind(new_password_hash)
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected();
 
     if rows_affected == 0 {
         return Err(DbError::NotFound);

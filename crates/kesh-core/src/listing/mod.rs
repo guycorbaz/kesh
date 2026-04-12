@@ -120,7 +120,10 @@ mod tests {
 
     #[test]
     fn sort_direction_serde_pascal_case() {
-        assert_eq!(serde_json::to_string(&SortDirection::Asc).unwrap(), "\"Asc\"");
+        assert_eq!(
+            serde_json::to_string(&SortDirection::Asc).unwrap(),
+            "\"Asc\""
+        );
         assert_eq!(
             serde_json::to_string(&SortDirection::Desc).unwrap(),
             "\"Desc\""
@@ -165,6 +168,9 @@ mod tests {
     fn sort_by_rejects_sql_injection_attempt() {
         let malicious = "\"entry_date; DROP TABLE journal_entries--\"";
         let result: Result<SortBy, _> = serde_json::from_str(malicious);
-        assert!(result.is_err(), "l'enum doit rejeter toute valeur hors whitelist");
+        assert!(
+            result.is_err(),
+            "l'enum doit rejeter toute valeur hors whitelist"
+        );
     }
 }

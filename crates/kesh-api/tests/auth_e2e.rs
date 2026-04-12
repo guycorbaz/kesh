@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::{Extension, State};
-use axum::routing::{get, put};
+use axum::routing::get;
 use axum::{Json, Router};
 use chrono::{TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
@@ -21,7 +21,7 @@ use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
-use kesh_api::{build_router, AppState};
+use kesh_api::{AppState, build_router};
 use kesh_db::entities::{NewUser, Role};
 use kesh_db::repositories::users;
 use serde_json::json;
@@ -92,7 +92,16 @@ fn test_config_rate_limit(max_attempts: u32, block_secs: i64) -> Config {
 async fn spawn_app(pool: MySqlPool) -> TestApp {
     let config = test_config();
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
-    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
+    let i18n = std::sync::Arc::new(
+        kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
     let state = AppState {
         pool,
         config: Arc::new(config),
@@ -599,7 +608,10 @@ async fn logout_revokes_refresh_token(pool: MySqlPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert!(revoked_at.is_some(), "refresh_token should be revoked in DB");
+    assert!(
+        revoked_at.is_some(),
+        "refresh_token should be revoked in DB"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -653,12 +665,7 @@ async fn logout_unknown_token_returns_204(pool: MySqlPool) {
 
 /// Forge un JWT arbitraire pour les tests (permet de tester les cas
 /// d'échec : expiré, mauvaise signature, sub non-parseable).
-fn forge_jwt(
-    sub: &str,
-    role: &str,
-    exp_offset_secs: i64,
-    secret: &[u8],
-) -> String {
+fn forge_jwt(sub: &str, role: &str, exp_offset_secs: i64, secret: &[u8]) -> String {
     let now = Utc::now().timestamp();
     let claims = Claims {
         sub: sub.to_string(),
@@ -812,10 +819,12 @@ async fn bootstrap_creates_admin_and_login_works_end_to_end(pool: MySqlPool) {
         .expect("bootstrap should succeed on empty DB");
 
     // Vérifier en base que l'admin existe
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'admin' AND role = 'Admin' AND active = TRUE")
-        .fetch_one(&pool)
-        .await
-        .expect("count should succeed");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users WHERE username = 'admin' AND role = 'Admin' AND active = TRUE",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count should succeed");
     assert_eq!(count, 1, "admin should be created by bootstrap");
 
     // Lancer le serveur E2E avec l'AppState post-bootstrap et tenter un login HTTP
@@ -828,7 +837,11 @@ async fn bootstrap_creates_admin_and_login_works_end_to_end(pool: MySqlPool) {
         .await
         .expect("login request should succeed");
 
-    assert_eq!(resp.status(), 200, "bootstrapped admin should be able to login");
+    assert_eq!(
+        resp.status(),
+        200,
+        "bootstrapped admin should be able to login"
+    );
     let body: serde_json::Value = resp.json().await.expect("json body");
     assert!(body["accessToken"].is_string());
     assert!(body["refreshToken"].is_string());
@@ -890,7 +903,16 @@ async fn bootstrap_is_idempotent_at_e2e_level(pool: MySqlPool) {
 /// Spawn app avec une config custom (pour tests rate limiting).
 async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
-    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
+    let i18n = std::sync::Arc::new(
+        kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
     let state = AppState {
         pool,
         config: Arc::new(config),
@@ -908,8 +930,7 @@ async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
         ))
         .with_state(state.clone());
 
-    let app = kesh_api::build_router(state, "nonexistent-static".to_string())
-        .merge(protected_test);
+    let app = kesh_api::build_router(state, "nonexistent-static".to_string()).merge(protected_test);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -1000,13 +1021,12 @@ async fn refresh_rotates_token(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 
     // Verify old token is revoked with reason=rotation in DB
-    let row: (Option<String>,) = sqlx::query_as(
-        "SELECT revoked_reason FROM refresh_tokens WHERE token = ?",
-    )
-    .bind(&rt)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let row: (Option<String>,) =
+        sqlx::query_as("SELECT revoked_reason FROM refresh_tokens WHERE token = ?")
+            .bind(&rt)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(row.0.as_deref(), Some("rotation"));
 }
 
@@ -1057,13 +1077,16 @@ async fn refresh_replay_after_rotation_revokes_all(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(active_count, 0, "all tokens should be revoked after theft detection");
+    assert_eq!(
+        active_count, 0,
+        "all tokens should be revoked after theft detection"
+    );
 }
 
 // --- 9.4 refresh_after_logout_does_not_mass_revoke ---
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn refresh_after_logout_does_not_mass_revoke(pool: MySqlPool) {
-    let user_id = create_user(&pool, "user4", "password123!", true).await;
+    let _user_id = create_user(&pool, "user4", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;
     let (_at, rt1) = login_and_get_tokens(&app, "user4", "password123!").await;
     // Create a second session
@@ -1095,7 +1118,11 @@ async fn refresh_after_logout_does_not_mass_revoke(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "second session should survive after logout of first");
+    assert_eq!(
+        resp.status(),
+        200,
+        "second session should survive after logout of first"
+    );
 }
 
 // --- 9.5 refresh_with_expired_token_returns_401 ---
@@ -1104,15 +1131,13 @@ async fn refresh_with_expired_token_returns_401(pool: MySqlPool) {
     let user_id = create_user(&pool, "user5", "password123!", true).await;
     // Insert an already-expired token directly in DB
     let expired_token = uuid::Uuid::new_v4().to_string();
-    sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-    )
-    .bind(user_id)
-    .bind(&expired_token)
-    .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::hours(1))
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
+        .bind(user_id)
+        .bind(&expired_token)
+        .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::hours(1))
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let app = spawn_app(pool).await;
     let resp = app
@@ -1236,7 +1261,10 @@ async fn rate_limit_blocks_after_threshold(pool: MySqlPool) {
     let has_retry_after = resp.headers().get("retry-after").is_some();
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "RATE_LIMITED");
-    assert!(has_retry_after, "429 response should include Retry-After header");
+    assert!(
+        has_retry_after,
+        "429 response should include Retry-After header"
+    );
 }
 
 // --- 9.10 rate_limit_resets_after_block_duration ---
@@ -1275,7 +1303,11 @@ async fn rate_limit_resets_after_block_duration(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "should be unblocked after block_duration");
+    assert_eq!(
+        resp.status(),
+        200,
+        "should be unblocked after block_duration"
+    );
 }
 
 // --- 9.11 rate_limit_resets_on_success ---
@@ -1314,7 +1346,12 @@ async fn rate_limit_resets_on_success(pool: MySqlPool) {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), 401, "attempt {} after reset should be 401", i + 1);
+        assert_eq!(
+            resp.status(),
+            401,
+            "attempt {} after reset should be 401",
+            i + 1
+        );
     }
 
     // 6th → now blocked
@@ -1357,7 +1394,11 @@ async fn change_password_revokes_all_tokens(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 401, "old refresh token should be revoked after password change");
+    assert_eq!(
+        resp.status(),
+        401,
+        "old refresh token should be revoked after password change"
+    );
 }
 
 // --- 9.13 change_password_wrong_current_returns_401 ---
@@ -1407,7 +1448,11 @@ async fn change_password_returns_new_tokens(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "new refresh token from password change should work");
+    assert_eq!(
+        resp.status(),
+        200,
+        "new refresh token from password change should work"
+    );
 }
 
 // --- 9.15 change_password_too_short_returns_400 ---
@@ -1460,11 +1505,12 @@ async fn cleanup_removes_old_tokens(pool: MySqlPool) {
     .await
     .unwrap();
 
-    let before_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?")
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let before_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(before_count, 2);
 
     // Cleanup : remove tokens older than 7 days
@@ -1474,11 +1520,12 @@ async fn cleanup_removes_old_tokens(pool: MySqlPool) {
         .unwrap();
     assert_eq!(removed, 2, "both old tokens should be removed");
 
-    let after_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?")
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let after_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(after_count, 0);
 }
 
@@ -1497,34 +1544,53 @@ async fn login_timing_still_normalized(pool: MySqlPool) {
     let mut d_bad_pwd = Vec::with_capacity(N);
 
     // Warm up
-    let _ = app.client.post(app.url("/api/v1/auth/login"))
+    let _ = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
         .json(&json!({"username": "warmup", "password": "warmup"}))
-        .send().await;
+        .send()
+        .await;
 
     for _ in 0..N {
         let s = Instant::now();
-        let _ = app.client.post(app.url("/api/v1/auth/login"))
+        let _ = app
+            .client
+            .post(app.url("/api/v1/auth/login"))
             .json(&json!({"username": "ghost_timing", "password": "any"}))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         d_absent.push(s.elapsed().as_millis() as u64);
 
         let s = Instant::now();
-        let _ = app.client.post(app.url("/api/v1/auth/login"))
+        let _ = app
+            .client
+            .post(app.url("/api/v1/auth/login"))
             .json(&json!({"username": "timing_inactive", "password": "correct-password"}))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         d_inactive.push(s.elapsed().as_millis() as u64);
 
         let s = Instant::now();
-        let _ = app.client.post(app.url("/api/v1/auth/login"))
+        let _ = app
+            .client
+            .post(app.url("/api/v1/auth/login"))
             .json(&json!({"username": "timing_active", "password": "wrong"}))
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         d_bad_pwd.push(s.elapsed().as_millis() as u64);
     }
 
     fn median(mut v: Vec<u64>) -> u64 {
         v.sort();
         let n = v.len();
-        if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2 }
+        if n % 2 == 1 {
+            v[n / 2]
+        } else {
+            (v[n / 2 - 1] + v[n / 2]) / 2
+        }
     }
 
     let m_a = median(d_absent);
@@ -1534,9 +1600,14 @@ async fn login_timing_still_normalized(pool: MySqlPool) {
 
     let max = m_a.max(m_i).max(m_b);
     let min = m_a.min(m_i).min(m_b);
-    assert!(min >= 10, "all medians should be > 10ms (Argon2 ~50ms), got min={min}ms");
-    assert!((max as f64) / (min as f64) < 5.0,
-        "timing ratio max/min should be < 5x, got max={max}ms min={min}ms");
+    assert!(
+        min >= 10,
+        "all medians should be > 10ms (Argon2 ~50ms), got min={min}ms"
+    );
+    assert!(
+        (max as f64) / (min as f64) < 5.0,
+        "timing ratio max/min should be < 5x, got max={max}ms min={min}ms"
+    );
 }
 
 // --- 9.18 all_refresh_error_codes_are_identical ---

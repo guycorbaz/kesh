@@ -6,10 +6,9 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::onboarding::{OnboardingState, UiMode};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 
-const SELECT_SQL: &str =
-    "SELECT id, step_completed, is_demo, ui_mode, version, created_at, updated_at \
+const SELECT_SQL: &str = "SELECT id, step_completed, is_demo, ui_mode, version, created_at, updated_at \
      FROM onboarding_state LIMIT 1";
 
 /// Retourne l'état d'onboarding (ou None si jamais initialisé).
@@ -26,12 +25,11 @@ pub async fn get_state(pool: &MySqlPool) -> Result<Option<OnboardingState>, DbEr
 pub async fn init_state(pool: &MySqlPool) -> Result<OnboardingState, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let result = sqlx::query(
-        "INSERT INTO onboarding_state (step_completed, is_demo) VALUES (0, FALSE)",
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let result =
+        sqlx::query("INSERT INTO onboarding_state (step_completed, is_demo) VALUES (0, FALSE)")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
 
     let last_id = result.last_insert_id();
     if last_id == 0 {
@@ -40,9 +38,8 @@ pub async fn init_state(pool: &MySqlPool) -> Result<OnboardingState, DbError> {
             "last_insert_id == 0 après INSERT onboarding_state".into(),
         ));
     }
-    let id = i64::try_from(last_id).map_err(|_| {
-        DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX"))
-    })?;
+    let id = i64::try_from(last_id)
+        .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
     let state = sqlx::query_as::<_, OnboardingState>(
         "SELECT id, step_completed, is_demo, ui_mode, version, created_at, updated_at \
@@ -52,9 +49,7 @@ pub async fn init_state(pool: &MySqlPool) -> Result<OnboardingState, DbError> {
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?
-    .ok_or_else(|| {
-        DbError::Invariant(format!("onboarding_state {id} introuvable après INSERT"))
-    })?;
+    .ok_or_else(|| DbError::Invariant(format!("onboarding_state {id} introuvable après INSERT")))?;
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(state)
@@ -74,14 +69,12 @@ pub async fn update_step(
 
     // Filtre sur id ET version pour éviter un UPDATE multi-row si la table
     // est corrompue (normalement single-row, mais défensif).
-    let current_id = sqlx::query_as::<_, (i64,)>(
-        "SELECT id FROM onboarding_state LIMIT 1",
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .ok_or(DbError::NotFound)?
-    .0;
+    let current_id = sqlx::query_as::<_, (i64,)>("SELECT id FROM onboarding_state LIMIT 1")
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?
+        .0;
 
     let rows_affected = sqlx::query(
         "UPDATE onboarding_state \

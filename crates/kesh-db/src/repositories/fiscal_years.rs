@@ -10,15 +10,13 @@ use chrono::NaiveDate;
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::{FiscalYear, NewFiscalYear};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
-const FIND_BY_ID_SQL: &str =
-    "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years WHERE id = ?";
 
-const LIST_BY_COMPANY_SQL: &str =
-    "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+const LIST_BY_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years WHERE company_id = ? ORDER BY start_date LIMIT ?";
 
 /// Crée un nouvel exercice comptable.
@@ -139,14 +137,13 @@ pub async fn list_by_company(
 pub async fn close(pool: &MySqlPool, id: i64) -> Result<FiscalYear, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let rows_affected = sqlx::query(
-        "UPDATE fiscal_years SET status = 'Closed' WHERE id = ? AND status = 'Open'",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let rows_affected =
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ? AND status = 'Open'")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected();
 
     if rows_affected == 0 {
         // Soit l'exercice n'existe pas, soit il est déjà clos
@@ -159,9 +156,9 @@ pub async fn close(pool: &MySqlPool, id: i64) -> Result<FiscalYear, DbError> {
         tx.rollback().await.map_err(map_db_error)?;
         return match current {
             None => Err(DbError::NotFound),
-            Some((status,)) if status == "Closed" => Err(DbError::IllegalStateTransition(
-                format!("fiscal_year {id} déjà clos — réouverture interdite (CO art. 957-964)"),
-            )),
+            Some((status,)) if status == "Closed" => Err(DbError::IllegalStateTransition(format!(
+                "fiscal_year {id} déjà clos — réouverture interdite (CO art. 957-964)"
+            ))),
             // Défensif : sous REPEATABLE READ InnoDB et dans la même transaction,
             // le SELECT post-UPDATE devrait voir cohérent. Cette branche ne peut
             // survenir que via un trigger inattendu ou une isolation plus faible.

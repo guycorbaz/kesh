@@ -11,16 +11,14 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::{Company, CompanyUpdate, NewCompany};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
-const FIND_BY_ID_SQL: &str =
-    "SELECT id, name, address, ide_number, org_type, accounting_language, \
+const FIND_BY_ID_SQL: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
             instance_language, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
-const LIST_SQL: &str =
-    "SELECT id, name, address, ide_number, org_type, accounting_language, \
+const LIST_SQL: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
             instance_language, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 

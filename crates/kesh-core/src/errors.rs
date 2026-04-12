@@ -50,9 +50,7 @@ pub enum CoreError {
     /// Une ligne doit avoir EXACTEMENT un des deux montants (débit ou
     /// crédit) strictement positif. Les cas rejetés : les deux à zéro,
     /// les deux positifs simultanément.
-    #[error(
-        "Écriture invalide : chaque ligne doit avoir soit un débit soit un crédit (exclusif)"
-    )]
+    #[error("Écriture invalide : chaque ligne doit avoir soit un débit soit un crédit (exclusif)")]
     EntryLineDebitCreditExclusive,
 
     /// Le total des débits ne correspond pas au total des crédits.

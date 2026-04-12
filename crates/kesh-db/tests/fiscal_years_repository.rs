@@ -6,7 +6,6 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::{companies, fiscal_years};
 use sqlx::MySqlPool;
 
-
 fn sample_new_company() -> NewCompany {
     NewCompany {
         name: "Test SA".into(),
@@ -19,7 +18,10 @@ fn sample_new_company() -> NewCompany {
 }
 
 async fn create_company(pool: &MySqlPool) -> i64 {
-    companies::create(pool, sample_new_company()).await.unwrap().id
+    companies::create(pool, sample_new_company())
+        .await
+        .unwrap()
+        .id
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

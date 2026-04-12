@@ -52,7 +52,9 @@ async fn create_and_find_primary(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn find_primary_returns_none_when_empty(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    let found = bank_accounts::find_primary(&pool, company_id).await.unwrap();
+    let found = bank_accounts::find_primary(&pool, company_id)
+        .await
+        .unwrap();
     assert!(found.is_none());
 }
 

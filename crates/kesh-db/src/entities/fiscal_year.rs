@@ -7,9 +7,7 @@
 
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo, Decode, Encode, MySql, Type,
-};
+use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
 
 /// Statut d'un exercice comptable.
 ///

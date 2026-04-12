@@ -58,7 +58,10 @@ async fn find_by_username_is_case_insensitive(pool: MySqlPool) {
     users::create(&pool, sample_new_user()).await.unwrap();
 
     let upper = users::find_by_username(&pool, "ALICE").await.unwrap();
-    assert!(upper.is_some(), "find_by_username doit être case-insensitive");
+    assert!(
+        upper.is_some(),
+        "find_by_username doit être case-insensitive"
+    );
     assert_eq!(upper.unwrap().username, "alice");
 
     let mixed = users::find_by_username(&pool, "Alice").await.unwrap();

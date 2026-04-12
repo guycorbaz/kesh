@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod auth;
 pub mod companies;
+pub mod contacts;
 pub mod health;
 pub mod i18n;
 pub mod journal_entries;

@@ -11,7 +11,7 @@ use sqlx::mysql::MySqlPool;
 
 use crate::entities::account::{Account, AccountUpdate, NewAccount};
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "id, company_id, number, name, account_type, parent_id, active, version, created_at, updated_at";
@@ -38,11 +38,7 @@ fn account_snapshot_json(account: &Account) -> serde_json::Value {
 }
 
 /// Crée un compte et retourne l'entité persistée, avec audit log atomique (Story 3.5).
-pub async fn create(
-    pool: &MySqlPool,
-    user_id: i64,
-    new: NewAccount,
-) -> Result<Account, DbError> {
+pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = sqlx::query(
@@ -111,12 +107,11 @@ pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<Account>, Db
 ///
 /// Retourne le nombre de comptes d'une company.
 pub async fn count_by_company(pool: &MySqlPool, company_id: i64) -> Result<i64, DbError> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM accounts WHERE company_id = ?")
-            .bind(company_id)
-            .fetch_one(pool)
-            .await
-            .map_err(map_db_error)?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM accounts WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .map_err(map_db_error)?;
     Ok(row.0)
 }
 
@@ -247,13 +242,12 @@ pub async fn archive(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     // Vérifier que le compte n'a pas d'enfants actifs
-    let children: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM accounts WHERE parent_id = ? AND active = TRUE",
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let children: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM accounts WHERE parent_id = ? AND active = TRUE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
     if children.0 > 0 {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::IllegalStateTransition(
@@ -368,9 +362,8 @@ pub async fn bulk_create(
         .map(|_| "?")
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "SELECT {COLUMNS} FROM accounts WHERE id IN ({placeholders}) ORDER BY number"
-    );
+    let sql =
+        format!("SELECT {COLUMNS} FROM accounts WHERE id IN ({placeholders}) ORDER BY number");
     let mut query = sqlx::query_as::<_, Account>(&sql);
     for id in &created_ids {
         query = query.bind(id);
@@ -411,8 +404,7 @@ pub async fn bulk_create_from_chart(
     });
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let mut number_to_id: std::collections::HashMap<&str, i64> =
-        std::collections::HashMap::new();
+    let mut number_to_id: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
     let mut created_ids: Vec<i64> = Vec::with_capacity(entries.len());
 
     for entry in &sorted {
@@ -455,9 +447,8 @@ pub async fn bulk_create_from_chart(
         .map(|_| "?")
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "SELECT {COLUMNS} FROM accounts WHERE id IN ({placeholders}) ORDER BY number"
-    );
+    let sql =
+        format!("SELECT {COLUMNS} FROM accounts WHERE id IN ({placeholders}) ORDER BY number");
     let mut query = sqlx::query_as::<_, Account>(&sql);
     for id in &created_ids {
         query = query.bind(id);
@@ -791,7 +782,10 @@ mod tests {
         assert!(details.get("before").is_none());
         assert!(details.get("after").is_none());
         assert_eq!(details.get("number").and_then(|v| v.as_str()), Some("T600"));
-        assert_eq!(details.get("name").and_then(|v| v.as_str()), Some("Audit Create"));
+        assert_eq!(
+            details.get("name").and_then(|v| v.as_str()),
+            Some("Audit Create")
+        );
 
         cleanup_test_accounts(&pool, company_id).await;
     }
@@ -853,8 +847,14 @@ mod tests {
             .get("after")
             .expect("update audit must wrap snapshot in {{before, after}}");
 
-        assert_eq!(before.get("name").and_then(|v| v.as_str()), Some("Before Name"));
-        assert_eq!(after.get("name").and_then(|v| v.as_str()), Some("After Name"));
+        assert_eq!(
+            before.get("name").and_then(|v| v.as_str()),
+            Some("Before Name")
+        );
+        assert_eq!(
+            after.get("name").and_then(|v| v.as_str()),
+            Some("After Name")
+        );
         assert_eq!(
             before.get("accountType").and_then(|v| v.as_str()),
             Some("Asset")

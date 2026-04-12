@@ -1,15 +1,15 @@
 //! Routes profil utilisateur — préférences.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Deserialize;
 
 use kesh_db::entities::onboarding::UiMode;
 use kesh_db::repositories::onboarding;
 
-use crate::errors::AppError;
 use crate::AppState;
+use crate::errors::AppError;
 
 #[derive(Debug, Deserialize)]
 pub struct ModeRequest {

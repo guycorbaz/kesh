@@ -5,16 +5,16 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::routing::get;
 use axum::Json;
 use axum::Router;
+use axum::routing::get;
 use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
-use kesh_api::{build_router, AppState};
-use serde_json::{json, Value};
+use kesh_api::{AppState, build_router};
+use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
@@ -61,7 +61,16 @@ async fn test_comptable_handler(
 async fn spawn_app(pool: MySqlPool) -> TestApp {
     let config = test_config();
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
-    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
+    let i18n = std::sync::Arc::new(
+        kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
     let state = AppState {
         pool,
         config: Arc::new(config),

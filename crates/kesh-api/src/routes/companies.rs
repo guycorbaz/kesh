@@ -1,14 +1,14 @@
 //! Routes company — lecture de la configuration de l'organisation.
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Serialize;
 
 use kesh_db::entities::{BankAccount, Company};
 use kesh_db::repositories::{bank_accounts, companies};
 
-use crate::errors::AppError;
 use crate::AppState;
+use crate::errors::AppError;
 
 /// Réponse JSON pour la company courante + comptes bancaires.
 #[derive(Debug, Serialize)]

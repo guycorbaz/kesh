@@ -2,9 +2,7 @@
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::{
-    encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo, Decode, Encode, MySql, Type,
-};
+use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
 
 /// Mode d'utilisation choisi à l'étape 2 de l'onboarding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

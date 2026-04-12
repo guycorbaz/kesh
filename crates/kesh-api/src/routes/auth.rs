@@ -2,19 +2,19 @@
 
 use std::net::SocketAddr;
 
+use axum::Json;
 use axum::extract::{ConnectInfo, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use chrono::Utc;
 use kesh_db::entities::NewRefreshToken;
 use kesh_db::repositories::{refresh_tokens, users};
 use serde::{Deserialize, Serialize};
 
+use crate::AppState;
 use crate::auth::{jwt, password};
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
-use crate::AppState;
 
 // === DTOs ===
 
@@ -188,7 +188,8 @@ pub async fn logout(
     State(state): State<AppState>,
     Json(req): Json<LogoutRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let revoked = refresh_tokens::revoke_by_token(&state.pool, &req.refresh_token, "logout").await?;
+    let revoked =
+        refresh_tokens::revoke_by_token(&state.pool, &req.refresh_token, "logout").await?;
     tracing::info!(revoked = revoked, "logout");
     Ok(StatusCode::NO_CONTENT)
 }
@@ -228,8 +229,8 @@ pub async fn refresh(
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<RefreshResponse>, AppError> {
     // Step 1 : chercher le token (actif OU révoqué)
-    let token_opt = refresh_tokens::find_by_token_include_revoked(&state.pool, &req.refresh_token)
-        .await?;
+    let token_opt =
+        refresh_tokens::find_by_token_include_revoked(&state.pool, &req.refresh_token).await?;
 
     let token = match token_opt {
         Some(t) => t,
@@ -243,18 +244,17 @@ pub async fn refresh(
     if token.revoked_at.is_some() {
         if token.revoked_reason.as_deref() == Some("rotation") {
             // Détection de vol : mass revoke tous les tokens de l'utilisateur
-            let revoked_count = refresh_tokens::revoke_all_for_user(
-                &state.pool,
-                token.user_id,
-                "theft_detected",
-            )
-            .await?;
+            let revoked_count =
+                refresh_tokens::revoke_all_for_user(&state.pool, token.user_id, "theft_detected")
+                    .await?;
             tracing::warn!(
                 user_id = token.user_id,
                 revoked_count = revoked_count,
                 "token replay detected, revoking all sessions"
             );
-            return Err(AppError::InvalidRefreshToken("token replay detected".into()));
+            return Err(AppError::InvalidRefreshToken(
+                "token replay detected".into(),
+            ));
         }
         // Révoqué par logout, password_change, etc. → 401 simple
         return Err(AppError::InvalidRefreshToken("token revoked".into()));

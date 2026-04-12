@@ -1,8 +1,8 @@
 //! Formatage suisse : montants (apostrophe U+2019) et dates (dd.mm.yyyy).
 
 use chrono::{NaiveDate, NaiveDateTime};
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 
 /// Apostrophe typographique (U+2019) — séparateur de milliers suisse.
 const THOUSANDS_SEP: char = '\u{2019}';
@@ -91,7 +91,10 @@ mod tests {
 
     #[test]
     fn money_large() {
-        assert_eq!(format_money(&dec!(1234567.89)), "1\u{2019}234\u{2019}567.89");
+        assert_eq!(
+            format_money(&dec!(1234567.89)),
+            "1\u{2019}234\u{2019}567.89"
+        );
     }
 
     #[test]

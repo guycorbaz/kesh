@@ -12,16 +12,16 @@
 //! - POST skip-bank : step == 6
 //! - POST reset : aucun prérequis
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::onboarding::UiMode;
 use kesh_db::entities::{Language, OrgType};
 use kesh_db::repositories::onboarding;
 
-use crate::errors::AppError;
 use crate::AppState;
+use crate::errors::AppError;
 
 /// Réponse JSON pour l'état d'onboarding (camelCase).
 #[derive(Debug, Serialize)]
@@ -130,9 +130,7 @@ pub async fn seed_demo(
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    let ui_mode = current
-        .ui_mode
-        .unwrap_or(UiMode::Guided);
+    let ui_mode = current.ui_mode.unwrap_or(UiMode::Guided);
 
     kesh_seed::seed_demo(&state.pool, &state.config.locale, ui_mode, current.version)
         .await
@@ -144,9 +142,7 @@ pub async fn seed_demo(
 }
 
 /// POST /api/v1/onboarding/reset — aucun prérequis de step
-pub async fn reset(
-    State(state): State<AppState>,
-) -> Result<Json<OnboardingResponse>, AppError> {
+pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     kesh_seed::reset_demo(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("Reset demo failed: {e}")))?;
@@ -167,14 +163,8 @@ pub async fn start_production(
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    let updated = onboarding::update_step(
-        &state.pool,
-        3,
-        false,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
+    let updated =
+        onboarding::update_step(&state.pool, 3, false, current.ui_mode, current.version).await?;
 
     Ok(Json(updated.into()))
 }
@@ -190,10 +180,9 @@ pub async fn set_org_type(
     State(state): State<AppState>,
     Json(body): Json<OrgTypeRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
-    let org_type: OrgType = body
-        .org_type
-        .parse()
-        .map_err(|_| AppError::Validation(format!("Type d'organisation invalide : {}", body.org_type)))?;
+    let org_type: OrgType = body.org_type.parse().map_err(|_| {
+        AppError::Validation(format!("Type d'organisation invalide : {}", body.org_type))
+    })?;
 
     let current = get_or_init_state(&state).await?;
     if current.step_completed != 3 || current.is_demo {
@@ -241,7 +230,8 @@ pub async fn set_accounting_language(
     // À ce stade (step 4→5), org_type ET accounting_language sont tous deux connus.
     // Guard idempotence : ne pas recharger si des comptes existent déjà (retry/navigation arrière).
     let company = get_company(&state).await?;
-    let existing = kesh_db::repositories::accounts::count_by_company(&state.pool, company.id).await?;
+    let existing =
+        kesh_db::repositories::accounts::count_by_company(&state.pool, company.id).await?;
     if existing == 0 {
         let chart = kesh_core::chart_of_accounts::load_chart(company.org_type.as_str())
             .map_err(|e| AppError::Internal(format!("Chargement plan comptable : {e}")))?;
@@ -287,7 +277,9 @@ pub async fn set_coordinates(
         return Err(AppError::Validation("Le nom ne peut pas être vide".into()));
     }
     if address.is_empty() {
-        return Err(AppError::Validation("L'adresse ne peut pas être vide".into()));
+        return Err(AppError::Validation(
+            "L'adresse ne peut pas être vide".into(),
+        ));
     }
 
     // Validate IDE via kesh-core if provided
@@ -334,7 +326,9 @@ pub async fn set_bank_account(
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let bank_name = body.bank_name.trim().to_string();
     if bank_name.is_empty() {
-        return Err(AppError::Validation("Le nom de la banque ne peut pas être vide".into()));
+        return Err(AppError::Validation(
+            "Le nom de la banque ne peut pas être vide".into(),
+        ));
     }
 
     // Validate IBAN via kesh-core
@@ -424,10 +418,7 @@ async fn get_or_init_state(
 ///
 /// Utilise une transaction avec SELECT FOR UPDATE pour éviter la race condition
 /// TOCTOU (deux requêtes concurrentes créant chacune une company).
-async fn ensure_company_with_language(
-    state: &AppState,
-    lang: Language,
-) -> Result<(), AppError> {
+async fn ensure_company_with_language(state: &AppState, lang: Language) -> Result<(), AppError> {
     use kesh_db::errors::map_db_error;
 
     let mut tx = state.pool.begin().await.map_err(map_db_error)?;
@@ -471,7 +462,9 @@ async fn ensure_company_with_language(
             .rows_affected();
             if rows == 0 {
                 tx.rollback().await.map_err(map_db_error)?;
-                return Err(AppError::Database(kesh_db::errors::DbError::OptimisticLockConflict));
+                return Err(AppError::Database(
+                    kesh_db::errors::DbError::OptimisticLockConflict,
+                ));
             }
         }
     }
@@ -480,8 +473,7 @@ async fn ensure_company_with_language(
     Ok(())
 }
 
-const COMPANY_SELECT_FOR_UPDATE: &str =
-    "SELECT id, name, address, ide_number, org_type, accounting_language, \
+const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
             instance_language, version, created_at, updated_at \
      FROM companies LIMIT 1 FOR UPDATE";
 
@@ -514,7 +506,9 @@ async fn update_company_org_type(state: &AppState, org_type: OrgType) -> Result<
     .rows_affected();
     if rows == 0 {
         tx.rollback().await.map_err(map_db_error)?;
-        return Err(AppError::Database(kesh_db::errors::DbError::OptimisticLockConflict));
+        return Err(AppError::Database(
+            kesh_db::errors::DbError::OptimisticLockConflict,
+        ));
     }
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
@@ -543,7 +537,9 @@ async fn update_company_accounting_language(
     .rows_affected();
     if rows == 0 {
         tx.rollback().await.map_err(map_db_error)?;
-        return Err(AppError::Database(kesh_db::errors::DbError::OptimisticLockConflict));
+        return Err(AppError::Database(
+            kesh_db::errors::DbError::OptimisticLockConflict,
+        ));
     }
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
@@ -577,7 +573,9 @@ async fn update_company_coordinates(
     .rows_affected();
     if rows == 0 {
         tx.rollback().await.map_err(map_db_error)?;
-        return Err(AppError::Database(kesh_db::errors::DbError::OptimisticLockConflict));
+        return Err(AppError::Database(
+            kesh_db::errors::DbError::OptimisticLockConflict,
+        ));
     }
     tx.commit().await.map_err(map_db_error)?;
     Ok(())

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
-use kesh_api::{build_router, AppState};
+use kesh_api::{AppState, build_router};
 use kesh_db::repositories::onboarding;
 use serde_json::json;
 use sqlx::MySqlPool;
@@ -67,9 +67,12 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     TestApp {

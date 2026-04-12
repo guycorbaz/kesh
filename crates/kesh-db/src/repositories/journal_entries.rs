@@ -34,11 +34,10 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
 };
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
-const ENTRY_COLUMNS: &str =
-    "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
+const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
      version, created_at, updated_at";
 
 const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit";
@@ -105,10 +104,7 @@ pub async fn create(
     for id in &account_ids {
         q = q.bind(id);
     }
-    let active_ids: Vec<i64> = q
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
+    let active_ids: Vec<i64> = q.fetch_all(&mut *tx).await.map_err(map_db_error)?;
 
     // Dédupliquer les IDs demandés : si une même ligne référence le même
     // compte deux fois, on ne doit pas exiger que l'API retourne 2 rows.
@@ -308,8 +304,7 @@ const MAX_LIMIT: i64 = 500;
 fn decimal_max_safe() -> Decimal {
     // `from_str` est infaillible pour un literal valide — le `expect`
     // ne panique jamais et sert de documentation d'invariant.
-    Decimal::from_str("999999999999999.9999")
-        .expect("literal decimal constant must parse")
+    Decimal::from_str("999999999999999.9999").expect("literal decimal constant must parse")
 }
 
 /// Échappe les caractères spéciaux `%` et `_` pour l'opérateur `LIKE`.
@@ -318,7 +313,10 @@ fn decimal_max_safe() -> Decimal {
 /// caractère d'échappement. Attention au quadruple backslash en source
 /// Rust (voir Dev Notes §Pièges story 3.4).
 fn escape_like(input: &str) -> String {
-    input.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 /// Paramètres de recherche, tri et pagination pour `list_by_company_paginated`.
@@ -442,9 +440,8 @@ pub async fn list_by_company_paginated(
         .map_err(map_db_error)?;
 
     // --- Query 2 : items paginés ---
-    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
-        "SELECT {ENTRY_COLUMNS} FROM journal_entries"
-    ));
+    let mut items_qb: QueryBuilder<sqlx::MySql> =
+        QueryBuilder::new(format!("SELECT {ENTRY_COLUMNS} FROM journal_entries"));
     push_where_clauses(&mut items_qb, company_id, &query);
 
     // ORDER BY secondaire stable sur entry_number DESC pour éviter
@@ -841,10 +838,7 @@ pub async fn delete_by_id(
 /// Supprime toutes les écritures d'une company (utilisé par `reset_demo`).
 ///
 /// Les lignes suivent par `ON DELETE CASCADE`.
-pub async fn delete_all_by_company(
-    pool: &MySqlPool,
-    company_id: i64,
-) -> Result<u64, DbError> {
+pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<u64, DbError> {
     let rows = sqlx::query("DELETE FROM journal_entries WHERE company_id = ?")
         .bind(company_id)
         .execute(pool)
@@ -894,19 +888,20 @@ mod tests {
 
         // Récupérer l'admin user pour l'audit log (dupliqué depuis
         // audit_log::tests story 3.3 — voir spec 3.5 Dev Notes L1).
-        let admin_user_id: i64 = sqlx::query_scalar(
-            "SELECT id FROM users WHERE role = 'Admin' LIMIT 1",
-        )
-        .fetch_one(pool)
-        .await
-        .expect("need at least one admin user (run seed-demo or bootstrap)");
+        let admin_user_id: i64 =
+            sqlx::query_scalar("SELECT id FROM users WHERE role = 'Admin' LIMIT 1")
+                .fetch_one(pool)
+                .await
+                .expect("need at least one admin user (run seed-demo or bootstrap)");
 
         (company_id, fy.id, admin_user_id)
     }
 
     /// Récupère 2 comptes actifs pour les tests (premier actif puis un autre).
     async fn two_accounts(pool: &MySqlPool, company_id: i64) -> (i64, i64) {
-        let accs = accounts::list_by_company(pool, company_id, false).await.unwrap();
+        let accs = accounts::list_by_company(pool, company_id, false)
+            .await
+            .unwrap();
         assert!(accs.len() >= 2, "need ≥ 2 active accounts (run seed-demo)");
         (accs[0].id, accs[1].id)
     }
@@ -953,14 +948,9 @@ mod tests {
         );
         let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
 
-        let audit_entries = audit_log::find_by_entity(
-            &pool,
-            "journal_entry",
-            created.entry.id,
-            10,
-        )
-        .await
-        .unwrap();
+        let audit_entries = audit_log::find_by_entity(&pool, "journal_entry", created.entry.id, 10)
+            .await
+            .unwrap();
 
         let created_audit = audit_entries
             .iter()
@@ -1221,13 +1211,9 @@ mod tests {
             .unwrap();
         }
 
-        let result = list_by_company_paginated(
-            &pool,
-            company_id,
-            JournalEntryListQuery::default(),
-        )
-        .await
-        .unwrap();
+        let result = list_by_company_paginated(&pool, company_id, JournalEntryListQuery::default())
+            .await
+            .unwrap();
 
         assert!(result.items.len() >= 3);
         assert!(result.total >= 3);
@@ -1245,17 +1231,41 @@ mod tests {
         let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 2 écritures avec descriptions distinctes.
-        let mut entry1 = mk_entry(company_id, today, vec![
-            NewJournalEntryLine { account_id: a1, debit: dec!(100), credit: dec!(0) },
-            NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(100) },
-        ]);
+        let mut entry1 = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(100),
+                    credit: dec!(0),
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(100),
+                },
+            ],
+        );
         entry1.description = "Facture fournisseur ABC".to_string();
         create(&pool, fy_id, admin_user_id, entry1).await.unwrap();
 
-        let mut entry2 = mk_entry(company_id, today, vec![
-            NewJournalEntryLine { account_id: a1, debit: dec!(50), credit: dec!(0) },
-            NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(50) },
-        ]);
+        let mut entry2 = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(50),
+                    credit: dec!(0),
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(50),
+                },
+            ],
+        );
         entry2.description = "Virement bancaire XYZ".to_string();
         create(&pool, fy_id, admin_user_id, entry2).await.unwrap();
 
@@ -1264,7 +1274,9 @@ mod tests {
             description: Some("facture".to_string()),
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         assert_eq!(result.total, 1);
         assert!(result.items[0].entry.description.contains("Facture"));
 
@@ -1273,7 +1285,9 @@ mod tests {
             description: Some("virement".to_string()),
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         assert_eq!(result.total, 1);
         assert!(result.items[0].entry.description.contains("Virement"));
     }
@@ -1286,17 +1300,41 @@ mod tests {
         let today = chrono::Utc::now().naive_utc().date();
 
         // Créer 2 écritures : une avec "50%" dans la description, une avec "50X".
-        let mut e1 = mk_entry(company_id, today, vec![
-            NewJournalEntryLine { account_id: a1, debit: dec!(10), credit: dec!(0) },
-            NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(10) },
-        ]);
+        let mut e1 = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(10),
+                    credit: dec!(0),
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(10),
+                },
+            ],
+        );
         e1.description = "Remise 50% client".to_string();
         create(&pool, fy_id, admin_user_id, e1).await.unwrap();
 
-        let mut e2 = mk_entry(company_id, today, vec![
-            NewJournalEntryLine { account_id: a1, debit: dec!(20), credit: dec!(0) },
-            NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(20) },
-        ]);
+        let mut e2 = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(20),
+                    credit: dec!(0),
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(20),
+                },
+            ],
+        );
         e2.description = "Compte 50X fournisseur".to_string();
         create(&pool, fy_id, admin_user_id, e2).await.unwrap();
 
@@ -1306,7 +1344,9 @@ mod tests {
             description: Some("50%".to_string()),
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         assert_eq!(
             result.total, 1,
             "Le % user input doit être échappé et ne pas matcher comme wildcard"
@@ -1323,10 +1363,29 @@ mod tests {
 
         // 3 écritures à 100, 500, 1000.
         for amount in [dec!(100), dec!(500), dec!(1000)] {
-            create(&pool, fy_id, admin_user_id, mk_entry(company_id, today, vec![
-                NewJournalEntryLine { account_id: a1, debit: amount, credit: dec!(0) },
-                NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: amount },
-            ])).await.unwrap();
+            create(
+                &pool,
+                fy_id,
+                admin_user_id,
+                mk_entry(
+                    company_id,
+                    today,
+                    vec![
+                        NewJournalEntryLine {
+                            account_id: a1,
+                            debit: amount,
+                            credit: dec!(0),
+                        },
+                        NewJournalEntryLine {
+                            account_id: a2,
+                            debit: dec!(0),
+                            credit: amount,
+                        },
+                    ],
+                ),
+            )
+            .await
+            .unwrap();
         }
 
         // Filtre [200, 800] — doit retourner uniquement 500.
@@ -1335,7 +1394,9 @@ mod tests {
             amount_max: Some(dec!(800)),
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         assert_eq!(result.total, 1);
     }
 
@@ -1348,17 +1409,41 @@ mod tests {
 
         // Créer 2 écritures Banque + 1 Ventes.
         for _ in 0..2 {
-            let mut e = mk_entry(company_id, today, vec![
-                NewJournalEntryLine { account_id: a1, debit: dec!(10), credit: dec!(0) },
-                NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(10) },
-            ]);
+            let mut e = mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(10),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(10),
+                    },
+                ],
+            );
             e.journal = CoreJournal::Banque.into();
             create(&pool, fy_id, admin_user_id, e).await.unwrap();
         }
-        let mut ventes = mk_entry(company_id, today, vec![
-            NewJournalEntryLine { account_id: a1, debit: dec!(20), credit: dec!(0) },
-            NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(20) },
-        ]);
+        let mut ventes = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(20),
+                    credit: dec!(0),
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(20),
+                },
+            ],
+        );
         ventes.journal = CoreJournal::Ventes.into();
         create(&pool, fy_id, admin_user_id, ventes).await.unwrap();
 
@@ -1367,7 +1452,9 @@ mod tests {
             journal: Some(CoreJournal::Banque.into()),
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         assert_eq!(result.total, 2);
     }
 
@@ -1380,18 +1467,43 @@ mod tests {
 
         // Créer 5 écritures.
         for _ in 0..5 {
-            create(&pool, fy_id, admin_user_id, mk_entry(company_id, today, vec![
-                NewJournalEntryLine { account_id: a1, debit: dec!(10), credit: dec!(0) },
-                NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(10) },
-            ])).await.unwrap();
+            create(
+                &pool,
+                fy_id,
+                admin_user_id,
+                mk_entry(
+                    company_id,
+                    today,
+                    vec![
+                        NewJournalEntryLine {
+                            account_id: a1,
+                            debit: dec!(10),
+                            credit: dec!(0),
+                        },
+                        NewJournalEntryLine {
+                            account_id: a2,
+                            debit: dec!(0),
+                            credit: dec!(10),
+                        },
+                    ],
+                ),
+            )
+            .await
+            .unwrap();
         }
 
         // Page 1 : limit=2, offset=0.
         let page1 = list_by_company_paginated(
             &pool,
             company_id,
-            JournalEntryListQuery { limit: 2, offset: 0, ..Default::default() },
-        ).await.unwrap();
+            JournalEntryListQuery {
+                limit: 2,
+                offset: 0,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(page1.items.len(), 2);
         assert_eq!(page1.total, 5);
         assert_eq!(page1.limit, 2);
@@ -1401,8 +1513,14 @@ mod tests {
         let page2 = list_by_company_paginated(
             &pool,
             company_id,
-            JournalEntryListQuery { limit: 2, offset: 2, ..Default::default() },
-        ).await.unwrap();
+            JournalEntryListQuery {
+                limit: 2,
+                offset: 2,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(page2.items.len(), 2);
         assert_eq!(page2.offset, 2);
 
@@ -1422,10 +1540,29 @@ mod tests {
         let today = chrono::Utc::now().naive_utc().date();
 
         for _ in 0..3 {
-            create(&pool, fy_id, admin_user_id, mk_entry(company_id, today, vec![
-                NewJournalEntryLine { account_id: a1, debit: dec!(10), credit: dec!(0) },
-                NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(10) },
-            ])).await.unwrap();
+            create(
+                &pool,
+                fy_id,
+                admin_user_id,
+                mk_entry(
+                    company_id,
+                    today,
+                    vec![
+                        NewJournalEntryLine {
+                            account_id: a1,
+                            debit: dec!(10),
+                            credit: dec!(0),
+                        },
+                        NewJournalEntryLine {
+                            account_id: a2,
+                            debit: dec!(0),
+                            credit: dec!(10),
+                        },
+                    ],
+                ),
+            )
+            .await
+            .unwrap();
         }
 
         let query = JournalEntryListQuery {
@@ -1433,7 +1570,9 @@ mod tests {
             sort_dir: SortDirection::Asc,
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         assert!(result.items.len() >= 3);
         // Tri ascendant : 1, 2, 3...
         for i in 0..result.items.len() - 1 {
@@ -1453,10 +1592,22 @@ mod tests {
 
         // Créer 3 écritures : 2 matchent le filtre, 1 non.
         for desc in ["Match 1", "Match 2", "Autre"] {
-            let mut e = mk_entry(company_id, today, vec![
-                NewJournalEntryLine { account_id: a1, debit: dec!(10), credit: dec!(0) },
-                NewJournalEntryLine { account_id: a2, debit: dec!(0), credit: dec!(10) },
-            ]);
+            let mut e = mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(10),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(10),
+                    },
+                ],
+            );
             e.description = desc.to_string();
             create(&pool, fy_id, admin_user_id, e).await.unwrap();
         }
@@ -1466,7 +1617,9 @@ mod tests {
             limit: 1, // limit petit pour forcer la pagination
             ..Default::default()
         };
-        let result = list_by_company_paginated(&pool, company_id, query).await.unwrap();
+        let result = list_by_company_paginated(&pool, company_id, query)
+            .await
+            .unwrap();
         // Total doit refléter TOUTES les matches, pas seulement la page.
         assert_eq!(result.total, 2);
         assert_eq!(result.items.len(), 1);

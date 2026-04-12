@@ -80,9 +80,7 @@ impl CheNumber {
 
         // Vérifier le préfixe
         if !s.starts_with("CHE") {
-            return Err(CoreError::InvalidCheNumber(
-                "doit commencer par CHE".into(),
-            ));
+            return Err(CoreError::InvalidCheNumber("doit commencer par CHE".into()));
         }
 
         // Vérifier qu'il y a exactement 9 chiffres après CHE

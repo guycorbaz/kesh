@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
-use kesh_api::{build_router, AppState};
+use kesh_api::{AppState, build_router};
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -98,7 +98,10 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
         .await
         .expect("login request");
     let body: serde_json::Value = resp.json().await.expect("login json");
-    body["accessToken"].as_str().expect("access token").to_string()
+    body["accessToken"]
+        .as_str()
+        .expect("access token")
+        .to_string()
 }
 
 // --- Tests ---

@@ -9,6 +9,7 @@ pub mod account;
 pub mod audit_log;
 pub mod bank_account;
 pub mod company;
+pub mod contact;
 pub mod fiscal_year;
 pub mod journal_entry;
 pub mod onboarding;
@@ -19,6 +20,7 @@ pub use account::{Account, AccountType, AccountUpdate, NewAccount};
 pub use audit_log::{AuditLogEntry, NewAuditLogEntry};
 pub use bank_account::{BankAccount, NewBankAccount};
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
+pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
 pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,

@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
-use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use sqlx::Executor;
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 
 /// Crée un pool SQLx connecté à MariaDB.
 ///

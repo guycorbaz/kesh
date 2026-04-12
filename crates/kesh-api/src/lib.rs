@@ -12,8 +12,8 @@ pub mod routes;
 
 use std::sync::Arc;
 
-use axum::routing::{get, post, put};
 use axum::Router;
+use axum::routing::{get, post, put};
 use sqlx::MySqlPool;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -49,8 +49,8 @@ pub struct AppState {
 /// Le `static_dir` contient le SPA SvelteKit buildé (`frontend/build`),
 /// servi en fallback par `ServeDir`/`ServeFile`.
 pub fn build_router(state: AppState, static_dir: String) -> Router {
-    let fallback = ServeDir::new(&static_dir)
-        .fallback(ServeFile::new(format!("{}/index.html", static_dir)));
+    let fallback =
+        ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{}/index.html", static_dir)));
 
     // Story 1.8 : sous-routeurs par niveau de rôle (RBAC)
     //
@@ -82,10 +82,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // Routes comptable+ (Admin + Comptable) : modification du plan comptable,
     // saisie d'écritures en partie double
     let comptable_routes = Router::new()
-        .route(
-            "/api/v1/accounts",
-            post(routes::accounts::create_account),
-        )
+        .route("/api/v1/accounts", post(routes::accounts::create_account))
         .route(
             "/api/v1/accounts/{id}",
             put(routes::accounts::update_account),
@@ -103,30 +100,37 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             put(routes::journal_entries::update_journal_entry)
                 .delete(routes::journal_entries::delete_journal_entry),
         )
+        // Story 4.1 : mutations carnet d'adresses
+        .route("/api/v1/contacts", post(routes::contacts::create_contact))
+        .route(
+            "/api/v1/contacts/{id}",
+            put(routes::contacts::update_contact),
+        )
+        .route(
+            "/api/v1/contacts/{id}/archive",
+            put(routes::contacts::archive_contact),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
 
     // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies, consultation plan comptable, lecture écritures
     let authenticated_routes = Router::new()
-        .route(
-            "/api/v1/accounts",
-            get(routes::accounts::list_accounts),
-        )
+        .route("/api/v1/accounts", get(routes::accounts::list_accounts))
         .route(
             "/api/v1/journal-entries",
             get(routes::journal_entries::list_journal_entries),
         )
+        // Story 4.1 : lecture carnet d'adresses (tout rôle authentifié)
+        .route("/api/v1/contacts", get(routes::contacts::list_contacts))
+        .route("/api/v1/contacts/{id}", get(routes::contacts::get_contact))
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(
             "/api/v1/companies/current",
             get(routes::companies::get_current),
         )
-        .route(
-            "/api/v1/profile/mode",
-            put(routes::profile::set_mode),
-        )
+        .route("/api/v1/profile/mode", put(routes::profile::set_mode))
         .route(
             "/api/v1/onboarding/state",
             get(routes::onboarding::get_state),
@@ -143,10 +147,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/onboarding/seed-demo",
             post(routes::onboarding::seed_demo),
         )
-        .route(
-            "/api/v1/onboarding/reset",
-            post(routes::onboarding::reset),
-        )
+        .route("/api/v1/onboarding/reset", post(routes::onboarding::reset))
         .route(
             "/api/v1/onboarding/start-production",
             post(routes::onboarding::start_production),

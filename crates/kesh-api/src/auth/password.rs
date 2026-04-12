@@ -13,8 +13,8 @@
 use std::sync::LazyLock;
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 
 use crate::errors::AppError;
@@ -34,8 +34,8 @@ pub fn hash_password(plain: &str) -> Result<String, AppError> {
 /// Retourne `Ok(true)` en cas de match, `Ok(false)` en cas de mismatch,
 /// `Err(AppError::Internal)` si le PHC string est mal formé (bug serveur).
 pub fn verify_password(plain: &str, phc: &str) -> Result<bool, AppError> {
-    let parsed = PasswordHash::new(phc)
-        .map_err(|e| AppError::Internal(format!("argon2 phc parse: {e}")))?;
+    let parsed =
+        PasswordHash::new(phc).map_err(|e| AppError::Internal(format!("argon2 phc parse: {e}")))?;
 
     match Argon2::default().verify_password(plain.as_bytes(), &parsed) {
         Ok(()) => Ok(true),

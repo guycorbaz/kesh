@@ -4,8 +4,8 @@
 //! `POST /api/v1/onboarding/seed-demo`.
 
 use chrono::{Datelike, Utc};
-use kesh_db::entities::{Language, NewCompany, NewFiscalYear, OrgType};
 use kesh_db::entities::onboarding::UiMode;
+use kesh_db::entities::{Language, NewCompany, NewFiscalYear, OrgType};
 use kesh_db::repositories::{companies, fiscal_years, onboarding};
 use kesh_i18n::Locale;
 use sqlx::MySqlPool;
@@ -82,18 +82,20 @@ pub async fn seed_demo(
     .await?;
 
     // Plan comptable PME dans la langue comptable de la company démo
-    let chart = kesh_core::chart_of_accounts::load_chart(company.org_type.as_str())
-        .map_err(|e| SeedError::Db(kesh_db::errors::DbError::Invariant(format!("chart load: {e}"))))?;
+    let chart =
+        kesh_core::chart_of_accounts::load_chart(company.org_type.as_str()).map_err(|e| {
+            SeedError::Db(kesh_db::errors::DbError::Invariant(format!(
+                "chart load: {e}"
+            )))
+        })?;
     let lang_key = company.accounting_language.as_str().to_lowercase();
     kesh_db::repositories::accounts::bulk_create_from_chart(pool, company.id, &chart, &lang_key)
         .await?;
 
     // Exercice fiscal (année courante) — un seul appel Utc::now()
     let current_year = Utc::now().naive_utc().date().year();
-    let start = chrono::NaiveDate::from_ymd_opt(current_year, 1, 1)
-        .expect("valid date");
-    let end = chrono::NaiveDate::from_ymd_opt(current_year, 12, 31)
-        .expect("valid date");
+    let start = chrono::NaiveDate::from_ymd_opt(current_year, 1, 1).expect("valid date");
+    let end = chrono::NaiveDate::from_ymd_opt(current_year, 12, 31).expect("valid date");
 
     fiscal_years::create(
         pool,
@@ -123,7 +125,7 @@ pub async fn reset_demo(pool: &MySqlPool) -> Result<(), SeedError> {
     // MariaDB — sur un pool partagé, chaque execute() peut utiliser une
     // connexion différente. On acquiert une connexion unique pour garantir
     // que le flag reste actif pendant les DELETEs.
-    let mut conn = pool.acquire().await.map_err(sqlx::Error::from)?;
+    let mut conn = pool.acquire().await?;
 
     sqlx::query("SET FOREIGN_KEY_CHECKS=0")
         .execute(&mut *conn)

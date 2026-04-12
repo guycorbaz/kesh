@@ -12,10 +12,9 @@ use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
 use crate::entities::audit_log::{AuditLogEntry, NewAuditLogEntry};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 
-const COLUMNS: &str =
-    "id, user_id, action, entity_type, entity_id, details_json, created_at";
+const COLUMNS: &str = "id, user_id, action, entity_type, entity_id, details_json, created_at";
 
 /// Insère une entrée d'audit dans une transaction en cours.
 ///

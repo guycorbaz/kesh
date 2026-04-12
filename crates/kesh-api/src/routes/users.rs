@@ -4,18 +4,18 @@
 //! par le middleware RBAC (`require_admin_role`) appliqué via `route_layer`
 //! sur le sous-routeur `/users/*` dans `build_router()`.
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use chrono::NaiveDateTime;
 use kesh_db::entities::{NewUser, Role, User, UserUpdate};
 use kesh_db::repositories::{refresh_tokens, users};
 use serde::{Deserialize, Serialize};
 
+use crate::AppState;
 use crate::auth::password;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
-use crate::AppState;
 
 // === DTOs ===
 
@@ -120,16 +120,20 @@ pub async fn create_user(
     // Validation username : trim + longueur [1, 64]
     let username = req.username.trim().to_string();
     if username.is_empty() {
-        return Err(AppError::Validation(
-            state.i18n.format(&state.config.locale, "error-username-empty", None),
-        ));
+        return Err(AppError::Validation(state.i18n.format(
+            &state.config.locale,
+            "error-username-empty",
+            None,
+        )));
     }
     if username.chars().count() > 64 {
         let mut args = kesh_i18n::FluentArgs::new();
         args.set("max", 64_i64);
-        return Err(AppError::Validation(
-            state.i18n.format(&state.config.locale, "error-username-too-long", Some(&args)),
-        ));
+        return Err(AppError::Validation(state.i18n.format(
+            &state.config.locale,
+            "error-username-too-long",
+            Some(&args),
+        )));
     }
 
     // Validation mot de passe (politique configurable)

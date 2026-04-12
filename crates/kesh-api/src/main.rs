@@ -16,7 +16,9 @@ use std::sync::Arc;
 
 use std::net::SocketAddr;
 
-use kesh_api::{auth::bootstrap, build_router, config::Config, middleware::rate_limit::RateLimiter, AppState};
+use kesh_api::{
+    AppState, auth::bootstrap, build_router, config::Config, middleware::rate_limit::RateLimiter,
+};
 use sqlx::mysql::MySqlPoolOptions;
 use tracing_subscriber::EnvFilter;
 
@@ -99,19 +101,22 @@ async fn main() {
     }
 
     // 6. i18n (story 2.1)
-    let locales_dir = std::path::PathBuf::from(
-        std::env::var("KESH_LOCALES_DIR").unwrap_or_else(|_| {
+    let locales_dir =
+        std::path::PathBuf::from(std::env::var("KESH_LOCALES_DIR").unwrap_or_else(|_| {
             // En dev : relatif au binaire, en prod : /app/locales
             if std::path::Path::new("crates/kesh-i18n/locales").exists() {
                 "crates/kesh-i18n/locales".to_string()
             } else {
                 "locales".to_string()
             }
-        }),
-    );
+        }));
     let i18n_bundle = match kesh_i18n::I18nBundle::load(&locales_dir) {
         Ok(b) => {
-            tracing::info!("i18n : {} locales chargées depuis {}", kesh_i18n::Locale::ALL.len(), locales_dir.display());
+            tracing::info!(
+                "i18n : {} locales chargées depuis {}",
+                kesh_i18n::Locale::ALL.len(),
+                locales_dir.display()
+            );
             Arc::new(b)
         }
         Err(e) => {

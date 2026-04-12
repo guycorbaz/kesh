@@ -171,10 +171,8 @@ mod tests {
     fn make_rate_limiter(max: u32, window_secs: u64, block_secs: u64) -> RateLimiter {
         let mut config = make_test_config("admin", "password");
         config.rate_limit_max_attempts = max;
-        config.rate_limit_window =
-            chrono::TimeDelta::seconds(window_secs as i64);
-        config.rate_limit_block_duration =
-            chrono::TimeDelta::seconds(block_secs as i64);
+        config.rate_limit_window = chrono::TimeDelta::seconds(window_secs as i64);
+        config.rate_limit_block_duration = chrono::TimeDelta::seconds(block_secs as i64);
         RateLimiter::new(&config)
     }
 

@@ -2,8 +2,8 @@
 //!
 //! Retourne toutes les traductions dans la langue de l'instance.
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Serialize;
 use std::collections::HashMap;
 

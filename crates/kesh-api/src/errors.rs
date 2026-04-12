@@ -7,9 +7,9 @@
 
 use std::sync::RwLock;
 
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use kesh_db::errors::DbError;
 use kesh_i18n::{I18nBundle, Locale};
 use serde::Serialize;
@@ -65,7 +65,6 @@ pub enum AppError {
     Database(#[from] DbError),
 
     // --- Story 1.7 ---
-
     /// Accès interdit — rôle insuffisant (403).
     #[error("Accès interdit")]
     Forbidden,
@@ -79,7 +78,6 @@ pub enum AppError {
     CannotDisableLastAdmin,
 
     // --- Story 1.6 ---
-
     /// Rate limiting déclenché : trop de tentatives de login depuis cette IP.
     /// `retry_after` = secondes avant déblocage, transmis dans le header `Retry-After`.
     #[error("Rate limited, retry after {retry_after}s")]
@@ -92,13 +90,11 @@ pub enum AppError {
     InvalidRefreshToken(String),
 
     // --- Story 2.2 ---
-
     /// Tentative de progression sur un step d'onboarding déjà complété (400).
     #[error("Étape d'onboarding déjà complétée")]
     OnboardingStepAlreadyCompleted,
 
     // --- Story 3.2 ---
-
     /// Écriture comptable déséquilibrée (FR21).
     /// Les totaux (format string décimal) sont inclus dans le message
     /// client pour respecter exactement le wording du PRD.
@@ -136,6 +132,14 @@ pub enum AppError {
         /// Date au format ISO (YYYY-MM-DD).
         date: String,
     },
+
+    // --- Story 4.1 ---
+    /// Un contact avec ce numéro IDE (CHE) existe déjà dans la même company.
+    /// Code client dédié (`IDE_ALREADY_EXISTS`) pour UX précise côté form,
+    /// distinct du générique `RESOURCE_CONFLICT` (autres UniqueConstraintViolation).
+    /// Le `String` porte le message i18n prêt à afficher.
+    #[error("{0}")]
+    IdeAlreadyExists(String),
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -186,20 +190,28 @@ impl IntoResponse for AppError {
                 build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)
             }
 
-            AppError::Forbidden => {
-                build_response(StatusCode::FORBIDDEN, "FORBIDDEN", &t("error-forbidden", "Accès interdit"))
-            }
+            AppError::Forbidden => build_response(
+                StatusCode::FORBIDDEN,
+                "FORBIDDEN",
+                &t("error-forbidden", "Accès interdit"),
+            ),
 
             AppError::CannotDisableSelf => build_response(
                 StatusCode::BAD_REQUEST,
                 "CANNOT_DISABLE_SELF",
-                &t("error-cannot-disable-self", "Impossible de désactiver son propre compte"),
+                &t(
+                    "error-cannot-disable-self",
+                    "Impossible de désactiver son propre compte",
+                ),
             ),
 
             AppError::CannotDisableLastAdmin => build_response(
                 StatusCode::BAD_REQUEST,
                 "CANNOT_DISABLE_LAST_ADMIN",
-                &t("error-cannot-disable-last-admin", "Impossible de désactiver le dernier administrateur"),
+                &t(
+                    "error-cannot-disable-last-admin",
+                    "Impossible de désactiver le dernier administrateur",
+                ),
             ),
 
             AppError::Internal(detail) => {
@@ -268,9 +280,8 @@ impl IntoResponse for AppError {
             }
 
             AppError::DateOutsideFiscalYear { date } => {
-                let fallback = format!(
-                    "La date {date} n'est pas dans l'exercice courant de cette écriture."
-                );
+                let fallback =
+                    format!("La date {date} n'est pas dans l'exercice courant de cette écriture.");
                 build_response(
                     StatusCode::BAD_REQUEST,
                     "DATE_OUTSIDE_FISCAL_YEAR",
@@ -278,17 +289,27 @@ impl IntoResponse for AppError {
                 )
             }
 
+            // Story 4.1 : code dédié pour l'unicité IDE par company.
+            AppError::IdeAlreadyExists(msg) => {
+                build_response(StatusCode::CONFLICT, "IDE_ALREADY_EXISTS", &msg)
+            }
+
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation
             // ici (propriété désirée).
             AppError::Database(db_err) => match db_err {
-                DbError::NotFound => {
-                    build_response(StatusCode::NOT_FOUND, "NOT_FOUND", &t("error-not-found", "Ressource introuvable"))
-                }
+                DbError::NotFound => build_response(
+                    StatusCode::NOT_FOUND,
+                    "NOT_FOUND",
+                    &t("error-not-found", "Ressource introuvable"),
+                ),
                 DbError::OptimisticLockConflict => build_response(
                     StatusCode::CONFLICT,
                     "OPTIMISTIC_LOCK_CONFLICT",
-                    &t("error-optimistic-lock", "Conflit de version — la ressource a été modifiée"),
+                    &t(
+                        "error-optimistic-lock",
+                        "Conflit de version — la ressource a été modifiée",
+                    ),
                 ),
                 DbError::UniqueConstraintViolation(m) => {
                     tracing::warn!("unique violation: {m}");
@@ -351,7 +372,10 @@ impl IntoResponse for AppError {
                     build_response(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "SERVICE_UNAVAILABLE",
-                        &t("error-service-unavailable", "Service temporairement indisponible"),
+                        &t(
+                            "error-service-unavailable",
+                            "Service temporairement indisponible",
+                        ),
                     )
                 }
                 DbError::Invariant(m) => {
@@ -383,8 +407,7 @@ mod tests {
     async fn response_body(resp: Response) -> (StatusCode, serde_json::Value) {
         let (parts, body) = resp.into_parts();
         let bytes = body.collect().await.expect("body collect").to_bytes();
-        let json: serde_json::Value =
-            serde_json::from_slice(&bytes).expect("body should be JSON");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("body should be JSON");
         (parts.status, json)
     }
 
@@ -399,8 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn unauthenticated_maps_to_401_with_generic_message() {
-        let resp =
-            AppError::Unauthenticated("detailed internal info".to_string()).into_response();
+        let resp = AppError::Unauthenticated("detailed internal info".to_string()).into_response();
         let (status, body) = response_body(resp).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(body["error"]["code"], "UNAUTHENTICATED");
@@ -449,8 +471,8 @@ mod tests {
 
     #[tokio::test]
     async fn db_connection_unavailable_maps_to_503() {
-        let resp = AppError::Database(DbError::ConnectionUnavailable("timeout".into()))
-            .into_response();
+        let resp =
+            AppError::Database(DbError::ConnectionUnavailable("timeout".into())).into_response();
         let (status, body) = response_body(resp).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(body["error"]["code"], "SERVICE_UNAVAILABLE");

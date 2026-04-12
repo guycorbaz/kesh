@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
-use kesh_api::{build_router, AppState};
+use kesh_api::{AppState, build_router};
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -68,9 +68,12 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         .expect("bind");
     let addr: SocketAddr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     TestApp {
@@ -216,26 +219,35 @@ async fn full_path_b_flow(pool: MySqlPool) {
     advance_to_step_2(&app, &token).await;
 
     // Step 2→3: start production
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/onboarding/start-production"))
         .header("Authorization", auth(&token))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
 
     // Step 3→4: org type
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/onboarding/org-type"))
         .header("Authorization", auth(&token))
         .json(&json!({ "orgType": "Independant" }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
 
     // Step 4→5: accounting language
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/onboarding/accounting-language"))
         .header("Authorization", auth(&token))
         .json(&json!({ "language": "DE" }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
 
     // Step 5→6: coordinates
@@ -249,11 +261,14 @@ async fn full_path_b_flow(pool: MySqlPool) {
     assert_eq!(body["stepCompleted"], 6);
 
     // Step 6→7: bank account
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/onboarding/bank-account"))
         .header("Authorization", auth(&token))
         .json(&json!({ "bankName": "UBS", "iban": "CH93 0076 2011 6238 5295 7", "qrIban": null }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["stepCompleted"], 7);
@@ -268,24 +283,42 @@ async fn skip_bank_advances_to_step_7(pool: MySqlPool) {
     advance_to_step_2(&app, &token).await;
 
     // Advance to step 6
-    app.client.post(app.url("/api/v1/onboarding/start-production"))
-        .header("Authorization", auth(&token)).send().await.unwrap();
-    app.client.post(app.url("/api/v1/onboarding/org-type"))
+    app.client
+        .post(app.url("/api/v1/onboarding/start-production"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "orgType": "Association" })).send().await.unwrap();
-    app.client.post(app.url("/api/v1/onboarding/accounting-language"))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/org-type"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "language": "FR" })).send().await.unwrap();
-    app.client.post(app.url("/api/v1/onboarding/coordinates"))
+        .json(&json!({ "orgType": "Association" }))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/accounting-language"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "language": "FR" }))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
         .json(&json!({ "name": "Mon Asso", "address": "Rue 1", "ideNumber": null }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // Skip bank
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/onboarding/skip-bank"))
         .header("Authorization", auth(&token))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["stepCompleted"], 7);
@@ -299,25 +332,43 @@ async fn bank_account_validates_iban(pool: MySqlPool) {
     advance_to_step_2(&app, &token).await;
 
     // Advance to step 6
-    app.client.post(app.url("/api/v1/onboarding/start-production"))
-        .header("Authorization", auth(&token)).send().await.unwrap();
-    app.client.post(app.url("/api/v1/onboarding/org-type"))
+    app.client
+        .post(app.url("/api/v1/onboarding/start-production"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "orgType": "Pme" })).send().await.unwrap();
-    app.client.post(app.url("/api/v1/onboarding/accounting-language"))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/org-type"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "language": "FR" })).send().await.unwrap();
-    app.client.post(app.url("/api/v1/onboarding/coordinates"))
+        .json(&json!({ "orgType": "Pme" }))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/accounting-language"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "language": "FR" }))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
         .json(&json!({ "name": "Test", "address": "Addr", "ideNumber": null }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // Invalid IBAN
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/onboarding/bank-account"))
         .header("Authorization", auth(&token))
         .json(&json!({ "bankName": "UBS", "iban": "INVALID", "qrIban": null }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");

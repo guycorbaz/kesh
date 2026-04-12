@@ -56,9 +56,7 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
             // Race condition : une autre instance a bootstrapp entre notre
             // COUNT et notre INSERT. Branche défensive, non testable
             // déterministiquement en mono-thread.
-            tracing::info!(
-                "bootstrap: admin créé en parallèle par un autre process"
-            );
+            tracing::info!("bootstrap: admin créé en parallèle par un autre process");
         }
         Err(other) => return Err(AppError::Database(other)),
     }

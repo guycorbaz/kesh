@@ -8,6 +8,7 @@ pub mod accounts;
 pub mod audit_log;
 pub mod bank_accounts;
 pub mod companies;
+pub mod contacts;
 pub mod fiscal_years;
 pub mod journal_entries;
 pub mod onboarding;

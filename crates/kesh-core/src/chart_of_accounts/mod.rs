@@ -133,11 +133,17 @@ mod tests {
     #[test]
     fn load_association_chart() {
         let chart = load_chart("Association").unwrap();
-        assert!(chart.len() >= 50, "Association chart should have ~50+ accounts");
+        assert!(
+            chart.len() >= 50,
+            "Association chart should have ~50+ accounts"
+        );
 
         // Comptes spécifiques aux associations
         let cotisations = chart.iter().find(|e| e.number == "3000").unwrap();
-        assert_eq!(cotisations.name.get("fr").unwrap(), "Cotisations des membres");
+        assert_eq!(
+            cotisations.name.get("fr").unwrap(),
+            "Cotisations des membres"
+        );
 
         let fonds = chart.iter().find(|e| e.number == "2850").unwrap();
         assert_eq!(fonds.name.get("fr").unwrap(), "Fonds affectés");
@@ -146,7 +152,10 @@ mod tests {
     #[test]
     fn load_independant_chart() {
         let chart = load_chart("Independant").unwrap();
-        assert!(chart.len() >= 50, "Independant chart should have ~50+ accounts");
+        assert!(
+            chart.len() >= 50,
+            "Independant chart should have ~50+ accounts"
+        );
 
         // Comptes spécifiques aux indépendants
         let capital = chart.iter().find(|e| e.number == "2800").unwrap();
@@ -222,11 +231,11 @@ mod tests {
     fn all_charts_root_accounts_have_no_parent() {
         for org_type in &["Pme", "Association", "Independant"] {
             let chart = load_chart(org_type).unwrap();
-            let roots: Vec<_> = chart
-                .iter()
-                .filter(|e| e.number.len() == 1)
-                .collect();
-            assert!(!roots.is_empty(), "Chart {org_type} should have root accounts");
+            let roots: Vec<_> = chart.iter().filter(|e| e.number.len() == 1).collect();
+            assert!(
+                !roots.is_empty(),
+                "Chart {org_type} should have root accounts"
+            );
             for root in &roots {
                 assert!(
                     root.parent_number.is_none(),

@@ -102,7 +102,10 @@ impl std::fmt::Debug for Config {
             .field("db_connect_timeout", &self.db_connect_timeout)
             .field("jwt_secret", &"***")
             .field("jwt_expiry", &self.jwt_expiry)
-            .field("refresh_token_max_lifetime", &self.refresh_token_max_lifetime)
+            .field(
+                "refresh_token_max_lifetime",
+                &self.refresh_token_max_lifetime,
+            )
             .field("refresh_inactivity", &self.refresh_inactivity)
             .field("rate_limit_window", &self.rate_limit_window)
             .field("rate_limit_max_attempts", &self.rate_limit_max_attempts)
@@ -180,13 +183,11 @@ impl Config {
             "from_fields_for_test: refresh_token_max_lifetime must be in (0, 365d], got {refresh_token_max_lifetime}"
         );
         assert!(
-            refresh_inactivity > TimeDelta::zero()
-                && refresh_inactivity <= TimeDelta::hours(24),
+            refresh_inactivity > TimeDelta::zero() && refresh_inactivity <= TimeDelta::hours(24),
             "from_fields_for_test: refresh_inactivity must be in (0, 24h], got {refresh_inactivity}"
         );
         assert!(
-            rate_limit_window > TimeDelta::zero()
-                && rate_limit_window <= TimeDelta::hours(24),
+            rate_limit_window > TimeDelta::zero() && rate_limit_window <= TimeDelta::hours(24),
             "from_fields_for_test: rate_limit_window must be in (0, 24h], got {rate_limit_window}"
         );
         assert!(
@@ -283,8 +284,8 @@ impl Config {
 
         // --- Story 1.5 : JWT ---
 
-        let jwt_secret =
-            env::var("KESH_JWT_SECRET").map_err(|_| ConfigError::MissingVar("KESH_JWT_SECRET".into()))?;
+        let jwt_secret = env::var("KESH_JWT_SECRET")
+            .map_err(|_| ConfigError::MissingVar("KESH_JWT_SECRET".into()))?;
 
         if jwt_secret.len() < 32 {
             return Err(ConfigError::WeakJwtSecret {

@@ -3,10 +3,9 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::bank_account::{BankAccount, NewBankAccount};
-use crate::errors::{map_db_error, DbError};
+use crate::errors::{DbError, map_db_error};
 
-const FIND_BY_ID_SQL: &str =
-    "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
      FROM bank_accounts WHERE id = ?";
 
 /// Crée un nouveau compte bancaire et retourne l'entité persistée.
@@ -33,18 +32,15 @@ pub async fn create(pool: &MySqlPool, new: NewBankAccount) -> Result<BankAccount
             "last_insert_id == 0 après INSERT bank_accounts".into(),
         ));
     }
-    let id = i64::try_from(last_id).map_err(|_| {
-        DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX"))
-    })?;
+    let id = i64::try_from(last_id)
+        .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
     let account = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(map_db_error)?
-        .ok_or_else(|| {
-            DbError::Invariant(format!("bank_account {id} introuvable après INSERT"))
-        })?;
+        .ok_or_else(|| DbError::Invariant(format!("bank_account {id} introuvable après INSERT")))?;
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(account)
@@ -84,10 +80,7 @@ pub async fn list_by_company(
 ///
 /// Utilise SELECT FOR UPDATE dans une transaction unique pour éviter le
 /// TOCTOU entre la lecture et l'écriture.
-pub async fn upsert_primary(
-    pool: &MySqlPool,
-    new: NewBankAccount,
-) -> Result<BankAccount, DbError> {
+pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<BankAccount, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let existing = sqlx::query_as::<_, BankAccount>(
@@ -143,9 +136,8 @@ pub async fn upsert_primary(
             .await
             .map_err(map_db_error)?;
 
-            let id = i64::try_from(result.last_insert_id()).map_err(|_| {
-                DbError::Invariant("last_insert_id overflow".into())
-            })?;
+            let id = i64::try_from(result.last_insert_id())
+                .map_err(|_| DbError::Invariant("last_insert_id overflow".into()))?;
 
             let account = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
                 .bind(id)

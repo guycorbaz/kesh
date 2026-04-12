@@ -16,7 +16,9 @@ async fn create_test_user(pool: &MySqlPool, username: &str) -> i64 {
         pool,
         NewUser {
             username: username.to_string(),
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo".to_string(),
+            password_hash:
+                "$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo"
+                    .to_string(),
             role: Role::Comptable,
             active: true,
         },

@@ -26,15 +26,13 @@ use kesh_db::entities::{
     Journal as DbJournal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
-use kesh_db::repositories::journal_entries::{
-    JournalEntryListQuery, JournalEntryListResult,
-};
+use kesh_db::repositories::journal_entries::{JournalEntryListQuery, JournalEntryListResult};
 use kesh_db::repositories::{companies, fiscal_years, journal_entries};
 
+use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
-use crate::AppState;
 
 /// Défaut et plafond pour la pagination de la liste des écritures.
 const DEFAULT_LIMIT: i64 = 50;
@@ -142,7 +140,10 @@ fn convert_entry(entry: JournalEntry, lines: Vec<JournalEntryLine>) -> JournalEn
         journal: entry.journal.into(),
         description: entry.description,
         version: entry.version,
-        lines: lines.into_iter().map(JournalEntryLineResponse::from).collect(),
+        lines: lines
+            .into_iter()
+            .map(JournalEntryLineResponse::from)
+            .collect(),
         created_at: entry.created_at,
         updated_at: entry.updated_at,
     }
@@ -270,17 +271,15 @@ pub async fn list_journal_entries(
     // Parse des dates optionnelles.
     let date_from = match params.date_from.as_deref() {
         Some(s) if !s.is_empty() => Some(
-            NaiveDate::from_str(s).map_err(|e| {
-                AppError::Validation(format!("dateFrom invalide ({e})"))
-            })?,
+            NaiveDate::from_str(s)
+                .map_err(|e| AppError::Validation(format!("dateFrom invalide ({e})")))?,
         ),
         _ => None,
     };
     let date_to = match params.date_to.as_deref() {
         Some(s) if !s.is_empty() => Some(
-            NaiveDate::from_str(s).map_err(|e| {
-                AppError::Validation(format!("dateTo invalide ({e})"))
-            })?,
+            NaiveDate::from_str(s)
+                .map_err(|e| AppError::Validation(format!("dateTo invalide ({e})")))?,
         ),
         _ => None,
     };
@@ -288,17 +287,15 @@ pub async fn list_journal_entries(
     // Parse des montants optionnels.
     let amount_min = match params.amount_min.as_deref() {
         Some(s) if !s.is_empty() => Some(
-            Decimal::from_str(s).map_err(|e| {
-                AppError::Validation(format!("amountMin invalide ({e})"))
-            })?,
+            Decimal::from_str(s)
+                .map_err(|e| AppError::Validation(format!("amountMin invalide ({e})")))?,
         ),
         _ => None,
     };
     let amount_max = match params.amount_max.as_deref() {
         Some(s) if !s.is_empty() => Some(
-            Decimal::from_str(s).map_err(|e| {
-                AppError::Validation(format!("amountMax invalide ({e})"))
-            })?,
+            Decimal::from_str(s)
+                .map_err(|e| AppError::Validation(format!("amountMax invalide ({e})")))?,
         ),
         _ => None,
     };
@@ -425,8 +422,8 @@ pub async fn create_journal_entry(
 
     // Pré-check exercice couvrant la date (distingue NO_FISCAL_YEAR
     // et FISCAL_YEAR_CLOSED pour l'UX).
-    let covering = fiscal_years::find_covering_date(&state.pool, company.id, req.entry_date)
-        .await?;
+    let covering =
+        fiscal_years::find_covering_date(&state.pool, company.id, req.entry_date).await?;
     let fiscal_year = match covering {
         None => {
             return Err(AppError::NoFiscalYear {
@@ -485,7 +482,10 @@ pub async fn create_journal_entry(
             other => AppError::from(other),
         })?;
 
-    Ok((StatusCode::CREATED, Json(JournalEntryResponse::from(result))))
+    Ok((
+        StatusCode::CREATED,
+        Json(JournalEntryResponse::from(result)),
+    ))
 }
 
 /// PUT /api/v1/journal-entries/{id} — modifie une écriture existante
@@ -531,8 +531,8 @@ pub async fn update_journal_entry(
     // Pré-check FY lock-free (distingue NO_FISCAL_YEAR et FISCAL_YEAR_CLOSED
     // pour l'UX). La vérification fine « date dans l'exercice courant de
     // l'entry » est faite DANS la tx du repository (M4 anti-TOCTOU).
-    let covering = fiscal_years::find_covering_date(&state.pool, company.id, req.entry_date)
-        .await?;
+    let covering =
+        fiscal_years::find_covering_date(&state.pool, company.id, req.entry_date).await?;
     match covering {
         None => {
             return Err(AppError::NoFiscalYear {

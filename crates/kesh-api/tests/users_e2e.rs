@@ -9,8 +9,8 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
-use kesh_api::{build_router, AppState};
-use serde_json::{json, Value};
+use kesh_api::{AppState, build_router};
+use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
@@ -65,7 +65,16 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
 
 async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
-    let i18n = std::sync::Arc::new(kesh_i18n::I18nBundle::load(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("kesh-i18n/locales").as_path()).expect("load test i18n"));
+    let i18n = std::sync::Arc::new(
+        kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
     let state = AppState {
         pool,
         config: Arc::new(config),
@@ -157,7 +166,14 @@ async fn create_user_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     assert_eq!(resp.status(), 201);
 
     let body: Value = resp.json().await.unwrap();
@@ -185,10 +201,24 @@ async fn create_user_duplicate_username_returns_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     assert_eq!(resp.status(), 201);
 
-    let resp = create_user_api(&app, &token, "alice", "another-password-12ch", "Consultation").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "another-password-12ch",
+        "Consultation",
+    )
+    .await;
     assert_eq!(resp.status(), 409);
 }
 
@@ -225,7 +255,14 @@ async fn create_user_non_admin_returns_403(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Create a Comptable user
-    let resp = create_user_api(&app, &token, "comptable1", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "comptable1",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     assert_eq!(resp.status(), 201);
 
     // Login as Comptable
@@ -235,7 +272,14 @@ async fn create_user_non_admin_returns_403(pool: MySqlPool) {
     let comptable_token = body["accessToken"].as_str().unwrap();
 
     // Try to create user with Comptable token
-    let resp = create_user_api(&app, comptable_token, "alice", "secure-password-12chars", "Consultation").await;
+    let resp = create_user_api(
+        &app,
+        comptable_token,
+        "alice",
+        "secure-password-12chars",
+        "Consultation",
+    )
+    .await;
     assert_eq!(resp.status(), 403);
 }
 
@@ -246,7 +290,14 @@ async fn update_user_change_role(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
     let version = user["version"].as_i64().unwrap();
@@ -272,7 +323,14 @@ async fn update_user_reactivate(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Create + disable
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 
@@ -306,7 +364,14 @@ async fn update_user_version_conflict_returns_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 
@@ -330,17 +395,26 @@ async fn update_user_self_disable_returns_400(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Get admin's own ID
-    let resp = app.client.get(app.url("/api/v1/users?limit=1")).bearer_auth(&token).send().await.unwrap();
+    let resp = app
+        .client
+        .get(app.url("/api/v1/users?limit=1"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
     let list: Value = resp.json().await.unwrap();
     let admin_id = list["items"][0]["id"].as_i64().unwrap();
     let version = list["items"][0]["version"].as_i64().unwrap();
 
     // Try to deactivate self via PUT /users/:id
-    let resp = app.client
+    let resp = app
+        .client
         .put(app.url(&format!("/api/v1/users/{}", admin_id)))
         .bearer_auth(&token)
         .json(&json!({"role": "Admin", "active": false, "version": version}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 400);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_SELF");
@@ -362,21 +436,39 @@ async fn update_user_deactivate_last_admin_returns_400(pool: MySqlPool) {
     let admin2_token = body["accessToken"].as_str().unwrap().to_string();
 
     // Disable admin2 via /disable first (leaves only original admin)
-    app.client.put(app.url(&format!("/api/v1/users/{}/disable", admin2_id)))
-        .bearer_auth(&token).send().await.unwrap();
+    app.client
+        .put(app.url(&format!("/api/v1/users/{}/disable", admin2_id)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
 
     // admin2's stale JWT: try to deactivate original admin via PUT /users/:id
-    let resp = app.client.get(app.url("/api/v1/users?limit=10")).bearer_auth(&admin2_token).send().await.unwrap();
+    let resp = app
+        .client
+        .get(app.url("/api/v1/users?limit=10"))
+        .bearer_auth(&admin2_token)
+        .send()
+        .await
+        .unwrap();
     let list: Value = resp.json().await.unwrap();
-    let admin1 = list["items"].as_array().unwrap().iter().find(|u| u["username"] == "admin").unwrap();
+    let admin1 = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "admin")
+        .unwrap();
     let admin1_id = admin1["id"].as_i64().unwrap();
     let admin1_version = admin1["version"].as_i64().unwrap();
 
-    let resp = app.client
+    let resp = app
+        .client
         .put(app.url(&format!("/api/v1/users/{}", admin1_id)))
         .bearer_auth(&admin2_token)
         .json(&json!({"role": "Admin", "active": false, "version": admin1_version}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 400);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_LAST_ADMIN");
@@ -394,25 +486,42 @@ async fn update_user_demote_last_admin_returns_400(pool: MySqlPool) {
     let admin2_version = admin2["version"].as_i64().unwrap();
 
     // Demote admin2 to Comptable (OK — original admin is still Admin)
-    let resp = app.client
+    let resp = app
+        .client
         .put(app.url(&format!("/api/v1/users/{}", admin2_id)))
         .bearer_auth(&token)
         .json(&json!({"role": "Comptable", "active": true, "version": admin2_version}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
 
     // Now try to demote the last admin (original) — should fail
-    let resp = app.client.get(app.url("/api/v1/users?limit=10")).bearer_auth(&token).send().await.unwrap();
+    let resp = app
+        .client
+        .get(app.url("/api/v1/users?limit=10"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
     let list: Value = resp.json().await.unwrap();
-    let admin1 = list["items"].as_array().unwrap().iter().find(|u| u["username"] == "admin").unwrap();
+    let admin1 = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "admin")
+        .unwrap();
     let admin1_id = admin1["id"].as_i64().unwrap();
     let admin1_version = admin1["version"].as_i64().unwrap();
 
-    let resp = app.client
+    let resp = app
+        .client
         .put(app.url(&format!("/api/v1/users/{}", admin1_id)))
         .bearer_auth(&token)
         .json(&json!({"role": "Comptable", "active": true, "version": admin1_version}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 400);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_LAST_ADMIN");
@@ -426,31 +535,55 @@ async fn update_user_deactivate_revokes_sessions(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Create user and get their refresh token
-    create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "alice", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let alice_refresh = body["refreshToken"].as_str().unwrap().to_string();
 
     // Get alice's data
-    let resp = app.client.get(app.url("/api/v1/users?limit=10")).bearer_auth(&token).send().await.unwrap();
+    let resp = app
+        .client
+        .get(app.url("/api/v1/users?limit=10"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
     let list: Value = resp.json().await.unwrap();
-    let alice = list["items"].as_array().unwrap().iter().find(|u| u["username"] == "alice").unwrap();
+    let alice = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "alice")
+        .unwrap();
     let alice_id = alice["id"].as_i64().unwrap();
     let alice_version = alice["version"].as_i64().unwrap();
 
     // Deactivate alice via PUT /users/:id (not /disable)
-    let resp = app.client
+    let resp = app
+        .client
         .put(app.url(&format!("/api/v1/users/{}", alice_id)))
         .bearer_auth(&token)
         .json(&json!({"role": "Comptable", "active": false, "version": alice_version}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
 
     // Alice's refresh token should be revoked
-    let resp = app.client
+    let resp = app
+        .client
         .post(app.url("/api/v1/auth/refresh"))
         .json(&json!({"refreshToken": alice_refresh}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 401);
 }
 
@@ -462,8 +595,22 @@ async fn list_users_paginated(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Create 2 users (admin already exists = 3 total)
-    create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
-    create_user_api(&app, &token, "bob", "secure-password-12chars", "Consultation").await;
+    create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
+    create_user_api(
+        &app,
+        &token,
+        "bob",
+        "secure-password-12chars",
+        "Consultation",
+    )
+    .await;
 
     let resp = app
         .client
@@ -486,7 +633,14 @@ async fn list_users_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    create_user_api(&app, &token, "comptable1", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "comptable1",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "comptable1", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let comptable_token = body["accessToken"].as_str().unwrap();
@@ -508,7 +662,14 @@ async fn get_user_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 
@@ -547,7 +708,14 @@ async fn disable_user_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 
@@ -597,7 +765,14 @@ async fn disable_last_admin_returns_400(pool: MySqlPool) {
     let admin1_token = login_admin(&app, &pool).await;
 
     // Create admin2 and get their JWT
-    let resp = create_user_api(&app, &admin1_token, "admin2", "secure-password-12chars", "Admin").await;
+    let resp = create_user_api(
+        &app,
+        &admin1_token,
+        "admin2",
+        "secure-password-12chars",
+        "Admin",
+    )
+    .await;
     assert_eq!(resp.status(), 201);
     let admin2: Value = resp.json().await.unwrap();
     let admin2_id = admin2["id"].as_i64().unwrap();
@@ -655,7 +830,14 @@ async fn disable_user_login_impossible_after(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Create + disable
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 
@@ -678,7 +860,14 @@ async fn reset_password_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
     let version_before = user["version"].as_i64().unwrap();
@@ -709,7 +898,14 @@ async fn reset_password_short_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 
@@ -729,7 +925,14 @@ async fn reset_password_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    create_user_api(&app, &token, "comptable1", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "comptable1",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "comptable1", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let comptable_token = body["accessToken"].as_str().unwrap();
@@ -752,7 +955,14 @@ async fn update_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    create_user_api(&app, &token, "comptable1", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "comptable1",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "comptable1", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let comptable_token = body["accessToken"].as_str().unwrap();
@@ -773,7 +983,14 @@ async fn disable_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    create_user_api(&app, &token, "comptable1", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "comptable1",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "comptable1", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let comptable_token = body["accessToken"].as_str().unwrap();
@@ -793,7 +1010,14 @@ async fn get_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    create_user_api(&app, &token, "comptable1", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "comptable1",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "comptable1", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let comptable_token = body["accessToken"].as_str().unwrap();
@@ -816,7 +1040,14 @@ async fn reset_password_revokes_sessions(pool: MySqlPool) {
     let token = login_admin(&app, &pool).await;
 
     // Create user and get their refresh_token
-    create_user_api(&app, &token, "alice", "secure-password-12chars", "Comptable").await;
+    create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let resp = login_as(&app, "alice", "secure-password-12chars").await;
     let body: Value = resp.json().await.unwrap();
     let alice_refresh = body["refreshToken"].as_str().unwrap().to_string();
@@ -910,7 +1141,9 @@ async fn configurable_password_policy(pool: MySqlPool) {
         .client
         .put(app.url("/api/v1/auth/password"))
         .bearer_auth(bob_token)
-        .json(&json!({"currentPassword": "twenty-char-password!!", "newPassword": "fifteen-chars!!"}))
+        .json(
+            &json!({"currentPassword": "twenty-char-password!!", "newPassword": "fifteen-chars!!"}),
+        )
         .send()
         .await
         .unwrap();

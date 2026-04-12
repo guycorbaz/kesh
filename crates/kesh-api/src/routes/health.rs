@@ -8,10 +8,10 @@
 //! DB), donc plus de gestion `Option<MySqlPool>`. Le comportement dégradé
 //! 503 reste déclenché uniquement par l'échec du `SELECT 1`.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde_json::json;
 
 use crate::AppState;
