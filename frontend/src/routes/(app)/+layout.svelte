@@ -42,6 +42,7 @@
 			items: [
 				{ label: 'Accueil', href: '/' },
 				{ label: "Carnet d'adresses", href: '/contacts' },
+				{ label: 'Catalogue', href: '/products' },
 				{ label: 'Facturer', href: '/invoices' },
 				{ label: 'Payer', href: '/bank-accounts' },
 				{ label: 'Importer', href: '/bank-import' },

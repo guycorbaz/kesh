@@ -13,6 +13,7 @@ pub mod contact;
 pub mod fiscal_year;
 pub mod journal_entry;
 pub mod onboarding;
+pub mod product;
 pub mod refresh_token;
 pub mod user;
 
@@ -27,5 +28,6 @@ pub use journal_entry::{
     NewJournalEntryLine,
 };
 pub use onboarding::{OnboardingState, UiMode};
+pub use product::{NewProduct, Product, ProductUpdate};
 pub use refresh_token::{NewRefreshToken, RefreshToken};
 pub use user::{NewUser, Role, User, UserUpdate};

@@ -63,6 +63,7 @@
 	let formPhone = $state('');
 	let formAddress = $state('');
 	let formIde = $state('');
+	let formPaymentTerms = $state('');
 	let formSubmitting = $state(false);
 	let formError = $state('');
 
@@ -204,6 +205,7 @@
 		formPhone = '';
 		formAddress = '';
 		formIde = '';
+		formPaymentTerms = '';
 		formError = '';
 		formOpen = true;
 	}
@@ -218,6 +220,7 @@
 		formPhone = c.phone ?? '';
 		formAddress = c.address ?? '';
 		formIde = formatIdeNumber(c.ideNumber);
+		formPaymentTerms = c.defaultPaymentTerms ?? '';
 		formError = '';
 		formOpen = true;
 	}
@@ -246,7 +249,8 @@
 				email: formEmail.trim() || null,
 				phone: formPhone.trim() || null,
 				address: formAddress.trim() || null,
-				ideNumber: normalizeIdeForApi(formIde)
+				ideNumber: normalizeIdeForApi(formIde),
+				defaultPaymentTerms: formPaymentTerms.trim() || null
 			};
 
 			if (editing) {
@@ -606,6 +610,19 @@
 				<p class="text-xs text-muted-foreground mt-1">
 					{i18nMsg('contact-form-ide-help', 'Format : CHE-123.456.789')}
 				</p>
+			</div>
+
+			<div>
+				<label for="form-payment-terms">
+					{i18nMsg('contact-form-payment-terms', 'Conditions de paiement')}
+				</label>
+				<Input
+					id="form-payment-terms"
+					type="text"
+					bind:value={formPaymentTerms}
+					maxlength={100}
+					placeholder={i18nMsg('contact-form-payment-terms-placeholder', 'ex: 30 jours net')}
+				/>
 			</div>
 
 			{#if formError}

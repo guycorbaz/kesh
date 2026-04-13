@@ -36,8 +36,8 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-11
-# (story 4-1 done — 3 passes code review convergées 2026-04-12, P1-P6 appliqués)
+last_updated: 2026-04-13
+# (story 4-2 done — code-review 3 passes Opus→Sonnet→Haiku, 22 patches, verdict CLEAN)
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -83,7 +83,7 @@ development_status:
   # Epic 4: Carnet d'Adresses & Catalogue
   epic-4: in-progress
   4-1-carnet-adresses-crud-contacts: done
-  4-2-conditions-paiement-catalogue-produits: backlog
+  4-2-conditions-paiement-catalogue-produits: done
   epic-4-retrospective: optional
 
   # Epic 5: Facturation QR Bill

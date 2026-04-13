@@ -110,6 +110,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/contacts/{id}/archive",
             put(routes::contacts::archive_contact),
         )
+        // Story 4.2 : mutations catalogue produits
+        .route("/api/v1/products", post(routes::products::create_product))
+        .route(
+            "/api/v1/products/{id}",
+            put(routes::products::update_product),
+        )
+        .route(
+            "/api/v1/products/{id}/archive",
+            put(routes::products::archive_product),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -124,6 +134,9 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Story 4.1 : lecture carnet d'adresses (tout rôle authentifié)
         .route("/api/v1/contacts", get(routes::contacts::list_contacts))
         .route("/api/v1/contacts/{id}", get(routes::contacts::get_contact))
+        // Story 4.2 : lecture catalogue produits (tout rôle authentifié)
+        .route("/api/v1/products", get(routes::products::list_products))
+        .route("/api/v1/products/{id}", get(routes::products::get_product))
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(

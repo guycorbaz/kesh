@@ -6,6 +6,7 @@ pub mod health;
 pub mod i18n;
 pub mod journal_entries;
 pub mod onboarding;
+pub mod products;
 pub mod profile;
 pub mod users;
 
