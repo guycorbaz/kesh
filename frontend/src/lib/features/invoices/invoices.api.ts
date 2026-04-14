@@ -7,9 +7,11 @@ import type {
 	CreateInvoiceRequest,
 	InvoiceListItemResponse,
 	InvoiceResponse,
+	InvoiceSettingsResponse,
 	ListInvoicesQuery,
 	ListResponse,
 	UpdateInvoiceRequest,
+	UpdateInvoiceSettingsRequest,
 } from './invoices.types';
 
 function buildQueryString(q: ListInvoicesQuery): string {
@@ -50,4 +52,20 @@ export async function updateInvoice(
 
 export async function deleteInvoice(id: number): Promise<void> {
 	return apiClient.delete(`/api/v1/invoices/${id}`);
+}
+
+// --- Story 5.2 : validation + config ---
+
+export async function validateInvoice(id: number): Promise<InvoiceResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/validate`, {});
+}
+
+export async function getInvoiceSettings(): Promise<InvoiceSettingsResponse> {
+	return apiClient.get('/api/v1/company/invoice-settings');
+}
+
+export async function updateInvoiceSettings(
+	req: UpdateInvoiceSettingsRequest,
+): Promise<InvoiceSettingsResponse> {
+	return apiClient.put('/api/v1/company/invoice-settings', req);
 }

@@ -33,10 +33,33 @@ export interface InvoiceResponse {
 	dueDate: string | null;
 	paymentTerms: string | null;
 	totalAmount: string;
+	journalEntryId: number | null;
 	version: number;
 	createdAt: string;
 	updatedAt: string;
 	lines: InvoiceLineResponse[];
+}
+
+// Story 5.2 — Configuration facturation
+export type JournalCode = 'Achats' | 'Ventes' | 'Banque' | 'Caisse' | 'OD';
+
+export interface InvoiceSettingsResponse {
+	companyId: number;
+	invoiceNumberFormat: string;
+	defaultReceivableAccountId: number | null;
+	defaultRevenueAccountId: number | null;
+	defaultSalesJournal: JournalCode;
+	journalEntryDescriptionTemplate: string;
+	version: number;
+}
+
+export interface UpdateInvoiceSettingsRequest {
+	invoiceNumberFormat: string;
+	defaultReceivableAccountId: number | null;
+	defaultRevenueAccountId: number | null;
+	defaultSalesJournal: JournalCode;
+	journalEntryDescriptionTemplate: string;
+	version: number;
 }
 
 export interface InvoiceListItemResponse {

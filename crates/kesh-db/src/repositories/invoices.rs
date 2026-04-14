@@ -668,14 +668,13 @@ pub async fn validate_invoice(
 
     let result = async {
         // (1) Lock facture + check draft.
-        let invoice_before = sqlx::query_as::<_, Invoice>(&format!(
-            "{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"
-        ))
-        .bind(invoice_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
+        let invoice_before =
+            sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+                .bind(invoice_id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
 
         let invoice_before = match invoice_before {
             None => return Err(DbError::NotFound),
@@ -710,35 +709,41 @@ pub async fn validate_invoice(
         let seq = invoice_number_sequences::next_number_for(&mut tx, company_id, fy.id).await?;
 
         // (5) Render numéro de facture.
-        let year = fy.start_date.format("%Y").to_string().parse::<i32>().ok()
-            .ok_or_else(|| DbError::Invariant(
-                format!("fiscal_year start_date inattendu : {}", fy.start_date)
-            ))?;
-        let invoice_number = invoice_format::render(
-            &settings.invoice_number_format,
-            year,
-            &fy.name,
-            seq,
-        )
-        .map_err(|e| DbError::Invariant(format!(
-            "rendu numéro facture échoué (config invalide ?) : {e}"
-        )))?;
+        let year = fy
+            .start_date
+            .format("%Y")
+            .to_string()
+            .parse::<i32>()
+            .ok()
+            .ok_or_else(|| {
+                DbError::Invariant(format!(
+                    "fiscal_year start_date inattendu : {}",
+                    fy.start_date
+                ))
+            })?;
+        let invoice_number =
+            invoice_format::render(&settings.invoice_number_format, year, &fy.name, seq).map_err(
+                |e| {
+                    DbError::Invariant(format!(
+                        "rendu numéro facture échoué (config invalide ?) : {e}"
+                    ))
+                },
+            )?;
 
         // (6) Contact name pour le libellé écriture.
-        let contact_name: String = sqlx::query_scalar(
-            "SELECT name FROM contacts WHERE id = ? AND company_id = ?",
-        )
-        .bind(invoice_before.contact_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?
-        .ok_or_else(|| {
-            DbError::Invariant(format!(
-                "contact {} introuvable (cohérence FK attendue)",
-                invoice_before.contact_id
-            ))
-        })?;
+        let contact_name: String =
+            sqlx::query_scalar("SELECT name FROM contacts WHERE id = ? AND company_id = ?")
+                .bind(invoice_before.contact_id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?
+                .ok_or_else(|| {
+                    DbError::Invariant(format!(
+                        "contact {} introuvable (cohérence FK attendue)",
+                        invoice_before.contact_id
+                    ))
+                })?;
 
         let entry_description = invoice_format::render_journal_entry_description(
             &settings.journal_entry_description_template,

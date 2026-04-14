@@ -75,6 +75,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/users/{id}/reset-password",
             put(routes::users::reset_password),
         )
+        // Story 5.2 : config facturation (Admin uniquement).
+        .route(
+            "/api/v1/company/invoice-settings",
+            put(routes::company_invoice_settings::update_invoice_settings),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
         ));
@@ -126,6 +131,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}",
             put(routes::invoices::update_invoice).delete(routes::invoices::delete_invoice),
         )
+        // Story 5.2 : validation facture draft → validated
+        .route(
+            "/api/v1/invoices/{id}/validate",
+            post(routes::invoices::validate_invoice_handler),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -146,6 +156,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_invoice))
+        // Story 5.2 : lecture config facturation (tout rôle authentifié)
+        .route(
+            "/api/v1/company/invoice-settings",
+            get(routes::company_invoice_settings::get_invoice_settings),
+        )
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(

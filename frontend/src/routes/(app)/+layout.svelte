@@ -63,7 +63,12 @@
 	];
 
 	let adminNavItems = $derived(
-		isAdmin ? [{ label: 'Utilisateurs', href: '/users' }] : []
+		isAdmin
+			? [
+					{ label: 'Utilisateurs', href: '/users' },
+					{ label: 'Facturation', href: '/settings/invoicing' },
+				]
+			: []
 	);
 </script>
 

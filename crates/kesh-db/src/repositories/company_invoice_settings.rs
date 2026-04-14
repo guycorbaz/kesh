@@ -49,13 +49,11 @@ pub async fn get_or_create_default(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     // MIRROR: garder synchronisé avec get_or_create_default_in_tx.
-    sqlx::query(
-        "INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)",
-    )
-    .bind(company_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    sqlx::query("INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)")
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
@@ -77,13 +75,11 @@ pub async fn get_or_create_default_in_tx(
     company_id: i64,
 ) -> Result<CompanyInvoiceSettings, DbError> {
     // MIRROR: garder synchronisé avec get_or_create_default.
-    sqlx::query(
-        "INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)",
-    )
-    .bind(company_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    sqlx::query("INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)")
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
@@ -110,13 +106,11 @@ pub async fn update(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     // S'assurer que la row existe (création lazy si absente).
-    sqlx::query(
-        "INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)",
-    )
-    .bind(company_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    sqlx::query("INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)")
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
 
     let before = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"

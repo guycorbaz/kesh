@@ -37,6 +37,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-14
+# (story 5-2 review — T1-T7 implémentés)
 # (story 5-2 in-progress — scope v0.6 + 3 stories backlog ajoutées : 2-6, 3-6, 5-4)
 project: kesh
 project_key: NOKEY
@@ -91,7 +92,7 @@ development_status:
   # Epic 5: Facturation QR Bill
   epic-5: in-progress
   5-1-creation-factures-brouillon: done
-  5-2-validation-numerotation-factures: in-progress
+  5-2-validation-numerotation-factures: review
   5-3-generation-pdf-qr-bill: backlog
   5-4-echeancier-factures: backlog
   epic-5-retrospective: optional

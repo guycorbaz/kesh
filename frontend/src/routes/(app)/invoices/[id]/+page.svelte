@@ -4,13 +4,18 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Pencil, Trash2, ArrowLeft } from '@lucide/svelte';
+	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen } from '@lucide/svelte';
 
-	import { getInvoice, deleteInvoice } from '$lib/features/invoices/invoices.api';
+	import {
+		getInvoice,
+		deleteInvoice,
+		validateInvoice,
+	} from '$lib/features/invoices/invoices.api';
 	import type { InvoiceResponse } from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
+	import { authState } from '$lib/app/stores/auth.svelte';
 
 	let invoice = $state<InvoiceResponse | null>(null);
 	let loading = $state(true);
@@ -18,6 +23,9 @@
 	let deleteOpen = $state(false);
 	let deleteSubmitting = $state(false);
 	let deleteError = $state('');
+	let validateOpen = $state(false);
+	let validateSubmitting = $state(false);
+	let validateError = $state('');
 
 	let id = $derived(parseInt(page.params.id ?? '', 10));
 
@@ -59,6 +67,44 @@
 		}
 	}
 
+	async function confirmValidate() {
+		if (!invoice) return;
+		validateSubmitting = true;
+		validateError = '';
+		try {
+			const updated = await validateInvoice(invoice.id);
+			invoice = updated;
+			notifySuccess(`Facture validée — ${updated.invoiceNumber ?? ''}`);
+			validateOpen = false;
+		} catch (err) {
+			if (isApiError(err)) {
+				validateError = err.message;
+				if (err.code === 'CONFIGURATION_REQUIRED') {
+					if (authState.currentUser?.role === 'Admin') {
+						validateError = `${err.message} — Configurez les comptes par défaut dans Paramètres > Facturation.`;
+					} else {
+						validateError =
+							'Demandez à votre administrateur de configurer les comptes par défaut de facturation.';
+					}
+				}
+				notifyError(validateError);
+				// Si conflit d'état (409) : la facture a peut-être changé — reload.
+				if (err.code === 'ILLEGAL_STATE_TRANSITION' || err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					try {
+						invoice = await getInvoice(invoice.id);
+					} catch {
+						// laisser l'erreur affichée
+					}
+				}
+			} else {
+				validateError = 'Erreur lors de la validation';
+				notifyError(validateError);
+			}
+		} finally {
+			validateSubmitting = false;
+		}
+	}
+
 	function statusLabel(s: string): string {
 		if (s === 'draft') return 'Brouillon';
 		if (s === 'validated') return 'Validée';
@@ -77,7 +123,11 @@
 	</Button>
 	{#if invoice?.status === 'draft'}
 		<div class="flex gap-2">
-			<Button onclick={() => goto(`/invoices/${invoice!.id}/edit`)}>
+			<Button onclick={() => (validateOpen = true)}>
+				<CheckCircle2 class="h-4 w-4" aria-hidden="true" />
+				Valider
+			</Button>
+			<Button variant="outline" onclick={() => goto(`/invoices/${invoice!.id}/edit`)}>
 				<Pencil class="h-4 w-4" aria-hidden="true" />
 				Modifier
 			</Button>
@@ -86,6 +136,14 @@
 				Supprimer
 			</Button>
 		</div>
+	{:else if invoice?.status === 'validated' && invoice.journalEntryId}
+		<Button
+			variant="outline"
+			onclick={() => goto(`/journal-entries/${invoice!.journalEntryId}`)}
+		>
+			<BookOpen class="h-4 w-4" aria-hidden="true" />
+			Voir l'écriture comptable
+		</Button>
 	{/if}
 </div>
 
@@ -173,6 +231,33 @@
 				<Button variant="destructive" onclick={confirmDelete} disabled={deleteSubmitting}>
 					Supprimer
 				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<Dialog.Root
+		open={validateOpen}
+		onOpenChange={(o) => {
+			validateOpen = o;
+			if (!o) validateError = '';
+		}}
+	>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>Valider la facture</Dialog.Title>
+			</Dialog.Header>
+			<p class="text-sm">
+				Une fois validée, cette facture sera immuable, recevra un numéro définitif et
+				générera une écriture comptable. Continuer&nbsp;?
+			</p>
+			{#if validateError}
+				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					{validateError}
+				</div>
+			{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (validateOpen = false)}>Annuler</Button>
+				<Button onclick={confirmValidate} disabled={validateSubmitting}>Valider</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

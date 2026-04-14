@@ -174,9 +174,8 @@ pub async fn create_in_tx(
             "last_insert_id == 0 après INSERT journal_entries".into(),
         ));
     }
-    let entry_id = i64::try_from(last_id).map_err(|_| {
-        DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX"))
-    })?;
+    let entry_id = i64::try_from(last_id)
+        .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
     // Étape 5 : INSERT des lignes avec line_order séquentiel.
     for (idx, line) in new.lines.iter().enumerate() {

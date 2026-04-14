@@ -150,6 +150,7 @@ pub struct InvoiceResponse {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    pub journal_entry_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -168,6 +169,7 @@ impl InvoiceResponse {
             due_date: invoice.due_date,
             payment_terms: invoice.payment_terms,
             total_amount: invoice.total_amount,
+            journal_entry_id: invoice.journal_entry_id,
             version: invoice.version,
             created_at: invoice.created_at,
             updated_at: invoice.updated_at,
@@ -509,6 +511,27 @@ pub async fn delete_invoice(
     let company = get_company(&state).await?;
     invoices::delete(&state.pool, company.id, id, current_user.user_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /api/v1/invoices/:id/validate` (Story 5.2 — comptable_routes).
+///
+/// Transition atomique `draft → validated` : attribue un numéro,
+/// génère l'écriture comptable, persiste. Renvoie la facture
+/// validée (incluant `invoiceNumber`, `journalEntryId`, statut).
+pub async fn validate_invoice_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<InvoiceResponse>, AppError> {
+    let company = get_company(&state).await?;
+    let _validated =
+        invoices::validate_invoice(&state.pool, company.id, id, current_user.user_id).await?;
+
+    // Recharger avec lignes pour la réponse (cohérent avec get_invoice).
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
 }
 
 // ---------------------------------------------------------------------------

@@ -194,12 +194,7 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
 /// le template à l'écriture, cette fonction ne peut échouer qu'en cas
 /// de `seq` négatif ou de `fy_name` contenant des caractères interdits
 /// dans la sortie (aucune vérif ici — responsabilité du caller).
-pub fn render(
-    template: &str,
-    year: i32,
-    fy_name: &str,
-    seq: i64,
-) -> Result<String, FormatError> {
+pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<String, FormatError> {
     let tokens = parse(template)?;
     let seq_str = seq.to_string();
 
@@ -287,7 +282,10 @@ mod tests {
 
     #[test]
     fn renders_f_year_seq04() {
-        assert_eq!(render("F-{YEAR}-{SEQ:04}", 2026, "2026", 42).unwrap(), "F-2026-0042");
+        assert_eq!(
+            render("F-{YEAR}-{SEQ:04}", 2026, "2026", 42).unwrap(),
+            "F-2026-0042"
+        );
     }
 
     #[test]
