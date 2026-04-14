@@ -53,9 +53,8 @@ static ALLOWED_VAT_RATES: LazyLock<[Decimal; 4]> = LazyLock::new(|| {
 /// Plafond `unit_price` : 1 milliard CHF. Couvre tous les cas réalistes de
 /// catalogue PME suisse et empêche les overflows en Epic 5 (ligne facture =
 /// unit_price × quantity → DECIMAL(19,4) max ≈ 10^15).
-static MAX_UNIT_PRICE: LazyLock<Decimal> = LazyLock::new(|| {
-    Decimal::from_str("1000000000").expect("MAX_UNIT_PRICE literal must parse")
-});
+static MAX_UNIT_PRICE: LazyLock<Decimal> =
+    LazyLock::new(|| Decimal::from_str("1000000000").expect("MAX_UNIT_PRICE literal must parse"));
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -461,8 +460,13 @@ mod tests {
         // "é" décomposé (NFD) : U+0065 U+0301 = "e\u{0301}"
         let nfd_name = "Caf\u{0065}\u{0301}";
         let nfd_desc = "logo Caf\u{0065}\u{0301}";
-        let v = validate_common(nfd_name.into(), Some(nfd_desc.into()), dec!(100), dec!(8.10))
-            .unwrap();
+        let v = validate_common(
+            nfd_name.into(),
+            Some(nfd_desc.into()),
+            dec!(100),
+            dec!(8.10),
+        )
+        .unwrap();
         // "é" composé (NFC) : U+00E9
         let nfc = "Caf\u{00E9}";
         assert_eq!(v.name, nfc);
