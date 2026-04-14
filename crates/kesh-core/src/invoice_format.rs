@@ -169,12 +169,17 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
             }
             Token::Seq(None) => {
                 has_placeholder = true;
-                // seq peut atteindre 10^10 - 1 = 10 chiffres dans le worst case.
-                worst_case_len += MAX_SEQ_PADDING as usize;
+                // seq est `i64` (BIGINT en DB, CHECK next_number ≥ 1). Worst case
+                // i64::MAX = 19 chiffres. Review P2 : la borne précédente
+                // (MAX_SEQ_PADDING=10) sous-estimait la taille maximale rendue.
+                worst_case_len += 19;
             }
             Token::Seq(Some(n)) => {
                 has_placeholder = true;
-                worst_case_len += *n as usize;
+                // Le padding garantit au moins `n` chiffres, mais le numéro peut
+                // dépasser `10^n - 1` → prendre max(n, 19) pour couvrir le worst
+                // case i64 (review P2).
+                worst_case_len += std::cmp::max(*n as usize, 19);
             }
         }
     }
@@ -195,6 +200,11 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
 /// de `seq` négatif ou de `fy_name` contenant des caractères interdits
 /// dans la sortie (aucune vérif ici — responsabilité du caller).
 pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<String, FormatError> {
+    // Review P14 : DB CHECK `next_number >= 1` devrait garantir seq ≥ 1,
+    // mais défense en profondeur si un caller contourne le repository.
+    if seq < 1 {
+        return Err(FormatError::InvalidSeqPadding(0));
+    }
     let tokens = parse(template)?;
     let seq_str = seq.to_string();
 
@@ -244,8 +254,17 @@ pub fn validate_description_template(template: &str) -> Result<(), FormatError> 
     if template.trim().is_empty() {
         return Err(FormatError::Empty);
     }
-    if template.len() > MAX {
-        return Err(FormatError::TemplateTooLong(template.len()));
+    // Review P17 : longueur en caractères (pas bytes) pour gérer l'UTF-8.
+    let char_count = template.chars().count();
+    if char_count > MAX {
+        return Err(FormatError::TemplateTooLong(char_count));
+    }
+    // Review P11 : rejeter les caractères de contrôle (< 0x20 hors tab).
+    for c in template.chars() {
+        let cp = c as u32;
+        if cp < 0x20 && cp != 0x09 {
+            return Err(FormatError::IllegalCharacter(c));
+        }
     }
 
     // Vérifier que toutes les accolades forment des placeholders connus.

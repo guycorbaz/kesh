@@ -15,6 +15,7 @@
 	} from '$lib/features/invoices/invoices.types';
 	import {
 		previewInvoiceNumber,
+		validateDescriptionTemplate,
 		validateFormatTemplate,
 	} from '$lib/features/invoices/invoice-number-format';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -46,6 +47,7 @@
 	let formatPreview = $derived(
 		formatValidation.ok ? previewInvoiceNumber(format, 2026, '2026', 1) : '',
 	);
+	let descriptionValidation = $derived(validateDescriptionTemplate(descriptionTemplate));
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 
@@ -71,6 +73,10 @@
 	async function save() {
 		if (!formatValidation.ok) {
 			notifyError(formatValidation.error ?? 'Format invalide');
+			return;
+		}
+		if (!descriptionValidation.ok) {
+			notifyError(descriptionValidation.error ?? 'Libellé invalide');
 			return;
 		}
 		submitting = true;
@@ -164,6 +170,9 @@
 					Placeholders : <code>{'{YEAR}'}</code>, <code>{'{INVOICE_NUMBER}'}</code>,
 					<code>{'{CONTACT_NAME}'}</code>.
 				</p>
+				{#if !descriptionValidation.ok}
+					<p class="mt-1 text-sm text-destructive">{descriptionValidation.error}</p>
+				{/if}
 			</div>
 		</section>
 
@@ -210,7 +219,7 @@
 		</section>
 
 		<div class="flex justify-end">
-			<Button type="submit" disabled={submitting || !formatValidation.ok}>
+			<Button type="submit" disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}>
 				{submitting ? 'Enregistrement…' : 'Enregistrer'}
 			</Button>
 		</div>

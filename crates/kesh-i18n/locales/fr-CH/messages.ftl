@@ -385,6 +385,7 @@ invoice-validate-button = Valider
 invoice-validate-confirm-title = Valider la facture
 invoice-validate-confirm-body = Une fois validée, cette facture sera immuable, recevra un numéro définitif et générera une écriture comptable. Continuer ?
 invoice-validate-success = Facture validée — { $invoiceNumber }
+invoice-validate-success-body = La facture { $invoiceNumber } est désormais validée et immuable. L'écriture comptable associée a été générée.
 invoice-error-fiscal-year-invalid = Aucun exercice ouvert ne couvre la date de la facture.
 invoice-error-configuration-required = Configurez les comptes par défaut dans Paramètres > Facturation avant de valider une facture.
 invoice-error-configuration-required-non-admin = Demandez à votre administrateur de configurer les comptes par défaut de facturation.

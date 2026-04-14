@@ -623,10 +623,14 @@ pub async fn delete(
 // Story 5.2 — Validation & numérotation
 // ---------------------------------------------------------------------------
 
-/// Résultat d'une validation réussie (facture validée + écriture comptable générée).
+/// Résultat d'une validation réussie (facture validée + lignes + écriture
+/// comptable générée). Les lignes sont retournées pour permettre au
+/// handler HTTP de construire la réponse sans re-fetch post-commit
+/// (review P3 — évite une fenêtre de race sur les lignes).
 #[derive(Debug)]
 pub struct ValidatedInvoice {
     pub invoice: Invoice,
+    pub lines: Vec<InvoiceLine>,
     pub journal_entry: crate::entities::JournalEntryWithLines,
 }
 
@@ -739,10 +743,13 @@ pub async fn validate_invoice(
                 .await
                 .map_err(map_db_error)?
                 .ok_or_else(|| {
-                    DbError::Invariant(format!(
-                        "contact {} introuvable (cohérence FK attendue)",
-                        invoice_before.contact_id
-                    ))
+                    // Review P10 : la FK contacts n'est pas ON DELETE CASCADE
+                    // côté invoices, mais un contact archivé/supprimé par une
+                    // voie directe (maintenance, cross-company bug) remonterait
+                    // 500 Invariant. On préfère 404 NotFound (surface client
+                    // actionnable) — le handler mappe déjà NotFound → 404.
+                    let _ = invoice_before.contact_id; // ID présent dans le log log au niveau handler
+                    DbError::NotFound
                 })?;
 
         let entry_description = invoice_format::render_journal_entry_description(
@@ -842,6 +849,7 @@ pub async fn validate_invoice(
 
         Ok(ValidatedInvoice {
             invoice: invoice_after,
+            lines: lines_before,
             journal_entry: je,
         })
     }

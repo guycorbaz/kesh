@@ -458,7 +458,10 @@ pub async fn create_invoice(
         company_id: company.id,
         contact_id: req.contact_id,
         date: req.date,
-        due_date: req.due_date,
+        // Review P6 : défaut due_date = invoice.date (Scope §12).
+        // L'utilisateur peut override avec `date + N jours` selon conditions
+        // de paiement. Pas de calcul auto depuis payment_terms (décision Guy).
+        due_date: Some(req.due_date.unwrap_or(req.date)),
         payment_terms,
         lines,
     };
@@ -486,7 +489,8 @@ pub async fn update_invoice(
     let changes = InvoiceUpdate {
         contact_id: req.contact_id,
         date: req.date,
-        due_date: req.due_date,
+        // Review P6 : défaut due_date = invoice.date si non fournie (Scope §12).
+        due_date: Some(req.due_date.unwrap_or(req.date)),
         payment_terms,
         lines,
     };
@@ -524,14 +528,14 @@ pub async fn validate_invoice_handler(
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let company = get_company(&state).await?;
-    let _validated =
+    // Review P3 : utiliser directement le résultat transactionnel au lieu
+    // d'un re-fetch post-commit (évite une fenêtre de race + DB roundtrip).
+    let validated =
         invoices::validate_invoice(&state.pool, company.id, id, current_user.user_id).await?;
-
-    // Recharger avec lignes pour la réponse (cohérent avec get_invoice).
-    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
-    Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
+    Ok(Json(InvoiceResponse::from_parts(
+        validated.invoice,
+        validated.lines,
+    )))
 }
 
 // ---------------------------------------------------------------------------

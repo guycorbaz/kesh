@@ -219,13 +219,17 @@
 			};
 			if (invoice) {
 				const req: UpdateInvoiceRequest = { ...payload, version: invoice.version };
-				await updateInvoice(invoice.id, req);
+				const updated = await updateInvoice(invoice.id, req);
 				notifySuccess('Facture modifiée');
+				// Review P5 : rediriger vers la vue détail pour exposer le bouton
+				// « Valider » aux comptables/admins (Scope §9 — validation depuis
+				// l'écran d'édition après sauvegarde draft).
+				goto(`/invoices/${updated.id}`);
 			} else {
-				await createInvoice(payload);
+				const created = await createInvoice(payload);
 				notifySuccess('Facture créée');
+				goto(`/invoices/${created.id}`);
 			}
-			goto('/invoices');
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT' && invoice) {

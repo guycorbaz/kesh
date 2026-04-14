@@ -70,6 +70,12 @@ pub async fn get_or_create_default(
 /// Retourne la config, tx-aware. Utilisé par `validate_invoice` pour
 /// éviter d'ouvrir une transaction imbriquée. Le caller fournit la
 /// transaction déjà ouverte.
+///
+/// **SELECT FOR UPDATE** obligatoire (review pass 1 P1) : verrouille la
+/// row pour empêcher un `PUT /company/invoice-settings` concurrent de
+/// modifier la config entre la lecture et le commit de `validate_invoice`.
+/// Sans ce verrou, l'écriture comptable pourrait utiliser les anciens
+/// comptes pendant que l'audit snapshotait les nouveaux (TOCTOU).
 pub async fn get_or_create_default_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -82,7 +88,7 @@ pub async fn get_or_create_default_in_tx(
         .map_err(map_db_error)?;
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ? FOR UPDATE"
     ))
     .bind(company_id)
     .fetch_one(&mut **tx)

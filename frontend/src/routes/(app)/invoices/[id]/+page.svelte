@@ -74,7 +74,10 @@
 		try {
 			const updated = await validateInvoice(invoice.id);
 			invoice = updated;
-			notifySuccess(`Facture validée — ${updated.invoiceNumber ?? ''}`);
+			// Review edge #13 : fallback si invoiceNumber null (ne devrait pas arriver mais défensif).
+			notifySuccess(
+				updated.invoiceNumber ? `Facture validée — ${updated.invoiceNumber}` : 'Facture validée',
+			);
 			validateOpen = false;
 		} catch (err) {
 			if (isApiError(err)) {
@@ -95,6 +98,15 @@
 					} catch {
 						// laisser l'erreur affichée
 					}
+					validateOpen = false;
+				}
+				// Review P13 : fermer le dialog sur erreurs non-retryables
+				// (l'utilisateur doit corriger la config ou l'exercice avant de réessayer).
+				if (
+					err.code === 'FISCAL_YEAR_INVALID' ||
+					err.code === 'CONFIGURATION_REQUIRED'
+				) {
+					validateOpen = false;
 				}
 			} else {
 				validateError = 'Erreur lors de la validation';
