@@ -120,6 +120,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/products/{id}/archive",
             put(routes::products::archive_product),
         )
+        // Story 5.1 : mutations factures brouillon
+        .route("/api/v1/invoices", post(routes::invoices::create_invoice))
+        .route(
+            "/api/v1/invoices/{id}",
+            put(routes::invoices::update_invoice).delete(routes::invoices::delete_invoice),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -137,6 +143,9 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Story 4.2 : lecture catalogue produits (tout rôle authentifié)
         .route("/api/v1/products", get(routes::products::list_products))
         .route("/api/v1/products/{id}", get(routes::products::get_product))
+        // Story 5.1 : lecture factures (tout rôle authentifié)
+        .route("/api/v1/invoices", get(routes::invoices::list_invoices))
+        .route("/api/v1/invoices/{id}", get(routes::invoices::get_invoice))
         .route("/api/v1/auth/password", put(routes::auth::change_password))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(

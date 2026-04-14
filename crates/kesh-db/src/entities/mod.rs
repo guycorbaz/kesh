@@ -11,6 +11,7 @@ pub mod bank_account;
 pub mod company;
 pub mod contact;
 pub mod fiscal_year;
+pub mod invoice;
 pub mod journal_entry;
 pub mod onboarding;
 pub mod product;
@@ -23,6 +24,7 @@ pub use bank_account::{BankAccount, NewBankAccount};
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,

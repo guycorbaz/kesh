@@ -1,8 +1,5 @@
 //! Routes CRUD pour le catalogue produits/services (Story 4.2).
 
-use std::str::FromStr;
-use std::sync::LazyLock;
-
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
@@ -23,6 +20,8 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
+use crate::routes::limits::{MAX_DECIMAL_SCALE, MAX_UNIT_PRICE, scale_within};
+use crate::routes::vat::validate_vat_rate;
 
 // ---------------------------------------------------------------------------
 // Limites
@@ -34,27 +33,6 @@ const MAX_LIST_LIMIT: i64 = 100;
 const DEFAULT_LIST_LIMIT: i64 = 20;
 /// Plafond anti-DoS pour le paramètre `search` avant `escape_like` + LIKE SQL.
 const MAX_SEARCH_LEN: usize = 100;
-/// Scale maximal autorisé pour `unit_price` (cohérent avec `DECIMAL(19,4)` en DB).
-const MAX_UNIT_PRICE_SCALE: u32 = 4;
-
-/// Whitelist des taux TVA suisses v0.1 (depuis 01.01.2024).
-/// Initialisé une seule fois via `LazyLock` (stable ≥ Rust 1.80).
-/// Note: `rust_decimal::Decimal::eq` ignore le scale (8.1 == 8.10 == 8.100),
-/// donc la comparaison reste robuste aux variations de représentation client.
-static ALLOWED_VAT_RATES: LazyLock<[Decimal; 4]> = LazyLock::new(|| {
-    [
-        Decimal::from_str("0.00").expect("VAT whitelist literal must parse"),
-        Decimal::from_str("2.60").expect("VAT whitelist literal must parse"),
-        Decimal::from_str("3.80").expect("VAT whitelist literal must parse"),
-        Decimal::from_str("8.10").expect("VAT whitelist literal must parse"),
-    ]
-});
-
-/// Plafond `unit_price` : 1 milliard CHF. Couvre tous les cas réalistes de
-/// catalogue PME suisse et empêche les overflows en Epic 5 (ligne facture =
-/// unit_price × quantity → DECIMAL(19,4) max ≈ 10^15).
-static MAX_UNIT_PRICE: LazyLock<Decimal> =
-    LazyLock::new(|| Decimal::from_str("1000000000").expect("MAX_UNIT_PRICE literal must parse"));
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -202,9 +180,9 @@ fn validate_common(
         ));
     }
     // Scale ≤ 4 : empêche toute truncation silencieuse MariaDB sur DECIMAL(19,4).
-    if unit_price.scale() > MAX_UNIT_PRICE_SCALE {
+    if !scale_within(&unit_price, MAX_DECIMAL_SCALE) {
         return Err(AppError::Validation(format!(
-            "Le prix unitaire doit avoir au plus {MAX_UNIT_PRICE_SCALE} décimales"
+            "Le prix unitaire doit avoir au plus {MAX_DECIMAL_SCALE} décimales"
         )));
     }
     // Plafond 1 milliard CHF : anti-overflow Epic 5 (ligne facture = prix × qty).
@@ -214,7 +192,7 @@ fn validate_common(
         ));
     }
 
-    if !ALLOWED_VAT_RATES.contains(&vat_rate) {
+    if !validate_vat_rate(&vat_rate) {
         return Err(AppError::Validation(
             "Taux TVA non autorisé. Valeurs acceptées : 0.00%, 2.60%, 3.80%, 8.10%".into(),
         ));
@@ -370,6 +348,7 @@ pub async fn archive_product(
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+    use std::str::FromStr;
 
     #[test]
     fn validate_accepts_valid_vat_rates() {

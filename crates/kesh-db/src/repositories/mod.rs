@@ -10,6 +10,7 @@ pub mod bank_accounts;
 pub mod companies;
 pub mod contacts;
 pub mod fiscal_years;
+pub mod invoices;
 pub mod journal_entries;
 pub mod onboarding;
 pub mod products;

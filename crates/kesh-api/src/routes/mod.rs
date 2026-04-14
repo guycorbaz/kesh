@@ -4,11 +4,14 @@ pub mod companies;
 pub mod contacts;
 pub mod health;
 pub mod i18n;
+pub mod invoices;
 pub mod journal_entries;
+pub mod limits;
 pub mod onboarding;
 pub mod products;
 pub mod profile;
 pub mod users;
+pub mod vat;
 
 use serde::Serialize;
 
