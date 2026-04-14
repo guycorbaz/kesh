@@ -37,7 +37,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-14
-# (epic-4 clôturé — toutes les stories done, rétro optionnelle)
+# (story 5-1 créée, ready-for-dev — Epic 5 démarre)
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -87,8 +87,8 @@ development_status:
   epic-4-retrospective: optional
 
   # Epic 5: Facturation QR Bill
-  epic-5: backlog
-  5-1-creation-factures-brouillon: backlog
+  epic-5: in-progress
+  5-1-creation-factures-brouillon: ready-for-dev
   5-2-validation-numerotation-factures: backlog
   5-3-generation-pdf-qr-bill: backlog
   epic-5-retrospective: optional
