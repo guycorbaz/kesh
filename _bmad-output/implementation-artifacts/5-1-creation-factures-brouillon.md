@@ -195,7 +195,9 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
       INDEX idx_invoice_lines_invoice (invoice_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   ```
-  **Note** : la clause `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` est OBLIGATOIRE (cf. pattern products) — sinon MariaDB 11.x divergerait avec `uca1400_ai_ci`.
+  **Note 1** : la clause `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` est OBLIGATOIRE (cf. pattern products) — sinon MariaDB 11.x divergerait avec `uca1400_ai_ci`.
+
+  **Note 2 — Plafonds volontairement hors DB** : les plafonds de magnitude (`unit_price ≤ 10⁹`, `quantity ≤ 10⁶`) et de scale (≤ 4 décimales) sont validés **côté handler uniquement** (pattern identique à `products.rs`). Raison : ces limites sont anti-DoS / anti-troncature, pas des invariants métier. Garder la flexibilité de les ajuster sans migration. Les CHECKs DB ci-dessus couvrent uniquement les invariants durs (`quantity > 0`, `unit_price ≥ 0`, `vat_rate` dans `[0, 100]`, `total_amount ≥ 0`, `status` dans enum textuel).
 
 - [ ] T1.2 Créer `crates/kesh-db/src/entities/invoice.rs` :
   - `pub struct Invoice { id, company_id, contact_id, invoice_number (Option<String>), status (String), date (chrono::NaiveDate), due_date (Option<NaiveDate>), payment_terms (Option<String>), total_amount (Decimal), version, created_at, updated_at }` avec `#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]` + `#[serde(rename_all = "camelCase")]`.
@@ -215,14 +217,16 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
   - `InvoiceListResult { items (Vec<InvoiceListItem>), total, offset, limit }`. **`InvoiceListItem`** = projection légère sans les lignes (juste entête + `contact_name` via JOIN) pour optimiser la liste.
   - Fonctions principales : `create(pool, NewInvoice, actor_user_id) -> Invoice`, `find_by_id_with_lines(pool, id, company_id) -> (Invoice, Vec<InvoiceLine>)`, `list_by_company_paginated`, `update(pool, id, company_id, expected_version, InvoiceUpdate, actor) -> Invoice`, `delete(pool, id, company_id, actor)`.
   - **`create`** : transaction → INSERT invoice → calculer `total_amount` = Σ (qty × unit_price) → UPDATE invoices SET total_amount → INSERT lines (avec `position = 0..N`, `line_total = qty × unit_price`) → INSERT audit log → commit. **Rollback explicite** si audit échoue.
-  - **`update`** : **pattern aligné avec `products.rs`** — SELECT initial optimiste (sans `FOR UPDATE`) pour charger l'entité courante + construire le snapshot `before`. Vérifier `status == 'draft'` dans le repository → sinon `DbError::IllegalStateTransition` (pattern identique à la vérification `active` dans products.rs). Puis transaction : DELETE invoice_lines WHERE invoice_id → INSERT nouvelles lignes → `UPDATE invoices SET ..., version = version + 1 WHERE id = ? AND version = ?` → si `rows_affected == 0` → `DbError::OptimisticLockConflict` → audit wrapper `{before, after}` → commit. **NE PAS** utiliser `SELECT ... FOR UPDATE` dans `update` (cohérence avec products.rs).
+  - **`update`** : **pattern aligné avec `products.rs`** — SELECT initial optimiste (sans `FOR UPDATE`) pour charger l'entité courante + construire le snapshot `before`. Vérifier `status == 'draft'` dans le repository → sinon `DbError::IllegalStateTransition` (pattern identique à la vérification `active` dans products.rs). Puis transaction : DELETE invoice_lines WHERE invoice_id → INSERT nouvelles lignes (avec `position = 0..N`, `line_total = qty × unit_price` par ligne) → **recalculer `total_amount = Σ (qty × unit_price)`** sur les nouvelles lignes → `UPDATE invoices SET contact_id = ?, date = ?, due_date = ?, payment_terms = ?, total_amount = ?, version = version + 1 WHERE id = ? AND version = ?` → si `rows_affected == 0` → `DbError::OptimisticLockConflict` → audit wrapper `{before, after}` (entête + lignes complètes des deux versions) → commit. **NE PAS** utiliser `SELECT ... FOR UPDATE` dans `update` (cohérence avec products.rs). **NE PAS oublier la mise à jour explicite de `total_amount`** dans l'UPDATE — c'est la source d'incohérence la plus probable.
   - **`delete`** : transaction → **`SELECT ... FOR UPDATE`** (justifié ici pour garantir l'atomicité snapshot + vérification statut + suppression) → vérifier `status == 'draft'` → snapshot avant suppression → DELETE invoices (CASCADE supprime les lignes) → audit `invoice.deleted` → commit.
   - **`list_by_company_paginated`** : JOIN contacts (alias `c`) : `FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id`. SELECT inclut `c.name AS contact_name`. `InvoiceSortBy::ContactName.as_sql_column()` retourne littéralement `"c.name"` (pas `"contact_name"` — l'alias dans ORDER BY fonctionne sur MariaDB mais une colonne qualifiée est plus robuste). Whitelist SQL stricte par enum variant, pas de string concat. `push_where_clauses` avec filtres status/contact_id/date range + search LIKE sur `i.payment_terms` et `c.name`.
 - [ ] T2.2 Ajouter `pub mod invoices;` dans `repositories/mod.rs`.
 
 ### T3 — API routes `/api/v1/invoices` (AC: #1, #4, #5, #6, #7, #8, #9, #11, #12, #14, #17)
 
-- [ ] T3.1 Créer `crates/kesh-api/src/routes/vat.rs` — extraire `allowed_vat_rates()` depuis `products.rs` :
+- [ ] T3.1 **Extraire en modules partagés** dans `crates/kesh-api/src/routes/` :
+
+  **`vat.rs`** — extraire `allowed_vat_rates()` depuis `products.rs` :
   ```rust
   use rust_decimal::Decimal;
   use std::sync::LazyLock;
@@ -243,6 +247,28 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
   }
   ```
   Mettre à jour `products.rs` pour importer depuis `crate::routes::vat` (DRY). Refactor non-breaking.
+
+  **`limits.rs`** — extraire `MAX_UNIT_PRICE` (déjà défini dans `products.rs:53` via `LazyLock<Decimal>`) et helpers de scale :
+  ```rust
+  use rust_decimal::Decimal;
+  use std::str::FromStr;
+  use std::sync::LazyLock;
+
+  pub static MAX_UNIT_PRICE: LazyLock<Decimal> = LazyLock::new(|| {
+      Decimal::from_str("1000000000").expect("MAX_UNIT_PRICE literal must parse")
+  });
+
+  pub static MAX_QUANTITY: LazyLock<Decimal> = LazyLock::new(|| {
+      Decimal::from_str("1000000").expect("MAX_QUANTITY literal must parse")
+  });
+
+  /// Retourne true si le scale (nombre de décimales) du montant est ≤ `max_scale`.
+  /// Évite la troncature silencieuse en `DECIMAL(p,s)`.
+  pub fn scale_within(value: &Decimal, max_scale: u32) -> bool {
+      value.scale() <= max_scale
+  }
+  ```
+  Refactorer `products.rs` pour importer `MAX_UNIT_PRICE` et `scale_within` depuis `crate::routes::limits` (DRY). Les tests products existants doivent continuer à passer sans changement de comportement.
 - [ ] T3.2 Créer `crates/kesh-api/src/routes/invoices.rs` avec DTOs + 5 handlers :
   - `CreateInvoiceRequest { contactId, date, dueDate, paymentTerms, lines: Vec<CreateInvoiceLineRequest> }`.
   - `UpdateInvoiceRequest { contactId, date, dueDate, paymentTerms, lines: Vec<CreateInvoiceLineRequest>, version }`.
@@ -261,7 +287,7 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
   - **Validation contact** : vérifier que `contact_id` appartient à la même `company_id` ET que `contact.active == true` → sinon 400 `INVALID_INPUT` (« Contact introuvable »).
   - Mapping erreurs : `DbError::IllegalStateTransition` → 409 `ILLEGAL_STATE_TRANSITION`, `DbError::OptimisticLockConflict` → 409 `OPTIMISTIC_LOCK_CONFLICT`.
 - [ ] T3.3 Enregistrer routes : GETs dans `authenticated_routes`, mutations dans `comptable_routes`.
-- [ ] T3.4 Ajouter `pub mod invoices; pub mod vat;` dans `routes/mod.rs`.
+- [ ] T3.4 Ajouter `pub mod invoices; pub mod vat; pub mod limits;` dans `routes/mod.rs`.
 
 ### T4 — Frontend feature `invoices` (AC: #1, #2, #3, #4, #5, #10, #11, #12, #13, #15, #17, #18)
 
@@ -279,7 +305,7 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
   - Submit → POST/PUT → redirect `/invoices` avec toast success.
   - Erreur 409 `OPTIMISTIC_LOCK_CONFLICT` → modale reload.
 - [ ] T4.4 Créer `ProductPicker.svelte` (dialog imbriqué) — liste produits cherchable (appelle `listProducts`), sélection → callback qui ajoute une ligne au formulaire avec snapshot complet.
-- [ ] T4.5 Créer `ContactPicker.svelte` (combobox) — dropdown cherchable appelant `listContacts({ search, limit: 50 })` debounced.
+- [ ] T4.5 Créer `ContactPicker.svelte` — **avant d'implémenter, vérifier la disponibilité d'un composant Combobox** dans le projet : `grep -r "Combobox" frontend/src/lib/components/ui/` (si shadcn-svelte / bits-ui est installé). Si un composant existe → l'utiliser. **Sinon**, implémenter une version simple : `<input type="text">` + dropdown absolute-positioned (ul/li avec `role="listbox"`), navigation flèches haut/bas + Enter pour sélection, Escape pour fermer, click hors → fermer (via `clickOutside` action ou listener global). Appelle `listContacts({ search, limit: 50 })` avec debounce 300ms (réutiliser le helper debounce existant). À la sélection, callback `onSelect(contact)` + fermeture. Accessibilité : `aria-controls`, `aria-expanded`, `aria-activedescendant`.
 - [ ] T4.6 Créer `/invoices/[id]/+page.svelte` — vue lecture seule avec bouton « Modifier » (si draft) et « Supprimer » (dialog de confirmation).
 - [ ] T4.7 Ajouter lien sidebar « Factures » dans `+layout.svelte` navGroups.
 
@@ -301,7 +327,10 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
 
 ### T6 — Tests (AC: #19)
 
-- [ ] T6.0 **Helpers fixtures** dans `invoices::tests` (module privé) : `create_test_contact(pool, company_id) -> (i64, Contact)` (nom préfixé `"TestInvoiceContact_"` + uuid court, IDE optionnel null, active=true) et `create_test_product(pool, company_id) -> (i64, Product)` (nom préfixé `"TestInvoiceProduct_"`, unit_price/vat_rate fixés). `cleanup_test_invoices(pool, company_id)` : `DELETE FROM invoices WHERE company_id = ? AND id IN (SELECT ...)` — isoler via un préfixe sur `payment_terms` (`"TestInvoice_"`) ou via les IDs retournés par les helpers (plus fiable). Pattern strictement calqué sur `cleanup_test_products` dans products.rs.
+- [ ] T6.0 **Helpers fixtures** dans `invoices::tests` (module privé) :
+  - `create_test_contact(pool, company_id) -> (i64, Contact)` — nom préfixé `"TestInvoiceContact_"` + suffixe uuid court (ex: `uuid::Uuid::new_v4().simple().to_string()[..8]`) pour éviter toute collision cross-test, `ide = None`, `active = true`.
+  - `create_test_product(pool, company_id) -> (i64, Product)` — nom préfixé `"TestInvoiceProduct_"` + suffixe uuid, `unit_price = dec!(100.00)`, `vat_rate = dec!(8.10)`.
+  - **Stratégie de cleanup retenue (choix tranché — pas d'ambiguïté)** : chaque test maintient **une liste locale `Vec<i64>` des IDs de factures créées** (pattern `let mut created_invoice_ids = vec![];` puis `created_invoice_ids.push(invoice.id)` après chaque `create`). À la fin du test (via `scopeguard` ou `Drop` impl, ou simplement en fin de fonction), appeler `cleanup_test_invoices(pool, &created_invoice_ids)` qui exécute `DELETE FROM invoices WHERE id IN (?, ?, ...)` (utiliser `QueryBuilder::new` + `push_tuples`). La CASCADE sur `invoice_lines` supprime les lignes automatiquement. **NE PAS** se baser sur un LIKE `payment_terms` (fragile, collision entre tests) ni sur un préfixe sur une colonne invoice (il n'y en a pas de naturel). Pour les contacts/produits de test, même stratégie : liste d'IDs locale + `cleanup_test_contacts(pool, &ids)` et `cleanup_test_products(pool, &ids)` (créer ces helpers de cleanup s'ils n'existent pas dans contacts.rs/products.rs).
 - [ ] T6.1 Tests d'intégration DB `invoices::tests` — pattern contacts/products :
   - `test_create_with_lines_computes_total` — vérifie `total_amount` et `line_total` après INSERT.
   - `test_create_writes_audit_log` — audit atomique avec snapshot entête + lignes.
@@ -318,7 +347,8 @@ so that **je puisse préparer la facturation de mes clients avant validation (St
   - `test_db_rejects_quantity_zero_via_direct_insert` — CHECK defense in depth.
   - `test_db_rejects_invalid_status_via_direct_update`.
   - **`test_delete_contact_rejected_when_has_invoices`** — ce test vit dans `contacts::tests` (ou dans un fichier d'intégration dédié) : créer un contact, créer une facture pour ce contact, tenter `DELETE /api/v1/contacts/:id` → vérifier 409. Assure qu'on n'introduit pas de régression sur Story 4.1 par la FK `ON DELETE RESTRICT`.
-- [ ] T6.2 Tests unit handlers `invoices::tests` (module `#[cfg(test)]`) : validation `lines = []`, validation TVA whitelist (réutilisation `vat::validate_vat_rate`), validation contact_id cross-company.
+- [ ] T6.2 Tests unit handlers `invoices::tests` (module `#[cfg(test)]`) : validation `lines = []`, validation TVA whitelist (réutilisation `vat::validate_vat_rate`), validation contact_id cross-company, validation scale unit_price/quantity, plafonds MAX_UNIT_PRICE et MAX_QUANTITY, normalisation NFC appliquée.
+- [ ] T6.2b **Tests RBAC e2e** (`invoices_rbac.spec.ts` Playwright ou test Rust dédié dans `kesh-api/tests/`) : AC #14 explicite — login en user `readonly` → POST `/api/v1/invoices` → 403 ; PUT → 403 ; DELETE → 403 ; GET list → 200 ; GET by id → 200. Login en user `comptable` → toutes mutations → 2xx. Sans ce test, la couverture RBAC repose uniquement sur l'enregistrement des routes, fragile en régression.
 - [ ] T6.3 Tests Vitest `invoice-helpers.test.ts` : `computeLineTotal` précision, `computeInvoiceTotal` avec 3 lignes, arrondis.
 - [ ] T6.4 Tests Playwright `invoices.spec.ts` :
   - Création facture avec 1 ligne libre + 1 ligne catalogue → vérifier total et persistance après reload.
