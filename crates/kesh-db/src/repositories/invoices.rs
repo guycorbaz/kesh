@@ -789,6 +789,12 @@ pub async fn validate_invoice(
         .await?;
 
         // (8) UPDATE invoices → validated.
+        // Review Q5 (pass 2) : le check `status = 'draft'` dans le WHERE est
+        // redondant avec le `SELECT ... FOR UPDATE` de (1) qui garantit que
+        // `invoice_before.status = 'draft'` jusqu'au commit. Conservé en
+        // défense en profondeur contre un refactor futur qui retirerait le
+        // FOR UPDATE initial (le check version suffit mais est moins robuste
+        // si le lock disparaît).
         let rows = sqlx::query(
             "UPDATE invoices SET status = 'validated', invoice_number = ?, \
              journal_entry_id = ?, version = version + 1 \

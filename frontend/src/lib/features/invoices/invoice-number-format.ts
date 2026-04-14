@@ -142,10 +142,6 @@ export function validateFormatTemplate(template: string): FormatValidationResult
 		} else {
 			return { ok: false, error: `Placeholder inconnu : {${inner}}` };
 		}
-		// Cas non reconnu
-		if (!KNOWN_PLACEHOLDERS.has(inner) && !inner.startsWith('SEQ:')) {
-			// (unreachable — logique ci-dessus couvre tout)
-		}
 	}
 
 	if (!hasPlaceholder) {

@@ -36,6 +36,9 @@ pub enum FormatError {
     IllegalCharacter(char),
     UnknownPlaceholder(String),
     InvalidSeqPadding(u32),
+    /// Numéro séquentiel invalide (< 1). Review Q4 (pass 2) : variant
+    /// dédié pour distinguer d'une erreur de padding.
+    InvalidSeq(i64),
     NoPlaceholder,
     RenderedTooLong(usize),
     UnmatchedBrace,
@@ -59,6 +62,7 @@ impl fmt::Display for FormatError {
                 f,
                 "Padding {{SEQ:{n}}} invalide — doit être entre 1 et {MAX_SEQ_PADDING}"
             ),
+            Self::InvalidSeq(n) => write!(f, "Numéro séquentiel invalide : {n} (doit être ≥ 1)"),
             Self::NoPlaceholder => write!(
                 f,
                 "Le format doit contenir au moins un placeholder reconnu ({{YEAR}}, {{FY}}, {{SEQ}}, {{SEQ:NN}})"
@@ -203,7 +207,15 @@ pub fn render(template: &str, year: i32, fy_name: &str, seq: i64) -> Result<Stri
     // Review P14 : DB CHECK `next_number >= 1` devrait garantir seq ≥ 1,
     // mais défense en profondeur si un caller contourne le repository.
     if seq < 1 {
-        return Err(FormatError::InvalidSeqPadding(0));
+        return Err(FormatError::InvalidSeq(seq));
+    }
+    // Review Q2 (pass 2) : fy.name est admin-controlled à la création de
+    // l'exercice. Un nom contenant '{' ou '}' pourrait produire un numéro
+    // visuellement trompeur. Refuser côté render (défense en profondeur).
+    if fy_name.contains('{') || fy_name.contains('}') {
+        return Err(FormatError::IllegalCharacter(
+            fy_name.chars().find(|c| *c == '{' || *c == '}').unwrap(),
+        ));
     }
     let tokens = parse(template)?;
     let seq_str = seq.to_string();
