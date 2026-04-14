@@ -59,8 +59,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo test
-        # -j1 to avoid cross-binary flakiness (see feedback_sqlx_mysql_gotchas)
-        run: cargo test --workspace -j1
+        # --test-threads=1 : tests share global state (i18n, error locale) and
+        # require serial execution within each binary.
+        # -j1 : serialize test binaries to avoid SQLx PoolTimedOut across binaries.
+        run: cargo test --workspace -j1 -- --test-threads=1
 
   frontend:
     name: Frontend (Svelte)
