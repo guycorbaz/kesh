@@ -37,7 +37,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-14
-# (story 5-1 en développement — Epic 5)
+# (story 5-2 in-progress — scope v0.6 + 3 stories backlog ajoutées : 2-6, 3-6, 5-4)
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -69,6 +69,7 @@ development_status:
   2-3-flux-onboarding-chemin-b-production: done
   2-4-page-accueil-navigation: done
   2-5-mode-guide-expert: done
+  2-6-onboarding-comptes-facturation-pre-remplis: backlog
   epic-2-retrospective: done
 
   # Epic 3: Plan Comptable & Écritures
@@ -78,6 +79,7 @@ development_status:
   3-3-modification-suppression-ecritures: done
   3-4-recherche-pagination-tri: done
   3-5-notifications-aide-contextuelle-audit: done
+  3-6-journaux-personnalisables: backlog
   epic-3-retrospective: optional
 
   # Epic 4: Carnet d'Adresses & Catalogue
@@ -88,9 +90,10 @@ development_status:
 
   # Epic 5: Facturation QR Bill
   epic-5: in-progress
-  5-1-creation-factures-brouillon: review
-  5-2-validation-numerotation-factures: backlog
+  5-1-creation-factures-brouillon: done
+  5-2-validation-numerotation-factures: in-progress
   5-3-generation-pdf-qr-bill: backlog
+  5-4-echeancier-factures: backlog
   epic-5-retrospective: optional
 
   # Epic 6: Import Bancaire & Réconciliation

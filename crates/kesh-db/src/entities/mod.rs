@@ -9,9 +9,11 @@ pub mod account;
 pub mod audit_log;
 pub mod bank_account;
 pub mod company;
+pub mod company_invoice_settings;
 pub mod contact;
 pub mod fiscal_year;
 pub mod invoice;
+pub mod invoice_number_sequence;
 pub mod journal_entry;
 pub mod onboarding;
 pub mod product;
@@ -22,9 +24,11 @@ pub use account::{Account, AccountType, AccountUpdate, NewAccount};
 pub use audit_log::{AuditLogEntry, NewAuditLogEntry};
 pub use bank_account::{BankAccount, NewBankAccount};
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
+pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
+pub use invoice_number_sequence::InvoiceNumberSequence;
 pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,

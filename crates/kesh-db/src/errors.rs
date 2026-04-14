@@ -57,6 +57,20 @@ pub enum DbError {
     #[error("La date n'est pas dans l'exercice courant de cette écriture")]
     DateOutsideFiscalYear,
 
+    /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
+    /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
+    /// inexistant (date hors de tous les exercices connus) OU clôturé.
+    /// Mappé vers HTTP 400 `FISCAL_YEAR_INVALID` côté API.
+    #[error("Aucun exercice ouvert ne couvre cette date")]
+    FiscalYearInvalid,
+
+    /// Un champ de configuration requis pour l'opération est absent
+    /// (Story 5.2 : `default_receivable_account_id` ou
+    /// `default_revenue_account_id` manquant dans `company_invoice_settings`).
+    /// Mappé vers HTTP 400 `CONFIGURATION_REQUIRED` côté API.
+    #[error("Configuration manquante : {0}")]
+    ConfigurationRequired(String),
+
     /// Pool épuisé ou timeout d'acquisition (retry-able côté API → 503).
     #[error("Pool de connexions épuisé ou timeout : {0}")]
     ConnectionUnavailable(String),
@@ -88,6 +102,8 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
+            Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
+            Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::Invariant(_) => "INVARIANT_VIOLATION",
             Self::Sqlx(_) => "DATABASE_ERROR",

@@ -7,5 +7,6 @@
 pub mod accounting;
 pub mod chart_of_accounts;
 pub mod errors;
+pub mod invoice_format;
 pub mod listing;
 pub mod types;

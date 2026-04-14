@@ -43,7 +43,9 @@ const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry
 const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit";
 
 /// Crée une écriture comptable (en-tête + lignes) dans une transaction
-/// atomique.
+/// atomique. Wrapper pool-level : ouvre sa propre transaction et la
+/// valide/rollback selon le résultat. Délègue à [`create_in_tx`] pour
+/// tout le travail métier.
 ///
 /// Le `fiscal_year_id` doit être pré-validé par le caller via
 /// [`fiscal_years::find_covering_date`](super::fiscal_years::find_covering_date)
@@ -56,7 +58,40 @@ pub async fn create(
     new: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    match create_in_tx(&mut tx, fiscal_year_id, user_id, new).await {
+        Ok(result) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(result)
+        }
+        Err(e) => {
+            // Best-effort rollback. Si le rollback échoue lui-même, on
+            // privilégie l'erreur métier originale — l'appelant la verra
+            // en premier et le drop-guard SQLx annulera la tx en arrière-plan.
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
 
+/// Cœur métier de [`create`] — accepte une transaction ouverte par le
+/// caller et **ne commit/rollback PAS** (responsabilité du caller).
+///
+/// Utilisée à deux endroits :
+/// 1. [`create`] (wrapper pool-level) — cas standard.
+/// 2. [`invoices::validate_invoice`](super::invoices::validate_invoice)
+///    (Story 5.2) — pour garantir l'atomicité { numérotation facture +
+///    insertion écriture comptable + UPDATE invoices.status } dans une
+///    seule transaction (impossible si `create` ouvre sa propre tx).
+///
+/// Contrat : en cas de succès, retourne `Ok(JournalEntryWithLines)` et
+/// la tx contient les inserts. En cas d'erreur, bubble-up sans toucher
+/// à la tx — le caller doit rollback ou laisser le drop-guard agir.
+pub async fn create_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    fiscal_year_id: i64,
+    user_id: i64,
+    new: NewJournalEntry,
+) -> Result<JournalEntryWithLines, DbError> {
     // Étape 1 : re-lock de l'exercice contre une clôture concurrente.
     let fy_row: Option<(i64, String)> = sqlx::query_as(
         "SELECT id, status FROM fiscal_years \
@@ -64,27 +99,19 @@ pub async fn create(
     )
     .bind(fiscal_year_id)
     .bind(new.company_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     match fy_row {
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
-        Some((_, status)) if status == "Closed" => {
-            tx.rollback().await.map_err(map_db_error)?;
-            // Variante dédiée (P2) : pas de matching fragile sur le contenu du message.
-            return Err(DbError::FiscalYearClosed);
-        }
+        None => return Err(DbError::NotFound),
+        Some((_, status)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
         Some(_) => {}
     }
 
     // Étape 2 : vérifier que tous les comptes existent, appartiennent
     // à la company et sont actifs.
     if new.lines.is_empty() {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::Invariant(
             "NewJournalEntry sans lignes — devait être rejeté en amont".into(),
         ));
@@ -104,17 +131,13 @@ pub async fn create(
     for id in &account_ids {
         q = q.bind(id);
     }
-    let active_ids: Vec<i64> = q.fetch_all(&mut *tx).await.map_err(map_db_error)?;
+    let active_ids: Vec<i64> = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
 
-    // Dédupliquer les IDs demandés : si une même ligne référence le même
-    // compte deux fois, on ne doit pas exiger que l'API retourne 2 rows.
     let mut unique_requested: Vec<i64> = account_ids.clone();
     unique_requested.sort_unstable();
     unique_requested.dedup();
 
     if active_ids.len() != unique_requested.len() {
-        tx.rollback().await.map_err(map_db_error)?;
-        // Variante dédiée (P12) : mapping API stable.
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
@@ -125,7 +148,7 @@ pub async fn create(
     )
     .bind(new.company_id)
     .bind(fiscal_year_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
@@ -141,38 +164,24 @@ pub async fn create(
     .bind(new.entry_date)
     .bind(new.journal)
     .bind(&new.description)
-    .execute(&mut *tx)
-    .await;
-
-    let header_result = match header_result {
-        Ok(r) => r,
-        Err(e) => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(map_db_error(e));
-        }
-    };
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
 
     let last_id = header_result.last_insert_id();
     if last_id == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::Invariant(
             "last_insert_id == 0 après INSERT journal_entries".into(),
         ));
     }
-    let entry_id = match i64::try_from(last_id) {
-        Ok(v) => v,
-        Err(_) => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::Invariant(format!(
-                "last_insert_id {last_id} dépasse i64::MAX"
-            )));
-        }
-    };
+    let entry_id = i64::try_from(last_id).map_err(|_| {
+        DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX"))
+    })?;
 
     // Étape 5 : INSERT des lignes avec line_order séquentiel.
     for (idx, line) in new.lines.iter().enumerate() {
         let line_order = (idx as i32) + 1;
-        let insert_result = sqlx::query(
+        sqlx::query(
             "INSERT INTO journal_entry_lines \
              (entry_id, account_id, line_order, debit, credit) \
              VALUES (?, ?, ?, ?, ?)",
@@ -182,13 +191,9 @@ pub async fn create(
         .bind(line_order)
         .bind(line.debit)
         .bind(line.credit)
-        .execute(&mut *tx)
-        .await;
-
-        if let Err(e) = insert_result {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(map_db_error(e));
-        }
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
     }
 
     // Étape 6 : double-check balance applicative (defense in depth).
@@ -197,7 +202,7 @@ pub async fn create(
          FROM journal_entry_lines WHERE entry_id = ?",
     )
     .bind(entry_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
@@ -205,7 +210,6 @@ pub async fn create(
     let total_credit: Decimal = row.try_get("c").map_err(map_db_error)?;
 
     if total_debit != total_credit {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::Invariant(format!(
             "balance DB incohérente après INSERT : débit={total_debit}, crédit={total_credit}"
         )));
@@ -216,7 +220,7 @@ pub async fn create(
         "SELECT {ENTRY_COLUMNS} FROM journal_entries WHERE id = ?"
     ))
     .bind(entry_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
@@ -224,18 +228,16 @@ pub async fn create(
         "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
     ))
     .bind(entry_id)
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     // Étape 8 (Story 3.5) : INSERT audit_log avant le COMMIT.
-    // Convention projet : snapshot direct pour création (cohérent avec
-    // delete_by_id), wrapper {before, after} uniquement pour update.
-    // Rollback explicite sur erreur pour cohérence avec les autres
-    // branches d'erreur de la fonction (pattern P10 uniformisé 3.5).
+    // Le caller qui appelle create_in_tx peut ajouter son propre audit
+    // (ex. validate_invoice ajoute « invoice.validated » en complément).
     let snapshot = entry_snapshot_json(&entry, &lines);
-    if let Err(e) = audit_log::insert_in_tx(
-        &mut tx,
+    audit_log::insert_in_tx(
+        tx,
         NewAuditLogEntry {
             user_id,
             action: "journal_entry.created".to_string(),
@@ -244,13 +246,7 @@ pub async fn create(
             details_json: Some(snapshot),
         },
     )
-    .await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
-    }
-
-    tx.commit().await.map_err(map_db_error)?;
+    .await?;
 
     Ok(JournalEntryWithLines { entry, lines })
 }

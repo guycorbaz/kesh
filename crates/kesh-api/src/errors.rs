@@ -367,6 +367,25 @@ impl IntoResponse for AppError {
                         "La date n'est pas dans l'exercice courant de cette écriture.",
                     ),
                 ),
+                DbError::FiscalYearInvalid => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "FISCAL_YEAR_INVALID",
+                    &t(
+                        "error-fiscal-year-invalid",
+                        "Aucun exercice ouvert ne couvre cette date.",
+                    ),
+                ),
+                DbError::ConfigurationRequired(field) => {
+                    tracing::warn!("configuration required: {field}");
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "CONFIGURATION_REQUIRED",
+                        &t(
+                            "error-configuration-required",
+                            "Configuration incomplète : configurez les paramètres de facturation avant de valider.",
+                        ),
+                    )
+                }
                 DbError::ConnectionUnavailable(m) => {
                     tracing::warn!("db connection unavailable: {m}");
                     build_response(

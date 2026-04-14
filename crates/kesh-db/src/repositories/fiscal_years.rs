@@ -107,6 +107,39 @@ pub async fn find_covering_date(
     .map_err(map_db_error)
 }
 
+/// Retourne l'exercice **ouvert** qui couvre une date donnée, avec lock
+/// `SELECT ... FOR UPDATE` — utilisé dans une transaction multi-étapes
+/// (ex. `invoices::validate_invoice` Story 5.2) pour empêcher une
+/// clôture concurrente entre le check et la fin de la transaction.
+///
+/// Distinct de [`find_covering_date`] : (a) filtre `status = 'Open'`
+/// (ignorent les exercices clos), (b) prend un `Transaction` au lieu
+/// d'un `Pool` (doit s'exécuter dans la transaction métier du caller),
+/// (c) applique `FOR UPDATE` sur la row trouvée.
+///
+/// Ordre des locks (Story 5.2 section Concurrence) : `fiscal_years`
+/// s'acquiert **après** `invoices` et **avant** `invoice_number_sequences`
+/// et `journal_entries`. Toute divergence = risque de deadlock avec
+/// `journal_entries::create_in_tx` en cours sur la même company.
+pub async fn find_open_covering_date(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    date: NaiveDate,
+) -> Result<Option<FiscalYear>, DbError> {
+    sqlx::query_as::<_, FiscalYear>(
+        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+         FROM fiscal_years \
+         WHERE company_id = ? AND start_date <= ? AND end_date >= ? AND status = 'Open' \
+         LIMIT 1 FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(date)
+    .bind(date)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste les exercices d'une company, triés par date de début.
 ///
 /// Limité à `MAX_LIST_LIMIT` exercices. Une entreprise a typiquement moins

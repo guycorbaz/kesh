@@ -34,7 +34,7 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
 
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
 const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
-    status, date, due_date, payment_terms, total_amount, version, created_at, updated_at \
+    status, date, due_date, payment_terms, total_amount, journal_entry_id, version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
 
 /// Échappe pour `LIKE ? ESCAPE '\\'`. Dupliqué depuis contacts/products —
@@ -617,6 +617,241 @@ pub async fn delete(
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Story 5.2 — Validation & numérotation
+// ---------------------------------------------------------------------------
+
+/// Résultat d'une validation réussie (facture validée + écriture comptable générée).
+#[derive(Debug)]
+pub struct ValidatedInvoice {
+    pub invoice: Invoice,
+    pub journal_entry: crate::entities::JournalEntryWithLines,
+}
+
+/// Valide une facture brouillon : lui attribue un numéro définitif,
+/// génère l'écriture comptable associée, et bascule son statut en
+/// `validated`. Le tout dans une transaction atomique.
+///
+/// # Ordre des locks (canonique — Story 5.2 section Concurrence)
+///
+/// 1. `invoices` (`SELECT ... FOR UPDATE` sur la facture à valider).
+/// 2. `fiscal_years` (via [`fiscal_years::find_open_covering_date`]).
+/// 3. `invoice_number_sequences` (via [`invoice_number_sequences::next_number_for`]).
+/// 4. `journal_entries` (via [`journal_entries::create_in_tx`]).
+/// 5. INSERTs + UPDATE invoices + INSERT audit.
+///
+/// **Toute divergence de cet ordre = risque de deadlock** avec des
+/// créations manuelles concurrentes de `journal_entries`.
+///
+/// # Erreurs
+///
+/// - [`DbError::NotFound`] : facture absente ou hors scope company.
+/// - [`DbError::IllegalStateTransition`] : statut ≠ `draft`.
+/// - [`DbError::FiscalYearInvalid`] : aucun exercice ouvert pour `invoice.date`.
+/// - [`DbError::ConfigurationRequired`] : comptes par défaut absents.
+/// - [`DbError::OptimisticLockConflict`] : race sur l'UPDATE final (défensif).
+pub async fn validate_invoice(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    user_id: i64,
+) -> Result<ValidatedInvoice, DbError> {
+    use crate::entities::{Journal, NewJournalEntry, NewJournalEntryLine};
+    use crate::repositories::{
+        company_invoice_settings, fiscal_years, invoice_number_sequences, journal_entries,
+    };
+    use kesh_core::invoice_format;
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        // (1) Lock facture + check draft.
+        let invoice_before = sqlx::query_as::<_, Invoice>(&format!(
+            "{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"
+        ))
+        .bind(invoice_id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+        let invoice_before = match invoice_before {
+            None => return Err(DbError::NotFound),
+            Some(inv) if inv.status != "draft" => {
+                return Err(DbError::IllegalStateTransition(format!(
+                    "impossible de valider une facture de statut '{}'",
+                    inv.status
+                )));
+            }
+            Some(inv) => inv,
+        };
+
+        let lines_before = fetch_lines(&mut tx, invoice_id).await?;
+
+        // (2) Config company (lazy create si absente).
+        let settings =
+            company_invoice_settings::get_or_create_default_in_tx(&mut tx, company_id).await?;
+
+        let receivable_account_id = settings.default_receivable_account_id.ok_or_else(|| {
+            DbError::ConfigurationRequired("default_receivable_account_id".into())
+        })?;
+        let revenue_account_id = settings
+            .default_revenue_account_id
+            .ok_or_else(|| DbError::ConfigurationRequired("default_revenue_account_id".into()))?;
+
+        // (3) Fiscal year ouvert couvrant invoice.date.
+        let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, invoice_before.date)
+            .await?
+            .ok_or(DbError::FiscalYearInvalid)?;
+
+        // (4) Sequence : lock + incrément.
+        let seq = invoice_number_sequences::next_number_for(&mut tx, company_id, fy.id).await?;
+
+        // (5) Render numéro de facture.
+        let year = fy.start_date.format("%Y").to_string().parse::<i32>().ok()
+            .ok_or_else(|| DbError::Invariant(
+                format!("fiscal_year start_date inattendu : {}", fy.start_date)
+            ))?;
+        let invoice_number = invoice_format::render(
+            &settings.invoice_number_format,
+            year,
+            &fy.name,
+            seq,
+        )
+        .map_err(|e| DbError::Invariant(format!(
+            "rendu numéro facture échoué (config invalide ?) : {e}"
+        )))?;
+
+        // (6) Contact name pour le libellé écriture.
+        let contact_name: String = sqlx::query_scalar(
+            "SELECT name FROM contacts WHERE id = ? AND company_id = ?",
+        )
+        .bind(invoice_before.contact_id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "contact {} introuvable (cohérence FK attendue)",
+                invoice_before.contact_id
+            ))
+        })?;
+
+        let entry_description = invoice_format::render_journal_entry_description(
+            &settings.journal_entry_description_template,
+            year,
+            &invoice_number,
+            &contact_name,
+        );
+
+        // (7) Créer l'écriture comptable dans la même tx.
+        let total = invoice_before.total_amount;
+        let journal: Journal = settings.default_sales_journal;
+
+        let je = journal_entries::create_in_tx(
+            &mut tx,
+            fy.id,
+            user_id,
+            NewJournalEntry {
+                company_id,
+                entry_date: invoice_before.date,
+                journal,
+                description: entry_description,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: receivable_account_id,
+                        debit: total,
+                        credit: Decimal::ZERO,
+                    },
+                    NewJournalEntryLine {
+                        account_id: revenue_account_id,
+                        debit: Decimal::ZERO,
+                        credit: total,
+                    },
+                ],
+            },
+        )
+        .await?;
+
+        // (8) UPDATE invoices → validated.
+        let rows = sqlx::query(
+            "UPDATE invoices SET status = 'validated', invoice_number = ?, \
+             journal_entry_id = ?, version = version + 1 \
+             WHERE id = ? AND company_id = ? AND version = ? AND status = 'draft'",
+        )
+        .bind(&invoice_number)
+        .bind(je.entry.id)
+        .bind(invoice_id)
+        .bind(company_id)
+        .bind(invoice_before.version)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+
+        if rows == 0 {
+            // Défensif : race entre SELECT FOR UPDATE et UPDATE (ne devrait pas arriver).
+            return Err(DbError::OptimisticLockConflict);
+        }
+
+        let invoice_after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+            .bind(invoice_id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        // (9) Audit log.
+        let audit_details = serde_json::json!({
+            "before": invoice_snapshot_json(&invoice_before, &lines_before),
+            "after": invoice_snapshot_json(&invoice_after, &lines_before),
+            "journalEntry": {
+                "id": je.entry.id,
+                "entryNumber": je.entry.entry_number,
+                "journal": je.entry.journal.as_str(),
+                "entryDate": je.entry.entry_date.to_string(),
+                "description": je.entry.description,
+                "lines": je.lines.iter().map(|l| serde_json::json!({
+                    "accountId": l.account_id,
+                    "lineOrder": l.line_order,
+                    "debit": l.debit.to_string(),
+                    "credit": l.credit.to_string(),
+                })).collect::<Vec<_>>(),
+            },
+        });
+
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry {
+                user_id,
+                action: "invoice.validated".to_string(),
+                entity_type: "invoice".to_string(),
+                entity_id: invoice_id,
+                details_json: Some(audit_details),
+            },
+        )
+        .await?;
+
+        Ok(ValidatedInvoice {
+            invoice: invoice_after,
+            journal_entry: je,
+        })
+    }
+    .await;
+
+    match result {
+        Ok(v) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

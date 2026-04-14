@@ -24,6 +24,9 @@ pub struct Invoice {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// Référence vers l'écriture comptable générée à la validation (Story 5.2).
+    /// NULL tant que la facture est en brouillon.
+    pub journal_entry_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
