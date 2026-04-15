@@ -136,7 +136,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/validate",
             post(routes::invoices::validate_invoice_handler),
         )
-        // Story 5.4 : marquage manuel paiement
+        // Story 5.4 : marquage manuel paiement + export CSV échéancier
+        // (Comptable+ — review pass 1 G2 B / B2).
+        .route(
+            "/api/v1/invoices/due-dates/export.csv",
+            get(routes::invoices::export_due_dates_csv_handler),
+        )
         .route(
             "/api/v1/invoices/{id}/mark-paid",
             post(routes::invoices::mark_invoice_paid_handler),
@@ -164,14 +169,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route("/api/v1/products/{id}", get(routes::products::get_product))
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
-        // Story 5.4 : échéancier (segment statique, prioritaire sur {id})
+        // Story 5.4 : échéancier en lecture (segment statique, prioritaire sur {id}).
+        // L'export CSV est restreint au rôle Comptable+ (voir comptable_routes)
+        // — décision review pass 1 G2 B (B2) : prévenir l'exfiltration de
+        // 10'000 lignes par un rôle Consultation lecture-seule.
         .route(
             "/api/v1/invoices/due-dates",
             get(routes::invoices::list_due_dates_handler),
-        )
-        .route(
-            "/api/v1/invoices/due-dates/export.csv",
-            get(routes::invoices::export_due_dates_csv_handler),
         )
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_invoice))
         // Story 5.3 : téléchargement PDF QR Bill (tout rôle authentifié)

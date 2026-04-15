@@ -36,7 +36,10 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-14
+last_updated: 2026-04-16
+# (story 5-4 done — 4 groupes × 11 passes review Opus/Sonnet/Haiku, 80 patches)
+# (story 5-4 review — phases a/b/c/d implémentées, prêt pour code-review)
+# (story 5-3 done — 3 passes review Sonnet/Haiku/Opus, 19 patches + 4 CRs)
 # (story 5-2 review — T1-T7 implémentés)
 # (story 5-2 in-progress — scope v0.6 + 3 stories backlog ajoutées : 2-6, 3-6, 5-4)
 project: kesh
@@ -93,8 +96,8 @@ development_status:
   epic-5: in-progress
   5-1-creation-factures-brouillon: done
   5-2-validation-numerotation-factures: done
-  5-3-generation-pdf-qr-bill: backlog
-  5-4-echeancier-factures: backlog
+  5-3-generation-pdf-qr-bill: done
+  5-4-echeancier-factures: done
   epic-5-retrospective: optional
 
   # Epic 6: Import Bancaire & Réconciliation

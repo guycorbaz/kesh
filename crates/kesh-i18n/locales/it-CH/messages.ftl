@@ -462,7 +462,6 @@ invoice-unmark-paid-success = Contrassegno pagamento annullato
 invoice-detail-paid-at-label = Pagata il
 
 invoice-error-paid-at-required = Data di pagamento obbligatoria
-invoice-error-paid-at-future = La data di pagamento non può essere futura
 invoice-error-paid-at-before-invoice-date = La data di pagamento non può essere anteriore alla data fattura
 invoice-error-mark-paid-not-validated = Solo le fatture convalidate possono essere contrassegnate come pagate
 invoice-error-already-unpaid = Questa fattura non è contrassegnata come pagata
@@ -488,3 +487,6 @@ common-cancel = Annulla
 common-error = Errore imprevisto
 
 nav-invoices-due-dates = Scadenziario
+invoice-pdf-error-not-found = Fattura non trovata.
+invoice-pdf-error-generic = Errore durante il download del PDF.
+invoice-pdf-error-empty = Il PDF ricevuto è vuoto.

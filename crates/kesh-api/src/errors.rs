@@ -165,8 +165,9 @@ pub enum AppError {
     #[error("Facture non prête pour PDF : {0}")]
     InvoiceNotPdfReady(String),
 
-    /// Trop de lignes pour tenir sur un PDF A4 (v0.1 : limite 35). Le `usize`
-    /// est la taille effective, affichée dans le message.
+    /// Trop de lignes pour tenir sur un PDF A4 (v0.1 : limite réelle dans
+    /// `routes::invoice_pdf::MAX_LINES_PER_PDF` = 9). Le `usize` est la
+    /// taille effective, affichée dans le message.
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
 
@@ -482,15 +483,23 @@ impl IntoResponse for AppError {
                             "invoice-error-paid-at-before-invoice-date".to_string(),
                             "La date de paiement ne peut être antérieure à la date de facture.",
                         ),
-                        "paidAtFuture" => (
-                            "invoice-error-paid-at-future".to_string(),
-                            "La date de paiement ne peut être postérieure à aujourd'hui.",
-                        ),
+                        // N2 (review pass 3 B) : code "paidAtFuture" supprimé —
+                        // `paid_at` peut être dans le futur (date d'exécution bancaire).
                         "alreadyUnpaid" => (
                             "invoice-error-already-unpaid".to_string(),
                             "Cette facture n'est pas marquée payée.",
                         ),
-                        _ => (format!("error-invalid-input-{code}"), "Entrée invalide"),
+                        // B13 (review pass 1 G2 B) : whitelist stricte —
+                        // un code non listé ne doit PAS construire dynamiquement
+                        // une clé FTL (potentielle pollution si le code provient
+                        // d'une couche non fiable). Fallback sur clé générique.
+                        _ => {
+                            tracing::warn!("invalid input code unknown to dispatch: {code}");
+                            (
+                                "error-invalid-input-generic".to_string(),
+                                "Entrée invalide",
+                            )
+                        }
                     };
                     build_response(StatusCode::BAD_REQUEST, "INVALID_INPUT", &t(&key, default))
                 }

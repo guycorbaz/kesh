@@ -302,7 +302,8 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let items = body["items"].as_array().unwrap();
-    // Default paymentStatus = "all" mais status forcé à validated → 1 résultat.
+    // B23 : depuis B1 (review pass 1 G2 B) le défaut backend = `unpaid` —
+    // l'unique facture seedée est `validated` + `paid_at IS NULL` → 1 résultat.
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["status"], "validated");
     assert_eq!(items[0]["paidAt"], serde_json::Value::Null);
@@ -311,8 +312,11 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
     assert_eq!(body["summary"]["unpaidCount"], 1);
 }
 
+/// N2 (review pass 3 B) : test inversé — un `paid_at` futur (date d'exécution
+/// bancaire programmée) doit être accepté. Le test précédent qui asseyait un
+/// rejet 400 reposait sur une AC#8 incorrecte (clarification domaine 2026-04-15).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn mark_paid_rejects_future_paid_at_returns_400(pool: MySqlPool) {
+async fn mark_paid_accepts_future_paid_at_returns_200(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     let (id, version) = create_validated_invoice_via_sql(
@@ -328,7 +332,8 @@ async fn mark_paid_rejects_future_paid_at_returns_400(pool: MySqlPool) {
 
     let app = spawn_app(pool.clone()).await;
     let token = login(&app).await;
-    let future = "2099-01-01T00:00:00";
+    // Date future plausible (ordre de virement programmé J+30).
+    let future = "2026-05-15T00:00:00";
     let resp = app
         .client
         .post(app.url(&format!("/api/v1/invoices/{id}/mark-paid")))
@@ -337,7 +342,7 @@ async fn mark_paid_rejects_future_paid_at_returns_400(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400);
+    assert_eq!(resp.status(), 200);
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -457,6 +462,10 @@ async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
             .unwrap()
             .starts_with("text/csv")
     );
+    // B7 (review pass 1 G2 B) : Content-Disposition explicite avec extension.
+    let cd = resp.headers()["content-disposition"].to_str().unwrap();
+    assert!(cd.contains("attachment"), "expected attachment, got: {cd}");
+    assert!(cd.contains(".csv"), "expected .csv extension, got: {cd}");
     let bytes = resp.bytes().await.unwrap();
     // BOM UTF-8.
     assert_eq!(&bytes[..3], &[0xEF, 0xBB, 0xBF]);
@@ -562,4 +571,42 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["error"]["code"], "RESULT_TOO_LARGE");
+}
+
+/// B10 (review pass 1 G2 B) : exerce le path `alreadyUnpaid` — tenter de
+/// dé-marquer une facture jamais marquée payée doit retourner 400
+/// `INVALID_INPUT` avec la clé i18n `invoice-error-already-unpaid`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn unmark_paid_on_never_paid_returns_400_already_unpaid(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (id, version) = create_validated_invoice_via_sql(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(50.00),
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/unmark-paid")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_INPUT");
+    let msg = body["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.to_lowercase().contains("payée") || msg.to_lowercase().contains("paid"),
+        "expected localized alreadyUnpaid message, got: {msg}"
+    );
 }

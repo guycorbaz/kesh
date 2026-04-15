@@ -134,7 +134,9 @@
 		if (inv.paidAt) return 'paid';
 		// P6 (review pass 2) : `isOverdue` est calculé backend → single source
 		// of truth pour « aujourd'hui » (évite la désync TZ client/serveur).
-		return inv.isOverdue ? 'overdue' : 'unpaid';
+		// Pass 2 G2 D : strict `=== true` symétrique avec la page échéancier
+		// (defensive contre `undefined` en rollout échelonné).
+		return inv.isOverdue === true ? 'overdue' : 'unpaid';
 	}
 
 	async function handleMarkConfirm(paidAt: string) {
@@ -195,27 +197,51 @@
 
 	let pdfDownloading = $state(false);
 
+	// D2 (review pass 1 G2 D) : whitelist explicite des codes d'erreur PDF
+	// — empêche la construction dynamique de clés FTL depuis err.code
+	// (potentiel mismatch silencieux si le backend renvoie un nouveau code).
+	const PDF_ERROR_KEYS: Record<string, string> = {
+		INVOICE_NOT_VALIDATED: 'invoice-pdf-error-invoice-not-validated',
+		INVOICE_NOT_PDF_READY: 'invoice-pdf-error-invoice-not-pdf-ready',
+		INVOICE_TOO_MANY_LINES_FOR_PDF: 'error-invoice-too-many-lines-for-pdf',
+		PDF_GENERATION_FAILED: 'invoice-pdf-error-pdf-generation-failed',
+		NOT_FOUND: 'invoice-pdf-error-not-found',
+	};
+
 	async function downloadPdf() {
 		if (!invoice) return;
 		pdfDownloading = true;
 		try {
 			const res = await apiClient.getBlob(`/api/v1/invoices/${invoice.id}/pdf`);
 			const blob = await res.blob();
-			const url = URL.createObjectURL(blob);
-			const win = window.open(url, '_blank', 'noopener,noreferrer');
-			if (!win) {
-				notifyError(i18nMsg('invoice-pdf-error-popup-blocked', 'Pop-up bloqué par le navigateur — autorisez les pop-ups pour télécharger le PDF.'));
-				URL.revokeObjectURL(url);
-			} else {
-				// Revoke after 30s — laisse au navigateur le temps de charger le blob.
-				setTimeout(() => URL.revokeObjectURL(url), 30_000);
+			if (blob.size === 0) {
+				notifyError(i18nMsg('invoice-pdf-error-empty', 'Le PDF reçu est vide.'));
+				return;
 			}
+			const url = URL.createObjectURL(blob);
+			// D2 (review pass 1 G2 D) : pattern <a download> hidden — aligné
+			// sur le download CSV échéancier, évite popup-blocker (Firefox
+			// strict / Safari mobile) et garantit semantics de téléchargement.
+			const filename = `facture-${invoice.invoiceNumber ?? invoice.id}.pdf`;
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			a.style.display = 'none';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			// Revoke différé pour laisser le navigateur récupérer le blob.
+			setTimeout(() => URL.revokeObjectURL(url), 5_000);
 		} catch (err) {
 			if (isApiError(err)) {
-				const key = `invoice-pdf-error-${err.code.toLowerCase().replace(/_/g, '-')}`;
+				// Pass 2 : remappage vers les clés FTL réellement présentes —
+		// `INVOICE_TOO_MANY_LINES_FOR_PDF` utilise la clé legacy
+		// `error-invoice-too-many-lines-for-pdf` (existante FR/DE/IT/EN
+		// avec les arguments {count}/{max}).
+		const key = PDF_ERROR_KEYS[err.code] ?? 'invoice-pdf-error-generic';
 				notifyError(i18nMsg(key, err.message));
 			} else {
-				notifyError('Erreur lors du téléchargement du PDF');
+				notifyError(i18nMsg('invoice-pdf-error-generic', 'Erreur lors du téléchargement du PDF'));
 			}
 		} finally {
 			pdfDownloading = false;

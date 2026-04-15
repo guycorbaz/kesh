@@ -167,12 +167,23 @@ pub struct InvoiceResponse {
     pub lines: Vec<InvoiceLineResponse>,
 }
 
+/// B3 (review pass 1 G2 B) : règle « en retard » centralisée — une seule
+/// définition pour `InvoiceResponse`, `DueDateItemResponse` et le payment
+/// status du CSV. Si la sémantique évolue (ex. délai de grâce), un seul
+/// site à modifier.
+pub fn is_invoice_overdue(
+    status: &str,
+    paid_at: Option<NaiveDateTime>,
+    due_date: Option<NaiveDate>,
+    today: NaiveDate,
+) -> bool {
+    status == "validated" && paid_at.is_none() && due_date.is_some_and(|d| d < today)
+}
+
 impl InvoiceResponse {
     fn from_parts(invoice: Invoice, lines: Vec<InvoiceLine>) -> Self {
         let today = chrono::Utc::now().naive_utc().date();
-        let is_overdue = invoice.status == "validated"
-            && invoice.paid_at.is_none()
-            && invoice.due_date.is_some_and(|d| d < today);
+        let is_overdue = is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
         Self {
             id: invoice.id,
             company_id: invoice.company_id,
@@ -208,6 +219,10 @@ pub struct InvoiceListItemResponse {
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
     pub paid_at: Option<NaiveDateTime>,
+    /// B22 (review pass 2 G2 B) : exposé sur la liste standard pour cohérence
+    /// avec `InvoiceResponse` et `DueDateItemResponse` — le frontend ne doit
+    /// jamais recalculer le statut overdue côté client (désync TZ possible).
+    pub is_overdue: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -215,6 +230,8 @@ pub struct InvoiceListItemResponse {
 
 impl From<InvoiceListItem> for InvoiceListItemResponse {
     fn from(i: InvoiceListItem) -> Self {
+        let today = chrono::Utc::now().naive_utc().date();
+        let is_overdue = is_invoice_overdue(&i.status, i.paid_at, i.due_date, today);
         Self {
             id: i.id,
             company_id: i.company_id,
@@ -227,6 +244,7 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
             payment_terms: i.payment_terms,
             total_amount: i.total_amount,
             paid_at: i.paid_at,
+            is_overdue,
             version: i.version,
             created_at: i.created_at,
             updated_at: i.updated_at,
@@ -609,15 +627,11 @@ pub struct ListDueDatesQuery {
     pub offset: Option<i64>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DueDateItemResponse {
-    #[serde(flatten)]
-    pub item: InvoiceListItemResponse,
-    /// Calculé côté backend (single source of truth pour `today`) :
-    /// `status == 'validated' && paid_at IS NULL && due_date < UTC_DATE()`.
-    pub is_overdue: bool,
-}
+/// B22 (review pass 2 G2 B) : `is_overdue` est désormais porté par
+/// `InvoiceListItemResponse` directement (cohérence avec la liste standard).
+/// Le wrapper historique est supprimé pour éviter une collision serde
+/// `#[serde(flatten)]` sur la même clé `isOverdue`.
+pub type DueDateItemResponse = InvoiceListItemResponse;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -643,6 +657,18 @@ pub struct UnmarkPaidRequest {
     pub version: i32,
 }
 
+/// B12 (review pass 1 G2 B) : `version` sérialisée par le frontend ne doit
+/// jamais être négative. Sans cette garde, un payload `version=-1` produit
+/// un 409 OPTIMISTIC_LOCK_CONFLICT confus au lieu d'un 400 explicite.
+fn validate_version(v: i32) -> Result<(), AppError> {
+    if v < 0 {
+        return Err(AppError::Validation(
+            "version doit être un entier non négatif".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Construit une `InvoiceListQuery` pour l'échéancier — force `status =
 /// 'validated'` et applique les défauts de tri (`due_date ASC`).
 fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, AppError> {
@@ -657,6 +683,13 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
         return Err(AppError::Validation(
             "offset doit être positif ou nul".into(),
         ));
+    }
+    // B16 (review pass 1 G2 B) : cap raisonnable (cf. list_invoices).
+    const MAX_OFFSET: i64 = 1_000_000;
+    if offset > MAX_OFFSET {
+        return Err(AppError::Validation(format!(
+            "offset doit être ≤ {MAX_OFFSET}"
+        )));
     }
 
     let search = match params
@@ -681,6 +714,26 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
             ));
         }
     }
+    // B11 (review pass 1 G2 B) : `dueBefore` doit être ≥ `dateFrom` (sinon
+    // intersection vide silencieuse — l'utilisateur s'attend à un message
+    // explicite).
+    if let (Some(df), Some(db)) = (params.date_from, params.due_before) {
+        if db < df {
+            return Err(AppError::Validation(
+                "dueBefore doit être ≥ dateFrom".into(),
+            ));
+        }
+    }
+    // B21 (review pass 2 G2 B) : pareil pour `dateTo` — une intersection
+    // vide due_before < date_to mérite un 400 explicite (uniquement quand
+    // les deux sont posés ; le cas indépendant reste autorisé).
+    if let (Some(dt), Some(db)) = (params.date_to, params.due_before) {
+        if db < dt {
+            return Err(AppError::Validation(
+                "dueBefore doit être ≥ dateTo".into(),
+            ));
+        }
+    }
 
     Ok(InvoiceListQuery {
         search,
@@ -689,11 +742,15 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
         contact_id: params.contact_id,
         date_from: params.date_from,
         date_to: params.date_to,
+        // B1 (review pass 1 G2 B) : défaut backend = `Unpaid` pour respecter
+        // AC#3 (échéancier chargé par défaut → impayées). Tout override
+        // explicite du caller (`?paymentStatus=all|paid|overdue`) reste
+        // honoré — seul le cas « pas de valeur fournie » bascule sur Unpaid.
         payment_status: Some(
             params
                 .payment_status
                 .map(Into::into)
-                .unwrap_or(PaymentStatusFilter::All),
+                .unwrap_or(PaymentStatusFilter::Unpaid),
         ),
         due_before: params.due_before,
         sort_by: params.sort_by.unwrap_or(InvoiceSortBy::DueDate),
@@ -711,27 +768,29 @@ pub async fn list_due_dates_handler(
     let company = get_company(&state).await?;
     let query = build_due_dates_query(params)?;
 
+    // B15 (review pass 1 G2 B) : strip explicite de `payment_status` avant
+    // la summary — rend l'invariant AC#11 (« le summary ignore paymentStatus »)
+    // visible côté handler au lieu de dépendre uniquement du contrat repo.
+    let summary_query = InvoiceListQuery {
+        payment_status: None,
+        ..query.clone()
+    };
     // List + summary en parallèle (read-only, pas de tx commune).
     let (list_res, summary_res) = tokio::join!(
         invoices::list_by_company_paginated(&state.pool, company.id, query.clone()),
-        invoices::due_dates_summary(&state.pool, company.id, &query),
+        invoices::due_dates_summary(&state.pool, company.id, &summary_query),
     );
     let list = list_res?;
     let summary = summary_res?;
 
-    let today = chrono::Utc::now().naive_utc().date();
+    // B22 (review pass 2 G2 B) : `is_overdue` est désormais calculé dans le
+    // `From<InvoiceListItem>` — chaque item porte sa propre valeur. Le `today`
+    // utilisé est `Utc::now()` à l'instant de la conversion, ce qui suffit
+    // pour la durée d'une requête (race midnight rare et acceptable).
     let items = list
         .items
         .into_iter()
-        .map(|i| {
-            let is_overdue = i.status == "validated"
-                && i.paid_at.is_none()
-                && i.due_date.is_some_and(|d| d < today);
-            DueDateItemResponse {
-                item: InvoiceListItemResponse::from(i),
-                is_overdue,
-            }
-        })
+        .map(InvoiceListItemResponse::from)
         .collect();
 
     Ok(Json(DueDatesResponse {
@@ -743,25 +802,11 @@ pub async fn list_due_dates_handler(
     }))
 }
 
-/// Validation commune pour `mark-paid` — borne haute `paid_at <= today`
-/// (UTC). La borne basse `paid_at >= invoice.date` est validée dans le
-/// repository (besoin d'un round-trip DB).
-///
-/// P1/P7 (review pass 2) : comparaison sur la **date** (pas le datetime)
-/// pour éviter un faux-positif matinal en CET — un utilisateur à 09:00 CET
-/// (07:00 UTC) sélectionnant « aujourd'hui » envoyait un `paid_at` à midi
-/// UTC, strictement supérieur à `Utc::now()` → rejet erroné. Retourne
-/// `DbError::InvalidInput("paidAtFuture")` pour cohérence i18n avec
-/// `paidAtBeforeInvoiceDate` (dispatch FTL côté `errors.rs`).
-fn validate_paid_at_bounds(paid_at: NaiveDateTime) -> Result<(), AppError> {
-    let today = chrono::Utc::now().naive_utc().date();
-    if paid_at.date() > today {
-        return Err(AppError::Database(kesh_db::errors::DbError::InvalidInput(
-            "paidAtFuture".into(),
-        )));
-    }
-    Ok(())
-}
+// N2 (review pass 3 B) : `validate_paid_at_bounds` supprimé.
+// Domaine métier : `paid_at` = date d'exécution bancaire effective. Elle peut
+// légitimement être dans le futur (ordre de virement programmé, décalage
+// week-end/jour férié appliqué par la banque). La seule borne reste la borne
+// basse `paid_at >= invoice.date - 1j`, validée dans le repository.
 
 /// `POST /api/v1/invoices/:id/mark-paid` — marquage manuel.
 pub async fn mark_invoice_paid_handler(
@@ -770,11 +815,11 @@ pub async fn mark_invoice_paid_handler(
     Path(id): Path<i64>,
     Json(req): Json<MarkPaidRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
+    validate_version(req.version)?;
     let company = get_company(&state).await?;
     let paid_at = req
         .paid_at
         .unwrap_or_else(|| chrono::Utc::now().naive_utc());
-    validate_paid_at_bounds(paid_at)?;
 
     // M1 (review pass 1 G2) : mark_as_paid retourne `(Invoice, Vec<InvoiceLine>)`
     // depuis la même transaction, supprimant la race DELETE/UPDATE entre
@@ -798,6 +843,7 @@ pub async fn unmark_invoice_paid_handler(
     Path(id): Path<i64>,
     Json(req): Json<UnmarkPaidRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
+    validate_version(req.version)?;
     let company = get_company(&state).await?;
     // M1 (review pass 1 G2) : idem mark_invoice_paid_handler — fetch atomique.
     let (updated, lines) = invoices::mark_as_paid(
@@ -832,11 +878,20 @@ const CSV_HEADER_KEYS: [&str; 7] = [
 /// par un espace reste lisible sans casser l'alignement des lignes si un
 /// parseur tiers naïf lit le fichier.
 fn csv_sanitize(raw: String) -> String {
+    // B9 (review pass 1 G2 B) : neutralise aussi TAB (Excel l'interprète
+    // comme déclencheur dans certains contextes) et le whitespace de tête
+    // (un attaquant peut bypasser le check via " =cmd").
     let raw: String = raw
         .chars()
-        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .map(|c| {
+            if c == '\r' || c == '\n' || c == '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
-    if let Some(first) = raw.chars().next() {
+    if let Some(first) = raw.trim_start().chars().next() {
         if matches!(first, '=' | '+' | '-' | '@') {
             let mut out = String::with_capacity(raw.len() + 1);
             out.push('\'');
@@ -881,9 +936,12 @@ pub async fn export_due_dates_csv_handler(
     let query = build_due_dates_query(params)?;
 
     // +1 pour détecter le dépassement de la limite dure.
-    let rows =
+    // `truncated` (P3 review pass 3 A) capte le cas où le clamp repo 50_000
+    // aurait silencieusement rabaissé l'intent — impossible tant que
+    // `MAX_EXPORT_ROWS + 1 <= 50_000`, mais on le propage en sécurité.
+    let (rows, truncated) =
         invoices::list_for_export(&state.pool, company.id, &query, MAX_EXPORT_ROWS + 1).await?;
-    if rows.len() as i64 > MAX_EXPORT_ROWS {
+    if truncated || rows.len() as i64 > MAX_EXPORT_ROWS {
         // H1 (review pass 1 G2) : code client dédié `RESULT_TOO_LARGE`
         // (spec §84 / AC#10), distinct de `VALIDATION_ERROR`.
         let locale = Locale::from(company.accounting_language.as_str());
@@ -930,9 +988,10 @@ pub async fn export_due_dates_csv_handler(
             .map_err(|e| AppError::Internal(format!("csv header: {e}")))?;
 
         for inv in rows {
+            // B3 (review pass 1 G2 B) : utilise le helper centralisé.
             let payment_status_key = if inv.paid_at.is_some() {
                 "payment-status-paid"
-            } else if inv.due_date.is_some_and(|d| d < today) {
+            } else if is_invoice_overdue(&inv.status, inv.paid_at, inv.due_date, today) {
                 "payment-status-overdue"
             } else {
                 "payment-status-unpaid"
@@ -951,7 +1010,10 @@ pub async fn export_due_dates_csv_handler(
                 inv.due_date.as_ref().map(format_date).unwrap_or_default(),
                 csv_sanitize(inv.contact_name.clone()),
                 format_money(&inv.total_amount),
-                payment_status,
+                // B19 (review pass 2 G2 B) : défense en profondeur — la valeur
+                // vient d'un fichier FTL contrôlé, mais une compromission
+                // (clé locale altérée) ne doit pas ouvrir un vecteur d'injection.
+                csv_sanitize(payment_status),
                 inv.paid_at
                     .map(|d| format_date(&d.date()))
                     .unwrap_or_default(),

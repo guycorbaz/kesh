@@ -106,8 +106,8 @@ pub async fn get_invoice_pdf(
     let i18n = build_i18n(&state.i18n, state.config.locale);
 
     // Génération.
-    let pdf_bytes = kesh_qrbill::generate_qr_bill_pdf(&qr_data, &pdf_data, &i18n)
-        .map_err(map_qrbill_error)?;
+    let pdf_bytes =
+        kesh_qrbill::generate_qr_bill_pdf(&qr_data, &pdf_data, &i18n).map_err(map_qrbill_error)?;
 
     // Content-Disposition : filename sanitizé.
     let filename = sanitize_filename(invoice.invoice_number.as_deref().unwrap_or("facture"));
@@ -175,8 +175,11 @@ fn build_qrbill_inputs(
     // IBAN / QR-IBAN + référence.
     let (iban, reference) = match primary_bank.qr_iban.as_deref() {
         Some(qr) if !qr.trim().is_empty() => {
+            // B8 (review pass 1 G2 B) : message i18n cohérent avec les
+            // autres erreurs PDF (le mapping côté errors.rs résoud la clé).
             let qrr = build_qrr(company.id as u64, invoice.id as u64).map_err(|e| {
-                AppError::InvoiceNotPdfReady(format!("Impossible de générer la référence QRR: {e}"))
+                tracing::warn!("build_qrr failed: {e}");
+                AppError::InvoiceNotPdfReady("qrbill-error-qrr-generation".into())
             })?;
             (normalize_iban(qr), Reference::Qrr(qrr))
         }
@@ -296,7 +299,11 @@ fn map_qrbill_error(err: QrBillError) -> AppError {
 }
 
 fn sanitize_filename(raw: &str) -> String {
+    // B20 (review pass 2 G2 B) : cap à 64 caractères pour borner la taille
+    // du header `Content-Disposition` (un `invoice_number` arbitrairement
+    // long polluerait la réponse HTTP).
     raw.chars()
+        .take(64)
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
                 c

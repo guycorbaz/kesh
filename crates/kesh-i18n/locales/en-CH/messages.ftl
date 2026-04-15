@@ -462,7 +462,6 @@ invoice-unmark-paid-success = Payment mark removed
 invoice-detail-paid-at-label = Paid on
 
 invoice-error-paid-at-required = Payment date required
-invoice-error-paid-at-future = Payment date cannot be in the future
 invoice-error-paid-at-before-invoice-date = Payment date cannot be before the invoice date
 invoice-error-mark-paid-not-validated = Only validated invoices can be marked as paid
 invoice-error-already-unpaid = This invoice is not marked as paid
@@ -488,3 +487,6 @@ common-cancel = Cancel
 common-error = Unexpected error
 
 nav-invoices-due-dates = Due dates
+invoice-pdf-error-not-found = Invoice not found.
+invoice-pdf-error-generic = Error downloading the PDF.
+invoice-pdf-error-empty = Received PDF is empty.

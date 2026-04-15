@@ -497,7 +497,6 @@ invoice-detail-paid-at-label = Payée le
 
 # Erreurs validation paidAt
 invoice-error-paid-at-required = Date de paiement obligatoire
-invoice-error-paid-at-future = La date de paiement ne peut être postérieure à aujourd'hui
 invoice-error-paid-at-before-invoice-date = La date de paiement ne peut être antérieure à la date de facture
 invoice-error-mark-paid-not-validated = Seules les factures validées peuvent être marquées payées
 invoice-error-already-unpaid = Cette facture n'est pas marquée payée
@@ -526,3 +525,6 @@ common-error = Erreur inattendue
 
 # Navigation
 nav-invoices-due-dates = Échéancier
+invoice-pdf-error-not-found = Facture introuvable.
+invoice-pdf-error-generic = Erreur lors du téléchargement du PDF.
+invoice-pdf-error-empty = Le PDF reçu est vide.

@@ -142,3 +142,126 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.getByText(productName)).toBeVisible();
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Story 5.3 — Téléchargement PDF QR Bill
+// ---------------------------------------------------------------------------
+
+async function createContactWithAddressViaApi(
+	page: import('@playwright/test').Page,
+	name: string,
+): Promise<number> {
+	const res = await page.request.post('/api/v1/contacts', {
+		data: {
+			contactType: 'Personne',
+			name,
+			isClient: true,
+			isSupplier: false,
+			address: 'Marktgasse 28\n9400 Rorschach',
+			defaultPaymentTerms: '30 jours net',
+		},
+	});
+	expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
+	return (await res.json()).id as number;
+}
+
+async function createAndValidateInvoiceViaApi(
+	page: import('@playwright/test').Page,
+	contactId: number,
+): Promise<number> {
+	const today = new Date().toISOString().slice(0, 10);
+	const createRes = await page.request.post('/api/v1/invoices', {
+		data: {
+			contactId,
+			date: today,
+			dueDate: today,
+			paymentTerms: '30 jours net',
+			lines: [
+				{
+					description: 'Conseil stratégique',
+					quantity: '4.5',
+					unitPrice: '200.00',
+					vatRate: '7.70',
+				},
+			],
+		},
+	});
+	expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
+	const invoice = await createRes.json();
+	const validateRes = await page.request.post(`/api/v1/invoices/${invoice.id}/validate`);
+	expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
+	return invoice.id as number;
+}
+
+test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
+	test('télécharge le PDF d\'une facture validée (golden path)', async ({ page, context }) => {
+		await login(page);
+		const contactId = await createContactWithAddressViaApi(page, uniq('PDF Client'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
+
+		await page.goto(`/invoices/${invoiceId}`);
+		await expect(page.getByRole('heading', { name: 'Facture' })).toBeVisible();
+
+		// Intercepte l'appel direct à l'endpoint PDF (plus robuste que window.open).
+		const pdfRes = await page.request.get(`/api/v1/invoices/${invoiceId}/pdf`);
+		expect(pdfRes.status()).toBe(200);
+		expect(pdfRes.headers()['content-type']).toContain('application/pdf');
+		const buf = await pdfRes.body();
+		expect(buf.slice(0, 7).toString('utf8')).toMatch(/^%PDF-1\./);
+	});
+
+	test('bouton visible uniquement si status=validated', async ({ page }) => {
+		await login(page);
+		const contactName = uniq('PDF Draft');
+		await createContactWithAddressViaApi(page, contactName);
+		// Facture brouillon non validée
+		await page.goto('/invoices/new');
+		await page.getByRole('combobox').click();
+		await page.getByRole('combobox').fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+		const firstRow = page.locator('tbody tr').first();
+		await firstRow.locator('input[type="text"]').first().fill('Item');
+		const inputs = firstRow.locator('input[inputmode="decimal"]');
+		await inputs.nth(0).fill('1');
+		await inputs.nth(1).fill('50');
+		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		await expect(page).toHaveURL('/invoices');
+
+		// Ouvre la facture brouillon → pas de bouton PDF
+		const row = page.locator('tbody tr', { hasText: contactName }).first();
+		await row.getByRole('button').first().click();
+		await expect(page.getByRole('button', { name: /Télécharger PDF/i })).toHaveCount(0);
+	});
+
+	test('erreur 400 INVOICE_NOT_PDF_READY affichée comme toast', async ({ page }) => {
+		// AC17 : le cas d'erreur INVOICE_NOT_PDF_READY doit s'afficher sous
+		// forme de toast côté UI. Le backend E2E (`invoice_pdf_e2e.rs`) couvre
+		// déjà la détection backend ; ici on vérifie que le frontend affiche
+		// correctement l'erreur en interceptant la réponse du serveur.
+		await login(page);
+		const contactId = await createContactWithAddressViaApi(page, uniq('PDF Err'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
+
+		// Intercepte l'appel PDF pour renvoyer un 400 INVOICE_NOT_PDF_READY.
+		await page.route(`**/api/v1/invoices/${invoiceId}/pdf`, async (route) => {
+			await route.fulfill({
+				status: 400,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					error: {
+						code: 'INVOICE_NOT_PDF_READY',
+						message: "Aucun compte bancaire principal n'est configuré pour cette company.",
+					},
+				}),
+			});
+		});
+
+		await page.goto(`/invoices/${invoiceId}`);
+		await page.getByRole('button', { name: /Télécharger PDF/i }).click();
+
+		// Toast d'erreur affichant le message INVOICE_NOT_PDF_READY.
+		await expect(
+			page.getByText(/compte bancaire principal|primary bank|INVOICE_NOT_PDF_READY/i),
+		).toBeVisible({ timeout: 5000 });
+	});
+});

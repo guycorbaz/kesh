@@ -72,7 +72,13 @@ fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Va
         "dueDate": inv.due_date.map(|d| d.to_string()),
         "paymentTerms": inv.payment_terms,
         "totalAmount": inv.total_amount.to_string(),
-        "paidAt": inv.paid_at.map(|dt| dt.to_string()),
+        // P14 (review pass 3 A) : format RFC3339 pour round-trip ISO-8601
+        // standard (parseurs externes compatibles). `paid_at` est stocké en
+        // UTC naïf ; l'on affiche donc le suffixe 'Z' sans conversion.
+        "paidAt": inv.paid_at.map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+        // P14 (review pass 3 A) : journal_entry_id tracé en audit pour
+        // permettre de détecter une rupture du lien JE lors d'un mark_as_paid.
+        "journalEntryId": inv.journal_entry_id,
         "version": inv.version,
         "lines": lines_json,
     })
@@ -169,9 +175,24 @@ fn push_where_clauses<'a>(
     qb.push(" WHERE i.company_id = ");
     qb.push_bind(company_id);
 
+    // N3 (review pass 3 B) : un filtre `payment_status` non-`All` impose
+    // implicitement `status='validated'`. Si le caller passe aussi
+    // `query.status = Some("draft"|"cancelled")`, la combinaison est
+    // contradictoire et produirait une liste vide silencieuse. On émet
+    // alors la garde `status='validated'` cohérente avec la sémantique
+    // « payment_status l'emporte » et on ignore le `query.status` incohérent
+    // (le caller a clairement voulu filtrer par statut de paiement).
+    let payment_status_active = matches!(
+        query.payment_status.unwrap_or_default(),
+        PaymentStatusFilter::Paid | PaymentStatusFilter::Unpaid | PaymentStatusFilter::Overdue,
+    );
     if let Some(ref status) = query.status {
-        qb.push(" AND i.status = ");
-        qb.push_bind(status.clone());
+        if !payment_status_active || status == "validated" {
+            qb.push(" AND i.status = ");
+            qb.push_bind(status.clone());
+        }
+        // sinon : ignoré silencieusement — la garde `status='validated'`
+        // sera émise par le bloc `payment_status` ci-dessous.
     }
 
     if let Some(cid) = query.contact_id {
@@ -436,6 +457,13 @@ pub async fn list_by_company_paginated(
     );
     push_where_clauses(&mut items_qb, company_id, &query);
     items_qb.push(" ORDER BY ");
+    // P7 (review pass 3 A) : NULLs en fin de liste quel que soit le sort.
+    // MariaDB trie NULL en premier en ASC et en dernier en DESC — on force
+    // le comportement « NULLs last » de façon déterministe pour une
+    // pagination stable (notamment InvoiceSortBy::DueDate où les factures
+    // legacy sans `due_date` doivent finir en bas).
+    items_qb.push(query.sort_by.as_sql_column());
+    items_qb.push(" IS NULL, ");
     items_qb.push(query.sort_by.as_sql_column());
     items_qb.push(" ");
     items_qb.push(query.sort_direction.as_sql_keyword());
@@ -462,10 +490,9 @@ pub async fn list_by_company_paginated(
 /// Agrégat pour la page « Échéancier » (Story 5.4).
 ///
 /// Calculé sur les factures validées impayées (`status = 'validated'
-/// AND paid_at IS NULL`), filtrées par contact/recherche/dates/due_before.
-/// Le filtre `payment_status` de la query est **volontairement ignoré** :
-/// le summary reflète toujours les créances en attente, indépendamment
-/// de l'onglet actif côté UI.
+/// AND paid_at IS NULL`), filtrées par les mêmes prédicats que
+/// [`list_by_company_paginated`] *à l'exception* de `payment_status`
+/// (volontairement ignoré — cf. doc de [`due_dates_summary`]).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DueDatesSummary {
@@ -477,12 +504,15 @@ pub struct DueDatesSummary {
 
 /// Calcule le résumé échéancier (1 requête SQL, 4 colonnes).
 ///
-/// **Filtres appliqués** (alignés avec `list_by_company_paginated`) :
-/// `contact_id`, `date_from`, `date_to`, `due_before`, `search`.
-/// **Filtres ignorés** : `payment_status` (le summary ne concerne que les
-/// impayées — un bascule d'onglet `paid` ne doit pas remettre à zéro le KPI),
-/// `status` (toujours `validated`), `paid_at IS NULL` (implicite).
-/// P12 (review pass 2) : doc explicitée après ambiguïté review.
+/// **Filtres appliqués** (alignés avec spec §74) : `contact_id`, `search`,
+/// `date_from`, `date_to`, `due_before` — le summary suit la même fenêtre
+/// d'observation que la liste pour rester cohérent avec l'UX de filtrage.
+/// **Filtres ignorés** : `payment_status` (le bascule d'onglet
+/// `Paid/Unpaid/Overdue` ne doit pas remettre à zéro le KPI), `status`
+/// (toujours `validated`), `paid_at IS NULL` (implicite).
+///
+/// P2 (review pass 3 B) : restauration des filtres temporels après que la
+/// passe 2 a constaté que la spec §74 les inclut explicitement.
 pub async fn due_dates_summary(
     pool: &MySqlPool,
     company_id: i64,
@@ -1090,6 +1120,10 @@ pub async fn mark_as_paid(
             if pa.date() < before.date - Duration::days(1) {
                 return Err(DbError::InvalidInput("paidAtBeforeInvoiceDate".to_string()));
             }
+            // Pas de borne supérieure : `paid_at` représente la date d'exécution
+            // bancaire, qui peut être dans le futur (ordre de virement programmé,
+            // décalage week-end/jour férié réécrit par la banque). Voir N2 review
+            // pass 3 B + AC#8 à amender dans la spec story 5.4.
         }
 
         let lines_before = fetch_lines(&mut tx, id).await?;
@@ -1164,13 +1198,20 @@ pub async fn mark_as_paid(
 ///
 /// Contrairement à [`list_by_company_paginated`], pas de LIMIT/OFFSET exposé :
 /// le handler passe `max_rows + 1` pour détecter le dépassement (> 10_000).
-/// Tri : `due_date ASC, id ASC`.
+/// Tri : `due_date ASC, id ASC` (NULLs last).
+///
+/// # Retour
+///
+/// `(rows, truncated)` — `truncated = true` ssi le plafond de défense
+/// (50_000) a silencieusement rabaissé le `max_rows` demandé par le caller.
+/// Dans ce cas le handler doit alerter l'utilisateur plutôt qu'exploiter
+/// un résultat partiel comme s'il était complet.
 pub async fn list_for_export(
     pool: &MySqlPool,
     company_id: i64,
     query: &InvoiceListQuery,
     max_rows: i64,
-) -> Result<Vec<InvoiceListItem>, DbError> {
+) -> Result<(Vec<InvoiceListItem>, bool), DbError> {
     // P3 (review pass 1) : plafond absolu 50_000 en défense en profondeur.
     // La règle métier « > 10_000 → 400 » reste appliquée côté handler ;
     // ce clamp évite un scan complet si un caller passe une valeur aberrante.
@@ -1178,7 +1219,13 @@ pub async fn list_for_export(
     // F3 (review pass 2) : borne basse à 1 (et non 0) pour éviter qu'un appel
     // avec `max_rows <= 0` se traduise silencieusement en `LIMIT 0` (retour
     // vide interprété à tort comme « aucune facture »).
-    let max_rows = max_rows.clamp(1, 50_000);
+    //
+    // P3 (review pass 3 A) : `truncated` remonte au caller quand le clamp
+    // haut a réellement rabaissé l'intent — plus de troncature silencieuse.
+    const HARD_CAP: i64 = 50_000;
+    let truncated = max_rows > HARD_CAP;
+    let effective = max_rows.clamp(1, HARD_CAP);
+
     let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
@@ -1186,14 +1233,19 @@ pub async fn list_for_export(
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
     );
     push_where_clauses(&mut items_qb, company_id, query);
-    items_qb.push(" ORDER BY i.due_date ASC, i.id ASC LIMIT ");
-    items_qb.push_bind(max_rows);
+    // P13 (review pass 3 A) : défense en profondeur — l'export ne doit
+    // jamais fuiter de drafts même si le handler oublie le filtre `status`.
+    items_qb.push(" AND i.status = 'validated'");
+    // NULLs last pour cohérence avec list_by_company_paginated (P7).
+    items_qb.push(" ORDER BY i.due_date IS NULL, i.due_date ASC, i.id ASC LIMIT ");
+    items_qb.push_bind(effective);
 
-    items_qb
+    let rows: Vec<InvoiceListItem> = items_qb
         .build_query_as()
         .fetch_all(pool)
         .await
-        .map_err(map_db_error)
+        .map_err(map_db_error)?;
+    Ok((rows, truncated))
 }
 
 // ---------------------------------------------------------------------------
@@ -1208,6 +1260,36 @@ mod tests {
     use rust_decimal_macros::dec;
     use sqlx::QueryBuilder;
     use uuid::Uuid;
+
+    // P9 (review pass 3 A) : unit tests pure `escape_like`. Sans Pool DB —
+    // valide simplement que les métacaractères LIKE sont neutralisés avant
+    // d'être passés à la requête paramétrée (complément aux tests d'intégration).
+    #[test]
+    fn test_escape_like_percent() {
+        assert_eq!(escape_like("5%"), "5\\%");
+    }
+
+    #[test]
+    fn test_escape_like_underscore() {
+        assert_eq!(escape_like("a_b"), "a\\_b");
+    }
+
+    #[test]
+    fn test_escape_like_backslash() {
+        assert_eq!(escape_like("c:\\path"), "c:\\\\path");
+    }
+
+    #[test]
+    fn test_escape_like_combined() {
+        // Ordre critique : backslash d'abord sinon on double-échappe
+        // les backslashes introduits par % et _.
+        assert_eq!(escape_like("100%_done\\"), "100\\%\\_done\\\\");
+    }
+
+    #[test]
+    fn test_escape_like_passthrough() {
+        assert_eq!(escape_like("plain text"), "plain text");
+    }
 
     async fn test_pool() -> MySqlPool {
         dotenvy::dotenv().ok();
@@ -2352,6 +2434,123 @@ mod tests {
             .await
             .unwrap();
         assert!(!entries.iter().any(|e| e.action == "invoice.unpaid"));
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// N3 (review pass 3 B) : si `payment_status` est actif (non-`All`), un
+    /// `query.status` contradictoire (ex. `draft` ou `cancelled`) est ignoré
+    /// silencieusement au profit de la garde implicite `status='validated'`.
+    /// Ce test verrouille la sémantique « payment_status l'emporte ».
+    #[tokio::test]
+    async fn test_payment_status_overrides_contradictory_status_filter() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        // Une facture validée + payée pour qu'elle apparaisse sous Paid.
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(42.00),
+        )
+        .await;
+        let _ = mark_as_paid(
+            &pool,
+            admin_user_id,
+            id,
+            company_id,
+            v,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap();
+
+        // status='draft' contradictoire avec payment_status=Paid : le repo
+        // doit ignorer le `status` et émettre `status='validated'` via le
+        // bloc payment_status, retournant 1 ligne au lieu de 0 silencieux.
+        let res = list_by_company_paginated(
+            &pool,
+            company_id,
+            InvoiceListQuery {
+                status: Some("draft".into()),
+                payment_status: Some(PaymentStatusFilter::Paid),
+                contact_id: Some(contact_id),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            res.items.iter().any(|i| i.id == id),
+            "facture validée+payée doit apparaître malgré status='draft' (payment_status l'emporte)"
+        );
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// P12 (review pass 3 A) : spec §184 — si l'insert audit échoue,
+    /// la transaction complète est rollbackée et `paid_at` reste NULL.
+    /// On force l'échec audit via un `user_id` inexistant (violation FK
+    /// `fk_audit_log_user`).
+    #[tokio::test]
+    async fn test_mark_as_paid_atomic_rollback_on_audit_failure() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(50.00),
+        )
+        .await;
+
+        // user_id = -999 : FK `fk_audit_log_user` échoue → l'insert audit
+        // lève une erreur DB qui force le rollback de l'UPDATE invoices.
+        let err = mark_as_paid(
+            &pool,
+            -999,
+            id,
+            company_id,
+            v,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap_err();
+        // N4 (review pass 3 B) : assertion stricte sur `ForeignKeyViolation` —
+        // l'invariant testé est précisément que l'échec de l'insert audit
+        // (causé par la FK `fk_audit_log_user`) provoque le rollback.
+        // Toute autre variante d'erreur indique que le test ne couvre plus
+        // ce qu'il prétend couvrir (ex. FK désactivée, schéma changé).
+        assert!(
+            matches!(err, DbError::ForeignKeyViolation(_)),
+            "attendu DbError::ForeignKeyViolation (FK audit_log.user_id), reçu {err:?}"
+        );
+
+        // Vérifie atomicité : `paid_at` est toujours NULL et `version`
+        // n'a pas été bumpé (l'UPDATE a été annulé par le rollback).
+        let (after, _) = find_by_id_with_lines(&pool, company_id, id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(after.paid_at.is_none(), "paid_at aurait dû rester NULL");
+        assert_eq!(after.version, v, "version n'aurait pas dû être bumpée");
 
         cleanup_invoices(&pool, &[id]).await;
         cleanup_journal_entries(&pool, &[je_id]).await;

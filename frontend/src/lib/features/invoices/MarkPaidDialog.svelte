@@ -1,7 +1,8 @@
 <!--
   Story 5.4 — Dialog « Marquer payée ».
   - Date défaut = aujourd'hui (YYYY-MM-DD).
-  - Validation client : paidAt <= today && paidAt >= invoice.date.
+  - Validation client : paidAt >= invoice.date - 1j (la borne haute future est
+    autorisée — AC#8 amendé 2026-04-15 : paid_at = date d'exécution bancaire).
   - Émet `onConfirm({ paidAt })` ; le parent gère l'appel API (409 recharge, 400 toast).
 -->
 <script lang="ts">
@@ -42,14 +43,9 @@
 
 	let clientError = $derived.by(() => {
 		if (!paidAt) return i18nMsg('invoice-error-paid-at-required', 'Date de paiement obligatoire');
-		const today = todayIso();
-		if (paidAt > today) {
-			return i18nMsg(
-				'invoice-error-paid-at-future',
-				'La date de paiement ne peut être postérieure à aujourd\'hui',
-			);
-		}
-		if (invoiceDate && paidAt < invoiceDate) {
+		// AC#8 amendé : pas de borne haute — paid_at peut être dans le futur
+		// (date d'exécution bancaire, ordre programmé, décalage week-end/férié).
+		if (invoiceDate && paidAt < invoiceDate.slice(0, 10)) {
 			return i18nMsg(
 				'invoice-error-paid-at-before-invoice-date',
 				'La date de paiement ne peut être antérieure à la date de facture',
@@ -60,9 +56,10 @@
 
 	function handleConfirm() {
 		if (clientError) return;
-		// Convertir YYYY-MM-DD en ISO 8601 datetime (midi UTC — évite les soucis TZ
-		// où "00:00 locale" pourrait retomber à la veille en UTC).
-		onConfirm(`${paidAt}T12:00:00`);
+		// Convertir YYYY-MM-DD en ISO 8601 datetime à midi UTC explicite (`Z`)
+		// — évite l'ambiguïté naive datetime que les parsers JS/Rust
+		// interprètent comme heure locale.
+		onConfirm(`${paidAt}T12:00:00Z`);
 	}
 </script>
 
@@ -85,7 +82,6 @@
 				id="mark-paid-date"
 				type="date"
 				bind:value={paidAt}
-				max={todayIso()}
 				min={invoiceDate}
 			/>
 		</div>

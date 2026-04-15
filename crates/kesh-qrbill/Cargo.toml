@@ -3,5 +3,17 @@ name = "kesh-qrbill"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+description = "Swiss QR Bill SIX 2.2 payload builder and PDF generator (standalone, publishable)"
 
 [dependencies]
+printpdf = "0.7"
+qrcodegen = "1.8"
+rust_decimal = { version = "1.41", features = ["maths"] }
+chrono = "0.4"
+thiserror = "2"
+time = "0.3"
+
+[dev-dependencies]
+rxing = "0.7"
+sha2 = "0.10"
+rust_decimal_macros = "1.40"

@@ -12,6 +12,7 @@
 	import { page } from '$app/state';
 
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import {
@@ -34,6 +35,22 @@
 	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
 
 	const VALID_PAYMENT_STATUS: PaymentStatusFilter[] = ['all', 'unpaid', 'overdue', 'paid'];
+
+	// D2 (review pass 1 G2 D) : map locale-stable des labels filter (le
+	// fallback `i18nMsg(key, ps)` exposait raw `'unpaid'` aux UI FR/DE/IT
+	// si la clé FTL manquait). Fallbacks FR explicites au lieu du mot-clé.
+	const FILTER_FALLBACK_FR: Record<PaymentStatusFilter, string> = {
+		all: 'Toutes',
+		unpaid: 'Impayées',
+		overdue: 'En retard',
+		paid: 'Payées',
+	};
+
+	// B2 (review pass 1 G2 B) : export CSV gated Comptable+ — masquer le
+	// bouton pour Consultation pour éviter un 403 au clic.
+	const canExportCsv = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
+	);
 	const VALID_SORT_BY: InvoiceSortBy[] = ['Date', 'DueDate', 'TotalAmount', 'ContactName'];
 	const VALID_SORT_DIR: SortDirection[] = ['Asc', 'Desc'];
 
@@ -106,7 +123,11 @@
 	function syncUrl() {
 		const p = new URLSearchParams();
 		if (effectiveSearch) p.set('search', effectiveSearch);
-		if (paymentStatus !== 'unpaid') p.set('paymentStatus', paymentStatus);
+		// D1 (review pass 1 G2 D) : URL share-friendly — toujours écrire
+		// `paymentStatus` même si défaut, pour qu'un lien partagé montre
+		// exactement ce que voit le destinataire (sans dépendre du défaut
+		// backend qui pourrait évoluer).
+		p.set('paymentStatus', paymentStatus);
 		if (contactFilter) p.set('contactId', String(contactFilter.id));
 		if (dueBeforeFilter) p.set('dueBefore', dueBeforeFilter);
 		if (sortBy !== 'DueDate') p.set('sortBy', sortBy);
@@ -144,6 +165,15 @@
 			if (isApiError(err)) notifyError(err.message);
 			items = [];
 			total = 0;
+			// Reset summary à zéro sur erreur — sinon stale KPIs visibles
+			// à côté d'une table vide (utilisateur croit que ses filtres
+			// ont produit ces chiffres).
+			summary = {
+				unpaidCount: 0,
+				unpaidTotal: '0',
+				overdueCount: 0,
+				overdueTotal: '0',
+			};
 		} finally {
 			if (seq === loadSeq) loading = false;
 		}
@@ -177,7 +207,10 @@
 			sortDirection = sortDirection === 'Asc' ? 'Desc' : 'Asc';
 		} else {
 			sortBy = col;
-			sortDirection = col === 'DueDate' || col === 'Date' ? 'Asc' : 'Asc';
+			// Defaults raisonnables : dates ASC (chrono), montants/contacts DESC
+			// (plus gros / Z d'abord). Branche morte « Asc : Asc » de pass 1
+			// remplacée par un vrai choix par colonne.
+			sortDirection = col === 'DueDate' || col === 'Date' || col === 'ContactName' ? 'Asc' : 'Desc';
 		}
 		offset = 0;
 	}
@@ -219,11 +252,17 @@
 	async function onExportCsv() {
 		exportingCsv = true;
 		try {
+			// Propage tous les filtres + tri visibles à l'écran — le CSV
+			// exporté doit refléter exactement la liste affichée (review
+			// pass 1 G2 D : auparavant sortBy/sortDirection/dates étaient
+			// ignorés → CSV désaligné).
 			const blob = await exportDueDatesCsv({
 				search: effectiveSearch || undefined,
 				contactId: contactFilter?.id,
 				dueBefore: dueBeforeFilter || undefined,
 				paymentStatus,
+				sortBy,
+				sortDirection,
 			});
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
@@ -244,7 +283,11 @@
 
 	function statusOf(inv: DueDateItem): 'paid' | 'unpaid' | 'overdue' {
 		if (inv.paidAt) return 'paid';
-		if (inv.isOverdue) return 'overdue';
+		// `isOverdue` peut être `undefined` lors d'un déploiement échelonné
+		// (frontend en avance sur backend). Strict comparison `=== true`
+		// évite de classer overdue silencieusement toute valeur truthy
+		// inattendue, et vice-versa.
+		if (inv.isOverdue === true) return 'overdue';
 		return 'unpaid';
 	}
 </script>
@@ -288,7 +331,7 @@
 					offset = 0;
 				}}
 			>
-				{i18nMsg(`due-dates-filter-${ps}`, ps)}
+				{i18nMsg(`due-dates-filter-${ps}`, FILTER_FALLBACK_FR[ps])}
 			</button>
 		{/each}
 	</div>
@@ -325,10 +368,12 @@
 			}}
 		/>
 	</div>
-	<Button variant="outline" size="sm" onclick={onExportCsv} disabled={exportingCsv}>
-		<Download class="h-4 w-4" aria-hidden="true" />
-		{i18nMsg('due-dates-export-button', 'Exporter CSV')}
-	</Button>
+	{#if canExportCsv}
+		<Button variant="outline" size="sm" onclick={onExportCsv} disabled={exportingCsv}>
+			<Download class="h-4 w-4" aria-hidden="true" />
+			{i18nMsg('due-dates-export-button', 'Exporter CSV')}
+		</Button>
+	{/if}
 </div>
 
 {#if loading}
