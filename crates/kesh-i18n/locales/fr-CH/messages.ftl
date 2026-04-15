@@ -407,3 +407,120 @@ settings-invoicing-format-invalid = Format invalide
 settings-invoicing-format-too-long = Le format est trop long
 nav-settings-invoicing = Facturation
 invoice-journal-entry-description = Facture { $invoiceNumber } - { $contactName }
+
+# --- Story 5.3 — Génération PDF QR Bill ---
+
+# Libellés affichés dans la partie facture du PDF (25 clés)
+invoice-pdf-title = Facture
+invoice-pdf-date = Date
+invoice-pdf-due-date = Échéance
+invoice-pdf-number = N° de facture
+invoice-pdf-ide = IDE
+invoice-pdf-recipient = Destinataire
+invoice-pdf-description = Description
+invoice-pdf-quantity = Qté
+invoice-pdf-unit-price = Prix unitaire
+invoice-pdf-vat = TVA
+invoice-pdf-line-total = Total
+invoice-pdf-subtotal = Sous-total
+invoice-pdf-total = Total
+invoice-pdf-total-ttc = Total TTC
+invoice-pdf-payment-terms = Conditions de paiement
+invoice-pdf-qr-section-payment = Section paiement
+invoice-pdf-qr-section-receipt = Récépissé
+invoice-pdf-qr-account = Compte / Payable à
+invoice-pdf-qr-reference = Référence
+invoice-pdf-qr-additional-info = Informations supplémentaires
+invoice-pdf-qr-payable-by = Payable par
+invoice-pdf-qr-currency = Monnaie
+invoice-pdf-qr-amount = Montant
+invoice-pdf-qr-acceptance-point = Point de dépôt
+invoice-pdf-qr-separate-before-paying = A détacher avant le versement
+
+# Messages d'erreur PDF (6 clés — codes applicatifs + causes détaillées)
+invoice-pdf-error-invoice-not-validated = La facture doit être validée avant de pouvoir être générée en PDF.
+invoice-pdf-error-invoice-not-pdf-ready = La facture n'est pas prête pour la génération PDF.
+invoice-pdf-error-pdf-generation-failed = Échec de la génération du PDF. Réessayez ultérieurement.
+invoice-pdf-error-popup-blocked = Pop-up bloqué par le navigateur — autorisez les pop-ups pour télécharger le PDF.
+invoice-pdf-error-missing-contact-address = Adresse du client manquante — renseignez-la dans la fiche contact.
+invoice-pdf-error-missing-primary-bank-account = Aucun compte bancaire principal configuré — ajoutez-en un dans les paramètres.
+
+# Libellés bouton frontend (2 clés)
+invoices-download-pdf = Télécharger PDF
+invoices-download-pdf-aria-label = Télécharger la facture { $number } au format PDF
+
+# Fallbacks AppError
+error-invoice-not-validated = La facture doit être validée avant de pouvoir être générée en PDF.
+error-invoice-too-many-lines-for-pdf = La facture contient { $count } lignes — le PDF A4 est limité à { $max } lignes en v0.1.
+error-pdf-generation-failed = Échec de la génération du PDF.
+
+# Story 5.4 — Échéancier factures
+due-dates-title = Échéancier
+due-dates-filter-all = Toutes
+due-dates-filter-unpaid = Impayées
+due-dates-filter-overdue = En retard
+due-dates-filter-paid = Payées
+due-dates-summary-unpaid = factures impayées
+due-dates-summary-overdue = en retard
+due-dates-search-label = Recherche
+due-dates-contact-label = Contact
+due-dates-contact-placeholder = Tous les contacts
+due-dates-due-before-label = Échéance avant
+due-dates-column-date = Date
+due-dates-column-due-date = Échéance
+due-dates-column-contact = Client
+due-dates-column-total = Total
+due-dates-column-payment-status = Statut
+due-dates-column-paid-at = Payée le
+due-dates-export-button = Exporter CSV
+due-dates-no-results = Aucune facture à afficher.
+due-dates-result-suffix = résultat(s)
+
+# Statuts paiement
+payment-status-paid = Payée
+payment-status-unpaid = Impayée
+payment-status-overdue = En retard
+
+# Marquer payée / Dé-marquer payée
+invoice-mark-paid-button = Marquer payée
+invoice-mark-paid-dialog-title = Marquer la facture comme payée
+invoice-mark-paid-dialog-body = Indiquez la date à laquelle vous avez reçu le paiement.
+invoice-mark-paid-date-label = Date de paiement
+invoice-mark-paid-confirm = Confirmer le paiement
+invoice-mark-paid-success = Facture marquée payée
+invoice-unmark-paid-button = Dé-marquer payée
+invoice-unmark-paid-dialog-title = Dé-marquer payée
+invoice-unmark-paid-dialog-body = Cette facture sera à nouveau considérée comme impayée. Utile pour corriger une erreur. Continuer ?
+invoice-unmark-paid-confirm = Dé-marquer
+invoice-unmark-paid-success = Marquage paiement annulé
+invoice-detail-paid-at-label = Payée le
+
+# Erreurs validation paidAt
+invoice-error-paid-at-required = Date de paiement obligatoire
+invoice-error-paid-at-future = La date de paiement ne peut être postérieure à aujourd'hui
+invoice-error-paid-at-before-invoice-date = La date de paiement ne peut être antérieure à la date de facture
+
+# Export CSV — en-têtes (locale = companies.accounting_language)
+echeancier-csv-header-number = Numéro
+echeancier-csv-header-date = Date
+echeancier-csv-header-due-date = Date d'échéance
+echeancier-csv-header-contact = Client
+echeancier-csv-header-total = Total
+echeancier-csv-header-payment-status = Statut paiement
+echeancier-csv-header-paid-at = Date paiement
+echeancier-export-error-too-large = Trop de résultats (> { $limit }). Veuillez affiner vos filtres (par ex. plage de dates ou statut de paiement) avant de relancer l'export.
+invoice-pdf-error-contact-missing = Le contact lié à la facture est introuvable.
+invoice-pdf-error-no-primary-bank = Aucun compte bancaire principal n'est configuré pour cette entreprise.
+invoice-pdf-error-company-address-empty = L'adresse de l'entreprise est vide — renseignez-la avant de générer un PDF.
+invoice-pdf-error-client-address-required = L'adresse du client est obligatoire pour la génération du PDF.
+invoice-pdf-error-client-address-empty = L'adresse du client est vide — renseignez-la avant de générer un PDF.
+
+# Commons
+common-loading = Chargement…
+common-previous = Précédent
+common-next = Suivant
+common-cancel = Annuler
+common-error = Erreur inattendue
+
+# Navigation
+nav-invoices-due-dates = Échéancier

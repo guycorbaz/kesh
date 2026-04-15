@@ -379,3 +379,110 @@ invoice-contact-picker-placeholder = Cerca contatto…
 invoice-contact-picker-empty = Nessun contatto
 
 # Story 5.2 — Validation & numérotation (TODO: traduction — fallback fr-CH via kesh-i18n)
+
+# --- Story 5.3 — PDF QR-fattura ---
+
+invoice-pdf-title = Fattura
+invoice-pdf-date = Data
+invoice-pdf-due-date = Scadenza
+invoice-pdf-number = N° fattura
+invoice-pdf-ide = IDI
+invoice-pdf-recipient = Destinatario
+invoice-pdf-description = Descrizione
+invoice-pdf-quantity = Qtà
+invoice-pdf-unit-price = Prezzo unitario
+invoice-pdf-vat = IVA
+invoice-pdf-line-total = Totale
+invoice-pdf-subtotal = Subtotale
+invoice-pdf-total = Totale
+invoice-pdf-total-ttc = Totale IVA incl.
+invoice-pdf-payment-terms = Condizioni di pagamento
+invoice-pdf-qr-section-payment = Sezione pagamento
+invoice-pdf-qr-section-receipt = Ricevuta
+invoice-pdf-qr-account = Conto / Pagabile a
+invoice-pdf-qr-reference = Riferimento
+invoice-pdf-qr-additional-info = Informazioni supplementari
+invoice-pdf-qr-payable-by = Pagabile da
+invoice-pdf-qr-currency = Valuta
+invoice-pdf-qr-amount = Importo
+invoice-pdf-qr-acceptance-point = Punto di accettazione
+invoice-pdf-qr-separate-before-paying = Da staccare prima del versamento
+
+invoice-pdf-error-invoice-not-validated = La fattura deve essere convalidata prima di generare il PDF.
+invoice-pdf-error-invoice-not-pdf-ready = La fattura non è pronta per la generazione PDF.
+invoice-pdf-error-pdf-generation-failed = Generazione PDF fallita. Riprovare più tardi.
+invoice-pdf-error-popup-blocked = Pop-up bloccato dal browser — consentire i pop-up per scaricare il PDF.
+invoice-pdf-error-missing-contact-address = Indirizzo del cliente mancante — compilare la scheda contatto.
+invoice-pdf-error-missing-primary-bank-account = Nessun conto bancario principale configurato — aggiungerlo nelle impostazioni.
+
+invoices-download-pdf = Scarica PDF
+invoices-download-pdf-aria-label = Scarica la fattura { $number } in formato PDF
+
+error-invoice-not-validated = La fattura deve essere convalidata prima di generare il PDF.
+error-invoice-too-many-lines-for-pdf = La fattura contiene { $count } righe — il PDF A4 è limitato a { $max } righe in v0.1.
+error-pdf-generation-failed = Generazione PDF fallita.
+
+# Story 5.4 — Scadenziario fatture
+due-dates-title = Scadenziario
+due-dates-filter-all = Tutte
+due-dates-filter-unpaid = Non pagate
+due-dates-filter-overdue = In ritardo
+due-dates-filter-paid = Pagate
+due-dates-summary-unpaid = fatture non pagate
+due-dates-summary-overdue = in ritardo
+due-dates-search-label = Ricerca
+due-dates-contact-label = Contatto
+due-dates-contact-placeholder = Tutti i contatti
+due-dates-due-before-label = Scadenza entro
+due-dates-column-date = Data
+due-dates-column-due-date = Scadenza
+due-dates-column-contact = Cliente
+due-dates-column-total = Totale
+due-dates-column-payment-status = Stato
+due-dates-column-paid-at = Pagata il
+due-dates-export-button = Esporta CSV
+due-dates-no-results = Nessuna fattura da mostrare.
+due-dates-result-suffix = risultato/i
+
+payment-status-paid = Pagata
+payment-status-unpaid = Non pagata
+payment-status-overdue = In ritardo
+
+invoice-mark-paid-button = Segna come pagata
+invoice-mark-paid-dialog-title = Segna la fattura come pagata
+invoice-mark-paid-dialog-body = Indica la data in cui hai ricevuto il pagamento.
+invoice-mark-paid-date-label = Data di pagamento
+invoice-mark-paid-confirm = Conferma pagamento
+invoice-mark-paid-success = Fattura segnata come pagata
+invoice-unmark-paid-button = Annulla pagamento
+invoice-unmark-paid-dialog-title = Annulla pagamento
+invoice-unmark-paid-dialog-body = La fattura tornerà non pagata. Utile per correggere un errore. Continuare?
+invoice-unmark-paid-confirm = Annulla
+invoice-unmark-paid-success = Contrassegno pagamento annullato
+invoice-detail-paid-at-label = Pagata il
+
+invoice-error-paid-at-required = Data di pagamento obbligatoria
+invoice-error-paid-at-future = La data di pagamento non può essere futura
+invoice-error-paid-at-before-invoice-date = La data di pagamento non può essere anteriore alla data fattura
+
+echeancier-csv-header-number = Numero
+echeancier-csv-header-date = Data
+echeancier-csv-header-due-date = Scadenza
+echeancier-csv-header-contact = Cliente
+echeancier-csv-header-total = Totale
+echeancier-csv-header-payment-status = Stato pagamento
+echeancier-csv-header-paid-at = Data pagamento
+echeancier-export-error-too-large = Troppi risultati (> { $limit }). Affinare i filtri (intervallo date o stato di pagamento) prima di esportare.
+invoice-pdf-error-contact-missing = Il contatto collegato alla fattura non è stato trovato.
+invoice-pdf-error-no-primary-bank = Nessun conto bancario principale configurato per questa azienda.
+invoice-pdf-error-company-address-empty = L'indirizzo dell'azienda è vuoto — compilarlo prima di generare un PDF.
+invoice-pdf-error-client-address-required = L'indirizzo del cliente è obbligatorio per generare il PDF.
+invoice-pdf-error-client-address-empty = L'indirizzo del cliente è vuoto — compilarlo prima di generare un PDF.
+
+common-loading = Caricamento…
+common-previous = Precedente
+common-next = Successivo
+common-cancel = Annulla
+common-error = Errore imprevisto
+
+nav-invoices-due-dates = Scadenziario

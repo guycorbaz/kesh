@@ -136,6 +136,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/validate",
             post(routes::invoices::validate_invoice_handler),
         )
+        // Story 5.4 : marquage manuel paiement
+        .route(
+            "/api/v1/invoices/{id}/mark-paid",
+            post(routes::invoices::mark_invoice_paid_handler),
+        )
+        .route(
+            "/api/v1/invoices/{id}/unmark-paid",
+            post(routes::invoices::unmark_invoice_paid_handler),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -155,7 +164,21 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route("/api/v1/products/{id}", get(routes::products::get_product))
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
+        // Story 5.4 : échéancier (segment statique, prioritaire sur {id})
+        .route(
+            "/api/v1/invoices/due-dates",
+            get(routes::invoices::list_due_dates_handler),
+        )
+        .route(
+            "/api/v1/invoices/due-dates/export.csv",
+            get(routes::invoices::export_due_dates_csv_handler),
+        )
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_invoice))
+        // Story 5.3 : téléchargement PDF QR Bill (tout rôle authentifié)
+        .route(
+            "/api/v1/invoices/{id}/pdf",
+            get(routes::invoice_pdf::get_invoice_pdf),
+        )
         // Story 5.2 : lecture config facturation (tout rôle authentifié)
         .route(
             "/api/v1/company/invoice-settings",

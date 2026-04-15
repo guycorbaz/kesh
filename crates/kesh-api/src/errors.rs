@@ -11,7 +11,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::errors::DbError;
-use kesh_i18n::{I18nBundle, Locale};
+use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -26,10 +26,23 @@ pub fn init_error_i18n(bundle: std::sync::Arc<I18nBundle>, locale: Locale) {
 }
 
 /// Résout un message d'erreur via i18n, avec fallback sur le message par défaut.
-fn t(key: &str, default: &str) -> String {
+///
+/// Exposé `pub(crate)` pour permettre aux handlers de construire des messages
+/// d'erreur localisés à la volée (ex. `InvoiceNotPdfReady` qui transporte un
+/// message pré-rendu dans son payload).
+pub(crate) fn t(key: &str, default: &str) -> String {
     let guard = I18N.read().expect("I18N read lock");
     match guard.as_ref() {
         Some((bundle, locale)) => bundle.format(locale, key, None),
+        None => default.to_string(),
+    }
+}
+
+/// Résout un message i18n avec arguments Fluent, fallback sur `default`.
+fn t_args(key: &str, default: &str, args: &FluentArgs<'_>) -> String {
+    let guard = I18N.read().expect("I18N read lock");
+    match guard.as_ref() {
+        Some((bundle, locale)) => bundle.format(locale, key, Some(args)),
         None => default.to_string(),
     }
 }
@@ -140,6 +153,34 @@ pub enum AppError {
     /// Le `String` porte le message i18n prêt à afficher.
     #[error("{0}")]
     IdeAlreadyExists(String),
+
+    // --- Story 5.3 — génération PDF QR Bill ---
+    /// La facture n'est pas validée — impossible de générer un PDF (400).
+    #[error("Facture non validée")]
+    InvoiceNotValidated,
+
+    /// Un pré-requis applicatif manque pour générer le PDF : adresse contact,
+    /// compte bancaire primary, IBAN invalide, etc. Le `String` contient la
+    /// description i18n renvoyée au client.
+    #[error("Facture non prête pour PDF : {0}")]
+    InvoiceNotPdfReady(String),
+
+    /// Trop de lignes pour tenir sur un PDF A4 (v0.1 : limite 35). Le `usize`
+    /// est la taille effective, affichée dans le message.
+    #[error("Facture trop de lignes pour PDF : {0}")]
+    InvoiceTooManyLinesForPdf(usize),
+
+    /// Échec interne de la génération PDF (bug crate, I/O). Le détail est
+    /// loggé mais jamais exposé au client (500).
+    #[error("Échec génération PDF : {0}")]
+    PdfGenerationFailed(String),
+
+    // --- Story 5.4 — Échéancier factures ---
+    /// Dépassement du plafond d'export (> 10'000 lignes en v0.1) — 400.
+    /// Code client dédié pour permettre au frontend de proposer un raffinage
+    /// des filtres (distinct de `VALIDATION_ERROR` générique).
+    #[error("Résultat trop volumineux : {0}")]
+    ResultTooLarge(String),
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -294,6 +335,50 @@ impl IntoResponse for AppError {
                 build_response(StatusCode::CONFLICT, "IDE_ALREADY_EXISTS", &msg)
             }
 
+            // Story 5.3 — erreurs PDF QR Bill.
+            AppError::InvoiceNotValidated => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_NOT_VALIDATED",
+                &t(
+                    "error-invoice-not-validated",
+                    "La facture doit être validée avant de pouvoir être générée en PDF.",
+                ),
+            ),
+            AppError::InvoiceNotPdfReady(msg) => {
+                build_response(StatusCode::BAD_REQUEST, "INVOICE_NOT_PDF_READY", &msg)
+            }
+            AppError::InvoiceTooManyLinesForPdf(n) => {
+                let max = crate::routes::invoice_pdf::MAX_LINES_PER_PDF;
+                let fallback = format!(
+                    "La facture contient {n} lignes — le PDF A4 est limité à {max} lignes en v0.1."
+                );
+                let mut args = FluentArgs::new();
+                args.set("count", n as i64);
+                args.set("max", max as i64);
+                let msg = t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args);
+                build_response(
+                    StatusCode::BAD_REQUEST,
+                    "INVOICE_TOO_MANY_LINES_FOR_PDF",
+                    &msg,
+                )
+            }
+            // Story 5.4 — overflow export CSV.
+            AppError::ResultTooLarge(msg) => {
+                build_response(StatusCode::BAD_REQUEST, "RESULT_TOO_LARGE", &msg)
+            }
+
+            AppError::PdfGenerationFailed(detail) => {
+                tracing::error!("pdf generation failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "PDF_GENERATION_FAILED",
+                    &t(
+                        "error-pdf-generation-failed",
+                        "Échec de la génération du PDF.",
+                    ),
+                )
+            }
+
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation
             // ici (propriété désirée).
@@ -385,6 +470,21 @@ impl IntoResponse for AppError {
                             "Configuration incomplète : configurez les paramètres de facturation avant de valider.",
                         ),
                     )
+                }
+                DbError::InvalidInput(code) => {
+                    tracing::warn!("invalid input: {code}");
+                    // Dispatch vers une clé FTL dédiée selon le code métier.
+                    // H2 (review pass 1 G2) : pour les codes connus, on résout
+                    // la clé i18n spec (ex. paidAtBeforeInvoiceDate → clé
+                    // `invoice-error-paid-at-before-invoice-date`).
+                    let (key, default): (String, &str) = match code.as_str() {
+                        "paidAtBeforeInvoiceDate" => (
+                            "invoice-error-paid-at-before-invoice-date".to_string(),
+                            "La date de paiement ne peut être antérieure à la date de facture.",
+                        ),
+                        _ => (format!("error-invalid-input-{code}"), "Entrée invalide"),
+                    };
+                    build_response(StatusCode::BAD_REQUEST, "INVALID_INPUT", &t(&key, default))
                 }
                 DbError::ConnectionUnavailable(m) => {
                     tracing::warn!("db connection unavailable: {m}");
@@ -511,5 +611,44 @@ mod tests {
             AppError::Database(DbError::CheckConstraintViolation("bad".into())).into_response();
         let (status, _) = response_body(resp).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // --- Story 5.3 PDF QR Bill ---
+
+    #[tokio::test]
+    async fn invoice_not_validated_maps_to_400() {
+        let resp = AppError::InvoiceNotValidated.into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_NOT_VALIDATED");
+    }
+
+    #[tokio::test]
+    async fn invoice_not_pdf_ready_maps_to_400() {
+        let resp = AppError::InvoiceNotPdfReady("Adresse client manquante".into()).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY");
+        assert_eq!(body["error"]["message"], "Adresse client manquante");
+    }
+
+    #[tokio::test]
+    async fn invoice_too_many_lines_maps_to_400() {
+        let resp = AppError::InvoiceTooManyLinesForPdf(42).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
+        assert!(body["error"]["message"].as_str().unwrap().contains("42"));
+    }
+
+    #[tokio::test]
+    async fn pdf_generation_failed_maps_to_500_without_leaking_detail() {
+        let resp = AppError::PdfGenerationFailed("printpdf internal: offset 0xdeadbeef".into())
+            .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["error"]["code"], "PDF_GENERATION_FAILED");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(!msg.contains("0xdeadbeef"), "detail leaked: {msg}");
     }
 }

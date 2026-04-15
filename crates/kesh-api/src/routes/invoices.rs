@@ -20,8 +20,13 @@ use kesh_db::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     companies, contacts,
-    invoices::{self, InvoiceListItem, InvoiceListQuery, InvoiceSortBy},
+    invoices::{
+        self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy,
+        PaymentStatusFilter,
+    },
 };
+use kesh_i18n::{FluentArgs, Locale};
+use kesh_i18n::formatting::{format_date, format_money};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -151,6 +156,7 @@ pub struct InvoiceResponse {
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
     pub journal_entry_id: Option<i64>,
+    pub paid_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -170,6 +176,7 @@ impl InvoiceResponse {
             payment_terms: invoice.payment_terms,
             total_amount: invoice.total_amount,
             journal_entry_id: invoice.journal_entry_id,
+            paid_at: invoice.paid_at,
             version: invoice.version,
             created_at: invoice.created_at,
             updated_at: invoice.updated_at,
@@ -191,6 +198,7 @@ pub struct InvoiceListItemResponse {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    pub paid_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -209,6 +217,7 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
             due_date: i.due_date,
             payment_terms: i.payment_terms,
             total_amount: i.total_amount,
+            paid_at: i.paid_at,
             version: i.version,
             created_at: i.created_at,
             updated_at: i.updated_at,
@@ -413,6 +422,8 @@ pub async fn list_invoices(
         contact_id: params.contact_id,
         date_from: params.date_from,
         date_to: params.date_to,
+        payment_status: None,
+        due_before: None,
         sort_by: params.sort_by.unwrap_or_default(),
         sort_direction: params.sort_direction.unwrap_or(SortDirection::Desc),
         limit,
@@ -536,6 +547,411 @@ pub async fn validate_invoice_handler(
         validated.invoice,
         validated.lines,
     )))
+}
+
+// ---------------------------------------------------------------------------
+// Story 5.4 — Échéancier factures
+// ---------------------------------------------------------------------------
+
+const MAX_EXPORT_ROWS: i64 = 10_000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PaymentStatusParam {
+    All,
+    Paid,
+    Unpaid,
+    Overdue,
+}
+
+impl From<PaymentStatusParam> for PaymentStatusFilter {
+    fn from(p: PaymentStatusParam) -> Self {
+        match p {
+            PaymentStatusParam::All => PaymentStatusFilter::All,
+            PaymentStatusParam::Paid => PaymentStatusFilter::Paid,
+            PaymentStatusParam::Unpaid => PaymentStatusFilter::Unpaid,
+            PaymentStatusParam::Overdue => PaymentStatusFilter::Overdue,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListDueDatesQuery {
+    #[serde(default)]
+    pub search: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<i64>,
+    #[serde(default)]
+    pub date_from: Option<NaiveDate>,
+    #[serde(default)]
+    pub date_to: Option<NaiveDate>,
+    #[serde(default)]
+    pub due_before: Option<NaiveDate>,
+    #[serde(default)]
+    pub payment_status: Option<PaymentStatusParam>,
+    #[serde(default)]
+    pub sort_by: Option<InvoiceSortBy>,
+    #[serde(default)]
+    pub sort_direction: Option<SortDirection>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub offset: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DueDateItemResponse {
+    #[serde(flatten)]
+    pub item: InvoiceListItemResponse,
+    /// Calculé côté backend (single source of truth pour `today`) :
+    /// `status == 'validated' && paid_at IS NULL && due_date < UTC_DATE()`.
+    pub is_overdue: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DueDatesResponse {
+    pub items: Vec<DueDateItemResponse>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+    pub summary: DueDatesSummary,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkPaidRequest {
+    #[serde(default)]
+    pub paid_at: Option<NaiveDateTime>,
+    pub version: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnmarkPaidRequest {
+    pub version: i32,
+}
+
+/// Construit une `InvoiceListQuery` pour l'échéancier — force `status =
+/// 'validated'` et applique les défauts de tri (`due_date ASC`).
+fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, AppError> {
+    let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
+    if !(1..=MAX_LIST_LIMIT).contains(&limit) {
+        return Err(AppError::Validation(format!(
+            "limit doit être compris entre 1 et {MAX_LIST_LIMIT}"
+        )));
+    }
+    let offset = params.offset.unwrap_or(0);
+    if offset < 0 {
+        return Err(AppError::Validation(
+            "offset doit être positif ou nul".into(),
+        ));
+    }
+
+    let search = match params
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(s) if s.chars().count() > MAX_SEARCH_LEN => {
+            return Err(AppError::Validation(format!(
+                "search doit faire au plus {MAX_SEARCH_LEN} caractères"
+            )));
+        }
+        Some(s) => Some(s.to_string()),
+        None => None,
+    };
+
+    if let (Some(df), Some(dt)) = (params.date_from, params.date_to) {
+        if df > dt {
+            return Err(AppError::Validation(
+                "dateFrom doit être antérieur ou égal à dateTo".into(),
+            ));
+        }
+    }
+
+    Ok(InvoiceListQuery {
+        search,
+        // Forcé côté backend — sécurité par défaut (Scope §5).
+        status: Some("validated".into()),
+        contact_id: params.contact_id,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        payment_status: Some(
+            params
+                .payment_status
+                .map(Into::into)
+                .unwrap_or(PaymentStatusFilter::All),
+        ),
+        due_before: params.due_before,
+        sort_by: params.sort_by.unwrap_or(InvoiceSortBy::DueDate),
+        sort_direction: params.sort_direction.unwrap_or(SortDirection::Asc),
+        limit,
+        offset,
+    })
+}
+
+/// `GET /api/v1/invoices/due-dates` — page échéancier.
+pub async fn list_due_dates_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ListDueDatesQuery>,
+) -> Result<Json<DueDatesResponse>, AppError> {
+    let company = get_company(&state).await?;
+    let query = build_due_dates_query(params)?;
+
+    // List + summary en parallèle (read-only, pas de tx commune).
+    let (list_res, summary_res) = tokio::join!(
+        invoices::list_by_company_paginated(&state.pool, company.id, query.clone()),
+        invoices::due_dates_summary(&state.pool, company.id, &query),
+    );
+    let list = list_res?;
+    let summary = summary_res?;
+
+    let today = chrono::Utc::now().naive_utc().date();
+    let items = list
+        .items
+        .into_iter()
+        .map(|i| {
+            let is_overdue = i.status == "validated"
+                && i.paid_at.is_none()
+                && i.due_date.is_some_and(|d| d < today);
+            DueDateItemResponse {
+                item: InvoiceListItemResponse::from(i),
+                is_overdue,
+            }
+        })
+        .collect();
+
+    Ok(Json(DueDatesResponse {
+        items,
+        total: list.total,
+        offset: list.offset,
+        limit: list.limit,
+        summary,
+    }))
+}
+
+/// Validation commune pour `mark-paid` / `unmark-paid` — borne `paid_at`
+/// dans le passé (vs `Utc::now()`). La borne basse `paid_at >= invoice.date`
+/// est validée dans le repository (besoin d'un round-trip DB).
+fn validate_paid_at_bounds(paid_at: NaiveDateTime) -> Result<(), AppError> {
+    let now = chrono::Utc::now().naive_utc();
+    if paid_at > now {
+        return Err(AppError::Validation(
+            "La date de paiement ne peut être postérieure à aujourd'hui.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// `POST /api/v1/invoices/:id/mark-paid` — marquage manuel.
+pub async fn mark_invoice_paid_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<MarkPaidRequest>,
+) -> Result<Json<InvoiceResponse>, AppError> {
+    let company = get_company(&state).await?;
+    let paid_at = req
+        .paid_at
+        .unwrap_or_else(|| chrono::Utc::now().naive_utc());
+    validate_paid_at_bounds(paid_at)?;
+
+    // M1 (review pass 1 G2) : mark_as_paid retourne `(Invoice, Vec<InvoiceLine>)`
+    // depuis la même transaction, supprimant la race DELETE/UPDATE entre
+    // l'UPDATE paid_at et un re-fetch post-commit.
+    let (updated, lines) = invoices::mark_as_paid(
+        &state.pool,
+        current_user.user_id,
+        id,
+        company.id,
+        req.version,
+        Some(paid_at),
+    )
+    .await?;
+    Ok(Json(InvoiceResponse::from_parts(updated, lines)))
+}
+
+/// `POST /api/v1/invoices/:id/unmark-paid` — annule un marquage payé.
+pub async fn unmark_invoice_paid_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<UnmarkPaidRequest>,
+) -> Result<Json<InvoiceResponse>, AppError> {
+    let company = get_company(&state).await?;
+    // M1 (review pass 1 G2) : idem mark_invoice_paid_handler — fetch atomique.
+    let (updated, lines) = invoices::mark_as_paid(
+        &state.pool,
+        current_user.user_id,
+        id,
+        company.id,
+        req.version,
+        None,
+    )
+    .await?;
+    Ok(Json(InvoiceResponse::from_parts(updated, lines)))
+}
+
+/// Clés FTL des en-têtes CSV (locale = `companies.accounting_language`).
+const CSV_HEADER_KEYS: [&str; 7] = [
+    "echeancier-csv-header-number",
+    "echeancier-csv-header-date",
+    "echeancier-csv-header-due-date",
+    "echeancier-csv-header-contact",
+    "echeancier-csv-header-total",
+    "echeancier-csv-header-payment-status",
+    "echeancier-csv-header-paid-at",
+];
+
+/// M3 (review pass 1 G2) : neutralise l'injection de formules Excel/Calc.
+/// Si une cellule commence par `=`, `+`, `-`, `@` (voir OWASP CSV Injection),
+/// on préfixe d'une apostrophe simple pour forcer l'interprétation texte.
+fn csv_sanitize(raw: String) -> String {
+    if let Some(first) = raw.chars().next() {
+        if matches!(first, '=' | '+' | '-' | '@') {
+            let mut out = String::with_capacity(raw.len() + 1);
+            out.push('\'');
+            out.push_str(&raw);
+            return out;
+        }
+    }
+    raw
+}
+
+const CSV_HEADER_FALLBACKS: [&str; 7] = [
+    "Numéro",
+    "Date",
+    "Date d'échéance",
+    "Client",
+    "Total",
+    "Statut paiement",
+    "Date paiement",
+];
+
+/// `GET /api/v1/invoices/due-dates/export.csv` — export CSV échéancier.
+///
+/// Format : UTF-8 + BOM, séparateur `;`, CRLF, montants suisses (1'234.56),
+/// dates dd.mm.yyyy. Limite dure 10'000 lignes (sinon 400).
+pub async fn export_due_dates_csv_handler(
+    State(state): State<AppState>,
+    Query(mut params): Query<ListDueDatesQuery>,
+) -> Result<axum::response::Response, AppError> {
+    use axum::http::HeaderValue;
+    use axum::http::header;
+    use axum::response::IntoResponse;
+
+    let company = get_company(&state).await?;
+
+    // M4 (review pass 1 G2) : le `limit`/`offset` côté client ne s'appliquent
+    // pas à l'export CSV (pas de pagination). On les force à des valeurs
+    // validables pour que `build_due_dates_query` ne rejette pas l'appel
+    // avec un 400 sur un paramètre sans effet. La limite réelle est
+    // appliquée par `list_for_export(MAX_EXPORT_ROWS + 1)`.
+    params.limit = None;
+    params.offset = None;
+    let query = build_due_dates_query(params)?;
+
+    // +1 pour détecter le dépassement de la limite dure.
+    let rows =
+        invoices::list_for_export(&state.pool, company.id, &query, MAX_EXPORT_ROWS + 1).await?;
+    if rows.len() as i64 > MAX_EXPORT_ROWS {
+        // H1 (review pass 1 G2) : code client dédié `RESULT_TOO_LARGE`
+        // (spec §84 / AC#10), distinct de `VALIDATION_ERROR`.
+        let locale = Locale::from(company.accounting_language.as_str());
+        let key = "echeancier-export-error-too-large";
+        let mut args = FluentArgs::new();
+        args.set("limit", MAX_EXPORT_ROWS);
+        let msg = state.i18n.format(&locale, key, Some(&args));
+        let msg = if msg == key || msg.is_empty() {
+            format!("Trop de résultats (> {MAX_EXPORT_ROWS}). Veuillez affiner vos filtres.")
+        } else {
+            msg
+        };
+        return Err(AppError::ResultTooLarge(msg));
+    }
+
+    let locale = Locale::from(company.accounting_language.as_str());
+    let today = chrono::Utc::now().naive_utc().date();
+
+    // Build CSV en mémoire (~2 Mo max → pas de streaming nécessaire).
+    let mut buf: Vec<u8> = Vec::with_capacity(rows.len().saturating_mul(200) + 4);
+    // BOM UTF-8 — garantit qu'Excel Windows interprète correctement les accents.
+    buf.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+
+    {
+        let mut wtr = csv::WriterBuilder::new()
+            .delimiter(b';')
+            .terminator(csv::Terminator::CRLF)
+            .from_writer(&mut buf);
+
+        // En-têtes (locale = accounting_language).
+        let headers: Vec<String> = CSV_HEADER_KEYS
+            .iter()
+            .zip(CSV_HEADER_FALLBACKS.iter())
+            .map(|(k, fb)| {
+                let v = state.i18n.format(&locale, k, None);
+                if v.is_empty() || v == *k {
+                    fb.to_string()
+                } else {
+                    v
+                }
+            })
+            .collect();
+        wtr.write_record(&headers)
+            .map_err(|e| AppError::Internal(format!("csv header: {e}")))?;
+
+        for inv in rows {
+            let payment_status_key = if inv.paid_at.is_some() {
+                "payment-status-paid"
+            } else if inv.due_date.is_some_and(|d| d < today) {
+                "payment-status-overdue"
+            } else {
+                "payment-status-unpaid"
+            };
+            let payment_status = state.i18n.format(&locale, payment_status_key, None);
+            let payment_status =
+                if payment_status.is_empty() || payment_status == payment_status_key {
+                    payment_status_key.to_string()
+                } else {
+                    payment_status
+                };
+
+            wtr.write_record(&[
+                csv_sanitize(inv.invoice_number.clone().unwrap_or_default()),
+                format_date(&inv.date),
+                inv.due_date.as_ref().map(format_date).unwrap_or_default(),
+                csv_sanitize(inv.contact_name.clone()),
+                format_money(&inv.total_amount),
+                payment_status,
+                inv.paid_at
+                    .map(|d| format_date(&d.date()))
+                    .unwrap_or_default(),
+            ])
+            .map_err(|e| AppError::Internal(format!("csv row: {e}")))?;
+        }
+
+        wtr.flush()
+            .map_err(|e| AppError::Internal(format!("csv flush: {e}")))?;
+    }
+
+    let filename = format!("echeancier-{}.csv", today.format("%Y-%m-%d"));
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+
+    let mut resp = (StatusCode::OK, buf).into_response();
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    resp.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disposition)
+            .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+    );
+    Ok(resp)
 }
 
 // ---------------------------------------------------------------------------

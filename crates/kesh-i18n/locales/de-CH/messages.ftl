@@ -379,3 +379,110 @@ invoice-contact-picker-placeholder = Kontakt suchen…
 invoice-contact-picker-empty = Keine Kontakte
 
 # Story 5.2 — Validation & numérotation (TODO: traduction — fallback fr-CH via kesh-i18n)
+
+# --- Story 5.3 — PDF QR-Rechnung ---
+
+invoice-pdf-title = Rechnung
+invoice-pdf-date = Datum
+invoice-pdf-due-date = Fälligkeit
+invoice-pdf-number = Rechnungsnummer
+invoice-pdf-ide = UID
+invoice-pdf-recipient = Empfänger
+invoice-pdf-description = Beschreibung
+invoice-pdf-quantity = Menge
+invoice-pdf-unit-price = Einzelpreis
+invoice-pdf-vat = MWST
+invoice-pdf-line-total = Total
+invoice-pdf-subtotal = Zwischentotal
+invoice-pdf-total = Total
+invoice-pdf-total-ttc = Total inkl. MWST
+invoice-pdf-payment-terms = Zahlungsbedingungen
+invoice-pdf-qr-section-payment = Zahlteil
+invoice-pdf-qr-section-receipt = Empfangsschein
+invoice-pdf-qr-account = Konto / Zahlbar an
+invoice-pdf-qr-reference = Referenz
+invoice-pdf-qr-additional-info = Zusätzliche Informationen
+invoice-pdf-qr-payable-by = Zahlbar durch
+invoice-pdf-qr-currency = Währung
+invoice-pdf-qr-amount = Betrag
+invoice-pdf-qr-acceptance-point = Annahmestelle
+invoice-pdf-qr-separate-before-paying = Vor der Einzahlung abzutrennen
+
+invoice-pdf-error-invoice-not-validated = Die Rechnung muss validiert sein, bevor ein PDF erzeugt werden kann.
+invoice-pdf-error-invoice-not-pdf-ready = Die Rechnung ist nicht bereit für die PDF-Erzeugung.
+invoice-pdf-error-pdf-generation-failed = PDF-Erzeugung fehlgeschlagen. Bitte später erneut versuchen.
+invoice-pdf-error-popup-blocked = Pop-up vom Browser blockiert — bitte Pop-ups für das PDF erlauben.
+invoice-pdf-error-missing-contact-address = Kundenadresse fehlt — bitte in der Kontaktkarte erfassen.
+invoice-pdf-error-missing-primary-bank-account = Kein Hauptbankkonto konfiguriert — bitte in den Einstellungen hinzufügen.
+
+invoices-download-pdf = PDF herunterladen
+invoices-download-pdf-aria-label = Rechnung { $number } als PDF herunterladen
+
+error-invoice-not-validated = Die Rechnung muss validiert sein, bevor ein PDF erzeugt werden kann.
+error-invoice-too-many-lines-for-pdf = Die Rechnung enthält { $count } Positionen — das A4-PDF ist in v0.1 auf { $max } Positionen begrenzt.
+error-pdf-generation-failed = PDF-Erzeugung fehlgeschlagen.
+
+# Story 5.4 — Fälligkeitsplan Rechnungen
+due-dates-title = Fälligkeitsplan
+due-dates-filter-all = Alle
+due-dates-filter-unpaid = Unbezahlt
+due-dates-filter-overdue = Überfällig
+due-dates-filter-paid = Bezahlt
+due-dates-summary-unpaid = unbezahlte Rechnungen
+due-dates-summary-overdue = überfällig
+due-dates-search-label = Suche
+due-dates-contact-label = Kontakt
+due-dates-contact-placeholder = Alle Kontakte
+due-dates-due-before-label = Fällig vor
+due-dates-column-date = Datum
+due-dates-column-due-date = Fälligkeit
+due-dates-column-contact = Kunde
+due-dates-column-total = Total
+due-dates-column-payment-status = Status
+due-dates-column-paid-at = Bezahlt am
+due-dates-export-button = CSV exportieren
+due-dates-no-results = Keine Rechnungen anzuzeigen.
+due-dates-result-suffix = Ergebnis(se)
+
+payment-status-paid = Bezahlt
+payment-status-unpaid = Unbezahlt
+payment-status-overdue = Überfällig
+
+invoice-mark-paid-button = Als bezahlt markieren
+invoice-mark-paid-dialog-title = Rechnung als bezahlt markieren
+invoice-mark-paid-dialog-body = Geben Sie das Datum an, an dem Sie die Zahlung erhalten haben.
+invoice-mark-paid-date-label = Zahlungsdatum
+invoice-mark-paid-confirm = Zahlung bestätigen
+invoice-mark-paid-success = Rechnung als bezahlt markiert
+invoice-unmark-paid-button = Zahlung rückgängig machen
+invoice-unmark-paid-dialog-title = Zahlung rückgängig machen
+invoice-unmark-paid-dialog-body = Die Rechnung gilt wieder als unbezahlt. Nützlich zur Korrektur eines Fehlers. Fortfahren?
+invoice-unmark-paid-confirm = Rückgängig machen
+invoice-unmark-paid-success = Zahlung rückgängig gemacht
+invoice-detail-paid-at-label = Bezahlt am
+
+invoice-error-paid-at-required = Zahlungsdatum erforderlich
+invoice-error-paid-at-future = Das Zahlungsdatum darf nicht in der Zukunft liegen
+invoice-error-paid-at-before-invoice-date = Das Zahlungsdatum darf nicht vor dem Rechnungsdatum liegen
+
+echeancier-csv-header-number = Nummer
+echeancier-csv-header-date = Datum
+echeancier-csv-header-due-date = Fälligkeitsdatum
+echeancier-csv-header-contact = Kunde
+echeancier-csv-header-total = Total
+echeancier-csv-header-payment-status = Zahlungsstatus
+echeancier-csv-header-paid-at = Zahlungsdatum
+echeancier-export-error-too-large = Zu viele Ergebnisse (> { $limit }). Bitte die Filter verfeinern (z. B. Datumsbereich oder Zahlungsstatus), bevor der Export erneut gestartet wird.
+invoice-pdf-error-contact-missing = Der mit der Rechnung verknüpfte Kontakt wurde nicht gefunden.
+invoice-pdf-error-no-primary-bank = Für dieses Unternehmen ist kein Hauptbankkonto konfiguriert.
+invoice-pdf-error-company-address-empty = Die Unternehmensadresse ist leer — bitte vor der PDF-Erstellung ausfüllen.
+invoice-pdf-error-client-address-required = Die Kundenadresse ist zur PDF-Erstellung erforderlich.
+invoice-pdf-error-client-address-empty = Die Kundenadresse ist leer — bitte vor der PDF-Erstellung ausfüllen.
+
+common-loading = Laden…
+common-previous = Vorherige
+common-next = Nächste
+common-cancel = Abbrechen
+common-error = Unerwarteter Fehler
+
+nav-invoices-due-dates = Fälligkeitsplan

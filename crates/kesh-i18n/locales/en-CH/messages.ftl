@@ -379,3 +379,110 @@ invoice-contact-picker-placeholder = Search contact…
 invoice-contact-picker-empty = No contacts
 
 # Story 5.2 — Validation & numérotation (TODO: traduction — fallback fr-CH via kesh-i18n)
+
+# --- Story 5.3 — QR Bill PDF ---
+
+invoice-pdf-title = Invoice
+invoice-pdf-date = Date
+invoice-pdf-due-date = Due date
+invoice-pdf-number = Invoice number
+invoice-pdf-ide = VAT ID
+invoice-pdf-recipient = Recipient
+invoice-pdf-description = Description
+invoice-pdf-quantity = Qty
+invoice-pdf-unit-price = Unit price
+invoice-pdf-vat = VAT
+invoice-pdf-line-total = Total
+invoice-pdf-subtotal = Subtotal
+invoice-pdf-total = Total
+invoice-pdf-total-ttc = Total (incl. VAT)
+invoice-pdf-payment-terms = Payment terms
+invoice-pdf-qr-section-payment = Payment part
+invoice-pdf-qr-section-receipt = Receipt
+invoice-pdf-qr-account = Account / Payable to
+invoice-pdf-qr-reference = Reference
+invoice-pdf-qr-additional-info = Additional information
+invoice-pdf-qr-payable-by = Payable by
+invoice-pdf-qr-currency = Currency
+invoice-pdf-qr-amount = Amount
+invoice-pdf-qr-acceptance-point = Acceptance point
+invoice-pdf-qr-separate-before-paying = Separate before paying in
+
+invoice-pdf-error-invoice-not-validated = The invoice must be validated before generating a PDF.
+invoice-pdf-error-invoice-not-pdf-ready = The invoice is not ready for PDF generation.
+invoice-pdf-error-pdf-generation-failed = PDF generation failed. Please try again later.
+invoice-pdf-error-popup-blocked = Pop-up blocked by the browser — please allow pop-ups to download the PDF.
+invoice-pdf-error-missing-contact-address = Customer address is missing — fill it in the contact sheet.
+invoice-pdf-error-missing-primary-bank-account = No primary bank account configured — add one in settings.
+
+invoices-download-pdf = Download PDF
+invoices-download-pdf-aria-label = Download invoice { $number } as PDF
+
+error-invoice-not-validated = The invoice must be validated before generating a PDF.
+error-invoice-too-many-lines-for-pdf = The invoice contains { $count } lines — the A4 PDF is limited to { $max } lines in v0.1.
+error-pdf-generation-failed = PDF generation failed.
+
+# Story 5.4 — Invoice due dates
+due-dates-title = Due dates
+due-dates-filter-all = All
+due-dates-filter-unpaid = Unpaid
+due-dates-filter-overdue = Overdue
+due-dates-filter-paid = Paid
+due-dates-summary-unpaid = unpaid invoices
+due-dates-summary-overdue = overdue
+due-dates-search-label = Search
+due-dates-contact-label = Contact
+due-dates-contact-placeholder = All contacts
+due-dates-due-before-label = Due before
+due-dates-column-date = Date
+due-dates-column-due-date = Due date
+due-dates-column-contact = Customer
+due-dates-column-total = Total
+due-dates-column-payment-status = Status
+due-dates-column-paid-at = Paid on
+due-dates-export-button = Export CSV
+due-dates-no-results = No invoices to display.
+due-dates-result-suffix = result(s)
+
+payment-status-paid = Paid
+payment-status-unpaid = Unpaid
+payment-status-overdue = Overdue
+
+invoice-mark-paid-button = Mark as paid
+invoice-mark-paid-dialog-title = Mark invoice as paid
+invoice-mark-paid-dialog-body = Enter the date you received the payment.
+invoice-mark-paid-date-label = Payment date
+invoice-mark-paid-confirm = Confirm payment
+invoice-mark-paid-success = Invoice marked as paid
+invoice-unmark-paid-button = Unmark paid
+invoice-unmark-paid-dialog-title = Unmark paid
+invoice-unmark-paid-dialog-body = This invoice will be unpaid again. Useful to fix a mistake. Continue?
+invoice-unmark-paid-confirm = Unmark
+invoice-unmark-paid-success = Payment mark removed
+invoice-detail-paid-at-label = Paid on
+
+invoice-error-paid-at-required = Payment date required
+invoice-error-paid-at-future = Payment date cannot be in the future
+invoice-error-paid-at-before-invoice-date = Payment date cannot be before the invoice date
+
+echeancier-csv-header-number = Number
+echeancier-csv-header-date = Date
+echeancier-csv-header-due-date = Due date
+echeancier-csv-header-contact = Customer
+echeancier-csv-header-total = Total
+echeancier-csv-header-payment-status = Payment status
+echeancier-csv-header-paid-at = Paid on
+echeancier-export-error-too-large = Too many results (> { $limit }). Please refine your filters (e.g. date range or payment status) before exporting.
+invoice-pdf-error-contact-missing = The contact linked to this invoice was not found.
+invoice-pdf-error-no-primary-bank = No primary bank account is configured for this company.
+invoice-pdf-error-company-address-empty = Company address is empty — please fill it in before generating a PDF.
+invoice-pdf-error-client-address-required = The client address is required to generate the PDF.
+invoice-pdf-error-client-address-empty = The client address is empty — please fill it in before generating a PDF.
+
+common-loading = Loading…
+common-previous = Previous
+common-next = Next
+common-cancel = Cancel
+common-error = Unexpected error
+
+nav-invoices-due-dates = Due dates

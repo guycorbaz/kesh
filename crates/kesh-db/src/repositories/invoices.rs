@@ -1036,7 +1036,7 @@ pub async fn mark_as_paid(
     company_id: i64,
     expected_version: i32,
     paid_at: Option<NaiveDateTime>,
-) -> Result<Invoice, DbError> {
+) -> Result<(Invoice, Vec<InvoiceLine>), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = async {
@@ -1125,7 +1125,10 @@ pub async fn mark_as_paid(
         )
         .await?;
 
-        Ok(after)
+        // M1 (review pass 1 G2) : retourner lignes issues de la même tx pour
+        // éviter une race DELETE/UPDATE entre mark_as_paid et le re-fetch du
+        // handler (lignes inchangées par mark_as_paid → réutilise lines_before).
+        Ok((after, lines_before))
     }
     .await;
 
@@ -2075,11 +2078,14 @@ mod tests {
         .await;
 
         let paid_at = Some(chrono::Utc::now().naive_utc());
-        let after = mark_as_paid(&pool, admin_user_id, id, company_id, v, paid_at)
+        let (after, lines_after) = mark_as_paid(&pool, admin_user_id, id, company_id, v, paid_at)
             .await
             .unwrap();
         assert!(after.paid_at.is_some());
         assert_eq!(after.version, v + 1);
+        // M1 (review pass 1 G2) : mark_as_paid retourne maintenant les lignes
+        // de la même transaction — pas de re-fetch post-commit côté handler.
+        assert!(!lines_after.is_empty());
 
         let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
             .await
@@ -2182,7 +2188,7 @@ mod tests {
         )
         .await;
 
-        let after1 = mark_as_paid(
+        let (after1, _) = mark_as_paid(
             &pool,
             admin_user_id,
             id,
@@ -2192,7 +2198,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let after2 = mark_as_paid(&pool, admin_user_id, id, company_id, after1.version, None)
+        let (after2, _) = mark_as_paid(&pool, admin_user_id, id, company_id, after1.version, None)
             .await
             .unwrap();
         assert!(after2.paid_at.is_none());

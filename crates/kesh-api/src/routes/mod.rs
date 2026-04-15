@@ -5,6 +5,7 @@ pub mod company_invoice_settings;
 pub mod contacts;
 pub mod health;
 pub mod i18n;
+pub mod invoice_pdf;
 pub mod invoices;
 pub mod journal_entries;
 pub mod limits;
