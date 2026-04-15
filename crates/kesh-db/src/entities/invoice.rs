@@ -27,6 +27,9 @@ pub struct Invoice {
     /// Référence vers l'écriture comptable générée à la validation (Story 5.2).
     /// NULL tant que la facture est en brouillon.
     pub journal_entry_id: Option<i64>,
+    /// Horodate de paiement manuel (Story 5.4). NULL = impayée.
+    /// Ne peut être posée que sur `status = 'validated'` (CHECK DB).
+    pub paid_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

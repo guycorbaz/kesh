@@ -15,7 +15,7 @@
 //!   products.rs). `delete` utilise `SELECT … FOR UPDATE` pour garantir
 //!   l'atomicité snapshot + check statut + DELETE.
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::QueryBuilder;
@@ -34,7 +34,7 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
 
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
 const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
-    status, date, due_date, payment_terms, total_amount, journal_entry_id, version, created_at, updated_at \
+    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
 
 /// Échappe pour `LIKE ? ESCAPE '\\'`. Dupliqué depuis contacts/products —
@@ -72,15 +72,18 @@ fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Va
         "dueDate": inv.due_date.map(|d| d.to_string()),
         "paymentTerms": inv.payment_terms,
         "totalAmount": inv.total_amount.to_string(),
+        "paidAt": inv.paid_at.map(|dt| dt.to_string()),
         "version": inv.version,
         "lines": lines_json,
     })
 }
 
 /// Colonne de tri pour la liste des factures (whitelist anti-injection).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum InvoiceSortBy {
+    #[default]
     Date,
+    DueDate,
     TotalAmount,
     ContactName,
     CreatedAt,
@@ -91,6 +94,7 @@ impl InvoiceSortBy {
     pub fn as_sql_column(&self) -> &'static str {
         match self {
             Self::Date => "i.date",
+            Self::DueDate => "i.due_date",
             Self::TotalAmount => "i.total_amount",
             Self::ContactName => "c.name",
             Self::CreatedAt => "i.created_at",
@@ -98,10 +102,16 @@ impl InvoiceSortBy {
     }
 }
 
-impl Default for InvoiceSortBy {
-    fn default() -> Self {
-        Self::Date
-    }
+/// Filtre dérivé « statut de paiement » — non stocké en DB.
+///
+/// Toujours combiné avec `status = 'validated'` côté handler échéancier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PaymentStatusFilter {
+    #[default]
+    All,
+    Paid,
+    Unpaid,
+    Overdue,
 }
 
 /// Paramètres de recherche, tri et pagination.
@@ -112,6 +122,10 @@ pub struct InvoiceListQuery {
     pub contact_id: Option<i64>,
     pub date_from: Option<NaiveDate>,
     pub date_to: Option<NaiveDate>,
+    /// Filtre échéancier (dérivé de `paid_at` + `due_date`, Story 5.4).
+    pub payment_status: Option<PaymentStatusFilter>,
+    /// Plafond `due_date <= ?` (Story 5.4).
+    pub due_before: Option<NaiveDate>,
     pub sort_by: InvoiceSortBy,
     pub sort_direction: SortDirection,
     pub limit: i64,
@@ -133,6 +147,7 @@ pub struct InvoiceListItem {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    pub paid_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -172,6 +187,43 @@ fn push_where_clauses<'a>(
     if let Some(dt) = query.date_to {
         qb.push(" AND i.date <= ");
         qb.push_bind(dt);
+    }
+
+    // `due_before` : borne haute inclusive (`<=`), cohérente avec `date_to`.
+    // Le nom historique « before » est conservé pour compatibilité API externe
+    // (queryParam `dueBefore`) ; la sémantique est bien « jusqu'à et y compris ».
+    if let Some(db) = query.due_before {
+        qb.push(" AND i.due_date <= ");
+        qb.push_bind(db);
+    }
+
+    // Story 5.4 — filtre dérivé du paid_at / due_date. UTC_DATE() garantit
+    // la cohérence quelle que soit la TZ de la session SQL (convention
+    // projet : tout en UTC naïf). Known limitation v0.1 : voir Story 5.4
+    // « Dette technique v0.2 — fuseau horaire société ».
+    //
+    // P1 (review pass 1) : tout filtre de paiement non-All implique
+    // `status='validated'` (une facture draft/cancelled n'a pas de sémantique
+    // de paiement). Enforcé ici côté repository en défense en profondeur,
+    // indépendamment du `query.status` passé par le caller.
+    match query.payment_status.unwrap_or_default() {
+        PaymentStatusFilter::All => {}
+        PaymentStatusFilter::Paid => {
+            qb.push(" AND i.status = 'validated' AND i.paid_at IS NOT NULL");
+        }
+        PaymentStatusFilter::Unpaid => {
+            qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL");
+        }
+        PaymentStatusFilter::Overdue => {
+            // E6 (review pass 2) : `due_date IS NULL` → NULL < UTC_DATE() = NULL
+            // → filtre false → la facture n'est jamais comptée comme overdue.
+            // Comportement intentionnel : une facture sans échéance explicite
+            // ne peut pas être « en retard ». Le défaut `due_date = invoice.date`
+            // posé par le handler `create_invoice` (Story 5.2) garantit que ce
+            // cas ne se produit pas en pratique pour les factures créées via
+            // Kesh ; une éventuelle `due_date` NULL provient de données legacy.
+            qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()");
+        }
     }
 
     if let Some(ref search) = query.search {
@@ -377,7 +429,7 @@ pub async fn list_by_company_paginated(
     let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, i.version, i.created_at, i.updated_at \
+         i.total_amount, i.paid_at, i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
     );
     push_where_clauses(&mut items_qb, company_id, &query);
@@ -402,6 +454,88 @@ pub async fn list_by_company_paginated(
         total,
         offset: query.offset,
         limit: query.limit,
+    })
+}
+
+/// Agrégat pour la page « Échéancier » (Story 5.4).
+///
+/// Calculé sur les factures validées impayées (`status = 'validated'
+/// AND paid_at IS NULL`), filtrées par contact/recherche/dates/due_before.
+/// Le filtre `payment_status` de la query est **volontairement ignoré** :
+/// le summary reflète toujours les créances en attente, indépendamment
+/// de l'onglet actif côté UI.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DueDatesSummary {
+    pub unpaid_count: i64,
+    pub unpaid_total: Decimal,
+    pub overdue_count: i64,
+    pub overdue_total: Decimal,
+}
+
+/// Calcule le résumé échéancier (1 requête SQL, 4 colonnes).
+///
+/// Le filtre `payment_status` de `query` est ignoré — voir [`DueDatesSummary`].
+pub async fn due_dates_summary(
+    pool: &MySqlPool,
+    company_id: i64,
+    query: &InvoiceListQuery,
+) -> Result<DueDatesSummary, DbError> {
+    let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+        // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
+        // DECIMAL par défaut, incompatible avec Rust i64.
+        "SELECT \
+            COUNT(*) AS unpaid_count, \
+            COALESCE(SUM(i.total_amount), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
+            CAST(COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
+            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN i.total_amount ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
+         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
+    );
+    qb.push(" WHERE i.company_id = ");
+    qb.push_bind(company_id);
+    qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL");
+
+    if let Some(cid) = query.contact_id {
+        qb.push(" AND i.contact_id = ");
+        qb.push_bind(cid);
+    }
+    if let Some(df) = query.date_from {
+        qb.push(" AND i.date >= ");
+        qb.push_bind(df);
+    }
+    if let Some(dt) = query.date_to {
+        qb.push(" AND i.date <= ");
+        qb.push_bind(dt);
+    }
+    if let Some(db) = query.due_before {
+        qb.push(" AND i.due_date <= ");
+        qb.push_bind(db);
+    }
+    if let Some(ref search) = query.search {
+        let trimmed = search.trim();
+        if !trimmed.is_empty() {
+            let pattern = format!("%{}%", escape_like(trimmed));
+            qb.push(" AND (COALESCE(i.invoice_number, '') LIKE ");
+            qb.push_bind(pattern.clone());
+            qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
+            qb.push_bind(pattern.clone());
+            qb.push(" ESCAPE '\\\\' OR c.name LIKE ");
+            qb.push_bind(pattern);
+            qb.push(" ESCAPE '\\\\')");
+        }
+    }
+
+    let row: (i64, Decimal, i64, Decimal) = qb
+        .build_query_as()
+        .fetch_one(pool)
+        .await
+        .map_err(map_db_error)?;
+
+    Ok(DueDatesSummary {
+        unpaid_count: row.0,
+        unpaid_total: row.1,
+        overdue_count: row.2,
+        overdue_total: row.3,
     })
 }
 
@@ -553,7 +687,7 @@ pub async fn delete(
 
     let current_opt = sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, version, created_at, updated_at \
+         payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
          FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(id)
@@ -874,6 +1008,176 @@ pub async fn validate_invoice(
 }
 
 // ---------------------------------------------------------------------------
+// Story 5.4 — Échéancier : mark_as_paid / unmark_as_paid
+// ---------------------------------------------------------------------------
+
+/// Marque une facture validée comme payée (`paid_at.is_some()`) ou l'annule
+/// (`paid_at.is_none()` → unmark).
+///
+/// # Concurrence
+///
+/// Transaction atomique :
+/// 1. `SELECT ... FOR UPDATE` sur la facture (scope company).
+/// 2. Vérifie `status = 'validated'` (sinon [`DbError::IllegalStateTransition`]).
+/// 3. Vérifie `version == expected_version` (sinon [`DbError::OptimisticLockConflict`]).
+/// 4. `UPDATE invoices SET paid_at = ?, version = version + 1`.
+/// 5. Insert audit log wrapper `{before, after}` avec action `invoice.paid`
+///    (si `paid_at.is_some()`) ou `invoice.unpaid` (si `None`).
+///
+/// # Note écriture comptable
+///
+/// **Ne crée AUCUNE écriture comptable** en v0.1. L'écriture d'encaissement
+/// sera générée par la réconciliation automatique (Epic 6). Ici `paid_at`
+/// est un simple marqueur opérationnel.
+pub async fn mark_as_paid(
+    pool: &MySqlPool,
+    user_id: i64,
+    id: i64,
+    company_id: i64,
+    expected_version: i32,
+    paid_at: Option<NaiveDateTime>,
+) -> Result<Invoice, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        let before_opt =
+            sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+                .bind(id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+
+        let before = match before_opt {
+            None => return Err(DbError::NotFound),
+            Some(inv) if inv.status != "validated" => {
+                return Err(DbError::IllegalStateTransition(format!(
+                    "impossible de marquer payée une facture de statut '{}'",
+                    inv.status
+                )));
+            }
+            Some(inv) if inv.version != expected_version => {
+                return Err(DbError::OptimisticLockConflict);
+            }
+            Some(inv) => inv,
+        };
+
+        // Validation calendaire paid_at vs invoice.date (défense en profondeur —
+        // le handler pré-valide aussi). Comparaison sur la date (pas le datetime)
+        // pour éviter qu'un paiement à 00:30 UTC soit rejeté comme « antérieur »
+        // à une facture du même jour.
+        // P2 (review pass 1) : tolérance 1 jour pour absorber l'écart entre
+        // `paid_at` stocké en UTC naïf et `invoice.date` en date métier locale
+        // (jusqu'à +/- 2h en CET/CEST). Sans cette tolérance, un paiement
+        // saisi à 00:30 CET le jour même de la facture serait rejeté.
+        if let Some(pa) = paid_at {
+            if pa.date() < before.date - Duration::days(1) {
+                return Err(DbError::InvalidInput("paidAtBeforeInvoiceDate".to_string()));
+            }
+        }
+
+        let lines_before = fetch_lines(&mut tx, id).await?;
+
+        let rows = sqlx::query(
+            "UPDATE invoices SET paid_at = ?, version = version + 1 \
+             WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
+        )
+        .bind(paid_at)
+        .bind(id)
+        .bind(company_id)
+        .bind(expected_version)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+
+        if rows == 0 {
+            return Err(DbError::OptimisticLockConflict);
+        }
+
+        let after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+            .bind(id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        let audit_details = serde_json::json!({
+            "before": invoice_snapshot_json(&before, &lines_before),
+            "after": invoice_snapshot_json(&after, &lines_before),
+        });
+
+        let action = if paid_at.is_some() {
+            "invoice.paid"
+        } else {
+            "invoice.unpaid"
+        };
+
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry {
+                user_id,
+                action: action.to_string(),
+                entity_type: "invoice".to_string(),
+                entity_id: id,
+                details_json: Some(audit_details),
+            },
+        )
+        .await?;
+
+        Ok(after)
+    }
+    .await;
+
+    match result {
+        Ok(v) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Charge jusqu'à `max_rows` factures validées filtrées (pour l'export CSV).
+///
+/// Contrairement à [`list_by_company_paginated`], pas de LIMIT/OFFSET exposé :
+/// le handler passe `max_rows + 1` pour détecter le dépassement (> 10_000).
+/// Tri : `due_date ASC, id ASC`.
+pub async fn list_for_export(
+    pool: &MySqlPool,
+    company_id: i64,
+    query: &InvoiceListQuery,
+    max_rows: i64,
+) -> Result<Vec<InvoiceListItem>, DbError> {
+    // P3 (review pass 1) : plafond absolu 50_000 en défense en profondeur.
+    // La règle métier « > 10_000 → 400 » reste appliquée côté handler ;
+    // ce clamp évite un scan complet si un caller passe une valeur aberrante.
+    //
+    // F3 (review pass 2) : borne basse à 1 (et non 0) pour éviter qu'un appel
+    // avec `max_rows <= 0` se traduise silencieusement en `LIMIT 0` (retour
+    // vide interprété à tort comme « aucune facture »).
+    let max_rows = max_rows.clamp(1, 50_000);
+    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+        "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
+         i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
+         i.total_amount, i.paid_at, i.version, i.created_at, i.updated_at \
+         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
+    );
+    push_where_clauses(&mut items_qb, company_id, query);
+    items_qb.push(" ORDER BY i.due_date ASC, i.id ASC LIMIT ");
+    items_qb.push_bind(max_rows);
+
+    items_qb
+        .build_query_as()
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)
+}
+
+// ---------------------------------------------------------------------------
 // Tests d'intégration DB (Story 5.1)
 // ---------------------------------------------------------------------------
 
@@ -1168,12 +1472,9 @@ mod tests {
         .await
         .unwrap();
 
-        // Simule un changement de statut via SQL direct.
-        sqlx::query("UPDATE invoices SET status = 'validated' WHERE id = ?")
-            .bind(inv.id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        // Bascule validated + journal_entry stub (respecte la CHECK
+        // chk_invoices_validated_has_je de la Story 5.2).
+        let (_v, je_id) = force_validate(&pool, company_id, inv.id).await;
 
         let err = update(
             &pool,
@@ -1193,13 +1494,8 @@ mod tests {
         .unwrap_err();
         assert!(matches!(err, DbError::IllegalStateTransition(_)));
 
-        // Retour à draft pour permettre le cleanup.
-        sqlx::query("UPDATE invoices SET status = 'draft' WHERE id = ?")
-            .bind(inv.id)
-            .execute(&pool)
-            .await
-            .unwrap();
         cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
     }
 
@@ -1318,23 +1614,15 @@ mod tests {
         )
         .await
         .unwrap();
-        sqlx::query("UPDATE invoices SET status = 'validated' WHERE id = ?")
-            .bind(inv.id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        let (_v, je_id) = force_validate(&pool, company_id, inv.id).await;
 
         let err = delete(&pool, company_id, inv.id, admin_user_id)
             .await
             .unwrap_err();
         assert!(matches!(err, DbError::IllegalStateTransition(_)));
 
-        sqlx::query("UPDATE invoices SET status = 'draft' WHERE id = ?")
-            .bind(inv.id)
-            .execute(&pool)
-            .await
-            .unwrap();
         cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
     }
 
@@ -1646,5 +1934,599 @@ mod tests {
 
         cleanup_invoices(&pool, &[inv_in.id, inv_out.id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 5.4 — Échéancier factures
+    // -----------------------------------------------------------------------
+
+    /// Assure un `fiscal_years` couvrant une plage large pour la company de
+    /// test (idempotent). Crée aussi un `journal_entries` stub et bascule
+    /// l'invoice en `validated` avec la FK — nécessaire pour satisfaire la
+    /// CHECK `chk_invoices_validated_has_je` (Story 5.2 mig 20260417000002).
+    async fn ensure_fiscal_year(pool: &MySqlPool, company_id: i64) -> i64 {
+        if let Some((id,)) =
+            sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
+                .bind(company_id)
+                .fetch_optional(pool)
+                .await
+                .unwrap()
+        {
+            return id;
+        }
+        let res = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, 'Test5.4Exercice', '2020-01-01', '2030-12-31', 'Open')",
+        )
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        res.last_insert_id() as i64
+    }
+
+    async fn insert_stub_journal_entry(pool: &MySqlPool, company_id: i64, fy_id: i64) -> i64 {
+        let (max_n,): (Option<i64>,) = sqlx::query_as(
+            "SELECT MAX(entry_number) FROM journal_entries \
+             WHERE company_id = ? AND fiscal_year_id = ?",
+        )
+        .bind(company_id)
+        .bind(fy_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let next_n = max_n.unwrap_or(0) + 1;
+        let res = sqlx::query(
+            "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
+             entry_date, journal, description) VALUES (?, ?, ?, CURDATE(), 'Ventes', 'stub-5.4')",
+        )
+        .bind(company_id)
+        .bind(fy_id)
+        .bind(next_n)
+        .execute(pool)
+        .await
+        .unwrap();
+        res.last_insert_id() as i64
+    }
+
+    /// Bascule une facture brouillon en `validated` avec un journal_entry
+    /// stub lié, sans passer par validate_invoice (qui requiert la config
+    /// complète company_invoice_settings + sequences). Retourne
+    /// `(new_version, journal_entry_id)` — ce dernier est utile pour le
+    /// cleanup car `ON DELETE RESTRICT` empêche la purge tant qu'une
+    /// invoice référence la je.
+    async fn force_validate(pool: &MySqlPool, company_id: i64, invoice_id: i64) -> (i32, i64) {
+        let fy_id = ensure_fiscal_year(pool, company_id).await;
+        let je_id = insert_stub_journal_entry(pool, company_id, fy_id).await;
+        sqlx::query(
+            "UPDATE invoices SET status = 'validated', journal_entry_id = ?, \
+             version = version + 1 WHERE id = ?",
+        )
+        .bind(je_id)
+        .bind(invoice_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        let (v,): (i32,) = sqlx::query_as("SELECT version FROM invoices WHERE id = ?")
+            .bind(invoice_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        (v, je_id)
+    }
+
+    async fn cleanup_journal_entries(pool: &MySqlPool, ids: &[i64]) {
+        if ids.is_empty() {
+            return;
+        }
+        let mut qb: QueryBuilder<sqlx::MySql> =
+            QueryBuilder::new("DELETE FROM journal_entries WHERE id IN (");
+        let mut sep = qb.separated(", ");
+        for id in ids {
+            sep.push_bind(*id);
+        }
+        sep.push_unseparated(")");
+        qb.build().execute(pool).await.ok();
+    }
+
+    async fn create_and_validate(
+        pool: &MySqlPool,
+        company_id: i64,
+        admin_user_id: i64,
+        contact_id: i64,
+        date: NaiveDate,
+        due_date: Option<NaiveDate>,
+        amount: Decimal,
+    ) -> (i64, i32, i64) {
+        let (inv, _) = create(
+            pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date,
+                due_date,
+                payment_terms: None,
+                lines: vec![sample_line("X", dec!(1), amount)],
+            },
+        )
+        .await
+        .unwrap();
+        let (v, je_id) = force_validate(pool, company_id, inv.id).await;
+        (inv.id, v, je_id)
+    }
+
+    #[tokio::test]
+    async fn test_mark_as_paid_nominal() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(100.00),
+        )
+        .await;
+
+        let paid_at = Some(chrono::Utc::now().naive_utc());
+        let after = mark_as_paid(&pool, admin_user_id, id, company_id, v, paid_at)
+            .await
+            .unwrap();
+        assert!(after.paid_at.is_some());
+        assert_eq!(after.version, v + 1);
+
+        let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| e.action == "invoice.paid"));
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_mark_as_paid_rejects_draft() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (inv, _) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: Some(today()),
+                payment_terms: None,
+                lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = mark_as_paid(
+            &pool,
+            admin_user_id,
+            inv.id,
+            company_id,
+            inv.version,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, DbError::IllegalStateTransition(_)));
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_mark_as_paid_optimistic_lock() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(50.00),
+        )
+        .await;
+
+        let err = mark_as_paid(
+            &pool,
+            admin_user_id,
+            id,
+            company_id,
+            v + 42,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, DbError::OptimisticLockConflict));
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_unmark_paid_writes_audit_unpaid() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(75.00),
+        )
+        .await;
+
+        let after1 = mark_as_paid(
+            &pool,
+            admin_user_id,
+            id,
+            company_id,
+            v,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap();
+        let after2 = mark_as_paid(&pool, admin_user_id, id, company_id, after1.version, None)
+            .await
+            .unwrap();
+        assert!(after2.paid_at.is_none());
+
+        let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| e.action == "invoice.unpaid"));
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_mark_as_paid_rejects_paid_at_before_invoice_date() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let invoice_date = NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            invoice_date,
+            Some(invoice_date),
+            dec!(10.00),
+        )
+        .await;
+
+        let before = NaiveDate::from_ymd_opt(2026, 3, 10)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let err = mark_as_paid(&pool, admin_user_id, id, company_id, v, Some(before))
+            .await
+            .unwrap_err();
+        match err {
+            DbError::InvalidInput(code) => assert_eq!(code, "paidAtBeforeInvoiceDate"),
+            other => panic!("attendu InvalidInput, reçu {other:?}"),
+        }
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_list_filter_overdue() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let t = today();
+        let past = t - chrono::Duration::days(30);
+        let future = t + chrono::Duration::days(30);
+
+        // 3 validated invoices : overdue-unpaid / overdue-paid / future-unpaid.
+        let (id_overdue_unpaid, _, je1) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            past,
+            Some(past),
+            dec!(100.00),
+        )
+        .await;
+        let (id_overdue_paid, v_op, je2) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            past,
+            Some(past),
+            dec!(200.00),
+        )
+        .await;
+        let _ = mark_as_paid(
+            &pool,
+            admin_user_id,
+            id_overdue_paid,
+            company_id,
+            v_op,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap();
+        let (id_future_unpaid, _, je3) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            t,
+            Some(future),
+            dec!(300.00),
+        )
+        .await;
+
+        let result = list_by_company_paginated(
+            &pool,
+            company_id,
+            InvoiceListQuery {
+                status: Some("validated".into()),
+                contact_id: Some(contact_id),
+                payment_status: Some(PaymentStatusFilter::Overdue),
+                limit: 100,
+                offset: 0,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let ids: Vec<i64> = result.items.iter().map(|i| i.id).collect();
+        assert!(ids.contains(&id_overdue_unpaid));
+        assert!(
+            !ids.contains(&id_overdue_paid),
+            "une facture overdue mais payée doit être exclue"
+        );
+        assert!(
+            !ids.contains(&id_future_unpaid),
+            "une facture future non payée n'est pas overdue"
+        );
+
+        cleanup_invoices(
+            &pool,
+            &[id_overdue_unpaid, id_overdue_paid, id_future_unpaid],
+        )
+        .await;
+        cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_due_dates_summary_computes_correct_totals() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let t = today();
+        let past = t - chrono::Duration::days(10);
+        let future = t + chrono::Duration::days(10);
+
+        let (id_overdue, _, je1) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            past,
+            Some(past),
+            dec!(100.00),
+        )
+        .await;
+        let (id_unpaid_not_overdue, _, je2) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            t,
+            Some(future),
+            dec!(50.00),
+        )
+        .await;
+        let (id_paid, v_p, je3) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            t,
+            Some(future),
+            dec!(500.00),
+        )
+        .await;
+        let _ = mark_as_paid(
+            &pool,
+            admin_user_id,
+            id_paid,
+            company_id,
+            v_p,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap();
+
+        let summary = due_dates_summary(
+            &pool,
+            company_id,
+            &InvoiceListQuery {
+                contact_id: Some(contact_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // Summary = unpaid only. Les 2 impayées (overdue + not-overdue), pas la payée.
+        assert_eq!(summary.unpaid_count, 2);
+        assert_eq!(summary.unpaid_total, dec!(150.0000));
+        assert_eq!(summary.overdue_count, 1);
+        assert_eq!(summary.overdue_total, dec!(100.0000));
+
+        cleanup_invoices(&pool, &[id_overdue, id_unpaid_not_overdue, id_paid]).await;
+        cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    #[tokio::test]
+    async fn test_due_dates_summary_ignores_payment_status_filter() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id_unpaid_a, _, je1) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(10.00),
+        )
+        .await;
+        let (id_unpaid_b, _, je2) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(20.00),
+        )
+        .await;
+        let (id_paid, v_p, je3) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(999.00),
+        )
+        .await;
+        let _ = mark_as_paid(
+            &pool,
+            admin_user_id,
+            id_paid,
+            company_id,
+            v_p,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap();
+
+        // Avec payment_status = Paid → summary doit toujours compter les impayées.
+        let summary = due_dates_summary(
+            &pool,
+            company_id,
+            &InvoiceListQuery {
+                contact_id: Some(contact_id),
+                payment_status: Some(PaymentStatusFilter::Paid),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.unpaid_count, 2);
+        assert_eq!(summary.unpaid_total, dec!(30.0000));
+
+        cleanup_invoices(&pool, &[id_unpaid_a, id_unpaid_b, id_paid]).await;
+        cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// Concurrence : deux `mark_as_paid` en parallèle → un réussit, l'autre
+    /// reçoit `OptimisticLockConflict`. Pool dédié à 4 connexions pour éviter
+    /// le deadlock pool-timeout (chaque tx garde sa connexion jusqu'au COMMIT).
+    #[tokio::test]
+    async fn test_mark_as_paid_concurrent_one_succeeds_other_409() {
+        dotenvy::dotenv().ok();
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for DB tests");
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("pool connect");
+
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(42.00),
+        )
+        .await;
+
+        let pool_a = pool.clone();
+        let pool_b = pool.clone();
+        let date_a = chrono::Utc::now().naive_utc();
+        let date_b = date_a;
+
+        let (res_a, res_b) = tokio::join!(
+            async move { mark_as_paid(&pool_a, admin_user_id, id, company_id, v, Some(date_a)).await },
+            async move { mark_as_paid(&pool_b, admin_user_id, id, company_id, v, Some(date_b)).await },
+        );
+
+        let successes = [&res_a, &res_b].iter().filter(|r| r.is_ok()).count();
+        assert_eq!(successes, 1, "exactement un mark_as_paid doit réussir");
+        let conflicts = [&res_a, &res_b]
+            .iter()
+            .filter(|r| matches!(r, Err(DbError::OptimisticLockConflict)))
+            .count();
+        assert_eq!(conflicts, 1, "l'autre doit recevoir OptimisticLockConflict");
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+
+        // P8 (review pass 1) : fermer le pool dédié pour libérer les 4
+        // connexions (éviter l'accumulation face à `max_connections` serveur
+        // sur une suite de tests avec pools multiples).
+        pool.close().await;
     }
 }

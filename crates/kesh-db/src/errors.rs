@@ -75,6 +75,13 @@ pub enum DbError {
     #[error("Pool de connexions épuisé ou timeout : {0}")]
     ConnectionUnavailable(String),
 
+    /// Entrée invalide détectée côté repository (validation métier qui
+    /// nécessite un round-trip DB, ex. `paid_at` antérieur à `invoice.date`).
+    /// Le payload est un code stable (non i18n) — le handler le mappe vers
+    /// une clé i18n FTL. Mappé vers HTTP 400 côté API.
+    #[error("Entrée invalide : {0}")]
+    InvalidInput(String),
+
     /// Invariant du crate violé (ex: AUTO_INCREMENT retourne une valeur impossible).
     /// Indique un bug ou un état de DB corrompu, jamais une erreur utilisateur.
     #[error("Invariant kesh-db violé : {0}")]
@@ -105,6 +112,7 @@ impl DbError {
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
+            Self::InvalidInput(_) => "INVALID_INPUT",
             Self::Invariant(_) => "INVARIANT_VIOLATION",
             Self::Sqlx(_) => "DATABASE_ERROR",
         }
