@@ -464,6 +464,8 @@ invoice-detail-paid-at-label = Bezahlt am
 invoice-error-paid-at-required = Zahlungsdatum erforderlich
 invoice-error-paid-at-future = Das Zahlungsdatum darf nicht in der Zukunft liegen
 invoice-error-paid-at-before-invoice-date = Das Zahlungsdatum darf nicht vor dem Rechnungsdatum liegen
+invoice-error-mark-paid-not-validated = Nur validierte Rechnungen können als bezahlt markiert werden
+invoice-error-already-unpaid = Diese Rechnung ist nicht als bezahlt markiert
 
 echeancier-csv-header-number = Nummer
 echeancier-csv-header-date = Datum

@@ -4,17 +4,22 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen } from '@lucide/svelte';
+	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen, Download } from '@lucide/svelte';
 
 	import {
 		getInvoice,
 		deleteInvoice,
 		validateInvoice,
+		markInvoicePaid,
+		unmarkInvoicePaid,
 	} from '$lib/features/invoices/invoices.api';
+	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
+	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
 	import type { InvoiceResponse } from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
-	import { isApiError } from '$lib/shared/utils/api-client';
+	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 
 	let invoice = $state<InvoiceResponse | null>(null);
@@ -117,6 +122,106 @@
 		}
 	}
 
+	// Story 5.4 — mark/unmark paid
+	let markOpen = $state(false);
+	let markSubmitting = $state(false);
+	let markError = $state('');
+	let unmarkOpen = $state(false);
+	let unmarkSubmitting = $state(false);
+	let unmarkError = $state('');
+
+	function paymentStatus(inv: InvoiceResponse): 'paid' | 'unpaid' | 'overdue' {
+		if (inv.paidAt) return 'paid';
+		// P6 (review pass 2) : `isOverdue` est calculé backend → single source
+		// of truth pour « aujourd'hui » (évite la désync TZ client/serveur).
+		return inv.isOverdue ? 'overdue' : 'unpaid';
+	}
+
+	async function handleMarkConfirm(paidAt: string) {
+		if (!invoice) return;
+		markSubmitting = true;
+		markError = '';
+		try {
+			invoice = await markInvoicePaid(invoice.id, { paidAt, version: invoice.version });
+			notifySuccess(i18nMsg('invoice-mark-paid-success', 'Facture marquée payée'));
+			markOpen = false;
+		} catch (err) {
+			if (isApiError(err)) {
+				markError = err.message;
+				notifyError(err.message);
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					try {
+						invoice = await getInvoice(invoice.id);
+					} catch {
+						// noop
+					}
+					markOpen = false;
+				}
+			} else {
+				markError = i18nMsg('common-error', 'Erreur inattendue');
+			}
+		} finally {
+			markSubmitting = false;
+		}
+	}
+
+	async function confirmUnmark() {
+		if (!invoice) return;
+		unmarkSubmitting = true;
+		unmarkError = '';
+		try {
+			invoice = await unmarkInvoicePaid(invoice.id, { version: invoice.version });
+			notifySuccess(i18nMsg('invoice-unmark-paid-success', 'Marquage paiement annulé'));
+			unmarkOpen = false;
+		} catch (err) {
+			if (isApiError(err)) {
+				unmarkError = err.message;
+				notifyError(err.message);
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					try {
+						invoice = await getInvoice(invoice.id);
+					} catch {
+						// noop
+					}
+					unmarkOpen = false;
+				}
+			} else {
+				unmarkError = i18nMsg('common-error', 'Erreur inattendue');
+			}
+		} finally {
+			unmarkSubmitting = false;
+		}
+	}
+
+	let pdfDownloading = $state(false);
+
+	async function downloadPdf() {
+		if (!invoice) return;
+		pdfDownloading = true;
+		try {
+			const res = await apiClient.getBlob(`/api/v1/invoices/${invoice.id}/pdf`);
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const win = window.open(url, '_blank', 'noopener,noreferrer');
+			if (!win) {
+				notifyError(i18nMsg('invoice-pdf-error-popup-blocked', 'Pop-up bloqué par le navigateur — autorisez les pop-ups pour télécharger le PDF.'));
+				URL.revokeObjectURL(url);
+			} else {
+				// Revoke after 30s — laisse au navigateur le temps de charger le blob.
+				setTimeout(() => URL.revokeObjectURL(url), 30_000);
+			}
+		} catch (err) {
+			if (isApiError(err)) {
+				const key = `invoice-pdf-error-${err.code.toLowerCase().replace(/_/g, '-')}`;
+				notifyError(i18nMsg(key, err.message));
+			} else {
+				notifyError('Erreur lors du téléchargement du PDF');
+			}
+		} finally {
+			pdfDownloading = false;
+		}
+	}
+
 	function statusLabel(s: string): string {
 		if (s === 'draft') return 'Brouillon';
 		if (s === 'validated') return 'Validée';
@@ -148,14 +253,39 @@
 				Supprimer
 			</Button>
 		</div>
-	{:else if invoice?.status === 'validated' && invoice.journalEntryId}
-		<Button
-			variant="outline"
-			onclick={() => goto(`/journal-entries/${invoice!.journalEntryId}`)}
-		>
-			<BookOpen class="h-4 w-4" aria-hidden="true" />
-			Voir l'écriture comptable
-		</Button>
+	{:else if invoice?.status === 'validated'}
+		<div class="flex gap-2">
+			{#if !invoice.paidAt}
+				<Button variant="outline" onclick={() => (markOpen = true)}>
+					{i18nMsg('invoice-mark-paid-button', 'Marquer payée')}
+				</Button>
+			{:else}
+				<Button variant="outline" onclick={() => (unmarkOpen = true)}>
+					{i18nMsg('invoice-unmark-paid-button', 'Dé-marquer payée')}
+				</Button>
+			{/if}
+			<Button
+				onclick={downloadPdf}
+				disabled={pdfDownloading}
+				aria-label={i18nMsg(
+					'invoices-download-pdf-aria-label',
+					`Télécharger la facture ${invoice.invoiceNumber ?? ''} au format PDF`,
+					{ number: invoice.invoiceNumber ?? '' },
+				)}
+			>
+				<Download class="h-4 w-4" aria-hidden="true" />
+				{i18nMsg('invoices-download-pdf', 'Télécharger PDF')}
+			</Button>
+			{#if invoice.journalEntryId}
+				<Button
+					variant="outline"
+					onclick={() => goto(`/journal-entries/${invoice!.journalEntryId}`)}
+				>
+					<BookOpen class="h-4 w-4" aria-hidden="true" />
+					Voir l'écriture comptable
+				</Button>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -169,6 +299,11 @@
 			<h1 class="text-2xl font-semibold">Facture</h1>
 			<p class="text-sm text-text-muted">
 				{invoice.invoiceNumber ?? 'Brouillon'} — {statusLabel(invoice.status)}
+				{#if invoice.status === 'validated'}
+					<span class="ml-2">
+						<PaymentStatusBadge status={paymentStatus(invoice)} />
+					</span>
+				{/if}
 			</p>
 		</div>
 
@@ -185,6 +320,12 @@
 				<div class="text-text-muted">Conditions de paiement</div>
 				<div>{invoice.paymentTerms ?? '—'}</div>
 			</div>
+			{#if invoice.paidAt}
+				<div>
+					<div class="text-text-muted">{i18nMsg('invoice-detail-paid-at-label', 'Payée le')}</div>
+					<div>{invoice.paidAt.slice(0, 10)}</div>
+				</div>
+			{/if}
 		</div>
 
 		<table class="w-full border-collapse text-sm">
@@ -270,6 +411,53 @@
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (validateOpen = false)}>Annuler</Button>
 				<Button onclick={confirmValidate} disabled={validateSubmitting}>Valider</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<MarkPaidDialog
+		open={markOpen}
+		onOpenChange={(o) => {
+			markOpen = o;
+			if (!o) markError = '';
+		}}
+		invoiceDate={invoice.date}
+		submitting={markSubmitting}
+		errorMsg={markError}
+		onConfirm={handleMarkConfirm}
+	/>
+
+	<Dialog.Root
+		open={unmarkOpen}
+		onOpenChange={(o) => {
+			unmarkOpen = o;
+			if (!o) unmarkError = '';
+		}}
+	>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>
+					{i18nMsg('invoice-unmark-paid-dialog-title', 'Dé-marquer payée')}
+				</Dialog.Title>
+			</Dialog.Header>
+			<p class="text-sm">
+				{i18nMsg(
+					'invoice-unmark-paid-dialog-body',
+					'Cette facture sera à nouveau considérée comme impayée. Utile pour corriger une erreur. Continuer ?',
+				)}
+			</p>
+			{#if unmarkError}
+				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					{unmarkError}
+				</div>
+			{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (unmarkOpen = false)} disabled={unmarkSubmitting}>
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
+				<Button variant="destructive" onclick={confirmUnmark} disabled={unmarkSubmitting}>
+					{i18nMsg('invoice-unmark-paid-confirm', 'Dé-marquer')}
+				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

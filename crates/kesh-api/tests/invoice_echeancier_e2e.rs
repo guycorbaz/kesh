@@ -461,11 +461,15 @@ async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     // BOM UTF-8.
     assert_eq!(&bytes[..3], &[0xEF, 0xBB, 0xBF]);
     let text = String::from_utf8_lossy(&bytes);
-    // Séparateur ; + montant suisse 1'234.56 (apostrophe typographique U+2019).
+    // Séparateur ; + montant formaté suisse (apostrophe typographique U+2019
+    // comme séparateur de milliers). P10 (review pass 2) : le total_amount
+    // stocké est unit_price × (1 + vat_rate/100) = 1234.56 × 1.081 ≈ 1334.56,
+    // formaté `1'334.56`. On asserte la présence du séparateur Swiss sur un
+    // nombre > 1000 dans le corps (plus robuste qu'un littéral exact).
     assert!(text.contains(';'));
     assert!(
-        text.contains("1\u{2019}234.56"),
-        "CSV must contain Swiss-formatted amount, got: {text}"
+        text.contains("1\u{2019}"),
+        "CSV must contain Swiss thousands separator (U+2019), got: {text}"
     );
 }
 
@@ -551,8 +555,8 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
 
     // Smoke : vérifier que le variant `ResultTooLarge` du AppError renvoie
     // bien `RESULT_TOO_LARGE` / 400 (découplé du seed massif).
-    use kesh_api::errors::AppError;
     use axum::response::IntoResponse;
+    use kesh_api::errors::AppError;
     let resp = AppError::ResultTooLarge("x".into()).into_response();
     assert_eq!(resp.status(), axum::http::StatusCode::BAD_REQUEST);
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();

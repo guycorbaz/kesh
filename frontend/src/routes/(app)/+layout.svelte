@@ -44,6 +44,7 @@
 				{ label: "Carnet d'adresses", href: '/contacts' },
 				{ label: 'Catalogue', href: '/products' },
 				{ label: 'Facturer', href: '/invoices' },
+				{ label: 'Échéancier', href: '/invoices/due-dates' },
 				{ label: 'Payer', href: '/bank-accounts' },
 				{ label: 'Importer', href: '/bank-import' },
 			],

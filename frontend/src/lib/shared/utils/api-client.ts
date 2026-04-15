@@ -223,9 +223,71 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
 	}
 }
 
+/**
+ * Variante binaire de `request()` — retourne la `Response` brute.
+ *
+ * Utilisée pour télécharger des blobs (PDF, exports CSV) : applique la même
+ * logique JWT + refresh 401 + parsing erreurs 4xx/5xx en `ApiError`, mais ne
+ * parse pas le body en JSON. Le caller appelle `.blob()` / `.arrayBuffer()`.
+ *
+ * @throws {ApiError} En cas d'erreur HTTP ou réseau.
+ */
+async function requestRaw(url: string, options: RequestInit = {}, isRetry = false): Promise<Response> {
+	const headers = buildHeaders(url, options.headers as Record<string, string> | undefined);
+	// `Content-Type: application/json` n'a pas de sens pour un GET binaire —
+	// on le laisse par cohérence, le serveur ignore sur GET sans body.
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+	let res: Response;
+	try {
+		res = await fetch(url, { ...options, headers, signal: controller.signal });
+	} catch (err) {
+		const isTimeout = err instanceof DOMException && err.name === 'AbortError';
+		const error: ApiError = {
+			code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+			message: isTimeout
+				? 'Le serveur ne répond pas. Réessayez ultérieurement.'
+				: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
+			status: 0,
+		};
+		throw error;
+	} finally {
+		clearTimeout(timeout);
+	}
+
+	if (
+		res.status === 401 &&
+		!isRetry &&
+		!AUTH_EXCLUDED_URLS.some((excluded) => url.startsWith(excluded))
+	) {
+		const refreshed = await refreshTokens();
+		if (refreshed) {
+			return requestRaw(url, options, true);
+		}
+		const error: ApiError = {
+			code: 'UNAUTHENTICATED',
+			message: 'Session expirée',
+			status: 401,
+		};
+		throw error;
+	}
+
+	if (!res.ok) {
+		throw await parseErrorResponse(res);
+	}
+
+	return res;
+}
+
 export const apiClient = {
 	get<T>(url: string): Promise<T> {
 		return request<T>(url, { method: 'GET' });
+	},
+
+	/** Téléchargement binaire : retourne la `Response` brute (appelez `.blob()`). */
+	getBlob(url: string): Promise<Response> {
+		return requestRaw(url, { method: 'GET' });
 	},
 
 	post<T>(url: string, body?: unknown): Promise<T> {

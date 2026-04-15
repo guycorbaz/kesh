@@ -25,8 +25,8 @@ use kesh_db::repositories::{
         PaymentStatusFilter,
     },
 };
-use kesh_i18n::{FluentArgs, Locale};
 use kesh_i18n::formatting::{format_date, format_money};
+use kesh_i18n::{FluentArgs, Locale};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -157,6 +157,10 @@ pub struct InvoiceResponse {
     pub total_amount: Decimal,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
+    /// P6 (review pass 2) : `is_overdue` calculé backend (source unique de
+    /// vérité pour « aujourd'hui » — évite la désync TZ client/serveur).
+    /// `true` ssi `status == 'validated' && paid_at IS NULL && due_date < today_utc`.
+    pub is_overdue: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -165,6 +169,10 @@ pub struct InvoiceResponse {
 
 impl InvoiceResponse {
     fn from_parts(invoice: Invoice, lines: Vec<InvoiceLine>) -> Self {
+        let today = chrono::Utc::now().naive_utc().date();
+        let is_overdue = invoice.status == "validated"
+            && invoice.paid_at.is_none()
+            && invoice.due_date.is_some_and(|d| d < today);
         Self {
             id: invoice.id,
             company_id: invoice.company_id,
@@ -177,6 +185,7 @@ impl InvoiceResponse {
             total_amount: invoice.total_amount,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
+            is_overdue,
             version: invoice.version,
             created_at: invoice.created_at,
             updated_at: invoice.updated_at,
@@ -734,15 +743,22 @@ pub async fn list_due_dates_handler(
     }))
 }
 
-/// Validation commune pour `mark-paid` / `unmark-paid` — borne `paid_at`
-/// dans le passé (vs `Utc::now()`). La borne basse `paid_at >= invoice.date`
-/// est validée dans le repository (besoin d'un round-trip DB).
+/// Validation commune pour `mark-paid` — borne haute `paid_at <= today`
+/// (UTC). La borne basse `paid_at >= invoice.date` est validée dans le
+/// repository (besoin d'un round-trip DB).
+///
+/// P1/P7 (review pass 2) : comparaison sur la **date** (pas le datetime)
+/// pour éviter un faux-positif matinal en CET — un utilisateur à 09:00 CET
+/// (07:00 UTC) sélectionnant « aujourd'hui » envoyait un `paid_at` à midi
+/// UTC, strictement supérieur à `Utc::now()` → rejet erroné. Retourne
+/// `DbError::InvalidInput("paidAtFuture")` pour cohérence i18n avec
+/// `paidAtBeforeInvoiceDate` (dispatch FTL côté `errors.rs`).
 fn validate_paid_at_bounds(paid_at: NaiveDateTime) -> Result<(), AppError> {
-    let now = chrono::Utc::now().naive_utc();
-    if paid_at > now {
-        return Err(AppError::Validation(
-            "La date de paiement ne peut être postérieure à aujourd'hui.".into(),
-        ));
+    let today = chrono::Utc::now().naive_utc().date();
+    if paid_at.date() > today {
+        return Err(AppError::Database(kesh_db::errors::DbError::InvalidInput(
+            "paidAtFuture".into(),
+        )));
     }
     Ok(())
 }
@@ -810,7 +826,16 @@ const CSV_HEADER_KEYS: [&str; 7] = [
 /// M3 (review pass 1 G2) : neutralise l'injection de formules Excel/Calc.
 /// Si une cellule commence par `=`, `+`, `-`, `@` (voir OWASP CSV Injection),
 /// on préfixe d'une apostrophe simple pour forcer l'interprétation texte.
+///
+/// P3 (review pass 2) : supprime aussi les CR/LF en défense en profondeur.
+/// `csv::Writer` quote les champs contenant `\n`/`\r`, mais un champ remplacé
+/// par un espace reste lisible sans casser l'alignement des lignes si un
+/// parseur tiers naïf lit le fichier.
 fn csv_sanitize(raw: String) -> String {
+    let raw: String = raw
+        .chars()
+        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .collect();
     if let Some(first) = raw.chars().next() {
         if matches!(first, '=' | '+' | '-' | '@') {
             let mut out = String::with_capacity(raw.len() + 1);

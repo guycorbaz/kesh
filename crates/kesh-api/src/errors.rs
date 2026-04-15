@@ -482,6 +482,14 @@ impl IntoResponse for AppError {
                             "invoice-error-paid-at-before-invoice-date".to_string(),
                             "La date de paiement ne peut être antérieure à la date de facture.",
                         ),
+                        "paidAtFuture" => (
+                            "invoice-error-paid-at-future".to_string(),
+                            "La date de paiement ne peut être postérieure à aujourd'hui.",
+                        ),
+                        "alreadyUnpaid" => (
+                            "invoice-error-already-unpaid".to_string(),
+                            "Cette facture n'est pas marquée payée.",
+                        ),
                         _ => (format!("error-invalid-input-{code}"), "Entrée invalide"),
                     };
                     build_response(StatusCode::BAD_REQUEST, "INVALID_INPUT", &t(&key, default))

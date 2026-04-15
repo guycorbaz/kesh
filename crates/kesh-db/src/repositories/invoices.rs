@@ -222,7 +222,9 @@ fn push_where_clauses<'a>(
             // posé par le handler `create_invoice` (Story 5.2) garantit que ce
             // cas ne se produit pas en pratique pour les factures créées via
             // Kesh ; une éventuelle `due_date` NULL provient de données legacy.
-            qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()");
+            qb.push(
+                " AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()",
+            );
         }
     }
 
@@ -475,7 +477,12 @@ pub struct DueDatesSummary {
 
 /// Calcule le résumé échéancier (1 requête SQL, 4 colonnes).
 ///
-/// Le filtre `payment_status` de `query` est ignoré — voir [`DueDatesSummary`].
+/// **Filtres appliqués** (alignés avec `list_by_company_paginated`) :
+/// `contact_id`, `date_from`, `date_to`, `due_before`, `search`.
+/// **Filtres ignorés** : `payment_status` (le summary ne concerne que les
+/// impayées — un bascule d'onglet `paid` ne doit pas remettre à zéro le KPI),
+/// `status` (toujours `validated`), `paid_at IS NULL` (implicite).
+/// P12 (review pass 2) : doc explicitée après ambiguïté review.
 pub async fn due_dates_summary(
     pool: &MySqlPool,
     company_id: i64,
@@ -1061,6 +1068,15 @@ pub async fn mark_as_paid(
             }
             Some(inv) => inv,
         };
+
+        // P2 (review pass 2) : rejeter `unmark_paid` sur une facture jamais
+        // marquée payée. Sans ce guard, l'UPDATE `SET paid_at = NULL` peut
+        // retourner `rows_affected = 0` (MariaDB) → faux
+        // `OPTIMISTIC_LOCK_CONFLICT`, ou bump de version + audit
+        // `invoice.unpaid` spurious sur une transition logiquement invalide.
+        if paid_at.is_none() && before.paid_at.is_none() {
+            return Err(DbError::InvalidInput("alreadyUnpaid".to_string()));
+        }
 
         // Validation calendaire paid_at vs invoice.date (défense en profondeur —
         // le handler pré-valide aussi). Comparaison sur la date (pas le datetime)
@@ -2243,6 +2259,99 @@ mod tests {
             DbError::InvalidInput(code) => assert_eq!(code, "paidAtBeforeInvoiceDate"),
             other => panic!("attendu InvalidInput, reçu {other:?}"),
         }
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// P4 (review pass 2) : spec T2.4 §715 — le statut `cancelled` doit
+    /// aussi être rejeté avec `IllegalStateTransition`. Le test `rejects_draft`
+    /// ne couvre que le cas `draft` ; la guard `status != "validated"` dans
+    /// le code couvre tous les autres statuts, mais il faut un test pour
+    /// capter toute régression si la condition devient un whitelist.
+    #[tokio::test]
+    async fn test_mark_as_paid_rejects_cancelled() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (inv, _) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: Some(today()),
+                payment_terms: None,
+                lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+            },
+        )
+        .await
+        .unwrap();
+
+        // Force le statut à 'cancelled' via SQL direct (pas d'API de cancel
+        // dans v0.1 ; sera ajoutée Epic 10 avoirs).
+        sqlx::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?")
+            .bind(inv.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = mark_as_paid(
+            &pool,
+            admin_user_id,
+            inv.id,
+            company_id,
+            inv.version,
+            Some(chrono::Utc::now().naive_utc()),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, DbError::IllegalStateTransition(_)));
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// P2 (review pass 2) : `unmark_paid` sur une facture validée jamais
+    /// marquée payée retourne `InvalidInput("alreadyUnpaid")` (transition
+    /// logiquement invalide) au lieu d'un faux `OPTIMISTIC_LOCK_CONFLICT`
+    /// ou d'un audit `invoice.unpaid` spurious.
+    #[tokio::test]
+    async fn test_unmark_never_paid_returns_invalid_input() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            Some(today()),
+            dec!(10.00),
+        )
+        .await;
+
+        let err = mark_as_paid(&pool, admin_user_id, id, company_id, v, None)
+            .await
+            .unwrap_err();
+        match err {
+            DbError::InvalidInput(code) => assert_eq!(code, "alreadyUnpaid"),
+            other => panic!("attendu InvalidInput(alreadyUnpaid), reçu {other:?}"),
+        }
+
+        // Vérifie qu'aucune entrée audit `invoice.unpaid` n'a été écrite
+        // (la guard doit bloquer AVANT l'insert audit).
+        let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
+            .await
+            .unwrap();
+        assert!(!entries.iter().any(|e| e.action == "invoice.unpaid"));
 
         cleanup_invoices(&pool, &[id]).await;
         cleanup_journal_entries(&pool, &[je_id]).await;

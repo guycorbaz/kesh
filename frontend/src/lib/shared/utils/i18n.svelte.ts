@@ -11,8 +11,10 @@ import { apiClient } from '$lib/shared/utils/api-client';
 let _messages = $state<Record<string, string>>({});
 
 /** Résout un message i18n avec fallback. */
-export function i18nMsg(key: string, fallback: string): string {
-	return _messages[key] || fallback;
+export function i18nMsg(key: string, fallback: string, args?: Record<string, string | number>): string {
+	const raw = _messages[key] || fallback;
+	if (!args) return raw;
+	return raw.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? ''));
 }
 
 /** Charge les traductions depuis l'API (appel idempotent côté serveur). */

@@ -7,7 +7,7 @@
  * via `rust_decimal::serde-str`. Ne JAMAIS convertir en `number`.
  */
 
-export type InvoiceSortBy = 'Date' | 'TotalAmount' | 'ContactName' | 'CreatedAt';
+export type InvoiceSortBy = 'Date' | 'DueDate' | 'TotalAmount' | 'ContactName' | 'CreatedAt';
 export type SortDirection = 'Asc' | 'Desc';
 export type InvoiceStatus = 'draft' | 'validated' | 'cancelled';
 
@@ -34,6 +34,9 @@ export interface InvoiceResponse {
 	paymentTerms: string | null;
 	totalAmount: string;
 	journalEntryId: number | null;
+	paidAt: string | null;
+	/** Calculé backend (P6 review pass 2). Source unique de vérité pour le badge « en retard ». */
+	isOverdue: boolean;
 	version: number;
 	createdAt: string;
 	updatedAt: string;
@@ -73,9 +76,54 @@ export interface InvoiceListItemResponse {
 	dueDate: string | null;
 	paymentTerms: string | null;
 	totalAmount: string;
+	paidAt: string | null;
 	version: number;
 	createdAt: string;
 	updatedAt: string;
+}
+
+// Story 5.4 — Échéancier
+export type PaymentStatusFilter = 'all' | 'paid' | 'unpaid' | 'overdue';
+
+export interface DueDateItem extends InvoiceListItemResponse {
+	isOverdue: boolean;
+}
+
+export interface DueDatesSummary {
+	unpaidCount: number;
+	unpaidTotal: string;
+	overdueCount: number;
+	overdueTotal: string;
+}
+
+export interface DueDatesResponse {
+	items: DueDateItem[];
+	total: number;
+	offset: number;
+	limit: number;
+	summary: DueDatesSummary;
+}
+
+export interface DueDatesQuery {
+	search?: string;
+	contactId?: number;
+	dateFrom?: string;
+	dateTo?: string;
+	dueBefore?: string;
+	paymentStatus?: PaymentStatusFilter;
+	sortBy?: InvoiceSortBy;
+	sortDirection?: SortDirection;
+	limit?: number;
+	offset?: number;
+}
+
+export interface MarkPaidRequest {
+	paidAt?: string;
+	version: number;
+}
+
+export interface UnmarkPaidRequest {
+	version: number;
 }
 
 export interface CreateInvoiceLineRequest {
