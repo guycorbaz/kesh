@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { seedTestState } from './helpers/test-state';
 
 test.beforeAll(async () => {
@@ -138,4 +139,13 @@ test.describe('Page contacts — CRUD', () => {
 	// Reportés à Story 4.2 ou post-MVP.
 	test.skip('filtre combinés (type + client + search)', async () => {});
 	test.skip('pagination navigation précédent/suivant', async () => {});
+});
+
+test.describe('Page contacts — accessibilité', () => {
+	test('axe-core sans violations sur la liste contacts', async ({ page }) => {
+		await goToContacts(page);
+		await page.waitForLoadState('networkidle');
+		const results = await new AxeBuilder({ page }).analyze();
+		expect(results.violations).toEqual([]);
+	});
 });

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { seedTestState } from './helpers/test-state';
 
 test.beforeAll(async () => {
@@ -65,6 +66,15 @@ test.describe('Page catalogue — affichage', () => {
 		await goToProducts(page);
 		await expect(page.getByRole('heading', { name: /Catalogue/ })).toBeVisible();
 		await expect(page.getByRole('button', { name: /Nouveau produit/ })).toBeVisible();
+	});
+});
+
+test.describe('Page catalogue — accessibilité', () => {
+	test('axe-core sans violations sur la liste produits', async ({ page }) => {
+		await goToProducts(page);
+		await page.waitForLoadState('networkidle');
+		const results = await new AxeBuilder({ page }).analyze();
+		expect(results.violations).toEqual([]);
 	});
 });
 

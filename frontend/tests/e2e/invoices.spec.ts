@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { seedTestState } from './helpers/test-state';
 
 test.beforeAll(async () => {
@@ -62,6 +63,18 @@ test.describe('Factures — liste', () => {
 		await page.goto('/invoices');
 		await expect(page.getByRole('heading', { name: 'Factures' })).toBeVisible();
 		await expect(page.getByRole('button', { name: /Nouvelle facture/ })).toBeVisible();
+	});
+
+	// Note (D-6-1-D) : avec le seed E2E actuel (bootstrap admin seul), la liste
+	// /invoices est vide → ce test axe valide uniquement l'empty state. Une fois
+	// Story 6-4 (`seed_accounting_company`) en place, étendre pour couvrir l'état
+	// peuplé (badges statut, contraste lignes de tableau, etc.).
+	test('axe-core sans violations sur la liste factures (empty state)', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices');
+		await page.waitForLoadState('networkidle');
+		const results = await new AxeBuilder({ page }).analyze();
+		expect(results.violations).toEqual([]);
 	});
 });
 

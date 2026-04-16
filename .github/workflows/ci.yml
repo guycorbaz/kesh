@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -14,6 +21,7 @@ jobs:
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       mariadb:
         image: mariadb:11.4
@@ -54,6 +62,9 @@ jobs:
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
+
+      - name: cargo build
+        run: cargo build --workspace --all-targets
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -118,9 +129,17 @@ jobs:
         # -j1 : serialize test binaries to avoid SQLx PoolTimedOut across binaries.
         run: cargo test --workspace -j1 -- --test-threads=1
 
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### Job \`${{ github.job }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Started: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
   frontend:
     name: Frontend (Svelte)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -151,6 +170,13 @@ jobs:
           path: frontend/build
           retention-days: 1
 
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### Job \`${{ github.job }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Started: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
   e2e:
     name: E2E (Playwright)
     needs: [backend, frontend]
@@ -169,6 +195,7 @@ jobs:
     # Ces tests doivent être remis en mode blocking avant toute release
     # prod — cf. `docs/known-failures.md#KF-007` pour le tracking.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       mariadb:
         image: mariadb:11.4
@@ -205,6 +232,16 @@ jobs:
 
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install sqlx-cli (binary)
+        run: cargo binstall sqlx-cli --no-confirm --force
+
+      - name: Apply migrations (explicit gate)
+        run: cargo sqlx migrate run
+        working-directory: crates/kesh-db
 
       - uses: actions/setup-node@v4
         with:
@@ -286,9 +323,17 @@ jobs:
           path: frontend/playwright-report
           retention-days: 7
 
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### Job \`${{ github.job }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Started: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
   docker-build:
     name: Docker build (sanity)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -301,3 +346,49 @@ jobs:
           tags: kesh:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### Job \`${{ github.job }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Started: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  docker-publish-main:
+    name: Docker publish (main)
+    needs: [backend, frontend, e2e, docker-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            guycorbaz/kesh:main
+            guycorbaz/kesh:main-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/guycorbaz/kesh
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### Job \`${{ github.job }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Started: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- Tags: \`guycorbaz/kesh:main\`, \`guycorbaz/kesh:main-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
