@@ -157,7 +157,7 @@ La pipeline **existe déjà** dans `.github/workflows/ci.yml` (commit `febd745` 
 
 ## Acceptance Criteria
 
-1. **Given** un push ou une pull request sur `main`, **When** GitHub Actions se déclenche, **Then** le workflow `ci.yml` exécute **4 jobs sur PR** (`backend`, `frontend`, `e2e`, `docker-build`) et **5 jobs sur push main** (+ `docker-publish-main`), chacun avec timeout explicite ≤ 30 min, et le pipeline finit en succès.
+1. **Given** un push ou une pull request sur `main`, **When** GitHub Actions se déclenche, **Then** le workflow `ci.yml` exécute **4 jobs** (`backend`, `frontend`, `e2e`, `docker-build`), chacun avec timeout explicite ≤ 30 min, et le pipeline finit en succès. _[Modifié par CR #17 — plus de 5e job `docker-publish-main` sur push main.]_
 
 2. **Given** le job `backend`, **When** exécution, **Then** les steps suivantes passent dans l'ordre : `rustup show`, `rustup component add rustfmt clippy`, Swatinem cache, wait-for-mariadb, `cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace -j1 -- --test-threads=1`.
 
@@ -169,9 +169,9 @@ La pipeline **existe déjà** dans `.github/workflows/ci.yml` (commit `febd745` 
 
 6. **Given** un push de tag `v*.*.*`, **When** `release.yml` se déclenche, **Then** l'image `guycorbaz/kesh:{version}` et `:latest` sont publiées sur Docker Hub ET une GitHub Release est créée (comportement existant préservé, trigger strictement `tags: ['v*.*.*']`).
 
-7. **Given** un push sur `main` (merge de PR) **ET** que les jobs `backend`, `frontend`, `e2e`, `docker-build` passent vert, **When** le job `docker-publish-main` de `ci.yml` se déclenche (`needs: [backend, frontend, e2e, docker-build]`), **Then** les images `guycorbaz/kesh:main` et `guycorbaz/kesh:main-{github.sha}` sont publiées sur Docker Hub. Le tag `:latest` n'est PAS modifié (réservé aux releases SemVer).
+7. ~~**Given** un push sur `main` (merge de PR) **ET** que les jobs `backend`, `frontend`, `e2e`, `docker-build` passent vert, **When** le job `docker-publish-main` de `ci.yml` se déclenche, **Then** les images `:main` et `:main-{sha}` sont publiées.~~ _[Supprimé par CR #17 — aucune publication Docker sur push `main`.]_
 
-7bis. **Given** un push sur `main` où un des 4 jobs prérequis échoue, **When** le pipeline s'exécute, **Then** le job `docker-publish-main` est **skip** (pas d'image `:main` publiée) — garantie que `:main` pointe toujours sur un commit dont les tests passent.
+7bis. ~~**Given** un push sur `main` où un des 4 jobs prérequis échoue, **When** le pipeline s'exécute, **Then** le job `docker-publish-main` est skip.~~ _[Supprimé par CR #17 — N/A.]_
 
 8. **Given** `ci.yml`, **When** un 2e push survient sur la même branche pendant qu'un run précédent est en cours, **Then** le 1er run est annulé (concurrency `ci-${{ github.ref }}` avec `cancel-in-progress: true`).
 
@@ -189,7 +189,7 @@ La pipeline **existe déjà** dans `.github/workflows/ci.yml` (commit `febd745` 
 
 15. **Given** `docs/ci.md`, **When** on l'ouvre, **Then** il documente (a) les 4 jobs du CI et ce qu'ils valident, (b) comment reproduire chaque step localement, (c) la politique axe-core, (d) la stratégie de publication Docker main + SemVer, (e) la politique de timeouts et concurrency.
 
-16. **Given** la PR de Story 6-1 mergée sur `main`, **When** on observe le run `ci.yml` sur `main`, **Then** les 5 jobs passent vert (dont `docker-publish-main`) ET une image `guycorbaz/kesh:main-{sha}` est tirable via `docker pull` ET le badge CI du README affiche « passing ». Capture d'écran du run vert attachée au Change Log (optionnel mais recommandé).
+16. **Given** la PR de Story 6-1 mergée sur `main`, **When** on observe le run `ci.yml` sur `main`, **Then** les 4 jobs passent vert (`backend`, `frontend`, `e2e`, `docker-build` sanity) ET le badge CI du README affiche « passing ». _[Modifié par CR #17 — plus de validation `docker pull` post-merge ; la première publication Docker sera sur `v0.1.0`.]_
 
 17. **Given** le backend et l'e2e partagent un service MariaDB 11.4, **When** quelqu'un demande pourquoi pas 10.11 (AC Epic §6.1), **Then** `docs/ci.md` documente la décision (cohérence avec `docker-compose.dev.yml`, architecture.md impose « 10.6+ », 11.4 respecte le minimum) et cette story l'amende explicitement dans Change Log.
 
@@ -241,42 +241,9 @@ La pipeline **existe déjà** dans `.github/workflows/ci.yml` (commit `febd745` 
   ```
   (Format minimaliste suffisant.)
 
-### T2 — Publication Docker `:main` sur merge (AC: #6, #7, #7bis)
+### T2 — Concurrency `release.yml` (AC: #6) — _T2.1 et T2.4 annulés par CR #17_
 
-- [x] T2.1 **Ajouter le job `docker-publish-main` dans `.github/workflows/ci.yml`** (pas dans `release.yml`) :
-  ```yaml
-  docker-publish-main:
-    name: Docker publish (main)
-    needs: [backend, frontend, e2e, docker-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build & push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: |
-            guycorbaz/kesh:main
-            guycorbaz/kesh:main-${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          labels: |
-            org.opencontainers.image.source=https://github.com/guycorbaz/kesh
-            org.opencontainers.image.revision=${{ github.sha }}
-  ```
-  Le `needs:` sur les 4 autres jobs est le gate critique — si l'un échoue, `docker-publish-main` est skip automatiquement par GitHub (pas de publication d'image cassée).
+- [x] T2.1 ~~**Ajouter le job `docker-publish-main` dans `.github/workflows/ci.yml`**~~ — _Annulé par CR #17 (issue GitHub #17). Job retiré de `ci.yml` ; aucune publication Docker sur push `main`. Seule voie de publication = tag SemVer via `release.yml`._
 - [x] T2.2 **Ne PAS modifier `release.yml` fonctionnellement** (trigger reste `tags: ['v*.*.*']` exclusivement). La publication `:main` passe par `ci.yml`, pas par `release.yml`. Ajouter uniquement :
   ```yaml
   concurrency:
@@ -285,7 +252,7 @@ La pipeline **existe déjà** dans `.github/workflows/ci.yml` (commit `febd745` 
   ```
   en tête de `release.yml` pour protéger contre 2 tags SemVer poussés en rafale. `cancel-in-progress: false` car on ne veut **jamais** annuler une release SemVer en cours (contrairement à `ci.yml`).
 - [x] T2.3 Vérifier les secrets nécessaires présents : `secrets.DOCKERHUB_USERNAME`, `secrets.DOCKERHUB_TOKEN` (déjà configurés — utilisés actuellement par `release.yml`).
-- [x] T2.4 Valider que le job `docker-publish-main` ne s'exécute PAS sur PR (ref ≠ `refs/heads/main`) — observable via l'onglet Actions : une PR doit afficher 4 jobs, un push main doit afficher 5 jobs dont le 5e `docker-publish-main` en dernier. **Validé statiquement** via la condition `if: github.event_name == 'push' && github.ref == 'refs/heads/main'` ; observation runtime à confirmer post-merge (T5).
+- [x] T2.4 ~~Valider que le job `docker-publish-main` ne s'exécute PAS sur PR.~~ _Annulé par CR #17 — N/A._
 
 ### T3 — Extension axe-core à 6 specs Playwright (AC: #11, #19)
 
@@ -495,3 +462,4 @@ Claude Opus 4.6 (1M context) — `claude-opus-4-6[1m]` via `bmad-dev-story`.
 | 2026-04-16 | SM (Bob) + Claude Opus 4.6 | Création story 6-1 via `bmad-create-story`. Amendement explicite AC Epic §6.1 : MariaDB 11.4 retenu (cohérent avec `docker-compose.dev.yml`) plutôt que 10.11 mentionné dans l'AC d'origine (architecture.md dit « 10.6+ » minimum). |
 | 2026-04-16 | Validation pass 1 — Claude Opus 4.6 (⚠️ auteur, biais) | 6 findings MEDIUM+ appliqués : (F1 CRITICAL) `docker-publish-main` déplacé dans `ci.yml` avec `needs: [backend, frontend, e2e, docker-build]` au lieu de `release.yml` trigger main — gate natif contre publication d'image `:main` cassée ; (F2 HIGH) remplacement `cargo install sqlx-cli` par `cargo-binstall` — gain ~4 min par run e2e ; (F3 MEDIUM) AC#13 simplifié pour matcher T1.5 réel (status + timestamp, pas durée/step failed) ; (F4 MEDIUM) ordre exact T1.4 explicité (après Swatinem cache, avant `cargo build --release`) ; (F11 MEDIUM) documentation empty state pour axe `/invoices` + dette D-6-1-D créée ; (F17 MEDIUM) `concurrency: release-${{ github.ref }}` (cancel-in-progress: false) ajouté à `release.yml`. 5 findings LOW non appliqués (cosmétique, docs, nice-to-have). **Recommandation** : lancer une passe 2 avec Sonnet ou Haiku en fenêtre fraîche pour contourner biais d'auteur avant `dev-story`. |
 | 2026-04-16 | Dev — Claude Opus 4.6 (1M context) | Implémentation story 6-1 via `bmad-dev-story`. T1 (hardening `ci.yml` : concurrency + permissions + timeouts × 4 + `cargo build` + step summary × 5), T1.4 (cargo-binstall + sqlx migrate), T2 (job `docker-publish-main` dans `ci.yml` + concurrency dans `release.yml`), T3 (4 tests axe-core ajoutés à contacts/products/invoices/homepage-settings), T4 (badge CI mis à jour avec `?branch=main` + création `docs/ci.md` ~5 KB), T6 (dette D-6-1-A à D-6-1-D documentée dans `docs/ci.md`). Validations statiques : YAML OK (python yaml.safe_load), `npm run check` 0 errors. Validations runtime (axe-core sur 4 nouveaux tests + run pipeline complet + `docker pull guycorbaz/kesh:main-{sha}`) déléguées à T5 post-merge. Status → `review`. |
+| 2026-04-16 | CR #17 — Claude Opus 4.6 (1M context) | **Changement de scope mid-review** — sur demande Guy : ne pas publier d'image Docker sur push `main`. Issue GitHub [#17](https://github.com/guycorbaz/kesh/issues/17) créée (template `feature_request.yml`). Modifs : (a) `ci.yml` : retrait complet du job `docker-publish-main` (4 jobs au lieu de 5) ; (b) AC #7 et #7bis supprimés, AC #1 et #16 amendés ; (c) T2.1 et T2.4 annulés (T2.2 concurrency `release.yml` conservé) ; (d) `docs/ci.md` : suppression `:main` et `:main-{sha}` du tableau Docker tags + retrait du bloc « Pourquoi `docker-publish-main` est dans `ci.yml` » + mise à jour schéma exécution + section « Stratégie de publication Docker » réécrite (Docker uniquement sur tags SemVer). YAML revalidé OK. Push amend sur PR #16. |

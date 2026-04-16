@@ -7,23 +7,20 @@ Documentation de la pipeline GitHub Actions définie dans `.github/workflows/ci.
 La pipeline `ci.yml` se déclenche sur :
 
 - **Pull request** vers `main` → 4 jobs (`backend`, `frontend`, `e2e`, `docker-build`)
-- **Push** sur `main` (= merge de PR) → 5 jobs (les 4 ci-dessus + `docker-publish-main`)
+- **Push** sur `main` (= merge de PR) → mêmes 4 jobs
+
+Aucune image Docker n'est publiée sur push `main` — la publication n'a lieu **que** sur push de tag `v*.*.*` (via `release.yml`). Le job `docker-build` du `ci.yml` build l'image en mode sanity (sans push) pour valider que le `Dockerfile` compile.
 
 La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` et publie une image Docker Hub SemVer + une GitHub Release.
 
 ### Schéma d'exécution
 
 ```
-[backend]         [frontend]         [docker-build]
-   |                  |                    |
-   +---------+--------+                    |
-             |                             |
-           [e2e]                           |
-             |                             |
-             +-----------------+-----------+
-                               |
-                               v
-                  [docker-publish-main]   ← gate : 4 jobs OK + push main
+[backend]         [frontend]         [docker-build]   ← sanity, no push
+   |                  |
+   +---------+--------+
+             |
+           [e2e]
 ```
 
 | Job | Trigger | Timeout | Dépendances |
@@ -31,8 +28,7 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 | `backend` | push, PR | 30 min | — |
 | `frontend` | push, PR | 20 min | — |
 | `e2e` | push, PR | 30 min | `backend`, `frontend` |
-| `docker-build` (sanity) | push, PR | 20 min | — |
-| `docker-publish-main` | push `main` uniquement | 20 min | `backend`, `frontend`, `e2e`, `docker-build` |
+| `docker-build` (sanity, no push) | push, PR | 20 min | — |
 | `docker` (release) | push tag `v*.*.*` | (défaut) | — |
 
 ## Reproduction locale
@@ -111,20 +107,14 @@ Aucune tolérance silencieuse.
 
 ## Stratégie de publication Docker
 
-Trois canaux de tags coexistent sur `guycorbaz/kesh` (Docker Hub) :
+La publication d'images Docker se fait **uniquement** sur push de tag SemVer `v*.*.*` (via `release.yml`). Aucune image n'est publiée sur push `main` — décision tracée dans le CR #17.
 
 | Tag | Trigger | Workflow | Mutabilité |
 |---|---|---|---|
-| `:main` | push merge sur `main` | `ci.yml/docker-publish-main` | **Mutable** — toujours le dernier commit `main` |
-| `:main-{sha}` | push merge sur `main` | `ci.yml/docker-publish-main` | Immuable — traçabilité exacte du commit |
 | `:{version}` (ex `:0.1.0`) | push tag `v*.*.*` | `release.yml/docker` | Immuable — release SemVer |
 | `:latest` | push tag `v*.*.*` | `release.yml/docker` | Mutable — toujours la dernière release SemVer |
 
-`:latest` n'est **jamais** modifié par les pushes sur `main` — il pointe exclusivement sur la dernière release SemVer.
-
-### Pourquoi `docker-publish-main` est dans `ci.yml` (pas `release.yml`)
-
-Le placement dans `ci.yml` permet d'utiliser le `needs: [backend, frontend, e2e, docker-build]` comme gate natif : si l'un des 4 jobs échoue, GitHub Actions skip automatiquement `docker-publish-main` — garantie qu'aucune image `:main` cassée n'est publiée. Un workflow indépendant sur `push: branches: [main]` n'aurait pas ce gate (il faudrait passer par `workflow_run`, verbeux et race-prone).
+Le job `docker-build` du `ci.yml` build l'image en mode sanity (sans push) sur chaque PR/push afin de détecter au plus tôt toute régression du `Dockerfile`. L'image est jetée à la fin du runner.
 
 ### Rotation des secrets Docker Hub
 
@@ -140,7 +130,6 @@ Les secrets `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN` sont configurés au niveau
 | `frontend` | 20 min | Build Vite + Vitest + svelte-check ≈ 5 min |
 | `e2e` | 30 min | Release build backend + Playwright chromium ≈ 15 min |
 | `docker-build` | 20 min | Build multi-stage ≈ 8 min |
-| `docker-publish-main` | 20 min | Build cache + push ≈ 5–10 min |
 
 Les timeouts évitent qu'un test gelé (typiquement `PoolTimedOut` SQLx cross-binary) mobilise un runner pendant 6 h (défaut GitHub Actions).
 
