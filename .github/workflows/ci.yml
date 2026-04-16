@@ -291,6 +291,23 @@ jobs:
         run: cargo sqlx migrate run
         working-directory: crates/kesh-db
 
+      - name: Seed admin + changeme users (E2E auth)
+        # Pré-seed des 2 users utilisés par les specs E2E :
+        #  - admin/admin123 (auth, users, accounts, contacts, products, invoices, journal-entries, mode-expert)
+        #  - changeme/changeme (homepage-settings, onboarding, onboarding-path-b)
+        # Hashes Argon2id générés via une routine matching crates/kesh-api/src/auth/password.rs
+        # (Argon2::default() = m=19456, t=2, p=1, variant Argon2id).
+        # Bootstrap admin de kesh-api se skip car users.count > 0 au startup.
+        # Le user `changeme` doit exister AVANT que les tests onboarding tournent ;
+        # la contradiction d'état post-onboarding (singleton onboarding_state)
+        # reste hors scope 6-1 — sera traitée par Story 6-4 (fixtures E2E).
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -uroot -pkesh_root kesh <<'SQL'
+          INSERT INTO users (username, password_hash, role, active) VALUES
+            ('admin', '$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4', 'Admin', TRUE),
+            ('changeme', '$argon2id$v=19$m=19456,t=2,p=1$81LfElCxe1hOPUgMpSeZgQ$PVGb49qpxsepIv9NC+1fms5ROMCD3jueZLVcrW5yud0', 'Admin', TRUE);
+          SQL
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
