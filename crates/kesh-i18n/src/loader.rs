@@ -3,8 +3,20 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use fluent_bundle::{FluentArgs, FluentResource};
+use fluent_bundle::resolver::ResolverError;
+use fluent_bundle::resolver::errors::ReferenceKind;
+use fluent_bundle::{FluentArgs, FluentError, FluentResource};
 use fluent_syntax::ast;
+
+/// Vrai si `err` est un « variable manquante » (`{ $var }` non fourni dans
+/// `args`). C'est le cas attendu dans `all_messages` qui pré-résout toutes
+/// les clés sans contexte, avec interpolation ensuite côté frontend.
+fn is_missing_variable_error(err: &FluentError) -> bool {
+    matches!(
+        err,
+        FluentError::ResolverError(ResolverError::Reference(ReferenceKind::Variable { .. }))
+    )
+}
 
 /// Type alias pour le FluentBundle concurrent (Send + Sync).
 type ConcurrentBundle = fluent_bundle::bundle::FluentBundle<
@@ -143,8 +155,17 @@ impl I18nBundle {
                 if let Some(pattern) = msg.value() {
                     let mut errs = vec![];
                     let value = bundle.format_pattern(pattern, None, &mut errs);
-                    if !errs.is_empty() {
-                        tracing::warn!(key = %key, locale = %locale, "Fluent resolution errors: {:?}", errs);
+                    // Le handler `GET /api/v1/i18n/messages` pré-résout toutes
+                    // les clés sans args — les variables `{ $var }` sont donc
+                    // rendues littéralement pour interpolation côté frontend.
+                    // Les `ResolverError(Reference(Variable))` sont attendues
+                    // et ne doivent pas polluer les logs.
+                    let real_errs: Vec<_> = errs
+                        .into_iter()
+                        .filter(|e| !is_missing_variable_error(e))
+                        .collect();
+                    if !real_errs.is_empty() {
+                        tracing::warn!(key = %key, locale = %locale, "Fluent resolution errors: {:?}", real_errs);
                     }
                     out.insert(key.clone(), value.to_string());
                 }

@@ -840,6 +840,31 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** une action sur une donnée comptable, **When** création/modification/suppression, **Then** le journal d'audit enregistre: user_id, action, entité, horodatage (FR88)
 - **And** schéma: table audit_log (id, user_id, action, entity_type, entity_id, details_json, created_at)
 
+### Story 3.7 : Gestion des exercices comptables
+
+**⚠️ Priorité HAUTE — bloquante post-Epic-6.** `validate_invoice` (Story 5-2), `journal_entries::create` (Story 3-2) et `mark_as_paid` (Story 5-4) exigent tous un `fiscal_year` ouvert couvrant la date de l'opération. Aujourd'hui, **aucune UI ni API** ne permet de créer/gérer un exercice — seule une `INSERT INTO fiscal_years` en SQL direct débloque. Cette story est bloquante avant Epic 7 (Import bancaire, qui réconcilie avec les factures validées).
+
+**As a** utilisateur comptable
+**I want** créer et gérer mes exercices comptables depuis l'interface
+**So that** je puisse valider mes factures et saisir des écritures sans passer par SQL
+
+**Critères d'acceptation :**
+
+- **Given** page `/settings/fiscal-years` (Admin + Comptable), **When** affichage, **Then** liste des exercices avec `name`, `start_date`, `end_date`, `status` (Open/Closed), ordonnée par `start_date DESC`
+- **Given** bouton « Nouvel exercice », **When** clic, **Then** formulaire avec `name` (texte libre, ex. « 2026 »), `start_date`, `end_date` ; validation côté frontend : `end_date > start_date` et non-chevauchement avec exercices existants de la même company
+- **Given** création d'exercice, **When** valide, **Then** route API `POST /api/v1/fiscal-years` crée l'exercice en `Open` + audit log
+- **Given** exercice `Open`, **When** édition, **Then** seul `name` est modifiable (les dates sont immuables une fois créées — impacte les écritures existantes)
+- **Given** exercice `Open` sans écriture liée, **When** suppression, **Then** refus (conforme `kesh-db::repositories::fiscal_years` — pas de `delete` autorisé, art. 957-964 CO) ; l'utilisateur voit un message explicite
+- **Given** onboarding Chemin B terminé sans exercice, **When** première validation de facture/écriture, **Then** toast explicite « Créez d'abord un exercice comptable dans Paramètres → Exercices » avec lien direct
+- **Given** onboarding Chemin A (démo) **OR** onboarding Chemin B (production) en cours d'extension, **When** finalisation, **Then** un exercice par défaut est créé automatiquement : `name = année en cours`, `start_date = 1er janvier`, `end_date = 31 décembre`, `status = Open` (décision UX à valider — opt-in via case à cocher ou par défaut transparent)
+- **Given** exercice `Open` avec toutes ses écritures, **When** clôture, **Then** bouton « Clôturer » passe le statut à `Closed` (préparation pour Story 13-1 Clôture & report des soldes — report effectif dans Epic 13)
+- **And** route API `GET /api/v1/fiscal-years` (list scopée company) + `POST` + `PATCH name` + `POST /:id/close`
+- **And** i18n complet 4 locales (~15 clés)
+- **And** test e2e : créer exercice → valider facture → confirmer écriture comptable générée
+- **And** seule l'action `create` modifie le schéma (pas de `delete` au niveau DB)
+
+**Dépendances :** aucune technique (repository `fiscal_years` existe déjà), mais à prioriser juste après Epic 6 car bloque toute validation facture end-to-end sans SQL direct.
+
 ## Epic 4 : Carnet d'Adresses & Catalogue
 
 **Objectif :** L'utilisateur peut gérer ses clients et fournisseurs avec validation IDE, et maintenir un catalogue de produits/services pour la facturation.
