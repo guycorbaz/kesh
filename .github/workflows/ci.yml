@@ -60,6 +60,35 @@ jobs:
           done
           echo "MariaDB not ready"; exit 1
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install sqlx-cli (binary)
+        run: cargo binstall sqlx-cli --no-confirm --force
+
+      - name: Apply migrations (kesh DB)
+        # Required by kesh-db tests using test_pool() (connects to DATABASE_URL
+        # directly, not sqlx::test ephemeral DBs). Without this, ~84 tests fail
+        # with "Table 'kesh.companies' doesn't exist".
+        run: cargo sqlx migrate run
+        working-directory: crates/kesh-db
+
+      - name: Seed company + admin user (kesh DB)
+        # kesh-db tests via test_pool() require:
+        #  - get_company_id() : at least one row in companies
+        #  - get_admin_user_id() : at least one user with role='Admin'
+        # The bootstrap admin in kesh-api creates the user, but no company —
+        # we seed both inline here. Password hash is a placeholder Argon2id
+        # string (tests never auth as this user).
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -uroot -pkesh_root kesh <<'SQL'
+          INSERT INTO companies (name, address, org_type, accounting_language, instance_language)
+          VALUES ('CI Test Company', 'Test Address 1, 1000 Lausanne', 'Independant', 'FR', 'FR');
+
+          INSERT INTO users (username, password_hash, role, active)
+          VALUES ('ci-admin', '$argon2id$v=19$m=19456,t=2,p=1$Y2ktdGVzdC1zYWx0$Y2ktdGVzdC1oYXNo', 'Admin', TRUE);
+          SQL
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 

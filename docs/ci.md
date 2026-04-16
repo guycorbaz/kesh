@@ -158,13 +158,25 @@ concurrency:
 
 ## Migrations SQLx
 
-Les migrations sont appliquées à **trois** endroits (idempotent) :
+Les migrations sont appliquées à **quatre** endroits (idempotent) :
 
-1. **CI explicit** dans le job `e2e` : `cargo sqlx migrate run` (via `cargo-binstall` pour `sqlx-cli`, gain ~4 min vs `cargo install`).
-2. **Backend startup** : `MIGRATOR.run()` au démarrage de `kesh-api` (`crates/kesh-api/src/main.rs`).
-3. **Tests `sqlx::test`** : SQLx applique automatiquement les migrations sur chaque DB ephemeral `_sqlx_test_*`.
+1. **CI explicit** dans le job `backend` : `cargo sqlx migrate run` (via `cargo-binstall` pour `sqlx-cli`). **Requis** par les tests `kesh-db` qui utilisent `test_pool()` — connexion directe à la DB `kesh` (pas `sqlx::test` éphémère).
+2. **CI explicit** dans le job `e2e` : `cargo sqlx migrate run`. Auto-documente le flow et fail-fast clair vs échec opaque au démarrage backend.
+3. **Backend startup** : `MIGRATOR.run()` au démarrage de `kesh-api` (`crates/kesh-api/src/main.rs`).
+4. **Tests `sqlx::test`** : SQLx applique automatiquement les migrations sur chaque DB ephemeral `_sqlx_test_*`.
 
-Le step explicite dans `e2e` est volontairement redondant — il auto-documente le flow et provoque un fail-fast clair si les migrations sont cassées (vs un échec opaque au démarrage backend).
+## Seed CI (job `backend`)
+
+Le job `backend` injecte deux rows minimales dans la DB `kesh` après les migrations :
+
+| Table | Row | Raison |
+|---|---|---|
+| `companies` | `'CI Test Company'` (org_type `Independant`, langues `FR`/`FR`) | `kesh-db::repositories::*::tests::get_company_id()` exige au moins une company |
+| `users` | `'ci-admin'` (role `Admin`, password hash placeholder) | `kesh-db::repositories::*::tests::get_admin_user_id()` exige au moins un user `Admin` |
+
+Le password hash est un placeholder Argon2id valide (≥ 20 octets pour satisfaire `chk_users_password_hash_len`) — les tests ne s'authentifient jamais avec ce user, ils interrogent juste son `id`.
+
+Le bootstrap admin de `kesh-api` ne peut pas remplir ce rôle car il crée un user mais **pas** de company (la company passe par le flow onboarding, hors scope d'un seed CI).
 
 ## Décision MariaDB 11.4 (vs 10.11 de l'AC Epic §6.1)
 
