@@ -262,7 +262,8 @@ jobs:
       # `0.0.0.0` REJETÉ (cf. N3 review pass 2). Loopback strict requis.
       KESH_HOST: "127.0.0.1"
       KESH_ADMIN_USERNAME: admin
-      KESH_ADMIN_PASSWORD: admin
+      KESH_ADMIN_PASSWORD: admin123
+      KESH_PASSWORD_MIN_LENGTH: "8"
       KESH_JWT_SECRET: ci-secret-at-least-32-bytes-long-for-testing
       RUST_LOG: info
       # Story 6.4 : active `/api/v1/_test/*` pour les fixtures Playwright.
