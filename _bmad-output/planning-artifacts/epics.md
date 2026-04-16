@@ -408,20 +408,21 @@ Ce document fournit le découpage complet en epics et stories pour Kesh, en déc
 | FR29-FR30 | Epic 4 | Catalogue produits/services |
 | FR31-FR35 | Epic 5 | Facturation, QR Bill PDF, numérotation |
 | FR38 | Epic 5 | PDF nouvel onglet |
-| FR42-FR53 | Epic 6 | Import CAMT.053/CSV, doublons, réconciliation, règles, profils banque |
-| FR65-FR68 | Epic 7 | Bilan, résultat, balance, journaux, export PDF/CSV |
-| FR77-FR79 | Epic 8 | Docker-compose (2 containers), migrations, détection version |
-| FR89 | Epic 8 | Frontend accessible même si DB inaccessible |
-| FR54-FR56 | Epic 9 | TVA taux configurables, arrondis, rapport |
-| FR36-FR37 | Epic 10 | Avoirs, numérotation séparée |
-| FR39-FR41 | Epic 10 | Paiements pain.001, validation IBAN |
-| FR57-FR59 | Epic 11 | Budgets annuels, versions, rapport comparatif |
-| FR60-FR62 | Epic 12 | Clôture exercice, report soldes, bilan ouverture |
-| FR63-FR64 | Epic 13 | Justificatifs, stockage filesystem |
-| FR74 | Epic 13 | Manuels PDF embarqués |
-| FR81 | Epic 13 | Modèles documents personnalisables |
-| FR85-FR86 | Epic 13 | Lettrage et délettrage |
-| FR87 | Epic 13 | Versioning parseurs SIX |
+| — | Epic 6 | Qualité & CI/CD (plateforme — non-FR : pipeline CI, multi-tenant refactor, lint i18n, fixtures E2E) |
+| FR42-FR53 | Epic 7 | Import CAMT.053/CSV, doublons, réconciliation, règles, profils banque |
+| FR65-FR68 | Epic 8 | Bilan, résultat, balance, journaux, export PDF/CSV |
+| FR77-FR79 | Epic 9 | Docker-compose (2 containers), migrations, détection version |
+| FR89 | Epic 9 | Frontend accessible même si DB inaccessible |
+| FR54-FR56 | Epic 10 | TVA taux configurables, arrondis, rapport |
+| FR36-FR37 | Epic 11 | Avoirs, numérotation séparée |
+| FR39-FR41 | Epic 11 | Paiements pain.001, validation IBAN |
+| FR57-FR59 | Epic 12 | Budgets annuels, versions, rapport comparatif |
+| FR60-FR62 | Epic 13 | Clôture exercice, report soldes, bilan ouverture |
+| FR63-FR64 | Epic 14 | Justificatifs, stockage filesystem |
+| FR74 | Epic 14 | Manuels PDF embarqués |
+| FR81 | Epic 14 | Modèles documents personnalisables |
+| FR85-FR86 | Epic 14 | Lettrage et délettrage |
+| FR87 | Epic 14 | Versioning parseurs SIX |
 
 **Couverture :** 89/89 FRs mappées (100%)
 
@@ -455,44 +456,50 @@ L'utilisateur peut créer des factures avec lignes libres ou depuis le catalogue
 **ARCH :** kesh-qrbill (crate publiable indépendante)
 **UX-DR :** UX-DR11 (prévisualisation PDF), UX-DR34 (pattern Sélectionner→Vérifier→Valider→Résultat)
 
-### Epic 6 : Import Bancaire & Réconciliation
+### Epic 6 : Qualité & CI/CD
+Plateforme de qualité avant l'import bancaire : pipeline CI GitHub Actions, refactor multi-tenant, lint i18n, fixtures E2E déterministes. Paie la dette accumulée sur Epics 4-5 et évite qu'elle ne se propage sur Epic 7+.
+**FRs couvertes :** — (non-FR, epic plateforme)
+**ARCH :** .github/workflows/, outillage lint, helpers de seed E2E
+**UX-DR :** UX-DR18 (axe-core dans CI)
+
+### Epic 7 : Import Bancaire & Réconciliation
 L'utilisateur peut importer des relevés CAMT.053 et CSV, détecter les doublons, réconcilier les transactions avec matching automatique et règles d'affectation évolutives.
 **FRs couvertes :** FR42-FR53
 **ARCH :** kesh-import (crate publiable), kesh-reconciliation (matching, rules, mutex)
 **UX-DR :** UX-DR7 (split view factures), UX-DR8 (tableau réconciliation), UX-DR12 (glisser-déposer)
 
-### Epic 7 : Rapports & Exports
+### Epic 8 : Rapports & Exports
 L'utilisateur peut générer bilan, compte de résultat, balance des comptes et journaux en PDF et CSV avec formats suisses.
 **FRs couvertes :** FR65-FR68
 **ARCH :** kesh-report (PDF tabulaire + CSV), kesh-i18n (formatage suisse)
 **UX-DR :** UX-DR31 (export global)
 
-### Epic 8 : Déploiement & Opérations
+### Epic 9 : Déploiement & Opérations
 L'administrateur peut déployer Kesh via docker-compose, les migrations s'appliquent automatiquement et la détection de version avertit avant migration.
 **FRs couvertes :** FR77-FR79, FR89
 **UX-DR :** UX-DR42-DR44 (logs, page d'attente, fichiers livrés)
 
 ### v0.2 — Complétude comptable
 
-### Epic 9 : TVA Suisse
+### Epic 10 : TVA Suisse
 L'utilisateur peut configurer les taux TVA avec historique, appliquer les arrondis commerciaux et générer des rapports TVA par période.
 **FRs couvertes :** FR54-FR56
 
-### Epic 10 : Avoirs & Paiements
+### Epic 11 : Avoirs & Paiements
 L'utilisateur peut créer des avoirs liés aux factures et générer des fichiers de paiement pain.001 conformes SIX.
 **FRs couvertes :** FR36-FR37, FR39-FR41
 **ARCH :** kesh-payment (crate publiable)
 **UX-DR :** UX-DR35 (flux paiement en deux temps)
 
-### Epic 11 : Budgets
+### Epic 12 : Budgets
 L'utilisateur peut créer des budgets annuels par compte, gérer des versions et suivre les écarts budget vs réalisé.
 **FRs couvertes :** FR57-FR59
 
-### Epic 12 : Clôture d'Exercice
+### Epic 13 : Clôture d'Exercice
 L'utilisateur peut clôturer un exercice comptable, reporter les soldes et saisir un bilan d'ouverture.
 **FRs couvertes :** FR60-FR62
 
-### Epic 13 : Justificatifs, Lettrage & Compléments v0.2
+### Epic 14 : Justificatifs, Lettrage & Compléments v0.2
 L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écritures entre elles, personnaliser les modèles de documents et accéder aux manuels embarqués.
 **FRs couvertes :** FR63-FR64, FR74, FR81, FR85-FR87
 
@@ -919,11 +926,73 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** les montants dans le PDF utilisent le format suisse (apostrophe séparateur: 1'234.56)
 - **And** tests unitaires avec les fichiers de test SIX officiels (docs/six-references/)
 
-## Epic 6 : Import Bancaire & Réconciliation
+## Epic 6 : Qualité & CI/CD
+
+**Objectif :** Mettre en place la plateforme de qualité (pipeline CI, refactor multi-tenant, lint i18n, fixtures E2E) avant de démarrer les epics fonctionnels v0.1 restants. Empêche la dette héritée d'Epics 4-5 (D1, D8, KF-001) de se propager à Epic 7+.
+
+### Story 6.1 : Pipeline CI GitHub Actions
+
+**As a** développeur
+**I want** une pipeline CI/CD automatisée
+**So that** chaque changement soit validé automatiquement avant merge
+
+**Critères d'acceptation :**
+
+- **Given** push ou pull request sur le repo, **When** GitHub Actions se déclenche, **Then** le workflow CI exécute : cargo build, cargo test --workspace, cargo clippy -D warnings, cargo fmt --check
+- **Given** workflow CI, **When** tests frontend, **Then** npm run check (svelte-check), npm run test (Vitest), npm run build exécutés
+- **Given** workflow CI, **When** tests E2E, **Then** Playwright headless exécuté contre un service MariaDB 10.11 provisionné dans le runner + migrations SQLx appliquées + seed de test
+- **Given** merge sur main, **When** workflow release, **Then** l'image Docker est buildée et publiée
+- **Given** échec de CI, **When** notification, **Then** le développeur voit clairement quel check a échoué
+- **And** fichiers dans .github/workflows/ : ci.yml (build + tests + e2e) et release.yml (Docker image)
+- **And** axe-core intégré dans la CI pour détecter les régressions d'accessibilité (UX-DR18)
+- **And** migration (`cargo sqlx migrate run`) exécutée dans la CI avant les tests de repos/E2E
+
+### Story 6.2 : Refactor multi-tenant scoping (`CurrentUser.company_id`)
+
+**As a** développeur
+**I want** que toutes les requêtes backend scopent par `CurrentUser.company_id` plutôt que de récupérer la company « par défaut » (`LIMIT 1`)
+**So that** Kesh soit prêt pour le multi-tenant et que l'isolation entre companies soit garantie
+
+**Critères d'acceptation :**
+
+- **Given** helper `get_company()` actuel qui fait `companies::list(pool, 1, 0)`, **When** refactor, **Then** remplacé par `get_company_for(user)` prenant `CurrentUser.company_id` explicitement
+- **Given** toutes les routes API (contacts, products, invoices, company_invoice_settings, bank_accounts, fiscal_years, invoice_pdf, etc.), **When** appel, **Then** scope par `CurrentUser.company_id`
+- **Given** test IDOR cross-company, **When** un utilisateur tente d'accéder à une ressource d'une autre company via ID direct, **Then** 404 NotFound (pas 200 avec données fuitées)
+- **Given** dette D1 Epic 4, **When** retro post-6.2, **Then** D1 marqué `closed` dans `docs/known-failures.md` ou équivalent
+- **And** au moins 1 test e2e IDOR par entité sensible (contacts, products, invoices, bank_accounts)
+
+### Story 6.3 : Lint i18n key-ownership + sidebar i18n (D8)
+
+**As a** développeur
+**I want** qu'une feature ne puisse pas utiliser les clés i18n d'une autre feature
+**So that** les couplages silencieux entre features soient détectés en build
+
+**Critères d'acceptation :**
+
+- **Given** règle de namespace strict, **When** feature A utilise une clé `contact-form-X` depuis un composant de feature B, **Then** erreur au build (svelte-check custom rule ou script de lint)
+- **Given** sidebar hardcodée (D8 Epic 4), **When** refactor, **Then** entrées sidebar pilotées par clés i18n (`nav-contacts`, `nav-products`, `nav-invoices`, `nav-banking`, etc.) × 4 locales
+- **Given** dette D8 Epic 4, **When** retro post-6.3, **Then** D8 marqué `closed`
+- **And** audit rétroactif : toute clé `{feature}-*` utilisée hors de son propre feature-folder lève une alerte explicite
+
+### Story 6.4 : Fixtures E2E déterministes
+
+**As a** développeur
+**I want** un helper partagé qui seed une company « comptablement complète »
+**So that** les tests E2E qui passent par `validate_invoice` ou d'autres flux liés à la config comptable fonctionnent de bout en bout sans bricolage SQL par test
+
+**Critères d'acceptation :**
+
+- **Given** helper `seed_accounting_company(pool)`, **When** appelé, **Then** crée company + fiscal_year 2020-2030 `Open` + company_invoice_settings avec `default_receivable_account_id` / `default_revenue_account_id` / `default_sales_journal` non-NULL + plan comptable minimal (comptes 1000/2000/3000/4000/1100)
+- **Given** tests E2E `invoice_pdf_e2e`, `invoice_echeancier_e2e`, `invoices_e2e`, **When** refactorés pour utiliser le helper, **Then** plus de bypass SQL `force_validate_via_sql` / `seed_validated_invoice_via_sql`
+- **Given** KF-001 Epic 5, **When** retro post-6.4, **Then** KF-001 marqué `closed` définitivement (statut confirmé après correctif 2026-04-16)
+- **And** le helper est publié dans un crate `kesh-test-fixtures` (ou module `kesh-db::test_fixtures`) pour être réutilisable entre `kesh-api` / `kesh-db` / futurs crates
+- **And** une doc `docs/testing.md` (ou équivalent) décrit le pattern d'utilisation
+
+## Epic 7 : Import Bancaire & Réconciliation
 
 **Objectif :** L'utilisateur peut importer ses relevés bancaires et réconcilier les transactions avec matching automatique et règles d'affectation.
 
-### Story 6.1 : Import CAMT.053
+### Story 7.1 : Import CAMT.053
 
 **As a** utilisateur
 **I want** importer mes relevés bancaires au format CAMT.053
@@ -941,7 +1010,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** tests d'intégration avec les fichiers de test SIX officiels (docs/six-references/)
 - **And** schéma: tables bank_imports (id, company_id, bank_account_id, file_hash, filename, imported_at) et bank_transactions (id, import_id, bank_account_id, date, amount, reference, details, status (pending/reconciled), matched_entry_id)
 
-### Story 6.2 : Import CSV (multi-encodage & profils banque)
+### Story 7.2 : Import CSV (multi-encodage & profils banque)
 
 **As a** utilisateur
 **I want** importer des relevés CSV de différentes banques
@@ -956,7 +1025,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** rejet de lignes, **When** format de date non reconnu, **Then** listing détaillé des erreurs avec numéros de ligne (FR51)
 - **And** schéma: table bank_profiles (id, company_id, bank_name, column_mapping_json, date_format, encoding, created_at)
 
-### Story 6.3 : Détection de doublons & rejet partiel
+### Story 7.3 : Détection de doublons & rejet partiel
 
 **As a** utilisateur
 **I want** que Kesh détecte les doublons et gère les imports partiels
@@ -969,7 +1038,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** fichier avec erreurs partielles, **When** import, **Then** les transactions valides sont importées, les invalides sont rejetées avec listing détaillé (FR51)
 - **And** détection de doublons par combinaison: date + montant + référence + compte bancaire
 
-### Story 6.4 : Réconciliation & matching automatique
+### Story 7.4 : Réconciliation & matching automatique
 
 **As a** utilisateur
 **I want** que les transactions connues soient automatiquement proposées pour réconciliation
@@ -984,7 +1053,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** le matching considère: montant exact, référence facture, nom client/fournisseur
 - **And** mutex par compte bancaire pour éviter les imports concurrents (kesh-reconciliation)
 
-### Story 6.5 : Réconciliation manuelle & règles d'affectation
+### Story 7.5 : Réconciliation manuelle & règles d'affectation
 
 **As a** utilisateur
 **I want** réconcilier manuellement les transactions et créer des règles pour l'avenir
@@ -999,11 +1068,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** les règles sont appliquées par priorité lors des imports suivants
 - **And** schéma: table import_rules (id, company_id, match_pattern, account_id, priority, active, created_at)
 
-## Epic 7 : Rapports & Exports
+## Epic 8 : Rapports & Exports
 
 **Objectif :** L'utilisateur peut générer bilan, compte de résultat, balance des comptes et journaux en PDF et CSV avec formats suisses.
 
-### Story 7.1 : Rapports comptables (bilan, résultat, balance, journaux)
+### Story 8.1 : Rapports comptables (bilan, résultat, balance, journaux)
 
 **As a** utilisateur
 **I want** générer mes rapports comptables
@@ -1018,7 +1087,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** un rapport, **When** filtrage par période, **Then** seules les écritures de la période sont incluses
 - **And** kesh-report génère les données, kesh-i18n formate les montants et dates
 
-### Story 7.2 : Export PDF & CSV
+### Story 8.2 : Export PDF & CSV
 
 **As a** utilisateur
 **I want** exporter mes rapports en PDF et CSV
@@ -1034,11 +1103,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** génération PDF < 3 secondes
 - **And** les messages d'erreur disent ce qui s'est passé ET ce que l'utilisateur peut faire (UX-DR38)
 
-## Epic 8 : Déploiement & Opérations
+## Epic 9 : Déploiement & Opérations
 
 **Objectif :** L'administrateur peut déployer Kesh via docker-compose avec migrations automatiques et le frontend reste accessible même si la DB est indisponible.
 
-### Story 8.1 : Docker-compose & Dockerfile production
+### Story 9.1 : Docker-compose & Dockerfile production
 
 **As a** administrateur
 **I want** déployer Kesh en production avec une seule commande
@@ -1054,7 +1123,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** l'image Docker expose le port configurable via KESH_PORT
 - **And** cette story concerne le déploiement production — distinct du docker-compose.dev.yml créé en Story 1.2 pour le développement
 
-### Story 8.2 : Migrations automatiques & détection de version
+### Story 9.2 : Migrations automatiques & détection de version
 
 **As a** administrateur
 **I want** que les migrations s'appliquent automatiquement au démarrage
@@ -1068,7 +1137,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** migrations réussies, **When** vérification, **Then** les données des exercices passés restent intactes et lisibles
 - **And** les fichiers de migration sont versionnés dans crates/kesh-db/migrations/
 
-### Story 8.3 : Résilience frontend (DB inaccessible)
+### Story 9.3 : Résilience frontend (DB inaccessible)
 
 **As a** utilisateur
 **I want** voir une page d'erreur claire si la base de données est indisponible
@@ -1082,22 +1151,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** DB redevenue accessible, **When** refresh, **Then** l'application fonctionne normalement sans redémarrage
 - **And** le healthcheck /health retourne 503 quand la DB est inaccessible, 200 quand tout est OK
 
-### Story 8.4 : CI/CD GitHub Actions
-
-**As a** développeur
-**I want** une pipeline CI/CD automatisée
-**So that** chaque changement soit validé automatiquement avant merge
-
-**Critères d'acceptation :**
-
-- **Given** push ou pull request sur le repo, **When** GitHub Actions se déclenche, **Then** le workflow CI exécute : cargo build, cargo test, cargo clippy, cargo fmt --check
-- **Given** workflow CI, **When** tests frontend, **Then** npm run check, npm run test (Vitest), npm run build exécutés
-- **Given** merge sur main, **When** workflow release, **Then** l'image Docker est buildée et publiée
-- **Given** échec de CI, **When** notification, **Then** le développeur voit clairement quel check a échoué
-- **And** fichiers dans .github/workflows/ : ci.yml (build + tests) et release.yml (Docker image)
-- **And** axe-core intégré dans la CI pour détecter les régressions d'accessibilité (UX-DR18)
-
-### Story 8.5 : Guide d'installation PDF
+### Story 9.4 : Guide d'installation PDF
 
 **As a** administrateur
 **I want** un guide d'installation clair et concis
@@ -1112,11 +1166,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** le guide est livré avec docker-compose.yml et .env.example (UX-DR44)
 - **And** le guide est dans la langue de l'instance
 
-## Epic 9 : TVA Suisse
+## Epic 10 : TVA Suisse
 
 **Objectif :** L'utilisateur peut configurer les taux TVA avec historique, appliquer les arrondis commerciaux et générer des rapports TVA par période.
 
-### Story 9.1 : Configuration des taux TVA
+### Story 10.1 : Configuration des taux TVA
 
 **As a** administrateur
 **I want** configurer les taux de TVA avec des dates de validité
@@ -1131,7 +1185,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** schéma: table vat_rates (id, company_id, label, rate, valid_from, valid_to, active, created_at)
 - **And** les taux standard suisses sont pré-configurés à l'onboarding (normal, réduit, spécial, exonéré)
 
-### Story 9.2 : Calcul TVA & rapport par période
+### Story 10.2 : Calcul TVA & rapport par période
 
 **As a** utilisateur
 **I want** que la TVA soit calculée correctement et pouvoir générer un rapport
@@ -1146,11 +1200,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** tous les calculs TVA utilisent rust_decimal (jamais de f64)
 - **And** export du rapport en PDF et CSV
 
-## Epic 10 : Avoirs & Paiements
+## Epic 11 : Avoirs & Paiements
 
 **Objectif :** L'utilisateur peut créer des avoirs liés aux factures et générer des fichiers de paiement pain.001 conformes SIX.
 
-### Story 10.1 : Avoirs (notes de crédit)
+### Story 11.1 : Avoirs (notes de crédit)
 
 **As a** utilisateur
 **I want** annuler une facture validée par la création d'un avoir
@@ -1164,7 +1218,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** avoir validé, **When** vérification du solde client, **Then** le solde revient à zéro (facture + avoir = 0)
 - **And** un avoir génère un PDF similaire à la facture, avec mention "Avoir" et référence à la facture d'origine
 
-### Story 10.2 : Génération de fichiers de paiement pain.001
+### Story 11.2 : Génération de fichiers de paiement pain.001
 
 **As a** utilisateur
 **I want** générer un fichier de paiement pour mes factures fournisseurs
@@ -1179,7 +1233,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** kesh-payment est une crate publiable indépendante (zéro dépendance sur kesh-core)
 - **And** tests de validation contre le schéma XSD officiel SIX (docs/six-references/)
 
-### Story 10.3 : Flux de paiement en deux temps
+### Story 11.3 : Flux de paiement en deux temps
 
 **As a** utilisateur
 **I want** préparer mes paiements au fil de l'eau et les envoyer en lot
@@ -1192,11 +1246,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **Given** le flux, **When** exécution, **Then** le pattern "Sélectionner → Vérifier → Valider → Résultat" est respecté (UX-DR34)
 - **And** le fichier généré est disponible pour téléchargement et upload dans l'e-banking (UX-DR35)
 
-## Epic 11 : Budgets
+## Epic 12 : Budgets
 
 **Objectif :** L'utilisateur peut créer des budgets annuels par compte, gérer des versions et suivre les écarts budget vs réalisé.
 
-### Story 11.1 : Budgets annuels & suivi
+### Story 12.1 : Budgets annuels & suivi
 
 **As a** utilisateur
 **I want** créer un budget et suivre les écarts avec le réalisé
@@ -1211,11 +1265,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** schéma: tables budgets (id, company_id, fiscal_year, version_name, created_at) et budget_lines (id, budget_id, account_id, month, amount)
 - **And** export du rapport en PDF et CSV
 
-## Epic 12 : Clôture d'Exercice
+## Epic 13 : Clôture d'Exercice
 
 **Objectif :** L'utilisateur peut clôturer un exercice comptable, reporter les soldes et saisir un bilan d'ouverture.
 
-### Story 12.1 : Clôture & report des soldes
+### Story 13.1 : Clôture & report des soldes
 
 **As a** utilisateur
 **I want** clôturer mon exercice et démarrer le suivant
@@ -1231,11 +1285,11 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** la clôture est une opération privilégiée (rôle Admin ou Comptable)
 - **And** un exercice clôturé ne peut pas être ré-ouvert — seules des contre-passations dans le nouvel exercice sont possibles
 
-## Epic 13 : Justificatifs, Lettrage & Compléments v0.2
+## Epic 14 : Justificatifs, Lettrage & Compléments v0.2
 
 **Objectif :** L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écritures entre elles, personnaliser les modèles de documents et accéder aux manuels embarqués.
 
-### Story 13.1 : Pièces justificatives
+### Story 14.1 : Pièces justificatives
 
 **As a** utilisateur
 **I want** attacher des fichiers à mes écritures
@@ -1250,7 +1304,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** les justificatifs sont inclus dans l'export global (ZIP)
 - **And** la stratégie de backup doit couvrir le volume de fichiers en plus du dump MariaDB
 
-### Story 13.2 : Lettrage
+### Story 14.2 : Lettrage
 
 **As a** utilisateur
 **I want** lettrer des écritures entre elles
@@ -1265,7 +1319,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 - **And** le lettrage aide à identifier les factures non payées et les paiements non affectés
 - **And** schéma: colonne lettering_code sur journal_entry_lines (nullable, même code = même lettrage)
 
-### Story 13.3 : Versioning parseurs, modèles & manuels
+### Story 14.3 : Versioning parseurs, modèles & manuels
 
 **As a** utilisateur
 **I want** que Kesh gère les versions des formats SIX et me fournisse de la documentation

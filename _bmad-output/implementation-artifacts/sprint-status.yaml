@@ -1,6 +1,6 @@
 # generated: 2026-04-03
-# last_updated: 2026-04-07
-# (story 1-7 passée en ready-for-dev — CRUD utilisateurs)
+# last_updated: 2026-04-16
+# (rétro Epic 5 done — renumérotage ex-Epic 6→13 en 7→14, insertion Epic 6 Qualité & CI/CD)
 # project: kesh
 # project_key: NOKEY
 # tracking_system: file-system
@@ -37,11 +37,12 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-16
+# (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
+# (décision rétro Epic 5 : nouvelle Epic 6 « Qualité & CI/CD » insérée avant ex-Epic 6 Import bancaire)
+# (ex-Epic 6→13 renumérotés en 7→14 — ex-story 8-4 CI/CD promue en 6-1)
 # (story 5-4 done — 4 groupes × 11 passes review Opus/Sonnet/Haiku, 80 patches)
-# (story 5-4 review — phases a/b/c/d implémentées, prêt pour code-review)
 # (story 5-3 done — 3 passes review Sonnet/Haiku/Opus, 19 patches + 4 CRs)
-# (story 5-2 review — T1-T7 implémentés)
-# (story 5-2 in-progress — scope v0.6 + 3 stories backlog ajoutées : 2-6, 3-6, 5-4)
+# (story 5-2 done — T1-T7 implémentés)
 project: kesh
 project_key: NOKEY
 tracking_system: file-system
@@ -90,68 +91,75 @@ development_status:
   epic-4: done
   4-1-carnet-adresses-crud-contacts: done
   4-2-conditions-paiement-catalogue-produits: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   # Epic 5: Facturation QR Bill
-  epic-5: in-progress
+  epic-5: done
   5-1-creation-factures-brouillon: done
   5-2-validation-numerotation-factures: done
   5-3-generation-pdf-qr-bill: done
   5-4-echeancier-factures: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
-  # Epic 6: Import Bancaire & Réconciliation
+  # Epic 6: Qualité & CI/CD (inséré 2026-04-16 — décision rétro Epic 5)
   epic-6: backlog
-  6-1-import-camt053: backlog
-  6-2-import-csv-multi-encodage-profils-banque: backlog
-  6-3-detection-doublons-rejet-partiel: backlog
-  6-4-reconciliation-matching-automatique: backlog
-  6-5-reconciliation-manuelle-regles-affectation: backlog
+  6-1-pipeline-ci-github-actions: backlog
+  6-2-multi-tenant-scoping-refactor: backlog
+  6-3-lint-i18n-sidebar-i18n: backlog
+  6-4-fixtures-e2e-deterministes: backlog
   epic-6-retrospective: optional
 
-  # Epic 7: Rapports & Exports
+  # Epic 7: Import Bancaire & Réconciliation (ex-Epic 6)
   epic-7: backlog
-  7-1-rapports-comptables-bilan-resultat-balance-journaux: backlog
-  7-2-export-pdf-csv: backlog
+  7-1-import-camt053: backlog
+  7-2-import-csv-multi-encodage-profils-banque: backlog
+  7-3-detection-doublons-rejet-partiel: backlog
+  7-4-reconciliation-matching-automatique: backlog
+  7-5-reconciliation-manuelle-regles-affectation: backlog
   epic-7-retrospective: optional
 
-  # Epic 8: Déploiement & Opérations
+  # Epic 8: Rapports & Exports (ex-Epic 7)
   epic-8: backlog
-  8-1-docker-compose-dockerfile-production: backlog
-  8-2-migrations-automatiques-detection-version: backlog
-  8-3-resilience-frontend-db-inaccessible: backlog
-  8-4-ci-cd-github-actions: backlog
-  8-5-guide-installation-pdf: backlog
+  8-1-rapports-comptables-bilan-resultat-balance-journaux: backlog
+  8-2-export-pdf-csv: backlog
   epic-8-retrospective: optional
+
+  # Epic 9: Déploiement & Opérations (ex-Epic 8 — 8-4 CI/CD promue en 6-1, 8-5 devient 9-4)
+  epic-9: backlog
+  9-1-docker-compose-dockerfile-production: backlog
+  9-2-migrations-automatiques-detection-version: backlog
+  9-3-resilience-frontend-db-inaccessible: backlog
+  9-4-guide-installation-pdf: backlog
+  epic-9-retrospective: optional
 
   # === v0.2 — Complétude comptable ===
 
-  # Epic 9: TVA Suisse
-  epic-9: backlog
-  9-1-configuration-taux-tva: backlog
-  9-2-calcul-tva-rapport-par-periode: backlog
-  epic-9-retrospective: optional
-
-  # Epic 10: Avoirs & Paiements
+  # Epic 10: TVA Suisse (ex-Epic 9)
   epic-10: backlog
-  10-1-avoirs-notes-de-credit: backlog
-  10-2-generation-fichiers-paiement-pain001: backlog
-  10-3-flux-paiement-en-deux-temps: backlog
+  10-1-configuration-taux-tva: backlog
+  10-2-calcul-tva-rapport-par-periode: backlog
   epic-10-retrospective: optional
 
-  # Epic 11: Budgets
+  # Epic 11: Avoirs & Paiements (ex-Epic 10)
   epic-11: backlog
-  11-1-budgets-annuels-suivi: backlog
+  11-1-avoirs-notes-de-credit: backlog
+  11-2-generation-fichiers-paiement-pain001: backlog
+  11-3-flux-paiement-en-deux-temps: backlog
   epic-11-retrospective: optional
 
-  # Epic 12: Clôture d'Exercice
+  # Epic 12: Budgets (ex-Epic 11)
   epic-12: backlog
-  12-1-cloture-report-des-soldes: backlog
+  12-1-budgets-annuels-suivi: backlog
   epic-12-retrospective: optional
 
-  # Epic 13: Justificatifs, Lettrage & Compléments v0.2
+  # Epic 13: Clôture d'Exercice (ex-Epic 12)
   epic-13: backlog
-  13-1-pieces-justificatives: backlog
-  13-2-lettrage: backlog
-  13-3-versioning-parseurs-modeles-manuels: backlog
+  13-1-cloture-report-des-soldes: backlog
   epic-13-retrospective: optional
+
+  # Epic 14: Justificatifs, Lettrage & Compléments v0.2 (ex-Epic 13)
+  epic-14: backlog
+  14-1-pieces-justificatives: backlog
+  14-2-lettrage: backlog
+  14-3-versioning-parseurs-modeles-manuels: backlog
+  epic-14-retrospective: optional

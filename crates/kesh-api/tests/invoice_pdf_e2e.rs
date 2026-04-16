@@ -119,7 +119,7 @@ async fn seed_base(pool: &MySqlPool) -> (i64, i64) {
             name: "Robert Schneider SA".into(),
             address: "Rue du Lac 1268\n2501 Biel".into(),
             org_type: OrgType::Pme,
-            ide_number: Some("CHE-123.456.789".into()),
+            ide_number: Some("CHE109322551".into()),
             accounting_language: Language::Fr,
             instance_language: Language::Fr,
         },
@@ -170,6 +170,11 @@ async fn seed_primary_bank(pool: &MySqlPool, company_id: i64, with_qr_iban: bool
     bank_accounts::upsert_primary(pool, new).await.unwrap();
 }
 
+/// Seed une facture puis la bascule `validated` via SQL direct (pattern aligné
+/// avec `invoice_echeancier_e2e::create_validated_invoice_via_sql`). Évite la
+/// dépendance à `validate_invoice` qui exige un `fiscal_year` + des comptes
+/// `company_invoice_settings` complets — non pertinent pour tester la route
+/// PDF, qui ne lit que `invoice.status == 'validated'` + champs de base.
 async fn seed_validated_invoice(
     pool: &MySqlPool,
     company_id: i64,
@@ -194,8 +199,61 @@ async fn seed_validated_invoice(
         lines,
     };
     let (invoice, _lines) = invoices::create(pool, user_id, new).await.unwrap();
-    // Validate to transition to status='validated'.
-    let _ = invoices::validate_invoice(pool, company_id, invoice.id, user_id).await;
+
+    // Lazy-create fiscal_year for company.
+    let fy_id: i64 = if let Some((id,)) =
+        sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
+            .bind(company_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap()
+    {
+        id
+    } else {
+        let r = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, 'Test5.3', '2020-01-01', '2030-12-31', 'Open')",
+        )
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        r.last_insert_id() as i64
+    };
+
+    // Insert minimal journal_entry.
+    let (max_n,): (Option<i64>,) = sqlx::query_as(
+        "SELECT MAX(entry_number) FROM journal_entries \
+         WHERE company_id = ? AND fiscal_year_id = ?",
+    )
+    .bind(company_id)
+    .bind(fy_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let next_n = max_n.unwrap_or(0) + 1;
+    let r = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
+         entry_date, journal, description) VALUES (?, ?, ?, CURDATE(), 'Ventes', 'stub-5.3-e2e')",
+    )
+    .bind(company_id)
+    .bind(fy_id)
+    .bind(next_n)
+    .execute(pool)
+    .await
+    .unwrap();
+    let je_id = r.last_insert_id() as i64;
+
+    sqlx::query(
+        "UPDATE invoices SET status = 'validated', journal_entry_id = ?, \
+         version = version + 1 WHERE id = ?",
+    )
+    .bind(je_id)
+    .bind(invoice.id)
+    .execute(pool)
+    .await
+    .unwrap();
+
     invoice.id
 }
 
