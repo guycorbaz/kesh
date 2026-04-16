@@ -107,7 +107,7 @@ development_status:
   6-1-pipeline-ci-github-actions: backlog
   6-2-multi-tenant-scoping-refactor: backlog
   6-3-lint-i18n-sidebar-i18n: backlog
-  6-4-fixtures-e2e-deterministes: backlog
+  6-4-fixtures-e2e-deterministes: in-progress  # PR Story 6-4 ouverte parallèle à PR #16 — débloque 6-1
   epic-6-retrospective: optional
 
   # Epic 7: Import Bancaire & Réconciliation (ex-Epic 6)
