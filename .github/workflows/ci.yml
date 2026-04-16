@@ -76,13 +76,16 @@ jobs:
         run: cargo sqlx migrate run
         working-directory: crates/kesh-db
 
-      - name: Seed company + admin user (kesh DB)
-        # kesh-db tests via test_pool() require:
-        #  - get_company_id() : at least one row in companies
-        #  - get_admin_user_id() : at least one user with role='Admin'
-        # The bootstrap admin in kesh-api creates the user, but no company —
-        # we seed both inline here. Password hash is a placeholder Argon2id
-        # string (tests never auth as this user).
+      - name: Seed company + admin user + accounts + fiscal_year (kesh DB)
+        # kesh-db tests via test_pool() require pre-seeded data because they
+        # connect directly to DATABASE_URL (not sqlx::test ephemeral DBs):
+        #  - get_company_id()       : ≥ 1 row in companies
+        #  - get_admin_user_id()    : ≥ 1 user role='Admin'
+        #  - two_accounts()         : ≥ 2 active accounts
+        #  - setup() journal_entries: 1 fiscal_year covering today
+        # Wide fiscal year range (2025-2030) tolerates clock drift between
+        # CI runs. Password hash is a placeholder Argon2id string (tests
+        # never auth as this user).
         run: |
           mysql -h 127.0.0.1 -P 3306 -uroot -pkesh_root kesh <<'SQL'
           INSERT INTO companies (name, address, org_type, accounting_language, instance_language)
@@ -90,6 +93,15 @@ jobs:
 
           INSERT INTO users (username, password_hash, role, active)
           VALUES ('ci-admin', '$argon2id$v=19$m=19456,t=2,p=1$Y2ktdGVzdC1zYWx0$Y2ktdGVzdC1oYXNo', 'Admin', TRUE);
+
+          INSERT INTO accounts (company_id, number, name, account_type)
+          SELECT id, '1000', 'Caisse CI', 'Asset' FROM companies WHERE name = 'CI Test Company';
+
+          INSERT INTO accounts (company_id, number, name, account_type)
+          SELECT id, '3000', 'Ventes CI', 'Revenue' FROM companies WHERE name = 'CI Test Company';
+
+          INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)
+          SELECT id, 'Exercice CI 2025-2030', '2025-01-01', '2030-12-31', 'Open' FROM companies WHERE name = 'CI Test Company';
           SQL
 
       - name: cargo fmt --check

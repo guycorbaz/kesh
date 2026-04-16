@@ -167,16 +167,19 @@ Les migrations sont appliquées à **quatre** endroits (idempotent) :
 
 ## Seed CI (job `backend`)
 
-Le job `backend` injecte deux rows minimales dans la DB `kesh` après les migrations :
+Le job `backend` injecte plusieurs rows dans la DB `kesh` après les migrations :
 
 | Table | Row | Raison |
 |---|---|---|
-| `companies` | `'CI Test Company'` (org_type `Independant`, langues `FR`/`FR`) | `kesh-db::repositories::*::tests::get_company_id()` exige au moins une company |
-| `users` | `'ci-admin'` (role `Admin`, password hash placeholder) | `kesh-db::repositories::*::tests::get_admin_user_id()` exige au moins un user `Admin` |
+| `companies` | `'CI Test Company'` (org_type `Independant`, langues `FR`/`FR`) | `kesh-db::repositories::*::tests::get_company_id()` exige ≥ 1 company |
+| `users` | `'ci-admin'` (role `Admin`, password hash placeholder) | `get_admin_user_id()` exige ≥ 1 user `Admin` |
+| `accounts` × 2 | `1000 Caisse CI` (Asset), `3000 Ventes CI` (Revenue) | `two_accounts()` exige ≥ 2 comptes actifs |
+| `fiscal_years` | `'Exercice CI 2025-2030'` (Open) | `journal_entries::tests::setup()` exige un exercice ouvert couvrant `today` |
 
-Le password hash est un placeholder Argon2id valide (≥ 20 octets pour satisfaire `chk_users_password_hash_len`) — les tests ne s'authentifient jamais avec ce user, ils interrogent juste son `id`.
-
-Le bootstrap admin de `kesh-api` ne peut pas remplir ce rôle car il crée un user mais **pas** de company (la company passe par le flow onboarding, hors scope d'un seed CI).
+**Notes** :
+- Le password hash est un placeholder Argon2id valide (≥ 20 octets pour satisfaire `chk_users_password_hash_len`) — les tests ne s'authentifient jamais avec ce user, ils interrogent juste son `id`.
+- Le fiscal_year couvre 2025-2030 délibérément large pour tolérer la dérive d'horloge entre runs CI.
+- Le bootstrap admin de `kesh-api` ne peut pas remplir ce rôle car il crée un user mais **pas** de company (la company passe par le flow onboarding, hors scope d'un seed CI).
 
 ## Décision MariaDB 11.4 (vs 10.11 de l'AC Epic §6.1)
 
