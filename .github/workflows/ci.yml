@@ -64,7 +64,10 @@ jobs:
         uses: cargo-bins/cargo-binstall@main
 
       - name: Install sqlx-cli (binary)
-        run: cargo binstall sqlx-cli --no-confirm --force
+        # --locked : si binstall retombe sur cargo install from source (pas de
+        # binaire pré-compilé), utiliser le Cargo.lock bundlé avec sqlx-cli
+        # pour éviter qu'une dep transitive plus récente exige Rust > 1.85.
+        run: cargo binstall sqlx-cli --no-confirm --force --locked
 
       - name: Apply migrations (kesh DB)
         # Required by kesh-db tests using test_pool() (connects to DATABASE_URL
@@ -266,7 +269,10 @@ jobs:
         uses: cargo-bins/cargo-binstall@main
 
       - name: Install sqlx-cli (binary)
-        run: cargo binstall sqlx-cli --no-confirm --force
+        # --locked : si binstall retombe sur cargo install from source (pas de
+        # binaire pré-compilé), utiliser le Cargo.lock bundlé avec sqlx-cli
+        # pour éviter qu'une dep transitive plus récente exige Rust > 1.85.
+        run: cargo binstall sqlx-cli --no-confirm --force --locked
 
       - name: Apply migrations (explicit gate)
         run: cargo sqlx migrate run
