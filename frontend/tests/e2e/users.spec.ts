@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { seedTestState } from './helpers/test-state';
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 /**
  * Tests E2E — Gestion des utilisateurs (Story 1.12)

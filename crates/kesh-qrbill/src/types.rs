@@ -240,10 +240,7 @@ pub enum QrBillError {
     #[error("Code pays invalide: {0} (attendu ISO-3166-1 alpha-2)")]
     InvalidCountry(String),
     #[error("Champ {field} contient un caractère non autorisé par SIX 2.2: U+{codepoint:04X}")]
-    InvalidCharset {
-        field: &'static str,
-        codepoint: u32,
-    },
+    InvalidCharset { field: &'static str, codepoint: u32 },
     #[error("Erreur génération PDF: {0}")]
     PdfGeneration(String),
 }

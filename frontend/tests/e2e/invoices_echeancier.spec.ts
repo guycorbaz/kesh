@@ -1,4 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
+
+test.beforeAll(async () => {
+	// Story 6.4 : preset `with-data` (= with-company + 1 contact + 1 product,
+	// PAS de facture pré-seedée — les tests ci-dessous créent les leurs via
+	// `daysFromToday` pour des dates déterministes).
+	await seedTestState('with-data');
+});
 
 /**
  * Tests E2E — Échéancier factures (Story 5.4)

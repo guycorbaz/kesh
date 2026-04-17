@@ -147,11 +147,7 @@ fn draw_invoice_section(
     );
     my -= 7.0;
     layer.use_text(
-        format!(
-            "{}: {}",
-            i18n.get("invoice-pdf-number"),
-            inv.invoice_number
-        ),
+        format!("{}: {}", i18n.get("invoice-pdf-number"), inv.invoice_number),
         9.0,
         Mm(meta_x),
         Mm(my),
@@ -209,11 +205,41 @@ fn draw_invoice_section(
     let col_vat = left + 140.0;
     let col_tot = left + 160.0;
 
-    layer.use_text(i18n.get("invoice-pdf-description"), 9.0, Mm(col_desc), Mm(ty), helv_bold);
-    layer.use_text(i18n.get("invoice-pdf-quantity"), 9.0, Mm(col_qty), Mm(ty), helv_bold);
-    layer.use_text(i18n.get("invoice-pdf-unit-price"), 9.0, Mm(col_unit), Mm(ty), helv_bold);
-    layer.use_text(i18n.get("invoice-pdf-vat"), 9.0, Mm(col_vat), Mm(ty), helv_bold);
-    layer.use_text(i18n.get("invoice-pdf-line-total"), 9.0, Mm(col_tot), Mm(ty), helv_bold);
+    layer.use_text(
+        i18n.get("invoice-pdf-description"),
+        9.0,
+        Mm(col_desc),
+        Mm(ty),
+        helv_bold,
+    );
+    layer.use_text(
+        i18n.get("invoice-pdf-quantity"),
+        9.0,
+        Mm(col_qty),
+        Mm(ty),
+        helv_bold,
+    );
+    layer.use_text(
+        i18n.get("invoice-pdf-unit-price"),
+        9.0,
+        Mm(col_unit),
+        Mm(ty),
+        helv_bold,
+    );
+    layer.use_text(
+        i18n.get("invoice-pdf-vat"),
+        9.0,
+        Mm(col_vat),
+        Mm(ty),
+        helv_bold,
+    );
+    layer.use_text(
+        i18n.get("invoice-pdf-line-total"),
+        9.0,
+        Mm(col_tot),
+        Mm(ty),
+        helv_bold,
+    );
     ty -= 5.0;
     // Header underline.
     hline(layer, left, PAGE_W - 20.0, ty);
@@ -230,11 +256,35 @@ fn draw_invoice_section(
                 idx + 1
             )));
         }
-        layer.use_text(truncate_display(&line.description, 45), 9.0, Mm(col_desc), Mm(ty), helv);
+        layer.use_text(
+            truncate_display(&line.description, 45),
+            9.0,
+            Mm(col_desc),
+            Mm(ty),
+            helv,
+        );
         layer.use_text(format_ch(line.quantity, 2), 9.0, Mm(col_qty), Mm(ty), helv);
-        layer.use_text(format_ch(line.unit_price, 2), 9.0, Mm(col_unit), Mm(ty), helv);
-        layer.use_text(format!("{}%", format_ch(line.vat_rate, 2)), 9.0, Mm(col_vat), Mm(ty), helv);
-        layer.use_text(format_ch(line.line_total, 2), 9.0, Mm(col_tot), Mm(ty), helv);
+        layer.use_text(
+            format_ch(line.unit_price, 2),
+            9.0,
+            Mm(col_unit),
+            Mm(ty),
+            helv,
+        );
+        layer.use_text(
+            format!("{}%", format_ch(line.vat_rate, 2)),
+            9.0,
+            Mm(col_vat),
+            Mm(ty),
+            helv,
+        );
+        layer.use_text(
+            format_ch(line.line_total, 2),
+            9.0,
+            Mm(col_tot),
+            Mm(ty),
+            helv,
+        );
         ty -= 5.0;
     }
 
@@ -325,13 +375,7 @@ fn draw_receipt(
         helv_bold,
     );
     y -= 3.0;
-    layer.use_text(
-        format_iban(&data.creditor_iban),
-        8.0,
-        Mm(x),
-        Mm(y),
-        helv,
-    );
+    layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(x), Mm(y), helv);
     y -= 3.5;
     layer.use_text(&data.creditor.name, 8.0, Mm(x), Mm(y), helv);
     y -= 3.5;
@@ -614,8 +658,7 @@ fn hline(layer: &PdfLayerReference, x1: f32, x2: f32, y: f32) {
 
 /// Swiss number format: apostrophe thousand separator, point decimal.
 pub fn format_ch(value: Decimal, decimals: u32) -> String {
-    let rounded =
-        value.round_dp_with_strategy(decimals, RoundingStrategy::MidpointAwayFromZero);
+    let rounded = value.round_dp_with_strategy(decimals, RoundingStrategy::MidpointAwayFromZero);
     let s = rounded.abs().to_string();
     let (int_part, frac_part) = match s.split_once('.') {
         Some((i, f)) => (i.to_string(), f.to_string()),
@@ -742,7 +785,11 @@ mod tests {
         let (data, invoice, i18n) = invoice_fixture();
         let bytes = generate_qr_bill_pdf(&data, &invoice, &i18n).unwrap();
         assert!(bytes.starts_with(b"%PDF-1."), "missing PDF magic");
-        assert!(bytes.len() > 1_000, "PDF suspiciously small: {}", bytes.len());
+        assert!(
+            bytes.len() > 1_000,
+            "PDF suspiciously small: {}",
+            bytes.len()
+        );
     }
 
     #[test]
@@ -761,7 +808,10 @@ mod tests {
 
     #[test]
     fn format_iban_groups_by_four() {
-        assert_eq!(format_iban("CH4431999123000889012"), "CH44 3199 9123 0008 8901 2");
+        assert_eq!(
+            format_iban("CH4431999123000889012"),
+            "CH44 3199 9123 0008 8901 2"
+        );
     }
 
     #[test]

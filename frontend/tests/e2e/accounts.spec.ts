@@ -1,12 +1,17 @@
 import { test, expect } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
 
 /**
  * Tests E2E — Plan comptable (Story 3.1)
  *
- * Ces tests necessitent un backend Kesh fonctionnel sur localhost:3000
- * avec un admin bootstrap (admin / admin123) et un seed demo effectue
- * (plan comptable PME charge).
+ * Prérequis backend (Story 6.4) : `KESH_TEST_MODE=true` + `KESH_HOST=127.0.0.1`.
+ * Le `beforeAll` truncate la DB et re-seed via l'endpoint `/api/v1/_test/seed`
+ * → état déterministe indépendant de l'ordre des specs.
  */
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 /** Helper : login as admin and navigate to /accounts. */
 async function loginAndGoToAccounts(page: import('@playwright/test').Page) {

@@ -1,9 +1,14 @@
 import { test, expect } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
 
 /**
  * Tests E2E — Page d'accueil & Paramètres (Story 2.4)
- * Requiert backend + frontend running avec onboarding complété.
+ * Prérequis backend (Story 6.4) : `KESH_TEST_MODE=true`.
  */
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 test.describe('Homepage', () => {
 	test.beforeEach(async ({ page }) => {

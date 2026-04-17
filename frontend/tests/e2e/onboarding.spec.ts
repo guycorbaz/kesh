@@ -1,22 +1,23 @@
 import { test, expect } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
 
 /**
  * Tests E2E — Flux d'onboarding Chemin A (Story 2.2)
  *
- * Ces tests nécessitent :
- * - Backend Kesh fonctionnel sur localhost:3000
- * - Base de données vide (pas de company)
- * - Admin user créé (bootstrap)
- *
- * IMPORTANT : Ces tests modifient l'état de la DB (seed demo, reset).
- * Les exécuter sur une DB de test dédiée.
+ * Prérequis backend (Story 6.4) : `KESH_TEST_MODE=true`. Le `beforeEach`
+ * seed le preset `fresh` (uniquement user `changeme/changeme`, aucune
+ * company, aucun onboarding_state) → chaque test démarre d'un onboarding
+ * vierge, évitant la mutation irréversible du singleton `onboarding_state`.
  */
 
 test.describe('Onboarding Wizard', () => {
 	test.beforeEach(async ({ page }) => {
-		// Login en tant qu'admin
+		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).
+		await seedTestState('fresh');
+
+		// Login en tant que changeme/changeme (le seul user du preset fresh).
 		await page.goto('/login');
-		await page.fill('#username', 'admin');
+		await page.fill('#username', 'changeme');
 		await page.fill('#password', 'changeme');
 		await page.click('button[type="submit"]');
 

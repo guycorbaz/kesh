@@ -5,27 +5,32 @@
 //! 200 (happy path QR-IBAN), 400 `INVOICE_NOT_VALIDATED`, 400 `INVOICE_NOT_PDF_READY`
 //! (×2), 404 autre company, 400 `INVOICE_TOO_MANY_LINES_FOR_PDF`, 401 sans JWT,
 //! 200 pour chaque rôle (3 cas).
+//!
+//! Depuis Story 6.4 : seed via `kesh_db::test_fixtures::seed_accounting_company`
+//! + validation via `kesh_db::repositories::invoices::validate_invoice`
+//!   (aucun INSERT manuel ni UPDATE direct sur `invoices.status` — KF-001 closed).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::{NaiveDate, TimeDelta};
-use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::bank_account::NewBankAccount;
-use kesh_db::entities::company::{Language, NewCompany, OrgType};
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::user::{NewUser, Role};
-use kesh_db::repositories::{bank_accounts, companies, contacts, invoices, users};
+use kesh_db::repositories::{bank_accounts, contacts, invoices, users};
+use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;
 use serde_json::json;
 use sqlx::MySqlPool;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
-const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
+/// Password du user `admin` seedé par `seed_accounting_company`
+/// (cf. `kesh_db::test_fixtures::ADMIN_PASSWORD_HASH`).
+const TEST_ADMIN_PASSWORD: &str = "admin123";
 
 struct TestApp {
     base_url: String,
@@ -106,27 +111,15 @@ async fn login(app: &TestApp) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
-/// Seeds company + admin user (returns admin user_id + company_id).
+/// Seede une company comptablement complète via `test_fixtures::seed_accounting_company` :
+/// 1 company + 2 users Admin (`admin/admin123`, `changeme/changeme`) + fiscal_year
+/// 2020-2030 Open + 5 accounts + `company_invoice_settings` avec défauts.
+/// Retourne `(admin_user_id, company_id)`.
 async fn seed_base(pool: &MySqlPool) -> (i64, i64) {
-    ensure_admin_user(pool, &test_config()).await.unwrap();
-    let admin_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE role = 'Admin' LIMIT 1")
-        .fetch_one(pool)
+    let seeded = seed_accounting_company(pool)
         .await
-        .unwrap();
-    let company = companies::create(
-        pool,
-        NewCompany {
-            name: "Robert Schneider SA".into(),
-            address: "Rue du Lac 1268\n2501 Biel".into(),
-            org_type: OrgType::Pme,
-            ide_number: Some("CHE109322551".into()),
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .unwrap();
-    (admin_id, company.id)
+        .expect("seed_accounting_company");
+    (seeded.admin_user_id, seeded.company_id)
 }
 
 async fn seed_contact(pool: &MySqlPool, company_id: i64, user_id: i64, with_address: bool) -> i64 {
@@ -170,11 +163,13 @@ async fn seed_primary_bank(pool: &MySqlPool, company_id: i64, with_qr_iban: bool
     bank_accounts::upsert_primary(pool, new).await.unwrap();
 }
 
-/// Seed une facture puis la bascule `validated` via SQL direct (pattern aligné
-/// avec `invoice_echeancier_e2e::create_validated_invoice_via_sql`). Évite la
-/// dépendance à `validate_invoice` qui exige un `fiscal_year` + des comptes
-/// `company_invoice_settings` complets — non pertinent pour tester la route
-/// PDF, qui ne lit que `invoice.status == 'validated'` + champs de base.
+/// Crée une facture `draft` puis la valide via le flow normal
+/// (`kesh_db::repositories::invoices::validate_invoice`, équivalent in-process
+/// de `POST /api/v1/invoices/:id/validate`). Aucun INSERT manuel ni UPDATE
+/// direct sur `invoices.status` — KF-001 closed via Story 6.4.
+///
+/// Prérequis : `seed_accounting_company` doit avoir été appelé au préalable
+/// (fiscal_year Open + company_invoice_settings complet).
 async fn seed_validated_invoice(
     pool: &MySqlPool,
     company_id: i64,
@@ -200,59 +195,9 @@ async fn seed_validated_invoice(
     };
     let (invoice, _lines) = invoices::create(pool, user_id, new).await.unwrap();
 
-    // Lazy-create fiscal_year for company.
-    let fy_id: i64 = if let Some((id,)) =
-        sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
-            .bind(company_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap()
-    {
-        id
-    } else {
-        let r = sqlx::query(
-            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-             VALUES (?, 'Test5.3', '2020-01-01', '2030-12-31', 'Open')",
-        )
-        .bind(company_id)
-        .execute(pool)
+    kesh_db::repositories::invoices::validate_invoice(pool, company_id, invoice.id, user_id)
         .await
-        .unwrap();
-        r.last_insert_id() as i64
-    };
-
-    // Insert minimal journal_entry.
-    let (max_n,): (Option<i64>,) = sqlx::query_as(
-        "SELECT MAX(entry_number) FROM journal_entries \
-         WHERE company_id = ? AND fiscal_year_id = ?",
-    )
-    .bind(company_id)
-    .bind(fy_id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    let next_n = max_n.unwrap_or(0) + 1;
-    let r = sqlx::query(
-        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
-         entry_date, journal, description) VALUES (?, ?, ?, CURDATE(), 'Ventes', 'stub-5.3-e2e')",
-    )
-    .bind(company_id)
-    .bind(fy_id)
-    .bind(next_n)
-    .execute(pool)
-    .await
-    .unwrap();
-    let je_id = r.last_insert_id() as i64;
-
-    sqlx::query(
-        "UPDATE invoices SET status = 'validated', journal_entry_id = ?, \
-         version = version + 1 WHERE id = ?",
-    )
-    .bind(je_id)
-    .bind(invoice.id)
-    .execute(pool)
-    .await
-    .unwrap();
+        .expect("validate_invoice");
 
     invoice.id
 }

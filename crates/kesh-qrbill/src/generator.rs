@@ -145,7 +145,9 @@ mod tests {
         let data = sample(Reference::None, "CH9300762011623852957");
         let payload = build_payload(&data).unwrap();
         assert!(payload.starts_with("SPC\n0200\n1\n"));
-        assert!(payload.contains("\nEPD\n") || payload.ends_with("\nEPD\n") || payload.contains("EPD"));
+        assert!(
+            payload.contains("\nEPD\n") || payload.ends_with("\nEPD\n") || payload.contains("EPD")
+        );
     }
 
     #[test]

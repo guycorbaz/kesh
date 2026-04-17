@@ -14,6 +14,12 @@ services:
     environment:
       DATABASE_URL: mysql://kesh:kesh_dev@mariadb:3306/kesh
       KESH_PORT: "3000"
+      # Story 6.4 : le défaut applicatif est désormais 127.0.0.1. En Docker,
+      # on bind 0.0.0.0 pour que le port mapping `127.0.0.1:3000:3000`
+      # de la section `ports:` fonctionne (sinon le container écouterait
+      # uniquement sur sa propre loopback, inaccessible depuis l'hôte).
+      # Ne JAMAIS set KESH_TEST_MODE=true avec KESH_HOST=0.0.0.0
+      # (ConfigError::TestModeWithPublicBind refusera le démarrage).
       KESH_HOST: "0.0.0.0"
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
       KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}

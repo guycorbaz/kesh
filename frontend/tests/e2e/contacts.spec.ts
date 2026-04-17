@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 /**
  * Tests E2E — Carnet d'adresses (Story 4.1)

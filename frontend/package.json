@@ -27,6 +27,7 @@
 		"@tailwindcss/vite": "^4.2.2",
 		"@testing-library/svelte": "^5.3.1",
 		"@types/big.js": "^6.2.2",
+		"@types/node": "^22.19.17",
 		"jsdom": "^29.0.2",
 		"mode-watcher": "^1.1.0",
 		"svelte": "^5.54.0",

@@ -247,14 +247,26 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             crate::middleware::auth::require_auth,
         ));
 
-    Router::new()
+    let mut main_router = Router::new()
         .route("/health", get(routes::health::health_check))
         .route("/api/v1/auth/login", post(routes::auth::login))
         .route("/api/v1/auth/logout", post(routes::auth::logout))
         .route("/api/v1/auth/refresh", post(routes::auth::refresh))
-        .merge(protected)
-        .fallback_service(fallback)
-        .with_state(state)
+        .merge(protected);
+
+    // Story 6.4 : routes /api/v1/_test/* gated par test_mode (runtime branch,
+    // pas Cargo feature — évite drift build CI vs prod). Le garde-fou
+    // `ConfigError::TestModeWithPublicBind` refuse déjà le démarrage si
+    // test_mode=true + bind non-loopback, donc arriver ici avec test_mode=true
+    // implique un bind loopback strict.
+    if state.config.test_mode {
+        tracing::warn!(
+            "KESH_TEST_MODE=true — /api/v1/_test/* exposé (DEV/CI ONLY, jamais en prod)"
+        );
+        main_router = main_router.nest("/api/v1/_test", routes::test_endpoints::router());
+    }
+
+    main_router.fallback_service(fallback).with_state(state)
 }
 
 // NOTE: les stories futures ajouteront leurs routes protégées en
