@@ -75,15 +75,24 @@ jobs:
             mariadb -h 127.0.0.1 -u root -pkesh_root kesh < "$migration"
           done
 
-      - name: Seed CI fixtures (company + admin user)
+      - name: Seed CI fixtures (company + admin + fiscal_year + accounts)
         # Argon2id hashes pré-calculés dans crates/kesh-db/src/test_fixtures.rs
         # — `admin/admin123` et `changeme/changeme`, validés par le helper
         # `seed_accounting_company`. Voir ADMIN_PASSWORD_HASH et
         # CHANGEME_PASSWORD_HASH dans test_fixtures.rs pour la source.
+        #
+        # Contenu aligné avec `seed_accounting_company` pour satisfaire TOUS
+        # les tests `kesh-db::repositories::*` qui attendent :
+        # - 1 company (SELECT id FROM companies LIMIT 1)
+        # - ≥1 admin user
+        # - 1 fiscal_year Open couvrant la date du jour
+        # - ≥2 accounts actifs (journal_entries::tests::two_accounts)
         run: |
           mariadb -h 127.0.0.1 -u root -pkesh_root kesh <<'SQL'
           INSERT INTO companies (name, address, org_type, accounting_language, instance_language)
           VALUES ('CI Seed Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR');
+          SET @company_id := LAST_INSERT_ID();
+
           INSERT INTO users (username, password_hash, role, active)
           VALUES (
             'admin',
@@ -91,6 +100,16 @@ jobs:
             'Admin',
             TRUE
           );
+
+          INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)
+          VALUES (@company_id, 'Exercice CI 2020-2030', '2020-01-01', '2030-12-31', 'Open');
+
+          INSERT INTO accounts (company_id, number, name, account_type) VALUES
+            (@company_id, '1000', 'Caisse CI', 'Asset'),
+            (@company_id, '1100', 'Banque CI', 'Asset'),
+            (@company_id, '2000', 'Capital CI', 'Liability'),
+            (@company_id, '3000', 'Ventes CI', 'Revenue'),
+            (@company_id, '4000', 'Charges CI', 'Expense');
           SQL
 
       - name: cargo test
