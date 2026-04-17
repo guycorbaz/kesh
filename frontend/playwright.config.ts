@@ -20,9 +20,25 @@ import type { PlaywrightTestConfig } from '@playwright/test';
 const config: PlaywrightTestConfig = {
 	testDir: 'tests/e2e',
 	testMatch: /(.+\.)?(test|spec)\.[jt]s/,
+	// Story 6.4 — serialisation inter-specs obligatoire.
+	//
+	// Chaque spec appelle `seedTestState(...)` dans son `beforeAll`, qui
+	// truncate la DB partagée + re-seed. Avec `workers >= 2`, les specs
+	// tournent en parallèle : Worker A exécute ses tests pendant que
+	// Worker B truncate la DB → tests de A voient une DB vide ou
+	// partiellement seedée → cascade d'échecs (« Plan comptable » non
+	// visible, resp.ok() false, etc.).
+	//
+	// Le `tokio::sync::Mutex` côté backend (code review P2) sérialise
+	// juste les calls seed/reset eux-mêmes, pas les tests entre deux
+	// seeds. `workers: 1` est donc nécessaire tant qu'on partage une
+	// DB unique entre tous les specs.
+	//
+	// Mitigation pérenne future (hors scope Story 6-4) : DB par worker
+	// (spawn backend multiple on ports différents + URL_BACKEND_<n>), ou
+	// seed statique unique + cleanup scoped par test.
+	workers: 1,
 	// Story 6.4 T7.7 : fail-fast si backend/KESH_TEST_MODE pas configuré.
-	// S'exécute une seule fois avant tous les workers (évite race condition
-	// vs un spec `_smoke` parallélisable).
 	globalSetup: './tests/e2e/global-setup.ts',
 	use: {
 		baseURL: process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000',
