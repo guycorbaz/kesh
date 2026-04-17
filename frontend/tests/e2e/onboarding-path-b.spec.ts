@@ -1,13 +1,17 @@
 import { test, expect } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
 
 /**
  * Tests E2E — Flux d'onboarding Chemin B (Story 2.3)
  *
- * Requiert backend + frontend running avec DB vide.
+ * Prérequis backend (Story 6.4) : `KESH_TEST_MODE=true`. Le `beforeEach`
+ * re-seed le preset `fresh` avant chaque test (onboarding mute le singleton
+ * `onboarding_state` de façon irréversible dans le run).
  */
 
 test.describe('Onboarding Path B', () => {
 	test.beforeEach(async ({ page }) => {
+		await seedTestState('fresh');
 		await page.goto('/login');
 		await page.fill('#username', 'changeme');
 		await page.fill('#password', 'changeme');

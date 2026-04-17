@@ -24,11 +24,15 @@ Registre des tests/comportements **constatés cassés mais hors scope** du trava
   1. La fixture `seed_base` utilisait `ide_number: Some("CHE-123.456.789".into())` — format d'affichage avec séparateurs — alors que la CHECK DB `chk_companies_ide_format` impose la forme canonique `^CHE[0-9]{9}$` (pas de séparateurs, normalisation côté route `contacts.rs`). De surcroît `123456789` ne satisfait pas le checksum mod-11 du `CheNumber`.
   2. Une fois le CHECK corrigé, 8 tests échouaient toujours avec `INVOICE_NOT_VALIDATED` — `seed_validated_invoice` appelait `invoices::validate_invoice` mais swallowait le `Result`. `validate_invoice` exige un `fiscal_year` ouvert + `company_invoice_settings` avec `default_receivable_account_id` et `default_revenue_account_id` non-NULL, aucun desquels n'était seedé.
 - **Scope d'origine** : Story 5-3 (Génération PDF QR Bill). Pré-existant — pas une régression introduite par la review story 5-4.
-- **Correctif** (commit à suivre) :
+- **Correctif v1 (2026-04-16)** :
   1. `ide_number` → `CHE109322551` (forme canonique, mod-11 valide, aligné avec `kesh-seed`).
   2. `seed_validated_invoice` refondu pour utiliser le pattern SQL bypass (`fiscal_year` + `journal_entry` stub + `UPDATE status='validated'`) aligné avec `invoice_echeancier_e2e::create_validated_invoice_via_sql`. Évite la dépendance à `validate_invoice` qui exige une config comptable complète non pertinente pour tester la route PDF.
-- **Validation** : `cargo test -p kesh-api --test invoice_pdf_e2e` → 11/11 ✅
-- **Status** : closed 2026-04-16
+- **Correctif v2 (Story 6.4, 2026-04-17)** : le bypass SQL ci-dessus a été **définitivement retiré** au profit du helper partagé `kesh_db::test_fixtures::seed_accounting_company` qui fournit un état comptable complet (company + fiscal_year Open + 5 accounts + `company_invoice_settings` avec défauts). Les deux tests `invoice_pdf_e2e.rs` et `invoice_echeancier_e2e.rs` appellent désormais `kesh_db::repositories::invoices::validate_invoice` via le flow normal — plus aucun `UPDATE invoices.status` ni INSERT manuel de `fiscal_year`/`journal_entry` n'existe dans les tests.
+- **Validation** :
+  - v1 : `cargo test -p kesh-api --test invoice_pdf_e2e` → 11/11 ✅ (2026-04-16)
+  - v2 : `cargo test -p kesh-api --test invoice_pdf_e2e --test invoice_echeancier_e2e` → 20/20 ✅ (2026-04-17)
+  - v2 : `grep -E "force_validate_via_sql|UPDATE.*invoices.*status" crates/kesh-api/tests/*.rs` → zéro occurrence (AC #3 + #4 Story 6.4)
+- **Status** : closed (vérifié post-Story-6.4, bypass SQL retiré)
 
 ---
 

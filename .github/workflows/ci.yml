@@ -119,11 +119,15 @@ jobs:
     env:
       DATABASE_URL: mysql://root:kesh_root@127.0.0.1:3306/kesh
       KESH_PORT: "3000"
+      # Story 6.4 T4.1 : garde-fou refuse test_mode + bind non-loopback.
+      # `0.0.0.0` REJETÉ (cf. N3 review pass 2). Loopback strict requis.
       KESH_HOST: "127.0.0.1"
       KESH_ADMIN_USERNAME: admin
       KESH_ADMIN_PASSWORD: admin
       KESH_JWT_SECRET: ci-secret-at-least-32-bytes-long-for-testing
       RUST_LOG: info
+      # Story 6.4 : active `/api/v1/_test/*` pour les fixtures Playwright.
+      KESH_TEST_MODE: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -165,6 +169,19 @@ jobs:
             sleep 2
           done
           echo "Backend failed to start"; cat backend.log; exit 1
+
+      # Story 6.4 T5.3 / T7.4 : smoke test — vérifier que le gate KESH_TEST_MODE
+      # est actif et que l'endpoint /api/v1/_test/seed est joignable AVANT de
+      # lancer Playwright (fail-fast, message d'erreur clair si la config CI
+      # est cassée plutôt qu'une avalanche de fails de specs).
+      - name: Smoke test /api/v1/_test/seed
+        env:
+          BACKEND_URL: ${{ env.KESH_BACKEND_URL || 'http://127.0.0.1:3000' }}
+        run: |
+          curl -sf -X POST "$BACKEND_URL/api/v1/_test/seed" \
+            -H "Content-Type: application/json" \
+            -d '{"preset":"fresh"}' \
+            || (echo "FATAL: $BACKEND_URL/api/v1/_test/seed inaccessible — KESH_TEST_MODE not active?"; cat backend.log; exit 1)
 
       - name: Run Playwright
         working-directory: frontend

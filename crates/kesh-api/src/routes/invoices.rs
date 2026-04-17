@@ -183,7 +183,8 @@ pub fn is_invoice_overdue(
 impl InvoiceResponse {
     fn from_parts(invoice: Invoice, lines: Vec<InvoiceLine>) -> Self {
         let today = chrono::Utc::now().naive_utc().date();
-        let is_overdue = is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
+        let is_overdue =
+            is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
         Self {
             id: invoice.id,
             company_id: invoice.company_id,
@@ -729,9 +730,7 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
     // les deux sont posés ; le cas indépendant reste autorisé).
     if let (Some(dt), Some(db)) = (params.date_to, params.due_before) {
         if db < dt {
-            return Err(AppError::Validation(
-                "dueBefore doit être ≥ dateTo".into(),
-            ));
+            return Err(AppError::Validation("dueBefore doit être ≥ dateTo".into()));
         }
     }
 

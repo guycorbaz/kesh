@@ -9,8 +9,7 @@
 use chrono::NaiveDate;
 use kesh_qrbill::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillI18n,
-    Reference, generate_qr_bill_pdf_with_date,
-    generator::build_payload,
+    Reference, generate_qr_bill_pdf_with_date, generator::build_payload,
 };
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -75,7 +74,10 @@ fn payload_is_deterministic_across_10_runs() {
     let first = build_payload(&data).expect("build payload");
     for _ in 0..9 {
         let next = build_payload(&data).unwrap();
-        assert_eq!(first, next, "payload QR Bill doit être strictement déterministe");
+        assert_eq!(
+            first, next,
+            "payload QR Bill doit être strictement déterministe"
+        );
     }
 }
 

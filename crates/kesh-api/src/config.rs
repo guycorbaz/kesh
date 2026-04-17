@@ -20,6 +20,13 @@ pub enum ConfigError {
     /// Refus explicite — un mot de passe vide permettrait un login avec
     /// une string vide, ce qui est catastrophique.
     EmptyAdminPassword,
+    /// `KESH_TEST_MODE=true` combiné avec un bind non-loopback — refus
+    /// explicite pour éviter d'exposer `/api/v1/_test/*` en staging/prod
+    /// (Story 6.4 garde-fou sécurité). Acceptés : `127.0.0.1`, `::1`,
+    /// `localhost`. **`0.0.0.0` est explicitement rejeté** car en Docker
+    /// `-p 3000:3000` avec bind interne `0.0.0.0` expose la route au
+    /// réseau hôte (cf. décision pass 2 / N3).
+    TestModeWithPublicBind { host: String },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -41,6 +48,16 @@ impl std::fmt::Display for ConfigError {
                     f,
                     "KESH_ADMIN_PASSWORD est vide ou composé uniquement de whitespace — \
                      un mot de passe non-trivial est obligatoire, même en dev."
+                )
+            }
+            ConfigError::TestModeWithPublicBind { host } => {
+                write!(
+                    f,
+                    "KESH_TEST_MODE=true incompatible avec KESH_HOST='{}' — \
+                     l'endpoint /api/v1/_test/* ne doit jamais être exposé \
+                     publiquement. Utiliser KESH_HOST=127.0.0.1 (ou ::1, localhost). \
+                     0.0.0.0 est rejeté (Docker -p expose au réseau hôte).",
+                    host
                 )
             }
         }
@@ -88,6 +105,14 @@ pub struct Config {
     // --- Story 2.1 : internationalisation ---
     /// Locale de l'instance (défaut FrCh). Configure la langue des messages d'erreur API.
     pub locale: kesh_i18n::Locale,
+
+    // --- Story 6.4 : fixtures E2E déterministes ---
+    /// Mode test : active les endpoints `/api/v1/_test/*` (reset + seed DB).
+    /// Lu depuis `KESH_TEST_MODE` (`"true"` / `"1"` → `true`). **Par défaut
+    /// `false`** — les routes test n'existent pas dans `build_router` si
+    /// `test_mode == false` (404 natif Axum). Incompatible avec un bind
+    /// non-loopback (refuse le démarrage).
+    pub test_mode: bool,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -112,6 +137,7 @@ impl std::fmt::Debug for Config {
             .field("rate_limit_block_duration", &self.rate_limit_block_duration)
             .field("password_min_length", &self.password_min_length)
             .field("locale", &self.locale)
+            .field("test_mode", &self.test_mode)
             .finish()
     }
 }
@@ -220,12 +246,21 @@ impl Config {
             rate_limit_block_duration,
             password_min_length,
             locale: kesh_i18n::Locale::FrCh,
+            test_mode: false,
         }
     }
 
     /// Retourne une copie avec la locale modifiée (builder pattern pour tests).
     pub fn with_locale(mut self, locale: kesh_i18n::Locale) -> Self {
         self.locale = locale;
+        self
+    }
+
+    /// Builder non-breaking pour activer `test_mode` sur un Config existant
+    /// (utilisé par les tests d'intégration qui montent l'endpoint
+    /// `/api/v1/_test/*`). Cf. Story 6.4 AC #6.
+    pub fn with_test_mode(mut self, enabled: bool) -> Self {
+        self.test_mode = enabled;
         self
     }
 
@@ -254,7 +289,10 @@ impl Config {
             Err(_) => 3000,
         };
 
-        let host = env::var("KESH_HOST").unwrap_or_else(|_| "0.0.0.0".into());
+        // Défaut `127.0.0.1` (sécurité par défaut — Story 6.4 T7.6). Pour
+        // un bind public en prod (reverse proxy en front), set explicitement
+        // `KESH_HOST=0.0.0.0` dans `.env` ou docker-compose.prod.yml.
+        let host = env::var("KESH_HOST").unwrap_or_else(|_| "127.0.0.1".into());
 
         // Trim explicite (patch V1) : un `KESH_ADMIN_USERNAME=" admin"`
         // (espace initial accidentel dans un copier-coller) créerait un
@@ -461,6 +499,32 @@ impl Config {
         let locale = kesh_i18n::Locale::from(locale_str.as_str());
         tracing::info!("Locale instance : {}", locale);
 
+        // --- Story 6.4 : mode test (endpoints /api/v1/_test/*) ---
+        let test_mode = match env::var("KESH_TEST_MODE") {
+            Ok(val) if val == "true" || val == "1" => true,
+            Ok(val) if val.is_empty() => false,
+            Ok(val) => {
+                tracing::warn!(
+                    "KESH_TEST_MODE='{}' non reconnu (attendu 'true' ou '1'), désactivé par défaut",
+                    val
+                );
+                false
+            }
+            Err(_) => false,
+        };
+
+        // Garde-fou sécurité (AC #6bis) : refus de démarrage si test_mode
+        // actif avec un bind non-loopback. `0.0.0.0` explicitement rejeté.
+        if test_mode && !is_loopback_host(&host) {
+            return Err(ConfigError::TestModeWithPublicBind { host });
+        }
+
+        if test_mode {
+            tracing::warn!(
+                "KESH_TEST_MODE=true — /api/v1/_test/* sera exposé (DEV/CI ONLY, jamais en prod)"
+            );
+        }
+
         Ok(Config {
             database_url,
             port,
@@ -477,8 +541,18 @@ impl Config {
             rate_limit_block_duration,
             password_min_length,
             locale,
+            test_mode,
         })
     }
+}
+
+/// Teste si le host est une adresse loopback stricte.
+///
+/// Acceptés : `127.0.0.1`, `::1`, `localhost`. **`0.0.0.0` est explicitement
+/// rejeté** car en Docker `-p 3000:3000` avec bind interne `0.0.0.0` expose
+/// la route au réseau hôte. Cf. décision H1 + N3 review pass 2.
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "::1" | "localhost")
 }
 
 /// Helpers de construction de `Config` pour les tests unitaires.
@@ -513,6 +587,7 @@ pub(crate) mod test_helpers {
             rate_limit_block_duration: TimeDelta::minutes(30),
             password_min_length: 12,
             locale: kesh_i18n::Locale::FrCh,
+            test_mode: false,
         }
     }
 }
@@ -556,6 +631,7 @@ mod tests {
             env::remove_var("KESH_RATE_LIMIT_MAX_ATTEMPTS");
             env::remove_var("KESH_RATE_LIMIT_BLOCK_MINUTES");
             env::remove_var("KESH_PASSWORD_MIN_LENGTH");
+            env::remove_var("KESH_TEST_MODE");
         }
     }
 
@@ -571,13 +647,20 @@ mod tests {
         let _guard = env_lock();
         reset_env();
         set_minimum_required();
+        // Set explicite pour neutraliser un éventuel `.env` local qui porterait
+        // `KESH_HOST=0.0.0.0` (dotenvy charge `.env` avant de lire les vars).
+        // Story 6.4 T7.6 : le défaut Rust est désormais `127.0.0.1`.
+        unsafe {
+            env::set_var("KESH_HOST", "127.0.0.1");
+        }
 
         let config = Config::from_env().expect("Config should load");
         assert_eq!(config.database_url, "mysql://test:test@localhost:3306/test");
         assert_eq!(config.port, 3000);
-        assert_eq!(config.host, "0.0.0.0");
+        assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.jwt_expiry, TimeDelta::minutes(15));
         assert_eq!(config.refresh_token_max_lifetime, TimeDelta::days(30));
+        assert!(!config.test_mode);
     }
 
     #[test]
@@ -886,4 +969,114 @@ mod tests {
         let config = Config::from_env().expect("Config should load");
         assert_eq!(config.password_min_length, 12);
     }
+
+    // --- Story 6.4 : test_mode + garde-fou bind public ---
+
+    #[test]
+    fn config_test_mode_defaults_to_false() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+
+        let config = Config::from_env().expect("Config should load");
+        assert!(!config.test_mode);
+    }
+
+    #[test]
+    fn config_test_mode_true_accepted_with_loopback_host() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "true");
+            env::set_var("KESH_HOST", "127.0.0.1");
+        }
+
+        let config = Config::from_env().expect("Config should load with loopback host");
+        assert!(config.test_mode);
+        assert_eq!(config.host, "127.0.0.1");
+    }
+
+    #[test]
+    fn config_test_mode_accepts_one_as_true() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "1");
+            // Set explicite pour éviter que `dotenvy::dotenv()` charge un
+            // `.env` local avec `KESH_HOST=0.0.0.0` (qui échouerait le
+            // garde-fou TestModeWithPublicBind).
+            env::set_var("KESH_HOST", "127.0.0.1");
+        }
+
+        let config = Config::from_env().expect("Config should load");
+        assert!(config.test_mode);
+    }
+
+    #[test]
+    fn config_test_mode_rejects_public_bind_0_0_0_0() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "true");
+            env::set_var("KESH_HOST", "0.0.0.0");
+        }
+
+        let result = Config::from_env();
+        match result {
+            Err(ConfigError::TestModeWithPublicBind { host }) => {
+                assert_eq!(host, "0.0.0.0");
+            }
+            other => panic!("expected TestModeWithPublicBind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_test_mode_rejects_ip_other_than_loopback() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "true");
+            env::set_var("KESH_HOST", "192.168.1.10");
+        }
+
+        let result = Config::from_env();
+        assert!(
+            matches!(result, Err(ConfigError::TestModeWithPublicBind { .. })),
+            "public IP must be rejected when test_mode=true, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn config_test_mode_accepts_ipv6_loopback() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "true");
+            env::set_var("KESH_HOST", "::1");
+        }
+
+        let config = Config::from_env().expect("::1 loopback must be accepted");
+        assert!(config.test_mode);
+    }
+
+    #[test]
+    fn config_test_mode_off_allows_public_bind() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "false");
+            env::set_var("KESH_HOST", "0.0.0.0");
+        }
+
+        let config = Config::from_env().expect("public bind OK when test_mode off");
+        assert!(!config.test_mode);
+        assert_eq!(config.host, "0.0.0.0");
+    }
+
 }

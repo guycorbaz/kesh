@@ -1,8 +1,13 @@
 import { test, expect } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 /**
  * Tests E2E — Mode Guidé/Expert (Story 2.5)
- * Requiert backend + frontend running avec onboarding complété.
+ * Prérequis backend (Story 6.4) : `KESH_TEST_MODE=true`.
  */
 
 test.describe('Mode toggle', () => {

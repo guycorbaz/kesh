@@ -32,7 +32,8 @@ tests/
 | `DATABASE_URL` | **oui** | — | URL MariaDB, format `mysql://user:pass@host:port/db` |
 | `KESH_JWT_SECRET` | **oui** | — | Clé HS256, **≥ 32 bytes**. Pas de valeur par défaut. |
 | `KESH_PORT` | non | `3000` | Port HTTP |
-| `KESH_HOST` | non | `0.0.0.0` | Interface d'écoute |
+| `KESH_HOST` | non | `127.0.0.1` | Interface d'écoute. Set `0.0.0.0` explicitement en prod (reverse proxy en front). **Incompatible avec `KESH_TEST_MODE=true` si non-loopback.** |
+| `KESH_TEST_MODE` | non | `false` | `true`/`1` active `/api/v1/_test/*` (seed/reset DB). **DEV/CI ONLY** — refuse le démarrage si combiné avec un `KESH_HOST` non-loopback. |
 | `KESH_ADMIN_USERNAME` | non | `admin` | Username du compte admin bootstrap (FR3) |
 | `KESH_ADMIN_PASSWORD` | non | `changeme` | Mot de passe admin bootstrap (logué en warning s'il vaut `changeme`) |
 | `KESH_JWT_EXPIRY_MINUTES` | non | `15` | Durée de vie de l'access token, borné `[1, 1440]` |

@@ -5,27 +5,28 @@
 //! Playwright (T6.4) — le repository-level couvre déjà la logique métier
 //! (24 tests `kesh-db::repositories::invoices`).
 //!
-//! Les helpers `force_validate_via_sql` court-circuitent `validate_invoice`
-//! pour ne pas dépendre d'un fiscal_year + company_invoice_settings
-//! complets — cohérent avec `kesh-db::repositories::invoices::tests`.
+//! Depuis Story 6.4 : seed via `kesh_db::test_fixtures::seed_accounting_company`
+//! + validation via `kesh_db::repositories::invoices::validate_invoice`
+//!   (aucun INSERT manuel ni UPDATE direct sur `invoices.status` — KF-001 closed).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::{NaiveDate, TimeDelta};
-use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
-use kesh_db::entities::company::{Language, NewCompany, OrgType};
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
-use kesh_db::repositories::{companies, contacts, invoices};
+use kesh_db::repositories::{contacts, invoices};
+use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;
 use serde_json::json;
 use sqlx::MySqlPool;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
-const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
+/// Password du user `admin` seedé par `seed_accounting_company`
+/// (cf. `kesh_db::test_fixtures::ADMIN_PASSWORD_HASH`).
+const TEST_ADMIN_PASSWORD: &str = "admin123";
 
 struct TestApp {
     base_url: String,
@@ -106,26 +107,15 @@ async fn login(app: &TestApp) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
+/// Seede une company comptablement complète via `test_fixtures::seed_accounting_company` :
+/// 1 company + 2 users Admin (`admin/admin123`, `changeme/changeme`) + fiscal_year
+/// 2020-2030 Open + 5 accounts + `company_invoice_settings` avec défauts.
+/// Retourne `(admin_user_id, company_id)`.
 async fn seed_base(pool: &MySqlPool) -> (i64, i64) {
-    ensure_admin_user(pool, &test_config()).await.unwrap();
-    let admin_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE role = 'Admin' LIMIT 1")
-        .fetch_one(pool)
+    let seeded = seed_accounting_company(pool)
         .await
-        .unwrap();
-    let company = companies::create(
-        pool,
-        NewCompany {
-            name: "TestCo".into(),
-            address: "Rue Test 1\n1000 Lausanne".into(),
-            org_type: OrgType::Pme,
-            ide_number: None,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .unwrap();
-    (admin_id, company.id)
+        .expect("seed_accounting_company");
+    (seeded.admin_user_id, seeded.company_id)
 }
 
 async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64) -> i64 {
@@ -150,9 +140,17 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64) -> i64 {
     .id
 }
 
-/// Crée un fiscal_year couvrant 2020-2030 + un journal_entry stub, puis
-/// bascule l'invoice en `validated`. Retourne `(invoice_id, version)`.
-async fn create_validated_invoice_via_sql(
+/// Crée une facture puis la valide via le flow normal
+/// (`kesh_db::repositories::invoices::validate_invoice`, équivalent in-process
+/// de `POST /api/v1/invoices/:id/validate`). Aucun INSERT manuel ni UPDATE
+/// direct sur `invoices.status` — KF-001 closed via Story 6.4.
+///
+/// Prérequis : `seed_accounting_company` doit avoir été appelé au préalable
+/// (fiscal_year Open + company_invoice_settings complet).
+///
+/// Retourne `(invoice_id, version)` — la version est lue depuis la facture
+/// validée, qui sert aux tests de verrouillage optimiste.
+async fn create_validated_invoice(
     pool: &MySqlPool,
     company_id: i64,
     contact_id: i64,
@@ -176,67 +174,12 @@ async fn create_validated_invoice_via_sql(
     };
     let (inv, _) = invoices::create(pool, admin_id, new).await.unwrap();
 
-    // Lazy-create fiscal_year for company.
-    let fy_id: i64 = if let Some((id,)) =
-        sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
-            .bind(company_id)
-            .fetch_optional(pool)
+    let validated =
+        kesh_db::repositories::invoices::validate_invoice(pool, company_id, inv.id, admin_id)
             .await
-            .unwrap()
-    {
-        id
-    } else {
-        let r = sqlx::query(
-            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-             VALUES (?, 'Test5.4', '2020-01-01', '2030-12-31', 'Open')",
-        )
-        .bind(company_id)
-        .execute(pool)
-        .await
-        .unwrap();
-        r.last_insert_id() as i64
-    };
+            .expect("validate_invoice");
 
-    // Insert minimal journal_entry.
-    let (max_n,): (Option<i64>,) = sqlx::query_as(
-        "SELECT MAX(entry_number) FROM journal_entries \
-         WHERE company_id = ? AND fiscal_year_id = ?",
-    )
-    .bind(company_id)
-    .bind(fy_id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    let next_n = max_n.unwrap_or(0) + 1;
-    let r = sqlx::query(
-        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
-         entry_date, journal, description) VALUES (?, ?, ?, CURDATE(), 'Ventes', 'stub-5.4-e2e')",
-    )
-    .bind(company_id)
-    .bind(fy_id)
-    .bind(next_n)
-    .execute(pool)
-    .await
-    .unwrap();
-    let je_id = r.last_insert_id() as i64;
-
-    sqlx::query(
-        "UPDATE invoices SET status = 'validated', journal_entry_id = ?, \
-         version = version + 1 WHERE id = ?",
-    )
-    .bind(je_id)
-    .bind(inv.id)
-    .execute(pool)
-    .await
-    .unwrap();
-
-    let (v,): (i32,) = sqlx::query_as("SELECT version FROM invoices WHERE id = ?")
-        .bind(inv.id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
-
-    (inv.id, v)
+    (validated.invoice.id, validated.invoice.version)
 }
 
 // --- Tests -------------------------------------------------------------------
@@ -259,7 +202,7 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
 
     // 1 validated unpaid + 1 draft (filtered out implicitement).
-    let _ = create_validated_invoice_via_sql(
+    let _ = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
@@ -319,7 +262,7 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
 async fn mark_paid_accepts_future_paid_at_returns_200(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (id, version) = create_validated_invoice_via_sql(
+    let (id, version) = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
@@ -389,7 +332,7 @@ async fn mark_paid_on_draft_invoice_returns_409(pool: MySqlPool) {
 async fn mark_paid_then_unmark_paid_round_trip(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (id, v) = create_validated_invoice_via_sql(
+    let (id, v) = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
@@ -435,7 +378,7 @@ async fn mark_paid_then_unmark_paid_round_trip(pool: MySqlPool) {
 async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let _ = create_validated_invoice_via_sql(
+    let _ = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
@@ -491,7 +434,7 @@ async fn mark_paid_rejects_paid_at_before_invoice_date(pool: MySqlPool) {
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     // Facture datée 2026-04-10 ; paid_at = 2026-04-01 → 9 jours avant, bien
     // au-delà de la tolérance de 1 jour (P2 review pass 1 G1).
-    let (id, version) = create_validated_invoice_via_sql(
+    let (id, version) = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
@@ -539,7 +482,7 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     // technique : T6 testcoverage extended).
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let _ = create_validated_invoice_via_sql(
+    let _ = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
@@ -580,7 +523,7 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
 async fn unmark_paid_on_never_paid_returns_400_already_unpaid(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (id, version) = create_validated_invoice_via_sql(
+    let (id, version) = create_validated_invoice(
         &pool,
         company_id,
         contact_id,

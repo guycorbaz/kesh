@@ -1,12 +1,17 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { seedTestState } from './helpers/test-state';
 
 /**
  * Tests E2E — Authentification & Accessibilité (Story 1.11)
  *
- * Ces tests nécessitent un backend Kesh fonctionnel sur localhost:3000.
- * En CI, le backend doit être démarré avant les tests E2E.
+ * Ces tests nécessitent un backend Kesh fonctionnel sur localhost:3000
+ * avec `KESH_TEST_MODE=true` (cf. Story 6.4).
  */
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 test.describe('Login', () => {
 	test('login réussi → redirection accueil, affichage header/sidebar', async ({ page }) => {

@@ -12,6 +12,7 @@ pub mod limits;
 pub mod onboarding;
 pub mod products;
 pub mod profile;
+pub mod test_endpoints;
 pub mod users;
 pub mod vat;
 

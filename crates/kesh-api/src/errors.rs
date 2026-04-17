@@ -495,10 +495,7 @@ impl IntoResponse for AppError {
                         // d'une couche non fiable). Fallback sur clé générique.
                         _ => {
                             tracing::warn!("invalid input code unknown to dispatch: {code}");
-                            (
-                                "error-invalid-input-generic".to_string(),
-                                "Entrée invalide",
-                            )
+                            ("error-invalid-input-generic".to_string(), "Entrée invalide")
                         }
                     };
                     build_response(StatusCode::BAD_REQUEST, "INVALID_INPUT", &t(&key, default))

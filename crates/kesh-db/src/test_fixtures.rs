@@ -30,16 +30,18 @@ use thiserror::Error;
 /// `Argon2::default()` = m=19456, t=2, p=1, variant Argon2id). Vérifiable
 /// via `crate::auth::password::verify_password("admin123", ADMIN_PASSWORD_HASH)`
 /// côté kesh-api.
-pub const ADMIN_PASSWORD_HASH: &str =
-    "$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4";
+pub const ADMIN_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4";
 
 /// Hash Argon2id pré-calculé du password `changeme`.
-pub const CHANGEME_PASSWORD_HASH: &str =
-    "$argon2id$v=19$m=19456,t=2,p=1$81LfElCxe1hOPUgMpSeZgQ$PVGb49qpxsepIv9NC+1fms5ROMCD3jueZLVcrW5yud0";
+pub const CHANGEME_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$81LfElCxe1hOPUgMpSeZgQ$PVGb49qpxsepIv9NC+1fms5ROMCD3jueZLVcrW5yud0";
 
 /// Identifiants des rows seedées par `seed_accounting_company`. Les champs
 /// pointent sur les `id` réels en base (auto-incrément MariaDB) pour que
 /// les tests puissent immédiatement s'en servir comme FK.
+///
+/// **Note** : `company_invoice_settings` n'a pas de colonne `id` (PK =
+/// `company_id`), donc cette table est accessible via `company_id` et
+/// n'est pas exposée dans `SeededCompany`.
 #[derive(Debug, Clone)]
 pub struct SeededCompany {
     pub company_id: i64,
@@ -48,7 +50,6 @@ pub struct SeededCompany {
     pub changeme_user_id: i64,
     /// Map `code` → `id` pour les 5 comptes seedés (1000, 1100, 2000, 3000, 4000).
     pub accounts: HashMap<&'static str, i64>,
-    pub company_invoice_settings_id: i64,
 }
 
 /// Erreurs spécifiques aux fixtures (`thiserror`-based, mappable vers
@@ -77,10 +78,11 @@ pub enum FixtureError {
 /// Retourne `SeededCompany` avec tous les IDs nécessaires pour les tests
 /// downstream.
 pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, FixtureError> {
-    // Company
+    // Company — adresse sur 2 lignes (line1 = rue, line2 = zip + ville) car
+    // la génération QR Bill exige les deux lignes (cf. test `invoice_pdf_e2e`).
     let company_result = sqlx::query(
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
-         VALUES ('CI Test Company', 'Test Address 1, 1000 Lausanne', 'Independant', 'FR', 'FR')",
+         VALUES ('CI Test Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
     )
     .execute(pool)
     .await?;
@@ -138,7 +140,9 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
 
     // Company invoice settings : default receivable = 1100 Banque, default
     // revenue = 3000 Ventes, default sales journal = Ventes (cf. AC #2 + #8).
-    let cis_result = sqlx::query(
+    // Note : PK = company_id, pas d'AUTO_INCREMENT — on s'appuie sur la FK
+    // pour retrouver la row.
+    sqlx::query(
         "INSERT INTO company_invoice_settings \
          (company_id, default_receivable_account_id, default_revenue_account_id, default_sales_journal) \
          VALUES (?, ?, ?, 'Ventes')",
@@ -148,7 +152,6 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     .bind(accounts["3000"])
     .execute(pool)
     .await?;
-    let company_invoice_settings_id = cis_result.last_insert_id() as i64;
 
     Ok(SeededCompany {
         company_id,
@@ -156,7 +159,6 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
         admin_user_id,
         changeme_user_id,
         accounts,
-        company_invoice_settings_id,
     })
 }
 
@@ -164,13 +166,21 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
 /// FK enfants → parents, avec `FOREIGN_KEY_CHECKS = 0` pour bypasser
 /// l'ordre strict. Réinitialise aussi les `AUTO_INCREMENT`.
 ///
+/// **Important** : utilise une connection unique acquise depuis le pool
+/// pour que `SET FOREIGN_KEY_CHECKS = 0` (session-scoped) reste actif
+/// sur toutes les requêtes TRUNCATE. Sans ça, sqlx peut multiplexer sur
+/// des connections distinctes et MariaDB refuse TRUNCATE sur une table
+/// référencée (erreur 1701).
+///
 /// **Inventaire validé** contre `crates/kesh-db/migrations/*.sql` au
 /// 2026-04-16. Si une table est ajoutée par une future migration, elle
 /// doit être ajoutée ici (le truncate ignorera silencieusement la
 /// nouvelle table → polluera les fixtures suivantes).
 pub async fn truncate_all(pool: &MySqlPool) -> Result<(), FixtureError> {
+    let mut conn = pool.acquire().await?;
+
     sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
     // Ordre : enfants (FK) → parents. invoice_number_sequences avant invoices
@@ -195,12 +205,12 @@ pub async fn truncate_all(pool: &MySqlPool) -> Result<(), FixtureError> {
     ];
     for table in tables {
         sqlx::query(&format!("TRUNCATE TABLE {table}"))
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
     }
 
     sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
     Ok(())
@@ -231,9 +241,11 @@ pub async fn mark_onboarding_complete(pool: &MySqlPool) -> Result<(), FixtureErr
     )
     .execute(pool)
     .await?;
-    sqlx::query("UPDATE onboarding_state SET step_completed = 10, ui_mode = 'guided' WHERE singleton = TRUE")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE onboarding_state SET step_completed = 10, ui_mode = 'guided' WHERE singleton = TRUE",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -310,11 +322,11 @@ mod tests {
         assert!(seeded.accounts.contains_key("1100"));
         assert!(seeded.accounts.contains_key("3000"));
 
-        // Company invoice settings : FK cohérence
+        // Company invoice settings : FK cohérence (PK = company_id).
         let cis_receivable: i64 = sqlx::query_scalar(
-            "SELECT default_receivable_account_id FROM company_invoice_settings WHERE id = ?",
+            "SELECT default_receivable_account_id FROM company_invoice_settings WHERE company_id = ?",
         )
-        .bind(seeded.company_invoice_settings_id)
+        .bind(seeded.company_id)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -324,9 +336,9 @@ mod tests {
         );
 
         let cis_revenue: i64 = sqlx::query_scalar(
-            "SELECT default_revenue_account_id FROM company_invoice_settings WHERE id = ?",
+            "SELECT default_revenue_account_id FROM company_invoice_settings WHERE company_id = ?",
         )
-        .bind(seeded.company_invoice_settings_id)
+        .bind(seeded.company_id)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -396,12 +408,11 @@ mod tests {
             .unwrap();
         assert_eq!(count, 1);
 
-        let username: String =
-            sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
-                .bind(user_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(username, "changeme");
     }
 
@@ -410,19 +421,21 @@ mod tests {
         seed_accounting_company(&pool).await.unwrap();
         mark_onboarding_complete(&pool).await.unwrap();
 
-        let step: i32 =
-            sqlx::query_scalar("SELECT step_completed FROM onboarding_state WHERE singleton = TRUE")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let step: i32 = sqlx::query_scalar(
+            "SELECT step_completed FROM onboarding_state WHERE singleton = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(step, 10);
     }
 
     #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn seed_contact_and_product_creates_both(pool: MySqlPool) {
         let seeded = seed_accounting_company(&pool).await.unwrap();
-        let (contact_id, product_id) =
-            seed_contact_and_product(&pool, seeded.company_id).await.unwrap();
+        let (contact_id, product_id) = seed_contact_and_product(&pool, seeded.company_id)
+            .await
+            .unwrap();
         assert!(contact_id > 0);
         assert!(product_id > 0);
 

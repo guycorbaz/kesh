@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { seedTestState } from './helpers/test-state';
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
 
 /**
  * Tests E2E — Factures brouillon (Story 5.1)

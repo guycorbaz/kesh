@@ -229,11 +229,7 @@ fn is_six_annex_c_char(c: char) -> bool {
     // Latin-1 supplément + Latin Ext-A : restreint aux lettres accentuées.
     // Exclut NBSP (00A0), soft hyphen (00AD), × (00D7), ÷ (00F7).
     let cp = c as u32;
-    if (0x00A1..=0x00FF).contains(&cp)
-        && cp != 0x00AD
-        && cp != 0x00D7
-        && cp != 0x00F7
-    {
+    if (0x00A1..=0x00FF).contains(&cp) && cp != 0x00AD && cp != 0x00D7 && cp != 0x00F7 {
         return true;
     }
     if (0x0100..=0x017F).contains(&cp) {
@@ -498,14 +494,8 @@ mod tests {
     fn build_qrr_rejects_zero_ids() {
         // C3 (review pass 1 G2 C) : IDs nuls produiraient un QRR tout-zéro
         // (refusé par les banques) — le rejet doit intervenir au build.
-        assert!(matches!(
-            build_qrr(0, 1),
-            Err(QrBillError::InvalidQrr(_))
-        ));
-        assert!(matches!(
-            build_qrr(1, 0),
-            Err(QrBillError::InvalidQrr(_))
-        ));
+        assert!(matches!(build_qrr(0, 1), Err(QrBillError::InvalidQrr(_))));
+        assert!(matches!(build_qrr(1, 0), Err(QrBillError::InvalidQrr(_))));
     }
 
     #[test]
@@ -533,7 +523,10 @@ mod tests {
         let check = compute_qrr_checksum(body).unwrap();
         let qrr = format!("{body}{check}");
         let data = sample_data_with_iban(IBAN_OK, Reference::Qrr(qrr));
-        assert!(matches!(validate(&data), Err(QrBillError::InvalidQrIban(_))));
+        assert!(matches!(
+            validate(&data),
+            Err(QrBillError::InvalidQrIban(_))
+        ));
     }
 
     #[test]
@@ -658,7 +651,10 @@ mod tests {
     #[test]
     fn amount_zero_rejected() {
         let data = sample_data(Decimal::ZERO);
-        assert!(matches!(validate(&data), Err(QrBillError::InvalidAmount(_))));
+        assert!(matches!(
+            validate(&data),
+            Err(QrBillError::InvalidAmount(_))
+        ));
     }
 
     #[test]
@@ -693,7 +689,10 @@ mod tests {
     #[test]
     fn amount_over_max_rejected() {
         let data = sample_data("1000000000.00".parse().unwrap());
-        assert!(matches!(validate(&data), Err(QrBillError::InvalidAmount(_))));
+        assert!(matches!(
+            validate(&data),
+            Err(QrBillError::InvalidAmount(_))
+        ));
     }
 
     fn sample_data(amount: Decimal) -> QrBillData {

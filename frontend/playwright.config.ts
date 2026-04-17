@@ -11,6 +11,10 @@ const config: PlaywrightTestConfig = {
 	},
 	testDir: 'tests/e2e',
 	testMatch: /(.+\.)?(test|spec)\.[jt]s/,
+	// Story 6.4 T7.7 : fail-fast si backend/KESH_TEST_MODE pas configuré.
+	// S'exécute une seule fois avant tous les workers (évite race condition
+	// vs un spec `_smoke` parallélisable).
+	globalSetup: './tests/e2e/global-setup.ts',
 	use: {
 		locale: 'fr-CH',
 		timezoneId: 'Europe/Zurich',
