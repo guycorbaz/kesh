@@ -6,21 +6,22 @@
  * destructive entre `beforeAll(seedTestState('fresh'))` et
  * `beforeAll(seedTestState('with-company'))` sur la même DB partagée).
  *
- * But : fail-fast si le backend n'est pas joignable AVANT que chaque spec
- * tente son propre `beforeAll: seedTestState(...)`. Le message d'erreur
- * liste les 4 prérequis (backend up, KESH_TEST_MODE, KESH_HOST loopback,
- * BACKEND_URL) pour que le dev voie tout de suite ce qui manque — cf.
- * NEW-H1 pass 4.
+ * But : **fail-fast check de connectivité** — valide que le backend est
+ * démarré, que `KESH_TEST_MODE` est actif, et que l'endpoint répond AVANT
+ * que chaque spec tente son propre `beforeAll: seedTestState(...)`. Le
+ * message d'erreur liste les 4 prérequis (backend up, `KESH_TEST_MODE`,
+ * `KESH_HOST` loopback, `KESH_BACKEND_URL`) pour que le dev voie tout de
+ * suite ce qui manque.
  *
- * Preset `with-company` choisi car non-destructif : chaque spec re-seed
- * son state propre par-dessus dans son `beforeAll`, sans surprise.
+ * **Pas une garantie d'état** (code review P10) : le preset `with-company`
+ * seedé ici est considéré comme un check "best-effort". Chaque spec est
+ * responsable de re-seeder son preset propre dans son `beforeAll` (ou
+ * `beforeEach` pour onboarding). Si `globalSetup` échoue partiellement
+ * (ex: truncate ok mais `mark_onboarding_complete` timeout), le spec
+ * suivant re-seedera son état propre et corrigera la dérive.
  */
 
 import { seedTestState } from './helpers/test-state';
-
-// `@types/node` n'est pas installé — déclaration ambient minimale pour que
-// `svelte-check` tolère l'usage de `process.env` (Playwright tourne sous Node).
-declare const process: { env: { readonly [key: string]: string | undefined } };
 
 async function globalSetup(): Promise<void> {
 	try {

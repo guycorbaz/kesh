@@ -162,6 +162,35 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     })
 }
 
+/// Liste des tables à truncate (code review P5).
+///
+/// Ordre : enfants (FK) → parents. `invoice_number_sequences` avant
+/// `invoices` (FK), `invoice_lines` avant `invoices` (FK), etc.
+///
+/// **Inventaire validé** contre `crates/kesh-db/migrations/*.sql`. Une
+/// future migration qui ajoute une table doit l'ajouter ici ; le test
+/// `truncate_all_inventory_matches_schema` (code review P5) compare
+/// cette liste vs `information_schema.TABLES` et échoue fort si un
+/// delta apparaît → force la mise à jour.
+pub(crate) const TABLES_TO_TRUNCATE: &[&str] = &[
+    "invoice_lines",
+    "journal_entry_lines",
+    "invoices",
+    "invoice_number_sequences",
+    "journal_entries",
+    "audit_log",
+    "company_invoice_settings",
+    "bank_accounts",
+    "accounts", // FK self-ref via parent_id
+    "products",
+    "contacts",
+    "fiscal_years",
+    "refresh_tokens",
+    "onboarding_state",
+    "users",
+    "companies",
+];
+
 /// Truncate toutes les tables (sauf `_sqlx_migrations`) dans l'ordre
 /// FK enfants → parents, avec `FOREIGN_KEY_CHECKS = 0` pour bypasser
 /// l'ordre strict. Réinitialise aussi les `AUTO_INCREMENT`.
@@ -172,10 +201,11 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
 /// des connections distinctes et MariaDB refuse TRUNCATE sur une table
 /// référencée (erreur 1701).
 ///
-/// **Inventaire validé** contre `crates/kesh-db/migrations/*.sql` au
-/// 2026-04-16. Si une table est ajoutée par une future migration, elle
-/// doit être ajoutée ici (le truncate ignorera silencieusement la
-/// nouvelle table → polluera les fixtures suivantes).
+/// **Cleanup garanti** (code review P3) : si un TRUNCATE échoue au
+/// milieu du flux, `SET FOREIGN_KEY_CHECKS = 1` est quand même exécuté
+/// avant que l'erreur ne remonte. Sans ce cleanup, une connection avec
+/// FK_CHECKS=0 serait rendue au pool et corromprait silencieusement la
+/// prochaine requête réutilisant cette connection.
 pub async fn truncate_all(pool: &MySqlPool) -> Result<(), FixtureError> {
     let mut conn = pool.acquire().await?;
 
@@ -183,37 +213,33 @@ pub async fn truncate_all(pool: &MySqlPool) -> Result<(), FixtureError> {
         .execute(&mut *conn)
         .await?;
 
-    // Ordre : enfants (FK) → parents. invoice_number_sequences avant invoices
-    // (FK), invoice_lines avant invoices (FK), etc.
-    let tables = [
-        "invoice_lines",
-        "journal_entry_lines",
-        "invoices",
-        "invoice_number_sequences",
-        "journal_entries",
-        "audit_log",
-        "company_invoice_settings",
-        "bank_accounts",
-        "accounts", // FK self-ref via parent_id
-        "products",
-        "contacts",
-        "fiscal_years",
-        "refresh_tokens",
-        "onboarding_state",
-        "users",
-        "companies",
-    ];
-    for table in tables {
-        sqlx::query(&format!("TRUNCATE TABLE {table}"))
-            .execute(&mut *conn)
-            .await?;
+    // Pattern try/finally async : on capture le résultat du truncate
+    // puis on restaure FK_CHECKS=1 AVANT de retourner l'erreur.
+    let truncate_result: Result<(), sqlx::Error> = async {
+        for table in TABLES_TO_TRUNCATE {
+            sqlx::query(&format!("TRUNCATE TABLE {table}"))
+                .execute(&mut *conn)
+                .await?;
+        }
+        Ok(())
     }
+    .await;
 
-    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+    // Restaurer FK_CHECKS=1 quoi qu'il arrive. On capture l'erreur de
+    // reset séparément pour ne pas masquer l'erreur originale du truncate
+    // (si les deux échouent, on remonte l'erreur du truncate qui est la
+    // cause racine, l'erreur de reset sera visible via tracing côté
+    // caller dans `map_err` de `kesh-api::routes::test_endpoints`).
+    let reset_err = sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
         .execute(&mut *conn)
-        .await?;
+        .await
+        .err();
 
-    Ok(())
+    match (truncate_result, reset_err) {
+        (Ok(()), None) => Ok(()),
+        (Err(e), _) => Err(FixtureError::Db(e)),
+        (Ok(()), Some(e)) => Err(FixtureError::Db(e)),
+    }
 }
 
 /// Insère seulement le user `changeme/changeme` (preset `fresh` — cf. AC #7).
@@ -232,17 +258,17 @@ pub async fn seed_changeme_user_only(pool: &MySqlPool) -> Result<i64, FixtureErr
 /// Marque l'`onboarding_state` singleton à `step_completed = 10` (preset
 /// `post-onboarding` / `with-company` — cf. AC #8). À appeler APRÈS
 /// `seed_accounting_company`.
+///
+/// **Atomique** (code review P8) : utilise `INSERT ... ON DUPLICATE KEY
+/// UPDATE` en une seule requête MariaDB, au lieu du pattern
+/// `INSERT IGNORE + UPDATE` précédent qui n'était pas atomique (race
+/// théorique entre deux callers concurrents — bénigne car ils écrivent
+/// la même valeur, mais autant éviter la fenêtre).
 pub async fn mark_onboarding_complete(pool: &MySqlPool) -> Result<(), FixtureError> {
-    // INSERT IGNORE : si la row existe déjà (singleton), on l'ignore puis on
-    // UPDATE. Singleton garanti par `uq_onboarding_singleton` UNIQUE constraint.
     sqlx::query(
-        "INSERT IGNORE INTO onboarding_state (singleton, step_completed, is_demo, ui_mode) \
-         VALUES (TRUE, 10, FALSE, 'guided')",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query(
-        "UPDATE onboarding_state SET step_completed = 10, ui_mode = 'guided' WHERE singleton = TRUE",
+        "INSERT INTO onboarding_state (singleton, step_completed, is_demo, ui_mode) \
+         VALUES (TRUE, 10, FALSE, 'guided') \
+         ON DUPLICATE KEY UPDATE step_completed = 10, is_demo = FALSE, ui_mode = 'guided'",
     )
     .execute(pool)
     .await?;
@@ -452,5 +478,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(product_name, "CI Product");
+    }
+
+    /// Code review P5 : garantit que `TABLES_TO_TRUNCATE` reste synchro
+    /// avec les migrations. Si une future migration ajoute une table,
+    /// ce test échoue immédiatement avec la liste du delta, forçant la
+    /// mise à jour de la const avant merge.
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    async fn truncate_all_inventory_matches_schema(pool: MySqlPool) {
+        // `sqlx::test` crée une DB éphémère par test — DATABASE() renvoie
+        // le nom de cette DB et non `kesh`. Cela capture aussi les tables
+        // ajoutées par les migrations dans l'exact contexte du test.
+        let db_tables: Vec<String> = sqlx::query_scalar(
+            "SELECT TABLE_NAME FROM information_schema.TABLES \
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_sqlx_migrations' \
+             ORDER BY TABLE_NAME",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("information_schema query");
+
+        let mut hardcoded: Vec<&str> = TABLES_TO_TRUNCATE.to_vec();
+        hardcoded.sort();
+        let mut from_db: Vec<String> = db_tables.clone();
+        from_db.sort();
+
+        let hardcoded_str: Vec<String> = hardcoded.iter().map(|s| s.to_string()).collect();
+
+        assert_eq!(
+            hardcoded_str, from_db,
+            "\nTABLES_TO_TRUNCATE désynchronisé avec information_schema :\n\
+             - tables DB : {from_db:?}\n\
+             - hardcoded : {hardcoded_str:?}\n\
+             → mettre à jour `TABLES_TO_TRUNCATE` dans `crates/kesh-db/src/test_fixtures.rs`"
+        );
     }
 }

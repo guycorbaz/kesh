@@ -275,14 +275,18 @@ async fn seed_rejects_invalid_preset(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    // serde rejette l'enum → Axum map vers 422 Unprocessable Entity par
-    // défaut. On accepte 4xx car le détail code est hors-scope AC #11
-    // (AC #11 demande « 400 Bad Request avec message clair » — l'important
-    // est que ça ne reach pas le handler et ne corrompt pas la DB).
-    let status = resp.status().as_u16();
+    // AC #11 : code review P1 — extracteur custom `SeedRequestExtractor`
+    // traduit le JsonRejection de serde en 400 Bad Request avec un message
+    // listant les presets valides (au lieu du 422 serde par défaut).
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let msg = body["error"].as_str().expect("error message");
     assert!(
-        (400..500).contains(&status),
-        "expected 4xx for invalid preset, got {status}"
+        msg.contains("fresh")
+            && msg.contains("post-onboarding")
+            && msg.contains("with-company")
+            && msg.contains("with-data"),
+        "error message must list valid presets, got: {msg}"
     );
 }
 

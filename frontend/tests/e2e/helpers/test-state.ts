@@ -25,30 +25,49 @@
 
 import { request as playwrightRequest, type APIRequestContext } from '@playwright/test';
 
-// `@types/node` n'est pas installé côté frontend — Playwright tourne pourtant
-// bien sous Node, donc `process` existe à l'exécution. Déclaration ambient
-// minimale pour que `svelte-check` (TypeScript) ne s'étouffe pas.
-declare const process: { env: { readonly [key: string]: string | undefined } };
-
 export type Preset = 'fresh' | 'post-onboarding' | 'with-company' | 'with-data';
 
-const BACKEND_URL = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000';
+/**
+ * Résout et valide l'URL backend (code review P9).
+ *
+ * Sans validation, `KESH_BACKEND_URL=""` ferait que `baseURL: ''` dans
+ * `newContext` accepte des POST relatifs contre le webServer Playwright
+ * (`:4173`) → erreurs opaques. On throw early avec un message clair.
+ */
+function resolveBackendUrl(): string {
+	const raw = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000';
+	const trimmed = raw.trim();
+	if (trimmed === '') {
+		throw new Error('KESH_BACKEND_URL est vide — attendu URL absolue (ex: http://127.0.0.1:3000).');
+	}
+	try {
+		// Lance TypeError si l'URL est malformée.
+		new URL(trimmed);
+	} catch {
+		throw new Error(
+			`KESH_BACKEND_URL="${trimmed}" n'est pas une URL valide — attendu ex: http://127.0.0.1:3000.`,
+		);
+	}
+	return trimmed;
+}
 
 /**
  * Truncate la DB backend puis seed l'état correspondant au preset.
  *
  * @throws {Error} si l'endpoint répond != 200 (KESH_TEST_MODE désactivé,
- *                 backend éteint, ou preset invalide).
+ *                 backend éteint, ou preset invalide), ou si
+ *                 `KESH_BACKEND_URL` est malformée.
  */
 export async function seedTestState(preset: Preset): Promise<void> {
-	const ctx: APIRequestContext = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
+	const backendUrl = resolveBackendUrl();
+	const ctx: APIRequestContext = await playwrightRequest.newContext({ baseURL: backendUrl });
 	try {
 		const res = await ctx.post('/api/v1/_test/seed', { data: { preset } });
 		if (!res.ok()) {
 			const body = await res.text().catch(() => '<no body>');
 			throw new Error(
 				`seedTestState(${preset}) failed: ${res.status()} ${res.statusText()} — ` +
-					`body: ${body} — KESH_TEST_MODE may not be enabled on backend ${BACKEND_URL}`,
+					`body: ${body} — KESH_TEST_MODE may not be enabled on backend ${backendUrl}`,
 			);
 		}
 	} finally {

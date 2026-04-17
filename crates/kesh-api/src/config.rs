@@ -27,6 +27,11 @@ pub enum ConfigError {
     /// `-p 3000:3000` avec bind interne `0.0.0.0` expose la route au
     /// réseau hôte (cf. décision pass 2 / N3).
     TestModeWithPublicBind { host: String },
+    /// `KESH_TEST_MODE` présent mais pas `"true"` / `"1"` / vide (code
+    /// review P7). Au lieu du warn + défaut `false` silencieux, on refuse
+    /// explicitement pour éviter qu'un opérateur ayant tapé `"True"` ou
+    /// `"yes"` croie test_mode activé alors que l'endpoint est 404.
+    InvalidTestModeValue { got: String },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -58,6 +63,16 @@ impl std::fmt::Display for ConfigError {
                      publiquement. Utiliser KESH_HOST=127.0.0.1 (ou ::1, localhost). \
                      0.0.0.0 est rejeté (Docker -p expose au réseau hôte).",
                     host
+                )
+            }
+            ConfigError::InvalidTestModeValue { got } => {
+                write!(
+                    f,
+                    "KESH_TEST_MODE='{}' non reconnu — valeurs acceptées : \
+                     'true', '1' (actif), ou vide/absente (inactif). \
+                     'True', 'TRUE', 'yes', 'on', etc. sont explicitement refusés \
+                     pour éviter les ambiguïtés de configuration.",
+                    got
                 )
             }
         }
@@ -256,10 +271,26 @@ impl Config {
         self
     }
 
-    /// Builder non-breaking pour activer `test_mode` sur un Config existant
-    /// (utilisé par les tests d'intégration qui montent l'endpoint
-    /// `/api/v1/_test/*`). Cf. Story 6.4 AC #6.
+    /// Builder **test-only** (cf. `#[doc(hidden)]`) pour activer
+    /// `test_mode` sur un Config existant — utilisé par les tests
+    /// d'intégration qui montent l'endpoint `/api/v1/_test/*`. Cf. Story
+    /// 6.4 AC #6.
+    ///
+    /// **Panique** (code review P6) si `enabled == true` **et** `host`
+    /// n'est pas loopback — miroir du garde-fou runtime `from_env`.
+    /// Empêche qu'un caller de `from_fields_for_test` muté avec
+    /// `host = "0.0.0.0"` active silencieusement `test_mode` en bypassant
+    /// le check. La panic est intentionnelle et acceptable ici : le
+    /// builder est `#[doc(hidden)]`, ne doit jamais être appelé depuis
+    /// un chemin de production.
+    #[doc(hidden)]
     pub fn with_test_mode(mut self, enabled: bool) -> Self {
+        if enabled && !is_loopback_host(&self.host) {
+            panic!(
+                "with_test_mode(true) exige un bind loopback — host actuel: '{}' (interdit, cf. ConfigError::TestModeWithPublicBind)",
+                self.host
+            );
+        }
         self.test_mode = enabled;
         self
     }
@@ -500,16 +531,15 @@ impl Config {
         tracing::info!("Locale instance : {}", locale);
 
         // --- Story 6.4 : mode test (endpoints /api/v1/_test/*) ---
+        // Parsing strict (code review P7) : seules `"true"` et `"1"`
+        // sont acceptées comme vérité. Toute autre valeur non vide
+        // (ex: `"True"`, `"yes"`, `" true"`) est rejetée avec une
+        // erreur explicite — évite qu'un opérateur croie test_mode
+        // actif alors que l'endpoint est 404.
         let test_mode = match env::var("KESH_TEST_MODE") {
             Ok(val) if val == "true" || val == "1" => true,
             Ok(val) if val.is_empty() => false,
-            Ok(val) => {
-                tracing::warn!(
-                    "KESH_TEST_MODE='{}' non reconnu (attendu 'true' ou '1'), désactivé par défaut",
-                    val
-                );
-                false
-            }
+            Ok(val) => return Err(ConfigError::InvalidTestModeValue { got: val }),
             Err(_) => false,
         };
 
@@ -548,11 +578,37 @@ impl Config {
 
 /// Teste si le host est une adresse loopback stricte.
 ///
-/// Acceptés : `127.0.0.1`, `::1`, `localhost`. **`0.0.0.0` est explicitement
-/// rejeté** car en Docker `-p 3000:3000` avec bind interne `0.0.0.0` expose
-/// la route au réseau hôte. Cf. décision H1 + N3 review pass 2.
+/// Accepte :
+///
+/// - `localhost` / `Localhost` / `LOCALHOST` / `localhost.` (case-insensitive + trailing dot FQDN, RFC 1035 hostname matching — code review pass 2 E5 pour compat Windows où `.env` et shell traitent les hostnames case-insensitive).
+/// - Toute adresse qui parse via `IpAddr` et dont `is_loopback()` est vrai (127.0.0.0/8, ::1). Supporte les IPv6 bracketés (`[::1]`) et les zone IDs (`::1%eth0`).
+///
+/// **`0.0.0.0` est explicitement rejeté** car en Docker `-p 3000:3000`
+/// avec bind interne `0.0.0.0` expose la route au réseau hôte.
+/// `0.0.0.0` ne passe pas `is_loopback()` (c'est `is_unspecified()`).
+///
+/// **Note sur `localhost`** (code review P4) : accepter la chaîne littérale
+/// `localhost` reste pragmatique pour les devs, mais une configuration
+/// DNS / `/etc/hosts` compromise pourrait résoudre `localhost` vers une
+/// IP non-loopback. Le risque est atténué par le fait que `KESH_TEST_MODE`
+/// est gated par env-var (opt-in explicite).
 fn is_loopback_host(host: &str) -> bool {
-    matches!(host, "127.0.0.1" | "::1" | "localhost")
+    // RFC 1035 : hostname matching case-insensitive. Trailing dot FQDN accepté.
+    let normalized = host.strip_suffix('.').unwrap_or(host);
+    if normalized.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    // Strip brackets IPv6 : `[::1]` → `::1`.
+    let stripped = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
+    // Strip zone ID IPv6 link-local : `fe80::1%eth0` → `fe80::1`.
+    let without_zone = stripped.split('%').next().unwrap_or(stripped);
+    match without_zone.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        Err(_) => false,
+    }
 }
 
 /// Helpers de construction de `Config` pour les tests unitaires.
@@ -1070,7 +1126,7 @@ mod tests {
         reset_env();
         set_minimum_required();
         unsafe {
-            env::set_var("KESH_TEST_MODE", "false");
+            env::set_var("KESH_TEST_MODE", "");
             env::set_var("KESH_HOST", "0.0.0.0");
         }
 
@@ -1079,4 +1135,109 @@ mod tests {
         assert_eq!(config.host, "0.0.0.0");
     }
 
+    /// Code review P7 : parsing strict de `KESH_TEST_MODE`. Les variantes
+    /// `"True"`, `"yes"`, `" true"` ne doivent PAS être silencieusement
+    /// interprétées comme `false` — elles produisent `InvalidTestModeValue`
+    /// pour éviter l'ambiguïté "je pensais que test_mode était actif".
+    #[test]
+    fn config_test_mode_rejects_capital_true_value() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "True");
+        }
+
+        let result = Config::from_env();
+        match result {
+            Err(ConfigError::InvalidTestModeValue { got }) => assert_eq!(got, "True"),
+            other => panic!("expected InvalidTestModeValue, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_test_mode_rejects_yes() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_TEST_MODE", "yes");
+        }
+
+        let result = Config::from_env();
+        assert!(
+            matches!(result, Err(ConfigError::InvalidTestModeValue { .. })),
+            "`yes` should be rejected, got {result:?}"
+        );
+    }
+
+    /// Code review P4 + pass 2 E5 : `is_loopback_host` reconnaît IPv6
+    /// bracketé, zone ID, et `localhost` case-insensitive + trailing dot.
+    #[test]
+    fn is_loopback_host_accepts_ipv6_variants() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("::1"));
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("[::1]"), "bracketed IPv6 loopback");
+        assert!(is_loopback_host("127.0.0.2"), "any 127.0.0.0/8 is loopback");
+        // Pass 2 E5 : RFC 1035 hostname case-insensitive + trailing dot FQDN.
+        assert!(is_loopback_host("Localhost"), "case-insensitive localhost");
+        assert!(is_loopback_host("LOCALHOST"), "case-insensitive localhost");
+        assert!(is_loopback_host("localhost."), "trailing dot FQDN");
+        assert!(
+            is_loopback_host("LocalHost."),
+            "case-insensitive + trailing dot"
+        );
+        // Rejets explicites.
+        assert!(!is_loopback_host("0.0.0.0"));
+        assert!(!is_loopback_host("192.168.1.1"));
+        assert!(!is_loopback_host("::"), "unspecified IPv6 must be rejected");
+        assert!(
+            !is_loopback_host("localhost.evil.com"),
+            "FQDN with domain suffix must be rejected"
+        );
+    }
+
+    /// Code review P6 : `with_test_mode(true)` doit paniquer si host
+    /// n'est pas loopback — miroir du garde-fou runtime.
+    #[test]
+    #[should_panic(expected = "with_test_mode(true) exige un bind loopback")]
+    fn with_test_mode_panics_on_public_host() {
+        // Construit un Config via from_fields_for_test (host="127.0.0.1"
+        // par défaut) puis mute le host pour simuler un caller fautif.
+        let mut config = Config::from_fields_for_test(
+            "mysql://test:test@localhost:3306/test".to_string(),
+            "admin".to_string(),
+            "admin123".to_string(),
+            TEST_JWT_SECRET.to_string(),
+            TimeDelta::minutes(15),
+            TimeDelta::days(30),
+            TimeDelta::minutes(15),
+            TimeDelta::minutes(15),
+            100,
+            TimeDelta::minutes(30),
+            12,
+        );
+        config.host = "0.0.0.0".to_string();
+        let _ = config.with_test_mode(true);
+    }
+
+    #[test]
+    fn with_test_mode_ok_on_loopback() {
+        let config = Config::from_fields_for_test(
+            "mysql://test:test@localhost:3306/test".to_string(),
+            "admin".to_string(),
+            "admin123".to_string(),
+            TEST_JWT_SECRET.to_string(),
+            TimeDelta::minutes(15),
+            TimeDelta::days(30),
+            TimeDelta::minutes(15),
+            TimeDelta::minutes(15),
+            100,
+            TimeDelta::minutes(30),
+            12,
+        )
+        .with_test_mode(true);
+        assert!(config.test_mode);
+    }
 }
