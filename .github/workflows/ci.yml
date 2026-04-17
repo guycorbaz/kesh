@@ -58,6 +58,41 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Les tests `kesh-db::repositories::*` (pré-Story-6-4, 84 tests) se
+      # connectent directement à DATABASE_URL au lieu d'utiliser `#[sqlx::test]`.
+      # Ils exigent donc que la DB `kesh` ait ses migrations appliquées + 1
+      # company + 1 admin user seedés. Les tests d'intégration plus récents
+      # (*_e2e.rs) utilisent `#[sqlx::test]` → DB éphémère auto-setup, pas
+      # impactés par cette step. Remédiation pérenne (hors scope Story 6-4) :
+      # refactorer les 84 tests pour `#[sqlx::test(migrator = "crate::MIGRATOR")]`.
+      - name: Install mariadb-client
+        run: sudo apt-get install -y mariadb-client
+
+      - name: Apply migrations to kesh DB
+        run: |
+          for migration in crates/kesh-db/migrations/*.sql; do
+            echo ">>> Applying $(basename "$migration")"
+            mariadb -h 127.0.0.1 -u root -pkesh_root kesh < "$migration"
+          done
+
+      - name: Seed CI fixtures (company + admin user)
+        # Argon2id hashes pré-calculés dans crates/kesh-db/src/test_fixtures.rs
+        # — `admin/admin123` et `changeme/changeme`, validés par le helper
+        # `seed_accounting_company`. Voir ADMIN_PASSWORD_HASH et
+        # CHANGEME_PASSWORD_HASH dans test_fixtures.rs pour la source.
+        run: |
+          mariadb -h 127.0.0.1 -u root -pkesh_root kesh <<'SQL'
+          INSERT INTO companies (name, address, org_type, accounting_language, instance_language)
+          VALUES ('CI Seed Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR');
+          INSERT INTO users (username, password_hash, role, active)
+          VALUES (
+            'admin',
+            '$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4',
+            'Admin',
+            TRUE
+          );
+          SQL
+
       - name: cargo test
         # --test-threads=1 : tests share global state (i18n, error locale) and
         # require serial execution within each binary.
