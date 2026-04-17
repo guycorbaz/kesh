@@ -182,6 +182,10 @@ jobs:
       RUST_LOG: info
       # Story 6.4 : active `/api/v1/_test/*` pour les fixtures Playwright.
       KESH_TEST_MODE: "true"
+      # Rate limiter élargi pour Playwright : 80 tests × 2 workers = ~160 logins
+      # depuis 127.0.0.1 (même IP). Défaut 5/15min bloquerait la CI après 5 tests.
+      KESH_RATE_LIMIT_MAX_ATTEMPTS: "1000"
+      KESH_RATE_LIMIT_WINDOW_MINUTES: "60"
     steps:
       - uses: actions/checkout@v4
 
