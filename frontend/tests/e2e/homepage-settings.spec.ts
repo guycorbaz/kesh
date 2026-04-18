@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { seedTestState } from './helpers/test-state';
 
 /**
@@ -40,5 +41,21 @@ test.describe('Settings', () => {
 		await expect(page.getByText('Comptabilité')).toBeVisible();
 		await expect(page.getByText('Comptes bancaires')).toBeVisible();
 		await expect(page.getByText('Utilisateurs')).toBeVisible();
+	});
+});
+
+test.describe('Homepage — accessibilité', () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto('/login');
+		await page.fill('#username', 'changeme');
+		await page.fill('#password', 'changeme');
+		await page.click('button[type="submit"]');
+	});
+
+	test('axe-core sans violations sur la page d\'accueil', async ({ page }) => {
+		await expect(page).toHaveURL('/');
+		await page.waitForLoadState('networkidle');
+		const results = await new AxeBuilder({ page }).analyze();
+		expect(results.violations).toEqual([]);
 	});
 });

@@ -1,6 +1,6 @@
 # Kesh
 
-[![CI](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml/badge.svg)](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml)
+[![CI](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml)
 [![Release](https://github.com/guycorbaz/kesh/actions/workflows/release.yml/badge.svg)](https://github.com/guycorbaz/kesh/actions/workflows/release.yml)
 [![License: EUPL 1.2](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12)
 [![Rust](https://img.shields.io/badge/rust-1.85-orange.svg)](https://www.rust-lang.org/)
