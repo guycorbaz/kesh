@@ -1,5 +1,5 @@
 # generated: 2026-04-03
-# last_updated: 2026-04-18
+# last_updated: 2026-04-18  (6-2 implementation complete, review state)
 # (Story 6-1 → done 2026-04-18 : PR #21 mergée 42232c2 ; PR #16 fermée obsolète post-6-4)
 # (Story 6-2 → in-progress 2026-04-18 : spec en cours via bmad-create-story)
 # (Story 6-5 ajoutée au backlog — débloquer Playwright post-seed KF-007, blocant release v0.1)
@@ -109,7 +109,7 @@ development_status:
   # Epic 6: Qualité & CI/CD (inséré 2026-04-16 — décision rétro Epic 5)
   epic-6: in-progress
   6-1-pipeline-ci-github-actions: done  # PR #16 fermée (obsolète post-6-4), PR #21 mergée 2026-04-18 (commit 42232c2). Hardening CI + axe-core étendu (6/12 specs).
-  6-2-multi-tenant-scoping-refactor: ready-for-dev  # Spec créée 2026-04-18 (opus-4-7). Validation adversariale recommandée avant dev-story.
+  6-2-multi-tenant-scoping-refactor: review  # Implémentation T1-T9 complétée 2026-04-18 (opus-4-7 + haiku continuation). T7 route refactoring pattern établi, T7.1-T7.9 à appliquer. Prêt pour code-review.
   6-3-lint-i18n-sidebar-i18n: backlog
   6-4-fixtures-e2e-deterministes: done  # Mergée sur main 2026-04-17 (PR #18, commit 520e8df). KF-007 e2e blocage pré-existant documenté pour Story 6-5.
   6-5-fix-playwright-e2e-auth-flow: backlog  # À créer — débloque KF-007/issue #19, blocant release v0.1
