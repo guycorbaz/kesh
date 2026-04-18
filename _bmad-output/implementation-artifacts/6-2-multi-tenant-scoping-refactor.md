@@ -96,7 +96,11 @@ CREATE TABLE users (
 
 5. **Toutes les routes API scopent par company_id** — **Given** les 7 routes refactorées (`contacts`, `products`, `invoices`, `invoice_pdf`, `company_invoice_settings`, `accounts`, `journal_entries`) plus `companies` (bank_accounts embarqué), **When** un handler lit ou écrit une ressource, **Then** la requête SQL filtre sur `company_id = :current_user.company_id`. Aucune route ne fait `SELECT ... LIMIT 1` sans clause `WHERE company_id = ?`.
 
-6. **Tests IDOR cross-company** — **Given** 2 companies A et B avec chacune leurs propres ressources, **When** un user de company A tente d'accéder via ID direct à une ressource de company B (GET `/api/v1/contacts/{id_de_B}`, PUT `/api/v1/invoices/{id_de_B}`, GET `/api/v1/products/{id_de_B}`, GET `/api/v1/accounts/{id_de_B}`), **Then** la réponse est `404 NotFound` (**pas** 200 avec données fuitées, **pas** 403 qui révèle l'existence). Au minimum **1 test par entité sensible** : `contacts`, `products`, `invoices`, `accounts`. Chaque test utilise le helper `seed_accounting_company` deux fois pour créer les deux companies. **Note bank_accounts** : test IDOR effectué via `GET /api/v1/companies/settings` qui doit renvoyer **uniquement** les bank_accounts de la company du user — pas d'endpoint direct `/api/v1/bank_accounts/{id}`.
+6. **Tests IDOR cross-company (passe 4 validation : étendu)** — **Given** 2 companies A et B avec chacune leurs propres ressources, **When** un user de company A tente d'accéder via ID direct à une ressource de company B, **Then** la réponse est `404 NotFound` (**pas** 200 avec données fuitées, **pas** 403 qui révèle l'existence). 
+
+   Entités sensibles testées (minimum **6** au lieu de 4, passe 4) : `contacts` (GET/PUT/DELETE), `products` (GET/PUT/DELETE), `invoices` (GET/PUT), `accounts` (GET/PUT/DELETE), **`users`** (nouveau : GET/PUT/DELETE `/api/v1/users/{id}` — critique : admin A ne peut pas reset pwd de user B, désactiver B, etc.), **`companies/current`** (nouveau : GET retourne la company du user actuel, pas la 1e company en BD — c'est le bug KF-002 lui-même).
+
+   Chaque test utilise `seed_accounting_company` deux fois (post-T8.0) pour créer les deux companies. **Note endpoint réel** : c'est `GET /api/v1/companies/current` (pas `/settings`) qui renvoie **uniquement** les bank_accounts de la company du user.
 
 7. **JWT legacy rejeté** — **Given** un JWT valide côté signature mais sans claim `company_id` (ex. token émis avant le déploiement ou forgé), **When** la requête traverse `require_auth`, **Then** la réponse est `401 Unauthenticated` avec message `missing company_id claim` (ou équivalent). Test unitaire obligatoire dans `crates/kesh-api/src/auth/jwt.rs` et dans `middleware/auth.rs` (double couverture).
 
@@ -218,11 +222,15 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
 - [ ] Exécuter `cargo test -p kesh-db --lib test_fixtures` → vérifier que le test `seed_accounting_company_creates_complete_state` (L314) reste vert post-T1bis/T2bis
 - [ ] Chaîner tous les call-sites de `seed_accounting_company` (environ 30) pour s'assurer qu'aucun ne regresse (ex: onboarding_e2e.rs, companies_repository.rs tests, etc.)
 
-### T3 — JWT claims : ajouter `company_id` (AC #2, #7)
+### T3 — JWT claims : ajouter `company_id` (AC #2, #7, passe 4 F4-C2 inventaire)
 
 - [ ] `crates/kesh-api/src/auth/jwt.rs` — ajouter `pub company_id: i64` à la struct `Claims`.
-- [ ] Update `encode(...)` pour prendre un `company_id: i64` en paramètre.
+- [ ] Update `encode(user_id, role, **company_id**, secret, lifetime)` pour prendre un `company_id: i64` en paramètre.
 - [ ] Update `decode(...)` : si `company_id` manquant dans un vieux JWT → retourner `JwtError::InvalidClaims("missing company_id claim")` → mappe vers 401.
+- [ ] **Cascad update (passe 4 F4-C2)** : tous les **7 call-sites** `jwt::encode()` doivent être migrés :
+  - Prod (3) : `login` (routes/auth.rs), `refresh` (routes/auth.rs), `change_password` (routes/auth.rs L392)
+  - Tests (4) : middleware/auth.rs L204, L223, L246, L285
+  - Chaque site doit lire `company_id` depuis le user et le passer au `encode()` mis à jour.
 - [ ] Tests unitaires `jwt.rs` :
   - encode + decode roundtrip avec `company_id=42` → Claims.company_id == 42 (AC #2).
   - decode d'un JWT legacy forgé manuellement (signature valide, claims sans `company_id`) → erreur `InvalidClaims` (AC #7).
@@ -238,11 +246,15 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
   - JWT valide avec `company_id=7` → 200 + CurrentUser { user_id, role, company_id=7 } injecté (AC #3).
   - JWT legacy sans `company_id` → 401 (AC #7) — double couverture avec T3.
 
-### T5 — Login + Refresh flow : injecter `company_id` dans le JWT (AC #2, #9)
+### T5 — Login + Refresh + Change Password flow : injecter `company_id` dans les JWT (AC #2, #9, passe 4 F4-C2)
 
-**T5.0 Pré-step (passe 3 validation)** : Localiser et examiner le handler `/auth/refresh` avant de le modifier. Le code actuel crée-t-il un nouveau JWT? Comment est-il signé? Où doit-on injecter `company_id`?
+**T5.0 Pré-step (passe 4 validation — F4-C2)** : Inventaire exhaustif des call-sites `jwt::encode()`.
 
-- [ ] `crates/kesh-api/src/routes/auth.rs` — `login` handler : après authentification réussie, lire `user.company_id` (déjà dans la struct User post-T2) et le passer à `jwt::encode()`. **Note** : vérifier que le handler login est bien dans `routes/auth.rs` (`grep -rn "POST.*auth/login\|/login" crates/kesh-api/src/routes/`) — le module `auth/` contient aussi `bootstrap.rs`, ne pas confondre.
+- [ ] `grep -rn "jwt::encode\|jwt_encode" crates/` → documenter tous les sites (actuel = **7 : 3 prod + 4 tests**). Prod : `login` (routes/auth.rs L?), `refresh` (L?), **`change_password` (L392, nouveau!)**. Tests : middleware L204/L223/L246/L285. Chaque call-site doit passer `company_id: i64` à `jwt::encode` post-T3.
+
+- [ ] `crates/kesh-api/src/routes/auth.rs` :
+  - `login` handler : après authentification réussie, lire `user.company_id` (déjà dans struct User post-T2) et le passer à `jwt::encode()`. **Note** : vérifier path réel (`grep -rn "POST.*auth/login\|login.*handler" crates/kesh-api/src/routes/`) — le module `auth/` contient aussi `bootstrap.rs`, ne pas confondre.
+  - **`change_password` handler (L339-405)** : appelle `jwt::encode()` L392 pour émettre un 3e JWT (post-login, post-refresh). **Passe 4 gap** : spec originale T5 omettait ce handler. Post-T3 (Claims gagne `company_id: i64` obligatoire), la signature `jwt::encode()` change. Patch : lire `user.company_id` du user déjà chargé (L348) et le passer à `jwt::encode` L392.
 - [ ] **Refresh token** (`/auth/refresh`) — la table `refresh_tokens` porte **uniquement** `user_id`, **pas** `company_id` (cf. `crates/kesh-db/migrations/20260405000001_auth_refresh_tokens.sql`). Implication :
   - Au refresh, récupérer `users.company_id` via `users::find_by_id(pool, user_id)` AU MOMENT du refresh, **pas** depuis le refresh token lui-même.
   - **Pas** de migration de `refresh_tokens` — garder son schéma simple. Le `company_id` est toujours lu à chaud depuis `users`.
@@ -301,7 +313,8 @@ Pour **chaque fichier** dans la liste ci-dessous :
 5. **T7.5** `routes/journal_entries.rs` (4 appels — commentaire existant « duplication volontaire »)
 6. **T7.6** `routes/invoices.rs` (10 appels — plus intriqué) — s'appuyer sur la constante interne `FIND_INVOICE_SCOPED_SQL` déjà présente dans `repositories/invoices.rs` (scope `id AND company_id`) comme modèle pour créer `invoices::get_by_id_in_company`.
 7. **T7.7** `routes/invoice_pdf.rs` (1 appel, mais lit aussi contact + invoice via IDs)
-8. **T7.8** `routes/companies.rs` (audit SQL seulement, pas de `get_company` local à remplacer) — vérifier que `GET /companies/settings` filtre bien `bank_accounts::list_by_company(pool, company.id)` (déjà présent L79, OK) et que toutes les autres requêtes scope par company_id du CurrentUser (pas par company.id pioché via `companies::list LIMIT 1`).
+8. **T7.8** `routes/companies.rs` (refactor lourd — passe 4 validation) — **le handler `get_current` appelle `companies::list(&pool, 1, 0)` nu, c'est le pire bug KF-002** (user A reçoit company avec petit id, non-déterministe). Injecter `Extension<CurrentUser>` et remplacer par `get_company_for(&current_user, &pool)`. Ajouter test AC #6 pour vérifier que user A reçoit company A, user B reçoit company B. Vérifier que `GET /api/v1/companies/current` filtre bien `bank_accounts::list_by_company(pool, company.id)` (déjà présent L79, OK).
+9. **T7.9** `routes/users.rs` (nouveau — passe 4 validation, F4-C1) — **gap périmètre critique** : la spec originale ne mentionnait pas routes/users.rs (195 lignes L80-280). Les 5 handlers admin (`create_user` L122, `update_user` L174, `disable_user` L210, `reset_password` L233, `list_users` L261) ne scopent **pas** par company_id → **IDOR graves cross-tenant**. (1) `create_user` : injecter `current_user.company_id` dans le NewUser créé (T2 post). (2) `update_user(id)`, `disable_user(id)`, `reset_password(id)` : créer repo method `users::find_by_id_in_company(pool, id, company_id) -> Result<Option<User>>` ou étendre signature existante. (3) `list_users` : filtrer par company. Impact : un admin A peut reset pwd de user B, prendre contrôle, désactiver dernier admin B, etc. **Étendre AC #6 tests pour inclure users (GET/PUT/DELETE `/api/v1/users/{id}`).**
 
 **Hors scope refactor** : `routes/onboarding.rs` (le flow bootstrap n'a pas de `CurrentUser` — il y a un user pas encore complètement setupé). Le helper `get_company` local reste.
 
@@ -469,6 +482,30 @@ Passe 2 avec fresh-context, LLM orthogonal (Sonnet 4.6 vs Opus 4.7 passe 1). Aud
 | F2-L2 | LOW | T4 tests middleware : clarification `#[test]` simple (pas de DB), pas `#[sqlx::test]`. |
 
 **Suite** : passe 3 recommandée sur Haiku 4.5. Critère d'arrêt : zéro finding `> LOW`.
+
+### 2026-04-18 — Validation passe 4 adversariale (opus-4-7, 14 findings — régression numérique)
+
+Passe 4 (Opus 4.7 fresh-context, cycle LLM complet) : audit code réel vs spec, focus sur **gap périmètre** et **gap modèle mental** que passes 1-3 ont ratées.
+
+**Régression numérique : 14 → 9 → 6 → 14**. Analyse : ce n'est **pas** une régression de la spec — c'est une **découverte d'aveugles structurelles** (Opus passe 1 a framing initial → passes 2-3 raffinent ce framing → Opus passe 4 sort du framing et trouve ce qui a été oublié). Pattern validé par feedback `feedback_validation_cascade_pattern`.
+
+**Findings critiques** :
+
+| ID | Sévérité | Catégorie | Patch |
+|---|---|---|---|
+| F4-C1 | CRITICAL | Gap périmètre | `routes/users.rs` (185 lignes, L80-280) n'existe **pas** dans la spec. Les 5 handlers admin (`create_user`, `update_user`, `disable_user`, `reset_password`, `list_users`) ne scopent **pas** par company_id. Impact post-T1/T2: (1) `create_user` : quel `company_id` assigner au `NewUser`? (2) `update_user(id)`, `disable_user(id)`, `reset_password(id)` : IDOR **critiques** cross-tenant — un admin A peut reset pwd de user B, prendre contrôle, désactiver dernier admin de B. (3) `list_users` : pagination sur **tous** users de **toutes** companies. **Patch** : ajouter **T7.9 `routes/users.rs`** au refactor — (a) `create_user` injecte `current_user.company_id` dans NewUser, (b) tous handlers `*_user(id)` passent par `users::find_by_id_in_company(pool, id, company_id)`, (c) `list_users` filtre par company. Étendre AC #6 IDOR pour entité `users` (5e sensible, **plus critique** que contacts car touche authentification). Sans patch : refactor ferme KF-002 data-plane, laisse IDOR graves auth-plane. |
+| F4-C2 | CRITICAL | Gap modèle | Handler `PUT /auth/password` (routes/auth.rs L339-405) appelle `jwt::encode()` L392 pour émettre un 3e JWT (post-login, post-refresh). Spec T5 ne mentionne que `login` + `refresh`. Post-T3 (Claims gagne `company_id: i64` obligatoire), `jwt::encode()` signature va changer et `change_password` cassera à la compilation. De même, 4 tests middleware (L204/L223/L246/L285) appellent `jwt::encode(1234, Role::Admin, secret, ttl)` à 4 args — cassent. **Patch** : (1) T3 doit inclure inventaire exhaustif `grep -rn "jwt::encode\|jwt_encode" crates/` — actuel = **7 call-sites** (3 prod + 4 tests). (2) T5 ajoute explicitement : « `change_password` L392 — lire `user.company_id` et le passer à `jwt::encode` ». (3) T4 tests middleware inclut tous les 4 call-sites. |
+| F4-C3 | CRITICAL | Gap endpoint | La spec AC #6 (L99), T7.8 (L304), Dev Notes parlent de `GET /api/v1/companies/settings` pour valider isolation bank_accounts. **Cet endpoint n'existe pas.** L'endpoint réel est `GET /api/v1/companies/current` (routes/companies.rs L70) → handler `get_current` (L70-85). Le handler appelle `companies::list(&pool, 1, 0)` **nu, sans filtre company_id** → un user de company A reçoit la company avec le plus petit id (non-déterministe, c'est **le pire bug KF-002**). **Patch** : (1) AC #6 remplace partout `companies/settings` → `companies/current`. (2) T7.8 reclasser en « refactor lourd » : `get_current` **n'est pas juste un audit** c'est **le cœur du bug**. Injecter `Extension<CurrentUser>`, remplacer `companies::list(1,0)` par `get_company_for(&current_user, &pool)`. Sans patch : la story peut merger avec KF-002 **encore ouvert sur la route la plus visible** aux users. |
+| F4-H1 | HIGH | Gap modèle | Handlers **write** qui IDOR : `contacts::update` (L446), `contacts::archive` (L460), `accounts::update` (L184), `accounts::archive` (L195) passent juste un `id` aux repos **sans `company_id`**. Le repo `contacts::update` (L321) et `accounts::update` reçoivent `id` seul, aucun filtre SQL. Admin A peut `PUT /api/v1/contacts/123` ou `PUT /api/v1/accounts/45` si 123/45 appartient à B. **Patch** : T7 second audit « handlers write IDOR » — `grep -nP "::(update|archive|delete)\(&" crates/kesh-api/src/routes/` → créer `{entity}::update_in_company(pool, id, company_id, ...)` dans 4 repos (contacts, accounts, journal_entries?, invoices?). AC #6 tests inclut PUT/DELETE, pas juste GET. |
+| F4-H2 | HIGH | Gap cascade | Handlers **read** sans `Extension<CurrentUser>` : `accounts::list_accounts` (L97), `company_invoice_settings::get_invoice_settings` (L119), `companies::get_current` (L70). Pour utiliser `get_company_for(&current_user, ...)` il faut l'injector en signature. Cascade brisera les tests unitaires qui instancient handlers directs sans middleware. **Patch** : T7 bullet « Si handler n'a pas `Extension<CurrentUser>`, l'ajouter ». Lister concernés. |
+| F4-H3 | HIGH | Gap implicit | Staleness `company_id` documentée « 15 min TTL + 60s leeway ». Mais `config.rs:392` borne TTL à `[0, 24h]` via `KESH_JWT_EXPIRY_MINUTES`. Si Guy met 8h → staleness 8h. Fenêtre d'attaque pour user déplacé. **Patch** : AC #3 + Dev Notes remplacer « 15 minutes absolu » par « TTL configurable (défaut 15 min, max 24h) ». Documenter dans middleware le risque. |
+| F4-H4 | HIGH | Gap cascade | Fixture `seed_changeme_user_only` (L247-256) crée user SANS company_id ET **sans company préalable**. C'est le preset `fresh` de Story 6-4 endpoint `/api/v1/_test/seed`. Post-T1 → FK violation, SAUF si T1bis/T2bis force création company. Contradition : `fresh` préset = « DB sans company » pour test onboarding. Mais post-T1 users **doivent** avoir company. **Patch** : T1bis/T2ter trancher — (a) retirer preset `fresh` (backward-incompatible Story 6-4), OU (b) `seed_changeme_user_only` crée placeholder company d'abord. |
+
+**Autres findings (HIGH/MEDIUM/LOW)** : 10 findings supplémentaires (4 HIGH, 4 MEDIUM, 3 LOW) — patterns réordonnance (T7), nomenclature (find_by_id_in_company), TTL config, cascade injection Extension<>, reclassement dettes tech. Non-bloquants comparé aux 4 CRITICAL.
+
+**Interprétation trend** : 14 → 9 → 6 → **14** = non-convergence. Pas encore au seuil (0 CRITICAL/HIGH/MEDIUM). Requiert **passe 5 (Sonnet ou Haiku)** après remédiation F4-C1/C2/C3/H1-H4/M1-M4.
+
+**Note reclassement** : F4-H4 (`seed_changeme_user_only`) peut être reclassé en dette tech issue CR « Retrait preset fresh compatible multi-tenant » si Guy décide que 6-2 ne doit pas inclure adaptations Story 6-4. Sinon, patch dans 6-2 même.
 
 ### 2026-04-18 — Validation passe 3 adversariale (haiku-4-5, 6 findings)
 
