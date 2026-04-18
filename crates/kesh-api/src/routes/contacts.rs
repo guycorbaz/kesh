@@ -461,12 +461,21 @@ pub async fn update_contact(
 }
 
 /// PUT /api/v1/contacts/{id}/archive — archive un contact.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn archive_contact(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ArchiveContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
+    // Verify contact belongs to current user's company
+    let existing = contacts::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    if existing.company_id != current_user.company_id {
+        return Err(AppError::Database(DbError::NotFound));
+    }
+
     let contact = contacts::archive(&state.pool, id, req.version, current_user.user_id).await?;
     Ok(Json(ContactResponse::from(contact)))
 }
