@@ -11,13 +11,11 @@ use unicode_normalization::UnicodeNormalization;
 use kesh_core::listing::SortDirection;
 use kesh_db::entities::product::{NewProduct, Product, ProductUpdate};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{
-    companies,
-    products::{self, ProductListQuery, ProductSortBy},
-};
+use kesh_db::repositories::products::{self, ProductListQuery, ProductSortBy};
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::limits::{MAX_DECIMAL_SCALE, MAX_UNIT_PRICE, scale_within};
@@ -119,13 +117,6 @@ impl From<Product> for ProductResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
 fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
@@ -210,11 +201,12 @@ fn validate_common(
 // Handlers
 // ---------------------------------------------------------------------------
 
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn list_products(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListProductsQuery>,
 ) -> Result<Json<ListResponse<ProductResponse>>, AppError> {
-    let company = get_company(&state).await?;
 
     let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
     if !(1..=MAX_LIST_LIMIT).contains(&limit) {
@@ -248,7 +240,7 @@ pub async fn list_products(
         offset,
     };
 
-    let result = products::list_by_company_paginated(&state.pool, company.id, query).await?;
+    let result = products::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
 
     Ok(Json(ListResponse {
         items: result
@@ -262,23 +254,26 @@ pub async fn list_products(
     }))
 }
 
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn get_product(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<ProductResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     let product = products::find_by_id(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
     Ok(Json(ProductResponse::from(product)))
 }
 
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn create_product(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateProductRequest>,
 ) -> Result<(StatusCode, Json<ProductResponse>), AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     let v = validate_common(req.name, req.description, req.unit_price, req.vat_rate)?;
 
@@ -300,7 +295,7 @@ pub async fn update_product(
     Path(id): Path<i64>,
     Json(req): Json<UpdateProductRequest>,
 ) -> Result<Json<ProductResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     let v = validate_common(req.name, req.description, req.unit_price, req.vat_rate)?;
 
     let changes = ProductUpdate {
@@ -328,7 +323,7 @@ pub async fn archive_product(
     Path(id): Path<i64>,
     Json(req): Json<ArchiveProductRequest>,
 ) -> Result<Json<ProductResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     let product = products::archive(
         &state.pool,
         company.id,
