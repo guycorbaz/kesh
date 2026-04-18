@@ -41,7 +41,7 @@ pub async fn get_company_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kesh_db::entities::OrgType;
+    use kesh_db::entities::{OrgType, Language};
 
     /// Mock company pour les tests.
     fn mock_company(id: i64) -> Company {
@@ -51,8 +51,8 @@ mod tests {
             address: "Test Address".to_string(),
             ide_number: None,
             org_type: OrgType::Independant,
-            accounting_language: "FR".to_string(),
-            instance_language: "FR".to_string(),
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
             version: 1,
             created_at: chrono::Utc::now().naive_utc(),
             updated_at: chrono::Utc::now().naive_utc(),
