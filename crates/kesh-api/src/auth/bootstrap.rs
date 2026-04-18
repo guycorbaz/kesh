@@ -135,6 +135,20 @@ mod tests {
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
     async fn bootstrap_creates_admin_on_empty_db(pool: MySqlPool) {
+        // Create a company first (required by users.company_id FK)
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind("Test Company")
+        .bind("123 Test St")
+        .bind("Independant")
+        .bind("FR")
+        .bind("FR")
+        .execute(&pool)
+        .await
+        .expect("company insert should succeed");
+
         let config = test_config();
 
         ensure_admin_user(&pool, &config)
@@ -155,6 +169,20 @@ mod tests {
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
     async fn bootstrap_is_idempotent_on_repeated_calls(pool: MySqlPool) {
+        // Create a company first (required by users.company_id FK)
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind("Test Company")
+        .bind("123 Test St")
+        .bind("Independant")
+        .bind("FR")
+        .bind("FR")
+        .execute(&pool)
+        .await
+        .expect("company insert should succeed");
+
         let config = test_config();
 
         ensure_admin_user(&pool, &config)
