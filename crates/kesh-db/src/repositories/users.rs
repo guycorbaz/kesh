@@ -145,6 +145,45 @@ pub async fn list(pool: &MySqlPool, limit: i64, offset: i64) -> Result<Vec<User>
         .map_err(map_db_error)
 }
 
+/// Story 6.2: Liste les utilisateurs d'une company donnée (multi-tenant scoping).
+pub async fn list_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<User>, DbError> {
+    let limit = limit.clamp(0, MAX_LIST_LIMIT);
+    let offset = offset.max(0);
+    sqlx::query_as::<_, User>(
+        "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+         FROM users WHERE company_id = ? ORDER BY id LIMIT ? OFFSET ?",
+    )
+    .bind(company_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Story 6.2: Retrouve un utilisateur par id dans une company (multi-tenant IDOR protection).
+/// Retourne None si l'user existe mais n'appartient pas à la company.
+pub async fn find_by_id_in_company(
+    pool: &MySqlPool,
+    id: i64,
+    company_id: i64,
+) -> Result<Option<User>, DbError> {
+    sqlx::query_as::<_, User>(
+        "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+         FROM users WHERE id = ? AND company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Met à jour le hash du mot de passe d'un utilisateur (story 1.6).
 ///
 /// Incrémente aussi la `version` (optimistic lock). Retourne une erreur
