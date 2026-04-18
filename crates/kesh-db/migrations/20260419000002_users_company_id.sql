@@ -1,8 +1,9 @@
 -- Story 6.2 — Multi-tenant scoping refactor
 -- Add company_id to users table to enable proper multi-tenant isolation
 
--- Step 0: Lock table to prevent race condition (concurrent INSERTs while migrating)
-LOCK TABLES users WRITE;
+-- Step 0: Lock tables to prevent race condition (concurrent INSERTs while migrating)
+-- Must lock both users (WRITE) and companies (READ) since UPDATE uses companies in subquery
+LOCK TABLES users WRITE, companies READ;
 
 -- Step 1: Add nullable company_id for backfill
 ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
