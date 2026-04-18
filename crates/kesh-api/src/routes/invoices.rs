@@ -19,7 +19,7 @@ use kesh_core::listing::SortDirection;
 use kesh_db::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
-    companies, contacts,
+    contacts,
     invoices::{
         self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy,
         PaymentStatusFilter,
@@ -30,6 +30,7 @@ use kesh_i18n::{FluentArgs, Locale};
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::limits::{
@@ -257,13 +258,6 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
 fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t: String = v.trim().nfc().collect();
@@ -397,9 +391,9 @@ fn validate_lines(reqs: Vec<CreateInvoiceLineRequest>) -> Result<Vec<NewInvoiceL
 
 pub async fn list_invoices(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListInvoicesQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItemResponse>>, AppError> {
-    let company = get_company(&state).await?;
 
     let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
     if !(1..=MAX_LIST_LIMIT).contains(&limit) {
@@ -458,7 +452,7 @@ pub async fn list_invoices(
         offset,
     };
 
-    let result = invoices::list_by_company_paginated(&state.pool, company.id, query).await?;
+    let result = invoices::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
     Ok(Json(ListResponse {
         items: result
             .items
@@ -473,10 +467,10 @@ pub async fn list_invoices(
 
 pub async fn get_invoice(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let company = get_company(&state).await?;
-    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
     Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
@@ -487,7 +481,7 @@ pub async fn create_invoice(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<(StatusCode, Json<InvoiceResponse>), AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
@@ -519,7 +513,7 @@ pub async fn update_invoice(
     Path(id): Path<i64>,
     Json(req): Json<UpdateInvoiceRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
@@ -551,7 +545,7 @@ pub async fn delete_invoice(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     invoices::delete(&state.pool, company.id, id, current_user.user_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -566,7 +560,7 @@ pub async fn validate_invoice_handler(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     // Review P3 : utiliser directement le résultat transactionnel au lieu
     // d'un re-fetch post-commit (évite une fenêtre de race + DB roundtrip).
     let validated =
@@ -762,9 +756,9 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
 /// `GET /api/v1/invoices/due-dates` — page échéancier.
 pub async fn list_due_dates_handler(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListDueDatesQuery>,
 ) -> Result<Json<DueDatesResponse>, AppError> {
-    let company = get_company(&state).await?;
     let query = build_due_dates_query(params)?;
 
     // B15 (review pass 1 G2 B) : strip explicite de `payment_status` avant
@@ -776,8 +770,8 @@ pub async fn list_due_dates_handler(
     };
     // List + summary en parallèle (read-only, pas de tx commune).
     let (list_res, summary_res) = tokio::join!(
-        invoices::list_by_company_paginated(&state.pool, company.id, query.clone()),
-        invoices::due_dates_summary(&state.pool, company.id, &summary_query),
+        invoices::list_by_company_paginated(&state.pool, current_user.company_id, query.clone()),
+        invoices::due_dates_summary(&state.pool, current_user.company_id, &summary_query),
     );
     let list = list_res?;
     let summary = summary_res?;
@@ -815,7 +809,7 @@ pub async fn mark_invoice_paid_handler(
     Json(req): Json<MarkPaidRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     validate_version(req.version)?;
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     let paid_at = req
         .paid_at
         .unwrap_or_else(|| chrono::Utc::now().naive_utc());
@@ -843,7 +837,7 @@ pub async fn unmark_invoice_paid_handler(
     Json(req): Json<UnmarkPaidRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     validate_version(req.version)?;
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     // M1 (review pass 1 G2) : idem mark_invoice_paid_handler — fetch atomique.
     let (updated, lines) = invoices::mark_as_paid(
         &state.pool,
@@ -917,13 +911,14 @@ const CSV_HEADER_FALLBACKS: [&str; 7] = [
 /// dates dd.mm.yyyy. Limite dure 10'000 lignes (sinon 400).
 pub async fn export_due_dates_csv_handler(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(mut params): Query<ListDueDatesQuery>,
 ) -> Result<axum::response::Response, AppError> {
     use axum::http::HeaderValue;
     use axum::http::header;
     use axum::response::IntoResponse;
 
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     // M4 (review pass 1 G2) : le `limit`/`offset` côté client ne s'appliquent
     // pas à l'export CSV (pas de pagination). On les force à des valeurs
@@ -939,7 +934,7 @@ pub async fn export_due_dates_csv_handler(
     // aurait silencieusement rabaissé l'intent — impossible tant que
     // `MAX_EXPORT_ROWS + 1 <= 50_000`, mais on le propage en sécurité.
     let (rows, truncated) =
-        invoices::list_for_export(&state.pool, company.id, &query, MAX_EXPORT_ROWS + 1).await?;
+        invoices::list_for_export(&state.pool, current_user.company_id, &query, MAX_EXPORT_ROWS + 1).await?;
     if truncated || rows.len() as i64 > MAX_EXPORT_ROWS {
         // H1 (review pass 1 G2) : code client dédié `RESULT_TOO_LARGE`
         // (spec §84 / AC#10), distinct de `VALIDATION_ERROR`.

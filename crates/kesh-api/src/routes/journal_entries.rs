@@ -27,10 +27,11 @@ use kesh_db::entities::{
     NewJournalEntryLine,
 };
 use kesh_db::repositories::journal_entries::{JournalEntryListQuery, JournalEntryListResult};
-use kesh_db::repositories::{companies, fiscal_years, journal_entries};
+use kesh_db::repositories::{fiscal_years, journal_entries};
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 
@@ -156,22 +157,6 @@ impl From<JournalEntryWithLines> for JournalEntryResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Helper — récupère la company courante (pattern story 3.1, v0.1 mono-company)
-// ---------------------------------------------------------------------------
-
-/// Récupère l'unique company de l'instance (v0.1 — mono-company par design).
-///
-/// **Duplication volontaire** avec `routes/accounts.rs::get_company` : pas
-/// d'import croisé entre fichiers de routes. Post-MVP, lorsque le contexte
-/// utilisateur multi-company sera introduit, ce helper sera factorisé.
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
-// ---------------------------------------------------------------------------
 // CoreError → AppError mapping
 // ---------------------------------------------------------------------------
 
@@ -259,10 +244,9 @@ pub struct ListJournalEntriesQuery {
 /// post-MVP si besoin d'un format d'erreur cohérent.
 pub async fn list_journal_entries(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListJournalEntriesQuery>,
 ) -> Result<Json<ListResponse<JournalEntryResponse>>, AppError> {
-    let company = get_company(&state).await?;
-
     // Clamp canonique — source de vérité (le repository a un garde-fou
     // défensif mais ne remonte pas d'erreur).
     let clamped_limit = params.limit.clamp(1, MAX_LIMIT);
@@ -356,7 +340,7 @@ pub async fn list_journal_entries(
     };
 
     let result: JournalEntryListResult =
-        journal_entries::list_by_company_paginated(&state.pool, company.id, query).await?;
+        journal_entries::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
 
     Ok(Json(ListResponse {
         items: result
@@ -385,7 +369,7 @@ pub async fn create_journal_entry(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     // P5 : trim du libellé dès l'entrée — unique source de vérité.
     let trimmed_description = req.description.trim().to_string();
@@ -496,7 +480,7 @@ pub async fn update_journal_entry(
     Path(id): Path<i64>,
     Json(req): Json<UpdateJournalEntryRequest>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     let trimmed_description = req.description.trim().to_string();
 
@@ -604,7 +588,7 @@ pub async fn delete_journal_entry(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     // Propagation directe via `?` : `DbError::FiscalYearClosed` est mappé
     // par le match exhaustif dans `errors.rs` vers 400 avec le message

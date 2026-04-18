@@ -16,10 +16,11 @@ use kesh_core::invoice_format;
 use kesh_db::entities::{
     CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal, account::AccountType,
 };
-use kesh_db::repositories::{accounts, companies, company_invoice_settings};
+use kesh_db::repositories::{accounts, company_invoice_settings};
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 
 // ---------------------------------------------------------------------------
@@ -67,13 +68,6 @@ pub struct UpdateInvoiceSettingsRequest {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
 fn parse_journal(raw: &str) -> Result<Journal, AppError> {
     raw.parse::<Journal>()
         .map_err(|_| AppError::Validation(format!("Journal inconnu : '{raw}'")))
@@ -118,8 +112,9 @@ async fn validate_account(
 /// `GET /api/v1/company/invoice-settings` — lecture config (tout rôle auth).
 pub async fn get_invoice_settings(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<InvoiceSettingsResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     let settings = company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;
     Ok(Json(settings.into()))
 }
@@ -130,7 +125,7 @@ pub async fn update_invoice_settings(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<UpdateInvoiceSettingsRequest>,
 ) -> Result<Json<InvoiceSettingsResponse>, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     // 1. Valider le format.
     invoice_format::validate_template(&req.invoice_number_format)
