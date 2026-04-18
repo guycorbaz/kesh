@@ -166,6 +166,15 @@ pub async fn list_by_company(
     .map_err(map_db_error)
 }
 
+/// Story 6.2: Compte les utilisateurs d'une company (pour pagination).
+pub async fn count_by_company(pool: &MySqlPool, company_id: i64) -> Result<i64, DbError> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .map_err(map_db_error)
+}
+
 /// Story 6.2: Retrouve un utilisateur par id dans une company (multi-tenant IDOR protection).
 /// Retourne None si l'user existe mais n'appartient pas à la company.
 pub async fn find_by_id_in_company(

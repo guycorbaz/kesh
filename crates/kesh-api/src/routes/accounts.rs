@@ -6,10 +6,11 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::account::{Account, AccountType, AccountUpdate, NewAccount};
-use kesh_db::repositories::{accounts, companies};
+use kesh_db::repositories::accounts;
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 
 // ---------------------------------------------------------------------------
@@ -79,37 +80,28 @@ impl From<Account> for AccountResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
-
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
-// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
 /// GET /api/v1/accounts — liste les comptes de la company courante.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn list_accounts(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListAccountsQuery>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
-    let company = get_company(&state).await?;
-    let list = accounts::list_by_company(&state.pool, company.id, params.include_archived).await?;
+    let list = accounts::list_by_company(&state.pool, current_user.company_id, params.include_archived).await?;
     Ok(Json(list.into_iter().map(AccountResponse::from).collect()))
 }
 
 /// POST /api/v1/accounts — crée un compte.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn create_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<(axum::http::StatusCode, Json<AccountResponse>), AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     let trimmed_number = req.number.trim().to_string();
     let trimmed_name = req.name.trim().to_string();

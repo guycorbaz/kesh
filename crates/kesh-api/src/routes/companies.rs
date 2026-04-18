@@ -2,13 +2,16 @@
 
 use axum::Json;
 use axum::extract::State;
+use axum::Extension;
 use serde::Serialize;
 
 use kesh_db::entities::{BankAccount, Company};
-use kesh_db::repositories::{bank_accounts, companies};
+use kesh_db::repositories::bank_accounts;
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
+use crate::middleware::auth::CurrentUser;
 
 /// Réponse JSON pour la company courante + comptes bancaires.
 #[derive(Debug, Serialize)]
@@ -67,15 +70,12 @@ impl From<BankAccount> for BankAccountJson {
 }
 
 /// GET /api/v1/companies/current — retourne la company courante + bank accounts.
+/// Story 6.2: Scoped by CurrentUser.company_id (KF-002 fix).
 pub async fn get_current(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<CompanyCurrentResponse>, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    let company = list
-        .into_iter()
-        .next()
-        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
-
+    let company = get_company_for(&current_user, &state.pool).await?;
     let accounts = bank_accounts::list_by_company(&state.pool, company.id).await?;
 
     Ok(Json(CompanyCurrentResponse {
