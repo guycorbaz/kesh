@@ -163,8 +163,14 @@ mod tests {
 
     #[test]
     fn decode_succeeds_but_sub_is_parseable_as_i64() {
-        let token = encode(9999, Role::Consultation, 5, TEST_SECRET, TimeDelta::minutes(5))
-            .expect("encode should succeed");
+        let token = encode(
+            9999,
+            Role::Consultation,
+            5,
+            TEST_SECRET,
+            TimeDelta::minutes(5),
+        )
+        .expect("encode should succeed");
 
         let claims = decode(&token, TEST_SECRET).expect("decode should succeed");
         let user_id: i64 = claims.sub.parse().expect("sub should parse as i64");
@@ -174,8 +180,14 @@ mod tests {
     #[test]
     fn encode_includes_company_id_in_claims() {
         let company_id = 123i64;
-        let token = encode(1, Role::Admin, company_id, TEST_SECRET, TimeDelta::minutes(15))
-            .expect("encode should succeed");
+        let token = encode(
+            1,
+            Role::Admin,
+            company_id,
+            TEST_SECRET,
+            TimeDelta::minutes(15),
+        )
+        .expect("encode should succeed");
 
         let claims = decode(&token, TEST_SECRET).expect("decode should succeed");
         assert_eq!(claims.company_id, company_id);

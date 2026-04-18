@@ -30,8 +30,8 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
         .map_err(|e| AppError::Internal(format!("bootstrap company count: {e}")))?;
 
     if company_count == 0 {
-        tracing::info!(
-            "bootstrap: no company exists yet, skipping admin user creation (wait for onboarding)"
+        tracing::warn!(
+            "⚠️  bootstrap: no company exists yet, skipping admin user creation (complete onboarding to create company + admin)"
         );
         return Ok(());
     }
@@ -249,6 +249,31 @@ mod tests {
             .await
             .expect("select should succeed");
         assert_eq!(usernames, vec!["alice".to_string()]);
+    }
+
+    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    async fn bootstrap_skips_silently_when_no_company_exists(pool: MySqlPool) {
+        // Story 6.2: If no company exists, bootstrap should skip and return Ok (T0.2 Option A)
+        // This verifies the idempotent behavior: API boots without error even if onboarding hasn't created a company yet
+
+        let config = test_config();
+
+        // Call ensure_admin_user on empty DB (no companies)
+        let result = ensure_admin_user(&pool, &config).await;
+
+        assert!(
+            result.is_ok(),
+            "bootstrap should not error when no company exists"
+        );
+
+        let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .expect("count should succeed");
+        assert_eq!(
+            user_count, 0,
+            "admin user should not be created if no company exists"
+        );
     }
 
     // NOTE: la branche `DbError::UniqueConstraintViolation` du step 3 est

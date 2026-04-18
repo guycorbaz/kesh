@@ -90,7 +90,12 @@ pub async fn list_accounts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListAccountsQuery>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
-    let list = accounts::list_by_company(&state.pool, current_user.company_id, params.include_archived).await?;
+    let list = accounts::list_by_company(
+        &state.pool,
+        current_user.company_id,
+        params.include_archived,
+    )
+    .await?;
     Ok(Json(list.into_iter().map(AccountResponse::from).collect()))
 }
 

@@ -291,11 +291,12 @@ pub async fn list_users(
     let offset = params.offset.unwrap_or(0).max(0);
 
     let total = users::count_by_company(&state.pool, current_user.company_id).await?;
-    let items: Vec<UserResponse> = users::list_by_company(&state.pool, current_user.company_id, limit, offset)
-        .await?
-        .into_iter()
-        .map(UserResponse::from)
-        .collect();
+    let items: Vec<UserResponse> =
+        users::list_by_company(&state.pool, current_user.company_id, limit, offset)
+            .await?
+            .into_iter()
+            .map(UserResponse::from)
+            .collect();
 
     Ok(Json(UserListResponse {
         items,

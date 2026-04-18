@@ -320,7 +320,6 @@ pub async fn list_contacts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListContactsQuery>,
 ) -> Result<Json<ListResponse<ContactResponse>>, AppError> {
-
     let limit = params
         .limit
         .unwrap_or(DEFAULT_LIST_LIMIT)
@@ -339,7 +338,8 @@ pub async fn list_contacts(
         offset,
     };
 
-    let result = contacts::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
+    let result =
+        contacts::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
 
     Ok(Json(ListResponse {
         items: result

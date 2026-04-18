@@ -245,13 +245,25 @@ pub async fn truncate_all(pool: &MySqlPool) -> Result<(), FixtureError> {
 }
 
 /// Insère seulement le user `changeme/changeme` (preset `fresh` — cf. AC #7).
-/// Aucune company, aucun account, aucun fiscal_year, aucun onboarding_state.
+/// Post-T1 migration: creates a temporary placeholder company (required for users.company_id NOT NULL FK).
+/// Aucun account, aucun fiscal_year, aucun onboarding_state.
 pub async fn seed_changeme_user_only(pool: &MySqlPool) -> Result<i64, FixtureError> {
+    // T1bis: Create placeholder company (required post-migration for users.company_id FK)
+    let company_result =
+        sqlx::query("INSERT INTO companies (name, org_type, language) VALUES (?, ?, ?)")
+            .bind("Fresh Placeholder Company")
+            .bind("Independant")
+            .bind("en")
+            .execute(pool)
+            .await?;
+    let company_id = company_result.last_insert_id() as i64;
+
     let result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, 'Admin', TRUE)",
+        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, 'Admin', TRUE, ?)",
     )
     .bind("changeme")
     .bind(CHANGEME_PASSWORD_HASH)
+    .bind(company_id)
     .execute(pool)
     .await?;
     Ok(result.last_insert_id() as i64)

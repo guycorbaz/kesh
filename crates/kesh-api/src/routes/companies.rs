@@ -1,8 +1,8 @@
 //! Routes company — lecture de la configuration de l'organisation.
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::State;
-use axum::Extension;
 use serde::Serialize;
 
 use kesh_db::entities::{BankAccount, Company};

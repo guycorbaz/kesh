@@ -340,7 +340,8 @@ pub async fn list_journal_entries(
     };
 
     let result: JournalEntryListResult =
-        journal_entries::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
+        journal_entries::list_by_company_paginated(&state.pool, current_user.company_id, query)
+            .await?;
 
     Ok(Json(ListResponse {
         items: result

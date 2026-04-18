@@ -41,7 +41,7 @@ pub async fn get_company_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kesh_db::entities::{OrgType, Language};
+    use kesh_db::entities::{Language, OrgType};
 
     /// Mock company pour les tests.
     fn mock_company(id: i64) -> Company {

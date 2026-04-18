@@ -207,7 +207,6 @@ pub async fn list_products(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListProductsQuery>,
 ) -> Result<Json<ListResponse<ProductResponse>>, AppError> {
-
     let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
     if !(1..=MAX_LIST_LIMIT).contains(&limit) {
         return Err(AppError::Validation(format!(
@@ -240,7 +239,8 @@ pub async fn list_products(
         offset,
     };
 
-    let result = products::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
+    let result =
+        products::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
 
     Ok(Json(ListResponse {
         items: result

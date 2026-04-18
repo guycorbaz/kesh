@@ -394,7 +394,6 @@ pub async fn list_invoices(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListInvoicesQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItemResponse>>, AppError> {
-
     let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
     if !(1..=MAX_LIST_LIMIT).contains(&limit) {
         return Err(AppError::Validation(format!(
@@ -452,7 +451,8 @@ pub async fn list_invoices(
         offset,
     };
 
-    let result = invoices::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
+    let result =
+        invoices::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
     Ok(Json(ListResponse {
         items: result
             .items
@@ -470,9 +470,10 @@ pub async fn get_invoice(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
+    let (invoice, lines) =
+        invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
+            .await?
+            .ok_or(AppError::Database(DbError::NotFound))?;
     Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
 }
 
@@ -933,8 +934,13 @@ pub async fn export_due_dates_csv_handler(
     // `truncated` (P3 review pass 3 A) capte le cas où le clamp repo 50_000
     // aurait silencieusement rabaissé l'intent — impossible tant que
     // `MAX_EXPORT_ROWS + 1 <= 50_000`, mais on le propage en sécurité.
-    let (rows, truncated) =
-        invoices::list_for_export(&state.pool, current_user.company_id, &query, MAX_EXPORT_ROWS + 1).await?;
+    let (rows, truncated) = invoices::list_for_export(
+        &state.pool,
+        current_user.company_id,
+        &query,
+        MAX_EXPORT_ROWS + 1,
+    )
+    .await?;
     if truncated || rows.len() as i64 > MAX_EXPORT_ROWS {
         // H1 (review pass 1 G2) : code client dédié `RESULT_TOO_LARGE`
         // (spec §84 / AC#10), distinct de `VALIDATION_ERROR`.

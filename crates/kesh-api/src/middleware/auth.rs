@@ -122,7 +122,12 @@ mod tests {
 
     /// Handler factice protégé qui renvoie 200 + l'id extrait (Story 6.2: include company_id).
     async fn echo_handler(Extension(user): Extension<CurrentUser>) -> String {
-        format!("{}:{}:{}", user.user_id, user.role.as_str(), user.company_id)
+        format!(
+            "{}:{}:{}",
+            user.user_id,
+            user.role.as_str(),
+            user.company_id
+        )
     }
 
     /// Construit un pool « bidon » qui n'est jamais vraiment utilisé par
@@ -261,8 +266,14 @@ mod tests {
 
     #[tokio::test]
     async fn valid_jwt_returns_200_and_injects_current_user() {
-        let token = jwt::encode(1234, Role::Admin, 5, TEST_JWT_SECRET, TimeDelta::minutes(15))
-            .expect("encode");
+        let token = jwt::encode(
+            1234,
+            Role::Admin,
+            5,
+            TEST_JWT_SECRET,
+            TimeDelta::minutes(15),
+        )
+        .expect("encode");
 
         let app = protected_router(test_state());
         let req = Request::builder()
