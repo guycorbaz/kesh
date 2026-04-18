@@ -383,7 +383,13 @@ async fn pdf_unknown_invoice_returns_404(pool: MySqlPool) {
 
 // --- AC16 / T6.8 : 3 rôles (Admin, Comptable, Consultation) accèdent au PDF.
 
-async fn seed_user_with_role(pool: &MySqlPool, username: &str, password: &str, role: Role) {
+async fn seed_user_with_role(
+    pool: &MySqlPool,
+    username: &str,
+    password: &str,
+    role: Role,
+    company_id: i64,
+) {
     let phc = hash_password(password).expect("hash password");
     users::create(
         pool,
@@ -392,6 +398,7 @@ async fn seed_user_with_role(pool: &MySqlPool, username: &str, password: &str, r
             password_hash: phc,
             role,
             active: true,
+            company_id,
         },
     )
     .await
@@ -419,7 +426,7 @@ async fn run_pdf_role_scenario(pool: MySqlPool, username: &str, role: Role) {
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
     seed_primary_bank(&pool, company_id, true).await;
     let invoice_id = seed_validated_invoice(&pool, company_id, contact_id, admin_id, 3).await;
-    seed_user_with_role(&pool, username, password, role).await;
+    seed_user_with_role(&pool, username, password, role, company_id).await;
 
     let app = spawn_app(pool.clone()).await;
     let token = login_as(&app, username, password).await;
