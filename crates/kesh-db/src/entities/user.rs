@@ -102,6 +102,9 @@ impl<'r> Decode<'r, MySql> for Role {
 /// Le `password_hash` contient le hash Argon2id au format PHC string.
 /// Le hachage lui-même est fait dans `kesh-api` (story 1.5) — ce crate
 /// stocke la chaîne telle que fournie.
+///
+/// **Multi-tenant (Story 6.2)** : `company_id` lie l'utilisateur à sa company.
+/// Les requêtes authentifiées scopent par ce champ via `CurrentUser.company_id`.
 #[derive(Clone, sqlx::FromRow)]
 // NOTE: PAS de derive Debug/Serialize/Deserialize — Debug manuel ci-dessous,
 // et Serialize/Deserialize interdits pour éviter la fuite du password_hash.
@@ -111,6 +114,7 @@ pub struct User {
     pub password_hash: String,
     pub role: Role,
     pub active: bool,
+    pub company_id: i64,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -124,6 +128,7 @@ impl std::fmt::Debug for User {
             .field("password_hash", &"***")
             .field("role", &self.role)
             .field("active", &self.active)
+            .field("company_id", &self.company_id)
             .field("version", &self.version)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
@@ -136,12 +141,16 @@ impl std::fmt::Debug for User {
 /// Le `password_hash` doit être fourni **déjà haché** par l'appelant
 /// (typiquement `kesh-api` avec Argon2id). Ce crate ne fait jamais
 /// de hachage lui-même.
+///
+/// **Multi-tenant (Story 6.2)** : `company_id` est obligatoire — un user
+/// doit appartenir à exactement une company.
 #[derive(Clone)]
 pub struct NewUser {
     pub username: String,
     pub password_hash: String,
     pub role: Role,
     pub active: bool,
+    pub company_id: i64,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -151,6 +160,7 @@ impl std::fmt::Debug for NewUser {
             .field("password_hash", &"***")
             .field("role", &self.role)
             .field("active", &self.active)
+            .field("company_id", &self.company_id)
             .finish()
     }
 }

@@ -88,21 +88,23 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     .await?;
     let company_id = company_result.last_insert_id() as i64;
 
-    // Users (admin + changeme)
+    // Users (admin + changeme) — Story 6.2: include company_id
     let admin_result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, 'Admin', TRUE)",
+        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, 'Admin', TRUE, ?)",
     )
     .bind("admin")
     .bind(ADMIN_PASSWORD_HASH)
+    .bind(company_id)
     .execute(pool)
     .await?;
     let admin_user_id = admin_result.last_insert_id() as i64;
 
     let changeme_result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, 'Admin', TRUE)",
+        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, 'Admin', TRUE, ?)",
     )
     .bind("changeme")
     .bind(CHANGEME_PASSWORD_HASH)
+    .bind(company_id)
     .execute(pool)
     .await?;
     let changeme_user_id = changeme_result.last_insert_id() as i64;

@@ -10,13 +10,13 @@ use crate::entities::{NewUser, User, UserUpdate};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
-const FIND_BY_ID_SQL: &str = "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
      FROM users WHERE id = ?";
 
-const FIND_BY_USERNAME_SQL: &str = "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
+const FIND_BY_USERNAME_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
      FROM users WHERE username = ?";
 
-const LIST_SQL: &str = "SELECT id, username, password_hash, role, active, version, created_at, updated_at \
+const LIST_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
      FROM users ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée un nouvel utilisateur et retourne l'entité persistée.
@@ -24,12 +24,13 @@ pub async fn create(pool: &MySqlPool, new: NewUser) -> Result<User, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, ?)",
+        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(&new.username)
     .bind(&new.password_hash)
     .bind(new.role)
     .bind(new.active)
+    .bind(new.company_id)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?;

@@ -23,10 +23,13 @@ use crate::auth::jwt;
 use crate::errors::AppError;
 
 /// Identité extraite du JWT valide, injectée dans la requête.
+///
+/// Story 6.2: `company_id` ajouté pour multi-tenant scoping.
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub user_id: i64,
     pub role: Role,
+    pub company_id: i64,
 }
 
 /// Middleware qui exige un JWT valide.
@@ -48,6 +51,13 @@ pub struct CurrentUser {
 // privilège (changement de plan comptable, clôture d'exercice) peuvent
 // ré-vérifier la DB avec `refresh_from_db(user_id)` si nécessaire, mais
 // ce n'est pas automatique. Documenté dans la spec story 1.5 Dev Notes.
+//
+// SEC: company_id staleness (Story 6.2) — idem role. Si un user est déplacé
+// vers une autre company au cours de sa session, le JWT existant continue de
+// porter l'ancien company_id jusqu'à l'expiration. La fenêtre de staleness
+// est proportionnelle au TTL JWT configurable via `KESH_JWT_EXPIRY_MINUTES`
+// (défaut 15 min, max 24h dans config.rs). Si TTL=480 min (8h), la staleness
+// company_id est 8h. Risque accepté pour l'architecture multi-tenant mono-user.
 pub async fn require_auth(
     State(state): State<AppState>,
     mut req: Request,
@@ -83,7 +93,13 @@ pub async fn require_auth(
     let role: Role = Role::from_str(&claims.role)
         .map_err(|_| AppError::Unauthenticated("invalid role claim".into()))?;
 
-    req.extensions_mut().insert(CurrentUser { user_id, role });
+    let company_id = claims.company_id;
+
+    req.extensions_mut().insert(CurrentUser {
+        user_id,
+        role,
+        company_id,
+    });
     Ok(next.run(req).await)
 }
 
@@ -104,9 +120,9 @@ mod tests {
 
     const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 
-    /// Handler factice protégé qui renvoie 200 + l'id extrait.
+    /// Handler factice protégé qui renvoie 200 + l'id extrait (Story 6.2: include company_id).
     async fn echo_handler(Extension(user): Extension<CurrentUser>) -> String {
-        format!("{}:{}", user.user_id, user.role.as_str())
+        format!("{}:{}:{}", user.user_id, user.role.as_str(), user.company_id)
     }
 
     /// Construit un pool « bidon » qui n'est jamais vraiment utilisé par
@@ -204,6 +220,7 @@ mod tests {
         let token = jwt::encode(
             42,
             Role::Comptable,
+            5,
             TEST_JWT_SECRET,
             TimeDelta::seconds(-120), // expired 120s ago, beyond leeway=60
         )
@@ -223,6 +240,7 @@ mod tests {
         let token = jwt::encode(
             42,
             Role::Comptable,
+            5,
             TEST_JWT_SECRET,
             TimeDelta::seconds(-30), // expired 30s ago, within leeway=60
         )
@@ -243,7 +261,7 @@ mod tests {
 
     #[tokio::test]
     async fn valid_jwt_returns_200_and_injects_current_user() {
-        let token = jwt::encode(1234, Role::Admin, TEST_JWT_SECRET, TimeDelta::minutes(15))
+        let token = jwt::encode(1234, Role::Admin, 5, TEST_JWT_SECRET, TimeDelta::minutes(15))
             .expect("encode");
 
         let app = protected_router(test_state());
@@ -260,7 +278,7 @@ mod tests {
         use http_body_util::BodyExt;
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body = std::str::from_utf8(&bytes).unwrap();
-        assert_eq!(body, "1234:Admin");
+        assert_eq!(body, "1234:Admin:5");
     }
 
     /// Patch V6 : header `Authorization: Bearer ` exactement 7 chars —
@@ -282,7 +300,7 @@ mod tests {
     async fn wrong_signature_returns_401() {
         let other_secret = b"other-secret-32-bytes-minimum-padding-long-enough";
         let token =
-            jwt::encode(1, Role::Admin, other_secret, TimeDelta::minutes(15)).expect("encode");
+            jwt::encode(1, Role::Admin, 5, other_secret, TimeDelta::minutes(15)).expect("encode");
 
         let app = protected_router(test_state());
         let req = Request::builder()

@@ -22,6 +22,20 @@ use crate::errors::AppError;
 /// `COUNT(*)` et notre `INSERT`, la branche `UniqueConstraintViolation`
 /// est traitée comme succès silencieux.
 pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), AppError> {
+    // Story 6.2: Check if companies exist before creating a user
+    // (users.company_id is NOT NULL, so at least one company must exist)
+    let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("bootstrap company count: {e}")))?;
+
+    if company_count == 0 {
+        tracing::info!(
+            "bootstrap: no company exists yet, skipping admin user creation (wait for onboarding)"
+        );
+        return Ok(());
+    }
+
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(pool)
         .await
@@ -34,6 +48,12 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
 
     let hash = hash_password_async(config.admin_password.clone()).await?;
 
+    // Get the first company to assign to the bootstrap admin
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("bootstrap get first company: {e}")))?;
+
     let result = users::create(
         pool,
         NewUser {
@@ -41,6 +61,7 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
             password_hash: hash,
             role: Role::Admin,
             active: true,
+            company_id,
         },
     )
     .await;
@@ -152,14 +173,34 @@ mod tests {
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
     async fn bootstrap_skips_if_users_already_exist(pool: MySqlPool) {
+        // Create a company first (required by FK)
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind("Test Company")
+        .bind("123 Test St")
+        .bind("Independant")
+        .bind("FR")
+        .bind("FR")
+        .execute(&pool)
+        .await
+        .expect("company insert should succeed");
+
+        let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("get company_id should succeed");
+
         // Insérer manuellement un user arbitraire (pas admin)
         sqlx::query(
-            "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, ?)",
+            "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, ?, ?, ?)",
         )
         .bind("alice")
         .bind("$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo")
         .bind("Comptable")
         .bind(true)
+        .bind(company_id)
         .execute(&pool)
         .await
         .expect("pre-insert should succeed");
