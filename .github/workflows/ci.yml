@@ -104,12 +104,13 @@ jobs:
           VALUES ('CI Seed Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR');
           SET @company_id := LAST_INSERT_ID();
 
-          INSERT INTO users (username, password_hash, role, active)
+          INSERT INTO users (username, password_hash, role, active, company_id)
           VALUES (
             'admin',
             '$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4',
             'Admin',
-            TRUE
+            TRUE,
+            @company_id
           );
 
           INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)
