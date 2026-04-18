@@ -119,3 +119,25 @@ Chaque commit qui adresse partiellement ou totalement une issue doit mentionner 
 
 - Les **CR antérieurs à 2026-04-16** dans `docs/change_request.md` restent historiques — ne sont pas migrés rétroactivement.
 - Les **KF antérieures** (KF-001 à KF-006 au 2026-04-16) ont été migrées manuellement lors de l'instauration de cette règle.
+
+## Règle de commit et push
+
+**Commit systématique après chaque étape BMAD** :
+
+On commit localement après chaque étape structurante du workflow BMAD, sans attendre :
+
+- **Après `bmad-create-story`** (ou `bmad-quick-spec`) — la spec est un artefact versionné, pas un brouillon.
+- **Après chaque passe de `bmad-create-story validate`** — chaque passe produit un Change Log entry + patches éventuels, qu'il faut tracer séparément.
+- **Après `bmad-dev-story`** (ou `bmad-quick-dev`) — l'implémentation est prête à être revue.
+- **Après chaque passe de `bmad-code-review`** — idem validate, chaque passe a ses findings + patches.
+
+Un commit par étape, pas un commit géant en fin de story. Ça permet de revenir en arrière proprement et de voir le fil du processus dans `git log`.
+
+**Push à la demande ou en fin d'epic** :
+
+On **ne push pas automatiquement** après chaque commit. Deux déclencheurs :
+
+1. **Sur demande explicite** de Guy (ex. « pousse », « fais une PR », « ouvre la PR »).
+2. **À la fin d'un epic**, après la rétrospective (`bmad-retrospective`). Le push de fin d'epic est le moment où l'on regroupe plusieurs stories dans un PR (ou plusieurs PRs) et où l'on matérialise la clôture de l'epic.
+
+**Exception** : si une règle de workflow BMAD spécifique impose un push (ex. CI check obligatoire avant passe suivante), on push. À justifier dans le message de commit ou dans la conversation.
