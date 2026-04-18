@@ -7,7 +7,7 @@
 use chrono::{Duration as ChronoDuration, Utc};
 use kesh_db::entities::{NewRefreshToken, NewUser, Role};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{companies, refresh_tokens, users};
+use kesh_db::repositories::{refresh_tokens, users};
 use sqlx::MySqlPool;
 
 /// Crée une company factice et retourne son id.
