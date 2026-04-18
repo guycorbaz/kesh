@@ -152,8 +152,8 @@ async fn idor_contacts_cross_company_returns_404(pool: MySqlPool) {
     let company_a = seed_accounting_company(&pool).await.expect("seed A");
     let company_b = seed_accounting_company(&pool).await.expect("seed B");
 
-    let user_a_id = create_company_user(&pool, company_a.company_id, "alice", "password123").await;
-    let user_b_id = create_company_user(&pool, company_b.company_id, "bob", "password123").await;
+    let _user_a_id = create_company_user(&pool, company_a.company_id, "alice", "password123").await;
+    let _user_b_id = create_company_user(&pool, company_b.company_id, "bob", "password123").await;
 
     let app = spawn_app(pool.clone()).await;
     let token_a = login(&app, "alice", "password123").await;
