@@ -14,7 +14,7 @@ use sqlx::MySqlPool;
 async fn create_test_company(pool: &MySqlPool) -> i64 {
     let result = sqlx::query(
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
-         VALUES (?, ?, ?, ?, ?)"
+         VALUES (?, ?, ?, ?, ?)",
     )
     .bind("Test Company")
     .bind("Test Address")
