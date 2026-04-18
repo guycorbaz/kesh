@@ -41,23 +41,6 @@ pub async fn get_company_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kesh_db::entities::{Language, OrgType};
-
-    /// Mock company pour les tests.
-    fn mock_company(id: i64) -> Company {
-        Company {
-            id,
-            name: "Test Company".to_string(),
-            address: "Test Address".to_string(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-            version: 1,
-            created_at: chrono::Utc::now().naive_utc(),
-            updated_at: chrono::Utc::now().naive_utc(),
-        }
-    }
 
     #[test]
     fn current_user_fields_accessible() {
