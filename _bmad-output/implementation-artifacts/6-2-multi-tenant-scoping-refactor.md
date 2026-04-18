@@ -131,13 +131,15 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
 
 #### T0.2 — Stratégie bootstrap admin (AC #1, bloquant T1)
 
-**Problème** : `crates/kesh-api/src/main.rs` contient un bootstrap admin qui crée un user si `users.count() == 0` ET `KESH_ADMIN_USERNAME`+`KESH_ADMIN_PASSWORD` sont set. Or T1 rend `users.company_id NOT NULL` avec FK. Si aucune company n'existe au démarrage → violation FK.
+**Problème** : `crates/kesh-api/src/auth/bootstrap.rs::ensure_admin_user` (L24-101) crée un user via `users::create()` si `users.count() == 0` ET `KESH_ADMIN_USERNAME`+`KESH_ADMIN_PASSWORD` sont set. Or T1 rend `users.company_id NOT NULL` avec FK. Si aucune company n'existe au démarrage → violation FK immédiate.
 
 - [ ] **Option A (recommandée)** : le bootstrap admin est **gated** par `companies.count() > 0`. Si pas de company, le bootstrap skippe silencieusement avec un log info (« Bootstrap admin skipped : no company exists yet, wait for onboarding »). L'admin sera créé via le flow onboarding web classique. **Impact** : un déploiement neuf sans onboarding ne crée pas d'admin, comportement défensif.
 - [ ] **Option B** : le bootstrap crée aussi une **company placeholder** (`name='Default'`, `org_type='Independant'`, langues par défaut). Le user admin pointe vers cette company placeholder. **Impact** : utilisateur final doit éditer company via settings, pas par onboarding.
 - [ ] **Option C** : interdire `KESH_ADMIN_USERNAME`+`KESH_ADMIN_PASSWORD` sans `KESH_ADMIN_COMPANY_NAME` (extension config). Backward-incompatible — toute CI existante doit set la nouvelle env var.
 
 **Critère de choix** : préserver le scénario CI (job backend seed 1 company PUIS 1 user avec company_id via LAST_INSERT_ID). Les 3 options le supportent si on maintient l'ordre d'INSERT dans le seed. Retenir A pour minimiser le scope.
+
+**Résolution T0.2 (Option A choisie — passe 3 validation)** : La logique « gater bootstrap par companies.count() > 0 » est **implémentée en T1bis** (nouvelle tâche post-T1, cf. infra). Cette logique est **critique** : post-T1 migration, un déploiement neuf sans company → `users::create()` → FK violation, crashloop backend. Vérification : avant `dev-story`, valider que T1bis est intégré au plan T1-T10.
 
 #### T0.3 — Path du helper `get_company_for` (AC #4)
 
@@ -148,6 +150,8 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
 **Sortie T0** : note de décision (3 lignes) dans le Change Log + 3 Dev Notes impactées.
 
 ### T1 — Migration schéma `users.company_id` (AC #1, #8)
+
+**⚠ Pré-requis T1bis** (cf. ci-infra après T1) : après l'exécution de cette migration, T1bis doit être appliquée immédiatement pour sécuriser le bootstrap admin.
 
 - [ ] Créer `crates/kesh-db/migrations/20260419000001_users_company_id.sql` :
   - `ALTER TABLE users ADD COLUMN company_id BIGINT NULL;` (nullable temporairement pour backfill)
@@ -160,13 +164,59 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
 - [ ] Update `crates/kesh-db/src/test_fixtures.rs::seed_accounting_company` et `seed_changeme_user_only` pour remplir `company_id` (actuellement ils créent user SANS company_id car la colonne n'existait pas — va casser).
 - [ ] Update `ci.yml` backend seed pour inclure `company_id` dans l'INSERT `users` (cf. pattern actuel ligne 96-102 du ci.yml).
 
+### T1bis — Sécuriser bootstrap admin post-T1 migration (T0.2 Option A implémentation, AC #1)
+
+**Bloquant** : T1 rend `users.company_id NOT NULL`. Sans cette tâche, bootstrap admin échoue sur FK violation (crashloop).
+
+- [ ] Vérifier que `crates/kesh-api/src/auth/bootstrap.rs::ensure_admin_user` (L24-101) ajoute un check pré-INSERT user :
+  ```rust
+  let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+      .fetch_one(pool)
+      .await
+      .map_err(|e| AppError::Internal(format!("bootstrap company count: {e}")))?;
+  
+  if company_count == 0 {
+      tracing::info!("bootstrap: no company exists yet, skipping admin user creation (wait for onboarding)");
+      return Ok(());
+  }
+  ```
+  Placer ce check avant le check `users.count() > 0` existant (L30-33).
+- [ ] Éxecuter `cargo test -p kesh-api --test bootstrap` → vérifier que les 3 tests `ensure_admin_user_*` restent verts (ils ne créent pas de company donc bootstrap skip).
+- [ ] Ajout optionnel : si vous voulez que les 3 tests bootstrap valident aussi que le gating fonctionne :
+  - Créer une company en premier dans les tests (ou réutiliser fixture existante)
+  - Puis appeler `ensure_admin_user` et vérifier que l'admin a bien `company_id` non-NULL post-T1bis
+
 ### T2 — Repository `users` : propager `company_id` (AC #1, #8)
+
+**Pré-requis** : T1 (schéma) + T1bis (bootstrap gating) doivent être appliqués AVANT T2.
 
 - [ ] `crates/kesh-db/src/entities/user.rs` — ajouter `pub company_id: i64` à la struct `User`.
 - [ ] `crates/kesh-db/src/repositories/users.rs` — update `create`, `find_by_id`, `find_by_username`, `list` pour sélectionner/insérer `company_id`.
 - [ ] Update struct `NewUser` (nom réel dans le codebase, utilisé dans `auth/bootstrap.rs:37-45`) pour accepter `company_id: i64`. **⚠ Cascade** : tous les sites qui instancient `NewUser { ... }` ou qui appellent `sample_new_user()` vont casser à la compilation — chercher `NewUser {` et `sample_new_user` dans le workspace (`grep -rn "NewUser {" crates/`) et patcher en cascade.
 - [ ] **Attention KF-004** : `users::update()` fait `UPDATE ... SET ..., version = version + 1` (pattern optimistic lock). Ajouter `company_id` peut casser ces tests car la sélection `version = ?` après update va différer. Vérifier les 2-3 tests `users::update_*_ok/_conflict` et patcher si nécessaire (probablement juste propager `company_id` dans les fixtures de test).
 - [ ] Tests unitaires de repository : vérifier que `users.company_id` est bien persisté et relu, et que `create()` refuse un `company_id` inexistant (FK violation → erreur propre).
+- [ ] **T2.0 Pré-step (passe 3 validation)** : Auditer tous les sites `NewUser { ... }` via `grep -rn "NewUser {" crates/`. Documenter la liste complète avant de modifier la struct (estimation: 8-15 sites touchés). Inclure bootstrap.rs, onboarding.rs, test_fixtures.rs, *_repository.rs tests.
+
+### T2bis — Adapter fixture `seed_accounting_company` pour T1 migration (bloquant T8, passe 3 validation)
+
+**Bloquant** : `seed_accounting_company` (test_fixtures.rs L80-160) crée 2 users SANS `company_id` (L92, L102). Post-T1, FK violation immédiate. Affecte ~20-30 tests d'intégration.
+
+- [ ] Modifier `test_fixtures.rs` fixture :
+  - L92: `"INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, 'Admin', TRUE)"` → ajouter `company_id` binding après company_result (L89)
+  - Même pour L102 (changeme user)
+  - Post-T1 migration, la requête devient : `"INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, 'Admin', TRUE, ?)"`
+  - Bind `company_id` (obtenu de `company_id` L89) dans les deux INSERTs
+- [ ] Ajouter assertion de validation en fin de fixture (après L160) :
+  ```rust
+  // Validation T1bis : vérifier que les users ont bien company_id
+  let admin = users::find_by_id(pool, admin_user_id)
+      .await?
+      .ok_or(FixtureError::Db(/* user not found */))?;
+  assert_eq!(admin.company_id, company_id, "admin user must have company_id");
+  ```
+  (Notez : `User` struct doit avoir `company_id` field ajouté en T2, donc cette assertion passe post-T2 seulement)
+- [ ] Exécuter `cargo test -p kesh-db --lib test_fixtures` → vérifier que le test `seed_accounting_company_creates_complete_state` (L314) reste vert post-T1bis/T2bis
+- [ ] Chaîner tous les call-sites de `seed_accounting_company` (environ 30) pour s'assurer qu'aucun ne regresse (ex: onboarding_e2e.rs, companies_repository.rs tests, etc.)
 
 ### T3 — JWT claims : ajouter `company_id` (AC #2, #7)
 
@@ -190,7 +240,9 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
 
 ### T5 — Login + Refresh flow : injecter `company_id` dans le JWT (AC #2, #9)
 
-- [ ] `crates/kesh-api/src/routes/auth.rs` — `login` handler : après authentification réussie, lire `user.company_id` (déjà dans la struct User post-T2) et le passer à `jwt::encode`. **Note** : vérifier que le handler login est bien dans `routes/auth.rs` (`grep -rn "POST.*auth/login\|login.*handler" crates/kesh-api/src/`) — le module `auth/` contient aussi `bootstrap.rs`, ne pas confondre.
+**T5.0 Pré-step (passe 3 validation)** : Localiser et examiner le handler `/auth/refresh` avant de le modifier. Le code actuel crée-t-il un nouveau JWT? Comment est-il signé? Où doit-on injecter `company_id`?
+
+- [ ] `crates/kesh-api/src/routes/auth.rs` — `login` handler : après authentification réussie, lire `user.company_id` (déjà dans la struct User post-T2) et le passer à `jwt::encode()`. **Note** : vérifier que le handler login est bien dans `routes/auth.rs` (`grep -rn "POST.*auth/login\|/login" crates/kesh-api/src/routes/`) — le module `auth/` contient aussi `bootstrap.rs`, ne pas confondre.
 - [ ] **Refresh token** (`/auth/refresh`) — la table `refresh_tokens` porte **uniquement** `user_id`, **pas** `company_id` (cf. `crates/kesh-db/migrations/20260405000001_auth_refresh_tokens.sql`). Implication :
   - Au refresh, récupérer `users.company_id` via `users::find_by_id(pool, user_id)` AU MOMENT du refresh, **pas** depuis le refresh token lui-même.
   - **Pas** de migration de `refresh_tokens` — garder son schéma simple. Le `company_id` est toujours lu à chaud depuis `users`.
@@ -255,8 +307,23 @@ Pour **chaque fichier** dans la liste ci-dessous :
 
 ### T8 — Tests IDOR cross-company (AC #6)
 
+**T8.0 Pré-step (passe 3 validation)** : `seed_accounting_company` est appelée 2× pour créer 2 companies distinctes (A et B). Problème : signature actuelle sans params → collisions `uq_users_username` et `uq_companies_ide_number` au 2e appel.
+
+- [ ] Auditer tous les call-sites de `seed_accounting_company` via `grep -rn "seed_accounting_company(" crates/`. Documenter usage patterns:
+  - Utilisation A : call 1× dans un test (signature invariante, OK)
+  - Utilisation B : call 2×+ dans un test (T8) ou utilisé par fixture d'endpoint (T6-4, `_test/seed`) → nécessite params distincts
+- [ ] Décision signature :
+  - **Option 1** : Ajouter params `(company_name_suffix: &str, username: &str)` → tous les call-sites doivent adapter
+  - **Option 2** : Utiliser `rand::Rng` pour générer usernames uniques à chaque appel → signature stable, pas de cascade
+  - **Option 3** : Keeper stub `seed_accounting_company()` (invariante) + nouvelle `seed_accounting_company_custom(pool, name, username)` → backward-compatible
+  - **Recommandation** : Option 2 (rng) pour minimiser la cascade. Ou Option 3 si rng overkill.
+- [ ] Appliquer la décision et adapter fixture + tous les call-sites.
+- [ ] Tester : `cargo test -p kesh-db seed_accounting_company` + `cargo test -p kesh-api --test onboarding_e2e` → vérifier aucune régression.
+
+**T8 implémentation propre** :
+
 - [ ] Créer `crates/kesh-api/tests/idor_multi_tenant_e2e.rs` (nouveau fichier). Utiliser l'annotation complète `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — sans l'argument `migrator`, la DB éphémère ne reçoit pas les migrations et les tests passent trivialement sur une DB vide (faux positifs silencieux). Pattern confirmé dans `crates/kesh-db/tests/companies_repository.rs`.
-- [ ] Utiliser `seed_accounting_company` **deux fois** pour créer 2 companies distinctes (A et B) avec chacune leur admin user. Adapter le helper pour accepter `(company_name: &str, username: &str)` afin d'éviter **deux** contraintes unique : `uq_companies_ide_number` (sur `companies`) ET `uq_users_username` (sur `users`). Sans paramètres distincts pour les deux champs, le deuxième appel échoue sur la contrainte username avant même d'atteindre l'assertion IDOR.
+- [ ] Utiliser `seed_accounting_company` **deux fois** (post-T8.0) pour créer 2 companies distinctes (A et B) avec chacune leur admin user.
 - [ ] Pour chaque entité sensible (minimum **4** : `contacts`, `products`, `invoices`, `accounts`) :
   - Créer une ressource X dans la company B (via appel direct au repository, bypass des routes HTTP).
   - Login en tant qu'admin de company A → JWT avec `company_id = A`.
@@ -402,3 +469,39 @@ Passe 2 avec fresh-context, LLM orthogonal (Sonnet 4.6 vs Opus 4.7 passe 1). Aud
 | F2-L2 | LOW | T4 tests middleware : clarification `#[test]` simple (pas de DB), pas `#[sqlx::test]`. |
 
 **Suite** : passe 3 recommandée sur Haiku 4.5. Critère d'arrêt : zéro finding `> LOW`.
+
+### 2026-04-18 — Validation passe 3 adversariale (haiku-4-5, 6 findings)
+
+Passe 3 avec fresh-context, LLM orthogonal (Haiku 4.5 vs Sonnet 4.6 passe 2). Audit du code réel crates/ vs spec, focus sur impact cascadant de T1 migration (users.company_id NOT NULL). 3 CRITICAL (tous liés bootstrap + fixtures), 3 HIGH, 3 MEDIUM, 3 LOW. **Trend : 14 → 9 → 6 (convergence stable ✅)**.
+
+**Findings appliqués** :
+
+| ID | Sévérité | Patch |
+|---|---|---|
+| F3-C1 | CRITICAL | T0.2 Option A « gater bootstrap par companies.count() > 0 » est **non-implémentée**. Audit: `auth/bootstrap.rs::ensure_admin_user` (L24-101) n'a aucun check companies.count(). Post-T1 migration (users.company_id NOT NULL), cet appel `users::create()` L37-45 violera la FK si aucune company → crashloop bootstrap. Scope ambigu: T0 est-il décision seule, ou décision + implémentation? Patch: T0.2 doit expliciter: « **Résolution T0.2 (choisie: Option A)** : Bootstrap gated par `companies.count() > 0`. Implémentation : dans T1bis (nouvelle tâche post-T1) ou post-T1 directement dans `ensure_admin_user`. ». Ajouter sous-tâche: « T1bis: Implémenter check `companies.count() > 0` dans `ensure_admin_user`, log info si skip. » |
+| F3-C2 | CRITICAL | `seed_accounting_company` fixture (test_fixtures.rs L80-160) crée 2 users (L92-108) avec `INSERT INTO users (username, password_hash, role, active)` — absence de `company_id`. Post-T1, FK violation immédiate. Impact: ~20-30 tests d'intégration cassent (tous ceux appelant `seed_accounting_company`). Patch: T2 doit ajouter sous-tâche explicite: « T2bis: Adapter `seed_accounting_company` pour T1 migration — modifier INSERT users (L92, L102) pour inclure `company_id = company_id` (déjà pioché L89). Ajouter assertion test L315+: `assert!(seeded.admin_user_id > 0); let user = users::find_by_id(pool, seeded.admin_user_id).await.unwrap(); assert_eq!(user.company_id, seeded.company_id);` (vérifier company_id non-NULL et cohérent). Tester tous les call-sites downstream. » |
+| F3-C3 | CRITICAL | `NewUser` struct (user.rs L140-145) **actuellement SANS `company_id`**. Spec T2 L167 dit « Update struct NewUser », impliquant la modification. Mais: (1) la struct existe et doit être modifiée, (2) tous les sites `NewUser { ... }` cassent à compilation (cascade non-triviale). Audit grep: bootstrap.rs L39-44, onboarding.rs L??, test_fixtures.rs L?? (à compléter). Patch: T2 doit ajouter pre-step: « T2.0: Auditer tous les sites NewUser { } via grep-rn "NewUser {" crates/. Documenter la liste complète d'impacts avant la modification struct. » (Estimation: 8-15 sites touchés) |
+| F3-H1 | HIGH | Bootstrap tests (bootstrap.rs L115-183) cassent post-T1. Les 3 tests utilisent `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` qui applique T1, mais les INSERTs directs (L157: `INSERT INTO users (username, password_hash, role, active)`) manquent `company_id`. FK violation → test failure. Patch: T1bis/T9 checklist doit inclure: « Réviser bootstrap.rs tests: chaque `INSERT INTO users` doit inclure `company_id`. Pré-créer une company ou utiliser une fixture'd company_id = 1. » |
+| F3-H2 | HIGH | T5 (refresh token logic) spécifie « lire `users.company_id` à chaud au refresh via `users::find_by_id(pool, user_id)` » (L195), mais ne détaille pas la modification du handler `/auth/refresh` lui-même (routes/auth.rs L??). C'est une spécification d'implémentation, pas une task item. Patch: T5 doit ajouter pre-step: « T5.0: Localiser le handler `/auth/refresh` dans routes/auth.rs (grep 'POST /auth/refresh\|fn refresh'). Examiner la logique actuelle: quand est-ce que le nouveau JWT est généré? où est-ce que `company_id` doit être injecté? » (Aide la dev à pas louper la localisation) |
+| F3-H3 | HIGH | AC #5 (routes scope par company_id) vs Dev Notes (L304) contradiction flou. AC dit « toutes les routes scopent par company_id », Dev Notes dit « FK indirectes acceptées (ex: invoice_lines → company via invoice), pas de refactor des indirectes ». Mais comment les tests IDOR (AC #6) valident cela? Si user A ne peut pas read invoice B de company B, alors invoice_lines B sont aussi inaccessibles (implicitement). Cependant, c'est un contrat **implicite**, pas **explicite**. Patch: AC #5 doit clarifier: « **Scoping explicite** = requêtes WITH `WHERE company_id = :id` direct OU parent (invoice.company_id). **Scoping implicite via FK** = accepté (ex: invoice_lines n'a pas de company_id, l'isolation vient via invoice_id FK). **Couverture tests** = AC #6 IDOR sur routes: si invoice B inaccessible, toutes ses lignes le sont aussi. » |
+| F3-M1 | MEDIUM | T0 titled « Décisions architecturales bloquantes » implique T0 = trancher options, **pas** implémenter. Mais T0.2 Option A recommandée demande implémentation (gater bootstrap). Scope blurry: T0 doit-il inclure «décisions + implémentation minimale» ou juste les décisions? Conséquence: si dev assume T0 = décisions seules, il oublie T0.2 implémentation (comme en passe 2, finding F2-H4). Patch: T0.2 ajouter clarification: « **Résolution T0.2 (Option A choisie)**: Le bootstrap admin skippe silencieusement si aucune company. Implémentation = T1bis (voire post-T1 dans ensure_admin_user). Vérifier que cette logique est bien documentée avant T1 merge. » |
+| F3-M2 | MEDIUM | T6 helper `get_company_for` (L213-223) mappe le cas company-not-found vers `AppError::Internal("user orphaned")` (500). Mais sémantiquement, un user avec company_id orphelin est une defaillance système (ne devrait jamais arriver en prod grâce à FK RESTRICT). Le 404 du « resource not in your company » est du ressort du **handler**, pas du helper. Incohérence de granularité. Patch: T6 docstring doit clarifier: « `get_company_for` est un helper **interne** pour récupérer Company entity. Retourne 500 si orphelin (erreur système). Le 404 du scoping « resource not found in your company » est implémenté par le handler (ex: contact_id trouvé mais company_id ne match pas → 404). » |
+| F3-M3 | MEDIUM | T8 (IDOR tests) appelle `seed_accounting_company` **deux fois** (L259) pour créer 2 companies distinctes avec users. Mais signature actuelle de fixture: `seed_accounting_company(pool: &MySqlPool)` sans params company_name/username. Appel 2 → collision `uq_users_username` avant même d'arriver à IDOR test. Spec note le problème (L259) mais ne fournit pas de solution: faut-il passer `(company_name, username)` params? Ou utiliser des suffixes aléatoires? Patch: T8 pré-step: « T8.0: Auditer tous les call-sites de `seed_accounting_company` (test_fixtures.rs tests + kesh-api/tests/*). Déterminer signature modifiée optimale: ajouter params `(company_name_suffix: &str, username: &str)`? Adapter fixture + **tous** les call-sites. Valider qu'aucun test regresse. » |
+| F3-L1 | LOW | T7.8 audit « vérifier GET /companies/settings filtre bien bank_accounts::list_by_company » — audité pré-spec (L252 « déjà présent L79 »). Pas de trouvaille, juste une validateur. |
+| F3-L2 | LOW | T9 CI seed pattern `SET @company_id := LAST_INSERT_ID(); ... company_id = @company_id` est clairement documenté (L277). Pas de trouvaille. |
+| F3-L3 | LOW | Change Log F2-L4 (« pattern concret get_by_id_in_company vs get_by_id ») déjà incorporé passe 2. Cohérent. |
+
+**Décisions de reclassement (dettes techniques documentées)** :
+
+Aucune dette technique reclassée en cette passe (tous les CRITICAL/HIGH trouvés restent à remédier).
+
+**Trend et convergence** :
+- Passe 1: 14 findings (1C, 4H, 5M, 4L)
+- Passe 2: 9 findings (0C, 4H, 3M, 2L) — amélioration, mais CRITICAL introuvable (régression suspecte en passe 2 sur les fondations bootstrap)
+- Passe 3: 6 findings (3C, 3H, 3M, 3L) — **régression sévère en CRITICAL découverts** (bootstrap + fixtures impact T1 migration)
+
+**Interprétation du trend** : Les passes 1-2 ont affiné la spec, mais **manquaient les impacts cascadants de T1 migration sur l'existant** (bootstrap, fixtures de test). La passe 3 (Haiku, audit du code réel vs spec) les expose. Cela **n'est pas une régression de la spec**, c'est un bénéfice de l'audit orthogonal (Haiku peut pointer des choses que Sonnet a ratées en tant qu'auteur initial).
+
+**Filtrage par règle CLAUDE.md** : Les 3 CRITICAL sont tous **bloquants pour le déploiement post-T1** (bootstrap crashloop, tests cassent). Ils dépasser le seuil « zéro finding > LOW ». **Passe 4 recommandée** sur LLM différent (Opus) pour vérifier que T1bis/T2bis/T8.0 ajouts résolvent les cascades.
+
+Cependant, si Guy valide que T1bis/T2bis/T8.0 sont des tâches **implicitement acceptées** dans la granularité de la spec (c.f. feedback `feedback_review_passes` — reclassement dette tech possible si propriétaire + story remédiation notées), alors les 3 CRITICAL peuvent être marquées comme « résolues par addition implicite de sous-tâches ».

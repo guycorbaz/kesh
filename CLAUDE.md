@@ -68,13 +68,18 @@ BMAD module config: `_bmad/bmm/config.yaml` — defines project name, user name,
 
 Tant qu'une passe de revue remonte **au moins un finding de sévérité supérieure à LOW** (c'est-à-dire `CRITICAL`, `HIGH`, ou `MEDIUM`), on **relance une nouvelle passe de revue** après application des patches. Le critère d'arrêt est :
 
-- **Zéro finding**, OU
-- **Uniquement des findings de sévérité `LOW`** (nits cosmétiques, améliorations de lisibilité, documentation mineure)
+- **Uniquement des findings de sévérité `LOW`** (nits cosmétiques, améliorations de lisibilité, documentation mineure), OU
+- **Maximum 8 passes atteint** (limite de budget LLM)
 
 Pour chaque nouvelle passe de revue sur la même story :
-- **Utiliser un LLM différent** de la passe précédente si possible (Opus ↔ Sonnet ↔ Haiku), afin de contourner le biais d'auteur sur les patches qu'on vient d'appliquer. Les régressions introduites par la remédiation ne sont souvent détectables que par un modèle orthogonal.
+- **Utiliser un LLM différent** de la passe précédente si possible (cycle Opus → Sonnet → Haiku → Opus), afin de contourner le biais d'auteur sur les patches qu'on vient d'appliquer. Les régressions introduites par la remédiation ne sont souvent détectables que par un modèle orthogonal.
 - **Fenêtre de contexte fraîche** — ne pas réutiliser le contexte de la passe précédente.
-- **Documenter dans le Change Log** les findings trouvés, les patches appliqués, et le modèle utilisé.
+- **Patches appliqués avant passe N+1** : chaque finding trouvé en passe N est remédié avant relancer la passe N+1.
+- **Documenter dans le Change Log final** (pas une entrée par passe) : résumé du trend numérique (passe 1: X findings → passe 2: Y → ... → passe N: 0 > LOW), modèles LLM utilisés, décisions de reclassement.
+
+**Boucle automatique** :
+- `bmad-create-story validate` : relancer automatiquement en boucle après chaque passe (LLM différent, patches appliqués, contexte frais) jusqu'à atteindre 0 CRITICAL/HIGH/MEDIUM OU 8 passes.
+- `bmad-code-review` : appliqué après implémentation (`dev-story` complétée), même boucle.
 
 Cette règle s'applique à :
 - `bmad-create-story validate` (revue de spec multi-passes)
