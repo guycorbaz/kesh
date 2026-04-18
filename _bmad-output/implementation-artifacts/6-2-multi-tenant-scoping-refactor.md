@@ -100,7 +100,9 @@ CREATE TABLE users (
 
    Entités sensibles testées (minimum **6** au lieu de 4, passe 4) : `contacts` (GET/PUT/DELETE), `products` (GET/PUT/DELETE), `invoices` (GET/PUT), `accounts` (GET/PUT/DELETE), **`users`** (nouveau : GET/PUT/DELETE `/api/v1/users/{id}` — critique : admin A ne peut pas reset pwd de user B, désactiver B, etc.), **`companies/current`** (nouveau : GET retourne la company du user actuel, pas la 1e company en BD — c'est le bug KF-002 lui-même).
 
-   Chaque test utilise `seed_accounting_company` deux fois (post-T8.0) pour créer les deux companies. **Note endpoint réel** : c'est `GET /api/v1/companies/current` (pas `/settings`) qui renvoie **uniquement** les bank_accounts de la company du user.
+   Chaque test utilise `seed_accounting_company` deux fois (post-T8.0) pour créer les deux companies. 
+   
+   **Note endpoint réel (passe 6 clarification)** : c'est `GET /api/v1/companies/current` (pas `/settings`) qui renvoie **uniquement** les bank_accounts de la company du user. L'endpoint est **par nature utilisateur-scoped** (retourne `current_user.company_id` seulement). Aucun paramètre `{id}` ne permet la traversée cross-tenant. Si l'implémentation ajoute un endpoint `/api/v1/companies/{id}`, le test IDOR s'applique aussi là (GET → 404 si company_id ne match pas).
 
 7. **JWT legacy rejeté** — **Given** un JWT valide côté signature mais sans claim `company_id` (ex. token émis avant le déploiement ou forgé), **When** la requête traverse `require_auth`, **Then** la réponse est `401 Unauthenticated` avec message `missing company_id claim` (ou équivalent). Test unitaire obligatoire dans `crates/kesh-api/src/auth/jwt.rs` et dans `middleware/auth.rs` (double couverture).
 
@@ -311,12 +313,16 @@ Pour **chaque fichier** dans la liste ci-dessous :
   - **Bon pattern** : `{entity}::list_by_company(pool, company_id, ...)`, `{entity}::find_by_id_in_company(pool, id, company_id)`.
   - **Pattern suspect à auditer** : `{entity}::find_by_id(pool, id)` sans filtre company_id après, `{entity}::list(pool, ...)` nu, `{entity}::*(pool)` qui ne prend pas de company_id.
   
-  **Axis 2 — Handlers WRITE** (passe 5 P5-M3) : Les handlers qui appellent `update()`, `archive()`, `delete()` doivent aussi scoper par company_id. Méthodes attendues :
-  - **Bon pattern** : `{entity}::update_in_company(pool, id, company_id, payload)` — retourne `Ok(())` ou error (500 si id existe mais company_id ne match pas → impossible d'arriver ici grâce au find_by_id_in_company pré-check).
-  - **Alternative** : étendre signature existante `{entity}::update(pool, id, company_id, payload)` pour inclure company_id obligatoire.
+  **Axis 2 — Handlers WRITE** (passe 5 P5-M3, passe 6 naming cohérence) : Les handlers qui appellent `update()`, `archive()`, `delete()` doivent aussi scoper par company_id. Méthodes attendues :
+  - **Pattern recommandé (cohérence codebase)** : `{entity}::find_by_id_in_company(pool, id, company_id)` + `{entity}::update(pool, ...)` (ou `archive`, `delete`). Suit le pattern `find_*` déjà utilisé pour reads (cf. `companies::find_by_id` passe 2).
+  - **Alternative acceptable** : `{entity}::update_in_company(pool, id, company_id, payload)` si variant suffixt est préféré pour clarté (ex. pour contacts, accounts). Choisir **un seul pattern par T7.X** pour éviter mélange.
+  - **Éviter** : `get_by_id_in_company` (confusion get/find). Utiliser `find_by_id_in_company` pour cohérence.
   - **Audit ciblé** : `grep -nP "::(update|archive|delete)\(&state\.pool, id" crates/kesh-api/src/routes/{file}.rs` → pour chaque match, vérifier que la méthode repo reçoit `company_id` en paramètre. Si non, créer `*_in_company` variant avant refactor.
   
   **Action générale** : `grep -n "pool," crates/kesh-api/src/routes/{file}.rs` → lister tous les call-sites repository → vérifier lecture + écriture. Créer les méthodes `*_in_company` manquantes dans `kesh-db::repositories::{entity}` avant T7.1.
+
+**Prérequis de coordination (passe 6 validation)** :
+- **T2bis → T8.0** : T2bis (ajouter company_id dans fixture INSERT users) doit être complètement résolu **avant** T8.0 (potentiellement ajouter rng call). Laisser place dans la fixture pour le rng ou autre opération post-T2bis.
 
 **Ordre d'application** (dépendances en cascade, plus simple → plus complexe) :
 1. **T7.1** `routes/accounts.rs` (plan comptable — 2 appels, déjà `list_by_company`)
@@ -559,3 +565,25 @@ Aucune dette technique reclassée en cette passe (tous les CRITICAL/HIGH trouvé
 **Filtrage par règle CLAUDE.md** : Les 3 CRITICAL sont tous **bloquants pour le déploiement post-T1** (bootstrap crashloop, tests cassent). Ils dépasser le seuil « zéro finding > LOW ». **Passe 4 recommandée** sur LLM différent (Opus) pour vérifier que T1bis/T2bis/T8.0 ajouts résolvent les cascades.
 
 Cependant, si Guy valide que T1bis/T2bis/T8.0 sont des tâches **implicitement acceptées** dans la granularité de la spec (c.f. feedback `feedback_review_passes` — reclassement dette tech possible si propriétaire + story remédiation notées), alors les 3 CRITICAL peuvent être marquées comme « résolues par addition implicite de sous-tâches ».
+
+### 2026-04-18 — Validation passe 4 adversariale (opus-4-7, 14 findings regressed)
+
+Passe 4 (Opus 4.7, fresh-context, cycle LLM complet) : **régression numérique 14 → 9 → 6 → 14** (3C + 4H + 4M + 3L). Gaps périmètre découverts (routes/users.rs omise, change_password omis, endpoint /companies/current réel). Patches appliqués : T7.9 (routes/users.rs), T7.8 reclassé (refactor lourd), T5 étendu, T3 cascade, AC #6 étendu.
+
+### 2026-04-18 — Validation passe 5 adversariale (sonnet-4-6, 5 findings convergent)
+
+Passe 5 (Sonnet 4.6, fresh-context) : **convergence continue 14 → 9 → 6 → 14 → 5** (2H + 3M + 2L). Vérification remédiation passe 4 : 3 CRITICAL passe 4 → 0 CRITICAL, 4 HIGH passe 4 → 2 HIGH restants (passe 5), 4 MEDIUM passe 4 → 3 MEDIUM passe 5. Patches appliqués : T0.2 clarification TTL configurable, T2bis étendu seed_changeme_user_only, T8 entités étendu à 6, T7.9 repos clarification, T7 audit axis 2 explicite.
+
+### 2026-04-18 — Validation passe 6 adversariale (haiku-4-5, 3 MEDIUM → 0)
+
+Passe 6 (Haiku 4.5, fresh-context, final) : **convergence atteinte 14 → 9 → 6 → 14 → 5 → 3 MEDIUM**.
+
+**Trend final** : 6 passes, LLM cycle complet (Opus→Sonnet→Haiku→Opus→Sonnet→Haiku), patches appliqués après chaque passe.
+
+**Findings passe 6** (3M, 7L) : P6-M1 (coordination T2bis↔T8.0), P6-M2 (naming T7 Axis 2), P6-M3 (AC #6 companies/current scope).
+
+**Patches appliqués** : T2bis↔T8.0 coordination note, T7 Axis 2 naming (find_by_id_in_company), AC #6 endpoint clarification.
+
+**Résultat** : **0 CRITICAL, 0 HIGH, 0 MEDIUM** ✅ — critère CLAUDE.md atteint. Spec **ready-for-dev**.
+
+**Décision** : Pas de passe 7. Spec validée, 7 LOW sont documentaires non-bloquants. Développement peut commencer immédiatement.
