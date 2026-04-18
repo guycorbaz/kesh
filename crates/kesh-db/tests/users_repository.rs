@@ -36,7 +36,9 @@ fn sample_new_user(company_id: i64) -> NewUser {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn create_and_find_by_id(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    let created = users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
     assert!(created.id > 0);
     assert_eq!(created.username, "alice");
     assert_eq!(created.role, Role::Comptable);
@@ -56,7 +58,9 @@ async fn find_by_id_returns_none_for_missing(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn find_by_username(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     let found = users::find_by_username(&pool, "alice").await.unwrap();
     assert!(found.is_some());
@@ -75,7 +79,9 @@ async fn find_by_username_is_case_insensitive(pool: MySqlPool) {
     // find_by_username("ALICE") matche la ligne "alice".
     // Ce comportement est documenté dans repositories/users.rs.
     let company_id = create_test_company(&pool).await;
-    users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     let upper = users::find_by_username(&pool, "ALICE").await.unwrap();
     assert!(
@@ -91,7 +97,9 @@ async fn find_by_username_is_case_insensitive(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn unique_constraint_on_username(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     // Deuxième user avec même username → UNIQUE violation
     let result = users::create(&pool, sample_new_user(company_id)).await;
@@ -101,7 +109,9 @@ async fn unique_constraint_on_username(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn update_role_and_active(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    let created = users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     let changes = UserUpdate {
         role: Role::Admin,
@@ -122,7 +132,9 @@ async fn update_role_and_active(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn update_fails_on_stale_version(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    let created = users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     // Premier update
     users::update_role_and_active(
@@ -173,7 +185,9 @@ async fn list_with_pagination(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn debug_masks_password_hash(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
-    let created = users::create(&pool, sample_new_user(company_id)).await.unwrap();
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
     let debug_output = format!("{created:?}");
     assert!(!debug_output.contains("argon2id"));
     assert!(!debug_output.contains("QUJDRA"));
