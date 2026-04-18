@@ -1,14 +1,13 @@
 # Known Failures (KF)
 
-Registre des tests/comportements **constatés cassés mais hors scope** du travail en cours, à ne pas oublier de corriger.
+> **📌 Archivé 2026-04-18** : ce fichier est **figé**. Les KF sont désormais suivies **uniquement** sur [GitHub Issues](https://github.com/guycorbaz/kesh/issues?q=label%3Aknown-failure) conformément à la règle `CLAUDE.md` « Issue Tracking Rule » (GitHub = unique source de vérité). Tout nouvelle KF doit être créée via le template `known_failure.yml` avec un titre `[KF-NNN] ...`.
+>
+> Les 7 KF historiques ci-dessous (KF-001 à KF-007) ont été migrées sur GitHub. Ce fichier reste uniquement la trace historique de la convention pré-2026-04-18. **Ne pas y ajouter de nouvelle entrée** — toute mise à jour d'une KF existante se fait sur l'issue GitHub correspondante.
 
-## Convention
+## Convention historique (pré-archivage)
 
-- **Une entrée par défaillance** identifiée par un ID `KF-NNN`.
+- Une entrée par défaillance identifiée par un ID `KF-NNN`.
 - Format : symptôme reproductible, root cause hypothétique, story d'origine, story de remédiation prévue, status (`open` / `closed`).
-- Une KF résolue passe à `status: closed` + lien vers le commit fix.
-- Pattern process : tout commit qui constate un échec hors scope doit mentionner la KF dans son message.
-- **Double tracking GitHub Issues** depuis 2026-04-16 — chaque KF a une issue sur [guycorbaz/kesh](https://github.com/guycorbaz/kesh/issues?q=label%3Aknown-failure) avec les labels `known-failure` + éventuellement `technical-debt` + `triage`. Ce fichier reste la source de vérité offline / dans Git ; GitHub est la source online pour triage.
 
 ---
 

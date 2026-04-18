@@ -87,7 +87,9 @@ Cette règle s'applique à :
 
 **Règle de traçage des CR, KF et bug reports** :
 
-Toute nouvelle découverte d'un **CR (Change Request)**, d'une **KF (Known Failure)** ou d'un **bug report** DOIT être créée comme GitHub Issue sur [guycorbaz/kesh/issues](https://github.com/guycorbaz/kesh/issues) en utilisant le template approprié dans `.github/ISSUE_TEMPLATE/`.
+**GitHub Issues est l'unique source de vérité.** Toute nouvelle découverte d'un **CR (Change Request)**, d'une **KF (Known Failure)** ou d'un **bug report** DOIT être créée comme GitHub Issue sur [guycorbaz/kesh/issues](https://github.com/guycorbaz/kesh/issues) en utilisant le template approprié dans `.github/ISSUE_TEMPLATE/`.
+
+**Pas de tracking local en parallèle** — aucun fichier dans le repo (Markdown, YAML, tableau de story) ne doit maintenir sa propre liste de KF/CR/bugs. Pas de double-tracking, pas de sync bidirectionnelle, pas de dérive de source de vérité.
 
 | Type | Template | Labels appliqués par le template |
 |------|----------|----------------------------------|
@@ -95,18 +97,12 @@ Toute nouvelle découverte d'un **CR (Change Request)**, d'une **KF (Known Failu
 | KF | `known_failure.yml` | `known-failure`, `triage` (+ `technical-debt` à ajouter manuellement si dette persistante) |
 | CR / feature request | `feature_request.yml` | `enhancement`, `triage` |
 
-### Double-tracking KF (GitHub + offline)
-
-Les KF sont suivies aux deux endroits :
-- **GitHub Issues** — source online pour triage, cross-référence dans les commits, discussion asynchrone.
-- **`docs/known-failures.md`** — source offline / dans Git, persiste même sans connexion GitHub. Chaque entrée KF-NNN référence son issue GitHub (ex. `**GitHub** : [#2](https://github.com/guycorbaz/kesh/issues/2)`).
-
-Sync bidirectionnelle manuelle : si on modifie l'un, on modifie l'autre. Les CR et bug reports n'ont que GitHub comme source (pas de fichier offline).
+Titre homogène pour les KF : `[KF-NNN] description` — facilite la recherche visuelle dans la liste d'issues.
 
 ### Quand créer une issue
 
-- **Bug report** : dès qu'un comportement incorrect est reproduit, **hors du flux normal de dev d'une story en cours**. Si le bug est découvert pendant l'implémentation d'une story liée, le corriger directement dans la story et le documenter dans le Change Log.
-- **KF** : dès qu'un test cassé ou un comportement défaillant est détecté **hors scope du travail courant**. Cf. convention `docs/known-failures.md`.
+- **Bug report** : dès qu'un comportement incorrect est reproduit, **hors du flux normal de dev d'une story en cours**. Si le bug est découvert pendant l'implémentation d'une story liée, le corriger directement dans la story et le documenter dans le Change Log de la story.
+- **KF** : dès qu'un test cassé ou un comportement défaillant est détecté **hors scope du travail courant**.
 - **CR** : **avant** tout changement de scope qui modifie le PRD ou les AC d'une story déjà validée (`done` ou en `review`). Ne pas faire de modification silencieuse du scope.
 
 ### Commits qui adressent une issue
@@ -117,8 +113,12 @@ Chaque commit qui adresse partiellement ou totalement une issue doit mentionner 
 
 ### Legacy
 
-- Les **CR antérieurs à 2026-04-16** dans `docs/change_request.md` restent historiques — ne sont pas migrés rétroactivement.
-- Les **KF antérieures** (KF-001 à KF-006 au 2026-04-16) ont été migrées manuellement lors de l'instauration de cette règle.
+Deux fichiers dans `docs/` sont **archivés et ne doivent plus être mis à jour** — ils ne servent que de trace historique :
+
+- `docs/change_request.md` — archivé depuis 2026-04-16, 8 CR migrés sur GitHub.
+- `docs/known-failures.md` — archivé depuis 2026-04-18, 7 KF migrées sur GitHub (KF-001 à KF-007).
+
+Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers pour y ajouter des entrées.
 
 ## Règle de commit et push
 
