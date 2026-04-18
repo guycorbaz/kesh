@@ -65,23 +65,26 @@ CREATE TABLE users (
 );
 ```
 
-**Usages `get_company()` à refactorer** (37 occurrences totales via `grep -rn "get_company" crates/kesh-api/src/routes/`) :
+**Usages `get_company()` à refactorer** (audit `grep -rn "get_company" crates/kesh-api/src/routes/` — 2026-04-18) :
 
-| Fichier | Helper `fn get_company` déclaré ? | Nombre d'appels |
-|---|---|---|
-| `routes/products.rs` | ✅ L122 | 5 |
-| `routes/invoices.rs` | ✅ L260 | 10 |
-| `routes/invoice_pdf.rs` | ✅ L343 | 1 |
-| `routes/journal_entries.rs` | ✅ L167 (avec commentaire « duplication volontaire ») | 4 |
-| `routes/accounts.rs` | ✅ L85 | 2 |
-| `routes/company_invoice_settings.rs` | ✅ L70 | 1 |
-| `routes/contacts.rs` | ✅ (à vérifier) | ? |
-| `routes/bank_accounts.rs` | ✅ (à vérifier) | ? |
-| `routes/onboarding.rs` | différent (flow création) | cas particulier |
+| Fichier | Helper `fn get_company` déclaré ? | Nombre d'appels | Scope refactor |
+|---|---|---|---|
+| `routes/products.rs` | ✅ L122 | 5 | IN — refactor |
+| `routes/invoices.rs` | ✅ L260 | 10 | IN — refactor |
+| `routes/invoice_pdf.rs` | ✅ L343 | 1 | IN — refactor |
+| `routes/journal_entries.rs` | ✅ L167 (avec commentaire « duplication volontaire ») | 4 | IN — refactor |
+| `routes/accounts.rs` | ✅ L85 | 2 | IN — refactor |
+| `routes/company_invoice_settings.rs` | ✅ L70 | 1 | IN — refactor |
+| `routes/contacts.rs` | ✅ L182 | 2 | IN — refactor |
+| `routes/onboarding.rs` | ✅ L481 | 2 | OUT — cas particulier (bootstrap) |
+
+**Total : 7 fichiers cibles du refactor**, 25 appels + 7 helpers dupliqués = **32 occurrences** à éliminer dans le scope de la story. `onboarding.rs` (2 appels + 1 helper = 3 occurrences) reste tel quel.
+
+⚠ **Correction importante vs epic original** : il n'existe **PAS** de fichier `routes/bank_accounts.rs`. La logique bank_accounts est hébergée dans `routes/companies.rs` (helper `GET /companies/settings` qui inclut la liste des bank_accounts via `kesh_db::repositories::bank_accounts::list_by_company`). `routes/companies.rs` ne déclare pas `fn get_company` local — il utilise directement `companies::*` du repository. Il est hors scope refactor (pas de `get_company()` à remplacer), mais **dans scope audit SQL** (AC #5) : toutes ses requêtes doivent scoper par company.
 
 **Tests existants sur l'isolation multi-tenant** : **aucun**. Aucun test ne vérifie qu'un user d'une company A ne peut pas lire une ressource d'une company B. À ajouter intégralement dans cette story.
 
-## Critères d'acceptation (Given/When/Then, reprise epics.md#Story-6.2 + additions)
+## Critères d'acceptation (11 AC — Given/When/Then, reprise epics.md#Story-6.2 + additions)
 
 1. **Schéma** — **Given** le schéma actuel sans `users.company_id`, **When** migration appliquée, **Then** la table `users` a une colonne `company_id BIGINT NOT NULL FOREIGN KEY REFERENCES companies(id) ON DELETE RESTRICT` + backfill des users existants pointe vers la company avec le plus petit `id` (ou la seule company si mono-tenant).
 
@@ -91,15 +94,19 @@ CREATE TABLE users (
 
 4. **Helper unifié `get_company_for`** — **Given** les 8 helpers `get_company()` dupliqués, **When** refactor, **Then** ils sont remplacés par un **unique** helper partagé `crate::helpers::get_company_for(current_user: &CurrentUser, pool: &MySqlPool) -> Result<Company, AppError>` qui fait `SELECT * FROM companies WHERE id = ?` avec `current_user.company_id`. Les 8 `fn get_company` locaux sont supprimés (DRY).
 
-5. **Toutes les routes API scopent par company_id** — **Given** les routes `contacts`, `products`, `invoices`, `invoice_pdf`, `bank_accounts`, `company_invoice_settings`, `accounts`, `journal_entries`, **When** un handler lit ou écrit une ressource, **Then** la requête SQL filtre sur `company_id = :current_user.company_id`. Aucune route ne fait `SELECT ... LIMIT 1` sans WHERE ni `SELECT ... WHERE company_id IN (SELECT id FROM companies)`.
+5. **Toutes les routes API scopent par company_id** — **Given** les 7 routes refactorées (`contacts`, `products`, `invoices`, `invoice_pdf`, `company_invoice_settings`, `accounts`, `journal_entries`) plus `companies` (bank_accounts embarqué), **When** un handler lit ou écrit une ressource, **Then** la requête SQL filtre sur `company_id = :current_user.company_id`. Aucune route ne fait `SELECT ... LIMIT 1` sans clause `WHERE company_id = ?`.
 
-6. **Tests IDOR cross-company** — **Given** 2 companies A et B avec chacune leurs propres ressources, **When** un user de company A tente d'accéder via ID direct à une ressource de company B (GET `/api/v1/contacts/{id_de_B}`, PUT `/api/v1/invoices/{id_de_B}`, DELETE `/api/v1/bank_accounts/{id_de_B}`, GET `/api/v1/products/{id_de_B}`), **Then** la réponse est `404 NotFound` (**pas** 200 avec données fuitées, **pas** 403 qui révèle l'existence). Au minimum **1 test par entité sensible** : contacts, products, invoices, bank_accounts. Chaque test utilise le helper `seed_accounting_company` deux fois pour créer les deux companies.
+6. **Tests IDOR cross-company** — **Given** 2 companies A et B avec chacune leurs propres ressources, **When** un user de company A tente d'accéder via ID direct à une ressource de company B (GET `/api/v1/contacts/{id_de_B}`, PUT `/api/v1/invoices/{id_de_B}`, GET `/api/v1/products/{id_de_B}`, GET `/api/v1/accounts/{id_de_B}`), **Then** la réponse est `404 NotFound` (**pas** 200 avec données fuitées, **pas** 403 qui révèle l'existence). Au minimum **1 test par entité sensible** : `contacts`, `products`, `invoices`, `accounts`. Chaque test utilise le helper `seed_accounting_company` deux fois pour créer les deux companies. **Note bank_accounts** : test IDOR effectué via `GET /api/v1/companies/settings` qui doit renvoyer **uniquement** les bank_accounts de la company du user — pas d'endpoint direct `/api/v1/bank_accounts/{id}`.
 
-7. **Onboarding flow préservé** — **Given** l'onboarding actuel (Story 2-2/2-3) crée une company puis attache un user admin, **When** le flow est joué sur DB fraîche, **Then** le user créé est correctement lié à la company créée (`users.company_id = companies.id`). Le flow continue de fonctionner sans régression (tests d'intégration `onboarding_e2e.rs` verts).
+7. **JWT legacy rejeté** — **Given** un JWT valide côté signature mais sans claim `company_id` (ex. token émis avant le déploiement ou forgé), **When** la requête traverse `require_auth`, **Then** la réponse est `401 Unauthenticated` avec message `missing company_id claim` (ou équivalent). Test unitaire obligatoire dans `crates/kesh-api/src/auth/jwt.rs` et dans `middleware/auth.rs` (double couverture).
 
-8. **KF-002 / issue #2 close** — **Given** la story mergée, **When** commit de merge, **Then** le message contient `closes #2`. GitHub ferme automatiquement l'issue. Pas de ligne à modifier dans `docs/known-failures.md` (fichier archivé depuis 2026-04-18, cf. PR #23).
+8. **Onboarding flow préservé** — **Given** l'onboarding actuel (Story 2-2/2-3) crée une company puis attache un user admin, **When** le flow est joué sur DB fraîche, **Then** le user créé est correctement lié à la company créée (`users.company_id = companies.id`). Validation explicite : `cargo test -p kesh-api --test onboarding_e2e -- --test-threads=1` → vert. Aucun test skippé, aucune nouvelle KF créée.
 
-9. **CI verte** — **Given** la branche `story/6-2-multi-tenant-scoping-refactor`, **When** PR ouverte, **Then** les 4 required checks passent (`Backend`, `Frontend`, `E2E`, `Docker build`). Aucune régression sur les 84+ tests `kesh-db` ni les tests `*_e2e.rs`.
+9. **Refresh token cohérent** — **Given** un refresh token valide (stocké dans `refresh_tokens` qui porte **uniquement** `user_id`, pas `company_id`), **When** le endpoint `/auth/refresh` régénère un access token, **Then** le nouveau JWT porte `company_id` lu à chaud depuis `users.company_id` (pas depuis le refresh token). Test d'intégration : login → refresh → JWT décodé porte bien `company_id`.
+
+10. **CI verte** — **Given** la branche `story/6-2-multi-tenant-scoping-refactor`, **When** PR ouverte, **Then** les 4 required checks passent (`Backend`, `Frontend`, `E2E`, `Docker build`). Aucune régression sur les 84+ tests `kesh-db` ni les tests `*_e2e.rs`.
+
+11. **KF-002 fermée au merge** — **Given** la PR mergée sur main, **When** le commit de merge (squash) ou l'un des commits de la PR contient `closes #2`, **Then** GitHub ferme automatiquement l'issue #2. **Validation** : la `bmad-code-review` checklist inclut un item « titre/body de PR contient `closes #2` ». (AC non-vérifiable pendant dev-story, migré en checklist review.)
 
 ## Scope volontairement HORS story — décisions tranchées
 
@@ -112,15 +119,35 @@ CREATE TABLE users (
 
 ## Tasks / Subtasks
 
-### T0 — Décision architecturale : `company_id` via JWT claim vs DB lookup (AC #2, #3)
+### T0 — Décisions architecturales bloquantes (AC #1, #2, #3, #4)
 
-- [ ] **Discussion + décision** (avant tout code) :
-  - **Option A** : `company_id` embarqué dans le JWT claim au login. `require_auth` le lit directement. Avantages : zero DB call par requête protégée. Inconvénients : breaking change protocolaire + migration users qui changent de company invisible jusqu'à expiration JWT.
-  - **Option B** : `company_id` pas dans le JWT, `require_auth` fait un `SELECT company_id FROM users WHERE id = ?` à chaque requête. Avantages : staleness nulle. Inconvénients : +1 DB call par requête.
+Ces trois décisions doivent être tranchées **avant tout code** car elles conditionnent T1-T7.
+
+#### T0.1 — `company_id` via JWT claim vs DB lookup (AC #2, #3)
+
+- [ ] **Option A** : `company_id` embarqué dans le JWT claim au login. `require_auth` le lit directement. Avantages : zero DB call par requête protégée. Inconvénients : breaking change protocolaire + staleness (user déplacé vers une autre company invisible jusqu'à expiration JWT).
+- [ ] **Option B** : `company_id` pas dans le JWT, `require_auth` fait un `SELECT company_id FROM users WHERE id = ?` à chaque requête. Avantages : staleness nulle. Inconvénients : +1 DB call par requête (impact latence ~1-3ms par call authentifié).
 - [ ] **Recommandation par défaut** : **Option A** (cohérent avec le pattern `role` déjà documenté dans `middleware/auth.rs:40-50`). Staleness acceptée et tracée.
-- [ ] **Sortie** : note de décision dans Dev Notes + impact sur T3/T4.
 
-### T1 — Migration schéma `users.company_id` (AC #1, #7)
+#### T0.2 — Stratégie bootstrap admin (AC #1, bloquant T1)
+
+**Problème** : `crates/kesh-api/src/main.rs` contient un bootstrap admin qui crée un user si `users.count() == 0` ET `KESH_ADMIN_USERNAME`+`KESH_ADMIN_PASSWORD` sont set. Or T1 rend `users.company_id NOT NULL` avec FK. Si aucune company n'existe au démarrage → violation FK.
+
+- [ ] **Option A (recommandée)** : le bootstrap admin est **gated** par `companies.count() > 0`. Si pas de company, le bootstrap skippe silencieusement avec un log info (« Bootstrap admin skipped : no company exists yet, wait for onboarding »). L'admin sera créé via le flow onboarding web classique. **Impact** : un déploiement neuf sans onboarding ne crée pas d'admin, comportement défensif.
+- [ ] **Option B** : le bootstrap crée aussi une **company placeholder** (`name='Default'`, `org_type='Independant'`, langues par défaut). Le user admin pointe vers cette company placeholder. **Impact** : utilisateur final doit éditer company via settings, pas par onboarding.
+- [ ] **Option C** : interdire `KESH_ADMIN_USERNAME`+`KESH_ADMIN_PASSWORD` sans `KESH_ADMIN_COMPANY_NAME` (extension config). Backward-incompatible — toute CI existante doit set la nouvelle env var.
+
+**Critère de choix** : préserver le scénario CI (job backend seed 1 company PUIS 1 user avec company_id via LAST_INSERT_ID). Les 3 options le supportent si on maintient l'ordre d'INSERT dans le seed. Retenir A pour minimiser le scope.
+
+#### T0.3 — Path du helper `get_company_for` (AC #4)
+
+- [ ] **Option A** : `crates/kesh-api/src/helpers.rs` (nouveau module top-level). Avantages : visibilité claire, import `use crate::helpers::get_company_for`. Inconvénients : risque de devenir un dumping ground.
+- [ ] **Option B** : `crates/kesh-api/src/routes/helpers.rs` (sous-module routes). Avantages : cohabitation avec les consommateurs. Inconvénients : nom incohérent si d'autres helpers non-route y arrivent.
+- [ ] **Recommandation par défaut** : **Option A** — précédent `crate::middleware::auth` et `crate::auth::jwt` montrent que le crate suit un pattern top-level. Cohérent.
+
+**Sortie T0** : note de décision (3 lignes) dans le Change Log + 3 Dev Notes impactées.
+
+### T1 — Migration schéma `users.company_id` (AC #1, #8)
 
 - [ ] Créer `crates/kesh-db/migrations/20260419000001_users_company_id.sql` :
   - `ALTER TABLE users ADD COLUMN company_id BIGINT NULL;` (nullable temporairement pour backfill)
@@ -133,38 +160,56 @@ CREATE TABLE users (
 - [ ] Update `crates/kesh-db/src/test_fixtures.rs::seed_accounting_company` et `seed_changeme_user_only` pour remplir `company_id` (actuellement ils créent user SANS company_id car la colonne n'existait pas — va casser).
 - [ ] Update `ci.yml` backend seed pour inclure `company_id` dans l'INSERT `users` (cf. pattern actuel ligne 96-102 du ci.yml).
 
-### T2 — Repository `users` : propager `company_id` (AC #1, #7)
+### T2 — Repository `users` : propager `company_id` (AC #1, #8)
 
 - [ ] `crates/kesh-db/src/entities/user.rs` — ajouter `pub company_id: i64` à la struct `User`.
 - [ ] `crates/kesh-db/src/repositories/users.rs` — update `create`, `get_by_id`, `get_by_username`, `list` pour sélectionner/insérer `company_id`.
 - [ ] Update signature `UserCreate` (ou équivalent) pour accepter `company_id`.
-- [ ] Tests unitaires de repository : vérifier que `users.company_id` est bien persisté et relu.
+- [ ] **Attention KF-004** : `users::update()` fait `UPDATE ... SET ..., version = version + 1` (pattern optimistic lock). Ajouter `company_id` peut casser ces tests car la sélection `version = ?` après update va différer. Vérifier les 2-3 tests `users::update_*_ok/_conflict` et patcher si nécessaire (probablement juste propager `company_id` dans les fixtures de test).
+- [ ] Tests unitaires de repository : vérifier que `users.company_id` est bien persisté et relu, et que `create()` refuse un `company_id` inexistant (FK violation → erreur propre).
 
-### T3 — JWT claims : ajouter `company_id` (AC #2)
+### T3 — JWT claims : ajouter `company_id` (AC #2, #7)
 
 - [ ] `crates/kesh-api/src/auth/jwt.rs` — ajouter `pub company_id: i64` à la struct `Claims`.
 - [ ] Update `encode(...)` pour prendre un `company_id: i64` en paramètre.
-- [ ] Update `decode(...)` : si `company_id` manquant dans un vieux JWT → retourner `JwtError::InvalidClaims("missing company_id")` → mappe vers 401.
-- [ ] Update tests unitaires jwt : encode/decode avec `company_id` + test decode d'un JWT legacy (sans company_id) → 401 attendu.
+- [ ] Update `decode(...)` : si `company_id` manquant dans un vieux JWT → retourner `JwtError::InvalidClaims("missing company_id claim")` → mappe vers 401.
+- [ ] Tests unitaires `jwt.rs` :
+  - encode + decode roundtrip avec `company_id=42` → Claims.company_id == 42 (AC #2).
+  - decode d'un JWT legacy forgé manuellement (signature valide, claims sans `company_id`) → erreur `InvalidClaims` (AC #7).
+  - decode d'un JWT forgé avec signature valide mais `company_id` non-entier → erreur `InvalidClaims` (AC #7).
 
-### T4 — `CurrentUser` + middleware `require_auth` (AC #3)
+### T4 — `CurrentUser` + middleware `require_auth` (AC #3, #7)
 
 - [ ] `crates/kesh-api/src/middleware/auth.rs` :
   - Ajouter `pub company_id: i64` à `CurrentUser`.
-  - Dans `require_auth`, parser `company_id` des claims (si absent → 401).
-  - Documenter la staleness `company_id` dans le bloc `SEC:` existant (alignement avec `role`).
-- [ ] Tests unitaires middleware : JWT valide avec `company_id` → 200 + CurrentUser bien injecté ; JWT sans `company_id` → 401.
+  - Dans `require_auth`, propager `claims.company_id` vers `CurrentUser`.
+  - Documenter la staleness `company_id` dans le bloc `SEC:` existant (alignement avec `role`). Ex : « SEC: company_id staleness — idem role, TTL JWT 15 min + leeway 60s ».
+- [ ] Tests unitaires middleware (étendre ceux existants dans `auth.rs:91+`) :
+  - JWT valide avec `company_id=7` → 200 + CurrentUser { user_id, role, company_id=7 } injecté (AC #3).
+  - JWT legacy sans `company_id` → 401 (AC #7) — double couverture avec T3.
 
-### T5 — Login flow : injecter `company_id` dans le JWT (AC #2)
+### T5 — Login + Refresh flow : injecter `company_id` dans le JWT (AC #2, #9)
 
-- [ ] `crates/kesh-api/src/routes/auth.rs` (ou équivalent) — `login` handler : après authentification réussie, lire `user.company_id` et le passer à `jwt::encode`.
-- [ ] Idem pour le refresh token endpoint (`/auth/refresh`) : le refresh token doit également porter `company_id` pour que le nouveau JWT l'ait aussi.
-- [ ] Tests d'intégration `auth_e2e.rs` (ou similaire) : login → GET `/api/v1/users/me` → vérifier que la réponse inclut `company_id` (si exposé) ou que les queries suivantes scopent bien.
+- [ ] `crates/kesh-api/src/routes/auth.rs` — `login` handler : après authentification réussie, lire `user.company_id` (déjà dans la struct User post-T2) et le passer à `jwt::encode`.
+- [ ] **Refresh token** (`/auth/refresh`) — la table `refresh_tokens` porte **uniquement** `user_id`, **pas** `company_id` (cf. `crates/kesh-db/migrations/20260405000001_auth_refresh_tokens.sql`). Implication :
+  - Au refresh, récupérer `users.company_id` via `users::get_by_id(pool, user_id)` AU MOMENT du refresh, **pas** depuis le refresh token lui-même.
+  - **Pas** de migration de `refresh_tokens` — garder son schéma simple. Le `company_id` est toujours lu à chaud depuis `users`.
+  - **Conséquence souhaitée** : un user déplacé vers une autre company verra son `company_id` updaté au prochain refresh (fréquence ~15 min). C'est le mécanisme de propagation naturel.
+- [ ] Tests d'intégration :
+  - `auth_e2e.rs::login_includes_company_id` : POST `/auth/login` → décoder le JWT reçu → vérifier `claims.company_id == user.company_id` (AC #2).
+  - `auth_e2e.rs::refresh_includes_fresh_company_id` : login → refresh → décoder le nouveau JWT → vérifier `company_id` présent et correct (AC #9).
+  - `auth_e2e.rs::refresh_picks_up_company_change` : login en tant que user-A (company=1) → UPDATE users SET company_id=2 en DB → refresh → nouveau JWT a `company_id=2` (staleness auto-résolue au refresh).
 
 ### T6 — Helper partagé `get_company_for` (AC #4)
 
-- [ ] Créer `crates/kesh-api/src/helpers.rs` (ou `crates/kesh-api/src/routes/helpers.rs`) :
+- [ ] Créer `crates/kesh-api/src/helpers.rs` (cf. décision T0.3) :
   ```rust
+  use kesh_db::entities::Company;
+  use kesh_db::repositories::companies;
+  use sqlx::MySqlPool;
+  use crate::errors::AppError;
+  use crate::middleware::auth::CurrentUser;
+
   pub async fn get_company_for(
       current_user: &CurrentUser,
       pool: &MySqlPool,
@@ -172,55 +217,71 @@ CREATE TABLE users (
       companies::get_by_id(pool, current_user.company_id)
           .await?
           .ok_or_else(|| AppError::Internal(format!(
-              "company_id {} from JWT not found in DB",
-              current_user.company_id
+              "company_id {} from JWT not found in DB (user {} orphaned?)",
+              current_user.company_id, current_user.user_id
           )))
   }
   ```
-- [ ] Ajouter `companies::get_by_id(pool, id)` dans `kesh-db::repositories::companies` si pas déjà existant.
-- [ ] Tests unitaires du helper.
+- [ ] Déclarer `pub mod helpers;` dans `crates/kesh-api/src/lib.rs`.
+- [ ] Ajouter `companies::get_by_id(pool, id) -> Result<Option<Company>, SqlxError>` dans `crates/kesh-db/src/repositories/companies.rs` si pas déjà existant. Doc comment indiquant que c'est le chemin canonique pour lookup par ID.
+- [ ] Tests unitaires du helper :
+  - `get_company_for_existing` → Ok(Company).
+  - `get_company_for_missing_id` → Err(AppError::Internal) avec message explicite (user orphaned).
 
-### T7 — Refactor des 8 fichiers de routes (AC #4, #5)
+### T7 — Refactor des 7 fichiers de routes (AC #4, #5)
 
-Pour **chaque fichier** dans (`contacts.rs`, `products.rs`, `invoices.rs`, `invoice_pdf.rs`, `bank_accounts.rs`, `company_invoice_settings.rs`, `accounts.rs`, `journal_entries.rs`) :
+Pour **chaque fichier** dans la liste ci-dessous :
 
 - [ ] Supprimer le `async fn get_company(state: &AppState)` local.
 - [ ] Pour chaque handler qui appelait `get_company(&state).await?` :
-  - Ajouter `Extension(current_user): Extension<CurrentUser>` aux paramètres du handler (pattern déjà présent ailleurs dans le même fichier).
+  - Ajouter `Extension(current_user): Extension<CurrentUser>` aux paramètres du handler (pattern déjà présent ailleurs dans le même fichier, cf. `routes/products.rs:278` pour un exemple type).
   - Remplacer `get_company(&state).await?` par `get_company_for(&current_user, &state.pool).await?`.
-- [ ] **Audit SQL** : pour chaque requête qui touche une entité de cette route, vérifier qu'elle filtre bien par `company_id`. Beaucoup de requêtes actuelles sont déjà OK (ex: `contacts::list_by_company(pool, company.id, ...)`), mais certaines pourraient encore passer par une autre voie. Corriger toute route qui fait un `list(pool)` nu ou un `get_by_id(pool, id)` sans vérifier l'appartenance à la company.
+- [ ] **Audit SQL pré-refactor** (à faire **avant** T7.1, à documenter dans Dev Notes du handler) : pour chaque requête SQL de la route, vérifier qu'elle filtre bien par `company_id`. Liste des méthodes repository attendues :
+  - **Bon pattern** : `{entity}::list_by_company(pool, company_id, ...)`, `{entity}::get_by_id_in_company(pool, id, company_id)`.
+  - **Pattern suspect à auditer** : `{entity}::get_by_id(pool, id)` sans vérification du company_id après coup, `{entity}::list(pool, ...)` nu, `{entity}::*(pool)` qui ne prend pas de company_id.
+  - **Action** : `grep -n "pool," crates/kesh-api/src/routes/{file}.rs` → lister tous les call-sites repository → vérifier que chacun filtre par company. Si manquant, créer la méthode `*_in_company` dans `kesh-db::repositories::{entity}` avant refactor.
 
-**Priorité d'ordre** (dépendances en cascade) :
-1. `routes/accounts.rs` (plan comptable — plus simple)
-2. `routes/contacts.rs`, `routes/products.rs` (CRUD simples)
-3. `routes/bank_accounts.rs`, `routes/company_invoice_settings.rs` (CRUD config)
-4. `routes/journal_entries.rs` (plus complexe, a déjà un commentaire « duplication volontaire »)
-5. `routes/invoices.rs`, `routes/invoice_pdf.rs` (les plus intriqués, 11 appels au total)
+**Ordre d'application** (dépendances en cascade, plus simple → plus complexe) :
+1. **T7.1** `routes/accounts.rs` (plan comptable — 2 appels, déjà `list_by_company`)
+2. **T7.2** `routes/contacts.rs` (2 appels — déjà `list_by_company`, `create_in_company`)
+3. **T7.3** `routes/products.rs` (5 appels)
+4. **T7.4** `routes/company_invoice_settings.rs` (1 appel — settings lié à une company par nature)
+5. **T7.5** `routes/journal_entries.rs` (4 appels — commentaire existant « duplication volontaire »)
+6. **T7.6** `routes/invoices.rs` (10 appels — plus intriqué)
+7. **T7.7** `routes/invoice_pdf.rs` (1 appel, mais lit aussi contact + invoice via IDs)
+8. **T7.8** `routes/companies.rs` (audit SQL seulement, pas de `get_company` local à remplacer) — vérifier que `GET /companies/settings` filtre bien `bank_accounts::list_by_company(pool, company.id)` (déjà présent L79, OK) et que toutes les autres requêtes scope par company_id du CurrentUser (pas par company.id pioché via `companies::list LIMIT 1`).
+
+**Hors scope refactor** : `routes/onboarding.rs` (le flow bootstrap n'a pas de `CurrentUser` — il y a un user pas encore complètement setupé). Le helper `get_company` local reste.
 
 ### T8 — Tests IDOR cross-company (AC #6)
 
-- [ ] Créer `crates/kesh-api/tests/idor_multi_tenant_e2e.rs`.
-- [ ] Utiliser `seed_accounting_company` **deux fois** pour créer 2 companies distinctes (A et B) avec chacune leur admin user.
-- [ ] Pour chaque entité sensible (minimum 4 : `contacts`, `products`, `invoices`, `bank_accounts`) :
-  - Créer une ressource X dans la company B (via appel direct au repository, bypass des routes).
+- [ ] Créer `crates/kesh-api/tests/idor_multi_tenant_e2e.rs` (nouveau fichier, pattern `#[sqlx::test]` avec DB éphémère).
+- [ ] Utiliser `seed_accounting_company` **deux fois** pour créer 2 companies distinctes (A et B) avec chacune leur admin user. Adapter le helper si nécessaire pour accepter un `company_name` en paramètre (sinon collision `uq_companies_*`).
+- [ ] Pour chaque entité sensible (minimum **4** : `contacts`, `products`, `invoices`, `accounts`) :
+  - Créer une ressource X dans la company B (via appel direct au repository, bypass des routes HTTP).
   - Login en tant qu'admin de company A → JWT avec `company_id = A`.
-  - GET `/api/v1/{entity}/{id_de_X}` → attendre `404 NotFound` (pas 200, pas 403).
-  - PUT / DELETE équivalents → idem 404.
-- [ ] Documentation : chaque test commente clairement le scénario d'attaque simulé.
+  - `GET /api/v1/{entity}/{id_de_X}` → attendre `404 NotFound` (**pas** 200 avec data, **pas** 403 qui révèle l'existence).
+  - `PUT /api/v1/{entity}/{id_de_X}` avec payload valide → attendre `404`.
+  - `DELETE /api/v1/{entity}/{id_de_X}` → attendre `404`.
+- [ ] Pour `bank_accounts` : test spécifique via `GET /api/v1/companies/settings` en tant qu'admin de A → `response.bank_accounts` ne contient **que** les bank_accounts de A (vérifier via assertion sur les IDs).
+- [ ] Documentation : chaque test commente clairement le scénario d'attaque simulé et l'entité concernée.
+- [ ] Cas de régression : 1 test happy path par entité (admin de A accède à SA propre ressource) → 200 — assure qu'on ne break pas le cas normal.
 
-### T9 — Fermeture KF-002 / issue #2 (AC #8)
-
-- [ ] Vérifier que le commit de merge contiendra `closes #2` dans sa description (ou son premier commit si squash).
-- [ ] Pas de modif dans `docs/known-failures.md` (archivé 2026-04-18, cf. nouvelle règle CLAUDE.md `Issue Tracking Rule`).
-- [ ] Optionnel : commenter sur l'issue #2 avec le lien vers la PR et un résumé du refactor.
-
-### T10 — Validation + documentation (AC #9)
+### T9 — Validation + documentation (AC #8, #10)
 
 - [ ] `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings` → vert.
-- [ ] `cargo test --workspace -j1 -- --test-threads=1` → vert (inclut les nouveaux tests IDOR).
-- [ ] `cd frontend && npm run build && npm run test:e2e` → vert (après Story 6-5 éventuellement si Playwright encore bloqué, sinon `continue-on-error` tient).
-- [ ] Mise à jour `crates/kesh-api/README.md` si le flow auth est documenté (ajouter `company_id` dans les claims JWT).
-- [ ] Si un changelog projet existe : note de refactor multi-tenant.
+- [ ] `cargo test --workspace -j1 -- --test-threads=1` → vert (inclut les nouveaux tests IDOR + onboarding_e2e).
+- [ ] **Validation AC #8 explicite** : `cargo test -p kesh-api --test onboarding_e2e -- --test-threads=1` → vert, aucun test skippé.
+- [ ] `cd frontend && npm run build && npm run test:e2e` → vert (tant que KF-007 non résolue, `continue-on-error` tient sur le step Run Playwright — acceptable).
+- [ ] Update `crates/kesh-api/README.md` L156 : modifier la ligne « Access token : JWT HS256, `sub`, `role`, `iat`, `exp` » pour ajouter `company_id`. Modifier L158 pour `CurrentUser { user_id, role, company_id }`.
+- [ ] Update `ci.yml` job `backend` step `Seed CI fixtures` (L78-113 actuelles) : ajouter `company_id = LAST_INSERT_ID()` dans l'INSERT `users` (nécessite capture de company_id après INSERT company, `SET @company_id := LAST_INSERT_ID();`).
+
+### T10 — Fermeture KF-002 / issue #2 au merge (AC #11)
+
+- [ ] Préparer la PR avec titre mentionnant `closes #2` **ou** inclure `closes #2` dans le body de la PR.
+- [ ] `bmad-code-review` checklist (avant merge) : vérifier présence de `closes #2` dans titre ou body PR.
+- [ ] Pas de modif dans `docs/known-failures.md` (archivé 2026-04-18).
+- [ ] Optionnel : commenter sur l'issue #2 avec le lien vers la PR et un résumé du refactor multi-tenant (facilite tracking).
 
 ## Dev Notes
 
@@ -239,8 +300,8 @@ Pour **chaque fichier** dans (`contacts.rs`, `products.rs`, `invoices.rs`, `invo
 
 ### Patterns à réutiliser (git intelligence)
 
-- Story 6-4 a introduit `kesh-db::test_fixtures::seed_accounting_company` qui crée company + admin user + fiscal_year + accounts. **Après T1+T2**, ce helper devra obligatoirement lier le user à la company (FK NOT NULL). Prévoir de patcher ce helper.
-- `bmad-code-review` 4 groupes × 11 passes sur Story 5-4 a produit le plus haut volume de findings `get_company` — réutiliser les patterns de remédiation identifiés (ex: `get_invoice_by_id_in_company` vs `get_invoice_by_id`).
+- Story 6-4 a introduit `kesh-db::test_fixtures::seed_accounting_company` qui crée company + admin user + fiscal_year + accounts. **Après T1+T2**, ce helper devra obligatoirement lier le user à la company (FK NOT NULL). Prévoir de patcher ce helper (probablement : lire `company_id` depuis la company fraîchement créée puis passer dans l'INSERT user).
+- Pattern repository à généraliser : `get_by_id_in_company(pool, id, company_id) -> Result<Option<T>>` vs `get_by_id(pool, id) -> Result<Option<T>>`. Le premier renvoie `Ok(None)` si la ressource existe mais dans une autre company → permet aux handlers de répondre 404 cleanly sans leaker l'existence. Le helper `invoices::get_by_id_in_company` existe déjà (à vérifier en T7.6).
 
 ### Références
 
@@ -280,11 +341,44 @@ claude-opus-4-7 (création spec 2026-04-18)
 
 ## Change Log
 
-### 2026-04-18 — Création spec (opus-4-7)
+### 2026-04-18 — Création spec v1 (opus-4-7)
 
 - Spec rédigée directement en mode comprehensive (skip du template BMAD light, alignement sur la densité de Story 6-4).
 - **Découverte bloquante** lors de l'audit : la table `users` n'a **pas** de colonne `company_id`. Scope élargi par rapport à l'AC d'origine `epics.md#Story-6.2` pour inclure migration schéma + update repositories + JWT claims.
-- 10 tâches (T0-T10) avec ordre explicite (T1→T2→T3 requis par cascade FK NOT NULL).
-- 9 AC (5 originaux epics.md + 4 additions : schéma, JWT, CurrentUser, onboarding préservé, CI verte).
-- 1 test IDOR minimum par entité sensible × 4 entités (contacts, products, invoices, bank_accounts).
-- Validation `validate-create-story` recommandée (complexité + impact transverse justifient les 5 passes adversariales).
+- 10 tâches (T0-T10), 9 AC (5 originaux + 4 additions), 1 test IDOR minimum × 4 entités.
+- Validation `validate-create-story` recommandée.
+
+### 2026-04-18 — Validation passe 1 adversariale (opus-4-7, 14 findings)
+
+Passe 1 avec fresh-context logic — 1 CRITICAL, 4 HIGH, 5 MEDIUM, 4 LOW. Guy a approuvé `all` → 14 patches appliqués.
+
+**Modifications structurelles** :
+
+- **AC** passés de 9 à **11** :
+  - Nouveau AC #7 (JWT legacy rejeté, explicite, sécurité-critique).
+  - Nouveau AC #9 (refresh token cohérent, lecture à chaud de `company_id` depuis `users`).
+  - Ex AC #8 (KF-002 closed) → AC #11, reformulé comme validation `bmad-code-review` checklist (non-vérifiable pendant dev).
+  - AC #5 simplifié (phrase SQL bizarre retirée).
+  - AC #6 : entité « bank_accounts » remplacée par **accounts**, validation bank_accounts via `/companies/settings` (pas de route directe).
+- **Tâches** : T0 éclaté en 3 sous-décisions (T0.1 JWT/DB, **T0.2 bootstrap admin** [CRITICAL], T0.3 path helper). T7 : 8 fichiers → **7** + `onboarding.rs` hors scope. T9+T10 renumérotés (T9 validation+doc, T10 fermeture KF). T2 note KF-004 version bump.
+
+**Findings appliqués** :
+
+| ID | Sévérité | Patch |
+|---|---|---|
+| F-C1 | CRITICAL | T0.2 ajouté avec 3 options (A recommandée : bootstrap gated par `companies.count() > 0`) |
+| F-H1 | HIGH | AC #8 (→ #11) reformulé — vérification migrée vers checklist code-review, pas dev |
+| F-H2 | HIGH | T7 enrichi : audit SQL pré-refactor obligatoire, liste repository methods attendues, ordre d'application T7.1→T7.8 |
+| F-H3 | HIGH | T5 détaille refresh tokens : `company_id` lu à chaud depuis `users.company_id` au refresh, pas depuis refresh_tokens (pas de migration de la table) + 3 tests d'intégration |
+| F-H4 | HIGH | Nouveau AC #7 explicite « JWT legacy sans company_id → 401 » + tests T3+T4 en double couverture |
+| F-M1 | MEDIUM | Tableau usages `get_company()` complété (contacts.rs L182/2 appels, onboarding.rs L481/2 appels), colonne « Scope refactor » ajoutée, **correction** `bank_accounts.rs` n'existe pas (logique dans `companies.rs`) |
+| F-M2 | MEDIUM | T9 exige `cargo test -p kesh-api --test onboarding_e2e` vert explicite (AC #8) |
+| F-M3 | MEDIUM | T2 note KF-004 (`version` bump) : vérifier tests `users::update_*` pour propager `company_id` dans fixtures |
+| F-M4 | MEDIUM | T0.3 ajouté, décision recommandée : `crates/kesh-api/src/helpers.rs` (top-level). T6 aligné |
+| F-M5 | MEDIUM | AC #2 couplé explicitement à T3 (tests unitaires + JWT forgé scenarios) |
+| F-L1 | LOW | Header tableau corrigé : « 32 occurrences scope refactor, 35 avec onboarding » au lieu de « 37 » |
+| F-L2 | LOW | AC #5 simplifié : phrase sur `SELECT ... WHERE company_id IN (SELECT id FROM companies)` retirée |
+| F-L3 | LOW | T9 : README confirmé (L156-158 documentent JWT claims), patch précis ajouté |
+| F-L4 | LOW | Référence « 4 groupes × 11 passes Story 5-4 » remplacée par pattern concret : `get_by_id_in_company` vs `get_by_id` |
+
+**Suite** : passe 2 à lancer sur un autre LLM (Sonnet 4.6 ou Haiku 4.5) avec fresh-context. Critère d'arrêt : zéro finding `> LOW` OU cascade convergente (trend numérique décroissant, règle `feedback_validation_cascade_pattern`).
