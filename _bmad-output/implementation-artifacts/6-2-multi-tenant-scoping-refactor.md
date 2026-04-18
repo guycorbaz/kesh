@@ -163,8 +163,8 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
 ### T2 — Repository `users` : propager `company_id` (AC #1, #8)
 
 - [ ] `crates/kesh-db/src/entities/user.rs` — ajouter `pub company_id: i64` à la struct `User`.
-- [ ] `crates/kesh-db/src/repositories/users.rs` — update `create`, `get_by_id`, `get_by_username`, `list` pour sélectionner/insérer `company_id`.
-- [ ] Update signature `UserCreate` (ou équivalent) pour accepter `company_id`.
+- [ ] `crates/kesh-db/src/repositories/users.rs` — update `create`, `find_by_id`, `find_by_username`, `list` pour sélectionner/insérer `company_id`.
+- [ ] Update struct `NewUser` (nom réel dans le codebase, utilisé dans `auth/bootstrap.rs:37-45`) pour accepter `company_id: i64`. **⚠ Cascade** : tous les sites qui instancient `NewUser { ... }` ou qui appellent `sample_new_user()` vont casser à la compilation — chercher `NewUser {` et `sample_new_user` dans le workspace (`grep -rn "NewUser {" crates/`) et patcher en cascade.
 - [ ] **Attention KF-004** : `users::update()` fait `UPDATE ... SET ..., version = version + 1` (pattern optimistic lock). Ajouter `company_id` peut casser ces tests car la sélection `version = ?` après update va différer. Vérifier les 2-3 tests `users::update_*_ok/_conflict` et patcher si nécessaire (probablement juste propager `company_id` dans les fixtures de test).
 - [ ] Tests unitaires de repository : vérifier que `users.company_id` est bien persisté et relu, et que `create()` refuse un `company_id` inexistant (FK violation → erreur propre).
 
@@ -184,15 +184,15 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
   - Ajouter `pub company_id: i64` à `CurrentUser`.
   - Dans `require_auth`, propager `claims.company_id` vers `CurrentUser`.
   - Documenter la staleness `company_id` dans le bloc `SEC:` existant (alignement avec `role`). Ex : « SEC: company_id staleness — idem role, TTL JWT 15 min + leeway 60s ».
-- [ ] Tests unitaires middleware (étendre ceux existants dans `auth.rs:91+`) :
+- [ ] Tests **unitaires** middleware (étendre ceux existants dans `auth.rs:91+`) — ces tests ne nécessitent **pas** de DB (mock JWT uniquement → `#[test]` simple, pas `#[sqlx::test]`) :
   - JWT valide avec `company_id=7` → 200 + CurrentUser { user_id, role, company_id=7 } injecté (AC #3).
   - JWT legacy sans `company_id` → 401 (AC #7) — double couverture avec T3.
 
 ### T5 — Login + Refresh flow : injecter `company_id` dans le JWT (AC #2, #9)
 
-- [ ] `crates/kesh-api/src/routes/auth.rs` — `login` handler : après authentification réussie, lire `user.company_id` (déjà dans la struct User post-T2) et le passer à `jwt::encode`.
+- [ ] `crates/kesh-api/src/routes/auth.rs` — `login` handler : après authentification réussie, lire `user.company_id` (déjà dans la struct User post-T2) et le passer à `jwt::encode`. **Note** : vérifier que le handler login est bien dans `routes/auth.rs` (`grep -rn "POST.*auth/login\|login.*handler" crates/kesh-api/src/`) — le module `auth/` contient aussi `bootstrap.rs`, ne pas confondre.
 - [ ] **Refresh token** (`/auth/refresh`) — la table `refresh_tokens` porte **uniquement** `user_id`, **pas** `company_id` (cf. `crates/kesh-db/migrations/20260405000001_auth_refresh_tokens.sql`). Implication :
-  - Au refresh, récupérer `users.company_id` via `users::get_by_id(pool, user_id)` AU MOMENT du refresh, **pas** depuis le refresh token lui-même.
+  - Au refresh, récupérer `users.company_id` via `users::find_by_id(pool, user_id)` AU MOMENT du refresh, **pas** depuis le refresh token lui-même.
   - **Pas** de migration de `refresh_tokens` — garder son schéma simple. Le `company_id` est toujours lu à chaud depuis `users`.
   - **Conséquence souhaitée** : un user déplacé vers une autre company verra son `company_id` updaté au prochain refresh (fréquence ~15 min). C'est le mécanisme de propagation naturel.
 - [ ] Tests d'intégration :
@@ -214,7 +214,7 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
       current_user: &CurrentUser,
       pool: &MySqlPool,
   ) -> Result<Company, AppError> {
-      companies::get_by_id(pool, current_user.company_id)
+      companies::find_by_id(pool, current_user.company_id)
           .await?
           .ok_or_else(|| AppError::Internal(format!(
               "company_id {} from JWT not found in DB (user {} orphaned?)",
@@ -223,7 +223,7 @@ Ces trois décisions doivent être tranchées **avant tout code** car elles cond
   }
   ```
 - [ ] Déclarer `pub mod helpers;` dans `crates/kesh-api/src/lib.rs`.
-- [ ] Ajouter `companies::get_by_id(pool, id) -> Result<Option<Company>, SqlxError>` dans `crates/kesh-db/src/repositories/companies.rs` si pas déjà existant. Doc comment indiquant que c'est le chemin canonique pour lookup par ID.
+- [ ] **`companies::find_by_id(pool, id)` existe déjà** dans `crates/kesh-db/src/repositories/companies.rs` (L85) — l'utiliser directement dans le helper. **Ne pas créer** une fonction `get_by_id` en doublon. Le nom canonique dans ce codebase est `find_by_id`, pas `get_by_id`.
 - [ ] Tests unitaires du helper :
   - `get_company_for_existing` → Ok(Company).
   - `get_company_for_missing_id` → Err(AppError::Internal) avec message explicite (user orphaned).
@@ -247,7 +247,7 @@ Pour **chaque fichier** dans la liste ci-dessous :
 3. **T7.3** `routes/products.rs` (5 appels)
 4. **T7.4** `routes/company_invoice_settings.rs` (1 appel — settings lié à une company par nature)
 5. **T7.5** `routes/journal_entries.rs` (4 appels — commentaire existant « duplication volontaire »)
-6. **T7.6** `routes/invoices.rs` (10 appels — plus intriqué)
+6. **T7.6** `routes/invoices.rs` (10 appels — plus intriqué) — s'appuyer sur la constante interne `FIND_INVOICE_SCOPED_SQL` déjà présente dans `repositories/invoices.rs` (scope `id AND company_id`) comme modèle pour créer `invoices::get_by_id_in_company`.
 7. **T7.7** `routes/invoice_pdf.rs` (1 appel, mais lit aussi contact + invoice via IDs)
 8. **T7.8** `routes/companies.rs` (audit SQL seulement, pas de `get_company` local à remplacer) — vérifier que `GET /companies/settings` filtre bien `bank_accounts::list_by_company(pool, company.id)` (déjà présent L79, OK) et que toutes les autres requêtes scope par company_id du CurrentUser (pas par company.id pioché via `companies::list LIMIT 1`).
 
@@ -255,8 +255,8 @@ Pour **chaque fichier** dans la liste ci-dessous :
 
 ### T8 — Tests IDOR cross-company (AC #6)
 
-- [ ] Créer `crates/kesh-api/tests/idor_multi_tenant_e2e.rs` (nouveau fichier, pattern `#[sqlx::test]` avec DB éphémère).
-- [ ] Utiliser `seed_accounting_company` **deux fois** pour créer 2 companies distinctes (A et B) avec chacune leur admin user. Adapter le helper si nécessaire pour accepter un `company_name` en paramètre (sinon collision `uq_companies_*`).
+- [ ] Créer `crates/kesh-api/tests/idor_multi_tenant_e2e.rs` (nouveau fichier). Utiliser l'annotation complète `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — sans l'argument `migrator`, la DB éphémère ne reçoit pas les migrations et les tests passent trivialement sur une DB vide (faux positifs silencieux). Pattern confirmé dans `crates/kesh-db/tests/companies_repository.rs`.
+- [ ] Utiliser `seed_accounting_company` **deux fois** pour créer 2 companies distinctes (A et B) avec chacune leur admin user. Adapter le helper pour accepter `(company_name: &str, username: &str)` afin d'éviter **deux** contraintes unique : `uq_companies_ide_number` (sur `companies`) ET `uq_users_username` (sur `users`). Sans paramètres distincts pour les deux champs, le deuxième appel échoue sur la contrainte username avant même d'atteindre l'assertion IDOR.
 - [ ] Pour chaque entité sensible (minimum **4** : `contacts`, `products`, `invoices`, `accounts`) :
   - Créer une ressource X dans la company B (via appel direct au repository, bypass des routes HTTP).
   - Login en tant qu'admin de company A → JWT avec `company_id = A`.
@@ -295,13 +295,13 @@ Pour **chaque fichier** dans la liste ci-dessous :
 ### Contraintes multi-tenant à garder à l'esprit
 
 - **Onboarding** : le flow Story 2-2/2-3 crée `companies` avant `users` (ordre d'INSERT). Pas de changement requis — juste propager le `companies.id` fraîchement créé vers le `users.company_id` INSERT suivant.
-- **Bootstrap admin** (`crates/kesh-api/src/main.rs`) : au démarrage, si `users` est vide ET `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` sont set, crée un admin. Problème : il n'y a peut-être pas de company non plus → on doit créer une company par défaut aussi, OU attendre qu'un user arrive par onboarding. **À trancher en T5**.
+- **Bootstrap admin** (`crates/kesh-api/src/auth/bootstrap.rs`, fonction `ensure_admin_user`) : au démarrage, si `users.count() == 0` ET `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` sont set, crée un admin. La logique est dans `auth/bootstrap.rs` (pas dans `main.rs`). Problème post-T1 : si `companies` est également vide, l'INSERT user violera la FK `users.company_id NOT NULL`. À corriger dans `ensure_admin_user` : ajouter un check `companies.count() > 0` avant l'INSERT user (Option A recommandée, cf. T0.2). **À implémenter dans `auth/bootstrap.rs`**.
 - **CI seed** : `ci.yml` job `backend` seed actuellement 1 company puis 1 user. L'ordre est bon, on doit juste ajouter `company_id = LAST_INSERT_ID()` dans l'INSERT users.
 
 ### Patterns à réutiliser (git intelligence)
 
 - Story 6-4 a introduit `kesh-db::test_fixtures::seed_accounting_company` qui crée company + admin user + fiscal_year + accounts. **Après T1+T2**, ce helper devra obligatoirement lier le user à la company (FK NOT NULL). Prévoir de patcher ce helper (probablement : lire `company_id` depuis la company fraîchement créée puis passer dans l'INSERT user).
-- Pattern repository à généraliser : `get_by_id_in_company(pool, id, company_id) -> Result<Option<T>>` vs `get_by_id(pool, id) -> Result<Option<T>>`. Le premier renvoie `Ok(None)` si la ressource existe mais dans une autre company → permet aux handlers de répondre 404 cleanly sans leaker l'existence. Le helper `invoices::get_by_id_in_company` existe déjà (à vérifier en T7.6).
+- Pattern repository à généraliser : `get_by_id_in_company(pool, id, company_id) -> Result<Option<T>>` vs `find_by_id(pool, id) -> Result<Option<T>>`. Le premier renvoie `Ok(None)` si la ressource existe mais dans une autre company → permet aux handlers de répondre 404 cleanly sans leaker l'existence. **Aucune fonction publique `get_by_id_in_company` n'existe encore** dans le codebase (vérifié 2026-04-18) — il existe une constante SQL interne `FIND_INVOICE_SCOPED_SQL` dans `invoices.rs` qui scope par `id AND company_id` : s'en inspirer comme modèle pour créer les fonctions `get_by_id_in_company` dans chaque repository entité en T7.
 
 ### Références
 
@@ -382,3 +382,23 @@ Passe 1 avec fresh-context logic — 1 CRITICAL, 4 HIGH, 5 MEDIUM, 4 LOW. Guy a 
 | F-L4 | LOW | Référence « 4 groupes × 11 passes Story 5-4 » remplacée par pattern concret : `get_by_id_in_company` vs `get_by_id` |
 
 **Suite** : passe 2 à lancer sur un autre LLM (Sonnet 4.6 ou Haiku 4.5) avec fresh-context. Critère d'arrêt : zéro finding `> LOW` OU cascade convergente (trend numérique décroissant, règle `feedback_validation_cascade_pattern`).
+
+### 2026-04-18 — Validation passe 2 adversariale (sonnet-4-6, 9 findings)
+
+Passe 2 avec fresh-context, LLM orthogonal (Sonnet 4.6 vs Opus 4.7 passe 1). Audit du code source réel vs spec. 0 CRITICAL, 4 HIGH, 3 MEDIUM, 2 LOW. Guy a approuvé `all` → 9 patches appliqués. Trend : 14 → 9 (convergence ✅).
+
+**Findings appliqués** :
+
+| ID | Sévérité | Patch |
+|---|---|---|
+| F2-H1 | HIGH | `companies::get_by_id` → `companies::find_by_id` (nom réel L85 du codebase). T6 code snippet + T6 bullet corrigés. T5 refresh corrigé. `get_by_id` était absent → risque de doublon DRY. |
+| F2-H2 | HIGH | Dev Notes : `invoices::get_by_id_in_company` déclarée « existe déjà » → **FAUX**. Corrigé : aucune fonction publique ne l'implémente. `FIND_INVOICE_SCOPED_SQL` interne sert de modèle. |
+| F2-H3 | HIGH | T8 : collision double à la fixture `seed_accounting_company` — `uq_users_username` ET `uq_companies_ide_number`. Helper doit accepter `(company_name, username)` distincts, pas seulement `company_name`. |
+| F2-H4 | HIGH | Bootstrap admin dans `auth/bootstrap.rs` (fn `ensure_admin_user`), **pas** `main.rs`. Dev Notes et T0.2 référençaient le mauvais fichier. Logique à modifier : ajouter check `companies.count() > 0` dans `ensure_admin_user`. |
+| F2-M1 | MEDIUM | `NewUser` (nom réel) remplace `UserCreate (ou équivalent)`. Note cascade ajoutée : tous sites `NewUser {` et `sample_new_user()` cassent à compilation → grep workspace avant T2. |
+| F2-M2 | MEDIUM | T8 : `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` annotation complète obligatoire. Sans `migrator`, DB éphémère vide → faux positifs silencieux. |
+| F2-M3 | MEDIUM | T5 : note ajoutée pour vérifier path réel du login handler (grep `POST.*auth/login`) — module `auth/` a aussi `bootstrap.rs`, ne pas confondre. |
+| F2-L1 | LOW | T7.6 `routes/invoices.rs` : mention `FIND_INVOICE_SCOPED_SQL` comme modèle pour créer `get_by_id_in_company`. |
+| F2-L2 | LOW | T4 tests middleware : clarification `#[test]` simple (pas de DB), pas `#[sqlx::test]`. |
+
+**Suite** : passe 3 recommandée sur Haiku 4.5. Critère d'arrêt : zéro finding `> LOW`.
