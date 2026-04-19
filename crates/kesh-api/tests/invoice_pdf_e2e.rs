@@ -21,8 +21,6 @@ use kesh_db::entities::bank_account::NewBankAccount;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::user::{NewUser, Role};
-use kesh_db::entities::{Language, NewCompany, OrgType};
-use kesh_db::repositories::companies;
 use kesh_db::repositories::{bank_accounts, contacts, invoices, users};
 use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;
@@ -111,22 +109,6 @@ async fn login(app: &TestApp) -> String {
         .unwrap();
     let body: serde_json::Value = resp.json().await.unwrap();
     body["accessToken"].as_str().unwrap().to_string()
-}
-
-async fn create_test_company(pool: &MySqlPool) {
-    companies::create(
-        pool,
-        NewCompany {
-            name: "Test Company".into(),
-            address: "Test Address".into(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .expect("create test company");
 }
 
 /// Seede une company comptablement complète via `test_fixtures::seed_accounting_company` :
