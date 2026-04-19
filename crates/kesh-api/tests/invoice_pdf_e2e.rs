@@ -113,6 +113,22 @@ async fn login(app: &TestApp) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 /// Seede une company comptablement complète via `test_fixtures::seed_accounting_company` :
 /// 1 company + 2 users Admin (`admin/admin123`, `changeme/changeme`) + fiscal_year
 /// 2020-2030 Open + 5 accounts + `company_invoice_settings` avec défauts.
