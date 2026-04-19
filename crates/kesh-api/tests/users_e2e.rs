@@ -13,6 +13,8 @@ use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
@@ -116,6 +118,22 @@ async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
         base_url: format!("http://{}", addr),
         client: reqwest::Client::new(),
     }
+}
+
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
 }
 
 /// Bootstrappe l'admin puis retourne un access_token Admin.

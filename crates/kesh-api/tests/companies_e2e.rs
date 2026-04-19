@@ -83,6 +83,23 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     }
 }
 
+/// Create a test company "Test SA" (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test SA".into(),
+            address: "Rue Test 1".into(),
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 async fn login(app: &TestApp) -> String {
     let resp = app
         .client
