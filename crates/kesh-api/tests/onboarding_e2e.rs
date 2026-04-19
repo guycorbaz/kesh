@@ -6,6 +6,8 @@ use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -103,11 +105,29 @@ fn auth(token: &str) -> String {
     format!("Bearer {token}")
 }
 
+/// Create a test company (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 // --- Tests ---
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn get_state_returns_initial_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -143,6 +163,7 @@ async fn get_state_requires_auth(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_language_advances_to_step_1(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -163,6 +184,7 @@ async fn set_language_advances_to_step_1(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_language_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -183,6 +205,7 @@ async fn set_language_invalid_returns_400(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_language_twice_returns_step_already_completed(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -213,6 +236,7 @@ async fn set_language_twice_returns_step_already_completed(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_mode_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -243,6 +267,7 @@ async fn set_mode_invalid_returns_400(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn full_onboarding_flow_demo_path(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -301,6 +326,7 @@ async fn full_onboarding_flow_demo_path(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn reset_clears_demo_data(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -344,6 +370,7 @@ async fn reset_clears_demo_data(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn seed_demo_at_wrong_step_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
