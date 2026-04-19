@@ -21,6 +21,8 @@ use kesh_db::entities::bank_account::NewBankAccount;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::user::{NewUser, Role};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use kesh_db::repositories::{bank_accounts, contacts, invoices, users};
 use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;

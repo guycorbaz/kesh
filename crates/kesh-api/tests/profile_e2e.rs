@@ -6,6 +6,8 @@ use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use kesh_db::repositories::onboarding;
 use serde_json::json;
 use sqlx::MySqlPool;
@@ -96,6 +98,8 @@ async fn login(app: &TestApp) -> String {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -121,6 +125,8 @@ async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_mode_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
