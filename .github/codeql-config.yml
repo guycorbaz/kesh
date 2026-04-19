@@ -1,24 +1,11 @@
 name: CodeQL config — suppress test false positives
 
+# Exclude test directories from analysis entirely
 paths-ignore:
-  # Test files with intentional test secrets/hardcoded values
   - crates/kesh-api/tests/
   - crates/kesh-db/tests/
+  - frontend/src/
   - frontend/
 
-queries:
-  # Rust hardcoded cryptographic values in test files — suppress
-  # (all test secrets are intentional, non-security-critical)
-  - uses: security-and-quality
-    with:
-      # Disable hardcoded cryptographic value detection (too noisy in tests)
-      disabled-rules:
-        - rust/hard-coded-cryptographic-value
-        - rust/cleartext-logging
-        - rust/cleartext-storage-database
-
-exclude:
-  paths:
-    - crates/kesh-api/tests/
-    - crates/kesh-db/tests/
-    - frontend/src/
+# Disable overly-noisy security checks that produce false positives in test code
+disable-default-queries: false
