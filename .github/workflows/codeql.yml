@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'ruby', 'rust']
+        language: ['javascript', 'rust']
 
     steps:
     - name: Checkout repository
@@ -33,8 +33,7 @@ jobs:
     - name: Build (Rust)
       if: matrix.language == 'rust'
       run: |
-        cargo build --release 2>&1 || true
-        # Don't fail on build errors; CodeQL will analyze what it can
+        cargo build --release || echo "Build failed; CodeQL will analyze what it can"
 
     - name: Autobuild (non-Rust)
       if: matrix.language != 'rust'

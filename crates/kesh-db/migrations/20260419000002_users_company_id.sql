@@ -12,6 +12,10 @@ ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1);
 
 -- Step 3: Guard — Defensive data integrity checks before making company_id NOT NULL
+-- Using IF...SIGNAL pattern which IS supported by MariaDB and sqlx (Story 6.2).
+-- Previous comment claimed "IF checks aren't supported in .sql migration files" —
+-- this was incorrect; guards are essential for multi-tenant data safety.
+
 -- Check 1 (C1): Verify guard conditions and signal if backfill failed
 SET @user_count = (SELECT COUNT(*) FROM users);
 SET @company_count = (SELECT COUNT(*) FROM companies);
