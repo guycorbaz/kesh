@@ -463,3 +463,64 @@ async fn idor_invoices_cross_company_returns_404(pool: MySqlPool) {
         }
     }
 }
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn idor_users_cross_company_returns_404(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+
+    let (company_a_id, _company_a_accounts) = create_seeded_company(&pool).await;
+    let (company_b_id, _company_b_accounts) = create_seeded_company(&pool).await;
+
+    let user_a_id = create_company_user(&pool, company_a_id, "alice", "password123").await;
+    let user_b_id = create_company_user(&pool, company_b_id, "bob", "password123").await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token_b = login(&app, "bob", "password123").await;
+
+    // Attempt to update user A as user B (cross-company) — should return 404
+    let update_resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", user_a_id)))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .json(&json!({"role": "Consultation", "active": false, "version": 0}))
+        .send()
+        .await
+        .expect("update should succeed");
+
+    assert_eq!(
+        update_resp.status(),
+        404,
+        "User B cannot update user from company A"
+    );
+
+    // Attempt to disable user A as user B (cross-company) — should return 404
+    let disable_resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}/disable", user_a_id)))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .expect("disable should succeed");
+
+    assert_eq!(
+        disable_resp.status(),
+        404,
+        "User B cannot disable user from company A"
+    );
+
+    // User A can still update own user (list endpoint is paginated, harder to test cross-company directly)
+    let own_update = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", user_b_id)))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .json(&json!({"role": "Comptable", "active": true, "version": 0}))
+        .send()
+        .await
+        .expect("own update should succeed");
+
+    assert_eq!(
+        own_update.status(),
+        200,
+        "User B can update own users in company B"
+    );
+}

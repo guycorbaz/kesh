@@ -2,6 +2,8 @@
 //!
 //! Vérifie la hiérarchie de rôles : Consultation < Comptable < Admin.
 
+mod common;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -9,13 +11,12 @@ use axum::Json;
 use axum::Router;
 use axum::routing::get;
 use chrono::TimeDelta;
+use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
 use kesh_api::{AppState, build_router};
-use kesh_db::entities::{Language, NewCompany, OrgType};
-use kesh_db::repositories::companies;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
@@ -137,22 +138,6 @@ async fn login_as(app: &TestApp, username: &str, password: &str) -> String {
     assert_eq!(resp.status(), 200, "login failed for {username}");
     let body: Value = resp.json().await.unwrap();
     body["accessToken"].as_str().unwrap().to_string()
-}
-
-async fn create_test_company(pool: &MySqlPool) {
-    companies::create(
-        pool,
-        NewCompany {
-            name: "Test Company".into(),
-            address: "Test Address".into(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .expect("create test company");
 }
 
 /// Bootstrap admin, login, create user with role, login as that user.

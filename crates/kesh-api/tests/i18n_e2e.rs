@@ -4,14 +4,15 @@
 //! (kesh_api::errors::init_error_i18n sets a static ONCE_LOCK).
 //! Running tests in parallel would cause race conditions.
 
+mod common;
+
 use std::sync::Arc;
 
 use chrono::TimeDelta;
+use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
-use kesh_db::entities::{Language, NewCompany, OrgType};
-use kesh_db::repositories::companies;
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -105,23 +106,6 @@ async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> Te
         base_url: format!("http://{addr}"),
         client: reqwest::Client::new(),
     }
-}
-
-/// Create a test company (required by Story 6.2 before ensure_admin_user)
-async fn create_test_company(pool: &MySqlPool) {
-    companies::create(
-        pool,
-        NewCompany {
-            name: "Test Company".into(),
-            address: "Test Address".into(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .expect("create test company");
 }
 
 async fn login(app: &TestApp, username: &str, password: &str) -> String {
