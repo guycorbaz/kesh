@@ -160,12 +160,16 @@ pub async fn create_account(
 }
 
 /// PUT /api/v1/accounts/{id} — modifie un compte (nom et type).
+/// Story 6.2: Validate company exists (defensive: company_id staleness window).
 pub async fn update_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
+    // Validate company exists (defensive: company_id staleness window)
+    let _ = get_company_for(&current_user, &state.pool).await?;
+
     let trimmed_name = req.name.trim().to_string();
     if trimmed_name.is_empty() {
         return Err(AppError::Validation("name must not be empty".into()));

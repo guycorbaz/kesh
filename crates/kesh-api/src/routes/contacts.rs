@@ -325,6 +325,9 @@ pub async fn list_contacts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListContactsQuery>,
 ) -> Result<Json<ListResponse<ContactResponse>>, AppError> {
+    // Validate company exists (defensive: company_id staleness window)
+    let _ = get_company_for(&current_user, &state.pool).await?;
+
     let limit = params
         .limit
         .unwrap_or(DEFAULT_LIST_LIMIT)
