@@ -251,7 +251,7 @@ pub async fn seed_changeme_user_only(pool: &MySqlPool) -> Result<i64, FixtureErr
     // T1bis: Create placeholder company (required post-migration for users.company_id FK)
     let company_result =
         sqlx::query("INSERT INTO companies (name, address, org_type, accounting_language, instance_language) VALUES (?, ?, ?, ?, ?)")
-            .bind("Fresh Placeholder Company")
+            .bind("_MIGRATION_PLACEHOLDER_DO_NOT_USE_")
             .bind("Placeholder Address")
             .bind("Independant")
             .bind("FR")

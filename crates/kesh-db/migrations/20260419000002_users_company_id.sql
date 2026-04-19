@@ -5,6 +5,14 @@
 -- Must lock both users (WRITE) and companies (READ) since UPDATE uses companies in subquery
 LOCK TABLES users WRITE, companies READ;
 
+-- Step 0.5: Guard — check if users exist but no companies (data integrity check)
+-- If this fails, migration will abort with a clear error before any changes
+SET @user_count = (SELECT COUNT(*) FROM users);
+SET @company_count = (SELECT COUNT(*) FROM companies);
+IF @user_count > 0 AND @company_count = 0 THEN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Migration failed: users exist but no companies in DB. Backfill impossible. Create at least one company before migration.';
+END IF;
+
 -- Step 1: Add nullable company_id for backfill
 ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 

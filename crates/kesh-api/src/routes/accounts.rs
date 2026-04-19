@@ -91,6 +91,9 @@ pub async fn list_accounts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListAccountsQuery>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
+    // Validate company exists (defensive: company_id staleness window)
+    let _ = get_company_for(&current_user, &state.pool).await?;
+
     let list = accounts::list_by_company(
         &state.pool,
         current_user.company_id,
