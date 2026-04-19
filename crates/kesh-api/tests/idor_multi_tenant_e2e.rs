@@ -141,7 +141,9 @@ async fn create_company_user(
 }
 
 /// Create a company with accounts, fiscal year, and settings (without users)
-async fn create_seeded_company(pool: &MySqlPool) -> (i64, std::collections::HashMap<&'static str, i64>) {
+async fn create_seeded_company(
+    pool: &MySqlPool,
+) -> (i64, std::collections::HashMap<&'static str, i64>) {
     let company_result = sqlx::query(
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
          VALUES ('CI Test Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
