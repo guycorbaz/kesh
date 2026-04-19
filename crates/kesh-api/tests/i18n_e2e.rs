@@ -6,6 +6,8 @@ use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -89,6 +91,23 @@ async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> Te
     }
 }
 
+/// Create a test company (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 async fn login(app: &TestApp, username: &str, password: &str) -> String {
     let resp = app
         .client
@@ -109,6 +128,7 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn i18n_messages_endpoint_returns_locale_and_messages(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
 
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
