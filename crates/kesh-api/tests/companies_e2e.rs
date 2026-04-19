@@ -82,6 +82,23 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     }
 }
 
+/// Create a test company (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Bootstrap Company".into(),
+            address: "Bootstrap Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create bootstrap company");
+}
+
 async fn login(app: &TestApp) -> String {
     let resp = app
         .client
@@ -97,6 +114,7 @@ async fn login(app: &TestApp) -> String {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn companies_current_returns_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
@@ -133,6 +151,7 @@ async fn companies_current_returns_company(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn companies_current_returns_404_when_no_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
