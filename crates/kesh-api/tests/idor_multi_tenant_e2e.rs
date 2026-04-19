@@ -503,3 +503,47 @@ async fn idor_users_cross_company_returns_404(pool: MySqlPool) {
         "User B cannot disable user from company A"
     );
 }
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn idor_companies_current_returns_own_company_only(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+
+    let (company_a_id, _company_a_accounts) = create_seeded_company(&pool).await;
+    let (company_b_id, _company_b_accounts) = create_seeded_company(&pool).await;
+
+    let _user_a_id = create_company_user(&pool, company_a_id, "alice", "password123").await;
+    let _user_b_id = create_company_user(&pool, company_b_id, "bob", "password123").await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token_a = login(&app, "alice", "password123").await;
+    let token_b = login(&app, "bob", "password123").await;
+
+    // User A access own company — should return 200
+    let resp_a = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .send()
+        .await
+        .expect("get should succeed");
+    assert_eq!(resp_a.status(), 200, "User A can access own company");
+
+    // Verify User A gets company A data
+    let body_a: serde_json::Value = resp_a.json().await.unwrap();
+    assert_eq!(body_a["company"]["id"].as_i64().unwrap(), company_a_id);
+
+    // User B access own company — should return 200
+    let resp_b = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .expect("get should succeed");
+    assert_eq!(resp_b.status(), 200, "User B can access own company");
+
+    // Verify User B gets company B data (different from A)
+    let body_b: serde_json::Value = resp_b.json().await.unwrap();
+    assert_eq!(body_b["company"]["id"].as_i64().unwrap(), company_b_id);
+    assert_ne!(body_b["company"]["id"], body_a["company"]["id"], "Users get their own companies");
+}
