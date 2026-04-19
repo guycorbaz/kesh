@@ -112,7 +112,7 @@ async fn companies_current_returns_company(pool: MySqlPool) {
 
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["company"]["name"], "Test SA");
+    assert_eq!(body["company"]["name"], "Test Company");
     assert!(body["bankAccounts"].is_array());
     assert_eq!(body["bankAccounts"].as_array().unwrap().len(), 0);
 }
