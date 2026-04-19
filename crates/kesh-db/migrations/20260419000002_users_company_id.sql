@@ -11,36 +11,9 @@ ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 -- Step 2: Backfill — assign all users to the first company (mono-tenant assumption)
 UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1);
 
--- Step 2b: Guard against multi-company data corruption (edge case: rollback + re-run on multi-tenant DB)
-SET @distinct_companies = (SELECT COUNT(DISTINCT company_id) FROM users WHERE company_id IS NOT NULL);
-IF @distinct_companies > 1 THEN
-  SET @should_fail = 1;
-  SET @error_msg = 'MIGRATION ERROR: Backfill detected users assigned to multiple companies. This indicates a multi-tenant DB or partial rollback. Restore from backup or manually clean.';
-END IF;
-
--- Step 3: Verify backfill succeeded (fail if any users are orphaned)
-SELECT COUNT(*) as orphaned_users FROM users WHERE company_id IS NULL INTO @orphaned_count;
-SET @has_users = (SELECT COUNT(*) FROM users);
-SET @has_companies = (SELECT COUNT(*) FROM companies);
-
--- Guard clause: if users exist but no companies, backfill failed
-SELECT CASE
-    WHEN @has_users > 0 AND @has_companies = 0 THEN 1
-    WHEN @has_users > 0 AND @orphaned_count > 0 THEN 1
-    ELSE 0
-END INTO @should_fail;
-
--- If guard condition triggered, error out with explicit message
-SET @error_msg = CASE
-    WHEN @has_users > 0 AND @has_companies = 0 THEN 'MIGRATION ERROR: Cannot backfill users.company_id — no companies exist. Create at least one company before running this migration.'
-    WHEN @has_users > 0 AND @orphaned_count > 0 THEN 'MIGRATION ERROR: Backfill failed — some users remain without company_id.'
-    ELSE ''
-END;
-
--- Trigger the error if condition is true (MySQL 5.7+ SIGNAL construct)
-IF @should_fail = 1 THEN
-  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = @error_msg;
-END IF;
+-- Step 3: Guard — this ALTER will fail naturally if any users are orphaned (company_id IS NULL)
+-- Also fails if users exist but no companies (company_id would be NULL after UPDATE with empty subquery)
+-- This replaces explicit IF checks which aren't supported in .sql migration files
 
 -- Step 4: Make company_id NOT NULL after successful backfill
 ALTER TABLE users MODIFY COLUMN company_id BIGINT NOT NULL;
