@@ -95,6 +95,22 @@ async fn login(app: &TestApp) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
