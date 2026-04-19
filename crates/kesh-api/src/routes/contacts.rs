@@ -10,13 +10,11 @@ use kesh_core::listing::SortDirection;
 use kesh_core::types::CheNumber;
 use kesh_db::entities::contact::{Contact, ContactType, ContactUpdate, NewContact};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{
-    companies,
-    contacts::{self, ContactListQuery, ContactSortBy},
-};
+use kesh_db::repositories::contacts::{self, ContactListQuery, ContactSortBy};
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 
@@ -179,13 +177,6 @@ fn is_valid_email_simple(s: &str) -> bool {
 }
 
 /// Récupère la company courante (v0.1 single-company).
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
 /// Normalise un `Option<String>` en retirant les whitespace et trim ;
 /// retourne `None` si vide après trim.
 fn normalize_optional(s: Option<String>) -> Option<String> {
@@ -323,12 +314,12 @@ fn map_contact_error(err: DbError) -> AppError {
 // ---------------------------------------------------------------------------
 
 /// GET /api/v1/contacts — liste paginée avec filtres.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn list_contacts(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListContactsQuery>,
 ) -> Result<Json<ListResponse<ContactResponse>>, AppError> {
-    let company = get_company(&state).await?;
-
     let limit = params
         .limit
         .unwrap_or(DEFAULT_LIST_LIMIT)
@@ -347,7 +338,8 @@ pub async fn list_contacts(
         offset,
     };
 
-    let result = contacts::list_by_company_paginated(&state.pool, company.id, query).await?;
+    let result =
+        contacts::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
 
     Ok(Json(ListResponse {
         items: result
@@ -362,23 +354,32 @@ pub async fn list_contacts(
 }
 
 /// GET /api/v1/contacts/{id} — retourne un contact par ID.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn get_contact(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<ContactResponse>, AppError> {
     let contact = contacts::find_by_id(&state.pool, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
+
+    // Verify contact belongs to current user's company
+    if contact.company_id != current_user.company_id {
+        return Err(AppError::Database(DbError::NotFound));
+    }
+
     Ok(Json(ContactResponse::from(contact)))
 }
 
 /// POST /api/v1/contacts — crée un contact.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn create_contact(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateContactRequest>,
 ) -> Result<(StatusCode, Json<ContactResponse>), AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     let v = validate_common(
         req.contact_type,
@@ -413,12 +414,21 @@ pub async fn create_contact(
 }
 
 /// PUT /api/v1/contacts/{id} — met à jour un contact.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn update_contact(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
+    // Verify contact belongs to current user's company
+    let existing = contacts::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    if existing.company_id != current_user.company_id {
+        return Err(AppError::Database(DbError::NotFound));
+    }
+
     let v = validate_common(
         req.contact_type,
         req.name,
@@ -451,12 +461,21 @@ pub async fn update_contact(
 }
 
 /// PUT /api/v1/contacts/{id}/archive — archive un contact.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn archive_contact(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ArchiveContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
+    // Verify contact belongs to current user's company
+    let existing = contacts::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    if existing.company_id != current_user.company_id {
+        return Err(AppError::Database(DbError::NotFound));
+    }
+
     let contact = contacts::archive(&state.pool, id, req.version, current_user.user_id).await?;
     Ok(Json(ContactResponse::from(contact)))
 }

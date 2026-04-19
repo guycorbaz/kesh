@@ -5,7 +5,23 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::users;
 use sqlx::MySqlPool;
 
-fn sample_new_user() -> NewUser {
+async fn create_test_company(pool: &MySqlPool) -> i64 {
+    let result = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind("Test Company")
+    .bind("Test Address")
+    .bind("Independant")
+    .bind("FR")
+    .bind("FR")
+    .execute(pool)
+    .await
+    .expect("company insert should succeed");
+    result.last_insert_id() as i64
+}
+
+fn sample_new_user(company_id: i64) -> NewUser {
     NewUser {
         username: "alice".into(),
         // Hash factice Argon2id (le vrai hachage est fait par kesh-api story 1.5).
@@ -13,12 +29,16 @@ fn sample_new_user() -> NewUser {
         password_hash: "$argon2id$v=19$m=19456,t=2,p=1$QUJDRA$YWJjZGVmZ2hpams".into(),
         role: Role::Comptable,
         active: true,
+        company_id,
     }
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn create_and_find_by_id(pool: MySqlPool) {
-    let created = users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
     assert!(created.id > 0);
     assert_eq!(created.username, "alice");
     assert_eq!(created.role, Role::Comptable);
@@ -37,7 +57,10 @@ async fn find_by_id_returns_none_for_missing(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn find_by_username(pool: MySqlPool) {
-    users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     let found = users::find_by_username(&pool, "alice").await.unwrap();
     assert!(found.is_some());
@@ -55,7 +78,10 @@ async fn find_by_username_is_case_insensitive(pool: MySqlPool) {
     // La collation utf8mb4_unicode_ci est case-insensitive :
     // find_by_username("ALICE") matche la ligne "alice".
     // Ce comportement est documenté dans repositories/users.rs.
-    users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     let upper = users::find_by_username(&pool, "ALICE").await.unwrap();
     assert!(
@@ -70,16 +96,22 @@ async fn find_by_username_is_case_insensitive(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn unique_constraint_on_username(pool: MySqlPool) {
-    users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     // Deuxième user avec même username → UNIQUE violation
-    let result = users::create(&pool, sample_new_user()).await;
+    let result = users::create(&pool, sample_new_user(company_id)).await;
     assert!(matches!(result, Err(DbError::UniqueConstraintViolation(_))));
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn update_role_and_active(pool: MySqlPool) {
-    let created = users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     let changes = UserUpdate {
         role: Role::Admin,
@@ -99,7 +131,10 @@ async fn update_role_and_active(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn update_fails_on_stale_version(pool: MySqlPool) {
-    let created = users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
 
     // Premier update
     users::update_role_and_active(
@@ -130,8 +165,9 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn list_with_pagination(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
     for i in 0..4 {
-        let mut new = sample_new_user();
+        let mut new = sample_new_user(company_id);
         new.username = format!("user{i}");
         users::create(&pool, new).await.unwrap();
     }
@@ -148,7 +184,10 @@ async fn list_with_pagination(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn debug_masks_password_hash(pool: MySqlPool) {
-    let created = users::create(&pool, sample_new_user()).await.unwrap();
+    let company_id = create_test_company(&pool).await;
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
     let debug_output = format!("{created:?}");
     assert!(!debug_output.contains("argon2id"));
     assert!(!debug_output.contains("QUJDRA"));
@@ -158,7 +197,7 @@ async fn debug_masks_password_hash(pool: MySqlPool) {
 #[test]
 fn debug_masks_password_hash_on_new_user() {
     // Vérifie que NewUser::Debug masque aussi le hash — pas de DB nécessaire
-    let new = sample_new_user();
+    let new = sample_new_user(1);
     let debug_output = format!("{new:?}");
     assert!(!debug_output.contains("argon2id"));
     assert!(debug_output.contains("***"));
@@ -166,7 +205,8 @@ fn debug_masks_password_hash_on_new_user() {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn username_empty_rejected(pool: MySqlPool) {
-    let mut new = sample_new_user();
+    let company_id = create_test_company(&pool).await;
+    let mut new = sample_new_user(company_id);
     new.username = String::new();
     let result = users::create(&pool, new).await;
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
@@ -174,7 +214,8 @@ async fn username_empty_rejected(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn password_hash_too_short_rejected(pool: MySqlPool) {
-    let mut new = sample_new_user();
+    let company_id = create_test_company(&pool).await;
+    let mut new = sample_new_user(company_id);
     new.password_hash = "short".into();
     let result = users::create(&pool, new).await;
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));

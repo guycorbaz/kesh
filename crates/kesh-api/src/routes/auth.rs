@@ -144,10 +144,11 @@ pub async fn login(
         return Err(AppError::InvalidCredentials);
     }
 
-    // Step 4 : JWT
+    // Step 4 : JWT (Story 6.2: include company_id)
     let access_token = jwt::encode(
         user.id,
         user.role,
+        user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
     )?;
@@ -300,6 +301,7 @@ pub async fn refresh(
     let access_token = jwt::encode(
         user.id,
         user.role,
+        user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
     )?;
@@ -392,6 +394,7 @@ pub async fn change_password(
     let access_token = jwt::encode(
         user.id,
         user.role,
+        user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
     )?;

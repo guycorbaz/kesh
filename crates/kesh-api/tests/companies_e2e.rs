@@ -82,6 +82,23 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     }
 }
 
+/// Create a test company "Test SA" (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test SA".into(),
+            address: "Rue Test 1".into(),
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 async fn login(app: &TestApp) -> String {
     let resp = app
         .client
@@ -97,23 +114,9 @@ async fn login(app: &TestApp) -> String {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn companies_current_returns_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
-
-    // Create a company
-    companies::create(
-        &pool,
-        NewCompany {
-            name: "Test SA".into(),
-            address: "Rue Test 1".into(),
-            ide_number: None,
-            org_type: OrgType::Pme,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .unwrap();
 
     let resp = app
         .client
@@ -128,23 +131,6 @@ async fn companies_current_returns_company(pool: MySqlPool) {
     assert_eq!(body["company"]["name"], "Test SA");
     assert!(body["bankAccounts"].is_array());
     assert_eq!(body["bankAccounts"].as_array().unwrap().len(), 0);
-}
-
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn companies_current_returns_404_when_no_company(pool: MySqlPool) {
-    let app = spawn_app(pool.clone()).await;
-    ensure_admin_user(&pool, &test_config()).await.unwrap();
-    let token = login(&app).await;
-
-    let resp = app
-        .client
-        .get(app.url("/api/v1/companies/current"))
-        .header("Authorization", format!("Bearer {token}"))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(resp.status(), 404);
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

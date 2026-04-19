@@ -98,6 +98,19 @@ kesh/
 └── .github/workflows/       # Pipelines CI/CD
 ```
 
+## Architecture
+
+### Multi-tenant (Story 6.2)
+
+Kesh supporte plusieurs sociétés par instance via un modèle multi-tenant :
+
+- **JWT claims** : chaque token contient `user_id`, `role`, et **`company_id`**
+- **Scoping** : toutes les requêtes filtrent par `company_id` du JWT (défense en profondeur contre IDOR)
+- **Onboarding** : création de la company lors de l'inscription (contrat Story 6.1)
+- **Foreign Key** : `users.company_id` NOT NULL, FK vers `companies.id`
+
+Chaque user est assigné à exactement une company. Le `company_id` est inclus au JWT à la connexion (story 1.5) et utilisé pour scoper tous les accès aux ressources (comptes, contacts, factures, écritures comptables, etc.).
+
 ## Développement
 
 ### Commandes utiles

@@ -10,6 +10,8 @@ use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
@@ -115,9 +117,26 @@ async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
     }
 }
 
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 /// Bootstrappe l'admin puis retourne un access_token Admin.
 async fn login_admin(app: &TestApp, pool: &MySqlPool) -> String {
     let config = test_config();
+    create_test_company(pool).await;
     ensure_admin_user(pool, &config).await.expect("bootstrap");
 
     let resp = app
@@ -1097,6 +1116,7 @@ async fn configurable_password_policy(pool: MySqlPool) {
     let config = test_config_with_min_password(20);
     // Bootstrap with standard config (admin password fits default min_length=12)
     let bootstrap_config = test_config();
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &bootstrap_config).await.unwrap();
 
     let app = spawn_app_with_config(pool.clone(), config).await;

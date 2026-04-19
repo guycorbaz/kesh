@@ -1,0 +1,71 @@
+name: Known Failure (KF)
+description: Record a test or behavior known to fail, out of scope for current work
+title: "[KF-NNN] "
+labels: ["known-failure", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when you discover a failing test or broken behavior **outside the scope** of your current task, so it isn't forgotten.
+
+        Mirror the entry in [`docs/known-failures.md`](../../docs/known-failures.md) (offline source of truth).
+
+  - type: input
+    id: kf_id
+    attributes:
+      label: KF ID
+      description: Sequential identifier matching `docs/known-failures.md` (e.g., KF-002).
+      placeholder: KF-NNN
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+      description: Reproducible failure. Include test name, command, exact error message.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: root_cause
+    attributes:
+      label: Root cause hypothesis
+      description: Best current understanding of why this fails.
+    validations:
+      required: true
+
+  - type: input
+    id: origin_scope
+    attributes:
+      label: Scope of origin
+      description: Which story / epic / commit introduced or carried this defect?
+      placeholder: "Story 5-3 — fixture pre-existing"
+    validations:
+      required: true
+
+  - type: textarea
+    id: blocking_impact
+    attributes:
+      label: Blocking impact
+      description: What is blocked? CI? Production? A specific epic?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      render: shell
+      placeholder: cargo test -p kesh-api --test invoice_pdf_e2e
+    validations:
+      required: true
+
+  - type: input
+    id: remediation_story
+    attributes:
+      label: Remediation story (planned)
+      description: Story or ticket reference for the future fix, if known.
+    validations:
+      required: false

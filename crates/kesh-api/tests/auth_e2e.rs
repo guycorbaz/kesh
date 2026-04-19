@@ -23,7 +23,7 @@ use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::{NewUser, Role};
-use kesh_db::repositories::users;
+use kesh_db::repositories::{companies, users};
 use serde_json::json;
 use sqlx::MySqlPool;
 
@@ -171,8 +171,36 @@ async fn test_me_handler(
     })))
 }
 
+/// Ensures test company with id=1 exists. Creates if necessary.
+async fn ensure_test_company(pool: &MySqlPool) {
+    let existing = companies::find_by_id(pool, 1)
+        .await
+        .expect("find should succeed");
+    if existing.is_none() {
+        sqlx::query(
+            "INSERT INTO companies (id, name, address, org_type, accounting_language, instance_language) \
+             VALUES (1, 'Test Company', 'Test Address', 'Independant', 'FR', 'FR')",
+        )
+        .execute(pool)
+        .await
+        .expect("company insert should succeed");
+    }
+}
+
 /// Crée un utilisateur dans la DB pour les besoins du test.
 async fn create_user(pool: &MySqlPool, username: &str, password: &str, active: bool) -> i64 {
+    create_user_in_company(pool, username, password, active, 1).await
+}
+
+/// Crée un utilisateur dans une company spécifique pour les besoins du test.
+async fn create_user_in_company(
+    pool: &MySqlPool,
+    username: &str,
+    password: &str,
+    active: bool,
+    company_id: i64,
+) -> i64 {
+    ensure_test_company(pool).await;
     let phc = hash_password(password).expect("hash should succeed");
     let user = users::create(
         pool,
@@ -181,6 +209,7 @@ async fn create_user(pool: &MySqlPool, username: &str, password: &str, active: b
             password_hash: phc,
             role: Role::Comptable,
             active,
+            company_id,
         },
     )
     .await
@@ -670,6 +699,7 @@ fn forge_jwt(sub: &str, role: &str, exp_offset_secs: i64, secret: &[u8]) -> Stri
     let claims = Claims {
         sub: sub.to_string(),
         role: role.to_string(),
+        company_id: 1,
         iat: now,
         exp: now + exp_offset_secs,
     };
@@ -813,10 +843,13 @@ async fn bootstrap_creates_admin_and_login_works_end_to_end(pool: MySqlPool) {
         12,
     );
 
-    // Bootstrap sur DB vide
+    // Create test company first (required by Story 6.2 for users.company_id FK)
+    ensure_test_company(&pool).await;
+
+    // Bootstrap sur DB avec company
     ensure_admin_user(&pool, &config)
         .await
-        .expect("bootstrap should succeed on empty DB");
+        .expect("bootstrap should succeed with company");
 
     // Vérifier en base que l'admin existe
     let count: i64 = sqlx::query_scalar(
@@ -878,6 +911,9 @@ async fn bootstrap_is_idempotent_at_e2e_level(pool: MySqlPool) {
         TimeDelta::minutes(30),
         12,
     );
+
+    // Create test company first (required by Story 6.2 for users.company_id FK)
+    ensure_test_company(&pool).await;
 
     // Trois appels consécutifs : le premier crée, les suivants sont no-op
     for i in 0..3 {

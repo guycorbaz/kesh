@@ -1,4 +1,8 @@
 //! Tests d'intégration E2E de l'internationalisation (story 2.1).
+//!
+//! Note: tests run serially because they share a global i18n state
+//! (kesh_api::errors::init_error_i18n sets a static ONCE_LOCK).
+//! Running tests in parallel would cause race conditions.
 
 use std::sync::Arc;
 
@@ -6,12 +10,25 @@ use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
+use std::sync::OnceLock;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
+
+// Mutex to synchronize i18n initialization across concurrent tests
+static I18N_INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn get_i18n_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    I18N_INIT_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
 
 struct TestApp {
     base_url: String,
@@ -59,6 +76,7 @@ async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> Te
     );
 
     // Init global i18n pour les messages d'erreur
+    // Note: must be called within a get_i18n_lock guard from the test
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
 
     let state = AppState {
@@ -89,6 +107,23 @@ async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> Te
     }
 }
 
+/// Create a test company (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 async fn login(app: &TestApp, username: &str, password: &str) -> String {
     let resp = app
         .client
@@ -109,6 +144,7 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn i18n_messages_endpoint_returns_locale_and_messages(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
 
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
@@ -146,6 +182,7 @@ async fn i18n_messages_requires_auth(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn error_messages_are_in_french_by_default(pool: MySqlPool) {
+    let _guard = get_i18n_lock().await;
     let app = spawn_app(pool.clone()).await;
 
     let resp = app
@@ -166,6 +203,7 @@ async fn error_messages_are_in_french_by_default(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn error_messages_in_german_when_locale_de(pool: MySqlPool) {
+    let _guard = get_i18n_lock().await;
     let app = spawn_app_with_locale(pool.clone(), kesh_i18n::Locale::DeCh).await;
 
     let resp = app

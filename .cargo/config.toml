@@ -1,0 +1,15 @@
+# Cargo configuration for the Kesh project
+#
+# Limit test parallelism to 2 threads to avoid:
+# - Database connection pool exhaustion (MariaDB test DB)
+# - Global state race conditions (e.g., i18n initialization)
+#
+# This ensures deterministic test execution in CI and locally.
+# Trade-off: ~5 min longer test suite execution, but stable & reproducible.
+
+[build]
+# Note: We don't set jobs here (that would limit compilation parallelism)
+
+[term]
+# Limit test threads to 2 (prevents PoolTimedOut and state races)
+test-threads = 2

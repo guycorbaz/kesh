@@ -6,10 +6,12 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::account::{Account, AccountType, AccountUpdate, NewAccount};
-use kesh_db::repositories::{accounts, companies};
+use kesh_db::errors::DbError;
+use kesh_db::repositories::accounts;
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 
 // ---------------------------------------------------------------------------
@@ -79,37 +81,33 @@ impl From<Account> for AccountResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
-
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
-}
-
-// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
 /// GET /api/v1/accounts — liste les comptes de la company courante.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn list_accounts(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListAccountsQuery>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
-    let company = get_company(&state).await?;
-    let list = accounts::list_by_company(&state.pool, company.id, params.include_archived).await?;
+    let list = accounts::list_by_company(
+        &state.pool,
+        current_user.company_id,
+        params.include_archived,
+    )
+    .await?;
     Ok(Json(list.into_iter().map(AccountResponse::from).collect()))
 }
 
 /// POST /api/v1/accounts — crée un compte.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn create_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<(axum::http::StatusCode, Json<AccountResponse>), AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     let trimmed_number = req.number.trim().to_string();
     let trimmed_name = req.name.trim().to_string();
@@ -186,12 +184,21 @@ pub async fn update_account(
 }
 
 /// PUT /api/v1/accounts/{id}/archive — archive un compte.
+/// Story 6.2: Scoped by current_user.company_id.
 pub async fn archive_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ArchiveAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
+    // Verify account belongs to current user's company
+    let existing = accounts::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    if existing.company_id != current_user.company_id {
+        return Err(AppError::Database(DbError::NotFound));
+    }
+
     let account = accounts::archive(&state.pool, id, req.version, current_user.user_id).await?;
     Ok(Json(AccountResponse::from(account)))
 }

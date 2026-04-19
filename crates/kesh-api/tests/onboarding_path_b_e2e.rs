@@ -6,6 +6,8 @@ use chrono::TimeDelta;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::repositories::companies;
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -98,6 +100,23 @@ fn auth(token: &str) -> String {
     format!("Bearer {token}")
 }
 
+/// Create a test company (required by Story 6.2 before ensure_admin_user)
+async fn create_test_company(pool: &MySqlPool) {
+    companies::create(
+        pool,
+        NewCompany {
+            name: "Test Company".into(),
+            address: "Test Address".into(),
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create test company");
+}
+
 /// Helper : advance through shared steps (language + mode) to step=2
 async fn advance_to_step_2(app: &TestApp, token: &str) {
     app.client
@@ -121,6 +140,7 @@ async fn advance_to_step_2(app: &TestApp, token: &str) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn start_production_advances_to_step_3(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
     advance_to_step_2(&app, &token).await;
@@ -142,6 +162,7 @@ async fn start_production_advances_to_step_3(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn org_type_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
     advance_to_step_2(&app, &token).await;
@@ -170,6 +191,7 @@ async fn org_type_invalid_returns_400(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn coordinates_validates_ide(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
     advance_to_step_2(&app, &token).await;
@@ -214,6 +236,7 @@ async fn coordinates_validates_ide(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn full_path_b_flow(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
     advance_to_step_2(&app, &token).await;
@@ -278,6 +301,7 @@ async fn full_path_b_flow(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn skip_bank_advances_to_step_7(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
     advance_to_step_2(&app, &token).await;
@@ -327,6 +351,7 @@ async fn skip_bank_advances_to_step_7(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn bank_account_validates_iban(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
     advance_to_step_2(&app, &token).await;

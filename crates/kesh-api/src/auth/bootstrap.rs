@@ -22,6 +22,20 @@ use crate::errors::AppError;
 /// `COUNT(*)` et notre `INSERT`, la branche `UniqueConstraintViolation`
 /// est traitée comme succès silencieux.
 pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), AppError> {
+    // Story 6.2: Check if companies exist before creating a user
+    // (users.company_id is NOT NULL, so at least one company must exist)
+    let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("bootstrap company count: {e}")))?;
+
+    if company_count == 0 {
+        tracing::warn!(
+            "⚠️  bootstrap: no company exists yet, skipping admin user creation (complete onboarding to create company + admin)"
+        );
+        return Ok(());
+    }
+
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(pool)
         .await
@@ -34,6 +48,12 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
 
     let hash = hash_password_async(config.admin_password.clone()).await?;
 
+    // Get the first company to assign to the bootstrap admin
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("bootstrap get first company: {e}")))?;
+
     let result = users::create(
         pool,
         NewUser {
@@ -41,6 +61,7 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
             password_hash: hash,
             role: Role::Admin,
             active: true,
+            company_id,
         },
     )
     .await;
@@ -114,6 +135,20 @@ mod tests {
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
     async fn bootstrap_creates_admin_on_empty_db(pool: MySqlPool) {
+        // Create a company first (required by users.company_id FK)
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind("Test Company")
+        .bind("123 Test St")
+        .bind("Independant")
+        .bind("FR")
+        .bind("FR")
+        .execute(&pool)
+        .await
+        .expect("company insert should succeed");
+
         let config = test_config();
 
         ensure_admin_user(&pool, &config)
@@ -134,6 +169,20 @@ mod tests {
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
     async fn bootstrap_is_idempotent_on_repeated_calls(pool: MySqlPool) {
+        // Create a company first (required by users.company_id FK)
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind("Test Company")
+        .bind("123 Test St")
+        .bind("Independant")
+        .bind("FR")
+        .bind("FR")
+        .execute(&pool)
+        .await
+        .expect("company insert should succeed");
+
         let config = test_config();
 
         ensure_admin_user(&pool, &config)
@@ -152,14 +201,34 @@ mod tests {
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
     async fn bootstrap_skips_if_users_already_exist(pool: MySqlPool) {
+        // Create a company first (required by FK)
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind("Test Company")
+        .bind("123 Test St")
+        .bind("Independant")
+        .bind("FR")
+        .bind("FR")
+        .execute(&pool)
+        .await
+        .expect("company insert should succeed");
+
+        let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("get company_id should succeed");
+
         // Insérer manuellement un user arbitraire (pas admin)
         sqlx::query(
-            "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, ?)",
+            "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, ?, ?, ?)",
         )
         .bind("alice")
         .bind("$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo")
         .bind("Comptable")
         .bind(true)
+        .bind(company_id)
         .execute(&pool)
         .await
         .expect("pre-insert should succeed");
@@ -180,6 +249,31 @@ mod tests {
             .await
             .expect("select should succeed");
         assert_eq!(usernames, vec!["alice".to_string()]);
+    }
+
+    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    async fn bootstrap_skips_silently_when_no_company_exists(pool: MySqlPool) {
+        // Story 6.2: If no company exists, bootstrap should skip and return Ok (T0.2 Option A)
+        // This verifies the idempotent behavior: API boots without error even if onboarding hasn't created a company yet
+
+        let config = test_config();
+
+        // Call ensure_admin_user on empty DB (no companies)
+        let result = ensure_admin_user(&pool, &config).await;
+
+        assert!(
+            result.is_ok(),
+            "bootstrap should not error when no company exists"
+        );
+
+        let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .expect("count should succeed");
+        assert_eq!(
+            user_count, 0,
+            "admin user should not be created if no company exists"
+        );
     }
 
     // NOTE: la branche `DbError::UniqueConstraintViolation` du step 3 est

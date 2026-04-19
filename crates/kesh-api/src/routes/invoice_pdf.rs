@@ -13,7 +13,7 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use kesh_db::entities::{BankAccount, Company, Invoice, InvoiceLine, contact::Contact};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{bank_accounts, companies, contacts, invoices};
+use kesh_db::repositories::{bank_accounts, contacts, invoices};
 use kesh_i18n::Locale;
 use kesh_qrbill::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillError,
@@ -24,6 +24,7 @@ use std::collections::HashMap;
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::helpers::get_company_for;
 
 /// Limite v0.1 : nombre de lignes pouvant tenir sur un PDF A4 mono-page.
 ///
@@ -45,7 +46,7 @@ pub async fn get_invoice_pdf(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
-    let company = get_company(&state).await?;
+    let company = get_company_for(&current_user, &state.pool).await?;
     tracing::info!(
         user_id = current_user.user_id,
         role = ?current_user.role,
@@ -338,13 +339,6 @@ async fn fetch_country(
         .map_err(|e| AppError::Internal(format!("fetch_country({table}): {e}")))?;
     row.map(|(c,)| c)
         .ok_or_else(|| AppError::Database(DbError::NotFound))
-}
-
-async fn get_company(state: &AppState) -> Result<Company, AppError> {
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
 }
 
 #[cfg(test)]

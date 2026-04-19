@@ -4,6 +4,7 @@
 //! par le middleware RBAC (`require_admin_role`) appliqué via `route_layer`
 //! sur le sous-routeur `/users/*` dans `build_router()`.
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -113,8 +114,10 @@ pub struct PaginationParams {
 // le font pour des gardes métier (self-disable, last-admin).
 
 /// `POST /api/v1/users` — Création d'utilisateur (Admin via middleware RBAC).
+/// Story 6.2: User created in the current user's company.
 pub async fn create_user(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<UserResponse>), AppError> {
     // Validation username : trim + longueur [1, 64]
@@ -147,10 +150,11 @@ pub async fn create_user(
         password_hash,
         role: req.role,
         active: true,
+        company_id: current_user.company_id,
     };
 
     let user = users::create(&state.pool, new_user).await?;
-    tracing::info!(user_id = user.id, role = ?user.role, "user created");
+    tracing::info!(user_id = user.id, role = ?user.role, company_id = current_user.company_id, "user created");
 
     Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
 }
@@ -158,14 +162,15 @@ pub async fn create_user(
 /// `PUT /api/v1/users/:id` — Modification d'utilisateur (Admin via middleware RBAC).
 ///
 /// Garde `Extension<CurrentUser>` pour les gardes métier (self-disable, last-admin).
+/// Story 6.2: Scoped by current_user.company_id (IDOR protection).
 pub async fn update_user(
     State(state): State<AppState>,
-    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    // Vérifier que l'utilisateur existe
-    let user = users::find_by_id(&state.pool, id)
+    // Vérifier que l'utilisateur existe ET appartient à la même company
+    let user = users::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
@@ -205,9 +210,10 @@ pub async fn update_user(
 /// `PUT /api/v1/users/:id/disable` — Désactivation de compte (Admin via middleware RBAC).
 ///
 /// Garde `Extension<CurrentUser>` pour le self-disable check.
+/// Story 6.2: Scoped by current_user.company_id (IDOR protection).
 pub async fn disable_user(
     State(state): State<AppState>,
-    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<UserResponse>, AppError> {
     // Self-disable interdit
@@ -215,7 +221,7 @@ pub async fn disable_user(
         return Err(AppError::CannotDisableSelf);
     }
 
-    let user = users::find_by_id(&state.pool, id)
+    let user = users::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
@@ -242,13 +248,15 @@ pub async fn disable_user(
 }
 
 /// `PUT /api/v1/users/:id/reset-password` — Réinitialisation mot de passe (Admin via middleware RBAC).
+/// Story 6.2: Scoped by current_user.company_id (IDOR protection).
 pub async fn reset_password(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ResetPasswordRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    // Vérifier que l'utilisateur cible existe
-    users::find_by_id(&state.pool, id)
+    // Vérifier que l'utilisateur cible existe ET appartient à la même company
+    users::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
@@ -263,7 +271,7 @@ pub async fn reset_password(
     refresh_tokens::revoke_all_for_user(&state.pool, id, "password_change").await?;
 
     // Re-fetch pour avoir la version mise à jour
-    let user = users::find_by_id(&state.pool, id)
+    let user = users::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
@@ -273,19 +281,22 @@ pub async fn reset_password(
 }
 
 /// `GET /api/v1/users` — Liste paginée des utilisateurs (Admin via middleware RBAC).
+/// Story 6.2: Scoped by current_user.company_id (IDOR protection).
 pub async fn list_users(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<UserListResponse>, AppError> {
     let limit = params.limit.unwrap_or(50).clamp(1, 1000);
     let offset = params.offset.unwrap_or(0).max(0);
 
-    let total = users::count(&state.pool).await?;
-    let items: Vec<UserResponse> = users::list(&state.pool, limit, offset)
-        .await?
-        .into_iter()
-        .map(UserResponse::from)
-        .collect();
+    let total = users::count_by_company(&state.pool, current_user.company_id).await?;
+    let items: Vec<UserResponse> =
+        users::list_by_company(&state.pool, current_user.company_id, limit, offset)
+            .await?
+            .into_iter()
+            .map(UserResponse::from)
+            .collect();
 
     Ok(Json(UserListResponse {
         items,
@@ -296,11 +307,13 @@ pub async fn list_users(
 }
 
 /// `GET /api/v1/users/:id` — Détail d'un utilisateur (Admin via middleware RBAC).
+/// Story 6.2: Scoped by current_user.company_id (IDOR protection).
 pub async fn get_user(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<UserResponse>, AppError> {
-    let user = users::find_by_id(&state.pool, id)
+    let user = users::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
