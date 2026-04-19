@@ -140,8 +140,8 @@ async fn seed_fresh_produces_expected_db_state(pool: MySqlPool) {
         .unwrap();
     assert_eq!(resp.status(), 200, "body: {:?}", resp.text().await);
 
-    // AC #7 : 1 user `changeme`, aucune company, aucun account, aucun
-    // fiscal_year, aucune onboarding_state.
+    // AC #7 (updated for Story 6.2): 1 user `changeme`, 1 placeholder company (required by users.company_id NOT NULL FK),
+    // no account, no fiscal_year, no onboarding_state.
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
         .await
@@ -155,7 +155,17 @@ async fn seed_fresh_produces_expected_db_state(pool: MySqlPool) {
             .unwrap();
     assert_eq!(changeme_exists, 1, "changeme user must exist");
 
-    for table in ["companies", "accounts", "fiscal_years", "onboarding_state"] {
+    // Story 6.2: users.company_id is NOT NULL, so a placeholder company is required.
+    let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        company_count, 1,
+        "expected 1 placeholder company for fresh preset"
+    );
+
+    for table in ["accounts", "fiscal_years", "onboarding_state"] {
         let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
             .fetch_one(&pool)
             .await
@@ -315,7 +325,7 @@ async fn reset_endpoint_produces_fresh_state(pool: MySqlPool) {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    // Après reset : un seul user `changeme`, aucune company.
+    // Après reset : un seul user `changeme`, 1 placeholder company (Story 6.2: users.company_id NOT NULL FK).
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
         .await
@@ -325,7 +335,10 @@ async fn reset_endpoint_produces_fresh_state(pool: MySqlPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(company_count, 0);
+    assert_eq!(
+        company_count, 1,
+        "expected 1 placeholder company after reset"
+    );
 }
 
 // --- Idempotence : seed × 2 produit le même état ---------------------------
