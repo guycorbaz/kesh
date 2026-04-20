@@ -1,8 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
+});
+
+test.afterEach(async ({ page }) => {
+	// Clear localStorage after each test to prevent token bleed to next test
+	await clearAuthStorage(page);
 });
 
 /**

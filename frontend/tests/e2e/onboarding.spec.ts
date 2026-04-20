@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
  * Tests E2E — Flux d'onboarding Chemin A (Story 2.2)
@@ -23,6 +23,11 @@ test.describe('Onboarding Wizard', () => {
 
 		// Le guard onboarding devrait rediriger vers /onboarding
 		await expect(page).toHaveURL(/\/onboarding/);
+	});
+
+	test.afterEach(async ({ page }) => {
+		// Clear localStorage after each test to prevent token bleed to next test
+		await clearAuthStorage(page);
 	});
 
 	test('étape 1 — choix de langue affiche 4 options', async ({ page }) => {

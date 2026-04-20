@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
  * Tests E2E — Plan comptable (Story 3.1)
@@ -11,6 +11,11 @@ import { seedTestState } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
+});
+
+test.afterEach(async ({ page }) => {
+	// Clear auth tokens after each test to prevent token bleed to next test
+	await clearAuthStorage(page);
 });
 
 /** Helper : login as admin and navigate to /accounts. */

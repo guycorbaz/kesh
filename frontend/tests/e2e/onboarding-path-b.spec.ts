@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
  * Tests E2E — Flux d'onboarding Chemin B (Story 2.3)
@@ -17,6 +17,11 @@ test.describe('Onboarding Path B', () => {
 		await page.fill('#password', 'changeme');
 		await page.click('button[type="submit"]');
 		await expect(page).toHaveURL(/\/onboarding/);
+	});
+
+	test.afterEach(async ({ page }) => {
+		// Clear localStorage after each test to prevent token bleed to next test
+		await clearAuthStorage(page);
 	});
 
 	test('flux complet Path B : langue → mode → production → org → accounting → coords → bank', async ({ page }) => {

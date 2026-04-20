@@ -27,6 +27,11 @@ import { request as playwrightRequest, type APIRequestContext } from '@playwrigh
 
 export type Preset = 'fresh' | 'post-onboarding' | 'with-company' | 'with-data';
 
+// Storage key constants (must match auth.svelte.ts — if keys change there, update here too)
+const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';
+const STORAGE_KEY_REFRESH_TOKEN = 'kesh:auth:refreshToken';
+const STORAGE_KEY_EXPIRES_IN = 'kesh:auth:expiresIn';
+
 /**
  * Résout et valide l'URL backend (code review P9).
  *
@@ -72,5 +77,27 @@ export async function seedTestState(preset: Preset): Promise<void> {
 		}
 	} finally {
 		await ctx.dispose();
+	}
+}
+
+/**
+ * Nettoie les clés d'authentification du localStorage côté client.
+ * Appelé dans afterEach() pour isoler les tokens entre tests.
+ *
+ * Note: `page.context().clearCookies()` n'efface QUE les cookies, pas localStorage.
+ * Cette fonction efface explicitement les clés kesh:auth:* du localStorage.
+ *
+ * @throws {Error} if page context is invalid or localStorage access fails
+ */
+export async function clearAuthStorage(page: import('@playwright/test').Page): Promise<void> {
+	try {
+		await page.evaluate((keys) => {
+			for (const key of keys) {
+				localStorage.removeItem(key);
+			}
+		}, [STORAGE_KEY_ACCESS_TOKEN, STORAGE_KEY_REFRESH_TOKEN, STORAGE_KEY_EXPIRES_IN]);
+	} catch (error) {
+		// If Playwright context is destroyed, log but don't fail test teardown
+		console.warn('[test] clearAuthStorage failed (page context may be destroyed):', error instanceof Error ? error.message : String(error));
 	}
 }

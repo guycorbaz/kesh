@@ -1,11 +1,16 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	// Story 6.4 : preset `with-data` (= with-company + 1 contact + 1 product,
 	// PAS de facture pré-seedée — les tests ci-dessous créent les leurs via
 	// `daysFromToday` pour des dates déterministes).
 	await seedTestState('with-data');
+});
+
+test.afterEach(async ({ page }) => {
+	// Clear localStorage after each test to prevent token bleed to next test
+	await clearAuthStorage(page);
 });
 
 /**
