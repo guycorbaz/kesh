@@ -111,7 +111,7 @@ development_status:
   epic-6: in-progress
   6-1-pipeline-ci-github-actions: done  # PR #16 fermée (obsolète post-6-4), PR #21 mergée 2026-04-18 (commit 42232c2). Hardening CI + axe-core étendu (6/12 specs).
   6-2-multi-tenant-scoping-refactor: done  # Implémentation T1-T9 complétée 2026-04-18 (opus-4-7 + haiku continuation). T7 route refactoring pattern établi, T7.1-T7.9 appliqués. Mergée 2026-04-20 (PR #25, fea684b).
-  6-3-lint-i18n-sidebar-i18n: backlog
+  6-3-lint-i18n-sidebar-i18n: ready-for-dev  # Spec complétée 2026-04-20 : D8 (KF-006 sidebar hardcodée) + lint rule key-ownership. Frontend-only, AC #1-#7 couvrent sidebar i18n × 4 locales + script lint + CI gate. Prête pour dev.
   6-4-fixtures-e2e-deterministes: done  # Mergée sur main 2026-04-17 (PR #18, commit 520e8df). KF-007 e2e blocage pré-existant documenté pour Story 6-5.
   6-5-fix-playwright-e2e-auth-flow: done  # Mergée 2026-04-20 (PR #28, squash 765af6d). KF-007 fixed: localStorage persistence + hydration. 40/76 tests passing. KF-008 (#27) created for pre-existing selector failures.
   epic-6-retrospective: optional
