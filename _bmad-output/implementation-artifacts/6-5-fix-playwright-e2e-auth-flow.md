@@ -91,10 +91,10 @@ Selon issue #19 :
 **When** inspectant `.github/workflows/ci.yml`, job `e2e`,
 **Then** ligne `continue-on-error: true` est SUPPRIMÉE ou commentée (commit explicite documentant "KF-007 fixed").
 
-### AC #6 — KF-007 fermée dans `docs/known-failures.md`
+### AC #6 — GitHub issue #19 fermée avec le correctif
 **Given** correctif validé en CI,
-**When** inspectant `docs/known-failures.md` section KF-007,
-**Then** statut mis à jour : `status: closed (Story 6-5, commit XXX)` + brief explication du fix.
+**When** inspectant GitHub issue #19 (KF-007),
+**Then** issue fermée via commit message `(closes #19)` ou `(fixes #19)`, sans édition de `docs/known-failures.md` (archivé depuis 2026-04-18).
 
 ### AC #7 — CI Gate E2E verte (all required checks pass)
 **Given** correctif merged sur main,
@@ -121,6 +121,30 @@ Selon issue #19 :
 - `frontend/tests/e2e/helpers/test-state.ts` : `seedTestState(preset)` appelle `/api/v1/_test/seed` 
 - Login : `page.goto('/login'); page.fill('input[name=username]', 'admin'); page.fill('input[name=password]', '...'); page.click('button[type=submit]')`
 - Assertion : `page.goto('/accounts')` + assert page title ou `h1` content
+
+**Test Spec Inventory**
+
+*Passing specs:*
+- `frontend/tests/e2e/auth.spec.ts` (4 tests: login, logout, accessibility)
+- `frontend/tests/e2e/onboarding.spec.ts` (3+ tests: onboarding flow)
+
+*Failing specs (~60 tests total):*
+- `frontend/tests/e2e/accounts.spec.ts` (8 tests)
+- `frontend/tests/e2e/contacts.spec.ts` (8 tests)
+- `frontend/tests/e2e/products.spec.ts` (8 tests)
+- `frontend/tests/e2e/invoices.spec.ts` (8 tests)
+- `frontend/tests/e2e/journal-entries.spec.ts` (8 tests)
+- `frontend/tests/e2e/users.spec.ts` (8 tests)
+- `frontend/tests/e2e/homepage-settings.spec.ts` (4 tests)
+- `frontend/tests/e2e/mode-expert.spec.ts` (2 tests)
+- `frontend/tests/e2e/invoices-echeancier.spec.ts` (4 tests)
+- `frontend/tests/e2e/onboarding-path-b.spec.ts` (status to verify)
+
+**Playwright & Browser Configuration**
+- Playwright version: `frontend/package.json` specifies version (confirm before dev)
+- Recommended browser: Chromium (same as CI in `.github/workflows/ci.yml`)
+- Default timeout: 30s (sufficient for local testing; may need adjustment if network slow)
+- Workers: 1 (already configured in `frontend/playwright.config.ts` — **do not change**)
 
 ### Recent Pattern Learnings (Stories 6-1 → 6-4)
 
@@ -168,7 +192,12 @@ export DATABASE_URL=mysql://test:test@localhost:3306/test  # or use sqlx offline
 cd crates/kesh-api
 cargo run  # starts on :3000
 
-# Terminal 2 — Frontend
+# Terminal 2 — Verify localStorage Key (IMPORTANT)
+cd frontend/src/lib
+grep -n "localStorage.setItem" auth.ts
+# Expected: 'accessToken' key, but verify the actual key name used
+
+# Terminal 3 — Frontend E2E Tests
 cd frontend
 npm run test:e2e -- --debug accounts.spec.ts
 # Playwright launches with browser UI + DevTools
@@ -177,8 +206,8 @@ npm run test:e2e -- --debug accounts.spec.ts
 ### Step 2 : Observe Login
 1. Watch login form submission in DevTools Network tab
 2. POST `/api/v1/auth/login` — check response status + JSON body (should contain accessToken)
-3. Switch to Application tab → localStorage — is `accessToken` key present and non-empty?
-4. Console — run `localStorage.getItem('accessToken')` manually, should return JWT string
+3. Switch to Application tab → localStorage — is the localStorage key (verified in Step 1) present and non-empty?
+4. Console — run `localStorage.getItem('<KEY_FROM_STEP_1>')` manually (should return JWT string, e.g., `localStorage.getItem('accessToken')`)
 
 ### Step 3 : Post-Login Navigation
 1. In Playwright test, after login assertion, add pause: `await page.pause();`
@@ -197,28 +226,35 @@ npm run test:e2e -- --debug accounts.spec.ts
   - Does it navigate to authenticated routes after "starting onboarding"?
   - or stays in onboarding flow (which might not require full auth)?
 
-### Step 5 : Likely Suspects (narrowing)
+### Step 5 : Likely Suspects (by Investigation Priority)
 
-Based on issue #19 symptoms, check these in order :
+Investigate in this order — **start with #1, skip others if root cause found**:
 
-1. **Frontend auth.ts** — is `authStore` (or state management) properly synced?
-   - `localStorage.setItem('accessToken', ...)` called?
-   - `fetch` wrapper adding `Authorization` header?
-   - Or using a fetch interceptor that's not working?
+**PRIORITY 1 (highest likelihood) — Frontend auth.ts**
+- Is token persisted to localStorage correctly? `localStorage.setItem('accessToken', ...)` called?
+- Is fetch wrapper injecting `Authorization: Bearer <token>` header?
+- Search: `grep -n "Authorization\|Bearer" frontend/src/lib/auth.ts`
+- Test: `localStorage.getItem('accessToken')` in DevTools console after login — should return JWT string
 
-2. **SvelteKit Load Functions** — any +page.server.ts with early `redirect(303, '/login')`?
-   - Search codebase : `grep -r "redirect.*login" frontend/src/routes/`
-   - Is condition checking for valid token, and is token being passed to load function?
+**PRIORITY 2 — SvelteKit Hooks Interference**
+- Are `hooks.server.ts` or `hooks.client.ts` intercepting requests/navigation and redirecting prematurely?
+- Search: `grep -r "redirect\|goto" frontend/src/hooks.*.ts`
+- **Hooks run BEFORE load functions**, so early redirect here blocks authenticated routes
 
-3. **SvelteKit Hooks** — any `hooks.server.ts` or `hooks.client.ts` interfering?
-   - Hooks might be redirecting before load function even runs
+**PRIORITY 3 — SvelteKit Load Functions**
+- Any +page.server.ts with early `redirect(303, '/login')`?
+- Search: `grep -r "redirect.*'/login'" frontend/src/routes/`
+- Are load functions checking for valid token before running?
 
-4. **Playwright Context** — are cookies/localStorage truly persistent across `page.goto()`?
-   - Add explicit check : `const token = await page.evaluate(() => localStorage.getItem('accessToken')); console.log('Token after nav:', token);`
+**PRIORITY 4 — Playwright Context Persistence**
+- Is localStorage truly persisted across `page.goto()` in Playwright?
+- Add test: `const token = await page.evaluate(() => localStorage.getItem('accessToken')); console.log('Token after nav:', token);`
+- Verify localStorage not cleared between login and navigation
 
-5. **Backend JWT Validation** — is backend properly checking Authorization header?
-   - `grep -r "Authorization" crates/kesh-api/src/` → check middleware or route handlers
-   - Is JWT validation failing silently (returning 401 which triggers frontend redirect)?
+**PRIORITY 5 (lowest likelihood) — Backend JWT Validation**
+- Is backend properly validating Authorization header?
+- Search: `grep -r "Authorization" crates/kesh-api/src/`
+- Is JWT verification middleware rejecting valid tokens silently?
 
 ### Step 6 : Document Finding & Implement Fix
 
@@ -242,6 +278,12 @@ Then code the fix and validate locally.
 - Auth spec : `npm run test:e2e -- auth.spec.ts`
 - **Full suite** : `npm run test:e2e -- --reporter=list` (all 12 specs)
 
+### Regression Prevention
+- ✅ `auth.spec.ts` MUST still pass 100% (no auth flow regression)
+- ✅ `onboarding.spec.ts` MUST still pass 100% (no onboarding flow regression)
+- ✅ No logic changes to `frontend/src/lib/auth.ts` beyond bug fix (refactors deferred to future story)
+- ✅ Backend JWT validation logic unchanged (fix is in frontend only)
+
 ### CI Validation
 - Merge to main branch → trigger `.github/workflows/ci.yml`
 - Confirm all 4 jobs pass : Backend, Docker, Frontend, **E2E** (without `continue-on-error: true`)
@@ -260,6 +302,7 @@ Then code the fix and validate locally.
 | Date | Phase | Notes |
 |------|-------|-------|
 | 2026-04-20 | Story File Creation | Story 6-5 created via `bmad-create-story` with comprehensive investigation guide. Ready for dev. |
+| 2026-04-20 | Validation Pass 1 | Haiku review: 10 findings (3 CRITICAL, 4 HIGH, 3 MEDIUM). Applied 3 CRITICAL fixes: (1) AC #6 now references GitHub issue #19 closure instead of archived docs file, (2) Added test spec inventory with explicit pass/fail status, (3) Added localStorage key verification step in investigation guide. Also added 4 HIGH enhancements: prioritized Likely Suspects by investigation order, added Playwright/Browser configuration section, enhanced Step 2 with key name verification, added regression prevention checklist. Ready for Validation Pass 2 (Sonnet model). |
 
 ---
 
