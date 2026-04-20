@@ -20,6 +20,7 @@ let _accessToken = $state<string | null>(null);
 let _refreshToken = $state<string | null>(null);
 let _expiresIn = $state<number | null>(null);
 let _currentUser = $state<CurrentUser | null>(null);
+let _hydrated = false;
 
 /**
  * Décode le payload JWT (segment central, base64url) sans
@@ -47,9 +48,9 @@ function decodeJwtPayload(token: string): { sub: string; role: string; exp: numb
 	return payload as { sub: string; role: string; exp: number };
 }
 
-const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';
-const STORAGE_KEY_REFRESH_TOKEN = 'kesh:auth:refreshToken';
-const STORAGE_KEY_EXPIRES_IN = 'kesh:auth:expiresIn';
+export const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';
+export const STORAGE_KEY_REFRESH_TOKEN = 'kesh:auth:refreshToken';
+export const STORAGE_KEY_EXPIRES_IN = 'kesh:auth:expiresIn';
 
 export const authState = {
 	get accessToken(): string | null {
@@ -129,6 +130,10 @@ export const authState = {
 	 * Valide l'expiration du token avant restauration.
 	 */
 	hydrate() {
+		// Guard: Only hydrate once (prevent concurrent load() functions from restoring multiple times)
+		if (_hydrated) {
+			return;
+		}
 		if (typeof window === 'undefined' || !window.localStorage) {
 			return;
 		}
@@ -136,8 +141,8 @@ export const authState = {
 		const refreshToken = window.localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
 		const expiresInStr = window.localStorage.getItem(STORAGE_KEY_EXPIRES_IN);
 
-		if (accessToken && refreshToken && expiresInStr) {
-			try {
+		try {
+			if (accessToken && refreshToken && expiresInStr) {
 				const expiresIn = parseInt(expiresInStr, 10);
 				if (isNaN(expiresIn)) {
 					throw new Error('expiresIn is not a valid number');
@@ -152,20 +157,22 @@ export const authState = {
 					window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
 					window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
 					window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
-					return;
+				} else {
+					_accessToken = accessToken;
+					_refreshToken = refreshToken;
+					_expiresIn = expiresIn;
+					_currentUser = { userId: claims.sub, role: claims.role };
 				}
-
-				_accessToken = accessToken;
-				_refreshToken = refreshToken;
-				_expiresIn = expiresIn;
-				_currentUser = { userId: claims.sub, role: claims.role };
-			} catch (error) {
-				// Token invalide ou décodage échoué — nettoyer localStorage
-				console.error('[auth] Hydration failed, clearing session:', error instanceof Error ? error.message : String(error));
-				window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
-				window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
-				window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 			}
+		} catch (error) {
+			// Token invalide ou décodage échoué — nettoyer localStorage
+			console.error('[auth] Hydration failed, clearing session:', error instanceof Error ? error.message : String(error));
+			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
+		} finally {
+			// Mark hydration as complete regardless of outcome (prevents duplicate attempts)
+			_hydrated = true;
 		}
 	},
 };

@@ -126,8 +126,8 @@ Call log:
                       - button "TVA"
                     - columnheader "Actions"
                 - rowgroup:
-                  - row "TestProduct Dup 1776697839327-546551 5.00 8.10% Modifier Archiver":
-                    - cell "TestProduct Dup 1776697839327-546551"
+                  - row "TestProduct Dup 1776698293577-777279 5.00 8.10% Modifier Archiver":
+                    - cell "TestProduct Dup 1776698293577-777279"
                     - cell
                     - cell "5.00"
                     - cell "8.10%"
@@ -160,7 +160,7 @@ Call log:
     - generic [ref=e5]:
       - generic [ref=e6]:
         - text: Nom *
-        - textbox "Nom *" [ref=e7]: TestProduct Dup 1776697839327-546551
+        - textbox "Nom *" [ref=e7]: TestProduct Dup 1776698293577-777279
       - generic [ref=e8]:
         - text: Description
         - textbox "Description" [ref=e9]

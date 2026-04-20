@@ -13,4 +13,9 @@ import { authState } from '$lib/app/stores/auth.svelte';
 
 // Restaurer les tokens IMMÉDIATEMENT au chargement du client
 // Exécution synchrone, avant load() functions + render
-authState.hydrate();
+try {
+	authState.hydrate();
+} catch (error) {
+	// Hydration failure is not fatal — app continues with unauthenticated state
+	console.error('[auth] Hydration failed at app startup:', error instanceof Error ? error.message : String(error));
+}

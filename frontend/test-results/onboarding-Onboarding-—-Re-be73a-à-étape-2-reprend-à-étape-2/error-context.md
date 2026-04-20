@@ -7,7 +7,7 @@
 # Test info
 
 - Name: onboarding.spec.ts >> Onboarding — Reprise après interruption >> F5 à étape 2 reprend à étape 2
-- Location: tests/e2e/onboarding.spec.ts:75:2
+- Location: tests/e2e/onboarding.spec.ts:77:2
 
 # Error details
 
@@ -65,88 +65,90 @@ Call log:
   11 |  */
   12 | 
   13 | test.describe('Onboarding Wizard', () => {
-  14 | 	test.afterEach(async ({ page }) => {
-  15 | 		// Clear localStorage after each test to prevent token bleed to next test
-  16 | 		await clearAuthStorage(page);
+  14 | 	test.beforeEach(async ({ page }) => {
+  15 | 		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).
+  16 | 		await seedTestState('fresh');
   17 | 
-  18 | 		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).
-  19 | 		await seedTestState('fresh');
-  20 | 
-  21 | 		// Login en tant que changeme/changeme (le seul user du preset fresh).
-  22 | 		await page.goto('/login');
-  23 | 		await page.fill('#username', 'changeme');
-  24 | 		await page.fill('#password', 'changeme');
-  25 | 		await page.click('button[type="submit"]');
-  26 | 
-  27 | 		// Le guard onboarding devrait rediriger vers /onboarding
-  28 | 		await expect(page).toHaveURL(/\/onboarding/);
-  29 | 	});
-  30 | 
-  31 | 	test('étape 1 — choix de langue affiche 4 options', async ({ page }) => {
-  32 | 		// 4 boutons de langue
-  33 | 		const langButtons = page.locator('button:has-text("Français"), button:has-text("Deutsch"), button:has-text("Italiano"), button:has-text("English")');
-  34 | 		await expect(langButtons).toHaveCount(4);
-  35 | 	});
-  36 | 
-  37 | 	test('flux complet : langue → mode → démo → bannière visible', async ({ page }) => {
-  38 | 		// Étape 1 : Choisir français
-  39 | 		await page.click('button:has-text("Français")');
-  40 | 
-  41 | 		// Étape 2 : Choisir mode guidé
-  42 | 		await expect(page.getByText('Guidé')).toBeVisible();
-  43 | 		await expect(page.getByText('Expert')).toBeVisible();
-  44 | 		await page.click('button:has-text("Guidé")');
-  45 | 
-  46 | 		// Étape 3 : Choisir démo
-  47 | 		await expect(page.getByText('Explorer avec des données de démo')).toBeVisible();
-  48 | 		await page.click('button:has-text("Explorer avec des données de démo")');
-  49 | 
-  50 | 		// Redirect vers / avec bannière démo
-  51 | 		await expect(page).toHaveURL('/');
-  52 | 		await expect(page.getByText('Instance de démonstration')).toBeVisible();
-  53 | 	});
-  54 | 
-  55 | 	test('bannière démo — reset redirige vers onboarding', async ({ page }) => {
-  56 | 		// Complete onboarding first
-  57 | 		await page.click('button:has-text("Français")');
-  58 | 		await page.click('button:has-text("Guidé")');
-  59 | 		await page.click('button:has-text("Explorer avec des données de démo")');
-  60 | 		await expect(page).toHaveURL('/');
-  61 | 
-  62 | 		// Click reset
-  63 | 		await page.click('button:has-text("Réinitialiser pour la production")');
-  64 | 
-  65 | 		// Confirm dialog
-  66 | 		await expect(page.getByText('Toutes les données de démonstration')).toBeVisible();
-  67 | 		await page.click('button:has-text("Confirmer")');
-  68 | 
-  69 | 		// Should redirect to onboarding
-  70 | 		await expect(page).toHaveURL(/\/onboarding/);
-  71 | 	});
-  72 | });
-  73 | 
-  74 | test.describe('Onboarding — Reprise après interruption', () => {
-  75 | 	test('F5 à étape 2 reprend à étape 2', async ({ page }) => {
-  76 | 		// Login
-  77 | 		await page.goto('/login');
-  78 | 		await page.fill('#username', 'admin');
-  79 | 		await page.fill('#password', 'changeme');
-  80 | 		await page.click('button[type="submit"]');
-> 81 | 		await expect(page).toHaveURL(/\/onboarding/);
+  18 | 		// Login en tant que changeme/changeme (le seul user du preset fresh).
+  19 | 		await page.goto('/login');
+  20 | 		await page.fill('#username', 'changeme');
+  21 | 		await page.fill('#password', 'changeme');
+  22 | 		await page.click('button[type="submit"]');
+  23 | 
+  24 | 		// Le guard onboarding devrait rediriger vers /onboarding
+  25 | 		await expect(page).toHaveURL(/\/onboarding/);
+  26 | 	});
+  27 | 
+  28 | 	test.afterEach(async ({ page }) => {
+  29 | 		// Clear localStorage after each test to prevent token bleed to next test
+  30 | 		await clearAuthStorage(page);
+  31 | 	});
+  32 | 
+  33 | 	test('étape 1 — choix de langue affiche 4 options', async ({ page }) => {
+  34 | 		// 4 boutons de langue
+  35 | 		const langButtons = page.locator('button:has-text("Français"), button:has-text("Deutsch"), button:has-text("Italiano"), button:has-text("English")');
+  36 | 		await expect(langButtons).toHaveCount(4);
+  37 | 	});
+  38 | 
+  39 | 	test('flux complet : langue → mode → démo → bannière visible', async ({ page }) => {
+  40 | 		// Étape 1 : Choisir français
+  41 | 		await page.click('button:has-text("Français")');
+  42 | 
+  43 | 		// Étape 2 : Choisir mode guidé
+  44 | 		await expect(page.getByText('Guidé')).toBeVisible();
+  45 | 		await expect(page.getByText('Expert')).toBeVisible();
+  46 | 		await page.click('button:has-text("Guidé")');
+  47 | 
+  48 | 		// Étape 3 : Choisir démo
+  49 | 		await expect(page.getByText('Explorer avec des données de démo')).toBeVisible();
+  50 | 		await page.click('button:has-text("Explorer avec des données de démo")');
+  51 | 
+  52 | 		// Redirect vers / avec bannière démo
+  53 | 		await expect(page).toHaveURL('/');
+  54 | 		await expect(page.getByText('Instance de démonstration')).toBeVisible();
+  55 | 	});
+  56 | 
+  57 | 	test('bannière démo — reset redirige vers onboarding', async ({ page }) => {
+  58 | 		// Complete onboarding first
+  59 | 		await page.click('button:has-text("Français")');
+  60 | 		await page.click('button:has-text("Guidé")');
+  61 | 		await page.click('button:has-text("Explorer avec des données de démo")');
+  62 | 		await expect(page).toHaveURL('/');
+  63 | 
+  64 | 		// Click reset
+  65 | 		await page.click('button:has-text("Réinitialiser pour la production")');
+  66 | 
+  67 | 		// Confirm dialog
+  68 | 		await expect(page.getByText('Toutes les données de démonstration')).toBeVisible();
+  69 | 		await page.click('button:has-text("Confirmer")');
+  70 | 
+  71 | 		// Should redirect to onboarding
+  72 | 		await expect(page).toHaveURL(/\/onboarding/);
+  73 | 	});
+  74 | });
+  75 | 
+  76 | test.describe('Onboarding — Reprise après interruption', () => {
+  77 | 	test('F5 à étape 2 reprend à étape 2', async ({ page }) => {
+  78 | 		// Login
+  79 | 		await page.goto('/login');
+  80 | 		await page.fill('#username', 'admin');
+  81 | 		await page.fill('#password', 'changeme');
+  82 | 		await page.click('button[type="submit"]');
+> 83 | 		await expect(page).toHaveURL(/\/onboarding/);
      |                      ^ Error: expect(page).toHaveURL(expected) failed
-  82 | 
-  83 | 		// Complete step 1
-  84 | 		await page.click('button:has-text("Français")');
-  85 | 
-  86 | 		// Should be at step 2 now
-  87 | 		await expect(page.getByText('Guidé')).toBeVisible();
-  88 | 
-  89 | 		// Simulate refresh (F5)
-  90 | 		await page.reload();
-  91 | 
-  92 | 		// Should still be at step 2
-  93 | 		await expect(page.getByText('Guidé')).toBeVisible();
-  94 | 	});
-  95 | });
-  96 | 
+  84 | 
+  85 | 		// Complete step 1
+  86 | 		await page.click('button:has-text("Français")');
+  87 | 
+  88 | 		// Should be at step 2 now
+  89 | 		await expect(page.getByText('Guidé')).toBeVisible();
+  90 | 
+  91 | 		// Simulate refresh (F5)
+  92 | 		await page.reload();
+  93 | 
+  94 | 		// Should still be at step 2
+  95 | 		await expect(page.getByText('Guidé')).toBeVisible();
+  96 | 	});
+  97 | });
+  98 | 
 ```

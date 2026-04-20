@@ -14,15 +14,15 @@
 ```
 Error: expect(locator).toBeVisible() failed
 
-Locator: getByText('test-1776697856062')
+Locator: getByText('test-1776698305994')
 Expected: visible
-Error: strict mode violation: getByText('test-1776697856062') resolved to 2 elements:
-    1) <td data-slot="table-cell" class="p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0">…</td> aka getByRole('cell', { name: 'test-1776697856062', exact: true })
+Error: strict mode violation: getByText('test-1776698305994') resolved to 2 elements:
+    1) <td data-slot="table-cell" class="p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0">…</td> aka getByRole('cell', { name: 'test-1776698305994', exact: true })
     2) <div data-title="">…</div> aka getByText('Utilisateur « test-')
 
 Call log:
   - Expect "toBeVisible" with timeout 5000ms
-  - waiting for getByText('test-1776697856062')
+  - waiting for getByText('test-1776698305994')
 
 ```
 
@@ -135,25 +135,25 @@ Call log:
                     - img
                   - button "Désactiver changeme" [ref=e85]:
                     - img
-            - row "test-1776697856062 Comptable Actif 20.04.2026 Modifier test-1776697856062 Réinitialiser le mot de passe de test-1776697856062 Désactiver test-1776697856062" [ref=e86]:
-              - cell "test-1776697856062" [ref=e87]
+            - row "test-1776698305994 Comptable Actif 20.04.2026 Modifier test-1776698305994 Réinitialiser le mot de passe de test-1776698305994 Désactiver test-1776698305994" [ref=e86]:
+              - cell "test-1776698305994" [ref=e87]
               - cell "Comptable" [ref=e88]
               - cell "Actif" [ref=e89]
               - cell "20.04.2026" [ref=e90]
-              - cell "Modifier test-1776697856062 Réinitialiser le mot de passe de test-1776697856062 Désactiver test-1776697856062" [ref=e91]:
+              - cell "Modifier test-1776698305994 Réinitialiser le mot de passe de test-1776698305994 Désactiver test-1776698305994" [ref=e91]:
                 - generic [ref=e92]:
-                  - button "Modifier test-1776697856062" [ref=e93]:
+                  - button "Modifier test-1776698305994" [ref=e93]:
                     - img
-                  - button "Réinitialiser le mot de passe de test-1776697856062" [ref=e94]:
+                  - button "Réinitialiser le mot de passe de test-1776698305994" [ref=e94]:
                     - img
-                  - button "Désactiver test-1776697856062" [ref=e95]:
+                  - button "Désactiver test-1776698305994" [ref=e95]:
                     - img
     - contentinfo [ref=e96]: Kesh v0.1.0 — Logiciel libre (EUPL 1.2). Les données ne remplacent pas un fiduciaire.
   - region "Notifications alt+T":
     - list:
       - listitem [ref=e97]:
         - img [ref=e99]
-        - generic [ref=e102]: Utilisateur « test-1776697856062 » créé.
+        - generic [ref=e102]: Utilisateur « test-1776698305994 » créé.
 ```
 
 # Test source

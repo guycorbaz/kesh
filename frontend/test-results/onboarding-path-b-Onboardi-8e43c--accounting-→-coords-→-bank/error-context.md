@@ -7,25 +7,47 @@
 # Test info
 
 - Name: onboarding-path-b.spec.ts >> Onboarding Path B >> flux complet Path B : langue → mode → production → org → accounting → coords → bank
-- Location: tests/e2e/onboarding-path-b.spec.ts:25:2
+- Location: tests/e2e/onboarding-path-b.spec.ts:27:2
 
 # Error details
 
 ```
-Test timeout of 30000ms exceeded.
-```
+Error: expect(locator).toBeVisible() failed
 
-```
-Error: page.evaluate: SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
-    at UtilityScript.evaluate (<anonymous>:304:16)
-    at UtilityScript.<anonymous> (<anonymous>:1:44)
-```
+Locator: getByText('Indépendant')
+Expected: visible
+Error: strict mode violation: getByText('Indépendant') resolved to 2 elements:
+    1) <div class="text-lg font-medium">Indépendant</div> aka getByRole('button', { name: 'Indépendant Travailleur indé' })
+    2) <div class="mt-1 text-sm text-text-muted">Travailleur indépendant, freelance</div> aka getByRole('button', { name: 'Indépendant Travailleur indé' })
 
-```
-Error: page.click: Test timeout of 30000ms exceeded.
 Call log:
-  - waiting for locator('button:has-text("Français")')
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for getByText('Indépendant')
 
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - link "Kesh" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e6]:
+      - heading "Type d'organisation" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - button "Indépendant Travailleur indépendant, freelance" [ref=e9]:
+          - generic [ref=e10]: Indépendant
+          - generic [ref=e11]: Travailleur indépendant, freelance
+        - button "Association Association à but non lucratif" [ref=e12]:
+          - generic [ref=e13]: Association
+          - generic [ref=e14]: Association à but non lucratif
+        - button "PME Petite et moyenne entreprise (SA, Sàrl)" [ref=e15]:
+          - generic [ref=e16]: PME
+          - generic [ref=e17]: Petite et moyenne entreprise (SA, Sàrl)
+    - contentinfo [ref=e18]: Kesh v0.1.0 — Logiciel libre (EUPL 1.2). Les données ne remplacent pas un fiduciaire.
+  - region "Notifications alt+T"
+  - generic [ref=e19]: Connexion - Kesh
 ```
 
 # Test source
@@ -43,72 +65,74 @@ Call log:
   10 |  */
   11 | 
   12 | test.describe('Onboarding Path B', () => {
-  13 | 	test.afterEach(async ({ page }) => {
-  14 | 		// Clear localStorage after each test to prevent token bleed to next test
-  15 | 		await clearAuthStorage(page);
-  16 | 
-  17 | 		await seedTestState('fresh');
-  18 | 		await page.goto('/login');
-  19 | 		await page.fill('#username', 'changeme');
-  20 | 		await page.fill('#password', 'changeme');
-  21 | 		await page.click('button[type="submit"]');
-  22 | 		await expect(page).toHaveURL(/\/onboarding/);
-  23 | 	});
-  24 | 
-  25 | 	test('flux complet Path B : langue → mode → production → org → accounting → coords → bank', async ({ page }) => {
-  26 | 		// Step 1: Language
-> 27 | 		await page.click('button:has-text("Français")');
-     |              ^ Error: page.click: Test timeout of 30000ms exceeded.
-  28 | 
-  29 | 		// Step 2: Mode
-  30 | 		await page.click('button:has-text("Guidé")');
-  31 | 
-  32 | 		// Step 3: Production path
-  33 | 		await page.click('button:has-text("Configurer pour la production")');
-  34 | 
-  35 | 		// Step 4: Org type
-  36 | 		await expect(page.getByText('Indépendant')).toBeVisible();
-  37 | 		await page.click('button:has-text("PME")');
-  38 | 
-  39 | 		// Step 5: Accounting language
-  40 | 		await expect(page.getByText('Langue comptable')).toBeVisible();
-  41 | 		await page.click('button:has-text("Français")');
-  42 | 
-  43 | 		// Step 6: Coordinates
-  44 | 		await expect(page.getByText('Coordonnées')).toBeVisible();
-  45 | 		await page.fill('#coord-name', 'Ma Société SA');
-  46 | 		await page.fill('#coord-address', 'Rue du Test 1, 1000 Lausanne');
-  47 | 		await page.click('button:has-text("Continuer")');
-  48 | 
-  49 | 		// Step 7: Bank (skip)
-  50 | 		await expect(page.getByText('Compte bancaire')).toBeVisible();
-  51 | 		await page.click('button:has-text("Configurer plus tard")');
-  52 | 
-  53 | 		// Should be in app with blue banner
-  54 | 		await expect(page).toHaveURL('/');
-  55 | 		await expect(page.getByText('Configuration incomplète')).toBeVisible();
-  56 | 	});
-  57 | 
-  58 | 	test('flux Path B avec banque configurée → pas de bannière bleue', async ({ page }) => {
-  59 | 		// Steps 1-6 same as above
-  60 | 		await page.click('button:has-text("Français")');
-  61 | 		await page.click('button:has-text("Expert")');
-  62 | 		await page.click('button:has-text("Configurer pour la production")');
-  63 | 		await page.click('button:has-text("Association")');
-  64 | 		await page.click('button:has-text("Français")');
-  65 | 		await page.fill('#coord-name', 'Mon Association');
-  66 | 		await page.fill('#coord-address', 'Rue 1');
-  67 | 		await page.click('button:has-text("Continuer")');
-  68 | 
-  69 | 		// Step 7: Bank (fill)
-  70 | 		await page.fill('#bank-name', 'UBS');
-  71 | 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
-  72 | 		await page.click('button:has-text("Enregistrer")');
-  73 | 
-  74 | 		// Should be in app WITHOUT blue banner
-  75 | 		await expect(page).toHaveURL('/');
-  76 | 		await expect(page.getByText('Configuration incomplète')).not.toBeVisible();
-  77 | 	});
-  78 | });
-  79 | 
+  13 | 	test.beforeEach(async ({ page }) => {
+  14 | 		await seedTestState('fresh');
+  15 | 		await page.goto('/login');
+  16 | 		await page.fill('#username', 'changeme');
+  17 | 		await page.fill('#password', 'changeme');
+  18 | 		await page.click('button[type="submit"]');
+  19 | 		await expect(page).toHaveURL(/\/onboarding/);
+  20 | 	});
+  21 | 
+  22 | 	test.afterEach(async ({ page }) => {
+  23 | 		// Clear localStorage after each test to prevent token bleed to next test
+  24 | 		await clearAuthStorage(page);
+  25 | 	});
+  26 | 
+  27 | 	test('flux complet Path B : langue → mode → production → org → accounting → coords → bank', async ({ page }) => {
+  28 | 		// Step 1: Language
+  29 | 		await page.click('button:has-text("Français")');
+  30 | 
+  31 | 		// Step 2: Mode
+  32 | 		await page.click('button:has-text("Guidé")');
+  33 | 
+  34 | 		// Step 3: Production path
+  35 | 		await page.click('button:has-text("Configurer pour la production")');
+  36 | 
+  37 | 		// Step 4: Org type
+> 38 | 		await expect(page.getByText('Indépendant')).toBeVisible();
+     |                                               ^ Error: expect(locator).toBeVisible() failed
+  39 | 		await page.click('button:has-text("PME")');
+  40 | 
+  41 | 		// Step 5: Accounting language
+  42 | 		await expect(page.getByText('Langue comptable')).toBeVisible();
+  43 | 		await page.click('button:has-text("Français")');
+  44 | 
+  45 | 		// Step 6: Coordinates
+  46 | 		await expect(page.getByText('Coordonnées')).toBeVisible();
+  47 | 		await page.fill('#coord-name', 'Ma Société SA');
+  48 | 		await page.fill('#coord-address', 'Rue du Test 1, 1000 Lausanne');
+  49 | 		await page.click('button:has-text("Continuer")');
+  50 | 
+  51 | 		// Step 7: Bank (skip)
+  52 | 		await expect(page.getByText('Compte bancaire')).toBeVisible();
+  53 | 		await page.click('button:has-text("Configurer plus tard")');
+  54 | 
+  55 | 		// Should be in app with blue banner
+  56 | 		await expect(page).toHaveURL('/');
+  57 | 		await expect(page.getByText('Configuration incomplète')).toBeVisible();
+  58 | 	});
+  59 | 
+  60 | 	test('flux Path B avec banque configurée → pas de bannière bleue', async ({ page }) => {
+  61 | 		// Steps 1-6 same as above
+  62 | 		await page.click('button:has-text("Français")');
+  63 | 		await page.click('button:has-text("Expert")');
+  64 | 		await page.click('button:has-text("Configurer pour la production")');
+  65 | 		await page.click('button:has-text("Association")');
+  66 | 		await page.click('button:has-text("Français")');
+  67 | 		await page.fill('#coord-name', 'Mon Association');
+  68 | 		await page.fill('#coord-address', 'Rue 1');
+  69 | 		await page.click('button:has-text("Continuer")');
+  70 | 
+  71 | 		// Step 7: Bank (fill)
+  72 | 		await page.fill('#bank-name', 'UBS');
+  73 | 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
+  74 | 		await page.click('button:has-text("Enregistrer")');
+  75 | 
+  76 | 		// Should be in app WITHOUT blue banner
+  77 | 		await expect(page).toHaveURL('/');
+  78 | 		await expect(page.getByText('Configuration incomplète')).not.toBeVisible();
+  79 | 	});
+  80 | });
+  81 | 
 ```
