@@ -101,8 +101,6 @@ fn auth(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-/// Create a test company (required by Story 6.2 before ensure_admin_user)
-
 /// Helper : advance through shared steps (language + mode) to step=2
 async fn advance_to_step_2(app: &TestApp, token: &str) {
     app.client
