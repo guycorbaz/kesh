@@ -483,7 +483,8 @@ async fn idor_users_cross_company_returns_404(pool: MySqlPool) {
     let (company_b_id, _company_b_accounts) = create_seeded_company(&pool).await;
 
     let user_a_id = create_company_user(&pool, company_a_id, "alice", "password123").await;
-    let _user_b_id = create_company_user_with_role(&pool, company_b_id, "bob", "password123", Role::Admin).await;
+    let _user_b_id =
+        create_company_user_with_role(&pool, company_b_id, "bob", "password123", Role::Admin).await;
 
     let app = spawn_app(pool.clone()).await;
     let token_b = login(&app, "bob", "password123").await;
@@ -545,5 +546,8 @@ async fn idor_companies_current_returns_own_company_only(pool: MySqlPool) {
     // Verify User B gets company B data (different from A)
     let body_b: serde_json::Value = resp_b.json().await.unwrap();
     assert_eq!(body_b["company"]["id"].as_i64().unwrap(), company_b_id);
-    assert_ne!(body_b["company"]["id"], body_a["company"]["id"], "Users get their own companies");
+    assert_ne!(
+        body_b["company"]["id"], body_a["company"]["id"],
+        "Users get their own companies"
+    );
 }
