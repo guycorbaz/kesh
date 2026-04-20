@@ -51,6 +51,14 @@ demo-reset-confirm-body = Toutes les données de démonstration seront supprimé
 demo-reset-confirm-ok = Confirmer
 demo-reset-confirm-cancel = Annuler
 
+# Navigation sidebar (Story 6.3)
+nav-home = Accueil
+nav-contacts = Carnet d'adresses
+nav-products = Catalogue
+nav-invoices = Factures
+nav-invoicing-due-dates = Échéancier
+nav-settings = Paramètres
+
 # Onboarding — Chemin B (Story 2.3)
 onboarding-choose-org-type = Type d'organisation
 onboarding-org-independant = Indépendant
@@ -218,7 +226,6 @@ tooltip-balanced-natural = Le total des entrées égale le total des sorties
 tooltip-balanced-technical = Équilibre partie double (débit = crédit)
 
 # Story 4.1 — Carnet d'adresses (contacts CRUD)
-nav-contacts = Carnet d'adresses
 contacts-page-title = Carnet d'adresses
 contact-form-create-title = Nouveau contact
 contact-form-edit-title = Modifier le contact
@@ -319,7 +326,6 @@ product-archive-cancel = Annuler
 product-archive-confirm = Archiver
 
 # --- Story 5.1 : Factures brouillon ---
-nav-invoices = Factures
 invoices-page-title = Factures
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
@@ -405,7 +411,6 @@ settings-invoicing-save = Enregistrer
 settings-invoicing-save-success = Configuration enregistrée
 settings-invoicing-format-invalid = Format invalide
 settings-invoicing-format-too-long = Le format est trop long
-nav-settings-invoicing = Facturation
 invoice-journal-entry-description = Facture { $invoiceNumber } - { $contactName }
 
 # --- Story 5.3 — Génération PDF QR Bill ---
@@ -523,8 +528,6 @@ common-next = Suivant
 common-cancel = Annuler
 common-error = Erreur inattendue
 
-# Navigation
-nav-invoices-due-dates = Échéancier
 invoice-pdf-error-not-found = Facture introuvable.
 invoice-pdf-error-generic = Erreur lors du téléchargement du PDF.
 invoice-pdf-error-empty = Le PDF reçu est vide.

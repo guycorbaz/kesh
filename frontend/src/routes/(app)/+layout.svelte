@@ -10,7 +10,11 @@
 	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+
+	type NavItem =
+		| { i18nKey: string; fallback: string; href: string }
+		| { label: string; href: string };
 
 	let { children } = $props();
 
@@ -36,15 +40,15 @@
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 
-	const navGroups = [
+	const navGroups: Array<{ label: string | null; items: NavItem[] }> = [
 		{
 			label: 'Quotidien',
 			items: [
-				{ label: 'Accueil', href: '/' },
-				{ label: "Carnet d'adresses", href: '/contacts' },
-				{ label: 'Catalogue', href: '/products' },
-				{ label: 'Facturer', href: '/invoices' },
-				{ label: 'Échéancier', href: '/invoices/due-dates' },
+				{ i18nKey: 'nav-home', fallback: 'Accueil', href: '/' },
+				{ i18nKey: 'nav-contacts', fallback: "Carnet d'adresses", href: '/contacts' },
+				{ i18nKey: 'nav-products', fallback: 'Catalogue', href: '/products' },
+				{ i18nKey: 'nav-invoices', fallback: 'Facturer', href: '/invoices' },
+				{ i18nKey: 'nav-invoicing-due-dates', fallback: 'Échéancier', href: '/invoices/due-dates' },
 				{ label: 'Payer', href: '/bank-accounts' },
 				{ label: 'Importer', href: '/bank-import' },
 			],
@@ -59,11 +63,11 @@
 		},
 		{
 			label: null,
-			items: [{ label: 'Paramètres', href: '/settings' }],
+			items: [{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' }],
 		},
 	];
 
-	let adminNavItems = $derived(
+	let adminNavItems: NavItem[] = $derived(
 		isAdmin
 			? [
 					{ label: 'Utilisateurs', href: '/users' },
@@ -71,6 +75,13 @@
 				]
 			: []
 	);
+
+	function getItemLabel(item: NavItem): string {
+		if ('i18nKey' in item) {
+			return i18nMsg(item.i18nKey, item.fallback);
+		}
+		return item.label;
+	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -172,7 +183,7 @@
 								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
 								style="min-height: var(--kesh-target-min-height);"
 							>
-								{item.label}
+								{getItemLabel(item)}
 							</a>
 						</li>
 					{/each}
@@ -191,7 +202,7 @@
 								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
 								style="min-height: var(--kesh-target-min-height);"
 							>
-								{item.label}
+								{getItemLabel(item)}
 							</a>
 						</li>
 					{/each}

@@ -158,6 +158,9 @@ jobs:
       - name: svelte-check
         run: npm run check
 
+      - name: Lint i18n key-ownership
+        run: npm run lint-i18n-ownership
+
       - name: unit tests
         run: npm run test:unit
 

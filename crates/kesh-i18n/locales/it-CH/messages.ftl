@@ -51,6 +51,14 @@ demo-reset-confirm-body = Tutti i dati dimostrativi verranno eliminati. Vuoi con
 demo-reset-confirm-ok = Conferma
 demo-reset-confirm-cancel = Annulla
 
+# Navigation sidebar (Story 6.3)
+nav-home = Home
+nav-contacts = Contatti
+nav-products = Catalogo
+nav-invoices = Fatture
+nav-invoicing-due-dates = Scadenze
+nav-settings = Impostazioni
+
 # Onboarding — Percorso B (Story 2.3)
 onboarding-choose-org-type = Tipo di organizzazione
 onboarding-org-independant = Indipendente
@@ -218,7 +226,6 @@ tooltip-balanced-natural = Il totale delle entrate è uguale al totale delle usc
 tooltip-balanced-technical = Equilibrio della partita doppia (Dare = Avere)
 
 # Story 4.1 — Rubrica (contatti CRUD)
-nav-contacts = Rubrica
 contacts-page-title = Rubrica
 contact-form-create-title = Nuovo contatto
 contact-form-edit-title = Modifica contatto
@@ -319,7 +326,6 @@ product-archive-cancel = Annulla
 product-archive-confirm = Archivia
 
 # --- Story 5.1: Bozze fatture ---
-nav-invoices = Fatture
 invoices-page-title = Fatture
 invoice-new-title = Nuova fattura
 invoice-edit-title = Modifica fattura
@@ -486,7 +492,6 @@ common-next = Successivo
 common-cancel = Annulla
 common-error = Errore imprevisto
 
-nav-invoices-due-dates = Scadenziario
 invoice-pdf-error-not-found = Fattura non trovata.
 invoice-pdf-error-generic = Errore durante il download del PDF.
 invoice-pdf-error-empty = Il PDF ricevuto è vuoto.
