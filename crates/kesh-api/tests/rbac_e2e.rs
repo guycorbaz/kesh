@@ -142,7 +142,6 @@ async fn login_as(app: &TestApp, username: &str, password: &str) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
-
 /// Bootstrap admin, login, create user with role, login as that user.
 async fn create_and_login_as(
     app: &TestApp,
