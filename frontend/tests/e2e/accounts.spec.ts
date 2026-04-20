@@ -13,8 +13,8 @@ test.beforeAll(async () => {
 	await seedTestState('with-company');
 });
 
-test.beforeEach(async ({ page }) => {
-	// Clear auth tokens to isolate each test and prevent token bleed from previous tests
+test.afterEach(async ({ page }) => {
+	// Clear auth tokens after each test to prevent token bleed to next test
 	await clearAuthStorage(page);
 });
 

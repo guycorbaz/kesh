@@ -11,8 +11,8 @@ import { seedTestState, clearAuthStorage } from './helpers/test-state';
  */
 
 test.describe('Onboarding Wizard', () => {
-	test.beforeEach(async ({ page }) => {
-		// Clear localStorage to isolate each test and prevent token bleed from previous tests
+	test.afterEach(async ({ page }) => {
+		// Clear localStorage after each test to prevent token bleed to next test
 		await clearAuthStorage(page);
 
 		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).

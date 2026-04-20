@@ -5,8 +5,8 @@ test.beforeAll(async () => {
 	await seedTestState('with-company');
 });
 
-test.beforeEach(async ({ page }) => {
-	// Clear localStorage to isolate each test and prevent token bleed from previous tests
+test.afterEach(async ({ page }) => {
+	// Clear localStorage after each test to prevent token bleed to next test
 	await clearAuthStorage(page);
 });
 
