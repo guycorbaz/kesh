@@ -17,8 +17,6 @@ use kesh_api::config::Config;
 use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
 use kesh_api::{AppState, build_router};
-use kesh_db::entities::{Language, NewCompany, OrgType};
-use kesh_db::repositories::companies;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
