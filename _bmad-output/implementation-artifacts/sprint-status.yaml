@@ -113,7 +113,7 @@ development_status:
   6-2-multi-tenant-scoping-refactor: done  # Implémentation T1-T9 complétée 2026-04-18 (opus-4-7 + haiku continuation). T7 route refactoring pattern établi, T7.1-T7.9 appliqués. Mergée 2026-04-20 (PR #25, fea684b).
   6-3-lint-i18n-sidebar-i18n: backlog
   6-4-fixtures-e2e-deterministes: done  # Mergée sur main 2026-04-17 (PR #18, commit 520e8df). KF-007 e2e blocage pré-existant documenté pour Story 6-5.
-  6-5-fix-playwright-e2e-auth-flow: ready-for-dev  # Créée 2026-04-20 — investigation + fix Playwright auth redirection /login persistant. Débloque KF-007/issue #19, blocant release v0.1
+  6-5-fix-playwright-e2e-auth-flow: in-progress  # Créée 2026-04-20 — investigation + fix Playwright auth redirection /login persistant. Débloque KF-007/issue #19, blocant release v0.1
   epic-6-retrospective: optional
 
   # Epic 7: Import Bancaire & Réconciliation (ex-Epic 6)

@@ -47,6 +47,10 @@ function decodeJwtPayload(token: string): { sub: string; role: string; exp: numb
 	return payload as { sub: string; role: string; exp: number };
 }
 
+const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';
+const STORAGE_KEY_REFRESH_TOKEN = 'kesh:auth:refreshToken';
+const STORAGE_KEY_EXPIRES_IN = 'kesh:auth:expiresIn';
+
 export const authState = {
 	get accessToken(): string | null {
 		return _accessToken;
@@ -71,6 +75,12 @@ export const authState = {
 		_refreshToken = refreshToken;
 		_expiresIn = expiresIn;
 		_currentUser = { userId: claims.sub, role: claims.role };
+		// Persister à localStorage pour survire aux navigations de page
+		if (typeof window !== 'undefined' && window.localStorage) {
+			window.localStorage.setItem(STORAGE_KEY_ACCESS_TOKEN, accessToken);
+			window.localStorage.setItem(STORAGE_KEY_REFRESH_TOKEN, refreshToken);
+			window.localStorage.setItem(STORAGE_KEY_EXPIRES_IN, String(expiresIn));
+		}
 	},
 
 	/**
@@ -83,6 +93,12 @@ export const authState = {
 		_refreshToken = null;
 		_expiresIn = null;
 		_currentUser = null;
+		// Nettoyer localStorage aussi
+		if (typeof window !== 'undefined' && window.localStorage) {
+			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
+		}
 	},
 
 	async logout() {
@@ -99,5 +115,43 @@ export const authState = {
 		_refreshToken = null;
 		_expiresIn = null;
 		_currentUser = null;
+		// Nettoyer localStorage aussi
+		if (typeof window !== 'undefined' && window.localStorage) {
+			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
+		}
+	},
+
+	/**
+	 * Restaure les tokens depuis localStorage (appelé au démarrage de l'app).
+	 * Safe pour SSR : vérifie typeof window avant d'accéder à localStorage.
+	 */
+	hydrate() {
+		if (typeof window === 'undefined' || !window.localStorage) {
+			return;
+		}
+		const accessToken = window.localStorage.getItem(STORAGE_KEY_ACCESS_TOKEN);
+		const refreshToken = window.localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
+		const expiresInStr = window.localStorage.getItem(STORAGE_KEY_EXPIRES_IN);
+
+		if (accessToken && refreshToken && expiresInStr) {
+			try {
+				const expiresIn = parseInt(expiresInStr, 10);
+				if (!isNaN(expiresIn)) {
+					// Valider le token AVANT de l'affecter
+					const claims = decodeJwtPayload(accessToken);
+					_accessToken = accessToken;
+					_refreshToken = refreshToken;
+					_expiresIn = expiresIn;
+					_currentUser = { userId: claims.sub, role: claims.role };
+				}
+			} catch {
+				// Token invalide ou décodage échoué — nettoyer localStorage
+				window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
+				window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
+				window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
+			}
+		}
 	},
 };
