@@ -83,8 +83,6 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     }
 }
 
-/// Create a test company "Test SA" (required by Story 6.2 before ensure_admin_user)
-
 async fn login(app: &TestApp) -> String {
     let resp = app
         .client
