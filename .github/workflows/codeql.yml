@@ -43,7 +43,3 @@ jobs:
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:${{ matrix.language }}"
-        # Exclude test files from CodeQL analysis
-        paths-ignore: |
-          crates/*/tests
-          frontend/
