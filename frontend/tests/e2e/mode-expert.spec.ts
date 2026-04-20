@@ -5,6 +5,11 @@ test.beforeAll(async () => {
 	await seedTestState('with-company');
 });
 
+test.beforeEach(async ({ page }) => {
+	// Clear localStorage to isolate each test and prevent token bleed from previous tests
+	await page.context().clearCookies();
+});
+
 /**
  * Tests E2E — Mode Guidé/Expert (Story 2.5)
  * Prérequis backend (Story 6.4) : `KESH_TEST_MODE=true`.

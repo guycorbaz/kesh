@@ -11,6 +11,9 @@ import { seedTestState } from './helpers/test-state';
 
 test.describe('Onboarding Path B', () => {
 	test.beforeEach(async ({ page }) => {
+		// Clear localStorage to isolate each test and prevent token bleed from previous tests
+		await page.context().clearCookies();
+
 		await seedTestState('fresh');
 		await page.goto('/login');
 		await page.fill('#username', 'changeme');

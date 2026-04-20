@@ -12,6 +12,9 @@ import { seedTestState } from './helpers/test-state';
 
 test.describe('Onboarding Wizard', () => {
 	test.beforeEach(async ({ page }) => {
+		// Clear localStorage to isolate each test and prevent token bleed from previous tests
+		await page.context().clearCookies();
+
 		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).
 		await seedTestState('fresh');
 

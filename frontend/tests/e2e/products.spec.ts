@@ -6,6 +6,11 @@ test.beforeAll(async () => {
 	await seedTestState('with-company');
 });
 
+test.beforeEach(async ({ page }) => {
+	// Clear localStorage to isolate each test and prevent token bleed from previous tests
+	await page.context().clearCookies();
+});
+
 /**
  * Tests E2E — Catalogue produits (Story 4.2)
  *

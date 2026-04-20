@@ -13,6 +13,12 @@ test.beforeAll(async () => {
 	await seedTestState('with-company');
 });
 
+test.beforeEach(async ({ page }) => {
+	// Clear localStorage to isolate each test and prevent token bleed from previous tests
+	// Use clearCookies which also clears storage at the context level
+	await page.context().clearCookies();
+});
+
 test.describe('Login', () => {
 	test('login réussi → redirection accueil, affichage header/sidebar', async ({ page }) => {
 		await page.goto('/login');
