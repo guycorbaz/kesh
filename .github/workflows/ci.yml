@@ -284,12 +284,9 @@ jobs:
             || (echo "FATAL: $BACKEND_URL/api/v1/_test/seed inaccessible — KESH_TEST_MODE not active?"; cat backend.log; exit 1)
 
       - name: Run Playwright
-        # ⚠️ KF-007 : échec attendu tant que Story 6-5 n'est pas livrée.
-        # `continue-on-error: true` au niveau du step (pas du job) permet
-        # à la conclusion du CheckRun GitHub de rester SUCCESS (sinon
-        # branch protection bloque le merge). Le warning GitHub Actions
-        # ci-dessous signale clairement l'échec dans l'UI.
-        continue-on-error: true
+        # KF-007 (Story 6-5) fixed: auth flow restored, 39–40/76 tests passing.
+        # Remaining 36 failures: pre-existing Playwright selector ambiguities (KF-008).
+        # continue-on-error: true removed — E2E gate now properly enforced.
         working-directory: frontend
         run: npm run test:e2e
 
