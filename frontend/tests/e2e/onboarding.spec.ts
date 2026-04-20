@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
  * Tests E2E — Flux d'onboarding Chemin A (Story 2.2)
@@ -13,7 +13,7 @@ import { seedTestState } from './helpers/test-state';
 test.describe('Onboarding Wizard', () => {
 	test.beforeEach(async ({ page }) => {
 		// Clear localStorage to isolate each test and prevent token bleed from previous tests
-		await page.context().clearCookies();
+		await clearAuthStorage(page);
 
 		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).
 		await seedTestState('fresh');

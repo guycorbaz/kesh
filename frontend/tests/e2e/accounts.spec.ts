@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
  * Tests E2E — Plan comptable (Story 3.1)
@@ -14,9 +14,8 @@ test.beforeAll(async () => {
 });
 
 test.beforeEach(async ({ page }) => {
-	// Clear localStorage to isolate each test and prevent token bleed from previous tests
-	// Use clearCookies which also clears storage at the context level
-	await page.context().clearCookies();
+	// Clear auth tokens to isolate each test and prevent token bleed from previous tests
+	await clearAuthStorage(page);
 });
 
 /** Helper : login as admin and navigate to /accounts. */

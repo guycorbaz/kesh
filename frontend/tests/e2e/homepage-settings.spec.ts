@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
  * Tests E2E — Page d'accueil & Paramètres (Story 2.4)
@@ -13,7 +13,7 @@ test.beforeAll(async () => {
 
 test.beforeEach(async ({ page }) => {
 	// Clear localStorage to isolate each test and prevent token bleed from previous tests
-	await page.context().clearCookies();
+	await clearAuthStorage(page);
 });
 
 test.describe('Homepage', () => {

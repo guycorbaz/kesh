@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState } from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -7,7 +7,7 @@ test.beforeAll(async () => {
 
 test.beforeEach(async ({ page }) => {
 	// Clear localStorage to isolate each test and prevent token bleed from previous tests
-	await page.context().clearCookies();
+	await clearAuthStorage(page);
 });
 
 /**

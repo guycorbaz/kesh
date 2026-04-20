@@ -126,6 +126,7 @@ export const authState = {
 	/**
 	 * Restaure les tokens depuis localStorage (appelé au démarrage de l'app).
 	 * Safe pour SSR : vérifie typeof window avant d'accéder à localStorage.
+	 * Valide l'expiration du token avant restauration.
 	 */
 	hydrate() {
 		if (typeof window === 'undefined' || !window.localStorage) {
@@ -138,16 +139,29 @@ export const authState = {
 		if (accessToken && refreshToken && expiresInStr) {
 			try {
 				const expiresIn = parseInt(expiresInStr, 10);
-				if (!isNaN(expiresIn)) {
-					// Valider le token AVANT de l'affecter
-					const claims = decodeJwtPayload(accessToken);
-					_accessToken = accessToken;
-					_refreshToken = refreshToken;
-					_expiresIn = expiresIn;
-					_currentUser = { userId: claims.sub, role: claims.role };
+				if (isNaN(expiresIn)) {
+					throw new Error('expiresIn is not a valid number');
 				}
-			} catch {
+				// Valider le token AVANT de l'affecter
+				const claims = decodeJwtPayload(accessToken);
+
+				// Vérifier que le token n'est pas expiré (exp en secondes, Date.now() en ms)
+				const nowSeconds = Math.floor(Date.now() / 1000);
+				if (claims.exp < nowSeconds) {
+					console.warn('[auth] Token expired during hydration, clearing session');
+					window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
+					window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
+					window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
+					return;
+				}
+
+				_accessToken = accessToken;
+				_refreshToken = refreshToken;
+				_expiresIn = expiresIn;
+				_currentUser = { userId: claims.sub, role: claims.role };
+			} catch (error) {
 				// Token invalide ou décodage échoué — nettoyer localStorage
+				console.error('[auth] Hydration failed, clearing session:', error instanceof Error ? error.message : String(error));
 				window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
 				window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
 				window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);

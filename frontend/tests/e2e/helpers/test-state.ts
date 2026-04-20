@@ -74,3 +74,23 @@ export async function seedTestState(preset: Preset): Promise<void> {
 		await ctx.dispose();
 	}
 }
+
+/**
+ * Nettoie les clés d'authentification du localStorage côté client.
+ * Appelé dans beforeEach() pour isoler les tokens entre tests.
+ *
+ * Note: `page.context().clearCookies()` n'efface QUE les cookies, pas localStorage.
+ * Cette fonction efface explicitement les clés kesh:auth:* du localStorage.
+ */
+export async function clearAuthStorage(page: import('@playwright/test').Page): Promise<void> {
+	await page.evaluate(() => {
+		const keysToRemove = [
+			'kesh:auth:accessToken',
+			'kesh:auth:refreshToken',
+			'kesh:auth:expiresIn',
+		];
+		for (const key of keysToRemove) {
+			localStorage.removeItem(key);
+		}
+	});
+}
