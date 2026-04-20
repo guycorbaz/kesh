@@ -104,21 +104,6 @@ fn auth(token: &str) -> String {
 }
 
 /// Create a test company (required by Story 6.2 before ensure_admin_user)
-async fn create_test_company(pool: &MySqlPool) {
-    companies::create(
-        pool,
-        NewCompany {
-            name: "Test Company".into(),
-            address: "Test Address".into(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .expect("create test company");
-}
 
 /// Helper : advance through shared steps (language + mode) to step=2
 async fn advance_to_step_2(app: &TestApp, token: &str) {

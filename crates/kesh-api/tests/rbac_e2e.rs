@@ -142,21 +142,6 @@ async fn login_as(app: &TestApp, username: &str, password: &str) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
-async fn create_test_company(pool: &MySqlPool) {
-    companies::create(
-        pool,
-        NewCompany {
-            name: "Test Company".into(),
-            address: "Test Address".into(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .expect("create test company");
-}
 
 /// Bootstrap admin, login, create user with role, login as that user.
 async fn create_and_login_as(
