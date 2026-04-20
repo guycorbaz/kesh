@@ -10,16 +10,18 @@ import { seedTestState, clearAuthStorage } from './helpers/test-state';
  */
 
 test.describe('Onboarding Path B', () => {
-	test.afterEach(async ({ page }) => {
-		// Clear localStorage after each test to prevent token bleed to next test
-		await clearAuthStorage(page);
-
+	test.beforeEach(async ({ page }) => {
 		await seedTestState('fresh');
 		await page.goto('/login');
 		await page.fill('#username', 'changeme');
 		await page.fill('#password', 'changeme');
 		await page.click('button[type="submit"]');
 		await expect(page).toHaveURL(/\/onboarding/);
+	});
+
+	test.afterEach(async ({ page }) => {
+		// Clear localStorage after each test to prevent token bleed to next test
+		await clearAuthStorage(page);
 	});
 
 	test('flux complet Path B : langue → mode → production → org → accounting → coords → bank', async ({ page }) => {

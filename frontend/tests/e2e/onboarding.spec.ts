@@ -11,10 +11,7 @@ import { seedTestState, clearAuthStorage } from './helpers/test-state';
  */
 
 test.describe('Onboarding Wizard', () => {
-	test.afterEach(async ({ page }) => {
-		// Clear localStorage after each test to prevent token bleed to next test
-		await clearAuthStorage(page);
-
+	test.beforeEach(async ({ page }) => {
 		// Reset DB + user `changeme` seul (preset fresh, cf. AC #7).
 		await seedTestState('fresh');
 
@@ -26,6 +23,11 @@ test.describe('Onboarding Wizard', () => {
 
 		// Le guard onboarding devrait rediriger vers /onboarding
 		await expect(page).toHaveURL(/\/onboarding/);
+	});
+
+	test.afterEach(async ({ page }) => {
+		// Clear localStorage after each test to prevent token bleed to next test
+		await clearAuthStorage(page);
 	});
 
 	test('étape 1 — choix de langue affiche 4 options', async ({ page }) => {
