@@ -206,8 +206,12 @@ npm run test:e2e -- --debug accounts.spec.ts
 ### Step 2 : Observe Login
 1. Watch login form submission in DevTools Network tab
 2. POST `/api/v1/auth/login` — check response status + JSON body (should contain accessToken)
-3. Switch to Application tab → localStorage — is the localStorage key (verified in Step 1) present and non-empty?
-4. Console — run `localStorage.getItem('<KEY_FROM_STEP_1>')` manually (should return JWT string, e.g., `localStorage.getItem('accessToken')`)
+3. Switch to Application tab → localStorage — verify the key identified in Step 1 is present and non-empty
+   - If key not found → localStorage.setItem never called, investigate auth.ts login handler
+   - If key exists but empty → token parsing failed after login response
+4. Console — run `localStorage.getItem('KEY')` with actual key from Step 1 (e.g., `localStorage.getItem('accessToken')`)
+   - Should return a long JWT string (starting with `eyJ...`)
+   - If returns `null` or `undefined` → token not persisted, STOP and investigate Step 1 logic
 
 ### Step 3 : Post-Login Navigation
 1. In Playwright test, after login assertion, add pause: `await page.pause();`
@@ -259,9 +263,11 @@ Investigate in this order — **start with #1, skip others if root cause found**
 ### Step 6 : Document Finding & Implement Fix
 
 Once root cause is clear, **before coding**:
-- Write a brief `FINDINGS.md` explaining what's broken
-- Propose the fix (1–2 line change? Larger refactor?)
-- Get confidence on the hypothesis by adding a targeted log/assertion
+- Document finding in `frontend/DEBUGGING-KF007.md` (per AC #2) with clear explanation of root cause
+  - Example: "localStorage key not injected into Authorization header because fetch wrapper in auth.ts missing Bearer prefix"
+  - Include evidence from DevTools (screenshots or logs)
+- Propose the fix with implementation scope (1–2 line change? Minimal refactor? Full rewrite?)
+- Validate hypothesis by adding targeted log/assertion to confirm fix will work
 
 Then code the fix and validate locally.
 
@@ -293,7 +299,7 @@ Then code the fix and validate locally.
 ✅ **Local Tests** : 100% of Playwright specs pass without retry or skip
 ✅ **CI Tests** : E2E job passes with `conclusion: success` (not `skipped`)
 ✅ **Code Quality** : `cargo fmt`, `cargo clippy`, `npm run check` all clean
-✅ **KF-007 Closed** : `docs/known-failures.md` updated with fix explanation
+✅ **KF-007 Closed** : GitHub issue #19 closed via commit message `(closes #19)` (no edits to archived docs/known-failures.md)
 ✅ **No Regressions** : Backend + Frontend unit/integration tests unchanged
 
 ## Change Log
@@ -302,7 +308,8 @@ Then code the fix and validate locally.
 | Date | Phase | Notes |
 |------|-------|-------|
 | 2026-04-20 | Story File Creation | Story 6-5 created via `bmad-create-story` with comprehensive investigation guide. Ready for dev. |
-| 2026-04-20 | Validation Pass 1 | Haiku review: 10 findings (3 CRITICAL, 4 HIGH, 3 MEDIUM). Applied 3 CRITICAL fixes: (1) AC #6 now references GitHub issue #19 closure instead of archived docs file, (2) Added test spec inventory with explicit pass/fail status, (3) Added localStorage key verification step in investigation guide. Also added 4 HIGH enhancements: prioritized Likely Suspects by investigation order, added Playwright/Browser configuration section, enhanced Step 2 with key name verification, added regression prevention checklist. Ready for Validation Pass 2 (Sonnet model). |
+| 2026-04-20 | Validation Pass 1 | Haiku review: 10 findings (3 CRITICAL, 4 HIGH, 3 MEDIUM). Applied 3 CRITICAL fixes: (1) AC #6 now references GitHub issue #19 closure instead of archived docs file, (2) Added test spec inventory with explicit pass/fail status, (3) Added localStorage key verification step in investigation guide. Also added 4 HIGH enhancements: prioritized Likely Suspects by investigation order, added Playwright/Browser configuration section, enhanced Step 2 with key name verification, added regression prevention checklist. Ready for Validation Pass 2. |
+| 2026-04-20 | Validation Pass 2 | Fresh context review: 6 findings (1 CRITICAL NEW, 2 HIGH CARRY-OVER, 3 MEDIUM). CRITICAL fix applied: (1) Success Metrics line 296 now correctly references GitHub issue #19 closure (not archived docs file) — Pass 1 fixed AC #6 but forgot Success Metrics. Also enhanced: (2) Step 6 now references AC #2 DEBUGGING-KF007.md for documentation, (3) Step 2 now includes conditional guidance if localStorage key not found. MEDIUM items (Step 3 pause workflow, Terminal numbering, test spec order) noted but deferred to optional Pass 3 optimization. Trend: 10 → 6 findings. Ready for Validation Pass 3 (Opus) or dev. |
 
 ---
 
