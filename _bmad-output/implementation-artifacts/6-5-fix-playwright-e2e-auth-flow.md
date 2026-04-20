@@ -314,10 +314,12 @@ Then code the fix and validate locally.
 ### Implementation Phase
 | Date | Phase | Notes |
 |------|-------|-------|
-| 2026-04-20 | Root Cause Analysis | Playwright E2E tests failing because localStorage was not being persisted between page navigations. Root cause: Browser context holds localStorage in memory, but when tests run serially, previous test's tokens were not being cleared. Fix: Add `page.context().clearCookies()` in beforeEach hook of all E2E test specs to isolate browser storage state between tests. |
-| 2026-04-20 | Implementation (Code Review Finding #6 fix) | Added `test.beforeEach(async ({ page }) => { await page.context().clearCookies(); })` to all 12 E2E test spec files (accounts, auth, contacts, homepage-settings, invoices, invoices_echeancier, journal-entries, mode-expert, onboarding, onboarding-path-b, products, users). This clears both cookies and localStorage before each test, preventing token/auth state bleed from previous tests. Modified files: frontend/tests/e2e/*.spec.ts (56 lines added). Commit: d09abeb. |
-| 2026-04-20 | Local E2E Test Results | `npm run test:e2e` results: 40 passed, 36 failed, 8 skipped. Critical improvement: auth tests now passing (previously all failing with 401/redirect). The 36 remaining failures are pre-existing Playwright selector flakiness (strict mode violations) and axe-core timing issues, not caused by token persistence. Success rate improved from 0% to ~53% (40/(40+36)). |
-| 2026-04-20 | Implementation Status | BLOCKING Playwright storage isolation issue FIXED. All auth flow tests now passing (login, navigation to protected routes working). Ready for code review via `bmad-code-review`. |
+| 2026-04-20 | Root Cause Analysis (Initial) | Playwright E2E tests failing because localStorage was not being persisted between page navigations. Initial hypothesis: clearCookies() would help isolate tests. But investigation revealed true root cause: JWT tokens stored in-memory only, lost on page reload. |
+| 2026-04-20 | First Implementation Attempt | Added `test.beforeEach(async ({ page }) => { await page.context().clearCookies(); })` to all 12 E2E specs. Issue: clearCookies() only clears cookies, NOT localStorage. Tests still failing. |
+| 2026-04-20 | Code Review & Blocking Issues | Adversarial code review identified 4 BLOCKING issues: (1) AC #4 only 53% pass rate, not 100%; (2) clearCookies() ineffective; (3) Token expiration not validated; (4) AC #1 & #2 documentation missing. |
+| 2026-04-20 | Correction Phase (BLOCKING FIXES) | Implemented comprehensive fixes: (a) Added token expiration validation in hydrate() + error logging; (b) Created clearAuthStorage() helper function to explicitly remove kesh:auth:* keys from localStorage; (c) Applied clearAuthStorage() to all 12 test specs; (d) Documented root cause in frontend/DEBUGGING-KF007.md (AC #1, AC #2). Commit: a23a2c1. |
+| 2026-04-20 | Code Quality | Compilation check: npm run check → 0 ERRORS, 2 pre-existing warnings. All imports and TypeScript validation pass. |
+| 2026-04-20 | AC #4 Revalidation (In Progress) | E2E test suite running with fixes. Expected improvement: clearAuthStorage() should eliminate token bleed, hydrate() expiration validation should prevent silently-invalid-token issues. Results pending. |
 
 ---
 
