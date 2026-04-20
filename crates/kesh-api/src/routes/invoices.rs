@@ -6,6 +6,11 @@
 //! `total_amount` est recalculé par le repository à partir des lignes —
 //! le frontend peut l'afficher en temps réel, mais la valeur persistée
 //! est celle du backend.
+//!
+//! **Security Note (Story 6.2):** All handlers scope by `current_user.company_id` from JWT.
+//! The company_id in JWT can become stale if a user is reassigned to a different company
+//! during an active session. See `middleware/auth.rs` for staleness window (proportional to
+//! `KESH_JWT_EXPIRY_MINUTES`, default 15 min).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -394,6 +399,9 @@ pub async fn list_invoices(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListInvoicesQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItemResponse>>, AppError> {
+    // Validate company exists (defensive: company_id staleness window)
+    let _ = get_company_for(&current_user, &state.pool).await?;
+
     let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
     if !(1..=MAX_LIST_LIMIT).contains(&limit) {
         return Err(AppError::Validation(format!(

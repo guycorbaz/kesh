@@ -117,12 +117,23 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
         .to_string()
 }
 
-/// Create a user in a company
+/// Create a user in a company (Comptable role by default)
 async fn create_company_user(
     pool: &MySqlPool,
     company_id: i64,
     username: &str,
     password: &str,
+) -> i64 {
+    create_company_user_with_role(pool, company_id, username, password, Role::Comptable).await
+}
+
+/// Create a user in a company with specified role
+async fn create_company_user_with_role(
+    pool: &MySqlPool,
+    company_id: i64,
+    username: &str,
+    password: &str,
+    role: Role,
 ) -> i64 {
     let hash = hash_password(password).expect("hash should succeed");
     let user = users::create(
@@ -130,7 +141,7 @@ async fn create_company_user(
         NewUser {
             username: username.to_string(),
             password_hash: hash,
-            role: Role::Comptable,
+            role,
             active: true,
             company_id,
         },
@@ -462,4 +473,81 @@ async fn idor_invoices_cross_company_returns_404(pool: MySqlPool) {
             assert_eq!(own_access.status(), 200, "User A can access own invoice");
         }
     }
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn idor_users_cross_company_returns_404(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+
+    let (company_a_id, _company_a_accounts) = create_seeded_company(&pool).await;
+    let (company_b_id, _company_b_accounts) = create_seeded_company(&pool).await;
+
+    let user_a_id = create_company_user(&pool, company_a_id, "alice", "password123").await;
+    let _user_b_id =
+        create_company_user_with_role(&pool, company_b_id, "bob", "password123", Role::Admin).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token_b = login(&app, "bob", "password123").await;
+
+    // Attempt to disable user A as user B (cross-company) — should return 404
+    let disable_resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}/disable", user_a_id)))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .expect("disable should succeed");
+
+    assert_eq!(
+        disable_resp.status(),
+        404,
+        "User B cannot disable user from company A"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn idor_companies_current_returns_own_company_only(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+
+    let (company_a_id, _company_a_accounts) = create_seeded_company(&pool).await;
+    let (company_b_id, _company_b_accounts) = create_seeded_company(&pool).await;
+
+    let _user_a_id = create_company_user(&pool, company_a_id, "alice", "password123").await;
+    let _user_b_id = create_company_user(&pool, company_b_id, "bob", "password123").await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token_a = login(&app, "alice", "password123").await;
+    let token_b = login(&app, "bob", "password123").await;
+
+    // User A access own company — should return 200
+    let resp_a = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .send()
+        .await
+        .expect("get should succeed");
+    assert_eq!(resp_a.status(), 200, "User A can access own company");
+
+    // Verify User A gets company A data
+    let body_a: serde_json::Value = resp_a.json().await.unwrap();
+    assert_eq!(body_a["company"]["id"].as_i64().unwrap(), company_a_id);
+
+    // User B access own company — should return 200
+    let resp_b = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .expect("get should succeed");
+    assert_eq!(resp_b.status(), 200, "User B can access own company");
+
+    // Verify User B gets company B data (different from A)
+    let body_b: serde_json::Value = resp_b.json().await.unwrap();
+    assert_eq!(body_b["company"]["id"].as_i64().unwrap(), company_b_id);
+    assert_ne!(
+        body_b["company"]["id"], body_a["company"]["id"],
+        "Users get their own companies"
+    );
 }

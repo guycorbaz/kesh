@@ -1,13 +1,14 @@
 //! Tests E2E pour GET /api/v1/companies/current (Story 2.4).
 
+mod common;
+
 use std::sync::Arc;
 
 use chrono::TimeDelta;
+use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
-use kesh_db::entities::{Language, NewCompany, OrgType};
-use kesh_db::repositories::companies;
 use serde_json::json;
 use sqlx::MySqlPool;
 use std::net::SocketAddr;
@@ -82,23 +83,6 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     }
 }
 
-/// Create a test company "Test SA" (required by Story 6.2 before ensure_admin_user)
-async fn create_test_company(pool: &MySqlPool) {
-    companies::create(
-        pool,
-        NewCompany {
-            name: "Test SA".into(),
-            address: "Rue Test 1".into(),
-            ide_number: None,
-            org_type: OrgType::Pme,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .expect("create test company");
-}
-
 async fn login(app: &TestApp) -> String {
     let resp = app
         .client
@@ -128,7 +112,7 @@ async fn companies_current_returns_company(pool: MySqlPool) {
 
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["company"]["name"], "Test SA");
+    assert_eq!(body["company"]["name"], "Test Company");
     assert!(body["bankAccounts"].is_array());
     assert_eq!(body["bankAccounts"].as_array().unwrap().len(), 0);
 }
