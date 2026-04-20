@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-20
+last_updated: 2026-04-20  (6-5 ready-for-dev created, deployment option C/next: bmad-dev-story)
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -113,7 +113,7 @@ development_status:
   6-2-multi-tenant-scoping-refactor: done  # Implémentation T1-T9 complétée 2026-04-18 (opus-4-7 + haiku continuation). T7 route refactoring pattern établi, T7.1-T7.9 appliqués. Mergée 2026-04-20 (PR #25, fea684b).
   6-3-lint-i18n-sidebar-i18n: backlog
   6-4-fixtures-e2e-deterministes: done  # Mergée sur main 2026-04-17 (PR #18, commit 520e8df). KF-007 e2e blocage pré-existant documenté pour Story 6-5.
-  6-5-fix-playwright-e2e-auth-flow: backlog  # À créer — débloque KF-007/issue #19, blocant release v0.1
+  6-5-fix-playwright-e2e-auth-flow: ready-for-dev  # Créée 2026-04-20 — investigation + fix Playwright auth redirection /login persistant. Débloque KF-007/issue #19, blocant release v0.1
   epic-6-retrospective: optional
 
   # Epic 7: Import Bancaire & Réconciliation (ex-Epic 6)
