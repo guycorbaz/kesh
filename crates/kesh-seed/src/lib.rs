@@ -108,6 +108,10 @@ pub async fn seed_demo(
     )
     .await?;
 
+    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
+    kesh_db::repositories::company_invoice_settings::insert_with_defaults(pool, company.id)
+        .await?;
+
     // Mettre à jour onboarding_state → step=3, is_demo=true
     onboarding::update_step(pool, 3, true, Some(ui_mode), onboarding_version).await?;
 

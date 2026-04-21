@@ -402,6 +402,36 @@ pub async fn skip_bank(
     Ok(Json(updated.into()))
 }
 
+/// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
+/// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
+pub async fn finalize(
+    State(state): State<AppState>,
+) -> Result<Json<OnboardingResponse>, AppError> {
+    let current = get_or_init_state(&state).await?;
+    if current.step_completed != 7 || current.is_demo {
+        return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
+
+    // Get company to create invoice settings
+    let company = get_company(&state).await?;
+
+    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
+    kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
+        .await?;
+
+    // Mark onboarding as complete (step 8 indicates completion)
+    let updated = onboarding::update_step(
+        &state.pool,
+        8,
+        current.is_demo,
+        current.ui_mode,
+        current.version,
+    )
+    .await?;
+
+    Ok(Json(updated.into()))
+}
+
 // --- Helpers ---
 
 /// Retourne l'état d'onboarding existant ou en crée un nouveau.

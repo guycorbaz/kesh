@@ -24,8 +24,9 @@
 		computeLineTotal,
 		formatInvoiceTotal,
 	} from '$lib/features/invoices/invoice-helpers';
-	import { createInvoice, getInvoice, updateInvoice } from '$lib/features/invoices/invoices.api';
+	import { createInvoice, getInvoice, updateInvoice, getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { getContact } from '$lib/features/contacts/contacts.api';
+	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 
 	import ContactPicker from './ContactPicker.svelte';
 	import ProductPicker from './ProductPicker.svelte';
@@ -98,6 +99,11 @@
 	// réinitialise automatiquement.
 	let initialContactInvoiceId = $state<number | null>(null);
 
+	// Story 2.6: Invoice settings validation
+	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
+	let loadingSettings = $state(true);
+	let settingsError = $state<string>('');
+
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
 	$effect(() => {
@@ -116,6 +122,20 @@
 					? `Impossible de charger le contact (${err.message}) — sélectionnez-le manuellement`
 					: 'Impossible de charger le contact initial — sélectionnez-le manuellement';
 			});
+	});
+
+	// Story 2.6: Load invoice settings on mount to check if accounts are configured
+	$effect(async () => {
+		try {
+			loadingSettings = true;
+			invoiceSettings = await getInvoiceSettings();
+		} catch (err) {
+			settingsError = isApiError(err)
+				? `Erreur lors du chargement des paramètres de facturation (${err.message})`
+				: 'Erreur lors du chargement des paramètres de facturation';
+		} finally {
+			loadingSettings = false;
+		}
 	});
 
 	function onContactSelect(c: ContactResponse) {
@@ -317,6 +337,13 @@
 		</div>
 	{/if}
 
+	{#if invoiceSettings && !invoiceSettings.defaultReceivableAccountId && !invoiceSettings.defaultRevenueAccountId}
+		<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning">
+			Configuration incomplète —
+			<a href="/settings/invoicing" class="underline font-medium">Configurez les comptes de facturation</a>
+		</div>
+	{/if}
+
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="invoice-contact">Contact</label>
@@ -423,7 +450,11 @@
 
 	<div class="flex justify-end gap-2">
 		<Button type="button" variant="outline" onclick={() => goto('/invoices')}>Annuler</Button>
-		<Button type="submit" disabled={submitting || conflictOpen}>
+		<Button
+			type="submit"
+			disabled={submitting || conflictOpen || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
+			title={invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? "Configurez d'abord les comptes de facturation dans les paramètres" : undefined}
+		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>
 	</div>

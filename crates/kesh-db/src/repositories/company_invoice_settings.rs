@@ -187,6 +187,56 @@ pub async fn update(
     Ok(after)
 }
 
+/// Creates company_invoice_settings with auto-prefill of default accounts (1100, 3000).
+/// Called during onboarding finalization (after chart of accounts is loaded).
+///
+/// Standard Swiss account numbers:
+/// - 1100: Receivables (clients/créances)
+/// - 3000: Revenue (ventes/produits)
+pub async fn insert_with_defaults(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<CompanyInvoiceSettings, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Lookup accounts 1100 (receivable) and 3000 (revenue) for this company
+    let receivable = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true LIMIT 1"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
+    let revenue = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true LIMIT 1"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
+    // INSERT with default values, pre-filled with receivable/revenue accounts if found
+    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+        "INSERT INTO company_invoice_settings \
+         (company_id, invoice_number_format, default_receivable_account_id, \
+          default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
+         VALUES (?, 'F-{{YEAR}}-{{SEQ:04}}', ?, ?, 'Ventes', '{{YEAR}}-{{INVOICE_NUMBER}}') \
+         RETURNING {COLUMNS}"
+    ))
+    .bind(company_id)
+    .bind(receivable)
+    .bind(revenue)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(settings)
+}
+
 // Reference to avoid unused import warning if Journal is not referenced
 // elsewhere in this file (needed for the SQL bind).
 #[allow(dead_code)]
