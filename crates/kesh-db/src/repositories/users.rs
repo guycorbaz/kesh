@@ -139,7 +139,7 @@ pub async fn count_active_by_role_in_company(
     role: crate::entities::Role,
 ) -> Result<i64, DbError> {
     let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM users WHERE company_id = ? AND role = ? AND active = TRUE"
+        "SELECT COUNT(*) FROM users WHERE company_id = ? AND role = ? AND active = TRUE",
     )
     .bind(company_id)
     .bind(role)

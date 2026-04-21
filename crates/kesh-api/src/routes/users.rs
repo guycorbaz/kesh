@@ -185,7 +185,12 @@ pub async fn update_user(
 
     if removes_active_admin {
         // Story 6.2: Count admins in current_user's company only (multi-tenant scoping)
-        let admin_count = users::count_active_by_role_in_company(&state.pool, current_user.company_id, Role::Admin).await?;
+        let admin_count = users::count_active_by_role_in_company(
+            &state.pool,
+            current_user.company_id,
+            Role::Admin,
+        )
+        .await?;
         if admin_count <= 1 {
             return Err(AppError::CannotDisableLastAdmin);
         }
@@ -229,7 +234,12 @@ pub async fn disable_user(
     // Protection du dernier admin
     if user.role == Role::Admin {
         // Story 6.2: Count admins in current_user's company only (multi-tenant scoping)
-        let admin_count = users::count_active_by_role_in_company(&state.pool, current_user.company_id, Role::Admin).await?;
+        let admin_count = users::count_active_by_role_in_company(
+            &state.pool,
+            current_user.company_id,
+            Role::Admin,
+        )
+        .await?;
         if admin_count <= 1 {
             return Err(AppError::CannotDisableLastAdmin);
         }

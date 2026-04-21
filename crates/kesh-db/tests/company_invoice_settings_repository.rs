@@ -1,7 +1,7 @@
 //! Tests pour le repository company_invoice_settings (Story 2.6).
 
+use kesh_db::entities::{Language, NewCompany, OrgType};
 use kesh_db::repositories::{accounts, companies, company_invoice_settings};
-use kesh_db::entities::{NewCompany, OrgType, Language};
 use sqlx::MySqlPool;
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -22,8 +22,7 @@ async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
     .expect("Failed to create company");
 
     // Load the PME chart of accounts (includes 1100 and 3000)
-    let chart = kesh_core::chart_of_accounts::load_chart("Pme")
-        .expect("Failed to load chart");
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("Failed to load chart");
     accounts::bulk_create_from_chart(&pool, company.id, &chart, "fr")
         .await
         .expect("Failed to create accounts from chart");
@@ -35,8 +34,14 @@ async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
 
     // Verify the settings were created with the correct account IDs (not None)
     assert_eq!(settings.company_id, company.id);
-    assert!(settings.default_receivable_account_id.is_some(), "Account 1100 should be found");
-    assert!(settings.default_revenue_account_id.is_some(), "Account 3000 should be found");
+    assert!(
+        settings.default_receivable_account_id.is_some(),
+        "Account 1100 should be found"
+    );
+    assert!(
+        settings.default_revenue_account_id.is_some(),
+        "Account 3000 should be found"
+    );
     assert_eq!(settings.invoice_number_format, "F-{YEAR}-{SEQ:04}");
     assert_eq!(settings.default_sales_journal.as_str(), "Ventes");
 }

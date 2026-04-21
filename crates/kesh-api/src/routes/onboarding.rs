@@ -404,9 +404,7 @@ pub async fn skip_bank(
 
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
 /// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
-pub async fn finalize(
-    State(state): State<AppState>,
-) -> Result<Json<OnboardingResponse>, AppError> {
+pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
     if current.step_completed != 7 || current.is_demo {
         return Err(AppError::OnboardingStepAlreadyCompleted);
