@@ -26,6 +26,7 @@
 	} from '$lib/features/invoices/invoice-helpers';
 	import { createInvoice, getInvoice, updateInvoice, getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { getContact } from '$lib/features/contacts/contacts.api';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 
 	import ContactPicker from './ContactPicker.svelte';
@@ -339,8 +340,8 @@
 
 	{#if invoiceSettings && !invoiceSettings.defaultReceivableAccountId && !invoiceSettings.defaultRevenueAccountId}
 		<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning">
-			Configuration incomplète —
-			<a href="/settings/invoicing" class="underline font-medium">Configurez les comptes de facturation</a>
+			{i18nMsg('config-incomplete-title', 'Configuration incomplète')} —
+			<a href="/settings/invoicing" class="underline font-medium">{i18nMsg('config-incomplete-link', 'Configurez les comptes de facturation')}</a>
 		</div>
 	{/if}
 
@@ -453,7 +454,7 @@
 		<Button
 			type="submit"
 			disabled={submitting || conflictOpen || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
-			title={invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? "Configurez d'abord les comptes de facturation dans les paramètres" : undefined}
+			title={invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined}
 		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>

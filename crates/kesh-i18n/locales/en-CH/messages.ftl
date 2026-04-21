@@ -495,3 +495,8 @@ common-error = Unexpected error
 invoice-pdf-error-not-found = Invoice not found.
 invoice-pdf-error-generic = Error downloading the PDF.
 invoice-pdf-error-empty = Received PDF is empty.
+
+# Story 2.6 — Onboarding: Invoice Settings Pre-fill
+config-incomplete-title = Configuration incomplete
+config-incomplete-link = Configure invoicing accounts
+invoice-settings-required = Please configure the invoicing accounts in settings first

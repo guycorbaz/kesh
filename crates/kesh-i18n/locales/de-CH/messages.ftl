@@ -495,3 +495,8 @@ common-error = Unerwarteter Fehler
 invoice-pdf-error-not-found = Rechnung nicht gefunden.
 invoice-pdf-error-generic = Fehler beim Herunterladen des PDFs.
 invoice-pdf-error-empty = Das empfangene PDF ist leer.
+
+# Story 2.6 — Onboarding: Invoice Settings Pre-fill
+config-incomplete-title = Konfiguration unvollständig
+config-incomplete-link = Konfigurieren Sie die Abrechnungskonten
+invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten in den Einstellungen

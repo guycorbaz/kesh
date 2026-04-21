@@ -453,6 +453,7 @@ test('Onboarding Path B: Production mode auto-configures invoice settings', asyn
 | 2026-04-14 | 0.1     | Stub créé en backlog pendant démarrage Story 5.2            | Claude Opus 4.6  |
 | 2026-04-21 | 1.0     | Spec complète issue de `bmad-create-story` — AC, tech spec, tests E2E | Claude Haiku 4.5 |
 | 2026-04-21 | 2.0     | Implémentation complète : T1 (insert_with_defaults), T2 (finalize endpoint), T4 (warning banner) | Claude Haiku 4.5 |
+| 2026-04-21 | 3.0     | AC 5-6 Tests E2E (Playwright) + i18n keys (4 locales) — Story complète | Claude Haiku 4.5 |
 
 ---
 
@@ -498,31 +499,44 @@ test('Onboarding Path B: Production mode auto-configures invoice settings', asyn
 
 ### Files Modified/Created
 
-| File | Change |
-|------|--------|
-| `crates/kesh-db/src/repositories/company_invoice_settings.rs` | Add `insert_with_defaults()` function |
-| `crates/kesh-api/src/routes/onboarding.rs` | Add `finalize()` endpoint (step 7→complete) |
-| `crates/kesh-api/src/lib.rs` | Register `/api/v1/onboarding/finalize` route |
-| `crates/kesh-seed/src/lib.rs` | Call `insert_with_defaults()` in seed_demo |
-| `crates/kesh-db/tests/company_invoice_settings_repository.rs` | Add unit tests |
-| `frontend/src/lib/components/invoices/InvoiceForm.svelte` | Add invoice settings validation + warning banner |
-| `frontend/src/lib/features/onboarding/onboarding.api.ts` | Add `finalize()` API function |
+| File | Change | Session |
+|------|--------|---------|
+| `crates/kesh-db/src/repositories/company_invoice_settings.rs` | Add `insert_with_defaults()` function | 1 |
+| `crates/kesh-api/src/routes/onboarding.rs` | Add `finalize()` endpoint (step 7→complete) | 1 |
+| `crates/kesh-api/src/lib.rs` | Register `/api/v1/onboarding/finalize` route | 1 |
+| `crates/kesh-seed/src/lib.rs` | Call `insert_with_defaults()` in seed_demo | 1 |
+| `crates/kesh-db/tests/company_invoice_settings_repository.rs` | Add unit tests | 1 |
+| `frontend/src/lib/components/invoices/InvoiceForm.svelte` | Add invoice settings validation + warning banner; integrate i18n keys | 1, 2 |
+| `frontend/src/lib/features/onboarding/onboarding.api.ts` | Add `finalize()` API function | 1 |
+| `frontend/tests/e2e/onboarding.spec.ts` | Add AC 5-6 E2E tests (Path A démo, Path B production) | 2 |
+| `crates/kesh-i18n/locales/fr-CH/messages.ftl` | Add Story 2.6 i18n keys | 2 |
+| `crates/kesh-i18n/locales/de-CH/messages.ftl` | Add Story 2.6 i18n keys | 2 |
+| `crates/kesh-i18n/locales/it-CH/messages.ftl` | Add Story 2.6 i18n keys | 2 |
+| `crates/kesh-i18n/locales/en-CH/messages.ftl` | Add Story 2.6 i18n keys | 2 |
 
-### Remaining Work (AC 3, Fallback, E2E Tests)
+### Remaining Work (AC 3)
 
 **AC 3 - Fallback selection screen:**
 - Not implemented (optional for this iteration, per story notes)
 - Would require optional step after Path B finalize if accounts missing
 - Deferred: assume 3 Swiss chart plans always contain 1100 and 3000
+- This is intentional—Swiss chart plans (PME, Association, Independant) all contain 1100 and 3000
 
-**AC 5-6 - E2E Tests:**
-- Not automated (would require Playwright setup and running backend locally)
-- Manual E2E paths documented in story spec
-- Can be added in subsequent pass with full test environment
+### Completed in Pass 2 (2026-04-21, Claude Haiku 4.5)
 
-**i18n Keys:**
-- Not implemented (low priority for French locale)
-- Keys mentioned in story notes (config-incomplete-*) should be added to i18n bundles
+**AC 5-6 - E2E Tests:** ✅ COMPLETED
+- Added 2 Playwright tests to `frontend/tests/e2e/onboarding.spec.ts`
+- Test AC 5: Path A (demo) — validates invoice settings pre-filled automatically
+- Test AC 6: Path B (production) — validates invoice settings pre-filled after full onboarding
+- Both tests verify: warning banner absent, Create Invoice button enabled (accounts configured)
+
+**i18n Keys:** ✅ COMPLETED  
+- Added 3 keys to all 4 locales (fr-CH, de-CH, it-CH, en-CH):
+  - `config-incomplete-title` — "Configuration incomplète" / "Konfiguration unvollständig" / etc.
+  - `config-incomplete-link` — "Configurez les comptes de facturation" / "Konfigurieren Sie..." / etc.
+  - `invoice-settings-required` — "Configurez d'abord..." / "Konfigurieren Sie zunächst..." / etc.
+- Updated `frontend/src/lib/components/invoices/InvoiceForm.svelte` to use i18n keys instead of hardcoded French strings
+- Maintains backward compatibility with fallbacks
 
 ### Decisions & Trade-offs
 

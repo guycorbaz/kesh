@@ -531,3 +531,8 @@ common-error = Erreur inattendue
 invoice-pdf-error-not-found = Facture introuvable.
 invoice-pdf-error-generic = Erreur lors du téléchargement du PDF.
 invoice-pdf-error-empty = Le PDF reçu est vide.
+
+# Story 2.6 — Onboarding: Invoice Settings Pre-fill
+config-incomplete-title = Configuration incomplète
+config-incomplete-link = Configurez les comptes de facturation
+invoice-settings-required = Configurez d'abord les comptes de facturation dans les paramètres
