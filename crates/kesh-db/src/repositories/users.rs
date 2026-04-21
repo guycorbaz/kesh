@@ -131,6 +131,24 @@ pub async fn count_active_by_role(
     Ok(row.0)
 }
 
+/// Story 6.2: Compte le nombre d'utilisateurs actifs avec un rôle donné dans une company spécifique.
+/// Utilisé pour le guard "ne pas désactiver le dernier admin d'une company".
+pub async fn count_active_by_role_in_company(
+    pool: &MySqlPool,
+    company_id: i64,
+    role: crate::entities::Role,
+) -> Result<i64, DbError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM users WHERE company_id = ? AND role = ? AND active = TRUE"
+    )
+    .bind(company_id)
+    .bind(role)
+    .fetch_one(pool)
+    .await
+    .map_err(map_db_error)?;
+    Ok(row.0)
+}
+
 /// Liste les utilisateurs avec pagination offset/limit.
 ///
 /// `limit` est clampé dans `[0, MAX_LIST_LIMIT]`, `offset` à `>= 0`.
