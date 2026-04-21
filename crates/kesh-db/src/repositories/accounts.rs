@@ -103,6 +103,24 @@ pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<Account>, Db
         .map_err(map_db_error)
 }
 
+/// Retourne un compte par ID si et seulement s'il appartient à la company spécifiée (ou None).
+/// Story 6.2: Multi-tenant scoping — utilisé pour les handlers PUT/DELETE qui doivent vérifier IDOR.
+pub async fn find_by_id_in_company(
+    pool: &MySqlPool,
+    id: i64,
+    company_id: i64,
+) -> Result<Option<Account>, DbError> {
+    sqlx::query_as::<_, Account>(
+        "SELECT id, company_id, number, name, account_type, parent_id, \
+         active, version, created_at, updated_at FROM accounts WHERE id = ? AND company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste les comptes d'une company, triés par numéro.
 ///
 /// Retourne le nombre de comptes d'une company.
