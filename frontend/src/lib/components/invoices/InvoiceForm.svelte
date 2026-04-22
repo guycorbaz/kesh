@@ -126,17 +126,19 @@
 	});
 
 	// Story 2.6: Load invoice settings on mount to check if accounts are configured
-	$effect(async () => {
-		try {
-			loadingSettings = true;
-			invoiceSettings = await getInvoiceSettings();
-		} catch (err) {
-			settingsError = isApiError(err)
-				? `Erreur lors du chargement des paramètres de facturation (${err.message})`
-				: 'Erreur lors du chargement des paramètres de facturation';
-		} finally {
-			loadingSettings = false;
-		}
+	$effect(() => {
+		(async () => {
+			try {
+				loadingSettings = true;
+				invoiceSettings = await getInvoiceSettings();
+			} catch (err) {
+				settingsError = isApiError(err)
+					? `Erreur lors du chargement des paramètres de facturation (${err.message})`
+					: 'Erreur lors du chargement des paramètres de facturation';
+			} finally {
+				loadingSettings = false;
+			}
+		})();
 	});
 
 	function onContactSelect(c: ContactResponse) {
