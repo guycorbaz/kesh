@@ -1,22 +1,22 @@
 -- Story 6.2 — Multi-tenant scoping refactor
--- Add company_id to users table to enable multi-tenant isolation.
--- Migration is safe for both fresh and existing DBs.
+-- Add company_id to users table for multi-tenant isolation.
+-- Migration handles both fresh test DBs (no companies yet) and production DBs.
 
--- Step 1: Add company_id column (nullable, will be populated on first company creation)
+-- Step 1: Add company_id column (nullable)
+-- Will be populated when company is created/assigned
 ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 
--- Step 2: Attempt backfill if companies exist (production DB scenario)
--- Assigns all users to the first (and typically only) company.
--- In fresh test DBs, this is a no-op (no companies yet).
--- Users created after this migration require explicit company_id.
+-- Step 2: Attempt backfill for production DBs
+-- In production: assigns existing users to first company if one exists
+-- In fresh test DBs: no-op (will be NULL until company created)
 UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1)
 WHERE company_id IS NULL AND EXISTS (SELECT 1 FROM companies LIMIT 1);
 
--- Step 3: Add index for multi-tenant queries (efficient before FK constraint)
+-- Step 3: Add index for multi-tenant queries
 CREATE INDEX idx_users_company_id ON users(company_id);
 
--- Step 4: Add foreign key constraint (users cannot exist without a valid company)
--- This constraint applies ONLY to new users going forward.
--- Existing NULL values are permitted for backward compatibility.
+-- Step 4: Add foreign key constraint for referential integrity
+-- This protects against orphaned users if a company is deleted.
+-- NULL company_id values are allowed during transition period.
 ALTER TABLE users ADD CONSTRAINT fk_users_company
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
