@@ -138,4 +138,13 @@ export const onboardingState = {
 			_loading = false;
 		}
 	},
+
+	async finalize() {
+		_loading = true;
+		try {
+			_state = await api.finalize();
+		} finally {
+			_loading = false;
+		}
+	},
 };

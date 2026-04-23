@@ -108,6 +108,7 @@
 				bankIban.trim(),
 				bankQrIban.trim() || null
 			);
+			await onboardingState.finalize();
 			goto('/');
 		} catch {
 			toast.error(msg('error-internal', 'Erreur lors de la sauvegarde du compte bancaire'));
@@ -117,6 +118,7 @@
 	async function handleSkipBank() {
 		try {
 			await onboardingState.skipBank();
+			await onboardingState.finalize();
 			goto('/');
 		} catch {
 			toast.error(msg('error-internal', 'Erreur'));
