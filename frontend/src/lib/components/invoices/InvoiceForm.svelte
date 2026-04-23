@@ -104,7 +104,7 @@
 	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
 	let loadingSettings = $state(true);
 	let settingsError = $state<string>('');
-	let settingsSeq = 0;
+	let settingsSeq = $state(0);
 
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
@@ -127,22 +127,20 @@
 	});
 
 	// Story 2.6: Load invoice settings on mount to check if accounts are configured
-	// F3+F4 HIGH FIX: Added AbortController for explicit cleanup on effect re-run.
+	// F3+F4 MEDIUM FIX: Sequence counter with effect cleanup.
 	// F5 HIGH FIX: Revalidate settings before submit to prevent stale data.
-	// F4 FIX: Each effect instance gets unique AbortSignal; stale requests abort on race.
 	$effect(() => {
 		const seq = ++settingsSeq;
-		const abortCtrl = new AbortController();
 
 		(async () => {
 			try {
 				loadingSettings = true;
 				const settings = await getInvoiceSettings();
-				if (seq !== settingsSeq || abortCtrl.signal.aborted) return;
+				if (seq !== settingsSeq) return;
 				invoiceSettings = settings;
 			} catch (err) {
-				// Ignore abort errors (cleanup from newer effect)
-				if (abortCtrl.signal.aborted || seq !== settingsSeq) return;
+				// Ignore errors from stale effect runs
+				if (seq !== settingsSeq) return;
 				settingsError = isApiError(err)
 					? `Erreur lors du chargement des paramètres de facturation (${err.message})`
 					: 'Erreur lors du chargement des paramètres de facturation';
@@ -153,11 +151,6 @@
 				loadingSettings = false;
 			}
 		})();
-
-		// Cleanup: abort in-flight request if effect re-runs
-		return () => {
-			abortCtrl.abort();
-		};
 	});
 
 	function onContactSelect(c: ContactResponse) {
@@ -232,7 +225,7 @@
 
 	async function onSubmit(e: Event) {
 		e.preventDefault();
-		// Blocker toute soumission pendant que la modale de conflit est ouverte :
+		// Bloquer toute soumission pendant que la modale de conflit est ouverte :
 		// l'utilisateur doit d'abord trancher (recharger ou annuler) avant de
 		// re-soumettre, sinon on relancerait avec une version toujours périmée.
 		// Notifier visiblement — Enter dans un input du formulaire passe ici.
@@ -253,11 +246,14 @@
 		}
 
 		// F5 HIGH FIX: Revalidate settings before submit to catch stale data.
-		// If settings were modified since mount, re-fetch to ensure account IDs still exist.
+		// If settings were modified since mount, re-fetch to ensure all fields still match.
 		try {
 			const freshSettings = await getInvoiceSettings();
-			if (freshSettings.default_receivable_account_id !== invoiceSettings?.default_receivable_account_id ||
-			    freshSettings.default_revenue_account_id !== invoiceSettings?.default_revenue_account_id) {
+			if (freshSettings.invoiceNumberFormat !== invoiceSettings?.invoiceNumberFormat ||
+			    freshSettings.defaultReceivableAccountId !== invoiceSettings?.defaultReceivableAccountId ||
+			    freshSettings.defaultRevenueAccountId !== invoiceSettings?.defaultRevenueAccountId ||
+			    freshSettings.defaultSalesJournal !== invoiceSettings?.defaultSalesJournal ||
+			    freshSettings.journalEntryDescriptionTemplate !== invoiceSettings?.journalEntryDescriptionTemplate) {
 				errorMsg = 'Les paramètres de facturation ont changé. Rechargez la page et réessayez.';
 				submitting = false;
 				return;
@@ -493,7 +489,7 @@
 		<Button
 			type="submit"
 			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
-			title={invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined}
+			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined)}
 		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>
