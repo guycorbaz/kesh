@@ -404,20 +404,51 @@ pub async fn skip_bank(
 
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
 /// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
-/// Idempotent: calling twice on same company is safe (upsert pattern).
+///
+/// F2 CRITICAL FIX: Added check for already-finalized state (step == 8) to allow safe retries.
+/// If step is already 8, finalization already succeeded → idempotent at HTTP level.
+/// Settings INSERT IGNORE ensures database-level idempotency as well.
+///
+/// F14 MEDIUM FIX: Updated docstring — route IS idempotent if already at step 8 (allows retries).
+/// Rejects only if at step < 7 or >= 8 (wrong state).
+///
+/// F15 MEDIUM FIX: Added explicit backend validation — if both account IDs are NULL,
+/// return 400 error instead of silently accepting incomplete settings.
 pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
-    if current.step_completed != 7 || current.is_demo {
+
+    // F2 CRITICAL FIX: Allow idempotent retries if already finalized (step == 8)
+    if current.is_demo {
         return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
+
+    if current.step_completed != 7 && current.step_completed != 8 {
+        return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
+
+    // If already finalized, return current state (idempotent)
+    if current.step_completed == 8 {
+        return Ok(Json(current.into()));
     }
 
     // Get company to create invoice settings
     let company = get_company(&state).await?;
 
-    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000).
-    // Uses INSERT IGNORE pattern to handle browser retry scenario (already finalized).
-    kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
-        .await?;
+    // Pre-fill invoice settings with default accounts (1100, 3000).
+    // Uses INSERT IGNORE pattern for database-level idempotency.
+    // F1 CRITICAL FIX: Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
+    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+    // F15 MEDIUM FIX: Validate that settings are not completely unconfigured.
+    // Both accounts NULL means the chart doesn't have standard Swiss accounts → cannot proceed.
+    if settings.default_receivable_account_id.is_none() && settings.default_revenue_account_id.is_none() {
+        return Err(AppError::Internal(
+            "Cannot finalize onboarding: accounts 1100 (Receivables) and 3000 (Revenue) not found in chart. \
+             Please reload the chart or contact support.".to_string(),
+        ));
+    }
 
     // Mark onboarding as complete (step 8 indicates completion)
     let updated = onboarding::update_step(

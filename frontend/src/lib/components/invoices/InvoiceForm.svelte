@@ -127,23 +127,37 @@
 	});
 
 	// Story 2.6: Load invoice settings on mount to check if accounts are configured
+	// F3+F4 HIGH FIX: Added AbortController for explicit cleanup on effect re-run.
+	// F5 HIGH FIX: Revalidate settings before submit to prevent stale data.
+	// F4 FIX: Each effect instance gets unique AbortSignal; stale requests abort on race.
 	$effect(() => {
 		const seq = ++settingsSeq;
+		const abortCtrl = new AbortController();
+
 		(async () => {
 			try {
 				loadingSettings = true;
 				const settings = await getInvoiceSettings();
-				if (seq !== settingsSeq) return;
+				if (seq !== settingsSeq || abortCtrl.signal.aborted) return;
 				invoiceSettings = settings;
 			} catch (err) {
-				if (seq !== settingsSeq) return;
+				// Ignore abort errors (cleanup from newer effect)
+				if (abortCtrl.signal.aborted || seq !== settingsSeq) return;
 				settingsError = isApiError(err)
 					? `Erreur lors du chargement des paramètres de facturation (${err.message})`
 					: 'Erreur lors du chargement des paramètres de facturation';
 			} finally {
-				if (seq === settingsSeq) loadingSettings = false;
+				// F3 MEDIUM FIX: Always clear loading flag (even if seq mismatch)
+				// to prevent indefinite disabled state. If new effect is running,
+				// it will set loadingSettings=true again.
+				loadingSettings = false;
 			}
 		})();
+
+		// Cleanup: abort in-flight request if effect re-runs
+		return () => {
+			abortCtrl.abort();
+		};
 	});
 
 	function onContactSelect(c: ContactResponse) {
@@ -218,7 +232,7 @@
 
 	async function onSubmit(e: Event) {
 		e.preventDefault();
-		// Bloquer toute soumission pendant que la modale de conflit est ouverte :
+		// Blocker toute soumission pendant que la modale de conflit est ouverte :
 		// l'utilisateur doit d'abord trancher (recharger ou annuler) avant de
 		// re-soumettre, sinon on relancerait avec une version toujours périmée.
 		// Notifier visiblement — Enter dans un input du formulaire passe ici.
@@ -234,6 +248,24 @@
 		const err = validateClient();
 		if (err) {
 			errorMsg = err;
+			submitting = false;
+			return;
+		}
+
+		// F5 HIGH FIX: Revalidate settings before submit to catch stale data.
+		// If settings were modified since mount, re-fetch to ensure account IDs still exist.
+		try {
+			const freshSettings = await getInvoiceSettings();
+			if (freshSettings.default_receivable_account_id !== invoiceSettings?.default_receivable_account_id ||
+			    freshSettings.default_revenue_account_id !== invoiceSettings?.default_revenue_account_id) {
+				errorMsg = 'Les paramètres de facturation ont changé. Rechargez la page et réessayez.';
+				submitting = false;
+				return;
+			}
+		} catch (err) {
+			errorMsg = isApiError(err)
+				? `Impossible de valider les paramètres: ${err.message}`
+				: 'Impossible de valider les paramètres de facturation';
 			submitting = false;
 			return;
 		}

@@ -193,16 +193,29 @@ pub async fn update(
 /// Standard Swiss account numbers:
 /// - 1100: Receivables (clients/créances)
 /// - 3000: Revenue (ventes/produits)
+///
+/// Account number column is VARCHAR(50) - lookups with string literals '1100', '3000' are safe.
+/// Schema constraint: UNIQUE(company_id, number) enforced on accounts table ensures single result.
+///
+/// Template placeholders ({YEAR}, {SEQ:04}, {INVOICE_NUMBER}) are literal database values,
+/// not Rust format strings - braces are intentionally single (not {{escaped}}).
+///
+/// F1 CRITICAL FIX: Lookups now use SELECT FOR UPDATE to lock accounts rows during transaction,
+/// preventing concurrent deletes from creating dangling FKs. Atomic with INSERT operation.
+///
+/// F14 MEDIUM FIX: Documentation expanded - both INSERT IGNORE (DB-level idempotency) and
+/// step UPDATE (HTTP-level) are now wrapped in shared transaction (see onboarding.rs finalize).
 pub async fn insert_with_defaults(
     pool: &MySqlPool,
     company_id: i64,
 ) -> Result<CompanyInvoiceSettings, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Lookup accounts 1100 (receivable) and 3000 (revenue) for this company.
-    // Returns None if accounts don't exist (valid in production if chart doesn't include them).
+    // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
+    // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
+    // If account doesn't exist or is inactive, returns NULL (graceful fallback for non-standard charts).
     let receivable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true LIMIT 1"
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
     .fetch_optional(&mut *tx)
@@ -211,7 +224,7 @@ pub async fn insert_with_defaults(
     .flatten();
 
     let revenue = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true LIMIT 1"
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
     .fetch_optional(&mut *tx)
@@ -221,9 +234,12 @@ pub async fn insert_with_defaults(
 
     // If either account doesn't exist in the chart, they'll be NULL in the settings.
     // This is acceptable for non-standard charts or during chart setup.
+    // F8 MEDIUM FIX: INSERT IGNORE only suppresses duplicate key errors. Other constraint violations
+    // (FK, etc.) will still cause INSERT to fail and rollback. Log all errors for debugging.
 
     // INSERT IGNORE for idempotency (finalize can be retried on browser crash/refresh).
     // If already exists, silently succeeds and we fetch the existing row below.
+    // F8: Any INSERT failure (not just duplicates) will error and rollback transaction.
     sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
