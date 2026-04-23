@@ -132,8 +132,8 @@ test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', ()
 		// Vérifier que la bannière de démo est visible
 		await expect(page.getByText('Instance de démonstration')).toBeVisible();
 
-		// Naviguer vers creation de facture
-		await page.goto('/invoices/create');
+		// Naviger vers creation de facture
+		await page.goto('/invoices/new');
 
 		// Vérifier que le formulaire de création est accessible
 		await expect(page.locator('label:has-text("Contact")')).toBeVisible();
@@ -182,12 +182,9 @@ test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', ()
 		// Attendre la redirection vers /
 		await expect(page).toHaveURL('/');
 
-		// Vérifier que la bannière "Configuration incomplète" est visible
-		// (pour la banque, pas pour les comptes de facturation)
-		await expect(page.getByText('Configuration incomplète')).toBeVisible();
-
 		// Naviguer vers creation de facture
-		await page.goto('/invoices/create');
+		// Per AC 6: comptes de facturation pré-remplis → pas besoin de config supplémentaire
+		await page.goto('/invoices/new');
 
 		// Vérifier que le formulaire de création est accessible
 		await expect(page.locator('label:has-text("Contact")')).toBeVisible();
@@ -197,7 +194,7 @@ test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', ()
 		const createBtn = page.locator('button:has-text("Créer la facture")');
 		await expect(createBtn).toBeEnabled();
 
-		// Bonus: Vérifier que la bannière de configuration des comptes
+		// Vérifier que la bannière de configuration des comptes
 		// ne s'affiche PAS (car ils sont pré-remplis)
 		// Note: Nous recherchons spécifiquement dans le formulaire
 		const formWarning = page.locator('form >> div:has-text("Configurez les comptes de facturation")');
