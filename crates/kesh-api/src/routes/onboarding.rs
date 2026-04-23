@@ -441,14 +441,9 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
         .await
         .map_err(|e| AppError::Database(e))?;
 
-    // F15 MEDIUM FIX: Validate that settings are not completely unconfigured.
-    // Both accounts NULL means the chart doesn't have standard Swiss accounts → cannot proceed.
-    if settings.default_receivable_account_id.is_none() && settings.default_revenue_account_id.is_none() {
-        return Err(AppError::Internal(
-            "Cannot finalize onboarding: accounts 1100 (Receivables) and 3000 (Revenue) not found in chart. \
-             Please reload the chart or contact support.".to_string(),
-        ));
-    }
+    // F15 MEDIUM FIX: Allow NULL accounts for non-standard charts.
+    // AC-3 deferred: Fallback UI for account selection would be shown here if implemented.
+    // For now, users with missing accounts (1100, 3000) will see a warning banner when creating invoices.
 
     // Mark onboarding as complete (step 8 indicates completion)
     let updated = onboarding::update_step(

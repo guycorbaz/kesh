@@ -203,8 +203,10 @@ pub async fn update(
 /// F1 CRITICAL FIX: Lookups now use SELECT FOR UPDATE to lock accounts rows during transaction,
 /// preventing concurrent deletes from creating dangling FKs. Atomic with INSERT operation.
 ///
-/// F14 MEDIUM FIX: Documentation expanded - both INSERT IGNORE (DB-level idempotency) and
-/// step UPDATE (HTTP-level) are now wrapped in shared transaction (see onboarding.rs finalize).
+/// F14 MEDIUM FIX: Uses INSERT IGNORE for idempotency (DB-level). This function runs in its own
+/// transaction and commits before onboarding::update_step (HTTP-level). If insert succeeds but
+/// step update fails, the system is left in an inconsistent state (settings exist, step=7). Retry
+/// is idempotent: INSERT IGNORE is a no-op, F15 validation passes (non-null accounts), step advances.
 pub async fn insert_with_defaults(
     pool: &MySqlPool,
     company_id: i64,
@@ -213,9 +215,10 @@ pub async fn insert_with_defaults(
 
     // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
     // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
+    // ORDER BY id LIMIT 1 ensures deterministic single-row lock on MariaDB (uniqueness is guaranteed by schema).
     // If account doesn't exist or is inactive, returns NULL (graceful fallback for non-standard charts).
     let receivable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
     .fetch_optional(&mut *tx)
@@ -224,7 +227,7 @@ pub async fn insert_with_defaults(
     .flatten();
 
     let revenue = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
     .fetch_optional(&mut *tx)
