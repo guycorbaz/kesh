@@ -9,8 +9,8 @@
 -- See Story 2-6 spec AC 3 for details.
 --
 -- MIGRATION DEPENDENCY: This migration creates FKs referencing the accounts table.
--- The accounts table must be created first (20260419000001_accounts.sql is imported before this).
--- Execution order is guaranteed by lexicographic ordering of migration files.
+-- The accounts table is created by 20260411000001_accounts.sql which runs first
+-- (dates: 20260411 < 20260419). FK constraints will not fail due to missing table.
 
 CREATE TABLE company_invoice_settings (
   company_id BIGINT NOT NULL,

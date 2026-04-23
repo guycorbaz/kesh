@@ -101,7 +101,9 @@ function validateKeysInFile(filePath) {
     // For files in features/X, only allow keys with namespace 'X'
     if (feature && namespace !== feature) {
       const relPath = path.relative(process.cwd(), filePath);
-      const violationKey = `${relPath}:${key}`;
+      // Normalize path separators to forward slashes for cross-platform consistency
+      const normalizedPath = relPath.replace(/\\/g, '/');
+      const violationKey = `${normalizedPath}:${key}`;
 
       // Skip known violations (pre-existing issue #30)
       if (KNOWN_VIOLATIONS.has(violationKey)) {

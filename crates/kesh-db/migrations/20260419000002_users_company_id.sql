@@ -6,14 +6,17 @@
 -- Will be populated when company is created/assigned
 ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 
--- Step 2: Attempt backfill for production DBs
--- In production: assigns existing users to first company if one exists
--- In fresh test DBs: no-op (will be NULL until company created)
+-- Step 2: Backfill company_id for existing users
+-- Conditional: only if companies table is populated (handles production DBs)
+-- Fresh test DBs (no companies) → UPDATE matches no rows, no-op, users.company_id remains NULL
+-- Assumption: By migration time, either companies are seeded OR no users exist yet
 UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1)
 WHERE company_id IS NULL AND EXISTS (SELECT 1 FROM companies LIMIT 1);
 
 -- Step 3: Add NOT NULL constraint to match Rust type (i64, non-nullable)
--- After backfill, any existing user without a company_id is considered a data error.
+-- This enforces that every user has a company_id (no orphaned users).
+-- PREREQUISITE: Backfill must have assigned company to all existing users, OR no users exist.
+-- If this step fails, it means users exist without companies → data consistency issue.
 -- New users will always be created with a company_id (enforced by bootstrap + Rust types).
 -- Must add constraint BEFORE index to ensure semantic ordering (schema constraints before optimization).
 ALTER TABLE users MODIFY COLUMN company_id BIGINT NOT NULL;
