@@ -12,13 +12,15 @@ ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1)
 WHERE company_id IS NULL AND EXISTS (SELECT 1 FROM companies LIMIT 1);
 
--- Step 3: Add index for multi-tenant queries
-CREATE INDEX idx_users_company_id ON users(company_id);
-
--- Step 4: Add NOT NULL constraint to match Rust type (i64, non-nullable)
+-- Step 3: Add NOT NULL constraint to match Rust type (i64, non-nullable)
 -- After backfill, any existing user without a company_id is considered a data error.
 -- New users will always be created with a company_id (enforced by bootstrap + Rust types).
+-- Must add constraint BEFORE index to ensure semantic ordering (schema constraints before optimization).
 ALTER TABLE users MODIFY COLUMN company_id BIGINT NOT NULL;
+
+-- Step 4: Add index for multi-tenant queries
+-- Logically placed after NOT NULL constraint (constraints define schema, then optimize with indices).
+CREATE INDEX idx_users_company_id ON users(company_id);
 
 -- Step 5: Add foreign key constraint for referential integrity
 -- This protects against orphaned users if a company is deleted.

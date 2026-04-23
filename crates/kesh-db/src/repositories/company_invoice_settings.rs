@@ -199,7 +199,8 @@ pub async fn insert_with_defaults(
 ) -> Result<CompanyInvoiceSettings, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Lookup accounts 1100 (receivable) and 3000 (revenue) for this company
+    // Lookup accounts 1100 (receivable) and 3000 (revenue) for this company.
+    // Returns None if accounts don't exist (valid in production if chart doesn't include them).
     let receivable = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true LIMIT 1"
     )
@@ -218,17 +219,35 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .flatten();
 
-    // INSERT with default values, pre-filled with receivable/revenue accounts if found
-    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-        "INSERT INTO company_invoice_settings \
+    if receivable.is_none() || revenue.is_none() {
+        tracing::debug!(
+            company_id = company_id,
+            receivable = receivable,
+            revenue = revenue,
+            "pre-fill: default accounts (1100/3000) not found in chart"
+        );
+    }
+
+    // INSERT IGNORE for idempotency (finalize can be retried on browser crash/refresh).
+    // If already exists, silently succeeds and we fetch the existing row below.
+    sqlx::query(
+        "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{{YEAR}}-{{SEQ:04}}', ?, ?, 'Ventes', '{{YEAR}}-{{INVOICE_NUMBER}}') \
-         RETURNING {COLUMNS}"
-    ))
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')"
+    )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    // Fetch the (possibly already-existing) row to return in response
+    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+    ))
+    .bind(company_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(map_db_error)?;

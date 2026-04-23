@@ -32,7 +32,8 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-title',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-date',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-journal',
-  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-${j.toLowerCase()}',
+  // Dynamic journal names (journal-${j.toLowerCase()}) handled per-journal type at runtime.
+  // For now, listing all known journals would be fragile. See issue #30 refactoring TODO.
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-description',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-col-account',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-col-debit',
@@ -99,7 +100,7 @@ function validateKeysInFile(filePath) {
 
     // For files in features/X, only allow keys with namespace 'X'
     if (feature && namespace !== feature) {
-      const relPath = filePath.replace(process.cwd(), '').replace(/^\//,  '');
+      const relPath = path.relative(process.cwd(), filePath);
       const violationKey = `${relPath}:${key}`;
 
       // Skip known violations (pre-existing issue #30)

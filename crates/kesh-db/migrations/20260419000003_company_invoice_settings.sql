@@ -2,6 +2,12 @@
 -- Stores per-company invoice configuration (number format, default accounts, journal).
 -- Relation 1-1 with companies table. Created for Story 2-6 onboarding pre-fill feature.
 --
+-- AC 3 DEFERRAL: Fallback UI for missing accounts (AC 3) is NOT IMPLEMENTED.
+-- Current implementation assumes Swiss PME charts always contain account 1100 (receivables)
+-- and 3000 (revenue). If non-standard charts are added in future, AC 3 fallback UI should
+-- be implemented to handle missing accounts gracefully (showing warning instead of error).
+-- See Story 2-6 spec AC 3 for details.
+--
 -- MIGRATION DEPENDENCY: This migration creates FKs referencing the accounts table.
 -- The accounts table must be created first (20260419000001_accounts.sql is imported before this).
 -- Execution order is guaranteed by lexicographic ordering of migration files.

@@ -404,6 +404,7 @@ pub async fn skip_bank(
 
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
 /// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
+/// Idempotent: calling twice on same company is safe (upsert pattern).
 pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
     if current.step_completed != 7 || current.is_demo {
@@ -413,7 +414,8 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     // Get company to create invoice settings
     let company = get_company(&state).await?;
 
-    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
+    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000).
+    // Uses INSERT IGNORE pattern to handle browser retry scenario (already finalized).
     kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
         .await?;
 
