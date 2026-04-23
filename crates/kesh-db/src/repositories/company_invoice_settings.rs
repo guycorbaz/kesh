@@ -219,14 +219,8 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .flatten();
 
-    if receivable.is_none() || revenue.is_none() {
-        tracing::debug!(
-            company_id = company_id,
-            receivable = receivable,
-            revenue = revenue,
-            "pre-fill: default accounts (1100/3000) not found in chart"
-        );
-    }
+    // If either account doesn't exist in the chart, they'll be NULL in the settings.
+    // This is acceptable for non-standard charts or during chart setup.
 
     // INSERT IGNORE for idempotency (finalize can be retried on browser crash/refresh).
     // If already exists, silently succeeds and we fetch the existing row below.
