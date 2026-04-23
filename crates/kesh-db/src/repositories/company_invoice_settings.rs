@@ -206,7 +206,7 @@ pub async fn update(
 /// F14 MEDIUM FIX: Uses INSERT IGNORE for idempotency (DB-level). This function runs in its own
 /// transaction and commits before onboarding::update_step (HTTP-level). If insert succeeds but
 /// step update fails, the system is left in an inconsistent state (settings exist, step=7). Retry
-/// is idempotent: INSERT IGNORE is a no-op, F15 validation passes (non-null accounts), step advances.
+/// is idempotent: INSERT IGNORE is a no-op, existing row is fetched, step update is retried.
 pub async fn insert_with_defaults(
     pool: &MySqlPool,
     company_id: i64,

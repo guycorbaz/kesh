@@ -104,7 +104,7 @@
 	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
 	let loadingSettings = $state(true);
 	let settingsError = $state<string>('');
-	let settingsSeq = $state(0);
+	let settingsSeq = 0;
 
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
@@ -246,18 +246,19 @@
 		}
 
 		// F5 HIGH FIX: Revalidate settings before submit to catch stale data.
-		// If settings were modified since mount, re-fetch to ensure all fields still match.
+		// If settings were modified since mount, re-fetch to ensure account IDs still exist.
 		try {
 			const freshSettings = await getInvoiceSettings();
-			if (freshSettings.invoiceNumberFormat !== invoiceSettings?.invoiceNumberFormat ||
-			    freshSettings.defaultReceivableAccountId !== invoiceSettings?.defaultReceivableAccountId ||
-			    freshSettings.defaultRevenueAccountId !== invoiceSettings?.defaultRevenueAccountId ||
-			    freshSettings.defaultSalesJournal !== invoiceSettings?.defaultSalesJournal ||
-			    freshSettings.journalEntryDescriptionTemplate !== invoiceSettings?.journalEntryDescriptionTemplate) {
+			// Only check account IDs (the two fields that gate invoice creation).
+			// String fields (format, journal, template) can be normalized server-side without affecting functionality.
+			if (freshSettings.defaultReceivableAccountId !== invoiceSettings?.defaultReceivableAccountId ||
+			    freshSettings.defaultRevenueAccountId !== invoiceSettings?.defaultRevenueAccountId) {
 				errorMsg = 'Les paramètres de facturation ont changé. Rechargez la page et réessayez.';
 				submitting = false;
 				return;
 			}
+			// Settings validated successfully — update to fresh values for use in invoice creation.
+			invoiceSettings = freshSettings;
 		} catch (err) {
 			errorMsg = isApiError(err)
 				? `Impossible de valider les paramètres: ${err.message}`
