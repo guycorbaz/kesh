@@ -89,6 +89,9 @@ pub async fn seed_demo(
             )))
         })?;
     let lang_key = company.accounting_language.as_str().to_lowercase();
+    // Bulk insert uses its own transaction — commits before insert_with_defaults reads.
+    // Each seed_demo() call is independent (creates its own company), so concurrent calls
+    // won't interfere. Insert lookups (1100, 3000) are per-company and isolated.
     kesh_db::repositories::accounts::bulk_create_from_chart(pool, company.id, &chart, &lang_key)
         .await?;
 

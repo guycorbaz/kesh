@@ -1,6 +1,10 @@
 -- Story 2-6 & 5.2 — Company invoice settings table creation
 -- Stores per-company invoice configuration (number format, default accounts, journal).
 -- Relation 1-1 with companies table. Created for Story 2-6 onboarding pre-fill feature.
+--
+-- MIGRATION DEPENDENCY: This migration creates FKs referencing the accounts table.
+-- The accounts table must be created first (20260419000001_accounts.sql is imported before this).
+-- Execution order is guaranteed by lexicographic ordering of migration files.
 
 CREATE TABLE company_invoice_settings (
   company_id BIGINT NOT NULL,

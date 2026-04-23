@@ -104,6 +104,7 @@
 	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
 	let loadingSettings = $state(true);
 	let settingsError = $state<string>('');
+	let settingsSeq = 0;
 
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
@@ -127,16 +128,20 @@
 
 	// Story 2.6: Load invoice settings on mount to check if accounts are configured
 	$effect(() => {
+		const seq = ++settingsSeq;
 		(async () => {
 			try {
 				loadingSettings = true;
-				invoiceSettings = await getInvoiceSettings();
+				const settings = await getInvoiceSettings();
+				if (seq !== settingsSeq) return;
+				invoiceSettings = settings;
 			} catch (err) {
+				if (seq !== settingsSeq) return;
 				settingsError = isApiError(err)
 					? `Erreur lors du chargement des paramètres de facturation (${err.message})`
 					: 'Erreur lors du chargement des paramètres de facturation';
 			} finally {
-				loadingSettings = false;
+				if (seq === settingsSeq) loadingSettings = false;
 			}
 		})();
 	});
@@ -340,7 +345,7 @@
 		</div>
 	{/if}
 
-	{#if invoiceSettings && !invoiceSettings.defaultReceivableAccountId && !invoiceSettings.defaultRevenueAccountId}
+	{#if invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId)}
 		<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning">
 			{i18nMsg('config-incomplete-title', 'Configuration incomplète')} —
 			<a href="/settings/invoicing" class="underline font-medium">{i18nMsg('config-incomplete-link', 'Configurez les comptes de facturation')}</a>
@@ -455,7 +460,7 @@
 		<Button type="button" variant="outline" onclick={() => goto('/invoices')}>Annuler</Button>
 		<Button
 			type="submit"
-			disabled={submitting || conflictOpen || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
+			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
 			title={invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined}
 		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
