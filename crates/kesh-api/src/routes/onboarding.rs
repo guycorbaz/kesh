@@ -121,7 +121,7 @@ pub async fn set_mode(
     Ok(Json(updated.into()))
 }
 
-/// POST /api/v1/onboarding/seed-demo — step 2→3 + pre-fill invoice settings
+/// POST /api/v1/onboarding/seed-demo — step 2→3
 pub async fn seed_demo(
     State(state): State<AppState>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
@@ -136,14 +136,9 @@ pub async fn seed_demo(
         .await
         .map_err(|e| AppError::Internal(format!("Seed demo failed: {e}")))?;
 
-    // Pre-fill invoice settings with default accounts for demo mode
-    // (same as finalize does for production, but for demo path)
-    let company = get_company(&state).await?;
-    let _ = kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-    // seed_demo met déjà step=3 via update_step — relire l'état
+    // seed_demo already calls insert_with_defaults internally (Story 2.6)
+    // to pre-fill invoice accounts with 1100 (receivable) and 3000 (revenue).
+    // seed_demo updates onboarding_state to step=3 via update_step — relire l'état
     let updated = get_or_init_state(&state).await?;
     Ok(Json(updated.into()))
 }
