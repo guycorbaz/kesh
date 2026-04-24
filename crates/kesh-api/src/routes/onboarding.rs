@@ -407,56 +407,116 @@ pub async fn skip_bank(
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
 /// Pre-fills invoice settings with default accounts (1100, 3000) if they exist in the chart.
 ///
-/// F2 CRITICAL FIX: Added check for already-finalized state (step == 8) to allow safe retries.
-/// If step is already 8, finalization already succeeded → idempotent at HTTP level.
-/// Settings INSERT IGNORE ensures database-level idempotency as well.
+/// F2 CRITICAL FIX: SELECT FOR UPDATE on onboarding_state serializes all finalize() calls.
+/// Prevents multiple concurrent requests from both passing the step check and duplicating work.
+/// Broader locking scope ensures deterministic behavior under concurrent load.
 ///
-/// F14 MEDIUM FIX: Updated docstring — route IS idempotent if already at step 8 (allows retries).
-/// Rejects only if at step < 7 or >= 8 (wrong state).
+/// F3 CRITICAL FIX: SELECT FOR UPDATE on company prevents deletion between check and insert.
+/// Company is locked for update, so DELETE from another transaction must wait.
+/// If company was deleted before we acquired lock, SELECT returns no row → error.
 ///
-/// F15 MEDIUM FIX: Added explicit backend validation — if both account IDs are NULL,
-/// return 400 error instead of silently accepting incomplete settings.
+/// F4 HIGH FIX: Pessimistic lock on onboarding_state prevents concurrent finalize() races.
+/// Once locked, only one finalize() can proceed. INSERT IGNORE remains idempotent.
+///
+/// F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded (1100, 3000 not NULL).
 pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
-    let current = get_or_init_state(&state).await?;
+    use kesh_db::errors::map_db_error;
 
-    // F2 CRITICAL FIX: Allow idempotent retries if already finalized (step == 8)
-    if current.is_demo {
+    // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
+    // 1. Lock onboarding_state (serializes all finalize() calls on same session)
+    // 2. Check state is still at step 7 or 8 (prevents TOCTOU on onboarding progression)
+    // 3. Lock company row (prevents deletion during finalize)
+    // 4. Proceed with insert_with_defaults() with guaranteed exclusive access
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+
+    let onboarding = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
+        "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
+         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE"
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    // Reject demo path finalize (demo is finalized via seed_demo)
+    if onboarding.is_demo {
+        tx.rollback().await.map_err(map_db_error)?;
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    if current.step_completed != 7 && current.step_completed != 8 {
+    // Allow idempotent retry if already finalized (step == 8)
+    if onboarding.step_completed < 7 || onboarding.step_completed > 8 {
+        tx.rollback().await.map_err(map_db_error)?;
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    // If already finalized, return current state (idempotent)
-    if current.step_completed == 8 {
-        return Ok(Json(current.into()));
+    // If already finalized, release lock and return (idempotent)
+    if onboarding.step_completed == 8 {
+        tx.commit().await.map_err(map_db_error)?;
+        return Ok(Json(onboarding.into()));
     }
 
-    // Get company to create invoice settings
-    let company = get_company(&state).await?;
+    // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
+    // Prevents concurrent deletion between our check and INSERT INTO company_invoice_settings.
+    let company = sqlx::query_as::<_, kesh_db::entities::Company>(
+        "SELECT id, name, address, ide_number, org_type, accounting_language, \
+                instance_language, version, created_at, updated_at \
+         FROM companies LIMIT 1 FOR UPDATE"
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or_else(|| {
+        AppError::Internal("Aucune company en base (company supprimée pendant onboarding ?)".into())
+    })?;
 
     // Pre-fill invoice settings with default accounts (1100, 3000).
     // Uses INSERT IGNORE pattern for database-level idempotency.
-    // F1 CRITICAL FIX: Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
-    let _ = kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
+    // Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
+    // F2/F3/F4: Transaction-level variant keeps account locks within this transaction,
+    // preserving company and onboarding_state locks until step update completes.
+    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company.id)
         .await
         .map_err(|e| AppError::Database(e))?;
 
-    // F15 MEDIUM FIX: Allow NULL accounts for non-standard charts.
-    // AC-3 deferred: Fallback UI for account selection would be shown here if implemented.
-    // For now, users with missing accounts (1100, 3000) will see a warning banner when creating invoices.
+    // F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded.
+    // Swiss PME/Association/Independant charts must contain accounts 1100 (receivable) and 3000 (revenue).
+    // If missing, the onboarding cannot proceed (AC 3 fallback UI not yet implemented).
+    if settings.default_receivable_account_id.is_none() || settings.default_revenue_account_id.is_none() {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(AppError::Validation(
+            "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
+             Veuillez ajouter ces comptes avant de finaliser l'onboarding.".into(),
+        ));
+    }
 
-    // Mark onboarding as complete (step 8 indicates completion)
-    let updated = onboarding::update_step(
-        &state.pool,
-        8,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
+    // Mark onboarding as complete while holding locks.
+    // Uses optimistic locking with expected version to detect concurrent updates (shouldn't happen due to SELECT FOR UPDATE).
+    let rows = sqlx::query(
+        "UPDATE onboarding_state SET step_completed = 8, version = version + 1 \
+         WHERE singleton = TRUE AND version = ?"
     )
-    .await?;
+    .bind(onboarding.version)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
 
+    if rows == 0 {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(AppError::Database(
+            kesh_db::errors::DbError::OptimisticLockConflict,
+        ));
+    }
+
+    let updated = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
+        "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
+         FROM onboarding_state WHERE singleton = TRUE"
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    tx.commit().await.map_err(map_db_error)?;
     Ok(Json(updated.into()))
 }
 
