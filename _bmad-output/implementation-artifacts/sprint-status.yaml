@@ -118,7 +118,7 @@ development_status:
 
   # Epic 7: Technical Debt Closure (inserted 2026-04-20 retro decision)
   epic-7: in-progress
-  7-1-audit-complete-kf-002-multi-tenant: backlog  # KF-002: complete multi-tenant scoping refactor
+  7-1-audit-complete-kf-002-multi-tenant: ready-for-dev  # KF-002: complete multi-tenant scoping refactor. Spec created 2026-04-24.
   7-2-kf-003-vat-db-driven-config: backlog  # KF-003: TVA rates table + config
   7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
   7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
