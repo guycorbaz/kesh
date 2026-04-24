@@ -445,16 +445,20 @@ No cosmetic or documentation-only findings.
 
 ### High Priority Issues
 
-**Created:** None yet (workflow requirement: create during story execution)
+**Created:** ✅ Issues #40, #41 (2026-04-24)
 
-**Planned:** 
-1. **Issue: KF-002-H-001** — Restrict onboarding `/reset` post-completion
-   - Labels: `known-failure`, `security`, `high-priority`
+1. **Issue #40:** [KF-002] Restrict onboarding `/reset` endpoint post-completion
+   - URL: https://github.com/guycorbaz/kesh/issues/40
+   - Labels: `known-failure`, `enhancement`
+   - Status: OPEN
    - Assignee: @guycorbaz
    - Milestone: v0.1 (before production release)
+   - Remediation: P1-005 applied (step gating added)
 
-2. **Issue: KF-002-M-001** — Verify httpOnly token storage in all deployments
-   - Labels: `enhancement`, `security`, `medium-priority`
+2. **Issue #41:** [KF-002] Verify httpOnly token storage in production deployment
+   - URL: https://github.com/guycorbaz/kesh/issues/41
+   - Labels: `enhancement`
+   - Status: OPEN
    - Assignee: @guycorbaz
    - Milestone: v0.1
 

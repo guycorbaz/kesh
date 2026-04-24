@@ -52,8 +52,8 @@ class RouteAnalyzer:
 
         module_name = filepath.stem
 
-        # Find all public async functions (handlers)
-        handler_pattern = r'pub\s+async\s+fn\s+(\w+)\s*\([^)]*\)\s*->\s*Result'
+        # Find all public async functions (handlers) - handle multiline signatures
+        handler_pattern = r'pub\s+async\s+fn\s+(\w+)\s*\('
         handlers = re.findall(handler_pattern, content)
 
         for handler in handlers:

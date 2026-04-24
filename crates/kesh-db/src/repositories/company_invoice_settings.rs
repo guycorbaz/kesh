@@ -244,6 +244,12 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .flatten();
 
+    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern)
+    if receivable.is_none() || revenue.is_none() {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::InactiveOrInvalidAccounts);
+    }
+
     sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
@@ -300,6 +306,13 @@ pub async fn insert_with_defaults_in_tx(
     .await
     .map_err(map_db_error)?
     .flatten();
+
+    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern)
+    // If accounts 1100 or 3000 don't exist, reject immediately instead of creating NULL rows.
+    // This prevents data corruption and provides clear error messages to callers.
+    if receivable.is_none() || revenue.is_none() {
+        return Err(DbError::InactiveOrInvalidAccounts);
+    }
 
     sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \

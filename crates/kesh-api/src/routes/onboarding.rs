@@ -143,8 +143,17 @@ pub async fn seed_demo(
     Ok(Json(updated.into()))
 }
 
-/// POST /api/v1/onboarding/reset — aucun prérequis de step
+/// POST /api/v1/onboarding/reset — Step gating: only allowed up to step 2 (P1-005 remediation)
+/// Prevents accidental reset of completed onboarding (step >2 indicates production setup has started)
 pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
+    let current = get_or_init_state(&state).await?;
+
+    // P1-005: Step gating - prevent reset after Path B started (step > 2)
+    // This prevents users from accidentally wiping all data post-finalization
+    if current.step_completed > 2 {
+        return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
+
     kesh_seed::reset_demo(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("Reset demo failed: {e}")))?;
