@@ -293,7 +293,7 @@
 		</Table.Header>
 		<Table.Body>
 			{#each users as user (user.id)}
-				<Table.Row class={!user.active ? 'opacity-50' : ''} data-testid="user-row-{user.username}"
+				<Table.Row class={!user.active ? 'opacity-50' : ''} data-testid="user-row-{user.username}">
 					<Table.Cell>
 						{user.username}
 						{#if isCurrentUser(user)}
