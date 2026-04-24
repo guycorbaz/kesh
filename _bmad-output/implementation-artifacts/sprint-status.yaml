@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-21  (2-6 implementation complete → review; E2E tests AC 5-6 + i18n keys 4 locales added. Ready for code-review.)
+last_updated: 2026-04-24  (2-6 code review complete → done. 10 KF issues created (KF-009 to KF-018). READY TO MERGE.)
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -79,7 +79,7 @@ development_status:
   2-3-flux-onboarding-chemin-b-production: done
   2-4-page-accueil-navigation: done
   2-5-mode-guide-expert: done
-  2-6-onboarding-comptes-facturation-pre-remplis: review
+  2-6-onboarding-comptes-facturation-pre-remplis: done
   epic-2-retrospective: done
 
   # Epic 3: Plan Comptable & Écritures
