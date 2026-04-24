@@ -34,6 +34,8 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-journal',
   // Dynamic journal names (journal-${j.toLowerCase()}) handled per-journal type at runtime.
   // For now, listing all known journals would be fragile. See issue #30 refactoring TODO.
+  // Dynamic journal pattern (journal-${j.toLowerCase()}):
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-${j.toLowerCase()}',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-description',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-col-account',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-col-debit',
