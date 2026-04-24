@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-24  (2-6 code review done. 10 KF issues created. Story 7-6 created for KF-010 (E2E selector refactoring). KF-009 already resolved in migration.)
+last_updated: 2026-04-24  (Story 7-6 merged: PR #29 7c8822d. E2E selector refactoring done — 5 data-testid attrs, 2 test refactor, audit script (182 brittle selectors), best practices doc. Code review: 1 MEDIUM (bad_spec) → APPROVED. CI: all green.)
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -123,7 +123,7 @@ development_status:
   7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
   7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
   7-5-kf-008-playwright-selector-fixes: backlog  # KF-008: Playwright selector ambiguities (36 tests)
-  7-6-e2e-selector-refactoring: review  # KF-010 (from Story 2-6 review): Refactor getByText() brittle selectors
+  7-6-e2e-selector-refactoring: done  # KF-010 (from Story 2-6 review): Refactor getByText() brittle selectors. Mergée 2026-04-24 (PR #29, commit 7c8822d)
   epic-7-retrospective: optional
 
   # Epic 8: Import Bancaire & Réconciliation (ex-Epic 6, renumbered 2026-04-20)
