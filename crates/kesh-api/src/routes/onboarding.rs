@@ -478,7 +478,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
         &mut tx, company.id,
     )
     .await
-    .map_err(|e| AppError::Database(e))?;
+    .map_err(AppError::Database)?;
 
     // F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded.
     // Swiss PME/Association/Independant charts must contain accounts 1100 (receivable) and 3000 (revenue).
