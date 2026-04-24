@@ -439,7 +439,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     // Pre-fill invoice settings with default accounts (1100, 3000).
     // Uses INSERT IGNORE pattern for database-level idempotency.
     // F1 CRITICAL FIX: Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
-    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
+    let _ = kesh_db::repositories::company_invoice_settings::insert_with_defaults(&state.pool, company.id)
         .await
         .map_err(|e| AppError::Database(e))?;
 
