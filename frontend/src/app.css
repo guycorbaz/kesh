@@ -11,6 +11,9 @@
   /* Couleurs — Source: UX spec §Système de Couleurs */
   --color-primary: #1e40af;
   --color-primary-light: #3b82f6;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #6b7280;
+  --color-secondary-foreground: #ffffff;
   --color-success: #16a34a;
   --color-error: #dc2626;
   --color-warning: #d97706;
