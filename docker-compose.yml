@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # --- Base de données MariaDB ---
+  mariadb:
+    image: mariadb:11-jammy
+    container_name: kesh-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-kesh_dev_root}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-kesh}
+      MARIADB_USER: ${MARIADB_USER:-kesh}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-kesh_dev}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - kesh-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --max_connections=100
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+
+  # --- API Kesh (Rust + Frontend statique) ---
+  kesh-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kesh-api
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      # Base de données — correspond au service mariadb ci-dessus
+      DATABASE_URL: mysql://${MARIADB_USER:-kesh}:${MARIADB_PASSWORD:-kesh_dev}@mariadb:3306/${MARIADB_DATABASE:-kesh}
+
+      # Application
+      KESH_PORT: ${KESH_PORT:-3000}
+      KESH_HOST: ${KESH_HOST:-0.0.0.0}  # 0.0.0.0 en docker-compose (reverse proxy fronts)
+
+      # Admin initial
+      KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-changeme}
+
+      # Authentification
+      KESH_JWT_SECRET: ${KESH_JWT_SECRET:-change-me-32-bytes-minimum-secret-generate-with-openssl-rand-hex-32}
+      KESH_JWT_EXPIRY_MINUTES: ${KESH_JWT_EXPIRY_MINUTES:-15}
+      KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS: ${KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS:-30}
+
+      # Session & Rate Limiting
+      KESH_REFRESH_INACTIVITY_MINUTES: ${KESH_REFRESH_INACTIVITY_MINUTES:-15}
+      KESH_RATE_LIMIT_WINDOW_MINUTES: ${KESH_RATE_LIMIT_WINDOW_MINUTES:-15}
+      KESH_RATE_LIMIT_MAX_ATTEMPTS: ${KESH_RATE_LIMIT_MAX_ATTEMPTS:-5}
+      KESH_RATE_LIMIT_BLOCK_MINUTES: ${KESH_RATE_LIMIT_BLOCK_MINUTES:-30}
+
+      # Logging
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mappage optionnel pour développement (rebuild nécessaire sinon)
+      - ./crates:/app/crates:ro
+    networks:
+      - kesh-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mariadb_data:
+    driver: local
+
+networks:
+  kesh-network:
+    driver: bridge
