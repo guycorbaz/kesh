@@ -45,13 +45,13 @@ test.describe('Page utilisateurs — CRUD', () => {
 		await loginAndGoToUsers(page);
 
 		// Le tableau doit être visible
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.locator('[data-testid="user-table"]')).toBeVisible();
 
 		// Au moins l'admin bootstrap doit apparaître
-		await expect(page.getByText('admin')).toBeVisible();
+		await expect(page.locator('[data-testid="user-row-admin"]')).toBeVisible();
 
 		// Badge "Vous" sur l'admin connecté
-		await expect(page.getByText('Vous')).toBeVisible();
+		await expect(page.locator('[data-testid="current-user-badge"]')).toBeVisible();
 	});
 
 	test('création d\'un utilisateur', async ({ page }) => {

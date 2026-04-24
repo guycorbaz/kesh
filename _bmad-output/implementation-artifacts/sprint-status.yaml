@@ -123,7 +123,7 @@ development_status:
   7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
   7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
   7-5-kf-008-playwright-selector-fixes: backlog  # KF-008: Playwright selector ambiguities (36 tests)
-  7-6-e2e-selector-refactoring: ready-for-dev  # KF-010 (from Story 2-6 review): Refactor getByText() brittle selectors
+  7-6-e2e-selector-refactoring: review  # KF-010 (from Story 2-6 review): Refactor getByText() brittle selectors
   epic-7-retrospective: optional
 
   # Epic 8: Import Bancaire & Réconciliation (ex-Epic 6, renumbered 2026-04-20)

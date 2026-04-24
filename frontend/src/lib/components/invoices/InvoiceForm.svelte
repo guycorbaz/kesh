@@ -375,7 +375,7 @@
 	{/if}
 
 	{#if invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId)}
-		<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning">
+		<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning" data-testid="invoice-config-warning">
 			{i18nMsg('config-incomplete-title', 'Configuration incomplète')} —
 			<a href="/settings/invoicing" class="underline font-medium">{i18nMsg('config-incomplete-link', 'Configurez les comptes de facturation')}</a>
 		</div>
@@ -487,7 +487,7 @@
 
 	<div class="flex justify-end gap-2">
 		<Button type="button" variant="outline" onclick={() => goto('/invoices')}>Annuler</Button>
-		<Button
+		<Button data-testid="create-invoice-button"
 			type="submit"
 			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
 			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined)}

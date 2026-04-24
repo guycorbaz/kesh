@@ -281,7 +281,7 @@
 {#if loading && users.length === 0}
 	<p class="text-sm text-text-muted">Chargement…</p>
 {:else}
-	<Table.Root>
+	<Table.Root data-testid="user-table">
 		<Table.Header>
 			<Table.Row>
 				<Table.Head>Nom d'utilisateur</Table.Head>
@@ -293,11 +293,11 @@
 		</Table.Header>
 		<Table.Body>
 			{#each users as user (user.id)}
-				<Table.Row class={!user.active ? 'opacity-50' : ''}>
+				<Table.Row class={!user.active ? 'opacity-50' : ''} data-testid="user-row-{user.username}"
 					<Table.Cell>
 						{user.username}
 						{#if isCurrentUser(user)}
-							<span class="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+							<span class="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary" data-testid="current-user-badge">
 								Vous
 							</span>
 						{/if}

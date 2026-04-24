@@ -140,18 +140,10 @@ test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', ()
 
 		// Vérifier que la bannière d'avertissement n'est PAS visible
 		// (car les comptes sont pré-remplis en mode démo)
-		const warningBanner = page.locator('text=Configuration incomplète');
-		// NOTE: Si la bannière est visible, cela signifie que la pré-remplissage a échoué
-		// Nous ne pouvons pas utiliser toBeVisible() car le selecteur pourrait trouver d'autres textes
-		const count = await warningBanner.count();
-		if (count > 0) {
-			// Si la bannière existe, elle ne doit pas être dans le formulaire de création
-			const formWarning = page.locator('form >> text=Configuration incomplète');
-			await expect(formWarning).not.toBeVisible();
-		}
+		await expect(page.locator('[data-testid="invoice-config-warning"]')).not.toBeVisible();
 
 		// Vérifier que le bouton Créer la facture est activé
-		const createBtn = page.locator('button:has-text("Créer la facture")');
+		const createBtn = page.locator('[data-testid="create-invoice-button"]');
 		await expect(createBtn).toBeEnabled();
 	});
 
@@ -189,15 +181,13 @@ test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', ()
 		// Vérifier que le formulaire de création est accessible
 		await expect(page.locator('label:has-text("Contact")')).toBeVisible();
 
+		// Vérifier que la bannière de configuration n'est PAS visible
+		// (car les comptes de facturation ont été pré-remplis)
+		await expect(page.locator('[data-testid="invoice-config-warning"]')).not.toBeVisible();
+
 		// Vérifier que le bouton Créer la facture est activé
 		// (car les comptes de facturation ont été pré-remplis)
-		const createBtn = page.locator('button:has-text("Créer la facture")');
+		const createBtn = page.locator('[data-testid="create-invoice-button"]');
 		await expect(createBtn).toBeEnabled();
-
-		// Vérifier que la bannière de configuration des comptes
-		// ne s'affiche PAS (car ils sont pré-remplis)
-		// Note: Nous recherchons spécifiquement dans le formulaire
-		const formWarning = page.locator('form >> div:has-text("Configurez les comptes de facturation")');
-		await expect(formWarning).not.toBeVisible();
 	});
 });
