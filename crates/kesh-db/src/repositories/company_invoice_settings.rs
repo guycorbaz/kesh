@@ -248,7 +248,7 @@ pub async fn insert_with_defaults(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')"
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
@@ -305,7 +305,7 @@ pub async fn insert_with_defaults_in_tx(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')"
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)

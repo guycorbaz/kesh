@@ -431,7 +431,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
 
     let onboarding = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
         "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
-         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE"
+         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE",
     )
     .fetch_one(&mut *tx)
     .await
@@ -460,7 +460,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     let company = sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, address, ide_number, org_type, accounting_language, \
                 instance_language, version, created_at, updated_at \
-         FROM companies LIMIT 1 FOR UPDATE"
+         FROM companies LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
     .await
@@ -474,14 +474,18 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     // Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
     // F2/F3/F4: Transaction-level variant keeps account locks within this transaction,
     // preserving company and onboarding_state locks until step update completes.
-    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company.id)
-        .await
-        .map_err(|e| AppError::Database(e))?;
+    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
+        &mut tx, company.id,
+    )
+    .await
+    .map_err(|e| AppError::Database(e))?;
 
     // F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded.
     // Swiss PME/Association/Independant charts must contain accounts 1100 (receivable) and 3000 (revenue).
     // If missing, the onboarding cannot proceed (AC 3 fallback UI not yet implemented).
-    if settings.default_receivable_account_id.is_none() || settings.default_revenue_account_id.is_none() {
+    if settings.default_receivable_account_id.is_none()
+        || settings.default_revenue_account_id.is_none()
+    {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(AppError::Validation(
             "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
@@ -493,7 +497,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     // Uses optimistic locking with expected version to detect concurrent updates (shouldn't happen due to SELECT FOR UPDATE).
     let rows = sqlx::query(
         "UPDATE onboarding_state SET step_completed = 8, version = version + 1 \
-         WHERE singleton = TRUE AND version = ?"
+         WHERE singleton = TRUE AND version = ?",
     )
     .bind(onboarding.version)
     .execute(&mut *tx)
@@ -510,7 +514,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
 
     let updated = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
         "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
-         FROM onboarding_state WHERE singleton = TRUE"
+         FROM onboarding_state WHERE singleton = TRUE",
     )
     .fetch_one(&mut *tx)
     .await
