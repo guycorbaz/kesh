@@ -24,8 +24,10 @@
 		computeLineTotal,
 		formatInvoiceTotal,
 	} from '$lib/features/invoices/invoice-helpers';
-	import { createInvoice, getInvoice, updateInvoice } from '$lib/features/invoices/invoices.api';
+	import { createInvoice, getInvoice, updateInvoice, getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { getContact } from '$lib/features/contacts/contacts.api';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 
 	import ContactPicker from './ContactPicker.svelte';
 	import ProductPicker from './ProductPicker.svelte';
@@ -98,6 +100,12 @@
 	// réinitialise automatiquement.
 	let initialContactInvoiceId = $state<number | null>(null);
 
+	// Story 2.6: Invoice settings validation
+	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
+	let loadingSettings = $state(true);
+	let settingsError = $state<string>('');
+	let settingsSeq = 0;
+
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
 	$effect(() => {
@@ -116,6 +124,33 @@
 					? `Impossible de charger le contact (${err.message}) — sélectionnez-le manuellement`
 					: 'Impossible de charger le contact initial — sélectionnez-le manuellement';
 			});
+	});
+
+	// Story 2.6: Load invoice settings on mount to check if accounts are configured
+	// F3+F4 MEDIUM FIX: Sequence counter with effect cleanup.
+	// F5 HIGH FIX: Revalidate settings before submit to prevent stale data.
+	$effect(() => {
+		const seq = ++settingsSeq;
+
+		(async () => {
+			try {
+				loadingSettings = true;
+				const settings = await getInvoiceSettings();
+				if (seq !== settingsSeq) return;
+				invoiceSettings = settings;
+			} catch (err) {
+				// Ignore errors from stale effect runs
+				if (seq !== settingsSeq) return;
+				settingsError = isApiError(err)
+					? `Erreur lors du chargement des paramètres de facturation (${err.message})`
+					: 'Erreur lors du chargement des paramètres de facturation';
+			} finally {
+				// F3 MEDIUM FIX: Always clear loading flag (even if seq mismatch)
+				// to prevent indefinite disabled state. If new effect is running,
+				// it will set loadingSettings=true again.
+				loadingSettings = false;
+			}
+		})();
 	});
 
 	function onContactSelect(c: ContactResponse) {
@@ -206,6 +241,28 @@
 		const err = validateClient();
 		if (err) {
 			errorMsg = err;
+			submitting = false;
+			return;
+		}
+
+		// F5 HIGH FIX: Revalidate settings before submit to catch stale data.
+		// If settings were modified since mount, re-fetch to ensure account IDs still exist.
+		try {
+			const freshSettings = await getInvoiceSettings();
+			// Only check account IDs (the two fields that gate invoice creation).
+			// String fields (format, journal, template) can be normalized server-side without affecting functionality.
+			if (freshSettings.defaultReceivableAccountId !== invoiceSettings?.defaultReceivableAccountId ||
+			    freshSettings.defaultRevenueAccountId !== invoiceSettings?.defaultRevenueAccountId) {
+				errorMsg = 'Les paramètres de facturation ont changé. Rechargez la page et réessayez.';
+				submitting = false;
+				return;
+			}
+			// Settings validated successfully — update to fresh values for use in invoice creation.
+			invoiceSettings = freshSettings;
+		} catch (err) {
+			errorMsg = isApiError(err)
+				? `Impossible de valider les paramètres: ${err.message}`
+				: 'Impossible de valider les paramètres de facturation';
 			submitting = false;
 			return;
 		}
@@ -317,6 +374,13 @@
 		</div>
 	{/if}
 
+	{#if invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId)}
+		<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning" data-testid="invoice-config-warning">
+			{i18nMsg('config-incomplete-title', 'Configuration incomplète')} —
+			<a href="/settings/invoicing" class="underline font-medium">{i18nMsg('config-incomplete-link', 'Configurez les comptes de facturation')}</a>
+		</div>
+	{/if}
+
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="invoice-contact">Contact</label>
@@ -423,7 +487,11 @@
 
 	<div class="flex justify-end gap-2">
 		<Button type="button" variant="outline" onclick={() => goto('/invoices')}>Annuler</Button>
-		<Button type="submit" disabled={submitting || conflictOpen}>
+		<Button data-testid="create-invoice-button"
+			type="submit"
+			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
+			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined)}
+		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>
 	</div>

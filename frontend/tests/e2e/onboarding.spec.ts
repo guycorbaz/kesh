@@ -95,3 +95,99 @@ test.describe('Onboarding — Reprise après interruption', () => {
 		await expect(page.getByText('Guidé')).toBeVisible();
 	});
 });
+
+test.describe('Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6)', () => {
+	test.beforeEach(async ({ page }) => {
+		// Reset DB + user `changeme` seul (preset fresh)
+		await seedTestState('fresh');
+
+		// Login en tant que changeme/changeme
+		await page.goto('/login');
+		await page.fill('#username', 'changeme');
+		await page.fill('#password', 'changeme');
+		await page.click('button[type="submit"]');
+
+		// Le guard onboarding devrait rediriger vers /onboarding
+		await expect(page).toHaveURL(/\/onboarding/);
+	});
+
+	test.afterEach(async ({ page }) => {
+		// Clear localStorage after each test
+		await clearAuthStorage(page);
+	});
+
+	test('AC 5: Path A (démo) — comptes de facturation pré-remplis automatiquement', async ({ page }) => {
+		// Step 1: Choisir français
+		await page.click('button:has-text("Français")');
+
+		// Step 2: Mode guidé
+		await page.click('button:has-text("Guidé")');
+
+		// Step 3: Chemin démo
+		await page.click('button:has-text("Explorer avec des données de démo")');
+
+		// Attendre la redirection vers /
+		await expect(page).toHaveURL('/');
+
+		// Vérifier que la bannière de démo est visible
+		await expect(page.getByText('Instance de démonstration')).toBeVisible();
+
+		// Naviger vers creation de facture
+		await page.goto('/invoices/new');
+
+		// Vérifier que le formulaire de création est accessible
+		await expect(page.locator('label:has-text("Contact")')).toBeVisible();
+
+		// Vérifier que la bannière d'avertissement n'est PAS visible
+		// (car les comptes sont pré-remplis en mode démo)
+		await expect(page.locator('[data-testid="invoice-config-warning"]')).not.toBeVisible();
+
+		// Vérifier que le bouton Créer la facture est activé
+		const createBtn = page.locator('[data-testid="create-invoice-button"]');
+		await expect(createBtn).toBeEnabled();
+	});
+
+	test('AC 6: Path B (production) — comptes de facturation pré-remplis après onboarding', async ({ page }) => {
+		// Step 1: Language
+		await page.click('button:has-text("Français")');
+
+		// Step 2: Mode
+		await page.click('button:has-text("Guidé")');
+
+		// Step 3: Production path
+		await page.click('button:has-text("Configurer pour la production")');
+
+		// Step 4: Org type — Indépendant
+		await page.click('button:has-text("Indépendant")');
+
+		// Step 5: Accounting language
+		await page.click('button:has-text("Français")');
+
+		// Step 6: Coordinates
+		await page.fill('#coord-name', 'Mon Business Indépendant');
+		await page.fill('#coord-address', 'Rue des Alpes 1, 1200 Genève');
+		await page.click('button:has-text("Continuer")');
+
+		// Step 7: Bank account (skip for now)
+		await page.click('button:has-text("Configurer plus tard")');
+
+		// Attendre la redirection vers /
+		await expect(page).toHaveURL('/');
+
+		// Naviguer vers creation de facture
+		// Per AC 6: comptes de facturation pré-remplis → pas besoin de config supplémentaire
+		await page.goto('/invoices/new');
+
+		// Vérifier que le formulaire de création est accessible
+		await expect(page.locator('label:has-text("Contact")')).toBeVisible();
+
+		// Vérifier que la bannière de configuration n'est PAS visible
+		// (car les comptes de facturation ont été pré-remplis)
+		await expect(page.locator('[data-testid="invoice-config-warning"]')).not.toBeVisible();
+
+		// Vérifier que le bouton Créer la facture est activé
+		// (car les comptes de facturation ont été pré-remplis)
+		const createBtn = page.locator('[data-testid="create-invoice-button"]');
+		await expect(createBtn).toBeEnabled();
+	});
+});

@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-20  (6-5 ready-for-dev created, deployment option C/next: bmad-dev-story)
+last_updated: 2026-04-24  (2-6 code review done. 10 KF issues created. Story 7-6 created for KF-010 (E2E selector refactoring). KF-009 already resolved in migration.)
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -79,7 +79,7 @@ development_status:
   2-3-flux-onboarding-chemin-b-production: done
   2-4-page-accueil-navigation: done
   2-5-mode-guide-expert: done
-  2-6-onboarding-comptes-facturation-pre-remplis: backlog
+  2-6-onboarding-comptes-facturation-pre-remplis: done
   epic-2-retrospective: done
 
   # Epic 3: Plan Comptable & Écritures
@@ -107,66 +107,76 @@ development_status:
   5-4-echeancier-factures: done
   epic-5-retrospective: done
 
-  # Epic 6: Qualité & CI/CD (inséré 2026-04-16 — décision rétro Epic 5)
-  epic-6: in-progress
+  # Epic 6: Qualité & CI/CD (inséré 2026-04-16 — décision rétro Epic 5) [FULLY COMPLETE 2026-04-20]
+  epic-6: done
   6-1-pipeline-ci-github-actions: done  # PR #16 fermée (obsolète post-6-4), PR #21 mergée 2026-04-18 (commit 42232c2). Hardening CI + axe-core étendu (6/12 specs).
   6-2-multi-tenant-scoping-refactor: done  # Implémentation T1-T9 complétée 2026-04-18 (opus-4-7 + haiku continuation). T7 route refactoring pattern établi, T7.1-T7.9 appliqués. Mergée 2026-04-20 (PR #25, fea684b).
-  6-3-lint-i18n-sidebar-i18n: backlog
+  6-3-lint-i18n-sidebar-i18n: done  # Implémentation complétée 2026-04-20 : D8 (KF-006) closure. T1-T4 done : sidebar i18n × 4 locales, lint-i18n-ownership script, CI integration, documentation (i18n-key-ownership-pattern.md), KF-006 status updated. PR #29 ready (closes #6).
   6-4-fixtures-e2e-deterministes: done  # Mergée sur main 2026-04-17 (PR #18, commit 520e8df). KF-007 e2e blocage pré-existant documenté pour Story 6-5.
-  6-5-fix-playwright-e2e-auth-flow: in-progress  # Créée 2026-04-20 — investigation + fix Playwright auth redirection /login persistant. Débloque KF-007/issue #19, blocant release v0.1
-  epic-6-retrospective: optional
+  6-5-fix-playwright-e2e-auth-flow: done  # Mergée 2026-04-20 (PR #28, squash 765af6d). KF-007 fixed: localStorage persistence + hydration. 40/76 tests passing. KF-008 (#27) created for pre-existing selector failures.
+  epic-6-retrospective: done  # 2026-04-20 : Retro complete. Major decision: insert Epic 7 (Tech Debt Closure) before Import, renumber 7→14 to 8→15.
 
-  # Epic 7: Import Bancaire & Réconciliation (ex-Epic 6)
-  epic-7: backlog
-  7-1-import-camt053: backlog
-  7-2-import-csv-multi-encodage-profils-banque: backlog
-  7-3-detection-doublons-rejet-partiel: backlog
-  7-4-reconciliation-matching-automatique: backlog
-  7-5-reconciliation-manuelle-regles-affectation: backlog
+  # Epic 7: Technical Debt Closure (inserted 2026-04-20 retro decision)
+  epic-7: in-progress
+  7-1-audit-complete-kf-002-multi-tenant: backlog  # KF-002: complete multi-tenant scoping refactor
+  7-2-kf-003-vat-db-driven-config: backlog  # KF-003: TVA rates table + config
+  7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
+  7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
+  7-5-kf-008-playwright-selector-fixes: backlog  # KF-008: Playwright selector ambiguities (36 tests)
+  7-6-e2e-selector-refactoring: review  # KF-010 (from Story 2-6 review): Refactor getByText() brittle selectors
   epic-7-retrospective: optional
 
-  # Epic 8: Rapports & Exports (ex-Epic 7)
+  # Epic 8: Import Bancaire & Réconciliation (ex-Epic 6, renumbered 2026-04-20)
   epic-8: backlog
-  8-1-rapports-comptables-bilan-resultat-balance-journaux: backlog
-  8-2-export-pdf-csv: backlog
+  8-1-import-camt053: backlog
+  8-2-import-csv-multi-encodage-profils-banque: backlog
+  8-3-detection-doublons-rejet-partiel: backlog
+  8-4-reconciliation-matching-automatique: backlog
+  8-5-reconciliation-manuelle-regles-affectation: backlog
   epic-8-retrospective: optional
 
-  # Epic 9: Déploiement & Opérations (ex-Epic 8 — 8-4 CI/CD promue en 6-1, 8-5 devient 9-4)
+  # Epic 9: Rapports & Exports (ex-Epic 7, renumbered 2026-04-20)
   epic-9: backlog
-  9-1-docker-compose-dockerfile-production: backlog
-  9-2-migrations-automatiques-detection-version: backlog
-  9-3-resilience-frontend-db-inaccessible: backlog
-  9-4-guide-installation-pdf: backlog
+  9-1-rapports-comptables-bilan-resultat-balance-journaux: backlog
+  9-2-export-pdf-csv: backlog
   epic-9-retrospective: optional
+
+  # Epic 10: Déploiement & Opérations (ex-Epic 8, renumbered 2026-04-20 — original 8-4 CI/CD promoted to 6-1, original 8-5 becomes 10-4)
+  epic-10: backlog
+  10-1-docker-compose-dockerfile-production: backlog
+  10-2-migrations-automatiques-detection-version: backlog
+  10-3-resilience-frontend-db-inaccessible: backlog
+  10-4-guide-installation-pdf: backlog
+  epic-10-retrospective: optional
 
   # === v0.2 — Complétude comptable ===
 
-  # Epic 10: TVA Suisse (ex-Epic 9)
-  epic-10: backlog
-  10-1-configuration-taux-tva: backlog
-  10-2-calcul-tva-rapport-par-periode: backlog
-  epic-10-retrospective: optional
-
-  # Epic 11: Avoirs & Paiements (ex-Epic 10)
+  # Epic 11: TVA Suisse (ex-Epic 9, renumbered 2026-04-20)
   epic-11: backlog
-  11-1-avoirs-notes-de-credit: backlog
-  11-2-generation-fichiers-paiement-pain001: backlog
-  11-3-flux-paiement-en-deux-temps: backlog
+  11-1-configuration-taux-tva: backlog
+  11-2-calcul-tva-rapport-par-periode: backlog
   epic-11-retrospective: optional
 
-  # Epic 12: Budgets (ex-Epic 11)
+  # Epic 12: Avoirs & Paiements (ex-Epic 10, renumbered 2026-04-20)
   epic-12: backlog
-  12-1-budgets-annuels-suivi: backlog
+  12-1-avoirs-notes-de-credit: backlog
+  12-2-generation-fichiers-paiement-pain001: backlog
+  12-3-flux-paiement-en-deux-temps: backlog
   epic-12-retrospective: optional
 
-  # Epic 13: Clôture d'Exercice (ex-Epic 12)
+  # Epic 13: Budgets (ex-Epic 11, renumbered 2026-04-20)
   epic-13: backlog
-  13-1-cloture-report-des-soldes: backlog
+  13-1-budgets-annuels-suivi: backlog
   epic-13-retrospective: optional
 
-  # Epic 14: Justificatifs, Lettrage & Compléments v0.2 (ex-Epic 13)
+  # Epic 14: Clôture d'Exercice (ex-Epic 12, renumbered 2026-04-20)
   epic-14: backlog
-  14-1-pieces-justificatives: backlog
-  14-2-lettrage: backlog
-  14-3-versioning-parseurs-modeles-manuels: backlog
+  14-1-cloture-report-des-soldes: backlog
   epic-14-retrospective: optional
+
+  # Epic 15: Justificatifs, Lettrage & Compléments v0.2 (ex-Epic 13, renumbered 2026-04-20)
+  epic-15: backlog
+  15-1-pieces-justificatives: backlog
+  15-2-lettrage: backlog
+  15-3-versioning-parseurs-modeles-manuels: backlog
+  epic-15-retrospective: optional

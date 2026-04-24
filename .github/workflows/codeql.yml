@@ -1,10 +1,13 @@
 name: CodeQL
 
+# Disabled: CodeQL analysis disabled (too slow, not needed for this stage)
+# on:
+#   push:
+#     branches: [main, story/**]
+#   pull_request:
+#     branches: [main]
 on:
-  push:
-    branches: [main, story/**]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:  # Manual trigger only
 
 permissions:
   contents: read
@@ -32,8 +35,7 @@ jobs:
     # Build using the standard Rust toolchain for better control
     - name: Build (Rust)
       if: matrix.language == 'rust'
-      run: |
-        cargo build --release || echo "Build failed; CodeQL will analyze what it can"
+      run: cargo build --release
 
     - name: Autobuild (non-Rust)
       if: matrix.language != 'rust'

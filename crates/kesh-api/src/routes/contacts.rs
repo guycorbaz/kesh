@@ -368,14 +368,10 @@ pub async fn get_contact(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    let contact = contacts::find_by_id(&state.pool, id)
+    // Story 6.2: Multi-tenant scoping via find_by_id_in_company
+    let contact = contacts::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-
-    // Verify contact belongs to current user's company
-    if contact.company_id != current_user.company_id {
-        return Err(AppError::Database(DbError::NotFound));
-    }
 
     Ok(Json(ContactResponse::from(contact)))
 }
@@ -429,13 +425,10 @@ pub async fn update_contact(
     Path(id): Path<i64>,
     Json(req): Json<UpdateContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    // Verify contact belongs to current user's company
-    let existing = contacts::find_by_id(&state.pool, id)
+    // Story 6.2: Multi-tenant scoping via find_by_id_in_company (IDOR check)
+    let _existing = contacts::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    if existing.company_id != current_user.company_id {
-        return Err(AppError::Database(DbError::NotFound));
-    }
 
     let v = validate_common(
         req.contact_type,
@@ -469,20 +462,17 @@ pub async fn update_contact(
 }
 
 /// PUT /api/v1/contacts/{id}/archive — archive un contact.
-/// Story 6.2: Scoped by current_user.company_id.
+/// Story 6.2: Scoped by current_user.company_id via find_by_id_in_company.
 pub async fn archive_contact(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<ArchiveContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    // Verify contact belongs to current user's company
-    let existing = contacts::find_by_id(&state.pool, id)
+    // Story 6.2: Multi-tenant scoping via find_by_id_in_company (IDOR check)
+    let _existing = contacts::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    if existing.company_id != current_user.company_id {
-        return Err(AppError::Database(DbError::NotFound));
-    }
 
     let contact = contacts::archive(&state.pool, id, req.version, current_user.user_id).await?;
     Ok(Json(ContactResponse::from(contact)))

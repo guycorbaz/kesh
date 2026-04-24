@@ -187,6 +187,144 @@ pub async fn update(
     Ok(after)
 }
 
+/// Creates company_invoice_settings with auto-prefill of default accounts (1100, 3000).
+/// Called during onboarding finalization (after chart of accounts is loaded).
+///
+/// **Pool-level variant** (`insert_with_defaults`): Opens its own transaction.
+/// Used by seed_demo (Path A), which doesn't need locking coordination.
+///
+/// **Transaction-level variant** (`insert_with_defaults_in_tx`): Works within caller's transaction.
+/// Used by finalize() (Path B), which holds locks on company and onboarding_state.
+/// Caller must pass open transaction to keep locks alive during account lookup and INSERT.
+///
+/// **Duplication note**: Code is intentionally duplicated between these variants rather than
+/// using a generic executor macro due to SQLx 0.8 HRTB fragility (see repository docstring P13).
+/// The 5-line body at lines marked MIRROR must stay synchronized.
+///
+/// Standard Swiss account numbers:
+/// - 1100: Receivables (clients/créances)
+/// - 3000: Revenue (ventes/produits)
+///
+/// Account number column is VARCHAR(50) - lookups with string literals '1100', '3000' are safe.
+/// Schema constraint: UNIQUE(company_id, number) enforced on accounts table ensures single result.
+///
+/// Template placeholders ({YEAR}, {SEQ:04}, {INVOICE_NUMBER}) are literal database values,
+/// not Rust format strings - braces are intentionally single (not {{escaped}}).
+///
+/// F1 CRITICAL FIX: Lookups use SELECT FOR UPDATE to lock accounts rows,
+/// preventing concurrent deletes from creating dangling FKs. Atomic with INSERT.
+///
+/// F2/F3/F4 CRITICAL FIX: Transaction-level variant keeps account locks within finalize()'s
+/// transaction, preserving company and onboarding_state locks until step update completes.
+pub async fn insert_with_defaults(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<CompanyInvoiceSettings, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // MIRROR: Keep synchronized with insert_with_defaults_in_tx
+    // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
+    // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
+    // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
+    let receivable = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
+    let revenue = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
+    sqlx::query(
+        "INSERT IGNORE INTO company_invoice_settings \
+         (company_id, invoice_number_format, default_receivable_account_id, \
+          default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+    )
+    .bind(company_id)
+    .bind(receivable)
+    .bind(revenue)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+    ))
+    .bind(company_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(settings)
+}
+
+/// Transaction-aware variant of insert_with_defaults for finalize() to use.
+/// Keeps account locks within the caller's transaction scope.
+///
+/// F2/F3/F4 CRITICAL: Caller must hold SELECT FOR UPDATE lock on onboarding_state
+/// and company to prevent deletion races. This function's SELECT FOR UPDATE on accounts
+/// complements the higher-level locks, ensuring deterministic ordering of account lookups.
+pub async fn insert_with_defaults_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+) -> Result<CompanyInvoiceSettings, DbError> {
+    // MIRROR: Keep synchronized with insert_with_defaults
+    // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
+    // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
+    // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
+    let receivable = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
+    let revenue = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
+    sqlx::query(
+        "INSERT IGNORE INTO company_invoice_settings \
+         (company_id, invoice_number_format, default_receivable_account_id, \
+          default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+    )
+    .bind(company_id)
+    .bind(receivable)
+    .bind(revenue)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+    ))
+    .bind(company_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    Ok(settings)
+}
+
 // Reference to avoid unused import warning if Journal is not referenced
 // elsewhere in this file (needed for the SQL bind).
 #[allow(dead_code)]

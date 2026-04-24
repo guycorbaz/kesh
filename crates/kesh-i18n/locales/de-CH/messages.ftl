@@ -51,6 +51,14 @@ demo-reset-confirm-body = Alle Demonstrationsdaten werden gelöscht. Möchten Si
 demo-reset-confirm-ok = Bestätigen
 demo-reset-confirm-cancel = Abbrechen
 
+# Navigation sidebar (Story 6.3)
+nav-home = Startseite
+nav-contacts = Kontakte
+nav-products = Katalog
+nav-invoices = Rechnungen
+nav-invoicing-due-dates = Fälligkeiten
+nav-settings = Einstellungen
+
 # Onboarding — Pfad B (Story 2.3)
 onboarding-choose-org-type = Organisationstyp
 onboarding-org-independant = Selbstständig
@@ -218,7 +226,6 @@ tooltip-balanced-natural = Die Summe der Eingänge entspricht der Summe der Ausg
 tooltip-balanced-technical = Doppelte Buchführung im Gleichgewicht (Soll = Haben)
 
 # Story 4.1 — Adressbuch (Kontakte CRUD)
-nav-contacts = Adressbuch
 contacts-page-title = Adressbuch
 contact-form-create-title = Neuer Kontakt
 contact-form-edit-title = Kontakt bearbeiten
@@ -319,7 +326,6 @@ product-archive-cancel = Abbrechen
 product-archive-confirm = Archivieren
 
 # --- Story 5.1: Rechnungsentwürfe ---
-nav-invoices = Rechnungen
 invoices-page-title = Rechnungen
 invoice-new-title = Neue Rechnung
 invoice-edit-title = Rechnung bearbeiten
@@ -486,7 +492,11 @@ common-next = Nächste
 common-cancel = Abbrechen
 common-error = Unerwarteter Fehler
 
-nav-invoices-due-dates = Fälligkeitsplan
 invoice-pdf-error-not-found = Rechnung nicht gefunden.
 invoice-pdf-error-generic = Fehler beim Herunterladen des PDFs.
 invoice-pdf-error-empty = Das empfangene PDF ist leer.
+
+# Story 2.6 — Onboarding: Invoice Settings Pre-fill
+config-incomplete-title = Konfiguration unvollständig
+config-incomplete-link = Konfigurieren Sie die Abrechnungskonten
+invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten in den Einstellungen

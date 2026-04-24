@@ -51,6 +51,14 @@ demo-reset-confirm-body = All demo data will be deleted. Do you want to continue
 demo-reset-confirm-ok = Confirm
 demo-reset-confirm-cancel = Cancel
 
+# Navigation sidebar (Story 6.3)
+nav-home = Home
+nav-contacts = Contacts
+nav-products = Catalog
+nav-invoices = Invoices
+nav-invoicing-due-dates = Due Dates
+nav-settings = Settings
+
 # Onboarding — Path B (Story 2.3)
 onboarding-choose-org-type = Organisation type
 onboarding-org-independant = Independent
@@ -218,7 +226,6 @@ tooltip-balanced-natural = Total money in equals total money out
 tooltip-balanced-technical = Double-entry balanced (debits = credits)
 
 # Story 4.1 — Address book (contacts CRUD)
-nav-contacts = Address book
 contacts-page-title = Address book
 contact-form-create-title = New contact
 contact-form-edit-title = Edit contact
@@ -319,7 +326,6 @@ product-archive-cancel = Cancel
 product-archive-confirm = Archive
 
 # --- Story 5.1: Draft invoices ---
-nav-invoices = Invoices
 invoices-page-title = Invoices
 invoice-new-title = New invoice
 invoice-edit-title = Edit invoice
@@ -486,7 +492,11 @@ common-next = Next
 common-cancel = Cancel
 common-error = Unexpected error
 
-nav-invoices-due-dates = Due dates
 invoice-pdf-error-not-found = Invoice not found.
 invoice-pdf-error-generic = Error downloading the PDF.
 invoice-pdf-error-empty = Received PDF is empty.
+
+# Story 2.6 — Onboarding: Invoice Settings Pre-fill
+config-incomplete-title = Configuration incomplete
+config-incomplete-link = Configure invoicing accounts
+invoice-settings-required = Please configure the invoicing accounts in settings first

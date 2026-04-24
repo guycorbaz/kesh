@@ -247,6 +247,25 @@ pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<Contact>, Db
         .map_err(map_db_error)
 }
 
+/// Retourne un contact par ID si et seulement s'il appartient à la company spécifiée (ou None).
+/// Story 6.2: Multi-tenant scoping — utilisé pour les handlers PUT/DELETE qui doivent vérifier IDOR.
+pub async fn find_by_id_in_company(
+    pool: &MySqlPool,
+    id: i64,
+    company_id: i64,
+) -> Result<Option<Contact>, DbError> {
+    sqlx::query_as::<_, Contact>(
+        "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
+         address, email, phone, ide_number, default_payment_terms, active, version, \
+         created_at, updated_at FROM contacts WHERE id = ? AND company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste simple (non paginée) — usage interne / tests.
 #[allow(dead_code)]
 pub async fn list_by_company(

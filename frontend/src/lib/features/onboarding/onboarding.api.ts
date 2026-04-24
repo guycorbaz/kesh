@@ -62,3 +62,8 @@ export async function setBankAccount(
 export async function skipBank(): Promise<OnboardingState> {
 	return apiClient.post<OnboardingState>('/api/v1/onboarding/skip-bank');
 }
+
+// Story 2.6: Finalize onboarding and pre-fill invoice settings
+export async function finalize(): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/finalize');
+}

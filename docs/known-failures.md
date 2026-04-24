@@ -135,4 +135,13 @@
 - **Blocage** : aucun FR. Critique dès qu'un utilisateur DE/IT/EN ouvre l'app.
 - **Reproduction** : changer `instance_language` de company en `de-CH`, relancer frontend, observer sidebar toujours en français.
 - **Story de remédiation** : **Story 6-3** (Epic 6 Qualité & CI/CD) — `nav-*` FTL keys × 4 locales + refactor layout.svelte + lint i18n key-ownership.
-- **Status** : open
+- **Correctif (2026-04-20, Story 6-3)** :
+  1. Ajout de 24 nouvelles clés `nav-*` (6 labels × 4 locales) dans `crates/kesh-i18n/locales/*/messages.ftl`
+  2. Refactor `frontend/src/routes/(app)/+layout.svelte` : nav items désormais utilise `i18nMsg('nav-*', fallback)` au lieu de labels hardcodés
+  3. Intégration du lint rule `lint-i18n-ownership` dans `.github/workflows/ci.yml` (CI gate) pour empêcher régression
+  4. Documentation complète : `docs/i18n-key-ownership-pattern.md`
+- **Validation** :
+  - `grep "^nav-" crates/kesh-i18n/locales/*/messages.ftl | wc -l` → **24** ✅
+  - `npm run lint-i18n-ownership` → PASS ✅
+  - `npm run check` → 0 errors ✅
+- **Status** : closed (vérifié 2026-04-20, toutes les ACs de Story 6-3 validées)

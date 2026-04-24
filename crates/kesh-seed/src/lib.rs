@@ -5,7 +5,7 @@
 
 use chrono::{Datelike, Utc};
 use kesh_db::entities::onboarding::UiMode;
-use kesh_db::entities::{Language, NewCompany, NewFiscalYear, OrgType};
+use kesh_db::entities::{Language, NewFiscalYear, OrgType};
 use kesh_db::repositories::{companies, fiscal_years, onboarding};
 use kesh_i18n::Locale;
 use sqlx::MySqlPool;
@@ -55,7 +55,9 @@ fn demo_address(locale: &Locale) -> &'static str {
 
 /// Charge les données de démonstration.
 ///
-/// Crée une company, un exercice fiscal, et met `onboarding_state` à step=3, is_demo=true.
+/// Récupère la company existante créée par ensure_company_with_language,
+/// la met à jour avec les infos démo, crée un exercice fiscal,
+/// et met `onboarding_state` à step=3, is_demo=true.
 /// Passe par les repositories kesh-db pour respecter les contraintes DB.
 /// `onboarding_version` est la version actuelle de l'onboarding_state,
 /// passée par le handler pour éviter une double lecture (TOCTOU).
@@ -67,19 +69,33 @@ pub async fn seed_demo(
 ) -> Result<(), SeedError> {
     let lang = locale_to_language(locale);
 
-    // Company démo
-    let company = companies::create(
-        pool,
-        NewCompany {
-            name: demo_company_name(locale).to_string(),
-            address: demo_address(locale).to_string(),
-            ide_number: Some("CHE109322551".to_string()),
-            org_type: OrgType::Pme,
-            accounting_language: lang,
-            instance_language: lang,
-        },
-    )
-    .await?;
+    // Récupérer la company existante (créée par ensure_company_with_language)
+    // et la mettre à jour avec les infos démo
+    let company = {
+        let list = companies::list(pool, 1, 0).await?;
+        let company = list.into_iter().next().ok_or_else(|| {
+            SeedError::Db(kesh_db::errors::DbError::Invariant(
+                "Aucune company existante pour seed_demo".into(),
+            ))
+        })?;
+
+        // Update company with demo info
+        use kesh_db::entities::CompanyUpdate;
+        companies::update(
+            pool,
+            company.id,
+            company.version,
+            CompanyUpdate {
+                name: demo_company_name(locale).to_string(),
+                address: demo_address(locale).to_string(),
+                ide_number: Some("CHE109322551".to_string()),
+                org_type: OrgType::Pme,
+                accounting_language: lang,
+                instance_language: lang,
+            },
+        )
+        .await?
+    };
 
     // Plan comptable PME dans la langue comptable de la company démo
     let chart =
@@ -89,6 +105,9 @@ pub async fn seed_demo(
             )))
         })?;
     let lang_key = company.accounting_language.as_str().to_lowercase();
+    // Bulk insert uses its own transaction — commits before insert_with_defaults reads.
+    // Each seed_demo() call is independent (creates its own company), so concurrent calls
+    // won't interfere. Insert lookups (1100, 3000) are per-company and isolated.
     kesh_db::repositories::accounts::bulk_create_from_chart(pool, company.id, &chart, &lang_key)
         .await?;
 
@@ -107,6 +126,9 @@ pub async fn seed_demo(
         },
     )
     .await?;
+
+    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
+    kesh_db::repositories::company_invoice_settings::insert_with_defaults(pool, company.id).await?;
 
     // Mettre à jour onboarding_state → step=3, is_demo=true
     onboarding::update_step(pool, 3, true, Some(ui_mode), onboarding_version).await?;

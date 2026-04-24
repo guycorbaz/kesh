@@ -1,19 +1,31 @@
 -- Story 6.2 — Multi-tenant scoping refactor
--- Add company_id to users table to enable proper multi-tenant isolation
+-- Add company_id to users table for multi-tenant isolation.
+-- Migration handles both fresh test DBs (no companies yet) and production DBs.
 
--- Step 1: Add nullable company_id for backfill
+-- Step 1: Add company_id column (nullable initially)
+-- Will be populated when company is created/assigned
 ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 
--- Step 2: Backfill — assign all users to the first company (mono-tenant assumption)
--- (Guards for data integrity are applied at application level during testing)
-UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1);
+-- Step 2: Backfill company_id for existing users
+-- Conditional: only if companies table is populated (handles production DBs)
+-- Fresh test DBs (no companies) → UPDATE matches no rows, no-op, users.company_id remains NULL
+-- Assumption: By migration time, either companies are seeded OR no users exist yet
+UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1)
+WHERE company_id IS NULL AND EXISTS (SELECT 1 FROM companies LIMIT 1);
 
--- Step 3: Make company_id NOT NULL after successful backfill
--- Note: If backfill failed (e.g., no companies exist), this will fail naturally on NULL violation
+-- Step 3: Add NOT NULL constraint to match Rust type (i64, non-nullable)
+-- This enforces that every user has a company_id (no orphaned users).
+-- PREREQUISITE: Backfill must have assigned company to all existing users, OR no users exist.
+-- If this step fails, it means users exist without companies → data consistency issue.
+-- New users will always be created with a company_id (enforced by bootstrap + Rust types).
+-- Must add constraint BEFORE index to ensure semantic ordering (schema constraints before optimization).
 ALTER TABLE users MODIFY COLUMN company_id BIGINT NOT NULL;
 
--- Step 4: Add foreign key constraint (ON DELETE CASCADE — deleting a company cascades to its users)
-ALTER TABLE users ADD CONSTRAINT fk_users_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
-
--- Step 5: Add index for company scoping (used in list_by_company, find_by_id_in_company queries)
+-- Step 4: Add index for multi-tenant queries
+-- Logically placed after NOT NULL constraint (constraints define schema, then optimize with indices).
 CREATE INDEX idx_users_company_id ON users(company_id);
+
+-- Step 5: Add foreign key constraint for referential integrity
+-- This protects against orphaned users if a company is deleted.
+ALTER TABLE users ADD CONSTRAINT fk_users_company
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;

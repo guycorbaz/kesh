@@ -236,6 +236,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/onboarding/skip-bank",
             post(routes::onboarding::skip_bank),
+        )
+        .route(
+            "/api/v1/onboarding/finalize",
+            post(routes::onboarding::finalize),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)
