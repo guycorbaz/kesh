@@ -64,13 +64,17 @@ async fn test_insert_with_defaults_handles_missing_accounts(pool: MySqlPool) {
     .expect("Failed to create company");
 
     // Call insert_with_defaults with no accounts
-    let settings = company_invoice_settings::insert_with_defaults(&pool, company.id)
-        .await
-        .expect("Failed to insert with defaults");
+    // E2-001 Fix: Now that P1-004+P1-007 added early NULL validation,
+    // insert_with_defaults should reject with InactiveOrInvalidAccounts error
+    let result = company_invoice_settings::insert_with_defaults(&pool, company.id)
+        .await;
 
-    // Verify the settings were created with NULL for missing accounts
-    assert_eq!(settings.company_id, company.id);
-    assert_eq!(settings.default_receivable_account_id, None);
-    assert_eq!(settings.default_revenue_account_id, None);
-    assert_eq!(settings.invoice_number_format, "F-{YEAR}-{SEQ:04}");
+    // Verify the error is correctly rejected
+    assert!(result.is_err(), "Expected Err when accounts are missing");
+    match result {
+        Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+            // Expected behavior: fail-fast when accounts don't exist
+        }
+        _ => panic!("Expected InactiveOrInvalidAccounts error, got: {:?}", result),
+    }
 }

@@ -143,14 +143,16 @@ pub async fn seed_demo(
     Ok(Json(updated.into()))
 }
 
-/// POST /api/v1/onboarding/reset — Step gating: only allowed up to step 2 (P1-005 remediation)
-/// Prevents accidental reset of completed onboarding (step >2 indicates production setup has started)
+/// POST /api/v1/onboarding/reset — Step gating: allow demo, block post-production (E2-002 fix)
+/// Demo users (is_demo=true) can always reset (step 3 is valid for demo path)
+/// Production users (is_demo=false) can only reset up to step 2
 pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
 
-    // P1-005: Step gating - prevent reset after Path B started (step > 2)
-    // This prevents users from accidentally wiping all data post-finalization
-    if current.step_completed > 2 {
+    // E2-002: Refined step gating - allow demo reset at any step, block post-production
+    // Demo path: step 3 is normal (seed_demo sets step=3), reset should be allowed
+    // Production path: step > 2 means setup has started, prevent accidental reset
+    if !current.is_demo && current.step_completed > 2 {
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
@@ -466,7 +468,8 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
 
     // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
     // Prevents concurrent deletion between our check and INSERT INTO company_invoice_settings.
-    let company = sqlx::query_as::<_, kesh_db::entities::Company>(
+    // R2-001 Fix: Add explicit rollback on error
+    let company = match sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, address, ide_number, org_type, accounting_language, \
                 instance_language, version, created_at, updated_at \
          FROM companies LIMIT 1 FOR UPDATE",
@@ -474,20 +477,33 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?
-    .ok_or_else(|| {
-        AppError::Internal("Aucune company en base (company supprimée pendant onboarding ?)".into())
-    })?;
+    {
+        Some(c) => c,
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(AppError::Internal(
+                "Aucune company en base (company supprimée pendant onboarding ?)".into(),
+            ));
+        }
+    };
 
     // Pre-fill invoice settings with default accounts (1100, 3000).
     // Uses INSERT IGNORE pattern for database-level idempotency.
     // Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
     // F2/F3/F4: Transaction-level variant keeps account locks within this transaction,
     // preserving company and onboarding_state locks until step update completes.
-    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
+    // R2-002 Fix: Add explicit rollback on error
+    let settings = match kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
         &mut tx, company.id,
     )
     .await
-    .map_err(AppError::Database)?;
+    {
+        Ok(s) => s,
+        Err(e) => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(AppError::Database(e));
+        }
+    };
 
     // F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded.
     // Swiss PME/Association/Independant charts must contain accounts 1100 (receivable) and 3000 (revenue).
@@ -521,13 +537,20 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
         ));
     }
 
-    let updated = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
+    // R2-003 Fix: Add explicit rollback on final SELECT error
+    let updated = match sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
         "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
          FROM onboarding_state WHERE singleton = TRUE",
     )
     .fetch_one(&mut *tx)
     .await
-    .map_err(map_db_error)?;
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(AppError::Database(map_db_error(e)));
+        }
+    };
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(Json(updated.into()))
