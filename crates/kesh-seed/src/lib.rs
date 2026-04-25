@@ -139,18 +139,22 @@ pub async fn seed_demo(
     // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
     // P1-H3: Retry logic for account lookup timing issues (bulk_create may not be fully committed)
     // MariaDB REPEATABLE READ isolation can cause SELECT FOR UPDATE to not see recent commits
+    // Simple retry without sleep — DB commits are typically very fast in practice
     let mut retries = 0;
     let max_retries = 3;
     loop {
         match kesh_db::repositories::company_invoice_settings::insert_with_defaults(pool, company.id).await {
-            Ok(settings) => {
-                tracing::debug!("company_invoice_settings inserted after {} retries", retries);
+            Ok(_settings) => {
+                if retries > 0 {
+                    tracing::debug!("company_invoice_settings inserted successfully (after {} retry attempts)", retries);
+                }
                 break;
             }
             Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) if retries < max_retries => {
                 retries += 1;
-                tracing::warn!("Account lookup failed (retry {}/{}), waiting for bulk_create commit", retries, max_retries);
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                tracing::warn!("Account lookup failed (attempt {}/{}), retrying immediately", retries, max_retries);
+                // Retry loop runs fast enough; no explicit sleep needed
+                // If this consistently fails, increase max_retries or add a sync barrier
             }
             Err(e) => return Err(SeedError::Db(e)),
         }
