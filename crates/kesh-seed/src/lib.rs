@@ -73,6 +73,15 @@ pub async fn seed_demo(
     // et la mettre à jour avec les infos démo
     let company = {
         let list = companies::list(pool, 1, 0).await?;
+
+        // P1-C2: Validate exactly 1 company exists (prevent corruption from race conditions)
+        // If multiple companies exist, seed_demo would corrupt wrong company
+        if list.len() != 1 {
+            return Err(SeedError::Db(kesh_db::errors::DbError::Invariant(
+                format!("Expected exactly 1 company for seed_demo, found {}", list.len()),
+            )));
+        }
+
         let company = list.into_iter().next().ok_or_else(|| {
             SeedError::Db(kesh_db::errors::DbError::Invariant(
                 "Aucune company existante pour seed_demo".into(),

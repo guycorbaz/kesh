@@ -23,6 +23,15 @@ use kesh_db::repositories::onboarding;
 use crate::AppState;
 use crate::errors::AppError;
 
+/// P1-H1: Helper for graceful transaction rollback
+/// Rollback errors are best-effort cleanup; don't fail the request if rollback fails
+async fn best_effort_rollback(tx: sqlx::Transaction<'_, sqlx::MySql>) {
+    if let Err(e) = tx.rollback().await {
+        tracing::warn!("Transaction rollback failed (best-effort cleanup): {}", e);
+        // Continue anyway — connection pool handles cleanup
+    }
+}
+
 /// Réponse JSON pour l'état d'onboarding (camelCase).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,8 +155,16 @@ pub async fn seed_demo(
 /// POST /api/v1/onboarding/reset — Step gating: allow demo, block post-production (E2-002 fix)
 /// Demo users (is_demo=true) can always reset (step 3 is valid for demo path)
 /// Production users (is_demo=false) can only reset up to step 2
+/// SECURITY: step >= 7 is finalization (irreversible) — NEVER allow reset regardless of is_demo
 pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
+
+    // P1-H4: Secondary security check — step >= 7 is finalization (irreversible)
+    // NEVER allow reset after finalization, regardless of is_demo flag
+    // This prevents reset() if is_demo flag is corrupted or manually modified
+    if current.step_completed >= 7 {
+        return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
 
     // E2-002: Refined step gating - allow demo reset at any step, block post-production
     // Demo path: step 3 is normal (seed_demo sets step=3), reset should be allowed
@@ -450,13 +467,13 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
 
     // Reject demo path finalize (demo is finalized via seed_demo)
     if onboarding.is_demo {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
     // Allow idempotent retry if already finalized (step == 8)
     if onboarding.step_completed < 7 || onboarding.step_completed > 8 {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
@@ -480,7 +497,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     {
         Some(c) => c,
         None => {
-            tx.rollback().await.map_err(map_db_error)?;
+            { let _ = tx.rollback().await; }
             return Err(AppError::Internal(
                 "Aucune company en base (company supprimée pendant onboarding ?)".into(),
             ));
@@ -500,7 +517,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     {
         Ok(s) => s,
         Err(e) => {
-            tx.rollback().await.map_err(map_db_error)?;
+            { let _ = tx.rollback().await; }
             return Err(AppError::Database(e));
         }
     };
@@ -511,7 +528,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     if settings.default_receivable_account_id.is_none()
         || settings.default_revenue_account_id.is_none()
     {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::Validation(
             "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
              Veuillez ajouter ces comptes avant de finaliser l'onboarding.".into(),
@@ -531,7 +548,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     .rows_affected();
 
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));
@@ -547,7 +564,7 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     {
         Ok(row) => row,
         Err(e) => {
-            tx.rollback().await.map_err(map_db_error)?;
+            { let _ = tx.rollback().await; }
             return Err(AppError::Database(map_db_error(e)));
         }
     };
@@ -615,7 +632,7 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
             .map_err(map_db_error)?
             .rows_affected();
             if rows == 0 {
-                tx.rollback().await.map_err(map_db_error)?;
+                { let _ = tx.rollback().await; }
                 return Err(AppError::Database(
                     kesh_db::errors::DbError::OptimisticLockConflict,
                 ));
@@ -659,7 +676,7 @@ async fn update_company_org_type(state: &AppState, org_type: OrgType) -> Result<
     .map_err(map_db_error)?
     .rows_affected();
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));
@@ -690,7 +707,7 @@ async fn update_company_accounting_language(
     .map_err(map_db_error)?
     .rows_affected();
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));
@@ -726,7 +743,7 @@ async fn update_company_coordinates(
     .map_err(map_db_error)?
     .rows_affected();
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        { let _ = tx.rollback().await; }
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));

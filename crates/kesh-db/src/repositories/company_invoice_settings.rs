@@ -250,7 +250,9 @@ pub async fn insert_with_defaults(
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
-    sqlx::query(
+    // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
+    // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
+    let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
@@ -261,7 +263,28 @@ pub async fn insert_with_defaults(
     .bind(revenue)
     .execute(&mut *tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    // If rows==0, row already existed (DUPLICATE KEY)
+    // Verify pre-existing row has valid accounts (not NULL from failed insert)
+    if rows == 0 {
+        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+            "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+        ))
+        .bind(company_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+        // Idempotency check: pre-existing row must have valid accounts
+        if existing.default_receivable_account_id.is_none() || existing.default_revenue_account_id.is_none() {
+            return Err(DbError::InactiveOrInvalidAccounts);
+        }
+
+        tx.commit().await.map_err(map_db_error)?;
+        return Ok(existing);
+    }
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
@@ -314,7 +337,9 @@ pub async fn insert_with_defaults_in_tx(
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
-    sqlx::query(
+    // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
+    // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
+    let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
@@ -325,7 +350,27 @@ pub async fn insert_with_defaults_in_tx(
     .bind(revenue)
     .execute(&mut **tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    // If rows==0, row already existed (DUPLICATE KEY)
+    // Verify pre-existing row has valid accounts (not NULL from failed insert)
+    if rows == 0 {
+        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
+            "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+        ))
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+        // Idempotency check: pre-existing row must have valid accounts
+        if existing.default_receivable_account_id.is_none() || existing.default_revenue_account_id.is_none() {
+            return Err(DbError::InactiveOrInvalidAccounts);
+        }
+
+        return Ok(existing);
+    }
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
