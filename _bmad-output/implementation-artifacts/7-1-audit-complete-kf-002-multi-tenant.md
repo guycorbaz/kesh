@@ -326,6 +326,19 @@ JWT-based tenant extraction is properly implemented across all layers (middlewar
 
 ## 📋 Change Log
 
+### 2026-04-25 — Code Review Prep & Remediation Planning
+- ✅ **HIGH Issue Verified:** KF-002-H-001 fixed via P1-005 (step gating: demo reset allowed, production reset blocked at step > 2)
+- ✅ **MEDIUM Issue M-001 Addressed:** TOKEN-STORAGE-SECURITY.md created — Migration plan to httpOnly cookies (Phase 1-3 for v0.2+)
+- ✅ **MEDIUM Issue M-002 Addressed:** MULTI-TENANT-QUERY-PATTERNS.md created — QueryBuilder automation plan (deferred to v0.2)
+- ✅ **Finding Summary Updated:**
+  - **0 CRITICAL** — No issues
+  - **1 HIGH** — Fixed (step gating applied)
+  - **2 MEDIUM** — Remediation plans documented
+- 📁 **New Documentation Created:**
+  - `docs/TOKEN-STORAGE-SECURITY.md` — Token storage security guide + httpOnly migration strategy
+  - `docs/MULTI-TENANT-QUERY-PATTERNS.md` — QueryBuilder patterns + v0.2 automation roadmap
+- **Status Update:** Ready for Code Review Pass 4 (adversarial review + compliance check)
+
 ### 2026-04-24 — Audit Complete
 - ✅ **T1 Complete:** Audit des routes API (31 endpoints, 28 scoped)
 - ✅ **T2 Complete:** Audit des requêtes SQL (11 repositories, WHERE company_id pattern verified)
