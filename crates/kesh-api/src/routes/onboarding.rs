@@ -555,14 +555,24 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     }
 
     // R2-003 Fix: Add explicit rollback on final SELECT error
+    // P1-H6: Use fetch_optional and handle None explicitly instead of fetch_one panic
+    // Although FOR UPDATE lock prevents deletion, explicit None handling is safer
     let updated = match sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
         "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
          FROM onboarding_state WHERE singleton = TRUE",
     )
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
     {
-        Ok(row) => row,
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            { let _ = tx.rollback().await; }
+            return Err(AppError::Database(
+                kesh_db::errors::DbError::Invariant(
+                    "onboarding_state row disappeared after update (FOR UPDATE lock should prevent this)".into(),
+                ),
+            ));
+        }
         Err(e) => {
             { let _ = tx.rollback().await; }
             return Err(AppError::Database(map_db_error(e)));

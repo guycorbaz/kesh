@@ -137,7 +137,24 @@ pub async fn seed_demo(
     .await?;
 
     // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
-    kesh_db::repositories::company_invoice_settings::insert_with_defaults(pool, company.id).await?;
+    // P1-H3: Retry logic for account lookup timing issues (bulk_create may not be fully committed)
+    // MariaDB REPEATABLE READ isolation can cause SELECT FOR UPDATE to not see recent commits
+    let mut retries = 0;
+    let max_retries = 3;
+    loop {
+        match kesh_db::repositories::company_invoice_settings::insert_with_defaults(pool, company.id).await {
+            Ok(settings) => {
+                tracing::debug!("company_invoice_settings inserted after {} retries", retries);
+                break;
+            }
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) if retries < max_retries => {
+                retries += 1;
+                tracing::warn!("Account lookup failed (retry {}/{}), waiting for bulk_create commit", retries, max_retries);
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+            Err(e) => return Err(SeedError::Db(e)),
+        }
+    }
 
     // Mettre à jour onboarding_state → step=3, is_demo=true
     onboarding::update_step(pool, 3, true, Some(ui_mode), onboarding_version).await?;

@@ -13,7 +13,17 @@ ALTER TABLE users ADD COLUMN company_id BIGINT NULL;
 UPDATE users SET company_id = (SELECT id FROM companies ORDER BY id LIMIT 1)
 WHERE company_id IS NULL AND EXISTS (SELECT 1 FROM companies LIMIT 1);
 
--- Step 3: Add NOT NULL constraint to match Rust type (i64, non-nullable)
+-- Step 3: P1-H5 Validation — ensure backfill succeeded before adding NOT NULL constraint
+-- Fail fast with descriptive error if users exist without company_id
+-- This prevents confusing "constraint violation" error if backfill didn't run
+SELECT CASE
+  WHEN EXISTS (SELECT 1 FROM users WHERE company_id IS NULL) THEN
+    SIGNAL SQLSTATE '45000'
+    SET MESSAGE_TEXT = 'MIGRATION FAILED: Users exist without company_id. Backfill in Step 2 did not complete. Check companies table is populated before retrying migration.';
+  ELSE 1
+END;
+
+-- Step 4: Add NOT NULL constraint to match Rust type (i64, non-nullable)
 -- This enforces that every user has a company_id (no orphaned users).
 -- PREREQUISITE: Backfill must have assigned company to all existing users, OR no users exist.
 -- If this step fails, it means users exist without companies → data consistency issue.
