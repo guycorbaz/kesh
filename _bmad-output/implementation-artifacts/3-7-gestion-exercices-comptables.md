@@ -88,7 +88,7 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   - `fiscal_years::update_name` — `SELECT FOR UPDATE` sur la row avant l'UPDATE (nécessaire pour figer le before-snapshot d'audit log).
   - `fiscal_years::create` — `SELECT FOR UPDATE` (overlap + name pré-checks dans la même tx).
   - `fiscal_years::create_if_absent_in_tx` — pas de FOR UPDATE applicatif, mais l'INSERT … WHERE NOT EXISTS gère l'atomicité.
-  - **Lock order** : `fiscal_years` n'est jamais combiné avec d'autres tables dans une même tx (toutes les fns ouvrent leur propre tx interne). Pas de risk de cross-table deadlock. Le `find_open_covering_date` existant (Story 5.2) acquiert FOR UPDATE sur fiscal_years APRÈS son lock sur invoices — toujours cohérent (fiscal_years après invoices dans cette tx-là). **T1.7 (nouvelle tâche)** : ajouter une entrée pour fiscal_years dans Pattern 5 du doc `docs/MULTI-TENANT-SCOPING-PATTERNS.md`.
+  - **Lock order** : `fiscal_years` n'est jamais combiné avec d'autres tables dans une même tx (toutes les fns ouvrent leur propre tx interne). Pas de risk de cross-table deadlock. Le `find_open_covering_date` existant (Story 5.2) acquiert FOR UPDATE sur fiscal_years APRÈS son lock sur invoices — toujours cohérent (fiscal_years après invoices dans cette tx-là). **T1.12** : ajouter une entrée pour fiscal_years dans Pattern 5 du doc `docs/MULTI-TENANT-SCOPING-PATTERNS.md`.
 - **i18n keys naming** : préfixe `fiscal-year-*` pour les libellés UI, `error-fiscal-year-*` pour les codes d'erreur. Cohérent avec la convention existante (`account-*`, `contact-*`, etc.).
 - **Notification toasts** : utilise les helpers `notifySuccess` / `notifyError` (story 3.5). Pas de `toast.*` direct.
 
@@ -116,11 +116,13 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 11. **Clôture — déjà clos** — Given un exercice déjà `Closed` (race entre 2 onglets ou refresh manqué), When POST close, Then `409 Conflict` `code='ILLEGAL_STATE_TRANSITION'` (mappé par le variant existant `AppError::Database(DbError::IllegalStateTransition)`, voir `errors.rs:440-447` — pas de nouveau variant à créer) `message=t('error-fiscal-year-already-closed')`. Le frontend affiche un toast rouge et rafraîchit la liste pour resynchroniser.
 
-12. **RBAC** — Given un user Lecteur (rôle non-Admin non-Comptable), When il accède à `/settings/fiscal-years`, Then il voit la liste en lecture seule (pas de bouton « Nouvel exercice », « Renommer », « Clôturer »). Les routes POST / PUT / POST close retournent `403 Forbidden`. (V0.1 RBAC : seuls Admin et Comptable peuvent muter.)
+12. **RBAC** (Pass 2 HP2-L3) — Given un user avec rôle non-mutateur (vérifier la valeur enum exacte dans `crates/kesh-db/src/entities/user.rs` — peut être `Lecteur` ou `Consultation` ou autre), When il accède à `/settings/fiscal-years`, Then il voit la liste en lecture seule (pas de bouton « Nouvel exercice », « Renommer », « Clôturer »). Les routes POST / PUT / POST close retournent `403 Forbidden`. (V0.1 RBAC : seuls Admin et Comptable peuvent muter.) Le test T2.8 doit utiliser la valeur exacte du Role enum (vérifier avant écriture du test).
 
 13. **Onboarding Path B — auto-création** — Given un user finalise l'onboarding production (Path B, `is_demo=false`, step 7→8), When `POST /api/v1/onboarding/finalize` réussit, Then un fiscal_year est automatiquement créé pour l'année calendaire courante (`name="Exercice {YYYY}"`, `start_date={YYYY}-01-01`, `end_date={YYYY}-12-31`, `status=Open`) **uniquement si** `fiscal_years::list_by_company(company_id).is_empty()`. Si déjà un exercice existe (re-finalize ou autre), skip silencieusement.
 
-14. **Onboarding Path A — auto-création (déjà existant)** — Le `kesh_seed::seed_demo` crée déjà un fiscal_year (lignes 145-159 actuelles). **Cette story ne modifie pas seed_demo.** Vérification : un test E2E `fiscal_years_e2e::demo_path_creates_fiscal_year` valide la non-régression.
+14. **Onboarding Path A — auto-création (déjà existant)** — Le `kesh_seed::seed_demo` crée déjà un fiscal_year (lignes 145-159 actuelles). **Cette story modifie seed_demo uniquement pour passer de `create()` à `create_for_seed()`** (T1.9). Vérification : un test E2E `fiscal_years_e2e::demo_path_creates_fiscal_year` valide :
+  - le fiscal_year existe avec `status='Open'`, dates 1er janvier-31 décembre, name = `Exercice {YYYY}` ;
+  - **Pass 2 HP2-M10 — Audit log NON créé** : `audit_log::find_by_action_and_entity_type("fiscal_year.created", "fiscal_year").is_empty() == true` après seed_demo (cohérent avec décision story 3.5 sur le seed system context).
 
 15. **Audit log — création** — Given `POST /api/v1/fiscal-years` réussit, When la transaction commit, Then une entrée `audit_log` est insérée avec `action='fiscal_year.created'`, `user_id={current_user}`, `entity_type='fiscal_year'`, `entity_id={new_fy.id}`, `details_json={snapshot complet}`. Test : vérifier l'entrée via `audit_log::find_by_entity('fiscal_year', new_fy.id)`.
 
@@ -128,12 +130,13 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 17. **Audit log — close** — Given `POST /api/v1/fiscal-years/{id}/close` réussit, When commit, Then `audit_log` entry avec `action='fiscal_year.closed'`, `details_json={snapshot post-close}` (status='Closed', `updated_at` reflète automatiquement le moment de clôture via le `ON UPDATE CURRENT_TIMESTAMP(3)` du schéma). **Pas de colonne `closed_at` à référencer** (Pass 1 M-2 — la colonne n'existe pas, `updated_at` suffit). Snapshot direct (pas de wrapper — c'est une transition à 1 résultat).
 
-18. **Audit log — onboarding auto-create** — Given finalize Path B crée un fiscal_year automatiquement (AC #13), When commit, Then audit_log entry avec `action='fiscal_year.created'` et `user_id={admin du tenant}` (= `current_user.user_id` du handler finalize — le user qui finalise). Cohérent — pas de seed system bypass car finalize est une action utilisateur.
+18. **Audit log — onboarding auto-create** (Pass 2 HP2-M11) — Given finalize Path B crée un fiscal_year automatiquement (AC #13) via `create_if_absent_in_tx`, When commit, Then audit_log entry est inséré avec `action='fiscal_year.created'`, `entity_type='fiscal_year'`, `entity_id={new_fy.id}`, `user_id={current_user.user_id}` (le user qui finalise — typiquement l'admin du tenant). Cohérent — finalize est une action utilisateur (pas un seed system bypass). **Test T3.2 doit explicitement vérifier** : `audit_log::find_by_entity('fiscal_year', new_fy.id).len() == 1` + `entry.action == 'fiscal_year.created'` + `entry.user_id == admin.user_id`.
 
 19. **i18n complet** — Toutes les clés UI fiscal-year-* + error-fiscal-year-* présentes dans les 4 locales (`fr-CH`, `de-CH`, `it-CH`, `en-CH`). Aucun hardcode FR dans le code Svelte. Liste des clés (~17) dans Tasks T6.
 
 20. **Tests E2E backend** — `crates/kesh-api/tests/fiscal_years_e2e.rs` couvre les cas suivants. Setup : utiliser `spawn_app` (pattern `crates/kesh-api/tests/onboarding_e2e.rs`). Pour le test Lecteur, créer manuellement un user avec `INSERT INTO users (..., role) VALUES (..., 'Lecteur')` après spawn_app. Tous les payloads en JSON camelCase :
    - **create_happy_path** : POST `{name: "Exercice 2027", startDate: "2027-01-01", endDate: "2027-12-31"}` → 201 + body avec id, status='Open'.
+   - **create_with_injected_company_id_ignored** (Pass 2 HP2-M9 — multi-tenant defense) : avec un user de companyId=1, POST `{name: "X", startDate: ..., endDate: ..., companyId: 999}` → le backend doit ignorer la valeur du payload et forcer `company_id = current_user.company_id (=1)`. Réponse : 201 + body avec `companyId: 1` (PAS 999). Vérifier aussi en DB via `find_by_id(new_fy.id).company_id == 1`.
    - **create_overlap** (Pass 1 H-6) : pré-insérer Exercice 2027 (Jan-Dec) puis POST `{name: "Mid 2027", startDate: "2027-07-01", endDate: "2028-06-30"}` → 400 / `VALIDATION_ERROR` / message contient « overlap ».
    - **create_duplicate_name** (Pass 1 H-5) : pré-insérer Exercice 2027 puis POST `{name: "Exercice 2027", startDate: "2028-01-01", endDate: "2028-12-31"}` → 400 / `VALIDATION_ERROR` / message contient « name-duplicate » ou « déjà utilisé ».
    - **create_dates_invalid** : POST `{name: "X", startDate: "2027-12-31", endDate: "2027-01-01"}` → 400 (CHECK constraint).
@@ -158,7 +161,7 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 21. **Tests Playwright** — `frontend/tests/e2e/fiscal-years.spec.ts` : un user Comptable se connecte, navigue vers `/settings/fiscal-years`, crée un exercice 2027, valide une facture datée 2027-06-15 (réutilise infra story 5-2), confirme que l'écriture comptable est créée (la facture passe en `Validated`), revient sur `/settings/fiscal-years`, clôture l'exercice, retente une validation de facture 2027 → erreur "exercice clôturé" (FR24).
 
-22. **Fallback toast actionnable validate_invoice sans fiscal_year** (Pass 1 H-9 — epics.md:858) — Given un user qui a (manuellement ou par cas exceptionnel) une instance sans fiscal_year ouvert, When il tente `POST /invoices/{id}/validate` et reçoit `400` avec `code='NO_FISCAL_YEAR'` ou message backend mentionnant l'absence d'exercice, Then le frontend affiche un toast actionnable « Créez d'abord un exercice comptable dans Paramètres → Exercices » avec un bouton/lien qui navigue vers `/settings/fiscal-years`. Les clés i18n : `error-fiscal-year-missing` + `go-to-settings`. Implémentation T5.9.
+22. **Fallback toast actionnable sans fiscal_year ouvert** (Pass 1 H-9 + Pass 2 HP2-M3 — epics.md:858) — Given un user qui (par cas exceptionnel) a une instance sans fiscal_year ouvert couvrant la date demandée, When il tente l'un des 3 endpoints qui exigent un fiscal_year (à savoir `POST /invoices/{id}/validate`, `POST /journal-entries`, `POST /invoices/{id}/mark-as-paid`) et reçoit `400` avec `code='NO_FISCAL_YEAR'`, Then le frontend affiche un toast actionnable « Créez d'abord un exercice comptable dans Paramètres → Exercices » avec un bouton/lien qui navigue vers `/settings/fiscal-years`. Les clés i18n : `error-fiscal-year-missing` + `go-to-settings`. Implémentation centralisée via helper `notifyMissingFiscalYearOrFallback` dans `frontend/src/lib/shared/utils/notify.ts` (étend les helpers story 3.5). Tous les call sites frontend qui appellent ces 3 endpoints utilisent le helper. Voir T5.9 pour l'algorithme de vérification du code d'erreur côté backend.
 
 23. **DELETE non supporté** (Pass 1 M-11 — CO art. 957-964) — Given une tentative `DELETE /api/v1/fiscal-years/{id}`, When la requête arrive, Then la réponse est `405 Method Not Allowed` (axum renvoie automatiquement 405 si la route n'est pas enregistrée pour cette méthode). Aucun handler `delete_fiscal_year` n'est créé. Aucun bouton suppression dans l'UI. Test E2E vérifie le 405.
 
@@ -168,12 +171,24 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 - [ ] T1.1 Refactor `fiscal_years::create` :
   - Signature finale : `pub async fn create(pool: &MySqlPool, user_id: i64, new: NewFiscalYear) -> Result<FiscalYear, DbError>`.
-  - Algorithme (Pass 1 H-5 + H-6) : `tx = pool.begin()` → `find_overlapping(tx, ...) FOR UPDATE` → si Some, rollback + `Err(DbError::Invariant("overlap"))` → `find_by_name(tx, ...) FOR UPDATE` → si Some, rollback + `Err(DbError::Invariant("name-duplicate"))` → INSERT → audit_log snapshot direct → commit.
-  - Note : utiliser `Invariant("overlap")` et `Invariant("name-duplicate")` comme codes ; le handler T2.4 distingue via le contenu du `String` interne (pattern simple) ou via deux variants enum dédiés (préférer le simple pour v0.1, ajouter un commentaire si évolution future).
+  - Algorithme (Pass 1 H-5 + H-6) : `tx = pool.begin()` → `find_overlapping(tx, ...) FOR UPDATE` → si Some, rollback + `Err(DbError::Invariant(FY_OVERLAP_KEY.to_string()))` → `find_by_name(tx, ...) FOR UPDATE` → si Some, rollback + `Err(DbError::Invariant(FY_NAME_DUPLICATE_KEY.to_string()))` → INSERT → audit_log snapshot direct → commit.
+  - **Pass 2 HP2-M4** : utiliser des constantes namespacées au lieu de strings nues :
+    ```rust
+    pub const FY_OVERLAP_KEY: &str = "fiscal_year:overlap";
+    pub const FY_NAME_DUPLICATE_KEY: &str = "fiscal_year:name-duplicate";
+    pub const FY_NAME_EMPTY_KEY: &str = "fiscal_year:name-empty";
+    ```
+    Définir dans `crates/kesh-db/src/repositories/fiscal_years.rs` (top du module). Le handler T2.4 fait `match s.as_str() { FY_OVERLAP_KEY => ..., FY_NAME_DUPLICATE_KEY => ..., _ => AppError::Internal(...) }` — fallback explicite sur tout Invariant non-fiscal_year-namespacé.
 - [ ] T1.2 Ajouter `fiscal_years::create_if_absent_in_tx(tx: &mut sqlx::Transaction<'_, sqlx::MySql>, user_id: i64, new: NewFiscalYear) -> Result<Option<FiscalYear>, DbError>` — Pass 1 H-4 (insert atomique pour onboarding finalize).
-  - SQL : `INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) SELECT ?, ?, ?, ?, 'Open' WHERE NOT EXISTS (SELECT 1 FROM fiscal_years WHERE company_id = ?)`.
-  - Si `rows_affected == 1` → `SELECT id FROM fiscal_years WHERE company_id = ? AND name = ?` → audit_log → return `Some(fy)`.
+  - SQL (Pass 2 HP2-H1 — `FROM dual` requis pour portabilité MariaDB) :
+    ```sql
+    INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)
+    SELECT ?, ?, ?, ?, 'Open' FROM dual
+    WHERE NOT EXISTS (SELECT 1 FROM fiscal_years WHERE company_id = ?)
+    ```
+  - Si `rows_affected == 1` → `SELECT id FROM fiscal_years WHERE company_id = ? AND name = ?` → **insertion audit_log via `audit_log::insert_in_tx(&mut **tx, ...)` dans la même tx** → return `Some(fy)`.
   - Si `rows_affected == 0` → return `Ok(None)` (idempotent, pas d'audit).
+  - **Pass 2 HP2-M5 — Responsabilité audit log** : le helper EST responsable de l'INSERT audit_log si rows == 1. Le caller (finalize) ne fait RIEN d'audit pour ce path. Cohérent avec story 3.5 (la fn repo qui crée la donnée audite aussi).
   - Pas de FOR UPDATE applicatif — l'atomicité est garantie par la sous-requête NOT EXISTS dans la même tx.
 - [ ] T1.3 Ajouter `fiscal_years::update_name(pool: &MySqlPool, user_id: i64, id: i64, new_name: String) -> Result<FiscalYear, DbError>` — Pass 1 H-7 (signature harmonisée, **pas de `expected_version`**).
   - Validation : `new_name.trim() != ""` sinon `DbError::Invariant("name-empty")`.
@@ -190,13 +205,18 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   - SQL : `SELECT ... FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ? FOR UPDATE LIMIT 1` (chevauchement d'intervalles fermés).
 - [ ] T1.7 Ajouter `fiscal_years::find_by_name(tx: &mut Transaction, company_id: i64, name: &str) -> Result<Option<FiscalYear>, DbError>` — Pass 1 H-5 (distinguer le cas duplicate name avant l'INSERT).
   - SQL : `SELECT ... FROM fiscal_years WHERE company_id = ? AND name = ? FOR UPDATE LIMIT 1`.
-- [ ] T1.8 Ajouter `fiscal_years::create_for_seed(pool: &MySqlPool, new: NewFiscalYear) -> Result<FiscalYear, DbError>` — variante non-auditée pour `kesh_seed::seed_demo`. Cohérent avec décision story 3.5 sur `bulk_create_from_chart` (contexte système, pas utilisateur).
+- [ ] T1.8 Ajouter `fiscal_years::create_for_seed(pool: &MySqlPool, new: NewFiscalYear) -> Result<FiscalYear, DbError>` — variante non-auditée pour `kesh_seed::seed_demo` (Pass 2 HP2-M12 expansion) :
+  - **Algorithme** : identique à `create()` MAIS sans le bloc audit_log et sans paramètre user_id. La tx interne fait toujours les pré-checks `find_overlapping` + `find_by_name` (les contraintes DB doivent être respectées même en seed — empêche un double seed_demo de violer les UNIQUE).
+  - **Justification** : cohérent avec décision story 3.5 sur `bulk_create_from_chart` (contexte système, pas utilisateur). Le seed crée des données « originales » pas des actions à tracer.
+  - **Caller unique** : `kesh_seed::seed_demo` ligne ~150 (T1.9).
+  - **Signature** : pas de `user_id`. Tx interne (`pool.begin()`).
 - [ ] T1.9 Mettre à jour TOUS les callsites de `fiscal_years::create` (Pass 1 H-1) :
   - `crates/kesh-seed/src/lib.rs:~150` — remplacer par `create_for_seed(pool, new)`.
   - Tous les tests dans `crates/kesh-db/tests/fiscal_years_repository.rs` (~9 callsites — passer `user_id=1` admin de test).
   - Vérifier via `grep -rn "fiscal_years::create" crates/` qu'aucun autre callsite n'est manqué.
   - Si `journal_entries.rs:1096` ou autre route appelle `fiscal_years::create` directement (ne devrait pas mais à vérifier), passer `current_user.user_id`.
-- [ ] T1.10 Modifier `fiscal_years::list_by_company` (Pass 1 M-1) — **garder ASC en repo** (pas de breaking change pour les callers existants comme story 5.2). Le tri DESC pour l'UI sera fait côté handler T2.2 via `result.reverse()` ou un sort_by.
+  - **Pass 2 HP2-M2 — Précision sur la portée du refactor** : SEULES les fns NOUVELLES de cette story (T1.1 `create`, T1.3 `update_name`, T1.4 `close`) ont une signature audit-aware. Les fns Story 5.2 (`insert_with_defaults_in_tx`, `find_open_covering_date`, etc.) restent **inchangées** — elles n'ont jamais audité et leur scope ne change pas dans 3.7.
+- [ ] T1.10 Modifier `fiscal_years::list_by_company` (Pass 2 HP2-M8 — revenir à la décision Pass 1 originale d'avoir DESC en repo) — changer ORDER BY de `start_date ASC` à `start_date DESC` dans la requête SQL. Vérification de non-régression : les seuls callers existants sont `find_open_covering_date` (n'utilise pas l'ordre — simple SELECT WHERE date BETWEEN) et le nouveau handler list T2.2 (qui veut DESC). Aucun breaking change.
 - [ ] T1.11 Compléter les tests `crates/kesh-db/tests/fiscal_years_repository.rs` :
   - `test_create_writes_audit_log`
   - `test_create_rejects_overlap_with_existing` (Pass 1 H-6 — exercice 2027 + tentative Jul 2027-Jun 2028 → Invariant("overlap"))
@@ -210,6 +230,7 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   - `test_create_if_absent_in_tx_creates_when_empty`
   - `test_create_if_absent_in_tx_skips_when_exists`
   - `test_find_by_id_in_company_returns_none_for_other_company` (Pass 1 H-8 multi-tenant scoping)
+  - `test_close_fiscal_year_with_no_journal_entries` (Pass 2 HP2-L4, optionnel) — close sur un fiscal_year sans écritures liées → succès (status passe à Closed). Edge case marginal mais documenté.
 - [ ] T1.12 Documenter les nouveaux lock sites dans `docs/MULTI-TENANT-SCOPING-PATTERNS.md` Pattern 5 — Pass 1 M-9. Ajouter une entrée `fiscal_years::create / update_name / close / find_*_locked` à la table avec description « FOR UPDATE locks pour pré-check unicité/overlap et figer le before-snapshot d'audit log ».
 
 ### T2 — API routes : `crates/kesh-api/src/routes/fiscal_years.rs` (AC: #2-#4, #6-#11, #15-#17, #20)
@@ -218,15 +239,31 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   - `FiscalYearResponse { id, company_id (i64 → camelCase companyId), name, start_date, end_date, status (string Open/Closed), created_at, updated_at }` avec `#[serde(rename_all = "camelCase")]` (cohérent avec contacts.rs, accounts.rs).
   - `CreateFiscalYearRequest { name: String, startDate: NaiveDate, endDate: NaiveDate }`.
   - `UpdateFiscalYearRequest { name: String }`.
-- [ ] T2.2 Handler `list_fiscal_years(State, Extension<CurrentUser>) -> Vec<FiscalYearResponse>`. Appelle `fiscal_years::list_by_company(pool, current_user.company_id)` (renvoie ASC). Renverse côté handler avant retour : `result.reverse()` ou `result.sort_by(|a, b| b.start_date.cmp(&a.start_date))`. Renvoie `200`. Pass 1 M-1 fix : on ne touche pas le repo (qui reste ASC pour stories 5.2 / 3.2 callers).
+- [ ] T2.2 Handler `list_fiscal_years(State, Extension<CurrentUser>) -> Result<Json<Vec<FiscalYearResponse>>, AppError>`. Appelle `fiscal_years::list_by_company(pool, current_user.company_id)` (renvoie DESC après T1.10). Renvoie `200` + Json(Vec). Pas de tri côté handler (Pass 2 HP2-M8 — DESC déplacé dans le repo).
 - [ ] T2.3 Handler `get_fiscal_year(State, Extension<CurrentUser>, Path(id)) -> FiscalYearResponse`. Appelle `fiscal_years::find_by_id_in_company(pool, current_user.company_id, id)` (Pass 1 H-3 — query scopée directement, pas de fetch-then-check). Si `None`, retourner `AppError::Database(DbError::NotFound)` → 404 (anti-énumération — pattern story 6-2 multi-tenant audit). Pas de 403.
-- [ ] T2.4 Handler `create_fiscal_year(State, Extension<CurrentUser>, Json<CreateFiscalYearRequest>) -> 201 + FiscalYearResponse`. Construit `NewFiscalYear { company_id: current_user.company_id, name, start_date, end_date }`. Appelle `fiscal_years::create(pool, current_user.user_id, new)`. Map les erreurs DB (Pass 1 H-5) :
-  - `DbError::Invariant("overlap")` → `AppError::Validation(t("error-fiscal-year-overlap"))`.
-  - `DbError::Invariant("name-duplicate")` → `AppError::Validation(t("error-fiscal-year-name-duplicate"))`.
-  - `DbError::Invariant("name-empty")` → `AppError::Validation(t("error-fiscal-year-name-empty"))` (cas extrême, devrait être validé côté frontend).
-  - `DbError::CheckConstraintViolation` → `AppError::Validation(t("error-fiscal-year-dates-invalid"))` (filet de sécurité si bypass frontend).
-  - `DbError::UniqueConstraintViolation` → `AppError::Validation(t("error-fiscal-year-conflict"))` (filet de sécurité — ne devrait jamais arriver après les pré-checks T1.6/T1.7).
-  - `DbError::ForeignKeyViolation` → `AppError::Internal` (ne devrait jamais arriver — JWT garantit company_id valide).
+- [ ] T2.4 Handler `create_fiscal_year(State, Extension<CurrentUser>, Json<CreateFiscalYearRequest>) -> 201 + FiscalYearResponse`. Construit `NewFiscalYear { company_id: current_user.company_id, name, start_date, end_date }`. Appelle `fiscal_years::create(pool, current_user.user_id, new)`. Map les erreurs DB (Pass 1 H-5 + Pass 2 HP2-M4 namespaced keys) :
+  ```rust
+  match result {
+      Ok(fy) => Ok((StatusCode::CREATED, Json(FiscalYearResponse::from(fy)))),
+      Err(DbError::Invariant(s)) if s == repositories::fiscal_years::FY_OVERLAP_KEY =>
+          Err(AppError::Validation(t("error-fiscal-year-overlap"))),
+      Err(DbError::Invariant(s)) if s == repositories::fiscal_years::FY_NAME_DUPLICATE_KEY =>
+          Err(AppError::Validation(t("error-fiscal-year-name-duplicate"))),
+      Err(DbError::Invariant(s)) if s == repositories::fiscal_years::FY_NAME_EMPTY_KEY =>
+          Err(AppError::Validation(t("error-fiscal-year-name-empty"))),
+      Err(DbError::CheckConstraintViolation(_)) =>
+          Err(AppError::Validation(t("error-fiscal-year-dates-invalid"))),
+      Err(DbError::UniqueConstraintViolation(_)) =>
+          Err(AppError::Validation(t("error-fiscal-year-conflict"))), // filet sécurité après pré-checks
+      Err(DbError::ForeignKeyViolation(_)) =>
+          Err(AppError::Internal("FK violation impossible (JWT scope) — investigate".into())),
+      Err(e) => {
+          // Pass 2 HP2-M6 — fallback transient errors (pool exhaustion, conn drop, ...) avec log
+          tracing::error!("unexpected DbError in create_fiscal_year: {e}");
+          Err(AppError::Internal(format!("DB error: {e}")))
+      }
+  }
+  ```
 - [ ] T2.5 Handler `update_fiscal_year(State, Extension<CurrentUser>, Path(id), Json<UpdateFiscalYearRequest>) -> 200 + FiscalYearResponse`. Vérification multi-tenant via `fiscal_years::find_by_id_in_company` (Pass 1 H-3) — si None, 404. Si Some, appelle `update_name(pool, current_user.user_id, id, new_name)`. Map :
   - `DbError::NotFound` → 404 (race entre find et update — improbable, mais propagation propre).
   - `DbError::Invariant("name-empty")` → `AppError::Validation(t("error-fiscal-year-name-empty"))`.
@@ -239,6 +276,8 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 ### T3 — Onboarding finalize Path B auto-create (AC: #13, #14, #18, #20)
 
+> **Prerequisites (Pass 2 HP2-L1)** : T3.0 doit être terminé AVANT T3.1 (le snippet de T3.1 utilise `current_user` qui n'existe que si T3.0 a ajouté l'extracteur).
+
 - [ ] **T3.0 (PRÉREQUIS — Pass 1 C-2)** — Ajouter `Extension<CurrentUser>` à la signature du handler `finalize`. Aujourd'hui `pub async fn finalize(State(state): State<AppState>) -> ...`. Doit devenir `pub async fn finalize(State(state): State<AppState>, Extension(current_user): Extension<CurrentUser>) -> ...`. Cohérent avec les handlers post-Story 3.5 (create_journal_entry, etc.). Aucun caller direct (axum injecte automatiquement via le router). Tests E2E continueront de fonctionner car l'auth middleware injecte `CurrentUser` en amont.
 - [ ] T3.1 Modifier `crates/kesh-api/src/routes/onboarding.rs::finalize`. Après `insert_with_defaults_in_tx` et avant le UPDATE step_completed=8, ajouter un bloc avec **insert atomique anti-TOCTOU (Pass 1 H-4)** :
   ```rust
@@ -250,9 +289,10 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   let fy_name = format!("Exercice {year}");
   let fy_start = chrono::NaiveDate::from_ymd_opt(year, 1, 1).expect("valid");
   let fy_end = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("valid");
+  // Pass 2 HP2-H1: `FROM dual` requis pour portabilité MariaDB.
   let inserted_rows = sqlx::query(
       "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-       SELECT ?, ?, ?, ?, 'Open' \
+       SELECT ?, ?, ?, ?, 'Open' FROM dual \
        WHERE NOT EXISTS (SELECT 1 FROM fiscal_years WHERE company_id = ?)"
   )
   .bind(company.id).bind(&fy_name).bind(fy_start).bind(fy_end).bind(company.id)
@@ -296,9 +336,22 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   ```
 - [ ] T4.2 Créer `fiscal-years.api.ts` avec 5 fonctions typées : `listFiscalYears()`, `getFiscalYear(id)`, `createFiscalYear(req)`, `updateFiscalYear(id, req)`, `closeFiscalYear(id)`. Utiliser `apiClient` (pattern accounts/contacts).
 - [ ] T4.3 Créer `fiscal-years.helpers.ts` (Pass 1 M-6 — pluriel cohérent avec api.ts/types.ts) :
-  - `validateFiscalYearForm({ name, startDate, endDate }): string | null` — retourne null si OK ou clé i18n d'erreur (`'error-fiscal-year-name-empty'` | `'error-fiscal-year-dates-invalid'`).
+  - `validateFiscalYearForm(input: CreateFiscalYearRequest): string | null` — Pass 2 HP2-M7 logique complète :
+    ```ts
+    export function validateFiscalYearForm(input: CreateFiscalYearRequest): string | null {
+      if (!input.name.trim()) return 'error-fiscal-year-name-empty';
+      const start = new Date(input.startDate);
+      const end = new Date(input.endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return 'error-fiscal-year-dates-invalid';
+      }
+      if (end <= start) return 'error-fiscal-year-dates-invalid';
+      return null;
+    }
+    ```
+    Retourne `null` si OK, sinon une clé i18n (le caller la passe à `t()`).
   - `formatFiscalYearLabel(fy: FiscalYearResponse): string` — format affichage (`"Exercice 2027 (Open)"`).
-  - `currentYearDefaults(): { name: string; startDate: string; endDate: string }` — retourne `{ name: 'Exercice {YYYY}', startDate: '{YYYY}-01-01', endDate: '{YYYY}-12-31' }` calculé via `new Date().getFullYear()` (pas de hardcode 2027).
+  - `currentYearDefaults(): { name: string; startDate: string; endDate: string }` — retourne `{ name: 'Exercice {YYYY}', startDate: '{YYYY}-01-01', endDate: '{YYYY}-12-31' }` calculé via `new Date().getFullYear()` (pas de hardcode).
 
 ### T5 — Frontend UI page (AC: #1-#11)
 
@@ -310,14 +363,19 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 - [ ] T5.6 Gestion des erreurs : `try/catch` + `notifyError(t(err.code))`. Pattern story 3.5.
 - [ ] T5.7 Lien dans `frontend/src/routes/(app)/settings/+page.svelte` vers `/settings/fiscal-years` (nouvelle ligne dans la home settings).
 - [ ] T5.8 RBAC frontend : depuis `currentUser.role` (déjà disponible via store auth), masquer les boutons mutateurs si rôle != Admin && != Comptable. Le backend reste la source de vérité (403 si bypass).
-- [ ] T5.9 Fallback toast actionnable (Pass 1 H-9 — AC #22) — dans le handler d'erreur de `validate_invoice` côté frontend (`frontend/src/lib/features/invoices/`), détecter le cas où l'erreur backend est `code='NO_FISCAL_YEAR'` ou message contient « exercice » et afficher un toast avec un lien cliquable :
-  ```svelte
-  toast.error(
-    msg('error-fiscal-year-missing', "Créez d'abord un exercice comptable"),
-    { action: { label: msg('go-to-settings', 'Ouvrir Paramètres'), onClick: () => goto('/settings/fiscal-years') } }
-  );
-  ```
-  Vérifier que `svelte-sonner` supporte les actions cliquables dans les toasts (sinon fallback : toast simple + bouton dédié dans la page facture).
+- [ ] T5.9 Fallback toast actionnable (Pass 1 H-9 + Pass 2 HP2-M3 — AC #22) :
+  - **Étape T5.9.0 — Vérification prérequis** :
+    1. `grep -rn "NO_FISCAL_YEAR" crates/kesh-api/src/` pour confirmer que ce code d'erreur existe (Story 5.2). Si absent, ajouter `AppError::NoFiscalYear { date: String }` (mapping HTTP 400 + code `NO_FISCAL_YEAR`) dans `errors.rs` ET dans les handlers `validate_invoice`, `journal_entries::create` (story 3.2), `mark_as_paid` (story 5.4) qui retournent ce code quand `find_open_covering_date` retourne None.
+    2. Pour Pass 2 supposer présent (Story 5.2 `errors.rs` ligne ~314 a un mapping similaire `NO_FISCAL_YEAR`).
+  - **Étape T5.9.1 — Frontend invoice handler** : dans `frontend/src/lib/features/invoices/` (vérifier le path exact via `ls frontend/src/lib/features/invoices/`), trouver l'endroit qui appelle `validate_invoice` (probablement dans `invoices.api.ts` ou un composant qui catch l'erreur). Détecter `err.code === 'NO_FISCAL_YEAR'` et afficher :
+    ```svelte
+    toast.error(
+      msg('error-fiscal-year-missing', "Créez d'abord un exercice comptable"),
+      { action: { label: msg('go-to-settings', 'Ouvrir Paramètres'), onClick: () => goto('/settings/fiscal-years') } }
+    );
+    ```
+  - **Étape T5.9.2 — Étendre à `journal_entries::create` + `mark_as_paid`** (Pass 2 HP2-M3) : les mêmes invariants FR24 s'appliquent. Tous les call sites frontend qui appellent ces 3 endpoints (validate_invoice, create_journal_entry, mark_as_paid) doivent utiliser le même handler de fallback. Centraliser via un helper `notifyMissingFiscalYearOrFallback(err)` dans `frontend/src/lib/shared/utils/notify.ts` (étendre le module story 3.5).
+  - **Étape T5.9.3 — Vérifier `svelte-sonner` action support** : si le toast.error avec `action` ne fonctionne pas (API check via `npm list svelte-sonner` puis lecture des types), fallback : toast simple + un Banner Svelte dédié au-dessus du bouton « Valider la facture » qui apparaît au state d'erreur.
 
 ### T6 — i18n (AC: #19)
 
@@ -499,3 +557,4 @@ frontend/tests/e2e/
 | ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------|
 | 2026-04-27 | 0.1     | Story créée via bmad-create-story après merge Story 7-1. Re-ouvre Epic 3 (was done).                                                                                                                                                                                                 | Claude Opus 4.7 (1M context)        |
 | 2026-04-27 | 0.2     | Pass 1 spec validate (3 reviewers Sonnet) → 25 patches : C-1 T7 supprimé (variant existe déjà), C-2 finalize Extension<CurrentUser>, H-1 callsites list, H-2 PATCH→PUT, H-3 find_by_id_in_company, H-4 atomic insert anti-TOCTOU, H-5 UNIQUE differentiation, H-6 overlap detection, H-7 update_name signature, H-8 IDOR tests, H-9 fallback toast AC #22, MEDIUM cleanup (closed_at→updated_at, file naming, best_effort_rollback, ASC vs DESC, Pattern 5 doc, +AC #23 DELETE 405). Trend Pass 1: 22 findings >LOW. | Claude Opus 4.7 (1M context)        |
+| 2026-04-27 | 0.3     | Pass 2 spec validate (3 reviewers Haiku) → 17 patches : HP2-H1 SQL `FROM dual` requis, HP2-M1 cross-ref T1.7→T1.12, HP2-M2 portée refactor (uniquement nouvelles fns), HP2-M3 cluster AC #22 (étendu à journal_entries::create + mark_as_paid via helper notify), HP2-M4 constantes namespacées Invariant keys, HP2-M5 audit responsibility helper vs caller, HP2-M6 fallback transient errors avec log, HP2-M7 validateFiscalYearForm logique complète, HP2-M8 ORDER BY DESC dans repo, HP2-M9 test injection companyId, HP2-M10 audit-not-created assertion seed, HP2-M11 audit log Path B finalize assertion, HP2-M12 create_for_seed expansion, +LOWs (T3.0 prerequisite explicit, role enum verification, close empty optional). Trend Pass 2: 13 findings >LOW (vs 22 Pass 1, -41%). | Claude Opus 4.7 (1M context)        |
