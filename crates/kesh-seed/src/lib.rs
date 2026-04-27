@@ -97,12 +97,10 @@ pub async fn seed_demo(
         // Under FOR UPDATE the count is observed atomically with the subsequent update.
         if companies_locked.len() != 1 {
             tx.rollback().await.ok();
-            return Err(SeedError::Db(kesh_db::errors::DbError::Invariant(
-                format!(
-                    "Expected exactly 1 company for seed_demo, found {}",
-                    companies_locked.len()
-                ),
-            )));
+            return Err(SeedError::Db(kesh_db::errors::DbError::Invariant(format!(
+                "Expected exactly 1 company for seed_demo, found {}",
+                companies_locked.len()
+            ))));
         }
         let company = companies_locked.into_iter().next().expect("len checked");
 

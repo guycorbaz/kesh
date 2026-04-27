@@ -606,24 +606,25 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
     // change (P1-004 + P1-007); it has been removed in this pass.
     // Open follow-up: KF-002-CR-001 (issue #44) — fallback UI to add missing accounts
     // during onboarding so the user has a recovery path.
-    let _settings = match kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
-        &mut tx, company.id,
-    )
-    .await
-    {
-        Ok(s) => s,
-        Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
-            best_effort_rollback(tx).await;
-            return Err(AppError::Validation(
+    let _settings =
+        match kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
+            &mut tx, company.id,
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+                best_effort_rollback(tx).await;
+                return Err(AppError::Validation(
                 "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
                  Veuillez ajouter ces comptes avant de finaliser l'onboarding.".into(),
             ));
-        }
-        Err(e) => {
-            best_effort_rollback(tx).await;
-            return Err(AppError::Database(e));
-        }
-    };
+            }
+            Err(e) => {
+                best_effort_rollback(tx).await;
+                return Err(AppError::Database(e));
+            }
+        };
 
     // Mark onboarding as complete while holding locks.
     // P15: under FOR UPDATE the singleton row cannot be modified by another tx,
