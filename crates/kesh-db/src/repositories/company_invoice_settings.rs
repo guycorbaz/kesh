@@ -266,24 +266,33 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .rows_affected();
 
-    // If rows==0, row already existed (DUPLICATE KEY)
-    // Verify pre-existing row has valid accounts (not NULL from failed insert)
+    // If rows==0, row already existed (DUPLICATE KEY).
+    // P16: validate that the referenced accounts are still alive (not soft-deleted).
+    // Pure NULL re-check on the row would be dead defense — the new fail-fast path
+    // can no longer insert NULLs. Joining on accounts.active=TRUE catches the case
+    // where a previously-good FK now points to a deactivated account.
     if rows == 0 {
         let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-            "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+            "SELECT {COLUMNS} FROM company_invoice_settings cis \
+             JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
+             JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
+             WHERE cis.company_id = ?"
         ))
         .bind(company_id)
-        .fetch_one(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(map_db_error)?;
 
-        // Idempotency check: pre-existing row must have valid accounts
-        if existing.default_receivable_account_id.is_none() || existing.default_revenue_account_id.is_none() {
-            return Err(DbError::InactiveOrInvalidAccounts);
+        match existing {
+            Some(row) => {
+                tx.commit().await.map_err(map_db_error)?;
+                return Ok(row);
+            }
+            None => {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::InactiveOrInvalidAccounts);
+            }
         }
-
-        tx.commit().await.map_err(map_db_error)?;
-        return Ok(existing);
     }
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
@@ -353,23 +362,24 @@ pub async fn insert_with_defaults_in_tx(
     .map_err(map_db_error)?
     .rows_affected();
 
-    // If rows==0, row already existed (DUPLICATE KEY)
-    // Verify pre-existing row has valid accounts (not NULL from failed insert)
+    // If rows==0, row already existed (DUPLICATE KEY).
+    // P16: validate FK liveness via JOIN on accounts.active = TRUE (cf. pool variant).
     if rows == 0 {
         let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-            "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+            "SELECT {COLUMNS} FROM company_invoice_settings cis \
+             JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
+             JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
+             WHERE cis.company_id = ?"
         ))
         .bind(company_id)
-        .fetch_one(&mut **tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
-        // Idempotency check: pre-existing row must have valid accounts
-        if existing.default_receivable_account_id.is_none() || existing.default_revenue_account_id.is_none() {
-            return Err(DbError::InactiveOrInvalidAccounts);
-        }
-
-        return Ok(existing);
+        return match existing {
+            Some(row) => Ok(row),
+            None => Err(DbError::InactiveOrInvalidAccounts),
+        };
     }
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(

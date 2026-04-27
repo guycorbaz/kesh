@@ -351,6 +351,77 @@ async fn reset_clears_demo_data(pool: MySqlPool) {
     assert!(body["uiMode"].is_null());
 }
 
+/// P8 / H4 — even if `is_demo = true` (potentially corrupted flag), `reset()` must
+/// refuse to wipe a finalized onboarding (step >= 7). The secondary step gate is
+/// the security floor; the is_demo flag alone is not sufficient.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reset_blocks_step_7_even_when_is_demo_flag_is_true(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    // Initialize onboarding_state, then forge a corrupted state: is_demo=true + step=7
+    // simulates either DB tampering or a bug that flipped is_demo on a finalized tenant.
+    sqlx::query("INSERT INTO onboarding_state (singleton, step_completed, is_demo, ui_mode, version) VALUES (TRUE, 7, TRUE, 'guided', 1)")
+        .execute(&pool)
+        .await
+        .expect("seed onboarding_state row");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/reset"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "reset() must refuse step >= 7 regardless of is_demo"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
+
+    // Verify the state was NOT wiped
+    let row: (i32, bool) = sqlx::query_as(
+        "SELECT step_completed, is_demo FROM onboarding_state WHERE singleton = TRUE",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read onboarding_state");
+    assert_eq!(row.0, 7, "step must remain 7 after refused reset");
+    assert!(row.1, "is_demo must remain true after refused reset");
+}
+
+/// P8 / P4 — production path (is_demo=false) past step 2 must always be blocked,
+/// regardless of KESH_PRODUCTION_RESET. This is the strict outer gate.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reset_blocks_production_past_step_2(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    sqlx::query("INSERT INTO onboarding_state (singleton, step_completed, is_demo, ui_mode, version) VALUES (TRUE, 5, FALSE, 'expert', 1)")
+        .execute(&pool)
+        .await
+        .expect("seed onboarding_state row");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/reset"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn seed_demo_at_wrong_step_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;

@@ -69,26 +69,46 @@ pub async fn seed_demo(
 ) -> Result<(), SeedError> {
     let lang = locale_to_language(locale);
 
-    // Récupérer la company existante (créée par ensure_company_with_language)
-    // et la mettre à jour avec les infos démo
+    // P6: Lock-and-validate the singleton company row inside a short tx before
+    // running the seed work. The FOR UPDATE lock blocks a concurrent reset_demo
+    // (or another seed_demo) from racing the list/update pair.
+    //
+    // Residual race window (acceptable for v0.1):
+    // - bulk_create_from_chart and fiscal_years::create commit their own
+    //   transactions outside this lock. If seed_demo aborts after they
+    //   commit, the company is left with orphaned accounts/fiscal_year
+    //   until reset_demo cleans up.
+    // - The retry loop on insert_with_defaults below tolerates the cross-tx
+    //   visibility gap; the single-tx refactor that eliminates both issues
+    //   is tracked under KF-002-H-002 (v0.2).
     let company = {
-        let list = companies::list(pool, 1, 0).await?;
+        let mut tx = pool.begin().await?;
+        let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
+            "SELECT id, name, address, ide_number, org_type, accounting_language, \
+                    instance_language, version, created_at, updated_at \
+             FROM companies ORDER BY id FOR UPDATE",
+        )
+        .fetch_all(&mut *tx)
+        .await?;
 
-        // P1-C2: Validate exactly 1 company exists (prevent corruption from race conditions)
-        // If multiple companies exist, seed_demo would corrupt wrong company
-        if list.len() != 1 {
+        // P1-C2: Validate exactly 1 company exists (prevent corruption from race conditions).
+        // Under FOR UPDATE the count is observed atomically with the subsequent update.
+        if companies_locked.len() != 1 {
+            tx.rollback().await.ok();
             return Err(SeedError::Db(kesh_db::errors::DbError::Invariant(
-                format!("Expected exactly 1 company for seed_demo, found {}", list.len()),
+                format!(
+                    "Expected exactly 1 company for seed_demo, found {}",
+                    companies_locked.len()
+                ),
             )));
         }
+        let company = companies_locked.into_iter().next().expect("len checked");
 
-        let company = list.into_iter().next().ok_or_else(|| {
-            SeedError::Db(kesh_db::errors::DbError::Invariant(
-                "Aucune company existante pour seed_demo".into(),
-            ))
-        })?;
+        // Release the lock before calling companies::update — that helper opens its
+        // own transaction, and holding the FOR UPDATE here would deadlock against it.
+        tx.commit().await?;
 
-        // Update company with demo info
+        // Update company with demo info (optimistic version check inside).
         use kesh_db::entities::CompanyUpdate;
         companies::update(
             pool,
@@ -136,25 +156,38 @@ pub async fn seed_demo(
     )
     .await?;
 
-    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000)
-    // P1-H3: Retry logic for account lookup timing issues (bulk_create may not be fully committed)
-    // MariaDB REPEATABLE READ isolation can cause SELECT FOR UPDATE to not see recent commits
-    // Simple retry without sleep — DB commits are typically very fast in practice
+    // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000).
+    // P1-H3 / P7: Retry with backoff for account lookup timing issues.
+    // bulk_create_from_chart commits in its own tx; under MariaDB REPEATABLE READ a
+    // separate session may not see the freshly-committed accounts immediately.
+    // 50 ms backoff between retries gives the inserter time to flush and avoids
+    // a busy-spin that would never resolve a permanent misconfiguration.
+    // Permanent missing-account misconfig surfaces as Err after max_retries.
     let mut retries = 0;
     let max_retries = 3;
     loop {
-        match kesh_db::repositories::company_invoice_settings::insert_with_defaults(pool, company.id).await {
+        match kesh_db::repositories::company_invoice_settings::insert_with_defaults(
+            pool, company.id,
+        )
+        .await
+        {
             Ok(_settings) => {
                 if retries > 0 {
-                    tracing::debug!("company_invoice_settings inserted successfully (after {} retry attempts)", retries);
+                    tracing::debug!(
+                        "company_invoice_settings inserted successfully (after {} retry attempts)",
+                        retries
+                    );
                 }
                 break;
             }
             Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) if retries < max_retries => {
                 retries += 1;
-                tracing::warn!("Account lookup failed (attempt {}/{}), retrying immediately", retries, max_retries);
-                // Retry loop runs fast enough; no explicit sleep needed
-                // If this consistently fails, increase max_retries or add a sync barrier
+                tracing::warn!(
+                    "Account lookup failed (attempt {}/{}), retrying after backoff",
+                    retries,
+                    max_retries
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
             Err(e) => return Err(SeedError::Db(e)),
         }

@@ -5,6 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { onboardingState, i18nMsg, loadI18nMessages } from '$lib/features/onboarding/onboarding.svelte';
 	import { modeState } from '$lib/app/stores/mode.svelte';
+	import { isApiError } from '$lib/shared/utils/api-client';
 	import { toast } from 'svelte-sonner';
 
 	function msg(key: string, fallback: string): string {
@@ -97,6 +98,32 @@
 	let bankIban = $state('');
 	let bankQrIban = $state('');
 
+	// P9: distinguish bank-step errors from finalize() errors so the user gets an
+	// actionable message and doesn't end up stuck at /onboarding step 7 with the
+	// bank account already saved.
+	function reportFinalizeError(err: unknown) {
+		if (!isApiError(err)) {
+			toast.error(msg('error-internal', 'Finalisation échouée — réessayez.'));
+			return;
+		}
+		if (err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
+			toast.error(
+				msg(
+					'onboarding-already-finalized',
+					"L'onboarding est déjà finalisé. Veuillez recharger la page."
+				)
+			);
+			return;
+		}
+		if (err.code === 'VALIDATION') {
+			// Backend signalled a configuration gap (e.g. accounts 1100/3000 missing).
+			// Show the backend message verbatim so the user sees the remediation.
+			toast.error(err.message);
+			return;
+		}
+		toast.error(msg('error-internal', 'Finalisation échouée — réessayez.'));
+	}
+
 	async function submitBankAccount() {
 		if (!bankName.trim() || !bankIban.trim()) {
 			toast.error(msg('error-validation', 'Nom de banque et IBAN sont obligatoires'));
@@ -108,20 +135,38 @@
 				bankIban.trim(),
 				bankQrIban.trim() || null
 			);
+		} catch (err) {
+			toast.error(
+				isApiError(err) && err.message
+					? err.message
+					: msg('error-internal', 'Erreur lors de la sauvegarde du compte bancaire')
+			);
+			return;
+		}
+		try {
 			await onboardingState.finalize();
 			goto('/');
-		} catch {
-			toast.error(msg('error-internal', 'Erreur lors de la sauvegarde du compte bancaire'));
+		} catch (err) {
+			reportFinalizeError(err);
 		}
 	}
 
 	async function handleSkipBank() {
 		try {
 			await onboardingState.skipBank();
+		} catch (err) {
+			toast.error(
+				isApiError(err) && err.message
+					? err.message
+					: msg('error-internal', 'Erreur lors du saut du compte bancaire')
+			);
+			return;
+		}
+		try {
 			await onboardingState.finalize();
 			goto('/');
-		} catch {
-			toast.error(msg('error-internal', 'Erreur'));
+		} catch (err) {
+			reportFinalizeError(err);
 		}
 	}
 

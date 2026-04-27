@@ -13,9 +13,10 @@
 3. [Pattern 2: JWT-Embedded Tenant ID](#pattern-2-jwt-embedded-tenant-id)
 4. [Pattern 3: Repository-Level Filtering](#pattern-3-repository-level-filtering)
 5. [Pattern 4: Defensive Validation](#pattern-4-defensive-validation)
-6. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
-7. [Testing Multi-Tenant Scoping](#testing-multi-tenant-scoping)
-8. [Automation Opportunities](#automation-opportunities)
+6. [Pattern 5: Lock Ordering for Multi-Statement Transactions](#pattern-5-lock-ordering-for-multi-statement-transactions)
+7. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
+8. [Testing Multi-Tenant Scoping](#testing-multi-tenant-scoping)
+9. [Automation Opportunities](#automation-opportunities)
 
 ---
 
@@ -278,6 +279,84 @@ pub async fn list_invoices(
 1. **Catches stale JWT:** If company deleted, request fails clearly
 2. **Catches reassignment:** If user moved to different company, doesn't get stale data
 3. **Explicit not implicit:** Handler code clearly shows the validation
+
+---
+
+## Pattern 5: Lock Ordering for Multi-Statement Transactions
+
+**Files:** `crates/kesh-api/src/routes/onboarding.rs`, any handler taking multiple `SELECT FOR UPDATE` locks
+
+### Why Lock Ordering Matters
+
+When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), MariaDB does not detect cross-table deadlocks proactively. Two concurrent transactions acquiring the same locks **in reverse order** will deadlock until `innodb_lock_wait_timeout` (50s default) elapses, returning a 500 to the user.
+
+### Global Lock Order (v0.1)
+
+**All transactions that lock more than one row MUST acquire locks in this order:**
+
+```
+1. onboarding_state  (singleton row, taken first)
+2. companies         (target company row)
+3. accounts          (account rows for the target company)
+4. company_invoice_settings  (settings row for the target company)
+```
+
+Rationale: this matches the natural dependency direction (state machine → tenant → tenant data → tenant settings). Reverse-order acquisition creates a deadlock cycle.
+
+### Where This Applies
+
+| Endpoint | Lock sequence | File |
+|----------|---------------|------|
+| `POST /onboarding/finalize` | onboarding_state → company → accounts → settings | `routes/onboarding.rs` finalize |
+| `POST /onboarding/coordinates`, `/org-type`, `/accounting-language` | company only (single lock, safe) | same |
+| `kesh_seed::seed_demo` | (currently no locks — see KF-002-H-002) | `kesh-seed/src/lib.rs` |
+
+### Known Risk — Tracked as KF-002-H-002
+
+**Issue:** `seed_demo` and `reset_demo` currently take no `FOR UPDATE` locks; they rely on optimistic version checks. If a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`. No deadlock-detection retry is implemented; failures surface as 500 after `innodb_lock_wait_timeout`.
+
+**Mitigation (v0.1):** all current write endpoints follow the documented order. New endpoints **MUST** follow it or be added to a deny list.
+
+**Resolution plan (v0.2):**
+- Add a deadlock-retry middleware that catches `ER_LOCK_DEADLOCK` (1213) and retries with exponential backoff (max 3 attempts)
+- Document any endpoint that intentionally diverges from the global order
+- Add CI check that grep-detects `FOR UPDATE` patterns and verifies lock order via static analysis
+
+### When to Use
+
+✅ Apply this rule when a transaction:
+- Calls `SELECT ... FOR UPDATE` on more than one table
+- Calls a helper function that itself locks (transitive locking)
+- Calls a repository fn whose internal locks are not documented (audit it before extending)
+
+❌ Single-row locks don't need this discipline — but document the lock acquisition site so reviewers can spot it later.
+
+### Code Reference
+
+```rust
+// CORRECT: lock in documented order
+async fn finalize() -> Result<...> {
+    let mut tx = pool.begin().await?;
+    let state = sqlx::query_as!("SELECT ... FROM onboarding_state ... FOR UPDATE")  // 1st
+        .fetch_one(&mut *tx).await?;
+    let company = sqlx::query_as!("SELECT ... FROM companies ORDER BY id LIMIT 1 FOR UPDATE")  // 2nd
+        .fetch_one(&mut *tx).await?;
+    insert_with_defaults_in_tx(&mut tx, company.id).await?;  // 3rd: locks accounts internally
+    tx.commit().await?;
+}
+```
+
+```rust
+// WRONG: reverse order will deadlock against finalize
+async fn bad_handler() -> Result<...> {
+    let mut tx = pool.begin().await?;
+    let accounts = sqlx::query!("SELECT ... FROM accounts WHERE ... FOR UPDATE")  // accounts FIRST
+        .fetch_all(&mut *tx).await?;
+    let state = sqlx::query!("SELECT ... FROM onboarding_state ... FOR UPDATE")  // onboarding_state SECOND
+        .fetch_one(&mut *tx).await?;
+    // Deadlock cycle: this tx holds accounts, finalize() holds onboarding_state, both wait
+}
+```
 
 ---
 
