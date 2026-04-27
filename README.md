@@ -24,12 +24,12 @@
 
 - **Comptabilité en partie double** — plan comptable suisse, écritures validées, audit log
 - **Carnet d'adresses & catalogue produits** — contacts, conditions de paiement, TVA
-- **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse *(à venir)*
+- **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse
 - **Import bancaire CAMT.053 / CSV** — réconciliation automatique *(à venir)*
 - **Paiements pain.001.001.03** — fichiers de paiement ISO 20022 *(à venir)*
 - **TVA suisse** — calcul et rapports par période *(à venir)*
 - **Multilingue** — FR, DE, IT, EN
-- **Multi-utilisateurs** — RBAC avec rôles, JWT + refresh tokens
+- **Multi-utilisateurs** — RBAC avec rôles, JWT + refresh tokens, isolation multi-tenant par `company_id`
 
 ## Pile technique
 
@@ -155,9 +155,10 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 
 | Version | Epics | Statut |
 |---------|-------|--------|
-| v0.1 | Fondations, Onboarding, Plan comptable, Carnet d'adresses | ✅ Done |
-| v0.1 | Facturation QR Bill, Import bancaire, Rapports, Déploiement | 🚧 En cours |
-| v0.2 | TVA, Avoirs & paiements, Budgets, Clôture, Lettrage | 📋 Backlog |
+| v0.1 | E1 Fondations & Authentification, E2 Onboarding & Configuration, E3 Plan comptable & Écritures, E4 Carnet d'adresses & Catalogue, E5 Facturation QR Bill, E6 Qualité & CI/CD | ✅ Done |
+| v0.1 | E7 Technical Debt Closure | 🚧 En cours |
+| v0.1 | E8 Import bancaire & Réconciliation, E9 Rapports & Exports, E10 Déploiement & Opérations | 📋 Backlog |
+| v0.2 | E11 TVA Suisse, E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs & Lettrage | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
 
