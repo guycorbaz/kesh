@@ -309,13 +309,14 @@ Rationale: this matches the natural dependency direction (state machine → tena
 |----------|---------------|------|
 | `POST /onboarding/finalize` | onboarding_state → company → accounts → settings | `routes/onboarding.rs` finalize |
 | `POST /onboarding/coordinates`, `/org-type`, `/accounting-language` | company only (single lock, safe) | same |
-| `kesh_seed::seed_demo` | (currently no locks — see KF-002-H-002) | `kesh-seed/src/lib.rs` |
+| `POST /onboarding/reset` | onboarding_state (gate-check only — released before reset_demo) | `routes/onboarding.rs` reset |
+| `kesh_seed::seed_demo` | companies (count-validation only — released before destructive ops) | `kesh-seed/src/lib.rs` |
 
 ### Known Risk — Tracked as KF-002-H-002
 
-**Issue:** `seed_demo` and `reset_demo` currently take no `FOR UPDATE` locks; they rely on optimistic version checks. If a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`. No deadlock-detection retry is implemented; failures surface as 500 after `innodb_lock_wait_timeout`.
+**Issue:** `seed_demo` and `reset` use a **lock-and-release** pattern: they acquire `FOR UPDATE` only for count-validation (seed_demo) or gate-check (reset), then **commit before** the destructive sub-operation runs (`bulk_create_from_chart`, `companies::update`, `reset_demo`). The lock therefore serializes only the precondition check, NOT the side-effect. A concurrent endpoint running between commit and side-effect can leave inconsistent state visible (handled via `DbError::NotFound`/`OptimisticLockConflict` retries today). Additionally, if a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`. No deadlock-detection retry is implemented; failures surface as 500 after `innodb_lock_wait_timeout`.
 
-**Mitigation (v0.1):** all current write endpoints follow the documented order. New endpoints **MUST** follow it or be added to a deny list.
+**Mitigation (v0.1):** all current write endpoints follow the documented order. New endpoints **MUST** follow it or be added to a deny list. Under single-tenant single-user the lock-and-release race window is unreachable in practice.
 
 **Resolution plan (v0.2):**
 - Add a deadlock-retry middleware that catches `ER_LOCK_DEADLOCK` (1213) and retries with exponential backoff (max 3 attempts)
