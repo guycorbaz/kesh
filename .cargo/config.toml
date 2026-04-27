@@ -7,9 +7,5 @@
 # This ensures deterministic test execution in CI and locally.
 # Trade-off: ~5 min longer test suite execution, but stable & reproducible.
 
-[build]
-# Note: We don't set jobs here (that would limit compilation parallelism)
-
-[term]
-# Limit test threads to 2 (prevents PoolTimedOut and state races)
-test-threads = 2
+[env]
+RUST_TEST_THREADS = "2"
