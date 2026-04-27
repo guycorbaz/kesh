@@ -274,13 +274,18 @@ pub async fn insert_with_defaults(
     // Pure NULL re-check on the row would be dead defense — the new fail-fast path
     // can no longer insert NULLs. Joining on accounts.active=TRUE catches the case
     // where a previously-good FK now points to a deactivated account.
+    // CI fix: explicit `cis.` prefix on the SELECT list — `accounts` also has a
+    // `company_id` column, so `{COLUMNS}` (unprefixed) yields "Column ambiguous".
     if rows == 0 {
-        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-            "SELECT {COLUMNS} FROM company_invoice_settings cis \
+        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
+            "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
+                    cis.default_revenue_account_id, cis.default_sales_journal, \
+                    cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
+             FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
              JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
-             WHERE cis.company_id = ?"
-        ))
+             WHERE cis.company_id = ?",
+        )
         .bind(company_id)
         .fetch_optional(&mut *tx)
         .await
@@ -367,13 +372,17 @@ pub async fn insert_with_defaults_in_tx(
 
     // If rows==0, row already existed (DUPLICATE KEY).
     // P16: validate FK liveness via JOIN on accounts.active = TRUE (cf. pool variant).
+    // CI fix: explicit `cis.` prefix — `accounts` also has a `company_id` column.
     if rows == 0 {
-        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-            "SELECT {COLUMNS} FROM company_invoice_settings cis \
+        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
+            "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
+                    cis.default_revenue_account_id, cis.default_sales_journal, \
+                    cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
+             FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
              JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
-             WHERE cis.company_id = ?"
-        ))
+             WHERE cis.company_id = ?",
+        )
         .bind(company_id)
         .fetch_optional(&mut **tx)
         .await
