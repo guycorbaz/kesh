@@ -46,8 +46,105 @@ async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
     assert_eq!(settings.default_sales_journal.as_str(), "Ventes");
 }
 
+/// P8 / C1 — calling insert_with_defaults twice on the same company must be idempotent.
+/// The second call exercises the `rows_affected == 0` branch (DUPLICATE KEY) and the
+/// JOIN-on-active-accounts validation introduced by P16. It must return the existing
+/// settings row, not error and not corrupt state.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn test_insert_with_defaults_handles_missing_accounts(pool: MySqlPool) {
+async fn test_insert_with_defaults_is_idempotent_on_existing_row(pool: MySqlPool) {
+    let company = companies::create(
+        &pool,
+        NewCompany {
+            name: "Idem Co".to_string(),
+            address: "789 Reentrant Way".to_string(),
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("Failed to create company");
+
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("Failed to load chart");
+    accounts::bulk_create_from_chart(&pool, company.id, &chart, "fr")
+        .await
+        .expect("Failed to create accounts from chart");
+
+    // First call: inserts the row (rows_affected == 1).
+    let first = company_invoice_settings::insert_with_defaults(&pool, company.id)
+        .await
+        .expect("first insert should succeed");
+
+    // Second call: exercises rows_affected == 0 path. Must succeed and return same row.
+    let second = company_invoice_settings::insert_with_defaults(&pool, company.id)
+        .await
+        .expect("second insert should be idempotent");
+
+    assert_eq!(
+        first.company_id, second.company_id,
+        "Idempotent call must return the same settings row (same company_id PK)"
+    );
+    assert_eq!(
+        first.default_receivable_account_id, second.default_receivable_account_id,
+        "Account references must match across idempotent calls"
+    );
+    assert_eq!(
+        first.default_revenue_account_id,
+        second.default_revenue_account_id,
+    );
+}
+
+/// P8 / P16 — if the FK accounts have been deactivated after the row was inserted,
+/// the idempotent path must fail with InactiveOrInvalidAccounts (FK liveness check).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn test_insert_with_defaults_rejects_when_referenced_accounts_inactive(pool: MySqlPool) {
+    let company = companies::create(
+        &pool,
+        NewCompany {
+            name: "Stale FK Co".to_string(),
+            address: "1 Deactivated St".to_string(),
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("Failed to create company");
+
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("Failed to load chart");
+    accounts::bulk_create_from_chart(&pool, company.id, &chart, "fr")
+        .await
+        .expect("Failed to create accounts from chart");
+
+    company_invoice_settings::insert_with_defaults(&pool, company.id)
+        .await
+        .expect("seed insert should succeed");
+
+    // Deactivate the referenced accounts (1100 and 3000) without removing them.
+    sqlx::query(
+        "UPDATE accounts SET active = FALSE WHERE company_id = ? AND number IN ('1100', '3000')",
+    )
+    .bind(company.id)
+    .execute(&pool)
+    .await
+    .expect("Failed to deactivate accounts");
+
+    // Re-call must reject because the JOIN on accounts.active=TRUE finds no row.
+    let result = company_invoice_settings::insert_with_defaults(&pool, company.id).await;
+    assert!(
+        matches!(
+            result,
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts)
+        ),
+        "Expected InactiveOrInvalidAccounts when referenced accounts are inactive, got: {:?}",
+        result
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn test_insert_with_defaults_rejects_missing_accounts(pool: MySqlPool) {
     // Create a company without any accounts
     let company = companies::create(
         &pool,
@@ -64,13 +161,19 @@ async fn test_insert_with_defaults_handles_missing_accounts(pool: MySqlPool) {
     .expect("Failed to create company");
 
     // Call insert_with_defaults with no accounts
-    let settings = company_invoice_settings::insert_with_defaults(&pool, company.id)
-        .await
-        .expect("Failed to insert with defaults");
+    // E2-001 Fix: Now that P1-004+P1-007 added early NULL validation,
+    // insert_with_defaults should reject with InactiveOrInvalidAccounts error
+    let result = company_invoice_settings::insert_with_defaults(&pool, company.id).await;
 
-    // Verify the settings were created with NULL for missing accounts
-    assert_eq!(settings.company_id, company.id);
-    assert_eq!(settings.default_receivable_account_id, None);
-    assert_eq!(settings.default_revenue_account_id, None);
-    assert_eq!(settings.invoice_number_format, "F-{YEAR}-{SEQ:04}");
+    // Verify the error is correctly rejected
+    assert!(result.is_err(), "Expected Err when accounts are missing");
+    match result {
+        Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+            // Expected behavior: fail-fast when accounts don't exist
+        }
+        _ => panic!(
+            "Expected InactiveOrInvalidAccounts error, got: {:?}",
+            result
+        ),
+    }
 }

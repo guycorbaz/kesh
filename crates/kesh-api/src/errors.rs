@@ -107,6 +107,13 @@ pub enum AppError {
     #[error("Étape d'onboarding déjà complétée")]
     OnboardingStepAlreadyCompleted,
 
+    /// Reset d'onboarding refusé par policy (production sans `KESH_PRODUCTION_RESET=1`,
+    /// ou production user au-delà du step 2). Distinct de `OnboardingStepAlreadyCompleted`
+    /// pour donner un signal actionnable au client (cf. Story 7-1, P6-L8).
+    /// HTTP 403 Forbidden — code unique `ONBOARDING_RESET_FORBIDDEN`.
+    #[error("Reset d'onboarding refusé par la configuration (production)")]
+    OnboardingResetForbidden,
+
     // --- Story 3.2 ---
     /// Écriture comptable déséquilibrée (FR21).
     /// Les totaux (format string décimal) sont inclus dans le message
@@ -294,6 +301,15 @@ impl IntoResponse for AppError {
                 &t(
                     "error-onboarding-step-already-completed",
                     "Cette étape de configuration a déjà été complétée",
+                ),
+            ),
+
+            AppError::OnboardingResetForbidden => build_response(
+                StatusCode::FORBIDDEN,
+                "ONBOARDING_RESET_FORBIDDEN",
+                &t(
+                    "error-onboarding-reset-forbidden",
+                    "Le reset de l'onboarding n'est pas autorisé sur cette instance.",
                 ),
             ),
 

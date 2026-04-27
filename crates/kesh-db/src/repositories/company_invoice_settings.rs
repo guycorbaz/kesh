@@ -244,7 +244,18 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .flatten();
 
-    sqlx::query(
+    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern).
+    // P6-M2: rollback is best-effort. The previous `.map_err(map_db_error)?` would
+    // hide InactiveOrInvalidAccounts behind a transient rollback error and break
+    // the retry-loop matching in seed_demo (which keys on this exact variant).
+    if receivable.is_none() || revenue.is_none() {
+        let _ = tx.rollback().await;
+        return Err(DbError::InactiveOrInvalidAccounts);
+    }
+
+    // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
+    // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
+    let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
@@ -255,7 +266,42 @@ pub async fn insert_with_defaults(
     .bind(revenue)
     .execute(&mut *tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    // If rows==0, row already existed (DUPLICATE KEY).
+    // P16: validate that the referenced accounts are still alive (not soft-deleted).
+    // Pure NULL re-check on the row would be dead defense — the new fail-fast path
+    // can no longer insert NULLs. Joining on accounts.active=TRUE catches the case
+    // where a previously-good FK now points to a deactivated account.
+    // CI fix: explicit `cis.` prefix on the SELECT list — `accounts` also has a
+    // `company_id` column, so `{COLUMNS}` (unprefixed) yields "Column ambiguous".
+    if rows == 0 {
+        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
+            "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
+                    cis.default_revenue_account_id, cis.default_sales_journal, \
+                    cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
+             FROM company_invoice_settings cis \
+             JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
+             JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
+             WHERE cis.company_id = ?",
+        )
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+        match existing {
+            Some(row) => {
+                tx.commit().await.map_err(map_db_error)?;
+                return Ok(row);
+            }
+            None => {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::InactiveOrInvalidAccounts);
+            }
+        }
+    }
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
@@ -301,7 +347,16 @@ pub async fn insert_with_defaults_in_tx(
     .map_err(map_db_error)?
     .flatten();
 
-    sqlx::query(
+    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern)
+    // If accounts 1100 or 3000 don't exist, reject immediately instead of creating NULL rows.
+    // This prevents data corruption and provides clear error messages to callers.
+    if receivable.is_none() || revenue.is_none() {
+        return Err(DbError::InactiveOrInvalidAccounts);
+    }
+
+    // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
+    // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
+    let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
@@ -312,7 +367,32 @@ pub async fn insert_with_defaults_in_tx(
     .bind(revenue)
     .execute(&mut **tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    // If rows==0, row already existed (DUPLICATE KEY).
+    // P16: validate FK liveness via JOIN on accounts.active = TRUE (cf. pool variant).
+    // CI fix: explicit `cis.` prefix — `accounts` also has a `company_id` column.
+    if rows == 0 {
+        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
+            "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
+                    cis.default_revenue_account_id, cis.default_sales_journal, \
+                    cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
+             FROM company_invoice_settings cis \
+             JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
+             JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
+             WHERE cis.company_id = ?",
+        )
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+        return match existing {
+            Some(row) => Ok(row),
+            None => Err(DbError::InactiveOrInvalidAccounts),
+        };
+    }
 
     let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
         "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"

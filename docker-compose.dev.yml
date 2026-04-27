@@ -24,6 +24,10 @@ services:
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
       KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}
       KESH_JWT_SECRET: ${KESH_JWT_SECRET:-dev-secret-at-least-32-bytes-long-for-testing}
+      # Onboarding reset gate (Story 7-1, KF-002).
+      # Set to "1" / "true" / "yes" to allow /onboarding/reset past step 2 in demo mode.
+      # NEVER enable in production — see docs/MULTI-TENANT-SCOPING-PATTERNS.md.
+      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
       RUST_LOG: ${RUST_LOG:-info}
     depends_on:
       mariadb:

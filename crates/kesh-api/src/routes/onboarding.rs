@@ -23,6 +23,33 @@ use kesh_db::repositories::onboarding;
 use crate::AppState;
 use crate::errors::AppError;
 
+/// P1-H1: Helper for graceful transaction rollback
+/// Rollback errors are best-effort cleanup; don't fail the request if rollback fails
+async fn best_effort_rollback(tx: sqlx::Transaction<'_, sqlx::MySql>) {
+    if let Err(e) = tx.rollback().await {
+        tracing::warn!("Transaction rollback failed (best-effort cleanup): {}", e);
+        // Continue anyway — connection pool handles cleanup
+    }
+}
+
+/// P6-M1: Parse a boolean-like environment variable.
+///
+/// Accepts (case-insensitive) `"1"`, `"true"`, `"yes"`, `"on"` as `true`.
+/// Anything else (including unset, empty, or unrecognized values) is `false`.
+///
+/// Used for `KESH_PRODUCTION_RESET` and any future opt-in env flag where a
+/// silent mismatch (e.g. operator setting `"true"` for a `"1"`-only check)
+/// would lead to confusing rejection of legitimate operations.
+fn env_flag_enabled(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
+}
+
 /// Réponse JSON pour l'état d'onboarding (camelCase).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,9 +159,20 @@ pub async fn seed_demo(
 
     let ui_mode = current.ui_mode.unwrap_or(UiMode::Guided);
 
+    // P11: surface actionable validation errors (chart de comptes mal configuré)
+    // as 422 instead of 500 so the client can show a concrete remediation message.
     kesh_seed::seed_demo(&state.pool, &state.config.locale, ui_mode, current.version)
         .await
-        .map_err(|e| AppError::Internal(format!("Seed demo failed: {e}")))?;
+        .map_err(|e| match e {
+            kesh_seed::SeedError::Db(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+                AppError::Validation(
+                    "Comptes par défaut introuvables (1100, 3000). \
+                     Vérifiez que le plan comptable a bien été chargé avant de relancer la démo."
+                        .into(),
+                )
+            }
+            other => AppError::Internal(format!("Seed demo failed: {other}")),
+        })?;
 
     // seed_demo already calls insert_with_defaults internally (Story 2.6)
     // to pre-fill invoice accounts with 1100 (receivable) and 3000 (revenue).
@@ -143,8 +181,74 @@ pub async fn seed_demo(
     Ok(Json(updated.into()))
 }
 
-/// POST /api/v1/onboarding/reset — aucun prérequis de step
+/// POST /api/v1/onboarding/reset — Step gating: allow demo, block post-production (E2-002 fix)
+///
+/// Step gating rules:
+/// - SECURITY: step >= 7 is finalization (irreversible) — NEVER allow reset regardless of is_demo
+/// - SECURITY (P4): production users (is_demo=false) can only reset up to step 2.
+///   The is_demo flag alone is not a sufficient gate because corruption / manual DB edit
+///   could flip it to true, allowing reset on a partially-configured production tenant
+///   at steps 3-6. The KESH_PRODUCTION_RESET env var (default false) is the second factor:
+///   in production deployments it must remain unset; only demo deployments set it.
+/// - Demo users (is_demo=true) can reset at steps 0..=6
+///
+/// LOCK ORDERING (P3 — partial protection only):
+/// We acquire SELECT FOR UPDATE on onboarding_state to serialize the gate-check
+/// against concurrent finalize() / seed_demo() / step-progression endpoints.
+/// The lock is **released (commit) before reset_demo runs**, so a concurrent
+/// finalize() could still flip the state to 8 between commit and reset_demo's
+/// DELETE. Under v0.1 single-tenant single-user this race is essentially
+/// unreachable; full serialization (single-tx covering reset_demo) is tracked
+/// under KF-002-H-002 (issue #43).
 pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
+    use kesh_db::errors::map_db_error;
+
+    // Ensure the onboarding_state row exists before locking (idempotent init).
+    let _ = get_or_init_state(&state).await?;
+
+    // P3 fix: lock-and-check inside a transaction to close the read/action TOCTOU window.
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let current = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
+        "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
+         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    // P1-H4: step >= 7 is irreversible finalization — never reset
+    if current.step_completed >= 7 {
+        best_effort_rollback(tx).await;
+        return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
+
+    // P4: production-mode safety net — refuse reset for is_demo=false past step 2
+    // even if KESH_PRODUCTION_RESET is set, to avoid accidental wipes.
+    // P6-L8: distinct ResetForbidden error so the client can show "reset not
+    // permitted in production" rather than the misleading "step already completed".
+    if !current.is_demo && current.step_completed > 2 {
+        best_effort_rollback(tx).await;
+        return Err(AppError::OnboardingResetForbidden);
+    }
+
+    // P4 hardening: even for is_demo=true at steps 3..=6, require explicit demo
+    // deployment confirmation. This blocks the "corrupted is_demo flag" attack
+    // path between steps 3 and 6 that the old gate ignored.
+    // P6-M1: accept "1" | "true" | "yes" | "on" (case-insensitive) so an operator
+    // setting `KESH_PRODUCTION_RESET=true` in docker-compose isn't silently denied.
+    if current.step_completed > 2 && !env_flag_enabled("KESH_PRODUCTION_RESET") {
+        best_effort_rollback(tx).await;
+        return Err(AppError::OnboardingResetForbidden);
+    }
+
+    // Release the lock before invoking reset_demo: reset_demo internally acquires
+    // its own connection and DELETEs onboarding_state, which would deadlock if we
+    // kept the FOR UPDATE lock held here.
+    // The lock therefore covers ONLY the gate-check above, NOT the destructive
+    // reset_demo work. Under v0.1 single-tenant single-user the residual window
+    // is unreachable in practice; full serialization is tracked under KF-002-H-002.
+    tx.commit().await.map_err(map_db_error)?;
+
     kesh_seed::reset_demo(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("Reset demo failed: {e}")))?;
@@ -419,6 +523,12 @@ pub async fn skip_bank(
 /// Once locked, only one finalize() can proceed. INSERT IGNORE remains idempotent.
 ///
 /// F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded (1100, 3000 not NULL).
+///
+/// LOCK ORDERING (see docs/MULTI-TENANT-SCOPING-PATTERNS.md Pattern 5):
+/// This handler acquires three sequential FOR UPDATE locks in the order
+/// `onboarding_state → companies → accounts`. New endpoints with multiple
+/// locks MUST follow the same order to avoid cross-table deadlocks.
+/// Tracking issue: KF-002-H-002 (deadlock-retry middleware planned for v0.2).
 pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
     use kesh_db::errors::map_db_error;
 
@@ -439,86 +549,132 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
 
     // Reject demo path finalize (demo is finalized via seed_demo)
     if onboarding.is_demo {
-        tx.rollback().await.map_err(map_db_error)?;
+        best_effort_rollback(tx).await;
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
     // Allow idempotent retry if already finalized (step == 8)
     if onboarding.step_completed < 7 || onboarding.step_completed > 8 {
-        tx.rollback().await.map_err(map_db_error)?;
+        best_effort_rollback(tx).await;
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    // If already finalized, release lock and return (idempotent)
+    // If already finalized, release lock and return (idempotent).
+    // P17: this path is read-only — rollback releases the FOR UPDATE lock
+    // without writing an empty commit record. Returned snapshot is the row
+    // observed at lock acquisition; under FOR UPDATE no concurrent writer can
+    // have changed it before we release.
     if onboarding.step_completed == 8 {
-        tx.commit().await.map_err(map_db_error)?;
+        best_effort_rollback(tx).await;
         return Ok(Json(onboarding.into()));
     }
 
     // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
     // Prevents concurrent deletion between our check and INSERT INTO company_invoice_settings.
-    let company = sqlx::query_as::<_, kesh_db::entities::Company>(
+    // R2-001 Fix: Add explicit rollback on error
+    // P5: ORDER BY id for deterministic row selection. v0.1 is mono-tenant so the
+    // result is unambiguous, but explicit ordering matches Pattern 5 lock-discipline
+    // and protects against multi-tenant drift in dev/test DBs.
+    let company = match sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, address, ide_number, org_type, accounting_language, \
                 instance_language, version, created_at, updated_at \
-         FROM companies LIMIT 1 FOR UPDATE",
+         FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?
-    .ok_or_else(|| {
-        AppError::Internal("Aucune company en base (company supprimée pendant onboarding ?)".into())
-    })?;
+    {
+        Some(c) => c,
+        None => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::Internal(
+                "Aucune company en base (company supprimée pendant onboarding ?)".into(),
+            ));
+        }
+    };
 
     // Pre-fill invoice settings with default accounts (1100, 3000).
     // Uses INSERT IGNORE pattern for database-level idempotency.
     // Account lookups use SELECT FOR UPDATE to prevent concurrent deletes.
     // F2/F3/F4: Transaction-level variant keeps account locks within this transaction,
     // preserving company and onboarding_state locks until step update completes.
-    let settings = kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
-        &mut tx, company.id,
-    )
-    .await
-    .map_err(AppError::Database)?;
-
-    // F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded.
-    // Swiss PME/Association/Independant charts must contain accounts 1100 (receivable) and 3000 (revenue).
-    // If missing, the onboarding cannot proceed (AC 3 fallback UI not yet implemented).
-    if settings.default_receivable_account_id.is_none()
-        || settings.default_revenue_account_id.is_none()
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(AppError::Validation(
-            "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
-             Veuillez ajouter ces comptes avant de finaliser l'onboarding.".into(),
-        ));
-    }
+    // R2-002 Fix: Add explicit rollback on error.
+    // P6-L4: insert_with_defaults_in_tx fails fast with DbError::InactiveOrInvalidAccounts
+    // when accounts 1100/3000 are missing — surface that as an actionable 422 with
+    // remediation guidance instead of a generic 500. The previous downstream NULL
+    // re-check on `settings.default_*_account_id` was dead code after the fail-fast
+    // change (P1-004 + P1-007); it has been removed in this pass.
+    // Open follow-up: KF-002-CR-001 (issue #44) — fallback UI to add missing accounts
+    // during onboarding so the user has a recovery path.
+    let _settings =
+        match kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
+            &mut tx, company.id,
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+                best_effort_rollback(tx).await;
+                return Err(AppError::Validation(
+                "Impossible de pré-remplir les comptes de facturation (1100, 3000 manquants du plan comptable). \
+                 Veuillez ajouter ces comptes avant de finaliser l'onboarding.".into(),
+            ));
+            }
+            Err(e) => {
+                best_effort_rollback(tx).await;
+                return Err(AppError::Database(e));
+            }
+        };
 
     // Mark onboarding as complete while holding locks.
-    // Uses optimistic locking with expected version to detect concurrent updates (shouldn't happen due to SELECT FOR UPDATE).
+    // P15: under FOR UPDATE the singleton row cannot be modified by another tx,
+    // so a 0-row UPDATE indicates the singleton was deleted (corruption), not an
+    // optimistic-lock conflict. We still bump version for downstream observers.
     let rows = sqlx::query(
         "UPDATE onboarding_state SET step_completed = 8, version = version + 1 \
-         WHERE singleton = TRUE AND version = ?",
+         WHERE singleton = TRUE",
     )
-    .bind(onboarding.version)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
 
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(AppError::Database(
-            kesh_db::errors::DbError::OptimisticLockConflict,
-        ));
+        best_effort_rollback(tx).await;
+        return Err(AppError::Database(kesh_db::errors::DbError::Invariant(
+            "onboarding_state singleton row missing during finalize (FOR UPDATE lock should prevent this)"
+                .into(),
+        )));
     }
 
-    let updated = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
+    // R2-003 Fix: Add explicit rollback on final SELECT error.
+    // P1-H6: Use fetch_optional and handle None explicitly instead of fetch_one panic.
+    // P6-L6: Use FOR UPDATE on the read-back so the SELECT is consistent with the
+    // earlier locks under any isolation level, including non-default READ COMMITTED
+    // production tunings. Pure cost: one extra IS-already-mine lock acquisition;
+    // no extra contention since this tx already holds the row exclusively.
+    // P6-L9: standardize on `.map_err(map_db_error)?` style for sqlx errors.
+    let updated = match sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
         "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
-         FROM onboarding_state WHERE singleton = TRUE",
+         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE",
     )
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::Database(kesh_db::errors::DbError::Invariant(
+                "onboarding_state row disappeared after update (FOR UPDATE lock should prevent this)"
+                    .into(),
+            )));
+        }
+        Err(e) => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::Database(e));
+        }
+    };
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(Json(updated.into()))
@@ -545,11 +701,12 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
 
     let mut tx = state.pool.begin().await.map_err(map_db_error)?;
 
-    // SELECT FOR UPDATE verrouille la row (ou rien si table vide)
+    // SELECT FOR UPDATE verrouille la row (ou rien si table vide).
+    // P5: ORDER BY id pour déterminisme (cf. Pattern 5 lock-discipline).
     let existing = sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, address, ide_number, org_type, accounting_language, \
                 instance_language, version, created_at, updated_at \
-         FROM companies LIMIT 1 FOR UPDATE",
+         FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
     .await
@@ -583,7 +740,7 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
             .map_err(map_db_error)?
             .rows_affected();
             if rows == 0 {
-                tx.rollback().await.map_err(map_db_error)?;
+                best_effort_rollback(tx).await;
                 return Err(AppError::Database(
                     kesh_db::errors::DbError::OptimisticLockConflict,
                 ));
@@ -595,9 +752,10 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
     Ok(())
 }
 
+// P5: ORDER BY id for deterministic row selection (Pattern 5 lock-discipline).
 const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
             instance_language, version, created_at, updated_at \
-     FROM companies LIMIT 1 FOR UPDATE";
+     FROM companies ORDER BY id LIMIT 1 FOR UPDATE";
 
 /// Retourne la company (première et unique). Erreur si aucune company n'existe.
 async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
@@ -627,7 +785,7 @@ async fn update_company_org_type(state: &AppState, org_type: OrgType) -> Result<
     .map_err(map_db_error)?
     .rows_affected();
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        best_effort_rollback(tx).await;
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));
@@ -658,7 +816,7 @@ async fn update_company_accounting_language(
     .map_err(map_db_error)?
     .rows_affected();
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        best_effort_rollback(tx).await;
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));
@@ -694,7 +852,7 @@ async fn update_company_coordinates(
     .map_err(map_db_error)?
     .rows_affected();
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
+        best_effort_rollback(tx).await;
         return Err(AppError::Database(
             kesh_db::errors::DbError::OptimisticLockConflict,
         ));

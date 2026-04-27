@@ -129,12 +129,16 @@
 	// Story 2.6: Load invoice settings on mount to check if accounts are configured
 	// F3+F4 MEDIUM FIX: Sequence counter with effect cleanup.
 	// F5 HIGH FIX: Revalidate settings before submit to prevent stale data.
+	// P10 FIX: Set loadingSettings=true synchronously at effect entry (not inside
+	// the async IIFE). The previous code left a microtask window where a stale
+	// loadingSettings=false from the prior run could let the user click Submit
+	// during the re-fetch.
 	$effect(() => {
 		const seq = ++settingsSeq;
+		loadingSettings = true;
 
 		(async () => {
 			try {
-				loadingSettings = true;
 				const settings = await getInvoiceSettings();
 				if (seq !== settingsSeq) return;
 				invoiceSettings = settings;
@@ -145,10 +149,11 @@
 					? `Erreur lors du chargement des paramètres de facturation (${err.message})`
 					: 'Erreur lors du chargement des paramètres de facturation';
 			} finally {
-				// F3 MEDIUM FIX: Always clear loading flag (even if seq mismatch)
-				// to prevent indefinite disabled state. If new effect is running,
-				// it will set loadingSettings=true again.
-				loadingSettings = false;
+				// Only the latest effect clears the flag, so a concurrent newer effect
+				// keeps loadingSettings=true while it loads. Stale runs leave it alone.
+				if (seq === settingsSeq) {
+					loadingSettings = false;
+				}
 			}
 		})();
 	});
