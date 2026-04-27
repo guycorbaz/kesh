@@ -336,7 +336,13 @@ async fn reset_clears_demo_data(pool: MySqlPool) {
         .await
         .unwrap();
 
-    // Reset
+    // Reset — after seed_demo the onboarding is at step 3, which Pass 6 P4 + P6-L8
+    // requires KESH_PRODUCTION_RESET=1 to allow (demo deployment opt-in).
+    let prev = std::env::var("KESH_PRODUCTION_RESET").ok();
+    unsafe {
+        std::env::set_var("KESH_PRODUCTION_RESET", "1");
+    }
+
     let resp = app
         .client
         .post(app.url("/api/v1/onboarding/reset"))
@@ -344,6 +350,14 @@ async fn reset_clears_demo_data(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
+
+    unsafe {
+        match prev {
+            Some(v) => std::env::set_var("KESH_PRODUCTION_RESET", v),
+            None => std::env::remove_var("KESH_PRODUCTION_RESET"),
+        }
+    }
+
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["stepCompleted"], 0);
