@@ -124,6 +124,22 @@
 		toast.error(msg('error-internal', 'Finalisation échouée — réessayez.'));
 	}
 
+	// P6-L7: defense-in-depth — never navigate to / unless the backend confirmed
+	// stepCompleted == 8. A bug or race that returns a stale snapshot would
+	// otherwise drop the user into the main app with onboarding incomplete.
+	function navigateHomeIfFinalized() {
+		if (onboardingState.stepCompleted === 8) {
+			goto('/');
+		} else {
+			toast.error(
+				msg(
+					'onboarding-finalize-incomplete',
+					"La finalisation n'a pas été confirmée. Veuillez recharger la page."
+				)
+			);
+		}
+	}
+
 	async function submitBankAccount() {
 		if (!bankName.trim() || !bankIban.trim()) {
 			toast.error(msg('error-validation', 'Nom de banque et IBAN sont obligatoires'));
@@ -145,7 +161,7 @@
 		}
 		try {
 			await onboardingState.finalize();
-			goto('/');
+			navigateHomeIfFinalized();
 		} catch (err) {
 			reportFinalizeError(err);
 		}
@@ -164,7 +180,7 @@
 		}
 		try {
 			await onboardingState.finalize();
-			goto('/');
+			navigateHomeIfFinalized();
 		} catch (err) {
 			reportFinalizeError(err);
 		}

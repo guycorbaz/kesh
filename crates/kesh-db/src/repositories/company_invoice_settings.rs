@@ -244,9 +244,12 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .flatten();
 
-    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern)
+    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern).
+    // P6-M2: rollback is best-effort. The previous `.map_err(map_db_error)?` would
+    // hide InactiveOrInvalidAccounts behind a transient rollback error and break
+    // the retry-loop matching in seed_demo (which keys on this exact variant).
     if receivable.is_none() || revenue.is_none() {
-        tx.rollback().await.map_err(map_db_error)?;
+        let _ = tx.rollback().await;
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 

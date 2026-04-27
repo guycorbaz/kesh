@@ -69,18 +69,20 @@ pub async fn seed_demo(
 ) -> Result<(), SeedError> {
     let lang = locale_to_language(locale);
 
-    // P6: Lock-and-validate the singleton company row inside a short tx before
-    // running the seed work. The FOR UPDATE lock blocks a concurrent reset_demo
-    // (or another seed_demo) from racing the list/update pair.
+    // P6: Lock-and-validate the singleton company row inside a short tx.
+    // The FOR UPDATE lock covers ONLY the count-validation step (`len() != 1`):
+    // it is committed before companies::update runs, so a concurrent reset_demo
+    // could still DELETE the company between this commit and companies::update.
+    // companies::update detects this via DbError::NotFound and the user retries.
     //
-    // Residual race window (acceptable for v0.1):
+    // Residual race window (acceptable for v0.1 single-tenant single-user):
     // - bulk_create_from_chart and fiscal_years::create commit their own
     //   transactions outside this lock. If seed_demo aborts after they
     //   commit, the company is left with orphaned accounts/fiscal_year
     //   until reset_demo cleans up.
     // - The retry loop on insert_with_defaults below tolerates the cross-tx
     //   visibility gap; the single-tx refactor that eliminates both issues
-    //   is tracked under KF-002-H-002 (v0.2).
+    //   is tracked under KF-002-H-002 (issue #43, v0.2).
     let company = {
         let mut tx = pool.begin().await?;
         let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
@@ -135,8 +137,10 @@ pub async fn seed_demo(
         })?;
     let lang_key = company.accounting_language.as_str().to_lowercase();
     // Bulk insert uses its own transaction — commits before insert_with_defaults reads.
-    // Each seed_demo() call is independent (creates its own company), so concurrent calls
-    // won't interfere. Insert lookups (1100, 3000) are per-company and isolated.
+    // P6-L3: seed_demo updates the singleton company (set up earlier by
+    // ensure_company_with_language); concurrent seed_demo calls are serialized
+    // by the FOR UPDATE lock acquired in the count-validation block above.
+    // Insert lookups (accounts 1100, 3000) are per-company and isolated.
     kesh_db::repositories::accounts::bulk_create_from_chart(pool, company.id, &chart, &lang_key)
         .await?;
 

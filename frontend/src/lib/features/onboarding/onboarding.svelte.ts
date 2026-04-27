@@ -140,11 +140,22 @@ export const onboardingState = {
 	},
 
 	async finalize() {
+		// P6-M3: re-entrant guard. The submit button is disabled while `_loading`
+		// is true, but a fast double-click (or bot) can fire two calls in the same
+		// tick before reactive bindings update. The guard short-circuits the second.
+		// On error, we keep the lock for one tick so the caller's catch + toast.error
+		// have time to render before the button re-enables.
+		if (_loading) return;
 		_loading = true;
 		try {
 			_state = await api.finalize();
-		} finally {
 			_loading = false;
+		} catch (err) {
+			// Defer re-enabling so the error toast paints before the button accepts a new click.
+			setTimeout(() => {
+				_loading = false;
+			}, 0);
+			throw err;
 		}
 	},
 };

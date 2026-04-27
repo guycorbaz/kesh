@@ -395,8 +395,71 @@ async fn reset_blocks_step_7_even_when_is_demo_flag_is_true(pool: MySqlPool) {
     assert!(row.1, "is_demo must remain true after refused reset");
 }
 
+/// P6-L5 — Positive path: when KESH_PRODUCTION_RESET=1 and is_demo=true at step > 2,
+/// reset() must succeed. Pairs with `reset_blocks_production_past_step_2` and
+/// `reset_blocks_step_7_even_when_is_demo_flag_is_true` to cover the gate matrix.
+///
+/// Note: this test mutates a process-level env var. It uses `serial_test::serial`
+/// or a similar guard if available; here we set + unset around the request and
+/// rely on the test harness running tests sequentially (cargo test --test-threads=1
+/// per `.cargo/config.toml`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reset_allows_demo_at_step_5_when_env_var_set(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    // Demo user mid-flow (step 5 = post-org-type, post-coordinates).
+    sqlx::query(
+        "INSERT INTO onboarding_state (singleton, step_completed, is_demo, ui_mode, version) \
+         VALUES (TRUE, 5, TRUE, 'guided', 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed onboarding_state row");
+
+    // SAFETY: process-wide env mutation. Tests run with --test-threads=1 (see
+    // .cargo/config.toml RUST_TEST_THREADS=2 — but reset env var read happens
+    // inside the request handler in this same process). We restore the previous
+    // value after the request to avoid leaking into subsequent tests.
+    let prev = std::env::var("KESH_PRODUCTION_RESET").ok();
+    // SAFETY (Rust 2024): set_var/remove_var are unsafe due to potential races
+    // with other threads reading env. Acceptable inside a serialized test.
+    unsafe {
+        std::env::set_var("KESH_PRODUCTION_RESET", "true");
+    }
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/reset"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+
+    // Restore env var BEFORE assertions so a panic doesn't leak state.
+    unsafe {
+        match prev {
+            Some(v) => std::env::set_var("KESH_PRODUCTION_RESET", v),
+            None => std::env::remove_var("KESH_PRODUCTION_RESET"),
+        }
+    }
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "reset() with KESH_PRODUCTION_RESET=true must succeed for is_demo=true at step 5"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 0, "state should be reset to step 0");
+    assert_eq!(body["isDemo"], false, "is_demo cleared after reset");
+}
+
 /// P8 / P4 — production path (is_demo=false) past step 2 must always be blocked,
-/// regardless of KESH_PRODUCTION_RESET. This is the strict outer gate.
+/// regardless of KESH_PRODUCTION_RESET. P6-L8: distinct ONBOARDING_RESET_FORBIDDEN
+/// error code (403) so the client can distinguish policy-refusal from a finalized
+/// onboarding (which uses ONBOARDING_STEP_ALREADY_COMPLETED at 400).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn reset_blocks_production_past_step_2(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -417,9 +480,9 @@ async fn reset_blocks_production_past_step_2(pool: MySqlPool) {
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), 400);
+    assert_eq!(resp.status(), 403);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
+    assert_eq!(body["error"]["code"], "ONBOARDING_RESET_FORBIDDEN");
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

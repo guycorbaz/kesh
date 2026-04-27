@@ -22,10 +22,16 @@ WHERE company_id IS NULL AND EXISTS (SELECT 1 FROM companies LIMIT 1);
 -- New users created post-migration always have company_id (enforced by bootstrap + Rust types).
 ALTER TABLE users MODIFY COLUMN company_id BIGINT NOT NULL;
 
--- Step 4: Add index for multi-tenant queries
-CREATE INDEX idx_users_company_id ON users(company_id);
-
--- Step 5: Add foreign key constraint for referential integrity
+-- Step 4: Add foreign key constraint for referential integrity.
 -- Protects against orphaned users if a company is deleted (CASCADE).
+-- P6-L2: ordering matters — adding the FK before the explicit index lets InnoDB
+-- create its own implicit index on the FK column. If the migration aborts between
+-- Step 3 and Step 5, the schema is left with NOT NULL + FK enforced (consistent),
+-- not with NOT NULL + index but no referential constraint (silently inconsistent).
 ALTER TABLE users ADD CONSTRAINT fk_users_company
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+
+-- Step 5: Add explicit index for multi-tenant query patterns.
+-- Redundant with the FK's implicit index in InnoDB, but keeps the index name
+-- stable for tooling that queries information_schema by name.
+CREATE INDEX idx_users_company_id ON users(company_id);
