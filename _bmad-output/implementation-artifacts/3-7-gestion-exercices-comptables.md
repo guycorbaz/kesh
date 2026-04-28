@@ -1,6 +1,6 @@
 # Story 3.7: Gestion des exercices comptables
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -101,7 +101,7 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 3. **Création — appel API + retour** — Given le formulaire valide soumis, When `POST /api/v1/fiscal-years` retourne `201 Created` + body `FiscalYearResponse`, Then la modale ferme, le tableau se rafraîchit (la nouvelle ligne apparaît en tête car `start_date DESC`), et un toast vert `notifySuccess('fiscal-year-created')` s'affiche.
 
-4. **Création — erreur overlap** — Given un exercice existe déjà avec la même `start_date` pour cette company, When création tentée, Then `POST /api/v1/fiscal-years` retourne `400 Validation` avec `code='VALIDATION_ERROR'` et `message=t('error-fiscal-year-overlap')`. Le toast rouge s'affiche, la modale reste ouverte avec les valeurs saisies pour correction.
+4. **Création — erreur overlap** — Given un exercice existe déjà avec la même `start_date` pour cette company, When création tentée, Then `POST /api/v1/fiscal-years` retourne `400 Validation` avec `code='VALIDATION_ERROR'` et `message=t('error-fiscal-year-overlap')`. **L'erreur s'affiche inline dans le formulaire** (Pass 1 Code Review F12 — single error surface : inline pour les erreurs de validation backend, modale reste ouverte avec valeurs saisies pour correction). Le toast n'est utilisé que pour les erreurs inattendues (réseau, etc.) hors validation.
 
 5. **Création — erreur dates invalides** — Given `start_date >= end_date`, When création, Then frontend bloque avant POST (validation client). En backup : si bypass (curl direct), le DB CHECK constraint déclenche `DbError::CheckConstraintViolation` → `AppError::Validation('error-fiscal-year-dates-invalid')` → 400.
 
@@ -109,7 +109,7 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
 
 7. **Renommage — appel API** — Given le nouveau nom, When `PUT /api/v1/fiscal-years/{id}` body `{ name }` retourne `200`, Then la ligne se met à jour, toast vert `notifySuccess('fiscal-year-renamed')`.
 
-8. **Renommage — erreur nom déjà utilisé** — Given un autre exercice de la même company porte déjà ce nom, When PUT, Then `400 Validation` `code='VALIDATION_ERROR'` `message=t('error-fiscal-year-name-duplicate')`.
+8. **Renommage — erreur nom déjà utilisé** — Given un autre exercice de la même company porte déjà ce nom, When PUT, Then `400 Validation` `code='VALIDATION_ERROR'` `message=t('error-fiscal-year-name-duplicate')`. **L'erreur s'affiche inline dans la modale rename** (Pass 1 Code Review F12 — cohérent avec AC #4, single error surface). Le toast n'est utilisé que pour les erreurs inattendues hors validation.
 
 9. **Clôture — bouton + confirmation** — Given une ligne avec status `Open`, When clic « Clôturer », Then modale de confirmation : « Vous êtes sur le point de clôturer l'exercice {name}. Cette action est **irréversible** : aucune écriture, facture ou paiement ne pourra plus être enregistré sur cette période. Confirmer ? » avec bouton rouge « Clôturer définitivement » et « Annuler ».
 
@@ -196,13 +196,12 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   - Si `rows_affected == 0` → return `Ok(None)` (idempotent, pas d'audit).
   - **Pass 2 HP2-M5 — Responsabilité audit log** : le helper EST responsable de l'INSERT audit_log si rows == 1. Le caller (finalize) ne fait RIEN d'audit pour ce path. Cohérent avec story 3.5 (la fn repo qui crée la donnée audite aussi).
   - Pas de FOR UPDATE applicatif — l'atomicité est garantie par la sous-requête NOT EXISTS dans la même tx.
-- [x] T1.3 Ajouter `fiscal_years::update_name(pool: &MySqlPool, user_id: i64, id: i64, new_name: String) -> Result<FiscalYear, DbError>` — Pass 1 H-7 (signature harmonisée, **pas de `expected_version`**).
-  - Validation : `new_name.trim() != ""` sinon `DbError::Invariant(FY_NAME_EMPTY_KEY.into())`.
-  - Algorithme : `tx = begin()` → `SELECT * FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE` (utiliser `find_by_id_in_company_locked`, voir T1.5) → si None, rollback + `DbError::NotFound` → check `find_by_name(tx, company_id, new_name)` ≠ None pour distinguer le doublon → UPDATE SET name = ?, updated_at = NOW() WHERE id = ? → re-SELECT after → audit_log wrapper `{before, after}` → commit.
-  - Le caller (T2.5) doit déjà avoir vérifié `company_id` via `find_by_id_in_company` ; l'update_name re-vérifie pour défense en profondeur.
+- [x] T1.3 Ajouter `fiscal_years::update_name(pool: &MySqlPool, user_id: i64, company_id: i64, id: i64, new_name: String) -> Result<FiscalYear, DbError>` — Pass 1 H-7 (signature harmonisée, **pas de `expected_version`**) + **Code Review Pass 1 F2** (paramètre `company_id` ajouté pour défense en profondeur multi-tenant — toute mutation cross-tenant est rejetée par le repo, indépendamment du pre-check du handler).
+  - Validation : `new_name.trim() != ""` sinon `DbError::Invariant(FY_NAME_EMPTY_KEY.into())`. **F3** : si `chars().count() > FY_NAME_MAX_LEN` (50), retourne `DbError::Invariant(FY_NAME_TOO_LONG_KEY.into())`. Trim centralisé dans le repo (cohérence avec `create`).
+  - Algorithme : `tx = begin()` → `SELECT * FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE` → si None, rollback + `DbError::NotFound` (route 404 anti-énumération + repo refuse cross-tenant) → check `find_by_name(tx, company_id, new_name)` ≠ None pour distinguer le doublon → UPDATE SET name = ? WHERE id = ? AND company_id = ? (`updated_at` auto via `ON UPDATE CURRENT_TIMESTAMP(3)`) → re-SELECT after → audit_log wrapper `{before, after}` → commit.
 - [x] T1.4 Refactor `fiscal_years::close` :
-  - Signature finale : `pub async fn close(pool: &MySqlPool, user_id: i64, id: i64) -> Result<FiscalYear, DbError>`.
-  - Logique inchangée (transition Open → Closed avec guard `WHERE status='Open'` qui retourne `DbError::IllegalStateTransition` si déjà Closed).
+  - Signature finale : `pub async fn close(pool: &MySqlPool, user_id: i64, company_id: i64, id: i64) -> Result<FiscalYear, DbError>` (**Code Review Pass 1 F2** — paramètre `company_id` ajouté pour défense en profondeur multi-tenant).
+  - Logique : transition Open → Closed avec guard `WHERE id = ? AND company_id = ? AND status='Open'`. Retourne `DbError::NotFound` si l'exercice n'existe pas dans cette company (404 anti-énumération + refus cross-tenant). Retourne `DbError::IllegalStateTransition` si déjà Closed.
   - Ajouter audit_log snapshot direct avec `action='fiscal_year.closed'` et `details_json = snapshot post-close`.
 - [x] T1.5 Ajouter `fiscal_years::find_by_id_in_company(pool: &MySqlPool, company_id: i64, id: i64) -> Result<Option<FiscalYear>, DbError>` — Pass 1 H-3 (Anti-Pattern 4 fix).
   - SQL : `SELECT ... FROM fiscal_years WHERE id = ? AND company_id = ?`. Pas de fetch-then-check côté handler.
@@ -420,13 +419,15 @@ so that **je puisse valider mes factures et saisir des écritures sans passer pa
   - `fiscal-year-name-label`, `fiscal-year-start-date-label`, `fiscal-year-end-date-label`, `fiscal-year-status-label`
   - `fiscal-year-status-open`, `fiscal-year-status-closed`
   - `fiscal-year-rename-button`, `fiscal-year-close-button`
-  - `fiscal-year-close-confirmation-title`, `fiscal-year-close-confirmation-body`, `fiscal-year-close-confirmation-action`
+  - `fiscal-year-close-confirmation-title`, `fiscal-year-close-confirmation-body` (avec interpolation Fluent `{ $name }` — Pass 1 F6), `fiscal-year-close-confirmation-action`
   - `fiscal-year-created`, `fiscal-year-renamed`, `fiscal-year-closed` (notifications success)
   - `error-fiscal-year-overlap`, `error-fiscal-year-name-duplicate`, `error-fiscal-year-name-empty`, `error-fiscal-year-dates-invalid`, `error-fiscal-year-already-closed`, `error-fiscal-year-conflict` (filet sécurité — UNIQUE constraint inattendue après pré-checks)
-  - `error-fiscal-year-missing` (Pass 1 H-9 / AC #22 — toast actionnable validate_invoice sans fiscal_year)
+  - `error-fiscal-year-name-too-long` (**Code Review Pass 1 F3** — pré-validation longueur 50 chars avant INSERT, évite `Data Too Long` 500)
+  - `error-fiscal-year-missing` (Pass 1 H-9 / AC #22 — toast actionnable validate_invoice sans fiscal_year ouvert)
+  - `error-fiscal-year-closed-for-date` (**Code Review Pass 1 F5** — message distinct quand l'exercice qui couvre la date est Closed, sémantique différente de « Créez d'abord »)
   - `go-to-settings` (Pass 1 H-9 / AC #22 — label du bouton dans le toast)
   - `settings-fiscal-years-link` (texte du lien depuis la page settings home)
-  - **Total : ~26 clés × 4 locales = ~104 entrées.**
+  - **Total : 28 clés × 4 locales = 112 entrées** (vs 26×4=104 avant Code Review Pass 1).
 - [x] T6.2 Lancer le lint i18n (`node frontend/scripts/lint-i18n-ownership.js`) après modification : doit rester PASS (pas de cross-feature key sharing).
 
 ### T7 — (supprimée Pass 1 C-1)
@@ -527,6 +528,10 @@ frontend/tests/e2e/
 - **Frontend Vitest** : `vitest run` pour les helpers. Mocks `apiClient` via `vi.mock`.
 - **Playwright** : `npm run test:e2e` (réutilise les fixtures déterministes story 6-4).
 - **CI gate** : tous les tests doivent passer + cargo fmt + cargo clippy + svelte-check + ESLint + lint-i18n-ownership.
+
+### Testing debt (Code Review Pass 2 — reclassement explicite)
+
+- **[KF-019](https://github.com/guycorbaz/kesh/issues/47)** — *AC #22 Playwright E2E coverage gap (fallback toast)* — Pass 1 F7 a converti les tests `test.info().annotations.push(...)` (vides) en `test.skip(true, "...")` honnête, mais l'AC #22 (toast actionnable lorsque `validate_invoice` ou `journal_entries::create` retourne `FISCAL_YEAR_INVALID` / `NO_FISCAL_YEAR` / `FISCAL_YEAR_CLOSED`) n'a toujours pas de couverture E2E réelle. Le wiring helper est partiellement validé statiquement par TypeScript (imports rigides) et les codes d'erreur backend sont couverts par les tests Rust E2E, mais le flow complet helper → toast → navigation n'est jamais exercé en browser. **MEDIUM**, owner Story 7-7 (à créer). Reclassement validé per règle CLAUDE.md « Exception : MEDIUM+ → dette documentée + propriétaire = résolu pour cette itération ».
 
 ### Previous story intelligence (Stories 3-1 à 3-5, 5-2, 6-2, 7-1)
 
@@ -643,3 +648,4 @@ Claude Opus 4.7 (1M context) — bmad-dev-story workflow.
 | 2026-04-27 | 1.0     | Pass 4 spec validate (3 reviewers Sonnet, fenêtre fraîche) → 9 patches : P4-H1 fix signature `audit_log::find_by_entity` (manque `pool` + `limit: i64` ; pas 2 params mais 4) → corrigé 3 occurrences AC #14/#15/#18, P4-M1 réécrire AC #13 pour décrire l'INSERT atomique (au lieu de l'ancien check-then-insert), F4-M1 ajouter T8.8 scenario Playwright validate_invoice sans fiscal_year (couvre AC #22 endpoint #1), +6 LOWs cleanup (cross-ref T1.7→T1.12 ligne 36, T8 heading élargi à #14/#21/#22, i18n count ~26×4=~104, AC #12 doublon Consultation nettoyé, file naming fiscal-years.helpers.ts uniformisé, source-tree T8.1-T8.5→T8.1-T8.8). **Trend Pass 4: 3 findings >LOW (vs 12 Pass 3, -75%). Trend total : 22 → 13 → 12 → 3 (-86%). ✅ CRITÈRE D'ARRÊT CLAUDE.md ATTEINT après application des patches > LOW. Spec convergée. STOP iteration. Total patches appliqués sur 4 passes : 68. Story prête pour `bmad-dev-story`.** | Claude Opus 4.7 (1M context)        |
 | 2026-04-28 | 1.1     | **Implémentation complète via bmad-dev-story.** T1 repo refactor + 13 nouveaux tests (22/22 passing). T2 nouveau module `routes/fiscal_years.rs` + 25 tests E2E (25/25 passing). T3 onboarding finalize Path B auto-create via insert atomique anti-TOCTOU. T4-T6 frontend feature lib + UI page `/settings/fiscal-years` + helper centralisé `notifyMissingFiscalYearOrFallback` instrumenté dans validate_invoice + JournalEntryForm (AC #22) + i18n × 4 locales (104 entrées). T8 Playwright spec. T1.12 Pattern 5 doc updated. svelte-check : 0 errors. lint-i18n-ownership : PASS. Status `ready-for-dev → review`. Prêt pour `bmad-code-review`. | Claude Opus 4.7 (1M context)        |
 | 2026-04-28 | 1.2     | **Code Review Pass 1 (3 reviewers Sonnet, fenêtres parallèles).** 34 findings bruts → 12 > LOW après dédup/triage. 15 patches appliqués : F1 CRITICAL idempotent finalize concurrent (catch UniqueConstraintViolation→Ok(None)), F2 HIGH ×2 multi-tenant defense (company_id ajouté à update_name + close repo signatures + SQL WHERE), F3 HIGH name VARCHAR(50) length validation (FY_NAME_TOO_LONG_KEY backend + frontend + i18n × 4), F4 HIGH find_overlapping algèbre des binds documentée, F5 + F6 MEDIUM UX i18n (différenciation FISCAL_YEAR_CLOSED + interpolation {name} dans close-confirmation-body × 4 locales), F7 MEDIUM Playwright AC #22 vides → test.skip honnête (helper testé via TS compile-time + tests backend), F8 MEDIUM trim centralisé dans update_name repo, F9 MEDIUM E2E test demo_path_creates_fiscal_year ajouté, F11 MEDIUM closeTarget reload safety, F12 MEDIUM single error surface (inline pour validation, toast pour fallback inattendu), F13 LOW DB check cross-tenant test, F14 LOW ORDER BY find_covering_date déterministe, F16 LOW seedTestState beforeEach, F18 LOW idempotent test assertion non-vacuus. Defer : F10 (deadlock middleware → issue #43), F15 (timezone → company tz v0.2), F17 ($app/navigation couplage → defer browser-only). Reject : F19 (LIMIT/FOR UPDATE order false positive après vérification). 9 findings rejetés (false positives + nits + cosmétique). Tendance Pass 1 : 12 findings > LOW. Tests post-patch : 28/28 repository OK + 28/28 e2e OK + svelte-check 0 errors + lint-i18n PASS. **CLAUDE.md exige Pass 2** (LLM différent, fenêtre fraîche). | Claude Opus 4.7 (1M context)        |
+| 2026-04-28 | 1.3     | **Code Review Pass 2 (Blind Hunter Haiku, Edge Case Hunter Haiku, Acceptance Auditor Opus, fenêtres parallèles fraîches).** 30 findings bruts → 1 MEDIUM + 8 LOW après dédup/triage. **Tendance 12 → 1 (-92%)**. 21 findings rejetés (false positives confirmés post-vérification : VARCHAR(50) en MariaDB utf8mb4 = 50 caractères pas bytes, frontend trim déjà fait, closeSubmitting libéré dans finally avant loadFiscalYears, company_id du JWT garanti > 0, etc.). 4 patches appliqués Pass 2 : G2 LOW tracing::warn! ajouté dans le catch UniqueConstraintViolation de create_if_absent_in_tx pour observabilité (anticipation future UNIQUE constraints), G3 LOW spec drift T1.3+T1.4 signatures `update_name`/`close` mises à jour avec `company_id` (suite F2), G4 LOW spec drift T6.1 i18n keys list mise à jour (28 clés × 4 locales = 112 entrées vs 26×4=104 avant Pass 1 ; clés ajoutées : `error-fiscal-year-name-too-long` F3 + `error-fiscal-year-closed-for-date` F5), G5 LOW spec drift AC #4 + AC #8 wording mis à jour pour refléter F12 single error surface (inline pour validation, toast pour fallback inattendu). G1 MEDIUM AC #22 Playwright coverage gap **reclassé en dette technique documentée** : issue [#47 KF-019](https://github.com/guycorbaz/kesh/issues/47) créée (labels `known-failure` + `technical-debt`), section « Testing debt » ajoutée dans Dev Notes, owner Story 7-7 (à créer). Per CLAUDE.md « Exception : MEDIUM+ reclassé en dette documentée + propriétaire = résolu pour cette itération » → **critère d'arrêt atteint**. Story status `review → done`. | Claude Opus 4.7 (1M context)        |

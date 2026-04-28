@@ -91,7 +91,7 @@ development_status:
   3-4-recherche-pagination-tri: done
   3-5-notifications-aide-contextuelle-audit: done
   3-6-journaux-personnalisables: backlog
-  3-7-gestion-exercices-comptables: review  # Story implémentée 2026-04-28. T1-T9 complétés. Repository (22 tests OK) + API (25 tests E2E OK) + frontend feature lib + UI page /settings/fiscal-years + i18n 4 locales (~26 keys × 4 = 104 entrées) + onboarding finalize Path B auto-create + Playwright spec. Helper notifyMissingFiscalYearOrFallback centralisé pour AC #22. Pattern 5 doc mis à jour.
+  3-7-gestion-exercices-comptables: done  # Story 3-7 done 2026-04-28 (commit a43a568 impl + Pass 1 patches, Pass 2 closure pending commit). Code Review 2 passes : Pass 1 Sonnet (12→0 critical) avec 15 patches dont F1 idempotent finalize, F2 multi-tenant repo, F3 length validation. Pass 2 Haiku/Opus (12→1 finding > LOW, -92%). G1 AC #22 Playwright gap reclassé en dette KF-019 (#47). Total tests post-patch : 28 repo OK + 28 e2e OK + svelte-check 0 errors + lint-i18n PASS. Status review → done après reclassement explicite per CLAUDE.md « MEDIUM+ → dette + owner = résolu ».
   epic-3-retrospective: optional
 
   # Epic 4: Carnet d'Adresses & Catalogue

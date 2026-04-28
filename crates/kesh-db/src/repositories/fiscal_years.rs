@@ -230,7 +230,22 @@ pub async fn create_if_absent_in_tx(
     {
         Ok(result) => result.rows_affected(),
         Err(err) => match map_db_error(err) {
-            DbError::UniqueConstraintViolation(_) => return Ok(None),
+            // Code Review Pass 2 G2 — log explicite quand le catch fire pour
+            // observabilité. Aujourd'hui les 2 UNIQUE constraints du schéma
+            // (`uq_fiscal_years_company_name`, `uq_fiscal_years_company_start_date`)
+            // sont toutes deux scopées `(company_id, ...)` — l'idempotence est
+            // sémantiquement correcte. Si une 3e UNIQUE est ajoutée plus tard,
+            // ce warn permet de détecter le silence en prod.
+            DbError::UniqueConstraintViolation(msg) => {
+                tracing::warn!(
+                    company_id = new.company_id,
+                    name = %new.name,
+                    constraint_msg = %msg,
+                    "create_if_absent_in_tx: UniqueConstraintViolation silenced as idempotent — \
+                     verify constraint matches uq_fiscal_years_company_*"
+                );
+                return Ok(None);
+            }
             other => return Err(other),
         },
     };
