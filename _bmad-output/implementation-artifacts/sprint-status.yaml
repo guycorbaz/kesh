@@ -97,7 +97,7 @@ development_status:
   # (schéma + 2 enums miroirs kesh-core/kesh-db + tous les callers + UI + i18n) sans valeur incrémentale v0.1.
   # Décision validée par Guy lors de la création de Story 3-6 via /bmad-create-story 3-6 (workflow halted faute de spec).
   3-7-gestion-exercices-comptables: done  # Story 3-7 done 2026-04-28 (commits a43a568 impl + Pass 1 patches, e168637 Pass 2 closure). Code Review 2 passes : Pass 1 Sonnet (12→0 critical) avec 15 patches. Pass 2 Haiku/Opus (12→1, -92%). G1 AC #22 Playwright gap reclassé en dette KF-019 (#47).
-  epic-3-retrospective: optional
+  epic-3-retrospective: done  # Skipped 2026-04-28 — décision Guy : pas de retro tardive sur Epic 3 (4 stories core 3-1..3-4 mergées Epic 1 sprints 2026-Q1 ; Story 3-5 audit + 3-7 fiscal_years déjà documentées dans leurs files respectifs avec change logs détaillés). Pas de leçons transverses inédites à capturer post-hoc.
 
   # Epic 4: Carnet d'Adresses & Catalogue
   epic-4: done
