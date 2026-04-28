@@ -631,6 +631,17 @@ pub async fn finalize(
             }
         };
 
+    // Story 7.2 (KF-003) — seed des 4 taux TVA suisses 2024+ pour la nouvelle
+    // company, dans la même transaction (atomicité avec invoice_settings et
+    // fiscal_year ; rollback global si l'un échoue). INSERT IGNORE en interne
+    // → idempotent sous re-finalize.
+    if let Err(e) =
+        kesh_db::repositories::vat_rates::seed_default_swiss_rates_in_tx(&mut tx, company.id).await
+    {
+        best_effort_rollback(tx).await;
+        return Err(AppError::Database(e));
+    }
+
     // Story 3.7 AC #13 — auto-create fiscal_year for current calendar year if
     // none exists (Path B). L'INSERT atomique anti-TOCTOU
     // (`create_if_absent_in_tx`) garantit l'idempotence sous finalize concurrent.

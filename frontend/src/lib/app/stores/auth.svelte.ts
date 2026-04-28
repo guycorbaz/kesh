@@ -9,6 +9,8 @@
  * `username` n'est PAS dans le JWT — absent de `CurrentUser`.
  */
 
+import { resetVatRatesCache } from '$lib/features/vat-rates';
+
 export interface CurrentUser {
 	/** `sub` du JWT — user_id (i64 sérialisé en string côté backend). */
 	userId: string;
@@ -100,6 +102,10 @@ export const authState = {
 			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
+		// Story 7.2 : invalider le cache des taux TVA pour éviter qu'un
+		// user suivant sur le même browser hérite des taux du précédent
+		// (cross-tenant si la même session web sert plusieurs companies).
+		resetVatRatesCache();
 	},
 
 	async logout() {
@@ -122,6 +128,8 @@ export const authState = {
 			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
+		// Story 7.2 : invalider le cache des taux TVA (cf. clearSession).
+		resetVatRatesCache();
 	},
 
 	/**

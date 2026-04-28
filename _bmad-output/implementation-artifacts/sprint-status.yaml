@@ -125,7 +125,7 @@ development_status:
   # Epic 7: Technical Debt Closure (inserted 2026-04-20 retro decision)
   epic-7: in-progress
   7-1-audit-complete-kf-002-multi-tenant: done  # KF-002 audit + multi-tenant scoping hardening. 4 review passes (Opus/Sonnet/Haiku cycle), trend 18→11→3→0 findings >LOW, 30 patches applied across passes 5/6/7. Pattern 5 lock-ordering doc added. v0.2 residuals tracked: #43 (deadlock-retry middleware), #44 (fallback UI accounts), #45 (server-side invoice validation).
-  7-2-kf-003-vat-db-driven-config: ready-for-dev  # KF-003: TVA rates table + config — spec créée 2026-04-28 via bmad-create-story
+  7-2-kf-003-vat-db-driven-config: review  # KF-003: TVA rates table + config — implémentation T1-T8 done 2026-04-28 via bmad-dev-story Opus, ready for code-review (Pass 1 validate Opus 0>LOW, Pass 2 user skipped)
   7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
   7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
   7-5-kf-008-playwright-selector-fixes: backlog  # KF-008: Playwright selector ambiguities (36 tests)

@@ -18,6 +18,7 @@ pub mod onboarding;
 pub mod products;
 pub mod refresh_tokens;
 pub mod users;
+pub mod vat_rates;
 
 /// Limite haute pour les appels `list()` : évite les OOM par `fetch_all`
 /// sur de gros résultats. S'applique à toutes les entités.

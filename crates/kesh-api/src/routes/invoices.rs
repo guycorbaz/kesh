@@ -41,7 +41,7 @@ use crate::routes::ListResponse;
 use crate::routes::limits::{
     MAX_DECIMAL_SCALE, MAX_LINE_TOTAL, MAX_QUANTITY, MAX_UNIT_PRICE, scale_within,
 };
-use crate::routes::vat::validate_vat_rate;
+use crate::routes::vat;
 
 // ---------------------------------------------------------------------------
 // Limites
@@ -55,8 +55,6 @@ const MAX_SEARCH_LEN: usize = 100;
 /// Cap lignes par facture : anti-DoS (N+1 INSERT dans transaction) + anti-overflow
 /// `total_amount` (avec MAX_LINE_TOTAL = 10¹², 200 lignes = 2·10¹⁴ < DECIMAL(19,4) max).
 const MAX_LINES: usize = 200;
-
-const VAT_ERROR_MSG: &str = "Taux TVA non autorisé. Valeurs acceptées : 0.00%, 2.60%, 3.80%, 8.10%";
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -323,10 +321,6 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
         )));
     }
 
-    if !validate_vat_rate(&req.vat_rate) {
-        return Err(AppError::Validation(VAT_ERROR_MSG.into()));
-    }
-
     // Anti-overflow : `qty × unit_price` doit rester sous `MAX_LINE_TOTAL`
     // pour garantir que `Σ line_total` sur MAX_LINES tient dans DECIMAL(19,4).
     let line_total = req.quantity * req.unit_price;
@@ -494,6 +488,8 @@ pub async fn create_invoice(
 
     ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
+    let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
+    vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
     let new = NewInvoice {
@@ -526,6 +522,8 @@ pub async fn update_invoice(
 
     ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
+    let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
+    vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
     let changes = InvoiceUpdate {
@@ -1098,17 +1096,18 @@ mod tests {
         assert!(matches!(err, AppError::Validation(_)));
     }
 
+    // Story 7.2 : `validate_line` ne valide plus le `vat_rate` (shape-check
+    // sync vs VAT-check async DB-driven séparés). Le shape-check passe pour
+    // n'importe quel `Decimal` ; le rejet d'un rate inconnu se fait dans le
+    // handler via `vat::verify_vat_rates_against_db` (couvert par les E2E
+    // invoices_e2e.rs et la suite vat_rates_e2e.rs).
     #[test]
-    fn validate_line_rejects_bad_vat() {
-        let err = validate_line(line("X", dec!(1), dec!(10), dec!(99.99)), 0).unwrap_err();
-        assert!(matches!(err, AppError::Validation(_)));
-    }
-
-    #[test]
-    fn validate_line_accepts_valid_vats() {
-        for v in ["0.00", "2.60", "3.80", "8.10"] {
-            let d: Decimal = v.parse().unwrap();
-            assert!(validate_line(line("X", dec!(1), dec!(10), d), 0).is_ok());
+    fn validate_line_accepts_any_vat_rate_shape() {
+        for d in [dec!(0.00), dec!(2.60), dec!(3.80), dec!(8.10), dec!(7.70)] {
+            assert!(
+                validate_line(line("X", dec!(1), dec!(10), d), 0).is_ok(),
+                "shape-check ne doit pas filtrer le rate ({d}) — délégué à la couche DB"
+            );
         }
     }
 

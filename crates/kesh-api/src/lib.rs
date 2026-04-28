@@ -181,6 +181,8 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Story 4.2 : lecture catalogue produits (tout rôle authentifié)
         .route("/api/v1/products", get(routes::products::list_products))
         .route("/api/v1/products/{id}", get(routes::products::get_product))
+        // Story 7.2 (KF-003) : lecture taux TVA configurés pour la company.
+        .route("/api/v1/vat-rates", get(routes::vat::list_vat_rates))
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
         // Story 5.4 : échéancier en lecture (segment statique, prioritaire sur {id}).

@@ -1056,6 +1056,51 @@ async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
     assert_eq!(create_entry.user_id, admin_user_id);
 }
 
+/// Story 7.2 (KF-003) — vérifie que `finalize` Path B seed les 4 taux TVA
+/// suisses 2024+ pour la nouvelle company, dans la même tx que le reste du
+/// finalize. Test exécute le full Path B + finalize, puis lit `vat_rates`
+/// directement et via `GET /api/v1/vat-rates`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn path_b_finalize_seeds_vat_rates(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    seed_minimal_chart(&pool, company_id).await;
+
+    run_path_b_until_finalize(&app, &token).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/finalize"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // 4 vat_rates en DB (DB-side check).
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vat_rates WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 4, "Path B finalize should seed 4 vat_rates");
+
+    // Et l'endpoint REST renvoie la même liste.
+    let resp = app
+        .client
+        .get(app.url("/api/v1/vat-rates"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 4);
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn path_b_finalize_idempotent_with_existing_fiscal_year(pool: MySqlPool) {
     use kesh_db::entities::NewFiscalYear;

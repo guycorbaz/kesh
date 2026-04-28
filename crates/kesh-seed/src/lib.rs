@@ -159,6 +159,11 @@ pub async fn seed_demo(
     )
     .await?;
 
+    // Story 7.2 (KF-003) — seed des 4 taux TVA suisses 2024+ pour la nouvelle
+    // company demo. Variante non-tx (cohérent avec le pattern des autres seeds
+    // dans cette fonction qui s'exécutent hors transaction unique).
+    kesh_db::repositories::vat_rates::seed_default_swiss_rates(pool, company.id).await?;
+
     // Story 2.6: Pre-fill invoice settings with default accounts (1100, 3000).
     // P1-H3 / P7: Retry with backoff for account lookup timing issues.
     // bulk_create_from_chart commits in its own tx; under MariaDB REPEATABLE READ a

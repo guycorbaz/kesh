@@ -24,7 +24,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::limits::{MAX_DECIMAL_SCALE, MAX_UNIT_PRICE, scale_within};
-use crate::routes::vat::validate_vat_rate;
+use crate::routes::vat;
 
 // ---------------------------------------------------------------------------
 // Limites
@@ -188,12 +188,6 @@ fn validate_common(
         ));
     }
 
-    if !validate_vat_rate(&vat_rate) {
-        return Err(AppError::Validation(
-            "Taux TVA non autorisé. Valeurs acceptées : 0.00%, 2.60%, 3.80%, 8.10%".into(),
-        ));
-    }
-
     Ok(ValidatedFields {
         name: trimmed_name,
         description,
@@ -284,6 +278,7 @@ pub async fn create_product(
     let company = get_company_for(&current_user, &state.pool).await?;
 
     let v = validate_common(req.name, req.description, req.unit_price, req.vat_rate)?;
+    vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &[v.vat_rate]).await?;
 
     let new = NewProduct {
         company_id: company.id,
@@ -305,6 +300,7 @@ pub async fn update_product(
 ) -> Result<Json<ProductResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let v = validate_common(req.name, req.description, req.unit_price, req.vat_rate)?;
+    vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &[v.vat_rate]).await?;
 
     let changes = ProductUpdate {
         name: v.name,
@@ -351,26 +347,21 @@ pub async fn archive_product(
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    use std::str::FromStr;
 
+    // Story 7.2 : `validate_common` ne valide plus le `vat_rate` (shape-check
+    // sync vs VAT-check async DB-driven séparés). Le shape-check passe pour
+    // n'importe quel `Decimal` ; le rejet d'un rate inconnu se fait dans le
+    // handler via `vat::verify_vat_rates_against_db` (couvert par les E2E
+    // products_e2e.rs et la suite vat_rates_e2e.rs).
     #[test]
-    fn validate_accepts_valid_vat_rates() {
-        for rate in ["0.00", "2.60", "3.80", "8.10"] {
-            let d = Decimal::from_str(rate).unwrap();
+    fn validate_accepts_any_vat_rate_shape() {
+        for d in [dec!(0.00), dec!(2.60), dec!(3.80), dec!(8.10), dec!(7.70)] {
             let r = validate_common("Logo".into(), None, dec!(100), d);
-            assert!(r.is_ok(), "rate {rate} should be accepted");
+            assert!(
+                r.is_ok(),
+                "shape-check ne doit pas filtrer le rate ({d}) — délégué à la couche DB"
+            );
         }
-    }
-
-    #[test]
-    fn validate_rejects_unknown_vat_rates() {
-        let err = validate_common("Logo".into(), None, dec!(100), dec!(99.99)).unwrap_err();
-        assert!(matches!(err, AppError::Validation(_)));
-        let err = validate_common("Logo".into(), None, dec!(100), dec!(-1.00)).unwrap_err();
-        assert!(matches!(err, AppError::Validation(_)));
-        // 7.70 (ancien taux pré-2024) refusé
-        let err = validate_common("Logo".into(), None, dec!(100), dec!(7.70)).unwrap_err();
-        assert!(matches!(err, AppError::Validation(_)));
     }
 
     #[test]
