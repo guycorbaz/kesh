@@ -18,7 +18,11 @@
 	import type { InvoiceResponse } from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
-	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
+	import {
+		notifyError,
+		notifyMissingFiscalYearOrFallback,
+		notifySuccess
+	} from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 
@@ -87,6 +91,11 @@
 		} catch (err) {
 			if (isApiError(err)) {
 				validateError = err.message;
+				// Story 3.7 AC #22 — fallback toast actionnable pour FISCAL_YEAR_INVALID.
+				if (notifyMissingFiscalYearOrFallback(err)) {
+					validateOpen = false;
+					return;
+				}
 				if (err.code === 'CONFIGURATION_REQUIRED') {
 					if (authState.currentUser?.role === 'Admin') {
 						validateError = `${err.message} — Configurez les comptes par défaut dans Paramètres > Facturation.`;

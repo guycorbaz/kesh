@@ -500,3 +500,35 @@ invoice-pdf-error-empty = Das empfangene PDF ist leer.
 config-incomplete-title = Konfiguration unvollständig
 config-incomplete-link = Konfigurieren Sie die Abrechnungskonten
 invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten in den Einstellungen
+
+# === Story 3.7 — Geschäftsjahresverwaltung (DE-CH) ===
+
+fiscal-year-title = Geschäftsjahre
+fiscal-year-list-empty = Keine Geschäftsjahre.
+fiscal-year-create-button = Neues Geschäftsjahr
+fiscal-year-name-label = Name
+fiscal-year-start-date-label = Anfangsdatum
+fiscal-year-end-date-label = Enddatum
+fiscal-year-status-label = Status
+fiscal-year-status-open = Offen
+fiscal-year-status-closed = Geschlossen
+fiscal-year-rename-button = Umbenennen
+fiscal-year-close-button = Schliessen
+fiscal-year-close-confirmation-title = Geschäftsjahr schliessen?
+fiscal-year-close-confirmation-body = Sie sind dabei, das Geschäftsjahr „{ $name }“ zu schliessen. Diese Aktion ist unwiderruflich: keine Buchung, Rechnung oder Zahlung kann mehr in diesem Zeitraum erfasst werden. Bestätigen?
+fiscal-year-close-confirmation-action = Endgültig schliessen
+fiscal-year-created = Geschäftsjahr erfolgreich erstellt.
+fiscal-year-renamed = Geschäftsjahr umbenannt.
+fiscal-year-closed = Geschäftsjahr geschlossen.
+error-fiscal-year-overlap = Dieses Geschäftsjahr überschneidet sich mit einem bestehenden Jahr.
+error-fiscal-year-name-duplicate = Ein Geschäftsjahr mit diesem Namen existiert bereits.
+error-fiscal-year-name-empty = Der Name des Geschäftsjahres ist erforderlich.
+error-fiscal-year-name-too-long = Der Name des Geschäftsjahrs ist zu lang (max. 50 Zeichen).
+error-fiscal-year-dates-invalid = Ungültige Daten — das Enddatum muss strikt nach dem Anfangsdatum liegen.
+error-fiscal-year-already-closed = Dieses Geschäftsjahr ist bereits geschlossen.
+error-fiscal-year-conflict = Konflikt im Geschäftsjahr (Name oder Anfangsdatum bereits verwendet).
+error-fiscal-year-missing = Erstellen Sie zuerst ein Geschäftsjahr unter Einstellungen → Geschäftsjahre.
+error-fiscal-year-closed-for-date = Das Geschäftsjahr, das dieses Datum abdeckt, ist geschlossen. Überprüfen Sie das Datum oder Ihre Geschäftsjahre.
+go-to-settings = Einstellungen öffnen
+settings-fiscal-years-link = Erstellen, umbenennen oder schliessen Sie die Geschäftsjahre Ihres Unternehmens.
+

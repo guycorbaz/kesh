@@ -500,3 +500,35 @@ invoice-pdf-error-empty = Received PDF is empty.
 config-incomplete-title = Configuration incomplete
 config-incomplete-link = Configure invoicing accounts
 invoice-settings-required = Please configure the invoicing accounts in settings first
+
+# === Story 3.7 — Fiscal Years (EN-CH) ===
+
+fiscal-year-title = Fiscal Years
+fiscal-year-list-empty = No fiscal years.
+fiscal-year-create-button = New fiscal year
+fiscal-year-name-label = Name
+fiscal-year-start-date-label = Start date
+fiscal-year-end-date-label = End date
+fiscal-year-status-label = Status
+fiscal-year-status-open = Open
+fiscal-year-status-closed = Closed
+fiscal-year-rename-button = Rename
+fiscal-year-close-button = Close
+fiscal-year-close-confirmation-title = Close this fiscal year?
+fiscal-year-close-confirmation-body = You are about to close fiscal year "{ $name }". This action is irreversible: no entry, invoice, or payment can be recorded for this period anymore. Confirm?
+fiscal-year-close-confirmation-action = Close permanently
+fiscal-year-created = Fiscal year created successfully.
+fiscal-year-renamed = Fiscal year renamed.
+fiscal-year-closed = Fiscal year closed.
+error-fiscal-year-overlap = This fiscal year overlaps with an existing one.
+error-fiscal-year-name-duplicate = A fiscal year with this name already exists.
+error-fiscal-year-name-empty = The fiscal year name is required.
+error-fiscal-year-name-too-long = The fiscal year name is too long (50 characters maximum).
+error-fiscal-year-dates-invalid = Invalid dates — the end date must be strictly after the start date.
+error-fiscal-year-already-closed = This fiscal year is already closed.
+error-fiscal-year-conflict = Fiscal year conflict (name or start date already in use).
+error-fiscal-year-missing = First create a fiscal year in Settings → Fiscal Years.
+error-fiscal-year-closed-for-date = The fiscal year covering this date is closed. Check the entered date or your fiscal years.
+go-to-settings = Open Settings
+settings-fiscal-years-link = Create, rename, or close your company fiscal years.
+

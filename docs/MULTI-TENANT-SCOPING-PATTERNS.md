@@ -307,10 +307,12 @@ Rationale: this matches the natural dependency direction (state machine → tena
 
 | Endpoint | Lock sequence | File |
 |----------|---------------|------|
-| `POST /onboarding/finalize` | onboarding_state → company → accounts → settings | `routes/onboarding.rs` finalize |
+| `POST /onboarding/finalize` | onboarding_state → company → accounts → settings → fiscal_years (auto-create via `create_if_absent_in_tx`) | `routes/onboarding.rs` finalize |
 | `POST /onboarding/coordinates`, `/org-type`, `/accounting-language` | company only (single lock, safe) | same |
 | `POST /onboarding/reset` | onboarding_state (gate-check only — released before reset_demo) | `routes/onboarding.rs` reset |
 | `kesh_seed::seed_demo` | companies (count-validation only — released before destructive ops) | `kesh-seed/src/lib.rs` |
+| `fiscal_years::create / update_name / close / find_*_locked` | fiscal_years only (single table, internal tx) — `FOR UPDATE` locks pour pré-check unicité/overlap et figer le before-snapshot d'audit log. Pas de chaîne cross-table. | `kesh-db/src/repositories/fiscal_years.rs` |
+| `invoices::validate_invoice` | invoices → fiscal_years (via `find_open_covering_date`) → invoice_number_sequences → journal_entries | `kesh-db/src/repositories/invoices.rs` |
 
 ### Known Risk — Tracked as KF-002-H-002
 

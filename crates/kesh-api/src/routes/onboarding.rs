@@ -12,16 +12,18 @@
 //! - POST skip-bank : step == 6
 //! - POST reset : aucun prérequis
 
-use axum::Json;
 use axum::extract::State;
+use axum::{Extension, Json};
+use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::onboarding::UiMode;
-use kesh_db::entities::{Language, OrgType};
+use kesh_db::entities::{Language, NewFiscalYear, OrgType};
 use kesh_db::repositories::onboarding;
 
 use crate::AppState;
 use crate::errors::AppError;
+use crate::middleware::auth::CurrentUser;
 
 /// P1-H1: Helper for graceful transaction rollback
 /// Rollback errors are best-effort cleanup; don't fail the request if rollback fails
@@ -529,7 +531,10 @@ pub async fn skip_bank(
 /// `onboarding_state → companies → accounts`. New endpoints with multiple
 /// locks MUST follow the same order to avoid cross-table deadlocks.
 /// Tracking issue: KF-002-H-002 (deadlock-retry middleware planned for v0.2).
-pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
+pub async fn finalize(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<OnboardingResponse>, AppError> {
     use kesh_db::errors::map_db_error;
 
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
@@ -625,6 +630,31 @@ pub async fn finalize(State(state): State<AppState>) -> Result<Json<OnboardingRe
                 return Err(AppError::Database(e));
             }
         };
+
+    // Story 3.7 AC #13 — auto-create fiscal_year for current calendar year if
+    // none exists (Path B). L'INSERT atomique anti-TOCTOU
+    // (`create_if_absent_in_tx`) garantit l'idempotence sous finalize concurrent.
+    // Audit log inséré uniquement si la création a effectivement eu lieu.
+    let year = Utc::now().naive_utc().date().year();
+    let fy_name = format!("Exercice {year}");
+    let fy_start = chrono::NaiveDate::from_ymd_opt(year, 1, 1).expect("valid date");
+    let fy_end = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("valid date");
+    let new_fy = NewFiscalYear {
+        company_id: company.id,
+        name: fy_name,
+        start_date: fy_start,
+        end_date: fy_end,
+    };
+    if let Err(e) = kesh_db::repositories::fiscal_years::create_if_absent_in_tx(
+        &mut tx,
+        current_user.user_id,
+        new_fy,
+    )
+    .await
+    {
+        best_effort_rollback(tx).await;
+        return Err(AppError::Database(e));
+    }
 
     // Mark onboarding as complete while holding locks.
     // P15: under FOR UPDATE the singleton row cannot be modified by another tx,

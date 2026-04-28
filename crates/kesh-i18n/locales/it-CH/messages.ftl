@@ -500,3 +500,35 @@ invoice-pdf-error-empty = Il PDF ricevuto è vuoto.
 config-incomplete-title = Configurazione incompleta
 config-incomplete-link = Configurare i conti di fatturazione
 invoice-settings-required = Configurare innanzitutto i conti di fatturazione nelle impostazioni
+
+# === Story 3.7 — Gestione esercizi contabili (IT-CH) ===
+
+fiscal-year-title = Esercizi contabili
+fiscal-year-list-empty = Nessun esercizio contabile.
+fiscal-year-create-button = Nuovo esercizio
+fiscal-year-name-label = Nome
+fiscal-year-start-date-label = Data di inizio
+fiscal-year-end-date-label = Data di fine
+fiscal-year-status-label = Stato
+fiscal-year-status-open = Aperto
+fiscal-year-status-closed = Chiuso
+fiscal-year-rename-button = Rinomina
+fiscal-year-close-button = Chiudi
+fiscal-year-close-confirmation-title = Chiudere questo esercizio?
+fiscal-year-close-confirmation-body = Stai per chiudere l’esercizio « { $name } ». Questa azione è irreversibile: nessuna registrazione, fattura o pagamento potrà più essere registrato su questo periodo. Confermare?
+fiscal-year-close-confirmation-action = Chiudi definitivamente
+fiscal-year-created = Esercizio creato con successo.
+fiscal-year-renamed = Esercizio rinominato.
+fiscal-year-closed = Esercizio chiuso.
+error-fiscal-year-overlap = Questo esercizio si sovrappone a un esercizio esistente.
+error-fiscal-year-name-duplicate = Un esercizio con questo nome esiste già.
+error-fiscal-year-name-empty = Il nome dell’esercizio è obbligatorio.
+error-fiscal-year-name-too-long = Il nome dell’esercizio è troppo lungo (massimo 50 caratteri).
+error-fiscal-year-dates-invalid = Date non valide — la data di fine deve essere strettamente successiva alla data di inizio.
+error-fiscal-year-already-closed = Questo esercizio è già chiuso.
+error-fiscal-year-conflict = Conflitto sull’esercizio (nome o data di inizio già utilizzati).
+error-fiscal-year-missing = Crea prima un esercizio contabile in Impostazioni → Esercizi.
+error-fiscal-year-closed-for-date = L’esercizio che copre questa data è chiuso. Verifica la data inserita o consulta i tuoi esercizi.
+go-to-settings = Apri impostazioni
+settings-fiscal-years-link = Crea, rinomina o chiudi gli esercizi contabili della tua azienda.
+

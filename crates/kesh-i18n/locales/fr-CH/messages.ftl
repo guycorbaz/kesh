@@ -536,3 +536,35 @@ invoice-pdf-error-empty = Le PDF reçu est vide.
 config-incomplete-title = Configuration incomplète
 config-incomplete-link = Configurez les comptes de facturation
 invoice-settings-required = Configurez d'abord les comptes de facturation dans les paramètres
+
+# === Story 3.7 — Gestion des exercices comptables (FR-CH) ===
+
+fiscal-year-title = Exercices comptables
+fiscal-year-list-empty = Aucun exercice comptable.
+fiscal-year-create-button = Nouvel exercice
+fiscal-year-name-label = Nom
+fiscal-year-start-date-label = Date de début
+fiscal-year-end-date-label = Date de fin
+fiscal-year-status-label = Statut
+fiscal-year-status-open = Ouvert
+fiscal-year-status-closed = Clôturé
+fiscal-year-rename-button = Renommer
+fiscal-year-close-button = Clôturer
+fiscal-year-close-confirmation-title = Clôturer cet exercice ?
+fiscal-year-close-confirmation-body = Vous êtes sur le point de clôturer l’exercice « { $name } ». Cette action est irréversible : aucune écriture, facture ou paiement ne pourra plus être enregistré sur cette période. Confirmer ?
+fiscal-year-close-confirmation-action = Clôturer définitivement
+fiscal-year-created = Exercice créé avec succès.
+fiscal-year-renamed = Exercice renommé.
+fiscal-year-closed = Exercice clôturé.
+error-fiscal-year-overlap = Cet exercice chevauche un exercice existant.
+error-fiscal-year-name-duplicate = Un exercice avec ce nom existe déjà.
+error-fiscal-year-name-empty = Le nom de l’exercice est obligatoire.
+error-fiscal-year-name-too-long = Le nom de l’exercice est trop long (50 caractères maximum).
+error-fiscal-year-dates-invalid = Dates invalides — la date de fin doit être strictement postérieure à la date de début.
+error-fiscal-year-already-closed = Cet exercice est déjà clôturé.
+error-fiscal-year-conflict = Conflit d’exercice (nom ou date de début déjà utilisé).
+error-fiscal-year-missing = Créez d’abord un exercice comptable dans Paramètres → Exercices.
+error-fiscal-year-closed-for-date = L’exercice qui couvre cette date est clôturé. Vérifiez la date saisie ou consultez vos exercices.
+go-to-settings = Ouvrir Paramètres
+settings-fiscal-years-link = Créez, renommez ou clôturez les exercices comptables de votre entreprise.
+

@@ -113,6 +113,19 @@
 				<Button variant="outline" size="sm" href="/users">{msg('settings-manage', 'Gérer')}</Button>
 			</div>
 		</section>
+
+		<Separator />
+
+		<!-- Section Exercices comptables (Story 3.7) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{msg('fiscal-year-title', 'Exercices comptables')}</h2>
+				<Button variant="outline" size="sm" href="/settings/fiscal-years">{msg('settings-manage', 'Gérer')}</Button>
+			</div>
+			<p class="mt-2 text-sm text-text-muted">
+				{msg('settings-fiscal-years-link', "Créez, renommez ou clôturez les exercices comptables de votre entreprise.")}
+			</p>
+		</section>
 	</div>
 {:else}
 	<p class="text-text-muted">{msg('settings-no-company', 'Aucune organisation configurée. Complétez l\'onboarding.')}</p>
