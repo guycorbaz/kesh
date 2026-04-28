@@ -24,7 +24,7 @@ use serde::Serialize;
 use sqlx::mysql::MySqlPool;
 
 use kesh_db::entities::VatRate;
-use kesh_db::errors::DbError;
+use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::vat_rates;
 
 use crate::AppState;
@@ -57,10 +57,13 @@ pub async fn validate_vat_rate(
 
 /// Vérifie qu'un ensemble de taux TVA sont tous autorisés pour la company.
 ///
-/// Déduplique via `BTreeSet<&Decimal>` (`Decimal::cmp` ignore le scale,
-/// donc `8.10` et `8.1` sont considérés égaux) → 1 SELECT par rate distinct.
+/// Déduplique via `BTreeSet<&Decimal>` (`Decimal::cmp` ignore le scale en
+/// `rust_decimal` ≥ 1.30 — projet en 1.41, OK) puis émet **une seule**
+/// requête `SELECT ... WHERE rate IN (?, ?, ...)`. Évite l'amplification
+/// O(N) qui transformerait MAX_LINES (200) lignes distinctes en 200
+/// round-trips DB.
 ///
-/// Court-circuit au premier rate refusé : retourne `AppError::Validation`
+/// Si tous les rates sont valides → `Ok(())`. Sinon → `AppError::Validation`
 /// avec `VAT_REJECTED_MSG`.
 pub async fn verify_vat_rates_against_db(
     pool: &MySqlPool,
@@ -68,13 +71,33 @@ pub async fn verify_vat_rates_against_db(
     rates: &[Decimal],
 ) -> Result<(), AppError> {
     let unique: BTreeSet<&Decimal> = rates.iter().collect();
-    for rate in unique {
-        let valid = validate_vat_rate(pool, company_id, rate).await?;
-        if !valid {
-            return Err(AppError::Validation(VAT_REJECTED_MSG.into()));
-        }
+    if unique.is_empty() {
+        return Ok(());
     }
-    Ok(())
+
+    // SELECT COUNT(DISTINCT rate) WHERE rate IN (?, ?, ...) — un seul
+    // round-trip DB quel que soit le nombre de rates distincts. Les
+    // placeholders `?` sont liés via `.bind()` (pas d'interpolation).
+    let placeholders = std::iter::repeat("?")
+        .take(unique.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT COUNT(DISTINCT rate) FROM vat_rates \
+         WHERE company_id = ? AND active = TRUE AND rate IN ({placeholders})",
+    );
+
+    let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(company_id);
+    for rate in &unique {
+        query = query.bind(*rate);
+    }
+    let matched = query.fetch_one(pool).await.map_err(map_db_error)?;
+
+    if matched as usize == unique.len() {
+        Ok(())
+    } else {
+        Err(AppError::Validation(VAT_REJECTED_MSG.into()))
+    }
 }
 
 // ---------------------------------------------------------------------------

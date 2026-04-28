@@ -11,11 +11,14 @@
 
 use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 
 /// Taux TVA persisté en base, scopé `company_id`.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-#[serde(rename_all = "camelCase")]
+///
+/// **Pas de dérivation `Serialize`** (Pass 1 remediation #17) : si un futur
+/// handler retourne `Json(rates)` au lieu de la projection
+/// `routes/vat::VatRateResponse`, `companyId` fuiterait au client. Toute
+/// exposition REST passe obligatoirement par `VatRateResponse`.
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct VatRate {
     pub id: i64,
     pub company_id: i64,
@@ -30,8 +33,7 @@ pub struct VatRate {
 
 /// Données de création d'un taux TVA. Réservé Epic 11-1 (CRUD admin) ;
 /// v0.1 utilisé uniquement par les helpers seed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct NewVatRate {
     pub company_id: i64,
     pub label: String,

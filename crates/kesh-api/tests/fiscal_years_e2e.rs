@@ -1064,10 +1064,14 @@ async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
 async fn path_b_finalize_seeds_vat_rates(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
-    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    // Pass 1 remediation #11 : récupérer `company_id` via le user admin
+    // (déterministe — `bootstrap_admin` crée admin avec username 'admin')
+    // plutôt que via `ORDER BY id LIMIT 1` qui suppose une unique company.
+    let company_id: i64 =
+        sqlx::query_scalar("SELECT company_id FROM users WHERE username = 'admin'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     seed_minimal_chart(&pool, company_id).await;
 
     run_path_b_until_finalize(&app, &token).await;

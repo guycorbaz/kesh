@@ -90,6 +90,23 @@ pub async fn seed_default_swiss_rates_in_tx(
     .await
     .map_err(map_db_error)?;
 
+    // Pass 1 remediation #19 : `INSERT IGNORE` swallow silencieusement les
+    // violations CHECK (MariaDB). Si une maintenance future modifiait les
+    // valeurs seed pour des invalides (rate < 0, label vide), 0 row serait
+    // insérée sans erreur. Cette assertion post-seed transforme un échec
+    // silencieux en `Invariant` explicite.
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vat_rates WHERE company_id = ? AND active = TRUE")
+            .bind(company_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    if count < 4 {
+        return Err(DbError::Invariant(format!(
+            "vat_rates seed failed: company_id={company_id} has {count} rows (expected ≥ 4)"
+        )));
+    }
+
     Ok(())
 }
 

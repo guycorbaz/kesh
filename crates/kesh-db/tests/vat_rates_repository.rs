@@ -206,20 +206,32 @@ async fn migration_backfill_pattern_seeds_existing_companies(pool: MySqlPool) {
         .unwrap();
 
     // Pattern strictement identique au bloc backfill de
-    // `20260428000001_vat_rates.sql`.
+    // `20260428000001_vat_rates.sql` — paramètres liés via `.bind()`
+    // (Pass 1 remediation #12 : pas d'interpolation de chaîne SQL).
+    let backfill = |label: &str, rate: &str| {
+        let label = label.to_string();
+        let rate: rust_decimal::Decimal = rate.parse().unwrap();
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT IGNORE INTO vat_rates (company_id, label, rate, valid_from, valid_to) \
+                 SELECT id, ?, ?, '2024-01-01', NULL FROM companies",
+            )
+            .bind(label)
+            .bind(rate)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+
     for (label, rate) in [
         ("product-vat-normal", "8.10"),
         ("product-vat-special", "3.80"),
         ("product-vat-reduced", "2.60"),
         ("product-vat-exempt", "0.00"),
     ] {
-        sqlx::query(&format!(
-            "INSERT IGNORE INTO vat_rates (company_id, label, rate, valid_from, valid_to) \
-             SELECT id, '{label}', {rate}, '2024-01-01', NULL FROM companies"
-        ))
-        .execute(&pool)
-        .await
-        .unwrap();
+        backfill(label, rate).await;
     }
 
     let rates_a = vat_rates::list_active_for_company(&pool, company_a.id)
@@ -238,13 +250,7 @@ async fn migration_backfill_pattern_seeds_existing_companies(pool: MySqlPool) {
         ("product-vat-reduced", "2.60"),
         ("product-vat-exempt", "0.00"),
     ] {
-        sqlx::query(&format!(
-            "INSERT IGNORE INTO vat_rates (company_id, label, rate, valid_from, valid_to) \
-             SELECT id, '{label}', {rate}, '2024-01-01', NULL FROM companies"
-        ))
-        .execute(&pool)
-        .await
-        .unwrap();
+        backfill(label, rate).await;
     }
     let rates_a = vat_rates::list_active_for_company(&pool, company_a.id)
         .await

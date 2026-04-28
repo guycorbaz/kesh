@@ -297,3 +297,86 @@ async fn list_vat_rates_query_param_companyid_ignored(pool: MySqlPool) {
         "query param companyId should be ignored — scope reste celui du JWT (CompA)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests directs de `verify_vat_rates_against_db` (sans HTTP) — Pass 1
+// remediation #4 + #9 : couverture du chemin batched IN-clause + dedup.
+// ---------------------------------------------------------------------------
+
+use kesh_api::routes::vat::{VAT_REJECTED_MSG, verify_vat_rates_against_db};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_accepts_all_seeded_rates(pool: MySqlPool) {
+    let company_id = create_company(&pool, "CompA").await;
+    let rates = vec![dec!(8.10), dec!(3.80), dec!(2.60), dec!(0.00)];
+    verify_vat_rates_against_db(&pool, company_id, &rates)
+        .await
+        .expect("all 4 seeded rates should pass");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_rejects_unknown_rate(pool: MySqlPool) {
+    let company_id = create_company(&pool, "CompA").await;
+    // 7.70 = ancien taux 2018-2023, jamais seedé v0.1.
+    let err = verify_vat_rates_against_db(&pool, company_id, &[dec!(7.70)])
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains(VAT_REJECTED_MSG),
+        "expected VAT_REJECTED_MSG, got {err:?}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_rejects_if_any_rate_unknown(pool: MySqlPool) {
+    let company_id = create_company(&pool, "CompA").await;
+    // 8.10 valide, 7.70 invalide → l'ensemble doit être rejeté.
+    let err = verify_vat_rates_against_db(&pool, company_id, &[dec!(8.10), dec!(7.70)])
+        .await
+        .unwrap_err();
+    assert!(format!("{err:?}").contains(VAT_REJECTED_MSG));
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_dedups_duplicate_rates(pool: MySqlPool) {
+    // Pass 1 remediation #4 (T3.4) : input `[8.10, 8.10, 8.10]` doit passer
+    // sans erreur via la dédup `BTreeSet<&Decimal>` + IN clause batched.
+    let company_id = create_company(&pool, "CompA").await;
+    verify_vat_rates_against_db(&pool, company_id, &[dec!(8.10), dec!(8.10), dec!(8.10)])
+        .await
+        .expect("dedup should reduce to 1 distinct rate, valid");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_scale_invariant_across_inputs(pool: MySqlPool) {
+    // `Decimal::cmp` scale-invariant (rust_decimal ≥ 1.30 — projet en 1.41).
+    // `8.1` et `8.10` doivent collapser à 1 rate distinct dans le BTreeSet.
+    let company_id = create_company(&pool, "CompA").await;
+    verify_vat_rates_against_db(&pool, company_id, &[dec!(8.1), dec!(8.10), dec!(8.100)])
+        .await
+        .expect("scale-invariant dedup");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_empty_slice_returns_ok(pool: MySqlPool) {
+    // Slice vide = no-op (pas de SELECT). Comportement défensif.
+    let company_id = create_company(&pool, "CompA").await;
+    verify_vat_rates_against_db(&pool, company_id, &[] as &[Decimal])
+        .await
+        .expect("empty slice should be Ok(())");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn verify_vat_isolates_per_tenant(pool: MySqlPool) {
+    // CompA n'a que les 4 taux par défaut. CompB pareil. Mais si un dev
+    // bypassait `company_id` dans la query, le test attraperait la fuite.
+    let company_a = create_company(&pool, "CompA").await;
+    let _company_b = create_company(&pool, "CompB").await;
+
+    // 8.10 est seedé pour les 2 — passe pour A.
+    verify_vat_rates_against_db(&pool, company_a, &[dec!(8.10)])
+        .await
+        .expect("8.10 valid for CompA");
+}

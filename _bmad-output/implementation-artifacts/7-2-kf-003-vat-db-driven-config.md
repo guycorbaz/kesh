@@ -285,7 +285,7 @@ Cohérent avec patterns établis Story 6-2 + 7-1 :
 
 ## Acceptance Criteria (AC)
 
-1. **Schéma table créée** — Given la migration appliquée, When `DESCRIBE vat_rates`, Then les colonnes `id`, `company_id`, `label`, `rate`, `valid_from`, `valid_to`, `active`, `version`, `created_at`, `updated_at` existent avec les types et contraintes définis en §schéma. Les contraintes `fk_vat_rates_company`, `uq_vat_rates_company_rate_valid_from`, `chk_vat_rates_rate_range`, `chk_vat_rates_label_not_empty`, `chk_vat_rates_dates`, et l'index `idx_vat_rates_company_active` sont présents.
+1. **Schéma table créée** — Given la migration appliquée, When `DESCRIBE vat_rates`, Then les colonnes `id`, `company_id`, `label`, `rate`, `valid_from`, `valid_to`, `active`, `created_at`, `updated_at` existent avec les types et contraintes définis en §schéma. Les contraintes `fk_vat_rates_company`, `uq_vat_rates_company_rate_valid_from`, `chk_vat_rates_rate_range`, `chk_vat_rates_label_not_empty`, `chk_vat_rates_dates`, et l'index `idx_vat_rates_company_active` sont présents. **Pas de colonne `version` v0.1** (table read-only — Epic 11-1 ajoutera `version` lors de l'introduction du CRUD admin, cf. §schéma).
 
 2. **Backfill complet** — Given la migration appliquée sur une DB contenant N companies, When `SELECT company_id, COUNT(*) FROM vat_rates GROUP BY company_id`, Then chaque company a exactement 4 lignes (taux suisses 2024+) avec `valid_from='2024-01-01'`, `valid_to=NULL`, `active=TRUE`.
 
@@ -645,4 +645,57 @@ Claude Opus 4.7 (1M context) — `claude-opus-4-7[1m]` — bmad-dev-story 2026-0
 **Patches appliqués** : 12 edits sur le story file (schéma, §seed, §migration, §validation backend, §frontend store, T1.2, T3.2-T3.4, T5.3, T6.1, T6.3, T4.3, AC #7).
 
 **Commit attendu** : `git commit -m "Story 7-2: spec validate Pass 1 — Opus, 1H+4M+5L → 0>LOW, 12 patches"` (cf. CLAUDE.md règle commit après chaque passe).
+
+#### Code Review Pass 1 — Sonnet (3 reviewers en parallèle, 2026-04-28)
+
+**Reviewers** : Blind Hunter (Sonnet, no context), Edge Case Hunter (Sonnet, projet read-only), Acceptance Auditor (Sonnet, spec + 23 ACs).
+
+**Findings bruts** : 25 → après dédup : 21 → après vérification : **14 patches appliqués + 7 reject/defer**.
+
+**Trend de sévérité (avant remédiation)** :
+
+| Sévérité | Count brut | Après vérification |
+|---|---|---|
+| HIGH | 2 (#1, #2) | **0** (#1 reject — handlers inexistants ; #2 patché) |
+| MEDIUM | 10 | **7 patchés + 3 reject/defer** |
+| LOW | 7 | **5 patchés + 2 reject** |
+| Bad spec | 1 (#13) | patché (AC #1 corrigée) |
+| Reject (noise) | 2 | confirmés |
+
+**Patches appliqués (14)** :
+
+| ID | Sévérité | Sujet | Fichier(s) |
+|---|---|---|---|
+| #13 | bad_spec | AC #1 retire `version` (incohérent §schéma) | story file |
+| #2 | HIGH | Cross-tenant cache bleed — generation counter | `vat-rates.store.svelte.ts` |
+| #4 | MEDIUM | Tests dédup + batch IN clause (7 tests sqlx) | `vat_rates_e2e.rs` |
+| #5 | MEDIUM | Vérification rust_decimal ≥ 1.30 (1.41 OK) | doc inline |
+| #7 | MEDIUM | Submit guard `vatOptions.length === 0` | `products/+page.svelte` |
+| #8 | MEDIUM | InvoiceForm initLines réactif (patch lines au resolve) | `InvoiceForm.svelte` |
+| #9 | MEDIUM | Batch `IN (?, ?, ...)` clause (1 SELECT vs N) | `routes/vat.rs` |
+| #10 | MEDIUM | `$effect` cleanup flag `cancelled` (×2) | `InvoiceForm.svelte`, `products/+page.svelte` |
+| #11 | MEDIUM | `company_id` via user admin (déterministe) | `fiscal_years_e2e.rs` |
+| #12 | MEDIUM | `format!` → `.bind()` dans test backfill | `vat_rates_repository.rs` |
+| #15 | LOW | Reformulation commentaire `TABLES_TO_TRUNCATE` | `test_fixtures.rs` |
+| #16 | LOW | `data-testid="invoice-line-vat-rate"` + sélecteur stable | `InvoiceForm.svelte`, `vat-rates.spec.ts` |
+| #17 | LOW | `VatRate` retire `Serialize`/`Deserialize` | `entities/vat_rate.rs` |
+| #19 | LOW | Assertion post-seed `COUNT >= 4` (détecte CHECK silently dropped) | `repositories/vat_rates.rs` |
+
+**Reject / Defer (7)** :
+
+| ID | Décision | Justification |
+|---|---|---|
+| #1 (HIGH) | **REJECT** | Handlers `add_line_handler`/`update_line_handler` n'existent pas dans le codebase — la spec T3.3 référençait des routes non montées. Toute la gestion des lignes passe par `create_invoice` / `update_invoice` (déjà couverts). Le finding était basé sur le texte de la spec, induisant en erreur les reviewers. |
+| #3 (MEDIUM) | **DEFER → Epic 11-1** | `validate_invoice_handler` ne re-vérifie pas la TVA. En v0.1 `vat_rates` est read-only après seed (CRUD admin = Epic 11-1) → un draft ne peut pas voir ses rates devenir invalides entre `create` et `validate`. Defense-in-depth = scope Epic 11-1. |
+| #5 (MEDIUM) | RESOLVED par doc | `rust_decimal = 1.41` (≥ 1.30) → `Decimal::cmp` scale-invariant garanti. Doc ajoutée inline. |
+| #6 (MEDIUM) | **REJECT** | `products.spec.ts` et `invoices.spec.ts` utilisent déjà `selectOption({ value })` (sélecteur déterministe par attribut, indépendant de la locale). Pattern équivalent à `getByRole('option', { name: /8\.10/ })` que T7.1 mentionne par exemple ("ou équivalent"). |
+| #14 (LOW) | **REJECT** | La feature `serde-str` de `rust_decimal` est activée dans `kesh-db/Cargo.toml:14` — c'est le défaut projet pour tous les DTOs `Decimal` (cf. `InvoiceResponse.vat_rate`). Pas d'annotation `#[serde(with = ...)]` nécessaire. |
+| #18 (LOW) | **DOCUMENTÉ** | Test `path_b_finalize_seeds_vat_rates` placé dans `fiscal_years_e2e.rs` (vs `onboarding_e2e.rs` indiqué T5.3) — par cohérence avec les autres tests de `bootstrap_admin` + `run_path_b_until_finalize` qui vivent tous dans `fiscal_years_e2e.rs`. Couvre AC #14 correctement. |
+| EC#21, EC#20 (noise) | **REJECT** | Empty slice gated par `validate_lines` non-empty upstream ; `DECIMAL(5,2)` head-room cosmétique (Suisse jamais > 10%). |
+
+**Résultat Pass 1** : 0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW restant après remédiation. Critère d'arrêt CLAUDE.md atteint.
+
+**Pass 2 recommandée** : LLM différent (Haiku ou Opus) sur fenêtre fraîche pour orthogonal review.
+
+**Commit attendu** : `git commit -m "Story 7-2: code review Pass 1 remediation — Sonnet, 14 patches + 7 rejects/defers"`.
 

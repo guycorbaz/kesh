@@ -49,7 +49,7 @@ test.describe('Taux TVA — chargement dynamique depuis le backend', () => {
 		await page.goto('/invoices/new');
 
 		// Attendre la 1re ligne par défaut (créée à l'ouverture du formulaire).
-		const lineSelect = page.locator('select').filter({ has: page.locator('option') }).first();
+		const lineSelect = page.getByTestId('invoice-line-vat-rate').first();
 		await expect(lineSelect.locator('option')).toHaveCount(4, { timeout: 5000 });
 	});
 
@@ -73,7 +73,7 @@ test.describe('Taux TVA — chargement dynamique depuis le backend', () => {
 
 		await page.goto('/invoices/new');
 		await expect(
-			page.locator('select').filter({ has: page.locator('option') }).first().locator('option'),
+			page.getByTestId('invoice-line-vat-rate').first().locator('option'),
 		).toHaveCount(4, { timeout: 5000 });
 
 		await page.goto('/products');

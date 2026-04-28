@@ -42,18 +42,26 @@
 	let vatOptions = $state<VatOption[]>([]);
 
 	$effect(() => {
+		// Pass 1 remediation #10 : flag `cancelled` pour éviter d'écrire dans
+		// `vatOptions` si le composant se démonte pendant le fetch.
+		let cancelled = false;
 		(async () => {
 			try {
 				const rates = await getVatRates();
-				vatOptions = rates.map((r) => ({
-					value: r.rate,
-					labelKey: r.label,
-					fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
-				}));
+				if (!cancelled) {
+					vatOptions = rates.map((r) => ({
+						value: r.rate,
+						labelKey: r.label,
+						fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
+					}));
+				}
 			} catch {
 				// Échec réseau : `<select>` reste vide/disabled.
 			}
 		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	// --- State ---
@@ -282,6 +290,17 @@
 		// Garde anti double-submit : la touche Entrée peut déclencher le form
 		// même si le bouton est `disabled`.
 		if (formSubmitting) return;
+		// Pass 1 remediation #7 : la touche Entrée peut soumettre alors que
+		// le `<select disabled>` n'est pas encore peuplé (store en vol). Sans
+		// ce guard, `formVatRate` reste à sa valeur initiale `'8.10'` même si
+		// la company a une liste différente.
+		if (vatOptions.length === 0) {
+			formError = i18nMsg(
+				'product-error-vat-loading',
+				'Chargement des taux TVA en cours, veuillez patienter…'
+			);
+			return;
+		}
 		formError = formValidation;
 		if (formError) return;
 

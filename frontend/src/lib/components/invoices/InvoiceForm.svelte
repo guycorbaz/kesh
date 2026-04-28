@@ -44,15 +44,40 @@
 	const DEFAULT_VAT = $derived(vatOptions[0] ?? '8.10');
 
 	$effect(() => {
+		// Pass 1 remediation #10 : flag `cancelled` pour éviter d'écrire dans
+		// `vatOptions` si le composant se démonte pendant le fetch.
+		let cancelled = false;
 		(async () => {
 			try {
 				const rates = await getVatRates();
-				vatOptions = rates.map((r) => r.rate);
+				if (!cancelled) {
+					vatOptions = rates.map((r) => r.rate);
+				}
 			} catch {
 				// Échec réseau : on garde la liste vide → `<select>` disabled,
 				// l'utilisateur voit l'erreur globale au moment du submit (validate).
 			}
 		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// Pass 1 remediation #8 : si une ligne a été initialisée avec le fallback
+	// hardcodé `'8.10'` (avant resolve du store) et que `'8.10'` n'est pas dans
+	// la liste de la company courante, repointer la ligne sur le premier
+	// vatOption résolu. No-op pour les companies suisses standard où `8.10`
+	// fait partie du seed — défense pour Epic 11-1 (CRUD admin) où la liste
+	// peut diverger d'une company à l'autre.
+	$effect(() => {
+		if (vatOptions.length === 0) return;
+		if (vatOptions.includes('8.10')) return;
+		const fallback = vatOptions[0];
+		for (const l of lines) {
+			if (l.vatRate === '8.10') {
+				l.vatRate = fallback;
+			}
+		}
 	});
 
 	// Identifiant UI stable (cross-reorder/remove). NE PAS envoyer au backend.
@@ -472,6 +497,8 @@
 							<select
 								bind:value={line.vatRate}
 								disabled={vatOptions.length === 0}
+								aria-label="Taux TVA"
+								data-testid="invoice-line-vat-rate"
 								class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
 							>
 								{#each vatOptions as v (v)}
