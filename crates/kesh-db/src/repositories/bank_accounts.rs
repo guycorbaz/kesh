@@ -76,6 +76,16 @@ pub async fn list_by_company(
     .map_err(map_db_error)
 }
 
+/// Compare le compte existant au payload — `true` si aucun champ métier ne diffère
+/// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
+/// Compare uniquement les champs effectivement écrits par l'UPDATE de
+/// `upsert_primary` (`bank_name`, `iban`, `qr_iban`).
+fn is_no_op_change(existing: &BankAccount, new: &NewBankAccount) -> bool {
+    existing.bank_name == new.bank_name
+        && existing.iban == new.iban
+        && existing.qr_iban == new.qr_iban
+}
+
 /// Upsert du compte bancaire principal (idempotent pour retries).
 ///
 /// Utilise SELECT FOR UPDATE dans une transaction unique pour éviter le
@@ -94,6 +104,16 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
 
     match existing {
         Some(account) => {
+            // KF-004 : court-circuit no-op AVANT toute mutation.
+            // Note technique : le SELECT FOR UPDATE ci-dessus tient déjà un X-lock
+            // sur la row ; tx.rollback() libère ce lock identiquement à tx.commit()
+            // côté InnoDB (pas de différence sémantique pour les verrous). Choix
+            // rollback() pour cohérence inter-repos + clarté « rien n'a été modifié ».
+            if is_no_op_change(&account, &new) {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Ok(account);
+            }
+
             let rows = sqlx::query(
                 "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, version = version + 1 \
                  WHERE id = ? AND version = ?",

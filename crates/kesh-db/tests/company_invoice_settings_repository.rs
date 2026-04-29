@@ -1,6 +1,6 @@
 //! Tests pour le repository company_invoice_settings (Story 2.6).
 
-use kesh_db::entities::{Language, NewCompany, OrgType};
+use kesh_db::entities::{CompanyInvoiceSettingsUpdate, Journal, Language, NewCompany, OrgType};
 use kesh_db::repositories::{accounts, companies, company_invoice_settings};
 use sqlx::MySqlPool;
 
@@ -176,4 +176,131 @@ async fn test_insert_with_defaults_rejects_missing_accounts(pool: MySqlPool) {
             result
         ),
     }
+}
+
+async fn create_admin_user(pool: &MySqlPool, company_id: i64) -> i64 {
+    let result = sqlx::query(
+        "INSERT INTO users (username, password_hash, role, active, company_id) \
+         VALUES (?, ?, 'Admin', TRUE, ?)",
+    )
+    .bind(format!("admin_{}", company_id))
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$QUJDRA$YWJjZGVmZ2hpams")
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("create admin user for test");
+    result.last_insert_id() as i64
+}
+
+/// KF-004 : payload identique à l'état persisté → pas de bump version,
+/// `updated_at` inchangé, **aucune entrée audit_log `company_invoice_settings.updated`**.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
+    let company = companies::create(
+        &pool,
+        NewCompany {
+            name: "NoOp Co".into(),
+            address: "1 rue Test".into(),
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap();
+    let admin_user_id = create_admin_user(&pool, company.id).await;
+
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("chart");
+    accounts::bulk_create_from_chart(&pool, company.id, &chart, "fr")
+        .await
+        .unwrap();
+    let settings = company_invoice_settings::insert_with_defaults(&pool, company.id)
+        .await
+        .unwrap();
+    let version_initial = settings.version;
+    let updated_at_initial = settings.updated_at;
+
+    let result = company_invoice_settings::update(
+        &pool,
+        company.id,
+        version_initial,
+        admin_user_id,
+        CompanyInvoiceSettingsUpdate {
+            invoice_number_format: settings.invoice_number_format.clone(),
+            default_receivable_account_id: settings.default_receivable_account_id,
+            default_revenue_account_id: settings.default_revenue_account_id,
+            default_sales_journal: settings.default_sales_journal,
+            journal_entry_description_template: settings.journal_entry_description_template.clone(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.version, version_initial);
+    assert_eq!(result.updated_at, updated_at_initial);
+
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'company_invoice_settings' AND entity_id = ? AND action = 'company_invoice_settings.updated'",
+    )
+    .bind(company.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count.0, 0);
+}
+
+/// KF-004 régression : modifier `invoice_number_format` → bump version + audit log.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_partial_change_bumps_version(pool: MySqlPool) {
+    let company = companies::create(
+        &pool,
+        NewCompany {
+            name: "Partial Co".into(),
+            address: "2 rue Test".into(),
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap();
+    let admin_user_id = create_admin_user(&pool, company.id).await;
+
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("chart");
+    accounts::bulk_create_from_chart(&pool, company.id, &chart, "fr")
+        .await
+        .unwrap();
+    let settings = company_invoice_settings::insert_with_defaults(&pool, company.id)
+        .await
+        .unwrap();
+    let version_initial = settings.version;
+
+    let result = company_invoice_settings::update(
+        &pool,
+        company.id,
+        version_initial,
+        admin_user_id,
+        CompanyInvoiceSettingsUpdate {
+            invoice_number_format: "F-{YEAR}-{SEQ:05}".into(),
+            default_receivable_account_id: settings.default_receivable_account_id,
+            default_revenue_account_id: settings.default_revenue_account_id,
+            default_sales_journal: Journal::Ventes,
+            journal_entry_description_template: settings.journal_entry_description_template.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.version, version_initial + 1);
+    assert_eq!(result.invoice_number_format, "F-{YEAR}-{SEQ:05}");
+
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'company_invoice_settings' AND entity_id = ? AND action = 'company_invoice_settings.updated'",
+    )
+    .bind(company.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count.0, 1);
 }

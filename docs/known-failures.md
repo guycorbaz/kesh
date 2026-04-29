@@ -72,8 +72,8 @@
 - **Scope d'origine** : Story 1-8 (RBAC & verrouillage optimiste), pattern propagé.
 - **Blocage** : UX dégradée sur les formulaires édition (faux conflits). Aucun impact intégrité.
 - **Reproduction** : éditer un contact, ne rien changer, cliquer « Enregistrer » deux fois dans deux onglets → le second reçoit `CONFLICT`.
-- **Story de remédiation** : à créer (priorité basse, cosmétique). Candidat post-v0.1.
-- **Status** : open
+- **Story de remédiation** : Story 7-3 (Epic 7 Tech Debt Closure).
+- **Status** : closed (Story 7-3, 2026-04-29)
 
 ---
 

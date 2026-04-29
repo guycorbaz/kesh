@@ -235,7 +235,16 @@ pub async fn update_password(
     Ok(())
 }
 
+/// Compare l'état persisté au payload — `true` si aucun champ métier ne diffère
+/// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
+fn is_no_op_change(before: &User, changes: &UserUpdate) -> bool {
+    before.role == changes.role && before.active == changes.active
+}
+
 /// Met à jour le rôle et/ou l'activation d'un utilisateur avec verrouillage optimiste.
+///
+/// SELECT before → version check applicatif → court-circuit no-op (KF-004) →
+/// UPDATE puis SELECT after, le tout dans une transaction atomique.
 ///
 /// Le `password_hash` et le `username` ne sont PAS modifiables ici — story 1.7
 /// introduira des flux dédiés pour ces cas (`change_password`, `rename_user`).
@@ -246,6 +255,35 @@ pub async fn update_role_and_active(
     changes: UserUpdate,
 ) -> Result<User, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Snapshot "before" pour permettre la détection no-op (KF-004).
+    let before_opt = sqlx::query_as::<_, User>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    let before = match before_opt {
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+        Some(u) if u.version != version => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::OptimisticLockConflict);
+        }
+        Some(u) => u,
+    };
+
+    // KF-004 : court-circuit no-op AVANT toute mutation.
+    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
+    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
+    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
+    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    if is_no_op_change(&before, &changes) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(before);
+    }
 
     let rows_affected = sqlx::query(
         "UPDATE users
@@ -262,16 +300,10 @@ pub async fn update_role_and_active(
     .rows_affected();
 
     if rows_affected == 0 {
-        let exists = sqlx::query_as::<_, (i64,)>("SELECT id FROM users WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
+        // Défensif : ne devrait pas arriver puisque la version-check applicative
+        // a déjà validé la version. Race théorique entre le SELECT et l'UPDATE.
         tx.rollback().await.map_err(map_db_error)?;
-        return match exists {
-            None => Err(DbError::NotFound),
-            Some(_) => Err(DbError::OptimisticLockConflict),
-        };
+        return Err(DbError::OptimisticLockConflict);
     }
 
     let user_opt = sqlx::query_as::<_, User>(FIND_BY_ID_SQL)

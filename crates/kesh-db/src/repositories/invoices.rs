@@ -576,6 +576,37 @@ pub async fn due_dates_summary(
     })
 }
 
+/// Compare l'état persisté (header + lignes) au payload — `true` si aucun
+/// champ métier ne diffère (KF-004 : court-circuit no-op pour ne pas bumper
+/// version inutilement).
+///
+/// Comparaison ligne-par-ligne dans l'ordre — `line_order` est sémantique
+/// (l'ordre détermine l'affichage PDF). `total_amount` n'est pas comparé
+/// directement : il est dérivé des lignes via `compute_total`, donc lignes
+/// identiques ⇒ total identique par construction.
+fn is_no_op_change(
+    before_inv: &Invoice,
+    before_lines: &[InvoiceLine],
+    changes: &InvoiceUpdate,
+) -> bool {
+    if before_inv.contact_id != changes.contact_id
+        || before_inv.date != changes.date
+        || before_inv.due_date != changes.due_date
+        || before_inv.payment_terms != changes.payment_terms
+    {
+        return false;
+    }
+    if before_lines.len() != changes.lines.len() {
+        return false;
+    }
+    before_lines.iter().zip(changes.lines.iter()).all(|(b, c)| {
+        b.description == c.description
+            && b.quantity == c.quantity
+            && b.unit_price == c.unit_price
+            && b.vat_rate == c.vat_rate
+    })
+}
+
 /// Met à jour une facture brouillon : replace-all sur les lignes +
 /// recalcul `total_amount` + audit wrapper `{before, after}`.
 pub async fn update(
@@ -628,6 +659,19 @@ pub async fn update(
             return Err(e);
         }
     };
+
+    // KF-004 : court-circuit no-op AVANT le DELETE/INSERT.
+    // CRITIQUE : ce check DOIT précéder le DELETE — sinon les IDs des lignes
+    // seraient détruits puis régénérés, polluant le test no-op et bumpant
+    // inutilement les compteurs AUTO_INCREMENT.
+    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
+    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
+    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
+    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    if is_no_op_change(&before_invoice, &before_lines, &changes) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok((before_invoice, before_lines));
+    }
 
     // Replace-all : DELETE anciennes lignes puis INSERT nouvelles.
     sqlx::query("DELETE FROM invoice_lines WHERE invoice_id = ?")
@@ -2842,5 +2886,200 @@ mod tests {
         // connexions (éviter l'accumulation face à `max_connections` serveur
         // sur une suite de tests avec pools multiples).
         pool.close().await;
+    }
+
+    fn line_to_new(l: &InvoiceLine) -> NewInvoiceLine {
+        NewInvoiceLine {
+            description: l.description.clone(),
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+            vat_rate: l.vat_rate,
+        }
+    }
+
+    /// KF-004 : payload identique (header + lignes même ordre) → pas de bump
+    /// version, `updated_at` inchangé, **mêmes IDs DB pour les lignes** (pas de
+    /// DELETE+INSERT), pas d'audit_log `invoice.updated`. `total_amount` reste
+    /// cohérent avec les lignes par construction (compute_total est pure).
+    #[tokio::test]
+    async fn update_no_op_returns_unchanged_entity_no_lines_churn() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (inv, lines) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: None,
+                payment_terms: Some("30 jours net".into()),
+                lines: vec![
+                    sample_line("Conseil", dec!(2), dec!(150.00)),
+                    sample_line("Hébergement", dec!(1), dec!(50.00)),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+        let version_initial = inv.version;
+        let updated_at_initial = inv.updated_at;
+        let total_initial = inv.total_amount;
+        let line_ids_initial: Vec<i64> = lines.iter().map(|l| l.id).collect();
+
+        let (result_inv, result_lines) = update(
+            &pool,
+            company_id,
+            inv.id,
+            version_initial,
+            admin_user_id,
+            InvoiceUpdate {
+                contact_id: inv.contact_id,
+                date: inv.date,
+                due_date: inv.due_date,
+                payment_terms: inv.payment_terms.clone(),
+                lines: lines.iter().map(line_to_new).collect(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result_inv.version, version_initial, "version inchangée");
+        assert_eq!(
+            result_inv.updated_at, updated_at_initial,
+            "updated_at inchangé"
+        );
+        assert_eq!(result_inv.total_amount, total_initial);
+        let line_ids_after: Vec<i64> = result_lines.iter().map(|l| l.id).collect();
+        assert_eq!(
+            line_ids_after, line_ids_initial,
+            "no-op : pas de DELETE+INSERT, IDs lignes identiques"
+        );
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'invoice' AND entity_id = ? AND action = 'invoice.updated'",
+        )
+        .bind(inv.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 0);
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// KF-004 régression : modifier `unit_price` d'une ligne → bump version,
+    /// DELETE+INSERT effectif (les IDs lignes changent), audit log présent.
+    #[tokio::test]
+    async fn update_line_change_bumps_version() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (inv, lines) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: None,
+                payment_terms: None,
+                lines: vec![sample_line("Item A", dec!(1), dec!(100.00))],
+            },
+        )
+        .await
+        .unwrap();
+        let version_initial = inv.version;
+
+        let mut new_lines: Vec<NewInvoiceLine> = lines.iter().map(line_to_new).collect();
+        new_lines[0].unit_price = dec!(120.00);
+
+        let (result_inv, _result_lines) = update(
+            &pool,
+            company_id,
+            inv.id,
+            version_initial,
+            admin_user_id,
+            InvoiceUpdate {
+                contact_id: inv.contact_id,
+                date: inv.date,
+                due_date: inv.due_date,
+                payment_terms: inv.payment_terms.clone(),
+                lines: new_lines,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result_inv.version, version_initial + 1);
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'invoice' AND entity_id = ? AND action = 'invoice.updated'",
+        )
+        .bind(inv.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 1);
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// KF-004 régression : permuter l'ordre des lignes (mêmes contenus) → bump
+    /// version. `line_order` est sémantique (détermine l'affichage PDF).
+    #[tokio::test]
+    async fn update_line_reorder_bumps_version() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (inv, lines) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: None,
+                payment_terms: None,
+                lines: vec![
+                    sample_line("Ligne A", dec!(1), dec!(100.00)),
+                    sample_line("Ligne B", dec!(1), dec!(200.00)),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+        let version_initial = inv.version;
+
+        let reordered: Vec<NewInvoiceLine> = vec![line_to_new(&lines[1]), line_to_new(&lines[0])];
+
+        let (result_inv, _) = update(
+            &pool,
+            company_id,
+            inv.id,
+            version_initial,
+            admin_user_id,
+            InvoiceUpdate {
+                contact_id: inv.contact_id,
+                date: inv.date,
+                due_date: inv.due_date,
+                payment_terms: inv.payment_terms.clone(),
+                lines: reordered,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result_inv.version, version_initial + 1);
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
     }
 }

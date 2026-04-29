@@ -105,9 +105,21 @@ pub async fn list(pool: &MySqlPool, limit: i64, offset: i64) -> Result<Vec<Compa
         .map_err(map_db_error)
 }
 
+/// Compare l'état persisté au payload — `true` si aucun champ métier ne diffère
+/// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
+fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
+    before.name == changes.name
+        && before.address == changes.address
+        && before.ide_number == changes.ide_number
+        && before.org_type == changes.org_type
+        && before.accounting_language == changes.accounting_language
+        && before.instance_language == changes.instance_language
+}
+
 /// Met à jour une company avec verrouillage optimiste.
 ///
-/// UPDATE puis SELECT dans une transaction atomique. Retourne
+/// SELECT before → version check applicatif → court-circuit no-op (KF-004) →
+/// UPDATE puis SELECT after, le tout dans une transaction atomique. Retourne
 /// `DbError::OptimisticLockConflict` si la version en base ne correspond pas
 /// à `version`, ou `DbError::NotFound` si l'entité n'existe pas.
 pub async fn update(
@@ -117,6 +129,35 @@ pub async fn update(
     changes: CompanyUpdate,
 ) -> Result<Company, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Snapshot "before" pour permettre la détection no-op (KF-004).
+    let before_opt = sqlx::query_as::<_, Company>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    let before = match before_opt {
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+        Some(c) if c.version != version => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::OptimisticLockConflict);
+        }
+        Some(c) => c,
+    };
+
+    // KF-004 : court-circuit no-op AVANT toute mutation.
+    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
+    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
+    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
+    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    if is_no_op_change(&before, &changes) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(before);
+    }
 
     let rows_affected = sqlx::query(
         "UPDATE companies
@@ -139,17 +180,10 @@ pub async fn update(
     .rows_affected();
 
     if rows_affected == 0 {
-        // version += 1 garantit toujours un changement si match → 0 signifie stale ou absent.
-        let exists = sqlx::query_as::<_, (i64,)>("SELECT id FROM companies WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
+        // Défensif : ne devrait pas arriver puisque la version-check applicative
+        // a déjà validé la version. Race théorique entre le SELECT et l'UPDATE.
         tx.rollback().await.map_err(map_db_error)?;
-        return match exists {
-            None => Err(DbError::NotFound),
-            Some(_) => Err(DbError::OptimisticLockConflict),
-        };
+        return Err(DbError::OptimisticLockConflict);
     }
 
     let company_opt = sqlx::query_as::<_, Company>(FIND_BY_ID_SQL)
