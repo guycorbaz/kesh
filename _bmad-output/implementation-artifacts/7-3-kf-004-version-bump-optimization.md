@@ -1,6 +1,6 @@
 # Story 7.3 : KF-004 — `update()` no-op ne doit plus bumper `version`
 
-Status: review
+Status: done
 
 <!-- Note: Validation est optionnelle. Lancer `bmad-create-story validate` pour une revue qualité multi-passes avant `dev-story`. -->
 
@@ -926,3 +926,44 @@ claude-opus-4-7 (Claude Opus 4.7, 1M context) — `bmad-dev-story` workflow le 2
 **Recommandation** : exécuter Pass 2 avec Haiku 4.5 + contexte frais pour challenge orthogonal sur les patches Pass 1 (notamment CR-M1 invoice E2E test et CR-M2 reclassement AC #29).
 
 **Commit attendu** : `git commit -m "Story 7-3: code review Pass 1 — Sonnet×3, 1H+5M+9L → 5 patches (2M+3L), 12 rejected"` (cf. CLAUDE.md règle commit après chaque passe).
+
+#### Code Review Pass 2 — Haiku 4.5 × 3 reviewers parallèles (2026-04-29)
+
+**Contexte** : Pass 2 lancée immédiatement après Pass 1 patches commit `647f0a2` via `bmad-code-review` workflow. Cycle CLAUDE.md respecté : Sonnet (P1) → Haiku (P2). Trois reviewers Haiku 4.5 parallèles, contextes frais orthogonaux à la session principale Opus et à la passe Sonnet précédente. Diff revu = cumulé `64dad5e..HEAD` (story 7-3 originale + patches Pass 1).
+
+**Findings remontés (26 bruts)** :
+- **Blind Hunter Haiku** : 0 CRITICAL / 3 HIGH (revendiqués) / 5 MEDIUM / 5 LOW = 13 findings
+- **Edge Case Hunter Haiku** : 0 CRITICAL / 4 HIGH (revendiqués) / 6 MEDIUM / 4 LOW = 14 findings
+- **Acceptance Auditor Haiku** : **0 findings — clean review, conformité spec confirmée AC-by-AC** (avec table de coverage 14 ACs sampled)
+
+**Triage Pass 2 — 0 patches, 26 rejected** (tous faux positifs vérifiés ou doublons P1) :
+
+| Catégorie | Nb | Raison du rejet |
+|---|---|---|
+| Doublons P1 race condition v0.1 (variant A & C exposées) | 5 | Décision architecturale documentée §race-condition + commentaires inline mandatory ; mitigation tracée [#49 KF-020](https://github.com/guycorbaz/kesh/issues/49). |
+| Doublons P1 régression NotFound→OptimisticLockConflict | 3 | Alignement intentionnel sur `contacts.rs` Variant A par spec T7.2 ; `contacts.rs:427,509` retourne déjà `OptimisticLockConflict`. |
+| Faux positifs Decimal scale-sensitive | 4 | **Vérifié empiriquement** : `rust_decimal::Decimal::eq` est scale-insensitive (`150.00 == 150.0000` retourne `true`). |
+| Faux positifs line ordering | 3 | **Vérifié** : `zip().all()` itère position-par-position, donc order-sensitive ; AC #7 valide ce comportement. |
+| Faux positifs `journal_entries` `before_lines` ordre | 2 | **Vérifié** : `journal_entries.rs:649` (SELECT) → `669` (no-op check) → `678` (DELETE) — ordre correct. |
+| Spéculatif (enum future variants, Unicode IBAN, ContactType case drift) | 5 | Pas de reproduction concrète ; hors scope KF-004 (concerne hypothèses de migrations futures). |
+| Whitespace handler-side | 2 | Spec §reportés-v0.2 explicite : normalisation est responsabilité handler, pas repo. |
+| Hors scope KF-004 (IDOR pre-existing, code dup YAGNI) | 2 | IDOR couvert dans `idor_multi_tenant_e2e.rs` (fichier dédié) ; YAGNI sur trait abstraction explicite §helper. |
+
+**Vérifications techniques effectuées (preuves empiriques)** :
+
+1. **rust_decimal scale-insensitive** : exécution de `cargo run` sur snippet de test → `dec!(150.00) == dec!(150.0000)` retourne `true`. Tous les findings Decimal scale rejetés.
+2. **journal_entries no-op order** : grep `journal_entries.rs` → SELECT before_lines à l. 649, no-op check à l. 669, DELETE à l. 678. Correct.
+3. **Convergence 3 reviewers** : Acceptance Auditor confirme Pass 1 patches `AC #21, #22, #29` correctement implémentés (citations file:line).
+
+**Résultat Pass 2 (auto-évaluation Opus 4.7 — biais d'auteur potentiel)** : 0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW restants après triage. **Critère d'arrêt CLAUDE.md atteint** :
+
+- ✅ Trend numérique : Pass 1 (17→5 patches+12 rejected) → Pass 2 (26→0 patches+26 rejected).
+- ✅ 2 LLMs différents utilisés en P2 (Haiku) vs P1 (Sonnet), chacun fresh context.
+- ✅ Cycle Opus(orchestrateur) → Sonnet(P1) → Haiku(P2) respecté.
+- ✅ Convergence orthogonale : Acceptance Auditor 0 findings + Blind/Edge findings tous vérifiés faux positifs ou doublons.
+- ✅ Patches appliqués entre passes (5 patches P1 commit `647f0a2`).
+- ✅ Aucun reclassement en dette technique requis pour Pass 2 (toutes les dettes — race v0.1, AC #29 deterministe — déjà tracées via issues #49 et #50 en Pass 1).
+
+**Recommandation finale** : Pass 3 NON requise. Story 7-3 **validée par code review**. Status sprint `review` → `done`.
+
+**Commit attendu** : `git commit -m "Story 7-3: code review Pass 2 + closure — Haiku×3, 26→0 patches+26 rejected, status done"`.
