@@ -39,7 +39,7 @@ KF-005 issue #5 cite 5 colonnes : `contacts.name, contacts.address, products.nam
 |---|---|---|
 | `contacts.rs:171-175` | `name`, `email` | FULLTEXT sur `name` ; `email` reste LIKE |
 | `products.rs:129-133` | `name`, `description` | FULLTEXT sur `name`, `description` |
-| `journal_entries.rs:374` | `description` | FULLTEXT sur `description` |
+| `journal_entries.rs:374-379` | `description` | FULLTEXT sur `description` |
 | `invoices.rs:256-261` | `i.invoice_number`, `i.payment_terms`, `c.name` (JOIN contacts) | `c.name` bénéficie de l'index `contacts.name` ; `invoice_number` et `payment_terms` restent LIKE |
 
 **Justifications de la liste finale (4 colonnes FULLTEXT)** :
@@ -65,7 +65,7 @@ KF-005 issue #5 cite 5 colonnes : `contacts.name, contacts.address, products.nam
 **Hors scope avec justification** (rejeter explicitement les sirènes) :
 
 1. **Trait/abstraction `SearchableRepository<T>`** — YAGNI v0.1. 4 callsites avec syntaxe SQL différente (JOINs invoices, simple WHERE contacts/products/journal_entries). Coût d'abstraction > coût de duplication.
-2. **Migration online avec `pt-online-schema-change`** — pas pertinent v0.1 : Kesh est mono-tenant local par déploiement, fenêtre de maintenance acceptée. Algorithme `INPLACE` MariaDB 10.11 suffit pour les volumes v0.1 (cf. §migration online).
+2. **Migration online avec `pt-online-schema-change`** — pas pertinent v0.1 : Kesh est mono-tenant local par déploiement, fenêtre de maintenance acceptée. Algorithme `INPLACE` MariaDB 11.x (`mariadb:11-jammy` en prod, `mariadb:11.4` en dev) suffit pour les volumes v0.1 (cf. §migration online).
 3. **Search ranking par pertinence** (BM25/TF-IDF) — `BOOLEAN MODE` ne ranke pas. UX inchangée v0.1 (tri par `name ASC` ou `entry_date DESC` préservé). `NATURAL LANGUAGE MODE` (avec ranking) est rejeté car il perd la sémantique prefix-search (cf. §mode FULLTEXT).
 4. **Recherche multi-langue avec stemming** (lemmatisation FR/DE/IT) — non supporté nativement par MariaDB FULLTEXT. Hors scope v0.1, peut-être Sphinx/Manticore en v0.3+ si besoin user émerge.
 5. **Search dans `invoice_lines.description`** — cf. ci-dessus, c'est une feature, pas un perf fix. Story dédiée v0.2 si demande utilisateur émerge (ex. « retrouver toutes les factures où j'ai facturé `consultation` »).
@@ -99,11 +99,16 @@ let bool_query = format!("{}*", term); // append wildcard pour préserver prefix
 qb.push(" AND MATCH(name) AGAINST(").push_bind(bool_query).push(" IN BOOLEAN MODE)");
 ```
 
-**Helper `escape_boolean_ft(input: &str) -> String`** (à créer, co-localisé ou dans `kesh-db/src/util.rs`) :
+**Helper `escape_boolean_ft(input: &str) -> String`** (à créer dans `kesh-db/src/util/search.rs`) :
 
-- Liste des caractères à échapper en BOOLEAN MODE : `+ - > < ( ) ~ * " @ \`
-- Stratégie : préfixer chaque caractère spécial par `\` ou supprimer (selon ce qui fait sens UX). Recommandation : supprimer `*` et `"` du payload utilisateur (les opérateurs sont contrôlés côté repo) ; échapper le reste.
-- Edge cases : payload vide après échappement → bypass FULLTEXT (la query devient inopérante avec un terme vide). Le repo doit faire `if term.is_empty() { skip search clause }`.
+- **Liste des caractères opérateurs BOOLEAN MODE MariaDB** (vérifiée doc 2026-04-29) : `+ - > < ( ) ~ * " \` — **10 caractères**. Note : `@` n'est PAS un opérateur BOOLEAN MODE (il appartient à la grammaire SQL générale, pas à la syntaxe `MATCH AGAINST` BOOLEAN). Une version antérieure de cette spec listait `@` à tort — corrigé.
+- **Stratégie : strip TOTAL (pas escape)**. Décision tranchée car le backslash-escaping `\+`, `\-` etc. n'est PAS garanti déterministe en BOOLEAN MODE selon la version MariaDB exacte (certaines versions interprètent quand même l'opérateur). Le strip total donne un comportement prévisible : l'utilisateur tape du texte, le helper retire tous les caractères opérateurs, puis le repo append un seul `*` en suffixe pour le prefix wildcard.
+- **Trim whitespace en entrée** : `input.trim()` avant strip (tabs, newlines, spaces multiples).
+- Edge cases :
+  - Payload vide après strip → retourner `""`. Le caller doit faire `if escaped.is_empty() { skip search clause }`.
+  - Payload `"   "` (whitespace only) → retourner `""` (test T1.3 dédié).
+  - Payload accents UTF-8 (`"Crémant"`, `"Société"`) → préservé tel quel (utf8mb4_unicode_ci tokenize correctement).
+  - Payload `"foo bar"` (multi-mots) → conservé tel quel ; le repo append `*` global donnant `"foo bar*"` qui en BOOLEAN MODE signifie « `foo` OR `bar*` » (OR implicite). Ce comportement multi-mots OR est documenté dans le doc-comment du helper. Si à l'usage l'UX nécessite un AND multi-mots, une évolution v0.2 splitterait par whitespace et appenderait `*` à chaque token (`"foo* bar*"`).
 
 ### §UX impact — tokens courts, stop-words, breaking changes
 
@@ -120,53 +125,52 @@ qb.push(" AND MATCH(name) AGAINST(").push_bind(bool_query).push(" IN BOOLEAN MOD
    - Recherche `« INV-2026 »` → **0 match** (tiret = séparateur de tokens, recherche `« INV-2026 »` cherche les 2 tokens `INV` ET `2026` ensemble en BOOLEAN AND, mais avec `*` wildcard le comportement diffère)
    - **Mitigation** : `invoice_number` reste en LIKE (cf. §scope) — n'utilise pas FULLTEXT.
 
-3. **Substring `info` → `infox`** (ex. utilisateur tape « info » pour trouver « infomercial »)
-   - LIKE `'%info%'` matche les 2.
-   - BOOLEAN `'info*'` matche `infox`, `infomercial`, `infos` (tout ce qui commence par `info`).
-   - BOOLEAN `'*info'` ❌ pas supporté MariaDB (suffix wildcard non disponible).
-   - **Conséquence** : recherche par milieu de mot perdue (ex. user cherche `« mar »` pour trouver `« Camargo »`). Acceptable v0.1 (rare en contexte comptable suisse, prefix search dominant).
+3. **🚨 Breaking change UX documenté — perte du substring mid-word**
+
+   - **AVANT (LIKE)** : `LIKE '%mar%'` matche TOUTES les positions du token `mar` dans la chaîne — début, milieu, fin de mot.
+   - **APRÈS (BOOLEAN + auto-append `*`)** : `MATCH AGAINST 'mar*'` ne matche QUE les mots COMMENÇANT par `mar`. MariaDB ne supporte PAS le suffix wildcard `*mar` (et le mid-word `*mar*` non plus).
+   - **Cas concrets perdus** (résultats utilisateur observables) :
+     - User cherche `« argo »` pour trouver `« Camargo & Associés »` → AVANT match ✓ ; APRÈS ❌ rien (`argo*` ne matche pas `Camargo`)
+     - User cherche `« est »` pour trouver `« TestContact Beta GmbH »` → AVANT ✓ ; APRÈS ❌
+     - User cherche `« mant »` pour trouver `« Crémant d'Alsace »` (vin œnologique PME suisse) → AVANT ✓ ; APRÈS ❌
+   - **Cas conservés** :
+     - User cherche `« mar »` pour trouver `« Marie Curie »` → AVANT ✓ ; APRÈS `mar*` matche ✓
+     - User cherche `« cama »` pour trouver `« Camargo »` → AVANT ✓ ; APRÈS `cama*` matche ✓
+   - **Décision v0.1** : régression acceptée — en contexte comptable suisse, la recherche par préfixe de mot (nom de famille, raison sociale, début de description) couvre ~95% des cas usage. Les recherches par fragment-milieu-de-mot sont rares (et souvent involontaires : user qui ne se rappelle que d'une partie centrale d'un mot — devrait alors taper le mot entier ou un autre token).
+   - **AC dédié** : cf. AC #15 — un test E2E ajoute un fixture explicite qui documente cette perte (assertion : `search("argo")` retourne 0 résultats sur `« Camargo »` post-migration). Si une future migration corrige (ex. via Sphinx/Manticore en v0.3+), le test devra être mis à jour.
 
 4. **Préservation des tests existants**
-   - 3 tests search existent : `contacts.rs:1017-1101` (×2), `products.rs:802-838`. Tous utilisent prefix de mots (`Beta` matchant `TestContact Beta`, `Alpha` matchant `TestProduct Alpha`).
+   - 3 tests search existent : `contacts.rs:1045-1129` (×2), `products.rs:821-857`. Tous utilisent prefix de mots (`Beta` matchant `TestContact Beta`, `Alpha` matchant `TestProduct Alpha`).
    - Avec BOOLEAN + wildcard auto-append : `Beta*` matche `Beta` et `BetaX` ; le test passe.
-   - Test `test_filter_escape_like_wildcard` (`contacts.rs:1064-1101`) cherche `« 100% »` — en BOOLEAN MODE, `%` est tokenizé comme séparateur. Le test devra être adapté ou supprimé (cf. T9).
+   - Test `test_filter_escape_like_wildcard` (`contacts.rs:1092-1129`) cherche `« 100% »` — en BOOLEAN MODE, `%` est tokenizé comme séparateur. Le test devra être adapté ou supprimé (cf. T9).
 
-### §migration online — algorithme INPLACE MariaDB 10.11
+### §migration online — algorithme INPLACE + LOCK=SHARED MariaDB 11.x
 
-**Risque** : `CREATE FULLTEXT INDEX` sur InnoDB peut locker la table en écriture pendant la création.
+**Risque** : `ALTER TABLE ... ADD FULLTEXT INDEX` sur InnoDB peut locker la table en écriture pendant la création de l'index.
 
-**Mitigation MariaDB 10.11** : utiliser `ALGORITHM=INPLACE, LOCK=NONE` quand possible :
+**Contrainte MariaDB FULLTEXT vérifiée (doc MariaDB 2026-04-29)** :
 
-```sql
-ALTER TABLE contacts ADD FULLTEXT INDEX ft_contacts_name (name)
-ALGORITHM=INPLACE, LOCK=NONE;
-```
+> « If a table has a FULLTEXT index, then it cannot be rebuilt by any ALTER TABLE operations when the LOCK clause is set to NONE. »
 
-**Limites documentées** :
-- `LOCK=NONE` peut être refusé par MariaDB selon la version exacte / contention. Si refus → `LOCK=SHARED` (lit OK, écriture bloquée).
-- Sur volumes v0.1 (< 50k lignes par table), même `LOCK=DEFAULT` se complète en quelques secondes — fenêtre de maintenance acceptable pour un déploiement self-hosted PME.
+> « Only one FULLTEXT index may be added at a time when ALGORITHM is set to INPLACE [or NOCOPY]. InnoDB presently supports one FULLTEXT index creation at a time. »
 
-**Recommandation pour la migration SQL** :
+**Conséquences pour la migration** :
 
-```sql
--- Ajout des index FULLTEXT KF-005
-SET innodb_lock_wait_timeout = 120; -- 2 min, sécurité
+1. **`LOCK=NONE` est rejeté par MariaDB** pour `ADD FULLTEXT INDEX`. Le minimum requis est `LOCK=SHARED` (lectures concurrentes autorisées, écritures bloquées le temps du build d'index). Tenter `LOCK=NONE` explicitement génère une erreur immédiate au runtime.
 
-ALTER TABLE contacts
-ADD FULLTEXT INDEX ft_contacts_name (name),
-ALGORITHM=INPLACE, LOCK=NONE;
+2. **Un seul `ADD FULLTEXT` par `ALTER TABLE`** quand `ALGORITHM=INPLACE` est demandé (limitation InnoDB). Le cas `products` (2 index FULLTEXT à créer) doit être splitté en 2 statements `ALTER TABLE products` séquentiels.
 
-ALTER TABLE products
-ADD FULLTEXT INDEX ft_products_name (name),
-ADD FULLTEXT INDEX ft_products_description (description),
-ALGORITHM=INPLACE, LOCK=NONE;
+3. **`FTS_DOC_ID` — reconstruction silencieuse au premier index** : pour chaque table sans FULLTEXT préalable (cas `contacts`, `products`, `journal_entries` — toutes vierges), le **premier** `ADD FULLTEXT INDEX` reconstruit la table entière pour y ajouter une colonne cachée `FTS_DOC_ID`. Cette reconstruction se produit **même avec `ALGORITHM=INPLACE`**. Ce n'est qu'à partir du 2e FULLTEXT sur la même table (cas `products` : `ft_products_description` après `ft_products_name`) que la reconstruction est évitée. **Implication v0.1** : sur volumes < 50k lignes par table, la reconstruction reste sub-secondaire (acceptable). À volumes > 100k lignes (post-Epic 8), une fenêtre de maintenance plus large peut être nécessaire.
 
-ALTER TABLE journal_entries
-ADD FULLTEXT INDEX ft_journal_entries_description (description),
-ALGORITHM=INPLACE, LOCK=NONE;
-```
+**Sur volumes v0.1** (< 50k lignes par table), `ALGORITHM=INPLACE, LOCK=SHARED` se complète en quelques secondes — fenêtre de maintenance acceptable pour un déploiement self-hosted PME.
 
-**Note SQLx migrations** : SQLx applique les migrations en transaction par défaut sur MySQL/MariaDB. Mais `ALTER TABLE ... ADD FULLTEXT` ne peut pas être dans une transaction (DDL implicite commit). Vérifier le comportement SQLx — si problème, splitter la migration en 4 fichiers séparés ou utiliser `-- migrate:next` directives.
+**Comportement transactionnel SQLx + MariaDB** :
+
+SQLx **n'enveloppe PAS** les migrations dans une transaction sur MySQL/MariaDB (DDL = auto-commit côté serveur natif). C'est le comportement attendu et géré par SQLx. **Pas de directive `-- no-transaction` à ajouter** (cette directive existe pour SQLx PostgreSQL, pas pour MySQL — la mention de `-- migrate:next` dans une version antérieure de cette spec était une confusion avec golang-migrate, supprimée).
+
+**Conséquence pratique** : pas de rollback atomique inter-statements. Si la 3e ou 4e `ALTER TABLE` échoue (ex. disk full, lock timeout), les précédentes restent persistées dans la DB. Le dev doit alors drop manuellement les index appliqués via `ALTER TABLE <table> DROP INDEX <ft_index_name>` avant de relancer la migration. **Cf. T2.5** pour la procédure de récupération.
+
+**Recommandation finale** : la migration SQL ci-dessous (T2.3) est le pattern de référence — 4 statements `ALTER TABLE` séquentiels, tous avec `ALGORITHM=INPLACE, LOCK=SHARED`, sans virgule parasite avant `ALGORITHM` (les options `ALGORITHM`/`LOCK` sont des modifiers de l'`ALTER TABLE` global, pas des items de la liste `ADD`).
 
 ### §multi-tenant scoping — préservation `WHERE company_id = ?`
 
@@ -198,15 +202,15 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 
 ## Acceptance Criteria
 
-1. **Migration SQL applicable** — Given une DB MariaDB 10.11 fraîchement migrée jusqu'à `20260429*` (avant Story 7-4), When la nouvelle migration `2026MMDD000001_kf005_fulltext_indexes.sql` est appliquée, Then 4 index FULLTEXT sont créés (`ft_contacts_name`, `ft_products_name`, `ft_products_description`, `ft_journal_entries_description`) sans erreur ; idempotent en re-run du test (sqlx::test recreate DB).
+1. **Migration SQL applicable** — Given une DB MariaDB 11.x (`mariadb:11-jammy` en prod, `mariadb:11.4` en dev) fraîchement migrée jusqu'à `20260429*` (avant Story 7-4), When la nouvelle migration `2026MMDD000001_kf005_fulltext_indexes.sql` est appliquée, Then 4 index FULLTEXT sont créés (`ft_contacts_name`, `ft_products_name`, `ft_products_description`, `ft_journal_entries_description`) sans erreur ; idempotent en re-run du test (sqlx::test recreate DB).
 
-2. **Helper `escape_boolean_ft` créé et testé** — Given une string utilisateur arbitraire (incluant `+`, `-`, `*`, `"`, `(`, `)`, `~`, `<`, `>`, `@`, `\`), When `escape_boolean_ft(input)` est appelé, Then la string retournée est safe pour insertion dans `MATCH AGAINST (... IN BOOLEAN MODE)` (caractères spéciaux contrôlés). Tests unitaires couvrent : caractères spéciaux × 11, payload vide, payload entier accent (`é, è, ê`), payload tokens courts (`< 3 chars`).
+2. **Helper `escape_boolean_ft` créé et testé — stratégie strip TOTAL** — Given une string utilisateur arbitraire (incluant les 10 opérateurs BOOLEAN MODE `+ - > < ( ) ~ * " \`), When `escape_boolean_ft(input)` est appelé, Then la string retournée a **TOUS les opérateurs strippés** (pas escapés) — comportement déterministe sur toutes versions MariaDB 11.x. Tests unitaires couvrent : 10 caractères opérateurs strippés, payload vide, payload `"   "` whitespace-only → `""`, payload accents UTF-8 (`"Crémant"` préservé), payload tokens courts (`"de"` préservé tel quel — la limite ≥ 3 chars est appliquée par MariaDB, pas par le helper), payload `"@gmail.com"` (le `@` PASSE car non-opérateur BOOLEAN MODE).
 
 3. **`contacts::list_by_company_paginated` utilise FULLTEXT pour `name`** — Given un company_id et `search: Some("Mar")`, When la query est exécutée, Then la clause SQL contient `MATCH(name) AGAINST('Mar*' IN BOOLEAN MODE)` (ou équivalent escaped) ET `email LIKE '%Mar%' ESCAPE '\\\\'` (la branche email reste en LIKE), composées en OR. Le test `test_filter_by_search_name` existant doit toujours passer.
 
 4. **`products::list_by_company_paginated` utilise FULLTEXT pour `name` et `description`** — Idem AC #3 mais sur 2 colonnes FULLTEXT. Test `test_filter_by_search` existant doit passer.
 
-5. **`journal_entries::list_by_company_paginated` utilise FULLTEXT pour `description`** — Idem. Aucun test search préexistant ; un nouveau test doit être ajouté (cf. T7.3).
+5. **`journal_entries::list_by_company_paginated` utilise FULLTEXT pour `description`** — Idem AC #3-#4. **Tests préexistants à adapter** : `journal_entries.rs:1269` `test_list_filter_description` (cherche `"facture"` minuscule pour matcher `"Facture fournisseur ABC"` — le case-insensitivity est garanti par `utf8mb4_unicode_ci` en LIKE comme en FULLTEXT, le test devrait passer post-refactor) ET `journal_entries.rs:1338` `test_list_filter_description_escapes_percent` (cherche `"50%"` — exactement le même problème que `test_filter_escape_like_wildcard` de contacts, doit être adapté de la même façon — cf. T9.4).
 
 6. **`invoices::list_by_company_paginated` bénéficie indirectement de `ft_contacts_name`** — Given le pattern actuel `c.name LIKE ? ESCAPE`, When la query est ré-implémentée, Then la clause `c.name` utilise `MATCH(c.name) AGAINST(? IN BOOLEAN MODE)` (l'index FULLTEXT sur `contacts.name` est partagé entre les requêtes contacts directes et invoices via JOIN). Les clauses `invoice_number` et `payment_terms` restent en LIKE.
 
@@ -214,60 +218,105 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 
 8. **EXPLAIN confirme l'utilisation de l'index** — Given une recherche `MATCH AGAINST` sur une table peuplée avec ≥ 10 lignes (suffisant pour que MariaDB ne choisisse pas full-scan), When `EXPLAIN SELECT ... MATCH AGAINST ...` est exécuté, Then l'output contient `type: fulltext` ou `key: ft_<table>_<col>`. Test sqlx ajouté par table (4 tests EXPLAIN).
 
-9. **Tests existants `test_filter_by_search_*` passent sans modification** ou avec adaptation documentée — Given les tests `contacts.rs:1017-1101`, `products.rs:802-838`, When le code repository est ré-implémenté, Then les tests passent (le pattern de matching `Beta` → `TestContact Beta` reste valide en BOOLEAN+wildcard). Le test `test_filter_escape_like_wildcard` (cherche `« 100% »`) doit être ADAPTÉ (en BOOLEAN MODE, `%` est tokenizé comme séparateur — soit le test cherche `« 100 »` directement, soit il vérifie que `%` est correctement échappé/strippé par `escape_boolean_ft`).
+9. **Tests existants `test_filter_by_search_*` passent sans modification** ou avec adaptation documentée — Given les tests `contacts.rs:1045-1129`, `products.rs:821-857`, When le code repository est ré-implémenté, Then les tests passent (le pattern de matching `Beta` → `TestContact Beta` reste valide en BOOLEAN+wildcard). Le test `test_filter_escape_like_wildcard` (cherche `« 100% »`) doit être ADAPTÉ (en BOOLEAN MODE, `%` est tokenizé comme séparateur — soit le test cherche `« 100 »` directement, soit il vérifie que `%` est correctement échappé/strippé par `escape_boolean_ft`).
 
 10. **Documentation pattern mise à jour** — `docs/optimistic-locking-patterns.md` n'est PAS la bonne place ; créer `docs/search-patterns.md` avec : (i) liste des 4 index FULLTEXT créés et leurs colonnes, (ii) quand utiliser FULLTEXT vs LIKE (règle : VARCHAR(255+) longs textes user-generated → FULLTEXT ; structured short → LIKE), (iii) limitations BOOLEAN MODE (tokens ≥ 3 chars, prefix wildcard auto-append, pas de suffix wildcard), (iv) exemple d'utilisation du helper `escape_boolean_ft`.
 
-11. **`docs/known-failures.md` archive mise à jour** — Status KF-005 `open` → `closed (Story 7-4, YYYY-MM-DD)`. Issue GitHub #5 fermée par commit final via `closes #5`.
+11. **Issue GitHub #5 fermée par commit final** via `closes #5` dans le message du commit d'implémentation. **Aucune modification de `docs/known-failures.md`** (CLAUDE.md indique que ce fichier est archivé depuis 2026-04-18, ne plus mettre à jour). La fermeture est tracée uniquement via GitHub Issues (source de vérité unique CR/KF/bugs per CLAUDE.md).
 
 12. **Régression suite verte** — `cargo test -p kesh-db --tests -- --test-threads=1` ✅ green (218+ tests, +2-4 nouveaux tests EXPLAIN + cross-company search isolation). `cargo test -p kesh-api` ✅ green (194 E2E tests). `cargo clippy --all-targets -- -D warnings` ✅ green. `cargo fmt --all --check` ✅ clean.
 
-13. **Performance vérifiée** (acceptance critère informatif, pas test automatisé v0.1) — Sur une table contacts seedée à 50k lignes (script de seed-perf séparé OU stress test manuel), la recherche `LIKE '%Mar%'` en baseline mesure ~500ms+ ; après KF-005, `MATCH AGAINST 'Mar*'` doit être < 50ms (10× speedup attendu sur cette taille). **Pas de test auto** — exécution manuelle documentée dans le Change Log story par le dev.
+13. **Performance vérifiée — informatif, pas test automatisé v0.1** — Sur une table `contacts` seedée à 50k lignes (test manuel ad-hoc, **pas de script commité requis**), la recherche `LIKE '%Mar%'` en baseline mesure ~500ms+ ; après KF-005, `MATCH AGAINST 'Mar*'` doit être < 50ms (10× speedup attendu sur cette taille). **Aucun script de seed-perf à committer pour cette story**. Le dev exécute manuellement (typiquement via `mariadb-cli` + une boucle INSERT côté shell) et documente le résultat (ms baseline vs post-fix) dans la section « Change Log » du story file.
 
 14. **README — Feuille de route et section Fonctionnalités inchangées** — Given la story est de la dette technique pure (pas de feature user-visible nouvelle, pas de release), When une vérification du README post-merge, Then aucune entrée à modifier dans la « Feuille de route » ni dans « Fonctionnalités » (cf. CLAUDE.md règle Sync README — la story n'introduit ni epic done ni feature livrée listée).
 
+15. **🚨 Breaking change UX documenté — régression mid-word search** — Given le changement BOOLEAN MODE + prefix wildcard, When un utilisateur recherche un fragment qui n'est pas un préfixe de mot (ex. `« argo »` pour trouver `« Camargo »`, `« est »` pour `« TestContact »`, `« mant »` pour `« Crémant »`), Then le résultat est **vide** (régression observable vs `LIKE '%argo%'`). Un test sqlx dédié (`test_search_no_longer_matches_mid_word`) ajoute un fixture explicite qui :
+    - (i) seed un contact `« Camargo & Associés »` ou un produit `« Crémant d'Alsace »` ;
+    - (ii) asserte que `search("argo")` (resp. `search("mant")`) retourne 0 résultats ;
+    - (iii) asserte que `search("camar")` (resp. `search("crém")`) retourne le résultat (préfixe OK) ;
+    - (iv) doc-comment du test : « Régression v0.1 documentée (KF-005) — mid-word search perdu en BOOLEAN MODE. Ce test sert de régression detector inversé : si une future migration restaure le mid-word match (ex. Sphinx/Manticore v0.3+ ou modification `innodb_ft_min_token_size=1`), le test devra être inversé pour asserter que le résultat est trouvé. ». Test ajouté dans T9.5 (un test par repo affecté : contacts, products, journal_entries — pas invoices car bénéficie indirectement via `c.name`).
+
+16. **`escape_boolean_ft` — décision « strip ALL » (pas escape)** — Given la grammaire BOOLEAN MODE MariaDB n'a pas de comportement déterministe garanti pour le backslash-escaping des opérateurs (`\+`, `\-`, etc. peuvent ou non être interprétés selon la version exacte du serveur), When le helper traite un caractère opérateur, Then il le **strippe** (supprime) au lieu de l'échapper. Liste complète des caractères strippés : `+ - > < ( ) ~ * " \` (note : `@` retiré car PAS un opérateur BOOLEAN MODE — confusion documentaire). Le seul caractère ajouté par le repo (pas par l'utilisateur) est le `*` de prefix wildcard, ajouté APRÈS le strip. Comportement déterministe sur toutes les versions MariaDB 11.x. Tests T1.3 mis à jour : `test_escape_strip_operators_inclut_all` couvre les 10 caractères, `test_escape_at_passes_through` (le `@` n'est PAS stripé car non-opérateur, doit passer tel quel).
+
+17. **`MATCH OR LIKE` query optimizer — test EXPLAIN supplémentaire** — Given le pattern hybride `WHERE company_id = ? AND (MATCH(name) AGAINST(?) OR email LIKE ?)` (cas contacts) ou `OR invoice_number LIKE ? OR payment_terms LIKE ?` (cas invoices), When la query est analysée par `EXPLAIN`, Then l'output doit montrer une utilisation de l'index FULLTEXT pour la branche `MATCH` (même si l'optimizer doit aussi scanner pour les LIKE). Si EXPLAIN révèle un full scan total, le pattern doit être restructuré en deux queries `UNION` (une pour `MATCH`, une pour les `LIKE`). Test sqlx dédié dans T7.4 : `test_hybrid_match_or_like_uses_fulltext_index` avec `FORCE INDEX` hint si nécessaire pour stabiliser le test.
+
+18. **Bonus mutualisation `escape_like` — décision in-scope cette story (T1.5)** — Given que la duplication 4× du helper `escape_like` (`contacts.rs:33-42`, `products.rs:31-36`, `journal_entries.rs:310-315`, `invoices.rs:42-47`) est une dette tech notée dans les commentaires inline (`invoices.rs:40-41` : « extraire si 4e duplication »), When le module `util/search.rs` est créé pour `escape_boolean_ft`, Then `escape_like` est aussi extrait dans le même module et les 4 callsites locaux supprimés au profit d'un import. **Coût marginal** : 4 import statements + suppression de 4 fonctions privées dupliquées (~30 LOC retirées). **Bénéfice** : ferme une dette tech transverse + cohérence architecturale (un seul module utility pour les helpers search). Tests existants de `escape_like` (s'ils existent en mod tests d'un des 4 fichiers) migrent vers `util/search.rs` mod tests.
+
 ## Tasks / Subtasks
 
-### T1 — Helper `escape_boolean_ft` (AC: #2)
+### T1 — Helper `escape_boolean_ft` + bonus mutualisation `escape_like` (AC: #2, #16, #18)
 
-- [ ] T1.1 Créer le fichier `crates/kesh-db/src/util.rs` (s'il n'existe pas) ou ajouter à un module existant util/search.
-- [ ] T1.2 Implémenter `pub fn escape_boolean_ft(input: &str) -> String` :
-  - Strip ou escape les caractères BOOLEAN MODE spéciaux : `+ - > < ( ) ~ * " @ \`
-  - Stratégie recommandée : **strip** `* "` (les opérateurs FULLTEXT contrôlés par le repo, pas par user) ; **escape** les autres avec `\` (préserver la string-as-is sans break).
-  - Trim whitespace en entrée.
-  - Si après stripping, la string est vide → retourner `""` (le caller doit alors skipper le filtre MATCH).
+- [ ] T1.1 Créer la sous-arborescence `crates/kesh-db/src/util/` avec `mod.rs` et `search.rs` (vérifier d'abord qu'aucun module `util`/`helpers`/`common` n'existe déjà — à ce jour : aucun).
+- [ ] T1.2 Implémenter `pub fn escape_boolean_ft(input: &str) -> String` (stratégie **strip TOTAL** — pas escape) :
+  - Trim whitespace en entrée (`input.trim()`).
+  - Strip TOUS les opérateurs BOOLEAN MODE : `+ - > < ( ) ~ * " \` (10 caractères, **pas de `@`** — non-opérateur).
+  - Si la string résultante est vide → retourner `""`.
+  - Préserver les accents UTF-8 (`utf8mb4_unicode_ci` côté DB tokenize correctement).
+  - **Justification strip vs escape** : le backslash-escaping en BOOLEAN MODE n'est pas déterministe selon la version MariaDB exacte. Le strip donne un comportement prévisible sur toutes versions 11.x.
 - [ ] T1.3 Tests unitaires (in-module `#[cfg(test)] mod tests`) :
-  - `test_escape_strip_wildcard_and_quote()` : `"foo*bar"` → `"foobar"` ; `"un \"deux\""` → `"un deux"`.
-  - `test_escape_special_chars()` : `"foo+bar"` → `"foo\\+bar"` ; idem pour `-`, `(`, `)`, `~`, `<`, `>`, `@`.
-  - `test_escape_accents_preserved()` : `"Crémant"` → `"Crémant"` (accents UTF-8 préservés).
-  - `test_escape_empty_after_strip()` : `"***"` → `""`.
-  - `test_escape_short_token()` : `"de"` → `"de"` (le helper ne juge pas la longueur, c'est au caller).
-- [ ] T1.4 Documenter le helper avec doc-comment `///` listant les caractères traités + exemple d'utilisation.
+  - `test_escape_strip_all_operators()` : pour chacun des 10 opérateurs, vérifier qu'il est strippé (`"foo+bar"` → `"foobar"`, `"foo-bar"` → `"foobar"`, etc. × 10).
+  - `test_escape_strip_combined()` : `"foo+*bar\"baz"` → `"foobarbaz"` (combinaison de plusieurs opérateurs).
+  - `test_escape_at_passes_through()` : `"@gmail.com"` → `"@gmail.com"` (le `@` n'est PAS un opérateur BOOLEAN MODE — passe tel quel).
+  - `test_escape_accents_preserved()` : `"Crémant"` → `"Crémant"` ; `"Société"` → `"Société"`.
+  - `test_escape_empty_input()` : `""` → `""`.
+  - `test_escape_whitespace_only()` : `"   "` → `""` (trim → vide).
+  - `test_escape_only_operators()` : `"+-*\"~"` → `""` (strip total → vide).
+  - `test_escape_short_token()` : `"de"` → `"de"` (le helper ne juge pas la longueur, MariaDB s'en charge via `innodb_ft_min_token_size`).
+  - `test_escape_unicode_general()` : caractères chinois, cyrilliques, etc. — préservés tels quels.
+- [ ] T1.4 Documenter le helper avec doc-comment `///` :
+  - Liste des 10 caractères strippés.
+  - Justification du choix strip vs escape (déterminisme inter-versions MariaDB).
+  - Exemple d'utilisation côté repo (`escape_boolean_ft(user_term) + "*"` pour le prefix wildcard).
+  - Note multi-mots : `"foo bar"` produit OR implicite en BOOLEAN MODE après append `*` (`"foo bar*"` = `foo` OR `bar*`).
+- [ ] T1.5 **Bonus mutualisation `escape_like`** (cf. AC #18 — décision : embarquer dans cette story) : créer `pub fn escape_like(input: &str) -> String` dans le même `util/search.rs`, copier l'implémentation depuis `contacts.rs:33-42`. Mettre à jour les 4 callsites (`contacts.rs:33-42`, `products.rs:31-36`, `journal_entries.rs:310-315`, `invoices.rs:42-47`) pour : (a) supprimer les définitions locales, (b) `use crate::util::search::escape_like` à la place. Tests existants de `escape_like` (s'ils existent dans `contacts.rs` mod tests) déplacés vers `util/search.rs` mod tests.
 
 ### T2 — Migration SQL `kf005_fulltext_indexes` (AC: #1, #11)
 
 - [ ] T2.1 Créer le fichier `crates/kesh-db/migrations/2026MMDD000001_kf005_fulltext_indexes.sql` (substituer MMDD par la date du jour de l'implémentation).
-- [ ] T2.2 Contenu :
+- [ ] T2.2 **Préalable — vérifier la collation effective de `contacts`** : la migration `20260414000001_contacts.sql` ne déclare PAS de clause `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` (contrairement à `products`/`journal_entries`/`invoices`). Sur MariaDB 11.x, le défaut serveur est InnoDB + `utf8mb4_uca1400_ai_ci`. Avant de créer `ft_contacts_name`, exécuter `SHOW CREATE TABLE contacts` dans la DB cible et **vérifier que la collation est bien `utf8mb4_unicode_ci`** (cohérente avec les autres tables). Si divergence → ajouter une étape `ALTER TABLE contacts CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` AVANT le `ADD FULLTEXT` (ou documenter la divergence et accepter — la collation n'empêche pas FULLTEXT de fonctionner, mais affecte le matching avec accents en cohérence inter-tables).
+- [ ] T2.3 Contenu de la migration :
   ```sql
   -- Migration 7-4 / KF-005 : Index FULLTEXT pour recherche performante sur colonnes texte longues.
   -- Remplace LIKE '%query%' (full table scan) par MATCH AGAINST IN BOOLEAN MODE.
   -- Cible 4 colonnes : contacts.name, products.name, products.description, journal_entries.description.
+  --
+  -- CONTRAINTES MariaDB 11.x InnoDB FULLTEXT (vérifiées doc MariaDB 2026-04-29) :
+  --   1. `LOCK=NONE` PAS supporté pour `ADD FULLTEXT INDEX` → minimum requis = `LOCK=SHARED`
+  --      (lectures concurrentes OK, écritures bloquées le temps du build d'index).
+  --   2. Un seul `ADD FULLTEXT` par `ALTER TABLE` avec `ALGORITHM=INPLACE` (limitation InnoDB) →
+  --      `products` doit être splitté en 2 statements séquentiels.
+  --   3. Le PREMIER `ADD FULLTEXT` sur une table déclenche une reconstruction silencieuse
+  --      de la table pour ajouter une colonne cachée `FTS_DOC_ID` (même avec ALGORITHM=INPLACE).
+  --      Acceptable v0.1 (volumes < 50k lignes → reconstruction sub-secondaire). Les FULLTEXT
+  --      ultérieurs sur la même table (cas products: 2e index `ft_products_description`)
+  --      n'ont plus besoin de cette reconstruction.
+  --
+  -- COMPORTEMENT TRANSACTIONNEL SQLx + MariaDB :
+  --   SQLx n'enveloppe PAS les migrations dans une transaction sur MySQL/MariaDB (DDL = auto-commit
+  --   côté serveur). Pas de rollback atomique inter-statements. Si la 3e ou 4e ALTER échoue,
+  --   les précédentes restent persistées — le dev doit alors drop manuellement les index appliqués
+  --   avant de relancer la migration. Documenté ; pas de directive `-- no-transaction` à ajouter
+  --   (elle existe pour SQLx PostgreSQL, pas MySQL).
 
   ALTER TABLE contacts
-      ADD FULLTEXT INDEX ft_contacts_name (name),
-      ALGORITHM=INPLACE, LOCK=NONE;
+      ADD FULLTEXT INDEX ft_contacts_name (name)
+      ALGORITHM=INPLACE, LOCK=SHARED;
+
+  -- products : 2 ALTER séquentiels (limitation InnoDB un FULLTEXT à la fois en INPLACE)
+  ALTER TABLE products
+      ADD FULLTEXT INDEX ft_products_name (name)
+      ALGORITHM=INPLACE, LOCK=SHARED;
 
   ALTER TABLE products
-      ADD FULLTEXT INDEX ft_products_name (name),
-      ADD FULLTEXT INDEX ft_products_description (description),
-      ALGORITHM=INPLACE, LOCK=NONE;
+      ADD FULLTEXT INDEX ft_products_description (description)
+      ALGORITHM=INPLACE, LOCK=SHARED;
 
   ALTER TABLE journal_entries
-      ADD FULLTEXT INDEX ft_journal_entries_description (description),
-      ALGORITHM=INPLACE, LOCK=NONE;
+      ADD FULLTEXT INDEX ft_journal_entries_description (description)
+      ALGORITHM=INPLACE, LOCK=SHARED;
   ```
-- [ ] T2.3 **Tester en local** : `cargo sqlx migrate run` ou run d'un test sqlx (`cargo test -p kesh-db test_create_contact -- --exact` qui force MIGRATOR à run). Vérifier `SHOW INDEX FROM contacts;` dans MariaDB CLI : `Index_type: FULLTEXT` listé.
-- [ ] T2.4 **Vérifier comportement transactionnel SQLx** : si la migration échoue avec « DDL cannot be in transaction », splitter en 4 fichiers (1 par ALTER TABLE) ou utiliser une syntaxe SQLx-compatible (`-- noqa: TX`).
+- [ ] T2.4 **Tester en local** : `cargo sqlx migrate run` ou run d'un test sqlx (`cargo test -p kesh-db test_create_contact -- --exact` qui force MIGRATOR à run). Vérifier `SHOW INDEX FROM contacts;` dans MariaDB CLI : `Index_type: FULLTEXT` listé pour chacun des 4 index attendus (`ft_contacts_name`, `ft_products_name`, `ft_products_description`, `ft_journal_entries_description`).
+- [ ] T2.5 **Si la migration échoue à mi-parcours** (ex. erreur disk full sur le 3e ALTER) : drop manuellement les index déjà créés via `ALTER TABLE <table> DROP INDEX <ft_index_name>` puis relancer. Pas de rollback atomique inter-statements (cf. comportement SQLx documenté en commentaire de migration).
 
 ### T3 — Refactor `contacts::list_by_company_paginated` (AC: #3, #7)
 
@@ -288,7 +337,7 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
   }
   ```
 - [ ] T3.3 Vérifier que la query COUNT (`contacts.rs:296-336`) est cohérente — si elle utilise aussi le filtre search, appliquer le même refactor.
-- [ ] T3.4 Lancer `cargo test -p kesh-db --test contacts_repository -- --test-threads=1` et le test inline `test_filter_by_search_name` (`contacts.rs:1017-1061`). Doit passer.
+- [ ] T3.4 Lancer `cargo test -p kesh-db --test contacts_repository -- --test-threads=1` et le test inline `test_filter_by_search_name` (`contacts.rs:1045-1089`). Doit passer.
 
 ### T4 — Refactor `products::list_by_company_paginated` (AC: #4)
 
@@ -301,12 +350,14 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
       .push(" IN BOOLEAN MODE))");
   ```
   - **Note** : MariaDB FULLTEXT permet aussi un index combiné `FULLTEXT (name, description)` mais NON utilisé ici car on veut compter `name` et `description` séparément (pour ranking futur si on passe en NATURAL).
-- [ ] T4.2 Test `test_filter_by_search` (`products.rs:802-838`) doit passer.
+- [ ] T4.2 Test `test_filter_by_search` (`products.rs:821-857`) doit passer.
 
 ### T5 — Refactor `journal_entries::list_by_company_paginated` (AC: #5)
 
 - [ ] T5.1 Idem T3 pour `journal_entries.rs:374-379` (1 colonne FULLTEXT `description`).
-- [ ] T5.2 Pas de test search préexistant — créer `test_filter_by_description_search` dans `journal_entries.rs` mod tests : seed 3 entrées avec descriptions distinctes, search `"<premier_mot>"`, vérifier que seul le résultat attendu est retourné.
+- [ ] T5.2 **Tests existants à vérifier (PAS « aucun test préexistant » comme indiqué dans une version antérieure de cette spec)** :
+  - `journal_entries.rs:1269` `test_list_filter_description` — cherche `"facture"` matchant `"Facture fournisseur ABC"`. Doit passer post-refactor (case-insensitivity via `utf8mb4_unicode_ci`).
+  - `journal_entries.rs:1338` `test_list_filter_description_escapes_percent` — cherche `"50%"`. À adapter de la même façon que T9.2 contacts (cf. T9.4 ci-dessous).
 
 ### T6 — Refactor `invoices::list_by_company_paginated` (AC: #6)
 
@@ -320,18 +371,32 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
       .push_bind(like_pattern)
       .push(" ESCAPE '\\\\')");
   ```
-- [ ] T6.2 Vérifier que la query COUNT correspondante (probablement dans le même fichier autour de `invoices.rs:610-670`) est aussi mise à jour.
-- [ ] T6.3 Si pas de test search inline existant, en créer un dans `invoices.rs` mod tests : seed 2 contacts + 2 factures, search par contact name, vérifier filtrage correct.
+- [ ] T6.2 Vérifier que la query COUNT correspondante dans la fonction `list_by_company_paginated` (autour de `invoices.rs:442-450`, dans le corps de la même fonction juste après l'ouverture, et NON pas autour de la l. 610) est aussi mise à jour.
+- [ ] T6.3 **Critique — 2e callsite à refactorer** : la fonction `due_dates_summary` (`invoices.rs:551-563`) contient une **duplication exacte** du même triplet LIKE (`c.name`, `i.invoice_number`, `i.payment_terms`). Si oubliée, KF-005 reste partiellement fermée — le résumé d'échéancier continuera à full-scan alors que la liste paginée bénéficiera de l'index FULLTEXT. Appliquer le même refactor que T6.1 sur cette callsite : `c.name` → `MATCH AGAINST` ; `invoice_number` et `payment_terms` restent en LIKE.
+- [ ] T6.4 Si pas de test search inline existant, en créer un dans `invoices.rs` mod tests : seed 2 contacts + 2 factures, search par contact name, vérifier filtrage correct. Couvrir AUSSI la search via `due_dates_summary` (au minimum 1 assertion sur le filtrage du résumé d'échéancier par contact name).
 
-### T7 — Tests EXPLAIN (AC: #8)
+### T7 — Tests EXPLAIN (AC: #7, #8, #17)
 
-- [ ] T7.1 Créer un test integration `crates/kesh-db/tests/kf005_fulltext_index_e2e.rs` ou ajouter aux test files existants par repo.
+- [ ] T7.1 Créer un test integration **dédié** `crates/kesh-db/tests/kf005_fulltext_index_e2e.rs` (PAS dans les test files existants — isolation des tests EXPLAIN qui nécessitent un seed contrôlé pour stabilité).
 - [ ] T7.2 Pour chaque table avec FULLTEXT (`contacts`, `products`, `journal_entries`) :
-  - Seed ≥ 10 lignes avec contenu varié.
-  - Run `EXPLAIN FORMAT=JSON SELECT ... WHERE company_id = ? AND MATCH(<col>) AGAINST(? IN BOOLEAN MODE)`.
-  - Parser le JSON, vérifier que `key` ou `index` contient `ft_<table>_<col>` OU que `access_type: fulltext`.
-  - **Note MariaDB** : sur petites tables, l'optimizer peut choisir le FULL SCAN même avec un index FULLTEXT (cost-based). Si le test flake, augmenter le seed à 100+ lignes ou commenter avec `#[ignore]` + doc-link sur l'optimizer behavior.
-- [ ] T7.3 Test isolation cross-company (AC #7) : créer 2 companies, seed 1 entrée par company avec le même mot recherché, vérifier que la query scopée à company A ne retourne que les résultats de A.
+  - Seed **100+ lignes** avec contenu varié (pas 10 — l'optimizer cost-based MariaDB choisit quasi-systématiquement le full scan en dessous de quelques centaines de lignes).
+  - **Utiliser `FORCE INDEX (<ft_index_name>)` dans la query de test** (PAS dans la query de production) pour rendre le test déterministe vs la cost-based variability :
+    ```rust
+    let explain_query = format!(
+        "EXPLAIN FORMAT=JSON SELECT * FROM {table} FORCE INDEX ({ft_idx}) \
+         WHERE company_id = ? AND MATCH({col}) AGAINST(? IN BOOLEAN MODE)",
+        table = "contacts", ft_idx = "ft_contacts_name", col = "name"
+    );
+    ```
+  - Parser le JSON output (`possible_keys` ou `key`), vérifier que `ft_<table>_<col>` est listé.
+  - Le `FORCE INDEX` valide **fonctionnellement que l'index existe et est utilisable**, indépendamment du choix réel de l'optimizer. Pour vérifier que l'optimizer le choisit naturellement en prod (sans FORCE), un test informatif additionnel peut être ajouté avec `#[ignore = "optimizer-cost-sensitive"]` (à exécuter manuellement sur un dataset réel).
+- [ ] T7.3 **Test isolation cross-company** (AC #7) : créer 2 companies, seed 1 entrée par company avec le même mot recherché, vérifier que la query scopée à company A ne retourne que les résultats de A. Un test par repo affecté (4 tests : contacts, products, journal_entries, invoices via JOIN).
+- [ ] T7.4 **Test EXPLAIN sur query hybride MATCH OR LIKE** (AC #17) : la composition `WHERE company_id = ? AND (MATCH(name) AGAINST(?) OR email LIKE ?)` (cas contacts) ou similaire pour invoices peut faire choisir un full scan par l'optimizer (anti-pattern documenté Percona). Test :
+  - Seed 100+ contacts avec emails variés.
+  - Run `EXPLAIN FORMAT=JSON` sur la query hybride RÉELLE (sans FORCE INDEX cette fois — on veut voir le choix de l'optimizer).
+  - Vérifier que l'output contient AU MOINS une utilisation de `ft_contacts_name` (idéalement le `key` principal, sinon dans `possible_keys`).
+  - Si le test révèle un full scan systématique → décision : (a) accepter et documenter dans `docs/search-patterns.md` que la branche `email LIKE` dégrade le plan ; (b) restructurer la query en `UNION` (MATCH d'un côté, LIKE de l'autre) — décision à prendre en review code.
+  - Idem pour `invoices` (triple OR : MATCH(c.name) OR invoice_number LIKE OR payment_terms LIKE) — risque optimizer plus élevé sur le triple OR + JOIN.
 
 ### T8 — Documentation (AC: #10)
 
@@ -341,16 +406,25 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
   - Section 3 : « Limitations BOOLEAN MODE » (min token ≥ 3 chars, prefix wildcard auto-append, pas de suffix wildcard, tokenization sur whitespace + ponctuation, conséquence sur recherches IDE/IBAN/numéros).
   - Section 4 : « Helper `escape_boolean_ft` » (signature, exemple d'utilisation, list des caractères traités).
   - Section 5 : « Pourquoi BOOLEAN et pas NATURAL LANGUAGE » (1 paragraphe : préservation prefix UX, pas de stop-words magiques, pas de besoin ranking v0.1).
-- [ ] T8.2 Mettre à jour `docs/known-failures.md` ou son archive (CLAUDE.md indique que `docs/known-failures.md` est archivé depuis 2026-04-18) : ajouter une note de closure si l'archive le permet, sinon documenter la fermeture uniquement via le commit final + l'issue GitHub #5.
+- [ ] T8.2 **Pas de modification de `docs/known-failures.md`** (archivé depuis 2026-04-18 per CLAUDE.md). Fermeture KF-005 tracée via : (a) commit final avec `closes #5`, (b) GitHub Issue #5 auto-fermée à merge sur main. C'est tout.
 
-### T9 — Adaptation tests existants (AC: #9)
+### T9 — Adaptation tests existants + tests régression UX (AC: #9, #15)
 
-- [ ] T9.1 `contacts.rs::test_filter_by_search_name` (l. 1017) — doit passer sans modif (cherche `"Beta"` matchant `"TestContact Beta"` ; en BOOLEAN+wildcard `Beta*` matche `Beta` exact, OK).
-- [ ] T9.2 `contacts.rs::test_filter_escape_like_wildcard` (l. 1064) — cherche `"100%"`. En BOOLEAN MODE, `%` n'est pas un opérateur LIKE — c'est un caractère ordinaire (mais tokenisé comme séparateur si présent en milieu de mot). Adapter le test :
+- [ ] T9.1 `contacts.rs::test_filter_by_search_name` (l. 1045) — doit passer sans modif (cherche `"Beta"` matchant `"TestContact Beta"` ; en BOOLEAN+wildcard `Beta*` matche `Beta` exact, OK).
+- [ ] T9.2 `contacts.rs::test_filter_escape_like_wildcard` (l. 1092) — cherche `"100%"`. En BOOLEAN MODE, `%` n'est pas un opérateur LIKE — c'est un caractère ordinaire (mais tokenisé comme séparateur si présent en milieu de mot). Adapter le test :
   - Soit : changer le terme cherché en `"100"` et vérifier que le résultat correspond.
   - Soit : vérifier que `escape_boolean_ft("100%")` strip ou échappe correctement le `%`.
   - **Décision** : adapter le test pour vérifier le comportement post-escape via le helper. Renommer en `test_search_handles_special_chars`.
-- [ ] T9.3 `products.rs::test_filter_by_search` (l. 802) — doit passer sans modif (`"Alpha"` matchant `"TestProduct Alpha"`).
+- [ ] T9.3 `products.rs::test_filter_by_search` (l. 821) — doit passer sans modif (`"Alpha"` matchant `"TestProduct Alpha"`).
+- [ ] T9.4 `journal_entries.rs::test_list_filter_description_escapes_percent` (l. 1338) — analogue à T9.2 contacts. Adapter le terme `"50%"` :
+  - Soit changer en `"50"` (le `%` est tokenisé séparateur en BOOLEAN MODE, donc `"50"` seul matche correctement).
+  - Soit vérifier que `escape_boolean_ft("50%")` strippe correctement le `%` et que la query ne génère pas d'erreur SQL.
+  - Renommer en `test_list_filter_description_handles_special_chars` pour refléter la sémantique BOOLEAN MODE.
+- [ ] T9.5 **Tests régression UX documentée (AC #15)** : ajouter un test par repo affecté qui asserte explicitement que le mid-word search ne fonctionne plus :
+  - `contacts.rs::test_search_no_longer_matches_mid_word` : seed contact `"Camargo & Associés"`, asserter `search("argo")` → 0 résultats, `search("camar")` → 1 résultat.
+  - `products.rs::test_search_no_longer_matches_mid_word` : seed produit `"Crémant d'Alsace"`, asserter `search("mant")` → 0 résultats, `search("crém")` → 1 résultat.
+  - `journal_entries.rs::test_search_no_longer_matches_mid_word` : seed entrée description `"TestSalaire Mensuel"`, asserter `search("alaire")` → 0 résultats, `search("salaire")` → 1 résultat.
+  - Doc-comment standard : « Régression v0.1 documentée (KF-005). Mid-word search perdu en BOOLEAN MODE. Si une future migration restaure le comportement (Sphinx/Manticore v0.3+ ou `innodb_ft_min_token_size=1`), ce test devra être inversé. »
 
 ### T10 — Verification + commit final (AC: #11, #12, #13)
 
@@ -358,7 +432,7 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 - [ ] T10.2 Lancer `cargo test -p kesh-api` ✅ green.
 - [ ] T10.3 `cargo clippy --all-targets -- -D warnings` ✅ green.
 - [ ] T10.4 `cargo fmt --all --check` ✅ clean.
-- [ ] T10.5 (Optionnel — informatif) Run perf manuel : seed 10k contacts via script ad-hoc, mesurer search baseline LIKE puis post-FULLTEXT. Documenter le delta dans le Change Log.
+- [ ] T10.5 (Optionnel — informatif AC #13) Run perf manuel : seed ~10-50k contacts via boucle INSERT shell (pas de script commité), mesurer search baseline LIKE puis post-FULLTEXT (`SET profiling = 1; SELECT ... ; SHOW PROFILES;` ou simple `\T file_log.txt` dans mariadb-cli). Documenter le delta (ms baseline vs ms post-fix) dans la section « Change Log » du story file. Si le speedup est < 5× sur 50k lignes, investiguer (peut indiquer optimizer suboptimal — cf. T7.4).
 - [ ] T10.6 Mettre à jour status story `review` (à la fin de l'impl, avant code-review) et sprint-status.yaml `review`.
 - [ ] T10.7 Commit final : `Story 7-4 : KF-005 — FULLTEXT search indexes (closes #5)` ; vérifier le tag `closes #5` pour fermeture auto de l'issue GitHub.
 
@@ -366,9 +440,7 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 
 ### Patterns architecturaux applicables
 
-- **DRY (Don't Repeat Yourself)** — le helper `escape_boolean_ft` est l'occasion de regrouper la logique d'échappement search dans `crates/kesh-db/src/util.rs` (ou équivalent). Si le module n'existe pas, créer la sous-arborescence proprement (`util/mod.rs` + `util/search.rs`). Voir aussi le helper `escape_like` dupliqué 4× dans contacts/products/journal_entries/invoices (`contacts.rs:33-42`, etc.) — **bonus de refactoring** : extraire `escape_like` dans le même module pour fermer la dette de duplication 4× notée dans les commentaires (`invoices.rs:40-41` : « 4e duplication — dette critique notée »). À évaluer avec Guy si on inclut le bonus dans cette story ou si on le sort en story dédiée.
-
-  **Décision (à valider en review)** : embarquer le bonus `escape_like` dans cette story (T1 étendu) car le module `util/search.rs` est créé pour `escape_boolean_ft` de toutes façons. Coût marginal négligeable (4 import statements + suppression de 4 fonctions privées dupliquées). Bénéfice : ferme une dette tech notée dans les commentaires du code.
+- **DRY (Don't Repeat Yourself)** — le helper `escape_boolean_ft` est créé dans le nouveau module `crates/kesh-db/src/util/search.rs`. **Bonus mutualisation `escape_like`** (in-scope, cf. AC #18 + T1.5) : le helper `escape_like` actuellement dupliqué dans 4 fichiers (`contacts.rs:33-42`, `products.rs:31-36`, `journal_entries.rs:310-315`, `invoices.rs:42-47`) est extrait dans le même module et les 4 callsites locaux remplacés par un import `use crate::util::search::escape_like`. Note de lecture du code source : les commentaires inline (`products.rs:30` : « 3e duplication — à extraire si 4e apparaît » et `invoices.rs:40-41` : « dette technique suivie (extraire si 4e duplication) ») indiquent que la 4e instance (invoices.rs) est précisément la condition de déclenchement de l'extraction — qui est faite par cette story.
 
 - **Multi-tenant scoping** (Story 7-1 KF-002, fermée 2026-04-29) — TOUTES les queries search incluent déjà `WHERE company_id = ?`. La migration FULLTEXT préserve cette invariante. T7.3 valide explicitement l'isolation cross-company.
 
@@ -448,14 +520,19 @@ b63dc4e Story 7-1: KF-002 Multi-Tenant Audit + Code Review Pass 4 Remediation (#
 - Les commits de PR sont en squash-merge (`(#NN)` suffixe).
 - Documentation systématique dans `docs/<topic>-patterns.md` quand un pattern réutilisable est introduit (cf. `docs/optimistic-locking-patterns.md` Story 7-3).
 
-### Latest tech information (MariaDB 10.11 FULLTEXT, vérifications préalables)
+### Latest tech information (MariaDB 11.x InnoDB FULLTEXT, vérifications préalables)
 
-- MariaDB 10.11 supporte InnoDB FULLTEXT depuis 10.0.5 (largement disponible).
-- `ALGORITHM=INPLACE, LOCK=NONE` supporté pour `ADD FULLTEXT` depuis MariaDB 10.2 (✓ v0.1 cible).
-- `innodb_ft_min_token_size` défaut = 3 caractères (modifiable mais nécessite redémarrage + REBUILD INDEX).
-- `BOOLEAN MODE` opérateurs : `+ -` (must/must-not), `> <` (relevance modifier), `( )` (grouping), `~` (penalty), `*` (prefix wildcard, suffix non-supporté), `"..."` (phrase).
-- `NATURAL LANGUAGE MODE` : ranking BM25-like, stop-words filtrés selon `default_collation` (utf8mb4_unicode_ci stop-words = liste anglaise par défaut, NON francophone — autre raison de préférer BOOLEAN qui n'utilise pas de stop-words).
-- Limite `MATCH ... AGAINST` : 1024 caractères max par défaut, largement suffisant pour Kesh.
+- **Versions du projet** : `mariadb:11-jammy` en prod (`docker-compose.yml`), `mariadb:11.4` en dev (`docker-compose.dev.yml`). InnoDB FULLTEXT supporté depuis MariaDB 10.0.5 (largement disponible).
+- **`ALGORITHM=INPLACE`** supporté pour `ADD FULLTEXT INDEX` depuis MariaDB 10.2 (✓).
+- **`LOCK=NONE` rejeté** pour `ADD FULLTEXT INDEX` (vérification doc MariaDB 2026-04-29). Minimum requis : `LOCK=SHARED`.
+- **Un seul `ADD FULLTEXT` par `ALTER TABLE`** quand `ALGORITHM=INPLACE` (limitation InnoDB documentée).
+- **Première reconstruction `FTS_DOC_ID`** : la 1ère fois qu'un FULLTEXT est ajouté à une table, la table est reconstruite pour ajouter la colonne cachée `FTS_DOC_ID`. Les FULLTEXT suivants sur la même table évitent cette reconstruction.
+- **Variable de configuration** : c'est `innodb_ft_min_token_size` qui s'applique à InnoDB (défaut = 3 caractères). `ft_min_word_len` est la variable MyISAM uniquement — NON applicable à Kesh (toutes les tables sont InnoDB). Modifier `innodb_ft_min_token_size` exige redémarrage serveur + REBUILD INDEX (impact système global, non recommandé v0.1 — la limite ≥ 3 chars est documentée comme contrainte UX).
+- **`BOOLEAN MODE` opérateurs (10 caractères)** : `+ -` (must/must-not), `> <` (relevance modifier), `( )` (grouping), `~` (penalty), `*` (prefix wildcard, suffix `*term` non-supporté), `"..."` (phrase). Note : `@` n'est PAS un opérateur BOOLEAN MODE — seulement dans la grammaire SQL générale.
+- **`NATURAL LANGUAGE MODE`** : ranking BM25-like, stop-words filtrés selon le collation. Pour `utf8mb4_unicode_ci`, la liste de stop-words est par défaut anglaise (NON francophone) — c'est l'une des raisons de préférer `BOOLEAN MODE` qui n'utilise pas de stop-words.
+- **Pattern hybride MATCH OR LIKE** : connu pour potentiellement causer un full scan optimizer (cf. Percona blog 2026 — l'optimizer peut abandonner le plan FULLTEXT quand l'OR contient une clause non-indexable). Test EXPLAIN dédié (T7.4) pour vérifier.
+- **Limite `MATCH ... AGAINST`** : 1024 caractères max par défaut, largement suffisant pour Kesh.
+- **SQLx + MariaDB transaction handling** : SQLx N'enveloppe PAS les migrations MySQL/MariaDB dans une transaction (DDL = auto-commit). Pas de directive `-- no-transaction` à ajouter (cette directive existe pour SQLx PostgreSQL, pas MySQL). En cas d'échec mid-migration, drop manuellement les index appliqués et relancer.
 
 ## Dev Agent Record
 
@@ -474,3 +551,72 @@ b63dc4e Story 7-1: KF-002 Multi-Tenant Audit + Code Review Pass 4 Remediation (#
 ### File List
 
 (à remplir par le dev)
+
+## Change Log
+
+### Spec Validate Pass 1 — Sonnet 4.6 × 3 reviewers parallèles (2026-04-29)
+
+**Contexte** : Pass 1 lancée immédiatement après création de la spec via `/bmad-create-story validate`. Cycle CLAUDE.md respecté : Opus (orchestrateur) → Sonnet (P1). Trois reviewers Sonnet 4.6 parallèles, contextes frais orthogonaux à la session principale Opus.
+
+**Reviewers** :
+- **Source/Refs Auditor** — vérifie chaque citation `file:line`, claim sur le code existant, snippet quoted.
+- **Scope/AC Auditor** — vérifie scope coherence + complétude ACs + task decomposition.
+- **Technical Reviewer** — challenge les décisions techniques (BOOLEAN vs NATURAL, FULLTEXT contraints, multi-tenant, helper strategy) avec accès web pour doc MariaDB.
+
+**Findings remontés (34 bruts → 23 dédupliqués)** :
+- Source/Refs : 0C / 3H / 3M / 4L = 10
+- Technical : **2C** / 3H / 4M / 3L = 12
+- Scope/AC : 0C / 2H / 5M / 5L = 12
+
+**Trend après triage** : 2 CRITICAL + 7 HIGH + 9 MEDIUM + 6 LOW (dédupliqué) = 24 findings actionnables.
+
+**Patches appliqués (18 patches sur le story file)** :
+
+| Sévérité | ID | Sujet | Patch appliqué |
+|---|---|---|---|
+| CRITICAL | T-CR1 | `LOCK=NONE` non supporté pour `ADD FULLTEXT` (MariaDB rejette) | Refonte T2.3 SQL : `LOCK=NONE` → `LOCK=SHARED` partout (5 statements) + §migration online amendée + Latest tech information clarifiée |
+| CRITICAL | T-CR2 | 2× `ADD FULLTEXT` dans un seul `ALTER TABLE` avec INPLACE rejeté | Split `products` en 2 `ALTER TABLE` séquentiels |
+| HIGH | S-H1 | Lignes test `test_filter_by_search_name` contacts : 1017 → 1045 (×N occurrences) | Replace_all sur `1017-1101` → `1045-1129`, `l. 1017` → `l. 1045`, etc. |
+| HIGH | S-H2 | Lignes test `test_filter_by_search` products : 802 → 821 | Idem |
+| HIGH | S-H3 | **Omission scope** : `due_dates_summary` (`invoices.rs:551-563`) contient un 2e bloc LIKE non couvert par T6 | Ajout T6.3 « Critique — 2e callsite » + correction T6.2 (range COUNT correcte) |
+| HIGH | T-H3 | `FTS_DOC_ID` — première reconstruction silencieuse non documentée | Section §migration online point 3 ajoutée + commentaire migration SQL |
+| HIGH | T-H4 | UX regression mid-word search insuffisamment flaggée | §UX impact point 3 entièrement réécrit avec exemples concrets ; AC #15 nouveau (régression UX documentée + tests T9.5 par repo) |
+| HIGH | T-H5 | SQLx `-- migrate:next` n'existe pas (golang-migrate, pas SQLx) | §migration online clarifie : SQLx ne wrappe PAS les migrations MySQL/MariaDB, pas de directive à ajouter |
+| HIGH | Sc-H1 | `contacts` table : pas de clause `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` | T2.2 nouveau « Préalable — vérifier collation effective » avant la migration |
+| MEDIUM | M1 | `invoices.rs:40-41` commentaire mal interprété | Dev Notes DRY corrigé : « 4e instance = condition de déclenchement » au lieu de « dette critique notée » |
+| MEDIUM | M2 | Inconsistance `journal_entries.rs:374` vs `:374-379` dans tableau scope | Tableau scope mis à jour avec range complet |
+| MEDIUM | M3 | Plage `invoices.rs:610-670` pour COUNT incorrecte | T6.2 corrigée → `~442-450` (corps de `list_by_company_paginated`) |
+| MEDIUM | M4 | `escape_boolean_ft` stratégie ambiguë (escape `\+` non garanti) | Décision tranchée : **strip TOTAL** (10 caractères) au lieu d'escape ; AC #2 mis à jour, T1.2/T1.3 réécrits, AC #16 nouveau |
+| MEDIUM | M5 | Pas de test EXPLAIN pour query hybride MATCH OR LIKE | T7.4 nouveau test dédié `test_hybrid_match_or_like_uses_fulltext_index` ; AC #17 nouveau |
+| MEDIUM | M6 | `ft_min_word_len` (MyISAM) vs `innodb_ft_min_token_size` (InnoDB) confondus | Latest tech information clarifie : InnoDB only, `innodb_ft_min_token_size` partout |
+| MEDIUM | M7 | EXPLAIN tests flaky — `FORCE INDEX` non prescrit | T7.2 réécrit avec `FORCE INDEX` hint déterministe + seed 100+ ; option `#[ignore = "optimizer-cost-sensitive"]` pour test informatif additionnel |
+| MEDIUM | M8 | Bonus `escape_like` mutualisation décision laissée ouverte | Décision tranchée in-scope : AC #18 nouveau + T1.5 nouvelle tâche dédiée + Dev Notes DRY simplifié (plus de « à valider en review ») |
+| MEDIUM | M9 | AC #5 — `journal_entries.rs` a 2 tests existants (l. 1269, 1338), pas zéro | AC #5 corrigé + T5.2 corrigé + T9.4 nouveau pour adapter `test_list_filter_description_escapes_percent` |
+| MEDIUM | M10 | « MariaDB 10.11 » alors que prod = `mariadb:11-jammy`, dev = `mariadb:11.4` | Replace_all : « MariaDB 10.11 » → « MariaDB 11.x (mariadb:11-jammy en prod, mariadb:11.4 en dev) » |
+| LOW | L1 | Virgule SQL parasite avant `ALGORITHM` | Refonte T2.3 SQL avec syntaxe correcte |
+| LOW | L2 | Test `test_escape_whitespace_only` non listé | T1.3 mis à jour avec test dédié |
+| LOW | L3 | AC #11 contredit CLAUDE.md (`docs/known-failures.md` archivé) | AC #11 réécrit : pas de modification du fichier archivé, fermeture via commit `closes #5` uniquement |
+| LOW | L4 | AC #13 perf script ambigu | AC #13 + T10.5 reformulés : pas de script commité, run manuel ad-hoc |
+| LOW | L5 | `@` listé comme opérateur BOOLEAN MODE alors qu'il n'en est pas un | Liste corrigée à 10 caractères (sans `@`) ; test `test_escape_at_passes_through` ajouté |
+| LOW | L6 | Multi-mots `"Mar Tin"` comportement OR implicite + wildcard global non documenté | §mode FULLTEXT helper documente le comportement multi-mots + edge case dans T1.4 doc-comment |
+
+**Vérifications techniques effectuées (Technical Reviewer)** :
+
+- ✅ Doc MariaDB officielle consultée pour `LOCK=NONE` rejeté FULLTEXT.
+- ✅ Doc MariaDB officielle consultée pour 1 FULLTEXT à la fois en INPLACE.
+- ✅ Documentation `FTS_DOC_ID` reconstruction au premier ADD FULLTEXT.
+- ✅ SQLx behavior MySQL/MariaDB transactionnel vérifié (pas de wrap).
+- ✅ Pattern hybride MATCH OR LIKE risque optimizer documenté (Percona).
+- ✅ `innodb_ft_min_token_size` (InnoDB) vs `ft_min_word_len` (MyISAM) clarifié.
+
+**Total patches** : 23 (CRITICAL + HIGH + MEDIUM + LOW). Aucun reclassement en dette tech (toutes les dettes — race v0.1 documentée KF-021 #50, etc. — déjà tracées par Story 7-3 closure).
+
+**Résultat Pass 1** (auto-évaluation Opus 4.7 sur les patches Sonnet — biais d'auteur potentiel) : 0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW restants après application des patches. Critère d'arrêt CLAUDE.md atteint **sous réserve** d'une Pass 2 par LLM différent (Haiku 4.5 ou Opus, contexte frais).
+
+**ACs ajoutés Pass 1** : #15 (régression UX documentée), #16 (helper strip strategy), #17 (test EXPLAIN hybride), #18 (bonus mutualisation `escape_like`). **Total ACs : 18** (passage de 14 à 18).
+
+**Tasks ajoutées Pass 1** : T1.5 (mutualisation `escape_like`), T2.2 (préalable collation), T2.5 (récupération échec migration), T6.3 (`due_dates_summary` callsite), T6.4 (test search invoices), T7.4 (EXPLAIN hybride), T9.4 (journal_entries `test_list_filter_description_escapes_percent`), T9.5 (3× tests régression UX par repo).
+
+**Recommandation** : exécuter Pass 2 avec Haiku 4.5 + contexte frais pour challenge orthogonal sur les patches Pass 1 (notamment sur les 2 CRITICAL fixes SQL et le reclassement strategy strip vs escape).
+
+**Commit attendu** : `git commit -m "Story 7-4: spec validate Pass 1 — Sonnet×3, 2C+7H+9M+6L → 23 patches, 0>LOW"` (cf. CLAUDE.md règle commit après chaque passe).
