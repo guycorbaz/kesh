@@ -151,6 +151,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/unmark-paid",
             post(routes::invoices::unmark_invoice_paid_handler),
         )
+        // Story 3.7 : mutations exercices comptables
+        .route(
+            "/api/v1/fiscal-years",
+            post(routes::fiscal_years::create_fiscal_year),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}",
+            put(routes::fiscal_years::update_fiscal_year),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}/close",
+            post(routes::fiscal_years::close_fiscal_year),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -168,6 +181,8 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Story 4.2 : lecture catalogue produits (tout rôle authentifié)
         .route("/api/v1/products", get(routes::products::list_products))
         .route("/api/v1/products/{id}", get(routes::products::get_product))
+        // Story 7.2 (KF-003) : lecture taux TVA configurés pour la company.
+        .route("/api/v1/vat-rates", get(routes::vat::list_vat_rates))
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
         // Story 5.4 : échéancier en lecture (segment statique, prioritaire sur {id}).
@@ -240,6 +255,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/onboarding/finalize",
             post(routes::onboarding::finalize),
+        )
+        // Story 3.7 : lecture exercices comptables (tout rôle authentifié)
+        .route(
+            "/api/v1/fiscal-years",
+            get(routes::fiscal_years::list_fiscal_years),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}",
+            get(routes::fiscal_years::get_fiscal_year),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

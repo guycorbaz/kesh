@@ -1052,8 +1052,11 @@ mod tests {
         let (a1, a2) = two_accounts(&pool, company_id).await;
         let today = chrono::Utc::now().naive_utc().date();
 
-        // Clore l'exercice.
-        fiscal_years::close(&pool, fy_id).await.unwrap();
+        // Clore l'exercice (Story 3.7 : signature audit-aware avec user_id +
+        // company_id pour défense en profondeur multi-tenant — Code Review F2).
+        fiscal_years::close(&pool, admin_user_id, company_id, fy_id)
+            .await
+            .unwrap();
 
         let new = mk_entry(
             company_id,
@@ -1091,9 +1094,9 @@ mod tests {
             .await
             .unwrap();
 
-        // Recréer pour les tests suivants.
+        // Recréer pour les tests suivants (Story 3.7 : pas d'audit log, contexte test).
         let year = chrono::Utc::now().naive_utc().date().year();
-        fiscal_years::create(
+        fiscal_years::create_for_seed(
             &pool,
             crate::entities::NewFiscalYear {
                 company_id,

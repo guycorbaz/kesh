@@ -30,12 +30,47 @@
 	} from '$lib/features/products/product-helpers';
 	import Big from 'big.js';
 
-	const VAT_OPTIONS = [
-		{ value: '8.10', labelKey: 'product-vat-normal', fallback: '8.10 % — Taux normal' },
-		{ value: '3.80', labelKey: 'product-vat-special', fallback: '3.80 % — Hébergement' },
-		{ value: '2.60', labelKey: 'product-vat-reduced', fallback: '2.60 % — Taux réduit' },
-		{ value: '0.00', labelKey: 'product-vat-exempt', fallback: '0.00 % — Exonéré' }
-	];
+	import { getVatRates } from '$lib/features/vat-rates';
+
+	type VatOption = { value: string; labelKey: string; fallback: string };
+
+	// Story 7.2 (KF-003) : taux TVA chargés dynamiquement depuis le backend.
+	// Le `label` retourné par l'API est déjà la clé i18n (`product-vat-normal`,
+	// etc.). Le fallback est dérivé par convention si la clé i18n n'est pas
+	// résolue. Pendant le chargement initial, `vatOptions` est vide → le
+	// `<select>` est `disabled` pour empêcher toute soumission prématurée.
+	let vatOptions = $state<VatOption[]>([]);
+	// Pass 2 LOW : distingue chargement en cours (`'loading'`) vs échec
+	// réseau (`'error'`) vs succès (`'ready'`) pour offrir un feedback
+	// précis dans le formulaire — sinon l'utilisateur voit une infinie
+	// « chargement… » même quand le fetch a échoué.
+	let vatLoadState = $state<'loading' | 'ready' | 'error'>('loading');
+
+	$effect(() => {
+		// Pass 1 remediation #10 : flag `cancelled` pour éviter d'écrire dans
+		// `vatOptions` si le composant se démonte pendant le fetch.
+		let cancelled = false;
+		(async () => {
+			try {
+				const rates = await getVatRates();
+				if (!cancelled) {
+					vatOptions = rates.map((r) => ({
+						value: r.rate,
+						labelKey: r.label,
+						fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
+					}));
+					vatLoadState = 'ready';
+				}
+			} catch {
+				if (!cancelled) {
+					vatLoadState = 'error';
+				}
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	// --- State ---
 	let products = $state<ProductResponse[]>([]);
@@ -216,7 +251,7 @@
 		formName = '';
 		formDescription = '';
 		formPrice = '';
-		formVatRate = '8.10';
+		formVatRate = vatOptions[0]?.value ?? '8.10';
 		formError = '';
 		formTouched = false;
 		formOpen = true;
@@ -235,8 +270,10 @@
 		} catch {
 			formPrice = p.unitPrice;
 		}
-		// Fallback défensif si le backend retourne un taux hors whitelist.
-		formVatRate = VAT_OPTIONS.some((o) => o.value === p.vatRate) ? p.vatRate : '8.10';
+		// Fallback défensif si le backend retourne un taux hors store actuel.
+		formVatRate = vatOptions.some((o) => o.value === p.vatRate)
+			? p.vatRate
+			: (vatOptions[0]?.value ?? '8.10');
 		formError = '';
 		// En édition, les champs sont déjà remplis : afficher la validation dès l'ouverture.
 		formTouched = true;
@@ -261,6 +298,23 @@
 		// Garde anti double-submit : la touche Entrée peut déclencher le form
 		// même si le bouton est `disabled`.
 		if (formSubmitting) return;
+		// Pass 1 remediation #7 + Pass 2 LOW : la touche Entrée peut soumettre
+		// alors que le `<select disabled>` n'est pas encore peuplé (store en
+		// vol) ou que le fetch a échoué. Sans ce guard, `formVatRate` reste
+		// à sa valeur initiale `'8.10'` même si la company a une liste
+		// différente. Distinguer loading vs error donne un feedback précis.
+		if (vatOptions.length === 0) {
+			formError = vatLoadState === 'error'
+				? i18nMsg(
+					'product-error-vat-fetch-failed',
+					'Impossible de charger les taux TVA. Vérifiez la connexion réseau et rechargez la page.'
+				)
+				: i18nMsg(
+					'product-error-vat-loading',
+					'Chargement des taux TVA en cours, veuillez patienter…'
+				);
+			return;
+		}
 		formError = formValidation;
 		if (formError) return;
 
@@ -565,9 +619,10 @@
 				<select
 					id="form-vat-rate"
 					bind:value={formVatRate}
+					disabled={vatOptions.length === 0}
 					class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
 				>
-					{#each VAT_OPTIONS as opt (opt.value)}
+					{#each vatOptions as opt (opt.value)}
 						<option value={opt.value}>{i18nMsg(opt.labelKey, opt.fallback)}</option>
 					{/each}
 				</select>

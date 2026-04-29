@@ -197,6 +197,8 @@ async fn seed_post_onboarding_produces_expected_db_state(pool: MySqlPool) {
             ("accounts", 5),
             ("company_invoice_settings", 1),
             ("onboarding_state", 1),
+            // Story 7.2 (KF-003) : seed_demo doit poser 4 vat_rates pour la company.
+            ("vat_rates", 4),
         ],
     )
     .await;

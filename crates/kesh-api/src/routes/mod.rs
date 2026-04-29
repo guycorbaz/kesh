@@ -3,6 +3,7 @@ pub mod auth;
 pub mod companies;
 pub mod company_invoice_settings;
 pub mod contacts;
+pub mod fiscal_years;
 pub mod health;
 pub mod i18n;
 pub mod invoice_pdf;

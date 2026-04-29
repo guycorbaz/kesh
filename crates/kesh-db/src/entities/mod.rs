@@ -19,6 +19,7 @@ pub mod onboarding;
 pub mod product;
 pub mod refresh_token;
 pub mod user;
+pub mod vat_rate;
 
 pub use account::{Account, AccountType, AccountUpdate, NewAccount};
 pub use audit_log::{AuditLogEntry, NewAuditLogEntry};
@@ -37,3 +38,4 @@ pub use onboarding::{OnboardingState, UiMode};
 pub use product::{NewProduct, Product, ProductUpdate};
 pub use refresh_token::{NewRefreshToken, RefreshToken};
 pub use user::{NewUser, Role, User, UserUpdate};
+pub use vat_rate::{NewVatRate, VatRate};

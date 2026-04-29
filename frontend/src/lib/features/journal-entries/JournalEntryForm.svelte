@@ -6,6 +6,7 @@
 	import { X, Plus } from '@lucide/svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { notifyMissingFiscalYearOrFallback } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { createJournalEntry, updateJournalEntry } from './journal-entries.api';
 	import type {
@@ -136,11 +137,13 @@
 			onSuccess();
 		} catch (err) {
 			if (isApiError(err)) {
+				// Story 3.7 AC #22 — fallback toast actionnable pour NO_FISCAL_YEAR / FISCAL_YEAR_CLOSED.
+				if (notifyMissingFiscalYearOrFallback(err)) {
+					return;
+				}
 				const code = err.code ?? '';
 				switch (code) {
 					case 'ENTRY_UNBALANCED':
-					case 'NO_FISCAL_YEAR':
-					case 'FISCAL_YEAR_CLOSED':
 					case 'DATE_OUTSIDE_FISCAL_YEAR':
 					case 'INACTIVE_OR_INVALID_ACCOUNTS':
 					case 'VALIDATION_ERROR':

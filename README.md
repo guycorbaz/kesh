@@ -155,10 +155,10 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 
 | Version | Epics | Statut |
 |---------|-------|--------|
-| v0.1 | E1 Fondations & Authentification, E2 Onboarding & Configuration, E4 Carnet d'adresses & Catalogue, E5 Facturation QR Bill, E6 Qualité & CI/CD | ✅ Done |
-| v0.1 | E3 Plan comptable & Écritures (ré-ouverte 2026-04-27 pour Story 3-7 gestion exercices comptables), E7 Technical Debt Closure | 🚧 En cours |
+| v0.1 | E1 Fondations & Authentification, E2 Onboarding & Configuration, E3 Plan comptable & Écritures, E4 Carnet d'adresses & Catalogue, E5 Facturation QR Bill, E6 Qualité & CI/CD | ✅ Done |
+| v0.1 | E7 Technical Debt Closure | 🚧 En cours |
 | v0.1 | E8 Import bancaire & Réconciliation, E9 Rapports & Exports, E10 Déploiement & Opérations | 📋 Backlog |
-| v0.2 | E11 TVA Suisse, E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs & Lettrage | 📋 Backlog |
+| v0.2 | E11 TVA Suisse, E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
 

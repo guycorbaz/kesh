@@ -59,7 +59,7 @@
 - **Blocage** : aucun court terme (taux suisses stables). Critique à chaque changement réglementaire ou quand on veut supporter un autre pays.
 - **Reproduction** : `grep -rn "7.70\|8.10\|3.70\|2.60" crates/kesh-core/src crates/kesh-db/src frontend/src/lib/features`.
 - **Story de remédiation** : **Epic 10** TVA Suisse — table `vat_rates(id, company_id, rate, valid_from, valid_to)`, migration des hardcodes, config admin.
-- **Status** : open
+- **Status** : closed (Story 7-2, 2026-04-28). Table `vat_rates` créée avec migration backfill, repository read-only, GET /api/v1/vat-rates, refactor backend (validate_vat_rate DB-driven async + `verify_vat_rates_against_db` avec dédup BTreeSet), seed onboarding Path B + seed_demo, frontend store inflight-promise + invalidation logout. CRUD admin et historique date-aware reportés Epic 11-1.
 
 ---
 

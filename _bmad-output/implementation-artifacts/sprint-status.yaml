@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-27  (Story 3-7 created via bmad-create-story — re-opens Epic 3 (was done). Unblocks Path B production: validate_invoice / journal_entries::create / mark_as_paid all require fiscal_year Open. Story 7-1 done: 4 review passes (5 Opus, 6 Sonnet, 7 Haiku) + 30 patches applied. Trend 18→11→3→0 findings >LOW. Issues #17 #30 #40 closed; #43 #44 #45 created for v0.2 residuals.)
+last_updated: 2026-04-29  (Story 7-2 done — KF-003 TVA DB-driven config closed après 2 passes code review : Pass 1 Sonnet 25→0>LOW (14 patches + 7 reject/defer + 1 bad_spec), Pass 2 Haiku 0 régression / 23/23 ACs PASS / 3 LOW cosmétiques appliqués. Critère d'arrêt CLAUDE.md atteint après Pass 2. Issue GitHub #3 fermée par commit `closes #3` (story implémentation). // Précédent : Story 7-2 spec créée 2026-04-28, implémentation T1-T8 done même jour. Story 3-7 done après 2 passes code review (Pass 1 Sonnet 12→0 critical, 15 patches ; Pass 2 Haiku/Opus 12→1, -92%, dette KF-019 #47 créée). Story 3-6 « journaux personnalisables » reclassified du backlog Epic 3 vers Epic 15 v0.2 (15-4). **Epic 3 status → done**.)
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -84,15 +84,20 @@ development_status:
 
   # Epic 3: Plan Comptable & Écritures
   # Re-opened 2026-04-27 to add Story 3-7 (gestion exercices comptables — Path B blocker)
-  epic-3: in-progress
+  # Closed 2026-04-28 after Story 3-6 reclassified to Epic 15 (v0.2) — see comment below
+  epic-3: done
   3-1-plan-comptable-chargement-gestion: done
   3-2-saisie-ecritures-en-partie-double: done
   3-3-modification-suppression-ecritures: done
   3-4-recherche-pagination-tri: done
   3-5-notifications-aide-contextuelle-audit: done
-  3-6-journaux-personnalisables: backlog
-  3-7-gestion-exercices-comptables: ready-for-dev  # Story créée 2026-04-27. Débloque Path B production. Spec à _bmad-output/implementation-artifacts/3-7-gestion-exercices-comptables.md
-  epic-3-retrospective: optional
+  # 3-6-journaux-personnalisables: RECLASSIFIED 2026-04-28 → Epic 15 (v0.2) as 15-4-journaux-personnalisables.
+  # Reason: aucun FR du PRD ne demande la personnalisation (FR22 liste 5 journaux figés : Achats/Ventes/Banque/Caisse/OD).
+  # Les 5 hardcodés couvrent les besoins standards PME suisse. Pas de demande utilisateur capturée. Refactor coûteux
+  # (schéma + 2 enums miroirs kesh-core/kesh-db + tous les callers + UI + i18n) sans valeur incrémentale v0.1.
+  # Décision validée par Guy lors de la création de Story 3-6 via /bmad-create-story 3-6 (workflow halted faute de spec).
+  3-7-gestion-exercices-comptables: done  # Story 3-7 done 2026-04-28 (commits a43a568 impl + Pass 1 patches, e168637 Pass 2 closure). Code Review 2 passes : Pass 1 Sonnet (12→0 critical) avec 15 patches. Pass 2 Haiku/Opus (12→1, -92%). G1 AC #22 Playwright gap reclassé en dette KF-019 (#47).
+  epic-3-retrospective: done  # Skipped 2026-04-28 — décision Guy : pas de retro tardive sur Epic 3 (4 stories core 3-1..3-4 mergées Epic 1 sprints 2026-Q1 ; Story 3-5 audit + 3-7 fiscal_years déjà documentées dans leurs files respectifs avec change logs détaillés). Pas de leçons transverses inédites à capturer post-hoc.
 
   # Epic 4: Carnet d'Adresses & Catalogue
   epic-4: done
@@ -120,7 +125,7 @@ development_status:
   # Epic 7: Technical Debt Closure (inserted 2026-04-20 retro decision)
   epic-7: in-progress
   7-1-audit-complete-kf-002-multi-tenant: done  # KF-002 audit + multi-tenant scoping hardening. 4 review passes (Opus/Sonnet/Haiku cycle), trend 18→11→3→0 findings >LOW, 30 patches applied across passes 5/6/7. Pattern 5 lock-ordering doc added. v0.2 residuals tracked: #43 (deadlock-retry middleware), #44 (fallback UI accounts), #45 (server-side invoice validation).
-  7-2-kf-003-vat-db-driven-config: backlog  # KF-003: TVA rates table + config
+  7-2-kf-003-vat-db-driven-config: done  # KF-003 closed 2026-04-29 — 2 passes code review (Pass 1 Sonnet 25→0>LOW + 14 patches + 7 reject/defer + 1 bad_spec ; Pass 2 Haiku 0 régression + 3 LOW cosmétiques). 23/23 ACs PASS. Issue GitHub #3 closed par commit `closes #3`.
   7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
   7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
   7-5-kf-008-playwright-selector-fixes: backlog  # KF-008: Playwright selector ambiguities (36 tests)
@@ -176,8 +181,11 @@ development_status:
   epic-14-retrospective: optional
 
   # Epic 15: Justificatifs, Lettrage & Compléments v0.2 (ex-Epic 13, renumbered 2026-04-20)
+  # Story 15-4 added 2026-04-28 — relocation from Epic 3 (Story 3-6 originally backlog,
+  # never specified in epics.md, reclassified after pragmatic v0.1 scope review).
   epic-15: backlog
   15-1-pieces-justificatives: backlog
   15-2-lettrage: backlog
   15-3-versioning-parseurs-modeles-manuels: backlog
+  15-4-journaux-personnalisables: backlog  # Reclassified from 3-6 (Epic 3) on 2026-04-28. Scope à spécifier — voir options A/B/C présentées lors du /bmad-create-story 3-6 du 2026-04-28. Pas urgent v0.2 si pas de demande utilisateur post-v0.1.
   epic-15-retrospective: optional

@@ -31,12 +31,54 @@
 
 	import ContactPicker from './ContactPicker.svelte';
 	import ProductPicker from './ProductPicker.svelte';
+	import { getVatRates } from '$lib/features/vat-rates';
 
 	type Props = { invoice?: InvoiceResponse | null };
 	let { invoice = null }: Props = $props();
 
-	const VAT_OPTIONS = ['0.00', '2.60', '3.80', '8.10'];
-	const DEFAULT_VAT = '8.10';
+	// Story 7.2 (KF-003) : taux TVA chargés dynamiquement depuis le backend.
+	// Cache de session via le store `vat-rates`. Pendant le chargement initial,
+	// `vatOptions` est vide et le `<select>` est `disabled` pour empêcher
+	// toute soumission prématurée.
+	let vatOptions = $state<string[]>([]);
+	const DEFAULT_VAT = $derived(vatOptions[0] ?? '8.10');
+
+	$effect(() => {
+		// Pass 1 remediation #10 : flag `cancelled` pour éviter d'écrire dans
+		// `vatOptions` si le composant se démonte pendant le fetch.
+		let cancelled = false;
+		(async () => {
+			try {
+				const rates = await getVatRates();
+				if (!cancelled) {
+					vatOptions = rates.map((r) => r.rate);
+				}
+			} catch {
+				// Échec réseau : on garde la liste vide → `<select>` disabled,
+				// l'utilisateur voit l'erreur globale au moment du submit (validate).
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// Pass 1 remediation #8 : si une ligne a été initialisée avec le fallback
+	// hardcodé `'8.10'` (avant resolve du store) et que `'8.10'` n'est pas dans
+	// la liste de la company courante, repointer la ligne sur le premier
+	// vatOption résolu. No-op pour les companies suisses standard où `8.10`
+	// fait partie du seed — défense pour Epic 11-1 (CRUD admin) où la liste
+	// peut diverger d'une company à l'autre.
+	$effect(() => {
+		if (vatOptions.length === 0) return;
+		if (vatOptions.includes('8.10')) return;
+		const fallback = vatOptions[0];
+		for (const l of lines) {
+			if (l.vatRate === '8.10') {
+				l.vatRate = fallback;
+			}
+		}
+	});
 
 	// Identifiant UI stable (cross-reorder/remove). NE PAS envoyer au backend.
 	type LineState = CreateInvoiceLineRequest & { _uiKey: string };
@@ -223,7 +265,8 @@
 			} catch {
 				return `Ligne ${i + 1} : valeurs numériques invalides`;
 			}
-			if (!VAT_OPTIONS.includes(l.vatRate)) return `Ligne ${i + 1} : taux TVA invalide`;
+			if (vatOptions.length > 0 && !vatOptions.includes(l.vatRate))
+				return `Ligne ${i + 1} : taux TVA invalide`;
 		}
 		return null;
 	}
@@ -453,9 +496,12 @@
 						<td class="py-2 pr-2">
 							<select
 								bind:value={line.vatRate}
+								disabled={vatOptions.length === 0}
+								aria-label="Taux TVA"
+								data-testid="invoice-line-vat-rate"
 								class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
 							>
-								{#each VAT_OPTIONS as v (v)}
+								{#each vatOptions as v (v)}
 									<option value={v}>{v}%</option>
 								{/each}
 							</select>

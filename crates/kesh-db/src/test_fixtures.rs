@@ -155,6 +155,25 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     .execute(pool)
     .await?;
 
+    // Story 7.2 (KF-003) : seed des 4 taux TVA suisses 2024+ pour cohérence
+    // avec ce que `kesh_seed::seed_demo` et `routes/onboarding::finalize`
+    // produisent en prod. Le state « post-onboarding » des fixtures doit
+    // refléter exactement le state observable côté user.
+    sqlx::query(
+        "INSERT IGNORE INTO vat_rates (company_id, label, rate, valid_from, valid_to) \
+         VALUES \
+            (?, 'product-vat-normal',  8.10, '2024-01-01', NULL), \
+            (?, 'product-vat-special', 3.80, '2024-01-01', NULL), \
+            (?, 'product-vat-reduced', 2.60, '2024-01-01', NULL), \
+            (?, 'product-vat-exempt',  0.00, '2024-01-01', NULL)",
+    )
+    .bind(company_id)
+    .bind(company_id)
+    .bind(company_id)
+    .bind(company_id)
+    .execute(pool)
+    .await?;
+
     Ok(SeededCompany {
         company_id,
         fiscal_year_id,
@@ -187,6 +206,7 @@ pub(crate) const TABLES_TO_TRUNCATE: &[&str] = &[
     "products",
     "contacts",
     "fiscal_years",
+    "vat_rates", // Story 7.2 (KF-003) — table enfant de companies (FK fk_vat_rates_company), aucune table ne référence vat_rates.
     "refresh_tokens",
     "onboarding_state",
     "users",

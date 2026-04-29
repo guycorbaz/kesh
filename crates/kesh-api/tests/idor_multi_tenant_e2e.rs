@@ -12,7 +12,7 @@ use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::{NewUser, Role};
-use kesh_db::repositories::users;
+use kesh_db::repositories::{users, vat_rates};
 use kesh_db::test_fixtures::truncate_all;
 use serde_json::json;
 use sqlx::MySqlPool;
@@ -208,6 +208,14 @@ async fn create_seeded_company(
     .execute(pool)
     .await
     .expect("company_invoice_settings insert");
+
+    // Story 7.2 (KF-003) : seed des 4 taux TVA suisses 2024+ pour la company.
+    // La nouvelle validation `verify_vat_rates_against_db` exige que la table
+    // `vat_rates` contienne le taux passé à `POST /api/v1/products` — sans
+    // seed, le test reçoit 400 VALIDATION_ERROR.
+    vat_rates::seed_default_swiss_rates(pool, company_id)
+        .await
+        .expect("vat_rates seed");
 
     (company_id, accounts)
 }
