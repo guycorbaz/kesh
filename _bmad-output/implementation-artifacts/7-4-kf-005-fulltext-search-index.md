@@ -175,7 +175,7 @@ SQLx **n'enveloppe PAS** les migrations dans une transaction sur MySQL/MariaDB (
 
 ### §multi-tenant scoping — préservation `WHERE company_id = ?`
 
-**Vérification critique** (Story 7-1 KF-002 closure 2026-04-29 a hardener le multi-tenant scoping codebase-wide) :
+**Vérification critique** (Story 7-1 KF-002 closure 2026-04-27 PR #42 a hardener le multi-tenant scoping codebase-wide) :
 
 Toutes les queries search incluent déjà `WHERE company_id = ?` AVANT le filtre LIKE. La migration vers MATCH AGAINST DOIT préserver cette composition AND :
 
@@ -213,7 +213,7 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 
 5. **`journal_entries::list_by_company_paginated` utilise FULLTEXT pour `description`** — Idem AC #3-#4. **Tests préexistants à vérifier post-refactor** :
    - `journal_entries.rs:1269` `test_list_filter_description` — cherche `"facture"` minuscule pour matcher `"Facture fournisseur ABC"`. Case-insensitivity garantie par `utf8mb4_unicode_ci` en LIKE comme en FULLTEXT → **doit passer post-refactor sans modification**.
-   - `journal_entries.rs:1338` `test_list_filter_description_escapes_percent` — cherche `"50%"`. En BOOLEAN MODE, `%` est strippé par `escape_boolean_ft` → **doit être adapté** (T9.4) : soit changer le terme cherché en `"50"`, soit asserter que `escape_boolean_ft("50%")` strippe correctement le `%`.
+   - `journal_entries.rs:1338` `test_list_filter_description_escapes_percent` — cherche `"50%"`. **Note importante (Pass 3 F1)** : `%` n'est **PAS** un opérateur BOOLEAN MODE et n'est donc **PAS** dans la strip-list de `escape_boolean_ft` (10 chars : `+ - > < ( ) ~ * " \`). MariaDB traite `%` comme un caractère **non-token** au niveau du tokenizer InnoDB FULLTEXT → la query `MATCH AGAINST '50%*' IN BOOLEAN MODE` tokenize en `50` (le `%` est silencieusement ignoré, pas strippé applicatif). Le test devra être adapté (T9.4) pour asserter ce comportement (la query passe sans erreur SQL et match les rows contenant `« 50% Promo »` via le token `50`).
 
 6. **`invoices` — DEUX callsites search bénéficient de `ft_contacts_name`** :
    - **Callsite primaire** : `invoices::list_by_company_paginated` (search à `invoices.rs:252-264`). `c.name` → `MATCH AGAINST` ; `invoice_number` et `payment_terms` restent LIKE.
@@ -336,7 +336,28 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
       ALGORITHM=INPLACE, LOCK=SHARED;
   ```
 - [ ] T2.4 **Tester en local** : `cargo sqlx migrate run` ou run d'un test sqlx (`cargo test -p kesh-db test_create_contact -- --exact` qui force MIGRATOR à run). Vérifier `SHOW INDEX FROM contacts;` dans MariaDB CLI : `Index_type: FULLTEXT` listé pour chacun des 4 index attendus (`ft_contacts_name`, `ft_products_name`, `ft_products_description`, `ft_journal_entries_description`).
-- [ ] T2.5 **Si la migration échoue à mi-parcours** (ex. erreur disk full sur le 3e ALTER) : drop manuellement les index déjà créés via `ALTER TABLE <table> DROP INDEX <ft_index_name>` puis relancer. Pas de rollback atomique inter-statements (cf. comportement SQLx documenté en commentaire de migration).
+- [ ] T2.5 **Runbook opérateur — si la migration échoue à mi-parcours en prod** (ex. erreur disk full sur le 3e ALTER) :
+  ```sql
+  -- 1. Diagnostiquer : lister les index FULLTEXT déjà créés
+  SHOW INDEX FROM contacts WHERE Index_type = 'FULLTEXT';
+  SHOW INDEX FROM products WHERE Index_type = 'FULLTEXT';
+  SHOW INDEX FROM journal_entries WHERE Index_type = 'FULLTEXT';
+
+  -- 2. Drop ceux qui existent déjà (selon le résultat de l'étape 1)
+  -- Remplacer <ft_xxx> par le nom de l'index trouvé. Exemple si seuls
+  -- ft_contacts_name et ft_products_name existent :
+  ALTER TABLE contacts DROP INDEX ft_contacts_name;
+  ALTER TABLE products DROP INDEX ft_products_name;
+  -- (ne pas dropper ce qui n'existe pas — chaque DROP qui échoue avec
+  -- erreur 1091 « can't DROP, check that key exists » est OK)
+
+  -- 3. Vérifier que la table _sqlx_migrations ne contient PAS la migration
+  -- partielle (sinon SQLx croira qu'elle est déjà appliquée et la skippera)
+  DELETE FROM _sqlx_migrations WHERE version = <timestamp_de_la_migration>;
+
+  -- 4. Relancer la migration via cargo sqlx migrate run (ou MIGRATOR au boot app)
+  ```
+  **Important** : ne JAMAIS re-run le fichier de migration directement (sans nettoyage `_sqlx_migrations`) — SQLx considère la version déjà appliquée et skippe silencieusement, laissant la DB dans un état inconsistant. Documenté dans `docs/search-patterns.md` (T8.1) section « Procédure de récupération échec migration ».
 
 ### T3 — Refactor `contacts::list_by_company_paginated` (AC: #3, #7)
 
@@ -442,15 +463,16 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 ### T9 — Adaptation tests existants + tests régression UX (AC: #9, #15)
 
 - [ ] T9.1 `contacts.rs::test_filter_by_search_name` (l. 1045) — doit passer sans modif (cherche `"Beta"` matchant `"TestContact Beta"` ; en BOOLEAN+wildcard `Beta*` matche `Beta` exact, OK).
-- [ ] T9.2 `contacts.rs::test_filter_escape_like_wildcard` (l. 1092) — cherche `"100%"`. En BOOLEAN MODE, `%` n'est pas un opérateur LIKE — c'est un caractère ordinaire (mais tokenisé comme séparateur si présent en milieu de mot). Adapter le test :
-  - Soit : changer le terme cherché en `"100"` et vérifier que le résultat correspond.
-  - Soit : vérifier que `escape_boolean_ft("100%")` strip ou échappe correctement le `%`.
-  - **Décision** : adapter le test pour vérifier le comportement post-escape via le helper. Renommer en `test_search_handles_special_chars`.
+- [ ] T9.2 `contacts.rs::test_filter_escape_like_wildcard` (l. 1092) — cherche `"100%"`. **Important (Pass 3 F1)** : `%` n'est **PAS** dans la strip-list de `escape_boolean_ft` (10 chars uniquement, `%` non-opérateur BOOLEAN MODE). Le `%` est traité comme caractère **non-token** au niveau du tokenizer InnoDB FULLTEXT → la query `MATCH AGAINST '100%*' IN BOOLEAN MODE` tokenize en `100` (le `%` ignoré silencieusement par le tokenizer, **pas par le helper**). Adapter le test :
+  - **Option A (recommandée)** : changer le terme cherché en `"100"` → `MATCH AGAINST '100*'` matche `"100% Promo"` via le token `100`. Test plus simple.
+  - **Option B** : conserver `"100%"` comme input, asserter (i) que la query passe sans erreur SQL et (ii) que le row `"100% Promo"` est trouvé.
+  - **NE PAS** asserter que `escape_boolean_ft("100%")` retourne `"100"` — ce serait faux (le helper ne touche pas au `%`).
+  - Renommer en `test_search_handles_special_chars` pour refléter la sémantique tokenization (pas l'escape applicatif).
 - [ ] T9.3 `products.rs::test_filter_by_search` (l. 821) — doit passer sans modif (`"Alpha"` matchant `"TestProduct Alpha"`).
-- [ ] T9.4 `journal_entries.rs::test_list_filter_description_escapes_percent` (l. 1338) — analogue à T9.2 contacts. Adapter le terme `"50%"` :
-  - Soit changer en `"50"` (le `%` est tokenisé séparateur en BOOLEAN MODE, donc `"50"` seul matche correctement).
-  - Soit vérifier que `escape_boolean_ft("50%")` strippe correctement le `%` et que la query ne génère pas d'erreur SQL.
-  - Renommer en `test_list_filter_description_handles_special_chars` pour refléter la sémantique BOOLEAN MODE.
+- [ ] T9.4 `journal_entries.rs::test_list_filter_description_escapes_percent` (l. 1338) — analogue à T9.2 contacts (mêmes options A/B, même règle « ne pas asserter strip côté helper »). Adapter le terme `"50%"` :
+  - **Option A (recommandée)** : changer en `"50"` → `MATCH AGAINST '50*'` matche `"50% remise"` via le token `50`.
+  - **Option B** : conserver `"50%"`, asserter no-error + match sur `"50% remise"`.
+  - Renommer en `test_list_filter_description_handles_special_chars` pour refléter la sémantique tokenization.
 - [ ] T9.5 **Tests régression UX documentée (AC #15)** : ajouter un test par repo affecté qui asserte explicitement que le mid-word search ne fonctionne plus :
   - `contacts.rs::test_search_no_longer_matches_mid_word` : seed contact `"Camargo & Associés"`, asserter `search("argo")` → 0 résultats, `search("camar")` → 1 résultat.
   - `products.rs::test_search_no_longer_matches_mid_word` : seed produit `"Crémant d'Alsace"`, asserter `search("mant")` → 0 résultats, `search("crém")` → 1 résultat.
@@ -482,7 +504,7 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 
 - **DRY (Don't Repeat Yourself)** — le helper `escape_boolean_ft` est créé dans le nouveau module `crates/kesh-db/src/util/search.rs`. **Bonus mutualisation `escape_like`** (in-scope, cf. AC #18 + T1.5) : le helper `escape_like` actuellement dupliqué dans 4 fichiers (`contacts.rs:33-42`, `products.rs:31-36`, `journal_entries.rs:310-315`, `invoices.rs:42-47`) est extrait dans le même module et les 4 callsites locaux remplacés par un import `use crate::util::search::escape_like`. Note de lecture du code source : les commentaires inline (`products.rs:30` : « 3e duplication — à extraire si 4e apparaît » et `invoices.rs:40-41` : « dette technique suivie (extraire si 4e duplication) ») indiquent que la 4e instance (invoices.rs) est précisément la condition de déclenchement de l'extraction — qui est faite par cette story.
 
-- **Multi-tenant scoping** (Story 7-1 KF-002, fermée 2026-04-29) — TOUTES les queries search incluent déjà `WHERE company_id = ?`. La migration FULLTEXT préserve cette invariante. T7.3 valide explicitement l'isolation cross-company.
+- **Multi-tenant scoping** (Story 7-1 KF-002, fermée 2026-04-27 PR #42) — TOUTES les queries search incluent déjà `WHERE company_id = ?`. La migration FULLTEXT préserve cette invariante. T7.3 valide explicitement l'isolation cross-company.
 
 - **Verrouillage optimiste** (Story 7-3 KF-004) — non concerné (search read-only).
 
@@ -500,7 +522,7 @@ WHERE company_id = ? AND (MATCH(name) AGAINST(? IN BOOLEAN MODE) OR email LIKE ?
 - `crates/kesh-db/migrations/2026MMDD000001_kf005_fulltext_indexes.sql` (T2) — nouvelle migration.
 - `crates/kesh-db/tests/kf005_fulltext_index_e2e.rs` (T7) — tests EXPLAIN + cross-company.
 - `docs/search-patterns.md` (T8) — nouvelle doc pattern.
-- `docs/known-failures.md` (T8) — archive update KF-005 closed.
+<!-- Pass 3 cleanup : `docs/known-failures.md` n'est PAS touché par cette story (fichier archivé depuis 2026-04-18). Fermeture KF-005 tracée via GitHub Issue #5 + commit `closes #5` uniquement. -->
 
 ### Standards de testing
 
@@ -675,7 +697,7 @@ b63dc4e Story 7-1: KF-002 Multi-Tenant Audit + Code Review Pass 4 Remediation (#
 - **Scope/AC Auditor Haiku** : 0C / 0H / **7M** / 0L = 7 findings (tous clarifications documentaires).
 - **Technical Reviewer Haiku** : 0C / **1H** / 3M / 6L = 10 findings (1 HIGH sur sémantique multi-mots BOOLEAN MODE, 3 MEDIUM sur edge-cases, 6 LOW cosmétiques).
 
-**Triage Pass 2 — 10 patches actionnables, 7 rejected (faux positifs ou hors scope)** :
+**Triage Pass 2 — 13 patches actionnables, 4 rejected (faux positifs ou hors scope)** :
 
 | Sévérité | ID | Sujet | Statut |
 |---|---|---|---|
@@ -724,3 +746,71 @@ Strictement : 1 HIGH + 9 MEDIUM > LOW remontés Pass 2 → théoriquement Pass 3
 Pragmatiquement : la qualité des findings Pass 2 (clarifications de wording, edge cases sans impact technique, citations vérifiées exactes) suggère que Pass 3 atteindra les diminishing returns absolues. Décision (avec justification) : **Pass 3 optionnelle** — à exécuter si l'utilisateur le souhaite pour confirmation finale, sinon spec validée pour `dev-story`.
 
 **Commit attendu** : `git commit -m "Story 7-4: spec validate Pass 2 — Haiku×3, 0C+1H+10M+6L → 13 patches + 4 rejected, 0>LOW"`.
+
+### Spec Validate Pass 3 — Opus 4.7 × 3 reviewers parallèles (2026-04-29)
+
+**Contexte** : Pass 3 lancée immédiatement après commit `88366f9` (Pass 2 patches). Cycle CLAUDE.md respecté complet : Opus orchestrateur → Sonnet (P1) → Haiku (P2) → **Opus (P3)** (cycle 3-LLM bouclé pour confirmation finale). Trois reviewers Opus 4.7 parallèles, contextes frais orthogonaux à toutes les passes précédentes.
+
+**Reviewers** :
+- **Source/Refs Auditor Opus** — 5e vérification indépendante des citations, focus sur references introduites par P1+P2.
+- **Scope/AC Auditor Opus** — go/no-go final dev-story readiness sur les 18 ACs.
+- **Technical Reviewer Opus** — challenge ultime du consensus P1+P2 avec recherche web active.
+
+**Findings remontés (14 bruts)** :
+- Source/Refs Auditor Opus : 0C / 0H / 0M / **5L** = 5 nits cosmétiques.
+- Scope/AC Auditor Opus : 0C / 0H / 0M / **4L** = 4 nits + verdict **GO**.
+- Technical Reviewer Opus : 0C / **1H** / 1M / 5L = 7 findings dont 1 HIGH genuine (contradiction interne ratée par P1+P2).
+
+**Triage Pass 3 — 6 patches actionnables, ~8 rejets cosmétiques** :
+
+| Sévérité | ID | Sujet | Patch appliqué |
+|---|---|---|---|
+| HIGH | T-F1 | **Contradiction interne `%` strippé** : AC #5, T9.2, T9.4 disent que `escape_boolean_ft("50%")` strippe le `%`, mais la strip-list canonique (10 chars) ne contient pas `%`. Le dev qui suivrait ces ACs écrirait un test failing. Ratée par Pass 1+2. | AC #5 + T9.2 + T9.4 réécrits : `%` n'est PAS strippé applicatif (helper) — il est ignoré silencieusement par le tokenizer InnoDB FULLTEXT. Options A/B explicites pour le test. Note explicite « NE PAS asserter strip côté helper » |
+| MEDIUM | T-F9.1 | T2.5 manquait runbook prod opérateur (commandes shell concrètes pour récupération échec migration) | T2.5 enrichie avec procédure pas-à-pas SQL : SHOW INDEX, DROP les FULLTEXT déjà créés, DELETE _sqlx_migrations row, relancer. Avertissement « ne JAMAIS re-run migration sans nettoyer _sqlx_migrations » |
+| LOW | S-L1 | `docs/known-failures.md` listé dans « Composants source à toucher » l. 503 (résiduel Pass 1) | Ligne supprimée + remplacée par commentaire HTML explicatif (fichier archivé, fermeture via GitHub Issue + commit `closes #5`) |
+| LOW | S-L3 | Pass 2 Change Log ligne « 10 patches actionnables, 7 rejected » incohérent avec total 13 patches + 4 rejets | Corrigé en « 13 patches actionnables, 4 rejected » |
+| LOW | S-L4 | Story 7-1 closure date erronée : spec dit 2026-04-29 (×2 occurrences), réalité 2026-04-27 (PR #42 vérifiée via `gh pr view 42`) | Corrigé en `2026-04-27 PR #42` aux 2 emplacements |
+| LOW | Sc-L1 | `sprint-status.yaml` mentionne « LOCK=NONE » obsolète (héritage pré-Pass 1) | Sync : `LOCK=NONE` → `LOCK=SHARED (corrigé Pass 1 — LOCK=NONE rejeté par MariaDB pour FULLTEXT)` + ajout count ACs à jour (18) + récap 3 passes |
+
+**Rejets Pass 3** (~8 nits non-actionnables) :
+- F2 (FORCE INDEX nécessite MATCH) : déjà implicitement couvert par les exemples de code de T7.2.
+- F3 (« Total : 3 reconstructions FTS_DOC_ID » explicite) : déjà déductible du texte existant, polish.
+- F4 (note `&` separator collation) : comportement identique sur les 2 collations Unicode, pas d'action.
+- F5 (test backslash explicite) : déjà couvert par `test_escape_strip_all_operators` (10 chars dont `\`).
+- F7 (note pas de placeholder UI) : implicite dans AC #14 (README inchangé).
+- F8 (escape_like signatures) : vérifié byte-for-byte identiques par Technical Reviewer Opus.
+- S-L2 (`§scope hors story` dangling) : pure cosmétique, le lecteur trouve la section sans difficulté.
+- S-L5 (quote MySQL paraphrasé) : sémantique identique, polish.
+- Sc-L2 (Pass 1 « 18 vs 23 patches » intro) : nit éditorial, total 23 correct au final.
+- Sc-L3 (`docs/known-failures.md` résiduel) : doublon avec S-L1 patché.
+- Sc-L4 (vestige « Status sprint » l. 32) : nit, n'affecte pas le dev.
+
+**Vérifications techniques effectuées (Technical Reviewer Opus + recherche web active)** :
+
+- ✅ **LOCK=SHARED minimum FULLTEXT** confirmé via doc MariaDB Online DDL.
+- ✅ **Split products INPLACE** confirmé via doc MariaDB (« Only one FULLTEXT index may be added at a time »).
+- ✅ **Multi-mots BOOLEAN « optionnel avec ranking »** : citation MySQL 8.0/8.4 § 14.9.2 vérifiée mot-à-mot.
+- ✅ **10-char strip list** confirmée exhaustive vs doc MariaDB BOOLEAN MODE operators (pas de nouveaux opérateurs en MariaDB 11.x).
+- ✅ **FTS_DOC_ID rebuild une fois par table** confirmé doc MariaDB.
+- ✅ **SQLx no transaction wrap MariaDB DDL** confirmé via `sqlx::raw_sql` docs : « MySQL and MariaDB do not support DDL in transactions. Instead, any active transaction is immediately and implicitly committed by the database server when executing a DDL statement. »
+- ✅ **MySQL bug #25951 FORCE INDEX FULLTEXT** : nécessite MATCH AGAINST dans la query (déjà implicite dans T7.2 example).
+
+**Trend numérique global (3 passes)** :
+- Pass 1 (Sonnet) : 34 raw → 23 patches (2C+7H+9M+6L, dont 2 CRITICAL fixes SQL).
+- Pass 2 (Haiku) : 17 raw → 13 patches + 4 rejets (0C+1H+10M+6L).
+- Pass 3 (Opus) : 14 raw → 6 patches + ~8 rejets (0C+1H+1M+12L).
+
+**Convergence orthogonale validée** : 3 LLMs différents (Sonnet, Haiku, Opus), 9 reviewers fresh-context au total, recherche web active P3 → 1 vraie inconsistence interne identifiée P3 (F1) + harmonisée. Source/Refs Auditor 0 findings P2 + 5 nits cosmétiques P3 = stabilisation des citations confirmée.
+
+**Critère d'arrêt CLAUDE.md atteint Pass 3** :
+- ✅ 0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW restants après application des patches Pass 3.
+- ✅ Cycle Opus → Sonnet → Haiku → Opus complété (3 LLMs distincts en 3 passes).
+- ✅ Convergence orthogonale 9 reviewers : aucun nouveau défaut technique trouvé Pass 3 hors le F1 cumulatif.
+- ✅ Scope/AC Auditor Opus verdict : **GO** pour dev-story.
+- ✅ Technical Reviewer Opus verdict : **APPROVED** post-F1 patch.
+
+**Verdict Pass 3** : **APPROVED for dev-story**. Pass 4 NON requise (diminishing returns extrêmes, F1 patché, tous critères CLAUDE.md atteints).
+
+**Spec finale** : 18 ACs concrets et testables, T1-T10 décomposés en 50+ subtasks, ~750 lignes incluant Change Log 3 passes documenté.
+
+**Commit attendu** : `git commit -m "Story 7-4: spec validate Pass 3 — Opus×3, 0C+1H+1M+12L → 6 patches, GO for dev-story"`.
