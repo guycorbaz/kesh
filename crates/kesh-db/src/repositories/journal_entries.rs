@@ -516,6 +516,32 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 /// 10. INSERT audit_log avec `before`/`after`
 /// 11. COMMIT
 ///
+/// Compare l'état persisté (header + lignes) au payload — `true` si aucun
+/// champ métier ne diffère (KF-004 : court-circuit no-op pour ne pas bumper
+/// version inutilement).
+///
+/// Comparaison lignes en respectant `line_order` (la sémantique métier
+/// d'une écriture comptable dépend de l'ordre — débit puis crédit, etc.).
+fn is_no_op_change(
+    before_entry: &JournalEntry,
+    before_lines: &[JournalEntryLine],
+    updated: &NewJournalEntry,
+) -> bool {
+    if before_entry.entry_date != updated.entry_date
+        || before_entry.journal != updated.journal
+        || before_entry.description != updated.description
+    {
+        return false;
+    }
+    if before_lines.len() != updated.lines.len() {
+        return false;
+    }
+    before_lines
+        .iter()
+        .zip(updated.lines.iter())
+        .all(|(b, c)| b.account_id == c.account_id && b.debit == c.debit && b.credit == c.credit)
+}
+
 /// Règle stricte : `tx.rollback()` explicite avant chaque `return Err`.
 pub async fn update(
     pool: &MySqlPool,
@@ -629,6 +655,24 @@ pub async fn update(
     .map_err(map_db_error)?;
 
     let before_json = entry_snapshot_json(&before_entry, &before_lines);
+
+    // KF-004 : court-circuit no-op AVANT le DELETE/UPDATE/INSERT.
+    // Tous les guards (FY status, version check, date dans FY, comptes
+    // actifs) ont déjà passé — un payload identique avec un état env
+    // valide retourne l'entry inchangée. Le verrou `FOR UPDATE` est
+    // libéré par le `tx.rollback()` (équivalent à commit côté locks
+    // InnoDB pour ce qui est de leur libération).
+    // NOTE concurrence (KF-004): grâce à `SELECT ... FOR UPDATE` étape 1,
+    // cette fonction n'est PAS exposée à la race REPEATABLE READ décrite
+    // dans la spec §race-condition. Les commits parallèles attendent le
+    // verrou X-lock, donc le snapshot post-lock est forcément à jour.
+    if is_no_op_change(&before_entry, &before_lines, &updated) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(JournalEntryWithLines {
+            entry: before_entry,
+            lines: before_lines,
+        });
+    }
 
     // Étape 7 : DELETE old lines + UPDATE header + INSERT new lines.
     sqlx::query("DELETE FROM journal_entry_lines WHERE entry_id = ?")
@@ -1667,5 +1711,325 @@ mod tests {
             "expected CheckConstraintViolation, got {:?}",
             err
         );
+    }
+
+    /// KF-004 : payload identique (header + lignes même ordre + comptes
+    /// toujours actifs + FY ouvert) → pas de bump version, `updated_at`
+    /// inchangé, mêmes IDs DB pour les lignes (pas de DELETE+INSERT),
+    /// pas d'audit_log `journal_entry.updated`.
+    #[tokio::test]
+    async fn update_no_op_returns_unchanged_entity_no_lines_churn() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(100),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(100),
+                    },
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+        let version_initial = created.entry.version;
+        let updated_at_initial = created.entry.updated_at;
+        let line_ids_initial: Vec<i64> = created.lines.iter().map(|l| l.id).collect();
+
+        // Payload strictement identique reconstruit depuis les `before` lines.
+        let identical = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: created.entry.description.clone(),
+            lines: created
+                .lines
+                .iter()
+                .map(|l| NewJournalEntryLine {
+                    account_id: l.account_id,
+                    debit: l.debit,
+                    credit: l.credit,
+                })
+                .collect(),
+        };
+
+        let result = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            version_initial,
+            admin_user_id,
+            identical,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.entry.version, version_initial);
+        assert_eq!(result.entry.updated_at, updated_at_initial);
+        let line_ids_after: Vec<i64> = result.lines.iter().map(|l| l.id).collect();
+        assert_eq!(
+            line_ids_after, line_ids_initial,
+            "no-op : pas de DELETE+INSERT, IDs lignes identiques"
+        );
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'journal_entry' AND entity_id = ? AND action = 'journal_entry.updated'",
+        )
+        .bind(created.entry.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 0);
+    }
+
+    /// KF-004 : si l'exercice est clôturé entre la création et l'update no-op,
+    /// le check `FiscalYearClosed` rejette AVANT le no-op check (pas de leak).
+    #[tokio::test]
+    async fn update_no_op_in_closed_fy_returns_fiscal_year_closed() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(50),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(50),
+                    },
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+
+        fiscal_years::close(&pool, admin_user_id, company_id, fy_id)
+            .await
+            .unwrap();
+
+        let identical = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: created.entry.description.clone(),
+            lines: created
+                .lines
+                .iter()
+                .map(|l| NewJournalEntryLine {
+                    account_id: l.account_id,
+                    debit: l.debit,
+                    credit: l.credit,
+                })
+                .collect(),
+        };
+
+        let result = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            created.entry.version,
+            admin_user_id,
+            identical,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(DbError::FiscalYearClosed)),
+            "expected FiscalYearClosed, got {:?}",
+            result
+        );
+
+        // Nettoyage (cf. test_create_rejects_closed_fiscal_year).
+        delete_all_by_company(&pool, company_id).await.unwrap();
+        sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
+            .bind(fy_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let year = chrono::Utc::now().naive_utc().date().year();
+        fiscal_years::create_for_seed(
+            &pool,
+            crate::entities::NewFiscalYear {
+                company_id,
+                name: format!("Exercice {year}"),
+                start_date: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
+                end_date: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    /// KF-004 : si un compte référencé par l'écriture a été archivé entre la
+    /// création et l'update no-op, le check d'intégrité rejette AVANT le no-op
+    /// check (pas de leak via no-op).
+    #[tokio::test]
+    async fn update_no_op_with_inactive_account_returns_inactive_error() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(75),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(75),
+                    },
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+
+        // Archiver a1 directement en SQL (la fonction archive() exige de ne
+        // pas avoir de sous-comptes ; on évite cette vérification ici car
+        // elle est orthogonale au scope du test).
+        sqlx::query("UPDATE accounts SET active = FALSE, version = version + 1 WHERE id = ?")
+            .bind(a1)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let identical = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: created.entry.description.clone(),
+            lines: created
+                .lines
+                .iter()
+                .map(|l| NewJournalEntryLine {
+                    account_id: l.account_id,
+                    debit: l.debit,
+                    credit: l.credit,
+                })
+                .collect(),
+        };
+
+        let result = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            created.entry.version,
+            admin_user_id,
+            identical,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(DbError::InactiveOrInvalidAccounts)),
+            "expected InactiveOrInvalidAccounts, got {:?}",
+            result
+        );
+
+        // Réactiver le compte pour les tests suivants.
+        sqlx::query("UPDATE accounts SET active = TRUE WHERE id = ?")
+            .bind(a1)
+            .execute(&pool)
+            .await
+            .unwrap();
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    /// KF-004 régression : modifier la `description` → bump version.
+    #[tokio::test]
+    async fn update_partial_change_bumps_version() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(33),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(33),
+                    },
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+        let version_initial = created.entry.version;
+
+        let mut payload = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: created.entry.description.clone(),
+            lines: created
+                .lines
+                .iter()
+                .map(|l| NewJournalEntryLine {
+                    account_id: l.account_id,
+                    debit: l.debit,
+                    credit: l.credit,
+                })
+                .collect(),
+        };
+        payload.description = "Description modifiée".into();
+
+        let result = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            version_initial,
+            admin_user_id,
+            payload,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.entry.version, version_initial + 1);
+        assert_eq!(result.entry.description, "Description modifiée");
     }
 }

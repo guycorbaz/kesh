@@ -335,6 +335,24 @@ pub async fn list_by_company_paginated(
     })
 }
 
+/// Compare l'état persisté (`before`) au payload de modification (`changes`).
+/// Retourne `true` si aucun champ métier ne diffère — auquel cas `update()`
+/// court-circuite la mutation pour ne pas bumper `version` inutilement (KF-004).
+///
+/// Ne compare PAS : `id`, `company_id`, `version`, `created_at`, `updated_at`,
+/// `active` (gérés hors changements user-form).
+fn is_no_op_change(before: &Contact, changes: &ContactUpdate) -> bool {
+    before.contact_type == changes.contact_type
+        && before.name == changes.name
+        && before.is_client == changes.is_client
+        && before.is_supplier == changes.is_supplier
+        && before.address == changes.address
+        && before.email == changes.email
+        && before.phone == changes.phone
+        && before.ide_number == changes.ide_number
+        && before.default_payment_terms == changes.default_payment_terms
+}
+
 /// Met à jour un contact actif. Verrouillage optimiste + audit log (wrapper before/after).
 /// Retourne `IllegalStateTransition` si le contact est archivé.
 pub async fn update(
@@ -370,6 +388,16 @@ pub async fn update(
         }
         Some(c) => c,
     };
+
+    // KF-004 : court-circuit no-op AVANT toute mutation.
+    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
+    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
+    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
+    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    if is_no_op_change(&before, &changes) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(before);
+    }
 
     let rows = sqlx::query(
         "UPDATE contacts SET contact_type = ?, name = ?, is_client = ?, is_supplier = ?, \
@@ -1261,6 +1289,110 @@ mod tests {
         .await
         .unwrap();
         assert!(full_list.items.iter().any(|c| c.id == to_arch.id));
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    fn contact_to_update(c: &Contact) -> ContactUpdate {
+        ContactUpdate {
+            contact_type: c.contact_type,
+            name: c.name.clone(),
+            is_client: c.is_client,
+            is_supplier: c.is_supplier,
+            address: c.address.clone(),
+            email: c.email.clone(),
+            phone: c.phone.clone(),
+            ide_number: c.ide_number.clone(),
+            default_payment_terms: c.default_payment_terms.clone(),
+        }
+    }
+
+    /// KF-004 : payload identique à l'état persisté → pas de bump version,
+    /// `updated_at` inchangé, **aucune entrée audit_log `contact.updated`**.
+    #[tokio::test]
+    async fn update_no_op_returns_unchanged_entity_no_audit() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut new = new_contact(company_id, "TestContact NoOp");
+        new.address = Some("Rue 1".into());
+        new.email = Some("a@b.ch".into());
+        let contact = create(&pool, admin_user_id, new).await.unwrap();
+        let version_initial = contact.version;
+        let updated_at_initial = contact.updated_at;
+
+        let result = update(
+            &pool,
+            contact.id,
+            version_initial,
+            admin_user_id,
+            contact_to_update(&contact),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.version, version_initial,
+            "version doit être inchangée"
+        );
+        assert_eq!(
+            result.updated_at, updated_at_initial,
+            "updated_at doit être inchangé"
+        );
+        assert_eq!(result.name, contact.name);
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'contact' AND entity_id = ? AND action = 'contact.updated'",
+        )
+        .bind(contact.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count.0, 0,
+            "aucune entrée audit_log contact.updated ne doit exister"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// KF-004 régression : modifier un seul champ doit toujours bumper version
+    /// et écrire l'entrée audit_log.
+    #[tokio::test]
+    async fn update_partial_change_bumps_version() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let contact = create(
+            &pool,
+            admin_user_id,
+            new_contact(company_id, "TestContact Partial"),
+        )
+        .await
+        .unwrap();
+        let version_initial = contact.version;
+
+        let mut changes = contact_to_update(&contact);
+        changes.name = "TestContact Partial Renamed".into();
+
+        let result = update(&pool, contact.id, version_initial, admin_user_id, changes)
+            .await
+            .unwrap();
+        assert_eq!(result.version, version_initial + 1);
+        assert_eq!(result.name, "TestContact Partial Renamed");
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'contact' AND entity_id = ? AND action = 'contact.updated'",
+        )
+        .bind(contact.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 1);
 
         cleanup_test_contacts(&pool, company_id).await;
     }

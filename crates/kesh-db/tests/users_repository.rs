@@ -163,6 +163,58 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::OptimisticLockConflict)));
 }
 
+/// KF-004 : payload identique à l'état persisté → pas de bump version,
+/// `updated_at` inchangé. Pas d'assertion audit_log : `users::update_role_and_active`
+/// n'écrit pas d'audit log v0.1.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_role_no_op_returns_unchanged_entity(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
+    let version_initial = created.version;
+    let updated_at_initial = created.updated_at;
+
+    let result = users::update_role_and_active(
+        &pool,
+        created.id,
+        version_initial,
+        UserUpdate {
+            role: created.role,
+            active: created.active,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.version, version_initial);
+    assert_eq!(result.updated_at, updated_at_initial);
+    assert_eq!(result.role, created.role);
+}
+
+/// KF-004 régression : modifier `role` → bump version.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_role_partial_change_bumps_version(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let created = users::create(&pool, sample_new_user(company_id))
+        .await
+        .unwrap();
+    let version_initial = created.version;
+
+    let result = users::update_role_and_active(
+        &pool,
+        created.id,
+        version_initial,
+        UserUpdate {
+            role: Role::Admin,
+            active: created.active,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.version, version_initial + 1);
+    assert_eq!(result.role, Role::Admin);
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn list_with_pagination(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;

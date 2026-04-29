@@ -159,6 +159,12 @@ pub async fn list_by_company(
     }
 }
 
+/// Compare l'état persisté au payload — `true` si aucun champ métier ne diffère
+/// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
+fn is_no_op_change(before: &Account, changes: &AccountUpdate) -> bool {
+    before.name == changes.name && before.account_type == changes.account_type
+}
+
 /// Met à jour un compte actif (nom et type). Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte est archivé.
 pub async fn update(
@@ -194,6 +200,16 @@ pub async fn update(
         }
         Some(a) => a,
     };
+
+    // KF-004 : court-circuit no-op AVANT toute mutation.
+    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
+    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
+    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
+    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    if is_no_op_change(&before, &changes) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(before);
+    }
 
     let rows = sqlx::query(
         "UPDATE accounts SET name = ?, account_type = ?, version = version + 1 \
@@ -978,6 +994,108 @@ mod tests {
         let child = created.iter().find(|a| a.number == "T10").unwrap();
         assert_eq!(child.name, "Test Circulants");
         assert_eq!(child.parent_id, Some(root.id));
+
+        cleanup_test_accounts(&pool, company_id).await;
+    }
+
+    /// KF-004 : payload identique → pas de bump version, pas d'audit_log.
+    #[tokio::test]
+    async fn update_no_op_returns_unchanged_entity_no_audit() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_accounts(&pool, company_id).await;
+
+        let account = create(
+            &pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: "T800".into(),
+                name: "Test NoOp".into(),
+                account_type: AccountType::Revenue,
+                parent_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        let version_initial = account.version;
+        let updated_at_initial = account.updated_at;
+
+        let result = update(
+            &pool,
+            account.id,
+            version_initial,
+            admin_user_id,
+            AccountUpdate {
+                name: account.name.clone(),
+                account_type: account.account_type,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.version, version_initial);
+        assert_eq!(result.updated_at, updated_at_initial);
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'account' AND entity_id = ? AND action = 'account.updated'",
+        )
+        .bind(account.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 0);
+
+        cleanup_test_accounts(&pool, company_id).await;
+    }
+
+    /// KF-004 régression : modifier `name` → bump version + audit log présent.
+    #[tokio::test]
+    async fn update_partial_change_bumps_version() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_accounts(&pool, company_id).await;
+
+        let account = create(
+            &pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: "T801".into(),
+                name: "Test Rename".into(),
+                account_type: AccountType::Asset,
+                parent_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        let version_initial = account.version;
+
+        let result = update(
+            &pool,
+            account.id,
+            version_initial,
+            admin_user_id,
+            AccountUpdate {
+                name: "Test Rename Updated".into(),
+                account_type: account.account_type,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.version, version_initial + 1);
+        assert_eq!(result.name, "Test Rename Updated");
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'account' AND entity_id = ? AND action = 'account.updated'",
+        )
+        .bind(account.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 1);
 
         cleanup_test_accounts(&pool, company_id).await;
     }

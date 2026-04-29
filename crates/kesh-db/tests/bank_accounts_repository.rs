@@ -124,6 +124,87 @@ async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
     assert_eq!(list.len(), 1);
 }
 
+/// KF-004 : second appel `upsert_primary` avec payload identique → pas de bump
+/// version, `updated_at` inchangé. Pas d'assertion audit_log : `bank_accounts`
+/// n'écrit pas d'audit log v0.1.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn upsert_primary_no_op_returns_unchanged_entity(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+
+    let created = bank_accounts::upsert_primary(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "UBS".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    let version_initial = created.version;
+    let updated_at_initial = created.updated_at;
+
+    let result = bank_accounts::upsert_primary(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "UBS".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.version, version_initial,
+        "version doit être inchangée"
+    );
+    assert_eq!(
+        result.updated_at, updated_at_initial,
+        "updated_at doit être inchangé"
+    );
+    assert_eq!(result.id, created.id);
+}
+
+/// KF-004 régression : second appel avec `iban` modifié → bump version.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn upsert_primary_partial_change_bumps_version(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+
+    let created = bank_accounts::upsert_primary(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "UBS".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    let version_initial = created.version;
+
+    let updated = bank_accounts::upsert_primary(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "UBS".into(),
+            iban: "CH1809000000306547981".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.version, version_initial + 1);
+    assert_eq!(updated.iban, "CH1809000000306547981");
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn fk_constraint_rejects_missing_company(pool: MySqlPool) {
     let result = bank_accounts::create(

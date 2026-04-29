@@ -98,6 +98,19 @@ pub async fn get_or_create_default_in_tx(
     Ok(settings)
 }
 
+/// Compare l'état persisté au payload — `true` si aucun champ métier ne diffère
+/// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
+fn is_no_op_change(
+    before: &CompanyInvoiceSettings,
+    changes: &CompanyInvoiceSettingsUpdate,
+) -> bool {
+    before.invoice_number_format == changes.invoice_number_format
+        && before.default_receivable_account_id == changes.default_receivable_account_id
+        && before.default_revenue_account_id == changes.default_revenue_account_id
+        && before.default_sales_journal == changes.default_sales_journal
+        && before.journal_entry_description_template == changes.journal_entry_description_template
+}
+
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
 ///
 /// Le caller doit avoir validé les données en amont (format, comptes,
@@ -129,6 +142,16 @@ pub async fn update(
     if before.version != expected_version {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
+    }
+
+    // KF-004 : court-circuit no-op AVANT toute mutation.
+    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
+    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
+    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
+    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    if is_no_op_change(&before, &changes) {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(before);
     }
 
     let rows = sqlx::query(

@@ -207,6 +207,63 @@ async fn list_negative_values_normalized(pool: MySqlPool) {
     assert_eq!(list.len(), 1);
 }
 
+/// KF-004 : payload identique à l'état persisté → pas de bump version,
+/// `updated_at` inchangé. Pas d'assertion audit_log : `companies::update`
+/// n'écrit pas d'audit log v0.1.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
+    let created = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
+    let version_initial = created.version;
+    let updated_at_initial = created.updated_at;
+
+    let identical = CompanyUpdate {
+        name: created.name.clone(),
+        address: created.address.clone(),
+        ide_number: created.ide_number.clone(),
+        org_type: created.org_type,
+        accounting_language: created.accounting_language,
+        instance_language: created.instance_language,
+    };
+
+    let result = companies::update(&pool, created.id, version_initial, identical)
+        .await
+        .unwrap();
+    assert_eq!(
+        result.version, version_initial,
+        "version doit être inchangée"
+    );
+    assert_eq!(
+        result.updated_at, updated_at_initial,
+        "updated_at doit être inchangé"
+    );
+    assert_eq!(result.name, created.name);
+}
+
+/// KF-004 régression : modifier `name` → bump version.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_partial_change_bumps_version(pool: MySqlPool) {
+    let created = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
+    let version_initial = created.version;
+
+    let changes = CompanyUpdate {
+        name: "Test SA Renommée".into(),
+        address: created.address.clone(),
+        ide_number: created.ide_number.clone(),
+        org_type: created.org_type,
+        accounting_language: created.accounting_language,
+        instance_language: created.instance_language,
+    };
+    let result = companies::update(&pool, created.id, version_initial, changes)
+        .await
+        .unwrap();
+    assert_eq!(result.version, version_initial + 1);
+    assert_eq!(result.name, "Test SA Renommée");
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn multiple_companies_without_ide(pool: MySqlPool) {
     // Plusieurs companies sans IDE (NULL) doivent être acceptées
