@@ -1067,11 +1067,17 @@ async fn path_b_finalize_seeds_vat_rates(pool: MySqlPool) {
     // Pass 1 remediation #11 : récupérer `company_id` via le user admin
     // (déterministe — `bootstrap_admin` crée admin avec username 'admin')
     // plutôt que via `ORDER BY id LIMIT 1` qui suppose une unique company.
+    //
+    // Invariant documenté (Pass 2 LOW) : `bootstrap_admin` crée toujours
+    // un user `username = 'admin'` (cf. helper ligne ~106). Si un futur
+    // helper introduisait un nom différent, ce test cassera explicitement
+    // (`fetch_one` panique avec « no rows ») plutôt que de lire la mauvaise
+    // company silencieusement.
     let company_id: i64 =
         sqlx::query_scalar("SELECT company_id FROM users WHERE username = 'admin'")
             .fetch_one(&pool)
             .await
-            .unwrap();
+            .expect("bootstrap_admin must create user 'admin' — see helper bootstrap_admin");
     seed_minimal_chart(&pool, company_id).await;
 
     run_path_b_until_finalize(&app, &token).await;

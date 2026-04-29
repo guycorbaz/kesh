@@ -95,6 +95,12 @@ pub async fn seed_default_swiss_rates_in_tx(
     // valeurs seed pour des invalides (rate < 0, label vide), 0 row serait
     // insérée sans erreur. Cette assertion post-seed transforme un échec
     // silencieux en `Invariant` explicite.
+    //
+    // **Borne `>= 4`** (Pass 2 LOW) : v0.1 seed exactement 4 taux suisses
+    // 2024+. La borne tolère qu'Epic 11-1 (CRUD admin) ajoute un 5e taux
+    // (taux luxe, super-réduit, etc.) sans devoir modifier ce check.
+    // L'objectif est uniquement de détecter les seeds *partiels* (< 4),
+    // pas d'interdire les extensions.
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM vat_rates WHERE company_id = ? AND active = TRUE")
             .bind(company_id)

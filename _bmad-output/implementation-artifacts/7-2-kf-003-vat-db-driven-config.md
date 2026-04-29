@@ -1,6 +1,6 @@
 # Story 7.2: KF-003 — Configuration DB-driven des taux TVA
 
-Status: review
+Status: done
 
 <!-- Note: Validation est optionnelle. Lancer `bmad-create-story validate` pour une revue qualité multi-passes avant `dev-story`. -->
 
@@ -698,4 +698,54 @@ Claude Opus 4.7 (1M context) — `claude-opus-4-7[1m]` — bmad-dev-story 2026-0
 **Pass 2 recommandée** : LLM différent (Haiku ou Opus) sur fenêtre fraîche pour orthogonal review.
 
 **Commit attendu** : `git commit -m "Story 7-2: code review Pass 1 remediation — Sonnet, 14 patches + 7 rejects/defers"`.
+
+#### Code Review Pass 2 — Haiku (3 reviewers, fenêtre fraîche, orthogonal review, 2026-04-29)
+
+**Reviewers** : Blind Hunter (Haiku), Edge Case Hunter (Haiku), Acceptance Auditor (Haiku).
+
+**Périmètre** : revue du diff de remédiation Pass 1 (commit 9741f54) uniquement, pour détecter les régressions introduites par les 14 patches.
+
+**Findings bruts** : 18 → après triage : **0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW** ; 12 reject + 3 LOW patchés cosmétiques + 0 régression.
+
+**Trend Pass 2** :
+
+| Reviewer | Raw | HIGH | MEDIUM | LOW | After triage |
+|---|---|---|---|---|---|
+| Blind Hunter | 10 | 1 | 4 | 5 | 0 (tous reject — voir motifs ci-dessous) |
+| Edge Case Hunter | 8 | 0 | 2 | 6 | 3 LOW (#5, #6, #8 ci-dessous) |
+| Acceptance Auditor | 0 | 0 | 0 | 0 | **23/23 ACs PASS, 0 régression** |
+
+**Findings rejetés (12) — motifs** :
+
+| ID | Sévérité initiale | Reject motif |
+|---|---|---|
+| BH#1 (HIGH) | « Generation counter race » | JS est single-threaded ; `resetVatRatesCache()` (sync increment) et `.then()` (microtask) ne peuvent pas s'entrelacer dans une même tick. Pattern `if (fetchGeneration === generation)` correct. |
+| BH#2 (MEDIUM) | « Format injection placeholders » | Le template SQL `IN ({placeholders})` n'interpole que des caractères `?`/`,`/` ` littéraux. Aucune donnée user-controlled. Toutes les valeurs sont `.bind()`. |
+| BH#3, EC#1 (MEDIUM) | « Empty slice » & « Promise stale data » | Empty gated en amont par `validate_lines` non-empty. Stale data : le `cancelled` flag dans les `$effect` jette l'écriture si le composant a été cleanup ; en cas de logout, le composant est démonté donc tout résultat tardif est ignoré. |
+| BH#4 (MEDIUM) | « `vatOptions[0]` non déterministe » | Backend `list_active_for_company` : `ORDER BY rate DESC` — ordre strictement défini (8.10, 3.80, 2.60, 0.00). |
+| BH#5, BH#9 (MEDIUM/LOW) | « Svelte 5 dépendance array » | Misconception : Svelte 5 `$effect` auto-tracke les dépendances réactives lues dans la closure (pas de tableau manuel — c'est React useEffect). |
+| EC#2 (MEDIUM) | « IN-clause sans cap » | `MAX_LINES = 200` cap déjà la borne supérieure ; MariaDB `max_allowed_packet` (16 MB par défaut) gère 200 binds sans problème. |
+| EC#3 (LOW) | self-acknowledged « false alarm » | Reviewer note explicitement « Current code captures by reference (correct). No actual fix needed ». |
+| EC#4 (LOW) | « double-patch login cycle » | Idempotent : la condition `if (l.vatRate === '8.10')` ne s'applique qu'aux lignes encore au fallback. Pas de side-effect cumulatif. |
+| EC#7 (LOW) | « VatRate Serialize regression » | Trait absence enforcée à la compilation ; régression future = compile error explicite. Test runtime serait redondant. |
+| BH#7 (LOW) | « pool.clone() inefficient » | `MySqlPool` est un Arc ; `.clone()` incrémente un compteur — pattern idiomatique sqlx, pas de surcoût. |
+| BH#10 (LOW) | « .unwrap() vs .expect() » | Dans le code de test, `.unwrap()` est acceptable ; les panics produisent des stack traces lisibles. |
+
+**Findings patchés (3 LOW cosmétiques)** :
+
+| ID | Sujet | Fichier(s) |
+|---|---|---|
+| BH#6 + EC#8 | Documenter invariant `bootstrap_admin → username='admin'` (.expect message) | `fiscal_years_e2e.rs` |
+| BH#8 + EC#5 | Clarifier commentaire `count >= 4` (Epic 11-1 pourra ajouter un 5e taux) | `repositories/vat_rates.rs` |
+| EC#6 | Distinguer `loading` / `ready` / `error` dans le formulaire produit (feedback utilisateur précis sur échec réseau) + 6 clés i18n (FR/EN/DE/IT) | `products/+page.svelte`, `messages.ftl × 4 locales` |
+
+**Acceptance Auditor — verdict** :
+
+> **Clean pass — 0 regressions detected.** The 14 patches are all orthogonal, backward-compatible improvements to reliability, defensiveness, and test determinism. No AC is weakened; all are maintained or strengthened.
+
+**Résultat Pass 2** : 0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW. **Critère d'arrêt CLAUDE.md atteint après Pass 2** (« uniquement des findings LOW »).
+
+**Cycle LLM utilisé** : Pass 1 Sonnet → Pass 2 Haiku (orthogonal aux Sonnet/Opus précédents). Pas de Pass 3 nécessaire.
+
+**Commit attendu** : `git commit -m "Story 7-2: code review Pass 2 closure — Haiku, 3 LOW patches, 0 régression, 23/23 ACs PASS"`.
 

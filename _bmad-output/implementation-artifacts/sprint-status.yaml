@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-28  (Story 7-2 spec créée via bmad-create-story — KF-003 TVA DB-driven config, scope verrouillé : table vat_rates + repo read-only + GET endpoint + refactor backend/frontend, sans CRUD admin (réservé Epic 11-1). Story status backlog → ready-for-dev. // Précédent : Story 3-7 done après 2 passes code review (Pass 1 Sonnet 12→0 critical, 15 patches ; Pass 2 Haiku/Opus 12→1, -92%, dette KF-019 #47 créée). Story 3-6 « journaux personnalisables » reclassified du backlog Epic 3 vers Epic 15 v0.2 (15-4) — aucun FR PRD ne demande personnalisation, les 5 journaux hardcodés couvrent PME suisse, pas de demande user. **Epic 3 status → done** (5 stories core 3-1..3-5 + 3-7, retro optional).)
+last_updated: 2026-04-29  (Story 7-2 done — KF-003 TVA DB-driven config closed après 2 passes code review : Pass 1 Sonnet 25→0>LOW (14 patches + 7 reject/defer + 1 bad_spec), Pass 2 Haiku 0 régression / 23/23 ACs PASS / 3 LOW cosmétiques appliqués. Critère d'arrêt CLAUDE.md atteint après Pass 2. Issue GitHub #3 fermée par commit `closes #3` (story implémentation). // Précédent : Story 7-2 spec créée 2026-04-28, implémentation T1-T8 done même jour. Story 3-7 done après 2 passes code review (Pass 1 Sonnet 12→0 critical, 15 patches ; Pass 2 Haiku/Opus 12→1, -92%, dette KF-019 #47 créée). Story 3-6 « journaux personnalisables » reclassified du backlog Epic 3 vers Epic 15 v0.2 (15-4). **Epic 3 status → done**.)
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -125,7 +125,7 @@ development_status:
   # Epic 7: Technical Debt Closure (inserted 2026-04-20 retro decision)
   epic-7: in-progress
   7-1-audit-complete-kf-002-multi-tenant: done  # KF-002 audit + multi-tenant scoping hardening. 4 review passes (Opus/Sonnet/Haiku cycle), trend 18→11→3→0 findings >LOW, 30 patches applied across passes 5/6/7. Pattern 5 lock-ordering doc added. v0.2 residuals tracked: #43 (deadlock-retry middleware), #44 (fallback UI accounts), #45 (server-side invoice validation).
-  7-2-kf-003-vat-db-driven-config: review  # KF-003: TVA rates table + config — implémentation T1-T8 done 2026-04-28 via bmad-dev-story Opus, ready for code-review (Pass 1 validate Opus 0>LOW, Pass 2 user skipped)
+  7-2-kf-003-vat-db-driven-config: done  # KF-003 closed 2026-04-29 — 2 passes code review (Pass 1 Sonnet 25→0>LOW + 14 patches + 7 reject/defer + 1 bad_spec ; Pass 2 Haiku 0 régression + 3 LOW cosmétiques). 23/23 ACs PASS. Issue GitHub #3 closed par commit `closes #3`.
   7-3-kf-004-version-bump-optimization: backlog  # KF-004: version no-op fix
   7-4-kf-005-fulltext-search-index: backlog  # KF-005: FULLTEXT index on search columns
   7-5-kf-008-playwright-selector-fixes: backlog  # KF-008: Playwright selector ambiguities (36 tests)

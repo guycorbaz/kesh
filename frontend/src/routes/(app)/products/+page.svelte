@@ -40,6 +40,11 @@
 	// résolue. Pendant le chargement initial, `vatOptions` est vide → le
 	// `<select>` est `disabled` pour empêcher toute soumission prématurée.
 	let vatOptions = $state<VatOption[]>([]);
+	// Pass 2 LOW : distingue chargement en cours (`'loading'`) vs échec
+	// réseau (`'error'`) vs succès (`'ready'`) pour offrir un feedback
+	// précis dans le formulaire — sinon l'utilisateur voit une infinie
+	// « chargement… » même quand le fetch a échoué.
+	let vatLoadState = $state<'loading' | 'ready' | 'error'>('loading');
 
 	$effect(() => {
 		// Pass 1 remediation #10 : flag `cancelled` pour éviter d'écrire dans
@@ -54,9 +59,12 @@
 						labelKey: r.label,
 						fallback: `${r.rate} % — ${r.label.replace('product-vat-', '')}`,
 					}));
+					vatLoadState = 'ready';
 				}
 			} catch {
-				// Échec réseau : `<select>` reste vide/disabled.
+				if (!cancelled) {
+					vatLoadState = 'error';
+				}
 			}
 		})();
 		return () => {
@@ -290,15 +298,21 @@
 		// Garde anti double-submit : la touche Entrée peut déclencher le form
 		// même si le bouton est `disabled`.
 		if (formSubmitting) return;
-		// Pass 1 remediation #7 : la touche Entrée peut soumettre alors que
-		// le `<select disabled>` n'est pas encore peuplé (store en vol). Sans
-		// ce guard, `formVatRate` reste à sa valeur initiale `'8.10'` même si
-		// la company a une liste différente.
+		// Pass 1 remediation #7 + Pass 2 LOW : la touche Entrée peut soumettre
+		// alors que le `<select disabled>` n'est pas encore peuplé (store en
+		// vol) ou que le fetch a échoué. Sans ce guard, `formVatRate` reste
+		// à sa valeur initiale `'8.10'` même si la company a une liste
+		// différente. Distinguer loading vs error donne un feedback précis.
 		if (vatOptions.length === 0) {
-			formError = i18nMsg(
-				'product-error-vat-loading',
-				'Chargement des taux TVA en cours, veuillez patienter…'
-			);
+			formError = vatLoadState === 'error'
+				? i18nMsg(
+					'product-error-vat-fetch-failed',
+					'Impossible de charger les taux TVA. Vérifiez la connexion réseau et rechargez la page.'
+				)
+				: i18nMsg(
+					'product-error-vat-loading',
+					'Chargement des taux TVA en cours, veuillez patienter…'
+				);
 			return;
 		}
 		formError = formValidation;
