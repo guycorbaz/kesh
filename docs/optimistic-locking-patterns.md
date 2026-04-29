@@ -69,9 +69,10 @@ Story 7-3 a appliqué le pattern aux 9 fonctions `update()` user-form du crate `
 
 Sous REPEATABLE READ + plain SELECT, si une tx parallèle commit entre `BEGIN` et le no-op check, le client peut retourner un snapshot stale au lieu d'un 409. Cette race est documentée dans la spec Story 7-3 §race-condition et acceptée v0.1 :
 
-- **Variant A** (6 cibles `contacts/products/invoices/accounts/company_invoice_settings/companies` + variant C `users`) : exposées à la race.
-- **`bank_accounts::upsert_primary`** : protégé par `SELECT FOR UPDATE` étape 1 (pas de race).
-- **`journal_entries::update`** : protégé par `SELECT FOR UPDATE` étape 1 (pas de race).
+- **Variant A — 5 cibles exposées** : `contacts`, `products`, `invoices`, `accounts`, `company_invoice_settings`.
+- **Variant C — 2 cibles exposées** (refactorées de UPDATE-then-check vers SELECT-then-UPDATE par cette story) : `companies`, `users`.
+- **Variant A protégée** : `journal_entries::update` — `SELECT FOR UPDATE` étape 1 (pas de race).
+- **Variant B protégée** : `bank_accounts::upsert_primary` — `SELECT FOR UPDATE` étape 1 (pas de race).
 
 **Mitigation Epic 8 prerequisite** : passer `invoices::update` en `SELECT FOR UPDATE` (entité comptable la plus exposée — sessions de saisie facture longues). Tracé via une issue GitHub follow-up dédiée. Les 5 autres entités variant A restent en pattern optimiste.
 

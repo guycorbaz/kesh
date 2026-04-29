@@ -329,6 +329,148 @@ async fn put_product_no_op_returns_200_unchanged_version(pool: MySqlPool) {
     assert_eq!(body["updatedAt"].as_str().unwrap(), updated_at_initial);
 }
 
+/// AC #21 — PUT /api/v1/invoices/{id} avec body identique (header + lignes)
+/// → 200 OK + version inchangée + updatedAt inchangé.
+///
+/// Couvre le cas le plus complexe (replace-all sur les lignes) : le no-op
+/// check doit comparer correctement le header ET les lignes ligne-à-ligne
+/// (description, quantity, unitPrice, vatRate) pour court-circuiter sans
+/// DELETE+INSERT du sous-table `invoice_lines`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn put_invoice_no_op_returns_200_unchanged_version(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, _) = create_seeded_company(&pool).await;
+    create_company_user(&pool, company_id, "alice", "password123").await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    // Setup : créer un contact pour la facture.
+    let contact_resp = app
+        .client
+        .post(app.url("/api/v1/contacts"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "contactType": "Entreprise",
+            "name": "Acme Invoice Co",
+            "isClient": true,
+            "isSupplier": false,
+            "address": "Rue 1\n1000 Lausanne",
+            "email": null,
+            "phone": null,
+            "ideNumber": null,
+            "defaultPaymentTerms": null
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(contact_resp.status(), 201);
+    let contact: serde_json::Value = contact_resp.json().await.unwrap();
+    let contact_id = contact["id"].as_i64().unwrap();
+
+    // Créer une facture brouillon avec 2 lignes.
+    let create_resp = app
+        .client
+        .post(app.url("/api/v1/invoices"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "contactId": contact_id,
+            "date": "2026-04-29",
+            "dueDate": "2026-05-29",
+            "paymentTerms": "30 jours net",
+            "lines": [
+                {
+                    "description": "Conseil",
+                    "quantity": "2",
+                    "unitPrice": "150.00",
+                    "vatRate": "8.10"
+                },
+                {
+                    "description": "Frais",
+                    "quantity": "1",
+                    "unitPrice": "50.00",
+                    "vatRate": "8.10"
+                }
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 201);
+    let invoice: serde_json::Value = create_resp.json().await.unwrap();
+    let id = invoice["id"].as_i64().unwrap();
+    let version_initial = invoice["version"].as_i64().unwrap();
+    let updated_at_initial = invoice["updatedAt"].as_str().unwrap().to_string();
+    let line_ids_initial: Vec<i64> = invoice["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(line_ids_initial.len(), 2, "facture créée avec 2 lignes");
+
+    // PUT body strictement identique (header + lignes même ordre, mêmes
+    // valeurs métier) → no-op.
+    let put_resp = app
+        .client
+        .put(app.url(&format!("/api/v1/invoices/{id}")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "contactId": contact_id,
+            "date": "2026-04-29",
+            "dueDate": "2026-05-29",
+            "paymentTerms": "30 jours net",
+            "lines": [
+                {
+                    "description": "Conseil",
+                    "quantity": "2",
+                    "unitPrice": "150.00",
+                    "vatRate": "8.10"
+                },
+                {
+                    "description": "Frais",
+                    "quantity": "1",
+                    "unitPrice": "50.00",
+                    "vatRate": "8.10"
+                }
+            ],
+            "version": version_initial
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        put_resp.status(),
+        200,
+        "PUT invoice no-op doit renvoyer 200 (KF-004 fix, AC #21)"
+    );
+    let body: serde_json::Value = put_resp.json().await.unwrap();
+    assert_eq!(
+        body["version"].as_i64().unwrap(),
+        version_initial,
+        "version doit être inchangée sur no-op"
+    );
+    assert_eq!(
+        body["updatedAt"].as_str().unwrap(),
+        updated_at_initial,
+        "updatedAt doit être inchangé sur no-op"
+    );
+
+    // AC #5 (sqlx) → AC #21 (E2E) : les lignes doivent conserver leurs IDs
+    // d'origine (pas de DELETE+INSERT) — invariant observable côté API qui
+    // valide que le no-op court-circuite avant la phase replace-all.
+    let line_ids_after: Vec<i64> = body["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(
+        line_ids_after, line_ids_initial,
+        "les IDs de lignes doivent être préservés sur no-op (pas de churn DELETE+INSERT)"
+    );
+}
+
 /// AC #22 — Deux utilisateurs en concurrence sur le même contact, body identique
 /// (no-op des deux côtés) → **200/200** (au lieu de 200/409 sous KF-004).
 ///
@@ -369,6 +511,7 @@ async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
     let contact: serde_json::Value = create_resp.json().await.unwrap();
     let id = contact["id"].as_i64().unwrap();
     let version_initial = contact["version"].as_i64().unwrap();
+    let updated_at_initial = contact["updatedAt"].as_str().unwrap().to_string();
 
     let identical_body = json!({
         "contactType": "Personne",
@@ -395,6 +538,11 @@ async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
     assert_eq!(put_a.status(), 200);
     let body_a: serde_json::Value = put_a.json().await.unwrap();
     assert_eq!(body_a["version"].as_i64().unwrap(), version_initial);
+    assert_eq!(
+        body_a["updatedAt"].as_str().unwrap(),
+        updated_at_initial,
+        "no-op A : updatedAt doit être inchangé"
+    );
 
     // User B : même body, même version_initial → AVANT fix : 409. APRÈS fix : 200.
     let put_b = app
@@ -412,6 +560,11 @@ async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
     );
     let body_b: serde_json::Value = put_b.json().await.unwrap();
     assert_eq!(body_b["version"].as_i64().unwrap(), version_initial);
+    assert_eq!(
+        body_b["updatedAt"].as_str().unwrap(),
+        updated_at_initial,
+        "no-op B : updatedAt doit être inchangé (les 2 invariants AC #22 — version ET updatedAt)"
+    );
 }
 
 /// AC #23 — Le fix ne masque PAS les vrais conflits : si user A fait une
@@ -523,34 +676,28 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
     );
 }
 
-/// AC #29 — Race condition documentée : si une mutation parallèle commit
-/// pendant le no-op check d'un autre client, le client no-op reçoit son
-/// snapshot stale (200, version inchangée). Comportement v0.1 acceptable
-/// — voir issue follow-up GitHub [KF-020 #49](https://github.com/guycorbaz/kesh/issues/49)
-/// trackant le passage de `invoices::update` en `SELECT FOR UPDATE` pour
-/// éliminer la race (mitigation Epic 8 prerequisite).
+/// AC #29 (reclassé v0.1 — voir Story 7-3 Change Log code-review pass 1) :
+/// **smoke test du verrouillage séquentiel**, pas régression detector de la
+/// race REPEATABLE READ.
 ///
-/// Ce test agit comme **régression detector** — si une future migration
-/// vers `SELECT FOR UPDATE` corrige la race, le 200 stale deviendra 409
-/// et ce test devra être mis à jour.
+/// Spec AC #29 d'origine demandait d'asserter `200 + body stale` sous race
+/// concurrente (`tokio::join!` ou délai contrôlé). Reproduire la race de
+/// manière déterministe en CI exige une vraie concurrence sur deux pools
+/// distincts ou un hook d'injection dans `is_no_op_change` — non livré v0.1.
+/// Tracé via issue [KF-021 #50](https://github.com/guycorbaz/kesh/issues/50)
+/// pour livraison ultérieure (idéalement avant ou avec la migration
+/// `SELECT FOR UPDATE` tracée par [KF-020 #49](https://github.com/guycorbaz/kesh/issues/49)).
 ///
-/// Implémentation : on simule la séquence sans tokio::join (qui rend la
-/// race difficile à reproduire de manière déterministe en CI). On exécute
-/// les requêtes séquentiellement mais avec la même version_initial (ce qui
-/// reproduit le scénario où B a chargé la page avant que A ne commit) :
-/// 1. A et B GET → version=N.
+/// Ce que ce test couvre actuellement (smoke test séquentiel) :
+/// 1. A GET → version=N.
 /// 2. A PUT modification effective → 200, version=N+1.
-/// 3. B PUT no-op (avec son v_initial=N) → **200, version=N (stale)**.
+/// 3. B PUT no-op avec son v_initial=N (snapshot stale) → **409**.
 ///
-/// Sous l'ancien comportement, étape 3 retournerait 409 car v=N est stale.
-/// Sous le fix actuel, le no-op check applicatif compare `before` (rechargé
-/// depuis la DB = v=N+1) au payload (envoyé avec v=N donc rejeté en
-/// version-check). Donc en réalité ce scénario devrait toujours renvoyer
-/// 409 (pas de stale leak) — la race décrite §race-condition n'existe que
-/// si A et B sont *vraiment* concurrents (pas de version-check sequentiel
-/// entre eux). Ce test documente la limite : un seul client séquentiel ne
-/// peut pas reproduire la race ; elle exige tokio::join sur deux pools
-/// distincts ou un test stress dédié.
+/// Le 409 confirme que le verrouillage optimiste applicatif protège
+/// correctement contre les snapshot stale en exécution séquentielle. La
+/// vraie race §race-condition (le snapshot stale leak en `200 OK`) n'existe
+/// que si A et B sont *vraiment* concurrents (pas de version-check
+/// sequentiel entre eux) — non couvert ici.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn no_op_with_parallel_mutation_returns_409_when_sequential(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
@@ -608,10 +755,9 @@ async fn no_op_with_parallel_mutation_returns_409_when_sequential(pool: MySqlPoo
 
     // 2) B PUT avec son `v_initial` stale ET un body qui *aurait été* no-op
     //    par rapport à l'état initial v=N. La version-check applicatif
-    //    rejette → 409. Ce test confirme que la race décrite dans la spec
-    //    §race-condition exige une vraie concurrence (tokio::join), et
-    //    qu'en exécution séquentielle le verrouillage optimiste protège
-    //    correctement contre les snapshot stale.
+    //    rejette → 409. Smoke test du verrouillage optimiste séquentiel.
+    //    Le test déterministe de la race §race-condition (200 + body stale
+    //    sous concurrence réelle) est tracé via [KF-021 #50].
     let put_b = app
         .client
         .put(app.url(&format!("/api/v1/contacts/{id}")))
@@ -635,6 +781,7 @@ async fn no_op_with_parallel_mutation_returns_409_when_sequential(pool: MySqlPoo
         put_b.status(),
         409,
         "exécution séquentielle : la version-check rejette le payload v=N quand la DB est en v=N+1 \
-         (la race §race-condition exige tokio::join concurrent — voir issue [KF-020 #49])"
+         (la race §race-condition exige tokio::join concurrent — voir issue [KF-021 #50] pour \
+         le test déterministe + [KF-020 #49] pour la migration SELECT FOR UPDATE)"
     );
 }
