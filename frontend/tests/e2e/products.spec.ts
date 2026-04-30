@@ -171,10 +171,11 @@ test.describe('Page catalogue — validation & erreurs', () => {
 		await page.getByRole('button', { name: /Nouveau produit/ }).click();
 		await page.fill('#form-name', name);
 		await page.fill('#form-price', '7.00');
-		await page.getByRole('button', { name: 'Créer' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Créer' }).click();
 		// Scope au formulaire (toast Sonner et formulaire affichent tous deux le message)
 		await expect(page.locator('[data-testid="product-form-error"]')).toContainText(/existe déjà|already exists/i, { timeout: 5000 });
-		await page.getByRole('button', { name: 'Annuler' }).click();
+		// Annuler scoped au dialog (un autre Annuler peut exister sur la page si autres dialogs)
+		await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
 
 		await archiveRow(page, name);
 	});

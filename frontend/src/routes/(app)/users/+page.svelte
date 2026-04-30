@@ -385,9 +385,9 @@
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="user-create-dialog-cancel">Annuler</Button>
 				</Dialog.Close>
-				<Button type="submit" disabled={createSubmitting}>
+				<Button type="submit" disabled={createSubmitting} data-testid="user-create-dialog-submit">
 					{createSubmitting ? 'Création…' : 'Créer'}
 				</Button>
 			</Dialog.Footer>

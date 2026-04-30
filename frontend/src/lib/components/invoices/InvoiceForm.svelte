@@ -470,7 +470,7 @@
 			</div>
 		</div>
 
-		<table class="w-full border-collapse text-sm">
+		<table class="w-full border-collapse text-sm" data-testid="invoice-lines-table">
 			<thead>
 				<tr class="border-b border-border text-left">
 					<th class="py-2 pr-2">Description</th>

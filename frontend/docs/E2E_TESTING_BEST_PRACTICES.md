@@ -306,15 +306,76 @@ await expect(page.locator('[data-testid="incomplete-config-banner"]')).toBeVisib
 ### Validation messages (formulaires)
 
 ```typescript
-// ✅ Scope au dialog ouvert (la modale a un role="dialog" implicite via bits-ui)
-await expect(page.getByRole('dialog')).toContainText('au moins 12 caractères');
-await expect(page.getByRole('dialog')).toContainText('ne correspondent pas');
+// ✅ Scope au dialog ouvert + toBeVisible() avant toContainText pour éviter vacuous pass
+const dialog = page.getByRole('dialog');
+await expect(dialog).toBeVisible();
+await expect(dialog).toContainText('au moins 12 caractères');
+await expect(dialog).toContainText('ne correspondent pas');
 
 // ✅ Toast de succès (svelte-sonner expose role="region" name="Notifications")
 await expect(page.getByLabel(/Notifications/)).toContainText(`Compte ${testNumber} créé`);
 
 // ✅ Erreur inline scoped au testid
 await expect(page.locator('[data-testid="product-form-error"]')).toContainText(/existe déjà/i);
+```
+
+### Contacts page
+
+> **Statut Story 7-5** : pas de strict-mode violation, pas de HIGH `getByText` à corriger. Refactor déféré ; tests `:150` axe-core relèvent [KF-023](https://github.com/guycorbaz/kesh/issues/55). Patterns actuels à suivre lors d'éventuelles évolutions :
+
+```typescript
+// ✅ Pattern row + dialog pour archivage (à appliquer si refactor futur)
+await page.locator('[data-testid="contact-row-{id}"] [data-testid="contact-archive-button"]').click();
+await page.getByRole('dialog').getByRole('button', { name: 'Archiver' }).click();
+
+// ✅ getByRole scoped au tr déjà acceptable si non-ambigu
+const row = page.locator('tr', { hasText: uniqueName });
+await row.getByRole('button', { name: /Archiver/ }).click();
+```
+
+### Products page
+
+```typescript
+// ✅ Erreur inline (toast Sonner partage le texte) — Story 7-5 fix strict-mode :166
+await expect(page.locator('[data-testid="product-form-error"]')).toContainText(/existe déjà/i);
+
+// ✅ Bouton dialog scoped (évite collision Annuler entre dialogs simultanés)
+await page.getByRole('dialog').getByRole('button', { name: 'Créer' }).click();
+await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
+```
+
+### Journal entries page
+
+> **Statut Story 7-5** : refactor déféré — tous les tests `journal-entries.spec.ts` bloqués par [KF-022](https://github.com/guycorbaz/kesh/issues/54) (auth 401 cascade dans helper `getAccountNumbers`). Pattern à appliquer post-fix KF-022 :
+
+```typescript
+// ✅ Pattern multi-ligne (chaque ligne d'écriture indexée 0-based)
+await page.locator('[data-testid="journal-entry-line-0-debit"]').fill('100');
+await page.locator('[data-testid="journal-entry-line-0-credit"]').fill('100');
+await page.locator('[data-testid="journal-entry-submit"]').click();
+```
+
+### Fiscal years page
+
+> **Statut Story 7-5** : refactor déféré — failures relèvent [KF-025](https://github.com/guycorbaz/kesh/issues/57) (state/timing fixture). 3 testids déjà posés Story 3-7 :
+
+```typescript
+// ✅ Testids Story 3-7 (préserver, ne pas renommer)
+await page.locator('[data-testid="fiscal-year-table"]').toBeVisible();
+await page.locator('[data-testid="fiscal-year-row-{id}"]').click();
+await page.locator('[data-testid="fiscal-year-create-button"]').click();
+```
+
+### VAT rates (formulaire produit / facture)
+
+> **Statut Story 7-5** : pas de page dédiée `/settings/vat-rates`. Les selects de taux TVA sont dans `/products` et `/invoices/new`. Testid `invoice-line-vat-rate` posé Story 7-6. Failure `:47/:56` relève [KF-024](https://github.com/guycorbaz/kesh/issues/56) (régression contenu select formulaire facture).
+
+```typescript
+// ✅ Select TVA dans une ligne de facture (testid Story 7-6)
+await page.locator('[data-testid="invoice-line-vat-rate"]').selectOption({ label: '8.10%' });
+
+// ✅ Select TVA dans le formulaire produit (id HTML existant)
+await page.locator('#form-vat-rate').selectOption({ label: '2.60%' });
 ```
 
 ## Naming Reference (par entité)

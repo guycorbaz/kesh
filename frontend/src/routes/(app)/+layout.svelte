@@ -82,6 +82,24 @@
 		}
 		return item.label;
 	}
+
+	/**
+	 * Calcule le slug `data-testid` d'un lien sidebar à partir de son href.
+	 *
+	 * `/users`              → `nav-link-users`
+	 * `/invoices/due-dates` → `nav-link-invoices-due-dates`
+	 * `/settings/invoicing` → `nav-link-settings-invoicing`
+	 * `/`                   → `nav-link-home`
+	 *
+	 * Note (Story 7-5 KF-008) : on lowercase explicitement pour éviter qu'un futur
+	 * href avec casse mixte (`/Users`) génère un testid distinct du même elt sémantique.
+	 * Les hrefs actuels de `navGroups` et `adminNavItems` produisent des slugs
+	 * uniques entre eux ; toute future addition doit préserver cette unicité.
+	 */
+	function navTestid(href: string): string {
+		const slug = href.replace(/^\//, '').replace(/\//g, '-').toLowerCase();
+		return `nav-link-${slug || 'home'}`;
+	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -180,7 +198,7 @@
 						<li>
 							<a
 								href={item.href}
-								data-testid={`nav-link-${item.href.replace(/^\//, '').replace(/\//g, '-') || 'home'}`}
+								data-testid={navTestid(item.href)}
 								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
 								style="min-height: var(--kesh-target-min-height);"
 							>
@@ -200,7 +218,7 @@
 						<li>
 							<a
 								href={item.href}
-								data-testid={`nav-link-${item.href.replace(/^\//, '').replace(/\//g, '-') || 'home'}`}
+								data-testid={navTestid(item.href)}
 								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
 								style="min-height: var(--kesh-target-min-height);"
 							>

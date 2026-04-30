@@ -63,10 +63,13 @@ test.describe('Page plan comptable — CRUD', () => {
 
 		// Ouvrir le dialog de creation (description visible = dialog ouvert)
 		await page.locator('[data-testid="account-create-button"]').click();
-		await expect(page.getByRole('dialog')).toContainText('Ajoutez un compte');
+		const createDialog = page.getByRole('dialog');
+		await expect(createDialog).toBeVisible();
+		await expect(createDialog).toContainText('Ajoutez un compte');
 
-		// Remplir le formulaire
-		const testNumber = `9999`;
+		// Remplir le formulaire — numéro dérivé du timestamp (4 chiffres) pour éviter
+		// la pollution inter-runs (seedTestState utilise beforeAll, pas beforeEach).
+		const testNumber = `9${String(Date.now()).slice(-3)}`;
 		await page.fill('#create-number', testNumber);
 		await page.fill('#create-name', 'Compte de test E2E');
 
@@ -84,11 +87,17 @@ test.describe('Page plan comptable — CRUD', () => {
 	test('modification d\'un compte via dialog', async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
-		// Cliquer sur le bouton modifier du premier compte visible (1000 du plan PME seedé)
-		await page.locator('[data-testid="account-row-1000-edit-button"]').click();
+		// Cliquer sur le bouton modifier du compte 1000 (seedé actif par with-company).
+		// Garde toHaveCount(1) avant click : si seed change ou compte 1000 archivé,
+		// le bouton n'est plus rendu ({#if active}) — fail-fast plutôt que timeout opaque.
+		const editButton = page.locator('[data-testid="account-row-1000-edit-button"]');
+		await expect(editButton).toHaveCount(1);
+		await editButton.click();
 
 		// Le dialog de modification doit s'ouvrir
-		await expect(page.getByText('Le numéro n\'est pas modifiable')).toBeVisible();
+		const editDialog = page.getByRole('dialog');
+		await expect(editDialog).toBeVisible();
+		await expect(editDialog).toContainText('Le numéro n\'est pas modifiable');
 
 		// Le champ numero doit etre desactive
 		const numberField = page.locator('#edit-number');
