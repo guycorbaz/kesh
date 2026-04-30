@@ -13,6 +13,7 @@ stepsCompleted:
   - spec-created
   - spec-validated
   - implementation-done
+  - code-reviewed
 ---
 
 # Story 7.5 : KF-008 — Stabilisation des sélecteurs Playwright (strict mode)
@@ -748,4 +749,36 @@ _(à remplir : composants Svelte instrumentés et testids ajoutés)_
 **Branche :** `story/7-5-kf-008-playwright-selector-fixes` (créée à partir de `main` commit `8ad44b8` post spec validate).
 
 **Next :** `/bmad-code-review` (LLM différent recommandé). PR à ouvrir avec `closes #27` au merge sur `main`.
+
+### 2026-04-30 — Code Review Loop (2 passes)
+
+**Workflow :** `/bmad-code-review` — 3 sous-agents adversariaux (Blind Hunter / Edge Case Hunter / Acceptance Auditor) par passe, contexte frais à chaque passe. Cycle LLM CLAUDE.md : Opus (impl) → Sonnet (P1) → Haiku (P2).
+
+**Trend numérique :**
+- **Pass 1 (Sonnet)** — 3 layers, 38 findings bruts → 18 après dedupe : **0 CRITICAL / 3 HIGH / 8 MEDIUM (6 patch + 2 defer) / 7 LOW (1 patch + 5 defer + 1 reject) / 4 reject**.
+- **Pass 2 (Haiku)** — 3 layers, 12 findings bruts → après triage **0 finding > LOW** (1 HIGH + 2 MEDIUM Blind reclassés en forward-risk acceptable per Edge Case Hunter cross-check + Auditor 11/11 SATISFIED). **Critère d'arrêt CLAUDE.md atteint.**
+
+**Patches appliqués (Pass 1, commit `e9d0cb4`) :**
+- **3 HIGH** : H1 testNumber dynamique (`9${Date.now().slice(-3)}`) ; H2 `expect(adminRow).toHaveCount(1)` guard avant `.not.toBeVisible()` ; H3 products.spec.ts:177 `getByRole('dialog').getByRole('button', { name: 'Annuler' })` scope.
+- **6 MEDIUM** : M1 helper `navTestid()` lowercase + comment garde unicité ; M2 `expect(dialog).toBeVisible()` × 4 avant `.toContainText()` ; M3 testids `user-create-dialog-{cancel,submit}` (cohérence avec accounts) ; M4 testid `invoice-lines-table` + scope spec ; M5 `expect(editButton).toHaveCount(1)` + `expect(editDialog).toBeVisible()` accounts edit ; M6 5 sections doc manquantes (contacts/products/journal-entries/fiscal-years/vat-rates) → AC #8 SATISFIED.
+- **1 LOW cosmétique** : T17 checkboxes ✅, T1.5.bis documenté, File List "8 fichiers".
+
+**Defer Pass 1 (7) :** onboarding-path-b steps 1-3+5 (out of scope), loginAsAdmin helper duplication (cross-spec refactor hors scope), product-form-error formValidation (no current test), homepage redirect timing (auto-wait suffit), Settings headings FR-only (default fr-CH), special chars (Swiss PME numérique + username validé), Sonner ARIA (version verrouillée).
+
+**Pass 2 (Haiku) reclassements :**
+- **F2.3 HIGH Blind** « `getByRole('dialog')` ambigu si plusieurs dialogs » → **reject** (forward-risk, Edge Case Hunter confirme « no current codebase concurrency »).
+- **F2.1 MEDIUM Blind** « testNumber collision 1-sec window » → **reject** (Edge Case « ZERO effective risk, workers:1 »).
+- **F2.2 MEDIUM Blind** « navTestid trailing slash » → **reject** (Edge Case « ZERO practical impact, current hrefs never use trailing slashes » + helper docstring couvre déjà la garde).
+- F2.4-F2.7 + F2E.001-005 LOW : defer (cosmétique).
+
+**Acceptance Auditor verdict Pass 2 :** GO. **11/11 ACs SATISFIED**, 0 finding, 0 régression, story closure-ready.
+
+**Vérification finale post-Pass-1 patches :**
+- `npm run check` 0 erreur, `npm run build` ✅
+- Specs touchés relancés : 17/19 verts (2 échecs = KF-023 + KF-025 connus, hors scope KF-008)
+- Suite complète : 52 passed / 32 failed / 9 skipped — stable post-patches
+- Audit : 9 HIGH résiduels, 0 strict-mode (AC #5 + AC #6 maintenus)
+- Total brittle : 192 → 170 (-22, vs 173 pre-Pass-1)
+
+**Status final :** prête pour merge sur `main`. Issue #27 fermera automatiquement par `closes #27` dans commit `faec675`.
 
