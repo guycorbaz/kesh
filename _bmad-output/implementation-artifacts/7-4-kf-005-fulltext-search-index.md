@@ -869,3 +869,53 @@ Pragmatiquement : la qualité des findings Pass 2 (clarifications de wording, ed
 **Issues GitHub touchées** : KF-005 (issue #5) — fermeture via `closes #5` dans le commit final d'implémentation.
 
 **Commit attendu** : `git commit -m "Story 7-4: KF-005 — FULLTEXT search indexes (closes #5)"`.
+
+### Code Review Pass 1 — Sonnet 4.6 × 3 reviewers parallèles (2026-04-30)
+
+**Contexte** : Pass 1 lancée immédiatement après commit `cfe20ff` (implémentation Opus). Cycle CLAUDE.md respecté : Opus (impl) → Sonnet (P1 review). Trois reviewers Sonnet 4.6 parallèles, contextes frais orthogonaux à la session principale Opus, sur le diff `git show cfe20ff` (1980 lignes, 1433 inserts / 130 deletes).
+
+**Reviewers** :
+- **Blind Hunter** (skill `bmad-review-adversarial-general`) — diff seul, aucun accès projet.
+- **Edge Case Hunter** (skill `bmad-review-edge-case-hunter`) — diff + accès lecture projet.
+- **Acceptance Auditor** — diff + spec + CLAUDE.md + `docs/search-patterns.md` ; verdict GO/NO-GO sur les 18 ACs.
+
+**Findings remontés (16 bruts → 14 dédupliqués + 1 reject)** :
+
+| Sévérité | Source | ID | Sujet | Verdict | Patch |
+|---|---|---|---|---|---|
+| HIGH | edge+auditor | F1 | Invoices : T6.4 marqué `[x]` mais aucun test inline search (2 callsites refactorés sans couverture) | FAIL | **Patch** — ajout `test_filter_by_search_matches_contact_name_fulltext` (couvre `list_by_company_paginated` + `due_dates_summary` avec marker unique 8 chars) + `test_filter_by_search_pure_operators_returns_zero` |
+| HIGH | edge+auditor | F2 | Invoices : test cross-company isolation manquant (T7.3 livre 3/4) | FAIL | **Patch** — ajout `t7_3_invoices_search_does_not_leak_cross_company` dans `kf005_fulltext_index_e2e.rs` (2 companies, contacts avec token FULLTEXT partagé, scoping `i.company_id` validé) |
+| MEDIUM | auditor | F3 | T7.4b waiver pointe vers couverture in-module inexistante | PARTIAL | **Auto-résolu par F1** — commentaire dans `kf005_fulltext_index_e2e.rs` mis à jour pour pointer vers le nouveau test inline |
+| MEDIUM | blind+edge | F4 | `products.rs` / `journal_entries.rs` : skip silencieux quand escape produit `""` → retourne TOUTES les rows (régression vs LIKE pré-refactor qui retournait 0) | — | **Patch** — émission `AND FALSE` quand input non-vide devient empty après strip (préserve la sémantique pré-refactor « 0 rows pour gibberish ») + `test_filter_by_search_pure_operators_returns_zero` × 2 (products + journal_entries) |
+| MEDIUM | edge | F5 | Multi-mots `"Jean Pierre"` → `"Jean Pierre*"` : seul le dernier token a le wildcard, sémantique non documentée | — | **Patch** — doc-comment `escape_boolean_ft` enrichi avec « Wildcard sur dernier token uniquement » + 3 cas observables documentés |
+| LOW | blind | F6 | Test T7.3 contacts : terme `"Marie"` partagé entre 2 companies (faible discriminant) | — | **Defer** P2 (cosmétique — fonctionnellement correct) |
+| LOW | auditor | F7 | Spec T2.3 contient assertion fausse « pas de virgule avant ALGORITHM » non corrigée | bad_spec | **Defer** P2 (à amender si spec ré-utilisée) |
+| LOW | auditor | F8 | T9.5 seeds simplifiés ASCII vs spec accents (`Camargo & Associés` → `Camargo Associes`) | PARTIAL | **Defer** P2 (couverture fonctionnelle OK) |
+| LOW | blind | F9 | Migration : pas de `IF NOT EXISTS` sur `ADD FULLTEXT INDEX` | — | **Defer** P2 |
+| LOW | blind | F10 | `docs/search-patterns.md` : stop-words associés à la collation au lieu de `ft_stopword_file` | — | **Defer** P2 |
+| LOW | edge | F11 | `journal_entries.rs` pas de garde explicite `trim().is_empty()` (asymétrie cosmétique) | — | **Auto-résolu par F4** (la garde a été ajoutée au passage) |
+| LOW | edge | F12 | `extract_first_key` : walk récursif peut retourner premier `key` non-cible | — | **Defer** P2 |
+| LOW | blind | F13 | `escape_boolean_ft` : pas de test pour espaces internes multiples | — | **Defer** P2 |
+| LOW | blind | F14 | `explain_json` T7.4a : terme MATCH hardcodé `'Marie*'` au lieu de bind | — | **Defer** P2 |
+
+**Reject** :
+- AA-F6 (T9.4 Option B vs Option A) — l'impl a corrigé une erreur spec : Option A (`"50"`) aurait échoué (`50` = 2 chars < `innodb_ft_min_token_size=3`). Pas un défaut, c'est une amélioration documentée dans le Debug Log.
+
+**Patches appliqués Pass 1 (5 patches)** :
+- F1 : 2 nouveaux tests in-module dans `invoices.rs::tests` (~ 200 lignes).
+- F2 : 1 nouveau test sqlx::test dans `kf005_fulltext_index_e2e.rs` (~ 110 lignes).
+- F3 : commentaire mis à jour (waiver T7.4b devient valide rétroactivement).
+- F4 : 2 helpers `push_where_clauses` patchés (`products.rs`, `journal_entries.rs`) + 2 tests régression.
+- F5 : doc-comment `escape_boolean_ft` enrichi.
+
+**Verification post-patches** :
+- `cargo build -p kesh-db --tests` ✅ clean.
+- `cargo test -p kesh-db --tests -- --test-threads=1` ✅ green : tests pertinents observés `test_filter_by_search_matches_contact_name_fulltext`, `test_filter_by_search_pure_operators_returns_zero` (×3 invoices/products/journal_entries), `test_filter_by_description_pure_operators_returns_zero`, `t7_3_invoices_search_does_not_leak_cross_company` — tous passent. Aucune régression sur les 244+ tests pré-existants.
+- `cargo clippy -p kesh-db --all-targets -- -D warnings` ✅ clean.
+- `cargo fmt -p kesh-db --check` ✅ clean.
+
+**Findings non-patchés Pass 1 → traités Pass 2** : 8 LOW (F6, F7, F8, F9, F10, F12, F13, F14). Décision Pass 1 : appliquer uniquement HIGH+MEDIUM pour relancer rapidement Pass 2 (Haiku) avec un LLM orthogonal sur les patches majeurs ; LOW à intégrer Pass 2 si Haiku confirme leur pertinence.
+
+**Résultat Pass 1** : critère d'arrêt CLAUDE.md NON atteint (8 LOW restants — toutes acceptables, mais > 0). Pass 2 obligatoire (LLM différent, contexte frais).
+
+**Commit attendu** : `git commit -m "Story 7-4: code review Pass 1 — Sonnet×3, 2H+3M+9L → 5 patches HIGH/MEDIUM (F1-F5), 8 LOW deferred Pass 2"`.

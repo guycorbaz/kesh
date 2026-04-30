@@ -21,13 +21,15 @@
 use chrono::NaiveDate;
 use kesh_db::entities::{
     AccountType, ContactType, Journal, Language, NewAccount, NewCompany, NewContact, NewFiscalYear,
-    NewJournalEntry, NewJournalEntryLine, NewProduct, NewUser, OrgType, Role,
+    NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine, NewProduct, NewUser, OrgType,
+    Role,
 };
 use kesh_db::repositories::contacts::{ContactListQuery, ContactSortBy};
+use kesh_db::repositories::invoices::InvoiceListQuery;
 use kesh_db::repositories::journal_entries::JournalEntryListQuery;
 use kesh_db::repositories::products::{ProductListQuery, ProductSortBy};
 use kesh_db::repositories::{
-    accounts, companies, contacts, fiscal_years, journal_entries, products, users,
+    accounts, companies, contacts, fiscal_years, invoices, journal_entries, products, users,
 };
 use rust_decimal_macros::dec;
 use serde_json::Value as JsonValue;
@@ -427,6 +429,126 @@ async fn t7_3_products_search_does_not_leak_cross_company(pool: MySqlPool) {
     }
 }
 
+/// Pass 1 F2 — Isolation cross-company sur le path FULLTEXT
+/// `MATCH(c.name)` dans `invoices::list_by_company_paginated` (JOIN
+/// invoices ↔ contacts). Le `WHERE i.company_id = ?` doit filtrer
+/// correctement même quand le contact name match côté FULLTEXT dans
+/// l'autre company. Sans ce test, une régression qui retirerait le
+/// filtre `i.company_id` ne serait pas détectée.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
+    let company_a = create_company(&pool, "Company A").await;
+    let user_a = create_admin(&pool, company_a).await;
+    let company_b = create_company(&pool, "Company B").await;
+    let user_b = create_admin(&pool, company_b).await;
+
+    // Un contact par company avec un nom partageant le même token unique
+    // (`KFFiveCross`). Si le scoping `i.company_id` était cassé, la search
+    // retournerait les 2 factures.
+    let contact_a = contacts::create(
+        &pool,
+        user_a,
+        NewContact {
+            company_id: company_a,
+            contact_type: ContactType::Entreprise,
+            name: "KFFiveCross ContactA SARL".into(),
+            is_client: true,
+            is_supplier: false,
+            address: None,
+            email: None,
+            phone: None,
+            ide_number: None,
+            default_payment_terms: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let contact_b = contacts::create(
+        &pool,
+        user_b,
+        NewContact {
+            company_id: company_b,
+            contact_type: ContactType::Entreprise,
+            name: "KFFiveCross ContactB SARL".into(),
+            is_client: true,
+            is_supplier: false,
+            address: None,
+            email: None,
+            phone: None,
+            ide_number: None,
+            default_payment_terms: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    let day = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
+    let line = NewInvoiceLine {
+        description: "Conseil".into(),
+        quantity: dec!(1),
+        unit_price: dec!(100.00),
+        vat_rate: dec!(8.10),
+    };
+
+    let (inv_a, _) = invoices::create(
+        &pool,
+        user_a,
+        NewInvoice {
+            company_id: company_a,
+            contact_id: contact_a,
+            date: day,
+            due_date: Some(day),
+            payment_terms: None,
+            lines: vec![line.clone()],
+        },
+    )
+    .await
+    .unwrap();
+    let (inv_b, _) = invoices::create(
+        &pool,
+        user_b,
+        NewInvoice {
+            company_id: company_b,
+            contact_id: contact_b,
+            date: day,
+            due_date: Some(day),
+            payment_terms: None,
+            lines: vec![line],
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = invoices::list_by_company_paginated(
+        &pool,
+        company_a,
+        InvoiceListQuery {
+            search: Some("KFFiveCross".into()),
+            limit: 100,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        result.items.iter().any(|i| i.id == inv_a.id),
+        "company A doit voir sa facture (contact = ContactA)"
+    );
+    assert!(
+        !result.items.iter().any(|i| i.id == inv_b.id),
+        "company A ne doit PAS voir la facture de company B malgré le token FULLTEXT partagé"
+    );
+    for item in &result.items {
+        assert_eq!(
+            item.company_id, company_a,
+            "tous les items doivent appartenir à company_a"
+        );
+    }
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn t7_3_journal_entries_search_does_not_leak_cross_company(pool: MySqlPool) {
     let company_a = create_company(&pool, "Company A").await;
@@ -520,9 +642,11 @@ async fn t7_4a_explain_hybrid_match_or_like_contacts(pool: MySqlPool) {
     }
 }
 
-// Note T7.4b (invoices 3-way OR) : non-implémenté ici car nécessite un seed
-// invoices + contacts complet (plusieurs centaines de lignes pour stabilité
-// optimizer). Le test in-module `invoices_repository.rs` couvre déjà le
-// path fonctionnel (search par contact name via JOIN). Le risque optimizer
-// 3-way OR reste théorique sans dataset prod réel — documenté en Change
-// Log story 7-4 (suivi v0.2 si KF-005 ne suffit pas).
+// Note T7.4b (invoices 3-way OR) : EXPLAIN dédié non-implémenté ici car
+// nécessite un seed invoices + contacts complet (plusieurs centaines de
+// lignes pour stabilité optimizer). Le path fonctionnel `MATCH(c.name)`
+// est désormais couvert par `test_filter_by_search_matches_contact_name_fulltext`
+// dans `invoices.rs::mod tests` (ajouté Pass 1 F1) qui exerce les 2
+// callsites (`list_by_company_paginated` + `due_dates_summary`). Le
+// risque optimizer 3-way OR reste théorique sans dataset prod réel —
+// documenté en Change Log story 7-4 (suivi v0.2 si KF-005 ne suffit pas).

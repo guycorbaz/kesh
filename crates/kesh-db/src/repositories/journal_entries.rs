@@ -361,16 +361,26 @@ fn push_where_clauses<'a>(
     qb.push_bind(company_id);
 
     if let Some(ref desc) = query.description {
-        // Story 7-4 / KF-005 : `description` migrée vers FULLTEXT BOOLEAN
-        // MODE (prefix wildcard auto-append). Si l'utilisateur tape
-        // uniquement des opérateurs (strip → ""), on skippe la clause
-        // search (le filtre date/journal/montant reste actif).
-        let escaped = escape_boolean_ft(desc);
-        if !escaped.is_empty() {
-            let bool_query = format!("{escaped}*");
-            qb.push(" AND MATCH(description) AGAINST(");
-            qb.push_bind(bool_query);
-            qb.push(" IN BOOLEAN MODE)");
+        let trimmed = desc.trim();
+        if !trimmed.is_empty() {
+            // Story 7-4 / KF-005 : `description` migrée vers FULLTEXT BOOLEAN
+            // MODE (prefix wildcard auto-append).
+            let escaped = escape_boolean_ft(trimmed);
+            if escaped.is_empty() {
+                // Edge case (Pass 1 F4) : input non-vide entièrement composé
+                // d'opérateurs BOOLEAN MODE strippés (ex. `"+++"`). Pas de
+                // colonne LIKE-friendly à fallback (description est la seule
+                // colonne search). On force 0 résultats : le pré-refactor
+                // `LIKE '%+++%'` retournait 0 par construction, on préserve
+                // cette sémantique explicitement (pas de retour de toutes
+                // les écritures par skip silencieux).
+                qb.push(" AND FALSE");
+            } else {
+                let bool_query = format!("{escaped}*");
+                qb.push(" AND MATCH(description) AGAINST(");
+                qb.push_bind(bool_query);
+                qb.push(" IN BOOLEAN MODE)");
+            }
         }
     }
 
@@ -1409,6 +1419,58 @@ mod tests {
             "le `%` doit être traité comme non-token par InnoDB FULLTEXT et ne matcher que le token `500`"
         );
         assert!(result.items[0].entry.description.contains("500%"));
+    }
+
+    /// Régression Pass 1 F4 : un input non-vide entièrement composé
+    /// d'opérateurs BOOLEAN MODE (ex. `"+++"`) doit retourner 0 résultats,
+    /// PAS la totalité du journal (skip silencieux pré-patch).
+    #[tokio::test]
+    async fn test_filter_by_description_pure_operators_returns_zero() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        // Seed 2 écritures — si le skip silencieux régressait, on les
+        // retrouverait toutes au lieu d'avoir 0 résultats.
+        for desc in ["TestEntry Alpha", "TestEntry Beta"] {
+            let mut entry = mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(1),
+                        credit: dec!(0),
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(1),
+                    },
+                ],
+            );
+            entry.description = desc.to_string();
+            create(&pool, fy_id, admin_user_id, entry).await.unwrap();
+        }
+
+        for gibberish in ["+++", "***", "()()", "~~~"] {
+            let result = list_by_company_paginated(
+                &pool,
+                company_id,
+                JournalEntryListQuery {
+                    description: Some(gibberish.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                result.total, 0,
+                "input pure-opérateurs `{gibberish}` doit retourner 0, pas tout le journal"
+            );
+            assert!(result.items.is_empty());
+        }
     }
 
     /// Régression detector inversé pour KF-005 v0.1 : asserte que la

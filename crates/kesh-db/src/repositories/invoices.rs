@@ -3101,4 +3101,210 @@ mod tests {
         cleanup_invoices(&pool, &[inv.id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
     }
+
+    // -------------------------------------------------------------------
+    // Story 7-4 / KF-005 — search inline tests (T6.4 + Pass 1 F1)
+    // -------------------------------------------------------------------
+
+    async fn create_named_contact(
+        pool: &MySqlPool,
+        company_id: i64,
+        user_id: i64,
+        name: &str,
+    ) -> i64 {
+        contacts::create(
+            pool,
+            user_id,
+            NewContact {
+                company_id,
+                contact_type: ContactType::Entreprise,
+                name: name.into(),
+                is_client: true,
+                is_supplier: false,
+                address: None,
+                email: None,
+                phone: None,
+                ide_number: None,
+                default_payment_terms: Some("30 jours net".into()),
+            },
+        )
+        .await
+        .expect("create_named_contact")
+        .id
+    }
+
+    /// T6.4 + Pass 1 F1 : couvre le path FULLTEXT `MATCH(c.name)` dans
+    /// `list_by_company_paginated` ET `due_dates_summary` (les 2 callsites
+    /// refactorés Story 7-4). Sans ce test, la query SQL générée pour
+    /// `MATCH(c.name) AGAINST(...)` ne serait jamais exercée par la suite
+    /// de tests — un bug dans la composition JOIN + multi-tenant + FULLTEXT
+    /// passerait inaperçu.
+    #[tokio::test]
+    async fn test_filter_by_search_matches_contact_name_fulltext() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+
+        // Marker unique 8 chars pour éviter la collision avec d'autres
+        // tests qui partagent le même pool DB. Token ≥ 3 chars (indexable
+        // via `innodb_ft_min_token_size = 3`).
+        let suffix = short_uuid();
+        let marker_marie = format!("KFFiveMa{suffix}");
+        let marker_pierre = format!("KFFivePi{suffix}");
+
+        let contact_marie = create_named_contact(
+            &pool,
+            company_id,
+            admin_user_id,
+            &format!("TestSearchInv {marker_marie} SARL"),
+        )
+        .await;
+        let contact_pierre = create_named_contact(
+            &pool,
+            company_id,
+            admin_user_id,
+            &format!("TestSearchInv {marker_pierre} SARL"),
+        )
+        .await;
+
+        let due = today();
+        let (inv_marie, _) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id: contact_marie,
+                date: today(),
+                due_date: Some(due),
+                payment_terms: None,
+                lines: vec![sample_line("Conseil", dec!(1), dec!(100.00))],
+            },
+        )
+        .await
+        .unwrap();
+        let (inv_pierre, _) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id: contact_pierre,
+                date: today(),
+                due_date: Some(due),
+                payment_terms: None,
+                lines: vec![sample_line("Conseil", dec!(1), dec!(200.00))],
+            },
+        )
+        .await
+        .unwrap();
+
+        // (1) list_by_company_paginated — search par marker Marie via
+        //     `MATCH(c.name) AGAINST('marker*' IN BOOLEAN MODE)`.
+        let result = list_by_company_paginated(
+            &pool,
+            company_id,
+            InvoiceListQuery {
+                search: Some(marker_marie.clone()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            result.items.iter().any(|i| i.id == inv_marie.id),
+            "list_by_company_paginated : search par `{marker_marie}` doit retourner la facture Marie"
+        );
+        assert!(
+            !result.items.iter().any(|i| i.id == inv_pierre.id),
+            "list_by_company_paginated : la facture Pierre NE doit PAS matcher le marker Marie"
+        );
+
+        // (2) due_dates_summary — même search filter. On valide les
+        //     deux factures pour qu'elles entrent dans le summary
+        //     (`status='validated' AND paid_at IS NULL`).
+        let (_, je_marie) = force_validate(&pool, company_id, inv_marie.id).await;
+        let (_, je_pierre) = force_validate(&pool, company_id, inv_pierre.id).await;
+
+        let summary = due_dates_summary(
+            &pool,
+            company_id,
+            &InvoiceListQuery {
+                search: Some(marker_marie.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            summary.unpaid_count, 1,
+            "due_dates_summary : search par `{marker_marie}` doit retourner unpaid_count=1 (Marie uniquement)"
+        );
+        assert_eq!(
+            summary.unpaid_total,
+            dec!(100.0000),
+            "due_dates_summary : unpaid_total = total facture Marie uniquement"
+        );
+
+        cleanup_invoices(&pool, &[inv_marie.id, inv_pierre.id]).await;
+        cleanup_journal_entries(&pool, &[je_marie, je_pierre]).await;
+        cleanup_contacts(&pool, &[contact_marie, contact_pierre]).await;
+    }
+
+    /// Pass 1 F4 (régression) : un input non-vide entièrement composé
+    /// d'opérateurs BOOLEAN MODE doit retourner 0 résultats côté invoices
+    /// (le fallback LIKE sur `invoice_number`/`payment_terms` est actif,
+    /// mais ne matche pas un input gibberish). Vérifie l'absence de skip
+    /// silencieux (qui retournerait toutes les factures de la company).
+    #[tokio::test]
+    async fn test_filter_by_search_pure_operators_returns_zero() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+
+        let suffix = short_uuid();
+        let contact_id = create_named_contact(
+            &pool,
+            company_id,
+            admin_user_id,
+            &format!("TestF4Inv {suffix} SARL"),
+        )
+        .await;
+        let (inv, _) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: None,
+                payment_terms: None,
+                lines: vec![sample_line("L", dec!(1), dec!(50.00))],
+            },
+        )
+        .await
+        .unwrap();
+
+        for gibberish in ["+++", "***", "()()", "~~~"] {
+            let result = list_by_company_paginated(
+                &pool,
+                company_id,
+                InvoiceListQuery {
+                    search: Some(gibberish.into()),
+                    limit: 100,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            // L'invoice ne contient ni `+++` ni `***` etc. dans
+            // invoice_number ou payment_terms (`30 jours net`) → 0 match.
+            assert!(
+                !result.items.iter().any(|i| i.id == inv.id),
+                "input pure-opérateurs `{gibberish}` ne doit pas matcher la facture seedée"
+            );
+        }
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
 }

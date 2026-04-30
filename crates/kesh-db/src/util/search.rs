@@ -83,6 +83,24 @@ const BOOLEAN_FT_OPERATORS: &[char] = &['+', '-', '>', '<', '(', ')', '~', '*', 
 /// multi-mots devient nécessaire en v0.2+, le repo splitterait par
 /// whitespace et appendrait `+` + `*` à chaque token (`"+foo* +bar*"`).
 ///
+/// **⚠️ Wildcard sur dernier token uniquement** (Pass 1 F5) : le `*`
+/// appendé par le repo se colle au DERNIER token seulement, pas à chaque
+/// token. Pour un input `"Jea Pie"`, la query devient `"Jea Pie*"` →
+/// `Jea` est traité comme **mot exact** (≥3 chars indexé), `Pie*` comme
+/// préfixe. Conséquences observables :
+/// - `"Jean Pie"` cherchant `"Jeanette Pierre"` → matche via `Pie*`
+///   (préfixe sur `Pierre`), PAS via `Jean` (qui ne matche pas
+///   `Jeanette` — pas de prefix wildcard). Le row est retourné mais via
+///   le second token, ce qui peut surprendre.
+/// - `"Jea Pierre"` cherchant `"Jeanette Pierre"` → matche via `Pierre`
+///   exact (le `*` final donne `Pierre*` qui matche `Pierre`).
+/// - `"foo bar"` où aucun document ne contient `bar` (exact OU prefix)
+///   ni `foo` (exact) → 0 résultats malgré tokens présents en partial.
+///
+/// Acceptable v0.1 : la recherche multi-mots reste utile (≥1 token
+/// match → row retourné). Évolution v0.2+ possible : split + prefix par
+/// token pour rendre toute la recherche prefix-friendly.
+///
 /// # Exemple
 ///
 /// ```ignore

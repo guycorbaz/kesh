@@ -122,7 +122,16 @@ fn push_where_clauses<'a>(
             // FULLTEXT séparés (pas combiné) pour conserver la flexibilité
             // d'un futur ranking par colonne.
             let escaped = escape_boolean_ft(trimmed);
-            if !escaped.is_empty() {
+            if escaped.is_empty() {
+                // Edge case (Pass 1 F4) : input non-vide entièrement composé
+                // d'opérateurs BOOLEAN MODE strippés (ex. `"+++"`). Pas de
+                // colonne LIKE-friendly à fallback (name + description sont
+                // les 2 colonnes search). On force 0 résultats : le
+                // pré-refactor `LIKE '%+++%'` retournait 0 par construction,
+                // on préserve cette sémantique explicitement (pas de retour
+                // de la totalité du catalogue par skip silencieux).
+                qb.push(" AND FALSE");
+            } else {
                 let bool_query = format!("{escaped}*");
                 qb.push(" AND (MATCH(name) AGAINST(");
                 qb.push_bind(bool_query.clone());
@@ -851,6 +860,55 @@ mod tests {
         .unwrap();
         assert!(result.items.iter().any(|p| p.name.contains("Alpha")));
         assert!(!result.items.iter().any(|p| p.name.contains("Beta")));
+
+        cleanup_test_products(&pool, company_id).await;
+    }
+
+    /// Régression Pass 1 F4 : un input non-vide entièrement composé
+    /// d'opérateurs BOOLEAN MODE (ex. `"+++"`) doit retourner 0 résultats,
+    /// PAS la totalité du catalogue (skip silencieux pré-patch).
+    #[tokio::test]
+    async fn test_filter_by_search_pure_operators_returns_zero() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_products(&pool, company_id).await;
+
+        // Seed 2 produits — si le skip silencieux régressait, on les
+        // retrouverait tous au lieu d'avoir 0 résultats.
+        create(
+            &pool,
+            admin_user_id,
+            new_product(company_id, "TestProduct Gamma"),
+        )
+        .await
+        .unwrap();
+        create(
+            &pool,
+            admin_user_id,
+            new_product(company_id, "TestProduct Delta"),
+        )
+        .await
+        .unwrap();
+
+        for gibberish in ["+++", "***", "()()", "~~~"] {
+            let result = list_by_company_paginated(
+                &pool,
+                company_id,
+                ProductListQuery {
+                    search: Some(gibberish.into()),
+                    limit: 100,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                result.total, 0,
+                "input pure-opérateurs `{gibberish}` doit retourner 0, pas tout le catalogue"
+            );
+            assert!(result.items.is_empty());
+        }
 
         cleanup_test_products(&pool, company_id).await;
     }
