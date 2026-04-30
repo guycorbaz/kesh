@@ -17,6 +17,7 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::product::{NewProduct, Product, ProductUpdate};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
+use crate::util::search::escape_boolean_ft;
 
 const COLUMNS: &str = "id, company_id, name, description, unit_price, vat_rate, \
     active, version, created_at, updated_at";
@@ -25,15 +26,6 @@ const COLUMNS: &str = "id, company_id, name, description, unit_price, vat_rate, 
 const FIND_BY_ID_SCOPED_SQL: &str = "SELECT id, company_id, name, description, unit_price, \
     vat_rate, active, version, created_at, updated_at FROM products \
     WHERE id = ? AND company_id = ?";
-
-/// Échappe les caractères spéciaux pour `LIKE ? ESCAPE '\\'` (pattern contacts/journal_entries).
-/// Dette technique : 3e duplication — à extraire dans `kesh-db/src/utils.rs` si une 4e apparaît.
-fn escape_like(input: &str) -> String {
-    input
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-}
 
 /// Snapshot JSON d'un produit pour l'audit log.
 /// `unit_price` et `vat_rate` sérialisés en string décimal (pas de perte de précision).
@@ -125,12 +117,19 @@ fn push_where_clauses<'a>(
     if let Some(ref search) = query.search {
         let trimmed = search.trim();
         if !trimmed.is_empty() {
-            let pattern = format!("%{}%", escape_like(trimmed));
-            qb.push(" AND (name LIKE ");
-            qb.push_bind(pattern.clone());
-            qb.push(" ESCAPE '\\\\' OR description LIKE ");
-            qb.push_bind(pattern);
-            qb.push(" ESCAPE '\\\\')");
+            // Story 7-4 / KF-005 : `name` et `description` migrés vers
+            // FULLTEXT BOOLEAN MODE (prefix wildcard auto-append). 2 index
+            // FULLTEXT séparés (pas combiné) pour conserver la flexibilité
+            // d'un futur ranking par colonne.
+            let escaped = escape_boolean_ft(trimmed);
+            if !escaped.is_empty() {
+                let bool_query = format!("{escaped}*");
+                qb.push(" AND (MATCH(name) AGAINST(");
+                qb.push_bind(bool_query.clone());
+                qb.push(" IN BOOLEAN MODE) OR MATCH(description) AGAINST(");
+                qb.push_bind(bool_query);
+                qb.push(" IN BOOLEAN MODE))");
+            }
         }
     }
 }
@@ -852,6 +851,65 @@ mod tests {
         .unwrap();
         assert!(result.items.iter().any(|p| p.name.contains("Alpha")));
         assert!(!result.items.iter().any(|p| p.name.contains("Beta")));
+
+        cleanup_test_products(&pool, company_id).await;
+    }
+
+    /// Régression detector inversé pour KF-005 v0.1 : asserte que la
+    /// recherche par fragment-mid-word est PERDUE en BOOLEAN MODE +
+    /// prefix wildcard. Si une future migration MariaDB ajoute le suffix
+    /// wildcard support, ou si Kesh migre vers Sphinx/Manticore (v0.3+),
+    /// OU si la config `innodb_ft_min_token_size=1` est appliquée, ce
+    /// test FAILERA et devra être inversé pour asserter le nouveau
+    /// comportement (match attendu).
+    #[tokio::test]
+    async fn test_search_no_longer_matches_mid_word() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_products(&pool, company_id).await;
+
+        create(
+            &pool,
+            admin_user_id,
+            new_product(company_id, "TestProduct Cremant Alsace"),
+        )
+        .await
+        .unwrap();
+
+        // « mant » fragment mid-word de « Cremant » → 0 résultat.
+        let mid = list_by_company_paginated(
+            &pool,
+            company_id,
+            ProductListQuery {
+                search: Some("mant".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            mid.total, 0,
+            "régression mid-word search documentée : `mant` ne doit plus matcher `Cremant`"
+        );
+
+        // Préfixe `crem` matche bien.
+        let prefix = list_by_company_paginated(
+            &pool,
+            company_id,
+            ProductListQuery {
+                search: Some("crem".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            prefix.items.iter().any(|p| p.name.contains("Cremant")),
+            "préfixe `crem` doit matcher `Cremant` via FULLTEXT prefix wildcard"
+        );
 
         cleanup_test_products(&pool, company_id).await;
     }

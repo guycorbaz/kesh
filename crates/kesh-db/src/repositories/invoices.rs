@@ -28,6 +28,7 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
+use crate::util::search::{escape_boolean_ft, escape_like};
 
 const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, unit_price, \
     vat_rate, line_total, created_at";
@@ -36,15 +37,6 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
 const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
     status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
-
-/// Échappe pour `LIKE ? ESCAPE '\\'`. Dupliqué depuis contacts/products —
-/// dette technique suivie (extraire si 4e duplication).
-fn escape_like(input: &str) -> String {
-    input
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-}
 
 /// Snapshot JSON d'une facture (entête + lignes) pour l'audit log.
 fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Value {
@@ -252,14 +244,28 @@ fn push_where_clauses<'a>(
     if let Some(ref search) = query.search {
         let trimmed = search.trim();
         if !trimmed.is_empty() {
-            let pattern = format!("%{}%", escape_like(trimmed));
-            qb.push(" AND (COALESCE(i.invoice_number, '') LIKE ");
-            qb.push_bind(pattern.clone());
-            qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
-            qb.push_bind(pattern.clone());
-            qb.push(" ESCAPE '\\\\' OR c.name LIKE ");
-            qb.push_bind(pattern);
-            qb.push(" ESCAPE '\\\\')");
+            // Story 7-4 / KF-005 : `c.name` migré vers FULLTEXT BOOLEAN
+            // MODE (bénéficie de l'index `ft_contacts_name`).
+            // `invoice_number` et `payment_terms` restent LIKE (formats
+            // structurés courts, peu volumineux).
+            let escaped = escape_boolean_ft(trimmed);
+            let like_pattern = format!("%{}%", escape_like(trimmed));
+            if escaped.is_empty() {
+                qb.push(" AND (COALESCE(i.invoice_number, '') LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
+                qb.push_bind(like_pattern);
+                qb.push(" ESCAPE '\\\\')");
+            } else {
+                let bool_query = format!("{escaped}*");
+                qb.push(" AND (MATCH(c.name) AGAINST(");
+                qb.push_bind(bool_query);
+                qb.push(" IN BOOLEAN MODE) OR COALESCE(i.invoice_number, '') LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
+                qb.push_bind(like_pattern);
+                qb.push(" ESCAPE '\\\\')");
+            }
         }
     }
 }
@@ -551,14 +557,27 @@ pub async fn due_dates_summary(
     if let Some(ref search) = query.search {
         let trimmed = search.trim();
         if !trimmed.is_empty() {
-            let pattern = format!("%{}%", escape_like(trimmed));
-            qb.push(" AND (COALESCE(i.invoice_number, '') LIKE ");
-            qb.push_bind(pattern.clone());
-            qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
-            qb.push_bind(pattern.clone());
-            qb.push(" ESCAPE '\\\\' OR c.name LIKE ");
-            qb.push_bind(pattern);
-            qb.push(" ESCAPE '\\\\')");
+            // Story 7-4 / KF-005 : 2e callsite (cf. T6.3). Même logique
+            // que list_by_company_paginated — `c.name` via FULLTEXT,
+            // colonnes invoice structurées en LIKE.
+            let escaped = escape_boolean_ft(trimmed);
+            let like_pattern = format!("%{}%", escape_like(trimmed));
+            if escaped.is_empty() {
+                qb.push(" AND (COALESCE(i.invoice_number, '') LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
+                qb.push_bind(like_pattern);
+                qb.push(" ESCAPE '\\\\')");
+            } else {
+                let bool_query = format!("{escaped}*");
+                qb.push(" AND (MATCH(c.name) AGAINST(");
+                qb.push_bind(bool_query);
+                qb.push(" IN BOOLEAN MODE) OR COALESCE(i.invoice_number, '') LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR COALESCE(i.payment_terms, '') LIKE ");
+                qb.push_bind(like_pattern);
+                qb.push(" ESCAPE '\\\\')");
+            }
         }
     }
 

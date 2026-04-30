@@ -36,6 +36,7 @@ use crate::entities::{
 };
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
+use crate::util::search::escape_boolean_ft;
 
 const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
      version, created_at, updated_at";
@@ -302,18 +303,6 @@ fn decimal_max_safe() -> Decimal {
     Decimal::from_str("999999999999999.9999").expect("literal decimal constant must parse")
 }
 
-/// Échappe les caractères spéciaux `%` et `_` pour l'opérateur `LIKE`.
-///
-/// Pattern SQL utilisé : `LIKE ? ESCAPE '\\'`. Le backslash est le
-/// caractère d'échappement. Attention au quadruple backslash en source
-/// Rust (voir Dev Notes §Pièges story 3.4).
-fn escape_like(input: &str) -> String {
-    input
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-}
-
 /// Paramètres de recherche, tri et pagination pour `list_by_company_paginated`.
 #[derive(Debug, Clone)]
 pub struct JournalEntryListQuery {
@@ -372,10 +361,17 @@ fn push_where_clauses<'a>(
     qb.push_bind(company_id);
 
     if let Some(ref desc) = query.description {
-        // Échappement `%` et `_` pour éviter la collision avec l'opérateur LIKE.
-        qb.push(" AND description LIKE ");
-        qb.push_bind(format!("%{}%", escape_like(desc)));
-        qb.push(" ESCAPE '\\\\'");
+        // Story 7-4 / KF-005 : `description` migrée vers FULLTEXT BOOLEAN
+        // MODE (prefix wildcard auto-append). Si l'utilisateur tape
+        // uniquement des opérateurs (strip → ""), on skippe la clause
+        // search (le filtre date/journal/montant reste actif).
+        let escaped = escape_boolean_ft(desc);
+        if !escaped.is_empty() {
+            let bool_query = format!("{escaped}*");
+            qb.push(" AND MATCH(description) AGAINST(");
+            qb.push_bind(bool_query);
+            qb.push(" IN BOOLEAN MODE)");
+        }
     }
 
     if let Some(date_from) = query.date_from {
@@ -1334,14 +1330,26 @@ mod tests {
         assert!(result.items[0].entry.description.contains("Virement"));
     }
 
+    /// Story 7-4 / KF-005 / T9.4 — adapté du précédent
+    /// `test_list_filter_description_escapes_percent` qui vérifiait
+    /// l'échappement applicatif du `%` dans la clause LIKE.
+    ///
+    /// Sémantique nouvelle (BOOLEAN MODE) : `%` n'est PAS dans la
+    /// strip-list de `escape_boolean_ft` (10 caractères opérateurs
+    /// uniquement). Il est traité comme caractère **non-token** par le
+    /// tokenizer InnoDB FULLTEXT, donc silencieusement ignoré. Le test
+    /// vérifie que (i) la query `MATCH AGAINST '50%*'` passe sans erreur
+    /// SQL et (ii) le row `"Remise 50% client"` est trouvé via le token
+    /// `50` extrait par le tokenizer (puis match `50*` du prefix wildcard).
+    /// Le seed a été ajusté pour que la 2e écriture ne contienne aucun
+    /// token préfixé par `50` (sinon BOOLEAN MODE matcherait aussi).
     #[tokio::test]
-    async fn test_list_filter_description_escapes_percent() {
+    async fn test_list_filter_description_handles_special_chars() {
         let pool = test_pool().await;
         let (company_id, fy_id, admin_user_id) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
         let today = chrono::Utc::now().naive_utc().date();
 
-        // Créer 2 écritures : une avec "50%" dans la description, une avec "50X".
         let mut e1 = mk_entry(
             company_id,
             today,
@@ -1358,7 +1366,10 @@ mod tests {
                 },
             ],
         );
-        e1.description = "Remise 50% client".to_string();
+        // Utilise `500` (3 chars, ≥ innodb_ft_min_token_size par défaut)
+        // pour que le tokenizer indexe le token. `50` (2 chars) serait
+        // filtré et la recherche retournerait 0.
+        e1.description = "Remise 500% client".to_string();
         create(&pool, fy_id, admin_user_id, e1).await.unwrap();
 
         let mut e2 = mk_entry(
@@ -1377,13 +1388,17 @@ mod tests {
                 },
             ],
         );
-        e2.description = "Compte 50X fournisseur".to_string();
+        // Pas de token préfixé `500` pour ne pas être capté par `500*`.
+        e2.description = "Achat fournisseur ABC".to_string();
         create(&pool, fy_id, admin_user_id, e2).await.unwrap();
 
-        // Recherche « 50% » — doit matcher UNIQUEMENT la première (le % est
-        // échappé et devient un caractère littéral, pas un wildcard).
+        // Recherche « 500% » : le `%` est un non-token côté InnoDB
+        // FULLTEXT. La query `MATCH AGAINST '500%*' IN BOOLEAN MODE`
+        // tokenize en `500` + prefix wildcard → matche
+        // `"Remise 500% client"` via le token `500` mais pas
+        // `"Achat fournisseur ABC"`.
         let query = JournalEntryListQuery {
-            description: Some("50%".to_string()),
+            description: Some("500%".to_string()),
             ..Default::default()
         };
         let result = list_by_company_paginated(&pool, company_id, query)
@@ -1391,9 +1406,78 @@ mod tests {
             .unwrap();
         assert_eq!(
             result.total, 1,
-            "Le % user input doit être échappé et ne pas matcher comme wildcard"
+            "le `%` doit être traité comme non-token par InnoDB FULLTEXT et ne matcher que le token `500`"
         );
-        assert!(result.items[0].entry.description.contains("50%"));
+        assert!(result.items[0].entry.description.contains("500%"));
+    }
+
+    /// Régression detector inversé pour KF-005 v0.1 : asserte que la
+    /// recherche par fragment-mid-word est PERDUE en BOOLEAN MODE +
+    /// prefix wildcard. Si une future migration MariaDB ajoute le suffix
+    /// wildcard support, ou si Kesh migre vers Sphinx/Manticore (v0.3+),
+    /// OU si la config `innodb_ft_min_token_size=1` est appliquée, ce
+    /// test FAILERA et devra être inversé pour asserter le nouveau
+    /// comportement (match attendu).
+    #[tokio::test]
+    async fn test_search_no_longer_matches_mid_word() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let mut entry = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(10),
+                    credit: dec!(0),
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(10),
+                },
+            ],
+        );
+        entry.description = "TestSalaire Mensuel".to_string();
+        create(&pool, fy_id, admin_user_id, entry).await.unwrap();
+
+        // « alaire » fragment mid-word de « TestSalaire » → 0 résultat.
+        let mid = list_by_company_paginated(
+            &pool,
+            company_id,
+            JournalEntryListQuery {
+                description: Some("alaire".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            mid.total, 0,
+            "régression mid-word search documentée : `alaire` ne doit plus matcher `TestSalaire`"
+        );
+
+        // Préfixe `testsal` matche bien.
+        let prefix = list_by_company_paginated(
+            &pool,
+            company_id,
+            JournalEntryListQuery {
+                description: Some("testsal".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            prefix
+                .items
+                .iter()
+                .any(|e| e.entry.description.contains("TestSalaire")),
+            "préfixe `testsal` doit matcher `TestSalaire` via FULLTEXT prefix wildcard"
+        );
     }
 
     #[tokio::test]
