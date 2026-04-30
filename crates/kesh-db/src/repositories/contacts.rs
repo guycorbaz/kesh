@@ -21,6 +21,7 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::contact::{Contact, ContactType, ContactUpdate, NewContact};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
+use crate::util::search::{escape_boolean_ft, escape_like};
 
 const COLUMNS: &str = "id, company_id, contact_type, name, is_client, is_supplier, \
     address, email, phone, ide_number, default_payment_terms, active, version, \
@@ -29,17 +30,6 @@ const COLUMNS: &str = "id, company_id, contact_type, name, is_client, is_supplie
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
     address, email, phone, ide_number, default_payment_terms, active, version, \
     created_at, updated_at FROM contacts WHERE id = ?";
-
-/// Échappe les caractères spéciaux pour `LIKE ? ESCAPE '\\'` (pattern
-/// Story 3.4 — voir `journal_entries.rs:315-322`). Ordre critique :
-/// backslash AVANT `%` et `_`, sinon le backslash injecté par la
-/// première passe réinitialise les passes suivantes.
-fn escape_like(input: &str) -> String {
-    input
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-}
 
 /// Snapshot JSON d'un contact pour l'audit log (Story 3.5 pattern + P8 `companyId`).
 fn contact_snapshot_json(c: &Contact) -> serde_json::Value {
@@ -167,12 +157,24 @@ fn push_where_clauses<'a>(
     if let Some(ref search) = query.search {
         let trimmed = search.trim();
         if !trimmed.is_empty() {
-            let pattern = format!("%{}%", escape_like(trimmed));
-            qb.push(" AND (name LIKE ");
-            qb.push_bind(pattern.clone());
-            qb.push(" ESCAPE '\\\\' OR email LIKE ");
-            qb.push_bind(pattern);
-            qb.push(" ESCAPE '\\\\')");
+            // Story 7-4 / KF-005 : `name` migré vers FULLTEXT BOOLEAN MODE
+            // (prefix wildcard auto-append). `email` reste LIKE car format
+            // structuré (`@`/`.` séparateurs de tokens FULLTEXT cassent
+            // les fragments du type `@gmail`).
+            let escaped = escape_boolean_ft(trimmed);
+            let email_pattern = format!("%{}%", escape_like(trimmed));
+            if escaped.is_empty() {
+                qb.push(" AND email LIKE ");
+                qb.push_bind(email_pattern);
+                qb.push(" ESCAPE '\\\\'");
+            } else {
+                let bool_query = format!("{escaped}*");
+                qb.push(" AND (MATCH(name) AGAINST(");
+                qb.push_bind(bool_query);
+                qb.push(" IN BOOLEAN MODE) OR email LIKE ");
+                qb.push_bind(email_pattern);
+                qb.push(" ESCAPE '\\\\')");
+            }
         }
     }
 }
@@ -1088,8 +1090,19 @@ mod tests {
         cleanup_test_contacts(&pool, company_id).await;
     }
 
+    /// Story 7-4 / KF-005 / T9.2 — adapté du précédent
+    /// `test_filter_escape_like_wildcard` qui vérifiait l'échappement
+    /// applicatif du `%` dans la clause LIKE.
+    ///
+    /// Sémantique nouvelle (BOOLEAN MODE) : `%` n'est PAS dans la
+    /// strip-list de `escape_boolean_ft` (10 caractères opérateurs
+    /// uniquement). Il est traité comme caractère **non-token** par le
+    /// tokenizer InnoDB FULLTEXT, donc silencieusement ignoré. Le test
+    /// vérifie que (i) la query passe sans erreur SQL et (ii) seul
+    /// `"TestContact 100% Promo"` est trouvé via le token `100` extrait
+    /// par le tokenizer (puis match `100*` du prefix wildcard).
     #[tokio::test]
-    async fn test_filter_escape_like_wildcard() {
+    async fn test_search_handles_special_chars() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
         let admin_user_id = get_admin_user_id(&pool).await;
@@ -1110,7 +1123,6 @@ mod tests {
         .await
         .unwrap();
 
-        // Rechercher exactement "100%" — sans escape le `%` serait wildcard.
         let result = list_by_company_paginated(
             &pool,
             company_id,
@@ -1124,6 +1136,65 @@ mod tests {
         .unwrap();
         assert!(result.items.iter().any(|c| c.name.contains("100% Promo")));
         assert!(!result.items.iter().any(|c| c.name.contains("Other")));
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Régression detector inversé pour KF-005 v0.1 : asserte que la recherche
+    /// par fragment-mid-word est PERDUE en BOOLEAN MODE + prefix wildcard.
+    /// Si une future migration MariaDB ajoute le suffix wildcard support,
+    /// ou si Kesh migre vers Sphinx/Manticore (v0.3+), OU si la config
+    /// `innodb_ft_min_token_size=1` est appliquée, ce test FAILERA et
+    /// devra être inversé pour asserter le nouveau comportement (match attendu).
+    #[tokio::test]
+    async fn test_search_no_longer_matches_mid_word() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        create(
+            &pool,
+            admin_user_id,
+            new_contact(company_id, "TestContact Camargo Associes"),
+        )
+        .await
+        .unwrap();
+
+        // « argo » est un fragment mid-word de « Camargo » → 0 résultat
+        // attendu (régression v0.1 documentée KF-005).
+        let mid = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("argo".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            mid.total, 0,
+            "régression mid-word search documentée : `argo` ne doit plus matcher `Camargo`"
+        );
+
+        // Préfixe `camar` matche bien (sémantique préservée).
+        let prefix = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("camar".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            prefix.items.iter().any(|c| c.name.contains("Camargo")),
+            "préfixe `camar` doit matcher `Camargo` via FULLTEXT prefix wildcard"
+        );
 
         cleanup_test_contacts(&pool, company_id).await;
     }
