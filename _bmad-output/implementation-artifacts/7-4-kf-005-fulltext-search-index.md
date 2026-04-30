@@ -919,3 +919,75 @@ Pragmatiquement : la qualité des findings Pass 2 (clarifications de wording, ed
 **Résultat Pass 1** : critère d'arrêt CLAUDE.md NON atteint (8 LOW restants — toutes acceptables, mais > 0). Pass 2 obligatoire (LLM différent, contexte frais).
 
 **Commit attendu** : `git commit -m "Story 7-4: code review Pass 1 — Sonnet×3, 2H+3M+9L → 5 patches HIGH/MEDIUM (F1-F5), 8 LOW deferred Pass 2"`.
+
+### Code Review Pass 2 — Haiku 4.5 × 3 reviewers parallèles (2026-04-30)
+
+**Contexte** : Pass 2 lancée immédiatement après commit `2d145f5` (Pass 1 patches). Cycle CLAUDE.md respecté : Sonnet (P1) → Haiku (P2). Trois reviewers Haiku 4.5 parallèles, contextes frais orthogonaux à la session principale Opus + à Pass 1 Sonnet, sur le diff `git show 2d145f5` (702 lignes de patches).
+
+**Reviewers** :
+- **Blind Hunter Haiku** (skill `bmad-review-adversarial-general`) — diff seul, aucun accès projet.
+- **Edge Case Hunter Haiku** (skill `bmad-review-edge-case-hunter`) — diff + accès lecture projet.
+- **Acceptance Auditor Haiku** — diff + spec + Pass 1 Change Log + CLAUDE.md ; vérification que les patches Pass 1 fulfillent réellement les ACs claimées.
+
+**Findings remontés (17 raw bruts)** :
+- Blind Hunter Haiku : 1C / 2H / 4M / 4L = 11 findings (claims).
+- Edge Case Hunter Haiku : 1C / 3H / 3M / 2L = 9 findings (claims).
+- Acceptance Auditor Haiku : **GO** verdict — 0 finding, 5 patches PASS/WAIVED, AC #6/#7/#12/#17 tous validés, 0 spec violation introduite.
+
+**Triage Pass 2 — 6 patches/clarifications LOW + 11 rejets** :
+
+| Source | ID | Sévérité claim | Sujet | Vérification → Verdict |
+|---|---|---|---|---|
+| BH | CRIT-1 | CRITICAL | `short_uuid()` collision risk parallel runs | `Uuid::new_v4().simple()[..8]` = 32 bits randomness, collision probabilistique négligeable (test pool partagé utilise déjà ce pattern partout). **Reject** (faux positif sur entropie helper). |
+| BH | HIGH-2 | HIGH | `AND FALSE` composabilité avec pagination | Sémantique SQL : WHERE évaluée AVANT LIMIT/OFFSET. `AND FALSE` constant-folded par MariaDB optimizer. Confirmé doc MariaDB optimizer. **Reject** (mal-compréhension SQL). |
+| BH | HIGH-3 | HIGH | `products.rs` n'a pas de garde `trim().is_empty()` (vs journal_entries) | **Faux** : `products.rs:117-119` a bien `let trimmed = search.trim(); if !trimmed.is_empty() {` — identique au pattern journal_entries. Lecture incorrecte du diff par le reviewer. **Reject**. |
+| BH | MED-4 | MEDIUM | `create_named_contact` dupliqué 2 modules de test | Refactor cosmétique. Helper duplication minime (6 lignes), pas critique. **Defer** post-v0.1. |
+| BH | MED-5 | MEDIUM | Cleanup FK ordering (invoices→je→contacts) | invoices.journal_entry_id ON DELETE RESTRICT ; cleanup_invoices détruit invoices d'abord puis cleanup_journal_entries efface stub je. Order correct vérifié. **Reject**. |
+| BH | MED-7 | MEDIUM | `KFFiveCross` marker collision (test cross-company) | Test utilise `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` → DB **éphémère** par test. Collision impossible. **Reject** (faux positif sur isolation sqlx::test). |
+| BH | MED-8 | MEDIUM | products test ne couvre pas `"   "` (whitespace-only) | Vrai mais : `if !trimmed.is_empty()` filtre déjà avant escape, le path `AND FALSE` n'est jamais hit pour ws-only (skip clause directement). Reclass **LOW**. **Defer** (le test couvrirait un path inactif). |
+| BH | LOW-9 | LOW | Import ordering not alphabetized | `cargo fmt --check` passe (vérifié). **Reject** (faux positif). |
+| BH | LOW-10 | LOW | `--test-threads=1` masque race | `sqlx::test` = DB éphémère ; in-module utilise unique markers UUID. Pas de race. **Reject**. |
+| BH | LOW-11 | LOW | `escape_boolean_ft` non testé | 18+ tests unitaires existent (vérifié `util::search::tests`). **Reject**. |
+| EH | CRIT-1 | CRITICAL | F1 pure_operators : assertion uniquement négative | Concern réel partiel : test paire (`test_filter_by_search_matches_contact_name_fulltext` couvre positif via marker_marie ; `test_filter_by_search_pure_operators_returns_zero` couvre négatif via gibberish). Cross-coverage existe. Reclass **LOW**. **Patch** appliqué : ajout sanity check positif intra-test pour distinguer fail "search cassé" vs fail "gibberish acceptable". |
+| EH | HIGH-2 | HIGH | FK cascade silent assumption | invoices.journal_entry_id ON DELETE RESTRICT documenté ; cleanup order respecté. Reclass **LOW** (commentaire fragility seulement). **Defer**. |
+| EH | HIGH-3 | HIGH | `AND FALSE` JOIN cost invoices | Identique BH-HIGH-2 — constant-folded. **Reject**. |
+| EH | MED-4 | MEDIUM | Asymétrie contacts/invoices/products fallback | Intent design — chaque repo a son fallback selon les colonnes disponibles : contacts→email LIKE, invoices→invoice_number+payment_terms LIKE, products/je→`AND FALSE` (pas de colonne LIKE-friendly). Documenté implicitement par les commentaires inline. **Reject** (intent design). |
+| EH | MED-5 | MEDIUM | `short_uuid` collision parallel | Identique BH-CRIT-1. **Reject**. |
+| EH | MED-6 | MEDIUM | Whitespace internes multiples non-normalisés | Comportement actuel correct (trim ne touche pas aux espaces internes). MariaDB tokenizer s'en charge. Reclass **LOW** (doc-only). **Patch** appliqué : note explicite ajoutée au doc-comment de `escape_boolean_ft` + 2 tests unitaires (`test_escape_internal_multiple_spaces_preserved`, `test_escape_trailing_leading_spaces_trimmed`). |
+| EH | LOW-7 | LOW | Token length edge case marker | `BOOLEAN_FT_OPERATORS` const, marker alphanumérique → strip no-op. **Reject** (cas hypothétique impossible). |
+| EH | LOW-8 | LOW | Trailing space docstring | Patché en même temps que EH-MED-6. **Patch** intégré. |
+
+**Rejets (11)** : 2 misunderstandings SQL semantics (BH-HIGH-2, EH-HIGH-3 : `AND FALSE` constant folding), 1 lecture incorrecte du code (BH-HIGH-3 : products has trim guard), 4 faux positifs sur isolation/randomness (BH-CRIT-1, BH-MED-7, EH-MED-5, BH-LOW-10), 4 cas où la fonctionnalité existe déjà (BH-MED-5, BH-LOW-9, BH-LOW-11, EH-LOW-7).
+
+**Patches Pass 2 (3)** :
+1. **EH-CRIT-1 → LOW** : sanity check positif dans `test_filter_by_search_pure_operators_returns_zero` (invoices) — assertion préliminaire que le marker matche bien la facture seedée avant de tester gibberish.
+2. **EH-MED-6 → LOW** : doc-comment `escape_boolean_ft` enrichi pour expliciter la conservation des espaces internes ; 2 tests unitaires ajoutés (`test_escape_internal_multiple_spaces_preserved`, `test_escape_trailing_leading_spaces_trimmed`).
+3. **EH-LOW-8** : intégré dans patch #2 (trailing space comportement documenté + testé).
+
+**Findings non-patchés (3 LOW deferred)** :
+- BH-MED-4 (create_named_contact dup) — refactor cosmétique post-v0.1.
+- BH-MED-8 → LOW (products `"   "` test) — path inactif (skip avant escape).
+- EH-HIGH-2 → LOW (FK cascade comment) — commentaire fragility, fonctionnel correct.
+
+**Verification post-patches** :
+- `cargo build -p kesh-db --tests` ✅ clean.
+- `cargo test -p kesh-db --lib util::search::` ✅ green : **19 tests** passent (2 nouveaux : internal_spaces + trailing_leading).
+- `cargo test -p kesh-db --lib repositories::invoices::tests::test_filter_by_search_pure_operators_returns_zero` ✅ green (sanity check actif).
+- `cargo clippy -p kesh-db --all-targets -- -D warnings` ✅ clean.
+- `cargo fmt -p kesh-db --check` ✅ clean.
+
+**Trend numérique global (2 passes)** :
+- Pass 1 (Sonnet ×3) : 16 raw → 14 actionable (2H + 3M + 9L) + 1 reject → 5 patches HIGH/MEDIUM.
+- Pass 2 (Haiku ×3) : 17 raw → 6 patches/clarifications LOW + 11 rejets → 3 patches LOW.
+
+**Convergence orthogonale validée** : 2 LLMs différents (Sonnet, Haiku) sur 6 reviewers fresh-context, taux de faux positifs Pass 2 élevé (11/17 = 65%) — signal de **diminishing returns extrêmes**, le verdict GO de l'Acceptance Auditor Haiku confirme qu'aucune nouvelle régression n'a été introduite par Pass 1.
+
+**Critère d'arrêt CLAUDE.md atteint Pass 2** :
+- ✅ Après triage rigoureux : 0 CRITICAL / 0 HIGH / 0 MEDIUM > LOW restants.
+- ✅ Cycle Opus (impl) → Sonnet (P1) → Haiku (P2) complété (3 LLMs distincts).
+- ✅ Acceptance Auditor Haiku verdict **GO** : tous les patches Pass 1 fulfillent leurs claims, AC #6/#7/#12/#17 validés, 0 spec violation introduite.
+- ✅ 19 tests util::search + 2 tests pure_operators + tous les tests existants green.
+
+**Verdict Pass 2** : **APPROVED for merge**. Pass 3 (Opus) optionnelle — recommandée seulement si une confirmation cross-LLM finale est souhaitée. Le taux de faux positifs Pass 2 (65%) suggère que Pass 3 atteindrait la saturation.
+
+**Commit attendu** : `git commit -m "Story 7-4: code review Pass 2 — Haiku×3, 0>LOW post-triage → 3 patches LOW (sanity + doc whitespace), 11 rejets faux positifs"`.

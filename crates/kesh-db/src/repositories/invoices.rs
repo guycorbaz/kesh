@@ -3255,6 +3255,10 @@ mod tests {
     /// (le fallback LIKE sur `invoice_number`/`payment_terms` est actif,
     /// mais ne matche pas un input gibberish). Vérifie l'absence de skip
     /// silencieux (qui retournerait toutes les factures de la company).
+    ///
+    /// Pass 2 polish : sanity check positif en début de test pour
+    /// distinguer un fail "search retourne 0 systématiquement" (bug grave)
+    /// d'un fail "gibberish ne matche pas" (comportement attendu).
     #[tokio::test]
     async fn test_filter_by_search_pure_operators_returns_zero() {
         let pool = test_pool().await;
@@ -3262,11 +3266,12 @@ mod tests {
         let admin_user_id = get_admin_user_id(&pool).await;
 
         let suffix = short_uuid();
+        let marker = format!("KFFiveF4Inv{suffix}");
         let contact_id = create_named_contact(
             &pool,
             company_id,
             admin_user_id,
-            &format!("TestF4Inv {suffix} SARL"),
+            &format!("TestF4Inv {marker} SARL"),
         )
         .await;
         let (inv, _) = create(
@@ -3283,6 +3288,26 @@ mod tests {
         )
         .await
         .unwrap();
+
+        // Sanity positive : le marker unique DOIT matcher la facture seedée
+        // (sinon le path FULLTEXT MATCH(c.name) est cassé et le test
+        // gibberish vacuously-pass avec 0 résultats systématiques).
+        let sanity = list_by_company_paginated(
+            &pool,
+            company_id,
+            InvoiceListQuery {
+                search: Some(marker.clone()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            sanity.items.iter().any(|i| i.id == inv.id),
+            "sanity check : search par marker `{marker}` doit matcher la facture seedée — \
+             si ça fail, le path search est cassé et les assertions gibberish ci-dessous sont vacuous"
+        );
 
         for gibberish in ["+++", "***", "()()", "~~~"] {
             let result = list_by_company_paginated(

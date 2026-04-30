@@ -66,7 +66,10 @@ const BOOLEAN_FT_OPERATORS: &[char] = &['+', '-', '>', '<', '(', ')', '~', '*', 
 /// - Caractères Unicode étendus (chinois, cyrillique, etc.) — préservés.
 ///
 /// **Comportement aux bornes** :
-/// - Whitespace en entrée : `input.trim()` est appliqué.
+/// - Whitespace en entrée : `input.trim()` est appliqué (whitespace
+///   leading/trailing). Les espaces internes multiples (`"foo  bar"`)
+///   sont **conservés tels quels** — le tokenizer InnoDB FULLTEXT
+///   les traite comme des séparateurs équivalents à un espace simple.
 /// - Payload vide après trim/strip : retourne `""`. Le caller doit
 ///   tester `if escaped.is_empty() { skip search clause }`.
 /// - Payload tokens courts (`"de"`, `"le"`) : préservé tel quel — la
@@ -253,5 +256,21 @@ mod tests {
         // L'espace n'est pas dans la strip-list — séparateur de tokens
         // côté MariaDB (sémantique optionnelle avec ranking).
         assert_eq!(escape_boolean_ft("foo bar baz"), "foo bar baz");
+    }
+
+    #[test]
+    fn test_escape_internal_multiple_spaces_preserved() {
+        // Pass 2 LOW : espaces internes multiples ne sont PAS normalisés.
+        // MariaDB tokenizer les traite comme un séparateur équivalent.
+        assert_eq!(escape_boolean_ft("foo  bar"), "foo  bar");
+        assert_eq!(escape_boolean_ft("a  b  c"), "a  b  c");
+    }
+
+    #[test]
+    fn test_escape_trailing_leading_spaces_trimmed() {
+        // Pass 2 LOW : les espaces leading/trailing sont strippés via trim,
+        // mais pas les espaces internes (cf. test ci-dessus).
+        assert_eq!(escape_boolean_ft(" foo bar "), "foo bar");
+        assert_eq!(escape_boolean_ft("\t Mar \n"), "Mar");
     }
 }
