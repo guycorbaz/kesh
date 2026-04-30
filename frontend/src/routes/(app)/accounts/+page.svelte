@@ -249,11 +249,11 @@
 	<h1 class="text-2xl font-semibold text-text">Plan comptable</h1>
 	<div class="flex items-center gap-3">
 		<label class="flex items-center gap-2 text-sm text-text-muted">
-			<input type="checkbox" bind:checked={showArchived} onchange={() => loadAccounts()} class="h-4 w-4 rounded border-border" />
+			<input type="checkbox" data-testid="account-show-archived-toggle" bind:checked={showArchived} onchange={() => loadAccounts()} class="h-4 w-4 rounded border-border" />
 			Afficher les archivés
 		</label>
 		{#if canModify()}
-			<Button onclick={openCreate}>
+			<Button onclick={openCreate} data-testid="account-create-button">
 				<Plus class="mr-2 h-4 w-4" aria-hidden="true" />
 				Nouveau compte
 			</Button>
@@ -267,16 +267,17 @@
 {:else if treeAccounts.length === 0}
 	<p class="text-sm text-text-muted">Aucun compte trouvé.</p>
 {:else}
-	<div class="border border-border rounded-lg overflow-hidden">
+	<div class="border border-border rounded-lg overflow-hidden" data-testid="account-table">
 		{#each treeAccounts as account (account.id)}
 			<div
 				class="flex items-center justify-between px-4 py-2 border-b border-border last:border-b-0 hover:bg-surface-alt transition-colors {!account.active ? 'opacity-50' : ''}"
 				style="padding-left: {16 + account.level * 24}px"
+				data-testid="account-row-{account.number}"
 			>
 				<div class="flex items-center gap-3 min-w-0">
-					<span class="font-mono text-sm text-text-muted whitespace-nowrap">{account.number}</span>
-					<span class="text-sm text-text truncate">{account.name}</span>
-					<span class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary whitespace-nowrap">
+					<span class="font-mono text-sm text-text-muted whitespace-nowrap" data-testid="account-row-{account.number}-number">{account.number}</span>
+					<span class="text-sm text-text truncate" data-testid="account-row-{account.number}-name">{account.name}</span>
+					<span class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary whitespace-nowrap" data-testid="account-row-{account.number}-type-badge">
 						{TYPE_LABELS[account.accountType]}
 					</span>
 					{#if !account.active}
@@ -285,10 +286,10 @@
 				</div>
 				{#if canModify() && account.active}
 					<div class="flex items-center gap-1 shrink-0">
-						<Button variant="ghost" size="icon-xs" onclick={() => openEdit(account)} aria-label="Modifier {account.number}">
+						<Button variant="ghost" size="icon-xs" onclick={() => openEdit(account)} aria-label="Modifier {account.number}" data-testid="account-row-{account.number}-edit-button">
 							<Pencil class="h-4 w-4" aria-hidden="true" />
 						</Button>
-						<Button variant="ghost" size="icon-xs" onclick={() => openArchive(account)} aria-label="Archiver {account.number}">
+						<Button variant="ghost" size="icon-xs" onclick={() => openArchive(account)} aria-label="Archiver {account.number}" data-testid="account-row-{account.number}-archive-button">
 							<Archive class="h-4 w-4" aria-hidden="true" />
 						</Button>
 					</div>
@@ -347,9 +348,9 @@
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="account-create-dialog-cancel">Annuler</Button>
 				</Dialog.Close>
-				<Button type="submit" disabled={createSubmitting}>
+				<Button type="submit" disabled={createSubmitting} data-testid="account-create-dialog-submit">
 					{createSubmitting ? 'Création…' : 'Créer'}
 				</Button>
 			</Dialog.Footer>
@@ -391,9 +392,9 @@
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="account-edit-dialog-cancel">Annuler</Button>
 				</Dialog.Close>
-				<Button type="submit" disabled={editSubmitting}>
+				<Button type="submit" disabled={editSubmitting} data-testid="account-edit-dialog-submit">
 					{editSubmitting ? 'Enregistrement…' : 'Enregistrer'}
 				</Button>
 			</Dialog.Footer>
@@ -412,9 +413,9 @@
 		</Dialog.Header>
 		<Dialog.Footer class="mt-4">
 			<Dialog.Close>
-				<Button variant="outline" type="button" autofocus>Annuler</Button>
+				<Button variant="outline" type="button" autofocus data-testid="account-archive-dialog-cancel">Annuler</Button>
 			</Dialog.Close>
-			<Button variant="destructive" disabled={archiveSubmitting} onclick={submitArchive}>
+			<Button variant="destructive" disabled={archiveSubmitting} onclick={submitArchive} data-testid="account-archive-dialog-confirm">
 				{archiveSubmitting ? 'Archivage…' : 'Archiver'}
 			</Button>
 		</Dialog.Footer>

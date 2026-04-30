@@ -59,11 +59,13 @@ await expect(page.getByText(/Configuration/i)).toBeVisible();
 // if the semantic role changes or multiple elements share a role
 await page.getByRole('button', { name: 'Créer' }).click();
 
-// ✅ BETTER — Combine role with data-testid for explicitness
-await page.getByRole('button', { name: 'Créer' }).first();
+// ✅ BETTER — Scope to a parent (dialog, role, testid)
+await page.getByRole('dialog').getByRole('button', { name: 'Créer' }).click();
 // OR simply use:
 await page.locator('[data-testid="create-button"]').click();
 ```
+
+> **Story 7-5 (KF-008) :** `.first()` / `.nth()` ne sont **pas** une réponse acceptable au strict-mode violation. Ils masquent l'ambiguïté au lieu de la résoudre — la première passe peut être stable mais devient flaky dès qu'un autre composant insère un élément du même rôle. Préférer **toujours** un sélecteur unique (testid ou rôle scoped à un parent).
 
 ---
 
@@ -75,8 +77,8 @@ await page.locator('[data-testid="create-button"]').click();
 // ✅ Preferred
 await page.locator('[data-testid="create-invoice-button"]').click();
 
-// Also acceptable (role + name combination)
-await page.getByRole('button', { name: 'Créer' }).first().click();
+// ✅ Acceptable (role + name combination, scoped to parent)
+await page.getByRole('dialog').getByRole('button', { name: 'Créer' }).click();
 ```
 
 ### Typing into inputs
@@ -172,9 +174,9 @@ await expect(page.getByText('admin').first()).toBeVisible();
 
 **How to fix strict mode violations:**
 
-1. Add `data-testid` to the component
-2. Use `.first()` or `.nth()` only as a last resort
-3. Combine selectors for specificity: `page.locator('table').getByText('value')`
+1. Add `data-testid` to the component (preferred)
+2. Combine selectors for specificity: `page.locator('table').getByText('value')` or `page.getByRole('dialog').getByText(...)`
+3. **Do NOT use `.first()` / `.nth()` to bypass strict-mode** — masque l'ambiguïté sans la résoudre, source de flakiness. Réserver `.first()` à la sémantique légitime « première ligne quelconque » avec un commentaire `// strict-mode safe: ...` justifiant l'intention.
 
 ---
 
@@ -256,6 +258,82 @@ await expect(page.locator('[data-testid="invoice-config-warning"]')).not.toBeVis
 await expect(page.getByText('Créer la facture')).toBeEnabled();
 await expect(page.getByText('Configuration incomplète')).not.toBeVisible();
 ```
+
+### Accounts page (Story 7-5 — KF-008)
+
+```typescript
+// ✅ Liste : conteneur + lignes par numéro de compte (clé naturelle PME)
+await expect(page.locator('[data-testid="account-table"]')).toBeVisible();
+await expect(page.locator('[data-testid="account-row-1000"]')).toBeVisible();
+await expect(page.locator('[data-testid="account-row-1000-type-badge"]')).toContainText('Actif');
+
+// ✅ Actions sur ligne : suffixe -edit-button / -archive-button scoped au numéro
+await page.locator('[data-testid="account-row-1000-edit-button"]').click();
+
+// ✅ Dialogs distincts (create / edit / archive) : suffixe pour disambiguer 3 boutons "Annuler"
+await page.locator('[data-testid="account-create-dialog-cancel"]').click();
+await page.locator('[data-testid="account-edit-dialog-cancel"]').click();
+await page.locator('[data-testid="account-archive-dialog-confirm"]').click();
+```
+
+### Homepage cards & sidebar nav
+
+```typescript
+// ✅ Cards d'accueil
+await expect(page.locator('[data-testid="homepage-card-recent-entries"]')).toBeVisible();
+await expect(page.locator('[data-testid="homepage-card-open-invoices"]')).toBeVisible();
+await expect(page.locator('[data-testid="homepage-card-bank-accounts"]')).toBeVisible();
+
+// ✅ Sidebar : testid dérivé du href (kebab-case, slash → tiret)
+//   /users → nav-link-users
+//   /invoices/due-dates → nav-link-invoices-due-dates
+await expect(page.locator('[data-testid="nav-link-users"]')).toBeVisible();
+```
+
+### Onboarding Path B
+
+```typescript
+// ✅ Boutons d'option (org type, mode, etc.) avec testid plutôt que texte traduit
+await page.locator('[data-testid="onboarding-org-type-pme"]').click();
+await page.locator('[data-testid="onboarding-org-type-association"]').click();
+
+// ✅ Bannière "Configuration incomplète" rendue dans (app)/+layout.svelte
+//    via lib/shared/components/IncompleteBanner.svelte — NE PAS confondre
+//    avec invoice-config-warning (testid distinct dans InvoiceForm.svelte).
+await expect(page.locator('[data-testid="incomplete-config-banner"]')).toBeVisible();
+```
+
+### Validation messages (formulaires)
+
+```typescript
+// ✅ Scope au dialog ouvert (la modale a un role="dialog" implicite via bits-ui)
+await expect(page.getByRole('dialog')).toContainText('au moins 12 caractères');
+await expect(page.getByRole('dialog')).toContainText('ne correspondent pas');
+
+// ✅ Toast de succès (svelte-sonner expose role="region" name="Notifications")
+await expect(page.getByLabel(/Notifications/)).toContainText(`Compte ${testNumber} créé`);
+
+// ✅ Erreur inline scoped au testid
+await expect(page.locator('[data-testid="product-form-error"]')).toContainText(/existe déjà/i);
+```
+
+## Naming Reference (par entité)
+
+| Entité | `key` row | Pattern testid type |
+|---|---|---|
+| `accounts` | numéro de compte (`1000`, `2000`) | `account-row-{number}`, `account-row-{number}-{action}-button`, `account-{action}-dialog-{verb}` |
+| `users` | `username` | `user-table`, `user-row-{username}`, `user-row-{username}-username-cell`, `user-create-button`, `current-user-badge` |
+| `homepage` | section sémantique | `homepage-card-{slug}` (recent-entries, open-invoices, bank-accounts) |
+| `sidebar nav` | href kebab | `nav-link-{href-slug}` (e.g. `nav-link-organization`, `nav-link-invoices-due-dates`) |
+| `onboarding` | type | `onboarding-org-type-{slug}` (independant, association, pme) |
+| `banners` | nature | `incomplete-config-banner`, `invoice-config-warning` (NE PAS confondre — composants distincts) |
+
+## Audit baseline (Story 7-5 — 2026-04-30)
+
+Pre-refactor : 192 brittle selectors (41 HIGH `getByText` + 151 MEDIUM `getByRole`).
+Post-refactor : 173 brittle selectors (**9 HIGH** = 8 onboarding hors scope + 1 auth.spec.ts:34 `Kesh` accepté + 164 MEDIUM `getByRole` non-ambigus).
+
+Strict-mode violations : 5 → **0**.
 
 ---
 

@@ -242,15 +242,15 @@
 		{msg('onboarding-choose-org-type', 'Type d\'organisation')}
 	</h2>
 	<div class="flex flex-col gap-4">
-		<button class={cardClass} onclick={() => chooseOrgType('Independant')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseOrgType('Independant')} disabled={onboardingState.loading} data-testid="onboarding-org-type-independant">
 			<div class="text-lg font-medium">{msg('onboarding-org-independant', 'Indépendant')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-org-independant-desc', 'Travailleur indépendant, freelance')}</div>
 		</button>
-		<button class={cardClass} onclick={() => chooseOrgType('Association')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseOrgType('Association')} disabled={onboardingState.loading} data-testid="onboarding-org-type-association">
 			<div class="text-lg font-medium">{msg('onboarding-org-association', 'Association')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-org-association-desc', 'Association à but non lucratif')}</div>
 		</button>
-		<button class={cardClass} onclick={() => chooseOrgType('Pme')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseOrgType('Pme')} disabled={onboardingState.loading} data-testid="onboarding-org-type-pme">
 			<div class="text-lg font-medium">{msg('onboarding-org-pme', 'PME')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-org-pme-desc', 'Petite et moyenne entreprise (SA, Sàrl)')}</div>
 		</button>

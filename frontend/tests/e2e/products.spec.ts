@@ -172,7 +172,8 @@ test.describe('Page catalogue — validation & erreurs', () => {
 		await page.fill('#form-name', name);
 		await page.fill('#form-price', '7.00');
 		await page.getByRole('button', { name: 'Créer' }).click();
-		await expect(page.getByText(/existe déjà|already exists/i)).toBeVisible({ timeout: 5000 });
+		// Scope au formulaire (toast Sonner et formulaire affichent tous deux le message)
+		await expect(page.locator('[data-testid="product-form-error"]')).toContainText(/existe déjà|already exists/i, { timeout: 5000 });
 		await page.getByRole('button', { name: 'Annuler' }).click();
 
 		await archiveRow(page, name);

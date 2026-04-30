@@ -632,7 +632,7 @@
 			</div>
 
 			{#if formError}
-				<p class="text-sm text-destructive">{formError}</p>
+				<p class="text-sm text-destructive" data-testid="product-form-error">{formError}</p>
 			{:else if formTouched && formValidation}
 				<p class="text-sm text-muted-foreground">{formValidation}</p>
 			{/if}

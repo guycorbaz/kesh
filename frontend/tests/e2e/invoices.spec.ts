@@ -159,10 +159,11 @@ test.describe('Factures — création brouillon', () => {
 		await row.getByRole('button').first().click();
 		await expect(page.getByRole('heading', { name: 'Facture' })).toBeVisible();
 
-		// Reload dur — l'état doit être identique
+		// Reload dur — l'état doit être identique. Scope au tbody (texte = contenu de cellule, pas
+		// un sélecteur de cible — on vérifie que la ligne reflète bien le produit/libellé saisi).
 		await page.reload();
-		await expect(page.getByText('Prestation libre')).toBeVisible();
-		await expect(page.getByText(productName)).toBeVisible();
+		await expect(page.locator('tbody')).toContainText('Prestation libre');
+		await expect(page.locator('tbody')).toContainText(productName);
 	});
 });
 

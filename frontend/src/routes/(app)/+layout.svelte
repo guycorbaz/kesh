@@ -180,6 +180,7 @@
 						<li>
 							<a
 								href={item.href}
+								data-testid={`nav-link-${item.href.replace(/^\//, '').replace(/\//g, '-') || 'home'}`}
 								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
 								style="min-height: var(--kesh-target-min-height);"
 							>
@@ -199,6 +200,7 @@
 						<li>
 							<a
 								href={item.href}
+								data-testid={`nav-link-${item.href.replace(/^\//, '').replace(/\//g, '-') || 'home'}`}
 								class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
 								style="min-height: var(--kesh-target-min-height);"
 							>
