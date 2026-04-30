@@ -111,6 +111,17 @@ Kesh supporte plusieurs sociétés par instance via un modèle multi-tenant :
 
 Chaque user est assigné à exactement une company. Le `company_id` est inclus au JWT à la connexion (story 1.5) et utilisé pour scoper tous les accès aux ressources (comptes, contacts, factures, écritures comptables, etc.).
 
+### Recherche full-text (Story 7.4)
+
+Les recherches sur les colonnes texte longues utilisent un index `FULLTEXT` MariaDB avec `MATCH AGAINST IN BOOLEAN MODE` (10×+ speedup vs `LIKE '%query%'` au-delà de ~50k lignes) :
+
+- **4 colonnes indexées** : `contacts.name`, `products.name`, `products.description`, `journal_entries.description`.
+- **LIKE conservé** sur les colonnes structurées courtes (`email`, `invoice_number`, `payment_terms`).
+- **UX prefix-search** préservée via auto-append `*` côté repository (`Mar*` matche `Marie`).
+- **Régression v0.1 documentée** : perte du mid-word search (`argo` ne matche plus `Camargo`) — accepté pour v0.1, traçable via 3 régression detectors actifs.
+
+Détails du pattern, limitations BOOLEAN MODE, runbook récupération échec migration : [docs/search-patterns.md](docs/search-patterns.md).
+
 ## Développement
 
 ### Commandes utiles
