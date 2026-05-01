@@ -159,10 +159,13 @@ test.describe('Factures — création brouillon', () => {
 		await row.getByRole('button').first().click();
 		await expect(page.getByRole('heading', { name: 'Facture' })).toBeVisible();
 
-		// Reload dur — l'état doit être identique
+		// Reload dur — l'état doit être identique. Scope à la table de lignes via testid
+		// (un autre <tbody> peut exister sur la page : tableau récap, picker produits, etc.).
 		await page.reload();
-		await expect(page.getByText('Prestation libre')).toBeVisible();
-		await expect(page.getByText(productName)).toBeVisible();
+		const linesTable = page.locator('[data-testid="invoice-lines-table"]');
+		await expect(linesTable).toBeVisible();
+		await expect(linesTable).toContainText('Prestation libre');
+		await expect(linesTable).toContainText(productName);
 	});
 });
 

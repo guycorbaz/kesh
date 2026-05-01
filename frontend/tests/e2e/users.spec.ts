@@ -38,7 +38,7 @@ test.describe('Page utilisateurs — CRUD', () => {
 		await expect(page).toHaveURL('/');
 
 		const sidebar = page.locator('nav[aria-label="Navigation principale"]');
-		await expect(sidebar.getByText('Utilisateurs')).toBeVisible();
+		await expect(sidebar.locator('[data-testid="nav-link-users"]')).toBeVisible();
 	});
 
 	test('liste des utilisateurs affichée avec tableau', async ({ page }) => {
@@ -58,8 +58,10 @@ test.describe('Page utilisateurs — CRUD', () => {
 		await loginAndGoToUsers(page);
 
 		// Ouvrir le dialog de création
-		await page.getByText('Nouvel utilisateur').click();
-		await expect(page.getByText('Créez un nouveau compte')).toBeVisible();
+		await page.locator('[data-testid="user-create-button"]').click();
+		const createDialog = page.getByRole('dialog');
+		await expect(createDialog).toBeVisible();
+		await expect(createDialog).toContainText('Créez un nouveau compte');
 
 		// Remplir le formulaire
 		const testUser = `test-${Date.now()}`;
@@ -67,38 +69,42 @@ test.describe('Page utilisateurs — CRUD', () => {
 		await page.fill('#create-password', 'MotDePasse12345');
 		await page.fill('#create-confirm', 'MotDePasse12345');
 
-		// Soumettre
-		await page.getByRole('button', { name: 'Créer' }).click();
+		// Soumettre — bouton scoped au dialog (Dialog.Footer parent + texte 'Créer')
+		await page.locator('[data-testid="user-create-dialog-submit"]').click();
 
-		// L'utilisateur doit apparaître dans le tableau
-		await expect(page.getByText(testUser)).toBeVisible({ timeout: 5000 });
+		// L'utilisateur doit apparaître dans le tableau (testid scope ligne, pas de collision avec le dialog)
+		await expect(page.locator(`[data-testid="user-row-${testUser}-username-cell"]`)).toBeVisible({ timeout: 5000 });
 	});
 
 	test('validation mot de passe trop court', async ({ page }) => {
 		await loginAndGoToUsers(page);
 
-		await page.getByText('Nouvel utilisateur').click();
+		await page.locator('[data-testid="user-create-button"]').click();
 		await page.fill('#create-username', 'test-short-pw');
 		await page.fill('#create-password', 'short');
 		await page.fill('#create-confirm', 'short');
 
-		await page.getByRole('button', { name: 'Créer' }).click();
+		await page.locator('[data-testid="user-create-dialog-submit"]').click();
 
-		// Message d'erreur de validation
-		await expect(page.getByText('au moins 12 caractères')).toBeVisible();
+		// Message d'erreur de validation (scope au dialog visible — évite vacuous pass si dialog se ferme)
+		const dialog = page.getByRole('dialog');
+		await expect(dialog).toBeVisible();
+		await expect(dialog).toContainText('au moins 12 caractères');
 	});
 
 	test('validation mots de passe non identiques', async ({ page }) => {
 		await loginAndGoToUsers(page);
 
-		await page.getByText('Nouvel utilisateur').click();
+		await page.locator('[data-testid="user-create-button"]').click();
 		await page.fill('#create-username', 'test-mismatch');
 		await page.fill('#create-password', 'MotDePasse12345');
 		await page.fill('#create-confirm', 'Différent12345!');
 
-		await page.getByRole('button', { name: 'Créer' }).click();
+		await page.locator('[data-testid="user-create-dialog-submit"]').click();
 
-		await expect(page.getByText('ne correspondent pas')).toBeVisible();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog).toBeVisible();
+		await expect(dialog).toContainText('ne correspondent pas');
 	});
 });
 
@@ -106,8 +112,11 @@ test.describe('Page utilisateurs — Erreurs', () => {
 	test('le bouton désactiver est absent pour soi-même', async ({ page }) => {
 		await loginAndGoToUsers(page);
 
-		// La ligne de l'admin connecté (avec badge "Vous") ne doit pas avoir de bouton désactiver
-		const adminRow = page.locator('tr', { has: page.getByText('Vous') });
+		// La ligne de l'admin connecté (testid stable, 'admin' = username fixe seedé par with-company)
+		// — toHaveCount(1) avant la négation : sinon `not.toBeVisible` passe vacuously si la ligne
+		// est absente du DOM (ex. seed change le username admin).
+		const adminRow = page.locator('[data-testid="user-row-admin"]');
+		await expect(adminRow).toHaveCount(1);
 		await expect(adminRow.getByLabel(/Désactiver/)).not.toBeVisible();
 	});
 });

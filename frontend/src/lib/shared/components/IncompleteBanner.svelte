@@ -9,6 +9,7 @@
 <div
 	class="flex items-center justify-between bg-blue-100 px-4 py-2 text-sm text-blue-900"
 	role="status"
+	data-testid="incomplete-config-banner"
 >
 	<span>{msg('incomplete-banner-text', 'Configuration incomplète — Terminer la configuration')}</span>
 	<a

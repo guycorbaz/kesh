@@ -245,7 +245,7 @@
 
 <div class="mb-6 flex items-center justify-between">
 	<h1 class="text-2xl font-semibold text-text">Factures</h1>
-	<Button onclick={() => goto('/invoices/new')}>
+	<Button onclick={() => goto('/invoices/new')} data-testid="invoice-create-button">
 		<Plus class="h-4 w-4" aria-hidden="true" />
 		Nouvelle facture
 	</Button>

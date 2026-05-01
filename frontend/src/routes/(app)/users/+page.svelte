@@ -271,7 +271,7 @@
 
 <div class="flex items-center justify-between mb-6">
 	<h1 class="text-2xl font-semibold text-text">Utilisateurs</h1>
-	<Button onclick={openCreate}>
+	<Button onclick={openCreate} data-testid="user-create-button">
 		<UserPlus class="mr-2 h-4 w-4" aria-hidden="true" />
 		Nouvel utilisateur
 	</Button>
@@ -294,7 +294,7 @@
 		<Table.Body>
 			{#each users as user (user.id)}
 				<Table.Row class={!user.active ? 'opacity-50' : ''} data-testid="user-row-{user.username}">
-					<Table.Cell>
+					<Table.Cell data-testid="user-row-{user.username}-username-cell">
 						{user.username}
 						{#if isCurrentUser(user)}
 							<span class="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary" data-testid="current-user-badge">
@@ -385,9 +385,9 @@
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="user-create-dialog-cancel">Annuler</Button>
 				</Dialog.Close>
-				<Button type="submit" disabled={createSubmitting}>
+				<Button type="submit" disabled={createSubmitting} data-testid="user-create-dialog-submit">
 					{createSubmitting ? 'Création…' : 'Créer'}
 				</Button>
 			</Dialog.Footer>

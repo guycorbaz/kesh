@@ -37,7 +37,7 @@
 
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
 	<!-- Widget : Dernières écritures -->
-	<div class="rounded-lg border border-border bg-white p-6 shadow-sm">
+	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-recent-entries">
 		<h3 class="text-lg font-semibold text-text">
 			{msg('homepage-entries-title', 'Dernières écritures')}
 		</h3>
@@ -56,7 +56,7 @@
 	</div>
 
 	<!-- Widget : Factures ouvertes -->
-	<div class="rounded-lg border border-border bg-white p-6 shadow-sm">
+	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-open-invoices">
 		<h3 class="text-lg font-semibold text-text">
 			{msg('homepage-invoices-title', 'Factures ouvertes')}
 		</h3>
@@ -75,7 +75,7 @@
 	</div>
 
 	<!-- Widget : Soldes comptes bancaires -->
-	<div class="rounded-lg border border-border bg-white p-6 shadow-sm">
+	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-bank-accounts">
 		<h3 class="text-lg font-semibold text-text">
 			{msg('homepage-bank-title', 'Comptes bancaires')}
 		</h3>

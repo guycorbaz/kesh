@@ -32,23 +32,23 @@ async function loginAndGoToAccounts(page: import('@playwright/test').Page) {
 test.describe('Page plan comptable — affichage', () => {
 	test('affiche le titre Plan comptable', async ({ page }) => {
 		await loginAndGoToAccounts(page);
-		await expect(page.getByText('Plan comptable')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Plan comptable', level: 1 })).toBeVisible();
 	});
 
 	test('affiche l\'arborescence des comptes avec numeros', async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
-		// Les comptes du plan PME doivent etre visibles
-		await expect(page.getByText('1000')).toBeVisible();
-		await expect(page.getByText('2000')).toBeVisible();
+		// Les comptes du plan PME doivent etre visibles (testid scope ligne)
+		await expect(page.locator('[data-testid="account-row-1000"]')).toBeVisible();
+		await expect(page.locator('[data-testid="account-row-2000"]')).toBeVisible();
 	});
 
 	test('affiche le type de compte (badge)', async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
-		// Les badges de type doivent etre presents
-		await expect(page.getByText('Actif').first()).toBeVisible();
-		await expect(page.getByText('Passif').first()).toBeVisible();
+		// Les badges de type sur les lignes 1000 (Actif) et 2000 (Passif)
+		await expect(page.locator('[data-testid="account-row-1000-type-badge"]')).toContainText('Actif');
+		await expect(page.locator('[data-testid="account-row-2000-type-badge"]')).toContainText('Passif');
 	});
 
 	test('affiche le compteur de comptes', async ({ page }) => {
@@ -61,48 +61,56 @@ test.describe('Page plan comptable — CRUD', () => {
 	test('ajout d\'un compte via dialog', async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
-		// Ouvrir le dialog de creation
-		await page.getByText('Nouveau compte').click();
-		await expect(page.getByText('Ajoutez un compte')).toBeVisible();
+		// Ouvrir le dialog de creation (description visible = dialog ouvert)
+		await page.locator('[data-testid="account-create-button"]').click();
+		const createDialog = page.getByRole('dialog');
+		await expect(createDialog).toBeVisible();
+		await expect(createDialog).toContainText('Ajoutez un compte');
 
-		// Remplir le formulaire
-		const testNumber = `9999`;
+		// Remplir le formulaire — numéro dérivé du timestamp (4 chiffres) pour éviter
+		// la pollution inter-runs (seedTestState utilise beforeAll, pas beforeEach).
+		const testNumber = `9${String(Date.now()).slice(-3)}`;
 		await page.fill('#create-number', testNumber);
 		await page.fill('#create-name', 'Compte de test E2E');
 
 		// Soumettre
-		await page.getByRole('button', { name: 'Créer' }).click();
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
 
-		// Le toast de succes doit apparaitre
-		await expect(page.getByText(`Compte ${testNumber} créé`)).toBeVisible();
+		// Le toast de succes doit apparaitre (svelte-sonner — region Notifications)
+		await expect(page.getByLabel(/Notifications/)).toContainText(`Compte ${testNumber} créé`);
 
-		// Le compte doit apparaitre dans la liste
-		await expect(page.getByText(testNumber)).toBeVisible();
-		await expect(page.getByText('Compte de test E2E')).toBeVisible();
+		// Le compte doit apparaitre dans la liste — testid scope ligne (évite collision avec le toast)
+		await expect(page.locator(`[data-testid="account-row-${testNumber}"]`)).toBeVisible();
+		await expect(page.locator(`[data-testid="account-row-${testNumber}-name"]`)).toContainText('Compte de test E2E');
 	});
 
 	test('modification d\'un compte via dialog', async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
-		// Cliquer sur le bouton modifier du premier compte visible
-		const editButton = page.getByLabel(/Modifier/).first();
+		// Cliquer sur le bouton modifier du compte 1000 (seedé actif par with-company).
+		// Garde toHaveCount(1) avant click : si seed change ou compte 1000 archivé,
+		// le bouton n'est plus rendu ({#if active}) — fail-fast plutôt que timeout opaque.
+		const editButton = page.locator('[data-testid="account-row-1000-edit-button"]');
+		await expect(editButton).toHaveCount(1);
 		await editButton.click();
 
 		// Le dialog de modification doit s'ouvrir
-		await expect(page.getByText('Le numéro n\'est pas modifiable')).toBeVisible();
+		const editDialog = page.getByRole('dialog');
+		await expect(editDialog).toBeVisible();
+		await expect(editDialog).toContainText('Le numéro n\'est pas modifiable');
 
 		// Le champ numero doit etre desactive
 		const numberField = page.locator('#edit-number');
 		await expect(numberField).toBeDisabled();
 
-		// Fermer sans modifier
-		await page.getByRole('button', { name: 'Annuler' }).click();
+		// Fermer sans modifier — testid scoped au dialog Modifier (pas de collision avec Créer/Archiver)
+		await page.locator('[data-testid="account-edit-dialog-cancel"]').click();
 	});
 
 	test('toggle afficher les archives', async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
 		// La checkbox "Afficher les archives" doit exister
-		await expect(page.getByText('Afficher les archivés')).toBeVisible();
+		await expect(page.locator('[data-testid="account-show-archived-toggle"]')).toBeVisible();
 	});
 });

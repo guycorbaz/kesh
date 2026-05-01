@@ -34,27 +34,27 @@ test.describe('Onboarding Path B', () => {
 		// Step 3: Production path
 		await page.click('button:has-text("Configurer pour la production")');
 
-		// Step 4: Org type
-		await expect(page.getByText('Indépendant')).toBeVisible();
-		await page.click('button:has-text("PME")');
+		// Step 4: Org type — testid scopé sur le bouton (titre h2 contient aussi "Type d'organisation")
+		await expect(page.locator('[data-testid="onboarding-org-type-independant"]')).toBeVisible();
+		await page.locator('[data-testid="onboarding-org-type-pme"]').click();
 
 		// Step 5: Accounting language
-		await expect(page.getByText('Langue comptable')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Langue comptable' })).toBeVisible();
 		await page.click('button:has-text("Français")');
 
 		// Step 6: Coordinates
-		await expect(page.getByText('Coordonnées')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Coordonnées' })).toBeVisible();
 		await page.fill('#coord-name', 'Ma Société SA');
 		await page.fill('#coord-address', 'Rue du Test 1, 1000 Lausanne');
 		await page.click('button:has-text("Continuer")');
 
 		// Step 7: Bank (skip)
-		await expect(page.getByText('Compte bancaire')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Compte bancaire' })).toBeVisible();
 		await page.click('button:has-text("Configurer plus tard")');
 
 		// Should be in app with blue banner
 		await expect(page).toHaveURL('/');
-		await expect(page.getByText('Configuration incomplète')).toBeVisible();
+		await expect(page.locator('[data-testid="incomplete-config-banner"]')).toBeVisible();
 	});
 
 	test('flux Path B avec banque configurée → pas de bannière bleue', async ({ page }) => {
@@ -62,7 +62,7 @@ test.describe('Onboarding Path B', () => {
 		await page.click('button:has-text("Français")');
 		await page.click('button:has-text("Expert")');
 		await page.click('button:has-text("Configurer pour la production")');
-		await page.click('button:has-text("Association")');
+		await page.locator('[data-testid="onboarding-org-type-association"]').click();
 		await page.click('button:has-text("Français")');
 		await page.fill('#coord-name', 'Mon Association');
 		await page.fill('#coord-address', 'Rue 1');
@@ -75,6 +75,6 @@ test.describe('Onboarding Path B', () => {
 
 		// Should be in app WITHOUT blue banner
 		await expect(page).toHaveURL('/');
-		await expect(page.getByText('Configuration incomplète')).not.toBeVisible();
+		await expect(page.locator('[data-testid="incomplete-config-banner"]')).not.toBeVisible();
 	});
 });

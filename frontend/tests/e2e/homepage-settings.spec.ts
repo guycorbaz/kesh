@@ -16,45 +16,46 @@ test.afterEach(async ({ page }) => {
 	await clearAuthStorage(page);
 });
 
+/** Helper : login as admin (admin/admin123 — bootstrap test). */
+async function loginAsAdmin(page: import('@playwright/test').Page) {
+	await page.goto('/login');
+	await page.fill('#username', 'admin');
+	await page.fill('#password', 'admin123');
+	await page.click('button[type="submit"]');
+	await expect(page).toHaveURL('/');
+}
+
 test.describe('Homepage', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/login');
-		await page.fill('#username', 'changeme');
-		await page.fill('#password', 'changeme');
-		await page.click('button[type="submit"]');
+		await loginAsAdmin(page);
 	});
 
 	test('affiche 3 widgets sur la page d\'accueil', async ({ page }) => {
 		await expect(page).toHaveURL('/');
-		await expect(page.getByText('Dernières écritures')).toBeVisible();
-		await expect(page.getByText('Factures ouvertes')).toBeVisible();
-		await expect(page.getByText('Comptes bancaires')).toBeVisible();
+		await expect(page.locator('[data-testid="homepage-card-recent-entries"]')).toBeVisible();
+		await expect(page.locator('[data-testid="homepage-card-open-invoices"]')).toBeVisible();
+		await expect(page.locator('[data-testid="homepage-card-bank-accounts"]')).toBeVisible();
 	});
 });
 
 test.describe('Settings', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/login');
-		await page.fill('#username', 'changeme');
-		await page.fill('#password', 'changeme');
-		await page.click('button[type="submit"]');
+		await loginAsAdmin(page);
 	});
 
 	test('page Paramètres affiche 4 sections', async ({ page }) => {
 		await page.goto('/settings');
-		await expect(page.getByText('Organisation')).toBeVisible();
-		await expect(page.getByText('Comptabilité')).toBeVisible();
-		await expect(page.getByText('Comptes bancaires')).toBeVisible();
-		await expect(page.getByText('Utilisateurs')).toBeVisible();
+		// Sections rendues comme <h2> sur la page /settings (heading scope par level + nom unique)
+		await expect(page.getByRole('heading', { level: 2, name: 'Organisation' })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 2, name: 'Comptabilité' })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 2, name: 'Comptes bancaires' })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 2, name: 'Utilisateurs' })).toBeVisible();
 	});
 });
 
 test.describe('Homepage — accessibilité', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/login');
-		await page.fill('#username', 'changeme');
-		await page.fill('#password', 'changeme');
-		await page.click('button[type="submit"]');
+		await loginAsAdmin(page);
 	});
 
 	test('axe-core sans violations sur la page d\'accueil', async ({ page }) => {
