@@ -139,7 +139,15 @@ git checkout -b story/X-Y-slug    # ou chore/..., fix/..., docs/...
 
 Pourquoi cette règle existe : sans elle, les premiers commits d'une story atterrissent sur `main` local, puis on `git checkout -b` après coup ce qui emporte les commits sur la nouvelle branche, mais laisse `main` local décalé. Après le squash-merge de la PR, `main` local pointe encore sur l'ancien commit et diverge de `origin/main`. Symptôme : `git pull` qui refuse de fast-forward, état incohérent, risque de `git reset --hard` mal ciblé.
 
-**Garde-fou outillé** : un hook `pre-commit` versionné dans `scripts/hooks/pre-commit` refuse les commits directs sur `main`/`master`. Il est activé via `git config core.hooksPath scripts/hooks` (à exécuter une fois par clone du repo). Bypass exceptionnel : `git commit --no-verify`, à justifier dans le message de commit.
+**Garde-fou outillé** : un hook `pre-commit` versionné dans `scripts/hooks/pre-commit` refuse les commits directs sur `main`/`master`. Installation (à exécuter une fois par clone du repo, et après tout update du hook) :
+
+```sh
+bash scripts/install-hooks.sh
+```
+
+Le script copie les hooks dans `.git/hooks/` (chemin par défaut, indépendant de la branche checkout — un hook activé via `core.hooksPath scripts/hooks` ne protégerait pas les branches qui ne contiennent pas encore le fichier hook, ex. `main` pré-merge).
+
+Bypass exceptionnel : `git commit --no-verify`, à justifier dans le message de commit.
 
 Branches typiques :
 - `story/X-Y-slug` — implémentation d'une story BMAD (ex. `story/7-5-kf-008-playwright-selector-fixes`).
