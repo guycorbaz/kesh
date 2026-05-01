@@ -1,0 +1,35 @@
+#!/bin/sh
+# Refuse direct commits on protected branches.
+#
+# Rationale (cf. CLAUDE.md § "Règle de branchement avant commit") :
+# tous les commits doivent passer par une branche de feature/story.
+# main reçoit du code uniquement via PR squash-mergée.
+#
+# Bypass exceptionnel : `git commit --no-verify` (à justifier dans le
+# message de commit).
+
+protected_branches="main master"
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+
+for protected in $protected_branches; do
+  if [ "$current_branch" = "$protected" ]; then
+    cat <<EOF >&2
+
+❌ Commit direct sur '$current_branch' refusé.
+
+Crée une branche de story/feature avant de commiter :
+
+    git checkout -b story/X-Y-slug    # ou chore/..., fix/..., docs/...
+    git add ...
+    git commit -m "..."
+
+Ensuite : push, PR, squash-merge, reset local.
+
+Bypass exceptionnel : git commit --no-verify (à justifier dans le message).
+
+EOF
+    exit 1
+  fi
+done
+
+exit 0
