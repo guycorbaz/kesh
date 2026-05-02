@@ -314,16 +314,40 @@ Rationale: this matches the natural dependency direction (state machine → tena
 | `fiscal_years::create / update_name / close / find_*_locked` | fiscal_years only (single table, internal tx) — `FOR UPDATE` locks pour pré-check unicité/overlap et figer le before-snapshot d'audit log. Pas de chaîne cross-table. | `kesh-db/src/repositories/fiscal_years.rs` |
 | `invoices::validate_invoice` | invoices → fiscal_years (via `find_open_covering_date`) → invoice_number_sequences → journal_entries | `kesh-db/src/repositories/invoices.rs` |
 
-### Known Risk — Tracked as KF-002-H-002
+### Known Risk — KF-002-H-002 (resolved 2026-05-03)
 
-**Issue:** `seed_demo` and `reset` use a **lock-and-release** pattern: they acquire `FOR UPDATE` only for count-validation (seed_demo) or gate-check (reset), then **commit before** the destructive sub-operation runs (`bulk_create_from_chart`, `companies::update`, `reset_demo`). The lock therefore serializes only the precondition check, NOT the side-effect. A concurrent endpoint running between commit and side-effect can leave inconsistent state visible (handled via `DbError::NotFound`/`OptimisticLockConflict` retries today). Additionally, if a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`. No deadlock-detection retry is implemented; failures surface as 500 after `innodb_lock_wait_timeout`.
+**Issue:** `seed_demo` and `reset` use a **lock-and-release** pattern: they acquire `FOR UPDATE` only for count-validation (seed_demo) or gate-check (reset), then **commit before** the destructive sub-operation runs (`bulk_create_from_chart`, `companies::update`, `reset_demo`). The lock therefore serializes only the precondition check, NOT the side-effect. A concurrent endpoint running between commit and side-effect can leave inconsistent state visible (handled via `DbError::NotFound`/`OptimisticLockConflict` retries today). Additionally, if a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`.
 
-**Mitigation (v0.1):** all current write endpoints follow the documented order. New endpoints **MUST** follow it or be added to a deny list. Under single-tenant single-user the lock-and-release race window is unreachable in practice.
+**Mitigation (v0.1):** all current write endpoints follow the documented order. New endpoints **MUST** follow it or be added to the deny list (see below).
 
-**Resolution plan (v0.2):**
-- Add a deadlock-retry middleware that catches `ER_LOCK_DEADLOCK` (1213) and retries with exponential backoff (max 3 attempts)
-- Document any endpoint that intentionally diverges from the global order
-- Add CI check that grep-detects `FOR UPDATE` patterns and verifies lock order via static analysis
+**Resolution status:**
+
+- ✅ **Deadlock-retry helper** (`crates/kesh-db/src/retry.rs`) — catches `ER_LOCK_DEADLOCK` (1213, **not** 1205 `lock_wait_timeout`) and retries with exponential backoff (50 → 100 ms between attempts 1↔2 and 2↔3; max 3 attempts → ≈ 150 ms added latency worst case). Used on `finalize` via `retry_with(...)` wrapper. Closure must be idempotent (re-runs full BEGIN → COMMIT). [Fix issue #43]
+- ⏳ **CI lint** (grep-detect `FOR UPDATE` + verify global order) — deferred to a future sprint (effort vs. value tradeoff: review discipline + Pattern 5 doc covers it for now).
+- ✅ **Deny list of divergent endpoints** — none currently. Any new endpoint that intentionally diverges MUST add a row in the table below with rationale.
+
+**Deny list (endpoints with intentionally divergent lock ordering):**
+
+| Endpoint | Reason | Mitigation |
+|---|---|---|
+| *(none)* | — | — |
+
+**How to use the retry helper for new endpoints:**
+
+```rust
+use kesh_db::retry::{is_deadlock_error, retry_with, DEFAULT_MAX_DEADLOCK_ATTEMPTS};
+
+retry_with(
+    DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+    |err: &AppError| matches!(err, AppError::Database(db) if is_deadlock_error(db)),
+    || {
+        let pool = state.pool.clone();
+        async move { handler_inner(&pool, /* args */).await }
+    },
+).await
+```
+
+Required: `handler_inner` must be **idempotent** under retry (same outcome regardless of how many times it's called with the same args). Typical patterns: idempotent `INSERT IGNORE`, conditional `UPDATE ... WHERE version = ?` (optimistic lock), early-return on already-finalized state. **Non-idempotent operations** (counters, append-only audit log inserts) require careful inspection — prefer wrapping a smaller transactional core inside the closure.
 
 ### When to Use
 

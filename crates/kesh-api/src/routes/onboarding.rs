@@ -530,11 +530,52 @@ pub async fn skip_bank(
 /// This handler acquires three sequential FOR UPDATE locks in the order
 /// `onboarding_state → companies → accounts`. New endpoints with multiple
 /// locks MUST follow the same order to avoid cross-table deadlocks.
-/// Tracking issue: KF-002-H-002 (deadlock-retry middleware planned for v0.2).
+///
+/// KF-002-H-002 (#43) closed 2026-05-03 : la fonction est wrappée dans
+/// `retry_with` (kesh-db) qui catch ER_LOCK_DEADLOCK (1213) et rejoue la
+/// closure jusqu'à `DEFAULT_MAX_DEADLOCK_ATTEMPTS` fois (3) avec backoff
+/// exponentiel. Les business errors (`OnboardingStepAlreadyCompleted`,
+/// `Validation`, etc.) ne sont PAS retryables et passent immédiatement.
 pub async fn finalize(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+
+    // KF-002-H-002 (#43) : la closure ci-dessous est rappelée intégralement
+    // si MariaDB rollback la tx pour deadlock (cycle de locks détecté avec
+    // une autre tx). Le rollback est implicite côté DB ; côté Rust on ne
+    // garde rien — chaque retry refait `pool.begin()`. Les captures clonées
+    // (pool, current_user) garantissent que la closure est `Fn` et non
+    // `FnOnce`.
+    retry_with(
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &AppError| matches!(err, AppError::Database(db_err) if is_deadlock_error(db_err)),
+        || {
+            let pool = state.pool.clone();
+            let current_user = current_user.clone();
+            async move { finalize_inner(&pool, &current_user).await }
+        },
+    )
+    .await
+    .map(Json)
+}
+
+/// Logique transactionnelle de `finalize()`. Extraite pour être enveloppable
+/// par `retry_with` — la closure de retry doit pouvoir relancer toute la tx
+/// (BEGIN → SELECT FOR UPDATE → … → COMMIT) après un rollback déclenché par
+/// MariaDB sur deadlock.
+///
+/// **Idempotence requise** : la fonction est rappelée à l'identique en cas
+/// de retry. C'est sûr ici car (a) le `step_completed == 8` court-circuite
+/// proprement (return Ok early), (b) `INSERT IGNORE` sur invoice_settings
+/// et vat_rates est idempotent, (c) `create_if_absent_in_tx` sur fiscal_year
+/// est idempotent, (d) l'`UPDATE` final ne se déclenche que si step était
+/// 7 → bumpe à 8 ou laisse no-op si quelqu'un d'autre a déjà bumpé.
+async fn finalize_inner(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+) -> Result<OnboardingResponse, AppError> {
     use kesh_db::errors::map_db_error;
 
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
@@ -542,7 +583,7 @@ pub async fn finalize(
     // 2. Check state is still at step 7 or 8 (prevents TOCTOU on onboarding progression)
     // 3. Lock company row (prevents deletion during finalize)
     // 4. Proceed with insert_with_defaults() with guaranteed exclusive access
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let onboarding = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
         "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
@@ -571,7 +612,7 @@ pub async fn finalize(
     // have changed it before we release.
     if onboarding.step_completed == 8 {
         best_effort_rollback(tx).await;
-        return Ok(Json(onboarding.into()));
+        return Ok(onboarding.into());
     }
 
     // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
@@ -718,7 +759,7 @@ pub async fn finalize(
     };
 
     tx.commit().await.map_err(map_db_error)?;
-    Ok(Json(updated.into()))
+    Ok(updated.into())
 }
 
 // --- Helpers ---

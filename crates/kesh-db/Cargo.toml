@@ -13,6 +13,14 @@ serde_json = "1"
 thiserror = "2"
 rust_decimal = { version = "1.41", features = ["serde-str", "maths"] }
 tracing = "0.1"
+# KF-002-H-002 (#43) : `tokio::time::sleep` pour le backoff entre retries
+# de deadlock dans `retry::retry_on_deadlock`. La feature `time` est nécessaire
+# car elle n'est pas systématiquement activée par les autres crates qui
+# utilisent tokio (sqlx `runtime-tokio-rustls` n'active que ce dont elle a
+# besoin pour son driver, pas `time`). `default-features = false` minimise
+# le scope ajouté ; cargo unifie les features avec sqlx via la version
+# semver `"1"` partagée entre tout le workspace.
+tokio = { version = "1", default-features = false, features = ["time"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
