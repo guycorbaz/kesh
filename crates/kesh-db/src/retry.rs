@@ -30,9 +30,10 @@ const MARIADB_DEADLOCK_ERROR_CODE: u16 = 1213;
 /// Choix conservateur :
 /// - Sous charge nominale, la probabilité de deadlock répété est très
 ///   faible (chaque retry attend que les autres tx finissent).
-/// - 3 tentatives ≈ 350 ms de latence pire cas (50 + 100 + 200 ms backoff)
-///   AVANT que l'erreur surface au client — acceptable vs. un 500 sur
-///   `innodb_lock_wait_timeout`.
+/// - 3 tentatives → 2 sleeps (entre 1↔2 et 2↔3) ≈ 150 ms de latence pire
+///   cas ajoutée (50 + 100 ms backoff). Le 3e essai n'est suivi d'aucun
+///   sleep — le helper return Err si l'attempt 3 échoue. Acceptable vs.
+///   un 500 sur `innodb_lock_wait_timeout` (50 s).
 /// - Au-delà de 3, le risque d'une boucle qui empile la latence dépasse
 ///   la valeur ajoutée du retry.
 pub const DEFAULT_MAX_DEADLOCK_ATTEMPTS: u32 = 3;
@@ -44,11 +45,29 @@ pub const DEFAULT_MAX_DEADLOCK_ATTEMPTS: u32 = 3;
 /// (la durée typique d'une tx FOR UPDATE est < 50 ms).
 const INITIAL_BACKOFF_MS: u64 = 50;
 
+/// Borne supérieure sur le backoff (M-002 review remediation).
+///
+/// L'API publique `retry_with` accepte `max_attempts: u32`. Sans cap, un
+/// caller exotique avec `max_attempts >= 65` produirait `2u64.pow(63+)`
+/// → panic en debug, sleep absurde en release (jusqu'à >292 ans). Cette
+/// borne saturente l'attente à 30 secondes, ce qui dépasse déjà
+/// `innodb_lock_wait_timeout` par défaut (50 s) — au-delà ça n'a plus
+/// de sens, mieux vaut surface l'erreur au caller.
+const MAX_BACKOFF_MS: u64 = 30_000;
+
 /// Détermine si une `sqlx::Error` est un deadlock MariaDB (code 1213).
 ///
 /// Les autres erreurs DB (contrainte unique, FK, syntax, etc.) ne sont PAS
 /// considérées comme retryable — un retry sur ces erreurs masquerait des
-/// bugs réels.
+/// bugs réels. **Note** : MariaDB surface le deadlock via le numéro
+/// d'erreur 1213, jamais via le SQLSTATE ANSI `40001` seul. On match donc
+/// strictement sur `MySqlDatabaseError::number()` pour éviter les faux
+/// positifs (cf. L-004 review).
+///
+/// **Hors scope** : `ER_LOCK_WAIT_TIMEOUT` (code 1205) n'est PAS retried.
+/// Ce code surface après `innodb_lock_wait_timeout` (50 s) — différent
+/// d'un cycle de deadlock détecté instantanément. Un retry sur 1205
+/// risquerait simplement de re-déclencher la même attente.
 fn is_deadlock_sqlx(err: &sqlx::Error) -> bool {
     err.as_database_error()
         .and_then(|db_err| db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
@@ -128,7 +147,16 @@ where
                 if !should_retry(&err) || attempt >= attempts {
                     return Err(err);
                 }
-                let backoff = Duration::from_millis(INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1));
+                // M-002 review remediation : `2u64.pow(attempt-1)` panic en
+                // debug pour `attempt >= 65` ; en release ça wrap silencieusement.
+                // Saturating shift + cap à `MAX_BACKOFF_MS` rend l'API safe pour
+                // tout `max_attempts: u32` sans changer le comportement réel
+                // dans la plage utile (DEFAULT=3 → 50, 100 ms).
+                let multiplier = 1u64.checked_shl(attempt - 1).unwrap_or(u64::MAX);
+                let backoff_ms = INITIAL_BACKOFF_MS
+                    .saturating_mul(multiplier)
+                    .min(MAX_BACKOFF_MS);
+                let backoff = Duration::from_millis(backoff_ms);
                 tracing::debug!(
                     target: "kesh_db::retry",
                     attempt,

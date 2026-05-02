@@ -322,7 +322,7 @@ Rationale: this matches the natural dependency direction (state machine → tena
 
 **Resolution status:**
 
-- ✅ **Deadlock-retry helper** (`crates/kesh-db/src/retry.rs`) — catches `ER_LOCK_DEADLOCK` (1213) and retries with exponential backoff (50 → 100 → 200 ms; max 3 attempts). Used on `finalize` via `retry_with(...)` wrapper. Closure must be idempotent (re-runs full BEGIN → COMMIT). [Fix issue #43]
+- ✅ **Deadlock-retry helper** (`crates/kesh-db/src/retry.rs`) — catches `ER_LOCK_DEADLOCK` (1213, **not** 1205 `lock_wait_timeout`) and retries with exponential backoff (50 → 100 ms between attempts 1↔2 and 2↔3; max 3 attempts → ≈ 150 ms added latency worst case). Used on `finalize` via `retry_with(...)` wrapper. Closure must be idempotent (re-runs full BEGIN → COMMIT). [Fix issue #43]
 - ⏳ **CI lint** (grep-detect `FOR UPDATE` + verify global order) — deferred to a future sprint (effort vs. value tradeoff: review discipline + Pattern 5 doc covers it for now).
 - ✅ **Deny list of divergent endpoints** — none currently. Any new endpoint that intentionally diverges MUST add a row in the table below with rationale.
 
