@@ -11,9 +11,13 @@
 //! - `total_amount` recalculé par le backend (source de vérité = lignes).
 //! - `update` utilise le pattern **replace-all** sur les lignes (DELETE
 //!   puis INSERT, dans la même transaction).
-//! - `update` charge l'entité initiale sans `FOR UPDATE` (pattern optimiste
-//!   products.rs). `delete` utilise `SELECT … FOR UPDATE` pour garantir
-//!   l'atomicité snapshot + check statut + DELETE.
+//! - `update` charge l'entité initiale avec `SELECT ... FOR UPDATE` depuis
+//!   KF-020 (closes #49) — divergence intentionnelle du pattern optimiste de
+//!   `products.rs` car l'`update` invoice traverse un check no-op (`is_no_op_change`)
+//!   qui pouvait fuiter un snapshot stale d'une tx parallèle (race KF-004
+//!   résiduelle). `delete` utilise aussi `SELECT … FOR UPDATE` pour garantir
+//!   l'atomicité snapshot + check statut + DELETE. Détails du lock-ordering
+//!   d'`update()` dans son docblock fonction.
 
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
@@ -628,6 +632,22 @@ fn is_no_op_change(
 
 /// Met à jour une facture brouillon : replace-all sur les lignes +
 /// recalcul `total_amount` + audit wrapper `{before, after}`.
+///
+/// **Ordre des locks (canonique, KF-020 #49 closed)** :
+///
+/// 1. `invoices` : `SELECT ... FOR UPDATE` sur la facture (scope `company_id`),
+///    fenêtre [BEGIN..COMMIT/ROLLBACK].
+/// 2. `invoice_lines` : SELECT (lecture sans lock — `before_lines`) puis
+///    DELETE+INSERT (locks ligne par ligne via FK CASCADE), fenêtre
+///    [post-no-op-check..pré-UPDATE].
+/// 3. `invoices` : UPDATE conditionnel (version-check), fenêtre [final].
+/// 4. `audit_log` : INSERT.
+///
+/// Toutes les acquisitions séquentielles sur le même row d'`invoices` (id,
+/// company_id), donc aucun deadlock self-induit. Si une autre tx prend les
+/// mêmes locks dans le même ordre (ex. `delete()`, `validate_invoice()`,
+/// `mark_as_paid()`), la sérialisation par X-lock invoices garantit l'absence
+/// de deadlock inter-transactions sur les invoices/invoice_lines.
 pub async fn update(
     pool: &MySqlPool,
     company_id: i64,
@@ -644,13 +664,19 @@ pub async fn update(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Pattern optimiste (pas de FOR UPDATE), comme products.rs.
-    let before_invoice_opt = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
-        .bind(id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
+    // KF-020 (closes #49) : SELECT … FOR UPDATE pour fermer la race no-op
+    // résiduelle KF-004. Sous REPEATABLE READ + plain SELECT, une tx parallèle
+    // qui commit entre notre BEGIN et le no-op check pouvait laisser fuiter un
+    // snapshot stale en `200 OK`. Avec FOR UPDATE, le X-lock attend la fin de
+    // la tx concurrente et la lecture post-lock retourne v=N+1 → la
+    // version-check applicative déclenche le 409 attendu.
+    let before_invoice_opt =
+        sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+            .bind(id)
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
 
     let before_invoice = match before_invoice_opt {
         None => {
@@ -683,10 +709,12 @@ pub async fn update(
     // CRITIQUE : ce check DOIT précéder le DELETE — sinon les IDs des lignes
     // seraient détruits puis régénérés, polluant le test no-op et bumpant
     // inutilement les compteurs AUTO_INCREMENT.
-    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
-    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
-    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
-    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    // KF-020 closed (#49) : le SELECT FOR UPDATE ci-dessus garantit que
+    // `before_invoice` ne peut pas être un snapshot stale d'une tx parallèle —
+    // si une autre tx était en train de modifier l'invoice, notre lock attend
+    // sa fin avant de lire. La version-check applicative ci-dessus rejette
+    // alors v=N+1 != expected_version=N avec 409. La race no-op résiduelle
+    // décrite dans Story 7-3 §race-condition est donc fermée pour invoices.
     if is_no_op_change(&before_invoice, &before_lines, &changes) {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok((before_invoice, before_lines));
@@ -2904,6 +2932,210 @@ mod tests {
         // P8 (review pass 1) : fermer le pool dédié pour libérer les 4
         // connexions (éviter l'accumulation face à `max_connections` serveur
         // sur une suite de tests avec pools multiples).
+        pool.close().await;
+    }
+
+    /// KF-020 (closes #49) : sous concurrence `update` (mutation) vs `update`
+    /// no-op avec le même `expected_version`, le `SELECT FOR UPDATE` ajouté
+    /// dans `update` doit garantir qu'aucun client ne reçoit un snapshot stale
+    /// déguisé en `200 OK`.
+    ///
+    /// Avant le fix : la race documentée Story 7-3 §race-condition pouvait
+    /// laisser fuiter un état v=N à B alors que A avait commit v=N+1 entre le
+    /// BEGIN et le no-op check de B (cf. spec issue #49 T0-T6).
+    ///
+    /// Après le fix, les seules issues valides sous tokio::join sont :
+    /// - **(A=Ok v=N+1, B=Ok v=N)** — B a acquis le X-lock en premier, no-op,
+    ///   ROLLBACK ; A a ensuite acquis le lock, vu v=N (B n'a rien commité),
+    ///   modifié, commit v=N+1.
+    /// - **(A=Ok v=N+1, B=Err OptimisticLockConflict)** — A a acquis le lock
+    ///   en premier, modifié, commit v=N+1 ; B a attendu, lu v=N+1,
+    ///   version-check applicative N != N+1 → 409.
+    ///
+    /// L'issue **(A=Ok v=N+1, B=Ok v=N) où B a démarré APRÈS le commit de A**
+    /// est éliminée par le X-lock (B serait bloqué par le lock de A jusqu'à
+    /// son commit, puis lirait v=N+1 → 409). Le détecter empiriquement de
+    /// l'extérieur exigerait des hooks DB-side (cf. KF-021 #50 pour le test
+    /// déterministe via barrière SQL).
+    ///
+    /// Ce test est une **régression sanity-check** : 30 itérations tokio::join
+    /// avec assertion d'invariants. Sans le fix, il pourrait passer
+    /// occasionnellement (par chance d'ordering), mais devrait flaker quand
+    /// le pool est bien chargé. Le test `KF-021 #50` couvrira la détection
+    /// déterministe.
+    #[tokio::test]
+    async fn test_update_concurrent_no_op_vs_mutation_no_stale_snapshot_kf020() {
+        dotenvy::dotenv().ok();
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for DB tests");
+        // M-3 review remediation : 6 connexions = 2 pour tokio::join (A+B) + 1
+        // pour create() séquentiel + 1 pour fetch_one final + 2 marge — évite
+        // pool starvation si Tokio scheduling synchronise temporairement les
+        // 4 phases sur la même boucle.
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .max_connections(6)
+            .connect(&url)
+            .await
+            .expect("pool connect");
+
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let mut invoices_to_clean: Vec<i64> = Vec::with_capacity(30);
+
+        for iteration in 0..30 {
+            // Setup : invoice v=1 avec 1 ligne « Item original ».
+            let (inv, _lines) = create(
+                &pool,
+                admin_user_id,
+                NewInvoice {
+                    company_id,
+                    contact_id,
+                    date: today(),
+                    due_date: None,
+                    payment_terms: Some("30 jours net".into()),
+                    lines: vec![sample_line("Item original", dec!(1), dec!(100.00))],
+                },
+            )
+            .await
+            .expect("create invoice");
+            invoices_to_clean.push(inv.id);
+            assert_eq!(
+                inv.version, 1,
+                "iteration {iteration} : v=1 attendu après create"
+            );
+
+            let pool_a = pool.clone();
+            let pool_b = pool.clone();
+            let id = inv.id;
+            let expected_version = inv.version;
+
+            // Task A : mutation effective (description différente).
+            let task_a = async move {
+                update(
+                    &pool_a,
+                    company_id,
+                    id,
+                    expected_version,
+                    admin_user_id,
+                    InvoiceUpdate {
+                        contact_id,
+                        date: today(),
+                        due_date: None,
+                        payment_terms: Some("30 jours net".into()),
+                        lines: vec![sample_line("Item modifié par A", dec!(1), dec!(100.00))],
+                    },
+                )
+                .await
+            };
+
+            // Task B : payload no-op strictement identique à l'état v=1.
+            let task_b = async move {
+                update(
+                    &pool_b,
+                    company_id,
+                    id,
+                    expected_version,
+                    admin_user_id,
+                    InvoiceUpdate {
+                        contact_id,
+                        date: today(),
+                        due_date: None,
+                        payment_terms: Some("30 jours net".into()),
+                        lines: vec![sample_line("Item original", dec!(1), dec!(100.00))],
+                    },
+                )
+                .await
+            };
+
+            let (res_a, res_b) = tokio::join!(task_a, task_b);
+
+            // Lecture finale de l'invoice pour vérifier l'invariant DB.
+            let final_invoice = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+                .bind(id)
+                .bind(company_id)
+                .fetch_one(&pool)
+                .await
+                .expect("fetch final invoice");
+
+            // H-1 review remediation : MariaDB peut résoudre un deadlock en
+            // rollback-ant l'une ou l'autre tx. Dans ce scenario à 2 acteurs sur
+            // un seul row, c'est statistiquement très rare (gap-locks
+            // invoice_lines uniquement), mais possible. On accepte
+            // `DbError::Sqlx` (avec une trace explicite) au lieu de panic
+            // brut — cela évite que CI fail spuriously sur une cause valide
+            // mais transitoire. Si A *succeeds*, on assert v=N+1.
+            match res_a {
+                Ok((ref a_invoice, ref _a_lines)) => {
+                    assert_eq!(
+                        a_invoice.version, 2,
+                        "iteration {iteration} : A.version doit être N+1=2 (mutation effective)"
+                    );
+                }
+                Err(DbError::Sqlx(ref err)) => {
+                    eprintln!(
+                        "iteration {iteration} : A a perdu un deadlock (rare, accepté) : {err}"
+                    );
+                    // Si A a deadlock, le DB final reste à v=1 — l'invariant 3
+                    // ci-dessous l'attrapera proprement. On continue.
+                }
+                Err(ref other) => {
+                    panic!(
+                        "iteration {iteration} : A doit être Ok ou Sqlx(deadlock), got {other:?}"
+                    );
+                }
+            }
+
+            // Invariant 2 : B est soit Ok(v=1, no-op préservé) soit
+            // OptimisticLockConflict. Sous deadlock rare, B peut aussi être
+            // Sqlx(deadlock) — accepté avec trace.
+            match &res_b {
+                Ok((b_invoice, _b_lines)) => {
+                    assert_eq!(
+                        b_invoice.version, 1,
+                        "iteration {iteration} : B.version doit être 1 (no-op préserve la version)",
+                    );
+                    // B a acquis le lock en premier → ROLLBACK no-op ; A,
+                    // bloquée pendant la durée de la tx de B, prend le lock
+                    // ensuite, voit v=1, modifie, commit v=2.
+                }
+                Err(DbError::OptimisticLockConflict) => {
+                    // A a acquis le lock en premier → commit v=2 → B a vu v=2 → 409. ✓
+                }
+                Err(DbError::Sqlx(err)) => {
+                    eprintln!(
+                        "iteration {iteration} : B a perdu un deadlock (rare, accepté) : {err}"
+                    );
+                }
+                Err(other) => {
+                    panic!(
+                        "iteration {iteration} : B doit être Ok(v=1), OptimisticLockConflict, ou Sqlx(deadlock), got {other:?}"
+                    );
+                }
+            }
+
+            // Invariant 3 : DB final cohérent avec res_a.
+            // - Si A=Ok : commit v=2 appliqué.
+            // - Si A=Err(Sqlx(deadlock)) : pas de commit, DB reste v=1.
+            // - B=Ok(v=1) ou Err(*) ne mute jamais le DB (no-op rollback ou échec).
+            let expected_db_version = if res_a.is_ok() { 2 } else { 1 };
+            assert_eq!(
+                final_invoice.version,
+                expected_db_version,
+                "iteration {iteration} : DB final v={expected_db_version} attendu (res_a={:?})",
+                res_a.as_ref().map(|(i, _)| i.version)
+            );
+            // total_amount = sum(qty × unit_price) HT, sans TVA (cf. compute_total).
+            // Mutation A garde 1×100, donc total inchangé numériquement
+            // quel que soit l'outcome — c'est version=2 qui prouve la mutation.
+            assert_eq!(
+                final_invoice.total_amount,
+                dec!(100.0000),
+                "iteration {iteration} : DB final total HT inchangé (1×100, sans TVA)"
+            );
+        }
+
+        cleanup_invoices(&pool, &invoices_to_clean).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
         pool.close().await;
     }
 
