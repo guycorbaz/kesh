@@ -7,10 +7,15 @@
 //! - AC #23 : no-op suivi d'un vrai conflit (modification effective avec
 //!   version stale) renvoie toujours 409 — le fix ne masque pas les vrais
 //!   conflits.
-//! - AC #29 : sous concurrence, si une mutation parallèle commit pendant le
-//!   no-op check, le client no-op reçoit son snapshot stale (200, version
-//!   inchangée). Comportement v0.1 documenté ; suivi via issue follow-up
-//!   (cf. Story 7-3 §race-condition).
+//! - AC #29 : sous concurrence, comportement initial v0.1 (snapshot stale
+//!   `200 OK` possible) **fermé par KF-020 (#49) 2026-05-02** — `invoices::update`
+//!   utilise maintenant `SELECT ... FOR UPDATE` (cf. test concurrent
+//!   `test_update_concurrent_no_op_vs_mutation_no_stale_snapshot_kf020` dans
+//!   `crates/kesh-db/src/repositories/invoices.rs`). Le test sequential
+//!   ci-dessous (`no_op_with_parallel_mutation_returns_409_when_sequential`)
+//!   reste pertinent pour les **autres** entités variant A (contacts,
+//!   products, etc.) qui n'ont pas FOR UPDATE — voir KF-021 #50 pour le test
+//!   déterministe inter-entités.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
