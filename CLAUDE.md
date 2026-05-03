@@ -62,6 +62,52 @@ BMAD module config: `_bmad/bmm/config.yaml` — defines project name, user name,
 - **Testing** — Test everything that can be tested. Unit tests for all business logic (especially the accounting engine, VAT calculations, and financial computations). Integration tests for parsers (CAMT.053, QR Bill, pain.001).
 - **E2E Testing** — Use Playwright for all end-to-end tests. Each user journey from the PRD maps to a Playwright test scenario.
 
+## Test Locally First
+
+**Règle « Test Locally First »** : avant chaque `git push` qui ouvre ou met à jour une PR, exécuter localement la même série de checks que la CI. La CI rouge sur un détail rattrapable localement (ex. `cargo fmt --check`) coûte un cycle de revue + re-run + cache invalidé. Le coût local est de l'ordre de la minute si le workspace est chaud.
+
+**Carry-forward Epic 6 retro** (2026-04-20) — codifié 2026-05-03 dans le prep sprint Epic 8, après la PR #66 retombée rouge sur `cargo fmt --check` (long-line dans `bank_imports.rs`, fix trivial mais coûte un cycle CI complet).
+
+### Backend (Rust)
+
+À lancer depuis la racine du repo. Ces 4 checks sont **exactement** ceux de `Backend (Rust)` dans `.github/workflows/ci.yml`.
+
+```sh
+cargo fmt --all -- --check
+cargo build --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+Note : la CI utilise `cargo test --workspace -j1 -- --test-threads=1` pour serializer les tests d'intégration DB. En local sans MariaDB démarré, `cargo test --workspace` (parallèle) suffit pour couvrir les tests unitaires sans I/O ; lancer le mode serial uniquement si la modif touche `kesh-db` ou les tests d'intégration.
+
+### Frontend (Svelte)
+
+À lancer depuis `frontend/`. Mêmes étapes que `Frontend (Svelte)` dans la CI.
+
+```sh
+cd frontend
+npm run check
+npm run lint-i18n-ownership
+npm run test:unit
+npm run build
+```
+
+### E2E (Playwright)
+
+**Pas exécuté par la CI principale** (cf. `ci.yml`) — donc d'autant plus critique en local si la modif touche le frontend ou les routes API consommées par les pages.
+
+```sh
+cd frontend
+npm run test:e2e
+```
+
+Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
+
+### Quand sauter
+
+Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable. Pour ces commits, la CI elle-même est généralement no-op (pas de Rust ni de TypeScript modifié → cache hit instantané).
+
 ## Review Iteration Rule
 
 **Règle de remédiation des revues (code review et spec validate)** :
@@ -87,6 +133,21 @@ Cette règle s'applique à :
 - Toute revue adversariale similaire où le budget LLM le permet
 
 **Exception** : si un finding `MEDIUM+` est explicitement reclassé en **dette technique documentée** (dans une section `Security debt` / `Performance debt` / équivalente du story file ou des Dev Notes) avec un propriétaire et une story de remédiation planifiée, il compte comme « résolu » pour cette itération.
+
+### Règle de splitting préventif
+
+**Si une story qui n'est pas encore en spec validate satisfait l'un de ces deux critères, la splitter en sous-stories avant de lancer `bmad-create-story`** :
+
+- **Scope cross-cutting** : la story touche **plus de 5 modules** distincts (crates Rust, packages npm, ou modules métier de premier niveau type `kesh-core/accounting`, `kesh-api/routes/invoices`, `frontend/src/features/invoices`).
+- **Profondeur d'incertitude** : `bmad-create-story validate` boucle au-delà de **4 passes adversariales** sans converger sur 0 finding > LOW.
+
+Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un seul mental-model adversarial fiable. Les régressions introduites par les patches d'une passe N deviennent invisibles aux passes N+1 (saturation contextuelle) et finissent par être détectées seulement post-merge en code review ou pire, en prod.
+
+**Précédent : Story 7-1** (KF-002 audit + multi-tenant scoping refactor) — 4 passes spec validate Opus/Sonnet/Haiku/Opus avant convergence, scope étalé sur 7+ modules (`kesh-core`, `kesh-db`, `kesh-api/routes/{invoices,journal_entries,companies,...}`). Lesson rétro Epic 7 : avec un split en 7-1a (audit/baseline) + 7-1b (scoping pattern) + 7-1c (rollout par module), chaque sous-story aurait pu converger en ≤ 2 passes.
+
+**Comment splitter** : dégager d'abord un story-zero qui pose le **pattern** (helper, type, helper test) sur 1-2 modules pilotes, puis enchaîner des sous-stories de **rollout** strictement mécaniques (apply pattern aux N-2 modules restants). La sous-story rollout est revue au file-by-file plutôt qu'en passes adversariales globales.
+
+**Exception** : si un *split forcé* introduit des cycles de dépendance Cargo ou des merges intermédiaires impossibles à tester en isolation, garder la story unique et documenter explicitement la dérogation dans le story file (section `Dérogation règle de splitting` avec justification + accepted risk).
 
 ## Issue Tracking Rule
 
