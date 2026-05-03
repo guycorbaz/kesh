@@ -111,7 +111,10 @@ mod tests {
     fn from_owned_imported_transaction() {
         let tx = fixture();
         let draft: BankTransactionDraft = tx.into();
-        assert_eq!(draft.booking_date, NaiveDate::from_ymd_opt(2026, 5, 2).unwrap());
+        assert_eq!(
+            draft.booking_date,
+            NaiveDate::from_ymd_opt(2026, 5, 2).unwrap()
+        );
         assert_eq!(draft.amount, Money::new(dec!(1234.56)));
         assert_eq!(draft.currency, "CHF");
         assert_eq!(draft.reference.as_deref(), Some("RF18539007547034"));
