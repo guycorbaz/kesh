@@ -5,6 +5,7 @@
 //! ou le filesystem.
 
 pub mod accounting;
+pub mod bank_imports;
 pub mod chart_of_accounts;
 pub mod errors;
 pub mod invoice_format;
