@@ -10,6 +10,14 @@ inputDocuments:
   - _bmad-output/planning-artifacts/ux-design-specification.md
 ---
 
+> ⚠️ **Archive historique — numérotage pré-2026-04-20.**
+>
+> Ce document utilise l'ancien numérotage des epics, antérieur à l'insertion d'Epic 6 (« Qualité & CI/CD », décision rétro Epic 5 du 2026-04-16) puis d'Epic 7 (« Technical Debt Closure », décision rétro Epic 6 du 2026-04-20). Suite au renumérotage en chaîne (ex-Epic 6 → Epic 8 « Import bancaire », ex-Epic 7 → Epic 9 « Rapports », …, ex-Epic 13 → Epic 15), **les numéros et titres des sections ci-dessous ne correspondent pas à `sprint-status.yaml` ni aux fichiers `epic-N.md`**.
+>
+> **Source de vérité** : un fichier `epic-N.md` par epic dans `_bmad-output/planning-artifacts/`. Premier exemple : [`epic-8.md`](epic-8.md) (créé 2026-05-02). Tous les Epic 9+ suivront cette convention.
+>
+> Décision tracée par [CR-009 #61](https://github.com/guycorbaz/kesh/issues/61) — fermée `not planned` le 2026-05-03 : coût > bénéfice de renumérotter un fichier en voie d'obsolescence.
+
 # Kesh - Epic Breakdown
 
 ## Vue d'ensemble
