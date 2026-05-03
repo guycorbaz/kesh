@@ -33,7 +33,8 @@ so that **les transactions apparaissent dans Kesh, prêtes pour la réconciliati
 Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + prévisualisation**. La détection de doublons (Story 8-3), la réconciliation (Story 8-4), le matching auto (Story 8-4) et les règles d'affectation (Story 8-5) **ne sont PAS dans le scope**. Voir §Scope HORS story.
 
 1. **Fixtures CAMT.053** — créer `crates/kesh-import/tests/fixtures/camt053/` avec **au minimum** :
-   - `v04_minimal.xml` — 1 `<BkToCstmrStmt>`, 1 compte CH IBAN, 3 `<Ntry>` (1 crédit + 2 débits), namespace `urn:iso:std:iso:20022:tech:xsd:camt.053.001.04`.
+   - `v04_minimal.xml` — 1 `<BkToCstmrStmt>`, 1 compte CH IBAN, 3 `<Ntry>` (1 crédit + 2 débits), namespace **par défaut** `<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">`.
+   - `v04_prefixed_namespace.xml` — équivalent v04 mais avec namespace **préfixé** : `<ns:Document xmlns:ns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04"><ns:BkToCstmrStmt>...</ns:BkToCstmrStmt></ns:Document>`. **Critique** — couvre le cas réel des banques suisses qui préfixent les éléments (cf. H4 Pass 1 review) ; sans ce fixture la régression « parseur faux négatif sur fichier prod » serait masquée par les fixtures synthétiques par défaut.
    - `v08_minimal.xml` — équivalent pour `camt.053.001.08`.
    - `v04_with_subtxs.xml` — 1 `<Ntry>` agrégée avec 3 `<TxDtls>` (FR49).
    - `v04_multi_stmt.xml` — 1 fichier avec 2 `<Stmt>` pour 2 IBAN différents (cf. décision §multi-stmt).
@@ -41,22 +42,23 @@ Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + p
    - `v04_truncated.xml` — fichier coupé en plein milieu d'un `<Ntry>` (XML mal formé → erreur parseur).
    - `v04_invalid_iban.xml` — 1 `<Ntry>` avec `<RltdPties><Cdtr>` IBAN au checksum cassé (cf. décision §iban-tolerant).
    - `v04_eur_currency.xml` — 1 `<Stmt>` en EUR (cf. décision §currency).
+   - `v04_credit_debit_indicator.xml` — 1 `<Ntry>` débit (`<CdtDbtInd>DBIT</CdtDbtInd>`) et 1 crédit (`CRDT`), montants `<Amt>` non-signés. Vérifie que le parseur applique la convention CAMT.053 « `<Amt>` toujours positif, signe porté par `<CdtDbtInd>` » et produit des `Decimal` signés (négatif pour DBIT) côté `ImportedTransaction.amount`.
 
    **Source pour les fixtures** : le dépôt contient l'XSD officiel `docs/six-references/ig-cash-managment-xml-schemas-v2.0.2-en/camt.053.001.08.xsd` mais **aucun sample XML customer-bank**. Construire les fixtures à la main à partir du XSD (minimum d'éléments obligatoires) — c'est l'usage standard pour les parseurs. Documenter la provenance synthétique dans un `crates/kesh-import/tests/fixtures/README.md`. **Ne pas inclure de données bancaires réelles** (PII).
 
 2. **Parseur `kesh-import::camt053`** — implémenter :
-   - `crates/kesh-import/src/camt053/mod.rs` — point d'entrée `pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError>`. Détecte la version via le namespace racine `xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.XX"` et dispatch vers le parseur de version.
+   - `crates/kesh-import/src/camt053/mod.rs` — point d'entrée `pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError>`. Détecte la version via le namespace racine de `<Document>` et dispatch vers le parseur de version. **Utiliser `quick_xml::NsReader` (pas `Reader` simple)** — les fichiers SIX réels (PostFinance, UBS, Raiffeisen) utilisent fréquemment des namespaces préfixés `<ns:Document xmlns:ns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">` ; `NsReader` résout l'URI indépendamment du préfixe via `resolve_element(qname)`. Un parseur basé sur `Reader` simple qui scanne un attribut littéral `xmlns="..."` casserait sur ces fichiers (faux négatif `BANK_IMPORT_UNSUPPORTED_VERSION`).
    - `crates/kesh-import/src/camt053/v04.rs` — parseur v04 (champs requis : `<Stmt><Id>`, `<Acct><Id><IBAN>`, `<Acct><Ccy>`, `<FrToDt>`, `<Bal>` open/close, `<Ntry>` × N).
    - `crates/kesh-import/src/camt053/v08.rs` — parseur v08 (delta avec v04 documenté inline ; en pratique v08 partage 95% du schéma au niveau des tags utilisés ici, le delta principal est `<Othr>` `SchmeNm` enrichi — non utilisé v0.1).
    - `crates/kesh-import/src/error.rs` — enum `CamtError` (`MalformedXml`, `UnsupportedVersion(String)`, `MissingRequiredField(&'static str)`, `InvalidAmount(String)`, `InvalidDate(String)`).
    - `crates/kesh-import/src/lib.rs` — exposer `pub mod camt053; pub mod error;`. Garder le scaffold spike intact (`mod types`, re-exports).
-   - **Dépendance ajoutée** : `quick-xml = "0.36"` (feature `serialize` non requise — on lit en mode pull-parser pour streaming et minimisation mémoire). **Ne pas ajouter** `serde_xml_rs` (déprécié) ni `xml-rs` (lent, pas streaming).
-   - `crates/kesh-import/Cargo.toml` : ajouter `quick-xml = "0.36"` en `[dependencies]`. Aucun ajout dans `[dev-dependencies]` au-delà du spike (`rust_decimal_macros`, `serde_json`).
+   - **Dépendance ajoutée** : `quick-xml = "0.39"` (latest stable — `Reader::config_mut()` introduit en 0.37, donc < 0.37 incompatible avec le code §quick-xml ci-dessous). Mode pull-parser pour streaming et minimisation mémoire ; feature `serialize` non requise. **Ne pas ajouter** `serde_xml_rs` (déprécié 2025) ni `xml-rs` (lent, pas streaming).
+   - `crates/kesh-import/Cargo.toml` : ajouter `quick-xml = "0.39"` en `[dependencies]`. Aucun ajout dans `[dev-dependencies]` au-delà du spike (`rust_decimal_macros`, `serde_json`).
    - **Invariant à préserver** : zéro dépendance workspace interne (`grep "kesh-" Cargo.toml | grep -v "name = "` doit retourner vide). Test CI ajouté en T8.
 
 3. **Extensions `kesh-core::bank_imports`** — étendre le scaffold spike :
-   - `crates/kesh-core/src/bank_imports.rs` — ajouter `BankImportDraft` (méta-fichier : `file_hash: String`, `filename: String`, `imported_at: DateTime<Utc>`, `bank_account_id: i64`, `company_id: i64`, `source_format: SourceFormat`).
-   - Ajouter `pub fn from_imported(stmt: &ImportedStatement, bank_account_id: i64, company_id: i64, file_hash: String, filename: String) -> (BankImportDraft, Vec<BankTransactionDraft>)` — wrapper qui injecte les FK dans tous les drafts du statement et retourne le couple `(import_meta, transactions)` à persister atomiquement.
+   - `crates/kesh-core/src/bank_imports.rs` — ajouter `BankImportDraft` (méta-fichier : `file_hash: String`, `filename: String`, `imported_at: NaiveDateTime`, `bank_account_id: i64`, `company_id: i64`, `source_format: SourceFormat`). **Convention `NaiveDateTime` (pas `DateTime<Utc>`)** alignée sur tous les autres entities/drafts du codebase (`audit_log`, `bank_account`, `account`, etc. — sqlx MariaDB mappe `DATETIME(3)` vers `NaiveDateTime`, pas `DateTime<Utc>`).
+   - Ajouter `pub fn from_imported(stmt: &ImportedStatement, bank_account_id: i64, company_id: i64, file_hash: String, filename: String, imported_at: NaiveDateTime) -> (BankImportDraft, Vec<BankTransactionDraft>)` — wrapper qui injecte les FK dans tous les drafts du statement et retourne le couple `(import_meta, transactions)` à persister atomiquement. **`imported_at` est passé en paramètre** (pas calculé via `Utc::now()` en interne) pour préserver le déterminisme : tests reproductibles + `kesh-core` reste pur (zéro I/O / zéro horloge interne, cf. spike). Caller (handler API) calcule `chrono::Utc::now().naive_utc()` et le passe.
    - Ajouter `pub fn validate_balance(stmt: &ImportedStatement) -> Result<(), CoreError>` — implémente CR-010 #62 : si `opening_balance.is_some() && closing_balance.is_some()`, vérifier `|opening + sum_transactions - closing| <= 0.01`. Erreur `CoreError::BankImportBalanceMismatch { opening, closing, sum, diff }`.
    - Ajouter `pub fn validate_currency_supported_v0_1(stmt: &ImportedStatement) -> Result<(), CoreError>` — n'accepte que `"CHF"` v0.1 (cf. décision §currency). Erreur `CoreError::BankImportUnsupportedCurrency(String)`.
    - Étendre `crates/kesh-core/src/errors.rs` : ajouter les 2 variantes ci-dessus à l'enum `CoreError`.
@@ -152,24 +154,26 @@ Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + p
 
    | Méthode | Path | Auth | Body / Response |
    |---|---|---|---|
-   | `POST` | `/api/v1/bank-imports/preview` | authenticated, role ≥ Comptable | multipart `file` + form field `bankAccountId` → `200 OK` `{ statementId, accountIban, periodFrom, periodTo, openingBalance, closingBalance, transactionCount, transactions: [...preview...], warnings: [...] }`. **Ne persiste rien.** |
-   | `POST` | `/api/v1/bank-imports` | authenticated, role ≥ Comptable | multipart `file` + form field `bankAccountId` → `201 Created` `{ id, importedAt, transactionCount, ... }`. **Persiste atomiquement.** |
+   | `POST` | `/api/v1/bank-imports/preview` | `comptable_routes` (role ≥ `Role::Comptable`) | multipart `file` + form field `bankAccountId` → `200 OK` `{ statementId, accountIban, periodFrom, periodTo, openingBalance, closingBalance, transactionCount, transactions: [...preview...], warnings: [...] }`. **Ne persiste rien.** |
+   | `POST` | `/api/v1/bank-imports` | `comptable_routes` (role ≥ `Role::Comptable`) | multipart `file` + form field `bankAccountId` → `201 Created` `{ id, importedAt, transactionCount, ... }`. **Persiste atomiquement.** |
    | `GET` | `/api/v1/bank-imports?bankAccountId=...&page=1&pageSize=20` | authenticated, tout rôle | `200 OK` `ListResponse<BankImportSummary>`. |
    | `GET` | `/api/v1/bank-imports/{id}` | authenticated, tout rôle | `200 OK` `{ ...meta..., transactions: [...] }` ou `404`. |
 
    **Détails implémentation :**
 
-   - **Multipart** : ajouter feature `axum = { version = "0.8", features = ["multipart"] }` dans `kesh-api/Cargo.toml`. Extracteur `axum::extract::Multipart`.
-   - **Limite upload** : 10 MiB par défaut (configurable via env `KESH_BANK_IMPORT_MAX_MB=10`, cf. décision §upload-limit). Refus `413 Payload Too Large` au-delà. La limite est appliquée à la fois côté Axum (`DefaultBodyLimit::max(10 * 1024 * 1024)`) ET en double-check dans le handler (compteur de bytes lu, pour ne pas dépendre uniquement du middleware).
+   - **Multipart** : modifier la dépendance `axum` dans `kesh-api/Cargo.toml` de `axum = "0.8"` vers `axum = { version = "0.8", features = ["multipart"] }`. Extracteur `axum::extract::Multipart`. La feature `multipart` n'est PAS dans la default features Axum 0.8, elle DOIT être activée explicitement.
+   - **Limite upload** : 10 MiB par défaut (configurable via env `KESH_BANK_IMPORT_MAX_MB=10`, cf. décision §upload-limit). Refus `413 Payload Too Large` au-delà. Mécanisme retenu : **`axum::extract::DefaultBodyLimit::max(N)` appliqué via `Router::layer()` sur le sub-router bank-import** (pas besoin d'ajouter la feature `"limit"` à `tower-http`). En double-check côté handler : compteur de bytes lu pendant le streaming multipart (défense en profondeur, au cas où la couche router serait contournée par un futur changement). **Ne pas mixer** `tower-http::limit::RequestBodyLimitLayer` ET `DefaultBodyLimit` — choisir un seul mécanisme (DefaultBodyLimit ici).
    - **Hash fichier** : SHA-256 calculé en streaming pendant la lecture du multipart (un seul `Vec<u8>` du contenu, hash + parse depuis ce buffer). Format hex lower-case 64 chars.
    - **Scoping multi-tenant** : récupérer `current_user.company_id`, valider que `bankAccountId` appartient à cette company via `bank_accounts::find_by_id_for_company(pool, current_user.company_id, bank_account_id)` (helper à créer si absent — pattern KF-002). Si non-match → `404 Not Found` (jamais 403 — cf. KF-002 pattern « hide existence »).
    - **Vérification balance** : appeler `kesh_core::bank_imports::validate_balance(&stmt)` après parse. Si `Err(BankImportBalanceMismatch)` → l'erreur est traitée comme un **warning non-bloquant** dans la réponse `preview` (champ `warnings`) MAIS comme un **rejet `422 Unprocessable Entity`** sur le `POST /bank-imports` final, sauf si le client envoie `confirmBalanceMismatch=true` dans le form (CR-010 décision : import permis avec confirmation explicite, traçable côté audit log).
    - **Vérification currency** : `validate_currency_supported_v0_1` → si EUR ou autre → `422 Unprocessable Entity` (pas de bypass v0.1).
    - **Pas de `retry_on_deadlock`** Story 8-1 : l'INSERT atomique ne tient pas de SELECT FOR UPDATE concurrent (une transaction n'attend pas une autre transaction sur des ranges disjoints). Le helper deadlock-retry sera mobilisé Story 8-4 (multi-locks finalize). Documenter `// PAS de retry_on_deadlock — INSERT-only atomique, voir Story 8-4 pour la mécanique réconciliation` dans le handler.
-   - **Audit log** : ajouter une entrée `audit_log` (table existante depuis Story 1-8) sur le `POST /bank-imports` réussi. Action `bank_import.created`, target = `bank_imports.id`. Pas d'audit sur preview (lecture pure, sans persistance).
+   - **Audit log** : ajouter une entrée `audit_log` (table existante depuis Story 1-8) sur le `POST /bank-imports` réussi. Signature réelle : `audit_log::insert_in_tx(tx: &mut Transaction<'_, MySql>, new: NewAuditLogEntry)` ; struct `NewAuditLogEntry { user_id, action, entity_type, entity_id, details_json }` (champs `entity_type` / `entity_id`, **pas** `target_table` / `target_id`). Construire `NewAuditLogEntry { user_id: current_user.user_id, action: "bank_import.created".to_string(), entity_type: "bank_imports".to_string(), entity_id: bank_import.id, details_json: Some(serde_json::to_string(&json!({ "filename": ..., "transaction_count": ..., "source_format": ... })).unwrap()) }`. Pas d'audit sur preview (lecture pure, sans persistance).
    - **AppError mapping** : ajouter dans `kesh-api/src/errors.rs` les variantes `MultipartTooLarge`, `MultipartMalformed`, `BankImportParseFailed(String)`, `BankImportBalanceMismatch(...)` → JSON structuré `{ code: "BANK_IMPORT_PARSE_FAILED", message: "...", details: {...} }`. Codes : `BANK_IMPORT_TOO_LARGE` (413), `BANK_IMPORT_MALFORMED_XML` (400), `BANK_IMPORT_UNSUPPORTED_VERSION` (400), `BANK_IMPORT_DUPLICATE_FILE` (409 — pour Story 8-3 mais préparé), `BANK_IMPORT_BALANCE_MISMATCH` (422), `BANK_IMPORT_UNSUPPORTED_CURRENCY` (422), `BANK_ACCOUNT_NOT_FOUND` (404), `RBAC_FORBIDDEN` (403 si role < Comptable).
-   - Mountant dans `crates/kesh-api/src/lib.rs` : ajouter les 4 routes dans `authenticated_routes`.
-   - **RBAC** : vérifier `role >= Role::Accountant` dans le handler POST (helper `require_role` existant si présent ; sinon ajouter — cohérent avec le pattern Story 1-8). GET sans restriction de rôle (lecture).
+   - **Mountant dans `crates/kesh-api/src/lib.rs`** :
+     - **POST routes** (`/bank-imports/preview` et `POST /bank-imports`) → `comptable_routes` (qui applique déjà `route_layer(from_fn(crate::middleware::rbac::require_comptable_role))`). Pattern identique à `POST /journal-entries`.
+     - **GET routes** (`/bank-imports` et `/bank-imports/{id}`) → `authenticated_routes` (lecture pour tous les rôles authentifiés, `Consultation` inclus).
+   - **RBAC** : repose entièrement sur le middleware `require_comptable_role` du sub-router `comptable_routes`. **Pas de check inline** dans les handlers (anti-pattern : duplique la garde déjà fournie par le router). Enum réelle = `Role::Consultation` < `Role::Comptable` < `Role::Admin` (cf. `crates/kesh-db/src/entities/user.rs`).
 
 7. **Frontend `frontend/src/lib/features/bank-import/`** — nouveau dossier (route `bank-import` existe déjà mais est un placeholder « à venir Epic 6 ») :
    - `bank-import.types.ts` — types miroirs API (`BankImportPreview`, `BankImportSummary`, `BankImportDetail`, `ParsedTransaction`).
@@ -180,7 +184,7 @@ Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + p
    - `BankImportDetail.svelte` — vue d'un import + ses transactions (panel droit ou route séparée).
    - `BankAccountSelector.svelte` — `<select>` des comptes bancaires de la company (charge via `companies/current` qui retourne déjà `bankAccounts[]` — Story 6-2 / 1-3). Première option = `is_primary` ; obligatoire avant upload.
    - **Drag-drop accessibilité** : input `<input type="file">` toujours présent et visible (aria-label), drag-drop est une augmentation, pas un substitut. Conformité axe-core (Story 6-3 / KF-023).
-   - **Avertissement balance mismatch** : si la réponse `preview` contient `warnings: ["balance_mismatch"]`, afficher un banner `<Alert variant="warning">` avec message i18n `bankImport.warnings.balanceMismatch` + checkbox `confirmBalanceMismatch` qui doit être cochée pour activer le bouton « Confirmer l'import ».
+   - **Avertissement balance mismatch** : si la réponse `preview` contient `warnings: ["balance_mismatch"]`, afficher un banner `<Alert variant="warning">` avec message i18n `bank-import-warnings-balance-mismatch` + checkbox `confirmBalanceMismatch` (envoyée comme champ form `"true"` côté multipart — cf. M5 spec) qui doit être cochée pour activer le bouton « Confirmer l'import ».
 
 8. **Route SvelteKit `frontend/src/routes/(app)/bank-import/`** — remplacer le placeholder par :
    - `+page.svelte` — orchestrateur (mount `BankImportUpload` + `BankImportList`).
@@ -192,40 +196,41 @@ Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + p
 
    ```fluent
    # Bank import (Story 8.1)
-   bankImport-title = Importer un relevé bancaire
-   bankImport-uploadPrompt = Glissez votre fichier CAMT.053 ou cliquez pour sélectionner
-   bankImport-fileMaxSize = Taille maximale : 10 Mo
-   bankImport-bankAccountLabel = Compte bancaire de destination
-   bankImport-bankAccountRequired = Sélectionnez un compte avant de téléverser
-   bankImport-parsing = Analyse du fichier en cours…
-   bankImport-previewTitle = Aperçu — { $count } transactions
-   bankImport-confirmButton = Confirmer l'import
-   bankImport-cancelButton = Annuler
-   bankImport-success = { $count } transactions importées avec succès
-   bankImport-errors-malformedXml = Le fichier n'est pas un XML CAMT.053 valide
-   bankImport-errors-unsupportedVersion = Version CAMT.053 non supportée : { $version }
-   bankImport-errors-tooLarge = Le fichier dépasse 10 Mo
-   bankImport-errors-duplicateFile = Ce fichier a déjà été importé le { $importedAt }
-   bankImport-errors-unsupportedCurrency = Devise non supportée : { $currency }. Seuls les comptes en CHF sont importables en v0.1.
-   bankImport-warnings-balanceMismatch = Le solde de clôture du fichier ({ $closing }) ne correspond pas à la somme calculée ({ $sum }). Écart : { $diff }. Confirmez pour importer quand même.
-   bankImport-warnings-balanceMismatchConfirm = Je confirme l'import malgré l'écart
-   bankImport-list-empty = Aucun import effectué pour ce compte
-   bankImport-list-importedAt = Importé le { $date }
-   bankImport-list-transactionCount = { $count } transactions
-   bankImport-list-period = Période : { $from } → { $to }
-   bankImport-detail-statementId = Identifiant du relevé
-   bankImport-detail-source = Format source
-   bankImport-detail-openingBalance = Solde d'ouverture
-   bankImport-detail-closingBalance = Solde de clôture
+   bank-import-title = Importer un relevé bancaire
+   bank-import-upload-prompt = Glissez votre fichier CAMT.053 ou cliquez pour sélectionner
+   bank-import-file-max-size = Taille maximale : 10 Mo
+   bank-import-bank-account-label = Compte bancaire de destination
+   bank-import-bank-account-required = Sélectionnez un compte avant de téléverser
+   bank-import-parsing = Analyse du fichier en cours…
+   bank-import-preview-title = Aperçu — { $count } transactions
+   bank-import-confirm-button = Confirmer l'import
+   bank-import-cancel-button = Annuler
+   bank-import-success = { $count } transactions importées avec succès
+   bank-import-errors-malformed-xml = Le fichier n'est pas un XML CAMT.053 valide
+   bank-import-errors-unsupported-version = Version CAMT.053 non supportée : { $version }
+   bank-import-errors-too-large = Le fichier dépasse 10 Mo
+   bank-import-errors-duplicate-file = Ce fichier a déjà été importé le { $importedAt }
+   bank-import-errors-unsupported-currency = Devise non supportée : { $currency }. Seuls les comptes en CHF sont importables en v0.1.
+   bank-import-warnings-balance-mismatch = Le solde de clôture du fichier ({ $closing }) ne correspond pas à la somme calculée ({ $sum }). Écart : { $diff }. Confirmez pour importer quand même.
+   bank-import-warnings-balance-mismatch-confirm = Je confirme l'import malgré l'écart
+   bank-import-list-empty = Aucun import effectué pour ce compte
+   bank-import-list-imported-at = Importé le { $date }
+   bank-import-list-transaction-count = { $count } transactions
+   bank-import-list-period = Période : { $from } → { $to }
+   bank-import-detail-statement-id = Identifiant du relevé
+   bank-import-detail-source = Format source
+   bank-import-detail-opening-balance = Solde d'ouverture
+   bank-import-detail-closing-balance = Solde de clôture
    ```
 
-   - **Préfixe `bankImport-`** (camelCase) cohérent avec `invoiceForm-`, `journalEntries-`, etc. (cf. `docs/i18n-key-ownership-pattern.md`).
+   - **Préfixe `bank-import-`** (kebab-case strict, identique au nom du dossier `frontend/src/lib/features/bank-import/`). Le lint `npm run lint-i18n-ownership` extrait le namespace via `key.split('-')[0]` ; le préfixe DOIT donc matcher exactement le nom du dossier kebab-case (cf. patterns `journal-entries-*`, `contacts-*`, `invoices-*`). Un préfixe camelCase comme `bankImport-` casserait le lint.
    - **Traductions DE / IT / EN** : dev fournit les 4 langues. Pour DE/IT, réutiliser le vocabulaire bancaire suisse standard (« Bankauszug » / « Estratto conto »). Validation via `npm run lint-i18n-ownership` (Story 6-3 garde-fou).
 
 10. **Tests** — couverture exhaustive :
 
     - **kesh-import unitaires** (`crates/kesh-import/tests/camt053_tests.rs`) :
-      - `parse_v04_minimal_extracts_all_transactions` (FR42)
+      - `parse_v04_minimal_extracts_all_transactions` (FR42, namespace par défaut)
+      - `parse_v04_prefixed_namespace_extracts_all_transactions` (H4 régression — `<ns:Document xmlns:ns="...">`)
       - `parse_v08_minimal_extracts_all_transactions` (multi-version)
       - `parse_with_subtxs_extracts_individual_transactions` (FR49)
       - `parse_multi_stmt_returns_one_per_account` (multi-Stmt)
@@ -233,6 +238,7 @@ Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + p
       - `parse_unknown_namespace_returns_unsupported_version`
       - `parse_invalid_iban_keeps_transaction` (tolérance IBAN)
       - `parse_eur_currency_preserved` (la devise est extraite, le rejet v0.1 vit dans kesh-core)
+      - `parse_credit_debit_indicator_signs_amount_correctly` (`<Amt>` non-signé + `<CdtDbtInd>DBIT|CRDT>` → `Decimal` signé)
 
     - **kesh-core unitaires** (`crates/kesh-core/src/bank_imports.rs::tests`, étendre les 4 existants) :
       - `validate_balance_passes_when_within_tolerance`
@@ -250,11 +256,14 @@ Story 8-1 livre **uniquement le parseur CAMT.053 + persistance + UI d'import + p
       - `unique_company_hash_blocks_duplicate_within_same_company`
       - `unique_company_hash_allows_same_hash_across_companies` (multi-tenant safety)
       - `bulk_insert_handles_500_transactions` (perf smoke)
+      - `find_by_id_for_company_rejects_wrong_company` (H5 — cross-tenant IDOR sur `bank_accounts`)
+      - `find_by_id_for_company_returns_account_when_owned` (H5 — happy path)
 
     - **kesh-api E2E HTTP** (`crates/kesh-api/tests/bank_imports_e2e.rs`) :
       - `post_preview_returns_parsed_statement` (happy path)
+      - `post_preview_returns_balance_mismatch_warning` (200 OK + `warnings: ["balance_mismatch"]` ; preview est non-bloquant sur mismatch, contrairement au POST final)
       - `post_import_creates_rows_atomically`
-      - `post_import_rejects_when_role_below_accountant` (403)
+      - `post_import_rejects_when_role_consultation` (403, vérifie que `require_comptable_role` middleware bloque bien)
       - `post_import_rejects_payload_too_large` (413)
       - `post_import_rejects_other_company_bank_account_id` (404 IDOR)
       - `post_import_rejects_eur_currency` (422)
@@ -321,7 +330,7 @@ Décision : `validate_currency_supported_v0_1` accepte uniquement `"CHF"`. Tout 
 
 **Justification PRD :** §FR42 « relevés bancaires » dans le contexte « Swiss accounting software » (PRD §Vue d'ensemble). Aucun FR ne mentionne de gestion multi-devises v0.1. Les comptes CH bancaires courants sont CHF dans 95%+ des cas PME ; les comptes EUR sont des comptes secondaires gérés v0.2 avec conversion taux.
 
-**Pas de bypass v0.1** — pas de flag `force_currency=EUR` ; un fichier EUR doit attendre v0.2. Documenté côté UI (i18n `bankImport-errors-unsupportedCurrency`).
+**Pas de bypass v0.1** — pas de flag `force_currency=EUR` ; un fichier EUR doit attendre v0.2. Documenté côté UI (i18n `bank-import-errors-unsupported-currency`).
 
 #### §balance-check — CR-010 #62 statement balance reconciliation
 
@@ -345,7 +354,7 @@ if diff > Decimal::new(1, 2) /* 0.01 */ {
 Ok(())
 ```
 
-**Tolérance 0.01** : reflète l'arrondi commercial standard suisse (centime). Au-delà → fichier suspect (tronqué, transactions manquantes, double-comptage).
+**Tolérance 0.01** : `rust_decimal` est arithmétiquement exact, donc cette tolérance n'absorbe **pas** une « erreur d'arrondi » (il n'y en a pas). Elle absorbe les frais bancaires fractionnaires non-listés explicitement comme `<Ntry>` (cas connu : certains exports CAMT.053 PostFinance reportent les frais BVR uniquement dans le solde de clôture, pas comme transaction). Au-delà de 0.01 CHF → fichier suspect (tronqué, transactions manquantes, double-comptage). Si en pratique aucun cas légitime ne dépasse 0 → durcir à `Decimal::ZERO` v0.2 après observation prod.
 
 **Comportement côté API :**
 - `POST /preview` : balance mismatch → `200 OK` + `warnings: ["balance_mismatch"]` dans la réponse, transactions tout de même listées.
@@ -374,8 +383,8 @@ Si **aucun `<Stmt>` ne matche** l'IBAN du compte sélectionné → `422 Unproces
 #### §upload-limit — 10 MiB hard limit
 
 `KESH_BANK_IMPORT_MAX_MB=10` env var (default 10). Appliqué :
-1. **Côté SvelteKit** (UX) : check `file.size > maxBytes` avant POST, message i18n `bankImport-errors-tooLarge`.
-2. **Côté Axum middleware** : `tower-http::limit::RequestBodyLimitLayer` à `max_mb * 1024 * 1024 + 4096` (overhead multipart).
+1. **Côté SvelteKit** (UX) : check `file.size > maxBytes` avant POST, message i18n `bank-import-errors-too-large`.
+2. **Côté Axum router** : `Router::layer(axum::extract::DefaultBodyLimit::max(max_mb * 1024 * 1024 + 4096))` sur le sub-router bank-import uniquement (overhead multipart 4 KiB). **Pas de feature `tower-http "limit"` requise** — DefaultBodyLimit est dans le core Axum.
 3. **Côté handler** : compteur de bytes lu pendant le streaming multipart, abort si dépassement (défense en profondeur, au cas où la couche 2 serait contournée par un futur changement).
 
 10 MiB couvre largement un relevé annuel CAMT.053 (~2400 transactions ≈ 1.5-3 MiB XML). Au-delà → fichier probablement non-CAMT (PDF, scan, fichier multi-banques fusionné par erreur).
@@ -397,7 +406,7 @@ Le wrapper `frontend/src/lib/shared/utils/api-client.ts` (Story 1-11) force `Con
 
 #### §quick-xml — choix librairie
 
-`quick-xml = "0.36"` (latest 2026 stable) :
+`quick-xml = "0.39"` (latest stable, vérifié `cargo search quick-xml` 2026-05-03 → 0.39.2) :
 - Pull parser zéro-allocation (mode `Reader::from_reader`). Pas de DOM intermédiaire pour fichiers de 10 MiB.
 - Mature, maintenue, dépendance unique (pas de cascade `xml-rs` / `serde-xml-rs`).
 - Compatible no-std côté core (pas requis ici mais préserve l'option de réutilisation kesh-import sur d'autres cibles).
@@ -435,7 +444,7 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 4. **(UX)** Given l'utilisateur sur la page `/bank-import`, When il glisse un fichier ou clique « Sélectionner », Then une **prévisualisation des transactions** s'affiche avant la persistance définitive. La confirmation explicite (bouton « Confirmer l'import ») déclenche le `POST /bank-imports`. *Test E2E + `BankImportUpload.test.ts`.*
 
-5. **(FR87 / Décision archi #2)** Given un fichier CAMT.053, When le namespace racine est `urn:iso:std:iso:20022:tech:xsd:camt.053.001.04` ou `.08`, Then le parseur de version correspondante est utilisé. Les autres versions retournent `400 BANK_IMPORT_UNSUPPORTED_VERSION` avec le namespace détecté dans le message. *Tests : `parse_v04_minimal_extracts_all_transactions`, `parse_v08_minimal_extracts_all_transactions`, `parse_unknown_namespace_returns_unsupported_version`.*
+5. **(FR87 / Décision archi #2)** Given un fichier CAMT.053, When le namespace racine de `<Document>` est `urn:iso:std:iso:20022:tech:xsd:camt.053.001.04` ou `.08` (forme par défaut OU préfixée), Then le parseur de version correspondante est utilisé. Les autres URIs retournent `400 BANK_IMPORT_UNSUPPORTED_VERSION` avec l'URI détecté dans le message. *Tests : `parse_v04_minimal_extracts_all_transactions`, `parse_v04_prefixed_namespace_extracts_all_transactions` (couvre `<ns:Document xmlns:ns="..."`), `parse_v08_minimal_extracts_all_transactions`, `parse_unknown_namespace_returns_unsupported_version`.*
 
 6. **(Architecture)** Given le crate `kesh-import`, When `cargo metadata -p kesh-import --format-version 1 | jq '.packages[0].dependencies[] | select(.path != null)'` est exécuté, Then aucune dépendance workspace interne n'apparaît (zéro path dep). *Test : script CI ajouté à `.github/workflows/ci.yml` (cf. T8.5).*
 
@@ -443,13 +452,13 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 8. **(Architecture)** Given un `ImportedTransaction`, When converti via `From`, Then le résultat est un `BankTransactionDraft` valide ; les FK (`bank_account_id`, `import_id`, `company_id`) sont injectées par `kesh-core::bank_imports::from_imported`, **pas** par `kesh-import`. *Test : `from_imported_injects_fk` (existing spike test étendu).*
 
-9. **(Fixtures SIX)** Given le suite de tests d'intégration `kesh-import`, When exécutée, Then les 8 fixtures listées en T1 sont chargées et au moins 6 cas distincts (v04 / v08 / sub-tx / multi-stmt / balance-mismatch / truncated / invalid-iban / EUR) sont validés. *Test : `crates/kesh-import/tests/camt053_tests.rs` × 8.*
+9. **(Fixtures SIX)** Given le suite de tests d'intégration `kesh-import`, When exécutée, Then les 10 fixtures listées en T1 sont chargées et tous les cas distincts (v04 default-ns / v04 prefixed-ns / v08 / sub-tx / multi-stmt / balance-mismatch / truncated / invalid-iban / EUR / cdt-dbt-indicator) sont validés. *Test : `crates/kesh-import/tests/camt053_tests.rs` × 10.*
 
 10. **(Schéma multi-tenant — KF-002 pattern)** Given une transaction bancaire persistée pour `company_A`, When `company_B` appelle `GET /bank-imports/{id}` ou `GET /bank-imports?bankAccountId=...`, Then la réponse est `404 Not Found` (jamais 403 — pattern KF-002). *Tests : `get_imports_lists_only_own_company`, `get_import_returns_404_for_other_company_id`.*
 
 11. **(Multi-tenant DB)** Given la migration appliquée, When `cargo test -p kesh-db bank_imports IDOR`, Then **aucun cross-tenant leak** n'est observé sur les 7 cas listés en T10. *Tests : `find_by_company_id_only_returns_own_imports` etc.*
 
-12. **(Sécurité — RBAC)** Given un utilisateur avec `role = Consultation`, When il tente `POST /bank-imports`, Then la réponse est `403 RBAC_FORBIDDEN`. Les rôles `Accountant` et `Admin` peuvent importer ; tous les rôles peuvent lire. *Test : `post_import_rejects_when_role_below_accountant`.*
+12. **(Sécurité — RBAC)** Given un utilisateur avec `role = Role::Consultation`, When il tente `POST /bank-imports`, Then la réponse est `403` (renvoyée par le middleware `require_comptable_role` du sub-router `comptable_routes`). Les rôles `Role::Comptable` et `Role::Admin` peuvent importer ; tous les rôles authentifiés peuvent lire (GET sur `authenticated_routes`). *Test : `post_import_rejects_when_role_consultation`.*
 
 13. **(Sécurité — payload limit)** Given un fichier > 10 MiB, When upload, Then la réponse est `413 BANK_IMPORT_TOO_LARGE`. Aucun parsing n'est tenté. *Test : `post_import_rejects_payload_too_large`.*
 
@@ -461,9 +470,9 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 17. **(Atomicité)** Given un import qui échoue côté `bank_transactions` (ex. erreur SQL ligne 150 sur 200), When la transaction DB rollback, Then `bank_imports` ET `bank_transactions` sont vides en DB (rien d'orphelin). *Test : `create_with_transactions_rolls_back_on_constraint_violation`.*
 
-18. **(Audit log)** Given un import réussi, When `GET /audit-log`, Then une entrée `bank_import.created` (ou `bank_import.created_with_balance_mismatch`) est présente avec `target_id = bank_import.id`, `user_id = importer`, `details JSON` contenant `{ filename, transaction_count, source_format }`. *Test : `post_import_creates_rows_atomically` étendu pour vérifier l'audit log.*
+18. **(Audit log)** Given un import réussi, When `SELECT FROM audit_log`, Then une entrée `action = bank_import.created` (ou `bank_import.created_with_balance_mismatch`) est présente avec `entity_type = "bank_imports"`, `entity_id = bank_import.id`, `user_id = importer`, `details_json` contenant `{ filename, transaction_count, source_format }`. *Test : `post_import_creates_rows_atomically` étendu pour vérifier l'audit log.*
 
-19. **(i18n)** Given les 4 locales (fr/de/it/en-CH), When `npm run lint-i18n-ownership`, Then le lint passe sans erreur (toutes les clés `bankImport-*` présentes dans les 4 fichiers). *Test : CI Story 6-3.*
+19. **(i18n)** Given les 4 locales (fr/de/it/en-CH), When `npm run lint-i18n-ownership`, Then le lint passe sans erreur (toutes les clés `bank-import-*` présentes dans les 4 fichiers, préfixe kebab-case strict). *Test : CI Story 6-3.*
 
 20. **(Accessibilité)** Given la page `/bank-import` rendue, When `axe-core` scan, Then zéro violation. Le drag-drop est une augmentation : un input `<input type="file" aria-label>` reste navigable au clavier. *Test : E2E `accessibility — axe scan zero violations`.*
 
@@ -479,7 +488,7 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 ### T2. Parseur `kesh-import::camt053` (AC #1, #2, #5)
 
-- [ ] T2.1 — Ajouter `quick-xml = "0.36"` à `crates/kesh-import/Cargo.toml`.
+- [ ] T2.1 — Ajouter `quick-xml = "0.39"` à `crates/kesh-import/Cargo.toml` (latest stable, requis pour `Reader::config_mut()`).
 - [ ] T2.2 — Créer `crates/kesh-import/src/error.rs` avec l'enum `CamtError` (5 variantes listées en T2 du scope).
 - [ ] T2.3 — Créer `crates/kesh-import/src/camt053/mod.rs` avec le dispatcher namespace + le trait `CamtParser`.
 - [ ] T2.4 — Implémenter `crates/kesh-import/src/camt053/v04.rs` (parser pull-based des éléments `<BkToCstmrStmt>`, `<Stmt>`, `<Acct>`, `<Bal>`, `<Ntry>`, `<NtryDtls>`, `<TxDtls>`, `<RltdPties>`, `<RmtInf>`).
@@ -489,11 +498,14 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 ### T3. Extensions `kesh-core::bank_imports` (AC #3, #8, #14, #15, #17)
 
-- [ ] T3.1 — Étendre `crates/kesh-core/src/bank_imports.rs` avec `BankImportDraft` (struct + From conversions).
-- [ ] T3.2 — Implémenter `from_imported(stmt, bank_account_id, company_id, file_hash, filename)` (fonction wrapper).
+- [ ] T3.1 — Étendre `crates/kesh-core/src/bank_imports.rs` avec `BankImportDraft` (struct + From conversions). Champ `imported_at: NaiveDateTime` (PAS `DateTime<Utc>` — convention codebase, sqlx MariaDB).
+- [ ] T3.2 — Implémenter `from_imported(stmt, bank_account_id, company_id, file_hash, filename, imported_at)` (wrapper, `imported_at` en paramètre — pas d'`Utc::now()` interne pour préserver le déterminisme + la pureté de `kesh-core`).
 - [ ] T3.3 — Implémenter `validate_balance(stmt) -> Result<(), CoreError>` (CR-010 #62, AC #14).
 - [ ] T3.4 — Implémenter `validate_currency_supported_v0_1(stmt) -> Result<(), CoreError>` (AC #15).
-- [ ] T3.5 — Étendre `crates/kesh-core/src/errors.rs` avec `BankImportBalanceMismatch` et `BankImportUnsupportedCurrency`.
+- [ ] T3.5 — Étendre `crates/kesh-core/src/errors.rs` avec :
+  - Variante `BankImportBalanceMismatch { opening: Money, closing: Money, sum: Money, diff: Money }` (Display via `thiserror` : `"solde de clôture incohérent : ouverture {opening} + somme {sum} ≠ clôture {closing} (écart {diff})"`).
+  - Variante `BankImportUnsupportedCurrency(String)` (Display : `"devise non supportée v0.1 : {0} (seul CHF est accepté)"`).
+  - **Bras `error_code()` correspondants** (la fonction est exhaustive sans wildcard — sans ces bras, `cargo build` casse) : `Self::BankImportBalanceMismatch { .. } => "BANK_IMPORT_BALANCE_MISMATCH"`, `Self::BankImportUnsupportedCurrency(_) => "BANK_IMPORT_UNSUPPORTED_CURRENCY"`.
 - [ ] T3.6 — Tests unitaires (étendre les 4 existants à ~10 tests, cf. §Tests).
 
 ### T4. Migration DB (AC #11, #16, #17)
@@ -513,16 +525,40 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 ### T6. Route API `bank_imports.rs` (AC #1, #4, #10, #12, #13, #14, #15, #16, #18)
 
-- [ ] T6.1 — Activer feature multipart : `axum = { version = "0.8", features = ["multipart"] }` dans `crates/kesh-api/Cargo.toml`.
+- [ ] T6.1 — Activer feature multipart : changer `axum = "0.8"` (actuel) en `axum = { version = "0.8", features = ["multipart"] }` dans `crates/kesh-api/Cargo.toml`. La feature `multipart` n'est pas dans les default features Axum 0.8.
 - [ ] T6.2 — Créer `crates/kesh-api/src/routes/bank_imports.rs` avec les 4 handlers (preview, create, list, detail).
-- [ ] T6.3 — Helper `bank_accounts::find_by_id_for_company(pool, company_id, id) -> Result<Option<BankAccount>, DbError>` (à ajouter dans `crates/kesh-db/src/repositories/bank_accounts.rs` si absent — cohérent avec le pattern Story 7-1).
-- [ ] T6.4 — Étendre `crates/kesh-api/src/errors.rs` avec les variantes `MultipartTooLarge`, `MultipartMalformed`, `BankImportParseFailed`, `BankImportBalanceMismatch`, etc. + mapping vers les codes HTTP listés au §scope T6.
-- [ ] T6.5 — Mapping erreur SQL `1062` (UNIQUE violation `uq_bank_imports_company_hash`) → `409 BANK_IMPORT_DUPLICATE_FILE` dans `bank_imports.rs` (helper local, pattern aligné `invoices::create` numérotation).
-- [ ] T6.6 — Mountant routes dans `crates/kesh-api/src/lib.rs` (4 routes dans `authenticated_routes`).
-- [ ] T6.7 — Helper RBAC `require_role_at_least(current_user, Role::Accountant)?` à utiliser dans les POST.
-- [ ] T6.8 — Audit log entry sur POST réussi (réutiliser le helper Story 1-8 + 3-5).
+- [ ] T6.3 — **Implémenter** `bank_accounts::find_by_id_for_company(pool: &MySqlPool, company_id: i64, id: i64) -> Result<Option<BankAccount>, DbError>` dans `crates/kesh-db/src/repositories/bank_accounts.rs` (la fonction n'existe PAS aujourd'hui — `bank_accounts.rs` a uniquement `create`, `find_primary`, `list_by_company`, `upsert_primary`). Pattern aligné Story 7-1 : `WHERE company_id = ? AND id = ? LIMIT 1`. Ajouter test unitaire dédié `find_by_id_for_company_rejects_wrong_company` (cross-tenant) ET `find_by_id_for_company_returns_account_when_owned`.
+- [ ] T6.4 — Étendre `crates/kesh-api/src/errors.rs` avec **7 variantes + 7 bras `IntoResponse` correspondants** (le `match self` est exhaustif sans wildcard `_ =>` dans `errors.rs:222` — chaque nouvelle variante doit avoir son bras, sinon `cargo build` casse) :
+
+  | Variante | Bras `match` (status, code, message) |
+  |---|---|
+  | `AppError::MultipartTooLarge` | `(StatusCode::PAYLOAD_TOO_LARGE, "BANK_IMPORT_TOO_LARGE", "Le fichier dépasse la limite de 10 Mo")` |
+  | `AppError::MultipartMalformed(detail)` | `(StatusCode::BAD_REQUEST, "MULTIPART_MALFORMED", detail)` |
+  | `AppError::BankImportParseFailed { code: String, message: String, details: serde_json::Value }` | `(StatusCode::BAD_REQUEST, code, message + details)` — `code` parmi `"BANK_IMPORT_MALFORMED_XML"` ou `"BANK_IMPORT_UNSUPPORTED_VERSION"` |
+  | `AppError::BankImportBalanceMismatch { opening, closing, sum, diff }` | `(StatusCode::UNPROCESSABLE_ENTITY, "BANK_IMPORT_BALANCE_MISMATCH", "Solde de clôture incohérent" + details JSON)` |
+  | `AppError::BankImportUnsupportedCurrency(currency)` | `(StatusCode::UNPROCESSABLE_ENTITY, "BANK_IMPORT_UNSUPPORTED_CURRENCY", "Devise non supportée v0.1 : {currency}")` |
+  | `AppError::BankImportNoMatchingStatement { found_ibans }` | `(StatusCode::UNPROCESSABLE_ENTITY, "BANK_IMPORT_NO_MATCHING_STATEMENT", "Aucun <Stmt> ne matche le compte sélectionné" + liste IBAN trouvés)` |
+  | `AppError::BankImportDuplicateFile { imported_at }` | `(StatusCode::CONFLICT, "BANK_IMPORT_DUPLICATE_FILE", "Fichier déjà importé le {imported_at}")` |
+
+  Pattern de construction de la réponse aligné avec les bras existants (`AppError::IdeAlreadyExists` à errors.rs:351 — modèle structuré JSON avec `code`, `message`, `details`).
+- [ ] T6.5 — Mapping erreur SQL `1062` (UNIQUE violation `uq_bank_imports_company_hash`) → `409 BANK_IMPORT_DUPLICATE_FILE`. **Pattern critique** : le repo `create_with_transactions` retourne `Result<_, DbError>` ; sans intervention, `DbError::UniqueConstraintViolation(msg)` est mappé par défaut vers `409 RESOURCE_CONFLICT` (générique) par `errors.rs:416`. Pour produire le code spécifique `BANK_IMPORT_DUPLICATE_FILE` attendu par AC #16, le handler DOIT catcher l'erreur AVANT le `?` :
+  ```rust
+  match repositories::bank_imports::create_with_transactions(&mut tx, ...).await {
+      Ok(result) => result,
+      Err(DbError::UniqueConstraintViolation(msg)) if msg.contains("uq_bank_imports_company_hash") => {
+          // Lookup l'import existant pour exposer imported_at dans le message
+          let existing = bank_imports::find_by_company_and_hash(&state.pool, current_user.company_id, &file_hash).await?;
+          return Err(AppError::BankImportDuplicateFile { imported_at: existing.map(|i| i.imported_at) });
+      }
+      Err(e) => return Err(e.into()),
+  }
+  ```
+  Pattern miroir de `invoices::create` qui catche `IDE_ALREADY_EXISTS` avant le `?` générique.
+- [ ] T6.6 — Mountant routes dans `crates/kesh-api/src/lib.rs` : POST `/bank-imports/preview` et `POST /bank-imports` ajoutées à `comptable_routes` ; GET `/bank-imports` et `GET /bank-imports/{id}` ajoutées à `authenticated_routes`. Pattern aligné `POST /journal-entries` (Story 3-2).
+- [ ] T6.7 — **RBAC = middleware sub-router** : aucun helper inline à créer. La garde `require_comptable_role` est déjà appliquée au niveau du `route_layer` de `comptable_routes` dans `lib.rs`. Vérifier les noms d'enum exacts : `Role::Consultation` / `Role::Comptable` / `Role::Admin` (PAS `Role::Accountant` qui n'existe pas).
+- [ ] T6.8 — Audit log entry sur POST réussi via `audit_log::insert_in_tx(tx, NewAuditLogEntry { user_id, action: "bank_import.created" (ou `bank_import.created_with_balance_mismatch` si AC #14 confirm), entity_type: "bank_imports", entity_id: bank_import.id, details_json: Some(JSON{filename, transaction_count, source_format}) })`. **Champs réels** = `entity_type` / `entity_id`, pas `target_table` / `target_id`.
 - [ ] T6.9 — Tests E2E `crates/kesh-api/tests/bank_imports_e2e.rs` (11 tests cf. §Tests).
-- [ ] T6.10 — Limite multipart : `tower-http::limit::RequestBodyLimitLayer` à 10 MiB + 4 KiB overhead. Configurable via `KESH_BANK_IMPORT_MAX_MB` (`kesh-api/src/config.rs`).
+- [ ] T6.10 — Limite multipart : `axum::extract::DefaultBodyLimit::max(max_bytes)` appliqué via `Router::layer()` sur le sub-router bank-import uniquement (10 MiB + 4 KiB overhead par défaut). Configurable via `KESH_BANK_IMPORT_MAX_MB` (`kesh-api/src/config.rs`). **Pas besoin** d'ajouter la feature `"limit"` à `tower-http` — DefaultBodyLimit est natif Axum.
 
 ### T7. Frontend feature `bank-import` (AC #1, #4, #20)
 
@@ -537,7 +573,7 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 
 ### T8. i18n + invariants CI (AC #6, #7, #19)
 
-- [ ] T8.1 — Ajouter les clés `bankImport-*` dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` (FR donné en §scope T9).
+- [ ] T8.1 — Ajouter les clés `bank-import-*` dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` (FR donné en §scope T9).
 - [ ] T8.2 — Traduire en DE / IT / EN (les 3 autres locales).
 - [ ] T8.3 — Vérifier `npm run lint-i18n-ownership` pass.
 - [ ] T8.4 — Ajouter `kesh-import` au check `cargo publish --dry-run` du workflow CI Rust (job existant pour `kesh-qrbill` Story 5-3, étendre à `kesh-import`).
@@ -587,7 +623,7 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 - **Optimistic locking** : `bank_transactions.version` posé pour Story 8-4. Pas mobilisé Story 8-1.
 - **Audit log (Story 1-8 / 3-5)** : helper `audit_log::insert_in_tx(tx, user_id, action, target_table, target_id, details_json)`.
 - **Erreurs structurées** : `AppError::Custom { status, code, message, details }` avec sérialisation JSON `{ error: { code, message, details } }` cohérente Story 1-11.
-- **i18n key ownership (Story 6-3 / KF-006)** : préfixe `bankImport-` réservé exclusivement à ce module. Documenté dans `docs/i18n-key-ownership-pattern.md` (à étendre).
+- **i18n key ownership (Story 6-3 / KF-006)** : préfixe `bank-import-` (kebab-case, matchant strictement le nom du dossier `frontend/src/lib/features/bank-import/`) réservé exclusivement à ce module. Le lint `npm run lint-i18n-ownership` extrait le namespace via `key.split('-')[0]` ; tout préfixe ne matchant pas le nom du dossier casse le lint. Documenté dans `docs/i18n-key-ownership-pattern.md` (à étendre).
 - **`rust_decimal` arithmétique** : utiliser `Decimal` de bout en bout. **Jamais** `f64`. Comparer avec `==` (scale-invariant côté `rust_decimal::Decimal::eq`).
 - **Repository pattern + sqlx** : `pool: &MySqlPool` ou `&mut Transaction<'_, MySql>` ; pas d'ORM. SQL inline dans le repository, pas de query builder magique. `sqlx::QueryBuilder::push_values` pour bulk INSERT.
 - **`From`/`Into` côté `kesh-core`** : décision archi #7. Ne pas implémenter `From<BankTransactionDraft> for ImportedTransaction` (pas utile, l'import est unidirectionnel).
@@ -619,8 +655,8 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 - `crates/kesh-db/tests/bank_imports_test.rs` *(nouveau ou inline `#[sqlx::test]`)*
 - `crates/kesh-api/Cargo.toml` (feature multipart)
 - `crates/kesh-api/src/routes/bank_imports.rs` *(nouveau)*
-- `crates/kesh-api/src/routes/mod.rs` (re-export)
-- `crates/kesh-api/src/lib.rs` (mountant 4 routes)
+- `crates/kesh-api/src/routes/mod.rs` (extension : `pub mod bank_imports;`)
+- `crates/kesh-api/src/lib.rs` (mountant : POST → `comptable_routes`, GET → `authenticated_routes`, sub-router avec `DefaultBodyLimit::max(...)`)
 - `crates/kesh-api/src/errors.rs` (variantes)
 - `crates/kesh-api/src/config.rs` (env var `KESH_BANK_IMPORT_MAX_MB`)
 - `crates/kesh-api/tests/bank_imports_e2e.rs` *(nouveau)*
@@ -657,7 +693,7 @@ Pour la dispatch v04 vs v08 : extraire la `xmlns="..."` du tag racine `<Document
 - Rust : `snake_case` modules / fns / fields ; `PascalCase` types ; `SCREAMING_SNAKE_CASE` const.
 - API JSON : `camelCase` via `#[serde(rename_all = "camelCase")]`.
 - Frontend types : `PascalCase` interfaces, `camelCase` fields.
-- i18n : `bankImport-{kebab-case-id}` (préfixe + tiret).
+- i18n : `bank-import-{kebab-case-id}` (kebab-case strict, identique au nom du dossier feature).
 - Routes API : `/api/v1/bank-imports/...` (kebab-case plural).
 - Routes SvelteKit : `/bank-import` (kebab-case singulier — convention existante des routes app).
 
@@ -732,3 +768,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-impor
 | Date | Action | Auteur |
 |------|--------|--------|
 | 2026-05-03 | Création de la story via `/bmad-create-story 8-1`. Spec construite à partir d'`epic-8.md`, du spike `kesh-import`, du retro Epic 7, et des patterns établis Stories 6-2 / 7-1 / 7-3. Splitting check appliqué (6 modules — au seuil). | Claude (SM, Opus 4.7) |
+| 2026-05-03 | **Pass 1 spec validate (Sonnet, contexte frais)** — 16 findings remontés (2C / 5H / 6M / 3L), tous appliqués (decision Guy `all`). Patches : C1 i18n keys camelCase→kebab-case strict matchant nom du dossier (`bank-import-*`), C2 `Role::Accountant`→`Role::Comptable` + RBAC via sub-router `comptable_routes` (pas helper inline), H1 `quick-xml 0.36`→`0.39` (latest, `Reader::config_mut` requiert ≥0.37), H2 `axum features=["multipart"]` + `DefaultBodyLimit::max(...)` (pas `tower-http "limit"`), H3 audit_log signature `insert_in_tx(tx, NewAuditLogEntry { entity_type, entity_id, ... })` (champs réels), H4 `quick_xml::NsReader` + fixture `v04_prefixed_namespace.xml` (régression CAMT prod préfixé), H5 `find_by_id_for_company` tâche explicite (n'existe pas dans repo) + 2 tests dédiés, M1 bras `error_code()` exhaustifs spec'és, M3 `NaiveDateTime` (convention codebase) au lieu de `DateTime<Utc>`, M4 7 bras `IntoResponse` listés (errors.rs sans wildcard), M5 `from_imported(... imported_at: NaiveDateTime)` paramètre (pas `Utc::now()` interne, pureté `kesh-core`), M6 catch-remap `DbError::UniqueConstraintViolation` avant le `?` (pattern `invoices::create`), L1 `routes/mod.rs` ajouté source tree, L2 tolérance balance reformulée (frais BVR PostFinance), L3 test preview balance mismatch ajouté. **Trend** : Pass 1 Sonnet 16 findings → 16 patches appliqués. Pass 2 Haiku à venir pour valider convergence. | Claude (Validator Sonnet 4.6 + Author Opus 4.7) |
