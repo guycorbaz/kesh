@@ -1,8 +1,24 @@
 # Story 8.1: Import CAMT.053
 
-Status: ready-for-dev
+Status: archived-split
 
-<!-- Note: Validation est optionnelle. Lancer `bmad-create-story validate` pour une revue qualité multi-passes avant `dev-story`. -->
+> **⚠️ Spec archivée 2026-05-04 — superseded par split 8-1a + 8-1b**
+>
+> Cette spec unifiée a été scindée en deux sous-stories avant `dev-story` afin de respecter la règle CLAUDE.md « splitter si > 5 modules touchés » (8-1 unifiée touchait 6 modules : `kesh-import`, `kesh-core::bank_imports`, `kesh-db`, `kesh-api`, `frontend`, `kesh-i18n`).
+>
+> Précédent rétro Epic 7 : Story 7-1 a explosé à 7 passes review faute de splitting préventif sur 7+ modules cross-cutting (`epic-7-retro-2026-05-01.md`). La décision Guy 2026-05-04 d'éviter la rechute a été d'appliquer la frontière de split naturelle (cargo path dep entre `kesh-import` et le reste).
+>
+> **Nouvelles specs actives :**
+> - **[`8-1a-camt053-parser-only.md`](8-1a-camt053-parser-only.md)** — `ready-for-dev` 2026-05-04 — parseur `kesh-import` + helpers `kesh-core::bank_imports` + invariants CI (T1, T2, T3, T8.4, T8.5). ACs #2, #5-#9, #14a, #15a.
+> - **[`8-1b-camt053-persistence-ui.md`](8-1b-camt053-persistence-ui.md)** — `backlog` (sera `ready-for-dev` après 8-1a `done`) — migration DB + entités + repositories + route API + frontend + i18n + E2E (T4-T7, T8.1-T8.3, T9, T10). ACs #1, #3, #4, #10-#21.
+>
+> **Cette spec reste vivante en tant que référence des décisions de conception détaillées** (§schéma, §iban-tolerant, §currency, §balance-check, §multi-stmt, §upload-limit, §perf, §api-client, §quick-xml) que 8-1a et 8-1b citent par renvoi. Ne **pas** modifier cette spec — toute évolution se fait sur 8-1a ou 8-1b.
+>
+> **Validations conservées :** Pass 1 Sonnet 4.6 (16 findings, 16 appliqués) + Pass 2 Haiku 4.5 (7 findings, 3 appliqués + 4 rejetés) restent valides — la spec a convergé sur 0 findings > LOW post-Pass 2. Le split est mécanique (découpage des tâches sans modification du contenu validé), pas de re-validate nécessaire pour 8-1a/8-1b.
+
+---
+
+<!-- Note historique : ce fichier était initialement la spec active. Il a été archivé le 2026-05-04 par split. Les sections ci-dessous (Story / Contexte / Scope / Décisions / AC / Tasks / Dev Notes) restent telles que validées Pass 1 + Pass 2, à titre de référence. -->
 
 ## Story
 
