@@ -570,3 +570,40 @@ error-fiscal-year-closed-for-date = L’exercice qui couvre cette date est clôt
 go-to-settings = Ouvrir Paramètres
 settings-fiscal-years-link = Créez, renommez ou clôturez les exercices comptables de votre entreprise.
 
+
+# --- Story 8-1b — Import bancaire CAMT.053 ---
+# Convention de nommage (validate Pass 3 O1+O2) :
+#   bank-import-errors-{slug}   — erreurs (codes HTTP 4xx/5xx)
+#   bank-import-warnings-{slug} — warnings (preview 200 OK)
+#   bank-import-labels-{slug}   — labels statiques UI
+
+# Errors
+bank-import-errors-too-large = Fichier trop volumineux. La taille maximale autorisée est de 10 Mio.
+bank-import-errors-malformed-xml = Fichier XML mal formé ou tronqué. Vérifiez l'export bancaire.
+bank-import-errors-unsupported-version = Version CAMT.053 non supportée. Versions acceptées : 001.04 et 001.08.
+bank-import-errors-missing-field = Un champ requis est absent du fichier CAMT.053.
+bank-import-errors-invalid-amount = Un montant est invalide dans le fichier.
+bank-import-errors-invalid-date = Une date est invalide dans le fichier.
+bank-import-errors-balance-mismatch = Le solde de clôture ne correspond pas à la somme des transactions. Cochez « Confirmer malgré l'écart » pour importer quand même.
+bank-import-errors-unsupported-currency = Devise non supportée. Seul le franc suisse (CHF) est pris en charge dans cette version.
+bank-import-errors-no-matching-statement = Aucun statement du fichier ne correspond au compte bancaire sélectionné.
+bank-import-errors-duplicate-file = Ce fichier a déjà été importé pour cette entreprise.
+bank-import-errors-bank-account-not-found = Compte bancaire introuvable.
+bank-import-errors-parse-failed = Le fichier CAMT.053 n'a pas pu être analysé.
+
+# Warnings (preview 200 OK)
+bank-import-warnings-balance-mismatch = Solde de clôture incohérent.
+bank-import-warnings-unsupported-currency = Devise non supportée v0.1.
+bank-import-warnings-ignored-statements = Certains statements du fichier ne correspondent pas au compte sélectionné et seront ignorés.
+
+# Labels UI
+bank-import-labels-page-title = Import bancaire CAMT.053
+bank-import-labels-bank-account-selector = Compte bancaire cible
+bank-import-labels-drop-zone = Glissez votre fichier CAMT.053 ici ou cliquez pour parcourir
+bank-import-labels-preview-title = Prévisualisation
+bank-import-labels-confirm-import = Confirmer l'import
+bank-import-labels-cancel = Annuler
+bank-import-labels-confirm-balance-mismatch = Importer malgré l'écart de solde
+bank-import-labels-list-title = Imports précédents
+bank-import-labels-import-success = Import réussi.
+bank-import-labels-empty = Aucun import bancaire.
