@@ -198,7 +198,7 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
 - [ ] T6.6 — Mountant routes : POST → `comptable_routes`, GET → `authenticated_routes`.
 - [ ] T6.7 — Vérifier RBAC = middleware sub-router (`require_comptable_role`), pas de check inline.
 - [ ] T6.8 — Audit log via `audit_log::insert_in_tx(tx, NewAuditLogEntry { ... })` (signature exacte cf. spec d'origine §T6.8).
-- [ ] T6.9 — Tests E2E HTTP `crates/kesh-api/tests/bank_imports_e2e.rs` (**13 tests** — total porté de 12 → 13 par F1+F3+F4 validate Pass 1) :
+- [ ] T6.9 — Tests E2E HTTP `crates/kesh-api/tests/bank_imports_e2e.rs` (**14 tests** — 12 → 13 par F1+F3+F4 validate Pass 1, → 14 par O3 validate Pass 3 ajout test parse error) :
 
   Liste indicative (à raffiner pendant dev) :
   1. `post_import_creates_rows_atomically` (AC #1, #3a, #17) — happy path, vérifie INSERT atomique bank_import + bank_transactions.
@@ -214,7 +214,15 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
   11. `post_import_audit_log_contains_correct_entry` (AC #18 — F3) — assert isolément l'audit_log post-création.
   12. `get_imports_lists_only_own_company` (AC #10) — multi-tenant scoping GET.
   13. `get_import_returns_404_for_other_company_id` (AC #10) — IDOR cross-tenant → 404 (jamais 403, pattern KF-002).
+  14. `post_import_rejects_truncated_xml` (mapping `CamtError::MalformedXml` — O3 validate Pass 3) — charge `v04_truncated.xml` depuis `kesh-import` fixtures (cf. §Standards de test M2), asserte `400 BANK_IMPORT_MALFORMED_XML` avec `details.message` contenant la position approximative du tag non fermé. Couvre le mapping HTTP du chemin parser-error (les autres tests parse-error tels que `unsupported_version`, `invalid_amount`, `invalid_date` sont laissés à 8-2 / hardening ultérieur — `truncated` est le cas le plus fréquent en production, prioritaire en v0.1).
 - [ ] T6.10 — `DefaultBodyLimit::max(max_mib * 1024 * 1024)` (interprétation binaire MiB) + env `KESH_BANK_IMPORT_MAX_MB` (default 10) + `.env.example` mis à jour avec commentaire explicite : `# Taille max upload bank-import en MiB binaire (1 MiB = 1024² bytes ; 10 = 10 485 760 bytes)`. Cohérence M3 validate Pass 2.
+
+  **Validation env var (O4 validate Pass 3)** — pattern symétrique à `KESH_JWT_SECRET` Story 1-5 dans `crates/kesh-api/src/config.rs` :
+
+  - `0 < KESH_BANK_IMPORT_MAX_MB <= 100` (range raisonnable v0.1 : entre 1 MiB et 100 MiB).
+  - Si parse fail (`"abc"`, `"1.5"`) ou hors range : warning log + fallback default `10`.
+  - Test : `config_bank_import_max_mb_*` (defaults_to_10, respects_env, out_of_bounds_falls_back, accepts_lower_bound, accepts_upper_bound) — pattern symétrique aux tests `config_jwt_expiry_*` existants.
+  - Justification borne haute 100 MiB : 100 MiB couvre raisonnablement un fichier CAMT.053 annuel d'une grosse PME ; au-delà, risque OOM côté axum (`Bytes::from` charge tout en mémoire avant parse). Document la borne dans le doc-comment de la fonction de config.
 
 ### T7. Frontend feature `bank-import` (AC #1, #4, #20)
 
@@ -229,9 +237,31 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
 
 ### T8. i18n (AC #19)
 
-- [ ] T8.1 — Clés `bank-import-*` dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` (FR donné §scope T9 spec d'origine).
+**Convention de naming clés i18n (O1+O2 validate Pass 3)** :
+
+- Préfixe module strict : `bank-import-*` (kebab-case, matchant le dossier `frontend/src/lib/features/bank-import/`).
+- **Sous-préfixes pluriels** pour les groupes :
+  - `bank-import-errors-{slug}` — toutes les erreurs (codes HTTP 4xx/5xx mappés en messages utilisateur).
+  - `bank-import-warnings-{slug}` — toutes les warnings (preview retourne 200 OK + warnings non-bloquants).
+  - `bank-import-labels-{slug}` — labels statiques (boutons, en-têtes, placeholders).
+- **Mapping HTTP code → i18n key** : un code HTTP en `SCREAMING_SNAKE_CASE` (ex. `BANK_IMPORT_DUPLICATE_FILE`) est mappé vers la clé i18n en kebab-case avec **retrait du préfixe `BANK_IMPORT_`** et ajout de `bank-import-errors-` :
+
+  | HTTP code (T6.4) | i18n key |
+  |---|---|
+  | `BANK_IMPORT_TOO_LARGE` | `bank-import-errors-too-large` |
+  | `BANK_IMPORT_MALFORMED_XML` | `bank-import-errors-malformed-xml` |
+  | `BANK_IMPORT_UNSUPPORTED_VERSION` | `bank-import-errors-unsupported-version` |
+  | `BANK_IMPORT_BALANCE_MISMATCH` | `bank-import-errors-balance-mismatch` |
+  | `BANK_IMPORT_UNSUPPORTED_CURRENCY` | `bank-import-errors-unsupported-currency` |
+  | `BANK_IMPORT_NO_MATCHING_STATEMENT` | `bank-import-errors-no-matching-statement` |
+  | `BANK_IMPORT_DUPLICATE_FILE` | `bank-import-errors-duplicate-file` |
+  | `BANK_ACCOUNT_NOT_FOUND` | `bank-import-errors-bank-account-not-found` |
+
+  Les warnings `balance_mismatch` (preview), `unsupported_currency` (preview), `ignored_statements` mappent vers `bank-import-warnings-{slug}` selon la même règle.
+
+- [ ] T8.1 — Clés `bank-import-*` dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` (FR donné §scope T9 spec d'origine — vérifier que toutes les clés erreur listées ci-dessus existent au préfixe `bank-import-errors-`, pas `bank-import-error-` au singulier).
 - [ ] T8.2 — Traductions DE / IT / EN.
-- [ ] T8.3 — Vérifier `npm run lint-i18n-ownership` pass.
+- [ ] T8.3 — Vérifier `npm run lint-i18n-ownership` pass (l'ownership du namespace `bank-import-*` est exclusivement la feature `bank-import` — Story 6-3 KF-006 pattern).
 
 ### T9. Tests E2E Playwright (AC #1, #4, #13, #14, #20)
 
@@ -240,7 +270,7 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
   1. `imports a CAMT.053 v04 file end-to-end` (AC #1) — drag-drop `v04_minimal.xml`, sélectionne bank account, preview, confirm, vérifie redirection sur `/bank-import/[id]` + transactions listées.
   2. `requires bank account selection before upload` (AC #3 / #4) — l'upload est désactivé tant qu'aucun `bankAccountId` n'est sélectionné ; un message d'erreur ARIA s'affiche en cas de tentative.
   3. `shows balance mismatch warning and accepts override` (AC #14) — preview affiche `warnings.balance_mismatch`, checkbox `confirmBalanceMismatch` apparaît, confirm → 201.
-  4. `rejects file > 10 MiB` (AC #13) — upload d'un fichier 12 MiB binaire (12 × 1024² bytes) → toast erreur `bank-import-error-too-large`. **Note** : tester en MiB cohérent avec §upload-limit (pas en MB décimal).
+  4. `rejects file > 10 MiB` (AC #13) — upload d'un fichier 12 MiB binaire (12 × 1024² bytes) → toast erreur `bank-import-errors-too-large` (préfixe **pluriel** `bank-import-errors-*` aligné spec d'origine §9 / `messages.ftl`, voir convention T8.1). **Note** : tester en MiB cohérent avec §upload-limit (pas en MB décimal).
   5. `lists previous imports paginated` (AC #10) — page `/bank-import` liste les imports précédents avec pagination.
   6. `accessibility — axe scan zero violations` (AC #20) — `axe-core` scan sur la page principale + page detail, zéro violation.
 
@@ -440,6 +470,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-impor
 
 | Date | Action | Auteur |
 |------|--------|--------|
+| 2026-05-04 | Validate Pass 3 Opus 4.7 (cycle Sonnet → Haiku → **Opus**, fenêtre fraîche, dernière passe attendue avant convergence). 16/16 patches Pass 1+2 confirmés APPLIED sans régression. 4 nouveaux findings Pass 3 → triage : **0 HIGH** + **1 MEDIUM** (O1 i18n key drift `bank-import-error-too-large` singulier vs `bank-import-errors-too-large` pluriel — bug introduit par patch F13 Pass 1 Sonnet, attrapé par Opus en Pass 3, drift cross-pass classique) + **3 LOW** (O2 mapping HTTP↔i18n key convention, O3 test #14 `v04_truncated.xml` ajouté à T6.9, O4 validation env var `KESH_BANK_IMPORT_MAX_MB` 0<x≤100). 4 patches appliqués. Trend final : 10 → 1 → **0 > LOW** post-O1 patch. **Critère d'arrêt CLAUDE.md atteint** : pas de relance Pass 4 nécessaire. Verdict Opus : **GO** sans condition. Story 8-1b prête pour `bmad-dev-story 8-1b`. Cycle validate complet : 22 patches au total (12 Pass 1 + 4 Pass 2 + 4 Pass 3 + 2 LOW absorbés). | Claude (Opus 4.7, validate Pass 3 application + closure) |
 | 2026-05-04 | Validate Pass 2 Haiku 4.5 (cycle Sonnet → Haiku, fenêtre fraîche). 12/12 patches Pass 1 confirmés APPLIED sans régression. 6 nouveaux findings Haiku → triage : **0 HIGH** + **1 MEDIUM** (M3 ambiguïté MiB/MB §upload-limit + env var KESH_BANK_IMPORT_MAX_MB) + **3 LOW** (M1 sqlx pattern T5.1 inline code, M2 fixture path convention §Standards de test, M4 localisation figée tests #8-9 IDOR dans bank_accounts) + **2 reject** (L1 dual coverage cosmétique, L2 audit log details_json déjà documenté ailleurs ; H3 « 7 vs 5 NEW variantes » faux positif vérifié). 4 patches appliqués. Trend : 10 → 1 > LOW (90% reduction). Verdict Haiku : GO-WITH-PATCHES. Relance Pass 3 Opus par règle CLAUDE.md (cycle Sonnet → Haiku → Opus, fenêtre fraîche, dernière passe avant convergence). | Claude (Opus 4.7, validate Pass 2 application) |
 | 2026-05-04 | Validate Pass 1 Sonnet 4.6 (cycle Opus → Sonnet par règle CLAUDE.md, fenêtre fraîche). 14 findings bruts → triage : **4 HIGH** (F1 AC #3 ignoredStatements test, F2 T5.6/AC#11 9 tests inline + count, F3 AC #18 audit log dédié, F4 BANK_IMPORT_NO_MATCHING_STATEMENT AC #3c + test) + **6 MEDIUM** (F5 `parse_camt053` canonique, F6 SourceFormat::Csv mapping, F7 CamtError::MissingRequiredField(String) drift, F8 DDL uppercase note, F10 sqlx try_from pattern, F11 spawn_app vs setup_test_app) + **2 LOW** (F13 6 Playwright scenarios inline, F15 File List pré-rempli) + **1 reject** (F12 lib.rs déjà présent ligne 206). 12 patches appliqués. Verdict Sonnet : GO-WITH-PATCHES. Trend findings > LOW : 10 → relance Pass 2 Haiku par règle CLAUDE.md. Status : `backlog` → `ready-for-dev`. | Claude (Opus 4.7, validate Pass 1 application) |
 | 2026-05-04 | Création de la story par split de 8-1 (`8-1-import-camt053.md`) en 8-1a (parser-only) + 8-1b (persistance + UI). Justification : règle CLAUDE.md « splitter si > 5 modules » (8-1 unifiée touchait 6 modules). Précédent rétro Epic 7 : Story 7-1 a explosé à 7 passes review faute de splitting préventif. Décision Guy 2026-05-04. La spec d'origine 8-1 reste comme référence des décisions de conception détaillées. 8-1b dépend de 8-1a (path dep) — status `backlog` jusqu'à 8-1a `done`. | Claude (Opus 4.7, dev-story split coordinator) |
