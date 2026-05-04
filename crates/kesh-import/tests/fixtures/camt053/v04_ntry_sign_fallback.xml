@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>STMT-NTRY-SIGN-FALLBACK-001</MsgId>
+      <CreDtTm>2026-05-31T23:59:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-NTRY-SIGN-FALLBACK</Id>
+      <CreDtTm>2026-05-31T23:59:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2026-05-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-05-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH4431999123000889012</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">1000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-05-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">1020.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-05-31</Dt>
+        </Dt>
+      </Bal>
+      <!--
+        Régression Pass 2 F13 / Pass 3 BH-Haiku #10 :
+        cette Ntry n'a PAS de <CdtDbtInd> à son niveau (cas légitime
+        observé chez certains exporters bancaires). Chaque <TxDtls>
+        en porte un : le parseur doit utiliser le sign TxDtls et
+        n'errer que si un TxDtls *et* la Ntry sont tous deux sans
+        signe. Ce fichier est syntaxiquement bien-formé pour CAMT.053
+        (le schéma autorise CdtDbtInd à divers niveaux).
+      -->
+      <Ntry>
+        <Amt Ccy="CHF">100.00</Amt>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-05-15</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-05-15</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-FALLBACK-001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-FALLBACK-CRDT</EndToEndId>
+              <AcctSvcrRef>BANK-FALLBACK-CRDT</AcctSvcrRef>
+            </Refs>
+            <Amt Ccy="CHF">60.00</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Client recette</Nm>
+              </Dbtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Encaissement A</Ustrd>
+            </RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-FALLBACK-DBIT</EndToEndId>
+              <AcctSvcrRef>BANK-FALLBACK-DBIT</AcctSvcrRef>
+            </Refs>
+            <Amt Ccy="CHF">40.00</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <RltdPties>
+              <Cdtr>
+                <Nm>Fournisseur</Nm>
+              </Cdtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Paiement B</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Mouvement net +20</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

@@ -284,3 +284,38 @@ fn parse_credit_debit_indicator_signs_amount_correctly() {
     assert_eq!(dbit.amount, dec!(-200.00), "DBIT ⇒ montant négatif");
     assert_eq!(dbit.counterparty_name.as_deref(), Some("Fournisseur"));
 }
+
+#[test]
+fn parse_ntry_without_sign_falls_back_to_txdtls_signs() {
+    // Régression review code Pass 3 finding BH-Haiku #10 (et patch
+    // Pass 2 F13) : un fichier dans lequel `<Ntry>` n'a PAS de
+    // `<CdtDbtInd>` mais où chaque `<TxDtls>` porte le sien doit
+    // être parsé sans erreur. Le sign Ntry devient `Option::None` et
+    // le parseur applique le sign de chaque TxDtls.
+    //
+    // Ce test verrouille la régression : si une refonte future remet
+    // `n.sign.ok_or(...)?` au-dessus du check `txdtls.is_empty()`,
+    // cette fixture lèverait MissingRequiredField et le test
+    // échouerait.
+    let xml = load("v04_ntry_sign_fallback.xml");
+    let stmts = parse_camt053(&xml).expect("parse OK avec Ntry sans CdtDbtInd");
+    assert_eq!(stmts.len(), 1);
+
+    let s = &stmts[0];
+    assert_eq!(s.account_iban, "CH4431999123000889012");
+    assert_eq!(s.transactions.len(), 2, "2 TxDtls ⇒ 2 ImportedTransaction");
+
+    let crdt = &s.transactions[0];
+    assert_eq!(crdt.amount, dec!(60.00), "TxDtls[0] CRDT ⇒ montant positif");
+    assert_eq!(crdt.end_to_end_id.as_deref(), Some("E2E-FALLBACK-CRDT"));
+    assert_eq!(crdt.counterparty_name.as_deref(), Some("Client recette"));
+
+    let dbit = &s.transactions[1];
+    assert_eq!(
+        dbit.amount,
+        dec!(-40.00),
+        "TxDtls[1] DBIT ⇒ montant négatif (sign TxDtls utilisé même sans Ntry sign)"
+    );
+    assert_eq!(dbit.end_to_end_id.as_deref(), Some("E2E-FALLBACK-DBIT"));
+    assert_eq!(dbit.counterparty_name.as_deref(), Some("Fournisseur"));
+}
