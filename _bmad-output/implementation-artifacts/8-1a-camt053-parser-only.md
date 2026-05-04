@@ -1,6 +1,6 @@
 # Story 8.1a: Parseur CAMT.053 (kesh-import + kesh-core)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Issue de scission de Story 8-1 (`8-1-import-camt053.md`) le 2026-05-04 :
      Story 8-1 unifiée touchait 6 modules cross-cutting (au seuil CLAUDE.md « splitter si > 5 modules »).
@@ -81,8 +81,8 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
 
 ### T1. Fixtures CAMT.053 (AC #9)
 
-- [ ] T1.1 — Créer `crates/kesh-import/tests/fixtures/camt053/` et `crates/kesh-import/tests/fixtures/README.md` (provenance synthétique, pas de PII, IBAN suisses fictifs MOD-97 valides).
-- [ ] T1.2 — Construire les **10** fichiers XML listés § Scope T1 (8-1) à la main à partir de l'XSD `docs/six-references/ig-cash-managment-xml-schemas-v2.0.2-en/camt.053.001.08.xsd` (pour v08) et de la spec ISO 20022 v04 publique :
+- [x] T1.1 — Créer `crates/kesh-import/tests/fixtures/camt053/` et `crates/kesh-import/tests/fixtures/README.md` (provenance synthétique, pas de PII, IBAN suisses fictifs MOD-97 valides).
+- [x] T1.2 — Construire les **10** fichiers XML listés § Scope T1 (8-1) à la main à partir de l'XSD `docs/six-references/ig-cash-managment-xml-schemas-v2.0.2-en/camt.053.001.08.xsd` (pour v08) et de la spec ISO 20022 v04 publique :
   - `v04_minimal.xml` (namespace par défaut)
   - `v04_prefixed_namespace.xml` (`<ns:Document xmlns:ns="...">`, **critique**)
   - `v08_minimal.xml`
@@ -93,12 +93,12 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
   - `v04_invalid_iban.xml` (IBAN counterparty checksum cassé)
   - `v04_eur_currency.xml` (`<Acct><Ccy>EUR</Ccy>`)
   - `v04_credit_debit_indicator.xml` (1 DBIT + 1 CRDT, montants `<Amt>` non-signés)
-- [ ] T1.3 — Vérifier `xmllint --noout fixtures/*.xml` → tous well-formed (sauf `v04_truncated.xml` qui doit échouer).
+- [x] T1.3 — Vérifier `xmllint --noout fixtures/*.xml` → tous well-formed (sauf `v04_truncated.xml` qui doit échouer).
 
 ### T2. Parseur `kesh-import::camt053` (AC #1, #2, #5, #9)
 
-- [ ] T2.1 — Ajouter `quick-xml = "0.39"` à `crates/kesh-import/Cargo.toml` (latest stable, requis pour `Reader::config_mut()`). Aucun ajout `[dev-dependencies]` au-delà du spike.
-- [ ] T2.2 — Créer `crates/kesh-import/src/error.rs` :
+- [x] T2.1 — Ajouter `quick-xml = "0.39"` à `crates/kesh-import/Cargo.toml` (latest stable, requis pour `Reader::config_mut()`). Aucun ajout `[dev-dependencies]` au-delà du spike.
+- [x] T2.2 — Créer `crates/kesh-import/src/error.rs` :
 
   ```rust
   #[derive(Debug, thiserror::Error, Clone, PartialEq)]
@@ -116,14 +116,14 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
   }
   ```
 
-- [ ] T2.3 — Créer `crates/kesh-import/src/camt053/mod.rs` avec :
+- [x] T2.3 — Créer `crates/kesh-import/src/camt053/mod.rs` avec :
   - Constantes `NS_V04 = "urn:iso:std:iso:20022:tech:xsd:camt.053.001.04"`, `NS_V08 = "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"`.
   - `pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError>` qui :
     1. Instancie `quick_xml::NsReader::from_reader(xml)`.
     2. Cherche le premier `Event::Start` au tag local `Document`.
     3. Résout le namespace via `reader.resolve_element(qname)` → URI.
     4. Si URI = NS_V04 → délègue à `v04::parse(reader)`. Si URI = NS_V08 → `v08::parse(reader)`. Sinon → `Err(CamtError::UnsupportedVersion(uri))`.
-- [ ] T2.4 — Implémenter `crates/kesh-import/src/camt053/v04.rs` (parser pull-based) — extrait les éléments :
+- [x] T2.4 — Implémenter `crates/kesh-import/src/camt053/v04.rs` (parser pull-based) — extrait les éléments :
   - `<BkToCstmrStmt>` (racine de la cardinalité `Vec<ImportedStatement>`)
   - `<Stmt>` (1 → 1 `ImportedStatement`)
   - `<Stmt><Id>` → `statement_id: Option<String>`
@@ -142,9 +142,9 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
     - `<AcctSvcrRef>` → `transaction_id: Option<String>`
     - `<NtryDtls><TxDtls><RltdPties><Cdtr><Nm>` ou `<Dbtr><Nm>` → `counterparty_name`
     - `<NtryDtls><TxDtls><RltdPties><CdtrAcct><Id><IBAN>` ou `<DbtrAcct>` → `counterparty_iban`
-- [ ] T2.5 — Implémenter `crates/kesh-import/src/camt053/v08.rs`. Réutiliser le code commun via un trait `CamtParser { fn parse(self) -> Result<Vec<ImportedStatement>, CamtError>; }` ; en pratique v08 partage 95% du schéma au niveau des tags utilisés ici, le delta principal `<Othr><SchmeNm>` enrichi n'est pas mobilisé. Documenter inline `// Delta v04 → v08 : ...`.
-- [ ] T2.6 — Mettre à jour `crates/kesh-import/src/lib.rs` : ajouter `pub mod camt053; pub mod error;`. Conserver `pub mod types; pub use types::{...};`. Re-exporter `pub use camt053::parse as parse_camt053; pub use error::CamtError;`.
-- [ ] T2.7 — Tests unitaires `crates/kesh-import/tests/camt053_tests.rs` (10 tests, AC #9) :
+- [x] T2.5 — Implémenter `crates/kesh-import/src/camt053/v08.rs`. Réutiliser le code commun via un trait `CamtParser { fn parse(self) -> Result<Vec<ImportedStatement>, CamtError>; }` ; en pratique v08 partage 95% du schéma au niveau des tags utilisés ici, le delta principal `<Othr><SchmeNm>` enrichi n'est pas mobilisé. Documenter inline `// Delta v04 → v08 : ...`. *(Implémentation : pas de trait, v04/v08 sont des wrappers minces autour de `parse_with_version`. Le delta `<Pty>` wrapper sur v08 est absorbé par le matching de chemin dans `handle_txdtls_text`. Un trait n'apportait pas de valeur, vu que les deux versions partagent le même chemin de code.)*
+- [x] T2.6 — Mettre à jour `crates/kesh-import/src/lib.rs` : ajouter `pub mod camt053; pub mod error;`. Conserver `pub mod types; pub use types::{...};`. Re-exporter `pub use camt053::parse as parse_camt053; pub use error::CamtError;`.
+- [x] T2.7 — Tests unitaires `crates/kesh-import/tests/camt053_tests.rs` (10 tests, AC #9) :
   - `parse_v04_minimal_extracts_all_transactions`
   - `parse_v04_prefixed_namespace_extracts_all_transactions` (régression H4)
   - `parse_v08_minimal_extracts_all_transactions`
@@ -158,7 +158,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
 
 ### T3. Extensions `kesh-core::bank_imports` (AC #8, #14a, #15a)
 
-- [ ] T3.1 — Étendre `crates/kesh-core/src/bank_imports.rs` avec :
+- [x] T3.1 — Étendre `crates/kesh-core/src/bank_imports.rs` avec :
 
   ```rust
   use chrono::NaiveDateTime;
@@ -190,7 +190,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
 
   `imported_by_user_id` est posé à 0 par défaut côté `from_imported` (le caller — handler API 8-1b — surcharge avec le user du JWT avant persistance). Alternative : passer `imported_by_user_id` en paramètre comme `imported_at`.
 
-- [ ] T3.2 — Implémenter `pub fn from_imported(stmt: &ImportedStatement, bank_account_id: i64, company_id: i64, file_hash: String, filename: String, imported_at: NaiveDateTime, imported_by_user_id: i64) -> (BankImportDraft, Vec<BankTransactionDraft>)`. **`imported_at` et `imported_by_user_id` sont passés en paramètres** — pas de `Utc::now()` ou de lookup user interne (préserve la pureté `kesh-core`).
+- [x] T3.2 — Implémenter `pub fn from_imported(stmt: &ImportedStatement, bank_account_id: i64, company_id: i64, file_hash: String, filename: String, imported_at: NaiveDateTime, imported_by_user_id: i64) -> (BankImportDraft, Vec<BankTransactionDraft>)`. **`imported_at` et `imported_by_user_id` sont passés en paramètres** — pas de `Utc::now()` ou de lookup user interne (préserve la pureté `kesh-core`).
 
   Le `SourceFormatTag` est dérivé de `stmt.source_format` :
   ```rust
@@ -204,7 +204,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
 
   Convention retenue : `SourceFormat::Camt053 { version }` avec une version inconnue est traité comme une erreur du parseur (ne devrait pas arriver, mais on évite `panic!` côté `kesh-core`). Implémenter `from_imported` qui retourne `Result<(BankImportDraft, Vec<BankTransactionDraft>), CoreError>` plutôt qu'un tuple direct, avec une nouvelle variante `CoreError::BankImportUnknownVersion(String)` (Display : `"version CAMT.053 inattendue : {0}"`, code `"BANK_IMPORT_UNKNOWN_VERSION"`).
 
-- [ ] T3.3 — Implémenter `pub fn validate_balance(stmt: &ImportedStatement) -> Result<(), CoreError>` (AC #14a, CR-010 #62) :
+- [x] T3.3 — Implémenter `pub fn validate_balance(stmt: &ImportedStatement) -> Result<(), CoreError>` (AC #14a, CR-010 #62) :
 
   ```rust
   pub fn validate_balance(stmt: &ImportedStatement) -> Result<(), CoreError> {
@@ -226,7 +226,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
   }
   ```
 
-- [ ] T3.4 — Implémenter `pub fn validate_currency_supported_v0_1(stmt: &ImportedStatement) -> Result<(), CoreError>` (AC #15a) :
+- [x] T3.4 — Implémenter `pub fn validate_currency_supported_v0_1(stmt: &ImportedStatement) -> Result<(), CoreError>` (AC #15a) :
 
   ```rust
   pub fn validate_currency_supported_v0_1(stmt: &ImportedStatement) -> Result<(), CoreError> {
@@ -237,7 +237,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
   }
   ```
 
-- [ ] T3.5 — Étendre `crates/kesh-core/src/errors.rs` avec **3 nouvelles variantes** + bras `error_code()` correspondants (la fonction est exhaustive sans wildcard) :
+- [x] T3.5 — Étendre `crates/kesh-core/src/errors.rs` avec **3 nouvelles variantes** + bras `error_code()` correspondants (la fonction est exhaustive sans wildcard) :
 
   ```rust
   #[error("solde de clôture incohérent : ouverture {opening} + somme {sum} ≠ clôture {closing} (écart {diff})")]
@@ -260,7 +260,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
   - `Self::BankImportUnsupportedCurrency(_) => "BANK_IMPORT_UNSUPPORTED_CURRENCY"`
   - `Self::BankImportUnknownVersion(_) => "BANK_IMPORT_UNKNOWN_VERSION"`
 
-- [ ] T3.6 — Tests unitaires (étendre les 4 tests spike existants à ~10) :
+- [x] T3.6 — Tests unitaires (étendre les 4 tests spike existants à ~10) :
   - `validate_balance_passes_when_within_tolerance`
   - `validate_balance_fails_when_diff_exceeds_one_cent`
   - `validate_balance_skipped_when_balances_missing`
@@ -272,8 +272,8 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs non
 
 ### T8. Invariants CI (AC #6, #7)
 
-- [ ] T8.4 — Étendre le job `Backend (Rust)` du workflow `.github/workflows/ci.yml` avec un step `cargo publish --dry-run --allow-dirty -p kesh-import` (modèle aligné sur le step équivalent `kesh-qrbill` Story 5-3 — vérifier le nom exact du job dans le yml avant édition).
-- [ ] T8.5 — Ajouter un step `cargo metadata --format-version 1 -p kesh-import | jq -e '.packages[] | select(.name == "kesh-import") | .dependencies[] | select(.path != null) | length' | wc -l` qui doit retourner `0` (zéro path dep interne). Échec → CI rouge.
+- [x] T8.4 — Étendre le job `Backend (Rust)` du workflow `.github/workflows/ci.yml` avec un step `cargo publish --dry-run --allow-dirty -p kesh-import` (modèle aligné sur le step équivalent `kesh-qrbill` Story 5-3 — vérifier le nom exact du job dans le yml avant édition). *(Note : aucun step équivalent kesh-qrbill n'existait dans `ci.yml` — Story 5-3 ne l'a pas ajouté. Step créé en autonome pour 8-1a, modèle réutilisable par une future story qui couvrirait kesh-qrbill et kesh-payment.)*
+- [x] T8.5 — Ajouter un step `cargo metadata --format-version 1 -p kesh-import | jq -e '.packages[] | select(.name == "kesh-import") | .dependencies[] | select(.path != null) | length' | wc -l` qui doit retourner `0` (zéro path dep interne). Échec → CI rouge. *(Implémentation : capture la liste des deps internes dans une variable shell, échec si non vide. Plus lisible que `jq -e ... | wc -l`, et l'erreur affiche les noms des deps fautives.)*
 
 ## Risque de splitting (CLAUDE.md check)
 
@@ -345,16 +345,64 @@ cargo metadata -p kesh-import --format-version 1 \
 
 ### Agent Model Used
 
-(à remplir par le dev agent)
+Claude Opus 4.7 (1M context) — `claude-opus-4-7[1m]`. Implémentation en une seule passe pull-based sans HALT, suivant la séquence T1 → T2 → T3 → T8 du story file.
 
 ### Debug Log References
 
+- `cargo build -p kesh-import` (1 erreur initiale `unescape()` non trouvée sur `BytesText` en `quick-xml 0.39` ; remédiée en passant par `decode()` + `quick_xml::escape::unescape(...)`).
+- `cargo test -p kesh-import` (test `parse_truncated_returns_malformed_xml_error` initialement vert (`Ok(vec![])`) au lieu d'erreur ; remédié par contrôle explicite à EOF que `path` est vide et `sb` n'a pas de builder ouvert).
+- `cargo publish --dry-run --allow-dirty -p kesh-import` → 25 fichiers, 88.7 KiB packagés, build standalone OK.
+- `cargo metadata` filtré sur path != null pour `kesh-import` → liste vide.
+- `cargo fmt --all -- --check` initialement rouge sur 3 fichiers (mises en forme rust 2024) → `cargo fmt --all` appliqué.
+- `cargo clippy --workspace --all-targets -- -D warnings` → vert.
+- `cargo test -p kesh-import -p kesh-core` → 7 + 10 + 147 + 4 = 168 tests verts (dont 13 `bank_imports::tests` + 17 tests dans `kesh-import`).
+
 ### Completion Notes List
 
+- **Stratégie parseur** : pull-based avec `quick_xml::NsReader` + pile de chemin (`Vec<String>`) + builders (`StmtBuilder`, `BalBuilder`, `NtryBuilder`, `TxDtlsBuilder`). Initialisation sur `Event::Start` du tag d'ancrage, finalisation sur `Event::End`. Dispatch des événements `Text` selon le builder actif (in-tx-dtls / in-ntry / in-bal / in-stmt). Match de chemin par suffix (`ends_with`) pour identifier les leaves.
+- **Dispatch namespace** : `parse(xml)` lit jusqu'au premier `<Document>` via `read_resolved_event_into` puis dispatche `v04::parse` ou `v08::parse` selon `ResolveResult::Bound(Namespace(ns))`. Préfixe ignoré (la `NsReader` résout proprement `<ns:Document xmlns:ns="...">`).
+- **Trait CamtParser non implémenté** : v04/v08 partagent ~100% du chemin de code utilisé (le delta `<Pty>` wrapper sur v08 est absorbé par le matching de chemin dans `handle_txdtls_text`). Un trait n'apportait pas de valeur, j'ai préféré 2 wrappers minces autour de `parse_with_version(reader, "001.04"|"001.08")`. Documenté dans T2.5.
+- **EOF tronqué détecté** : à `Event::Eof`, vérification `path.is_empty() && sb.is_none()` ; sinon retour `MalformedXml("fin de fichier inattendue, éléments non fermés : ...")`. quick-xml 0.39 ne lève pas d'erreur sur tags non fermés à EOF par défaut.
+- **`SourceFormatTag` finie + `as_db_str()`** : projection stable pour la base (`CAMT053_V04`/`CAMT053_V08`). Persistance déclarée Story 8-1b.
+- **`CoreError::error_code()` exhaustive** : 3 nouveaux bras ajoutés (`BANK_IMPORT_BALANCE_MISMATCH`, `BANK_IMPORT_UNSUPPORTED_CURRENCY`, `BANK_IMPORT_UNKNOWN_VERSION`).
+- **Test bonus `from_imported_v08_maps_to_correct_tag`** : 11 tests `bank_imports` au lieu des 8 prévus dans T3.6, pour couvrir explicitement le mapping v08 → `Camt053V08`.
+- **Local test gap pré-existant** : `cargo test -p kesh-api config::tests::*` (20 tests) échoue localement parce que `.env` porte `KESH_HOST=0.0.0.0 + KESH_TEST_MODE=true` que le code refuse au boot pour raisons de sécurité. Échec pré-existant à cette story (vérifié sur `git stash` baseline). Ne se manifeste pas en CI (pas de `.env` checked-in).
+- **Step CI alternatif** : T8.5 implémenté avec capture de la liste des deps internes dans `INTERNAL_DEPS=$(...)` puis `[ -n "$INTERNAL_DEPS" ] && exit 1` plutôt que `jq -e ... | wc -l`, pour afficher les noms des deps fautives en cas d'échec (meilleur diagnostic).
+
 ### File List
+
+**Nouveaux fichiers** :
+
+- `crates/kesh-import/src/error.rs`
+- `crates/kesh-import/src/camt053/mod.rs`
+- `crates/kesh-import/src/camt053/v04.rs`
+- `crates/kesh-import/src/camt053/v08.rs`
+- `crates/kesh-import/tests/camt053_tests.rs`
+- `crates/kesh-import/tests/fixtures/README.md`
+- `crates/kesh-import/tests/fixtures/camt053/v04_minimal.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_prefixed_namespace.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v08_minimal.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_with_subtxs.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_multi_stmt.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_balance_mismatch.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_truncated.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_invalid_iban.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_eur_currency.xml`
+- `crates/kesh-import/tests/fixtures/camt053/v04_credit_debit_indicator.xml`
+
+**Fichiers modifiés** :
+
+- `crates/kesh-import/Cargo.toml` (ajout `quick-xml = "0.39"`)
+- `crates/kesh-import/src/lib.rs` (re-exports `camt053`, `error`, `parse_camt053`, `CamtError`)
+- `crates/kesh-core/src/bank_imports.rs` (ajout `BankImportDraft`, `SourceFormatTag`, `from_imported`, `validate_balance`, `validate_currency_supported_v0_1` + 11 tests)
+- `crates/kesh-core/src/errors.rs` (ajout 3 variantes `BankImport*` + 3 bras `error_code()`)
+- `.github/workflows/ci.yml` (ajout 2 steps `cargo publish --dry-run` + invariant zéro path dep)
+- `Cargo.lock` (auto, ajout `quick-xml v0.39.2` et 1 transitive)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (8-1a → in-progress puis review)
 
 ### Change Log
 
 | Date | Action | Auteur |
 |------|--------|--------|
+| 2026-05-04 | Implémentation Story 8-1a terminée. T1 (10 fixtures + README), T2 (parseur `kesh-import::camt053` v04/v08, dispatch namespace, 10 tests d'intégration), T3 (extensions `kesh-core::bank_imports` : `BankImportDraft` / `SourceFormatTag` / `from_imported` / `validate_balance` / `validate_currency_supported_v0_1`, 3 nouvelles variantes `CoreError::BankImport*`, 11 tests unitaires), T8 (invariants CI : `cargo publish --dry-run -p kesh-import` AC #7 + invariant zéro path dep AC #6). Validation locale : fmt + build + clippy `-D warnings` + tests `kesh-import` (10 + 7) et `kesh-core` (147) verts ; `cargo publish --dry-run -p kesh-import` OK ; `cargo metadata` invariant vide. ACs #2/#5/#6/#7/#8/#9/#14a/#15a satisfaits. Status story : `ready-for-dev` → `review`. | Claude (Opus 4.7, dev-story exécution) |
 | 2026-05-04 | Création de la story par split de 8-1 (`8-1-import-camt053.md`) en 8-1a (parser-only) + 8-1b (persistance + UI). Justification : règle CLAUDE.md « splitter si > 5 modules » (8-1 unifiée touchait 6 modules). Précédent rétro Epic 7 : Story 7-1 a explosé à 7 passes review faute de splitting préventif. Décision Guy 2026-05-04. La spec d'origine 8-1 reste comme référence des décisions de conception détaillées. | Claude (Opus 4.7, dev-story split coordinator) |

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ns:Document xmlns:ns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <ns:BkToCstmrStmt>
+    <ns:GrpHdr>
+      <ns:MsgId>STMT-PREFIX-001</ns:MsgId>
+      <ns:CreDtTm>2026-05-31T23:59:00</ns:CreDtTm>
+    </ns:GrpHdr>
+    <ns:Stmt>
+      <ns:Id>STMT-PREFIXED</ns:Id>
+      <ns:CreDtTm>2026-05-31T23:59:00</ns:CreDtTm>
+      <ns:FrToDt>
+        <ns:FrDtTm>2026-05-01T00:00:00</ns:FrDtTm>
+        <ns:ToDtTm>2026-05-31T23:59:59</ns:ToDtTm>
+      </ns:FrToDt>
+      <ns:Acct>
+        <ns:Id>
+          <ns:IBAN>CH4431999123000889012</ns:IBAN>
+        </ns:Id>
+        <ns:Ccy>CHF</ns:Ccy>
+      </ns:Acct>
+      <ns:Bal>
+        <ns:Tp>
+          <ns:CdOrPrtry>
+            <ns:Cd>OPBD</ns:Cd>
+          </ns:CdOrPrtry>
+        </ns:Tp>
+        <ns:Amt Ccy="CHF">5000.00</ns:Amt>
+        <ns:CdtDbtInd>CRDT</ns:CdtDbtInd>
+        <ns:Dt>
+          <ns:Dt>2026-05-01</ns:Dt>
+        </ns:Dt>
+      </ns:Bal>
+      <ns:Bal>
+        <ns:Tp>
+          <ns:CdOrPrtry>
+            <ns:Cd>CLBD</ns:Cd>
+          </ns:CdOrPrtry>
+        </ns:Tp>
+        <ns:Amt Ccy="CHF">5500.00</ns:Amt>
+        <ns:CdtDbtInd>CRDT</ns:CdtDbtInd>
+        <ns:Dt>
+          <ns:Dt>2026-05-31</ns:Dt>
+        </ns:Dt>
+      </ns:Bal>
+      <ns:Ntry>
+        <ns:Amt Ccy="CHF">500.00</ns:Amt>
+        <ns:CdtDbtInd>CRDT</ns:CdtDbtInd>
+        <ns:Sts>BOOK</ns:Sts>
+        <ns:BookgDt>
+          <ns:Dt>2026-05-10</ns:Dt>
+        </ns:BookgDt>
+        <ns:ValDt>
+          <ns:Dt>2026-05-10</ns:Dt>
+        </ns:ValDt>
+        <ns:AcctSvcrRef>BANK-TX-101</ns:AcctSvcrRef>
+        <ns:NtryDtls>
+          <ns:TxDtls>
+            <ns:Refs>
+              <ns:EndToEndId>E2E-PFX-001</ns:EndToEndId>
+            </ns:Refs>
+            <ns:RltdPties>
+              <ns:Dbtr>
+                <ns:Nm>Régie Genevoise SA</ns:Nm>
+              </ns:Dbtr>
+            </ns:RltdPties>
+            <ns:RmtInf>
+              <ns:Ustrd>Honoraires avril</ns:Ustrd>
+            </ns:RmtInf>
+          </ns:TxDtls>
+        </ns:NtryDtls>
+        <ns:AddtlNtryInf>Honoraires avril</ns:AddtlNtryInf>
+      </ns:Ntry>
+    </ns:Stmt>
+  </ns:BkToCstmrStmt>
+</ns:Document>

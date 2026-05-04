@@ -69,6 +69,26 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Story 8-1a (AC #7) : kesh-import est publiable indépendamment sur
+      # crates.io. cargo publish --dry-run vérifie que le manifeste, les
+      # exclusions et les dépendances respectent les contraintes du registry.
+      - name: kesh-import — cargo publish --dry-run
+        run: cargo publish --dry-run --allow-dirty -p kesh-import
+
+      # Story 8-1a (AC #6) : invariant zéro dépendance workspace interne.
+      # Le crate doit rester autonome (décision archi #7) pour pouvoir
+      # publier sur crates.io sans pulled-in `kesh-core`/`kesh-db`/etc.
+      # `cargo metadata` filtré sur les deps `path != null` doit être vide.
+      - name: kesh-import — invariant zéro path dep interne
+        run: |
+          INTERNAL_DEPS=$(cargo metadata --format-version 1 -q \
+            | jq -r '.packages[] | select(.name == "kesh-import") | .dependencies[] | select(.path != null) | .name')
+          if [ -n "$INTERNAL_DEPS" ]; then
+            echo "::error::kesh-import a des dépendances workspace internes :"
+            echo "$INTERNAL_DEPS"
+            exit 1
+          fi
+
       # Les tests `kesh-db::repositories::*` (pré-Story-6-4, 84 tests) se
       # connectent directement à DATABASE_URL au lieu d'utiliser `#[sqlx::test]`.
       # Ils exigent donc que la DB `kesh` ait ses migrations appliquées + 1

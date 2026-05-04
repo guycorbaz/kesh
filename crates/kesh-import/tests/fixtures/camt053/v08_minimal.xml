@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>STMT-V08-001</MsgId>
+      <CreDtTm>2026-05-31T23:59:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-V08</Id>
+      <CreDtTm>2026-05-31T23:59:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2026-05-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-05-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH5604835012345678009</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">2500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-05-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">2750.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-05-31</Dt>
+        </Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="CHF">250.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <Dt>2026-05-20</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-05-20</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-TX-V08-001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-V08-001</EndToEndId>
+            </Refs>
+            <RltdPties>
+              <Dbtr>
+                <Pty>
+                  <Nm>Bobst SA</Nm>
+                </Pty>
+              </Dbtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Remboursement avance</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Remboursement avance</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
