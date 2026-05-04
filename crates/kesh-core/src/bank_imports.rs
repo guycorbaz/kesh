@@ -220,9 +220,20 @@ pub fn from_imported(
 /// `closing` déclaré. Tolère un écart absolu de **0.01** (un centime,
 /// règle d'arrondi commerciale).
 ///
+/// La comparaison utilise `>` strict : un écart **égal** à 0.01 est
+/// accepté (dans la tolérance), seul un écart **strictement supérieur**
+/// déclenche l'erreur. Voir tests `validate_balance_passes_at_exactly_one_cent`
+/// et `validate_balance_fails_just_above_one_cent` pour les bornes.
+///
 /// Si l'un des deux soldes est absent, retourne `Ok(())` (skip
-/// silencieux) — les CSV n'incluent pas toujours les soldes, et le
-/// CAMT.053 émis par certaines banques peut omettre `OPBD` ou `CLBD`.
+/// silencieux). Cette tolérance est calibrée pour les CSV (Story 8-2)
+/// dont certains profils n'embarquent pas les soldes. **Pour CAMT.053
+/// spécifiquement**, le schéma ISO 20022 impose `OPBD` et `CLBD` : un
+/// `ImportedStatement` issu du parseur `kesh-import::camt053` sans
+/// soldes doit être traité comme un signal de fichier malformé en
+/// amont (le parseur lève `MissingRequiredField` sur un `<Bal>`
+/// partiellement renseigné depuis Story 8-1a Pass 1 review). Le
+/// présent skip ne s'applique donc en pratique qu'aux sources CSV.
 ///
 /// # Erreurs
 ///
@@ -404,6 +415,34 @@ mod tests {
         // les deux absents → skip
         let stmt = statement_fixture(None, None);
         validate_balance(&stmt).expect("skip silencieux si les deux absents");
+    }
+
+    #[test]
+    fn validate_balance_passes_at_exactly_one_cent() {
+        // Régression review code Pass 1 finding F10 : la borne `> 0.01`
+        // (strict) accepte un écart **exactement** égal à 0.01. Ce test
+        // verrouille la sémantique inclusive de la tolérance contre une
+        // régression `>` → `>=`.
+        // opening 1000 + Σ 100 = 1100, closing = 1100.01 → diff = 0.01
+        let stmt = statement_fixture(Some(dec!(1000.00)), Some(dec!(1100.01)));
+        validate_balance(&stmt)
+            .expect("écart de 0.01 exactement doit passer (tolérance inclusive)");
+    }
+
+    #[test]
+    fn validate_balance_fails_just_above_one_cent() {
+        // Régression review code Pass 1 finding F10 : juste au-dessus
+        // de 0.01 (0.011) doit échouer. Verrouille la sémantique
+        // contre une régression `>` → `<`.
+        // opening 1000 + Σ 100 = 1100, closing = 1100.011 → diff = 0.011
+        let stmt = statement_fixture(Some(dec!(1000.00)), Some(dec!(1100.011)));
+        let err = validate_balance(&stmt).expect_err("écart de 0.011 doit échouer");
+        match err {
+            CoreError::BankImportBalanceMismatch { diff, .. } => {
+                assert_eq!(diff, Money::new(dec!(0.011)));
+            }
+            other => panic!("attendu BankImportBalanceMismatch, obtenu {other:?}"),
+        }
     }
 
     #[test]

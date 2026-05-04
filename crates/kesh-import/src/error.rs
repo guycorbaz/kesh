@@ -25,10 +25,12 @@ pub enum CamtError {
     UnsupportedVersion(String),
 
     /// Un champ requis pour construire un `ImportedStatement` ou une
-    /// `ImportedTransaction` est absent du document. Le paramètre nomme
-    /// le champ manquant (ex. `"account_iban"`, `"booking_date"`).
+    /// `ImportedTransaction` est absent du document. Le paramètre porte
+    /// le chemin du champ manquant en notation dot-path indexée pour
+    /// faciliter le diagnostic sur fichiers multi-`<Stmt>` / multi-`<Ntry>`
+    /// (ex. `"stmt[2].ntry[5].amount"`, `"stmt[0].account_iban"`).
     #[error("Champ requis manquant : {0}")]
-    MissingRequiredField(&'static str),
+    MissingRequiredField(String),
 
     /// Un montant `<Amt>` n'a pas pu être parsé comme `Decimal`. Le message
     /// contient la valeur brute incriminée.

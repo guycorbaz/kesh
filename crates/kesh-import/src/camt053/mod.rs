@@ -60,7 +60,14 @@ pub const NS_V08: &str = "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08";
 ///   non parseable dans un `<Amt>` ou un élément date.
 pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
     let mut reader = NsReader::from_reader(xml);
-    reader.config_mut().trim_text(true);
+    {
+        let cfg = reader.config_mut();
+        cfg.trim_text(true);
+        // Defense-in-depth : explicite, indépendant du défaut quick-xml.
+        // Sans ça, un futur bump du crate qui flippe le défaut désynchroniserait
+        // silencieusement la pile de chemin et corromprait le parsing.
+        cfg.check_end_names = true;
+    }
 
     let mut buf = Vec::new();
 
@@ -114,6 +121,11 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
     let mut path: Vec<String> = Vec::new();
     let mut stmts: Vec<ImportedStatement> = Vec::new();
     let mut sb: Option<StmtBuilder> = None;
+    // Compteurs de localisation pour enrichir les erreurs
+    // `MissingRequiredField` avec un dot-path indexé style
+    // `stmt[2].ntry[5].amount` — voir doc de [`CamtError::MissingRequiredField`].
+    let mut stmt_index: usize = 0;
+    let mut ntry_index: usize = 0;
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -136,7 +148,10 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 let local = local_name(start.local_name().as_ref())?;
 
                 match local.as_str() {
-                    "Stmt" => sb = Some(StmtBuilder::default()),
+                    "Stmt" => {
+                        sb = Some(StmtBuilder::default());
+                        ntry_index = 0;
+                    }
                     "Bal" => {
                         if let Some(s) = sb.as_mut() {
                             s.bal = Some(BalBuilder::default());
@@ -177,7 +192,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                     "Bal" => {
                         if let Some(s) = sb.as_mut() {
                             if let Some(b) = s.bal.take() {
-                                apply_balance(s, b);
+                                apply_balance(s, b, stmt_index)?;
                             }
                         }
                     }
@@ -191,14 +206,16 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                     "Ntry" => {
                         if let Some(s) = sb.as_mut() {
                             if let Some(n) = s.ntry.take() {
-                                let txs = emit_transactions(n)?;
+                                let txs = emit_transactions(n, stmt_index, ntry_index)?;
                                 s.transactions.extend(txs);
+                                ntry_index += 1;
                             }
                         }
                     }
                     "Stmt" => {
                         if let Some(b) = sb.take() {
-                            stmts.push(finalize_statement(b, version)?);
+                            stmts.push(finalize_statement(b, version, stmt_index)?);
+                            stmt_index += 1;
                         }
                     }
                     _ => {}
@@ -291,10 +308,15 @@ fn handle_text(stmt: &mut StmtBuilder, path: &[String], txt: &str) -> Result<(),
 }
 
 fn handle_stmt_text(stmt: &mut StmtBuilder, path: &[String], txt: &str) -> Result<(), CamtError> {
+    // Tous les matchers anchorent le suffix complet du chemin via
+    // `ends_with(...)` pour rester robustes aux extensions vendor qui
+    // pourraient introduire un autre `<Id>` / `<FrDtTm>` à un niveau
+    // imbriqué (review code Pass 1, finding F7 — alignement avec les
+    // matchers Acct/Id/IBAN, Acct/Ccy).
     let leaf = path.last().map(String::as_str).unwrap_or("");
     match leaf {
         "Id" => {
-            if path.iter().rev().nth(1).map(String::as_str) == Some("Stmt") {
+            if ends_with(path, &["Stmt", "Id"]) {
                 stmt.statement_id = Some(txt.to_string());
             }
         }
@@ -308,8 +330,16 @@ fn handle_stmt_text(stmt: &mut StmtBuilder, path: &[String], txt: &str) -> Resul
                 stmt.currency = Some(txt.to_string());
             }
         }
-        "FrDtTm" => stmt.period_from = Some(parse_date(txt)?),
-        "ToDtTm" => stmt.period_to = Some(parse_date(txt)?),
+        "FrDtTm" => {
+            if ends_with(path, &["FrToDt", "FrDtTm"]) {
+                stmt.period_from = Some(parse_date(txt)?);
+            }
+        }
+        "ToDtTm" => {
+            if ends_with(path, &["FrToDt", "ToDtTm"]) {
+                stmt.period_to = Some(parse_date(txt)?);
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -446,28 +476,101 @@ fn handle_txdtls_text(t: &mut TxDtlsBuilder, path: &[String], txt: &str) -> Resu
     Ok(())
 }
 
-fn apply_balance(stmt: &mut StmtBuilder, b: BalBuilder) {
-    let (Some(code), Some(amount), Some(sign)) = (&b.code, b.amount, &b.sign) else {
-        return;
+/// Indicateur Crédit/Débit (`<CdtDbtInd>`) — interne au parseur.
+///
+/// CAMT.053 n'autorise que `CRDT` ou `DBIT`. Toute autre valeur est
+/// strictement rejetée par `parse_sign` plutôt que silencieusement
+/// traitée comme positif (qui inverserait silencieusement un débit en
+/// crédit sur un fichier malformé — corruption comptable directe).
+#[derive(Clone, Copy)]
+enum CdtDbtSign {
+    Credit,
+    Debit,
+}
+
+impl CdtDbtSign {
+    fn apply(self, amount: Decimal) -> Decimal {
+        match self {
+            Self::Credit => amount,
+            Self::Debit => -amount,
+        }
+    }
+}
+
+fn parse_sign(raw: &str, location: &str) -> Result<CdtDbtSign, CamtError> {
+    match raw {
+        "CRDT" => Ok(CdtDbtSign::Credit),
+        "DBIT" => Ok(CdtDbtSign::Debit),
+        other => Err(CamtError::MalformedXml(format!(
+            "{location}.CdtDbtInd inattendu : {other:?} (attendu CRDT ou DBIT)"
+        ))),
+    }
+}
+
+/// Applique un bloc `<Bal>` au `StmtBuilder`.
+///
+/// Sémantique stricte (issue de la review code Pass 1, finding F1+F2) :
+///
+/// - Si `code` (Tp/CdOrPrtry/Cd) absent → skip silencieux : on ne sait
+///   pas comment classifier le solde (peut être une extension vendor ou
+///   un code non-OPBD/CLBD comme PRCD, ITBD).
+/// - Si `code` présent mais `amount` absent → erreur (CAMT.053 schéma
+///   exige `<Amt>`).
+/// - Si `code` présent mais `sign` (`CdtDbtInd`) absent → erreur (idem).
+/// - Si `sign` présent mais valeur ≠ `CRDT`/`DBIT` → erreur explicite
+///   (refus de traiter un sign inconnu comme positif silencieusement).
+/// - Codes `OPBD` / `CLBD` → assigne `opening_balance` / `closing_balance`.
+/// - Autres codes (PRCD, ITBD, OPAV, CLAV, etc.) → silencieusement
+///   ignorés (informationnels, hors périmètre v0.1 + CR-010 #62).
+fn apply_balance(
+    stmt: &mut StmtBuilder,
+    b: BalBuilder,
+    stmt_index: usize,
+) -> Result<(), CamtError> {
+    let Some(code) = b.code.as_deref() else {
+        return Ok(());
     };
-    let signed = if sign == "DBIT" { -amount } else { amount };
-    match code.as_str() {
+    let amount = b.amount.ok_or_else(|| {
+        CamtError::MissingRequiredField(format!("stmt[{stmt_index}].bal[{code}].amount"))
+    })?;
+    let sign_raw = b.sign.as_deref().ok_or_else(|| {
+        CamtError::MissingRequiredField(format!("stmt[{stmt_index}].bal[{code}].cdt_dbt_ind"))
+    })?;
+    let sign = parse_sign(sign_raw, &format!("stmt[{stmt_index}].bal[{code}]"))?;
+    let signed = sign.apply(amount);
+    match code {
         "OPBD" => stmt.opening_balance = Some(signed),
         "CLBD" => stmt.closing_balance = Some(signed),
         _ => {}
     }
+    Ok(())
 }
 
-fn emit_transactions(n: NtryBuilder) -> Result<Vec<ImportedTransaction>, CamtError> {
+fn emit_transactions(
+    n: NtryBuilder,
+    stmt_index: usize,
+    ntry_index: usize,
+) -> Result<Vec<ImportedTransaction>, CamtError> {
+    let location = |suffix: &str| format!("stmt[{stmt_index}].ntry[{ntry_index}].{suffix}");
+
     let booking_date = n
         .booking_date
-        .ok_or(CamtError::MissingRequiredField("booking_date"))?;
-    let ntry_amount = n.amount.ok_or(CamtError::MissingRequiredField("amount"))?;
-    let ntry_sign = n.sign.as_deref().unwrap_or("CRDT").to_string();
+        .ok_or_else(|| CamtError::MissingRequiredField(location("booking_date")))?;
+    let ntry_amount = n
+        .amount
+        .ok_or_else(|| CamtError::MissingRequiredField(location("amount")))?;
+    let ntry_sign_raw = n
+        .sign
+        .as_deref()
+        .ok_or_else(|| CamtError::MissingRequiredField(location("cdt_dbt_ind")))?;
+    let ntry_sign = parse_sign(
+        ntry_sign_raw,
+        &format!("stmt[{stmt_index}].ntry[{ntry_index}]"),
+    )?;
     let ntry_currency = n
         .currency
         .clone()
-        .ok_or(CamtError::MissingRequiredField("currency"))?;
+        .ok_or_else(|| CamtError::MissingRequiredField(location("currency")))?;
 
     let value_date = n.value_date;
     let ntry_reference = n.reference.clone();
@@ -475,15 +578,10 @@ fn emit_transactions(n: NtryBuilder) -> Result<Vec<ImportedTransaction>, CamtErr
     let ntry_details = n.addtl_ntry_inf.clone();
 
     if n.txdtls.is_empty() {
-        let signed_amount = if ntry_sign == "DBIT" {
-            -ntry_amount
-        } else {
-            ntry_amount
-        };
         return Ok(vec![ImportedTransaction {
             booking_date,
             value_date,
-            amount: signed_amount,
+            amount: ntry_sign.apply(ntry_amount),
             currency: ntry_currency,
             reference: ntry_reference,
             details: ntry_details.unwrap_or_default(),
@@ -495,14 +593,17 @@ fn emit_transactions(n: NtryBuilder) -> Result<Vec<ImportedTransaction>, CamtErr
     }
 
     let mut out = Vec::with_capacity(n.txdtls.len());
-    for t in n.txdtls {
+    for (i, t) in n.txdtls.into_iter().enumerate() {
         let amount_raw = t.amount.unwrap_or(ntry_amount);
-        let sign = t.sign.as_deref().unwrap_or(&ntry_sign);
-        let signed = if sign == "DBIT" {
-            -amount_raw
+        let sign = if let Some(s) = t.sign.as_deref() {
+            parse_sign(
+                s,
+                &format!("stmt[{stmt_index}].ntry[{ntry_index}].txdtls[{i}]"),
+            )?
         } else {
-            amount_raw
+            ntry_sign
         };
+        let signed = sign.apply(amount_raw);
         let currency = t.currency.unwrap_or_else(|| ntry_currency.clone());
         let reference = t.cdtr_ref.or_else(|| ntry_reference.clone());
         let transaction_id = t.transaction_id.or_else(|| ntry_transaction_id.clone());
@@ -527,19 +628,24 @@ fn emit_transactions(n: NtryBuilder) -> Result<Vec<ImportedTransaction>, CamtErr
     Ok(out)
 }
 
-fn finalize_statement(b: StmtBuilder, version: &str) -> Result<ImportedStatement, CamtError> {
+fn finalize_statement(
+    b: StmtBuilder,
+    version: &str,
+    stmt_index: usize,
+) -> Result<ImportedStatement, CamtError> {
+    let location = |suffix: &str| format!("stmt[{stmt_index}].{suffix}");
     let account_iban = b
         .account_iban
-        .ok_or(CamtError::MissingRequiredField("account_iban"))?;
+        .ok_or_else(|| CamtError::MissingRequiredField(location("account_iban")))?;
     let currency = b
         .currency
-        .ok_or(CamtError::MissingRequiredField("currency"))?;
+        .ok_or_else(|| CamtError::MissingRequiredField(location("currency")))?;
     let period_from = b
         .period_from
-        .ok_or(CamtError::MissingRequiredField("period_from"))?;
+        .ok_or_else(|| CamtError::MissingRequiredField(location("period_from")))?;
     let period_to = b
         .period_to
-        .ok_or(CamtError::MissingRequiredField("period_to"))?;
+        .ok_or_else(|| CamtError::MissingRequiredField(location("period_to")))?;
 
     Ok(ImportedStatement {
         statement_id: b.statement_id,

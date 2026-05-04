@@ -170,6 +170,34 @@ fn parse_truncated_returns_malformed_xml_error() {
 }
 
 #[test]
+fn parse_truncated_after_stmt_close_caught_by_eof_guard() {
+    // Régression code review Pass 1 finding F6 : la fixture
+    // `v04_truncated.xml` se coupe en plein milieu d'un texte, donc
+    // quick-xml peut très bien lever lui-même une erreur sur le texte
+    // tronqué — on ne peut pas distinguer si c'est notre check EOF
+    // explicite ou quick-xml qui catch. Cette fixture-ci est bien-
+    // formée jusqu'après `</Stmt>` puis EOF brutal sans
+    // `</BkToCstmrStmt>` ni `</Document>`. quick-xml retourne
+    // proprement Event::Eof ; c'est *uniquement* notre guard qui
+    // détecte les tags non fermés via `path.is_empty()`.
+    let xml = load("v04_truncated_after_stmt_close.xml");
+    let err = parse_camt053(&xml).expect_err("EOF avec tags ouverts doit échouer");
+    match err {
+        CamtError::MalformedXml(msg) => {
+            assert!(
+                msg.contains("fin de fichier inattendue"),
+                "le message doit indiquer la cause EOF (guard explicite), obtenu : {msg}"
+            );
+            assert!(
+                msg.contains("BkToCstmrStmt"),
+                "le message doit nommer le tag non fermé, obtenu : {msg}"
+            );
+        }
+        other => panic!("attendu MalformedXml(...), obtenu {other:?}"),
+    }
+}
+
+#[test]
 fn parse_unknown_namespace_returns_unsupported_version() {
     let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
 <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.99">
