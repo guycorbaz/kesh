@@ -48,7 +48,7 @@ so that **mes transactions apparaissent dans Kesh, prêtes pour la réconciliati
 Toutes les décisions §schéma, §upload-limit, §perf, §api-client, §multi-stmt (exécution UI), §balance-check (mapping API), §currency (mapping API) de [`8-1-import-camt053.md`](8-1-import-camt053.md) §317-447 s'appliquent telles quelles à 8-1b. Points critiques pour la couche persistance + API + UI :
 
 - **§schéma** : `bank_imports` + `bank_transactions` avec `company_id` partout (multi-tenant Pattern 1 KF-002), `(company_id, file_hash) UNIQUE`, `idx_bank_transactions_pending` couvre Story 8-4.
-- **§upload-limit** : 10 MiB hard limit configurable via `KESH_BANK_IMPORT_MAX_MB`, appliqué via `axum::extract::DefaultBodyLimit::max(...)` sur le sub-router bank-import. Pas besoin de feature `tower-http "limit"`.
+- **§upload-limit** : **10 MiB** hard limit (binaire = `10 * 1024 * 1024` = 10 485 760 bytes), configurable via env var `KESH_BANK_IMPORT_MAX_MB` (entier en MiB malgré le suffixe `_MAX_MB` — convention industrielle de raccourci, voir M3 validate Pass 2). Appliqué via `axum::extract::DefaultBodyLimit::max(max_mib * 1024 * 1024)` sur le sub-router bank-import. Pas besoin de feature `tower-http "limit"`. **Cohérence à respecter dans T6.10 + .env.example + tests E2E `rejects file > 10 MB` : tous les sites utilisent l'interprétation binaire (1 MiB = 1024² bytes), pas décimale (10⁶).**
 - **§perf** : bulk INSERT via `sqlx::QueryBuilder::push_values` (pattern Story 3-2), batch chunks de 1000 si > 1000 transactions / fichier.
 - **§api-client** : extension `frontend/src/lib/shared/utils/api-client.ts` pour accepter `body: FormData` sans forcer `Content-Type: application/json`. Test unitaire dédié.
 - **§multi-stmt (exécution)** : handler API filtre `Vec<ImportedStatement>` par IBAN sélectionné par l'utilisateur (normalisation `replace(' ', '').to_uppercase()`). Statements non-matchants → liste `ignoredStatements` dans la réponse `preview`. Aucun match → `422 BANK_IMPORT_NO_MATCHING_STATEMENT`.
@@ -93,7 +93,7 @@ Numérotation héritée de la spec 8-1 d'origine pour traçabilité. Les ACs mar
 
 12. **(Sécurité — RBAC)** Given un utilisateur avec `role = Role::Consultation`, When il tente `POST /bank-imports`, Then la réponse est `403` (renvoyée par le middleware `require_comptable_role` du sub-router `comptable_routes`). Les rôles `Role::Comptable` et `Role::Admin` peuvent importer ; tous les rôles authentifiés peuvent lire (GET sur `authenticated_routes`). *Test : `post_import_rejects_when_role_consultation`.*
 
-13. **(Sécurité — payload limit)** Given un fichier > 10 MiB, When upload, Then la réponse est `413 BANK_IMPORT_TOO_LARGE`. Aucun parsing n'est tenté. *Test : `post_import_rejects_payload_too_large`.*
+13. **(Sécurité — payload limit)** Given un fichier > 10 MiB (= 10 485 760 bytes binaire, voir §upload-limit), When upload, Then la réponse est `413 BANK_IMPORT_TOO_LARGE`. Aucun parsing n'est tenté. *Test : `post_import_rejects_payload_too_large` (génère un buffer de 10 485 761 bytes pour reproduire l'overflow d'un seul byte au-dessus de la limite).*
 
 14. **(CR-010 #62 — balance check mapping API)** Given un fichier où `|opening + Σ transactions - closing| > 0.01`, When `POST /bank-imports` sans `confirmBalanceMismatch`, Then `422 BANK_IMPORT_BALANCE_MISMATCH`. When avec `confirmBalanceMismatch=true`, Then `201 Created` + entrée audit_log `bank_import.created_with_balance_mismatch`. *Tests : `post_import_rejects_balance_mismatch_without_confirm` + `post_import_accepts_balance_mismatch_with_confirm`. (L'algo `validate_balance` est hérité 8-1a — AC #14a.)*
 
@@ -125,7 +125,50 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
 
 - [ ] T5.1 — Entités `BankImport` / `BankTransaction` + enums `BankImportSourceFormat` / `BankTransactionStatus` avec `#[derive(sqlx::FromRow)]` (cf. spec d'origine §T5 + Pass 2 H3).
 
-  **Pattern sqlx enum (F10 validate Pass 1)** : les enums `BankImportSourceFormat` et `BankTransactionStatus` sont stockés en `VARCHAR` MariaDB et **doivent** soit (a) implémenter manuellement `sqlx::Type<MySql> + Encode + Decode` (pattern `Role` dans `crates/kesh-db/src/entities/user.rs`), soit (b) utiliser `#[sqlx(try_from = "String")]` sur les champs des structs parentes `BankImport` / `BankTransaction`. **Sans ce pattern**, `sqlx::query_as::<_, BankImport>(...)` ne compile pas. Référence canonique : `entities/user.rs::Role` impl `sqlx::Type<MySql>` + `TryFrom<String>` + `From<Role> for String`.
+  **Pattern sqlx enum (F10 validate Pass 1 + M1 validate Pass 2)** : les enums `BankImportSourceFormat` et `BankTransactionStatus` sont stockés en `VARCHAR` MariaDB et **doivent** soit (a) implémenter manuellement `sqlx::Type<MySql> + Encode + Decode` (pattern `Role` dans `crates/kesh-db/src/entities/user.rs`), soit (b) utiliser `#[sqlx(try_from = "String")]` sur les champs des structs parentes `BankImport` / `BankTransaction`. **Sans ce pattern**, `sqlx::query_as::<_, BankImport>(...)` ne compile pas.
+
+  **Option (b) recommandée pour 8-1b** (moins de boilerplate). Exemple minimal :
+
+  ```rust
+  // entities/bank_import.rs
+  #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+  pub enum BankImportSourceFormat {
+      Camt053V04,
+      Camt053V08,
+  }
+
+  impl TryFrom<String> for BankImportSourceFormat {
+      type Error = String;
+      fn try_from(s: String) -> Result<Self, Self::Error> {
+          match s.as_str() {
+              "CAMT053_V04" => Ok(Self::Camt053V04),
+              "CAMT053_V08" => Ok(Self::Camt053V08),
+              other => Err(format!("BankImportSourceFormat inconnu : {other}")),
+          }
+      }
+  }
+
+  impl From<BankImportSourceFormat> for String {
+      fn from(v: BankImportSourceFormat) -> Self {
+          match v {
+              BankImportSourceFormat::Camt053V04 => "CAMT053_V04".into(),
+              BankImportSourceFormat::Camt053V08 => "CAMT053_V08".into(),
+          }
+      }
+  }
+
+  #[derive(sqlx::FromRow)]
+  pub struct BankImport {
+      pub id: i64,
+      pub company_id: i64,
+      // ...
+      #[sqlx(try_from = "String")]
+      pub source_format: BankImportSourceFormat,
+      // ...
+  }
+  ```
+
+  Référence canonique pour l'option (a) : `crates/kesh-db/src/entities/user.rs::Role` impl `sqlx::Type<MySql>`. Aligner les valeurs string sur `kesh_core::bank_imports::SourceFormatTag::as_db_str()` (= `"CAMT053_V04"`/`"CAMT053_V08"`, MAJUSCULES — voir T4.1 note F8).
 
 - [ ] T5.2 — Inscription `entities/mod.rs`.
 - [ ] T5.3 — `repositories::bank_imports` (`create_with_transactions`, `find_by_company_id`, `find_by_company_and_hash`).
@@ -143,7 +186,7 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
   8. `find_by_id_for_company_rejects_wrong_company` — IDOR sur `bank_accounts::find_by_id_for_company` : company_B ne peut pas lire un bank_account de company_A → `Ok(None)`.
   9. `find_by_id_for_company_returns_account_when_owned` — happy path correspondant à #8.
 
-  Tests #8 et #9 sont des tests de sécurité IDOR sur le helper `bank_accounts::find_by_id_for_company` créé en T6.3 (ils peuvent vivre dans `repositories::bank_accounts` ou dans le suite test bank_imports — la spec d'origine les place avec bank_accounts pour cohérence du repository).
+  Tests #8 et #9 sont des tests de sécurité IDOR sur le helper `bank_accounts::find_by_id_for_company` créé en T6.3. **Localisation figée (M4 validate Pass 2)** : ces tests vivent dans le **fichier de test du module `bank_accounts`** (cohésion fonction-tests, le helper testé est `bank_accounts::find_by_id_for_company` — pas un appel via `bank_imports`). Pratique : soit étendre `crates/kesh-db/src/repositories/bank_accounts.rs` avec un module `#[cfg(test)] mod tests { ... }` inline, soit créer/étendre `crates/kesh-db/tests/bank_accounts_test.rs`. **Ne pas mélanger avec les 7 autres tests bank_imports** (qui restent dans `bank_imports_test.rs` ou inline `bank_imports.rs`).
 
 ### T6. Route API `bank_imports.rs` (AC #1, #4, #10, #12, #13, #14, #15, #16, #18)
 
@@ -171,7 +214,7 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
   11. `post_import_audit_log_contains_correct_entry` (AC #18 — F3) — assert isolément l'audit_log post-création.
   12. `get_imports_lists_only_own_company` (AC #10) — multi-tenant scoping GET.
   13. `get_import_returns_404_for_other_company_id` (AC #10) — IDOR cross-tenant → 404 (jamais 403, pattern KF-002).
-- [ ] T6.10 — `DefaultBodyLimit::max(...)` + env `KESH_BANK_IMPORT_MAX_MB` + `.env.example` mis à jour (Pass 2 L2).
+- [ ] T6.10 — `DefaultBodyLimit::max(max_mib * 1024 * 1024)` (interprétation binaire MiB) + env `KESH_BANK_IMPORT_MAX_MB` (default 10) + `.env.example` mis à jour avec commentaire explicite : `# Taille max upload bank-import en MiB binaire (1 MiB = 1024² bytes ; 10 = 10 485 760 bytes)`. Cohérence M3 validate Pass 2.
 
 ### T7. Frontend feature `bank-import` (AC #1, #4, #20)
 
@@ -197,7 +240,7 @@ Sections T4 → T10 héritées **telles quelles** de [`8-1-import-camt053.md`](8
   1. `imports a CAMT.053 v04 file end-to-end` (AC #1) — drag-drop `v04_minimal.xml`, sélectionne bank account, preview, confirm, vérifie redirection sur `/bank-import/[id]` + transactions listées.
   2. `requires bank account selection before upload` (AC #3 / #4) — l'upload est désactivé tant qu'aucun `bankAccountId` n'est sélectionné ; un message d'erreur ARIA s'affiche en cas de tentative.
   3. `shows balance mismatch warning and accepts override` (AC #14) — preview affiche `warnings.balance_mismatch`, checkbox `confirmBalanceMismatch` apparaît, confirm → 201.
-  4. `rejects file > 10 MB` (AC #13) — upload d'un fichier 12 MiB → toast erreur `bank-import-error-too-large`.
+  4. `rejects file > 10 MiB` (AC #13) — upload d'un fichier 12 MiB binaire (12 × 1024² bytes) → toast erreur `bank-import-error-too-large`. **Note** : tester en MiB cohérent avec §upload-limit (pas en MB décimal).
   5. `lists previous imports paginated` (AC #10) — page `/bank-import` liste les imports précédents avec pagination.
   6. `accessibility — axe scan zero violations` (AC #20) — `axe-core` scan sur la page principale + page detail, zéro violation.
 
@@ -287,6 +330,16 @@ Pendant le cycle code review 8-1a (3 passes Opus → Sonnet → Haiku), 22 patch
 
 - **Intégration sqlx** : `#[sqlx::test]` avec migration auto + fixtures inline.
 - **E2E HTTP** : `crates/kesh-api/tests/bank_imports_e2e.rs` avec helper `spawn_app(pool)` existant — F11 validate Pass 1 (`setup_test_app()` n'existe pas dans le codebase ; le helper canonique est `spawn_app(pool: MySqlPool) -> TestApp` défini dans `crates/kesh-api/tests/auth_e2e.rs:92` et utilisé dans tous les fichiers `*_e2e.rs`).
+
+  **Chargement des fixtures CAMT.053 (M2 validate Pass 2)** : ne pas dupliquer les fixtures dans `crates/kesh-api/tests/fixtures/`. Lire directement depuis le crate sister `kesh-import` via `env!("CARGO_MANIFEST_DIR")` (analogue au test `validate_balance_detects_balance_mismatch_fixture` de 8-1a Pass 2 F16) :
+
+  ```rust
+  let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../kesh-import/tests/fixtures/camt053/v04_multi_stmt.xml");
+  let xml = std::fs::read(&fixture_path).expect("fixture introuvable");
+  ```
+
+  Fixtures à utiliser depuis `crates/kesh-import/tests/fixtures/camt053/` : `v04_minimal.xml`, `v04_multi_stmt.xml` (test #2 ignoredStatements), `v04_balance_mismatch.xml` (tests #6+#7), `v04_eur_currency.xml` (test #8), `v04_truncated.xml` (mapping erreur parse).
 - **Vitest frontend** : `npm run test:unit -- bank-import`.
 - **Playwright** : `npm run test:e2e -- bank-import.spec.ts` ; pré-requis MariaDB + seed CI + browsers installés (cf. CLAUDE.md « Test Locally First → E2E »).
 
@@ -387,5 +440,6 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-impor
 
 | Date | Action | Auteur |
 |------|--------|--------|
+| 2026-05-04 | Validate Pass 2 Haiku 4.5 (cycle Sonnet → Haiku, fenêtre fraîche). 12/12 patches Pass 1 confirmés APPLIED sans régression. 6 nouveaux findings Haiku → triage : **0 HIGH** + **1 MEDIUM** (M3 ambiguïté MiB/MB §upload-limit + env var KESH_BANK_IMPORT_MAX_MB) + **3 LOW** (M1 sqlx pattern T5.1 inline code, M2 fixture path convention §Standards de test, M4 localisation figée tests #8-9 IDOR dans bank_accounts) + **2 reject** (L1 dual coverage cosmétique, L2 audit log details_json déjà documenté ailleurs ; H3 « 7 vs 5 NEW variantes » faux positif vérifié). 4 patches appliqués. Trend : 10 → 1 > LOW (90% reduction). Verdict Haiku : GO-WITH-PATCHES. Relance Pass 3 Opus par règle CLAUDE.md (cycle Sonnet → Haiku → Opus, fenêtre fraîche, dernière passe avant convergence). | Claude (Opus 4.7, validate Pass 2 application) |
 | 2026-05-04 | Validate Pass 1 Sonnet 4.6 (cycle Opus → Sonnet par règle CLAUDE.md, fenêtre fraîche). 14 findings bruts → triage : **4 HIGH** (F1 AC #3 ignoredStatements test, F2 T5.6/AC#11 9 tests inline + count, F3 AC #18 audit log dédié, F4 BANK_IMPORT_NO_MATCHING_STATEMENT AC #3c + test) + **6 MEDIUM** (F5 `parse_camt053` canonique, F6 SourceFormat::Csv mapping, F7 CamtError::MissingRequiredField(String) drift, F8 DDL uppercase note, F10 sqlx try_from pattern, F11 spawn_app vs setup_test_app) + **2 LOW** (F13 6 Playwright scenarios inline, F15 File List pré-rempli) + **1 reject** (F12 lib.rs déjà présent ligne 206). 12 patches appliqués. Verdict Sonnet : GO-WITH-PATCHES. Trend findings > LOW : 10 → relance Pass 2 Haiku par règle CLAUDE.md. Status : `backlog` → `ready-for-dev`. | Claude (Opus 4.7, validate Pass 1 application) |
 | 2026-05-04 | Création de la story par split de 8-1 (`8-1-import-camt053.md`) en 8-1a (parser-only) + 8-1b (persistance + UI). Justification : règle CLAUDE.md « splitter si > 5 modules » (8-1 unifiée touchait 6 modules). Précédent rétro Epic 7 : Story 7-1 a explosé à 7 passes review faute de splitting préventif. Décision Guy 2026-05-04. La spec d'origine 8-1 reste comme référence des décisions de conception détaillées. 8-1b dépend de 8-1a (path dep) — status `backlog` jusqu'à 8-1a `done`. | Claude (Opus 4.7, dev-story split coordinator) |
