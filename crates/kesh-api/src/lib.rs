@@ -164,6 +164,22 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/fiscal-years/{id}/close",
             post(routes::fiscal_years::close_fiscal_year),
         )
+        // Story 8-1b : import bancaire CAMT.053 (Comptable+ uniquement
+        // pour les mutations — POST preview + POST create).
+        // DefaultBodyLimit appliqué localement pour ces deux endpoints
+        // multipart (cf. KESH_BANK_IMPORT_MAX_MB / config.bank_import_max_mib).
+        .route(
+            "/api/v1/bank-imports/preview",
+            post(routes::bank_imports::preview).layer(axum::extract::DefaultBodyLimit::max(
+                (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+            )),
+        )
+        .route(
+            "/api/v1/bank-imports",
+            post(routes::bank_imports::create).layer(axum::extract::DefaultBodyLimit::max(
+                (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+            )),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -264,6 +280,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/fiscal-years/{id}",
             get(routes::fiscal_years::get_fiscal_year),
+        )
+        // Story 8-1b : lecture imports bancaires (tout rôle authentifié,
+        // multi-tenant scoping via current_user.company_id du JWT).
+        .route("/api/v1/bank-imports", get(routes::bank_imports::list))
+        .route(
+            "/api/v1/bank-imports/{id}",
+            get(routes::bank_imports::detail),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

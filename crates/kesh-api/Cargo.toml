@@ -8,10 +8,11 @@ license.workspace = true
 kesh-core = { path = "../kesh-core" }
 kesh-db = { path = "../kesh-db" }
 kesh-i18n = { path = "../kesh-i18n" }
+kesh-import = { path = "../kesh-import" }
 kesh-qrbill = { path = "../kesh-qrbill" }
 kesh-seed = { path = "../kesh-seed" }
 
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
@@ -34,8 +35,11 @@ unicode-normalization = "0.1"
 # Story 5.4 — export CSV échéancier (BOM + séparateur ; + CRLF, RFC 4180).
 csv = "1"
 
+# Story 8-1b — hash SHA-256 du fichier importé (dédup company-scope).
+sha2 = "0.10"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
 rust_decimal_macros = "1.40"

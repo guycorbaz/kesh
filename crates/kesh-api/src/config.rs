@@ -128,6 +128,14 @@ pub struct Config {
     /// `test_mode == false` (404 natif Axum). Incompatible avec un bind
     /// non-loopback (refuse le démarrage).
     pub test_mode: bool,
+
+    // --- Story 8-1b : import bancaire CAMT.053 ---
+    /// Taille max d'un fichier upload bank-import en **MiB binaires**
+    /// (1 MiB = 1024² bytes). Appliqué via `axum::extract::DefaultBodyLimit::max`
+    /// sur le sub-router bank-import (T6.10 + M3 validate Pass 2).
+    /// Lu depuis `KESH_BANK_IMPORT_MAX_MB` ; défaut 10, borne [1, 100]
+    /// (O4 validate Pass 3 — borne haute évite OOM côté `axum::body::Bytes`).
+    pub bank_import_max_mib: u32,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -262,6 +270,7 @@ impl Config {
             password_min_length,
             locale: kesh_i18n::Locale::FrCh,
             test_mode: false,
+            bank_import_max_mib: 10,
         }
     }
 
@@ -555,6 +564,30 @@ impl Config {
             );
         }
 
+        // KESH_BANK_IMPORT_MAX_MB : optionnel, défaut 10, borne [1, 100]
+        // (Story 8-1b T6.10 + O4 validate Pass 3). Interprétation MiB
+        // binaire (1 MiB = 1024² bytes), voir M3 validate Pass 2.
+        let bank_import_max_mib = match env::var("KESH_BANK_IMPORT_MAX_MB") {
+            Ok(val) => match val.parse::<u32>() {
+                Ok(m) if (1..=100).contains(&m) => m,
+                Ok(m) => {
+                    tracing::warn!(
+                        "KESH_BANK_IMPORT_MAX_MB={} hors borne [1, 100], utilisation du défaut 10",
+                        m
+                    );
+                    10
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_BANK_IMPORT_MAX_MB='{}' invalide, utilisation du défaut 10",
+                        val
+                    );
+                    10
+                }
+            },
+            Err(_) => 10,
+        };
+
         Ok(Config {
             database_url,
             port,
@@ -572,6 +605,7 @@ impl Config {
             password_min_length,
             locale,
             test_mode,
+            bank_import_max_mib,
         })
     }
 }
@@ -644,6 +678,7 @@ pub(crate) mod test_helpers {
             password_min_length: 12,
             locale: kesh_i18n::Locale::FrCh,
             test_mode: false,
+            bank_import_max_mib: 10,
         }
     }
 }

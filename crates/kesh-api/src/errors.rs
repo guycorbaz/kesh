@@ -189,6 +189,55 @@ pub enum AppError {
     /// des filtres (distinct de `VALIDATION_ERROR` générique).
     #[error("Résultat trop volumineux : {0}")]
     ResultTooLarge(String),
+
+    // --- Story 8-1b — Import bancaire CAMT.053 (T6.4) ---
+    /// Fichier upload > `KESH_BANK_IMPORT_MAX_MB` MiB → `413`.
+    #[error("Fichier trop volumineux")]
+    BankImportTooLarge,
+
+    /// XML CAMT.053 mal formé / version inconnue / champ requis manquant /
+    /// montant ou date invalide. Le `String` porte le détail (chemin
+    /// indexé `stmt[i].ntry[j].field` pour `MissingRequiredField`).
+    /// Mappe toutes les variantes `CamtError` vers un seul code HTTP `400`
+    /// avec un sous-code dans `details.kind`.
+    #[error("Fichier CAMT.053 invalide : {kind} — {message}")]
+    BankImportParseFailed {
+        /// Sous-code (`MALFORMED_XML`, `UNSUPPORTED_VERSION`,
+        /// `MISSING_FIELD`, `INVALID_AMOUNT`, `INVALID_DATE`).
+        kind: &'static str,
+        message: String,
+    },
+
+    /// Solde déclaré incohérent (CR-010 #62, sans `confirmBalanceMismatch`)
+    /// → `422`. Les 4 montants sont exposés en `details` pour permettre à
+    /// l'UX d'afficher le delta.
+    #[error("Solde de clôture incohérent (écart {diff})")]
+    BankImportBalanceMismatch {
+        opening: String,
+        closing: String,
+        sum: String,
+        diff: String,
+    },
+
+    /// Devise non supportée v0.1 (autre que CHF) → `422`.
+    #[error("Devise non supportée v0.1 : {0}")]
+    BankImportUnsupportedCurrency(String),
+
+    /// Aucun `<Stmt>` du fichier ne matche l'IBAN du `bankAccountId`
+    /// sélectionné (multi-stmt, F4 validate Pass 1) → `422`.
+    /// `found_ibans` aide l'utilisateur à corriger le compte cible.
+    #[error("Aucun statement ne correspond au compte sélectionné")]
+    BankImportNoMatchingStatement { found_ibans: Vec<String> },
+
+    /// Fichier déjà importé pour cette company (UNIQUE
+    /// `(company_id, file_hash)` violation) → `409`.
+    #[error("Fichier déjà importé")]
+    BankImportDuplicateFile,
+
+    /// Le `bankAccountId` fourni n'existe pas / appartient à une autre
+    /// company → `404` (jamais `403`, pattern KF-002 anti-énumération).
+    #[error("Compte bancaire non trouvé")]
+    BankAccountNotFound,
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -395,6 +444,134 @@ impl IntoResponse for AppError {
                     ),
                 )
             }
+
+            // --- Story 8-1b — Import bancaire CAMT.053 (T6.4) ---
+            AppError::BankImportTooLarge => build_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "BANK_IMPORT_TOO_LARGE",
+                &t(
+                    "bank-import-errors-too-large",
+                    "Fichier trop volumineux (>10 MiB).",
+                ),
+            ),
+
+            AppError::BankImportParseFailed { kind, message } => {
+                tracing::warn!("bank import parse failed: {kind} — {message}");
+                let (code, default) = match kind {
+                    "MALFORMED_XML" => (
+                        "BANK_IMPORT_MALFORMED_XML",
+                        "Fichier XML mal formé ou tronqué.",
+                    ),
+                    "UNSUPPORTED_VERSION" => (
+                        "BANK_IMPORT_UNSUPPORTED_VERSION",
+                        "Version CAMT.053 non supportée.",
+                    ),
+                    "MISSING_FIELD" => (
+                        "BANK_IMPORT_MISSING_FIELD",
+                        "Champ requis manquant dans le fichier.",
+                    ),
+                    "INVALID_AMOUNT" => (
+                        "BANK_IMPORT_INVALID_AMOUNT",
+                        "Montant invalide dans le fichier.",
+                    ),
+                    "INVALID_DATE" => {
+                        ("BANK_IMPORT_INVALID_DATE", "Date invalide dans le fichier.")
+                    }
+                    _ => ("BANK_IMPORT_PARSE_FAILED", "Fichier CAMT.053 invalide."),
+                };
+                let key = match code {
+                    "BANK_IMPORT_MALFORMED_XML" => "bank-import-errors-malformed-xml",
+                    "BANK_IMPORT_UNSUPPORTED_VERSION" => "bank-import-errors-unsupported-version",
+                    "BANK_IMPORT_MISSING_FIELD" => "bank-import-errors-missing-field",
+                    "BANK_IMPORT_INVALID_AMOUNT" => "bank-import-errors-invalid-amount",
+                    "BANK_IMPORT_INVALID_DATE" => "bank-import-errors-invalid-date",
+                    _ => "bank-import-errors-parse-failed",
+                };
+                let mut body = serde_json::json!({
+                    "error": {
+                        "code": code,
+                        "message": t(key, default),
+                        "details": { "kind": kind, "message": message }
+                    }
+                });
+                // S'assurer du shape stable même si `code` est statique.
+                if let Some(err_obj) = body.get_mut("error").and_then(|e| e.as_object_mut()) {
+                    if let Some(c) = err_obj.get_mut("code") {
+                        *c = serde_json::Value::String(code.to_string());
+                    }
+                }
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
+            AppError::BankImportBalanceMismatch {
+                opening,
+                closing,
+                sum,
+                diff,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_BALANCE_MISMATCH",
+                        "message": t(
+                            "bank-import-errors-balance-mismatch",
+                            "Solde de clôture incohérent.",
+                        ),
+                        "details": {
+                            "opening": opening,
+                            "closing": closing,
+                            "sum": sum,
+                            "diff": diff,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankImportUnsupportedCurrency(currency) => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_UNSUPPORTED_CURRENCY",
+                        "message": t(
+                            "bank-import-errors-unsupported-currency",
+                            "Devise non supportée v0.1 (CHF uniquement).",
+                        ),
+                        "details": { "currency": currency }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankImportNoMatchingStatement { found_ibans } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_NO_MATCHING_STATEMENT",
+                        "message": t(
+                            "bank-import-errors-no-matching-statement",
+                            "Aucun statement ne correspond au compte sélectionné.",
+                        ),
+                        "details": { "foundIbans": found_ibans }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankImportDuplicateFile => build_response(
+                StatusCode::CONFLICT,
+                "BANK_IMPORT_DUPLICATE_FILE",
+                &t(
+                    "bank-import-errors-duplicate-file",
+                    "Ce fichier a déjà été importé.",
+                ),
+            ),
+
+            AppError::BankAccountNotFound => build_response(
+                StatusCode::NOT_FOUND,
+                "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND",
+                &t(
+                    "bank-import-errors-bank-account-not-found",
+                    "Compte bancaire non trouvé.",
+                ),
+            ),
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation
