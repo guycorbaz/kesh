@@ -25,6 +25,8 @@
 //! - [`validate_currency_supported_v0_1`] : enforce le périmètre v0.1
 //!   limité à CHF.
 
+use std::fmt;
+
 use chrono::{NaiveDate, NaiveDateTime};
 use kesh_import::{ImportedStatement, ImportedTransaction, SourceFormat};
 use rust_decimal::Decimal;
@@ -149,6 +151,15 @@ impl SourceFormatTag {
             Self::Camt053V04 => "CAMT053_V04",
             Self::Camt053V08 => "CAMT053_V08",
         }
+    }
+}
+
+/// Délègue à [`SourceFormatTag::as_db_str`] (review code Pass 2 finding
+/// F18 — `format!("{}", tag)` sera utilisé en 8-1b pour le logging et
+/// les messages d'erreur sans dépendre du `Debug` derive).
+impl fmt::Display for SourceFormatTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_db_str())
     }
 }
 
@@ -372,6 +383,19 @@ mod tests {
 
     #[test]
     fn validate_balance_passes_when_within_tolerance() {
+        // Test du chemin Ok pour deux valeurs de diff sous la borne :
+        //   - diff = 0    (cas idéal : opening + Σ = closing)
+        //   - diff = 0.005 (sous tolérance, pas à la borne)
+        //
+        // **Note review code Pass 2 finding F17** : ce test seul est
+        // vacuux (une impl `Ok(())` constante le passerait). Il faut
+        // le lire en paire avec :
+        //   - `validate_balance_passes_at_exactly_one_cent` (borne =)
+        //   - `validate_balance_fails_just_above_one_cent` (borne +ε)
+        //   - `validate_balance_fails_when_diff_exceeds_one_cent` (loin)
+        // Ensemble, ces 4 tests verrouillent la sémantique `> 0.01`
+        // strict avec la borne incluse.
+
         // opening 1000.00 + Σ 100.00 = closing 1100.00 → diff 0
         let stmt = statement_fixture(Some(dec!(1000.00)), Some(dec!(1100.00)));
         validate_balance(&stmt).expect("balance check passes");
@@ -440,6 +464,64 @@ mod tests {
         match err {
             CoreError::BankImportBalanceMismatch { diff, .. } => {
                 assert_eq!(diff, Money::new(dec!(0.011)));
+            }
+            other => panic!("attendu BankImportBalanceMismatch, obtenu {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_balance_handles_signed_mix_correctly() {
+        // Régression review code Pass 2 finding F19 : verrouille la
+        // somme signée des transactions (CRDT positif + DBIT négatif).
+        // Sans ça, un bug de `sum_transactions` qui sommerait des
+        // valeurs absolues au lieu des valeurs signées resterait
+        // invisible — tous les autres tests utilisent uniquement
+        // amount = +100.
+        // opening 1000 + (+200) + (-50) + (+30) = 1180 = closing 1180 → diff 0
+        let mut stmt = statement_fixture(Some(dec!(1000.00)), Some(dec!(1180.00)));
+        stmt.transactions = vec![
+            ImportedTransaction {
+                amount: dec!(200.00),
+                ..fixture()
+            },
+            ImportedTransaction {
+                amount: dec!(-50.00),
+                ..fixture()
+            },
+            ImportedTransaction {
+                amount: dec!(30.00),
+                ..fixture()
+            },
+        ];
+        validate_balance(&stmt)
+            .expect("somme signée 200 + (-50) + 30 = 180 doit aligner avec 1000 → 1180");
+    }
+
+    #[test]
+    fn validate_balance_detects_balance_mismatch_fixture() {
+        // Régression review code Pass 2 finding F16 (verdict NO-GO
+        // conditionnel Auditor) : la fixture `v04_balance_mismatch.xml`
+        // était orpheline — aucun test d'intégration ne la chargeait,
+        // ce qui rendait AC #9 PARTIAL. Ce test parse la fixture via
+        // `kesh-import` et vérifie que `validate_balance` détecte
+        // l'incohérence (opening 1000 + Σ 100 = 1100 ≠ closing 1500
+        // → diff 400).
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../kesh-import/tests/fixtures/camt053/v04_balance_mismatch.xml");
+        let xml = std::fs::read(&fixture_path)
+            .unwrap_or_else(|e| panic!("fixture {} introuvable : {e}", fixture_path.display()));
+        let stmts = kesh_import::parse_camt053(&xml).expect("parse OK");
+        assert_eq!(stmts.len(), 1);
+        let s = &stmts[0];
+        assert_eq!(s.opening_balance, Some(dec!(1000.00)));
+        assert_eq!(s.closing_balance, Some(dec!(1500.00)));
+        assert_eq!(s.transactions.len(), 1);
+        assert_eq!(s.transactions[0].amount, dec!(100.00));
+
+        let err = validate_balance(s).expect_err("balance check doit fail");
+        match err {
+            CoreError::BankImportBalanceMismatch { diff, .. } => {
+                assert_eq!(diff, Money::new(dec!(400.00)));
             }
             other => panic!("attendu BankImportBalanceMismatch, obtenu {other:?}"),
         }

@@ -389,11 +389,14 @@ fn handle_ntry_text(ntry: &mut NtryBuilder, path: &[String], txt: &str) -> Resul
             }
         }
         "Dt" | "DtTm" => {
-            let parent = path.iter().rev().nth(1).map(String::as_str);
-            match parent {
-                Some("BookgDt") => ntry.booking_date = Some(parse_date(txt)?),
-                Some("ValDt") => ntry.value_date = Some(parse_date(txt)?),
-                _ => {}
+            // Matchers anchored sur le tail complet (review code Pass 2
+            // finding F14, alignement avec F7) : un futur `<XxxDt><Dt>`
+            // imbriqué ailleurs dans le subtree Ntry n'écrasera pas
+            // silencieusement booking_date / value_date.
+            if ends_with(path, &["BookgDt", "Dt"]) || ends_with(path, &["BookgDt", "DtTm"]) {
+                ntry.booking_date = Some(parse_date(txt)?);
+            } else if ends_with(path, &["ValDt", "Dt"]) || ends_with(path, &["ValDt", "DtTm"]) {
+                ntry.value_date = Some(parse_date(txt)?);
             }
         }
         "NtryRef" => {
@@ -456,11 +459,16 @@ fn handle_txdtls_text(t: &mut TxDtlsBuilder, path: &[String], txt: &str) -> Resu
             // v04 : RltdPties > (Cdtr|Dbtr) > Nm — parent in {Cdtr, Dbtr}.
             // v08 : RltdPties > (Cdtr|Dbtr) > Pty > Nm — parent = Pty,
             // grand-parent in {Cdtr, Dbtr}.
+            //
+            // Le check `in_rltd_pties` (review code Pass 2 finding F21)
+            // garantit qu'on ne capture pas un `<Nm>` Cdtr/Dbtr d'un
+            // autre subtree (ex. `<RltdAgts>` ou extensions vendor).
             let parent = path.iter().rev().nth(1).map(String::as_str);
             let grand = path.iter().rev().nth(2).map(String::as_str);
             let is_v04 = matches!(parent, Some("Cdtr") | Some("Dbtr"));
             let is_v08 = parent == Some("Pty") && matches!(grand, Some("Cdtr") | Some("Dbtr"));
-            if is_v04 || is_v08 {
+            let in_rltd_pties = path.iter().any(|s| s == "RltdPties");
+            if (is_v04 || is_v08) && in_rltd_pties {
                 t.counterparty_name = Some(txt.to_string());
             }
         }
@@ -559,14 +567,18 @@ fn emit_transactions(
     let ntry_amount = n
         .amount
         .ok_or_else(|| CamtError::MissingRequiredField(location("amount")))?;
-    let ntry_sign_raw = n
-        .sign
-        .as_deref()
-        .ok_or_else(|| CamtError::MissingRequiredField(location("cdt_dbt_ind")))?;
-    let ntry_sign = parse_sign(
-        ntry_sign_raw,
-        &format!("stmt[{stmt_index}].ntry[{ntry_index}]"),
-    )?;
+    // Le sign Ntry est optionnel ici : certains exporters bancaires
+    // omettent `<CdtDbtInd>` au niveau `<Ntry>` quand chaque
+    // `<TxDtls>` porte le sien. On ne lève l'erreur que si le sign
+    // n'est ni présent au niveau Ntry ni au niveau TxDtls
+    // correspondant — voir review code Pass 2 finding F13.
+    let ntry_sign: Option<CdtDbtSign> = match n.sign.as_deref() {
+        Some(raw) => Some(parse_sign(
+            raw,
+            &format!("stmt[{stmt_index}].ntry[{ntry_index}]"),
+        )?),
+        None => None,
+    };
     let ntry_currency = n
         .currency
         .clone()
@@ -578,10 +590,14 @@ fn emit_transactions(
     let ntry_details = n.addtl_ntry_inf.clone();
 
     if n.txdtls.is_empty() {
+        // Pas de TxDtls : un sign au niveau Ntry est obligatoire
+        // (sinon on ne sait pas comment signer le montant agrégé).
+        let sign =
+            ntry_sign.ok_or_else(|| CamtError::MissingRequiredField(location("cdt_dbt_ind")))?;
         return Ok(vec![ImportedTransaction {
             booking_date,
             value_date,
-            amount: ntry_sign.apply(ntry_amount),
+            amount: sign.apply(ntry_amount),
             currency: ntry_currency,
             reference: ntry_reference,
             details: ntry_details.unwrap_or_default(),
@@ -595,13 +611,18 @@ fn emit_transactions(
     let mut out = Vec::with_capacity(n.txdtls.len());
     for (i, t) in n.txdtls.into_iter().enumerate() {
         let amount_raw = t.amount.unwrap_or(ntry_amount);
+        let txdtls_loc = format!("stmt[{stmt_index}].ntry[{ntry_index}].txdtls[{i}]");
+        // Pour chaque TxDtls : sign propre si présent, sinon
+        // fallback Ntry, sinon erreur (ni TxDtls ni Ntry n'a de
+        // signe — Ntry et au moins un TxDtls défaillants).
         let sign = if let Some(s) = t.sign.as_deref() {
-            parse_sign(
-                s,
-                &format!("stmt[{stmt_index}].ntry[{ntry_index}].txdtls[{i}]"),
-            )?
+            parse_sign(s, &txdtls_loc)?
         } else {
-            ntry_sign
+            ntry_sign.ok_or_else(|| {
+                CamtError::MissingRequiredField(format!(
+                    "{txdtls_loc}.cdt_dbt_ind (ni TxDtls ni Ntry n'a de signe)"
+                ))
+            })?
         };
         let signed = sign.apply(amount_raw);
         let currency = t.currency.unwrap_or_else(|| ntry_currency.clone());

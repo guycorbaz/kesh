@@ -75,6 +75,21 @@ fn parse_v04_prefixed_namespace_extracts_all_transactions() {
     assert_eq!(s.account_iban, "CH4431999123000889012");
     assert_eq!(s.transactions.len(), 1);
 
+    // Review code Pass 2 finding F15 : couverture body-dispatch sur
+    // namespace préfixé. Sans ces assertions, un défaut de matching
+    // dans `apply_balance` ou `handle_bal_text` pour les tags
+    // préfixés laisserait silencieusement opening/closing à None.
+    assert_eq!(
+        s.opening_balance,
+        Some(dec!(5000.00)),
+        "OPBD doit être extrait via handle_bal_text + apply_balance avec préfixe"
+    );
+    assert_eq!(
+        s.closing_balance,
+        Some(dec!(5500.00)),
+        "CLBD doit être extrait via handle_bal_text + apply_balance avec préfixe"
+    );
+
     let tx = &s.transactions[0];
     assert_eq!(tx.amount, dec!(500.00));
     assert_eq!(tx.counterparty_name.as_deref(), Some("Régie Genevoise SA"));
