@@ -7,6 +7,8 @@
 pub mod accounts;
 pub mod audit_log;
 pub mod bank_accounts;
+pub mod bank_imports;
+pub mod bank_transactions;
 pub mod companies;
 pub mod company_invoice_settings;
 pub mod contacts;
