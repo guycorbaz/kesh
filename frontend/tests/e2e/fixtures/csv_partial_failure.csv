@@ -1,0 +1,4 @@
+date;amount;reference;details
+2026-01-15;100.00;REF1;Valid
+INVALID_DATE;200.00;REF2;Bad date
+2026-01-17;not_a_number;REF3;Bad amount
