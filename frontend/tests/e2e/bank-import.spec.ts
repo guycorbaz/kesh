@@ -47,12 +47,27 @@ async function login(page: Page): Promise<void> {
 }
 
 /**
+ * Récupère le JWT stocké en localStorage par l'auth-store post-login
+ * (review code Pass 1 M11) — `page.request.*` ne partage pas l'auth
+ * de la page (pas de cookies dans cette stack JWT-in-memory). On lit
+ * `kesh:auth:accessToken` directement et on l'injecte en bearer.
+ */
+async function authHeaders(page: Page): Promise<Record<string, string>> {
+	const token = await page.evaluate(() => localStorage.getItem('kesh:auth:accessToken'));
+	if (!token) {
+		throw new Error('JWT introuvable en localStorage post-login');
+	}
+	return { Authorization: `Bearer ${token}` };
+}
+
+/**
  * Configure un bank_account via l'API onboarding (le seul endpoint
  * exposé v0.1). Idempotent : vérifie qu'un bank_account existe avant
- * de tenter la création.
+ * de tenter la création. M11 : passe le JWT en header explicite.
  */
 async function ensureBankAccount(page: Page): Promise<number> {
-	const company = await page.request.get('/api/v1/companies/current');
+	const headers = await authHeaders(page);
+	const company = await page.request.get('/api/v1/companies/current', { headers });
 	if (company.ok()) {
 		const json = await company.json();
 		if (Array.isArray(json.bankAccounts) && json.bankAccounts.length > 0) {
@@ -60,6 +75,7 @@ async function ensureBankAccount(page: Page): Promise<number> {
 		}
 	}
 	const res = await page.request.post('/api/v1/onboarding/bank-account', {
+		headers,
 		data: {
 			bankName: 'UBS Test',
 			iban: TEST_IBAN,
@@ -157,27 +173,22 @@ test('lists previous imports paginated', async ({ page }) => {
 	await page.goto('/bank-import');
 
 	// Crée un import via l'API (rapidité — pas via UI).
+	// Review code Pass 1 : suppression du `page.evaluate(fetch)` qui
+	// était dead code (404 systématique car SvelteKit ne sert pas
+	// `/tests/fixtures/`). On lit directement la fixture côté Node
+	// et on POST avec multipart natif Playwright + JWT (M11).
 	const accountId = await ensureBankAccount(page);
-	const fixtureBuffer = await page.evaluate(async () => {
-		const res = await fetch('/tests/fixtures/camt053_v04_minimal.xml');
-		return Array.from(new Uint8Array(await res.arrayBuffer()));
-	}).catch(() => null);
-	if (!fixtureBuffer) {
-		// Si la fixture n'est pas servie statiquement, on lit côté Node.
-		const fs = await import('fs');
-		const buf = fs.readFileSync(FIXTURE_MINIMAL);
-		const form = new FormData();
-		form.append('bankAccountId', accountId.toString());
-		form.append('file', new Blob([buf]), 'v04_minimal.xml');
-		// Note : `page.request.post` permet l'envoi multipart natif.
-		const res = await page.request.post('/api/v1/bank-imports', {
-			multipart: {
-				bankAccountId: accountId.toString(),
-				file: { name: 'v04_minimal.xml', mimeType: 'application/xml', buffer: buf },
-			},
-		});
-		expect(res.status()).toBe(201);
-	}
+	const fs = await import('fs');
+	const buf = fs.readFileSync(FIXTURE_MINIMAL);
+	const headers = await authHeaders(page);
+	const res = await page.request.post('/api/v1/bank-imports', {
+		headers,
+		multipart: {
+			bankAccountId: accountId.toString(),
+			file: { name: 'v04_minimal.xml', mimeType: 'application/xml', buffer: buf },
+		},
+	});
+	expect(res.status()).toBe(201);
 
 	await page.reload();
 	await expect(page.getByTestId('bank-import-list')).toBeVisible();

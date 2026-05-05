@@ -85,6 +85,23 @@ function isGlobalNamespace(namespace) {
   return GLOBAL_NAMESPACES.includes(namespace);
 }
 
+/**
+ * Returns true if `key` is owned by `feature` (multi-segment feature
+ * names like `bank-import` are supported by checking that the key
+ * starts with `${feature}-`). Single-segment features keep the
+ * historical first-token comparison via the caller's fallback.
+ */
+function keyBelongsToFeature(key, feature) {
+  if (!feature) return true;
+  // Feature names with multiple segments (e.g. "bank-import",
+  // "vat-rates") require prefix-match because `key.split('-')[0]`
+  // truncates to the first token only.
+  if (feature.includes('-')) {
+    return key === feature || key.startsWith(`${feature}-`);
+  }
+  return getNamespace(key) === feature;
+}
+
 function validateKeysInFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf-8');
   const keys = extractI18nKeys(content);
@@ -100,8 +117,9 @@ function validateKeysInFile(filePath) {
       continue;
     }
 
-    // For files in features/X, only allow keys with namespace 'X'
-    if (feature && namespace !== feature) {
+    // For files in features/X, only allow keys belonging to X
+    // (supports multi-segment feature names like `bank-import`).
+    if (feature && !keyBelongsToFeature(key, feature)) {
       const relPath = path.relative(process.cwd(), filePath);
       // Normalize path separators to forward slashes for cross-platform consistency
       const normalizedPath = relPath.replace(/\\/g, '/');

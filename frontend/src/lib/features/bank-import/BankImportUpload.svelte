@@ -18,6 +18,7 @@
 		BankImportResponse,
 	} from './bank-import.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
 	type Props = {
 		bankAccounts: Array<{ id: number; bankName: string; iban: string }>;
@@ -33,6 +34,37 @@
 	let errorCode = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
 	let dragActive = $state(false);
+
+	// Review code Pass 1 M7 : reset l'état (preview, fichier, erreurs) si
+	// l'utilisateur change de bank_account après un upload — sinon le
+	// preview / message d'erreur affichés correspondent à un compte
+	// différent que celui maintenant sélectionné.
+	let lastSeenAccountId: number | null = null;
+	$effect(() => {
+		if (lastSeenAccountId !== null && lastSeenAccountId !== selectedAccountId) {
+			selectedFile = null;
+			preview = null;
+			confirmBalanceMismatch = false;
+			errorCode = null;
+			errorMessage = null;
+		}
+		lastSeenAccountId = selectedAccountId;
+	});
+
+	// Review code Pass 1 M9 : mapping warning code (raw API string) →
+	// clé i18n. Le composant affiche la clé tant que l'i18n runtime
+	// front n'est pas wired ici ; au moins le code n'apparaît plus
+	// brut « balance_mismatch » dans l'UI.
+	function warningLabel(code: string): string {
+		// Mapping warning code (snake_case raw API) → clé i18n kebab-case.
+		// Convention `bank-import-warnings-{slug}` (validate Pass 3 O1+O2).
+		const key = `bank-import-warnings-${code.replace(/_/g, '-')}`;
+		const fallbackByCode: Record<string, string> = {
+			balance_mismatch: 'Solde de clôture incohérent.',
+			unsupported_currency: 'Devise non supportée v0.1.',
+		};
+		return i18nMsg(key, fallbackByCode[code] ?? code);
+	}
 
 	function reset(): void {
 		selectedFile = null;
@@ -69,7 +101,21 @@
 	}
 
 	async function handleConfirm(): Promise<void> {
-		if (!selectedFile || !selectedAccountId) return;
+		if (!selectedFile || !selectedAccountId || !preview) return;
+		// Review code Pass 1 M8 : guard anti-stale-preview. Si l'utilisateur
+		// a changé le bank_account entre le preview et le confirm (le
+		// reset $effect vide normalement preview, mais belt-and-suspenders),
+		// vérifier que l'IBAN du preview correspond toujours à un account
+		// existant côté liste.
+		const previewIban = preview.selectedStatement.accountIban.replace(/\s/g, '').toUpperCase();
+		const matchingAccount = bankAccounts.find(
+			(a) => a.id === selectedAccountId && a.iban.replace(/\s/g, '').toUpperCase() === previewIban,
+		);
+		if (!matchingAccount) {
+			errorCode = 'STALE_PREVIEW';
+			errorMessage = "La sélection de compte a changé. Recharger le fichier.";
+			return;
+		}
 		isLoading = true;
 		errorCode = null;
 		errorMessage = null;
@@ -120,7 +166,7 @@
 
 <section data-testid="bank-import-upload">
 	<label class="block text-sm font-medium" for="bank-account-select">
-		Compte bancaire cible
+		{i18nMsg('bank-import-labels-bank-account-selector', 'Compte bancaire cible')}
 	</label>
 	<select
 		id="bank-account-select"
@@ -163,7 +209,10 @@
 				disabled={!selectedAccountId}
 			/>
 			<p class="text-text-muted">
-				Glissez votre fichier CAMT.053 ici ou cliquez pour parcourir
+				{i18nMsg(
+					'bank-import-labels-drop-zone',
+					'Glissez votre fichier CAMT.053 ici ou cliquez pour parcourir',
+				)}
 			</p>
 		</div>
 	{/if}
@@ -185,7 +234,9 @@
 
 	{#if preview}
 		<div class="mt-6" data-testid="bank-import-preview">
-			<h2 class="text-lg font-semibold">Prévisualisation</h2>
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('bank-import-labels-preview-title', 'Prévisualisation')}
+			</h2>
 			<dl class="mt-2 grid grid-cols-2 gap-2 text-sm">
 				<dt>IBAN</dt>
 				<dd data-testid="preview-iban">{preview.selectedStatement.accountIban}</dd>
@@ -207,7 +258,7 @@
 					data-testid="preview-warnings"
 				>
 					{#each preview.warnings as warn (warn)}
-						<p data-warning-code={warn}>{warn}</p>
+						<p data-warning-code={warn}>{warningLabel(warn)}</p>
 					{/each}
 				</div>
 			{/if}
@@ -246,7 +297,10 @@
 						data-testid="confirm-balance-mismatch"
 						bind:checked={confirmBalanceMismatch}
 					/>
-					Importer malgré l'écart de solde
+					{i18nMsg(
+						'bank-import-labels-confirm-balance-mismatch',
+						"Importer malgré l'écart de solde",
+					)}
 				</label>
 			{/if}
 
@@ -259,7 +313,7 @@
 						(preview.warnings.includes('balance_mismatch') && !confirmBalanceMismatch)}
 					onclick={handleConfirm}
 				>
-					Confirmer l'import
+					{i18nMsg('bank-import-labels-confirm-import', "Confirmer l'import")}
 				</button>
 				<button
 					type="button"
@@ -267,7 +321,7 @@
 					class="rounded border border-border px-4 py-2"
 					onclick={reset}
 				>
-					Annuler
+					{i18nMsg('bank-import-labels-cancel', 'Annuler')}
 				</button>
 			</div>
 		</div>

@@ -3,6 +3,7 @@
   data-testid sur chaque ligne pour Playwright (Story 7-5/KF-008).
 -->
 <script lang="ts">
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { BankImportResponse } from './bank-import.types';
 
 	type Props = {
@@ -14,7 +15,7 @@
 <section data-testid="bank-import-list">
 	{#if imports.length === 0}
 		<p class="text-text-muted" data-testid="bank-import-list-empty">
-			Aucun import bancaire.
+			{i18nMsg('bank-import-labels-empty', 'Aucun import bancaire.')}
 		</p>
 	{:else}
 		<table class="w-full table-auto text-sm">

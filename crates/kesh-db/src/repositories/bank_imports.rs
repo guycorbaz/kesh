@@ -85,7 +85,13 @@ pub async fn create_with_transactions(
         .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
     // Étape 2 : bulk INSERT bank_transactions par chunks de 1000.
-    let mut inserted_ids: Vec<i64> = Vec::with_capacity(transactions.len());
+    //
+    // Pass 1 review H4 : on n'accumule PAS les IDs depuis `last_insert_id()`
+    // car (a) la SELECT-back en step 3 est la source de vérité unique et
+    // (b) l'arithmétique `first_id + offset` reposait implicitement sur
+    // `innodb_autoinc_lock_mode = 1`, qui n'est plus le défaut MariaDB
+    // 10.6+ (mode 2 « interleaved » peut casser la séquence). Le SELECT
+    // par `(company_id, import_id)` est correct quel que soit le mode.
     for chunk in transactions.chunks(1000) {
         if chunk.is_empty() {
             continue;
@@ -111,20 +117,7 @@ pub async fn create_with_transactions(
                 .push_bind(&t.counterparty_iban)
                 .push_bind(&t.counterparty_name);
         });
-        let chunk_result = qb.build().execute(&mut **tx).await.map_err(map_db_error)?;
-
-        // last_insert_id() retourne l'ID de la première ligne insérée du
-        // bulk ; les autres ont des IDs consécutifs (garantie InnoDB +
-        // innodb_autoinc_lock_mode = 1 par défaut sur MariaDB).
-        let first_id = chunk_result.last_insert_id();
-        let n = chunk_result.rows_affected();
-        for offset in 0..n {
-            let id_u64 = first_id + offset;
-            let id = i64::try_from(id_u64).map_err(|_| {
-                DbError::Invariant(format!("bank_transaction id {id_u64} dépasse i64::MAX"))
-            })?;
-            inserted_ids.push(id);
-        }
+        qb.build().execute(&mut **tx).await.map_err(map_db_error)?;
     }
 
     // Étape 3 : SELECT-back pour récupérer les entités complètes (avec
@@ -137,7 +130,7 @@ pub async fn create_with_transactions(
     .await
     .map_err(map_db_error)?;
 
-    let inserted_txs = if inserted_ids.is_empty() {
+    let inserted_txs = if transactions.is_empty() {
         Vec::new()
     } else {
         sqlx::query_as::<_, BankTransaction>(&format!(
@@ -195,6 +188,35 @@ pub async fn find_by_company_id(
         .fetch_all(pool)
         .await
         .map_err(map_db_error),
+    }
+}
+
+/// Compte total des imports d'une company pour la pagination
+/// (review code Pass 1 H5 : `total: 0` hardcoded était un contrat
+/// JSON menteur — `BankImportListResponse.total` doit refléter la
+/// réalité pour qu'une UI cliente puisse paginer correctement).
+pub async fn count_by_company_id(
+    pool: &MySqlPool,
+    company_id: i64,
+    bank_account_id: Option<i64>,
+) -> Result<i64, DbError> {
+    match bank_account_id {
+        Some(bank_id) => sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM bank_imports \
+             WHERE company_id = ? AND bank_account_id = ?",
+        )
+        .bind(company_id)
+        .bind(bank_id)
+        .fetch_one(pool)
+        .await
+        .map_err(map_db_error),
+        None => {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM bank_imports WHERE company_id = ?")
+                .bind(company_id)
+                .fetch_one(pool)
+                .await
+                .map_err(map_db_error)
+        }
     }
 }
 

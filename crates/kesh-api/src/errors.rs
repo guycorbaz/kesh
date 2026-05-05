@@ -487,19 +487,17 @@ impl IntoResponse for AppError {
                     "BANK_IMPORT_INVALID_DATE" => "bank-import-errors-invalid-date",
                     _ => "bank-import-errors-parse-failed",
                 };
-                let mut body = serde_json::json!({
+                // Review code Pass 1 M14 : `code` est `&'static str` donc
+                // déjà serialisé en string par `serde_json::json!`. Le
+                // bloc `if let Some(err_obj) = body.get_mut(...)` qui
+                // re-posait la même valeur était du dead code.
+                let body = serde_json::json!({
                     "error": {
                         "code": code,
                         "message": t(key, default),
                         "details": { "kind": kind, "message": message }
                     }
                 });
-                // S'assurer du shape stable même si `code` est statique.
-                if let Some(err_obj) = body.get_mut("error").and_then(|e| e.as_object_mut()) {
-                    if let Some(c) = err_obj.get_mut("code") {
-                        *c = serde_json::Value::String(code.to_string());
-                    }
-                }
                 (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
 

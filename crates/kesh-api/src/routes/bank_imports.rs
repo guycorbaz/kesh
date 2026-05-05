@@ -152,17 +152,36 @@ pub struct ListBankImportsQuery {
 // Multipart parsing helper
 // ---------------------------------------------------------------------------
 
-const FILENAME_MAX_LEN: usize = 255;
+const FILENAME_MAX_BYTES: usize = 255;
 
 struct MultipartFields {
-    file_bytes: Vec<u8>,
+    /// Bytes du fichier uploadé. Conservé en `Bytes` (zero-copy depuis
+    /// axum) au lieu de `Vec<u8>` (review code Pass 1 H1) pour éviter
+    /// le doublement RSS sur upload (10 MiB → 20 MiB).
+    file_bytes: axum::body::Bytes,
     filename: String,
     bank_account_id: i64,
     confirm_balance_mismatch: bool,
 }
 
+/// Tronque `s` à `max_bytes` octets en respectant les frontières de char
+/// UTF-8 (review code Pass 1 M1) — `chars().take(N).collect()` ne borne
+/// que le nombre de scalaires Unicode, pas les octets ; un nom de
+/// fichier plein d'emoji 4-byte produit jusqu'à 1020 octets et casse
+/// `VARCHAR(255)` MariaDB qui mesure en bytes.
+fn truncate_to_byte_len(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
+}
+
 async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, AppError> {
-    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_bytes: Option<axum::body::Bytes> = None;
     let mut filename: Option<String> = None;
     let mut bank_account_id: Option<i64> = None;
     let mut confirm_balance_mismatch = false;
@@ -171,26 +190,53 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
             "file" => {
+                if file_bytes.is_some() {
+                    // Review code Pass 1 (multipart hardening) : refuser
+                    // les champs dupliqués sur les champs sécurité-sensibles
+                    // pour éviter les attaques par duplication.
+                    return Err(AppError::Validation(
+                        "Champ 'file' dupliqué dans le multipart".into(),
+                    ));
+                }
                 let original = field.file_name().unwrap_or("upload.xml").to_string();
-                let truncated: String = original.chars().take(FILENAME_MAX_LEN).collect();
-                filename = Some(truncated);
-                let bytes = field.bytes().await.map_err(map_multipart_err)?;
-                file_bytes = Some(bytes.to_vec());
+                filename = Some(truncate_to_byte_len(&original, FILENAME_MAX_BYTES));
+                file_bytes = Some(field.bytes().await.map_err(map_multipart_err)?);
             }
             "bankAccountId" => {
+                if bank_account_id.is_some() {
+                    return Err(AppError::Validation(
+                        "Champ 'bankAccountId' dupliqué dans le multipart".into(),
+                    ));
+                }
                 let text = field.text().await.map_err(map_multipart_err)?;
                 let id: i64 = text.trim().parse().map_err(|_| {
                     AppError::Validation(format!("bankAccountId invalide : '{text}'"))
                 })?;
+                if id <= 0 {
+                    // Defense-in-depth (review code Pass 1) : rejeter
+                    // 0/négatif au boundary plutôt que de laisser
+                    // find_by_id_for_company faire la requête DB inutile.
+                    return Err(AppError::Validation(
+                        "bankAccountId doit être strictement positif".into(),
+                    ));
+                }
                 bank_account_id = Some(id);
             }
             "confirmBalanceMismatch" => {
                 let text = field.text().await.map_err(map_multipart_err)?;
-                confirm_balance_mismatch = matches!(text.trim(), "true" | "1");
+                // Review code Pass 1 M3 : case-insensitive — accepter
+                // "true"/"True"/"TRUE"/"1" pour les clients non-browser
+                // (curl, scripts) qui peuvent envoyer en majuscules.
+                confirm_balance_mismatch =
+                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
             }
             _ => {
-                // Ignore unknown fields (forward-compat).
-                let _ = field.bytes().await;
+                // Review code Pass 1 M2 : propager l'erreur sur les
+                // champs inconnus aussi — sinon un PAYLOAD_TOO_LARGE
+                // déclenché en lisant un champ inconnu serait
+                // silencieusement masqué et le caller verrait un
+                // confusing "champ 'file' manquant".
+                field.bytes().await.map_err(map_multipart_err)?;
             }
         }
     }
@@ -369,15 +415,34 @@ pub async fn preview(
 
     // Warnings non-bloquants.
     let mut warnings: Vec<String> = Vec::new();
-    if let Err(DbError::NotFound) = Ok::<_, DbError>(()) {
-        // (placeholder — la branche n'arrive jamais ; structure pour permettre
-        // l'extension future avec d'autres warnings côté preview.)
+    // Review code Pass 1 M4 : match explicite sur la variante CoreError
+    // attendue (au lieu de `Err(_)` qui swallow toute future variante en
+    // la traitant à tort comme balance_mismatch / unsupported_currency).
+    match core_bank_imports::validate_balance(&stmt) {
+        Ok(()) => {}
+        Err(kesh_core::errors::CoreError::BankImportBalanceMismatch { .. }) => {
+            warnings.push("balance_mismatch".into());
+        }
+        Err(other) => {
+            // CoreError inattendue : log + on remonte un 500 au lieu
+            // de masquer derrière un warning.
+            tracing::warn!("validate_balance unexpected CoreError: {other}");
+            return Err(AppError::Internal(format!(
+                "validate_balance retourne une variante inattendue : {other}"
+            )));
+        }
     }
-    if let Err(_e) = core_bank_imports::validate_balance(&stmt) {
-        warnings.push("balance_mismatch".into());
-    }
-    if let Err(_e) = core_bank_imports::validate_currency_supported_v0_1(&stmt) {
-        warnings.push("unsupported_currency".into());
+    match core_bank_imports::validate_currency_supported_v0_1(&stmt) {
+        Ok(()) => {}
+        Err(kesh_core::errors::CoreError::BankImportUnsupportedCurrency(_)) => {
+            warnings.push("unsupported_currency".into());
+        }
+        Err(other) => {
+            tracing::warn!("validate_currency unexpected CoreError: {other}");
+            return Err(AppError::Internal(format!(
+                "validate_currency retourne une variante inattendue : {other}"
+            )));
+        }
     }
 
     let source_format = version_to_source_format(&stmt)?;
@@ -570,6 +635,10 @@ pub async fn create(
 }
 
 /// `GET /api/v1/bank-imports` — liste paginée multi-tenant (KF-002).
+///
+/// Review code Pass 1 H5 : `total` retourné via `count_by_company_id`
+/// (au lieu de `0` hardcodé) pour respecter le contrat
+/// `ListResponse<T>.total` honnête vis-à-vis du client TypeScript.
 pub async fn list(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -577,6 +646,13 @@ pub async fn list(
 ) -> Result<Json<ListResponse<BankImportResponse>>, AppError> {
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
     let offset = query.offset.unwrap_or(0).max(0);
+
+    let total = bank_imports::count_by_company_id(
+        &state.pool,
+        current_user.company_id,
+        query.bank_account_id,
+    )
+    .await?;
 
     let imports = bank_imports::find_by_company_id(
         &state.pool,
@@ -589,7 +665,7 @@ pub async fn list(
 
     Ok(Json(ListResponse {
         items: imports.into_iter().map(import_to_response).collect(),
-        total: 0, // count séparé hors scope v0.1 — TODO Story 8-3 si pagination cliente l'exige
+        total,
         offset,
         limit,
     }))

@@ -4,6 +4,7 @@
 	import BankImportList from '$lib/features/bank-import/BankImportList.svelte';
 	import { listBankImports } from '$lib/features/bank-import/bank-import.api';
 	import { apiClient } from '$lib/shared/utils/api-client';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { BankImportResponse } from '$lib/features/bank-import/bank-import.types';
 
 	type BankAccountListItem = { id: number; bankName: string; iban: string };
@@ -48,7 +49,7 @@
 </svelte:head>
 
 <h1 class="text-2xl font-semibold text-text" data-testid="bank-import-page-title">
-	Import bancaire CAMT.053
+	{i18nMsg('bank-import-labels-page-title', 'Import bancaire CAMT.053')}
 </h1>
 
 {#if loading}
@@ -59,7 +60,9 @@
 	</div>
 
 	<section class="mt-10">
-		<h2 class="text-lg font-semibold">Imports précédents</h2>
+		<h2 class="text-lg font-semibold">
+			{i18nMsg('bank-import-labels-list-title', 'Imports précédents')}
+		</h2>
 		<BankImportList {imports} />
 	</section>
 {/if}

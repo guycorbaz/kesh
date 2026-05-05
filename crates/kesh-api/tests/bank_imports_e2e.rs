@@ -255,6 +255,21 @@ async fn post_import_creates_rows_atomically(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(count, 1);
+
+    // AC #3a (review code Pass 1 H3) : chaque ligne `bank_transactions`
+    // doit avoir `bank_account_id = selected_id`. Sans cette assertion
+    // explicite, une régression sur la FK ne serait pas détectée.
+    let ba_id: i64 = sqlx::query_scalar(
+        "SELECT bank_account_id FROM bank_transactions WHERE import_id = ? LIMIT 1",
+    )
+    .bind(import_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        ba_id, s.bank_account_id,
+        "AC #3a : chaque transaction doit porter bank_account_id du compte cible"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

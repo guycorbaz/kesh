@@ -40,6 +40,15 @@ CREATE TABLE bank_imports (
         FOREIGN KEY (imported_by_user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT uq_bank_imports_company_hash UNIQUE (company_id, file_hash),
     CONSTRAINT chk_bank_imports_period CHECK (period_to >= period_from),
+    -- Defense-in-depth (Pass 1 review M5) :
+    -- transaction_count borné >= 0 (l'app passe `i32::try_from(len) as i32`
+    -- mais une régression passant un négatif est silencieusement acceptée
+    -- sans cette CHECK).
+    CONSTRAINT chk_bank_imports_tx_count CHECK (transaction_count >= 0),
+    -- file_hash doit être un SHA-256 hex de 64 chars (le compute_sha256_hex
+    -- handler le garantit, mais futur caller pourrait passer un MD5 32
+    -- chars ; CHAR(64) padderait avec des espaces silencieusement).
+    CONSTRAINT chk_bank_imports_hash_len CHECK (CHAR_LENGTH(file_hash) = 64),
     INDEX idx_bank_imports_company_account_imported (company_id, bank_account_id, imported_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
