@@ -54,7 +54,7 @@ test('creates a bank profile via wizard', async ({ page }) => {
 	await page.getByTestId('header-row-count-input').fill('1');
 	await page.getByTestId('col-date-input').fill('0');
 	await page.getByTestId('col-amount-input').fill('1');
-	await page.getByTestId('bank-profile-submit').click();
+	await page.getByTestId('bank-import-profile-submit').click();
 
 	// Redirect vers /bank-import/profiles/{id}
 	await expect(page).toHaveURL(/\/bank-import\/profiles\/\d+/);
@@ -69,9 +69,9 @@ test('rejects equal separators with API error', async ({ page }) => {
 	await page.getByTestId('decimal-separator-select').selectOption(',');
 	await page.getByTestId('col-date-input').fill('0');
 	await page.getByTestId('col-amount-input').fill('1');
-	await page.getByTestId('bank-profile-submit').click();
+	await page.getByTestId('bank-import-profile-submit').click();
 
-	await expect(page.getByTestId('bank-profile-error')).toBeVisible();
+	await expect(page.getByTestId('bank-import-profile-error')).toBeVisible();
 });
 
 test('duplicate bank_name returns 409', async ({ page }) => {
@@ -82,7 +82,7 @@ test('duplicate bank_name returns 409', async ({ page }) => {
 	await page.getByTestId('date-format-input').fill('%Y-%m-%d');
 	await page.getByTestId('col-date-input').fill('0');
 	await page.getByTestId('col-amount-input').fill('1');
-	await page.getByTestId('bank-profile-submit').click();
+	await page.getByTestId('bank-import-profile-submit').click();
 	await expect(page).toHaveURL(/\/bank-import\/profiles\/\d+/);
 
 	// Deuxième profil même nom → erreur 409
@@ -91,9 +91,9 @@ test('duplicate bank_name returns 409', async ({ page }) => {
 	await page.getByTestId('date-format-input').fill('%Y-%m-%d');
 	await page.getByTestId('col-date-input').fill('0');
 	await page.getByTestId('col-amount-input').fill('1');
-	await page.getByTestId('bank-profile-submit').click();
+	await page.getByTestId('bank-import-profile-submit').click();
 
-	await expect(page.getByTestId('bank-profile-error')).toBeVisible();
+	await expect(page.getByTestId('bank-import-profile-error')).toBeVisible();
 });
 
 test('accessibility — profile pages axe scan zero violations', async ({ page }) => {
