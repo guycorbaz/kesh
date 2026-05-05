@@ -7,12 +7,16 @@ description = "Parseurs CAMT.053 ISO 20022 et CSV multi-encodage pour relevés b
 repository.workspace = true
 
 [dependencies]
+chardetng = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+csv = "1.3"
+encoding_rs = "0.8"
 quick-xml = "0.39"
+regex = "1.10"
 rust_decimal = { version = "1.41", features = ["serde-str"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
 
 [dev-dependencies]
 rust_decimal_macros = "1.40"
-serde_json = "1"
