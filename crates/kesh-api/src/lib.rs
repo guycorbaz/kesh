@@ -180,6 +180,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
                 (state.config.bank_import_max_mib as usize) * 1024 * 1024,
             )),
         )
+        // Story 8-2 : write profils CSV (Comptable+).
+        .route("/api/v1/bank-profiles", post(routes::bank_profiles::create))
+        .route(
+            "/api/v1/bank-profiles/{id}",
+            axum::routing::put(routes::bank_profiles::update).delete(routes::bank_profiles::delete),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -287,6 +293,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/bank-imports/{id}",
             get(routes::bank_imports::detail),
+        )
+        // Story 8-2 : lecture profils CSV bancaires (tous rôles
+        // authentifiés, multi-tenant KF-002).
+        .route("/api/v1/bank-profiles", get(routes::bank_profiles::list))
+        .route(
+            "/api/v1/bank-profiles/{id}",
+            get(routes::bank_profiles::detail),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

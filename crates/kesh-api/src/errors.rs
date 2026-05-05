@@ -238,6 +238,75 @@ pub enum AppError {
     /// company → `404` (jamais `403`, pattern KF-002 anti-énumération).
     #[error("Compte bancaire non trouvé")]
     BankAccountNotFound,
+
+    // ----- Story 8-2 — Bank profiles + CSV import -----
+    /// Profil CSV introuvable / cross-tenant (pattern KF-002) → `404`.
+    /// Aussi utilisé pour `auto-match aucun profil ne matche le filename`
+    /// (cf. §profile-matching).
+    #[error("Profil bancaire introuvable")]
+    BankCsvProfileNotFound {
+        available_profiles: Vec<BankProfileSummary>,
+    },
+
+    /// Encoding détecté n'est pas dans `{UTF-8, ISO-8859-1}` v0.1 → `422`.
+    #[error("Encoding non supporté v0.1")]
+    BankCsvUnsupportedEncoding { detected: Option<String> },
+
+    /// Encoding détecté diverge de celui du profil sans
+    /// `confirmEncodingMismatch=true` → `422` (Pass 1 H5).
+    #[error("Encoding mismatch profil vs détecté")]
+    BankCsvEncodingMismatch { profile: String, detected: String },
+
+    /// Au moins une ligne du CSV échoue au parsing → `422` strict reject
+    /// FR51. Liste les erreurs (cap 100, Pass 2 H'1).
+    #[error("Échec parsing CSV partiel")]
+    BankCsvParsePartialFailure {
+        lines: Vec<CsvLineErrorPayload>,
+        total_errors: usize,
+        truncated: bool,
+    },
+
+    /// Validation profil failed (XOR, séparateurs distincts, regex
+    /// invalide, chrono format, longueurs, etc.) → `422`.
+    #[error("Profil bancaire invalide : {0}")]
+    BankCsvProfileValidation(String),
+
+    /// UNIQUE `(company_id, bank_name)` violation → `409`.
+    #[error("Profil bancaire dupliqué (bank_name déjà utilisé)")]
+    BankCsvProfileDuplicate,
+
+    /// Profil DB corrompu (column_mapping JSON invalide ou indices
+    /// hors-borne sur le 1er record) → `500` (jamais utilisateur).
+    #[error("Profil bancaire mal configuré : {0}")]
+    BankCsvProfileMisconfigured(String),
+
+    /// Fichier CSV vide ou 0 lignes de données après header skip → `422`.
+    #[error("Fichier CSV vide : {reason}")]
+    BankCsvEmptyFile { reason: String },
+
+    /// Format de fichier non supporté (ni CAMT ni CSV) → `415`.
+    #[error("Format de fichier non supporté")]
+    BankImportUnsupportedFormat,
+}
+
+/// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
+/// (cap 50 entrées par §profile-matching Pass 1 M11).
+#[derive(Debug, Clone, Serialize)]
+pub struct BankProfileSummary {
+    pub id: i64,
+    #[serde(rename = "bankName")]
+    pub bank_name: String,
+}
+
+/// Payload structuré pour `BankCsvParsePartialFailure.lines`.
+/// Sérialisé directement dans `details.lines` du JSON 422.
+#[derive(Debug, Clone, Serialize)]
+pub struct CsvLineErrorPayload {
+    pub line: usize,
+    pub code: String,
+    pub value: Option<String>,
+    #[serde(rename = "messageI18nKey")]
+    pub message_i18n_key: String,
 }
 
 /// Structure de la réponse d'erreur JSON renvoyée au client.
@@ -568,6 +637,126 @@ impl IntoResponse for AppError {
                 &t(
                     "bank-import-errors-bank-account-not-found",
                     "Compte bancaire non trouvé.",
+                ),
+            ),
+
+            // ----- Story 8-2 — bank profiles + CSV import -----
+            AppError::BankCsvProfileNotFound { available_profiles } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_NO_PROFILE_MATCH",
+                        "message": t(
+                            "bank-csv-errors-no-profile-match",
+                            "Aucun profil bancaire ne matche ce fichier.",
+                        ),
+                        "details": {
+                            "availableProfiles": available_profiles,
+                        }
+                    }
+                });
+                (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+
+            AppError::BankCsvUnsupportedEncoding { detected } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_UNSUPPORTED_ENCODING",
+                        "message": t(
+                            "bank-csv-errors-unsupported-encoding",
+                            "Encoding du fichier non supporté (UTF-8 ou ISO-8859-1 attendu).",
+                        ),
+                        "details": { "detected": detected }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankCsvEncodingMismatch { profile, detected } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_ENCODING_MISMATCH",
+                        "message": t(
+                            "bank-csv-errors-encoding-mismatch",
+                            "L'encoding détecté diffère du profil. Confirmez via confirmEncodingMismatch=true.",
+                        ),
+                        "details": {
+                            "profileEncoding": profile,
+                            "detectedEncoding": detected,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankCsvParsePartialFailure {
+                lines,
+                total_errors,
+                truncated,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_PARTIAL_FAILURE",
+                        "message": t(
+                            "bank-csv-errors-partial-failure",
+                            "Certaines lignes du CSV n'ont pas pu être parsées.",
+                        ),
+                        "details": {
+                            "lines": lines,
+                            "totalErrors": total_errors,
+                            "truncated": truncated,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankCsvProfileValidation(reason) => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "BANK_CSV_PROFILE_INVALID",
+                &t(
+                    "bank-csv-errors-profile-invalid",
+                    &format!("Profil bancaire invalide : {}", reason),
+                ),
+            ),
+
+            AppError::BankCsvProfileDuplicate => build_response(
+                StatusCode::CONFLICT,
+                "BANK_CSV_PROFILE_DUPLICATE",
+                &t(
+                    "bank-csv-errors-profile-duplicate",
+                    "Un profil avec ce nom de banque existe déjà.",
+                ),
+            ),
+
+            AppError::BankCsvProfileMisconfigured(reason) => build_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "BANK_CSV_PROFILE_MISCONFIGURED",
+                &t(
+                    "bank-csv-errors-profile-misconfigured",
+                    &format!("Profil mal configuré : {}", reason),
+                ),
+            ),
+
+            AppError::BankCsvEmptyFile { reason } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_EMPTY_FILE",
+                        "message": t(
+                            "bank-csv-errors-empty-file",
+                            "Fichier CSV vide ou aucune ligne de données.",
+                        ),
+                        "details": { "reason": reason }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankImportUnsupportedFormat => build_response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "BANK_IMPORT_UNSUPPORTED_FORMAT",
+                &t(
+                    "bank-import-errors-unsupported-format",
+                    "Format de fichier non supporté (CAMT.053 XML ou CSV attendus).",
                 ),
             ),
 
