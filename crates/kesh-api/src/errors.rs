@@ -646,7 +646,7 @@ impl IntoResponse for AppError {
                     "error": {
                         "code": "BANK_CSV_NO_PROFILE_MATCH",
                         "message": t(
-                            "bank-csv-errors-no-profile-match",
+                            "bank-import-csv-errors-no-profile-match",
                             "Aucun profil bancaire ne matche ce fichier.",
                         ),
                         "details": {
@@ -662,7 +662,7 @@ impl IntoResponse for AppError {
                     "error": {
                         "code": "BANK_CSV_UNSUPPORTED_ENCODING",
                         "message": t(
-                            "bank-csv-errors-unsupported-encoding",
+                            "bank-import-csv-errors-unsupported-encoding",
                             "Encoding du fichier non supporté (UTF-8 ou ISO-8859-1 attendu).",
                         ),
                         "details": { "detected": detected }
@@ -676,7 +676,7 @@ impl IntoResponse for AppError {
                     "error": {
                         "code": "BANK_CSV_ENCODING_MISMATCH",
                         "message": t(
-                            "bank-csv-errors-encoding-mismatch",
+                            "bank-import-csv-errors-encoding-mismatch",
                             "L'encoding détecté diffère du profil. Confirmez via confirmEncodingMismatch=true.",
                         ),
                         "details": {
@@ -697,7 +697,7 @@ impl IntoResponse for AppError {
                     "error": {
                         "code": "BANK_CSV_PARTIAL_FAILURE",
                         "message": t(
-                            "bank-csv-errors-partial-failure",
+                            "bank-import-csv-errors-partial-failure",
                             "Certaines lignes du CSV n'ont pas pu être parsées.",
                         ),
                         "details": {
@@ -714,7 +714,7 @@ impl IntoResponse for AppError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "BANK_CSV_PROFILE_INVALID",
                 &t(
-                    "bank-csv-errors-profile-invalid",
+                    "bank-import-csv-errors-profile-invalid",
                     &format!("Profil bancaire invalide : {}", reason),
                 ),
             ),
@@ -723,7 +723,7 @@ impl IntoResponse for AppError {
                 StatusCode::CONFLICT,
                 "BANK_CSV_PROFILE_DUPLICATE",
                 &t(
-                    "bank-csv-errors-profile-duplicate",
+                    "bank-import-csv-errors-profile-duplicate",
                     "Un profil avec ce nom de banque existe déjà.",
                 ),
             ),
@@ -732,7 +732,7 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "BANK_CSV_PROFILE_MISCONFIGURED",
                 &t(
-                    "bank-csv-errors-profile-misconfigured",
+                    "bank-import-csv-errors-profile-misconfigured",
                     &format!("Profil mal configuré : {}", reason),
                 ),
             ),
@@ -742,7 +742,7 @@ impl IntoResponse for AppError {
                     "error": {
                         "code": "BANK_CSV_EMPTY_FILE",
                         "message": t(
-                            "bank-csv-errors-empty-file",
+                            "bank-import-csv-errors-empty-file",
                             "Fichier CSV vide ou aucune ligne de données.",
                         ),
                         "details": { "reason": reason }

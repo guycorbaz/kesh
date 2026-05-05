@@ -10,7 +10,7 @@
 </script>
 
 <h1 class="text-2xl font-semibold">
-	{i18nMsg('bank-profile-labels-page-title-new', 'Nouveau profil bancaire')}
+	{i18nMsg('bank-import-profile-labels-page-title-new', 'Nouveau profil bancaire')}
 </h1>
 
 <div class="mt-6">

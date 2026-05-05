@@ -92,9 +92,9 @@
 	}
 </script>
 
-<form data-testid="bank-profile-form" onsubmit={handleSubmit}>
+<form data-testid="bank-import-profile-form" onsubmit={handleSubmit}>
 	<label class="block text-sm font-medium" for="bank-name-input">
-		{i18nMsg('bank-profile-labels-bank-name', 'Nom de la banque')}
+		{i18nMsg('bank-import-profile-labels-bank-name', 'Nom de la banque')}
 	</label>
 	<input
 		id="bank-name-input"
@@ -107,10 +107,10 @@
 	/>
 
 	<label class="mt-4 block text-sm font-medium" for="filename-pattern-input">
-		{i18nMsg('bank-profile-labels-filename-pattern', 'Pattern filename (regex)')}
+		{i18nMsg('bank-import-profile-labels-filename-pattern', 'Pattern filename (regex)')}
 		<span class="text-xs text-text-muted">
 			{i18nMsg(
-				'bank-profile-labels-filename-pattern-help',
+				'bank-import-profile-labels-filename-pattern-help',
 				'Regex case-sensitive (utilisez `(?i)` pour case-insensitive)',
 			)}
 		</span>
@@ -125,7 +125,7 @@
 	/>
 
 	<label class="mt-4 block text-sm font-medium" for="date-format-input">
-		{i18nMsg('bank-profile-labels-date-format', 'Format date (chrono)')}
+		{i18nMsg('bank-import-profile-labels-date-format', 'Format date (chrono)')}
 	</label>
 	<input
 		id="date-format-input"
@@ -140,7 +140,7 @@
 	<div class="mt-4 grid grid-cols-2 gap-4">
 		<div>
 			<label class="block text-sm font-medium" for="field-separator-select">
-				{i18nMsg('bank-profile-labels-field-separator', 'Séparateur champs')}
+				{i18nMsg('bank-import-profile-labels-field-separator', 'Séparateur champs')}
 			</label>
 			<select
 				id="field-separator-select"
@@ -155,7 +155,7 @@
 		</div>
 		<div>
 			<label class="block text-sm font-medium" for="decimal-separator-select">
-				{i18nMsg('bank-profile-labels-decimal-separator', 'Séparateur décimal')}
+				{i18nMsg('bank-import-profile-labels-decimal-separator', 'Séparateur décimal')}
 			</label>
 			<select
 				id="decimal-separator-select"
@@ -170,7 +170,7 @@
 	</div>
 
 	<label class="mt-4 block text-sm font-medium" for="encoding-select">
-		{i18nMsg('bank-profile-labels-encoding', 'Encodage (optionnel)')}
+		{i18nMsg('bank-import-profile-labels-encoding', 'Encodage (optionnel)')}
 	</label>
 	<select
 		id="encoding-select"
@@ -184,7 +184,7 @@
 	</select>
 
 	<label class="mt-4 block text-sm font-medium" for="header-row-count-input">
-		{i18nMsg('bank-profile-labels-header-row-count', 'Nb lignes header (0-5)')}
+		{i18nMsg('bank-import-profile-labels-header-row-count', 'Nb lignes header (0-5)')}
 	</label>
 	<input
 		id="header-row-count-input"
@@ -198,7 +198,7 @@
 
 	<fieldset class="mt-6 border border-border p-4">
 		<legend class="text-sm font-medium">
-			{i18nMsg('bank-profile-labels-column-mapping', 'Mapping colonnes (0-indexed)')}
+			{i18nMsg('bank-import-profile-labels-column-mapping', 'Mapping colonnes (0-indexed)')}
 		</legend>
 		<label class="mt-2 flex items-center gap-2 text-sm">
 			<input
@@ -206,7 +206,7 @@
 				data-testid="use-debit-credit-split"
 				bind:checked={useDebitCreditSplit}
 			/>
-			{i18nMsg('bank-profile-labels-use-debit-credit-split', 'Colonnes débit/crédit séparées')}
+			{i18nMsg('bank-import-profile-labels-use-debit-credit-split', 'Colonnes débit/crédit séparées')}
 		</label>
 
 		<div class="mt-2 grid grid-cols-2 gap-2">
@@ -241,7 +241,7 @@
 	</fieldset>
 
 	{#if errorMessage}
-		<div class="mt-4 rounded border border-error bg-error-soft p-3" data-testid="bank-profile-error" role="alert">
+		<div class="mt-4 rounded border border-error bg-error-soft p-3" data-testid="bank-import-profile-error" role="alert">
 			<p class="text-error">{errorMessage}</p>
 		</div>
 	{/if}
@@ -249,11 +249,11 @@
 	<div class="mt-6 flex gap-2">
 		<button
 			type="submit"
-			data-testid="bank-profile-submit"
+			data-testid="bank-import-profile-submit"
 			class="rounded bg-primary px-4 py-2 text-white disabled:opacity-50"
 			disabled={isLoading}
 		>
-			{i18nMsg(existing ? 'bank-profile-labels-update' : 'bank-profile-labels-create', existing ? 'Mettre à jour' : 'Créer')}
+			{i18nMsg(existing ? 'bank-import-profile-labels-update' : 'bank-import-profile-labels-create', existing ? 'Mettre à jour' : 'Créer')}
 		</button>
 	</div>
 </form>

@@ -157,14 +157,14 @@ pub enum CsvLineErrorCode {
 }
 
 impl CsvLineErrorCode {
-    /// Clé i18n associée au code (préfixe `bank-csv-errors-`).
+    /// Clé i18n associée au code (préfixe `bank-import-csv-errors-`).
     pub fn i18n_key(&self) -> &'static str {
         match self {
-            CsvLineErrorCode::InvalidDate => "bank-csv-errors-invalid-date",
-            CsvLineErrorCode::InvalidAmount => "bank-csv-errors-invalid-amount",
-            CsvLineErrorCode::AmbiguousDebitCredit => "bank-csv-errors-ambiguous-debit-credit",
-            CsvLineErrorCode::EmptyMandatoryField => "bank-csv-errors-empty-mandatory-field",
-            CsvLineErrorCode::RowTooShort => "bank-csv-errors-row-too-short",
+            CsvLineErrorCode::InvalidDate => "bank-import-csv-errors-invalid-date",
+            CsvLineErrorCode::InvalidAmount => "bank-import-csv-errors-invalid-amount",
+            CsvLineErrorCode::AmbiguousDebitCredit => "bank-import-csv-errors-ambiguous-debit-credit",
+            CsvLineErrorCode::EmptyMandatoryField => "bank-import-csv-errors-empty-mandatory-field",
+            CsvLineErrorCode::RowTooShort => "bank-import-csv-errors-row-too-short",
         }
     }
 }
@@ -183,7 +183,7 @@ pub struct CsvLineError {
     /// Valeur fautive si applicable, tronquée à 100 chars UTF-8-aware
     /// + suffix `…` si dépassement.
     pub value: Option<String>,
-    /// Clé i18n frontend, ex. `"bank-csv-errors-invalid-date"`.
+    /// Clé i18n frontend, ex. `"bank-import-csv-errors-invalid-date"`.
     pub message_i18n_key: String,
 }
 
