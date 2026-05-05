@@ -1,6 +1,6 @@
 # Story 8.2: Import CSV (multi-encodage & profils banque)
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation est optionnelle. Lancer `bmad-create-story validate 8-2`
      avant `dev-story` pour stress-test la spec. Cycle CLAUDE.md : auteur =
