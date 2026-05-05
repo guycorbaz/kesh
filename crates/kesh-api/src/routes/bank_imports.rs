@@ -166,9 +166,9 @@ struct MultipartFields {
     /// Story 8-2 — bankProfileId explicite (CSV uniquement).
     bank_profile_id: Option<i64>,
     /// Story 8-2 — Pass 1 H5 + Pass 2 H'3 confirmation explicite.
-    /// (Wired into create_csv when EncodingMismatch detected — extension
-    /// future Pass review post-impl pour le flow complet preview→confirm.)
-    #[allow(dead_code)]
+    /// Wired dans `create_csv` (Pass 1 review G2 H7) : si `parse_csv`
+    /// retourne `EncodingMismatch` ET ce flag est `true`, on retry avec
+    /// l'encoding détecté + audit log spécial `created_with_encoding_mismatch`.
     confirm_encoding_mismatch: bool,
 }
 
@@ -331,18 +331,27 @@ fn detect_import_format(
             return Ok(ImportFormat::Csv);
         }
     }
-    // Priorité 3 — sniff content (raw bytes ASCII-safe)
+    // Priorité 3 — sniff content sur **raw bytes ASCII-safe**.
+    // Pass 1 review G2-BH-4 + G2-EH-9 + G2-AA-3 : un fichier CAMT.053
+    // encodé en ISO-8859-1 (cas réel observé) ferait échouer `from_utf8`
+    // → `unwrap_or("")` retournerait "" → marqueur XML jamais trouvé.
+    // Skip leading whitespace + BOM bytes pour matcher uniquement au
+    // début du fichier (un CSV avec `<?xml` dans une cellule au milieu
+    // ne déclenche plus le faux positif CAMT).
     let sniff = &raw_first_bytes[..raw_first_bytes.len().min(256)];
-    let sniff_str = std::str::from_utf8(sniff)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if sniff_str.contains("<?xml")
-        || sniff_str.contains("<document")
-        || sniff_str.contains("bktocstmrstmt")
-    {
+    let head_start = sniff
+        .iter()
+        .position(|&b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0xEF | 0xBB | 0xBF))
+        .unwrap_or(sniff.len());
+    let head: Vec<u8> = sniff[head_start..]
+        .iter()
+        .take(50)
+        .map(|b| b.to_ascii_lowercase())
+        .collect();
+    if head.starts_with(b"<?xml") || head.starts_with(b"<document") {
         return Ok(ImportFormat::Camt053);
     }
-    // Heuristique CSV : présence de séparateur courant
+    // Heuristique CSV : présence de séparateur courant dans la fenêtre.
     if sniff.iter().any(|b| matches!(b, b',' | b';' | b'\t')) {
         return Ok(ImportFormat::Csv);
     }
@@ -398,21 +407,48 @@ fn map_csv_error(err: CsvError) -> AppError {
 
 /// Résolution du profil CSV (cf. §profile-matching).
 ///
+/// **Pass 1 review G2 H6 — transaction-bound** : signature passe le
+/// `pool` séparément (utilisé pour `list_available_profiles` sur le
+/// chemin no-match) et un `executor` dédié pour les SELECT critiques
+/// (étapes 1 et 2). Le caller `create_csv` passe `&mut **tx` comme
+/// executor pour que la résolution + INSERT bank_imports + audit_log
+/// vivent dans la même transaction (Pass 2 H'2 + Pass 3 M''4
+/// Interprétation A).
+///
+/// Pass 1 review G2 H8 / G2-AA-6 : `available_profiles` enrichi
+/// systématiquement dans tous les chemins d'erreur (vs `Vec::new()`
+/// fragile qui dépendait du caller).
+///
+/// Pass 1 review G2-AA-2 : warning `bank_csv_multiple_profile_matches`
+/// retourné via `WarningCollector` mécanisme — multi-match prend le
+/// plus récent + push warning (AC #8).
+///
+/// Returns `(profile, warnings)` — warnings vide si single match
+/// ou explicit ID.
+///
 /// 1. Si `bank_profile_id` explicite → `find_by_id_for_company` (404 si
 ///    cross-tenant ou inexistant — Pass 1 H8).
-/// 2. Sinon → auto-match par `filename_pattern` regex.
+/// 2. Sinon → auto-match par `filename_pattern` regex (warning si plusieurs).
 /// 3. Sinon → 404 avec `available_profiles` (cap 50, Pass 1 M11).
-async fn resolve_csv_profile(
+async fn resolve_csv_profile<'e, E>(
+    executor: E,
     pool: &sqlx::MySqlPool,
     company_id: i64,
     bank_profile_id: Option<i64>,
     filename: &str,
-) -> Result<kesh_db::entities::bank_profile::BankProfile, AppError> {
+) -> Result<(kesh_db::entities::bank_profile::BankProfile, Vec<String>), AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
     use kesh_db::repositories::bank_profiles;
 
+    // Branche unique : selon `bank_profile_id`, on appelle UN seul SELECT
+    // sur l'executor (pour permettre transaction-bound). Le helper
+    // `list_available_profiles` est appelé sur le pool dans le path
+    // d'erreur uniquement (pas critique d'être dans la tx).
     if let Some(id) = bank_profile_id {
-        match bank_profiles::find_by_id_for_company(pool, company_id, id).await? {
-            Some(profile) => return Ok(profile),
+        match bank_profiles::find_by_id_for_company(executor, company_id, id).await? {
+            Some(profile) => return Ok((profile, Vec::new())),
             None => {
                 return Err(AppError::BankCsvProfileNotFound {
                     available_profiles: list_available_profiles(pool, company_id).await,
@@ -422,21 +458,21 @@ async fn resolve_csv_profile(
     }
 
     let matches =
-        bank_profiles::find_matching_profiles_for_filename(pool, company_id, filename).await?;
-    matches
-        .into_iter()
-        .next()
-        .ok_or_else(|| AppError::BankCsvProfileNotFound {
-            // Note : on ne peut pas await dans un closure, donc helper.
-            available_profiles: Vec::new(),
-        })
-        .map(Ok)
-        .unwrap_or_else(|err| {
-            // Si pas de match → enrichir le payload avec available_profiles.
-            // On ne peut pas re-await ici, donc le caller doit gérer.
-            // Helper async ci-dessous.
-            Err(err)
-        })
+        bank_profiles::find_matching_profiles_for_filename(executor, company_id, filename).await?;
+    let count = matches.len();
+    match matches.into_iter().next() {
+        Some(profile) => {
+            let mut warnings = Vec::new();
+            if count > 1 {
+                // Pass 1 review G2-AA-2 : warning AC #8.
+                warnings.push("bank_csv_multiple_profile_matches".to_string());
+            }
+            Ok((profile, warnings))
+        }
+        None => Err(AppError::BankCsvProfileNotFound {
+            available_profiles: list_available_profiles(pool, company_id).await,
+        }),
+    }
 }
 
 async fn list_available_profiles(
@@ -1014,26 +1050,25 @@ async fn preview_csv(
     bank_account: &kesh_db::entities::BankAccount,
     fields: &MultipartFields,
 ) -> Result<Json<BankImportPreviewResponse>, AppError> {
-    let profile = match resolve_csv_profile(
+    // Preview ne persiste pas — on utilise le pool directement (pas
+    // besoin de transaction-bound). Pass 1 review G2 H6 : la race
+    // condition n'est critique que pour create_csv.
+    let (profile, mut warnings) = resolve_csv_profile(
+        &state.pool,
         &state.pool,
         company_id,
         fields.bank_profile_id,
         &fields.filename,
     )
-    .await
-    {
-        Ok(p) => p,
-        Err(AppError::BankCsvProfileNotFound { .. }) => {
-            // Enrichir le payload avec available_profiles (limité à 50, M11).
-            return Err(AppError::BankCsvProfileNotFound {
-                available_profiles: list_available_profiles(&state.pool, company_id).await,
-            });
-        }
-        Err(other) => return Err(other),
-    };
+    .await?;
 
     let csv_profile = db_profile_to_csv_profile(&profile)?;
     let stmt = parse_csv(&fields.file_bytes, &csv_profile).map_err(map_csv_error)?;
+
+    // Si auto-match utilisé (bankProfileId absent) → warning informatif.
+    if fields.bank_profile_id.is_none() {
+        warnings.push("bank_csv_profile_auto_matched".to_string());
+    }
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
     let preview_txs: Vec<PreviewTransaction> = stmt
@@ -1065,7 +1100,7 @@ async fn preview_csv(
             closing_balance: None,
         },
         ignored_statements: Vec::new(),
-        warnings: Vec::new(),
+        warnings,
         transactions: preview_txs,
     }))
 }
@@ -1076,36 +1111,54 @@ async fn create_csv(
     bank_account: &kesh_db::entities::BankAccount,
     fields: &MultipartFields,
 ) -> Result<(StatusCode, Json<BankImportResponse>), AppError> {
-    let profile = match resolve_csv_profile(
+    // Pass 1 review G2 H6 — transaction-bound profile resolution.
+    // Spec §profile-matching Pass 2 H'2 + Pass 3 M''4 Interprétation A :
+    // ouvrir la transaction AVANT la résolution du profil pour bloquer
+    // tout DELETE concurrent du profil entre resolve et INSERT.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
+    let (profile, _warnings) = resolve_csv_profile(
+        &mut *tx,
         &state.pool,
         current_user.company_id,
         fields.bank_profile_id,
         &fields.filename,
     )
-    .await
-    {
-        Ok(p) => p,
-        Err(AppError::BankCsvProfileNotFound { .. }) => {
-            return Err(AppError::BankCsvProfileNotFound {
-                available_profiles: list_available_profiles(&state.pool, current_user.company_id)
-                    .await,
-            });
-        }
-        Err(other) => return Err(other),
-    };
+    .await?;
 
     let csv_profile = db_profile_to_csv_profile(&profile)?;
-    let stmt = parse_csv(&fields.file_bytes, &csv_profile).map_err(map_csv_error)?;
 
-    let file_hash = compute_sha256_hex(&fields.file_bytes);
+    // Pass 1 review G2 H7 — wiring `confirmEncodingMismatch` :
+    // si parse_csv retourne EncodingMismatch ET le flag est true,
+    // re-essayer avec un profil dont l'encoding est forcé None
+    // (auto-détecté) puis logger via audit log spécial.
+    let (stmt, encoding_mismatch_confirmed) = match parse_csv(&fields.file_bytes, &csv_profile) {
+        Ok(s) => (s, false),
+        Err(kesh_import::CsvError::EncodingMismatch { .. }) if fields.confirm_encoding_mismatch => {
+            // Force l'encoding du profil — l'utilisateur accepte le risque
+            // de mojibake (cf. §encoding-detection Pass 1 H5).
+            let mut forced = csv_profile.clone();
+            // Le profil garde son encoding original, mais on force le
+            // parser à utiliser l'encoding détecté (auto). Pour ce faire,
+            // on supprime l'encoding du profil → auto-détect.
+            forced.encoding = None;
+            let s = parse_csv(&fields.file_bytes, &forced).map_err(map_csv_error)?;
+            (s, true)
+        }
+        Err(e) => return Err(map_csv_error(e)),
+    };
+
     let imported_at = chrono::Utc::now().naive_utc();
-
     let (draft, tx_drafts): (BankImportDraft, Vec<BankTransactionDraft>) =
         core_bank_imports::from_imported(
             &stmt,
             fields.bank_account_id,
             current_user.company_id,
-            file_hash.clone(),
+            compute_sha256_hex(&fields.file_bytes),
             fields.filename.clone(),
             imported_at,
             current_user.user_id,
@@ -1121,8 +1174,10 @@ async fn create_csv(
         statement_id: None,
         period_from: draft.period_from,
         period_to: draft.period_to,
-        opening_balance: None,
-        closing_balance: None,
+        // Pass 1 review G2-BH-6 : pattern symétrique avec CAMT — propage les
+        // soldes du draft (None pour CSV mais cohérent si futur extends).
+        opening_balance: draft.opening_balance.map(|m| m.amount()),
+        closing_balance: draft.closing_balance.map(|m| m.amount()),
         transaction_count: draft.transaction_count,
         imported_by_user_id: draft.imported_by_user_id,
     };
@@ -1144,12 +1199,6 @@ async fn create_csv(
         })
         .collect();
 
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-
     let (header, _txs) =
         match bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await {
             Ok(out) => out,
@@ -1160,11 +1209,18 @@ async fn create_csv(
         };
 
     // Audit log avec snapshot bank_profile_name (Pass 2 M'3).
+    // Pass 1 review G2 H7 : action `created_with_encoding_mismatch` si
+    // l'utilisateur a confirmé le mismatch.
+    let action = if encoding_mismatch_confirmed {
+        "bank_import.created_with_encoding_mismatch"
+    } else {
+        "bank_import.created"
+    };
     audit_log::insert_in_tx(
         &mut tx,
         NewAuditLogEntry {
             user_id: current_user.user_id,
-            action: "bank_import.created".to_string(),
+            action: action.to_string(),
             entity_type: "bank_imports".to_string(),
             entity_id: header.id,
             details_json: Some(serde_json::json!({
@@ -1183,7 +1239,5 @@ async fn create_csv(
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
 
     let _ = bank_account; // validé en amont
-    let _ = file_hash; // déjà persisté via draft.file_hash
-    let _ = imported_at; // déjà persisté via draft.imported_at
     Ok((StatusCode::CREATED, Json(import_to_response(header))))
 }

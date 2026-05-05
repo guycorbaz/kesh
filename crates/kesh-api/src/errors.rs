@@ -728,14 +728,20 @@ impl IntoResponse for AppError {
                 ),
             ),
 
-            AppError::BankCsvProfileMisconfigured(reason) => build_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "BANK_CSV_PROFILE_MISCONFIGURED",
-                &t(
-                    "bank-import-csv-errors-profile-misconfigured",
-                    &format!("Profil mal configuré : {}", reason),
-                ),
-            ),
+            AppError::BankCsvProfileMisconfigured(reason) => {
+                // Pass 1 review G2-BH-5 + G2-EH-4 : ne pas exposer la `reason`
+                // interne au client (peut contenir byte_offset DB, paths,
+                // etc.). Logger côté serveur, retourner un message générique.
+                tracing::error!("bank_csv profile misconfigured: {}", reason);
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "BANK_CSV_PROFILE_MISCONFIGURED",
+                    &t(
+                        "bank-import-csv-errors-profile-misconfigured",
+                        "Profil bancaire mal configuré.",
+                    ),
+                )
+            }
 
             AppError::BankCsvEmptyFile { reason } => {
                 let body = serde_json::json!({

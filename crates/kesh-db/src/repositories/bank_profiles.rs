@@ -170,13 +170,25 @@ where
     let mut matched = Vec::new();
     for profile in candidates {
         if let Some(ref pattern) = profile.filename_pattern {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if re.is_match(filename) {
-                    matched.push(profile);
+            match regex::Regex::new(pattern) {
+                Ok(re) => {
+                    if re.is_match(filename) {
+                        matched.push(profile);
+                    }
+                }
+                Err(e) => {
+                    // Pass 1 review G2-BH-11 + G2-EH-7 : tracer la regex
+                    // invalide en DB plutôt que de l'ignorer silencieusement
+                    // (silent failure hostile au diagnostic).
+                    tracing::warn!(
+                        "bank_profile id={} : filename_pattern invalide ({:?}) — \
+                         ignoré au matching ({})",
+                        profile.id,
+                        pattern,
+                        e
+                    );
                 }
             }
-            // Si la regex est invalide en DB (ne devrait pas arriver
-            // grâce à validation handler), on l'ignore silencieusement.
         }
     }
     Ok(matched)

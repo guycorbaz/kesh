@@ -53,13 +53,30 @@ impl BankProfile {
 
     /// Récupère `decimal_separator` comme `char` (la colonne MariaDB
     /// est `CHAR(1)` mais sqlx mysql la lit en `String`).
+    ///
+    /// Pass 1 review G2-BH-10 + G2-EH-6 : log défensif si la string
+    /// stockée en DB est vide (ne devrait pas arriver via l'API qui
+    /// rejette les strings vides, mais protection contre corruption
+    /// ou migration manuelle).
     pub fn decimal_separator_char(&self) -> char {
-        self.decimal_separator.chars().next().unwrap_or('.')
+        self.decimal_separator.chars().next().unwrap_or_else(|| {
+            tracing::error!(
+                "bank_profile id={} : decimal_separator vide en DB, fallback '.'",
+                self.id
+            );
+            '.'
+        })
     }
 
-    /// Récupère `field_separator` comme `char`.
+    /// Récupère `field_separator` comme `char` (idem decimal_separator).
     pub fn field_separator_char(&self) -> char {
-        self.field_separator.chars().next().unwrap_or(',')
+        self.field_separator.chars().next().unwrap_or_else(|| {
+            tracing::error!(
+                "bank_profile id={} : field_separator vide en DB, fallback ','",
+                self.id
+            );
+            ','
+        })
     }
 }
 
