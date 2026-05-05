@@ -38,7 +38,7 @@ so that **je puisse traiter dans Kesh les banques qui n'exposent pas CAMT.053, s
     - `kesh-core/src/bank_imports.rs` : ajouter variante `SourceFormatTag::Csv` avec `as_db_str() = "CSV"` + étendre la fn `from_imported()` pour brancher `kesh_import::SourceFormat::Csv { encoding, profile_name }` → `SourceFormatTag::Csv` (sans erreur). Aujourd'hui `from_imported()` retourne `Err(CoreError::BankImportUnknownVersion("csv"))` sur ce branch — ce qui doit être supprimé.
     - `kesh-api/src/routes/bank_imports.rs::version_to_source_format()` : étendre pour mapper `kesh_import::SourceFormat::Csv { .. }` → `BankImportSourceFormat::Csv`.
 2. **Module parser `kesh-import::csv`** (T2) — `crates/kesh-import/src/csv/{mod.rs, encoding.rs, parser.rs, profile.rs}` + tests `csv_tests.rs`. Détection encoding (BOM → `chardetng`), parser via `csv` crate, mapping profil → `ImportedTransaction`. Variantes `CamtError` étendues ou nouveau type `ImportError` avec sous-type `Csv(CsvError)` (cf. §error-types).
-3. **Entités + repositories `bank_profiles`** (T3) — `kesh-db/src/entities/bank_profile.rs` + `kesh-db/src/repositories/bank_profiles.rs` (CRUD + helper `find_matching_profile_for_filename`).
+3. **Entités + repositories `bank_profiles`** (T3) — `kesh-db/src/entities/bank_profile.rs` + `kesh-db/src/repositories/bank_profiles.rs` (CRUD + helper `find_matching_profiles_for_filename`, retourne `Vec<BankProfile>` pour gérer multi-match).
 4. **Routes API CRUD `bank_profiles`** (T4) — `kesh-api/src/routes/bank_profiles.rs` (5 endpoints : `POST/GET-list/GET-detail/PUT/DELETE`), RBAC `comptable_routes`, audit log, scoping company.
 5. **Extension route `POST /bank-imports`** (T5) — détection CSV vs CAMT.053 par MIME / extension fichier, dispatch vers parser CSV avec profile lookup, integration avec la pipeline existante.
 6. **Frontend feature `bank-csv-import`** (T6) — extension `frontend/src/lib/features/bank-import/` :
@@ -151,11 +151,22 @@ pub struct ColumnMapping {
    **Sensibilité à la casse (Pass 2 M'5)** : le matching regex est **case-sensitive par défaut** (standard `regex` crate Rust). Un profil avec `filename_pattern = "^export_.*\\.csv$"` ne matchera **pas** `Export_20260315.csv` (E majuscule). L'utilisateur peut activer le case-insensitive via le flag inline regex `(?i)`, ex. `filename_pattern = "(?i)^export_.*\\.csv$"`. UI doit afficher cette information dans l'aide contextuelle de `BankProfileForm.svelte` (placeholder + tooltip i18n `bank-profile-labels-filename-pattern-help`).
 3. **Aucun match** → preview retourne `404 BANK_CSV_NO_PROFILE_MATCH` avec `details.available_profiles: [{id, bank_name}]` (cap 50 entrées par réponse, cf. Pass 1 M11 anti-amplification). **Pas** de fallback inline UI v0.1 (création de profil = flow séparé).
 
-**Race condition profile delete + import concurrent** (Pass 2 H'2) :
+**Race condition profile delete + import concurrent** (Pass 2 H'2 + Pass 3 M''4 séquencement) :
 
 Pendant l'exécution de `POST /bank-imports`, un autre utilisateur de la même company peut supprimer le profil que l'on vient de résoudre (race entre l'étape de résolution et l'INSERT bank_imports). Le code doit s'en prémunir :
 
-- **Pattern transaction-bound** : la résolution du profil (étapes 1, 2, ou 3 ci-dessus) DOIT s'effectuer **dans la même transaction DB** que l'INSERT `bank_imports` + `bank_transactions` + `audit_log`. Concrètement : le handler obtient une `&mut Transaction<'_, MySql>` (depuis `pool.begin().await`), passe cette transaction à `find_by_id_for_company` ou `find_matching_profiles_for_filename`, puis enchaîne les `create_with_transactions` + `audit_log_insert` sans relâcher le commit. Tout DELETE concurrent attendrait le commit.
+- **Séquencement Pass 3 M''4 — Interprétation A retenue (parse dans la transaction)** :
+  ```text
+  pool.begin() → tx
+  ├─ find_by_id_for_company(&mut tx, ...)  // résolution profil étape 1/2/3
+  ├─ parse_csv(bytes, &profile)            // parse CPU-bound, dans tx
+  ├─ create_with_transactions(&mut tx, ...) // INSERT bank_imports + transactions
+  ├─ audit_log_insert(&mut tx, ...)         // INSERT audit_log
+  └─ tx.commit()
+  ```
+  **Conséquence acceptée v0.1** : la transaction MariaDB reste ouverte pendant tout le parse (qui peut prendre quelques secondes sur 50 MB de CSV avec 100k lignes). Avantage : un seul read du profil garantit cohérence parse/persist sur exactement la même version de `column_mapping`. Pas besoin de version optimiste sur `bank_profiles`. Pas de CHECK SQL FOR UPDATE explicite — le row lock implicite sur `bank_profiles.id` (lecture transactionnelle) suffit pour bloquer DELETE/UPDATE concurrents.
+  **Limitation v0.1 → cf. L7 Limitations connues** : SLA latence d'autres requêtes touchant `bank_profiles` peut se dégrader sur uploads > 50 MB. Acceptable v0.1 (uploads asynchrones rares) ; v0.2 si observé en prod, pivoter vers Interprétation B (pre-parse hors tx + revalider `profile.version` dans la tx).
+- **Pattern transaction-bound** : la résolution du profil (étapes 1, 2, ou 3 ci-dessus) DOIT s'effectuer **dans la même transaction DB** que l'INSERT `bank_imports` + `bank_transactions` + `audit_log`. Concrètement : le handler obtient une `&mut Transaction<'_, MySql>` (depuis `pool.begin().await`), passe cette transaction à `find_by_id_for_company` ou `find_matching_profiles_for_filename`, puis enchaîne les `parse_csv` + `create_with_transactions` + `audit_log_insert` sans relâcher le commit. Tout DELETE concurrent attendrait le commit.
 - **Helper repo signature** : `find_by_id_for_company(executor: impl sqlx::Executor<'_, Database = MySql>, ...)` accepte à la fois `&MySqlPool` et `&mut Transaction` via le trait `Executor` (pattern Story 7-1 KF-002).
 - **Validation post-fetch** : si `find_by_id_for_company(&mut tx, company_id, profile_id)` retourne `None` à l'intérieur de la transaction, retourner `404 BANK_CSV_NO_PROFILE_MATCH` (le profil n'existe plus ou n'a jamais existé). **Jamais** d'`unwrap()` ou d'indexing `[0]` sans check.
 - **Test E2E** : `concurrent_profile_delete_during_upload_aborts_with_404` — démarrer un import CSV en thread A (latence simulée via sleep dans le handler de test), lancer DELETE profile en thread B, attendre commit thread A → vérifier que A a soit committé avec succès (B attend le lock), soit reçu `404` (si B a réussi à passer entre la fin de la transaction A et le check). Le pattern transaction garantit la cohérence : on n'observe **jamais** un import committé avec un `bank_profile_id` inexistant (vu de l'extérieur).
@@ -246,11 +257,21 @@ pub enum CsvError {
 /// limité à 100 entrées).
 pub const MAX_CSV_LINE_ERRORS: usize = 100;
 
+/// Cap anti-DoS sur la taille de la valeur fautive stockée dans
+/// `CsvLineError.value` (Pass 3 M''3). Sans ce cap, un attaquant peut
+/// uploader un CSV avec 100 lignes invalides où chaque cellule
+/// `amount` fait 1 MB → `errors: Vec<CsvLineError>` ferait 100 MB de
+/// strings malgré le cap H'1 sur le **nombre** d'erreurs. Truncation
+/// UTF-8-aware via `s.chars().take(MAX_CSV_LINE_ERROR_VALUE_CHARS)
+/// .collect::<String>()` (pas `s[..N]` qui panique sur boundary
+/// non-ASCII), suffixée d'`…` (un seul char) si tronquée.
+pub const MAX_CSV_LINE_ERROR_VALUE_CHARS: usize = 100;
+
 /// Erreur ligne-par-ligne pour `PartialFailure`. (Pass 1 H7)
 pub struct CsvLineError {
     pub line: usize,                  // numéro absolu fichier (cf. §csv-parser line numbers)
     pub code: CsvLineErrorCode,       // discriminant pour mapping i18n + tri UI
-    pub value: Option<String>,        // valeur fautive si applicable (vidée par troncature à 100 chars pour éviter logs/JSON DoS)
+    pub value: Option<String>,        // valeur fautive tronquée à `MAX_CSV_LINE_ERROR_VALUE_CHARS` (100 chars) UTF-8-aware + suffix `…` si dépassement (Pass 3 M''3 anti-DoS)
     pub message_i18n_key: String,     // clé i18n frontend, ex. "bank-csv-errors-invalid-date"
 }
 
@@ -483,7 +504,9 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 
 15ter. **(Pass 1 M10 — montant zéro vs empty mandatory)** Given un profil avec `debit_credit_split = [3, 4]` et un CSV où la ligne 8 a `debit = "" AND credit = ""` (les deux empty), When `POST /bank-imports`, Then `422 BANK_CSV_PARTIAL_FAILURE` avec `details.lines[0].code = "EMPTY_MANDATORY_FIELD"`. **Distinct du cas zéro explicite** : `debit = "0.00"` ou `credit = "0,00"` est accepté (transaction d'annulation valide). *Tests integration : `rejects_empty_debit_credit_columns` + `accepts_explicit_zero_debit_or_credit`.*
 
-15quater. **(Pass 2 M'1 — `validate_csv_profile_signature` — indices hors-borne au parse)** Given un profil DB avec `column_mapping.amount = 99` (index hors-borne pour un CSV à 5 colonnes), When `POST /bank-imports` avec ce CSV, Then `422 BANK_CSV_PROFILE_MISCONFIGURED` (helper `validate_csv_profile_signature` appelé après le 1er record de données). Le helper ne doit pas attendre que toutes les lignes échouent en `RowTooShort` — early reject sur le premier record. *Tests : `post_csv_rejects_profile_column_index_out_of_bounds` (E2E HTTP) + `validate_csv_profile_signature_rejects_oob_indices` (unit).*
+15quinquies. **(Pass 3 M''3 — `CsvLineError.value` truncation 100 chars UTF-8-aware)** Given un CSV avec une ligne invalide où la colonne `amount` contient une chaîne de 5000 caractères Unicode (mix latin + cyrillique pour stress UTF-8 boundary), When `POST /bank-imports`, Then `details.lines[0].value` retournée fait **exactement** 100 chars + suffixe `…` (101 caractères Unicode total). Garantit que le payload JSON 422 reste borné même si l'attaquant fournit des cellules géantes (100 lignes × 5000 chars = 500 KB unbounded sinon, vs 100 × 100 chars = 10 KB borné). *Tests : `csv_line_error_value_truncated_at_100_chars` (unit, vérifie boundary UTF-8 ne panique pas) + `partial_failure_total_payload_bounded` (E2E HTTP, fixture avec 100 lignes × valeurs 5KB → assert response body < 30 KB).*
+
+15quater. **(Pass 2 M'1 + Pass 3 M''2 — indices hors-borne early-reject parser-side)** Given un profil DB avec `column_mapping.amount = 99` (index hors-borne pour un CSV à 5 colonnes), When `POST /bank-imports` avec ce CSV, Then `422 BANK_CSV_PROFILE_MISCONFIGURED` retourné via `CsvError::ProfileMisconfigured`. **Localisation early-reject** : le check vit dans `kesh-import::csv::parser::parse_csv` qui lit le **premier record de données** (post header skip), vérifie indices vs `first_record.len()`, et `Err` immédiatement sans entrer dans la boucle de collection — n'attend **pas** que toutes les lignes échouent en `RowTooShort`. Le payload final est un `CsvError::ProfileMisconfigured` simple, pas un `PartialFailure(Vec)` cappé à 100. *Tests : `post_csv_rejects_profile_column_index_out_of_bounds` (E2E HTTP) + `parser_early_rejects_oob_indices_on_first_record` (unit `kesh-import`).*
 
 16. **(Validation profil — date_format chrono)** Given `date_format = "%Q"` (token invalide chrono), When `POST /bank-profiles`, Then `422 BANK_CSV_PROFILE_INVALID` avec message ciblant `date_format`. *Test E2E HTTP : `post_profile_rejects_invalid_chrono_format`.*
 
@@ -563,6 +586,7 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 - [ ] **T2.3** `crates/kesh-import/src/csv/parser.rs` :
   - `pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement, CsvError>`
   - Décodage encoding → string, csv crate ReaderBuilder, skip header_row_count, iter rows mappés → `ImportedTransaction`.
+  - **Pass 3 M''2 — early-reject indices OOB** : avant la boucle de collection d'erreurs, lire le **premier record de données** (post header skip) via `reader.records().next()`. Vérifier que tous les indices du `column_mapping` (`date`, `amount` si Some, `debit_credit_split.0` et `.1` si Some, `reference`, `details`, `counterparty`) sont strictement `< first_record.len()`. Si un index est OOB → return `Err(CsvError::ProfileMisconfigured("column_mapping.{field} (index {i}) out of bounds for {n} columns"))` **immédiatement**. Préserve le premier record pour le passer ensuite dans la boucle principale (`std::iter::once(first_record).chain(reader.records())` pattern).
   - Strip apostrophe (`'`) milliers + remplacement decimal_separator → `.` avant `Decimal::from_str_exact`.
   - Sur erreur ligne, **collecter les erreurs jusqu'à `MAX_CSV_LINE_ERRORS = 100`** (Pass 2 H'1 cap anti-DoS). Au-delà, continuer à itérer pour incrémenter `total_errors` mais ne pas accumuler de nouvelles entrées dans le Vec. Si non-vide à la fin → `CsvError::PartialFailure { errors, total_errors, truncated: total_errors > MAX_CSV_LINE_ERRORS }`. Strict reject v0.1. Test unit `partial_failure_caps_at_100_errors_for_huge_invalid_csv` : fixture avec 500 lignes invalides → assert `errors.len() == 100`, `total_errors == 500`, `truncated == true`.
   - **Pas** de validation balance pour CSV (les CSV n'exposent pas opening/closing balance) — le helper `validate_balance` est skip côté API pour `source_format = CSV`.
@@ -589,12 +613,12 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
   - `pub struct BankProfile` (champs cf. §profile-model, sans `column_mapping` typé — stocké en `String` JSON, désérialisé via méthode `pub fn parse_column_mapping(&self) -> Result<ColumnMapping, DbError>`).
   - `pub struct NewBankProfile` (sans id/created_at/updated_at).
   - **Pattern `BankImportSourceFormat` 8-1b ne s'applique pas ici** (pas d'enum).
-- [ ] **T3.2** `crates/kesh-db/src/repositories/bank_profiles.rs` :
-  - `create(pool, company_id, profile) -> Result<BankProfile, DbError>` + `INSERT INTO audit_log` atomique dans la même transaction (pattern 8-1b).
-  - `find_by_id_for_company(pool, company_id, id) -> Result<Option<BankProfile>, DbError>` (KF-002 helper).
-  - `list_by_company(pool, company_id, pagination) -> Result<(Vec<BankProfile>, i64), DbError>`.
-  - `update(pool, company_id, id, patch) -> Result<BankProfile, DbError>` + audit log.
-  - `delete(pool, company_id, id) -> Result<(), DbError>` + audit log.
+- [ ] **T3.2** `crates/kesh-db/src/repositories/bank_profiles.rs` (Pass 3 L''2 — signatures génériques `Executor` pour permettre l'appel transaction-bound §profile-matching race) :
+  - `create(executor: impl sqlx::Executor<'_, Database = MySql>, company_id, profile) -> Result<BankProfile, DbError>` + `INSERT INTO audit_log` atomique dans la même transaction (pattern 8-1b). Note : `create` est typiquement appelé avec un `&mut Transaction` côté handler pour grouper avec audit_log.
+  - `find_by_id_for_company(executor: impl sqlx::Executor<'_, Database = MySql>, company_id, id) -> Result<Option<BankProfile>, DbError>` (KF-002 helper). Accepte `&MySqlPool` ET `&mut Transaction` via le trait `Executor` — appel critique pour `POST /bank-imports` (transaction-bound).
+  - `list_by_company(executor, company_id, pagination) -> Result<(Vec<BankProfile>, i64), DbError>`.
+  - `update(executor, company_id, id, new_profile: NewBankProfile) -> Result<BankProfile, DbError>` + audit log (Pass 1 M18 — PUT full replacement, param renamed `new_profile`).
+  - `delete(executor, company_id, id) -> Result<(), DbError>` + audit log.
   - `find_matching_profiles_for_filename(pool, company_id, filename) -> Result<Vec<BankProfile>, DbError>` — SELECT puis filter Rust-side via `regex::Regex::new(profile.filename_pattern).is_match(filename)` (filtrage SQL impossible, regex MariaDB diffère). ORDER BY `updated_at DESC`. **Pass 1 L1** : pas de cache regex v0.1 (acceptable pour < 50 profils par company, typique en v0.1) ; documenter dans Dev Notes que le cache `Arc<HashMap<String, Regex>>` invalidé sur CRUD profil sera adressé v0.2 si une company > 100 profils est observée. La compilation O(N) à chaque upload reste bornée par `T1.1 chk_bank_profiles_filename_pattern_len ≤ 200` + complexité NFA Thompson.
 - [ ] **T3.3** Mapping erreurs SQL :
   - `1062` (Duplicate entry) sur `uq_bank_profiles_company_name` → `DbError::ProfileDuplicate`.
@@ -731,7 +755,7 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 1. `kesh-import` (nouveau module `csv`)
 2. `kesh-db` (migration `bank_profiles` + entités/repos)
 3. `kesh-api` (nouvelles routes `bank_profiles` + extension `bank_imports`)
-4. `kesh-core` (4 nouvelles variantes `CoreError::BankCsv*` — minimal)
+4. `kesh-core` (7 nouvelles variantes `CoreError::BankCsv*` post Pass 1+2 — liste canonique §error-types)
 5. `frontend/src/lib/features/bank-import` (extension : 3 nouveaux components + 3 nouvelles routes)
 6. `frontend/src/lib/shared/i18n/locales` (extension fichier `bank-import.json` × 4 locales)
 
@@ -741,7 +765,7 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 - Frontière naturelle frontend/backend déjà absorbée par 8-1b — 8-2 réutilise les composants drop-zone, page route, api-client, audit log.
 - Pas de path dep cargo cassée : `kesh-import::csv` est ajouté dans la même crate que `camt053`, donc pas de réordonnancement workspace.
 - Le module CSV est isolé (zéro coupling avec camt053 sauf re-exports `lib.rs`).
-- Les 4 nouvelles variantes `CoreError::BankCsv*` sont minimales (pattern Story 8-1a).
+- Les 7 nouvelles variantes `CoreError::BankCsv*` (liste canonique §error-types post Pass 1+2) restent isolées au domaine import (pattern Story 8-1a).
 
 **Trigger de re-évaluation** : si `bmad-create-story validate 8-2` boucle au-delà de 4 passes adversariales sans converger sur 0 finding > LOW, splitter en :
 - **8-2a** : parser `kesh-import::csv` + entités/repos `bank_profiles` (T1-T3) — backend autonome, testable via `cargo test`.
@@ -775,8 +799,16 @@ Cette section est documentée pour décision à la passe validate Pass 4 si appl
 - `kesh_import::{ImportedStatement, ImportedTransaction, SourceFormat}`.
 - `kesh_import::{ImportError, CsvError, CsvLineError, CamtError}` (T2.4 sera ajouté).
 
-**`kesh-core::bank_imports` extensions T4** :
-- `validate_csv_profile_signature(profile: &CsvProfile, sample_row: &[String]) -> Result<(), CoreError>` — sanity check post-parse que les indices column_mapping sont valides vs longueur du **premier row de données**. **Obligatoire v0.1** (Pass 1 M21 — pas optionnel). Appelé après `parse_csv()` sur le premier record. Si un index est hors-borne → `CoreError::BankCsvProfileMisconfigured("column_mapping.{field} (index {i}) out of bounds for {n} columns")`. Évite de parcourir tout le fichier pour produire 1000× le même `RowTooShort` quand le profil pointe sur des colonnes inexistantes. Coût : O(1) — un seul check sur le premier record.
+**Localisation `validate_csv_profile_signature` — décision Pass 3 M''2 : parser-side** :
+
+Le check d'indices hors-borne est implémenté **dans le parser `kesh-import::csv::parser`**, pas dans `kesh-core`. Justification :
+
+- Cohérent avec `CsvError::ProfileMisconfigured(String)` qui existe déjà §error-types — pas besoin de helper `kesh-core` séparé.
+- **Early-reject avant la collection d'erreurs** : `parse_csv` lit le premier record de données, vérifie que tous les indices du `column_mapping` (`date`, `amount` ou les 2 indices `debit_credit_split`, `reference`, `details`, `counterparty`) sont strictement < `first_record.len()`. Si un index est OOB → return `Err(CsvError::ProfileMisconfigured("column_mapping.{field} (index {i}) out of bounds for {n} columns"))` **immédiatement**, sans entrer dans la boucle de collection des `RowTooShort`. C'est ça qui défait l'objectif anti-amplification de Pass 1 M21 si on faisait le check côté handler post-parse.
+- Pas de violation `kesh-import` zéro-dep `kesh-core` : `CsvProfile` est défini côté `kesh-import` (T2.2), donc le parser accède librement aux champs.
+- AC #15quater testable directement en unit `kesh-import` (pas besoin d'intégration handler).
+
+Pas de fonction `kesh-core::bank_imports::validate_csv_profile_signature` séparée — le check vit entièrement côté parser.
 
 **`kesh-db::repositories::bank_imports`** : pas de nouvelle méthode. La méthode `create_with_transactions` existante fonctionne pour CSV (le `source_format` est déjà accepté en string).
 
@@ -795,11 +827,11 @@ Cette section est documentée pour décision à la passe validate Pass 4 si appl
 - `crates/kesh-db/src/repositories/bank_profiles.rs` (nouveau)
 - `crates/kesh-db/src/{lib.rs, entities/mod.rs, repositories/mod.rs}` (re-exports)
 - `crates/kesh-db/tests/bank_profiles_test.rs` (nouveau, 8 sqlx::test)
-- `crates/kesh-core/src/errors.rs` (4 variantes)
+- `crates/kesh-core/src/errors.rs` (7 variantes — liste canonique §error-types)
 - `crates/kesh-core/src/bank_imports.rs` (helper signature optionnel)
 - `crates/kesh-api/src/routes/bank_profiles.rs` (nouveau)
 - `crates/kesh-api/src/routes/bank_imports.rs` (extension dispatch)
-- `crates/kesh-api/src/errors.rs` (4 variantes)
+- `crates/kesh-api/src/errors.rs` (9 variantes — liste canonique §error-types tableau)
 - `crates/kesh-api/src/router.rs` (mount bank_profiles routes)
 - `crates/kesh-api/tests/bank_profiles_e2e.rs` (nouveau, 12 tests)
 - `crates/kesh-api/tests/bank_imports_e2e.rs` (8 nouveaux tests CSV)
@@ -837,7 +869,8 @@ Cette section est documentée pour décision à la passe validate Pass 4 si appl
 - **L4 — FK `bank_profile_id` orpheline dans audit log** : `bank_imports` n'a pas de colonne `bank_profile_id` avec FK. Le `bank_profile_id` apparaît dans `audit_log.details_json` comme métadonnée, mais aussi le `bank_name` snapshot pour préserver la trace humaine après suppression du profil. Le delete profil est donc libre (pas de RESTRICT). **v0.2** : ajouter `bank_imports.bank_profile_id BIGINT NULL` avec FK `ON DELETE SET NULL` pour permettre les joins relationnels propres post-delete.
 - **L5 — `filename_pattern` catch-all** : un profil avec `filename_pattern = "^.*$"` matche tous les filenames CSV uploadés et capture l'auto-match (en prenant le `updated_at` le plus récent). UI doit afficher un warning visuel au save quand le pattern est trop large, mais pas de blocage v0.1 (laisse à l'utilisateur sa responsabilité).
 - **L1 — pas de cache regex** : compilation O(N profils) à chaque upload. Acceptable pour < 50 profils par company. v0.2 si nécessaire.
-- **§audit-log dette** : delete profile crée une référence orpheline dans audit log. Acceptable v0.1, FK ajoutée v0.2.
+- **§audit-log dette** : delete profile crée une référence orpheline dans audit log (mitigée par snapshot `bank_profile_name` Pass 2 M'3). Acceptable v0.1, FK ajoutée v0.2.
+- **L7 — parse CSV dans la transaction** (Pass 3 M''4) : `parse_csv()` se déroule à l'intérieur de la transaction MariaDB ouverte pour résoudre le profil + INSERT. Sur uploads > 50 MB (~100k transactions), la transaction reste ouverte plusieurs secondes, dégradant le SLA latence d'autres requêtes touchant `bank_profiles` (row lock implicite). v0.2 si observé en prod : pivoter vers pre-parse hors tx + revalidation `profile.version` dans la tx (Interprétation B).
 
 ### Checklist locale avant push
 
@@ -895,6 +928,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-csv-i
 
 | Date | Action | Auteur |
 |------|--------|--------|
+| 2026-05-05 | **Validate Pass 3 Opus 4.7 — closure cycle review** — cycle CLAUDE.md complet Sonnet → Haiku → Opus. 3 reviewers parallèles. Verdict **Acceptance Auditor Opus : GO sans condition**, 0 finding > LOW Auditor (juste AA3-1 LOW non-blocking sur AC #24 perf NFR rattachement task). Blind Hunter et Edge Case Hunter ont remonté **6 findings résiduels** : 4 MEDIUM + 2 LOW. Décision Guy Option A : appliquer les 6 patches puis STOP cycle review (Auditor a déjà dit GO, les 4 MEDIUM sont des affinements documentaires + 1 décision design + 1 cap résiduel, pas des trous structurels). Patches appliqués : M''1 drift documentaire « 4 variantes » → 7/9 (§Risque de splitting + §Source tree alignés sur liste canonique §error-types) ; M''2 décision **parser-side** pour `validate_csv_profile_signature` (early-reject sur 1er record dans `kesh-import::csv::parser`, pas de helper séparé `kesh-core` — préserve l'objectif anti-amplification de Pass 1 M21) ; M''3 truncation `CsvLineError.value` UTF-8-aware via const `MAX_CSV_LINE_ERROR_VALUE_CHARS = 100` + AC #15quinquies (ferme le DoS payload-size que Pass 2 H'1 prétendait clore mais laissait à 100 × 1 MB) ; M''4 séquencement parse-vs-tx **Interprétation A** (parse dans la transaction, simple + cohérence cohésive) avec Limitations connues L7 v0.1 documentée (SLA latence > 50 MB) ; L''1 nommage `find_matching_profiles_for_filename` aligné en pluriel ; L''2 T3.2 signatures génériques `impl sqlx::Executor` pour transaction-bound. Trend complet : Pass 1 = 29 → Pass 2 = 9 → Pass 3 = 6 → 0 post-patches. **Critère d'arrêt CLAUDE.md atteint** : 0 finding > LOW + Verdict Auditor GO. Cycle review 3 passes Sonnet → Haiku → Opus complet, ~44 patches appliqués au total (29 + 9 + 6). Spec finale : 900 → ~960 lignes, 37 → 38 ACs (#15quinquies ajouté Pass 3). Spec status : `ready-for-dev` confirmé. Prochaine étape : `bmad-dev-story 8-2`. | Claude (Opus 4.7, validate Pass 3 application + closure) |
 | 2026-05-05 | **Validate Pass 2 Haiku 4.5** — cycle CLAUDE.md Sonnet → Haiku, fenêtre fraîche. 3 reviewers parallèles. Verdict **Acceptance Auditor : GO sans condition**. 18 findings bruts → triage : **3 HIGH** (H'1 PartialFailure Vec non borné DoS — cap 100 avec `truncated` flag ; H'2 race profile delete + import concurrent — pattern transaction-bound + helper executor générique pattern KF-002 ; H'3 mojibake bypass `confirmEncodingMismatch=true` sans preview — re-detect encoding systématique côté final, ignore flag si pas de mismatch effectif) + **6 MEDIUM** (M'1 `validate_csv_profile_signature` AC explicite + 15quater ; M'2 header-only file AC #5bis-c ; M'3 snapshot `bank_profile_name` audit log + AC #20 enrichi ; M'4 drift `details: String` pas `Option` — alignement avec `kesh_import::ImportedTransaction.details: String` + DB `bank_transactions.details TEXT NOT NULL` 8-1b ; M'5 regex case-sensitive doc + flag `(?i)` ; M'6 justification field_separator distinct) + **3 LOW** (BH2-9/10, EH2-7) + **5 rejets/faux-positifs** (BH2-1 T5.0 déjà documenté, BH2-4 sniff acceptable, EH2-5 multipart code 8-1b OK, EH2-8/9 déjà couverts). **Option A appliquée** : 9 patches HIGH+MEDIUM appliqués. Trend : Pass 1 = 29 findings > LOW → Pass 2 = 9 findings > LOW → -69%. Critère d'arrêt CLAUDE.md non atteint en Pass 2 (mais 0 > LOW post-patches). Nouvelles sections : `MAX_CSV_LINE_ERRORS = 100` const, payload `truncated` flag, anti-bypass mojibake re-detect, race transaction-bound profile resolution, snapshot `bank_profile_name` audit log. ACs : 5bis-c + 15quater nouveaux. Stats : 843 → ~920 lignes. Prochaine étape : Pass 3 Opus 4.7 (cycle Sonnet → Haiku → Opus, validation finale). | Claude (Opus 4.7, validate Pass 2 application) |
 | 2026-05-05 | **Validate Pass 1 Sonnet 4.6** — 3 reviewers parallèles (Blind Hunter / Edge Case Hunter / Acceptance Auditor), cycle CLAUDE.md (auteur=Opus, Pass 1=Sonnet pour briser biais). Verdict Acceptance Auditor : **CONDITIONAL GO** (2 HIGH bloquants AA-1 + AA-2). 45 findings bruts → triage : **8 HIGH** (H1 hypothèse fausse `BankImportSourceFormat::Csv` non livrée 8-1b ; H2 `period_from`/`period_to` NOT NULL CSV stratégie manquante ; H3 `bytes[..3]` panic fichier < 3 bytes ; H4 underflow u8 `header_row_count = 0` ; H5 mojibake silencieux profil ISO-8859-1 + fichier UTF-8 ; H6 `ColumnMapping.amount` non-Option ; H7 `CsvError::PartialFailure` + `CsvLineError` non définis ; H8 `bankProfileId` cross-tenant/invalide non spécifié) + **21 MEDIUM** + **9 LOW** + **2 rejects** (AA-11 ref existe ; BH-9 fixtures dupliquées reclassée L6 décision documentée). **Option A appliquée** : 29 patches HIGH+MEDIUM appliqués. Spec passe de 597 → ~830 lignes. Sections enrichies : §Scope verrouillé point 1bis (extension enums Csv obligatoire), §encoding-detection (algo 0+3 priorités, mojibake bloquant final), §profile-model (`Option<usize>` + collision check + priorité parse DB corrompue), §profile-matching (étape 1b 404), §csv-detection (sniff raw bytes priorités), §csv-parser (saturating skip, `position.line()`, period_from min/max, EmptyFile guard), §error-types (12 variantes CsvError + CsvLineError + 9 AppError canonique), §preview-csv-response-shape, §multipart-guards. ACs : 5bis/5ter/5quater/5quinquies/11bis/11ter/11quater/15bis/15ter ajoutés (35 ACs total post Pass 1 vs 26 initiaux). Tasks : T5.0 sub-tasks enums, T5.5 18 E2E HTTP, T8.1 9 scénarios Playwright, T2.7 10 fixtures. Limitations connues v0.1 documentées (L1/L4/L5). Trend Pass 1 : 29 findings > LOW raw → 0 (tous appliqués). Prochaine étape : commit + Pass 2 Haiku 4.5 (cycle Sonnet → Haiku). | Claude (Opus 4.7, validate Pass 1 application) |
 | 2026-05-05 | Spec créée par `bmad-create-story 8-2` post-merge PR #69 (8-1a + 8-1b done). Status `backlog` → `ready-for-dev`. Branche `story/8-2-import-csv-multi-encodage-profils-banque` créée depuis main `076ac86`. 26 ACs définis (vs 7 ACs epic-8.md → enrichis avec FR52a-d détection encoding, FR53 auto-match, FR51 strict reject mapping, multi-tenant, RBAC, validation profil, audit log, i18n, a11y, perf). 9 tasks T1-T9. Dépendances upstream 8-1a/8-1b validées. Risque de splitting documenté (6 modules au seuil, pas de split préventif, trigger validate Pass 4 si non-convergence). | Claude (Opus 4.7, bmad-create-story) |
