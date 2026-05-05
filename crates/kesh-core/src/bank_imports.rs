@@ -141,7 +141,10 @@ pub struct BankImportDraft {
 pub enum SourceFormatTag {
     Camt053V04,
     Camt053V08,
-    // Csv ajouté Story 8-2.
+    /// Story 8-2 T5.0.b — import CSV (multi-encodage + profil banque).
+    /// La distinction par profil bancaire spécifique vit dans
+    /// `audit_log.details_json.bank_profile_id` (cf. Limitation L4).
+    Csv,
 }
 
 impl SourceFormatTag {
@@ -150,6 +153,7 @@ impl SourceFormatTag {
         match self {
             Self::Camt053V04 => "CAMT053_V04",
             Self::Camt053V08 => "CAMT053_V08",
+            Self::Csv => "CSV",
         }
     }
 }
@@ -192,11 +196,7 @@ pub fn from_imported(
         SourceFormat::Camt053 { version } => {
             return Err(CoreError::BankImportUnknownVersion(version.clone()));
         }
-        SourceFormat::Csv { .. } => {
-            // Story 8-1a ne traite pas le CSV — il sera ajouté par 8-2 avec
-            // une variante SourceFormatTag::Csv dédiée.
-            return Err(CoreError::BankImportUnknownVersion("csv".to_string()));
-        }
+        SourceFormat::Csv { .. } => SourceFormatTag::Csv,
     };
 
     let transactions: Vec<BankTransactionDraft> = stmt

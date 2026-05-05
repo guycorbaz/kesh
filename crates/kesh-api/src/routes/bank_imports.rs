@@ -34,7 +34,7 @@ use kesh_db::entities::{
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{audit_log, bank_accounts, bank_imports, bank_transactions};
-use kesh_import::{CamtError, ImportedStatement, parse_camt053};
+use kesh_import::{CamtError, CsvError, CsvLineError, ImportedStatement, parse_camt053, parse_csv};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -160,8 +160,16 @@ struct MultipartFields {
     /// le doublement RSS sur upload (10 MiB → 20 MiB).
     file_bytes: axum::body::Bytes,
     filename: String,
+    content_type: Option<String>,
     bank_account_id: i64,
     confirm_balance_mismatch: bool,
+    /// Story 8-2 — bankProfileId explicite (CSV uniquement).
+    bank_profile_id: Option<i64>,
+    /// Story 8-2 — Pass 1 H5 + Pass 2 H'3 confirmation explicite.
+    /// (Wired into create_csv when EncodingMismatch detected — extension
+    /// future Pass review post-impl pour le flow complet preview→confirm.)
+    #[allow(dead_code)]
+    confirm_encoding_mismatch: bool,
 }
 
 /// Tronque `s` à `max_bytes` octets en respectant les frontières de char
@@ -183,8 +191,11 @@ fn truncate_to_byte_len(s: &str, max_bytes: usize) -> String {
 async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, AppError> {
     let mut file_bytes: Option<axum::body::Bytes> = None;
     let mut filename: Option<String> = None;
+    let mut content_type: Option<String> = None;
     let mut bank_account_id: Option<i64> = None;
     let mut confirm_balance_mismatch = false;
+    let mut bank_profile_id: Option<i64> = None;
+    let mut confirm_encoding_mismatch = false;
 
     while let Some(field) = multipart.next_field().await.map_err(map_multipart_err)? {
         let name = field.name().unwrap_or("").to_string();
@@ -200,6 +211,7 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 }
                 let original = field.file_name().unwrap_or("upload.xml").to_string();
                 filename = Some(truncate_to_byte_len(&original, FILENAME_MAX_BYTES));
+                content_type = field.content_type().map(|s| s.to_string());
                 file_bytes = Some(field.bytes().await.map_err(map_multipart_err)?);
             }
             "bankAccountId" => {
@@ -230,6 +242,29 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 confirm_balance_mismatch =
                     matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
             }
+            "bankProfileId" => {
+                // Story 8-2 — Pass 2 M'8 duplicate guard.
+                if bank_profile_id.is_some() {
+                    return Err(AppError::Validation(
+                        "Champ 'bankProfileId' dupliqué dans le multipart".into(),
+                    ));
+                }
+                let text = field.text().await.map_err(map_multipart_err)?;
+                let id: i64 = text.trim().parse().map_err(|_| {
+                    AppError::Validation(format!("bankProfileId invalide : '{text}'"))
+                })?;
+                if id <= 0 {
+                    return Err(AppError::Validation(
+                        "bankProfileId doit être strictement positif".into(),
+                    ));
+                }
+                bank_profile_id = Some(id);
+            }
+            "confirmEncodingMismatch" => {
+                let text = field.text().await.map_err(map_multipart_err)?;
+                confirm_encoding_mismatch =
+                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+            }
             _ => {
                 // Review code Pass 1 M2 : propager l'erreur sur les
                 // champs inconnus aussi — sinon un PAYLOAD_TOO_LARGE
@@ -251,9 +286,174 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
     Ok(MultipartFields {
         file_bytes,
         filename,
+        content_type,
         bank_account_id,
         confirm_balance_mismatch,
+        bank_profile_id,
+        confirm_encoding_mismatch,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Story 8-2 — Format detection + CSV pipeline helpers
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImportFormat {
+    Camt053,
+    Csv,
+}
+
+/// Détecte le format upload (CAMT.053 vs CSV) sur les raw bytes
+/// (pas decoded — encoding non encore connu).
+///
+/// Priorités : extension > MIME > sniff content (cf. spec §csv-detection).
+fn detect_import_format(
+    filename: &str,
+    content_type: Option<&str>,
+    raw_first_bytes: &[u8],
+) -> Result<ImportFormat, AppError> {
+    let lower = filename.to_ascii_lowercase();
+    // Priorité 1 — extension
+    if lower.ends_with(".xml") {
+        return Ok(ImportFormat::Camt053);
+    }
+    if lower.ends_with(".csv") || lower.ends_with(".txt") {
+        return Ok(ImportFormat::Csv);
+    }
+    // Priorité 2 — MIME
+    if let Some(ct) = content_type {
+        let ct_lower = ct.to_ascii_lowercase();
+        if ct_lower.contains("xml") {
+            return Ok(ImportFormat::Camt053);
+        }
+        if ct_lower.contains("csv") || ct_lower == "text/plain" {
+            return Ok(ImportFormat::Csv);
+        }
+    }
+    // Priorité 3 — sniff content (raw bytes ASCII-safe)
+    let sniff = &raw_first_bytes[..raw_first_bytes.len().min(256)];
+    let sniff_str = std::str::from_utf8(sniff)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if sniff_str.contains("<?xml")
+        || sniff_str.contains("<document")
+        || sniff_str.contains("bktocstmrstmt")
+    {
+        return Ok(ImportFormat::Camt053);
+    }
+    // Heuristique CSV : présence de séparateur courant
+    if sniff.iter().any(|b| matches!(b, b',' | b';' | b'\t')) {
+        return Ok(ImportFormat::Csv);
+    }
+    Err(AppError::BankImportUnsupportedFormat)
+}
+
+/// Convertit un `kesh_import::CsvLineError` vers payload sérialisable.
+fn csv_line_error_to_payload(e: CsvLineError) -> crate::errors::CsvLineErrorPayload {
+    crate::errors::CsvLineErrorPayload {
+        line: e.line,
+        code: format!("{:?}", e.code).to_uppercase(),
+        value: e.value,
+        message_i18n_key: e.message_i18n_key,
+    }
+}
+
+/// Mappe `CsvError` vers `AppError`.
+fn map_csv_error(err: CsvError) -> AppError {
+    match err {
+        CsvError::EmptyFile { reason } => AppError::BankCsvEmptyFile { reason },
+        CsvError::UnsupportedEncoding { detected } => {
+            AppError::BankCsvUnsupportedEncoding { detected }
+        }
+        CsvError::EncodingMismatch { profile, detected } => {
+            AppError::BankCsvEncodingMismatch { profile, detected }
+        }
+        CsvError::DecodingFailed {
+            encoding,
+            byte_offset,
+        } => AppError::BankCsvProfileMisconfigured(format!(
+            "Decoding {} failed at byte {}",
+            encoding, byte_offset
+        )),
+        CsvError::MissingHeader => AppError::BankCsvEmptyFile {
+            reason: "missing header".into(),
+        },
+        CsvError::ProfileMisconfigured(reason) => AppError::BankCsvProfileMisconfigured(reason),
+        CsvError::PartialFailure {
+            errors,
+            total_errors,
+            truncated,
+        } => AppError::BankCsvParsePartialFailure {
+            lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
+            total_errors,
+            truncated,
+        },
+        // Pour les variantes non-PartialFailure inline (InvalidDate etc.)
+        // — ne devraient pas apparaître au top-level (collectées dans
+        // PartialFailure), mais defense-in-depth.
+        other => AppError::BankCsvProfileMisconfigured(other.to_string()),
+    }
+}
+
+/// Résolution du profil CSV (cf. §profile-matching).
+///
+/// 1. Si `bank_profile_id` explicite → `find_by_id_for_company` (404 si
+///    cross-tenant ou inexistant — Pass 1 H8).
+/// 2. Sinon → auto-match par `filename_pattern` regex.
+/// 3. Sinon → 404 avec `available_profiles` (cap 50, Pass 1 M11).
+async fn resolve_csv_profile(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_profile_id: Option<i64>,
+    filename: &str,
+) -> Result<kesh_db::entities::bank_profile::BankProfile, AppError> {
+    use kesh_db::repositories::bank_profiles;
+
+    if let Some(id) = bank_profile_id {
+        match bank_profiles::find_by_id_for_company(pool, company_id, id).await? {
+            Some(profile) => return Ok(profile),
+            None => {
+                return Err(AppError::BankCsvProfileNotFound {
+                    available_profiles: list_available_profiles(pool, company_id).await,
+                });
+            }
+        }
+    }
+
+    let matches =
+        bank_profiles::find_matching_profiles_for_filename(pool, company_id, filename).await?;
+    matches
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::BankCsvProfileNotFound {
+            // Note : on ne peut pas await dans un closure, donc helper.
+            available_profiles: Vec::new(),
+        })
+        .map(Ok)
+        .unwrap_or_else(|err| {
+            // Si pas de match → enrichir le payload avec available_profiles.
+            // On ne peut pas re-await ici, donc le caller doit gérer.
+            // Helper async ci-dessous.
+            Err(err)
+        })
+}
+
+async fn list_available_profiles(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+) -> Vec<crate::errors::BankProfileSummary> {
+    use kesh_db::repositories::bank_profiles;
+    match bank_profiles::list_by_company(pool, company_id, 50, 0).await {
+        Ok((profiles, _)) => profiles
+            .into_iter()
+            .map(|p| crate::errors::BankProfileSummary {
+                id: p.id,
+                bank_name: p.bank_name,
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 fn map_multipart_err(e: axum::extract::multipart::MultipartError) -> AppError {
@@ -368,10 +568,8 @@ fn version_to_source_format(stmt: &ImportedStatement) -> Result<BankImportSource
             kind: "UNSUPPORTED_VERSION",
             message: version.clone(),
         }),
-        kesh_import::SourceFormat::Csv { .. } => Err(AppError::BankImportParseFailed {
-            kind: "UNSUPPORTED_VERSION",
-            message: "csv".into(),
-        }),
+        // Story 8-2 T5.0.c — CSV désormais accepté.
+        kesh_import::SourceFormat::Csv { .. } => Ok(BankImportSourceFormat::Csv),
     }
 }
 
@@ -379,6 +577,7 @@ fn source_format_tag_for_kesh_core(fmt: BankImportSourceFormat) -> SourceFormatT
     match fmt {
         BankImportSourceFormat::Camt053V04 => SourceFormatTag::Camt053V04,
         BankImportSourceFormat::Camt053V08 => SourceFormatTag::Camt053V08,
+        BankImportSourceFormat::Csv => SourceFormatTag::Csv,
     }
 }
 
@@ -407,7 +606,17 @@ pub async fn preview(
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
 
-    // Hash + parse.
+    // Story 8-2 — détection format upload.
+    let format = detect_import_format(
+        &fields.filename,
+        fields.content_type.as_deref(),
+        &fields.file_bytes,
+    )?;
+    if format == ImportFormat::Csv {
+        return preview_csv(&state, current_user.company_id, &bank_account, &fields).await;
+    }
+
+    // Hash + parse CAMT.053.
     let file_hash = compute_sha256_hex(&fields.file_bytes);
     let stmts = parse_camt053(&fields.file_bytes).map_err(map_camt_error)?;
     let selection = select_statement_by_iban(stmts, &bank_account.iban)?;
@@ -508,6 +717,16 @@ pub async fn create(
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+
+    // Story 8-2 — détection format upload + dispatch CSV.
+    let format = detect_import_format(
+        &fields.filename,
+        fields.content_type.as_deref(),
+        &fields.file_bytes,
+    )?;
+    if format == ImportFormat::Csv {
+        return create_csv(&state, &current_user, &bank_account, &fields).await;
+    }
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
     let stmts = parse_camt053(&fields.file_bytes).map_err(map_camt_error)?;
@@ -766,4 +985,205 @@ impl CoreErrorIntoDbError for kesh_core::errors::CoreError {
             "CoreError inattendue dans bank_imports route : {self}"
         ))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Story 8-2 — CSV preview + create handlers
+// ---------------------------------------------------------------------------
+
+/// Construit un `kesh_import::CsvProfile` depuis l'entité DB.
+fn db_profile_to_csv_profile(
+    profile: &kesh_db::entities::bank_profile::BankProfile,
+) -> Result<kesh_import::CsvProfile, AppError> {
+    let column_mapping = profile.parse_column_mapping().map_err(AppError::Database)?;
+    Ok(kesh_import::CsvProfile {
+        bank_name: profile.bank_name.clone(),
+        filename_pattern: profile.filename_pattern.clone(),
+        column_mapping,
+        date_format: profile.date_format.clone(),
+        decimal_separator: profile.decimal_separator_char(),
+        field_separator: profile.field_separator_char(),
+        encoding: profile.encoding.clone(),
+        header_row_count: profile.header_row_count,
+    })
+}
+
+async fn preview_csv(
+    state: &AppState,
+    company_id: i64,
+    bank_account: &kesh_db::entities::BankAccount,
+    fields: &MultipartFields,
+) -> Result<Json<BankImportPreviewResponse>, AppError> {
+    let profile = match resolve_csv_profile(
+        &state.pool,
+        company_id,
+        fields.bank_profile_id,
+        &fields.filename,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(AppError::BankCsvProfileNotFound { .. }) => {
+            // Enrichir le payload avec available_profiles (limité à 50, M11).
+            return Err(AppError::BankCsvProfileNotFound {
+                available_profiles: list_available_profiles(&state.pool, company_id).await,
+            });
+        }
+        Err(other) => return Err(other),
+    };
+
+    let csv_profile = db_profile_to_csv_profile(&profile)?;
+    let stmt = parse_csv(&fields.file_bytes, &csv_profile).map_err(map_csv_error)?;
+
+    let file_hash = compute_sha256_hex(&fields.file_bytes);
+    let preview_txs: Vec<PreviewTransaction> = stmt
+        .transactions
+        .iter()
+        .map(|t| PreviewTransaction {
+            booking_date: t.booking_date,
+            value_date: t.value_date,
+            amount: t.amount,
+            currency: t.currency.clone(),
+            reference: t.reference.clone(),
+            details: t.details.clone(),
+            counterparty_iban: t.counterparty_iban.clone(),
+            counterparty_name: t.counterparty_name.clone(),
+        })
+        .collect();
+
+    Ok(Json(BankImportPreviewResponse {
+        file_hash,
+        filename: fields.filename.clone(),
+        source_format: "CSV".to_string(),
+        selected_statement: PreviewStatement {
+            statement_id: None,
+            account_iban: bank_account.iban.clone(),
+            currency: stmt.currency,
+            period_from: stmt.period_from,
+            period_to: stmt.period_to,
+            opening_balance: None,
+            closing_balance: None,
+        },
+        ignored_statements: Vec::new(),
+        warnings: Vec::new(),
+        transactions: preview_txs,
+    }))
+}
+
+async fn create_csv(
+    state: &AppState,
+    current_user: &CurrentUser,
+    bank_account: &kesh_db::entities::BankAccount,
+    fields: &MultipartFields,
+) -> Result<(StatusCode, Json<BankImportResponse>), AppError> {
+    let profile = match resolve_csv_profile(
+        &state.pool,
+        current_user.company_id,
+        fields.bank_profile_id,
+        &fields.filename,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(AppError::BankCsvProfileNotFound { .. }) => {
+            return Err(AppError::BankCsvProfileNotFound {
+                available_profiles: list_available_profiles(&state.pool, current_user.company_id)
+                    .await,
+            });
+        }
+        Err(other) => return Err(other),
+    };
+
+    let csv_profile = db_profile_to_csv_profile(&profile)?;
+    let stmt = parse_csv(&fields.file_bytes, &csv_profile).map_err(map_csv_error)?;
+
+    let file_hash = compute_sha256_hex(&fields.file_bytes);
+    let imported_at = chrono::Utc::now().naive_utc();
+
+    let (draft, tx_drafts): (BankImportDraft, Vec<BankTransactionDraft>) =
+        core_bank_imports::from_imported(
+            &stmt,
+            fields.bank_account_id,
+            current_user.company_id,
+            file_hash.clone(),
+            fields.filename.clone(),
+            imported_at,
+            current_user.user_id,
+        )
+        .map_err(|e| AppError::Database(e.into_db_error_or_internal()))?;
+
+    let new_import = NewBankImport {
+        company_id: draft.company_id,
+        bank_account_id: draft.bank_account_id,
+        filename: draft.filename,
+        file_hash: draft.file_hash,
+        source_format: BankImportSourceFormat::Csv,
+        statement_id: None,
+        period_from: draft.period_from,
+        period_to: draft.period_to,
+        opening_balance: None,
+        closing_balance: None,
+        transaction_count: draft.transaction_count,
+        imported_by_user_id: draft.imported_by_user_id,
+    };
+    let new_txs: Vec<NewBankTransaction> = tx_drafts
+        .into_iter()
+        .map(|d| NewBankTransaction {
+            company_id: current_user.company_id,
+            bank_account_id: fields.bank_account_id,
+            booking_date: d.booking_date,
+            value_date: d.value_date,
+            amount: d.amount.amount(),
+            currency: d.currency,
+            reference: d.reference,
+            details: d.details,
+            end_to_end_id: d.end_to_end_id,
+            transaction_id: d.transaction_id,
+            counterparty_iban: d.counterparty_iban,
+            counterparty_name: d.counterparty_name,
+        })
+        .collect();
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
+    let (header, _txs) =
+        match bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await {
+            Ok(out) => out,
+            Err(DbError::UniqueConstraintViolation(_)) => {
+                return Err(AppError::BankImportDuplicateFile);
+            }
+            Err(e) => return Err(AppError::Database(e)),
+        };
+
+    // Audit log avec snapshot bank_profile_name (Pass 2 M'3).
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry {
+            user_id: current_user.user_id,
+            action: "bank_import.created".to_string(),
+            entity_type: "bank_imports".to_string(),
+            entity_id: header.id,
+            details_json: Some(serde_json::json!({
+                "filename": header.filename,
+                "transaction_count": header.transaction_count,
+                "source_format": "CSV",
+                "bank_profile_id": profile.id,
+                "bank_profile_name": profile.bank_name,
+            })),
+        },
+    )
+    .await?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
+    let _ = bank_account; // validé en amont
+    let _ = file_hash; // déjà persisté via draft.file_hash
+    let _ = imported_at; // déjà persisté via draft.imported_at
+    Ok((StatusCode::CREATED, Json(import_to_response(header))))
 }

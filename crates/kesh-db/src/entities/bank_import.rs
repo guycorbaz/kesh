@@ -15,13 +15,16 @@ use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysq
 ///
 /// Mappé en `VARCHAR(32)` MariaDB. Valeurs **MAJUSCULES** strictes,
 /// alignées sur `kesh_core::bank_imports::SourceFormatTag::as_db_str()`.
-/// La variante `Csv` arrivera Story 8-2 — laissée hors enum tant que la
-/// migration n'introduit pas de profil CSV.
+/// La variante `Csv` (Story 8-2) couvre tous les profils CSV — la
+/// distinction par banque vit dans `bank_profiles.id` tracé dans
+/// `audit_log.details_json` (cf. spec 8-2 Limitation L4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BankImportSourceFormat {
     Camt053V04,
     Camt053V08,
+    /// Story 8-2 T5.0.a — import CSV (multi-encodage + profil banque).
+    Csv,
 }
 
 impl BankImportSourceFormat {
@@ -31,6 +34,7 @@ impl BankImportSourceFormat {
         match self {
             Self::Camt053V04 => "CAMT053_V04",
             Self::Camt053V08 => "CAMT053_V08",
+            Self::Csv => "CSV",
         }
     }
 }
@@ -47,6 +51,7 @@ impl std::str::FromStr for BankImportSourceFormat {
         match s {
             "CAMT053_V04" => Ok(Self::Camt053V04),
             "CAMT053_V08" => Ok(Self::Camt053V08),
+            "CSV" => Ok(Self::Csv),
             other => Err(format!("BankImportSourceFormat inconnu : {other}")),
         }
     }
@@ -124,6 +129,7 @@ mod tests {
     fn source_format_as_str_uppercase() {
         assert_eq!(BankImportSourceFormat::Camt053V04.as_str(), "CAMT053_V04");
         assert_eq!(BankImportSourceFormat::Camt053V08.as_str(), "CAMT053_V08");
+        assert_eq!(BankImportSourceFormat::Csv.as_str(), "CSV");
     }
 
     #[test]
@@ -131,6 +137,7 @@ mod tests {
         for fmt in [
             BankImportSourceFormat::Camt053V04,
             BankImportSourceFormat::Camt053V08,
+            BankImportSourceFormat::Csv,
         ] {
             let parsed = BankImportSourceFormat::from_str(fmt.as_str()).unwrap();
             assert_eq!(fmt, parsed);
@@ -139,8 +146,10 @@ mod tests {
 
     #[test]
     fn source_format_unknown_rejected() {
-        let err = BankImportSourceFormat::from_str("CSV").unwrap_err();
-        assert!(err.contains("CSV"));
+        // Story 8-2 T5.0.a : "CSV" est désormais valide (variant Csv ajouté).
+        // Test garde-fou : un slug inconnu reste rejeté.
+        let err = BankImportSourceFormat::from_str("UNKNOWN_FORMAT_XX").unwrap_err();
+        assert!(err.contains("UNKNOWN_FORMAT_XX"));
     }
 
     #[test]
