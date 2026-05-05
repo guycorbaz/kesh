@@ -63,7 +63,15 @@
 			balance_mismatch: 'Solde de clôture incohérent.',
 			unsupported_currency: 'Devise non supportée v0.1.',
 		};
-		return i18nMsg(key, fallbackByCode[code] ?? code);
+		const fallback = fallbackByCode[code];
+		if (fallback === undefined) {
+			// Review code Pass 2 L2 : signaler en console les codes
+			// inconnus du frontend (extensibilité backend → frontend).
+			console.warn(
+				`[bank-import] warning code "${code}" non mappé en frontend ; affichage code brut.`,
+			);
+		}
+		return i18nMsg(key, fallback ?? code);
 	}
 
 	function reset(): void {
@@ -107,9 +115,25 @@
 		// reset $effect vide normalement preview, mais belt-and-suspenders),
 		// vérifier que l'IBAN du preview correspond toujours à un account
 		// existant côté liste.
-		const previewIban = preview.selectedStatement.accountIban.replace(/\s/g, '').toUpperCase();
+		//
+		// Review code Pass 2 L1 : différencier "liste accounts vide" de
+		// "compte changé" pour donner un signal actionnable côté UX
+		// (réessayer vs recharger le fichier).
+		// Review code Pass 2 L6 : guard `?? ''` sur `a.iban` au cas où
+		// le DTO drift (TS type promet string mais defensive coding).
+		if (bankAccounts.length === 0) {
+			errorCode = 'NO_ACCOUNTS_LOADED';
+			errorMessage =
+				'Aucun compte bancaire chargé. Réessayez après actualisation.';
+			return;
+		}
+		const previewIban = (preview.selectedStatement.accountIban ?? '')
+			.replace(/\s/g, '')
+			.toUpperCase();
 		const matchingAccount = bankAccounts.find(
-			(a) => a.id === selectedAccountId && a.iban.replace(/\s/g, '').toUpperCase() === previewIban,
+			(a) =>
+				a.id === selectedAccountId &&
+				(a.iban ?? '').replace(/\s/g, '').toUpperCase() === previewIban,
 		);
 		if (!matchingAccount) {
 			errorCode = 'STALE_PREVIEW';

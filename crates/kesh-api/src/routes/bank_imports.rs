@@ -639,6 +639,15 @@ pub async fn create(
 /// Review code Pass 1 H5 : `total` retourné via `count_by_company_id`
 /// (au lieu de `0` hardcodé) pour respecter le contrat
 /// `ListResponse<T>.total` honnête vis-à-vis du client TypeScript.
+///
+/// **Review code Pass 2 L5 — race count/items** : les deux requêtes
+/// (`count_by_company_id` puis `find_by_company_id`) ne partagent pas
+/// de transaction. Un INSERT concurrent entre les deux peut faire
+/// diverger légèrement `total` et `items.len()`. Pour v0.1 c'est
+/// acceptable (le frontend recharge périodiquement et l'écart est
+/// borné à 1 par tx concurrente). Si Story 8-3 ajoute une UI
+/// pagination strictement consistante, wrapper les deux queries dans
+/// une `Transaction` `READ COMMITTED`.
 pub async fn list(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,

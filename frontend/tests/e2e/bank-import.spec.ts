@@ -51,11 +51,31 @@ async function login(page: Page): Promise<void> {
  * (review code Pass 1 M11) — `page.request.*` ne partage pas l'auth
  * de la page (pas de cookies dans cette stack JWT-in-memory). On lit
  * `kesh:auth:accessToken` directement et on l'injecte en bearer.
+ *
+ * Review code Pass 2 L4 : try/catch défensif autour de
+ * `localStorage.getItem` — privacy mode browser ou quota plein peuvent
+ * lever (rare mais a déjà cassé des CI flaky historiquement). Le throw
+ * reste explicite pour échec rapide, juste avec un meilleur diag.
  */
 async function authHeaders(page: Page): Promise<Record<string, string>> {
-	const token = await page.evaluate(() => localStorage.getItem('kesh:auth:accessToken'));
+	let token: string | null = null;
+	try {
+		token = await page.evaluate(() => {
+			try {
+				return localStorage.getItem('kesh:auth:accessToken');
+			} catch {
+				return null;
+			}
+		});
+	} catch (err) {
+		throw new Error(
+			`localStorage inaccessible (privacy mode ou quota ?) : ${String(err)}`,
+		);
+	}
 	if (!token) {
-		throw new Error('JWT introuvable en localStorage post-login');
+		throw new Error(
+			'JWT introuvable en localStorage post-login (auth-store cleared ou login fail ?)',
+		);
 	}
 	return { Authorization: `Bearer ${token}` };
 }
