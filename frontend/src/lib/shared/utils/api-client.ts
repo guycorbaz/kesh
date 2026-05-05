@@ -101,11 +101,22 @@ async function refreshTokens(): Promise<boolean> {
  * Construit les headers pour une requête.
  * Ajoute Authorization sauf pour les URLs d'auth exclues.
  */
-function buildHeaders(url: string, customHeaders?: Record<string, string>): Record<string, string> {
+function buildHeaders(
+	url: string,
+	customHeaders?: Record<string, string>,
+	body?: BodyInit | null,
+): Record<string, string> {
 	const headers: Record<string, string> = {
-		'Content-Type': 'application/json',
 		...customHeaders,
 	};
+
+	// Story 8-1b §api-client : pour FormData, le browser pose son propre
+	// `Content-Type: multipart/form-data; boundary=...` avec le delimiter
+	// correct. Forcer `application/json` casserait la requête. On
+	// n'ajoute le default JSON que si le body n'est PAS un FormData.
+	if (!(body instanceof FormData) && !headers['Content-Type']) {
+		headers['Content-Type'] = 'application/json';
+	}
 
 	if (!AUTH_EXCLUDED_URLS.some((excluded) => url.startsWith(excluded)) && authState.accessToken) {
 		headers['Authorization'] = `Bearer ${authState.accessToken}`;
@@ -165,7 +176,11 @@ async function parseErrorResponse(res: Response): Promise<ApiError> {
 const REQUEST_TIMEOUT_MS = 30_000;
 
 async function request<T>(url: string, options: RequestInit = {}, isRetry = false): Promise<T> {
-	const headers = buildHeaders(url, options.headers as Record<string, string> | undefined);
+	const headers = buildHeaders(
+		url,
+		options.headers as Record<string, string> | undefined,
+		options.body ?? null,
+	);
 
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -295,6 +310,15 @@ export const apiClient = {
 			method: 'POST',
 			body: body !== undefined ? JSON.stringify(body) : undefined,
 		});
+	},
+
+	/**
+	 * POST avec body `FormData` (Story 8-1b §api-client) — le browser pose
+	 * automatiquement `Content-Type: multipart/form-data; boundary=...`.
+	 * Utilisé pour l'upload bank-import (XML CAMT.053).
+	 */
+	postFormData<T>(url: string, form: FormData): Promise<T> {
+		return request<T>(url, { method: 'POST', body: form });
 	},
 
 	put<T>(url: string, body?: unknown): Promise<T> {

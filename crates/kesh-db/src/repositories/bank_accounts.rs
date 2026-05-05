@@ -61,6 +61,32 @@ pub async fn find_primary(
     .map_err(map_db_error)
 }
 
+/// Cherche un compte bancaire par id **scopé multi-tenant**.
+///
+/// Story 8-1b T6.3 (review code Pass 1 H5) : utilisé par le handler
+/// `POST /bank-imports/preview` pour valider que le `bankAccountId`
+/// fourni par le client appartient bien à la company courante (sinon
+/// un attaquant pourrait passer un id appartenant à une autre company
+/// et persister ses transactions sous ce bank_account — IDOR).
+///
+/// Renvoie `None` si le compte n'existe pas OU appartient à une autre
+/// company (pas de leak d'existence cross-tenant — pattern KF-002).
+pub async fn find_by_id_for_company(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<BankAccount>, DbError> {
+    sqlx::query_as::<_, BankAccount>(
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+         FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste les comptes bancaires d'une company.
 pub async fn list_by_company(
     pool: &MySqlPool,

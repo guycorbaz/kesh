@@ -69,6 +69,37 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Story 8-1a (AC #7) : kesh-import est publiable indépendamment sur
+      # crates.io. cargo publish --dry-run vérifie que le manifeste, les
+      # exclusions et les dépendances respectent les contraintes du registry.
+      # Pas de --allow-dirty : le checkout CI est propre et un build script
+      # qui mute le tree doit échouer ici (review code Pass 1 finding F3).
+      - name: kesh-import — cargo publish --dry-run
+        run: cargo publish --dry-run -p kesh-import
+
+      # Story 8-1a (AC #6) : invariant zéro dépendance workspace interne.
+      # Le crate doit rester autonome (décision archi #7) pour pouvoir
+      # publier sur crates.io sans pulled-in `kesh-core`/`kesh-db`/etc.
+      # `cargo metadata --no-deps` filtré sur les deps `path != null` doit
+      # être vide. Hardening review code Pass 1 :
+      # - F4 : `--no-deps` évite de charger tout le graph transitif et
+      #   empêche un faux positif si un crate externe partageait le nom
+      #   `kesh-import`.
+      # - F5 : `set -euo pipefail` + check explicite de `jq` pour que
+      #   l'échec de `cargo metadata` ou l'absence de `jq` ne se traduise
+      #   pas en INTERNAL_DEPS vide (faux pass).
+      - name: kesh-import — invariant zéro path dep interne
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null || { echo "::error::jq requis pour cet invariant" >&2; exit 2; }
+          INTERNAL_DEPS=$(cargo metadata --no-deps --format-version 1 -q \
+            | jq -r '.packages[] | select(.name == "kesh-import") | .dependencies[] | select(.path != null) | .name')
+          if [ -n "$INTERNAL_DEPS" ]; then
+            echo "::error::kesh-import a des dépendances workspace internes :"
+            echo "$INTERNAL_DEPS"
+            exit 1
+          fi
+
       # Les tests `kesh-db::repositories::*` (pré-Story-6-4, 84 tests) se
       # connectent directement à DATABASE_URL au lieu d'utiliser `#[sqlx::test]`.
       # Ils exigent donc que la DB `kesh` ait ses migrations appliquées + 1

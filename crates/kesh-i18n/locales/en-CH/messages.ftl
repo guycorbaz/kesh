@@ -534,3 +534,32 @@ error-fiscal-year-closed-for-date = The fiscal year covering this date is closed
 go-to-settings = Open Settings
 settings-fiscal-years-link = Create, rename, or close your company fiscal years.
 
+
+# --- Story 8-1b — CAMT.053 bank import ---
+bank-import-errors-too-large = File too large. Maximum size: 10 MiB.
+bank-import-errors-malformed-xml = Malformed or truncated XML file. Please check the bank export.
+bank-import-errors-unsupported-version = Unsupported CAMT.053 version. Accepted versions: 001.04 and 001.08.
+bank-import-errors-missing-field = A required field is missing from the CAMT.053 file.
+bank-import-errors-invalid-amount = An amount in the file is invalid.
+bank-import-errors-invalid-date = A date in the file is invalid.
+bank-import-errors-balance-mismatch = The closing balance does not match the sum of transactions. Tick "Confirm despite mismatch" to import anyway.
+bank-import-errors-unsupported-currency = Unsupported currency. Only Swiss francs (CHF) are accepted in this version.
+bank-import-errors-no-matching-statement = No statement in the file matches the selected bank account.
+bank-import-errors-duplicate-file = This file has already been imported for this company.
+bank-import-errors-bank-account-not-found = Bank account not found.
+bank-import-errors-parse-failed = The CAMT.053 file could not be parsed.
+
+bank-import-warnings-balance-mismatch = Closing balance inconsistent.
+bank-import-warnings-unsupported-currency = Unsupported currency in v0.1.
+bank-import-warnings-ignored-statements = Some statements in the file do not match the selected account and will be ignored.
+
+bank-import-labels-page-title = CAMT.053 bank import
+bank-import-labels-bank-account-selector = Target bank account
+bank-import-labels-drop-zone = Drop your CAMT.053 file here or click to browse
+bank-import-labels-preview-title = Preview
+bank-import-labels-confirm-import = Confirm import
+bank-import-labels-cancel = Cancel
+bank-import-labels-confirm-balance-mismatch = Import despite balance mismatch
+bank-import-labels-list-title = Previous imports
+bank-import-labels-import-success = Import successful.
+bank-import-labels-empty = No bank imports.

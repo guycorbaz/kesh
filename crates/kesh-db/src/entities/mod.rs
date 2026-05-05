@@ -8,6 +8,8 @@
 pub mod account;
 pub mod audit_log;
 pub mod bank_account;
+pub mod bank_import;
+pub mod bank_transaction;
 pub mod company;
 pub mod company_invoice_settings;
 pub mod contact;
@@ -24,6 +26,8 @@ pub mod vat_rate;
 pub use account::{Account, AccountType, AccountUpdate, NewAccount};
 pub use audit_log::{AuditLogEntry, NewAuditLogEntry};
 pub use bank_account::{BankAccount, NewBankAccount};
+pub use bank_import::{BankImport, BankImportSourceFormat, NewBankImport};
+pub use bank_transaction::{BankTransaction, BankTransactionStatus, NewBankTransaction};
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
 pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};

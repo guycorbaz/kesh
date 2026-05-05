@@ -68,6 +68,37 @@ pub enum CoreError {
     /// Une écriture dont le total est zéro n'est pas persistée.
     #[error("Écriture invalide : le total ne peut pas être nul")]
     EntryZeroTotal,
+
+    /// Le solde de clôture annoncé d'un relevé bancaire ne correspond pas
+    /// à la somme `opening + Σ transactions` à la tolérance d'un centime
+    /// près. Indique un fichier tronqué ou des transactions filtrées en
+    /// amont (CR-010 #62).
+    #[error(
+        "solde de clôture incohérent : ouverture {opening} + somme {sum} ≠ clôture {closing} (écart {diff})"
+    )]
+    BankImportBalanceMismatch {
+        /// Solde d'ouverture déclaré dans le relevé.
+        opening: Money,
+        /// Solde de clôture déclaré dans le relevé.
+        closing: Money,
+        /// Somme algébrique des montants de transactions extraits.
+        sum: Money,
+        /// Écart absolu entre `opening + sum` et `closing` (toujours positif).
+        diff: Money,
+    },
+
+    /// La devise du relevé bancaire importé n'est pas supportée par la
+    /// version v0.1 (seul CHF est accepté). Le rejet vit côté `kesh-core`
+    /// pour conserver `kesh-import` agnostique du périmètre fonctionnel.
+    #[error("devise non supportée v0.1 : {0} (seul CHF est accepté)")]
+    BankImportUnsupportedCurrency(String),
+
+    /// Le suffixe de version `SourceFormat::Camt053 { version }` ne
+    /// correspond à aucune variante connue de `SourceFormatTag`. Indique
+    /// un parseur émettant un suffixe inattendu — ne devrait pas survenir
+    /// avec le parseur Kesh courant (limité à `001.04` et `001.08`).
+    #[error("version CAMT.053 inattendue : {0}")]
+    BankImportUnknownVersion(String),
 }
 
 impl CoreError {
@@ -88,6 +119,9 @@ impl CoreError {
             Self::EntryLineDebitCreditExclusive => "ENTRY_LINE_DEBIT_CREDIT_EXCLUSIVE",
             Self::EntryUnbalanced { .. } => "ENTRY_UNBALANCED",
             Self::EntryZeroTotal => "ENTRY_ZERO_TOTAL",
+            Self::BankImportBalanceMismatch { .. } => "BANK_IMPORT_BALANCE_MISMATCH",
+            Self::BankImportUnsupportedCurrency(_) => "BANK_IMPORT_UNSUPPORTED_CURRENCY",
+            Self::BankImportUnknownVersion(_) => "BANK_IMPORT_UNKNOWN_VERSION",
         }
     }
 }

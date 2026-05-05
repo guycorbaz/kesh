@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+quick-xml = "0.39"
 rust_decimal = { version = "1.41", features = ["serde-str"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

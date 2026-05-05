@@ -534,3 +534,32 @@ error-fiscal-year-closed-for-date = L’esercizio che copre questa data è chius
 go-to-settings = Apri impostazioni
 settings-fiscal-years-link = Crea, rinomina o chiudi gli esercizi contabili della tua azienda.
 
+
+# --- Story 8-1b — Importazione bancaria CAMT.053 ---
+bank-import-errors-too-large = File troppo grande. Dimensione massima consentita: 10 MiB.
+bank-import-errors-malformed-xml = File XML malformato o troncato. Verificare l'esportazione bancaria.
+bank-import-errors-unsupported-version = Versione CAMT.053 non supportata. Versioni accettate: 001.04 e 001.08.
+bank-import-errors-missing-field = Un campo obbligatorio è assente nel file CAMT.053.
+bank-import-errors-invalid-amount = Un importo nel file non è valido.
+bank-import-errors-invalid-date = Una data nel file non è valida.
+bank-import-errors-balance-mismatch = Il saldo finale non corrisponde alla somma delle transazioni. Spuntare «Conferma comunque» per importare.
+bank-import-errors-unsupported-currency = Valuta non supportata. In questa versione è accettato solo il franco svizzero (CHF).
+bank-import-errors-no-matching-statement = Nessun estratto del file corrisponde al conto bancario selezionato.
+bank-import-errors-duplicate-file = Questo file è già stato importato per questa azienda.
+bank-import-errors-bank-account-not-found = Conto bancario non trovato.
+bank-import-errors-parse-failed = Il file CAMT.053 non ha potuto essere analizzato.
+
+bank-import-warnings-balance-mismatch = Saldo finale incoerente.
+bank-import-warnings-unsupported-currency = Valuta non supportata in v0.1.
+bank-import-warnings-ignored-statements = Alcuni estratti del file non corrispondono al conto selezionato e saranno ignorati.
+
+bank-import-labels-page-title = Importazione bancaria CAMT.053
+bank-import-labels-bank-account-selector = Conto bancario di destinazione
+bank-import-labels-drop-zone = Trascinare il file CAMT.053 qui o fare clic per sfogliare
+bank-import-labels-preview-title = Anteprima
+bank-import-labels-confirm-import = Conferma importazione
+bank-import-labels-cancel = Annulla
+bank-import-labels-confirm-balance-mismatch = Importa nonostante lo scarto di saldo
+bank-import-labels-list-title = Importazioni precedenti
+bank-import-labels-import-success = Importazione riuscita.
+bank-import-labels-empty = Nessuna importazione bancaria.
