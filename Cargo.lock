@@ -1735,6 +1735,8 @@ dependencies = [
  "chrono",
  "dotenvy",
  "kesh-core",
+ "kesh-import",
+ "regex",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
