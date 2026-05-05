@@ -96,10 +96,14 @@ pub fn detect_encoding(bytes: &[u8]) -> Result<(DetectedEncoding, usize), CsvErr
 
 /// Décode `bytes` (post BOM skip) avec l'encoding détecté.
 ///
-/// Pour UTF-8 retourne directement la slice convertie en `String` (déjà
-/// validée par `from_utf8` ou par for_bom). Pour ISO-8859-1, mapping
-/// byte 0xXX → char(0xXX) en utilisant `encoding_rs::WINDOWS_1252`
-/// (qui couvre ISO-8859-1 strict + extensions).
+/// Pour UTF-8 retourne directement la slice convertie en `String`.
+/// **Note Pass 1 review G1 H4** : revalidation `from_utf8` ici est volontaire
+/// (defense-in-depth). Coût mineur (~25ms sur 50 MB) accepté pour préserver
+/// l'invariant que `decode_bytes` retourne toujours du UTF-8 valide même
+/// si `detect_encoding` a un bug — `from_utf8_unchecked` éviterait cette
+/// passe mais introduit de l'unsafe avec confiance dans la lib externe.
+/// Pour ISO-8859-1, mapping byte 0xXX → char(0xXX) en utilisant
+/// `encoding_rs::WINDOWS_1252` (qui couvre ISO-8859-1 strict + extensions).
 pub fn decode_bytes(bytes: &[u8], encoding: DetectedEncoding) -> Result<String, CsvError> {
     match encoding {
         DetectedEncoding::Utf8 => {

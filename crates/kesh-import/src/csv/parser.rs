@@ -56,8 +56,18 @@ pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement
     let decoded = decode_bytes(&bytes[bom_len..], detected_encoding)?;
 
     // 4. csv::ReaderBuilder
+    // Pass 1 review G1 H5 : check défensif sur le cast `field_separator as u8`.
+    // `validate()` borne déjà le char à `{',', ';', '\t'}` (tous ASCII), mais
+    // si un CsvProfile est construit directement sans validate(), un char
+    // Unicode > U+00FF tronquerait silencieusement à un byte arbitraire.
+    let field_sep_byte = u8::try_from(profile.field_separator as u32).map_err(|_| {
+        CsvError::ProfileMisconfigured(format!(
+            "field_separator '{}' n'est pas ASCII",
+            profile.field_separator.escape_default()
+        ))
+    })?;
     let mut reader = csv::ReaderBuilder::new()
-        .delimiter(profile.field_separator as u8)
+        .delimiter(field_sep_byte)
         .has_headers(profile.header_row_count > 0)
         .flexible(true) // tolère lignes de longueur variable, on gère l'erreur RowTooShort manuellement
         .from_reader(decoded.as_bytes());
@@ -88,6 +98,15 @@ pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement
             });
         }
     };
+
+    // Pass 1 review G1 H3 : ligne vide post-header (csv::flexible(true)
+    // accepte des records de longueur 0) → diagnostic "EmptyFile" plutôt
+    // que "ProfileMisconfigured" qui induirait l'utilisateur en erreur.
+    if first_record.is_empty() {
+        return Err(CsvError::EmptyFile {
+            reason: "blank line after header skip".to_string(),
+        });
+    }
 
     // 6.b Validation indices hors-borne sur 1er record.
     let max_idx = profile.column_mapping.max_index();
@@ -149,9 +168,20 @@ pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement
             }
             Err(e) => {
                 total_errors += 1;
+                // Pass 1 review G1 H2 : extraire la position depuis l'erreur
+                // csv (champ quoted mal formé, NUL byte, etc.) plutôt que
+                // hardcoder line=0. Le crate csv 1.3 expose `position()`
+                // sur `csv::Error` via la trait `IntoInnerError` indirect ;
+                // en pratique le `kind` `Utf8` ou `UnequalLengths` peut
+                // contenir une `Position`. Fallback line=0 si non dispo.
+                let line = match e.kind() {
+                    csv::ErrorKind::Utf8 { pos: Some(p), .. } => p.line() as usize,
+                    csv::ErrorKind::UnequalLengths { pos: Some(p), .. } => p.line() as usize,
+                    _ => 0,
+                };
                 if errors.len() < MAX_CSV_LINE_ERRORS {
                     errors.push(CsvLineError::new(
-                        0,
+                        line,
                         CsvLineErrorCode::RowTooShort,
                         Some(e.to_string()),
                     ));
@@ -352,13 +382,36 @@ fn parse_row(
 
 /// Parse un montant string vers `Decimal`, en gérant :
 /// - apostrophe milliers suisse (`1'234.56` → strip `'`)
-/// - decimal_separator = `,` → remplacer par `.` avant parse
+/// - decimal_separator = `,` → strip point milliers européen + remplacer
+///   virgule décimale par point. Pass 1 review G1 H1 : `"1.234,56"`
+///   (format allemand/suisse-allemand typique) doit parser comme 1234.56,
+///   pas être rejeté `InvalidAmount`. Quand `decimal_sep == ','`, le `.`
+///   est non-ambigu = séparateur milliers et peut être strip.
+/// - decimal_separator = `.` → strip espace insécable U+00A0 et espace
+///   ASCII (séparateurs milliers européens) avant parse.
+///
+/// **Notation scientifique** : `Decimal::from_str_exact` rejette explicitement
+/// `1.5e10`, `NaN`, `inf` (vs `from_str`). Rejet documenté §csv-parser.
+///
+/// **Préfixe devise** : `"CHF 1234.56"` n'est PAS supporté (rejeté
+/// `InvalidAmount`). Documenté pour éviter les rapports faux-bug.
 fn parse_amount(raw: &str, decimal_sep: char) -> Result<Decimal, ()> {
+    // Strip apostrophe (séparateur milliers suisse).
     let s = raw.replace('\'', "");
-    let s = if decimal_sep == ',' {
-        s.replace(',', ".")
-    } else {
-        s
+    // Strip espaces ASCII et insécables (séparateurs milliers européens).
+    let s = s.replace([' ', '\u{00A0}'], "");
+    // Selon le decimal_sep, strip aussi le séparateur milliers
+    // complémentaire et normaliser en `.`.
+    let s = match decimal_sep {
+        ',' => {
+            // Format allemand : `1.234,56` → strip `.`, replace `,` → `.`
+            s.replace('.', "").replace(',', ".")
+        }
+        '.' => {
+            // Format US : `1,234.56` → strip `,`
+            s.replace(',', "")
+        }
+        _ => s, // Validation déjà faite dans CsvProfile::validate
     };
     Decimal::from_str_exact(&s).map_err(|_| ())
 }
@@ -760,5 +813,126 @@ mod tests {
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
         assert_eq!(stmt.transactions[0].details, "");
+    }
+
+    // ====================================================================
+    // Pass 1 review G1 patches : tests manquants
+    // ====================================================================
+
+    /// Pass 1 review G1 H1 : `parse_amount` doit accepter le format
+    /// allemand `1.234,56` quand `decimal_sep = ','`. Le point est
+    /// strip comme séparateur milliers.
+    #[test]
+    fn parses_german_format_amount_with_dot_thousands_and_comma_decimal() {
+        let csv = "date;montant\n2026-01-15;1.234,56\n";
+        let profile = make_profile(
+            ';',
+            ',',
+            1,
+            ColumnMapping {
+                date: 0,
+                amount: Some(1),
+                debit_credit_split: None,
+                reference: None,
+                details: None,
+                counterparty: None,
+            },
+        );
+        let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
+        assert_eq!(stmt.transactions[0].amount, dec!(1234.56));
+    }
+
+    /// Pass 1 review G1 H1 : `parse_amount` doit accepter le format US
+    /// `1,234.56` quand `decimal_sep = '.'`.
+    #[test]
+    fn parses_us_format_amount_with_comma_thousands_and_dot_decimal() {
+        let csv = "date,montant\n2026-01-15,\"1,234.56\"\n";
+        let profile = make_profile(
+            ',',
+            '.',
+            1,
+            ColumnMapping {
+                date: 0,
+                amount: Some(1),
+                debit_credit_split: None,
+                reference: None,
+                details: None,
+                counterparty: None,
+            },
+        );
+        let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
+        assert_eq!(stmt.transactions[0].amount, dec!(1234.56));
+    }
+
+    /// Pass 1 review G1 BH-9 : profil DB corrompu avec à la fois `amount`
+    /// ET `debit_credit_split` non-null. Doit prioriser `debit_credit_split`
+    /// au parse (cf. spec §profile-model M16). Notons que `validate()`
+    /// rejette ce cas, mais le parse défensif protège contre une DB
+    /// corrompue ou un bypass de validation.
+    #[test]
+    fn parses_corrupt_profile_with_both_amount_and_split_prefers_split() {
+        // Construction directe de CsvProfile sans appeler validate().
+        // Simule un profil DB corrompu désérialisé.
+        let profile = CsvProfile {
+            bank_name: "Corrupt".to_string(),
+            filename_pattern: None,
+            column_mapping: ColumnMapping {
+                date: 0,
+                amount: Some(1),                  // shouldn't be used
+                debit_credit_split: Some((1, 2)), // priority
+                reference: None,
+                details: None,
+                counterparty: None,
+            },
+            date_format: "%Y-%m-%d".to_string(),
+            decimal_separator: '.',
+            field_separator: ';',
+            encoding: None,
+            header_row_count: 1,
+        };
+        // validate() rejette ce cas — vérifions :
+        assert!(profile.validate().is_err());
+
+        // Mais si on bypass validate (via accès direct à parse_row),
+        // la priorité parse est sur debit_credit_split.
+        // On teste via une version contournée : construire un parse_row
+        // directement avec un record et le profil corrompu.
+        let record = csv::StringRecord::from(vec!["2026-01-15", "100.00", ""]);
+        let result = super::parse_row(&record, 1, &profile);
+        // Avec debit=100, credit=empty → amount = -100.
+        let tx = result.expect("parse_row corrupt profile prefers split");
+        assert_eq!(tx.amount, dec!(-100));
+    }
+
+    /// Pass 1 review G1 AA-2 : line numbers absolus avec multi-header.
+    /// `header_row_count = 2` + erreur sur 5e ligne de données →
+    /// `line` retourné = 7 (1-based, position absolue dans le fichier).
+    #[test]
+    fn line_numbers_are_file_absolute_with_multi_header() {
+        // 2 lignes de header + 4 lignes valides + 1 ligne invalide (date malformée)
+        let csv = "header1;header2\nheader1b;header2b\n2026-01-01;100\n2026-01-02;200\n2026-01-03;300\n2026-01-04;400\nINVALID_DATE;500\n";
+        let profile = make_profile(
+            ';',
+            '.',
+            2,
+            ColumnMapping {
+                date: 0,
+                amount: Some(1),
+                debit_credit_split: None,
+                reference: None,
+                details: None,
+                counterparty: None,
+            },
+        );
+        let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
+        match err {
+            CsvError::PartialFailure { errors, .. } => {
+                assert_eq!(errors.len(), 1);
+                // Position absolue dans le fichier : ligne 7 (2 headers + 4 data + 1 invalid).
+                assert_eq!(errors[0].line, 7);
+                assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate);
+            }
+            other => panic!("expected PartialFailure, got {:?}", other),
+        }
     }
 }

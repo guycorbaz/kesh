@@ -162,7 +162,9 @@ impl CsvLineErrorCode {
         match self {
             CsvLineErrorCode::InvalidDate => "bank-import-csv-errors-invalid-date",
             CsvLineErrorCode::InvalidAmount => "bank-import-csv-errors-invalid-amount",
-            CsvLineErrorCode::AmbiguousDebitCredit => "bank-import-csv-errors-ambiguous-debit-credit",
+            CsvLineErrorCode::AmbiguousDebitCredit => {
+                "bank-import-csv-errors-ambiguous-debit-credit"
+            }
             CsvLineErrorCode::EmptyMandatoryField => "bank-import-csv-errors-empty-mandatory-field",
             CsvLineErrorCode::RowTooShort => "bank-import-csv-errors-row-too-short",
         }

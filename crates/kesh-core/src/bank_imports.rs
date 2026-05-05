@@ -662,4 +662,31 @@ mod tests {
         assert_eq!(draft.source_format, SourceFormatTag::Camt053V08);
         assert_eq!(draft.source_format.as_db_str(), "CAMT053_V08");
     }
+
+    /// Pass 1 review G1 AA-1 : Story 8-2 T5.0.b — vérifie que le branch
+    /// `SourceFormat::Csv { .. }` retourne `Ok(SourceFormatTag::Csv)`
+    /// (vs ancien `Err(BankImportUnknownVersion("csv"))` du 8-1a).
+    #[test]
+    fn from_imported_csv_maps_to_csv_tag() {
+        let mut stmt = statement_fixture(None, None);
+        stmt.source_format = SourceFormat::Csv {
+            encoding: "UTF-8".into(),
+            profile_name: Some("UBS".into()),
+        };
+        let (draft, _) = from_imported(
+            &stmt,
+            1,
+            1,
+            String::new(),
+            String::new(),
+            NaiveDate::from_ymd_opt(2026, 5, 4)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            1,
+        )
+        .expect("csv branch OK");
+        assert_eq!(draft.source_format, SourceFormatTag::Csv);
+        assert_eq!(draft.source_format.as_db_str(), "CSV");
+    }
 }
