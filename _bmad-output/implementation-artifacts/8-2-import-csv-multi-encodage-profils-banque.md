@@ -32,7 +32,11 @@ so that **je puisse traiter dans Kesh les banques qui n'exposent pas CAMT.053, s
 
 ### Scope verrouillé — ce qui est livré par 8-2
 
-1. **Migration DB** (T1) — `crates/kesh-db/migrations/2026MMDDHHMMSS_bank_profiles.sql` créant `bank_profiles` (id, company_id, bank_name, column_mapping JSON, date_format, encoding, separator, decimal_separator, header_row_count, created_at, updated_at). **Pas** de modification de `bank_imports`/`bank_transactions` (le `source_format` accepte déjà `'CSV'` — ENUM string `('CAMT053_V04', 'CAMT053_V08', 'CSV')` côté Rust, tableau MAJUSCULES côté DB).
+1. **Migration DB** (T1) — `crates/kesh-db/migrations/2026MMDDHHMMSS_bank_profiles.sql` créant `bank_profiles` (id, company_id, bank_name, column_mapping JSON, date_format, encoding, separator, decimal_separator, header_row_count, created_at, updated_at). Pas de migration ALTER sur `bank_imports`/`bank_transactions` côté DB — la colonne `source_format VARCHAR(32) NOT NULL` n'a pas de CHECK constraint (cf. comment migration 8-1b ligne 17), donc `'CSV'` est insérable. **Mais l'extension Rust est obligatoire** (cf. point 1bis).
+1bis. **Extension enums Rust `source_format`** (T2.4 + T2.5 + T5.0) — **point critique non livré par 8-1b** :
+    - `kesh-db/src/entities/bank_import.rs` : ajouter variante `BankImportSourceFormat::Csv` avec `as_db_str() = "CSV"` + parser `from_str("CSV")` + supprimer le test `source_format_unknown_rejected` qui vérifie le rejet de "CSV" (héritage 8-1b documenté).
+    - `kesh-core/src/bank_imports.rs` : ajouter variante `SourceFormatTag::Csv` avec `as_db_str() = "CSV"` + étendre la fn `from_imported()` pour brancher `kesh_import::SourceFormat::Csv { encoding, profile_name }` → `SourceFormatTag::Csv` (sans erreur). Aujourd'hui `from_imported()` retourne `Err(CoreError::BankImportUnknownVersion("csv"))` sur ce branch — ce qui doit être supprimé.
+    - `kesh-api/src/routes/bank_imports.rs::version_to_source_format()` : étendre pour mapper `kesh_import::SourceFormat::Csv { .. }` → `BankImportSourceFormat::Csv`.
 2. **Module parser `kesh-import::csv`** (T2) — `crates/kesh-import/src/csv/{mod.rs, encoding.rs, parser.rs, profile.rs}` + tests `csv_tests.rs`. Détection encoding (BOM → `chardetng`), parser via `csv` crate, mapping profil → `ImportedTransaction`. Variantes `CamtError` étendues ou nouveau type `ImportError` avec sous-type `Csv(CsvError)` (cf. §error-types).
 3. **Entités + repositories `bank_profiles`** (T3) — `kesh-db/src/entities/bank_profile.rs` + `kesh-db/src/repositories/bank_profiles.rs` (CRUD + helper `find_matching_profile_for_filename`).
 4. **Routes API CRUD `bank_profiles`** (T4) — `kesh-api/src/routes/bank_profiles.rs` (5 endpoints : `POST/GET-list/GET-detail/PUT/DELETE`), RBAC `comptable_routes`, audit log, scoping company.
@@ -58,15 +62,20 @@ so that **je puisse traiter dans Kesh les banques qui n'exposent pas CAMT.053, s
 
 **Algorithme déterministe** (R4 epic-8.md résolu) :
 
-1. **BOM check** (priorité 1) — `encoding_rs::Encoding::for_bom(&bytes[..3])` :
-   - `EF BB BF` → UTF-8 (consommer 3 bytes BOM, parser UTF-8 strict)
-   - `FF FE` / `FE FF` → UTF-16 LE/BE → **422 BANK_CSV_UNSUPPORTED_ENCODING** (non v0.1).
+0. **Empty file guard** (priorité 0) — si `bytes.len() == 0` → `422 BANK_CSV_EMPTY_FILE` (cf. §error-types `CsvError::EmptyFile`). Aucun parsing n'est tenté.
+1. **BOM check** (priorité 1) — `encoding_rs::Encoding::for_bom(bytes)` (**pas** `&bytes[..3]` — la lib gère elle-même les slices courtes ; le slice `[..3]` panic sur fichiers de 1 ou 2 bytes, ex. BOM tronqué). Si `Some((Encoding::UTF_8, bom_len))` → UTF-8 (skip `bom_len`). Si `Some((UTF_16LE | UTF_16BE, _))` → **422 BANK_CSV_UNSUPPORTED_ENCODING** (non v0.1).
 2. **Sans BOM** — heuristique en deux passes :
-   - Passe 1 : tenter décodage UTF-8 strict via `std::str::from_utf8`. Si OK → UTF-8.
-   - Passe 2 : si UTF-8 fail → `chardetng::EncodingDetector` sur les premiers 1024 bytes. Si verdict `windows-1252` ou `iso-8859-1` → ISO-8859-1.
-   - Sinon (autre encoding détecté) → `422 BANK_CSV_UNSUPPORTED_ENCODING`.
+   - **Passe 1** : tenter décodage UTF-8 strict via `std::str::from_utf8`. Si OK → UTF-8 (couvre ASCII pur AC #4 et UTF-8 sans BOM).
+   - **Passe 2** : si UTF-8 fail → `chardetng::EncodingDetector::feed(&bytes[..bytes.len().min(1024)], true)` puis `detector.guess(None, true)`. Cohérence : on échantillonne **1024 bytes max** (texte de la spec), pas le fichier entier — perf prévisible sur fichiers 50 MB. Si verdict `windows-1252` ou `iso-8859-1` → ISO-8859-1. Sinon (autre encoding détecté) → `422 BANK_CSV_UNSUPPORTED_ENCODING`.
+   - **Garde-fou petit fichier** : si `bytes.len() < 64` ET passe 1 a échoué, `chardetng` est probabiliste peu fiable → `422 BANK_CSV_UNSUPPORTED_ENCODING` avec `details.detected = null` (refus explicite plutôt que faux positif silencieux).
 
-**Pas d'override utilisateur en v0.1** : le profil stocke `encoding` (nullable, default `null` = auto-détect). Si `encoding` non-null et conflict avec détection → warning preview `bank_csv_encoding_mismatch` + utilise la valeur du profil. Cas extrême (BOM UTF-16 + `encoding=ISO-8859-1` profil) → reject `422`.
+**Override utilisateur via profil** : le profil stocke `encoding` (`Option<String>`, default `null` = auto-détect).
+
+- **Pas d'override silencieux** (révision Pass 1 H5 mojibake) : si `profile.encoding` est non-null ET diverge du résultat de l'algo de détection (ex. profil dit `UTF-8` mais BOM détecte `UTF-16LE`, ou profil dit `ISO-8859-1` mais bytes sont valides UTF-8 avec accents `0xC3 0xA9`), comportement strict :
+  - **`POST /preview`** : `200 OK` + warning `bank_csv_encoding_mismatch` (UI peut afficher) avec `details.profileEncoding` + `details.detectedEncoding`. La preview utilise **l'encoding détecté** (pas le profil) pour éviter le mojibake silencieux à l'affichage.
+  - **`POST /bank-imports` final** : `422 BANK_CSV_ENCODING_MISMATCH` sauf si form contient `confirmEncodingMismatch=true` → `201 Created` + audit log `bank_import.created_with_encoding_mismatch`. Le décodage utilise alors la valeur du profil (utilisateur est explicitement responsable du mojibake potentiel).
+
+Cas extrême (BOM UTF-16 + `encoding=ISO-8859-1` profil ou vice-versa) → toujours reject `422 BANK_CSV_UNSUPPORTED_ENCODING` (pas de bypass car UTF-16 est non v0.1, peu importe le profil).
 
 **Lib choisies** :
 - `encoding_rs` 0.8.x — Mozilla Servo, BOM detection + decoding standardisé W3C Encoding.
@@ -93,24 +102,29 @@ pub struct BankProfile {
 
 // JSON serialized in column_mapping
 pub struct ColumnMapping {
-    pub date: usize,            // 0-indexed column
-    pub amount: usize,          // OR (debit, credit) tuple
-    pub debit_credit_split: Option<(usize, usize)>,  // alt à amount
+    pub date: usize,                                  // 0-indexed column, REQUIRED
+    pub amount: Option<usize>,                        // XOR avec debit_credit_split (Pass 1 H6)
+    pub debit_credit_split: Option<(usize, usize)>,   // (debit_col, credit_col) — XOR avec amount
     pub reference: Option<usize>,
     pub details: Option<usize>,
     pub counterparty: Option<usize>,
 }
 ```
 
-**Validation côté API** :
+**Important sérialisation** : `amount` est `Option<usize>` (pas `usize`) précisément parce que la contrainte XOR est exprimée par `Some`/`None`. Un payload de création peut envoyer `{"date": 0, "debit_credit_split": [3, 4], ...}` sans champ `amount` (deserialize → `None`). Côté DB, le JSON sérialisé n'inclut pas le champ `amount` quand `None` (`#[serde(skip_serializing_if = "Option::is_none")]`).
+
+**Validation côté API** (T2.2 + T4.3) :
 - `bank_name` non-vide, 1..=100 chars
-- `column_mapping` : exactement un de `amount` xor `debit_credit_split` (XOR strict)
+- `column_mapping` : exactement un de `amount.is_some()` XOR `debit_credit_split.is_some()` (XOR strict — fail si les deux ou aucun)
+- **Unicité indices** (Pass 1 M13) : tous les indices spécifiés (`date`, `amount`, `reference`, `details`, `counterparty`, et les 2 valeurs de `debit_credit_split`) doivent être deux à deux distincts. Erreur `BankCsvProfileValidation("column_mapping.{a} ({i}) conflicts with column_mapping.{b} ({i})")` sinon. Évite les diagnostics cryptiques (« montant invalide : 2026-01-15 ») quand `date` et `amount` pointent la même colonne.
 - `date_format` : valider via `chrono::format::strftime::StrftimeItems::new(fmt).all(|i| !matches!(i, Item::Error))` au create/update
 - `field_separator` ∈ `{',', ';', '\t'}` v0.1 (pas de full custom)
 - `decimal_separator` ∈ `{'.', ','}`
-- `field_separator != decimal_separator` (sinon ambiguïté)
+- `field_separator != decimal_separator` (sinon ambiguïté ; cf. AC #15 étendu)
 - `header_row_count` ∈ `0..=5`
-- `filename_pattern` (si Some) : regex valide, longueur ≤ 200 chars
+- `filename_pattern` (si Some) : regex valide via `regex::Regex::new(...)`, longueur ≤ 200 chars
+
+**Priorité au parse en cas de DB corrompue** (Pass 1 M16) : la validation API est la première ligne de défense, mais une DB compromise ou une migration manuelle peut créer un `column_mapping` JSON avec **les deux** champs `amount` ET `debit_credit_split` non-null. Au moment du parse (T2.3), priorité explicite : `if debit_credit_split.is_some() { utiliser split } else if amount.is_some() { utiliser amount } else { CsvError::ProfileMisconfigured("column_mapping.amount + debit_credit_split tous deux null en DB") }`. Pas de fallback silencieux. Test unit `parses_corrupt_profile_with_both_amount_and_split_prefers_split` + log `tracing::warn!`.
 
 **Stockage `column_mapping` en DB** : type `JSON` MariaDB (10.2+ supporte JSON natif via `JSON_VALID` CHECK). Sérialisation Rust via `serde_json::to_string` côté insert/update, désérialisation via `serde_json::from_str` côté SELECT. Pas de `sqlx::types::Json` direct (l'integration sqlx-mysql + JSON natif a des subtilités v0.8.6 — préférer string serialization explicite, pattern Story 7-2 pour `vat_rates.metadata`).
 
@@ -119,36 +133,62 @@ pub struct ColumnMapping {
 #### §profile-matching
 
 À l'upload d'un fichier CSV, ordre de résolution du profil :
-1. **bankProfileId explicite** (champ multipart `bankProfileId=N`) — utilisateur a sélectionné un profil dans l'UI → utiliser tel quel.
-2. **Auto-match par filename** — si `bankProfileId` absent ET fichier détecté CSV : `SELECT FROM bank_profiles WHERE company_id = ? AND filename_pattern IS NOT NULL` puis tester chaque regex sur le nom du fichier. Premier match (ORDER BY `updated_at DESC`) → applique. Plusieurs matches → utilise le plus récent + warning `bank_csv_multiple_profile_matches`.
-3. **Aucun match** → preview retourne `404 BANK_CSV_NO_PROFILE_MATCH` avec `details.available_profiles: [{id, bank_name}]` pour aider l'utilisateur à sélectionner manuellement. **Pas** de fallback inline UI v0.1 (création de profil = flow séparé).
+1. **bankProfileId explicite** (champ multipart `bankProfileId=N`) — utilisateur a sélectionné un profil dans l'UI → résoudre via `repository::find_by_id_for_company(company_id, profile_id)`.
+   - **1a** — profil trouvé pour cette company → utiliser tel quel.
+   - **1b** — profil inexistant OU appartenant à une autre company (Pass 1 H8) → `404 BANK_CSV_NO_PROFILE_MATCH` (jamais 403, pattern KF-002). **Pas** de fallback auto-match pour ne pas masquer le bug client (UI a envoyé un ID périmé). Cf. AC #11bis pour test confused-deputy explicite `bankProfileId = profil_company_B + bankAccountId = own`.
+2. **Auto-match par filename** — si `bankProfileId` absent ET fichier détecté CSV : `SELECT FROM bank_profiles WHERE company_id = ? AND filename_pattern IS NOT NULL` puis tester chaque regex compilée sur le nom du fichier. Premier match (ORDER BY `updated_at DESC`) → applique. Plusieurs matches → utilise le plus récent + warning `bank_csv_multiple_profile_matches`. Le scoping `company_id` dans le SELECT garantit que les profils d'un autre tenant ne sont jamais consultés.
+3. **Aucun match** → preview retourne `404 BANK_CSV_NO_PROFILE_MATCH` avec `details.available_profiles: [{id, bank_name}]` (cap 50 entrées par réponse, cf. Pass 1 M11 anti-amplification). **Pas** de fallback inline UI v0.1 (création de profil = flow séparé).
 
 **Important** : le profil n'est consulté QUE pour les CSV. Les CAMT.053 (détectés via MIME `application/xml` ou ext `.xml`) bypassent complètement ce path.
 
 #### §csv-detection
 
-Détection CSV vs CAMT.053 sur le multipart upload :
-- **Extension fichier** (priorité 1) : `.xml` → CAMT.053, `.csv` ou `.txt` → CSV.
-- **MIME type** (priorité 2) : `application/xml` / `text/xml` → CAMT, `text/csv` / `application/vnd.ms-excel` / `text/plain` → CSV.
-- **Sniff content** (priorité 3) : premiers 256 bytes après decoding — si commence par `<?xml` ou `<` puis `BkToCstmrStmt` → CAMT, sinon → CSV.
-- **Aucun match** → `415 BANK_IMPORT_UNSUPPORTED_FORMAT` (nouveau).
+Détection CSV vs CAMT.053 sur le multipart upload, **avant** decoding (raw bytes) :
+- **Extension fichier** (priorité 1) : `.xml` → CAMT.053. `.csv` ou `.txt` → CSV. Match exact lowercase, après `truncate_to_byte_len` héritage 8-1b.
+- **MIME type** (priorité 2 — utilisée si extension absente ou ambiguë) : `application/xml` / `text/xml` → CAMT. `text/csv` / `application/vnd.ms-excel` / `text/plain` → CSV.
+- **Sniff content sur raw bytes** (priorité 3 — utilisée si extension+MIME ambigus, Pass 1 M19) : opère sur les premiers 256 raw bytes (**pas decoded** — au moment de la détection format, l'encoding n'est pas encore connu, et le profil non plus). La détection XML cherche `<?xml` ou `<Document` ou `BkToCstmrStmt` en ASCII brut. Robuste aux encodages non-UTF-8 (les séquences ASCII sont préservées dans ISO-8859-x et UTF-8). Sniff CSV : présence d'un séparateur courant (`,;\t`) avec moins de 5% de bytes hors `[\x09\x0A\x0D\x20-\x7E\xA0-\xFF]` (heuristique simple).
+- **Aucun match** → `415 BANK_IMPORT_UNSUPPORTED_FORMAT` (nouveau, §error-types). Body de réponse `{ code, message, details: { extension, mime, detected_marker } }` pour aider le diagnostic UI. **Cf. AC #5bis pour les 3 tests E2E HTTP couvrant chaque priorité.**
+
+**Note priorité** : si extension `.xml` dit CAMT mais MIME dit `text/csv`, l'extension gagne (priorité 1). Cas concret : fichier `releve.xml` exporté par un outil mal configuré qui met `Content-Type: text/csv` — extension wins, parse CAMT.053 (qui rejettera proprement si le contenu n'est pas du XML valide).
 
 #### §csv-parser
 
 **Lib** : `csv` crate (BurntSushi) 1.3.x.
+
+**Lecture** :
 - `csv::ReaderBuilder::new().delimiter(profile.field_separator as u8).has_headers(profile.header_row_count > 0).from_reader(decoded_bytes.as_bytes())`.
-- Skip `header_row_count - 1` rows additionnels après le `has_headers` skip natif (puisque `csv` crate skip uniquement la première ligne).
-- `iter().enumerate()` → row index 1-based **côté utilisateur** (humanly addressable line numbers : si `header_row_count=1` et erreur ligne 5 du fichier, retourner `line: 5` pas `line: 4`).
+- **Skip header additionnel** (Pass 1 H4) : `let extra_skip = profile.header_row_count.saturating_sub(1) as usize;` (saturating, pas naïf — `header_row_count = 0` donne `extra_skip = 0`, `header_row_count = 1` donne `0`, `header_row_count = 5` donne `4`). Skipper `extra_skip` rows additionnels via `reader.records().take(extra_skip).count()` avant l'itération de données.
+- **Cas `header_row_count = 0`** : `has_headers(false)` → le crate ne skip rien. `extra_skip = 0` → aucun skip additionnel. Toutes les lignes sont des données. Test unit dédié `parses_csv_with_zero_header_rows`.
+
+**Line numbers** (Pass 1 M9) :
+- **NE PAS utiliser** `iter().enumerate()` — rompt avec les champs CSV multi-lignes quoted (un champ `"Loyer\nmensuel"` est une cellule mais 2 lignes physiques).
+- Utiliser `csv::ReaderBuilder::new().has_headers(...).from_reader(...).records()` puis pour chaque `record`, appeler `record.position()` qui retourne `Option<&Position>` avec `position.line()` (1-based, ligne réelle du fichier source).
+- **Formule de stockage** : `line_in_file = position.line()` (déjà absolue dans le fichier, incluant les lignes embarquées dans les champs quoted ET le header). C'est le numéro qu'on retourne à l'utilisateur dans `CsvLineError.line`. Test unit `line_numbers_are_file_absolute_with_multi_header` couvrant `header_row_count=2` + erreur sur 5e ligne de données → `line = 7`.
+
+**Empty file / no transactions guard** (Pass 1 M14) :
+- Si après itération complète `transactions.is_empty()` (fichier de 0 byte est déjà rejeté par §encoding-detection priorité 0, mais cas dérivés : header-only, toutes lignes en commentaire, etc.) → `CsvError::EmptyFile { reason: "no data rows after header skip" }` → `422 BANK_CSV_EMPTY_FILE`.
+- Évite un import `201 Created` avec `transaction_count = 0` qui consomme un `file_hash` et bloque le réimport légitime.
+
+**Calcul `period_from` / `period_to`** (Pass 1 H2) :
+- Le DB schema 8-1b a `period_from DATE NOT NULL` et `period_to DATE NOT NULL`. Pour CAMT.053 ces dates viennent de `<FrToDt>`. Pour CSV, **aucune source globale** — le parser doit les calculer depuis les transactions.
+- Algorithme : `period_from = min(transactions.iter().map(|t| t.booking_date))` et `period_to = max(...)`. Si `transactions.is_empty()` → déjà rejeté par EmptyFile guard ci-dessus, donc ces unwraps sont safe.
+- Le `ImportedStatement` retourné par `parse_csv()` pour CSV a donc `period_from = min(booking_dates)` et `period_to = max(booking_dates)` (pas `Option`, comme pour CAMT).
+- Test unit `csv_period_from_to_calculated_from_transactions` couvre 3 cas : 1 transaction (period_from == period_to), N transactions ordre quelconque (min/max), une seule date répétée.
 
 **Mapping value parsing** :
 - **Date** : `chrono::NaiveDate::parse_from_str(value, &profile.date_format)`. Erreur → `CsvError::InvalidDate { line, value, format }`.
 - **Amount** :
-  - Si `debit_credit_split` : parse les deux colonnes, signe `+` si crédit non-vide, `-` si débit non-vide, `0` si les deux vides → erreur `CsvError::AmbiguousDebitCredit { line }` si les deux non-vides.
-  - Sinon : parse `amount` directement (signe préservé). `decimal_separator=','` → remplace `,` par `.` avant parse. Strip apostrophe (séparateur milliers suisse `1'234.56` → `1234.56`).
-  - Lib : `rust_decimal::Decimal::from_str_exact` (rejection NaN/infinity, contrairement à `from_str`).
+  - Si `debit_credit_split.is_some()` (priorité parse cf. §profile-model M16) : parse les deux colonnes.
+    - `debit non-empty + credit empty` → amount = `-debit` (négatif).
+    - `debit empty + credit non-empty` → amount = `+credit` (positif).
+    - `debit empty + credit empty` → **`CsvError::EmptyMandatoryField { line, field: "amount" }`** (Pass 1 M10 : ne PAS retourner `Decimal::ZERO` silencieusement — bloque l'import au lieu de persister une transaction de 0 CHF cryptique).
+    - `debit non-empty + credit non-empty` → `CsvError::AmbiguousDebitCredit { line }`.
+  - Sinon (`amount.is_some()` après XOR) : parse `amount` directement (signe préservé). `decimal_separator=','` → remplace `,` par `.` avant parse. Strip apostrophe (séparateur milliers suisse `1'234.56` → `1234.56`).
+  - **Zéro non-blocking** : un `amount = "0.00"` ou `"0,00"` parsé explicitement par l'utilisateur est valide (transaction d'annulation, écriture de mémoire). Seul le cas `debit + credit tous deux empty` rejette.
+  - Lib : `rust_decimal::Decimal::from_str_exact` (rejection NaN/infinity/scientific notation, contrairement à `from_str`).
 - **Reference / Details / Counterparty** : `Option<String>`, trim, empty → `None`.
-- **Currency** : non lisible depuis CSV v0.1, **assumé CHF**. Validation `validate_currency_supported_v0_1` skip pour CSV (currency = "CHF" forced). Document explicit dans dev notes.
-- **booking_date == value_date** : pas de distinction CSV v0.1 (la majorité des banques exposent une seule date dans leur CSV). Le helper `from_imported` côté `kesh-core` accepte déjà `booking_date == value_date`.
+- **Currency** : non lisible depuis CSV v0.1, **assumé CHF**. Validation `validate_currency_supported_v0_1` skip pour CSV (currency = "CHF" forced dans `ImportedStatement.currency`). Document explicit dans Dev Notes.
+- **booking_date == value_date** : pas de distinction CSV v0.1. Le helper `from_imported` côté `kesh-core` accepte déjà `booking_date == value_date`.
 
 #### §error-types
 
@@ -162,43 +202,161 @@ pub enum ImportError {
 }
 
 pub enum CsvError {
+    EmptyFile { reason: String },                                // Pass 1 M14 — fichier 0 byte ou 0 transactions après header skip
     UnsupportedEncoding { detected: Option<String> },
+    EncodingMismatch { profile: String, detected: String },      // Pass 1 H5 — non-bloquant en preview, bloquant en final sans confirm
     DecodingFailed { encoding: String, byte_offset: usize },
     MissingHeader,
     InvalidDate { line: usize, value: String, format: String },
     InvalidAmount { line: usize, value: String },
-    AmbiguousDebitCredit { line: usize },
-    EmptyMandatoryField { line: usize, field: &'static str },
+    AmbiguousDebitCredit { line: usize },                        // debit ET credit non-empty sur même ligne
+    EmptyMandatoryField { line: usize, field: &'static str },    // ex. amount empty quand debit+credit tous deux empty
     RowTooShort { line: usize, expected_cols: usize, got: usize },
+    ProfileMisconfigured(String),                                // Pass 1 M16 — DB JSON corrompu (amount + debit_credit_split tous deux null/présents) ou indices hors-borne
+    PartialFailure(Vec<CsvLineError>),                           // Pass 1 H7 — collecte de toutes les erreurs ligne, strict reject FR51
     Io(String),
+}
+
+/// Erreur ligne-par-ligne pour `PartialFailure`. (Pass 1 H7)
+pub struct CsvLineError {
+    pub line: usize,                  // numéro absolu fichier (cf. §csv-parser line numbers)
+    pub code: CsvLineErrorCode,       // discriminant pour mapping i18n + tri UI
+    pub value: Option<String>,        // valeur fautive si applicable (vidée par troncature à 100 chars pour éviter logs/JSON DoS)
+    pub message_i18n_key: String,     // clé i18n frontend, ex. "bank-csv-errors-invalid-date"
+}
+
+pub enum CsvLineErrorCode {
+    InvalidDate,
+    InvalidAmount,
+    AmbiguousDebitCredit,
+    EmptyMandatoryField,
+    RowTooShort,
 }
 ```
 
-**Impact** : `kesh-import::lib.rs` re-exporte `pub use error::{ImportError, CamtError, CsvError}`. Les types `From<CamtError> for ImportError` et `From<CsvError> for ImportError` permettent la propagation `?`.
+**Impact** : `kesh-import::lib.rs` re-exporte `pub use error::{ImportError, CamtError, CsvError, CsvLineError, CsvLineErrorCode}`. Les types `From<CamtError> for ImportError` et `From<CsvError> for ImportError` permettent la propagation `?`.
 
 `kesh-core::errors::CoreError` étendu avec :
 - `BankCsvProfileNotFound`
-- `BankCsvUnsupportedEncoding(String)` (encoding détecté pour diag)
-- `BankCsvParsePartialFailure(Vec<CsvLineError>)` — wrap pour le rejet partiel structuré FR51
+- `BankCsvUnsupportedEncoding(Option<String>)` (encoding détecté pour diag, `None` si fichier trop court < 64 bytes)
+- `BankCsvEncodingMismatch { profile: String, detected: String }` — Pass 1 H5
+- `BankCsvParsePartialFailure(Vec<CsvLineError>)` — wrap pour rejet partiel structuré FR51
 - `BankCsvProfileValidation(String)` (msg de validation profil)
+- `BankCsvProfileMisconfigured(String)` — DB corrompue (cf. §profile-model M16)
+- `BankCsvEmptyFile`
 
-Côté `kesh-api::errors::AppError` : 6 nouvelles variantes mappées vers HTTP :
-- `BankCsvProfileNotFound` → 404 `BANK_CSV_NO_PROFILE_MATCH`
-- `BankCsvUnsupportedEncoding` → 422 `BANK_CSV_UNSUPPORTED_ENCODING`
-- `BankCsvParsePartialFailure` → 422 `BANK_CSV_PARTIAL_FAILURE` avec payload `{lines: [{line, code, value, message}]}`
-- `BankCsvProfileValidation` → 422 `BANK_CSV_PROFILE_INVALID`
-- `BankCsvProfileDuplicate` → 409 `BANK_CSV_PROFILE_DUPLICATE` (UNIQUE bank_name)
-- `BankImportUnsupportedFormat` → 415 `BANK_IMPORT_UNSUPPORTED_FORMAT`
+Côté `kesh-api::errors::AppError` (cf. T5.0 pour la subtask de déclaration) : **9 nouvelles variantes** (Pass 1 M6 — liste consolidée canonique, exhaustive ; T4.2 et T5 référencent cette liste plutôt que de la redupliquer) :
+
+| Variante AppError | HTTP | Code | Origin (CoreError ou direct) |
+|---|---|---|---|
+| `BankCsvProfileNotFound` | 404 | `BANK_CSV_NO_PROFILE_MATCH` | `CoreError::BankCsvProfileNotFound` (1a/1b/3 §profile-matching) |
+| `BankCsvUnsupportedEncoding` | 422 | `BANK_CSV_UNSUPPORTED_ENCODING` | `CoreError::BankCsvUnsupportedEncoding` (UTF-16, fichier <64 bytes, encoding inconnu) |
+| `BankCsvEncodingMismatch` | 422 | `BANK_CSV_ENCODING_MISMATCH` | `CoreError::BankCsvEncodingMismatch` (final sans `confirmEncodingMismatch=true`) |
+| `BankCsvParsePartialFailure` | 422 | `BANK_CSV_PARTIAL_FAILURE` | `CoreError::BankCsvParsePartialFailure` (FR51 strict reject) |
+| `BankCsvProfileValidation` | 422 | `BANK_CSV_PROFILE_INVALID` | direct (handler validation pré-repo) |
+| `BankCsvProfileDuplicate` | 409 | `BANK_CSV_PROFILE_DUPLICATE` | mapping SQL 1062 sur `uq_bank_profiles_company_name` |
+| `BankCsvProfileMisconfigured` | 500 | `BANK_CSV_PROFILE_MISCONFIGURED` | `CoreError::BankCsvProfileMisconfigured` (corrupted DB JSON) |
+| `BankCsvEmptyFile` | 422 | `BANK_CSV_EMPTY_FILE` | `CoreError::BankCsvEmptyFile` |
+| `BankImportUnsupportedFormat` | 415 | `BANK_IMPORT_UNSUPPORTED_FORMAT` | direct (helper `detect_import_format`) |
+
+Payload `BankCsvParsePartialFailure` :
+```json
+{
+  "code": "BANK_CSV_PARTIAL_FAILURE",
+  "message": "...",
+  "details": {
+    "lines": [
+      {"line": 7, "code": "INVALID_DATE", "value": "32.13.2026", "message_i18n_key": "bank-csv-errors-invalid-date"},
+      {"line": 12, "code": "INVALID_AMOUNT", "value": "abc", "message_i18n_key": "bank-csv-errors-invalid-amount"},
+      {"line": 18, "code": "ROW_TOO_SHORT", "value": null, "message_i18n_key": "bank-csv-errors-row-too-short"}
+    ],
+    "total_errors": 3
+  }
+}
+```
+
+#### §preview-csv-response-shape
+
+(Pass 1 M7) — La réponse `POST /preview` pour CSV partage la struct `BankImportPreviewResponse` (héritée 8-1b) avec ces différences :
+
+```jsonc
+{
+  "selectedStatement": {
+    "accountIban": null,                   // CSV n'a pas d'IBAN (CHF assumé, pas d'extraction depuis fichier)
+    "currency": "CHF",                     // forcé pour CSV v0.1
+    "periodFrom": "2026-01-15",            // calculé min(booking_dates), cf. §csv-parser
+    "periodTo": "2026-01-31",              // calculé max(booking_dates)
+    "openingBalance": null,                // CSV n'expose pas opening (vs CAMT.053 qui a <Bal>)
+    "closingBalance": null,                // idem
+    "transactionCount": 27
+  },
+  "transactions": [...],                   // Vec<ImportedTransaction> identique à CAMT
+  "ignoredStatements": [],                 // toujours vide pour CSV (single-statement par fichier)
+  "warnings": ["bank_csv_profile_auto_matched"],   // discriminé selon le path
+  "appliedProfile": {                      // **nouveau pour CSV**, null pour CAMT
+    "id": 42,
+    "bankName": "UBS"
+  },
+  "sourceFormat": "CSV"                    // **nouveau** pour disambiguer côté frontend
+}
+```
+
+Côté Rust, étendre `BankImportPreviewResponse` (kesh-api) avec :
+```rust
+#[serde(skip_serializing_if = "Option::is_none")]
+pub applied_profile: Option<AppliedProfileSummary>,
+pub source_format: String,  // "CAMT053_V04" | "CAMT053_V08" | "CSV"
+```
+
+Pour CAMT.053, `applied_profile = None` (pas de breaking change frontend grâce à `skip_serializing_if`). `source_format` est nouveau : impose un patch frontend mineur 8-1b (rétrocompat acceptée car post-merge ≤ 24h, pas de client externe).
 
 #### §partial-failure-mapping
 
 **Décision FR51 v0.1 — strict reject** : si **N'IMPORTE QUELLE** ligne du CSV échoue au parsing, l'import entier est rejeté (`422 BANK_CSV_PARTIAL_FAILURE`). Le payload de réponse liste **toutes** les lignes en erreur avec `{line, code, value, message_i18n_key}` pour l'UI affiche un panneau « 12 lignes en erreur ». Pas de partial commit en v0.1.
 
-**Justification** : un partial commit nécessite (a) flow de re-import des lignes corrigées, (b) gestion de l'unicité fichier-hash quand le fichier corrigé a un nouveau hash, (c) UI pour éditer les lignes en erreur inline. Tous ces points sont reportés Story 8-3 (rejet partiel + dédup ligne par ligne). Pour v0.1 (Story 8-2), strict reject + listing détaillé suffit pour le scénario Lisa de la PRD (« Lisa consulte les lignes en erreur, crée un profil banque personnalisé, et réimporte les 3 lignes manquantes » → en 8-2 elle réimporte le fichier complet après avoir corrigé le profil ; en 8-3 elle pourra réimporter juste le delta).
+**Justification** : un partial commit nécessite (a) flow de re-import des lignes corrigées, (b) gestion de l'unicité fichier-hash quand le fichier corrigé a un nouveau hash, (c) UI pour éditer les lignes en erreur inline. Tous ces points sont reportés Story 8-3 (rejet partiel + dédup ligne par ligne).
+
+**Scénario Lisa adapté 8-2 (Pass 1 L8)** : Lisa uploade un fichier CSV de 15 lignes, dont 3 invalides (date malformée). Comportement 8-2 : `422 BANK_CSV_PARTIAL_FAILURE` listant les 3 lignes. Lisa corrige son profil banque (ou modifie le fichier source). Elle réimporte le **fichier complet corrigé** (les 15 lignes). Comme le strict-reject 8-2 garantit qu'aucun import partiel n'a eu lieu, le hash-doublon (`(company_id, file_hash) UNIQUE` 8-1b) ne bloque pas le réimport (le hash du fichier corrigé est nouveau, distinct du fichier d'origine). En Story 8-3, Lisa pourra réimporter uniquement le delta (3 lignes corrigées) avec un détecteur ligne-par-ligne. Le scénario PRD original (« réimporte les 3 lignes manquantes ») correspond donc à **8-3**, pas à **8-2** — la spec 8-2 livre la moitié infrastructure (listing détaillé), 8-3 livre l'autre moitié (re-import partiel + dédup).
 
 #### §upload-limit
 
 Hérité 8-1b : `KESH_BANK_IMPORT_MAX_MB` (default 10, range [1, 100]) appliqué via `DefaultBodyLimit` sur le sub-router. **Aucune nouvelle env var pour 8-2**.
+
+#### §multipart-guards
+
+(Pass 1 M8) — `parse_multipart` (handler `bank_imports.rs`) doit appliquer des guards anti-duplication pour les nouveaux champs CSV, suivant strictement le pattern 8-1b qui guarde déjà `file` et `bankAccountId` :
+
+```rust
+// Pseudo-code dans parse_multipart()
+let mut bank_profile_id: Option<i64> = None;
+let mut confirm_encoding_mismatch: Option<bool> = None;
+
+while let Some(field) = multipart.next_field().await? {
+    match field.name() {
+        // ... existant 8-1b: file, bankAccountId, confirmBalanceMismatch ...
+        Some("bankProfileId") => {
+            if bank_profile_id.is_some() {
+                return Err(AppError::Validation("Champ 'bankProfileId' dupliqué dans multipart"));
+            }
+            let raw = field.text().await?;
+            let id: i64 = raw.trim().parse().map_err(|_| AppError::Validation("bankProfileId doit être un entier"))?;
+            if id <= 0 {
+                return Err(AppError::Validation("bankProfileId doit être strictement positif"));
+            }
+            bank_profile_id = Some(id);
+        }
+        Some("confirmEncodingMismatch") => {
+            if confirm_encoding_mismatch.is_some() {
+                return Err(AppError::Validation("Champ 'confirmEncodingMismatch' dupliqué"));
+            }
+            confirm_encoding_mismatch = Some(field.text().await?.eq_ignore_ascii_case("true"));
+        }
+        // ... unknown field handling existant 8-1b ...
+    }
+}
+```
+
+Pattern : (1) duplicate guard, (2) parse + validation `> 0`, (3) cohérence avec `bankAccountId` qui valide déjà strict. Test E2E HTTP `post_csv_rejects_duplicate_bank_profile_id_field` couvre.
 
 #### §audit-log
 
@@ -213,7 +371,7 @@ Action existante `bank_import.created` étend son `details_json` avec `source_fo
 
 Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutilisent le code persistance/UI sans re-test (8-2 vérifie uniquement les nouveaux comportements CSV-specific).
 
-1. **(FR42 + FR50 — happy path UTF-8)** Given un fichier CSV UTF-8 valide avec BOM, profil banque correspondant existant, When l'utilisateur sélectionne le profil + uploade le fichier + clique « Confirmer », Then toutes les transactions sont persistées dans `bank_transactions` avec `bank_account_id = selected_id` et `bank_imports.source_format = 'CSV'`. *Test : E2E `imports a CSV UTF-8 file end-to-end` + integration `kesh-import::csv::parser::tests::parses_utf8_with_bom`.*
+1. **(FR42 + FR50 — happy path UTF-8 avec `bankProfileId` explicite, Pass 1 M3)** Given un fichier CSV UTF-8 valide avec BOM, profil banque créé pour la company de l'utilisateur, When l'utilisateur uploade le fichier via multipart contenant `bankProfileId=<profile.id>` + `bankAccountId=<account.id>` + `file`, Then `POST /preview` retourne `200 OK` avec `appliedProfile.id = profile.id` + `sourceFormat = "CSV"`, et `POST /bank-imports` persiste toutes les transactions avec `bank_account_id = selected_id` et `bank_imports.source_format = 'CSV'`. *Test : E2E `imports a CSV UTF-8 file end-to-end` + E2E HTTP `post_csv_with_explicit_bank_profile_id_uses_it` + integration `kesh-import::csv::parser::tests::parses_utf8_with_bom`.*
 
 2. **(FR52a — détection BOM UTF-8)** Given un fichier CSV avec BOM `EF BB BF` au début, When parsing, Then les 3 bytes BOM sont consommés et le contenu décodé en UTF-8. *Test unit : `detects_and_strips_utf8_bom`.*
 
@@ -223,17 +381,42 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 
 5. **(FR52d — encoding non supporté)** Given un fichier UTF-16 LE (BOM `FF FE`), When upload, Then `422 BANK_CSV_UNSUPPORTED_ENCODING` avec `details.detected = "UTF-16LE"`. Aucun parsing n'est tenté. *Test E2E HTTP : `post_csv_rejects_utf16_encoding`.*
 
+5bis. **(Pass 1 H3 — fichiers tronqués/courts)** Given un fichier de 0, 1 ou 2 bytes (cas limites BOM check), When upload :
+   - 0 byte → `422 BANK_CSV_EMPTY_FILE` (priorité 0 §encoding-detection).
+   - 1-2 bytes → BOM check `for_bom(bytes)` retourne `None` (lib gère slices courts), passe 1 UTF-8 strict OK si bytes ASCII → `422 BANK_CSV_EMPTY_FILE` après parsing (0 transactions). Sinon → `422 BANK_CSV_UNSUPPORTED_ENCODING` (passe 2 chardetng < 64 bytes).
+   *Tests E2E HTTP : `post_csv_rejects_empty_file` + `post_csv_handles_truncated_bom_2_bytes` + integration `kesh-import::csv::encoding::tests::for_bom_handles_short_slices_safely`.*
+
+5ter. **(Pass 1 H4 — header_row_count = 0)** Given un profil avec `header_row_count = 0` et un CSV sans ligne d'en-tête (toutes lignes sont des données), When parsing, Then aucune ligne n'est skippée (extra_skip = `saturating_sub(0, 1) = 0`) et toutes les lignes sont parsées comme transactions. *Test unit : `parses_csv_with_zero_header_rows` + fixture `csv_no_header.csv` (5 transactions sans header).*
+
+5quater. **(Pass 1 M1 — détection format CSV vs CAMT)** Given trois sous-cas :
+   - **5quater-a** : fichier `.bin` MIME `application/octet-stream` content non-XML, non-CSV-like → `415 BANK_IMPORT_UNSUPPORTED_FORMAT`.
+   - **5quater-b** : fichier `releve.xml` mais MIME `text/csv` → l'extension wins (priorité 1), parser CAMT.053 invoqué (rejette proprement si non valide XML).
+   - **5quater-c** : fichier `releve.txt` MIME `text/plain` content commençant par `<?xml ...>` → sniff content (priorité 3) détecte XML → CAMT.053.
+   *Tests E2E HTTP : `post_unknown_format_returns_415` + `post_xml_extension_wins_over_csv_mime` + `post_txt_with_xml_content_sniffed_as_camt`.*
+
+5quinquies. **(Pass 1 H5 — encoding mismatch profil vs détection)** Given un fichier CSV UTF-8 (auto-détecté UTF-8 par BOM ou heuristique) et un profil avec `encoding = "ISO-8859-1"` :
+   - **5quinquies-a — preview** : `POST /preview` retourne `200 OK` + warning `bank_csv_encoding_mismatch` avec `details.profileEncoding = "ISO-8859-1"` + `details.detectedEncoding = "UTF-8"`. Le contenu décodé pour la preview utilise l'encoding **détecté** (UTF-8) — l'utilisateur voit les caractères corrects.
+   - **5quinquies-b — final sans confirmation** : `POST /bank-imports` sans `confirmEncodingMismatch=true` → `422 BANK_CSV_ENCODING_MISMATCH`.
+   - **5quinquies-c — final avec confirmation** : `POST /bank-imports` avec `confirmEncodingMismatch=true` → `201 Created` + audit log `bank_import.created_with_encoding_mismatch`. Le décodage utilise l'encoding du **profil** (ISO-8859-1) — l'utilisateur a explicitement accepté le risque mojibake.
+   *Tests E2E HTTP : `post_csv_preview_warns_on_encoding_mismatch` + `post_csv_rejects_encoding_mismatch_without_confirm` + `post_csv_accepts_encoding_mismatch_with_confirm_writes_audit`.*
+
 6. **(FR53 — création profil banque)** Given un utilisateur Comptable, When `POST /api/v1/bank-profiles` avec body valide, Then `201 Created` + entrée DB + audit log `bank_profile.created`. *Test E2E HTTP : `post_bank_profile_creates_with_audit_log`.*
 
 7. **(FR53 — auto-apply profil par filename)** Given un profil banque avec `filename_pattern = "^export-ubs-\\d{8}\\.csv$"`, When upload `export-ubs-20260315.csv` sans `bankProfileId` explicite, Then le preview applique automatiquement le profil + warning UI `bank_csv_profile_auto_matched: { profile_id, bank_name }`. *Test E2E HTTP : `post_csv_preview_auto_matches_profile_by_filename` + scénario Playwright `auto-applies bank profile on upload`.*
 
 8. **(FR53 — auto-apply ambigu)** Given deux profils avec `filename_pattern` qui matchent tous deux le filename uploadé, When preview, Then le plus récent (`updated_at DESC`) est appliqué + warning `bank_csv_multiple_profile_matches: { matched_profiles: [...] }`. *Test E2E HTTP : `post_csv_preview_warns_on_multiple_profile_matches`.*
 
-9. **(FR53 — aucun profil match)** Given un fichier CSV uploadé sans `bankProfileId` ET aucun `filename_pattern` ne matche, When preview, Then `404 BANK_CSV_NO_PROFILE_MATCH` avec `details.available_profiles = [{id, bank_name}]`. *Test E2E HTTP : `post_csv_preview_404_when_no_profile_matches`.*
+9. **(FR53 — aucun profil match, Pass 1 M11)** Given un fichier CSV uploadé sans `bankProfileId` ET aucun `filename_pattern` ne matche, When preview, Then `404 BANK_CSV_NO_PROFILE_MATCH` avec `details.available_profiles = [{id, bank_name}]` **borné à 50 entrées max** (cap anti-amplification : si la company a plus de 50 profils, retourner les 50 plus récents `ORDER BY updated_at DESC`). *Test E2E HTTP : `post_csv_preview_404_when_no_profile_matches` + `post_csv_404_caps_available_profiles_at_50` (créer 51 profils + assert `details.available_profiles.length == 50`).*
 
 10. **(FR51 — rejet partiel avec listing erreurs)** Given un CSV avec 5 lignes valides + 3 lignes invalides (date malformée ligne 7, montant non-numérique ligne 12, ligne 18 trop courte), When `POST /bank-imports`, Then `422 BANK_CSV_PARTIAL_FAILURE` avec body `{ lines: [{line: 7, code: "INVALID_DATE", value: "32.13.2026", message_i18n_key: "bank-csv-errors-invalid-date"}, ...] }`. **Aucune** transaction persistée (strict reject v0.1). *Test E2E HTTP : `post_csv_rejects_partial_failure_with_detailed_lines`.*
 
 11. **(Multi-tenant scoping bank_profiles — KF-002 pattern)** Given un profil créé par `company_A`, When `company_B` appelle `GET /api/v1/bank-profiles/{id}` ou `GET /api/v1/bank-profiles` (list), Then `404 Not Found` (jamais 403). *Tests : `get_profile_returns_404_for_other_company` + `list_profiles_only_returns_own_company`.*
+
+11bis. **(Pass 1 H8 — confused deputy `bankProfileId` cross-tenant)** Given `company_A` a un profil `id=42`, When un utilisateur de `company_B` (avec `bankAccountId` valide pour B) fait `POST /bank-imports` avec multipart `bankProfileId=42`, Then `404 BANK_CSV_NO_PROFILE_MATCH` (le repo `find_by_id_for_company(company_B, 42)` retourne `None`). Aucun leak de configuration profil cross-tenant. *Test E2E HTTP : `post_csv_import_rejects_bank_profile_id_from_other_tenant`.*
+
+11ter. **(Pass 1 H8 — `bankProfileId` inexistant)** Given un utilisateur authentifié, When `POST /bank-imports` avec `bankProfileId=999999` (ID qui n'existe pas), Then `404 BANK_CSV_NO_PROFILE_MATCH`. *Test E2E HTTP : `post_csv_import_rejects_nonexistent_bank_profile_id`.*
+
+11quater. **(Pass 1 M8 — `bankProfileId` dupliqué multipart)** Given un multipart contenant deux champs `bankProfileId=1` ET `bankProfileId=99`, When `POST /bank-imports`, Then `400 Validation` avec message `"Champ 'bankProfileId' dupliqué dans multipart"`. *Test E2E HTTP : `post_csv_rejects_duplicate_bank_profile_id_field` (pattern identique à `bankAccountId` 8-1b).*
 
 12. **(Multi-tenant DB profile auto-match)** Given `company_A` a un profil avec `filename_pattern = "ubs.csv"`, When `company_B` uploade `ubs.csv` sans bankProfileId, Then `404 BANK_CSV_NO_PROFILE_MATCH` (les profils de `company_A` n'ont pas leaké). *Test integration : `auto_match_only_considers_own_company_profiles`.*
 
@@ -241,7 +424,15 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 
 14. **(Sécurité — payload limit)** Hérité 8-1b. CSV > 10 MiB → `413 BANK_IMPORT_TOO_LARGE`. *Pas de re-test, lien vers test `post_import_rejects_payload_too_large` 8-1b.*
 
-15. **(Validation profil — XOR amount/debit_credit_split)** Given un payload de création profil avec `column_mapping: { amount: 3, debit_credit_split: [4, 5] }`, When `POST /bank-profiles`, Then `422 BANK_CSV_PROFILE_INVALID` avec message `column_mapping doit contenir exactement un de amount XOR debit_credit_split`. Cas inverse (ni l'un ni l'autre) → même rejet. *Test E2E HTTP : `post_profile_rejects_xor_violation`.*
+15. **(Validation profil — règles cumulées Pass 1 M4 + M5 + M13)** Given des payloads de création profil invalides, When `POST /bank-profiles`, Then `422 BANK_CSV_PROFILE_INVALID` avec message ciblé. Cas couverts :
+   - **15a (XOR)** : `column_mapping: { amount: 3, debit_credit_split: [4, 5] }` → `"column_mapping doit contenir exactement un de amount XOR debit_credit_split"`. Cas inverse (ni l'un ni l'autre) → même rejet.
+   - **15b (séparateurs distincts, M4)** : `field_separator = ',' AND decimal_separator = ','` → `"field_separator (',') doit être différent de decimal_separator (',')"`. Test couvre aussi `field_separator = ';' AND decimal_separator = '.'` → OK (créé).
+   - **15c (collision indices colonnes, M13)** : `column_mapping: { date: 2, amount: 2, ... }` → `"column_mapping.date (2) conflicts with column_mapping.amount (2)"`. Test couvre aussi `debit_credit_split: [3, 3]` → conflict débit/crédit même colonne.
+   *Tests E2E HTTP : `post_profile_rejects_xor_violation` + `post_profile_rejects_equal_separators` + `post_profile_rejects_column_mapping_collision`.*
+
+15bis. **(Pass 1 M5 — `AmbiguousDebitCredit` au parse)** Given un profil avec `debit_credit_split = [3, 4]` et un CSV où la ligne 5 a `debit = "100.00"` ET `credit = "50.00"` simultanément, When `POST /bank-imports`, Then `422 BANK_CSV_PARTIAL_FAILURE` avec `details.lines[0] = {line: 5, code: "AMBIGUOUS_DEBIT_CREDIT", value: null, message_i18n_key: "bank-csv-errors-ambiguous-debit-credit"}`. *Test integration : `parses_debit_credit_both_filled_returns_ambiguous_error` + fixture `csv_debit_credit_both_filled.csv`.*
+
+15ter. **(Pass 1 M10 — montant zéro vs empty mandatory)** Given un profil avec `debit_credit_split = [3, 4]` et un CSV où la ligne 8 a `debit = "" AND credit = ""` (les deux empty), When `POST /bank-imports`, Then `422 BANK_CSV_PARTIAL_FAILURE` avec `details.lines[0].code = "EMPTY_MANDATORY_FIELD"`. **Distinct du cas zéro explicite** : `debit = "0.00"` ou `credit = "0,00"` est accepté (transaction d'annulation valide). *Tests integration : `rejects_empty_debit_credit_columns` + `accepts_explicit_zero_debit_or_credit`.*
 
 16. **(Validation profil — date_format chrono)** Given `date_format = "%Q"` (token invalide chrono), When `POST /bank-profiles`, Then `422 BANK_CSV_PROFILE_INVALID` avec message ciblant `date_format`. *Test E2E HTTP : `post_profile_rejects_invalid_chrono_format`.*
 
@@ -263,7 +454,11 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 
 25. **(Strip apostrophe milliers + decimal_separator virgule)** Given un CSV format suisse `1'234,56` avec `decimal_separator=','`, When parsing amount, Then la valeur résultante est `Decimal::new(123456, 2) = 1234.56`. *Test unit : `parses_swiss_amount_with_apostrophe_thousands_and_comma_decimal`.*
 
-26. **(Profil filename_pattern regex injection safe)** Given un payload de création profil avec `filename_pattern = "(?:.*){10000}"` (catastrophic backtracking pattern), When `POST /bank-profiles`, Then la regex est validée via `regex::Regex::new()` avec **le default size limit** (`regex` crate borne déjà la complexité via `size_limit` 10MB par défaut). Pattern qui dépasse → `422 BANK_CSV_PROFILE_INVALID`. *Test E2E HTTP : `post_profile_rejects_pathological_regex`.*
+26. **(Profil filename_pattern regex injection safe, Pass 1 M20 reformulé)** Given un payload de création profil avec `filename_pattern` problématique :
+   - **Properties du `regex` crate** (Rust) : moteur **NFA Thompson** — garantit O(N) sur le matching, **pas de catastrophic backtracking** (contrairement à PCRE/Java/Python). Le `size_limit` (10MB par défaut) limite la taille du **NFA compilé** (protection contre la compilation lente d'un pattern gigantesque).
+   - **26a (compilation trop coûteuse)** : `filename_pattern = "(?:a|aa|aaa|aaaa){50}"` ou un pattern dont le NFA dépasse 10MB → `regex::Regex::new()` retourne `Err(CompiledTooBig)` → `422 BANK_CSV_PROFILE_INVALID` avec message ciblant `filename_pattern`. *Test : `post_profile_rejects_pathological_regex_compilation`.*
+   - **26b (longueur input bornée)** : le filename uploadé est borné par `truncate_to_byte_len` (255 bytes, hérité 8-1b) → matching toujours O(255) max. Aucun input attacker-controlled au-delà → pas de DoS au matching grâce aux deux bornes (NFA + input).
+   - **26c (longueur pattern bornée)** : `filename_pattern.len() > 200` au save → `422 BANK_CSV_PROFILE_INVALID`. *Test : `post_profile_rejects_pattern_over_200_chars`.*
 
 ## Tasks / Subtasks
 
@@ -315,10 +510,21 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
   - Strip apostrophe (`'`) milliers + remplacement decimal_separator → `.` avant `Decimal::from_str_exact`.
   - Sur erreur ligne, **collecter tous les erreurs** (Vec) puis si non-vide → `CsvError::PartialFailure(Vec<CsvLineError>)`. Strict reject v0.1.
   - **Pas** de validation balance pour CSV (les CSV n'exposent pas opening/closing balance) — le helper `validate_balance` est skip côté API pour `source_format = CSV`.
-- [ ] **T2.4** `crates/kesh-import/src/error.rs` : étendre avec `CsvError` (cf. §error-types) + `ImportError` enum wrapper. `From<CamtError>` + `From<CsvError>` for `ImportError`.
-- [ ] **T2.5** `crates/kesh-import/src/lib.rs` : `pub mod csv;` + `pub use csv::{parse_csv, CsvProfile, ColumnMapping, DetectedEncoding};` + `pub use error::{ImportError, CamtError, CsvError, CsvLineError};`.
+- [ ] **T2.4** `crates/kesh-import/src/error.rs` : étendre avec `CsvError` (cf. §error-types — **12 variantes** post Pass 1 incluant `EmptyFile`, `EncodingMismatch`, `ProfileMisconfigured`, `PartialFailure`) + struct `CsvLineError` + enum `CsvLineErrorCode` + `ImportError` enum wrapper. `From<CamtError>` + `From<CsvError>` for `ImportError`. **Pass 1 H1 + Pass 1 H7** : ajouter aussi variante `kesh_import::SourceFormat::Csv { encoding, profile_name }` (struct existe déjà mais doit être consommable par le pipeline 8-1b — vérifier que `kesh_import::types.rs` la définit déjà ou l'ajouter).
+- [ ] **T2.5** `crates/kesh-import/src/lib.rs` : `pub mod csv;` + `pub use csv::{parse_csv, CsvProfile, ColumnMapping, DetectedEncoding};` + `pub use error::{ImportError, CamtError, CsvError, CsvLineError, CsvLineErrorCode};`.
 - [ ] **T2.6** Tests `crates/kesh-import/tests/csv_tests.rs` : 12+ tests d'intégration utilisant les fixtures `tests/fixtures/csv/*.csv`.
-- [ ] **T2.7** Fixtures `tests/fixtures/csv/` : `utf8_bom_minimal.csv` (3 tx, BOM, ;), `iso_8859_1_swiss_accents.csv` (5 tx, accents é/ç/à), `utf8_swiss_amount.csv` (apostrophe milliers + virgule decimal), `partial_failure.csv` (8 rows : 5 OK + 3 invalid mixed), `utf16_le.csv` (1 tx UTF-16 LE BOM — reject test).
+- [ ] **T2.7** Fixtures `tests/fixtures/csv/` (10 fixtures post Pass 1) :
+  - `utf8_bom_minimal.csv` (3 tx, BOM, `;` separator)
+  - `iso_8859_1_swiss_accents.csv` (5 tx, accents é/ç/à en bytes 0xE9/0xE7/0xE0)
+  - `utf8_swiss_amount.csv` (apostrophe milliers + virgule decimal `1'234,56`)
+  - `partial_failure.csv` (8 rows : 5 OK + 3 invalid mixed — date/amount/row_too_short)
+  - `utf16_le.csv` (1 tx UTF-16 LE BOM — reject test)
+  - **Pass 1 H4** `csv_no_header.csv` (5 tx, `header_row_count = 0` test)
+  - **Pass 1 M5** `csv_debit_credit_both_filled.csv` (5 OK + 1 row avec debit ET credit non-empty → `AmbiguousDebitCredit`)
+  - **Pass 1 M10** `csv_debit_credit_both_empty.csv` (5 OK + 1 row avec debit ET credit empty → `EmptyMandatoryField`) + variant `csv_debit_credit_explicit_zero.csv` (5 OK avec une ligne `debit="0,00"` valide)
+  - **Pass 1 H3** `csv_2_bytes_truncated_bom.csv` (raw bytes `EF BB` — BOM tronqué)
+  - **Pass 1 H5** `csv_utf8_content_iso_profile.csv` (bytes UTF-8 `0xC3 0xA9` mais sera testé avec un profil `encoding=ISO-8859-1` → encoding mismatch)
+  - **Pass 1 M14** `csv_header_only.csv` (header présent, 0 lignes de données → `EmptyFile`).
 - [ ] **T2.8** Cargo.toml — ajouter dépendances : `csv = "1.3"`, `encoding_rs = "0.8"`, `chardetng = "0.1"`, `regex = "1.10"` (pour profile filename_pattern validation côté kesh-import). **Vérifier `cargo publish --dry-run` reste vert** (aucune dép interne).
 
 ### T3. Entités + repos `bank_profiles` (AC #6, #11, #17, #21)
@@ -333,7 +539,7 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
   - `list_by_company(pool, company_id, pagination) -> Result<(Vec<BankProfile>, i64), DbError>`.
   - `update(pool, company_id, id, patch) -> Result<BankProfile, DbError>` + audit log.
   - `delete(pool, company_id, id) -> Result<(), DbError>` + audit log.
-  - `find_matching_profiles_for_filename(pool, company_id, filename) -> Result<Vec<BankProfile>, DbError>` — SELECT puis filter Rust-side via `regex::Regex::new(profile.filename_pattern).is_match(filename)` (filtrage SQL impossible, regex MariaDB diffère). ORDER BY `updated_at DESC`.
+  - `find_matching_profiles_for_filename(pool, company_id, filename) -> Result<Vec<BankProfile>, DbError>` — SELECT puis filter Rust-side via `regex::Regex::new(profile.filename_pattern).is_match(filename)` (filtrage SQL impossible, regex MariaDB diffère). ORDER BY `updated_at DESC`. **Pass 1 L1** : pas de cache regex v0.1 (acceptable pour < 50 profils par company, typique en v0.1) ; documenter dans Dev Notes que le cache `Arc<HashMap<String, Regex>>` invalidé sur CRUD profil sera adressé v0.2 si une company > 100 profils est observée. La compilation O(N) à chaque upload reste bornée par `T1.1 chk_bank_profiles_filename_pattern_len ≤ 200` + complexité NFA Thompson.
 - [ ] **T3.3** Mapping erreurs SQL :
   - `1062` (Duplicate entry) sur `uq_bank_profiles_company_name` → `DbError::ProfileDuplicate`.
 - [ ] **T3.4** Tests `kesh-db` : 8 tests `#[sqlx::test]` (create + audit, find_by_id_own_company, find_by_id_other_company_returns_none, list_paginated, update + audit + race optimistic, delete + audit, duplicate_bank_name_rejected, find_matching_profiles_filters_by_company).
@@ -344,13 +550,18 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
   - `POST /api/v1/bank-profiles` (create, RBAC Comptable+).
   - `GET /api/v1/bank-profiles?page=&per_page=` (list, all roles).
   - `GET /api/v1/bank-profiles/{id}` (detail, all roles).
-  - `PUT /api/v1/bank-profiles/{id}` (update, Comptable+).
-  - `DELETE /api/v1/bank-profiles/{id}` (delete, Comptable+).
-- [ ] **T4.2** `crates/kesh-api/src/errors.rs` : 4 nouvelles variantes `AppError` :
-  - `BankCsvProfileNotFound` → 404 `BANK_CSV_PROFILE_NOT_FOUND`
+  - `PUT /api/v1/bank-profiles/{id}` (**update full replacement**, Comptable+) — Pass 1 M18 : sémantique REST PUT stricte = remplacement complet. Body doit contenir tous les champs requis (bank_name, column_mapping, date_format, decimal_separator, field_separator, header_row_count + champs Optionnels même si null). Tout champ omis → `422 BANK_CSV_PROFILE_INVALID`. Pas de PATCH partiel v0.1.
+  - `DELETE /api/v1/bank-profiles/{id}` (delete, Comptable+) — Pass 1 M17 : delete libre, **pas de RESTRICT** sur les imports historiques. Le `bank_profile_id` dans `audit_log.details_json` reste comme référence orpheline (acceptable v0.1, documenté §audit-log et Dev Notes Limitations connues). Le `bank_name` est dupliqué dans le `details_json` au moment de l'import pour préserver la trace humaine même après suppression du profil.
+- [ ] **T4.2** `crates/kesh-api/src/errors.rs` : **9 nouvelles variantes** `AppError` (Pass 1 M6 — liste consolidée canonique cf. §error-types tableau ; T4.2 + T5.0 pointent toutes les deux vers cette même liste pour éviter la divergence) :
+  - `BankCsvProfileNotFound` → 404 `BANK_CSV_NO_PROFILE_MATCH`
+  - `BankCsvUnsupportedEncoding` → 422 `BANK_CSV_UNSUPPORTED_ENCODING`
+  - `BankCsvEncodingMismatch` → 422 `BANK_CSV_ENCODING_MISMATCH`
+  - `BankCsvParsePartialFailure(Vec<CsvLineError>)` → 422 `BANK_CSV_PARTIAL_FAILURE` avec payload structuré
   - `BankCsvProfileValidation(String)` → 422 `BANK_CSV_PROFILE_INVALID`
-  - `BankCsvProfileDuplicate` → 409 `BANK_CSV_PROFILE_DUPLICATE`
-  - `BankCsvProfilePathologicalRegex` → 422 `BANK_CSV_PROFILE_INVALID` (regex builder failed) — peut être absorbé dans `BankCsvProfileValidation`.
+  - `BankCsvProfileDuplicate` → 409 `BANK_CSV_PROFILE_DUPLICATE` (UNIQUE bank_name)
+  - `BankCsvProfileMisconfigured(String)` → 500 `BANK_CSV_PROFILE_MISCONFIGURED`
+  - `BankCsvEmptyFile` → 422 `BANK_CSV_EMPTY_FILE`
+  - `BankImportUnsupportedFormat` → 415 `BANK_IMPORT_UNSUPPORTED_FORMAT`
 - [ ] **T4.3** Validation côté handler (avant repo) :
   - Parse `column_mapping` JSON → struct → `validate()` (cf. T2.2)
   - Compile `filename_pattern` via `regex::Regex::new` — failure → 422.
@@ -358,11 +569,28 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 - [ ] **T4.4** Mount sur `comptable_routes` (write) + `authenticated_routes` (read), pattern 8-1b.
 - [ ] **T4.5** Tests E2E HTTP `crates/kesh-api/tests/bank_profiles_e2e.rs` : 12 tests (create+audit, RBAC, list scoping, detail 404 cross-tenant, update+audit, delete+audit, validation errors, duplicate 409, pathological regex 422).
 
-### T5. Extension `POST /bank-imports` pour CSV (AC #1, #5, #7, #8, #9, #10, #20)
+### T5. Extension `POST /bank-imports` pour CSV (AC #1, #5, #5bis, #5ter, #5quater, #5quinquies, #7, #8, #9, #10, #11bis, #11ter, #11quater, #20)
 
-- [ ] **T5.1** `crates/kesh-api/src/routes/bank_imports.rs` — détection format upload :
-  - Helper `fn detect_import_format(filename: &str, content_type: Option<&str>, first_bytes: &[u8]) -> Result<ImportFormat, AppError>`
+- [ ] **T5.0** **Pré-requis Pass 1 H1** — extension enums `source_format` côté Rust (point critique non livré par 8-1b, **doit être fait avant T5.1+**) :
+  - **T5.0.a** `crates/kesh-db/src/entities/bank_import.rs` :
+    - Ajouter variante `BankImportSourceFormat::Csv` à l'enum.
+    - `as_db_str()` retourne `"CSV"` pour la nouvelle variante.
+    - `from_str()` parse `"CSV"` → `Ok(BankImportSourceFormat::Csv)` + supprimer le test `source_format_unknown_rejected` qui asserte le rejet de "CSV" + ajouter test `source_format_csv_roundtrip` symétrique aux tests CAMT053.
+    - Mise à jour des `#[derive(sqlx::Type)]` impl manuelle pour MySql encoder/decoder.
+  - **T5.0.b** `crates/kesh-core/src/bank_imports.rs` :
+    - Ajouter variante `SourceFormatTag::Csv` à l'enum.
+    - `as_db_str()` retourne `"CSV"`.
+    - Étendre `from_imported()` : la branch `kesh_import::SourceFormat::Csv { encoding, profile_name }` doit retourner `Ok((... SourceFormatTag::Csv, ...))` au lieu de `Err(CoreError::BankImportUnknownVersion("csv"))`. Le `profile_name` peut alimenter un nouveau champ `BankImportDraft.source_format_label` (optionnel UI) ou être ignoré v0.1.
+    - Test `from_imported_csv_succeeds` symétrique aux tests CAMT.
+  - **T5.0.c** `crates/kesh-api/src/routes/bank_imports.rs::version_to_source_format()` :
+    - Étendre pour mapper `kesh_import::SourceFormat::Csv { .. }` → `BankImportSourceFormat::Csv`.
+    - Pas d'erreur sur le path CSV (vs aujourd'hui qui fallback `BankImportParseFailed`).
+
+- [ ] **T5.1** `crates/kesh-api/src/routes/bank_imports.rs` — détection format upload (Pass 1 M1 + M19) :
+  - Helper `fn detect_import_format(filename: &str, content_type: Option<&str>, raw_first_bytes: &[u8]) -> Result<ImportFormat, AppError>`
+  - **Important** : le sniff opère sur **raw bytes** (pas decoded — l'encoding n'est pas encore connu). Patterns ASCII-safe : `<?xml`, `<Document`, `BkToCstmrStmt` pour CAMT ; présence de séparateur courant pour CSV.
   - `enum ImportFormat { Camt053, Csv }`
+  - Priorité : extension > MIME > sniff. Cf. §csv-detection.
   - Fallback `415 BANK_IMPORT_UNSUPPORTED_FORMAT`.
 - [ ] **T5.2** Handler `preview_bank_import` (existing) extension :
   - Si CSV : extraire `bankProfileId` du multipart (Optional), résoudre profil via repo (explicit ID OR auto-match filename), parse via `kesh-import::parse_csv`, mapper `ImportedStatement` → preview response.
@@ -373,7 +601,15 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
   - **Skip** validation currency pour CSV (assumed CHF v0.1, document inline).
   - `audit_log.details_json` enrichi `{source_format: "CSV", bank_profile_id: <id|null>, transaction_count}`.
 - [ ] **T5.4** Configuration : aucune nouvelle env var (KESH_BANK_IMPORT_MAX_MB hérité).
-- [ ] **T5.5** Tests E2E HTTP étendus dans `bank_imports_e2e.rs` : 8 nouveaux tests CSV (happy UTF-8, ISO-8859-1, UTF-16 reject, partial failure 422, no profile match 404, auto-match by filename, multiple profile match warning, audit log includes source_format).
+- [ ] **T5.5** Tests E2E HTTP étendus dans `bank_imports_e2e.rs` : **18 nouveaux tests CSV post Pass 1** :
+  - Happy paths : `post_csv_with_explicit_bank_profile_id_uses_it`, `imports_csv_iso_8859_1_with_swiss_accents`
+  - Encoding : `post_csv_rejects_utf16_encoding`, `post_csv_rejects_empty_file` (Pass 1 H3), `post_csv_handles_truncated_bom_2_bytes` (Pass 1 H3)
+  - Encoding mismatch (Pass 1 H5) : `post_csv_preview_warns_on_encoding_mismatch`, `post_csv_rejects_encoding_mismatch_without_confirm`, `post_csv_accepts_encoding_mismatch_with_confirm_writes_audit`
+  - Format detection (Pass 1 M1) : `post_unknown_format_returns_415`, `post_xml_extension_wins_over_csv_mime`, `post_txt_with_xml_content_sniffed_as_camt`
+  - Profile resolution (Pass 1 H8) : `post_csv_import_rejects_bank_profile_id_from_other_tenant`, `post_csv_import_rejects_nonexistent_bank_profile_id`, `post_csv_rejects_duplicate_bank_profile_id_field` (Pass 1 M8)
+  - Profile match : `post_csv_preview_auto_matches_profile_by_filename`, `post_csv_preview_warns_on_multiple_profile_matches`, `post_csv_preview_404_when_no_profile_matches`, `post_csv_404_caps_available_profiles_at_50` (Pass 1 M11)
+  - Partial failure : `post_csv_rejects_partial_failure_with_detailed_lines`
+  - Audit log : `post_csv_import_audit_log_includes_source_format_and_profile`
 
 ### T6. Frontend feature `bank-csv-import` (AC #6, #7, #9, #10, #15, #16, #17, #23)
 
@@ -411,7 +647,7 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
 
 ### T8. Tests E2E Playwright (AC #1, #5, #7, #9, #10, #23)
 
-- [ ] **T8.1** `frontend/tests/e2e/bank-csv-import.spec.ts` (nouveau fichier) — 7 scénarios :
+- [ ] **T8.1** `frontend/tests/e2e/bank-csv-import.spec.ts` (nouveau fichier) — **9 scénarios post Pass 1** :
   1. `imports a CSV UTF-8 file end-to-end` (AC #1)
   2. `creates a bank profile via wizard then imports` (AC #6 + #7)
   3. `auto-applies bank profile on filename match` (AC #7)
@@ -419,7 +655,9 @@ Numérotation indépendante de 8-1b. Les ACs marqués **Hérité 8-1b** réutili
   5. `displays partial failure error panel with line numbers` (AC #10)
   6. `rejects UTF-16 with unsupported encoding error` (AC #5)
   7. `accessibility — profile pages axe scan zero violations` (AC #23)
-- [ ] **T8.2** Fixtures Playwright `frontend/tests/e2e/fixtures/` : 4 CSV (`csv_utf8_bom_minimal.csv`, `csv_iso_8859_1_swiss.csv`, `csv_partial_failure.csv`, `csv_utf16_le.csv`).
+  8. **Pass 1 H5** `shows encoding mismatch warning then accepts override` (AC #5quinquies) — preview affiche warning + checkbox confirmation, confirm passe `confirmEncodingMismatch=true`.
+  9. **Pass 1 M1** `rejects unsupported file format with 415` (AC #5quater-a) — upload `.bin` → erreur UI.
+- [ ] **T8.2** Fixtures Playwright `frontend/tests/e2e/fixtures/` : **6 CSV post Pass 1** (`csv_utf8_bom_minimal.csv`, `csv_iso_8859_1_swiss.csv`, `csv_partial_failure.csv`, `csv_utf16_le.csv`, `csv_utf8_for_iso_profile.csv` mojibake test, `unknown_format.bin` 415 test). **Décision Pass 1 L6** (BH-9 fixtures dupliquées kesh-import vs Playwright) : les fixtures Playwright sont **différentes** (plus enrichies, contenu réel banque suisse) ; les fixtures kesh-import sont synthétiques minimales pour les unit tests. Documenter cette divergence en commentaire en tête de chaque dossier.
 - [ ] **T8.3** Helper `seedTestState('with-bank-profile')` dans `frontend/tests/e2e/helpers/test-state.ts` (extension du seeder existant) — crée company + bank_account + 1 bank_profile pour les scénarios qui en ont besoin.
 
 ### T9. Sync sprint-status + README
@@ -482,7 +720,7 @@ Cette section est documentée pour décision à la passe validate Pass 4 si appl
 - `kesh_import::{ImportError, CsvError, CsvLineError, CamtError}` (T2.4 sera ajouté).
 
 **`kesh-core::bank_imports` extensions T4** :
-- `validate_csv_profile_signature(profile: &CsvProfile, sample_row: &[String]) -> Result<(), CoreError>` — sanity check post-parse que les indices column_mapping sont valides vs longueur des rows. Optionnel v0.1 si trop coûteux.
+- `validate_csv_profile_signature(profile: &CsvProfile, sample_row: &[String]) -> Result<(), CoreError>` — sanity check post-parse que les indices column_mapping sont valides vs longueur du **premier row de données**. **Obligatoire v0.1** (Pass 1 M21 — pas optionnel). Appelé après `parse_csv()` sur le premier record. Si un index est hors-borne → `CoreError::BankCsvProfileMisconfigured("column_mapping.{field} (index {i}) out of bounds for {n} columns")`. Évite de parcourir tout le fichier pour produire 1000× le même `RowTooShort` quand le profil pointe sur des colonnes inexistantes. Coût : O(1) — un seul check sur le premier record.
 
 **`kesh-db::repositories::bank_imports`** : pas de nouvelle méthode. La méthode `create_with_transactions` existante fonctionne pour CSV (le `source_format` est déjà accepté en string).
 
@@ -538,6 +776,13 @@ Cette section est documentée pour décision à la passe validate Pass 4 si appl
 
 **Pas de mocks DB** côté backend tests — toujours `#[sqlx::test]` (intégration réelle MariaDB), pattern Story 7-2 + 8-1b.
 
+### Limitations connues v0.1 (Pass 1 documentées)
+
+- **L4 — FK `bank_profile_id` orpheline dans audit log** : `bank_imports` n'a pas de colonne `bank_profile_id` avec FK. Le `bank_profile_id` apparaît dans `audit_log.details_json` comme métadonnée, mais aussi le `bank_name` snapshot pour préserver la trace humaine après suppression du profil. Le delete profil est donc libre (pas de RESTRICT). **v0.2** : ajouter `bank_imports.bank_profile_id BIGINT NULL` avec FK `ON DELETE SET NULL` pour permettre les joins relationnels propres post-delete.
+- **L5 — `filename_pattern` catch-all** : un profil avec `filename_pattern = "^.*$"` matche tous les filenames CSV uploadés et capture l'auto-match (en prenant le `updated_at` le plus récent). UI doit afficher un warning visuel au save quand le pattern est trop large, mais pas de blocage v0.1 (laisse à l'utilisateur sa responsabilité).
+- **L1 — pas de cache regex** : compilation O(N profils) à chaque upload. Acceptable pour < 50 profils par company. v0.2 si nécessaire.
+- **§audit-log dette** : delete profile crée une référence orpheline dans audit log. Acceptable v0.1, FK ajoutée v0.2.
+
 ### Checklist locale avant push
 
 Hérité 8-1b + ajout :
@@ -567,7 +812,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-csv-i
 ### Références
 
 - Epic 8 — [`_bmad-output/planning-artifacts/epic-8.md`](../planning-artifacts/epic-8.md) §Story 8-2 + §Risques R3/R4
-- PRD — [`_bmad-output/planning-artifacts/prd.md`](../planning-artifacts/prd.md) FR42, FR50, FR51, FR52, FR53, scénario Lisa l.168
+- PRD — [`_bmad-output/planning-artifacts/prd.md`](../planning-artifacts/prd.md) FR42, FR50, FR51, FR52, FR53, scénario Lisa import partiel (Pass 1 L3 : section UX Scenarios — chercher « Lisa importe un fichier CSV » dans le PRD plutôt qu'une ligne précise, le numéro change selon les passes d'édition PRD)
 - Architecture — [`_bmad-output/planning-artifacts/architecture.md`](../planning-artifacts/architecture.md) §11.5 Data Architecture, §17 Frontières architecturales, §kesh-import publiable
 - Story 8-1a — [`8-1a-camt053-parser-only.md`](8-1a-camt053-parser-only.md) (`kesh-import` crate, types autonomes, `From`/`Into` pattern)
 - Story 8-1b — [`8-1b-camt053-persistence-ui.md`](8-1b-camt053-persistence-ui.md) (pipeline persistance + UI réutilisée intégralement)
@@ -594,4 +839,5 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-csv-i
 
 | Date | Action | Auteur |
 |------|--------|--------|
+| 2026-05-05 | **Validate Pass 1 Sonnet 4.6** — 3 reviewers parallèles (Blind Hunter / Edge Case Hunter / Acceptance Auditor), cycle CLAUDE.md (auteur=Opus, Pass 1=Sonnet pour briser biais). Verdict Acceptance Auditor : **CONDITIONAL GO** (2 HIGH bloquants AA-1 + AA-2). 45 findings bruts → triage : **8 HIGH** (H1 hypothèse fausse `BankImportSourceFormat::Csv` non livrée 8-1b ; H2 `period_from`/`period_to` NOT NULL CSV stratégie manquante ; H3 `bytes[..3]` panic fichier < 3 bytes ; H4 underflow u8 `header_row_count = 0` ; H5 mojibake silencieux profil ISO-8859-1 + fichier UTF-8 ; H6 `ColumnMapping.amount` non-Option ; H7 `CsvError::PartialFailure` + `CsvLineError` non définis ; H8 `bankProfileId` cross-tenant/invalide non spécifié) + **21 MEDIUM** + **9 LOW** + **2 rejects** (AA-11 ref existe ; BH-9 fixtures dupliquées reclassée L6 décision documentée). **Option A appliquée** : 29 patches HIGH+MEDIUM appliqués. Spec passe de 597 → ~830 lignes. Sections enrichies : §Scope verrouillé point 1bis (extension enums Csv obligatoire), §encoding-detection (algo 0+3 priorités, mojibake bloquant final), §profile-model (`Option<usize>` + collision check + priorité parse DB corrompue), §profile-matching (étape 1b 404), §csv-detection (sniff raw bytes priorités), §csv-parser (saturating skip, `position.line()`, period_from min/max, EmptyFile guard), §error-types (12 variantes CsvError + CsvLineError + 9 AppError canonique), §preview-csv-response-shape, §multipart-guards. ACs : 5bis/5ter/5quater/5quinquies/11bis/11ter/11quater/15bis/15ter ajoutés (35 ACs total post Pass 1 vs 26 initiaux). Tasks : T5.0 sub-tasks enums, T5.5 18 E2E HTTP, T8.1 9 scénarios Playwright, T2.7 10 fixtures. Limitations connues v0.1 documentées (L1/L4/L5). Trend Pass 1 : 29 findings > LOW raw → 0 (tous appliqués). Prochaine étape : commit + Pass 2 Haiku 4.5 (cycle Sonnet → Haiku). | Claude (Opus 4.7, validate Pass 1 application) |
 | 2026-05-05 | Spec créée par `bmad-create-story 8-2` post-merge PR #69 (8-1a + 8-1b done). Status `backlog` → `ready-for-dev`. Branche `story/8-2-import-csv-multi-encodage-profils-banque` créée depuis main `076ac86`. 26 ACs définis (vs 7 ACs epic-8.md → enrichis avec FR52a-d détection encoding, FR53 auto-match, FR51 strict reject mapping, multi-tenant, RBAC, validation profil, audit log, i18n, a11y, perf). 9 tasks T1-T9. Dépendances upstream 8-1a/8-1b validées. Risque de splitting documenté (6 modules au seuil, pas de split préventif, trigger validate Pass 4 si non-convergence). | Claude (Opus 4.7, bmad-create-story) |
