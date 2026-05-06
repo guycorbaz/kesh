@@ -1395,8 +1395,20 @@ fn apply_duplicate_lines_filter(
                 .collect()
         }
     };
-    let count = i32::try_from(filtered.len())
-        .expect("M-1: transaction_count > i32::MAX irréaliste pour un import bancaire v0.1");
+    // M-1 (Pass 2) revisited by F2 (Pass 3) — `expect(...)` panic en
+    // axum async ne produit pas un 500 structuré (tokio task panic
+    // log au shutdown sans corrélation requête). On préfère ici la
+    // saturation explicite + tracing::error! pour un audit trail
+    // cohérent ; le seuil 2B+ transactions reste invariant logique
+    // mais ne fait pas tomber la requête sur un cas pathologique
+    // upstream (ex. boucle de dedup malformée).
+    let count = i32::try_from(filtered.len()).unwrap_or_else(|_| {
+        tracing::error!(
+            len = filtered.len(),
+            "transaction_count > i32::MAX (saturation à i32::MAX) — investiguer un possible bug amont"
+        );
+        i32::MAX
+    });
     (filtered, count)
 }
 
@@ -1830,18 +1842,20 @@ async fn create_csv(
     // review) — find_in_dedup_window via `&mut *tx` au lieu de
     // `&state.pool` (alignement modèle spec L11).
     //
-    // M9 (Pass 1 review) — defensive guard : si `parse_csv_collect`
-    // retourne PartialFailure { valid: empty }, la sentinel
-    // `empty_valid_sentinel_date()` (1970-01-01) atterrit dans
-    // draft.period_from. Le check `valid.transactions.is_empty()` plus
-    // haut a déjà rejeté ce cas avec `reason = "no_valid_lines_to_commit"`.
+    // M9 (Pass 1 review) + F5 (Pass 3 review) — defensive guard : si
+    // `parse_csv_collect` retourne PartialFailure { valid: empty }, la
+    // sentinel `empty_valid_sentinel_date()` (= `NaiveDate::MIN`,
+    // jamais une date bancaire réelle) atterrit dans draft.period_from.
+    // Le check `valid.transactions.is_empty()` plus haut a déjà rejeté
+    // ce cas avec `reason = "no_valid_lines_to_commit"`.
     //
     // L-1 (Pass 2 review) — debug_assert seul ne fire qu'en debug.
     // En release, si l'invariant venait à être cassé par un futur
-    // refactor, la query SQL `BETWEEN '1970-01-01' AND '1970-01-01'`
-    // retournerait au pire les transactions de cette unique date pour
-    // ce compte/tenant — risque borné mais incohérent. On ajoute un
-    // garde runtime qui court-circuite à `Vec::new()`.
+    // refactor, le runtime guard ci-dessous court-circuite vers
+    // `Vec::new()`. La sentinel = `NaiveDate::MIN` est garantie
+    // unique (aucune transaction bancaire ne peut avoir cette date)
+    // donc le guard ne crée pas de bypass dedup pour des données
+    // légitimes.
     let sentinel = kesh_import::empty_valid_sentinel_date();
     debug_assert_ne!(
         draft.period_from, sentinel,

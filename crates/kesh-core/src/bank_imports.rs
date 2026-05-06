@@ -422,6 +422,18 @@ pub fn detect_duplicate_lines(
     // sont théoriquement impossibles puisque la déduplication est
     // appliquée à chaque INSERT, mais l'invariant n'est pas garanti
     // par la base de données).
+    //
+    // **F10 (Pass 3 review)** — limitation connue : si
+    // `confirmDuplicateLines=import` a été utilisé sur un import
+    // précédent (override explicite), la table `bank_transactions`
+    // peut contenir N rangs avec la même clé composite. Dans ce cas,
+    // l'`existing_transaction_id` rapporté pour le nouveau match
+    // pointe seulement sur le **plus petit `id`** (déterministe via
+    // `or_insert`). Le comptage côté **nouvelles** transactions
+    // (champ `details_json.duplicate_lines_skipped: N`) reste correct
+    // — c'est la traçabilité de la collision côté existant qui est
+    // simplifiée. Acceptable v0.1 ; renvoyer `Vec<i64>` par clé
+    // serait une extension type-safe v0.2.
     let mut index: HashMap<&DuplicateKey, i64> = HashMap::with_capacity(existing_keys.len());
     for (id, key) in existing_keys {
         index.entry(key).or_insert(*id);
@@ -1136,6 +1148,48 @@ mod tests {
         // normalize_reference_fallback fait trim+lowercase → "ref|pipe"
         // → escape pipe → "ref\\|pipe"
         assert_eq!(key.to_string(), "2026-05-15|150|ref\\|pipe|17");
+    }
+
+    #[test]
+    fn dedup_key_zero_amount_scale_invariant() {
+        // E11 (Pass 3 review) — `Decimal::ZERO` peut prendre plusieurs
+        // scales (`Decimal::new(0, 0)` vs `Decimal::new(0, 4)`) ; après
+        // `normalize()` les deux doivent produire la même clé Hash + Eq
+        // pour ne pas créer de faux négatifs sur les transactions à
+        // montant 0 (rare mais possible : compensation, virement à 0
+        // CHF pour mise à jour de référence).
+        let key_zero_no_scale = dedup_key_scalar(
+            date(2026, 5, 15),
+            Decimal::new(0, 0),
+            Some("REF-A"),
+            None,
+            None,
+            17,
+        );
+        let key_zero_with_scale = dedup_key_scalar(
+            date(2026, 5, 15),
+            Decimal::new(0, 4),
+            Some("REF-A"),
+            None,
+            None,
+            17,
+        );
+        assert_eq!(
+            key_zero_no_scale, key_zero_with_scale,
+            "Decimal::ZERO scale 0 vs scale 4 must compare equal post-normalize"
+        );
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h1 = DefaultHasher::new();
+        key_zero_no_scale.hash(&mut h1);
+        let mut h2 = DefaultHasher::new();
+        key_zero_with_scale.hash(&mut h2);
+        assert_eq!(
+            h1.finish(),
+            h2.finish(),
+            "Decimal::ZERO scales must hash identically post-normalize"
+        );
     }
 
     #[test]

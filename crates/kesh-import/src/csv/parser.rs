@@ -40,11 +40,19 @@ use rust_decimal::Decimal;
 /// l'historique. La voie nominale est de rejeter avec
 /// `reason = "no_valid_lines_to_commit"` (AC #16) avant cet appel.
 ///
-/// Pourquoi 1970-01-01 et pas `NaiveDate::MIN` (an -262143) : si la
-/// garde caller est jamais ratée par un futur refactor, le SQL BETWEEN
-/// scanne au pire 56 ans plutôt que 263 000 ans — moins catastrophique.
+/// **F5 (Pass 3 review)** : utilise `NaiveDate::MIN` (an -262143) plutôt
+/// que `1970-01-01` (initial M9 Pass 1). Justification : `1970-01-01`
+/// est une date réelle qui pourrait apparaître dans un import légitime
+/// (système-default, dataset de test/dev). Si une telle transaction
+/// arrive avec une autre clé composite à dédupliquer dans la même
+/// fenêtre, la garde runtime L-1 court-circuiterait `find_in_dedup_window`
+/// et **bypasserait silencieusement** la dedup pour cette transaction.
+/// `NaiveDate::MIN` ne peut jamais correspondre à une transaction
+/// bancaire réelle → la sentinel reste défensive sans risque de
+/// collision avec des données légitimes. Le runtime guard L-1
+/// (côté kesh-api) couvre déjà le risque de scan complet.
 pub fn empty_valid_sentinel_date() -> NaiveDate {
-    NaiveDate::from_ymd_opt(1970, 1, 1).expect("1970-01-01 is a valid NaiveDate")
+    NaiveDate::MIN
 }
 
 /// Issue du parser CSV en mode « collect » (Story 8-3 T4).
@@ -1211,10 +1219,12 @@ mod tests {
 
     #[test]
     fn parse_csv_collect_zero_valid_uses_sentinel_date() {
-        // M9 (Pass 1 review) — quand `transactions.is_empty()` après parse,
-        // `period_from`/`period_to` doivent être la sentinel publique
-        // [`empty_valid_sentinel_date`] (= 1970-01-01) pour permettre au
-        // caller de comparer explicitement avant un find_in_dedup_window.
+        // M9 (Pass 1) + F5 (Pass 3) — quand `transactions.is_empty()` après
+        // parse, `period_from`/`period_to` doivent être la sentinel publique
+        // [`empty_valid_sentinel_date`] (= `NaiveDate::MIN`, jamais une date
+        // bancaire réelle) pour permettre au caller de comparer explicitement
+        // avant un `find_in_dedup_window` sans risque de collision avec des
+        // données légitimes (ex. transaction datée 1970-01-01).
         let csv = "date;amount;ref;details\n\
                    INVALID_A;100;R1;A\n";
         let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
@@ -1224,7 +1234,7 @@ mod tests {
                 assert_eq!(valid.transactions.len(), 0);
                 assert_eq!(valid.period_from, sentinel);
                 assert_eq!(valid.period_to, sentinel);
-                assert_eq!(sentinel, NaiveDate::from_ymd_opt(1970, 1, 1).unwrap());
+                assert_eq!(sentinel, NaiveDate::MIN);
             }
             other => panic!("expected PartialFailure, got {:?}", other),
         }

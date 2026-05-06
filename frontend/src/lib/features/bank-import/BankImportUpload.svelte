@@ -87,6 +87,18 @@
 			errorMessage = "Sélectionnez d'abord un compte bancaire.";
 			return;
 		}
+		// F1 (Pass 3 review) — réinitialise les confirm flags quand un
+		// nouveau fichier est sélectionné sur le MÊME compte (le `$effect`
+		// au-dessus ne déclenche `reset()` que sur changement de
+		// `selectedAccountId`). Sans ça, un user qui aurait coché
+		// `confirmDuplicateLines=import` sur un fichier #1 se retrouverait
+		// silencieusement avec `import` actif sur un fichier #2 où il ne
+		// l'a pas explicitement choisi → bug data-integrity latent.
+		confirmBalanceMismatch = false;
+		confirmDuplicateFile = false;
+		confirmDuplicateLines = 'skip';
+		confirmPartialImport = false;
+		confirmEncodingMismatch = false;
 		selectedFile = file;
 		errorCode = null;
 		errorMessage = null;
