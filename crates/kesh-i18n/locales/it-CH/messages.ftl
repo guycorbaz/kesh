@@ -552,6 +552,12 @@ bank-import-errors-parse-failed = Il file CAMT.053 non ha potuto essere analizza
 bank-import-warnings-balance-mismatch = Saldo finale incoerente.
 bank-import-warnings-unsupported-currency = Valuta non supportata in v0.1.
 bank-import-warnings-ignored-statements = Alcuni estratti del file non corrispondono al conto selezionato e saranno ignorati.
+# Story 8-3 — rilevamento duplicati + accettazione parziale
+bank-import-warnings-duplicate-file = Questo file è già stato importato.
+bank-import-warnings-duplicate-lines-summary = transazioni si sovrappongono a un import precedente.
+bank-import-warnings-invalid-lines-summary = righe non valide rilevate nel CSV.
+bank-import-warnings-invalid-lines-truncated = Mostrati i primi 100 errori (limite raggiunto).
+bank-import-warnings-encoding-mismatch = La codifica rilevata differisce dal profilo.
 
 bank-import-labels-page-title = Importazione bancaria CAMT.053
 bank-import-labels-bank-account-selector = Conto bancario di destinazione
@@ -560,6 +566,20 @@ bank-import-labels-preview-title = Anteprima
 bank-import-labels-confirm-import = Conferma importazione
 bank-import-labels-cancel = Annulla
 bank-import-labels-confirm-balance-mismatch = Importa nonostante lo scarto di saldo
+# Story 8-3 — flag di conferma + KF #70
+bank-import-labels-confirm-duplicate-file = Importa nonostante il file già importato
+bank-import-labels-confirm-duplicate-lines = Comportamento sui duplicati
+bank-import-labels-confirm-duplicate-lines-skip = Ignora i duplicati (predefinito)
+bank-import-labels-confirm-duplicate-lines-import = Importa comunque
+bank-import-labels-confirm-partial-import = Importa comunque le righe valide
+bank-import-labels-confirm-encoding-mismatch = Importa con la codifica rilevata
+bank-import-labels-bank-profile-selector = Profilo bancario CSV
+bank-import-labels-bank-profile-auto-matched = rilevato automaticamente
+# L6 / M8 (Pass 1 review)
+bank-import-labels-bank-profile-auto-detect-placeholder = Rilevamento automatico
+bank-import-info-bank-csv-profile-auto-matched = Profilo bancario rilevato automaticamente dal nome del file.
+bank-import-info-bank-csv-multiple-profile-matches = Più profili corrispondono al nome del file ; è stato selezionato il primo.
+bank-import-errors-no-valid-lines-to-commit = Nessuna riga valida da importare nel CSV.
 bank-import-labels-list-title = Importazioni precedenti
 bank-import-labels-import-success = Importazione riuscita.
 bank-import-labels-empty = Nessuna importazione bancaria.

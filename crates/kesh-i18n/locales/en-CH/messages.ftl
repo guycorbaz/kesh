@@ -552,6 +552,12 @@ bank-import-errors-parse-failed = The CAMT.053 file could not be parsed.
 bank-import-warnings-balance-mismatch = Closing balance inconsistent.
 bank-import-warnings-unsupported-currency = Unsupported currency in v0.1.
 bank-import-warnings-ignored-statements = Some statements in the file do not match the selected account and will be ignored.
+# Story 8-3 — duplicate detection + partial commit
+bank-import-warnings-duplicate-file = This file has already been imported.
+bank-import-warnings-duplicate-lines-summary = transactions overlap a previous import.
+bank-import-warnings-invalid-lines-summary = invalid lines detected in the CSV.
+bank-import-warnings-invalid-lines-truncated = First 100 errors shown (cap reached).
+bank-import-warnings-encoding-mismatch = Detected encoding differs from profile.
 
 bank-import-labels-page-title = CAMT.053 bank import
 bank-import-labels-bank-account-selector = Target bank account
@@ -560,6 +566,20 @@ bank-import-labels-preview-title = Preview
 bank-import-labels-confirm-import = Confirm import
 bank-import-labels-cancel = Cancel
 bank-import-labels-confirm-balance-mismatch = Import despite balance mismatch
+# Story 8-3 — confirm flags + KF #70
+bank-import-labels-confirm-duplicate-file = Import despite duplicate file
+bank-import-labels-confirm-duplicate-lines = Duplicate handling
+bank-import-labels-confirm-duplicate-lines-skip = Skip duplicates (default)
+bank-import-labels-confirm-duplicate-lines-import = Import anyway
+bank-import-labels-confirm-partial-import = Import valid lines anyway
+bank-import-labels-confirm-encoding-mismatch = Import with detected encoding
+bank-import-labels-bank-profile-selector = CSV bank profile
+bank-import-labels-bank-profile-auto-matched = auto-detected
+# L6 / M8 (Pass 1 review)
+bank-import-labels-bank-profile-auto-detect-placeholder = Auto-detect
+bank-import-info-bank-csv-profile-auto-matched = Bank profile auto-detected from the filename.
+bank-import-info-bank-csv-multiple-profile-matches = Multiple profiles match the filename ; the first one was selected.
+bank-import-errors-no-valid-lines-to-commit = No valid lines to import in the CSV.
 bank-import-labels-list-title = Previous imports
 bank-import-labels-import-success = Import successful.
 bank-import-labels-empty = No bank imports.

@@ -552,6 +552,12 @@ bank-import-errors-parse-failed = Die CAMT.053-Datei konnte nicht verarbeitet we
 bank-import-warnings-balance-mismatch = Schlusssaldo inkonsistent.
 bank-import-warnings-unsupported-currency = Währung in v0.1 nicht unterstützt.
 bank-import-warnings-ignored-statements = Einige Auszüge der Datei entsprechen nicht dem ausgewählten Konto und werden ignoriert.
+# Story 8-3 — Duplikat-Erkennung + partielle Annahme
+bank-import-warnings-duplicate-file = Diese Datei wurde bereits importiert.
+bank-import-warnings-duplicate-lines-summary = Transaktionen überschneiden sich mit einem früheren Import.
+bank-import-warnings-invalid-lines-summary = ungültige Zeilen in der CSV-Datei erkannt.
+bank-import-warnings-invalid-lines-truncated = Erste 100 Fehler angezeigt (Limit erreicht).
+bank-import-warnings-encoding-mismatch = Das erkannte Encoding weicht vom Profil ab.
 
 bank-import-labels-page-title = CAMT.053-Bankimport
 bank-import-labels-bank-account-selector = Ziel-Bankkonto
@@ -560,6 +566,20 @@ bank-import-labels-preview-title = Vorschau
 bank-import-labels-confirm-import = Import bestätigen
 bank-import-labels-cancel = Abbrechen
 bank-import-labels-confirm-balance-mismatch = Trotz Saldoabweichung importieren
+# Story 8-3 — Bestätigungs-Flags + KF #70
+bank-import-labels-confirm-duplicate-file = Trotz bereits importierter Datei importieren
+bank-import-labels-confirm-duplicate-lines = Verhalten bei Duplikaten
+bank-import-labels-confirm-duplicate-lines-skip = Duplikate ignorieren (Standard)
+bank-import-labels-confirm-duplicate-lines-import = Trotzdem importieren
+bank-import-labels-confirm-partial-import = Gültige Zeilen trotzdem importieren
+bank-import-labels-confirm-encoding-mismatch = Mit erkanntem Encoding importieren
+bank-import-labels-bank-profile-selector = CSV-Bankprofil
+bank-import-labels-bank-profile-auto-matched = automatisch erkannt
+# L6 / M8 (Pass 1 review)
+bank-import-labels-bank-profile-auto-detect-placeholder = Automatische Erkennung
+bank-import-info-bank-csv-profile-auto-matched = Bankprofil anhand des Dateinamens automatisch erkannt.
+bank-import-info-bank-csv-multiple-profile-matches = Mehrere Profile passen zum Dateinamen ; das erste wurde übernommen.
+bank-import-errors-no-valid-lines-to-commit = Keine gültige Zeile zum Importieren in der CSV-Datei.
 bank-import-labels-list-title = Frühere Importe
 bank-import-labels-import-success = Import erfolgreich.
 bank-import-labels-empty = Kein Bankimport.

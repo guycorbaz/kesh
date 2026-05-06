@@ -27,14 +27,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use kesh_core::bank_imports::{
-    self as core_bank_imports, BankImportDraft, BankTransactionDraft, SourceFormatTag,
+    self as core_bank_imports, BankImportDraft, BankTransactionDraft, DuplicateKey, DuplicateLine,
+    SourceFormatTag, dedup_key_scalar, detect_duplicate_lines,
 };
 use kesh_db::entities::{
-    BankImportSourceFormat, NewAuditLogEntry, NewBankImport, NewBankTransaction,
+    BankImport, BankImportSourceFormat, NewAuditLogEntry, NewBankImport, NewBankTransaction,
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{audit_log, bank_accounts, bank_imports, bank_transactions};
-use kesh_import::{CamtError, CsvError, CsvLineError, ImportedStatement, parse_camt053, parse_csv};
+use kesh_import::{
+    CamtError, CsvError, CsvLineError, ImportedStatement, ParseCsvOutcome, parse_camt053,
+    parse_csv_collect,
+};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -56,11 +60,111 @@ pub struct BankImportPreviewResponse {
     /// Statement sélectionné (matché par IBAN du `bankAccountId`).
     pub selected_statement: PreviewStatement,
     /// Statements ignorés (autres IBAN dans le fichier multi-stmt).
-    /// AC #3b — F1 validate Pass 1.
+    /// AC #3b — F1 validate Pass 1. Conservé top-level pour
+    /// backward-compat 8-1b (test `post_preview_returns_ignored_statements_for_multi_stmt_file`).
     pub ignored_statements: Vec<IgnoredStatement>,
-    /// Warnings non-bloquants (`balance_mismatch`, `unsupported_currency`).
-    pub warnings: Vec<String>,
+    /// Story 8-3 — warnings non-bloquants structurés. Cf. spec
+    /// §preview-warnings-shape : forme JSON stable, champs `null` ou
+    /// vides (`[]`) quand absent.
+    pub warnings: PreviewWarnings,
     pub transactions: Vec<PreviewTransaction>,
+    /// Story 8-3 KF #70 — métadonnées de résolution de profil CSV
+    /// (None pour CAMT). Permet à la UI de pré-sélectionner le profil
+    /// auto-matché et de basculer vers une sélection explicite.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub csv_profile_match: Option<CsvProfileMatch>,
+}
+
+/// Warnings non-bloquants exposés par `POST /preview` (Story 8-3
+/// §preview-warnings-shape). Tous les champs sont optionnels
+/// (`Option<...>`) ou vides (`Vec` vide) quand l'analyse ne détecte
+/// rien.
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewWarnings {
+    /// CR-010 #62 / 8-1b — opening + Σ ≠ closing.
+    pub balance_mismatch: Option<BalanceMismatchPayload>,
+    /// 8-1b — devise ≠ CHF (rejet bloquant final, info en preview).
+    pub unsupported_currency: Option<UnsupportedCurrencyPayload>,
+    /// 8-2 — encoding détecté ≠ encoding profil (overridable
+    /// `confirmEncodingMismatch`).
+    pub encoding_mismatch: Option<EncodingMismatchPayload>,
+    /// Story 8-3 — fichier déjà importé par le passé (`(company_id,
+    /// file_hash)` matching). Overridable via `confirmDuplicateFile`.
+    pub duplicate_file: Option<DuplicateFilePayload>,
+    /// Story 8-3 — transactions chevauchant un import précédent
+    /// (clé composite `(date, amount, ref_normalized, account)`).
+    pub duplicate_lines: Vec<DuplicateLineWarning>,
+    /// Story 8-3 — lignes CSV invalides (parse partial mode).
+    /// Overridable via `confirmPartialImport`.
+    pub invalid_lines: Option<InvalidLinesPayload>,
+    /// Warnings informationnels CSV (`bank_csv_multiple_profile_matches`,
+    /// `bank_csv_profile_auto_matched`, etc.) — non-bloquants, mappés
+    /// vers i18n côté frontend.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub informational: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceMismatchPayload {
+    pub opening: String,
+    pub closing: String,
+    pub sum: String,
+    pub diff: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsupportedCurrencyPayload {
+    pub currency: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodingMismatchPayload {
+    pub profile: String,
+    pub detected: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateFilePayload {
+    pub existing_import_id: i64,
+    pub existing_filename: String,
+    /// L5 (Pass 1 review) — sérialisé en RFC3339 UTC (`...Z`) plutôt
+    /// que `NaiveDateTime` sans timezone, pour matcher la spec
+    /// §preview-warnings-shape qui montre `"2026-04-12T10:30:00Z"`.
+    /// La DB stocke des timestamps naïfs en convention UTC ; la
+    /// conversion `naive_utc.and_utc()` est sémantiquement sûre.
+    pub existing_imported_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateLineWarning {
+    pub new_index: usize,
+    pub existing_transaction_id: i64,
+    pub key: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvalidLinesPayload {
+    pub lines: Vec<crate::errors::CsvLineErrorPayload>,
+    pub total_errors: usize,
+    pub truncated: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvProfileMatch {
+    pub profile_id: i64,
+    pub profile_name: String,
+    /// `true` si le profil a été matché via le filename pattern
+    /// (auto-match), `false` si l'utilisateur a explicitement passé
+    /// `bankProfileId` dans le multipart.
+    pub auto_matched: bool,
 }
 
 #[derive(Serialize)]
@@ -168,8 +272,29 @@ struct MultipartFields {
     /// Story 8-2 — Pass 1 H5 + Pass 2 H'3 confirmation explicite.
     /// Wired dans `create_csv` (Pass 1 review G2 H7) : si `parse_csv`
     /// retourne `EncodingMismatch` ET ce flag est `true`, on retry avec
-    /// l'encoding détecté + audit log spécial `created_with_encoding_mismatch`.
+    /// l'encoding détecté + audit log spécial.
     confirm_encoding_mismatch: bool,
+    /// Story 8-3 — autorise l'INSERT d'un nouvel import malgré un
+    /// fichier déjà importé (`(company_id, file_hash)` matching).
+    confirm_duplicate_file: bool,
+    /// Story 8-3 — comportement face aux lignes doublons :
+    /// `Skip` (default) ignore les doublons, `Import` les persiste.
+    confirm_duplicate_lines: ConfirmDuplicateLines,
+    /// Story 8-3 — autorise la persistance des lignes valides d'un
+    /// CSV partiellement défaillant (warnings.invalidLines retourné).
+    confirm_partial_import: bool,
+}
+
+/// Story 8-3 — comportement face aux doublons ligne-par-ligne.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConfirmDuplicateLines {
+    /// Default (sans flag ou `confirmDuplicateLines=skip`) — les
+    /// transactions doublons ne sont pas persistées.
+    #[default]
+    Skip,
+    /// `confirmDuplicateLines=import` — toutes les transactions sont
+    /// persistées, doublons inclus (audit log discriminant).
+    Import,
 }
 
 /// Tronque `s` à `max_bytes` octets en respectant les frontières de char
@@ -196,6 +321,20 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
     let mut confirm_balance_mismatch = false;
     let mut bank_profile_id: Option<i64> = None;
     let mut confirm_encoding_mismatch = false;
+    let mut confirm_duplicate_file = false;
+    // M2 (Pass 1 review) — _seen guard parity with confirmDuplicateLines:
+    // reject duplicate confirm-flag fields in multipart so an attacker
+    // cannot flip `true` → `false` by appending a second occurrence.
+    let mut confirm_duplicate_file_seen = false;
+    let mut confirm_duplicate_lines = ConfirmDuplicateLines::Skip;
+    let mut confirm_duplicate_lines_seen = false;
+    let mut confirm_partial_import = false;
+    // M3 (Pass 1 review) — same as M2 for confirmPartialImport.
+    let mut confirm_partial_import_seen = false;
+    // L9 (Pass 1 review) — same _seen guard for confirmBalanceMismatch
+    // and confirmEncodingMismatch (parity with the rest of the family).
+    let mut confirm_balance_mismatch_seen = false;
+    let mut confirm_encoding_mismatch_seen = false;
 
     while let Some(field) = multipart.next_field().await.map_err(map_multipart_err)? {
         let name = field.name().unwrap_or("").to_string();
@@ -235,6 +374,12 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 bank_account_id = Some(id);
             }
             "confirmBalanceMismatch" => {
+                if confirm_balance_mismatch_seen {
+                    return Err(AppError::Validation(
+                        "Champ 'confirmBalanceMismatch' dupliqué dans le multipart".into(),
+                    ));
+                }
+                confirm_balance_mismatch_seen = true;
                 let text = field.text().await.map_err(map_multipart_err)?;
                 // Review code Pass 1 M3 : case-insensitive — accepter
                 // "true"/"True"/"TRUE"/"1" pour les clients non-browser
@@ -261,8 +406,54 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 bank_profile_id = Some(id);
             }
             "confirmEncodingMismatch" => {
+                if confirm_encoding_mismatch_seen {
+                    return Err(AppError::Validation(
+                        "Champ 'confirmEncodingMismatch' dupliqué dans le multipart".into(),
+                    ));
+                }
+                confirm_encoding_mismatch_seen = true;
                 let text = field.text().await.map_err(map_multipart_err)?;
                 confirm_encoding_mismatch =
+                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+            }
+            "confirmDuplicateFile" => {
+                if confirm_duplicate_file_seen {
+                    return Err(AppError::Validation(
+                        "Champ 'confirmDuplicateFile' dupliqué dans le multipart".into(),
+                    ));
+                }
+                confirm_duplicate_file_seen = true;
+                let text = field.text().await.map_err(map_multipart_err)?;
+                confirm_duplicate_file =
+                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+            }
+            "confirmDuplicateLines" => {
+                if confirm_duplicate_lines_seen {
+                    return Err(AppError::Validation(
+                        "Champ 'confirmDuplicateLines' dupliqué dans le multipart".into(),
+                    ));
+                }
+                confirm_duplicate_lines_seen = true;
+                let text = field.text().await.map_err(map_multipart_err)?;
+                confirm_duplicate_lines = match text.trim().to_ascii_lowercase().as_str() {
+                    "skip" => ConfirmDuplicateLines::Skip,
+                    "import" => ConfirmDuplicateLines::Import,
+                    other => {
+                        return Err(AppError::Validation(format!(
+                            "confirmDuplicateLines invalide : '{other}' (attendu 'skip' ou 'import')"
+                        )));
+                    }
+                };
+            }
+            "confirmPartialImport" => {
+                if confirm_partial_import_seen {
+                    return Err(AppError::Validation(
+                        "Champ 'confirmPartialImport' dupliqué dans le multipart".into(),
+                    ));
+                }
+                confirm_partial_import_seen = true;
+                let text = field.text().await.map_err(map_multipart_err)?;
+                confirm_partial_import =
                     matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
             }
             _ => {
@@ -291,6 +482,9 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
         confirm_balance_mismatch,
         bank_profile_id,
         confirm_encoding_mismatch,
+        confirm_duplicate_file,
+        confirm_duplicate_lines,
+        confirm_partial_import,
     })
 }
 
@@ -397,6 +591,7 @@ fn map_csv_error(err: CsvError) -> AppError {
             lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
             total_errors,
             truncated,
+            reason: None,
         },
         // Pour les variantes non-PartialFailure inline (InvalidDate etc.)
         // — ne devraient pas apparaître au top-level (collectées dans
@@ -658,19 +853,26 @@ pub async fn preview(
     let selection = select_statement_by_iban(stmts, &bank_account.iban)?;
     let stmt = selection.selected;
 
-    // Warnings non-bloquants.
-    let mut warnings: Vec<String> = Vec::new();
-    // Review code Pass 1 M4 : match explicite sur la variante CoreError
-    // attendue (au lieu de `Err(_)` qui swallow toute future variante en
-    // la traitant à tort comme balance_mismatch / unsupported_currency).
+    // Warnings non-bloquants — structurés (Story 8-3).
+    let mut warnings = PreviewWarnings::default();
+
+    // CR-010 #62 / 8-1b — balance_mismatch.
     match core_bank_imports::validate_balance(&stmt) {
         Ok(()) => {}
-        Err(kesh_core::errors::CoreError::BankImportBalanceMismatch { .. }) => {
-            warnings.push("balance_mismatch".into());
+        Err(kesh_core::errors::CoreError::BankImportBalanceMismatch {
+            opening,
+            closing,
+            sum,
+            diff,
+        }) => {
+            warnings.balance_mismatch = Some(BalanceMismatchPayload {
+                opening: money_to_string(opening),
+                closing: money_to_string(closing),
+                sum: money_to_string(sum),
+                diff: money_to_string(diff),
+            });
         }
         Err(other) => {
-            // CoreError inattendue : log + on remonte un 500 au lieu
-            // de masquer derrière un warning.
             tracing::warn!("validate_balance unexpected CoreError: {other}");
             return Err(AppError::Internal(format!(
                 "validate_balance retourne une variante inattendue : {other}"
@@ -679,8 +881,8 @@ pub async fn preview(
     }
     match core_bank_imports::validate_currency_supported_v0_1(&stmt) {
         Ok(()) => {}
-        Err(kesh_core::errors::CoreError::BankImportUnsupportedCurrency(_)) => {
-            warnings.push("unsupported_currency".into());
+        Err(kesh_core::errors::CoreError::BankImportUnsupportedCurrency(currency)) => {
+            warnings.unsupported_currency = Some(UnsupportedCurrencyPayload { currency });
         }
         Err(other) => {
             tracing::warn!("validate_currency unexpected CoreError: {other}");
@@ -688,6 +890,30 @@ pub async fn preview(
                 "validate_currency retourne une variante inattendue : {other}"
             )));
         }
+    }
+
+    // Story 8-3 — détection fichier déjà importé (FR43 partie 1).
+    if let Some(existing) =
+        bank_imports::find_by_company_and_hash(&state.pool, current_user.company_id, &file_hash)
+            .await?
+    {
+        warnings.duplicate_file = Some(duplicate_file_payload(&existing));
+    }
+
+    // Story 8-3 — détection ligne-par-ligne (FR43 partie 2).
+    // L8 (Pass 1 review) — garde `is_empty()` parité avec preview_csv :
+    // si le statement n'a pas de transactions, ne lance pas la requête
+    // SQL inutile sur `bank_transactions`.
+    if !stmt.transactions.is_empty() {
+        warnings.duplicate_lines = compute_duplicate_lines_warnings(
+            &state.pool,
+            current_user.company_id,
+            fields.bank_account_id,
+            stmt.period_from,
+            stmt.period_to,
+            &stmt.transactions,
+        )
+        .await?;
     }
 
     let source_format = version_to_source_format(&stmt)?;
@@ -732,6 +958,7 @@ pub async fn preview(
         ignored_statements: ignored,
         warnings,
         transactions: preview_txs,
+        csv_profile_match: None,
     }))
 }
 
@@ -765,6 +992,41 @@ pub async fn create(
     }
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
+
+    // Story 8-3 — ouvre la transaction AVANT le check applicatif
+    // duplicate file pour que le check + INSERT vivent dans la même tx
+    // (le UNIQUE a été retiré par migration, donc le check est notre
+    // seule barrière — cf. Limitations connues v0.1 L11 race acceptée).
+    //
+    // M1 (Pass 1 review) — `find_by_company_and_hash` ET
+    // `find_in_dedup_window` sont désormais exécutés via `&mut *tx`
+    // au lieu de `&state.pool`, conformément à la spec L11 + T6.2 step 5
+    // (« le check applicatif est dans la transaction »). Sous MariaDB
+    // REPEATABLE READ la fenêtre de race reste théoriquement ouverte
+    // par snapshot ; mais sortir le check de la transaction l'élargit
+    // arbitrairement et désaligne le code de la documentation.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
+    let mut modifiers: Vec<&'static str> = Vec::new();
+    let mut details_extra = serde_json::Map::new();
+
+    if let Some(existing) =
+        bank_imports::find_by_company_and_hash(&mut *tx, current_user.company_id, &file_hash)
+            .await?
+    {
+        if !fields.confirm_duplicate_file {
+            return Err(AppError::BankImportDuplicateFile {
+                existing_import_id: existing.id,
+                existing_filename: existing.filename,
+            });
+        }
+        modifiers.push("duplicate_file");
+    }
+
     let stmts = parse_camt053(&fields.file_bytes).map_err(map_camt_error)?;
     let selection = select_statement_by_iban(stmts, &bank_account.iban)?;
     let stmt = selection.selected;
@@ -777,8 +1039,8 @@ pub async fn create(
     }
 
     // Validation balance (bloquante sauf confirm explicite).
-    let balance_mismatch_action = match core_bank_imports::validate_balance(&stmt) {
-        Ok(()) => None,
+    match core_bank_imports::validate_balance(&stmt) {
+        Ok(()) => {}
         Err(kesh_core::errors::CoreError::BankImportBalanceMismatch {
             opening,
             closing,
@@ -793,7 +1055,7 @@ pub async fn create(
                     diff: money_to_string(diff),
                 });
             }
-            Some("created_with_balance_mismatch")
+            modifiers.push("balance_mismatch");
         }
         Err(other) => return Err(AppError::Database(other.into_db_error_or_internal())),
     };
@@ -814,6 +1076,52 @@ pub async fn create(
         )
         .map_err(|e| AppError::Database(e.into_db_error_or_internal()))?;
 
+    // Story 8-3 — détection ligne-par-ligne (FR43 partie 2). On charge
+    // la fenêtre dans la transaction ouverte (M1, Pass 1 review) et on
+    // filtre les drafts selon `confirm_duplicate_lines`.
+    let existing = bank_transactions::find_in_dedup_window(
+        &mut *tx,
+        current_user.company_id,
+        fields.bank_account_id,
+        draft.period_from,
+        draft.period_to,
+    )
+    .await?;
+    let duplicate_lines =
+        detect_duplicate_lines_for_imported(&stmt.transactions, fields.bank_account_id, &existing);
+
+    // M5 (Pass 1 review) — invariant d'alignement positionnel :
+    // `tx_drafts` (sortie `from_imported`) et `stmt.transactions`
+    // (entrée `detect_duplicate_lines_for_imported`) doivent indexer
+    // les mêmes transactions dans le même ordre, sinon
+    // `apply_duplicate_lines_filter` skipperait les mauvaises rangées.
+    debug_assert_eq!(
+        tx_drafts.len(),
+        stmt.transactions.len(),
+        "M5 alignement: tx_drafts.len() doit == stmt.transactions.len()"
+    );
+
+    let (final_drafts, final_count) =
+        apply_duplicate_lines_filter(tx_drafts, &duplicate_lines, fields.confirm_duplicate_lines);
+    if !duplicate_lines.is_empty() {
+        match fields.confirm_duplicate_lines {
+            ConfirmDuplicateLines::Skip => {
+                modifiers.push("duplicate_lines_skipped");
+                details_extra.insert(
+                    "duplicate_lines_skipped".into(),
+                    serde_json::json!(duplicate_lines.len()),
+                );
+            }
+            ConfirmDuplicateLines::Import => {
+                modifiers.push("duplicate_lines_imported");
+                details_extra.insert(
+                    "duplicate_lines_imported".into(),
+                    serde_json::json!(duplicate_lines.len()),
+                );
+            }
+        }
+    }
+
     // Conversion vers les Inserts kesh-db.
     let new_import = NewBankImport {
         company_id: draft.company_id,
@@ -826,10 +1134,10 @@ pub async fn create(
         period_to: draft.period_to,
         opening_balance: draft.opening_balance.map(|m| m.amount()),
         closing_balance: draft.closing_balance.map(|m| m.amount()),
-        transaction_count: draft.transaction_count,
+        transaction_count: final_count,
         imported_by_user_id: draft.imported_by_user_id,
     };
-    let new_txs: Vec<NewBankTransaction> = tx_drafts
+    let new_txs: Vec<NewBankTransaction> = final_drafts
         .into_iter()
         .map(|t| NewBankTransaction {
             company_id: current_user.company_id,
@@ -847,38 +1155,19 @@ pub async fn create(
         })
         .collect();
 
-    // Persistance atomique : entête + transactions + audit log dans 1 tx.
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-
     let (header, _txs) =
-        match bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await {
-            Ok(out) => out,
-            Err(DbError::UniqueConstraintViolation(_)) => {
-                return Err(AppError::BankImportDuplicateFile);
-            }
-            Err(e) => return Err(AppError::Database(e)),
-        };
+        bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await?;
 
-    let action = balance_mismatch_action.unwrap_or("created");
-    let action_str = format!("bank_import.{action}");
-    let details_json = serde_json::json!({
-        "filename": header.filename,
-        "transaction_count": header.transaction_count,
-        "source_format": source_format_tag_for_kesh_core(source_format).as_db_str(),
-    });
-    audit_log::insert_in_tx(
+    insert_canonical_audit_log(
         &mut tx,
-        NewAuditLogEntry {
-            user_id: current_user.user_id,
-            action: action_str,
-            entity_type: "bank_imports".into(),
-            entity_id: header.id,
-            details_json: Some(details_json),
-        },
+        current_user.user_id,
+        header.id,
+        &header.filename,
+        header.transaction_count,
+        source_format_tag_for_kesh_core(source_format).as_db_str(),
+        modifiers,
+        details_extra,
+        None, // CAMT path : pas de profile_id
     )
     .await?;
 
@@ -983,6 +1272,165 @@ fn compute_sha256_hex(bytes: &[u8]) -> String {
     hex_encode(&hash)
 }
 
+/// Story 8-3 — sérialise un `BankImport` existant en payload preview.
+fn duplicate_file_payload(existing: &BankImport) -> DuplicateFilePayload {
+    DuplicateFilePayload {
+        existing_import_id: existing.id,
+        existing_filename: existing.filename.clone(),
+        // L5 — naive→UTC en convention DB (timestamps stockés en UTC).
+        existing_imported_at: existing.imported_at.and_utc(),
+    }
+}
+
+/// Story 8-3 — calcule les warnings `duplicateLines` en chargeant la
+/// fenêtre `[period_from, period_to]` et en comparant via
+/// [`detect_duplicate_lines`]. Retourne `Vec` vide si aucun doublon.
+///
+/// Variante préview (utilise `&MySqlPool`). Pour `create`, voir la
+/// version transaction-bound dans le handler.
+async fn compute_duplicate_lines_warnings(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_account_id: i64,
+    period_from: chrono::NaiveDate,
+    period_to: chrono::NaiveDate,
+    new_txs: &[kesh_import::ImportedTransaction],
+) -> Result<Vec<DuplicateLineWarning>, AppError> {
+    let existing = bank_transactions::find_in_dedup_window(
+        pool,
+        company_id,
+        bank_account_id,
+        period_from,
+        period_to,
+    )
+    .await?;
+    Ok(detect_duplicate_lines_for_imported(
+        new_txs,
+        bank_account_id,
+        &existing,
+    ))
+}
+
+/// Story 8-3 — filtre les drafts selon `confirmDuplicateLines` :
+/// `Skip` retire les drafts dont `new_index ∈ duplicate_lines`,
+/// `Import` les conserve tous.
+///
+/// Retourne `(filtered_drafts, count i32)` — le compteur est calculé
+/// avec `i32::try_from` saturé à `i32::MAX` pour matcher le contrat
+/// `transaction_count: INT NOT NULL` côté DB.
+fn apply_duplicate_lines_filter(
+    drafts: Vec<BankTransactionDraft>,
+    duplicate_lines: &[DuplicateLineWarning],
+    mode: ConfirmDuplicateLines,
+) -> (Vec<BankTransactionDraft>, i32) {
+    let filtered: Vec<BankTransactionDraft> = match mode {
+        ConfirmDuplicateLines::Import => drafts,
+        ConfirmDuplicateLines::Skip if duplicate_lines.is_empty() => drafts,
+        ConfirmDuplicateLines::Skip => {
+            let dup_set: std::collections::HashSet<usize> =
+                duplicate_lines.iter().map(|d| d.new_index).collect();
+            drafts
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, d)| if dup_set.contains(&i) { None } else { Some(d) })
+                .collect()
+        }
+    };
+    let count = i32::try_from(filtered.len()).unwrap_or(i32::MAX);
+    (filtered, count)
+}
+
+/// Story 8-3 §audit-log-actions — insère une **action canonique unique**
+/// `bank_import.created` avec `details_json.modifiers: [..]` triés
+/// alphabétiquement pour discriminer les variantes (balance_mismatch,
+/// duplicate_file, partial, encoding_mismatch, etc.).
+///
+/// Une seule entrée audit par import, quel que soit le nombre de
+/// modifiers actifs. Cf. spec §audit-log-actions.
+#[allow(clippy::too_many_arguments)]
+async fn insert_canonical_audit_log(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    user_id: i64,
+    import_id: i64,
+    filename: &str,
+    transaction_count: i32,
+    source_format_db_str: &str,
+    mut modifiers: Vec<&'static str>,
+    details_extra: serde_json::Map<String, serde_json::Value>,
+    csv_profile: Option<&kesh_db::entities::BankProfile>,
+) -> Result<(), AppError> {
+    modifiers.sort();
+    modifiers.dedup();
+    let mut details = serde_json::json!({
+        "filename": filename,
+        "transaction_count": transaction_count,
+        "source_format": source_format_db_str,
+        "modifiers": modifiers,
+    });
+    let details_obj = details
+        .as_object_mut()
+        .expect("details_json est toujours un object");
+    for (k, v) in details_extra {
+        details_obj.insert(k, v);
+    }
+    if let Some(p) = csv_profile {
+        details_obj.insert("bank_profile_id".into(), serde_json::json!(p.id));
+        details_obj.insert(
+            "bank_profile_name".into(),
+            serde_json::json!(p.bank_name.clone()),
+        );
+    }
+
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "bank_import.created".to_string(),
+            entity_type: "bank_imports".to_string(),
+            entity_id: import_id,
+            details_json: Some(details),
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+/// Story 8-3 — wrapper qui mappe `&[ImportedTransaction]` → drafts +
+/// `&[BankTransaction]` → `(id, DuplicateKey)` puis appelle
+/// [`detect_duplicate_lines`]. Retourne les warnings sérialisables.
+fn detect_duplicate_lines_for_imported(
+    new_txs: &[kesh_import::ImportedTransaction],
+    bank_account_id: i64,
+    existing: &[kesh_db::entities::BankTransaction],
+) -> Vec<DuplicateLineWarning> {
+    let drafts: Vec<BankTransactionDraft> =
+        new_txs.iter().map(BankTransactionDraft::from).collect();
+    let existing_keys: Vec<(i64, DuplicateKey)> = existing
+        .iter()
+        .map(|t| {
+            (
+                t.id,
+                dedup_key_scalar(
+                    t.booking_date,
+                    t.amount,
+                    t.reference.as_deref(),
+                    t.end_to_end_id.as_deref(),
+                    t.transaction_id.as_deref(),
+                    t.bank_account_id,
+                ),
+            )
+        })
+        .collect();
+    detect_duplicate_lines(&drafts, bank_account_id, &existing_keys)
+        .into_iter()
+        .map(|d: DuplicateLine| DuplicateLineWarning {
+            new_index: d.new_index,
+            existing_transaction_id: d.existing_transaction_id,
+            key: d.key,
+        })
+        .collect()
+}
+
 fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -1053,7 +1501,7 @@ async fn preview_csv(
     // Preview ne persiste pas — on utilise le pool directement (pas
     // besoin de transaction-bound). Pass 1 review G2 H6 : la race
     // condition n'est critique que pour create_csv.
-    let (profile, mut warnings) = resolve_csv_profile(
+    let (profile, informational) = resolve_csv_profile(
         &state.pool,
         &state.pool,
         company_id,
@@ -1064,31 +1512,100 @@ async fn preview_csv(
 
     let csv_profile = db_profile_to_csv_profile(&profile)?;
 
-    // Pass 3 review BH3-1 : preview ne doit PAS retourner 422 sur
-    // `EncodingMismatch` (cf. spec AC #5quinquies-a + §encoding-detection
-    // ligne 75). À la place : retourner 200 + warning
-    // `bank_csv_encoding_mismatch` + décodage avec encoding détecté
-    // (auto-détection forcée via `encoding = None`). L'utilisateur
-    // voit la preview correcte côté UI, et peut décider de confirmer
-    // au moment du `POST /bank-imports` (qui lui retournera 422 si
-    // pas de `confirmEncodingMismatch=true`).
-    let stmt = match parse_csv(&fields.file_bytes, &csv_profile) {
-        Ok(s) => s,
-        Err(kesh_import::CsvError::EncodingMismatch { .. }) => {
-            warnings.push("bank_csv_encoding_mismatch".to_string());
-            let mut forced = csv_profile.clone();
-            forced.encoding = None;
-            parse_csv(&fields.file_bytes, &forced).map_err(map_csv_error)?
-        }
-        Err(e) => return Err(map_csv_error(e)),
+    // Story 8-3 — `parse_csv_collect` retourne `ParseCsvOutcome` qui
+    // discrimine `AllValid` / `PartialFailure` / `HardFailure`. Sur
+    // EncodingMismatch (HardFailure), 8-2 Pass 3 BH3-1 préserve le
+    // comportement preview = 200 OK + warning + retry sans encoding
+    // forcé.
+    let mut warnings = PreviewWarnings {
+        informational,
+        ..Default::default()
     };
 
-    // Si auto-match utilisé (bankProfileId absent) → warning informatif.
-    if fields.bank_profile_id.is_none() {
-        warnings.push("bank_csv_profile_auto_matched".to_string());
+    let outcome = parse_csv_collect(&fields.file_bytes, &csv_profile);
+    let (stmt, invalid_lines_payload) = match outcome {
+        ParseCsvOutcome::AllValid(s) => (s, None),
+        ParseCsvOutcome::PartialFailure {
+            valid,
+            errors,
+            total_errors,
+            truncated,
+        } => {
+            let payload = InvalidLinesPayload {
+                lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
+                total_errors,
+                truncated,
+            };
+            (valid, Some(payload))
+        }
+        ParseCsvOutcome::HardFailure(kesh_import::CsvError::EncodingMismatch {
+            profile: p,
+            detected,
+        }) => {
+            // Pass 3 review BH3-1 — retry avec auto-détection.
+            warnings.encoding_mismatch = Some(EncodingMismatchPayload {
+                profile: p,
+                detected,
+            });
+            let mut forced = csv_profile.clone();
+            forced.encoding = None;
+            match parse_csv_collect(&fields.file_bytes, &forced) {
+                ParseCsvOutcome::AllValid(s) => (s, None),
+                ParseCsvOutcome::PartialFailure {
+                    valid,
+                    errors,
+                    total_errors,
+                    truncated,
+                } => {
+                    let payload = InvalidLinesPayload {
+                        lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
+                        total_errors,
+                        truncated,
+                    };
+                    (valid, Some(payload))
+                }
+                ParseCsvOutcome::HardFailure(e) => return Err(map_csv_error(e)),
+            }
+        }
+        ParseCsvOutcome::HardFailure(e) => return Err(map_csv_error(e)),
+    };
+    warnings.invalid_lines = invalid_lines_payload;
+
+    let auto_matched = fields.bank_profile_id.is_none();
+    let csv_profile_match = Some(CsvProfileMatch {
+        profile_id: profile.id,
+        profile_name: profile.bank_name.clone(),
+        auto_matched,
+    });
+    if auto_matched {
+        warnings
+            .informational
+            .push("bank_csv_profile_auto_matched".to_string());
     }
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
+
+    // Story 8-3 — détection fichier déjà importé (FR43 partie 1).
+    if let Some(existing) =
+        bank_imports::find_by_company_and_hash(&state.pool, company_id, &file_hash).await?
+    {
+        warnings.duplicate_file = Some(duplicate_file_payload(&existing));
+    }
+
+    // Story 8-3 — détection ligne-par-ligne (FR43 partie 2). Skip si
+    // pas de transactions valides (cas all-invalid CSV).
+    if !stmt.transactions.is_empty() {
+        warnings.duplicate_lines = compute_duplicate_lines_warnings(
+            &state.pool,
+            company_id,
+            fields.bank_account_id,
+            stmt.period_from,
+            stmt.period_to,
+            &stmt.transactions,
+        )
+        .await?;
+    }
+
     let preview_txs: Vec<PreviewTransaction> = stmt
         .transactions
         .iter()
@@ -1120,6 +1637,7 @@ async fn preview_csv(
         ignored_statements: Vec::new(),
         warnings,
         transactions: preview_txs,
+        csv_profile_match,
     }))
 }
 
@@ -1129,17 +1647,38 @@ async fn create_csv(
     bank_account: &kesh_db::entities::BankAccount,
     fields: &MultipartFields,
 ) -> Result<(StatusCode, Json<BankImportResponse>), AppError> {
-    // Pass 1 review G2 H6 — transaction-bound profile resolution.
-    // Spec §profile-matching Pass 2 H'2 + Pass 3 M''4 Interprétation A :
-    // ouvrir la transaction AVANT la résolution du profil pour bloquer
-    // tout DELETE concurrent du profil entre resolve et INSERT.
     let mut tx = state
         .pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
 
-    let (profile, _warnings) = resolve_csv_profile(
+    let file_hash = compute_sha256_hex(&fields.file_bytes);
+    let mut modifiers: Vec<&'static str> = Vec::new();
+    let mut details_extra = serde_json::Map::new();
+
+    // Story 8-3 — duplicate file check applicatif (FR43 partie 1)
+    // AVANT le parse CSV (fail-fast applicatif §error-precedence-order
+    // ordre 6, plus précoce que le parse).
+    //
+    // M1 (Pass 1 review) — passe `&mut *tx` plutôt que `&state.pool`
+    // pour aligner le code sur le modèle « check applicatif dans la tx »
+    // (spec L11 + T6.2 step 5).
+    if let Some(existing) =
+        bank_imports::find_by_company_and_hash(&mut *tx, current_user.company_id, &file_hash)
+            .await?
+    {
+        if !fields.confirm_duplicate_file {
+            return Err(AppError::BankImportDuplicateFile {
+                existing_import_id: existing.id,
+                existing_filename: existing.filename,
+            });
+        }
+        modifiers.push("duplicate_file");
+    }
+
+    // Pass 1 review G2 H6 — transaction-bound profile resolution.
+    let (profile, _info) = resolve_csv_profile(
         &mut *tx,
         &state.pool,
         current_user.company_id,
@@ -1150,32 +1689,62 @@ async fn create_csv(
 
     let csv_profile = db_profile_to_csv_profile(&profile)?;
 
-    // Pass 1 review G2 H7 — wiring `confirmEncodingMismatch` :
-    // si parse_csv retourne EncodingMismatch ET le flag est true,
-    // re-essayer avec un profil dont l'encoding est forcé None
-    // (auto-détecté) puis logger via audit log spécial.
-    //
-    // **Sémantique Pass 2 review M2 (EH2-2)** : `confirmEncodingMismatch=true`
-    // signifie « accepter l'encoding détecté par le serveur (pas celui
-    // du profil) ». Si l'utilisateur veut FORCER l'encoding du profil
-    // (au risque de mojibake), il doit modifier son profil. Cette
-    // sémantique est documentée dans la clé i18n
-    // `bank-import-csv-warnings-encoding-mismatch` qui dit explicitement
-    // « décodage utilise l'encoding détecté ».
-    let (stmt, encoding_mismatch_confirmed) = match parse_csv(&fields.file_bytes, &csv_profile) {
-        Ok(s) => (s, false),
-        Err(kesh_import::CsvError::EncodingMismatch { .. }) if fields.confirm_encoding_mismatch => {
-            // Force l'encoding du profil — l'utilisateur accepte le risque
-            // de mojibake (cf. §encoding-detection Pass 1 H5).
+    // Story 8-3 — `parse_csv_collect` retourne `ParseCsvOutcome`. Le
+    // partial commit est autorisé via `confirmPartialImport=true`.
+    // EncodingMismatch wiring 8-2 H7 préservé.
+    let outcome = parse_csv_collect(&fields.file_bytes, &csv_profile);
+
+    let outcome = match outcome {
+        ParseCsvOutcome::HardFailure(kesh_import::CsvError::EncodingMismatch { .. })
+            if fields.confirm_encoding_mismatch =>
+        {
+            modifiers.push("encoding_mismatch");
             let mut forced = csv_profile.clone();
-            // Le profil garde son encoding original, mais on force le
-            // parser à utiliser l'encoding détecté (auto). Pour ce faire,
-            // on supprime l'encoding du profil → auto-détect.
             forced.encoding = None;
-            let s = parse_csv(&fields.file_bytes, &forced).map_err(map_csv_error)?;
-            (s, true)
+            parse_csv_collect(&fields.file_bytes, &forced)
         }
-        Err(e) => return Err(map_csv_error(e)),
+        other => other,
+    };
+
+    let stmt = match outcome {
+        ParseCsvOutcome::AllValid(s) => s,
+        ParseCsvOutcome::PartialFailure {
+            valid,
+            errors,
+            total_errors,
+            truncated,
+        } => {
+            if !fields.confirm_partial_import {
+                return Err(AppError::BankCsvParsePartialFailure {
+                    lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
+                    total_errors,
+                    truncated,
+                    reason: None,
+                });
+            }
+            // AC #16 — partial commit avec 0 lignes valides → reject 422
+            // discriminant `reason = "no_valid_lines_to_commit"`.
+            if valid.transactions.is_empty() {
+                return Err(AppError::BankCsvParsePartialFailure {
+                    lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
+                    total_errors,
+                    truncated,
+                    reason: Some("no_valid_lines_to_commit"),
+                });
+            }
+            modifiers.push("partial");
+            details_extra.insert(
+                "partial_invalid_lines".into(),
+                serde_json::json!(errors.len()),
+            );
+            details_extra.insert(
+                "partial_total_errors".into(),
+                serde_json::json!(total_errors),
+            );
+            details_extra.insert("partial_truncated".into(), serde_json::json!(truncated));
+            valid
+        }
+        ParseCsvOutcome::HardFailure(e) => return Err(map_csv_error(e)),
     };
 
     let imported_at = chrono::Utc::now().naive_utc();
@@ -1184,12 +1753,66 @@ async fn create_csv(
             &stmt,
             fields.bank_account_id,
             current_user.company_id,
-            compute_sha256_hex(&fields.file_bytes),
+            file_hash.clone(),
             fields.filename.clone(),
             imported_at,
             current_user.user_id,
         )
         .map_err(|e| AppError::Database(e.into_db_error_or_internal()))?;
+
+    // Story 8-3 — détection ligne-par-ligne (FR43 partie 2). M1 (Pass 1
+    // review) — find_in_dedup_window via `&mut *tx` au lieu de
+    // `&state.pool` (alignement modèle spec L11).
+    //
+    // M9 (Pass 1 review) — defensive guard : si `parse_csv_collect`
+    // retourne PartialFailure { valid: empty }, la sentinel
+    // `empty_valid_sentinel_date()` (1970-01-01) atterrit dans
+    // draft.period_from. Le check `valid.transactions.is_empty()` plus
+    // haut a déjà rejeté ce cas avec `reason = "no_valid_lines_to_commit"`,
+    // mais on ajoute un debug_assert pour matérialiser l'invariant.
+    debug_assert_ne!(
+        draft.period_from,
+        kesh_import::empty_valid_sentinel_date(),
+        "M9: période sentinel ne doit pas atteindre find_in_dedup_window"
+    );
+    let existing = bank_transactions::find_in_dedup_window(
+        &mut *tx,
+        current_user.company_id,
+        fields.bank_account_id,
+        draft.period_from,
+        draft.period_to,
+    )
+    .await?;
+    let duplicate_lines =
+        detect_duplicate_lines_for_imported(&stmt.transactions, fields.bank_account_id, &existing);
+
+    // M5 (Pass 1 review) — invariant d'alignement positionnel ; cf. CAMT path.
+    debug_assert_eq!(
+        tx_drafts.len(),
+        stmt.transactions.len(),
+        "M5 alignement: tx_drafts.len() doit == stmt.transactions.len()"
+    );
+
+    let (final_drafts, final_count) =
+        apply_duplicate_lines_filter(tx_drafts, &duplicate_lines, fields.confirm_duplicate_lines);
+    if !duplicate_lines.is_empty() {
+        match fields.confirm_duplicate_lines {
+            ConfirmDuplicateLines::Skip => {
+                modifiers.push("duplicate_lines_skipped");
+                details_extra.insert(
+                    "duplicate_lines_skipped".into(),
+                    serde_json::json!(duplicate_lines.len()),
+                );
+            }
+            ConfirmDuplicateLines::Import => {
+                modifiers.push("duplicate_lines_imported");
+                details_extra.insert(
+                    "duplicate_lines_imported".into(),
+                    serde_json::json!(duplicate_lines.len()),
+                );
+            }
+        }
+    }
 
     let new_import = NewBankImport {
         company_id: draft.company_id,
@@ -1200,14 +1823,12 @@ async fn create_csv(
         statement_id: None,
         period_from: draft.period_from,
         period_to: draft.period_to,
-        // Pass 1 review G2-BH-6 : pattern symétrique avec CAMT — propage les
-        // soldes du draft (None pour CSV mais cohérent si futur extends).
         opening_balance: draft.opening_balance.map(|m| m.amount()),
         closing_balance: draft.closing_balance.map(|m| m.amount()),
-        transaction_count: draft.transaction_count,
+        transaction_count: final_count,
         imported_by_user_id: draft.imported_by_user_id,
     };
-    let new_txs: Vec<NewBankTransaction> = tx_drafts
+    let new_txs: Vec<NewBankTransaction> = final_drafts
         .into_iter()
         .map(|d| NewBankTransaction {
             company_id: current_user.company_id,
@@ -1226,37 +1847,18 @@ async fn create_csv(
         .collect();
 
     let (header, _txs) =
-        match bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await {
-            Ok(out) => out,
-            Err(DbError::UniqueConstraintViolation(_)) => {
-                return Err(AppError::BankImportDuplicateFile);
-            }
-            Err(e) => return Err(AppError::Database(e)),
-        };
+        bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await?;
 
-    // Audit log avec snapshot bank_profile_name (Pass 2 M'3).
-    // Pass 1 review G2 H7 : action `created_with_encoding_mismatch` si
-    // l'utilisateur a confirmé le mismatch.
-    let action = if encoding_mismatch_confirmed {
-        "bank_import.created_with_encoding_mismatch"
-    } else {
-        "bank_import.created"
-    };
-    audit_log::insert_in_tx(
+    insert_canonical_audit_log(
         &mut tx,
-        NewAuditLogEntry {
-            user_id: current_user.user_id,
-            action: action.to_string(),
-            entity_type: "bank_imports".to_string(),
-            entity_id: header.id,
-            details_json: Some(serde_json::json!({
-                "filename": header.filename,
-                "transaction_count": header.transaction_count,
-                "source_format": "CSV",
-                "bank_profile_id": profile.id,
-                "bank_profile_name": profile.bank_name,
-            })),
-        },
+        current_user.user_id,
+        header.id,
+        &header.filename,
+        header.transaction_count,
+        "CSV",
+        modifiers,
+        details_extra,
+        Some(&profile),
     )
     .await?;
 

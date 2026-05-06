@@ -60,7 +60,7 @@ describe('bank-import.api', () => {
 	});
 
 	it('createBankImport ajoute confirmBalanceMismatch quand demandé', async () => {
-		await createBankImport(FAKE_FILE, 42, true);
+		await createBankImport(FAKE_FILE, 42, { confirmBalanceMismatch: true });
 		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
 		const form = init.body as FormData;
 		expect(form.get('confirmBalanceMismatch')).toBe('true');
@@ -72,5 +72,58 @@ describe('bank-import.api', () => {
 		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
 		const form = init.body as FormData;
 		expect(form.get('confirmBalanceMismatch')).toBeNull();
+	});
+
+	// Story 8-3 T7.5 — 4 nouveaux tests sur les flags étendus.
+	it('createBankImport ajoute confirmDuplicateFile quand demandé', async () => {
+		await createBankImport(FAKE_FILE, 42, { confirmDuplicateFile: true });
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const form = init.body as FormData;
+		expect(form.get('confirmDuplicateFile')).toBe('true');
+		expect(form.get('confirmDuplicateLines')).toBeNull();
+	});
+
+	it('createBankImport sérialise confirmDuplicateLines (skip|import)', async () => {
+		await createBankImport(FAKE_FILE, 42, { confirmDuplicateLines: 'import' });
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const form = init.body as FormData;
+		expect(form.get('confirmDuplicateLines')).toBe('import');
+	});
+
+	// L9 (Pass 1 review) — la valeur par défaut backend est `Skip`. Le
+	// frontend n'envoie PAS le champ quand l'utilisateur a explicitement
+	// choisi `'skip'` (équivalent sémantique à omettre le champ).
+	it("createBankImport n'envoie pas confirmDuplicateLines='skip' (default backend)", async () => {
+		await createBankImport(FAKE_FILE, 42, { confirmDuplicateLines: 'skip' });
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const form = init.body as FormData;
+		expect(form.get('confirmDuplicateLines')).toBeNull();
+	});
+
+	// L1 (Pass 1 review) — bankProfileId === 0 doit être appended (defensive
+	// même si DB AUTO_INCREMENT commence à 1).
+	it('createBankImport sérialise bankProfileId === 0 (truthy guard L1)', async () => {
+		await createBankImport(FAKE_FILE, 42, { bankProfileId: 0 });
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const form = init.body as FormData;
+		expect(form.get('bankProfileId')).toBe('0');
+	});
+
+	it('createBankImport ajoute confirmPartialImport + bankProfileId combinés', async () => {
+		await createBankImport(FAKE_FILE, 42, {
+			confirmPartialImport: true,
+			bankProfileId: 77,
+		});
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const form = init.body as FormData;
+		expect(form.get('confirmPartialImport')).toBe('true');
+		expect(form.get('bankProfileId')).toBe('77');
+	});
+
+	it('previewBankImport propage le bankProfileId explicite (KF #70)', async () => {
+		await previewBankImport(FAKE_FILE, 42, { bankProfileId: 99 });
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const form = init.body as FormData;
+		expect(form.get('bankProfileId')).toBe('99');
 	});
 });

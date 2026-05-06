@@ -268,6 +268,172 @@ pub fn validate_balance(stmt: &ImportedStatement) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// Clé composite stable de détection de doublon ligne-par-ligne (Story
+/// 8-3 FR43 partie 2).
+///
+/// La clé compose `(booking_date, amount, reference_normalized,
+/// bank_account_id)`, où `reference_normalized` est obtenue via
+/// `trim().to_lowercase()` appliqué au premier identifiant non-vide
+/// parmi `reference`, `end_to_end_id`, `transaction_id` (sinon chaîne
+/// vide). Cf. spec §dedup-key.
+///
+/// Pourquoi pas de tolérance sur `booking_date` ni sur `amount` :
+/// décision R1 epic-8 — les imports CAMT.053 et CSV publient des
+/// dates exactes (XSD CAMT, formats CSV bien définis), une tolérance
+/// invitee des faux positifs sans gain. Pour les écarts d'arrondi,
+/// la valeur est remontée telle quelle (pas de `round_to_centimes`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DuplicateKey {
+    pub booking_date: NaiveDate,
+    pub amount: Decimal,
+    pub reference_normalized: String,
+    pub bank_account_id: i64,
+}
+
+impl fmt::Display for DuplicateKey {
+    /// Forme `"yyyy-mm-dd|amount|ref|account_id"` utilisée par
+    /// [`DuplicateLine::key`] pour le debug et l'affichage UI.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}|{}|{}|{}",
+            self.booking_date, self.amount, self.reference_normalized, self.bank_account_id
+        )
+    }
+}
+
+/// Construit une [`DuplicateKey`] depuis un brouillon de transaction.
+///
+/// Utilisé par `kesh-api` côté nouvel import (pré-INSERT) pour calculer
+/// les clés des transactions candidates et les comparer aux clés
+/// existantes en base via [`detect_duplicate_lines`].
+pub fn dedup_key_from_draft(t: &BankTransactionDraft, bank_account_id: i64) -> DuplicateKey {
+    DuplicateKey {
+        booking_date: t.booking_date,
+        // M4 (Pass 1 review) — `Decimal::normalize()` removes trailing zeros so that
+        // 1.50 and 1.5 produce identical Hash + Eq. Without it, sqlx may return DB
+        // rows with a different scale than the parsed file, breaking the HashMap match.
+        amount: t.amount.amount().normalize(),
+        reference_normalized: normalize_reference_fallback(
+            t.reference.as_deref(),
+            t.end_to_end_id.as_deref(),
+            t.transaction_id.as_deref(),
+        ),
+        bank_account_id,
+    }
+}
+
+/// Construit une [`DuplicateKey`] depuis des scalars — utilisé par
+/// `kesh-api` pour mapper les `BankTransaction` chargés via
+/// `kesh-db::repositories::bank_transactions::find_in_dedup_window`
+/// sans introduire de dépendance `kesh-core → kesh-db`.
+pub fn dedup_key_scalar(
+    booking_date: NaiveDate,
+    amount: Decimal,
+    reference: Option<&str>,
+    end_to_end_id: Option<&str>,
+    transaction_id: Option<&str>,
+    bank_account_id: i64,
+) -> DuplicateKey {
+    DuplicateKey {
+        booking_date,
+        // M4 — see dedup_key_from_draft: scale-stable Hash via .normalize().
+        amount: amount.normalize(),
+        reference_normalized: normalize_reference_fallback(
+            reference,
+            end_to_end_id,
+            transaction_id,
+        ),
+        bank_account_id,
+    }
+}
+
+/// `trim().to_lowercase()` sur le premier `Some(s)` non-vide de la
+/// chaîne `reference → end_to_end_id → transaction_id`, sinon retourne
+/// la chaîne vide. Le cas chaîne vide est conservateur : deux
+/// transactions sans aucun identifiant et même date/montant/compte
+/// matchent comme doublons (l'utilisateur peut override via
+/// `confirmDuplicateLines=import` si c'est un faux positif).
+fn normalize_reference_fallback(
+    reference: Option<&str>,
+    end_to_end_id: Option<&str>,
+    transaction_id: Option<&str>,
+) -> String {
+    let raw = reference
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| end_to_end_id.filter(|s| !s.trim().is_empty()))
+        .or_else(|| transaction_id.filter(|s| !s.trim().is_empty()))
+        .unwrap_or("");
+    raw.trim().to_lowercase()
+}
+
+/// Résultat d'une détection de doublon ligne-par-ligne — pointe une
+/// transaction du nouvel import (`new_index`) qui matche une
+/// transaction existante en base (`existing_transaction_id`).
+///
+/// Le champ `key` contient la forme texte de [`DuplicateKey`] pour
+/// debug et affichage UI.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct DuplicateLine {
+    pub new_index: usize,
+    pub existing_transaction_id: i64,
+    pub key: String,
+}
+
+/// Détecte les doublons ligne-par-ligne entre un nouvel import et les
+/// transactions existantes (Story 8-3 FR43 partie 2).
+///
+/// Compare en `O(N + M)` via une `HashMap<DuplicateKey, i64>`
+/// construite sur les transactions existantes. Pour chaque transaction
+/// nouvelle, retourne un [`DuplicateLine`] si la clé matche.
+///
+/// Le caller (`kesh-api`) construit `existing_keys` via :
+/// ```ignore
+/// existing.iter().map(|t| (t.id, dedup_key_scalar(
+///     t.booking_date, t.amount,
+///     t.reference.as_deref(), t.end_to_end_id.as_deref(),
+///     t.transaction_id.as_deref(), t.bank_account_id))).collect()
+/// ```
+///
+/// **Hors-scope helper** : la fenêtre `period_from..period_to` est
+/// filtrée en amont par
+/// `kesh-db::repositories::bank_transactions::find_in_dedup_window`.
+/// Le helper n'applique aucun filtrage de date supplémentaire — si un
+/// caller passe des keys hors-fenêtre, les matchs sont retournés.
+///
+/// **Hors-scope helper** : doublons intra-import (`new vs new`) non
+/// détectés en v0.1. Cf. Limitations connues v0.1 L15.
+pub fn detect_duplicate_lines(
+    new: &[BankTransactionDraft],
+    bank_account_id: i64,
+    existing_keys: &[(i64, DuplicateKey)],
+) -> Vec<DuplicateLine> {
+    use std::collections::HashMap;
+
+    // Construit l'index des clés existantes — premier `id` rencontré
+    // par clé est conservé (les collisions inter-imports existants
+    // sont théoriquement impossibles puisque la déduplication est
+    // appliquée à chaque INSERT, mais l'invariant n'est pas garanti
+    // par la base de données).
+    let mut index: HashMap<&DuplicateKey, i64> = HashMap::with_capacity(existing_keys.len());
+    for (id, key) in existing_keys {
+        index.entry(key).or_insert(*id);
+    }
+
+    let mut out = Vec::new();
+    for (idx, tx) in new.iter().enumerate() {
+        let key = dedup_key_from_draft(tx, bank_account_id);
+        if let Some(&existing_id) = index.get(&key) {
+            out.push(DuplicateLine {
+                new_index: idx,
+                existing_transaction_id: existing_id,
+                key: key.to_string(),
+            });
+        }
+    }
+    out
+}
+
 /// Vérifie que la devise du relevé importé est supportée par le
 /// périmètre v0.1 (CHF uniquement).
 ///
@@ -661,6 +827,324 @@ mod tests {
         .expect("v08 OK");
         assert_eq!(draft.source_format, SourceFormatTag::Camt053V08);
         assert_eq!(draft.source_format.as_db_str(), "CAMT053_V08");
+    }
+
+    // ── Story 8-3 — détection de doublons ligne-par-ligne (T2.2) ────
+
+    fn draft(
+        booking_date: NaiveDate,
+        amount: Decimal,
+        reference: Option<&str>,
+        end_to_end_id: Option<&str>,
+        transaction_id: Option<&str>,
+    ) -> BankTransactionDraft {
+        BankTransactionDraft {
+            booking_date,
+            value_date: None,
+            amount: Money::new(amount),
+            currency: "CHF".into(),
+            reference: reference.map(|s| s.to_string()),
+            details: String::new(),
+            end_to_end_id: end_to_end_id.map(|s| s.to_string()),
+            transaction_id: transaction_id.map(|s| s.to_string()),
+            counterparty_iban: None,
+            counterparty_name: None,
+        }
+    }
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    #[test]
+    fn detect_duplicate_lines_finds_match_on_full_key() {
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some("REF-ABC"),
+            None,
+            None,
+        )];
+        let existing = vec![(
+            42,
+            dedup_key_scalar(
+                date(2026, 5, 15),
+                dec!(150.00),
+                Some("REF-ABC"),
+                None,
+                None,
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].new_index, 0);
+        assert_eq!(result[0].existing_transaction_id, 42);
+        // M4 (Pass 1 review) — Decimal::normalize() strips trailing zeros,
+        // so "150.00" formats as "150" via DuplicateKey::Display.
+        assert_eq!(result[0].key, "2026-05-15|150|ref-abc|17");
+    }
+
+    #[test]
+    fn detect_duplicate_lines_uses_end_to_end_id_when_reference_null() {
+        // AC #8 — fallback `coalesce(reference, end_to_end_id, transaction_id, "")`
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            None,
+            Some("EID-42"),
+            None,
+        )];
+        let existing = vec![(
+            7,
+            dedup_key_scalar(
+                date(2026, 5, 15),
+                dec!(150.00),
+                None,
+                Some("EID-42"),
+                None,
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].existing_transaction_id, 7);
+        assert!(result[0].key.contains("eid-42"));
+    }
+
+    #[test]
+    fn detect_duplicate_lines_uses_transaction_id_when_eid_null() {
+        // Fallback chain : reference -> end_to_end_id -> transaction_id
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            None,
+            None,
+            Some("TX-99"),
+        )];
+        let existing = vec![(
+            8,
+            dedup_key_scalar(
+                date(2026, 5, 15),
+                dec!(150.00),
+                None,
+                None,
+                Some("TX-99"),
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].key.contains("tx-99"));
+    }
+
+    #[test]
+    fn detect_duplicate_lines_normalizes_reference_whitespace_and_case() {
+        // AC #9 — `"  ABC-123  "` doit matcher `"abc-123"`.
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some("  ABC-123  "),
+            None,
+            None,
+        )];
+        let existing = vec![(
+            9,
+            dedup_key_scalar(
+                date(2026, 5, 15),
+                dec!(150.00),
+                Some("abc-123"),
+                None,
+                None,
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn detect_duplicate_lines_treats_empty_string_as_distinct_from_null() {
+        // Note edge case : `coalesce(reference="", end_to_end_id=Some("X"))`
+        // — `reference` est filtrée par `!s.trim().is_empty()` donc `""` est
+        // ignoré et le fallback prend `end_to_end_id`. Documenter via test.
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some(""),
+            Some("X"),
+            None,
+        )];
+        let existing = vec![(
+            10,
+            dedup_key_scalar(date(2026, 5, 15), dec!(150.00), None, Some("X"), None, 17),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        assert_eq!(result.len(), 1, "ref vide doit fallback sur end_to_end_id");
+    }
+
+    #[test]
+    fn detect_duplicate_lines_does_not_filter_by_date() {
+        // AC #11 (T2.2#6) — la fenêtre est filtrée côté SQL par
+        // `find_in_dedup_window`. Si le caller passe des keys
+        // hors-fenêtre, le helper retourne quand même les matchs.
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some("REF-A"),
+            None,
+            None,
+        )];
+        // Même clé sauf la date — pas de match (booking_date fait partie de la clé).
+        let existing_diff_date = vec![(
+            42,
+            dedup_key_scalar(
+                date(2025, 1, 1),
+                dec!(150.00),
+                Some("REF-A"),
+                None,
+                None,
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing_diff_date);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn detect_duplicate_lines_finds_match_when_existing_key_in_input() {
+        // AC #11 (T2.2#7) — symétrique : keys dans la fenêtre → matchs.
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some("REF-A"),
+            None,
+            None,
+        )];
+        let existing_in_window = vec![(
+            55,
+            dedup_key_scalar(
+                date(2026, 5, 15),
+                dec!(150.00),
+                Some("REF-A"),
+                None,
+                None,
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing_in_window);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].existing_transaction_id, 55);
+    }
+
+    #[test]
+    fn detect_duplicate_lines_returns_empty_when_no_match() {
+        let new = vec![draft(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some("REF-A"),
+            None,
+            None,
+        )];
+        let existing = vec![(
+            1,
+            dedup_key_scalar(
+                date(2026, 5, 16),
+                dec!(150.00),
+                Some("REF-B"),
+                None,
+                None,
+                17,
+            ),
+        )];
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn detect_duplicate_lines_handles_n_to_m_in_o_n_plus_m() {
+        // Perf smoke : new=1000, existing=5000, < 50ms via HashSet.
+        let mut new = Vec::with_capacity(1000);
+        for i in 0..1000 {
+            new.push(draft(
+                date(2026, 5, 15),
+                Decimal::new(i, 2),
+                Some(&format!("REF-NEW-{i}")),
+                None,
+                None,
+            ));
+        }
+        let mut existing = Vec::with_capacity(5000);
+        for i in 0..5000 {
+            existing.push((
+                i + 100_000,
+                dedup_key_scalar(
+                    date(2026, 5, 15),
+                    Decimal::new(i, 2),
+                    Some(&format!("REF-EXISTING-{i}")),
+                    None,
+                    None,
+                    17,
+                ),
+            ));
+        }
+        // Inject 3 colliding refs at known indexes so we know how many to expect.
+        for i in [10_i64, 500, 999] {
+            existing.push((
+                900_000 + i,
+                dedup_key_scalar(
+                    date(2026, 5, 15),
+                    Decimal::new(i, 2),
+                    Some(&format!("REF-NEW-{i}")),
+                    None,
+                    None,
+                    17,
+                ),
+            ));
+        }
+
+        let start = std::time::Instant::now();
+        let result = detect_duplicate_lines(&new, 17, &existing);
+        let elapsed = start.elapsed();
+
+        assert_eq!(result.len(), 3, "3 collisions injectées attendues");
+        assert!(
+            elapsed.as_millis() < 200,
+            "performance dégradée : {elapsed:?} > 200ms (cible smoke 50ms)"
+        );
+    }
+
+    #[test]
+    fn dedup_key_normalizes_decimal_scale() {
+        // M4 (Pass 1 review) — `Decimal::normalize()` strips trailing zeros so
+        // 1.50 (scale 2) and 1.5 (scale 1) hash + compare as equal in `DuplicateKey`.
+        // Without normalization, sqlx returning a different scale than the parsed
+        // file would silently miss the duplicate.
+        let key_scale_2 = dedup_key_scalar(
+            date(2026, 5, 15),
+            Decimal::new(150, 2), // 1.50
+            Some("REF-A"),
+            None,
+            None,
+            17,
+        );
+        let key_scale_1 = dedup_key_scalar(
+            date(2026, 5, 15),
+            Decimal::new(15, 1), // 1.5
+            Some("REF-A"),
+            None,
+            None,
+            17,
+        );
+        assert_eq!(key_scale_2, key_scale_1, "Eq must hold across scales");
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h1 = DefaultHasher::new();
+        key_scale_2.hash(&mut h1);
+        let mut h2 = DefaultHasher::new();
+        key_scale_1.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish(), "Hash must hold across scales");
     }
 
     /// Pass 1 review G1 AA-1 : Story 8-2 T5.0.b — vérifie que le branch

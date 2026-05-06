@@ -227,11 +227,20 @@ pub async fn count_by_company_id(
 /// **Multi-tenant safety** : un même hash peut exister sur plusieurs
 /// companies sans conflit (l'unique `(company_id, file_hash)` ne porte
 /// pas sur le hash seul).
-pub async fn find_by_company_and_hash(
-    pool: &MySqlPool,
+///
+/// **Executor générique (M1, Pass 1 review)** : accepte `&MySqlPool`
+/// (preview) ou `&mut Transaction<MySql>` (handler create dans une tx
+/// ouverte) — pareillement à [`super::bank_transactions::find_in_dedup_window`].
+/// Cette généralisation rapproche le code du modèle documenté en
+/// spec L11 (« le check applicatif est dans la transaction »).
+pub async fn find_by_company_and_hash<'e, E>(
+    executor: E,
     company_id: i64,
     file_hash: &str,
-) -> Result<Option<BankImport>, DbError> {
+) -> Result<Option<BankImport>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
     sqlx::query_as::<_, BankImport>(&format!(
         "SELECT {COLUMNS} FROM bank_imports \
          WHERE company_id = ? AND file_hash = ? \
@@ -239,7 +248,7 @@ pub async fn find_by_company_and_hash(
     ))
     .bind(company_id)
     .bind(file_hash)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await
     .map_err(map_db_error)
 }

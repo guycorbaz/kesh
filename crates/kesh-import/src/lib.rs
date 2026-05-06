@@ -30,7 +30,10 @@ pub mod error;
 pub mod types;
 
 pub use camt053::parse as parse_camt053;
-pub use csv::{ColumnMapping, CsvProfile, DetectedEncoding, parse_csv};
+pub use csv::{
+    ColumnMapping, CsvProfile, DetectedEncoding, ParseCsvOutcome, empty_valid_sentinel_date,
+    parse_csv, parse_csv_collect,
+};
 pub use error::{
     CamtError, CsvError, CsvLineError, CsvLineErrorCode, ImportError,
     MAX_CSV_LINE_ERROR_VALUE_CHARS, MAX_CSV_LINE_ERRORS,

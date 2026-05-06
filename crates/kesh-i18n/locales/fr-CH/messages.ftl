@@ -595,6 +595,12 @@ bank-import-errors-parse-failed = Le fichier CAMT.053 n'a pas pu être analysé.
 bank-import-warnings-balance-mismatch = Solde de clôture incohérent.
 bank-import-warnings-unsupported-currency = Devise non supportée v0.1.
 bank-import-warnings-ignored-statements = Certains statements du fichier ne correspondent pas au compte sélectionné et seront ignorés.
+# Story 8-3 — détection doublons + rejet partiel
+bank-import-warnings-duplicate-file = Ce fichier a déjà été importé.
+bank-import-warnings-duplicate-lines-summary = transactions chevauchent un import précédent.
+bank-import-warnings-invalid-lines-summary = lignes invalides détectées dans le CSV.
+bank-import-warnings-invalid-lines-truncated = Premières 100 erreurs affichées (cap atteint).
+bank-import-warnings-encoding-mismatch = L'encodage détecté diffère du profil.
 
 # Labels UI
 bank-import-labels-page-title = Import bancaire CAMT.053
@@ -604,6 +610,24 @@ bank-import-labels-preview-title = Prévisualisation
 bank-import-labels-confirm-import = Confirmer l'import
 bank-import-labels-cancel = Annuler
 bank-import-labels-confirm-balance-mismatch = Importer malgré l'écart de solde
+# Story 8-3 — labels confirm flags + KF #70
+bank-import-labels-confirm-duplicate-file = Importer malgré le fichier déjà importé
+bank-import-labels-confirm-duplicate-lines = Comportement face aux doublons
+bank-import-labels-confirm-duplicate-lines-skip = Ignorer les doublons (par défaut)
+bank-import-labels-confirm-duplicate-lines-import = Importer quand même
+bank-import-labels-confirm-partial-import = Importer les lignes valides quand même
+bank-import-labels-confirm-encoding-mismatch = Importer avec l'encodage détecté
+bank-import-labels-bank-profile-selector = Profil bancaire CSV
+bank-import-labels-bank-profile-auto-matched = auto-détecté
+# L6 (Pass 1 review) — placeholder du <select> (option vide), distinct de
+# l'annotation `auto-matched` ci-dessus pour permettre des traductions
+# divergentes (ex. EN: "Auto-detect" placeholder vs "(auto-matched)" annotation).
+bank-import-labels-bank-profile-auto-detect-placeholder = Auto-détection
+# M8 (Pass 1 review) — clés i18n pour les codes informationnels remontés
+# via `warnings.informational[]` (snake_case → kebab-case côté frontend).
+bank-import-info-bank-csv-profile-auto-matched = Profil bancaire détecté automatiquement par le nom du fichier.
+bank-import-info-bank-csv-multiple-profile-matches = Plusieurs profils correspondent au nom du fichier ; le premier a été retenu.
+bank-import-errors-no-valid-lines-to-commit = Aucune ligne valide à importer dans le CSV.
 bank-import-labels-list-title = Imports précédents
 bank-import-labels-import-success = Import réussi.
 bank-import-labels-empty = Aucun import bancaire.

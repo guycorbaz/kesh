@@ -11,6 +11,8 @@
 //! même si un attaquant devine un `import_id` valide d'une autre
 //! company).
 
+use chrono::NaiveDate;
+use sqlx::MySql;
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::bank_transaction::BankTransaction;
@@ -39,6 +41,47 @@ pub async fn list_by_import(
     .bind(company_id)
     .bind(import_id)
     .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Charge les transactions existantes dans la fenêtre
+/// `[period_from, period_to]` (bornes incluses) pour le compte
+/// donné, scopées multi-tenant (Story 8-3 T3.1).
+///
+/// Utilisé par le handler `bank_imports::create` pour la détection de
+/// doublons ligne-par-ligne (cf. `kesh_core::bank_imports::detect_duplicate_lines`).
+///
+/// **Multi-tenant safety (KF-002 Pattern 1)** : filtrage systématique
+/// par `(company_id, bank_account_id)` — les transactions cross-tenant
+/// ne sont jamais retournées.
+///
+/// **Index** : utilise
+/// `idx_bank_transactions_company_account_date (company_id, bank_account_id, booking_date)`
+/// (créé en migration `20260504000001_bank_imports.sql`).
+///
+/// **Executor générique** : accepte `&MySqlPool` (preview) ou
+/// `&mut Transaction<MySql>` (handler create dans une tx ouverte).
+pub async fn find_in_dedup_window<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    period_from: NaiveDate,
+    period_to: NaiveDate,
+) -> Result<Vec<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, BankTransaction>(&format!(
+        "SELECT {COLUMNS} FROM bank_transactions \
+         WHERE company_id = ? AND bank_account_id = ? \
+           AND booking_date BETWEEN ? AND ?"
+    ))
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(period_from)
+    .bind(period_to)
+    .fetch_all(executor)
     .await
     .map_err(map_db_error)
 }

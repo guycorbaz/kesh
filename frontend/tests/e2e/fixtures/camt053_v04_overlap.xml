@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Story 8-3 fixture : hash distinct de v04_minimal.xml (MsgId modifié)
+     mais avec une transaction identique en clé composite stable
+     (booking_date=2026-05-15, amount=1234.56, reference=RF18539007547034,
+     bank_account_id=…). Permet de tester `warnings.duplicateLines`
+     sans déclencher `warnings.duplicateFile` (hash file différent). -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>STMT-2026-05-002-OVERLAP</MsgId>
+      <CreDtTm>2026-05-31T23:59:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-002</Id>
+      <CreDtTm>2026-05-31T23:59:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2026-05-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-05-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH4431999123000889012</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">10000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-05-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">11784.56</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-05-31</Dt>
+        </Dt>
+      </Bal>
+      <!-- Transaction A : DOUBLON (mêmes clés que v04_minimal.xml). -->
+      <Ntry>
+        <Amt Ccy="CHF">1234.56</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-05-15</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-05-15</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-TX-42</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-2026-05-001</EndToEndId>
+            </Refs>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Ref>RF18539007547034</Ref>
+                </CdtrRefInf>
+              </Strd>
+              <Ustrd>Loyer mai 2026</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Loyer mai 2026</AddtlNtryInf>
+      </Ntry>
+      <!-- Transaction B : NOUVELLE (date/amount/ref distincts). -->
+      <Ntry>
+        <Amt Ccy="CHF">550.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-05-20</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-05-20</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-TX-43</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-2026-05-002</EndToEndId>
+            </Refs>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Ref>RF99887766554433</Ref>
+                </CdtrRefInf>
+              </Strd>
+              <Ustrd>Honoraires mai 2026</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Honoraires mai 2026</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

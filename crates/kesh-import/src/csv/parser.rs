@@ -30,12 +30,108 @@ use crate::types::{ImportedStatement, ImportedTransaction, SourceFormat};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
+/// Sentinel publique pour `period_from`/`period_to` quand
+/// `parse_csv_collect` retourne `PartialFailure { valid: stmt, ... }`
+/// avec `stmt.transactions.is_empty()` (M9, Pass 1 review).
+///
+/// Le caller `kesh-api::create_csv` doit comparer explicitement contre
+/// cette sentinel avant tout usage en DB (typiquement
+/// `find_in_dedup_window`) afin d'éviter un BETWEEN scan complet de
+/// l'historique. La voie nominale est de rejeter avec
+/// `reason = "no_valid_lines_to_commit"` (AC #16) avant cet appel.
+///
+/// Pourquoi 1970-01-01 et pas `NaiveDate::MIN` (an -262143) : si la
+/// garde caller est jamais ratée par un futur refactor, le SQL BETWEEN
+/// scanne au pire 56 ans plutôt que 263 000 ans — moins catastrophique.
+pub fn empty_valid_sentinel_date() -> NaiveDate {
+    NaiveDate::from_ymd_opt(1970, 1, 1).expect("1970-01-01 is a valid NaiveDate")
+}
+
+/// Issue du parser CSV en mode « collect » (Story 8-3 T4).
+///
+/// Discrimine trois résultats :
+///
+/// - [`ParseCsvOutcome::AllValid`] : toutes les lignes data ont parsé
+///   avec succès — l'`ImportedStatement` est complet.
+/// - [`ParseCsvOutcome::PartialFailure`] : au moins une ligne data a
+///   échoué (mais le parsing global a démarré sans erreur fatale). Le
+///   caller décide :
+///     - `confirmPartialImport=false` (8-2 strict reject) → retourne
+///       `422 BANK_CSV_PARTIAL_FAILURE`.
+///     - `confirmPartialImport=true` (8-3 partial commit) → persiste les
+///       transactions valides + retourne un warning `invalidLines`.
+///
+///   La partie `valid: ImportedStatement` peut avoir un `transactions`
+///   vide (cas « 0 valides parmi N invalides », AC #16) auquel cas le
+///   handler retourne `422 BANK_CSV_PARTIAL_FAILURE` avec
+///   `reason = "no_valid_lines_to_commit"`.
+/// - [`ParseCsvOutcome::HardFailure`] : le parser n'a pas pu démarrer
+///   (encoding non supporté, profil mal configuré, fichier vide). Le
+///   caller mappe vers la variante `AppError` correspondante.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParseCsvOutcome {
+    AllValid(ImportedStatement),
+    PartialFailure {
+        valid: ImportedStatement,
+        errors: Vec<CsvLineError>,
+        total_errors: usize,
+        truncated: bool,
+    },
+    HardFailure(CsvError),
+}
+
 /// Parse un fichier CSV bancaire selon le profil.
 ///
-/// Retourne un `ImportedStatement` complet avec `period_from`/`period_to`
-/// calculés depuis les booking_dates si succès. En cas d'erreur, voir
-/// [`CsvError`] pour la sémantique de chaque variante.
+/// Wrapper legacy 8-2 autour de [`parse_csv_collect`] (Story 8-3 T4) :
+/// convertit `ParseCsvOutcome::PartialFailure` en
+/// `Err(CsvError::PartialFailure { errors, total_errors, truncated })`
+/// (sans le champ `valid`). **Backward-compat absolue** — les tests
+/// 8-2 ne changent pas.
+///
+/// Pour les nouveaux call-sites (Story 8-3 partial commit), utiliser
+/// [`parse_csv_collect`].
 pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement, CsvError> {
+    match parse_csv_collect(bytes, profile) {
+        ParseCsvOutcome::AllValid(stmt) => Ok(stmt),
+        ParseCsvOutcome::PartialFailure {
+            errors,
+            total_errors,
+            truncated,
+            ..
+        } => Err(CsvError::PartialFailure {
+            errors,
+            total_errors,
+            truncated,
+        }),
+        ParseCsvOutcome::HardFailure(e) => Err(e),
+    }
+}
+
+/// Parse un fichier CSV bancaire en mode « collect » (Story 8-3 T4).
+///
+/// Contrairement à [`parse_csv`] (strict reject 8-2), `parse_csv_collect`
+/// **collecte** systématiquement les transactions valides ET les
+/// erreurs ligne — laisse au caller le choix de rejeter strictement ou
+/// de persister les valides via le flag multipart `confirmPartialImport`.
+///
+/// Retourne [`ParseCsvOutcome`] discriminant les 3 issues. Les caps
+/// anti-DoS hérités 8-2 (`MAX_CSV_LINE_ERRORS = 100` + flag
+/// `truncated`) sont préservés.
+pub fn parse_csv_collect(bytes: &[u8], profile: &CsvProfile) -> ParseCsvOutcome {
+    match parse_csv_collect_inner(bytes, profile) {
+        Ok(outcome) => outcome,
+        Err(e) => ParseCsvOutcome::HardFailure(e),
+    }
+}
+
+/// Helper interne : retourne `Ok(AllValid|PartialFailure)` pour le cas
+/// nominal et `Err(CsvError)` pour les hard failures (encoding, profile,
+/// missing header, empty file). [`parse_csv_collect`] convertit
+/// `Err(...)` en [`ParseCsvOutcome::HardFailure`] uniformément.
+fn parse_csv_collect_inner(
+    bytes: &[u8],
+    profile: &CsvProfile,
+) -> Result<ParseCsvOutcome, CsvError> {
     profile.validate()?;
 
     // 1. Détection encoding + skip BOM
@@ -190,42 +286,41 @@ pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement
         }
     }
 
-    // 8. Strict reject si erreurs (FR51 v0.1)
-    if !errors.is_empty() {
-        let truncated = total_errors > MAX_CSV_LINE_ERRORS;
-        return Err(CsvError::PartialFailure {
-            errors,
-            total_errors,
-            truncated,
-        });
-    }
-
-    // 9. EmptyFile si 0 transactions valides après iteration complète.
-    if transactions.is_empty() {
-        return Err(CsvError::EmptyFile {
-            reason: "0 valid transactions after parsing".to_string(),
-        });
-    }
-
-    // 10. Calcul period_from / period_to (Pass 1 H2)
-    let period_from = transactions
-        .iter()
-        .map(|t| t.booking_date)
-        .min()
-        .expect("transactions non-vide vérifié ligne 8");
-    let period_to = transactions
-        .iter()
-        .map(|t| t.booking_date)
-        .max()
-        .expect("transactions non-vide vérifié ligne 8");
-
-    // 11. Construire ImportedStatement
+    // 8. Construit l'`ImportedStatement` candidat (avec les transactions
+    //    valides, possiblement vide si toutes ont échoué). Story 8-3 T4 :
+    //    `parse_csv_collect` retourne toujours un `ImportedStatement` —
+    //    le caller décide de rejeter (strict mode 8-2) ou persister
+    //    (partial commit 8-3) selon `confirmPartialImport`.
     //
     // Note Pass 2 M'4 alignement : `ImportedStatement.account_iban: String`
     // (pas Option). CSV n'expose pas d'IBAN → string vide. Le frontend
     // serialise `accountIban === ""` comme « pas d'IBAN » côté UI
     // (cf. §preview-csv-response-shape). statement_id reste Option.
-    Ok(ImportedStatement {
+    let sentinel = empty_valid_sentinel_date();
+    let (period_from, period_to) = if transactions.is_empty() {
+        // M9 (Pass 1 review) — sentinel epoch 1970-01-01 (cf. doc-comment
+        // de [`empty_valid_sentinel_date`]). Le caller doit comparer
+        // explicitement avant tout usage en DB.
+        (sentinel, sentinel)
+    } else {
+        let from = transactions
+            .iter()
+            .map(|t| t.booking_date)
+            .min()
+            .expect("transactions non-vide");
+        let to = transactions
+            .iter()
+            .map(|t| t.booking_date)
+            .max()
+            .expect("transactions non-vide");
+        (from, to)
+    };
+    debug_assert!(
+        (period_from == sentinel) == transactions.is_empty(),
+        "empty_valid_sentinel_date invariant: sentinel iff transactions.is_empty()"
+    );
+
+    let stmt = ImportedStatement {
         source_format: SourceFormat::Csv {
             encoding: detected_encoding.as_str().to_string(),
             profile_name: Some(profile.bank_name.clone()),
@@ -238,7 +333,28 @@ pub fn parse_csv(bytes: &[u8], profile: &CsvProfile) -> Result<ImportedStatement
         opening_balance: None,
         closing_balance: None,
         transactions,
-    })
+    };
+
+    // 9. Discrimine AllValid vs PartialFailure vs EmptyFile.
+    if !errors.is_empty() {
+        let truncated = total_errors > MAX_CSV_LINE_ERRORS;
+        return Ok(ParseCsvOutcome::PartialFailure {
+            valid: stmt,
+            errors,
+            total_errors,
+            truncated,
+        });
+    }
+
+    // 0 erreurs ET 0 valides — défensif (en pratique unreachable post
+    // first_record check, mais garde la sémantique 8-2 EmptyFile).
+    if stmt.transactions.is_empty() {
+        return Err(CsvError::EmptyFile {
+            reason: "0 valid transactions after parsing".to_string(),
+        });
+    }
+
+    Ok(ParseCsvOutcome::AllValid(stmt))
 }
 
 /// Parse une ligne CSV en `ImportedTransaction` ou `CsvLineError`.
@@ -973,6 +1089,177 @@ mod tests {
                 assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate);
             }
             other => panic!("expected PartialFailure, got {:?}", other),
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Story 8-3 T4.3 — `parse_csv_collect` 6 tests
+    // ─────────────────────────────────────────────────────────────
+
+    fn simple_profile() -> CsvProfile {
+        make_profile(
+            ';',
+            '.',
+            1,
+            ColumnMapping {
+                date: 0,
+                amount: Some(1),
+                debit_credit_split: None,
+                reference: Some(2),
+                details: Some(3),
+                counterparty: None,
+            },
+        )
+    }
+
+    #[test]
+    fn parse_csv_collect_all_valid_returns_all_valid() {
+        // T4.3#1 — happy path : 2 lignes valides → AllValid.
+        let csv =
+            "date;amount;ref;details\n2026-01-15;100.00;R1;Loyer\n2026-01-16;-50.00;R2;Achat\n";
+        let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
+        match outcome {
+            ParseCsvOutcome::AllValid(stmt) => {
+                assert_eq!(stmt.transactions.len(), 2);
+                assert_eq!(stmt.transactions[0].amount, dec!(100.00));
+            }
+            other => panic!("expected AllValid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_csv_collect_partial_returns_valid_and_errors() {
+        // T4.3#2 — fixture-like : 3 valides + 2 invalides (date + amount).
+        let csv = "date;amount;ref;details\n\
+                   2026-01-15;100.00;R1;A\n\
+                   INVALID_DATE;200.00;R2;B\n\
+                   2026-01-17;NOT_A_NUMBER;R3;C\n\
+                   2026-01-18;300.00;R4;D\n\
+                   2026-01-19;400.00;R5;E\n";
+        let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
+        match outcome {
+            ParseCsvOutcome::PartialFailure {
+                valid,
+                errors,
+                total_errors,
+                truncated,
+            } => {
+                assert_eq!(valid.transactions.len(), 3);
+                assert_eq!(errors.len(), 2);
+                assert_eq!(total_errors, 2);
+                assert!(!truncated);
+                // Vérifie codes d'erreur attendus.
+                let codes: Vec<_> = errors.iter().map(|e| e.code).collect();
+                assert!(codes.contains(&CsvLineErrorCode::InvalidDate));
+                assert!(codes.contains(&CsvLineErrorCode::InvalidAmount));
+            }
+            other => panic!("expected PartialFailure, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_csv_collect_caps_errors_at_max() {
+        // T4.3#3 — 50 valides + 150 invalides → errors=100, total_errors=150,
+        // truncated=true, valid=50.
+        let mut csv = String::from("date;amount;ref;details\n");
+        for i in 0..50 {
+            csv.push_str(&format!("2026-01-15;{}.00;R{};V\n", i + 1, i));
+        }
+        for i in 0..150 {
+            csv.push_str(&format!("INVALID_DATE_{};100.00;R;X\n", i));
+        }
+        let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
+        match outcome {
+            ParseCsvOutcome::PartialFailure {
+                valid,
+                errors,
+                total_errors,
+                truncated,
+            } => {
+                assert_eq!(valid.transactions.len(), 50);
+                assert_eq!(errors.len(), 100, "cap MAX_CSV_LINE_ERRORS=100");
+                assert_eq!(total_errors, 150);
+                assert!(truncated, "truncated flag doit être true");
+            }
+            other => panic!("expected PartialFailure, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_csv_collect_zero_valid_returns_partial_with_empty_valid() {
+        // T4.3#4 — 0 valides + 3 invalides → PartialFailure { valid empty }.
+        let csv = "date;amount;ref;details\n\
+                   INVALID_A;100;R1;A\n\
+                   INVALID_B;200;R2;B\n\
+                   INVALID_C;300;R3;C\n";
+        let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
+        match outcome {
+            ParseCsvOutcome::PartialFailure {
+                valid,
+                errors,
+                total_errors,
+                truncated,
+            } => {
+                assert!(valid.transactions.is_empty(), "0 valides attendu");
+                assert_eq!(errors.len(), 3);
+                assert_eq!(total_errors, 3);
+                assert!(!truncated);
+            }
+            other => panic!("expected PartialFailure with empty valid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_csv_collect_zero_valid_uses_sentinel_date() {
+        // M9 (Pass 1 review) — quand `transactions.is_empty()` après parse,
+        // `period_from`/`period_to` doivent être la sentinel publique
+        // [`empty_valid_sentinel_date`] (= 1970-01-01) pour permettre au
+        // caller de comparer explicitement avant un find_in_dedup_window.
+        let csv = "date;amount;ref;details\n\
+                   INVALID_A;100;R1;A\n";
+        let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
+        match outcome {
+            ParseCsvOutcome::PartialFailure { valid, .. } => {
+                let sentinel = empty_valid_sentinel_date();
+                assert_eq!(valid.transactions.len(), 0);
+                assert_eq!(valid.period_from, sentinel);
+                assert_eq!(valid.period_to, sentinel);
+                assert_eq!(sentinel, NaiveDate::from_ymd_opt(1970, 1, 1).unwrap());
+            }
+            other => panic!("expected PartialFailure, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_csv_collect_hard_failure_on_empty_file() {
+        // T4.3#5 — header seul (0 data rows) → HardFailure(EmptyFile).
+        let csv = "date;amount;ref;details\n";
+        let outcome = parse_csv_collect(csv.as_bytes(), &simple_profile());
+        match outcome {
+            ParseCsvOutcome::HardFailure(CsvError::EmptyFile { .. }) => {}
+            other => panic!("expected HardFailure(EmptyFile), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_csv_wrapper_preserves_legacy_behavior() {
+        // T4.3#6 — `parse_csv` (signature 8-2) doit retourner Err sur
+        // les partial failures, sans exposer le champ `valid`.
+        let csv = "date;amount;ref;details\n\
+                   2026-01-15;100.00;R1;A\n\
+                   INVALID_DATE;200;R2;B\n";
+        let err = parse_csv(csv.as_bytes(), &simple_profile()).unwrap_err();
+        match err {
+            CsvError::PartialFailure {
+                errors,
+                total_errors,
+                truncated,
+            } => {
+                assert_eq!(errors.len(), 1);
+                assert_eq!(total_errors, 1);
+                assert!(!truncated);
+            }
+            other => panic!("expected PartialFailure (legacy), got {:?}", other),
         }
     }
 }
