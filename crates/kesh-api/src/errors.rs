@@ -229,10 +229,18 @@ pub enum AppError {
     #[error("Aucun statement ne correspond au compte sélectionné")]
     BankImportNoMatchingStatement { found_ibans: Vec<String> },
 
-    /// Fichier déjà importé pour cette company (UNIQUE
-    /// `(company_id, file_hash)` violation) → `409`.
+    /// Story 8-3 — fichier déjà importé pour cette company sans
+    /// `confirmDuplicateFile=true`. **Code HTTP changé 8-3 : 409 → 422**
+    /// (cohérence avec autres `BankImport*` qui sont aussi des refus
+    /// métier, cf. §confirm-flags). Le check applicatif via
+    /// `bank_imports::find_by_company_and_hash` (transaction-bound)
+    /// remplace la contrainte UNIQUE retirée par la migration
+    /// `20260507000001_bank_imports_relax_hash_unique.sql`.
     #[error("Fichier déjà importé")]
-    BankImportDuplicateFile,
+    BankImportDuplicateFile {
+        existing_import_id: i64,
+        existing_filename: String,
+    },
 
     /// Le `bankAccountId` fourni n'existe pas / appartient à une autre
     /// company → `404` (jamais `403`, pattern KF-002 anti-énumération).
@@ -259,11 +267,16 @@ pub enum AppError {
 
     /// Au moins une ligne du CSV échoue au parsing → `422` strict reject
     /// FR51. Liste les erreurs (cap 100, Pass 2 H'1).
+    ///
+    /// Story 8-3 — `reason` optionnel discrimine le cas
+    /// `"no_valid_lines_to_commit"` (`confirmPartialImport=true` sur
+    /// CSV avec 0 lignes valides — AC #16).
     #[error("Échec parsing CSV partiel")]
     BankCsvParsePartialFailure {
         lines: Vec<CsvLineErrorPayload>,
         total_errors: usize,
         truncated: bool,
+        reason: Option<&'static str>,
     },
 
     /// Validation profil failed (XOR, séparateurs distincts, regex
@@ -622,14 +635,25 @@ impl IntoResponse for AppError {
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
             }
 
-            AppError::BankImportDuplicateFile => build_response(
-                StatusCode::CONFLICT,
-                "BANK_IMPORT_DUPLICATE_FILE",
-                &t(
-                    "bank-import-errors-duplicate-file",
-                    "Ce fichier a déjà été importé.",
-                ),
-            ),
+            AppError::BankImportDuplicateFile {
+                existing_import_id,
+                existing_filename,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_DUPLICATE_FILE",
+                        "message": t(
+                            "bank-import-errors-duplicate-file",
+                            "Ce fichier a déjà été importé.",
+                        ),
+                        "details": {
+                            "existingImportId": existing_import_id,
+                            "existingFilename": existing_filename,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
 
             AppError::BankAccountNotFound => build_response(
                 StatusCode::NOT_FOUND,
@@ -692,7 +716,16 @@ impl IntoResponse for AppError {
                 lines,
                 total_errors,
                 truncated,
+                reason,
             } => {
+                let mut details = serde_json::json!({
+                    "lines": lines,
+                    "totalErrors": total_errors,
+                    "truncated": truncated,
+                });
+                if let Some(r) = reason {
+                    details["reason"] = serde_json::Value::String(r.to_string());
+                }
                 let body = serde_json::json!({
                     "error": {
                         "code": "BANK_CSV_PARTIAL_FAILURE",
@@ -700,11 +733,7 @@ impl IntoResponse for AppError {
                             "bank-import-csv-errors-partial-failure",
                             "Certaines lignes du CSV n'ont pas pu être parsées.",
                         ),
-                        "details": {
-                            "lines": lines,
-                            "totalErrors": total_errors,
-                            "truncated": truncated,
-                        }
+                        "details": details
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()

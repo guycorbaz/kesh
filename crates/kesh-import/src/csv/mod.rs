@@ -16,5 +16,5 @@ pub mod parser;
 pub mod profile;
 
 pub use encoding::{DetectedEncoding, detect_encoding};
-pub use parser::parse_csv;
+pub use parser::{ParseCsvOutcome, empty_valid_sentinel_date, parse_csv, parse_csv_collect};
 pub use profile::{ColumnMapping, CsvProfile};

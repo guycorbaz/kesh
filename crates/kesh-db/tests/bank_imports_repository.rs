@@ -12,7 +12,6 @@ use chrono::NaiveDate;
 use kesh_db::entities::{
     BankImportSourceFormat, NewBankAccount, NewBankImport, NewBankTransaction, NewUser, Role,
 };
-use kesh_db::errors::DbError;
 use kesh_db::repositories::{bank_accounts, bank_imports, users};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -243,8 +242,13 @@ async fn find_by_company_and_hash_finds_existing(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn unique_company_hash_blocks_duplicate_within_same_company(pool: MySqlPool) {
-    // AC #16 dedup : second INSERT même (company_id, file_hash) → erreur SQL 1062.
+async fn duplicate_company_hash_now_allowed_post_relax(pool: MySqlPool) {
+    // Story 8-3 — la migration `20260507000001_bank_imports_relax_hash_unique.sql`
+    // a relâché le UNIQUE en INDEX simple. Deux INSERT successifs avec
+    // le même `(company_id, file_hash)` doivent désormais réussir
+    // (le check applicatif transactionnel via `find_by_company_and_hash`
+    // est appliqué dans le handler `bank_imports::create` selon le flag
+    // multipart `confirmDuplicateFile`).
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
     let bank_id = create_test_bank_account(&pool, company_id, "CH4431999123000889012").await;
@@ -266,7 +270,11 @@ async fn unique_company_hash_blocks_duplicate_within_same_company(pool: MySqlPoo
         vec![make_new_tx(company_id, bank_id, dec!(200.00), "R")],
     )
     .await;
-    assert!(matches!(result, Err(DbError::UniqueConstraintViolation(_))));
+    assert!(
+        result.is_ok(),
+        "post-relax UNIQUE, second INSERT même (company, hash) doit réussir : {result:?}"
+    );
+    tx2.commit().await.unwrap();
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

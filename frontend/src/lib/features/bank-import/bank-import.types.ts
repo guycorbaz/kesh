@@ -32,8 +32,52 @@ export interface BankImportPreviewResponse {
 	sourceFormat: string;
 	selectedStatement: PreviewStatement;
 	ignoredStatements: IgnoredStatement[];
-	warnings: string[];
+	/// Story 8-3 — warnings non-bloquants structurés.
+	warnings: PreviewWarnings;
 	transactions: PreviewTransaction[];
+	/// Story 8-3 KF #70 — métadonnées CSV profile (absent pour CAMT).
+	csvProfileMatch?: CsvProfileMatch;
+}
+
+export interface PreviewWarnings {
+	balanceMismatch?: BalanceMismatchPayload | null;
+	unsupportedCurrency?: { currency: string } | null;
+	encodingMismatch?: { profile: string; detected: string } | null;
+	duplicateFile?: DuplicateFilePayload | null;
+	duplicateLines: DuplicateLineWarning[];
+	invalidLines?: InvalidLinesPayload | null;
+	informational: string[];
+}
+
+export interface BalanceMismatchPayload {
+	opening: string;
+	closing: string;
+	sum: string;
+	diff: string;
+}
+
+export interface DuplicateFilePayload {
+	existingImportId: number;
+	existingFilename: string;
+	existingImportedAt: string;
+}
+
+export interface DuplicateLineWarning {
+	newIndex: number;
+	existingTransactionId: number;
+	key: string;
+}
+
+export interface InvalidLinesPayload {
+	lines: { line: number; code: string; value: string | null; messageI18nKey: string }[];
+	totalErrors: number;
+	truncated: boolean;
+}
+
+export interface CsvProfileMatch {
+	profileId: number;
+	profileName: string;
+	autoMatched: boolean;
 }
 
 export interface BankImportResponse {
