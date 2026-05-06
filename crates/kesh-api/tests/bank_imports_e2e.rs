@@ -1361,16 +1361,22 @@ async fn dedup_handles_2000_existing_under_3s(pool: MySqlPool) {
 
     // Seed direct SQL : 1 bank_imports row + 200 bank_transactions dans
     // la fenêtre 2026-04-01 .. 2026-04-30 du nouvel import.
+    //
+    // CI-fix : `file_hash` doit faire 64 chars exactement (CHECK
+    // constraint `chk_bank_imports_hash_len` = SHA-256 hex). Seed a
+    // sentinel-hash distinct des autres tests (préfixe `dedupperf`).
+    let seed_file_hash = format!("dedupperf{}", "0".repeat(64 - 9));
     let imported_at = Utc::now().naive_utc();
     let import_id: i64 = sqlx::query_scalar(
         "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
          source_format, statement_id, period_from, period_to, opening_balance, \
          closing_balance, transaction_count, imported_at, imported_by_user_id) \
-         VALUES (?, ?, 'seed.csv', 'seed-hash-l10', 'CSV', NULL, '2026-04-01', \
+         VALUES (?, ?, 'seed.csv', ?, 'CSV', NULL, '2026-04-01', \
          '2026-04-30', NULL, NULL, 200, ?, ?) RETURNING id",
     )
     .bind(s.company_id)
     .bind(s.bank_account_id)
+    .bind(&seed_file_hash)
     .bind(imported_at)
     .bind(s.user_id)
     .fetch_one(&pool)
