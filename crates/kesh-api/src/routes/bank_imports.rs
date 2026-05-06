@@ -1063,7 +1063,25 @@ async fn preview_csv(
     .await?;
 
     let csv_profile = db_profile_to_csv_profile(&profile)?;
-    let stmt = parse_csv(&fields.file_bytes, &csv_profile).map_err(map_csv_error)?;
+
+    // Pass 3 review BH3-1 : preview ne doit PAS retourner 422 sur
+    // `EncodingMismatch` (cf. spec AC #5quinquies-a + §encoding-detection
+    // ligne 75). À la place : retourner 200 + warning
+    // `bank_csv_encoding_mismatch` + décodage avec encoding détecté
+    // (auto-détection forcée via `encoding = None`). L'utilisateur
+    // voit la preview correcte côté UI, et peut décider de confirmer
+    // au moment du `POST /bank-imports` (qui lui retournera 422 si
+    // pas de `confirmEncodingMismatch=true`).
+    let stmt = match parse_csv(&fields.file_bytes, &csv_profile) {
+        Ok(s) => s,
+        Err(kesh_import::CsvError::EncodingMismatch { .. }) => {
+            warnings.push("bank_csv_encoding_mismatch".to_string());
+            let mut forced = csv_profile.clone();
+            forced.encoding = None;
+            parse_csv(&fields.file_bytes, &forced).map_err(map_csv_error)?
+        }
+        Err(e) => return Err(map_csv_error(e)),
+    };
 
     // Si auto-match utilisé (bankProfileId absent) → warning informatif.
     if fields.bank_profile_id.is_none() {
