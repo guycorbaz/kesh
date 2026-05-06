@@ -400,6 +400,26 @@ fn parse_amount(raw: &str, decimal_sep: char) -> Result<Decimal, ()> {
     let s = raw.replace('\'', "");
     // Strip espaces ASCII et insécables (séparateurs milliers européens).
     let s = s.replace([' ', '\u{00A0}'], "");
+
+    // Pass 2 review M1 (EH2-1) : détection ambiguïté format mélangé.
+    // Si la valeur contient à la fois `.` et `,`, vérifier que l'ordre
+    // est cohérent avec le decimal_sep du profil :
+    // - decimal_sep == ',' (DE) : `1.234,56` OK car `.` (milliers) AVANT
+    //   `,` (décimal). `1,500.00` (US) → INCOHÉRENT car `,` avant `.`.
+    // - decimal_sep == '.' (US) : `1,234.56` OK. `1.500,00` (DE) →
+    //   INCOHÉRENT car `.` avant `,`.
+    // Sans ce check, `parse_amount("1,500.00", ',')` produirait
+    // silencieusement 1.5 au lieu de rejeter (bug financier critique).
+    let last_dot = s.rfind('.');
+    let last_comma = s.rfind(',');
+    if let (Some(dot_pos), Some(comma_pos)) = (last_dot, last_comma) {
+        match decimal_sep {
+            ',' if comma_pos < dot_pos => return Err(()), // ambigu (US dans profil DE)
+            '.' if dot_pos < comma_pos => return Err(()), // ambigu (DE dans profil US)
+            _ => {}
+        }
+    }
+
     // Selon le decimal_sep, strip aussi le séparateur milliers
     // complémentaire et normaliser en `.`.
     let s = match decimal_sep {
@@ -818,6 +838,26 @@ mod tests {
     // ====================================================================
     // Pass 1 review G1 patches : tests manquants
     // ====================================================================
+
+    /// Pass 2 review M1 (EH2-1) : `parse_amount` doit rejeter les
+    /// formats mélangés ambigus pour éviter la corruption financière
+    /// silencieuse. `"1,500.00"` (US) avec `decimal_sep=','` (DE)
+    /// produirait silencieusement 1.5 sans ce check.
+    #[test]
+    fn parse_amount_rejects_ambiguous_us_format_with_de_profile() {
+        // Profile DE (decimal_sep=','), value en format US (1,234.56).
+        assert!(parse_amount("1,500.00", ',').is_err());
+        assert!(parse_amount("1,234.56", ',').is_err());
+        assert!(parse_amount("12,345.67", ',').is_err());
+    }
+
+    /// Pass 2 review M1 (EH2-1) symétrique : `"1.500,00"` (DE) avec
+    /// `decimal_sep='.'` (US) → rejet.
+    #[test]
+    fn parse_amount_rejects_ambiguous_de_format_with_us_profile() {
+        assert!(parse_amount("1.500,00", '.').is_err());
+        assert!(parse_amount("1.234,56", '.').is_err());
+    }
 
     /// Pass 1 review G1 H1 : `parse_amount` doit accepter le format
     /// allemand `1.234,56` quand `decimal_sep = ','`. Le point est

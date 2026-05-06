@@ -142,3 +142,46 @@ test('displays partial failure error panel with line numbers', async ({ page }) 
 	const error = page.getByTestId('bank-import-error');
 	await expect(error).toBeVisible();
 });
+
+// Pass 2 review M4 (BH2-2) : CSV happy path E2E couvrant le pipeline
+// complet (création profil → upload CSV → preview → parser → success).
+test('uploads CSV with matching profile end-to-end', async ({ page }) => {
+	await login(page);
+
+	// Étape 1 — créer un profil bancaire qui matche `csv_utf8_minimal.csv`.
+	await page.goto('/bank-import/profiles/new');
+	await page.getByTestId('bank-name-input').fill('Test E2E Bank');
+	// Pattern qui matche le filename exact uploadé.
+	await page.getByTestId('filename-pattern-input').fill('^csv_utf8_minimal\\.csv$');
+	await page.getByTestId('date-format-input').fill('%Y-%m-%d');
+	await page.getByTestId('field-separator-select').selectOption(';');
+	await page.getByTestId('decimal-separator-select').selectOption('.');
+	await page.getByTestId('header-row-count-input').fill('1');
+	await page.getByTestId('col-date-input').fill('0');
+	await page.getByTestId('col-amount-input').fill('1');
+	await page.getByTestId('col-reference-input').fill('2');
+	await page.getByTestId('col-details-input').fill('3');
+	await page.getByTestId('bank-import-profile-submit').click();
+	await expect(page).toHaveURL(/\/bank-import\/profiles\/\d+/);
+
+	// Étape 2 — uploader le CSV qui matche le profil par auto-match
+	// filename. Le backend doit résoudre le profil via
+	// `find_matching_profiles_for_filename` puis parser → preview.
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	await page
+		.getByTestId('bank-import-file-input')
+		.setInputFiles(path.join(__dirname, 'fixtures', 'csv_utf8_minimal.csv'));
+
+	// Étape 3 — preview affiché avec 3 transactions (cf. fixture).
+	await expect(page.getByTestId('bank-import-preview')).toBeVisible();
+	await expect(page.getByTestId('preview-tx-count')).toHaveText('3');
+
+	// Étape 4 — confirm import → persist + redirect.
+	await page.getByTestId('bank-import-confirm').click();
+	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
+
+	// La liste affiche au moins 1 import.
+	await expect(page.getByTestId('bank-import-list-row').first()).toBeVisible();
+});

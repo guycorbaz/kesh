@@ -1136,6 +1136,14 @@ async fn create_csv(
     // si parse_csv retourne EncodingMismatch ET le flag est true,
     // re-essayer avec un profil dont l'encoding est forcé None
     // (auto-détecté) puis logger via audit log spécial.
+    //
+    // **Sémantique Pass 2 review M2 (EH2-2)** : `confirmEncodingMismatch=true`
+    // signifie « accepter l'encoding détecté par le serveur (pas celui
+    // du profil) ». Si l'utilisateur veut FORCER l'encoding du profil
+    // (au risque de mojibake), il doit modifier son profil. Cette
+    // sémantique est documentée dans la clé i18n
+    // `bank-import-csv-warnings-encoding-mismatch` qui dit explicitement
+    // « décodage utilise l'encoding détecté ».
     let (stmt, encoding_mismatch_confirmed) = match parse_csv(&fields.file_bytes, &csv_profile) {
         Ok(s) => (s, false),
         Err(kesh_import::CsvError::EncodingMismatch { .. }) if fields.confirm_encoding_mismatch => {

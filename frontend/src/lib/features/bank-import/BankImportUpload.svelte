@@ -108,12 +108,21 @@
 				errorMessage = err.message;
 				// Pass 1 review G3 H11 : afficher le détail des lignes
 				// CSV en erreur si BANK_CSV_PARTIAL_FAILURE.
-				if (err.code === 'BANK_CSV_PARTIAL_FAILURE' && err.details?.lines) {
-					errorPartialLines = err.details.lines as Array<{
-						line: number;
-						code: string;
-						value: string | null;
-					}>;
+				// Pass 2 review M3 (BH2-1 + EH2-5) : type guard runtime
+				// (Array.isArray) au lieu de `as` cast non vérifié — protège
+				// contre une évolution future du schema backend ou un payload
+				// 422 malformé qui crasherait la table render.
+				if (
+					err.code === 'BANK_CSV_PARTIAL_FAILURE' &&
+					Array.isArray(err.details?.lines)
+				) {
+					errorPartialLines = err.details.lines.filter(
+						(line: unknown): line is { line: number; code: string; value: string | null } =>
+							typeof line === 'object' &&
+							line !== null &&
+							typeof (line as { line?: unknown }).line === 'number' &&
+							typeof (line as { code?: unknown }).code === 'string',
+					);
 				} else {
 					errorPartialLines = null;
 				}
