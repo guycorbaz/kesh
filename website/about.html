@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>About — Kesh</title>
+	<meta name="description" content="Kesh project — mission, architecture, BMAD methodology, and Swiss compliance focus." />
+	<meta name="theme-color" content="#0f172a" />
+	<link rel="icon" type="image/svg+xml" href="img/logo.svg" />
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script>
+		tailwind.config = { darkMode: 'class' };
+	</script>
+	<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+	<header class="sticky top-0 z-50 backdrop-blur-md bg-slate-950/70 border-b border-slate-800">
+		<nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+			<a href="index.html" class="flex items-center gap-3 group">
+				<img src="img/logo.svg" alt="Kesh logo" class="w-9 h-9 transition-transform group-hover:scale-110" />
+				<span class="text-xl font-bold tracking-tight">Kesh</span>
+			</a>
+			<div class="hidden md:flex items-center gap-8 text-sm font-medium">
+				<a href="index.html" class="text-slate-300 hover:text-white transition-colors">Home</a>
+				<a href="about.html" class="text-emerald-400">About</a>
+				<a href="roadmap.html" class="text-slate-300 hover:text-white transition-colors">Roadmap</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="text-slate-300 hover:text-white transition-colors">Issues</a>
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">GitHub</a>
+			</div>
+		</nav>
+	</header>
+
+	<!-- Hero -->
+	<section class="relative overflow-hidden border-b border-slate-800">
+		<div class="absolute inset-0 hero-gradient"></div>
+		<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<p class="text-emerald-400 text-sm font-mono mb-3">// About the project</p>
+			<h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">An open accounting platform, built for Switzerland.</h1>
+			<p class="text-lg text-slate-300 leading-relaxed">Kesh is being designed and developed in the open as a free alternative to proprietary Swiss accounting software. It targets independents, SMEs, and associations who want to keep their financial data on their own infrastructure — without sacrificing the workflows and compliance features they actually need.</p>
+		</div>
+	</section>
+
+	<!-- Mission -->
+	<section class="border-b border-slate-800">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<h2 class="text-3xl font-bold tracking-tight mb-8">Mission</h2>
+			<div class="space-y-5 text-slate-300 leading-relaxed">
+				<p>Most accounting software for the Swiss market is closed-source, expensive, and cloud-only. Even the open-source options are rarely focused on Swiss specificities: the QR-Bill payment slip, the ISO 20022 banking flows mandated since 2018, the four official languages, and the locale conventions that small accountants and fiduciaries rely on every day.</p>
+				<p>Kesh exists to fill this gap. It is built around three commitments:</p>
+				<ul class="space-y-3 list-disc list-inside marker:text-emerald-400">
+					<li><strong class="text-white">Swiss-first.</strong> QR Bill 2.2, CAMT.053, pain.001, multilingual UI, and a chart of accounts adapted to Swiss practice.</li>
+					<li><strong class="text-white">Self-hosted.</strong> Single-binary deployment via Docker Compose. Your accounting data never leaves your servers unless you choose to back it up off-site.</li>
+					<li><strong class="text-white">Free, forever.</strong> Released under the European Union Public Licence (EUPL 1.2). No tiers, no feature paywall.</li>
+				</ul>
+			</div>
+		</div>
+	</section>
+
+	<!-- Architecture -->
+	<section class="border-b border-slate-800 bg-slate-900/30">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<h2 class="text-3xl font-bold tracking-tight mb-8">Architecture</h2>
+			<div class="grid sm:grid-cols-2 gap-6">
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800">
+					<h3 class="text-lg font-semibold mb-2 text-emerald-400">Backend — Rust workspace</h3>
+					<p class="text-sm text-slate-400 mb-3">A multi-crate Cargo workspace cleanly separates business logic from I/O concerns.</p>
+					<ul class="text-sm text-slate-300 space-y-1.5 font-mono">
+						<li><code>kesh-core</code> — pure types, validation</li>
+						<li><code>kesh-db</code> — persistence, migrations</li>
+						<li><code>kesh-api</code> — Axum HTTP layer</li>
+						<li><code>kesh-qrbill</code> — QR Bill 2.2</li>
+						<li><code>kesh-import</code> — CAMT.053, CSV</li>
+						<li><code>kesh-payment</code> — pain.001 (planned)</li>
+						<li><code>kesh-i18n</code> — Fluent i18n</li>
+					</ul>
+				</div>
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800">
+					<h3 class="text-lg font-semibold mb-2 text-emerald-400">Frontend — SvelteKit 2</h3>
+					<p class="text-sm text-slate-400 mb-3">A modern SvelteKit SPA with Tailwind CSS 4 and TypeScript end-to-end.</p>
+					<ul class="text-sm text-slate-300 space-y-1.5">
+						<li>Svelte 5 (runes mode)</li>
+						<li>Tailwind CSS 4</li>
+						<li>Vitest unit tests</li>
+						<li>Playwright E2E coverage</li>
+						<li>i18n via Fluent (FR/DE/IT/EN)</li>
+					</ul>
+				</div>
+			</div>
+
+			<div class="mt-8 p-6 rounded-xl bg-slate-900 border border-slate-800">
+				<h3 class="text-lg font-semibold mb-2">Multi-tenant by design</h3>
+				<p class="text-sm text-slate-400 leading-relaxed">Every JWT carries a <code class="text-emerald-400">company_id</code> claim. Every database query filters by that claim — defence in depth against IDOR. Companies are isolated at the row level, not just at the application layer.</p>
+			</div>
+		</div>
+	</section>
+
+	<!-- Compliance -->
+	<section class="border-b border-slate-800">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<h2 class="text-3xl font-bold tracking-tight mb-8">Swiss compliance</h2>
+			<div class="grid sm:grid-cols-2 gap-4">
+				<div class="p-5 rounded-lg border border-slate-800 bg-slate-900/50">
+					<h3 class="font-semibold mb-1">QR Bill 2.2</h3>
+					<p class="text-sm text-slate-400">Pixel-perfect generation per the SIX Swiss Payment Standards Implementation Guidelines.</p>
+				</div>
+				<div class="p-5 rounded-lg border border-slate-800 bg-slate-900/50">
+					<h3 class="font-semibold mb-1">CAMT.053.001.04</h3>
+					<p class="text-sm text-slate-400">ISO 20022 bank statement import — required for automated reconciliation since 2018.</p>
+				</div>
+				<div class="p-5 rounded-lg border border-slate-800 bg-slate-900/50">
+					<h3 class="font-semibold mb-1">pain.001.001.03</h3>
+					<p class="text-sm text-slate-400">Outgoing payment files in the format expected by Swiss banks (planned for v0.2).</p>
+				</div>
+				<div class="p-5 rounded-lg border border-slate-800 bg-slate-900/50">
+					<h3 class="font-semibold mb-1">Swiss VAT</h3>
+					<p class="text-sm text-slate-400">Per-period VAT computation and reporting (planned for v0.2).</p>
+				</div>
+				<div class="p-5 rounded-lg border border-slate-800 bg-slate-900/50">
+					<h3 class="font-semibold mb-1">Locale conventions</h3>
+					<p class="text-sm text-slate-400">Date format <code>dd.mm.yyyy</code>, thousands separator with apostrophe (1'234.50), CHF currency.</p>
+				</div>
+				<div class="p-5 rounded-lg border border-slate-800 bg-slate-900/50">
+					<h3 class="font-semibold mb-1">Four languages</h3>
+					<p class="text-sm text-slate-400">French, German, Italian, English — the four working languages of Swiss business.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- BMAD -->
+	<section class="border-b border-slate-800 bg-slate-900/30">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<h2 class="text-3xl font-bold tracking-tight mb-4">Built with BMAD</h2>
+			<p class="text-slate-300 leading-relaxed mb-6">Kesh is developed using the <strong class="text-white">BMAD (Breakthrough Method of Agile AI-driven Development)</strong> methodology — a structured, story-driven workflow that emphasises explicit specifications, multi-pass adversarial review, and immutable change logs. Every story flows through the same gates:</p>
+			<div class="space-y-3">
+				<div class="flex gap-4 p-4 rounded-lg border border-slate-800 bg-slate-900/50">
+					<span class="font-mono text-emerald-400 shrink-0">1.</span>
+					<div>
+						<h3 class="font-semibold">Spec creation</h3>
+						<p class="text-sm text-slate-400">Acceptance criteria, technical design, test plan — written before any code.</p>
+					</div>
+				</div>
+				<div class="flex gap-4 p-4 rounded-lg border border-slate-800 bg-slate-900/50">
+					<span class="font-mono text-emerald-400 shrink-0">2.</span>
+					<div>
+						<h3 class="font-semibold">Spec validation (multi-pass)</h3>
+						<p class="text-sm text-slate-400">Adversarial review across multiple LLMs (Opus → Sonnet → Haiku rotation) until zero <code>MEDIUM+</code> findings remain.</p>
+					</div>
+				</div>
+				<div class="flex gap-4 p-4 rounded-lg border border-slate-800 bg-slate-900/50">
+					<span class="font-mono text-emerald-400 shrink-0">3.</span>
+					<div>
+						<h3 class="font-semibold">Implementation</h3>
+						<p class="text-sm text-slate-400">Test-driven development, full CI green locally before push.</p>
+					</div>
+				</div>
+				<div class="flex gap-4 p-4 rounded-lg border border-slate-800 bg-slate-900/50">
+					<span class="font-mono text-emerald-400 shrink-0">4.</span>
+					<div>
+						<h3 class="font-semibold">Code review (multi-pass)</h3>
+						<p class="text-sm text-slate-400">Same adversarial loop on the implementation. Same convergence criterion.</p>
+					</div>
+				</div>
+				<div class="flex gap-4 p-4 rounded-lg border border-slate-800 bg-slate-900/50">
+					<span class="font-mono text-emerald-400 shrink-0">5.</span>
+					<div>
+						<h3 class="font-semibold">Retrospective</h3>
+						<p class="text-sm text-slate-400">At the end of each epic — capture the lessons that change how the next epic is built.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- License -->
+	<section>
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<h2 class="text-3xl font-bold tracking-tight mb-4">License</h2>
+			<p class="text-slate-300 leading-relaxed mb-4">Kesh is distributed under the <a href="https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12" target="_blank" rel="noopener" class="text-emerald-400 underline hover:no-underline">European Union Public Licence v1.2 (EUPL 1.2)</a> — an OSI-approved copyleft licence, drafted by the European Commission, and explicitly compatible with the GPL family.</p>
+			<p class="text-slate-300 leading-relaxed">You can run it, modify it, and redistribute it, including commercially. If you distribute a modified version, you publish your changes under the same terms.</p>
+		</div>
+	</section>
+
+	<footer class="border-t border-slate-800 bg-slate-950">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+			<div class="flex items-center gap-3">
+				<img src="img/logo.svg" alt="" class="w-7 h-7 opacity-70" />
+				<span>Kesh — open-source Swiss accounting</span>
+			</div>
+			<div class="flex items-center gap-6">
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="hover:text-white transition-colors">GitHub</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="hover:text-white transition-colors">Issues</a>
+				<a href="https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12" target="_blank" rel="noopener" class="hover:text-white transition-colors">EUPL 1.2</a>
+			</div>
+		</div>
+	</footer>
+</body>
+</html>

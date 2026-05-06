@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Roadmap — Kesh</title>
+	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 Swiss VAT and payments, planned epics and current status." />
+	<meta name="theme-color" content="#0f172a" />
+	<link rel="icon" type="image/svg+xml" href="img/logo.svg" />
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script>
+		tailwind.config = { darkMode: 'class' };
+	</script>
+	<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+	<header class="sticky top-0 z-50 backdrop-blur-md bg-slate-950/70 border-b border-slate-800">
+		<nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+			<a href="index.html" class="flex items-center gap-3 group">
+				<img src="img/logo.svg" alt="Kesh logo" class="w-9 h-9 transition-transform group-hover:scale-110" />
+				<span class="text-xl font-bold tracking-tight">Kesh</span>
+			</a>
+			<div class="hidden md:flex items-center gap-8 text-sm font-medium">
+				<a href="index.html" class="text-slate-300 hover:text-white transition-colors">Home</a>
+				<a href="about.html" class="text-slate-300 hover:text-white transition-colors">About</a>
+				<a href="roadmap.html" class="text-emerald-400">Roadmap</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="text-slate-300 hover:text-white transition-colors">Issues</a>
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">GitHub</a>
+			</div>
+		</nav>
+	</header>
+
+	<!-- Hero -->
+	<section class="relative overflow-hidden border-b border-slate-800">
+		<div class="absolute inset-0 hero-gradient"></div>
+		<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<p class="text-emerald-400 text-sm font-mono mb-3">// Roadmap</p>
+			<h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">From foundations to Swiss VAT.</h1>
+			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) to the first feature-complete production release (v0.2).</p>
+			<div class="flex gap-4 mt-8 text-sm">
+				<div class="flex items-center gap-2">
+					<span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+					<span class="text-slate-400">Done</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<span class="w-3 h-3 rounded-full bg-amber-400 pulse-glow"></span>
+					<span class="text-slate-400">In progress</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<span class="w-3 h-3 rounded-full bg-slate-600"></span>
+					<span class="text-slate-400">Backlog</span>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- v0.1 -->
+	<section class="border-b border-slate-800">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<div class="flex items-baseline gap-4 mb-2">
+				<h2 class="text-3xl font-bold tracking-tight">v0.1 — MVP</h2>
+				<span class="text-sm text-slate-500 font-mono">Foundation release</span>
+			</div>
+			<p class="text-slate-400 mb-10">Core accounting, contacts, invoicing, banking import. The minimum a Swiss freelancer needs to issue invoices and reconcile bank statements.</p>
+
+			<div class="relative pl-12 space-y-8">
+				<div class="timeline-line"></div>
+
+				<!-- E1 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E1 — Foundations &amp; Authentication</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Workspace bootstrap, MariaDB schema baseline, JWT authentication with refresh tokens, password hashing, login flow.</p>
+					</div>
+				</div>
+
+				<!-- E2 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E2 — Onboarding &amp; Configuration</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Company creation flow, user-to-company assignment, multi-tenant scoping (<code>company_id</code> JWT claim).</p>
+					</div>
+				</div>
+
+				<!-- E3 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E3 — Chart of Accounts &amp; Journal Entries</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Swiss chart of accounts seed, double-entry validation, journal entry CRUD, immutable audit log.</p>
+					</div>
+				</div>
+
+				<!-- E4 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E4 — Contacts &amp; Product Catalog</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Contact management (customers, suppliers), product catalog with VAT rates and payment terms.</p>
+					</div>
+				</div>
+
+				<!-- E5 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E5 — QR Bill Invoicing</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Invoice CRUD, QR Bill 2.2 PDF generation, invoice status workflow (draft → sent → paid).</p>
+					</div>
+				</div>
+
+				<!-- E6 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E6 — Quality &amp; CI/CD</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">GitHub Actions CI pipeline, Docker images on Docker Hub, pre-commit hooks, automated release tagging.</p>
+					</div>
+				</div>
+
+				<!-- E7 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E7 — Technical Debt Closure</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Multi-tenant scoping rollout, full-text search, Playwright stability fixes, security hardening (KF-002 audit).</p>
+					</div>
+				</div>
+
+				<!-- E8 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-amber-400 border-4 border-slate-950 ring-2 ring-amber-400/30 pulse-glow"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-amber-400/40">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E8 — Bank Import &amp; Reconciliation</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">In progress</span>
+						</div>
+						<p class="text-sm text-slate-400 mb-3">CAMT.053 ISO 20022 parser, CSV import (multi-bank profiles), automatic reconciliation against open invoices.</p>
+						<div class="text-xs font-mono text-slate-500 space-y-1">
+							<div>↳ 8-1a CAMT.053 parser <span class="text-emerald-400">✓ done</span></div>
+							<div>↳ 8-1b CAMT.053 persistence + UI <span class="text-emerald-400">✓ done</span></div>
+							<div>↳ 8-2 CSV import <span class="text-amber-300">in progress</span></div>
+							<div>↳ 8-3+ reconciliation <span class="text-slate-500">backlog</span></div>
+						</div>
+					</div>
+				</div>
+
+				<!-- E9 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-slate-600 border-4 border-slate-950"></div>
+					<div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold text-slate-300">E9 — Reports &amp; Exports</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Backlog</span>
+						</div>
+						<p class="text-sm text-slate-500">Balance sheet, P&amp;L, trial balance, CSV/PDF exports.</p>
+					</div>
+				</div>
+
+				<!-- E10 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-slate-600 border-4 border-slate-950"></div>
+					<div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold text-slate-300">E10 — Deployment &amp; Operations</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Backlog</span>
+						</div>
+						<p class="text-sm text-slate-500">Production docker-compose, backup/restore tooling, observability dashboards, security baseline.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- v0.2 -->
+	<section class="border-b border-slate-800 bg-slate-900/30">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+			<div class="flex items-baseline gap-4 mb-2">
+				<h2 class="text-3xl font-bold tracking-tight">v0.2 — Production-ready</h2>
+				<span class="text-sm text-slate-500 font-mono">Swiss VAT &amp; payments</span>
+			</div>
+			<p class="text-slate-400 mb-10">Everything an SME needs to run a full fiscal year on Kesh: VAT computation, outgoing payments, budgets, year-end closing.</p>
+
+			<div class="grid sm:grid-cols-2 gap-4">
+				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
+					<h3 class="font-semibold mb-1">E11 — Swiss VAT</h3>
+					<p class="text-sm text-slate-400">Per-period VAT computation, official VAT report formats, multiple rates (standard, reduced, accommodation).</p>
+				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
+					<h3 class="font-semibold mb-1">E12 — Credits &amp; Payments (pain.001)</h3>
+					<p class="text-sm text-slate-400">Generate ISO 20022 pain.001 outgoing payment files for upload to Swiss e-banking.</p>
+				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
+					<h3 class="font-semibold mb-1">E13 — Budgets</h3>
+					<p class="text-sm text-slate-400">Annual budgets per account, variance reports, cash-flow forecasting.</p>
+				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
+					<h3 class="font-semibold mb-1">E14 — Year-end Closing</h3>
+					<p class="text-sm text-slate-400">Period locking, opening balance carry-forward, closing entries automation.</p>
+				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800 sm:col-span-2">
+					<h3 class="font-semibold mb-1">E15 — Receipts, Payment Matching &amp; Custom Journals</h3>
+					<p class="text-sm text-slate-400">Document attachments, automated payment matching to invoices, user-definable journal types.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Track progress -->
+	<section>
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+			<h2 class="text-2xl font-bold tracking-tight mb-3">Track progress</h2>
+			<p class="text-slate-400 mb-8">All work is tracked publicly on GitHub.</p>
+			<div class="flex flex-col sm:flex-row gap-4 justify-center">
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">Browse issues</a>
+				<a href="https://github.com/guycorbaz/kesh/pulls" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 transition-colors text-slate-100 font-semibold">Open pull requests</a>
+			</div>
+		</div>
+	</section>
+
+	<footer class="border-t border-slate-800 bg-slate-950">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+			<div class="flex items-center gap-3">
+				<img src="img/logo.svg" alt="" class="w-7 h-7 opacity-70" />
+				<span>Kesh — open-source Swiss accounting</span>
+			</div>
+			<div class="flex items-center gap-6">
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="hover:text-white transition-colors">GitHub</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="hover:text-white transition-colors">Issues</a>
+				<a href="https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12" target="_blank" rel="noopener" class="hover:text-white transition-colors">EUPL 1.2</a>
+			</div>
+		</div>
+	</footer>
+</body>
+</html>

@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Kesh — Open-source Swiss accounting & invoicing</title>
+	<meta name="description" content="Kesh is a free, open-source, self-hosted accounting and management software for Swiss freelancers, SMEs, and associations. Built with Rust, SvelteKit, and MariaDB." />
+	<meta name="theme-color" content="#0f172a" />
+	<link rel="icon" type="image/svg+xml" href="img/logo.svg" />
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script>
+		tailwind.config = {
+			darkMode: 'class',
+			theme: {
+				extend: {
+					colors: {
+						accent: { DEFAULT: '#10b981', soft: '#10b98115' },
+					},
+				},
+			},
+		};
+	</script>
+	<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+	<!-- Navigation -->
+	<header class="sticky top-0 z-50 backdrop-blur-md bg-slate-950/70 border-b border-slate-800">
+		<nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+			<a href="index.html" class="flex items-center gap-3 group">
+				<img src="img/logo.svg" alt="Kesh logo" class="w-9 h-9 transition-transform group-hover:scale-110" />
+				<span class="text-xl font-bold tracking-tight">Kesh</span>
+			</a>
+			<div class="hidden md:flex items-center gap-8 text-sm font-medium">
+				<a href="index.html" class="text-emerald-400">Home</a>
+				<a href="about.html" class="text-slate-300 hover:text-white transition-colors">About</a>
+				<a href="roadmap.html" class="text-slate-300 hover:text-white transition-colors">Roadmap</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="text-slate-300 hover:text-white transition-colors">Issues</a>
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">
+					<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+					GitHub
+				</a>
+			</div>
+			<button id="menu-toggle" class="md:hidden text-slate-300 hover:text-white" aria-label="Toggle menu">
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+			</button>
+		</nav>
+		<div id="mobile-menu" class="hidden md:hidden border-t border-slate-800 bg-slate-950">
+			<div class="flex flex-col gap-4 px-4 py-4 text-sm">
+				<a href="index.html" class="text-emerald-400">Home</a>
+				<a href="about.html" class="text-slate-300">About</a>
+				<a href="roadmap.html" class="text-slate-300">Roadmap</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="text-slate-300">Issues</a>
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="text-emerald-400 font-semibold">GitHub →</a>
+			</div>
+		</div>
+	</header>
+
+	<!-- Hero -->
+	<section class="relative overflow-hidden">
+		<div class="absolute inset-0 bg-grid opacity-50"></div>
+		<div class="absolute inset-0 hero-gradient"></div>
+		<div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32 lg:py-40">
+			<div class="max-w-4xl mx-auto text-center">
+				<div class="animate-fade-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm font-medium mb-6">
+					<span class="w-2 h-2 rounded-full bg-emerald-400 pulse-glow"></span>
+					v0.1 in active development
+				</div>
+				<h1 class="animate-fade-up delay-1 text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6">
+					Open-source <span class="bg-gradient-to-r from-emerald-400 via-blue-400 to-emerald-500 bg-clip-text text-transparent">Swiss accounting</span> &amp; invoicing
+				</h1>
+				<p class="animate-fade-up delay-2 text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed">
+					Kesh is a free, self-hosted accounting and management platform for Swiss freelancers, SMEs, and associations. QR Bill 2.2, CAMT.053 import, multi-tenant, multilingual.
+				</p>
+				<div class="animate-fade-up delay-3 flex flex-col sm:flex-row gap-4 justify-center">
+					<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">
+						<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+						View on GitHub
+					</a>
+					<a href="roadmap.html" class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 transition-colors text-slate-100 font-semibold">
+						Roadmap
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+					</a>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Key features -->
+	<section class="border-t border-slate-800 bg-slate-900/50">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<div class="text-center mb-14">
+				<h2 class="text-3xl sm:text-4xl font-bold tracking-tight mb-4">Built for Swiss financial workflows</h2>
+				<p class="text-slate-400 max-w-2xl mx-auto">Compliance, security, and a modern stack — designed from day one for freelancers, SMEs, and accounting professionals.</p>
+			</div>
+
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
+					<div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+						<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+					</div>
+					<h3 class="text-lg font-semibold mb-2">Double-entry bookkeeping</h3>
+					<p class="text-sm text-slate-400">Swiss chart of accounts, validated journal entries, immutable audit log.</p>
+				</div>
+
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
+					<div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+						<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
+					</div>
+					<h3 class="text-lg font-semibold mb-2">QR Bill 2.2</h3>
+					<p class="text-sm text-slate-400">Pixel-perfect Swiss QR-Bill PDF generation, fully compliant with SIX 2.2 specification.</p>
+				</div>
+
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
+					<div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+						<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+					</div>
+					<h3 class="text-lg font-semibold mb-2">CAMT.053 + CSV import</h3>
+					<p class="text-sm text-slate-400">Bank statement import in ISO 20022 CAMT.053 format and configurable CSV profiles per bank.</p>
+				</div>
+
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
+					<div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+						<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+					</div>
+					<h3 class="text-lg font-semibold mb-2">Multilingual</h3>
+					<p class="text-sm text-slate-400">French, German, Italian, English. Locale-aware formatting (apostrophes for thousands, dd.mm.yyyy dates).</p>
+				</div>
+
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
+					<div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+						<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+					</div>
+					<h3 class="text-lg font-semibold mb-2">Multi-tenant &amp; RBAC</h3>
+					<p class="text-sm text-slate-400">Strict company-level isolation, role-based access control, JWT + refresh tokens.</p>
+				</div>
+
+				<div class="p-6 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
+					<div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+						<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+					</div>
+					<h3 class="text-lg font-semibold mb-2">Self-hosted &amp; free</h3>
+					<p class="text-sm text-slate-400">EUPL 1.2 license. Docker Compose deployment. Your data stays on your infrastructure.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Tech stack -->
+	<section class="border-t border-slate-800">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<div class="grid lg:grid-cols-2 gap-12 items-center">
+				<div>
+					<h2 class="text-3xl sm:text-4xl font-bold tracking-tight mb-4">Modern, type-safe stack</h2>
+					<p class="text-slate-400 mb-6 leading-relaxed">Kesh is built on a deliberately conservative selection of modern, type-safe technologies. The accounting engine is pure Rust with comprehensive unit tests; the web layer uses Axum and SvelteKit for performance and DX.</p>
+					<dl class="space-y-3 text-sm">
+						<div class="flex gap-3">
+							<dt class="text-emerald-400 font-mono w-24 shrink-0">Backend</dt>
+							<dd class="text-slate-300">Rust 1.85 (edition 2024), Axum, SQLx</dd>
+						</div>
+						<div class="flex gap-3">
+							<dt class="text-emerald-400 font-mono w-24 shrink-0">Frontend</dt>
+							<dd class="text-slate-300">SvelteKit 2 + Svelte 5, TypeScript, Tailwind CSS 4</dd>
+						</div>
+						<div class="flex gap-3">
+							<dt class="text-emerald-400 font-mono w-24 shrink-0">Database</dt>
+							<dd class="text-slate-300">MariaDB 11.4</dd>
+						</div>
+						<div class="flex gap-3">
+							<dt class="text-emerald-400 font-mono w-24 shrink-0">Deploy</dt>
+							<dd class="text-slate-300">Docker Compose</dd>
+						</div>
+						<div class="flex gap-3">
+							<dt class="text-emerald-400 font-mono w-24 shrink-0">Testing</dt>
+							<dd class="text-slate-300">cargo test, Vitest, Playwright</dd>
+						</div>
+					</dl>
+				</div>
+				<div class="relative">
+					<div class="absolute -inset-4 bg-gradient-to-r from-emerald-500/20 to-blue-500/20 rounded-2xl blur-xl"></div>
+					<pre class="relative rounded-xl border border-slate-800 bg-slate-900 p-6 text-sm overflow-x-auto"><code class="text-slate-200"><span class="text-slate-500"># Quick start</span>
+git clone https://github.com/guycorbaz/kesh.git
+<span class="text-emerald-400">cd</span> kesh
+
+<span class="text-slate-500"># Start MariaDB + backend</span>
+docker compose -f docker-compose.dev.yml up -d
+
+<span class="text-slate-500"># Frontend (hot reload)</span>
+<span class="text-emerald-400">cd</span> frontend &amp;&amp; npm install &amp;&amp; npm run dev
+
+<span class="text-slate-500"># → http://localhost:5173</span></code></pre>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- CTA -->
+	<section class="border-t border-slate-800 bg-gradient-to-b from-slate-900/50 to-slate-950">
+		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+			<h2 class="text-3xl sm:text-4xl font-bold tracking-tight mb-4">Get involved</h2>
+			<p class="text-slate-400 mb-8 max-w-2xl mx-auto">Kesh is in active development under the EUPL 1.2 license. Contributions, bug reports, and feature requests are welcome.</p>
+			<div class="flex flex-col sm:flex-row gap-4 justify-center">
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors">
+					Browse issues
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+				</a>
+				<a href="about.html" class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 transition-colors text-slate-100 font-semibold">
+					Learn more
+				</a>
+			</div>
+		</div>
+	</section>
+
+	<!-- Footer -->
+	<footer class="border-t border-slate-800 bg-slate-950">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+			<div class="flex items-center gap-3">
+				<img src="img/logo.svg" alt="" class="w-7 h-7 opacity-70" />
+				<span>Kesh — open-source Swiss accounting</span>
+			</div>
+			<div class="flex items-center gap-6">
+				<a href="https://github.com/guycorbaz/kesh" target="_blank" rel="noopener" class="hover:text-white transition-colors">GitHub</a>
+				<a href="https://github.com/guycorbaz/kesh/issues" target="_blank" rel="noopener" class="hover:text-white transition-colors">Issues</a>
+				<a href="https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12" target="_blank" rel="noopener" class="hover:text-white transition-colors">EUPL 1.2</a>
+			</div>
+		</div>
+	</footer>
+
+	<script>
+		// Mobile menu toggle.
+		const toggle = document.getElementById('menu-toggle');
+		const menu = document.getElementById('mobile-menu');
+		if (toggle && menu) {
+			toggle.addEventListener('click', () => menu.classList.toggle('hidden'));
+		}
+	</script>
+</body>
+</html>
