@@ -1,4 +1,4 @@
-# Story 8.3: Détection de doublons & rejet partiel
+# Story 8-3: Détection de doublons & rejet partiel
 
 Status: ready-for-dev
 
@@ -49,7 +49,12 @@ so that **aucune transaction n'apparaît en double dans ma comptabilité, et qu'
 - **Critère** : `(company_id, file_hash)` exact (SHA-256 hex). Hérité 8-1b.
 - **Migration** : `20260507000001_bank_imports_relax_hash_unique.sql` remplace `uq_bank_imports_company_hash UNIQUE` par `idx_bank_imports_company_hash` non-unique. **Justification** : pour permettre `confirmDuplicateFile=true`, deux rows distincts avec même `(company_id, file_hash)` doivent coexister (chacun avec son propre `imported_at` / `imported_by_user_id` / éventuellement transactions différentes après skip de doublons-ligne). Sans relâcher le UNIQUE, l'INSERT échoue avec SQL 1062 et il n'y a pas d'override propre.
 - **Test 8-1b à adapter** : `unique_company_hash_blocks_duplicate_within_same_company` actuellement asserte une erreur SQL 1062. Le renommer / réécrire en `find_by_company_and_hash_finds_existing_for_dedup_check` qui asserte le check applicatif via `repositories::bank_imports::find_by_company_and_hash` (déjà existant dans 8-1b à `bank_imports.rs:230`). **Sans cette modification, la migration plante les tests existants**.
-- **Concurrence** : un INSERT concurrent sans `confirmDuplicateFile=true` pourrait théoriquement arriver à `find_by_company_and_hash` retournant `None` côté handler A pendant que handler B est en train de commit. Solution : `SELECT ... FOR SHARE` ou défense applicative simple via `bank_imports::find_by_company_and_hash` appelé **dans la transaction** juste avant l'INSERT du header (`tx.begin()` → `find_by_company_and_hash` → INSERT). En pratique, MariaDB en `REPEATABLE READ` (default) lit le snapshot de début de transaction donc la fenêtre de race est microscopique. Acceptable pour v0.1 — documenter en limitation L11.
+- **Concurrence** : un INSERT concurrent sans `confirmDuplicateFile=true` peut arriver à `find_by_company_and_hash` retournant `None` côté handler A pendant que handler B est en train de commit. **Sous MariaDB `REPEATABLE READ` (default), le snapshot début-tx ne voit pas l'INSERT concurrent committé après le début ; les deux SELECT retournent `None` → les deux INSERT passent**. Sans le UNIQUE relâché, on pourrait s'appuyer sur la contrainte ; avec relâchement, la race n'est **pas** fermée par REPEATABLE READ. Mitigations possibles :
+  - **(a)** `SELECT ... FOR UPDATE` sur une row sentinelle de `bank_imports` (pas trivial — il faudrait un row d'index unique scopé `(company_id, file_hash)` pré-existant qu'on lock, ou un advisory lock applicatif via `GET_LOCK('bank_import_dedup', company_id || file_hash)`).
+  - **(b)** Rétablir le UNIQUE conditionnel via une colonne `force_insert_marker` (CHECK `(force_insert_marker IS NULL AND ...) UNIQUE`) — complexité MariaDB non triviale.
+  - **(c)** Accepter la race comme **rare empiriquement** (les imports concurrents du même fichier par le même utilisateur sur la même company sont peu probables — typiquement 1 import par jour, retry-after-error humain, pas de cron).
+
+  **Décision v0.1** : option (c) — race acceptée + documentée en L11. Si la rareté empirique se révèle fausse en prod (KF émergente), revenir à (a) advisory lock dans T6.2 step 2 (lift-and-shift, ~10 lignes). Les imports CAMT.053 mensuels et les CSV bancaires manuels ne sont structurellement pas exposés à du concurrent INSERT par le même user/company/hash.
 
 #### §dedup-key (détection ligne-par-ligne)
 
@@ -59,13 +64,14 @@ so that **aucune transaction n'apparaît en double dans ma comptabilité, et qu'
 - **Helper** : `kesh_core::bank_imports::detect_duplicate_lines(new: &[BankTransactionDraft], existing: &[BankTransaction]) -> Vec<DuplicateLine>` où `DuplicateLine { new_index: usize, existing_id: i64, key: String }`. Pure (sans I/O), facilement testable.
 - **Justification clé** : `(date, amount, ref, account)` est exactement le critère donné par epic-8 (« And détection de doublons par combinaison : `date + montant + référence + bank_account_id` »). Le fallback `coalesce(ref, eid, tid, "")` est l'extension naturelle pour CSV où `reference` est souvent absent mais `end_to_end_id` ou `transaction_id` peut être disponible (hérité du parser).
 
-#### §confirm-flags (3 flags `confirm*` côté `POST /bank-imports`)
+#### §confirm-flags (4 flags `confirm*` côté `POST /bank-imports` — 3 nouveaux 8-3 + 1 hérité 8-2)
 
-| Flag multipart | Default | Quand actif | Comportement |
-|---|---|---|---|
-| `confirmDuplicateFile` | `false` | preview retourne `warnings.duplicateFile` non-nil | `false` → **422 BANK_IMPORT_DUPLICATE_FILE** (pas 409 — voir note ci-dessous). `true` → INSERT bank_imports même hash + audit `bank_import.created_with_duplicate_file`. |
-| `confirmDuplicateLines` | `"skip"` (string enum) | preview retourne `warnings.duplicateLines` non-vide | `"skip"` → persiste seulement les lignes non-doublons + audit `bank_import.created_with_duplicate_lines_skipped` + `details_json.duplicate_lines_skipped: N`. `"import"` → persiste toutes les lignes (override du skip) + audit `bank_import.created_with_duplicate_lines_imported`. **Pas d'option `"reject"` distincte** : si l'utilisateur veut tout rejeter, il ne soumet simplement pas le `POST /bank-imports`. |
-| `confirmPartialImport` | `false` | parser CSV retourne `CsvError::PartialFailure` | `false` → `422 BANK_CSV_PARTIAL_FAILURE` + payload listing (comportement 8-2 inchangé). `true` → persiste les lignes valides + retour `201 Created` + `warnings.invalidLines: [{line, code, value, message_i18n_key}]` + audit `bank_import.created_with_partial`. |
+| Flag multipart | Default | Quand actif | Comportement | Audit (cf. §audit-log-actions) |
+|---|---|---|---|---|
+| `confirmDuplicateFile` | `false` | preview retourne `warnings.duplicateFile` non-nil | `false` → **422 BANK_IMPORT_DUPLICATE_FILE** (pas 409 — voir note ci-dessous). `true` → INSERT bank_imports même hash. | `details_json.modifiers += ["duplicate_file"]` |
+| `confirmDuplicateLines` | `"skip"` (string enum) | preview retourne `warnings.duplicateLines` non-vide | `"skip"` → persiste seulement les lignes non-doublons. `"import"` → persiste toutes les lignes (override du skip). **Pas d'option `"reject"` distincte** : si l'utilisateur veut tout rejeter, il ne soumet simplement pas le `POST /bank-imports`. | `+= ["duplicate_lines_skipped"]` ou `+= ["duplicate_lines_imported"]` ; `details_json.duplicate_lines_skipped: N` ou `duplicate_lines_imported: N` |
+| `confirmPartialImport` | `false` | parser CSV retourne `CsvError::PartialFailure` | `false` → `422 BANK_CSV_PARTIAL_FAILURE` + payload listing (comportement 8-2 inchangé). `true` → persiste les lignes valides + retour `201 Created` + `warnings.invalidLines: { lines, totalErrors, truncated }`. | `+= ["partial"]` ; `details_json.partial_invalid_lines: N`, `partial_total_errors: N`, `partial_truncated: bool` |
+| `confirmEncodingMismatch` *(8-2 backend, 8-3 frontend wiring)* | `false` | preview retourne `warnings.encodingMismatch` (8-2) | **8-2 backend déjà parsé + déjà mappé** ; **8-3 = frontend wiring uniquement** (KF #70, T7.3, AC #20). Audit existait en 8-2 sous l'action discriminante `bank_import.created_with_encoding_mismatch` → migrée 8-3 vers le pattern modifiers (cf. T6.6). | `+= ["encoding_mismatch"]` |
 
 **Note codes HTTP `BANK_IMPORT_DUPLICATE_FILE` 409 → 422** : 8-1b utilise `409 BANK_IMPORT_DUPLICATE_FILE` retourné via `Err(DbError::UniqueConstraintViolation)` mappé inline. 8-3 retire le UNIQUE (cf. §dedup-file) et fait le check applicatif **avant** l'INSERT, **dans le handler** (pas dans le repo). Le code 409 « Conflict » garde du sens pour l'unicité, mais `422 Unprocessable Entity` est plus cohérent avec le reste des erreurs `BankImport*` (balance/currency/no-matching-statement) qui sont aussi des refus métier. **Décision** : aligner sur `422 BANK_IMPORT_DUPLICATE_FILE` pour la cohérence des `confirm*=true`. Adapter le test `unique_company_hash_blocks_duplicate_within_same_company` en conséquence.
 
@@ -85,12 +91,16 @@ Réponse JSON `POST /preview` étendue (forme stable, fields optionnels) :
     "ignoredStatements": [{"statementId": "...", "iban": "..."}],
     "duplicateFile": null | {"existingImportId": 42, "existingFilename": "releve.xml", "existingImportedAt": "2026-04-12T10:30:00Z"},
     "duplicateLines": [{"newIndex": 0, "existingTransactionId": 123, "key": "2026-04-12|150.00|REF-ABC|17"}],
-    "invalidLines": [{"line": 7, "code": "InvalidDate", "value": "32.13.2026", "messageI18nKey": "bank-import-csv-errors-invalid-date"}]
+    "invalidLines": null | {
+      "lines": [{"line": 7, "code": "InvalidDate", "value": "32.13.2026", "messageI18nKey": "bank-import-csv-errors-invalid-date"}],
+      "totalErrors": 3,
+      "truncated": false
+    }
   }
 }
 ```
 
-`warnings` est toujours présent (jamais `null`). Champs `null`/`[]` quand absent. **Backward-compat 8-1b/8-2** : les tests existants n'asserent que sur `transactions[*]` ou sur `warnings.balanceMismatch`/`unsupportedCurrency`, ne cassent pas avec les ajouts.
+`warnings` est toujours présent (jamais `null`). Champs `null`/`[]` quand absent. **`invalidLines` est un objet** `{ lines, totalErrors, truncated }` (pas un array) — analogue à `balanceMismatch` qui est aussi un objet, et homogène avec le besoin d'exposer `totalErrors`/`truncated` en cas de cap (cf. AC #15). **Backward-compat 8-1b/8-2** : les tests existants n'asserent que sur `transactions[*]` ou sur `warnings.balanceMismatch`/`unsupportedCurrency`, ne cassent pas avec les ajouts.
 
 #### §kesh-import-partial-mode (parser CSV)
 
@@ -121,23 +131,32 @@ pub enum ParseCsvOutcome {
 
 **Localisation des changements** : `crates/kesh-import/src/csv/parser.rs` (refactor + nouvelle fn) + `crates/kesh-import/src/csv/mod.rs` (re-export). **Pas de breaking change** sur `kesh_import::CsvError` ni sur `parse_csv`. Module `kesh-import` reste publishable (invariant 8-1a `cargo publish --dry-run` préservé).
 
-#### §audit-log-actions (8 nouvelles actions audit)
+#### §audit-log-actions (action canonique unique + modifiers discriminants)
 
-Toutes les variantes confirm-driven produisent une `audit_log.action` distincte pour traçabilité :
+**Décision 8-3 — single canonical action** : on **abandonne** le pattern action-discriminante de 8-1b (`bank_import.created_with_balance_mismatch`) au profit d'une **action canonique unique** `bank_import.created` + `details_json.modifiers: Vec<String>` qui discrimine les variantes. Justification : avec 8-3, le nombre de combinaisons explose (5 modifiers × combinaisons N!) ; les actions composées (`bank_import.created_with_balance_mismatch_and_duplicate_file_and_partial`) deviennent illisibles et ingérables côté requêtes audit.
 
-| Action | Quand |
-|---|---|
-| `bank_import.created` | Happy path (pas de warning, ou tous warnings absents en preview) |
-| `bank_import.created_with_balance_mismatch` | 8-1b inchangé |
-| `bank_import.created_with_duplicate_file` | `confirmDuplicateFile=true` |
-| `bank_import.created_with_duplicate_lines_skipped` | `warnings.duplicateLines` non-vide + `confirmDuplicateLines="skip"` (default) |
-| `bank_import.created_with_duplicate_lines_imported` | `warnings.duplicateLines` non-vide + `confirmDuplicateLines="import"` |
-| `bank_import.created_with_partial` | `confirmPartialImport=true` |
-| `bank_import.created_with_encoding_mismatch` | `confirmEncodingMismatch=true` (8-2 backend déjà OK, audit déjà tracé en 8-2 — pas de modif 8-3 sauf vérification que le mapping audit existe ; sinon ajouter) |
+**Migration 8-1b** : le test 8-1b qui asserte `action == "bank_import.created_with_balance_mismatch"` doit être **adapté** pour asserter `action == "bank_import.created"` + `details_json.modifiers contains "balance_mismatch"`. Cf. T6.6 (nouvelle subtask).
 
-**Combinaisons** : si plusieurs flags sont `true` (ex. `confirmDuplicateFile=true` + `confirmPartialImport=true`), on émet **une seule entrée audit** avec une `action` composée par concat avec `+` ou via `details_json.modifiers: ["duplicate_file", "partial"]`. **Décision 8-3** : utiliser `details_json.modifiers: Vec<String>` pour rester simple — `action` reste `"bank_import.created_with_modifiers"` (ou `"bank_import.created"` si modifiers vide). Cf. T6.4 mapping détaillé.
+**Mapping canonique 8-3** :
 
-**Note traçabilité** : `details_json` contient en plus `duplicate_lines_skipped: N`, `duplicate_lines_imported: N`, `partial_invalid_lines: N`, `partial_total_errors: N`, `partial_truncated: bool` selon les modifiers actifs. Permet à un audit a posteriori de quantifier les overrides utilisateur.
+| Condition | `audit_log.action` | `details_json.modifiers` (Vec<String>) |
+|---|---|---|
+| Aucun warning, ou tous warnings absents | `bank_import.created` | `[]` |
+| `confirmBalanceMismatch=true` | `bank_import.created` | `["balance_mismatch"]` |
+| `confirmDuplicateFile=true` | `bank_import.created` | `["duplicate_file"]` |
+| `warnings.duplicateLines` non-vide, default skip | `bank_import.created` | `["duplicate_lines_skipped"]` |
+| `warnings.duplicateLines` non-vide, `confirmDuplicateLines="import"` | `bank_import.created` | `["duplicate_lines_imported"]` |
+| `confirmPartialImport=true` | `bank_import.created` | `["partial"]` |
+| `confirmEncodingMismatch=true` | `bank_import.created` | `["encoding_mismatch"]` |
+| Combinaisons | `bank_import.created` | concat des modifiers triés alphabétiquement |
+
+**Combinaisons** : exemple `confirmDuplicateFile=true` + `confirmPartialImport=true` → `details_json.modifiers = ["duplicate_file", "partial"]` (tri alphabétique pour stabilité des tests). **Une seule entrée audit** par import quel que soit le nombre de modifiers actifs.
+
+**Note 8-2 `bank_import.created_with_encoding_mismatch`** : 8-2 a livré cette action discriminante. **Migration symétrique** dans 8-3 : `action = "bank_import.created"` + `modifiers = ["encoding_mismatch"]`. Adapter le test 8-2 correspondant. Cf. T6.6.
+
+**Note traçabilité** : `details_json` contient en plus `duplicate_lines_skipped: N`, `duplicate_lines_imported: N`, `partial_invalid_lines: N`, `partial_total_errors: N`, `partial_truncated: bool` selon les modifiers actifs. Permet à un audit a posteriori de quantifier les overrides utilisateur sans avoir à parser des actions composées.
+
+**Backward-compat des consommateurs externes** : aucun consommateur externe (BI / dashboards) n'a été identifié sur l'audit `bank_import.*` à ce stade du projet (pré-v0.1 GA). Si un consommateur apparaît en v0.2+, prévoir une vue SQL `audit_log_legacy` qui synthétise l'action+modifiers en `bank_import.created_with_X` à la volée.
 
 ### Risque de splitting (CLAUDE.md check)
 
@@ -148,7 +167,14 @@ Toutes les variantes confirm-driven produisent une `audit_log.action` distincte 
 1. **Profondeur d'incertitude faible** : tous les patterns sont établis (multi-tenant scoping 6-2/7-1, audit log 1-8, `confirm*` flags 8-1b/8-2, partial-failure infrastructure 8-2). 8-3 est une **extension cohérente** pas un greenfield.
 2. **Frontière de split naturelle absente** : contrairement à 8-1 (parser autonome `kesh-import` vs persistance/UI = `cargo path dep`), 8-3 ne se découpe pas en deux livrables testables en isolation. Les helpers `kesh-core` détectent des doublons que seul un test E2E HTTP peut valider en bout de chaîne ; le mode partial commit `kesh-import` est trivialement testable mais inutile sans le wiring handler.
 3. **Volume estimé** : ~1500-2000 lignes net (vs 4500 pour 8-2 qui avait un nouveau parser CSV + nouvelle table profiles + nouveau frontend pour les profils). 8-3 est environ **40% du volume 8-2**, donc plus tenable en mental model unique.
-4. **Précédents** : Story 8-1b a tenu sur 5 modules sans split (3 passes review, convergence). Story 8-2 sur 6 modules a tenu mais a coûté 6 passes (3 spec + 3 code). 8-3 = 6 modules avec patterns acquis → projection 4 passes (2 spec + 2 code) raisonnable. **Trigger d'arrêt** : si Pass 4 spec validate ne converge pas, splitter rétroactivement en `8-3a` (kesh-core/kesh-db/kesh-import/kesh-api backend) + `8-3b` (frontend KF #70 + UI extension). La frontière naturelle backend-vs-frontend est la plus propre à ce stade.
+4. **Précédents** : Story 8-1b a tenu sur 5 modules sans split (3 passes review, convergence). Story 8-2 sur 6 modules a coûté **6 passes** (3 spec + 3 code) — c'est-à-dire **au seuil CLAUDE.md de splitting préventif** (4 passes). 8-3 = 6 modules avec patterns acquis → projection **4-6 passes** (2-3 spec + 2-3 code), pas optimiste. Si la convergence requiert > 6 passes, le coût LLM dépasse celui d'un split rétroactif.
+
+**Trigger d'arrêt** : si **Pass 4 spec validate** ne converge pas (≥ 1 finding > LOW), **splitter rétroactivement** selon la frontière `kesh-import` cargo dependency (publishable invariant 8-1a) :
+
+- **8-3a backend partial commit + dedup core** : T1 (migration DB), T2 (helper `detect_duplicate_lines`), T3 (`find_in_dedup_window`), T4 (mode partial `parse_csv_collect`), T5 (`preview` enrichie) + tests E2E preview-only correspondants. Livrable testable en isolation : la route `POST /preview` retourne les 4 nouveaux warnings, mais `POST /bank-imports` reste 8-2 (pas de `confirm*` flags additionnels). Backward-compat absolue.
+- **8-3b backend create flags + audit log + frontend** : T6 (`create` handler + `confirm*` flags + audit modifiers + T6.6 migration tests), T7 (frontend KF #70 + UI extension), T8 (i18n), T9 (Playwright), T10 (sync). Dépend de 8-3a comme prérequis.
+
+Cette frontière a deux avantages : (a) 8-3a est **déjà partiellement testable** en isolation via `POST /preview` (la UI 8-2 ignorerait juste les nouveaux champs warnings), (b) 8-3b devient un sprint front-heavy avec moins de risque architectural (les helpers backend sont déjà validés). **Décision pré-implementation** prise par Guy si la trigger se déclenche — pas appliquée par défaut.
 
 **Note 8-2** : KF #70 (frontend wiring `bankProfileId` + `confirmEncodingMismatch`) est inclus dans 8-3 car il **augmente la cohérence** du refactor frontend (un seul passage sur `BankImportUpload.svelte`) plutôt que de la fragmenter. Sans inclusion, `BankImportUpload` serait modifié 2× (8-3 puis 8-2bis), avec risque de régression. Le surcoût en lignes ajoutées est ~250 (estimé KF #70) + ~400 (ajouts 8-3 native) = ~650 lignes frontend, raisonnable.
 
@@ -162,7 +188,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 
 2. **(FR43 — create, fichier déjà importé sans confirm)** Given le même fichier déjà importé, When `POST /bank-imports` **sans** `confirmDuplicateFile`, Then `422 BANK_IMPORT_DUPLICATE_FILE` avec `details = { existingImportId, existingFilename }`. Aucune row insérée. *Test E2E HTTP : `post_import_rejects_duplicate_file_without_confirm`.* — **Remplacement test 8-1b** : ce test remplace `unique_company_hash_blocks_duplicate_within_same_company` qui assertait l'erreur SQL 1062 (caduque post-§dedup-file).
 
-3. **(FR43 — create, fichier déjà importé avec confirm)** Given le même fichier déjà importé, When `POST /bank-imports` **avec** `confirmDuplicateFile=true`, Then `201 Created` + nouveau `bank_imports.id` distinct + audit log `bank_import.created` avec `details_json.modifiers = ["duplicate_file"]`. Les deux rows `bank_imports` (ancien + nouveau) coexistent en DB pour le même `(company_id, file_hash)`. *Test E2E HTTP : `post_import_accepts_duplicate_file_with_confirm`.*
+3. **(FR43 — create, fichier déjà importé avec confirm)** Given le même fichier déjà importé, When `POST /bank-imports` **avec** `confirmDuplicateFile=true`, Then `201 Created` + nouveau `bank_imports.id` distinct + audit log `action = "bank_import.created"` + `details_json.modifiers = ["duplicate_file"]`. Les deux rows `bank_imports` (ancien + nouveau) coexistent en DB pour le même `(company_id, file_hash)`. *Test E2E HTTP : `post_import_accepts_duplicate_file_with_confirm`.*
 
 4. **(FR43 — multi-tenant safety, fichier déjà importé)** **Hérité 8-1b** (test `unique_company_hash_allows_same_hash_across_companies`). Le même fichier importé pour `company_A` n'empêche pas un import pour `company_B`. **Pas re-testé 8-3** mais le test existant **doit continuer à passer** post-migration §dedup-file.
 
@@ -170,9 +196,9 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 
 5. **(FR43 — preview, doublons ligne)** Given un nouvel import (fichier hash distinct) sur `bank_account_id = X` qui contient 5 transactions dont 2 matchent (selon clé `(booking_date, amount, ref_normalized, bank_account_id)`) des `bank_transactions` existantes d'un import précédent dans la même fenêtre `[period_from, period_to]`, When `POST /preview`, Then `warnings.duplicateLines = [{newIndex: 1, existingTransactionId: ..., key: "..."}, {newIndex: 3, ...}]` (2 entrées). Les 5 transactions sont listées dans `transactions` (l'utilisateur voit ce qu'il importe + ce qui est doublon). *Test E2E HTTP : `post_preview_returns_duplicate_lines_warning`.*
 
-6. **(FR43 — create, doublons ligne, skip default)** Given le même import qu'AC #5, When `POST /bank-imports` **sans** `confirmDuplicateLines` (ou avec `confirmDuplicateLines=skip` explicite), Then `201 Created` + 3 transactions persistées (5 - 2 doublons) + `bank_imports.transaction_count = 3` + audit log `bank_import.created` avec `details_json.modifiers = ["duplicate_lines_skipped"]`, `details_json.duplicate_lines_skipped = 2`. *Test E2E HTTP : `post_import_skips_duplicate_lines_by_default`.*
+6. **(FR43 — create, doublons ligne, skip default)** Given le même import qu'AC #5, When `POST /bank-imports` **sans** `confirmDuplicateLines` (ou avec `confirmDuplicateLines=skip` explicite), Then `201 Created` + 3 transactions persistées (5 - 2 doublons) + `bank_imports.transaction_count = 3` + audit log `action = "bank_import.created"` + `details_json.modifiers = ["duplicate_lines_skipped"]` + `details_json.duplicate_lines_skipped = 2`. *Test E2E HTTP : `post_import_skips_duplicate_lines_by_default`.*
 
-7. **(FR43 — create, doublons ligne, force import)** Given le même import qu'AC #5, When `POST /bank-imports` avec `confirmDuplicateLines=import`, Then `201 Created` + **5** transactions persistées (toutes, doublons inclus) + `bank_imports.transaction_count = 5` + audit log avec `modifiers = ["duplicate_lines_imported"]`, `details_json.duplicate_lines_imported = 2`. *Test E2E HTTP : `post_import_force_imports_duplicate_lines`.*
+7. **(FR43 — create, doublons ligne, force import)** Given le même import qu'AC #5, When `POST /bank-imports` avec `confirmDuplicateLines=import`, Then `201 Created` + **5** transactions persistées (toutes, doublons inclus) + `bank_imports.transaction_count = 5` + audit log `action = "bank_import.created"` + `details_json.modifiers = ["duplicate_lines_imported"]` + `details_json.duplicate_lines_imported = 2`. *Test E2E HTTP : `post_import_force_imports_duplicate_lines`.*
 
 8. **(FR43 — détection clé composite stable, référence vide)** Given une transaction nouvelle avec `reference = NULL`, `end_to_end_id = "EID-42"` matchant une existante avec `reference = NULL`, `end_to_end_id = "EID-42"`, même date/montant/compte, When détection, Then la transaction est marquée doublon (le fallback `coalesce(reference, end_to_end_id, transaction_id, "")` capture l'identité). *Test unitaire `kesh-core` : `detect_duplicate_lines_uses_end_to_end_id_when_reference_null`.*
 
@@ -180,23 +206,23 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 
 10. **(FR43 — multi-tenant safety, doublons ligne)** Given une transaction de `company_A` (`bank_account_id = 17` appartenant à A) avec mêmes date/montant/ref qu'une transaction `company_B` (`bank_account_id = 99` appartenant à B), When `company_A` importe pour son compte 17, Then aucun doublon détecté (la requête `find_in_dedup_window` filtre par `(company_id, bank_account_id)` — KF-002 Pattern 1). *Test E2E HTTP : `post_import_does_not_detect_duplicate_lines_across_tenants`.*
 
-11. **(FR43 — fenêtre de comparaison `period_from..period_to`)** Given une transaction nouvelle au `2026-05-15` dans un import dont `period_from=2026-05-01` et `period_to=2026-05-31`, et une transaction existante au `2026-04-12` (hors fenêtre), When détection, Then **pas** de doublon (la fenêtre filtre les transactions hors `period_from..period_to`). Si la transaction existante est au `2026-05-15` (dans la fenêtre, même date/montant/ref/account), Then doublon détecté. *Tests unitaires : `detect_duplicate_lines_skips_existing_outside_period` + `detect_duplicate_lines_finds_existing_within_period`.*
+11. **(FR43 — fenêtre de comparaison `period_from..period_to`)** Given une transaction nouvelle au `2026-05-15` dans un import dont `period_from=2026-05-01` et `period_to=2026-05-31`, et une transaction existante au `2026-04-12` (hors fenêtre), When détection, Then **pas** de doublon. Si la transaction existante est au `2026-05-15` (dans la fenêtre, même date/montant/ref/account), Then doublon détecté. **Le filtre fenêtre est appliqué côté SQL** par `find_in_dedup_window` (cf. T3.1) — le helper `detect_duplicate_lines` reçoit déjà des `existing_keys` filtrées et n'applique aucun filtre de date supplémentaire. *Tests : (a) intégration SQL `find_in_dedup_window_returns_only_within_period` (T3.2#1) couvre le filtre de fenêtre côté DB ; (b) unitaire `detect_duplicate_lines_finds_match_when_existing_key_in_input` couvre le helper sur des `existing_keys` pré-filtrés.*
 
 ### Partial commit CSV (FR51 partie 2)
 
-12. **(FR51 — preview, lignes invalides)** Given un fichier CSV avec 5 lignes valides + 3 lignes invalides (date malformée ligne 7, montant non-numérique ligne 12, ligne 18 trop courte), When `POST /preview`, Then `200 OK` + `transactions` contient les 5 valides + `warnings.invalidLines = [{line:7, code:"InvalidDate", ...}, {line:12, code:"InvalidAmount", ...}, {line:18, code:"RowTooShort", ...}]`. Pas d'erreur 422 au preview. *Test E2E HTTP : `post_preview_csv_returns_invalid_lines_warning`.*
+12. **(FR51 — preview, lignes invalides)** Given un fichier CSV avec 5 lignes valides + 3 lignes invalides (date malformée ligne 7, montant non-numérique ligne 12, ligne 18 trop courte), When `POST /preview`, Then `200 OK` + `transactions` contient les 5 valides + `warnings.invalidLines = { lines: [{line:7, code:"InvalidDate", ...}, {line:12, code:"InvalidAmount", ...}, {line:18, code:"RowTooShort", ...}], totalErrors: 3, truncated: false }`. Pas d'erreur 422 au preview. *Test E2E HTTP : `post_preview_csv_returns_invalid_lines_warning`.*
 
 13. **(FR51 — create, partial sans confirm — strict reject 8-2)** **Hérité 8-2** (test `post_csv_rejects_partial_failure_with_detailed_lines`). Given le même CSV, When `POST /bank-imports` **sans** `confirmPartialImport`, Then `422 BANK_CSV_PARTIAL_FAILURE` avec body `{ lines: [...], totalErrors: 3, truncated: false }`. **Pas re-testé 8-3** mais doit continuer à passer.
 
-14. **(FR51 — create, partial avec confirm)** Given le même CSV (5 valides + 3 invalides), When `POST /bank-imports` avec `confirmPartialImport=true`, Then `201 Created` + 5 transactions persistées + `bank_imports.transaction_count = 5` + warnings response `{ invalidLines: [...] }` retournée + audit log avec `modifiers = ["partial"]`, `details_json.partial_invalid_lines = 3`, `details_json.partial_total_errors = 3`, `details_json.partial_truncated = false`. *Test E2E HTTP : `post_import_csv_accepts_partial_with_confirm`.*
+14. **(FR51 — create, partial avec confirm)** Given le même CSV (5 valides + 3 invalides), When `POST /bank-imports` avec `confirmPartialImport=true`, Then `201 Created` + 5 transactions persistées + `bank_imports.transaction_count = 5` + warnings response `{ invalidLines: { lines: [...], totalErrors: 3, truncated: false } }` retournée + audit log `action = "bank_import.created"` + `details_json.modifiers = ["partial"]` + `details_json.partial_invalid_lines = 3` + `details_json.partial_total_errors = 3` + `details_json.partial_truncated = false`. *Test E2E HTTP : `post_import_csv_accepts_partial_with_confirm`.*
 
-15. **(FR51 — partial commit + cap 100 errors)** Given un CSV avec 50 lignes valides + 150 lignes invalides (au-dessus du `MAX_CSV_LINE_ERRORS = 100` cap), When `POST /bank-imports` avec `confirmPartialImport=true`, Then `201 Created` + 50 transactions persistées + `warnings.invalidLines.length == 100` (cappé) + `warnings.invalidLinesTotalErrors = 150` + `warnings.invalidLinesTruncated = true` + audit log `details_json.partial_total_errors = 150`, `partial_truncated = true`. *Test E2E HTTP : `post_import_csv_accepts_partial_with_truncated_errors`.*
+15. **(FR51 — partial commit + cap 100 errors)** Given un CSV avec 50 lignes valides + 150 lignes invalides (au-dessus du `MAX_CSV_LINE_ERRORS = 100` cap), When `POST /bank-imports` avec `confirmPartialImport=true`, Then `201 Created` + 50 transactions persistées + `warnings.invalidLines.lines.length == 100` (cappé) + `warnings.invalidLines.totalErrors == 150` + `warnings.invalidLines.truncated == true` + audit log `action = "bank_import.created"` + `details_json.modifiers = ["partial"]` + `details_json.partial_invalid_lines = 100` + `details_json.partial_total_errors = 150` + `details_json.partial_truncated = true`. *Test E2E HTTP : `post_import_csv_accepts_partial_with_truncated_errors`.*
 
 16. **(FR51 — partial commit + 0 lignes valides)** Given un CSV avec 0 lignes valides + 3 lignes invalides, When `POST /bank-imports` avec `confirmPartialImport=true`, Then `422 BANK_CSV_EMPTY_FILE` (pas `201` car aucune transaction à persister — `bank_imports.transaction_count = 0` n'a pas de sens v0.1, et la CHECK SQL `transaction_count >= 0` permettrait techniquement mais c'est une UX misleading). **Décision** : on rejette en `422 BANK_CSV_PARTIAL_FAILURE` avec un nouveau code de détail `details.reason = "no_valid_lines_to_commit"`. *Test E2E HTTP : `post_import_csv_rejects_partial_when_zero_valid_lines`.*
 
 ### Combinaisons confirm-flags (cas croisés)
 
-17. **(combinaison `duplicateFile + duplicateLines + partial`)** Given un fichier CSV avec (a) hash matchant un import existant, (b) 2 transactions chevauchant des transactions existantes dans la fenêtre, (c) 3 lignes invalides, When `POST /bank-imports` avec **les 3 flags** `confirmDuplicateFile=true`, `confirmDuplicateLines=skip`, `confirmPartialImport=true`, Then `201 Created` + audit log `details_json.modifiers = ["duplicate_file", "duplicate_lines_skipped", "partial"]` + transaction_count cohérent (`5 valides - 2 doublons = 3`). *Test E2E HTTP : `post_import_csv_combines_three_confirm_flags`.*
+17. **(combinaison `duplicateFile + duplicateLines + partial`)** Given un fichier CSV avec (a) hash matchant un import existant, (b) 2 transactions chevauchant des transactions existantes dans la fenêtre, (c) 3 lignes invalides, When `POST /bank-imports` avec **les 3 flags** `confirmDuplicateFile=true`, `confirmDuplicateLines=skip`, `confirmPartialImport=true`, Then `201 Created` + audit log `action = "bank_import.created"` + `details_json.modifiers = ["duplicate_file", "duplicate_lines_skipped", "partial"]` (tri alphabétique) + transaction_count cohérent (`5 valides - 2 doublons = 3`). *Test E2E HTTP : `post_import_csv_combines_three_confirm_flags`.*
 
 18. **(combinaison absente)** Given le même fichier qu'AC #17 mais avec aucun flag confirm, When `POST /bank-imports`, Then `422` retourné sur la **première erreur dans l'ordre** : `BANK_CSV_PARTIAL_FAILURE` (les lignes invalides sont détectées avant la dédup, car parser-side). Ordre de précédence des erreurs documenté en §error-precedence-order. *Test E2E HTTP : `post_import_returns_partial_failure_first_when_no_flags`.*
 
@@ -206,7 +232,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 
 20. **(KF #70 — `confirmEncodingMismatch` checkbox UI)** Given un upload CSV où le profil annonce `encoding=ISO-8859-1` mais le détecteur trouve `UTF-8`, When `POST /preview` retourne `warnings.encodingMismatch`, Then dans la preview UI une checkbox « Confirmer le décodage UTF-8 malgré le profil ISO-8859-1 » apparaît + cocher la checkbox + cliquer « Confirmer l'import » envoie `confirmEncodingMismatch=true` au handler create + `201 Created` retourné. *Tests : Playwright `csv encoding mismatch confirm flow end-to-end` + Vitest `BankImportUpload.test.ts: encoding mismatch confirm wires confirmEncodingMismatch flag`.*
 
-21. **(KF #70 — issue closure)** GitHub issue #70 fermée par le commit qui livre 8-3 (`closes #70`).
+21. **(KF #70 — issue closure)** GitHub issue #70 fermée au merge de la PR 8-3. **`closes #70` doit apparaître dans le body de la PR** (qui devient le squash commit message) — cf. T10.4. Pas dans un commit intermédiaire, qui serait perdu au squash.
 
 ### UI preview enrichie (panneaux warnings)
 
@@ -248,6 +274,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 - [ ] T1.2 — Vérifier l'application sur DB fraîche (`cargo test -p kesh-db --lib test_fixtures` avec MariaDB up + KESH_TEST_MODE=true — règle CLAUDE.md « Test Locally First » sur modif migrations).
 - [ ] T1.3 — Réversibilité manuelle vérifiée (`DROP INDEX idx_bank_imports_company_hash; ALTER TABLE bank_imports ADD CONSTRAINT uq_bank_imports_company_hash UNIQUE (company_id, file_hash);`).
 - [ ] T1.4 — Pas de modification de `crates/kesh-db/src/test_fixtures.rs::TABLES_TO_TRUNCATE` (tables identiques).
+- [ ] T1.5 — **Ordre d'application critique** : avant `cargo test --workspace`, supprimer ou renommer le test 8-1b `unique_company_hash_blocks_duplicate_within_same_company` qui asserte l'erreur SQL 1062 (caduque post-relax). Sinon le test plante au premier `cargo test` post-migration. Ce test sera **remplacé** par `post_import_rejects_duplicate_file_without_confirm` en T6.5#2 (mais T6 vient plus tard — d'où la nécessité de supprimer dès T1).
 
 ### T2. Helper `kesh_core::bank_imports::detect_duplicate_lines` (AC #5, #8, #9, #10, #11, #25, #29)
 
@@ -294,8 +321,8 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
   3. `detect_duplicate_lines_uses_transaction_id_when_eid_null` — fallback chain.
   4. `detect_duplicate_lines_normalizes_reference_whitespace_and_case` (AC #9).
   5. `detect_duplicate_lines_treats_empty_string_as_distinct_from_null` — note edge : `coalesce("", null)` retourne `""`, donc deux refs vides sont matched. Documenter en commentaire.
-  6. `detect_duplicate_lines_skips_existing_outside_period` (AC #11) — note : la fenêtre est filtrée côté SQL par le caller, pas par le helper. Test vérifie que le helper retourne tous les matches sur `existing_keys` qu'on lui donne, sans filtrer.
-  7. `detect_duplicate_lines_finds_existing_within_period` (AC #11).
+  6. `detect_duplicate_lines_does_not_filter_by_date` — la fenêtre est filtrée **côté SQL** par `find_in_dedup_window` (cf. AC #11 + T3.2#1). Le helper reçoit déjà `existing_keys` pré-filtré ; ce test vérifie que **si** un caller passe des keys hors-fenêtre, le helper retourne quand même les matchs (pas de double-filtrage côté helper).
+  7. `detect_duplicate_lines_finds_match_when_existing_key_in_input` (AC #11) — symétrique du précédent : keys dans la fenêtre → matchs détectés.
   8. `detect_duplicate_lines_returns_empty_when_no_match`.
   9. `detect_duplicate_lines_handles_n_to_m_in_o_n_plus_m` — perf smoke : `new.len() = 1000`, `existing.len() = 5000`, durée < 50ms via HashSet.
 
@@ -387,9 +414,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
      - `Skip` (default) → ne pas insérer les drafts dont `new_index ∈ duplicate_lines.new_index`. Mémoriser `modifier = "duplicate_lines_skipped"`, `details_json.duplicate_lines_skipped = duplicate_lines.len()`.
      - `Import` → insérer tout. Mémoriser `modifier = "duplicate_lines_imported"`, `details_json.duplicate_lines_imported = duplicate_lines.len()`.
   8. INSERT `bank_imports` + `bank_transactions` filtrés.
-  9. Audit log :
-     - Si `modifiers.is_empty()` → `action = "bank_import.created"` (8-1b inchangé pour happy path).
-     - Sinon → `action = "bank_import.created"` (single action stable) + `details_json.modifiers = modifiers` + autres champs `duplicate_lines_skipped: N`, `partial_invalid_lines: N`, etc. selon les flags actifs.
+  9. Audit log : **action canonique unique** `bank_import.created` (jamais composée). `details_json.modifiers: Vec<String>` triés alphabétiquement liste les modifiers actifs (`balance_mismatch`, `duplicate_file`, `duplicate_lines_skipped`, `duplicate_lines_imported`, `partial`, `encoding_mismatch`). Si `modifiers.is_empty()` → `details_json.modifiers = []`. Champs additionnels `details_json.duplicate_lines_skipped: N`, `partial_invalid_lines: N`, etc. selon les modifiers actifs. Cf. §audit-log-actions.
   10. Commit transaction.
 
 - [ ] T6.3 — Modifier le handler `create_csv` (CSV path) — mêmes étapes que T6.2 mais avec `parse_csv_collect` :
@@ -406,7 +431,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
   - Modifier `AppError::BankCsvPartialFailure` pour ajouter optional `reason: Option<&'static str>` (pour AC #16 `"no_valid_lines_to_commit"`).
   - Pas de nouvelle variante : tous les autres cas réutilisent les variantes 8-1b/8-2 existantes.
 
-- [ ] T6.5 — Tests E2E HTTP (`crates/kesh-api/tests/bank_imports_e2e.rs`) — **10 nouveaux tests** :
+- [ ] T6.5 — Tests E2E HTTP (`crates/kesh-api/tests/bank_imports_e2e.rs`) — **13 nouveaux tests** :
   1. `post_preview_returns_duplicate_file_warning` (AC #1).
   2. `post_import_rejects_duplicate_file_without_confirm` (AC #2 — remplace `unique_company_hash_blocks_duplicate_within_same_company` 8-1b).
   3. `post_import_accepts_duplicate_file_with_confirm` (AC #3).
@@ -422,6 +447,12 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
   13. `post_import_returns_partial_failure_first_when_no_flags` (AC #18) — ordre de précédence.
 
   **Ordre de précédence des erreurs (§error-precedence-order)** : 1. RBAC (403). 2. Validation multipart (400). 3. Payload too large (413). 4. Bank account not found (404). 5. Format detection (415). 6. Currency unsupported (422 — bloquant absolu, pas d'override). 7. Encoding mismatch (422 — sauf `confirmEncodingMismatch`). 8. Profile misconfigured (422 — bloquant absolu). 9. CSV partial failure (422 — sauf `confirmPartialImport`). 10. Balance mismatch (422 — sauf `confirmBalanceMismatch`). 11. Duplicate file (422 — sauf `confirmDuplicateFile`). 12. Duplicate lines (jamais bloquant — toujours `201` avec skip/import).
+
+- [ ] T6.6 — Migration des tests audit log 8-1b/8-2 vers le pattern action canonique unique (cf. §audit-log-actions) :
+  - Test 8-1b qui asserte `action == "bank_import.created_with_balance_mismatch"` → `action == "bank_import.created"` + `details_json.modifiers contains "balance_mismatch"`.
+  - Test 8-2 qui asserte `action == "bank_import.created_with_encoding_mismatch"` → `action == "bank_import.created"` + `details_json.modifiers contains "encoding_mismatch"`.
+  - Vérifier qu'aucun autre test (ou code applicatif consommateur) ne s'appuie sur les actions composées 8-1b/8-2 (`grep -r "created_with_" crates/`).
+  - Pas de Dual-write transitoire : la migration est atomique (le commit 8-3 change la production + les tests dans la même PR). Pas de feature flag (jamais publié à des consommateurs externes — cf. §audit-log-actions backward-compat note).
 
 ### T7. Frontend KF #70 closure + extension UI preview (AC #19, #20, #22, #23, #24, #28)
 
@@ -446,7 +477,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
   - Props : `profiles: BankProfile[]`, `autoMatchedId: number | null`, `value: number | null`, `onChange: (id) => void`.
   - Render : `<select>` avec `autoMatchedId` en valeur par défaut + option « Aucun profil (parser auto) ». **Note 8-2** : la liste des profils disponibles est déjà retournée par l'API preview en cas de mismatch (`warnings.encodingMismatch.availableProfiles` ou similaire — vérifier 8-2 backend) ; sinon fetch via `GET /companies/{id}/bank-profiles` séparément. Documenter en commentaire la source.
 
-- [ ] T7.5 — Tests Vitest (`frontend/src/lib/features/bank-import/BankImportUpload.test.ts`) — **3-4 nouveaux tests** :
+- [ ] T7.5 — Tests Vitest (`frontend/src/lib/features/bank-import/BankImportUpload.test.ts`) — **4 nouveaux tests** :
   1. `duplicate file checkbox toggles confirm flag` (AC #22).
   2. `duplicate lines radio updates state to skip or import` (AC #23).
   3. `partial commit checkbox toggles confirm flag` (AC #24).
@@ -477,7 +508,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 
 ### T9. Tests E2E Playwright (AC #20, #22, #23, #24, #28)
 
-- [ ] T9.1 — Étendre ou créer `frontend/tests/e2e/bank-import-confirms.spec.ts` (séparé de `bank-import.spec.ts` 8-1b et `bank-csv-import.spec.ts` 8-2 pour ne pas alourdir) — **3-4 scénarios** :
+- [ ] T9.1 — Étendre ou créer `frontend/tests/e2e/bank-import-confirms.spec.ts` (séparé de `bank-import.spec.ts` 8-1b et `bank-csv-import.spec.ts` 8-2 pour ne pas alourdir) — **5 scénarios** :
   1. `duplicate file warning shows panel and accepts override` (AC #22).
   2. `duplicate lines warning shows panel with skip-or-import radio` (AC #23) — variantes skip + import.
   3. `csv partial failure shows panel and accepts partial commit` (AC #24).
@@ -498,7 +529,7 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 - [ ] T10.1 — `_bmad-output/implementation-artifacts/sprint-status.yaml` : transition `8-3-detection-doublons-rejet-partiel: backlog → ready-for-dev` (cette story creation) puis `ready-for-dev → review` (post `dev-story`).
 - [ ] T10.2 — README.md `## Feuille de route` : Epic 8 reste 🚧 En cours (4/5 stories après merge 8-3, restantes 8-4 + 8-5).
 - [ ] T10.3 — README.md `## Fonctionnalités` : la ligne « Import bancaire CAMT.053 + CSV multi-encodage » mentionne déjà ces deux formats post 8-1b/8-2 — **pas de nouvelle ligne**. La détection de doublons + rejet partiel est un comportement intrinsèque de l'import (déjà couvert verbalement « Détection de doublons à l'import (hash fichier + vérification par transaction) » PRD §308). Vérifier juste que rien à *(à venir)* n'est marqué fausement.
-- [ ] T10.4 — Commit qui livre 8-3 inclut `closes #70` dans le body (KF #70 frontend wiring closure — AC #21).
+- [ ] T10.4 — `closes #70` dans **le body de la PR** 8-3 (le squash commit body est dérivé de la PR description) — KF #70 frontend wiring closure, AC #21. **Ne pas** mettre `closes #70` uniquement dans un commit intermédiaire de la branche, qui serait perdu au squash-merge sur main.
 - [ ] T10.5 — **Pas** de fermeture issue 8-3 elle-même (pas d'issue tracked en GitHub pour 8-3 — la story est planifiée via Epic 8 stories list, pas via GitHub Issues).
 
 ## Dev Notes
@@ -564,9 +595,9 @@ Numérotation continue 8-1b/8-2. Les ACs `**Hérité 8-1b**` ou `**Hérité 8-2*
 - **Unit `kesh-core`** : `#[cfg(test)] mod tests` inline `bank_imports.rs`. 9 tests T2.2.
 - **Intégration `kesh-db`** : `#[sqlx::test]`. 4 tests T3.2.
 - **Unit `kesh-import`** : `#[cfg(test)] mod tests` inline `parser.rs`. 6 tests T4.3.
-- **E2E HTTP `kesh-api`** : `crates/kesh-api/tests/bank_imports_e2e.rs` avec helper `spawn_app(pool)` (pattern 8-1b/8-2). 10-13 tests T6.5.
-- **Vitest frontend** : `npm run test:unit -- bank-import`. 3-4 tests T7.5.
-- **Playwright** : `frontend/tests/e2e/bank-import-confirms.spec.ts`. 4-5 scénarios T9.1.
+- **E2E HTTP `kesh-api`** : `crates/kesh-api/tests/bank_imports_e2e.rs` avec helper `spawn_app(pool)` (pattern 8-1b/8-2). 13 tests T6.5.
+- **Vitest frontend** : `npm run test:unit -- bank-import`. 4 tests T7.5.
+- **Playwright** : `frontend/tests/e2e/bank-import-confirms.spec.ts`. 5 scénarios T9.1.
 
 ### Checklist locale avant push
 
@@ -593,10 +624,11 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-impor
 
 | # | Limitation | Justification |
 |---|---|---|
-| L11 | Race window microscopique sur INSERT concurrent même `(company_id, file_hash)` sans `confirmDuplicateFile=true` | Le check applicatif `find_by_company_and_hash` est dans la transaction, mais MariaDB en `REPEATABLE READ` lit le snapshot début-tx ; un second handler concurrent peut commit avant le premier. Acceptable v0.1 (probabilité < 1‰, mitigé par le fait que les imports sont rarement concurrents pour le même fichier). |
+| L11 | Race ouverte sur INSERT concurrent même `(company_id, file_hash)` sans `confirmDuplicateFile=true` | Le check applicatif `find_by_company_and_hash` est dans la transaction, mais MariaDB en `REPEATABLE READ` (default) ne voit pas un INSERT concurrent committé après le début de tx ; les deux SELECT retournent `None` → les deux INSERT passent. Acceptable v0.1 par **rareté empirique** (imports CAMT.053 mensuels, CSV bancaires manuels — pas de structure de cron concurrent par même user/company/hash). Mitigation curative documentée §dedup-file (advisory lock `GET_LOCK` à activer en KF si la race émerge en prod). |
 | L12 | Détection de doublons inter-comptes (virement entre 2 comptes bancaires de la même company) | Pas couvert v0.1 — la clé inclut `bank_account_id` donc un virement entre comptes A et B apparaît 2× légitimement (1× sortie A, 1× entrée B). Reporté Story 8-4 (matching réconciliation aura besoin de détecter ces paires). |
 | L13 | Fenêtre de comparaison limitée à `period_from..period_to` du fichier en cours | Si l'utilisateur ré-importe un fichier avec une fenêtre élargie qui dépasse les imports précédents, des transactions doublons hors fenêtre du nouveau fichier ne sont pas détectées. Acceptable v0.1 — les imports CAMT.053 ont une fenêtre stable (1 mois typiquement), les CSV aussi (export bancaire mensuel). |
 | L14 | Pas de re-import du **delta** d'un partial commit | L'utilisateur doit corriger son fichier source / profil et réuploader le fichier complet. La détection ligne-par-ligne (FR43 partie 2) garantit qu'aucune ligne ne sera dupliquée — donc le re-upload est sûr. UI inline d'édition des lignes invalides reportée v0.2 (scope front significatif). |
+| L15 | Doublons **intra-import** non détectés v0.1 | Le helper `detect_duplicate_lines(new, bank_account_id, existing_keys)` compare `new vs existing` mais pas `new vs new`. Si un fichier CSV/CAMT contient deux lignes identiques en interne (même date/montant/ref/account) — par exemple un export bancaire avec ligne dupliquée par un bug de l'export — les deux lignes seront persistées sans warning. Justification v0.1 : cas rare en CAMT.053 (validation XSD côté banque) et en CSV bien formé ; quand il survient, l'utilisateur peut le détecter dans la UI preview (les 2 transactions y apparaissent côte-à-côte) avant de confirmer l'import. Reporté v0.2 ou Story 8-X (extension simple : déduplication via HashSet sur les `new` drafts avant la comparaison `existing`). |
 
 ### Références
 
@@ -663,4 +695,5 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-impor
 
 | Date | Action | Auteur |
 |------|--------|--------|
-| 2026-05-06 | Création de la story par `/bmad-create-story 8-3` post-merge PR #71 (Story 8-2 done). Spec construite à partir d'epic-8.md Story 8-3 ACs (FR43 + FR51) + drifts/limitations 8-1b/8-2 (CsvError::PartialFailure strict-reject à étendre, `(company_id, file_hash) UNIQUE` à relâcher, KF #70 frontend wiring à inclure). 29 ACs définis (24 nouveaux + 4 hérités 8-1b/8-2 + 1 KF closure GitHub) + 10 tasks T1-T10 + 6 modules touchés (au seuil > 5 — splitting risque documenté). Décisions de conception clés : §dedup-file (relax UNIQUE → INDEX + check applicatif), §dedup-key (clé composite stable `(date, amount, ref_normalized, account)` avec fallback `coalesce(ref, eid, tid, "")`), §confirm-flags (3 nouveaux flags multipart `confirmDuplicateFile/confirmDuplicateLines/confirmPartialImport`, codes HTTP harmonisés 422), §preview-warnings-shape (réponse JSON enrichie 4 champs warnings backward-compat), §kesh-import-partial-mode (`parse_csv_collect` retournant `ParseCsvOutcome::PartialFailure { valid, errors, ... }` sans breaking-change `parse_csv` 8-2), §audit-log-actions (8 actions discriminantes via `details_json.modifiers`), §error-precedence-order (12 niveaux d'erreurs documentés). KF #70 (frontend wiring `bankProfileId` + `confirmEncodingMismatch` UI) inclus dans 8-3 pour cohérence du refactor frontend (un seul passage sur `BankImportUpload.svelte`). Status `8-3-detection-doublons-rejet-partiel: backlog → ready-for-dev`. Prochaine étape : `bmad-create-story validate 8-3` Pass 1 Sonnet (cycle CLAUDE.md, auteur=Opus, Pass 1=Sonnet pour briser biais d'auteur). | Claude (Opus 4.7, bmad-create-story exécution) |
+| 2026-05-06 | Création de la story par `/bmad-create-story 8-3` post-merge PR #71 (Story 8-2 done). Spec construite à partir d'epic-8.md Story 8-3 ACs (FR43 + FR51) + drifts/limitations 8-1b/8-2 (CsvError::PartialFailure strict-reject à étendre, `(company_id, file_hash) UNIQUE` à relâcher, KF #70 frontend wiring à inclure). 29 ACs définis (25 nouveaux + 4 hérités 8-1b/8-2 dont 1 KF closure GitHub AC #21) + 10 tasks T1-T10 + 6 modules touchés (au seuil > 5 — splitting risque documenté). Décisions de conception clés : §dedup-file (relax UNIQUE → INDEX + check applicatif), §dedup-key (clé composite stable `(date, amount, ref_normalized, account)` avec fallback `coalesce(ref, eid, tid, "")`), §confirm-flags (3 nouveaux flags multipart `confirmDuplicateFile/confirmDuplicateLines/confirmPartialImport`, codes HTTP harmonisés 422), §preview-warnings-shape (réponse JSON enrichie 4 champs warnings backward-compat), §kesh-import-partial-mode (`parse_csv_collect` retournant `ParseCsvOutcome::PartialFailure { valid, errors, ... }` sans breaking-change `parse_csv` 8-2), §audit-log-actions (8 actions discriminantes via `details_json.modifiers`), §error-precedence-order (12 niveaux d'erreurs documentés). KF #70 (frontend wiring `bankProfileId` + `confirmEncodingMismatch` UI) inclus dans 8-3 pour cohérence du refactor frontend (un seul passage sur `BankImportUpload.svelte`). Status `8-3-detection-doublons-rejet-partiel: backlog → ready-for-dev`. Prochaine étape : `bmad-create-story validate 8-3` Pass 1 Sonnet (cycle CLAUDE.md, auteur=Opus, Pass 1=Sonnet pour briser biais d'auteur). | Claude (Opus 4.7, bmad-create-story exécution) |
+| 2026-05-06 | **Pass 1 spec validate (Opus 4.7 1M context)** — dérogation au cycle CLAUDE.md (idéalement Sonnet pour briser biais d'auteur Opus 4.7) : invocation utilisateur sur Opus 4.7 1M, contexte étendu utilisé comme proxy partiel pour réduire le biais d'auteur, à confirmer en Pass 2 par un modèle orthogonal (Sonnet 4.6 ou Haiku 4.5). Audit en deux agents parallèles : (1) Agent Explore — vérification factuelle des claims contre sources (PRD FR43/§437, FR51/§445, scénarios Sophie §134 / Lisa §168, epic-8.md, 8-1b et 8-2 spec, code post-merge 8-2). Conclusion : claims factuellement cohérents avec sources. 4 « findings » de l'agent (migration manquante, helpers `parse_csv_collect`/`detect_duplicate_lines`/`find_in_dedup_window` inexistants, mapping HTTP 409→422 non appliqué) **rejetés** car ce sont précisément les tasks T1-T6 à implémenter par dev-story, pas des défauts de spec. 1 finding accepté (compte ACs 24 vs 25). (2) Agent general-purpose — audit cohérence interne sur 14 axes : 11 findings retenus (1 HIGH F1, 7 MEDIUM F2-F8, 3 LOW F9-F11) + 1 LOW F12 (ordre application T1 vs test 8-1b) ajouté par audit Opus. **Trend findings > LOW : 8 → 0 post-patches**. **12 patches appliqués Pass 1 (toutes catégories — Option `all` choisie par Guy)** : F1 (HIGH) — réécriture §audit-log-actions vers action canonique unique `bank_import.created` + `details_json.modifiers: Vec<String>` triés alphabétiquement (résout triple contradiction table/combinaisons/T6.2 step 9), migration tests 8-1b balance_mismatch + 8-2 encoding_mismatch ajoutée comme T6.6, ACs #3/#6/#7/#14/#17 alignés. F2 (MEDIUM) — reformulation L11 race INSERT concurrent : retrait de l'argument REPEATABLE READ (techniquement inverse), justification par rareté empirique + mitigation curative documentée (advisory lock `GET_LOCK`). F3 (MEDIUM) — `warnings.invalidLines` imbriqué en objet `{ lines, totalErrors, truncated }` (analogue à `balanceMismatch`, résout incohérence AC #15 vs §preview-warnings-shape). F4 (MEDIUM) — renommage T2.2#6 `..._skips_existing_outside_period` → `..._does_not_filter_by_date` + clarification AC #11 (filtre fenêtre côté SQL `find_in_dedup_window`, pas helper). F5 (MEDIUM) — alignement compteurs T6.5 (10→13), T9.1 (3-4→5), §Standards de test, T7.5 (3-4→4). F6 (MEDIUM) — limitation L15 ajoutée (doublons intra-import non détectés v0.1 — helper compare new vs existing pas new vs new). F7 (MEDIUM) — précision AC #21 + T10.4 : `closes #70` dans body PR (squash-merge le préserve), pas commit intermédiaire. F8 (MEDIUM) — projection §Risque de splitting ajustée 4-6 passes (8-2 a coûté 6) + frontière split rétroactif matérialisée (8-3a backend dedup core + preview / 8-3b backend create flags + audit + frontend). F9 (LOW) — 4e ligne tableau §confirm-flags pour `confirmEncodingMismatch` (8-2 backend, 8-3 frontend uniquement). F10 (LOW) — title `Story 8.3` → `Story 8-3` (convention 8-1a/8-1b/8-2). F11 (LOW) — Change Log « 24 nouveaux » → « 25 nouveaux ». F12 (LOW) — T1.5 ajoutée : ordre application migration vs renommage test 8-1b `unique_company_hash_blocks_duplicate_within_same_company`. **Spec post-Pass-1** : ~720 lignes (vs ~666 avant), 29 ACs inchangés en numérotation, 10 tasks (T6.6 ajoutée), 4 limitations connues (L11-L15), 4 confirm-flags documentés (vs 3 + 1 hérité). **Critère d'arrêt CLAUDE.md** : 0 finding > LOW post-patches Pass 1 ; règle « ≥ 1 MEDIUM+ → relance Pass N+1 » non-applicable car 0 résiduel, **mais** dérogation au cycle modèle (Pass 1 sur Opus = même famille que l'auteur) → **Pass 2 recommandée** avec Sonnet 4.6 ou Haiku 4.5 pour confirmation orthogonale, fenêtre fraîche, focus sur les sections les plus modifiées (§audit-log-actions, §dedup-file L11, §preview-warnings-shape, §Risque de splitting). | Claude (Opus 4.7 1M context, bmad-create-story validate Pass 1 — dérogation cycle modèle) |
