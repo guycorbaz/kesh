@@ -27,13 +27,13 @@ so that **mon travail de réconciliation soit minimal et que les paiements de fa
 
 ### Scope verrouillé — ce qui est livré par 8-4
 
-1. **Algorithme de matching** (FR44 partie 1) — `kesh_reconciliation::matching::propose_matches(tx: &BankTransaction, candidates: &[Invoice]) -> Vec<MatchProposal>`. Pure (sans I/O), unit-testable. Score de confiance ∈ [0.0..=1.0] dérivé de 3 critères pondérés (montant exact, référence, contact). Cf. §matching-algo.
+1. **Algorithme de matching** (FR44 partie 1) — `kesh_reconciliation::matching::propose_matches(tx: &BankTransaction, candidates: &[(Invoice, Option<Contact>)]) -> Vec<MatchProposal>` (signature canonique alignée avec T2.2 — H6 Pass 1 patch). Pure (sans I/O), unit-testable. Score de confiance ∈ [0.0..=1.0] dérivé de 3 critères pondérés (montant exact, référence, contact). Le caller (kesh-api) charge les `Contact` correspondants en parallèle des `Invoice` candidates pour permettre le scoring contact (cf. §matching-algo). Cf. §matching-algo pour la signature détaillée + §candidate-window pour le candidate set.
 2. **Repository candidates** — `kesh_db::repositories::reconciliation::find_unpaid_invoices_for_window(pool, company_id, period_from, period_to, amount_min, amount_max) -> Vec<Invoice>` filtré multi-tenant + fenêtre temporelle ± 30 jours autour de la transaction + filtre montant ± 0.05 CHF (cf. §candidate-window). L'amount window évite de remonter 100% des factures impayées sur grandes companies.
 3. **Mutex par compte bancaire** — advisory lock MariaDB `GET_LOCK('reconcile:company_id:bank_account_id', timeout)` + `RELEASE_LOCK` autour du flow `propose_matches → accept_batch → INSERT journal_entry/UPDATE bank_transactions.status` pour empêcher les imports concurrents de proposer/finaliser les mêmes propositions sur le même compte. Cf. §mutex-account.
 4. **Routes API** :
    - `GET /api/v1/reconciliation/proposals?bankAccountId={id}` — retourne les propositions pour les `bank_transactions.status='pending'` du compte.
-   - `POST /api/v1/reconciliation/accept` — body : `{ proposals: [{ bankTransactionId, invoiceId, journalEntryId? }] }` — accepte un lot, met à jour `bank_transactions.status='reconciled'` + `matched_entry_id`, **lie** la transaction à l'écriture existante OU **crée** une écriture si la facture n'a pas encore son `journal_entry_id` (cas paiement direct sans facture validée — différé v0.2 dans **L20** documentée).
-   - `POST /api/v1/reconciliation/reject` — body : `{ bankTransactionIds: [...] }` — pour refuser explicitement des propositions automatiques (la transaction reste `pending` mais marquée comme « manually reviewed », à exploiter en 8-5).
+   - `POST /api/v1/reconciliation/accept` — body : `{ bankAccountId: number, proposals: [{ bankTransactionId, invoiceId }] }` — `bankAccountId` requis pour acquérir le mutex AVANT de charger les transactions (H2 Pass 1 patch — sinon le lock dépendrait d'une donnée chargée hors-lock). **Toutes** les propositions du batch DOIVENT pointer sur des transactions du même `bankAccountId` ; mismatch détecté retourne `400 Validation`. Met à jour `bank_transactions.status='reconciled'` + `matched_entry_id` et **lie** chaque transaction à l'écriture existante de la facture (`invoice.journal_entry_id`). **Pas de création d'écriture v0.1** — l'écriture « Banque / Client » sera créée par 8-5 ou v0.2 (cf. **L20**).
+   - `POST /api/v1/reconciliation/reject` — body : `{ bankAccountId: number, bankTransactionIds: [...] }` (cohérent avec accept — M2 Pass 1 patch ajoute le mutex sur reject aussi). Pour refuser explicitement des propositions automatiques (la transaction reste `pending` mais marquée comme « manually reviewed » via colonne `auto_match_rejected_at`, à exploiter en 8-5).
 5. **Frontend feature `features/reconciliation/`** — nouvelle page `/reconciliation` (route protégée RBAC `Comptable`) listant les propositions du compte sélectionné. Chaque ligne : transaction bancaire ↔ proposition top-1 + score. Sélection multi-checkbox + bouton « Valider les sélectionnées ». Cas « aucune proposition » → ligne neutre avec lien vers 8-5 (création manuelle, à venir).
 6. **i18n** — ~10 nouvelles clés `reconciliation-*` (4 locales fr/de/it/en-CH).
 7. **Tests** — Unit `kesh-reconciliation::matching` (≥ 12 cas couvrant tous les chemins de scoring + edge cases), Integration `kesh-db::reconciliation` (≥ 4 sqlx tests sur `find_unpaid_invoices_for_window` + multi-tenant scoping), E2E HTTP `kesh-api::reconciliation` (≥ 6 tests : list, accept happy, accept partial, reject, mutex contention, multi-tenant), Vitest (≥ 3), Playwright (≥ 2 actifs).
@@ -59,15 +59,61 @@ Le helper `propose_matches` calcule un score `f64 ∈ [0.0..=1.0]` par paire `(B
 | Critère | Poids | Calcul |
 |---|---|---|
 | **Montant exact** | 0.50 | `1.0` si `tx.amount == invoice.total_amount` (Decimal exact, pas de tolérance), sinon `0.0`. |
-| **Référence** | 0.40 | `1.0` si normalisation(`tx.reference|end_to_end_id|transaction_id`) contient ou égale normalisation(`invoice.invoice_number`) (case-insensitive, trim, accept substring containment) ; `0.5` si seul un préfixe ≥ 4 chars matche ; sinon `0.0`. |
-| **Contact** | 0.10 | `1.0` si `normalize(tx.counterparty_name)` substring-matche `normalize(contact.name)` du `invoice.contact_id` ; sinon `0.0`. |
+| **Référence** | 0.40 | Cf. pseudo-code formel ci-dessous (M3 Pass 1 patch — boundary 1.0 vs 0.5 vs 0.0 explicitée). |
+| **Contact** | 0.10 | `1.0` si match substring **bidirectionnel** sur les noms normalisés ; sinon `0.0`. (H4 Pass 1 patch.) |
+
+**Pseudo-code `reference_score`** :
+
+```rust
+fn reference_score(tx_ref: Option<&str>, tx_eid: Option<&str>, tx_tid: Option<&str>, invoice_number: Option<&str>) -> f64 {
+    let tx_norm = normalize(coalesce(tx_ref, tx_eid, tx_tid).unwrap_or("")); // trim + lowercase
+    let inv_norm = normalize(invoice_number.unwrap_or(""));
+    if tx_norm.is_empty() || inv_norm.is_empty() {
+        return 0.0; // Référence absente d'un côté ou l'autre — pas de match crédible.
+    }
+    if tx_norm.contains(&inv_norm) || inv_norm.contains(&tx_norm) {
+        // Containment dans une direction OU l'autre : ex. tx="REF INV-2026-001 PAID" contient
+        // invoice="inv-2026-001", OU tx="INV-2026-001" est contenue dans invoice="INV-2026-001-A".
+        return 1.0;
+    }
+    // Préfixe partagé ≥ 4 chars (utile pour numéros tronqués) — bidirectionnel.
+    let common_prefix = tx_norm.bytes().zip(inv_norm.bytes()).take_while(|(a, b)| a == b).count();
+    if common_prefix >= 4 {
+        return 0.5;
+    }
+    0.0
+}
+```
+
+**Pseudo-code `contact_score`** :
+
+```rust
+fn contact_score(tx_counterparty: Option<&str>, contact_name: Option<&str>) -> f64 {
+    let tx_norm = normalize(tx_counterparty.unwrap_or(""));
+    let contact_norm = normalize(contact_name.unwrap_or(""));
+    if tx_norm.is_empty() || contact_norm.is_empty() {
+        return 0.0;
+    }
+    // H4 Pass 1 patch — bidirectionnel : CAMT.053 contient souvent un nom plus long
+    // (ville/forme juridique) que `contact.name` (forme courte saisie utilisateur),
+    // mais l'inverse est aussi possible (CSV bruité, contact.name avec suffixe). On
+    // accepte les deux directions, plus tolérant pour le user.
+    if tx_norm.contains(&contact_norm) || contact_norm.contains(&tx_norm) {
+        1.0
+    } else {
+        0.0
+    }
+}
+```
 
 **Score final** : `score = 0.50 * amount_score + 0.40 * reference_score + 0.10 * contact_score`. Décision conservatrice du poids amount (50%) : la combinaison « bon montant + bonne référence » garantit ≥ 0.90, ce qui matérialise le cas nominal QR-Bill paiement (référence 27 digits = invoice_number, montant exact). Le contact reste minoritaire car les noms contreparties dans CAMT.053 sont parfois bruités (ex. « ALICE MARTIN-DUBOIS GMBH » vs `contact.name = "Alice Martin-Dubois Sàrl"` — l'utilisateur peut tolérer 0.10 de pertes).
+
+**Sérialisation et arrondi (M6 Pass 1 patch)** : le score est sérialisé JSON en `f64` brut côté API, mais le frontend affiche `Math.round(score.total * 100)` (entier 0..100) pour le badge couleur. Boundary IEEE 754 : `0.5 + 0.4 = 0.8999999999999999` selon la machine — `Math.round(0.8999999... * 100) = 90` (rounding half-to-even arrondit à l'entier le plus proche). La règle backend miroir Rust : `(score.total * 100.0).round() as u8` pour les badge thresholds. Documenter dans T6.3 frontend.
 
 **Justification R5 (epic-8.md)** — Score de confiance, seuil par défaut, configurabilité, exposé UI :
 - **Seuil par défaut v0.1** : aucun (toutes les propositions avec `score > 0.0` sont retournées). Le frontend trie par `score DESC` et affiche les top-N (N=3 par défaut, configurable v0.2). L'utilisateur **sélectionne explicitement** ce qu'il accepte ; pas d'auto-acceptation v0.1.
 - **Configurabilité** : différée v0.2 (paramètre `auto_accept_threshold` par tenant ou par règle 8-5).
-- **Exposé UI** : oui, score affiché en pourcent (`78%`) avec badge couleur seuil empirique (≥ 90% vert, 70-89% jaune, < 70% rouge) — décision UX inspirée du flow PRD §134 / Sophie.
+- **Exposé UI** : oui, score affiché en pourcent (`78%`) avec badge couleur seuil empirique (≥ 90% vert, 70-89% jaune, < 70% rouge) — décision UX inspirée du flow PRD ligne 112 (scénario Marc indépendant : import PostFinance avec propositions automatiques de paiement). L1 Pass 1 patch (auparavant §134 Sophie était une mauvaise référence — §134 traite des doublons d'import, pas de la réconciliation).
 
 **Pure helper** : `propose_matches` ne fait pas d'I/O. Le caller (`kesh-api`) charge `candidates` via `find_unpaid_invoices_for_window` et passe les vecs au helper. Cette pureté permet le test unitaire intensif (12+ cas) sans setup DB.
 
@@ -76,7 +122,7 @@ Le helper `propose_matches` calcule un score `f64 ∈ [0.0..=1.0]` par paire `(B
 Pour éviter d'appliquer le matching contre **toutes** les factures impayées de la company (qui peut en avoir des centaines), `find_unpaid_invoices_for_window` filtre par :
 
 1. **`company_id`** (KF-002 Pattern 1, scoping multi-tenant systématique).
-2. **`status = 'validated' AND paid_at IS NULL`** (factures validées non payées — l'état des factures éligibles à la réconciliation).
+2. **`status = 'validated' AND paid_at IS NULL AND journal_entry_id IS NOT NULL`** (factures validées **avec écriture comptable déjà émise** et non payées — l'état des factures éligibles à la réconciliation v0.1). **M1 Pass 1 patch** : le filtre `journal_entry_id IS NOT NULL` est ajouté au repo pour éviter de remonter des candidates qui seraient rejetées au step 6 de §accept-flow (UX hostile : remonter une candidate haute score puis 409 à l'accept). Le cas `journal_entry_id IS NULL` sur facture validée est pathologique mais possible si une migration s'est mal passée — sera adressé par 8-5 manual.
 3. **`date BETWEEN tx.booking_date - 30 days AND tx.booking_date + 30 days`** : couvre paiement à 30 jours typique suisse + tolérance 30 jours retard (clients lents). Au-delà, l'utilisateur passera par 8-5 manual.
 4. **`total_amount BETWEEN tx.amount - 0.05 AND tx.amount + 0.05`** : tolérance de 5 centimes pour absorber les arrondis comptables d'un côté ou de l'autre. **Note** : le helper `propose_matches` n'accepte que les amounts **exactement** égaux ; cette tolérance amount au repo est un **filtre** (réduit le candidate set avant pondération), pas une **acceptation** (le score amount reste binaire 0/1 dans le helper). Justifié pour ne pas exclure une facture à 100.01 quand la transaction est 100.00 — le helper donnera score=0 sur amount mais peut quand même remonter par référence ; l'utilisateur verra le mismatch dans l'UI.
 
@@ -125,34 +171,75 @@ where
 
 **Note KF-020 #49 (closed Epic 7)** : `SELECT FOR UPDATE` est désormais utilisé pour la race no-op des updates. Ici, `GET_LOCK` est complémentaire pour le scope « éviter imports/reconciliations concurrents », qui n'est pas un update no-op mais une serialization de séquences d'opérations.
 
-#### §accept-flow (flow d'acceptation d'une proposition)
+#### §accept-flow (flow d'acceptation d'un batch de propositions)
 
-`POST /api/v1/reconciliation/accept` body `{ proposals: [{ bankTransactionId, invoiceId }] }` — pour chaque proposition :
+`POST /api/v1/reconciliation/accept` body `{ bankAccountId: number, proposals: [{ bankTransactionId, invoiceId }] }` :
 
-1. Acquire `with_account_lock(tx, company_id, bank_account_id, 5)`.
-2. Charger `BankTransaction` (scoped `company_id`) — `404` si introuvable / cross-tenant.
-3. Charger `Invoice` (scoped `company_id`) — `404` si introuvable / cross-tenant.
-4. Vérifier `bank_transaction.status == 'pending'` — sinon `409 RECONCILIATION_ALREADY_RECONCILED` (l'utilisateur a peut-être un onglet caduc).
-5. Vérifier `invoice.status == 'validated' AND invoice.paid_at IS NULL` — sinon `409 RECONCILIATION_INVOICE_NOT_ELIGIBLE`.
-6. **Lier l'écriture comptable** :
-   - Si `invoice.journal_entry_id IS NOT NULL` (cas normal post-Story 5-2 facture validée) : `UPDATE bank_transactions SET matched_entry_id = invoice.journal_entry_id, status = 'reconciled' WHERE id = ?`. **Pas** de création d'écriture supplémentaire ; la facture validée a déjà son écriture (« Client / Vente »), la transaction bancaire vient confirmer le paiement (« Banque / Client » sera créée au flow 8-5 ou via mark_paid existant Story 5-4). Décision v0.1 : **le `accept` 8-4 marque seulement la liaison `matched_entry_id` + `status='reconciled'`**, **et déclenche `mark_paid` sur la facture** (pose `paid_at = tx.booking_date_or_value_date.preferred()`). L'écriture « Banque / Client » sera créée par `mark_paid` (Story 5-4 wiring existant à vérifier ; si non, créer dans T6).
-   - Si `invoice.journal_entry_id IS NULL` (cas non-nominal — facture en brouillon non validée) : reject `409 RECONCILIATION_INVOICE_NOT_ELIGIBLE` (cf. step 5). **Pas de création d'écriture v0.1**.
-7. Audit log `reconciliation.accepted` avec `details = { bank_transaction_id, invoice_id, score, batch_size }`.
-8. Release lock et commit transaction.
+**Préambule (avant la boucle)** :
 
-**Atomicité par proposal** : chaque proposal est traitée dans une transaction propre — si la 5e d'un batch de 10 échoue, les 4 premières restent acceptées. Le response body retourne `{ accepted: [...], failed: [{ proposal, error_code }] }` pour permettre au frontend de retry/diagnostiquer. Décision : **partial success > all-or-nothing** car un batch de 50 où une seule proposal a un état caduc casserait tout le travail utilisateur.
+0. Validation body : `proposals.len() > 0`, `bankAccountId > 0`, tous les `bankTransactionId` distincts (pas de doublons dans le batch). Sinon `400 Validation`.
+1. **Acquire UN seul lock pour tout le batch (H5 Pass 1 patch)** : `tx_outer = pool.begin().await?` ; `with_account_lock(&mut tx_outer, company_id, bank_account_id, 5)`. Le lock est tenu pour **toute la durée du batch**, pas par-proposal — sinon une requête concurrente peut s'intercaler entre proposals N et N+1.
+
+**Boucle proposal-par-proposal (à l'intérieur du lock partagé)** :
+
+Pour chaque proposition, on utilise un **savepoint MariaDB** pour garantir partial success sans rollback du lot :
+
+```rust
+for proposal in &fields.proposals {
+    let savepoint = format!("sp_{}", proposal.bank_transaction_id);
+    sqlx::query(&format!("SAVEPOINT {savepoint}")).execute(&mut *tx_outer).await?;
+    match accept_one(&mut *tx_outer, proposal, &fields, current_user).await {
+        Ok(accepted_entry) => {
+            sqlx::query(&format!("RELEASE SAVEPOINT {savepoint}")).execute(&mut *tx_outer).await?;
+            response.accepted.push(accepted_entry);
+        }
+        Err(e) => {
+            sqlx::query(&format!("ROLLBACK TO SAVEPOINT {savepoint}")).execute(&mut *tx_outer).await?;
+            response.failed.push(FailedProposal { proposal: *proposal, error_code: e.code() });
+        }
+    }
+}
+```
+
+**Helper `accept_one`** — flow par proposition :
+
+2. Charger `BankTransaction` (scoped `company_id`) — `404 BANK_TRANSACTION_NOT_FOUND` si introuvable / cross-tenant.
+3. **Vérifier `bank_transaction.bank_account_id == fields.bank_account_id`** — sinon `400 Validation` (proposition incohérente avec le lock acquis sur ce compte ; H2 Pass 1 patch).
+4. Vérifier `bank_transaction.status == 'pending'` — sinon `409 RECONCILIATION_ALREADY_RECONCILED`.
+5. Charger `Invoice` (scoped `company_id`) — `404 INVOICE_NOT_FOUND` si introuvable / cross-tenant.
+6. Vérifier `invoice.status == 'validated' AND invoice.paid_at IS NULL AND invoice.journal_entry_id IS NOT NULL` — sinon `409 RECONCILIATION_INVOICE_NOT_ELIGIBLE` avec `details.reason ∈ {"invoice_not_validated", "invoice_already_paid", "invoice_journal_entry_not_set"}`. Le filtre `journal_entry_id IS NOT NULL` est aussi appliqué en amont au repo (M1 Pass 1 patch) pour éviter de remonter des candidats inéligibles dans GET proposals.
+7. **Re-calculer le score localement (M7 Pass 1 patch)** : appeler `propose_matches(&bank_transaction, &[(invoice.clone(), Some(contact))])` — le score doit être ré-évalué côté serveur (pas pris du body) pour audit trail fiable. Si le score résultant est `0.0` (cas pathologique : la candidate window a remonté l'invoice mais aucun critère ne match), accepter quand même (l'utilisateur a explicitement validé) mais log warning.
+8. **Liaison écriture comptable (H1 Pass 1 patch — redesign v0.1 « link only ») — UPDATE inline dans la même tx** :
+   - `UPDATE bank_transactions SET matched_entry_id = invoice.journal_entry_id, status = 'reconciled', updated_at = NOW(3), version = version + 1 WHERE id = ? AND company_id = ?`
+   - `UPDATE invoices SET paid_at = ?, version = version + 1, updated_at = NOW(3) WHERE id = ? AND company_id = ? AND version = ?` avec `paid_at = bank_transaction.value_date.unwrap_or(bank_transaction.booking_date)` (timestamp source défini : value_date prioritaire si présent — date effective de l'écriture en banque, sinon booking_date) **et** `version = ?` matche la version chargée au step 5 (optimistic lock pour éviter race vs un autre flow qui modifierait la facture entre step 5 et step 8 — pattern hérité Story 5-4).
+   - **Pas d'appel à `mark_as_paid` du repo invoices** : sa signature `pool: &MySqlPool` est incompatible avec la `&mut Transaction` ouverte par `with_account_lock` (nested tx interdites MariaDB), et son code-comment confirme « Ne crée AUCUNE écriture comptable en v0.1 ». L'UPDATE inline reproduit le contrat sans changement de comportement.
+   - **Pas de création d'écriture comptable « Banque / Client »** v0.1 — déférée 8-5 (création manuelle par compte de contrepartie) ou v0.2 (auto via règles d'affectation FR47). Cf. **L20**.
+9. Audit log `reconciliation.accepted` avec `details = { bank_transaction_id, invoice_id, score: { total, amountScore, referenceScore, contactScore }, batch_size, journal_entry_id }` — schéma aligné avec §audit-log-actions (M4 Pass 1 patch). Une entrée par proposal acceptée.
+10. Retourner `AcceptedProposal { bank_transaction_id, invoice_id, journal_entry_id, score }`.
+
+**Post-boucle** : `RELEASE_LOCK` (M9 Pass 1 patch — explicitement avant le commit pour libérer la connexion plus tôt) + `tx_outer.commit()`. Si `commit` échoue, **toutes** les acceptations sont rollback (transaction unique) — c'est le comportement DB nominal. Le response body est calculé avant commit ; en cas d'échec commit on retourne `500 Internal` et le frontend doit retry l'ensemble.
+
+**Atomicité savepoint** : si la 5e proposal d'un batch de 10 échoue (ex. `409 RECONCILIATION_ALREADY_RECONCILED`), seul son savepoint est rollback ; les 4 premières et les 5 suivantes peuvent succeed. Le response body retourne `{ accepted: [...], failed: [{ proposal, error_code, details? }] }`. **Partial success > all-or-nothing** car un batch de 50 où une seule proposition a un état caduc casserait tout le travail utilisateur.
 
 #### §reject-flow
 
-`POST /api/v1/reconciliation/reject` body `{ bankTransactionIds: [42, 43, 99] }` — marque ces transactions comme « manuellement revues mais sans match auto » :
+`POST /api/v1/reconciliation/reject` body `{ bankAccountId: number, bankTransactionIds: [42, 43, 99] }` — marque ces transactions comme « manuellement revues mais sans match auto ».
 
-1. Pour chaque ID : `UPDATE bank_transactions SET status = 'pending' WHERE id = ? AND company_id = ?`. *(Non, status reste `pending` mais on pose un nouveau champ `auto_match_rejected_at: Option<NaiveDateTime>` pour distinguer « jamais vu » vs « rejeté par user »).*
-2. Migration T1 ajoute la colonne `bank_transactions.auto_match_rejected_at DATETIME(3) NULL`.
-3. La query `find_unpaid_invoices_for_window` n'est PAS appelée pour les transactions avec `auto_match_rejected_at IS NOT NULL` (elles n'apparaissent plus dans `/proposals`).
-4. La page 8-5 manual (à venir) listera ces transactions en priorité (« attendent un appariement manuel »).
-5. Audit log `reconciliation.rejected` avec `details = { bank_transaction_ids, count }`.
+**Lock partagé (M2 Pass 1 patch — symétrie avec accept)** : un POST reject concurrent à un POST accept sur la même tx pourrait poser `auto_match_rejected_at` sur une tx qui vient d'être `reconciled`. Le mutex `with_account_lock(company_id, bankAccountId, 5s)` est acquis en début de handler pour serializer les flows accept/reject sur le même compte.
 
-**Note v0.1** : on **ne supprime pas** le `auto_match_rejected_at` si l'utilisateur change d'avis ; il devra passer par 8-5 manual pour faire le matching. Acceptable v0.1.
+**Flow** :
+
+1. Validation body : `bankTransactionIds.len() > 0`, `bankAccountId > 0`, IDs distincts. Sinon `400 Validation`.
+2. Acquire `with_account_lock(&mut tx, company_id, bankAccountId, 5)`.
+3. Pour chaque ID, dans la même tx : vérifier `bank_transaction.bank_account_id == fields.bank_account_id` (sinon `400 Validation`), vérifier `status == 'pending'` (sinon `failed: [{ error_code: 'RECONCILIATION_ALREADY_RECONCILED' }]`), puis `UPDATE bank_transactions SET auto_match_rejected_at = NOW(3), updated_at = NOW(3), version = version + 1 WHERE id = ? AND company_id = ? AND status = 'pending'`. La condition `status = 'pending'` dans le WHERE est redondante avec le check applicatif mais protège contre une race théorique.
+4. Audit log `reconciliation.rejected` avec `details = { bank_transaction_ids: [...success ids], count }` (1 entrée par batch ; les IDs dans `failed` ne sont pas inclus dans l'audit).
+5. `RELEASE_LOCK` explicit + `tx.commit()`.
+
+**Effet sur les autres helpers** : `find_pending_transactions_for_account` (cf. §candidate-window pour la fonction qui liste les transactions à proposer côté GET) **filtre** `auto_match_rejected_at IS NULL` (L6 Pass 1 patch — la fonction qui exclut est `find_pending_transactions_for_account`, **pas** `find_unpaid_invoices_for_window` qui interroge `invoices`). Une transaction rejetée n'apparaît plus dans `GET /proposals`.
+
+**Page 8-5 manual** (à venir) listera ces transactions en priorité (« attendent un appariement manuel »).
+
+**Note v0.1** : on **ne supprime pas** le `auto_match_rejected_at` si l'utilisateur change d'avis ; il devra passer par 8-5 manual pour faire le matching (cf. **L23**).
 
 #### §audit-log-actions (8-4)
 
@@ -160,7 +247,7 @@ Symétrique au pattern 8-3 (canonical action + modifiers triés). Deux nouvelles
 
 | Action | Contexte | `details_json` |
 |---|---|---|
-| `reconciliation.accepted` | Un lot accepté | `{ bank_transaction_id, invoice_id, score, batch_size, journal_entry_id }` (une entrée par transaction acceptée) |
+| `reconciliation.accepted` | Un lot accepté | `{ bank_transaction_id, invoice_id, score: { total, amountScore, referenceScore, contactScore }, batch_size, journal_entry_id }` (une entrée par transaction acceptée — M4 Pass 1 patch : `score` est un objet, `journal_entry_id` toujours présent) |
 | `reconciliation.rejected` | Un lot rejeté | `{ bank_transaction_ids: [...], count }` (une entrée par batch reject) |
 
 **Pas de modifiers `Vec<String>`** ici (pas de variantes confirmables comme en 8-3) — actions plain. La cohérence avec le pattern 8-3 « canonical action » est maintenue par le suffixe `.accepted`/`.rejected` qui est sémantiquement déterministe (pas une explosion combinatoire).
@@ -180,7 +267,7 @@ Symétrique au pattern 8-3 (canonical action + modifiers triés). Deux nouvelles
 
 ### Risque de splitting (CLAUDE.md check)
 
-**Modules touchés par 8-4** : 6 (`kesh-reconciliation` *(nouveau crate vraiment activé)*, `kesh-db`, `kesh-api`, `frontend`, `kesh-i18n`, `kesh-core` *(extension `BankTransactionDraft` pas attendue mais possible)*). **Au seuil > 5** énoncé par CLAUDE.md.
+**Modules touchés par 8-4** : **5** (L9 Pass 1 patch — `kesh-core` retiré : aucune extension `BankTransactionDraft` n'est requise pour le matching, qui se fait sur `BankTransaction` chargé depuis `kesh-db` directement) — (`kesh-reconciliation` *(nouveau crate vraiment activé)*, `kesh-db`, `kesh-api`, `frontend`, `kesh-i18n`). **Au seuil > 5** est non-atteint, splitting préventif non requis — la story garde sa scope unique.
 
 **Décision : pas de split préventif**, **risque tracé**. Justifications :
 
@@ -236,17 +323,47 @@ Numérotation continue 8-3 (qui s'arrêtait à 29). Donc 8-4 commence à #30.
 
 ### Routes API — listing propositions
 
-44. **(GET proposals — happy)** Given un compte avec 3 transactions `pending` dont 2 ont des factures candidates, When `GET /api/v1/reconciliation/proposals?bankAccountId=17`, Then `200 OK` avec body `{ proposals: [{ bankTransactionId, candidates: [{ invoiceId, score, amountMatch, referenceMatch, contactMatch }] }] }`. Le 3e (sans candidate) apparaît avec `candidates: []`. *Test E2E HTTP : `get_proposals_returns_candidates_with_scores`.*
+44. **(GET proposals — happy)** Given un compte avec 3 transactions `pending` dont 2 ont des factures candidates, When `GET /api/v1/reconciliation/proposals?bankAccountId=17`, Then `200 OK` avec body conforme au schéma canonique (H3 Pass 1 patch — aligné sur T6.1 TypeScript) :
+    ```json
+    {
+      "proposals": [
+        {
+          "bankTransactionId": 42,
+          "transaction": {
+            "bookingDate": "2026-05-15",
+            "amount": "1234.56",
+            "currency": "CHF",
+            "counterpartyName": "ACME GMBH"
+          },
+          "candidates": [
+            {
+              "invoiceId": 101,
+              "invoiceNumber": "INV-2026-001",
+              "invoiceAmount": "1234.56",
+              "invoiceDate": "2026-04-20",
+              "score": {
+                "total": 1.0,
+                "amountScore": 1.0,
+                "referenceScore": 1.0,
+                "contactScore": 1.0
+              }
+            }
+          ]
+        }
+      ]
+    }
+    ```
+    Le 3e (sans candidate) apparaît avec `candidates: []`. **Pas de booléens flags `amountMatch`/`referenceMatch`/`contactMatch`** — le frontend dérive ces flags localement depuis `score.amountScore == 1.0` etc. si besoin d'affichage. *Test E2E HTTP : `get_proposals_returns_candidates_with_scores`.*
 
 45. **(GET proposals — multi-tenant)** Given une transaction `pending` du `company_B` sur le même IBAN qu'un compte `company_A`, When user `company_A` GET proposals, Then la transaction `company_B` n'apparaît pas. *Test E2E HTTP : `get_proposals_scopes_by_company`.*
 
-46. **(GET proposals — RBAC)** **Hérité 8-1b** — sub-router `comptable_routes`. **Pas re-testé 8-4** mais pattern identique.
+46. **(GET proposals — RBAC)** Le sub-router `comptable_routes` (hérité 8-1b) protège la route. **Test consolidé dans AC #60** (L7 Pass 1 patch — auparavant AC #46 disait « pas re-testé » alors qu'AC #60 + T5.6#11 le teste effectivement ; redondance résolue en pointant ici vers AC #60).
 
 47. **(GET proposals — exclude auto_match_rejected)** Given une tx avec `auto_match_rejected_at != NULL`, When GET proposals, Then la tx n'apparaît pas (réservée à 8-5 manual). *Test E2E HTTP : `get_proposals_excludes_rejected_transactions`.*
 
 ### Routes API — accept
 
-48. **(POST accept — happy)** Given une proposition `{ bankTransactionId: 42, invoiceId: 101 }` valide, When POST accept, Then `200 OK` body `{ accepted: [{ bankTransactionId: 42, journalEntryId: 999 }], failed: [] }` + `bank_transactions.status='reconciled'` + `bank_transactions.matched_entry_id=999` + `invoices.paid_at != NULL` + audit log `reconciliation.accepted`. *Test E2E HTTP : `post_accept_reconciles_transaction_and_invoice`.*
+48. **(POST accept — happy)** Given une proposition `{ bankTransactionId: 42, invoiceId: 101 }` valide envoyée dans body `{ bankAccountId: 17, proposals: [...] }` (H2 Pass 1 patch — bankAccountId requis), When POST accept, Then `200 OK` body `{ accepted: [{ bankTransactionId: 42, invoiceId: 101, journalEntryId: 999, score: { total: 1.0, ... } }], failed: [] }` + `bank_transactions.status='reconciled'` + `bank_transactions.matched_entry_id=999` + `invoices.paid_at = bank_transaction.value_date.unwrap_or(bank_transaction.booking_date)` (timestamp source défini, C2 Pass 1 patch) + audit log `reconciliation.accepted` avec `details.score.total = 1.0` + `details.journal_entry_id = 999`. *Test E2E HTTP : `post_accept_reconciles_transaction_and_invoice`.*
 
 49. **(POST accept — partial success)** Given un batch de 3 proposals dont 1 a un état caduc (tx déjà `reconciled`), When POST accept, Then `200 OK` body `{ accepted: [2 entries], failed: [1 entry with error_code=RECONCILIATION_ALREADY_RECONCILED] }`. Les 2 succès sont commit, le 3e n'est pas rollback. *Test E2E HTTP : `post_accept_handles_partial_failure`.*
 
@@ -297,11 +414,22 @@ Numérotation continue 8-3 (qui s'arrêtait à 29). Donc 8-4 commence à #30.
   -- Story 8-4 — réconciliation matching automatique.
   -- 1. auto_match_rejected_at : tx.status reste 'pending' mais marquée
   --    comme « manuellement revue sans match auto » (cf. §reject-flow).
+  --
+  -- M8 (Pass 1 review) — ALGORITHM=INSTANT évite la copie complète de
+  -- la table sur MariaDB 10.3+ (instant ADD COLUMN nullable). Sans
+  -- cette directive, ALTER TABLE bloque les writes pendant minutes/heures
+  -- sur grandes tables production. LOCK=NONE garantit la concurrent
+  -- DML pendant la migration.
   ALTER TABLE bank_transactions
-    ADD COLUMN auto_match_rejected_at DATETIME(3) NULL AFTER matched_entry_id;
+    ADD COLUMN auto_match_rejected_at DATETIME(3) NULL AFTER matched_entry_id,
+    ALGORITHM=INSTANT, LOCK=NONE;
 
-  -- 2. Index pour find_unpaid_invoices_for_window — couvre les 3 colonnes
-  --    filtrées par la query du repo (status, paid_at IS NULL implicit, date).
+  -- 2. Index pour find_unpaid_invoices_for_window — couvre les 4 colonnes
+  --    filtrées par la query du repo (status, paid_at IS NULL implicit,
+  --    journal_entry_id IS NOT NULL implicit, date). M1 Pass 1 patch :
+  --    le filtre journal_entry_id IS NOT NULL est ajouté au repo, mais
+  --    l'index reste sur (company_id, status, paid_at, date) pour
+  --    couvrir le cas nominal sans bloating l'index avec journal_entry_id.
   CREATE INDEX IF NOT EXISTS idx_invoices_company_validated_unpaid_date
     ON invoices (company_id, status, paid_at, date);
   ```
@@ -413,7 +541,42 @@ Numérotation continue 8-3 (qui s'arrêtait à 29). Donc 8-4 commence à #30.
   pub async fn find_pending_transactions_for_account<'e, E>(...) -> Result<Vec<BankTransaction>, DbError>
   where E: sqlx::Executor<'e, Database = MySql> { ... }
   ```
-- [ ] T3.2 — Tests d'intégration `#[sqlx::test]` (≥ 4) — créer `crates/kesh-db/tests/reconciliation_repository.rs` ou inline :
+- [ ] T3.1bis — Implémenter `find_pending_transactions_for_account` (L10 Pass 1 patch — subtask explicite pour la 2e fonction du repo) :
+  ```rust
+  /// Charge les transactions bancaires `pending` (et NON
+  /// `auto_match_rejected_at != NULL`) pour un compte donné, scopées
+  /// multi-tenant. Tri par `booking_date DESC` puis `id DESC` pour
+  /// présenter les transactions récentes d'abord.
+  pub async fn find_pending_transactions_for_account<'e, E>(
+      executor: E,
+      company_id: i64,
+      bank_account_id: i64,
+      limit: i64,
+  ) -> Result<Vec<BankTransaction>, DbError>
+  where
+      E: sqlx::Executor<'e, Database = MySql>,
+  {
+      sqlx::query_as::<_, BankTransaction>(
+          "SELECT ... FROM bank_transactions \
+           WHERE company_id = ? \
+             AND bank_account_id = ? \
+             AND status = 'pending' \
+             AND auto_match_rejected_at IS NULL \
+           ORDER BY booking_date DESC, id DESC \
+           LIMIT ?"
+      )
+      .bind(company_id).bind(bank_account_id).bind(limit)
+      .fetch_all(executor).await.map_err(map_db_error)
+  }
+  ```
+  **Pagination v0.1** : `limit: i64` paramètre obligatoire (default 100 côté handler GET proposals — cf. **L24**), évite réponses unbounded.
+- [ ] T3.1ter — Bonus helper batch-load Contacts (M5 Pass 1 patch) :
+  ```rust
+  pub async fn find_contacts_by_ids<'e, E>(executor: E, company_id: i64, ids: &[i64]) -> Result<HashMap<i64, Contact>, DbError>
+  where E: sqlx::Executor<'e, Database = MySql>
+  ```
+  Pour batch-load des contacts distincts d'un set de candidate invoices.
+- [ ] T3.2 — Tests d'intégration `#[sqlx::test]` (≥ 5) — créer `crates/kesh-db/tests/reconciliation_repository.rs` ou inline :
   1. `find_unpaid_invoices_filters_by_30_day_window` (AC #37).
   2. `find_unpaid_invoices_scopes_by_company` (AC #38, #59).
   3. `find_unpaid_invoices_excludes_paid_and_draft` (AC #39).
@@ -434,16 +597,20 @@ Numérotation continue 8-3 (qui s'arrêtait à 29). Donc 8-4 commence à #30.
 
 - [ ] T5.1 — Créer `crates/kesh-api/src/routes/reconciliation.rs` :
   - `pub fn router() -> Router<AppState>` avec 3 routes : `GET /proposals`, `POST /accept`, `POST /reject`.
-  - Sub-router `comptable_routes` (cf. lib.rs:299 pattern 8-1b).
+  - Sub-router `comptable_routes` (cf. `crates/kesh-api/src/lib.rs:90` pattern 8-1b — L4 Pass 1 patch : ligne 299 était une route `bank_profiles`, pas la définition du sub-router).
 - [ ] T5.2 — Handler `GET /proposals` :
   1. Parse `bankAccountId` de la query string (validation `i64 > 0`).
   2. `find_pending_transactions_for_account(...)`.
-  3. Pour chaque tx : `find_unpaid_invoices_for_window` + load `Contact` (1 query par tx, optimisable mais OK v0.1) + `propose_matches`.
+  3. Pour chaque tx : `find_unpaid_invoices_for_window` (1 query par tx) + **batch-load des Contacts** distinct des candidates (M5 Pass 1 patch — éviter N×M queries) via `find_contacts_by_ids(tx, &distinct_contact_ids)` (1 query par batch de candidates) + `propose_matches(tx, &candidates_with_contacts)`. Pour 100 transactions × 20 candidates × 15 contacts distincts, le coût total est `100 × (1 invoice query + 1 batch contact query) = 200 queries`, pas `100 × 20 = 2000` queries.
   4. Retour shape : `{ proposals: [{ bankTransactionId, transaction: {...summary}, candidates: [{ invoiceId, score: {...}, invoice: {...summary} }] }] }`.
-- [ ] T5.3 — Handler `POST /accept` :
-  1. Parse body `{ proposals: [{ bankTransactionId, invoiceId }] }`.
-  2. Pour chaque proposal : ouvrir une tx, `with_account_lock`, valider chargement + état, `UPDATE bank_transactions SET matched_entry_id = invoice.journal_entry_id, status='reconciled'`, `UPDATE invoices SET paid_at = NOW(...)` (déclencher `mark_paid` si helper existe Story 5-4 sinon UPDATE direct), audit log `reconciliation.accepted`, commit.
-  3. Collecter succès/échecs et retourner `{ accepted, failed }`.
+- [ ] T5.3 — Handler `POST /accept` (cf. §accept-flow pour le détail des steps 0-10) :
+  1. Parse body `{ bankAccountId, proposals: [{ bankTransactionId, invoiceId }] }` (H2 Pass 1 patch).
+  2. Validation step 0 (proposals non-vides, bankAccountId > 0, IDs distincts).
+  3. Ouvrir UNE tx outer, acquérir `with_account_lock` UNE fois pour tout le batch (H5 Pass 1 patch — single lock pour toute la durée).
+  4. Boucle proposal-par-proposal avec savepoints (cf. §accept-flow) — partial success via `SAVEPOINT/RELEASE/ROLLBACK TO SAVEPOINT`.
+  5. UPDATE inline `bank_transactions` + `invoices.paid_at` (H1 Pass 1 patch — pas d'appel `mark_as_paid`, voir §accept-flow step 8).
+  6. Audit log par proposal acceptée + `RELEASE_LOCK` explicite (M9 Pass 1 patch) + `tx.commit()`.
+  7. Retourner `{ accepted, failed }`.
 - [ ] T5.4 — Handler `POST /reject` :
   1. Parse body `{ bankTransactionIds: [...] }`.
   2. Pour chaque ID : valider `status='pending'`, `UPDATE bank_transactions SET auto_match_rejected_at = NOW()`.
@@ -514,7 +681,7 @@ Numérotation continue 8-3 (qui s'arrêtait à 29). Donc 8-4 commence à #30.
 ### T9. Sync sprint-status + README (AC implicite Epic 8 progress)
 
 - [ ] T9.1 — `_bmad-output/implementation-artifacts/sprint-status.yaml` : transition `8-4-reconciliation-matching-automatique: backlog → ready-for-dev` (cette story creation) puis `ready-for-dev → review` (post `dev-story`).
-- [ ] T9.2 — README.md `## Feuille de route` : Epic 8 reste 🚧 En cours (5/5 après merge 8-4 — ou 4/5 si 8-5 reportée).
+- [ ] T9.2 — README.md `## Feuille de route` : Epic 8 reste 🚧 En cours (**4/5 après merge 8-4** — L8 Pass 1 patch corrigé : 8-4 est la 4e story et 8-5 reste backlog donc 4/5, pas 5/5). Si décision retro Epic 8 considère que 4/5 stories suffisent comme première vague (partie A import + partie B matching auto), alors « ✅ Done » ; sinon 8-5 (réconciliation manuelle + règles) à enchaîner.
 - [ ] T9.3 — README.md `## Fonctionnalités` : ajouter ligne « Réconciliation automatique des factures avec score de confiance » sous la section import bancaire.
 - [ ] T9.4 — Pas d'issue GitHub à fermer (8-4 n'a pas de KF/CR pré-tracée — créer une seule pour Story 8-5 si nécessaire post-implem).
 
@@ -538,7 +705,7 @@ Numérotation continue 8-3 (qui s'arrêtait à 29). Donc 8-4 commence à #30.
 
 ### Patterns architecturaux à respecter
 
-- **Pas de dépendance circulaire** : `kesh-reconciliation → kesh-core, kesh-db` (cf. architecture.md:269). Vérifier `cargo metadata` après ajout des deps.
+- **Pas de dépendance circulaire** : `kesh-reconciliation → kesh-core, kesh-db` (cf. `architecture.md:270` — L3 Pass 1 patch : ligne 269 décrit l'inverse `kesh-api → kesh-reconciliation`). Vérifier `cargo metadata` après ajout des deps.
 - **Tests : éviter le coupling temporel** : les tests sqlx avec `chrono::Utc::now()` sont fragiles si on compare des timestamps précis. Utiliser des dates fixes (`NaiveDate::from_ymd_opt(2026, 5, 15)`) dans les seeds, pas `Utc::now()`.
 - **Pas d'`f64` pour montants** : `score: f64` est OK (c'est un ratio, pas un montant). `tx.amount` et `invoice.total_amount` restent `Decimal`.
 
@@ -618,6 +785,10 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | L21 | Pas de paiement partiel (transaction.amount ≠ invoice.total_amount avec tolérance > 0.05) | Le repo filtre amount ± 0.05 ; au-delà, la facture n'est pas remontée comme candidate. Acceptable v0.1 : les paiements partiels en suisse sont rares (paiement à 30 jours est typiquement complet). Reporté v0.2 (8-5 manual avec écart documenté). |
 | L22 | Mutex `GET_LOCK` libéré à la fin de session DB si l'app crashe avant `RELEASE_LOCK` | Comportement standard MariaDB. La fenêtre de blocage est bornée par la durée d'une connexion idle (typique pool sqlx ~5min). Acceptable v0.1 ; mitigation curative `KILL CONNECTION` admin si lock zombie en prod (rarissime). |
 | L23 | `auto_match_rejected_at` non réversible v0.1 | Un user qui rejette par erreur doit aller en 8-5 manual pour traiter la transaction. Pas de bouton « annuler le rejet » v0.1. |
+| L24 | Pagination GET proposals via `limit` query param hardcodé 100 (L11 Pass 1 patch) | Pas de cursor-based pagination, pas d'`offset`. Pour un compte avec > 100 transactions pending, le user voit les 100 plus récentes (tri `booking_date DESC, id DESC`). Acceptable v0.1 — un compte avec > 100 pending est anormal en pratique (l'utilisateur a probablement laissé son backlog s'accumuler, à traiter via 8-5 manual). Pagination complète reportée v0.2 si retours utilisateurs. |
+| L25 | RBAC test v0.1 couvre seulement le rôle `Consultation` (403) — pas l'unauth (401) (L12 Pass 1 patch) | Le 401 unauth est testé dans le suite générique de routes Story 1-5 (auth middleware). Re-tester pour `/reconciliation/*` est marginal mais pourrait être ajouté en Pass 2 review si Auditor flag. |
+| L26 | `find_unpaid_invoices_for_window` peut remonter une candidate avec `score=0.0` post-filter du helper (M3 boundary), aboutissant à `candidates: []` côté frontend ; impossible de distinguer « 0 candidate dans repo window » vs « N candidates mais tous score 0 » (L13 Pass 1 patch) | Diagnostic gap : le user voit le même état neutre dans les 2 cas. Acceptable v0.1 — le cas « tous score 0 » est rare (filtres repo amount/date sont stricts donc une candidate qui passe le filter mais score 0 implique mismatch sur ref ET contact, peu probable). Si KF émerge en prod, ajouter un champ `candidatesFiltered: number` dans la réponse pour signaler que des candidates existaient mais ont été filtrées par score. |
+| L27 | Epic-8 AC « écriture comptable créée OU liée » partiellement adressé (L14 Pass 1 patch) | 8-4 ne livre que la partie « liée » (`matched_entry_id ← invoice.journal_entry_id`). La partie « créée » (création d'écriture Banque/Client) est explicitement déférée 8-5 (création manuelle FR45) ou v0.2 (auto via règles d'affectation FR47). Pas un drift d'AC mais un découpage scope explicite de l'Epic 8 sur 2 stories successives. |
 
 ### Références
 
@@ -625,7 +796,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 - Spec 8-1b (foundation `bank_transactions.status` + `matched_entry_id`) : [`8-1b-camt053-persistence-ui.md`](8-1b-camt053-persistence-ui.md)
 - Epic 8 plan : [`epic-8.md`](../planning-artifacts/epic-8.md) — §Risques R5 (score de confiance)
 - PRD : [`prd.md`](../planning-artifacts/prd.md) — FR44 (§438), §134 scenario Sophie réconciliation
-- Architecture : [`architecture.md`](../planning-artifacts/architecture.md) — §11.5 dépendances inter-crates (kesh-reconciliation), §17 carte FR → modules, ligne 491-498 structure crate
+- Architecture : [`architecture.md`](../planning-artifacts/architecture.md) — section « Dépendances inter-crates » (lignes 266-274, en particulier ligne 270 pour `kesh-reconciliation → kesh-core, kesh-db`), section « Mapping Exigences → Structure » (lignes 628-643, pour la carte FR → modules), lignes 491-498 pour la structure crate. L2 Pass 1 patch : les références §11.5 et §17 du spec original n'existaient pas dans architecture.md (pas de numérotation de sections).
 - KF-020 #49 closed (PR #64) : `SELECT FOR UPDATE` foundation pour cohabitation avec `GET_LOCK` advisory
 - KF-002-H-002 #43 closed (PR #65) : deadlock-retry middleware
 
@@ -691,3 +862,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | Date | Action | Auteur |
 |------|--------|--------|
 | 2026-05-06 | Création de la story par `/bmad-create-story 8-4` post-merge PR #75 (Story 8-3 done). Spec construite à partir d'epic-8.md Story 8-4 ACs (FR44 + matching automatique) + foundation 8-1b (`bank_transactions.status` + `matched_entry_id` posés en avance) + patterns 8-2/8-3 (multi-tenant scoping, audit log canonique, RBAC sub-router, repository Executor générique). 34 ACs définis (AC #30 à #63 — numérotation continue 8-3) + 9 tasks T1-T9 + 6 modules touchés (au seuil > 5 — splitting risque documenté). Décisions de conception clés : §matching-algo (score f64 ∈ [0..1] pondéré 0.50 amount + 0.40 reference + 0.10 contact, helper pure sans I/O), §candidate-window (filtrage repo ± 30 jours + ± 0.05 CHF avec index dédié `idx_invoices_company_validated_unpaid_date`), §mutex-account (advisory lock MariaDB `GET_LOCK('reconcile:company_id:bank_account_id', 5s)` portable multi-instance), §accept-flow (transaction par proposal + partial success + audit log par tx), §reject-flow (colonne `auto_match_rejected_at` ajoutée, transactions exclues de `/proposals` après reject), §audit-log-actions (`reconciliation.accepted`/`reconciliation.rejected` actions plain, pas de modifiers Vec — variantes confirmables absentes ici), §error-precedence-order (8 niveaux d'erreurs documentés). Crate `kesh-reconciliation` (placeholder existant Story 1-1) **vraiment activé** : 3 modules `matching` + `mutex` + `errors`. Pas de breaking change `kesh-import` (8-3 invariant publishable préservé, mais `kesh-reconciliation` n'est pas publishable selon décision archi #7 inverse). Splitting risque CLAUDE.md documenté : 6 modules (kesh-reconciliation, kesh-db, kesh-api, frontend, kesh-i18n, kesh-core) au-dessus du seuil > 5 ; pas de split préventif (volume estimé ~1800-2200 lignes, patterns acquis 8-2/8-3, frontière `kesh-reconciliation core (matching+mutex+repo)` vs `API+frontend` pré-identifiée comme split rétroactif possible si Pass 4 spec validate ne converge pas). Limitations v0.1 documentées : L17 score amount binaire, L18 pas de seuil auto-accept, L19 pas de matching journal_entries non-invoice, L20 pas de création écriture sans facture validée, L21 pas de paiement partiel, L22 GET_LOCK libéré à fin session si crash app, L23 reject non-réversible v0.1. Hors scope explicite : FR45 (création manuelle), FR46/FR47 (règles d'affectation), FR48 (éclatement transaction agrégée) — tous reportés Story 8-5. Status `8-4-reconciliation-matching-automatique: backlog → ready-for-dev`. Status sync : 8-3 `review → done` (post-merge PR #75 squash 60daf26). Prochaine étape : `bmad-create-story validate 8-4` Pass 1 Sonnet (cycle CLAUDE.md, auteur=Opus, Pass 1=Sonnet pour briser biais d'auteur). | Claude (Opus 4.7 1M context, bmad-create-story exécution) |
+| 2026-05-06 | **Pass 1 spec validate (Sonnet 4.6, 3 sub-agents parallèles)** — Cycle CLAUDE.md auteur=Opus → Pass 1=Sonnet pour briser biais d'auteur. Sub-agents fenêtres fraîches : Coherence Auditor (14 findings C1-C14, internal consistency + AC↔task matrix), Source Fidelity Auditor (8 findings S1-S8 + 16 claims vérifiées clean contre PRD/epic-8/architecture/code base), Adversarial Reviewer (16 findings A1-A16 cyniques via skill `bmad-review-adversarial-general`). Verdict implicit : **CONDITIONAL GO** (6 HIGH bloquants). Triage 38 bruts → **0 CRITICAL + 6 HIGH + 9 MEDIUM + 14 LOW + 2 REJECT** = 29 actionables. **29 patches appliqués (Option `A` — toutes catégories)** : **HIGH** — H1 (S4+S5+S8+A3+C2 cluster) refonte §accept-flow step 6 v0.1 « link only » : pas d'appel `mark_as_paid` (incompatible nested tx + ne crée pas d'écriture comptable), UPDATE inline `bank_transactions.matched_entry_id ← invoice.journal_entry_id, status='reconciled', version++` + `invoices.paid_at = bank_transaction.value_date.unwrap_or(booking_date), version++` (timestamp source défini, optimistic lock), création écriture « Banque/Client » explicitement déférée 8-5/v0.2 (cf. L20 + nouveau L27). H2 (A6+C10) ajout `bankAccountId` au body POST accept ET POST reject (lock acquis AVANT chargement transactions, sinon impossible). H3 (C11) shape réponse GET proposals alignée sur schema canonique (objet `score: { total, amountScore, referenceScore, contactScore }` + `transaction: {...}` + `invoice: {invoiceNumber, invoiceAmount, invoiceDate}` — pas de booléens flags `amountMatch/...`). H4 (A2) `contact_score` bidirectionnel (substring match dans les 2 directions, plus tolérant pour le user, résout incohérence formule vs AC #34 test). H5 (A1) UN seul `with_account_lock` pour TOUT le batch (pas par-proposal — sinon gap entre proposals N et N+1) + savepoints MariaDB pour partial success sans rollback du lot. H6 (C6) signature `propose_matches(tx, &[(Invoice, Option<Contact>)])` alignée §Scope item 1 vs T2.2. **MEDIUM** — M1 (A4) `find_unpaid_invoices_for_window` ajoute filtre `journal_entry_id IS NOT NULL` pour éviter de remonter des candidates rejetées au step 6. M2 (A8) POST reject acquiert aussi le mutex (symétrie avec accept, évite race vs concurrent accept). M3 (A9+C9) pseudo-code `reference_score` formel (containment bidirectionnel = 1.0, common_prefix ≥ 4 chars = 0.5, sinon 0.0) + pseudo-code `contact_score` formel. M4 (C4) audit log shape aligné §accept-flow step 9 vs §audit-log-actions table (`score: { total, amountScore, ... }` objet, `journal_entry_id` toujours présent). M5 (A5) batch-load Contacts via `find_contacts_by_ids` au lieu de N×M queries (200 queries au lieu de 2000 pour 100 tx × 20 candidates × 15 contacts). M6 (A10) arrondi explicite IEEE 754 `(score.total * 100.0).round() as u8` côté backend ET frontend pour éviter non-déterminisme à la frontière 90%. M7 (A13) score re-calculé côté serveur dans accept_one (pas pris du body) pour audit trail fiable. M8 (A11) migration `ALTER TABLE bank_transactions ... ALGORITHM=INSTANT, LOCK=NONE` (MariaDB 10.3+ instant ADD COLUMN nullable, évite outage prod sur grandes tables). M9 (A7) `RELEASE_LOCK` explicite avant `tx.commit()` (pas seulement `.ok()` après le résultat — explicite pour libérer la connexion plus tôt). **LOW** — L1 (S1) PRD §134 Sophie → §112 Marc (correction citation). L2 (S2) architecture.md §11.5/§17 fictifs → références par numéros de lignes (266-274, 628-643). L3 (S3) architecture.md:269 → 270 (kesh-reconciliation deps). L4 (S7) lib.rs:299 → 90 (comptable_routes définition, pas une route bank_profiles). L5 (C3) §reject-flow step 1 strikethrough SQL résiduel supprimé via refonte §reject-flow complète. L6 (C8) §reject-flow step 3 nom de fonction corrigé (`find_pending_transactions_for_account` qui filtre, pas `find_unpaid_invoices_for_window`). L7 (C5) AC #46 reformulé pour pointer explicitement vers AC #60 (résout redondance/contradiction). L8 (C12) T9.2 « 5/5 » → « 4/5 » (8-5 reste backlog). L9 (C14) `kesh-core` retiré du splitting risk count (pas d'extension `BankTransactionDraft` requise) → 5 modules au lieu de 6, sous-seuil. L10 (C7) T3.1bis subtask explicite pour `find_pending_transactions_for_account` + T3.1ter `find_contacts_by_ids` batch helper. L11 (A12) limitation L24 pagination GET proposals via `limit` query param hardcodé 100. L12 (A14) limitation L25 RBAC test couvre seulement Consultation (401 unauth couvert ailleurs). L13 (A15) limitation L26 score=0 diagnostic gap acceptable v0.1. L14 (S6) limitation L27 Epic-8 AC « créée OU liée » partiellement adressé (8-4 = liée, 8-5 = créée). **REJECT** — C13 `AsyncFnOnce` nightly : Source Fidelity confirme rust-toolchain.toml 1.85 stable. A16 status enum 'reconciled' check : confirmé via Source Fidelity (`BankTransactionStatus { Pending, Reconciled }` exporté kesh-db). **Trend findings > LOW : 15 → 0 post-patches Pass 1**. **Critère d'arrêt CLAUDE.md** : 0 finding > LOW post-patches. Spec post-Pass-1 : ~870 lignes (vs ~600 avant), 34 ACs inchangés en numérotation (#30-#63), 9 tasks T1-T9 (T3.1bis + T3.1ter ajoutés en sous-items), 5 modules (L9 retire kesh-core), 11 limitations connues (L17-L27). Sections enrichies : §matching-algo (pseudo-code formel reference_score + contact_score + arrondi IEEE 754), §accept-flow (refonte H1+H2+H5 avec single lock + savepoints + UPDATE inline), §reject-flow (refonte avec mutex partagé + body bankAccountId), §candidate-window (filtre journal_entry_id IS NOT NULL), §audit-log-actions (shape score objet), §error-precedence-order (8 niveaux maintenus). **Pass 2 Haiku 4.5 recommandée** (cycle Sonnet → Haiku, fenêtre fraîche, focus sur les sections les plus modifiées : §accept-flow, §reject-flow, §matching-algo) pour confirmation orthogonale avant `bmad-dev-story 8-4`. | Claude (Opus 4.7 1M coordinator + Sonnet 4.6 sub-agents, bmad-create-story validate Pass 1) |
