@@ -1404,7 +1404,9 @@ async fn dedup_handles_2000_existing_under_3s(pool: MySqlPool) {
             .push_bind(Option::<String>::None)
             .push_bind(Option::<String>::None)
             .push_bind(Option::<String>::None)
-            .push_bind("imported");
+            // CI-fix : `chk_bank_transactions_status` n'autorise que
+            // `'pending'` ou `'reconciled'` (cf. migration 20260504000001).
+            .push_bind("pending");
     });
     qb.build().execute(&pool).await.unwrap();
 
