@@ -203,6 +203,7 @@ pub(crate) const TABLES_TO_TRUNCATE: &[&str] = &[
     "company_invoice_settings",
     "bank_transactions", // Story 8-1b — enfant de bank_imports + bank_accounts.
     "bank_imports",      // Story 8-1b — enfant de bank_accounts + companies.
+    "bank_profiles",     // Story 8-2 — enfant de companies (CASCADE).
     "bank_accounts",
     "accounts", // FK self-ref via parent_id
     "products",

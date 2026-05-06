@@ -141,7 +141,10 @@ pub struct BankImportDraft {
 pub enum SourceFormatTag {
     Camt053V04,
     Camt053V08,
-    // Csv ajouté Story 8-2.
+    /// Story 8-2 T5.0.b — import CSV (multi-encodage + profil banque).
+    /// La distinction par profil bancaire spécifique vit dans
+    /// `audit_log.details_json.bank_profile_id` (cf. Limitation L4).
+    Csv,
 }
 
 impl SourceFormatTag {
@@ -150,6 +153,7 @@ impl SourceFormatTag {
         match self {
             Self::Camt053V04 => "CAMT053_V04",
             Self::Camt053V08 => "CAMT053_V08",
+            Self::Csv => "CSV",
         }
     }
 }
@@ -192,11 +196,7 @@ pub fn from_imported(
         SourceFormat::Camt053 { version } => {
             return Err(CoreError::BankImportUnknownVersion(version.clone()));
         }
-        SourceFormat::Csv { .. } => {
-            // Story 8-1a ne traite pas le CSV — il sera ajouté par 8-2 avec
-            // une variante SourceFormatTag::Csv dédiée.
-            return Err(CoreError::BankImportUnknownVersion("csv".to_string()));
-        }
+        SourceFormat::Csv { .. } => SourceFormatTag::Csv,
     };
 
     let transactions: Vec<BankTransactionDraft> = stmt
@@ -661,5 +661,32 @@ mod tests {
         .expect("v08 OK");
         assert_eq!(draft.source_format, SourceFormatTag::Camt053V08);
         assert_eq!(draft.source_format.as_db_str(), "CAMT053_V08");
+    }
+
+    /// Pass 1 review G1 AA-1 : Story 8-2 T5.0.b — vérifie que le branch
+    /// `SourceFormat::Csv { .. }` retourne `Ok(SourceFormatTag::Csv)`
+    /// (vs ancien `Err(BankImportUnknownVersion("csv"))` du 8-1a).
+    #[test]
+    fn from_imported_csv_maps_to_csv_tag() {
+        let mut stmt = statement_fixture(None, None);
+        stmt.source_format = SourceFormat::Csv {
+            encoding: "UTF-8".into(),
+            profile_name: Some("UBS".into()),
+        };
+        let (draft, _) = from_imported(
+            &stmt,
+            1,
+            1,
+            String::new(),
+            String::new(),
+            NaiveDate::from_ymd_opt(2026, 5, 4)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            1,
+        )
+        .expect("csv branch OK");
+        assert_eq!(draft.source_format, SourceFormatTag::Csv);
+        assert_eq!(draft.source_format.as_db_str(), "CSV");
     }
 }

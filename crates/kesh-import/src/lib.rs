@@ -19,14 +19,20 @@
 //!
 //! - [`types`] : types autonomes [`ImportedStatement`] / [`ImportedTransaction`]
 //!   représentant un relevé importé.
-//! - [`error`] : enum [`CamtError`] pour les défaillances du parseur CAMT.053.
+//! - [`error`] : enum [`CamtError`] / [`CsvError`] / [`ImportError`] pour les
+//!   défaillances des parseurs.
 //! - [`camt053`] : parseur CAMT.053 v04 / v08 (Story 8-1a).
-//! - `csv` : parseur CSV multi-encodage / multi-profils (Story 8-2 — à venir).
+//! - [`csv`] : parseur CSV multi-encodage / multi-profils (Story 8-2).
 
 pub mod camt053;
+pub mod csv;
 pub mod error;
 pub mod types;
 
 pub use camt053::parse as parse_camt053;
-pub use error::CamtError;
+pub use csv::{ColumnMapping, CsvProfile, DetectedEncoding, parse_csv};
+pub use error::{
+    CamtError, CsvError, CsvLineError, CsvLineErrorCode, ImportError,
+    MAX_CSV_LINE_ERROR_VALUE_CHARS, MAX_CSV_LINE_ERRORS,
+};
 pub use types::{ImportedStatement, ImportedTransaction, SourceFormat};

@@ -33,6 +33,13 @@
 	let isLoading = $state(false);
 	let errorCode = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
+	// Pass 1 review G3 H11 : si erreur `BANK_CSV_PARTIAL_FAILURE`,
+	// stocker le détail des lignes pour affichage panneau dédié.
+	let errorPartialLines = $state<Array<{
+		line: number;
+		code: string;
+		value: string | null;
+	}> | null>(null);
 	let dragActive = $state(false);
 
 	// Review code Pass 1 M7 : reset l'état (preview, fichier, erreurs) si
@@ -94,13 +101,35 @@
 		isLoading = true;
 		try {
 			preview = await previewBankImport(file, selectedAccountId);
+			errorPartialLines = null;
 		} catch (err) {
 			if (isApiError(err)) {
 				errorCode = err.code;
 				errorMessage = err.message;
+				// Pass 1 review G3 H11 : afficher le détail des lignes
+				// CSV en erreur si BANK_CSV_PARTIAL_FAILURE.
+				// Pass 2 review M3 (BH2-1 + EH2-5) : type guard runtime
+				// (Array.isArray) au lieu de `as` cast non vérifié — protège
+				// contre une évolution future du schema backend ou un payload
+				// 422 malformé qui crasherait la table render.
+				if (
+					err.code === 'BANK_CSV_PARTIAL_FAILURE' &&
+					Array.isArray(err.details?.lines)
+				) {
+					errorPartialLines = err.details.lines.filter(
+						(line: unknown): line is { line: number; code: string; value: string | null } =>
+							typeof line === 'object' &&
+							line !== null &&
+							typeof (line as { line?: unknown }).line === 'number' &&
+							typeof (line as { code?: unknown }).code === 'string',
+					);
+				} else {
+					errorPartialLines = null;
+				}
 			} else {
 				errorCode = 'UNKNOWN_ERROR';
 				errorMessage = 'Erreur inattendue.';
+				errorPartialLines = null;
 			}
 			preview = null;
 		} finally {
@@ -227,7 +256,7 @@
 				id="bank-import-file-input"
 				data-testid="bank-import-file-input"
 				type="file"
-				accept=".xml,application/xml"
+				accept=".xml,application/xml,.csv,text/csv,.txt"
 				class="hidden"
 				onchange={handleFileInput}
 				disabled={!selectedAccountId}
@@ -235,10 +264,22 @@
 			<p class="text-text-muted">
 				{i18nMsg(
 					'bank-import-labels-drop-zone',
-					'Glissez votre fichier CAMT.053 ici ou cliquez pour parcourir',
+					'Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir',
 				)}
 			</p>
 		</div>
+		<p class="mt-2 text-xs text-text-muted">
+			<a
+				href="/bank-import/profiles"
+				data-testid="bank-import-profiles-link"
+				class="underline"
+			>
+				{i18nMsg(
+					'bank-import-profile-labels-page-title',
+					'Profils bancaires CSV',
+				)}
+			</a>
+		</p>
 	{/if}
 
 	{#if isLoading}
@@ -253,6 +294,31 @@
 			role="alert"
 		>
 			<p class="text-error">{errorMessage}</p>
+			{#if errorPartialLines && errorPartialLines.length > 0}
+				<div
+					class="mt-2 max-h-64 overflow-y-auto"
+					data-testid="bank-import-csv-partial-failure-lines"
+				>
+					<table class="w-full table-auto text-sm">
+						<thead>
+							<tr>
+								<th class="text-left">Ligne</th>
+								<th class="text-left">Code</th>
+								<th class="text-left">Valeur</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each errorPartialLines as line, i (i)}
+								<tr data-testid="bank-import-csv-partial-failure-row">
+									<td>{line.line}</td>
+									<td><code>{line.code}</code></td>
+									<td>{line.value ?? '—'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
