@@ -25,7 +25,7 @@
 - **Comptabilité en partie double** — plan comptable suisse, écritures validées, audit log
 - **Carnet d'adresses & catalogue produits** — contacts, conditions de paiement, TVA
 - **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse
-- **Import bancaire CAMT.053** — parser + persistance + UI ✓ (CSV multi-banque + réconciliation : *à venir*)
+- **Import bancaire CAMT.053 + CSV multi-encodage** — parser + persistance + UI ✓, profils banque réutilisables ✓ (réconciliation : *à venir*)
 - **Paiements pain.001.001.03** — fichiers de paiement ISO 20022 *(à venir)*
 - **TVA suisse** — calcul et rapports par période *(à venir)*
 - **Multilingue** — FR, DE, IT, EN
