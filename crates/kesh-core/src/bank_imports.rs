@@ -293,11 +293,18 @@ pub struct DuplicateKey {
 impl fmt::Display for DuplicateKey {
     /// Forme `"yyyy-mm-dd|amount|ref|account_id"` utilisée par
     /// [`DuplicateLine::key`] pour le debug et l'affichage UI.
+    ///
+    /// **L-2 (Pass 2 review)** : la référence peut théoriquement
+    /// contenir le séparateur `|`. On l'échappe en `\|` pour éviter
+    /// que le frontend qui re-parse cette clé pour des affichages
+    /// debug ne confonde un délimiteur avec un caractère de
+    /// référence (cas rare CAMT.053 / CSV mais possible).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let escaped_ref = self.reference_normalized.replace('|', "\\|");
         write!(
             f,
             "{}|{}|{}|{}",
-            self.booking_date, self.amount, self.reference_normalized, self.bank_account_id
+            self.booking_date, self.amount, escaped_ref, self.bank_account_id
         )
     }
 }
@@ -1112,6 +1119,23 @@ mod tests {
             elapsed.as_millis() < 200,
             "performance dégradée : {elapsed:?} > 200ms (cible smoke 50ms)"
         );
+    }
+
+    #[test]
+    fn dedup_key_display_escapes_pipe_in_reference() {
+        // L-2 (Pass 2 review) — une référence contenant le séparateur
+        // `|` doit être échappée en `\|` dans la forme texte.
+        let key = dedup_key_scalar(
+            date(2026, 5, 15),
+            dec!(150.00),
+            Some("REF|PIPE"),
+            None,
+            None,
+            17,
+        );
+        // normalize_reference_fallback fait trim+lowercase → "ref|pipe"
+        // → escape pipe → "ref\\|pipe"
+        assert_eq!(key.to_string(), "2026-05-15|150|ref\\|pipe|17");
     }
 
     #[test]

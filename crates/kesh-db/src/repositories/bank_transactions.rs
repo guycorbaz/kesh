@@ -72,6 +72,14 @@ pub async fn find_in_dedup_window<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
+    // L-4 (Pass 2 review) — bornes inversées (`from > to`) résulteraient
+    // en BETWEEN MariaDB silencieusement vide ; surfacing en debug.
+    debug_assert!(
+        period_from <= period_to,
+        "find_in_dedup_window: period_from {} > period_to {}",
+        period_from,
+        period_to
+    );
     sqlx::query_as::<_, BankTransaction>(&format!(
         "SELECT {COLUMNS} FROM bank_transactions \
          WHERE company_id = ? AND bank_account_id = ? \

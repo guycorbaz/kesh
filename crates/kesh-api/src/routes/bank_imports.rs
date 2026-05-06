@@ -101,6 +101,16 @@ pub struct PreviewWarnings {
     /// Warnings informationnels CSV (`bank_csv_multiple_profile_matches`,
     /// `bank_csv_profile_auto_matched`, etc.) — non-bloquants, mappés
     /// vers i18n côté frontend.
+    ///
+    /// **L-5 (Pass 2 review)** — couplage backend ↔ frontend i18n :
+    /// chaque code remonté ici (snake_case Rust) doit avoir une clé
+    /// i18n correspondante en kebab-case avec le préfixe
+    /// `bank-import-info-{kebab(code)}` dans les 4 locales. Ex.
+    /// `bank_csv_profile_auto_matched` → `bank-import-info-bank-csv-profile-auto-matched`.
+    /// Le frontend (`BankImportUpload.svelte`) effectue la conversion
+    /// snake→kebab via `info.replace(/_/g, '-')`. Tout nouveau code
+    /// ajouté ici **DOIT** être propagé aux 4 fichiers
+    /// `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub informational: Vec<String>,
 }
@@ -313,6 +323,28 @@ fn truncate_to_byte_len(s: &str, max_bytes: usize) -> String {
     s[..end].to_string()
 }
 
+/// **M-2 (Pass 2 review)** — Parser strict pour les flags `confirm*`
+/// multipart. Surfacing immédiate des bugs clients :
+///
+/// - `"true"` / `"1"` → `true`
+/// - `"false"` / `"0"` / `""` → `false` (chaîne vide = absence de
+///   valeur côté HTML form, comportement attendu)
+/// - tout autre → `Err(Validation(...))`
+///
+/// Le pattern précédent `matches!(..., "true" | "1")` traitait
+/// silencieusement `"yes"`, `"on"`, `"foo"` comme `false`, ce qui
+/// pouvait masquer des bugs côté client (typo dans la sérialisation
+/// du booléen) ou des tentatives de bypass défensives.
+fn parse_strict_bool_multipart(field_name: &str, text: &str) -> Result<bool, AppError> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Ok(true),
+        "false" | "0" | "" => Ok(false),
+        other => Err(AppError::Validation(format!(
+            "{field_name} doit être 'true'/'1' ou 'false'/'0' (reçu '{other}')"
+        ))),
+    }
+}
+
 async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, AppError> {
     let mut file_bytes: Option<axum::body::Bytes> = None;
     let mut filename: Option<String> = None;
@@ -381,11 +413,9 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 }
                 confirm_balance_mismatch_seen = true;
                 let text = field.text().await.map_err(map_multipart_err)?;
-                // Review code Pass 1 M3 : case-insensitive — accepter
-                // "true"/"True"/"TRUE"/"1" pour les clients non-browser
-                // (curl, scripts) qui peuvent envoyer en majuscules.
+                // M-2 (Pass 2) — strict parser : valeurs invalides → 400.
                 confirm_balance_mismatch =
-                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+                    parse_strict_bool_multipart("confirmBalanceMismatch", &text)?;
             }
             "bankProfileId" => {
                 // Story 8-2 — Pass 2 M'8 duplicate guard.
@@ -414,7 +444,7 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 confirm_encoding_mismatch_seen = true;
                 let text = field.text().await.map_err(map_multipart_err)?;
                 confirm_encoding_mismatch =
-                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+                    parse_strict_bool_multipart("confirmEncodingMismatch", &text)?;
             }
             "confirmDuplicateFile" => {
                 if confirm_duplicate_file_seen {
@@ -425,7 +455,7 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 confirm_duplicate_file_seen = true;
                 let text = field.text().await.map_err(map_multipart_err)?;
                 confirm_duplicate_file =
-                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+                    parse_strict_bool_multipart("confirmDuplicateFile", &text)?;
             }
             "confirmDuplicateLines" => {
                 if confirm_duplicate_lines_seen {
@@ -454,7 +484,7 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 confirm_partial_import_seen = true;
                 let text = field.text().await.map_err(map_multipart_err)?;
                 confirm_partial_import =
-                    matches!(text.trim().to_ascii_lowercase().as_str(), "true" | "1");
+                    parse_strict_bool_multipart("confirmPartialImport", &text)?;
             }
             _ => {
                 // Review code Pass 1 M2 : propager l'erreur sur les
@@ -1005,6 +1035,13 @@ pub async fn create(
     // REPEATABLE READ la fenêtre de race reste théoriquement ouverte
     // par snapshot ; mais sortir le check de la transaction l'élargit
     // arbitrairement et désaligne le code de la documentation.
+    //
+    // M-4 (Pass 2 review) — sur tout return Err(...) avant `tx.commit()`,
+    // sqlx::Transaction::drop déclenche un ROLLBACK asynchrone
+    // (cf. sqlx-mysql::Transaction::drop_inner) ; la connexion est
+    // rendue au pool une fois le rollback terminé. Aucun leak en
+    // pratique, mais l'utilisateur doit savoir que la fenêtre entre
+    // `Err(...)` et la fin du rollback async occupe une connexion.
     let mut tx = state
         .pool
         .begin()
@@ -1315,9 +1352,20 @@ async fn compute_duplicate_lines_warnings(
 /// `Skip` retire les drafts dont `new_index ∈ duplicate_lines`,
 /// `Import` les conserve tous.
 ///
-/// Retourne `(filtered_drafts, count i32)` — le compteur est calculé
-/// avec `i32::try_from` saturé à `i32::MAX` pour matcher le contrat
-/// `transaction_count: INT NOT NULL` côté DB.
+/// Retourne `(filtered_drafts, count i32)` — le compteur respecte le
+/// contrat `transaction_count: INT NOT NULL` côté DB.
+///
+/// **M-3 (Pass 2 review)** : invariant des indices doublons —
+/// `duplicate_lines[*].new_index < drafts.len()` ; un OOB indique un
+/// bug logique amont (`detect_duplicate_lines` qui retournerait un
+/// index hors-borne) qu'il faut surfacer en debug.
+///
+/// **M-1 (Pass 2 review)** : le cast `usize → i32` panique en cas
+/// d'overflow plutôt que de saturer silencieusement. Pour une PME
+/// suisse, `filtered.len() > i32::MAX = 2_147_483_647` est irréaliste ;
+/// si jamais ça arrivait, un panic explicite vaut mieux qu'un audit
+/// log incohérent avec la DB (logiciel comptable, pas de saturation
+/// muette acceptable).
 fn apply_duplicate_lines_filter(
     drafts: Vec<BankTransactionDraft>,
     duplicate_lines: &[DuplicateLineWarning],
@@ -1327,8 +1375,19 @@ fn apply_duplicate_lines_filter(
         ConfirmDuplicateLines::Import => drafts,
         ConfirmDuplicateLines::Skip if duplicate_lines.is_empty() => drafts,
         ConfirmDuplicateLines::Skip => {
-            let dup_set: std::collections::HashSet<usize> =
-                duplicate_lines.iter().map(|d| d.new_index).collect();
+            let len = drafts.len();
+            let dup_set: std::collections::HashSet<usize> = duplicate_lines
+                .iter()
+                .map(|d| {
+                    debug_assert!(
+                        d.new_index < len,
+                        "M-3: duplicate_lines.new_index {} OOB for drafts.len() {}",
+                        d.new_index,
+                        len
+                    );
+                    d.new_index
+                })
+                .collect();
             drafts
                 .into_iter()
                 .enumerate()
@@ -1336,7 +1395,8 @@ fn apply_duplicate_lines_filter(
                 .collect()
         }
     };
-    let count = i32::try_from(filtered.len()).unwrap_or(i32::MAX);
+    let count = i32::try_from(filtered.len())
+        .expect("M-1: transaction_count > i32::MAX irréaliste pour un import bancaire v0.1");
     (filtered, count)
 }
 
@@ -1359,6 +1419,12 @@ async fn insert_canonical_audit_log(
     details_extra: serde_json::Map<String, serde_json::Value>,
     csv_profile: Option<&kesh_db::entities::BankProfile>,
 ) -> Result<(), AppError> {
+    // L-6 (Pass 2 review) — INVARIANT spec §audit-log-actions :
+    // `details_json.modifiers` doit être trié alphabétiquement et
+    // dédupliqué AVANT insertion. Le sort+dedup ici est défensif
+    // (les caller sites poussent dans l'ordre logique du handler) ;
+    // un consommateur d'audit a posteriori (vue SQL, BI) compte sur
+    // un ordre stable. Ne pas retirer.
     modifiers.sort();
     modifiers.dedup();
     let mut details = serde_json::json!({
@@ -1768,21 +1834,32 @@ async fn create_csv(
     // retourne PartialFailure { valid: empty }, la sentinel
     // `empty_valid_sentinel_date()` (1970-01-01) atterrit dans
     // draft.period_from. Le check `valid.transactions.is_empty()` plus
-    // haut a déjà rejeté ce cas avec `reason = "no_valid_lines_to_commit"`,
-    // mais on ajoute un debug_assert pour matérialiser l'invariant.
+    // haut a déjà rejeté ce cas avec `reason = "no_valid_lines_to_commit"`.
+    //
+    // L-1 (Pass 2 review) — debug_assert seul ne fire qu'en debug.
+    // En release, si l'invariant venait à être cassé par un futur
+    // refactor, la query SQL `BETWEEN '1970-01-01' AND '1970-01-01'`
+    // retournerait au pire les transactions de cette unique date pour
+    // ce compte/tenant — risque borné mais incohérent. On ajoute un
+    // garde runtime qui court-circuite à `Vec::new()`.
+    let sentinel = kesh_import::empty_valid_sentinel_date();
     debug_assert_ne!(
-        draft.period_from,
-        kesh_import::empty_valid_sentinel_date(),
+        draft.period_from, sentinel,
         "M9: période sentinel ne doit pas atteindre find_in_dedup_window"
     );
-    let existing = bank_transactions::find_in_dedup_window(
-        &mut *tx,
-        current_user.company_id,
-        fields.bank_account_id,
-        draft.period_from,
-        draft.period_to,
-    )
-    .await?;
+    let existing = if draft.period_from == sentinel {
+        // Garde runtime L-1 — defense-in-depth.
+        Vec::new()
+    } else {
+        bank_transactions::find_in_dedup_window(
+            &mut *tx,
+            current_user.company_id,
+            fields.bank_account_id,
+            draft.period_from,
+            draft.period_to,
+        )
+        .await?
+    };
     let duplicate_lines =
         detect_duplicate_lines_for_imported(&stmt.transactions, fields.bank_account_id, &existing);
 
