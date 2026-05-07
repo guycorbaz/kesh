@@ -646,3 +646,12 @@ reconciliation-cols-candidate = Candidate
 reconciliation-cols-score = Score
 reconciliation-actions-accept = Accept
 reconciliation-actions-reject = Reject
+# H8 Pass 1 code review — 8 canonical keys AC #61.
+reconciliation-labels-validate-selected = Validate selection
+reconciliation-labels-reject-selected = Reject selection
+reconciliation-labels-score = Score
+reconciliation-errors-account-locked = Bank account is being reconciled by another user. Please retry in a few seconds.
+reconciliation-errors-already-reconciled = This transaction is already reconciled.
+reconciliation-errors-invoice-not-eligible = This invoice is not eligible for reconciliation.
+reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
+reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.

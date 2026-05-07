@@ -646,3 +646,12 @@ reconciliation-cols-candidate = Candidato
 reconciliation-cols-score = Score
 reconciliation-actions-accept = Accettare
 reconciliation-actions-reject = Rifiutare
+# H8 Pass 1 code review — 8 chiavi canoniche AC #61.
+reconciliation-labels-validate-selected = Convalida selezione
+reconciliation-labels-reject-selected = Rifiuta selezione
+reconciliation-labels-score = Punteggio
+reconciliation-errors-account-locked = Conto bancario in fase di riconciliazione da parte di un altro utente. Riprova tra qualche secondo.
+reconciliation-errors-already-reconciled = Questa transazione è già stata riconciliata.
+reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla riconciliazione.
+reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
+reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.

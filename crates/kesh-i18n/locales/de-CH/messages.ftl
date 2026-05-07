@@ -646,3 +646,12 @@ reconciliation-cols-candidate = Kandidat
 reconciliation-cols-score = Score
 reconciliation-actions-accept = Akzeptieren
 reconciliation-actions-reject = Ablehnen
+# H8 Pass 1 code review — 8 kanonische Schlüssel AC #61.
+reconciliation-labels-validate-selected = Auswahl validieren
+reconciliation-labels-reject-selected = Auswahl ablehnen
+reconciliation-labels-score = Wert
+reconciliation-errors-account-locked = Bankkonto wird gerade von einem anderen Benutzer abgeglichen. Bitte versuchen Sie es in wenigen Sekunden erneut.
+reconciliation-errors-already-reconciled = Diese Transaktion wurde bereits abgeglichen.
+reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleich nicht zulässig.
+reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
+reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.

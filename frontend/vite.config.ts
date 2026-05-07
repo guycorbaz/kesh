@@ -1,5 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vitest/config';
 
 // Config du proxy `/api → :3000` partagée entre `vite dev` et `vite preview`.
@@ -13,8 +14,13 @@ const apiProxy = {
 	}
 };
 
+// H1 Pass 1 code review (Story 8-4) — `svelteTesting()` ajoute les
+// resolve conditions browser pour `@testing-library/svelte` en
+// jsdom (sans ce plugin, `mount(...)` plante avec
+// `lifecycle_function_unavailable` car Svelte importe la version
+// server-side par défaut).
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [tailwindcss(), sveltekit(), svelteTesting()],
 	server: {
 		proxy: apiProxy
 	},

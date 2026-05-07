@@ -251,11 +251,18 @@ pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<Contact>, Db
 
 /// Retourne un contact par ID si et seulement s'il appartient à la company spécifiée (ou None).
 /// Story 6.2: Multi-tenant scoping — utilisé pour les handlers PUT/DELETE qui doivent vérifier IDOR.
-pub async fn find_by_id_in_company(
-    pool: &MySqlPool,
+///
+/// **M7 Pass 1 code review** : Executor générique pour usage en transaction
+/// (ex. `&mut **tx` depuis `kesh-api/routes/reconciliation.rs accept_one`),
+/// remplace le helper dupliqué `reconciliation::find_contact_by_id_for_company`.
+pub async fn find_by_id_in_company<'e, E>(
+    executor: E,
     id: i64,
     company_id: i64,
-) -> Result<Option<Contact>, DbError> {
+) -> Result<Option<Contact>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
     sqlx::query_as::<_, Contact>(
         "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
          address, email, phone, ide_number, default_payment_terms, active, version, \
@@ -263,7 +270,7 @@ pub async fn find_by_id_in_company(
     )
     .bind(id)
     .bind(company_id)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await
     .map_err(map_db_error)
 }

@@ -315,21 +315,16 @@ pub enum AppError {
     /// tenu jusqu'à fin de session MariaDB (cf. L22).
     #[error("Échec de libération du verrou de réconciliation")]
     ReconciliationLockReleaseFailed { bank_account_id: i64 },
-
-    /// Tentative de réconcilier une transaction déjà `status='reconciled'`
-    /// → `409` (l'utilisateur a peut-être un onglet caduc).
-    #[error("Transaction déjà réconciliée")]
-    ReconciliationAlreadyReconciled { bank_transaction_id: i64 },
-
-    /// Facture non éligible pour réconciliation → `409` avec `details.reason`
-    /// ∈ `{ "invoice_not_validated", "invoice_already_paid",
-    /// "invoice_journal_entry_not_set", "payment_date_before_invoice_date" }`
-    /// (HP4-2 Pass 4 enum complet 4 reasons).
-    #[error("Facture non éligible pour réconciliation : {reason}")]
-    ReconciliationInvoiceNotEligible {
-        invoice_id: i64,
-        reason: &'static str,
-    },
+    //
+    // M6 Pass 1 code review — variants supprimés :
+    // - `ReconciliationAlreadyReconciled { bank_transaction_id }` :
+    //   le cas est représenté par `FailedProposal { error_code:
+    //   "RECONCILIATION_ALREADY_RECONCILED" }` per-proposal au lieu
+    //   de remonter en `AppError` global → variant dead code.
+    // - `ReconciliationInvoiceNotEligible { invoice_id, reason }` :
+    //   idem, le 409 invoice-eligibility est représenté en
+    //   `FailedProposal` per-proposal (4 reasons enum dans
+    //   `details.reason`).
 }
 
 /// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
@@ -857,36 +852,9 @@ impl IntoResponse for AppError {
                 });
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
             }
-            AppError::ReconciliationAlreadyReconciled {
-                bank_transaction_id,
-            } => {
-                let msg = t(
-                    "reconciliation-errors-already-reconciled",
-                    "Cette transaction a déjà été réconciliée.",
-                );
-                let body = serde_json::json!({
-                    "error": {
-                        "code": "RECONCILIATION_ALREADY_RECONCILED",
-                        "message": msg,
-                        "details": { "bankTransactionId": bank_transaction_id },
-                    }
-                });
-                (StatusCode::CONFLICT, Json(body)).into_response()
-            }
-            AppError::ReconciliationInvoiceNotEligible { invoice_id, reason } => {
-                let msg = t(
-                    "reconciliation-errors-invoice-not-eligible",
-                    "Facture non éligible pour réconciliation.",
-                );
-                let body = serde_json::json!({
-                    "error": {
-                        "code": "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
-                        "message": msg,
-                        "details": { "invoiceId": invoice_id, "reason": reason },
-                    }
-                });
-                (StatusCode::CONFLICT, Json(body)).into_response()
-            }
+            // M6 Pass 1 code review : variants `ReconciliationAlreadyReconciled` et
+            // `ReconciliationInvoiceNotEligible` supprimés (jamais émis comme
+            // `AppError` global, représentés en `FailedProposal` per-proposal).
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation

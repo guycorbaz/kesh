@@ -30,6 +30,10 @@ export interface ReconciliationProposal {
 
 export interface GetProposalsResponse {
 	proposals: ReconciliationProposal[];
+	// H6 Pass 1 code review — pagination indicator. true si la query
+	// SQL a renvoyé `limit + 1` lignes côté backend. v0.1 : structure
+	// présente mais pas de UI dédiée (bouton « Charger plus » v0.2).
+	hasMore: boolean;
 }
 
 export interface AcceptProposalInput {

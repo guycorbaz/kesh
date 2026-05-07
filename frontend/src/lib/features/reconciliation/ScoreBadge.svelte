@@ -1,6 +1,9 @@
 <!--
-  Story 8-4 — Badge de score de matching (vert ≥0.85, jaune 0.60-0.85, rouge <0.60).
+  Story 8-4 — Badge de score de matching (vert ≥0.90, jaune 0.70-0.90, rouge <0.70).
   Indicateur visuel du niveau de confiance d'une proposition de réconciliation.
+  H3 Pass 1 code review : seuils 0.90/0.70 alignés sur §matching-algo
+  (cf. spec L25 IEEE 754 note — combinaison 0.50 amount + 0.40 reference
+  produit 0.90 exactement en f64 pour le cas nominal QR-Bill).
 -->
 <script lang="ts">
 	type Props = {
@@ -9,7 +12,7 @@
 	let { score }: Props = $props();
 
 	const tier = $derived(
-		score >= 0.85 ? 'high' : score >= 0.6 ? 'medium' : 'low',
+		score >= 0.9 ? 'high' : score >= 0.7 ? 'medium' : 'low',
 	);
 	const colorClass = $derived(
 		tier === 'high'

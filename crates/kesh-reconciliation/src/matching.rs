@@ -394,6 +394,14 @@ mod tests {
                 "[L10-style perf warning] propose_matches_handles_1000_x_500: {elapsed:?} > 200ms"
             );
         }
+        // M8 Pass 1 — upper bound large pour catch les régressions
+        // catastrophiques (e.g. introduction d'I/O dans le helper, boucle
+        // accidentelle O(N²) sur les chars). 5s = ~25× le seuil cible
+        // 200ms, garde la marge pour l'overhead CI variable.
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "matching perf catastrophic regression: {elapsed:?}"
+        );
     }
 
     /// L28 / H4 — fallback chain transaction_id si reference + eid null.

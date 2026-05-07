@@ -1,7 +1,15 @@
 <!--
-  Story 8-4 (FR44) — Liste de propositions de réconciliation avec
-  sélection per-tx (radio sur la candidate) + actions batch
-  Accept/Reject. Erreurs partielles affichées en bas via `failed`.
+  Story 8-4 (FR44) — top-1 only par tx via checkbox tx-level. Candidates
+  2..N ignorées côté UI v0.1 — voir KF-026 #76 pour le pattern multi-
+  candidates v0.2.
+
+  Liste de propositions de réconciliation avec sélection par tx
+  (checkbox) + actions batch Accept/Reject. Pour chaque transaction
+  pending, on affiche la candidate top-1 (la mieux scorée) et un
+  checkbox au niveau tx. Si la transaction n'a aucune candidate,
+  on affiche « Aucune correspondance » sans checkbox (tx
+  non-sélectionnable). Erreurs partielles affichées en bas via
+  `failed`.
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -22,24 +30,33 @@
 	let { bankAccountId }: Props = $props();
 
 	let proposals = $state<ReconciliationProposal[]>([]);
-	let selected = $state<Map<number, number>>(new Map()); // txId → invoiceId
+	// γ refactor BS1 — checkbox tx-level top-1 only : selected = Set<txId>
+	// (l'invoiceId top-1 est ré-extrait au moment du submit).
+	let selected = $state<Set<number>>(new Set());
 	let loading = $state(false);
 	let busy = $state(false);
 	let errorMsg = $state<string | null>(null);
 	let failed = $state<FailedProposal[]>([]);
 	let lastSuccessCount = $state(0);
 
+	// H7 Pass 1 code review — generation tag pour drop les responses
+	// `getProposals` stale (race sur fast account switch).
+	let loadGen = 0;
+
 	async function load() {
+		const myGen = ++loadGen;
 		loading = true;
 		errorMsg = null;
 		try {
 			const r = await getProposals(bankAccountId);
+			if (myGen !== loadGen) return; // stale response, drop
 			proposals = r.proposals;
-			selected = new Map();
+			selected = new Set();
 		} catch (e) {
+			if (myGen !== loadGen) return;
 			errorMsg = e instanceof Error ? e.message : String(e);
 		} finally {
-			loading = false;
+			if (myGen === loadGen) loading = false;
 		}
 	}
 
@@ -47,10 +64,10 @@
 		void load();
 	});
 
-	function toggle(txId: number, invoiceId: number) {
-		const next = new Map(selected);
-		if (next.get(txId) === invoiceId) next.delete(txId);
-		else next.set(txId, invoiceId);
+	function toggle(txId: number) {
+		const next = new Set(selected);
+		if (next.has(txId)) next.delete(txId);
+		else next.add(txId);
 		selected = next;
 	}
 
@@ -60,10 +77,20 @@
 		errorMsg = null;
 		failed = [];
 		try {
-			const items = Array.from(selected.entries()).map(([bankTransactionId, invoiceId]) => ({
-				bankTransactionId,
-				invoiceId,
-			}));
+			// γ refactor — pour chaque txId sélectionné, retrouver la
+			// candidate top-1 (candidates[0]) dans la proposal courante.
+			// Une tx sans candidate ne peut pas être sélectionnée (cf.
+			// disabled checkbox), donc candidates[0] est garanti exister.
+			const items = Array.from(selected).map((txId) => {
+				const p = proposals.find((x) => x.bankTransactionId === txId);
+				if (!p || p.candidates.length === 0) {
+					throw new Error(`No candidate for txId=${txId}`);
+				}
+				return {
+					bankTransactionId: txId,
+					invoiceId: p.candidates[0].invoiceId,
+				};
+			});
 			const r = await acceptProposals(bankAccountId, items);
 			lastSuccessCount = r.accepted.length;
 			failed = r.failed;
@@ -81,7 +108,7 @@
 		errorMsg = null;
 		failed = [];
 		try {
-			const ids = Array.from(selected.keys());
+			const ids = Array.from(selected);
 			const r = await rejectProposals(bankAccountId, ids);
 			lastSuccessCount = r.rejected.length;
 			failed = r.failed;
@@ -140,6 +167,7 @@
 		<table class="w-full table-auto text-sm" data-testid="reconciliation-table">
 			<thead>
 				<tr>
+					<th class="text-left"></th>
 					<th class="text-left">{i18nMsg('reconciliation-cols-tx-date', 'Date')}</th>
 					<th class="text-right">{i18nMsg('reconciliation-cols-tx-amount', 'Montant')}</th>
 					<th class="text-left">{i18nMsg('reconciliation-cols-tx-counterparty', 'Contrepartie')}</th>
@@ -149,48 +177,37 @@
 			</thead>
 			<tbody>
 				{#each proposals as p (p.bankTransactionId)}
-					{#if p.candidates.length === 0}
-						<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
-							<td>{p.transaction.bookingDate}</td>
-							<td class="text-right">{p.transaction.amount} {p.transaction.currency}</td>
-							<td>{p.transaction.counterpartyName ?? ''}</td>
+					<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
+						<td>
+							{#if p.candidates.length > 0}
+								<input
+									type="checkbox"
+									checked={selected.has(p.bankTransactionId)}
+									onchange={() => toggle(p.bankTransactionId)}
+									data-testid="tx-checkbox"
+									data-tx-id={p.bankTransactionId}
+								/>
+							{/if}
+						</td>
+						<td>{p.transaction.bookingDate}</td>
+						<td class="text-right">{p.transaction.amount} {p.transaction.currency}</td>
+						<td>{p.transaction.counterpartyName ?? ''}</td>
+						{#if p.candidates.length === 0}
 							<td colspan="2" class="text-text-muted">
 								{i18nMsg('reconciliation-labels-no-candidate', 'Aucune correspondance')}
 							</td>
-						</tr>
-					{:else}
-						{#each p.candidates as c, idx (c.invoiceId)}
-							<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
-								{#if idx === 0}
-									<td rowspan={p.candidates.length}>{p.transaction.bookingDate}</td>
-									<td rowspan={p.candidates.length} class="text-right">
-										{p.transaction.amount}
-										{p.transaction.currency}
-									</td>
-									<td rowspan={p.candidates.length}>
-										{p.transaction.counterpartyName ?? ''}
-									</td>
-								{/if}
-								<td>
-									<label class="flex items-center gap-2">
-										<input
-											type="radio"
-											name="candidate-{p.bankTransactionId}"
-											checked={selected.get(p.bankTransactionId) === c.invoiceId}
-											onchange={() => toggle(p.bankTransactionId, c.invoiceId)}
-											data-testid="candidate-radio"
-											data-tx-id={p.bankTransactionId}
-											data-invoice-id={c.invoiceId}
-										/>
-										<span>{c.invoiceNumber ?? `#${c.invoiceId}`} ({c.invoiceAmount})</span>
-									</label>
-								</td>
-								<td>
-									<ScoreBadge score={c.score.total} />
-								</td>
-							</tr>
-						{/each}
-					{/if}
+						{:else}
+							<td>
+								<span data-testid="candidate-top-1" data-invoice-id={p.candidates[0].invoiceId}>
+									{p.candidates[0].invoiceNumber ?? `#${p.candidates[0].invoiceId}`}
+									({p.candidates[0].invoiceAmount})
+								</span>
+							</td>
+							<td>
+								<ScoreBadge score={p.candidates[0].score.total} />
+							</td>
+						{/if}
+					</tr>
 				{/each}
 			</tbody>
 		</table>

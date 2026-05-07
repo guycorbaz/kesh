@@ -18,7 +18,15 @@
 //! - [`find_pending_by_ids`] : pré-flight ownership check batch
 //!   pour POST /accept et POST /reject (HP3-4 + MP3-3 Pass 3 —
 //!   1 SELECT IN avant lock acquisition, valide que tous les IDs
-//!   appartiennent au compte fourni).
+//!   appartiennent au compte fourni). **H4 Pass 1 code review** :
+//!   le helper filtre désormais `status='pending' AND
+//!   auto_match_rejected_at IS NULL` côté SQL, donc une transaction
+//!   `reconciled` ou rejetée n'est plus retournée → le caller voit
+//!   un mismatch length et retourne 400.
+//! - [`find_pending_by_id_for_account`] : recharge UNE
+//!   `BankTransaction` pending par id (C2 Pass 1 — TOCTOU fix : appelé
+//!   inside lock dans `accept_one` pour fermer la fenêtre entre le
+//!   pré-flight batch et l'UPDATE).
 //!
 //! Tous les helpers utilisent l'Executor générique pour accepter
 //! `&MySqlPool` (preview) ou `&mut Transaction<MySql>` (handler create
@@ -80,7 +88,8 @@ where
            AND paid_at IS NULL \
            AND journal_entry_id IS NOT NULL \
            AND date BETWEEN DATE_SUB(?, INTERVAL ? DAY) AND DATE_ADD(?, INTERVAL ? DAY) \
-           AND total_amount BETWEEN ? - ? AND ? + ?",
+           AND total_amount BETWEEN ? - ? AND ? + ? \
+         LIMIT 50",
     ))
     .bind(company_id)
     .bind(tx_date)
@@ -154,6 +163,12 @@ where
     if ids.is_empty() {
         return Ok(HashMap::new());
     }
+    if ids.len() > MAX_IN_CLAUSE_IDS {
+        return Err(DbError::Sqlx(sqlx::Error::Protocol(format!(
+            "find_contacts_by_ids: ids.len()={} exceeds MAX_IN_CLAUSE_IDS={MAX_IN_CLAUSE_IDS}",
+            ids.len()
+        ))));
+    }
     // Build IN clause manuellement avec placeholders.
     let placeholders = std::iter::repeat_n("?", ids.len())
         .collect::<Vec<_>>()
@@ -171,29 +186,6 @@ where
     }
     let rows = q.fetch_all(executor).await.map_err(map_db_error)?;
     Ok(rows.into_iter().map(|c| (c.id, c)).collect())
-}
-
-/// Helper inline pour charger un `Contact` par id scopée multi-tenant
-/// — variant Executor générique du `contacts::find_by_id_in_company`
-/// qui ne prenait que `&MySqlPool` (utilisable dans transaction).
-pub async fn find_contact_by_id_for_company<'e, E>(
-    executor: E,
-    company_id: i64,
-    id: i64,
-) -> Result<Option<Contact>, DbError>
-where
-    E: sqlx::Executor<'e, Database = MySql>,
-{
-    sqlx::query_as::<_, Contact>(
-        "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
-         address, email, phone, ide_number, default_payment_terms, active, version, \
-         created_at, updated_at FROM contacts WHERE id = ? AND company_id = ?",
-    )
-    .bind(id)
-    .bind(company_id)
-    .fetch_optional(executor)
-    .await
-    .map_err(map_db_error)
 }
 
 /// Helper inline pour charger une `Invoice` par id scopée multi-tenant.
@@ -218,14 +210,26 @@ where
     .map_err(map_db_error)
 }
 
-/// Pré-flight ownership check batch (HP3-4 + MP3-3 Pass 3) : vérifie
-/// que tous les `bank_transaction_id` fournis appartiennent au
-/// `(company_id, bank_account_id)` donné. 1 SELECT IN avant lock
-/// acquisition.
+/// Cap maximum de la liste `ids` pour éviter un IN clause unbounded
+/// (M9 Pass 1 code review). MariaDB tolère des IN larges mais le
+/// chemin nominal de réconciliation traite des batches < 100 ; cap
+/// défensif à 500 pour éviter un payload abusif.
+const MAX_IN_CLAUSE_IDS: usize = 500;
+
+/// Pré-flight ownership + activation check batch (HP3-4 + MP3-3
+/// Pass 3 + H4 Pass 1) : vérifie que tous les `bank_transaction_id`
+/// fournis appartiennent au `(company_id, bank_account_id)` donné
+/// **ET** sont encore actifs pour la réconciliation
+/// (`status = 'pending' AND auto_match_rejected_at IS NULL`).
 ///
 /// Retourne `HashMap<id, BankTransaction>` keyed par `tx.id`. Les IDs
-/// non-trouvés sont absents de la HashMap — le caller compare
-/// `result.len() == ids.len()` pour détecter le mismatch.
+/// non-trouvés (ou déjà réconciliés/rejetés) sont absents de la
+/// HashMap — le caller compare `result.len() == ids.len()` pour
+/// détecter le mismatch et retourne `400 Validation` (« n'appartiennent
+/// pas au bankAccountId fourni — ou ne sont plus actifs »).
+///
+/// **M9 Pass 1** : retourne `Err(DbError::Sqlx(Protocol))` si
+/// `ids.len() > MAX_IN_CLAUSE_IDS` (cap défensif anti-DoS).
 pub async fn find_pending_by_ids<'e, E>(
     executor: E,
     company_id: i64,
@@ -238,12 +242,20 @@ where
     if ids.is_empty() {
         return Ok(HashMap::new());
     }
+    if ids.len() > MAX_IN_CLAUSE_IDS {
+        return Err(DbError::Sqlx(sqlx::Error::Protocol(format!(
+            "find_pending_by_ids: ids.len()={} exceeds MAX_IN_CLAUSE_IDS={MAX_IN_CLAUSE_IDS}",
+            ids.len()
+        ))));
+    }
     let placeholders = std::iter::repeat_n("?", ids.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
         "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
-         WHERE company_id = ? AND bank_account_id = ? AND id IN ({placeholders})"
+         WHERE company_id = ? AND bank_account_id = ? \
+           AND status = 'pending' AND auto_match_rejected_at IS NULL \
+           AND id IN ({placeholders})"
     );
     let mut q = sqlx::query_as::<_, BankTransaction>(&sql)
         .bind(company_id)
@@ -253,4 +265,36 @@ where
     }
     let rows = q.fetch_all(executor).await.map_err(map_db_error)?;
     Ok(rows.into_iter().map(|t| (t.id, t)).collect())
+}
+
+/// Recharge UNE `BankTransaction` `status='pending'` (sans filtre
+/// `auto_match_rejected_at`) par id pour un compte donné, scopée
+/// multi-tenant. Utilisé par `accept_one` (C2 Pass 1 — TOCTOU fix)
+/// pour rafraîchir l'état dans le lock après le pré-flight batch
+/// hors-lock.
+///
+/// **Différence avec `find_pending_by_ids`** : ce helper ne filtre
+/// PAS `auto_match_rejected_at IS NULL`. Une transaction rejetée
+/// manuellement entre le pré-flight et le lock peut encore être
+/// acceptée (pattern « j'ai rejeté trop vite, je rétracte ») — le
+/// caller laisse le step 4 status check trancher.
+pub async fn find_pending_by_id_for_account<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    id: i64,
+) -> Result<Option<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, BankTransaction>(&format!(
+        "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
+         WHERE company_id = ? AND bank_account_id = ? AND id = ?"
+    ))
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
 }

@@ -31,7 +31,14 @@ describe('reconciliation.api', () => {
 		mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
-			json: () => Promise.resolve({ proposals: [], accepted: [], failed: [], rejected: [] }),
+			json: () =>
+				Promise.resolve({
+					proposals: [],
+					hasMore: false,
+					accepted: [],
+					failed: [],
+					rejected: [],
+				}),
 			headers: new Headers(),
 		} as Response);
 		vi.stubGlobal('fetch', mockFetch);

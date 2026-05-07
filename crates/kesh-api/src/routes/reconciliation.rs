@@ -22,7 +22,9 @@ use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{audit_log, bank_accounts, reconciliation as reconciliation_repo};
+use kesh_db::repositories::{
+    audit_log, bank_accounts, contacts as contacts_repo, reconciliation as reconciliation_repo,
+};
 use kesh_reconciliation::{MatchScore, ReconciliationError, propose_matches, with_account_lock};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,10 @@ use crate::middleware::auth::CurrentUser;
 
 /// Limite de résultats par défaut pour `GET /proposals` (cf. L24).
 const DEFAULT_PROPOSALS_LIMIT: i64 = 100;
+
+/// Cap maximum de la query param `limit` (M9 Pass 1 code review —
+/// défense anti-DoS contre `?limit=999999`).
+const MAX_PROPOSALS_LIMIT: i64 = 500;
 
 /// Fenêtre temporelle ± `WINDOW_DAYS` autour de `tx.booking_date` pour
 /// le filtre `find_unpaid_invoices_for_window` (§candidate-window).
@@ -56,6 +62,11 @@ const LOCK_TIMEOUT_SECS: u32 = 5;
 #[serde(rename_all = "camelCase")]
 pub struct GetProposalsResponse {
     pub proposals: Vec<ReconciliationProposal>,
+    /// Indique si la query SQL a renvoyé `limit + 1` lignes (H6 Pass 1
+    /// code review). Permet au frontend v0.2 d'afficher un bouton
+    /// « Charger plus » sans probe count séparé. v0.1 : structure
+    /// présente mais pas de UI dédiée.
+    pub has_more: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -177,9 +188,12 @@ pub async fn get_proposals(
             "bankAccountId doit être strictement positif".into(),
         ));
     }
+    // M9 Pass 1 — cap limit à `MAX_PROPOSALS_LIMIT` pour éviter DoS via
+    // `?limit=999999`.
     let limit = query
         .limit
         .filter(|&l| l > 0)
+        .map(|l| l.min(MAX_PROPOSALS_LIMIT))
         .unwrap_or(DEFAULT_PROPOSALS_LIMIT);
 
     // Pré-flight HP3-4 — bank_account ownership check.
@@ -192,13 +206,20 @@ pub async fn get_proposals(
     .ok_or(AppError::BankAccountNotFound)?;
 
     // Pass 1 : load all pending transactions (1 query).
-    let transactions = reconciliation_repo::find_pending_transactions_for_account(
+    // H6 Pass 1 — fetch `limit + 1` pour détecter la présence de plus
+    // de résultats (pagination indicator `has_more`). On truncate à
+    // `limit` avant le scoring pour ne pas exposer la sentinelle.
+    let mut transactions = reconciliation_repo::find_pending_transactions_for_account(
         &state.pool,
         current_user.company_id,
         query.bank_account_id,
-        limit,
+        limit + 1,
     )
     .await?;
+    let has_more = transactions.len() as i64 > limit;
+    if has_more {
+        transactions.truncate(limit as usize);
+    }
 
     // Pass 2 : per tx, load candidates + accumulate distinct contact_ids.
     let mut tx_candidates: Vec<(BankTransaction, Vec<Invoice>)> =
@@ -228,7 +249,13 @@ pub async fn get_proposals(
         )
         .await?;
         for inv in &candidates {
-            distinct_contact_ids.insert(inv.contact_id);
+            // M1 Pass 1 — guard `contact_id > 0` : l'entité Invoice
+            // expose `contact_id: i64` (pas `Option<i64>`) avec sentinel
+            // 0 = pas de contact lié. Insérer 0 dans le set provoquerait
+            // un SELECT inutile sur contact_id=0 (jamais existant).
+            if inv.contact_id > 0 {
+                distinct_contact_ids.insert(inv.contact_id);
+            }
         }
         tx_candidates.push((tx, candidates));
     }
@@ -275,7 +302,10 @@ pub async fn get_proposals(
         })
         .collect();
 
-    Ok(Json(GetProposalsResponse { proposals }))
+    Ok(Json(GetProposalsResponse {
+        proposals,
+        has_more,
+    }))
 }
 
 // ============================================================
@@ -358,24 +388,20 @@ pub async fn post_accept(
     let proposals = body.proposals.clone();
     let user_id = current_user.user_id;
     let company_id = current_user.company_id;
-    let pool_clone = state.pool.clone();
 
+    // C2 Pass 1 — `tx_map` (snapshot pré-flight 0ter) n'est plus passé
+    // dans le lock : `accept_one` recharge la BankTransaction inside
+    // lock pour fermer la fenêtre TOCTOU entre le pré-flight (hors-lock)
+    // et l'UPDATE step 8. Le pré-flight 0ter reste utile pour valider
+    // le batch ownership avant d'acquérir le lock (fail-fast 400).
+    drop(tx_map);
     let lock_result = with_account_lock(
         &mut tx_outer,
         company_id,
         bank_account_id,
         LOCK_TIMEOUT_SECS,
         async move |tx_inner| {
-            accept_batch(
-                tx_inner,
-                &pool_clone,
-                company_id,
-                bank_account_id,
-                user_id,
-                &proposals,
-                &tx_map,
-            )
-            .await
+            accept_batch(tx_inner, company_id, bank_account_id, user_id, &proposals).await
         },
     )
     .await;
@@ -415,14 +441,17 @@ pub async fn post_accept(
 
 /// Helper interne — itère les proposals dans des savepoints MariaDB
 /// pour partial success.
+///
+/// **C2 Pass 1 code review** : signature simplifiée — ne reçoit plus
+/// `_pool` ni `tx_map`. `accept_one` recharge la `BankTransaction`
+/// inside lock via `find_pending_by_id_for_account` (TOCTOU fix),
+/// et reçoit `bank_account_id` pour scope le SELECT.
 async fn accept_batch(
     tx_outer: &mut sqlx::Transaction<'_, sqlx::MySql>,
-    _pool: &sqlx::MySqlPool,
     company_id: i64,
-    _bank_account_id: i64,
+    bank_account_id: i64,
     user_id: i64,
     proposals: &[AcceptProposalInput],
-    tx_map: &HashMap<i64, BankTransaction>,
 ) -> Result<AcceptResponse, ReconciliationError> {
     let mut accepted: Vec<AcceptedProposal> = Vec::new();
     let mut failed: Vec<FailedProposal> = Vec::new();
@@ -434,7 +463,16 @@ async fn accept_batch(
             .execute(&mut **tx_outer)
             .await?;
 
-        match accept_one(tx_outer, company_id, user_id, proposal, tx_map, batch_size).await {
+        match accept_one(
+            tx_outer,
+            company_id,
+            bank_account_id,
+            user_id,
+            proposal,
+            batch_size,
+        )
+        .await
+        {
             Ok(entry) => {
                 sqlx::query(&format!("RELEASE SAVEPOINT {savepoint}"))
                     .execute(&mut **tx_outer)
@@ -454,25 +492,51 @@ async fn accept_batch(
 }
 
 /// Helper interne — traite UNE proposal dans son savepoint.
+///
+/// **C2 Pass 1 code review (TOCTOU fix)** : la BankTransaction est
+/// rechargée INSIDE le lock via `find_pending_by_id_for_account`. Le
+/// snapshot `tx_map` du pré-flight 0ter (hors-lock) est ignoré ici
+/// pour fermer la fenêtre TOCTOU. `bank_account_id` est nécessaire
+/// pour scope le SELECT (l'invariant batch « tous les tx du même
+/// bank_account_id » a été validé au pré-flight 0ter).
 async fn accept_one(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
+    bank_account_id: i64,
     user_id: i64,
     proposal: &AcceptProposalInput,
-    tx_map: &HashMap<i64, BankTransaction>,
     batch_size: i64,
 ) -> Result<AcceptedProposal, FailedProposal> {
-    // Step 2 — load BankTransaction (déjà en map post-pré-flight).
-    let bank_transaction = tx_map
-        .get(&proposal.bank_transaction_id)
-        .cloned()
-        .ok_or_else(|| FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
-            error_code: "BANK_TRANSACTION_NOT_FOUND".to_string(),
-            details: None,
-        })?;
+    // Step 2 — recharger BankTransaction INSIDE le lock (C2 Pass 1
+    // TOCTOU fix). Le snapshot `tx_map` pré-lock peut être caduc si un
+    // autre flow a updated la transaction entre le pré-flight 0ter et
+    // l'acquisition du lock.
+    let bank_transaction = match reconciliation_repo::find_pending_by_id_for_account(
+        &mut **tx,
+        company_id,
+        bank_account_id,
+        proposal.bank_transaction_id,
+    )
+    .await
+    {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return Err(FailedProposal {
+                bank_transaction_id: proposal.bank_transaction_id,
+                error_code: "BANK_TRANSACTION_NOT_FOUND".to_string(),
+                details: None,
+            });
+        }
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id: proposal.bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
 
-    // Step 4 — status pending.
+    // Step 4 — status pending (post-rechargement inside lock).
     if bank_transaction.status != BankTransactionStatus::Pending {
         return Err(FailedProposal {
             bank_transaction_id: proposal.bank_transaction_id,
@@ -507,14 +571,18 @@ async fn accept_one(
     };
 
     // Step 5bis — load Contact si invoice.contact_id valid (MP6-1 Pass 6).
+    // M1 Pass 1 — guard `contact_id > 0` : sentinel 0 = pas de contact lié.
+    // M7 Pass 1 — utilisation directe de `contacts_repo::find_by_id_in_company`
+    // (Executor générique, helper dupliqué `find_contact_by_id_for_company`
+    // supprimé du `reconciliation_repo`).
     // Sur erreur DB, contact = None → score contact = 0.0 (graceful).
-    let contact = reconciliation_repo::find_contact_by_id_for_company(
-        &mut **tx,
-        company_id,
-        invoice.contact_id,
-    )
-    .await
-    .unwrap_or(None);
+    let contact = if invoice.contact_id > 0 {
+        contacts_repo::find_by_id_in_company(&mut **tx, invoice.contact_id, company_id)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
 
     // Step 6 — éligibilité invoice (HP3-3 Pass 3 + HP4-2 Pass 4 enum 4 reasons).
     if invoice.status != "validated" {
@@ -565,15 +633,21 @@ async fn accept_one(
         });
 
     // Step 8 — UPDATE bank_transactions + invoices inline.
+    // M2 Pass 1 — `NaiveDate::and_hms_opt` est deprecated ; utiliser
+    // `and_time(NaiveTime::from_hms_opt(0,0,0))` pour produire le
+    // `NaiveDateTime` minuit (l'unwrap est safe : 00:00:00 est constant).
     let paid_at_dt = paid_at_candidate
-        .and_hms_opt(0, 0, 0)
-        .expect("midnight always valid");
+        .and_time(chrono::NaiveTime::from_hms_opt(0, 0, 0).expect("midnight is constant valid"));
     let invoice_version_pre = invoice.version;
 
-    sqlx::query(
+    // C1 Pass 1 — UPDATE avec guard `status='pending'` (defense-in-depth
+    // contre une race entre step 4 et step 8 : le check status au step 4
+    // est lu inside lock mais l'UPDATE reste séparé) + check
+    // `rows_affected() == 1` pour détecter le no-op silencieux.
+    let bank_tx_update = sqlx::query(
         "UPDATE bank_transactions \
          SET matched_entry_id = ?, status = 'reconciled', updated_at = NOW(3), version = version + 1 \
-         WHERE id = ? AND company_id = ?",
+         WHERE id = ? AND company_id = ? AND status = 'pending'",
     )
     .bind(journal_entry_id)
     .bind(proposal.bank_transaction_id)
@@ -585,6 +659,14 @@ async fn accept_one(
         error_code: "DATABASE_ERROR".to_string(),
         details: Some(serde_json::json!({ "message": e.to_string() })),
     })?;
+
+    if bank_tx_update.rows_affected() != 1 {
+        return Err(FailedProposal {
+            bank_transaction_id: proposal.bank_transaction_id,
+            error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            details: Some(serde_json::json!({ "reason": "race_during_update" })),
+        });
+    }
 
     let invoice_update = sqlx::query(
         "UPDATE invoices \
@@ -834,9 +916,24 @@ async fn reject_batch(
             continue;
         }
 
+        // M4 Pass 1 — récupérer `auto_match_rejected_at` depuis la DB
+        // (NOW(3) appliqué côté serveur) au lieu de `chrono::Utc::now()`
+        // côté app : évite le clock skew entre l'horloge applicative et
+        // celle de MariaDB. SELECT séparé après UPDATE car MariaDB
+        // RETURNING n'est pas systématiquement supporté sur le sub-set
+        // de versions ciblé (10.5+ requis pour RETURNING avec UPDATE).
+        let rejected_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "SELECT auto_match_rejected_at FROM bank_transactions \
+             WHERE id = ? AND company_id = ?",
+        )
+        .bind(id)
+        .bind(company_id)
+        .fetch_one(&mut **tx_outer)
+        .await?;
+
         rejected.push(RejectedProposal {
             bank_transaction_id: id,
-            rejected_at: chrono::Utc::now(),
+            rejected_at,
         });
     }
 
@@ -858,12 +955,17 @@ async fn reject_batch(
             },
         )
         .await
+        // C3 Pass 1 — toute `DbError` non-Sqlx (e.g. `NotFound`,
+        // `OptimisticLockConflict`, `UniqueConstraintViolation`) est
+        // wrapped dans `sqlx::Error::Protocol` pour préserver la
+        // sémantique `Database` côté handler (mappée 500). Le fake
+        // `AccountLocked{0,0}` précédent était mappé 409 par erreur,
+        // induisant un retry-after côté client sans cause valide.
         .map_err(|e| match e {
             DbError::Sqlx(sqlx_err) => ReconciliationError::Database(sqlx_err),
-            _ => ReconciliationError::AccountLocked {
-                bank_account_id: 0,
-                timeout_secs: 0,
-            },
+            other => ReconciliationError::Database(sqlx::Error::Protocol(format!(
+                "audit_log insert_in_tx failed (non-Sqlx DbError): {other:?}"
+            ))),
         })?;
     }
 
