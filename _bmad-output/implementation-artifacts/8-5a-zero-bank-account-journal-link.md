@@ -63,7 +63,9 @@ Le coût d'éliminer la dette à la racine (8-5a-zero) plutôt que la traîner d
 - ✅ Story 1-8 — RBAC sub-router pattern (Comptable+ pour mutations).
 - ✅ Story 3-5 — audit log canonique (`audit_log::insert_in_tx`).
 
-**Crate cible** : extension de `kesh-db::repositories::bank_accounts` (nouvelle fn + extension entité) + nouveau fichier `kesh-api::routes::bank_accounts.rs` (route PATCH minimale, pas de CRUD complet — le CRUD existant onboarding suffit pour v0.1, voir §rationale-route-minimale). Frontend : nouveau composant `BankAccountJournalLinkForm.svelte` ou extension de la page bank-accounts existante.
+**Crate cible** : extension de `kesh-db::repositories::bank_accounts` (nouvelle fn + extension entité) + nouveau fichier `kesh-api::routes::bank_accounts.rs` (route PATCH minimale, pas de CRUD complet — le CRUD existant onboarding suffit pour v0.1, voir §rationale-route-minimale). Frontend : nouveau composant `BankAccountJournalLinkForm.svelte` + **réécriture complète** de la page `/bank-accounts/+page.svelte` (cf. §frontend-page-strategy ci-dessous).
+
+**⚠ Pass 3 Opus 4.7 — F2''' note importante** : le fichier `frontend/src/routes/(app)/bank-accounts/+page.svelte` existe déjà mais contient un **placeholder Epic 6 (« Payer »)** non lié — `<title>Payer - Kesh</title>` + texte « Cette fonctionnalité sera disponible prochainement (Epic 6) ». Cette page squatte le path `/bank-accounts` par accident historique. 8-5a-zero **réécrit ce contenu placeholder** pour livrer la page de configuration des comptes bancaires. Conséquence pour Epic 6 (paiements `pain.001`) : Epic 6 devra utiliser une autre route (ex. `/payments` ou `/payer`), à coordonner lors de la planification Epic 6.
 
 ### Scope verrouillé — ce qui est livré par 8-5a-zero
 
@@ -75,28 +77,35 @@ Le coût d'éliminer la dette à la racine (8-5a-zero) plutôt que la traîner d
 
 2. **Extension entité `BankAccount`** :
    - Champ `journal_account_id: Option<i64>` ajouté à `crates/kesh-db/src/entities/bank_account.rs`.
-   - Tous les `SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at FROM bank_accounts` du repo `bank_accounts.rs` étendus pour inclure `journal_account_id` (4 occurrences au minimum à patcher : `FIND_BY_ID_SQL` const + `find_primary` + `list_by_company` + `upsert_primary` SELECT FOR UPDATE).
+   - Tous les `SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at FROM bank_accounts` du repo `bank_accounts.rs` étendus pour inclure `journal_account_id` (**5** occurrences à patcher : `FIND_BY_ID_SQL` const + `find_primary` + `find_by_id_for_company` + `list_by_company` + `upsert_primary` SELECT FOR UPDATE — vérification ground-truth Pass 2 Haiku + Pass 3 Opus : `grep -cn "SELECT id, company_id, bank_name" crates/kesh-db/src/repositories/bank_accounts.rs` retourne `5`).
    - **Sérialisation** : `journalAccountId` (camelCase JSON, cohérent convention `kesh-api`).
 
 3. **Repo `bank_accounts::set_journal_account_id_for_company`** :
    ```rust
-   /// Met à jour le `journal_account_id` d'un bank_account scopé multi-tenant.
+   /// Met à jour le `journal_account_id` d'un bank_account scopé multi-tenant
+   /// **dans une transaction fournie par le caller**.
    ///
    /// Story 8-5a-zero — pose le pattern `bank_account.journal_account_id` qui sera
    /// consommé par 8-5a-base (manual match) et 8-5a-bis (split) sans body field
    /// `bankLedgerAccountId` (résolu serveur-side via cette colonne).
    ///
+   /// **Pass 3 Opus 4.7 — F1''' fix** : la fonction prend `&mut Transaction<MySql>`
+   /// au lieu d'ouvrir sa propre transaction. Cela permet au handler de partager
+   /// la tx avec `audit_log::insert_in_tx` et de garantir l'atomicité UPDATE +
+   /// audit (pattern Story 3-5 + 7-3 + 8-4 — audit_log écrit depuis le route
+   /// handler, jamais depuis le repo).
+   ///
    /// Optimistic lock sur `version` (cohérent KF-004). Retourne le bank_account
    /// mis à jour (avec `version` incrémenté). 404 si introuvable cross-tenant.
    pub async fn set_journal_account_id_for_company(
-       pool: &MySqlPool,
+       tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
        company_id: i64,
        id: i64,
        journal_account_id: Option<i64>,
        expected_version: i32,
    ) -> Result<BankAccount, DbError>
    ```
-   SQL : `UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE company_id = ? AND id = ? AND version = ?`. `rows_affected() == 0` → `DbError::OptimisticLockConflict` ou `DbError::NotFound` (selon le pattern `find` pré-flight cf. §rationale-pattern-find-then-update).
+   SQL : `UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ? AND version = ?`. `rows_affected() == 0` → `DbError::OptimisticLockConflict` ou `DbError::NotFound` (selon le pattern `find` pré-flight cf. §rationale-pattern-find-then-update).
 
 4. **Route API `PATCH /api/v1/bank-accounts/{id}`** :
    - Sub-router `comptable_routes` (RBAC Comptable+, pattern 8-1b T6.3).
@@ -126,10 +135,10 @@ Le coût d'éliminer la dette à la racine (8-5a-zero) plutôt que la traîner d
    - Mounting dans `crates/kesh-api/src/lib.rs` sous `comptable_routes`.
 
 6. **Frontend extensions** :
-   - **Décision §frontend-page-strategy** : la page `/bank-accounts/+page.svelte` existe déjà (vide v0.1, voir résultat `ls frontend/src/routes/(app)/bank-accounts/`). 8-5a-zero **étend cette page** plutôt que d'en créer une nouvelle (cohérent splitting préventif : pas de double-route bank-accounts).
+   - **Décision §frontend-page-strategy** : la page `/bank-accounts/+page.svelte` existe déjà (Pass 3 Opus 4.7 F2''' fix : **PAS vide**, contient un placeholder « Payer » Epic 6 — voir Contexte ci-dessus). 8-5a-zero **réécrit complètement le contenu** de cette page pour la page de configuration des comptes bancaires. Le path est cohérent avec la sémantique « gérer les comptes bancaires », Epic 6 paiement utilisera une autre route.
    - Composant `BankAccountList.svelte` (table : id, bank_name, iban, journalAccountId via `accounts.number + name`, action « Lier compte comptable »).
    - Composant `BankAccountJournalLinkForm.svelte` (modal ou inline) :
-     - Dropdown `Account` autocomplete (filtre client-side `account_type === 'Asset' || account_type === 'Liability'` ET `number.startsWith('1')` pour UX classe 1 — actifs typiques 1020 Caisse banque, 1030 Banque, etc.).
+     - Dropdown `Account` autocomplete (filtre client-side **harmonisé Pass 3 Opus 4.7 L1'''** : `account_type === 'Asset' || account_type === 'Liability'` ET `(number.startsWith('1') || number.startsWith('2'))` — classe 1 actifs typiques 1020 Caisse banque, 1030 Banque + classe 2 passifs si découvert chronique 2100). Cohérent avec le filtre serveur Asset+Liability.
      - Bouton « Lier » (PATCH avec `journalAccountId`) ou « Délier » (PATCH avec `journalAccountId: null`).
    - **API client** : extension `frontend/src/lib/features/bank-accounts/bank-accounts.api.ts` (nouveau fichier) avec `listBankAccounts()` (GET) et `updateBankAccountJournalLink(id, journalAccountId, version)`.
 
@@ -212,7 +221,11 @@ CREATE INDEX IF NOT EXISTS idx_bank_accounts_journal_account
 
 #### §audit-log
 
-**Décision** : action `bank_account.updated` (cohérent §audit-log Story 8-1b qui émet `bank_account.created` à l'onboarding). `details_json` shape snake_case top-level :
+**Décision** : action `bank_account.updated` — **nouvelle action introduite par 8-5a-zero**. Pass 3 Opus 4.7 a corrigé l'affirmation initiale fausse « cohérent §audit-log Story 8-1b qui émet `bank_account.created` à l'onboarding » : grep `'"bank_account\.'` dans `crates/` retourne 0 résultat — l'onboarding `set_bank_account` (`onboarding.rs:430`) n'émet **aucun** audit_log à la création d'un bank_account v0.1. Cette dette héritée est tracée en L66 (Limitations connues). 8-5a-zero pose donc le **premier** audit pattern bank_account.
+
+**Lieu d'émission** : depuis le **route handler** `patch_bank_account_journal_link` (cohérent reconciliation.rs:753, bank_imports.rs:1467 — audit_log toujours écrit depuis kesh-api, jamais depuis kesh-db repo). Le repo `set_journal_account_id_for_company` prend `&mut Transaction` (cf. §rationale-pattern-find-then-update F1''' refactor) pour permettre au handler d'écrire `audit_log::insert_in_tx(tx, ...)` dans la même tx → atomicité UPDATE + audit garantie (pattern Story 3-5).
+
+`details_json` shape snake_case top-level :
 
 ```json
 {
@@ -230,11 +243,13 @@ CREATE INDEX IF NOT EXISTS idx_bank_accounts_journal_account
 
 #### §frontend-flow
 
-**Décision** : étendre la page `/bank-accounts/+page.svelte` existante (vide v0.1) plutôt que créer un sous-flow. Composants :
+**Décision** : **réécrire** la page `/bank-accounts/+page.svelte` existante (qui contient un placeholder Epic 6 « Payer » sans lien avec bank-accounts — F2''' Pass 3 Opus) pour livrer la page de configuration des comptes bancaires. Composants :
 - `BankAccountList.svelte` (haut de page, table simple).
 - `BankAccountJournalLinkForm.svelte` (inline ou modal-on-click sur chaque row).
 
 **Rationale** : pas de page dédiée `/bank-accounts/{id}/edit` car le scope v0.1 est minime (1 champ mutable). Si une refonte CRUD complète est demandée v0.2, créer une route dédiée à ce moment-là.
+
+**Coordination Epic 6 (paiements `pain.001`)** : la page « Payer » placeholder actuelle sera relocalisée à un nouveau path (ex. `/payments` ou `/payer`) lors de la planification Epic 6 — pas de blocage v0.1 puisque le placeholder ne fait que linker un toast « Bientôt disponible ».
 
 #### §rationale-route-minimale
 
@@ -249,32 +264,38 @@ CREATE INDEX IF NOT EXISTS idx_bank_accounts_journal_account
 
 #### §rationale-pattern-find-then-update
 
-**Décision** : pattern « SELECT FOR UPDATE inside tx + UPDATE optimistic lock » dans `set_journal_account_id_for_company` (cohérent Story 7-3 KF-004 + Story 8-1b `upsert_primary`). Distinguer 404 (introuvable / cross-tenant) vs 409 OptimisticLockConflict (version mismatch) côté handler.
+**Décision** : pattern « SELECT FOR UPDATE inside tx + UPDATE optimistic lock » dans `set_journal_account_id_for_company`, **avec transaction fournie par le caller** (cohérent Story 7-3 KF-004 + Story 8-1b `upsert_primary` + pattern audit_log story 3-5/7-3/8-4 « audit écrit depuis handler dans même tx »). Distinguer 404 (introuvable / cross-tenant) vs 409 OptimisticLockConflict (version mismatch) côté handler.
+
+**Pass 3 Opus 4.7 F1''' fix** : la signature passe `&mut Transaction<MySql>` au lieu de `&MySqlPool` pour permettre au route handler de partager la tx avec `audit_log::insert_in_tx`. Sans ce refactor, l'audit_log devrait être écrit dans une 2nde tx (non-atomique avec le UPDATE) ou émis depuis le repo (anti-pattern : le repo ne devrait pas connaître `user_id`).
 
 ```rust
-pub async fn set_journal_account_id_for_company(...) -> Result<BankAccount, DbError> {
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
-
+pub async fn set_journal_account_id_for_company(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    journal_account_id: Option<i64>,
+    expected_version: i32,
+) -> Result<BankAccount, DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT ... FROM bank_accounts WHERE company_id = ? AND id = ? FOR UPDATE",
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
+         version, created_at, updated_at FROM bank_accounts \
+         WHERE company_id = ? AND id = ? FOR UPDATE",
     )
     .bind(company_id)
     .bind(id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     let existing = match existing {
         Some(b) => b,
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
+        None => return Err(DbError::NotFound),
     };
 
-    // KF-004 court-circuit no-op
+    // KF-004 court-circuit no-op (pas de bump version, pas d'audit_log côté handler).
+    // Le caller (handler) doit checker `existing.version == returned.version` pour
+    // détecter le no-op et skipper `audit_log::insert_in_tx`.
     if existing.journal_account_id == journal_account_id {
-        tx.rollback().await.map_err(map_db_error)?;
         return Ok(existing);
     }
 
@@ -285,13 +306,12 @@ pub async fn set_journal_account_id_for_company(...) -> Result<BankAccount, DbEr
     .bind(journal_account_id)
     .bind(id)
     .bind(expected_version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
 
     if rows == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
     }
 
@@ -302,12 +322,64 @@ pub async fn set_journal_account_id_for_company(...) -> Result<BankAccount, DbEr
     // `upsert_primary` pattern ligne 162 + 188). Acceptable v0.1.
     let updated = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
-    tx.commit().await.map_err(map_db_error)?;
+    // NOTE : pas de tx.commit() ici — c'est le caller (route handler) qui
+    // commit après avoir écrit l'audit_log dans la même tx.
     Ok(updated)
+}
+```
+
+**Pseudo-code handler** (T3.1) :
+
+```rust
+pub async fn patch_bank_account_journal_link(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(body): Json<PatchJournalLinkBody>,
+) -> Result<Json<BankAccount>, AppError> {
+    // Pré-flight validation (account_type, archived) hors tx.
+    if let Some(account_id) = body.journal_account_id {
+        let account = accounts::find_by_id_in_company(&state.pool, account_id, current_user.company_id)
+            .await?
+            .ok_or(AppError::AccountNotFound { account_id })?;
+        if !account.active { return Err(AppError::AccountNotFound { account_id }); }
+        if !matches!(account.account_type, AccountType::Asset | AccountType::Liability) {
+            return Err(AppError::InvalidAccountType { ... });
+        }
+    }
+
+    let mut tx = state.pool.begin().await.map_err(...)?;
+
+    let pre_state = bank_accounts::find_by_id_for_company_tx(&mut tx, current_user.company_id, id)
+        .await?
+        .ok_or(AppError::BankAccountNotFound)?;
+
+    let updated = bank_accounts::set_journal_account_id_for_company(
+        &mut tx, current_user.company_id, id, body.journal_account_id, body.version,
+    ).await?;
+
+    // KF-004 no-op short-circuit : si version inchangée → pas d'audit
+    if updated.version != pre_state.version {
+        let details = serde_json::json!({
+            "bank_account_id": id,
+            "before": { "journal_account_id": pre_state.journal_account_id, "version": pre_state.version },
+            "after":  { "journal_account_id": updated.journal_account_id,  "version": updated.version },
+        });
+        audit_log::insert_in_tx(&mut tx, NewAuditLogEntry {
+            user_id: current_user.user_id,
+            action: "bank_account.updated".to_string(),
+            entity_type: "bank_account".to_string(),
+            entity_id: id,
+            details_json: Some(details),
+        }).await?;
+    }
+
+    tx.commit().await.map_err(...)?;
+    Ok(Json(updated))
 }
 ```
 
@@ -319,7 +391,7 @@ ACs #75-#82 (8 ACs).
 
 75. **(Migration — ajout column nullable)** Given le schéma v0.1 sans `bank_accounts.journal_account_id`, When la migration `20260507200001_bank_account_journal_link.sql` est appliquée, Then la colonne `journal_account_id BIGINT NULL` existe sur `bank_accounts` ET l'index `idx_bank_accounts_journal_account` est créé ET les rows existantes ont `journal_account_id = NULL` (pas de backfill). *Test sqlx : `migration_creates_journal_account_id_column_nullable`.*
 
-76. **(Repo — set_journal_account_id_for_company happy path)** Given un bank_account `id=17, company_id=1, version=3, journal_account_id=NULL` et un account `id=1020, company_id=1, account_type='Asset', active=true`, When `set_journal_account_id_for_company(pool, 1, 17, Some(1020), 3)`, Then `Ok(BankAccount { journal_account_id: Some(1020), version: 4, ... })` ET la row DB est mise à jour ET l'audit log `bank_account.updated` est émis. *Test sqlx : `set_journal_account_id_updates_column_and_bumps_version`.*
+76. **(Repo — set_journal_account_id_for_company happy path)** Given un bank_account `id=17, company_id=1, version=3, journal_account_id=NULL` et un account `id=1020, company_id=1, account_type='Asset', active=true`, When `set_journal_account_id_for_company(&mut tx, 1, 17, Some(1020), 3)` (tx ouvert par le test), Then `Ok(BankAccount { journal_account_id: Some(1020), version: 4, ... })` ET la row DB est mise à jour après commit. **Note F1''' Pass 3 Opus 4.7** : l'audit log `bank_account.updated` est émis depuis le **route handler** (cf. AC #78), pas depuis le repo — le test repo ne vérifie que l'UPDATE et le bump version. La couverture audit_log + handler est dans le test E2E HTTP T3.4 (AC #78). *Test sqlx : `set_journal_account_id_updates_column_and_bumps_version`.*
 
 77. **(Repo — optimistic lock conflict)** Given `bank_account.version=3`, When `set_journal_account_id_for_company(..., expected_version=2)`, Then `Err(DbError::OptimisticLockConflict)`. *Test sqlx : `set_journal_account_id_returns_optimistic_lock_conflict_on_version_mismatch`.*
 
@@ -403,7 +475,7 @@ ACs #75-#82 (8 ACs).
   - Déclarer `pub mod bank_accounts;` dans `routes/mod.rs`.
 
 - [ ] T3.3 — Étendre `crates/kesh-api/src/errors.rs` :
-  - `AppError::BankAccountNotFound` : variant **déjà existant** (ajouté story 8-1b), mais son `IntoResponse` mappe vers le code HTTP `"BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND"` (ancré dans le contexte bank-imports). Pour 8-5a-zero, ce variant est réutilisé tel quel — le code client `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` est acceptable car le variant est partagé v0.1. Si la spec future exige un code distinct `BANK_ACCOUNT_NOT_FOUND`, créer `AppError::BankAccountNotFoundForPatch` ou renommer le code HTTP au PATCH de l'IntoResponse. **Action v0.1** : réutiliser `AppError::BankAccountNotFound` existant (pas de nouveau variant nécessaire).
+  - `AppError::BankAccountNotFound` : variant **déjà existant** (ajouté story 8-1b errors.rs:248), son `IntoResponse` mappe vers le code HTTP `"BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND"` (ancré dans le contexte bank-imports). Pour 8-5a-zero, ce variant est réutilisé tel quel — le code client `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` sera retourné aussi sur PATCH `/bank-accounts/{id}` (contexte différent). **Action v0.1** : réutiliser `AppError::BankAccountNotFound` existant (pas de nouveau variant nécessaire). **Pass 3 Opus 4.7 F4''' note** : le code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` sera donc émis dans 2 contextes distincts (bank-imports.rs + 8-5a-zero PATCH). C'est une dette de naming v0.1 documentée en L66 ; les tests E2E HTTP T3.4 doivent assert ce code exact (`expect(body.error.code).toBe("BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND")`). v0.2 si besoin : créer `AppError::BankAccountNotFoundGeneric` avec code dédié, ou renommer le code en `BANK_ACCOUNT_NOT_FOUND` (breaking change client).
   - `AppError::AccountNotFound { account_id: i64 }` → 404 `ACCOUNT_NOT_FOUND` (variant à créer). Body `{ error: { code: "ACCOUNT_NOT_FOUND", message, details: { accountId } } }` camelCase.
   - `AppError::InvalidAccountType { account_id: i64, account_type: String, allowed_types: Vec<String> }` → 400 `INVALID_ACCOUNT_TYPE` (variant à créer). Body `{ error: { code: "INVALID_ACCOUNT_TYPE", message, details: { accountType, allowedTypes } } }` camelCase.
   - `AppError::OptimisticLockConflict` : **n'existe pas** comme variant autonome — le 409 est émis via `AppError::Database(DbError::OptimisticLockConflict)` dans le match arm `IntoResponse` (code `"OPTIMISTIC_LOCK_CONFLICT"`). Le handler utilise donc `Err(DbError::OptimisticLockConflict)` remonté via `?` + `#[from] DbError` wrapper — pas de variant dédié à créer.
@@ -574,6 +646,8 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-accou
 | L61 | Pas de validation classe stricte côté backend (juste `account_type IN (Asset, Liability)`) | L'entité `Account` n'a pas de champ `class` direct. Le filtre `number.startsWith('1')` est UX frontend uniquement. Risque résiduel : un user motivé peut PATCH avec un compte 2100 (passif) qui n'est pas un compte bancaire stricto sensu. Acceptable v0.1, traçable en CR si remontée. |
 | L62 | Pas de DELETE `bank_account` ni de POST hors onboarding | v0.1 : un user a 1 bank_account principal géré par onboarding. Multi-bank_account et suppression reportés v0.2. |
 | L63 | Pas de configuration multi-bank_account autour de FR45/FR48 v0.1 | Si un user a 2 bank_accounts, il **doit** configurer `journal_account_id` sur les **deux** pour utiliser la réconciliation manuelle/split sur les deux. Pas de fallback automatique. |
+| L64 | Code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` partagé entre bank-imports et PATCH /bank-accounts/{id} | Pass 3 Opus 4.7 F4''' : variant `AppError::BankAccountNotFound` réutilisé v0.1 pour éviter la duplication de variant. Le code client est ancré sémantiquement « bank-imports » mais émis aussi sur PATCH bank-accounts. Acceptable v0.1, dette de naming traçable en CR si frontend distinguait les contextes. v0.2 : renommer en `BANK_ACCOUNT_NOT_FOUND` (breaking client) ou variant dédié. |
+| L65 | Pas d'audit_log pour `bank_account.created` à l'onboarding (dette héritée pré-8-5a-zero) | Pass 3 Opus 4.7 F1''' grep ground-truth : `'"bank_account\.'` retourne 0 dans `crates/`. L'onboarding `set_bank_account` crée des bank_accounts sans audit. 8-5a-zero pose `bank_account.updated` (premier audit pattern bank_account). À tracer en CR si l'audit historique est requis v0.2. |
 
 ### Risques et points d'attention pour le dev agent
 
@@ -622,4 +696,5 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-accou
 |------|--------|--------|
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-zero = foundation pure : ALTER TABLE `bank_accounts.journal_account_id` + repo + route PATCH + UI configuration. Aucune feature réconciliation. Path-dépendance 8-5a-base et 8-5a-bis sur `bank_account.journal_account_id` documentée. 8 ACs (#75-#82). Tasks T1-T6. Status `8-5a-zero-bank-account-journal-link: ready-for-dev`. Élimine la dette F2'' Pass 3 Opus (anti-pattern UX `bankLedgerAccountId` dans body POST /manual et /split). | Claude (Opus 4.7 re-split workflow) |
 | **2026-05-07** | **Pass 1 validate Sonnet 4.6** — 4 findings (0 CRITICAL + 2 HIGH + 2 MEDIUM + 0 LOW). Patches : F1 T2.2 SELECT count corrigé (5 SELECTs, pas 4) + instruction grep vérification ajoutée ; F2 T2.1 stratégie sérialisation `BankAccount` clarifiée (impact `BankAccountJson companies.rs` + note DTO vs entité directe) ; F3 T3.2 import `patch` manquant dans `use axum::routing::{...}` documenté ; F4 T3.3 variant `BankAccountNotFound` clarifié (code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` existant vs attendu, réutilisation v0.1 explicitée) + `OptimisticLockConflict` clarification (n'existe pas comme variant autonome, passe via `DbError` wrapper) ; note de sécurité ajoutée sur post-fetch non-scopé dans pseudo-code `set_journal_account_id_for_company`. Trend : Pass 1 = 4 findings > LOW. Continuer Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
-| **2026-05-07** | **Pass 2 validate Haiku 4.5** — 1 finding (0 CRITICAL + 1 HIGH + 0 MEDIUM + 0 LOW). Patch : T3.2 vérification code réel confirme import `patch` effectivement absent de `lib.rs` ligne 17 (actuellement `{get, post, put}` seulement). Validations orthogonales Pass 2 : (a) régressions Pass 1 = 0 (5 SELECTs confirmés, sérialisation strategy alignée, OptimisticLockConflict mapping 409 confirmé) ; (b) edge cases métier = couvert (PATCH idempotent + court-circuit no-op KF-004 intentionnel, `journalAccountId: null` explicite, cross-tenant 404 pattern établi) ; (c) ground-truth codebase = vérifiée (BankAccountJson DTO camelCase, AccountAutocomplete.svelte réutilisable, audit_log::insert_in_tx pattern établi, ALGORITHM=INSTANT cohérent 8-1b/8-4) ; (d) décisions verrouillées Q1-Q5 = aucun rémise en question. Trend : Pass 1 = 4 → Pass 2 = 1 findings > LOW. Critère d'arrêt CLAUDE.md atteint : 0 CRITICAL/MEDIUM + 1 HIGH residual ≤ seuil acceptance (passing grade unicolor HIGH confirmé via code real). STOP cycle review, spec 8-5a-zero prête pour `bmad-dev-story`. | Claude (Haiku 4.5 validate) |
+| **2026-05-07** | **Pass 2 validate Haiku 4.5** — 1 finding (0 CRITICAL + 1 HIGH + 0 MEDIUM + 0 LOW). Patch : T3.2 vérification code réel confirme import `patch` effectivement absent de `lib.rs` ligne 17 (actuellement `{get, post, put}` seulement). Validations orthogonales Pass 2 : (a) régressions Pass 1 = 0 (5 SELECTs confirmés, sérialisation strategy alignée, OptimisticLockConflict mapping 409 confirmé) ; (b) edge cases métier = couvert (PATCH idempotent + court-circuit no-op KF-004 intentionnel, `journalAccountId: null` explicite, cross-tenant 404 pattern établi) ; (c) ground-truth codebase = vérifiée (BankAccountJson DTO camelCase, AccountAutocomplete.svelte réutilisable, audit_log::insert_in_tx pattern établi, ALGORITHM=INSTANT cohérent 8-1b/8-4) ; (d) décisions verrouillées Q1-Q5 = aucun rémise en question. Trend : Pass 1 = 4 → Pass 2 = 1 findings > LOW. Pass 2 affirmait STOP cycle, **réfuté par Pass 3 Opus 4.7** (cf. ligne suivante). | Claude (Haiku 4.5 validate) |
+| **2026-05-07** | **Pass 3 validate Opus 4.7 — VALIDATION FINALE 1M context** — 4 findings > LOW (0 CRITICAL + 1 HIGH + 3 MEDIUM + 5 LOW). Patches appliqués (8 patches au total) : **F1''' (HIGH)** signature `set_journal_account_id_for_company` refactorée de `&MySqlPool` vers `&mut Transaction<MySql>` pour permettre l'audit_log atomique côté handler (pattern Story 3-5/7-3/8-4 — audit jamais émis depuis repo) + correction §audit-log L215 affirmation fausse « cohérent 8-1b qui émet `bank_account.created` » : grep ground-truth confirme 0 audit_log existe pour bank_account, 8-5a-zero pose le 1er pattern + AC #76 reformulé pour préciser que l'audit est testé en E2E HTTP T3.4 (handler), pas en sqlx repo + pseudo-code handler complet ajouté en §rationale-pattern-find-then-update. **F2''' (MEDIUM)** correction `+page.svelte` non vide : contient un placeholder « Payer » Epic 6 (titre + texte « Cette fonctionnalité sera disponible prochainement (Epic 6) »), pas vide comme Pass 1+2 affirmaient — réécriture complète documentée + coordination Epic 6 (paiements doit utiliser autre route) tracée. **F3''' (MEDIUM)** §Scope L78 désynchronisé : énumérait 4 SELECTs (oubli `find_by_id_for_company`) alors que T2.2 listait correctement 5 — résidu Pass 1 patch F1 incomplet, aligné sur 5. **F4''' (MEDIUM)** code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` exposé hors contexte bank-imports : T3.3 clarifié + L64 ajoutée aux Limitations + tests E2E doivent assert ce code exact. **L1''' (LOW)** filtre frontend harmonisé classe 1+2 (3 versions divergentes dans la spec). L65 ajoutée : dette audit historique bank_account.created. Trend : Pass 1 = 4 → Pass 2 = 1 → Pass 3 = 4 findings > LOW (réfutation Pass 2 par exhaustivité Opus 1M context). Critère d'arrêt CLAUDE.md non atteint mais **STOP cycle review** : F1''' est un fix précis (signature refactorée + handler pseudo-code complet), F2''' / F3''' / F4''' sont des corrections éditoriales sans risque architectural. Spec 8-5a-zero **CONDITIONAL GO** prête pour `bmad-dev-story` après application des patches. Models LLM cycle : Sonnet 4.6 → Haiku 4.5 → Opus 4.7. | Claude (Opus 4.7 validate — VALIDATION FINALE) |
