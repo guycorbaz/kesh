@@ -24,15 +24,33 @@
 	let loadError = $state<string | null>(null);
 
 	onMount(async () => {
-		try {
-			const [ba, acc] = await Promise.all([listBankAccounts(), fetchAccounts(false)]);
-			bankAccounts = ba;
-			accounts = acc;
-		} catch (err) {
-			loadError = isApiError(err) ? err.message : String(err);
-		} finally {
-			loading = false;
+		// P-M5 Pass 1 code review Sonnet 4.6 : Promise.allSettled au lieu de
+		// Promise.all pour dégradation gracieuse. Si `fetchAccounts` échoue
+		// mais `listBankAccounts` réussit, on affiche la liste avec
+		// `accountLabel` qui retournera `#X` pour les ids non résolus
+		// (acceptable v0.1). Si `listBankAccounts` échoue, on affiche
+		// l'erreur principale.
+		const [baResult, accResult] = await Promise.allSettled([
+			listBankAccounts(),
+			fetchAccounts(false),
+		]);
+		if (baResult.status === 'fulfilled') {
+			bankAccounts = baResult.value;
+		} else {
+			loadError = isApiError(baResult.reason)
+				? baResult.reason.message
+				: String(baResult.reason);
 		}
+		if (accResult.status === 'fulfilled') {
+			accounts = accResult.value;
+		} else {
+			// Liste vide : `accountLabel` retournera `#X` pour les ids posés.
+			// On ne propage l'erreur dans `loadError` que si la liste des
+			// bank_accounts est elle aussi en échec (sinon on affiche la liste
+			// avec labels dégradés plutôt que de bloquer la page entière).
+			accounts = [];
+		}
+		loading = false;
 	});
 
 	function handleUpdated(updated: BankAccountSummary) {

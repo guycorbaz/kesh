@@ -485,3 +485,72 @@ async fn ctx_patch(pool: &MySqlPool, ctx: &Ctx, body: Value) -> reqwest::Respons
         .await
         .unwrap()
 }
+
+// ============================================================
+// AC #78 (P-M2 Pass 1 code review Sonnet 4.6) — PATCH sur un
+// bank_account_id inexistant retourne 404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND.
+// Code partagé v0.1 (dette naming L64 — renommer en BANK_ACCOUNT_NOT_FOUND
+// ou créer un variant dédié en v0.2 si le frontend distingue les contextes).
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn patch_bank_account_returns_404_bank_account_not_found_for_unknown_id(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Body valide structurellement (passe l'extracteur), mais bank_account_id
+    // n'existe pas → 404.
+    let resp = app
+        .client
+        .patch(app.url("/api/v1/bank-accounts/999999"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "journalAccountId": ctx.asset_account_id,
+            "version": 1,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404, "unknown bank_account_id → 404");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND",
+        "code partagé v0.1 (dette L64)"
+    );
+}
+
+// ============================================================
+// P-H1 Pass 1 code review Sonnet 4.6 — body PATCH malformé doit
+// retourner 400 VALIDATION_ERROR (standard Kesh) et non le 422 Axum natif.
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn patch_bank_account_malformed_body_returns_400_validation_error(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Champ `version` manquant (struct exige journalAccountId + version).
+    let resp = app
+        .client
+        .patch(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "journalAccountId": ctx.asset_account_id,
+            // pas de version
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "body malformé doit retourner 400, pas le 422 Axum natif"
+    );
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "VALIDATION_ERROR",
+        "shape standard Kesh {{error:{{code,message}}}}"
+    );
+}

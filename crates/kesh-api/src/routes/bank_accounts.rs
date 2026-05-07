@@ -19,7 +19,9 @@
 
 use axum::Extension;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{FromRequest, Path, Request, State};
+use axum::response::{IntoResponse, Response};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::BankAccount;
@@ -45,6 +47,47 @@ pub struct PatchJournalLinkBody {
     pub version: i32,
 }
 
+/// Extracteur custom pour `PatchJournalLinkBody` (P-H1 Pass 1 code review
+/// Sonnet 4.6) — convertit les rejets serde en `AppError::Validation` (400
+/// `VALIDATION_ERROR` standard Kesh) au lieu du 422 Axum natif.
+///
+/// Pattern repris de `routes::test_endpoints::SeedRequestExtractor`. Scope
+/// minimal v0.1 : appliqué uniquement à ce handler. Cleanup transverse
+/// post-MVP possible si le pattern devient récurrent (helper partagé dans
+/// `kesh-api::extractors`).
+pub struct PatchJournalLinkBodyExtractor(pub PatchJournalLinkBody);
+
+impl<S> FromRequest<S> for PatchJournalLinkBodyExtractor
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<PatchJournalLinkBody>::from_request(req, state).await {
+            Ok(Json(body)) => Ok(Self(body)),
+            Err(rej) => {
+                let message = match &rej {
+                    JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
+                        "corps JSON malformé ou champ requis manquant (`journalAccountId` Option<i64>, `version` i32)".to_string()
+                    }
+                    JsonRejection::MissingJsonContentType(_) => {
+                        "Content-Type attendu : application/json".to_string()
+                    }
+                    _ => {
+                        tracing::warn!(
+                            rejection = %rej,
+                            "PatchJournalLinkBodyExtractor: unhandled JsonRejection variant"
+                        );
+                        "requête invalide (corps non-parsable)".to_string()
+                    }
+                };
+                Err(AppError::Validation(message).into_response())
+            }
+        }
+    }
+}
+
 /// Handler `GET /api/v1/bank-accounts` — liste les bank_accounts de la
 /// company courante (multi-tenant scoping via `current_user.company_id`).
 pub async fn list_bank_accounts(
@@ -61,7 +104,7 @@ pub async fn patch_bank_account_journal_link(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
-    Json(body): Json<PatchJournalLinkBody>,
+    PatchJournalLinkBodyExtractor(body): PatchJournalLinkBodyExtractor,
 ) -> Result<Json<BankAccount>, AppError> {
     if body.version < 1 {
         return Err(AppError::Validation("version doit être >= 1".to_string()));
@@ -107,19 +150,10 @@ pub async fn patch_bank_account_journal_link(
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
 
-    let pre_state = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
-         version, created_at, updated_at FROM bank_accounts \
-         WHERE company_id = ? AND id = ? LIMIT 1",
-    )
-    .bind(current_user.company_id)
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(format!("select bank_account: {e}")))?
-    .ok_or(AppError::BankAccountNotFound)?;
-
-    let updated = match bank_accounts::set_journal_account_id_for_company(
+    // P-C1 (Pass 1 code review Sonnet 4.6) : le repo retourne atomiquement
+    // `(updated, before)`. `before` provient du même SELECT FOR UPDATE que
+    // l'UPDATE — pas de fenêtre TOCTOU possible avec un SELECT séparé.
+    let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         current_user.company_id,
         id,
@@ -128,20 +162,22 @@ pub async fn patch_bank_account_journal_link(
     )
     .await
     {
-        Ok(b) => b,
+        Ok(pair) => pair,
         Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
         Err(e) => return Err(AppError::Database(e)),
     };
 
     // KF-004 no-op short-circuit : pas d'audit_log si la version n'a pas
     // été bumpée. `set_journal_account_id_for_company` court-circuite et
-    // retourne `existing` quand `journal_account_id` ne change pas.
-    if updated.version != pre_state.version {
+    // retourne `(existing, existing)` (versions identiques) quand
+    // `journal_account_id` ne change pas — la version stale est déjà
+    // rejetée en amont par P-H2 (OptimisticLockConflict avant court-circuit).
+    if updated.version != before.version {
         let details = serde_json::json!({
             "bank_account_id": id,
             "before": {
-                "journal_account_id": pre_state.journal_account_id,
-                "version": pre_state.version,
+                "journal_account_id": before.journal_account_id,
+                "version": before.version,
             },
             "after": {
                 "journal_account_id": updated.journal_account_id,

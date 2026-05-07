@@ -315,7 +315,7 @@ async fn set_journal_account_id_updates_column_and_bumps_version(pool: MySqlPool
     let pre_version = pre.version;
 
     let mut tx = pool.begin().await.unwrap();
-    let updated = bank_accounts::set_journal_account_id_for_company(
+    let (updated, before) = bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         company_id,
         bank_account_id,
@@ -328,6 +328,11 @@ async fn set_journal_account_id_updates_column_and_bumps_version(pool: MySqlPool
 
     assert_eq!(updated.journal_account_id, Some(account_id));
     assert_eq!(updated.version, pre_version + 1);
+    assert_eq!(
+        before.journal_account_id, None,
+        "before snapshot pre-update"
+    );
+    assert_eq!(before.version, pre_version, "before version pre-bump");
 
     // Régression DB : la row est bien mise à jour après commit.
     let post = bank_accounts::find_by_id_for_company(&pool, company_id, bank_account_id)
@@ -451,7 +456,7 @@ async fn set_journal_account_id_to_null_unlinks_successfully(pool: MySqlPool) {
 
     // Step 1 : link.
     let mut tx = pool.begin().await.unwrap();
-    let linked = bank_accounts::set_journal_account_id_for_company(
+    let (linked, _before) = bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         company_id,
         bank_account_id,
@@ -465,7 +470,7 @@ async fn set_journal_account_id_to_null_unlinks_successfully(pool: MySqlPool) {
 
     // Step 2 : unlink (set None).
     let mut tx = pool.begin().await.unwrap();
-    let unlinked = bank_accounts::set_journal_account_id_for_company(
+    let (unlinked, _before) = bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         company_id,
         bank_account_id,
@@ -504,7 +509,7 @@ async fn find_by_id_for_company_returns_journal_account_id_when_set(pool: MySqlP
     assert_eq!(pre.journal_account_id, None);
 
     let mut tx = pool.begin().await.unwrap();
-    bank_accounts::set_journal_account_id_for_company(
+    let _ = bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         company_id,
         bank_account_id,
@@ -545,7 +550,7 @@ async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPoo
         .unwrap()
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
-    let linked = bank_accounts::set_journal_account_id_for_company(
+    let (linked, _before) = bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         company_id,
         bank_account_id,
@@ -559,7 +564,7 @@ async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPoo
 
     // Re-call avec la même valeur → no-op short-circuit.
     let mut tx = pool.begin().await.unwrap();
-    let unchanged = bank_accounts::set_journal_account_id_for_company(
+    let (unchanged, before) = bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         company_id,
         bank_account_id,
@@ -575,4 +580,135 @@ async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPoo
         "version doit rester inchangée"
     );
     assert_eq!(unchanged.journal_account_id, Some(account_id));
+    // No-op : `before` et `updated` doivent référencer le même état.
+    assert_eq!(
+        before.version, unchanged.version,
+        "no-op : before == updated"
+    );
+    assert_eq!(before.journal_account_id, unchanged.journal_account_id);
+}
+
+/// AC #75 — Pass 1 code review Sonnet 4.6 (P-M1) : la migration
+/// `20260507200001_bank_account_journal_link.sql` crée la colonne
+/// `journal_account_id BIGINT NULL` (sans FK DB-level). La nullabilité
+/// se vérifie par INSERT direct avec valeur NULL ; l'absence de FK se
+/// vérifie par INSERT direct avec un id pointant vers une row inexistante
+/// du plan comptable (la défense est applicative, scopée multi-tenant
+/// dans le handler — KF-002).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn migration_creates_journal_account_id_column_nullable(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+
+    // (a) Introspection : la colonne existe et est nullable.
+    let is_nullable: String = sqlx::query_scalar(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bank_accounts' \
+         AND COLUMN_NAME = 'journal_account_id'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("colonne journal_account_id doit exister après migration");
+    assert_eq!(
+        is_nullable, "YES",
+        "journal_account_id doit être nullable (IS_NULLABLE = 'YES')"
+    );
+
+    // (b) NULL accepté : INSERT avec journal_account_id explicitement NULL.
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, qr_iban, is_primary, journal_account_id) \
+         VALUES (?, ?, ?, NULL, FALSE, NULL)",
+    )
+    .bind(company_id)
+    .bind("BankNullExplicit")
+    .bind("CH4431999123000889012")
+    .execute(&pool)
+    .await
+    .expect("INSERT bank_account avec journal_account_id NULL doit réussir");
+
+    let null_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bank_accounts WHERE company_id = ? AND journal_account_id IS NULL",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        null_count >= 1,
+        "au moins un bank_account avec journal_account_id=NULL doit exister"
+    );
+
+    // (c) Pas de FK DB-level : INSERT avec un id pointant vers une row
+    // inexistante de la table `accounts` doit réussir au niveau DB. La
+    // défense d'intégrité est applicative (handler `accounts::find_by_id_in_company`).
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, qr_iban, is_primary, journal_account_id) \
+         VALUES (?, ?, ?, NULL, FALSE, ?)",
+    )
+    .bind(company_id)
+    .bind("BankUnknownAccount")
+    .bind("CH1809000000306547981")
+    .bind(999_999_999_i64) // id volontairement inexistant
+    .execute(&pool)
+    .await
+    .expect(
+        "INSERT bank_account avec journal_account_id pointant vers une row inexistante doit \
+         réussir (pas de FK DB, défense applicative — pattern Kesh multi-tenant)",
+    );
+}
+
+/// P-H2 (Pass 1 code review Sonnet 4.6) : un client avec `expected_version`
+/// stale sur un no-op (target == existing.journal_account_id) DOIT
+/// recevoir `OptimisticLockConflict`, pas un 200 OK silencieux. La
+/// version est validée AVANT le court-circuit no-op.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn set_journal_account_id_no_op_with_stale_version_returns_conflict(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "admin").await;
+    let account_id = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1020",
+        "Caisse banque",
+        AccountType::Asset,
+    )
+    .await;
+    let bank_account_id = create_bank_account(&pool, company_id).await;
+
+    // Setup : link une fois pour avoir une row avec journal_account_id posé
+    // et une version > 1.
+    let pre = bank_accounts::find_by_id_for_company(&pool, company_id, bank_account_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let (linked, _) = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(account_id),
+        pre.version,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(linked.version, pre.version + 1);
+
+    // No-op (target == existing) MAIS avec une `expected_version` stale
+    // (= pre.version, pas linked.version).
+    let mut tx = pool.begin().await.unwrap();
+    let result = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(account_id),
+        pre.version, // version stale
+    )
+    .await;
+    let _ = tx.rollback().await;
+
+    assert!(
+        matches!(result, Err(DbError::OptimisticLockConflict)),
+        "no-op avec version stale doit retourner OptimisticLockConflict, got: {result:?}"
+    );
 }

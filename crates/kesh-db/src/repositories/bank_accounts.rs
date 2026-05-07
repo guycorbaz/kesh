@@ -211,28 +211,44 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
 /// audit (pattern Story 3-5 + 7-3 + 8-4 — audit_log écrit depuis le route
 /// handler, jamais depuis le repo).
 ///
+/// **Pass 1 code review Sonnet 4.6 — P-C1** : retourne `(updated, before)`
+/// atomiquement. Le caller utilise `before` comme source `before` de
+/// l'audit_log (pas un SELECT séparé hors-FOR UPDATE qui ouvrirait une
+/// fenêtre TOCTOU avec un SELECT FOR UPDATE concurrent).
+///
+/// **Pass 1 code review Sonnet 4.6 — P-H2** : la version est validée AVANT
+/// le court-circuit no-op. Un client avec version stale obtient
+/// `OptimisticLockConflict` même si `journal_account_id` ne change pas
+/// (pas de 200 OK silencieux sur version périmée).
+///
 /// Optimistic lock sur `version` (cohérent KF-004). Court-circuit no-op : si
-/// `journal_account_id` ne change pas, retourne l'entité inchangée sans bump
-/// version (le caller doit comparer `existing.version == returned.version`
-/// pour détecter et skipper l'audit_log).
+/// `journal_account_id` ne change pas ET version match, retourne l'entité
+/// inchangée sans bump version. Le caller doit comparer
+/// `before.version == updated.version` pour détecter le no-op et skipper
+/// l'audit_log.
 ///
 /// Erreurs :
 /// - `DbError::NotFound` : bank_account introuvable ou cross-tenant.
-/// - `DbError::OptimisticLockConflict` : `expected_version` ne match pas.
+/// - `DbError::OptimisticLockConflict` : `expected_version` ne match pas
+///   (vérifié AVANT court-circuit no-op).
 ///
 /// **Note transactional safety** : le SELECT FOR UPDATE initial est scopé par
-/// `(company_id, id)`, l'UPDATE final est scopé par `(id, version)`. Le
-/// post-fetch via `FIND_BY_ID_SQL` (filtre par `id` seul) est sûr dans la même
-/// tx car la row appartient nécessairement à la company (sinon le SELECT FOR
-/// UPDATE aurait retourné None). Cohérent avec le pattern `upsert_primary`.
+/// `(company_id, id)`, l'UPDATE final est scopé par `(id, company_id, version)`
+/// (defense-in-depth M4). Le post-fetch via `FIND_BY_ID_SQL` (filtre par `id`
+/// seul) est sûr dans la même tx car la row appartient nécessairement à la
+/// company (sinon le SELECT FOR UPDATE aurait retourné None). Cohérent avec
+/// le pattern `upsert_primary`.
 pub async fn set_journal_account_id_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     id: i64,
     journal_account_id: Option<i64>,
     expected_version: i32,
-) -> Result<BankAccount, DbError> {
+) -> Result<(BankAccount, BankAccount), DbError> {
     // SELECT FOR UPDATE scopé multi-tenant + verrou X sur la row.
+    // Le `existing` retourné sert également de source `before` pour
+    // l'audit_log côté handler (P-C1 : pas de SELECT séparé qui ouvrirait
+    // une fenêtre TOCTOU).
     let existing = sqlx::query_as::<_, BankAccount>(
         "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
          version, created_at, updated_at FROM bank_accounts \
@@ -249,20 +265,34 @@ pub async fn set_journal_account_id_for_company(
         None => return Err(DbError::NotFound),
     };
 
-    // KF-004 court-circuit no-op : pas de bump version, pas d'audit_log côté
-    // handler. Le caller (handler) doit checker `existing.version ==
-    // returned.version` pour détecter le no-op et skipper
-    // `audit_log::insert_in_tx`.
-    if existing.journal_account_id == journal_account_id {
-        return Ok(existing);
+    // P-H2 : validation optimistic lock AVANT court-circuit no-op. Un client
+    // avec version stale doit obtenir `OptimisticLockConflict` même si la
+    // valeur cible (`journal_account_id`) coïncide avec l'état persisté.
+    // Sinon il pourrait croire son écriture acceptée alors qu'une mutation
+    // concurrente a entre-temps changé la row puis l'a remise à la même
+    // valeur — état invisible côté client.
+    if existing.version != expected_version {
+        return Err(DbError::OptimisticLockConflict);
     }
 
+    // KF-004 court-circuit no-op : pas de bump version, pas d'audit_log côté
+    // handler. Le caller (handler) doit checker `before.version ==
+    // updated.version` pour détecter le no-op et skipper
+    // `audit_log::insert_in_tx`.
+    if existing.journal_account_id == journal_account_id {
+        return Ok((existing.clone(), existing));
+    }
+
+    // M4 defense-in-depth : ajout `AND company_id = ?` au scope de l'UPDATE.
+    // Le SELECT FOR UPDATE précédent garantit déjà l'appartenance, mais
+    // l'UPDATE explicite multi-tenant rend l'invariant local au statement.
     let rows = sqlx::query(
         "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 \
-         WHERE id = ? AND version = ?",
+         WHERE id = ? AND company_id = ? AND version = ?",
     )
     .bind(journal_account_id)
     .bind(id)
+    .bind(company_id)
     .bind(expected_version)
     .execute(&mut **tx)
     .await
@@ -284,5 +314,5 @@ pub async fn set_journal_account_id_for_company(
 
     // NOTE : pas de tx.commit() ici — c'est le caller (route handler) qui
     // commit après avoir écrit l'audit_log dans la même tx.
-    Ok(updated)
+    Ok((updated, existing))
 }

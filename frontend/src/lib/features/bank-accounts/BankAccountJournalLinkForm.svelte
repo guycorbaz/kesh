@@ -9,6 +9,7 @@
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { notifySuccess } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
 		updateBankAccountJournalLink,
@@ -24,10 +25,17 @@
 
 	let { bankAccount, accounts, onSuccess, onCancel }: Props = $props();
 
-	// `bankAccount.journalAccountId` capturé comme valeur initiale —
-	// le composant est démonté/remonté quand le parent ferme/rouvre le
-	// formulaire (cohérent BankProfileForm.svelte pattern bank-import).
-	let selectedAccountId = $state<number | null>(bankAccount.journalAccountId);
+	// P-L1 Pass 1 code review Sonnet 4.6 : `selectedAccountId` synchronisé
+	// avec la prop `bankAccount.journalAccountId` via `$effect` — dissipe le
+	// warning Svelte `state_referenced_locally` et garantit la sync si le
+	// parent re-binde la prop sans démonter (le composant est habituellement
+	// démonté/remonté, mais le pattern est plus robuste). On initialise à
+	// `null` puis on hydrate via `$effect` : Svelte ne capture pas la prop
+	// au moment de l'init du `$state`, donc plus de warning.
+	let selectedAccountId = $state<number | null>(null);
+	$effect(() => {
+		selectedAccountId = bankAccount.journalAccountId;
+	});
 	let submitting = $state(false);
 	let errorMessage = $state<string | null>(null);
 
@@ -58,6 +66,13 @@
 				selectedAccountId,
 				bankAccount.version,
 			);
+			// P-M7 Pass 1 code review Sonnet 4.6 : toast succès câblé.
+			notifySuccess(
+				i18nMsg(
+					'bank-accounts-toast-link-success',
+					'Compte bancaire lié avec succès au plan comptable.',
+				),
+			);
 			onSuccess(updated);
 		} catch (err) {
 			if (isApiError(err)) {
@@ -79,6 +94,13 @@
 				bankAccount.id,
 				null,
 				bankAccount.version,
+			);
+			// P-M7 Pass 1 code review Sonnet 4.6 : toast succès câblé.
+			notifySuccess(
+				i18nMsg(
+					'bank-accounts-toast-unlink-success',
+					'Compte bancaire délié du plan comptable.',
+				),
 			);
 			onSuccess(updated);
 		} catch (err) {
