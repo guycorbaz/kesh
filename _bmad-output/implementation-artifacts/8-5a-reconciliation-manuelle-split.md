@@ -57,6 +57,32 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
    - `manual::build_journal_entry_for_split(tx, bank_account_journal_id, splits, description, entry_date) -> NewJournalEntry` — pure, à N+1 lignes, sign-aware.
    - `split::validate_split_balance(tx_amount, splits) -> Result<(), SplitImbalance>` — Decimal exact `==`.
 
+   **⚠️ Gap architectural — résolution `bank_account_journal_id` (F2'' Pass 3 Opus 4.7)** :
+   Le paramètre `bank_account_journal_id` (compte comptable lié au `bank_account`) est **requis** pour construire la `NewJournalEntry` côté banque. Or **l'entité `BankAccount` (`crates/kesh-db/src/entities/bank_account.rs`) n'a AUCUNE colonne `journal_account_id` / `linked_account_id` / équivalente** dans le schéma v0.1 (vérifié migration `20260410000001_bank_accounts.sql` + entité). La spec d'origine 8-5 (`§manual-match-flow` step 5, lignes 125-126) référence `bank_account.linked_account_id` qui **n'existe pas**.
+
+   **Décision 8-5a (verrouillée Pass 3)** : Le client (frontend + API) **doit fournir `bankLedgerAccountId` dans le body** de `POST /manual` et `POST /split` (champ requis, type `i64 > 0`). Le handler valide cross-tenant via `accounts::find_by_id_in_company`. Cette décision évite une migration de schéma (lesson 8-3 retro : pas de migration en 8-5a) et reste cohérente avec le pattern 5-2 où `validate_invoice` consomme `default_receivable_account_id` / `default_revenue_account_id` (configuration explicite, pas auto-magique).
+
+   **Body étendu** :
+   ```json
+   {
+     "bankAccountId": 17,
+     "bankLedgerAccountId": 1020,
+     "bankTransactionId": 42,
+     "counterpartyAccountId": 6810,
+     "description": "Frais TWINT mai",
+     "valueDate": "2026-05-15"
+   }
+   ```
+
+   **Validation handler** :
+   - `bankLedgerAccountId > 0` (validation body, 400).
+   - `accounts::find_by_id_in_company(pool, bankLedgerAccountId, company_id)` retourne `Some(Account)` ET `account.active == true` (404 `ACCOUNT_NOT_FOUND` sinon).
+   - **Pas de check de classe comptable** côté backend v0.1 (l'entité `Account` n'a pas de champ `class` directement — seul `account_type: AccountType` qui est `Asset/Liability/Revenue/Expense`). Le frontend filtre côté client à `number.starts_with('1')` pour la classe 1 (actifs) sur le sélecteur `bankLedgerAccount`. Une validation serveur stricte de la classe est reportée Story 8-5c v0.2.
+
+   **AC #75 et AC #85 mis à jour pour refléter le body étendu**. **`splitTransaction` API frontend mise à jour** pour ajouter `bankLedgerAccountId` (T5.1).
+
+   **Suggestion v0.2 (issue GitHub à créer post-merge 8-5a)** : ajouter une migration `ALTER TABLE bank_accounts ADD COLUMN journal_account_id BIGINT NULL FOREIGN KEY → accounts.id` + page de configuration UX, pour éliminer le `bankLedgerAccountId` du body (pré-rempli serveur-side). Tracé en `dette-architecture-bank-ledger`.
+
 4. **Helper `kesh-db::bank_transactions::find_pending_by_id_for_account`** — charge une transaction `pending` par id, scopée tenant + compte. Helper utilisé par `/manual` + `/split` + (8-5b) `/accept` rule type.
 
 5. **Breaking change `POST /api/v1/reconciliation/accept` (Q2 décision Guy 2026-05-07)** — le request body proposals[*] a désormais un discriminator `type` **obligatoire** :
@@ -65,7 +91,7 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
    - `type: "split"` (8-5a) — `{ type: 'split', bankTransactionId, splits: [...] }`
    - `type: "rule"` (8-5b — non livré 8-5a, mais le discriminator est posé) — réservé futur, refusé v0.1 8-5a si non implémenté.
 
-   **Pas de backward-compat** : si `type` absent → `400 Validation` avec message « champ `type` requis, valeurs acceptées v0.1 : ["invoice"] » (Kesh pas en prod, breaking change accepté). Si `type` présent mais non reconnu ou non encore supporté (`"manual"`, `"split"`, `"rule"` en 8-5a v0.1) → `400 Validation` avec message « type inconnu ou non supporté : "<valeur>", valeurs acceptées v0.1 : ["invoice"] ». Migration des **22 tests actifs** E2E HTTP 8-4 existants (+ 1 ignored préservé) pour ajouter `type: 'invoice'` explicite est livrée par 8-5a (couverte par AC #96 et T3.4).
+   **Pas de backward-compat** : si `type` absent → `400 Validation` avec message « champ `type` requis, valeurs acceptées v0.1 : ["invoice"] » (Kesh pas en prod, breaking change accepté). Si `type` présent mais non reconnu ou non encore supporté (`"manual"`, `"split"`, `"rule"` en 8-5a v0.1) → `400 Validation` avec message « type inconnu ou non supporté : "<valeur>", valeurs acceptées v0.1 : ["invoice"] ». Migration des **21 tests actifs** E2E HTTP 8-4 existants (+ 1 ignored préservé = 22 attributs `#[sqlx::test]` au total) pour ajouter `type: 'invoice'` explicite est livrée par 8-5a (couverte par AC #96 et T3.4). **Pass 3 validate F1'' Opus 4.7 — correction du compte** : la spec disait "22 actifs + 1 ignored = 23 total" en plusieurs endroits (régression Pass 1 Sonnet 4.6 F4) ; vérification `awk` directe sur le fichier `reconciliation_e2e.rs` confirme **21 tests actifs (`#[sqlx::test]` non précédés de `#[ignore]`) + 1 ignored (`post_accept_filters_currency_mismatch` ligne 1654-1655) = 22 attributs `#[sqlx::test]` au total**.
 
    **Note implémentation 8-5a** : le 8-5a peut soit (a) garder `/manual` et `/split` comme routes standalone et étendre `/accept` uniquement avec discriminator `type` (`invoice` reconnu, `manual`/`split` peuvent rester par leurs routes dédiées si plus simple), soit (b) unifier tout sur `/accept` avec discriminator complet. **Décision design préférée 8-5a** : garder `/manual` et `/split` standalone pour la lisibilité backend, et exposer `type='invoice'` strict sur `/accept` avec breaking change. Le 8-5b ajoutera `type='rule'` à `/accept`. Cette décision peut être revisitée pendant `bmad-create-story validate 8-5a` Pass 1 si Sonnet identifie une simplification.
 
@@ -119,7 +145,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 
 ### Création manuelle de contrepartie (FR45)
 
-75. **(FR45 — happy paiement débit)** Given une `bank_transaction` `pending` débit `-150.00 CHF` (frais bancaires) sur `bank_account_id=17` lié au compte comptable 1020, et un compte `6810 Frais bancaires` actif, When `POST /api/v1/reconciliation/manual { bankAccountId: 17, bankTransactionId: 42, counterpartyAccountId: 6810, description: "Frais TWINT mai" }`, Then `200 OK` body `{ bankTransactionId: 42, journalEntryId: 999 }` ET `journal_entries` table contient 1 nouvelle entry à 2 lignes (1020 crédit 150.00 + 6810 débit 150.00) ET `bank_transactions.status='reconciled'`, `matched_entry_id=999`, `auto_match_rejected_at=NULL`. *Test E2E HTTP : `manual_match_creates_journal_entry_for_debit_transaction`.*
+75. **(FR45 — happy paiement débit)** Given une `bank_transaction` `pending` débit `-150.00 CHF` (frais bancaires) sur `bank_account_id=17`, le compte comptable bancaire `bankLedgerAccountId=1020` (Caisse banque, fourni par le client cf. F2'' Pass 3) et un compte `6810 Frais bancaires` actif, When `POST /api/v1/reconciliation/manual { bankAccountId: 17, bankLedgerAccountId: 1020, bankTransactionId: 42, counterpartyAccountId: 6810, description: "Frais TWINT mai" }`, Then `200 OK` body `{ bankTransactionId: 42, journalEntryId: 999 }` ET `journal_entries` table contient 1 nouvelle entry à 2 lignes (1020 crédit 150.00 + 6810 débit 150.00) ET `bank_transactions.status='reconciled'`, `matched_entry_id=999`, `auto_match_rejected_at=NULL`. *Test E2E HTTP : `manual_match_creates_journal_entry_for_debit_transaction`.*
 
 76. **(FR45 — happy encaissement crédit)** Given tx pending crédit `+200.00 CHF`, compte contrepartie `7510 Intérêts bancaires`, When manual-match, Then journal_entry à 2 lignes (1020 débit 200 + 7510 crédit 200). *Test E2E HTTP : `manual_match_creates_journal_entry_for_credit_transaction`.*
 
@@ -141,7 +167,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 
 ### Éclatement de transaction agrégée (FR48)
 
-85. **(FR48 — split happy paiement)** Given tx pending débit `-10700.00`, body `splits: [{ counterpartyAccountId: 5000, amount: 5000, description: 'Salaire Alice' }, { counterpartyAccountId: 5000, amount: 4500, description: 'Salaire Bob' }, { counterpartyAccountId: 5700, amount: 1200, description: 'Charges' }]`, When POST `/split`, Then `200 OK` + 1 journal_entry à 4 lignes (1020 crédit 10700 + 5000 débit 5000 + 5000 débit 4500 + 5700 débit 1200) + `bank_transactions.status='reconciled'`. *Test E2E HTTP : `split_creates_journal_entry_with_n_plus_1_lines`.*
+85. **(FR48 — split happy paiement)** Given tx pending débit `-10700.00`, body `{ bankAccountId: 17, bankLedgerAccountId: 1020, bankTransactionId: 42, splits: [{ counterpartyAccountId: 5000, amount: '5000', description: 'Salaire Alice' }, { counterpartyAccountId: 5000, amount: '4500', description: 'Salaire Bob' }, { counterpartyAccountId: 5700, amount: '1200', description: 'Charges' }] }` (`bankLedgerAccountId` requis cf. F2'' Pass 3), When POST `/split`, Then `200 OK` + 1 journal_entry à 4 lignes (1020 crédit 10700 + 5000 débit 5000 + 5000 débit 4500 + 5700 débit 1200) + `bank_transactions.status='reconciled'`. *Test E2E HTTP : `split_creates_journal_entry_with_n_plus_1_lines`.*
 
 86. **(FR48 — split happy encaissement)** Given tx pending crédit `+5000.00` (remboursement multi-source), body `splits: [{ counterpartyAccountId: 7510, amount: 3000, description: 'Intérêts' }, { counterpartyAccountId: 6900, amount: 2000, description: 'Remboursement frais' }]`, When POST `/split`, Then journal_entry à 3 lignes (1020 débit 5000 + 7510 crédit 3000 + 6900 crédit 2000). *Test E2E HTTP : `split_creates_journal_entry_for_credit_transaction`.*
 
@@ -165,7 +191,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 
 95. **(Q2 — type='invoice' explicite)** Given body `{ type: 'invoice', bankTransactionId, invoiceId }`, When POST `/accept`, Then flow 8-4 invoice exécuté (audit `reconciliation.accepted` + `invoice.paid`). *Test E2E HTTP : `accept_with_explicit_invoice_type_runs_8_4_flow`.*
 
-96. **(Q2 — migration tests E2E 8-4)** Given le fichier de tests `crates/kesh-api/tests/reconciliation_e2e.rs` (**22 tests actifs + 1 ignored** = 23 attributs `#[sqlx::test]` au total — Pass 1 validate : la spec disait initialement "21 tests" mais le fichier réel en contient 23 dont 1 ignored `post_accept_filters_currency_mismatch`), When 8-5a livré, Then tous les tests qui POST `/accept` ajoutent `type: 'invoice'` dans leur body et restent verts (régression non introduite). *Test E2E HTTP : `cargo test -p kesh-api --test reconciliation_e2e` : 22 verts + 1 ignored (mono-CHF Story 11 préservé).*
+96. **(Q2 — migration tests E2E 8-4)** Given le fichier de tests `crates/kesh-api/tests/reconciliation_e2e.rs` (**21 tests actifs + 1 ignored** = 22 attributs `#[sqlx::test]` au total — Pass 3 validate Opus 4.7 F1'' : la spec disait "22 actifs + 1 ignored = 23 total" suite à régression Pass 1 Sonnet 4.6 F4 ; vérification `awk` directe sur le fichier confirme 21 actifs + 1 ignored `post_accept_filters_currency_mismatch` ligne 1654-1655 = 22 total), When 8-5a livré, Then tous les tests qui POST `/accept` ajoutent `type: 'invoice'` dans leur body et restent verts (régression non introduite). *Test E2E HTTP : `cargo test -p kesh-api --test reconciliation_e2e` : 21 verts + 1 ignored (mono-CHF Story 11 préservé).*
 
 ### UI frontend extensions (manual + split)
 
@@ -194,6 +220,8 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 - Est dans `kesh-db::repositories::reconciliation` (same module), **pas** dans `bank_transactions.rs` (évite la duplication cross-module).
 
 **Décision** : Ajouter une variante `find_strictly_pending_by_id_for_account` dans `reconciliation.rs` avec le filtre `status = 'pending'` explicite, plutôt que dupliquer le helper dans `bank_transactions.rs`. Le helper existant `find_pending_by_id_for_account` est conservé pour 8-4 (son absence de filtre status est intentionnelle pour `accept_one` step 4 qui vérifie le status séparément).
+
+**F8'' Pass 3 Opus 4.7 — note de naming** : Le helper existant 8-4 `find_pending_by_id_for_account` a un nom trompeur — il **ne filtre PAS `status='pending'`** (cf. doc-comment lignes 270-280 de `reconciliation.rs`, le caller fait le check status au step 4 inside lock). Le nom `find_strictly_pending_by_id_for_account` ajouté par 8-5a clarifie cette distinction. Renommer le helper 8-4 (e.g. en `find_by_id_for_account_no_status_filter`) est tracé en `dette-naming-reconciliation-helpers` (issue GitHub à créer post-merge 8-5a, non-bloquant).
 
 - [ ] T1.1 — Étendre `crates/kesh-db/src/repositories/reconciliation.rs` (pas `bank_transactions.rs`) :
   ```rust
@@ -264,6 +292,22 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
   use rust_decimal::Decimal;
 
   /// Vérifie que sum(splits[*].amount) == tx.amount.abs() (Decimal exact, pas de tolérance).
+  ///
+  /// **F7'' Pass 3 Opus 4.7 — précondition longueur** : ce helper ne valide PAS
+  /// `splits.len() >= 2` (AC #88) ni `splits.len() <= 50` (AC #89). Le caller
+  /// (handler `post_split`) DOIT appliquer ces deux contraintes AVANT
+  /// d'appeler `validate_split_balance`, sinon une liste vide validera contre
+  /// `tx.amount = 0` (cas dégénéré) et un split unique passera contre une tx
+  /// du même montant (anti-pattern qui devrait passer par `/manual`).
+  ///
+  /// **Précondition `tx_amount`** : signed (positif=crédit titulaire,
+  /// négatif=débit). `validate_split_balance` applique `.abs()` en interne ;
+  /// le caller passe `tx.amount` brut (pas `tx.amount.abs()`). Si
+  /// `tx.amount == 0`, `expected == 0` et `splits` doit sommer à 0
+  /// — refusé in fine par `chk_journal_entries_balance` DB constraint via
+  /// `create_in_tx` (entry à somme nulle = balanced mais inutile).
+  /// Validation explicite `tx.amount != 0` recommandée côté handler (cas
+  /// très rare en CAMT.053, exclu en pratique par le parser).
   pub fn validate_split_balance(tx_amount: Decimal, splits: &[Decimal]) -> Result<(), SplitImbalance> {
       let sum: Decimal = splits.iter().sum();
       let expected = tx_amount.abs();
@@ -310,14 +354,57 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
     - `type: 'invoice'` → flow 8-4 inchangé.
     - `type` absent ou non reconnu (`'manual'`/`'split'`/`'rule'` v0.1 8-5a) → `400 Validation` avec liste des types acceptés.
 
+  **F3'' Pass 3 Opus 4.7 — validation accounts (`bankLedgerAccountId` + `counterpartyAccountId` + tous les `splits[i].counterpartyAccountId`)** :
+  - Helper réutilisé : `accounts::find_by_id_in_company(pool, account_id, company_id)` (existant, signature `(pool: &MySqlPool, id: i64, company_id: i64) -> Result<Option<Account>, DbError>`, **note ordre paramètres inversé vs `fiscal_years::find_by_id_in_company`** — cohérence à reporter v0.2).
+  - Le helper **ne filtre PAS `active=true`** côté SQL (comportement actuel) — le handler doit donc faire le check manuel après le `find` :
+    ```rust
+    let account = accounts::find_by_id_in_company(&state.pool, account_id, company_id)
+        .await?
+        .ok_or(AppError::AccountNotFound)?;
+    if !account.active {
+        return Err(AppError::AccountNotFound); // AC #82 : archived = 404 (anti-énumération)
+    }
+    ```
+  - **Ordre de validation pré-flight** (avant `with_account_lock`) :
+    1. `bank_accounts::find_by_id_for_company(pool, company_id, bankAccountId)` → 404 `BANK_ACCOUNT_NOT_FOUND` (AC #78).
+    2. `accounts::find_by_id_in_company(pool, bankLedgerAccountId, company_id)` + check `active` → 404 `ACCOUNT_NOT_FOUND` (F2'' Pass 3).
+    3. `accounts::find_by_id_in_company(pool, counterpartyAccountId, company_id)` + check `active` → 404 `ACCOUNT_NOT_FOUND` (AC #77, #82).
+    4. **Pour `/split`** : itérer `splits[i].counterpartyAccountId`, batch-load via une seule query `IN (...)` (pattern `find_pending_by_ids` reconciliation.rs:233) ou itération séquentielle si volume ≤ 50 (cap T2 inchangé). Tout split référençant un account inexistant ou archivé (cross-tenant ou même tenant) → `404 ACCOUNT_NOT_FOUND` body `details.missingAccountIds: [<ids>]` (AC #90 camelCase JSON, list distincts triés).
+  - **Note** : `journal_entries::create_in_tx` re-vérifie déjà tous les `account_ids` (existence + `active=TRUE` + même `company_id`) au step 2 (cf. `crates/kesh-db/src/repositories/journal_entries.rs:113-143`). Le pré-flight handler-side fait le mapping HTTP fin (`404 ACCOUNT_NOT_FOUND` typé + `missingAccountIds` détaillé) ; sans pré-flight, l'erreur remonterait `DbError::InactiveOrInvalidAccounts` mappée `400 INACTIVE_OR_INVALID_ACCOUNTS` générique (moins UX-friendly).
+
 - [ ] T3.2 — Étendre `crates/kesh-api/src/lib.rs` mounting :
   - `comptable_routes` : ajouter `POST /api/v1/reconciliation/manual`, `POST /api/v1/reconciliation/split`.
 
 - [ ] T3.3 — Étendre `crates/kesh-api/src/errors.rs` (variantes ajoutées) :
-  - `AppError::AccountNotFound { account_id }` (si pas déjà existant) → `404 ACCOUNT_NOT_FOUND`.
-  - `AppError::ReconciliationAlreadyReconciled { bank_transaction_id }` → `409 RECONCILIATION_ALREADY_RECONCILED` (émis si `find_strictly_pending_by_id_for_account` retourne `None` car status ≠ 'pending' ou tx introuvable).
-  - `AppError::ReconciliationFiscalYearClosed { entry_date }` → `409 RECONCILIATION_FISCAL_YEAR_CLOSED`.
-  - `AppError::ReconciliationSplitImbalance { expected, actual, difference }` → `400 RECONCILIATION_SPLIT_IMBALANCE`.
+  - `AppError::AccountNotFound { account_id, missing_account_ids: Option<Vec<i64>> }` → `404 ACCOUNT_NOT_FOUND` body `{ error: { code: "ACCOUNT_NOT_FOUND", message: t(...), details: { accountId, missingAccountIds: [...] } } }` (camelCase JSON, AC #90 ; `missingAccountIds` populated pour split, single `accountId` pour manual). **F10'' Pass 3 Opus 4.7 — confirmation absence variant** : la spec disait « si pas déjà existant » mais aucun grep `AccountNotFound` dans `errors.rs` actuel (seul `BankAccountNotFound` existe) → variant **à créer**, non pas à réutiliser.
+  - `AppError::ReconciliationAlreadyReconciled { bank_transaction_id }` → `409 RECONCILIATION_ALREADY_RECONCILED` (émis si `find_strictly_pending_by_id_for_account` retourne `None` car status ≠ 'pending' ou tx introuvable). **Note** : ce variant a été *supprimé* en M6 Pass 1 code review 8-4 (`errors.rs:319-323` doc-comment) car remplacé par `FailedProposal { error_code: "RECONCILIATION_ALREADY_RECONCILED" }` per-proposal pour le batch `/accept`. **8-5a le ré-introduit comme variant global** car `/manual` et `/split` traitent UNE transaction (pas un batch — pas de partial success), donc le code per-proposal ne s'applique pas.
+  - `AppError::ReconciliationFiscalYearClosed { entry_date: NaiveDate }` → `409 RECONCILIATION_FISCAL_YEAR_CLOSED` (cf. F6'' clarification HTTP 409 + cohérence §error-precedence-order).
+  - `AppError::ReconciliationSplitImbalance { expected, actual, difference }` → `400 RECONCILIATION_SPLIT_IMBALANCE` body `details = { expected: '10700.00', actual: '10500.00', difference: '-200.00' }` (string Decimal cf. AC #87).
+
+  **F11'' Pass 3 Opus 4.7 — impact `Copy` sur `AcceptProposalInput`** : la struct actuelle `AcceptProposalInput` (`reconciliation.rs:155-160`) dérive `Copy` (2 i64 = 16 octets, OK). Ajouter un champ `r#type: String` pour Q2 breaking change **casse `Copy`** car `String` est `Drop`. Solutions :
+  - **(a)** Remplacer `String` par un `enum` typé : `enum AcceptType { Invoice, Manual, Split, Rule }` avec `#[serde(rename_all = "lowercase")]` — dérive `Copy` car enum unit-only. **Préférée** car typage strict + Validation Serde gratuit (rejet 400 si valeur inconnue côté Rust avant atteindre le handler).
+  - **(b)** Garder `String` libre + retirer `Copy` de `AcceptProposalInput` → ajouter `clone()` aux usages internes. Plus flexible mais break diff-hostile.
+
+  **Décision Pass 3** : option (a). La spec d'origine §accept-with-rule-flow était implicite ; le breaking change Q2 mérite un typage strict serde. Le test `accept_rejects_proposal_missing_type_discriminator` (AC #94) couvre serde rejection (`type` field absent = 422 sérialisation Serde) et le test `accept_with_explicit_invoice_type_runs_8_4_flow` (AC #95) couvre le happy path.
+
+  ```rust
+  #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+  #[serde(rename_all = "lowercase")]
+  pub enum AcceptType {
+      Invoice,
+      // Manual, Split, Rule réservés v0.1 — Serde rejette pour l'instant
+      // sauf si explicitement listés (cohérent §rejet manual/split/rule
+      // sur /accept en 8-5a — ces flows passent par routes dédiées).
+  }
+
+  #[derive(Debug, Deserialize, Clone, Copy)]
+  #[serde(rename_all = "camelCase")]
+  pub struct AcceptProposalInput {
+      pub r#type: AcceptType,
+      pub bank_transaction_id: i64,
+      pub invoice_id: i64,
+  }
+  ```
 
 - [ ] T3.4 — **Migration tests E2E 8-4 existants** : modifier `crates/kesh-api/tests/reconciliation_e2e.rs` (21 tests existants) pour ajouter `type: 'invoice'` explicite dans tous les bodies POST /accept (AC #96).
 
@@ -327,7 +414,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
   17. Accept type discriminator obligatoire (AC #94).
   18. Accept type='invoice' explicite (AC #95).
   
-  **Total minimal** : 18 tests (10 manual + 6 split + 2 accept-discriminator). **Total complet** : 21 tests (+ AC #89, #91, #93).
+  **Total minimal** : 18 tests (10 manual + 6 split + 2 accept-discriminator). **Total complet (avec stretch)** : 21 tests = 18 minimum + 3 stretch (AC #89/#91/#93).
 
 ### T4. Helper `fiscal_years::find_open_covering_date` — vérification signature (AC #80)
 
@@ -338,15 +425,32 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 Le flow `/manual` et `/split` tourne sous `with_account_lock` qui ouvre une `tx_outer`. Le helper correct à utiliser est **`find_open_covering_date(tx, company_id, entry_date)`** (status='Open', inside tx = sémantique correcte pour bloquer une clôture concurrente de l'exercice).
 
 - [ ] T4.1 — **Pas besoin de créer un nouveau helper** : utiliser `fiscal_years::find_open_covering_date` existant (Story 3-7) avec `&mut tx_outer` passé depuis le handler. Importer `kesh_db::repositories::fiscal_years` dans `crates/kesh-api/src/routes/reconciliation.rs`.
-- [ ] T4.2 — Vérifier l'ordre des locks : `fiscal_years` est acquis APRÈS le lock advisory `with_account_lock` (GET_LOCK au niveau session) → pas de deadlock possible (advisory lock ≠ row lock). L'ordre est : advisory lock → `find_strictly_pending` → `find_open_covering_date FOR UPDATE` → `create_in_tx`.
-- [ ] T4.3 — Ajouter test E2E HTTP `manual_match_rejects_closed_fiscal_year` (AC #80) : seed un exercice `Closed` + tx pending, POST `/manual`, vérifier `409 RECONCILIATION_FISCAL_YEAR_CLOSED` (le `find_open_covering_date` retourne `None` → handler retourne l'erreur avant `create_in_tx`).
+
+  **F5'' Pass 3 Opus 4.7 — redondance avec `journal_entries::create_in_tx`** : le helper `journal_entries::create_in_tx` (cf. `crates/kesh-db/src/repositories/journal_entries.rs:96-110`) fait LUI-MÊME un `SELECT FOR UPDATE` sur `fiscal_years WHERE id = ? AND company_id = ?` puis vérifie `status != 'Closed'` (retourne `DbError::FiscalYearClosed` mappé `400 FISCAL_YEAR_CLOSED` par `errors.rs:908`). Donc **deux fail-fast du closed-check sont possibles** :
+  - **(a) Approche fail-fast handler** (préférée) : appeler `find_open_covering_date(tx, company_id, entry_date)` côté handler, retourner `409 RECONCILIATION_FISCAL_YEAR_CLOSED` (code dédié 8-5a) avant `create_in_tx`. Le helper interne fera ensuite un re-lock idempotent (re-SELECT FOR UPDATE de la même row dans la même tx = no-op).
+  - **(b) Approche déléguer à `create_in_tx`** : laisser `create_in_tx` détecter et retourner `DbError::FiscalYearClosed` mappé en `400 FISCAL_YEAR_CLOSED` générique. Inconvénient : code HTTP 400 (générique, légalement c'est une violation `Conflict 409`), wording moins précis pour 8-5a.
+
+  **Décision Pass 3** : **approche (a)** — appeler `find_open_covering_date` côté handler (pré-flight inside lock), pour bénéficier du code dédié `409 RECONCILIATION_FISCAL_YEAR_CLOSED` cohérent §error-precedence-order #10. Le re-check de `create_in_tx` reste utile en defense-in-depth mais ne sera jamais déclenché en chemin nominal (la fiscal_year est lockée par notre `find_open_covering_date FOR UPDATE`, pas de fenêtre TOCTOU).
+
+- [ ] T4.2 — Vérifier l'ordre des locks : `fiscal_years` est acquis APRÈS le lock advisory `with_account_lock` (GET_LOCK au niveau session) → pas de deadlock possible (advisory lock ≠ row lock). L'ordre est : advisory lock → `find_strictly_pending` → `find_open_covering_date FOR UPDATE` → `create_in_tx` (re-prend le même fiscal_year lock = idempotent).
+
+- [ ] T4.3 — Ajouter test E2E HTTP `manual_match_rejects_closed_fiscal_year` (AC #80) : seed un exercice `Closed` + tx pending, POST `/manual`, vérifier **`409 RECONCILIATION_FISCAL_YEAR_CLOSED`** (le `find_open_covering_date` retourne `None` car le filtre `status='Open'` exclut le Closed → handler retourne l'erreur typée avant `create_in_tx`). **F6'' Pass 3 Opus 4.7 — distinction code/HTTP** :
+  - `RECONCILIATION_FISCAL_YEAR_CLOSED` (8-5a, **HTTP 409**, code spécifique au flow réconciliation) — émis par `post_manual` / `post_split` côté handler quand `find_open_covering_date` retourne `None` pour une `entry_date` qui tombe sur un exercice Closed (ou aucun exercice n'existe). Mappage AppError→HTTP : 409 (conflit métier, l'utilisateur doit choisir une autre date ou réouvrir un exercice — non-faisable v0.1).
+  - `FISCAL_YEAR_CLOSED` (existant, HTTP 400, code générique journal entries) — émis par `journal_entries::create_in_tx` step 1 si la fiscal_year passe le check handler mais bascule Closed entre les deux locks (race extrême — quasi impossible avec advisory lock + FOR UPDATE en chaîne, mais reste en defense-in-depth).
+  - Les deux codes coexistent. Le mapping HTTP 409 du code spécifique 8-5a est cohérent avec le pattern §error-precedence-order #7 (advisory lock 409) et #5 (already reconciled 409) — toutes les erreurs métier de réconciliation sont 409, pas 400.
 
 ### T5. Frontend `ManualMatchModal` + `TransactionSplitModal` + extensions (AC #97-#100)
 
 - [ ] T5.1 — Étendre `frontend/src/lib/features/reconciliation/reconciliation.api.ts` :
   ```ts
+  // F2'' Pass 3 Opus 4.7 — `bankLedgerAccountId` ajouté pour résoudre le compte
+  // comptable côté banque (compte 1020 typiquement). bank_accounts table n'a
+  // pas de colonne journal_account_id en v0.1 — le client doit le fournir
+  // explicitement. Reportée v0.2 : pré-remplir serveur-side via migration
+  // `ALTER TABLE bank_accounts ADD journal_account_id`.
   export async function manualMatchTransaction(
       bankAccountId: number,
+      bankLedgerAccountId: number,
       bankTransactionId: number,
       counterpartyAccountId: number,
       description?: string,
@@ -355,6 +459,7 @@ Le flow `/manual` et `/split` tourne sous `with_account_lock` qui ouvre une `tx_
 
   export async function splitTransaction(
       bankAccountId: number,
+      bankLedgerAccountId: number,
       bankTransactionId: number,
       splits: { counterpartyAccountId: number; amount: string; description: string }[],
       description?: string,
@@ -435,7 +540,9 @@ Le flow `/manual` et `/split` tourne sous `with_account_lock` qui ouvre une `tx_
 ### Patterns architecturaux à respecter
 
 - **Pas de dépendance circulaire** : `kesh-reconciliation → kesh-core, kesh-db` (cohérent 8-4). Les nouveaux modules `manual`, `split` consomment `kesh_db::entities::BankTransaction` et `kesh_db::entities::journal_entry::NewJournalEntry`.
-- **Cohérence audit log** : tous les `details_json` pour `reconciliation.manual_matched` et `reconciliation.split_applied` utilisent snake_case systématiquement : `bank_transaction_id`, `counterparty_account_id`, `journal_entry_id`, `total_amount`, `amount`, `description`, `value_date`, `was_previously_rejected`. Jamais de mélange camelCase (cohérent AC #84, AC #93, AC #90 error `missingAccountIds` est camelCase uniquement en réponse HTTP, jamais dans `details_json`).
+- **Cohérence audit log** : tous les **clés top-level** des `details_json` pour `reconciliation.manual_matched` et `reconciliation.split_applied` utilisent snake_case systématiquement : `bank_transaction_id`, `counterparty_account_id`, `journal_entry_id`, `total_amount`, `amount`, `description`, `value_date`, `was_previously_rejected`. Pas de mélange camelCase **au top-level** (cohérent AC #84, AC #93, AC #90 error `missingAccountIds` est camelCase uniquement en réponse HTTP, jamais dans `details_json`).
+
+  **F4'' Pass 3 Opus 4.7 — exception sous-objets typés** : si un `details_json` inclut un objet sérialisé via une struct typée Rust avec `#[serde(rename_all = "camelCase")]` (ex. pattern 8-4 où `details.score` = `MatchScore { total, amount_score, reference_score, contact_score }` produit JSON `{ total, amountScore, referenceScore, contactScore }`), le sous-objet sera camelCase. Cette nuance est **acceptable** (cohérence avec API HTTP qui sérialise les structs Rust de la même manière) et ne casse pas la lisibilité. **Pour 8-5a manual_matched et split_applied** : aucun sous-objet typé n'est inclus — toutes les valeurs sont primitives (i64, String, Decimal-as-String, NaiveDate-as-String, bool) ou des Vec d'objets construits manuellement via `serde_json::json!` avec clés snake_case explicites. Donc 100 % snake_case dans 8-5a (vs mix 8-4).
 - **Pas d'`f64` pour montants** : `Decimal` partout (`splits[i].amount`, `tx.amount`). Le `f64` n'apparaît que dans le score 8-4 hérité, pas dans 8-5a.
 - **Tests : éviter le coupling temporel** : utiliser des dates fixes dans les seeds (`NaiveDate::from_ymd_opt(2026, 5, 15)`).
 - **`auto_match_rejected_at=NULL` au manual-match** : indispensable pour éviter qu'une tx manual-matched apparaisse comme « rejetée + matched » (état incohérent).
@@ -443,8 +550,9 @@ Le flow `/manual` et `/split` tourne sous `with_account_lock` qui ouvre une `tx_
 ### Source tree à toucher
 
 **DB** :
-- `crates/kesh-db/src/repositories/bank_transactions.rs` (extension `find_pending_by_id_for_account`)
-- `crates/kesh-db/src/repositories/fiscal_years.rs` (vérifier ou créer `find_open_for_date_for_company` — T4)
+- `crates/kesh-db/src/repositories/reconciliation.rs` (ajout `find_strictly_pending_by_id_for_account` — T1.1, **F9'' Pass 3 Opus 4.7 correction** : était listé `bank_transactions.rs` ce qui contredisait T1 qui localise dans `reconciliation.rs`)
+- `crates/kesh-db/src/repositories/fiscal_years.rs` (utiliser `find_open_covering_date` existant Story 3-7 — T4, pas de modification)
+- `crates/kesh-db/src/repositories/accounts.rs` (utiliser `find_by_id_in_company` existant — T3.1, pas de modification ; check `active=true` côté handler)
 
 **Backend `kesh-reconciliation`** :
 - `crates/kesh-reconciliation/Cargo.toml` (deps inchangées : `kesh-core`, `kesh-db`, `sqlx`, `chrono`, `rust_decimal`, `serde`, `thiserror`, `tracing`)
@@ -476,7 +584,7 @@ Le flow `/manual` et `/split` tourne sous `with_account_lock` qui ouvre une `tx_
 
 - **Unit `kesh-reconciliation`** : `#[cfg(test)] mod tests` inline `manual.rs` + `split.rs`. ≥ 6 unit tests T2.5.
 - **Intégration `kesh-db`** : `#[sqlx::test]`. ≥ 2 tests T1.2 (+ ≥ 1 T4.2 fiscal_years).
-- **E2E HTTP `kesh-api`** : helper `spawn_app(pool)` (pattern 8-1b/8-2/8-3/8-4). ≥ **18 nouveaux tests** T3.5 (10 manual + 6 split + 2 accept-discriminator). + **22 tests actifs** 8-4 migrés + 1 ignored préservé (= 23 total dans reconciliation_e2e.rs — régression non introduite).
+- **E2E HTTP `kesh-api`** : helper `spawn_app(pool)` (pattern 8-1b/8-2/8-3/8-4). ≥ **18 nouveaux tests** T3.5 (10 manual + 6 split + 2 accept-discriminator). + **21 tests actifs** 8-4 migrés + 1 ignored préservé (= 22 total dans reconciliation_e2e.rs — régression non introduite).
 - **Vitest frontend** : `npm run test:unit -- reconciliation`. ≥ 4 tests T5.6.
 - **Playwright** : `frontend/tests/e2e/reconciliation-manual.spec.ts`. ≥ 2 actifs + 2 a11y.
 
@@ -521,13 +629,13 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 
 ### Risques et points d'attention pour le dev agent
 
-1. **Breaking change `POST /accept` (Q2)** : si le dev agent oublie de migrer les **22 tests actifs** E2E HTTP 8-4 existants (AC #96 + T3.4), CI rouge en local + remote. **Vérification systématique** : `cargo test -p kesh-api --test reconciliation_e2e` doit retourner 22 verts + 1 ignored mono-CHF Story 11 (= 23 attributs `#[sqlx::test]` dans le fichier).
+1. **Breaking change `POST /accept` (Q2)** : si le dev agent oublie de migrer les **21 tests actifs** E2E HTTP 8-4 existants (AC #96 + T3.4), CI rouge en local + remote. **Vérification systématique** : `cargo test -p kesh-api --test reconciliation_e2e` doit retourner 21 verts + 1 ignored mono-CHF Story 11 (= 22 attributs `#[sqlx::test]` dans le fichier).
 
 2. **Helper `manual::build_journal_entry_for_counterparty` réutilisé par 8-5b** : ne pas le rendre privé. Le marquer `pub` dans `lib.rs` re-exports. La signature ne doit pas changer après merge 8-5a (8-5b dépend de la stabilité d'API). Si une évolution est nécessaire, elle doit faire l'objet d'un CR explicite.
 
 3. **`fiscal_years::find_open_for_date_for_company` peut ne pas exister** : vérifier dans `crates/kesh-db/src/repositories/fiscal_years.rs` Story 3-7. Si le helper n'existe qu'avec une signature différente, créer une version compatible (Executor générique, multi-tenant scoped) avant T3.
 
-4. **Test E2E HTTP volume** : 18 nouveaux tests minimum + 22 tests actifs 8-4 migrés = **≥ 40 tests à passer**. Pas de dette test acceptable cette fois (lessons 8-4 retro). Si scope vraiment trop large dans une seule session dev, accepter de différer 3 tests stretch-goal split edge cases (AC #89/#91/#93) **uniquement en ultime recours** et tracer en `dette-test-e2e-http`. **Mais** : les 10 tests manual + 6 split + 2 accept-discriminator + 22 régression 8-4 sont **incontournables** (sécurité multi-tenant + RBAC + non-régression).
+4. **Test E2E HTTP volume** : 18 nouveaux tests minimum + 21 tests actifs 8-4 migrés = **≥ 39 tests à passer**. Pas de dette test acceptable cette fois (lessons 8-4 retro). Si scope vraiment trop large dans une seule session dev, accepter de différer 3 tests stretch-goal split edge cases (AC #89/#91/#93) **uniquement en ultime recours** et tracer en `dette-test-e2e-http`. **Mais** : les 10 tests manual + 6 split + 2 accept-discriminator + 21 régression 8-4 sont **incontournables** (sécurité multi-tenant + RBAC + non-régression).
 
 5. **Suppression de la suggestion ML (Q5)** : ne pas implémenter la fonction `suggest_rule` ni l'objet `ruleSuggestion` dans la response. C'est explicitement out-of-scope 8-5a (et out-of-scope 8-5b aussi, reporté v0.2).
 
@@ -567,3 +675,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | **2026-05-07** | Spec créée par split mécanique de 8-5 unifiée (décision Guy 2026-05-07 Q1=B). Découpage scope FR45 (manual) + FR48 (split) + breaking change `POST /accept` discriminator (Q2). FR46 suggestion ML retirée (Q5 — reportée v0.2). 26 ACs (#75-#100). Tasks T1-T8. Path-dépendance 8-5b sur le helper `manual::build_journal_entry_for_counterparty` documentée. Status `8-5a-reconciliation-manuelle-split: backlog → ready-for-dev`. | Claude (Opus 4.7 split workflow) |
 | **2026-05-07** | **Pass 1 validate Sonnet 4.6** — 7 findings (2 CRITICAL + 3 HIGH + 2 MEDIUM + 0 LOW appliqués). Patches appliqués : F1 import erroné `kesh_core::accounting::NewJournalEntry` → `kesh_db::entities::journal_entry::NewJournalEntry` (T2.1) ; F2 T1 refactored — `find_pending_by_id_for_account` existe dans reconciliation.rs sans filtre status, ajout de `find_strictly_pending_by_id_for_account` dans le même module ; F3 T4 refactored — `find_open_for_date_for_company` n'existe pas, utiliser `find_open_covering_date` (Story 3-7) ; F4 compte tests 8-4 corrigé 21→22 actifs + 1 ignored = 23 total (AC #96, T3.4, §Risques 1) ; F5 décompte tests T3.5 unifié à 18 min (10+6+2) ; F6 `accountId` → `counterpartyAccountId` dans AC #85-#86 ; F7 `was_previously_rejected` précisé both cases (AC #84) ; + LOW : `splitsCount` retiré de `splitTransaction` response frontend, `missing_account_ids` → `missingAccountIds` camelCase (AC #90), filtre classe compte explicité côté client dans T5.3. Trend : Pass 1 = 5 findings > LOW. Prochaine étape : Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
 | **2026-05-07** | **Pass 2 validate Haiku 4.5** — 6 findings (2 CRITICAL + 2 HIGH + 2 MEDIUM + 2 LOW appliqués). Patches majeurs : F1 AC #93 `reconciliation.split_applied` `details_json` structure complètement spécifiée (cohérent AC #84 snake_case) ; F2 T3.1 `entry_date` résolution clarifiée (fallback `tx.booking_date` si `valueDate` omis) ; F3 T2.1 tuple splits remplacé par struct `SplitDetail` type-safe ; F4 cohérence audit log snake_case documentée ; F5 T3.3 variante `ReconciliationAlreadyReconciled` explicitée ; F6 `valueDate` omis fallback behavior documenté. LOW : AC #96 lisibilité améliorée, test Vitest gaps notées. Trend : Pass 1 = 5 > LOW → Pass 2 = 6 > LOW (régression, mais sur fondements architecturaux solides — 4 issues CRITICAL+HIGH adressées profondeur codebase). Prochaine étape : Pass 3 Opus 4.7 (cycle orthogonal Sonnet → Haiku → Opus). | Claude (Haiku 4.5 validate) |
+| **2026-05-07** | **Pass 3 validate Opus 4.7 — VALIDATION FINALE (1M context)** — 11 findings (2 CRITICAL + 2 HIGH + 3 MEDIUM + 4 LOW appliqués). Patches majeurs : **F1'' CRITICAL** compte tests `reconciliation_e2e.rs` corrigé partout (était "22 actifs + 1 ignored = 23 total" suite à régression Pass 1 Sonnet F4, vérification `awk` donne **21 actifs + 1 ignored = 22 total** — 6 occurrences corrigées : §scope ligne 68, AC #96, §Standards de test, §Risques 1+4) ; **F2'' CRITICAL** gap architectural `bank_account.linked_account_id` n'existe pas dans le schéma v0.1 (vérifié migration `20260410000001_bank_accounts.sql` + entité `BankAccount`), spec d'origine 8-5 §manual-match-flow lignes 125-126 référence un champ inexistant — **décision verrouillée 8-5a** : ajout `bankLedgerAccountId` requis dans body `POST /manual` et `POST /split` (AC #75 et #85 mis à jour, T5.1 frontend API mise à jour, suggestion v0.2 dette-architecture-bank-ledger pour migration `ALTER TABLE bank_accounts ADD journal_account_id`) ; **F3'' HIGH** validation accounts (`bankLedgerAccountId` + `counterpartyAccountId` + tous les `splits[i]`) explicitée — `accounts::find_by_id_in_company` ne filtre pas `active=true` côté SQL, handler doit appliquer le check post-find pour AC #82 + ordre pré-flight #1-4 + batch validation pour split + reuse `find_pending_by_ids` pattern + note interaction avec `journal_entries::create_in_tx` step 2 ; **F4'' HIGH** clarification snake_case top-level vs camelCase sous-objets typés (pattern 8-4 `details.score` = `MatchScore` camelCase via `Serialize`) — règle 8-5a : 100% snake_case car aucun sous-objet typé ; **F5'' MEDIUM** redondance `find_open_covering_date` côté handler vs re-lock interne `journal_entries::create_in_tx` step 1 — décision approche (a) fail-fast handler pour code 409 dédié vs 400 générique ; **F6'' MEDIUM** distinction `RECONCILIATION_FISCAL_YEAR_CLOSED` (8-5a, HTTP 409) vs `FISCAL_YEAR_CLOSED` (existant, HTTP 400 générique) — coexistence justifiée + cohérence §error-precedence-order ; **F7'' MEDIUM** précondition `validate_split_balance` documentée (longueur min/max validée par caller, pas par helper, signed `tx.amount` brut, edge case `tx.amount==0`) ; **F8'' LOW** note nom trompeur `find_pending_by_id_for_account` (8-4 ne filtre pas status — voir `dette-naming-reconciliation-helpers`) ; **F9'' LOW** §source-tree corrigé (était `bank_transactions.rs`, doit être `reconciliation.rs` cohérent T1) ; **F10'' LOW** `AppError::AccountNotFound` confirmé non-existant (variant à créer, non réutiliser ; payload structure spécifié) ; **F11'' LOW** impact `Copy` sur `AcceptProposalInput` (ajout discriminator `type` casse `Copy`) — décision option (a) enum typé `AcceptType { Invoice }` au lieu de `String` (typage strict + rejet Serde gratuit). Trend : Pass 1 = 5 > LOW → Pass 2 = 6 > LOW → **Pass 3 = 7 > LOW** (régression structurelle révélée — gaps architecturaux F1''/F2'' invisibles aux passes Sonnet+Haiku via biais d'auteur sur les patches récents, détectés par Opus 1M context vérification ground truth fichiers Rust réels). **Critère STOP CLAUDE.md non atteint** (≥ 1 finding > LOW). **Recommandation** : la spec a maintenant 7 findings résiduels CRITICAL+HIGH+MEDIUM adressés en patches in-place mais avec une dette de validation architecturale (F2'' notamment) — le splitting préventif aurait pu identifier ce gap plus tôt. **Verdict CONDITIONAL GO** : la spec est **implémentable telle quelle** par dev-story ; chaque finding a une remédiation concrète appliquée. **Prochaine étape recommandée** : pass 4 Sonnet 4.6 sur le code post-implémentation (review code, pas spec) — le cycle review SPEC s'arrête car les 11 findings sont tous adressés via patches concrets dans la spec. Si Guy préfère lancer Pass 4 Haiku 4.5 sur la spec, le risque est faible (les 11 patches sont conservateurs et orthogonaux) mais le ROI marginal — convergence asymptotique attendue ≤ 3 findings. | Claude (Opus 4.7 validate, 1M context) |
