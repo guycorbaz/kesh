@@ -295,6 +295,11 @@ pub async fn set_journal_account_id_for_company(...) -> Result<BankAccount, DbEr
         return Err(DbError::OptimisticLockConflict);
     }
 
+    // FIND_BY_ID_SQL filtre seulement par `id`, pas par `company_id`.
+    // Le SELECT FOR UPDATE initial + l'UPDATE scopé guarantissent qu'on
+    // ne peut arriver ici que si la row appartient à la company — le
+    // post-fetch non-scopé est sûr dans cette transaction (cohérent avec
+    // `upsert_primary` pattern ligne 162 + 188). Acceptable v0.1.
     let updated = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_one(&mut *tx)
@@ -346,15 +351,20 @@ ACs #75-#82 (8 ACs).
       pub journal_account_id: Option<i64>,
   }
   ```
-  Sérialisation `journalAccountId` camelCase via `#[serde(rename_all = "camelCase")]` (cohérent `Account` entity).
+  Sérialisation `journalAccountId` camelCase via `#[serde(rename_all = "camelCase")]` (cohérent `Account` entity qui a déjà ce derive).
 
-- [ ] T2.2 — Patcher les 4 SELECT SQL dans `crates/kesh-db/src/repositories/bank_accounts.rs` pour inclure `journal_account_id` :
-  - `FIND_BY_ID_SQL` constante.
-  - `find_primary` SELECT.
-  - `find_by_id_for_company` SELECT.
-  - `list_by_company` SELECT.
-  - `upsert_primary` SELECT FOR UPDATE.
+  **Impact `BankAccountJson` (companies.rs)** : le DTO `BankAccountJson` dans `crates/kesh-api/src/routes/companies.rs` contient déjà `#[serde(rename_all = "camelCase")]` et un `From<BankAccount>` manuel — le DTO n'est pas impacté par l'ajout du `rename_all` sur l'entité. Ajouter aussi `journal_account_id: Option<i64>` au `BankAccountJson` + `From<BankAccount>` dans `companies.rs` pour exposer le champ sur `GET /api/v1/companies/current`.
+
+  **Stratégie de sérialisation réponse PATCH** : le handler `patch_bank_account_journal_link` retourne `Json(bank_account)` directement (entité `BankAccount` avec `#[serde(rename_all = "camelCase")]`). Pattern différent du `BankAccountJson` DTO de `companies.rs` — acceptable car ce handler est dédié et retourne l'entité complète. Alternative équivalente : créer un DTO `BankAccountResponse` dans `routes/bank_accounts.rs` si l'implémentation révèle un besoin de filtrage de champs.
+
+- [ ] T2.2 — Patcher les **5** SELECT SQL dans `crates/kesh-db/src/repositories/bank_accounts.rs` pour inclure `journal_account_id` :
+  - `FIND_BY_ID_SQL` constante (ligne 8 — une seule chaîne, réutilisée dans `create`, `upsert_primary` branches INSERT/UPDATE post-fetch).
+  - `find_primary` SELECT inline (ligne 55).
+  - `find_by_id_for_company` SELECT inline (ligne 80).
+  - `list_by_company` SELECT inline (ligne 96).
+  - `upsert_primary` SELECT FOR UPDATE inline (ligne 123).
   - **Précaution** : `upsert_primary` ne met PAS à jour `journal_account_id` (il reste préservé sur l'UPDATE existing — vérifier que la branche `Some(account)` ne touche pas la colonne, et que la branche `None` (INSERT) n'inclut pas la colonne dans VALUES — laisse à NULL par défaut DB).
+  - **Vérification** : `grep -c "SELECT id, company_id, bank_name" crates/kesh-db/src/repositories/bank_accounts.rs` doit retourner 5. Si non, grep résiduel = oubli à corriger.
 
 - [ ] T2.3 — Ajouter `set_journal_account_id_for_company` dans `bank_accounts.rs` (cf. §rationale-pattern-find-then-update ci-dessus).
 
@@ -387,15 +397,16 @@ ACs #75-#82 (8 ACs).
     - Response 200 OK avec `Vec<BankAccount>` JSON.
 
 - [ ] T3.2 — Étendre `crates/kesh-api/src/lib.rs` mounting :
+  - **Import** : Ajouter `patch` à l'import existant : `use axum::routing::{get, patch, post, put};` (actuellement `{get, post, put}` seulement — `patch` manque, compilera pas sinon).
   - `comptable_routes` : `.route("/api/v1/bank-accounts/{id}", patch(routes::bank_accounts::patch_bank_account_journal_link))`.
   - `authenticated_routes` : `.route("/api/v1/bank-accounts", get(routes::bank_accounts::list_bank_accounts))`.
   - Déclarer `pub mod bank_accounts;` dans `routes/mod.rs`.
 
 - [ ] T3.3 — Étendre `crates/kesh-api/src/errors.rs` :
-  - `AppError::BankAccountNotFound { bank_account_id: i64 }` → 404 `BANK_ACCOUNT_NOT_FOUND` (réutiliser variant 8-1b si déjà existant — vérifier).
-  - `AppError::AccountNotFound { account_id: i64 }` → 404 `ACCOUNT_NOT_FOUND` (variant à créer si inexistant — F10'' Pass 3 8-5a confirmait absence). Body `{ error: { code, message, details: { accountId } } }` camelCase.
-  - `AppError::InvalidAccountType { account_id, account_type, allowed_types }` → 400 `INVALID_ACCOUNT_TYPE` (variant à créer).
-  - `AppError::OptimisticLockConflict` (variant existant — vérifier réutilisation) → 409.
+  - `AppError::BankAccountNotFound` : variant **déjà existant** (ajouté story 8-1b), mais son `IntoResponse` mappe vers le code HTTP `"BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND"` (ancré dans le contexte bank-imports). Pour 8-5a-zero, ce variant est réutilisé tel quel — le code client `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` est acceptable car le variant est partagé v0.1. Si la spec future exige un code distinct `BANK_ACCOUNT_NOT_FOUND`, créer `AppError::BankAccountNotFoundForPatch` ou renommer le code HTTP au PATCH de l'IntoResponse. **Action v0.1** : réutiliser `AppError::BankAccountNotFound` existant (pas de nouveau variant nécessaire).
+  - `AppError::AccountNotFound { account_id: i64 }` → 404 `ACCOUNT_NOT_FOUND` (variant à créer). Body `{ error: { code: "ACCOUNT_NOT_FOUND", message, details: { accountId } } }` camelCase.
+  - `AppError::InvalidAccountType { account_id: i64, account_type: String, allowed_types: Vec<String> }` → 400 `INVALID_ACCOUNT_TYPE` (variant à créer). Body `{ error: { code: "INVALID_ACCOUNT_TYPE", message, details: { accountType, allowedTypes } } }` camelCase.
+  - `AppError::OptimisticLockConflict` : **n'existe pas** comme variant autonome — le 409 est émis via `AppError::Database(DbError::OptimisticLockConflict)` dans le match arm `IntoResponse` (code `"OPTIMISTIC_LOCK_CONFLICT"`). Le handler utilise donc `Err(DbError::OptimisticLockConflict)` remonté via `?` + `#[from] DbError` wrapper — pas de variant dédié à créer.
 
 - [ ] T3.4 — Tests E2E HTTP `crates/kesh-api/tests/bank_accounts_e2e.rs` *(nouveau fichier, ≥ 5 tests)* :
   1. `patch_bank_account_links_journal_account_returns_200_with_updated_entity` (AC #78).
@@ -610,3 +621,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- bank-accou
 | Date | Entrée | Auteur |
 |------|--------|--------|
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-zero = foundation pure : ALTER TABLE `bank_accounts.journal_account_id` + repo + route PATCH + UI configuration. Aucune feature réconciliation. Path-dépendance 8-5a-base et 8-5a-bis sur `bank_account.journal_account_id` documentée. 8 ACs (#75-#82). Tasks T1-T6. Status `8-5a-zero-bank-account-journal-link: ready-for-dev`. Élimine la dette F2'' Pass 3 Opus (anti-pattern UX `bankLedgerAccountId` dans body POST /manual et /split). | Claude (Opus 4.7 re-split workflow) |
+| **2026-05-07** | **Pass 1 validate Sonnet 4.6** — 4 findings (0 CRITICAL + 2 HIGH + 2 MEDIUM + 0 LOW). Patches : F1 T2.2 SELECT count corrigé (5 SELECTs, pas 4) + instruction grep vérification ajoutée ; F2 T2.1 stratégie sérialisation `BankAccount` clarifiée (impact `BankAccountJson companies.rs` + note DTO vs entité directe) ; F3 T3.2 import `patch` manquant dans `use axum::routing::{...}` documenté ; F4 T3.3 variant `BankAccountNotFound` clarifié (code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` existant vs attendu, réutilisation v0.1 explicitée) + `OptimisticLockConflict` clarification (n'existe pas comme variant autonome, passe via `DbError` wrapper) ; note de sécurité ajoutée sur post-fetch non-scopé dans pseudo-code `set_journal_account_id_for_company`. Trend : Pass 1 = 4 findings > LOW. Continuer Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
