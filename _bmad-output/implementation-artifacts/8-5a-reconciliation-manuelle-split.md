@@ -1,6 +1,13 @@
 # Story 8-5a: Réconciliation manuelle + éclatement de transaction
 
-Status: ready-for-dev
+Status: archived-split-bis
+
+> **⚠️ ARCHIVED-SPLIT-BIS 2026-05-07** — cette spec a été re-splittée en sous-stories après Pass 3 validate Opus 4.7 qui a révélé une dette architecturale critique F2'' (`bank_account.journal_account_id` inexistant — anti-pattern UX `bankLedgerAccountId` dans body POST /manual et /split). Décision Guy 2026-05-07 : éviter la dette à la racine en re-splittant 8-5a en 3 sous-stories séquentielles. Voir :
+> - **[`8-5a-zero-bank-account-journal-link.md`](8-5a-zero-bank-account-journal-link.md)** — Foundation column `journal_account_id` + UI configuration. Status `ready-for-dev`.
+> - **[`8-5a-base-manual-match.md`](8-5a-base-manual-match.md)** — FR45 manual match utilisant la column. Status `backlog` (post-merge 8-5a-zero).
+> - **[`8-5a-bis-split-breaking-accept.md`](8-5a-bis-split-breaking-accept.md)** — FR48 split + breaking POST /accept Q2. Status `backlog` (post-merge 8-5a-base).
+>
+> Le contenu ci-dessous est conservé comme **référence des décisions de conception** validées sur 3 passes Sonnet→Haiku→Opus (29 patches cumulés, 7 findings résiduels Pass 3). Les sections §audit-log-shapes (snake_case top-level), §rbac (Comptable+ sub-router), §error-precedence-order (404 → 412 → 409 → 400), §migration-21-tests restent valables et ont été transposées dans les sous-stories. Trend findings : Pass 1 = 5 → Pass 2 = 6 → Pass 3 = 7 (NON convergence asymptotique due au gap architectural F2'' qui propageait des incohérences à chaque passe ; le re-split élimine la dette à la racine).
 
 <!-- Issue de scission de Story 8-5 (`8-5-reconciliation-manuelle-regles-affectation.md`) le 2026-05-07 :
      Story 8-5 unifiée touchait 5-6 modules au seuil critique CLAUDE.md « splitter si > 5 modules »

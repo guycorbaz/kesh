@@ -2,12 +2,26 @@
 
 Status: backlog
 
-<!-- Issue de scission de Story 8-5 (`8-5-reconciliation-manuelle-regles-affectation.md`) le 2026-05-07 :
-     8-5b reste backlog jusqu'à 8-5a (manual + split + breaking change /accept) `done`/merged.
-     Path-dépendance sur 8-5a : réutilise le helper `kesh-reconciliation::manual::build_journal_entry_for_counterparty`
-     pour le flow `accept-with-rule` (création d'une journal_entry à 2 lignes à la volée à partir d'une rule).
+<!-- Issue de scission de Story 8-5 (`8-5-reconciliation-manuelle-regles-affectation.md`) le 2026-05-07,
+     RE-SPLIT 8-5a effectif 2026-05-07 post-Pass-3 validate Opus 4.7 :
+
+     Path-dépendance mise à jour 2026-05-07 :
+     8-5b reste backlog jusqu'à **8-5a-bis** (split + breaking change /accept) `done`/merged.
+     Path-dépendance détaillée :
+     - 8-5a-zero (foundation column `bank_account.journal_account_id`) → fournit la base pour
+       résoudre serveur-side le ledger account banque dans le flow `accept-with-rule`.
+     - 8-5a-base (helper `manual::build_journal_entry_for_counterparty`) → réutilisé tel quel
+       par 8-5b pour le flow `accept-with-rule` (création d'une journal_entry à 2 lignes à la
+       volée à partir d'une rule).
+     - **8-5a-bis (breaking POST /accept type='invoice'/'split' obligatoire)** → 8-5b ajoute
+       `type='rule'` à l'enum `AcceptType` livré par 8-5a-bis. Le breaking change Q2 est porté
+       par 8-5a-bis (et non par 8-5b) pour regrouper la migration des 15 sites POST /accept
+       8-4 dans une seule story.
+
      Voir 8-5-reconciliation-manuelle-regles-affectation.md (status `archived-split`)
-     pour les décisions de conception détaillées (§rules-schema, §rule-application, §accept-with-rule-flow). -->
+     pour les décisions de conception détaillées (§rules-schema, §rule-application, §accept-with-rule-flow).
+     Voir 8-5a-reconciliation-manuelle-split.md (status `archived-split-bis`) pour le contexte
+     du re-split 8-5a → 8-5a-zero/8-5a-base/8-5a-bis. -->
 
 ## Story
 
@@ -19,33 +33,38 @@ so that **mon taux d'auto-affectation atteigne 80% au fil des mois (cf. UX scena
 
 **Story 8-5b = seconde moitié de la story unifiée 8-5**, scindée pré-`bmad-create-story validate` pour respecter la règle de splitting CLAUDE.md (> 5 modules + 3 features distinctes). Voir [`8-5-reconciliation-manuelle-regles-affectation.md`](8-5-reconciliation-manuelle-regles-affectation.md) (status `archived-split`) pour la spec d'origine — toutes les **décisions de conception** (§rules-schema, §rule-application, §accept-with-rule-flow) y sont documentées en détail et restent valides pour 8-5b avec les amendements Q3/Q4a/Q4b/Q5 listés ci-dessous.
 
-**Dépendance bloquante** : Story 8-5a (`8-5a-reconciliation-manuelle-split`) doit être stable (review-closed avec 0 findings > LOW, mergée sur `main`) avant que 8-5b ne soit `ready-for-dev`. 8-5b consomme :
-- `kesh_reconciliation::manual::build_journal_entry_for_counterparty` (helper public 8-5a — utilisé par flow `accept-with-rule` step 8 §accept-with-rule-flow)
-- `kesh_db::repositories::bank_transactions::find_pending_by_id_for_account` (helper 8-5a)
-- Breaking change `POST /accept` discriminator type='invoice' (8-5a) — 8-5b ajoute `type='rule'`
-- `fiscal_years::find_open_for_date_for_company` (vérifié/créé 8-5a T4)
+**Dépendance bloquante (mise à jour 2026-05-07 post-re-split 8-5a)** : Story **8-5a-bis** (`8-5a-bis-split-breaking-accept`) doit être stable (review-closed avec 0 findings > LOW, mergée sur `main`) avant que 8-5b ne soit `ready-for-dev`. 8-5b consomme :
+- `kesh_reconciliation::manual::build_journal_entry_for_counterparty` (helper public 8-5a-base — utilisé par flow `accept-with-rule` step 8 §accept-with-rule-flow)
+- `kesh_db::repositories::reconciliation::find_strictly_pending_by_id_for_account` (helper 8-5a-base, partagé par /manual + /split + flow rule)
+- `bank_account.journal_account_id` column (foundation 8-5a-zero) — résolu serveur-side pour la ligne banque du flow `accept-with-rule`
+- **Breaking change `POST /accept` discriminator** (8-5a-bis) avec enum `AcceptType { Invoice, Split }` — 8-5b ajoute `type='rule'` à cet enum
+- `fiscal_years::find_open_covering_date` (vérifié 8-5a-base T4)
 
-**Pourquoi 8-5b après 8-5a :** la valeur utilisateur du moteur de règles est conditionnée par l'existence du helper `manual::build_journal_entry_for_counterparty` (pour appliquer une rule = créer une journal_entry à la volée comme un manual-match). Sans 8-5a, 8-5b devrait dupliquer ce code, ce qui contredirait DRY. Path dep stable confirmée par le scope 8-5a.
+**Pourquoi 8-5b après 8-5a-bis (post-re-split 2026-05-07) :** la valeur utilisateur du moteur de règles est conditionnée par l'existence du helper `manual::build_journal_entry_for_counterparty` (pour appliquer une rule = créer une journal_entry à la volée comme un manual-match) — livré par 8-5a-base et stabilisé par 8-5a-bis (qui ajoute `type='split'` au discriminator `AcceptType`). Sans 8-5a-bis, 8-5b devrait soit dupliquer ce code (anti-DRY), soit refaire le breaking POST /accept en parallèle (risque de conflit Cargo / Vec ordre tagged enum). Path dep stable confirmée par le re-split 8-5a → 8-5a-zero/base/bis.
 
 **8-5b livre la valeur utilisateur d'optimisation :**
 - **FR47** — moteur de règles persistées (CRUD + application en GET /proposals + POST /accept)
 - **Soft-delete des rules** (Q3 décision Guy 2026-05-07) : préserve l'audit historique `reconciliation_rule.applied`.
 
 **8-5b ne livre PAS** :
-- FR45 manual match (8-5a)
-- FR48 transaction split (8-5a)
+- FR45 manual match (8-5a-base, post-re-split)
+- FR48 transaction split (8-5a-bis, post-re-split)
+- Foundation `bank_account.journal_account_id` (8-5a-zero, post-re-split)
+- Breaking change `POST /accept` discriminator (8-5a-bis, post-re-split — 8-5b ajoute juste `type='rule'`)
 - **FR46 suggestion ML automatique post-manual-match** (reportée v0.2 / Story 8-5c potentielle ou Epic 11+ — décision Guy Q5 2026-05-07)
 - Algorithme heuristique déterministe `suggest_rule` (la fonction décrite §rule-suggestion de la spec d'origine est **caduque**, voir Q5)
 - Endpoint `POST /reconciliation/rules/suggest` (jamais livré)
 
-**Status sprint :** `8-5b-reconciliation-rules-engine: backlog` au moment de la création (2026-05-07). Transition vers `ready-for-dev` après que 8-5a ait clos son cycle review (0 findings > LOW + merged main).
+**Status sprint :** `8-5b-reconciliation-rules-engine: backlog` au moment de la création (2026-05-07). Transition vers `ready-for-dev` après que **8-5a-bis** (post-re-split 2026-05-07) ait clos son cycle review (0 findings > LOW + merged main) — qui implique aussi que 8-5a-zero et 8-5a-base soient déjà mergées (séquence stricte).
 
 **Pré-requis closed (au moment du démarrage 8-5b) :**
-- ✅ Story 8-5a — helpers `kesh-reconciliation::manual` + `kesh-reconciliation::split` + helper `bank_transactions::find_pending_by_id_for_account` + breaking change `POST /accept` discriminator type.
+- ✅ Story **8-5a-zero** — column `bank_account.journal_account_id` + UI configuration (foundation).
+- ✅ Story **8-5a-base** — helper public `kesh-reconciliation::manual::build_journal_entry_for_counterparty` + helper repo `find_strictly_pending_by_id_for_account` + variants AppError (`BankAccountNotConfigured`, `ReconciliationFiscalYearClosed`, `ReconciliationTransactionNotPending`).
+- ✅ Story **8-5a-bis** — helper `kesh-reconciliation::split::*` + breaking change `POST /accept` discriminator `AcceptType { Invoice, Split }` (8-5b ajoute `Rule`) + migration des 15 sites POST /accept dans `reconciliation_e2e.rs`.
 - ✅ Story 8-4 — `kesh-reconciliation` crate base + `with_account_lock` + audit log helpers.
 - ✅ Story 6-2 — multi-tenant scoping pattern KF-002 Pattern 1.
 
-**Crate cible** : extension de `kesh-reconciliation` avec 1 nouveau module `rules` (engine matching counterparty/IBAN/reference + sélection priorité). Le module `manual` existe déjà (livré 8-5a) et est réutilisé tel quel par le flow `accept-with-rule`.
+**Crate cible** : extension de `kesh-reconciliation` avec 1 nouveau module `rules` (engine matching counterparty/IBAN/reference + sélection priorité). Le module `manual` existe déjà (livré 8-5a-base post-re-split) et est réutilisé tel quel par le flow `accept-with-rule`. Le module `split` existe déjà (livré 8-5a-bis post-re-split) mais n'est pas réutilisé par 8-5b (pas de rule type=split).
 
 ### Scope verrouillé — ce qui est livré par 8-5b
 
