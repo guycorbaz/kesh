@@ -19,6 +19,7 @@ pub mod invoices;
 pub mod journal_entries;
 pub mod onboarding;
 pub mod products;
+pub mod reconciliation;
 pub mod refresh_tokens;
 pub mod users;
 pub mod vat_rates;

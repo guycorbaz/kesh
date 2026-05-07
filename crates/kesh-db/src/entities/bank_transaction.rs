@@ -98,6 +98,11 @@ pub struct BankTransaction {
     pub counterparty_name: Option<String>,
     pub status: BankTransactionStatus,
     pub matched_entry_id: Option<i64>,
+    /// Story 8-4 — timestamp de rejet manuel (POST /reconciliation/reject).
+    /// `NULL` = jamais rejetée (nominale) ; `NOT NULL` = exclut de
+    /// `find_pending_transactions_for_account` côté GET /proposals
+    /// (réservée pour 8-5 manual).
+    pub auto_match_rejected_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

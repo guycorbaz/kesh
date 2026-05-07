@@ -300,6 +300,36 @@ pub enum AppError {
     /// Format de fichier non supporté (ni CAMT ni CSV) → `415`.
     #[error("Format de fichier non supporté")]
     BankImportUnsupportedFormat,
+
+    // ----- Story 8-4 — Reconciliation -----
+    /// Advisory lock `GET_LOCK('reconcile:{company}:{account}', timeout)`
+    /// non acquis dans les `timeout_secs` secondes → `409`.
+    #[error("Compte verrouillé par une autre opération de réconciliation")]
+    ReconciliationAccountLocked {
+        bank_account_id: i64,
+        timeout_secs: u32,
+    },
+
+    /// `RELEASE_LOCK` failure (HP3-1 Pass 3 + HP4-1/HP5-1 Pass 4-5
+    /// caller pattern correction) → `500`. Le lock advisory restera
+    /// tenu jusqu'à fin de session MariaDB (cf. L22).
+    #[error("Échec de libération du verrou de réconciliation")]
+    ReconciliationLockReleaseFailed { bank_account_id: i64 },
+
+    /// Tentative de réconcilier une transaction déjà `status='reconciled'`
+    /// → `409` (l'utilisateur a peut-être un onglet caduc).
+    #[error("Transaction déjà réconciliée")]
+    ReconciliationAlreadyReconciled { bank_transaction_id: i64 },
+
+    /// Facture non éligible pour réconciliation → `409` avec `details.reason`
+    /// ∈ `{ "invoice_not_validated", "invoice_already_paid",
+    /// "invoice_journal_entry_not_set", "payment_date_before_invoice_date" }`
+    /// (HP4-2 Pass 4 enum complet 4 reasons).
+    #[error("Facture non éligible pour réconciliation : {reason}")]
+    ReconciliationInvoiceNotEligible {
+        invoice_id: i64,
+        reason: &'static str,
+    },
 }
 
 /// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
@@ -794,6 +824,69 @@ impl IntoResponse for AppError {
                     "Format de fichier non supporté (CAMT.053 XML ou CSV attendus).",
                 ),
             ),
+
+            // ----- Story 8-4 — Reconciliation -----
+            AppError::ReconciliationAccountLocked {
+                bank_account_id,
+                timeout_secs,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-account-locked",
+                    "Un autre import/réconciliation est en cours sur ce compte, réessayez dans quelques secondes.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_ACCOUNT_LOCKED",
+                        "message": msg,
+                        "details": { "bankAccountId": bank_account_id, "retryAfterSeconds": timeout_secs },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            AppError::ReconciliationLockReleaseFailed { bank_account_id } => {
+                let msg = t(
+                    "reconciliation-errors-lock-release-failed",
+                    "Échec interne de libération du verrou. Réessayez.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_LOCK_RELEASE_FAILED",
+                        "message": msg,
+                        "details": { "bankAccountId": bank_account_id },
+                    }
+                });
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+            }
+            AppError::ReconciliationAlreadyReconciled {
+                bank_transaction_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-already-reconciled",
+                    "Cette transaction a déjà été réconciliée.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_ALREADY_RECONCILED",
+                        "message": msg,
+                        "details": { "bankTransactionId": bank_transaction_id },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            AppError::ReconciliationInvoiceNotEligible { invoice_id, reason } => {
+                let msg = t(
+                    "reconciliation-errors-invoice-not-eligible",
+                    "Facture non éligible pour réconciliation.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+                        "message": msg,
+                        "details": { "invoiceId": invoice_id, "reason": reason },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation

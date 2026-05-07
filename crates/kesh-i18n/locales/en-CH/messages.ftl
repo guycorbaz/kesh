@@ -628,3 +628,21 @@ bank-import-profile-errors-column-mapping-xor-violation = Choose `amount` OR `de
 bank-import-profile-errors-date-format-invalid = Invalid chrono date format.
 bank-import-profile-errors-regex-invalid = Invalid filename_pattern regex.
 bank-import-profile-errors-separators-equal = Field and decimal separators must be different.
+
+# Story 8-4 (FR44) — Automatic bank reconciliation.
+reconciliation-page-title = Reconciliation
+reconciliation-page-subtitle = Automatic match proposals transaction ↔ invoice.
+reconciliation-labels-loading = Loading proposals…
+reconciliation-labels-empty = No transactions awaiting reconciliation.
+reconciliation-labels-no-account = No bank account configured.
+reconciliation-labels-account-select = Bank account
+reconciliation-labels-no-candidate = No match
+reconciliation-labels-success-suffix = operation(s) succeeded.
+reconciliation-labels-failed = Partial failures
+reconciliation-cols-tx-date = Date
+reconciliation-cols-tx-amount = Amount
+reconciliation-cols-tx-counterparty = Counterparty
+reconciliation-cols-candidate = Candidate
+reconciliation-cols-score = Score
+reconciliation-actions-accept = Accept
+reconciliation-actions-reject = Reject

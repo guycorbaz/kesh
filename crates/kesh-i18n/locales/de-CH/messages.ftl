@@ -628,3 +628,21 @@ bank-import-profile-errors-column-mapping-xor-violation = Wählen Sie `amount` O
 bank-import-profile-errors-date-format-invalid = Ungültiges chrono-Datumsformat.
 bank-import-profile-errors-regex-invalid = Ungültige Regex für filename_pattern.
 bank-import-profile-errors-separators-equal = Feld- und Dezimaltrennzeichen müssen unterschiedlich sein.
+
+# Story 8-4 (FR44) — Bankabstimmung automatisch.
+reconciliation-page-title = Abstimmung
+reconciliation-page-subtitle = Automatische Vorschläge zum Abgleich Transaktion ↔ Rechnung.
+reconciliation-labels-loading = Vorschläge werden geladen…
+reconciliation-labels-empty = Keine Transaktionen zur Abstimmung vorhanden.
+reconciliation-labels-no-account = Kein Bankkonto konfiguriert.
+reconciliation-labels-account-select = Bankkonto
+reconciliation-labels-no-candidate = Keine Übereinstimmung
+reconciliation-labels-success-suffix = Vorgang/Vorgänge erfolgreich.
+reconciliation-labels-failed = Teilfehler
+reconciliation-cols-tx-date = Datum
+reconciliation-cols-tx-amount = Betrag
+reconciliation-cols-tx-counterparty = Gegenpartei
+reconciliation-cols-candidate = Kandidat
+reconciliation-cols-score = Score
+reconciliation-actions-accept = Akzeptieren
+reconciliation-actions-reject = Ablehnen
