@@ -609,11 +609,28 @@ async fn accept_one(
     let paid_at_candidate = bank_transaction
         .value_date
         .unwrap_or(bank_transaction.booking_date);
+    // Lower bound (existant) — paiement >= invoice.date - 1 day.
     if paid_at_candidate < invoice.date - Duration::days(1) {
         return Err(FailedProposal {
             bank_transaction_id: proposal.bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({ "reason": "payment_date_before_invoice_date" })),
+        });
+    }
+    // Upper bound (P3-M2 Pass 3) — paiement <= invoice.date + WINDOW_DAYS.
+    // Aligne `accept_one` sur le candidate window ±30j de
+    // `find_unpaid_invoices_for_window`. Empêche d'accepter une tx
+    // récente contre une invoice très ancienne ou une tx future contre
+    // invoice récente. L27 (cf. spec) : paiements tardifs > 30j sont
+    // reportés Story 8-5 manual.
+    if paid_at_candidate > invoice.date + Duration::days(WINDOW_DAYS) {
+        return Err(FailedProposal {
+            bank_transaction_id: proposal.bank_transaction_id,
+            error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "payment_date_outside_window",
+                "window_days": WINDOW_DAYS,
+            })),
         });
     }
     let journal_entry_id = invoice.journal_entry_id.unwrap();
@@ -632,6 +649,24 @@ async fn accept_one(
             contact_score: 0.0,
         });
 
+    // Step 7bis — P3-H4 Pass 3 : min-score guard.
+    // Refuse les couples (tx, invoice) avec score total <= 0.0 —
+    // protection server-side contre les bypass UI où un Comptable
+    // forgerait un POST `{bankTransactionId, invoiceId}` arbitraire.
+    // Le score est calculé serveur-side, pas trusté du client. v0.1
+    // pas d'override manuel ; story 8-5 ajoutera la création manuelle
+    // FR45 avec override explicite.
+    if score.total <= 0.0 {
+        return Err(FailedProposal {
+            bank_transaction_id: proposal.bank_transaction_id,
+            error_code: "RECONCILIATION_SCORE_TOO_LOW".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "score_zero_no_match",
+                "score": score,
+            })),
+        });
+    }
+
     // Step 8 — UPDATE bank_transactions + invoices inline.
     // M2 Pass 1 — `NaiveDate::and_hms_opt` est deprecated ; utiliser
     // `and_time(NaiveTime::from_hms_opt(0,0,0))` pour produire le
@@ -644,14 +679,23 @@ async fn accept_one(
     // contre une race entre step 4 et step 8 : le check status au step 4
     // est lu inside lock mais l'UPDATE reste séparé) + check
     // `rows_affected() == 1` pour détecter le no-op silencieux.
+    //
+    // P3-H1 Pass 3 — symétrie optimistic lock avec UPDATE invoices :
+    // ajoute `AND version = ?` pour défense-in-depth contre futures
+    // mutations `bank_transactions` hors flow réconciliation (Story 8-5
+    // manual matching, retroactive parser updates). `bank_tx_version_pre`
+    // est la version courante DB au moment du recharge inside lock par
+    // `find_pending_by_id_for_account` (C2 Pass 1 TOCTOU fix).
+    let bank_tx_version_pre = bank_transaction.version;
     let bank_tx_update = sqlx::query(
         "UPDATE bank_transactions \
          SET matched_entry_id = ?, status = 'reconciled', updated_at = NOW(3), version = version + 1 \
-         WHERE id = ? AND company_id = ? AND status = 'pending'",
+         WHERE id = ? AND company_id = ? AND status = 'pending' AND version = ?",
     )
     .bind(journal_entry_id)
     .bind(proposal.bank_transaction_id)
     .bind(company_id)
+    .bind(bank_tx_version_pre)
     .execute(&mut **tx)
     .await
     .map_err(|e| FailedProposal {
@@ -922,7 +966,15 @@ async fn reject_batch(
         // celle de MariaDB. SELECT séparé après UPDATE car MariaDB
         // RETURNING n'est pas systématiquement supporté sur le sub-set
         // de versions ciblé (10.5+ requis pour RETURNING avec UPDATE).
-        let rejected_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        //
+        // P3-C1 Pass 3 — `auto_match_rejected_at` colonne `DATETIME(3)`
+        // (sans TZ DB-side, cf. migration `20260507100001_reconciliation_8_4.sql:15`)
+        // — sqlx-mysql décode en `NaiveDateTime`. Le type `DateTime<Utc>`
+        // est réservé aux colonnes `TIMESTAMP`. La sérialisation JSON
+        // applique `.and_utc()` car MariaDB stocke en UTC (convention
+        // projet) — `.and_utc()` ré-attache juste le marqueur Utc à la
+        // valeur naïve, pas de conversion timezone applicative.
+        let rejected_at_naive: chrono::NaiveDateTime = sqlx::query_scalar(
             "SELECT auto_match_rejected_at FROM bank_transactions \
              WHERE id = ? AND company_id = ?",
         )
@@ -933,7 +985,7 @@ async fn reject_batch(
 
         rejected.push(RejectedProposal {
             bank_transaction_id: id,
-            rejected_at,
+            rejected_at: rejected_at_naive.and_utc(),
         });
     }
 
