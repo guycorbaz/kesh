@@ -157,7 +157,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 
 92. **(FR48 — split RBAC Comptable+)** Given user `Consultation`, When POST split, Then `403 Forbidden`. *Test E2E HTTP : `split_requires_comptable_role`.*
 
-93. **(FR48 — split audit log)** Given POST split happy 3 lignes, When commit, Then audit `(action='reconciliation.split_applied', entity_id=tx.id, details = { ..., splits: [...3 entries...], total_amount: '10700.00' })` ET `journal_entry.created` émis par `create_in_tx`. *Test E2E HTTP : `split_emits_audit_log`.*
+93. **(FR48 — split audit log)** Given POST split happy 3 lignes (comptes 5000, 5000, 5700), When commit, Then audit_log contient 2 entrées : `(action='reconciliation.split_applied', entity_type='bank_transaction', entity_id=tx.id, details = { bank_transaction_id, splits: [{ counterparty_account_id, amount, description }, { counterparty_account_id, amount, description }, ...], total_amount: '10700.00' })` (structure cohérente AC #84, snake_case) ET `(action='journal_entry.created', entity_type='journal_entry', entity_id=<new_je_id>)` émis par `journal_entries::create_in_tx`. *Test E2E HTTP : `split_emits_audit_log`.*
 
 ### Breaking change `POST /accept` discriminator type (Q2 décision Guy)
 
@@ -242,11 +242,18 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
       entry_date: NaiveDate,
   ) -> NewJournalEntry { ... }
 
+  /// Détail d'un split pour `build_journal_entry_for_split` (type-safe).
+  pub struct SplitDetail {
+      pub account_id: i64,
+      pub amount: Decimal,
+      pub description: String,
+  }
+
   /// Variante N+1 lignes pour split (FR48). Pure.
   pub fn build_journal_entry_for_split(
       tx: &BankTransaction,
       bank_account_journal_id: i64,
-      splits: &[(i64 /* account_id */, Decimal, String /* description */)],
+      splits: &[SplitDetail],
       description: String,
       entry_date: NaiveDate,
   ) -> NewJournalEntry { ... }
@@ -297,8 +304,8 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 ### T3. Routes API `POST /manual` + `POST /split` + breaking change `/accept` (AC #75-#96)
 
 - [ ] T3.1 — Étendre `crates/kesh-api/src/routes/reconciliation.rs` (du 8-4) :
-  - Handler `post_manual` (cf. spec d'origine §manual-match-flow steps 0-8 + 10, **sans step 9 ruleSuggestion**).
-  - Handler `post_split` (cf. spec d'origine §split-flow).
+  - Handler `post_manual` (cf. spec d'origine §manual-match-flow steps 0-8 + 10, **sans step 9 ruleSuggestion**). **Résolution `entry_date`** : utiliser la valeur `valueDate` du request body si fournie, sinon fallback `tx.booking_date`. Cette date est utilisée pour : (a) résoudre le `fiscal_year_id` via `find_open_covering_date`, (b) positionner `journal_entry.date` lors de la création via `create_in_tx`.
+  - Handler `post_split` (cf. spec d'origine §split-flow). Idem résolution `entry_date` que `/manual`.
   - Modifier `post_accept` pour exiger `type` discriminator obligatoire (Q2 breaking) :
     - `type: 'invoice'` → flow 8-4 inchangé.
     - `type` absent ou non reconnu (`'manual'`/`'split'`/`'rule'` v0.1 8-5a) → `400 Validation` avec liste des types acceptés.
@@ -308,6 +315,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #75-#10
 
 - [ ] T3.3 — Étendre `crates/kesh-api/src/errors.rs` (variantes ajoutées) :
   - `AppError::AccountNotFound { account_id }` (si pas déjà existant) → `404 ACCOUNT_NOT_FOUND`.
+  - `AppError::ReconciliationAlreadyReconciled { bank_transaction_id }` → `409 RECONCILIATION_ALREADY_RECONCILED` (émis si `find_strictly_pending_by_id_for_account` retourne `None` car status ≠ 'pending' ou tx introuvable).
   - `AppError::ReconciliationFiscalYearClosed { entry_date }` → `409 RECONCILIATION_FISCAL_YEAR_CLOSED`.
   - `AppError::ReconciliationSplitImbalance { expected, actual, difference }` → `400 RECONCILIATION_SPLIT_IMBALANCE`.
 
@@ -426,7 +434,8 @@ Le flow `/manual` et `/split` tourne sous `with_account_lock` qui ouvre une `tx_
 
 ### Patterns architecturaux à respecter
 
-- **Pas de dépendance circulaire** : `kesh-reconciliation → kesh-core, kesh-db` (cohérent 8-4). Les nouveaux modules `manual`, `split` consomment `kesh_db::entities::BankTransaction` et `kesh_core::accounting::NewJournalEntry`.
+- **Pas de dépendance circulaire** : `kesh-reconciliation → kesh-core, kesh-db` (cohérent 8-4). Les nouveaux modules `manual`, `split` consomment `kesh_db::entities::BankTransaction` et `kesh_db::entities::journal_entry::NewJournalEntry`.
+- **Cohérence audit log** : tous les `details_json` pour `reconciliation.manual_matched` et `reconciliation.split_applied` utilisent snake_case systématiquement : `bank_transaction_id`, `counterparty_account_id`, `journal_entry_id`, `total_amount`, `amount`, `description`, `value_date`, `was_previously_rejected`. Jamais de mélange camelCase (cohérent AC #84, AC #93, AC #90 error `missingAccountIds` est camelCase uniquement en réponse HTTP, jamais dans `details_json`).
 - **Pas d'`f64` pour montants** : `Decimal` partout (`splits[i].amount`, `tx.amount`). Le `f64` n'apparaît que dans le score 8-4 hérité, pas dans 8-5a.
 - **Tests : éviter le coupling temporel** : utiliser des dates fixes dans les seeds (`NaiveDate::from_ymd_opt(2026, 5, 15)`).
 - **`auto_match_rejected_at=NULL` au manual-match** : indispensable pour éviter qu'une tx manual-matched apparaisse comme « rejetée + matched » (état incohérent).
@@ -557,3 +566,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 |------|--------|--------|
 | **2026-05-07** | Spec créée par split mécanique de 8-5 unifiée (décision Guy 2026-05-07 Q1=B). Découpage scope FR45 (manual) + FR48 (split) + breaking change `POST /accept` discriminator (Q2). FR46 suggestion ML retirée (Q5 — reportée v0.2). 26 ACs (#75-#100). Tasks T1-T8. Path-dépendance 8-5b sur le helper `manual::build_journal_entry_for_counterparty` documentée. Status `8-5a-reconciliation-manuelle-split: backlog → ready-for-dev`. | Claude (Opus 4.7 split workflow) |
 | **2026-05-07** | **Pass 1 validate Sonnet 4.6** — 7 findings (2 CRITICAL + 3 HIGH + 2 MEDIUM + 0 LOW appliqués). Patches appliqués : F1 import erroné `kesh_core::accounting::NewJournalEntry` → `kesh_db::entities::journal_entry::NewJournalEntry` (T2.1) ; F2 T1 refactored — `find_pending_by_id_for_account` existe dans reconciliation.rs sans filtre status, ajout de `find_strictly_pending_by_id_for_account` dans le même module ; F3 T4 refactored — `find_open_for_date_for_company` n'existe pas, utiliser `find_open_covering_date` (Story 3-7) ; F4 compte tests 8-4 corrigé 21→22 actifs + 1 ignored = 23 total (AC #96, T3.4, §Risques 1) ; F5 décompte tests T3.5 unifié à 18 min (10+6+2) ; F6 `accountId` → `counterpartyAccountId` dans AC #85-#86 ; F7 `was_previously_rejected` précisé both cases (AC #84) ; + LOW : `splitsCount` retiré de `splitTransaction` response frontend, `missing_account_ids` → `missingAccountIds` camelCase (AC #90), filtre classe compte explicité côté client dans T5.3. Trend : Pass 1 = 5 findings > LOW. Prochaine étape : Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
+| **2026-05-07** | **Pass 2 validate Haiku 4.5** — 6 findings (2 CRITICAL + 2 HIGH + 2 MEDIUM + 2 LOW appliqués). Patches majeurs : F1 AC #93 `reconciliation.split_applied` `details_json` structure complètement spécifiée (cohérent AC #84 snake_case) ; F2 T3.1 `entry_date` résolution clarifiée (fallback `tx.booking_date` si `valueDate` omis) ; F3 T2.1 tuple splits remplacé par struct `SplitDetail` type-safe ; F4 cohérence audit log snake_case documentée ; F5 T3.3 variante `ReconciliationAlreadyReconciled` explicitée ; F6 `valueDate` omis fallback behavior documenté. LOW : AC #96 lisibilité améliorée, test Vitest gaps notées. Trend : Pass 1 = 5 > LOW → Pass 2 = 6 > LOW (régression, mais sur fondements architecturaux solides — 4 issues CRITICAL+HIGH adressées profondeur codebase). Prochaine étape : Pass 3 Opus 4.7 (cycle orthogonal Sonnet → Haiku → Opus). | Claude (Haiku 4.5 validate) |
