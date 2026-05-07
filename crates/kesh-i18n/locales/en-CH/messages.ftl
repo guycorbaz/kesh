@@ -655,3 +655,21 @@ reconciliation-errors-already-reconciled = This transaction is already reconcile
 reconciliation-errors-invoice-not-eligible = This invoice is not eligible for reconciliation.
 reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
 reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.
+
+# Story 8-5a-zero — `bank_account.journal_account_id` link configuration.
+bank-accounts-labels-page-title = Bank accounts
+bank-accounts-labels-page-subtitle = Link each bank account to a chart-of-accounts entry (typical class 1: 1020 Cash, 1030 Bank).
+bank-accounts-labels-bank-name = Bank
+bank-accounts-labels-iban = IBAN
+bank-accounts-labels-journal-account-id = Linked ledger account
+bank-accounts-labels-not-configured = Not configured
+bank-accounts-labels-empty = No bank accounts configured.
+bank-accounts-labels-loading = Loading…
+bank-accounts-actions-link-account = Link to chart of accounts
+bank-accounts-actions-unlink-account = Unlink
+bank-accounts-actions-cancel = Cancel
+bank-accounts-actions-submit = Link
+bank-accounts-errors-account-not-found = Ledger account not found.
+bank-accounts-errors-invalid-account-type = Invalid account type (Asset or Liability required).
+bank-accounts-toast-link-success = Bank account successfully linked to chart of accounts.
+bank-accounts-toast-unlink-success = Bank account unlinked from chart of accounts.

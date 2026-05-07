@@ -328,6 +328,17 @@ export const apiClient = {
 		});
 	},
 
+	/**
+	 * PATCH JSON — Story 8-5a-zero (`PATCH /api/v1/bank-accounts/{id}`).
+	 * Aligné sur `put` et `post` : Content-Type application/json, JWT auto-injecté.
+	 */
+	patch<T>(url: string, body?: unknown): Promise<T> {
+		return request<T>(url, {
+			method: 'PATCH',
+			body: body !== undefined ? JSON.stringify(body) : undefined,
+		});
+	},
+
 	delete(url: string): Promise<void> {
 		return request<void>(url, { method: 'DELETE' });
 	},

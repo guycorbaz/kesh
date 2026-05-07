@@ -1,11 +1,12 @@
 //! Repository CRUD pour `BankAccount`.
 
 use sqlx::mysql::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 use crate::entities::bank_account::{BankAccount, NewBankAccount};
 use crate::errors::{DbError, map_db_error};
 
-const FIND_BY_ID_SQL: &str = "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, created_at, updated_at \
      FROM bank_accounts WHERE id = ?";
 
 /// Crée un nouveau compte bancaire et retourne l'entité persistée.
@@ -52,7 +53,7 @@ pub async fn find_primary(
     company_id: i64,
 ) -> Result<Option<BankAccount>, DbError> {
     sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, created_at, updated_at \
          FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE LIMIT 1",
     )
     .bind(company_id)
@@ -77,7 +78,7 @@ pub async fn find_by_id_for_company(
     id: i64,
 ) -> Result<Option<BankAccount>, DbError> {
     sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, created_at, updated_at \
          FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
     )
     .bind(company_id)
@@ -93,7 +94,7 @@ pub async fn list_by_company(
     company_id: i64,
 ) -> Result<Vec<BankAccount>, DbError> {
     sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, created_at, updated_at \
          FROM bank_accounts WHERE company_id = ? ORDER BY is_primary DESC, id",
     )
     .bind(company_id)
@@ -120,7 +121,7 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, version, created_at, updated_at \
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, created_at, updated_at \
          FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE LIMIT 1 FOR UPDATE",
     )
     .bind(new.company_id)
@@ -195,4 +196,93 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
             Ok(account)
         }
     }
+}
+
+/// Met à jour le `journal_account_id` d'un bank_account scopé multi-tenant
+/// **dans une transaction fournie par le caller**.
+///
+/// Story 8-5a-zero — pose le pattern `bank_account.journal_account_id` qui sera
+/// consommé par 8-5a-base (manual match) et 8-5a-bis (split) sans body field
+/// `bankLedgerAccountId` (résolu serveur-side via cette colonne).
+///
+/// **Pass 3 Opus 4.7 — F1''' fix** : la fonction prend `&mut Transaction<MySql>`
+/// au lieu d'ouvrir sa propre transaction. Cela permet au handler de partager
+/// la tx avec `audit_log::insert_in_tx` et de garantir l'atomicité UPDATE +
+/// audit (pattern Story 3-5 + 7-3 + 8-4 — audit_log écrit depuis le route
+/// handler, jamais depuis le repo).
+///
+/// Optimistic lock sur `version` (cohérent KF-004). Court-circuit no-op : si
+/// `journal_account_id` ne change pas, retourne l'entité inchangée sans bump
+/// version (le caller doit comparer `existing.version == returned.version`
+/// pour détecter et skipper l'audit_log).
+///
+/// Erreurs :
+/// - `DbError::NotFound` : bank_account introuvable ou cross-tenant.
+/// - `DbError::OptimisticLockConflict` : `expected_version` ne match pas.
+///
+/// **Note transactional safety** : le SELECT FOR UPDATE initial est scopé par
+/// `(company_id, id)`, l'UPDATE final est scopé par `(id, version)`. Le
+/// post-fetch via `FIND_BY_ID_SQL` (filtre par `id` seul) est sûr dans la même
+/// tx car la row appartient nécessairement à la company (sinon le SELECT FOR
+/// UPDATE aurait retourné None). Cohérent avec le pattern `upsert_primary`.
+pub async fn set_journal_account_id_for_company(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+    journal_account_id: Option<i64>,
+    expected_version: i32,
+) -> Result<BankAccount, DbError> {
+    // SELECT FOR UPDATE scopé multi-tenant + verrou X sur la row.
+    let existing = sqlx::query_as::<_, BankAccount>(
+        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
+         version, created_at, updated_at FROM bank_accounts \
+         WHERE company_id = ? AND id = ? FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let existing = match existing {
+        Some(b) => b,
+        None => return Err(DbError::NotFound),
+    };
+
+    // KF-004 court-circuit no-op : pas de bump version, pas d'audit_log côté
+    // handler. Le caller (handler) doit checker `existing.version ==
+    // returned.version` pour détecter le no-op et skipper
+    // `audit_log::insert_in_tx`.
+    if existing.journal_account_id == journal_account_id {
+        return Ok(existing);
+    }
+
+    let rows = sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 \
+         WHERE id = ? AND version = ?",
+    )
+    .bind(journal_account_id)
+    .bind(id)
+    .bind(expected_version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    if rows == 0 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    // Post-fetch : FIND_BY_ID_SQL filtre par `id` seul, mais le SELECT FOR
+    // UPDATE initial + l'UPDATE scopé garantissent qu'on ne peut arriver ici
+    // que si la row appartient à la company (cohérent `upsert_primary`).
+    let updated = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    // NOTE : pas de tx.commit() ici — c'est le caller (route handler) qui
+    // commit après avoir écrit l'audit_log dans la même tx.
+    Ok(updated)
 }

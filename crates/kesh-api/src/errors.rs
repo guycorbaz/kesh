@@ -244,8 +244,32 @@ pub enum AppError {
 
     /// Le `bankAccountId` fourni n'existe pas / appartient à une autre
     /// company → `404` (jamais `403`, pattern KF-002 anti-énumération).
+    ///
+    /// Story 8-5a-zero (F4''') : variant réutilisé pour le PATCH
+    /// `/bank-accounts/{id}`. Le code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`
+    /// est ancré sémantiquement « bank-imports » mais émis aussi sur PATCH
+    /// `/bank-accounts/{id}` v0.1 (dette de naming L64 documentée). v0.2 :
+    /// renommer le code en `BANK_ACCOUNT_NOT_FOUND` (breaking client) ou
+    /// créer un variant dédié si le frontend distingue les contextes.
     #[error("Compte bancaire non trouvé")]
     BankAccountNotFound,
+
+    // ----- Story 8-5a-zero — bank_account.journal_account_id link -----
+    /// Le compte du plan comptable référencé par `journalAccountId` n'existe
+    /// pas, est archivé, ou appartient à une autre company → `404`
+    /// `ACCOUNT_NOT_FOUND` (anti-énumération KF-002 — jamais 403).
+    #[error("Compte du plan comptable non trouvé : id={account_id}")]
+    AccountNotFound { account_id: i64 },
+
+    /// Le compte référencé n'est pas de type Asset ou Liability → `400`
+    /// `INVALID_ACCOUNT_TYPE`. Un bank_account ne peut être lié qu'à un
+    /// compte d'actif (1020 Caisse, 1030 Banque) ou de passif rare (2100
+    /// découvert chronique). Revenue/Expense rejetés (cf. §validation-account-type).
+    #[error("Type de compte invalide : {account_type} (Asset|Liability requis)")]
+    InvalidAccountType {
+        account_id: i64,
+        account_type: String,
+    },
 
     // ----- Story 8-2 — Bank profiles + CSV import -----
     /// Profil CSV introuvable / cross-tenant (pattern KF-002) → `404`.
@@ -688,6 +712,42 @@ impl IntoResponse for AppError {
                     "Compte bancaire non trouvé.",
                 ),
             ),
+
+            // ----- Story 8-5a-zero — bank_account.journal_account_id link -----
+            AppError::AccountNotFound { account_id } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "ACCOUNT_NOT_FOUND",
+                        "message": t(
+                            "bank-accounts-errors-account-not-found",
+                            "Compte du plan comptable non trouvé.",
+                        ),
+                        "details": { "accountId": account_id }
+                    }
+                });
+                (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+
+            AppError::InvalidAccountType {
+                account_id,
+                account_type,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "INVALID_ACCOUNT_TYPE",
+                        "message": t(
+                            "bank-accounts-errors-invalid-account-type",
+                            "Type de compte invalide (Actif ou Passif requis).",
+                        ),
+                        "details": {
+                            "accountId": account_id,
+                            "accountType": account_type,
+                            "allowedTypes": ["Asset", "Liability"],
+                        }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
 
             // ----- Story 8-2 — bank profiles + CSV import -----
             AppError::BankCsvProfileNotFound { available_profiles } => {

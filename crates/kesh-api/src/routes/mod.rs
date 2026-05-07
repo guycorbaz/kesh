@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod auth;
+pub mod bank_accounts;
 pub mod bank_imports;
 pub mod bank_profiles;
 pub mod companies;
