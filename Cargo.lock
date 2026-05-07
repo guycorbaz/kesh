@@ -1697,6 +1697,7 @@ dependencies = [
  "kesh-i18n",
  "kesh-import",
  "kesh-qrbill",
+ "kesh-reconciliation",
  "kesh-seed",
  "reqwest",
  "rust_decimal",
@@ -1801,6 +1802,18 @@ dependencies = [
 [[package]]
 name = "kesh-reconciliation"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "kesh-db",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "kesh-report"

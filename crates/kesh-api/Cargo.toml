@@ -10,6 +10,7 @@ kesh-db = { path = "../kesh-db" }
 kesh-i18n = { path = "../kesh-i18n" }
 kesh-import = { path = "../kesh-import" }
 kesh-qrbill = { path = "../kesh-qrbill" }
+kesh-reconciliation = { path = "../kesh-reconciliation" }
 kesh-seed = { path = "../kesh-seed" }
 
 axum = { version = "0.8", features = ["multipart"] }

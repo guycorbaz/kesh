@@ -300,6 +300,31 @@ pub enum AppError {
     /// Format de fichier non supporté (ni CAMT ni CSV) → `415`.
     #[error("Format de fichier non supporté")]
     BankImportUnsupportedFormat,
+
+    // ----- Story 8-4 — Reconciliation -----
+    /// Advisory lock `GET_LOCK('reconcile:{company}:{account}', timeout)`
+    /// non acquis dans les `timeout_secs` secondes → `409`.
+    #[error("Compte verrouillé par une autre opération de réconciliation")]
+    ReconciliationAccountLocked {
+        bank_account_id: i64,
+        timeout_secs: u32,
+    },
+
+    /// `RELEASE_LOCK` failure (HP3-1 Pass 3 + HP4-1/HP5-1 Pass 4-5
+    /// caller pattern correction) → `500`. Le lock advisory restera
+    /// tenu jusqu'à fin de session MariaDB (cf. L22).
+    #[error("Échec de libération du verrou de réconciliation")]
+    ReconciliationLockReleaseFailed { bank_account_id: i64 },
+    //
+    // M6 Pass 1 code review — variants supprimés :
+    // - `ReconciliationAlreadyReconciled { bank_transaction_id }` :
+    //   le cas est représenté par `FailedProposal { error_code:
+    //   "RECONCILIATION_ALREADY_RECONCILED" }` per-proposal au lieu
+    //   de remonter en `AppError` global → variant dead code.
+    // - `ReconciliationInvoiceNotEligible { invoice_id, reason }` :
+    //   idem, le 409 invoice-eligibility est représenté en
+    //   `FailedProposal` per-proposal (4 reasons enum dans
+    //   `details.reason`).
 }
 
 /// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
@@ -794,6 +819,42 @@ impl IntoResponse for AppError {
                     "Format de fichier non supporté (CAMT.053 XML ou CSV attendus).",
                 ),
             ),
+
+            // ----- Story 8-4 — Reconciliation -----
+            AppError::ReconciliationAccountLocked {
+                bank_account_id,
+                timeout_secs,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-account-locked",
+                    "Un autre import/réconciliation est en cours sur ce compte, réessayez dans quelques secondes.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_ACCOUNT_LOCKED",
+                        "message": msg,
+                        "details": { "bankAccountId": bank_account_id, "retryAfterSeconds": timeout_secs },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            AppError::ReconciliationLockReleaseFailed { bank_account_id } => {
+                let msg = t(
+                    "reconciliation-errors-lock-release-failed",
+                    "Échec interne de libération du verrou. Réessayez.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_LOCK_RELEASE_FAILED",
+                        "message": msg,
+                        "details": { "bankAccountId": bank_account_id },
+                    }
+                });
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+            }
+            // M6 Pass 1 code review : variants `ReconciliationAlreadyReconciled` et
+            // `ReconciliationInvoiceNotEligible` supprimés (jamais émis comme
+            // `AppError` global, représentés en `FailedProposal` per-proposal).
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation

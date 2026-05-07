@@ -186,6 +186,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/bank-profiles/{id}",
             axum::routing::put(routes::bank_profiles::update).delete(routes::bank_profiles::delete),
         )
+        // Story 8-4 : routes réconciliation (Comptable+, FR44).
+        .route(
+            "/api/v1/reconciliation/proposals",
+            get(routes::reconciliation::get_proposals),
+        )
+        .route(
+            "/api/v1/reconciliation/accept",
+            post(routes::reconciliation::post_accept),
+        )
+        .route(
+            "/api/v1/reconciliation/reject",
+            post(routes::reconciliation::post_reject),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));

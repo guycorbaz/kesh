@@ -628,3 +628,30 @@ bank-import-profile-errors-column-mapping-xor-violation = Scegli `amount` O `deb
 bank-import-profile-errors-date-format-invalid = Formato data chrono non valido.
 bank-import-profile-errors-regex-invalid = Regex filename_pattern non valida.
 bank-import-profile-errors-separators-equal = I separatori campi e decimale devono essere diversi.
+
+# Story 8-4 (FR44) — Riconciliazione bancaria automatica.
+reconciliation-page-title = Riconciliazione
+reconciliation-page-subtitle = Proposte automatiche di matching transazione ↔ fattura.
+reconciliation-labels-loading = Caricamento delle proposte…
+reconciliation-labels-empty = Nessuna transazione in attesa di riconciliazione.
+reconciliation-labels-no-account = Nessun conto bancario configurato.
+reconciliation-labels-account-select = Conto bancario
+reconciliation-labels-no-candidate = Nessuna corrispondenza
+reconciliation-labels-success-suffix = operazione/i riuscita/e.
+reconciliation-labels-failed = Errori parziali
+reconciliation-cols-tx-date = Data
+reconciliation-cols-tx-amount = Importo
+reconciliation-cols-tx-counterparty = Controparte
+reconciliation-cols-candidate = Candidato
+reconciliation-cols-score = Score
+reconciliation-actions-accept = Accettare
+reconciliation-actions-reject = Rifiutare
+# H8 Pass 1 code review — 8 chiavi canoniche AC #61.
+reconciliation-labels-validate-selected = Convalida selezione
+reconciliation-labels-reject-selected = Rifiuta selezione
+reconciliation-labels-score = Punteggio
+reconciliation-errors-account-locked = Conto bancario in fase di riconciliazione da parte di un altro utente. Riprova tra qualche secondo.
+reconciliation-errors-already-reconciled = Questa transazione è già stata riconciliata.
+reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla riconciliazione.
+reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
+reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.

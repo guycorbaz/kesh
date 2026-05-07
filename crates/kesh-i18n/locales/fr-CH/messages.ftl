@@ -676,3 +676,31 @@ bank-import-profile-errors-column-mapping-xor-violation = Choisir `amount` OU `d
 bank-import-profile-errors-date-format-invalid = Format de date chrono invalide.
 bank-import-profile-errors-regex-invalid = Regex filename_pattern invalide.
 bank-import-profile-errors-separators-equal = Les séparateurs champs et décimal doivent être différents.
+
+# Story 8-4 (FR44) — Réconciliation bancaire automatique.
+reconciliation-page-title = Réconciliation
+reconciliation-page-subtitle = Propositions automatiques de matching transaction ↔ facture.
+reconciliation-labels-loading = Chargement des propositions…
+reconciliation-labels-empty = Aucune transaction en attente de réconciliation.
+reconciliation-labels-no-account = Aucun compte bancaire configuré.
+reconciliation-labels-account-select = Compte bancaire
+reconciliation-labels-no-candidate = Aucune correspondance
+reconciliation-labels-success-suffix = opération(s) réussie(s).
+reconciliation-labels-failed = Échecs partiels
+reconciliation-cols-tx-date = Date
+reconciliation-cols-tx-amount = Montant
+reconciliation-cols-tx-counterparty = Contrepartie
+reconciliation-cols-candidate = Candidate
+reconciliation-cols-score = Score
+reconciliation-actions-accept = Accepter
+reconciliation-actions-reject = Rejeter
+# H8 Pass 1 code review — 8 clés canoniques AC #61 (en parallèle des
+# clés existantes utilisées par le composant).
+reconciliation-labels-validate-selected = Valider sélection
+reconciliation-labels-reject-selected = Rejeter sélection
+reconciliation-labels-score = Score
+reconciliation-errors-account-locked = Compte bancaire en cours de réconciliation par un autre utilisateur. Réessayez dans quelques secondes.
+reconciliation-errors-already-reconciled = Cette transaction est déjà réconciliée.
+reconciliation-errors-invoice-not-eligible = Cette facture n'est pas éligible à la réconciliation.
+reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
+reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
