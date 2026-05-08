@@ -23,6 +23,9 @@
 		ReconciliationProposal,
 	} from './reconciliation.types';
 	import ScoreBadge from './ScoreBadge.svelte';
+	import ManualMatchModal from './ManualMatchModal.svelte';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 	type Props = {
 		bankAccountId: number;
@@ -30,6 +33,10 @@
 	let { bankAccountId }: Props = $props();
 
 	let proposals = $state<ReconciliationProposal[]>([]);
+	// Story 8-5a-base FR45 — manual match modal state.
+	let manualOpen = $state(false);
+	let manualProposal = $state<ReconciliationProposal | null>(null);
+	let accounts = $state<AccountResponse[]>([]);
 	// γ refactor BS1 — checkbox tx-level top-1 only : selected = Set<txId>
 	// (l'invoiceId top-1 est ré-extrait au moment du submit).
 	let selected = $state<Set<number>>(new Set());
@@ -63,6 +70,32 @@
 	$effect(() => {
 		void load();
 	});
+
+	// Story 8-5a-base — load accounts une fois (utilisé par le ManualMatchModal,
+	// pré-filtré dans la modal).
+	$effect(() => {
+		void (async () => {
+			try {
+				accounts = await fetchAccounts();
+			} catch {
+				// Silencieux : la modal affichera un select vide si erreur,
+				// le user ne peut pas réconcilier sans accounts mais le
+				// flow accept/reject reste fonctionnel.
+				accounts = [];
+			}
+		})();
+	});
+
+	function openManualMatch(p: ReconciliationProposal) {
+		manualProposal = p;
+		manualOpen = true;
+	}
+
+	async function onManualSuccess() {
+		manualOpen = false;
+		manualProposal = null;
+		await load();
+	}
 
 	function toggle(txId: number) {
 		const next = new Set(selected);
@@ -173,6 +206,7 @@
 					<th class="text-left">{i18nMsg('reconciliation-cols-tx-counterparty', 'Contrepartie')}</th>
 					<th class="text-left">{i18nMsg('reconciliation-cols-candidate', 'Candidate')}</th>
 					<th class="text-left">{i18nMsg('reconciliation-cols-score', 'Score')}</th>
+					<th class="text-left"></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -207,10 +241,37 @@
 								<ScoreBadge score={p.candidates[0].score.total} />
 							</td>
 						{/if}
+						<td>
+							<!-- Story 8-5a-base FR45 — bouton « Affecter manuellement »
+							     disponible sur toutes les rows pending (avec ou sans
+							     candidate auto-matchée). -->
+							<button
+								type="button"
+								class="text-xs text-primary underline disabled:opacity-50"
+								disabled={busy}
+								onclick={() => openManualMatch(p)}
+								data-testid="manual-match-button"
+								data-tx-id={p.bankTransactionId}
+							>
+								{i18nMsg('reconciliation-manual-button-label', 'Affecter manuellement')}
+							</button>
+						</td>
 					</tr>
 				{/each}
 			</tbody>
 		</table>
+
+		<ManualMatchModal
+			open={manualOpen}
+			onOpenChange={(v) => {
+				manualOpen = v;
+				if (!v) manualProposal = null;
+			}}
+			{bankAccountId}
+			proposal={manualProposal}
+			{accounts}
+			onSuccess={onManualSuccess}
+		/>
 
 		{#if failed.length > 0}
 			<div class="mt-4" data-testid="reconciliation-failed">

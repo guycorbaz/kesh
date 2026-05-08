@@ -5,6 +5,7 @@ import { authState } from '$lib/app/stores/auth.svelte';
 import {
 	acceptProposals,
 	getProposals,
+	manualMatchTransaction,
 	rejectProposals,
 } from './reconciliation.api';
 
@@ -76,5 +77,34 @@ describe('reconciliation.api', () => {
 		const body = JSON.parse(init.body as string);
 		expect(body.bankAccountId).toBe(7);
 		expect(body.bankTransactionIds).toEqual([10, 11]);
+	});
+
+	// Story 8-5a-base FR45 — manual match.
+	it('manualMatchTransaction appelle POST /reconciliation/manual sans bankLedgerAccountId', async () => {
+		await manualMatchTransaction(17, 42, 6810, 'Frais TWINT mai', '2026-05-15');
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toContain('/api/v1/reconciliation/manual');
+		expect(init.method).toBe('POST');
+		const body = JSON.parse(init.body as string);
+		expect(body.bankAccountId).toBe(17);
+		expect(body.bankTransactionId).toBe(42);
+		expect(body.counterpartyAccountId).toBe(6810);
+		expect(body.description).toBe('Frais TWINT mai');
+		expect(body.valueDate).toBe('2026-05-15');
+		// Démarcation explicite vs spec 8-5a unifiée : PAS de
+		// `bankLedgerAccountId` dans le body (résolu serveur-side via
+		// `bank_account.journal_account_id` foundation 8-5a-zero).
+		expect(body.bankLedgerAccountId).toBeUndefined();
+	});
+
+	it('manualMatchTransaction omet description / valueDate quand absents', async () => {
+		await manualMatchTransaction(17, 42, 6810);
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		const body = JSON.parse(init.body as string);
+		expect(body.description).toBeUndefined();
+		expect(body.valueDate).toBeUndefined();
+		// Verbe HTTP doit rester POST (cf. Pass 4 Sonnet F1 + Pass 5 Haiku
+		// M1 — naming clarification).
+		expect(init.method).toBe('POST');
 	});
 });

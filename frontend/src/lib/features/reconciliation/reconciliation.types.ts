@@ -68,3 +68,9 @@ export interface RejectResponse {
 	rejected: RejectedProposal[];
 	failed: FailedProposal[];
 }
+
+// Story 8-5a-base FR45 — réconciliation manuelle.
+export interface ManualMatchResponse {
+	bankTransactionId: number;
+	journalEntryId: number;
+}

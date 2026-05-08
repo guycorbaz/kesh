@@ -656,6 +656,13 @@ reconciliation-errors-invoice-not-eligible = This invoice is not eligible for re
 reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
 reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.
 
+# Story 8-5a-base FR45 — Manual reconciliation.
+reconciliation-manual-button-label = Assign manually
+reconciliation-manual-modal-title = Manual reconciliation
+reconciliation-manual-counterparty-label = Counterparty account
+reconciliation-manual-description-label = Description
+reconciliation-manual-bank-account-not-configured = The bank account is not configured. Link a chart-of-accounts entry under /bank-accounts.
+
 # Story 8-5a-zero — `bank_account.journal_account_id` link configuration.
 bank-accounts-labels-page-title = Bank accounts
 bank-accounts-labels-page-subtitle = Link each bank account to a chart-of-accounts entry (typical class 1: 1020 Cash, 1030 Bank).

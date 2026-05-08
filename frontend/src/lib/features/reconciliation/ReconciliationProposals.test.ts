@@ -21,6 +21,13 @@ vi.mock('./reconciliation.api', () => ({
 	getProposals: vi.fn(),
 	acceptProposals: vi.fn(),
 	rejectProposals: vi.fn(),
+	manualMatchTransaction: vi.fn(),
+}));
+
+// Story 8-5a-base — accounts API mocked (les comptes sont chargés par
+// ReconciliationProposals au mount pour passer au ManualMatchModal).
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock i18n util pour rendre le composant déterministe (renvoie le
@@ -166,6 +173,28 @@ describe('ReconciliationProposals', () => {
 		const [bankAccountId, items] = mockApi.acceptProposals.mock.calls[0];
 		expect(bankAccountId).toBe(17);
 		expect(items).toEqual([{ bankTransactionId: 42, invoiceId: 101 }]);
+	});
+
+	// Story 8-5a-base FR45 — bouton « Affecter manuellement » présent
+	// sur toutes les rows pending (avec ou sans candidate).
+	it('shows manual match button for tx without candidate', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [
+				makeProposalWithoutCandidate(2),
+				makeProposalWithCandidate(3, 102, 0.6),
+			],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+
+		const { findAllByTestId } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+
+		const buttons = await findAllByTestId('manual-match-button');
+		// 2 rows → 2 boutons « Affecter manuellement ».
+		expect(buttons).toHaveLength(2);
+		// Présent sur la tx sans candidate.
+		expect(buttons[0].getAttribute('data-tx-id')).toBe('2');
 	});
 
 	it('triggers reject with selected txIds only', async () => {

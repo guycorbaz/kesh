@@ -339,6 +339,39 @@ pub enum AppError {
     /// tenu jusqu'à fin de session MariaDB (cf. L22).
     #[error("Échec de libération du verrou de réconciliation")]
     ReconciliationLockReleaseFailed { bank_account_id: i64 },
+
+    // ----- Story 8-5a-base — réconciliation manuelle FR45 -----
+    /// Le `bank_account` ciblé n'a pas de `journal_account_id`
+    /// configuré (8-5a-zero foundation). Le user doit configurer le
+    /// compte comptable lié via la page `/bank-accounts` avant
+    /// d'utiliser le manual match → `412 Precondition Failed`,
+    /// code `BANK_ACCOUNT_NOT_CONFIGURED`. Body inclut
+    /// `details.bankAccountId` + `details.hint` lien UX.
+    #[error("Compte bancaire non configuré (journal_account_id manquant) : id={bank_account_id}")]
+    BankAccountNotConfigured { bank_account_id: i64 },
+
+    /// L'exercice fiscal couvrant `entry_date` est inexistant ou
+    /// `Closed` lors du flow `/reconciliation/manual` (8-5a-base) →
+    /// `409 RECONCILIATION_FISCAL_YEAR_CLOSED`.
+    ///
+    /// **Distinct de `AppError::FiscalYearClosed { date: String }`**
+    /// (Story 3-4 — variant générique journal_entries, mappe → 400
+    /// avec code `FISCAL_YEAR_CLOSED`). Le variant reconciliation
+    /// utilise `entry_date: NaiveDate` (pas String) cohérent avec
+    /// `ReconciliationError::FiscalYearClosed { entry_date }` qui
+    /// remonte directement depuis la closure `with_account_lock`.
+    #[error("Exercice fiscal clos pour la date {entry_date}")]
+    ReconciliationFiscalYearClosed { entry_date: chrono::NaiveDate },
+
+    /// Le `bank_transaction` ciblé n'est pas (ou plus) en status
+    /// `pending` — couvre 4 cas distincts en un code
+    /// (`find_strictly_pending_by_id_for_account` retourne `None`) :
+    /// (a) tx introuvable, (b) tx déjà `reconciled`, (c) tx
+    /// cross-tenant, (d) tx cross-account. → `404
+    /// RECONCILIATION_TRANSACTION_NOT_PENDING` (anti-énumération
+    /// KF-002 — pas 409 puisque le helper ne distingue pas les causes).
+    #[error("Transaction bancaire non pending : id={bank_transaction_id}")]
+    ReconciliationTransactionNotPending { bank_transaction_id: i64 },
     //
     // M6 Pass 1 code review — variants supprimés :
     // - `ReconciliationAlreadyReconciled { bank_transaction_id }` :
@@ -911,6 +944,59 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+            }
+
+            // ----- Story 8-5a-base — réconciliation manuelle FR45 -----
+            AppError::BankAccountNotConfigured { bank_account_id } => {
+                let msg = t(
+                    "reconciliation-manual-bank-account-not-configured",
+                    "Le compte bancaire n'est pas configuré. Configurer le compte \
+                     comptable lié dans /bank-accounts.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_ACCOUNT_NOT_CONFIGURED",
+                        "message": msg,
+                        "details": {
+                            "bankAccountId": bank_account_id,
+                            "hint": "Configurer le compte comptable lié via /bank-accounts",
+                        },
+                    }
+                });
+                (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+            }
+
+            AppError::ReconciliationFiscalYearClosed { entry_date } => {
+                let msg = t(
+                    "reconciliation-errors-fiscal-year-closed",
+                    "Réconciliation impossible : l'exercice comptable n'est pas \
+                     ouvert pour cette date.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_FISCAL_YEAR_CLOSED",
+                        "message": msg,
+                        "details": { "entryDate": entry_date.to_string() },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
+            AppError::ReconciliationTransactionNotPending {
+                bank_transaction_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-transaction-not-pending",
+                    "Transaction bancaire introuvable ou déjà réconciliée.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_TRANSACTION_NOT_PENDING",
+                        "message": msg,
+                        "details": { "bankTransactionId": bank_transaction_id },
+                    }
+                });
+                (StatusCode::NOT_FOUND, Json(body)).into_response()
             }
             // M6 Pass 1 code review : variants `ReconciliationAlreadyReconciled` et
             // `ReconciliationInvoiceNotEligible` supprimés (jamais émis comme

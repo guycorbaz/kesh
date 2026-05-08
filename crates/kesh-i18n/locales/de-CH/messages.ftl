@@ -656,6 +656,13 @@ reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleic
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
 
+# Story 8-5a-base FR45 — Manueller Abgleich.
+reconciliation-manual-button-label = Manuell zuweisen
+reconciliation-manual-modal-title = Manueller Abgleich
+reconciliation-manual-counterparty-label = Gegenkonto
+reconciliation-manual-description-label = Bezeichnung
+reconciliation-manual-bank-account-not-configured = Das Bankkonto ist nicht konfiguriert. Verknüpfen Sie das Buchhaltungskonto unter /bank-accounts.
+
 # Story 8-5a-zero — Verbindung `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Bankkonten
 bank-accounts-labels-page-subtitle = Jedes Bankkonto mit einem Konto des Kontorahmens verbinden (typisch Klasse 1: 1020 Kasse, 1030 Bank).

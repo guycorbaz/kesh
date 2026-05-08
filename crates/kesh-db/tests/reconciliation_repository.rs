@@ -551,3 +551,174 @@ async fn find_pending_transactions_excludes_auto_match_rejected(pool: MySqlPool)
         "tx auto_match_rejected ne doit PAS être retournée (AC #47)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 8-5a-base T1.2 — find_strictly_pending_by_id_for_account
+// ---------------------------------------------------------------------------
+
+/// Story 8-5a-base T1.2.1 — happy path : returns Some(tx) si
+/// company_id/bank_account_id/id matchent ET status='pending'.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_strictly_pending_returns_tx_when_all_conditions_match(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let bank_id = create_test_bank_account(&pool, company_id, "CH4431999123000889012").await;
+
+    let tx_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let mut import_tx = pool.begin().await.unwrap();
+    let mut nbi = make_new_import(company_id, bank_id, user_id, HASH_X);
+    nbi.transaction_count = 1;
+    let (_, txs) = bank_imports::create_with_transactions(
+        &mut import_tx,
+        nbi,
+        vec![make_new_tx(
+            company_id,
+            bank_id,
+            tx_date,
+            dec!(150.00),
+            "REF-1",
+        )],
+    )
+    .await
+    .expect("seed tx");
+    import_tx.commit().await.unwrap();
+    let tx_id = txs[0].id;
+
+    let result = reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &pool, company_id, bank_id, tx_id,
+    )
+    .await
+    .expect("find_strictly_pending_by_id_for_account");
+
+    let bt = result.expect("happy path → Some(tx)");
+    assert_eq!(bt.id, tx_id);
+    assert_eq!(bt.company_id, company_id);
+    assert_eq!(bt.bank_account_id, bank_id);
+}
+
+/// Story 8-5a-base T1.2.2 — sécurité multi-tenant + scope account :
+/// cross-tenant return None (KF-002 Pattern 1, jamais de leak).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_strictly_pending_returns_none_for_cross_tenant(pool: MySqlPool) {
+    let company_a = create_test_company(&pool, "AcmeA").await;
+    let user_a = create_test_user(&pool, "alice", company_a).await;
+    let bank_a = create_test_bank_account(&pool, company_a, "CH4431999123000889012").await;
+
+    let company_b = create_test_company(&pool, "AcmeB").await;
+    let user_b = create_test_user(&pool, "bob", company_b).await;
+    let bank_b = create_test_bank_account(&pool, company_b, "CH9300762011623852957").await;
+
+    let tx_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    // Insert une tx du côté company_b.
+    let mut import_tx = pool.begin().await.unwrap();
+    let mut nbi = make_new_import(company_b, bank_b, user_b, HASH_X);
+    nbi.transaction_count = 1;
+    let (_, txs) = bank_imports::create_with_transactions(
+        &mut import_tx,
+        nbi,
+        vec![make_new_tx(
+            company_b,
+            bank_b,
+            tx_date,
+            dec!(150.00),
+            "REF-B",
+        )],
+    )
+    .await
+    .expect("seed tx B");
+    import_tx.commit().await.unwrap();
+    let tx_id_b = txs[0].id;
+
+    // user_a tente de lire la tx de company_b → doit être None.
+    let cross_tenant = reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &pool, company_a, bank_a, tx_id_b,
+    )
+    .await
+    .expect("find_strictly_pending_by_id_for_account cross-tenant");
+    assert!(
+        cross_tenant.is_none(),
+        "cross-tenant doit retourner None (anti-leak KF-002)"
+    );
+
+    // user_a avec son own bank_id mais id de tx_b → None aussi.
+    let cross_account = reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &pool, company_b, bank_a, tx_id_b,
+    )
+    .await
+    .expect("find_strictly_pending cross-account");
+    assert!(
+        cross_account.is_none(),
+        "cross-account (mauvais bank_id) doit retourner None"
+    );
+    // Sanity : avec le bon couple company+bank → Some.
+    assert!(
+        reconciliation_repo::find_strictly_pending_by_id_for_account(
+            &pool, company_b, bank_b, tx_id_b,
+        )
+        .await
+        .expect("happy")
+        .is_some(),
+        "lookup légitime doit retourner Some(tx)"
+    );
+    // suppress unused warning
+    let _ = user_a;
+}
+
+/// Story 8-5a-base T1.2.3 — filtre status précis : tx déjà
+/// `reconciled` retourne None (le helper distinct de
+/// `find_pending_by_id_for_account` 8-4).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_strictly_pending_returns_none_for_reconciled_status(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let bank_id = create_test_bank_account(&pool, company_id, "CH4431999123000889012").await;
+
+    let tx_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let mut import_tx = pool.begin().await.unwrap();
+    let mut nbi = make_new_import(company_id, bank_id, user_id, HASH_X);
+    nbi.transaction_count = 1;
+    let (_, txs) = bank_imports::create_with_transactions(
+        &mut import_tx,
+        nbi,
+        vec![make_new_tx(
+            company_id,
+            bank_id,
+            tx_date,
+            dec!(150.00),
+            "REF-RECON",
+        )],
+    )
+    .await
+    .expect("seed tx");
+    import_tx.commit().await.unwrap();
+    let tx_id = txs[0].id;
+
+    // Marque la tx comme `reconciled` directement DB-side.
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(tx_id)
+        .execute(&pool)
+        .await
+        .expect("mark reconciled");
+
+    let result = reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &pool, company_id, bank_id, tx_id,
+    )
+    .await
+    .expect("find_strictly_pending_by_id_for_account");
+
+    assert!(
+        result.is_none(),
+        "tx avec status='reconciled' doit retourner None (filtre status précis vs find_pending_by_id_for_account 8-4)"
+    );
+
+    // Sanity : `find_pending_by_id_for_account` 8-4, lui, retourne quand
+    // même la tx (ne filtre pas status — F8'' Pass 3 spec note).
+    let still_findable_by_legacy =
+        reconciliation_repo::find_pending_by_id_for_account(&pool, company_id, bank_id, tx_id)
+            .await
+            .expect("find_pending_by_id_for_account");
+    assert!(
+        still_findable_by_legacy.is_some(),
+        "find_pending_by_id_for_account 8-4 ne filtre PAS status, retourne la tx reconciled — démarcation explicite vs strictly_pending"
+    );
+}

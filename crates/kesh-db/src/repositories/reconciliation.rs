@@ -278,6 +278,16 @@ where
 /// manuellement entre le pré-flight et le lock peut encore être
 /// acceptée (pattern « j'ai rejeté trop vite, je rétracte ») — le
 /// caller laisse le step 4 status check trancher.
+///
+/// **Naming caveat (dette `dette-naming-reconciliation-helpers` —
+/// F8'' Pass 3 Opus 8-5a-base)** : malgré le nom, ce helper ne
+/// filtre PAS `status='pending'` côté SQL. Il appelle juste « par
+/// id pour un compte ». Le filtre status est délégué au caller
+/// (8-4 `accept_one` step 4). 8-5a-base introduit
+/// [`find_strictly_pending_by_id_for_account`] qui, lui, filtre
+/// strictement `status='pending'` côté SQL — utilisé par le flow
+/// manual où l'on ne veut pas réutiliser une transaction déjà
+/// `reconciled`.
 pub async fn find_pending_by_id_for_account<'e, E>(
     executor: E,
     company_id: i64,
@@ -290,6 +300,39 @@ where
     sqlx::query_as::<_, BankTransaction>(&format!(
         "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
          WHERE company_id = ? AND bank_account_id = ? AND id = ?"
+    ))
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Charge UNE `BankTransaction` **strictement** `status='pending'` par
+/// id, scopée multi-tenant `(company_id, bank_account_id, id)`. Utilisé
+/// par le flow `/manual` (8-5a-base) et `/split` (8-5a-bis) pour
+/// pré-flight ownership AVANT lock ET inside lock.
+///
+/// Retourne `None` si introuvable, status ≠ 'pending', cross-tenant,
+/// ou cross-account. Couvre en un seul code 4 cas — le caller mappe
+/// vers `RECONCILIATION_TRANSACTION_NOT_PENDING` 404.
+///
+/// **Distinct de `find_pending_by_id_for_account` (8-4)** qui ne
+/// filtre PAS `status` (cf. `dette-naming-reconciliation-helpers`).
+pub async fn find_strictly_pending_by_id_for_account<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    id: i64,
+) -> Result<Option<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, BankTransaction>(&format!(
+        "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
+         WHERE company_id = ? AND bank_account_id = ? AND id = ? \
+           AND status = 'pending'"
     ))
     .bind(company_id)
     .bind(bank_account_id)

@@ -5,6 +5,7 @@ import type {
 	AcceptProposalInput,
 	AcceptResponse,
 	GetProposalsResponse,
+	ManualMatchResponse,
 	RejectResponse,
 } from './reconciliation.types';
 
@@ -38,4 +39,33 @@ export async function rejectProposals(
 		bankAccountId,
 		bankTransactionIds,
 	});
+}
+
+/**
+ * Story 8-5a-base FR45 — réconciliation manuelle.
+ *
+ * Le compte ledger banque est résolu **serveur-side** via
+ * `bank_account.journal_account_id` (foundation 8-5a-zero) — donc le
+ * body NE contient PAS `bankLedgerAccountId`. Si le bank_account n'a
+ * pas son journal_account_id configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED
+ * (le user doit configurer via la page `/bank-accounts`).
+ */
+export async function manualMatchTransaction(
+	bankAccountId: number,
+	bankTransactionId: number,
+	counterpartyAccountId: number,
+	description?: string,
+	valueDate?: string,
+): Promise<ManualMatchResponse> {
+	const body: Record<string, unknown> = {
+		bankAccountId,
+		bankTransactionId,
+		counterpartyAccountId,
+	};
+	if (description !== undefined && description !== '') body.description = description;
+	if (valueDate !== undefined) body.valueDate = valueDate;
+	return apiClient.post<ManualMatchResponse>(
+		'/api/v1/reconciliation/manual',
+		body,
+	);
 }

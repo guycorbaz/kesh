@@ -705,6 +705,13 @@ reconciliation-errors-invoice-not-eligible = Cette facture n'est pas éligible �
 reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
 reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
 
+# Story 8-5a-base FR45 — Réconciliation manuelle.
+reconciliation-manual-button-label = Affecter manuellement
+reconciliation-manual-modal-title = Réconciliation manuelle
+reconciliation-manual-counterparty-label = Compte de contrepartie
+reconciliation-manual-description-label = Description
+reconciliation-manual-bank-account-not-configured = Le compte bancaire n'est pas configuré. Configurer le compte comptable lié dans /bank-accounts.
+
 # Story 8-5a-zero — Configuration `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Comptes bancaires
 bank-accounts-labels-page-subtitle = Lier chaque compte bancaire à un compte du plan comptable (classe 1 typique : 1020 Caisse, 1030 Banque).
