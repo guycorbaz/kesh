@@ -75,7 +75,7 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
    **Pas de `bankLedgerAccountId`** — résolu serveur-side via `bank_accounts::find_by_id_for_company(...).journal_account_id`. Si NULL → 412 `BANK_ACCOUNT_NOT_CONFIGURED` (le user doit configurer en 8-5a-zero avant d'utiliser 8-5a-base).
 
    **Flow** :
-   - Pré-flight ownership : `bank_accounts::find_by_id_for_company(pool, company_id, bankAccountId)` → 404 (variant unit-struct `AppError::BankAccountNotFound`, code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1 dette L64) si None.
+   - Pré-flight ownership : `bank_accounts::find_by_id_for_company(pool, company_id, bankAccountId)` → 404 (variant unit-struct `AppError::BankAccountNotFound`, code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1 — dette de naming héritée 8-1b documentée `errors.rs:248-253`, F7'''' Pass 6 Opus clarification numéro de référence) si None.
    - Vérification configuration : `bank_account.journal_account_id` doit être `Some(journal_account_id)`. Si `None` → 412 `BANK_ACCOUNT_NOT_CONFIGURED` body `{ error: { code: "BANK_ACCOUNT_NOT_CONFIGURED", message: t(...), details: { bankAccountId, hint: "Configurer le compte comptable lié via /bank-accounts" } } }`.
    - Validation `counterpartyAccountId` : `accounts::find_by_id_in_company` + check `active=true` → 404 `ACCOUNT_NOT_FOUND` (anti-énumération, AC #86 hérité).
    - **Note** : pas de check `account_type` strict pour `counterpartyAccountId` (peut être Asset/Liability/Revenue/Expense — flexible v0.1, le user choisit). Frontend filtre client-side classes 5/6/7 par UX, pas d'invariant serveur.
@@ -86,7 +86,7 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
    - `fiscal_years::find_open_covering_date(tx, company_id, entry_date)` → 409 `RECONCILIATION_FISCAL_YEAR_CLOSED` si None.
    - Construire `NewJournalEntry` via `manual::build_journal_entry_for_counterparty(...)` (helper pure §helper-signature ci-dessous).
    - `journal_entries::create_in_tx(tx, fiscal_year_id, user_id, new_je)` → atomicité (émet audit `journal_entry.created` automatiquement). **Signature réelle** : `(tx: &mut Transaction<'_, MySql>, fiscal_year_id: i64, user_id: i64, new: NewJournalEntry)` — le `company_id` est dans `new.company_id`, pas un paramètre séparé.
-   - UPDATE `bank_transactions SET status='reconciled', matched_entry_id=<new_je_id>, auto_match_rejected_at=NULL, version=version+1 WHERE id=? AND version=?` (optimistic lock cohérent P3-H1 8-4).
+   - UPDATE `bank_transactions SET status='reconciled', matched_entry_id=<new_je_id>, auto_match_rejected_at=NULL, updated_at=NOW(3), version=version+1 WHERE id=? AND company_id=? AND status='pending' AND version=?` (optimistic lock cohérent P3-H1 8-4 + defense-in-depth multi-tenant + status guard, cf. F3'''' Pass 6 Opus §validation-handler-side step 8 pour la SQL complète).
    - Audit log `reconciliation.manual_matched` action distincte (Q4a, cohérent §audit-log-shapes 8-5a unifiée).
    - Response : `200 OK` body `{ bankTransactionId: 42, journalEntryId: 999 }`.
 
@@ -218,13 +218,20 @@ pub fn build_journal_entry_for_counterparty(
 **Inside lock (advisory `with_account_lock`)** :
 5. Re-fetch tx (TOCTOU defense pattern 8-4).
 6. Resolve `entry_date` + `find_open_covering_date(tx_inside_lock, company_id, entry_date)` → si `None`, retourner `Err(ReconciliationError::FiscalYearClosed { entry_date })` depuis la closure du lock. Le handler externe traduit en 409 `RECONCILIATION_FISCAL_YEAR_CLOSED`. **F5''' Pass 3 Opus — sémantique du `None`** : `find_open_covering_date` retourne `None` à la fois pour « aucun exercice n'existe pour cette date » (NoFiscalYear) et « l'exercice existe mais est `Closed` ». La spec mappe les deux en 409 `RECONCILIATION_FISCAL_YEAR_CLOSED` v0.1 (UX simplifié — utilisateur cible reçoit le même message « réconciliation impossible, vérifier l'exercice comptable »). Différenciation reportée v0.2 (cf. L46 ci-dessous) si UX granulaire requise.
-7. `journal_entries::create_in_tx(tx_inside_lock, fiscal_year_id, user_id, new_je)`. **Note race** : si `create_in_tx` retourne `DbError::FiscalYearClosed` (exercice clos entre step 6 et step 7), ce cas remonte via `AppError::Database(DbError::FiscalYearClosed)` → 400 `FISCAL_YEAR_CLOSED` (pas 409). Acceptable v0.1 — cas pathologique (clôture concurrent rarissime sous lock advisory). Documenter dans une note Dev si différenciation nécessaire v0.2.
-8. UPDATE bank_transactions optimistic lock → 409 via `AppError::Database(DbError::OptimisticLockConflict)` si race (pattern 8-4 réutilisé — pas de variant `ReconciliationOptimisticLockConflict` dédié, `Database(OptimisticLockConflict)` → 409 `OPTIMISTIC_LOCK_CONFLICT` couvre ce cas).
-9. Audit log `reconciliation.manual_matched`.
+7. `journal_entries::create_in_tx(tx_inside_lock, fiscal_year_id, user_id, new_je)`. **Note race** : si `create_in_tx` retourne `DbError::FiscalYearClosed` (exercice clos entre step 6 et step 7), ce cas remonte via la closure en `Err(ReconciliationError::Db(DbError::FiscalYearClosed))` (cf. T2.3 nouveau variant `Db(#[from] DbError)`) → handler match `Err(ReconciliationError::Db(db_err)) => Err(AppError::Database(db_err))` → mapping HTTP `AppError::Database(DbError::FiscalYearClosed)` → 400 `FISCAL_YEAR_CLOSED` (pas 409). Acceptable v0.1 — cas pathologique (clôture concurrent rarissime sous lock advisory). Documenter dans une note Dev si différenciation nécessaire v0.2.
+8. UPDATE bank_transactions optimistic lock → 409 via `AppError::Database(DbError::OptimisticLockConflict)` si race (pattern 8-4 réutilisé — pas de variant `ReconciliationOptimisticLockConflict` dédié, `Database(OptimisticLockConflict)` → 409 `OPTIMISTIC_LOCK_CONFLICT` couvre ce cas). **F3'''' Pass 6 Opus — SQL UPDATE complète** (defense-in-depth multi-tenant + status guard, cohérent pattern 8-4 ligne 691) :
+   ```sql
+   UPDATE bank_transactions 
+   SET status = 'reconciled', matched_entry_id = ?, auto_match_rejected_at = NULL, 
+       updated_at = NOW(3), version = version + 1 
+   WHERE id = ? AND company_id = ? AND status = 'pending' AND version = ?
+   ```
+   Si `rows_affected() == 0` → mapper en `Err(ReconciliationError::Db(DbError::OptimisticLockConflict))` (couvre race version + race status `pending → reconciled` par autre flow concurrent).
+9. Audit log `reconciliation.manual_matched`. **F2'''' Pass 6 Opus — atomicité** : steps 5-9 sont **TOUS inside la closure unique de `with_account_lock`**. La closure retourne `Result<i64, ReconciliationError>` (le `i64` = `journal_entry_id` créé step 7). Si step 9 audit_log échoue, la closure retourne `Err(ReconciliationError::Db(...))` → `with_account_lock` propage → handler `drop(tx_outer)` ROLLBACK total (UPDATE bank_transactions step 8 inclus). **NE PAS sortir step 9 audit_log de la closure** sous prétexte de performance happy-path : casse l'invariant atomicity audit ↔ business write.
 
 #### §audit-log-shape
 
-100% snake_case top-level (cohérent F4'' Pass 3 décision Opus). Pas de sous-objets typés camelCase (vs pattern 8-4 `MatchScore`).
+100% snake_case top-level **dans 8-5a-base** (cohérent F4'' Pass 3 décision Opus). Le helper `build_journal_entry_for_counterparty` produit une `NewJournalEntry` à 2 lignes scalaires sans struct typée à serializer — donc tous les fields de `details_json` sont scalaires (i64, Decimal stringified, NaiveDate stringified, bool, String). **F6'''' Pass 6 Opus — démarcation vs 8-4** : 8-4 sérialise `"score": MatchScore { ... }` (struct typée serde camelCase via Serialize derive). 8-5a-base n'utilise pas de struct typée — la règle « pas de sous-objet camelCase » s'applique uniquement aux scalars de 8-5a-base, sans rétroaction sur 8-4 existant.
 
 ```json
 {
@@ -355,15 +362,38 @@ ACs #83-#92 (10 ACs).
   pub use manual::build_journal_entry_for_counterparty;
   ```
 
-- [ ] T2.3 — Étendre `crates/kesh-reconciliation/src/errors.rs` (1 variant ajouté) :
+- [ ] T2.3 — Étendre `crates/kesh-reconciliation/src/errors.rs` (2 variants ajoutés) :
   ```rust
   pub enum ReconciliationError {
-      // ... 8-4 variants conservés
+      // ... 8-4 variants conservés (AccountLocked, LockReleaseFailed, Database(#[from] sqlx::Error))
       FiscalYearClosed { entry_date: NaiveDate },
+      /// **F1'''' Pass 6 Opus** — wrapper typé pour `DbError` (variants
+      /// `FiscalYearClosed`, `OptimisticLockConflict`, `InactiveOrInvalidAccounts`,
+      /// `Invariant`, etc.). Ground-truth : `kesh-db::errors::DbError` est un
+      /// enum distinct de `sqlx::Error` (pas `From<DbError> for sqlx::Error`).
+      /// Sans ce variant, la closure `with_account_lock` (qui retourne
+      /// `Result<T, ReconciliationError>`) ne peut PAS bubbler typé un
+      /// `DbError::FiscalYearClosed` (race step 6 → step 7) ni un
+      /// `DbError::OptimisticLockConflict` (UPDATE bank_transactions step 8).
+      ///
+      /// Le handler `post_manual` (kesh-api) match ce variant en
+      /// `match lock_result { Err(ReconciliationError::Db(db_err)) => Err(AppError::Database(db_err)), ... }`
+      /// — préserve la fidélité du `DbError` jusqu'au mapping HTTP final.
+      ///
+      /// **Path-dep** : réutilisé par 8-5a-bis (split flow) et 8-5b
+      /// (accept-with-rule flow) pour la même raison.
+      Db(#[from] kesh_db::errors::DbError),
       // (SplitImbalance reporté en 8-5a-bis)
       // (BankAccountNotConfigured handler-side dans kesh-api uniquement)
   }
   ```
+  
+  **Pourquoi ce variant `Db(DbError)` séparé de `Database(sqlx::Error)`** :
+  - 8-4 conserve son flow inchangé (`Database(#[from] sqlx::Error)` reste la voie pour les erreurs sqlx brutes hors helpers `kesh-db`).
+  - Les helpers `kesh-db` (qui retournent `Result<_, DbError>`) bubblent maintenant via `Db(#[from] DbError)` dans la closure. Le `?` opérator fonctionne en transparent : `journal_entries::create_in_tx(...)?` compile.
+  - Le handler distingue `Database(sqlx)` → 500 catch-all et `Db(db_err)` → mapping fin via `AppError::Database(db_err)` (qui sait mapper `DbError::FiscalYearClosed` → 400 et `DbError::OptimisticLockConflict` → 409 etc.).
+  
+  **Non-régression 8-4** : 8-4 n'utilise PAS de helper `kesh-db` qui retourne `DbError` dans la closure `with_account_lock` (8-4 fait du SQL inline + `FailedProposal` per-proposal). Donc le nouveau variant `Db` n'impacte pas le flow 8-4 existant.
 
 - [ ] T2.4 — Tests unit `kesh-reconciliation::manual` (≥ 2) :
   1. `manual_build_je_creates_2_lines_for_credit_tx` (AC #84).
@@ -408,6 +438,49 @@ ACs #83-#92 (10 ACs).
     }
     ```
     Sans ce match explicite, le cas tomberait dans `ReconciliationError::Database(e)` → 500 Internal Error (silencieux incorrect).
+  
+  - **F1'''' Pass 6 Opus — Mapping `ReconciliationError::Db(DbError)` → `AppError`** : le handler match aussi explicitement le nouveau variant `Db` (cf. T2.3) pour préserver la fidélité du `DbError` :
+    ```rust
+    Err(ReconciliationError::Db(db_err)) => {
+        drop(tx_outer);
+        Err(AppError::Database(db_err))
+    }
+    ```
+    Le mapping `AppError::Database(DbError) → HTTP` est déjà géré dans `errors.rs:922+` (sous-match exhaustif) :
+    - `DbError::FiscalYearClosed` → 400 `FISCAL_YEAR_CLOSED` (race step 6 → step 7).
+    - `DbError::OptimisticLockConflict` → 409 `OPTIMISTIC_LOCK_CONFLICT` (race UPDATE bank_transactions step 8).
+    - `DbError::Invariant(_)`, `DbError::Sqlx(_)`, etc. → 500 `INTERNAL_ERROR`.
+    
+    **Match block complet du handler** :
+    ```rust
+    match lock_result {
+        Ok(journal_entry_id) => {
+            tx_outer.commit().await.map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+            Ok(Json(ManualMatchResponse { bank_transaction_id, journal_entry_id }))
+        }
+        Err(ReconciliationError::AccountLocked { bank_account_id, timeout_secs }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationAccountLocked { bank_account_id, timeout_secs })
+        }
+        Err(ReconciliationError::LockReleaseFailed { bank_account_id, .. }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationLockReleaseFailed { bank_account_id })
+        }
+        Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationFiscalYearClosed { entry_date })
+        }
+        Err(ReconciliationError::Db(db_err)) => {
+            drop(tx_outer);
+            Err(AppError::Database(db_err))
+        }
+        Err(ReconciliationError::Database(e)) => {
+            drop(tx_outer);
+            Err(AppError::Database(DbError::Sqlx(e)))
+        }
+    }
+    ```
+    Match exhaustif sur tous les variants `ReconciliationError` (le compilateur Rust force la complétude).
 
 - [ ] T3.4 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_manual_e2e.rs` *(nouveau fichier, ≥ 11 tests)* :
   1. `manual_match_creates_journal_entry_for_debit_transaction` (AC #83).
@@ -420,7 +493,7 @@ ACs #83-#92 (10 ACs).
   8. `manual_match_reverses_auto_rejection` (AC #90).
   9. `manual_match_requires_comptable_role` (AC #91 RBAC).
   10. `manual_match_emits_audit_log_pair` (AC #91 audit, **assertion sur `was_previously_rejected=false`** ET shape complète `details_json` : `bank_transaction_id`, `counterparty_account_id`, `journal_entry_id`, `amount`, `description`, `value_date` snake_case top-level).
-  11. **F7''' Pass 3 Opus** — `manual_match_rejects_zero_amount_transaction` (L48) : tx avec `amount = 0.00` → 400 `VALIDATION_ERROR` body `{ reason: "zero_amount_transaction" }`.
+  11. **F7''' Pass 3 Opus** — `manual_match_rejects_zero_amount_transaction` (L48) : tx avec `amount = 0.00` → 400 `VALIDATION_ERROR`. **F5'''' Pass 6 Opus — shape response body** : `AppError::Validation(msg)` à `errors.rs:418-420` émet `build_response(BAD_REQUEST, "VALIDATION_ERROR", &msg)` qui produit body `{ error: { code: "VALIDATION_ERROR", message: msg } }` — **PAS** de field `details.reason`. Le test doit asserter sur `body["error"]["code"] == "VALIDATION_ERROR"` ET `body["error"]["message"]` contient le marqueur `"zero_amount_transaction"` (utiliser `AppError::Validation("zero_amount_transaction".into())` pour que le marqueur soit dans le message). Si différenciation client requise v0.2 → créer un variant typé `AppError::ValidationWithReason { reason: &'static str }` qui émet `details: { reason }` (pattern 8-4 `BankCsvEmptyFile` errors.rs:868) — non bloquant v0.1.
 
   **F6''' Pass 3 Opus** — Le test #8 `manual_match_reverses_auto_rejection` (AC #90) DOIT inclure une assertion explicite sur le détail audit log `was_previously_rejected=true` (pas seulement le UPDATE bank_transactions `auto_match_rejected_at=NULL` côté row). Sans cette assertion, le test ne couvre pas la branche audit shape distinctive.
 
@@ -493,7 +566,7 @@ ACs #83-#92 (10 ACs).
 **Modules touchés** :
 1. `crates/kesh-db/src/repositories/reconciliation.rs` (1 nouvelle fn `find_strictly_pending_by_id_for_account`).
 2. `crates/kesh-reconciliation/src/manual.rs` *(nouveau)*.
-3. `crates/kesh-reconciliation/src/lib.rs` + `errors.rs` (extension).
+3. `crates/kesh-reconciliation/src/lib.rs` + `errors.rs` (extension : 2 variants `FiscalYearClosed` + `Db(DbError)` — F1'''' Pass 6 Opus).
 4. `crates/kesh-api/src/routes/reconciliation.rs` (1 nouveau handler `post_manual`).
 5. `crates/kesh-api/src/errors.rs` (4 variants actifs : `BankAccountNotConfigured` nouveau, `ReconciliationFiscalYearClosed` nouveau, `ReconciliationTransactionNotPending` nouveau, `AccountNotFound` réutilisé — `BankAccountNotFound` existe déjà). `ReconciliationOptimisticLockConflict` **non créé** (réutilise `Database(DbError::OptimisticLockConflict)` pattern 8-4).
 6. `crates/kesh-i18n` (5 clés × 4 locales).
@@ -545,7 +618,7 @@ ACs #83-#92 (10 ACs).
 - `crates/kesh-reconciliation/Cargo.toml` (deps inchangées)
 - `crates/kesh-reconciliation/src/lib.rs` (refactor — module `manual` ajouté ; `split` reporté 8-5a-bis ; `rules` reporté 8-5b)
 - `crates/kesh-reconciliation/src/manual.rs` *(nouveau, pure, helper réutilisé par 8-5a-bis et 8-5b)*
-- `crates/kesh-reconciliation/src/errors.rs` (1 variant ajouté : `FiscalYearClosed`)
+- `crates/kesh-reconciliation/src/errors.rs` (2 variants ajoutés : `FiscalYearClosed { entry_date }` + `Db(#[from] DbError)` — F1'''' Pass 6 Opus)
 
 **Backend `kesh-api`** :
 - `crates/kesh-api/src/routes/reconciliation.rs` (extension : `post_manual` handler)
@@ -603,7 +676,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | **(post-Q5)** | Suggestion ML automatique post-manual non livrée | Décision Guy Q5 2026-05-07 : la response `POST /manual` ne retourne pas de `ruleSuggestion`. L'utilisateur crée ses rules manuellement via `/reconciliation/rules` (livré par 8-5b). Suggestion ML potentielle Story 8-5c v0.2 ou Epic 11+. |
 | **L46 NEW (F5''' Pass 3 Opus)** | **NON DIFFÉRENCIATION** `NoFiscalYear` vs `FiscalYearClosed` dans le flow manual | `fiscal_years::find_open_covering_date` retourne `Option<FiscalYear>` (None unifié pour les 2 cas). Le handler manual mappe `None` → 409 `RECONCILIATION_FISCAL_YEAR_CLOSED` sans distinguer si l'exercice n'existe pas vs s'il existe mais est `Closed`. UX simplifiée v0.1 (user cible reçoit le même message « réconciliation impossible »). Différenciation v0.2 : ajouter un helper `find_any_covering_date` qui retourne le statut. |
 | **L47 NEW (F8''' Pass 3 Opus)** | **Currency `tx.currency != "CHF"` non validée explicitement par 8-5a-base** | L'invariant `tx.currency == "CHF"` est garanti à l'amont par les imports 8-1b (CAMT.053) + 8-2 (CSV) + 8-3 (dedup) qui rejettent les non-CHF en 422 `BANK_IMPORT_UNSUPPORTED_CURRENCY`. Le handler `/manual` n'ajoute pas de check redondant. Si une tx non-CHF se faufile (jamais en v0.1), le UPDATE/INSERT journal_entry passera mais représente la transaction comme CHF (faux comptablement). Risque accepté v0.1, détection upstream incontournable. v0.2 : check belt-and-suspenders dans le handler manual + 422 `UNSUPPORTED_CURRENCY`. |
-| **L48 NEW (F7''' Pass 3 Opus)** | **`tx.amount == 0` validation handler-side** | Le handler `/manual` doit pré-valider `tx.amount != Decimal::ZERO` (step 4bis §validation-handler-side, code 400 `VALIDATION_ERROR` body `{ reason: "zero_amount_transaction" }`). Sinon le helper `build_journal_entry_for_counterparty` produirait 2 lignes débit/crédit 0/0 (sémantiquement vides, pollue les comptes). v0.2 : promouvoir cette validation au niveau import (rejeter à l'amont). |
+| **L48 NEW (F7''' Pass 3 Opus)** | **`tx.amount == 0` validation handler-side** | Le handler `/manual` doit pré-valider `tx.amount != Decimal::ZERO` (step 4bis §validation-handler-side, code 400 `VALIDATION_ERROR`, marqueur `"zero_amount_transaction"` dans `error.message` via `AppError::Validation("zero_amount_transaction".into())` — F5'''' Pass 6 Opus). Sinon le helper `build_journal_entry_for_counterparty` produirait 2 lignes débit/crédit 0/0 (sémantiquement vides, pollue les comptes). v0.2 : promouvoir cette validation au niveau import (rejeter à l'amont) + variant typé `AppError::ValidationWithReason { reason }` pour exposer le marqueur dans `details.reason` plutôt que `error.message`. |
 
 ### Risques et points d'attention pour le dev agent
 
@@ -653,6 +726,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | Date | Entrée | Auteur |
 |------|--------|--------|
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-base = FR45 manual match utilisant `bank_account.journal_account_id` configuré en 8-5a-zero (foundation). **Différence majeure vs spec 8-5a unifiée** : le body POST `/manual` n'inclut PAS `bankLedgerAccountId` — résolu serveur-side. Anti-pattern UX éliminé à la racine. Helper public `kesh-reconciliation::manual::build_journal_entry_for_counterparty` réutilisé par 8-5a-bis et 8-5b (path dep). 10 ACs (#83-#92). Tasks T1-T7. Path-dépendance bloquante : 8-5a-zero `done`/merged. Status `8-5a-base-manual-match: backlog`. | Claude (Opus 4.7 re-split workflow) |
+| **2026-05-08** | **Pass 6 validate Opus 4.7 — VALIDATION FINALE 6e PASSE** — 5 findings > LOW (0 CRITICAL + 1 HIGH + 4 MEDIUM + 2 LOW). Patches : (F1'''' HIGH) Variant `ReconciliationError::Db(#[from] DbError)` ajouté T2.3 — gap structurel détecté Pass 6 1M context : la closure `with_account_lock` retourne `Result<T, ReconciliationError>` mais `journal_entries::create_in_tx` retourne `Result<_, DbError>` non convertible (pas de `From<DbError> for sqlx::Error`). Sans ce variant la spec promettait un mapping `DbError::FiscalYearClosed → 400` impossible techniquement. Match handler exhaustif documenté T3.3. (F2'''' MEDIUM) §validation-handler-side step 9 — annotation explicite « steps 5-9 inside closure unique, NE PAS sortir audit_log de la closure ». (F3'''' MEDIUM) SQL UPDATE bank_transactions step 8 complétée avec `AND company_id = ? AND status = 'pending'` + `updated_at = NOW(3)` (defense-in-depth multi-tenant + status guard cohérent pattern 8-4 ligne 691). (F4'''' MEDIUM intégré dans F1'''' patch — typing audit log clarifié). (F5'''' MEDIUM) Test #11 zero_amount — clarification body shape `AppError::Validation` émet `error.message`, PAS `error.details.reason` (assertion test corrigée). (F6'''' LOW) §audit-log-shape clarifie démarcation vs 8-4 `MatchScore` (snake_case top-level applique uniquement aux scalars 8-5a-base, sans rétroaction 8-4). (F7'''' LOW) Référence « dette L64 » remplacée par « dette héritée 8-1b errors.rs:248-253 » pour clarté. Trend : Pass 1=3 → Pass 2=3 → Pass 3=7 → Pass 4=2 → Pass 5=2 → **Pass 6=5 findings > LOW** (1 HIGH gap structurel détecté par 1M context Opus + verification ground-truth exhaustive de `ReconciliationError`/`DbError`/`with_account_lock` types). Cycle review continue **Pass 7 Sonnet 4.6** après application des 7 patches. Critère STOP non atteint (1 HIGH > LOW). Path-dépendance : nouveau variant `Db(DbError)` réutilisé par 8-5a-bis (split flow) et 8-5b (accept-with-rule flow) — signature helper public `build_journal_entry_for_counterparty` **inchangée** (stable contractée). | Claude (Opus 4.7 1M validate) |
 | **2026-05-08** | **Pass 5 validate Haiku 4.5** — 2 findings > LOW (0 CRITICAL + 0 HIGH + 2 MEDIUM + 2 LOW). Patches : (M1) T5.4.3 test naming clarity — renommer test pour expliciter validation absence du field `bankLedgerAccountId` vs verbe HTTP POST (confusion latente déjà clarifiée Pass 4 mais naming du test imprécis pour dev agent) ; (M2) T3.1 codification position étape 4bis — ajouter annotation explicite `// Step 4bis: zero amount pre-validation` et clarifier que cette validation est **PRÉ-flight** avant `with_account_lock` (non "inside lock") ; (M3) T5.2 exemple filtrage inline — ajouter snippet code `const filteredAccounts = accounts.filter(...)` pour cristalliser pattern pré-filtrage avant passage à `AccountAutocomplete` (pattern compatible Pass 4, mais clarté améliorée) ; (L1) T4.2 distinction locks — rephrase distinction advisory lock vs row lock pour clarté (advisory = `GET_LOCK()` session-level, FOR UPDATE = row lock intra-tx) ; (L2) T1.2 couverture exhaustive tests — clarifier que les 3 tests couvrent sécurité multi-tenant + filtre status + happy path complet. Trend : Pass 1=3 → Pass 2=3 → Pass 3=7 → Pass 4=2 → **Pass 5=2 findings > LOW** (stabilisation, 0 régressions Pass 4, omissions de clarité détectées). **Critère d'arrêt CLAUDE.md atteint** : ≤ 2 MEDIUM après 5 passes adversariales orthogonales (Pass 5 = dernière passe, tous findings = clarté/documentation, code-impact-zero). Cycle review **STOP**. Spec 8-5a-base ready for `bmad-dev-story`. | Claude (Haiku 4.5 validate) |
 | **2026-05-08** | **Pass 1 validate Sonnet 4.6** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 2 LOW). Patches : (1) F1 MEDIUM — signature incorrecte `create_in_tx` corrigée (§scope verrouillé + §validation-handler-side) : `(tx, fiscal_year_id, user_id, new_je)` au lieu de `(tx, new_je, company_id, fiscal_year_id, audit_actor)` ; (2) F2 MEDIUM — race condition `DbError::FiscalYearClosed` → 400 documentée (§validation-handler-side step 7) ; (3) F3 MEDIUM — mapping explicite `ReconciliationError::FiscalYearClosed → AppError::ReconciliationFiscalYearClosed` spécifié dans T3.3 (sans ce match → 500 silencieux) ; (4) F4 LOW — comptage variantes T3.3 + §risque-splitting corrigés (`ReconciliationOptimisticLockConflict` non créé — pattern `Database(OptimisticLockConflict)` 8-4 réutilisé). Trend : Pass 1 = 3 findings > LOW. Continuer Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
 | **2026-05-08** | **Pass 2 validate Haiku 4.5** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 0 LOW). Patches : (1) M1 MEDIUM — référence AC obsolète ligne 80 corrigée (`AC #82` → `AC #86` — spec 8-5a-base ACs #83-#92) ; (2) M2 MEDIUM — T1.2 tests incomplets : ajout test positif happy-path `find_strictly_pending_returns_tx_when_all_conditions_match` (couverture 100% du helper avant implémentation) ; (3) M3 MEDIUM — T5.2 compatibilité `AccountAutocomplete.svelte` non vérifiée : directive clarity ajoutée (vérifier avant reuse, créer wrapper dédié si incompatibilité). Trend : Pass 1 = 3 → Pass 2 = 3 findings > LOW (tous MEDIUM, pas de régressions Pass-1). Continue Pass 3 Opus 4.7 pour convergence. | Claude (Haiku 4.5 validate) |
