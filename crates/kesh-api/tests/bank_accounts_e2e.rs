@@ -554,3 +554,73 @@ async fn patch_bank_account_malformed_body_returns_400_validation_error(pool: My
         "shape standard Kesh {{error:{{code,message}}}}"
     );
 }
+
+// ============================================================
+// Pass 3 Opus 4.7 (BH2-M-3 confirmation) — double PATCH idempotent
+// avec MÊME journalAccountId ET version mise à jour entre les deux
+// appels DOIT laisser audit_count = 1.
+//
+// Ce test valide end-to-end le pattern KF-004 court-circuit no-op +
+// la correction P-C1 (tuple `(updated, before)` atomique) :
+// - 1er PATCH : link → version 1 → 2, audit_log inséré.
+// - 2nd PATCH : même journalAccountId, version 2 (à jour) → no-op
+//   short-circuit (version 2 → 2), audit_log NON inséré.
+//
+// Garde-fou contre régression future si le handler oublie le
+// `if updated.version != before.version` ou si le repo perd le
+// court-circuit no-op.
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn patch_bank_account_idempotent_no_op_does_not_duplicate_audit_log(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let pre_version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+
+    // 1er PATCH : link.
+    let resp1 = ctx_patch(
+        &pool,
+        &ctx,
+        json!({
+            "journalAccountId": ctx.asset_account_id,
+            "version": pre_version,
+        }),
+    )
+    .await;
+    assert_eq!(resp1.status(), 200);
+    let body1: Value = resp1.json().await.unwrap();
+    let v1 = body1["version"].as_i64().unwrap();
+    assert_eq!(v1, (pre_version + 1) as i64);
+
+    // 2nd PATCH : même journalAccountId, version mise à jour → no-op
+    // short-circuit (handler skip audit_log car updated.version == before.version).
+    let resp2 = ctx_patch(
+        &pool,
+        &ctx,
+        json!({
+            "journalAccountId": ctx.asset_account_id,
+            "version": v1,
+        }),
+    )
+    .await;
+    assert_eq!(resp2.status(), 200, "no-op idempotent doit retourner 200");
+    let body2: Value = resp2.json().await.unwrap();
+    assert_eq!(
+        body2["version"].as_i64().unwrap(),
+        v1,
+        "no-op : version inchangée"
+    );
+
+    // audit_count doit rester à 1 (un seul audit_log écrit pour le 1er PATCH).
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE entity_type = 'bank_account' AND entity_id = ? AND action = 'bank_account.updated'",
+    )
+    .bind(ctx.bank_account_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit_count, 1,
+        "double PATCH idempotent : audit_count doit rester 1 (KF-004 court-circuit)"
+    );
+}
