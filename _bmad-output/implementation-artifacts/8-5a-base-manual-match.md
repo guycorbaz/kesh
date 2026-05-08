@@ -320,10 +320,10 @@ ACs #83-#92 (10 ACs).
   ```
   SQL : `WHERE company_id = ? AND bank_account_id = ? AND id = ? AND status = 'pending'`.
 
-- [ ] T1.2 — Tests inline `#[sqlx::test]` (≥ 3) :
-  1. `find_strictly_pending_scopes_by_account_and_company` (cross-tenant returns None).
-  2. `find_strictly_pending_returns_none_for_reconciled_tx` (status='reconciled' returns None).
-  3. `find_strictly_pending_returns_tx_when_all_conditions_match` (happy path : returns tx si company_id/bank_account_id/id corrects + status='pending').
+- [ ] T1.2 — Tests inline `#[sqlx::test]` (≥ 3, couverture exhaustive avant implémentation) :
+  1. `find_strictly_pending_scopes_by_account_and_company` (cross-tenant returns None — sécurité multi-tenant).
+  2. `find_strictly_pending_returns_none_for_reconciled_tx` (status='reconciled' returns None — filtre status précis).
+  3. `find_strictly_pending_returns_tx_when_all_conditions_match` (happy path : returns tx si company_id/bank_account_id/id corrects + status='pending' — couverture complete du happy path).
 
 - [ ] T1.3 — Vérifier `cargo test -p kesh-db reconciliation` MariaDB up local (lesson 8-3 retro).
 
@@ -374,7 +374,7 @@ ACs #83-#92 (10 ACs).
 - [ ] T3.1 — Étendre `crates/kesh-api/src/routes/reconciliation.rs` (du 8-4) avec handler `post_manual` :
   - Validation Serde body `{ bankAccountId, bankTransactionId, counterpartyAccountId, description?, valueDate? }` camelCase.
   - **Note dev — description max length** : la spec et le frontend fixent 200 chars max pour le field `description`. Le code existant dans `routes/journal_entries.rs` utilise `MAX_DESCRIPTION_LEN = 500`. 8-5a-base utilise **200** chars (business rule modal, libellé court UX). Définir `const MAX_MANUAL_DESCRIPTION_LEN: usize = 200;` dans `routes/reconciliation.rs` et valider avec `AppError::Validation(format!("description trop longue (max {MAX_MANUAL_DESCRIPTION_LEN} caractères)"))`. Ne pas réutiliser la constante 500 de `journal_entries.rs` (limites distinctes).
-  - Pré-flight ordre §validation-handler-side ci-dessus.
+  - Pré-flight ordre §validation-handler-side ci-dessus. **Important** : l'étape 4bis `tx.amount != 0` est une validation **PRÉ-flight** (avant le `with_account_lock`), à insérer immédiatement après la validation `counterpartyAccountId` étape 3 — cf. §validation-handler-side step 4bis pour le positionnement exact.
   - **Différence majeure vs spec 8-5a unifiée** : pas de `bankLedgerAccountId` body. Résolution serveur-side :
     ```rust
     // F1''' Pass 3 Opus : `AppError::BankAccountNotFound` est unit-struct
@@ -428,7 +428,7 @@ ACs #83-#92 (10 ACs).
 
 - [ ] T4.1 — Pas besoin de créer un nouveau helper : utiliser `fiscal_years::find_open_covering_date` existant (Story 3-7) avec `&mut tx_outer` passé depuis le handler. Importer `kesh_db::repositories::fiscal_years` dans `crates/kesh-api/src/routes/reconciliation.rs`.
 
-- [ ] T4.2 — Vérifier l'ordre des locks : `fiscal_years` est acquis APRÈS le lock advisory `with_account_lock` (GET_LOCK au niveau session) → pas de deadlock possible (advisory lock ≠ row lock). L'ordre est : advisory lock → `find_strictly_pending` → `find_open_covering_date FOR UPDATE` → `create_in_tx` (re-prend le même fiscal_year lock = idempotent).
+- [ ] T4.2 — Vérifier l'ordre des locks : `fiscal_years` est acquis APRÈS le lock advisory `with_account_lock` (MySQL `GET_LOCK()` au niveau session, advisory lock sans row-level overhead) → pas de deadlock possible. **Distinction** : `with_account_lock` utilise advisory lock (session-level), tandis que `find_open_covering_date` utilise `FOR UPDATE` (row lock intra-transaction). Les deux sont orthogonaux. L'ordre est : advisory lock → `find_strictly_pending` → `find_open_covering_date FOR UPDATE` → `create_in_tx` (re-prend le même fiscal_year lock = idempotent).
 
 ### T5. Frontend `ManualMatchModal` + extension `ReconciliationProposals` (AC #92)
 
@@ -447,7 +447,14 @@ ACs #83-#92 (10 ACs).
 
 - [ ] T5.2 — Créer `frontend/src/lib/features/reconciliation/ManualMatchModal.svelte` :
   - Props : `bankTransaction`, `bankAccountId`.
-  - Sélecteur `Account` autocomplete (filtre client-side classes 5/6/7 via `account.number.startsWith('5/6/7')`). **Vérifier d'abord** que le composant `AccountAutocomplete.svelte` existe dans `frontend/src/lib/features/journal-entries/` et est compatible (accepte les options de filtrage). Créer un wrapper ou composant dédié `ManualMatchAccountSelector` si incompatibilité. **Note Pass 4 Sonnet** : le composant `AccountAutocomplete.svelte` accepte une prop `accounts: AccountResponse[]` pré-filtrée (examinée lors de la validate Pass 4). Pattern compatible : le `ManualMatchModal` passe `accounts.filter(a => ['5','6','7'].some(c => a.number.startsWith(c)))` à `AccountAutocomplete`. Aucun wrapper dédié n'est nécessaire. Pas de modification du composant existant.
+  - Sélecteur `Account` autocomplete (filtre client-side classes 5/6/7 via `account.number.startsWith('5/6/7')`). **Vérifier d'abord** que le composant `AccountAutocomplete.svelte` existe dans `frontend/src/lib/features/journal-entries/` et est compatible (accepte les options de filtrage). Créer un wrapper ou composant dédié `ManualMatchAccountSelector` si incompatibilité. **Note Pass 4 Sonnet** : le composant `AccountAutocomplete.svelte` accepte une prop `accounts: AccountResponse[]` pré-filtrée (examinée lors de la validate Pass 4). Pattern compatible : le `ManualMatchModal` doit filtrer **client-side** avant la prop :
+    ```ts
+    const filteredAccounts = accounts.filter(a => 
+      ['5','6','7'].some(c => a.number.startsWith(c))
+    );
+    // puis passer filteredAccounts à <AccountAutocomplete accounts={filteredAccounts} />
+    ```
+    Aucun wrapper dédié n'est nécessaire. Pas de modification du composant existant.
   - Textarea description (200 chars max).
   - Datepicker `valueDate` pré-rempli (`tx.value_date ?? tx.booking_date`).
   - On submit : `manualMatchTransaction(...)` + dispatch event `success`.
@@ -460,7 +467,7 @@ ACs #83-#92 (10 ACs).
 - [ ] T5.4 — Tests Vitest (≥ 3) :
   1. `ReconciliationProposals: shows manual button for tx without candidate` (AC #92 part 1).
   2. `ManualMatchModal: prefills value date from tx.value_date` (AC #92 part 2).
-  3. `manual_match.api: POST sends body without bankLedgerAccountId` (régression vs spec 8-5a unifiée — la route est POST, pas PATCH).
+  3. `manual_match_api_excludes_bank_ledger_account_id_from_request` (régression vs spec 8-5a unifiée — vérifier absence du field bankLedgerAccountId dans body POST, démarcation clair par rapport au verbe HTTP POST lui-même).
 
 ### T6. i18n (AC implicite UI)
 
@@ -646,6 +653,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | Date | Entrée | Auteur |
 |------|--------|--------|
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-base = FR45 manual match utilisant `bank_account.journal_account_id` configuré en 8-5a-zero (foundation). **Différence majeure vs spec 8-5a unifiée** : le body POST `/manual` n'inclut PAS `bankLedgerAccountId` — résolu serveur-side. Anti-pattern UX éliminé à la racine. Helper public `kesh-reconciliation::manual::build_journal_entry_for_counterparty` réutilisé par 8-5a-bis et 8-5b (path dep). 10 ACs (#83-#92). Tasks T1-T7. Path-dépendance bloquante : 8-5a-zero `done`/merged. Status `8-5a-base-manual-match: backlog`. | Claude (Opus 4.7 re-split workflow) |
+| **2026-05-08** | **Pass 5 validate Haiku 4.5** — 2 findings > LOW (0 CRITICAL + 0 HIGH + 2 MEDIUM + 2 LOW). Patches : (M1) T5.4.3 test naming clarity — renommer test pour expliciter validation absence du field `bankLedgerAccountId` vs verbe HTTP POST (confusion latente déjà clarifiée Pass 4 mais naming du test imprécis pour dev agent) ; (M2) T3.1 codification position étape 4bis — ajouter annotation explicite `// Step 4bis: zero amount pre-validation` et clarifier que cette validation est **PRÉ-flight** avant `with_account_lock` (non "inside lock") ; (M3) T5.2 exemple filtrage inline — ajouter snippet code `const filteredAccounts = accounts.filter(...)` pour cristalliser pattern pré-filtrage avant passage à `AccountAutocomplete` (pattern compatible Pass 4, mais clarté améliorée) ; (L1) T4.2 distinction locks — rephrase distinction advisory lock vs row lock pour clarté (advisory = `GET_LOCK()` session-level, FOR UPDATE = row lock intra-tx) ; (L2) T1.2 couverture exhaustive tests — clarifier que les 3 tests couvrent sécurité multi-tenant + filtre status + happy path complet. Trend : Pass 1=3 → Pass 2=3 → Pass 3=7 → Pass 4=2 → **Pass 5=2 findings > LOW** (stabilisation, 0 régressions Pass 4, omissions de clarité détectées). **Critère d'arrêt CLAUDE.md atteint** : ≤ 2 MEDIUM après 5 passes adversariales orthogonales (Pass 5 = dernière passe, tous findings = clarté/documentation, code-impact-zero). Cycle review **STOP**. Spec 8-5a-base ready for `bmad-dev-story`. | Claude (Haiku 4.5 validate) |
 | **2026-05-08** | **Pass 1 validate Sonnet 4.6** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 2 LOW). Patches : (1) F1 MEDIUM — signature incorrecte `create_in_tx` corrigée (§scope verrouillé + §validation-handler-side) : `(tx, fiscal_year_id, user_id, new_je)` au lieu de `(tx, new_je, company_id, fiscal_year_id, audit_actor)` ; (2) F2 MEDIUM — race condition `DbError::FiscalYearClosed` → 400 documentée (§validation-handler-side step 7) ; (3) F3 MEDIUM — mapping explicite `ReconciliationError::FiscalYearClosed → AppError::ReconciliationFiscalYearClosed` spécifié dans T3.3 (sans ce match → 500 silencieux) ; (4) F4 LOW — comptage variantes T3.3 + §risque-splitting corrigés (`ReconciliationOptimisticLockConflict` non créé — pattern `Database(OptimisticLockConflict)` 8-4 réutilisé). Trend : Pass 1 = 3 findings > LOW. Continuer Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
 | **2026-05-08** | **Pass 2 validate Haiku 4.5** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 0 LOW). Patches : (1) M1 MEDIUM — référence AC obsolète ligne 80 corrigée (`AC #82` → `AC #86` — spec 8-5a-base ACs #83-#92) ; (2) M2 MEDIUM — T1.2 tests incomplets : ajout test positif happy-path `find_strictly_pending_returns_tx_when_all_conditions_match` (couverture 100% du helper avant implémentation) ; (3) M3 MEDIUM — T5.2 compatibilité `AccountAutocomplete.svelte` non vérifiée : directive clarity ajoutée (vérifier avant reuse, créer wrapper dédié si incompatibilité). Trend : Pass 1 = 3 → Pass 2 = 3 findings > LOW (tous MEDIUM, pas de régressions Pass-1). Continue Pass 3 Opus 4.7 pour convergence. | Claude (Haiku 4.5 validate) |
 | **2026-05-08** | **Pass 3 validate Opus 4.7 — VALIDATION FINALE** — 8 findings (1 CRITICAL + 1 HIGH + 5 MEDIUM + 1 LOW). Patches : (1) F1''' CRITICAL — pseudo-code T3.1 corrige `AppError::BankAccountNotFound` qui est **unit-struct** (pas `{ bank_account_id }`) — ne compile pas sinon (errors.rs:255 ground-truth) ; (2) F2''' HIGH — AC #87 corrige le code HTTP attendu : code réel `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1 (dette L64 documentée) — pas `BANK_ACCOUNT_NOT_FOUND` ; (3) F3''' MEDIUM — clarification mapping `find_open_covering_date None → ReconciliationError::FiscalYearClosed` traduit côté closure (sans cette traduction explicite, le `Option::None` ne propage pas) ; (4) F4''' MEDIUM — helper `build_journal_entry_for_counterparty` doc clarifie source `company_id` (depuis `tx.company_id`) + journal hardcodé `Journal::Banque` (fields obligatoires `NewJournalEntry`) ; (5) F5''' MEDIUM — sémantique `find_open_covering_date None` confond NoFiscalYear/Closed → L46 dette UX v0.1 (UX simplifié) ; (6) F6''' MEDIUM — test #8 `manual_match_reverses_auto_rejection` doit asserter `was_previously_rejected=true` dans audit shape ; (7) F7''' MEDIUM — pré-validation handler-side `tx.amount != 0` (step 4bis + L48 + nouveau test #11 `manual_match_rejects_zero_amount_transaction`) ; (8) F8''' LOW — currency non-CHF documentée en L47 (invariant garanti à l'amont par 8-1b/8-2/8-3, pas de check redondant). Trend : Pass 1 = 3 → Pass 2 = 3 → Pass 3 = 7 findings > LOW. **NON-CONVERGENT** : Pass 3 a remonté plus de findings que Pass 2 (le 1M context Opus a permis une vérification ground-truth exhaustive du code Rust qui a révélé F1''' CRITICAL + F2''' HIGH invisibles à Sonnet/Haiku sans accès au code réel). Cycle review continue. **Prochaine étape** : Pass 4 Sonnet 4.6 après application des 8 patches. Critère STOP non atteint. | Claude (Opus 4.7 1M validate) |
