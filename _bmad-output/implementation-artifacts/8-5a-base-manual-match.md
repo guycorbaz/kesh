@@ -75,7 +75,7 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
    **Pas de `bankLedgerAccountId`** — résolu serveur-side via `bank_accounts::find_by_id_for_company(...).journal_account_id`. Si NULL → 412 `BANK_ACCOUNT_NOT_CONFIGURED` (le user doit configurer en 8-5a-zero avant d'utiliser 8-5a-base).
 
    **Flow** :
-   - Pré-flight ownership : `bank_accounts::find_by_id_for_company(pool, company_id, bankAccountId)` → 404 `BANK_ACCOUNT_NOT_FOUND` si None.
+   - Pré-flight ownership : `bank_accounts::find_by_id_for_company(pool, company_id, bankAccountId)` → 404 (variant unit-struct `AppError::BankAccountNotFound`, code HTTP `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1 dette L64) si None.
    - Vérification configuration : `bank_account.journal_account_id` doit être `Some(journal_account_id)`. Si `None` → 412 `BANK_ACCOUNT_NOT_CONFIGURED` body `{ error: { code: "BANK_ACCOUNT_NOT_CONFIGURED", message: t(...), details: { bankAccountId, hint: "Configurer le compte comptable lié via /bank-accounts" } } }`.
    - Validation `counterpartyAccountId` : `accounts::find_by_id_in_company` + check `active=true` → 404 `ACCOUNT_NOT_FOUND` (anti-énumération, AC #86 hérité).
    - **Note** : pas de check `account_type` strict pour `counterpartyAccountId` (peut être Asset/Liability/Revenue/Expense — flexible v0.1, le user choisit). Frontend filtre client-side classes 5/6/7 par UX, pas d'invariant serveur.
@@ -187,7 +187,7 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
 
 ```rust
 pub fn build_journal_entry_for_counterparty(
-    tx: &BankTransaction,
+    tx: &BankTransaction,                // tx.company_id et tx.amount sont consommés
     bank_account_journal_id: i64,        // résolu serveur-side via bank_account.journal_account_id
     counterparty_account_id: i64,
     description: String,
@@ -198,6 +198,12 @@ pub fn build_journal_entry_for_counterparty(
 **Rationale** :
 - **Pure** (zéro I/O) : tests unitaires faciles, pas de mock DB.
 - **Sign-aware** : si `tx.amount < 0` (débit titulaire = sortie cash) → la ligne banque est en CRÉDIT (compte d'actif diminue) et la contrepartie en DÉBIT (charge augmente). Si `tx.amount > 0` (crédit titulaire = entrée cash) → inverse.
+- **F4''' Pass 3 Opus — fields obligatoires `NewJournalEntry`** : la struct `NewJournalEntry` (cf. `kesh-db/src/entities/journal_entry.rs:166`) exige `company_id`, `entry_date`, `journal: Journal`, `description`, `lines: Vec<NewJournalEntryLine>`. Le helper :
+  - `company_id` : récupéré depuis `tx.company_id`.
+  - `journal` : hardcodé `Journal::Banque` (cohérent flow réconciliation ; toute opération bank_transaction tombe dans le journal Banque).
+  - `entry_date`, `description` : passés en paramètres.
+  - `lines` : 2 lignes calculées (sign-aware, banque + contrepartie).
+- **F7''' Pass 3 Opus — précondition `tx.amount != 0`** : le helper assume `tx.amount != 0`. Si `tx.amount == 0`, la sign-aware logic est ambiguë (`abs(0) = 0` → 2 lignes débit/crédit 0/0 valides en partie double mais sémantiquement vides). Le handler **doit pré-valider** `tx.amount != Decimal::ZERO` avec 400 `VALIDATION_ERROR { reason: "zero_amount_transaction" }` (cf. T3.1 step 4bis). Le helper peut soit panic (`debug_assert`) soit accepter — choix : `debug_assert!(!tx.amount.is_zero())` pour catch en dev, accepter en prod (pas de UB).
 - **Pas de SplitDetail** : c'est la signature simple à 2 lignes. Le helper N+1 lignes est dans le module `split` (8-5a-bis).
 
 #### §validation-handler-side
@@ -207,10 +213,11 @@ pub fn build_journal_entry_for_counterparty(
 2. **NOUVEAU 8-5a-base** : `bank_account.journal_account_id IS Some(...)` → 412 `BANK_ACCOUNT_NOT_CONFIGURED` sinon (ce check remplace la validation `bankLedgerAccountId` body de la spec 8-5a unifiée).
 3. `counterpartyAccountId` cross-tenant + `active=true` : `accounts::find_by_id_in_company` + check → 404 `ACCOUNT_NOT_FOUND`.
 4. `bankTransactionId` strictement pending + cross-tenant + cross-account : `find_strictly_pending_by_id_for_account` → 404 `RECONCILIATION_TRANSACTION_NOT_PENDING`.
+4bis. **F7''' Pass 3 Opus — pré-validation `tx.amount != 0`** : si `tx.amount == Decimal::ZERO`, retourner 400 `AppError::Validation("zero_amount_transaction".into())` (cf. L48). Évite que le helper `build_journal_entry_for_counterparty` produise 2 lignes 0/0 sémantiquement vides.
 
 **Inside lock (advisory `with_account_lock`)** :
 5. Re-fetch tx (TOCTOU defense pattern 8-4).
-6. Resolve `entry_date` + `find_open_covering_date(tx_inside_lock, company_id, entry_date)` → 409 `RECONCILIATION_FISCAL_YEAR_CLOSED`.
+6. Resolve `entry_date` + `find_open_covering_date(tx_inside_lock, company_id, entry_date)` → si `None`, retourner `Err(ReconciliationError::FiscalYearClosed { entry_date })` depuis la closure du lock. Le handler externe traduit en 409 `RECONCILIATION_FISCAL_YEAR_CLOSED`. **F5''' Pass 3 Opus — sémantique du `None`** : `find_open_covering_date` retourne `None` à la fois pour « aucun exercice n'existe pour cette date » (NoFiscalYear) et « l'exercice existe mais est `Closed` ». La spec mappe les deux en 409 `RECONCILIATION_FISCAL_YEAR_CLOSED` v0.1 (UX simplifié — utilisateur cible reçoit le même message « réconciliation impossible, vérifier l'exercice comptable »). Différenciation reportée v0.2 (cf. L46 ci-dessous) si UX granulaire requise.
 7. `journal_entries::create_in_tx(tx_inside_lock, fiscal_year_id, user_id, new_je)`. **Note race** : si `create_in_tx` retourne `DbError::FiscalYearClosed` (exercice clos entre step 6 et step 7), ce cas remonte via `AppError::Database(DbError::FiscalYearClosed)` → 400 `FISCAL_YEAR_CLOSED` (pas 409). Acceptable v0.1 — cas pathologique (clôture concurrent rarissime sous lock advisory). Documenter dans une note Dev si différenciation nécessaire v0.2.
 8. UPDATE bank_transactions optimistic lock → 409 via `AppError::Database(DbError::OptimisticLockConflict)` si race (pattern 8-4 réutilisé — pas de variant `ReconciliationOptimisticLockConflict` dédié, `Database(OptimisticLockConflict)` → 409 `OPTIMISTIC_LOCK_CONFLICT` couvre ce cas).
 9. Audit log `reconciliation.manual_matched`.
@@ -283,7 +290,7 @@ ACs #83-#92 (10 ACs).
 
 86. **(FR45 — multi-tenant safety counterparty)** Given user company_A POST manual avec `counterpartyAccountId` appartenant à company_B, Then `404 ACCOUNT_NOT_FOUND` (KF-002 pattern, pas 403). *Test E2E HTTP : `manual_match_does_not_leak_cross_tenant_account`.*
 
-87. **(FR45 — multi-tenant safety bank_account)** Given user company_A POST manual avec `bankAccountId` appartenant à company_B, Then `404 BANK_ACCOUNT_NOT_FOUND`. *Test E2E HTTP : `manual_match_returns_404_on_cross_tenant_bank_account`.*
+87. **(FR45 — multi-tenant safety bank_account)** Given user company_A POST manual avec `bankAccountId` appartenant à company_B, Then `404` body `error.code = "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND"` (dette naming L64 héritée 8-1b — code partagé v0.1 entre `bank-imports` et `bank-accounts` parce que `AppError::BankAccountNotFound` est un unit-struct unique). v0.2 : renommer en `BANK_ACCOUNT_NOT_FOUND`. *Test E2E HTTP : `manual_match_returns_404_on_cross_tenant_bank_account`.*
 
 88. **(FR45 — already reconciled idempotency)** Given tx déjà `reconciled` (matched_entry_id != NULL), When POST manual, Then `404 RECONCILIATION_TRANSACTION_NOT_PENDING` (cohérent `find_strictly_pending_by_id_for_account` retourne None car status != 'pending' — pas 409 puisque le helper ne distingue pas les causes). *Test E2E HTTP : `manual_match_rejects_already_reconciled_transaction`.*
 
@@ -369,13 +376,18 @@ ACs #83-#92 (10 ACs).
   - Pré-flight ordre §validation-handler-side ci-dessus.
   - **Différence majeure vs spec 8-5a unifiée** : pas de `bankLedgerAccountId` body. Résolution serveur-side :
     ```rust
+    // F1''' Pass 3 Opus : `AppError::BankAccountNotFound` est unit-struct
+    // (pas `{ bank_account_id }`) — dette L64 documentée. Code HTTP réel
+    // retourné = `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (cf. errors.rs ligne 255 +
+    // tests bank_accounts_e2e.rs ligne 518). v0.2 : renommer en
+    // `BANK_ACCOUNT_NOT_FOUND` (breaking client).
     let bank_account = bank_accounts::find_by_id_for_company(&state.pool, company_id, body.bank_account_id)
         .await?
-        .ok_or(AppError::BankAccountNotFound { bank_account_id: body.bank_account_id })?;
+        .ok_or(AppError::BankAccountNotFound)?;
     let journal_account_id = bank_account.journal_account_id
         .ok_or(AppError::BankAccountNotConfigured { bank_account_id: body.bank_account_id })?;
     ```
-  - Inside lock : flow 5-9 §validation-handler-side.
+  - Inside lock : flow 5-9 §validation-handler-side. **Mapping `find_open_covering_date` None → `ReconciliationError::FiscalYearClosed`** : la closure passée à `with_account_lock` doit traduire le `None` retourné par `fiscal_years::find_open_covering_date` en `Err(ReconciliationError::FiscalYearClosed { entry_date })`. Sans cette traduction explicite, le `None` est un `Ok(None)` côté DB qui ne propage pas en erreur (F3''' Pass 3 Opus).
 
 - [ ] T3.2 — Étendre `crates/kesh-api/src/lib.rs` mounting :
   - `comptable_routes` : ajouter `.route("/api/v1/reconciliation/manual", post(routes::reconciliation::post_manual))`.
@@ -385,7 +397,7 @@ ACs #83-#92 (10 ACs).
   - `AppError::ReconciliationFiscalYearClosed { entry_date: NaiveDate }` → 409 `RECONCILIATION_FISCAL_YEAR_CLOSED` (cohérent §error-precedence-order #10 hérité 8-5a unifiée).
   - `AppError::ReconciliationTransactionNotPending { bank_transaction_id }` → 404 `RECONCILIATION_TRANSACTION_NOT_PENDING` (helper `find_strictly_pending_by_id_for_account` retourne None — couvre cas pending/reconciled/cross-account/cross-tenant en un seul code).
   - `AppError::AccountNotFound { account_id: i64 }` → 404 `ACCOUNT_NOT_FOUND` (réutiliser variant 8-5a-zero T3.3 si déjà créé).
-  - `AppError::BankAccountNotFound` (réutiliser variant 8-1b/8-5a-zero existant).
+  - `AppError::BankAccountNotFound` (réutiliser variant 8-1b/8-5a-zero existant — **F1''' Pass 3 Opus : unit-struct, PAS `{ bank_account_id }`**, code HTTP réel `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1, dette L64).
   - `AppError::ReconciliationOptimisticLockConflict` **— NE PAS CRÉER** : le variant n'existe pas en 8-4. Le pattern 8-4 réutilise `AppError::Database(DbError::OptimisticLockConflict)` → 409 `OPTIMISTIC_LOCK_CONFLICT`. 8-5a-base doit faire de même pour l'UPDATE bank_transactions step 8 (mapper le `rows_affected() == 0` sur `AppError::Database(DbError::OptimisticLockConflict)`).
   - **Mapping `ReconciliationError::FiscalYearClosed` → `AppError`** : le handler DOIT matcher ce cas explicitement dans le `match lock_result { ... }` block (pattern 8-4). Exemple :
     ```rust
@@ -396,7 +408,7 @@ ACs #83-#92 (10 ACs).
     ```
     Sans ce match explicite, le cas tomberait dans `ReconciliationError::Database(e)` → 500 Internal Error (silencieux incorrect).
 
-- [ ] T3.4 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_manual_e2e.rs` *(nouveau fichier, ≥ 10 tests)* :
+- [ ] T3.4 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_manual_e2e.rs` *(nouveau fichier, ≥ 11 tests)* :
   1. `manual_match_creates_journal_entry_for_debit_transaction` (AC #83).
   2. `manual_match_creates_journal_entry_for_credit_transaction` (AC #84).
   3. `manual_match_rejects_unconfigured_bank_account_with_412` (AC #85, **nouveau 8-5a-base**).
@@ -406,7 +418,10 @@ ACs #83-#92 (10 ACs).
   7. `manual_match_rejects_closed_fiscal_year` (AC #89).
   8. `manual_match_reverses_auto_rejection` (AC #90).
   9. `manual_match_requires_comptable_role` (AC #91 RBAC).
-  10. `manual_match_emits_audit_log_pair` (AC #91 audit, was_previously_rejected=false case).
+  10. `manual_match_emits_audit_log_pair` (AC #91 audit, **assertion sur `was_previously_rejected=false`** ET shape complète `details_json` : `bank_transaction_id`, `counterparty_account_id`, `journal_entry_id`, `amount`, `description`, `value_date` snake_case top-level).
+  11. **F7''' Pass 3 Opus** — `manual_match_rejects_zero_amount_transaction` (L48) : tx avec `amount = 0.00` → 400 `VALIDATION_ERROR` body `{ reason: "zero_amount_transaction" }`.
+
+  **F6''' Pass 3 Opus** — Le test #8 `manual_match_reverses_auto_rejection` (AC #90) DOIT inclure une assertion explicite sur le détail audit log `was_previously_rejected=true` (pas seulement le UPDATE bank_transactions `auto_match_rejected_at=NULL` côté row). Sans cette assertion, le test ne couvre pas la branche audit shape distinctive.
 
 ### T4. Helper `fiscal_years::find_open_covering_date` — vérification signature (AC #89)
 
@@ -578,6 +593,9 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | L21 (héritée 8-4) | **NON LEVÉE v0.1** | Reportée v0.2. Workaround 8-5a-base : manual avec compte « Différence de paiement » + invoice toujours dans `paid_at IS NULL`. |
 | L18 (héritée 8-4) | **NON LEVÉE v0.1** | Pas de seuil auto-accept. Reportée v0.2. |
 | **(post-Q5)** | Suggestion ML automatique post-manual non livrée | Décision Guy Q5 2026-05-07 : la response `POST /manual` ne retourne pas de `ruleSuggestion`. L'utilisateur crée ses rules manuellement via `/reconciliation/rules` (livré par 8-5b). Suggestion ML potentielle Story 8-5c v0.2 ou Epic 11+. |
+| **L46 NEW (F5''' Pass 3 Opus)** | **NON DIFFÉRENCIATION** `NoFiscalYear` vs `FiscalYearClosed` dans le flow manual | `fiscal_years::find_open_covering_date` retourne `Option<FiscalYear>` (None unifié pour les 2 cas). Le handler manual mappe `None` → 409 `RECONCILIATION_FISCAL_YEAR_CLOSED` sans distinguer si l'exercice n'existe pas vs s'il existe mais est `Closed`. UX simplifiée v0.1 (user cible reçoit le même message « réconciliation impossible »). Différenciation v0.2 : ajouter un helper `find_any_covering_date` qui retourne le statut. |
+| **L47 NEW (F8''' Pass 3 Opus)** | **Currency `tx.currency != "CHF"` non validée explicitement par 8-5a-base** | L'invariant `tx.currency == "CHF"` est garanti à l'amont par les imports 8-1b (CAMT.053) + 8-2 (CSV) + 8-3 (dedup) qui rejettent les non-CHF en 422 `BANK_IMPORT_UNSUPPORTED_CURRENCY`. Le handler `/manual` n'ajoute pas de check redondant. Si une tx non-CHF se faufile (jamais en v0.1), le UPDATE/INSERT journal_entry passera mais représente la transaction comme CHF (faux comptablement). Risque accepté v0.1, détection upstream incontournable. v0.2 : check belt-and-suspenders dans le handler manual + 422 `UNSUPPORTED_CURRENCY`. |
+| **L48 NEW (F7''' Pass 3 Opus)** | **`tx.amount == 0` validation handler-side** | Le handler `/manual` doit pré-valider `tx.amount != Decimal::ZERO` (step 4bis §validation-handler-side, code 400 `VALIDATION_ERROR` body `{ reason: "zero_amount_transaction" }`). Sinon le helper `build_journal_entry_for_counterparty` produirait 2 lignes débit/crédit 0/0 (sémantiquement vides, pollue les comptes). v0.2 : promouvoir cette validation au niveau import (rejeter à l'amont). |
 
 ### Risques et points d'attention pour le dev agent
 
@@ -629,3 +647,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-base = FR45 manual match utilisant `bank_account.journal_account_id` configuré en 8-5a-zero (foundation). **Différence majeure vs spec 8-5a unifiée** : le body POST `/manual` n'inclut PAS `bankLedgerAccountId` — résolu serveur-side. Anti-pattern UX éliminé à la racine. Helper public `kesh-reconciliation::manual::build_journal_entry_for_counterparty` réutilisé par 8-5a-bis et 8-5b (path dep). 10 ACs (#83-#92). Tasks T1-T7. Path-dépendance bloquante : 8-5a-zero `done`/merged. Status `8-5a-base-manual-match: backlog`. | Claude (Opus 4.7 re-split workflow) |
 | **2026-05-08** | **Pass 1 validate Sonnet 4.6** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 2 LOW). Patches : (1) F1 MEDIUM — signature incorrecte `create_in_tx` corrigée (§scope verrouillé + §validation-handler-side) : `(tx, fiscal_year_id, user_id, new_je)` au lieu de `(tx, new_je, company_id, fiscal_year_id, audit_actor)` ; (2) F2 MEDIUM — race condition `DbError::FiscalYearClosed` → 400 documentée (§validation-handler-side step 7) ; (3) F3 MEDIUM — mapping explicite `ReconciliationError::FiscalYearClosed → AppError::ReconciliationFiscalYearClosed` spécifié dans T3.3 (sans ce match → 500 silencieux) ; (4) F4 LOW — comptage variantes T3.3 + §risque-splitting corrigés (`ReconciliationOptimisticLockConflict` non créé — pattern `Database(OptimisticLockConflict)` 8-4 réutilisé). Trend : Pass 1 = 3 findings > LOW. Continuer Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
 | **2026-05-08** | **Pass 2 validate Haiku 4.5** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 0 LOW). Patches : (1) M1 MEDIUM — référence AC obsolète ligne 80 corrigée (`AC #82` → `AC #86` — spec 8-5a-base ACs #83-#92) ; (2) M2 MEDIUM — T1.2 tests incomplets : ajout test positif happy-path `find_strictly_pending_returns_tx_when_all_conditions_match` (couverture 100% du helper avant implémentation) ; (3) M3 MEDIUM — T5.2 compatibilité `AccountAutocomplete.svelte` non vérifiée : directive clarity ajoutée (vérifier avant reuse, créer wrapper dédié si incompatibilité). Trend : Pass 1 = 3 → Pass 2 = 3 findings > LOW (tous MEDIUM, pas de régressions Pass-1). Continue Pass 3 Opus 4.7 pour convergence. | Claude (Haiku 4.5 validate) |
+| **2026-05-08** | **Pass 3 validate Opus 4.7 — VALIDATION FINALE** — 8 findings (1 CRITICAL + 1 HIGH + 5 MEDIUM + 1 LOW). Patches : (1) F1''' CRITICAL — pseudo-code T3.1 corrige `AppError::BankAccountNotFound` qui est **unit-struct** (pas `{ bank_account_id }`) — ne compile pas sinon (errors.rs:255 ground-truth) ; (2) F2''' HIGH — AC #87 corrige le code HTTP attendu : code réel `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1 (dette L64 documentée) — pas `BANK_ACCOUNT_NOT_FOUND` ; (3) F3''' MEDIUM — clarification mapping `find_open_covering_date None → ReconciliationError::FiscalYearClosed` traduit côté closure (sans cette traduction explicite, le `Option::None` ne propage pas) ; (4) F4''' MEDIUM — helper `build_journal_entry_for_counterparty` doc clarifie source `company_id` (depuis `tx.company_id`) + journal hardcodé `Journal::Banque` (fields obligatoires `NewJournalEntry`) ; (5) F5''' MEDIUM — sémantique `find_open_covering_date None` confond NoFiscalYear/Closed → L46 dette UX v0.1 (UX simplifié) ; (6) F6''' MEDIUM — test #8 `manual_match_reverses_auto_rejection` doit asserter `was_previously_rejected=true` dans audit shape ; (7) F7''' MEDIUM — pré-validation handler-side `tx.amount != 0` (step 4bis + L48 + nouveau test #11 `manual_match_rejects_zero_amount_transaction`) ; (8) F8''' LOW — currency non-CHF documentée en L47 (invariant garanti à l'amont par 8-1b/8-2/8-3, pas de check redondant). Trend : Pass 1 = 3 → Pass 2 = 3 → Pass 3 = 7 findings > LOW. **NON-CONVERGENT** : Pass 3 a remonté plus de findings que Pass 2 (le 1M context Opus a permis une vérification ground-truth exhaustive du code Rust qui a révélé F1''' CRITICAL + F2''' HIGH invisibles à Sonnet/Haiku sans accès au code réel). Cycle review continue. **Prochaine étape** : Pass 4 Sonnet 4.6 après application des 8 patches. Critère STOP non atteint. | Claude (Opus 4.7 1M validate) |
