@@ -662,6 +662,13 @@ reconciliation-manual-modal-title = Riconciliazione manuale
 reconciliation-manual-counterparty-label = Conto controparte
 reconciliation-manual-description-label = Descrizione
 reconciliation-manual-bank-account-not-configured = Il conto bancario non è configurato. Configurare il conto contabile collegato in /bank-accounts.
+reconciliation-manual-value-date-label = Data valuta
+reconciliation-manual-submit = Assegna
+reconciliation-manual-error-no-proposal = Nessuna transazione selezionata
+reconciliation-manual-error-counterparty-required = Conto controparte obbligatorio
+reconciliation-manual-error-description-too-long = Descrizione troppo lunga (max { $max } caratteri)
+reconciliation-manual-description-placeholder = Spese bancarie maggio
+reconciliation-cols-actions = Azioni
 
 # Story 8-5a-zero — Collegamento `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Conti bancari

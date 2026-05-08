@@ -662,6 +662,13 @@ reconciliation-manual-modal-title = Manueller Abgleich
 reconciliation-manual-counterparty-label = Gegenkonto
 reconciliation-manual-description-label = Bezeichnung
 reconciliation-manual-bank-account-not-configured = Das Bankkonto ist nicht konfiguriert. Verknüpfen Sie das Buchhaltungskonto unter /bank-accounts.
+reconciliation-manual-value-date-label = Valutadatum
+reconciliation-manual-submit = Zuweisen
+reconciliation-manual-error-no-proposal = Keine Transaktion ausgewählt
+reconciliation-manual-error-counterparty-required = Gegenkonto erforderlich
+reconciliation-manual-error-description-too-long = Bezeichnung zu lang (max. { $max } Zeichen)
+reconciliation-manual-description-placeholder = Bankgebühren Mai
+reconciliation-cols-actions = Aktionen
 
 # Story 8-5a-zero — Verbindung `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Bankkonten

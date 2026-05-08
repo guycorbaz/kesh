@@ -54,8 +54,16 @@ use rust_decimal::Decimal;
 /// `tx.amount == 0`, les 2 lignes seraient 0/0 (sémantiquement vides).
 /// Le handler **doit pré-valider** `tx.amount != Decimal::ZERO` avec
 /// 400 `VALIDATION_ERROR { reason: "zero_amount_transaction" }` (cf.
-/// step 4bis §validation-handler-side). Le helper utilise
-/// `debug_assert!` pour catch en dev, accepte en prod (pas de UB).
+/// step 4bis §validation-handler-side).
+///
+/// # Panics
+///
+/// Panics si `tx.amount.is_zero()`. La précondition est garantie par le
+/// handler step 4bis ; un panic ici signifie un bug d'invariant.
+/// P-M6 Pass 1 code review : `assert!` (vs `debug_assert!`) pour que
+/// l'invariant soit aussi enforced en release — fail-fast en cas de
+/// breach plutôt que produire silencieusement une écriture 0/0
+/// sémantiquement vide qui pollue les comptes.
 pub fn build_journal_entry_for_counterparty(
     tx: &BankTransaction,
     bank_account_journal_id: i64,
@@ -63,7 +71,7 @@ pub fn build_journal_entry_for_counterparty(
     description: String,
     entry_date: NaiveDate,
 ) -> NewJournalEntry {
-    debug_assert!(
+    assert!(
         !tx.amount.is_zero(),
         "build_journal_entry_for_counterparty assumes tx.amount != 0; \
          handler MUST pré-valider step 4bis (cf. spec §validation-handler-side)"

@@ -489,8 +489,11 @@ async fn post_manual_creates_journal_entry_and_marks_transaction_reconciled(pool
 /// AC #84 — happy path **crédit positif** (encaissement) : tx pending
 /// +200.00 CHF + counterpartyAccountId 7510 (Revenue ici) → 200 OK +
 /// journal_entry à 2 lignes (1020 débit 200 + 7510 crédit 200).
+///
+/// P-M11 Pass 1 code review : nom corrigé (le test seede `dec!(200.00)`
+/// donc un crédit positif, pas un négatif — l'ancien nom était inversé).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn post_manual_creates_journal_entry_for_negative_amount(pool: MySqlPool) {
+async fn post_manual_creates_journal_entry_for_positive_credit_amount(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // Compte additionnel 7510 Intérêts (Revenue).
     let revenue_id = create_account(
@@ -1024,4 +1027,158 @@ async fn post_manual_rejects_zero_amount_transaction(pool: MySqlPool) {
         message.contains("zero_amount_transaction"),
         "marqueur zero_amount_transaction attendu dans message, got: {message}"
     );
+}
+
+/// P-H2 Pass 1 code review — AC #91 RBAC : un user `Consultation` qui
+/// POST /api/v1/reconciliation/manual reçoit 403 (sub-router
+/// `comptable_routes`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_manual_requires_comptable_role(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("rbac_consult"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-50.00),
+            "FEES",
+        )],
+    )
+    .await;
+    let tx_id = tx_ids[0];
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        403,
+        "Consultation rôle doit être rejeté 403 sur POST /manual"
+    );
+}
+
+/// P-M1 Pass 1 code review — AC #91 audit log canonique : un POST
+/// /manual happy path doit émettre 2 entrées dans `audit_log` :
+/// 1. `(action='reconciliation.manual_matched', entity_type='bank_transaction')`
+///    avec `details_json` snake_case top-level complet.
+/// 2. `(action='journal_entry.created', entity_type='journal_entry')`
+///    émis automatiquement par `journal_entries::create_in_tx` (héritage
+///    Story 3-2).
+/// Couvre la pair canonique non testée explicitement par les autres
+/// tests (le test #8 reverse rejection ne vérifie pas la pair complète).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_manual_emits_audit_log_pair(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("audit_pair"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-100.00),
+            "FEES",
+        )],
+    )
+    .await;
+    let tx_id = tx_ids[0];
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "description": "Test audit pair",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let je_id = body["journalEntryId"].as_i64().expect("journalEntryId");
+
+    // Audit log entry #1 : reconciliation.manual_matched scope tx.
+    let recon_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'reconciliation.manual_matched' \
+           AND entity_type = 'bank_transaction' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        recon_count.0, 1,
+        "1 audit log reconciliation.manual_matched pour la tx"
+    );
+
+    // Audit log entry #2 : journal_entry.created scope JE (émis par
+    // journal_entries::create_in_tx). AC #91 second item.
+    let je_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'journal_entry.created' \
+           AND entity_type = 'journal_entry' AND entity_id = ?",
+    )
+    .bind(je_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        je_count.0, 1,
+        "1 audit log journal_entry.created pour la JE créée par create_in_tx"
+    );
+
+    // Vérifier shape complète details_json snake_case top-level (cohérent
+    // F4'' Pass 3, F6''' Pass 3 Opus).
+    let details_json: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log \
+         WHERE action = 'reconciliation.manual_matched' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        details_json["bank_transaction_id"].is_i64(),
+        "bank_transaction_id snake_case top-level"
+    );
+    assert!(details_json["counterparty_account_id"].is_i64());
+    assert!(details_json["journal_entry_id"].is_i64());
+    assert_eq!(
+        details_json["was_previously_rejected"],
+        serde_json::Value::Bool(false),
+        "happy path : was_previously_rejected = false"
+    );
+    assert!(
+        details_json["amount"].is_string(),
+        "amount = String Decimal"
+    );
+    assert!(details_json["description"].is_string());
+    assert!(details_json["value_date"].is_string());
 }

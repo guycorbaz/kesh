@@ -22,6 +22,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
+	import { isApiError } from '$lib/shared/utils/api-client';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ReconciliationProposal } from './reconciliation.types';
 	import { manualMatchTransaction } from './reconciliation.api';
@@ -63,11 +64,11 @@
 			description = '';
 			errorMsg = '';
 			bankNotConfigured = false;
-			// Pré-remplir avec value_date s'il existe sinon booking_date.
-			// L'API renvoie `transaction.bookingDate` (camelCase). value_date
-			// n'est pas exposé dans ReconciliationProposal v0.1 — fallback
-			// booking_date qui couvre 95% des cas.
-			valueDate = proposal.transaction.bookingDate;
+			// P-M7 Pass 1 code review : `valueDate` est désormais exposé
+			// par GET /proposals (champ optionnel sur TransactionSummary).
+			// Si null, fallback bookingDate (cohérent comportement
+			// historique pré-Pass-1).
+			valueDate = proposal.transaction.valueDate ?? proposal.transaction.bookingDate;
 		}
 	});
 
@@ -104,13 +105,18 @@
 			onSuccess();
 			onOpenChange(false);
 		} catch (e) {
-			const msg = e instanceof Error ? e.message : String(e);
-			// Detect 412 BANK_ACCOUNT_NOT_CONFIGURED via message string
-			// (apiClient throw une Error stringifiée incluant le code).
-			if (msg.includes('BANK_ACCOUNT_NOT_CONFIGURED')) {
+			// P-H1 Pass 1 code review : `apiClient` throw des objets `ApiError`
+			// plain (interface, pas `class extends Error`), donc la détection
+			// par `e instanceof Error` + `String(e).includes(...)` ne marchait
+			// jamais (toujours `[object Object]`). On utilise le type guard
+			// dédié `isApiError` qui inspecte les champs `code` + `status`.
+			if (isApiError(e) && e.code === 'BANK_ACCOUNT_NOT_CONFIGURED') {
 				bankNotConfigured = true;
+				errorMsg = e.message;
+			} else if (isApiError(e)) {
+				errorMsg = e.message;
 			} else {
-				errorMsg = msg;
+				errorMsg = e instanceof Error ? e.message : String(e);
 			}
 		} finally {
 			submitting = false;

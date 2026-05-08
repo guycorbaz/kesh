@@ -206,7 +206,9 @@
 					<th class="text-left">{i18nMsg('reconciliation-cols-tx-counterparty', 'Contrepartie')}</th>
 					<th class="text-left">{i18nMsg('reconciliation-cols-candidate', 'Candidate')}</th>
 					<th class="text-left">{i18nMsg('reconciliation-cols-score', 'Score')}</th>
-					<th class="text-left"></th>
+					<th class="text-left" aria-label={i18nMsg('reconciliation-cols-actions', 'Actions')}>
+						<span class="sr-only">{i18nMsg('reconciliation-cols-actions', 'Actions')}</span>
+					</th>
 				</tr>
 			</thead>
 			<tbody>

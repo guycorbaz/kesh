@@ -63,7 +63,10 @@ export async function manualMatchTransaction(
 		counterpartyAccountId,
 	};
 	if (description !== undefined && description !== '') body.description = description;
-	if (valueDate !== undefined) body.valueDate = valueDate;
+	// P-L2 Pass 1 code review : filtrer `valueDate === ''` aussi (le
+	// datepicker HTML retourne `''` quand vidé, et le backend ne sait
+	// pas désérialiser `""` en `Option<NaiveDate>` → 422 ValidationError).
+	if (valueDate !== undefined && valueDate !== '') body.valueDate = valueDate;
 	return apiClient.post<ManualMatchResponse>(
 		'/api/v1/reconciliation/manual',
 		body,

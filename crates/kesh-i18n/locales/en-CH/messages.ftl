@@ -662,6 +662,13 @@ reconciliation-manual-modal-title = Manual reconciliation
 reconciliation-manual-counterparty-label = Counterparty account
 reconciliation-manual-description-label = Description
 reconciliation-manual-bank-account-not-configured = The bank account is not configured. Link a chart-of-accounts entry under /bank-accounts.
+reconciliation-manual-value-date-label = Value date
+reconciliation-manual-submit = Assign
+reconciliation-manual-error-no-proposal = No transaction selected
+reconciliation-manual-error-counterparty-required = Counterparty account required
+reconciliation-manual-error-description-too-long = Description too long (max { $max } characters)
+reconciliation-manual-description-placeholder = Bank fees May
+reconciliation-cols-actions = Actions
 
 # Story 8-5a-zero — `bank_account.journal_account_id` link configuration.
 bank-accounts-labels-page-title = Bank accounts

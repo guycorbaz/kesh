@@ -50,6 +50,8 @@ function makeProposalWithCandidate(
 		bankTransactionId,
 		transaction: {
 			bookingDate: '2026-05-15',
+			// P-M7 Pass 1 : valueDate exposé par GET /proposals.
+			valueDate: '2026-05-15',
 			amount: '100.00',
 			currency: 'CHF',
 			counterpartyName: 'ACME GMBH',
@@ -78,6 +80,9 @@ function makeProposalWithoutCandidate(
 		bankTransactionId,
 		transaction: {
 			bookingDate: '2026-05-15',
+			// P-M7 Pass 1 : valueDate exposé par GET /proposals (null
+			// fallback testé séparément dans ManualMatchModal.test.ts).
+			valueDate: null,
 			amount: '50.00',
 			currency: 'CHF',
 			counterpartyName: 'UNKNOWN',
@@ -176,8 +181,11 @@ describe('ReconciliationProposals', () => {
 	});
 
 	// Story 8-5a-base FR45 — bouton « Affecter manuellement » présent
-	// sur toutes les rows pending (avec ou sans candidate).
-	it('shows manual match button for tx without candidate', async () => {
+	// sur toutes les rows pending (avec ou sans candidate). Décision
+	// Pass 1 code review P-M2 : override workflow utile pour frais
+	// bancaires (tx sans candidate) ET correction d'un match auto
+	// incorrect (tx avec candidate). Cf. L66.
+	it('shows manual match button for all pending rows (with and without candidate)', async () => {
 		mockApi.getProposals.mockResolvedValue({
 			proposals: [
 				makeProposalWithoutCandidate(2),
@@ -191,10 +199,12 @@ describe('ReconciliationProposals', () => {
 		});
 
 		const buttons = await findAllByTestId('manual-match-button');
-		// 2 rows → 2 boutons « Affecter manuellement ».
+		// 2 rows → 2 boutons « Affecter manuellement » (override workflow,
+		// même quand candidate auto-proposée existe — cf. L66 Pass 1).
 		expect(buttons).toHaveLength(2);
-		// Présent sur la tx sans candidate.
+		// Présent sur la tx sans candidate ET sur la tx avec candidate.
 		expect(buttons[0].getAttribute('data-tx-id')).toBe('2');
+		expect(buttons[1].getAttribute('data-tx-id')).toBe('3');
 	});
 
 	it('triggers reject with selected txIds only', async () => {

@@ -85,6 +85,11 @@ pub struct ReconciliationProposal {
 #[serde(rename_all = "camelCase")]
 pub struct TransactionSummary {
     pub booking_date: chrono::NaiveDate,
+    /// P-M7 Pass 1 code review : exposer `value_date` (Option<NaiveDate>)
+    /// pour pré-remplir le champ datepicker du `ManualMatchModal` avec la
+    /// date de valeur (si présente) plutôt que le booking_date. Camelcase
+    /// JSON : `valueDate`.
+    pub value_date: Option<chrono::NaiveDate>,
     pub amount: String,
     pub currency: String,
     pub counterparty_name: Option<String>,
@@ -297,6 +302,7 @@ pub async fn get_proposals(
                 bank_transaction_id: tx.id,
                 transaction: TransactionSummary {
                     booking_date: tx.booking_date,
+                    value_date: tx.value_date,
                     amount: tx.amount.normalize().to_string(),
                     currency: tx.currency.clone(),
                     counterparty_name: tx.counterparty_name.clone(),
@@ -1156,6 +1162,29 @@ pub async fn post_manual(
                 bank_account_id: body.bank_account_id,
             })?;
 
+    // Step 2 bis — P-H5 Pass 1 code review : vérifier que le compte ledger
+    // banque résolu est ACTIF. Race fenêtre : un Admin peut archiver le
+    // compte 1020 entre le PATCH /bank-accounts/{id} (8-5a-zero) et
+    // l'appel manual. Sans ce check, `journal_entries::create_in_tx`
+    // step 7 retourne 400 INACTIVE_OR_INVALID_ACCOUNTS (générique). On
+    // remonte 412 BANK_ACCOUNT_NOT_CONFIGURED qui pointe vers la racine
+    // (le compte lié n'est plus exploitable, reconfigurer dans
+    // /bank-accounts) — UX cohérente avec step 2.
+    let bank_ledger_account = accounts_repo::find_by_id_in_company(
+        &state.pool,
+        bank_ledger_account_id,
+        current_user.company_id,
+    )
+    .await?;
+    match bank_ledger_account {
+        Some(a) if a.active => {}
+        _ => {
+            return Err(AppError::BankAccountNotConfigured {
+                bank_account_id: body.bank_account_id,
+            });
+        }
+    }
+
     // Step 3 — counterpartyAccountId ownership + active check.
     // anti-énumération KF-002 : 404 même si cross-tenant ou archivé.
     let counterparty = accounts_repo::find_by_id_in_company(
@@ -1195,12 +1224,12 @@ pub async fn post_manual(
     }
 
     // Capture les inputs handler-side avant de move dans la closure.
+    // P-H3 Pass 1 code review : `resolved_value_date` calculé handler-side
+    // était dead code (la closure recalcule indépendamment depuis ses
+    // captures `body.value_date` + `tx.value_date` + `booking_date`).
+    // Supprimé.
     let was_previously_rejected = bank_transaction.auto_match_rejected_at.is_some();
     let bank_transaction_amount = bank_transaction.amount;
-    let resolved_value_date = body
-        .value_date
-        .or(bank_transaction.value_date)
-        .unwrap_or(bank_transaction.booking_date);
     let description = body.description.clone().unwrap_or_default();
 
     // Step 5+ — tout le reste inside `with_account_lock` (atomicité
@@ -1214,10 +1243,13 @@ pub async fn post_manual(
     let bank_account_id = body.bank_account_id;
     let bank_transaction_id = body.bank_transaction_id;
     let counterparty_account_id = body.counterparty_account_id;
-    let counterparty_number = counterparty.number.clone();
-    let _ = counterparty_number; // silence possible unused (logging future)
+    // P-H3 Pass 1 code review : suppression `counterparty_number` (dead
+    // code spéculatif pour logging futur).
     let user_id = current_user.user_id;
     let company_id = current_user.company_id;
+    // `counterparty` (Account complet) consommé jusque ici par les checks
+    // step 3 (active=true). Drop explicite pour signaler la fin d'usage.
+    drop(counterparty);
 
     let lock_result: Result<i64, ReconciliationError> = with_account_lock(
         &mut tx_outer,
@@ -1290,7 +1322,13 @@ pub async fn post_manual(
             .bind(bank_tx_version_pre)
             .execute(&mut **tx_inner)
             .await
-            .map_err(ReconciliationError::Database)?;
+            // P-M5 Pass 1 code review : cohérence avec le reste de la
+            // closure qui wrap les erreurs sqlx via `Db(DbError::Sqlx(_))`
+            // (variant `From<DbError>` pour `?`). Si step 8 est extrait en
+            // helper kesh-db retournant `DbError`, le `?` continuera à
+            // fonctionner. Le variant `Database(sqlx::Error)` reste pour
+            // compat 8-4 mais n'est plus émis par 8-5a-base.
+            .map_err(|e| ReconciliationError::Db(DbError::Sqlx(e)))?;
 
             if update_result.rows_affected() != 1 {
                 // Race version OR status `pending → reconciled` par
@@ -1335,20 +1373,25 @@ pub async fn post_manual(
                 .commit()
                 .await
                 .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-            // Variables non utilisées en happy path (silence warnings).
-            let _ = resolved_value_date;
-            let _ = bank_ledger_account_id;
-            let _ = counterparty_account_id;
             Ok(Json(ManualMatchResponse {
                 bank_transaction_id,
                 journal_entry_id,
             }))
         }
+        // P-H4 Pass 1 code review : remplacement `drop(tx_outer)` par
+        // `rollback().await` explicite pour signaler l'intention. Le
+        // rollback peut échouer (connexion DB perdue) — on ignore
+        // l'erreur car l'erreur principale (AccountLocked, FiscalYearClosed,
+        // Db, ...) est plus signifiante. Pattern idiomatique Rust + plus
+        // explicite que le drop implicite.
+        // Note résiduelle : les handlers 8-4 (`post_accept`/`post_reject`)
+        // utilisent encore `drop(tx_outer)`. Cohérence reportée Story 11+
+        // (out-of-scope 8-5a-base).
         Err(ReconciliationError::AccountLocked {
             bank_account_id,
             timeout_secs,
         }) => {
-            drop(tx_outer);
+            let _ = tx_outer.rollback().await;
             Err(AppError::ReconciliationAccountLocked {
                 bank_account_id,
                 timeout_secs,
@@ -1357,19 +1400,19 @@ pub async fn post_manual(
         Err(ReconciliationError::LockReleaseFailed {
             bank_account_id, ..
         }) => {
-            drop(tx_outer);
+            let _ = tx_outer.rollback().await;
             Err(AppError::ReconciliationLockReleaseFailed { bank_account_id })
         }
         Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
-            drop(tx_outer);
+            let _ = tx_outer.rollback().await;
             Err(AppError::ReconciliationFiscalYearClosed { entry_date })
         }
         Err(ReconciliationError::Db(db_err)) => {
-            drop(tx_outer);
+            let _ = tx_outer.rollback().await;
             Err(AppError::Database(db_err))
         }
         Err(ReconciliationError::Database(e)) => {
-            drop(tx_outer);
+            let _ = tx_outer.rollback().await;
             Err(AppError::Database(DbError::Sqlx(e)))
         }
     }
