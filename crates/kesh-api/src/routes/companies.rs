@@ -55,6 +55,8 @@ pub struct BankAccountJson {
     pub iban: String,
     pub qr_iban: Option<String>,
     pub is_primary: bool,
+    /// Story 8-5a-zero — compte du plan comptable lié (None = non configuré).
+    pub journal_account_id: Option<i64>,
 }
 
 impl From<BankAccount> for BankAccountJson {
@@ -65,6 +67,7 @@ impl From<BankAccount> for BankAccountJson {
             iban: b.iban,
             qr_iban: b.qr_iban,
             is_primary: b.is_primary,
+            journal_account_id: b.journal_account_id,
         }
     }
 }

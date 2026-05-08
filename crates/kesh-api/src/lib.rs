@@ -14,7 +14,7 @@ pub mod routes;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use sqlx::MySqlPool;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -199,6 +199,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reconciliation/reject",
             post(routes::reconciliation::post_reject),
         )
+        // Story 8-5a-zero : configuration `bank_account.journal_account_id`
+        // (Comptable+ pour la mutation, foundation FR45/FR48).
+        .route(
+            "/api/v1/bank-accounts/{id}",
+            patch(routes::bank_accounts::patch_bank_account_journal_link),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -313,6 +319,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/bank-profiles/{id}",
             get(routes::bank_profiles::detail),
+        )
+        // Story 8-5a-zero : lecture des bank_accounts de la company
+        // (tous rôles authentifiés, multi-tenant KF-002).
+        .route(
+            "/api/v1/bank-accounts",
+            get(routes::bank_accounts::list_bank_accounts),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

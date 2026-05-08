@@ -655,3 +655,21 @@ reconciliation-errors-already-reconciled = Diese Transaktion wurde bereits abgeg
 reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleich nicht zulässig.
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
+
+# Story 8-5a-zero — Verbindung `bank_account.journal_account_id`.
+bank-accounts-labels-page-title = Bankkonten
+bank-accounts-labels-page-subtitle = Jedes Bankkonto mit einem Konto des Kontorahmens verbinden (typisch Klasse 1: 1020 Kasse, 1030 Bank).
+bank-accounts-labels-bank-name = Bank
+bank-accounts-labels-iban = IBAN
+bank-accounts-labels-journal-account-id = Verbundenes Buchhaltungskonto
+bank-accounts-labels-not-configured = Nicht konfiguriert
+bank-accounts-labels-empty = Keine Bankkonten konfiguriert.
+bank-accounts-labels-loading = Wird geladen…
+bank-accounts-actions-link-account = Mit Kontorahmen verbinden
+bank-accounts-actions-unlink-account = Trennen
+bank-accounts-actions-cancel = Abbrechen
+bank-accounts-actions-submit = Verbinden
+bank-accounts-errors-account-not-found = Buchhaltungskonto nicht gefunden.
+bank-accounts-errors-invalid-account-type = Ungültiger Kontotyp (Aktiv- oder Passivkonto erforderlich).
+bank-accounts-toast-link-success = Bankkonto erfolgreich mit dem Kontorahmen verbunden.
+bank-accounts-toast-unlink-success = Bankkonto vom Kontorahmen getrennt.

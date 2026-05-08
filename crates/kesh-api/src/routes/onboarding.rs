@@ -462,6 +462,11 @@ pub async fn set_bank_account(
     let company = get_company(&state).await?;
 
     // Upsert primary bank account (idempotent in case of retry)
+    // TODO(L65 Story 8-5a-zero) : backfill audit_log `bank_account.created` v0.2.
+    // L'audit historique de la création initiale du bank_account n'est pas
+    // émis — Story 8-5a-zero pose le 1er audit_log (`bank_account.updated`).
+    // Pattern audit_log `entity.created` à appliquer ici en v0.2 (cohérent
+    // 8-1b/8-4 qui émettent `bank_import.created` / `reconciliation.matched`).
     use kesh_db::entities::NewBankAccount;
     use kesh_db::repositories::bank_accounts;
 

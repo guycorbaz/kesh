@@ -655,3 +655,21 @@ reconciliation-errors-already-reconciled = Questa transazione è già stata rico
 reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla riconciliazione.
 reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
 reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.
+
+# Story 8-5a-zero — Collegamento `bank_account.journal_account_id`.
+bank-accounts-labels-page-title = Conti bancari
+bank-accounts-labels-page-subtitle = Collegare ogni conto bancario a un conto del piano dei conti (classe 1 tipica: 1020 Cassa, 1030 Banca).
+bank-accounts-labels-bank-name = Banca
+bank-accounts-labels-iban = IBAN
+bank-accounts-labels-journal-account-id = Conto contabile collegato
+bank-accounts-labels-not-configured = Non configurato
+bank-accounts-labels-empty = Nessun conto bancario configurato.
+bank-accounts-labels-loading = Caricamento…
+bank-accounts-actions-link-account = Collega al piano dei conti
+bank-accounts-actions-unlink-account = Scollega
+bank-accounts-actions-cancel = Annulla
+bank-accounts-actions-submit = Collega
+bank-accounts-errors-account-not-found = Conto contabile non trovato.
+bank-accounts-errors-invalid-account-type = Tipo di conto non valido (Attivo o Passivo richiesto).
+bank-accounts-toast-link-success = Conto bancario collegato con successo al piano dei conti.
+bank-accounts-toast-unlink-success = Conto bancario scollegato dal piano dei conti.
