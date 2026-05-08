@@ -17,15 +17,19 @@
 
 use axum::Json;
 use axum::extract::{Extension, Query, State};
-use chrono::Duration;
+use chrono::{Duration, NaiveDate};
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
-    audit_log, bank_accounts, contacts as contacts_repo, reconciliation as reconciliation_repo,
+    accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
+    journal_entries, reconciliation as reconciliation_repo,
 };
-use kesh_reconciliation::{MatchScore, ReconciliationError, propose_matches, with_account_lock};
+use kesh_reconciliation::{
+    MatchScore, ReconciliationError, build_journal_entry_for_counterparty, propose_matches,
+    with_account_lock,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -81,6 +85,11 @@ pub struct ReconciliationProposal {
 #[serde(rename_all = "camelCase")]
 pub struct TransactionSummary {
     pub booking_date: chrono::NaiveDate,
+    /// P-M7 Pass 1 code review : exposer `value_date` (Option<NaiveDate>)
+    /// pour pré-remplir le champ datepicker du `ManualMatchModal` avec la
+    /// date de valeur (si présente) plutôt que le booking_date. Camelcase
+    /// JSON : `valueDate`.
+    pub value_date: Option<chrono::NaiveDate>,
     pub amount: String,
     pub currency: String,
     pub counterparty_name: Option<String>,
@@ -293,6 +302,7 @@ pub async fn get_proposals(
                 bank_transaction_id: tx.id,
                 transaction: TransactionSummary {
                     booking_date: tx.booking_date,
+                    value_date: tx.value_date,
                     amount: tx.amount.normalize().to_string(),
                     currency: tx.currency.clone(),
                     counterparty_name: tx.counterparty_name.clone(),
@@ -435,6 +445,22 @@ pub async fn post_accept(
         Err(ReconciliationError::Database(e)) => {
             drop(tx_outer);
             Err(AppError::Database(DbError::Sqlx(e)))
+        }
+        // Story 8-5a-base T2.3 — variant `Db(DbError)` ajouté à
+        // `ReconciliationError`. La closure `accept_batch` n'émet PAS
+        // ce variant en pratique (elle continue d'utiliser
+        // `.map_err(|e| match e { Sqlx → Database, other → Database+Protocol })`
+        // — F2 Pass 7 Sonnet directive). Cette branche est unreachable
+        // en pratique mais requise pour l'exhaustivité du compilateur.
+        Err(ReconciliationError::Db(db_err)) => {
+            drop(tx_outer);
+            Err(AppError::Database(db_err))
+        }
+        // Idem : `accept_batch` n'émet pas `FiscalYearClosed`. Branche
+        // exhaustive uniquement.
+        Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationFiscalYearClosed { entry_date })
         }
     }
 }
@@ -906,6 +932,19 @@ pub async fn post_reject(
             drop(tx_outer);
             Err(AppError::Database(DbError::Sqlx(e)))
         }
+        // Story 8-5a-base T2.3 — branches exhaustives sur les nouveaux
+        // variants `Db(DbError)` + `FiscalYearClosed { entry_date }`.
+        // Unreachable en pratique pour `reject_batch` (qui n'émet PAS
+        // ces variants — pattern `.map_err` manuel conservé) mais
+        // requises pour l'exhaustivité du match.
+        Err(ReconciliationError::Db(db_err)) => {
+            drop(tx_outer);
+            Err(AppError::Database(db_err))
+        }
+        Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationFiscalYearClosed { entry_date })
+        }
     }
 }
 
@@ -1022,4 +1061,359 @@ async fn reject_batch(
     }
 
     Ok(RejectResponse { rejected, failed })
+}
+
+// ============================================================
+// Story 8-5a-base — POST /reconciliation/manual (FR45)
+// ============================================================
+
+/// Cap maximum pour le field `description` du body POST /manual
+/// (8-5a-base). Distinct de `MAX_DESCRIPTION_LEN = 500` de
+/// `routes/journal_entries.rs` — business rule modal manual
+/// (libellé court UX, F4 Pass 4 Sonnet).
+const MAX_MANUAL_DESCRIPTION_LEN: usize = 200;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualMatchBody {
+    pub bank_account_id: i64,
+    pub bank_transaction_id: i64,
+    pub counterparty_account_id: i64,
+    pub description: Option<String>,
+    pub value_date: Option<NaiveDate>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualMatchResponse {
+    pub bank_transaction_id: i64,
+    pub journal_entry_id: i64,
+}
+
+/// Handler `POST /api/v1/reconciliation/manual` (Story 8-5a-base FR45).
+///
+/// Crée à la volée une `journal_entry` à 2 lignes (banque + contrepartie)
+/// pour réconcilier une `bank_transaction` `pending` sans facture
+/// pré-existante. Le compte ledger banque est résolu **serveur-side**
+/// via `bank_account.journal_account_id` (foundation 8-5a-zero) — pas
+/// de body field `bankLedgerAccountId`.
+///
+/// Lève L19/L20 héritées 8-4 (matching journal_entries non-invoice +
+/// création écriture sans facture). L23 partiellement levée (manual
+/// reset `auto_match_rejected_at = NULL`).
+///
+/// Sub-router `comptable_routes` → RBAC Comptable+ enforcé.
+///
+/// **Ordre de validation** (cf. spec §validation-handler-side) :
+/// 1. `bankAccountId` ownership multi-tenant → 404 BANK_ACCOUNT_NOT_FOUND.
+/// 2. `bank_account.journal_account_id` configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED.
+/// 3. `counterpartyAccountId` ownership + active → 404 ACCOUNT_NOT_FOUND.
+/// 4. `find_strictly_pending_by_id_for_account` → 404 RECONCILIATION_TRANSACTION_NOT_PENDING.
+///    4bis. `tx.amount != 0` → 400 VALIDATION_ERROR (zero_amount_transaction, F7''' Pass 3).
+/// 5. (inside lock 5-9) : re-fetch tx (TOCTOU) + fiscal_year + create_in_tx
+///    + UPDATE bank_transactions optimistic lock + audit log.
+pub async fn post_manual(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(body): Json<ManualMatchBody>,
+) -> Result<Json<ManualMatchResponse>, AppError> {
+    // Step 0 — validation body de surface.
+    if body.bank_account_id <= 0 {
+        return Err(AppError::Validation(
+            "bankAccountId doit être strictement positif".into(),
+        ));
+    }
+    if body.bank_transaction_id <= 0 {
+        return Err(AppError::Validation(
+            "bankTransactionId doit être strictement positif".into(),
+        ));
+    }
+    if body.counterparty_account_id <= 0 {
+        return Err(AppError::Validation(
+            "counterpartyAccountId doit être strictement positif".into(),
+        ));
+    }
+    if let Some(d) = &body.description {
+        if d.chars().count() > MAX_MANUAL_DESCRIPTION_LEN {
+            return Err(AppError::Validation(format!(
+                "description trop longue (max {MAX_MANUAL_DESCRIPTION_LEN} caractères)"
+            )));
+        }
+    }
+
+    // Step 1 — bank_account ownership pré-flight (KF-002 multi-tenant).
+    // F1''' Pass 3 Opus : `AppError::BankAccountNotFound` est unit-struct
+    // (pas `{ bank_account_id }`) — code HTTP réel
+    // `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1, dette héritée 8-1b.
+    let bank_account = bank_accounts::find_by_id_for_company(
+        &state.pool,
+        current_user.company_id,
+        body.bank_account_id,
+    )
+    .await?
+    .ok_or(AppError::BankAccountNotFound)?;
+
+    // Step 2 — bank_account.journal_account_id configuré (foundation 8-5a-zero).
+    // → 412 BANK_ACCOUNT_NOT_CONFIGURED si NULL.
+    let bank_ledger_account_id =
+        bank_account
+            .journal_account_id
+            .ok_or(AppError::BankAccountNotConfigured {
+                bank_account_id: body.bank_account_id,
+            })?;
+
+    // Step 2 bis — P-H5 Pass 1 code review : vérifier que le compte ledger
+    // banque résolu est ACTIF. Race fenêtre : un Admin peut archiver le
+    // compte 1020 entre le PATCH /bank-accounts/{id} (8-5a-zero) et
+    // l'appel manual. Sans ce check, `journal_entries::create_in_tx`
+    // step 7 retourne 400 INACTIVE_OR_INVALID_ACCOUNTS (générique). On
+    // remonte 412 BANK_ACCOUNT_NOT_CONFIGURED qui pointe vers la racine
+    // (le compte lié n'est plus exploitable, reconfigurer dans
+    // /bank-accounts) — UX cohérente avec step 2.
+    let bank_ledger_account = accounts_repo::find_by_id_in_company(
+        &state.pool,
+        bank_ledger_account_id,
+        current_user.company_id,
+    )
+    .await?;
+    match bank_ledger_account {
+        Some(a) if a.active => {}
+        _ => {
+            return Err(AppError::BankAccountNotConfigured {
+                bank_account_id: body.bank_account_id,
+            });
+        }
+    }
+
+    // Step 3 — counterpartyAccountId ownership + active check.
+    // anti-énumération KF-002 : 404 même si cross-tenant ou archivé.
+    let counterparty = accounts_repo::find_by_id_in_company(
+        &state.pool,
+        body.counterparty_account_id,
+        current_user.company_id,
+    )
+    .await?;
+    let counterparty = match counterparty {
+        Some(a) if a.active => a,
+        _ => {
+            return Err(AppError::AccountNotFound {
+                account_id: body.counterparty_account_id,
+            });
+        }
+    };
+
+    // Step 4 — find_strictly_pending : 404 si introuvable / cross-tenant /
+    // cross-account / déjà reconciled (4 cas en un seul code).
+    let bank_transaction = reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &state.pool,
+        current_user.company_id,
+        body.bank_account_id,
+        body.bank_transaction_id,
+    )
+    .await?
+    .ok_or(AppError::ReconciliationTransactionNotPending {
+        bank_transaction_id: body.bank_transaction_id,
+    })?;
+
+    // Step 4bis — F7''' Pass 3 Opus : pré-validation `tx.amount != 0`.
+    // Évite que `build_journal_entry_for_counterparty` produise 2 lignes
+    // 0/0 sémantiquement vides (cf. L48). Marqueur "zero_amount_transaction"
+    // dans `error.message` (F5'''' Pass 6 — shape réelle `AppError::Validation`).
+    if bank_transaction.amount.is_zero() {
+        return Err(AppError::Validation("zero_amount_transaction".to_string()));
+    }
+
+    // Capture les inputs handler-side avant de move dans la closure.
+    // P-H3 Pass 1 code review : `resolved_value_date` calculé handler-side
+    // était dead code (la closure recalcule indépendamment depuis ses
+    // captures `body.value_date` + `tx.value_date` + `booking_date`).
+    // Supprimé.
+    let was_previously_rejected = bank_transaction.auto_match_rejected_at.is_some();
+    let bank_transaction_amount = bank_transaction.amount;
+    let description = body.description.clone().unwrap_or_default();
+
+    // Step 5+ — tout le reste inside `with_account_lock` (atomicité
+    // §validation-handler-side step 9 : steps 5-9 ne PAS sortir audit_log
+    // de la closure — F2'''' Pass 6 Opus).
+    let mut tx_outer = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let bank_account_id = body.bank_account_id;
+    let bank_transaction_id = body.bank_transaction_id;
+    let counterparty_account_id = body.counterparty_account_id;
+    // P-H3 Pass 1 code review : suppression `counterparty_number` (dead
+    // code spéculatif pour logging futur).
+    let user_id = current_user.user_id;
+    let company_id = current_user.company_id;
+    // `counterparty` (Account complet) consommé jusque ici par les checks
+    // step 3 (active=true). Drop explicite pour signaler la fin d'usage.
+    drop(counterparty);
+
+    let lock_result: Result<i64, ReconciliationError> = with_account_lock(
+        &mut tx_outer,
+        company_id,
+        bank_account_id,
+        LOCK_TIMEOUT_SECS,
+        async move |tx_inner| {
+            // Step 5 — re-fetch tx INSIDE le lock (TOCTOU defense
+            // pattern 8-4 — un autre flow concurrent peut avoir mis à
+            // jour la tx entre le pré-flight step 4 et l'acquisition
+            // du lock).
+            let tx = reconciliation_repo::find_strictly_pending_by_id_for_account(
+                &mut **tx_inner,
+                company_id,
+                bank_account_id,
+                bank_transaction_id,
+            )
+            .await?
+            .ok_or_else(|| {
+                // Race avec un autre flow : la tx a été reconciled
+                // entre step 4 et step 5. On émet un DbError typé
+                // wrappé en variant `Db` pour préserver la fidélité
+                // jusqu'au mapping HTTP. `OptimisticLockConflict`
+                // (mappé 409) reflète bien la sémantique de race.
+                ReconciliationError::Db(DbError::OptimisticLockConflict)
+            })?;
+            let bank_tx_version_pre = tx.version;
+            let booking_date = tx.booking_date;
+            let entry_date = body.value_date.or(tx.value_date).unwrap_or(booking_date);
+
+            // Step 6 — find_open_covering_date avec FOR UPDATE row lock
+            // intra-tx (advisory lock orthogonal). Si None (NoFiscalYear
+            // OR Closed unifiés v0.1, cf. L46), traduire en
+            // `ReconciliationError::FiscalYearClosed { entry_date }` —
+            // F3''' Pass 3 Opus : sans cette traduction, le `Ok(None)`
+            // ne propagerait pas en erreur.
+            let fiscal_year =
+                fiscal_years::find_open_covering_date(tx_inner, company_id, entry_date)
+                    .await
+                    .map_err(ReconciliationError::Db)?
+                    .ok_or(ReconciliationError::FiscalYearClosed { entry_date })?;
+
+            // Step 7 — build_journal_entry_for_counterparty (helper
+            // 8-5a-base T2) puis create_in_tx atomique.
+            let new_je = build_journal_entry_for_counterparty(
+                &tx,
+                bank_ledger_account_id,
+                counterparty_account_id,
+                description.clone(),
+                entry_date,
+            );
+            let je =
+                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je).await?;
+            let journal_entry_id = je.entry.id;
+
+            // Step 8 — UPDATE bank_transactions optimistic lock + status
+            // guard + multi-tenant defense (F3'''' Pass 6 Opus complète
+            // cohérent pattern 8-4 ligne 691).
+            let update_result = sqlx::query(
+                "UPDATE bank_transactions \
+                 SET status = 'reconciled', matched_entry_id = ?, \
+                     auto_match_rejected_at = NULL, updated_at = NOW(3), \
+                     version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND status = 'pending' \
+                   AND version = ?",
+            )
+            .bind(journal_entry_id)
+            .bind(bank_transaction_id)
+            .bind(company_id)
+            .bind(bank_tx_version_pre)
+            .execute(&mut **tx_inner)
+            .await
+            // P-M5 Pass 1 code review : cohérence avec le reste de la
+            // closure qui wrap les erreurs sqlx via `Db(DbError::Sqlx(_))`
+            // (variant `From<DbError>` pour `?`). Si step 8 est extrait en
+            // helper kesh-db retournant `DbError`, le `?` continuera à
+            // fonctionner. Le variant `Database(sqlx::Error)` reste pour
+            // compat 8-4 mais n'est plus émis par 8-5a-base.
+            .map_err(|e| ReconciliationError::Db(DbError::Sqlx(e)))?;
+
+            if update_result.rows_affected() != 1 {
+                // Race version OR status `pending → reconciled` par
+                // un autre flow concurrent. Mapper en
+                // `OptimisticLockConflict` → 409.
+                return Err(ReconciliationError::Db(DbError::OptimisticLockConflict));
+            }
+
+            // Step 9 — audit log `reconciliation.manual_matched` snake_case
+            // top-level (Q4a action distincte cohérent F4'' Pass 3).
+            let details = serde_json::json!({
+                "bank_transaction_id": bank_transaction_id,
+                "counterparty_account_id": counterparty_account_id,
+                "journal_entry_id": journal_entry_id,
+                "amount": bank_transaction_amount.to_string(),
+                "description": description,
+                "value_date": entry_date.to_string(),
+                "was_previously_rejected": was_previously_rejected,
+            });
+            audit_log::insert_in_tx(
+                tx_inner,
+                NewAuditLogEntry {
+                    user_id,
+                    action: "reconciliation.manual_matched".to_string(),
+                    entity_type: "bank_transaction".to_string(),
+                    entity_id: bank_transaction_id,
+                    details_json: Some(details),
+                },
+            )
+            .await?;
+
+            Ok(journal_entry_id)
+        },
+    )
+    .await;
+
+    // F1'''' Pass 6 Opus — match exhaustif sur tous les variants
+    // `ReconciliationError`. Le compilateur Rust force la complétude.
+    match lock_result {
+        Ok(journal_entry_id) => {
+            tx_outer
+                .commit()
+                .await
+                .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+            Ok(Json(ManualMatchResponse {
+                bank_transaction_id,
+                journal_entry_id,
+            }))
+        }
+        // P-H4 Pass 1 code review : remplacement `drop(tx_outer)` par
+        // `rollback().await` explicite pour signaler l'intention. Le
+        // rollback peut échouer (connexion DB perdue) — on ignore
+        // l'erreur car l'erreur principale (AccountLocked, FiscalYearClosed,
+        // Db, ...) est plus signifiante. Pattern idiomatique Rust + plus
+        // explicite que le drop implicite.
+        // Note résiduelle : les handlers 8-4 (`post_accept`/`post_reject`)
+        // utilisent encore `drop(tx_outer)`. Cohérence reportée Story 11+
+        // (out-of-scope 8-5a-base).
+        Err(ReconciliationError::AccountLocked {
+            bank_account_id,
+            timeout_secs,
+        }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationAccountLocked {
+                bank_account_id,
+                timeout_secs,
+            })
+        }
+        Err(ReconciliationError::LockReleaseFailed {
+            bank_account_id, ..
+        }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationLockReleaseFailed { bank_account_id })
+        }
+        Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationFiscalYearClosed { entry_date })
+        }
+        Err(ReconciliationError::Db(db_err)) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::Database(db_err))
+        }
+        Err(ReconciliationError::Database(e)) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::Database(DbError::Sqlx(e)))
+        }
+    }
 }

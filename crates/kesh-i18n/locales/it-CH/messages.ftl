@@ -656,6 +656,20 @@ reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla r
 reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
 reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.
 
+# Story 8-5a-base FR45 — Riconciliazione manuale.
+reconciliation-manual-button-label = Assegna manualmente
+reconciliation-manual-modal-title = Riconciliazione manuale
+reconciliation-manual-counterparty-label = Conto controparte
+reconciliation-manual-description-label = Descrizione
+reconciliation-manual-bank-account-not-configured = Il conto bancario non è configurato. Configurare il conto contabile collegato in /bank-accounts.
+reconciliation-manual-value-date-label = Data valuta
+reconciliation-manual-submit = Assegna
+reconciliation-manual-error-no-proposal = Nessuna transazione selezionata
+reconciliation-manual-error-counterparty-required = Conto controparte obbligatorio
+reconciliation-manual-error-description-too-long = Descrizione troppo lunga (max { $max } caratteri)
+reconciliation-manual-description-placeholder = Spese bancarie maggio
+reconciliation-cols-actions = Azioni
+
 # Story 8-5a-zero — Collegamento `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Conti bancari
 bank-accounts-labels-page-subtitle = Collegare ogni conto bancario a un conto del piano dei conti (classe 1 tipica: 1020 Cassa, 1030 Banca).

@@ -9,6 +9,10 @@ export interface MatchScore {
 
 export interface TransactionSummary {
 	bookingDate: string;
+	// P-M7 Pass 1 code review : `valueDate` exposé par GET /proposals
+	// pour permettre au ManualMatchModal de pré-remplir le datepicker
+	// avec la date de valeur (fallback bookingDate si absente).
+	valueDate: string | null;
 	amount: string;
 	currency: string;
 	counterpartyName: string | null;
@@ -67,4 +71,10 @@ export interface RejectedProposal {
 export interface RejectResponse {
 	rejected: RejectedProposal[];
 	failed: FailedProposal[];
+}
+
+// Story 8-5a-base FR45 — réconciliation manuelle.
+export interface ManualMatchResponse {
+	bankTransactionId: number;
+	journalEntryId: number;
 }
