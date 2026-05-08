@@ -77,7 +77,7 @@ so that **mon backlog de transactions `pending` se résorbe (frais bancaires, sa
    **Flow** :
    - Pré-flight ownership : `bank_accounts::find_by_id_for_company(pool, company_id, bankAccountId)` → 404 `BANK_ACCOUNT_NOT_FOUND` si None.
    - Vérification configuration : `bank_account.journal_account_id` doit être `Some(journal_account_id)`. Si `None` → 412 `BANK_ACCOUNT_NOT_CONFIGURED` body `{ error: { code: "BANK_ACCOUNT_NOT_CONFIGURED", message: t(...), details: { bankAccountId, hint: "Configurer le compte comptable lié via /bank-accounts" } } }`.
-   - Validation `counterpartyAccountId` : `accounts::find_by_id_in_company` + check `active=true` → 404 `ACCOUNT_NOT_FOUND` (anti-énumération, AC #82 hérité).
+   - Validation `counterpartyAccountId` : `accounts::find_by_id_in_company` + check `active=true` → 404 `ACCOUNT_NOT_FOUND` (anti-énumération, AC #86 hérité).
    - **Note** : pas de check `account_type` strict pour `counterpartyAccountId` (peut être Asset/Liability/Revenue/Expense — flexible v0.1, le user choisit). Frontend filtre client-side classes 5/6/7 par UX, pas d'invariant serveur.
    - Charge tx via `find_strictly_pending_by_id_for_account` (helper créé en 8-5a-base T1) → 404 `RECONCILIATION_TRANSACTION_NOT_PENDING` si None (status ≠ pending ou cross-account/cross-tenant).
    - Acquérir `with_account_lock(tx_outer, company_id, bank_account_id, 5)` (advisory lock 8-4 réutilisé).
@@ -313,9 +313,10 @@ ACs #83-#92 (10 ACs).
   ```
   SQL : `WHERE company_id = ? AND bank_account_id = ? AND id = ? AND status = 'pending'`.
 
-- [ ] T1.2 — Tests inline `#[sqlx::test]` (≥ 2) :
+- [ ] T1.2 — Tests inline `#[sqlx::test]` (≥ 3) :
   1. `find_strictly_pending_scopes_by_account_and_company` (cross-tenant returns None).
   2. `find_strictly_pending_returns_none_for_reconciled_tx` (status='reconciled' returns None).
+  3. `find_strictly_pending_returns_tx_when_all_conditions_match` (happy path : returns tx si company_id/bank_account_id/id corrects + status='pending').
 
 - [ ] T1.3 — Vérifier `cargo test -p kesh-db reconciliation` MariaDB up local (lesson 8-3 retro).
 
@@ -430,7 +431,7 @@ ACs #83-#92 (10 ACs).
 
 - [ ] T5.2 — Créer `frontend/src/lib/features/reconciliation/ManualMatchModal.svelte` :
   - Props : `bankTransaction`, `bankAccountId`.
-  - Sélecteur `Account` autocomplete (filtre client-side classes 5/6/7 via `account.number.startsWith('5/6/7')`). Réutiliser `AccountAutocomplete.svelte` de `features/journal-entries/` si compatible.
+  - Sélecteur `Account` autocomplete (filtre client-side classes 5/6/7 via `account.number.startsWith('5/6/7')`). **Vérifier d'abord** que le composant `AccountAutocomplete.svelte` existe dans `frontend/src/lib/features/journal-entries/` et est compatible (accepte les options de filtrage). Créer un wrapper ou composant dédié `ManualMatchAccountSelector` si incompatibilité.
   - Textarea description (200 chars max).
   - Datepicker `valueDate` pré-rempli (`tx.value_date ?? tx.booking_date`).
   - On submit : `manualMatchTransaction(...)` + dispatch event `success`.
@@ -627,3 +628,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 |------|--------|--------|
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-base = FR45 manual match utilisant `bank_account.journal_account_id` configuré en 8-5a-zero (foundation). **Différence majeure vs spec 8-5a unifiée** : le body POST `/manual` n'inclut PAS `bankLedgerAccountId` — résolu serveur-side. Anti-pattern UX éliminé à la racine. Helper public `kesh-reconciliation::manual::build_journal_entry_for_counterparty` réutilisé par 8-5a-bis et 8-5b (path dep). 10 ACs (#83-#92). Tasks T1-T7. Path-dépendance bloquante : 8-5a-zero `done`/merged. Status `8-5a-base-manual-match: backlog`. | Claude (Opus 4.7 re-split workflow) |
 | **2026-05-08** | **Pass 1 validate Sonnet 4.6** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 2 LOW). Patches : (1) F1 MEDIUM — signature incorrecte `create_in_tx` corrigée (§scope verrouillé + §validation-handler-side) : `(tx, fiscal_year_id, user_id, new_je)` au lieu de `(tx, new_je, company_id, fiscal_year_id, audit_actor)` ; (2) F2 MEDIUM — race condition `DbError::FiscalYearClosed` → 400 documentée (§validation-handler-side step 7) ; (3) F3 MEDIUM — mapping explicite `ReconciliationError::FiscalYearClosed → AppError::ReconciliationFiscalYearClosed` spécifié dans T3.3 (sans ce match → 500 silencieux) ; (4) F4 LOW — comptage variantes T3.3 + §risque-splitting corrigés (`ReconciliationOptimisticLockConflict` non créé — pattern `Database(OptimisticLockConflict)` 8-4 réutilisé). Trend : Pass 1 = 3 findings > LOW. Continuer Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
+| **2026-05-08** | **Pass 2 validate Haiku 4.5** — 3 findings (0 CRITICAL + 0 HIGH + 3 MEDIUM + 0 LOW). Patches : (1) M1 MEDIUM — référence AC obsolète ligne 80 corrigée (`AC #82` → `AC #86` — spec 8-5a-base ACs #83-#92) ; (2) M2 MEDIUM — T1.2 tests incomplets : ajout test positif happy-path `find_strictly_pending_returns_tx_when_all_conditions_match` (couverture 100% du helper avant implémentation) ; (3) M3 MEDIUM — T5.2 compatibilité `AccountAutocomplete.svelte` non vérifiée : directive clarity ajoutée (vérifier avant reuse, créer wrapper dédié si incompatibilité). Trend : Pass 1 = 3 → Pass 2 = 3 findings > LOW (tous MEDIUM, pas de régressions Pass-1). Continue Pass 3 Opus 4.7 pour convergence. | Claude (Haiku 4.5 validate) |
