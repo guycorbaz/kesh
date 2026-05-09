@@ -185,11 +185,11 @@ so that **les transactions agrégées soient comptablement décomposées proprem
 
 7. **API client frontend** : nouvelle fonction `splitTransaction` :
    ```ts
+   // F5 Pass 1 : description?: string top-level retiré (sans contrepartie body Rust).
    export async function splitTransaction(
        bankAccountId: number,
        bankTransactionId: number,
        splits: { counterpartyAccountId: number; amount: string; description: string }[],
-       description?: string,
        valueDate?: string,
    ): Promise<{ bankTransactionId: number; journalEntryId: number }>;
    ```
@@ -263,7 +263,7 @@ so that **les transactions agrégées soient comptablement décomposées proprem
 3. `bank_account.journal_account_id IS Some(...)` : 412 `BANK_ACCOUNT_NOT_CONFIGURED`.
 4. **Validation accounts batch** : pour chaque `splits[i].counterpartyAccountId`, vérifier `accounts::find_by_id_in_company` + `active=true`. Pattern : batch-load via une seule query `IN (...)` (cohérent `find_pending_by_ids` pattern reconciliation.rs:233) ou itération séquentielle si volume ≤ 50 (cap §split-flow inchangé). Tout split référençant un account inexistant ou archivé → `404 ACCOUNT_NOT_FOUND` body `details.missingAccountIds: [<ids>]` (camelCase JSON, list distincts triés).
 5. `bankTransactionId` strictement pending : `find_strictly_pending_by_id_for_account` (helper 8-5a-base) → 404 `RECONCILIATION_TRANSACTION_NOT_PENDING` si None.
-6. `validate_split_balance(tx.amount, splits.iter().map(|s| s.amount))` → 400 `RECONCILIATION_SPLIT_IMBALANCE` si Err.
+6. `validate_split_balance(tx.amount, &splits.iter().map(|s| s.amount).collect::<Vec<_>>())` → 400 `RECONCILIATION_SPLIT_IMBALANCE` si Err. **(F7 Pass 1 : `validate_split_balance` attend `&[Decimal]`, pas un `Iterator` — il faut `.collect()` avant passage.)**
 
 **Inside lock (advisory `with_account_lock`)** :
 7. Re-fetch tx (TOCTOU defense pattern 8-4).
@@ -380,10 +380,7 @@ Sub-router `comptable_routes` (Comptable+). `Consultation` retourne 403 (cohére
 | 14 | 2064 | `post_accept_rejects_zero_score_match` | Score guard |
 | 15 | 2129 | `post_accept_rejects_payment_date_outside_window` | Date guard outside |
 
-**Plus 1 site ignored** (préservé pour Story 11) :
-| # | Ligne | Test fonction parent | Notes |
-|---|-------|---------------------|-------|
-| 16 | dans `post_accept_filters_currency_mismatch` (1656) | body placeholder | `#[ignore]` Story 11 mono-CHF v0.1 — patch pour cohérence post-un-ignore |
+**Pas de 16ème site (F6 Pass 1)** : le test ignoré `post_accept_filters_currency_mismatch` ne contient **aucun** appel `POST /accept` — il fait immédiatement `panic!("placeholder...")`. Il n'y a que **15 sites** à patcher (ground-truth `grep -c "reconciliation/accept" reconciliation_e2e.rs` = 15). La mention précédente « 16 sites (15 actifs + 1 ignored body placeholder) » était incorrecte.
 
 **Pattern de patch** :
 ```rust
@@ -501,10 +498,14 @@ ACs #93-#100 (8 ACs).
 - [ ] T2.3 — Étendre `crates/kesh-api/src/errors.rs` (variantes ajoutées/réutilisées) :
   - `AppError::ReconciliationSplitImbalance { expected, actual, difference }` → 400 `RECONCILIATION_SPLIT_IMBALANCE` body `details = { expected: '10700.00', actual: '10500.00', difference: '-200.00' }` (string Decimal cohérent AC #95).
   - `AppError::AccountNotFound { account_id, missing_account_ids: Option<Vec<i64>> }` (extension du variant 8-5a-zero/8-5a-base) → 404 `ACCOUNT_NOT_FOUND` body `{ error: { code, message, details: { accountId, missingAccountIds: [...] } } }` camelCase. `missingAccountIds` populated pour split (Vec d'ids invalides triés), single `accountId` pour manual.
+    **MIGRATION REQUISE (F2 Pass 1)** : l'extension casse la compilation de 2 callsites existants :
+    - `crates/kesh-api/src/routes/reconciliation.rs:1199` : `AppError::AccountNotFound { account_id }` → ajouter `missing_account_ids: None`.
+    - `crates/kesh-api/src/routes/bank_accounts.rs:124` : idem.
+    - `crates/kesh-api/src/errors.rs` `IntoResponse` match arm : le destructuring `AppError::AccountNotFound { account_id }` → `AppError::AccountNotFound { account_id, missing_account_ids }`, et inclure `missingAccountIds` si `Some`.
   - `AppError::BankAccountNotConfigured` (réutiliser variant 8-5a-base).
   - `AppError::ReconciliationFiscalYearClosed` (réutiliser variant 8-5a-base).
   - `AppError::ReconciliationTransactionNotPending` (réutiliser variant 8-5a-base).
-  - `AppError::ReconciliationOptimisticLockConflict` (réutiliser variant 8-4 / 8-5a-base).
+  - **Pas de variant `ReconciliationOptimisticLockConflict`** (F1 Pass 1) : ce variant n'existe pas dans `errors.rs`. L'optimistic lock remonte via `ReconciliationError::Db(DbError::OptimisticLockConflict)` → `AppError::Database(DbError::OptimisticLockConflict)` → 409 `OPTIMISTIC_LOCK_CONFLICT` (cf. `reconciliation.rs:1277,1337` pattern 8-5a-base). Le match bloc `post_split` doit inclure `Err(ReconciliationError::Db(db_err)) => Err(AppError::Database(db_err))` (cohérent `post_manual` lignes 1410-1413).
 
 ### T3. Breaking change `POST /accept` discriminator type (AC #100)
 
@@ -526,23 +527,29 @@ ACs #93-#100 (8 ACs).
         },
     }
     ```
+  - **Retirer `AcceptType` enum (F8 Pass 1)** : l'enum `AcceptType { Invoice, Split }` défini dans §note-implementation-accept est dead code — le dispatch se fait via pattern matching sur `AcceptProposalInput`. Ne pas créer ce type ; Clippy `-D warnings` signale `dead_code` → CI rouge.
   - Match enum dans `accept_one` pour dispatcher vers flow `accept_invoice` (8-4 inchangé) ou `accept_split` (nouveau, équivalent batch de `/split`).
   - **Décision option (a) §note-implementation-accept** : implémenter `type='split'` dans `/accept` pour cohérence batch. Si volume trop large, fallback option (b) acceptable avec `type='split'` retourne 400 « non supporté v0.1, utiliser /reconciliation/split ».
-  - Si `type` absent → 400 Validation message « champ `type` requis, valeurs acceptées v0.1 : ["invoice", "split"] » (Serde dispatch fail = 400/422 sérialisation, vérifier mappage).
-  - Si `type` non reconnu → 400 Validation message « type inconnu ou non supporté : "<valeur>", valeurs acceptées v0.1 : ["invoice", "split"] ».
+  - **Gestion 400 pour type absent/inconnu (F9 Pass 1)** : par défaut, `axum::Json` + `serde(tag)` retourne 422 Unprocessable Entity sur désérialisation échouée. Pour retourner 400 `Validation` avec le message spécifié, implémenter un custom extractor `AcceptBodyExtractor` sur le modèle de `PatchJournalLinkBodyExtractor` (`crates/kesh-api/src/routes/bank_accounts.rs:55-89`) :
+    ```rust
+    // Pattern : impl FromRequest pour wrapper AcceptBody, catch JsonRejection → AppError::Validation
+    // Si `type` absent → 400 message « champ `type` requis, valeurs acceptées v0.1 : ["invoice", "split"] »
+    // Si `type` non reconnu → Serde retourne JsonDataError → même custom 400
+    ```
+    Ce custom extractor est **requis** pour satisfaire AC #100 (`accept_rejects_proposal_missing_type_discriminator` → 400 pas 422).
 
 - [ ] T3.2 — Vérifier impact `Copy` : retirer `Copy` de `AcceptProposalInput` (F11'' Pass 3), ajouter `clone()` aux usages internes si nécessaire.
 
-### T3.4. Migration tests E2E 8-4 existants (AC #100 part 3)
+### T3.3. Migration tests E2E 8-4 existants (AC #100 part 3)
 
-- [ ] T3.4 — Modifier `crates/kesh-api/tests/reconciliation_e2e.rs` (cf. §migration-21-tests) :
-  - Patcher les 15 sites POST /accept actifs (lignes 757, 910, 1030, 1104, 1203, 1416, 1492, 1632, 1679, 1737, 1805, 1870, 1980, 2064, 2129) pour ajouter `type: 'invoice'` dans le body proposals[*].
-  - Patcher 1 site ignored (dans `post_accept_filters_currency_mismatch` ligne 1656) pour cohérence post-un-ignore.
-  - Vérifier `cargo test -p kesh-api --test reconciliation_e2e` retourne 21 verts + 1 ignored (= 22 attributs `#[sqlx::test]`).
+- [ ] T3.3 — Modifier `crates/kesh-api/tests/reconciliation_e2e.rs` (cf. §migration-21-tests) :
+  - Patcher les **15 sites POST /accept actifs** (lignes 757, 910, 1030, 1104, 1203, 1416, 1492, 1632, 1679, 1737, 1805, 1870, 1980, 2064, 2129) pour ajouter `type: 'invoice'` dans le body proposals[*].
+  - **Pas de site ignoré à patcher (F6 Pass 1)** : le test ignoré `post_accept_filters_currency_mismatch` ne contient aucun appel `POST /accept`.
+  - Vérifier `cargo test -p kesh-api --test reconciliation_e2e` retourne 22 verts + 1 ignored (= 22 attributs `#[sqlx::test(migrator)]` au total, 1 ignoré).
 
-### T3.5. Tests E2E HTTP nouveaux 8-5a-bis (AC #93-#100)
+### T3.4. Tests E2E HTTP nouveaux 8-5a-bis (AC #93-#100)
 
-- [ ] T3.5 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_split_e2e.rs` *(nouveau fichier, ≥ 10 tests)* :
+- [ ] T3.4 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_split_e2e.rs` *(nouveau fichier, ≥ 10 tests)* :
   1. `split_creates_journal_entry_with_n_plus_1_lines` (AC #93).
   2. `split_creates_journal_entry_for_credit_transaction` (AC #94).
   3. `split_rejects_imbalanced_payload` (AC #95).
@@ -568,11 +575,13 @@ ACs #93-#100 (8 ACs).
 - [ ] T5.1 — Étendre `frontend/src/lib/features/reconciliation/reconciliation.api.ts` :
   ```ts
   // **Différence majeure vs spec 8-5a unifiée** : pas de `bankLedgerAccountId`.
+  // **F5 Pass 1** : le paramètre `description?: string` top-level a été retiré —
+  // il n'a pas de contrepartie dans le body Rust (SplitBody ne définit pas de description
+  // top-level). Chaque split line a sa propre description.
   export async function splitTransaction(
       bankAccountId: number,
       bankTransactionId: number,
       splits: { counterpartyAccountId: number; amount: string; description: string }[],
-      description?: string,
       valueDate?: string,
   ): Promise<{ bankTransactionId: number; journalEntryId: number }>;
   ```
@@ -584,6 +593,20 @@ ACs #93-#100 (8 ACs).
   // Après (8-5a-bis)
   body: { proposals: [{ type: 'invoice', bankTransactionId, invoiceId }] }
   ```
+  **MIGRATION TYPE REQUISE (F3 Pass 1)** : mettre à jour `frontend/src/lib/features/reconciliation/reconciliation.types.ts` :
+  - `AcceptProposalInput` → discriminated union TypeScript :
+    ```ts
+    export type AcceptProposalInput =
+      | { type: 'invoice'; bankTransactionId: number; invoiceId: number }
+      | { type: 'split'; bankTransactionId: number; splits: SplitProposalLine[] };
+    export interface SplitProposalLine {
+      counterpartyAccountId: number;
+      amount: string;
+      description: string;
+    }
+    ```
+  **MIGRATION TEST VITEST REQUISE (F4 Pass 1)** : mettre à jour `reconciliation.api.test.ts` ligne ~69 :
+  - Changer `expect(body.proposals).toEqual([{ bankTransactionId: 1, invoiceId: 2 }])` → `expect(body.proposals).toEqual([{ type: 'invoice', bankTransactionId: 1, invoiceId: 2 }])`.
 
 - [ ] T5.3 — Créer `frontend/src/lib/features/reconciliation/TransactionSplitModal.svelte` :
   - Props : `bankTransaction`, `bankAccountId`.
@@ -676,7 +699,7 @@ ACs #93-#100 (8 ACs).
 **DB** : (pas de modification — tous les helpers réutilisés)
 - `crates/kesh-db/src/repositories/reconciliation.rs` (utilise `find_strictly_pending_by_id_for_account` 8-5a-base)
 - `crates/kesh-db/src/repositories/fiscal_years.rs` (utilise `find_open_covering_date`)
-- `crates/kesh-db/src/repositories/accounts.rs` (utilise `find_by_id_in_company` + nouveau pattern batch)
+- `crates/kesh-db/src/repositories/accounts.rs` (utilise `find_by_id_in_company` en itération séquentielle cap 50 — L3 Pass 1 : pas de nouveau helper kesh-db)
 - `crates/kesh-db/src/repositories/bank_accounts.rs` (utilise `find_by_id_for_company` étendu 8-5a-zero)
 
 **Backend `kesh-reconciliation`** :
@@ -696,6 +719,8 @@ ACs #93-#100 (8 ACs).
 
 **Frontend** :
 - `frontend/src/lib/features/reconciliation/reconciliation.api.ts` (extension `splitTransaction` + migration `acceptProposal` avec `type: 'invoice'`)
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts` **(F3 Pass 1 : mise à jour `AcceptProposalInput` → discriminated union + ajout `SplitProposalLine`)**
+- `frontend/src/lib/features/reconciliation/reconciliation.api.test.ts` **(F4 Pass 1 : migration test `acceptProposals` ligne ~69 pour ajouter `type: 'invoice'`)**
 - `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte` (extension bouton « Éclater »)
 - `frontend/src/lib/features/reconciliation/TransactionSplitModal.svelte` *(nouveau)*
 - `frontend/src/lib/features/reconciliation/TransactionSplitModal.test.ts` *(nouveau, Vitest)*
@@ -788,3 +813,4 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 | Date | Entrée | Auteur |
 |------|--------|--------|
 | **2026-05-07** | Spec créée par re-split mécanique de 8-5a unifiée (décision Guy 2026-05-07 post-Pass-3 validate Opus 4.7). 8-5a-bis = FR48 split + breaking POST /accept Q2. **Différence majeure vs spec 8-5a unifiée** : le body POST `/split` n'inclut PAS `bankLedgerAccountId` — résolu serveur-side via `bank_account.journal_account_id` (foundation 8-5a-zero). Helper public `kesh-reconciliation::split::build_split_journal_entry` compose le pattern de `manual::build_journal_entry_for_counterparty` (8-5a-base). Migration nominale des 15 sites POST /accept dans `reconciliation_e2e.rs` (= 21 actifs + 1 ignored = 22 attributs `#[sqlx::test]` au total) pour Q2 breaking. 8 ACs (#93-#100). Tasks T1-T7. Path-dépendance bloquante : 8-5a-base `done`/merged. Status `8-5a-bis-split-breaking-accept: backlog`. | Claude (Opus 4.7 re-split workflow) |
+| **2026-05-07** | **Pass 1 validate Sonnet 4.6** — 9 findings (0 CRITICAL + 2 HIGH + 5 MEDIUM + 2 LOW). Patches appliqués : [F1] retire `ReconciliationOptimisticLockConflict` inexistant T2.3, remplace par pattern `Db(DbError::OptimisticLockConflict)` réel. [F2] T2.3 : migration callsites `AccountNotFound` extension `missing_account_ids`. [F3] T5.2 + source tree : ajoute `reconciliation.types.ts` mise à jour discriminated union. [F4] T5.2 : directive migration test Vitest existant ligne ~69. [F5] T5.1 + §7 : retire `description?: string` top-level sans contrepartie Rust de `splitTransaction`. [F6] §migration-21-tests + T3.3 (ex-T3.4) : corrige 16 → 15 sites (test ignoré = 0 appel `/accept`). [F7] §validation step 6 : corrige call-site `validate_split_balance` Iterator → `collect::<Vec<_>>()`. [F8] T3.1 : retire `AcceptType` dead code (Clippy `-D warnings`). [F9] T3.1 : prescrit custom extractor pour 400 vs 422 serde. [LOW L2] renommage T3.4→T3.3/T3.5→T3.4. [LOW L3] source tree contradiction "nouveau batch" → "itération séquentielle". Trend : Pass 1 = 7 findings > LOW. Prochaine étape Pass 2 Haiku 4.5. | Claude (Sonnet 4.6 validate) |
