@@ -29,12 +29,13 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::account::{AccountType, NewAccount};
 use kesh_db::entities::{
     BankImportSourceFormat, ContactType, Language, NewBankAccount, NewBankImport,
     NewBankTransaction, NewCompany, NewContact, NewUser, OrgType, Role,
 };
 use kesh_db::repositories::{
-    bank_accounts, bank_imports, companies, contacts as contacts_repo, users,
+    accounts, bank_accounts, bank_imports, companies, contacts as contacts_repo, users,
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -2252,4 +2253,162 @@ async fn accept_with_explicit_invoice_type_runs_8_4_flow(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(count, 1);
+}
+
+/// AA-F1 Pass 1 code-review — coverage E2E HTTP du flow `POST /accept`
+/// avec `type: "split"` (batch path qui exerce `accept_one_split`).
+/// Vérifie : 200 OK + audit `reconciliation.split_applied` snake_case +
+/// audit `journal_entry.created` + `bank_transactions.status='reconciled'`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "accept_split_co").await;
+    let user_id = create_user(&pool, "accept_split_user", Role::Comptable, company_id).await;
+    let bank_account_id = create_bank_account(&pool, company_id, "CH1000000000000099002").await;
+
+    // Bank ledger 1020 + 2 counterparties classes 5/6.
+    let bank_ledger_account_id = accounts::create(
+        &pool,
+        user_id,
+        NewAccount {
+            company_id,
+            number: "1020".into(),
+            name: "Banque".into(),
+            account_type: AccountType::Asset,
+            parent_id: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let cp_a = accounts::create(
+        &pool,
+        user_id,
+        NewAccount {
+            company_id,
+            number: "5000".into(),
+            name: "Salaires".into(),
+            account_type: AccountType::Expense,
+            parent_id: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let cp_b = accounts::create(
+        &pool,
+        user_id,
+        NewAccount {
+            company_id,
+            number: "5700".into(),
+            name: "Charges sociales".into(),
+            account_type: AccountType::Expense,
+            parent_id: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    // Link bank_account → journal_account.
+    let mut tx = pool.begin().await.unwrap();
+    let ba = bank_accounts::find_by_id_for_company(&pool, company_id, bank_account_id)
+        .await
+        .unwrap()
+        .expect("bank_account exists");
+    bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(bank_ledger_account_id),
+        ba.version,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    // Fiscal year ouvert 2026 (insert_fake_fiscal_year déjà défini).
+    let _ = insert_fake_fiscal_year(&pool, company_id).await;
+
+    let booking_date = NaiveDate::from_ymd_opt(2026, 5, 31).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        company_id,
+        bank_account_id,
+        user_id,
+        &unique_hash("accept_split"),
+        booking_date,
+        booking_date,
+        vec![make_new_tx(
+            company_id,
+            bank_account_id,
+            booking_date,
+            Some(booking_date),
+            dec!(-100.00),
+            "CHF",
+            "BATCH-PAY",
+            None,
+        )],
+    )
+    .await;
+
+    let jwt = forge_jwt(user_id, "Comptable", company_id);
+    let body = serde_json::json!({
+        "bankAccountId": bank_account_id,
+        "proposals": [
+            {
+                "type": "split",
+                "bankTransactionId": tx_ids[0],
+                "splits": [
+                    { "counterpartyAccountId": cp_a, "amount": "60.00", "description": "Salaire" },
+                    { "counterpartyAccountId": cp_b, "amount": "40.00", "description": "Charges" },
+                ],
+            }
+        ]
+    });
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let resp_body: Value = resp.json().await.unwrap();
+    let accepted = resp_body["accepted"].as_array().expect("accepted array");
+    assert_eq!(accepted.len(), 1);
+    let je_id = accepted[0]["journalEntryId"]
+        .as_i64()
+        .expect("journalEntryId i64");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_ids[0]));
+
+    // Audit log reconciliation.split_applied (pas reconciliation.accepted).
+    let split_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'reconciliation.split_applied' \
+         AND entity_id = ?",
+    )
+    .bind(tx_ids[0])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(split_count, 1);
+
+    // Audit log journal_entry.created.
+    let je_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'journal_entry.created' AND entity_id = ?",
+    )
+    .bind(je_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(je_count, 1);
+
+    // tx status reconciled.
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_ids[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "reconciled");
 }

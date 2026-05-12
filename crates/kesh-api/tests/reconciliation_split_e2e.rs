@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{NaiveDate, NaiveDateTime, TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
@@ -854,7 +854,8 @@ async fn split_emits_audit_log(pool: MySqlPool) {
         splits_audit[0]["counterparty_account_id"],
         ctx.cp_a_account_id
     );
-    assert_eq!(splits_audit[0]["amount"], "5000");
+    // P5 Pass 1 code-review — scale 2 normalisé via round_dp(2).
+    assert_eq!(splits_audit[0]["amount"], "5000.00");
 
     // 1 audit log journal_entry.created.
     let je_audit_count: i64 = sqlx::query_scalar(
@@ -909,8 +910,3 @@ async fn split_rejects_already_reconciled(pool: MySqlPool) {
         "RECONCILIATION_TRANSACTION_NOT_PENDING"
     );
 }
-
-// Suppress dead_code warning for tests that don't use NaiveDateTime
-// when compiled (we don't actually use it directly).
-#[allow(dead_code)]
-fn _unused_naive_date_time(_: NaiveDateTime) {}

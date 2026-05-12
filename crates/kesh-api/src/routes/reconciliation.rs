@@ -480,6 +480,12 @@ pub async fn post_accept(
                             "splits[{idx}].amount doit être strictement positif (> 0)"
                         )));
                     }
+                    // P1 (ECH-01) — voir commentaire post_split step 2.
+                    if s.amount.scale() > 2 {
+                        return Err(AppError::Validation(format!(
+                            "splits[{idx}].amount précision invalide (max 2 décimales pour CHF)"
+                        )));
+                    }
                     if s.counterparty_account_id <= 0 {
                         return Err(AppError::Validation(format!(
                             "splits[{idx}].counterpartyAccountId doit être strictement positif"
@@ -1066,6 +1072,16 @@ async fn accept_one_split(
                 details: Some(serde_json::json!({ "reason": "split_amount_not_positive" })),
             });
         }
+        // P1 (ECH-01) defense-in-depth — surface check existe déjà dans
+        // `post_accept` step 0, on réplique ici pour éviter 500 DATABASE_ERROR
+        // si bypass surface (clients API directs).
+        if s.amount.scale() > 2 {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "VALIDATION_ERROR".to_string(),
+                details: Some(serde_json::json!({ "reason": "split_amount_scale_too_high" })),
+            });
+        }
     }
 
     // Step b — bank_account.journal_account_id lookup inside lock (H1 Pass 4).
@@ -1131,6 +1147,17 @@ async fn accept_one_split(
                 bank_transaction_id,
                 error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
                 details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+            });
+        }
+    }
+
+    // P2 (ECH-02) defense-in-depth — counterparty != bank_ledger inside lock.
+    for s in splits {
+        if s.counterparty_account_id == bank_ledger_account_id {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "VALIDATION_ERROR".to_string(),
+                details: Some(serde_json::json!({ "reason": "counterparty_equals_bank_ledger" })),
             });
         }
     }
@@ -1303,12 +1330,16 @@ async fn accept_one_split(
 
     // Step l — audit log reconciliation.split_applied.
     let was_previously_rejected = bt.auto_match_rejected_at.is_some();
+    // P5 (Pass 1) — normaliser scale 2 décimales cohérent /split standalone.
+    // `Decimal::rescale(2)` force scale 2 dans la sortie.
     let splits_for_audit: Vec<serde_json::Value> = splits
         .iter()
         .map(|s| {
+            let mut amount = s.amount;
+            amount.rescale(2);
             serde_json::json!({
                 "counterparty_account_id": s.counterparty_account_id,
-                "amount": s.amount.to_string(),
+                "amount": amount.to_string(),
                 "description": s.description,
             })
         })
@@ -2080,6 +2111,17 @@ pub async fn post_split(
                 "splits[{idx}].amount doit être strictement positif (> 0)"
             )));
         }
+        // Code-review P1 (ECH-01 Pass 1 Sonnet) — `bank_transactions.amount`
+        // est DECIMAL(18,2) (centimes CHF) ; les `journal_entry_lines.debit/credit`
+        // sont DECIMAL(19,4). Sans cette validation, un split avec scale > 2
+        // (ex. "3.33333") passerait `validate_split_balance` (qui compare la
+        // valeur mathématique) mais échouerait à l'INSERT avec strict mode
+        // MariaDB → HTTP 500 au lieu de 400. Cap à 2 décimales (centimes).
+        if s.amount.scale() > 2 {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].amount précision invalide (max 2 décimales pour CHF)"
+            )));
+        }
         if s.counterparty_account_id <= 0 {
             return Err(AppError::Validation(format!(
                 "splits[{idx}].counterpartyAccountId doit être strictement positif"
@@ -2117,6 +2159,20 @@ pub async fn post_split(
             return Err(AppError::BankAccountNotConfigured {
                 bank_account_id: body.bank_account_id,
             });
+        }
+    }
+
+    // P2 (ECH-02 Pass 1 Sonnet) — interdire counterparty == bank_ledger_account_id.
+    // Sinon le JE résultant aurait des lignes débit + crédit sur le même compte
+    // (self-referential balance-sheet no-op) sans signification comptable. Le
+    // frontend filtre client-side classes 5/6/7 (le bank ledger est classe 1/2),
+    // donc en UX normal pas de collision possible — mais un client API direct
+    // pourrait bypass. Defense-in-depth backend.
+    for (idx, s) in body.splits.iter().enumerate() {
+        if s.counterparty_account_id == bank_ledger_account_id {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].counterpartyAccountId ne peut pas être le compte ledger banque"
+            )));
         }
     }
 
@@ -2186,13 +2242,19 @@ pub async fn post_split(
             description: s.description.clone(),
         })
         .collect();
+    // P5 (Pass 1 LOW merged BH-M4/ECH-07/AA-F3) — normaliser scale 2 décimales
+    // pour cohérence avec total_amount + spec §audit-log-shape (`"5000.00"`).
+    // `Decimal::rescale(2)` force la scale 2 dans le résultat (round_dp(2)
+    // ne padd pas les zéros trailing si scale d'entrée < 2).
     let splits_for_audit: Vec<serde_json::Value> = body
         .splits
         .iter()
         .map(|s| {
+            let mut amount = s.amount;
+            amount.rescale(2);
             serde_json::json!({
                 "counterparty_account_id": s.counterparty_account_id,
-                "amount": s.amount.to_string(),
+                "amount": amount.to_string(),
                 "description": s.description,
             })
         })

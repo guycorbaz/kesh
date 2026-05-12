@@ -674,7 +674,6 @@ reconciliation-split-button-label = Suddividi
 reconciliation-split-modal-title = Suddividi la transazione
 reconciliation-split-balance-indicator = Saldo
 reconciliation-split-error-imbalance = La suddivisione non bilancia l'importo della transazione.
-reconciliation-split-success-toast = Transazione suddivisa con successo.
 
 reconciliation-cols-actions = Azioni
 

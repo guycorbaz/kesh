@@ -674,7 +674,6 @@ reconciliation-split-button-label = Split
 reconciliation-split-modal-title = Split transaction
 reconciliation-split-balance-indicator = Balance
 reconciliation-split-error-imbalance = The split does not balance the transaction amount.
-reconciliation-split-success-toast = Transaction split successfully.
 
 reconciliation-cols-actions = Actions
 

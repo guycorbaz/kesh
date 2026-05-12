@@ -1031,6 +1031,9 @@ impl IntoResponse for AppError {
             }
 
             // Story 8-5a-bis FR48 — split imbalance → 400 avec body Decimal stringifié.
+            // P5 Pass 1 code-review (BH-M4+ECH-07+AA-F3) — `Decimal::rescale(2)`
+            // force scale 2 ("10500" → "10500.00") cohérent total_amount audit log.
+            // round_dp(2) ne padd pas les zéros trailing si scale d'entrée < 2.
             AppError::ReconciliationSplitImbalance {
                 expected,
                 actual,
@@ -1040,14 +1043,20 @@ impl IntoResponse for AppError {
                     "reconciliation-split-error-imbalance",
                     "L'éclatement n'équilibre pas le montant de la transaction.",
                 );
+                let mut expected_s = expected;
+                let mut actual_s = actual;
+                let mut difference_s = difference;
+                expected_s.rescale(2);
+                actual_s.rescale(2);
+                difference_s.rescale(2);
                 let body = serde_json::json!({
                     "error": {
                         "code": "RECONCILIATION_SPLIT_IMBALANCE",
                         "message": msg,
                         "details": {
-                            "expected": expected.to_string(),
-                            "actual": actual.to_string(),
-                            "difference": difference.to_string(),
+                            "expected": expected_s.to_string(),
+                            "actual": actual_s.to_string(),
+                            "difference": difference_s.to_string(),
                         }
                     }
                 });
