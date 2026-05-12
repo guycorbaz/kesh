@@ -1,6 +1,6 @@
 # Story 8-5b: Moteur de règles d'affectation
 
-Status: backlog
+Status: ready-for-dev
 
 <!-- Issue de scission de Story 8-5 (`8-5-reconciliation-manuelle-regles-affectation.md`) le 2026-05-07,
      RE-SPLIT 8-5a effectif 2026-05-07 post-Pass-3 validate Opus 4.7 :
@@ -34,7 +34,7 @@ so that **mon taux d'auto-affectation atteigne 80% au fil des mois (cf. UX scena
 **Story 8-5b = seconde moitié de la story unifiée 8-5**, scindée pré-`bmad-create-story validate` pour respecter la règle de splitting CLAUDE.md (> 5 modules + 3 features distinctes). Voir [`8-5-reconciliation-manuelle-regles-affectation.md`](8-5-reconciliation-manuelle-regles-affectation.md) (status `archived-split`) pour la spec d'origine — toutes les **décisions de conception** (§rules-schema, §rule-application, §accept-with-rule-flow) y sont documentées en détail et restent valides pour 8-5b avec les amendements Q3/Q4a/Q4b/Q5 listés ci-dessous.
 
 **Dépendance bloquante (mise à jour 2026-05-07 post-re-split 8-5a)** : Story **8-5a-bis** (`8-5a-bis-split-breaking-accept`) doit être stable (review-closed avec 0 findings > LOW, mergée sur `main`) avant que 8-5b ne soit `ready-for-dev`. 8-5b consomme :
-- `kesh_reconciliation::manual::build_journal_entry_for_counterparty` (helper public 8-5a-base — utilisé par flow `accept-with-rule` step 8 §accept-with-rule-flow)
+- `kesh_reconciliation::manual::build_journal_entry_for_counterparty` (helper public 8-5a-base — utilisé par flow `accept-with-rule` **step 11** §accept-with-rule-flow ; Pass 3 AA-F2 fix cross-reference)
 - `kesh_db::repositories::reconciliation::find_strictly_pending_by_id_for_account` (helper 8-5a-base, partagé par /manual + /split + flow rule)
 - `bank_account.journal_account_id` column (foundation 8-5a-zero) — résolu serveur-side pour la ligne banque du flow `accept-with-rule`
 - **Breaking change `POST /accept` discriminator** (8-5a-bis) avec enum `AcceptType { Invoice, Split }` — 8-5b ajoute `type='rule'` à cet enum
@@ -150,24 +150,445 @@ L'utilisateur observe les transactions pending dans `/reconciliation`, identifie
 
 **Reporté v0.2** : suggestion ML basée sur l'historique des accepts (« cette tx ressemble à 8 autres déjà acceptées vers le compte 6510 — créer une règle ? ») potentiellement traitée via Story 8-5c v0.2 ou Epic 11+ avec un vrai modèle d'embeddings.
 
-#### §rule-application valide tel quel
+#### §rule-application — flow détaillé GET /proposals
 
-Steps 1-3 + position dans response avec discriminator `type: 'rule'` — cohérent avec breaking change 8-5a (discriminator `type` obligatoire dans response candidates).
+(Pass 1 P-C1 : inline le flow car la spec archivée n'est pas accessible au dev agent.)
 
-#### §accept-with-rule-flow valide tel quel
+**Position dans la response** : pour chaque tx pending, après le calcul des candidates invoice (score 8-4), si **aucune candidate invoice n'a `score >= 0.5`** (ni 0.5 lui-même), appliquer les rules. Si une rule matche, ajouter une candidate avec `type: 'rule'` à la liste `candidates[]` de la tx — **en plus** des candidates invoice de score < 0.5 (coexistence). Le frontend choisit l'affichage prioritaire (la rule en premier visuellement, mais l'invoice reste visible).
 
-Steps 2-14 cohérents. Le helper `manual::build_journal_entry_for_counterparty` étape 8 est livré par 8-5a. Le double audit step 12+13 (`reconciliation.accepted` + `reconciliation_rule.applied`) reflète la décision Q4b.
+**Sign filter (Pass 1 P-H7 ECH-05)** : contrairement au matching invoice 8-4 qui skip les tx débit (`amount <= Decimal::ZERO`), **les rules s'appliquent aux 2 sens** (débit ET crédit). Le use-case canonique (Swisscom, salaires, cotisations sociales) est débit. Le sign-aware côté JE est géré par `build_journal_entry_for_counterparty` (8-5a-base) qui choisit débit/crédit selon `sign(tx.amount)`. **Ne pas hériter du filter sign 8-4 ligne `reconciliation.rs:343`** pour les rules.
 
-#### §error-precedence-order — codes 8-5b uniquement
+**Currency filter (Pass 3 R1 ECH3-1)** : **les rules HÉRITENT** du filter currency 8-4 (`reconciliation.rs:338` `if tx.currency != "CHF" { continue }`) — les rules **NE s'appliquent PAS aux tx non-CHF v0.1** (cohérent L38 héritée 8-4 mono-CHF). Raison : `build_journal_entry_for_counterparty` (8-5a-base) construit une JE Decimal sans devise, et `journal_entry_lines.amount` est traité comme CHF côté plan comptable suisse. Appliquer une rule sur une tx EUR créerait une écriture comptable faussée (montant EUR stocké comme CHF, sans taux de change). **À implémenter dans le handler `get_proposals`** : le filter currency doit s'appliquer **AVANT** la branche rule fallback (placer le rule-matching APRÈS le `if tx.currency != "CHF" { tx_candidates.push((tx, Vec::new())); continue; }` ligne 338 — la même branche `continue` qui skip non-CHF pour l'invoice matching skip aussi pour les rules). Pas de candidate `type='rule'` retournée pour les tx non-CHF. Defense-in-depth dans `accept_one_rule` step 0 préflight : `if bt.currency != "CHF" → FailedProposal { error_code: 'RECONCILIATION_CURRENCY_MISMATCH', details: { txCurrency } }` per-proposal (évite la JE faussée même si un client bypass via API direct sans passer par GET /proposals). **Limitation v0.1** : multi-currency rules → reporté Story 11 (cohérent L47 8-5a-bis).
+
+**Résolution `counterpartyAccountName` dans la candidate (Pass 2 Q5 AA-F1)** : la candidate type=rule expose `counterpartyAccountId` + `counterpartyAccountName` pour affichage UI sans 2ème round-trip. Le handler `get_proposals`, **après le rule-match** (cf. ci-dessous), fait 1 SELECT additionnel : `SELECT id, number, name FROM accounts WHERE id = ? AND company_id = ?`. Optimisation : pré-charger les accounts mappés `HashMap<i64, AccountInfo>` en même temps que `active_account_ids` (1 SELECT enrichi au lieu de 1 par rule-match). Pattern :
+
+```rust
+let accounts_info: HashMap<i64, (String, String)> = sqlx::query_as::<_, (i64, String, String)>(
+    "SELECT id, number, name FROM accounts WHERE company_id = ? AND active = TRUE",
+)
+.bind(company_id)
+.fetch_all(&state.pool)
+.await?
+.into_iter()
+.map(|(id, num, name)| (id, (num, name)))
+.collect();
+
+// active_account_ids = accounts_info.keys() (no extra query)
+```
+
+Le helper `first_matching_rule` retourne `Option<&Rule>`, le handler résout `accounts_info.get(&rule.counterparty_account_id)` pour construire `counterpartyAccountName = format!("{} {}", num, name)`.
+
+**Stratégie chargement `active_account_ids` (Pass 1 P-H4 ECH-02 + Pass 2 Q5 fusionné)** : voir bloc ci-dessus — `accounts_info` HashMap résout les 2 besoins (filter actif + nom display) en 1 query batch.
+
+```rust
+let active_account_ids: HashSet<i64> = sqlx::query_scalar::<_, i64>(
+    "SELECT id FROM accounts WHERE company_id = ? AND active = TRUE",
+)
+.bind(company_id)
+.fetch_all(&state.pool)
+.await?
+.into_iter()
+.collect();
+```
+
+(SELECT inline cohérent pattern `accept_one_split` 8-5a-bis car `accounts::find_by_id_in_company` n'est pas Executor-generic. Ne pas faire 1 query par rule — antipattern O(N) découvert dans la spec d'origine. Pas de nouveau helper kesh-db nécessaire.)
+
+**Order strict (Pass 1 P-M-LOW ECH-13 + Pass 2 Q1 BH-F2)** : `find_active_for_company` ORDER BY **`priority ASC, id ASC`** — tiebreaker à 2 niveaux. (Pass 2 patch : la mention `created_at ASC` 3ème niveau était une régression Pass 1 vs T2.2 — supprimé. `id ASC` suffit comme tiebreaker total puisque id est unique et AUTO_INCREMENT — ordre de création préservé implicitement.) À tester via T3.4 cas `first_matching_rule_respects_id_tiebreaker_on_equal_priority` (test #8 ajouté Pass 2 Q10).
+
+#### §accept-with-rule-flow — steps 1-16 détaillés (Pass 3 AA-F1)
+
+(Pass 1 P-C1 : inline car le dev agent doit pouvoir implémenter sans accès à la spec archivée. Pattern dérivé de `post_split` 8-5a-bis + `post_manual` 8-5a-base.)
+
+**Body** :
+```json
+{
+  "bankAccountId": 17,
+  "proposals": [
+    { "type": "rule", "bankTransactionId": 43, "ruleId": 7, "counterpartyAccountId": 6510 }
+  ]
+}
+```
+
+**Validation pré-flight surface (Pass 1 P-C1 + ECH-08)** dans `post_accept` step 0, pour chaque variant Rule :
+
+```rust
+AcceptProposalInput::Rule { bank_transaction_id, rule_id, counterparty_account_id } => {
+    if *bank_transaction_id <= 0 { return Err(AppError::Validation("bankTransactionId > 0".into())); }
+    if *rule_id <= 0 { return Err(AppError::Validation("ruleId > 0".into())); }
+    if *counterparty_account_id <= 0 { return Err(AppError::Validation("counterpartyAccountId > 0".into())); }
+}
+```
+
+**Flow `accept_one_rule` (inside `with_account_lock`)** — pattern parallèle à `accept_one_split` 8-5a-bis :
+
+1. **Re-fetch tx INSIDE lock (TOCTOU)** : `find_strictly_pending_by_id_for_account(tx_inner, company_id, bank_account_id, bank_transaction_id)` → 404 `RECONCILIATION_TRANSACTION_NOT_PENDING` si None.
+2. **Re-fetch rule INSIDE lock** : `find_by_id_for_company(tx_inner, company_id, rule_id)` → 404 `RECONCILIATION_RULE_NOT_FOUND` si None OU si `active=false` (rule désactivée concurrente entre GET et POST).
+3. **Bank account lookup INSIDE lock** : SELECT inline `bank_accounts.journal_account_id` (pattern `accept_one_split` Pass 1) :
+   ```rust
+   let journal_account_id: Option<i64> = sqlx::query_scalar(
+       "SELECT journal_account_id FROM bank_accounts WHERE id = ? AND company_id = ?"
+   ).bind(bank_account_id).bind(company_id).fetch_one(&mut **tx_inner).await?;
+   ```
+   → **412 `BANK_ACCOUNT_NOT_CONFIGURED`** si NULL (Pass 1 P-C1 ECH-12 — pattern hérité `accept_one_split`).
+4. **Vérifier counterparty_account_id mismatch (AC #120)** : `rule.counterparty_account_id != body_counterparty_account_id` → 400 `RECONCILIATION_RULE_MISMATCH` (per-proposal `FailedProposal`).
+5. **Vérifier counterparty_account actif** : SELECT inline `accounts.active WHERE id=? AND company_id=?` → si `active=false` ou None → 404 `ACCOUNT_NOT_FOUND` (per-proposal `FailedProposal`).
+6. **Pré-validation `tx.amount != 0`** (pattern manual step 4bis 8-5a-base) → 400 `Validation { reason: "zero_amount_transaction" }`.
+7. **Re-validation match côté serveur (AC #119)** : appeler `rule_matches(rule, tx)` → si `false` → `failed: [{ errorCode: 'RECONCILIATION_RULE_NO_LONGER_MATCHES' }]` per-proposal. Cas race : la rule a été modifiée (match_type/match_value) entre GET /proposals et POST /accept.
+8. **Resolve entry_date** : `entry_date = tx.value_date.unwrap_or(tx.booking_date)` (cohérent manual flow 8-5a-base). Pas de body field `valueDate` v0.1 pour `type='rule'` (l'utilisateur fait confiance à la date tx).
+9. **Resolve fiscal_year** : `fiscal_years::find_open_covering_date(tx_inner, company_id, entry_date)` → 409 `RECONCILIATION_FISCAL_YEAR_CLOSED { entry_date }` si None.
+10. **Resolve description JE (Pass 1 P-H2 ECH-01)** : construction handler-side :
+    ```rust
+    let description = format!("Règle '{}' — {}", rule.label, tx.counterparty_name.as_deref().unwrap_or("(sans contrepartie)"));
+    ```
+    Max 200 chars (cohérent `MAX_MANUAL_DESCRIPTION_LEN` 8-5a-base). Truncate via `.chars().take(200).collect()` si label + counterparty > 200.
+11. **Construire NewJournalEntry** : appeler `manual::build_journal_entry_for_counterparty(tx, journal_account_id, rule.counterparty_account_id, description, entry_date)` (helper 8-5a-base stable). Vérifier `tx.amount != 0` est garanti par step 6.
+12. **`journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je)`** → journal_entry créé (audit `journal_entry.created` émis automatiquement). Capture `journal_entry_id`.
+13. **UPDATE bank_transactions optimistic lock** (P3-H1 8-4 pattern) :
+    ```sql
+    UPDATE bank_transactions
+    SET matched_entry_id = ?, status = 'reconciled',
+        auto_match_rejected_at = NULL, updated_at = NOW(3),
+        version = version + 1
+    WHERE id = ? AND company_id = ? AND status = 'pending'
+      AND version = ?
+    ```
+    Si `rows_affected != 1` → `FailedProposal { errorCode: 'RECONCILIATION_ALREADY_RECONCILED', reason: 'race_during_update' }`.
+14. **UPDATE rules.applied_count atomique** (Pass 1 P-M-MEDIUM ECH-10 + BH-F19/F20) :
+    ```sql
+    UPDATE reconciliation_rules
+    SET applied_count = applied_count + 1, last_applied_at = NOW(3), version = version + 1
+    WHERE id = ? AND company_id = ?
+    ```
+    **PAS de clause `AND version = ?`** — l'`applied_count` est un compteur statistique, pas un invariant business. Pas d'optimistic lock ici, les accepts concurrents sur la même rule (depuis comptes bancaires différents) ne doivent pas se bloquer. L'advisory lock `with_account_lock(company_id, bank_account_id)` sérialise déjà les accepts sur le même bank_account.
+15. **Audit `reconciliation.accepted`** snake_case top-level + sub-objects, shape :
+    ```json
+    {
+      "bank_transaction_id": 43,
+      "type": "rule",
+      "rule_id": 7,
+      "match_type": "counterparty_contains",
+      "counterparty_account_id": 6510,
+      "amount": "150.00",
+      "journal_entry_id": 999,
+      "value_date": "2026-05-15",
+      "was_previously_rejected": false
+    }
+    ```
+    (Pass 1 P-H3 AA-F8 + BH-F24 : `type` ajouté pour distinguer invoice/split/rule dans le même action ; shape consistent avec `reconciliation.split_applied` 8-5a-bis.)
+16. **Audit `reconciliation_rule.applied`** :
+    ```json
+    {
+      "rule_id": 7,
+      "bank_transaction_id": 43,
+      "match_type": "counterparty_contains",
+      "match_value": "Swisscom",
+      "applied_count_after": 24,
+      "journal_entry_id": 999
+    }
+    ```
+    (Pass 1 P-H3 + BH-F23 : `applied_count_after` snapshot post-incrément du step 14.)
+
+**Response** : `AcceptResponse { accepted: Vec<AcceptedProposal>, failed: Vec<FailedProposal> }`. Le variant `AcceptedProposal` pour `type='rule'` est défini en §api-response-shapes (Pass 1 P-H6).
+
+#### §api-response-shapes — extension enum tagged pour rule
+
+(Pass 1 P-H6 ECH-09 + ECH-15 + BH-F44 + BH-F45 + AA-F6 — refactor `ReconciliationCandidate` et `AcceptedProposal` en enum tagged Serde.)
+
+**Le pattern existant** : `AcceptedProposal` actuel `{ bank_transaction_id, invoice_id, journal_entry_id, score }`. Pour `type='rule'`, `invoice_id` n'a pas de sens — l'utilisation d'un sentinel 0 (comme `AcceptedProposal.invoice_id = 0` pour Split dans 8-5a-bis) est une **dette tracée v0.2** (cf. limitations héritées 8-5a-bis BH-H1). Pour 8-5b, on **garde le pattern sentinel 0 inchangé** : `accepted[i].invoice_id = 0` pour les accepts type=rule. Cohérence avec 8-5a-bis, refactor `Option<i64>` v0.2 transversal.
+
+**`ReconciliationCandidate` extension** : la struct actuelle a `invoice_id`, `invoice_number`, `invoice_amount`, `invoice_date`, `score`. Pour candidate type=rule, ces champs sont `None` / `0` / `""` / `score=1.0` (placeholder). **Refactor recommandé v0.2** : enum tagged response.
+
+**Pour v0.1 8-5b — refactor explicite minimal** (Pass 1 P-H6) :
+
+```rust
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationCandidate {
+    /// Discriminator type — Pass 1 P-H6 : explicite plutôt que sentinel.
+    #[serde(rename = "type")]
+    pub candidate_type: CandidateType,
+    // Champs invoice (None pour candidate type=rule).
+    pub invoice_id: Option<i64>,
+    pub invoice_number: Option<String>,
+    pub invoice_amount: Option<String>,
+    pub invoice_date: Option<chrono::NaiveDate>,
+    pub score: Option<MatchScore>,
+    // Champs rule (None pour candidate type=invoice).
+    pub rule_id: Option<i64>,
+    pub rule_label: Option<String>,
+    pub rule_match_type: Option<String>,
+    pub counterparty_account_id: Option<i64>,
+    pub counterparty_account_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateType {
+    Invoice,
+    Rule,
+}
+```
+
+**Migration des appelants** : tous les sites qui créent un `ReconciliationCandidate` (handler `get_proposals` 8-4) doivent maintenant ajouter `candidate_type: CandidateType::Invoice` + wrap invoice fields dans `Some(...)` + tous les rule fields à `None`. ~3 sites à patcher dans `reconciliation.rs:get_proposals`. Vérifier ground-truth avant dev-story.
+
+**Frontend `reconciliation.types.ts`** : extension symétrique :
+```ts
+export interface ReconciliationCandidate {
+  type: 'invoice' | 'rule';
+  invoiceId: number | null;
+  invoiceNumber: string | null;
+  invoiceAmount: string | null;
+  invoiceDate: string | null;
+  score: MatchScore | null;
+  ruleId: number | null;
+  ruleLabel: string | null;
+  ruleMatchType: string | null;
+  counterpartyAccountId: number | null;
+  counterpartyAccountName: string | null;
+}
+```
+
+#### §audit-log-shapes — 5 actions distinctes (4 rule + 1 extension)
+
+(Pass 1 P-H3 + AA-F2 + AA-F8 + BH-F22-F24 : shapes complets et inline.)
+
+**1. `reconciliation_rule.created`** — émis sur POST /rules.
+```json
+{
+  "rule_id": 7,
+  "label": "Swisscom AG → 6510",
+  "match_type": "counterparty_contains",
+  "match_value": "Swisscom",
+  "counterparty_account_id": 6510,
+  "priority": 100,
+  "active": true
+}
+```
+
+**2. `reconciliation_rule.updated`** — émis sur PATCH /rules/{id} (cas nominal ET cas réactivation `active=true`).
+```json
+{
+  "rule_id": 7,
+  "before": { "label": "Swisscom → 6510", "match_value": "Swisscom", "priority": 100, "active": true },
+  "after": { "label": "Swisscom AG → 6510", "match_value": "Swisscom AG", "priority": 50, "active": true }
+}
+```
+Shape : objets `before`/`after` **complets** (snapshot des 4 champs mutables : `label`, `match_value`, `priority`, `active`). Pas un diff partiel — facilite l'audit replay. (Pass 1 BH-F22 + AA-F9 + ECH-11.)
+
+**3. `reconciliation_rule.deleted`** — émis sur DELETE /rules/{id} **seulement si le UPDATE a effet** (i.e. `soft_delete_by_id_for_company` retourne `true`). Pas d'audit redondant sur DELETE idempotent (AC #111). (Pass 1 BH-F07.)
+```json
+{
+  "rule_id": 7,
+  "soft_delete": true,
+  "before": { "active": true },
+  "after": { "active": false }
+}
+```
+
+**4. `reconciliation_rule.applied`** — émis sur POST /accept type='rule' (cf. step 16 §accept-with-rule-flow).
+
+**5. Extension `reconciliation.accepted`** pour `type='rule'` (cf. step 15 §accept-with-rule-flow).
+
+#### §i18n-keys — liste nominale (Pass 1 P-M BH-F39)
+
+**Préfixe `reconciliation-rules-*` × 12 clés** :
+- `reconciliation-rules-page-title` = "Règles d'affectation"
+- `reconciliation-rules-button-new` = "+ Nouvelle règle"
+- `reconciliation-rules-cols-label` = "Libellé"
+- `reconciliation-rules-cols-match-type` = "Type"
+- `reconciliation-rules-cols-match-value` = "Valeur"
+- `reconciliation-rules-cols-account` = "Compte"
+- `reconciliation-rules-cols-priority` = "Priorité"
+- `reconciliation-rules-cols-applied-count` = "Appliquée"
+- `reconciliation-rules-cols-actions` = "Actions"
+- `reconciliation-rules-action-deactivate` = "Désactiver"
+- `reconciliation-rules-action-reactivate` = "Réactiver"
+- `reconciliation-rules-action-delete` = "Supprimer"
+
+**Préfixe `reconciliation-rule-applied-*` × 3 clés** (UI cards / badge candidate type=rule) :
+- `reconciliation-rule-applied-badge` = "Règle"
+- `reconciliation-rule-applied-tooltip` = "Cette transaction matche la règle « { $label } »"
+- `reconciliation-rule-applied-success-toast` = "Règle appliquée avec succès."
+
+**Préfixe `reconciliation-rules-error-*` × 4 clés** (gestion erreurs API) :
+- `reconciliation-rules-error-duplicate-active` = "Une règle active existe déjà avec ce match."
+- `reconciliation-rules-error-archived-account` = "Le compte de contrepartie est archivé."
+- `reconciliation-rules-error-no-longer-matches` = "La règle ne matche plus la transaction (modification concurrente)."
+- `reconciliation-rules-error-mismatch` = "Le compte sélectionné ne correspond pas à la règle."
+
+**Total : 19 clés** (12 page + 3 applied + 4 errors). Cible spec d'origine ~15 — Pass 1 augmente à 19 pour couvrir les erreurs API.
+
+#### §pass-2-clarifications (Pass 2 Haiku Q6-Q10 — clarifications additionnelles)
+
+**Q6 BH-F13 + AA-F4 — Pre-dev check `DbError::UniqueConstraintViolation`** : le handler `update_in_tx` discrimine SQL 1062 selon le nom de la contrainte violée via `DbError::UniqueConstraintViolation(message: String)`. **Pre-check obligatoire avant dev-story** :
+```sh
+grep -n "UniqueConstraintViolation" crates/kesh-db/src/errors.rs
+```
+Si le variant existe avec un message capturé : OK, parser le message pour `uq_reconciliation_rules_match_active`. Si pas exist : créer le variant en T2 (extension kesh-db `DbError` enum) — ajouter dans le mapping `From<sqlx::Error>` la branche `SqlState::IntegrityConstraintViolation { code: "23000", ... }` (SQLSTATE 23000 = UNIQUE).
+
+**Q7 AA-F-#110/#111 — DELETE HTTP code aligné sur 204 No Content** : standard REST. AC #110 et AC #111 conjoints :
+- **AC #110** (DELETE soft-delete réussi) → **204 No Content** (pas de body, pas de 200 OK).
+- **AC #111** (DELETE idempotent déjà inactive) → **204 No Content** également (idempotent UX, le client ne différencie pas).
+- Le handler retourne 204 dans les deux cas. La distinction `audit_log émis ou pas` est interne et invisible du client.
+
+**Q8 AA-F-#114 — Invoice override rule seuil** : la spec d'origine §rule-application disait « tx sans candidate score ≥ 0.5 ». Pass 2 clarification :
+- **Si la tx a ≥ 1 candidate invoice avec `score >= 0.5`** → ne PAS appliquer les rules (invoice-priority).
+- **Si la tx n'a aucune candidate invoice** OU **tous les candidates invoice ont `score < 0.5`** → appliquer les rules, ajouter la candidate type=rule à `candidates[]` (coexistence avec invoice candidates de score < 0.5 si présents).
+
+Modifier AC #114 : « Given tx avec invoice match score **≥ 0.5** ET rule match aussi, Then la candidate est `type: 'invoice'` (rule ignored). Given tx avec invoice match score **< 0.5** ET rule match, Then les 2 candidates coexistent (invoice + rule) dans la response. »
+
+**Q9 AA-F2 — Construction `description` step 11 handler-side** : le **handler `accept_one_rule` construit** la `description` AVANT d'appeler `manual::build_journal_entry_for_counterparty` :
+```rust
+let counterparty_display = bt.counterparty_name.as_deref().unwrap_or("(sans contrepartie)");
+let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_display);
+// Truncate UTF-8 safe à 200 chars (cap MAX_MANUAL_DESCRIPTION_LEN 8-5a-base).
+let description: String = raw_description.chars().take(200).collect();
+```
+Le helper `build_journal_entry_for_counterparty` reçoit `description: String` final. Pas de logique de format inside helper (helper reste pure).
+
+**Q10 AA-F-#115b — Test unit #8 tiebreaker ajouté T3.4** : la liste T3.4 contient maintenant 8 tests (au lieu de 7) :
+1-7. (inchangés)
+8. **NOUVEAU** `first_matching_rule_respects_id_tiebreaker_on_equal_priority` (AC #115b).
+
+#### §pass-3-clarifications (Pass 3 Opus R3+R4)
+
+**R3 ECH3-3 — `valueDate` body NON-supporté pour `type='rule'` v0.1 (décision explicite)** : contrairement à `type='split'` (8-5a-bis M4''' Pass 3 Opus) qui supporte `body.value_date.or(tx.value_date).unwrap_or(tx.booking_date)` (3 couches), le variant `Rule` v0.1 **n'a PAS de body field `valueDate`**. Raison : le use-case canonique (Swisscom récurrent, salaires) n'a aucune raison d'override la date — la rule applique tx.value_date naturel. Le variant Rust :
+
+```rust
+#[serde(rename = "rule", rename_all = "camelCase")]
+Rule {
+    bank_transaction_id: i64,
+    rule_id: i64,
+    counterparty_account_id: i64,
+    // PAS de `value_date: Option<NaiveDate>` v0.1. Pass 3 R3 décision Guy.
+}
+```
+
+Le step 8 §accept-with-rule-flow résout `entry_date = tx.value_date.unwrap_or(tx.booking_date)` (2 couches). **Si un client envoie `valueDate` dans le body** : Serde l'ignore silencieusement (champ inconnu, par défaut Serde permet — sauf si `#[serde(deny_unknown_fields)]` est ajouté sur l'enum). **Décision** : ne PAS ajouter `deny_unknown_fields` v0.1 (cohérent avec le pattern existant 8-5a-bis qui n'a pas non plus de deny_unknown). Si v0.2 livre des rules avec override date → ajouter `value_date: Option<NaiveDate>` au variant + 3-couches step 8.
+
+**R4 ECH3-7 — Audit `reconciliation.accepted` `value_date` field nullable** : le shape JSON dans §accept-with-rule-flow step 15 montre `"value_date": "2026-05-15"` qui est l'**`entry_date` résolu** (toujours non-null après step 8). **Décision** : pour cohérence avec `reconciliation.accepted` 8-4 hérité (qui logge `tx.value_date` brut, peut être null), l'audit shape utilise **`tx.value_date` brut** (peut être `null`) — PAS `entry_date` résolu. Re-clarification du shape :
+
+```json
+{
+  "bank_transaction_id": 43,
+  "type": "rule",
+  "rule_id": 7,
+  "match_type": "counterparty_contains",
+  "counterparty_account_id": 6510,
+  "amount": "150.00",
+  "journal_entry_id": 999,
+  "value_date": null,         // ← tx.value_date brut (peut être null si tx CSV sans value_date)
+  "entry_date": "2026-05-15",  // ← Pass 3 R4 ajout : entry_date résolu pour traçabilité
+  "was_previously_rejected": false
+}
+```
+
+**Ajout du champ `entry_date`** (nouveau Pass 3 R4) — distinct de `value_date` brut. Le test E2E `accept_with_rule_emits_audit_with_null_value_date_when_tx_value_date_is_null` doit asserter `value_date: null` quand `bt.value_date IS NULL` ET `entry_date: <tx.booking_date>` (fallback step 8).
+
+#### §pass-3-clarifications (suite — R5 dedup query block)
+
+**R5 BH-F1 — Suppression duplicate query block dans §rule-application** : Pass 2 Q5 a ajouté `accounts_info: HashMap<i64, (String, String)>` comme query unifiée, mais le block Pass 1 P-H4 original `active_account_ids: HashSet<i64>` est resté en parallèle. **Le dev doit utiliser uniquement `accounts_info`** — `active_account_ids = accounts_info.keys().copied().collect()` si vraiment besoin d'un HashSet typé. Le code snippet ci-dessous remplace les 2 blocks :
+
+```rust
+// Pass 3 R5 — query unifiée unique :
+let accounts_info: HashMap<i64, (String, String)> = sqlx::query_as::<_, (i64, String, String)>(
+    "SELECT id, number, name FROM accounts WHERE company_id = ? AND active = TRUE",
+)
+.bind(company_id)
+.fetch_all(&state.pool)
+.await?
+.into_iter()
+.map(|(id, num, name)| (id, (num, name)))
+.collect();
+
+// `first_matching_rule` filtre par `accounts_info.contains_key(&r.counterparty_account_id)`.
+// Si helper signature exige HashSet<i64> (rétrocompat T3.1) :
+let active_account_ids: HashSet<i64> = accounts_info.keys().copied().collect();
+```
+
+(Le bloc Pass 1 P-H4 SELECT inline `query_scalar::<_, i64>` est obsolète après Pass 3 R5 — supprimer.)
+
+#### §error-precedence-order — codes 8-5b (Pass 1 P-C1 — ajout 412 + 422)
 
 | # | Erreur | HTTP | Code |
 |---|---|---|---|
+| 9 | `bankAccountId` cross-tenant | 404 | `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (hérité 8-4/8-5a-base) |
+| 10 | `bank_account.journal_account_id` NULL | **412** | **`BANK_ACCOUNT_NOT_CONFIGURED`** (Pass 1 P-C1 — hérité 8-5a-base, applicable au flow accept-with-rule) |
+| 11 | `bank_transaction` non pending | 404 | `RECONCILIATION_TRANSACTION_NOT_PENDING` (hérité 8-5a-base) |
 | 12 | Rule not found / deactivated | 404 | `RECONCILIATION_RULE_NOT_FOUND` |
-| 13 | Rule no longer matches (race entre GET /proposals et POST /accept) | 409 (failed[]) | `RECONCILIATION_RULE_NO_LONGER_MATCHES` |
-| 14 | Rule UNIQUE constraint violation (match_type+match_value déjà existant active) | 409 | `RECONCILIATION_RULE_DUPLICATE` |
+| 13 | Rule no longer matches (race) | 409 (failed[]) | `RECONCILIATION_RULE_NO_LONGER_MATCHES` |
+| 14 | Rule UNIQUE constraint violation | 409 | `RECONCILIATION_RULE_DUPLICATE` |
 | 15 | Rule mismatch (proposal.counterpartyAccountId ≠ rule.counterparty_account_id) | 400 | `RECONCILIATION_RULE_MISMATCH` |
+| 16 | Counterparty account archivé (au moment du POST /rules ou POST /accept type=rule) | 404 | `ACCOUNT_NOT_FOUND` (hérité 8-5a-base) |
+| 17 | `tx.amount == 0` au flow accept-with-rule | 400 | `VALIDATION_ERROR { reason: "zero_amount_transaction" }` (hérité 8-5a-base) |
+| 18 | `entry_date` hors fiscal year ouvert | 409 | `RECONCILIATION_FISCAL_YEAR_CLOSED { entry_date }` (hérité 8-5a-base) |
 
-(Codes #9-#11 du tableau étendu sont 8-5a.)
+**Ordre de précédence dans `accept_one_rule`** : 1 (tx pending) → 2 (rule found+active) → 3 (bank_account configured) → 4 (counterparty mismatch) → 5 (counterparty active) → 6 (amount != 0) → 7 (rule re-matches) → 8 (fiscal year) → 9 (UPDATE atomic).
+
+#### §rules-types-rust — définition des types (Pass 1 P-M BH-F11 + BH-F12)
+
+```rust
+/// Body input pour POST /rules — champs requis.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewReconciliationRule {
+    pub label: String,
+    pub match_type: ReconciliationMatchType,
+    pub match_value: String,
+    pub counterparty_account_id: i64,
+    /// Optionnel — défaut 100 si absent (cohérent default DDL).
+    #[serde(default = "default_priority")]
+    pub priority: i32,
+}
+
+fn default_priority() -> i32 { 100 }
+
+/// Body input pour PATCH /rules/{id} — champs optionnels (patch partial).
+/// Pass 1 BH-F08 + BH-F13 : `expected_version` séparé des champs métier.
+/// `match_type` non patchable v0.1 (changer le type briserait la cohérence
+/// historique des audit `reconciliation_rule.applied` qui réfèrent à ce type).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateReconciliationRule {
+    /// Optimistic lock — version attendue (obligatoire).
+    pub expected_version: i32,
+    pub label: Option<String>,
+    /// match_type NON patchable v0.1 (cf. §risques 8-5b BH-F13).
+    /// pub match_type: Option<...> — out-of-scope.
+    pub match_value: Option<String>,
+    pub counterparty_account_id: Option<i64>,
+    pub priority: Option<i32>,
+    pub active: Option<bool>,
+}
+```
+
+**Validation applicative dans `post_create` (Pass 1 P-M ECH-07) avant DB INSERT** :
+- `label.trim().is_empty()` → 400 `VALIDATION_ERROR { reason: "label_empty" }` (avant CHECK DB).
+- `label.chars().count() > 120` → 400 `VALIDATION_ERROR { reason: "label_too_long" }` (avant troncature SQL).
+- `match_value.trim().is_empty()` → 400 (avant CHECK DB).
+- `match_value.chars().count() > 255` → 400.
+- `priority` hors [1, 1000] → 400 (avant CHECK DB).
+- `match_type == IbanExact` → **normaliser** `match_value` à `.trim().to_uppercase().retain(|c| !c.is_whitespace())` AVANT INSERT (Pass 1 P-H5 ECH-03 : IBAN canonique en DB pour matching reproductible).
+
+**Validation applicative dans `post_update` (Pass 2 Q4 ECH2-1) — appliquer aussi à PATCH** : si `body.match_value.is_some()` ET la rule actuelle a `match_type == IbanExact` (ou si `body.match_type` est tenté — interdit v0.1 cf. UpdateReconciliationRule §rules-types-rust), normaliser le nouveau `match_value` identique. Sinon le PATCH stocke un IBAN non-canonique et `rule_matches` IbanExact échouera (même bug que Pass 1 P-H4 sur création, mais à PATCH). Le helper de normalisation IBAN doit être factorisé (e.g. `fn normalize_iban_canonical(s: &str) -> String` dans `kesh_core::iban` ou inline `kesh-api/routes/reconciliation_rules.rs`).
+
+#### §rules-schema — clarifications Pass 1 (MariaDB + reactivation conflict)
+
+**MariaDB version minimale** (Pass 1 P-H3 BH-F05) : 8-5b exige **MariaDB ≥ 10.6** pour le support d'index UNIQUE sur colonne VIRTUAL (cohérent avec Docker Compose qui pin `mariadb:11.x` selon `docker-compose.yml`). Si le projet doit supporter MariaDB ≤ 10.5, fallback Option B (trigger SQL) ou Option C (check applicatif racy). **Décision v0.1** : pin sur 10.6+, Option A retenue.
+
+**Conflit reactivation UNIQUE** (Pass 1 P-H3 ECH-04 + BH-F27) : si rule R1 soft-deleted + rule R2 active créée entre-temps avec mêmes `(company_id, match_type, match_value)`, alors `PATCH R1 { active: true }` viole `uq_reconciliation_rules_match_active` (active_uniq de R1 passe de NULL à `match_value`, qui collide avec R2). Le handler `update_in_tx` doit :
+
+1. Détecter SQL 1062 sur la contrainte `uq_reconciliation_rules_match_active` (parser `DbError::UniqueConstraintViolation(message)` qui contient le nom de la contrainte violée).
+2. Retourner `DbError::DuplicateRule { match_type, match_value }`.
+3. Handler mappe → `AppError::ReconciliationRuleDuplicate { match_type, match_value }` → 409 `RECONCILIATION_RULE_DUPLICATE`.
+
+**Distinct du conflit optimistic lock version** (qui se manifeste par `rows_affected = 0` sur le UPDATE — pas SQL 1062). Le handler doit discriminer les 2 cas par leur signature SQL respective.
+
+**Nouvel AC #109b** (Pass 1 P-H3 ECH-04 + AA-F3) :
+> **(FR47 — PATCH réactivation conflit Q3)** Given rule R1 `(counterparty_contains, 'Swisscom')` soft-deleted ET rule R2 `(counterparty_contains, 'Swisscom')` créée active entre-temps, When PATCH R1 `{ active: true, expectedVersion: <current> }`, Then `409 RECONCILIATION_RULE_DUPLICATE` body `details = { matchType: 'counterparty_contains', matchValue: 'Swisscom' }`. *Test E2E HTTP : `rule_patch_reactivation_fails_when_concurrent_active_rule_exists`.*
+
+**Nouvel AC #115b** (Pass 1 P-L ECH-13) :
+> **(FR47 — tiebreaker `id ASC` à même priorité)** Given 2 rules actives matchant la même tx avec `priority=100` chacune, et rule créée 1ère a `id < rule créée 2ème`, When GET, Then la rule `id` plus petit gagne. *Test unit : `first_matching_rule_respects_id_tiebreaker_on_equal_priority`.*
 
 ## Acceptance Criteria
 
@@ -193,9 +614,9 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
 
 109. **(FR47 — PATCH réactivation via active=true)** Given rule soft-deleted (`active=false`), When PATCH `{ active: true, version: <current> }`, Then `200 OK` + rule re-activée. *Test E2E HTTP : `rule_patch_reactivates_inactive_rule`.*
 
-110. **(FR47 — DELETE /rules soft delete Q3)** Given DELETE `/rules/{id}`, Then `204 No Content` + rule.active=false en DB (**pas DELETE physique**) + audit `reconciliation_rule.deleted` avec `details.soft_delete=true`. La rule disparaît de `GET /rules?active=true` mais reste accessible via `GET /rules?active=false`. Les anciennes entrées audit `reconciliation_rule.applied` avec ce `rule_id` restent valides. *Test E2E HTTP : `rule_delete_soft_deletes_and_preserves_audit_history`.*
+110. **(FR47 — DELETE /rules soft delete Q3)** Given DELETE `/rules/{id}`, Then **`204 No Content`** + rule.active=false en DB (**pas DELETE physique**) + audit `reconciliation_rule.deleted` avec `details.soft_delete=true`. La rule disparaît de `GET /rules?active=true` mais reste accessible via `GET /rules?active=false`. Les anciennes entrées audit `reconciliation_rule.applied` avec ce `rule_id` restent valides. *Test E2E HTTP : `rule_delete_soft_deletes_and_preserves_audit_history`.*
 
-111. **(FR47 — DELETE /rules already inactive idempotent)** Given rule `active=false`, When DELETE, Then `200 OK` ou `204 No Content` no-op (idempotent — le `UPDATE active=false` est sans effet, pas d'audit redondant). *Test E2E HTTP : `rule_delete_idempotent_when_already_inactive`.*
+111. **(FR47 — DELETE /rules already inactive idempotent)** Given rule `active=false`, When DELETE, Then **`204 No Content`** no-op (idempotent — le `UPDATE active=false` est sans effet, **pas d'audit redondant**, le handler vérifie le retour `bool` de `soft_delete_by_id_for_company` avant émission de l'audit). Pass 2 Q7 : aligné sur 204 (pas 200) cohérent AC #110. *Test E2E HTTP : `rule_delete_idempotent_when_already_inactive`.*
 
 112. **(FR47 — RBAC mutations Comptable+)** Given user `Consultation`, When POST/PATCH/DELETE `/rules`, Then `403`. GET `/rules` → 200 (read-only accessible). *Test E2E HTTP : `rule_mutations_require_comptable_role`.*
 
@@ -203,7 +624,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
 
 113. **(FR47 — rule applied to tx without invoice candidate)** Given tx pending sans candidate invoice (counterparty `Swisscom AG`) et rule `counterparty_contains:Swisscom → 6510`, When `GET /proposals?bankAccountId=17`, Then la candidate de la tx contient `{ type: 'rule', ruleId: <id>, counterpartyAccountId: 6510, counterpartyAccountName: '6510 Frais télécom' }`. *Test E2E HTTP : `get_proposals_applies_rule_when_no_invoice_candidate`.*
 
-114. **(FR47 — invoice candidate overrides rule)** Given tx avec invoice match `score=0.95` ET rule match aussi, When GET, Then la candidate est `{ type: 'invoice', ... }` (rule ignored, score-based dispatch). *Test E2E HTTP : `get_proposals_invoice_candidate_overrides_rule`.*
+114. **(FR47 — invoice candidate overrides rule au seuil 0.5)** Pass 2 Q8 — clarification seuil. **Given** tx avec **au moins 1 candidate invoice score ≥ 0.5** ET rule match aussi, When GET, Then `candidates[]` ne contient **que** les candidates invoice — la rule est silencieusement skip (invoice-priority dispatch). **Given** tx avec **uniquement des candidates invoice score < 0.5** (top-1 invoice score = 0.3 par ex.) ET rule match, When GET, Then `candidates[]` contient **les invoice candidates < 0.5 ET la candidate rule** (coexistence — le frontend choisit l'affichage prioritaire visuellement). **Given** tx avec **aucune candidate invoice** ET rule match, When GET, Then `candidates[]` contient uniquement la candidate `type='rule'`. *Tests E2E HTTP : `get_proposals_invoice_candidate_overrides_rule_at_threshold_0_5` (score=0.5 → invoice wins) + `get_proposals_invoice_low_score_coexists_with_rule` (score=0.3 → both candidates).*
 
 115. **(FR47 — rule priority order)** Given 2 rules actives matchant la même tx (`Swisscom` priority=200, `Swisscom AG` priority=100), When GET, Then la rule priority=100 gagne. *Test E2E HTTP : `get_proposals_applies_highest_priority_rule`.*
 
@@ -211,9 +632,13 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
 
 117. **(FR47 — rule skip si rule désactivée)** Given rule soft-deleted (`active=false`), When GET, Then la rule n'est pas évaluée pour les tx pending. *Test E2E HTTP : `get_proposals_skips_inactive_rule`.*
 
+117bis. **(FR47 — rule skip si tx non-CHF — Pass 3 R1 ECH3-1)** Given tx `pending` avec `currency='EUR'` ET rule active match `counterparty_contains:Swisscom`, When `GET /proposals`, Then `candidates[]` ne contient PAS de candidate `type='rule'` (rule silencieusement skip, cohérent avec invoice matching mono-CHF L38 hérité 8-4). ET Given le même contexte, When `POST /accept { type: 'rule', bankTransactionId: <tx EUR id>, ruleId, counterpartyAccountId }` (client bypass GET), Then `failed: [{ errorCode: 'RECONCILIATION_CURRENCY_MISMATCH', details: { txCurrency: 'EUR', expectedCurrency: 'CHF' } }]` per-proposal (defense-in-depth backend). *Tests E2E HTTP : `get_proposals_skips_rule_for_non_chf_transaction` + `accept_with_rule_rejects_non_chf_transaction`.*
+
 ### Acceptation avec type='rule' (FR47 partie 3)
 
-118. **(FR47 — POST accept type=rule happy)** Given une candidate type=rule sur tx 42, When POST accept `{ type: 'rule', bankTransactionId: 42, ruleId: 7, counterpartyAccountId: 6510 }`, Then `200 OK` accepted ET journal_entry à 2 lignes créée (via `manual::build_journal_entry_for_counterparty` 8-5a) ET `bank_transactions.status='reconciled'` ET `reconciliation_rules.applied_count` incrémenté ET `last_applied_at` mis à jour ET audit `reconciliation.accepted` (avec `details.rule_id`, `details.match_type`, **pas** d'`invoice_id`) + audit `reconciliation_rule.applied`. *Test E2E HTTP : `accept_with_rule_creates_journal_entry_and_increments_count`.*
+118. **(FR47 — POST accept type=rule happy)** Given une candidate type=rule sur tx 42 ET `bank_account.journal_account_id` configuré ET tx pending non-reconciled, When POST accept `{ type: 'rule', bankTransactionId: 42, ruleId: 7, counterpartyAccountId: 6510 }`, Then `200 OK` accepted ET journal_entry à 2 lignes créée (via `manual::build_journal_entry_for_counterparty` 8-5a-base) ET `bank_transactions.status='reconciled'` ET `bank_transactions.auto_match_rejected_at=NULL` ET `reconciliation_rules.applied_count` incrémenté +1 ET `last_applied_at` mis à jour ET audit `reconciliation.accepted` (avec `details.type='rule'`, `details.rule_id`, `details.match_type`, **pas** d'`invoice_id` dans details — `invoice_id=0` sentinel dans la response shape v0.1 dette tracée Pass 1 P-H6) + audit `reconciliation_rule.applied` (avec `details.applied_count_after`). *Test E2E HTTP : `accept_with_rule_creates_journal_entry_and_increments_count`.*
+
+118bis. **(FR47 — POST accept type=rule 412 bank_account non configuré)** Pass 1 P-C1 ECH-12 + AA-F1. Given une candidate type=rule sur tx 42 ET `bank_account.journal_account_id IS NULL`, When POST accept `{ type: 'rule', bankTransactionId: 42, ruleId: 7, counterpartyAccountId: 6510 }`, Then **`412 BANK_ACCOUNT_NOT_CONFIGURED`** body `details.bankAccountId = 17` + lien vers `/bank-accounts` (cohérent flow manual 8-5a-base AC #79). Pas de mutation DB (`bank_transactions.status` reste `pending`, `applied_count` reste inchangé). *Test E2E HTTP : `accept_with_rule_rejects_unconfigured_bank_account_with_412`.*
 
 119. **(FR47 — POST accept type=rule re-validation match)** Given une candidate type=rule retournée par GET, modification de la rule entre GET et POST (e.g. match_value changé), When POST accept, Then `failed: [{ errorCode: 'RECONCILIATION_RULE_NO_LONGER_MATCHES' }]`. *Test E2E HTTP : `accept_with_rule_rejects_when_no_longer_matches`.*
 
@@ -344,7 +769,20 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
                   .or(tx.transaction_id.as_deref());
               match_contains(reference, &rule.match_value)
           },
-          IbanExact => tx.counterparty_iban.as_deref() == Some(&rule.match_value),
+          IbanExact => {
+              // Pass 1 P-H5 ECH-03 + BH-F29 : IBAN canonique en DB (uppercase,
+              // no whitespace) garanti par validation côté handler `post_create`
+              // (cf. §rules-types-rust). Pour défense-in-depth, on normalise
+              // aussi le côté tx (qui devrait déjà être canonique post-parser
+              // CAMT.053). Aucun cas mixte attendu en pratique.
+              let normalize_iban = |s: &str| -> String {
+                  s.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase()
+              };
+              match tx.counterparty_iban.as_deref() {
+                  Some(tx_iban) => normalize_iban(tx_iban) == normalize_iban(&rule.match_value),
+                  None => false,
+              }
+          },
       }
   }
 
@@ -362,6 +800,11 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
           .find(|r| rule_matches(r, tx))
   }
 
+  /// Normalisation pour `CounterpartyContains` / `CounterpartyExact` /
+  /// `ReferenceContains` UNIQUEMENT (matching insensible casse + trim).
+  /// Pass 2 Q2 BH-F7 : NE PAS utiliser pour `IbanExact` qui exige
+  /// uppercase canonique + strip whitespace (cf. `normalize_iban` inline
+  /// dans `rule_matches` branch `IbanExact`).
   fn normalize(s: &str) -> String { s.trim().to_lowercase() }
   fn match_contains(haystack: Option<&str>, needle: &str) -> bool {
       let Some(h) = haystack else { return false };
@@ -390,7 +833,18 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
   }
   ```
 
-- [ ] T3.4 — Tests unit `kesh-reconciliation::rules` (≥ 6) :
+  **Pass 2 Q3 BH-F13 — mapping 1:1 ReconciliationError → AppError requis dans T4.4** :
+
+  | `ReconciliationError` variant | `AppError` variant | HTTP | Code |
+  |---|---|---|---|
+  | `RuleNotFound { rule_id }` | `ReconciliationRuleNotFound { rule_id }` | 404 | `RECONCILIATION_RULE_NOT_FOUND` |
+  | `RuleNoLongerMatches { rule_id }` | mappé en `FailedProposal` per-proposal (pas AppError global, cohérent pattern `accept_one_*` 8-4/8-5a-bis) | 200 + failed[] | `RECONCILIATION_RULE_NO_LONGER_MATCHES` |
+  | `RuleMismatch { rule_id, expected_account, actual_account }` | mappé en `FailedProposal` per-proposal | 200 + failed[] | `RECONCILIATION_RULE_MISMATCH` |
+  | `RuleDuplicate { match_type, match_value }` | `ReconciliationRuleDuplicate { match_type, match_value }` | 409 | `RECONCILIATION_RULE_DUPLICATE` |
+
+  Helper `impl From<ReconciliationError> for AppError` à étendre dans `kesh-api::errors` pour les variants `RuleNotFound` + `RuleDuplicate` (mapping AppError global). Les variants `RuleNoLongerMatches` + `RuleMismatch` restent **per-proposal** dans `accept_one_rule` → `FailedProposal` (pas convertis en `AppError` global).
+
+- [ ] T3.4 — Tests unit `kesh-reconciliation::rules` (≥ **8**, Pass 2 Q10 +1) :
   1. `rule_matches_counterparty_contains` (AC #113).
   2. `rule_matches_counterparty_exact_normalize_case` (AC #113).
   3. `rule_matches_iban_exact` (AC #113).
@@ -398,6 +852,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
   5. `first_matching_rule_respects_priority_order` (AC #115).
   6. `first_matching_rule_skips_inactive_account` (AC #116).
   7. `first_matching_rule_skips_inactive_rule` (AC #117).
+  8. **NOUVEAU Pass 2 Q10** `first_matching_rule_respects_id_tiebreaker_on_equal_priority` (AC #115b).
 
 ### T4. Routes API (AC #101-#112, #113-#122)
 
@@ -420,10 +875,33 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
   - `AppError::ReconciliationRuleMismatch { rule_id }` → `400 RECONCILIATION_RULE_MISMATCH`.
   - `AppError::ReconciliationRuleNoLongerMatches { rule_id }` → mappé en `failed[]` shape (per-proposal error, pas HTTP global).
 
-- [ ] T4.5 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_rules_e2e.rs` *(nouveau)* (≥ 14 tests) :
-  1-9. Rules CRUD (AC #101-#112).
-  10-12. Rule application GET /proposals (AC #113-#117).
-  13-16. Rule accept (AC #118-#122).
+- [ ] T4.5 — Tests E2E HTTP `crates/kesh-api/tests/reconciliation_rules_e2e.rs` *(nouveau)* (≥ 17 tests, Pass 1 P-M BH-F01/F02 + AC #109b/#115b/#118bis ajoutés) :
+  1. `rule_create_returns_201_with_audit_log` (AC #101).
+  2. `rule_create_rejects_duplicate_match_when_active` (AC #102).
+  3. `rule_create_succeeds_when_existing_rule_is_inactive` (AC #103, Q3).
+  4. `rule_create_rejects_archived_account` (AC #104).
+  5. `rule_list_paginated` (AC #105).
+  6. `rule_list_filters_active` (AC #106).
+  7. `rule_list_scopes_by_company` (AC #107).
+  8. `rule_update_uses_optimistic_lock` (AC #108).
+  9. `rule_patch_reactivates_inactive_rule` (AC #109).
+  10. `rule_patch_reactivation_fails_when_concurrent_active_rule_exists` (**AC #109b nouveau Pass 1**).
+  11. `rule_delete_soft_deletes_and_preserves_audit_history` (AC #110).
+  12. `rule_delete_idempotent_when_already_inactive` (AC #111).
+  13. `rule_mutations_require_comptable_role` (AC #112).
+  14. `get_proposals_applies_rule_when_no_invoice_candidate` (AC #113).
+  15. `get_proposals_invoice_candidate_overrides_rule` (AC #114).
+  16. `get_proposals_applies_highest_priority_rule` (AC #115).
+  17. `get_proposals_skips_rule_with_archived_account` (AC #116).
+  18. `get_proposals_skips_inactive_rule` (AC #117).
+  19. `accept_with_rule_creates_journal_entry_and_increments_count` (AC #118).
+  20. `accept_with_rule_rejects_unconfigured_bank_account_with_412` (**AC #118bis nouveau Pass 1**).
+  21. `accept_with_rule_rejects_when_no_longer_matches` (AC #119).
+  22. `accept_with_rule_validates_counterparty_account_consistency` (AC #120).
+  23. `accept_with_rule_handles_concurrent_rule_update` (AC #121).
+  24. `accept_with_rule_emits_triple_audit_log` (AC #122).
+
+  **Total : 24 tests E2E HTTP** (12 CRUD + 5 application + 7 accept-with-rule). Compte initial spec d'origine ~14, augmenté par Pass 1 à 24 pour couvrir AC #109b/#118bis + alignement 1 test = 1 AC.
 
 ### T5. Frontend feature `features/reconciliation/rules` + page (AC #123-#124)
 
@@ -486,9 +964,9 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
 - **Repository pattern + sqlx** : Executor générique `<E: Executor>` (pattern 8-3 / 8-4 / 8-5a).
 - **Advisory lock per-account** : `with_account_lock(tx, company_id, bank_account_id, 5)` réutilisé pour `accept-with-rule` (sérialisation cross-flows sur le même compte).
 - **`journal_entries::create_in_tx`** : helper Story 5-2, accepte tx ouverte par caller, ne commit pas. Émet audit `journal_entry.created` automatiquement.
-- **`fiscal_years::find_open_for_date_for_company`** : helper Story 3-7 (vérifié/créé 8-5a T4), indispensable pour résoudre `fiscal_year_id` à partir d'une `entry_date` dans accept-with-rule.
-- **Helper `manual::build_journal_entry_for_counterparty`** : **livré 8-5a, réutilisé tel quel** par 8-5b dans le flow `accept-with-rule` step 8.
-- **Helper `bank_transactions::find_pending_by_id_for_account`** : livré 8-5a, réutilisé par flow `accept-with-rule`.
+- **`fiscal_years::find_open_covering_date`** : helper Story 3-7 (vérifié/créé 8-5a-base T4 + 8-5a-bis T4), indispensable pour résoudre `fiscal_year_id` à partir d'une `entry_date` dans accept-with-rule. **Nom canonique** Pass 1 P-H6 BH-F42 : ne pas confondre avec `find_open_for_date_for_company` (nom obsolète apparaissant dans la spec d'origine).
+- **Helper `manual::build_journal_entry_for_counterparty`** : **livré 8-5a-base, signature stable** (`tx, bank_account_journal_id, counterparty_account_id, description: String, entry_date: NaiveDate`), réutilisé tel quel par 8-5b dans le flow `accept-with-rule` step 11.
+- **Helper `kesh_db::repositories::reconciliation::find_strictly_pending_by_id_for_account`** : **livré 8-5a-base**, filtre status='pending' explicite. Pass 1 P-H6 BH-F43 : nom canonique — ne pas confondre avec `bank_transactions::find_pending_by_id_for_account` (helper distinct du repo `bank_transactions`, antipattern naming F8'' Pass 3 hérité 8-4, ne PAS utiliser pour le flow 8-5b qui exige le filter strict).
 - **Breaking change `POST /accept` discriminator type** : livré 8-5a (type='invoice' obligatoire). 8-5b ajoute type='rule' au discriminator.
 
 ### Lessons leçons des stories précédentes
@@ -599,9 +1077,19 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 
 4. **Test E2E HTTP volume** : 14 nouveaux tests minimum. Pas de dette test acceptable (lessons 8-4 retro). Les 9 rules CRUD + 5 application accept-with-rule sont **incontournables** (sécurité multi-tenant + RBAC + audit log dual + Q3 reactivation flow).
 
-5. **Path-dépendance sur 8-5a** : si `manual::build_journal_entry_for_counterparty` ou `find_pending_by_id_for_account` ont changé entre 8-5a livré et 8-5b démarré (rare mais possible si un patch CR-XXX est appliqué entre-temps), vérifier la signature avant T4. Si breaking change → CR explicite.
+5. **Path-dépendance sur 8-5a-bis (post-merge)** : `manual::build_journal_entry_for_counterparty` et `find_strictly_pending_by_id_for_account` sont stables (livrés 8-5a-base, vérifiés intacts post-merge 8-5a-bis 2026-05-12 PR #83). Vérifier signature avant T4 si un patch CR-XXX a été appliqué entre-temps. Si breaking change → CR explicite. (Pass 1 P-H6 — clean up reference obsolete `find_pending_by_id_for_account`.)
 
 6. **Suppression définitive de la suggestion ML (Q5)** : ne pas implémenter `suggest_rule`, ne pas créer endpoint `/rules/suggest`. Si le dev agent voit du code lié dans la spec d'origine, l'ignorer (caduque post-Q5). Tracer en `Completion Notes` que cet aspect est explicitement out-of-scope.
+
+7. **Refactor `ReconciliationCandidate` enum tagged (Pass 1 P-H6)** : 3 sites à patcher dans `reconciliation.rs:get_proposals` qui construisent actuellement des `ReconciliationCandidate` 8-4. Tous les call-sites doivent ajouter `candidate_type: CandidateType::Invoice` + wrap fields invoice dans `Some(...)` + tous rule fields à `None`. Vérifier ground-truth `grep -c "ReconciliationCandidate {" crates/kesh-api/src/routes/reconciliation.rs` avant dev-story.
+
+8. **Variant `Rule` à `AcceptProposalInput` (Pass 1 P-H6 ECH-08 + Pass 3 R2 ECH3-2)** : l'enum tagged 8-5a-bis a `Invoice` + `Split`. 8-5b ajoute `Rule { bank_transaction_id, rule_id, counterparty_account_id }`. **4 sites à modifier** dans `reconciliation.rs` : (a) déclaration enum + `#[serde(rename = "rule", rename_all = "camelCase")]` ; (b) `impl AcceptProposalInput { fn bank_transaction_id(&self) -> i64 { ... } }` (pattern match exhaustif — compilateur catch) ; (c) `accept_batch` dispatch `match proposal { Invoice => accept_one_invoice, Split => accept_one_split, Rule => accept_one_rule }` ; **(d) Pass 3 R2 — `AcceptBodyExtractor` error message hardcodé `["invoice", "split"]` ligne ~248 → mettre à jour `["invoice", "split", "rule"]` pour cohérence du message d'erreur 400 quand type absent/inconnu**. Sans le patch (d), les clients reçoivent un message qui prétend `"rule"` n'est pas accepté alors que le handler le supporte — confusion garantie. Test E2E `accept_with_rule_extractor_error_lists_rule` (extension du test discriminator hérité 8-5a-bis).
+
+9. **MariaDB ≥ 10.6 requis (Pass 1 P-H3)** : la VIRTUAL column `active_uniq` indexable UNIQUE exige MariaDB ≥ 10.6 (cohérent Docker Compose `mariadb:11.x`). Si dev local sur version antérieure → migration échoue. Vérifier `SELECT VERSION()` avant T1.
+
+10. **Frontend page rules : filtre UI inactives (Pass 1 P-M BH-F36 + BH-F37)** : le load function charge `active=true` par défaut, mais la page doit aussi afficher les rules désactivées avec bouton « Réactiver ». Ajouter un toggle UI « Afficher les règles désactivées » (state local `showInactive`) qui re-fetch avec `active=` paramètre absent (= toutes). Pas d'AC dédié v0.1 — comportement UI flexible.
+
+11. **Test access audit depuis Playwright (Pass 1 P-M BH-F38)** : T7.1 « vérifier audit » dans le test E2E end-to-end. Comme il n'y a pas de page d'audit UI v0.1, le test Playwright doit faire un appel API direct `GET /api/v1/audit-log` (si endpoint existe — sinon, à vérifier avant dev-story) ou skipper la vérification d'audit côté Playwright (suffisant car T4.5 #19 + #24 couvrent l'audit E2E HTTP).
 
 ### Références
 
@@ -635,5 +1123,11 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 (à compléter par dev-story)
 
 ## Change Log
+
+| Date | Entrée | Auteur |
+|------|--------|--------|
+| **2026-05-12** | **Pass 3 validate Opus 4.7 — VALIDATION FINALE** — 27 findings bruts (BH 13 + ECH 7 + AA 7). Verdict Acceptance Auditor Opus : **CONDITIONAL GO** (0 CRITICAL / 0 HIGH côté Auditor / 2 MEDIUM éditoriaux / 5 LOW). ECH Hunter trouve 1 HIGH résiduel (ECH3-1 currency filter missed Pass 1+2). **7 patches appliqués** (R1-R5 + 2 fixes éditoriaux AA-F1/F2) : [R1 HIGH ECH3-1] §rule-application Currency filter ajouté — rules **HÉRITENT** du filter 8-4 `tx.currency != "CHF"` (skip non-CHF cohérent L38) + defense-in-depth accept_one_rule step 0 préflight `RECONCILIATION_CURRENCY_MISMATCH` per-proposal + AC #117bis nouveau avec 2 tests E2E HTTP. [R2 MEDIUM ECH3-2] §risques #8 ajout 4ème site (d) `AcceptBodyExtractor` message hardcodé `["invoice", "split"]` → `["invoice", "split", "rule"]` (ligne ~248 reconciliation.rs). [R3 MEDIUM ECH3-3] §pass-3-clarifications décision explicite : variant `Rule` v0.1 PAS de body field `valueDate` (cohérent use-case Swisscom récurrent, contrairement à `Split` qui supporte 3-couches override). [R4 MEDIUM ECH3-7] §pass-3-clarifications + step 15 audit shape : `value_date` = `tx.value_date` brut nullable (peut être `null`) + ajout nouveau champ `entry_date` résolu pour traçabilité (distinct des 2). Test `accept_with_rule_emits_audit_with_null_value_date_when_tx_value_date_is_null`. [R5 MEDIUM BH-F1 Opus] §rule-application : suppression duplicate query block résiduel — `accounts_info: HashMap<i64, (String, String)>` est l'unique query batch, `active_account_ids = accounts_info.keys()` dérivé sans SELECT additionnel. [AA-F1 MEDIUM] rename header §accept-with-rule-flow "steps 1-13" → "steps 1-16". [AA-F2 MEDIUM] fix cross-reference §contexte L37 "step 8 helper used" → "step 11 helper used". **Ground-truth verifications confirmées** Opus Auditor : `manual::build_journal_entry_for_counterparty` STABLE (manual.rs:67), `find_strictly_pending_by_id_for_account` STABLE (reconciliation.rs:323), `AcceptProposalInput::{Invoice, Split}` STABLE (reconciliation.rs:178-196), `AppError::BankAccountNotConfigured` STABLE (errors.rs:361), `DbError::UniqueConstraintViolation(String)` STABLE (errors.rs:26+105+152) — **Q6 pre-check pass d'office sans création variant T2**. Faux positifs dismiss : BH-F4 sentinel defer (confirmé Pass 1), BH-F11 step ordering (logique OK), BH-F17 index already correct, ECH-Opus F12 migration filename (placeholder MMDD à résoudre dev-story = OK), F13 numbering tables (cosmétique cross-ref). Trend cycle complet : Pass 1 = ~17 findings > LOW → Pass 2 = ~7 > LOW → **Pass 3 post-patches = 0 HIGH + 0 MEDIUM résiduel** (R1-R5 résolus, AA-F1/F2 résolus). **Critère arrêt CLAUDE.md ATTEINT Pass 3** — 0 finding > LOW. Cycle review STOP. Verdict final : **`GO ready-for-dev`**. Path-dep 8-5a-bis MERGED PR #83 squash `3c996fb` + sync PR #84 `f759dab` — tous helpers ground-truth STABLE. 8-5b débloqué pour `bmad-dev-story 8-5b`. | Claude (Opus 4.7 validate — VALIDATION FINALE) |
+| **2026-05-12** | **Pass 2 validate Haiku 4.5** — ~50 findings bruts (BH 20 + ECH 15 + AA 15). Verdict Acceptance Auditor : **CONDITIONAL GO** (0 CRITICAL, 0 HIGH bloquant, ~7-10 MEDIUM réserves). **8 patches appliqués** (Q1-Q10) : [Q1 BH-F2] §rule-application order_by tiebreaker aligné 2-level `priority ASC, id ASC` (suppression régression Pass 1 `created_at` 3ème niveau). [Q2 BH-F7] T3.1 docstring `normalize()` clarifié : ne s'applique PAS à `IbanExact` qui utilise `normalize_iban` inline. [Q3 BH-F13] T3.3 table mapping `ReconciliationError` → `AppError` 1:1 ajoutée (4 variants), helper `From<ReconciliationError>` étendu, `RuleNoLongerMatches`/`RuleMismatch` per-proposal vs `RuleNotFound`/`RuleDuplicate` AppError global. [Q4 ECH2-1] §rules-types-rust IBAN normalization étendue à PATCH (pas seulement CREATE) via helper factorisé `normalize_iban_canonical`. [Q5 AA-F1] §rule-application stratégie unifiée : 1 SELECT batch `accounts_info: HashMap<i64, (number, name)>` qui résout `active_account_ids` ET `counterparty_account_name` candidate type=rule (au lieu de 2 queries). [Q6 BH-F13+AA-F4] §pass-2-clarifications pre-dev check obligatoire `grep DbError::UniqueConstraintViolation` avant dev-story + fallback si variant absent (créer en T2 extension kesh-db). [Q7 AA-F-#110/#111] HTTP code DELETE aligné sur **204 No Content** dans les deux cas (cas réussi + cas idempotent), suppression ambiguïté 200/204. [Q8 AA-F-#114] AC #114 enrichi : seuil **score ≥ 0.5** explicite pour invoice override rule + cas coexistence si invoice score < 0.5 (deux candidates retournées). [Q9 AA-F2] §pass-2-clarifications step 11 description handler-side : handler construit `format!("Règle '{}' — {}", rule.label, counterparty)` AVANT helper, truncate UTF-8-safe 200 chars. [Q10 AA-F-#115b] T3.4 test unit #8 `first_matching_rule_respects_id_tiebreaker_on_equal_priority` ajouté nominalement. **Faux positifs dismiss** : BH-F4 sentinel `invoice_id=0` (defer explicite Pass 1 confirmé), BH-F11 step ordering counterparty (logique OK), BH-F17 index already correct, ECH2-2 MariaDB <10.6 fallback (Docker pinned 11.x), ECH2-7 audit JSON size (limite 1GB jamais atteinte). Trend : Pass 1 = ~17 findings > LOW → Pass 2 = ~7 findings > LOW → Pass 2 post-patches = **0 HIGH résiduel**. **Critère arrêt CLAUDE.md NON encore atteint** (MEDIUM/LOW restants à valider par Pass 3 orthogonal). Prochaine étape : Pass 3 Opus 4.7 (cycle Sonnet → Haiku → Opus) pour confirmer convergence. | Claude (Haiku 4.5 validate) |
+| **2026-05-12** | **Pass 1 validate Sonnet 4.6** — 72 findings bruts (Blind Hunter 46 + Edge Case Hunter 16 + Acceptance Auditor 10). Triage : 1 CRITICAL + 7 HIGH + ~10 MEDIUM > LOW post-dédup, verdict Acceptance Auditor `CONDITIONAL GO`. **~20 patches appliqués** : [P-C1] §accept-with-rule-flow inline avec 16 steps détaillés (suppression renvoi à spec archivée `8-5-reconciliation-manuelle-regles-affectation.md`) + ajout step 3 check 412 BANK_ACCOUNT_NOT_CONFIGURED (pattern `accept_one_split` 8-5a-bis hérité) + AC #118bis nouveau. [P-H1 BH-F16+AA-F1+ECH-12] résolution `description` + `entry_date` handler-side (format `"Règle '{label}' — {counterparty}"` max 200 chars, `entry_date = tx.value_date.unwrap_or(tx.booking_date)`). [P-H2 ECH-02] §rule-application stratégie `active_account_ids: HashSet<i64>` 1 query batch SELECT inline pré-boucle tx (cohérent SELECT inline `accept_one_split` 8-5a-bis). [P-H3 ECH-04+BH-F27+AA-F3] §rules-schema clarification MariaDB ≥ 10.6 obligatoire (UNIQUE sur VIRTUAL column) + conflit reactivation UNIQUE `uq_reconciliation_rules_match_active` mappé `DbError::DuplicateRule` → `RECONCILIATION_RULE_DUPLICATE` (distinct du conflit optimistic lock version) + nouvel AC #109b. [P-H4 ECH-03+BH-F29+BH-F30] §rules-types-rust normalisation IBAN canonique (`uppercase + strip whitespace`) imposée à la création + défense-in-depth dans `rule_matches` T3.1. [P-H5 BH-F42+BH-F43] helper names canoniques : `find_strictly_pending_by_id_for_account` (PAS `find_pending_by_id_for_account`), `find_open_covering_date` (PAS `find_open_for_date_for_company`) — supprimer divergences §Dev Notes. [P-H6 ECH-09+ECH-15+BH-F44+BH-F45+AA-F6] §api-response-shapes nouvelle section : `ReconciliationCandidate` refactor en struct avec discriminator `candidate_type: CandidateType { Invoice, Rule }` + tous fields invoice/rule en `Option<>` (refactor mineur 3 sites `get_proposals`). `AcceptedProposal` garde sentinel `invoice_id=0` v0.1 (dette transverse tracée v0.2 avec 8-5a-bis BH-H1). Variant `AcceptProposalInput::Rule` à ajouter à l'enum tagged Serde 8-5a-bis (3 sites code listés §risques 8). [P-H7 ECH-05] §rule-application sign filter clarification : les rules s'appliquent aux 2 sens (débit ET crédit), **NE PAS hériter** du sign filter 8-4 invoice `reconciliation.rs:343`. [P-M ECH-07+BH-F33] validation applicative dans `post_create` AVANT INSERT (label/match_value empty + length + priority range) — éviter messages d'erreur SQL bruts. [P-M BH-F11+BH-F12+BH-F13] §rules-types-rust types Rust `NewReconciliationRule` + `UpdateReconciliationRule` (avec `expected_version` séparé des champs métier + `match_type` non patchable v0.1). [P-M AA-F2+AA-F8+BH-F22-F24] §audit-log-shapes 5 actions distinctes shapes complets (4 rule.* + extension `reconciliation.accepted` avec `details.type='rule'`). [P-M BH-F39] §i18n-keys 19 clés nominales listées (cible spec d'origine ~15 augmentée à 19 pour couvrir erreurs API). [P-M ECH-10+BH-F19+BH-F20] `increment_applied_count_in_tx` UPDATE atomique sans optimistic lock sur version (compteur statistique, pas invariant business). [P-M BH-F36+BH-F37] §risques nouveau point 10 toggle UI inactives. [P-M BH-F38] §risques nouveau point 11 Playwright audit fallback. [P-L ECH-13+BH-F44] nouvel AC #115b tiebreaker `id ASC` à même priorité. [P-L BH-F01+BH-F02] T4.5 24 tests E2E HTTP énumérés nommément (au lieu de 14 vagues). Defers : BH-H1 sentinel `invoice_id=0` Split/Rule (refactor `Option<i64>` v0.2 transverse), BH-F09/F10 list/detail response shapes minor, BH-F25/F26 GET /rules/{id} détail couverage (à ajouter si Pass 2 le détecte), ECH-14 DELETE concurrent pendant accept-with-rule (low-prob accepté), BH-F32/F34 défaults FK + priority range (cohérent v0.1). Trend : Pass 1 = ~17+ findings > LOW. **Critère arrêt CLAUDE.md NON atteint** — Pass 2 obligatoire (Haiku 4.5 cycle CLAUDE.md, briser biais Sonnet auteur Pass 1). | Claude (Sonnet 4.6 validate) |
 
 - **2026-05-07** — Spec créée par split mécanique de 8-5 unifiée (décision Guy 2026-05-07 Q1=B). Découpage scope FR47 rules engine (CRUD + application GET /proposals + extension POST /accept type='rule'). FR46 suggestion ML supprimée (Q5 — reportée v0.2). Soft-delete via colonne synthétique active_uniq (Q3 workaround MariaDB). 4 actions audit distinctes (Q4b). 24 ACs (#101-#124). Tasks T1-T8. Path-dépendance sur 8-5a (helper `manual::build_journal_entry_for_counterparty` réutilisé). Status `8-5b-reconciliation-rules-engine: backlog` jusqu'à 8-5a `done`/merged. Cycle prévu après merge 8-5a : transition `backlog → ready-for-dev` puis `bmad-create-story validate 8-5b` Pass 1 Sonnet (cycle CLAUDE.md, auteur=Opus split, briser biais d'auteur).
