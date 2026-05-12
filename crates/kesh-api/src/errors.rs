@@ -258,8 +258,18 @@ pub enum AppError {
     /// Le compte du plan comptable référencé par `journalAccountId` n'existe
     /// pas, est archivé, ou appartient à une autre company → `404`
     /// `ACCOUNT_NOT_FOUND` (anti-énumération KF-002 — jamais 403).
+    ///
+    /// **Story 8-5a-bis (F1''' Pass 3 Opus)** : extension `missing_account_ids`
+    /// pour le cas batch (split N comptes contreparties). Quand `Some(vec)`,
+    /// `account_id` est le premier id de `vec` trié et `details.missingAccountIds`
+    /// est inclus dans le body JSON (cohérent §validation-handler-side-split
+    /// step 5). Quand `None` (manual + bank-accounts PATCH), seul
+    /// `details.accountId` est inclus — rétro-compat 8-5a-zero / 8-5a-base.
     #[error("Compte du plan comptable non trouvé : id={account_id}")]
-    AccountNotFound { account_id: i64 },
+    AccountNotFound {
+        account_id: i64,
+        missing_account_ids: Option<Vec<i64>>,
+    },
 
     /// Le compte référencé n'est pas de type Asset ou Liability → `400`
     /// `INVALID_ACCOUNT_TYPE`. Un bank_account ne peut être lié qu'à un
@@ -372,6 +382,19 @@ pub enum AppError {
     /// KF-002 — pas 409 puisque le helper ne distingue pas les causes).
     #[error("Transaction bancaire non pending : id={bank_transaction_id}")]
     ReconciliationTransactionNotPending { bank_transaction_id: i64 },
+
+    // ----- Story 8-5a-bis — split FR48 -----
+    /// `sum(splits) != tx.amount.abs()` (Decimal exact, pas de tolérance)
+    /// → `400 RECONCILIATION_SPLIT_IMBALANCE`. Body `details = {
+    /// expected, actual, difference }` (string Decimal cohérent AC #95).
+    #[error(
+        "Éclatement de transaction non équilibré : attendu {expected}, reçu {actual}, écart {difference}"
+    )]
+    ReconciliationSplitImbalance {
+        expected: rust_decimal::Decimal,
+        actual: rust_decimal::Decimal,
+        difference: rust_decimal::Decimal,
+    },
     //
     // M6 Pass 1 code review — variants supprimés :
     // - `ReconciliationAlreadyReconciled { bank_transaction_id }` :
@@ -747,7 +770,15 @@ impl IntoResponse for AppError {
             ),
 
             // ----- Story 8-5a-zero — bank_account.journal_account_id link -----
-            AppError::AccountNotFound { account_id } => {
+            // F1''' Pass 3 Opus : `missing_account_ids` optionnel pour batch split.
+            AppError::AccountNotFound {
+                account_id,
+                missing_account_ids,
+            } => {
+                let mut details = serde_json::json!({ "accountId": account_id });
+                if let Some(ids) = missing_account_ids {
+                    details["missingAccountIds"] = serde_json::json!(ids);
+                }
                 let body = serde_json::json!({
                     "error": {
                         "code": "ACCOUNT_NOT_FOUND",
@@ -755,7 +786,7 @@ impl IntoResponse for AppError {
                             "bank-accounts-errors-account-not-found",
                             "Compte du plan comptable non trouvé.",
                         ),
-                        "details": { "accountId": account_id }
+                        "details": details
                     }
                 });
                 (StatusCode::NOT_FOUND, Json(body)).into_response()
@@ -997,6 +1028,39 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+
+            // Story 8-5a-bis FR48 — split imbalance → 400 avec body Decimal stringifié.
+            // P5 Pass 1 code-review (BH-M4+ECH-07+AA-F3) — `Decimal::rescale(2)`
+            // force scale 2 ("10500" → "10500.00") cohérent total_amount audit log.
+            // round_dp(2) ne padd pas les zéros trailing si scale d'entrée < 2.
+            AppError::ReconciliationSplitImbalance {
+                expected,
+                actual,
+                difference,
+            } => {
+                let msg = t(
+                    "reconciliation-split-error-imbalance",
+                    "L'éclatement n'équilibre pas le montant de la transaction.",
+                );
+                let mut expected_s = expected;
+                let mut actual_s = actual;
+                let mut difference_s = difference;
+                expected_s.rescale(2);
+                actual_s.rescale(2);
+                difference_s.rescale(2);
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_SPLIT_IMBALANCE",
+                        "message": msg,
+                        "details": {
+                            "expected": expected_s.to_string(),
+                            "actual": actual_s.to_string(),
+                            "difference": difference_s.to_string(),
+                        }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
             // M6 Pass 1 code review : variants `ReconciliationAlreadyReconciled` et
             // `ReconciliationInvoiceNotEligible` supprimés (jamais émis comme

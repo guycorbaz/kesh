@@ -7,6 +7,8 @@ import type {
 	GetProposalsResponse,
 	ManualMatchResponse,
 	RejectResponse,
+	SplitProposalLine,
+	SplitResponse,
 } from './reconciliation.types';
 
 export async function getProposals(
@@ -71,4 +73,28 @@ export async function manualMatchTransaction(
 		'/api/v1/reconciliation/manual',
 		body,
 	);
+}
+
+/**
+ * Story 8-5a-bis FR48 — éclatement de transaction agrégée en N lignes
+ * contreparties + 1 ligne banque.
+ *
+ * Le compte ledger banque est résolu **serveur-side** via
+ * `bank_account.journal_account_id` (foundation 8-5a-zero) — donc le
+ * body NE contient PAS `bankLedgerAccountId`. Si NULL → 412
+ * BANK_ACCOUNT_NOT_CONFIGURED.
+ */
+export async function splitTransaction(
+	bankAccountId: number,
+	bankTransactionId: number,
+	splits: SplitProposalLine[],
+	valueDate?: string,
+): Promise<SplitResponse> {
+	const body: Record<string, unknown> = {
+		bankAccountId,
+		bankTransactionId,
+		splits,
+	};
+	if (valueDate !== undefined && valueDate !== '') body.valueDate = valueDate;
+	return apiClient.post<SplitResponse>('/api/v1/reconciliation/split', body);
 }

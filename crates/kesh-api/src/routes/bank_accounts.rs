@@ -121,11 +121,17 @@ pub async fn patch_bank_account_journal_link(
         let account =
             accounts::find_by_id_in_company(&state.pool, account_id, current_user.company_id)
                 .await?
-                .ok_or(AppError::AccountNotFound { account_id })?;
+                .ok_or(AppError::AccountNotFound {
+                    account_id,
+                    missing_account_ids: None,
+                })?;
 
         if !account.active {
             // Anti-énumération : compte archivé → 404 (pas 400) pour ne pas leak l'existence.
-            return Err(AppError::AccountNotFound { account_id });
+            return Err(AppError::AccountNotFound {
+                account_id,
+                missing_account_ids: None,
+            });
         }
 
         // Validation §validation-account-type : un compte bancaire ne peut être

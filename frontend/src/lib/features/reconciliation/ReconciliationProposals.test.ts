@@ -177,7 +177,11 @@ describe('ReconciliationProposals', () => {
 		expect(mockApi.acceptProposals).toHaveBeenCalledTimes(1);
 		const [bankAccountId, items] = mockApi.acceptProposals.mock.calls[0];
 		expect(bankAccountId).toBe(17);
-		expect(items).toEqual([{ bankTransactionId: 42, invoiceId: 101 }]);
+		// Story 8-5a-bis Q2 breaking — chaque proposal porte un discriminator
+		// `type` ('invoice' par défaut depuis ReconciliationProposals).
+		expect(items).toEqual([
+			{ type: 'invoice', bankTransactionId: 42, invoiceId: 101 },
+		]);
 	});
 
 	// Story 8-5a-base FR45 — bouton « Affecter manuellement » présent

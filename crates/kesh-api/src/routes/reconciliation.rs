@@ -16,7 +16,9 @@
 //! 8-1b — RBAC `Comptable` requis).
 
 use axum::Json;
-use axum::extract::{Extension, Query, State};
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{Extension, FromRequest, Query, Request, State};
+use axum::response::{IntoResponse, Response};
 use chrono::{Duration, NaiveDate};
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
@@ -27,8 +29,8 @@ use kesh_db::repositories::{
     journal_entries, reconciliation as reconciliation_repo,
 };
 use kesh_reconciliation::{
-    MatchScore, ReconciliationError, build_journal_entry_for_counterparty, propose_matches,
-    with_account_lock,
+    MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
+    build_split_journal_entry, propose_matches, validate_split_balance, with_account_lock,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -161,11 +163,105 @@ pub struct AcceptBody {
     pub proposals: Vec<AcceptProposalInput>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+/// Story 8-5a-bis Q2 breaking — enum tagged Serde sur le champ `type`.
+///
+/// - `type: "invoice"` (8-4 héritée) : matching tx ↔ facture validée.
+/// - `type: "split"` (8-5a-bis) : équivalent batch de `/split` standalone
+///   (éclate tx en N+1 lignes JE). Path-dep `bank_account.journal_account_id`
+///   résolu serveur-side inside `accept_one_split` (H1 Pass 4).
+/// - `type: "manual"` (réservé v0.2 — Manual standalone via `/manual`).
+/// - `type: "rule"` (réservé 8-5b).
+///
+/// Pas de `derive(Copy)` (F11'' Pass 3) car `Vec<SplitProposalLine>` +
+/// `Decimal` ne sont pas `Copy`. Les call-sites internes utilisent
+/// `clone()` quand nécessaire.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum AcceptProposalInput {
+    #[serde(rename = "invoice", rename_all = "camelCase")]
+    Invoice {
+        bank_transaction_id: i64,
+        invoice_id: i64,
+    },
+    #[serde(rename = "split", rename_all = "camelCase")]
+    Split {
+        bank_transaction_id: i64,
+        splits: Vec<SplitProposalLine>,
+        /// M6''' Pass 3 Opus — `value_date` optional cohérent avec `/split`
+        /// standalone. Si absent → handler default = 3 couches
+        /// `body.value_date.or(tx.value_date).unwrap_or(tx.booking_date)`.
+        #[serde(default)]
+        value_date: Option<NaiveDate>,
+    },
+}
+
+impl AcceptProposalInput {
+    /// Helper d'extraction du `bank_transaction_id` indépendamment du
+    /// variant — utilisé par le pré-flight `post_accept` (validation
+    /// surface + batch ownership) avant le dispatch dans `accept_one`.
+    fn bank_transaction_id(&self) -> i64 {
+        match self {
+            AcceptProposalInput::Invoice {
+                bank_transaction_id,
+                ..
+            }
+            | AcceptProposalInput::Split {
+                bank_transaction_id,
+                ..
+            } => *bank_transaction_id,
+        }
+    }
+}
+
+/// Story 8-5a-bis — ligne de split dans le body `/accept type='split'`
+/// (équivalent du `SplitLineInput` côté `/split` standalone).
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct AcceptProposalInput {
-    pub bank_transaction_id: i64,
-    pub invoice_id: i64,
+pub struct SplitProposalLine {
+    pub counterparty_account_id: i64,
+    pub amount: Decimal,
+    pub description: String,
+}
+
+/// Extracteur custom pour `AcceptBody` — convertit les rejets serde en
+/// `AppError::Validation` (400 `VALIDATION_ERROR`) au lieu du 422 Axum
+/// natif.
+///
+/// **F9 Pass 1** : sans cet extracteur, un body absent du champ `type`
+/// retourne 422 (Axum default sur `serde(tag)` désérialisation échouée).
+/// AC #100 exige 400 explicite. Pattern repris de
+/// `routes::bank_accounts::PatchJournalLinkBodyExtractor`.
+pub struct AcceptBodyExtractor(pub AcceptBody);
+
+impl<S> FromRequest<S> for AcceptBodyExtractor
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<AcceptBody>::from_request(req, state).await {
+            Ok(Json(body)) => Ok(Self(body)),
+            Err(rej) => {
+                let message = match &rej {
+                    JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
+                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées v0.1 : [\"invoice\", \"split\"]".to_string()
+                    }
+                    JsonRejection::MissingJsonContentType(_) => {
+                        "Content-Type attendu : application/json".to_string()
+                    }
+                    _ => {
+                        tracing::warn!(
+                            rejection = %rej,
+                            "AcceptBodyExtractor: unhandled JsonRejection variant"
+                        );
+                        "requête invalide (corps non-parsable)".to_string()
+                    }
+                };
+                Err(AppError::Validation(message).into_response())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -328,9 +424,9 @@ pub async fn get_proposals(
 pub async fn post_accept(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
-    Json(body): Json<AcceptBody>,
+    AcceptBodyExtractor(body): AcceptBodyExtractor,
 ) -> Result<Json<AcceptResponse>, AppError> {
-    // Step 0 — validation body.
+    // Step 0 — validation body (Q2 breaking : enum tagged, dispatch sur variant).
     if body.proposals.is_empty() {
         return Err(AppError::Validation("proposals vide".into()));
     }
@@ -341,16 +437,62 @@ pub async fn post_accept(
     }
     let mut seen_tx_ids = std::collections::HashSet::new();
     for p in &body.proposals {
-        if !seen_tx_ids.insert(p.bank_transaction_id) {
+        let bt_id = p.bank_transaction_id();
+        if !seen_tx_ids.insert(bt_id) {
             return Err(AppError::Validation(format!(
-                "bankTransactionId dupliqué dans le batch : {}",
-                p.bank_transaction_id
+                "bankTransactionId dupliqué dans le batch : {bt_id}"
             )));
         }
-        if p.bank_transaction_id <= 0 || p.invoice_id <= 0 {
+        if bt_id <= 0 {
             return Err(AppError::Validation(
-                "bankTransactionId et invoiceId doivent être strictement positifs".into(),
+                "bankTransactionId doit être strictement positif".into(),
             ));
+        }
+        match p {
+            AcceptProposalInput::Invoice { invoice_id, .. } => {
+                if *invoice_id <= 0 {
+                    return Err(AppError::Validation(
+                        "invoiceId doit être strictement positif (type='invoice')".into(),
+                    ));
+                }
+            }
+            AcceptProposalInput::Split { splits, .. } => {
+                // Story 8-5a-bis — pré-validation surface des splits inline
+                // (cohérent §validation-handler-side-split steps 1, 1bis, 2).
+                if splits.len() < MIN_SPLIT_LINES {
+                    return Err(AppError::Validation(format!(
+                        "splits doit contenir au moins {MIN_SPLIT_LINES} lignes — utilisez /accept type='invoice' ou /manual"
+                    )));
+                }
+                if splits.len() > MAX_SPLIT_LINES {
+                    return Err(AppError::Validation(format!(
+                        "splits ne peut pas dépasser {MAX_SPLIT_LINES} lignes"
+                    )));
+                }
+                for (idx, s) in splits.iter().enumerate() {
+                    if s.description.chars().count() > MAX_MANUAL_DESCRIPTION_LEN {
+                        return Err(AppError::Validation(format!(
+                            "splits[{idx}].description trop longue (max {MAX_MANUAL_DESCRIPTION_LEN} caractères)"
+                        )));
+                    }
+                    if s.amount <= Decimal::ZERO {
+                        return Err(AppError::Validation(format!(
+                            "splits[{idx}].amount doit être strictement positif (> 0)"
+                        )));
+                    }
+                    // P1 (ECH-01) — voir commentaire post_split step 2.
+                    if s.amount.scale() > 2 {
+                        return Err(AppError::Validation(format!(
+                            "splits[{idx}].amount précision invalide (max 2 décimales pour CHF)"
+                        )));
+                    }
+                    if s.counterparty_account_id <= 0 {
+                        return Err(AppError::Validation(format!(
+                            "splits[{idx}].counterpartyAccountId doit être strictement positif"
+                        )));
+                    }
+                }
+            }
         }
     }
 
@@ -367,7 +509,7 @@ pub async fn post_accept(
     let tx_ids: Vec<i64> = body
         .proposals
         .iter()
-        .map(|p| p.bank_transaction_id)
+        .map(|p| p.bank_transaction_id())
         .collect();
     let tx_map = reconciliation_repo::find_pending_by_ids(
         &state.pool,
@@ -462,6 +604,21 @@ pub async fn post_accept(
             drop(tx_outer);
             Err(AppError::ReconciliationFiscalYearClosed { entry_date })
         }
+        // Story 8-5a-bis — `SplitImbalance` peut être émis par
+        // `accept_one_split` (cf. T3 H1 Pass 4). Mapping → 400 cohérent
+        // avec `/split` standalone.
+        Err(ReconciliationError::SplitImbalance {
+            expected,
+            actual,
+            difference,
+        }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationSplitImbalance {
+                expected,
+                actual,
+                difference,
+            })
+        }
     }
 }
 
@@ -484,7 +641,7 @@ async fn accept_batch(
     let batch_size = proposals.len() as i64;
 
     for proposal in proposals {
-        let savepoint = format!("sp_{}", proposal.bank_transaction_id);
+        let savepoint = format!("sp_{}", proposal.bank_transaction_id());
         sqlx::query(&format!("SAVEPOINT {savepoint}"))
             .execute(&mut **tx_outer)
             .await?;
@@ -517,7 +674,55 @@ async fn accept_batch(
     Ok(AcceptResponse { accepted, failed })
 }
 
-/// Helper interne — traite UNE proposal dans son savepoint.
+/// Helper interne — dispatch sur le variant `AcceptProposalInput` Q2.
+///
+/// Story 8-5a-bis F3''' Pass 3 Opus + H1 Pass 4 : pattern match top-level
+/// pour briser les 29 accès directs `proposal.bank_transaction_id` /
+/// `.invoice_id` (qui cassent avec l'enum tagged).
+async fn accept_one(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+    user_id: i64,
+    proposal: &AcceptProposalInput,
+    batch_size: i64,
+) -> Result<AcceptedProposal, FailedProposal> {
+    match proposal {
+        AcceptProposalInput::Invoice {
+            bank_transaction_id,
+            invoice_id,
+        } => {
+            accept_one_invoice(
+                tx,
+                company_id,
+                bank_account_id,
+                user_id,
+                *bank_transaction_id,
+                *invoice_id,
+                batch_size,
+            )
+            .await
+        }
+        AcceptProposalInput::Split {
+            bank_transaction_id,
+            splits,
+            value_date,
+        } => {
+            accept_one_split(
+                tx,
+                company_id,
+                bank_account_id,
+                user_id,
+                *bank_transaction_id,
+                splits,
+                *value_date,
+            )
+            .await
+        }
+    }
+}
+
+/// Helper interne — traite UNE proposal `type='invoice'` dans son savepoint.
 ///
 /// **C2 Pass 1 code review (TOCTOU fix)** : la BankTransaction est
 /// rechargée INSIDE le lock via `find_pending_by_id_for_account`. Le
@@ -525,12 +730,13 @@ async fn accept_batch(
 /// pour fermer la fenêtre TOCTOU. `bank_account_id` est nécessaire
 /// pour scope le SELECT (l'invariant batch « tous les tx du même
 /// bank_account_id » a été validé au pré-flight 0ter).
-async fn accept_one(
+async fn accept_one_invoice(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     bank_account_id: i64,
     user_id: i64,
-    proposal: &AcceptProposalInput,
+    bank_transaction_id: i64,
+    invoice_id: i64,
     batch_size: i64,
 ) -> Result<AcceptedProposal, FailedProposal> {
     // Step 2 — recharger BankTransaction INSIDE le lock (C2 Pass 1
@@ -541,21 +747,21 @@ async fn accept_one(
         &mut **tx,
         company_id,
         bank_account_id,
-        proposal.bank_transaction_id,
+        bank_transaction_id,
     )
     .await
     {
         Ok(Some(t)) => t,
         Ok(None) => {
             return Err(FailedProposal {
-                bank_transaction_id: proposal.bank_transaction_id,
+                bank_transaction_id,
                 error_code: "BANK_TRANSACTION_NOT_FOUND".to_string(),
                 details: None,
             });
         }
         Err(e) => {
             return Err(FailedProposal {
-                bank_transaction_id: proposal.bank_transaction_id,
+                bank_transaction_id,
                 error_code: "DATABASE_ERROR".to_string(),
                 details: Some(serde_json::json!({ "message": e.to_string() })),
             });
@@ -565,7 +771,7 @@ async fn accept_one(
     // Step 4 — status pending (post-rechargement inside lock).
     if bank_transaction.status != BankTransactionStatus::Pending {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
             details: None,
         });
@@ -573,23 +779,21 @@ async fn accept_one(
 
     // Step 5 — load Invoice via reconciliation_repo helper.
     let invoice = match reconciliation_repo::find_invoice_by_id_for_company(
-        &mut **tx,
-        company_id,
-        proposal.invoice_id,
+        &mut **tx, company_id, invoice_id,
     )
     .await
     {
         Ok(Some(inv)) => inv,
         Ok(None) => {
             return Err(FailedProposal {
-                bank_transaction_id: proposal.bank_transaction_id,
+                bank_transaction_id,
                 error_code: "INVOICE_NOT_FOUND".to_string(),
-                details: Some(serde_json::json!({ "invoiceId": proposal.invoice_id })),
+                details: Some(serde_json::json!({ "invoiceId": invoice_id })),
             });
         }
         Err(e) => {
             return Err(FailedProposal {
-                bank_transaction_id: proposal.bank_transaction_id,
+                bank_transaction_id,
                 error_code: "DATABASE_ERROR".to_string(),
                 details: Some(serde_json::json!({ "message": e.to_string() })),
             });
@@ -613,21 +817,21 @@ async fn accept_one(
     // Step 6 — éligibilité invoice (HP3-3 Pass 3 + HP4-2 Pass 4 enum 4 reasons).
     if invoice.status != "validated" {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({ "reason": "invoice_not_validated" })),
         });
     }
     if invoice.paid_at.is_some() {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({ "reason": "invoice_already_paid" })),
         });
     }
     if invoice.journal_entry_id.is_none() {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({ "reason": "invoice_journal_entry_not_set" })),
         });
@@ -638,20 +842,20 @@ async fn accept_one(
     // Lower bound (existant) — paiement >= invoice.date - 1 day.
     if paid_at_candidate < invoice.date - Duration::days(1) {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({ "reason": "payment_date_before_invoice_date" })),
         });
     }
     // Upper bound (P3-M2 Pass 3) — paiement <= invoice.date + WINDOW_DAYS.
-    // Aligne `accept_one` sur le candidate window ±30j de
+    // Aligne `accept_one_invoice` sur le candidate window ±30j de
     // `find_unpaid_invoices_for_window`. Empêche d'accepter une tx
     // récente contre une invoice très ancienne ou une tx future contre
     // invoice récente. L27 (cf. spec) : paiements tardifs > 30j sont
     // reportés Story 8-5 manual.
     if paid_at_candidate > invoice.date + Duration::days(WINDOW_DAYS) {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({
                 "reason": "payment_date_outside_window",
@@ -684,7 +888,7 @@ async fn accept_one(
     // FR45 avec override explicite.
     if score.total <= 0.0 {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_SCORE_TOO_LOW".to_string(),
             details: Some(serde_json::json!({
                 "reason": "score_zero_no_match",
@@ -719,20 +923,20 @@ async fn accept_one(
          WHERE id = ? AND company_id = ? AND status = 'pending' AND version = ?",
     )
     .bind(journal_entry_id)
-    .bind(proposal.bank_transaction_id)
+    .bind(bank_transaction_id)
     .bind(company_id)
     .bind(bank_tx_version_pre)
     .execute(&mut **tx)
     .await
     .map_err(|e| FailedProposal {
-        bank_transaction_id: proposal.bank_transaction_id,
+        bank_transaction_id,
         error_code: "DATABASE_ERROR".to_string(),
         details: Some(serde_json::json!({ "message": e.to_string() })),
     })?;
 
     if bank_tx_update.rows_affected() != 1 {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
             details: Some(serde_json::json!({ "reason": "race_during_update" })),
         });
@@ -744,20 +948,20 @@ async fn accept_one(
          WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
     )
     .bind(paid_at_dt)
-    .bind(proposal.invoice_id)
+    .bind(invoice_id)
     .bind(company_id)
     .bind(invoice_version_pre)
     .execute(&mut **tx)
     .await
     .map_err(|e| FailedProposal {
-        bank_transaction_id: proposal.bank_transaction_id,
+        bank_transaction_id,
         error_code: "DATABASE_ERROR".to_string(),
         details: Some(serde_json::json!({ "message": e.to_string() })),
     })?;
 
     if invoice_update.rows_affected() != 1 {
         return Err(FailedProposal {
-            bank_transaction_id: proposal.bank_transaction_id,
+            bank_transaction_id,
             error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
             details: Some(serde_json::json!({ "reason": "race_during_update" })),
         });
@@ -765,8 +969,8 @@ async fn accept_one(
 
     // Step 9 — audit log reconciliation.accepted.
     let details_accepted = serde_json::json!({
-        "bank_transaction_id": proposal.bank_transaction_id,
-        "invoice_id": proposal.invoice_id,
+        "bank_transaction_id": bank_transaction_id,
+        "invoice_id": invoice_id,
         "score": score,
         "batch_size": batch_size,
         "journal_entry_id": journal_entry_id,
@@ -777,13 +981,13 @@ async fn accept_one(
             user_id,
             action: "reconciliation.accepted".to_string(),
             entity_type: "bank_transaction".to_string(),
-            entity_id: proposal.bank_transaction_id,
+            entity_id: bank_transaction_id,
             details_json: Some(details_accepted),
         },
     )
     .await
     .map_err(|e| FailedProposal {
-        bank_transaction_id: proposal.bank_transaction_id,
+        bank_transaction_id,
         error_code: "DATABASE_ERROR".to_string(),
         details: Some(serde_json::json!({ "message": e.to_string() })),
     })?;
@@ -803,22 +1007,382 @@ async fn accept_one(
             user_id,
             action: "invoice.paid".to_string(),
             entity_type: "invoice".to_string(),
-            entity_id: proposal.invoice_id,
+            entity_id: invoice_id,
             details_json: Some(details_paid),
         },
     )
     .await
     .map_err(|e| FailedProposal {
-        bank_transaction_id: proposal.bank_transaction_id,
+        bank_transaction_id,
         error_code: "DATABASE_ERROR".to_string(),
         details: Some(serde_json::json!({ "message": e.to_string() })),
     })?;
 
     Ok(AcceptedProposal {
-        bank_transaction_id: proposal.bank_transaction_id,
-        invoice_id: proposal.invoice_id,
+        bank_transaction_id,
+        invoice_id,
         journal_entry_id,
         score,
+    })
+}
+
+/// Helper interne Story 8-5a-bis — traite UNE proposal `type='split'`
+/// dans son savepoint. Pattern per-proposal `FailedProposal` (cohérent
+/// pattern 8-4 `accept_one_invoice`).
+///
+/// **H1 Pass 4 — Résolution `journal_account_id` inside lock** :
+/// le lookup `bank_accounts::find_by_id_for_company` est fait inside la
+/// closure (SELECT non-mutant, OK dans le lock advisory). Si NULL →
+/// `FailedProposal { error_code: "BANK_ACCOUNT_NOT_CONFIGURED" }`
+/// per-proposal (PAS un `AppError` global qui casserait le batch).
+///
+/// **Validations répliquées (M2 Pass 4)** : les validations pré-flight
+/// surface (1bis, 2, 6bis, 7) sont garanties handler-side (`post_accept`
+/// step 0) mais répliquées defense-in-depth ici en `FailedProposal`.
+#[allow(clippy::too_many_arguments)]
+async fn accept_one_split(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+    user_id: i64,
+    bank_transaction_id: i64,
+    splits: &[SplitProposalLine],
+    value_date: Option<NaiveDate>,
+) -> Result<AcceptedProposal, FailedProposal> {
+    // Step a — re-validation defense-in-depth (1bis, 2).
+    if splits.len() < MIN_SPLIT_LINES || splits.len() > MAX_SPLIT_LINES {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "VALIDATION_ERROR".to_string(),
+            details: Some(serde_json::json!({ "reason": "splits_count_out_of_range" })),
+        });
+    }
+    for s in splits {
+        if s.description.chars().count() > MAX_MANUAL_DESCRIPTION_LEN {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "VALIDATION_ERROR".to_string(),
+                details: Some(serde_json::json!({ "reason": "split_description_too_long" })),
+            });
+        }
+        if s.amount <= Decimal::ZERO {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "VALIDATION_ERROR".to_string(),
+                details: Some(serde_json::json!({ "reason": "split_amount_not_positive" })),
+            });
+        }
+        // P1 (ECH-01) defense-in-depth — surface check existe déjà dans
+        // `post_accept` step 0, on réplique ici pour éviter 500 DATABASE_ERROR
+        // si bypass surface (clients API directs).
+        if s.amount.scale() > 2 {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "VALIDATION_ERROR".to_string(),
+                details: Some(serde_json::json!({ "reason": "split_amount_scale_too_high" })),
+            });
+        }
+    }
+
+    // Step b — bank_account.journal_account_id lookup inside lock (H1 Pass 4).
+    // SELECT inline (les helpers `bank_accounts::find_by_id_for_company` et
+    // `accounts::find_by_id_in_company` prennent un `&MySqlPool` pas un
+    // Executor générique — kesh-db extension hors scope 8-5a-bis).
+    let journal_account_row: Option<(Option<i64>,)> = match sqlx::query_as(
+        "SELECT journal_account_id FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .fetch_optional(&mut **tx)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+    let bank_ledger_account_id = match journal_account_row {
+        Some((Some(id),)) => id,
+        Some((None,)) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+                details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+            });
+        }
+        None => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_FOUND".to_string(),
+                details: None,
+            });
+        }
+    };
+
+    // Step c — vérifier que le ledger banque est actif.
+    let ledger_active: Option<(bool,)> =
+        match sqlx::query_as("SELECT active FROM accounts WHERE id = ? AND company_id = ? LIMIT 1")
+            .bind(bank_ledger_account_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+    match ledger_active {
+        Some((true,)) => {}
+        _ => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+                details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+            });
+        }
+    }
+
+    // P2 (ECH-02) defense-in-depth — counterparty != bank_ledger inside lock.
+    for s in splits {
+        if s.counterparty_account_id == bank_ledger_account_id {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "VALIDATION_ERROR".to_string(),
+                details: Some(serde_json::json!({ "reason": "counterparty_equals_bank_ledger" })),
+            });
+        }
+    }
+
+    // Step d — batch validation des counterparty accounts (itération séquentielle).
+    let mut missing: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+    for s in splits {
+        let row: Option<(bool,)> = match sqlx::query_as(
+            "SELECT active FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+        )
+        .bind(s.counterparty_account_id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+        match row {
+            Some((true,)) => {}
+            _ => {
+                missing.insert(s.counterparty_account_id);
+            }
+        }
+    }
+    if !missing.is_empty() {
+        let ids: Vec<i64> = missing.into_iter().collect();
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "ACCOUNT_NOT_FOUND".to_string(),
+            details: Some(serde_json::json!({ "missingAccountIds": ids })),
+        });
+    }
+
+    // Step e — re-fetch tx INSIDE lock (TOCTOU).
+    let bt = match reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &mut **tx,
+        company_id,
+        bank_account_id,
+        bank_transaction_id,
+    )
+    .await
+    {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "RECONCILIATION_TRANSACTION_NOT_PENDING".to_string(),
+                details: None,
+            });
+        }
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+
+    // Step f — defense-in-depth tx.amount != 0 (6bis).
+    if bt.amount.is_zero() {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "VALIDATION_ERROR".to_string(),
+            details: Some(serde_json::json!({ "reason": "zero_amount_transaction" })),
+        });
+    }
+
+    // Step g — validate_split_balance.
+    let amounts: Vec<Decimal> = splits.iter().map(|s| s.amount).collect();
+    if let Err(imb) = validate_split_balance(bt.amount, &amounts) {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_SPLIT_IMBALANCE".to_string(),
+            details: Some(serde_json::json!({
+                "expected": imb.expected.to_string(),
+                "actual": imb.actual.to_string(),
+                "difference": imb.difference.to_string(),
+            })),
+        });
+    }
+
+    // Step h — résoudre entry_date 3 couches (F4''' Pass 3).
+    let entry_date = value_date.or(bt.value_date).unwrap_or(bt.booking_date);
+
+    // Step i — fiscal year.
+    let fiscal_year = match fiscal_years::find_open_covering_date(tx, company_id, entry_date).await
+    {
+        Ok(Some(fy)) => fy,
+        Ok(None) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "RECONCILIATION_FISCAL_YEAR_CLOSED".to_string(),
+                details: Some(serde_json::json!({ "entryDate": entry_date.to_string() })),
+            });
+        }
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+
+    // Step j — build_split_journal_entry + create_in_tx.
+    let split_details: Vec<SplitDetail> = splits
+        .iter()
+        .map(|s| SplitDetail {
+            account_id: s.counterparty_account_id,
+            amount: s.amount,
+            description: s.description.clone(),
+        })
+        .collect();
+    let je_description = format!("Éclatement transaction agrégée ({} lignes)", splits.len());
+    let new_je = build_split_journal_entry(
+        &bt,
+        bank_ledger_account_id,
+        &split_details,
+        je_description,
+        entry_date,
+    );
+    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
+        Ok(j) => j,
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+    let journal_entry_id = je.entry.id;
+
+    // Step k — UPDATE bank_transactions optimistic lock + reset auto_match_rejected_at.
+    let bank_tx_version_pre = bt.version;
+    let bank_tx_update = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = ?, status = 'reconciled', \
+             auto_match_rejected_at = NULL, updated_at = NOW(3), \
+             version = version + 1 \
+         WHERE id = ? AND company_id = ? AND status = 'pending' \
+           AND version = ?",
+    )
+    .bind(journal_entry_id)
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .bind(bank_tx_version_pre)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| FailedProposal {
+        bank_transaction_id,
+        error_code: "DATABASE_ERROR".to_string(),
+        details: Some(serde_json::json!({ "message": e.to_string() })),
+    })?;
+    if bank_tx_update.rows_affected() != 1 {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            details: Some(serde_json::json!({ "reason": "race_during_update" })),
+        });
+    }
+
+    // Step l — audit log reconciliation.split_applied.
+    let was_previously_rejected = bt.auto_match_rejected_at.is_some();
+    // P5 (Pass 1) — normaliser scale 2 décimales cohérent /split standalone.
+    // `Decimal::rescale(2)` force scale 2 dans la sortie.
+    let splits_for_audit: Vec<serde_json::Value> = splits
+        .iter()
+        .map(|s| {
+            let mut amount = s.amount;
+            amount.rescale(2);
+            serde_json::json!({
+                "counterparty_account_id": s.counterparty_account_id,
+                "amount": amount.to_string(),
+                "description": s.description,
+            })
+        })
+        .collect();
+    let details = serde_json::json!({
+        "bank_transaction_id": bank_transaction_id,
+        "splits": splits_for_audit,
+        "total_amount": bt.amount.abs().to_string(),
+        "journal_entry_id": journal_entry_id,
+        "value_date": entry_date.to_string(),
+        "was_previously_rejected": was_previously_rejected,
+    });
+    if let Err(e) = audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "reconciliation.split_applied".to_string(),
+            entity_type: "bank_transaction".to_string(),
+            entity_id: bank_transaction_id,
+            details_json: Some(details),
+        },
+    )
+    .await
+    {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        });
+    }
+
+    Ok(AcceptedProposal {
+        bank_transaction_id,
+        // Pour un split, pas d'invoice ciblée — sentinel 0 (la structure
+        // est commune avec invoice flow).
+        invoice_id: 0,
+        journal_entry_id,
+        score: MatchScore {
+            total: 0.0,
+            amount_score: 0.0,
+            reference_score: 0.0,
+            contact_score: 0.0,
+        },
     })
 }
 
@@ -944,6 +1508,20 @@ pub async fn post_reject(
         Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
             drop(tx_outer);
             Err(AppError::ReconciliationFiscalYearClosed { entry_date })
+        }
+        // Story 8-5a-bis — branche exhaustive uniquement (reject_batch
+        // n'émet pas SplitImbalance). Unreachable en pratique.
+        Err(ReconciliationError::SplitImbalance {
+            expected,
+            actual,
+            difference,
+        }) => {
+            drop(tx_outer);
+            Err(AppError::ReconciliationSplitImbalance {
+                expected,
+                actual,
+                difference,
+            })
         }
     }
 }
@@ -1198,6 +1776,7 @@ pub async fn post_manual(
         _ => {
             return Err(AppError::AccountNotFound {
                 account_id: body.counterparty_account_id,
+                missing_account_ids: None,
             });
         }
     };
@@ -1414,6 +1993,428 @@ pub async fn post_manual(
         Err(ReconciliationError::Database(e)) => {
             let _ = tx_outer.rollback().await;
             Err(AppError::Database(DbError::Sqlx(e)))
+        }
+        // Story 8-5a-bis — branche exhaustive (post_manual ne fait pas
+        // de split, unreachable en pratique).
+        Err(ReconciliationError::SplitImbalance {
+            expected,
+            actual,
+            difference,
+        }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationSplitImbalance {
+                expected,
+                actual,
+                difference,
+            })
+        }
+    }
+}
+
+// ============================================================
+// Story 8-5a-bis — POST /reconciliation/split (FR48)
+// ============================================================
+
+/// Bornes split (§split-flow Min/max splits) :
+/// - `< 2` → 400 Validation (utiliser /manual pour 1 ligne).
+/// - `> 50` → 400 Validation (cap raisonnable v0.1).
+const MIN_SPLIT_LINES: usize = 2;
+const MAX_SPLIT_LINES: usize = 50;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitLineInput {
+    pub counterparty_account_id: i64,
+    pub amount: Decimal,
+    pub description: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitBody {
+    pub bank_account_id: i64,
+    pub bank_transaction_id: i64,
+    pub splits: Vec<SplitLineInput>,
+    pub value_date: Option<NaiveDate>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitResponse {
+    pub bank_transaction_id: i64,
+    pub journal_entry_id: i64,
+}
+
+/// Handler `POST /api/v1/reconciliation/split` (Story 8-5a-bis FR48).
+///
+/// Éclate une `bank_transaction` `pending` agrégée en N+1 lignes de
+/// `journal_entry` (1 ligne banque agrégée + N lignes contreparties).
+/// Le compte ledger banque est résolu **serveur-side** via
+/// `bank_account.journal_account_id` (foundation 8-5a-zero) — pas de
+/// body field `bankLedgerAccountId`.
+///
+/// Sub-router `comptable_routes` → RBAC Comptable+ enforcé.
+///
+/// **Ordre de validation** (cf. spec §validation-handler-side-split) :
+/// step 1 `splits.len()` ∈ [2, 50] → 400 Validation ;
+/// step 1bis `splits[i].description` ≤ 200 chars (M4''') → 400 Validation ;
+/// step 2 `splits[i].amount > 0` strict (C1''') → 400 Validation ;
+/// step 3 `bankAccountId` ownership multi-tenant → 404 BANK_ACCOUNT_NOT_FOUND ;
+/// step 4 `bank_account.journal_account_id` configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED ;
+/// step 5 batch ownership/active des `counterpartyAccountId` → 404 ACCOUNT_NOT_FOUND ;
+/// step 6 `find_strictly_pending_by_id_for_account` → 404 RECONCILIATION_TRANSACTION_NOT_PENDING ;
+/// step 6bis `tx.amount != 0` (M2''') → 400 VALIDATION_ERROR ;
+/// step 7 `validate_split_balance` → 400 RECONCILIATION_SPLIT_IMBALANCE ;
+/// steps 8-13 inside lock : re-fetch tx + fiscal_year + create_in_tx + UPDATE optimistic + audit.
+pub async fn post_split(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(body): Json<SplitBody>,
+) -> Result<Json<SplitResponse>, AppError> {
+    // Step 0 — validation surface body.
+    if body.bank_account_id <= 0 {
+        return Err(AppError::Validation(
+            "bankAccountId doit être strictement positif".into(),
+        ));
+    }
+    if body.bank_transaction_id <= 0 {
+        return Err(AppError::Validation(
+            "bankTransactionId doit être strictement positif".into(),
+        ));
+    }
+
+    // Step 1 — splits.len() ∈ [2, 50].
+    if body.splits.len() < MIN_SPLIT_LINES {
+        return Err(AppError::Validation(format!(
+            "splits doit contenir au moins {MIN_SPLIT_LINES} lignes — utilisez /manual pour 1 ligne"
+        )));
+    }
+    if body.splits.len() > MAX_SPLIT_LINES {
+        return Err(AppError::Validation(format!(
+            "splits ne peut pas dépasser {MAX_SPLIT_LINES} lignes"
+        )));
+    }
+
+    // Step 1bis — longueur description ≤ 200 chars (M4''' Pass 3 Opus,
+    // defense-in-depth backend — frontend cap aussi).
+    for (idx, s) in body.splits.iter().enumerate() {
+        if s.description.chars().count() > MAX_MANUAL_DESCRIPTION_LEN {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].description trop longue (max {MAX_MANUAL_DESCRIPTION_LEN} caractères)"
+            )));
+        }
+
+        // Step 2 — splits[i].amount > 0 strict (C1''' Pass 3 Opus).
+        // Rejet montants 0 et négatifs pour empêcher lignes JE 0/0 vides.
+        if s.amount <= Decimal::ZERO {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].amount doit être strictement positif (> 0)"
+            )));
+        }
+        // Code-review P1 (ECH-01 Pass 1 Sonnet) — `bank_transactions.amount`
+        // est DECIMAL(18,2) (centimes CHF) ; les `journal_entry_lines.debit/credit`
+        // sont DECIMAL(19,4). Sans cette validation, un split avec scale > 2
+        // (ex. "3.33333") passerait `validate_split_balance` (qui compare la
+        // valeur mathématique) mais échouerait à l'INSERT avec strict mode
+        // MariaDB → HTTP 500 au lieu de 400. Cap à 2 décimales (centimes).
+        if s.amount.scale() > 2 {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].amount précision invalide (max 2 décimales pour CHF)"
+            )));
+        }
+        if s.counterparty_account_id <= 0 {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].counterpartyAccountId doit être strictement positif"
+            )));
+        }
+    }
+
+    // Step 3 — bank_account ownership pré-flight (KF-002 multi-tenant).
+    let bank_account = bank_accounts::find_by_id_for_company(
+        &state.pool,
+        current_user.company_id,
+        body.bank_account_id,
+    )
+    .await?
+    .ok_or(AppError::BankAccountNotFound)?;
+
+    // Step 4 — bank_account.journal_account_id configuré (foundation 8-5a-zero).
+    let bank_ledger_account_id =
+        bank_account
+            .journal_account_id
+            .ok_or(AppError::BankAccountNotConfigured {
+                bank_account_id: body.bank_account_id,
+            })?;
+
+    // Step 4bis — ledger banque actif (P-H5 Pass 1 manual pattern réutilisé).
+    let bank_ledger_account = accounts_repo::find_by_id_in_company(
+        &state.pool,
+        bank_ledger_account_id,
+        current_user.company_id,
+    )
+    .await?;
+    match bank_ledger_account {
+        Some(a) if a.active => {}
+        _ => {
+            return Err(AppError::BankAccountNotConfigured {
+                bank_account_id: body.bank_account_id,
+            });
+        }
+    }
+
+    // P2 (ECH-02 Pass 1 Sonnet) — interdire counterparty == bank_ledger_account_id.
+    // Sinon le JE résultant aurait des lignes débit + crédit sur le même compte
+    // (self-referential balance-sheet no-op) sans signification comptable. Le
+    // frontend filtre client-side classes 5/6/7 (le bank ledger est classe 1/2),
+    // donc en UX normal pas de collision possible — mais un client API direct
+    // pourrait bypass. Defense-in-depth backend.
+    for (idx, s) in body.splits.iter().enumerate() {
+        if s.counterparty_account_id == bank_ledger_account_id {
+            return Err(AppError::Validation(format!(
+                "splits[{idx}].counterpartyAccountId ne peut pas être le compte ledger banque"
+            )));
+        }
+    }
+
+    // Step 5 — batch validation accounts via itération séquentielle (cap 50,
+    // cf. §validation-handler-side-split step 5 + L3 Pass 1 source tree).
+    // Collecte les IDs manquants triés et distincts pour body 404 batch.
+    let mut missing: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+    for s in &body.splits {
+        match accounts_repo::find_by_id_in_company(
+            &state.pool,
+            s.counterparty_account_id,
+            current_user.company_id,
+        )
+        .await?
+        {
+            Some(a) if a.active => {}
+            _ => {
+                missing.insert(s.counterparty_account_id);
+            }
+        }
+    }
+    if !missing.is_empty() {
+        let ids: Vec<i64> = missing.into_iter().collect();
+        let first = ids[0];
+        return Err(AppError::AccountNotFound {
+            account_id: first,
+            missing_account_ids: Some(ids),
+        });
+    }
+
+    // Step 6 — find_strictly_pending.
+    let bank_transaction = reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &state.pool,
+        current_user.company_id,
+        body.bank_account_id,
+        body.bank_transaction_id,
+    )
+    .await?
+    .ok_or(AppError::ReconciliationTransactionNotPending {
+        bank_transaction_id: body.bank_transaction_id,
+    })?;
+
+    // Step 6bis — pré-validation `tx.amount != 0` (M2''' Pass 3 Opus).
+    if bank_transaction.amount.is_zero() {
+        return Err(AppError::Validation("zero_amount_transaction".to_string()));
+    }
+
+    // Step 7 — validate_split_balance Decimal exact (F7 Pass 1 .collect::<Vec<_>>()).
+    let amounts: Vec<Decimal> = body.splits.iter().map(|s| s.amount).collect();
+    if let Err(imbalance) = validate_split_balance(bank_transaction.amount, &amounts) {
+        return Err(AppError::ReconciliationSplitImbalance {
+            expected: imbalance.expected,
+            actual: imbalance.actual,
+            difference: imbalance.difference,
+        });
+    }
+
+    // Capture inputs handler-side avant move dans closure.
+    let was_previously_rejected = bank_transaction.auto_match_rejected_at.is_some();
+    let bank_transaction_amount = bank_transaction.amount;
+    let splits_for_lock: Vec<SplitDetail> = body
+        .splits
+        .iter()
+        .map(|s| SplitDetail {
+            account_id: s.counterparty_account_id,
+            amount: s.amount,
+            description: s.description.clone(),
+        })
+        .collect();
+    // P5 (Pass 1 LOW merged BH-M4/ECH-07/AA-F3) — normaliser scale 2 décimales
+    // pour cohérence avec total_amount + spec §audit-log-shape (`"5000.00"`).
+    // `Decimal::rescale(2)` force la scale 2 dans le résultat (round_dp(2)
+    // ne padd pas les zéros trailing si scale d'entrée < 2).
+    let splits_for_audit: Vec<serde_json::Value> = body
+        .splits
+        .iter()
+        .map(|s| {
+            let mut amount = s.amount;
+            amount.rescale(2);
+            serde_json::json!({
+                "counterparty_account_id": s.counterparty_account_id,
+                "amount": amount.to_string(),
+                "description": s.description,
+            })
+        })
+        .collect();
+    let je_description = format!(
+        "Éclatement transaction agrégée ({} lignes)",
+        body.splits.len()
+    );
+
+    // Steps 8-13 inside `with_account_lock`.
+    let mut tx_outer = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let bank_account_id = body.bank_account_id;
+    let bank_transaction_id = body.bank_transaction_id;
+    let body_value_date = body.value_date;
+    let user_id = current_user.user_id;
+    let company_id = current_user.company_id;
+
+    let lock_result: Result<i64, ReconciliationError> = with_account_lock(
+        &mut tx_outer,
+        company_id,
+        bank_account_id,
+        LOCK_TIMEOUT_SECS,
+        async move |tx_inner| {
+            // Step 8 — re-fetch tx INSIDE le lock (TOCTOU).
+            let tx = reconciliation_repo::find_strictly_pending_by_id_for_account(
+                &mut **tx_inner,
+                company_id,
+                bank_account_id,
+                bank_transaction_id,
+            )
+            .await?
+            .ok_or_else(|| ReconciliationError::Db(DbError::OptimisticLockConflict))?;
+            let bank_tx_version_pre = tx.version;
+            let booking_date = tx.booking_date;
+            let entry_date = body_value_date.or(tx.value_date).unwrap_or(booking_date);
+
+            // Step 9 — find_open_covering_date.
+            let fiscal_year =
+                fiscal_years::find_open_covering_date(tx_inner, company_id, entry_date)
+                    .await
+                    .map_err(ReconciliationError::Db)?
+                    .ok_or(ReconciliationError::FiscalYearClosed { entry_date })?;
+
+            // Step 10 — build_split_journal_entry (N+1 lignes).
+            let new_je = build_split_journal_entry(
+                &tx,
+                bank_ledger_account_id,
+                &splits_for_lock,
+                je_description.clone(),
+                entry_date,
+            );
+
+            // Step 11 — create_in_tx atomique.
+            let je =
+                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je).await?;
+            let journal_entry_id = je.entry.id;
+
+            // Step 12 — UPDATE bank_transactions optimistic lock + status guard
+            // + reset auto_match_rejected_at = NULL (M3 Pass 2).
+            let update_result = sqlx::query(
+                "UPDATE bank_transactions \
+                 SET status = 'reconciled', matched_entry_id = ?, \
+                     auto_match_rejected_at = NULL, updated_at = NOW(3), \
+                     version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND status = 'pending' \
+                   AND version = ?",
+            )
+            .bind(journal_entry_id)
+            .bind(bank_transaction_id)
+            .bind(company_id)
+            .bind(bank_tx_version_pre)
+            .execute(&mut **tx_inner)
+            .await
+            .map_err(|e| ReconciliationError::Db(DbError::Sqlx(e)))?;
+
+            if update_result.rows_affected() != 1 {
+                return Err(ReconciliationError::Db(DbError::OptimisticLockConflict));
+            }
+
+            // Step 13 — audit log `reconciliation.split_applied` snake_case
+            // top-level (cohérent F4'' Pass 3 + Q4a action distincte).
+            let details = serde_json::json!({
+                "bank_transaction_id": bank_transaction_id,
+                "splits": splits_for_audit,
+                "total_amount": bank_transaction_amount.abs().to_string(),
+                "journal_entry_id": journal_entry_id,
+                "value_date": entry_date.to_string(),
+                "was_previously_rejected": was_previously_rejected,
+            });
+            audit_log::insert_in_tx(
+                tx_inner,
+                NewAuditLogEntry {
+                    user_id,
+                    action: "reconciliation.split_applied".to_string(),
+                    entity_type: "bank_transaction".to_string(),
+                    entity_id: bank_transaction_id,
+                    details_json: Some(details),
+                },
+            )
+            .await?;
+
+            Ok(journal_entry_id)
+        },
+    )
+    .await;
+
+    match lock_result {
+        Ok(journal_entry_id) => {
+            tx_outer
+                .commit()
+                .await
+                .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+            Ok(Json(SplitResponse {
+                bank_transaction_id,
+                journal_entry_id,
+            }))
+        }
+        Err(ReconciliationError::AccountLocked {
+            bank_account_id,
+            timeout_secs,
+        }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationAccountLocked {
+                bank_account_id,
+                timeout_secs,
+            })
+        }
+        Err(ReconciliationError::LockReleaseFailed {
+            bank_account_id, ..
+        }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationLockReleaseFailed { bank_account_id })
+        }
+        Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationFiscalYearClosed { entry_date })
+        }
+        Err(ReconciliationError::Db(db_err)) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::Database(db_err))
+        }
+        Err(ReconciliationError::Database(e)) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::Database(DbError::Sqlx(e)))
+        }
+        Err(ReconciliationError::SplitImbalance {
+            expected,
+            actual,
+            difference,
+        }) => {
+            let _ = tx_outer.rollback().await;
+            Err(AppError::ReconciliationSplitImbalance {
+                expected,
+                actual,
+                difference,
+            })
         }
     }
 }

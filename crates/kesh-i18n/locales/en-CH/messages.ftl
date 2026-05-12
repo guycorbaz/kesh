@@ -668,6 +668,13 @@ reconciliation-manual-error-no-proposal = No transaction selected
 reconciliation-manual-error-counterparty-required = Counterparty account required
 reconciliation-manual-error-description-too-long = Description too long (max { $max } characters)
 reconciliation-manual-description-placeholder = Bank fees May
+
+# Story 8-5a-bis FR48 — split aggregated transaction.
+reconciliation-split-button-label = Split
+reconciliation-split-modal-title = Split transaction
+reconciliation-split-balance-indicator = Balance
+reconciliation-split-error-imbalance = The split does not balance the transaction amount.
+
 reconciliation-cols-actions = Actions
 
 # Story 8-5a-zero — `bank_account.journal_account_id` link configuration.

@@ -668,6 +668,13 @@ reconciliation-manual-error-no-proposal = Nessuna transazione selezionata
 reconciliation-manual-error-counterparty-required = Conto controparte obbligatorio
 reconciliation-manual-error-description-too-long = Descrizione troppo lunga (max { $max } caratteri)
 reconciliation-manual-description-placeholder = Spese bancarie maggio
+
+# Story 8-5a-bis FR48 — suddivisione di una transazione aggregata.
+reconciliation-split-button-label = Suddividi
+reconciliation-split-modal-title = Suddividi la transazione
+reconciliation-split-balance-indicator = Saldo
+reconciliation-split-error-imbalance = La suddivisione non bilancia l'importo della transazione.
+
 reconciliation-cols-actions = Azioni
 
 # Story 8-5a-zero — Collegamento `bank_account.journal_account_id`.
