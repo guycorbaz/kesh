@@ -24,6 +24,7 @@
 	} from './reconciliation.types';
 	import ScoreBadge from './ScoreBadge.svelte';
 	import ManualMatchModal from './ManualMatchModal.svelte';
+	import TransactionSplitModal from './TransactionSplitModal.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
@@ -36,6 +37,9 @@
 	// Story 8-5a-base FR45 — manual match modal state.
 	let manualOpen = $state(false);
 	let manualProposal = $state<ReconciliationProposal | null>(null);
+	// Story 8-5a-bis FR48 — split modal state.
+	let splitOpen = $state(false);
+	let splitProposal = $state<ReconciliationProposal | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
 	// γ refactor BS1 — checkbox tx-level top-1 only : selected = Set<txId>
 	// (l'invoiceId top-1 est ré-extrait au moment du submit).
@@ -97,6 +101,17 @@
 		await load();
 	}
 
+	function openSplit(p: ReconciliationProposal) {
+		splitProposal = p;
+		splitOpen = true;
+	}
+
+	async function onSplitSuccess() {
+		splitOpen = false;
+		splitProposal = null;
+		await load();
+	}
+
 	function toggle(txId: number) {
 		const next = new Set(selected);
 		if (next.has(txId)) next.delete(txId);
@@ -120,6 +135,7 @@
 					throw new Error(`No candidate for txId=${txId}`);
 				}
 				return {
+					type: 'invoice' as const,
 					bankTransactionId: txId,
 					invoiceId: p.candidates[0].invoiceId,
 				};
@@ -257,6 +273,18 @@
 							>
 								{i18nMsg('reconciliation-manual-button-label', 'Affecter manuellement')}
 							</button>
+							<!-- Story 8-5a-bis FR48 — bouton « Éclater » disponible sur
+							     toutes les rows pending (cf. AC #93). -->
+							<button
+								type="button"
+								class="ml-2 text-xs text-primary underline disabled:opacity-50"
+								disabled={busy}
+								onclick={() => openSplit(p)}
+								data-testid="split-button"
+								data-tx-id={p.bankTransactionId}
+							>
+								{i18nMsg('reconciliation-split-button-label', 'Éclater')}
+							</button>
 						</td>
 					</tr>
 				{/each}
@@ -273,6 +301,18 @@
 			proposal={manualProposal}
 			{accounts}
 			onSuccess={onManualSuccess}
+		/>
+
+		<TransactionSplitModal
+			open={splitOpen}
+			onOpenChange={(v) => {
+				splitOpen = v;
+				if (!v) splitProposal = null;
+			}}
+			{bankAccountId}
+			proposal={splitProposal}
+			{accounts}
+			onSuccess={onSplitSuccess}
 		/>
 
 		{#if failed.length > 0}

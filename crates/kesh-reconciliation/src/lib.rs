@@ -15,14 +15,20 @@
 //!   construit une `NewJournalEntry` à 2 lignes équilibrées sign-aware
 //!   pour le flow `POST /api/v1/reconciliation/manual`. Signature
 //!   stable contractée pour 8-5a-bis (split) et 8-5b (rules engine).
+//! - [`split`] : (Story 8-5a-bis FR48) helpers publics
+//!   `build_split_journal_entry` (N+1 lignes équilibrées) et
+//!   `validate_split_balance` (Decimal exact `==`) pour le flow
+//!   `POST /api/v1/reconciliation/split`.
 //! - [`errors`] : enum [`ReconciliationError`] commun aux modules.
 
 pub mod errors;
 pub mod manual;
 pub mod matching;
 pub mod mutex;
+pub mod split;
 
 pub use errors::ReconciliationError;
 pub use manual::build_journal_entry_for_counterparty;
 pub use matching::{MatchProposal, MatchScore, propose_matches};
 pub use mutex::with_account_lock;
+pub use split::{SplitDetail, SplitImbalance, build_split_journal_entry, validate_split_balance};

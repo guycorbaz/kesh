@@ -668,6 +668,14 @@ reconciliation-manual-error-no-proposal = Keine Transaktion ausgewählt
 reconciliation-manual-error-counterparty-required = Gegenkonto erforderlich
 reconciliation-manual-error-description-too-long = Bezeichnung zu lang (max. { $max } Zeichen)
 reconciliation-manual-description-placeholder = Bankgebühren Mai
+
+# Story 8-5a-bis FR48 — Aufteilung einer aggregierten Transaktion.
+reconciliation-split-button-label = Aufteilen
+reconciliation-split-modal-title = Transaktion aufteilen
+reconciliation-split-balance-indicator = Saldo
+reconciliation-split-error-imbalance = Die Aufteilung gleicht den Transaktionsbetrag nicht aus.
+reconciliation-split-success-toast = Transaktion erfolgreich aufgeteilt.
+
 reconciliation-cols-actions = Aktionen
 
 # Story 8-5a-zero — Verbindung `bank_account.journal_account_id`.

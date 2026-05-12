@@ -204,6 +204,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reconciliation/manual",
             post(routes::reconciliation::post_manual),
         )
+        // Story 8-5a-bis : route éclatement de transaction (Comptable+, FR48).
+        .route(
+            "/api/v1/reconciliation/split",
+            post(routes::reconciliation::post_split),
+        )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).
         .route(

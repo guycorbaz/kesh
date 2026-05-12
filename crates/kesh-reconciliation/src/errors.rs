@@ -1,6 +1,7 @@
 //! Errors du module reconciliation.
 
 use chrono::NaiveDate;
+use rust_decimal::Decimal;
 
 /// Erreurs spécifiques au flow de réconciliation Story 8-4.
 #[derive(Debug, thiserror::Error)]
@@ -76,4 +77,21 @@ pub enum ReconciliationError {
     /// compilateur (unreachable en pratique).
     #[error("kesh-db error: {0}")]
     Db(#[from] kesh_db::errors::DbError),
+
+    /// Story 8-5a-bis FR48 — split balance check failed
+    /// (`sum(splits) != tx.amount.abs()`). Le handler `post_split`
+    /// mappe vers `AppError::ReconciliationSplitImbalance { expected,
+    /// actual, difference }` → HTTP 400 `RECONCILIATION_SPLIT_IMBALANCE`.
+    ///
+    /// **Note `#[from] SplitImbalance` non utilisable** : `thiserror`
+    /// ne supporte pas `#[from]` sur un struct-variant multi-champs. La
+    /// conversion `From<SplitImbalance> for ReconciliationError` est
+    /// implémentée manuellement dans [`crate::split`] (M3 Pass 4
+    /// validate Sonnet + M5''' Pass 3 Opus).
+    #[error("split balance mismatch: expected={expected}, actual={actual}, diff={difference}")]
+    SplitImbalance {
+        expected: Decimal,
+        actual: Decimal,
+        difference: Decimal,
+    },
 }

@@ -59,14 +59,19 @@ describe('reconciliation.api', () => {
 		expect(init.method).toBe('GET');
 	});
 
-	it('acceptProposals envoie body JSON avec proposals[]', async () => {
-		await acceptProposals(7, [{ bankTransactionId: 1, invoiceId: 2 }]);
+	it('acceptProposals envoie body JSON avec proposals[] + type="invoice"', async () => {
+		await acceptProposals(7, [
+			{ type: 'invoice', bankTransactionId: 1, invoiceId: 2 },
+		]);
 		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
 		expect(url).toContain('/api/v1/reconciliation/accept');
 		expect(init.method).toBe('POST');
 		const body = JSON.parse(init.body as string);
 		expect(body.bankAccountId).toBe(7);
-		expect(body.proposals).toEqual([{ bankTransactionId: 1, invoiceId: 2 }]);
+		// Story 8-5a-bis Q2 breaking — chaque proposal porte un discriminator `type`.
+		expect(body.proposals).toEqual([
+			{ type: 'invoice', bankTransactionId: 1, invoiceId: 2 },
+		]);
 	});
 
 	it('rejectProposals envoie body JSON avec bankTransactionIds[]', async () => {

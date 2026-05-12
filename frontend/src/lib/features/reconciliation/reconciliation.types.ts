@@ -40,9 +40,22 @@ export interface GetProposalsResponse {
 	hasMore: boolean;
 }
 
-export interface AcceptProposalInput {
-	bankTransactionId: number;
-	invoiceId: number;
+// Story 8-5a-bis Q2 — breaking change : discriminated union sur `type`.
+// 'invoice' (8-4 héritée) et 'split' (8-5a-bis FR48). 'manual' réservé v0.2,
+// 'rule' réservé 8-5b.
+export type AcceptProposalInput =
+	| { type: 'invoice'; bankTransactionId: number; invoiceId: number }
+	| {
+			type: 'split';
+			bankTransactionId: number;
+			splits: SplitProposalLine[];
+			valueDate?: string;
+	  };
+
+export interface SplitProposalLine {
+	counterpartyAccountId: number;
+	amount: string;
+	description: string;
 }
 
 export interface AcceptedProposal {
@@ -75,6 +88,12 @@ export interface RejectResponse {
 
 // Story 8-5a-base FR45 — réconciliation manuelle.
 export interface ManualMatchResponse {
+	bankTransactionId: number;
+	journalEntryId: number;
+}
+
+// Story 8-5a-bis FR48 — éclatement de transaction (split).
+export interface SplitResponse {
 	bankTransactionId: number;
 	journalEntryId: number;
 }

@@ -717,6 +717,14 @@ reconciliation-manual-error-no-proposal = Aucune transaction sélectionnée
 reconciliation-manual-error-counterparty-required = Compte de contrepartie obligatoire
 reconciliation-manual-error-description-too-long = Description trop longue (max { $max } caractères)
 reconciliation-manual-description-placeholder = Frais bancaires mai
+
+# Story 8-5a-bis FR48 — éclatement de transaction agrégée.
+reconciliation-split-button-label = Éclater
+reconciliation-split-modal-title = Éclater la transaction
+reconciliation-split-balance-indicator = Balance
+reconciliation-split-error-imbalance = L'éclatement n'équilibre pas le montant de la transaction.
+reconciliation-split-success-toast = Transaction éclatée avec succès.
+
 reconciliation-cols-actions = Actions
 
 # Story 8-5a-zero — Configuration `bank_account.journal_account_id`.
