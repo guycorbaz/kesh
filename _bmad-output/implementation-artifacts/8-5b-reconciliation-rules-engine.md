@@ -158,7 +158,25 @@ L'utilisateur observe les transactions pending dans `/reconciliation`, identifie
 
 **Sign filter (Pass 1 P-H7 ECH-05)** : contrairement au matching invoice 8-4 qui skip les tx débit (`amount <= Decimal::ZERO`), **les rules s'appliquent aux 2 sens** (débit ET crédit). Le use-case canonique (Swisscom, salaires, cotisations sociales) est débit. Le sign-aware côté JE est géré par `build_journal_entry_for_counterparty` (8-5a-base) qui choisit débit/crédit selon `sign(tx.amount)`. **Ne pas hériter du filter sign 8-4 ligne `reconciliation.rs:343`** pour les rules.
 
-**Stratégie chargement `active_account_ids` (Pass 1 P-H4 ECH-02)** : avant la boucle tx dans `get_proposals`, faire **1 seul SELECT batch** sur tous les comptes actifs de la company :
+**Résolution `counterpartyAccountName` dans la candidate (Pass 2 Q5 AA-F1)** : la candidate type=rule expose `counterpartyAccountId` + `counterpartyAccountName` pour affichage UI sans 2ème round-trip. Le handler `get_proposals`, **après le rule-match** (cf. ci-dessous), fait 1 SELECT additionnel : `SELECT id, number, name FROM accounts WHERE id = ? AND company_id = ?`. Optimisation : pré-charger les accounts mappés `HashMap<i64, AccountInfo>` en même temps que `active_account_ids` (1 SELECT enrichi au lieu de 1 par rule-match). Pattern :
+
+```rust
+let accounts_info: HashMap<i64, (String, String)> = sqlx::query_as::<_, (i64, String, String)>(
+    "SELECT id, number, name FROM accounts WHERE company_id = ? AND active = TRUE",
+)
+.bind(company_id)
+.fetch_all(&state.pool)
+.await?
+.into_iter()
+.map(|(id, num, name)| (id, (num, name)))
+.collect();
+
+// active_account_ids = accounts_info.keys() (no extra query)
+```
+
+Le helper `first_matching_rule` retourne `Option<&Rule>`, le handler résout `accounts_info.get(&rule.counterparty_account_id)` pour construire `counterpartyAccountName = format!("{} {}", num, name)`.
+
+**Stratégie chargement `active_account_ids` (Pass 1 P-H4 ECH-02 + Pass 2 Q5 fusionné)** : voir bloc ci-dessus — `accounts_info` HashMap résout les 2 besoins (filter actif + nom display) en 1 query batch.
 
 ```rust
 let active_account_ids: HashSet<i64> = sqlx::query_scalar::<_, i64>(
@@ -173,7 +191,7 @@ let active_account_ids: HashSet<i64> = sqlx::query_scalar::<_, i64>(
 
 (SELECT inline cohérent pattern `accept_one_split` 8-5a-bis car `accounts::find_by_id_in_company` n'est pas Executor-generic. Ne pas faire 1 query par rule — antipattern O(N) découvert dans la spec d'origine. Pas de nouveau helper kesh-db nécessaire.)
 
-**Order strict (Pass 1 P-M-LOW ECH-13)** : `find_active_for_company` ORDER BY `priority ASC, id ASC, created_at ASC` — tiebreaker explicite à 3 niveaux. À tester via T3.4 nouveau cas `first_matching_rule_respects_id_tiebreaker_on_equal_priority`.
+**Order strict (Pass 1 P-M-LOW ECH-13 + Pass 2 Q1 BH-F2)** : `find_active_for_company` ORDER BY **`priority ASC, id ASC`** — tiebreaker à 2 niveaux. (Pass 2 patch : la mention `created_at ASC` 3ème niveau était une régression Pass 1 vs T2.2 — supprimé. `id ASC` suffit comme tiebreaker total puisque id est unique et AUTO_INCREMENT — ordre de création préservé implicitement.) À tester via T3.4 cas `first_matching_rule_respects_id_tiebreaker_on_equal_priority` (test #8 ajouté Pass 2 Q10).
 
 #### §accept-with-rule-flow — steps 1-13 détaillés
 
@@ -398,6 +416,38 @@ Shape : objets `before`/`after` **complets** (snapshot des 4 champs mutables : `
 
 **Total : 19 clés** (12 page + 3 applied + 4 errors). Cible spec d'origine ~15 — Pass 1 augmente à 19 pour couvrir les erreurs API.
 
+#### §pass-2-clarifications (Pass 2 Haiku Q6-Q10 — clarifications additionnelles)
+
+**Q6 BH-F13 + AA-F4 — Pre-dev check `DbError::UniqueConstraintViolation`** : le handler `update_in_tx` discrimine SQL 1062 selon le nom de la contrainte violée via `DbError::UniqueConstraintViolation(message: String)`. **Pre-check obligatoire avant dev-story** :
+```sh
+grep -n "UniqueConstraintViolation" crates/kesh-db/src/errors.rs
+```
+Si le variant existe avec un message capturé : OK, parser le message pour `uq_reconciliation_rules_match_active`. Si pas exist : créer le variant en T2 (extension kesh-db `DbError` enum) — ajouter dans le mapping `From<sqlx::Error>` la branche `SqlState::IntegrityConstraintViolation { code: "23000", ... }` (SQLSTATE 23000 = UNIQUE).
+
+**Q7 AA-F-#110/#111 — DELETE HTTP code aligné sur 204 No Content** : standard REST. AC #110 et AC #111 conjoints :
+- **AC #110** (DELETE soft-delete réussi) → **204 No Content** (pas de body, pas de 200 OK).
+- **AC #111** (DELETE idempotent déjà inactive) → **204 No Content** également (idempotent UX, le client ne différencie pas).
+- Le handler retourne 204 dans les deux cas. La distinction `audit_log émis ou pas` est interne et invisible du client.
+
+**Q8 AA-F-#114 — Invoice override rule seuil** : la spec d'origine §rule-application disait « tx sans candidate score ≥ 0.5 ». Pass 2 clarification :
+- **Si la tx a ≥ 1 candidate invoice avec `score >= 0.5`** → ne PAS appliquer les rules (invoice-priority).
+- **Si la tx n'a aucune candidate invoice** OU **tous les candidates invoice ont `score < 0.5`** → appliquer les rules, ajouter la candidate type=rule à `candidates[]` (coexistence avec invoice candidates de score < 0.5 si présents).
+
+Modifier AC #114 : « Given tx avec invoice match score **≥ 0.5** ET rule match aussi, Then la candidate est `type: 'invoice'` (rule ignored). Given tx avec invoice match score **< 0.5** ET rule match, Then les 2 candidates coexistent (invoice + rule) dans la response. »
+
+**Q9 AA-F2 — Construction `description` step 11 handler-side** : le **handler `accept_one_rule` construit** la `description` AVANT d'appeler `manual::build_journal_entry_for_counterparty` :
+```rust
+let counterparty_display = bt.counterparty_name.as_deref().unwrap_or("(sans contrepartie)");
+let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_display);
+// Truncate UTF-8 safe à 200 chars (cap MAX_MANUAL_DESCRIPTION_LEN 8-5a-base).
+let description: String = raw_description.chars().take(200).collect();
+```
+Le helper `build_journal_entry_for_counterparty` reçoit `description: String` final. Pas de logique de format inside helper (helper reste pure).
+
+**Q10 AA-F-#115b — Test unit #8 tiebreaker ajouté T3.4** : la liste T3.4 contient maintenant 8 tests (au lieu de 7) :
+1-7. (inchangés)
+8. **NOUVEAU** `first_matching_rule_respects_id_tiebreaker_on_equal_priority` (AC #115b).
+
 #### §error-precedence-order — codes 8-5b (Pass 1 P-C1 — ajout 412 + 422)
 
 | # | Erreur | HTTP | Code |
@@ -460,6 +510,8 @@ pub struct UpdateReconciliationRule {
 - `priority` hors [1, 1000] → 400 (avant CHECK DB).
 - `match_type == IbanExact` → **normaliser** `match_value` à `.trim().to_uppercase().retain(|c| !c.is_whitespace())` AVANT INSERT (Pass 1 P-H5 ECH-03 : IBAN canonique en DB pour matching reproductible).
 
+**Validation applicative dans `post_update` (Pass 2 Q4 ECH2-1) — appliquer aussi à PATCH** : si `body.match_value.is_some()` ET la rule actuelle a `match_type == IbanExact` (ou si `body.match_type` est tenté — interdit v0.1 cf. UpdateReconciliationRule §rules-types-rust), normaliser le nouveau `match_value` identique. Sinon le PATCH stocke un IBAN non-canonique et `rule_matches` IbanExact échouera (même bug que Pass 1 P-H4 sur création, mais à PATCH). Le helper de normalisation IBAN doit être factorisé (e.g. `fn normalize_iban_canonical(s: &str) -> String` dans `kesh_core::iban` ou inline `kesh-api/routes/reconciliation_rules.rs`).
+
 #### §rules-schema — clarifications Pass 1 (MariaDB + reactivation conflict)
 
 **MariaDB version minimale** (Pass 1 P-H3 BH-F05) : 8-5b exige **MariaDB ≥ 10.6** pour le support d'index UNIQUE sur colonne VIRTUAL (cohérent avec Docker Compose qui pin `mariadb:11.x` selon `docker-compose.yml`). Si le projet doit supporter MariaDB ≤ 10.5, fallback Option B (trigger SQL) ou Option C (check applicatif racy). **Décision v0.1** : pin sur 10.6+, Option A retenue.
@@ -502,9 +554,9 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
 
 109. **(FR47 — PATCH réactivation via active=true)** Given rule soft-deleted (`active=false`), When PATCH `{ active: true, version: <current> }`, Then `200 OK` + rule re-activée. *Test E2E HTTP : `rule_patch_reactivates_inactive_rule`.*
 
-110. **(FR47 — DELETE /rules soft delete Q3)** Given DELETE `/rules/{id}`, Then `204 No Content` + rule.active=false en DB (**pas DELETE physique**) + audit `reconciliation_rule.deleted` avec `details.soft_delete=true`. La rule disparaît de `GET /rules?active=true` mais reste accessible via `GET /rules?active=false`. Les anciennes entrées audit `reconciliation_rule.applied` avec ce `rule_id` restent valides. *Test E2E HTTP : `rule_delete_soft_deletes_and_preserves_audit_history`.*
+110. **(FR47 — DELETE /rules soft delete Q3)** Given DELETE `/rules/{id}`, Then **`204 No Content`** + rule.active=false en DB (**pas DELETE physique**) + audit `reconciliation_rule.deleted` avec `details.soft_delete=true`. La rule disparaît de `GET /rules?active=true` mais reste accessible via `GET /rules?active=false`. Les anciennes entrées audit `reconciliation_rule.applied` avec ce `rule_id` restent valides. *Test E2E HTTP : `rule_delete_soft_deletes_and_preserves_audit_history`.*
 
-111. **(FR47 — DELETE /rules already inactive idempotent)** Given rule `active=false`, When DELETE, Then `200 OK` ou `204 No Content` no-op (idempotent — le `UPDATE active=false` est sans effet, pas d'audit redondant). *Test E2E HTTP : `rule_delete_idempotent_when_already_inactive`.*
+111. **(FR47 — DELETE /rules already inactive idempotent)** Given rule `active=false`, When DELETE, Then **`204 No Content`** no-op (idempotent — le `UPDATE active=false` est sans effet, **pas d'audit redondant**, le handler vérifie le retour `bool` de `soft_delete_by_id_for_company` avant émission de l'audit). Pass 2 Q7 : aligné sur 204 (pas 200) cohérent AC #110. *Test E2E HTTP : `rule_delete_idempotent_when_already_inactive`.*
 
 112. **(FR47 — RBAC mutations Comptable+)** Given user `Consultation`, When POST/PATCH/DELETE `/rules`, Then `403`. GET `/rules` → 200 (read-only accessible). *Test E2E HTTP : `rule_mutations_require_comptable_role`.*
 
@@ -512,7 +564,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
 
 113. **(FR47 — rule applied to tx without invoice candidate)** Given tx pending sans candidate invoice (counterparty `Swisscom AG`) et rule `counterparty_contains:Swisscom → 6510`, When `GET /proposals?bankAccountId=17`, Then la candidate de la tx contient `{ type: 'rule', ruleId: <id>, counterpartyAccountId: 6510, counterpartyAccountName: '6510 Frais télécom' }`. *Test E2E HTTP : `get_proposals_applies_rule_when_no_invoice_candidate`.*
 
-114. **(FR47 — invoice candidate overrides rule)** Given tx avec invoice match `score=0.95` ET rule match aussi, When GET, Then la candidate est `{ type: 'invoice', ... }` (rule ignored, score-based dispatch). *Test E2E HTTP : `get_proposals_invoice_candidate_overrides_rule`.*
+114. **(FR47 — invoice candidate overrides rule au seuil 0.5)** Pass 2 Q8 — clarification seuil. **Given** tx avec **au moins 1 candidate invoice score ≥ 0.5** ET rule match aussi, When GET, Then `candidates[]` ne contient **que** les candidates invoice — la rule est silencieusement skip (invoice-priority dispatch). **Given** tx avec **uniquement des candidates invoice score < 0.5** (top-1 invoice score = 0.3 par ex.) ET rule match, When GET, Then `candidates[]` contient **les invoice candidates < 0.5 ET la candidate rule** (coexistence — le frontend choisit l'affichage prioritaire visuellement). **Given** tx avec **aucune candidate invoice** ET rule match, When GET, Then `candidates[]` contient uniquement la candidate `type='rule'`. *Tests E2E HTTP : `get_proposals_invoice_candidate_overrides_rule_at_threshold_0_5` (score=0.5 → invoice wins) + `get_proposals_invoice_low_score_coexists_with_rule` (score=0.3 → both candidates).*
 
 115. **(FR47 — rule priority order)** Given 2 rules actives matchant la même tx (`Swisscom` priority=200, `Swisscom AG` priority=100), When GET, Then la rule priority=100 gagne. *Test E2E HTTP : `get_proposals_applies_highest_priority_rule`.*
 
@@ -686,6 +738,11 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
           .find(|r| rule_matches(r, tx))
   }
 
+  /// Normalisation pour `CounterpartyContains` / `CounterpartyExact` /
+  /// `ReferenceContains` UNIQUEMENT (matching insensible casse + trim).
+  /// Pass 2 Q2 BH-F7 : NE PAS utiliser pour `IbanExact` qui exige
+  /// uppercase canonique + strip whitespace (cf. `normalize_iban` inline
+  /// dans `rule_matches` branch `IbanExact`).
   fn normalize(s: &str) -> String { s.trim().to_lowercase() }
   fn match_contains(haystack: Option<&str>, needle: &str) -> bool {
       let Some(h) = haystack else { return false };
@@ -714,7 +771,18 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
   }
   ```
 
-- [ ] T3.4 — Tests unit `kesh-reconciliation::rules` (≥ 6) :
+  **Pass 2 Q3 BH-F13 — mapping 1:1 ReconciliationError → AppError requis dans T4.4** :
+
+  | `ReconciliationError` variant | `AppError` variant | HTTP | Code |
+  |---|---|---|---|
+  | `RuleNotFound { rule_id }` | `ReconciliationRuleNotFound { rule_id }` | 404 | `RECONCILIATION_RULE_NOT_FOUND` |
+  | `RuleNoLongerMatches { rule_id }` | mappé en `FailedProposal` per-proposal (pas AppError global, cohérent pattern `accept_one_*` 8-4/8-5a-bis) | 200 + failed[] | `RECONCILIATION_RULE_NO_LONGER_MATCHES` |
+  | `RuleMismatch { rule_id, expected_account, actual_account }` | mappé en `FailedProposal` per-proposal | 200 + failed[] | `RECONCILIATION_RULE_MISMATCH` |
+  | `RuleDuplicate { match_type, match_value }` | `ReconciliationRuleDuplicate { match_type, match_value }` | 409 | `RECONCILIATION_RULE_DUPLICATE` |
+
+  Helper `impl From<ReconciliationError> for AppError` à étendre dans `kesh-api::errors` pour les variants `RuleNotFound` + `RuleDuplicate` (mapping AppError global). Les variants `RuleNoLongerMatches` + `RuleMismatch` restent **per-proposal** dans `accept_one_rule` → `FailedProposal` (pas convertis en `AppError` global).
+
+- [ ] T3.4 — Tests unit `kesh-reconciliation::rules` (≥ **8**, Pass 2 Q10 +1) :
   1. `rule_matches_counterparty_contains` (AC #113).
   2. `rule_matches_counterparty_exact_normalize_case` (AC #113).
   3. `rule_matches_iban_exact` (AC #113).
@@ -722,6 +790,7 @@ Numérotation héritée de la spec 8-5 d'origine pour traçabilité. ACs #101-#1
   5. `first_matching_rule_respects_priority_order` (AC #115).
   6. `first_matching_rule_skips_inactive_account` (AC #116).
   7. `first_matching_rule_skips_inactive_rule` (AC #117).
+  8. **NOUVEAU Pass 2 Q10** `first_matching_rule_respects_id_tiebreaker_on_equal_priority` (AC #115b).
 
 ### T4. Routes API (AC #101-#112, #113-#122)
 
@@ -995,6 +1064,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reconcilia
 
 | Date | Entrée | Auteur |
 |------|--------|--------|
+| **2026-05-12** | **Pass 2 validate Haiku 4.5** — ~50 findings bruts (BH 20 + ECH 15 + AA 15). Verdict Acceptance Auditor : **CONDITIONAL GO** (0 CRITICAL, 0 HIGH bloquant, ~7-10 MEDIUM réserves). **8 patches appliqués** (Q1-Q10) : [Q1 BH-F2] §rule-application order_by tiebreaker aligné 2-level `priority ASC, id ASC` (suppression régression Pass 1 `created_at` 3ème niveau). [Q2 BH-F7] T3.1 docstring `normalize()` clarifié : ne s'applique PAS à `IbanExact` qui utilise `normalize_iban` inline. [Q3 BH-F13] T3.3 table mapping `ReconciliationError` → `AppError` 1:1 ajoutée (4 variants), helper `From<ReconciliationError>` étendu, `RuleNoLongerMatches`/`RuleMismatch` per-proposal vs `RuleNotFound`/`RuleDuplicate` AppError global. [Q4 ECH2-1] §rules-types-rust IBAN normalization étendue à PATCH (pas seulement CREATE) via helper factorisé `normalize_iban_canonical`. [Q5 AA-F1] §rule-application stratégie unifiée : 1 SELECT batch `accounts_info: HashMap<i64, (number, name)>` qui résout `active_account_ids` ET `counterparty_account_name` candidate type=rule (au lieu de 2 queries). [Q6 BH-F13+AA-F4] §pass-2-clarifications pre-dev check obligatoire `grep DbError::UniqueConstraintViolation` avant dev-story + fallback si variant absent (créer en T2 extension kesh-db). [Q7 AA-F-#110/#111] HTTP code DELETE aligné sur **204 No Content** dans les deux cas (cas réussi + cas idempotent), suppression ambiguïté 200/204. [Q8 AA-F-#114] AC #114 enrichi : seuil **score ≥ 0.5** explicite pour invoice override rule + cas coexistence si invoice score < 0.5 (deux candidates retournées). [Q9 AA-F2] §pass-2-clarifications step 11 description handler-side : handler construit `format!("Règle '{}' — {}", rule.label, counterparty)` AVANT helper, truncate UTF-8-safe 200 chars. [Q10 AA-F-#115b] T3.4 test unit #8 `first_matching_rule_respects_id_tiebreaker_on_equal_priority` ajouté nominalement. **Faux positifs dismiss** : BH-F4 sentinel `invoice_id=0` (defer explicite Pass 1 confirmé), BH-F11 step ordering counterparty (logique OK), BH-F17 index already correct, ECH2-2 MariaDB <10.6 fallback (Docker pinned 11.x), ECH2-7 audit JSON size (limite 1GB jamais atteinte). Trend : Pass 1 = ~17 findings > LOW → Pass 2 = ~7 findings > LOW → Pass 2 post-patches = **0 HIGH résiduel**. **Critère arrêt CLAUDE.md NON encore atteint** (MEDIUM/LOW restants à valider par Pass 3 orthogonal). Prochaine étape : Pass 3 Opus 4.7 (cycle Sonnet → Haiku → Opus) pour confirmer convergence. | Claude (Haiku 4.5 validate) |
 | **2026-05-12** | **Pass 1 validate Sonnet 4.6** — 72 findings bruts (Blind Hunter 46 + Edge Case Hunter 16 + Acceptance Auditor 10). Triage : 1 CRITICAL + 7 HIGH + ~10 MEDIUM > LOW post-dédup, verdict Acceptance Auditor `CONDITIONAL GO`. **~20 patches appliqués** : [P-C1] §accept-with-rule-flow inline avec 16 steps détaillés (suppression renvoi à spec archivée `8-5-reconciliation-manuelle-regles-affectation.md`) + ajout step 3 check 412 BANK_ACCOUNT_NOT_CONFIGURED (pattern `accept_one_split` 8-5a-bis hérité) + AC #118bis nouveau. [P-H1 BH-F16+AA-F1+ECH-12] résolution `description` + `entry_date` handler-side (format `"Règle '{label}' — {counterparty}"` max 200 chars, `entry_date = tx.value_date.unwrap_or(tx.booking_date)`). [P-H2 ECH-02] §rule-application stratégie `active_account_ids: HashSet<i64>` 1 query batch SELECT inline pré-boucle tx (cohérent SELECT inline `accept_one_split` 8-5a-bis). [P-H3 ECH-04+BH-F27+AA-F3] §rules-schema clarification MariaDB ≥ 10.6 obligatoire (UNIQUE sur VIRTUAL column) + conflit reactivation UNIQUE `uq_reconciliation_rules_match_active` mappé `DbError::DuplicateRule` → `RECONCILIATION_RULE_DUPLICATE` (distinct du conflit optimistic lock version) + nouvel AC #109b. [P-H4 ECH-03+BH-F29+BH-F30] §rules-types-rust normalisation IBAN canonique (`uppercase + strip whitespace`) imposée à la création + défense-in-depth dans `rule_matches` T3.1. [P-H5 BH-F42+BH-F43] helper names canoniques : `find_strictly_pending_by_id_for_account` (PAS `find_pending_by_id_for_account`), `find_open_covering_date` (PAS `find_open_for_date_for_company`) — supprimer divergences §Dev Notes. [P-H6 ECH-09+ECH-15+BH-F44+BH-F45+AA-F6] §api-response-shapes nouvelle section : `ReconciliationCandidate` refactor en struct avec discriminator `candidate_type: CandidateType { Invoice, Rule }` + tous fields invoice/rule en `Option<>` (refactor mineur 3 sites `get_proposals`). `AcceptedProposal` garde sentinel `invoice_id=0` v0.1 (dette transverse tracée v0.2 avec 8-5a-bis BH-H1). Variant `AcceptProposalInput::Rule` à ajouter à l'enum tagged Serde 8-5a-bis (3 sites code listés §risques 8). [P-H7 ECH-05] §rule-application sign filter clarification : les rules s'appliquent aux 2 sens (débit ET crédit), **NE PAS hériter** du sign filter 8-4 invoice `reconciliation.rs:343`. [P-M ECH-07+BH-F33] validation applicative dans `post_create` AVANT INSERT (label/match_value empty + length + priority range) — éviter messages d'erreur SQL bruts. [P-M BH-F11+BH-F12+BH-F13] §rules-types-rust types Rust `NewReconciliationRule` + `UpdateReconciliationRule` (avec `expected_version` séparé des champs métier + `match_type` non patchable v0.1). [P-M AA-F2+AA-F8+BH-F22-F24] §audit-log-shapes 5 actions distinctes shapes complets (4 rule.* + extension `reconciliation.accepted` avec `details.type='rule'`). [P-M BH-F39] §i18n-keys 19 clés nominales listées (cible spec d'origine ~15 augmentée à 19 pour couvrir erreurs API). [P-M ECH-10+BH-F19+BH-F20] `increment_applied_count_in_tx` UPDATE atomique sans optimistic lock sur version (compteur statistique, pas invariant business). [P-M BH-F36+BH-F37] §risques nouveau point 10 toggle UI inactives. [P-M BH-F38] §risques nouveau point 11 Playwright audit fallback. [P-L ECH-13+BH-F44] nouvel AC #115b tiebreaker `id ASC` à même priorité. [P-L BH-F01+BH-F02] T4.5 24 tests E2E HTTP énumérés nommément (au lieu de 14 vagues). Defers : BH-H1 sentinel `invoice_id=0` Split/Rule (refactor `Option<i64>` v0.2 transverse), BH-F09/F10 list/detail response shapes minor, BH-F25/F26 GET /rules/{id} détail couverage (à ajouter si Pass 2 le détecte), ECH-14 DELETE concurrent pendant accept-with-rule (low-prob accepté), BH-F32/F34 défaults FK + priority range (cohérent v0.1). Trend : Pass 1 = ~17+ findings > LOW. **Critère arrêt CLAUDE.md NON atteint** — Pass 2 obligatoire (Haiku 4.5 cycle CLAUDE.md, briser biais Sonnet auteur Pass 1). | Claude (Sonnet 4.6 validate) |
 
 - **2026-05-07** — Spec créée par split mécanique de 8-5 unifiée (décision Guy 2026-05-07 Q1=B). Découpage scope FR47 rules engine (CRUD + application GET /proposals + extension POST /accept type='rule'). FR46 suggestion ML supprimée (Q5 — reportée v0.2). Soft-delete via colonne synthétique active_uniq (Q3 workaround MariaDB). 4 actions audit distinctes (Q4b). 24 ACs (#101-#124). Tasks T1-T8. Path-dépendance sur 8-5a (helper `manual::build_journal_entry_for_counterparty` réutilisé). Status `8-5b-reconciliation-rules-engine: backlog` jusqu'à 8-5a `done`/merged. Cycle prévu après merge 8-5a : transition `backlog → ready-for-dev` puis `bmad-create-story validate 8-5b` Pass 1 Sonnet (cycle CLAUDE.md, auteur=Opus split, briser biais d'auteur).
