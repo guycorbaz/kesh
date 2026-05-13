@@ -619,6 +619,22 @@ pub async fn post_accept(
                 difference,
             })
         }
+        // Story 8-5b — variants Rule ajoutés à `ReconciliationError`
+        // pour les handlers `post_create_rule`/`post_update_rule` +
+        // `accept_one_rule` step 2. Ce flow (`accept_batch`) ne les émet
+        // pas : les conflits Rule sont gérés en handlers CRUD séparés ou
+        // en `FailedProposal` per-proposal (cf. §accept-with-rule-flow).
+        // Branche exhaustive uniquement.
+        Err(ReconciliationError::RuleNotFound { .. }
+        | ReconciliationError::RuleNoLongerMatches { .. }
+        | ReconciliationError::RuleMismatch { .. }
+        | ReconciliationError::RuleDuplicate { .. }) => {
+            drop(tx_outer);
+            unreachable!(
+                "variants Rule (Story 8-5b) jamais émis par accept_batch — \
+                 conflits Rule gérés en handler CRUD ou FailedProposal per-proposal"
+            )
+        }
     }
 }
 
@@ -1523,6 +1539,17 @@ pub async fn post_reject(
                 difference,
             })
         }
+        // Story 8-5b — branche exhaustive (reject_batch ne touche pas
+        // aux rules). Unreachable en pratique.
+        Err(ReconciliationError::RuleNotFound { .. }
+        | ReconciliationError::RuleNoLongerMatches { .. }
+        | ReconciliationError::RuleMismatch { .. }
+        | ReconciliationError::RuleDuplicate { .. }) => {
+            drop(tx_outer);
+            unreachable!(
+                "variants Rule (Story 8-5b) jamais émis par reject_batch"
+            )
+        }
     }
 }
 
@@ -2008,6 +2035,17 @@ pub async fn post_manual(
                 difference,
             })
         }
+        // Story 8-5b — branche exhaustive (post_manual ne touche pas
+        // aux rules). Unreachable en pratique.
+        Err(ReconciliationError::RuleNotFound { .. }
+        | ReconciliationError::RuleNoLongerMatches { .. }
+        | ReconciliationError::RuleMismatch { .. }
+        | ReconciliationError::RuleDuplicate { .. }) => {
+            let _ = tx_outer.rollback().await;
+            unreachable!(
+                "variants Rule (Story 8-5b) jamais émis par post_manual"
+            )
+        }
     }
 }
 
@@ -2415,6 +2453,17 @@ pub async fn post_split(
                 actual,
                 difference,
             })
+        }
+        // Story 8-5b — branche exhaustive (post_split ne touche pas
+        // aux rules). Unreachable en pratique.
+        Err(ReconciliationError::RuleNotFound { .. }
+        | ReconciliationError::RuleNoLongerMatches { .. }
+        | ReconciliationError::RuleMismatch { .. }
+        | ReconciliationError::RuleDuplicate { .. }) => {
+            let _ = tx_outer.rollback().await;
+            unreachable!(
+                "variants Rule (Story 8-5b) jamais émis par post_split"
+            )
         }
     }
 }

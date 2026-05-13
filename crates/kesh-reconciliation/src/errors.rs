@@ -94,4 +94,54 @@ pub enum ReconciliationError {
         actual: Decimal,
         difference: Decimal,
     },
+
+    /// Story 8-5b FR47 — la rule n'existe pas ou est archivée
+    /// (`active=false`). Émis par le handler `accept-with-rule` step 2
+    /// quand `reconciliation_rules::find_by_id_for_company` retourne
+    /// `None` ou que la rule trouvée a `active=false` (soft-deleted
+    /// entre le `GET /proposals` et le `POST /accept`). Le handler
+    /// mappe vers `AppError::ReconciliationRuleNotFound { rule_id }`
+    /// → HTTP 404 `RECONCILIATION_RULE_NOT_FOUND`.
+    #[error("reconciliation rule {rule_id} not found or archived")]
+    RuleNotFound { rule_id: i64 },
+
+    /// Story 8-5b FR47 — la rule existait au `GET /proposals` mais
+    /// son `(match_type, match_value)` a été modifié entre-temps et
+    /// elle ne match plus la transaction (race window race PATCH /rules
+    /// vs POST /accept type=rule). Émis par `accept_one_rule` step 7.
+    /// **Mappé en `FailedProposal` per-proposal** (pas AppError global)
+    /// → HTTP 200 OK + `failed[].errorCode = 'RECONCILIATION_RULE_NO_LONGER_MATCHES'`.
+    #[error("reconciliation rule {rule_id} no longer matches the transaction")]
+    RuleNoLongerMatches { rule_id: i64 },
+
+    /// Story 8-5b FR47 — le body `counterpartyAccountId` ne correspond
+    /// pas au `rule.counterparty_account_id` actuel (race window /
+    /// client menteur). Émis par `accept_one_rule` step 4 (AC #120).
+    /// **Mappé en `FailedProposal` per-proposal** (pas AppError global)
+    /// → HTTP 200 OK + `failed[].errorCode = 'RECONCILIATION_RULE_MISMATCH'`.
+    #[error(
+        "reconciliation rule {rule_id} counterparty mismatch: expected={expected_account}, \
+         actual={actual_account}"
+    )]
+    RuleMismatch {
+        rule_id: i64,
+        expected_account: i64,
+        actual_account: i64,
+    },
+
+    /// Story 8-5b FR47 — la création d'une rule active a violé la
+    /// contrainte UNIQUE `uq_reconciliation_rules_match_active` (i.e.
+    /// une rule active existe déjà avec mêmes `(company_id,
+    /// match_type, match_value)`). Émis par le handler `post_create`
+    /// ou `post_update` (réactivation conflict AC #109b) après
+    /// détection via [`kesh_db::repositories::reconciliation_rules::is_duplicate_rule_constraint`].
+    /// Le handler mappe vers `AppError::ReconciliationRuleDuplicate
+    /// { match_type, match_value }` → HTTP 409 `RECONCILIATION_RULE_DUPLICATE`.
+    #[error(
+        "reconciliation rule duplicate: match_type={match_type}, match_value={match_value}"
+    )]
+    RuleDuplicate {
+        match_type: String,
+        match_value: String,
+    },
 }

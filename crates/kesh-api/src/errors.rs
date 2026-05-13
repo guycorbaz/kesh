@@ -405,6 +405,44 @@ pub enum AppError {
     //   idem, le 409 invoice-eligibility est représenté en
     //   `FailedProposal` per-proposal (4 reasons enum dans
     //   `details.reason`).
+
+    // ----- Story 8-5b — rules engine FR47 -----
+    /// `reconciliation_rule` ciblée par `find_by_id_for_company`
+    /// retourne `None` OU rule archivée (active=false) lors du flow
+    /// `accept-with-rule` step 2 ou des handlers PATCH/DELETE /rules
+    /// → `404 RECONCILIATION_RULE_NOT_FOUND`.
+    #[error("Règle de réconciliation introuvable : id={rule_id}")]
+    ReconciliationRuleNotFound { rule_id: i64 },
+
+    /// Création/réactivation d'une rule active avec mêmes `(company_id,
+    /// match_type, match_value)` qu'une autre rule active existante
+    /// (violation `uq_reconciliation_rules_match_active`). Détecté via
+    /// [`kesh_db::repositories::reconciliation_rules::is_duplicate_rule_constraint`]
+    /// → `409 RECONCILIATION_RULE_DUPLICATE`. Body inclut
+    /// `details.matchType` + `details.matchValue`.
+    #[error(
+        "Règle de réconciliation déjà existante : match_type={match_type}, match_value={match_value}"
+    )]
+    ReconciliationRuleDuplicate {
+        match_type: String,
+        match_value: String,
+    },
+
+    /// **Pass 4 LOW#6 annotation** : variant défini pour complétude
+    /// `From<ReconciliationError>` mais **jamais émis comme HTTP 400
+    /// global** — `accept_one_rule` retourne `Err(FailedProposal {
+    /// error_code: "RECONCILIATION_RULE_MISMATCH" })` per-proposal.
+    /// Garder le variant pour conversion exhaustive ; il est en
+    /// pratique unreachable côté handler global.
+    #[error("Règle de réconciliation : compte mismatch (rule_id={rule_id})")]
+    ReconciliationRuleMismatch { rule_id: i64 },
+
+    /// Idem `ReconciliationRuleMismatch` — variant exhaustif jamais
+    /// émis comme HTTP global. `accept_one_rule` retourne
+    /// `FailedProposal { error_code: "RECONCILIATION_RULE_NO_LONGER_MATCHES" }`
+    /// per-proposal.
+    #[error("Règle de réconciliation : ne match plus la transaction (rule_id={rule_id})")]
+    ReconciliationRuleNoLongerMatches { rule_id: i64 },
 }
 
 /// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
@@ -1065,6 +1103,68 @@ impl IntoResponse for AppError {
             // M6 Pass 1 code review : variants `ReconciliationAlreadyReconciled` et
             // `ReconciliationInvoiceNotEligible` supprimés (jamais émis comme
             // `AppError` global, représentés en `FailedProposal` per-proposal).
+
+            // Story 8-5b — rules engine FR47 (4 variants).
+            AppError::ReconciliationRuleNotFound { rule_id } => {
+                let msg = t(
+                    "reconciliation-rules-error-not-found",
+                    "Règle de réconciliation introuvable.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_RULE_NOT_FOUND",
+                        "message": msg,
+                        "details": { "ruleId": rule_id },
+                    }
+                });
+                (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+            AppError::ReconciliationRuleDuplicate {
+                match_type,
+                match_value,
+            } => {
+                let msg = t(
+                    "reconciliation-rules-error-duplicate",
+                    "Une règle active existe déjà pour cette combinaison type/valeur.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_RULE_DUPLICATE",
+                        "message": msg,
+                        "details": {
+                            "matchType": match_type,
+                            "matchValue": match_value,
+                        }
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            // Pass 4 LOW#6 : ces 2 variants existent pour complétude du
+            // From<ReconciliationError>; jamais émis comme HTTP global
+            // (accept_one_rule retourne FailedProposal per-proposal).
+            // Fallback défensif : 500 si jamais reached.
+            AppError::ReconciliationRuleMismatch { rule_id } => {
+                tracing::error!(
+                    "ReconciliationRuleMismatch reached as HTTP global (rule_id={rule_id}) — \
+                     should have been per-proposal FailedProposal"
+                );
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "RECONCILIATION_RULE_MISMATCH",
+                    "Variant Rule jamais émis comme erreur globale (bug interne)",
+                )
+            }
+            AppError::ReconciliationRuleNoLongerMatches { rule_id } => {
+                tracing::error!(
+                    "ReconciliationRuleNoLongerMatches reached as HTTP global (rule_id={rule_id}) — \
+                     should have been per-proposal FailedProposal"
+                );
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "RECONCILIATION_RULE_NO_LONGER_MATCHES",
+                    "Variant Rule jamais émis comme erreur globale (bug interne)",
+                )
+            }
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation
