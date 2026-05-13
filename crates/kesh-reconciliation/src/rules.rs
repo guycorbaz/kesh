@@ -46,9 +46,7 @@ use std::collections::HashSet;
 pub fn rule_matches(rule: &ReconciliationRule, tx: &BankTransaction) -> bool {
     use ReconciliationMatchType::*;
     match rule.match_type {
-        CounterpartyContains => {
-            match_contains(tx.counterparty_name.as_deref(), &rule.match_value)
-        }
+        CounterpartyContains => match_contains(tx.counterparty_name.as_deref(), &rule.match_value),
         CounterpartyExact => match_exact(tx.counterparty_name.as_deref(), &rule.match_value),
         ReferenceContains => {
             let reference = tx
@@ -211,11 +209,25 @@ mod tests {
     #[test]
     fn rule_matches_counterparty_contains() {
         let tx = make_tx(Some("Swisscom (Schweiz) AG"), None, None, None, None);
-        let rule = make_rule(1, ReconciliationMatchType::CounterpartyContains, "swisscom", 1, 100, true);
+        let rule = make_rule(
+            1,
+            ReconciliationMatchType::CounterpartyContains,
+            "swisscom",
+            1,
+            100,
+            true,
+        );
         assert!(rule_matches(&rule, &tx));
 
         // Pas de match : aucune occurrence.
-        let rule2 = make_rule(2, ReconciliationMatchType::CounterpartyContains, "Sunrise", 1, 100, true);
+        let rule2 = make_rule(
+            2,
+            ReconciliationMatchType::CounterpartyContains,
+            "Sunrise",
+            1,
+            100,
+            true,
+        );
         assert!(!rule_matches(&rule2, &tx));
 
         // tx.counterparty_name = None → pas de match.
@@ -227,12 +239,26 @@ mod tests {
     #[test]
     fn rule_matches_counterparty_exact_normalize_case() {
         let tx = make_tx(Some("  SWISSCOM SA  "), None, None, None, None);
-        let rule = make_rule(1, ReconciliationMatchType::CounterpartyExact, "swisscom sa", 1, 100, true);
+        let rule = make_rule(
+            1,
+            ReconciliationMatchType::CounterpartyExact,
+            "swisscom sa",
+            1,
+            100,
+            true,
+        );
         // trim + lowercase des 2 côtés → égal.
         assert!(rule_matches(&rule, &tx));
 
         // Différent : "Swisscom" exact ne match pas "Swisscom SA".
-        let rule2 = make_rule(2, ReconciliationMatchType::CounterpartyExact, "Swisscom", 1, 100, true);
+        let rule2 = make_rule(
+            2,
+            ReconciliationMatchType::CounterpartyExact,
+            "Swisscom",
+            1,
+            100,
+            true,
+        );
         assert!(!rule_matches(&rule2, &tx));
     }
 
@@ -293,7 +319,14 @@ mod tests {
     // Test 4 — AC #113 ReferenceContains avec fallback chain.
     #[test]
     fn rule_matches_reference_fallback_chain() {
-        let rule = make_rule(1, ReconciliationMatchType::ReferenceContains, "INV-", 1, 100, true);
+        let rule = make_rule(
+            1,
+            ReconciliationMatchType::ReferenceContains,
+            "INV-",
+            1,
+            100,
+            true,
+        );
 
         // tx.reference présent → utilisé en priorité.
         let tx_ref = make_tx(None, None, Some("INV-2026-001"), Some("E2E"), Some("TXN"));
@@ -322,17 +355,49 @@ mod tests {
         let tx = make_tx(Some("Swisscom AG"), None, None, None, None);
         let rules = vec![
             // priority 100 (premier en ordre tri) → mais ne match pas.
-            make_rule(1, ReconciliationMatchType::CounterpartyContains, "Sunrise", 100, 100, true),
+            make_rule(
+                1,
+                ReconciliationMatchType::CounterpartyContains,
+                "Sunrise",
+                100,
+                100,
+                true,
+            ),
             // priority 200 → ne match pas non plus.
-            make_rule(2, ReconciliationMatchType::CounterpartyExact, "Salt", 100, 200, true),
+            make_rule(
+                2,
+                ReconciliationMatchType::CounterpartyExact,
+                "Salt",
+                100,
+                200,
+                true,
+            ),
             // priority 300 → match !
-            make_rule(3, ReconciliationMatchType::CounterpartyContains, "Swisscom", 100, 300, true),
+            make_rule(
+                3,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                100,
+                300,
+                true,
+            ),
             // priority 400 → match aussi mais ordre tardif.
-            make_rule(4, ReconciliationMatchType::CounterpartyContains, "AG", 100, 400, true),
+            make_rule(
+                4,
+                ReconciliationMatchType::CounterpartyContains,
+                "AG",
+                100,
+                400,
+                true,
+            ),
         ];
         let active: HashSet<i64> = [100].into_iter().collect();
         let matched = first_matching_rule(&rules, &tx, &active);
-        assert_eq!(matched.map(|r| r.id), Some(3), "must pick first matching by priority order");
+        assert_eq!(
+            matched.map(|r| r.id),
+            Some(3),
+            "must pick first matching by priority order"
+        );
     }
 
     // Test 6 — AC #116 first_matching_rule skip rules sur compte archivé.
@@ -341,9 +406,23 @@ mod tests {
         let tx = make_tx(Some("Swisscom"), None, None, None, None);
         let rules = vec![
             // priority 100 → matche, mais counterparty_account_id=999 N'EST PAS dans active_account_ids.
-            make_rule(1, ReconciliationMatchType::CounterpartyContains, "Swisscom", 999, 100, true),
+            make_rule(
+                1,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                999,
+                100,
+                true,
+            ),
             // priority 200 → matche aussi, compte 100 actif.
-            make_rule(2, ReconciliationMatchType::CounterpartyContains, "Swisscom", 100, 200, true),
+            make_rule(
+                2,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                100,
+                200,
+                true,
+            ),
         ];
         let active: HashSet<i64> = [100].into_iter().collect(); // 999 archivé
         let matched = first_matching_rule(&rules, &tx, &active);
@@ -360,9 +439,23 @@ mod tests {
         let tx = make_tx(Some("Swisscom"), None, None, None, None);
         let rules = vec![
             // priority 100 → matche mais active=false → skip.
-            make_rule(1, ReconciliationMatchType::CounterpartyContains, "Swisscom", 100, 100, false),
+            make_rule(
+                1,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                100,
+                100,
+                false,
+            ),
             // priority 200 → matche, active=true.
-            make_rule(2, ReconciliationMatchType::CounterpartyContains, "Swisscom", 100, 200, true),
+            make_rule(
+                2,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                100,
+                200,
+                true,
+            ),
         ];
         let active: HashSet<i64> = [100].into_iter().collect();
         let matched = first_matching_rule(&rules, &tx, &active);
@@ -378,9 +471,23 @@ mod tests {
         // Le helper ne re-sort pas, il prend la première qui match.
         let rules = vec![
             // id=5 priority=200.
-            make_rule(5, ReconciliationMatchType::CounterpartyContains, "Swisscom", 100, 200, true),
+            make_rule(
+                5,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                100,
+                200,
+                true,
+            ),
             // id=42 priority=200 (vient après dans la slice ordonnée DB).
-            make_rule(42, ReconciliationMatchType::CounterpartyContains, "Swisscom", 100, 200, true),
+            make_rule(
+                42,
+                ReconciliationMatchType::CounterpartyContains,
+                "Swisscom",
+                100,
+                200,
+                true,
+            ),
         ];
         let active: HashSet<i64> = [100].into_iter().collect();
         let matched = first_matching_rule(&rules, &tx, &active);

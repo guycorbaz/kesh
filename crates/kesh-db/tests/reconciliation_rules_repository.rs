@@ -120,7 +120,10 @@ async fn create_and_find_by_id_scopes_by_company(pool: MySqlPool) {
     assert!(created.id > 0);
     assert_eq!(created.label, "Swisscom auto");
     assert_eq!(created.company_id, company_a);
-    assert_eq!(created.match_type, ReconciliationMatchType::CounterpartyContains);
+    assert_eq!(
+        created.match_type,
+        ReconciliationMatchType::CounterpartyContains
+    );
     assert_eq!(created.match_value, "Swisscom");
     assert_eq!(created.counterparty_account_id, account_a);
     assert_eq!(created.priority, 100);
@@ -313,11 +316,10 @@ async fn unique_partial_conflicts_on_reactivation(pool: MySqlPool) {
 
     // Tenter PATCH r1 { active: true } → doit violer UNIQUE (active_uniq
     // de r1 passe de NULL à "Swisscom", collide avec r2.active_uniq).
-    let r1_after_delete =
-        reconciliation_rules::find_by_id_for_company(&pool, company_id, r1.id)
-            .await
-            .unwrap()
-            .unwrap();
+    let r1_after_delete = reconciliation_rules::find_by_id_for_company(&pool, company_id, r1.id)
+        .await
+        .unwrap()
+        .unwrap();
 
     let mut tx = pool.begin().await.unwrap();
     let res = reconciliation_rules::update_in_tx(

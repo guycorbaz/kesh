@@ -469,9 +469,11 @@ pub async fn get_proposals(
             // `candidate_invoices.is_empty()` quand tx.currency != "CHF",
             // mais rules NE PAS hériter du sign filter 8-4 invoice (P-H7).
             if !has_strong_invoice_match && tx.currency == "CHF" {
-                if let Some(rule) =
-                    kesh_reconciliation::first_matching_rule(&active_rules, &tx, &active_account_ids)
-                {
+                if let Some(rule) = kesh_reconciliation::first_matching_rule(
+                    &active_rules,
+                    &tx,
+                    &active_account_ids,
+                ) {
                     let counterparty_display = accounts_info
                         .get(&rule.counterparty_account_id)
                         .map(|(num, name)| format!("{num} {name}"))
@@ -744,10 +746,12 @@ pub async fn post_accept(
         // pas : les conflits Rule sont gérés en handlers CRUD séparés ou
         // en `FailedProposal` per-proposal (cf. §accept-with-rule-flow).
         // Branche exhaustive uniquement.
-        Err(ReconciliationError::RuleNotFound { .. }
-        | ReconciliationError::RuleNoLongerMatches { .. }
-        | ReconciliationError::RuleMismatch { .. }
-        | ReconciliationError::RuleDuplicate { .. }) => {
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
             drop(tx_outer);
             unreachable!(
                 "variants Rule (Story 8-5b) jamais émis par accept_batch — \
@@ -1605,29 +1609,24 @@ async fn accept_one_rule(
     };
 
     // Step 2 — SELECT rule (transaction-bound). RuleNotFound si None ou inactive.
-    let rule = match reconciliation_rules::find_by_id_for_company(
-        &mut **tx,
-        company_id,
-        rule_id,
-    )
-    .await
-    {
-        Ok(Some(r)) if r.active => r,
-        Ok(_) => {
-            return Err(FailedProposal {
-                bank_transaction_id,
-                error_code: "RECONCILIATION_RULE_NOT_FOUND".to_string(),
-                details: Some(serde_json::json!({ "ruleId": rule_id })),
-            });
-        }
-        Err(e) => {
-            return Err(FailedProposal {
-                bank_transaction_id,
-                error_code: "DATABASE_ERROR".to_string(),
-                details: Some(serde_json::json!({ "message": e.to_string() })),
-            });
-        }
-    };
+    let rule =
+        match reconciliation_rules::find_by_id_for_company(&mut **tx, company_id, rule_id).await {
+            Ok(Some(r)) if r.active => r,
+            Ok(_) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "RECONCILIATION_RULE_NOT_FOUND".to_string(),
+                    details: Some(serde_json::json!({ "ruleId": rule_id })),
+                });
+            }
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
 
     // Step 4 — counterparty mismatch check (AC #120).
     if rule.counterparty_account_id != counterparty_account_id {
@@ -2037,14 +2036,14 @@ pub async fn post_reject(
         }
         // Story 8-5b — branche exhaustive (reject_batch ne touche pas
         // aux rules). Unreachable en pratique.
-        Err(ReconciliationError::RuleNotFound { .. }
-        | ReconciliationError::RuleNoLongerMatches { .. }
-        | ReconciliationError::RuleMismatch { .. }
-        | ReconciliationError::RuleDuplicate { .. }) => {
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
             drop(tx_outer);
-            unreachable!(
-                "variants Rule (Story 8-5b) jamais émis par reject_batch"
-            )
+            unreachable!("variants Rule (Story 8-5b) jamais émis par reject_batch")
         }
     }
 }
@@ -2533,14 +2532,14 @@ pub async fn post_manual(
         }
         // Story 8-5b — branche exhaustive (post_manual ne touche pas
         // aux rules). Unreachable en pratique.
-        Err(ReconciliationError::RuleNotFound { .. }
-        | ReconciliationError::RuleNoLongerMatches { .. }
-        | ReconciliationError::RuleMismatch { .. }
-        | ReconciliationError::RuleDuplicate { .. }) => {
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
             let _ = tx_outer.rollback().await;
-            unreachable!(
-                "variants Rule (Story 8-5b) jamais émis par post_manual"
-            )
+            unreachable!("variants Rule (Story 8-5b) jamais émis par post_manual")
         }
     }
 }
@@ -2952,14 +2951,14 @@ pub async fn post_split(
         }
         // Story 8-5b — branche exhaustive (post_split ne touche pas
         // aux rules). Unreachable en pratique.
-        Err(ReconciliationError::RuleNotFound { .. }
-        | ReconciliationError::RuleNoLongerMatches { .. }
-        | ReconciliationError::RuleMismatch { .. }
-        | ReconciliationError::RuleDuplicate { .. }) => {
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
             let _ = tx_outer.rollback().await;
-            unreachable!(
-                "variants Rule (Story 8-5b) jamais émis par post_split"
-            )
+            unreachable!("variants Rule (Story 8-5b) jamais émis par post_split")
         }
     }
 }

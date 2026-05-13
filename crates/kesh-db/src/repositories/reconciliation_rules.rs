@@ -96,9 +96,8 @@ pub async fn list_by_company_paginated(
          WHERE company_id = ?{where_active} \
          ORDER BY priority ASC, id ASC LIMIT ? OFFSET ?"
     );
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM reconciliation_rules WHERE company_id = ?{where_active}"
-    );
+    let count_sql =
+        format!("SELECT COUNT(*) FROM reconciliation_rules WHERE company_id = ?{where_active}");
 
     let rules = sqlx::query_as::<_, ReconciliationRule>(&select_sql)
         .bind(company_id)
@@ -129,9 +128,8 @@ pub async fn find_by_id_for_company<'e, E>(
 where
     E: Executor<'e, Database = MySql>,
 {
-    let query = format!(
-        "SELECT {COLUMNS} FROM reconciliation_rules WHERE id = ? AND company_id = ?"
-    );
+    let query =
+        format!("SELECT {COLUMNS} FROM reconciliation_rules WHERE id = ? AND company_id = ?");
     sqlx::query_as::<_, ReconciliationRule>(&query)
         .bind(id)
         .bind(company_id)

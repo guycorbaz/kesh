@@ -137,9 +137,7 @@ pub enum ReconciliationError {
     /// détection via [`kesh_db::repositories::reconciliation_rules::is_duplicate_rule_constraint`].
     /// Le handler mappe vers `AppError::ReconciliationRuleDuplicate
     /// { match_type, match_value }` → HTTP 409 `RECONCILIATION_RULE_DUPLICATE`.
-    #[error(
-        "reconciliation rule duplicate: match_type={match_type}, match_value={match_value}"
-    )]
+    #[error("reconciliation rule duplicate: match_type={match_type}, match_value={match_value}")]
     RuleDuplicate {
         match_type: String,
         match_value: String,

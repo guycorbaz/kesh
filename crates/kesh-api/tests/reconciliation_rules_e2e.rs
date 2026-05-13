@@ -241,7 +241,10 @@ async fn create_pending_bank_tx(
     currency: &str,
     value_date: Option<NaiveDate>,
 ) -> i64 {
-    let unique_hash = format!("{:064x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
+    let unique_hash = format!(
+        "{:064x}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
     let mut tx = pool.begin().await.unwrap();
     let (_header, txs) = bank_imports::create_with_transactions(
         &mut tx,
@@ -416,7 +419,10 @@ async fn rule_create_rejects_duplicate_match_when_active(pool: MySqlPool) {
     assert_eq!(resp.status(), 409);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "RECONCILIATION_RULE_DUPLICATE");
-    assert_eq!(body["error"]["details"]["matchType"], "counterparty_contains");
+    assert_eq!(
+        body["error"]["details"]["matchType"],
+        "counterparty_contains"
+    );
     assert_eq!(body["error"]["details"]["matchValue"], "Swisscom");
 }
 
@@ -471,7 +477,13 @@ async fn rule_create_succeeds_when_existing_rule_is_inactive(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn rule_create_rejects_archived_account(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
-    archive_account(&pool, ctx.counterparty_account_id, ctx.user_id, ctx.company_id).await;
+    archive_account(
+        &pool,
+        ctx.counterparty_account_id,
+        ctx.user_id,
+        ctx.company_id,
+    )
+    .await;
     let app = spawn_app(pool.clone()).await;
 
     let resp = post_rule_raw(
@@ -624,7 +636,10 @@ async fn rule_list_scopes_by_company(pool: MySqlPool) {
         .await
         .unwrap();
     let body_b: Value = resp_b.json().await.unwrap();
-    assert_eq!(body_b["total"], 0, "B doit pas voir les rules de A (KF-002)");
+    assert_eq!(
+        body_b["total"], 0,
+        "B doit pas voir les rules de A (KF-002)"
+    );
 }
 
 // ============================================================
@@ -809,12 +824,11 @@ async fn rule_delete_soft_deletes_and_preserves_audit_history(pool: MySqlPool) {
     assert_eq!(resp.status(), 204);
 
     // DB : row still exists, active=false.
-    let active: bool =
-        sqlx::query_scalar("SELECT active FROM reconciliation_rules WHERE id = ?")
-            .bind(r_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let active: bool = sqlx::query_scalar("SELECT active FROM reconciliation_rules WHERE id = ?")
+        .bind(r_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert!(!active);
 
     // Audit : created + deleted.
@@ -1081,7 +1095,13 @@ async fn get_proposals_skips_rule_with_archived_account(pool: MySqlPool) {
         }),
     )
     .await;
-    archive_account(&pool, ctx.counterparty_account_id, ctx.user_id, ctx.company_id).await;
+    archive_account(
+        &pool,
+        ctx.counterparty_account_id,
+        ctx.user_id,
+        ctx.company_id,
+    )
+    .await;
     create_pending_bank_tx(
         &pool,
         ctx.company_id,
@@ -1267,13 +1287,12 @@ async fn accept_with_rule_creates_journal_entry_and_increments_count(pool: MySql
     assert_eq!(body["accepted"].as_array().unwrap().len(), 1);
     assert!(body["failed"].as_array().unwrap().is_empty());
 
-    let applied_count: i64 = sqlx::query_scalar(
-        "SELECT applied_count FROM reconciliation_rules WHERE id = ?",
-    )
-    .bind(rule_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let applied_count: i64 =
+        sqlx::query_scalar("SELECT applied_count FROM reconciliation_rules WHERE id = ?")
+            .bind(rule_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(applied_count, 1);
 }
 
@@ -1363,7 +1382,10 @@ async fn accept_with_rule_rejects_when_no_longer_matches(pool: MySqlPool) {
     .await;
     let body: Value = resp.json().await.unwrap();
     let failed = body["failed"].as_array().unwrap();
-    assert_eq!(failed[0]["errorCode"], "RECONCILIATION_RULE_NO_LONGER_MATCHES");
+    assert_eq!(
+        failed[0]["errorCode"],
+        "RECONCILIATION_RULE_NO_LONGER_MATCHES"
+    );
 }
 
 // ============================================================

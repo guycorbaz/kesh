@@ -318,9 +318,10 @@ pub async fn detail(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<ReconciliationRuleResponse>, AppError> {
-    let rule = reconciliation_rules::find_by_id_for_company(&state.pool, current_user.company_id, id)
-        .await?
-        .ok_or(AppError::ReconciliationRuleNotFound { rule_id: id })?;
+    let rule =
+        reconciliation_rules::find_by_id_for_company(&state.pool, current_user.company_id, id)
+            .await?
+            .ok_or(AppError::ReconciliationRuleNotFound { rule_id: id })?;
     Ok(Json(rule.into()))
 }
 
@@ -353,13 +354,10 @@ pub async fn patch(
 
     // Pré-load rule actuelle pour normalisation IBAN PATCH (Pass 2 Q4 ECH2-1).
     // Si match_value est patché ET la rule a match_type=IbanExact, normaliser.
-    let current = reconciliation_rules::find_by_id_for_company(
-        &state.pool,
-        current_user.company_id,
-        id,
-    )
-    .await?
-    .ok_or(AppError::ReconciliationRuleNotFound { rule_id: id })?;
+    let current =
+        reconciliation_rules::find_by_id_for_company(&state.pool, current_user.company_id, id)
+            .await?
+            .ok_or(AppError::ReconciliationRuleNotFound { rule_id: id })?;
 
     let normalized_match_value = match (&req.match_value, current.match_type) {
         (Some(mv), ReconciliationMatchType::IbanExact) => Some(normalize_iban_canonical(mv)),

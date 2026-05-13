@@ -222,8 +222,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         )
         .route(
             "/api/v1/reconciliation/rules/{id}",
-            patch(routes::reconciliation_rules::patch)
-                .delete(routes::reconciliation_rules::delete),
+            patch(routes::reconciliation_rules::patch).delete(routes::reconciliation_rules::delete),
         )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
