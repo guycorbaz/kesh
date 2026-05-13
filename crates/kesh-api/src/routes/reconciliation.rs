@@ -98,13 +98,33 @@ pub struct TransactionSummary {
     pub counterparty_name: Option<String>,
 }
 
+/// Story 8-5b §api-response-shapes Pass 1 P-H6 — discriminator candidate
+/// type. `Invoice` héritée 8-4 ; `Rule` nouveau 8-5b.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateType {
+    Invoice,
+    Rule,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReconciliationCandidate {
-    pub invoice_id: i64,
+    /// Story 8-5b — discriminator. Les fields ci-dessous sont Some/None
+    /// selon ce type.
+    pub candidate_type: CandidateType,
+    // ----- Invoice candidate fields -----
+    pub invoice_id: Option<i64>,
     pub invoice_number: Option<String>,
-    pub invoice_amount: String,
-    pub invoice_date: chrono::NaiveDate,
+    pub invoice_amount: Option<String>,
+    pub invoice_date: Option<chrono::NaiveDate>,
+    // ----- Rule candidate fields (Story 8-5b) -----
+    pub rule_id: Option<i64>,
+    pub rule_label: Option<String>,
+    pub counterparty_account_id: Option<i64>,
+    /// Display name `"{number} {name}"` du compte de contrepartie résolu
+    /// via accounts_info (1 query batch, cf. §rule-application R5/Q5).
+    pub counterparty_account_name: Option<String>,
     pub score: MatchScore,
 }
 
@@ -389,7 +409,29 @@ pub async fn get_proposals(
         reconciliation_repo::find_contacts_by_ids(&state.pool, current_user.company_id, &ids_vec)
             .await?;
 
-    // Pass 4 : score per-tx + build response.
+    // Pass 3.5 (Story 8-5b §rule-application) — pre-load active rules +
+    // accounts_info pour appliquer rule fallback dans Pass 4 (closure sync).
+    let active_rules =
+        reconciliation_rules::find_active_for_company(&state.pool, current_user.company_id).await?;
+    let accounts_info_rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, number, name FROM accounts WHERE company_id = ? AND active = TRUE",
+    )
+    .bind(current_user.company_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let accounts_info: HashMap<i64, (String, String)> = accounts_info_rows
+        .into_iter()
+        .map(|(id, number, name)| (id, (number, name)))
+        .collect();
+    let active_account_ids: std::collections::HashSet<i64> =
+        accounts_info.keys().copied().collect();
+
+    // Pass 4 : score per-tx + rule fallback + build response.
+    // AC #114 (Pass 2 Q8) : un invoice candidate avec score ≥ 0.5 prime
+    // sur les rules ; en dessous, rule + invoice coexistent (les 2
+    // s'affichent). Aucun invoice candidate → rule en fallback seul.
+    const INVOICE_OVERRIDE_THRESHOLD: f64 = 0.5;
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
         .map(|(tx, candidate_invoices)| {
@@ -399,19 +441,61 @@ pub async fn get_proposals(
                     .map(|inv| (inv.clone(), contacts_map.get(&inv.contact_id).cloned()))
                     .collect();
             let match_proposals = propose_matches(&tx, &candidates_with_contacts);
-            let candidates: Vec<ReconciliationCandidate> = match_proposals
+            let has_strong_invoice_match = match_proposals
+                .iter()
+                .any(|mp| mp.score.total >= INVOICE_OVERRIDE_THRESHOLD);
+
+            let mut candidates: Vec<ReconciliationCandidate> = match_proposals
                 .into_iter()
                 .filter_map(|mp| {
                     let inv = candidate_invoices.iter().find(|i| i.id == mp.invoice_id)?;
                     Some(ReconciliationCandidate {
-                        invoice_id: inv.id,
+                        candidate_type: CandidateType::Invoice,
+                        invoice_id: Some(inv.id),
                         invoice_number: inv.invoice_number.clone(),
-                        invoice_amount: inv.total_amount.normalize().to_string(),
-                        invoice_date: inv.date,
+                        invoice_amount: Some(inv.total_amount.normalize().to_string()),
+                        invoice_date: Some(inv.date),
+                        rule_id: None,
+                        rule_label: None,
+                        counterparty_account_id: None,
+                        counterparty_account_name: None,
                         score: mp.score,
                     })
                 })
                 .collect();
+
+            // Story 8-5b rule fallback. Currency CHF only (Pass 3 R1
+            // currency filter cohérent L38) — déjà filtré au Pass 2 via
+            // `candidate_invoices.is_empty()` quand tx.currency != "CHF",
+            // mais rules NE PAS hériter du sign filter 8-4 invoice (P-H7).
+            if !has_strong_invoice_match && tx.currency == "CHF" {
+                if let Some(rule) =
+                    kesh_reconciliation::first_matching_rule(&active_rules, &tx, &active_account_ids)
+                {
+                    let counterparty_display = accounts_info
+                        .get(&rule.counterparty_account_id)
+                        .map(|(num, name)| format!("{num} {name}"))
+                        .unwrap_or_else(|| format!("compte #{}", rule.counterparty_account_id));
+                    candidates.push(ReconciliationCandidate {
+                        candidate_type: CandidateType::Rule,
+                        invoice_id: None,
+                        invoice_number: None,
+                        invoice_amount: None,
+                        invoice_date: None,
+                        rule_id: Some(rule.id),
+                        rule_label: Some(rule.label.clone()),
+                        counterparty_account_id: Some(rule.counterparty_account_id),
+                        counterparty_account_name: Some(counterparty_display),
+                        score: MatchScore {
+                            total: 1.0,
+                            amount_score: 0.0,
+                            reference_score: 0.0,
+                            contact_score: 0.0,
+                        },
+                    });
+                }
+            }
+
             ReconciliationProposal {
                 bank_transaction_id: tx.id,
                 transaction: TransactionSummary {

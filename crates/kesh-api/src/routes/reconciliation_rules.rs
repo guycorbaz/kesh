@@ -114,6 +114,7 @@ pub struct UpdateRuleRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListQuery {
     #[serde(default = "default_page")]
     pub page: i64,
