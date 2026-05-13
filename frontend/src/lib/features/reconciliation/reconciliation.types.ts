@@ -18,11 +18,22 @@ export interface TransactionSummary {
 	counterpartyName: string | null;
 }
 
+// Story 8-5b — discriminator candidate_type. Les fields invoice/rule
+// sont Some/None selon ce type.
+export type CandidateType = 'invoice' | 'rule';
+
 export interface ReconciliationCandidate {
-	invoiceId: number;
+	candidateType: CandidateType;
+	// Invoice candidate fields
+	invoiceId: number | null;
 	invoiceNumber: string | null;
-	invoiceAmount: string;
-	invoiceDate: string;
+	invoiceAmount: string | null;
+	invoiceDate: string | null;
+	// Story 8-5b — Rule candidate fields
+	ruleId: number | null;
+	ruleLabel: string | null;
+	counterpartyAccountId: number | null;
+	counterpartyAccountName: string | null;
 	score: MatchScore;
 }
 
@@ -50,6 +61,12 @@ export type AcceptProposalInput =
 			bankTransactionId: number;
 			splits: SplitProposalLine[];
 			valueDate?: string;
+	  }
+	| {
+			type: 'rule';
+			bankTransactionId: number;
+			ruleId: number;
+			counterpartyAccountId: number;
 	  };
 
 export interface SplitProposalLine {
