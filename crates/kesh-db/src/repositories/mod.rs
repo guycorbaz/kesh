@@ -20,6 +20,7 @@ pub mod journal_entries;
 pub mod onboarding;
 pub mod products;
 pub mod reconciliation;
+pub mod reconciliation_rules;
 pub mod refresh_tokens;
 pub mod users;
 pub mod vat_rates;

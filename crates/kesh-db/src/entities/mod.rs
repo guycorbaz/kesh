@@ -20,6 +20,7 @@ pub mod invoice_number_sequence;
 pub mod journal_entry;
 pub mod onboarding;
 pub mod product;
+pub mod reconciliation_rule;
 pub mod refresh_token;
 pub mod user;
 pub mod vat_rate;
@@ -42,6 +43,9 @@ pub use journal_entry::{
 };
 pub use onboarding::{OnboardingState, UiMode};
 pub use product::{NewProduct, Product, ProductUpdate};
+pub use reconciliation_rule::{
+    NewReconciliationRule, ReconciliationMatchType, ReconciliationRule, UpdateReconciliationRule,
+};
 pub use refresh_token::{NewRefreshToken, RefreshToken};
 pub use user::{NewUser, Role, User, UserUpdate};
 pub use vat_rate::{NewVatRate, VatRate};
