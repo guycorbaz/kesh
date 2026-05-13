@@ -49,11 +49,17 @@ pub fn rule_matches(rule: &ReconciliationRule, tx: &BankTransaction) -> bool {
         CounterpartyContains => match_contains(tx.counterparty_name.as_deref(), &rule.match_value),
         CounterpartyExact => match_exact(tx.counterparty_name.as_deref(), &rule.match_value),
         ReferenceContains => {
+            // Pass 1 code review LOW EC7 fix : filter empty strings dans
+            // le fallback chain. CAMT.053 parser peut produire
+            // `reference = Some("")` (XML element present mais empty) —
+            // sémantiquement absent, doit fallback sur end_to_end_id /
+            // transaction_id.
             let reference = tx
                 .reference
                 .as_deref()
-                .or(tx.end_to_end_id.as_deref())
-                .or(tx.transaction_id.as_deref());
+                .filter(|s| !s.is_empty())
+                .or(tx.end_to_end_id.as_deref().filter(|s| !s.is_empty()))
+                .or(tx.transaction_id.as_deref().filter(|s| !s.is_empty()));
             match_contains(reference, &rule.match_value)
         }
         IbanExact => match tx.counterparty_iban.as_deref() {

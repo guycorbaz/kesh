@@ -593,7 +593,8 @@ async fn soft_delete_sets_active_false_idempotent(pool: MySqlPool) {
 
 // ---------------------------------------------------------------------------
 // Test 8 — AC #118 partiel : increment_applied_count_in_tx atomique.
-// Pas de version increment (Pass 1 ECH-10).
+// Pass 1 code review HIGH AA1 fix : version est bumped dans le SET
+// (pas de WHERE version=? clause — différent de l'optimistic lock CRUD).
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -622,13 +623,19 @@ async fn increment_applied_count_atomic(pool: MySqlPool) {
     assert!(r.last_applied_at.is_none());
     let initial_version = r.version;
 
-    // 5 incréments atomiques séquentiels.
-    for _ in 0..5 {
+    // 5 incréments atomiques séquentiels. La fonction retourne maintenant
+    // applied_count post-incrément (Pass 1 HIGH AA2 fix pour audit
+    // applied_count_after field).
+    for expected in 1..=5 {
         let mut tx = pool.begin().await.unwrap();
-        reconciliation_rules::increment_applied_count_in_tx(&mut tx, company_id, r.id)
+        let count = reconciliation_rules::increment_applied_count_in_tx(&mut tx, company_id, r.id)
             .await
             .unwrap();
         tx.commit().await.unwrap();
+        assert_eq!(
+            count, expected,
+            "applied_count_after doit refléter post-incrément"
+        );
     }
 
     let after = reconciliation_rules::find_by_id_for_company(&pool, company_id, r.id)
@@ -641,7 +648,9 @@ async fn increment_applied_count_atomic(pool: MySqlPool) {
         "last_applied_at doit être posée après le premier increment"
     );
     assert_eq!(
-        after.version, initial_version,
-        "version ne doit PAS être incrémentée (Pass 1 ECH-10 — compteur statistique pas invariant business)"
+        after.version,
+        initial_version + 5,
+        "version DOIT être bumpée à chaque increment (Pass 1 HIGH AA1 fix — \
+         requis par spec step 14 + scope-locked §5 + T2.2)"
     );
 }

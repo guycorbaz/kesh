@@ -65,6 +65,7 @@ function makeProposalWithCandidate(
 				invoiceDate: '2026-05-10',
 				ruleId: null,
 				ruleLabel: null,
+				ruleMatchType: null,
 				counterpartyAccountId: null,
 				counterpartyAccountName: null,
 				score: {

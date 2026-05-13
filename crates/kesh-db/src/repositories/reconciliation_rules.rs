@@ -191,11 +191,13 @@ pub async fn create_in_tx(
             entity_type: "reconciliation_rules".to_string(),
             entity_id: id,
             details_json: Some(serde_json::json!({
+                "rule_id": id,
                 "label": new_rule.label,
                 "match_type": new_rule.match_type.as_str(),
                 "match_value": new_rule.match_value,
                 "counterparty_account_id": new_rule.counterparty_account_id,
                 "priority": new_rule.priority,
+                "active": true,
             })),
         },
     )
@@ -299,21 +301,18 @@ pub async fn update_in_tx(
             entity_type: "reconciliation_rules".to_string(),
             entity_id: id,
             details_json: Some(serde_json::json!({
+                "rule_id": id,
                 "before": {
                     "label": before.label,
                     "match_value": before.match_value,
-                    "counterparty_account_id": before.counterparty_account_id,
                     "priority": before.priority,
                     "active": before.active,
-                    "version": before.version,
                 },
                 "after": {
                     "label": after.label,
                     "match_value": after.match_value,
-                    "counterparty_account_id": after.counterparty_account_id,
                     "priority": after.priority,
                     "active": after.active,
-                    "version": after.version,
                 },
             })),
         },
@@ -358,7 +357,10 @@ pub async fn soft_delete_by_id_for_company(
                 entity_type: "reconciliation_rules".to_string(),
                 entity_id: id,
                 details_json: Some(serde_json::json!({
+                    "rule_id": id,
                     "soft_delete": true,
+                    "before": { "active": true },
+                    "after": { "active": false },
                 })),
             },
         )
@@ -368,23 +370,29 @@ pub async fn soft_delete_by_id_for_company(
     Ok(transitioned)
 }
 
-/// Incrémente `applied_count` + `last_applied_at = NOW(3)`.
+/// Incrémente `applied_count` + `last_applied_at = NOW(3)` + bumps
+/// `version`. **Pas de WHERE clause sur version** (Pass 1 P-M ECH-10) :
+/// `applied_count` est un compteur statistique, donc l'UPDATE ne doit
+/// jamais échouer pour cause d'optimistic lock conflict avec un PATCH
+/// /rules concurrent. **Mais `version` doit être bumped** (Pass 1 code
+/// review HIGH AA1 — corrigé) : spec step 14 + scope-locked §5 + T2.2
+/// confirment 3 fois que `version=version+1` est requis dans le SET
+/// pour invalider les sessions édition utilisateur en cours et garder
+/// les audit logs cohérents. Sans le bump, un PATCH après un accept
+/// verrait une version stale et ne déclencherait pas OPTIMISTIC_LOCK_CONFLICT.
 ///
-/// **Pas d'optimistic lock sur `version`** (Pass 1 P-M ECH-10 / BH-F19) :
-/// `applied_count` est un compteur statistique, pas un invariant
-/// business. Un `accept-with-rule` concurrent à un `PATCH /rules` ne
-/// doit pas faire échouer l'un ou l'autre. `version` n'est pas
-/// incrémentée non plus pour la même raison — sinon chaque application
-/// invalide une session édition utilisateur en cours sans changement
-/// éditorial réel.
+/// Retourne `applied_count` post-incrément pour le caller (utilisé
+/// dans l'audit `reconciliation_rule.applied` field `applied_count_after`).
 pub async fn increment_applied_count_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     rule_id: i64,
-) -> Result<(), DbError> {
+) -> Result<i64, DbError> {
     sqlx::query(
         "UPDATE reconciliation_rules \
-         SET applied_count = applied_count + 1, last_applied_at = NOW(3) \
+         SET applied_count = applied_count + 1, \
+             last_applied_at = NOW(3), \
+             version = version + 1 \
          WHERE id = ? AND company_id = ?",
     )
     .bind(rule_id)
@@ -392,5 +400,14 @@ pub async fn increment_applied_count_in_tx(
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    Ok(())
+
+    let applied_count: i64 = sqlx::query_scalar(
+        "SELECT applied_count FROM reconciliation_rules WHERE id = ? AND company_id = ?",
+    )
+    .bind(rule_id)
+    .bind(company_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(applied_count)
 }

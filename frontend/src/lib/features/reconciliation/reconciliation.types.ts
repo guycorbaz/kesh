@@ -32,6 +32,7 @@ export interface ReconciliationCandidate {
 	// Story 8-5b — Rule candidate fields
 	ruleId: number | null;
 	ruleLabel: string | null;
+	ruleMatchType: string | null;
 	counterpartyAccountId: number | null;
 	counterpartyAccountName: string | null;
 	score: MatchScore;

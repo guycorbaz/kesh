@@ -121,6 +121,9 @@ pub struct ReconciliationCandidate {
     // ----- Rule candidate fields (Story 8-5b) -----
     pub rule_id: Option<i64>,
     pub rule_label: Option<String>,
+    /// Pass 1 code review LOW AA5 fix : match_type exposed for audit
+    /// replay + frontend display (§api-response-shapes spec).
+    pub rule_match_type: Option<String>,
     pub counterparty_account_id: Option<i64>,
     /// Display name `"{number} {name}"` du compte de contrepartie résolu
     /// via accounts_info (1 query batch, cf. §rule-application R5/Q5).
@@ -218,8 +221,11 @@ pub enum AcceptProposalInput {
     /// créer un journal_entry sans facture pré-existante. Le serveur
     /// résout serveur-side : (a) ledger banque via
     /// `bank_account.journal_account_id`, (b) re-validation match au
-    /// step 7 anti-race, (c) optimistic lock implicite via SELECT
-    /// FOR UPDATE bank_transaction. Pas de body `value_date` v0.1
+    /// step 7 anti-race, (c) optimistic version check `AND version = ?`
+    /// au step 13 (Pass 1 code review HIGH EC1 fix — pas de `SELECT FOR
+    /// UPDATE` sur bank_transactions ; le serialization repose
+    /// exclusivement sur l'advisory lock `with_account_lock`).
+    /// Pas de body `value_date` v0.1
     /// (Pass 3 R3 — l'utilisateur fait confiance à `tx.value_date`).
     #[serde(rename = "rule", rename_all = "camelCase")]
     Rule {
@@ -457,6 +463,7 @@ pub async fn get_proposals(
                         invoice_date: Some(inv.date),
                         rule_id: None,
                         rule_label: None,
+                        rule_match_type: None,
                         counterparty_account_id: None,
                         counterparty_account_name: None,
                         score: mp.score,
@@ -486,6 +493,7 @@ pub async fn get_proposals(
                         invoice_date: None,
                         rule_id: Some(rule.id),
                         rule_label: Some(rule.label.clone()),
+                        rule_match_type: Some(rule.match_type.as_str().to_string()),
                         counterparty_account_id: Some(rule.counterparty_account_id),
                         counterparty_account_name: Some(counterparty_display),
                         score: MatchScore {
@@ -752,11 +760,17 @@ pub async fn post_accept(
             | ReconciliationError::RuleMismatch { .. }
             | ReconciliationError::RuleDuplicate { .. },
         ) => {
+            // Pass 1 code review HIGH BH1 fix : defensive 500 au lieu
+            // de unreachable!() qui crash le task Tokio.
             drop(tx_outer);
-            unreachable!(
-                "variants Rule (Story 8-5b) jamais émis par accept_batch — \
-                 conflits Rule gérés en handler CRUD ou FailedProposal per-proposal"
-            )
+            tracing::error!(
+                "Story 8-5b Rule variant propagated to accept_batch — \
+                 defensive 500 fallback (should not reach: Rule conflicts \
+                 handled in CRUD handlers or per-proposal FailedProposal)"
+            );
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in accept_batch".into(),
+            ))
         }
     }
 }
@@ -1804,21 +1818,27 @@ async fn accept_one_rule(
         });
     }
 
-    // Step 14 — increment_applied_count_in_tx (atomique sans version bump).
-    if let Err(e) =
-        reconciliation_rules::increment_applied_count_in_tx(tx, company_id, rule_id).await
-    {
-        return Err(FailedProposal {
-            bank_transaction_id,
-            error_code: "DATABASE_ERROR".to_string(),
-            details: Some(serde_json::json!({ "message": e.to_string() })),
-        });
-    }
+    // Step 14 — increment_applied_count_in_tx (atomique avec version+1
+    // dans le SET — pas de WHERE version=? per Pass 1 ECH-10). Pass 1
+    // code review HIGH AA1 fix : version doit être bumped pour cohérence
+    // optimistic lock côté PATCH suivant.
+    let applied_count_after =
+        match reconciliation_rules::increment_applied_count_in_tx(tx, company_id, rule_id).await {
+            Ok(count) => count,
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
 
     // Step 15 — audit reconciliation_rule.applied (action distincte Q4b).
     let was_previously_rejected = bt.auto_match_rejected_at.is_some();
     // Pass 3 R4 — `value_date` brut nullable (peut être null), `entry_date`
     // résolu non-null (distinct du value_date) pour traçabilité.
+    // Pass 1 code review HIGH AA2 fix : `applied_count_after` requis par spec.
     let rule_applied_details = serde_json::json!({
         "rule_id": rule_id,
         "rule_label": rule.label,
@@ -1827,6 +1847,7 @@ async fn accept_one_rule(
         "bank_transaction_id": bank_transaction_id,
         "counterparty_account_id": counterparty_account_id,
         "journal_entry_id": journal_entry_id,
+        "applied_count_after": applied_count_after,
         "value_date": bt.value_date.map(|d| d.to_string()),
         "entry_date": entry_date.to_string(),
         "was_previously_rejected": was_previously_rejected,
@@ -1853,10 +1874,12 @@ async fn accept_one_rule(
     // Step 16 — audit reconciliation.accepted avec details.type='rule' (extension Pass 1 P-M).
     let mut amount_audit = bt.amount;
     amount_audit.rescale(2);
+    // Pass 1 code review HIGH AA3 fix : `match_type` requis par spec step 15.
     let accepted_details = serde_json::json!({
         "type": "rule",
         "bank_transaction_id": bank_transaction_id,
         "rule_id": rule_id,
+        "match_type": rule.match_type.as_str(),
         "counterparty_account_id": counterparty_account_id,
         "journal_entry_id": journal_entry_id,
         "amount": amount_audit.to_string(),
@@ -1888,8 +1911,12 @@ async fn accept_one_rule(
         // Sentinel invoice_id=0 (dette transverse 8-5a-bis BH-H1 v0.2).
         invoice_id: 0,
         journal_entry_id,
+        // Pass 1 code review LOW EC9 fix : score.total = 1.0 cohérent
+        // avec celui exposé par get_proposals pour candidate type=rule
+        // (`total: 1.0` au lieu de `0.0` qui pouvait être interprété
+        // comme "no match" par un consumer).
         score: MatchScore {
-            total: 0.0,
+            total: 1.0,
             amount_score: 0.0,
             reference_score: 0.0,
             contact_score: 0.0,
@@ -2043,7 +2070,10 @@ pub async fn post_reject(
             | ReconciliationError::RuleDuplicate { .. },
         ) => {
             drop(tx_outer);
-            unreachable!("variants Rule (Story 8-5b) jamais émis par reject_batch")
+            tracing::error!("Story 8-5b Rule variant propagated to reject_batch — defensive 500");
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in reject_batch".into(),
+            ))
         }
     }
 }
@@ -2539,7 +2569,10 @@ pub async fn post_manual(
             | ReconciliationError::RuleDuplicate { .. },
         ) => {
             let _ = tx_outer.rollback().await;
-            unreachable!("variants Rule (Story 8-5b) jamais émis par post_manual")
+            tracing::error!("Story 8-5b Rule variant propagated to post_manual — defensive 500");
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in post_manual".into(),
+            ))
         }
     }
 }
@@ -2958,7 +2991,10 @@ pub async fn post_split(
             | ReconciliationError::RuleDuplicate { .. },
         ) => {
             let _ = tx_outer.rollback().await;
-            unreachable!("variants Rule (Story 8-5b) jamais émis par post_split")
+            tracing::error!("Story 8-5b Rule variant propagated to post_split — defensive 500");
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in post_split".into(),
+            ))
         }
     }
 }

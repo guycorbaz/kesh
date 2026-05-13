@@ -411,18 +411,23 @@ pub async fn delete(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    // Pré-flight pour distinguer 404 vs idempotent. Sans ce SELECT, le
-    // repository renvoie `Ok(false)` pour les deux cas (déjà inactive
-    // OU cross-tenant), ce qui leak l'idempotence vers les attaquants.
-    reconciliation_rules::find_by_id_for_company(&state.pool, current_user.company_id, id)
-        .await?
-        .ok_or(AppError::ReconciliationRuleNotFound { rule_id: id })?;
-
+    // Pass 1 code review HIGH EC2 fix : pre-flight existence check
+    // déplacé INSIDE la transaction pour éliminer la race window où
+    // un concurrent PATCH (reactivate) entre l'existence check et le
+    // soft-delete causerait un double-delete avec audit trail corrompu
+    // (violation CO Art. 958f). Pattern aligné sur le PATCH handler.
     let mut tx = state
         .pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
+    // Existence check transaction-bound : si la rule n'existe pas
+    // (ou cross-tenant), 404 sans leak d'existence (KF-002).
+    reconciliation_rules::find_by_id_for_company(&mut *tx, current_user.company_id, id)
+        .await?
+        .ok_or(AppError::ReconciliationRuleNotFound { rule_id: id })?;
+
     let transitioned = reconciliation_rules::soft_delete_by_id_for_company(
         &mut tx,
         current_user.company_id,
@@ -431,10 +436,9 @@ pub async fn delete(
     )
     .await?;
 
-    // Idempotence : si rule déjà inactive, on log un audit informatif
-    // léger pour traçabilité (action `reconciliation_rule.deleted` avec
-    // `idempotent_noop: true`). Évite la confusion silencieuse mais
-    // distincte du log "vrai" delete émis par `soft_delete_by_id_for_company`.
+    // Idempotence : si rule déjà inactive (transitioned=false), on log un
+    // audit informatif léger pour traçabilité (action
+    // `reconciliation_rule.deleted` avec `idempotent_noop: true`).
     if !transitioned {
         audit_log::insert_in_tx(
             &mut tx,
@@ -444,6 +448,7 @@ pub async fn delete(
                 entity_type: "reconciliation_rules".to_string(),
                 entity_id: id,
                 details_json: Some(serde_json::json!({
+                    "rule_id": id,
                     "soft_delete": true,
                     "idempotent_noop": true,
                 })),

@@ -1494,6 +1494,10 @@ async fn accept_with_rule_emits_triple_audit_log(pool: MySqlPool) {
     .await;
     assert_eq!(resp.status(), 200);
 
+    // Pass 1 code review MEDIUM AA3 fix : assert exactement 3 entrées
+    // audit (reconciliation.accepted + reconciliation_rule.applied +
+    // journal_entry.created) + assert applied_count_after + match_type
+    // dans les details JSON.
     let applied_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_log WHERE action = 'reconciliation_rule.applied'",
     )
@@ -1506,8 +1510,34 @@ async fn accept_with_rule_emits_triple_audit_log(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(applied_count, 1);
-    assert_eq!(accepted_count, 1);
+    let je_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'journal_entry.created'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(applied_count, 1, "exactly one reconciliation_rule.applied");
+    assert_eq!(accepted_count, 1, "exactly one reconciliation.accepted");
+    assert_eq!(je_count, 1, "exactly one journal_entry.created");
+
+    // Verify applied_count_after field (Pass 1 HIGH AA2 fix).
+    let applied_details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log \
+         WHERE action = 'reconciliation_rule.applied' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(applied_details["applied_count_after"], 1);
+
+    // Verify match_type field in reconciliation.accepted (Pass 1 HIGH AA3 fix).
+    let accepted_details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log \
+         WHERE action = 'reconciliation.accepted' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(accepted_details["match_type"], "counterparty_contains");
 }
 
 // ============================================================
