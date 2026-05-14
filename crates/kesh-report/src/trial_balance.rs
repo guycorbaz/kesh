@@ -55,6 +55,10 @@ pub async fn generate(
 ) -> Result<TrialBalance, ReportError> {
     // Règle d'inclusion (Pass 1 ECH-03) :
     // (active=true OR EXISTS écritures dans la période)
+    //
+    // CORRECTION (Pass 4 dev) : la subquery `filtered_jel` filtre les lignes par
+    // fiscal_year + période AVANT le LEFT JOIN sur accounts, sinon SUM agrège
+    // les lignes de TOUS les fy (bug constaté avec fy2 sans écritures).
     let sql = "
         SELECT
             a.id AS account_id,
@@ -62,18 +66,22 @@ pub async fn generate(
             a.name,
             a.account_type,
             a.active,
-            COALESCE(SUM(jel.debit), 0) AS total_debit,
-            COALESCE(SUM(jel.credit), 0) AS total_credit,
+            COALESCE(SUM(filtered_jel.debit), 0) AS total_debit,
+            COALESCE(SUM(filtered_jel.credit), 0) AS total_credit,
             CASE
-                WHEN a.account_type IN ('Asset', 'Expense') THEN COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0)
-                ELSE COALESCE(SUM(jel.credit), 0) - COALESCE(SUM(jel.debit), 0)
+                WHEN a.account_type IN ('Asset', 'Expense')
+                    THEN COALESCE(SUM(filtered_jel.debit), 0) - COALESCE(SUM(filtered_jel.credit), 0)
+                ELSE COALESCE(SUM(filtered_jel.credit), 0) - COALESCE(SUM(filtered_jel.debit), 0)
             END AS balance
         FROM accounts a
-        LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id
-        LEFT JOIN journal_entries je ON je.id = jel.entry_id
-            AND je.company_id = ?
-            AND je.fiscal_year_id = ?
-            AND je.entry_date BETWEEN ? AND ?
+        LEFT JOIN (
+            SELECT jel.account_id, jel.debit, jel.credit
+            FROM journal_entry_lines jel
+            INNER JOIN journal_entries je ON je.id = jel.entry_id
+            WHERE je.company_id = ?
+              AND je.fiscal_year_id = ?
+              AND je.entry_date BETWEEN ? AND ?
+        ) AS filtered_jel ON filtered_jel.account_id = a.id
         WHERE a.company_id = ?
           AND (
               a.active = TRUE
@@ -91,7 +99,7 @@ pub async fn generate(
     ";
 
     let rows = sqlx::query_as::<_, TrialBalanceRow>(sql)
-        .bind(company_id) // je.company_id (LEFT JOIN)
+        .bind(company_id) // filtered_jel.je.company_id
         .bind(period.fiscal_year_id)
         .bind(period.start_date)
         .bind(period.end_date)
