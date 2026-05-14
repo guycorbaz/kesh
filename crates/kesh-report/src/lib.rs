@@ -17,12 +17,12 @@ pub mod journal_report;
 pub mod period;
 pub mod trial_balance;
 
-pub use balance_sheet::{generate as generate_balance_sheet, AccountBalance, BalanceSheet};
+pub use balance_sheet::{AccountBalance, BalanceSheet, generate as generate_balance_sheet};
 pub use errors::ReportError;
-pub use income_statement::{generate as generate_income_statement, IncomeStatement};
+pub use income_statement::{IncomeStatement, generate as generate_income_statement};
 pub use journal_report::{
-    generate as generate_journal_report, JournalEntryLineRow, JournalEntryRow, JournalReport,
-    JournalSection,
+    JournalEntryLineRow, JournalEntryRow, JournalReport, JournalSection,
+    generate as generate_journal_report,
 };
 pub use period::ReportPeriod;
-pub use trial_balance::{generate as generate_trial_balance, TrialBalance, TrialBalanceRow};
+pub use trial_balance::{TrialBalance, TrialBalanceRow, generate as generate_trial_balance};

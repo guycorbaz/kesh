@@ -44,7 +44,7 @@ impl ReportPeriod {
             fiscal_year_id,
         )
         .await?
-        .ok_or(ReportError::FiscalYearNotFound)?;
+        .ok_or(ReportError::FiscalYearNotFound { fiscal_year_id })?;
 
         // Pré-validation : si une borne explicite est hors fy, rejeter
         // (Pass 3 ECH3-03 : message d'erreur plus précis avant la résolution asymétrique)

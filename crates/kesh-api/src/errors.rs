@@ -443,6 +443,68 @@ pub enum AppError {
     /// per-proposal.
     #[error("Règle de réconciliation : ne match plus la transaction (rule_id={rule_id})")]
     ReconciliationRuleNoLongerMatches { rule_id: i64 },
+
+    // --- Story 9-1 (Rapports comptables) ---
+    /// L'exercice fiscal demandé n'existe pas (ou n'appartient pas à la company
+    /// du current user). 404 `FISCAL_YEAR_NOT_FOUND`.
+    #[error("Exercice fiscal introuvable (fiscal_year_id={fiscal_year_id})")]
+    ReportFiscalYearNotFound { fiscal_year_id: i64 },
+
+    /// La période demandée dépasse les bornes de l'exercice fiscal. Body 400
+    /// avec `details: { fyStart, fyEnd, requestedStart, requestedEnd }`.
+    ///
+    /// Pass 3 BH3-03 : ce variant utilise un body JSON ad-hoc divergent du
+    /// pattern `build_response` standard car `ErrorBody` n'a pas de champ
+    /// `details`. Refactor v0.2 (L69 dette tracée).
+    #[error(
+        "Période hors exercice : start={requested_start} end={requested_end} \
+         fy=[{fy_start};{fy_end}]"
+    )]
+    ReportPeriodOutOfFiscalYear {
+        fy_start: chrono::NaiveDate,
+        fy_end: chrono::NaiveDate,
+        requested_start: chrono::NaiveDate,
+        requested_end: chrono::NaiveDate,
+    },
+}
+
+// --- Story 9-1 : From<ReportError> for AppError ---
+
+impl From<kesh_report::errors::ReportError> for AppError {
+    fn from(err: kesh_report::errors::ReportError) -> Self {
+        use kesh_report::errors::ReportError;
+        match err {
+            ReportError::Db(db_err) => AppError::Database(db_err),
+            ReportError::FiscalYearNotFound { fiscal_year_id } => {
+                AppError::ReportFiscalYearNotFound { fiscal_year_id }
+            }
+            ReportError::PeriodInvalid { reason } => AppError::Validation(reason),
+            ReportError::PeriodOutOfFiscalYear {
+                fy_start,
+                fy_end,
+                requested_start,
+                requested_end,
+            } => AppError::ReportPeriodOutOfFiscalYear {
+                fy_start,
+                fy_end,
+                requested_start,
+                requested_end,
+            },
+            ReportError::TrialBalanceUnbalanced {
+                total_debit,
+                total_credit,
+            } => {
+                tracing::error!(
+                    %total_debit,
+                    %total_credit,
+                    "trial_balance unbalanced — invariant cassé"
+                );
+                AppError::Internal(format!(
+                    "trial balance unbalanced: debit={total_debit} credit={total_credit}"
+                ))
+            }
+        }
+    }
 }
 
 /// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
@@ -1164,6 +1226,41 @@ impl IntoResponse for AppError {
                     "RECONCILIATION_RULE_NO_LONGER_MATCHES",
                     "Variant Rule jamais émis comme erreur globale (bug interne)",
                 )
+            }
+
+            // --- Story 9-1 : Rapports comptables ---
+            AppError::ReportFiscalYearNotFound { fiscal_year_id } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "FISCAL_YEAR_NOT_FOUND",
+                        "message": "Exercice comptable introuvable pour cette company.",
+                        "details": { "fiscalYearId": fiscal_year_id },
+                    }
+                });
+                (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+
+            // Pass 3 BH3-03 : variant ad-hoc JSON divergent (ErrorBody standard n'a pas
+            // de champ `details`). L69 dette refactor v0.2.
+            AppError::ReportPeriodOutOfFiscalYear {
+                fy_start,
+                fy_end,
+                requested_start,
+                requested_end,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "REPORT_PERIOD_OUT_OF_FISCAL_YEAR",
+                        "message": "La période sélectionnée dépasse les bornes de l'exercice.",
+                        "details": {
+                            "fyStart": fy_start.format("%Y-%m-%d").to_string(),
+                            "fyEnd": fy_end.format("%Y-%m-%d").to_string(),
+                            "requestedStart": requested_start.format("%Y-%m-%d").to_string(),
+                            "requestedEnd": requested_end.format("%Y-%m-%d").to_string(),
+                        },
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
 
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,

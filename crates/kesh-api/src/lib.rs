@@ -353,6 +353,23 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reconciliation/rules/{id}",
             get(routes::reconciliation_rules::detail),
+        )
+        // Story 9-1 : rapports comptables (tous rôles authentifiés — lecture seule, FR65).
+        .route(
+            "/api/v1/reports/balance-sheet",
+            get(routes::reports::get_balance_sheet),
+        )
+        .route(
+            "/api/v1/reports/income-statement",
+            get(routes::reports::get_income_statement),
+        )
+        .route(
+            "/api/v1/reports/trial-balance",
+            get(routes::reports::get_trial_balance),
+        )
+        .route(
+            "/api/v1/reports/journals",
+            get(routes::reports::get_journal_report),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)
