@@ -222,7 +222,9 @@ async fn create_acc(
 }
 
 async fn archive_acc(pool: &MySqlPool, account_id: i64, user_id: i64) {
-    accounts::archive(pool, account_id, 1, user_id).await.unwrap();
+    accounts::archive(pool, account_id, 1, user_id)
+        .await
+        .unwrap();
 }
 
 async fn post_entry(
@@ -300,8 +302,15 @@ async fn setup_full(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
     )
     .await;
 
-    let acc_1000_asset =
-        create_acc(pool, user_id, company_id, "1000", "Banque", AccountType::Asset).await;
+    let acc_1000_asset = create_acc(
+        pool,
+        user_id,
+        company_id,
+        "1000",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
     let acc_2000_liab = create_acc(
         pool,
         user_id,
@@ -629,9 +638,18 @@ async fn default_period_uses_fiscal_year_full_range_all_endpoints(pool: MySqlPoo
             .unwrap();
         assert_eq!(resp.status(), 200, "endpoint: {endpoint}");
         let body: Value = resp.json().await.unwrap();
-        assert_eq!(body["period"]["fiscalYearId"], ctx.fy_id, "endpoint: {endpoint}");
-        assert_eq!(body["period"]["startDate"], "2026-07-01", "endpoint: {endpoint}");
-        assert_eq!(body["period"]["endDate"], "2027-06-30", "endpoint: {endpoint}");
+        assert_eq!(
+            body["period"]["fiscalYearId"], ctx.fy_id,
+            "endpoint: {endpoint}"
+        );
+        assert_eq!(
+            body["period"]["startDate"], "2026-07-01",
+            "endpoint: {endpoint}"
+        );
+        assert_eq!(
+            body["period"]["endDate"], "2027-06-30",
+            "endpoint: {endpoint}"
+        );
     }
 }
 
@@ -736,7 +754,12 @@ async fn multi_fiscal_years_isolation(pool: MySqlPool) {
     let rows = body["rows"].as_array().unwrap();
     for r in rows {
         let bal: Decimal = r["balance"].as_str().unwrap().parse().unwrap();
-        assert_eq!(bal, Decimal::ZERO, "fy2 row {} doit avoir balance=0", r["accountNumber"]);
+        assert_eq!(
+            bal,
+            Decimal::ZERO,
+            "fy2 row {} doit avoir balance=0",
+            r["accountNumber"]
+        );
     }
 }
 
@@ -807,10 +830,7 @@ async fn fiscal_year_id_zero_or_negative_returns_400(pool: MySqlPool) {
             .unwrap();
         assert_eq!(resp.status(), 400, "value: {value}");
         let body: Value = resp.json().await.unwrap();
-        assert_eq!(
-            body["error"]["code"], "VALIDATION_ERROR",
-            "value: {value}"
-        );
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "value: {value}");
     }
 }
 
@@ -1135,7 +1155,10 @@ async fn journals_orders_entries_chronologically(pool: MySqlPool) {
         .collect();
     let mut sorted = dates.clone();
     sorted.sort();
-    assert_eq!(dates, sorted, "Achats entries doivent être triés ASC par date");
+    assert_eq!(
+        dates, sorted,
+        "Achats entries doivent être triés ASC par date"
+    );
 }
 
 // ============================================================
@@ -1263,7 +1286,10 @@ async fn journals_preserves_line_order(pool: MySqlPool) {
     let entries = achats["entries"].as_array().unwrap();
     if !entries.is_empty() {
         let lines = entries[0]["lines"].as_array().unwrap();
-        let orders: Vec<i64> = lines.iter().map(|l| l["lineOrder"].as_i64().unwrap()).collect();
+        let orders: Vec<i64> = lines
+            .iter()
+            .map(|l| l["lineOrder"].as_i64().unwrap())
+            .collect();
         let mut sorted = orders.clone();
         sorted.sort();
         assert_eq!(orders, sorted);

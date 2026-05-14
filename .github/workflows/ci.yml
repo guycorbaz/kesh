@@ -39,6 +39,10 @@ jobs:
           --health-retries=10
     env:
       DATABASE_URL: mysql://root:kesh_root@127.0.0.1:3306/kesh
+      # Story 9-1 (Pass 2 ECH2-07 + L62) : pool DB ≥ 4 connexions pour les tests
+      # E2E HTTP rapports qui exécutent audit best-effort + SELECT métier
+      # concurrents sur la même requête.
+      SQLX_MAX_CONNECTIONS: "4"
     steps:
       - uses: actions/checkout@v4
 

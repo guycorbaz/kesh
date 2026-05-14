@@ -164,7 +164,9 @@ async fn balance_sheet_empty_returns_zero_with_equation(pool: MySqlPool) {
     )
     .await;
 
-    let period = ReportPeriod::resolve(&pool, cid, fy, None, None).await.unwrap();
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
     let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
         .await
         .unwrap();
@@ -204,7 +206,9 @@ async fn fiscal_year_non_calendar_isolation(pool: MySqlPool) {
     )
     .await;
 
-    let period = ReportPeriod::resolve(&pool, cid, fy, None, None).await.unwrap();
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
     let tb = kesh_report::generate_trial_balance(&pool, cid, &period)
         .await
         .unwrap();
@@ -238,7 +242,15 @@ async fn cross_tenant_aggregation_returns_zero(pool: MySqlPool) {
     )
     .await;
     let asset_b = create_acc(&pool, uid_b, cid_b, "1000", "Banque B", AccountType::Asset).await;
-    let revenue_b = create_acc(&pool, uid_b, cid_b, "4000", "Ventes B", AccountType::Revenue).await;
+    let revenue_b = create_acc(
+        &pool,
+        uid_b,
+        cid_b,
+        "4000",
+        "Ventes B",
+        AccountType::Revenue,
+    )
+    .await;
     post_entry(
         &pool,
         uid_b,
@@ -306,7 +318,9 @@ async fn period_bounds_inclusive(pool: MySqlPool) {
     )
     .await;
 
-    let period = ReportPeriod::resolve(&pool, cid, fy, None, None).await.unwrap();
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
     let tb = kesh_report::generate_trial_balance(&pool, cid, &period)
         .await
         .unwrap();
@@ -410,7 +424,9 @@ async fn balance_sheet_excludes_2979_from_liabilities(pool: MySqlPool) {
     )
     .await;
 
-    let period = ReportPeriod::resolve(&pool, cid, fy, None, None).await.unwrap();
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
     let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
         .await
         .unwrap();
