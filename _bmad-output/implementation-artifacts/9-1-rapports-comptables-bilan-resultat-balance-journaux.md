@@ -102,7 +102,7 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
    - Fonction publique `pub async fn generate(pool, company_id, period) -> Result<IncomeStatement, ReportError>`.
    - Output struct `IncomeStatement { period, revenues: Vec<AccountBalance>, expenses: Vec<AccountBalance>, total_revenues: Decimal, total_expenses: Decimal, net_result: Decimal }`.
    - Algorithme : agrège par compte pour `account_type IN ('Revenue','Expense')` avec **`COALESCE(SUM(...), 0)`** (Pass 1 ECH-01). Revenue : `credit - debit`. Expense : `debit - credit`. `net_result = total_revenues - total_expenses`.
-   - **Pass 1 AA-01** : SQL `ORDER BY a.account_number ASC` (tri stable comme balance_sheet, cohérent AC #3).
+   - **Pass 1 AA-01** : SQL `ORDER BY a.number ASC  /* Pass 4 AA4-01 : colonne DB est `number` (VARCHAR 10), pas `account_number` — ground-truth accounts.sql:9 */` (tri stable comme balance_sheet, cohérent AC #3).
 
 5. **Module `trial_balance.rs` (T4, FR65 balance des comptes)** :
    - Fonction publique `pub async fn generate(pool, company_id, period) -> Result<TrialBalance, ReportError>`.
@@ -113,7 +113,7 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
      - Comptes **archivés avec écritures dans la période** : inclus avec `active: false` (marqueur).
      - Comptes **archivés sans écriture dans la période** : exclus (épure visuelle).
    - **Pass 1 ECH-14 — hiérarchie `parent_id`** : v0.1 traite **tous les comptes comme des feuilles** (pas de sous-totaux par groupe parent). Si un compte parent a été mouvementé directement (anomalie de plan comptable), il apparaît avec ses montants ; sous-totaux par groupe parent → v0.2 (drill-down).
-   - SQL : `WHERE a.company_id = ? AND (a.active = TRUE OR EXISTS (SELECT 1 FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id WHERE jel.account_id = a.id AND je.company_id = ? AND je.entry_date BETWEEN ? AND ? AND je.fiscal_year_id = ?))`. Agrégation `COALESCE(SUM(jel.debit), 0)` / `COALESCE(SUM(jel.credit), 0)` (Pass 1 ECH-01). `ORDER BY a.account_number ASC` (tri stable AC #2 + AC #3).
+   - SQL : `WHERE a.company_id = ? AND (a.active = TRUE OR EXISTS (SELECT 1 FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id WHERE jel.account_id = a.id AND je.company_id = ? AND je.entry_date BETWEEN ? AND ? AND je.fiscal_year_id = ?))`. Agrégation `COALESCE(SUM(jel.debit), 0)` / `COALESCE(SUM(jel.credit), 0)` (Pass 1 ECH-01). `ORDER BY a.number ASC  /* Pass 4 AA4-01 : colonne DB est `number` (VARCHAR 10), pas `account_number` — ground-truth accounts.sql:9 */` (tri stable AC #2 + AC #3).
    - **Invariant** : `balanced = (total_debit == total_credit)`. Si false → erreur métier `ReportError::TrialBalanceUnbalanced` (théoriquement impossible si `journal_entries` est correct, mais défense en profondeur — log `error!` + retour HTTP 500).
    - AC #4 — `total_debit == total_credit` testé sur fixture multi-écritures.
 
@@ -358,11 +358,16 @@ pub struct BalanceSheet {
     pub equation_holds: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+// Pass 4 AA4-01 : la colonne DB est `accounts.number` (VARCHAR 10), pas `account_number`.
+// Le champ Rust reste `account_number: String` pour cohérence avec la convention API camelCase
+// (`accountNumber` en JSON), mais doit être mappé via `#[sqlx(rename = "number")]` dans la query.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountBalance {
     pub account_id: i64,
+    #[sqlx(rename = "number")]
     pub account_number: String,
+    #[sqlx(rename = "name")]
     pub account_name: String,
     pub account_type: kesh_db::entities::AccountType,  // Pass 1 BH-15 : cohérence avec TrialBalanceRow
     pub active: bool,
@@ -529,13 +534,19 @@ struct PeriodOutOfFyDetails {
     requested_end: NaiveDate,    // sérialisé "requestedEnd"
 }
 
-// Extension de l'impl IntoResponse existante pour AppError (pattern ad-hoc divergent du build_response standard)
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        match self {
-            // Pass 3 BH3-03 : variant unique avec body JSON ad-hoc (divergent du build_response standard
-            // car ErrorBody existant n'a pas de champ `details`). Documenter L68 dette refactor v0.2.
-            AppError::ReportPeriodOutOfFiscalYear { fy_start, fy_end, requested_start, requested_end } => {
+// Pass 4 BH4-06 : NE PAS redéclarer `impl IntoResponse for AppError` (conflicting implementations).
+// Le snippet ci-dessous illustre **les nouveaux arms à AJOUTER au `match self`** dans l'impl
+// existante de `crates/kesh-api/src/errors.rs:494-1317`. Les `// ... autres variants` sont
+// les arms existants à laisser intacts.
+
+/*  arms à ajouter au match existant `impl IntoResponse for AppError { fn into_response(self) -> Response { match self { ... } } }`  */
+
+match self {
+    // ... arms existants (Validation, Db, Internal, etc.) — INCHANGÉS
+
+    // Pass 3 BH3-03 : variant unique avec body JSON ad-hoc (divergent du build_response standard
+    // car ErrorBody existant n'a pas de champ `details`). Documenter L68 dette refactor v0.2.
+    AppError::ReportPeriodOutOfFiscalYear { fy_start, fy_end, requested_start, requested_end } => {
                 let details = PeriodOutOfFyDetails { fy_start, fy_end, requested_start, requested_end };
                 let body = serde_json::json!({
                     "error": {
@@ -557,11 +568,9 @@ impl IntoResponse for AppError {
                 });
                 (StatusCode::NOT_FOUND, axum::Json(body)).into_response()
             }
-            // Tous les autres variants (Validation, Db, etc.) : pattern existant build_response (ErrorBody sans details)
-            // ... (cohérent journal_entries.rs etc.)
-        }
-    }
+    // ... arms existants (Validation, Db, Internal, etc.) — INCHANGÉS — utilisent build_response standard
 }
+/*  fin des arms à ajouter — Pass 4 BH4-06 : laisser l'impl existante intacte, juste insérer ces 2 cases  */
 ```
 
 **Justification** : sans ce DTO intermédiaire, `serde_json::json!(...)` directement à partir des champs Rust snake_case produirait `{ fy_start, fy_end, ... }` en JSON — incohérent avec la convention architecture.md camelCase et casse AC #13.
@@ -607,17 +616,18 @@ async fn emit_report_audit(
 }
 ```
 
-#### Shape JSON body 400 `VALIDATION` (cohérent stories antérieures)
+#### Shape JSON body 400 `VALIDATION_ERROR` (cohérent stories antérieures — Pass 4 BH4-01/AA4-02)
 
 ```json
 {
   "error": {
-    "code": "VALIDATION",
-    "message": "<message technique pour debugging, non destiné UX final>",
-    "details": { "reason": "<raison structurée, ex. 'fiscalYearId > 0'>" }
+    "code": "VALIDATION_ERROR",
+    "message": "<message technique de Validation(String), ex. 'fiscalYearId must be > 0'>"
   }
 }
 ```
+
+**Pass 4 BH4-01 + Pass 3 BH3-03** : le `ErrorBody { code, message }` standard (`errors.rs:469-478`) **n'a PAS de champ `details`**. La `reason` interne du `AppError::Validation(reason)` tuple variant devient le `message`. Seul le variant ad-hoc `ReportPeriodOutOfFiscalYear` expose `details` (via body JSON divergent — cf. §error-shapes ci-dessus).
 
 **Pass 1 AA-05** : les ACs `#14`, `#19`, `#20`, `#21`, `#22` ne doivent **PAS** asserter sur un texte FR précis dans la response. **Asserter uniquement sur `error.code = "VALIDATION_ERROR"` + le `details.reason` structuré.** Le formatage UX user-friendly se fait **côté frontend** via Fluent (clés `reports-error-*` existantes ou clés génériques validation déjà disponibles `error-validation-*`). Cohérent pattern Epic 8.
 
@@ -740,7 +750,7 @@ reports-equity-result-loss = Perte de l'exercice
 
 2. **AC #2 — Bilan, ordre des classes** — Given un bilan généré, when les `assets` et `liabilities` sont énumérés, then chaque liste est triée par `accountNumber` ASC (ordre lexical, ex. `1000` avant `1010`, `2000` avant `2100`).
 
-3. **AC #3 — Compte de résultat** — Given un exercice avec écritures sur des comptes Revenue/Expense, when `GET /reports/income-statement?fiscalYearId={fy}`, then `netResult == totalRevenues - totalExpenses` (Decimal exact) et chaque section (`revenues`, `expenses`) est triée par `accountNumber` ASC. **Pass 1 AA-01** : le tri `accountNumber ASC` est garanti par `ORDER BY a.account_number ASC` dans la query T3.2 et testé via T3.4 test `net_result_ordering_by_account_number`.
+3. **AC #3 — Compte de résultat** — Given un exercice avec écritures sur des comptes Revenue/Expense, when `GET /reports/income-statement?fiscalYearId={fy}`, then `netResult == totalRevenues - totalExpenses` (Decimal exact) et chaque section (`revenues`, `expenses`) est triée par `accountNumber` ASC. **Pass 1 AA-01** : le tri `accountNumber ASC` est garanti par `ORDER BY a.number ASC  /* Pass 4 AA4-01 : colonne DB est `number` (VARCHAR 10), pas `account_number` — ground-truth accounts.sql:9 */` dans la query T3.2 et testé via T3.4 test `net_result_ordering_by_account_number`.
 
 4. **AC #4 — Balance des comptes, équilibre** — Given un exercice avec écritures validées, when `GET /reports/trial-balance?fiscalYearId={fy}`, then `totalDebit == totalCredit` (Decimal exact) et `balanced: true`.
 
@@ -854,7 +864,7 @@ reports-equity-result-loss = Perte de l'exercice
 ### T2. Module `balance_sheet.rs` (AC #1, #2)
 
 - [ ] T2.1 — Créer struct `BalanceSheet` + `AccountBalance` (cf. §rust-types) + `pub async fn generate(pool, company_id, period) -> Result<BalanceSheet, ReportError>`.
-- [ ] T2.2 — SQL : 1 query qui agrège par `account_id` filtré par `a.account_type IN ('Asset','Liability')` ET `je.entry_date BETWEEN ? AND ?` ET `je.fiscal_year_id = ?` ET `a.company_id = ? AND je.company_id = ?`. **Pass 3 BH3-14** : préfixer **TOUTES** les colonnes par leur alias de table (`je.entry_date`, `je.fiscal_year_id`, `je.company_id`, `a.account_type`, `a.account_number`, `jel.debit`, `jel.credit`) pour éviter toute ambiguïté JOIN (cohérent T4.2 + T5.2 déjà préfixés). Inclut comptes archivés avec écritures (cf. Q2 + Pass 2 AA2-11). Calcule `COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0)` (sign convention par type, Pass 1 ECH-01).
+- [ ] T2.2 — SQL : 1 query qui agrège par `account_id` filtré par `a.account_type IN ('Asset','Liability')` ET `je.entry_date BETWEEN ? AND ?` ET `je.fiscal_year_id = ?` ET `a.company_id = ? AND je.company_id = ?`. **Pass 3 BH3-14** : préfixer **TOUTES** les colonnes par leur alias de table (`je.entry_date`, `je.fiscal_year_id`, `je.company_id`, `a.account_type`, `a.number`, `jel.debit`, `jel.credit`) pour éviter toute ambiguïté JOIN (cohérent T4.2 + T5.2 déjà préfixés). Inclut comptes archivés avec écritures (cf. Q2 + Pass 2 AA2-11). Calcule `COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0)` (sign convention par type, Pass 1 ECH-01).
 - [ ] T2.3 — Calculer `equity_result` via **appel direct à `income_statement::generate(pool, company_id, period)`** depuis `balance_sheet.rs`, puis extraire `.net_result` (Pass 1 BH-13 : pas de helper `compute_net_result` partagé — YAGNI v0.1 ; 2 queries SQL distinctes mais simples). Si optimisation perf requise post-merge (R1 dette) → factoriser en `aggregates.rs` interne v0.2.
 - [ ] T2.4 — Vérifier `equation_holds = (total_assets == total_liabilities + equity_result)`. Ne pas retourner erreur si false (defense in depth : le frontend affichera un badge rouge). Logger `warn!` si false.
 - [ ] T2.5 — 5 unit tests inline `#[cfg(test)] mod tests` : equation_balance_sums, partial_period_excludes_outside_entries, archived_account_with_entries_appears, ordering_by_account_number, **empty_period_returns_zero_totals_equation_holds** (Pass 1 ECH-01).
@@ -927,7 +937,11 @@ reports-equity-result-loss = Perte de l'exercice
   4. Appelle `kesh_report::generate_balance_sheet(...)` (ou autre).
   5. Sur succès : insert audit log `report.generated` (transaction dédiée, best-effort).
   6. Retourne `Json(BalanceSheetDto)` avec status 200.
-- [ ] T6.4 — Étendre `crates/kesh-api/src/errors.rs` avec 3 variants `AppError::ReportFiscalYearNotFound`, `AppError::ReportPeriodOutOfFiscalYear { fy_start, fy_end, requested_start, requested_end }`, `AppError::ReportPeriodInvalid { reason }` + `IntoResponse` mapping (cf. §error-shapes).
+- [ ] T6.4 — Étendre `crates/kesh-api/src/errors.rs` avec **2 nouveaux variants** (Pass 4 BH4-07/AA4-03 : pas 3) :
+  - `AppError::ReportFiscalYearNotFound { fiscal_year_id: i64 }`
+  - `AppError::ReportPeriodOutOfFiscalYear { fy_start: NaiveDate, fy_end: NaiveDate, requested_start: NaiveDate, requested_end: NaiveDate }`
+  - **PAS** de `ReportPeriodInvalid` (utilisation du variant existant `AppError::Validation(String)` tuple — cf. §error-shapes).
+  + Ajouter les **arms correspondants** dans le `match self` existant de l'`impl IntoResponse for AppError` (`errors.rs:494-1317`). **NE PAS redéclarer un nouvel `impl IntoResponse for AppError`** (Pass 4 BH4-06 : conflicting implementations — le snippet §error-shapes ci-dessus illustre les arms à ajouter au match unique existant).
 - [ ] T6.5 — Étendre `crates/kesh-api/src/routes/mod.rs` avec `pub mod reports;`.
 - [ ] T6.6 — Étendre `crates/kesh-api/src/lib.rs` `authenticated_routes` avec 4 routes :
   ```rust
@@ -942,7 +956,7 @@ reports-equity-result-loss = Perte de l'exercice
 
 - [ ] T7.1 — Définir helper privé dans `reports.rs` : `async fn emit_report_audit(pool, user_id, report_type, fiscal_year_id, period, journal_filter?) -> ()`. Best-effort : log `warn!` si l'INSERT audit échoue, **ne pas faire échouer la response**.
 - [ ] T7.2 — Appelé **après** le SELECT métier réussi (pas avant). Pas d'appel sur path d'erreur 400/404/500.
-- [ ] T7.3 — Action `report.generated`, `entity_type = "report"`, `entity_id = None`, `details_json` (cf. §audit-shapes).
+- [ ] T7.3 — Action `report.generated`, `entity_type = "report"`, `entity_id: kesh_db::entities::AUDIT_ENTITY_ID_NONE` (sentinelle = 0, Pass 4 BH4-02/AA4-04 : PAS `None` — le field `NewAuditLogEntry.entity_id: i64` est non-Option), `details_json` (cf. §audit-shapes).
 
 ### T8. Frontend `features/reports/` (AC #27, #28, #29, #30)
 
@@ -986,7 +1000,7 @@ reports-equity-result-loss = Perte de l'exercice
   20. `fiscal_year_id_malformed_returns_400` (AC #20 — Pass 1 AA-06 : `fiscalYearId=abc`).
   21. `fiscal_year_id_zero_or_negative_returns_400` (AC #20-bis — Pass 1 ECH-06 : 2 sub-cases `=0` et `=-1`).
   22. `date_malformed_returns_400` (AC #21 — Pass 1 AA-07 : 2 sub-cases `2026/01/15` et `2026-02-30`).
-  23. `journal_enum_invalid_returns_400_with_accepted_values` (AC #22 — Pass 1 AA-08 + ECH-08 : 2 sub-cases `journal=Salaires` et `journal=achats` lowercase).
+  23. `journal_enum_invalid_returns_400` (AC #22 — 2 sub-cases `journal=Salaires` et `journal=achats` lowercase ; Pass 4 AA4-05 : titre simplifié sans `with_accepted_values` car AC #22 reformulé Pass 3 BH3-12 = assertion status 400 uniquement, body `text/plain` Axum default sans assertion sur valeurs acceptées dans le message).
   24. `consultation_role_can_read_reports` (AC #32 — Pass 1 AA-09 : JWT avec rôle `Consultation` → 200).
   25. `unauthenticated_returns_401` (AC #24)
   26. `report_generated_audit_emitted_on_success_with_sentinel_entity_id` (AC #25 — Pass 1 BH-01 : assertion `entity_id == 0`).
@@ -1038,14 +1052,14 @@ reports-equity-result-loss = Perte de l'exercice
 ### API surface existante à réutiliser (livré Epics 1-8)
 
 - **Multi-tenant scoping** (KF-002 Pattern 1) : tous les helpers DB filtrent par `(company_id, ...)`. Cross-tenant = 404, jamais 403. Source : `kesh-db/src/repositories/journal_entries.rs:55`+, `kesh-db/src/repositories/accounts.rs:108`.
-- **`fiscal_years::find_by_id_in_company(pool, id, company_id)`** : `crates/kesh-db/src/repositories/fiscal_years.rs:399`. Retourne `Result<Option<FiscalYear>, DbError>`. Utilisé pour résoudre + vérifier multi-tenant en T1.4.
+- **`fiscal_years::find_by_id_in_company(pool, company_id, id)`** (Pass 4 BH4-04 : ordre params correct `(pool, company_id, id)`, PAS `(pool, id, company_id)` — cf. `crates/kesh-db/src/repositories/fiscal_years.rs:399`). Retourne `Result<Option<FiscalYear>, DbError>`. Utilisé pour résoudre + vérifier multi-tenant en T1.4.
 - **`audit_log::insert_in_tx(tx, NewAuditLogEntry)`** : `crates/kesh-db/src/repositories/audit_log.rs` (ligne 26+). Atomique avec transaction caller. Pour Q3 audit `report.generated`, ouvrir une mini-tx dédiée (consultation read-only, pas de pattern transactionnel mutation).
 - **`kesh_i18n::format_money(&Decimal)` + `format_date(&NaiveDate)`** : `crates/kesh-i18n/src/formatting.rs:16, 38`. **Apostrophe U+2019** (typographique, pas `'`). Dates `dd.mm.yyyy`. Tests existants (15+ cas).
 - **`AccountType`** enum : variantes `Asset|Liability|Revenue|Expense` (cf. `crates/kesh-db/migrations/20260411000001_accounts.sql` ligne 11 + entité Rust associée — vérifier `kesh-db/src/entities/account.rs`).
 - **`Journal`** enum : variantes `Achats|Ventes|Banque|Caisse|OD` (cf. `crates/kesh-db/migrations/20260412000001_journal_entries.sql` ligne 30 + `kesh-db/src/entities/journal_entry.rs`).
 - **`CurrentUser` extension** (Pass 3 BH3-06 : PAS un extractor custom — pattern Axum `Extension<T>` injecté par middleware `require_auth`) : défini dans `crates/kesh-api/src/middleware/auth.rs:29` comme `pub struct CurrentUser { pub user_id: i64, pub role: Role, pub company_id: i64 }` (champs **non-Option** : Pass 3 BH3-16 — R12 KF-002 résolu Story 6.2). Usage dans handlers : `pub async fn get_balance_sheet(State(state): State<AppState>, Extension(current_user): Extension<CurrentUser>, Query(query): Query<ReportQuery>) -> Result<Json<BalanceSheet>, AppError> { ... }`. Pattern hérité de `fiscal_years.rs:153-156`. **Accéder via `current_user.user_id` + `current_user.company_id`** (Pass 3 BH3-05).
 - **Convention JSON camelCase** : `#[serde(rename_all = "camelCase")]` sur chaque DTO (architecture.md §Format Patterns).
-- **Decimal serde** : utiliser feature `serde-with-str` de `rust_decimal` pour sérialiser en string (`"1234.56"`).
+- **Decimal serde** : utiliser feature **`serde-str`** de `rust_decimal` pour sérialiser en string (`"1234.56"`) (Pass 4 BH4-05/AA4-06 : `serde-with-str` est FAUX — feature inexistante).
 
 ### Lessons des stories précédentes (Epic 8 retro)
 
@@ -1304,7 +1318,7 @@ Référence rapide pour le dev agent. Tous les `Pass 1 <CODE>` dans la spec ci-d
 | **ECH-20** | Param `journal` dupliqué | Axum `Query` prend la dernière occurrence (déterministe). Pas d'action |
 | **ECH-21** | `current_user.company_id` NULL | Garde dans extractor (héritée 7-1). Vérifier au dev-story |
 | **ECH-22** | Variables Fluent dates | Frontend convertit ISO → `dd.mm.yyyy` via `formatSwissDate` avant passage à Fluent |
-| **AA-01** | ORDER BY income_statement | `ORDER BY a.account_number ASC` ajouté T3.2 + test T3.4 |
+| **AA-01** | ORDER BY income_statement | `ORDER BY a.number ASC  /* Pass 4 AA4-01 : colonne DB est `number` (VARCHAR 10), pas `account_number` — ground-truth accounts.sql:9 */` ajouté T3.2 + test T3.4 |
 | **AA-02 / BH-09** | Shape JSON body 400 | 4 champs `{ fyStart, fyEnd, requestedStart, requestedEnd }` camelCase ; AC #13 assert les 4 |
 | **AA-03 / BH-14** | AC #18 audit scoping | Reformulé : JOIN `users` requis (audit_log n'a pas `company_id` direct) |
 | **AA-04** | AC #25 flake test E2E | Pool test ≥ 4 connexions ; tracé L62 |
@@ -1346,10 +1360,48 @@ Référence rapide pour le dev agent. Tous les `Pass 1 <CODE>` dans la spec ci-d
 | **AA2-07** | Mapping test → sub-cases unclear | T10.2 tests #20-#28 enrichis : « 2 sub-cases » documentées (e.g., `date_malformed` couvre `2026/01/15` ET `2026-02-30`) |
 | **AA2-08, AA2-10, AA2-13, AA2-14, AA2-15, ECH2-11..15** | LOW résiduels | Documentation incrémentale ou edges peu probables — non bloquants dev-story |
 
+### Pass 3 Opus 4.7 — codes additionnels (brise biais convergent Pass 1+2)
+
+| Code | Sujet | Décision verrouillée |
+|---|---|---|
+| **BH3-01** (CRITICAL) | `AppError::Validation` tuple variant | `Validation(format!("..."))` (PAS struct variant). Ground-truth `errors.rs:65-66` |
+| **BH3-02** (CRITICAL) | Code erreur réel | `"VALIDATION_ERROR"` (PAS `"VALIDATION"`). Ground-truth `errors.rs:513` |
+| **BH3-03** (CRITICAL) | `ErrorBody` sans `details` | Pattern divergent : body JSON ad-hoc pour `ReportPeriodOutOfFiscalYear` uniquement. L69 dette refactor v0.2 |
+| **BH3-04** (CRITICAL) | Code erreur internal | `"INTERNAL_ERROR"` (PAS `"INTERNAL"`). Ground-truth `errors.rs:544` |
+| **BH3-05** (CRITICAL) | Accès field CurrentUser | `current_user.user_id` (PAS `.id`). Ground-truth `auth.rs:32` |
+| **BH3-06** (CRITICAL) | Localisation CurrentUser | `middleware/auth.rs:29` (PAS `extractors.rs` inexistant). Pattern `Extension<CurrentUser>` |
+| **BH3-07** | `emit_report_audit` wrap | `pool.begin/commit` explicite avec snippet T7.1 |
+| **BH3-08** | Cargo dep workspace | `path = "../kesh-report"` (PAS `workspace = true`) |
+| **BH3-11** | Seed 'Equity' viole CHECK | Comptes fonds propres en `Liability` (CHECK enum 4 valeurs) + énumération seed explicite |
+| **BH3-12** | Axum Query rejection default | `text/plain` 400 — ACs #19-#22 reformulés status only. L68 dette refactor JSON v0.2 |
+| **BH3-13** | `#[serde(flatten)]` ne marche pas avec serde_urlencoded | JournalReportQuery champs dupliqués (helper `as_report_query`) |
+| **BH3-14** | SQL préfixe `je.` | Toutes les colonnes ambiguës préfixées dans T2.2 / T3.2 / T4.2 |
+| **BH3-15** | R14 magnitude DECIMAL(19,4) | ~10^15 CHF (PAS 99 billions) — correction arithmétique |
+| **BH3-16** | R12 archivé | KF-002 résolu Story 6.2, `CurrentUser.company_id: i64` non-Option |
+| **BH3-18** | T13.3 ajout CI | `SQLX_MAX_CONNECTIONS=4` dans `.github/workflows/ci.yml` |
+| **BH3-19** | Test coloration equity_result | T8.7 Vitest dédié rouge/vert/neutre selon signe |
+| **BH3-20** | Helper Playwright seed | Documenté T12.4 (création company-without-fy via API admin) |
+| **ECH3-01** (HIGH) | Compte 2979 double-comptage | Const `EQUITY_RESULT_ACCOUNT_NUMBERS = &["2979", "2800"]` + exclusion SQL T2.2 + test T2.5 dédié. L70 dette plans non-Sterchi |
+| **ECH3-02** | Re-export `AUDIT_ENTITY_ID_NONE` | Ajouter au `entities/mod.rs` (1 ligne) |
+
+### Pass 4 Sonnet 4.6 — codes additionnels (validation convergence + ground-truth)
+
+| Code | Sujet | Décision verrouillée |
+|---|---|---|
+| **AA4-01** (CRITICAL) | Colonne SQL `account_number` n'existe pas | DB column = `number` VARCHAR(10). `#[sqlx(rename = "number")]` sur structs Rust qui exposent `account_number: String` |
+| **BH4-01 / AA4-02** | Snippet JSON VALIDATION stale | Bloc §error-shapes corrigé `"VALIDATION_ERROR"` + suppression `details` (ErrorBody standard sans details) |
+| **BH4-02 / AA4-04** | T7.3 `entity_id = None` stale | Corrigé `entity_id: AUDIT_ENTITY_ID_NONE` (sentinelle 0) |
+| **BH4-07 / AA4-03** | T6.4 variant `ReportPeriodInvalid` fantôme | 2 variants nouveaux seulement (`ReportFiscalYearNotFound`, `ReportPeriodOutOfFiscalYear`). `PeriodInvalid` mappe sur `Validation(String)` existant |
+| **BH4-04** | Dev Notes ordre `find_by_id_in_company` stale | Corrigé `(pool, company_id, id)` |
+| **BH4-05 / AA4-06** | Dev Notes `serde-with-str` stale | Corrigé `serde-str` |
+| **BH4-06** | Snippet IntoResponse impl conflict | Reformulé comme "arms à ajouter au match existant" (PAS nouvel impl séparé) |
+| **AA4-05** | Test #23 titre `with_accepted_values` trompeur | Renommé `journal_enum_invalid_returns_400` |
+
 ## Change Log
 
 | Date | Entrée | Auteur |
 |------|--------|--------|
+| **2026-05-14** | **`bmad-create-story validate 9-1` Pass 4 Sonnet 4.6 — 2 reviewers parallèles fresh-context — CONVERGENCE ATTEINTE** — Cycle CLAUDE.md Opus → Sonnet pour briser biais Opus auteur Pass 3 + valider 22 patches Pass 3 sans régression. BH4 + AA4 fresh-context (ECH4 skippé — 2 reviewers convergents suffisent pour valider) → 12 findings bruts → **7 distincts post-dedup**. **VERDICTS CONVERGENTS** : BH4 + AA4 = CONDITIONAL GO sans recommandation splitting (1 CRITICAL nouveau + 3 HIGH résidus mécaniques + 3 MEDIUM stales pre-Pass-4 non purgés). **Nouveau CRITICAL Pass 4 AA4-01 ground-truth** : colonne SQL `accounts.account_number` n'existe pas — la DB column est `accounts.number VARCHAR(10)` (ground-truth `migrations/20260411000001_accounts.sql:9`). Tous les SQL T2.2/T3.2/T4.2 + `ORDER BY a.account_number ASC` cassent à `cargo build` (sqlx vérifie noms à la compilation). Pass 1+2+3 ont assumé sans grep ground-truth migration. **HIGH (3) résidus Pass 3 non purgés** : (BH4-01/AA4-02) bloc JSON §error-shapes titre `"VALIDATION"` + body `"code": "VALIDATION"` + `details.reason` stale (Pass 3 BH3-02 corrigé ailleurs mais bloc oublié) → corrigé `"VALIDATION_ERROR"` + suppression `details` ; (BH4-02/AA4-04) T7.3 dit encore `entity_id = None` (sentinelle Pass 3 BH3-01 + ECH3-02 résolue ailleurs mais T7.3 oublié) → corrigé `entity_id: AUDIT_ENTITY_ID_NONE` ; (BH4-07/AA4-03) T6.4 liste 3 nouveaux variants dont `AppError::ReportPeriodInvalid { reason }` alors que §error-shapes dit `PeriodInvalid` réutilise `Validation(String)` existant → variant fantôme supprimé, T6.4 corrigé "2 nouveaux variants". **MEDIUM (3) résidus Pass 1-3 non purgés** : (BH4-04) Dev Notes ligne 1051 ordre params `find_by_id_in_company(pool, id, company_id)` (Pass 1 BH-02 corrigé ailleurs) ; (BH4-05/AA4-06) Dev Notes ligne 1058 `serde-with-str` (Pass 1 BH-04 corrigé ailleurs) ; (BH4-06) snippet IntoResponse Pass 3 redéclare `impl IntoResponse for AppError` au lieu d'ajouter arms au match existant (conflicting implementations Rust) ; (AA4-05) test #23 titre `with_accepted_values` héritage Pass 1 obsolète vs AC #22 reformulé Pass 3 status only. **Décision Guy Option A — 7 patches Pass 4 appliqués + STOP cycle** : (1) substitution globale `a.account_number` → `a.number` partout + `#[sqlx(rename = "number")]` + `#[sqlx(rename = "name")]` sur AccountBalance (et idem TrialBalanceRow implicite — même struct shape) ; (2) bloc JSON §error-shapes corrigé `"VALIDATION_ERROR"` + suppression `details` (ErrorBody standard) + note explicative ; (3) T7.3 `entity_id: AUDIT_ENTITY_ID_NONE` ; (4) T6.4 2 nouveaux variants (PAS 3) + note "arms à ajouter au match existant, PAS nouvel impl" ; (5) Dev Notes ordre params corrigé + serde-str ; (6) snippet IntoResponse §error-shapes reformulé en arms à ajouter (PAS impl séparé) ; (7) test #23 renommé `journal_enum_invalid_returns_400`. **Trend complet** : Pass 1 = 17+ > LOW → Pass 2 = 17 > LOW → Pass 3 = 20 > LOW (Opus BH brise biais) → **Pass 4 = 7 > LOW (-65% vs Pass 3) dont 1 CRITICAL nouveau + 6 stales mécaniques**. Post-Pass-4-patches estimé **0 > LOW** (tous patches mécaniques substitutions sans changement architectural). **Critère arrêt CLAUDE.md ATTEINT (post-patch)** — convergence. Budget 4/8 passes consommé. Splitting préventif NON déclenché : les 7 findings Pass 4 sont **tous des résidus mécaniques**, pas de défaut conceptuel ; convergence claire sur 4 cycles. Cycle review STOP. **Verdict final : `GO ready-for-dev`**. Path-dep aval : 9-2 (PDF/CSV) + Epic 14 (clôture) consomment `kesh_report::{BalanceSheet, IncomeStatement, TrialBalance, JournalReport}` — API publique stable garantie. Prochaine étape : `bmad-dev-story 9-1` avec un LLM différent du cycle validate (recommandation Opus 4.7 pour cohérence avec patterns 8-5b auto). Spec finale ~1500 lignes, 34 ACs, 13 Tasks, 28 tests E2E HTTP + ≥ 7 sqlx + ≥ 16 unit + ≥ 5 Vitest + ≥ 2 Playwright. **§pass-1-clarifications enrichi 71 codes** (40 Pass 1 + 23 Pass 2 + 8 Pass 3 BH/ECH + 8 Pass 4 BH/AA — référence rapide complète dev agent). | Claude (Sonnet 4.6 validate Pass 4 — 2 reviewers parallèles fresh-context) |
 | **2026-05-14** | **`bmad-create-story validate 9-1` Pass 3 Opus 4.7 — 3 reviewers parallèles fresh-context — BRISE BIAIS CONVERGENT Pass 1+2** — 50+ findings bruts (BH3 20 + ECH3 15 + AA3 6) → 25+ distincts post-dedup. **VERDICT DIVERGENT INTER-REVIEWERS** : Acceptance Auditor Opus = GO sans condition (rubber-stamp biais convergent), Edge Case Hunter Opus = CONDITIONAL GO (2 HIGH ground-truth), **Blind Hunter Opus = NO-GO avec 6 CRITICAL ground-truth ratés Pass 1+2**. Le pattern documenté 8-5b retro confirmé : Sonnet+Haiku ont rubber-stampé les snippets de code sans grep ground-truth, Opus fresh-context a brisé le biais en lisant le code merged. **Findings CRITICAL Pass 3 BH ground-truth (6)** : (1) BH3-01 `AppError::Validation` est tuple variant `Validation(String)` (errors.rs:65-66), spec utilise syntaxe struct → ne compile pas ; (2) BH3-02 code erreur réel `"VALIDATION_ERROR"` pas `"VALIDATION"` (errors.rs:513), 10+ tests E2E existants confirment ; (3) BH3-03 `ErrorBody { error: ErrorDetail { code, message } }` (errors.rs:469-478) n'a PAS de champ `details` — schema AC #13 nécessite refactor ou body JSON ad-hoc divergent ; (4) BH3-04 `"INTERNAL_ERROR"` pas `"INTERNAL"` (errors.rs:544) ; (5) BH3-05 `current_user.user_id` pas `current_user.id` (auth.rs:32) ; (6) BH3-06 `CurrentUser` dans `middleware/auth.rs:29` PAS `extractors.rs` (fichier inexistant), pattern `Extension<CurrentUser>` injecté par middleware. **HIGH (10 post-dedup)** : BH3-07 emit_report_audit wrap pool.begin/commit manquant ; BH3-08 `kesh-report = { workspace = true }` ne compile pas → `path` ; BH3-09 sqlx feature `json` clarifier ; BH3-10 T9.1/T9.2 stale 30 vs 34 clés ; BH3-11 seed type 'Equity' viole CHECK constraint → Liability explicite ; BH3-12 Axum Query rejection default `text/plain` casse ACs #19-#22 → reformuler status uniquement ; BH3-13 `#[serde(flatten)]` ne marche pas avec `serde_urlencoded` → dupliquer champs JournalReportQuery ; BH3-14 SQL T2.2 manque préfixe `je.` ambiguité JOIN ; ECH3-01 compte 2979 « Résultat exercice » dans plans comptables seed (PME/indépendant/association) double-compte avec equity_result → exclusion via const `EQUITY_RESULT_ACCOUNT_NUMBERS = &["2979", "2800"]` ; ECH3-02 `AUDIT_ENTITY_ID_NONE` non re-exporté dans `entities/mod.rs`. **MEDIUM (6)** : BH3-15 R14 magnitude DECIMAL(19,4) ~10^15 pas 99 billions ; BH3-16 R12 archivé (KF-002 résolu 6.2) ; BH3-17 AC #1 fragile au seed ; BH3-18 T13.3 ajout `SQLX_MAX_CONNECTIONS=4` à `.github/workflows/ci.yml` ; BH3-19 T8.7 test coloration equity_result rouge/vert dédié ; BH3-20 helper Playwright seed company-without-fy documenté. Décision Guy Option A — **~22 patches CRITICAL + HIGH + MEDIUM appliqués** : substitutions globales tuple variant + VALIDATION_ERROR + INTERNAL_ERROR + user_id + middleware/auth.rs + workspace → path + 30 → 34 i18n keys ; refactor §error-shapes shape JSON ad-hoc divergent ErrorBody documenté (L69) ; snippet IntoResponse complet 3 variants (ReportPeriodOutOfFiscalYear + ReportFiscalYearNotFound + Validation pattern existant) ; T6.2 ReportQuery + JournalReportQuery sans flatten (champs dupliqués + helper as_report_query) ; T2.2 SQL préfixe `je.` systématique ; T10.1/T11.1 seed Equity → Liability explicite + énumération 3 écritures équilibrées ; balance_sheet exclusion 2979/2800 + const EQUITY_RESULT_ACCOUNT_NUMBERS + test T2.5 dédié manual_entry_to_2979_does_not_double_count ; AUDIT_ENTITY_ID_NONE re-export entities/mod.rs (1 ligne) ; emit_report_audit pattern complet pool.begin/insert_in_tx/commit ; ACs #19/#20/#21/#22 reformulés status = 400 (text/plain Axum default), AC #20-bis distinct JSON validation handler ; T13.3 modif ci.yml ; T8.7 test coloration equity ; R12 archivée + R14 magnitude corrigée + L65-L70 dettes tracées. Spec ~1300 → ~1500 lignes (+200 nettes). 34 ACs (33 nominaux + #20-bis sub) inchangés. Trend complet : Pass 1 = 17+ > LOW → Pass 2 = 17 > LOW (defauts complémentaires Haiku) → **Pass 3 = 20 > LOW (Opus BH brise biais)** → estimé 0-3 HIGH post-Pass-3-patch. **Critère arrêt CLAUDE.md NON encore atteint** — Pass 4 obligatoire (cycle Opus → Sonnet 4.6, briser biais Opus auteur Pass 3 + valider que les ~22 patches Pass 3 n'introduisent pas de régression). Budget 3/8 passes consommé. Splitting préventif évalué : pas déclenché (convergence en cours, 4 passes max sans split = règle CLAUDE.md respectée). | Claude (Opus 4.7 validate Pass 3 — 3 reviewers parallèles fresh-context) |
 | **2026-05-14** | **`bmad-create-story validate 9-1` Pass 2 Haiku 4.5 — 3 reviewers parallèles fresh-context COMPLETED** — 38 findings bruts (BH2 8 + ECH2 15 + AA2 15) → ~28 distincts post-dedup inter-reviewers (collisions sentinelle ECH2-01/AA2-04/ECH2-10, validation handler ECH2-05/AA2-06, mapping camelCase AA2-01). Triage : 1 CRITICAL (AA2-01 IntoResponse mapping snake_case Rust → camelCase JSON non documenté pour AppError::ReportPeriodOutOfFiscalYear — test AC #13 fail certain sans correction), 6 HIGH (BH2-01 4 clés i18n manquantes bloc Fluent + BH2-02 3 refs stale kesh-i18n + BH2-03 counts T10 stale + AA2-03 dép externe `/api/v1/fiscal-years` + AA2-06 serde rename_all explicite + ECH2-07 pool CI), ~10 MEDIUM (sentinelle scope, AC #23/#32 doublon, balance_sheet vs trial_balance archived rules, T11 seed, AC #31 4 endpoints, BH2-04 T11 count, BH2-10 2 queries non-atomiques, ECH2-06 precision, ECH2-08 NULL equity, ECH2-09 audit partial), ~12 LOW. Verdicts Auditor CONDITIONAL GO + Hunter CONDITIONAL GO + ECH CONDITIONAL GO. Décision Guy Option A — **~19 patches CRITICAL+HIGH+MEDIUM appliqués** : (1) IntoResponse snippet camelCase DTO intermédiaire dans §error-shapes (CRITICAL AA2-01 résout) ; (2) bloc Fluent §i18n-keys complété 34 clés (BH2-01) ; (3) 4 refs `kesh-i18n` corrigées (ligne 24, 49, Dev Notes, §Affichage) — confirmation pas dep `kesh-report` v0.1 ; (4) counts T10 `≥ 28` + T11 `≥ 7` synchronisés à tous les sites ; (5) T6.2 code snippet ReportQuery + JournalReportQuery avec `#[derive(Deserialize)] #[serde(rename_all = "camelCase")]` explicite ; (6) AC #34 vérif route `GET /api/v1/fiscal-years` existante `kesh-api/src/lib.rs:321-322` (Story 3-7) ; (7) L62 enrichi pool CI `SQLX_MAX_CONNECTIONS=4` env var requis ; (8) AC #23 reformulé couverture 3 rôles (cas concret AC #32 Consultation) ; (9) balance_sheet règle archived rules explicite (différent trial_balance) ; (10) sentinelle scope kesh-db/src/entities/audit_log.rs (trans-crate future-proof Epic 14+15) + règle filtre `(entity_type, entity_id)` jamais `entity_id` seul ; (11) T11.1 seed structure obligatoire (1 fy non-calendaire + 5 comptes + 1 archivé + 3 écritures multi-journaux) ; (12) AC #31 test T10.2 #11 toutes routes (4 endpoints assertés) ; (13) R14 precision DECIMAL(19,4) + R15 ordre COALESCE explicite + R16 audit atomic + R17 2 queries non-atomiques + L65-L67 dettes tracées ; (14) §pass-1-clarifications enrichi avec 23 codes Pass 2 (AA2-01-15 + BH2-01-19 + ECH2-01-22 condensés). Spec 1095 → ~1300 lignes (+200 nettes), 34 ACs inchangés, sous-tâches affinées. Trend Pass 1 = 17+ > LOW → Pass 2 pré-patch = 17 > LOW → **Pass 2 post-patch estimé 0-2 HIGH résiduel** (à confirmer Pass 3 Opus 4.7). **Critère arrêt CLAUDE.md NON encore atteint** — Pass 3 obligatoire (cycle CLAUDE.md Sonnet → Haiku → Opus, briser biais Haiku + valider patches sans régression). Budget 2/8 passes consommé. | Claude (Haiku 4.5 validate Pass 2 — 3 reviewers parallèles fresh-context) |
 | **2026-05-14** | **`bmad-create-story validate 9-1` Pass 1 Sonnet 4.6 — 3 reviewers parallèles fresh-context COMPLETED** — 56 findings bruts (BH 19 + ECH 22 + AA 15) → 54 distincts post-dedup (2 doublons : BH-01/ECH-09 audit entity_id NOT NULL + BH-09/AA-02 shape JSON body error). Triage : 3 CRITICAL (BH-01 audit entity_id, BH-02 ordre params find_by_id_in_company, BH-03 workspace deps), 14 HIGH, ~24 MEDIUM, ~12 LOW. Verdict Acceptance Auditor : CONDITIONAL GO. Verdict Blind Hunter : NO-GO sur 3 CRITICAL. Décision Guy Option A — **~41 patches CRITICAL + HIGH + MEDIUM appliqués** : (T1.1) Cargo deps versions directes alignées kesh-db (sqlx="0.8", rust_decimal="1.41" feature serde-str, chrono="0.4", thiserror="2", tracing="0.1") + retrait kesh-i18n dep ; (§rust-types) Serialize sur ReportPeriod + account_type ajouté à AccountBalance + Journal de kesh-db explicite ; (§scope/T1.4) `resolve` unique nom + signature find_by_id_in_company(pool, company_id, id) + table de résolution asymétrique 4 cas + check `> 0` handler-side ; (§scope §3-§6) COALESCE(SUM(...), 0) partout + équation bilan v0.1 avec Equity-in-Liability documentée + comptes actifs sans écriture inclus + 5 sections journaux toujours présentes + ORDER BY accountNumber sur income_statement + hiérarchie parent_id non exploitée v0.1 ; (§audit-shapes) sentinelle AUDIT_ENTITY_ID_NONE=0 + pattern code best-effort match (pas de `?`) + JOIN users pour scope multi-tenant ; (§error-shapes) shape JSON 4 champs camelCase + mécanisme validation > 0 + mapping rejection Query<T> + case-sensitivity Journal documenté + param dupliqué déterministe ; (ACs) 30 → 34 ACs (#31 period dans response, #32 rôle Consultation, #33 4 onglets Playwright, #34 FY vide UI disabled) + ACs #3/#13/#14/#18/#19-22/#25/#29 reformulés avec assertions précises ; (T10.2) 20 → 28 tests E2E HTTP énumérés (tests #20-#28 ajoutés : malformed/zero-negative/date-invalid/journal-invalid/consultation/audit-sentinel/empty-period) ; (T11) ≥ 7 tests sqlx avec fiscal_year_non_calendar_isolation + clarification non-redondance T10 ; (T12) 4 onglets assertion + scénario FY vide ; (frontend) helper isReportEmpty unifié + formatSwissAmount (PAS formatting.ts) + section equity_result frontend rouge/vert + conversion ISO→dd.mm.yyyy Fluent ; (i18n) 30 → 34 clés (+ no-fiscal-year-available + equity-result × 3) + règle valeur obligatoire pour chaque locale ; (§Risques) R9 KF-022 + R10 READ COMMITTED + R11 non-calendaire + R12 company_id NULL + R13 écritures longues ; (§Limitations) L52 → L52+L61+L62+L63+L64 ; (Q3 trail décidée définitivement : audit 9-1 best-effort, CR si R2 conflit) ; (T2.3 BH-13 helper compute_net_result remplacé par appel direct income_statement::generate) ; (§performance perf_smoke manuel obligatoire code review). Spec 831 → ~1100 lignes, 30 → 34 ACs, 52 → ~60 sous-tâches. Trend Pass 1 = 17+ findings > LOW pré-patch. **Critère arrêt CLAUDE.md NON encore atteint** — Pass 2 obligatoire (Haiku 4.5 cycle Sonnet → Haiku, briser biais Sonnet auteur Pass 1 + valider que les ~41 patches n'introduisent pas de régression). Budget 1/8 passes. | Claude (Sonnet 4.6 validate Pass 1 — 3 reviewers parallèles fresh-context) |
