@@ -1,9 +1,7 @@
 <script lang="ts">
 	// Story 9-1 — Vue Journaux.
-	import Big from 'big.js';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
 	import type { JournalReportDto } from './reports.types';
 
 	interface Props {
@@ -12,13 +10,7 @@
 	let { dto }: Props = $props();
 	let empty = $derived(isReportEmpty('journals', dto));
 
-	function fmt(v: string): string {
-		try {
-			return formatSwissAmount(new Big(v));
-		} catch {
-			return v;
-		}
-	}
+	const fmt = formatReportAmount;
 </script>
 
 <section class="space-y-4">
@@ -64,17 +56,25 @@
 						{/each}
 					{/if}
 					<div class="mt-2 flex justify-end gap-4 text-sm font-semibold">
-						<span>D: {fmt(section.sectionTotalDebit)}</span>
-						<span>C: {fmt(section.sectionTotalCredit)}</span>
+						<span
+							>{i18nMsg('reports-total-debit', 'Total débit')}: {fmt(
+								section.sectionTotalDebit,
+							)}</span
+						>
+						<span
+							>{i18nMsg('reports-total-credit', 'Total crédit')}: {fmt(
+								section.sectionTotalCredit,
+							)}</span
+						>
 					</div>
 				</div>
 			</details>
 		{/each}
 
 		<p class="rounded border bg-gray-50 p-3 text-right font-semibold">
-			{i18nMsg('reports-grand-total', 'Total général')}: D = {fmt(dto.grandTotalDebit)} | C = {fmt(
-				dto.grandTotalCredit,
-			)}
+			{i18nMsg('reports-grand-total', 'Total général')}:
+			{i18nMsg('reports-total-debit', 'Total débit')} = {fmt(dto.grandTotalDebit)} |
+			{i18nMsg('reports-total-credit', 'Total crédit')} = {fmt(dto.grandTotalCredit)}
 		</p>
 	{/if}
 </section>

@@ -1,6 +1,8 @@
 // Story 9-1 — Client API rapports comptables (4 endpoints GET /api/v1/reports/*).
 
+import Big from 'big.js';
 import { apiClient } from '$lib/shared/utils/api-client';
+import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 import type {
 	BalanceSheetDto,
 	IncomeStatementDto,
@@ -98,4 +100,17 @@ export function formatSwissDate(iso: string): string {
 	const parts = iso.split('-');
 	if (parts.length !== 3) return iso;
 	return `${parts[2]}.${parts[1]}.${parts[0]}`;
+}
+
+/**
+ * Formate un montant décimal suisse — wrapper sûr autour de `formatSwissAmount`.
+ * Si la valeur ne peut être parsée (NaN, vide, malformée), retourne la chaîne brute.
+ * Pass 1 code review patch P22 — DRY (anciennement dupliqué dans les 4 vues).
+ */
+export function formatReportAmount(v: string): string {
+	try {
+		return formatSwissAmount(new Big(v));
+	} catch {
+		return v;
+	}
 }

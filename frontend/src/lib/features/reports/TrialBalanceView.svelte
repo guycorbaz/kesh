@@ -1,9 +1,7 @@
 <script lang="ts">
 	// Story 9-1 — Vue Balance des comptes.
-	import Big from 'big.js';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
 	import type { TrialBalanceDto } from './reports.types';
 
 	interface Props {
@@ -12,13 +10,7 @@
 	let { dto }: Props = $props();
 	let empty = $derived(isReportEmpty('trial-balance', dto));
 
-	function fmt(v: string): string {
-		try {
-			return formatSwissAmount(new Big(v));
-		} catch {
-			return v;
-		}
-	}
+	const fmt = formatReportAmount;
 </script>
 
 <section class="space-y-4">
@@ -48,7 +40,8 @@
 						<td class="px-2 py-1 font-mono">{r.accountNumber}</td>
 						<td class="px-2 py-1">
 							{r.accountName}
-							{#if !r.active}<span class="ml-1 rounded bg-gray-200 px-1 text-xs">archivé</span
+							{#if !r.active}<span class="ml-1 rounded bg-gray-200 px-1 text-xs"
+									>{i18nMsg('reports-archived-label', 'archivé')}</span
 								>{/if}
 						</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.totalDebit)}</td>

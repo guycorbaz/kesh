@@ -775,3 +775,12 @@ reports-error-no-fiscal-year-available = No fiscal year available. Create a fisc
 reports-equity-result-section-title = Period result (before closing entries)
 reports-equity-result-profit = Period profit
 reports-equity-result-loss = Period loss
+
+# Alerts + badges UI (2 — code review Pass 1 i18n leaks)
+reports-equation-warning = ⚠️ Balance sheet equation unbalanced (verify source data).
+reports-archived-label = archived
+
+# Reports page — chrome (3 — code review Pass 1 i18n leaks)
+reports-page-title = Accounting Reports
+reports-instruction-select-and-generate = Select a fiscal year and click Generate.
+reports-loading = Generating report…

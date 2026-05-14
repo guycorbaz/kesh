@@ -1047,6 +1047,60 @@ reports-equity-result-loss = Perte de l'exercice
 - [x] T13.2 — README.md : vérifier section « Feuille de route » — Epic 9 statut `🚧 En cours` au démarrage 9-1 (épisode déjà tagué `🚧` lors de la création epic-9.md commit `95d7bc3`). Aucun changement v0.1 features tant que 9-2 (export) n'est pas livré.
 - [x] T13.3 — `.github/workflows/ci.yml` (Pass 3 BH3-18 + Pass 2 ECH2-07 + L62) : ajouter env var `SQLX_MAX_CONNECTIONS: "4"` au step `Backend (Rust)` pour garantir le pool ≥ 4 pendant `cargo test -- --test-threads=1` (audit best-effort + SELECT métier concurrents sur la même request). Si déjà présent (autres stories Epic 8), aucune modification.
 
+### Review Findings
+
+**Pass 1 code review Sonnet 4.6 (cycle CLAUDE.md, brise biais Opus 4.7 dev-story)** — 5 chunks × 3 reviewers BH+ECH+AA = 15 agents en parallèle sur diff `git diff main..HEAD` (6141 lignes, 36 fichiers). 152 findings bruts → ~75 distincts post-dedup → 1 decision-needed + 24 patches + 7 defer + ~50 dismiss après grep ground-truth.
+
+**Décisions clés grep-vérifiées avant triage** :
+- Test 7 `report_aggregates.rs:461` `matches!()` SANS `assert!()` → assertion no-op, AC #16 cross-tenant non couvert (triple convergence BH+ECH+AA)
+- `SQLX_MAX_CONNECTIONS` env var lue ZÉRO fois en Rust (`main.rs:43` hardcode `max_connections(5)`)
+- Clé i18n `reports-error-period-out-of-fiscal-year` définie en 4 locales mais ZÉRO call site frontend (dead key, AC #13/Pass 1 ECH-22 non livré côté UX)
+- `(e as Error).message ?? 'Erreur'` perd `ApiError.details` + fallback FR hardcodé
+- 3 strings FR hardcodées BalanceSheetView.svelte:134 + JournalReportView.svelte:67-68 + TrialBalanceView.svelte:51 (clés i18n existantes non utilisées)
+- ARIA tabs : zéro `onkeydown`/`tabindex`/`aria-controls`/`aria-labelledby` → axe a11y test ne scanne que le shell vide, populé jamais vérifié
+- Playwright `reports.spec.ts` : 2 tests réels au lieu de 3 promis dans JSDoc — AC #28 (T12.1 génération via UI) + AC #34 (T12.4 company sans fy) ABSENTS
+- ECH-A-F01 `equation_holds` latent post-Epic 14 (compte 2800 retained earnings) → DEFER + doc (décision Guy)
+
+**Decision-needed (1)** :
+- [x] [Review][Decision] equation_holds latent post-Epic 14 closure (compte 2800 retained earnings) — **DÉCIDÉ : defer + doc explicite L52-tris** (résolution Guy 2026-05-14 — Epic 14 clôture pas encore livré v0.1, équation correcte pre-closure)
+
+**Patches HIGH (8)** :
+- [ ] [Review][Patch] P1 — `assert!(matches!())` au lieu de `matches!()` test 7 [crates/kesh-db/tests/report_aggregates.rs:461]
+- [ ] [Review][Patch] P2 — Wrap "Équation bilan déséquilibrée" via i18nMsg (nouvelle clé `reports-equation-warning` × 4 locales) [frontend/src/lib/features/reports/BalanceSheetView.svelte:134]
+- [ ] [Review][Patch] P3 — Remplacer "D:" "C:" par clés `reports-total-debit`/`reports-total-credit` [frontend/src/lib/features/reports/JournalReportView.svelte:67-68]
+- [ ] [Review][Patch] P4 — Remplacer "archivé" par clé `account-archived-label` existante [frontend/src/lib/features/reports/TrialBalanceView.svelte:51]
+- [ ] [Review][Patch] P5 — error handler `isApiError()` + `error.details.fyStart/End` + `formatSwissDate` + Fluent `reports-error-period-out-of-fiscal-year` [frontend/src/routes/(app)/reports/+page.svelte:68]
+- [ ] [Review][Patch] P6 — ARIA tabs : `id` + `aria-controls` + `aria-labelledby` + `onkeydown` Arrow + roving `tabindex` [frontend/src/routes/(app)/reports/+page.svelte:98-118]
+- [ ] [Review][Patch] P7 — Ajouter test Playwright AC #28 T12.1 (génération bilan via UI + assertion montant apostrophe) [frontend/tests/e2e/reports.spec.ts]
+- [ ] [Review][Patch] P8 — Ajouter test Playwright AC #34 T12.4 (company sans FY → bouton disabled + message) [frontend/tests/e2e/reports.spec.ts]
+- [ ] [Review][Patch] P23 — Retirer `SQLX_MAX_CONNECTIONS` no-op de ci.yml + commentaire trace [.github/workflows/ci.yml] *(décision Guy 2026-05-14 — `--test-threads=1` serialise déjà tout)*
+
+**Patches MEDIUM (15)** :
+- [ ] [Review][Patch] P9 — period.rs : ajouter 7 unit tests inline (T1.5 : default_period, partial_period_*, period_out_of_fy_*, period_inversed, period_same_day_is_valid) [crates/kesh-report/src/period.rs]
+- [ ] [Review][Patch] P10 — income_statement.rs : test `net_result_ordering_by_account_number` (AC #3 explicit) [crates/kesh-report/src/income_statement.rs]
+- [ ] [Review][Patch] P11 — journal_report.rs : ajouter 3 unit tests inline (filter_unique_returns_one_section, empty_period_returns_5_empty_sections, fixed_order_when_filter_none) [crates/kesh-report/src/journal_report.rs]
+- [ ] [Review][Patch] P12 — `assert!(assets.len() >= 2)` au lieu de `if assets.len() >= 2` [crates/kesh-api/tests/reports_e2e.rs balance_sheet_orders_accounts_by_number]
+- [ ] [Review][Patch] P13 — Asserts numériques exacts `totalRevenues=500`, `totalExpenses=1000`, `netResult=-500` (pas juste tautologie) [crates/kesh-api/tests/reports_e2e.rs income_statement test]
+- [ ] [Review][Patch] P14 — Asserts numériques `totalAssets`/`totalLiabilities`/`equityResult` (pas que `equationHolds`) [crates/kesh-api/tests/reports_e2e.rs balance_sheet equation test]
+- [ ] [Review][Patch] P15 — AC #25 audit : assert `details_json` contient 5 champs `{ reportType, fiscalYearId, periodStart, periodEnd, journalFilter }` [crates/kesh-api/tests/reports_e2e.rs report_generated_audit_emitted_on_success]
+- [ ] [Review][Patch] P16 — Fallback `reports-equity-result-section-title` : ajouter "(avant clôture)" [frontend/src/lib/features/reports/BalanceSheetView.svelte:53]
+- [ ] [Review][Patch] P17 — Reset `periodStart`/`periodEnd` à `""` on FY change [frontend/src/routes/(app)/reports/+page.svelte ou ReportSelector]
+- [ ] [Review][Patch] P18 — `formatSwissDate` sur `fy.startDate`/`endDate` dropdown [frontend/src/lib/features/reports/ReportSelector.svelte:43]
+- [ ] [Review][Patch] P19 — Loading indicator dans tabpanel pendant generate [frontend/src/routes/(app)/reports/+page.svelte tabpanel]
+- [ ] [Review][Patch] P20 — Race-condition guard `generate()` (sequence counter, pattern Reconciliation) [frontend/src/routes/(app)/reports/+page.svelte:43-71]
+- [ ] [Review][Patch] P21 — +page.ts : `isApiError()` au lieu de `catch {}` silencieux [frontend/src/routes/(app)/reports/+page.ts:10-15]
+- [ ] [Review][Patch] P22 — Extract `fmt()` helper to reports.api.ts (DRY 4 duplications) [frontend/src/lib/features/reports/reports.api.ts + 4 vues]
+- [ ] [Review][Patch] P24 — Renforcer Playwright tab-count test + axe scan état populé (pas que shell vide) [frontend/tests/e2e/reports.spec.ts]
+
+**Deferred (7 — dettes documentées dans story file ou epic-9.md)** :
+- [x] [Review][Defer] DF1 — Snapshot isolation balance_sheet 4 queries (Pass 1 BH-13 design choice, low write concurrency) — deferred, design tradeoff
+- [x] [Review][Defer] DF2 — journal_report no debit==credit check (defense-in-depth, INSERT invariant garantit) — deferred, defense-in-depth nice-to-have
+- [x] [Review][Defer] DF3 — trial_balance EXISTS double scan perf (low v0.1 scale) — deferred, scale-bound
+- [x] [Review][Defer] DF4 — ORDER BY lexicographic VARCHAR (Sterchi 4-digit standard) — deferred, plans non-Sterchi → CR v0.2 L70
+- [x] [Review][Defer] DF5 — `archive_acc` hardcoded version=1 helper hygiene — deferred, test-helper drift risk
+- [x] [Review][Defer] DF6 — Closed fiscal_year test sqlx absent — deferred, regression guard nice-to-have
+- [x] [Review][Defer] DF7 — equation_holds latent post-Epic 14 (compte 2800 retained earnings) — deferred, Epic 14 clôture pas encore livré v0.1, doc L52-tris
+
 ## Dev Notes
 
 ### API surface existante à réutiliser (livré Epics 1-8)

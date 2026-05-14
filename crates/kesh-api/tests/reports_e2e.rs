@@ -442,6 +442,36 @@ async fn balance_sheet_returns_balanced_assets_liabilities(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["equationHolds"], true);
+
+    // Code review Pass 1 patch P14 — asserts numériques exacts au lieu de juste
+    // déléguer la correction au flag `equationHolds`. Seed setup_full (Pass 3 BH3-11) :
+    //   Assets : 1000 (E2 débit 500) + 1090 archivé (E3 débit 250) = 750
+    //   Liabilities : 2000 (E1 crédit 1000 + E3 crédit 250) = 1250 (3000 sans écriture, exclu via HAVING != 0)
+    //   equity_result = total_revenues 500 − total_expenses 1000 = -500
+    //   Équation : 750 == 1250 + (-500) = 750 ✓
+    let total_assets: Decimal = body["totalAssets"].as_str().unwrap().parse().unwrap();
+    let total_liabilities: Decimal = body["totalLiabilities"].as_str().unwrap().parse().unwrap();
+    let equity_result: Decimal = body["equityResult"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        total_assets,
+        dec!(750),
+        "totalAssets attendu = 1000:500 + 1090:250 = 750"
+    );
+    assert_eq!(
+        total_liabilities,
+        dec!(1250),
+        "totalLiabilities attendu = 2000:1250 (3000 exclu HAVING)"
+    );
+    assert_eq!(
+        equity_result,
+        dec!(-500),
+        "equity_result attendu = 500 − 1000 = -500"
+    );
+    assert_eq!(
+        total_assets,
+        total_liabilities + equity_result,
+        "équation manuelle indépendante du flag serveur"
+    );
 }
 
 // ============================================================
@@ -465,15 +495,21 @@ async fn balance_sheet_orders_accounts_by_number(pool: MySqlPool) {
         .unwrap();
     let body: Value = resp.json().await.unwrap();
     let assets = body["assets"].as_array().unwrap();
-    if assets.len() >= 2 {
-        let nums: Vec<&str> = assets
-            .iter()
-            .map(|a| a["accountNumber"].as_str().unwrap())
-            .collect();
-        let mut sorted = nums.clone();
-        sorted.sort();
-        assert_eq!(nums, sorted, "assets should be sorted by accountNumber ASC");
-    }
+    // Code review Pass 1 patch P12 — `assert!` (au lieu du `if` qui skippait
+    // silencieusement) : seed setup_full produit 1000:500 + 1090:250 = 2 assets,
+    // donc l'assertion d'ordering EST exécutable et doit l'être.
+    assert!(
+        assets.len() >= 2,
+        "seed setup_full doit produire au moins 2 assets (1000 + 1090 archivé avec écriture); \
+         si la précondition change, le test ordering devient vacuous → corriger le seed"
+    );
+    let nums: Vec<&str> = assets
+        .iter()
+        .map(|a| a["accountNumber"].as_str().unwrap())
+        .collect();
+    let mut sorted = nums.clone();
+    sorted.sort();
+    assert_eq!(nums, sorted, "assets should be sorted by accountNumber ASC");
 }
 
 // ============================================================
@@ -499,6 +535,26 @@ async fn income_statement_computes_net_result_and_orders(pool: MySqlPool) {
     let total_revenues: Decimal = body["totalRevenues"].as_str().unwrap().parse().unwrap();
     let total_expenses: Decimal = body["totalExpenses"].as_str().unwrap().parse().unwrap();
     let net_result: Decimal = body["netResult"].as_str().unwrap().parse().unwrap();
+    // Code review Pass 1 patch P13 — asserts numériques exacts (au lieu de la
+    // tautologie `net == rev - exp` qui passe pour 0=0-0). Seed setup_full :
+    //   E2 Banque 2026-12-31 : crédit 4000 (Revenue) = 500
+    //   E1 Achats 2026-09-15 : débit  5000 (Expense) = 1000
+    //   → netResult = 500 - 1000 = -500
+    assert_eq!(
+        total_revenues,
+        dec!(500),
+        "totalRevenues attendu = 4000:500"
+    );
+    assert_eq!(
+        total_expenses,
+        dec!(1000),
+        "totalExpenses attendu = 5000:1000"
+    );
+    assert_eq!(
+        net_result,
+        dec!(-500),
+        "netResult attendu = 500 - 1000 = -500"
+    );
     assert_eq!(net_result, total_revenues - total_expenses);
 }
 
@@ -896,9 +952,14 @@ async fn report_generated_audit_emitted_on_success(pool: MySqlPool) {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    // Vérifier audit row
-    let row: (i64, String, String, i64) = sqlx::query_as(
-        "SELECT user_id, action, entity_type, entity_id FROM audit_log \
+    // Vérifier audit row + details_json content (Pass 1 code review patch P15 —
+    // AC #25 exige `details_json = { reportType, fiscalYearId, periodStart,
+    // periodEnd, journalFilter }`. Auparavant seuls user/action/entity_* étaient
+    // assertés → faux-vert si une régression renommait les clés JSON.)
+    // Colonne `details_json` est de type `JSON` côté MariaDB (stockée comme blob
+    // binaire) → fetch en `Vec<u8>` puis parse UTF-8 + JSON.
+    let row: (i64, String, String, i64, Option<Vec<u8>>) = sqlx::query_as(
+        "SELECT user_id, action, entity_type, entity_id, details_json FROM audit_log \
          WHERE user_id = ? AND action = 'report.generated' \
          ORDER BY id DESC LIMIT 1",
     )
@@ -910,6 +971,24 @@ async fn report_generated_audit_emitted_on_success(pool: MySqlPool) {
     assert_eq!(row.1, "report.generated");
     assert_eq!(row.2, "report");
     assert_eq!(row.3, 0, "entity_id doit être AUDIT_ENTITY_ID_NONE (0)");
+
+    let details_bytes = row.4.expect("details_json doit être non-NULL");
+    let details: Value =
+        serde_json::from_slice(&details_bytes).expect("details_json doit être JSON valide");
+    assert_eq!(details["reportType"], "balance-sheet", "AC #25 reportType");
+    assert_eq!(details["fiscalYearId"], ctx.fy_id, "AC #25 fiscalYearId");
+    assert!(
+        details.get("periodStart").is_some(),
+        "AC #25 periodStart présent (peut être null)"
+    );
+    assert!(
+        details.get("periodEnd").is_some(),
+        "AC #25 periodEnd présent (peut être null)"
+    );
+    assert!(
+        details.get("journalFilter").is_some(),
+        "AC #25 journalFilter présent (peut être null)"
+    );
 }
 
 // ============================================================

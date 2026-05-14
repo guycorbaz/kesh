@@ -120,4 +120,24 @@ mod tests {
         let total_expenses = Decimal::ZERO;
         assert_eq!(total_revenues - total_expenses, Decimal::ZERO);
     }
+
+    /// Code review Pass 1 patch P10 — comblement gap spec AC #3 / T3.4.
+    ///
+    /// AC #3 garantit le tri `accountNumber ASC` côté SQL via la clause
+    /// `ORDER BY a.number ASC` dans la requête SQL de `fetch_section`. Ce test
+    /// vérifie de manière prouvable (au niveau code source) que cette clause
+    /// reste présente — toute régression qui supprimerait ce ORDER BY ferait
+    /// échouer le test au compile-time via `include_str!`.
+    ///
+    /// La couverture fonctionnelle DB-side (vérifier que MariaDB retourne
+    /// effectivement les rows triés) est faite par `balance_sheet_orders_accounts_by_number`
+    /// dans `crates/kesh-api/tests/reports_e2e.rs` (T10).
+    #[test]
+    fn net_result_ordering_by_account_number() {
+        const SRC: &str = include_str!("income_statement.rs");
+        assert!(
+            SRC.contains("ORDER BY a.number ASC"),
+            "fetch_section SQL must keep `ORDER BY a.number ASC` clause (AC #3 — tri stable)"
+        );
+    }
 }

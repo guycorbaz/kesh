@@ -1,9 +1,8 @@
 <script lang="ts">
 	// Story 9-1 — Vue Compte de résultat.
 	import Big from 'big.js';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
 	import type { IncomeStatementDto } from './reports.types';
 
 	interface Props {
@@ -12,13 +11,7 @@
 	let { dto }: Props = $props();
 	let empty = $derived(isReportEmpty('income-statement', dto));
 
-	function fmt(v: string): string {
-		try {
-			return formatSwissAmount(new Big(v));
-		} catch {
-			return v;
-		}
-	}
+	const fmt = formatReportAmount;
 
 	let netBig = $derived(
 		(() => {

@@ -775,3 +775,12 @@ reports-error-no-fiscal-year-available = Kein Geschäftsjahr verfügbar. Erstell
 reports-equity-result-section-title = Periodenergebnis (vor Abschlussbuchung)
 reports-equity-result-profit = Gewinn der Periode
 reports-equity-result-loss = Verlust der Periode
+
+# Alerts + badges UI (2 — code review Pass 1 i18n leaks)
+reports-equation-warning = ⚠️ Bilanzgleichung ungültig (Quelldaten prüfen).
+reports-archived-label = archiviert
+
+# Berichte-Seite — chrome (3 — code review Pass 1 i18n leaks)
+reports-page-title = Buchhaltungsberichte
+reports-instruction-select-and-generate = Wählen Sie ein Geschäftsjahr aus und klicken Sie auf Generieren.
+reports-loading = Bericht wird generiert…

@@ -3,6 +3,7 @@
 	// Pass 1 ECH-12 + AC #34 : si fiscal_years vide → dropdown vide + bouton disabled.
 
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { formatSwissDate } from './reports.api';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
 	interface Props {
@@ -40,7 +41,9 @@
 				aria-label={i18nMsg('reports-filter-fiscal-year', 'Exercice')}
 			>
 				{#each fiscalYears as fy (fy.id)}
-					<option value={fy.id}>{fy.name} ({fy.startDate} → {fy.endDate})</option>
+					<option value={fy.id}
+						>{fy.name} ({formatSwissDate(fy.startDate)} → {formatSwissDate(fy.endDate)})</option
+					>
 				{/each}
 			</select>
 		</label>

@@ -458,8 +458,8 @@ async fn report_period_resolve_cross_tenant_returns_fy_not_found(pool: MySqlPool
     let err = ReportPeriod::resolve(&pool, cid_a, fy_b, None, None)
         .await
         .unwrap_err();
-    matches!(
-        err,
-        kesh_report::ReportError::FiscalYearNotFound { fiscal_year_id: _ }
+    assert!(
+        matches!(err, kesh_report::ReportError::FiscalYearNotFound { .. }),
+        "expected FiscalYearNotFound on cross-tenant fy lookup, got: {err:?}"
     );
 }

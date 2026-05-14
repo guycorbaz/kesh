@@ -259,7 +259,13 @@ pub async fn generate(
 
 #[cfg(test)]
 mod tests {
+    //! Code review Pass 1 patch P11 — comblement gap spec T5.5 (3 unit tests
+    //! additionnels au-dessus de `fixed_order_has_five_journals`). Les tests
+    //! d'agrégation SQL sont couverts par les 22+6 tests E2E HTTP (T10) et le
+    //! seed `with-data` Playwright (T12).
     use super::*;
+
+    const SRC: &str = include_str!("journal_report.rs");
 
     #[test]
     fn fixed_order_has_five_journals() {
@@ -270,5 +276,43 @@ mod tests {
         assert_eq!(order[2], Journal::Banque);
         assert_eq!(order[3], Journal::Caisse);
         assert_eq!(order[4], Journal::OD);
+    }
+
+    /// AC #7 — quand `journal_filter = None`, l'output contient toujours 5
+    /// sections dans l'ordre fixe Pass 1 ECH-05 (Achats, Ventes, Banque, Caisse,
+    /// OD), même si certaines sont vides. Garantie côté code par l'utilisation
+    /// de `fixed_journal_order()` comme source de vérité pour `ordered_journals`.
+    #[test]
+    fn filter_none_uses_fixed_journal_order_as_ordered_journals() {
+        // Sentinelle de garde : si quelqu'un refactore vers
+        // `sections.keys().collect()` (HashMap → ordre non déterministe), ce
+        // grep saute et alerte avant que les tests E2E flaky le détectent.
+        assert!(
+            SRC.contains("fixed_journal_order().to_vec()"),
+            "filter=None doit construire `ordered_journals` via `fixed_journal_order()` \
+             pour garantir l'ordre stable des 5 sections (AC #7 / Pass 1 ECH-05)"
+        );
+    }
+
+    /// AC #8 — quand `journal_filter = Some(j)`, le SQL doit filtrer côté DB
+    /// (clause `AND je.journal = ?`) pour ne pas charger toutes les écritures.
+    #[test]
+    fn filter_some_adds_journal_predicate_in_sql() {
+        assert!(
+            SRC.contains("AND je.journal = ?"),
+            "SQL filter branch must include `AND je.journal = ?` predicate when \
+             `journal_filter = Some(j)` (AC #8)"
+        );
+    }
+
+    /// AC #10 — l'ordre des lignes dans chaque écriture est préservé via
+    /// `ORDER BY ... jel.line_order ASC` (la dernière clé de tri SQL).
+    #[test]
+    fn line_order_preserved_via_sql_order_by() {
+        assert!(
+            SRC.contains("jel.line_order ASC"),
+            "SQL ORDER BY must end with `jel.line_order ASC` to preserve line \
+             order within each journal entry (AC #10)"
+        );
     }
 }

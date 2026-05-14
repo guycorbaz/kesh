@@ -830,3 +830,12 @@ reports-error-no-fiscal-year-available = Aucun exercice comptable disponible. Cr
 reports-equity-result-section-title = Résultat de l'exercice (avant clôture)
 reports-equity-result-profit = Bénéfice de l'exercice
 reports-equity-result-loss = Perte de l'exercice
+
+# Alertes + badges UI (2 — code review Pass 1 i18n leaks)
+reports-equation-warning = ⚠️ Équation bilan déséquilibrée (vérifier données source).
+reports-archived-label = archivé
+
+# Page rapports — chrome (3 — code review Pass 1 i18n leaks)
+reports-page-title = Rapports comptables
+reports-instruction-select-and-generate = Sélectionnez un exercice et cliquez sur Générer.
+reports-loading = Génération du rapport en cours…

@@ -1,9 +1,8 @@
 <script lang="ts">
 	// Story 9-1 — Vue Bilan.
 	import Big from 'big.js';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
 	import type { BalanceSheetDto } from './reports.types';
 
 	interface Props {
@@ -13,13 +12,7 @@
 
 	let empty = $derived(isReportEmpty('balance-sheet', dto));
 
-	function fmt(v: string): string {
-		try {
-			return formatSwissAmount(new Big(v));
-		} catch {
-			return v;
-		}
-	}
+	const fmt = formatReportAmount;
 
 	let equityBig = $derived(
 		(() => {
@@ -39,12 +32,14 @@
 				: 'text-gray-700',
 	);
 
+	// P16 — fallback inclut "(avant clôture)" pour cohérence avec la valeur i18n canonique
+	// et préserve la nuance OR Art. 960b (résultat pre-clôture vs définitif).
 	let equityLabel = $derived(
 		equityBig.gt(0)
 			? i18nMsg('reports-equity-result-profit', "Bénéfice de l'exercice")
 			: equityBig.lt(0)
 				? i18nMsg('reports-equity-result-loss', "Perte de l'exercice")
-				: i18nMsg('reports-equity-result-section-title', "Résultat de l'exercice"),
+				: i18nMsg('reports-equity-result-section-title', "Résultat de l'exercice (avant clôture)"),
 	);
 </script>
 
@@ -131,7 +126,10 @@
 
 		{#if !dto.equationHolds}
 			<p class="rounded bg-red-50 p-3 text-sm text-red-900" role="alert">
-				⚠️ Équation bilan déséquilibrée (vérifier données source).
+				{i18nMsg(
+					'reports-equation-warning',
+					'⚠️ Équation bilan déséquilibrée (vérifier données source).',
+				)}
 			</p>
 		{/if}
 	{/if}

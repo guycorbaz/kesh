@@ -775,3 +775,12 @@ reports-error-no-fiscal-year-available = Nessun esercizio contabile disponibile.
 reports-equity-result-section-title = Risultato del periodo (prima della chiusura contabile)
 reports-equity-result-profit = Utile del periodo
 reports-equity-result-loss = Perdita del periodo
+
+# Alerts + badges UI (2 — code review Pass 1 i18n leaks)
+reports-equation-warning = ⚠️ Equazione di bilancio non bilanciata (verificare i dati sorgente).
+reports-archived-label = archiviato
+
+# Pagina rapporti — chrome (3 — code review Pass 1 i18n leaks)
+reports-page-title = Rapporti contabili
+reports-instruction-select-and-generate = Seleziona un esercizio contabile e clicca su Genera.
+reports-loading = Generazione del rapporto in corso…
