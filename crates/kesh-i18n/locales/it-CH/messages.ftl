@@ -731,3 +731,47 @@ reconciliation-rules-error-not-found = Regola non trovata.
 reconciliation-rules-error-duplicate = Una regola attiva esiste già per questa combinazione tipo/valore.
 reconciliation-rules-applied-badge = Regola
 reconciliation-rules-applied-score-na = Auto
+
+# === Story 9-1 — Rapporti contabili (34 chiavi) ===
+# TODO official translation — basico (Pass 1 ECH-19)
+
+reports-balance-sheet = Bilancio
+reports-income-statement = Conto economico
+reports-trial-balance = Bilancio di verifica
+reports-journals = Giornali
+
+reports-column-account-number = N° conto
+reports-column-account-name = Denominazione
+reports-column-debit = Dare
+reports-column-credit = Avere
+reports-column-balance = Saldo
+reports-column-entry-date = Data
+reports-column-description = Causale
+
+reports-section-assets = Attivi
+reports-section-liabilities = Passivi
+reports-section-equity = Patrimonio netto
+reports-section-revenues = Ricavi
+reports-section-expenses = Costi
+
+reports-total-assets = Totale attivi
+reports-total-liabilities = Totale passivi
+reports-total-revenues = Totale ricavi
+reports-total-expenses = Totale costi
+reports-total-debit = Totale dare
+reports-total-credit = Totale avere
+reports-net-result = Risultato netto
+reports-grand-total = Totale generale
+
+reports-filter-period = Periodo
+reports-filter-fiscal-year = Esercizio
+reports-filter-journal = Giornale
+reports-button-generate = Genera
+
+reports-error-no-entries-in-period = Nessuna registrazione nel periodo selezionato. Modifica le date o scegli un altro esercizio.
+reports-error-period-out-of-fiscal-year = Il periodo selezionato supera i limiti dell'esercizio. Scegli un periodo tra { $fyStart } e { $fyEnd }.
+reports-error-no-fiscal-year-available = Nessun esercizio contabile disponibile. Crea un esercizio prima di generare i rapporti.
+
+reports-equity-result-section-title = Risultato del periodo (prima della chiusura contabile)
+reports-equity-result-profit = Utile del periodo
+reports-equity-result-loss = Perdita del periodo

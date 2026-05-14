@@ -731,3 +731,47 @@ reconciliation-rules-error-not-found = Rule not found.
 reconciliation-rules-error-duplicate = An active rule already exists for this type/value combination.
 reconciliation-rules-applied-badge = Rule
 reconciliation-rules-applied-score-na = Auto
+
+# === Story 9-1 — Accounting reports (34 keys) ===
+# TODO official translation — basic translation (Pass 1 ECH-19)
+
+reports-balance-sheet = Balance Sheet
+reports-income-statement = Income Statement
+reports-trial-balance = Trial Balance
+reports-journals = Journals
+
+reports-column-account-number = Account No.
+reports-column-account-name = Account Name
+reports-column-debit = Debit
+reports-column-credit = Credit
+reports-column-balance = Balance
+reports-column-entry-date = Date
+reports-column-description = Description
+
+reports-section-assets = Assets
+reports-section-liabilities = Liabilities
+reports-section-equity = Equity
+reports-section-revenues = Revenues
+reports-section-expenses = Expenses
+
+reports-total-assets = Total Assets
+reports-total-liabilities = Total Liabilities
+reports-total-revenues = Total Revenues
+reports-total-expenses = Total Expenses
+reports-total-debit = Total Debit
+reports-total-credit = Total Credit
+reports-net-result = Net Result
+reports-grand-total = Grand Total
+
+reports-filter-period = Period
+reports-filter-fiscal-year = Fiscal Year
+reports-filter-journal = Journal
+reports-button-generate = Generate
+
+reports-error-no-entries-in-period = No entries in the selected period. Change the dates or pick a different fiscal year.
+reports-error-period-out-of-fiscal-year = The selected period exceeds the fiscal year bounds. Pick a period between { $fyStart } and { $fyEnd }.
+reports-error-no-fiscal-year-available = No fiscal year available. Create a fiscal year before generating reports.
+
+reports-equity-result-section-title = Period result (before closing entries)
+reports-equity-result-profit = Period profit
+reports-equity-result-loss = Period loss
