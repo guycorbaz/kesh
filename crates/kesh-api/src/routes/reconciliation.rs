@@ -26,11 +26,12 @@ use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
-    journal_entries, reconciliation as reconciliation_repo,
+    journal_entries, reconciliation as reconciliation_repo, reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
-    build_split_journal_entry, propose_matches, validate_split_balance, with_account_lock,
+    build_split_journal_entry, propose_matches, rule_matches, validate_split_balance,
+    with_account_lock,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -97,13 +98,36 @@ pub struct TransactionSummary {
     pub counterparty_name: Option<String>,
 }
 
+/// Story 8-5b §api-response-shapes Pass 1 P-H6 — discriminator candidate
+/// type. `Invoice` héritée 8-4 ; `Rule` nouveau 8-5b.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateType {
+    Invoice,
+    Rule,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReconciliationCandidate {
-    pub invoice_id: i64,
+    /// Story 8-5b — discriminator. Les fields ci-dessous sont Some/None
+    /// selon ce type.
+    pub candidate_type: CandidateType,
+    // ----- Invoice candidate fields -----
+    pub invoice_id: Option<i64>,
     pub invoice_number: Option<String>,
-    pub invoice_amount: String,
-    pub invoice_date: chrono::NaiveDate,
+    pub invoice_amount: Option<String>,
+    pub invoice_date: Option<chrono::NaiveDate>,
+    // ----- Rule candidate fields (Story 8-5b) -----
+    pub rule_id: Option<i64>,
+    pub rule_label: Option<String>,
+    /// Pass 1 code review LOW AA5 fix : match_type exposed for audit
+    /// replay + frontend display (§api-response-shapes spec).
+    pub rule_match_type: Option<String>,
+    pub counterparty_account_id: Option<i64>,
+    /// Display name `"{number} {name}"` du compte de contrepartie résolu
+    /// via accounts_info (1 query batch, cf. §rule-application R5/Q5).
+    pub counterparty_account_name: Option<String>,
     pub score: MatchScore,
 }
 
@@ -193,6 +217,22 @@ pub enum AcceptProposalInput {
         #[serde(default)]
         value_date: Option<NaiveDate>,
     },
+    /// Story 8-5b FR47 — application d'une `reconciliation_rule` pour
+    /// créer un journal_entry sans facture pré-existante. Le serveur
+    /// résout serveur-side : (a) ledger banque via
+    /// `bank_account.journal_account_id`, (b) re-validation match au
+    /// step 7 anti-race, (c) optimistic version check `AND version = ?`
+    /// au step 13 (Pass 1 code review HIGH EC1 fix — pas de `SELECT FOR
+    /// UPDATE` sur bank_transactions ; le serialization repose
+    /// exclusivement sur l'advisory lock `with_account_lock`).
+    /// Pas de body `value_date` v0.1
+    /// (Pass 3 R3 — l'utilisateur fait confiance à `tx.value_date`).
+    #[serde(rename = "rule", rename_all = "camelCase")]
+    Rule {
+        bank_transaction_id: i64,
+        rule_id: i64,
+        counterparty_account_id: i64,
+    },
 }
 
 impl AcceptProposalInput {
@@ -206,6 +246,10 @@ impl AcceptProposalInput {
                 ..
             }
             | AcceptProposalInput::Split {
+                bank_transaction_id,
+                ..
+            }
+            | AcceptProposalInput::Rule {
                 bank_transaction_id,
                 ..
             } => *bank_transaction_id,
@@ -245,7 +289,7 @@ where
             Err(rej) => {
                 let message = match &rej {
                     JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées v0.1 : [\"invoice\", \"split\"]".to_string()
+                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées v0.1 : [\"invoice\", \"split\", \"rule\"]".to_string()
                     }
                     JsonRejection::MissingJsonContentType(_) => {
                         "Content-Type attendu : application/json".to_string()
@@ -371,7 +415,29 @@ pub async fn get_proposals(
         reconciliation_repo::find_contacts_by_ids(&state.pool, current_user.company_id, &ids_vec)
             .await?;
 
-    // Pass 4 : score per-tx + build response.
+    // Pass 3.5 (Story 8-5b §rule-application) — pre-load active rules +
+    // accounts_info pour appliquer rule fallback dans Pass 4 (closure sync).
+    let active_rules =
+        reconciliation_rules::find_active_for_company(&state.pool, current_user.company_id).await?;
+    let accounts_info_rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, number, name FROM accounts WHERE company_id = ? AND active = TRUE",
+    )
+    .bind(current_user.company_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let accounts_info: HashMap<i64, (String, String)> = accounts_info_rows
+        .into_iter()
+        .map(|(id, number, name)| (id, (number, name)))
+        .collect();
+    let active_account_ids: std::collections::HashSet<i64> =
+        accounts_info.keys().copied().collect();
+
+    // Pass 4 : score per-tx + rule fallback + build response.
+    // AC #114 (Pass 2 Q8) : un invoice candidate avec score ≥ 0.5 prime
+    // sur les rules ; en dessous, rule + invoice coexistent (les 2
+    // s'affichent). Aucun invoice candidate → rule en fallback seul.
+    const INVOICE_OVERRIDE_THRESHOLD: f64 = 0.5;
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
         .map(|(tx, candidate_invoices)| {
@@ -381,19 +447,65 @@ pub async fn get_proposals(
                     .map(|inv| (inv.clone(), contacts_map.get(&inv.contact_id).cloned()))
                     .collect();
             let match_proposals = propose_matches(&tx, &candidates_with_contacts);
-            let candidates: Vec<ReconciliationCandidate> = match_proposals
+            let has_strong_invoice_match = match_proposals
+                .iter()
+                .any(|mp| mp.score.total >= INVOICE_OVERRIDE_THRESHOLD);
+
+            let mut candidates: Vec<ReconciliationCandidate> = match_proposals
                 .into_iter()
                 .filter_map(|mp| {
                     let inv = candidate_invoices.iter().find(|i| i.id == mp.invoice_id)?;
                     Some(ReconciliationCandidate {
-                        invoice_id: inv.id,
+                        candidate_type: CandidateType::Invoice,
+                        invoice_id: Some(inv.id),
                         invoice_number: inv.invoice_number.clone(),
-                        invoice_amount: inv.total_amount.normalize().to_string(),
-                        invoice_date: inv.date,
+                        invoice_amount: Some(inv.total_amount.normalize().to_string()),
+                        invoice_date: Some(inv.date),
+                        rule_id: None,
+                        rule_label: None,
+                        rule_match_type: None,
+                        counterparty_account_id: None,
+                        counterparty_account_name: None,
                         score: mp.score,
                     })
                 })
                 .collect();
+
+            // Story 8-5b rule fallback. Currency CHF only (Pass 3 R1
+            // currency filter cohérent L38) — déjà filtré au Pass 2 via
+            // `candidate_invoices.is_empty()` quand tx.currency != "CHF",
+            // mais rules NE PAS hériter du sign filter 8-4 invoice (P-H7).
+            if !has_strong_invoice_match && tx.currency == "CHF" {
+                if let Some(rule) = kesh_reconciliation::first_matching_rule(
+                    &active_rules,
+                    &tx,
+                    &active_account_ids,
+                ) {
+                    let counterparty_display = accounts_info
+                        .get(&rule.counterparty_account_id)
+                        .map(|(num, name)| format!("{num} {name}"))
+                        .unwrap_or_else(|| format!("compte #{}", rule.counterparty_account_id));
+                    candidates.push(ReconciliationCandidate {
+                        candidate_type: CandidateType::Rule,
+                        invoice_id: None,
+                        invoice_number: None,
+                        invoice_amount: None,
+                        invoice_date: None,
+                        rule_id: Some(rule.id),
+                        rule_label: Some(rule.label.clone()),
+                        rule_match_type: Some(rule.match_type.as_str().to_string()),
+                        counterparty_account_id: Some(rule.counterparty_account_id),
+                        counterparty_account_name: Some(counterparty_display),
+                        score: MatchScore {
+                            total: 1.0,
+                            amount_score: 0.0,
+                            reference_score: 0.0,
+                            contact_score: 0.0,
+                        },
+                    });
+                }
+            }
+
             ReconciliationProposal {
                 bank_transaction_id: tx.id,
                 transaction: TransactionSummary {
@@ -453,6 +565,23 @@ pub async fn post_accept(
                 if *invoice_id <= 0 {
                     return Err(AppError::Validation(
                         "invoiceId doit être strictement positif (type='invoice')".into(),
+                    ));
+                }
+            }
+            AcceptProposalInput::Rule {
+                rule_id,
+                counterparty_account_id,
+                ..
+            } => {
+                // Story 8-5b — pré-validation surface du variant Rule.
+                if *rule_id <= 0 {
+                    return Err(AppError::Validation(
+                        "ruleId doit être strictement positif (type='rule')".into(),
+                    ));
+                }
+                if *counterparty_account_id <= 0 {
+                    return Err(AppError::Validation(
+                        "counterpartyAccountId doit être strictement positif (type='rule')".into(),
                     ));
                 }
             }
@@ -619,6 +748,30 @@ pub async fn post_accept(
                 difference,
             })
         }
+        // Story 8-5b — variants Rule ajoutés à `ReconciliationError`
+        // pour les handlers `post_create_rule`/`post_update_rule` +
+        // `accept_one_rule` step 2. Ce flow (`accept_batch`) ne les émet
+        // pas : les conflits Rule sont gérés en handlers CRUD séparés ou
+        // en `FailedProposal` per-proposal (cf. §accept-with-rule-flow).
+        // Branche exhaustive uniquement.
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
+            // Pass 1 code review HIGH BH1 fix : defensive 500 au lieu
+            // de unreachable!() qui crash le task Tokio.
+            drop(tx_outer);
+            tracing::error!(
+                "Story 8-5b Rule variant propagated to accept_batch — \
+                 defensive 500 fallback (should not reach: Rule conflicts \
+                 handled in CRUD handlers or per-proposal FailedProposal)"
+            );
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in accept_batch".into(),
+            ))
+        }
     }
 }
 
@@ -716,6 +869,22 @@ async fn accept_one(
                 *bank_transaction_id,
                 splits,
                 *value_date,
+            )
+            .await
+        }
+        AcceptProposalInput::Rule {
+            bank_transaction_id,
+            rule_id,
+            counterparty_account_id,
+        } => {
+            accept_one_rule(
+                tx,
+                company_id,
+                bank_account_id,
+                user_id,
+                *bank_transaction_id,
+                *rule_id,
+                *counterparty_account_id,
             )
             .await
         }
@@ -1387,6 +1556,375 @@ async fn accept_one_split(
 }
 
 // ============================================================
+// Story 8-5b — accept_one_rule (FR47)
+// ============================================================
+
+/// Story 8-5b — traite UNE proposal `type='rule'` dans son savepoint.
+///
+/// Pattern strict `accept_one_split` (cf. spec ECH4-1 Pass 4) :
+/// retourne `Result<AcceptedProposal, FailedProposal>` pour TOUTES les
+/// erreurs per-proposal. Aucune escalade en `AppError` global — le
+/// batch handler accumule les `FailedProposal` et retourne 200 OK avec
+/// `failed[]` non vide.
+///
+/// 16 steps documentés §accept-with-rule-flow. Décisions Pass 1-4 :
+/// - Step 0 : currency CHF defense-in-depth (Pass 3 R1).
+/// - Step 4 : counterparty mismatch RULE_MISMATCH per-proposal (AC #120).
+/// - Step 7 : re-validation `rule_matches` anti-race (AC #119).
+/// - Step 11 : description handler-side `"Règle '{label}' — {counterparty}"`
+///   tronquée 200 chars UTF-8-safe (Pass 2 Q9).
+/// - Step 12 : `manual::build_journal_entry_for_counterparty` réutilisé
+///   (signature stable 8-5a-base).
+#[allow(clippy::too_many_arguments)]
+async fn accept_one_rule(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+    user_id: i64,
+    bank_transaction_id: i64,
+    rule_id: i64,
+    counterparty_account_id: i64,
+) -> Result<AcceptedProposal, FailedProposal> {
+    // Step 1 — bank_account.journal_account_id lookup (inline, transaction-bound).
+    let journal_account_row: Option<(Option<i64>,)> = match sqlx::query_as(
+        "SELECT journal_account_id FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .fetch_optional(&mut **tx)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+    let bank_ledger_account_id = match journal_account_row {
+        Some((Some(id),)) => id,
+        Some((None,)) => {
+            // Step 3 (Pass 4 ECH4-1) — per-proposal FailedProposal (PAS 412 global).
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+                details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+            });
+        }
+        None => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_FOUND".to_string(),
+                details: None,
+            });
+        }
+    };
+
+    // Step 2 — SELECT rule (transaction-bound). RuleNotFound si None ou inactive.
+    let rule =
+        match reconciliation_rules::find_by_id_for_company(&mut **tx, company_id, rule_id).await {
+            Ok(Some(r)) if r.active => r,
+            Ok(_) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "RECONCILIATION_RULE_NOT_FOUND".to_string(),
+                    details: Some(serde_json::json!({ "ruleId": rule_id })),
+                });
+            }
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+
+    // Step 4 — counterparty mismatch check (AC #120).
+    if rule.counterparty_account_id != counterparty_account_id {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_RULE_MISMATCH".to_string(),
+            details: Some(serde_json::json!({
+                "ruleId": rule_id,
+                "expectedAccount": rule.counterparty_account_id,
+                "actualAccount": counterparty_account_id,
+            })),
+        });
+    }
+
+    // Step 5 — counterparty account actif (SELECT inline).
+    let counterparty_row: Option<(bool, String)> = match sqlx::query_as(
+        "SELECT active, name FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+    )
+    .bind(counterparty_account_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+    let counterparty_name = match counterparty_row {
+        Some((true, name)) => name,
+        _ => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "ACCOUNT_NOT_FOUND".to_string(),
+                details: Some(serde_json::json!({
+                    "missingAccountIds": [counterparty_account_id],
+                })),
+            });
+        }
+    };
+
+    // Step 6 — refetch tx INSIDE lock (TOCTOU, pattern accept_one_split).
+    let bt = match reconciliation_repo::find_strictly_pending_by_id_for_account(
+        &mut **tx,
+        company_id,
+        bank_account_id,
+        bank_transaction_id,
+    )
+    .await
+    {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "RECONCILIATION_TRANSACTION_NOT_PENDING".to_string(),
+                details: None,
+            });
+        }
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+
+    // Step 0/6.5 — currency filter CHF (Pass 3 R1 — defense-in-depth, le
+    // get_proposals filter aussi côté upstream).
+    if bt.currency != "CHF" {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_CURRENCY_MISMATCH".to_string(),
+            details: Some(serde_json::json!({
+                "transactionCurrency": bt.currency,
+                "expected": "CHF",
+            })),
+        });
+    }
+
+    // Step 7 — re-validation rule_matches anti-race (AC #119).
+    if !rule_matches(&rule, &bt) {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_RULE_NO_LONGER_MATCHES".to_string(),
+            details: Some(serde_json::json!({ "ruleId": rule_id })),
+        });
+    }
+
+    // Step 8 — tx.amount != 0 (helper panic guard 8-5a-base).
+    if bt.amount.is_zero() {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "VALIDATION_ERROR".to_string(),
+            details: Some(serde_json::json!({ "reason": "zero_amount_transaction" })),
+        });
+    }
+
+    // Step 9 — entry_date = tx.value_date.unwrap_or(tx.booking_date) (Pass 1 P-H1).
+    let entry_date = bt.value_date.unwrap_or(bt.booking_date);
+
+    // Step 10 — fiscal_year covering.
+    let fiscal_year = match fiscal_years::find_open_covering_date(tx, company_id, entry_date).await
+    {
+        Ok(Some(fy)) => fy,
+        Ok(None) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "RECONCILIATION_FISCAL_YEAR_CLOSED".to_string(),
+                details: Some(serde_json::json!({ "entryDate": entry_date.to_string() })),
+            });
+        }
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+
+    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate 200.
+    let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_name);
+    let description: String = raw_description.chars().take(200).collect();
+
+    // Step 12 — build_journal_entry_for_counterparty + create_in_tx.
+    let new_je = build_journal_entry_for_counterparty(
+        &bt,
+        bank_ledger_account_id,
+        counterparty_account_id,
+        description,
+        entry_date,
+    );
+    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
+        Ok(j) => j,
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    };
+    let journal_entry_id = je.entry.id;
+
+    // Step 13 — UPDATE bank_transactions optimistic lock (pattern accept_one_split).
+    let bank_tx_update = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = ?, status = 'reconciled', \
+             auto_match_rejected_at = NULL, updated_at = NOW(3), \
+             version = version + 1 \
+         WHERE id = ? AND company_id = ? AND status = 'pending' \
+           AND version = ?",
+    )
+    .bind(journal_entry_id)
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .bind(bt.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| FailedProposal {
+        bank_transaction_id,
+        error_code: "DATABASE_ERROR".to_string(),
+        details: Some(serde_json::json!({ "message": e.to_string() })),
+    })?;
+    if bank_tx_update.rows_affected() != 1 {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            details: Some(serde_json::json!({ "reason": "race_during_update" })),
+        });
+    }
+
+    // Step 14 — increment_applied_count_in_tx (atomique avec version+1
+    // dans le SET — pas de WHERE version=? per Pass 1 ECH-10). Pass 1
+    // code review HIGH AA1 fix : version doit être bumped pour cohérence
+    // optimistic lock côté PATCH suivant.
+    let applied_count_after =
+        match reconciliation_rules::increment_applied_count_in_tx(tx, company_id, rule_id).await {
+            Ok(count) => count,
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+
+    // Step 15 — audit reconciliation_rule.applied (action distincte Q4b).
+    let was_previously_rejected = bt.auto_match_rejected_at.is_some();
+    // Pass 3 R4 — `value_date` brut nullable (peut être null), `entry_date`
+    // résolu non-null (distinct du value_date) pour traçabilité.
+    // Pass 1 code review HIGH AA2 fix : `applied_count_after` requis par spec.
+    let rule_applied_details = serde_json::json!({
+        "rule_id": rule_id,
+        "rule_label": rule.label,
+        "match_type": rule.match_type.as_str(),
+        "match_value": rule.match_value,
+        "bank_transaction_id": bank_transaction_id,
+        "counterparty_account_id": counterparty_account_id,
+        "journal_entry_id": journal_entry_id,
+        "applied_count_after": applied_count_after,
+        "value_date": bt.value_date.map(|d| d.to_string()),
+        "entry_date": entry_date.to_string(),
+        "was_previously_rejected": was_previously_rejected,
+    });
+    if let Err(e) = audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "reconciliation_rule.applied".to_string(),
+            entity_type: "reconciliation_rules".to_string(),
+            entity_id: rule_id,
+            details_json: Some(rule_applied_details),
+        },
+    )
+    .await
+    {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        });
+    }
+
+    // Step 16 — audit reconciliation.accepted avec details.type='rule' (extension Pass 1 P-M).
+    let mut amount_audit = bt.amount;
+    amount_audit.rescale(2);
+    // Pass 1 code review HIGH AA3 fix : `match_type` requis par spec step 15.
+    let accepted_details = serde_json::json!({
+        "type": "rule",
+        "bank_transaction_id": bank_transaction_id,
+        "rule_id": rule_id,
+        "match_type": rule.match_type.as_str(),
+        "counterparty_account_id": counterparty_account_id,
+        "journal_entry_id": journal_entry_id,
+        "amount": amount_audit.to_string(),
+        "value_date": bt.value_date.map(|d| d.to_string()),
+        "entry_date": entry_date.to_string(),
+        "was_previously_rejected": was_previously_rejected,
+    });
+    if let Err(e) = audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry {
+            user_id,
+            action: "reconciliation.accepted".to_string(),
+            entity_type: "bank_transaction".to_string(),
+            entity_id: bank_transaction_id,
+            details_json: Some(accepted_details),
+        },
+    )
+    .await
+    {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        });
+    }
+
+    Ok(AcceptedProposal {
+        bank_transaction_id,
+        // Sentinel invoice_id=0 (dette transverse 8-5a-bis BH-H1 v0.2).
+        invoice_id: 0,
+        journal_entry_id,
+        // Pass 1 code review LOW EC9 fix : score.total = 1.0 cohérent
+        // avec celui exposé par get_proposals pour candidate type=rule
+        // (`total: 1.0` au lieu de `0.0` qui pouvait être interprété
+        // comme "no match" par un consumer).
+        score: MatchScore {
+            total: 1.0,
+            amount_score: 0.0,
+            reference_score: 0.0,
+            contact_score: 0.0,
+        },
+    })
+}
+
+// ============================================================
 // POST /reject
 // ============================================================
 
@@ -1522,6 +2060,20 @@ pub async fn post_reject(
                 actual,
                 difference,
             })
+        }
+        // Story 8-5b — branche exhaustive (reject_batch ne touche pas
+        // aux rules). Unreachable en pratique.
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
+            drop(tx_outer);
+            tracing::error!("Story 8-5b Rule variant propagated to reject_batch — defensive 500");
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in reject_batch".into(),
+            ))
         }
     }
 }
@@ -2008,6 +2560,20 @@ pub async fn post_manual(
                 difference,
             })
         }
+        // Story 8-5b — branche exhaustive (post_manual ne touche pas
+        // aux rules). Unreachable en pratique.
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
+            let _ = tx_outer.rollback().await;
+            tracing::error!("Story 8-5b Rule variant propagated to post_manual — defensive 500");
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in post_manual".into(),
+            ))
+        }
     }
 }
 
@@ -2415,6 +2981,20 @@ pub async fn post_split(
                 actual,
                 difference,
             })
+        }
+        // Story 8-5b — branche exhaustive (post_split ne touche pas
+        // aux rules). Unreachable en pratique.
+        Err(
+            ReconciliationError::RuleNotFound { .. }
+            | ReconciliationError::RuleNoLongerMatches { .. }
+            | ReconciliationError::RuleMismatch { .. }
+            | ReconciliationError::RuleDuplicate { .. },
+        ) => {
+            let _ = tx_outer.rollback().await;
+            tracing::error!("Story 8-5b Rule variant propagated to post_split — defensive 500");
+            Err(AppError::Internal(
+                "internal: unexpected Rule variant in post_split".into(),
+            ))
         }
     }
 }

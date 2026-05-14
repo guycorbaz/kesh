@@ -215,6 +215,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/bank-accounts/{id}",
             patch(routes::bank_accounts::patch_bank_account_journal_link),
         )
+        // Story 8-5b : CRUD règles d'affectation (Comptable+ mutations).
+        .route(
+            "/api/v1/reconciliation/rules",
+            post(routes::reconciliation_rules::post_create),
+        )
+        .route(
+            "/api/v1/reconciliation/rules/{id}",
+            patch(routes::reconciliation_rules::patch).delete(routes::reconciliation_rules::delete),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -335,6 +344,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/bank-accounts",
             get(routes::bank_accounts::list_bank_accounts),
+        )
+        // Story 8-5b : lecture règles d'affectation (tous rôles authentifiés).
+        .route(
+            "/api/v1/reconciliation/rules",
+            get(routes::reconciliation_rules::list),
+        )
+        .route(
+            "/api/v1/reconciliation/rules/{id}",
+            get(routes::reconciliation_rules::detail),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

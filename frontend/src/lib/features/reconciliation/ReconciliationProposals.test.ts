@@ -58,10 +58,16 @@ function makeProposalWithCandidate(
 		},
 		candidates: [
 			{
+				candidateType: 'invoice' as const,
 				invoiceId,
 				invoiceNumber: `INV-2026-${invoiceId}`,
 				invoiceAmount: '100.00',
 				invoiceDate: '2026-05-10',
+				ruleId: null,
+				ruleLabel: null,
+				ruleMatchType: null,
+				counterpartyAccountId: null,
+				counterpartyAccountName: null,
 				score: {
 					total: scoreTotal,
 					amountScore: 1.0,

@@ -134,11 +134,23 @@
 				if (!p || p.candidates.length === 0) {
 					throw new Error(`No candidate for txId=${txId}`);
 				}
-				return {
-					type: 'invoice' as const,
-					bankTransactionId: txId,
-					invoiceId: p.candidates[0].invoiceId,
-				};
+				const c = p.candidates[0];
+				if (c.candidateType === 'rule' && c.ruleId !== null && c.counterpartyAccountId !== null) {
+					return {
+						type: 'rule' as const,
+						bankTransactionId: txId,
+						ruleId: c.ruleId,
+						counterpartyAccountId: c.counterpartyAccountId,
+					};
+				}
+				if (c.candidateType === 'invoice' && c.invoiceId !== null) {
+					return {
+						type: 'invoice' as const,
+						bankTransactionId: txId,
+						invoiceId: c.invoiceId,
+					};
+				}
+				throw new Error(`Invalid candidate for txId=${txId}`);
 			});
 			const r = await acceptProposals(bankAccountId, items);
 			lastSuccessCount = r.accepted.length;
@@ -250,10 +262,29 @@
 							</td>
 						{:else}
 							<td>
-								<span data-testid="candidate-top-1" data-invoice-id={p.candidates[0].invoiceId}>
-									{p.candidates[0].invoiceNumber ?? `#${p.candidates[0].invoiceId}`}
-									({p.candidates[0].invoiceAmount})
-								</span>
+								{#if p.candidates[0].candidateType === 'rule'}
+									<span
+										class="mr-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800"
+										data-testid="candidate-rule-badge"
+										data-rule-id={p.candidates[0].ruleId}
+									>
+										{i18nMsg('reconciliation-rules-applied-badge', 'Règle')}
+									</span>
+									<span
+										data-testid="candidate-top-1"
+										data-candidate-type="rule"
+										data-rule-id={p.candidates[0].ruleId}
+									>
+										{p.candidates[0].ruleLabel ?? `#${p.candidates[0].ruleId}`}
+										→ {p.candidates[0].counterpartyAccountName ??
+											`#${p.candidates[0].counterpartyAccountId}`}
+									</span>
+								{:else}
+									<span data-testid="candidate-top-1" data-candidate-type="invoice" data-invoice-id={p.candidates[0].invoiceId}>
+										{p.candidates[0].invoiceNumber ?? `#${p.candidates[0].invoiceId}`}
+										({p.candidates[0].invoiceAmount})
+									</span>
+								{/if}
 							</td>
 							<td>
 								<ScoreBadge score={p.candidates[0].score.total} />
