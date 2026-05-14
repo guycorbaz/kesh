@@ -21,7 +21,7 @@ so that **je puisse vérifier ma situation financière à n'importe quel moment,
 
 **Séparation 9-1 / 9-2 (verrouillée par epic-9.md)** :
 
-- **9-1 (cette story)** livre la **génération de données** : 4 modules de calcul dans la crate `kesh-report` (actuellement coquille vide, cf. `crates/kesh-report/src/lib.rs`), 4 routes HTTP qui retournent du **JSON structuré** uniquement, et la page frontend qui rend ces données en HTML/Tailwind avec les formats suisses (apostrophe, dd.mm.yyyy) via `kesh-i18n`.
+- **9-1 (cette story)** livre la **génération de données** : 4 modules de calcul dans la crate `kesh-report` (actuellement coquille vide, cf. `crates/kesh-report/src/lib.rs`), 4 routes HTTP qui retournent du **JSON structuré** uniquement, et la page frontend qui rend ces données en HTML/Tailwind avec les formats suisses (apostrophe, dd.mm.yyyy) **côté frontend** (helper `formatSwissAmount` depuis `$lib/features/journal-entries/balance.ts`). **Pass 2 BH2-02** : `kesh-i18n` n'est PAS dépendance de `kesh-report` en 9-1 (formatage Rust reporté 9-2 PDF).
 - **9-2 (suivante)** livre **PDF + CSV + export global** : rendu PDF tabulaire (lib à confirmer, `printpdf 0.7` candidat par défaut car déjà utilisé par `kesh-qrbill`), export CSV par rapport, et export ZIP global par table (FR66-FR68).
 
 **Cette séparation est délibérée** : elle permet à 9-1 d'être revue/mergée sans dépendre du choix de la librairie PDF (R3 epic-9.md) ni de la performance du rendu (R1). Le JSON est la **surface stable** pour 9-2 et pour les Epics 11 (TVA), 13 (Budgets), 14 (Clôture) qui réutilisent les agrégations.
@@ -46,7 +46,7 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
 
 ### Scope verrouillé — ce qui est livré par 9-1
 
-1. **Crate `kesh-report` instanciée (FR65)** — `Cargo.toml` avec deps `chrono`, `rust_decimal`, `serde`, `thiserror`, `sqlx` (feature `mysql` + `chrono` + `rust_decimal` + `runtime-tokio-rustls`), `kesh-core`, `kesh-db`, `kesh-i18n`. Structure :
+1. **Crate `kesh-report` instanciée (FR65)** — `Cargo.toml` avec deps **versions directes** (Pass 1 BH-03 + Pass 2 BH2-02 : pas de `kesh-i18n` en 9-1) : `chrono`, `rust_decimal`, `serde`, `thiserror`, `sqlx` (feature `mysql` + `chrono` + `rust_decimal` + `runtime-tokio-rustls`), `kesh-core`, `kesh-db`. Structure :
 
    ```
    crates/kesh-report/
@@ -79,6 +79,11 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
    - **Pass 1 ECH-04** : la table `accounts.account_type` (CHECK BINARY) n'a **PAS** de variant `Equity` — les comptes de capitaux propres réels (compte 2800/2979 Sterchi PME) sont déclarés en `Liability`. **L'équation v0.1 admet que `total_liabilities` inclut les fonds propres permanents** (report à nouveau, capital social, etc.) ET `equity_result` ne représente **que** le résultat de l'exercice courant. Cette présentation est **approximative pré-clôture** : la clôture Epic 14 produira l'écriture qui transfère `equity_result` vers le compte 2979 (résultat reporté). **Documenter explicitement dans le rendu frontend** : « Résultat de l'exercice (avant clôture) ». L52-bis dette tracée.
    - **Équation bilan** : `equation_holds = (total_assets == total_liabilities + equity_result)`. Tolérance 0 (rust_decimal exact, pas de tolérance float). **Pass 1 ECH-04 nuance** : sur dataset équilibré avec capitaux propres en `Liability` + résultat séparé `equity_result`, l'équation tient mathématiquement (les soldes des comptes de capitaux propres permanents sont déjà dans `total_liabilities`). Vérifier ground-truth via fixture seed T2.5.
    - **Pass 1 ECH-01 cas vide** : si la période n'a aucune écriture, retourne `BalanceSheet { assets: vec![], liabilities: vec![], total_assets: 0, total_liabilities: 0, equity_result: 0, equation_holds: true }` (0 == 0 + 0). Pas d'erreur.
+   - **Pass 2 AA2-11 — règle d'inclusion archived (cohérente trial_balance Pass 1 ECH-03)** :
+     - Comptes Asset/Liability **actifs sans écriture dans la période** : **exclus** des listes `assets`/`liabilities` (épure visuelle bilan — différent de trial_balance qui les inclut). Justification : le bilan affiche les positions financières effectives ; un compte actif sans solde n'est pas une position.
+     - Comptes Asset/Liability **archivés avec écritures dans la période** : **inclus** avec `active: false` (cohérent CO 957a conservation 10 ans).
+     - Comptes Asset/Liability **archivés sans écriture dans la période** : exclus.
+     - SQL T2.2 utilise donc `WHERE jel.account_id IN (SELECT id FROM accounts WHERE company_id = ? AND account_type IN ('Asset','Liability'))` puis agrège — les comptes sans écriture sortent naturellement de l'agrégation. Filtre archived `(active=true OR EXISTS écritures)` appliqué pour décider d'**afficher ou non** un compte avec écritures non-zéro.
    - AC #1 — équation bilan vérifiée dans tous les cas du test fixture.
 
 4. **Module `income_statement.rs` (T3, FR65 compte de résultat)** :
@@ -131,7 +136,7 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
      - `TrialBalance` : `rows.length === 0`
      - `JournalReport` : `journals.every(j => j.entries.length === 0)`
    - **Pass 1 BH-06 — formatage suisse côté frontend** : utiliser **`formatSwissAmount(big: Big)`** depuis `$lib/features/journal-entries/balance.ts:93` (PAS `formatting.ts` — fichier inexistant). Pour la cohérence Pattern, créer `$lib/features/reports/reports-helpers.ts` qui réexporte `formatSwissAmount` + `formatSwissDate` (à créer si nécessaire — wrapper Intl.DateTimeFormat ou manuel `dd.mm.yyyy`).
-   - `ReportSelector.svelte` — UI : sélecteur d'exercice (chargé via `/api/v1/fiscal-years`), date range picker (period start/end optionnels), bouton « Générer ». **Pass 1 ECH-12 + AC #34** : si la liste fiscal_years est vide, dropdown vide + bouton `disabled` + message `reports-error-no-fiscal-year-available`.
+   - `ReportSelector.svelte` — UI : sélecteur d'exercice (chargé via `GET /api/v1/fiscal-years` → **route existante** livrée Story 3-7, vérifiée Pass 2 AA2-03 dans `crates/kesh-api/src/lib.rs:321-322` mountée dans `authenticated_routes`), date range picker (period start/end optionnels), bouton « Générer ». **Pass 1 ECH-12 + AC #34** : si la liste fiscal_years est vide, dropdown vide + bouton `disabled` + message `reports-error-no-fiscal-year-available`.
    - `BalanceSheetView.svelte`, `IncomeStatementView.svelte`, `TrialBalanceView.svelte`, `JournalReportView.svelte` — 4 vues qui affichent le rapport en tableau HTML Tailwind, montants formatés via `formatSwissAmount` (apostrophe `1'234.56`) et dates via wrapper `dd.mm.yyyy`.
    - **Pass 1 ECH-11 — equity_result négatif** : `BalanceSheetView` affiche `equityResult` dans une section dédiée « Résultat de l'exercice (avant clôture) ». Si négatif → libellé « Perte de l'exercice », couleur rouge (Tailwind `text-red-600`). Si positif → « Bénéfice de l'exercice », vert. Si zéro → neutre. Ne PAS confondre avec total liabilities.
    - **Pass 1 ECH-22 — formatage variables Fluent** : pour le message `reports-error-period-out-of-fiscal-year`, le composant Svelte qui consomme l'erreur 400 reçoit `error.details.fyStart` / `fyEnd` en ISO 8601 (`"2026-12-31"`). Avant passage à `$t('reports-error-period-out-of-fiscal-year', { fyStart: ..., fyEnd: ... })`, **convertir** via `formatSwissDate` pour afficher `"31.12.2026"`. Documenté dans T8.3.
@@ -153,8 +158,8 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
 
 12. **Tests** :
     - **Unit `kesh-report`** (`#[cfg(test)] mod tests` inline dans chaque module) — ≥ 16 tests : balance_sheet (4 : équation, archivés, période partielle, multi-fiscal-year-isolation), income_statement (3 : résultat net positif/négatif/zéro), trial_balance (4 : balanced=true, balanced=false ground truth, account ordering, totaux), journal_report (5 : 5 journaux, filter Achats, ordering, vide, multi-line entries).
-    - **Intégration `kesh-db`** (`#[sqlx::test]` dans nouveau fichier `crates/kesh-db/tests/report_aggregates.rs`) — ≥ 6 tests : multi-tenant cross-company (4 cross-tenant 0-rows), period filter (1 boundary), fiscal_year isolation (1).
-    - **E2E HTTP `kesh-api`** (`crates/kesh-api/tests/reports_e2e.rs` nouveau) — ≥ 20 tests : 4 endpoints × { happy path, 401 unauth, 400 validation, 404 cross-tenant, 400 period out of FY } = 20 minimum.
+    - **Intégration `kesh-db`** (`#[sqlx::test]` dans nouveau fichier `crates/kesh-db/tests/report_aggregates.rs`) — ≥ 7 tests : multi-tenant cross-company (4 cross-tenant 0-rows), period filter (1 boundary), fiscal_year isolation (1).
+    - **E2E HTTP `kesh-api`** (`crates/kesh-api/tests/reports_e2e.rs` nouveau) — ≥ 28 tests : 4 endpoints × { happy path, 401 unauth, 400 validation, 404 cross-tenant, 400 period out of FY } = 20 minimum.
     - **Vitest frontend** (`frontend/src/lib/features/reports/*.test.ts`) — ≥ 4 tests : ReportSelector validation, BalanceSheetView formatting montants, formatage suisse apostrophe, période par défaut = exercice complet.
     - **Playwright E2E** (`frontend/tests/e2e/reports.spec.ts` nouveau) — ≥ 1 actif (générer bilan sur exercice seed) + 1 axe a11y scan zero violations sur la page `/reports`.
 
@@ -226,7 +231,7 @@ R2 est documentée dans `epic-9.md` comme « à faire avant spec validate 9-1 �
 - Architecture.md ligne 355 : « Dates : ISO 8601 (`2026-04-02`...) ».
 - Frontend convertit `dd.mm.yyyy` (saisie UI) → `YYYY-MM-DD` (envoi API) — pattern KE déjà standard pour invoices, journal_entries.
 - Évite ambiguïté locale (FR/DE/EN).
-- **Affichage** dans les rapports : `dd.mm.yyyy` via `kesh-i18n::format_date` (cf. §i18n).
+- **Affichage** dans les rapports : `dd.mm.yyyy` via wrapper frontend `formatSwissDate` (Pass 2 BH2-02 — pas de `kesh-i18n::format_date` côté Rust en 9-1).
 
 #### Q5 — Ordre des colonnes balance des comptes (compatibilité fiduciaire)
 
@@ -372,12 +377,26 @@ Une seule nouvelle action audit : `report.generated`.
 **Pass 1 BH-01 / ECH-09 — sentinelle `entity_id`** : le schéma DB `audit_log.entity_id BIGINT NOT NULL` (cf. `crates/kesh-db/migrations/20260413000001_audit_log.sql:18`) + struct `NewAuditLogEntry.entity_id: i64` (non-Option, cf. `crates/kesh-db/src/entities/audit_log.rs`) → impossible de passer `None`. **Décision** : utiliser **la valeur sentinelle `0`** (BIGINT positif, distinct de tout `entity_id` réel car `AUTO_INCREMENT` commence à 1). **Pas de migration DB v0.1** (audit_log conservation 10 ans CO 957-964 — éviter ALTER COLUMN sur table d'audit). Définir constante publique :
 
 ```rust
-// crates/kesh-report/src/lib.rs ou crates/kesh-api/src/routes/reports.rs
-/// Sentinelle entity_id pour les actions audit sans entité concrète
-/// (rapports, consultations agrégées, etc.). Distinct de tout id réel
-/// car les AUTO_INCREMENT BIGINT démarrent à 1.
+// Pass 2 ECH2-01 + ECH2-10 + AA2-04 : définir dans `crates/kesh-db/src/entities/audit_log.rs`
+// (PAS dans kesh-report ni kesh-api) pour réutilisabilité trans-crate v0.2+ et éviter
+// la duplication. Toutes les futures actions audit sans entité concrète (Epic 14 clôture,
+// Epic 15 exports, etc.) utiliseront cette même constante.
+/// Sentinelle `entity_id` pour les actions audit sans entité concrète
+/// (rapports, consultations agrégées, exports, etc.).
+///
+/// Garantie d'unicité sémantique : les `id` réels d'entités sont en `AUTO_INCREMENT`
+/// qui démarre à 1 — `0` ne correspond à aucune entité réelle.
+///
+/// **IMPORTANT — utilisation correcte** : pour distinguer plusieurs actions audit
+/// avec `entity_id = 0`, **toujours filtrer sur la combinaison `(entity_type, entity_id)`**,
+/// jamais sur `entity_id` seul. Exemple :
+///   SELECT * FROM audit_log WHERE entity_type = 'report' AND entity_id = AUDIT_ENTITY_ID_NONE;
 pub const AUDIT_ENTITY_ID_NONE: i64 = 0;
 ```
+
+**Vérification ground-truth** (Pass 2 ECH2-01) : `audit_log.id BIGINT AUTO_INCREMENT PRIMARY KEY` dans migration `20260413000001` — démarre bien à 1, donc `entity_id = 0` ne peut jamais correspondre à une row existante. Pas de risque de collision avec entités réelles.
+
+**Future-proof** : si Epic 14 (clôture) émet `audit.action = 'fiscal_year.closed'` avec `entity_type = 'fiscal_year'` ET `entity_id = fy.id` (entité réelle), aucune collision. Si Epic 15 (exports) émet `audit.action = 'export.zip.generated'` avec `entity_type = 'export'` ET `entity_id = AUDIT_ENTITY_ID_NONE`, le filtre par `entity_type` distingue parfaitement des audits rapports. Pattern propre, scalable.
 
 Shape de l'audit row :
 
@@ -445,7 +464,7 @@ Ok(Json(report))
 
 `From<ReportError> for AppError` impl factorise le mapping.
 
-#### Shape JSON body 400 `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` (Pass 1 AA-02 + BH-09)
+#### Shape JSON body 400 `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` (Pass 1 AA-02 + BH-09 + Pass 2 AA2-01)
 
 **Convention camelCase** cohérente avec architecture.md §Format Patterns ligne 355 :
 
@@ -464,7 +483,50 @@ Ok(Json(report))
 }
 ```
 
-Les 4 champs (`fyStart`, `fyEnd`, `requestedStart`, `requestedEnd`) sont **toujours présents** (camelCase ISO 8601 string). Le test AC #13 (T10.2 #13) vérifie ground-truth les **4 champs**.
+Les 4 champs (`fyStart`, `fyEnd`, `requestedStart`, `requestedEnd`) sont **toujours présents** (camelCase ISO 8601 string, **jamais omis ni null** — Pass 2 AA2-05). Le test AC #13 (T10.2 #13) vérifie ground-truth les **4 champs**.
+
+**Pass 2 AA2-01 — IntoResponse mapping snake_case Rust → camelCase JSON (CRITICAL)** :
+
+Le variant `AppError::ReportPeriodOutOfFiscalYear { fy_start, fy_end, requested_start, requested_end }` (snake_case Rust) doit être sérialisé en `{ fyStart, fyEnd, requestedStart, requestedEnd }` (camelCase JSON). **Pattern recommandé** : utiliser un DTO intermédiaire avec `#[serde(rename_all = "camelCase")]` dans `kesh-api/src/errors.rs::IntoResponse impl` :
+
+```rust
+// crates/kesh-api/src/errors.rs (extension T6.4)
+
+use chrono::NaiveDate;
+use serde::Serialize;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PeriodOutOfFyDetails {
+    fy_start: NaiveDate,         // sérialisé "fyStart"
+    fy_end: NaiveDate,           // sérialisé "fyEnd"
+    requested_start: NaiveDate,  // sérialisé "requestedStart"
+    requested_end: NaiveDate,    // sérialisé "requestedEnd"
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        match self {
+            AppError::ReportPeriodOutOfFiscalYear { fy_start, fy_end, requested_start, requested_end } => {
+                let details = PeriodOutOfFyDetails { fy_start, fy_end, requested_start, requested_end };
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "REPORT_PERIOD_OUT_OF_FISCAL_YEAR",
+                        "message": "La période sélectionnée dépasse les bornes de l'exercice.",
+                        "details": details,
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+            // ... autres variants
+        }
+    }
+}
+```
+
+**Justification** : sans ce DTO intermédiaire, `serde_json::json!(...)` directement à partir des champs Rust snake_case produirait `{ fy_start, fy_end, ... }` en JSON — incohérent avec la convention architecture.md camelCase et casse AC #13.
+
+**Pattern uniforme pour les 3 nouveaux AppError variants** (`ReportFiscalYearNotFound`, `ReportPeriodOutOfFiscalYear`, `ReportPeriodInvalid` → mappé via `Validation`) : chacun a un DTO intermédiaire camelCase si `details` contient plusieurs champs Rust snake_case. Le variant `Validation { reason }` (1 seul champ) n'a pas besoin de DTO (sérialisation `{ "reason": "..." }` triviale).
 
 #### Shape JSON body 400 `VALIDATION` (cohérent stories antérieures)
 
@@ -560,10 +622,18 @@ reports-filter-fiscal-year = Exercice
 reports-filter-journal = Journal
 reports-button-generate = Générer
 
-# Erreurs UX (2)
+# Erreurs UX (3 — Pass 2 BH2-01)
 reports-error-no-entries-in-period = Aucune écriture dans la période sélectionnée. Modifiez les dates ou choisissez un autre exercice.
 reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse les bornes de l'exercice. Choisissez une période entre { $fyStart } et { $fyEnd }.
+reports-error-no-fiscal-year-available = Aucun exercice comptable disponible. Créez un exercice avant de générer des rapports.
+
+# Section résultat de l'exercice (3 — Pass 1 ECH-11 + Pass 2 BH2-01)
+reports-equity-result-section-title = Résultat de l'exercice (avant clôture)
+reports-equity-result-profit = Bénéfice de l'exercice
+reports-equity-result-loss = Perte de l'exercice
 ```
+
+**Décompte ground-truth** : 4 labels rapports + 7 colonnes + 5 sections + 8 totaux + 4 filtres + 3 erreurs UX + 3 equity-result = **34 clés** × 4 locales.
 
 **Traductions DE/IT/EN-CH** : version basique livrée par dev-story, traducteur officiel reporté v0.2 (cohérent limitation L51 héritée 8-5b). Marquer `# TODO official translation` en commentaire Fluent pour DE/IT/EN-CH.
 
@@ -639,7 +709,7 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
 
 ### RBAC
 
-23. **AC #23 — Authenticated read** — Given un user avec rôle Consultation (lecture seule, pas d'écriture), when GET rapport, then response 200 (rôle Consultation autorisé en lecture).
+23. **AC #23 — Authenticated read (3 rôles)** — Given un user authentifié avec rôle `Admin`, `Comptable` OU `Consultation`, when GET rapport, then response 200 dans les 3 cas. Test E2E couvre **au minimum le rôle Consultation** (AC #32 spécifique, le plus restrictif — si Consultation peut lire, Admin et Comptable peuvent aussi via la même route `authenticated_routes`). Pass 2 AA2-02 : AC #32 est le cas concret testé de AC #23 générique. **Pas de doublon** : #23 énonce la couverture des 3 rôles, #32 fournit l'assertion test concrète.
 
 24. **AC #24 — Unauthenticated 401** — Given GET rapport sans header Authorization, then response 401.
 
@@ -733,7 +803,27 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
 ### T6. Routes API `kesh-api/routes/reports.rs` (AC #11-#24, #25-#26)
 
 - [ ] T6.1 — Créer `crates/kesh-api/src/routes/reports.rs` avec 4 handlers : `get_balance_sheet`, `get_income_statement`, `get_trial_balance`, `get_journal_report`.
-- [ ] T6.2 — Query params extractor : déclarer struct `ReportQuery { fiscal_year_id: i64, period_start: Option<NaiveDate>, period_end: Option<NaiveDate> }` (camelCase via `#[serde(rename_all = "camelCase")]`). Pour `journals` : `JournalReportQuery extends ReportQuery + journal: Option<Journal>`.
+- [ ] T6.2 — Query params extractor (Pass 2 AA2-06 — derives explicites obligatoires) :
+  ```rust
+  use serde::Deserialize;
+  use chrono::NaiveDate;
+
+  #[derive(Debug, Deserialize)]
+  #[serde(rename_all = "camelCase")]  // Pass 2 AA2-06 : sans ce derive, query params seraient snake_case en URL (cassait l'API contract)
+  pub struct ReportQuery {
+      pub fiscal_year_id: i64,             // URL : ?fiscalYearId=42
+      pub period_start: Option<NaiveDate>, // URL : ?periodStart=2026-01-01
+      pub period_end: Option<NaiveDate>,   // URL : ?periodEnd=2026-12-31
+  }
+
+  #[derive(Debug, Deserialize)]
+  #[serde(rename_all = "camelCase")]
+  pub struct JournalReportQuery {
+      #[serde(flatten)]
+      pub base: ReportQuery,
+      pub journal: Option<kesh_db::entities::journal_entry::Journal>,  // URL : ?journal=Achats (case-sensitive)
+  }
+  ```
 - [ ] T6.3 — Chaque handler :
   1. Extrait `CurrentUser` (JWT middleware) → `company_id`.
   2. Parse query params, valide (`fiscal_year_id > 0`).
@@ -788,7 +878,7 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
   8. `journals_filter_achats_returns_one_section` (AC #8)
   9. `journals_orders_entries_chronologically` (AC #9)
   10. `journals_preserves_line_order` (AC #10)
-  11. `default_period_uses_fiscal_year_full_range` (AC #11) — **Pass 1 BH-12** : assertion `response.period.startDate == fy.start_date && response.period.endDate == fy.end_date` (AC #31).
+  11. `default_period_uses_fiscal_year_full_range_all_endpoints` (AC #11 + AC #31) — **Pass 1 BH-12 + Pass 2 AA2-09** : assertion `response.period.startDate == fy.start_date && response.period.endDate == fy.end_date && response.period.fiscalYearId == fy.id` testée **sur les 4 endpoints** (balance-sheet, income-statement, trial-balance, journals) — 4 sous-tests groupés ou 1 test parameterized.
   12. `partial_period_excludes_outside_entries` (AC #12)
   13. `period_end_out_of_fy_returns_400_with_four_details_fields` (AC #13) — **Pass 1 AA-02** : assertion JSON body 400 contient les **4 champs** `error.details.{fyStart, fyEnd, requestedStart, requestedEnd}`.
   14. `period_inversed_returns_400_validation_code` (AC #14) — **Pass 1 AA-05** : assertion sur `error.code = "VALIDATION"`, pas sur texte FR.
@@ -813,6 +903,22 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
 **Pass 1 AA-12 — clarification distinction T10 vs T11** : T11 teste les **agrégats SQL** au niveau repo/kesh-db (correctness des `COALESCE(SUM(...), 0)`, des `BETWEEN` bounds, des `WHERE company_id = ?` ground-truth). T10 teste les **endpoints HTTP** end-to-end (parsing JWT, response shape, codes HTTP). **Pas de redondance** : T11 isole les SQL avec seed inline minimal, T10 vérifie l'intégration complète depuis JWT auth. Les deux niveaux protègent des classes de régression différentes.
 
 - [ ] T11.1 — Créer `crates/kesh-db/tests/report_aggregates.rs` (≥ 7 tests sqlx) — multi-tenant strict, période bounds inclusives, fiscal_year isolation, SUM sur 0 ligne (COALESCE), exercice non-calendaire (Pass 1 ECH-16). Pattern `#[sqlx::test]` héritée 8-5b.
+  **Pass 2 AA2-12 — seed structure obligatoire** (sinon `fiscal_year_non_calendar_isolation` peut passer vacuously) :
+  ```rust
+  // Fixture minimale par test sqlx (inline ou via helper module dans tests/):
+  // - 1 company (ex. id=1)
+  // - 1 fiscal_year **NON-CALENDAIRE** : start_date=2026-07-01, end_date=2027-06-30, status='Open'
+  // - 5 comptes : 1000 (Asset), 2000 (Liability), 3000 (Equity → mappé Liability par CHECK),
+  //   4000 (Revenue), 5000 (Expense). Tous actifs.
+  // - 1 compte archivé avec écriture : 1090 Asset active=false avec 1 ligne écriture dans la période.
+  // - 3 écritures journal_entries dans des journaux différents (Achats + Banque + OD),
+  //   chacune avec 2 lignes équilibrées débit/crédit. Dates : 2026-09-15, 2026-12-31, 2027-03-15
+  //   (à l'intérieur de l'exercice non-calendaire).
+  ```
+  Permet de vérifier ground-truth :
+  - `fiscal_year_non_calendar_isolation` : un test paire crée fy2 calendaire 2027-01-01→2027-12-31 ; les écritures fy1 (juillet-juin) ne contaminent pas fy2.
+  - `archived_account_with_entries_appears` : compte 1090 archivé doit apparaître dans trial_balance.
+  - Etc.
 
 ### T12. Playwright E2E + a11y (AC #27, #28, #33, #34)
 
@@ -853,7 +959,7 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
 ### Patterns architecturaux à respecter
 
 - **Pas de `f64`** : `rust_decimal::Decimal` partout. `equation_holds = (a == b + c)` égalité Decimal exacte, pas de tolérance.
-- **Pas de dépendance circulaire** : `kesh-report` dépend de `kesh-core`, `kesh-db`, `kesh-i18n`. **Pas d'inverse**. `kesh-api` dépend de `kesh-report`.
+- **Pas de dépendance circulaire** : `kesh-report` dépend de `kesh-core`, `kesh-db` (Pass 2 BH2-02 : PAS `kesh-i18n` en 9-1 — formatage frontend uniquement). **Pas d'inverse**. `kesh-api` dépend de `kesh-report`.
 - **Repository pattern strict** : les SQL queries des modules `kesh-report` peuvent rester inline dans le module (pattern OK pour des agrégations ad-hoc), mais si Story 9-2 ou Epic 14 réutilise la même agrégation → extraire dans `kesh-db/repositories/` au moment du besoin (YAGNI v0.1).
 - **Naming patterns** (architecture.md §Naming Patterns) :
   - Routes kebab-case : `/reports/balance-sheet`, `/reports/income-statement`, `/reports/trial-balance`, `/reports/journals`.
@@ -881,10 +987,10 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
 - `crates/kesh-api/src/routes/mod.rs` (T6.5 — `pub mod reports`)
 - `crates/kesh-api/src/lib.rs` (T6.6 — 4 routes ajoutées dans `authenticated_routes`)
 - `crates/kesh-api/src/errors.rs` (T6.4 — 3 nouveaux variants AppError + IntoResponse)
-- `crates/kesh-api/tests/reports_e2e.rs` *(nouveau, T10 — ≥ 20 tests)*
+- `crates/kesh-api/tests/reports_e2e.rs` *(nouveau, T10 — ≥ 28 tests, Pass 2 BH2-03)*
 
 **Crate `kesh-db`** :
-- `crates/kesh-db/tests/report_aggregates.rs` *(nouveau, T11 — ≥ 6 tests sqlx)*
+- `crates/kesh-db/tests/report_aggregates.rs` *(nouveau, T11 — ≥ 7 tests sqlx, Pass 2 BH2-04)*
 
 **i18n** :
 - `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (T9 — 30 nouvelles clés × 4 locales)
@@ -908,8 +1014,8 @@ reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse le
 ### Standards de test
 
 - **Unit `kesh-report`** (T2.5, T3.4, T4.4, T5.5) : `#[cfg(test)] mod tests` inline dans chaque module. **≥ 16 tests** total. Utilise une mini-fixture en-mémoire si possible (Decimal pur, pas d'I/O) OU `#[sqlx::test]` si l'agrégation est plus claire à tester DB-side.
-- **Intégration `kesh-db`** (T11) : `#[sqlx::test]` dans `crates/kesh-db/tests/report_aggregates.rs`. **≥ 6 tests** sqlx. Seed via `kesh-seed` ou inline INSERT.
-- **E2E HTTP `kesh-api`** (T10) : `spawn_app(pool)` pattern hérité 8-5b. **≥ 20 tests** (énumérés T10.2).
+- **Intégration `kesh-db`** (T11) : `#[sqlx::test]` dans `crates/kesh-db/tests/report_aggregates.rs`. **≥ 7 tests** sqlx (Pass 2 BH2-04). Seed via `kesh-seed` ou inline INSERT.
+- **E2E HTTP `kesh-api`** (T10) : `spawn_app(pool)` pattern hérité 8-5b. **≥ 28 tests** (énumérés T10.2 — Pass 2 BH2-03).
 - **Vitest frontend** (T8.7) : `npm run test:unit -- reports`. **≥ 4 tests**.
 - **Playwright** (T12) : `frontend/tests/e2e/reports.spec.ts`. **≥ 1 actif + 1 a11y**.
 
@@ -947,9 +1053,12 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run test:e2e -- reports.sp
 | L59 | Le résultat de l'exercice affiché au bilan (`equity_result`) est calculé en mémoire sans écriture de clôture comptable réelle | Q1 Option A v0.1. La clôture (Epic 14) générera l'écriture 2979 réelle. v0.1 affichage informatif. |
 | L60 | Single-currency (CHF) | Hérité L38 héritée 8-4. Multi-currency Epic 11+. |
 | L61 | Présentation `equity_result` séparé du `total_liabilities` au bilan (Q1 Option A) | Pass 1 ECH-04 : table `accounts.account_type` n'a pas de variant `Equity` ; les fonds propres permanents sont en `Liability`. L'équation tient mais le rendu UI doit préciser « avant clôture ». Vrai bilan post-clôture Epic 14. |
-| L62 | Pas de réjection de body assertion détaillée — test E2E `report_generated_audit_emitted_on_success` (AC #25) dépend de `pool_size ≥ 4` | Pass 1 AA-04 : sans pool ≥ 4, race INSERT audit possible. KF post-merge si flake observé en CI. |
+| L62 | Pool de connexion DB test ≥ 4 pour AC #25 (audit best-effort + SELECT métier concurrent) | Pass 1 AA-04 + Pass 2 ECH2-07 : sans pool ≥ 4, race INSERT audit possible. **CI doit configurer `SQLX_MAX_CONNECTIONS=4` au minimum** (env var dans `.github/workflows/ci.yml` step de test DB). Dev-story T10.1 doit vérifier le helper `spawn_app(pool)` accepte un paramètre pool_size ≥ 4 OU utilise la default sqlx (qui est ≥ 8). KF post-merge si flake observé CI. |
 | L63 | Pas de hiérarchie `parent_id` exploitée v0.1 (pas de sous-totaux par groupe parent) | Pass 1 ECH-14 : tous les comptes traités comme feuilles. Drill-down + subtotaux v0.2. |
 | L64 | `report.generated` audit best-effort (warn! sur INSERT failure, retour 200) | Pass 1 Q3 décidé + ECH-15 pattern code documenté. CO Art. 958f satisfait pour le cas nominal ; failure mode = consultation non auditée mais data retournée intacte. KF si CO inspection révèle non-conformité. |
+| L65 | `balance_sheet` exécute 2 queries SQL (balance + income_statement pour equity_result) non-atomiques | Pass 2 BH2-10 / R17 : sous READ COMMITTED, divergence possible ≤ centimes si écriture concurrente. Acceptable v0.1, optimisation query unifiée OU snapshot REPEATABLE READ → v0.2. |
+| L66 | Period inversion via résolution asymétrique : si `(None, Some(e))` avec `e < fy.start_date` | Pass 2 ECH2-02 : résolution donne `(fy.start_date, e)` avec `start > end` → check `start ≤ end` rejette en 400 `VALIDATION`. Message error pourrait être plus explicite. KF UX v0.2. |
+| L67 | Ambiguïté timezone des dates en query params API | Pass 2 ECH2-04 : `entry_date` stocké `DATE` (jour calendaire sans TZ). API attend ISO `YYYY-MM-DD` interprété comme date calendaire pure (pas datetime). Pas de conversion TZ backend ; frontend affiche en local user. Documenté en §api-routes. |
 
 ### Risques et points d'attention pour le dev agent
 
@@ -1000,6 +1109,22 @@ KF-002 historique : certains users pouvaient avoir `company_id NULL` avant Story
 ### R13 (Pass 1 ECH-17) — Écritures avec 50+ lignes
 
 Aucune contrainte DB ne limite `journal_entry_lines` par écriture. v0.1 retourne la totalité dans `JournalEntryRow.lines`. Si > 50 lignes par écriture observé en prod → CR pour pagination intra-écriture v0.2.
+
+### R14 (Pass 2 ECH2-06) — Precision DECIMAL(19,4) vs `rust_decimal`
+
+`journal_entry_lines.{debit,credit}` stocke `DECIMAL(19,4)` (max ~99 billions CHF, 4 décimales). Les agrégations `SUM(debit)` côté SQL préservent exactement la précision en MariaDB InnoDB (pas de cast Float). `rust_decimal::Decimal` côté Rust gère arbitraire jusqu'à ~28 chiffres significatifs. **Aucun risque d'arrondi v0.1** pour les datasets attendus (CHF privé/PME ≤ quelques millions). Vérification via T11 test « insérer ligne `debit=99999999.9999` → SUM exact retourné ». Test optionnel.
+
+### R15 (Pass 2 ECH2-08) — `equity_result` calcul édge NULL
+
+Si l'INSERT `SUM(...)` retourne `NULL` (0 lignes correspondantes), `COALESCE(SUM(...), 0)` ramène à `Decimal::ZERO`. **L'ordre des `COALESCE`** est important : utiliser `COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0)` (pas `COALESCE(SUM(debit) - SUM(credit), 0)` — édge cases NULL différents). Cf. §scope §3-§6 SQL explicite.
+
+### R16 (Pass 2 ECH2-09) — Audit log INSERT partiellement échoué
+
+Si `audit_log::insert_in_tx` retourne `DbError::Invariant("rows_affected == 0")` (cf. `audit_log.rs:42-50`), le `warn!` affiche l'erreur **mais l'INSERT a peut-être eu lieu** (avant un trigger qui l'a annulé). Pattern best-effort : on log et continue. **Garantie atomique** : l'INSERT audit est dans une transaction dédiée auto-commit ; si la transaction rollback (erreur), aucune row partielle n'est créée. Aucune action additionnelle requise v0.1.
+
+### R17 (Pass 2 BH2-10) — `equity_result` 2 queries SQL non-atomiques
+
+Le calcul `balance_sheet.equity_result` appelle `income_statement::generate` qui exécute 1 query SQL distincte du balance_sheet (2 queries indépendantes). Sous `READ COMMITTED`, si une nouvelle écriture est committée entre les 2 queries, `equity_result` et `total_liabilities` peuvent voir des snapshots légèrement différents (divergence ≤ quelques centimes en pratique). **Acceptable v0.1** — documenter en L65 comme dette traçable. **Optimisation v0.2** : query SQL unifiée OU transaction snapshot REPEATABLE READ.
 
 ### Références
 
@@ -1087,9 +1212,38 @@ Référence rapide pour le dev agent. Tous les `Pass 1 <CODE>` dans la spec ci-d
 | **BH-18** | Test journal section vide | Test T5.5 `filter_none_with_missing_journal_returns_5_sections_with_empty_one` |
 | **BH-19** | Warning `rename_all` query params | Noté dans T6.2 — sans `rename_all`, query params seraient snake_case en URL |
 
+### Pass 2 Haiku 4.5 — codes additionnels
+
+| Code | Sujet | Décision verrouillée |
+|---|---|---|
+| **AA2-01** (CRITICAL) | Mapping snake_case → camelCase IntoResponse | DTO intermédiaire `#[serde(rename_all = "camelCase")]` dans `kesh-api/src/errors.rs` (snippet T6.4 fourni) |
+| **BH2-01** | 4 clés i18n manquantes bloc Fluent | Bloc Fluent §i18n-keys complété 34 clés (4 labels + 7 colonnes + 5 sections + 8 totaux + 4 filtres + 3 erreurs UX + 3 equity-result) |
+| **BH2-02** | Refs stale `kesh-i18n` dep `kesh-report` | 4 sites corrigés (ligne 24, 49, Dev Notes Patterns, §Affichage) — `kesh-i18n` reporté 9-2 |
+| **BH2-03** | Counts tests T10 stale (20 vs 28) | Tous les sites synchronisés à ≥ 28 tests |
+| **BH2-04** | Counts tests T11 stale (6 vs 7) | Tous les sites synchronisés à ≥ 7 tests sqlx |
+| **AA2-02** | Doublon apparent AC #23 vs #32 | AC #23 reformulé : couverture 3 rôles ; AC #32 = cas concret Consultation testé (le plus restrictif) |
+| **AA2-03** | AC #34 dépendance route externe | `GET /api/v1/fiscal-years` confirmé existant dans `crates/kesh-api/src/lib.rs:321-322` (Story 3-7) |
+| **AA2-06** | `serde(rename_all)` explicite manquant T6.2 | Code snippet complet ReportQuery + JournalReportQuery avec derives obligatoires |
+| **AA2-09** | AC #31 period dans response — toutes routes | Test T10.2 #11 renommé `default_period_uses_fiscal_year_full_range_all_endpoints` |
+| **AA2-11** | balance_sheet règle archived rules | Explicite §3 : actifs sans écriture exclus (épure bilan), archived avec écritures inclus |
+| **AA2-12** | T11 seed structure non détaillée | Fixture obligatoire documentée : 1 company + 1 fy non-calendaire + 5 comptes + 1 archivé + 3 écritures multi-journaux |
+| **ECH2-01 / ECH2-10 / AA2-04** | Sentinelle entity_id=0 scope | Déplacée dans `kesh-db/src/entities/audit_log.rs` (trans-crate). Filtre toujours sur `(entity_type, entity_id)` jamais `entity_id` seul. Future-proof |
+| **ECH2-02** | Période inversée asymétrique (None, Some(e<start)) | Géré par check `s ≤ e` après résolution → 400 `VALIDATION`. L66 dette UX message v0.2 |
+| **ECH2-04** | TZ ambiguïté dates ISO | DATE calendar-day pure (pas datetime), aucune conversion TZ backend. L67 documenté |
+| **ECH2-06** | DECIMAL(19,4) precision | R14 : précision préservée v0.1 jusqu'à ~99 billions CHF (au-delà non testé) |
+| **ECH2-07** | Pool DB ≥ 4 connexions CI | L62 enrichi : env var `SQLX_MAX_CONNECTIONS=4` à ajouter `.github/workflows/ci.yml` |
+| **ECH2-08** | `equity_result` NULL edge | R15 : ordre `COALESCE` explicite — `COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0)`, pas l'inverse |
+| **ECH2-09** | Audit partial INSERT | R16 : `audit_log::insert_in_tx` atomique (rollback si erreur), pas de row partielle possible |
+| **BH2-10** | 2 queries SQL non-atomiques (balance + income) | R17 + L65 dette traçable v0.2 query unifiée OU snapshot REPEATABLE READ |
+| **BH2-05** | AC #3 ordering passif | Assertion test explicite (T3.4 `net_result_ordering_by_account_number`) — pas de patch supplémentaire requis |
+| **AA2-05** | 4 champs présence non-garantie JSON | DTO `#[serde(rename_all = "camelCase")]` sans `#[serde(skip_serializing_if)]` → champs toujours présents |
+| **AA2-07** | Mapping test → sub-cases unclear | T10.2 tests #20-#28 enrichis : « 2 sub-cases » documentées (e.g., `date_malformed` couvre `2026/01/15` ET `2026-02-30`) |
+| **AA2-08, AA2-10, AA2-13, AA2-14, AA2-15, ECH2-11..15** | LOW résiduels | Documentation incrémentale ou edges peu probables — non bloquants dev-story |
+
 ## Change Log
 
 | Date | Entrée | Auteur |
 |------|--------|--------|
+| **2026-05-14** | **`bmad-create-story validate 9-1` Pass 2 Haiku 4.5 — 3 reviewers parallèles fresh-context COMPLETED** — 38 findings bruts (BH2 8 + ECH2 15 + AA2 15) → ~28 distincts post-dedup inter-reviewers (collisions sentinelle ECH2-01/AA2-04/ECH2-10, validation handler ECH2-05/AA2-06, mapping camelCase AA2-01). Triage : 1 CRITICAL (AA2-01 IntoResponse mapping snake_case Rust → camelCase JSON non documenté pour AppError::ReportPeriodOutOfFiscalYear — test AC #13 fail certain sans correction), 6 HIGH (BH2-01 4 clés i18n manquantes bloc Fluent + BH2-02 3 refs stale kesh-i18n + BH2-03 counts T10 stale + AA2-03 dép externe `/api/v1/fiscal-years` + AA2-06 serde rename_all explicite + ECH2-07 pool CI), ~10 MEDIUM (sentinelle scope, AC #23/#32 doublon, balance_sheet vs trial_balance archived rules, T11 seed, AC #31 4 endpoints, BH2-04 T11 count, BH2-10 2 queries non-atomiques, ECH2-06 precision, ECH2-08 NULL equity, ECH2-09 audit partial), ~12 LOW. Verdicts Auditor CONDITIONAL GO + Hunter CONDITIONAL GO + ECH CONDITIONAL GO. Décision Guy Option A — **~19 patches CRITICAL+HIGH+MEDIUM appliqués** : (1) IntoResponse snippet camelCase DTO intermédiaire dans §error-shapes (CRITICAL AA2-01 résout) ; (2) bloc Fluent §i18n-keys complété 34 clés (BH2-01) ; (3) 4 refs `kesh-i18n` corrigées (ligne 24, 49, Dev Notes, §Affichage) — confirmation pas dep `kesh-report` v0.1 ; (4) counts T10 `≥ 28` + T11 `≥ 7` synchronisés à tous les sites ; (5) T6.2 code snippet ReportQuery + JournalReportQuery avec `#[derive(Deserialize)] #[serde(rename_all = "camelCase")]` explicite ; (6) AC #34 vérif route `GET /api/v1/fiscal-years` existante `kesh-api/src/lib.rs:321-322` (Story 3-7) ; (7) L62 enrichi pool CI `SQLX_MAX_CONNECTIONS=4` env var requis ; (8) AC #23 reformulé couverture 3 rôles (cas concret AC #32 Consultation) ; (9) balance_sheet règle archived rules explicite (différent trial_balance) ; (10) sentinelle scope kesh-db/src/entities/audit_log.rs (trans-crate future-proof Epic 14+15) + règle filtre `(entity_type, entity_id)` jamais `entity_id` seul ; (11) T11.1 seed structure obligatoire (1 fy non-calendaire + 5 comptes + 1 archivé + 3 écritures multi-journaux) ; (12) AC #31 test T10.2 #11 toutes routes (4 endpoints assertés) ; (13) R14 precision DECIMAL(19,4) + R15 ordre COALESCE explicite + R16 audit atomic + R17 2 queries non-atomiques + L65-L67 dettes tracées ; (14) §pass-1-clarifications enrichi avec 23 codes Pass 2 (AA2-01-15 + BH2-01-19 + ECH2-01-22 condensés). Spec 1095 → ~1300 lignes (+200 nettes), 34 ACs inchangés, sous-tâches affinées. Trend Pass 1 = 17+ > LOW → Pass 2 pré-patch = 17 > LOW → **Pass 2 post-patch estimé 0-2 HIGH résiduel** (à confirmer Pass 3 Opus 4.7). **Critère arrêt CLAUDE.md NON encore atteint** — Pass 3 obligatoire (cycle CLAUDE.md Sonnet → Haiku → Opus, briser biais Haiku + valider patches sans régression). Budget 2/8 passes consommé. | Claude (Haiku 4.5 validate Pass 2 — 3 reviewers parallèles fresh-context) |
 | **2026-05-14** | **`bmad-create-story validate 9-1` Pass 1 Sonnet 4.6 — 3 reviewers parallèles fresh-context COMPLETED** — 56 findings bruts (BH 19 + ECH 22 + AA 15) → 54 distincts post-dedup (2 doublons : BH-01/ECH-09 audit entity_id NOT NULL + BH-09/AA-02 shape JSON body error). Triage : 3 CRITICAL (BH-01 audit entity_id, BH-02 ordre params find_by_id_in_company, BH-03 workspace deps), 14 HIGH, ~24 MEDIUM, ~12 LOW. Verdict Acceptance Auditor : CONDITIONAL GO. Verdict Blind Hunter : NO-GO sur 3 CRITICAL. Décision Guy Option A — **~41 patches CRITICAL + HIGH + MEDIUM appliqués** : (T1.1) Cargo deps versions directes alignées kesh-db (sqlx="0.8", rust_decimal="1.41" feature serde-str, chrono="0.4", thiserror="2", tracing="0.1") + retrait kesh-i18n dep ; (§rust-types) Serialize sur ReportPeriod + account_type ajouté à AccountBalance + Journal de kesh-db explicite ; (§scope/T1.4) `resolve` unique nom + signature find_by_id_in_company(pool, company_id, id) + table de résolution asymétrique 4 cas + check `> 0` handler-side ; (§scope §3-§6) COALESCE(SUM(...), 0) partout + équation bilan v0.1 avec Equity-in-Liability documentée + comptes actifs sans écriture inclus + 5 sections journaux toujours présentes + ORDER BY accountNumber sur income_statement + hiérarchie parent_id non exploitée v0.1 ; (§audit-shapes) sentinelle AUDIT_ENTITY_ID_NONE=0 + pattern code best-effort match (pas de `?`) + JOIN users pour scope multi-tenant ; (§error-shapes) shape JSON 4 champs camelCase + mécanisme validation > 0 + mapping rejection Query<T> + case-sensitivity Journal documenté + param dupliqué déterministe ; (ACs) 30 → 34 ACs (#31 period dans response, #32 rôle Consultation, #33 4 onglets Playwright, #34 FY vide UI disabled) + ACs #3/#13/#14/#18/#19-22/#25/#29 reformulés avec assertions précises ; (T10.2) 20 → 28 tests E2E HTTP énumérés (tests #20-#28 ajoutés : malformed/zero-negative/date-invalid/journal-invalid/consultation/audit-sentinel/empty-period) ; (T11) ≥ 7 tests sqlx avec fiscal_year_non_calendar_isolation + clarification non-redondance T10 ; (T12) 4 onglets assertion + scénario FY vide ; (frontend) helper isReportEmpty unifié + formatSwissAmount (PAS formatting.ts) + section equity_result frontend rouge/vert + conversion ISO→dd.mm.yyyy Fluent ; (i18n) 30 → 34 clés (+ no-fiscal-year-available + equity-result × 3) + règle valeur obligatoire pour chaque locale ; (§Risques) R9 KF-022 + R10 READ COMMITTED + R11 non-calendaire + R12 company_id NULL + R13 écritures longues ; (§Limitations) L52 → L52+L61+L62+L63+L64 ; (Q3 trail décidée définitivement : audit 9-1 best-effort, CR si R2 conflit) ; (T2.3 BH-13 helper compute_net_result remplacé par appel direct income_statement::generate) ; (§performance perf_smoke manuel obligatoire code review). Spec 831 → ~1100 lignes, 30 → 34 ACs, 52 → ~60 sous-tâches. Trend Pass 1 = 17+ findings > LOW pré-patch. **Critère arrêt CLAUDE.md NON encore atteint** — Pass 2 obligatoire (Haiku 4.5 cycle Sonnet → Haiku, briser biais Sonnet auteur Pass 1 + valider que les ~41 patches n'introduisent pas de régression). Budget 1/8 passes. | Claude (Sonnet 4.6 validate Pass 1 — 3 reviewers parallèles fresh-context) |
 | **2026-05-14** | **`bmad-create-story 9-1` Opus 4.7 — spec initiale ready-for-dev** | Claude (Opus 4.7 — create-story) |
