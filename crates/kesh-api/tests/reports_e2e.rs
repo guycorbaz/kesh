@@ -1042,6 +1042,204 @@ async fn cross_tenant_aggregation_filtered_by_company(pool: MySqlPool) {
 }
 
 // ============================================================
+// AC #6 — Archived account WITHOUT entries excluded
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn trial_balance_excludes_archived_without_entries(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_w", Role::Comptable).await;
+    // Créer un compte archivé sans écriture
+    let archived_no_entries = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "1099",
+        "Compte archivé sans entrée",
+        AccountType::Asset,
+    )
+    .await;
+    archive_acc(&pool, archived_no_entries, ctx.user_id).await;
+
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/trial-balance?fiscalYearId={}",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    let rows = body["rows"].as_array().unwrap();
+    let found = rows
+        .iter()
+        .any(|r| r["accountId"].as_i64() == Some(archived_no_entries));
+    assert!(!found, "compte 1099 archivé sans écriture doit être exclu");
+}
+
+// ============================================================
+// AC #9 — Journals orders entries chronologically
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn journals_orders_entries_chronologically(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_x", Role::Comptable).await;
+    // Ajouter 2 écritures Achats avec dates inverses
+    post_entry(
+        &pool,
+        ctx.user_id,
+        ctx.fy_id,
+        ctx.company_id,
+        NaiveDate::from_ymd_opt(2026, 11, 20).unwrap(),
+        Journal::Achats,
+        "Achat tardif",
+        ctx.acc_5000_expense,
+        ctx.acc_2000_liab,
+        dec!(100.00),
+    )
+    .await;
+    post_entry(
+        &pool,
+        ctx.user_id,
+        ctx.fy_id,
+        ctx.company_id,
+        NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
+        Journal::Achats,
+        "Achat précoce",
+        ctx.acc_5000_expense,
+        ctx.acc_2000_liab,
+        dec!(200.00),
+    )
+    .await;
+
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/journals?fiscalYearId={}&journal=Achats",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    let achats = &body["journals"][0];
+    let entries = achats["entries"].as_array().unwrap();
+    let dates: Vec<&str> = entries
+        .iter()
+        .map(|e| e["entryDate"].as_str().unwrap())
+        .collect();
+    let mut sorted = dates.clone();
+    sorted.sort();
+    assert_eq!(dates, sorted, "Achats entries doivent être triés ASC par date");
+}
+
+// ============================================================
+// AC #20 — fiscalYearId malformé (parse error) returns 400
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn fiscal_year_id_malformed_returns_400(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_y", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/balance-sheet?fiscalYearId=abc"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    // Pass 3 BH3-12 : Axum Query rejection = text/plain 400
+    assert_eq!(resp.status(), 400);
+}
+
+// ============================================================
+// AC #21 — Date malformée returns 400
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn date_malformed_returns_400(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_z", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    for date in &["2026/01/15", "2026-02-30"] {
+        let resp = app
+            .client
+            .get(app.url(&format!(
+                "/api/v1/reports/balance-sheet?fiscalYearId={}&periodStart={date}",
+                ctx.fy_id
+            )))
+            .bearer_auth(&ctx.jwt)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400, "date: {date}");
+    }
+}
+
+// ============================================================
+// AC #22 — Journal enum invalide returns 400
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn journal_enum_invalid_returns_400(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_aa", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    for journal in &["Salaires", "achats"] {
+        let resp = app
+            .client
+            .get(app.url(&format!(
+                "/api/v1/reports/journals?fiscalYearId={}&journal={journal}",
+                ctx.fy_id
+            )))
+            .bearer_auth(&ctx.jwt)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400, "journal: {journal}");
+    }
+}
+
+// ============================================================
+// AC #28 / Pass 1 ECH-01 — Empty period returns zero totals + equation holds
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_empty_period_returns_zero_totals_equation_holds(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_bb", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    // Période 1 jour sans écritures (entre 2 écritures réelles)
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/balance-sheet?fiscalYearId={}&periodStart=2026-10-01&periodEnd=2026-10-01",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let assets = body["assets"].as_array().unwrap();
+    let liabilities = body["liabilities"].as_array().unwrap();
+    assert_eq!(assets.len(), 0);
+    assert_eq!(liabilities.len(), 0);
+    assert_eq!(body["equationHolds"], true);
+    let total_assets: Decimal = body["totalAssets"].as_str().unwrap().parse().unwrap();
+    let equity_result: Decimal = body["equityResult"].as_str().unwrap().parse().unwrap();
+    assert_eq!(total_assets, Decimal::ZERO);
+    assert_eq!(equity_result, Decimal::ZERO);
+}
+
+// ============================================================
 // AC #10 — Journal line ordering preserved
 // ============================================================
 
