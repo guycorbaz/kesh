@@ -13,7 +13,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 ## Scope
 
 Étend l'API publique stable `kesh_report::{BalanceSheet, IncomeStatement, TrialBalance, JournalReport}` livrée par Story 9-1 avec :
-- 2 nouveaux modules `kesh-report::{pdf, csv}` (sérialiseurs purs, déterministes, byte-stable pour tests). Nouveau variant `ReportError::PdfGeneration(String)` mappé `AppError::Internal` (500).
+- 2 nouveaux modules `kesh-report::{pdf, csv}` (sérialiseurs purs, déterministes, byte-stable pour tests). Nouveau variant `ReportError::PdfGeneration(String)` mappé `AppError::PdfGenerationFailed(s)` (variant existant `errors.rs:184`, code HTTP 500, i18n key dédié — Pass 4 ECH4-L1 sync).
 - 4 nouveaux endpoints HTTP `GET /api/v1/reports/{type}/export?format=pdf|csv` (Option B : routes séparées, pas d'extension `?format=` sur les routes JSON existantes — voir Decision §design-export-route). `format` parsé `Option<String>` puis validé handler-side → 400 VALIDATION_ERROR (pas 422 Axum).
 - 4 boutons « Export PDF » + 4 boutons « Export CSV » dans la page `/reports` (1 paire par onglet, visible une fois le rapport généré). Flag `exporting` dédié (pas partagé `loading`).
 - **10 clés i18n** (`reports-export-*` + `reports-filename-*` + `reports-pdf-*`) × 4 locales (fr/de/it/en-CH).
@@ -134,7 +134,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
   - [ ] T1.2 `csv = "1.3"` (sérialiseur standard Rust, RFC 4180 compliant)
   - [ ] T1.3 Vérifier `cargo build -p kesh-report` clean après ajout
 
-- [ ] **T2** Créer `crates/kesh-report/src/pdf.rs` — sérialiseur PDF pur (AC: #1-#9, #29)
+- [ ] **T2** Créer `crates/kesh-report/src/pdf.rs` — sérialiseur PDF pur (AC: #1-#9, #29, #31 — Pass 4 AA4-LOW3 ajout AC #31 pour T2.3a pagination)
   - [ ] T2.0 **(Pass 1 ECH-C2 + Pass 3 ECH3-H2)** Ajouter `PdfGeneration(String)` à `ReportError` (`crates/kesh-report/src/errors.rs`) — **mappé `AppError::PdfGenerationFailed(s)`** (variant existant `crates/kesh-api/src/errors.rs:184`, cohérent avec `invoice_pdf.rs` Story 5-3 + i18n key `error-pdf-generation-failed`, code HTTP 500, message client utile). **PAS `AppError::Internal`** (Pass 3 ECH3-H2 invalide la dismission Pass 2 ECH2-C1 : ECH2-C1 disait « mapping déjà documentée » mais T2.0 disait `Internal`, alors que le variant dédié `PdfGenerationFailed` existe déjà avec son IntoResponse branch). Sans ça, `printpdf::save_to_bytes() -> Result<_, PrintpdfError>` ne peut être propagé en `Result<Vec<u8>, ReportError>` ET on perd l'i18n message UX existant.
   - [ ] T2.1 Signature publique `pub fn render_balance_sheet_pdf(bs: &BalanceSheet, ctx: &PdfContext) -> Result<Vec<u8>, ReportError>` (× 4 fonctions, une par rapport)
   - [ ] T2.2 **(Pass 3 ECH3-C1 + BH3-M2)** `PdfContext { company_name: String, locale: String, empty_message: String, journal_filter_label: Option<String>, section_labels: SectionLabels }` — tous champs owned `String` (pas `&'static str` qui forcerait `Box::leak` ou consts). `locale` est **`String` (e.g. `"fr-CH"`)** dérivé côté handler via `SELECT accounting_language FROM companies WHERE id = ?` (1 query DB ajoutée par export, perf acceptable < 5ms). `empty_message`, `journal_filter_label` (`Some("Ventes")` si filtre), `section_labels` (struct local avec `actifs`, `passifs`, `capitaux_propres`, `produits`, `charges`, etc. — chargés depuis kesh-i18n côté handler) sont tous résolus AVANT d'appeler `render_*_pdf`. `kesh-report::pdf` reste découplé de `kesh-i18n` (DD-14 pattern `kesh-qrbill`).
@@ -175,7 +175,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
   - [ ] T5.3 **(Pass 1 AA-M3 + ECH-M2)** Construire `Response` :
     - PDF : `axum::response::Response::builder().header(CONTENT_TYPE, "application/pdf").header(CONTENT_DISPOSITION, build_content_disposition(filename)?).body(Body::from(pdf_bytes)).unwrap()`. Helper `build_content_disposition` retourne **les deux formes** : `attachment; filename="ascii_fallback"; filename*=UTF-8''<percent-encoded>` (RFC 5987 + ASCII fallback). Sans ça, `HeaderValue::from_str` panic sur un company name `"Müller AG"` (caractères non-ISO-8859-1).
     - CSV : idem avec `text/csv; charset=utf-8` + extension `.csv`. Body construit dans un `Vec<u8>` (cf. L5 — streaming Axum hors scope v0.1).
-  - [ ] T5.4 **(Pass 1 BH-M1 + ECH-C1 + AA-M3 + Pass 3 BH3-M3)** Filename helper `fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String` — slug ASCII via **regex inline** (`[^a-z0-9-]` → `-` puis `-+$` → `""`), max 20 chars, fallback `"company"` si slug vide. **Slug appliqué à `type_slug` ET `company_name`** (Pass 3 BH3-M3 — defense in depth, si future locale zh-CH provides `资产负债表` comme `reports-filename-balance-sheet`, le slug ramène en ASCII). **Pas de crate `slug`** ajoutée à kesh-api/Cargo.toml. Le slug ASCII est la valeur du `filename=` ; le `filename*=UTF-8''<percent-encoded>` utilise le nom original UTF-8.
+  - [ ] T5.4 **(Pass 1 BH-M1 + ECH-C1 + AA-M3 + Pass 3 BH3-M3 + Pass 4 ECH4-L3)** Filename helper `fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String` — slug ASCII via **regex inline** (`[^a-z0-9-]` → `-` puis `-+$` → `""`), max 20 chars, **fallback `"report"` pour `type_slug` vide post-slug** (cas CJK future locale) **et fallback `"company"` pour `company_name` vide post-slug**. **Slug appliqué à `type_slug` ET `company_name`** (Pass 3 BH3-M3 — defense in depth). **Pas de crate `slug`** ajoutée à kesh-api/Cargo.toml. Le slug ASCII est la valeur du `filename=` ; le `filename*=UTF-8''<percent-encoded>` utilise le nom original UTF-8.
   - [ ] T5.5 **(Pass 1 BH-M2)** Audit log `report.exported` via **nouvelle fonction séparée** `emit_report_export_audit(pool, user_id, report_type, format, fiscal_year_id, period_start, period_end, journal_filter)` — **PAS** modification de la signature existante `emit_report_audit` (qui briserait les 4 callers Story 9-1). Pattern best-effort identique.
   - [ ] T5.6 Validation `fiscal_year_id > 0` réutilisée (`validate_fiscal_year_id` helper Story 9-1).
   - [ ] T5.7 Multi-tenant via `ReportPeriod::resolve(&state.pool, current_user.company_id, ...)` — identique Story 9-1 (AC #24).
@@ -241,7 +241,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
     - **Tests positifs PDF/CSV** : `with-company` + insertion de 3-5 écritures via SQL (cohérent Story 9-1 reports_e2e.rs). Période query incluse dans FY 2020-2030.
     - **Test rapport vide (AC #32(f))** : `with-company` seedé **SANS aucune insertion `journal_entries`** + query `?fiscalYearId=<id>&periodStart=2026-01-01&periodEnd=2026-12-31` (période DANS FY 2020-2030 mais aucune écriture en DB). Les 4 rapports retournent vides → AC #8 (PDF empty_message) et AC #17 (CSV header-only). **NE PAS utiliser période 2099** qui est out-of-FY (FY est 2020-2030) → déclencherait 400 PERIOD_OUT_OF_FY au lieu d'empty report (Pass 2 AA2-H2 ground-truth `test_fixtures.rs:114` → FY 2020-2030).
     - **Test multi-tenant 404 (AC #32(d))** : créer un 2e seed via 2e appel `seed_accounting_company_extra` ou fixture inline 2 companies.
-    - **Test auth 401 (AC #32(g))** : pas de Bearer token, request POST sur 1 endpoint export → 401 (test isolé, pas obligation de tester les 4 endpoints — middleware auth identique sur authenticated_routes router).
+    - **Test auth 401 (AC #32(g))** : pas de Bearer token, **request GET** (les 4 endpoints export sont GET, cf. T6.1 — Pass 4 BH4-L3 coquille « POST » corrigée) sur 1 endpoint export → 401 (test isolé, pas obligation de tester les 4 endpoints — middleware auth identique sur authenticated_routes router).
     - **Test RBAC Consultation (AC #32(h))** : créer 1 user role Consultation + login → PDF + CSV success path = 2 tests.
   - [ ] T9.3 Assertions content-type + content-disposition + premiers bytes pour PDF (`assert!(body.starts_with(b"%PDF-1."))`) et CSV (`assert_eq!(&body[..3], b"\xef\xbb\xbf")`).
   - [ ] T9.4 **(Pass 1 ECH-M2)** Test content-disposition avec company name non-ASCII (e.g. `"Müller AG"`) — assert header bien formé, pas de `HeaderValue` panic. Réutilise `seed_accounting_company` mais override `companies.name` via SQL `UPDATE`.
@@ -360,11 +360,12 @@ Si dépendance crate `slug` jugée nécessaire en review : `slug = "0.1"` (8K do
   - **Préserver** : `get_balance_sheet`, `get_income_statement`, `get_trial_balance`, `get_journal_report`, `validate_fiscal_year_id`, `emit_report_audit`, `ReportQuery`, `JournalReportQuery`
   - **Modifier** : ajouter `ExportQuery`, `ExportFormat`, 4 handlers `export_*`, helpers `build_filename` + audit
 - `crates/kesh-api/src/lib.rs` ligne ~373 — 4 nouvelles routes après celles Story 9-1
+- `crates/kesh-api/src/errors.rs` — **(Pass 4 ECH4-M1)** ajouter bras `ReportError::PdfGeneration(s) => AppError::PdfGenerationFailed(s)` dans le `match err` de `From<ReportError> for AppError` (`errors.rs:476`). Sans ça, build échoue E0004 non-exhaustive match dès T2.0 commit. **Préserver** : 5 bras existants (`Db`, `FiscalYearNotFound`, `PeriodInvalid`, `PeriodOutOfFiscalYear`, `TrialBalanceUnbalanced`).
 - `frontend/src/lib/features/reports/reports.api.ts` (~117 lignes existantes) — ajouter `getReportExportUrl`, `downloadReport`, `buildExportFilename`
   - **Préserver** : `getBalanceSheet`, `getIncomeStatement`, `getTrialBalance`, `getJournalReport`, `isReportEmpty`, `formatSwissDate`, `formatReportAmount`, helpers `buildQuery`
 - `frontend/src/lib/features/reports/ReportSelector.svelte` — ajouter 2 boutons + 2 props
 - `frontend/src/routes/(app)/reports/+page.svelte` (~218 lignes existantes) — ajouter handlers `exportPdf`/`exportCsv` + state `exporting` + bind `onExportPdf`/`onExportCsv`
-- 4 fichiers `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — ajouter 11 clés `reports-export-*` + `reports-filename-*`
+- 4 fichiers `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — ajouter **10 clés** : 4× `reports-export-*` + 4× `reports-filename-*` + 2× `reports-pdf-*` (Pass 4 BH4-L2 + AA4-LOW1 + ECH4-L2 sync, total cohérent avec T8.1 + T8.4 + Scope §line 19).
 
 ### Testing standards
 
@@ -436,7 +437,7 @@ Toutes les Q1-Q6 ont été tranchées en Pass 1 Sonnet 4.6 (cycle CLAUDE.md). Ve
 | Q1 | Helper `format_swiss_amount` local ou factorisé `kesh-format` ? | **Accepté duplication v0.1**. Helper local à `kesh-report::pdf`, pas de dépendance kesh-i18n (Decision §swiss-amount-format). Si > 3 crates dupliquent → story Epic 15 v0.2. **Pass 1 BH-H3 fix incluse** : nom correct `kesh-i18n::format_money` (pas `format_amount`). | T2.4 |
 | Q2 | `emit_report_audit` modifié ou nouveau `emit_report_export_audit` ? | **Nouveau fn séparé** mandaté. Modifier la signature existante briserait les 4 callers Story 9-1 → 28 E2E tests reports_e2e.rs cassent (Pass 1 BH-M2). | T5.5 |
 | Q3 | Endpoint `companyName` existe ? | **Oui, confirmé `companies.rs:75`** (Pass 1 ECH-H1 + BH-M3 + AA-H5 ground-truth). Chargé via `+page.ts` load function en parallèle de `fiscalYears`, extension `PageData`. Fallback `'company'` uniquement si `data.companyName === ''` (pathologique). | T7.3 |
-| Q4 | Fixtures écritures helper public ou inline SQL ? | **Inline SQL** cohérent Story 9-1 `reports_e2e.rs`. Pas de nouveau preset endpoint. Stratégie spécifique : `with-company` + insertions SQL ad-hoc + tests rapport vide via `periodStart=2099-01-01` (Pass 1 AA-M5). | T9.2 |
+| Q4 | Fixtures écritures helper public ou inline SQL ? | **Inline SQL** cohérent Story 9-1 `reports_e2e.rs`. Pas de nouveau preset endpoint. Stratégie spécifique : `with-company` + insertions SQL ad-hoc + tests rapport vide via **seed SANS écritures + période DANS FY 2020-2030** (Pass 2 AA2-H2 invalidant la stratégie 2099 hors FY — Pass 4 BH4-L1+AA4-LOW2+ECH4 trail sync). | T9.2 + AC #32(f) |
 | Q5 | PDF pagination strategy multi-page ? | **Option (a) page break automatique** via `doc.add_page()` quand cursor Y approche 25mm du bas. Footer `page X/Y` dans helper `draw_footer`. AC #31 (< 5 MB pour 10k entries) sécurise contre fichiers absurdes. | T2.3 + AC #31 |
 | Q6 | Benchmark dataset construction code vs DB ? | **Code Rust pur** via factories `make_balance_sheet(n_accounts: usize)` etc. — pas de DB pour bench, isolation des effets DB (latence/buffer pool). 2 fixtures : 1000 + 10000 écritures (Pass 1 AA-M4). | T4.3 |
 
@@ -556,6 +557,41 @@ Section synthèse pour traçabilité review iteration CLAUDE.md.
 - Trend > LOW : Pass 1 = 31 → Pass 2 = 6 → **Pass 3 = 10** (régression apparente mais qualité réelle améliorée — Opus a invalidé 2 dismissions Pass 2 et trouvé 1 CRITICAL gap conceptuel sur la locale source).
 
 **Critère arrêt CLAUDE.md NON atteint** — Pass 4 Sonnet 4.6 obligatoire (cycle Sonnet → Haiku → Opus → Sonnet, briser biais Opus auteur Pass 3 + valider 10 patches sans régression). Budget 3/8 passes consommé. **Splitting préventif évalué** : Pass 3 régression numérique mais bug-type findings (pas conceptuels) → split 9-2a non justifié, Pass 4 devrait converger sur 0 > LOW si patches Pass 3 propres.
+
+### Pass 4 Sonnet 4.6 clarifications — CONVERGENCE ATTEINTE
+
+3 reviewers Sonnet 4.6 parallèles fresh-context (BH4+ECH4+AA4) post-Pass-3 Opus. **Tous 3 reviewers GO**. Pattern 8-5b retro respecté : Sonnet brise biais Opus Pass 3 author.
+
+| Code | Finding | Sévérité Pass 4 | Verdict |
+|---|---|---|---|
+| ECH4-M1 | File Structure UPDATE list manque `crates/kesh-api/src/errors.rs` (où ajouter `From<ReportError>` arm) | MEDIUM | **PATCHÉ** — UPDATE list ajoute errors.rs avec note exhaustive match E0004. ECH4 lui-même note « compiler-guardrailed → reclassement LOW acceptable » |
+| BH4-L1+AA4-LOW2+ECH4-L1 | Stale references à « 2099 » dans Q4 row + « AppError::Internal » dans Scope §line 16 + « 11 clés » dans File Structure | LOW (3 codes mergés) | **PATCHÉ** — Scope §line 16 sync `PdfGenerationFailed`, Q4 row sync stratégie empty-report DANS FY, File Structure « 11 → 10 clés » |
+| BH4-L3 | T9.2 ligne 244 dit « POST » mais routes export sont GET | LOW | **PATCHÉ** — T9.2 « request GET » |
+| AA4-LOW3 | T2 header AC mapping manque AC #31 | LOW | **PATCHÉ** — T2 header `(AC: #1-#9, #29, #31)` |
+| ECH4-L3 | type_slug fallback empty post-slug non spécifié | LOW | **PATCHÉ** — T5.4 fallback `"report"` pour type_slug vide, `"company"` pour company_name vide |
+| BH4-L2 + AA4-LOW1 + ECH4-L2 | Variantes du « 11 vs 10 clés » | LOW (merge ci-dessus) | **PATCHÉ** unique |
+
+**Pass 3 patches verification** : **10/10 ✓** confirmés ground-truth par les 3 reviewers Pass 4 (`PdfGenerationFailed` variant `errors.rs:184`, `BalanceSheet::equity_result` scalaire, `fetchCompanyCurrent` dans `settings.api.ts:4`, `accounting_language` field `company.rs:150`, `printpdf 0.7` + `tracing 0.1` versions ground-truth correctes).
+
+**Bilan Pass 4 post-ground-truth** :
+- 10 bruts → 7 distincts post-dedup → **7 patches appliqués** (1 MEDIUM cosmetic spec gap + 6 LOW typos / wording stale) → **0 > LOW post-patch**.
+- Trend > LOW : Pass 1 = 31 → Pass 2 = 6 → Pass 3 = 10 → **Pass 4 = 1 (essentiellement 0 post-patch)**.
+
+### 🎯 CONVERGENCE ATTEINTE — Cycle review STOP
+
+**Critère arrêt CLAUDE.md ATTEINT Pass 4** : « Uniquement des findings de sévérité LOW » → tous patchés. Le 1 MEDIUM (ECH4-M1) est reclassement LOW justifié — Rust exhaustive match E0004 compiler-guardrail rend l'oubli impossible côté implémentation (le dev ne peut pas ship un build qui casse).
+
+**Budget consommé : 4/8 passes.** Marge restante 4 passes inutilisée.
+
+**Cycle final** : Sonnet (auteur Pass 1) → Haiku Pass 2 → Opus Pass 3 (brise consensus, invalide 2 dismissions Pass 2) → Sonnet Pass 4 (brise biais Opus, confirme convergence). Pattern 8-5b retro pleinement respecté.
+
+**Verdict final : `GO ready-for-dev` FERME**. Spec ~1300 lignes, 36 ACs, 13 tasks (T1-T13 + sub-tasks T2.0/T2.3a/T2.7/T3.6/T5.8/T6.2/T7.6/T9.4 ajoutés au fil des passes). Le dev a une spec complète avec :
+- Ground-truth verified (kesh-report API contracts, AppError variants, fetchCompanyCurrent, accounting_language, FY 2020-2030, printpdf 0.7, tracing 0.1)
+- Decisions verrouillées (R1-R8 résolues, Q1-Q6 fermées, L1-L12 documentées)
+- Test budget chiffré (16 E2E HTTP + 12 unit + 3 Vitest + 1 Playwright = 32 tests minimum)
+- 4 passes de patches cumulés (31 + 6 + 10 + 7 = 54 patches au total)
+
+**Path-dep aval** : 9-2b (export global ZIP) peut démarrer dès que 9-2a est mergée (réutilise `kesh-report::csv` serializer + filename helpers + audit pattern).
 
 ### Project Structure Notes
 
