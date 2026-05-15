@@ -731,3 +731,56 @@ reconciliation-rules-error-not-found = Regel nicht gefunden.
 reconciliation-rules-error-duplicate = Eine aktive Regel existiert bereits für diese Typ/Wert-Kombination.
 reconciliation-rules-applied-badge = Regel
 reconciliation-rules-applied-score-na = Auto
+
+# === Story 9-1 — Buchhaltungsberichte (34 Schlüssel) ===
+# TODO official translation — basique livré dev-story (Pass 1 ECH-19)
+
+reports-balance-sheet = Bilanz
+reports-income-statement = Erfolgsrechnung
+reports-trial-balance = Saldobilanz
+reports-journals = Journale
+
+reports-column-account-number = Konto-Nr.
+reports-column-account-name = Bezeichnung
+reports-column-debit = Soll
+reports-column-credit = Haben
+reports-column-balance = Saldo
+reports-column-entry-date = Datum
+reports-column-description = Buchungstext
+
+reports-section-assets = Aktiven
+reports-section-liabilities = Passiven
+reports-section-equity = Eigenkapital
+reports-section-revenues = Ertrag
+reports-section-expenses = Aufwand
+
+reports-total-assets = Total Aktiven
+reports-total-liabilities = Total Passiven
+reports-total-revenues = Total Ertrag
+reports-total-expenses = Total Aufwand
+reports-total-debit = Total Soll
+reports-total-credit = Total Haben
+reports-net-result = Periodenergebnis
+reports-grand-total = Gesamttotal
+
+reports-filter-period = Periode
+reports-filter-fiscal-year = Geschäftsjahr
+reports-filter-journal = Journal
+reports-button-generate = Erstellen
+
+reports-error-no-entries-in-period = Keine Buchungen in der gewählten Periode. Ändern Sie die Daten oder wählen Sie ein anderes Geschäftsjahr.
+reports-error-period-out-of-fiscal-year = Die gewählte Periode überschreitet die Grenzen des Geschäftsjahres. Wählen Sie eine Periode zwischen { $fyStart } und { $fyEnd }.
+reports-error-no-fiscal-year-available = Kein Geschäftsjahr verfügbar. Erstellen Sie zuerst ein Geschäftsjahr.
+
+reports-equity-result-section-title = Periodenergebnis (vor Abschlussbuchung)
+reports-equity-result-profit = Gewinn der Periode
+reports-equity-result-loss = Verlust der Periode
+
+# Alerts + badges UI (2 — code review Pass 1 i18n leaks)
+reports-equation-warning = ⚠️ Bilanzgleichung ungültig (Quelldaten prüfen).
+reports-archived-label = archiviert
+
+# Berichte-Seite — chrome (3 — code review Pass 1 i18n leaks)
+reports-page-title = Buchhaltungsberichte
+reports-instruction-select-and-generate = Wählen Sie ein Geschäftsjahr aus und klicken Sie auf Generieren.
+reports-loading = Bericht wird generiert…

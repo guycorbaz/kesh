@@ -780,3 +780,62 @@ reconciliation-rules-error-not-found = Règle introuvable.
 reconciliation-rules-error-duplicate = Une règle active existe déjà pour cette combinaison type/valeur.
 reconciliation-rules-applied-badge = Règle
 reconciliation-rules-applied-score-na = Auto
+
+# === Story 9-1 — Rapports comptables (34 clés) ===
+
+# Labels rapports (4)
+reports-balance-sheet = Bilan
+reports-income-statement = Compte de résultat
+reports-trial-balance = Balance des comptes
+reports-journals = Journaux
+
+# Colonnes (7)
+reports-column-account-number = N° de compte
+reports-column-account-name = Intitulé
+reports-column-debit = Débit
+reports-column-credit = Crédit
+reports-column-balance = Solde
+reports-column-entry-date = Date
+reports-column-description = Libellé
+
+# Sections (5)
+reports-section-assets = Actifs
+reports-section-liabilities = Passifs
+reports-section-equity = Capitaux propres
+reports-section-revenues = Produits
+reports-section-expenses = Charges
+
+# Totaux (8)
+reports-total-assets = Total actifs
+reports-total-liabilities = Total passifs
+reports-total-revenues = Total produits
+reports-total-expenses = Total charges
+reports-total-debit = Total débit
+reports-total-credit = Total crédit
+reports-net-result = Résultat net
+reports-grand-total = Total général
+
+# Filtres (4)
+reports-filter-period = Période
+reports-filter-fiscal-year = Exercice
+reports-filter-journal = Journal
+reports-button-generate = Générer
+
+# Erreurs UX (3)
+reports-error-no-entries-in-period = Aucune écriture dans la période sélectionnée. Modifiez les dates ou choisissez un autre exercice.
+reports-error-period-out-of-fiscal-year = La période sélectionnée dépasse les bornes de l'exercice. Choisissez une période entre { $fyStart } et { $fyEnd }.
+reports-error-no-fiscal-year-available = Aucun exercice comptable disponible. Créez un exercice avant de générer des rapports.
+
+# Section résultat de l'exercice (3 — Pass 1 ECH-11)
+reports-equity-result-section-title = Résultat de l'exercice (avant clôture)
+reports-equity-result-profit = Bénéfice de l'exercice
+reports-equity-result-loss = Perte de l'exercice
+
+# Alertes + badges UI (2 — code review Pass 1 i18n leaks)
+reports-equation-warning = ⚠️ Équation bilan déséquilibrée (vérifier données source).
+reports-archived-label = archivé
+
+# Page rapports — chrome (3 — code review Pass 1 i18n leaks)
+reports-page-title = Rapports comptables
+reports-instruction-select-and-generate = Sélectionnez un exercice et cliquez sur Générer.
+reports-loading = Génération du rapport en cours…

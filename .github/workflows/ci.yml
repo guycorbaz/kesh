@@ -39,6 +39,13 @@ jobs:
           --health-retries=10
     env:
       DATABASE_URL: mysql://root:kesh_root@127.0.0.1:3306/kesh
+      # Story 9-1 (Pass 2 ECH2-07) avait ajouté `SQLX_MAX_CONNECTIONS: "4"` ici, mais
+      # code-review Pass 1 Sonnet a établi que la var n'est lue NULLE PART (main.rs:43
+      # hardcode `max_connections(5)`, sqlx::test utilise sa propre config). Retirée :
+      # `cargo test --workspace -j1 -- --test-threads=1` serialise déjà entièrement
+      # l'exécution (1 binaire à la fois, 1 thread par binaire) donc le pool default
+      # de 5 connexions est largement suffisant. Si une vraie contention apparaît,
+      # ajouter `pool_max_conns=N` au query string DATABASE_URL (lu par sqlx).
     steps:
       - uses: actions/checkout@v4
 

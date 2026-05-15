@@ -12,6 +12,18 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+/// Sentinelle `entity_id` pour les actions audit sans entité concrète
+/// (rapports, consultations agrégées, exports, etc. — Story 9-1).
+///
+/// Garantie d'unicité sémantique : les `id` réels d'entités sont en `AUTO_INCREMENT`
+/// qui démarre à 1 — `0` ne correspond à aucune entité réelle.
+///
+/// **IMPORTANT — utilisation correcte** : pour distinguer plusieurs actions audit
+/// avec `entity_id = 0`, **toujours filtrer sur la combinaison `(entity_type, entity_id)`**,
+/// jamais sur `entity_id` seul. Exemple :
+///   SELECT * FROM audit_log WHERE entity_type = 'report' AND entity_id = AUDIT_ENTITY_ID_NONE;
+pub const AUDIT_ENTITY_ID_NONE: i64 = 0;
+
 /// Entrée du journal d'audit persistée en base.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
