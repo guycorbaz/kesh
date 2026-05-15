@@ -6,11 +6,11 @@
  *   2. AC #28 (T12.1) : génération bilan via UI sur preset `with-company` (sans
  *      écritures → empty-state message attendu, mais le flow Generate→Response
  *      est vérifié end-to-end avec MariaDB up + audit best-effort)
- *   3. AC #34 (T12.4) : company sans fiscal_year → bouton Générer disabled
- *      (TODO — code review Pass 1 P8 : actuellement skippé car les presets
- *      `with-company`/`with-data` incluent tous un fiscal_year. Implémenter
- *      un preset `with-company-no-fy` côté test_endpoints.rs pour activer.)
- *   4. AC #34 : axe a11y scan zero violations (état empty + état populé)
+ *   3. AC #34 : axe a11y scan zero violations (état empty + état populé)
+ *   4. AC #34 (T12.4) : company sans fiscal_year → bouton Générer disabled
+ *      + message i18n `reports-error-no-fiscal-year-available` visible
+ *      (preset `with-company-no-fy` — Issue #90). **Exécuté en dernier** car
+ *      reseed la DB en état no-fy, incompatible avec les tests précédents.
  *
  * Pré-requis :
  *   - MariaDB up + KESH_TEST_MODE=true.
@@ -82,23 +82,6 @@ test('reports page generates balance sheet end-to-end (AC #28, T12.1)', async ({
 	await expect(emptyMsg.or(totalActifs)).toBeVisible({ timeout: 5000 });
 });
 
-test.skip('reports page disables Générer when company has no fiscal year (AC #34, T12.4)', async () => {
-	// TODO (code review Pass 1 P8 follow-up) : ce test nécessite un preset
-	// `with-company-no-fy` dans `crates/kesh-api/src/routes/test_endpoints.rs`
-	// (et `seed_accounting_company_no_fy` dans `crates/kesh-db/src/test_fixtures.rs`)
-	// qui seed company + user admin mais PAS de fiscal_year.
-	//
-	// Tracker : créer issue GitHub « test preset `with-company-no-fy` for AC #34
-	// E2E coverage » + ajouter à epic-9.md dette technique.
-	//
-	// Comportement attendu une fois le preset disponible :
-	//   await seedTestState('with-company-no-fy');
-	//   await login(page);
-	//   await page.goto('/reports');
-	//   await expect(page.getByRole('button', { name: /générer/i })).toBeDisabled();
-	//   await expect(page.getByText(/aucun exercice comptable disponible/i)).toBeVisible();
-});
-
 test('reports page has zero axe a11y violations (empty state)', async ({ page }) => {
 	await login(page);
 	await page.goto('/reports');
@@ -125,4 +108,20 @@ test('reports page has zero axe a11y violations (populated state)', async ({ pag
 		.withTags(['wcag2a', 'wcag2aa'])
 		.analyze();
 	expect(results.violations).toEqual([]);
+});
+
+// Issue #90 — AC #34 / T12.4 : ce test reseed la DB avec `with-company-no-fy`
+// et doit donc être exécuté EN DERNIER dans ce fichier. Sinon, les tests
+// suivants qui s'attendent à un `with-company` (avec fiscal_year) seedé par
+// `beforeAll` verraient un état dérivé (no-fy) et échoueraient en cascade.
+test('reports page disables Générer when company has no fiscal year (AC #34, T12.4)', async ({
+	page,
+}) => {
+	await seedTestState('with-company-no-fy');
+	await login(page);
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+
+	await expect(page.getByRole('button', { name: /générer/i })).toBeDisabled();
+	await expect(page.getByText(/aucun exercice comptable disponible/i)).toBeVisible();
 });

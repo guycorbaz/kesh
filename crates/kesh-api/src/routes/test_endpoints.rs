@@ -17,6 +17,8 @@
 //! - `fresh` : uniquement user `changeme/changeme` (AC #7)
 //! - `post-onboarding` / `with-company` : state complet post-onboarding (AC #8/#9)
 //! - `with-data` : `with-company` + contact + product (AC #10, pas de facture)
+//! - `with-company-no-fy` : `with-company` mais sans `fiscal_year`
+//!   (Issue #90 — Story 9-1 AC #34 garde-fou E2E « bouton Générer disabled »)
 //!
 //! **Concurrence** (code review P2) : un `tokio::sync::Mutex` statique
 //! sérialise tous les seed/reset server-side. Sans ça, deux workers
@@ -30,8 +32,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{Router, post};
 use kesh_db::test_fixtures::{
-    mark_onboarding_complete, seed_accounting_company, seed_changeme_user_only,
-    seed_contact_and_product, truncate_all,
+    mark_onboarding_complete, seed_accounting_company, seed_accounting_company_no_fy,
+    seed_changeme_user_only, seed_contact_and_product, truncate_all,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
@@ -77,6 +79,11 @@ pub enum Preset {
     /// `'CI Product'`. **Pas de facture pré-seedée** — les specs créent
     /// leurs fixtures dynamiquement.
     WithData,
+    /// Issue #90 / Story 9-1 AC #34 : variante de `WithCompany` qui **omet
+    /// le `fiscal_year`**. Garde-fou E2E pour la page `/reports` avec
+    /// company sans exercice comptable (bouton « Générer » disabled +
+    /// message i18n `reports-error-no-fiscal-year-available`).
+    WithCompanyNoFy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,7 +91,7 @@ pub struct SeedRequest {
     pub preset: Preset,
 }
 
-const VALID_PRESETS: &str = "fresh, post-onboarding, with-company, with-data";
+const VALID_PRESETS: &str = "fresh, post-onboarding, with-company, with-data, with-company-no-fy";
 
 /// Extracteur custom (code review AC #11) qui wrappe `Json<SeedRequest>`
 /// et intercepte les rejets serde pour produire un **400 Bad Request** avec
@@ -187,6 +194,15 @@ async fn seed_handler(
                 .await
                 .map_err(|e| AppError::Internal(format!("seed_contact_and_product: {e}")))?;
             "with-data"
+        }
+        Preset::WithCompanyNoFy => {
+            seed_accounting_company_no_fy(&state.pool)
+                .await
+                .map_err(|e| AppError::Internal(format!("seed_accounting_company_no_fy: {e}")))?;
+            mark_onboarding_complete(&state.pool)
+                .await
+                .map_err(|e| AppError::Internal(format!("mark_onboarding_complete: {e}")))?;
+            "with-company-no-fy"
         }
     };
 
