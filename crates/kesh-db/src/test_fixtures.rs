@@ -183,6 +183,98 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     })
 }
 
+/// Variante de [`seed_accounting_company`] qui **omet le `fiscal_year`**.
+///
+/// Cas d'usage : tester l'AC #34 de Story 9-1 (Issue #90) — page `/reports`
+/// affiche bouton « Générer » disabled + message
+/// `reports-error-no-fiscal-year-available` quand `fiscal_years` est vide
+/// pour la company de l'utilisateur connecté. Représente le cas réaliste
+/// « company complète, fiscal_year supprimé après onboarding ».
+///
+/// Crée :
+/// - 1 `companies` : `'CI Test Company No FY'`
+/// - 2 `users` Admin : `admin/admin123` + `changeme/changeme`
+/// - **AUCUN `fiscal_years`** (différence clé vs. [`seed_accounting_company`])
+/// - 5 `accounts` (1000-4000) + `company_invoice_settings` + 4 `vat_rates`
+///
+/// Les call sites doivent appeler [`mark_onboarding_complete`] après pour
+/// que le user passe le gate onboarding du frontend (step ≥ 6 path B prod).
+pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), FixtureError> {
+    let company_result = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('CI Test Company No FY', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+    )
+    .execute(pool)
+    .await?;
+    let company_id = company_result.last_insert_id() as i64;
+
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, 'Admin', TRUE, ?)",
+    )
+    .bind("admin")
+    .bind(ADMIN_PASSWORD_HASH)
+    .bind(company_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, 'Admin', TRUE, ?)",
+    )
+    .bind("changeme")
+    .bind(CHANGEME_PASSWORD_HASH)
+    .bind(company_id)
+    .execute(pool)
+    .await?;
+
+    let mut accounts: HashMap<&'static str, i64> = HashMap::new();
+    for (code, name, account_type) in &[
+        ("1000", "Caisse CI", "Asset"),
+        ("1100", "Banque CI", "Asset"),
+        ("2000", "Capital CI", "Liability"),
+        ("3000", "Ventes CI", "Revenue"),
+        ("4000", "Charges CI", "Expense"),
+    ] {
+        let result = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, ?)",
+        )
+        .bind(company_id)
+        .bind(code)
+        .bind(name)
+        .bind(account_type)
+        .execute(pool)
+        .await?;
+        accounts.insert(*code, result.last_insert_id() as i64);
+    }
+
+    sqlx::query(
+        "INSERT INTO company_invoice_settings \
+         (company_id, default_receivable_account_id, default_revenue_account_id, default_sales_journal) \
+         VALUES (?, ?, ?, 'Ventes')",
+    )
+    .bind(company_id)
+    .bind(accounts["1100"])
+    .bind(accounts["3000"])
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT IGNORE INTO vat_rates (company_id, label, rate, valid_from, valid_to) \
+         VALUES \
+            (?, 'product-vat-normal',  8.10, '2024-01-01', NULL), \
+            (?, 'product-vat-special', 3.80, '2024-01-01', NULL), \
+            (?, 'product-vat-reduced', 2.60, '2024-01-01', NULL), \
+            (?, 'product-vat-exempt',  0.00, '2024-01-01', NULL)",
+    )
+    .bind(company_id)
+    .bind(company_id)
+    .bind(company_id)
+    .bind(company_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Liste des tables à truncate (code review P5).
 ///
 /// Ordre : enfants (FK) → parents. `invoice_number_sequences` avant
@@ -518,6 +610,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(product_name, "CI Product");
+    }
+
+    /// Issue #90 — `seed_accounting_company_no_fy` doit produire company +
+    /// users + accounts + invoice settings + vat_rates mais **0** fiscal_year.
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    async fn seed_accounting_company_no_fy_skips_fiscal_year(pool: MySqlPool) {
+        seed_accounting_company_no_fy(&pool).await.expect("seed");
+
+        let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(company_count, 1, "1 company expected");
+
+        let user_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'Admin' AND active = TRUE")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(user_count, 2, "2 Admin users expected (admin + changeme)");
+
+        let fy_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(fy_count, 0, "fiscal_years must be empty (AC #34 scenario)");
+
+        let account_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(account_count, 5, "5 accounts expected");
+
+        let cis_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM company_invoice_settings")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(cis_count, 1, "1 company_invoice_settings expected");
+
+        let vat_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vat_rates")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(vat_count, 4, "4 vat_rates expected");
     }
 
     /// Code review P5 : garantit que `TABLES_TO_TRUNCATE` reste synchro

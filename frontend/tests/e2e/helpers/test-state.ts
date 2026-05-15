@@ -25,7 +25,12 @@
 
 import { request as playwrightRequest, type APIRequestContext } from '@playwright/test';
 
-export type Preset = 'fresh' | 'post-onboarding' | 'with-company' | 'with-data';
+export type Preset =
+	| 'fresh'
+	| 'post-onboarding'
+	| 'with-company'
+	| 'with-data'
+	| 'with-company-no-fy';
 
 // Storage key constants (must match auth.svelte.ts — if keys change there, update here too)
 const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';

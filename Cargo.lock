@@ -1698,6 +1698,7 @@ dependencies = [
  "kesh-import",
  "kesh-qrbill",
  "kesh-reconciliation",
+ "kesh-report",
  "kesh-seed",
  "reqwest",
  "rust_decimal",
@@ -1737,6 +1738,7 @@ dependencies = [
  "dotenvy",
  "kesh-core",
  "kesh-import",
+ "kesh-report",
  "regex",
  "rust_decimal",
  "rust_decimal_macros",
@@ -1818,6 +1820,18 @@ dependencies = [
 [[package]]
 name = "kesh-report"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "kesh-core",
+ "kesh-db",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tracing",
+]
 
 [[package]]
 name = "kesh-seed"

@@ -275,6 +275,57 @@ async fn seed_with_data_adds_contact_and_product_but_no_invoice(pool: MySqlPool)
     .await;
 }
 
+// --- Issue #90 / Story 9-1 AC #34 : preset `with-company-no-fy` --------------
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn seed_with_company_no_fy_skips_fiscal_year(pool: MySqlPool) {
+    let app = spawn_app(pool.clone(), true).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/_test/seed"))
+        .json(&json!({ "preset": "with-company-no-fy" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "body: {:?}", resp.text().await);
+
+    assert_row_counts(
+        &pool,
+        &[
+            ("users", 2),
+            ("companies", 1),
+            // Différence clé vs. `with-company` : aucun fiscal_year.
+            ("fiscal_years", 0),
+            ("accounts", 5),
+            ("company_invoice_settings", 1),
+            ("onboarding_state", 1),
+            ("vat_rates", 4),
+        ],
+    )
+    .await;
+
+    let admin_active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users WHERE username = 'admin' AND role = 'Admin' AND active = TRUE",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        admin_active, 1,
+        "admin user must be active so the Playwright test can login"
+    );
+
+    let step: i32 =
+        sqlx::query_scalar("SELECT step_completed FROM onboarding_state WHERE singleton = TRUE")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        step, 10,
+        "step_completed must be 10 so frontend onboarding gate (step >= 6) passes"
+    );
+}
+
 // --- AC #11 : preset invalide -----------------------------------------------
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -297,7 +348,8 @@ async fn seed_rejects_invalid_preset(pool: MySqlPool) {
         msg.contains("fresh")
             && msg.contains("post-onboarding")
             && msg.contains("with-company")
-            && msg.contains("with-data"),
+            && msg.contains("with-data")
+            && msg.contains("with-company-no-fy"),
         "error message must list valid presets, got: {msg}"
     );
 }
