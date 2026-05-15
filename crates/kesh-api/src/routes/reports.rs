@@ -320,13 +320,7 @@ pub async fn export_balance_sheet(
     )
     .await;
 
-    build_export_response(
-        format,
-        body,
-        "balance-sheet",
-        &company_name,
-        &period,
-    )
+    build_export_response(format, body, "balance-sheet", &company_name, &period)
 }
 
 /// GET /api/v1/reports/income-statement/export?format=pdf|csv
@@ -380,13 +374,7 @@ pub async fn export_income_statement(
     )
     .await;
 
-    build_export_response(
-        format,
-        body,
-        "income-statement",
-        &company_name,
-        &period,
-    )
+    build_export_response(format, body, "income-statement", &company_name, &period)
 }
 
 /// GET /api/v1/reports/trial-balance/export?format=pdf|csv
@@ -440,13 +428,7 @@ pub async fn export_trial_balance(
     )
     .await;
 
-    build_export_response(
-        format,
-        body,
-        "trial-balance",
-        &company_name,
-        &period,
-    )
+    build_export_response(format, body, "trial-balance", &company_name, &period)
 }
 
 /// GET /api/v1/reports/journals/export?format=pdf|csv&journal=Ventes
@@ -506,13 +488,7 @@ pub async fn export_journal_report(
     )
     .await;
 
-    build_export_response(
-        format,
-        body,
-        "journals",
-        &company_name,
-        &period,
-    )
+    build_export_response(format, body, "journals", &company_name, &period)
 }
 
 // ===========================================================================
@@ -573,8 +549,7 @@ fn build_export_response(
     company_name: &str,
     period: &ReportPeriod,
 ) -> Result<Response, AppError> {
-    let filename =
-        build_filename(type_slug, company_name, period, format.extension());
+    let filename = build_filename(type_slug, company_name, period, format.extension());
 
     let content_disposition = build_content_disposition(&filename)?;
 
@@ -594,9 +569,8 @@ fn build_export_response(
 fn build_content_disposition(filename: &str) -> Result<HeaderValue, AppError> {
     let ascii_fallback = ascii_fallback_filename(filename);
     let percent_encoded = percent_encode_filename(filename);
-    let value = format!(
-        "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{percent_encoded}"
-    );
+    let value =
+        format!("attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{percent_encoded}");
     HeaderValue::from_str(&value)
         .map_err(|e| AppError::Internal(format!("invalid Content-Disposition header: {e}")))
 }
@@ -605,7 +579,13 @@ fn build_content_disposition(filename: &str) -> Result<HeaderValue, AppError> {
 fn ascii_fallback_filename(filename: &str) -> String {
     filename
         .chars()
-        .map(|c| if c.is_ascii() && c != '"' && c != '\\' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii() && c != '"' && c != '\\' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -613,8 +593,7 @@ fn ascii_fallback_filename(filename: &str) -> String {
 fn percent_encode_filename(filename: &str) -> String {
     let mut out = String::with_capacity(filename.len());
     for b in filename.bytes() {
-        let is_safe = b.is_ascii_alphanumeric()
-            || matches!(b, b'-' | b'.' | b'_' | b'~');
+        let is_safe = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~');
         if is_safe {
             out.push(b as char);
         } else {
@@ -630,12 +609,7 @@ fn percent_encode_filename(filename: &str) -> String {
 /// Le `type_slug` et le `company_name` sont **tous les deux** slugifiés (regex
 /// inline `[^a-z0-9-]` → `-` + collapse `-+` → `-` + truncate 20 chars +
 /// strip trailing `-`) avec fallback `"report"` / `"company"` si vide post-slug.
-fn build_filename(
-    type_slug: &str,
-    company_name: &str,
-    period: &ReportPeriod,
-    ext: &str,
-) -> String {
+fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String {
     let slug_type = slugify(type_slug, "report");
     let slug_company = slugify(company_name, "company");
     let period_start = period.start_date.format("%Y-%m-%d").to_string();
@@ -661,7 +635,13 @@ fn slugify(input: &str, fallback: &str) -> String {
         .collect();
     let cleaned: String = lowered
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     // Collapse repeated dashes
     let mut collapsed = String::with_capacity(cleaned.len());
@@ -854,7 +834,10 @@ mod tests {
         // 23 chars : "acme-sa-fribourg-exten" (truncated to 20 + strip)
         let result = slugify("Acme SA Fribourg Extension Long", "fallback");
         assert!(result.len() <= 20);
-        assert!(!result.ends_with('-'), "result must not end with `-`, got: {result}");
+        assert!(
+            !result.ends_with('-'),
+            "result must not end with `-`, got: {result}"
+        );
     }
 
     #[test]
@@ -893,14 +876,20 @@ mod tests {
     fn build_filename_kesh_pattern() {
         let period = period_for_test();
         let name = build_filename("balance-sheet", "CI Test Company", &period, "pdf");
-        assert_eq!(name, "kesh-balance-sheet-ci-test-company-2026-01-01_2026-12-31.pdf");
+        assert_eq!(
+            name,
+            "kesh-balance-sheet-ci-test-company-2026-01-01_2026-12-31.pdf"
+        );
     }
 
     #[test]
     fn build_filename_handles_non_ascii_company() {
         let period = period_for_test();
         let name = build_filename("balance-sheet", "Müller AG", &period, "csv");
-        assert_eq!(name, "kesh-balance-sheet-muller-ag-2026-01-01_2026-12-31.csv");
+        assert_eq!(
+            name,
+            "kesh-balance-sheet-muller-ag-2026-01-01_2026-12-31.csv"
+        );
     }
 
     #[test]
@@ -918,7 +907,10 @@ mod tests {
 
     #[test]
     fn percent_encode_keeps_safe_chars() {
-        assert_eq!(percent_encode_filename("file-name_2026.pdf"), "file-name_2026.pdf");
+        assert_eq!(
+            percent_encode_filename("file-name_2026.pdf"),
+            "file-name_2026.pdf"
+        );
     }
 
     #[test]

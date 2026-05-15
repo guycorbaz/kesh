@@ -558,7 +558,11 @@ mod tests {
         assert!(lines.len() >= 2);
         // Header : 8 colonnes
         let header_cols: Vec<&str> = lines[0].split(';').collect();
-        assert_eq!(header_cols.len(), 8, "journals CSV header must have 8 columns");
+        assert_eq!(
+            header_cols.len(),
+            8,
+            "journals CSV header must have 8 columns"
+        );
         // Data row : 8 colonnes, date ISO, journal name
         let data_cols: Vec<&str> = lines[1].split(';').collect();
         assert_eq!(data_cols.len(), 8);

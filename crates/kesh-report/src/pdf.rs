@@ -236,9 +236,11 @@ impl PdfBuilder {
     /// de redessiner le header condensé si nécessaire.
     fn new_page(&mut self) {
         let page_num = self.pages.len() + 1;
-        let (page_idx, layer_idx) =
-            self.doc
-                .add_page(Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), format!("Layer {page_num}"));
+        let (page_idx, layer_idx) = self.doc.add_page(
+            Mm(PAGE_WIDTH_MM),
+            Mm(PAGE_HEIGHT_MM),
+            format!("Layer {page_num}"),
+        );
         self.pages.push((page_idx, layer_idx));
         self.current_page_idx = self.pages.len() - 1;
         self.cursor_y = PAGE_HEIGHT_MM - MARGIN_TOP_MM;
@@ -386,7 +388,13 @@ fn draw_totals_footer(builder: &mut PdfBuilder, label: &str, amount: Decimal) {
     builder.ensure_space_for_row();
     let y = builder.cursor_y;
     let layer = builder.current_layer();
-    layer.use_text(label, FONT_SIZE_PT, Mm(MARGIN_LEFT_MM), Mm(y), &builder.font_bold);
+    layer.use_text(
+        label,
+        FONT_SIZE_PT,
+        Mm(MARGIN_LEFT_MM),
+        Mm(y),
+        &builder.font_bold,
+    );
     layer.use_text(
         format_swiss_amount(amount),
         FONT_SIZE_PT,
@@ -426,7 +434,11 @@ pub fn render_balance_sheet_pdf(
     for ab in &bs.assets {
         draw_account_row(&mut builder, ab);
     }
-    draw_totals_footer(&mut builder, &ctx.section_labels.total_assets, bs.total_assets);
+    draw_totals_footer(
+        &mut builder,
+        &ctx.section_labels.total_assets,
+        bs.total_assets,
+    );
 
     // Section Passifs
     builder.write_line(&ctx.section_labels.liabilities, FONT_SIZE_PT, true, 0.0);
@@ -960,7 +972,11 @@ mod tests {
             JournalSection {
                 journal: *j,
                 entries,
-                section_total_debit: if empty || i > 0 { Decimal::ZERO } else { dec!(100) },
+                section_total_debit: if empty || i > 0 {
+                    Decimal::ZERO
+                } else {
+                    dec!(100)
+                },
                 section_total_credit: Decimal::ZERO,
             }
         })
@@ -1055,7 +1071,10 @@ mod tests {
         let ctx = PdfContext::fr_ch_default("CI Test Company");
         let bytes = render_balance_sheet_pdf(&fixture_bs(true), &ctx).unwrap();
         assert!(bytes.starts_with(b"%PDF-1."));
-        assert!(bytes.len() > 200, "empty PDF should still have minimal content");
+        assert!(
+            bytes.len() > 200,
+            "empty PDF should still have minimal content"
+        );
     }
 
     #[test]

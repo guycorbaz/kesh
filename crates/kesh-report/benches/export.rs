@@ -281,5 +281,11 @@ fn bench_csv_10k(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_pdf_1000, bench_csv_1000, bench_pdf_10k, bench_csv_10k);
+criterion_group!(
+    benches,
+    bench_pdf_1000,
+    bench_csv_1000,
+    bench_pdf_10k,
+    bench_csv_10k
+);
 criterion_main!(benches);
