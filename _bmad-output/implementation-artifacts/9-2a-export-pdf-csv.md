@@ -13,11 +13,11 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 ## Scope
 
 Étend l'API publique stable `kesh_report::{BalanceSheet, IncomeStatement, TrialBalance, JournalReport}` livrée par Story 9-1 avec :
-- 2 nouveaux modules `kesh-report::{pdf, csv}` (sérialiseurs purs, déterministes, byte-stable pour tests).
-- 4 nouveaux endpoints HTTP `GET /api/v1/reports/{type}/export?format=pdf|csv` (Option B : routes séparées, pas d'extension `?format=` sur les routes JSON existantes — voir Decision §design-export-route).
-- 4 boutons « Export PDF » + 4 boutons « Export CSV » dans la page `/reports` (1 paire par onglet, visible une fois le rapport généré).
-- ~12 clés i18n `reports-export-*` × 4 locales (fr/de/it/en-CH).
-- Audit log dédié `report.exported` (best-effort, pattern Story 9-1 `emit_report_audit`).
+- 2 nouveaux modules `kesh-report::{pdf, csv}` (sérialiseurs purs, déterministes, byte-stable pour tests). Nouveau variant `ReportError::PdfGeneration(String)` mappé `AppError::Internal` (500).
+- 4 nouveaux endpoints HTTP `GET /api/v1/reports/{type}/export?format=pdf|csv` (Option B : routes séparées, pas d'extension `?format=` sur les routes JSON existantes — voir Decision §design-export-route). `format` parsé `Option<String>` puis validé handler-side → 400 VALIDATION_ERROR (pas 422 Axum).
+- 4 boutons « Export PDF » + 4 boutons « Export CSV » dans la page `/reports` (1 paire par onglet, visible une fois le rapport généré). Flag `exporting` dédié (pas partagé `loading`).
+- **10 clés i18n** (`reports-export-*` + `reports-filename-*` + `reports-pdf-*`) × 4 locales (fr/de/it/en-CH).
+- Audit log dédié `report.exported` (best-effort, nouvelle fn `emit_report_export_audit` séparée — ne modifie PAS `emit_report_audit` Story 9-1).
 
 **Hors scope (livré par 9-2b)** : export ZIP global par table (souveraineté des données, FR68). Nouveau module `kesh-api/routes/exports.rs`, nouvelle entrée menu principal, `metadata.json` + hash SHA-256.
 
@@ -35,15 +35,15 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 4. **Given** un PDF de compte de résultat, **When** rendu, **Then** il contient l'en-tête, les sections Produits / Charges avec totaux, et le résultat net (bénéfice / perte) en pied de page.
 
-5. **Given** un PDF de balance, **When** rendu, **Then** toutes les lignes ont 4 colonnes (Numéro, Compte, Débit, Crédit, Solde) avec totaux débit = totaux crédit en bas.
+5. **Given** un PDF de balance, **When** rendu, **Then** toutes les lignes ont **5 colonnes** (Numéro, Compte, Débit, Crédit, Solde) avec totaux débit = totaux crédit en bas (Pass 1 BH-L1 + AA-H1 — typo « 4 » → « 5 »).
 
 6. **Given** un PDF de journaux, **When** rendu (sans filtre `journal`), **Then** les 5 sections (Achats, Ventes, Banque, Caisse, OD) sont toujours présentes même vides — cohérent avec le DTO JSON Story 9-1 (Pass 1 ECH-09).
 
 7. **Given** un PDF de journaux **with** filtre `journal=Ventes`, **When** rendu, **Then** seule la section Ventes apparaît, en-tête mentionne « Journal : Ventes ».
 
-8. **Given** un rapport vide (aucune écriture dans la période), **When** export PDF, **Then** le PDF est généré quand même avec le message i18n `reports-error-no-entries-in-period` rendu au centre (cohérent avec UX-DR38 + helper `isReportEmpty` Story 9-1).
+8. **Given** un rapport vide (aucune écriture dans la période), **When** export PDF, **Then** le PDF est généré quand même avec le message `ctx.empty_message` (i18n key `reports-pdf-empty-message`) rendu au centre. Le handler résout la clé via `kesh-i18n` AVANT d'appeler `render_*_pdf` — `kesh-report` ne dépend pas de `kesh-i18n` (Pass 1 AA-M1 — Architecture decision §swiss-amount-format respectée).
 
-9. **Given** un dataset de référence (~1000 écritures), **When** génération PDF d'un rapport, **Then** la durée totale entre clic et début du download `< 3 secondes` (benchmark documenté en `crates/kesh-report/benches/`).
+9. **Given** un dataset de référence (~1000 écritures), **When** génération PDF d'un rapport, **Then** la durée de **rendering pur** mesurée via criterion bench `< 500 ms` sur dataset 1000 écritures (Pass 1 AA-L1 + ECH-M3 — clarification scope : le benchmark mesure le rendering seul, pas le round-trip réseau ; le budget total client→download `< 3s` est documenté comme cible CI mais pas asserted via test automatisé v0.1).
 
 ### Export CSV
 
@@ -57,7 +57,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
     - dates ISO 8601 (`2026-05-15` — machine-readable, pas le format affichage)
     - chaînes contenant `;`, `"`, ou retour-ligne sont entourées de `"` avec `"` interne doublé en `""` (RFC 4180).
 
-12. **Given** un CSV de bilan, **When** rendu, **Then** colonnes : `Section;NumeroCompte;NomCompte;Solde` où `Section ∈ {Actifs, Passifs, CapitauxPropres}`. Ligne de total par section. Ligne finale `Total actifs;;;<somme>` + `Total passifs + capitaux propres;;;<somme>`.
+12. **Given** un CSV de bilan, **When** rendu, **Then** colonnes : `Section;NumeroCompte;NomCompte;Solde` où `Section ∈ {Actifs, Passifs, CapitauxPropres}`. Ligne de total par section. Ligne finale `Total actifs;;;<somme>` + `Total passifs + capitaux propres;;;<somme>`. **Invariant hérité Story 9-1** : les deux totaux finaux sont toujours égaux (calcul `BalanceSheet::equity_result`) — pas de ligne de vérification explicite, l'égalité est implicite (Pass 1 ECH-M4).
 
 13. **Given** un CSV de compte de résultat, **When** rendu, **Then** colonnes : `Section;NumeroCompte;NomCompte;Solde` où `Section ∈ {Produits, Charges}`. Total par section + ligne finale `ResultatNet;;;<somme>`.
 
@@ -67,7 +67,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 16. **Given** un CSV de journaux **with** filtre `journal=Ventes`, **When** rendu, **Then** seules les lignes du journal Ventes apparaissent, première colonne `Journal` reste populée (= "Ventes" partout).
 
-17. **Given** un rapport vide, **When** export CSV, **Then** le CSV contient les en-têtes uniquement (1 ligne) + une ligne `# Aucune écriture dans la période` en commentaire ASCII (pas de BOM-issue).
+17. **Given** un rapport vide, **When** export CSV, **Then** le CSV contient **uniquement la ligne d'en-tête** (1 ligne, pas de data rows) — pas de comment `#` car non RFC 4180 (Pass 1 ECH-M1). Le frontend détecte le cas vide en comptant les lignes du blob téléchargé.
 
 ### Frontend : intégration UI
 
@@ -79,10 +79,10 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 21. **Given** export PDF/CSV en cours, **When** l'utilisateur clique sur l'autre format, **Then** le second clic est ignoré jusqu'à fin du premier (`loading` flag partagé ou flag dédié `exporting` — au choix dev, justifier).
 
-22. **Given** un nom de fichier suggéré au browser, **When** download déclenché, **Then** le format est `kesh-{type}-{companyShort}-{periodStart}_{periodEnd}.{ext}` où :
-    - `{type}` ∈ {`bilan`, `compte-resultat`, `balance`, `journaux`} (localisé en français — i18n key `reports-filename-{type}`)
-    - `{companyShort}` = slug ASCII de `company.name` (max 20 chars, fallback `company` si vide)
-    - `{periodStart}` / `{periodEnd}` = `YYYY-MM-DD` (machine-readable pour tri filesystem)
+22. **Given** un nom de fichier suggéré au browser, **When** download déclenché, **Then** le format est `kesh-{typeSlug}-{companyShort}-{periodStart}_{periodEnd}.{ext}` où :
+    - `{typeSlug}` = valeur de la clé i18n `reports-filename-{reportType}` où `reportType ∈ {balance-sheet, income-statement, trial-balance, journals}` (clé en slug anglais, valeur localisée — fr-CH = `bilan`/`compte-resultat`/`balance`/`journaux`, de-CH = `bilanz`/`erfolgsrechnung`/etc.) — Pass 1 AA-H3 résolu.
+    - `{companyShort}` = slug ASCII de `company.name` via `buildExportFilename` (NFD strip diacritics + lowercase + non-alphanum → `-` + collapse repeated `-` + truncate 20 chars + strip trailing `-`). Fallback `company` si slug résultant est vide.
+    - `{periodStart}` / `{periodEnd}` = `YYYY-MM-DD` (machine-readable pour tri filesystem). Si `period_start`/`end` étaient `None` à l'API (donc résolus depuis le FY par `ReportPeriod::resolve`), le filename utilise les bornes effectives du FY.
     - `{ext}` = `pdf` ou `csv`
     - Exemple : `kesh-bilan-ci-test-company-2026-01-01_2026-12-31.pdf`
 
@@ -96,7 +96,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 26. **Given** un utilisateur non authentifié, **When** export PDF/CSV, **Then** 401 (middleware auth standard).
 
-27. **Given** le serveur backend, **When** export `?format=invalid` ou param manquant, **Then** 400 `VALIDATION_ERROR` JSON avec message listant les formats valides (`pdf`, `csv`).
+27. **Given** le serveur backend, **When** export `?format=invalid`, `?format=` absent, OU `?fiscalYearId` absent ou ≤ 0, OU `?periodStart`/`periodEnd` en dehors des bornes de l'exercice, **Then** 400 `VALIDATION_ERROR` JSON avec message listant la cause (Pass 1 BH-H2 + ECH-H4 + AA-L4). Le `format` est `Option<String>` parsé serde (jamais 422 Axum), validé handler-side. Les autres params suivent le pattern Story 9-1 (`validate_fiscal_year_id` + `ReportPeriod::resolve`).
 
 ### Audit + observabilité
 
@@ -111,19 +111,21 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 ### Performance + limites
 
-30. **Given** un dataset large (10k écritures dans un journal), **When** export CSV journaux, **Then** la durée `< 5 secondes` (RAM bornée — streaming via `csv::Writer` sur réponse Axum, PAS d'allocation `Vec<String>` géante).
+30. **Given** un dataset large (10k écritures dans un journal), **When** export CSV journaux, **Then** la durée de rendering pur mesurée via criterion bench `< 5 secondes` (Pass 1 AA-C1 corrigée — RAM bornée via `csv::Writer` vers un `Vec<u8>` final, pas de `Vec<String>` par ligne, mais **PAS de streaming Axum body v0.1** cf. L5).
 
 31. **Given** un dataset large, **When** export PDF, **Then** taille du fichier `< 5 MB` pour 10k écritures dans un journal (binding implicite : limite de pagination si nécessaire — voir §pagination-pdf §Limitations).
 
 ### Tests
 
-32. **Given** la story est implémentée, **When** suite de tests exécutée, **Then** **≥ 16 tests E2E HTTP** dans `crates/kesh-api/tests/reports_export_e2e.rs` couvrent : (a) 4 endpoints PDF × 200 binary content, (b) 4 endpoints CSV × 200 text/csv content, (c) format invalid 400, (d) multi-tenant 404, (e) FY out of bounds 400, (f) rapport vide PDF + CSV success path, (g) auth 401, (h) RBAC Consultation 200.
+32. **Given** la story est implémentée, **When** suite de tests exécutée, **Then** **≥ 16 tests E2E HTTP** dans `crates/kesh-api/tests/reports_export_e2e.rs` couvrent (Pass 1 AA-M2 — décomposition corrigée à 16 exact) : (a) 4 endpoints PDF × 200 binary content, (b) 4 endpoints CSV × 200 text/csv content, (c) format invalid 400 VALIDATION_ERROR, (d) multi-tenant 404, (e) FY out of bounds 400, (f) rapport vide PDF + CSV success path (2 tests via période future `2099-01-01/2099-12-31`), (g) auth 401, (h) RBAC Consultation 200 PDF + Consultation 200 CSV (2 tests). Total : 4+4+1+1+1+2+1+2 = **16**.
 
 33. **Given** la story est implémentée, **When** tests unit `kesh-report` exécutés, **Then** **≥ 12 tests** valident : (a) PDF byte signature commence par `%PDF-1.` (4 rapports × 1 = 4 tests), (b) CSV BOM + séparateur + CRLF (4 tests), (c) CSV escaping RFC 4180 (1 test), (d) format suisse montant + date dans PDF via grep regex sur le texte décompressé (3 tests).
 
-34. **Given** la story est implémentée, **When** Vitest exécuté, **Then** **≥ 3 tests** sur `reports.api.ts` : (a) `getReportPdf(query)` retourne un `Blob`, (b) construction filename `kesh-bilan-...-2026-01-01_2026-12-31.pdf`, (c) erreur backend → erreur formatée UX-DR38.
+34. **Given** la story est implémentée, **When** Vitest exécuté, **Then** **≥ 3 tests** sur `reports.api.ts` : (a) `downloadReport(type, query, 'pdf', filename)` appelle `fetch` avec l'URL correcte construite via `getReportExportUrl` et retourne via Blob (mock fetch) — Pass 1 AA-H2 fn name correct ; (b) `buildExportFilename` produit la string attendue pour les 4 types + edge cases (accents `Müller AG` → `muller-ag`, longueur >20 truncate + strip trailing `-`, slug vide → fallback `company`) ; (c) erreur backend (mock 500) → exception formatée propagée à `+page.svelte` `formatError`.
 
-35. **Given** la story est implémentée, **When** Playwright exécuté, **Then** **1 scénario actif** `reports-export-pdf.spec.ts` télécharge un PDF + assert byte signature `%PDF-1.` + filename pattern.
+35. **Given** la story est implémentée, **When** Playwright exécuté, **Then** **1 scénario actif** `reports-export-pdf.spec.ts` télécharge un PDF + assert byte signature `%PDF-1.` + filename pattern. **(Pass 1 ECH-M5)** Utiliser `await download.saveAs('/tmp/kesh-test-9-2a.pdf')` puis `fs.readFile()` — pas `download.path()` qui peut retourner `null`.
+
+36. **(Nouvelle AC Pass 1 ECH-H2)** **Given** un export PDF/CSV en vol, **When** l'utilisateur change `selectedFiscalYearId` côté frontend, **Then** : (a) l'export en vol cible toujours l'ancien FY (closure captures `query` au moment du clic) ; (b) le flag `exporting` est **reset à `false` dans le `finally`** du handler `exportPdf()`/`exportCsv()` quelle que soit l'issue (success ou catch error) ; (c) si erreur, `errorMsg` est mis à jour même si l'UI affiche le nouveau FY (acceptable v0.1, documenté L9). **Le flag `exporting` est dédié et NE partage PAS `loading`** (qui contrôle uniquement `generate()`).
 
 ## Tasks / Subtasks
 
@@ -132,58 +134,63 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
   - [ ] T1.2 `csv = "1.3"` (sérialiseur standard Rust, RFC 4180 compliant)
   - [ ] T1.3 Vérifier `cargo build -p kesh-report` clean après ajout
 
-- [ ] **T2** Créer `crates/kesh-report/src/pdf.rs` — sérialiseur PDF pur (AC: #1-#9)
+- [ ] **T2** Créer `crates/kesh-report/src/pdf.rs` — sérialiseur PDF pur (AC: #1-#9, #29)
+  - [ ] T2.0 **(Pass 1 ECH-C2)** Ajouter `PdfGeneration(String)` à `ReportError` (`crates/kesh-report/src/errors.rs`) — mappé `AppError::Internal` (500) dans `From<ReportError> for AppError` (`crates/kesh-api/src/errors.rs`). Sans ça, `printpdf::save_to_bytes() -> Result<_, PrintpdfError>` ne peut être propagé en `Result<Vec<u8>, ReportError>`.
   - [ ] T2.1 Signature publique `pub fn render_balance_sheet_pdf(bs: &BalanceSheet, ctx: &PdfContext) -> Result<Vec<u8>, ReportError>` (× 4 fonctions, une par rapport)
-  - [ ] T2.2 `PdfContext { company_name: String, locale: &str }` — porte les données i18n non incluses dans les DTOs (locale courante pour les libellés `Actifs`/`Aktiven`/etc.)
+  - [ ] T2.2 `PdfContext { company_name: String, locale: &'static str, empty_message: String, journal_filter_label: Option<String> }` — porte les données i18n et libellés non inclus dans les DTOs (locale + message empty résolus côté handler avant d'appeler `render_*_pdf`, cf. M5/H8). `journal_filter_label` est `Some("Ventes")` si l'export filtre, `None` sinon — résolu par le handler depuis le param URL (le DTO `JournalReport` ne contient pas ce champ, cf. C1).
   - [ ] T2.3 Helpers privés `draw_header`, `draw_table_row`, `draw_totals_footer` (DRY — réutilisés par les 4 fonctions)
-  - [ ] T2.4 Format suisse montants via helper local `format_swiss_amount(decimal: Decimal) -> String` (apostrophe séparateur + point décimal) — vérifier cohérence avec `kesh-i18n::format_amount` (DD-13, à confirmer en spec validate)
+  - [ ] T2.4 Format suisse montants via helper local `format_swiss_amount(decimal: Decimal) -> String` (apostrophe séparateur + point décimal, **toujours 2 décimales** `format!("{:.2}", ...)`, gestion signe négatif avec `-` en préfixe). Cohérence à vérifier avec `kesh-i18n::format_money` (Pass 1 BH-H3 — nom correct, pas `format_amount`) — accepté duplication v0.1 (cf. Decision §swiss-amount-format + Q1).
   - [ ] T2.5 Format dates `dd.mm.yyyy` via `NaiveDate::format("%d.%m.%Y")`
-  - [ ] T2.6 Cas dégénéré rapport vide : afficher message centré, ne pas crasher (AC #8)
+  - [ ] T2.6 Cas dégénéré rapport vide : afficher `ctx.empty_message` centré, ne pas crasher (AC #8 patché Pass 1 AA-M1 — i18n résolu côté handler, **PAS** dépendance kesh-i18n dans kesh-report)
+  - [ ] T2.7 Format négatifs : tester explicitement `format_swiss_amount(Decimal::from_str("-1234.56"))` → `"-1'234.56"` (Pass 1 ECH-L1).
 
 - [ ] **T3** Créer `crates/kesh-report/src/csv.rs` — sérialiseur CSV pur (AC: #10-#17)
   - [ ] T3.1 Signature publique `pub fn render_balance_sheet_csv<W: Write>(bs: &BalanceSheet, writer: W) -> Result<(), ReportError>` (× 4 fonctions, streaming-friendly)
   - [ ] T3.2 BOM en tête : `writer.write_all(b"\xef\xbb\xbf")?;` avant d'instancier `csv::WriterBuilder`
   - [ ] T3.3 `csv::WriterBuilder::new().delimiter(b';').terminator(csv::Terminator::CRLF).from_writer(writer)`
-  - [ ] T3.4 Tests RFC 4180 escaping : un nom de compte contenant `;` doit être entouré de `"..."` (AC #11)
-  - [ ] T3.5 Cas rapport vide : écrire seulement la ligne d'en-tête + commentaire ASCII (AC #17)
+  - [ ] T3.4 Tests RFC 4180 escaping : (a) un nom de compte contenant `;` doit être entouré de `"..."` ; (b) un nom contenant `"` doit doubler le `"` → `""` ; (c) un nom contenant `\n` ou `\r\n` doit être entouré de `"..."` (Pass 1 ECH-L4). Le crate `csv 1.3` gère (b) et (c) automatiquement, juste tester.
+  - [ ] T3.5 Cas rapport vide : écrire **uniquement la ligne d'en-tête, aucune ligne suivante** (Pass 1 ECH-M1 — drop le `# Aucune écriture` qui n'est pas RFC 4180 et serait affiché en data row par Excel). Le frontend peut détecter le cas vide via la présence d'une seule ligne dans le blob téléchargé.
+  - [ ] T3.6 Format décimal : **toujours 2 décimales** via `format!("{:.2}", amount)` — `Decimal::ZERO` → `"0.00"` (Pass 1 ECH-H5 — sinon Excel auto-typing colonne mixte casse).
 
 - [ ] **T4** Étendre `crates/kesh-report/src/lib.rs` exports + créer benchmark (AC: #1, #10, #9, #30, #31)
   - [ ] T4.1 `pub mod csv;` + `pub mod pdf;`
   - [ ] T4.2 Re-exports : `pub use pdf::{render_balance_sheet_pdf, render_income_statement_pdf, render_trial_balance_pdf, render_journal_report_pdf, PdfContext};` + symétrique pour CSV
-  - [ ] T4.3 Créer `crates/kesh-report/benches/export.rs` avec criterion (à ajouter en dev-dep `criterion = "0.5"`) — bench les 4 rapports PDF + 4 CSV sur fixture 1000 écritures (AC #9 + #30 + #31)
+  - [ ] T4.3 **(Pass 1 AA-M4)** Créer `crates/kesh-report/benches/export.rs` avec criterion (à ajouter en dev-dep `criterion = "0.5"`) — bench les 4 rapports PDF + 4 CSV sur **2 fixtures** : 1000 écritures (AC #9) et 10000 écritures (AC #30 + #31). Fixtures construites en code Rust (pas DB) via factories `make_balance_sheet(n_accounts: usize)` etc. — accepted Q6.
   - [ ] T4.4 Bench documenté dans `Cargo.toml` : `[[bench]] name = "export" harness = false`
 
-- [ ] **T5** Créer 4 nouveaux endpoints `kesh-api/src/routes/reports.rs` (AC: #1, #10, #22-#28)
+- [ ] **T5** Créer 4 nouveaux endpoints `kesh-api/src/routes/reports.rs` (AC: #1, #10, #22-#29)
   - [ ] T5.1 Ajouter `pub async fn export_balance_sheet`, `export_income_statement`, `export_trial_balance`, `export_journal_report` — signature `(State<AppState>, Extension<CurrentUser>, Query<ExportQuery>) -> Result<Response, AppError>` (réponse binaire, pas `Json<>`).
-  - [ ] T5.2 Définir `struct ExportQuery { fiscal_year_id: i64, period_start: Option<NaiveDate>, period_end: Option<NaiveDate>, journal: Option<Journal>, format: ExportFormat }` avec `#[serde(rename_all = "camelCase")]`. `enum ExportFormat { Pdf, Csv }` avec `#[serde(rename_all = "lowercase")]`. Le champ `journal` reste `Option<Journal>` global (ignoré par les 3 premiers rapports — pattern Story 9-1 `JournalReportQuery`).
-  - [ ] T5.3 Construire `Response` :
-    - PDF : `axum::response::Response::builder().header(CONTENT_TYPE, "application/pdf").header(CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")).body(Body::from(pdf_bytes)).unwrap()`
-    - CSV : idem avec `text/csv; charset=utf-8` + extension `.csv`. Body construit dans un `Vec<u8>` (le streaming Axum vers `csv::Writer` est possible mais ajoute de la complexité — accepté pour v0.1, voir L5)
-  - [ ] T5.4 Filename helper `fn build_filename(report_type: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String` — slug ASCII via crate `slug = "0.1"` (à ajouter à kesh-api Cargo.toml), max 20 chars, fallback `"company"`.
-  - [ ] T5.5 Audit log `report.exported` via helper modifié `emit_report_audit` (ajouter param `format: Option<&str>` à la signature existante, ou créer `emit_report_export_audit` séparé — au choix dev, justifier). Pattern best-effort identique Story 9-1.
+  - [ ] T5.2 **(Pass 1 BH-H2)** Définir `struct ExportQuery { fiscal_year_id: i64, period_start: Option<NaiveDate>, period_end: Option<NaiveDate>, journal: Option<Journal>, format: Option<String> }` avec `#[serde(rename_all = "camelCase")]`. **Le champ `format` est `Option<String>` pas `enum`** — la validation est faite handler-side via `validate_format(&query.format)? -> ExportFormat` qui retourne `AppError::Validation("format manquant ou invalide, attendu pdf|csv")` (400 JSON cohérent). Évite le 422 Axum par défaut sur deserialization enum failure. Le champ `journal` reste `Option<Journal>` global (ignoré par les 3 premiers rapports — pattern Story 9-1 `JournalReportQuery`).
+  - [ ] T5.3 **(Pass 1 AA-M3 + ECH-M2)** Construire `Response` :
+    - PDF : `axum::response::Response::builder().header(CONTENT_TYPE, "application/pdf").header(CONTENT_DISPOSITION, build_content_disposition(filename)?).body(Body::from(pdf_bytes)).unwrap()`. Helper `build_content_disposition` retourne **les deux formes** : `attachment; filename="ascii_fallback"; filename*=UTF-8''<percent-encoded>` (RFC 5987 + ASCII fallback). Sans ça, `HeaderValue::from_str` panic sur un company name `"Müller AG"` (caractères non-ISO-8859-1).
+    - CSV : idem avec `text/csv; charset=utf-8` + extension `.csv`. Body construit dans un `Vec<u8>` (cf. L5 — streaming Axum hors scope v0.1).
+  - [ ] T5.4 **(Pass 1 BH-M1 + ECH-C1 + AA-M3)** Filename helper `fn build_filename(report_type: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String` — slug ASCII via **regex inline** (`[^a-z0-9-]` → `-` puis `-+$` → `""`), max 20 chars, fallback `"company"` si slug vide. **Pas de crate `slug`** ajoutée à kesh-api/Cargo.toml. Le slug ASCII est la valeur du `filename=` ; le `filename*=UTF-8''<percent-encoded>` utilise le nom original UTF-8.
+  - [ ] T5.5 **(Pass 1 BH-M2)** Audit log `report.exported` via **nouvelle fonction séparée** `emit_report_export_audit(pool, user_id, report_type, format, fiscal_year_id, period_start, period_end, journal_filter)` — **PAS** modification de la signature existante `emit_report_audit` (qui briserait les 4 callers Story 9-1). Pattern best-effort identique.
   - [ ] T5.6 Validation `fiscal_year_id > 0` réutilisée (`validate_fiscal_year_id` helper Story 9-1).
   - [ ] T5.7 Multi-tenant via `ReportPeriod::resolve(&state.pool, current_user.company_id, ...)` — identique Story 9-1 (AC #24).
+  - [ ] T5.8 **(Pass 1 AA-H4)** Instrumenter les 4 handlers avec `tracing::info_span!("report_export", report_type = %report_type, format = %format, byte_size = body.len(), duration_ms = ...).in_scope(|| { ... })` — pattern cohérent Story 9-1 (AC #29 maintenant couvert par task).
 
 - [ ] **T6** Mount routes dans `crates/kesh-api/src/lib.rs` (AC: #1, #10, #26)
-  - [ ] T6.1 4 nouvelles routes après celles de Story 9-1 ligne ~373 :
+  - [ ] T6.1 **(Pass 1 BH-H1)** Insérer les 4 nouvelles routes **AVANT le `;` de fermeture** de `let authenticated_routes = Router::new()...;` (ligne ~373 actuelle), en chaînant `.route()` sur la dernière route Story 9-1. **Ne PAS** insérer après le `;` — ça créerait des routes orphelines hors `authenticated_routes` → 401 silencieusement bypass → IDOR cross-tenant critique :
     - `.route("/api/v1/reports/balance-sheet/export", get(routes::reports::export_balance_sheet))`
     - `.route("/api/v1/reports/income-statement/export", get(routes::reports::export_income_statement))`
     - `.route("/api/v1/reports/trial-balance/export", get(routes::reports::export_trial_balance))`
     - `.route("/api/v1/reports/journals/export", get(routes::reports::export_journal_report))`
-  - [ ] T6.2 Routes dans `authenticated_routes` (même bloc que Story 9-1) — auth middleware déjà appliqué.
+  - [ ] T6.2 Vérification anti-régression : après merge, `grep -A1 "authenticated_routes = Router" crates/kesh-api/src/lib.rs | head -50` doit montrer les 4 routes export AVANT le `;`. Si test E2E AC #26 (auth 401) échoue avec 200 sur n'importe quel endpoint export, c'est ce bug.
 
 - [ ] **T7** Étendre frontend `frontend/src/lib/features/reports/` (AC: #18-#23)
   - [ ] T7.1 Ajouter dans `reports.api.ts` :
     - `getReportExportUrl(type: ReportType, query: ReportQuery, format: 'pdf' | 'csv', journal?: string): string` (construit l'URL avec query string).
     - `downloadReport(type: ReportType, query: ReportQuery, format: 'pdf' | 'csv', filename: string): Promise<void>` (déclenche le download via fetch blob + lien `<a download>` éphémère, gère 401 redirect via `apiClient`).
-    - `buildExportFilename(type: ReportType, companyName: string, period: { start: string; end: string }, format: 'pdf' | 'csv'): string` — implémente le pattern AC #22 + slug ASCII via regex `[^a-z0-9-]/g`.
+    - `buildExportFilename(type: ReportType, companyName: string, period: { start: string; end: string }, format: 'pdf' | 'csv'): string` — implémente le pattern AC #22 + slug ASCII via regex. **Post-process slug** : `.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 20).replace(/-+$/, '')` (Pass 1 ECH-H3 — trailing hyphens supprimés après truncate).
   - [ ] T7.2 Modifier `ReportSelector.svelte` : ajouter 2 boutons `Export PDF` + `Export CSV` à droite du bouton « Générer ». Props : `onExportPdf: () => void` + `onExportCsv: () => void` + `canExport: boolean` (vrai si un rapport est généré ET pas en cours d'export).
-  - [ ] T7.3 Modifier `+page.svelte` : ajouter state `companyName` (à charger via `/api/v1/companies/current` ou via `data.company` dans `+page.ts` — vérifier si endpoint existe Story 1-7+ ; sinon, fallback `'company'`).
-  - [ ] T7.4 Handler `async function exportPdf()` + `exportCsv()` : appelle `downloadReport(activeTab, query, format, buildExportFilename(...))`, gère erreurs via `formatError` existant Story 9-1.
+  - [ ] T7.3 **(Pass 1 ECH-H1 + BH-M3 + AA-H5 — Q3 RÉSOLU)** Modifier `+page.ts` (existant) pour charger `companyName` en parallèle de `fiscalYears` via `getCurrentCompany()` (helper à créer dans `lib/features/companies/companies.api.ts` si pas existant — endpoint confirmé `GET /api/v1/companies/current` à `companies.rs:75` retournant `CompanyCurrentResponse { company: { name, ... }, ... }`). Extension de `PageData` : `interface PageData { fiscalYears: FiscalYearResponse[]; companyName: string }`. **Pas de fallback `'company'` côté production** — si fetch échoue 401, `+page.ts` déclenche redirect login (pattern existant). Fallback `'company'` uniquement si `data.companyName === ''` (cas pathologique seed sans onboarding).
+  - [ ] T7.4 Handler `async function exportPdf()` + `exportCsv()` : appelle `downloadReport(activeTab, query, format, buildExportFilename(...))`, gère erreurs via `formatError` existant Story 9-1. **(Pass 1 ECH-H2)** Utiliser **flag `exporting` dédié** (pas partagé avec `loading`), toujours reset dans `finally`. Pas de race guard `genSeq` — les exports sont fire-and-forget côté state (le blob déclenche le download navigateur, pas d'écriture state critique).
   - [ ] T7.5 Garde `canExport` : `false` si aucun rapport généré, `false` si `noFiscalYears`, `false` si `loading || exporting`.
+  - [ ] T7.6 **(Pass 1 ECH-H2 follow-up)** Si l'utilisateur change `selectedFiscalYearId` pendant un export en vol : l'export en vol cible toujours l'ancien FY (closure captures `query` au moment du clic). Au retour : (a) succès → blob téléchargé avec filename portant l'ancien FY (correct UX) ; (b) erreur → message affiché dans `errorMsg` même si UI affiche le nouveau FY (acceptable v0.1, documenté dette L9 ci-dessous).
 
 - [ ] **T8** Ajouter clés i18n × 4 locales (fr/de/it/en-CH) — AC: #22, #23, #18-#21
-  - [ ] T8.1 Clés dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` :
+  - [ ] T8.1 **(Pass 1 AA-H3)** Clés dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` — **les suffixes i18n utilisent les slugs anglais cohérents avec `ReportType` côté TS (`balance-sheet`, `income-statement`, etc.)**. Le **filename** rendu reste en français (FR locale) — c'est la valeur de la clé, pas la clé elle-même :
     - `reports-export-pdf-button = Export PDF`
     - `reports-export-csv-button = Export CSV`
     - `reports-export-loading = Génération du fichier…`
@@ -194,28 +201,33 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
     - `reports-filename-journals = journaux`
     - `reports-pdf-header-period = Période`
     - `reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.`
-    - `reports-csv-comment-empty = # Aucune écriture dans la période`
-  - [ ] T8.2 Idem pour `de-CH`, `it-CH`, `en-CH` (traductions de base, validation native v0.2 — L4 héritée)
-  - [ ] T8.3 `npm run lint-i18n-ownership` PASS — toutes les clés `reports-export-*` et `reports-filename-*` appartiennent à `lib/features/reports/`
-  - [ ] T8.4 `cargo run -p kesh-i18n --bin validate-locale-coverage` (si existant) — sinon validation manuelle clés présentes dans les 4 locales.
+  - [ ] T8.2 Idem pour `de-CH`, `it-CH`, `en-CH` (traductions de base, validation native v0.2 — L4 héritée). DE filename ex : `bilanz`, `erfolgsrechnung`, `kontensaldenliste`, `journale`. IT/EN équivalents.
+  - [ ] T8.3 **(Pass 1 AA-L3)** `npm run lint-i18n-ownership` PASS — toutes les clés `reports-export-*`, `reports-filename-*`, `reports-pdf-*` appartiennent à `lib/features/reports/`. Le préfixe `reports-csv-*` n'est plus utilisé (suite à T3.5 patché Pass 1 ECH-M1, le `csv-comment-empty` est supprimé).
+  - [ ] T8.4 `cargo run -p kesh-i18n --bin validate-locale-coverage` (si existant) — sinon validation manuelle 10 clés présentes dans les 4 locales (Pass 1 BH-L3 — 10 clés exactement, plus 11 ni 12).
 
 - [ ] **T9** Tests E2E HTTP `crates/kesh-api/tests/reports_export_e2e.rs` (AC: #32)
-  - [ ] T9.1 16 tests minimum (voir AC #32 décomposition)
-  - [ ] T9.2 Pattern fixture identique `reports_e2e.rs` Story 9-1 : `seed_accounting_company` + écritures via SQL bypass ou helper `kesh-db::test_fixtures::*` (pas de nouveau preset endpoint — réutilise `with-company` pour tests positifs et `with-company-no-fy` pour test « pas de fiscal_year »).
+  - [ ] T9.1 **16 tests minimum** (voir AC #32 décomposition Pass 1 patchée — `(a)4+(b)4+(c)1+(d)1+(e)1+(f)2+(g)1+(h)2 = 16`).
+  - [ ] T9.2 **(Pass 1 AA-M5)** Pattern fixture identique `reports_e2e.rs` Story 9-1 : `seed_accounting_company` + écritures via SQL bypass. **Stratégie spécifique** :
+    - **Tests positifs PDF/CSV** : `with-company` + insertion de 3-5 écritures via SQL (cohérent Story 9-1 reports_e2e.rs).
+    - **Test rapport vide (AC #32(f))** : `with-company` + query `?fiscalYearId=<id>&periodStart=2099-01-01&periodEnd=2099-12-31` (période future garantie sans écritures) — pas de nouveau preset nécessaire.
+    - **Test multi-tenant 404 (AC #32(d))** : créer un 2e seed via 2e appel `seed_accounting_company_extra` ou fixture inline 2 companies.
+    - **Test auth 401 (AC #32(g))** : pas de Bearer token.
+    - **Test RBAC Consultation (AC #32(h))** : créer 1 user role Consultation + login → PDF + CSV success path = 2 tests.
   - [ ] T9.3 Assertions content-type + content-disposition + premiers bytes pour PDF (`assert!(body.starts_with(b"%PDF-1."))`) et CSV (`assert_eq!(&body[..3], b"\xef\xbb\xbf")`).
+  - [ ] T9.4 **(Pass 1 ECH-M2)** Test content-disposition avec company name non-ASCII (e.g. `"Müller AG"`) — assert header bien formé, pas de `HeaderValue` panic. Réutilise `seed_accounting_company` mais override `companies.name` via SQL `UPDATE`.
 
 - [ ] **T10** Tests unit `crates/kesh-report/src/{pdf,csv}.rs` + benchmark (AC: #33, #9, #30)
   - [ ] T10.1 12 tests unit minimum (voir AC #33 décomposition).
   - [ ] T10.2 Benchmark criterion `crates/kesh-report/benches/export.rs` exécuté localement avant push — résultats commités en commentaire dans le commit ou dans le story file `Completion Notes`.
 
 - [ ] **T11** Tests frontend Vitest `frontend/src/lib/features/reports/reports.api.test.ts` (AC: #34)
-  - [ ] T11.1 3 tests minimum :
-    - `buildExportFilename` produit la string attendue pour les 4 types + slug edge cases (accents, espaces, longueur >20).
+  - [ ] T11.1 **3 tests minimum** (Pass 1 ECH-H3 patché — strip trailing hyphens explicitement testé) :
+    - `buildExportFilename` produit la string attendue pour les 4 types + slug edge cases : accents `Müller AG` → `muller-ag`, espaces multiples `Kesh ---   SA` → `kesh-sa`, longueur >20 truncate `acme-sa-fribourg-extension-long` → `acme-sa-fribourg-ext` (puis strip trailing `-` si applicable), nom vide → fallback `company`, nom chinois `北京公司` → fallback `company`.
     - `downloadReport` mock `fetch` + assert appel `apiClient` correct + Blob retourné.
     - `downloadReport` rejette quand status 500 + message formaté.
 
 - [ ] **T12** Playwright `frontend/tests/e2e/reports-export-pdf.spec.ts` (AC: #35)
-  - [ ] T12.1 1 scénario : login → /reports → générer Bilan → cliquer « Export PDF » → assert download event Playwright + filename pattern + premier byte `%PDF-1.`
+  - [ ] T12.1 **(Pass 1 ECH-M5)** 1 scénario : login → /reports → générer Bilan → cliquer « Export PDF » → `const download = await page.waitForEvent('download')` → `await download.saveAs('/tmp/kesh-test-9-2a.pdf')` → `fs.readFile('/tmp/kesh-test-9-2a.pdf')` → assert premier byte `%PDF-1.` + assert `download.suggestedFilename()` match pattern `/^kesh-bilan-.*-\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.pdf$/`.
   - [ ] T12.2 Pas d'a11y test sur le bouton export (AC #18-#21 vérifiés via Vitest et tests E2E HTTP) — KF-027 #91 hors scope ne bloque pas.
 
 - [ ] **T13** CI green + Test Locally First avant push (règle CLAUDE.md)
@@ -294,8 +306,9 @@ Si dépendance crate `slug` jugée nécessaire en review : `slug = "0.1"` (8K do
 |---|---|---|---|
 | `printpdf` | 0.7 | `kesh-qrbill` precedent | Cohérence workspace, pas de churn dépendances v0.1 |
 | `csv` | 1.3 | Nouvelle dep `kesh-report` | RFC 4180 compliant, standard Rust |
-| `criterion` (dev) | 0.5 | Nouvelle dev-dep `kesh-report` | Benchmark `< 3s` AC #9 reproductible |
-| `slug` | 0.1 (optionnel) | Nouvelle dep `kesh-api` si nécessaire | Voir §filename-slug |
+| `criterion` (dev) | 0.5 | Nouvelle dev-dep `kesh-report` | Benchmark `< 500ms` AC #9 reproductible |
+| `percent-encoding` | 2.x | **(Pass 1 AA-M3)** Réutilisée dans workspace via `reqwest`/`url` (vérifier pas besoin d'ajout explicite Cargo.toml) | RFC 5987 percent-encoding pour `Content-Disposition filename*=UTF-8''<...>` |
+| ~~`slug`~~ | ~~0.1~~ | **(Pass 1 BH-M1 + ECH-C1)** Retirée — regex inline backend + frontend cohérents | Pas de nouvelle dépendance |
 
 ### File structure
 
@@ -344,7 +357,7 @@ Si dépendance crate `slug` jugée nécessaire en review : `slug = "0.1"` (8K do
 - `BalanceSheet { period: ReportPeriod, assets: Vec<AccountBalance>, liabilities: Vec<AccountBalance>, equity_result: Decimal, ... }`
 - `IncomeStatement { period, revenues: Vec<AccountBalance>, expenses: Vec<AccountBalance>, net_result: Decimal, ... }`
 - `TrialBalance { period, rows: Vec<TrialBalanceRow> }`
-- `JournalReport { period, journals: Vec<JournalSection>, journal_filter: Option<Journal> }`
+- `JournalReport { period: ReportPeriod, journals: Vec<JournalSection>, grand_total_debit: Decimal, grand_total_credit: Decimal }` — **Pass 1 BH-C1 ground-truth `journal_report.rs:21-26`** : `journal_filter` n'est **PAS** un champ du struct, c'est uniquement un paramètre de `generate_journal_report(..., journal: Option<Journal>)`. Le label du filtre pour le header PDF doit être passé via `PdfContext.journal_filter_label` (cf. T2.2 patché).
 
 Tous `Serialize` camelCase. Champs nommés stables — Story 9-2a peut les binder par name, pas par position.
 
@@ -379,17 +392,76 @@ Tous `Serialize` camelCase. Champs nommés stables — Story 9-2a peut les binde
 | L6 | Pas de pagination PDF pour gros datasets (10k+ écritures dans un journal) | Mitigé par AC #31 (5 MB max sur 10k écritures, acceptable) ; pagination ajoutée si dépassement observé | Si rapport > 5 MB ou > 50 pages : story dédiée v0.2 |
 | L7 | Pas d'horodatage signé / certificat sur le PDF (Swiss CO Art. 958f conformité partielle) | Recherche réglementaire R2 epic-9.md non encore complétée — décision audit-trail-only acceptée pour v0.1 | Si recherche R2 conclut signature requise : story Epic 14 ou 15 |
 | L8 | `Content-Disposition` filename UTF-8 RFC 5987 — compatible navigateurs modernes (Chrome/Firefox/Safari) mais peut tronquer en IE11/Edge legacy | v0.1 ne supporte que navigateurs modernes (cohérent reste de l'app) | Pas de tracking — décision PRD |
+| L9 | **Export en vol + changement de FY** : si l'utilisateur change `selectedFiscalYearId` pendant un export en vol, l'export complète sur l'ancien FY (closure capture). En cas d'erreur, `errorMsg` est mis à jour même si l'UI affiche le nouveau FY → confusion UX possible (Pass 1 ECH-H2). | Acceptable v0.1 : exports rapides (~500ms benchmark) limitent la fenêtre. Mitigation v0.2 si feedback utilisateur : ajouter un toast contextualisé « Export bilan FY 2025 terminé » au lieu de mettre à jour `errorMsg` partagé. | v0.2 si flake observé |
 
-### Risques & questions ouvertes (à clarifier en spec validate)
+### Risques & questions ouvertes — RÉSOLUS Pass 1
 
-| # | Risque / question | À traiter |
-|---|---|---|
-| Q1 | **Helper `format_swiss_amount`** — local à `kesh-report::pdf` ou factorisé via nouvelle crate `kesh-format` ? Si plusieurs crates dupliquent le format (kesh-qrbill, kesh-report, frontend `formatSwissAmount`), création v0.2 d'une crate `kesh-format` pourrait être justifiée. | Spec validate Pass 1 — décision « accepter duplication v0.1 + L1 tracking dette » sauf objection majeure |
-| Q2 | **Audit log signature** — étendre `emit_report_audit` avec param `format: Option<&str>` (backward compat) OU créer `emit_report_export_audit` séparé ? | Spec validate Pass 1 — proposer Option « créer fonction séparée » pour clarté + scope test |
-| Q3 | **Endpoint exposing `companyName`** — `+page.svelte` a besoin de `companyName` pour construire le filename (AC #22). Vérifier si `/api/v1/companies/current` ou équivalent existe Story 1-7+. Sinon, fallback `'company'` documenté + dette L2 dédiée. | Spec validate Pass 1 — grep ground-truth `routes/companies.rs` |
-| Q4 | **Test fixtures écritures** — pour les 16 tests E2E, faut-il créer un helper `seed_with_entries(fy_id, count)` dans `kesh-db::test_fixtures` ou inline SQL dans le fichier de test ? Story 9-1 a inline les écritures via SQL bypass dans `reports_e2e.rs`. | Spec validate Pass 1 — décision « inline cohérent Story 9-1, pas de nouvelle fixture publique » sauf si > 3 fichiers de test ont besoin du même seed |
-| Q5 | **PDF pagination strategy** — si un rapport dépasse 1 page A4, faut-il (a) page break automatique géré par `printpdf::PdfPageReference::add_page`, (b) message « rapport tronqué » avec lien CSV, (c) crash propre ? AC #31 dit `< 5 MB` mais ne couvre pas multi-page. | Spec validate Pass 1 — proposer Option (a) par défaut, footer page X/Y |
-| Q6 | **Performance benchmark dataset** — la fixture ~1000 écritures (AC #9) n'existe pas encore. À créer dans `kesh-report/benches/fixtures.rs` ou réutiliser une fixture existante ? | Spec validate Pass 1 — décision construire en code Rust (pas DB) via `BalanceSheet { assets: (0..N).map(...).collect(), ... }` |
+Toutes les Q1-Q6 ont été tranchées en Pass 1 Sonnet 4.6 (cycle CLAUDE.md). Verdict :
+
+| # | Question | Décision Pass 1 | Référence patch |
+|---|---|---|---|
+| Q1 | Helper `format_swiss_amount` local ou factorisé `kesh-format` ? | **Accepté duplication v0.1**. Helper local à `kesh-report::pdf`, pas de dépendance kesh-i18n (Decision §swiss-amount-format). Si > 3 crates dupliquent → story Epic 15 v0.2. **Pass 1 BH-H3 fix incluse** : nom correct `kesh-i18n::format_money` (pas `format_amount`). | T2.4 |
+| Q2 | `emit_report_audit` modifié ou nouveau `emit_report_export_audit` ? | **Nouveau fn séparé** mandaté. Modifier la signature existante briserait les 4 callers Story 9-1 → 28 E2E tests reports_e2e.rs cassent (Pass 1 BH-M2). | T5.5 |
+| Q3 | Endpoint `companyName` existe ? | **Oui, confirmé `companies.rs:75`** (Pass 1 ECH-H1 + BH-M3 + AA-H5 ground-truth). Chargé via `+page.ts` load function en parallèle de `fiscalYears`, extension `PageData`. Fallback `'company'` uniquement si `data.companyName === ''` (pathologique). | T7.3 |
+| Q4 | Fixtures écritures helper public ou inline SQL ? | **Inline SQL** cohérent Story 9-1 `reports_e2e.rs`. Pas de nouveau preset endpoint. Stratégie spécifique : `with-company` + insertions SQL ad-hoc + tests rapport vide via `periodStart=2099-01-01` (Pass 1 AA-M5). | T9.2 |
+| Q5 | PDF pagination strategy multi-page ? | **Option (a) page break automatique** via `doc.add_page()` quand cursor Y approche 25mm du bas. Footer `page X/Y` dans helper `draw_footer`. AC #31 (< 5 MB pour 10k entries) sécurise contre fichiers absurdes. | T2.3 + AC #31 |
+| Q6 | Benchmark dataset construction code vs DB ? | **Code Rust pur** via factories `make_balance_sheet(n_accounts: usize)` etc. — pas de DB pour bench, isolation des effets DB (latence/buffer pool). 2 fixtures : 1000 + 10000 écritures (Pass 1 AA-M4). | T4.3 |
+
+**Pass 1 = 0 question résiduelle.** Toutes verrouillées par grep/Read ground-truth.
+
+### Pass 1 clarifications — codes findings traités
+
+Section synthèse pour traçabilité review iteration CLAUDE.md.
+
+| Code | Finding | Sévérité Pass 1 | Patch |
+|---|---|---|---|
+| BH-C1 | `JournalReport` struct ground-truth (pas de `journal_filter` field, mais `grand_total_debit/credit`) | CRITICAL | Dev Notes API stable corrigé + `PdfContext.journal_filter_label` ajouté T2.2 + ECH-H8 résolu en synergie |
+| BH-H1 | T6.1 « après ligne 373 » placerait routes hors `authenticated_routes` (IDOR) | HIGH | T6.1 réécrit + T6.2 vérification grep ajoutée |
+| BH-H2 | `?format=invalid` retourne 422 Axum pas 400 VALIDATION_ERROR | HIGH | T5.2 `format: Option<String>` + validation handler-side → AC #27 patché (couvre aussi ECH-H4) |
+| BH-H3 | `kesh-i18n::format_amount` n'existe pas (vraie fn `format_money`) | HIGH | T2.4 corrigé |
+| BH-M1 | Contradiction slug crate vs regex inline | MEDIUM (escaladé CRITICAL via ECH-C1) | T5.4 : regex inline, pas de crate `slug` |
+| BH-M2 | Modifier `emit_report_audit` casse 4 callers Story 9-1 | MEDIUM | T5.5 : nouvelle fonction `emit_report_export_audit` mandatée |
+| BH-M3 | Q3 companyName ambigu — endpoint existe | MEDIUM | Voir Q3 ci-dessus + T7.3 |
+| BH-L1 | AC #5 typo « 4 colonnes » → 5 | LOW (escaladé HIGH via AA-H1) | AC #5 patché |
+| BH-L2 | lib.rs ~30 → 28 lignes | LOW | File structure note non patchée (cosmétique pure) |
+| BH-L3 | Scope « ~12 clés » → 10 | LOW | T8.4 patché « 10 clés » |
+| ECH-C1 | Filename slug divergence backend vs frontend vs Decision | CRITICAL | T5.4 + T7.1 + Decision §filename-slug harmonisés (regex inline + RFC 5987 backend) |
+| ECH-C2 | `ReportError::PdfGeneration` variant manquant | CRITICAL | T2.0 nouveau (variant + From mapping) |
+| ECH-H1 | Q3 endpoint companyName | HIGH (merge BH-M3 + AA-H5) | Voir Q3 + T7.3 |
+| ECH-H2 | `exporting` flag race condition | HIGH | AC #36 nouvelle + T7.4 flag dédié + T7.6 closure capture documentée |
+| ECH-H3 | Slug trailing hyphens post-truncate | HIGH | T7.1 regex `replace(/-+$/, '')` + T11.1 test edge cases élargi |
+| ECH-H4 | Missing `fiscalYearId` → 422 pas 400 | HIGH (merge BH-H2) | AC #27 patché |
+| ECH-H5 | Decimal `0` vs `0.00` format Excel | HIGH | T3.6 nouveau `format!("{:.2}", ...)` |
+| ECH-H6 | `PdfContext` pas de `journal_filter` info | HIGH (merge BH-C1) | T2.2 `journal_filter_label: Option<String>` ajouté |
+| ECH-M1 | Empty CSV `#` comment non RFC 4180 | MEDIUM | T3.5 + AC #17 patché : header seul, pas de comment |
+| ECH-M2 | Content-Disposition RFC 5987 manquant | MEDIUM (merge AA-M3) | T5.3 helper `build_content_disposition` filename + filename* |
+| ECH-M3 | Performance SLA ambiguë | MEDIUM (merge AA-L1) | AC #9 clarifié rendering pur < 500ms |
+| ECH-M4 | PDF/CSV equity verification inconsistance | MEDIUM | AC #12 note invariant implicite |
+| ECH-M5 | Playwright `download.path()` may be null | MEDIUM | T12.1 `download.saveAs()` mandaté |
+| ECH-L1 | Test format swiss montant négatif | LOW | T2.7 nouveau test négatif |
+| ECH-L2 | Risque clash i18n keys `reports-filename-balance-sheet` vs `reports-balance-sheet` | LOW | Acceptable, lint-i18n-ownership couvre (T8.3) |
+| ECH-L3 | `details_json` journalFilter null consistency | LOW | Reporté Pass 2 ou dev-story (cosmétique audit) |
+| ECH-L4 | Test CSV escape `\n` dans champ | LOW (escaladé) | T3.4 (c) ajouté |
+| ECH-L5 | CSV `Vec<u8>` Content-Length note | LOW | Acceptable, hyper chunked transfer fallback |
+| AA-C1 | AC #30 streaming claim contradicte Vec<u8> | CRITICAL | AC #30 réécrit |
+| AA-H1 | AC #5 « 4 colonnes » → 5 | HIGH (merge BH-L1) | AC #5 patché |
+| AA-H2 | AC #34(a) `getReportPdf` fn inexistante | HIGH | AC #34(a) → `downloadReport` |
+| AA-H3 | i18n key naming FR slug vs EN slug contradiction | HIGH | AC #22 + T8.1 harmonisés : clé EN slug, valeur localisée FR/DE/IT/EN |
+| AA-H4 | AC #29 tracing span orphan task | HIGH | T5.8 nouveau + T5 AC liste mise à jour |
+| AA-H5 | Q3 endpoint companyName | HIGH (merge ECH-H1) | Voir Q3 |
+| AA-M1 | AC #8 i18n key viole Decision §swiss-amount-format | MEDIUM | AC #8 patché : `ctx.empty_message` résolu handler-side |
+| AA-M2 | AC #32 décomp sums 15 not 16 | MEDIUM | AC #32 décompo corrigée 16 exact (h split en 2) |
+| AA-M3 | Content-Disposition simple vs RFC 5987 | MEDIUM (merge ECH-M2) | T5.3 patché |
+| AA-M4 | Bench dataset 1000 vs AC #30 10k | MEDIUM | T4.3 patché 2 fixtures 1000 + 10000 |
+| AA-M5 | Empty report fixture strategy manquante | MEDIUM | T9.2 stratégie `period=2099-01-01/2099-12-31` |
+| AA-L1 | Performance threshold ambigu | LOW (merge ECH-M3) | AC #9 patché |
+| AA-L2 | « ~12 clés » → 10 | LOW (merge BH-L3) | Voir BH-L3 |
+| AA-L3 | Lint-i18n ne couvre pas `reports-pdf-*` `reports-csv-*` | LOW | T8.3 patché : `reports-pdf-*` ajouté ; `reports-csv-*` plus utilisé (T3.5 drop comment) |
+| AA-L4 | AC #32(e) « FY out of bounds 400 » sans AC déclarant | LOW | AC #27 patché (couvre ce cas) |
+
+**Trend Pass 1** : 43 findings bruts → 34 distincts post-dedup → **31 patches appliqués** (Option A : C+H+M) + 3 LOW résiduels acceptés (L1 cosmétique, L2 cosmétique, ECH-L3 audit cosmétique reporté).
+
+**Critère arrêt CLAUDE.md NON atteint** — Pass 2 Haiku 4.5 obligatoire (cycle Sonnet → Haiku, briser biais Sonnet auteur Pass 1 + valider 31 patches sans régression). Budget 1/8 passes consommé.
 
 ### Project Structure Notes
 
