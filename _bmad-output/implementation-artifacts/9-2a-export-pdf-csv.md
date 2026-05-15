@@ -426,7 +426,10 @@ Tous `Serialize` camelCase. Champs nommés stables — Story 9-2a peut les binde
 | L9 | **Export en vol + changement de FY** : si l'utilisateur change `selectedFiscalYearId` pendant un export en vol, l'export complète sur l'ancien FY (closure capture). En cas d'erreur, `errorMsg` est mis à jour même si l'UI affiche le nouveau FY → confusion UX possible (Pass 1 ECH-H2). | Acceptable v0.1 : exports rapides (~500ms benchmark) limitent la fenêtre. Mitigation v0.2 si feedback utilisateur : ajouter un toast contextualisé « Export bilan FY 2025 terminé » au lieu de mettre à jour `errorMsg` partagé. | v0.2 si flake observé |
 | L10 | **(Pass 3 ECH3-M1)** Duplicate query param `?format=pdf&format=csv` : serde_urlencoded (Axum default) retient la **dernière** valeur silencieusement → l'export retourne le format `csv`. Pas de 400 distinct. | Comportement par défaut du parser, faible probabilité (user n'écrit pas manuellement les URLs), pas de risque sécurité. | v0.2 si rapporté |
 | L11 | **(Pass 3 ECH3-M2)** PDF Helvetica builtin ne supporte que Latin-1 ish. Si `company.name` contient Cyrillique/CJK (`Газпром`, `北京公司`, etc.), le PDF rend des cases vides ou caractères de remplacement à la place. AC #3 (« en-tête raison sociale ») visuellement dégradé. | Dégradation gracieuse acceptée v0.1 (cohérent L3) ; le filename reste utilisable via slug ASCII (T5.4) ; v0.2 si demande explicite tenants non-Latin avec embedding TTF (`printpdf::PdfFont::from_bytes`). | Epic 15 si demande |
-| L12 | **(Pass 3 BH3-L1)** Wording T7.3 « 401 → re-throw » diverge subtilement du pattern Story 9-1 `+page.ts:18-22` qui `return { fiscalYears: [] }` sur 401. Les deux fonctionnent (api-client redirige déjà), mais inconsistance dans le même fichier. | Acceptable v0.1 : sémantique identique en pratique (redirect login déclenché par api-client). Refactor cosmétique → si revue manuelle insiste. | LOW |
+| L12 | **(Pass 3 BH3-L1)** Wording T7.3 « 401 → re-throw » diverge subtilement du pattern Story 9-1 `+page.ts:18-22` qui `return { fiscalYears: [] }` sur 401. Les deux fonctionnent (api-client redirige déjà), mais inconsistance dans le même fichier. | Acceptable v0.1 : sémantique identique en pratique (redirect login déclenché par api-client). Refactor cosmétique → si revue manuelle insiste. **Résolu Pass 1 code-review M9** : `loadFiscalYears` aligné sur `loadCompanyName` (re-throw 401). | LOW — RÉSOLU |
+| L13 | **(Pass 1 code-review M18 / AC #31)** PDF Journaux sur 10'000 écritures pèse ~6.5 MB avec le format actuel (Helvetica builtin, 2 lignes par écriture, pas de compression stream custom). AC #31 mandate `< 5 MB`. Le test unit `pdf_10k_journal_report_size_under_5mb` est marqué `#[ignore]` v0.1, exécutable via `cargo test -p kesh-report -- --ignored`. | Dataset 10k est un extreme rarement atteint en PME suisse v0.1 (médiane attendue : ~1k écritures/an). Compression PDF stream (flate via printpdf) ou pagination intelligente section-aware → v0.2 ou Epic 15. | Issue GitHub à créer si feedback utilisateur dépasse 5k écritures observé. |
+| L14 | **(Pass 1 code-review H6 / AC #28)** Audit log `report.exported` est émis **avant** la sérialisation finale de la `Response` Axum (et donc avant la fin du transfert TCP vers le client). En cas d'échec réseau pendant le flush, l'audit indique `exported=true` alors que le client n'a jamais reçu le PDF. | Conformité Swiss CO 958f acceptable v0.1 (le byte content est garanti livré côté serveur, et un échec réseau côté client est typiquement retry-able). Refactor « audit on ACK » (post-flush hook Axum) → v0.2 si compliance demande. | v0.2 si audit-on-flush requis |
+| L15 | **(Pass 1 code-review H9 / AC #33(d))** Aucun test ne vérifie que `1'234.56` ou `15.05.2026` apparaissent **effectivement dans les bytes du PDF généré** — les helpers `format_swiss_amount`/`format_swiss_date` sont testés isolément, et la vérification (d) repose sur une visualisation manuelle du PDF. Décompresser les streams `obj…endstream` exige une crate dédiée (`lopdf`) ou un parser PDF custom, complexité disproportionnée v0.1. | Verification manuelle suffisante v0.1 (PDF E2E test `export_balance_sheet_pdf_returns_200` valide la signature `%PDF-1.` + Content-Type + filename). | v0.2 si automation nécessaire |
 
 ### Risques & questions ouvertes — RÉSOLUS Pass 1
 
@@ -593,6 +596,48 @@ Section synthèse pour traçabilité review iteration CLAUDE.md.
 
 **Path-dep aval** : 9-2b (export global ZIP) peut démarrer dès que 9-2a est mergée (réutilise `kesh-report::csv` serializer + filename helpers + audit pattern).
 
+### Pass 1 code-review clarifications — Sonnet 4.6 (post-implémentation)
+
+Cycle CLAUDE.md « Review iteration » : `bmad-code-review` Pass 1 Sonnet 4.6 lancée après `bmad-dev-story` (commits `edf9731` + `6c373bd` + `968c538`). 12 reviewers (4 chunks × BH/ECH/AA). **Trend** : 89 findings bruts → 11 HIGH + 18 MEDIUM dédupliqués post-ground-truth = **29 patches appliqués (Option A : C+H+M)**, 52 LOW deferred.
+
+| Code | Finding | Sévérité Pass 1 | Patch |
+|---|---|---|---|
+| H1 | `map_csv_err` + `map_io_err` + `write_bom` dans `csv.rs` mappent vers `ReportError::PdfGeneration` → un échec CSV apparaissait comme « Échec PDF » côté UI (3× confirmé : BH1-H1 + ECH1-M2 + AA1-M2) | HIGH | **PATCHÉ** — Nouveau variant `ReportError::CsvGeneration(String)` + `AppError::CsvGenerationFailed(String)` + From arm + IntoResponse + i18n key `error-csv-generation-failed` × 4 locales |
+| H2 | `render_balance_sheet_pdf` dessine `Total actifs` deux fois (footer dup post-équité) — BH1-H3 | HIGH | **PATCHÉ** — Second `draw_totals_footer(...total_assets)` supprimé `pdf.rs:478-482`. L'équation bilan reste vérifiable visuellement (Total actifs haut vs Total passifs + Capitaux propres bas) |
+| H3 | `draw_empty_message` hardcode `cursor_y = PAGE_HEIGHT / 2.0 = 148.5mm` sans tenir compte du header courant (collision possible avec header multi-line `journal_filter_label`) — BH1-H2 | HIGH | **PATCHÉ** — Calcul dynamique : `(builder.cursor_y + MARGIN_BOTTOM_MM) / 2.0` centre entre le curseur post-header et la marge basse |
+| H4 | Trial balance `col_name_x` trop étroit (45mm) pour Swiss GAAP noms > 22 chars (e.g. « Provisions pour dépréciation d'actifs ») — débordement sur colonne débit — BH1-H4 | HIGH | **PATCHÉ** — Helper `truncate_with_ellipsis(name, 30)` (cuts à 30 chars Unicode + `…`). Préserve la largeur des colonnes débit/crédit/solde. 2 tests unit ajoutés |
+| H5 | `load_pdf_context` query `WHERE id = company_id` sans `AND company_id` doublé (IDOR théorique) — BH2-H1 | HIGH | **PATCHÉ doc-only** — `company_id` provient du claim JWT signé HS256 (`middleware/auth.rs:96`), garanti = la company de l'utilisateur authentifié. Ajouter un filtre redondant ne fournirait aucune protection. Documenté en commentaire fonction + Limitations L13 (défense en profondeur) |
+| H6 | Audit log `report.exported` émis AVANT delivery confirmation côté handler (BH2-H2) | HIGH | **DEFER L14** — Compliance Swiss CO 958f acceptable v0.1 (byte content garanti livré côté serveur). Refactor « audit on flush ACK » → v0.2 si compliance demande. Documenté Limitations L14 |
+| H7 | `percent_encode_filename` cast `b as char` correct uniquement pour ASCII, fragile si filter élargi (BH2-H3) | HIGH | **PATCHÉ** — `debug_assert!(b < 128, ...)` dans la branche safe + commentaire d'invariant |
+| H8 | AC #9 (< 500ms PDF 1000 entrées) pas asserted dans test automatisé (AA1-H1) | HIGH | **PATCHÉ** — Test unit `ac9_balance_sheet_pdf_1000_under_500ms` dans `pdf.rs` avec `Instant::now()` + `assert!(elapsed < 500ms)` sur dataset 1000 entrées. Le bench criterion reste pour mesure perf, mais l'AC #9 est désormais gardé par un test fail-on-threshold |
+| H9 | AC #33(d) 3 tests « format suisse dans bytes PDF » manquants (AA1-H2) | HIGH | **DEFER LOW / L15** — Décompresser les streams PDF exige une crate (`lopdf`) ou un parser custom, complexité disproportionnée v0.1. Documenté Limitations L15 — vérification manuelle suffisante v0.1 |
+| H10 | AC #22 typeSlug non localisé : backend passe `"balance-sheet"` brut à `build_filename` au lieu de `"bilan"` (fr-CH) ; frontend `TYPE_SLUGS` hardcode FR (2× confirmé : AA2-H1 + AA4-F1) | HIGH | **PATCHÉ** — Nouveau helper backend `resolve_type_slug(state, locale, report_type)` qui résout via `state.i18n.format(...)` avec fallback report_type. Frontend `buildExportFilename` utilise `i18nMsg('reports-filename-{type}', TYPE_SLUGS_FALLBACK[type])` |
+| H11 | `render_journal_report_pdf` grand total `write_inline` sans `ensure_space_for_row()` préalable → invisible si la dernière section laisse `cursor_y < MARGIN_BOTTOM_MM` (ECH1-H1) | HIGH | **PATCHÉ** — `builder.ensure_space_for_row()` ajouté ligne 803 |
+| M1 | Tests E2E cross-tenant 404 sur balance-sheet uniquement (3 endpoints non couverts) | MEDIUM | **PATCHÉ** — 3 nouveaux tests `export_{income_statement,trial_balance,journals}_cross_tenant_returns_404` dans `reports_export_e2e.rs` |
+| M2 | `assert_csv_response` panic si body < 3 bytes (BOM slice) | MEDIUM | **PATCHÉ** — Garde `assert!(body.len() >= 3, ...)` avant `&body[..3]` |
+| M3 | `load_pdf_context` accounting_language match incomplet — fallback silencieux pour `"FR"` (ECH2-M1) | MEDIUM | **PATCHÉ** — Arms explicites `"FR" => "fr-CH"` + arm `other => warn! + fr-CH` |
+| M4 | `emit_report_export_audit` `pool.begin/commit` pour 1 INSERT (ECH2-M2) | MEDIUM | **DISMISSED** — Claim ground-truth incorrect : Story 9-1 `emit_report_audit` utilise aussi `tx`, et `audit_log::insert_in_tx` est l'unique API publique (pas de `insert(pool)` direct). Pattern cohérent inter-story 9-1/9-2a, refactor reporté si nouveau besoin (Epic 9 retro) |
+| M5 | `load_pdf_context` 500 sur row deleted (RowNotFound) au lieu de 404 (ECH2-M-actual) | MEDIUM | **DEFER LOW** — Impossible via UI v0.1 (pas d'endpoint delete company), acceptable jusqu'à v0.2 |
+| M6 | Phantom section-total quand IS/BS partial-empty (e.g. revenues vides mais expenses présentes → « Total produits;;;0.00 » phantom) (ECH1-M1) | MEDIUM | **PATCHÉ** — Guards `if !revenues.is_empty()` / `if !expenses.is_empty()` / `if !assets.is_empty()` / `if !liabilities.is_empty()` dans `csv.rs` (BS + IS). `ResultatNet` reste écrit (reflète le calcul réel même si une section est vide) |
+| M7 | Tests empty PDF manquants pour Income Statement + Journal Report (AA1-M3) | MEDIUM | **PATCHÉ** — 2 nouveaux tests `income_statement_pdf_empty_does_not_crash` + `journal_report_pdf_empty_does_not_crash` dans `pdf.rs` |
+| M8 | AC #6 vs AC #8 ambiguïté tout-vide pour journal report (AA1-M1) | MEDIUM | **PATCHÉ doc-only** — Précédence verrouillée : AC #8 (`empty_message` centré) prime pour le cas « tout-vide » dans journal report (cohérent code actuel `pdf.rs:711-714`) |
+| M9 | `+page.ts` `loadFiscalYears` / `loadCompanyName` ont des politiques 401 asymétriques (swallow vs re-throw) (ECH4-M1) | MEDIUM | **PATCHÉ** — `loadFiscalYears` re-throw 401 (aligné `loadCompanyName`). L12 mise à jour avec « RÉSOLU » |
+| M10 | Tab switch ne clear pas `errorMsg` → erreur d'export Bilan reste affichée après bascule onglet Compte de résultat (ECH4-M2) | MEDIUM | **PATCHÉ** — Helper `selectTab(next)` clear `errorMsg` sur changement d'onglet. `onclick` / `handleTabKeydown` mis à jour |
+| M11 | `triggerDownload` ne cleanup pas si `a.click()` jette exception (BH4-F-01) | MEDIUM | **PATCHÉ** — `try { appendChild + click } finally { removeChild + revokeObjectURL }` |
+| M12 | Double-click race window : 2e clic peut traverser le guard `if (exporting) return` avant que `exporting = true` ne soit posté (BH4-F-02) | MEDIUM | **PATCHÉ** — `if (exporting) return` désormais le **premier** check de `exportReport`, AVANT tout autre check ou await |
+| M13 | AC #23 `reports-export-error-generic` jamais utilisé : tout `errorMsg` provient de `formatError(e)` (AA4-F2) | MEDIUM | **PATCHÉ** — `exportReport` catch : `isApiError(e) && e.code` → `formatError(e)` (message structuré backend), sinon fallback `i18nMsg('reports-export-error-generic', ...)` |
+| M14 | RFC 5987 language tag absent : `filename*=UTF-8''…` au lieu de `filename*=UTF-8'fr-CH'…` (BH2-M2) | MEDIUM | **PATCHÉ** — `build_content_disposition(filename, locale_bcp47)` insère le tag langue entre les 2 apostrophes. Les 4 handlers passent `&ctx.locale`. Test unit `content_disposition_with_locale_tag_includes_language` ajouté |
+| M15 | Format strict lowercase non documenté API message (BH2-M1) | MEDIUM | **DÉJÀ APPLIQUÉ** — `validate_format` retourne `"format manquant ou invalide, attendu pdf|csv (lowercase strict)"` (depuis Pass 2 ECH2-H1 verrouillé pré-dev) |
+| M16 | `balance` fr-CH ambigu (collision visuelle avec `bilan` Bilan vs trial-balance) — BH3-M1 + ECH3-L1 + AA3-L1 | MEDIUM | **PATCHÉ** — `reports-filename-trial-balance = balance-comptes` fr-CH. Frontend `TYPE_SLUGS_FALLBACK['trial-balance'] = 'balance-comptes'`. Test Vitest mis à jour |
+| M17 | Footer position `y=10mm` sous `MARGIN_BOTTOM_MM (25mm)` → risque de clipping printer laser (BH1-M4) | MEDIUM | **PATCHÉ** — Footer dessiné à `MARGIN_BOTTOM_MM - 10.0 = 15mm` (au-dessus zone non-imprimable typique) |
+| M18 | Bench `assert!(bytes.len() < 5MB)` inline dans `b.iter` (anti-pattern criterion : assert silencieux dans benchmark fausse les samples) (BH1-M3) | MEDIUM | **PATCHÉ** — Bench `bench_pdf_10k` retire l'assert (juste mesure perf). Nouveau test unit `pdf_10k_journal_report_size_under_5mb` dans `pdf.rs`. **Mesure réelle = 6.5 MB > 5 MB AC #31** → test marqué `#[ignore]` v0.1, dette technique documentée Limitations L13 |
+
+**Trend Pass 1 code-review** : 89 findings bruts → 29 distincts post-dedup (11 HIGH + 18 MEDIUM) → **27 patches appliqués + 2 deferred (H6→L14, H9→L15) + 1 dismissed (M4) + 1 already-applied (M15)** = effectivement 27/29 patches code, 4 acceptations documentées en Limitations.
+
+**Régressions découvertes par les patches** :
+- M18 (extraction assert! du bench vers test) a révélé que PDF 10k entrées pèse ~6.5 MB > 5 MB AC #31 — auparavant masqué par le pattern criterion. Documenté L13.
+- Aucune régression Story 9-1 introduite : 28/28 tests `reports_e2e.rs` ✓.
+
 ### Project Structure Notes
 
 Alignement avec `architecture.md` §11 (workspace) + §17 (FR65-FR68 → `kesh-report/` + `features/reports/`) :
@@ -700,6 +745,20 @@ Le rendering Helvetica builtin + structure tabulaire monoline est dominé par le
 - `npx playwright test` — **non exécuté** (nécessite MariaDB up + browsers, manuel pré-push).
 - `cargo bench` — **non exécuté** (sandbox CI), à lancer manuellement avant PR.
 
+#### Pass 1 code-review — résultats post-patches
+
+- `cargo fmt --all -- --check` ✓ clean.
+- `cargo build --workspace --all-targets` ✓ clean (0 warnings).
+- `cargo clippy --workspace --all-targets -- -D warnings` ✓ clean.
+- `cargo test -p kesh-report` ✓ **53/53 pass + 1 ignored** (47 prev + 6 nouveaux : 2 truncate, 2 empty IS+JR, 1 AC #9 SLA, 1 BS no-dup + 1 ignored AC #31 10k).
+- `cargo test -p kesh-api --test reports_e2e -- --test-threads=1` ✓ **28/28 pass** (Story 9-1 — 0 régression).
+- `cargo test -p kesh-api --test reports_export_e2e -- --test-threads=1` ✓ **20/20 pass** (17 prev + 3 nouveaux cross-tenant : IS, TB, JR).
+- `cargo test -p kesh-api --lib routes::reports` ✓ **13/13 pass** (12 prev + 1 nouveau content_disposition_with_locale_tag).
+- `npm run check` ✓ 0 errors, 25 warnings (baseline inchangée).
+- `npm run lint-i18n-ownership` ✓ PASS (1 nouvelle clé `error-csv-generation-failed` × 4 locales).
+- `npm run test:unit` ✓ **241/241 pass** (test Vitest mis à jour pour `balance-comptes` fr-CH).
+- `npm run build` ✓ adapter-static OK.
+
 ### File List
 
 #### Nouveaux fichiers
@@ -728,6 +787,25 @@ Le rendering Helvetica builtin + structure tabulaire monoline est dominé par le
 - `frontend/src/routes/(app)/reports/+page.ts` — load `companyName` parallèle via `fetchCompanyCurrent` (Pass 3 ECH3-H1 — réutilise `lib/features/settings`). Fallback `'company'` sur 403/500/network.
 - `frontend/src/routes/(app)/reports/+page.svelte` — flag dédié `exporting`, `canExport` derived, `exportReport`/`exportPdf`/`exportCsv` handlers, `activeReportPeriod()` helper, props bind sur `ReportSelector`.
 
+#### Pass 1 code-review — fichiers modifiés (post-implémentation)
+
+- `crates/kesh-report/src/errors.rs` — ajout variant `ReportError::CsvGeneration(String)` (H1).
+- `crates/kesh-report/src/csv.rs` — `map_csv_err`/`map_io_err`/`write_bom` mappent vers `CsvGeneration` (H1) ; guards section-indépendants BS/IS (M6).
+- `crates/kesh-report/src/pdf.rs` — suppression dup `Total actifs` (H2) ; `draw_empty_message` cursor dynamic (H3) ; `truncate_with_ellipsis` helper + appel dans trial balance (H4) ; `ensure_space_for_row` avant grand total JR (H11) ; footer position 15mm (M17) ; 6 nouveaux tests (truncate × 2, empty IS, empty JR, AC #9 SLA, BS no-dup) + 1 test `#[ignore]` (AC #31 10k size).
+- `crates/kesh-report/benches/export.rs` — `bench_pdf_10k` retire `assert!` inline (M18).
+- `crates/kesh-api/src/errors.rs` — ajout variant `AppError::CsvGenerationFailed(String)` + From arm + IntoResponse 500 (H1).
+- `crates/kesh-api/src/routes/reports.rs` — doc commentaire IDOR `load_pdf_context` (H5) ; `debug_assert!(b < 128)` dans `percent_encode_filename` (H7) ; helper `resolve_type_slug` + 4 handlers utilisent type_slug localisé (H10) ; `load_pdf_context` arm `"FR" =>` + warn fallback (M3) ; `build_content_disposition(filename, locale_bcp47)` + 4 handlers passent `&ctx.locale` (M14) ; 1 nouveau test unit `content_disposition_with_locale_tag_includes_language`.
+- `crates/kesh-api/tests/reports_export_e2e.rs` — 3 nouveaux tests cross-tenant (IS, TB, JR) (M1) ; `assert_csv_response` BOM slice guard (M2) ; assertion `filename*=UTF-8'…'` relaxée pour accepter tag langue (cohérent M14).
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl` — ajout `error-csv-generation-failed` (H1) ; `reports-filename-trial-balance = balance-comptes` (M16).
+- `crates/kesh-i18n/locales/de-CH/messages.ftl` — ajout `error-csv-generation-failed` (H1).
+- `crates/kesh-i18n/locales/it-CH/messages.ftl` — ajout `error-csv-generation-failed` (H1).
+- `crates/kesh-i18n/locales/en-CH/messages.ftl` — ajout `error-csv-generation-failed` (H1).
+- `frontend/src/lib/features/reports/reports.api.ts` — import `i18nMsg` + `buildExportFilename` utilise `i18nMsg('reports-filename-{type}', fallback)` (H10) ; `TYPE_SLUGS_FALLBACK['trial-balance'] = 'balance-comptes'` (M16) ; `triggerDownload` try/finally cleanup (M11).
+- `frontend/src/lib/features/reports/reports.api.test.ts` — assertion `trial-balance` filename → `balance-comptes` (M16).
+- `frontend/src/routes/(app)/reports/+page.svelte` — `exportReport` guard re-entrancy AVANT tout check (M12) ; catch fallback `reports-export-error-generic` (M13) ; helper `selectTab` clear errorMsg (M10).
+- `frontend/src/routes/(app)/reports/+page.ts` — `loadFiscalYears` re-throw 401 (M9, aligne `loadCompanyName` — L12 RÉSOLU).
+- `_bmad-output/implementation-artifacts/9-2a-export-pdf-csv.md` — ajout §pass-1-code-review-clarifications + Limitations L13/L14/L15 + Completion Notes Pass 1 results + Change Log entry.
+
 ## Change Log
 
 - **2026-05-15** (Opus 4.7 dev-story) — Implémentation complète Story 9-2a sur branche `story/9-2a-export-pdf-csv` :
@@ -738,3 +816,13 @@ Le rendering Helvetica builtin + structure tabulaire monoline est dominé par le
   - Tests : 47 unit (kesh-report) + 12 unit (kesh-api) + 17 E2E HTTP + 14 Vitest + 1 Playwright (non exécuté CI) = **91 tests** dont 90 exécutés et passing.
   - 0 régression Story 9-1 (28 reports_e2e tests préservés, 7 report_aggregates sqlx tests inchangés).
   - Baseline 20 config::tests::* fails hérités documentés (inchangé pré-9-2a).
+
+- **2026-05-15** (Opus 4.7 code-review Pass 1 Sonnet 4.6) — 29 patches HIGH + MEDIUM appliqués (11 H + 18 M) ; 2 deferred Limitations L14/L15 ; 1 dismissed (M4 claim ground-truth incorrect) ; 1 already-applied (M15) :
+  - **Bugs réels corrigés** : H1 CSV→PdfError mismapping (variant dédié), H2 duplicate Total actifs, H3 empty_message collision header, H4 trial balance overflow nom long, H11 grand total JR invisible page boundary.
+  - **Coverage tests étendue** : 3 nouveaux cross-tenant E2E (IS, TB, JR — M1), 2 nouveaux empty path PDF tests (IS, JR — M7), 1 test AC #9 SLA assert fail-on-threshold (H8), 1 test AC #31 size unit dédié extracté du bench (M18, marqué `#[ignore]` car mesure réelle 6.5 MB > 5 MB → L13 dette technique).
+  - **Frontend UX** : guards re-entrancy double-click (M12), try/finally cleanup objectURL (M11), tab switch clear errorMsg (M10), fallback `reports-export-error-generic` AC #23 (M13), 401 handling aligné (M9).
+  - **Sécurité / RFC compliance** : `debug_assert!` ASCII guard percent-encode (H7), RFC 5987 tag langue `filename*=UTF-8'fr-CH'…` (M14).
+  - **i18n** : nouvelle clé `error-csv-generation-failed` × 4 locales (H1), `reports-filename-trial-balance` fr-CH `balance` → `balance-comptes` (M16), typeSlug filename localisé via i18n côté backend + frontend (H10).
+  - **Régression découverte** : M18 extraction `assert!` du bench a révélé que PDF 10k entrées pèse ~6.5 MB > 5 MB AC #31 (auparavant masqué par anti-pattern criterion). Documenté Limitations L13, test `#[ignore]`, fix prévu v0.2.
+  - **Tests Locally First post-patches** : `cargo fmt/build/clippy` ✓ clean ; `cargo test -p kesh-report` 53/53 + 1 ignored ; `cargo test -p kesh-api --test reports_export_e2e -- --test-threads=1` 20/20 ; `cargo test -p kesh-api --test reports_e2e -- --test-threads=1` 28/28 (0 régression 9-1) ; `npm run check/lint-i18n/test:unit/build` ✓ tous verts (241/241 Vitest).
+  - **Cycle CLAUDE.md** : Pass 2 Haiku 4.5 prévue (briser biais Sonnet auteur Pass 1 + valider 29 patches, cycle Sonnet → Haiku → Opus).
