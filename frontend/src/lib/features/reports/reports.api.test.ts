@@ -30,6 +30,10 @@ describe('reports.api — Story 9-2a', () => {
 		const period = { start: '2026-01-01', end: '2026-12-31' };
 
 		it('produit la string attendue pour les 4 types', () => {
+			// Pass 1 code-review H10 + M16 : typeSlug est résolu via i18nMsg
+			// (fallback FR par défaut quand le store i18n n'est pas chargé en
+			// jsdom). Le fallback `'balance'` est devenu `'balance-comptes'`
+			// (M16 — distinct de `bilan` pour éviter l'ambiguïté FR).
 			expect(
 				buildExportFilename('balance-sheet', 'CI Test Company', period, 'pdf'),
 			).toBe('kesh-bilan-ci-test-company-2026-01-01_2026-12-31.pdf');
@@ -40,7 +44,7 @@ describe('reports.api — Story 9-2a', () => {
 			);
 			expect(
 				buildExportFilename('trial-balance', 'CI Test Company', period, 'pdf'),
-			).toBe('kesh-balance-ci-test-company-2026-01-01_2026-12-31.pdf');
+			).toBe('kesh-balance-comptes-ci-test-company-2026-01-01_2026-12-31.pdf');
 			expect(buildExportFilename('journals', 'CI Test Company', period, 'csv')).toBe(
 				'kesh-journaux-ci-test-company-2026-01-01_2026-12-31.csv',
 			);

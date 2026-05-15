@@ -429,6 +429,8 @@ invoices-download-pdf-aria-label = Scarica la fattura { $number } in formato PDF
 error-invoice-not-validated = La fattura deve essere convalidata prima di generare il PDF.
 error-invoice-too-many-lines-for-pdf = La fattura contiene { $count } righe — il PDF A4 è limitato a { $max } righe in v0.1.
 error-pdf-generation-failed = Generazione PDF fallita.
+# Story 9-2a + Pass 1 code-review H1 — variante CSV dedicata.
+error-csv-generation-failed = Generazione CSV fallita.
 
 # Story 5.4 — Scadenziario fatture
 due-dates-title = Scadenziario

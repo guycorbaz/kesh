@@ -27,10 +27,13 @@ async function loadFiscalYears(): Promise<FiscalYearResponse[]> {
 	try {
 		return await listFiscalYears();
 	} catch (err) {
-		// 401 → api-client a déjà déclenché redirect login ; le catch ici évite un crash
-		// transitoire de SvelteKit pendant le repaint pré-redirect.
+		// Pass 1 code-review M9 (ECH4-M1) : aligné sur `loadCompanyName` —
+		// 401 re-throw (auth guard `+layout.ts` gère redirect login). L'ancien
+		// pattern « return [] » swallowait l'erreur et masquait la cause si
+		// le redirect échouait (e.g. network down). Re-throw 401 propage
+		// l'erreur au boundary `+error.svelte` qui affiche un état cohérent.
 		if (isApiError(err) && err.status === 401) {
-			return [];
+			throw err;
 		}
 		// Pour toute autre erreur (500, network, etc.), propager pour qu'elle remonte
 		// au boundary +error.svelte — fiscalYears est critique pour la fonctionnalité.

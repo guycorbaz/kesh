@@ -2,6 +2,7 @@
 
 import Big from 'big.js';
 import { apiClient } from '$lib/shared/utils/api-client';
+import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 import type {
 	BalanceSheetDto,
@@ -143,11 +144,16 @@ export function getReportExportUrl(
 
 /**
  * Construit le filename `kesh-{typeSlug}-{companySlug}-{periodStart}_{periodEnd}.{ext}`
- * (AC #22 + Pass 1 ECH-H3).
+ * (AC #22 + Pass 1 ECH-H3 + Pass 1 code-review H10).
  *
  * Pipeline slug ASCII : NFD-strip diacritics + lowercase + non-alphanum → `-` +
  * collapse `-+` → `-` + truncate 20 chars + strip trailing `-`. Fallback
  * `'company'` si vide post-slug (e.g. nom CJK).
+ *
+ * Pass 1 code-review H10 (AA2-H1 + AA4-F1) : `typeSlug` est résolu via i18n
+ * (clé `reports-filename-{type}`) au lieu d'être hardcodé FR. Cohérent avec
+ * la résolution backend (cf. `routes/reports.rs::resolve_type_slug`) — en
+ * DE-CH on obtient `bilanz`, en IT-CH `bilancio`, etc.
  */
 export function buildExportFilename(
 	type: ReportType,
@@ -155,16 +161,20 @@ export function buildExportFilename(
 	period: { start: string; end: string },
 	format: 'pdf' | 'csv',
 ): string {
-	const typeSlug = TYPE_SLUGS[type];
+	const typeSlug = i18nMsg(`reports-filename-${type}`, TYPE_SLUGS_FALLBACK[type]);
 	const companySlug = slugify(companyName, 'company');
 	return `kesh-${typeSlug}-${companySlug}-${period.start}_${period.end}.${format}`;
 }
 
-/** Slugs FR-CH par défaut (cohérent avec les clés i18n `reports-filename-*`). */
-const TYPE_SLUGS: Record<ReportType, string> = {
+/**
+ * Fallbacks FR-CH si la clé i18n est manquante (cohérent avec les valeurs
+ * fr-CH de `reports-filename-*`). Pass 1 code-review M16 : `trial-balance`
+ * mis à jour `balance` → `balance-comptes` (clarté vs `bilan`).
+ */
+const TYPE_SLUGS_FALLBACK: Record<ReportType, string> = {
 	'balance-sheet': 'bilan',
 	'income-statement': 'compte-resultat',
-	'trial-balance': 'balance',
+	'trial-balance': 'balance-comptes',
 	journals: 'journaux',
 };
 
@@ -216,14 +226,25 @@ export async function downloadReport(
 	triggerDownload(blob, filename);
 }
 
-/** Helper interne : déclenche le download navigateur via un lien éphémère. */
+/**
+ * Helper interne : déclenche le download navigateur via un lien éphémère.
+ *
+ * Pass 1 code-review M11 (BH4-F-01) : `removeChild` + `revokeObjectURL` dans
+ * un `finally` pour garantir le cleanup même si `a.click()` jette (e.g. CSP
+ * bloque le download, ou popup blocker). Sans ce garde, un crash de click
+ * laisserait l'objet URL et le `<a>` éphémère attachés au DOM — fuite mémoire.
+ */
 function triggerDownload(blob: Blob, filename: string): void {
 	const objectUrl = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = objectUrl;
 	a.download = filename;
-	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
-	URL.revokeObjectURL(objectUrl);
+	try {
+		document.body.appendChild(a);
+		a.click();
+	} finally {
+		// Cleanup robuste — pas de remove() si appendChild a échoué
+		if (a.parentNode) a.parentNode.removeChild(a);
+		URL.revokeObjectURL(objectUrl);
+	}
 }

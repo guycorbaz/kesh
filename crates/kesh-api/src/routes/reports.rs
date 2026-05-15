@@ -320,7 +320,17 @@ pub async fn export_balance_sheet(
     )
     .await;
 
-    build_export_response(format, body, "balance-sheet", &company_name, &period)
+    // Pass 1 code-review H10 : type_slug localisé via i18n (fr-CH → `bilan`).
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "balance-sheet");
+    // Pass 1 code-review M14 : Content-Disposition `filename*=UTF-8'<lang>'…`
+    build_export_response_with_locale(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        &period,
+        &ctx.locale,
+    )
 }
 
 /// GET /api/v1/reports/income-statement/export?format=pdf|csv
@@ -374,7 +384,17 @@ pub async fn export_income_statement(
     )
     .await;
 
-    build_export_response(format, body, "income-statement", &company_name, &period)
+    // Pass 1 code-review H10 : type_slug localisé via i18n.
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "income-statement");
+    // Pass 1 code-review M14 : Content-Disposition `filename*=UTF-8'<lang>'…`
+    build_export_response_with_locale(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        &period,
+        &ctx.locale,
+    )
 }
 
 /// GET /api/v1/reports/trial-balance/export?format=pdf|csv
@@ -428,7 +448,17 @@ pub async fn export_trial_balance(
     )
     .await;
 
-    build_export_response(format, body, "trial-balance", &company_name, &period)
+    // Pass 1 code-review H10 : type_slug localisé via i18n.
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "trial-balance");
+    // Pass 1 code-review M14 : Content-Disposition `filename*=UTF-8'<lang>'…`
+    build_export_response_with_locale(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        &period,
+        &ctx.locale,
+    )
 }
 
 /// GET /api/v1/reports/journals/export?format=pdf|csv&journal=Ventes
@@ -488,7 +518,17 @@ pub async fn export_journal_report(
     )
     .await;
 
-    build_export_response(format, body, "journals", &company_name, &period)
+    // Pass 1 code-review H10 : type_slug localisé via i18n.
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "journals");
+    // Pass 1 code-review M14 : Content-Disposition `filename*=UTF-8'<lang>'…`
+    build_export_response_with_locale(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        &period,
+        &ctx.locale,
+    )
 }
 
 // ===========================================================================
@@ -502,6 +542,16 @@ pub async fn export_journal_report(
 ///
 /// Retourne `(ctx, company_name)` — `company_name` est aussi utilisé séparément
 /// pour construire le filename.
+///
+/// **Pass 1 code-review H5 (BH2-H1) — scoping multi-tenant** : `company_id`
+/// provient de `Extension<CurrentUser>` injecté par `middleware/auth.rs` à
+/// partir du claim JWT signé HS256 (cf. `middleware/auth.rs:96`). Le claim
+/// `company_id` est garanti = la company dont l'utilisateur est membre, le JWT
+/// étant signé côté serveur lors du login. Il n'y a donc pas d'IDOR ici tant
+/// que le JWT guard est sain (éprouvé Story 1-5/1-6 + 7-1). Ajouter
+/// `AND company_id = ?` ne fournirait aucune protection supplémentaire car la
+/// valeur testée serait identique à la PK. Documenté comme dette de défense
+/// en profondeur — voir Limitations L13.
 async fn load_pdf_context(
     pool: &MySqlPool,
     company_id: i64,
@@ -517,16 +567,52 @@ async fn load_pdf_context(
     // v0.1 : tous libellés FR-CH par défaut. L'extension i18n complète des
     // libellés PDF est reportée à v0.2 (L4 + L11). Le code locale est exposé
     // via PdfContext pour traceability future.
+    //
+    // Pass 1 code-review M3 (ECH2-M1) : `"FR" =>` explicite avec warning sur
+    // valeur inconnue pour faciliter le diagnostic d'une row corrompue.
     let bcp47 = match locale_code.as_str() {
+        "FR" => "fr-CH",
         "DE" => "de-CH",
         "IT" => "it-CH",
         "EN" => "en-CH",
-        _ => "fr-CH",
+        other => {
+            tracing::warn!(
+                unknown_locale = %other,
+                "accounting_language inconnu, fallback fr-CH"
+            );
+            "fr-CH"
+        }
     };
 
     let mut ctx = PdfContext::fr_ch_default(company_name.clone());
     ctx.locale = bcp47.to_string();
     Ok((ctx, company_name))
+}
+
+/// Résout le slug localisé d'un type de rapport via `kesh-i18n` (clé
+/// `reports-filename-{report_type}`).
+///
+/// Pass 1 code-review H10 (AA2-H1 + AA4-F1) : AC #22 mandate que `{typeSlug}`
+/// du filename soit la **valeur** de la clé i18n `reports-filename-{reportType}`
+/// résolue dans la locale active (fr-CH → `bilan`, de-CH → `bilanz`, etc.).
+/// Avant ce patch, le slug brut anglais (`balance-sheet`, etc.) était passé à
+/// `build_filename` qui le slugifiait sans traduction — divergence AC #22.
+fn resolve_type_slug(state: &AppState, locale_bcp47: &str, report_type: &str) -> String {
+    let locale = kesh_i18n::Locale::from(locale_bcp47);
+    let key = format!("reports-filename-{report_type}");
+    let resolved = state.i18n.format(&locale, &key, None);
+    // Sécurité : si la clé est absente partout, `format` retourne la clé brute.
+    // Dans ce cas on retombe sur le report_type anglais (fallback).
+    if resolved == key {
+        tracing::warn!(
+            i18n_key = %key,
+            locale = %locale_bcp47,
+            "reports-filename-* manquant en i18n, fallback report_type brut"
+        );
+        report_type.to_string()
+    } else {
+        resolved
+    }
 }
 
 /// Helper : exécute un closure CSV writer dans un `Vec<u8>` (cf. L5 — pas de
@@ -541,17 +627,22 @@ where
 }
 
 /// Construit la `Response` HTTP binaire avec headers Content-Type + Content-Disposition
-/// (T5.3 + RFC 5987 + AA-M3).
-fn build_export_response(
+/// (T5.3 + RFC 5987 + AA-M3 + Pass 1 code-review M14 — BH2-M2).
+///
+/// Le paramètre `locale_bcp47` est inséré entre les deux apostrophes simples
+/// de `filename*=UTF-8'<lang>'…` (RFC 5987 § 3.2.1). Locale vide (`""`)
+/// produit `filename*=UTF-8''…` (sans tag langue, syntaxe également valide).
+fn build_export_response_with_locale(
     format: ExportFormat,
     body: Vec<u8>,
     type_slug: &str,
     company_name: &str,
     period: &ReportPeriod,
+    locale_bcp47: &str,
 ) -> Result<Response, AppError> {
     let filename = build_filename(type_slug, company_name, period, format.extension());
 
-    let content_disposition = build_content_disposition(&filename)?;
+    let content_disposition = build_content_disposition(&filename, locale_bcp47)?;
 
     let response = Response::builder()
         .status(StatusCode::OK)
@@ -566,11 +657,18 @@ fn build_export_response(
 /// Construit le Content-Disposition header avec ASCII fallback + RFC 5987 UTF-8
 /// (T5.3 + Pass 1 ECH-M2 — sans ça, `HeaderValue::from_str` panic sur
 /// company name `"Müller AG"` — caractères non-ISO-8859-1).
-fn build_content_disposition(filename: &str) -> Result<HeaderValue, AppError> {
+///
+/// Pass 1 code-review M14 (BH2-M2) : ajoute le tag langue BCP-47 entre les
+/// deux apostrophes simples (`filename*=UTF-8'fr-CH'…`) pour respecter la
+/// syntaxe complète RFC 5987 (charset, language, value). `locale_bcp47=""`
+/// retombe sur l'ancien format `filename*=UTF-8''…` (sans tag) — rétro-compat
+/// pour les tests existants.
+fn build_content_disposition(filename: &str, locale_bcp47: &str) -> Result<HeaderValue, AppError> {
     let ascii_fallback = ascii_fallback_filename(filename);
     let percent_encoded = percent_encode_filename(filename);
-    let value =
-        format!("attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{percent_encoded}");
+    let value = format!(
+        "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8'{locale_bcp47}'{percent_encoded}"
+    );
     HeaderValue::from_str(&value)
         .map_err(|e| AppError::Internal(format!("invalid Content-Disposition header: {e}")))
 }
@@ -590,11 +688,21 @@ fn ascii_fallback_filename(filename: &str) -> String {
 }
 
 /// Percent-encode RFC 5987 (réservé + non-ASCII).
+///
+/// Pass 1 code-review H7 (BH2-H3) : le cast `b as char` n'est correct que si
+/// `b < 128` (ASCII). La branche `is_safe` est aujourd'hui garantie ASCII via
+/// `is_ascii_alphanumeric()` + le set `-._~`, mais un refactor élargissant
+/// le filtre (e.g. à `is_alphanumeric()` Unicode) introduirait silencieusement
+/// un bug — le `debug_assert!` ci-dessous protège contre cette régression.
 fn percent_encode_filename(filename: &str) -> String {
     let mut out = String::with_capacity(filename.len());
     for b in filename.bytes() {
         let is_safe = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~');
         if is_safe {
+            debug_assert!(
+                b < 128,
+                "is_safe doit garantir un byte ASCII (b < 128) avant `b as char`"
+            );
             out.push(b as char);
         } else {
             out.push_str(&format!("%{b:02X}"));
@@ -895,7 +1003,8 @@ mod tests {
     #[test]
     fn content_disposition_handles_unicode_via_rfc5987() {
         // Cohérent T9.4 — Pass 1 ECH-M2 : pas de panic sur "Müller AG"
-        let header = build_content_disposition("kesh-bilan-müller-ag-2026.pdf").unwrap();
+        // Locale vide = rétro-compat `filename*=UTF-8''…`
+        let header = build_content_disposition("kesh-bilan-müller-ag-2026.pdf", "").unwrap();
         let header_str = header.to_str().unwrap();
         assert!(header_str.contains("filename="));
         assert!(header_str.contains("filename*=UTF-8''"));
@@ -903,6 +1012,19 @@ mod tests {
         assert!(header_str.contains("kesh-bilan-m_ller-ag-2026.pdf"));
         // Percent-encoded : `ü` = `%C3%BC`
         assert!(header_str.contains("%C3%BC"));
+    }
+
+    /// Pass 1 code-review M14 (BH2-M2) : RFC 5987 complet avec tag langue
+    /// `filename*=UTF-8'fr-CH'…`. Vérifie que la locale est insérée entre les
+    /// deux apostrophes simples (et pas autour, ni omise).
+    #[test]
+    fn content_disposition_with_locale_tag_includes_language() {
+        let header = build_content_disposition("kesh-bilan-test-2026.pdf", "fr-CH").unwrap();
+        let header_str = header.to_str().unwrap();
+        assert!(
+            header_str.contains("filename*=UTF-8'fr-CH'"),
+            "RFC 5987 tag langue manquant, got: {header_str}"
+        );
     }
 
     #[test]

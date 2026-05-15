@@ -49,4 +49,13 @@ pub enum ReportError {
     /// exposé brut au client).
     #[error("échec génération PDF : {0}")]
     PdfGeneration(String),
+
+    /// Échec interne de la génération CSV (`csv::Writer`, I/O flush, BOM write).
+    ///
+    /// Pass 1 code-review H1 (BH1-H1 + ECH1-M2 + AA1-M2) : variant dédié pour
+    /// éviter qu'un échec d'export CSV soit présenté comme « Échec génération
+    /// PDF » côté UI. Mappé vers `AppError::CsvGenerationFailed` (code HTTP 500,
+    /// i18n key `error-csv-generation-failed`).
+    #[error("échec génération CSV : {0}")]
+    CsvGeneration(String),
 }

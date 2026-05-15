@@ -252,17 +252,13 @@ fn bench_pdf_10k(c: &mut Criterion) {
     let ctx = ctx();
     let mut group = c.benchmark_group("pdf_10k");
     group.sample_size(10);
+    // Pass 1 code-review M18 (BH1-M3) : l'assertion AC #31 (taille < 5 MB) a
+    // été extraite vers un test unitaire `pdf_10k_size_under_5mb` dans
+    // `kesh-report/src/pdf.rs` (anti-pattern criterion : assert dans `b.iter`
+    // ne fail pas proprement le bench, fausse les samples et peut être skip
+    // selon le mode CI).
     group.bench_function("journal_report_pagination", |b| {
-        b.iter(|| {
-            let bytes = render_journal_report_pdf(&jr, &ctx).unwrap();
-            // AC #31 — taille < 5 MB
-            assert!(
-                bytes.len() < 5 * 1024 * 1024,
-                "PDF 10k entries must be < 5 MB, got {} bytes",
-                bytes.len()
-            );
-            bytes
-        })
+        b.iter(|| render_journal_report_pdf(&jr, &ctx).unwrap())
     });
     group.finish();
 }

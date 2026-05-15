@@ -183,6 +183,15 @@ pub enum AppError {
     #[error("Échec génération PDF : {0}")]
     PdfGenerationFailed(String),
 
+    /// Story 9-2a + Pass 1 code-review H1 — Échec interne de la génération CSV
+    /// (bug crate `csv`, I/O flush, BOM write). Variant dédié pour i18n message
+    /// client utile (« Échec génération CSV » au lieu du « Échec génération PDF »
+    /// affiché à tort par le mapping initial). Code HTTP 500, i18n key
+    /// `error-csv-generation-failed`. Le détail est loggé mais jamais exposé
+    /// au client.
+    #[error("Échec génération CSV : {0}")]
+    CsvGenerationFailed(String),
+
     // --- Story 5.4 — Échéancier factures ---
     /// Dépassement du plafond d'export (> 10'000 lignes en v0.1) — 400.
     /// Code client dédié pour permettre au frontend de proposer un raffinage
@@ -507,6 +516,12 @@ impl From<kesh_report::errors::ReportError> for AppError {
             // client utile (cohérent kesh-qrbill::QrBillError::PdfGeneration mapping
             // dans invoice_pdf.rs).
             ReportError::PdfGeneration(detail) => AppError::PdfGenerationFailed(detail),
+            // Story 9-2a + Pass 1 code-review H1 : variant dédié — sinon un
+            // échec CSV se présentait à tort comme un échec PDF côté UI.
+            ReportError::CsvGeneration(detail) => {
+                tracing::error!(%detail, "CSV generation failed");
+                AppError::CsvGenerationFailed(detail)
+            }
         }
     }
 }
@@ -732,6 +747,20 @@ impl IntoResponse for AppError {
                     &t(
                         "error-pdf-generation-failed",
                         "Échec de la génération du PDF.",
+                    ),
+                )
+            }
+
+            // Story 9-2a + Pass 1 code-review H1 — variant dédié CSV (sinon un
+            // échec d'export CSV se présentait côté UI comme un échec PDF).
+            AppError::CsvGenerationFailed(detail) => {
+                tracing::error!("csv generation failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "CSV_GENERATION_FAILED",
+                    &t(
+                        "error-csv-generation-failed",
+                        "Échec de la génération du CSV.",
                     ),
                 )
             }

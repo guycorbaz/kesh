@@ -39,10 +39,14 @@ fn format_amount_iso(amount: Decimal) -> String {
 }
 
 /// Helper : écrit le BOM en tête puis renvoie le writer prêt à recevoir des records.
+///
+/// Pass 1 code-review H1 : mappe vers `CsvGeneration` (pas `PdfGeneration` —
+/// sinon un échec d'écriture du BOM lors d'un export CSV apparaissait à tort
+/// comme un « Échec génération PDF » côté UI).
 fn write_bom<W: Write>(writer: &mut W) -> Result<(), ReportError> {
     writer
         .write_all(UTF8_BOM)
-        .map_err(|e| ReportError::PdfGeneration(format!("csv BOM write: {e}")))
+        .map_err(|e| ReportError::CsvGeneration(format!("csv BOM write: {e}")))
 }
 
 /// Génère le CSV du bilan (AC #12).
@@ -66,36 +70,42 @@ pub fn render_balance_sheet_csv<W: Write>(
         return Ok(());
     }
 
-    // Section Actifs
-    for ab in &bs.assets {
-        wtr.write_record([
-            "Actifs",
-            &ab.account_number,
-            &ab.account_name,
-            &format_amount_iso(ab.balance),
-        ])
-        .map_err(map_csv_err)?;
+    // Pass 1 code-review M6 (ECH1-M1) : guard chaque section indépendamment
+    // — sinon un BS partiel (actifs vides mais passifs présents, ou inverse)
+    // affiche un « Total actifs;;;0.00 » phantom alors qu'aucune ligne actif
+    // n'a été émise. Idem section Passifs.
+    if !bs.assets.is_empty() {
+        for ab in &bs.assets {
+            wtr.write_record([
+                "Actifs",
+                &ab.account_number,
+                &ab.account_name,
+                &format_amount_iso(ab.balance),
+            ])
+            .map_err(map_csv_err)?;
+        }
+        wtr.write_record(["Total actifs", "", "", &format_amount_iso(bs.total_assets)])
+            .map_err(map_csv_err)?;
     }
-    wtr.write_record(["Total actifs", "", "", &format_amount_iso(bs.total_assets)])
-        .map_err(map_csv_err)?;
 
-    // Section Passifs
-    for ab in &bs.liabilities {
+    if !bs.liabilities.is_empty() {
+        for ab in &bs.liabilities {
+            wtr.write_record([
+                "Passifs",
+                &ab.account_number,
+                &ab.account_name,
+                &format_amount_iso(ab.balance),
+            ])
+            .map_err(map_csv_err)?;
+        }
         wtr.write_record([
-            "Passifs",
-            &ab.account_number,
-            &ab.account_name,
-            &format_amount_iso(ab.balance),
+            "Total passifs",
+            "",
+            "",
+            &format_amount_iso(bs.total_liabilities),
         ])
         .map_err(map_csv_err)?;
     }
-    wtr.write_record([
-        "Total passifs",
-        "",
-        "",
-        &format_amount_iso(bs.total_liabilities),
-    ])
-    .map_err(map_csv_err)?;
 
     // Section Capitaux propres — UNE seule ligne synthétique (Pass 3 BH3-H2)
     wtr.write_record([
@@ -139,40 +149,49 @@ pub fn render_income_statement_csv<W: Write>(
         return Ok(());
     }
 
-    for ab in &is_.revenues {
+    // Pass 1 code-review M6 (ECH1-M1) : guard chaque section indépendamment
+    // pour éviter un « Total produits;;;0.00 » / « Total charges;;;0.00 »
+    // phantom quand une seule des deux sections est non-vide.
+    if !is_.revenues.is_empty() {
+        for ab in &is_.revenues {
+            wtr.write_record([
+                "Produits",
+                &ab.account_number,
+                &ab.account_name,
+                &format_amount_iso(ab.balance),
+            ])
+            .map_err(map_csv_err)?;
+        }
         wtr.write_record([
-            "Produits",
-            &ab.account_number,
-            &ab.account_name,
-            &format_amount_iso(ab.balance),
+            "Total produits",
+            "",
+            "",
+            &format_amount_iso(is_.total_revenues),
         ])
         .map_err(map_csv_err)?;
     }
-    wtr.write_record([
-        "Total produits",
-        "",
-        "",
-        &format_amount_iso(is_.total_revenues),
-    ])
-    .map_err(map_csv_err)?;
 
-    for ab in &is_.expenses {
+    if !is_.expenses.is_empty() {
+        for ab in &is_.expenses {
+            wtr.write_record([
+                "Charges",
+                &ab.account_number,
+                &ab.account_name,
+                &format_amount_iso(ab.balance),
+            ])
+            .map_err(map_csv_err)?;
+        }
         wtr.write_record([
-            "Charges",
-            &ab.account_number,
-            &ab.account_name,
-            &format_amount_iso(ab.balance),
+            "Total charges",
+            "",
+            "",
+            &format_amount_iso(is_.total_expenses),
         ])
         .map_err(map_csv_err)?;
     }
-    wtr.write_record([
-        "Total charges",
-        "",
-        "",
-        &format_amount_iso(is_.total_expenses),
-    ])
-    .map_err(map_csv_err)?;
 
+    // Résultat net : utile même si une section est vide (= total_revenues -
+    // total_expenses, donc reflète le rapport réel).
     wtr.write_record(["ResultatNet", "", "", &format_amount_iso(is_.net_result)])
         .map_err(map_csv_err)?;
 
@@ -286,12 +305,14 @@ pub fn render_journal_report_csv<W: Write>(
 // Mappers d'erreur internes
 // ---------------------------------------------------------------------------
 
+/// Pass 1 code-review H1 : mappent vers `CsvGeneration` (pas `PdfGeneration`).
+/// Cf. commentaire `write_bom` ci-dessus pour le contexte.
 fn map_csv_err(e: csv::Error) -> ReportError {
-    ReportError::PdfGeneration(format!("csv write: {e}"))
+    ReportError::CsvGeneration(format!("csv write: {e}"))
 }
 
 fn map_io_err(e: std::io::Error) -> ReportError {
-    ReportError::PdfGeneration(format!("csv io flush: {e}"))
+    ReportError::CsvGeneration(format!("csv io flush: {e}"))
 }
 
 // ============================================================================

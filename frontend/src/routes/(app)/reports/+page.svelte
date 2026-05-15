@@ -166,8 +166,20 @@
 	 * Flag `exporting` toujours reset dans `finally` (AC #36(b)). Pass 1 ECH-H2
 	 * closure capture : `query` est snapshot au moment du clic, donc un change de
 	 * FY pendant l'export en vol ne casse pas l'opération (AC #36(a)).
+	 *
+	 * Pass 1 code-review M12 (BH4-F-02) : `exporting = true` est posé AVANT
+	 * tout `await` (immédiatement après le early-return guard) pour éviter une
+	 * fenêtre de race où deux clics rapides passeraient tous deux le guard
+	 * `if (exporting) return` avant que le flag ne soit mis à jour.
+	 *
+	 * Pass 1 code-review M13 (AA4-F2) : si l'erreur n'expose pas de code
+	 * structuré (network, parse error), on retombe sur la clé i18n générique
+	 * `reports-export-error-generic` (AC #23) plutôt qu'un message brut.
 	 */
 	async function exportReport(format: 'pdf' | 'csv'): Promise<void> {
+		// Pass 1 code-review M12 : guard re-entrancy avant TOUT await (incluant
+		// canExport derived qui peut être évalué simultanément par deux clics).
+		if (exporting) return;
 		if (!canExport || selectedFiscalYearId === null) return;
 		const period = activeReportPeriod();
 		if (!period) return;
@@ -190,7 +202,16 @@
 			);
 			await downloadReport(activeTab, query, format, filename);
 		} catch (e) {
-			errorMsg = formatError(e);
+			// Pass 1 code-review M13 (AA4-F2) : code structuré → message i18n
+			// du backend (formatError) ; sinon fallback générique AC #23.
+			if (isApiError(e) && e.code) {
+				errorMsg = formatError(e);
+			} else {
+				errorMsg = i18nMsg(
+					'reports-export-error-generic',
+					"Impossible d'exporter le rapport. Vérifiez votre connexion et réessayez.",
+				);
+			}
 		} finally {
 			exporting = false;
 		}
@@ -220,9 +241,21 @@
 		else if (event.key === 'End') nextIndex = tabs.length - 1;
 		if (nextIndex !== null) {
 			event.preventDefault();
-			activeTab = tabs[nextIndex].id;
+			selectTab(tabs[nextIndex].id);
 			const btn = document.getElementById(`reports-tab-${tabs[nextIndex].id}`);
 			btn?.focus();
+		}
+	}
+
+	/**
+	 * Sélectionne un nouvel onglet et clear `errorMsg` (Pass 1 code-review M10 —
+	 * ECH4-M2 : avant ce patch, une erreur d'export sur l'onglet Bilan restait
+	 * affichée après bascule vers l'onglet Compte de résultat, faux-positif UX).
+	 */
+	function selectTab(next: ReportType): void {
+		if (activeTab !== next) {
+			activeTab = next;
+			errorMsg = null;
 		}
 	}
 </script>
@@ -259,7 +292,7 @@
 				class="border-b-2 px-4 py-2 text-sm font-medium {activeTab === tab.id
 					? 'border-indigo-600 text-indigo-700'
 					: 'border-transparent text-gray-600 hover:text-gray-900'}"
-				onclick={() => (activeTab = tab.id)}
+				onclick={() => selectTab(tab.id)}
 				onkeydown={(e) => handleTabKeydown(e, idx)}
 			>
 				{i18nMsg(tab.labelKey, tab.fallback)}

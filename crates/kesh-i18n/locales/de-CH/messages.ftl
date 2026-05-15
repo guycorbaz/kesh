@@ -429,6 +429,8 @@ invoices-download-pdf-aria-label = Rechnung { $number } als PDF herunterladen
 error-invoice-not-validated = Die Rechnung muss validiert sein, bevor ein PDF erzeugt werden kann.
 error-invoice-too-many-lines-for-pdf = Die Rechnung enthält { $count } Positionen — das A4-PDF ist in v0.1 auf { $max } Positionen begrenzt.
 error-pdf-generation-failed = PDF-Erzeugung fehlgeschlagen.
+# Story 9-2a + Pass 1 code-review H1 — dedizierter CSV-Variant.
+error-csv-generation-failed = CSV-Erzeugung fehlgeschlagen.
 
 # Story 5.4 — Fälligkeitsplan Rechnungen
 due-dates-title = Fälligkeitsplan

@@ -382,6 +382,14 @@ fn assert_csv_response(content_type: &str, body: &[u8]) {
         content_type, "text/csv; charset=utf-8",
         "Content-Type must be text/csv; charset=utf-8"
     );
+    // Pass 1 code-review M2 (BH2-M5) : garde-fou contre un body tronqué — sinon
+    // `&body[..3]` panic avec un message peu lisible. Si jamais le backend
+    // retournait un body < 3 bytes, on échoue avec un message explicite.
+    assert!(
+        body.len() >= 3,
+        "CSV body must be at least 3 bytes (UTF-8 BOM), got {} bytes",
+        body.len()
+    );
     assert_eq!(
         &body[..3],
         b"\xef\xbb\xbf",
@@ -717,6 +725,74 @@ async fn export_cross_tenant_returns_404(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "FISCAL_YEAR_NOT_FOUND");
 }
 
+// Pass 1 code-review M1 (BH2-M3 + ECH2-M3) : `export_cross_tenant_returns_404`
+// ne couvrait que balance-sheet. Les 3 autres endpoints doivent prouver la
+// même protection multi-tenant pour éviter une régression silencieuse si une
+// route omet `current_user.company_id` dans `ReportPeriod::resolve`.
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn export_income_statement_cross_tenant_returns_404(pool: MySqlPool) {
+    let ctx_a = seed_with_entries(&pool, "co_x_is_a", Role::Comptable).await;
+    let ctx_b = seed_with_entries(&pool, "co_x_is_b", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/income-statement/export?fiscalYearId={}&format=pdf",
+            ctx_b.fy_id
+        )))
+        .bearer_auth(&ctx_a.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_NOT_FOUND");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn export_trial_balance_cross_tenant_returns_404(pool: MySqlPool) {
+    let ctx_a = seed_with_entries(&pool, "co_x_tb_a", Role::Comptable).await;
+    let ctx_b = seed_with_entries(&pool, "co_x_tb_b", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/trial-balance/export?fiscalYearId={}&format=csv",
+            ctx_b.fy_id
+        )))
+        .bearer_auth(&ctx_a.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_NOT_FOUND");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn export_journals_cross_tenant_returns_404(pool: MySqlPool) {
+    let ctx_a = seed_with_entries(&pool, "co_x_jr_a", Role::Comptable).await;
+    let ctx_b = seed_with_entries(&pool, "co_x_jr_b", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/journals/export?fiscalYearId={}&format=pdf",
+            ctx_b.fy_id
+        )))
+        .bearer_auth(&ctx_a.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_NOT_FOUND");
+}
+
 // ============================================================
 // AC #32(e) — FY out of bounds 400 (avant OU après FY 2020-2030)
 // ============================================================
@@ -921,9 +997,10 @@ async fn export_content_disposition_handles_non_ascii_company_name(pool: MySqlPo
         .unwrap();
     // ASCII fallback : `ü` remplacé par `_`
     assert!(cd.contains("muller-ag") || cd.contains("m_ller-ag"));
-    // RFC 5987 percent-encoded form
+    // RFC 5987 percent-encoded form (avec tag langue BCP-47 — Pass 1 code-review M14).
+    // Le test accepte les deux variantes : `UTF-8''` (sans tag) ou `UTF-8'<lang>'`.
     assert!(
-        cd.contains("filename*=UTF-8''"),
-        "Content-Disposition must include filename*=UTF-8'' (RFC 5987), got: {cd}"
+        cd.contains("filename*=UTF-8'") && cd.contains('\''),
+        "Content-Disposition must include filename*=UTF-8'…' (RFC 5987), got: {cd}"
     );
 }
