@@ -460,6 +460,9 @@ invoices-download-pdf-aria-label = Télécharger la facture { $number } au forma
 error-invoice-not-validated = La facture doit être validée avant de pouvoir être générée en PDF.
 error-invoice-too-many-lines-for-pdf = La facture contient { $count } lignes — le PDF A4 est limité à { $max } lignes en v0.1.
 error-pdf-generation-failed = Échec de la génération du PDF.
+# Story 9-2a + Pass 1 code-review H1 — variant CSV dédié (au lieu de réutiliser
+# error-pdf-generation-failed qui aurait affiché « Échec PDF » pour un export CSV).
+error-csv-generation-failed = Échec de la génération du CSV.
 
 # Story 5.4 — Échéancier factures
 due-dates-title = Échéancier
@@ -839,3 +842,15 @@ reports-archived-label = archivé
 reports-page-title = Rapports comptables
 reports-instruction-select-and-generate = Sélectionnez un exercice et cliquez sur Générer.
 reports-loading = Génération du rapport en cours…
+
+# Story 9-2a — Export PDF & CSV (10 clés)
+reports-export-pdf-button = Export PDF
+reports-export-csv-button = Export CSV
+reports-export-loading = Génération du fichier…
+reports-export-error-generic = Impossible d'exporter le rapport. Vérifiez votre connexion et réessayez.
+reports-filename-balance-sheet = bilan
+reports-filename-income-statement = compte-resultat
+reports-filename-trial-balance = balance-comptes
+reports-filename-journals = journaux
+reports-pdf-header-period = Période
+reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.

@@ -429,6 +429,8 @@ invoices-download-pdf-aria-label = Download invoice { $number } as PDF
 error-invoice-not-validated = The invoice must be validated before generating a PDF.
 error-invoice-too-many-lines-for-pdf = The invoice contains { $count } lines — the A4 PDF is limited to { $max } lines in v0.1.
 error-pdf-generation-failed = PDF generation failed.
+# Story 9-2a + Pass 1 code-review H1 — dedicated CSV variant.
+error-csv-generation-failed = CSV generation failed.
 
 # Story 5.4 — Invoice due dates
 due-dates-title = Due dates
@@ -784,3 +786,15 @@ reports-archived-label = archived
 reports-page-title = Accounting Reports
 reports-instruction-select-and-generate = Select a fiscal year and click Generate.
 reports-loading = Generating report…
+
+# Story 9-2a — Export PDF & CSV (10 keys)
+reports-export-pdf-button = Export PDF
+reports-export-csv-button = Export CSV
+reports-export-loading = Generating file…
+reports-export-error-generic = Unable to export report. Check your connection and try again.
+reports-filename-balance-sheet = balance-sheet
+reports-filename-income-statement = income-statement
+reports-filename-trial-balance = trial-balance
+reports-filename-journals = journals
+reports-pdf-header-period = Period
+reports-pdf-empty-message = No entries in the selected period.

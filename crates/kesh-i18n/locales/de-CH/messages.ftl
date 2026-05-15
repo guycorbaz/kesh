@@ -429,6 +429,8 @@ invoices-download-pdf-aria-label = Rechnung { $number } als PDF herunterladen
 error-invoice-not-validated = Die Rechnung muss validiert sein, bevor ein PDF erzeugt werden kann.
 error-invoice-too-many-lines-for-pdf = Die Rechnung enthält { $count } Positionen — das A4-PDF ist in v0.1 auf { $max } Positionen begrenzt.
 error-pdf-generation-failed = PDF-Erzeugung fehlgeschlagen.
+# Story 9-2a + Pass 1 code-review H1 — dedizierter CSV-Variant.
+error-csv-generation-failed = CSV-Erzeugung fehlgeschlagen.
 
 # Story 5.4 — Fälligkeitsplan Rechnungen
 due-dates-title = Fälligkeitsplan
@@ -784,3 +786,15 @@ reports-archived-label = archiviert
 reports-page-title = Buchhaltungsberichte
 reports-instruction-select-and-generate = Wählen Sie ein Geschäftsjahr aus und klicken Sie auf Generieren.
 reports-loading = Bericht wird generiert…
+
+# Story 9-2a — Export PDF & CSV (10 Schlüssel)
+reports-export-pdf-button = PDF-Export
+reports-export-csv-button = CSV-Export
+reports-export-loading = Datei wird generiert…
+reports-export-error-generic = Bericht konnte nicht exportiert werden. Verbindung prüfen und erneut versuchen.
+reports-filename-balance-sheet = bilanz
+reports-filename-income-statement = erfolgsrechnung
+reports-filename-trial-balance = kontensaldenliste
+reports-filename-journals = journale
+reports-pdf-header-period = Zeitraum
+reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
