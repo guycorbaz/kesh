@@ -31,7 +31,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 2. **Given** un PDF généré, **When** ouvert dans n'importe quel lecteur PDF, **Then** les montants apparaissent au format suisse : apostrophe séparateur de milliers et point décimal (`1'234.56`), et les dates au format `dd.mm.yyyy` (FR67).
 
-3. **Given** un PDF de bilan, **When** rendu, **Then** il contient l'en-tête (raison sociale de la company + période + exercice), les sections Actifs / Passifs / Capitaux propres avec totaux par classe de compte, et l'équation bilan vérifiée affichée en pied de page (`Total actifs = Total passifs + capitaux propres`).
+3. **Given** un PDF de bilan, **When** rendu, **Then** il contient l'en-tête (raison sociale de la company + période + exercice), les sections **Actifs** et **Passifs** énumérant les comptes avec totaux par compte, et la section **Capitaux propres** réduite à **une seule ligne synthétique « Résultat de l'exercice : `<equity_result>` »** (Pass 3 BH3-H2 ground-truth `balance_sheet.rs:30-40` — `BalanceSheet` DTO Story 9-1 expose `equity_result: Decimal` scalaire, pas `Vec<AccountBalance>` ; pas d'`AccountType::Equity` v0.1). L'équation bilan vérifiée (`Total actifs = Total passifs + equity_result`) est affichée en pied de page (cohérent §swiss-amount-format Decision §design-export-route). Refactor multi-lignes équité → CR Epic 14 (clôture) ou Epic 15 si feedback fiduciaire.
 
 4. **Given** un PDF de compte de résultat, **When** rendu, **Then** il contient l'en-tête, les sections Produits / Charges avec totaux, et le résultat net (bénéfice / perte) en pied de page.
 
@@ -57,7 +57,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
     - dates ISO 8601 (`2026-05-15` — machine-readable, pas le format affichage)
     - chaînes contenant `;`, `"`, ou retour-ligne sont entourées de `"` avec `"` interne doublé en `""` (RFC 4180).
 
-12. **Given** un CSV de bilan, **When** rendu, **Then** colonnes : `Section;NumeroCompte;NomCompte;Solde` où `Section ∈ {Actifs, Passifs, CapitauxPropres}`. Ligne de total par section. Ligne finale `Total actifs;;;<somme>` + `Total passifs + capitaux propres;;;<somme>`. **Invariant hérité Story 9-1** : les deux totaux finaux sont toujours égaux (calcul `BalanceSheet::equity_result`) — pas de ligne de vérification explicite, l'égalité est implicite (Pass 1 ECH-M4).
+12. **Given** un CSV de bilan, **When** rendu, **Then** colonnes : `Section;NumeroCompte;NomCompte;Solde` où `Section ∈ {Actifs, Passifs, CapitauxPropres}`. Ligne de total par section pour Actifs et Passifs. **La section `CapitauxPropres` ne contient qu'UNE ligne** (Pass 3 BH3-H2) : `CapitauxPropres;;Résultat de l'exercice;<equity_result>` (NomCompte = "Résultat de l'exercice" en clair, NumeroCompte vide car pas de compte du plan comptable derrière — `BalanceSheet::equity_result` est scalaire). Ligne finale `Total actifs;;;<somme>` + `Total passifs + capitaux propres;;;<somme>`. **Invariant hérité Story 9-1** : les deux totaux finaux sont toujours égaux (calcul `BalanceSheet::equity_result`) — pas de ligne de vérification explicite, l'égalité est implicite (Pass 1 ECH-M4).
 
 13. **Given** un CSV de compte de résultat, **When** rendu, **Then** colonnes : `Section;NumeroCompte;NomCompte;Solde` où `Section ∈ {Produits, Charges}`. Total par section + ligne finale `ResultatNet;;;<somme>`.
 
@@ -135,11 +135,21 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
   - [ ] T1.3 Vérifier `cargo build -p kesh-report` clean après ajout
 
 - [ ] **T2** Créer `crates/kesh-report/src/pdf.rs` — sérialiseur PDF pur (AC: #1-#9, #29)
-  - [ ] T2.0 **(Pass 1 ECH-C2)** Ajouter `PdfGeneration(String)` à `ReportError` (`crates/kesh-report/src/errors.rs`) — mappé `AppError::Internal` (500) dans `From<ReportError> for AppError` (`crates/kesh-api/src/errors.rs`). Sans ça, `printpdf::save_to_bytes() -> Result<_, PrintpdfError>` ne peut être propagé en `Result<Vec<u8>, ReportError>`.
+  - [ ] T2.0 **(Pass 1 ECH-C2 + Pass 3 ECH3-H2)** Ajouter `PdfGeneration(String)` à `ReportError` (`crates/kesh-report/src/errors.rs`) — **mappé `AppError::PdfGenerationFailed(s)`** (variant existant `crates/kesh-api/src/errors.rs:184`, cohérent avec `invoice_pdf.rs` Story 5-3 + i18n key `error-pdf-generation-failed`, code HTTP 500, message client utile). **PAS `AppError::Internal`** (Pass 3 ECH3-H2 invalide la dismission Pass 2 ECH2-C1 : ECH2-C1 disait « mapping déjà documentée » mais T2.0 disait `Internal`, alors que le variant dédié `PdfGenerationFailed` existe déjà avec son IntoResponse branch). Sans ça, `printpdf::save_to_bytes() -> Result<_, PrintpdfError>` ne peut être propagé en `Result<Vec<u8>, ReportError>` ET on perd l'i18n message UX existant.
   - [ ] T2.1 Signature publique `pub fn render_balance_sheet_pdf(bs: &BalanceSheet, ctx: &PdfContext) -> Result<Vec<u8>, ReportError>` (× 4 fonctions, une par rapport)
-  - [ ] T2.2 `PdfContext { company_name: String, locale: &'static str, empty_message: String, journal_filter_label: Option<String> }` — porte les données i18n et libellés non inclus dans les DTOs (locale + message empty résolus côté handler avant d'appeler `render_*_pdf`, cf. M5/H8). `journal_filter_label` est `Some("Ventes")` si l'export filtre, `None` sinon — résolu par le handler depuis le param URL (le DTO `JournalReport` ne contient pas ce champ, cf. C1).
+  - [ ] T2.2 **(Pass 3 ECH3-C1 + BH3-M2)** `PdfContext { company_name: String, locale: String, empty_message: String, journal_filter_label: Option<String>, section_labels: SectionLabels }` — tous champs owned `String` (pas `&'static str` qui forcerait `Box::leak` ou consts). `locale` est **`String` (e.g. `"fr-CH"`)** dérivé côté handler via `SELECT accounting_language FROM companies WHERE id = ?` (1 query DB ajoutée par export, perf acceptable < 5ms). `empty_message`, `journal_filter_label` (`Some("Ventes")` si filtre), `section_labels` (struct local avec `actifs`, `passifs`, `capitaux_propres`, `produits`, `charges`, etc. — chargés depuis kesh-i18n côté handler) sont tous résolus AVANT d'appeler `render_*_pdf`. `kesh-report::pdf` reste découplé de `kesh-i18n` (DD-14 pattern `kesh-qrbill`).
   - [ ] T2.3 Helpers privés `draw_header`, `draw_table_row`, `draw_totals_footer` (DRY — réutilisés par les 4 fonctions)
-  - [ ] T2.3a **(Pass 2 ECH2-M3)** Pagination automatique : tracker la position Y cursor au fil des `draw_table_row` ; quand Y descend sous 25mm (margin bas A4 = 297mm), appeler `let (new_page_idx, new_layer_idx) = doc.add_page(Mm(210.0), Mm(297.0), "Layer N+1"); let layer = doc.get_page(new_page_idx).get_layer(new_layer_idx);` et reset Y au top (header redrawn condensed). Helper `draw_footer(layer, "page X/Y")` ajouté. **Test** : benchmark 10k écritures journal_report → assert PDF byte size `< 5 MB` (AC #31). Sans pagination, 10k rows in 1 page → file size explose et rendering bug printpdf.
+  - [ ] T2.3a **(Pass 2 ECH2-M3 + Pass 3 ECH3-M3 constants)** Pagination automatique. **Constants centralisées** (Pass 3 ECH3-M3 — sans ça dev devine) en haut de `pdf.rs` :
+    ```rust
+    const PAGE_WIDTH_MM: f32 = 210.0;   // A4 portrait
+    const PAGE_HEIGHT_MM: f32 = 297.0;
+    const MARGIN_TOP_MM: f32 = 20.0;
+    const MARGIN_BOTTOM_MM: f32 = 25.0;
+    const FONT_SIZE_PT: f32 = 10.0;
+    const LINE_HEIGHT_MM: f32 = 4.2;    // ≈ 12pt at 10pt font
+    // → utile ≈ 252mm / 4.2mm ≈ 60 rows/page A4
+    ```
+    Tracker `cursor_y` au fil des `draw_table_row`. Quand `cursor_y - LINE_HEIGHT_MM < MARGIN_BOTTOM_MM`, appeler `let (new_page_idx, new_layer_idx) = doc.add_page(Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), format!("Layer {}", page_num));` et reset `cursor_y = PAGE_HEIGHT_MM - MARGIN_TOP_MM` (header redrawn condensed). Helper `draw_footer(layer, page_num, total_pages)` ajouté (footer X/Y). **Test** : benchmark 10k écritures journal_report → assert PDF byte size `< 5 MB` (AC #31) ET pagination déclenchée (count pages > 1 via inspection PDF bytes).
   - [ ] T2.4 Format suisse montants via helper local `format_swiss_amount(decimal: Decimal) -> String` (apostrophe séparateur + point décimal, **toujours 2 décimales** `format!("{:.2}", ...)`, gestion signe négatif avec `-` en préfixe). Cohérence à vérifier avec `kesh-i18n::format_money` (Pass 1 BH-H3 — nom correct, pas `format_amount`) — accepté duplication v0.1 (cf. Decision §swiss-amount-format + Q1).
   - [ ] T2.5 Format dates `dd.mm.yyyy` via `NaiveDate::format("%d.%m.%Y")`
   - [ ] T2.6 Cas dégénéré rapport vide : afficher `ctx.empty_message` centré, ne pas crasher (AC #8 patché Pass 1 AA-M1 — i18n résolu côté handler, **PAS** dépendance kesh-i18n dans kesh-report)
@@ -165,11 +175,26 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
   - [ ] T5.3 **(Pass 1 AA-M3 + ECH-M2)** Construire `Response` :
     - PDF : `axum::response::Response::builder().header(CONTENT_TYPE, "application/pdf").header(CONTENT_DISPOSITION, build_content_disposition(filename)?).body(Body::from(pdf_bytes)).unwrap()`. Helper `build_content_disposition` retourne **les deux formes** : `attachment; filename="ascii_fallback"; filename*=UTF-8''<percent-encoded>` (RFC 5987 + ASCII fallback). Sans ça, `HeaderValue::from_str` panic sur un company name `"Müller AG"` (caractères non-ISO-8859-1).
     - CSV : idem avec `text/csv; charset=utf-8` + extension `.csv`. Body construit dans un `Vec<u8>` (cf. L5 — streaming Axum hors scope v0.1).
-  - [ ] T5.4 **(Pass 1 BH-M1 + ECH-C1 + AA-M3)** Filename helper `fn build_filename(report_type: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String` — slug ASCII via **regex inline** (`[^a-z0-9-]` → `-` puis `-+$` → `""`), max 20 chars, fallback `"company"` si slug vide. **Pas de crate `slug`** ajoutée à kesh-api/Cargo.toml. Le slug ASCII est la valeur du `filename=` ; le `filename*=UTF-8''<percent-encoded>` utilise le nom original UTF-8.
+  - [ ] T5.4 **(Pass 1 BH-M1 + ECH-C1 + AA-M3 + Pass 3 BH3-M3)** Filename helper `fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String` — slug ASCII via **regex inline** (`[^a-z0-9-]` → `-` puis `-+$` → `""`), max 20 chars, fallback `"company"` si slug vide. **Slug appliqué à `type_slug` ET `company_name`** (Pass 3 BH3-M3 — defense in depth, si future locale zh-CH provides `资产负债表` comme `reports-filename-balance-sheet`, le slug ramène en ASCII). **Pas de crate `slug`** ajoutée à kesh-api/Cargo.toml. Le slug ASCII est la valeur du `filename=` ; le `filename*=UTF-8''<percent-encoded>` utilise le nom original UTF-8.
   - [ ] T5.5 **(Pass 1 BH-M2)** Audit log `report.exported` via **nouvelle fonction séparée** `emit_report_export_audit(pool, user_id, report_type, format, fiscal_year_id, period_start, period_end, journal_filter)` — **PAS** modification de la signature existante `emit_report_audit` (qui briserait les 4 callers Story 9-1). Pattern best-effort identique.
   - [ ] T5.6 Validation `fiscal_year_id > 0` réutilisée (`validate_fiscal_year_id` helper Story 9-1).
   - [ ] T5.7 Multi-tenant via `ReportPeriod::resolve(&state.pool, current_user.company_id, ...)` — identique Story 9-1 (AC #24).
-  - [ ] T5.8 **(Pass 1 AA-H4)** Instrumenter les 4 handlers avec `tracing::info_span!("report_export", report_type = %report_type, format = %format, byte_size = body.len(), duration_ms = ...).in_scope(|| { ... })` — pattern cohérent Story 9-1 (AC #29 maintenant couvert par task).
+  - [ ] T5.8 **(Pass 1 AA-H4 + Pass 3 BH3-M1 syntax fixed)** Instrumenter les 4 handlers avec le pattern correct `tracing` Rust :
+    ```rust
+    let span = tracing::info_span!(
+        "report_export",
+        report_type = %report_type,
+        format = %format,
+        byte_size = tracing::field::Empty,
+        duration_ms = tracing::field::Empty
+    );
+    let _enter = span.enter();
+    let start = std::time::Instant::now();
+    /* ... fetch report + render PDF/CSV → body: Vec<u8> ... */
+    span.record("byte_size", body.len());
+    span.record("duration_ms", start.elapsed().as_millis() as u64);
+    ```
+    **Pass 3 BH3-M1** : `info_span!` évalue les field values à la création du span, donc `byte_size = body.len()` directement ne compile pas (body inconnu). Pattern correct = `tracing::field::Empty` placeholder + `span.record()` après le travail.
 
 - [ ] **T6** Mount routes dans `crates/kesh-api/src/lib.rs` (AC: #1, #10, #26)
   - [ ] T6.1 **(Pass 1 BH-H1)** Insérer les 4 nouvelles routes **AVANT le `;` de fermeture** de `let authenticated_routes = Router::new()...;` (ligne ~373 actuelle), en chaînant `.route()` sur la dernière route Story 9-1. **Ne PAS** insérer après le `;` — ça créerait des routes orphelines hors `authenticated_routes` → 401 silencieusement bypass → IDOR cross-tenant critique :
@@ -185,7 +210,7 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
     - `downloadReport(type: ReportType, query: ReportQuery, format: 'pdf' | 'csv', filename: string): Promise<void>` (déclenche le download via fetch blob + lien `<a download>` éphémère, gère 401 redirect via `apiClient`).
     - `buildExportFilename(type: ReportType, companyName: string, period: { start: string; end: string }, format: 'pdf' | 'csv'): string` — implémente le pattern AC #22 + slug ASCII via regex. **Post-process slug** : `.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 20).replace(/-+$/, '')` (Pass 1 ECH-H3 — trailing hyphens supprimés après truncate).
   - [ ] T7.2 Modifier `ReportSelector.svelte` : ajouter 2 boutons `Export PDF` + `Export CSV` à droite du bouton « Générer ». Props : `onExportPdf: () => void` + `onExportCsv: () => void` + `canExport: boolean` (vrai si un rapport est généré ET pas en cours d'export).
-  - [ ] T7.3 **(Pass 1 ECH-H1 + BH-M3 + AA-H5 — Q3 RÉSOLU + Pass 2 ECH2-H2)** Modifier `+page.ts` (existant) pour charger `companyName` en parallèle de `fiscalYears` via `getCurrentCompany()` (helper à créer dans `lib/features/companies/companies.api.ts` si pas existant — endpoint confirmé `GET /api/v1/companies/current` à `companies.rs:75` retournant `CompanyCurrentResponse { company: { name, ... }, ... }`). Extension de `PageData` : `interface PageData { fiscalYears: FiscalYearResponse[]; companyName: string }`. **Gestion erreurs complète** (Pass 2 ECH2-H2) :
+  - [ ] T7.3 **(Pass 1 ECH-H1 + BH-M3 + AA-H5 — Q3 RÉSOLU + Pass 2 ECH2-H2 + Pass 3 ECH3-H1)** Modifier `+page.ts` (existant) pour charger `companyName` en parallèle de `fiscalYears` via **`fetchCompanyCurrent()` existant dans `lib/features/settings/settings.api.ts`** (Pass 3 ECH3-H1 ground-truth — helper déjà créé Story 1-7+, **PAS** de nouveau fichier `lib/features/companies/companies.api.ts` à créer, qui dupliquerait). Endpoint backend confirmé `GET /api/v1/companies/current` à `companies.rs:75` retournant `CompanyCurrentResponse { company: { name, ... }, ... }`. Import : `import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';`. Couplage cross-feature `reports → settings` accepté v0.1 (alternative : extraire dans `lib/shared/api/` → refactor cosmétique reporté). Extension de `PageData` : `interface PageData { fiscalYears: FiscalYearResponse[]; companyName: string }`. **Gestion erreurs complète** (Pass 2 ECH2-H2) :
     - `401` → re-throw (`+layout.ts` auth guard redirect login).
     - `403` → impossible en théorie (Consultation peut lire companies), mais si rencontré → fallback `companyName = 'company'` + log warn.
     - `500`, network timeout, autres → fallback `companyName = 'company'` (filename dégradé mais page utilisable, cohérent avec pattern Story 9-1 fiscalYears `[]` fallback).
@@ -394,10 +419,13 @@ Tous `Serialize` camelCase. Champs nommés stables — Story 9-2a peut les binde
 | L3 | PDF font = Helvetica builtin (pas de support glyphs étendus) | Cohérent kesh-qrbill, pas d'embedding TTF v0.1 | Epic 15 si glyphs spéciaux nécessaires |
 | L4 | Traductions DE/IT/EN basiques (machine ou auteur, pas natif speaker review) | Hérité Story 9-1 L4 | v0.2 review native speakers |
 | L5 | CSV body en `Vec<u8>` en RAM (pas de streaming Axum body) | Simplicité v0.1, dataset référence ~1000 écritures = ~200 KB max | v0.2 si dataset très large observed |
-| L6 | Pas de pagination PDF pour gros datasets (10k+ écritures dans un journal) | Mitigé par AC #31 (5 MB max sur 10k écritures, acceptable) ; pagination ajoutée si dépassement observé | Si rapport > 5 MB ou > 50 pages : story dédiée v0.2 |
+| L6 | **(Pass 3 BH3-H1 corrigée)** Pagination PDF automatique **implémentée** v0.1 (T2.3a) : page break à `cursor_y < MARGIN_BOTTOM_MM (25mm)` + footer `page X/Y`. Pas de TOC ni breaks intelligents par section (e.g., couper milieu de section Actifs) | Pagination cosmétique uniquement v0.1 — section breaks intelligents + TOC → v0.2 si feedback | v0.2 si > 50 pages observé sur dataset réel |
 | L7 | Pas d'horodatage signé / certificat sur le PDF (Swiss CO Art. 958f conformité partielle) | Recherche réglementaire R2 epic-9.md non encore complétée — décision audit-trail-only acceptée pour v0.1 | Si recherche R2 conclut signature requise : story Epic 14 ou 15 |
 | L8 | `Content-Disposition` filename UTF-8 RFC 5987 — compatible navigateurs modernes (Chrome/Firefox/Safari) mais peut tronquer en IE11/Edge legacy | v0.1 ne supporte que navigateurs modernes (cohérent reste de l'app) | Pas de tracking — décision PRD |
 | L9 | **Export en vol + changement de FY** : si l'utilisateur change `selectedFiscalYearId` pendant un export en vol, l'export complète sur l'ancien FY (closure capture). En cas d'erreur, `errorMsg` est mis à jour même si l'UI affiche le nouveau FY → confusion UX possible (Pass 1 ECH-H2). | Acceptable v0.1 : exports rapides (~500ms benchmark) limitent la fenêtre. Mitigation v0.2 si feedback utilisateur : ajouter un toast contextualisé « Export bilan FY 2025 terminé » au lieu de mettre à jour `errorMsg` partagé. | v0.2 si flake observé |
+| L10 | **(Pass 3 ECH3-M1)** Duplicate query param `?format=pdf&format=csv` : serde_urlencoded (Axum default) retient la **dernière** valeur silencieusement → l'export retourne le format `csv`. Pas de 400 distinct. | Comportement par défaut du parser, faible probabilité (user n'écrit pas manuellement les URLs), pas de risque sécurité. | v0.2 si rapporté |
+| L11 | **(Pass 3 ECH3-M2)** PDF Helvetica builtin ne supporte que Latin-1 ish. Si `company.name` contient Cyrillique/CJK (`Газпром`, `北京公司`, etc.), le PDF rend des cases vides ou caractères de remplacement à la place. AC #3 (« en-tête raison sociale ») visuellement dégradé. | Dégradation gracieuse acceptée v0.1 (cohérent L3) ; le filename reste utilisable via slug ASCII (T5.4) ; v0.2 si demande explicite tenants non-Latin avec embedding TTF (`printpdf::PdfFont::from_bytes`). | Epic 15 si demande |
+| L12 | **(Pass 3 BH3-L1)** Wording T7.3 « 401 → re-throw » diverge subtilement du pattern Story 9-1 `+page.ts:18-22` qui `return { fiscalYears: [] }` sur 401. Les deux fonctionnent (api-client redirige déjà), mais inconsistance dans le même fichier. | Acceptable v0.1 : sémantique identique en pratique (redirect login déclenché par api-client). Refactor cosmétique → si revue manuelle insiste. | LOW |
 
 ### Risques & questions ouvertes — RÉSOLUS Pass 1
 
@@ -497,7 +525,37 @@ Section synthèse pour traçabilité review iteration CLAUDE.md.
 - 19 bruts → 4 dismissed (Haiku faux-positifs 21%) + 9 self/cross-dismissed (47% deferred LOW ou cosmétique) → **6 patches appliqués** (3 HIGH + 3 MEDIUM légitimes).
 - Trend > LOW : Pass 1 = 31 → **Pass 2 = 6** (-81%).
 
-**Critère arrêt CLAUDE.md NON atteint** — Pass 3 Opus 4.7 obligatoire (cycle Sonnet → Haiku → Opus, briser biais Haiku auteur Pass 2 + valider 6 patches sans régression + pattern 8-5b retro « Opus brise biais Haiku/Sonnet sur ground-truth »). Budget 2/8 passes consommé.
+### Pass 3 Opus 4.7 clarifications — pattern 8-5b retro CONFIRMÉ
+
+3 reviewers Opus 4.7 parallèles fresh-context — pattern Story 8-5b retro confirmé : **Opus brise consensus Sonnet+Haiku par ground-truth grep aggressif**. 2 dismissions Pass 2 invalidées (ECH2-C1 wrong target variant, T2.3a sans update L6).
+
+| Code | Finding | Sévérité Pass 3 | Verdict |
+|---|---|---|---|
+| BH3-H1 | L6 contradicte T2.3a — Pass 2 patched pagination sans updater Limitations | HIGH | **PATCHÉ** — L6 réécrite « pagination implémentée v0.1 » |
+| BH3-H2 | AC #3 + #12 décrivent CapitauxPropres avec « totaux par classe » mais `BalanceSheet` DTO Story 9-1 a `equity_result: Decimal` scalaire, pas `Vec<AccountBalance>` | HIGH | **PATCHÉ** — AC #3 + #12 clarifient « section CapitauxPropres = 1 ligne synthétique Résultat de l'exercice » |
+| BH3-M1 | T5.8 `tracing::info_span!` pseudo-code ne compile pas (`body.len()` inconnu à création span) | MEDIUM | **PATCHÉ** — T5.8 réécrite avec pattern `tracing::field::Empty` + `span.record()` correct |
+| BH3-M2 | `PdfContext.locale: &'static str` force `Box::leak` ou consts | MEDIUM (bundled C1) | **PATCHÉ** — locale `String` owned (cf. C1 ECH3-C1) |
+| BH3-M3 | Non-ASCII translation values briseraient filename header si future locale ajoutée | MEDIUM | **PATCHÉ** — T5.4 slug regex sur full filename (type_slug + company_name) |
+| BH3-L1 | T7.3 401 re-throw diverge Story 9-1 pattern fallback | LOW | **DEFER L12** — sémantique équivalente en pratique |
+| BH3-L2 | Pas de test smoke audit `report.exported` row INSERTed | LOW | **DEFER LOW** — pattern best-effort Story 9-1 hérité |
+| ECH3-C1 | `PdfContext.locale` source non spécifiée (Accept-Language ? DB ?) | CRITICAL | **PATCHÉ** (bundled BH3-M2) — T2.2 réécrite : locale via SELECT `companies.accounting_language` côté handler, 1 query DB ≤ 5ms, pattern documenté |
+| ECH3-H1 | T7.3 mandate créer `lib/features/companies/companies.api.ts:getCurrentCompany` mais `fetchCompanyCurrent` existe déjà dans `lib/features/settings/settings.api.ts` | HIGH | **PATCHÉ** — T7.3 réécrite : réutiliser `fetchCompanyCurrent`, pas créer duplicate |
+| ECH3-H2 | T2.0 mappe vers `AppError::Internal` mais variant dédié `AppError::PdfGenerationFailed(s)` existe déjà à `errors.rs:184` avec i18n. **Pass 2 ECH2-C1 dismissed à tort** | HIGH | **PATCHÉ** — T2.0 corrigée : map vers `PdfGenerationFailed` cohérent invoice_pdf |
+| ECH3-H3 | T6.1 devrait mentionner explicit que routes export DOIVENT être dans `authenticated_routes` pas admin/comptable | HIGH (marginal) | **DEFER LOW** — T6.1 dit déjà « avant le `;` de `let authenticated_routes = ...` », explicite enough. AC #32(h) Consultation test attraperait régression |
+| ECH3-M1 | Duplicate `?format=pdf&format=csv` silent last-wins | MEDIUM | **PATCHÉ L10** — documenté comme dette acceptable v0.1 |
+| ECH3-M2 | Asian/Cyrillic company name → glyph missing rendu PDF | MEDIUM | **PATCHÉ L11** — dégradation gracieuse documentée, v0.2 si demande |
+| ECH3-M3 | T2.3a pagination « Y < 25mm » sans constants (MARGIN, FONT_SIZE, LINE_HEIGHT) | MEDIUM | **PATCHÉ** — T2.3a constants centralisées en haut de `pdf.rs` |
+| ECH3-L1 | Spec ne dit pas si `companyName` + `fiscalYears` chargés en `Promise.all` ou séquentiel | LOW | **DEFER LOW** — impact perf marginal |
+| ECH3-L2 | `details_json` audit log pas de `companyId` | LOW | **DEFER LOW** — pré-existant pattern Story 9-1 |
+| AA3-L1 | Pass 2 patch trail mislabels T5.6 (vraie task T5.2) | LOW | **DEFER LOW** — cosmétique trail |
+| AA3-L2 | T2 header AC mapping incomplet pour T2.3a (devrait inclure AC #31) | LOW | **DEFER LOW** — traceability matrix |
+| AA3-L3 | Deferred LOWs trackés dans patch trail pas dans Limitations | LOW | **DEFER LOW** — convention pré-existante |
+
+**Bilan Pass 3 post-ground-truth** :
+- 19 bruts → 15 distincts post-dedup → **10 patches appliqués** (1 CRITICAL + 4 HIGH + 5 MEDIUM légitimes) + 8 LOW deferred (cosmétiques + dette tracée v0.2).
+- Trend > LOW : Pass 1 = 31 → Pass 2 = 6 → **Pass 3 = 10** (régression apparente mais qualité réelle améliorée — Opus a invalidé 2 dismissions Pass 2 et trouvé 1 CRITICAL gap conceptuel sur la locale source).
+
+**Critère arrêt CLAUDE.md NON atteint** — Pass 4 Sonnet 4.6 obligatoire (cycle Sonnet → Haiku → Opus → Sonnet, briser biais Opus auteur Pass 3 + valider 10 patches sans régression). Budget 3/8 passes consommé. **Splitting préventif évalué** : Pass 3 régression numérique mais bug-type findings (pas conceptuels) → split 9-2a non justifié, Pass 4 devrait converger sur 0 > LOW si patches Pass 3 propres.
 
 ### Project Structure Notes
 
