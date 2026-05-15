@@ -39,4 +39,14 @@ pub enum ReportError {
         total_debit: Decimal,
         total_credit: Decimal,
     },
+
+    /// Échec interne de la génération PDF (`printpdf::save_to_bytes`, I/O, etc.).
+    ///
+    /// Story 9-2a T2.0 + Pass 3 ECH3-H2 : mappé vers `AppError::PdfGenerationFailed`
+    /// (variant dédié `kesh-api/src/errors.rs:184`, code HTTP 500, i18n key
+    /// `error-pdf-generation-failed`). Cohérent avec `kesh-qrbill::QrBillError::PdfGeneration`
+    /// (DD-14 pattern). Le `String` porte le détail technique (loggé mais jamais
+    /// exposé brut au client).
+    #[error("échec génération PDF : {0}")]
+    PdfGeneration(String),
 }

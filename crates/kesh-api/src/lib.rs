@@ -370,6 +370,25 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reports/journals",
             get(routes::reports::get_journal_report),
+        )
+        // Story 9-2a : export PDF/CSV des 4 rapports comptables. Routes DOIVENT
+        // rester dans `authenticated_routes` AVANT le `;` (Pass 1 BH-H1) sinon
+        // routes orphelines hors guards → 401 silencieusement bypass → IDOR cross-tenant.
+        .route(
+            "/api/v1/reports/balance-sheet/export",
+            get(routes::reports::export_balance_sheet),
+        )
+        .route(
+            "/api/v1/reports/income-statement/export",
+            get(routes::reports::export_income_statement),
+        )
+        .route(
+            "/api/v1/reports/trial-balance/export",
+            get(routes::reports::export_trial_balance),
+        )
+        .route(
+            "/api/v1/reports/journals/export",
+            get(routes::reports::export_journal_report),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

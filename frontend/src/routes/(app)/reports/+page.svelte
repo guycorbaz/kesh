@@ -12,6 +12,8 @@
 	import TrialBalanceView from '$lib/features/reports/TrialBalanceView.svelte';
 	import JournalReportView from '$lib/features/reports/JournalReportView.svelte';
 	import {
+		buildExportFilename,
+		downloadReport,
 		formatSwissDate,
 		getBalanceSheet,
 		getIncomeStatement,
@@ -22,6 +24,8 @@
 		BalanceSheetDto,
 		IncomeStatementDto,
 		JournalReportDto,
+		JournalReportQuery,
+		ReportQuery,
 		ReportType,
 		TrialBalanceDto,
 	} from '$lib/features/reports/reports.types';
@@ -29,6 +33,8 @@
 
 	interface PageData {
 		fiscalYears: FiscalYearResponse[];
+		// Story 9-2a — Nom de la company pour construire les filenames d'export.
+		companyName: string;
 	}
 	let { data }: { data: PageData } = $props();
 
@@ -38,6 +44,9 @@
 	let activeTab = $state<ReportType>('balance-sheet');
 	let loading = $state(false);
 	let errorMsg = $state<string | null>(null);
+	// Story 9-2a — flag dédié pour l'export (PAS partagé avec `loading` qui contrôle
+	// uniquement `generate()`). Pass 1 ECH-H2 + AC #36 + Pass 2 AA2-C1.
+	let exporting = $state(false);
 
 	let balanceSheet = $state<BalanceSheetDto | null>(null);
 	let incomeStatement = $state<IncomeStatementDto | null>(null);
@@ -125,6 +134,76 @@
 		}
 	}
 
+	// Story 9-2a — Helpers export PDF/CSV.
+
+	/**
+	 * Retourne le DTO actuel pour l'onglet actif, ou `null` si aucun rapport
+	 * généré. Sert à `canExport` ET à extraire `period.start/end` pour le filename.
+	 */
+	function activeReportPeriod(): { startDate: string; endDate: string } | null {
+		switch (activeTab) {
+			case 'balance-sheet':
+				return balanceSheet?.period ?? null;
+			case 'income-statement':
+				return incomeStatement?.period ?? null;
+			case 'trial-balance':
+				return trialBalance?.period ?? null;
+			case 'journals':
+				return journalReport?.period ?? null;
+		}
+	}
+
+	let canExport = $derived(
+		!loading &&
+			!exporting &&
+			selectedFiscalYearId !== null &&
+			data.fiscalYears.length > 0 &&
+			activeReportPeriod() !== null,
+	);
+
+	/**
+	 * Handler factorisé : déclenche le download d'un rapport au format demandé.
+	 * Flag `exporting` toujours reset dans `finally` (AC #36(b)). Pass 1 ECH-H2
+	 * closure capture : `query` est snapshot au moment du clic, donc un change de
+	 * FY pendant l'export en vol ne casse pas l'opération (AC #36(a)).
+	 */
+	async function exportReport(format: 'pdf' | 'csv'): Promise<void> {
+		if (!canExport || selectedFiscalYearId === null) return;
+		const period = activeReportPeriod();
+		if (!period) return;
+		exporting = true;
+		errorMsg = null;
+		try {
+			const query: ReportQuery | JournalReportQuery = {
+				fiscalYearId: selectedFiscalYearId,
+				periodStart: periodStart || undefined,
+				periodEnd: periodEnd || undefined,
+			};
+			if (activeTab === 'journals') {
+				// Aucun filtre journal exposé v0.1 — laisse undefined.
+			}
+			const filename = buildExportFilename(
+				activeTab,
+				data.companyName,
+				{ start: period.startDate, end: period.endDate },
+				format,
+			);
+			await downloadReport(activeTab, query, format, filename);
+		} catch (e) {
+			errorMsg = formatError(e);
+		} finally {
+			exporting = false;
+		}
+	}
+
+	async function exportPdf(): Promise<void> {
+		await exportReport('pdf');
+	}
+
+	async function exportCsv(): Promise<void> {
+		await exportReport('csv');
+	}
+
 	const tabs: { id: ReportType; labelKey: string; fallback: string }[] = [
 		{ id: 'balance-sheet', labelKey: 'reports-balance-sheet', fallback: 'Bilan' },
 		{ id: 'income-statement', labelKey: 'reports-income-statement', fallback: 'Compte de résultat' },
@@ -162,6 +241,10 @@
 		bind:periodEnd
 		{loading}
 		onGenerate={generate}
+		onExportPdf={exportPdf}
+		onExportCsv={exportCsv}
+		{canExport}
+		{exporting}
 	/>
 
 	<div role="tablist" class="flex border-b" aria-label={i18nMsg('reports-page-title', 'Rapports comptables')}>

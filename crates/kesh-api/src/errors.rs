@@ -503,6 +503,10 @@ impl From<kesh_report::errors::ReportError> for AppError {
                     "trial balance unbalanced: debit={total_debit} credit={total_credit}"
                 ))
             }
+            // Story 9-2a T2.0 + Pass 3 ECH3-H2 : variant dédié pour i18n message
+            // client utile (cohérent kesh-qrbill::QrBillError::PdfGeneration mapping
+            // dans invoice_pdf.rs).
+            ReportError::PdfGeneration(detail) => AppError::PdfGenerationFailed(detail),
         }
     }
 }

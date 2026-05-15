@@ -784,3 +784,15 @@ reports-archived-label = archiviato
 reports-page-title = Rapporti contabili
 reports-instruction-select-and-generate = Seleziona un esercizio contabile e clicca su Genera.
 reports-loading = Generazione del rapporto in corso…
+
+# Story 9-2a — Export PDF & CSV (10 chiavi)
+reports-export-pdf-button = Esporta PDF
+reports-export-csv-button = Esporta CSV
+reports-export-loading = Generazione del file…
+reports-export-error-generic = Impossibile esportare il rapporto. Verifica la connessione e riprova.
+reports-filename-balance-sheet = bilancio
+reports-filename-income-statement = conto-economico
+reports-filename-trial-balance = bilancio-verifica
+reports-filename-journals = giornali
+reports-pdf-header-period = Periodo
+reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.

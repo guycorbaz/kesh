@@ -1,6 +1,6 @@
 # Story 9.2a: Export PDF & CSV par rapport
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -129,10 +129,10 @@ so that je puisse les partager avec mon fiduciaire, les archiver hors-ligne, ou 
 
 ## Tasks / Subtasks
 
-- [ ] **T1** Ajouter dépendances `printpdf` + `csv` à `crates/kesh-report/Cargo.toml` (AC: #1, #10)
-  - [ ] T1.1 `printpdf = "0.7"` (cohérent `kesh-qrbill`, ne PAS upgrader sans coordination)
-  - [ ] T1.2 `csv = "1.3"` (sérialiseur standard Rust, RFC 4180 compliant)
-  - [ ] T1.3 Vérifier `cargo build -p kesh-report` clean après ajout
+- [x] **T1** Ajouter dépendances `printpdf` + `csv` à `crates/kesh-report/Cargo.toml` (AC: #1, #10)
+  - [x] T1.1 `printpdf = "0.7"` (cohérent `kesh-qrbill`, ne PAS upgrader sans coordination)
+  - [x] T1.2 `csv = "1.3"` (sérialiseur standard Rust, RFC 4180 compliant)
+  - [x] T1.3 Vérifier `cargo build -p kesh-report` clean après ajout
 
 - [ ] **T2** Créer `crates/kesh-report/src/pdf.rs` — sérialiseur PDF pur (AC: #1-#9, #29, #31 — Pass 4 AA4-LOW3 ajout AC #31 pour T2.3a pagination)
   - [ ] T2.0 **(Pass 1 ECH-C2 + Pass 3 ECH3-H2)** Ajouter `PdfGeneration(String)` à `ReportError` (`crates/kesh-report/src/errors.rs`) — **mappé `AppError::PdfGenerationFailed(s)`** (variant existant `crates/kesh-api/src/errors.rs:184`, cohérent avec `invoice_pdf.rs` Story 5-3 + i18n key `error-pdf-generation-failed`, code HTTP 500, message client utile). **PAS `AppError::Internal`** (Pass 3 ECH3-H2 invalide la dismission Pass 2 ECH2-C1 : ECH2-C1 disait « mapping déjà documentée » mais T2.0 disait `Internal`, alors que le variant dédié `PdfGenerationFailed` existe déjà avec son IntoResponse branch). Sans ça, `printpdf::save_to_bytes() -> Result<_, PrintpdfError>` ne peut être propagé en `Result<Vec<u8>, ReportError>` ET on perd l'i18n message UX existant.

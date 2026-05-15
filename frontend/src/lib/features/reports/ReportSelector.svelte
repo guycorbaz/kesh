@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Story 9-1 — Sélecteur d'exercice + période + bouton Générer.
+	// Story 9-2a — Boutons Export PDF + Export CSV (props onExportPdf/onExportCsv + canExport).
 	// Pass 1 ECH-12 + AC #34 : si fiscal_years vide → dropdown vide + bouton disabled.
 
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -13,6 +14,11 @@
 		periodEnd: string;
 		loading: boolean;
 		onGenerate: () => void;
+		// Story 9-2a — Export PDF/CSV
+		onExportPdf?: () => void;
+		onExportCsv?: () => void;
+		canExport?: boolean;
+		exporting?: boolean;
 	}
 
 	let {
@@ -22,6 +28,10 @@
 		periodEnd = $bindable(),
 		loading,
 		onGenerate,
+		onExportPdf,
+		onExportCsv,
+		canExport = false,
+		exporting = false,
 	}: Props = $props();
 
 	let noFiscalYears = $derived(fiscalYears.length === 0);
@@ -82,12 +92,42 @@
 		</p>
 	{/if}
 
-	<button
-		type="button"
-		class="rounded bg-indigo-600 px-4 py-2 text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-		disabled={!canGenerate}
-		onclick={onGenerate}
-	>
-		{i18nMsg('reports-button-generate', 'Générer')}
-	</button>
+	<div class="flex flex-wrap items-center gap-2">
+		<button
+			type="button"
+			class="rounded bg-indigo-600 px-4 py-2 text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+			disabled={!canGenerate}
+			onclick={onGenerate}
+		>
+			{i18nMsg('reports-button-generate', 'Générer')}
+		</button>
+
+		{#if onExportPdf}
+			<button
+				type="button"
+				class="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+				disabled={!canExport || exporting}
+				onclick={onExportPdf}
+			>
+				{i18nMsg('reports-export-pdf-button', 'Export PDF')}
+			</button>
+		{/if}
+
+		{#if onExportCsv}
+			<button
+				type="button"
+				class="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+				disabled={!canExport || exporting}
+				onclick={onExportCsv}
+			>
+				{i18nMsg('reports-export-csv-button', 'Export CSV')}
+			</button>
+		{/if}
+
+		{#if exporting}
+			<span class="text-sm italic text-gray-500" role="status">
+				{i18nMsg('reports-export-loading', 'Génération du fichier…')}
+			</span>
+		{/if}
+	</div>
 </div>

@@ -784,3 +784,15 @@ reports-archived-label = archiviert
 reports-page-title = Buchhaltungsberichte
 reports-instruction-select-and-generate = Wählen Sie ein Geschäftsjahr aus und klicken Sie auf Generieren.
 reports-loading = Bericht wird generiert…
+
+# Story 9-2a — Export PDF & CSV (10 Schlüssel)
+reports-export-pdf-button = PDF-Export
+reports-export-csv-button = CSV-Export
+reports-export-loading = Datei wird generiert…
+reports-export-error-generic = Bericht konnte nicht exportiert werden. Verbindung prüfen und erneut versuchen.
+reports-filename-balance-sheet = bilanz
+reports-filename-income-statement = erfolgsrechnung
+reports-filename-trial-balance = kontensaldenliste
+reports-filename-journals = journale
+reports-pdf-header-period = Zeitraum
+reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.

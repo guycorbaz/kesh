@@ -114,3 +114,116 @@ export function formatReportAmount(v: string): string {
 		return v;
 	}
 }
+
+// ============================================================================
+// Story 9-2a — Export PDF & CSV
+// ============================================================================
+
+/**
+ * Construit l'URL d'un endpoint d'export `/api/v1/reports/{type}/export?format=...`.
+ * Pour le rapport `journals`, le paramètre optionnel `journal` est inclus si fourni.
+ */
+export function getReportExportUrl(
+	type: ReportType,
+	query: ReportQuery | JournalReportQuery,
+	format: 'pdf' | 'csv',
+): string {
+	const params: Record<string, string | number | undefined> = {
+		fiscalYearId: query.fiscalYearId,
+		periodStart: query.periodStart,
+		periodEnd: query.periodEnd,
+		format,
+	};
+	if (type === 'journals') {
+		params.journal = (query as JournalReportQuery).journal;
+	}
+	const qs = buildQuery(params);
+	return `/api/v1/reports/${type}/export?${qs}`;
+}
+
+/**
+ * Construit le filename `kesh-{typeSlug}-{companySlug}-{periodStart}_{periodEnd}.{ext}`
+ * (AC #22 + Pass 1 ECH-H3).
+ *
+ * Pipeline slug ASCII : NFD-strip diacritics + lowercase + non-alphanum → `-` +
+ * collapse `-+` → `-` + truncate 20 chars + strip trailing `-`. Fallback
+ * `'company'` si vide post-slug (e.g. nom CJK).
+ */
+export function buildExportFilename(
+	type: ReportType,
+	companyName: string,
+	period: { start: string; end: string },
+	format: 'pdf' | 'csv',
+): string {
+	const typeSlug = TYPE_SLUGS[type];
+	const companySlug = slugify(companyName, 'company');
+	return `kesh-${typeSlug}-${companySlug}-${period.start}_${period.end}.${format}`;
+}
+
+/** Slugs FR-CH par défaut (cohérent avec les clés i18n `reports-filename-*`). */
+const TYPE_SLUGS: Record<ReportType, string> = {
+	'balance-sheet': 'bilan',
+	'income-statement': 'compte-resultat',
+	'trial-balance': 'balance',
+	journals: 'journaux',
+};
+
+/**
+ * Slug ASCII strict. Pipeline (cf. AC #22) :
+ * 1. NFD-decompose + strip diacritics (`/[̀-ͯ]/g`).
+ * 2. lowercase.
+ * 3. `[^a-z0-9-]` → `-`.
+ * 4. Collapse `-+` → `-`.
+ * 5. Truncate 20 chars.
+ * 6. Strip trailing `-` (Pass 1 ECH-H3).
+ * 7. Fallback si vide.
+ */
+export function slugify(input: string, fallback: string): string {
+	const normalised = input
+		.normalize('NFD')
+		.replace(/[̀-ͯ]/g, '')
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, '-')
+		.replace(/-+/g, '-')
+		.slice(0, 20)
+		.replace(/-+$/, '')
+		.replace(/^-+/, '');
+	return normalised.length === 0 ? fallback : normalised;
+}
+
+/**
+ * Télécharge un export PDF/CSV via `fetch` + Blob + lien `<a download>` éphémère.
+ *
+ * Le 401 est géré par `apiClient` (redirect login). Autres erreurs (400, 500)
+ * sont relayées via une exception formatée que `+page.svelte` capture dans
+ * `errorMsg` (AC #23 + Pass 1 ECH-H3).
+ *
+ * @param type — Type du rapport (utilisé dans le URL path).
+ * @param query — Query params (`fiscalYearId`, période, journal optionnel).
+ * @param format — `'pdf'` ou `'csv'`.
+ * @param filename — Filename suggéré au browser (construit via `buildExportFilename`).
+ */
+export async function downloadReport(
+	type: ReportType,
+	query: ReportQuery | JournalReportQuery,
+	format: 'pdf' | 'csv',
+	filename: string,
+): Promise<void> {
+	const url = getReportExportUrl(type, query, format);
+	// On utilise `apiClient.getBlob` pour bénéficier de la gestion 401 + ApiError centralisée.
+	const response = await apiClient.getBlob(url);
+	const blob = await response.blob();
+	triggerDownload(blob, filename);
+}
+
+/** Helper interne : déclenche le download navigateur via un lien éphémère. */
+function triggerDownload(blob: Blob, filename: string): void {
+	const objectUrl = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = objectUrl;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(objectUrl);
+}
