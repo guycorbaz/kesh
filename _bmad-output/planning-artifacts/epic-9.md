@@ -16,7 +16,8 @@ crates:
   - kesh-report (interne, deps : kesh-core + kesh-db + kesh-i18n)
 stories:
   - 9-1-rapports-comptables-bilan-resultat-balance-journaux
-  - 9-2-export-pdf-csv
+  - 9-2a-export-pdf-csv
+  - 9-2b-export-global-zip
 ---
 
 # Epic 9 — Rapports & Exports
@@ -121,23 +122,42 @@ crates/kesh-report/
 - **And** scoping multi-tenant `company_id` sur toutes les requêtes (pattern Story 7-1)
 - **And** audit trail Swiss CO Art. 958f : chaque génération de rapport peut être journalisée (à confirmer au spec validate — voir R2)
 
-### Story 9-2 : Export PDF & CSV
+### Story 9-2a : Export PDF & CSV par rapport
+
+**Split rationale** : la Story 9-2 originale (epic-9.md initial) touchait 6 modules (kesh-report pdf + csv, kesh-api/routes/reports, kesh-api/routes/exports nouveau, frontend/features/reports + frontend/features/exports nouveau, kesh-i18n locales × 4) + R3 incertitude librairie PDF. Décision 2026-05-15 : splitter en 9-2a (export per-report PDF+CSV) + 9-2b (export global ZIP) avant `bmad-create-story` pour respecter règle CLAUDE.md splitting préventif (>5 modules). Couplage PDF/CSV justifié pour 9-2a : mêmes données `kesh-report::{BalanceSheet, IncomeStatement, TrialBalance, JournalReport}`, formats de sérialisation différents.
 
 **As a** utilisateur
-**I want** exporter mes rapports en PDF et CSV
-**So that** je puisse les partager avec mon fiduciaire, les archiver ou les importer ailleurs
+**I want** exporter chacun des 4 rapports comptables (bilan, compte de résultat, balance, journaux) en PDF ou en CSV
+**So that** je puisse les partager avec mon fiduciaire ou les archiver hors-ligne
 
 **Critères d'acceptation :**
 
 - **Given** un rapport généré, **When** export PDF, **Then** le PDF respecte les formats suisses : apostrophe séparateur de milliers (`1'234.56`), dates `dd.mm.yyyy` (FR67)
 - **Given** un rapport, **When** export CSV, **Then** fichier CSV avec séparateur point-virgule, encodage UTF-8 BOM (compat Excel CH/DE)
-- **Given** menu export, **When** export global par table, **Then** l'utilisateur peut exporter l'ensemble des données (comptes, écritures, contacts, factures, transactions bancaires) en CSV (FR68)
-- **Given** export global, **When** génération, **Then** ZIP contenant un CSV par table + fichier `metadata.json` (version Kesh, date export, locale, périmètre exercice)
-- **Given** export, **When** bouton dans le menu principal, **Then** accessible directement (pas caché dans les paramètres) — souveraineté des données
+- **Given** export PDF ou CSV, **When** bouton dans la page de génération du rapport, **Then** accessible directement à côté du bouton « Générer »
 - **And** génération PDF d'un rapport `< 3 secondes` sur dataset de référence (~1000 écritures)
 - **And** les messages d'erreur disent ce qui s'est passé ET ce que l'utilisateur peut faire (UX-DR38) — par exemple : « Aucune écriture dans la période sélectionnée. Modifiez les dates ou choisissez un autre exercice. »
-- **And** scoping multi-tenant `company_id` sur l'export global (impossible d'exfiltrer les données d'une autre company)
+- **And** scoping multi-tenant `company_id` sur les 4 rapports (déjà garanti par l'API 9-1, vérifier que l'extension `?format=pdf|csv` ne contourne pas le scoping)
 - **And** choix de la librairie PDF documenté dans la story (`printpdf` candidate par défaut, à valider — voir R3)
+- **And** consomme l'API publique stable `kesh_report::{BalanceSheet, IncomeStatement, TrialBalance, JournalReport}` livrée par Story 9-1 (FR65, FR66, FR67)
+
+### Story 9-2b : Export global ZIP (souveraineté des données)
+
+**As a** utilisateur
+**I want** exporter l'ensemble de mes données (comptes, écritures, contacts, factures, transactions bancaires) en un seul fichier
+**So that** je garde la souveraineté de mes données comptables et puisse migrer ailleurs si nécessaire
+
+**Critères d'acceptation :**
+
+- **Given** menu principal (pas caché dans les paramètres), **When** clic sur « Export global », **Then** déclenche la génération d'un ZIP contenant un CSV par table (FR68)
+- **Given** export global, **When** génération, **Then** le ZIP contient :
+  - un CSV par table (`accounts.csv`, `journal_entries.csv`, `journal_entry_lines.csv`, `contacts.csv`, `products.csv`, `invoices.csv`, `invoice_lines.csv`, `bank_transactions.csv`, `bank_imports.csv`, etc. — liste exhaustive à figer en spec validate)
+  - un fichier `metadata.json` (version Kesh, date export, locale, périmètre exercice, hash SHA-256 de chaque CSV pour intégrité)
+- **Given** export ZIP, **When** téléchargement terminé, **Then** durée totale `< 10 secondes` sur dataset de référence (~1000 écritures + factures + transactions)
+- **And** scoping multi-tenant `company_id` sur l'export global (impossible d'exfiltrer les données d'une autre company — test IDOR obligatoire)
+- **And** les messages d'erreur respectent UX-DR38 (ce qui s'est passé + ce que l'utilisateur peut faire)
+- **And** route dédiée `GET /api/v1/exports/global.zip` (nouveau module `kesh-api/routes/exports.rs`)
+- **And** **path-dependency 9-2a** : 9-2b peut démarrer en parallèle de 9-2a mais devrait être mergée APRÈS 9-2a pour réutiliser le serializer CSV de `kesh-report::csv` si possible (à confirmer spec validate 9-2b)
 
 ---
 
