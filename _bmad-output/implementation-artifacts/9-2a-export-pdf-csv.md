@@ -1,6 +1,6 @@
 # Story 9.2a: Export PDF & CSV par rapport
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -826,3 +826,15 @@ Le rendering Helvetica builtin + structure tabulaire monoline est dominé par le
   - **Régression découverte** : M18 extraction `assert!` du bench a révélé que PDF 10k entrées pèse ~6.5 MB > 5 MB AC #31 (auparavant masqué par anti-pattern criterion). Documenté Limitations L13, test `#[ignore]`, fix prévu v0.2.
   - **Tests Locally First post-patches** : `cargo fmt/build/clippy` ✓ clean ; `cargo test -p kesh-report` 53/53 + 1 ignored ; `cargo test -p kesh-api --test reports_export_e2e -- --test-threads=1` 20/20 ; `cargo test -p kesh-api --test reports_e2e -- --test-threads=1` 28/28 (0 régression 9-1) ; `npm run check/lint-i18n/test:unit/build` ✓ tous verts (241/241 Vitest).
   - **Cycle CLAUDE.md** : Pass 2 Haiku 4.5 prévue (briser biais Sonnet auteur Pass 1 + valider 29 patches, cycle Sonnet → Haiku → Opus).
+
+- **2026-05-15** (code-review Pass 2 Haiku 4.5) — **CONVERGENCE ATTEINTE, CYCLE CODE-REVIEW STOP, STATUS `review → done`**. 3 reviewers Haiku 4.5 parallèles fresh-context (BH2 + ECH2 + AA2) sur diff Pass 1 patches (~1351 lignes, commits `87d05f6` + `d9dbcdf`) :
+  - **Verdict 3/3 reviewers GO** : BH2 (0/0/0/0), ECH2 (0/0/1/3 — 1 MEDIUM Haiku faux-positif dismissed ground-truth), AA2 (0/0/0/0).
+  - **ECH2-M1 dismissed** : « SvelteKit SSR error boundary race sur `loadFiscalYears` 401 re-throw » — **invalide** car `+page.ts:9` a `export const ssr = false`, donc `load()` tourne uniquement en browser, pas en SSR. Pattern mémoire `feedback_haiku_review_diff_combined` confirmé (Haiku hallucine sur diff multi-commit, toujours grep ground-truth avant flag).
+  - **10/11 HIGH Pass 1 patches verified ground-truth** par les 3 reviewers Haiku (H1 CSV variant errors.rs:59 + AppError:142 + From arm:521 + IntoResponse:751 + 4 locales i18n ; H2 duplicate Total Actifs supprimé pdf.rs ; H3 dynamic cursor `(builder.cursor_y + MARGIN_BOTTOM_MM) / 2.0` ; H4 truncate_with_ellipsis helper + 2 tests ; H7 debug_assert ASCII ; H8 ac9_balance_sheet_pdf_1000_under_500ms test ; H10 resolve_type_slug backend + i18nMsg frontend ; H11 ensure_space_for_row line 840 grand total). H5/H6/H9 correctement deferred L14/L15.
+  - **18/18 MEDIUM Pass 1 patches verified** (3 cross-tenant E2E tests, BOM guard, FR explicit locale match, phantom section guards, empty PDF tests, 401 alignment, selectTab clear errorMsg, try/finally cleanup, double-click guard first, isApiError fallback, RFC 5987 lang tag, balance-comptes slug, footer 15mm, AC #31 size test `#[ignore]` L13).
+  - **3 LOW résiduels Haiku ECH2** (truncate max>0 hardcoded 30, RFC 5987 empty locale `""` rétro-compat, ensure_space mono-ligne grand total) — tous defensive nits acceptables, aucun patch.
+  - **Trend > LOW** : Pass 1 = 29 patches → **Pass 2 = 0 légitime** (-100%). Convergence atteinte cycle 2 passes.
+  - **Budget consommé** : 2/8 passes. Marge 6 passes inutilisée.
+  - **Critère arrêt CLAUDE.md ATTEINT** : 0 finding > LOW post-ground-truth. Status story `review → done`.
+  - **Path-dep aval** : 9-2b export global ZIP ready quand spec créée (réutilise `kesh-report::{pdf, csv}` serializers + `AppError::CsvGenerationFailed` variant + `resolve_type_slug` helper).
+  - **Prochaine étape** : push branche `story/9-2a-export-pdf-csv` (9 commits ahead of main) + PR vers main.
