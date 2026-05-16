@@ -91,7 +91,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     ```
     Avec exactement **16 entrées** dans `tables` (une par CSV), chaque valeur ayant un `rowCount` (nombre de data rows hors header) et un `sha256` (digest hex 64-char SHA-256 des bytes du CSV tel qu'il apparaît dans le ZIP — BOM + header + data + CRLF).
 
-13. **Given** `metadata.json.keshVersion`, **When** comparé à `env!("CARGO_PKG_VERSION")` au build-time de `kesh-api`, **Then** valeur identique (`"0.1.0"` actuellement) — Decision §version-source = lecture compile-time, pas runtime DB.
+13. **Given** `metadata.json.keshVersion`, **When** comparé à `env!("CARGO_PKG_VERSION")` au build-time de `kesh-api`, **Then** valeur identique au build courant (assertion test : `assert_eq!(meta.kesh_version, env!("CARGO_PKG_VERSION"))` — Pass 1 BH-LOW-03 + AA-MEDIUM-04, pas de hardcode `"0.1.0"`). Decision §version-source = lecture compile-time, pas runtime DB.
 
 14. **Given** `metadata.json.exportDate`, **When** parsé, **Then** format strict ISO 8601 UTC avec suffixe `Z` (jamais offset `+01:00`). Cf. `chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)`.
 
@@ -111,7 +111,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
 
 20. **Given** un dataset de référence (~1000 écritures + ~100 factures + ~500 transactions bancaires), **When** l'export ZIP complet est généré, **Then** durée totale **< 10 secondes** mesurée via test perf `criterion` ou test E2E avec `Instant::now()` (cohérent epic-9.md §Story 9-2b AC original). Cible isolation : rendering pur (queries SQL + serialization CSV + packaging ZIP), pas le download network round-trip.
 
-21. **Given** un dataset large (5000+ écritures), **When** export, **Then** durée **< 30 secondes** (cible élargie hors AC critique). Au-delà = dette tracée L4 streaming v0.2.
+21. **(RECLASS Pass 1 AA-MEDIUM-06 → limitation L11)** ~~Given un dataset large (5000+ écritures), When export, Then durée < 30 secondes~~ — **reclassé** en limitation L11 (cible aspirationnelle, pas un AC binaire). Aucun test obligatoire en CI ; observation manuelle si dataset extrême signalé. Au-delà de 30s = dette tracée L4 streaming v0.2.
 
 22. **Given** le ZIP final, **When** sa taille est mesurée, **Then** **< 5 MB** pour le dataset de référence (cohérent compression `zip` par défaut Deflate level 6, CSV très compressible). Documenté L3 si dépassé.
 
@@ -140,44 +140,52 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
 
 ### Tests
 
-29. **Given** la story est implémentée, **When** suite de tests exécutée, **Then** **≥ 12 tests E2E HTTP** dans `crates/kesh-api/tests/exports_global_e2e.rs` couvrent :
+29. **Given** la story est implémentée, **When** suite de tests exécutée, **Then** **≥ 17 tests E2E HTTP** dans `crates/kesh-api/tests/exports_global_e2e.rs` couvrent :
     - (a) Success path : seed `with-company` + 3 écritures + 2 contacts + 1 facture → 200 + ZIP signature `PK\x03\x04` + `Content-Type: application/zip`
-    - (b) Multi-tenant 2 companies : seed A + seed B → export user A → décompresse ZIP → assert `accounts.csv` ne contient AUCUN account_id de B (IDOR test)
-    - (c) ZIP structure : décompresse → assert exactement 17 entrées (16 CSV listés + 1 metadata.json)
-    - (d) `metadata.json` parsing : extrait du ZIP → désérialise serde → assert shape (keshVersion, exportDate ISO 8601 UTC `Z` suffix, companyId, companyName, locale, fiscalYearScope=`"all"`, `tables` map 16 entries)
+    - (b) Multi-tenant 2 companies : seed A + seed B → export user A → décompresse ZIP → assert **les 3 CSV sensibles** `accounts.csv` + `contacts.csv` + `bank_transactions.csv` ne contiennent AUCUN id de B (IDOR test élargi multi-table — Pass 1 BH-MEDIUM-05)
+    - (c) ZIP structure : décompresse → assert exactement 17 entrées AVEC `assert_eq!(names_set, expected_names_set)` (set complet : 16 noms CSV listés `{company, fiscal_years, accounts, journal_entries, journal_entry_lines, contacts, products, invoices, invoice_lines, bank_accounts, bank_imports, bank_transactions, vat_rates, company_invoice_settings, reconciliation_rules, bank_profiles}.csv` + `metadata.json`) — couvre simultanément AC #5 ET AC #9 (absence des 5 tables exclues vérifiée par non-appartenance au set, Pass 1 AA-MEDIUM-03)
+    - (d) `metadata.json` parsing : extrait du ZIP → désérialise serde → assert shape complète AVEC valeurs exactes : `assert_eq!(meta.kesh_version, env!("CARGO_PKG_VERSION"))` (Pass 1 AA-MEDIUM-04), `assert_eq!(meta.locale, "fr-CH")` pour seed avec `accounting_language = FR` (Pass 1 AA-MEDIUM-05), `meta.export_date` matches regex `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`, `meta.fiscal_year_scope == "all"`, `meta.tables.len() == 16`
     - (e) SHA-256 intégrité : pour chaque CSV dans le ZIP, recalcule sha256 sur bytes décompressés → assert == `metadata.json.tables[name].sha256`
-    - (f) Empty company : seed `with-company-no-fy` (ou équivalent SANS écritures) → 200 + ZIP toujours 17 entrées + chaque CSV contient au moins le header row + `metadata.json.tables[name].rowCount = 0` pour les tables vides
-    - (g) Large dataset perf : seed + insertion de ~1000 écritures via SQL bulk → assert durée `< 10s` via `Instant::now()` autour de l'appel HTTP
+    - (f) Empty company : seed `with-company-no-fy` (ou équivalent SANS écritures) → 200 + ZIP toujours 17 entrées + chaque CSV contient au moins le header row + `metadata.json.tables[name].rowCount = 0` pour les tables vides **SAUF** `company.csv` (rowCount=1, la company elle-même) ET `company_invoice_settings.csv` (rowCount=1, lazy-create injecte defaults) — Pass 1 ECH-MEDIUM-08
+    - (g) Large dataset perf : seed + insertion de ~1000 écritures via SQL bulk → assert durée `< 10s` via `Instant::now()` autour de l'appel HTTP **ET** assert `zip_bytes.len() < 5 * 1024 * 1024` (5 MB cible AC #22 — Pass 1 AA-HIGH-03)
     - (h) Auth 401 : pas de Bearer token → 401 (test isolé GET 1 endpoint, middleware identique)
     - (i) RBAC Consultation 200 : seed user role Consultation + login → 200
     - (j) `Content-Disposition: attachment` + RFC 5987 fallback (réutilise helper Story 9-2a `build_content_disposition`)
     - (k) Filename pattern : assert `download.suggestedFilename()` ou header parsing match regex `/^kesh-export-.+-\d{4}-\d{2}-\d{2}\.zip$/`
     - (l) ZIP byte signature `PK\x03\x04` (4 premiers bytes) — test isolé du success path pour faciliter le diagnostic en cas de régression
-    Total : a+b+c+d+e+f+g+h+i+j+k+l = **12 tests minimum**.
+    - **(m)** **Audit log post-export 200** (Pass 1 AA-HIGH-04 + ECH-H2 héritage 9-2a) : après export success, `sqlx::query!("SELECT * FROM audit_log WHERE action='exports.global' AND company_id = ? ORDER BY id DESC LIMIT 1", company_id)` → assert 1 row, `entity_type = 'export'`, `entity_id = AUDIT_ENTITY_ID_NONE`, `details_json` JSON contient `byte_size > 0`, `csv_count = 16`, `fiscal_year_scope = "all"`, `duration_ms` numeric.
+    - **(n)** **Error path 500 SQL** (Pass 1 AA-HIGH-01) : injecter une panne de pool (e.g. pool fermé / DB down sandbox) → `GET /api/v1/exports/global.zip` → assert HTTP 500 + body JSON `code = "GLOBAL_EXPORT_FAILED"`. Implémentation alternative si pool injection complexe : test unit dans T10 sur `build_global_export` avec mock pool poisoné.
+    - **(o)** **Error path 500 ZIP packaging** (Pass 1 AA-HIGH-01) : test unit T10 alternatif (cf. AC #30(i) ajouté) — provoquer `build_zip` failure via `ZipWriter` simulé ou fichier avec nom invalide UTF-8 → assert `Err(AppError::GlobalExportFailed(...))`.
+    - **(p)** **403 sur `company_id` pathologique** (Pass 1 AA-HIGH-02) : créer un user dont le JWT claim aurait `company_id = 0` (test isolé du middleware si possible — sinon documenter comme limitation L et reclasser AC#19). Si le middleware garantit `company_id > 0` à 100%, ce test devient un guard contre régression future du middleware. À défaut : skip et noter dans Completion Notes.
+    - **(q)** **Tables exclues absentes** (Pass 1 AA-MEDIUM-03, redondant avec (c) mais isole le test pour diagnostic) : décompresse ZIP → assert qu'aucun des noms `{users, refresh_tokens, audit_log, onboarding_state, invoice_number_sequences}.csv` n'est dans la liste des entrées.
+    Total : a..q = **17 tests minimum** (12 originaux + 5 nouveaux Pass 1).
 
-30. **Given** la story est implémentée, **When** tests unit `kesh-api::exports::*` exécutés, **Then** **≥ 8 tests** valident :
-    - (a) `serialize_accounts_csv(rows: &[Account], writer) -> Result<()>` produit BOM + header + data rows attendus (1 test fixture 2 rows)
-    - (b) `serialize_journal_entries_csv` idem (1 test fixture 1 row avec champs date + decimal)
+30. **Given** la story est implémentée, **When** tests unit `kesh-api::exports::*` + `kesh-api::errors` exécutés, **Then** **≥ 10 tests** valident :
+    - (a) `serialize_accounts_csv(rows: &[Account], writer) -> Result<()>` produit BOM + header + data rows attendus (1 test fixture 2 rows) **+ assert dates ISO 8601** (`created_at` field formaté correctement)
+    - (b) `serialize_journal_entries_csv` idem (1 test fixture 1 row avec champs date + decimal) **+ assert `entry_date` au format `YYYY-MM-DD`**
     - (c) `serialize_journal_entry_lines_csv` idem (1 test fixture 2 rows)
     - (d) `build_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, AppError>` produit un ZIP valide commençant par `PK\x03\x04` + contient les entrées attendues (1 test fixture 2 files)
     - (e) `build_metadata_json(company, locale, tables) -> Result<String>` produit le JSON shape attendu avec `tables.*.sha256` non vide (1 test)
     - (f) `sha256_hex(bytes) -> String` retourne 64-char hex (1 test connu : hash de `b""` = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`)
     - (g) `build_global_export(state, company_id) -> Result<(Vec<u8>, GlobalExportMeta)>` orchestrateur — 1 test avec fixture company + 1 account + assert ZIP bytes valides + meta cohérente
     - (h) Empty table case : `serialize_accounts_csv(&[], writer)` produit BOM + header seul (0 data rows), cohérent Story 9-2a CSV empty pattern
+    - **(i)** `AppError::GlobalExportFailed("test detail")` → `into_response()` → status 500 + body JSON code `GLOBAL_EXPORT_FAILED` (Pass 1 AA-LOW-03 promu MEDIUM — couvre AC #17 et AC #18). Test dans `crates/kesh-api/src/errors.rs` `#[cfg(test)] mod tests` (cohérent pattern `pdf_generation_failed_into_response_returns_500` Story 9-2a).
+    - **(j)** `build_zip` failure path (Pass 1 AA-HIGH-01) : appel `build_zip(&[(invalid_utf8_name_bytes, b"data".to_vec())])` ou simulation OOM via `Cursor` avec capacité fixée → assert `Err(AppError::GlobalExportFailed(detail))` avec `detail.contains("zip")`.
 
-31. **Given** la story est implémentée, **When** Vitest exécuté, **Then** **≥ 2 tests** sur `frontend/src/lib/features/exports/exports.api.test.ts` :
-    - (a) `downloadGlobalExport()` appelle `fetch` avec URL `/api/v1/exports/global.zip` + déclenche download via Blob + lien `<a download>` éphémère (mock fetch + `URL.createObjectURL`)
+31. **Given** la story est implémentée, **When** Vitest exécuté, **Then** **≥ 3 tests** sur `frontend/src/lib/features/exports/exports.api.test.ts` (Pass 1 AA-HIGH-05) :
+    - (a) `downloadGlobalExport()` appelle `fetch` avec URL `/api/v1/exports/global.zip` + déclenche download via Blob + lien `<a download>` éphémère (mock fetch + `URL.createObjectURL`) + assert filename extrait du header `Content-Disposition`
     - (b) Erreur backend (mock 500) → exception formatée propagée à `+page.svelte`
+    - **(c)** **Double-clic guard re-entrancy** (Pass 1 AA-HIGH-05 — AC #26 sans test antérieur) : test handler `startExport` du `+page.svelte` ou logique équivalente — mock `downloadGlobalExport` slow (delayed Promise) → appeler `startExport()` puis `startExport()` immédiatement avant résolution de la première → assert que `downloadGlobalExport` n'est appelée qu'**une seule fois** (second call court-circuité par guard `if (exporting) return`). Si le test du composant Svelte est complexe : alternative — extraire la logique de guard en helper testable côté `exports.api.ts` ou utiliser `@testing-library/svelte` cohérent avec patterns Story 9-2a.
 
-32. **Given** la story est implémentée, **When** Playwright exécuté, **Then** **1 scénario** `frontend/tests/e2e/export-global.spec.ts` : login → `/export` → cliquer `Lancer l'export` → `await page.waitForEvent('download')` → `await download.saveAs('/tmp/kesh-test-9-2b.zip')` → `fs.readFile()` → assert premier 4 bytes `PK\x03\x04` + assert `download.suggestedFilename()` match regex `/^kesh-export-.+-\d{4}-\d{2}-\d{2}\.zip$/`. Pattern `saveAs` mandaté (cohérent Story 9-2a Pass 1 ECH-M5 — `download.path()` peut retourner `null`).
+32. **Given** la story est implémentée, **When** Playwright exécuté, **Then** **1 scénario** `frontend/tests/e2e/export-global.spec.ts` : login → `/export` → assert page contient titre `export-global-title` + bouton `Lancer l'export` visible (Pass 1 AA-MEDIUM-01 — vérifier les éléments UI AC#2) → cliquer `Lancer l'export` → assert bouton devient `disabled` avec libellé `Génération de l'export…` (Pass 1 AA-MEDIUM-07 — AC#25 état UX) → `await page.waitForEvent('download')` → `await download.saveAs('/tmp/kesh-test-9-2b.zip')` → `fs.readFile()` → assert premier 4 bytes `PK\x03\x04` + assert `download.suggestedFilename()` match regex `/^kesh-export-.+-\d{4}-\d{2}-\d{2}\.zip$/` → assert bouton redevient `enabled` post-download. Pattern `saveAs` mandaté (cohérent Story 9-2a Pass 1 ECH-M5 — `download.path()` peut retourner `null`).
 
 ## Tasks / Subtasks
 
 - [ ] **T1** Ajouter dépendances `zip` + `sha2` à `crates/kesh-api/Cargo.toml` (AC: #3, #4, #16)
-  - [ ] T1.1 `zip = "2"` (version 2.x — sync API, 4M+ downloads/year, Deflate compression par défaut, pas de complexité async hors scope v0.1). Vérifier au moment du dev la dernière stable via `cargo search zip`. Decision §zip-library figée.
-  - [ ] T1.2 `sha2 = "0.10"` (RustCrypto, mature, déjà workspace via auth Argon2 ? — vérifier `cargo tree`). Sinon ajouter en dep directe. SHA-256 hex via `Digest::digest(&bytes) + hex::encode(...)`.
-  - [ ] T1.3 `hex = "0.4"` (encoder hex pour SHA-256 64-char string). Si déjà dans le workspace : skip.
-  - [ ] T1.4 `cargo build -p kesh-api` clean après ajout.
+  - [ ] T1.1 `zip = "2"` (version 2.x — sync API, 4M+ downloads/year, Deflate compression par défaut, pas de complexité async hors scope v0.1). Vérifier au moment du dev la dernière stable via `cargo search zip`. Decision §zip-library figée. **Note** : `csv = "1.3"` est **déjà** dans `kesh-api/Cargo.toml` (héritée Story 9-2a, ligne 38) — aucun ajout requis (Pass 1 BH-LOW-01).
+  - [ ] T1.2 `sha2 = "0.10"` est **déjà** dans `kesh-api/Cargo.toml` (héritée Story 8-1b, ligne 41) — aucun ajout requis (Pass 1 BH-LOW-01). Pour le ré-utiliser : `use sha2::{Digest, Sha256};` puis `Sha256::digest(&bytes)`.
+  - [ ] T1.3 **(Decision §hex-encoding — Pass 1 BH-HIGH-04 + ECH-MEDIUM-03)** **NE PAS** ajouter la crate `hex = "0.4"`. Réutiliser le pattern local existant `hex_encode(&[u8]) -> String` (`crates/kesh-api/src/routes/bank_imports.rs:1512`, basé sur `format!("{b:02x}")` en boucle, ~10 lignes). **Action** : en T5.1/T5.4 du refactor `pub(crate) util`, promouvoir `hex_encode` de `bank_imports.rs` vers `crates/kesh-api/src/util.rs::hex_encode` (DRY CLAUDE.md). T4.4 utilise alors `util::hex_encode(&Sha256::digest(bytes))` au lieu de `hex::encode(...)`. Justification : éviter une nouvelle crate transitive pour 10 lignes triviales + cohérence avec pattern Story 8-1b existant.
+  - [ ] T1.4 `cargo build -p kesh-api` clean après ajout `zip = "2"` (seule nouvelle dep nécessaire).
 
 - [ ] **T2** Créer module `crates/kesh-api/src/exports/` (Decision §csv-table-serializer-location) (AC: #6, #7, #9)
   - [ ] T2.1 `crates/kesh-api/src/exports/mod.rs` — déclarations `pub mod csv_tables; pub mod global; pub mod metadata;` + re-export `build_global_export`.
@@ -199,6 +207,11 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - `serialize_reconciliation_rules_csv`
     - `serialize_bank_profiles_csv`
   - [ ] T2.3 Chaque serializer : BOM en tête (`writer.write_all(&[0xEF, 0xBB, 0xBF])?`), `csv::WriterBuilder::new().delimiter(b';').terminator(csv::Terminator::CRLF).from_writer(writer)`, header row déterministe + 1 record par entity row. Dates au format ISO 8601 (`NaiveDate::format("%Y-%m-%d")` ou `DateTime<Utc>::to_rfc3339_opts(Secs, true)`). Decimal toujours 2 décimales (`format!("{:.2}", ...)` — cohérent Story 9-2a `format_amount_iso`).
+  - [ ] T2.3.1 **Paramètres explicites côté handler** (Pass 1 BH-HIGH-02 + ECH-HIGH-02/03/07) :
+    - `accounts::list_by_company(pool, company_id, /*include_archived=*/true)` — souveraineté = comptes archivés inclus.
+    - `contacts::list_by_company(pool, company_id, /*include_archived=*/true)` — souveraineté = contacts archivés inclus (sinon factures sans contact = incohérence référentielle).
+    - `company_invoice_settings::get_or_create_default(pool, company_id)` — lazy-create acceptée (side-effect write idempotent) ; `serialize_company_invoice_settings_csv` reçoit donc TOUJOURS 1 row (jamais 0). Documenter en commentaire au site de l'appel : `// lazy-create OK : write idempotent, row injectée avec defaults si absente`.
+    - Pour `vat_rates` / `products` / `reconciliation_rules` : appeler les nouvelles fns T3.2 (`list_all_by_company`) qui retournent **toutes** les rows sans filtre `active`.
   - [ ] T2.4 Helper privé `fn write_csv_bom<W: Write>(writer: &mut W) -> Result<(), AppError>` (DRY, 16 callers) + helper `fn make_csv_writer<W: Write>(writer: W) -> csv::Writer<W>` (DRY, mêmes paramètres séparateur/terminator partout). **Decision §csv-helper-reuse** : on duplique le pattern Story 9-2a `kesh-report::csv::{make_writer, format_amount_iso}` côté `kesh-api/exports` plutôt que d'exposer ces helpers comme API publique de `kesh-report` (DD-12 : `kesh-report` = rapports comptables agrégés, pas raw tables — ne pas étendre son scope).
   - [ ] T2.5 Map d'erreurs CSV → `AppError::GlobalExportFailed(format!("csv {table}: {e}"))` (T6 ajoute le variant).
   - [ ] T2.6 Tests unit en bas du fichier : ≥ 4 tests par batch (cf. T9.1 = 8 tests min : 3 serializers représentatifs + empty table case + build_zip + build_metadata_json + sha256_hex + orchestrateur).
@@ -211,7 +224,18 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - Construit `metadata.json` via `build_metadata_json(...)`.
     - Construit ZIP via `build_zip(files)`.
     - Retourne `(zip_bytes, GlobalExportMeta { byte_size, csv_count: 16, duration_ms })` pour audit/tracing.
-  - [ ] T3.2 **(Decision §pagination-traversal)** Pour les 16 tables, **pas de pagination** v0.1 — toutes les rows fetched en une seule query `SELECT * FROM <table> WHERE company_id = ?`. Si une table devient extrême (10k+ rows) : c'est du domaine de la limitation L4 streaming v0.2. **Action** : pour chaque repository qui n'a qu'un `list_by_company_paginated`, ajouter une nouvelle fn `list_all_by_company(pool, company_id) -> Result<Vec<Entity>, DbError>` (cohérent avec la fn existante `delete_all_by_company` pattern `accounts.rs:497`). Sub-tâches concrètes : ajouter `list_all_by_company` dans `repositories::{contacts, products, invoices, bank_transactions, bank_imports}` (les 5 repos qui n'ont actuellement que `list_by_company_paginated`). Réutiliser `list_by_company` (sans paginated) pour les autres.
+  - [ ] T3.2 **(Decision §pagination-traversal)** Pour les 16 tables, **pas de pagination** v0.1 — toutes les rows fetched en une seule query `SELECT * FROM <table> WHERE company_id = ?`. Si une table devient extrême (10k+ rows) : c'est du domaine de la limitation L4 streaming v0.2. **Action** : créer **10 nouvelles fns `list_all_by_company`** dans 8 repos (cohérent pattern `delete_all_by_company` `accounts.rs:497` — signature `pool, company_id -> Result<Vec<Entity>, DbError>`). Liste exhaustive ground-truth (Pass 1 BH-CRITICAL-01..05 + ECH-HIGH-01..08, grep `crates/kesh-db/src/repositories/*.rs` 2026-05-16) :
+    - [ ] T3.2.1 `repositories::journal_entries::list_all_by_company(pool, company_id) -> Result<Vec<JournalEntry>, DbError>` — pattern `SELECT id, company_id, fiscal_year_id, entry_date, description, ... FROM journal_entries WHERE company_id = ? ORDER BY entry_date, id`. **Distinct** de `list_by_company_paginated` (paginé).
+    - [ ] T3.2.2 `repositories::journal_entries::list_all_lines_by_company(pool, company_id) -> Result<Vec<JournalEntryLine>, DbError>` — `JournalEntryLine` n'a PAS de `company_id` direct (ground-truth `entities/journal_entry.rs:144-151`). Pattern OBLIGATOIRE single-query JOIN : `SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit FROM journal_entry_lines jel JOIN journal_entries je ON jel.entry_id = je.id WHERE je.company_id = ? ORDER BY jel.entry_id, jel.line_order`. **NE JAMAIS** itérer N appels `list_lines_by_entry_id` (N+1 garanti sur 5000+ entries).
+    - [ ] T3.2.3 `repositories::products::list_all_by_company(pool, company_id) -> Result<Vec<Product>, DbError>` — pattern `SELECT * WHERE company_id = ?` **SANS filtre `active`** (produits archivés inclus pour cohérence référentielle factures).
+    - [ ] T3.2.4 `repositories::invoices::list_all_by_company(pool, company_id) -> Result<Vec<Invoice>, DbError>` — pattern `SELECT * WHERE company_id = ?` **SANS filtre `status`** (drafts + validated + paid inclus). **NE PAS** confondre avec `list_for_export` existant qui filtre `status = 'validated'`.
+    - [ ] T3.2.5 `repositories::invoices::list_all_lines_by_company(pool, company_id) -> Result<Vec<InvoiceLine>, DbError>` — `InvoiceLine` n'a PAS de `company_id` direct (ground-truth `entities/invoice.rs:41-51`). Pattern OBLIGATOIRE single-query JOIN : `SELECT il.id, il.invoice_id, il.position, il.description, il.quantity, il.unit_price, il.vat_rate, il.line_total, il.created_at FROM invoice_lines il JOIN invoices i ON il.invoice_id = i.id WHERE i.company_id = ? ORDER BY il.invoice_id, il.position`. **NE JAMAIS** itérer N appels (N+1 garanti sur 100+ invoices).
+    - [ ] T3.2.6 `repositories::bank_imports::list_all_by_company(pool, company_id) -> Result<Vec<BankImport>, DbError>` — la fn existante `find_by_company_id` (`repositories/bank_imports.rs:155`) est paginée (`limit: i64, offset: i64`) + filtrée par `bank_account_id: Option<i64>` ; créer nouvelle fn **sans** ces paramètres.
+    - [ ] T3.2.7 `repositories::bank_transactions::list_all_by_company(pool, company_id) -> Result<Vec<BankTransaction>, DbError>` — pattern `SELECT * WHERE company_id = ?`.
+    - [ ] T3.2.8 `repositories::vat_rates::list_all_by_company(pool, company_id) -> Result<Vec<VatRate>, DbError>` — la fn existante `list_active_for_company` filtre `active = TRUE` ; créer nouvelle fn **sans filtre actif**. Justification : un export souveraineté inclut les taux historiques pour permettre reconstruction calculs TVA passés (Pass 1 BH-CRITICAL-03 + ECH-HIGH-01).
+    - [ ] T3.2.9 `repositories::reconciliation_rules::list_all_by_company(pool, company_id) -> Result<Vec<ReconciliationRule>, DbError>` — la fn existante `find_active_for_company` filtre `active = TRUE` ; créer nouvelle fn **sans filtre actif** (règles soft-deleted incluses pour audit historique). Pattern `SELECT * WHERE company_id = ? ORDER BY id`.
+    - [ ] T3.2.10 `repositories::bank_profiles::list_all_by_company(pool, company_id) -> Result<Vec<BankProfile>, DbError>` — la fn existante `list_by_company` (`repositories/bank_profiles.rs:117-145`) est paginée (`limit: i64, offset: i64`) ; créer nouvelle fn non-paginée. Pattern `SELECT * WHERE company_id = ? ORDER BY id`.
+    - [ ] T3.2.11 **NE PAS** créer pour `contacts`, `accounts`, `companies`, `fiscal_years`, `bank_accounts`, `company_invoice_settings` — toutes ces fns existent déjà avec les signatures non-paginées correctes (cf. §scope-tables tableau). Pour `accounts` et `contacts`, passer explicitement `include_archived: true` au moment de l'appel (Pass 1 BH-HIGH-02 + ECH-HIGH-02/03).
   - [ ] T3.3 `pub fn build_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, AppError>` — construit ZIP en mémoire :
     ```rust
     use zip::{ZipWriter, write::FileOptions, CompressionMethod};
@@ -235,6 +259,8 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     Ok(cursor.into_inner())
     ```
     **Note pour le dev** : vérifier l'API exacte `zip 2.x` au moment de l'implémentation — la signature `FileOptions::default()` et `unix_permissions` peuvent évoluer entre 2.0 et 2.x. Le test `T9.1(l)` (signature `PK\x03\x04`) capture toute régression API.
+    **Ordre des entrées (Pass 1 ECH-LOW-02)** : `metadata.json` ajouté **en dernier** dans `files: Vec<(String, Vec<u8>)>` passé à `build_zip` (position 16, index 0-based). Cohérent avec lecture humaine : les 16 CSV d'abord puis manifeste de référence. Documenté en commentaire au site de l'appel `build_global_export`.
+    **Note ECH-MEDIUM-04** : l'ordre du `Vec` files (insertion §scope-tables) diverge de l'ordre alphabétique `BTreeMap` de `metadata.tables` — intentionnel, ne pas corriger. Tests doivent utiliser key-lookup (`meta.tables["accounts.csv"]`), pas index.
   - [ ] T3.4 `struct GlobalExportMeta { byte_size: usize, csv_count: usize, duration_ms: u64 }` retournée pour audit + tracing post-handler.
   - [ ] T3.5 **Logging tracing** : `tracing::info_span!("global_export", byte_size = tracing::field::Empty, csv_count = tracing::field::Empty, duration_ms = tracing::field::Empty)` créé par le handler T5, fields populated post-`build_global_export` via `span.record(...)` (cohérent Story 9-2a T5.8 pattern Pass 3 BH3-M1).
 
@@ -248,7 +274,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - `locale = locale_bcp47` (déjà résolu côté handler via mapping `Language → fr-CH/de-CH/it-CH/en-CH`, cohérent Story 9-2a `load_pdf_context`).
     - `fiscal_year_scope = "all"` (string literal v0.1, prévu pour futur `"fy:2026"` v0.2).
     - Sérialisation : `serde_json::to_vec_pretty(&meta).map_err(|e| AppError::GlobalExportFailed(format!("metadata serialize: {e}")))?`.
-  - [ ] T4.4 `pub fn sha256_hex(bytes: &[u8]) -> String` — helper public (utilisé par tests + `build_global_export`) : `hex::encode(sha2::Sha256::digest(bytes))`.
+  - [ ] T4.4 `pub fn sha256_hex(bytes: &[u8]) -> String` — helper public (utilisé par tests + `build_global_export`) : `crate::util::hex_encode(&sha2::Sha256::digest(bytes))` (Pass 1 BH-HIGH-04 — pas de crate `hex` externe, réutilisation pattern local `bank_imports::hex_encode` promu `pub(crate) util::hex_encode` en T5.4).
 
 - [ ] **T5** Créer `crates/kesh-api/src/routes/exports.rs` — handler HTTP (AC: #3, #10, #11, #17, #19, #23, #24)
   - [ ] T5.1 `pub async fn export_global(State(state): State<AppState>, Extension(current_user): Extension<CurrentUser>) -> Result<Response, AppError>` :
@@ -266,6 +292,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - `tx.begin()` + `audit_log::insert_in_tx(action="exports.global", entity_type="export", entity_id=AUDIT_ENTITY_ID_NONE, details_json=...)` + commit.
     - INSERT fail → `warn!` log + retour 200 (NE JAMAIS faire échouer le download).
   - [ ] T5.4 Réutiliser **directement** `routes::reports::build_content_disposition` Story 9-2a — **action** : promouvoir cette fn `pub(crate)` (actuellement privée dans `routes/reports.rs`) ou la déplacer dans `crates/kesh-api/src/util.rs::build_content_disposition`. Tests Story 9-2a `content_disposition_with_locale_tag_includes_language` doivent rester verts post-refactor.
+  - [ ] T5.5 **(Pass 1 §hex-encoding)** Promouvoir `hex_encode(bytes: &[u8]) -> String` de `routes/bank_imports.rs:1512` (private) → `pub(crate)` dans `crates/kesh-api/src/util.rs`. Refactor Story 8-1b : remplacer l'appel interne `hex_encode(...)` par `util::hex_encode(...)`. Tests existants `bank_imports` doivent rester verts. Utilisé par `kesh-api::exports::metadata::sha256_hex` (T4.4).
 
 - [ ] **T6** Étendre `crates/kesh-api/src/errors.rs` — nouveau variant (AC: #17, #18)
   - [ ] T6.1 Ajouter `GlobalExportFailed(String)` au `enum AppError` (Decision §error-variant).
@@ -286,13 +313,15 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
 
 - [ ] **T7** Mount route dans `crates/kesh-api/src/lib.rs` (AC: #3, #10)
   - [ ] T7.1 **(CRITICAL — anti-IDOR Pass 1 BH-H1 Story 9-2a)** Insérer la route DANS `authenticated_routes` (AVANT le `;` de fermeture du let binding), en chaînant `.route("/api/v1/exports/global.zip", get(routes::exports::export_global))` sur la dernière route. Vérifier après merge : `grep -A1 "authenticated_routes = Router" crates/kesh-api/src/lib.rs | head -50` doit montrer la route export AVANT le `;`. Si test E2E auth 401 (T9 AC #29(h)) retourne 200, c'est ce bug.
-  - [ ] T7.2 Ajouter `pub mod exports;` dans le module declarations de `lib.rs` (ou dans `src/exports/mod.rs` selon convention existante).
-  - [ ] T7.3 Ajouter `pub mod exports;` dans `routes/mod.rs`.
+  - [ ] T7.2 **(module métier `kesh-api::exports`)** Ajouter `pub mod exports;` dans `crates/kesh-api/src/lib.rs` (au niveau des autres `pub mod` comme `pub mod routes;`, `pub mod errors;`). Ce module pointe vers `src/exports/mod.rs` (créé en T2.1). Pass 1 BH-MEDIUM-07 — disambig avec T7.3.
+  - [ ] T7.3 **(module routes `kesh-api::routes::exports`)** Ajouter `pub mod exports;` dans `crates/kesh-api/src/routes/mod.rs` (au niveau des autres `pub mod` comme `pub mod reports;`). Ce module pointe vers `src/routes/exports.rs` (créé en T5). T7.2 et T7.3 sont **deux fichiers distincts** (lib.rs ≠ routes/mod.rs) — bien appliquer les deux.
 
 - [ ] **T8** Créer frontend `frontend/src/lib/features/exports/` + page `/export` (AC: #1, #2, #25-#28)
   - [ ] T8.1 Créer `frontend/src/lib/features/exports/exports.api.ts` :
-    - `export async function downloadGlobalExport(): Promise<void>` — appelle `apiClient.getBlob('/api/v1/exports/global.zip')` → blob → déclenche download via `<a download>` éphémère + `URL.createObjectURL` + cleanup `try { appendChild + click } finally { removeChild + revokeObjectURL }` (pattern Story 9-2a M11 `triggerDownload`).
-    - Le filename est imposé par le backend via `Content-Disposition` — frontend ne calcule pas.
+    - `export async function downloadGlobalExport(): Promise<void>` — appelle `apiClient.getBlob('/api/v1/exports/global.zip')` qui retourne `Promise<Response>` (cohérent ground-truth `api-client.ts:304`). Vérifier `response.ok` et lever `ApiError` si HTTP non-2xx (cohérent pattern `request` existant, garantit que `+page.svelte` catch déclenche bien — Pass 1 ECH-MEDIUM-09).
+    - Extraire le filename du header `Content-Disposition` : `const cd = response.headers.get('Content-Disposition'); const filename = parseContentDispositionFilename(cd) ?? 'kesh-export.zip';` — implémenter `parseContentDispositionFilename(header: string | null): string | null` localement dans `exports.api.ts` (parse `filename="..."` ASCII fallback ; ignorer `filename*=UTF-8''...` côté frontend, le browser ne l'expose pas systématiquement). Pass 1 ECH-MEDIUM-02.
+    - Déclencher download via Blob + lien `<a download={filename}>` éphémère + `URL.createObjectURL` + cleanup `try { appendChild + click } finally { removeChild + revokeObjectURL }`. **Action DRY (Pass 1 BH-MEDIUM-02)** : `triggerDownload` est actuellement `function` privée dans `reports.api.ts:237` (non `export`). Soit (a) **dupliquer la fonction localement** dans `exports.api.ts` (~10 lignes, choix Pass 1 minimal), soit (b) refactor : promouvoir `triggerDownload` → `export function triggerDownload(blob, filename)` dans `reports.api.ts` + l'importer ici. **Decision §triggerDownload-reuse** : choix (a) duplication pour cette story (refactor (b) hors scope minimal — si > 2 features futures dupliquent, story Epic 15 v0.2 d'extraction vers `lib/shared/utils/download.ts`).
+    - Le filename est imposé par le backend via `Content-Disposition` — frontend ne le calcule pas, juste l'extrait du header.
   - [ ] T8.2 Créer `frontend/src/routes/(app)/export/+page.svelte` :
     - Title : `i18nMsg('export-global-title', 'Export global')`.
     - Description : `i18nMsg('export-global-description', 'Exportez toutes vos données comptables au format CSV pour migration ou archivage.')` — mention RGPD / souveraineté.
@@ -314,6 +343,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
         exporting = false;
       }
       ```
+    - **`formatError(err: unknown): string`** : la fn est actuellement locale à `reports/+page.svelte:75` (non `export`ée). **Action Pass 1 BH-MEDIUM-03 + ECH-LOW-04** : dupliquer la fn localement dans `export/+page.svelte` (copie 5 lignes identiques). Si > 2 pages futures dupliquent : story Epic 15 v0.2 d'extraction vers `lib/shared/utils/error-format.ts`.
     - Zone alerte `errorMsg` (cohérent pattern `+page.svelte` Story 9-2a).
   - [ ] T8.3 Créer `frontend/src/routes/(app)/export/+page.ts` :
     - `export const ssr = false;` (cohérent reports page).
@@ -361,9 +391,9 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - `error-global-export-failed = L'export global n'a pas pu être généré. Si le problème persiste, contactez le support.`
     - `export-global-content-includes = L'export contient : plan comptable, écritures, contacts, produits, factures, comptes bancaires, transactions, règles de réconciliation, et un manifeste metadata.json avec hash SHA-256 de chaque fichier pour vérification d'intégrité.`
     - `export-global-content-excludes = Ne contient pas : utilisateurs (PII + mots de passe), tokens de session, journal d'audit interne, état d'onboarding (raisons de sécurité et technicité).`
-    - `export-global-souverainete-note = Vos données vous appartiennent. Kesh ne fait aucune copie de cet export sur ses serveurs.`
+    - `export-global-souverainete-note = Vos données vous appartiennent. Kesh ne fait aucune copie de cet export sur ses serveurs.` (Pass 1 BH-LOW-04 : convention ASCII-only pour i18n keys — `souverainete` SANS accent, déjà conforme ; vérifier en T11.3 que `lint-i18n-ownership` ne flag pas cette clé)
   - [ ] T11.2 Idem pour `de-CH`, `it-CH`, `en-CH` (traductions de base, validation native v0.2 — L5 héritée). EN ex : `Global Export of your data`, `Launch export`, etc. DE/IT équivalents.
-  - [ ] T11.3 `npm run lint-i18n-ownership` PASS — toutes les clés `export-global-*` + `nav-export-global` + `error-global-export-failed` appartiennent à `lib/features/exports/` ou `routes/(app)/export/`. Vérifier le manifest `lib/i18n/key-ownership.json` (ou équivalent existant) — ajouter la nouvelle feature `exports`.
+  - [ ] T11.3 `npm run lint-i18n-ownership` PASS — toutes les clés `export-global-*` + `error-global-export-failed` appartiennent à `lib/features/exports/`. Vérifier le manifest `lib/i18n/key-ownership.json` (ou équivalent existant) — ajouter la nouvelle feature `exports`. **Note Pass 1 BH-MEDIUM-04 + ECH-HIGH-09** : la clé `nav-export-global` est passée via variable `i18nMsg(item.i18nKey, item.fallback)` dans `+layout.svelte` (hors `lib/features/`). La regex du linter (`i18nMsg\s*\(\s*['"\`]...`) ne capture **pas** les appels avec variable dynamique → la clé `nav-*` ne sera pas scannée par le linter (cohérent comportement des `nav-home`, `nav-contacts` existantes). Vérifier post-implementation que le linter passe vert ; si le pattern change (ex. future refactor du layout vers strings littérales), ajouter `nav` aux `GLOBAL_NAMESPACES` du linter (`frontend/scripts/lint-i18n-ownership.js`).
   - [ ] T11.4 Validation manuelle 12 clés présentes dans les 4 locales (cohérent Story 9-2a T8.4).
 
 - [ ] **T12** Tests Vitest frontend `frontend/src/lib/features/exports/exports.api.test.ts` (AC: #31)
@@ -478,25 +508,26 @@ Cohérent avec Story 9-2a Pass 1 code-review M3 (arm `"FR" =>` explicite + warn 
 
 #### Decision §scope-tables — 16 tables incluses, 5 exclues
 
-**Tables INCLUSES (16)** :
-| # | Table | Source repository | Justification |
+**Tables INCLUSES (16)** — signatures ground-truth grep `crates/kesh-db/src/repositories/*.rs` 2026-05-16 (Pass 1 BH-CRITICAL-01..05) :
+
+| # | Table | Source repository (signature exacte) | Justification |
 |---|---|---|---|
-| 1 | `company.csv` | `repositories::companies::find_by_id` | Référentiel principal — 1 row |
-| 2 | `fiscal_years.csv` | `repositories::fiscal_years::list_by_company` | Référentiel comptable |
-| 3 | `accounts.csv` | `repositories::accounts::list_by_company` | Plan comptable user-customisé |
-| 4 | `journal_entries.csv` | `repositories::journal_entries::list_all_by_company` (nouvelle fn T3.2) | Cœur comptable |
-| 5 | `journal_entry_lines.csv` | `repositories::journal_entries::list_all_lines_by_company` (nouvelle fn T3.2) | Détail écritures |
-| 6 | `contacts.csv` | `repositories::contacts::list_all_by_company` (nouvelle fn T3.2) | Carnet d'adresses |
-| 7 | `products.csv` | `repositories::products::list_all_by_company` (nouvelle fn T3.2) | Catalogue |
-| 8 | `invoices.csv` | `repositories::invoices::list_all_by_company` (nouvelle fn T3.2) | Facturation |
-| 9 | `invoice_lines.csv` | via `list_invoices_with_lines` ou fn dédiée | Détail factures |
-| 10 | `bank_accounts.csv` | `repositories::bank_accounts::list_by_company` | Comptes bancaires |
-| 11 | `bank_imports.csv` | `repositories::bank_imports::list_all_by_company` (nouvelle fn T3.2) | Historique imports |
-| 12 | `bank_transactions.csv` | `repositories::bank_transactions::list_all_by_company` (nouvelle fn T3.2) | Transactions importées |
-| 13 | `vat_rates.csv` | `repositories::vat_rates::list_by_company` | Taux TVA configurés |
-| 14 | `company_invoice_settings.csv` | `repositories::company_invoice_settings::find_by_company` | Config facturation (1 row) |
-| 15 | `reconciliation_rules.csv` | `repositories::reconciliation_rules::list_by_company` (Story 8-5b) | Règles user-config |
-| 16 | `bank_profiles.csv` | `repositories::bank_profiles::list_by_company` (Story 8-2) | Profils import |
+| 1 | `company.csv` | `repositories::companies::find_by_id(pool, company_id) -> Result<Option<Company>, DbError>` (déjà existant) | Référentiel principal — 1 row |
+| 2 | `fiscal_years.csv` | `repositories::fiscal_years::list_by_company(pool, company_id) -> Result<Vec<FiscalYear>, DbError>` (déjà existant, **borné `MAX_LIST_LIMIT=1000`** — cf. `repositories/mod.rs::MAX_LIST_LIMIT`, doc L14 si dépassé) | Référentiel comptable |
+| 3 | `accounts.csv` | `repositories::accounts::list_by_company(pool, company_id, /*include_archived=*/true)` (déjà existant — verrouiller `true` pour souveraineté complète) | Plan comptable complet (archives incluses) |
+| 4 | `journal_entries.csv` | `repositories::journal_entries::list_all_by_company(pool, company_id) -> Result<Vec<JournalEntry>, DbError>` **(nouvelle fn T3.2)** — pattern `SELECT id, company_id, fiscal_year_id, entry_date, ... FROM journal_entries WHERE company_id = ? ORDER BY entry_date, id` | Cœur comptable |
+| 5 | `journal_entry_lines.csv` | `repositories::journal_entries::list_all_lines_by_company(pool, company_id) -> Result<Vec<JournalEntryLine>, DbError>` **(nouvelle fn T3.2)** — `JournalEntryLine` n'a PAS de `company_id` direct ; pattern obligatoire `SELECT jel.* FROM journal_entry_lines jel JOIN journal_entries je ON jel.entry_id = je.id WHERE je.company_id = ? ORDER BY jel.entry_id, jel.line_order` (single-query anti-N+1) | Détail écritures |
+| 6 | `contacts.csv` | `repositories::contacts::list_by_company(pool, company_id, /*include_archived=*/true)` (déjà existant, non-paginé — verrouiller `true` pour souveraineté) | Carnet d'adresses complet (archives incluses) |
+| 7 | `products.csv` | `repositories::products::list_all_by_company(pool, company_id) -> Result<Vec<Product>, DbError>` **(nouvelle fn T3.2)** — pattern `SELECT * WHERE company_id = ?` **sans filtre `active`** (produits archivés inclus pour cohérence référentielle factures) | Catalogue complet (archives incluses) |
+| 8 | `invoices.csv` | `repositories::invoices::list_all_by_company(pool, company_id) -> Result<Vec<Invoice>, DbError>` **(nouvelle fn T3.2)** — pattern `SELECT * WHERE company_id = ?` **sans filtre `status`** (drafts + validated + paid inclus). **NE PAS** réutiliser `list_for_export` existant qui filtre `status = 'validated'`. | Facturation complète (drafts + validated + paid) |
+| 9 | `invoice_lines.csv` | `repositories::invoices::list_all_lines_by_company(pool, company_id) -> Result<Vec<InvoiceLine>, DbError>` **(nouvelle fn T3.2)** — `InvoiceLine` n'a PAS de `company_id` direct ; pattern obligatoire `SELECT il.* FROM invoice_lines il JOIN invoices i ON il.invoice_id = i.id WHERE i.company_id = ? ORDER BY il.invoice_id, il.position` (single-query anti-N+1) | Détail factures |
+| 10 | `bank_accounts.csv` | `repositories::bank_accounts::list_by_company(pool, company_id) -> Result<Vec<BankAccount>, DbError>` (déjà existant, non-paginé) | Comptes bancaires |
+| 11 | `bank_imports.csv` | `repositories::bank_imports::list_all_by_company(pool, company_id) -> Result<Vec<BankImport>, DbError>` **(nouvelle fn T3.2)** — la fn existante `find_by_company_id` est paginée + filtrée `bank_account_id` ; créer nouvelle fn **sans** `limit/offset/bank_account_id` | Historique imports |
+| 12 | `bank_transactions.csv` | `repositories::bank_transactions::list_all_by_company(pool, company_id) -> Result<Vec<BankTransaction>, DbError>` **(nouvelle fn T3.2)** — pattern `SELECT * WHERE company_id = ?` | Transactions importées |
+| 13 | `vat_rates.csv` | `repositories::vat_rates::list_all_by_company(pool, company_id) -> Result<Vec<VatRate>, DbError>` **(nouvelle fn T3.2)** — la fn existante `list_active_for_company` filtre `active = TRUE` ; créer nouvelle fn **sans filtre actif** pour inclure taux historiques (sinon perte conformité audit TVA passée) | Taux TVA actifs + historiques (souveraineté complète) |
+| 14 | `company_invoice_settings.csv` | `repositories::company_invoice_settings::get_or_create_default(pool, company_id) -> Result<CompanyInvoiceSettings, DbError>` (déjà existant — lazy-create write-side-effect ACCEPTABLE : si row absente, valeurs par défaut injectées avant export) | Config facturation (1 row, lazy-create idempotent) |
+| 15 | `reconciliation_rules.csv` | `repositories::reconciliation_rules::list_all_by_company(pool, company_id) -> Result<Vec<ReconciliationRule>, DbError>` **(nouvelle fn T3.2)** — la fn existante `find_active_for_company` filtre `active = TRUE` ; créer nouvelle fn **sans filtre actif** (règles soft-deleted incluses) | Règles user-config actives + soft-deleted |
+| 16 | `bank_profiles.csv` | `repositories::bank_profiles::list_all_by_company(pool, company_id) -> Result<Vec<BankProfile>, DbError>` **(nouvelle fn T3.2)** — la fn existante `list_by_company` est paginée (`limit: i64, offset: i64`) ; créer nouvelle fn non-paginée | Profils import |
 
 **Tables EXCLUES (5)** — détaillé AC #9 :
 - `users` (PII + Argon2 hashes — sécurité critique)
@@ -505,7 +536,13 @@ Cohérent avec Story 9-2a Pass 1 code-review M3 (arm `"FR" =>` explicite + warn 
 - `onboarding_state` (technique singleton)
 - `invoice_number_sequences` (technique counter state)
 
-Note pour le dev : si certaines fn `list_all_by_company` n'existent pas encore (cf. T3.2 sub-task — 5 nouveaux repos à étendre), elles doivent être créées en respectant le pattern `delete_all_by_company` `accounts.rs:497` (signature `pool, company_id → Result<Vec<Entity>, DbError>`).
+Note pour le dev (Pass 1) : **10 nouvelles fns `list_all_by_company` à créer** dans 8 repos (T3.2.1..T3.2.10) — cf. liste exhaustive T3.2. Pattern strict `delete_all_by_company` `accounts.rs:497` (`pool, company_id → Result<Vec<Entity>, DbError>`). Pour `journal_entry_lines` et `invoice_lines` : single-query JOIN obligatoire (entités sans `company_id` direct, anti-N+1). Pour `vat_rates`, `reconciliation_rules`, `products` : sans filtre `active` (souveraineté complète, archives incluses).
+
+**Note empty company** (Pass 1 ECH-MEDIUM-08) : pour une company sans données, les 14 CSV métier ont `rowCount=0` (header-only). Deux exceptions :
+- `company.csv` : `rowCount=1` (la company elle-même, toujours présente).
+- `company_invoice_settings.csv` : `rowCount=1` (lazy-create via `get_or_create_default` injecte une row avec valeurs par défaut).
+
+Tests AC #29(f) doivent prendre en compte ces deux exceptions dans les assertions.
 
 ### Architecture compliance (architecture.md §17 + §11)
 
@@ -519,10 +556,10 @@ Note pour le dev : si certaines fn `list_all_by_company` n'existent pas encore (
 
 | Item | Version | Source | Justification |
 |---|---|---|---|
-| `zip` | 2.x (latest stable, vérifier `cargo search zip` au dev) | Nouvelle dep `kesh-api` | Decision §zip-library, sync API mature |
-| `sha2` | 0.10 | Nouvelle dep `kesh-api` (ou déjà workspace via Argon2) | RustCrypto standard pour SHA-256 |
-| `hex` | 0.4 | Nouvelle dep `kesh-api` (ou déjà workspace) | Encoder hex pour SHA-256 64-char string |
-| `csv` | 1.3 | Déjà dans `kesh-report` (Story 9-2a) | Réutilisé via re-import dans `kesh-api` Cargo.toml |
+| `zip` | 2.x (latest stable, vérifier `cargo search zip` au dev) | **Nouvelle dep** `kesh-api` (seule nouvelle dep, Pass 1 BH-LOW-01 confirmé) | Decision §zip-library, sync API mature |
+| `sha2` | 0.10 | **Déjà** dans `kesh-api/Cargo.toml` (héritée Story 8-1b ligne 41) — aucun ajout | RustCrypto standard pour SHA-256 |
+| `hex` | — | **NE PAS ajouter** (Decision §hex-encoding Pass 1 BH-HIGH-04) | Réutiliser `bank_imports::hex_encode` promu `pub(crate) util::hex_encode` (~10 lignes pattern local) |
+| `csv` | 1.3 | **Déjà** dans `kesh-api/Cargo.toml` (héritée Story 9-2a ligne 38) — aucun ajout | Réutilisé par `kesh-api::exports::csv_tables` |
 | `serde_json` | déjà workspace | Métadata serde | Aucun ajout |
 | `chrono` | déjà workspace | `Utc::now().to_rfc3339_opts(Secs, true)` | Aucun ajout |
 
@@ -544,17 +581,21 @@ Note pour le dev : si certaines fn `list_all_by_company` n'existent pas encore (
 
 **Fichiers UPDATE (existants, ne PAS recréer)** :
 
-- `crates/kesh-api/Cargo.toml` — ajout `zip 2.x` + `sha2 0.10` + `hex 0.4` (sauf si déjà workspace).
+- `crates/kesh-api/Cargo.toml` — ajout **uniquement `zip = "2"`** (Pass 1 : `sha2` + `csv` déjà présents, `hex` non requis cf. §hex-encoding).
 - `crates/kesh-api/src/lib.rs` — ajout `pub mod exports;` (module métier) + 1 nouvelle route `.route("/api/v1/exports/global.zip", get(routes::exports::export_global))` DANS `authenticated_routes` AVANT le `;`. **Anti-IDOR T7.1 critique.**
 - `crates/kesh-api/src/routes/mod.rs` — ajout `pub mod exports;`.
 - `crates/kesh-api/src/errors.rs` — ajout variant `AppError::GlobalExportFailed(String)` + bras `IntoResponse` 500 + i18n key.
 - `crates/kesh-api/src/routes/reports.rs` — refactor : `slugify` privé → `pub(crate)` dans `util.rs` (importé par les 2 routes) ; `build_content_disposition` privé → `pub(crate)` ; `map_language_to_bcp47` extrait de `load_pdf_context` → `pub(crate) util::map_language_to_bcp47`. **Préserver** : signatures publiques des 4 handlers export + `emit_report_export_audit` + tests unit existants 13/13 doivent rester verts.
-- `crates/kesh-db/src/repositories/contacts.rs` — ajout `pub async fn list_all_by_company(pool, company_id) -> Result<Vec<Contact>, DbError>` (pas de pagination).
-- `crates/kesh-db/src/repositories/products.rs` — idem `list_all_by_company`.
-- `crates/kesh-db/src/repositories/invoices.rs` — idem `list_all_by_company` + helper `list_all_lines_by_company` ou méthode alternative pour récupérer toutes les `invoice_lines` d'une company en un coup.
-- `crates/kesh-db/src/repositories/journal_entries.rs` — idem `list_all_by_company` + `list_all_lines_by_company`.
-- `crates/kesh-db/src/repositories/bank_imports.rs` — idem `list_all_by_company`.
-- `crates/kesh-db/src/repositories/bank_transactions.rs` — idem `list_all_by_company`.
+- `crates/kesh-api/src/routes/bank_imports.rs` — refactor : `hex_encode` local (`bank_imports.rs:1512`) → `pub(crate) util::hex_encode` (Pass 1 §hex-encoding). **Préserver** : tests existants `bank_imports` doivent rester verts post-refactor.
+- `crates/kesh-db/src/repositories/journal_entries.rs` — ajout `list_all_by_company` + `list_all_lines_by_company` (JOIN obligatoire entries pour scoping `company_id`).
+- `crates/kesh-db/src/repositories/products.rs` — ajout `list_all_by_company` (sans filtre `active`).
+- `crates/kesh-db/src/repositories/invoices.rs` — ajout `list_all_by_company` (sans filtre `status`) + `list_all_lines_by_company` (JOIN obligatoire invoices pour scoping `company_id`).
+- `crates/kesh-db/src/repositories/bank_imports.rs` — ajout `list_all_by_company` (sans filtre `bank_account_id`, sans pagination).
+- `crates/kesh-db/src/repositories/bank_transactions.rs` — ajout `list_all_by_company`.
+- `crates/kesh-db/src/repositories/vat_rates.rs` — ajout `list_all_by_company` (sans filtre `active` — souveraineté complète).
+- `crates/kesh-db/src/repositories/reconciliation_rules.rs` — ajout `list_all_by_company` (sans filtre `active` — règles soft-deleted incluses).
+- `crates/kesh-db/src/repositories/bank_profiles.rs` — ajout `list_all_by_company` (non-paginé).
+- **NE PAS** modifier `contacts.rs` ni `accounts.rs` (Pass 1 : `list_by_company` non-paginé déjà existant, appel direct avec `include_archived: true`).
 - 4 fichiers `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — ajout 12 clés (`nav-export-global` + `export-global-*` × 10 + `error-global-export-failed`).
 - `frontend/src/routes/(app)/+layout.svelte` — ajout entrée `nav-export-global` dans `navGroups` (~ligne 43) AVANT `nav-settings`. **Préserver** : `navTestid` helper + 3 groupes existants.
 - Manifest i18n ownership (`lib/i18n/key-ownership.json` ou équivalent — vérifier au dev) — ajout feature `exports` avec préfixes `export-global-*` + `nav-export-global` + `error-global-export-failed`.
@@ -618,6 +659,12 @@ Note pour le dev : si certaines fn `list_all_by_company` n'existent pas encore (
 | L8 | Pas de chiffrement du ZIP (mot de passe AES-256 ou similaire) | Hors scope sécurité v0.1 — si l'utilisateur partage le ZIP, c'est sa responsabilité (TLS protège le transit). Le ZIP contient des données financières sensibles | v0.2 si feedback utilisateur — option `?encrypted=true&password=...` |
 | L9 | Tables EXCLUES (`users`, `refresh_tokens`, `audit_log`, `onboarding_state`, `invoice_number_sequences`) — pas négociable v0.1, documenté AC #9 | Sécurité (PII/secrets) + technicité (state interne non portable) | v0.2 si compliance externe demande `audit_log` (story dédiée Epic 14) |
 | L10 | Export entièrement synchrone (pas de queue/background job avec progression UI) | Acceptable < 10s dataset référence ; au-delà = boucle de chargement bloquante côté UI | v0.2 si dataset extrême avec UX progress bar / WebSocket |
+| L11 | **(Pass 1 AA-MEDIUM-06)** Cible `< 30s` sur dataset large (5000+ écritures) = **aspirationnelle**, pas un AC binaire. AC #21 reclassé en limitation (pas de test obligatoire CI) | Pattern non-streaming + RAM bounded ; mesure manuelle pré-PR si dataset extrême signalé | Combine v0.2 avec L4 streaming |
+| L12 | **(Pass 1 ECH-MEDIUM-05)** `metadata.json` n'a pas de SHA-256 de lui-même dans le manifeste (bootstrap problem auto-référence). Si `metadata.json` est altéré, les hashes CSV deviennent non-vérifiables | L'intégrité du manifeste repose sur le transport TLS, pas un mécanisme out-of-band | v0.2 : signer le ZIP entier (e.g. detached `.sig` ou `metadata.json.sig`) |
+| L13 | **(Pass 1 ECH-MEDIUM-06)** Date du filename `{YYYY-MM-DD}` calculée en **UTC** côté serveur (`chrono::Utc::now()`). Peut différer d'un jour de la date locale de l'utilisateur en soirée (Europe/Zurich UTC+1/+2) | Cohérence ISO 8601 stricte côté backend ; alternative (date locale tz Zurich) ajouterait complexité timezone | v0.2 si feedback utilisateur — option header `Accept-Timezone` ou param `?tz=Europe/Zurich` |
+| L14 | **(Pass 1 BH-MEDIUM-06)** `fiscal_years::list_by_company` borne implicite `MAX_LIST_LIMIT=1000` (cf. `repositories/mod.rs::MAX_LIST_LIMIT`) — si une company a > 1000 exercices, troncature silencieuse | Cas pathologique extrême (1000 ans d'exercices) — non bloquant v0.1 | v0.2 si signalé → fn dédiée `list_all_fiscal_years_by_company` sans LIMIT |
+| L15 | **(Pass 1 ECH-MEDIUM-10)** RAM peak côté serveur non bornée explicitement : 16 buffers CSV + ZIP final + transient compression simultanément. Estimation 200-500 MB possible sur 5000+ écritures + requêtes concurrentes. Pas de bornage défensif type `if buf.len() > 200 MB { return Err(...) }` v0.1 | Cohérent L3 (Vec<u8> non-streaming) ; OOM killer pourrait terminer si dataset extrême | v0.2 : bornage défensif `AppError::GlobalExportFailed("dataset too large for in-memory export")` + transition streaming L4 |
+| L16 | **(Pass 1 ECH-MEDIUM-09 + dérive Q7)** Si `Language` decode DB renvoie une valeur inconnue (`"XX"` corrompu), `AppError::Database` 500 retourné au lieu d'un fallback `fr-CH` gracieux | Comportement actuel `Language::Decode` lève dans sqlx — modifier nécessiterait variant `Unknown(String)` dans `kesh-db` (hors scope) | v0.2 story Epic 15 : enrichir `Language` enum |
 
 ### Risques & questions ouvertes — pour spec validate
 
@@ -625,16 +672,41 @@ Les éléments ci-dessous restent à clarifier ou à décider lors de `bmad-crea
 
 | # | Risque / question | À traiter |
 |---|---|---|
-| Q1 | **Exact 16 tables figées** : la liste §scope-tables est ground-truth based mais le dev pourrait découvrir une table omise (ex. `invoice_attachments` future ou table jointure secondaire). Si oui, l'ajouter à la liste + bumper la count = 17 + ajuster AC #5 + tests E2E (AC #29(c)). | Spec validate Pass 1 + dev-story T2.2 grep `entities/` |
-| Q2 | **Repository `list_all_by_company` à ajouter** : 5+ nouvelles fn dans 5+ repos (T3.2). Pattern strict `pool, company_id → Result<Vec<Entity>, DbError>` (cohérent `delete_all_by_company` `accounts.rs:497`). Faut-il un trait commun `ListAllByCompany` ? **Recommandation** : non, duplication acceptable v0.1 (5 fn `pub async`, ~10 lignes chacune). | Dev-story T3.2 |
-| Q3 | **Refactor Story 9-2a privés → `pub(crate) util`** (T5.1/T5.2/T5.4) : promouvoir `slugify`, `build_content_disposition`, `map_language_to_bcp47` doit-il faire l'objet d'un commit séparé avant T2 ? **Recommandation** : commit dédié `refactor(9-2b): promote 9-2a helpers to pub(crate) util` en première étape, puis T2+ s'appuie dessus. Cohérent règle CLAUDE.md « commit par étape BMAD ». | Dev-story T5 |
+| Q1 | **(RÉSOLUE Pass 1)** Liste 16 tables figée et ground-truth grep validée (Pass 1 BH-CRITICAL-01..05 + ECH-HIGH-01..08). Aucune table additionnelle découverte. Si dev-story découvre table omise (ex. `invoice_attachments`) → créer CR GitHub Issue avant modification spec. | RÉSOLUE — pas d'action |
+| Q2 | **Repository `list_all_by_company` à ajouter** : **10 nouvelles fns** dans 8 repos (T3.2.1..T3.2.10 — détail post-Pass 1). Pattern strict `pool, company_id → Result<Vec<Entity>, DbError>` (cohérent `delete_all_by_company` `accounts.rs:497`). Faut-il un trait commun `ListAllByCompany` ? **Recommandation** : non, duplication acceptable v0.1 (10 fns `pub async`, ~10 lignes chacune). | Dev-story T3.2 |
+| Q3 | **Refactor Story 9-2a privés → `pub(crate) util`** (T5.1/T5.2/T5.4) : promouvoir `slugify`, `build_content_disposition`, `map_language_to_bcp47`, `hex_encode` doit-il faire l'objet d'un commit séparé avant T2 ? **Recommandation** : commit dédié `refactor(9-2b): promote 9-2a + 8-1b helpers to pub(crate) util` en première étape, puis T2+ s'appuie dessus. Cohérent règle CLAUDE.md « commit par étape BMAD ». | Dev-story T5 |
 | Q4 | **`zip 2.x` exact API stability** : la version 2.0 a renommé `FileOptions` paramètres vs 1.x. Vérifier au dev exact via `cargo doc -p zip --open` ou docs.rs/zip/latest. Test `T9.1(l)` (signature `PK\x03\x04`) capture toute régression. | Dev-story T3.3 |
-| Q5 | **`sha256_hex` perf sur gros CSV** : SHA-256 de 16 buffers `Vec<u8>` cumulés ~5 MB = ~50ms estimé (RustCrypto, 100-200 MB/s sur CPU moderne). Acceptable v0.1. Si > 200ms observé : passer en streaming `Digest::update` chunked. | Dev-story T4.4 |
-| Q6 | **`metadata.json` ordering deterministe** : `BTreeMap` (clé alphabétique) ou `Vec<(String, TableMeta)>` (ordre d'insertion = ordre §scope-tables liste) ? Recommandation : `BTreeMap` (cohérent serde_json + facilite tests byte-stability). | Dev-story T4.1 |
-| Q7 | **Si `accounting_language` est NULL ou non-mapped** (e.g. value DB stale `"XX"`) : fallback `fr-CH` + warn log (cohérent Story 9-2a code-review M3 pattern). Documenter en Completion Notes. | Dev-story T5.1 |
-| Q8 | **Empty company ZIP shape** : si la company a 0 row dans toutes les tables sauf `company.csv` (1 row), le ZIP doit-il quand même contenir les 16 CSV (chacun avec header-only) ? **Recommandation** : OUI (AC #5 + AC #29(f) — 17 entrées toujours). Cohérent Story 9-2a CSV empty pattern Pass 1 ECH-M1. | Dev-story T2.3 (each serializer must write header even for empty input) |
-| Q9 | **Test perf `< 10s` flake en CI sandbox** : si la sandbox CI est lente, marquer `#[ignore]` et exécuter manuellement pré-PR via `cargo test --ignored` (cohérent Story 9-2a AC #31 `pdf_10k_journal_report_size_under_5mb` ignored). | Dev-story T9.2 |
-| Q10 | **Sally (UX designer) input sur menu placement** : nouveau groupe `Souveraineté` ou simplement nouvelle entrée dans groupe `null` final ? Cohérence UX globale Kesh à confirmer. **Recommandation** : ouvrir une discussion brève Sally en dev-story si T8.4 a un doute. Sinon : nouveau groupe top-level `Souveraineté` (ou équivalent) AVANT `Paramètres`. | Dev-story T8.4 ou skill `bmad-agent-ux-designer` |
+| Q5 | **(RÉSOLUE Pass 1 AA-LOW-01)** `sha256_hex` perf : ~50ms estimé acceptable v0.1. Si > 200ms observé en dev-story T4.4 : passer streaming `Digest::update` chunked. Pas de blocker spec validate. | RÉSOLUE — défer dev-story si mesure dépasse |
+| Q6 | **`metadata.json` ordering deterministe** : `BTreeMap` (clé alphabétique) ou `Vec<(String, TableMeta)>` (ordre d'insertion = ordre §scope-tables liste) ? Recommandation : `BTreeMap` (cohérent serde_json + facilite tests byte-stability). **Note Pass 1 ECH-MEDIUM-04** : ordre alphabétique `BTreeMap` diverge de l'ordre d'insertion ZIP (§scope-tables) — intentionnel, ne pas corriger. Documenter en commentaire T4.1. | Dev-story T4.1 — décision **BTreeMap** verrouillée |
+| Q7 | **(RÉSOLUE Pass 1 ECH-MEDIUM-01)** Si `accounting_language` DB est NULL ou non-mapped : le `Language::Decode` actuel lève une erreur sqlx (pas un fallback gracieux côté handler). Accepter comportement `AppError::Database` 500 comme **dette technique documentée** (probabilité quasi-nulle en prod car valeurs contraintes par enum Rust à l'écriture). Modifier `Language::Decode` pour ajouter variant `Unknown(String)` = hors scope 9-2b (story Epic 15 v0.2). | RÉSOLUE — dette documentée Completion Notes |
+| Q8 | **(RÉSOLUE Pass 1)** Empty company ZIP shape : OUI, le ZIP contient les 16 CSV avec header-only pour les tables vides (AC #5 + AC #29(f)). **Précision** : `company.csv` rowCount=1 (la company elle-même) ET `company_invoice_settings.csv` rowCount=1 (lazy-create injecte defaults) — Pass 1 ECH-MEDIUM-08, intégré AC #29(f). Les 14 autres CSV rowCount=0. | RÉSOLUE |
+| Q9 | **Test perf `< 10s` flake en CI sandbox** : si la sandbox CI est lente, marquer `#[ignore]` et exécuter manuellement pré-PR via `cargo test --ignored` (cohérent Story 9-2a AC #31 `pdf_10k_journal_report_size_under_5mb` ignored). Si flake observé → créer KF GitHub Issue avec timing observé (Pass 1 ECH-LOW-01). | Dev-story T9.2 |
+| Q10 | **Sally (UX designer) input sur menu placement** : nouveau groupe `Souveraineté` ou simplement nouvelle entrée dans groupe `null` final ? Cohérence UX globale Kesh à confirmer. **Recommandation** : ouvrir une discussion brève Sally en dev-story si T8.4 a un doute. Sinon : nouveau groupe top-level `Souveraineté` (ou équivalent) AVANT `Paramètres`. **Note Pass 1 AA-LOW-02** : AC #1 légèrement sous-spécifié sur le groupe exact, à défaut → groupe `null` cohérent avec la convention actuelle. | Dev-story T8.4 ou skill `bmad-agent-ux-designer` |
+
+### Definition of Done — critères d'arrêt story (Pass 1 AA-MEDIUM-09)
+
+Gates minimum pour transition `review → done` :
+
+1. **Status** : entrée `sprint-status.yaml` `9-2b-export-global-zip: done` (post-merge squash PR).
+2. **CI verte** sur la branche `story/9-2b-export-global-zip` :
+   - `cargo fmt --all -- --check` ✅
+   - `cargo build --workspace --all-targets` ✅
+   - `cargo clippy --workspace --all-targets -- -D warnings` ✅
+   - `cargo test --workspace` ✅ (100% nouveaux tests + 0 régression Story 9-1 + Story 9-2a + KF-002 multi-tenant audits)
+3. **Frontend clean** (depuis `frontend/`) :
+   - `npm run check` ✅
+   - `npm run lint-i18n-ownership` ✅ (12 nouvelles clés appartiennent à `lib/features/exports/`)
+   - `npm run test:unit` ✅ (≥ 3 Vitest exports)
+   - `npm run build` ✅
+4. **Playwright vert** (manuel pré-push, MariaDB + browsers requis) : `cd frontend && npm run test:e2e -- export-global.spec.ts` ✅
+5. **0 régression** : suites E2E adjacentes intactes — `reports_e2e.rs` (Story 9-1, 28 tests) + `reports_export_e2e.rs` (Story 9-2a, 20 tests).
+6. **AC1-AC32 tous verts** sauf dérogations documentées :
+   - AC #19 (403 pathologique) : si test (p) impossible à provoquer via middleware courant → noter en Completion Notes comme limitation L documentée + guard contre régression middleware.
+   - AC #21 : reclassé L11 (aspirationnel, pas obligatoire CI).
+7. **Aucune nouvelle KF > LOW** introduite et non documentée. Si une régression flake émerge → créer GitHub Issue (label `known-failure`) avant merge.
+8. **Change Log** story file mis à jour avec entrées Pass 1..N (validate) + Pass 1..M (code-review), modèles LLM utilisés, total patches appliqués, trend numérique.
+9. **README.md `Feuille de route`** vérifié — Epic 9 toujours en cours (Story 9-2c hors scope ; pas de toggle si pas de dernière story epic).
+10. **Memory mise à jour** : entrée mémoire `project_9_2b_dev_progress.md` (ou équivalent) créée avec hash squash + résumé cycle.
 
 ### Project Structure Notes
 
@@ -668,9 +740,11 @@ Modules touchés par 9-2b :
 - **Frontend minimal** : 1 page avec 1 bouton, ~150 lignes Svelte.
 - **i18n large mais mécanique** : 12 clés × 4 locales = 48 entries, traduction de strings simples.
 
-**Décision** : **garder Story 9-2b unique**, ne pas splitter. Si `bmad-create-story validate 9-2b` boucle au-delà de **4 passes adversariales** (critère CLAUDE.md profondeur d'incertitude) : reconsidérer split en 9-2b-zero (refactor `pub(crate) util` Story 9-2a) + 9-2b-core (endpoint + serializers + page).
+**Décision** : **garder Story 9-2b unique**, ne pas splitter. Si `bmad-create-story validate 9-2b` boucle au-delà de **4 passes adversariales** (critère CLAUDE.md profondeur d'incertitude) : reconsidérer split en 9-2b-zero (refactor `pub(crate) util` Story 9-2a + 8-1b) + 9-2b-core (endpoint + serializers + page).
 
 **Dérogation règle de splitting non requise.**
+
+**Note Pass 1** : 55 findings bruts (5 CRITICAL + 18 HIGH + 24 MEDIUM + 10 LOW) — substantiel mais convergeable (CRITICAL = data layer ground-truth corrections, HIGH = AC test gaps + JOIN patterns, MEDIUM = test value assertions + docs/limitations). Pas de signal de split nécessaire — pattern reste simple, scope inchangé.
 
 ### References
 
@@ -711,3 +785,10 @@ Modules touchés par 9-2b :
 ## Change Log
 
 - **2026-05-15** (Opus 4.7 create-story) — Spec initiale créée sur branche `story/9-2b-export-global-zip`. Path-dep Story 9-2a `done` (`b891bff` mergée). 32 ACs (Menu+UX 2, Endpoint+ZIP 3, CSV 2, Multi-tenant 4, Metadata 5, Validation 3, Performance 3, Audit 2, Frontend 4, Tests 4). 14 tasks T1-T14 avec sub-tasks. 8 décisions verrouillées (§csv-table-serializer-location, §zip-library, §error-variant, §audit-action, §filename, §performance, §menu-placement, §version-source, §locale-source, §scope-tables). 10 limitations v0.1 (L1-L10). 10 questions ouvertes Q1-Q10 pour spec validate. Splitting check : ~10 modules touchés borderline > 5 threshold CLAUDE.md mais justifié non-split (pattern simple + réutilisation massive 9-2a). Status `backlog → ready-for-dev`. Cycle CLAUDE.md prochaine étape : `bmad-create-story validate 9-2b` Pass 1 Sonnet 4.6 (briser biais Opus auteur, ground-truth grep aggressif).
+
+- **2026-05-16** (Sonnet 4.6 spec validate Pass 1) — **55 findings bruts** détectés (5 CRITICAL + 18 HIGH + 24 MEDIUM + 10 LOW) via 3 reviewers parallèles fresh-context (Blind Hunter + Edge Case Hunter + Acceptance Auditor). Modèles parent Opus 4.7 (orchestrateur) + Sonnet 4.6 ×3 reviewers. **~27 patches > LOW appliqués post-dédup** :
+  - **5 CRITICAL** (signatures DB ground-truth invalides §scope-tables) : §scope-tables tableau réécrit avec signatures exactes (BH-C1..C5 + ECH-H1/H4/H5/H6/H7/H8). T3.2 restructuré en 11 sous-tâches T3.2.1..T3.2.11 (10 nouvelles fns `list_all_by_company` dans 8 repos, JOIN SQL prescrit pour `journal_entry_lines` + `invoice_lines`, sans filtre `active` pour `vat_rates`/`reconciliation_rules`/`products`, sans filtre `status` pour `invoices`).
+  - **10 HIGH** : `include_archived=true` verrouillé accounts/contacts (T2.3.1) ; `hex` crate **NON-AJOUTÉE** + Decision §hex-encoding réutilise pattern `bank_imports::hex_encode` promu `util::hex_encode` (T1.3 + T4.4 + T5.5) ; T7.2/T7.3 disambig lib.rs vs routes/mod.rs ; T8.1 Content-Disposition parsing explicite + triggerDownload duplication décidée + ApiError sur HTTP non-2xx ; T8.2 formatError local copy ; AC#29 étendu 12→17 tests (m audit_log, n SQL error, o ZIP error, p 403 pathologique, q tables exclues set) ; AC#30 étendu 8→10 tests (i GlobalExportFailed.into_response, j build_zip failure) ; AC#31 étendu 2→3 tests Vitest (c double-click guard) ; AC#32 Playwright étendu avec assertions bouton disabled+enabled.
+  - **~12 MEDIUM appliqués + ~10 reportés en limitations L11..L16** : AC#21 reclassé L11 ; nouvelle section **Definition of Done** (10 gates) ; AC#13/AC#29(d) assertions valeurs exactes (`env!("CARGO_PKG_VERSION")`, `"fr-CH"`, ISO 8601 UTC regex) ; AC#29(b) IDOR multi-CSV (accounts+contacts+bank_transactions) ; AC#29(f) précise rowCount=1 pour `company.csv`/`company_invoice_settings.csv` empty case ; ordre `metadata.json` en dernier dans ZIP (T3.3 ECH-LOW-02) ; L12 metadata.json sans self-SHA bootstrap ; L13 UTC date filename ; L14 fiscal_years borné 1000 ; L15 RAM peak non bornée ; L16 Language::decode no fallback ; Q1/Q5/Q7/Q8 résolues, Q6/Q9/Q10 enrichies ; File structure update list étendue (10 repos UPDATE + bank_imports.rs refactor hex_encode).
+  - **10 LOW reportés** : `sha2`/`csv` déjà dans Cargo.toml (BH-LOW-01 → annotation T1) ; numéros de ligne fragiles (BH-LOW-02 → no patch) ; `nav-export-global` linter regex variable (BH-MEDIUM-04 / ECH-HIGH-09 → annotation T11.3) ; ordre BTreeMap vs ZIP (ECH-MEDIUM-04 → annotation T3.3) ; `to_vec_pretty` justifié (ECH-LOW-5 → no patch).
+  - **Trend Pass 1** : 5 CRITICAL → 0 (tous patchés). 18 HIGH → 0 > LOW restants après patches. 24 MEDIUM → ~10 reportés explicitement en limitations (assumées). **Status post-patches** : 0 finding > LOW non remédié. Cycle CLAUDE.md → **Pass 2 obligatoire** (modèle différent : Haiku 4.5) sur spec patchée fresh-context pour vérifier patches + débusquer régressions introduites par patches Pass 1. Splitting check inchangé (pattern simple maintenu malgré scope élargi des T3.2).
