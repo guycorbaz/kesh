@@ -20,7 +20,7 @@ Crée le **nouveau module métier `kesh-api/src/exports/`** (NON-`routes/`, help
 
 Crée le **nouveau variant `AppError::GlobalExportFailed(String)`** (HTTP 500, i18n key `error-global-export-failed`) — distinct de `AppError::CsvGenerationFailed` (Story 9-2a) car le packaging ZIP peut échouer pour d'autres raisons que la sérialisation CSV per-table.
 
-Ajoute **1 nouvelle entrée menu principal** `Export global` pointant sur `/export` (top-level route — PAS dans `/settings`, AC #1 souveraineté UX) avec **1 nouveau module Svelte `frontend/src/lib/features/exports/`** + **nouvelle page `frontend/src/routes/(app)/export/+page.svelte`**.
+Ajoute **1 nouvelle entrée menu principal** `Export global` pointant sur `/export` (top-level route — PAS dans `/settings`, AC #1 souveraineté UX) avec **1 nouveau module Svelte `frontend/src/lib/features/export/`** + **nouvelle page `frontend/src/routes/(app)/export/+page.svelte`**.
 
 Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9-2a) — `details_json` inclut `byte_size`, `csv_count=16`, `fiscal_year_scope='all'`, `duration_ms`.
 
@@ -118,13 +118,14 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
 ### Audit + observabilité
 
 23. **Given** un export ZIP réussi 200, **When** la réponse est retournée, **Then** une ligne `audit_log` est insérée avec :
+    - `user_id = current_user.user_id` (le user qui a déclenché l'export)
     - `action = 'exports.global'` (distinct de `report.exported` Story 9-2a)
     - `entity_type = 'export'`
     - `entity_id = AUDIT_ENTITY_ID_NONE` (cohérent Story 9-1 — pas d'entité 1:1)
-    - `details_json` incluant `byte_size` (octets du ZIP final), `csv_count = 16`, `fiscal_year_scope = "all"`, `duration_ms` (rendering pur)
+    - `details_json` incluant **`company_id`** (Pass 3 ECH3-CRITICAL-01 — la table `audit_log` n'a pas de colonne `company_id`, donc le multi-tenant audit query doit passer par le JSON path `details_json->>'$.company_id'` ou via FK `user_id → users.company_id`), `byte_size` (octets du ZIP final), `csv_count = 16`, `fiscal_year_scope = "all"`, `duration_ms` (rendering pur)
     - Pattern best-effort : INSERT échec → `warn!` log + retour 200 (NE JAMAIS faire échouer le download — cohérent Story 9-1 ECH-15 et Story 9-2a `emit_report_export_audit`).
 
-24. **Given** export en cours, **When** le monitoring observe les logs structurés, **Then** un span `tracing::info_span!("global_export")` est émis avec attributs `byte_size`, `csv_count`, `duration_ms` via le **pattern `tracing::field::Empty` + `span.record()`** identique Story 9-2a T5.8 (Pass 3 BH3-M1 — `info_span!` évalue les fields à la création).
+24. **Given** export en cours, **When** le monitoring observe les logs structurés, **Then** un span `tracing::info_span!("global_export")` est émis avec attributs `byte_size`, `csv_count`, `duration_ms` via le **pattern `tracing::field::Empty` + `span.record()`** cohérent Story 9-2a T5.8 (`info_span!` évalue les fields à la création). **Pass 3 AA3-MEDIUM-03** : Story 9-2a span avait 2 fields (`byte_size`, `duration_ms`) ; 9-2b ajoute `csv_count = 16` comme field additionnel spécifique à l'export global multi-tables (pattern identique, set de fields étendu).
 
 ### Frontend UI
 
@@ -140,7 +141,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
 
 ### Tests
 
-29. **Given** la story est implémentée, **When** suite de tests exécutée, **Then** **≥ 20 tests E2E HTTP** dans `crates/kesh-api/tests/exports_global_e2e.rs` couvrent :
+29. **Given** la story est implémentée, **When** suite de tests exécutée, **Then** **≥ 21 tests E2E HTTP** dans `crates/kesh-api/tests/exports_global_e2e.rs` couvrent :
     - (a) Success path : seed `with-company` + 3 écritures + 2 contacts + 1 facture → 200 + ZIP signature `PK\x03\x04` + `Content-Type: application/zip`
     - (b) Multi-tenant 2 companies : seed A + seed B → export user A → décompresse ZIP → assert **5 CSV sensibles + 2 CSV JOINés** ne contiennent AUCUN id de B (IDOR test élargi multi-table) :
        - **Direct `company_id` scoping (5 tables)** : `accounts.csv`, `contacts.csv`, `bank_transactions.csv`, `invoices.csv`, `journal_entries.csv` — assert aucun `id`/`account_id`/`invoice_id` etc. ne correspond à B.
@@ -149,29 +150,39 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - (c) ZIP structure : décompresse → assert exactement 17 entrées AVEC `assert_eq!(names_set, expected_names_set)` (set complet : 16 noms CSV listés `{company, fiscal_years, accounts, journal_entries, journal_entry_lines, contacts, products, invoices, invoice_lines, bank_accounts, bank_imports, bank_transactions, vat_rates, company_invoice_settings, reconciliation_rules, bank_profiles}.csv` + `metadata.json`) — couvre simultanément AC #5 ET AC #9 (absence des 5 tables exclues vérifiée par non-appartenance au set, Pass 1 AA-MEDIUM-03)
     - (d) `metadata.json` parsing : extrait du ZIP → désérialise serde → assert shape complète AVEC valeurs exactes : `assert_eq!(meta.kesh_version, env!("CARGO_PKG_VERSION"))` (Pass 1 AA-MEDIUM-04), `assert_eq!(meta.locale, "fr-CH")` pour seed avec `accounting_language = FR` (Pass 1 AA-MEDIUM-05), `meta.export_date` matches regex `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`, `meta.fiscal_year_scope == "all"`, `meta.tables.len() == 16`
     - (e) SHA-256 intégrité : pour chaque CSV dans le ZIP, recalcule sha256 sur bytes décompressés → assert == `metadata.json.tables[name].sha256`
-    - (f) Empty company : seed `with-company-no-fy` (ou équivalent SANS écritures) → 200 + ZIP toujours 17 entrées + chaque CSV contient au moins le header row. **Pattern assertion (Pass 2 ECH2-HIGH-04)** : utiliser map explicite des rowCounts attendus, PAS d'assertion uniforme `== 0` :
+    - (f) Empty company : seed `with-company-no-fy` (preset CI sans écritures ni factures) → 200 + ZIP toujours 17 entrées + chaque CSV contient au moins le header row. **Pattern assertion (Pass 2 ECH2-HIGH-04 + Pass 3 BH3-HIGH-02 + ECH3-HIGH-01 ground-truth)** : utiliser map explicite des rowCounts attendus en respectant les rows seedés par défaut du preset, PAS d'assertion uniforme `== 0` :
        ```rust
+       // Pass 3 ground-truth (crates/kesh-db/src/test_fixtures.rs:202-275) :
+       // seed_accounting_company_no_fy injecte par défaut :
+       //   - 1 company
+       //   - 5 accounts (1000/1100/2000/3000/4000 — plan comptable minimal CI)
+       //   - 1 company_invoice_settings (lazy-create defaults)
+       //   - 4 vat_rates (product-vat-normal/special/reduced/exempt Swiss defaults Story 7-2 KF-003)
+       //   - 0 dans les 12 autres tables
        let expected_row_counts: HashMap<&str, usize> = HashMap::from([
-           ("company.csv", 1),                    // la company elle-même
-           ("company_invoice_settings.csv", 1),   // lazy-create injecte defaults
-           ("accounts.csv", 0), ("contacts.csv", 0), ("products.csv", 0),
+           ("company.csv", 1),                       // la company elle-même
+           ("accounts.csv", 5),                      // 5 accounts seedés par défaut
+           ("company_invoice_settings.csv", 1),      // lazy-create defaults
+           ("vat_rates.csv", 4),                     // 4 vat_rates seedés (Story 7-2)
+           // Tables vides (12) :
+           ("contacts.csv", 0), ("products.csv", 0),
            ("fiscal_years.csv", 0), ("journal_entries.csv", 0), ("journal_entry_lines.csv", 0),
            ("invoices.csv", 0), ("invoice_lines.csv", 0),
            ("bank_accounts.csv", 0), ("bank_imports.csv", 0), ("bank_transactions.csv", 0),
-           ("vat_rates.csv", 0), ("reconciliation_rules.csv", 0), ("bank_profiles.csv", 0),
+           ("reconciliation_rules.csv", 0), ("bank_profiles.csv", 0),
        ]);
        for (name, expected) in expected_row_counts {
            assert_eq!(meta.tables[name].row_count, expected, "rowCount mismatch for {name}");
        }
        ```
-       — Pass 1 ECH-MEDIUM-08 + Pass 2 ECH2-HIGH-04.
-    - (g) Large dataset perf : seed + insertion de ~1000 écritures via SQL bulk → assert durée `< 10s` via `Instant::now()` autour de l'appel HTTP **ET** assert `zip_bytes.len() < 5 * 1024 * 1024` (5 MB cible AC #22 — Pass 1 AA-HIGH-03)
+       Si les seed defaults changent (renommage account, nouveaux vat_rates v0.2) : update la map. Pas d'assertion uniforme = pas de faux-positif.
+    - (g) Large dataset perf (Pass 3 ECH3-HIGH-03 ground-truth) : seed **`with-company`** (PAS `with-company-no-fy` — `journal_entries.fiscal_year_id` NOT NULL requiert un fiscal_year seedé) + insertion de ~1000 écritures via SQL bulk `INSERT INTO journal_entries (company_id, fiscal_year_id, entry_date, description) VALUES (?, ?, ?, ?), ...` référençant le `fiscal_year_id` du preset → assert durée `< 10s` via `Instant::now()` autour de l'appel HTTP **ET** assert `zip_bytes.len() < 5 * 1024 * 1024` (5 MB cible AC #22 — Pass 1 AA-HIGH-03)
     - (h) Auth 401 : pas de Bearer token → 401 (test isolé GET 1 endpoint, middleware identique)
     - (i) RBAC Consultation 200 : seed user role Consultation + login → 200
     - (j) `Content-Disposition: attachment` + RFC 5987 fallback (réutilise helper Story 9-2a `build_content_disposition`)
     - (k) Filename pattern : assert `download.suggestedFilename()` ou header parsing match regex `/^kesh-export-.+-\d{4}-\d{2}-\d{2}\.zip$/`
     - (l) ZIP byte signature `PK\x03\x04` (4 premiers bytes) — test isolé du success path pour faciliter le diagnostic en cas de régression
-    - **(m)** **Audit log post-export 200** (Pass 1 AA-HIGH-04 + ECH-H2 héritage 9-2a) : après export success, `sqlx::query!("SELECT * FROM audit_log WHERE action='exports.global' AND company_id = ? ORDER BY id DESC LIMIT 1", company_id)` → assert 1 row, `entity_type = 'export'`, `entity_id = AUDIT_ENTITY_ID_NONE`, `details_json` JSON contient `byte_size > 0`, `csv_count = 16`, `fiscal_year_scope = "all"`, `duration_ms` numeric.
+    - **(m)** **Audit log post-export 200** (Pass 1 AA-HIGH-04 + ECH-H2 héritage 9-2a + Pass 3 ECH3-CRITICAL-01 ground-truth) : la table `audit_log` n'a **PAS** de colonne `company_id` (cf. `crates/kesh-db/migrations/20260413000001_audit_log.sql:13-26` — colonnes : `id, user_id, action, entity_type, entity_id, details_json, created_at`). Filtrer par `user_id` (chaque company a ses propres users via FK `users.company_id`) : `sqlx::query!("SELECT * FROM audit_log WHERE user_id = ? AND action = 'exports.global' ORDER BY id DESC LIMIT 1", current_user.user_id)` → assert 1 row, `entity_type = 'export'`, `entity_id = AUDIT_ENTITY_ID_NONE`, `details_json` JSON contient `company_id` (cf. AC #23 patch Pass 3), `byte_size > 0`, `csv_count = 16`, `fiscal_year_scope = "all"`, `duration_ms` numeric.
     - **(n)** **Error path 500 SQL** (Pass 1 AA-HIGH-01) : injecter une panne de pool (e.g. pool fermé / DB down sandbox) → `GET /api/v1/exports/global.zip` → assert HTTP 500 + body JSON `code = "GLOBAL_EXPORT_FAILED"`. Implémentation alternative si pool injection complexe : test unit dans T10 sur `build_global_export` avec mock pool poisoné.
     - **(o)** **Error path 500 ZIP packaging** (Pass 1 AA-HIGH-01) : test unit T10 alternatif (cf. AC #30(i) ajouté) — provoquer `build_zip` failure via `ZipWriter` simulé ou fichier avec nom invalide UTF-8 → assert `Err(AppError::GlobalExportFailed(...))`.
     - **(p)** **403 sur `company_id` pathologique** (Pass 1 AA-HIGH-02) : créer un user dont le JWT claim aurait `company_id = 0` (test isolé du middleware si possible — sinon documenter comme limitation L et reclasser AC#19). Si le middleware garantit `company_id > 0` à 100%, ce test devient un guard contre régression future du middleware. À défaut : skip et noter dans Completion Notes.
@@ -179,7 +190,8 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - **(r)** **Inclusion produits archivés** (Pass 2 ECH2-HIGH-06) : seed company + insertion SQL de 2 products (1 actif `active=TRUE`, 1 archivé `active=FALSE`) → export → assert `meta.tables["products.csv"].row_count == 2` (les deux exportés, pas seulement l'actif).
     - **(s)** **Inclusion vat_rates historiques** (Pass 2 ECH2-HIGH-06) : seed + insertion SQL de 2 vat_rates (1 actif `active=TRUE`, 1 historique `active=FALSE`) → export → assert `meta.tables["vat_rates.csv"].row_count == 2`.
     - **(t)** **Inclusion reconciliation_rules soft-deleted** (Pass 2 ECH2-HIGH-06) : seed + insertion SQL de 2 rules (1 active, 1 soft-deleted `active=FALSE`) → export → assert `meta.tables["reconciliation_rules.csv"].row_count == 2`.
-    Total : a..t = **20 tests minimum** (12 originaux + 5 ajoutés Pass 1 + 3 ajoutés Pass 2).
+    - **(u)** **Multi-tenant scoping toutes les fns repo** (Pass 3 ECH3-MEDIUM-05) : seed 2 companies A+B avec 1 row dans chacune des 8 tables couvertes par les **nouvelles** `list_all_by_company` (journal_entries, products, invoices, bank_imports, bank_transactions, vat_rates, reconciliation_rules, bank_profiles) + 2 tables JOINées (journal_entry_lines, invoice_lines via fixtures parent). Pour chaque fn `list_all_by_company` (boucle parameterized), appeler directement le repository avec `company_id = A.id` → assert `result.len() == 1 AND result[0].company_id == A.id` (pour les entités avec `company_id` direct) ou `result[0].entry_id IN {A's entry_ids}` (pour JOINées). Couvre les 9 tables non-testées par AC#29(b) directement (`company`/`fiscal_years`/`bank_accounts` testés implicitement via fixtures setup ; les 6 nouvelles fns testées explicitement).
+    Total : a..u = **21 tests minimum** (12 originaux + 5 ajoutés Pass 1 + 3 ajoutés Pass 2 + 1 ajouté Pass 3).
 
 30. **Given** la story est implémentée, **When** tests unit `kesh-api::exports::*` + `kesh-api::errors` exécutés, **Then** **≥ 10 tests** valident :
     - (a) `serialize_accounts_csv(rows: &[Account], writer) -> Result<()>` produit BOM + header + data rows attendus (1 test fixture 2 rows) **+ assert dates ISO 8601** (`created_at` field formaté correctement)
@@ -193,10 +205,12 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - **(i)** `AppError::GlobalExportFailed("test detail")` → `into_response()` → status 500 + body JSON code `GLOBAL_EXPORT_FAILED` (Pass 1 AA-LOW-03 promu MEDIUM — couvre AC #17 et AC #18). Test dans `crates/kesh-api/src/errors.rs` `#[cfg(test)] mod tests` (cohérent pattern `pdf_generation_failed_into_response_returns_500` Story 9-2a).
     - **(j)** `build_zip` failure path (Pass 1 AA-HIGH-01) : appel `build_zip(&[(invalid_utf8_name_bytes, b"data".to_vec())])` ou simulation OOM via `Cursor` avec capacité fixée → assert `Err(AppError::GlobalExportFailed(detail))` avec `detail.contains("zip")`.
 
-31. **Given** la story est implémentée, **When** Vitest exécuté, **Then** **≥ 3 tests** sur `frontend/src/lib/features/exports/exports.api.test.ts` (Pass 1 AA-HIGH-05) :
+31. **Given** la story est implémentée, **When** Vitest exécuté, **Then** **≥ 5 tests** sur `frontend/src/lib/features/export/exports.api.test.ts` (Pass 1 AA-HIGH-05 + Pass 3 ECH3-HIGH-04) :
     - (a) `downloadGlobalExport()` appelle `fetch` avec URL `/api/v1/exports/global.zip` + déclenche download via Blob + lien `<a download>` éphémère (mock fetch + `URL.createObjectURL`) + assert filename extrait du header `Content-Disposition`
     - (b) Erreur backend (mock 500) → exception formatée propagée à `+page.svelte`
     - **(c)** **Double-clic guard re-entrancy** (Pass 1 AA-HIGH-05 — AC #26 sans test antérieur) : test handler `startExport` du `+page.svelte` ou logique équivalente — mock `downloadGlobalExport` slow (delayed Promise) → appeler `startExport()` puis `startExport()` immédiatement avant résolution de la première → assert que `downloadGlobalExport` n'est appelée qu'**une seule fois** (second call court-circuité par guard `if (exporting) return`). Si le test du composant Svelte est complexe : alternative — extraire la logique de guard en helper testable côté `exports.api.ts` ou utiliser `@testing-library/svelte` cohérent avec patterns Story 9-2a.
+    - **(d)** **`parseContentDispositionFilename` ASCII fallback** (Pass 3 ECH3-HIGH-04) : `parseContentDispositionFilename('attachment; filename="kesh-export-foo-2026-05-15.zip"') === 'kesh-export-foo-2026-05-15.zip'`.
+    - **(e)** **`parseContentDispositionFilename` RFC 5987 UTF-8 percent-decoded + null** (Pass 3 ECH3-HIGH-04) : `parseContentDispositionFilename("attachment; filename*=UTF-8''kesh-export-%C3%A9t%C3%A9-2026.zip") === 'kesh-export-été-2026.zip'` AND `parseContentDispositionFilename(null) === null` AND `parseContentDispositionFilename('') === null`.
 
 32. **Given** la story est implémentée, **When** Playwright exécuté, **Then** **1 scénario** `frontend/tests/e2e/export-global.spec.ts` : login → `/export` → assert page contient titre `export-global-title` + bouton `Lancer l'export` visible (Pass 1 AA-MEDIUM-01 — vérifier les éléments UI AC#2) → cliquer `Lancer l'export` → assert bouton devient `disabled` avec libellé `Génération de l'export…` (Pass 1 AA-MEDIUM-07 — AC#25 état UX) → `await page.waitForEvent('download')` → `await download.saveAs('/tmp/kesh-test-9-2b.zip')` → `fs.readFile()` → assert premier 4 bytes `PK\x03\x04` + assert `download.suggestedFilename()` match regex `/^kesh-export-.+-\d{4}-\d{2}-\d{2}\.zip$/` → assert bouton redevient `enabled` post-download. Pattern `saveAs` mandaté (cohérent Story 9-2a Pass 1 ECH-M5 — `download.path()` peut retourner `null`).
 
@@ -310,15 +324,22 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
   - [ ] T5.1 `pub async fn export_global(State(state): State<AppState>, Extension(current_user): Extension<CurrentUser>) -> Result<Response, AppError>` :
     - Validation : `current_user.company_id` doit être `> 0` (sinon 403 Forbidden — AC #19 état pathologique).
     - Charge `company` via `repositories::companies::find_by_id(&state.pool, current_user.company_id).await?.ok_or(AppError::Forbidden)?`.
-    - Résout `locale_bcp47` via mapping `company.accounting_language → "fr-CH"/"de-CH"/"it-CH"/"en-CH"` (réutiliser **directement** le helper `load_pdf_context::map_language_to_bcp47` Story 9-2a s'il est public, sinon dupliquer le `match` 4-branches — cohérent Pass 3 ECH3-C1 + Pass 1 code-review M3 arm `"FR" =>` explicit, **avec fallback `fr-CH` + warn log sur valeur inconnue** — cohérent Decision §locale-source). **Decision §locale-helper** : créer un helper `pub(crate) fn map_language_to_bcp47(lang: Language) -> &'static str` dans `crates/kesh-api/src/util.rs` (nouveau ou existant) pour partager entre `routes/reports.rs` et `routes/exports.rs`. Refactor Story 9-2a `load_pdf_context` pour réutiliser le helper.
-    - **Calcul filename (Pass 2 BH2-HIGH-01 + BH2-MEDIUM-01)** : `let export_date = chrono::Utc::now().date_naive(); let filename = build_global_filename(&company.name, export_date);` (T5.2 helper). Le filename est en UTC date (L13 connu).
+    - **Résolution `locale_bcp47`** (Pass 3 ECH3-HIGH-02 + AA3-HIGH-02 + BH3-MEDIUM-01 ground-truth) : **extraire** le `match locale_code.as_str()` inline de `load_pdf_context` (`crates/kesh-api/src/routes/reports.rs:573-585`) vers un **nouveau** helper `pub(crate) fn map_language_to_bcp47(locale_code: &str) -> &'static str` dans `crates/kesh-api/src/util.rs` (PAS un helper existant — il n'existe pas). Signature `&str` (PAS l'enum `Language`) car `load_pdf_context` fetch déjà `(name, accounting_language)` comme `(String, String)`. Fallback `fr-CH` + warn log sur valeur inconnue (cohérent Story 9-2a Pass 1 code-review M3). Refactor Story 9-2a `load_pdf_context` en passant pour réutiliser le helper. Pour `routes/exports.rs` : appel `let locale_bcp47 = util::map_language_to_bcp47(company.accounting_language.as_str());` (l'enum `Language` a `as_str()` qui retourne `&'static str` `"FR"/"DE"/"IT"/"EN"` SCREAMING — vérifier sur `entities/company.rs:Language::as_str`).
+    - **Calcul filename (Pass 2 BH2-HIGH-01 + BH2-MEDIUM-01 + Pass 3 ECH3-HIGH-05)** : `let export_date = chrono::Utc::now().date_naive(); let filename = build_global_filename(&company.name, export_date);` (T5.2 helper). Le helper utilise `slugify(company.name.as_str(), "company")` avec max_len=20 chars (cohérent Story 9-2a `slugify_truncates_to_20_chars`). Le filename est en UTC date (L13 connu).
     - Tracing span `global_export` créé + `Instant::now()` start.
     - Appelle `exports::global::build_global_export(&state.pool, current_user.company_id).await?` → `(zip_bytes, meta)`.
     - `span.record("byte_size", meta.byte_size); span.record("csv_count", meta.csv_count); span.record("duration_ms", meta.duration_ms);`
     - Construit `Response::builder().header(CONTENT_TYPE, "application/zip").header(CONTENT_DISPOSITION, build_content_disposition(&filename, &locale_bcp47)?).body(Body::from(zip_bytes))`.
-    - Émet audit best-effort : `emit_global_export_audit(&state.pool, current_user.id, current_user.company_id, meta.byte_size, meta.csv_count, "all", meta.duration_ms).await;` (NE PAS `?` — best-effort, T5.3).
+    - Émet audit best-effort (Pass 3 BH3-HIGH-01 + AA3-HIGH-01 ground-truth `CurrentUser { user_id, role, company_id }` dans `middleware/auth.rs:29-33`) : `emit_global_export_audit(&state.pool, current_user.user_id, current_user.company_id, meta.byte_size, meta.csv_count, "all", meta.duration_ms).await;` (champ `user_id` — PAS `id` ; NE PAS `?` — best-effort, T5.3).
     - Return 200.
-  - [ ] T5.2 Filename helper : `fn build_global_filename(company_name: &str, export_date: NaiveDate) -> String` — pattern `kesh-export-{companyShort}-{YYYY-MM-DD}.zip`. Réutiliser **directement** `routes::reports::build_filename` Story 9-2a si possible (signature `(type_slug, company_name, period, ext)`) en passant `type_slug = "export"` + dérivant `period` factice avec start=end=export_date. **Decision §filename-helper-reuse** : préférer une nouvelle fn dédiée `build_global_filename` (signature plus simple, pas de `ReportPeriod` factice qui prête à confusion). Mais réutiliser le helper `slugify` private de `routes/reports.rs` — **action** : promouvoir `slugify` de `routes/reports.rs` → `crates/kesh-api/src/util.rs::slugify` `pub(crate)`. Refactor Story 9-2a en passant.
+  - [ ] T5.2 **(Pass 3 ECH3-HIGH-05 + BH3-LOW-3 reformulé)** Créer une nouvelle fn `build_global_filename(company_name: &str, export_date: NaiveDate) -> String` (signature plus simple que `build_filename` Story 9-2a qui requiert `ReportPeriod`) — pattern `kesh-export-{slug}-{YYYY-MM-DD}.zip` :
+    ```rust
+    pub(crate) fn build_global_filename(company_name: &str, export_date: NaiveDate) -> String {
+        let slug = crate::util::slugify(company_name, "company"); // max 20 chars hérité Story 9-2a
+        format!("kesh-export-{}-{}.zip", slug, export_date.format("%Y-%m-%d"))
+    }
+    ```
+    Le helper `slugify` (`routes::reports::slugify`, ground-truth `reports.rs:738`) est promu `pub(crate)` dans `crates/kesh-api/src/util.rs` (action T5.2 sub-task — refactor Story 9-2a en passant). Signature actuelle `fn slugify(input: &str, fallback: &str) -> String` truncate à 20 chars (cf. test `slugify_truncates_to_20_chars_and_strips_trailing_dash` `reports.rs:941`). Filename composé reste ~50 chars max (`kesh-export-` 12 + slug ≤ 20 + `-YYYY-MM-DD.zip` 15 = ≤ 47 chars).
   - [ ] T5.3 `async fn emit_global_export_audit(pool: &MySqlPool, user_id: i64, company_id: i64, byte_size: usize, csv_count: usize, fiscal_year_scope: &str, duration_ms: u64)` — pattern best-effort identique Story 9-2a `emit_report_export_audit` :
     - `tx.begin()` + `audit_log::insert_in_tx(action="exports.global", entity_type="export", entity_id=AUDIT_ENTITY_ID_NONE, details_json=...)` + commit.
     - INSERT fail → `warn!` log + retour 200 (NE JAMAIS faire échouer le download).
@@ -327,18 +348,18 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
 
 - [ ] **T6** Étendre `crates/kesh-api/src/errors.rs` — nouveau variant (AC: #17, #18)
   - [ ] T6.1 Ajouter `GlobalExportFailed(String)` au `enum AppError` (Decision §error-variant).
-  - [ ] T6.2 Ajouter bras dans `IntoResponse for AppError` (cohérent Story 9-2a `PdfGenerationFailed`/`CsvGenerationFailed` blocs ~ligne 742+756) :
+  - [ ] T6.2 **(Pass 3 ECH3-CRITICAL-02 ground-truth)** Ajouter bras dans `IntoResponse for AppError` cohérent **exact** Story 9-2a `PdfGenerationFailed` (lignes 742-752) / `CsvGenerationFailed` (lignes 756-766). Ground-truth `crates/kesh-api/src/errors.rs:562` : `fn build_response(status: StatusCode, code: &'static str, message: &str) -> Response` est **3-args** (PAS 5-args). `ErrorBody` struct n'a PAS de field `details` — uniquement `error: ErrorDetail { code, message }`. Pattern correct :
     ```rust
     AppError::GlobalExportFailed(detail) => {
+        tracing::error!("global export failed: {detail}");
         build_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "GLOBAL_EXPORT_FAILED",
-            "error-global-export-failed",
-            "Impossible de générer l'export global. Réessayez dans quelques instants.",
-            Some(serde_json::json!({ "detail": detail })),
+            &t("error-global-export-failed", "Échec de la génération de l'export global. Réessayez dans quelques instants."),
         )
     }
     ```
+    Le `detail` est capturé via `tracing::error!` (ops debug), pas exposé en HTTP body (cohérent UX-DR38 : message client générique actionable + diagnostic serveur).
   - [ ] T6.3 Pas de bras `From<ReportError>` — le variant est dédié `kesh-api`, jamais retourné depuis `kesh-report`.
   - [ ] T6.4 Test unit : `crates/kesh-api/src/errors.rs` (en bas du fichier `#[cfg(test)] mod tests`) — `AppError::GlobalExportFailed("test detail")` → `into_response()` → status 500 + body JSON code `GLOBAL_EXPORT_FAILED` (pattern cohérent `pdf_generation_failed_into_response_returns_500` Story 9-2a).
 
@@ -347,10 +368,14 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
   - [ ] T7.2 **(module métier `kesh-api::exports`)** Ajouter `pub mod exports;` dans `crates/kesh-api/src/lib.rs` (au niveau des autres `pub mod` comme `pub mod routes;`, `pub mod errors;`). Ce module pointe vers `src/exports/mod.rs` (créé en T2.1). Pass 1 BH-MEDIUM-07 — disambig avec T7.3.
   - [ ] T7.3 **(module routes `kesh-api::routes::exports`)** Ajouter `pub mod exports;` dans `crates/kesh-api/src/routes/mod.rs` (au niveau des autres `pub mod` comme `pub mod reports;`). Ce module pointe vers `src/routes/exports.rs` (créé en T5). T7.2 et T7.3 sont **deux fichiers distincts** (lib.rs ≠ routes/mod.rs) — bien appliquer les deux.
 
-- [ ] **T8** Créer frontend `frontend/src/lib/features/exports/` + page `/export` (AC: #1, #2, #25-#28)
-  - [ ] T8.1 Créer `frontend/src/lib/features/exports/exports.api.ts` :
-    - `export async function downloadGlobalExport(): Promise<void>` — appelle `apiClient.getBlob('/api/v1/exports/global.zip')` qui retourne `Promise<Response>` (cohérent ground-truth `api-client.ts:304`). Vérifier `response.ok` et lever `ApiError` si HTTP non-2xx (cohérent pattern `request` existant, garantit que `+page.svelte` catch déclenche bien — Pass 1 ECH-MEDIUM-09).
-    - Extraire le filename du header `Content-Disposition` : `const cd = response.headers.get('Content-Disposition'); const filename = parseContentDispositionFilename(cd) ?? 'kesh-export.zip';` — implémenter `parseContentDispositionFilename(header: string | null): string | null` localement dans `exports.api.ts` (parse `filename="..."` ASCII fallback ; ignorer `filename*=UTF-8''...` côté frontend, le browser ne l'expose pas systématiquement). Pass 1 ECH-MEDIUM-02.
+- [ ] **T8** Créer frontend `frontend/src/lib/features/export/` + page `/export` (AC: #1, #2, #25-#28)
+  - [ ] T8.1 Créer `frontend/src/lib/features/export/exports.api.ts` :
+    - `export async function downloadGlobalExport(): Promise<void>` — appelle `apiClient.getBlob('/api/v1/exports/global.zip')` qui retourne `Promise<Response>` (cohérent ground-truth `api-client.ts:304`). **Pass 3 ECH3-MEDIUM-02 ground-truth `api-client.ts:283-295`** : `getBlob` **throw déjà** sur HTTP non-2xx via `parseErrorResponse` (`requestRaw` body : `if (!res.ok) { throw await parseErrorResponse(res); }`). **Aucune vérification supplémentaire `response.ok` requise** — l'exception est catchée dans `+page.svelte` (T8.2) directement.
+    - **Nouveau parser RFC 6266 / 5987** (Pass 3 ECH3-HIGH-04 — PAS un pattern réutilisé de 9-2a, qui passait filename via paramètre) : implémenter `function parseContentDispositionFilename(header: string | null): string | null` localement dans `exports.api.ts` :
+       - Extraire d'abord `filename*=UTF-8''<percent>` si présent (browser-décodé via `decodeURIComponent`) — RFC 5987 form
+       - Sinon fallback `filename="..."` ASCII (RFC 6266 form simple)
+       - Sinon `return null` → caller utilise fallback hardcodé `'kesh-export.zip'`
+       - Usage : `const cd = response.headers.get('Content-Disposition'); const filename = parseContentDispositionFilename(cd) ?? 'kesh-export.zip';`
     - Déclencher download via Blob + lien `<a download={filename}>` éphémère + `URL.createObjectURL` + cleanup `try { appendChild + click } finally { removeChild + revokeObjectURL }`. **Action DRY (Pass 1 BH-MEDIUM-02)** : `triggerDownload` est actuellement `function` privée dans `reports.api.ts:237` (non `export`). Soit (a) **dupliquer la fonction localement** dans `exports.api.ts` (~10 lignes, choix Pass 1 minimal), soit (b) refactor : promouvoir `triggerDownload` → `export function triggerDownload(blob, filename)` dans `reports.api.ts` + l'importer ici. **Decision §triggerDownload-reuse** : choix (a) duplication pour cette story (refactor (b) hors scope minimal — si > 2 features futures dupliquent, story Epic 15 v0.2 d'extraction vers `lib/shared/utils/download.ts`).
     - Le filename est imposé par le backend via `Content-Disposition` — frontend ne le calcule pas, juste l'extrait du header.
   - [ ] T8.2 Créer `frontend/src/routes/(app)/export/+page.svelte` :
@@ -389,10 +414,10 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     },
     ```
     Placement : **AVANT** l'entrée `nav-settings` (cohérent UX souveraineté = pas caché dans paramètres, AC #1). **Si Sally (UX designer) recommande un groupe nommé** (e.g. `Souveraineté`) en review feedback : refactor low-risk post-merge, ne pas bloquer dev-story. Le fallback ci-dessus permet de débloquer T8.4 sans attendre Sally.
-  - [ ] T8.5 Tests Vitest `frontend/src/lib/features/exports/exports.api.test.ts` : **≥ 3 tests post-Pass 1** (cf. AC #31 a-c — `downloadGlobalExport` mock fetch success + reject 500 + double-click guard re-entrancy). Voir T12.1 canonical.
+  - [ ] T8.5 Tests Vitest `frontend/src/lib/features/export/exports.api.test.ts` : **≥ 3 tests post-Pass 1** (cf. AC #31 a-c — `downloadGlobalExport` mock fetch success + reject 500 + double-click guard re-entrancy). Voir T12.1 canonical.
 
 - [ ] **T9** Tests E2E HTTP `crates/kesh-api/tests/exports_global_e2e.rs` (AC: #29)
-  - [ ] T9.1 **20 tests minimum post-Pass 2** (voir AC #29 décomposition a-t — 12 originaux a-l + 5 ajoutés Pass 1 m-q + 3 ajoutés Pass 2 r-t pour inclusion archives products/vat_rates/reconciliation_rules).
+  - [ ] T9.1 **21 tests minimum post-Pass 3** (voir AC #29 décomposition a-u — 12 originaux a-l + 5 ajoutés Pass 1 m-q + 3 ajoutés Pass 2 r-t + 1 ajouté Pass 3 u multi-tenant scoping all repos).
   - [ ] T9.2 **Pattern fixture identique** Story 9-2a `reports_export_e2e.rs` : `seed_accounting_company` + insertions SQL via `state.pool`. Stratégie spécifique :
     - **Tests positifs** : `with-company` + insertion de 3 écritures + 2 contacts + 1 facture + 1 produit + 1 bank_account via SQL.
     - **Test multi-tenant 404/IDOR (AC #29(b))** : créer 2 seeds (`with-company` × 2 ou `seed_accounting_company` 2 appels avec emails distincts), login user A, télécharger ZIP A, décompresser via `zip` crate côté test (dev-dep `zip = "2"` test-only), parser `accounts.csv` → assert aucun account_id de B.
@@ -424,11 +449,11 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - `export-global-content-excludes = Ne contient pas : utilisateurs (PII + mots de passe), tokens de session, journal d'audit interne, état d'onboarding (raisons de sécurité et technicité).`
     - `export-global-souverainete-note = Vos données vous appartiennent. Kesh ne fait aucune copie de cet export sur ses serveurs.` (Pass 1 BH-LOW-04 : convention ASCII-only pour i18n keys — `souverainete` SANS accent, déjà conforme ; vérifier en T11.3 que `lint-i18n-ownership` ne flag pas cette clé)
   - [ ] T11.2 Idem pour `de-CH`, `it-CH`, `en-CH` (traductions de base, validation native v0.2 — L5 héritée). EN ex : `Global Export of your data`, `Launch export`, etc. DE/IT équivalents.
-  - [ ] T11.3 `npm run lint-i18n-ownership` PASS — toutes les clés `export-global-*` + `error-global-export-failed` appartiennent à `lib/features/exports/`. Vérifier le manifest `lib/i18n/key-ownership.json` (ou équivalent existant) — ajouter la nouvelle feature `exports`. **Note Pass 1 BH-MEDIUM-04 + ECH-HIGH-09** : la clé `nav-export-global` est passée via variable `i18nMsg(item.i18nKey, item.fallback)` dans `+layout.svelte` (hors `lib/features/`). La regex du linter (`i18nMsg\s*\(\s*['"\`]...`) ne capture **pas** les appels avec variable dynamique → la clé `nav-*` ne sera pas scannée par le linter (cohérent comportement des `nav-home`, `nav-contacts` existantes). Vérifier post-implementation que le linter passe vert ; si le pattern change (ex. future refactor du layout vers strings littérales), ajouter `nav` aux `GLOBAL_NAMESPACES` du linter (`frontend/scripts/lint-i18n-ownership.js`).
+  - [ ] T11.3 `npm run lint-i18n-ownership` PASS — toutes les clés `export-global-*` + `error-global-export-failed` appartiennent à la feature folder `lib/features/export/` (singular). **Pass 3 BH3-HIGH-03 ground-truth** : le linter `frontend/scripts/lint-i18n-ownership.js:94-103` calcule `getNamespace(key) === feature` pour features sans dash. Avec feature folder `export/` (singular) ET key prefix `export-*` (singular) → `getNamespace("export-global-button") = "export" === "export"` MATCH. Si on garde `exports/` (plural) folder, le linter rejettera toutes les clés (mismatch `export` vs `exports`). **PAS de manifest `key-ownership.json` à modifier** — le linter est code-only (vérifié grep `find frontend -name "key-ownership.json"` → empty). **Note Pass 1 BH-MEDIUM-04 + ECH-HIGH-09** : la clé `nav-export-global` est passée via variable `i18nMsg(item.i18nKey, item.fallback)` dans `+layout.svelte` (hors `lib/features/`). La regex du linter (`i18nMsg\s*\(\s*['"\`]...`) ne capture **pas** les appels avec variable dynamique → la clé `nav-*` ne sera pas scannée par le linter (cohérent comportement des `nav-home`, `nav-contacts` existantes). Vérifier post-implementation que le linter passe vert ; si le pattern change (ex. future refactor du layout vers strings littérales), ajouter `nav` aux `GLOBAL_NAMESPACES` du linter (`frontend/scripts/lint-i18n-ownership.js`).
   - [ ] T11.4 Validation manuelle 12 clés présentes dans les 4 locales (cohérent Story 9-2a T8.4).
 
-- [ ] **T12** Tests Vitest frontend `frontend/src/lib/features/exports/exports.api.test.ts` (AC: #31)
-  - [ ] T12.1 **≥ 3 tests post-Pass 1** (cf. AC #31 décomposition a-c — `downloadGlobalExport` mock success, mock 500, double-click guard re-entrancy).
+- [ ] **T12** Tests Vitest frontend `frontend/src/lib/features/export/exports.api.test.ts` (AC: #31)
+  - [ ] T12.1 **≥ 5 tests post-Pass 3** (cf. AC #31 décomposition a-e — 3 originaux + 2 ajoutés Pass 3 : (d) parseContentDispositionFilename ASCII, (e) RFC 5987 UTF-8 percent-decoded).
 
 - [ ] **T13** Playwright `frontend/tests/e2e/export-global.spec.ts` (AC: #32)
   - [ ] T13.1 1 scénario : login → `/export` → cliquer `Lancer l'export` → `waitForEvent('download')` → `saveAs('/tmp/kesh-test-9-2b.zip')` → `fs.readFile` → assert premier 4 bytes = `[0x50, 0x4B, 0x03, 0x04]` (`PK\x03\x04`) + assert `download.suggestedFilename()` match regex.
@@ -531,9 +556,9 @@ Trade-off : si l'API `kesh-api` est rebuild sans bump de version, le `metadata.j
 
 #### Decision §locale-source — `company.accounting_language` mapping
 
-**Choix v0.1** : `metadata.json.locale` = `company.accounting_language` (enum `Language::FR/DE/IT/EN`) mappé en BCP47 (`fr-CH`/`de-CH`/`it-CH`/`en-CH`) côté handler.
+**Choix v0.1** : `metadata.json.locale` = `company.accounting_language` (enum `Language::Fr/De/It/En` PascalCase, avec `as_str()` retournant `"FR"/"DE"/"IT"/"EN"` SCREAMING — ground-truth `entities/company.rs:74-83`) mappé en BCP47 (`fr-CH`/`de-CH`/`it-CH`/`en-CH`) côté handler.
 
-Réutilise le mapping helper `map_language_to_bcp47` Story 9-2a (introduit par Pass 3 ECH3-C1 dans `load_pdf_context`). T5.1 promeut le helper `pub(crate)` dans `crates/kesh-api/src/util.rs` pour partage entre `routes/reports.rs` (Story 9-2a) et `routes/exports.rs` (Story 9-2b).
+**(Pass 3 ECH3-HIGH-02 + AA3-HIGH-02 correction)** Story 9-2a a **inlined** le mapping dans `load_pdf_context` (`crates/kesh-api/src/routes/reports.rs:573-585`) — il n'existe pas de helper `map_language_to_bcp47` extrait. **Action 9-2b T5.1** : extraire le match en nouveau helper `pub(crate) fn map_language_to_bcp47(locale_code: &str) -> &'static str` dans `crates/kesh-api/src/util.rs`. Signature **`&str`** (PAS l'enum `Language`) car `load_pdf_context` fetch `accounting_language` comme `String` ; pour `routes/exports.rs` qui charge `Company`, appeler `util::map_language_to_bcp47(company.accounting_language.as_str())`. Refactor Story 9-2a `load_pdf_context` en passant pour réutiliser le helper extrait.
 
 Cohérent avec Story 9-2a Pass 1 code-review M3 (arm `"FR" =>` explicite + warn fallback `fr-CH` sur valeur DB inconnue).
 
@@ -604,8 +629,8 @@ Tests AC #29(f) doivent prendre en compte ces deux exceptions dans les assertion
 - `crates/kesh-api/src/routes/exports.rs` (~150 lignes — `export_global` handler + `emit_global_export_audit` + `build_global_filename`)
 - `crates/kesh-api/src/util.rs` (~80 lignes — ou extension d'un fichier existant si présent — `pub(crate) fn slugify`, `pub(crate) fn build_content_disposition`, `pub(crate) fn map_language_to_bcp47`) — **action** : refactor de Story 9-2a privés vers `pub(crate)` partagés.
 - `crates/kesh-api/tests/exports_global_e2e.rs` (~500 lignes — 12 tests E2E HTTP + helper `assert_zip_response`)
-- `frontend/src/lib/features/exports/exports.api.ts` (~50 lignes — `downloadGlobalExport`)
-- `frontend/src/lib/features/exports/exports.api.test.ts` (~70 lignes Vitest, 2+ tests)
+- `frontend/src/lib/features/export/exports.api.ts` (~50 lignes — `downloadGlobalExport`)
+- `frontend/src/lib/features/export/exports.api.test.ts` (~70 lignes Vitest, 2+ tests)
 - `frontend/src/routes/(app)/export/+page.svelte` (~120 lignes — page UI avec bouton + handler + zone alerte)
 - `frontend/src/routes/(app)/export/+page.ts` (~10 lignes — `export const ssr = false;`)
 - `frontend/tests/e2e/export-global.spec.ts` (~50 lignes Playwright, 1 scénario)
@@ -635,17 +660,17 @@ Tests AC #29(f) doivent prendre en compte ces deux exceptions dans les assertion
 
 - **Tests d'intégration Rust** : `crates/kesh-api/tests/exports_global_e2e.rs` — pattern `reqwest` + `spawn_app` identique `reports_export_e2e.rs` Story 9-2a. Helper `assert_zip_response(body) -> Vec<(String, Vec<u8>)>` factoriser dans le fichier (pas dans `kesh-db::test_fixtures` — scope test seulement). Décompression via `zip 2.x` dev-dep (déjà dans Cargo.toml runtime, donc dispo en test sans ajout).
 - **Tests unit Rust** : `crates/kesh-api/src/exports/{csv_tables, global, metadata}.rs` — modules `#[cfg(test)] mod tests` en bas de chaque fichier. Fixtures `Account`/`Contact`/etc. construites en code (pas de DB), cohérent Story 9-2a Q6.
-- **Tests frontend Vitest** : `frontend/src/lib/features/exports/exports.api.test.ts` — mock `fetch` via `vi.mock`.
+- **Tests frontend Vitest** : `frontend/src/lib/features/export/exports.api.test.ts` — mock `fetch` via `vi.mock`.
 - **Playwright** : `frontend/tests/e2e/export-global.spec.ts` — pattern `await page.waitForEvent('download')` + `download.suggestedFilename()` + `await download.saveAs('/tmp/...')` + `fs.readFile` (cohérent Story 9-2a Pass 1 ECH-M5 — **PAS** `download.path()` qui peut retourner `null`).
 - **Benchmark criterion (optionnel)** : si la performance de `build_global_export` devient sensible, ajouter `crates/kesh-api/benches/global_export.rs` — hors scope v0.1 sauf si AC #29(g) test perf flake.
 
 ### Previous Story Intelligence (Story 9-2a)
 
 **Patterns à réutiliser tels quels** :
-- **`csv::WriterBuilder + BOM UTF-8 + ';' delimiter + CRLF terminator + format_amount_iso(...)`** — re-implémenté dans `kesh-api::exports::csv_tables` (Decision §csv-table-serializer-location).
+- **Patterns CSV DUPLIQUÉS depuis Story 9-2a** (Pass 3 ECH3-MEDIUM-01 — Decision §csv-table-serializer-location verrouille la duplication explicite, PAS l'import cross-crate) : `csv::WriterBuilder + BOM UTF-8 + ';' delimiter + CRLF terminator + format!("{amount:.2}")`. **NE PAS** promouvoir `format_amount_iso` de `crates/kesh-report/src/csv.rs:37` (actuellement privé `fn`, pas `pub fn`) — violation DD-12 (kesh-report scope = rapports agrégés, pas raw tables). Copier le code 1:1 dans `kesh-api::exports::csv_tables` (~50 lignes additives).
 - **`build_content_disposition(filename, locale_bcp47) -> HeaderValue` (RFC 5987 `filename*=UTF-8'<lang>'<percent>` + ASCII fallback)** — promu `pub(crate)` dans `crates/kesh-api/src/util.rs` (T5.4), partagé entre `routes::reports` (Story 9-2a) et `routes::exports` (Story 9-2b).
 - **`slugify(name, max_len, fallback) -> String` (NFD strip diacritics + lowercase + `[^a-z0-9-]` → `-` + collapse + truncate + strip trailing `-`)** — promu `pub(crate)` dans `crates/kesh-api/src/util.rs` (T5.2).
-- **`map_language_to_bcp47(lang: Language) -> &'static str`** — extrait de `load_pdf_context` Story 9-2a Pass 3 ECH3-C1, promu `pub(crate) util::map_language_to_bcp47` (T5.1).
+- **`map_language_to_bcp47(locale_code: &str) -> &'static str`** — **NOUVELLE extraction Pass 3 ECH3-HIGH-02** (le helper n'existait pas en 9-2a — mapping était inline dans `load_pdf_context` `reports.rs:573-585`). Promu `pub(crate) util::map_language_to_bcp47` en T5.1, signature `&str` (cohérent avec usage existant `load_pdf_context`). Refactor Story 9-2a en passant pour partager helper.
 - **`emit_<action>_audit` best-effort pattern** : `tx.begin/insert_in_tx/commit`, `warn!` on error, retour 200 quoi qu'il arrive — Story 9-2a `emit_report_export_audit` (ligne `reports.rs:866`) répliqué dans `routes/exports.rs::emit_global_export_audit` (T5.3).
 - **`tracing::info_span!` + `tracing::field::Empty` placeholder + `span.record()` post-render** — pattern Pass 3 BH3-M1 Story 9-2a (T5.8) répliqué dans `routes/exports.rs` (T3.5 + T5.1).
 - **Frontend `triggerDownload` try/finally cleanup objectURL** — pattern Story 9-2a Pass 1 code-review M11 répliqué dans `exports.api.ts::downloadGlobalExport`.
@@ -696,6 +721,8 @@ Tests AC #29(f) doivent prendre en compte ces deux exceptions dans les assertion
 | L14 | **(Pass 1 BH-MEDIUM-06)** `fiscal_years::list_by_company` borne implicite `MAX_LIST_LIMIT=1000` (cf. `repositories/mod.rs::MAX_LIST_LIMIT`) — si une company a > 1000 exercices, troncature silencieuse | Cas pathologique extrême (1000 ans d'exercices) — non bloquant v0.1 | v0.2 si signalé → fn dédiée `list_all_fiscal_years_by_company` sans LIMIT |
 | L15 | **(Pass 1 ECH-MEDIUM-10)** RAM peak côté serveur non bornée explicitement : 16 buffers CSV + ZIP final + transient compression simultanément. Estimation 200-500 MB possible sur 5000+ écritures + requêtes concurrentes. Pas de bornage défensif type `if buf.len() > 200 MB { return Err(...) }` v0.1 | Cohérent L3 (Vec<u8> non-streaming) ; OOM killer pourrait terminer si dataset extrême | v0.2 : bornage défensif `AppError::GlobalExportFailed("dataset too large for in-memory export")` + transition streaming L4 |
 | L16 | **(Pass 2 ECH2-MEDIUM-02 — révisée)** Le mapping `map_language_to_bcp47` côté handler (T5.1) applique un fallback `fr-CH` + warn log sur valeur inconnue (cohérent Decision §locale-source + Story 9-2a Pass 1 code-review M3). Cependant, si `Language::Decode` dans `kesh-db` lève une erreur sqlx pour une valeur DB non-mappée à l'enum (`"XX"` corrompu, hors `{FR, DE, IT, EN}`), le handler reçoit `AppError::Database` 500 avant d'atteindre le mapping. En pratique : les valeurs DB sont contraintes par l'enum Rust à l'écriture, donc probabilité quasi-nulle | Comportement actuel acceptable v0.1 — DB constraints + enum write-side évitent les valeurs corrompues | v0.2 story Epic 15 : enrichir `Language` enum avec variant `Unknown(String)` pour tolérer valeurs DB corrompues sans 500 |
+| L17 | **(Pass 3 ECH3-MEDIUM-03)** JOIN T3.2.2/T3.2.5 utilise `INNER JOIN` (par défaut SQL `JOIN` keyword). Si une row `journal_entry_lines` ou `invoice_lines` orpheline existe (entry_id/invoice_id pointant vers une row parent supprimée), elle est silencieusement exclue de l'export. Acceptable v0.1 : les contraintes FK InnoDB (migrations Story 1-x) interdisent cet état à l'INSERT, donc seul un bug DB ou un DELETE manuel sans CASCADE peut le produire | Comportement défensif intentionnel — un orphan row dans un export souveraineté serait incorrect sans son parent | v0.2 si signalé : audit hebdomadaire des FK orphelins + warn log au site de la query |
+| L18 | **(Pass 3 BH3-MEDIUM-02 — AC#19 reclassement)** AC #19 (403 Forbidden sur `current_user.company_id` pathologique) reste implémentable défensivement dans T5.1 (`if current_user.company_id == 0 { return Err(AppError::Forbidden) }`) mais n'est pas trivialement testable end-to-end : le middleware auth (ground-truth `middleware/auth.rs:95-102`) ne valide pas `company_id > 0`, il fait juste passer le claim JWT. Test AC#29(p) reste **conditionnel** — si test bypass middleware via fixture custom impossible : reclassé en limitation défensive + guard contre future régression middleware | Cohérent UX-DR38 : message client générique 403, server logs détaillent | v0.2 si middleware refactor inclut validation company_id |
 
 ### Risques & questions ouvertes — pour spec validate
 
@@ -704,15 +731,15 @@ Les éléments ci-dessous restent à clarifier ou à décider lors de `bmad-crea
 | # | Risque / question | À traiter |
 |---|---|---|
 | Q1 | **(RÉSOLUE Pass 1)** Liste 16 tables figée et ground-truth grep validée (Pass 1 BH-CRITICAL-01..05 + ECH-HIGH-01..08). Aucune table additionnelle découverte. Si dev-story découvre table omise (ex. `invoice_attachments`) → créer CR GitHub Issue avant modification spec. | RÉSOLUE — pas d'action |
-| Q2 | **Repository `list_all_by_company` à ajouter** : **10 nouvelles fns** dans 8 repos (T3.2.1..T3.2.10 — détail post-Pass 1). Pattern strict `pool, company_id → Result<Vec<Entity>, DbError>` (cohérent `delete_all_by_company` `accounts.rs:497`). Faut-il un trait commun `ListAllByCompany` ? **Recommandation** : non, duplication acceptable v0.1 (10 fns `pub async`, ~10 lignes chacune). | Dev-story T3.2 |
-| Q3 | **Refactor Story 9-2a privés → `pub(crate) util`** (T5.1/T5.2/T5.4) : promouvoir `slugify`, `build_content_disposition`, `map_language_to_bcp47`, `hex_encode` doit-il faire l'objet d'un commit séparé avant T2 ? **Recommandation** : commit dédié `refactor(9-2b): promote 9-2a + 8-1b helpers to pub(crate) util` en première étape, puis T2+ s'appuie dessus. Cohérent règle CLAUDE.md « commit par étape BMAD ». | Dev-story T5 |
+| Q2 | **(RÉSOLUE Pass 3)** Repository `list_all_by_company` ajouter 10 nouvelles fns dans 8 repos (T3.2.1..T3.2.10). Pattern strict `pool, company_id → Result<Vec<Entity>, DbError>` (cohérent `delete_all_by_company` `accounts.rs:497`). **Décision** : pas de trait commun `ListAllByCompany` v0.1, duplication acceptable (~10 fns × 10 lignes). | RÉSOLUE — duplication v0.1 |
+| Q3 | **(RÉSOLUE Pass 3)** Refactor Story 9-2a + 8-1b privés → `pub(crate) util` (T5.1/T5.2/T5.4/T5.5) : promouvoir `slugify`, `build_content_disposition`, `map_language_to_bcp47` (nouveau extract), `hex_encode` en **commit dédié première étape** `refactor(9-2b): promote 9-2a + 8-1b helpers to pub(crate) util` avant T2+. Cohérent règle CLAUDE.md « commit par étape BMAD ». | RÉSOLUE — commit refactor dédié first |
 | Q4 | **`zip 2.x` exact API stability** : la version 2.0 a renommé `FileOptions` paramètres vs 1.x. Vérifier au dev exact via `cargo doc -p zip --open` ou docs.rs/zip/latest. Test `T9.1(l)` (signature `PK\x03\x04`) capture toute régression. | Dev-story T3.3 |
 | Q5 | **(RÉSOLUE Pass 1 AA-LOW-01)** `sha256_hex` perf : ~50ms estimé acceptable v0.1. Si > 200ms observé en dev-story T4.4 : passer streaming `Digest::update` chunked. Pas de blocker spec validate. | RÉSOLUE — défer dev-story si mesure dépasse |
 | Q6 | **`metadata.json` ordering deterministe** : `BTreeMap` (clé alphabétique) ou `Vec<(String, TableMeta)>` (ordre d'insertion = ordre §scope-tables liste) ? Recommandation : `BTreeMap` (cohérent serde_json + facilite tests byte-stability). **Note Pass 1 ECH-MEDIUM-04** : ordre alphabétique `BTreeMap` diverge de l'ordre d'insertion ZIP (§scope-tables) — intentionnel, ne pas corriger. Documenter en commentaire T4.1. | Dev-story T4.1 — décision **BTreeMap** verrouillée |
 | Q7 | **(RÉSOLUE Pass 1 ECH-MEDIUM-01)** Si `accounting_language` DB est NULL ou non-mapped : le `Language::Decode` actuel lève une erreur sqlx (pas un fallback gracieux côté handler). Accepter comportement `AppError::Database` 500 comme **dette technique documentée** (probabilité quasi-nulle en prod car valeurs contraintes par enum Rust à l'écriture). Modifier `Language::Decode` pour ajouter variant `Unknown(String)` = hors scope 9-2b (story Epic 15 v0.2). | RÉSOLUE — dette documentée Completion Notes |
 | Q8 | **(RÉSOLUE Pass 1)** Empty company ZIP shape : OUI, le ZIP contient les 16 CSV avec header-only pour les tables vides (AC #5 + AC #29(f)). **Précision** : `company.csv` rowCount=1 (la company elle-même) ET `company_invoice_settings.csv` rowCount=1 (lazy-create injecte defaults) — Pass 1 ECH-MEDIUM-08, intégré AC #29(f). Les 14 autres CSV rowCount=0. | RÉSOLUE |
-| Q9 | **Test perf `< 10s` flake en CI sandbox** : si la sandbox CI est lente, marquer `#[ignore]` et exécuter manuellement pré-PR via `cargo test --ignored` (cohérent Story 9-2a AC #31 `pdf_10k_journal_report_size_under_5mb` ignored). Si flake observé → créer KF GitHub Issue avec timing observé (Pass 1 ECH-LOW-01). | Dev-story T9.2 |
-| Q10 | **Sally (UX designer) input sur menu placement** : nouveau groupe `Souveraineté` ou simplement nouvelle entrée dans groupe `null` final ? Cohérence UX globale Kesh à confirmer. **Recommandation** : ouvrir une discussion brève Sally en dev-story si T8.4 a un doute. Sinon : nouveau groupe top-level `Souveraineté` (ou équivalent) AVANT `Paramètres`. **Note Pass 1 AA-LOW-02** : AC #1 légèrement sous-spécifié sur le groupe exact, à défaut → groupe `null` cohérent avec la convention actuelle. | Dev-story T8.4 ou skill `bmad-agent-ux-designer` |
+| Q9 | **(RÉSOLUE Pass 3)** Test perf `< 10s` flake en CI sandbox : marquer `#[ignore]` si flake observé + exécuter `cargo test --ignored` manuellement pré-PR (cohérent Story 9-2a AC #31). Créer KF GitHub Issue si flake persistant. | RÉSOLUE — défer dev-story selon mesure |
+| Q10 | **(RÉSOLUE Pass 3)** Sally UX placement menu : **default fallback Pass 2 ECH2-M6** appliqué (groupe `label: null` AVANT nav-settings dans T8.4). Si Sally recommande groupe nommé `Souveraineté` en review → refactor low-risk post-merge, ne bloque pas dev-story. | RÉSOLUE — default appliqué T8.4 |
 
 ### Definition of Done — critères d'arrêt story (Pass 1 AA-MEDIUM-09)
 
@@ -726,7 +753,7 @@ Gates minimum pour transition `review → done` :
    - `cargo test --workspace` ✅ (100% nouveaux tests + 0 régression Story 9-1 + Story 9-2a + KF-002 multi-tenant audits)
 3. **Frontend clean** (depuis `frontend/`) :
    - `npm run check` ✅
-   - `npm run lint-i18n-ownership` ✅ (12 nouvelles clés appartiennent à `lib/features/exports/`)
+   - `npm run lint-i18n-ownership` ✅ (12 nouvelles clés appartiennent à `lib/features/export/`)
    - `npm run test:unit` ✅ (≥ 3 Vitest exports)
    - `npm run build` ✅
 4. **Playwright vert** (manuel pré-push, MariaDB + browsers requis) : `cd frontend && npm run test:e2e -- export-global.spec.ts` ✅
@@ -738,14 +765,14 @@ Gates minimum pour transition `review → done` :
 8. **Change Log** story file mis à jour avec entrées Pass 1..N (validate) + Pass 1..M (code-review), modèles LLM utilisés, total patches appliqués, trend numérique.
 9. **README.md `Feuille de route`** vérifié — Epic 9 toujours en cours (Story 9-2c hors scope ; pas de toggle si pas de dernière story epic).
 10. **Memory mise à jour** : entrée mémoire `project_9_2b_dev_progress.md` (ou équivalent) créée avec hash squash + résumé cycle.
-11. **(Pass 2 ECH2-MEDIUM-01)** Baseline regression check pré-dev : `grep -c "^#\[test\]\|#\[tokio::test\]\|^async fn\b.*\b" crates/kesh-api/tests/reports_e2e.rs` et `reports_export_e2e.rs` documenté en Completion Notes pour vérifier que les baselines 28+20 sont à jour au moment du dev (counts peuvent évoluer post-PR adjacentes). Si delta → ajuster les targets dans gate 5.
+11. **(Pass 2 ECH2-MEDIUM-01 + Pass 3 AA3-HIGH-03 corrigé ground-truth)** Baseline regression check pré-dev : `grep -cE "^#\[sqlx::test" crates/kesh-api/tests/reports_e2e.rs` (baseline attendue 28) et `grep -cE "^#\[sqlx::test" crates/kesh-api/tests/reports_export_e2e.rs` (baseline attendue 20). Les fichiers utilisent **`#[sqlx::test]`** (PAS `#[test]` ni `#[tokio::test]`) — la regex Pass 2 était incorrecte. Documenter les counts pré-dev en Completion Notes. Si delta → ajuster les targets dans gate 5 (les counts peuvent évoluer post-PR adjacentes au cycle 9-2b).
 
 ### Project Structure Notes
 
 Alignement avec `architecture.md` §11 (workspace) + §17 (FR68 → souveraineté des données) :
 - ✅ Nouveau module `kesh-api/src/exports/` — additif, pas de nouvelle crate.
 - ✅ Routes API dans `kesh-api/routes/exports.rs` — nouveau fichier (sémantique distincte de `routes/reports.rs`).
-- ✅ Frontend nouvelle feature `lib/features/exports/` + nouvelle page `/export` — additif, pas de modification des features existantes.
+- ✅ Frontend nouvelle feature `lib/features/export/` + nouvelle page `/export` — additif, pas de modification des features existantes.
 - ✅ i18n dans `kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — section `export-global-*` nouvelle.
 - ✅ Helpers Story 9-2a refactorés `pub(crate)` dans `util.rs` — DRY, cohérent règle DRY CLAUDE.md.
 
@@ -758,7 +785,7 @@ Modules touchés par 9-2b :
 4. `kesh-api/src/errors.rs` (1 nouveau variant)
 5. `kesh-api/src/util.rs` (refactor 9-2a privés → `pub(crate)`)
 6. `kesh-db/src/repositories/*` (5+ fn `list_all_by_company` additives)
-7. `frontend/src/lib/features/exports/` (nouveau)
+7. `frontend/src/lib/features/export/` (nouveau)
 8. `frontend/src/routes/(app)/export/+page.{ts,svelte}` (nouvelle page)
 9. `frontend/src/routes/(app)/+layout.svelte` (1 entrée nav)
 10. `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (12 clés × 4 = 48 entries)
@@ -831,3 +858,27 @@ Modules touchés par 9-2b :
   - **3 MEDIUM appliqués + 3 reportés** : (1) L16 révisé pour matcher Decision §locale-source fallback `fr-CH` + warn (ECH2-M2 contradiction résolue) ; (2) T8.4 default fallback navGroup explicite pour débloquer dev sans Sally (ECH2-M6) ; (3) DoD gate 7 rephrasé measurable (ECH2-M5) + ajout gate 11 baseline regression check (ECH2-M1). **Reportés acceptables** : ECH2-M3 (filename slug collision risk — déjà documenté implicitement L13 + slugify limit) ; ECH2-M4 (metadata.json bootstrap — déjà L12) ; AA2-MEDIUM-002 (INNER vs LEFT JOIN — accepté INNER par défaut, FK contrainte garante).
   - **1 LOW reporté** : BH2-LOW-01 (changelog "8 décisions" inexact — 10 décisions documentées) → cosmétique, ignoré.
   - **Trend Pass 2** : 1 CRITICAL → 0 (patché). 11 HIGH → 0 > LOW restants après patches. 12 MEDIUM → 9 appliqués + 3 reportés en justifications/limitations existantes. **Status post-patches** : 0 finding > LOW non remédié. Tests croissent à 20+10+3 = 33 tests minimum (vs 23 initial Opus). Cycle CLAUDE.md → **Pass 3 requis** (modèle différent : Opus 4.7) sur spec doublement patchée pour vérifier convergence finale (anti-rubber-stamp Opus auteur initial : il a écrit la spec mais Pass 1 Sonnet + Pass 2 Haiku ont substantiellement modifié donc auteur-bias minimal au point Pass 3).
+
+- **2026-05-16** (Opus 4.7 spec validate Pass 3) — **25 findings bruts** détectés (2 CRITICAL + 11 HIGH + 8 MEDIUM + 8 LOW) via 3 reviewers parallèles fresh-context (BH3 + ECH3 + AA3 Opus 4.7 sur spec doublement patchée). Opus a fait son job d'audit deep-dive et trouvé **2 CRITICAL ground-truth verified** que Sonnet + Haiku ont raté. **~15 patches > LOW appliqués post-dédup**, dont 3 régressions introduites par patches Pass 1+2 elles-mêmes :
+  - **CRITICAL (2 patchés, compile/runtime blockers)** :
+    - ECH3-C1 : `audit_log` table n'a PAS de colonne `company_id` (ground-truth migration `20260413000001_audit_log.sql:13-26` = colonnes `id, user_id, action, entity_type, entity_id, details_json, created_at`). AC#29(m) test SELECT corrigé pour filtrer par `user_id = current_user.user_id` (FK `users.company_id` garantit isolation multi-tenant). AC#23 enrichi : `details_json` inclut maintenant `company_id` pour requêtes audit multi-tenant via JSON path.
+    - ECH3-C2 : `build_response` signature ground-truth `errors.rs:562` = **3 args** (PAS 5 args). T6.2 réécrit cohérent pattern `PdfGenerationFailed`/`CsvGenerationFailed` Story 9-2a : `tracing::error!` capture detail + `build_response(StatusCode::INTERNAL_SERVER_ERROR, "GLOBAL_EXPORT_FAILED", &t(...))` 3-args.
+  - **HIGH (8 régressions + nouvelles)** :
+    - BH3-H1/AA3-H1 régression Pass 1+2 : T5.1 utilisait `current_user.id` → ground-truth `middleware/auth.rs:29-33` `CurrentUser { user_id, role, company_id }` (field `user_id`, PAS `id`). Patchés : T5.1 + AC#23 + AC#29(m).
+    - BH3-H2/ECH3-H1 régression Pass 2 : AC#29(f) HashMap `accounts.csv=0 + vat_rates.csv=0` contradisait seed `with-company-no-fy` qui injecte par défaut 5 accounts + 4 vat_rates (ground-truth `test_fixtures.rs:202-275`). HashMap corrigé : `accounts.csv=5, vat_rates.csv=4, company.csv=1, company_invoice_settings.csv=1, 12 autres=0`.
+    - BH3-H3 nouveau : i18n linter `lint-i18n-ownership.js:94-103` rejetait toutes les clés `export-global-*` sous feature folder `lib/features/exports/` (mismatch singular/plural namespace). Patché : feature folder renommé `exports/` → **`export/`** (singular, cohérent route `/export`). Pas de manifest `key-ownership.json` à modifier (linter code-only).
+    - ECH3-H2/AA3-H2 nouveau : claim `map_language_to_bcp47` "introduit par Pass 3 ECH3-C1 Story 9-2a" était une **hallucination** Opus initial — la fn n'existe pas en 9-2a, mapping inline dans `load_pdf_context` `reports.rs:573-585`. T5.1 + §locale-source + Previous Story Intelligence reformulés : **NOUVELLE extraction** Pass 3 vers `pub(crate) fn map_language_to_bcp47(locale_code: &str) -> &'static str` dans `util.rs` (signature `&str` PAS enum `Language`). Refactor 9-2a `load_pdf_context` en passant.
+    - ECH3-H3 nouveau : AC#29(g) perf 1000 entries violait FK `journal_entries.fiscal_year_id NOT NULL` sur preset `with-company-no-fy` (sans fiscal_year). Corrigé : preset explicite **`with-company`** (avec fiscal_year seedé).
+    - ECH3-H4 nouveau : T8.1 Content-Disposition parsing prétendu "pattern 9-2a" — n'existe pas (grep frontend = 0 match). Reformulé : NOUVEAU parser RFC 6266 + 5987 local + 2 nouveaux tests Vitest AC#31(d)(e) (ASCII fallback + UTF-8 percent-decoded + null).
+    - ECH3-H5 nouveau : filename `{companyShort}` derivation underspecified. Patché : T5.2 code Rust explicite `slugify(company_name, "company")` max 20 chars + commentaire trace `slugify_truncates_to_20_chars`.
+    - AA3-H3 régression Pass 2 : DoD gate 11 grep regex `^#[test]\|#[tokio::test]` ne matche pas `#[sqlx::test]` (réel pattern utilisé `reports_e2e.rs` 28 occurrences). Corrigé : `grep -cE "^#\[sqlx::test"`.
+  - **MEDIUM (7 patchés + 1 acceptée justification)** :
+    - ECH3-M1 §csv-table-serializer-location wording : "réutiliser tels quels" + "re-implémenté" contradictoire → clarifié "DUPLIQUÉS depuis Story 9-2a", PAS d'import cross-crate (DD-12).
+    - ECH3-M2 T8.1 `getBlob` redondant `response.ok` check → retiré (api-client throw déjà sur non-2xx via `parseErrorResponse`).
+    - ECH3-M3 + L17 ajoutée : INNER JOIN vs LEFT JOIN T3.2.2/T3.2.5 — INNER accepté par défaut + L17 limitation FK orphan rows silently excluded (acceptable v0.1, FK InnoDB garante).
+    - ECH3-M5 + AC#29(u) ajouté : IDOR test multi-tenant pour 8 nouvelles fns + 2 JOINées via parameterized test direct repo (count tests 20→21).
+    - AA3-M2 + Q's terminales : Q2/Q3/Q9/Q10 marquées **RÉSOLUES** (recommendations terminales promues). Q4/Q6 restent légitimement open (dev-time API check + decision lockée).
+    - AA3-M3 + AC#24 : span `csv_count` field précisé "additionnel" vs 9-2a 2-fields pattern.
+    - BH3-MED-02 + L18 ajoutée : AC#19 reclassement conditionnel — défensif T5.1 `company_id > 0` mais test AC#29(p) reste skip-able si bypass middleware impossible.
+  - **8 LOW reportés** : BH3-L1/L2/L3 (cosmétiques wording §filename + decision count), ECH3-L1..L4 (UTC year boundary, dead_code attrs, two Instant::now, hex_encode perf), AA3-L1 (changelog count).
+  - **Trend Pass 3** : 2 CRITICAL → 0 (patchés, ground-truth bugs). 11 HIGH → 0 > LOW restants après patches (8 patchés directement + 3 régressions Pass 1+2 corrigées). 8 MEDIUM → 7 patchés + 1 acceptée. **Status post-patches** : 0 finding > LOW non remédié. Tests croissent à **21+10+5+1 = 37 tests minimum**. **3 hallucinations Opus initial corrigées** : `Pass 3 ECH3-C1 Story 9-2a` (n'existe pas), `map_language_to_bcp47` (n'existe pas, à créer), `triggerDownload` pattern reuse (à dupliquer). Cycle CLAUDE.md → **Pass 4 requis** (rotation Opus → Sonnet 4.6) sur spec triplement patchée pour vérifier convergence finale 0 > LOW.
