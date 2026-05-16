@@ -414,7 +414,7 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     },
     ```
     Placement : **AVANT** l'entrée `nav-settings` (cohérent UX souveraineté = pas caché dans paramètres, AC #1). **Si Sally (UX designer) recommande un groupe nommé** (e.g. `Souveraineté`) en review feedback : refactor low-risk post-merge, ne pas bloquer dev-story. Le fallback ci-dessus permet de débloquer T8.4 sans attendre Sally.
-  - [ ] T8.5 Tests Vitest `frontend/src/lib/features/export/exports.api.test.ts` : **≥ 3 tests post-Pass 1** (cf. AC #31 a-c — `downloadGlobalExport` mock fetch success + reject 500 + double-click guard re-entrancy). Voir T12.1 canonical.
+  - [ ] T8.5 Tests Vitest `frontend/src/lib/features/export/exports.api.test.ts` : **≥ 5 tests post-Pass 3** (cf. AC #31 a-e — voir T12.1 canonical : 3 originaux Pass 1 + 2 ajoutés Pass 3 parseContentDispositionFilename).
 
 - [ ] **T9** Tests E2E HTTP `crates/kesh-api/tests/exports_global_e2e.rs` (AC: #29)
   - [ ] T9.1 **21 tests minimum post-Pass 3** (voir AC #29 décomposition a-u — 12 originaux a-l + 5 ajoutés Pass 1 m-q + 3 ajoutés Pass 2 r-t + 1 ajouté Pass 3 u multi-tenant scoping all repos).
@@ -424,10 +424,11 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
     - **Test ZIP structure (AC #29(c))** : décompresse + assert `zip.len() == 17` + listing exact des 17 noms attendus (16 CSV + `metadata.json`).
     - **Test metadata.json (AC #29(d))** : extract entry `metadata.json` → `serde_json::from_slice::<GlobalExportMetadata>` → assert champs.
     - **Test SHA-256 (AC #29(e))** : pour chaque CSV entry : décompresse bytes → `sha2::Sha256::digest` → hex encode → assert == `meta.tables[name].sha256`.
-    - **Test empty company (AC #29(f))** : `with-company-no-fy` ou seed minimal sans écritures → ZIP toujours 17 entrées + each CSV header-only (row_count=0).
+    - **Test empty company (AC #29(f))** : `with-company-no-fy` (preset CI sans écritures) → ZIP toujours 17 entrées + chaque CSV selon la map `expected_row_counts` d'AC #29(f) — Pass 4 BH4-MEDIUM-01 : **PAS uniforme `row_count=0`** car le preset injecte par défaut 5 accounts + 4 vat_rates + 1 company + 1 company_invoice_settings (ground-truth `test_fixtures.rs:202-275`). Voir HashMap explicite ligne AC #29(f).
     - **Test perf (AC #29(g))** : insertion bulk 1000 journal_entries via SQL `INSERT ... VALUES (...), (...), ...` + `Instant::now()` autour de l'appel HTTP → `assert!(elapsed < Duration::from_secs(10))`. Marquer `#[ignore]` si la CI sandbox est lente (à exécuter manuellement pré-PR via `cargo test --ignored`).
     - **Test auth 401 (AC #29(h))** : pas de Bearer token → 401 sur GET `/api/v1/exports/global.zip` (test isolé, middleware identique sur `authenticated_routes`).
     - **Test RBAC Consultation (AC #29(i))** : créer 1 user role Consultation + login → 200.
+    - **Test multi-tenant scoping repo fns (AC #29(u) — Pass 3 ECH3-MEDIUM-05)** : `seed_accounting_company × 2` (companies A et B avec users distincts) + insertion SQL d'1 row par company dans chacune des 8 tables couvertes par les nouvelles `list_all_by_company` (journal_entries, products, invoices, bank_imports, bank_transactions, vat_rates, reconciliation_rules, bank_profiles) + parent rows pour JOINées (journal_entry_lines, invoice_lines). Parameterized test loop : pour chaque fn `list_all_by_company`, appel direct repo avec `company_id = A.id` → assert `result.len() == 1` AND scoping correct (`row.company_id == A.id` ou `row.entry_id IN A.entry_ids` pour JOINées).
   - [ ] T9.3 Helpers `assert_zip_response(body: &Bytes) -> Vec<(String, Vec<u8>)>` (décompresse + retourne liste fichiers) — factoriser dans le fichier test, pas dans `kesh-db::test_fixtures` (scope test seulement).
 
 - [ ] **T10** Tests unit `crates/kesh-api/src/exports/` (AC: #30)
@@ -594,11 +595,13 @@ Cohérent avec Story 9-2a Pass 1 code-review M3 (arm `"FR" =>` explicite + warn 
 
 Note pour le dev (Pass 1) : **10 nouvelles fns `list_all_by_company` à créer** dans 8 repos (T3.2.1..T3.2.10) — cf. liste exhaustive T3.2. Pattern strict `delete_all_by_company` `accounts.rs:497` (`pool, company_id → Result<Vec<Entity>, DbError>`). Pour `journal_entry_lines` et `invoice_lines` : single-query JOIN obligatoire (entités sans `company_id` direct, anti-N+1). Pour `vat_rates`, `reconciliation_rules`, `products` : sans filtre `active` (souveraineté complète, archives incluses).
 
-**Note empty company** (Pass 1 ECH-MEDIUM-08) : pour une company sans données, les 14 CSV métier ont `rowCount=0` (header-only). Deux exceptions :
+**Note empty company** (Pass 1 ECH-MEDIUM-08 + Pass 3 BH3-HIGH-02 corrigé + Pass 4 BH4-LOW-01) : pour une company seedée via `with-company-no-fy` (sans écritures ni factures), les 12 CSV métier ont `rowCount=0` (header-only). **Quatre exceptions** dues aux seed defaults du preset (ground-truth `test_fixtures.rs:202-275`) :
 - `company.csv` : `rowCount=1` (la company elle-même, toujours présente).
-- `company_invoice_settings.csv` : `rowCount=1` (lazy-create via `get_or_create_default` injecte une row avec valeurs par défaut).
+- `accounts.csv` : `rowCount=5` (5 accounts seedés par défaut : 1000/1100/2000/3000/4000).
+- `company_invoice_settings.csv` : `rowCount=1` (direct INSERT defaults par le preset).
+- `vat_rates.csv` : `rowCount=4` (4 taux TVA Swiss seedés Story 7-2 KF-003 : normal/special/reduced/exempt).
 
-Tests AC #29(f) doivent prendre en compte ces deux exceptions dans les assertions.
+Tests AC #29(f) doivent prendre en compte ces quatre exceptions dans les assertions via la HashMap explicite (cf. AC #29(f)).
 
 ### Architecture compliance (architecture.md §17 + §11)
 
@@ -628,7 +631,7 @@ Tests AC #29(f) doivent prendre en compte ces deux exceptions dans les assertion
 - `crates/kesh-api/src/exports/metadata.rs` (~120 lignes — `GlobalExportMetadata` + `TableMeta` + `build_metadata_json` + `sha256_hex`)
 - `crates/kesh-api/src/routes/exports.rs` (~150 lignes — `export_global` handler + `emit_global_export_audit` + `build_global_filename`)
 - `crates/kesh-api/src/util.rs` (~80 lignes — ou extension d'un fichier existant si présent — `pub(crate) fn slugify`, `pub(crate) fn build_content_disposition`, `pub(crate) fn map_language_to_bcp47`) — **action** : refactor de Story 9-2a privés vers `pub(crate)` partagés.
-- `crates/kesh-api/tests/exports_global_e2e.rs` (~500 lignes — 12 tests E2E HTTP + helper `assert_zip_response`)
+- `crates/kesh-api/tests/exports_global_e2e.rs` (~700 lignes post-Pass-3 — **21 tests E2E HTTP** a-u + helper `assert_zip_response`)
 - `frontend/src/lib/features/export/exports.api.ts` (~50 lignes — `downloadGlobalExport`)
 - `frontend/src/lib/features/export/exports.api.test.ts` (~70 lignes Vitest, 2+ tests)
 - `frontend/src/routes/(app)/export/+page.svelte` (~120 lignes — page UI avec bouton + handler + zone alerte)
@@ -810,7 +813,7 @@ Modules touchés par 9-2b :
 - `_bmad-output/planning-artifacts/epic-9.md` §Story 9-2b (ACs originaux 7 bullets)
 - `_bmad-output/planning-artifacts/prd.md` FR68 (export global per table CSV), UX-DR38 (messages d'erreur actionnables — héritée Story 9-2a)
 - `_bmad-output/planning-artifacts/architecture.md` decision #12 (kesh-report crate, scope rapports — NE PAS étendre à raw tables), decision #13 (kesh-i18n transverse), §11 (workspace Cargo), §17 (cartographie FR68)
-- `_bmad-output/implementation-artifacts/9-2a-export-pdf-csv.md` — **foundation directe**, patterns réutilisés : `build_content_disposition` (Pass 1 code-review M14 RFC 5987 lang tag), `slugify` (Pass 1 BH-M1 regex inline), `emit_report_export_audit` best-effort, tracing span `tracing::field::Empty` (Pass 3 BH3-M1), frontend `triggerDownload` cleanup (M11), `exporting` flag dédié + guard re-entrancy (M12), `formatError` + fallback `*-error-generic` (M13), `map_language_to_bcp47` (Pass 3 ECH3-C1)
+- `_bmad-output/implementation-artifacts/9-2a-export-pdf-csv.md` — **foundation directe**, patterns réutilisés : `build_content_disposition` (Pass 1 code-review M14 RFC 5987 lang tag), `slugify` (Pass 1 BH-M1 regex inline), `emit_report_export_audit` best-effort, tracing span `tracing::field::Empty` (Pass 3 BH3-M1), frontend `triggerDownload` cleanup (M11 — à dupliquer per §triggerDownload-reuse), `exporting` flag dédié + guard re-entrancy (M12), `formatError` + fallback `*-error-generic` (M13). **`map_language_to_bcp47`** : N'EST PAS un pattern réutilisé — c'est une **nouvelle extraction T5.1 Pass 3** (le mapping est actuellement inline dans `load_pdf_context` `reports.rs:573-585`, à extraire vers `pub(crate) util::map_language_to_bcp47`).
 - `_bmad-output/implementation-artifacts/9-1-rapports-comptables-bilan-resultat-balance-journaux.md` — pattern audit best-effort Story 9-1 ECH-15
 - `crates/kesh-api/src/routes/reports.rs` — patterns Story 9-2a à promouvoir `pub(crate)` (T5.1/T5.2/T5.4)
 - `crates/kesh-api/src/errors.rs:184` + `:193` — variants `PdfGenerationFailed` + `CsvGenerationFailed` existants, pattern à reproduire pour `GlobalExportFailed`
@@ -882,3 +885,15 @@ Modules touchés par 9-2b :
     - BH3-MED-02 + L18 ajoutée : AC#19 reclassement conditionnel — défensif T5.1 `company_id > 0` mais test AC#29(p) reste skip-able si bypass middleware impossible.
   - **8 LOW reportés** : BH3-L1/L2/L3 (cosmétiques wording §filename + decision count), ECH3-L1..L4 (UTC year boundary, dead_code attrs, two Instant::now, hex_encode perf), AA3-L1 (changelog count).
   - **Trend Pass 3** : 2 CRITICAL → 0 (patchés, ground-truth bugs). 11 HIGH → 0 > LOW restants après patches (8 patchés directement + 3 régressions Pass 1+2 corrigées). 8 MEDIUM → 7 patchés + 1 acceptée. **Status post-patches** : 0 finding > LOW non remédié. Tests croissent à **21+10+5+1 = 37 tests minimum**. **3 hallucinations Opus initial corrigées** : `Pass 3 ECH3-C1 Story 9-2a` (n'existe pas), `map_language_to_bcp47` (n'existe pas, à créer), `triggerDownload` pattern reuse (à dupliquer). Cycle CLAUDE.md → **Pass 4 requis** (rotation Opus → Sonnet 4.6) sur spec triplement patchée pour vérifier convergence finale 0 > LOW.
+
+- **2026-05-16** (Sonnet 4.6 spec validate Pass 4 — **CONVERGENCE**) — **12 findings bruts** (0 CRITICAL + 0 HIGH + 1 MEDIUM + 11 LOW) via 3 reviewers parallèles fresh-context (BH4 + ECH4 + AA4 Sonnet 4.6, rotation Opus → Sonnet). Spec quadruplement patchée maintenant cohérente. **1 MEDIUM patché + 4 LOW patchés pour propreté + 7 LOW reportés cosmétiques** :
+  - **1 MEDIUM patché** : BH4-MEDIUM-01 — T9.2 prose "each CSV header-only (row_count=0)" pour test empty company contradisait HashMap explicite AC#29(f) (qui a 4 entries non-zéro post-Pass 3). T9.2 reformulé pour pointer explicitement vers la HashMap. Cohérence prose ↔ test specification rétablie.
+  - **4 LOW patchés** :
+    - BH4-LOW-01 : §scope-tables note empty company "deux exceptions" → **"quatre exceptions"** (accounts.csv=5, vat_rates.csv=4 ajoutés).
+    - BH4-LOW-02 : File structure stale "~500 lignes — 12 tests E2E" → **"~700 lignes — 21 tests E2E"**.
+    - BH4-LOW-03 / AA4-LOW-03 : T8.5 stale "≥ 3 tests post-Pass 1" → **"≥ 5 tests post-Pass 3"** (match T12.1 canonical).
+    - AA4-LOW-01 : §References ligne 816 stale claim `map_language_to_bcp47 (Pass 3 ECH3-C1)` corrigé en "**NOUVELLE extraction T5.1 Pass 3**" (cohérent §locale-source + T5.1).
+    - AA4-LOW-02 : T9.2 fixture strategy ajout bullet explicite AC#29(u) multi-tenant scoping all repos.
+  - **7 LOW reportés cosmétiques** : ECH4-LOW-01..04 (parser extra params, helper signature wording), BH4-LOW-04 (slugify 2-arg vs 3-arg description ambiguë mais code samples cohérents), nits divers.
+  - **Trend Pass 4** : 0 CRITICAL → 0. 0 HIGH → 0. 1 MEDIUM → 0 (patché). 11 LOW → 4 patchés + 7 reportés cosmétiques. **Status post-patches** : **0 finding > LOW non remédié**. Tests minimum stable à **21+10+5+1 = 37 tests**. **Critère d'arrêt CLAUDE.md atteint** (0 finding > LOW). Cycle **TERMINE à Pass 4 (4/8 budget)**.
+  - **Bilan cycle complet (4 passes)** : 55 + 24 + 25 + 12 = **116 findings bruts totaux** (7 CRITICAL + 41 HIGH + 47 MEDIUM + 21 LOW) → **~60 patches > LOW cumulés** (27 Pass 1 + 13 Pass 2 + 15 Pass 3 + 5 Pass 4) + ~21 LOW reportés. Modèles utilisés : Sonnet 4.6 (Pass 1+4) → Haiku 4.5 (Pass 2) → Opus 4.7 (Pass 3) — rotation complète anti-rubber-stamp. Pass 3 Opus a trouvé 2 CRITICAL ground-truth (audit_log company_id + build_response signature) que Sonnet + Haiku ont raté. Pass 4 Sonnet a vérifié convergence et trouvé 1 MEDIUM stale prose Pass 2 non corrigée Pass 3. Auteur-bias Opus initial brisé par 3 passes intermédiaires avec patches substantiels. **Spec converge ready-for-dev** : 32 ACs full coverage, 18 limitations documentées, 10+ décisions verrouillées, 37 tests minimum, DoD 11 gates measurables, splitting check inchangé (pattern simple).
