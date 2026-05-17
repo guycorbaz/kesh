@@ -798,3 +798,17 @@ reports-filename-trial-balance = bilancio-verifica
 reports-filename-journals = giornali
 reports-pdf-header-period = Periodo
 reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
+
+# Story 9-2b — Esportazione globale ZIP (sovranità dei dati) — 12 chiavi
+nav-export-global = Esportazione globale
+export-global-title = Esportazione globale dei vostri dati
+export-global-description = Esportate tutti i vostri dati contabili (conti, scritture, contatti, fatture, transazioni bancarie) in formato CSV in un file ZIP. Utilizzate questa esportazione per archiviare, migrare verso un altro software o conservare i vostri dati per 10 anni (CO svizzero Art. 958f).
+export-global-button = Avvia esportazione
+export-global-loading = Generazione esportazione…
+export-global-success = Esportazione scaricata.
+export-global-error-generic = Impossibile generare l'esportazione globale. Verificate la connessione e riprovate.
+export-global-filename-hint = Il file sarà scaricato con il nome kesh-export-{ $companyShort }-{ $date }.zip
+export-global-content-includes = L'esportazione contiene: piano dei conti, scritture, contatti, prodotti, fatture, conti bancari, transazioni, regole di riconciliazione e un manifesto metadata.json con hash SHA-256 di ogni file per la verifica di integrità.
+export-global-content-excludes = Non contiene: utenti (PII + password), token di sessione, registro audit interno, stato onboarding (motivi di sicurezza e tecnici).
+export-global-souverainete-note = I vostri dati vi appartengono. Kesh non effettua alcuna copia di questa esportazione sui suoi server.
+error-global-export-failed = L'esportazione globale non è potuta essere generata. Se il problema persiste, contattate l'assistenza.
