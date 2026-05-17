@@ -1,0 +1,122 @@
+[
+  {
+    "id": "C3-ECH-001",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_multi_tenant_idor_scoping",
+    "finding": "CSV BOM assertion precedes content validation on 5 direct-table CSVs",
+    "path": "assert_eq!(&raw[0..3], &[0xEF, 0xBB, 0xBF], ...) before split/parse",
+    "boundary": "All CSV entries must start with UTF-8 BOM; empty files (0 data rows + header) correctly assert header presence",
+    "verdict": "PASS — BOM check isolated early, header extraction via split() expected to always yield ≥1 element (header line)",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-002",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_multi_tenant_idor_scoping",
+    "finding": "IDOR scoping on journal_entry_lines.csv via JOIN parsing",
+    "path": "Parse CSV header → locate entry_id column → iterate data rows → HashSet lookup of allowed_entry_ids",
+    "boundary": "If CSV is empty (0 data rows): for-loop doesn't execute, jel_data_count=0 ✓. If CSV leaks company_B rows: HashSet.contains() fails assertion ✓",
+    "verdict": "PASS — metadata.rowCount corroborates CSV data count (assert_eq! catches mismatch)",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-003",
+    "category": "Boundary Condition",
+    "severity": "LOW",
+    "test": "export_global_zip_multi_tenant_idor_scoping",
+    "finding": "CSV parser assumes header + data both use semicolon delimiter; malformed header (different delimiter) not caught",
+    "path": "cols = header.split(';').collect() → position() on cols[cid_pos]; if header has ',' then position() finds wrong column",
+    "boundary": "Edge: header='company_id;X;Y' but data row='X,Z,W' → parser splits data on ';' → cid_pos out-of-bounds panic",
+    "verdict": "ACCEPTABLE — spec mandates ';' delimiter (AC #29 CSV format); malformed header is app-level bug (not test responsibility)",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-004",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_audit_log_inserted",
+    "finding": "Audit poll loop waits 2s (20 × 100ms) for async best-effort insert",
+    "path": "for _ in 0..20: fetch_optional(WHERE user_id=? AND action='exports.global') → sleep 100ms if None",
+    "boundary": "If audit insert latency > 2s: loop exhausts, row=None, .expect() panics with diagnostic message ✓",
+    "verdict": "PASS — failure mode is explicit panic with clear error msg; no silent pass",
+    "actionable": false,
+    "risk": "flakiness if CI latency > 2s, but message documents intent"
+  },
+  {
+    "id": "C3-ECH-005",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_audit_log_inserted",
+    "finding": "Audit filtering uses user_id (FK isolation), not company_id (audit_log schema has no company_id column)",
+    "path": "Query: WHERE user_id=? AND action='exports.global' → no company_id filter (FK users.company_id guarantees isolation)",
+    "boundary": "Multi-tenant safety: each user belongs to exactly 1 company; filtering by user_id is sufficient ✓",
+    "verdict": "PASS — design correct per Pass 3 ECH review (C1 ground-truth validation of audit_log schema)",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-006",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_audit_log_inserted",
+    "finding": "details_json field decoded as serde_json::Value (JSON BLOB type), not Option<String>",
+    "path": "sqlx::query_as::<_, (..., serde_json::Value)> with details_json parameter; deserializes JSON directly",
+    "boundary": "If details_json is NULL: serde_json::Value::Null ✓; if malformed JSON: query fails at deserialize step (caught by .unwrap())",
+    "verdict": "PASS — type signature enforces JSON deserialization; no string-parsing fallback risk",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-007",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_repo_scoping_all_list_all_by_company",
+    "finding": "Invoice lines JOIN scoping assertion non-tautological: 1 invoice_line inserted per company (A & B)",
+    "path": "invoices::list_all_lines_by_company(pool, a.company_id) → JOIN invoices ON invoice_lines.invoice_id=invoices.id WHERE invoices.company_id=?",
+    "boundary": "If JOIN omits WHERE invoices.company_id filter: result=2 (both A & B rows) → assertion fails (expected 1) ✓ CATCHES REGRESSION",
+    "verdict": "PASS — assertion count (1 vs 2) proves JOIN scoping; not tautological (≠ empty result both ways)",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-008",
+    "category": "Boundary Condition",
+    "severity": "LOW",
+    "test": "export_global_zip_filename_pattern",
+    "finding": "Date suffix extraction uses hardcoded char positions: fname[fname.len()-14..fname.len()-4] for '-YYYY-MM-DD'",
+    "path": "date_suffix = &fname[fname.len()-14..fname.len()-4]; assert 2 dashes in date_suffix",
+    "boundary": "Edge: filename='kesh-export-ABC-2026-01-01.zip' (28 chars) → [14..24]='ABC-2026-01'; count dashes=2 ✓. But if company slug variable length (vs fixed 'ABC'), boundaries might shift",
+    "verdict": "ACCEPTABLE — spec says pattern 'kesh-export-.+-YYYY-MM-DD.zip'; regex-like validation would be more robust, but hardcoded extraction works if slug is non-empty",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-009",
+    "category": "Path Trace",
+    "severity": "INFO",
+    "test": "export_global_zip_audit_log_inserted",
+    "finding": "Details JSON assertions check specific fields: company_id, byte_size, csv_count, fiscal_year_scope, duration_ms",
+    "path": "details[\"company_id\"].as_i64().unwrap() → assert matches ctx.company_id; similar for byte_size (u64>0), csv_count (16), fiscal_year_scope (string), duration_ms (number)",
+    "boundary": "If field missing: .unwrap() panics; if type mismatch (e.g., csv_count is string not u64): as_u64()=None → .unwrap() panics ✓",
+    "verdict": "PASS — schema violations are hard failures; type safety enforced",
+    "actionable": false,
+    "risk": "none"
+  },
+  {
+    "id": "C3-ECH-010",
+    "category": "Seed Fixture",
+    "severity": "INFO",
+    "test": "export_global_zip_repo_scoping_all_list_all_by_company",
+    "finding": "Fixture creates row couples (A & B) for all 8 scoped tables via mix of repository + raw SQL",
+    "path": "seed_company(A), seed_company(B) → insert products(A), products(B) → ... → post_entry(A), post_entry(B) → list_all_by_company(A) assertions",
+    "boundary": "If any insert fails (FK missing, duplicates): query panics early ✓. If repository function queries both A & B despite filter: assertion fails ✓",
+    "verdict": "PASS — fixture setup is comprehensive (8 tables, 2 companies, non-tautological counts)",
+    "actionable": false,
+    "risk": "none"
+  }
+]

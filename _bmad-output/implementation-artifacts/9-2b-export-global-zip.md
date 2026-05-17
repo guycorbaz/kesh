@@ -1,6 +1,6 @@
 # Story 9.2b: Export global ZIP (souveraineté des données)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -511,6 +511,45 @@ Faux positifs ou comportements spec-acceptés (résumé concis) :
 - **Spec-acceptés** : `get_or_create_default` lazy-create (§scope-tables row 14), `list_all_by_company` unbounded (L4+L15 documentés), `map_language_to_bcp47(&str)` (§locale-source intentionnel), single-INSERT tx pattern (cohérent 9-2a `emit_report_export_audit`), tests `(n)(o)` no-ops (AC #29 placeholder wired).
 - **Faux positifs** : `JournalEntryLine` colonnes manquantes (entité a 6 champs réels), 16 noms canoniques non testés (couvert par AC #29(c) `structure_17_entries_exact_set`), `invoices.rs` hardcoded vs `LINE_COLUMNS` (JOIN `il.` alias diffère), `format!` per-call (pattern existant), RFC 5987 regex `/i` (analyse self-dismiss reviewer), revokeObjectURL race (pattern Story 9-2a project convention), `exporting` flag race Svelte 5 (sync model), `role="alert"` re-render (pattern acceptable), Vitest revokeObjectURL timing (dépendant de H7 défer), `successMsg` 2e clic (UX intentionnel), separator `;` hardcoded (contrat figé §csv-format), ISO-8859-1 charset fallback (backend toujours UTF-8), `isApiError(e)` sans `&& e.code` (différence non-observable), T8.4 nav-group structure (spec autorise).
 - **Hors scope** : RBAC Admin/Comptable tests dédiés (AC #11 mandate Consultation seul), JWT forgé role invalide (pas dans spec).
+
+---
+
+
+
+## Review Findings (Pass 2 — Haiku 4.5 × 12 reviewers post-patches Pass 1)
+
+**Date** : 2026-05-17 — **Modèle** : Haiku 4.5 (rotation Sonnet → Haiku, fresh-context)
+**Total bruts** : ~30 findings — **Post-dédup + triage ground-truth (memory `feedback_haiku_review_diff_combined`)** : **0 CRITICAL, 0 HIGH, 0 MEDIUM réels > LOW**
+
+### Critère d'arrêt CLAUDE.md ATTEINT ✅
+
+Trend > LOW : Pass 1 = **15** → Pass 2 = **0**.
+
+### Faux positifs Haiku (ground-truth grep, memory appliquée)
+
+| # | Reviewer | Claim | Ground-truth | Verdict |
+|---|---|---|---|---|
+| 1 | C2 Blind CRITICAL | "list_all_lines_by_company raw SQL vs format!{COLUMNS} style inconsistency" | JOIN avec alias `jel.*` requiert le listing explicite, **intentionnel** patch H5 spec | **DISMISS** style nit, severity overstated par Haiku |
+| 2 | C2 AA CRITICAL | "i18n content-includes liste 13 éléments au lieu de 16" | description UX user-facing (approximative), "écritures"/"factures" englobent leurs lignes en langue naturelle | **DISMISS** demoted LOW (cosmétique UX summary) |
+| 3 | C4 Blind CRITICAL | "lookahead `(?!\*)` fragile sur `filename * = ...`" (avec espace avant `*`) | Edge case théorique non-RFC-compliant, jamais émis par le backend | **DISMISS** demoted LOW (cas hypothétique) |
+| 4 | C3 Blind HIGH | "audit poll 2s insuffisant CI charged" | Audit `.await`ed AVANT response → committé synchroniquement, poll loop = défensif pur | **DISMISS** overcautious |
+| 5 | C3 Blind HIGH | "AC #29(u) 8/? fns couvertes" | Test couvre 10/10 nouvelles fns (8 list_all_by_company + 2 list_all_lines_by_company JOIN). Comment "8 tables" lu hors contexte | **DISMISS** misreading par Haiku |
+| 6 | C4 Blind HIGH | "savedZipPath race tests parallèles" | Module-level var, Playwright workers = processus séparés, 1 seul test dans le fichier | **DISMISS** défensif sans bug actuel |
+| 7 | C4 Blind HIGH | "test H8 tautologique" | Implémente l'alternative documentée spec ("extraire guard en helper testable") | **DISMISS** suit spec |
+| 8 | C4 ECH HIGH | "`route.continue()` sans `await`" | **FALSE POSITIVE** : `await route.continue()` présent ligne 66 `export-global.spec.ts` | **DISMISS** hallucination Haiku (memory pattern confirmé) |
+| 9 | C4 ECH HIGH | "`resolveDownload!` sans validation" | **FALSE POSITIVE** : `expect(slowFetch).toHaveBeenCalledTimes(1)` présent ligne 201 `exports.api.test.ts` | **DISMISS** hallucination Haiku |
+| 10 | C1 Blind MEDIUM | "asymétrie `.instrument()` find_by_id non couvert" | Span scope intentionnellement limité à `build_global_export` (design tight scope) | **DISMISS** design intent |
+| 11 | C1 Blind MEDIUM | "`emit_global_export_audit -> ()` avale erreurs" | Pattern best-effort documenté spec AC #23 cohérent Story 9-2a | **DISMISS** intentional |
+| 12 | C2 Blind MEDIUM | "no const LINE_COLUMNS journal_entries" | Style cohérent JOIN alias explicite | **DISMISS** style nit |
+| 13 | C3 Blind MEDIUM | "BOM assertion fragile + diagnostic opaque" | Comportement post-patch meilleur que avant (panic clair vs silent truncation) | **DISMISS** overcautious |
+
+### Findings Pass 2 confirmés > LOW : **0**
+
+Tous les 12 reviewers Haiku ont validé les 15 patches Pass 1 cohérents avec la spec. Les 3 CRITICAL + 6 HIGH bruts triés ground-truth = 2 faux positifs Haiku purs (memory pattern) + 11 severities overstated demoted en LOW.
+
+**Bilan cycle complet (2 passes)** : 108 + 30 = **138 findings bruts** → 15 patches Pass 1 + 0 patches Pass 2 (0 > LOW post-triage) + 5 deferred + ~50 dismissed. Modèles utilisés : Sonnet 4.6 (Pass 1) → Haiku 4.5 (Pass 2). Rotation appliquée, biais Opus dev-story brisé.
+
+**Critère d'arrêt CLAUDE.md ATTEINT — cycle STOP Pass 2 (budget 2/8).**
 
 ---
 
