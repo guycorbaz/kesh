@@ -1306,7 +1306,7 @@ pub async fn detail(
 
 fn compute_sha256_hex(bytes: &[u8]) -> String {
     let hash = Sha256::digest(bytes);
-    hex_encode(&hash)
+    crate::util::hex_encode(&hash)
 }
 
 /// Story 8-3 — sérialise un `BankImport` existant en payload preview.
@@ -1507,14 +1507,6 @@ fn detect_duplicate_lines_for_imported(
             key: d.key,
         })
         .collect()
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
 }
 
 fn import_to_response(import: kesh_db::entities::BankImport) -> BankImportResponse {

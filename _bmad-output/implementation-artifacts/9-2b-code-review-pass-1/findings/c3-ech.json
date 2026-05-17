@@ -1,0 +1,132 @@
+[
+  {
+    "id": "C3-ECH-001",
+    "severity": "HIGH",
+    "test": "export_global_zip_multi_tenant_idor_scoping",
+    "location": "exports_global_e2e.rs:524-525",
+    "title": "BOM strip inconditionnelle sur 3 octets : panic si CSV vide (header seul = BOM + header CRLF) ou si BOM absent",
+    "description": "Le test fait `std::str::from_utf8(&raw[3..])` pour stripper le BOM. Si le CSV vide exporté contient uniquement le BOM + header CRLF (ex. `bank_transactions.csv` avec 0 lignes pour `co_a_idor`), le slice `raw[3..]` est valide, mais si un CSV non-BOM était généré (ex. régression future dans `write_csv_bom`), le test lirait 3 octets du header comme données et le `company_id` column lookup trouverait un faux header décalé. La vérification n'assert pas `raw[0..3] == [0xEF, 0xBB, 0xBF]` avant le strip, donc le test accepte silencieusement un CSV sans BOM.",
+    "reproduction": "Supprimer `write_csv_bom` dans un serializer → le test passe quand même car il strip aveuglément 3 octets (qui sont alors les 3 premiers chars du header).",
+    "fix": "Ajouter `assert_eq!(&raw[0..3], &[0xEF, 0xBB, 0xBF], \"{name} must start with UTF-8 BOM\");` avant le strip dans la boucle de vérification IDOR."
+  },
+  {
+    "id": "C3-ECH-002",
+    "severity": "HIGH",
+    "test": "export_global_zip_multi_tenant_idor_scoping",
+    "location": "exports_global_e2e.rs:516-543",
+    "title": "Vérification IDOR limitée à 5 tables directes — 2 tables JOINées (journal_entry_lines, invoice_lines) vérifiées uniquement via rowCount, pas via company_id réel",
+    "description": "Le test vérifie que `journal_entry_lines.csv` a 6 lignes pour A (via rowCount dans metadata.json), mais ne parse pas le CSV `journal_entry_lines.csv` pour confirmer que chaque ligne appartient bien à A (via FK `journal_entry_id` pointant vers une entry de A). Si `list_all_lines_by_company` retourne accidentellement des lignes de B qui font que le total reste 6, l'IDOR n'est pas détecté. Idem pour `invoice_lines.csv`.",
+    "reproduction": "Une implémentation buggée de `list_all_lines_by_company` qui retourne 3 lignes A + 3 lignes B = 6 total passerait le test.",
+    "fix": "Parser le CSV `journal_entry_lines.csv` et vérifier que chaque `journal_entry_id` référencé est dans le set des `entry.id` de A (ou ajouter une assertion count complémentaire pour B en appelant l'endpoint avec `ctx_b.jwt` et vérifier que B a aussi 6 lignes distinctes)."
+  },
+  {
+    "id": "C3-ECH-003",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_content_disposition_rfc5987",
+    "location": "exports_global_e2e.rs:896",
+    "title": "Assertion `filename*=UTF-8'fr-CH'` hardcodée — ne détecterait pas une régression sur company DE/IT",
+    "description": "Le seed utilise `accounting_language: Language::Fr` donc `locale_bcp47 = 'fr-CH'`. Le test assert que la valeur est `filename*=UTF-8'fr-CH'`. Il n'y a pas de test symétrique pour une company `Language::De` (→ `de-CH`) ou `Language::It` (→ `it-CH`). Si `map_language_to_bcp47` régresse pour `DE`/`IT`, le header Content-Disposition serait incorrect pour ces locales mais aucun test E2E ne le détecterait.",
+    "reproduction": "Casser `map_language_to_bcp47('DE')` → retourner `'fr-CH'` au lieu de `'de-CH'` : le test (j) passe quand même.",
+    "fix": "Ajouter un variant du test (j) avec `seed_company` utilisant `accounting_language: Language::De` et asserter `filename*=UTF-8'de-CH'`."
+  },
+  {
+    "id": "C3-ECH-004",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_filename_pattern",
+    "location": "exports_global_e2e.rs:929-935",
+    "title": "Validation du suffixe de date fragile : compte uniquement 2 tirets, ne valide pas les composantes YYYY/MM/DD numériquement",
+    "description": "La validation `date_suffix.chars().filter(|c| *c == '-').count() == 2` vérifie qu'il y a 2 tirets dans les 10 chars `fname[len-14..len-4]`, mais n'asserte pas : (1) que les 4 premiers chars sont des chiffres (YYYY), (2) que le mois est dans `01..=12`, (3) que le jour est dans `01..=31`. Un filename `kesh-export-ci-test-company-pattern-abcd-ef-gh.zip` passerait la validation.",
+    "reproduction": "Modifier `build_global_filename` pour retourner `kesh-export-slug-abcd-ef-gh.zip` → le test (k) passe.",
+    "fix": "Utiliser un regex `r\"kesh-export-.+-\\d{4}-\\d{2}-\\d{2}\\.zip\"` avec la crate `regex` ou une assertion séquentielle plus stricte sur les composantes numériques."
+  },
+  {
+    "id": "C3-ECH-005",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_empty_company_explicit_row_count_map",
+    "location": "exports_global_e2e.rs:735-759",
+    "title": "Hypothèse `company_invoice_settings.csv = 1` dépend du comportement lazy-create : si `get_or_create_default` ne crée pas en l'absence de CIS pre-existant, le count reste 0 et le test failera",
+    "description": "Le commentaire du test dit \"lazy-create OK : write idempotent\" mais le test E2E n'a pas de vérification préalable que la CIS n'était pas déjà seedée par le migrator. Si le migrator insère une CIS par défaut pour toute nouvelle company (comportement présent ou futur), le count serait 1 avant même l'appel export — le test passerait accidentellement. Inversement si `get_or_create_default` est refactorisé en lecture seule (get-only sans create), le count serait 0 et le test failera. La fragilité vient du fait que le test suppose un comportement interne de la DB sans l'asserter indépendamment.",
+    "reproduction": "Modifier `get_or_create_default` pour retourner une valeur calculée sans INSERT → `company_invoice_settings.csv` aura 0 rows → assertion `expected=1 actual=0`.",
+    "fix": "Insérer explicitement une CIS via SQL dans le test (comme le font les autres tables) OU vérifier avant l'export que la CIS est absente et qu'elle est bien créée par l'export."
+  },
+  {
+    "id": "C3-ECH-006",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_sha256_integrity",
+    "location": "exports_global_e2e.rs:666-676",
+    "title": "SHA-256 calculé sur les bytes ZIP décompressés (via `zip::ZipArchive::by_index`) — si la lib ZIP retourne les bytes dans un ordre différent des bytes BOM+CSV serialisés, les hash divergent silencieusement",
+    "description": "La spécification (metadata.rs:24) dit que le SHA-256 est calculé sur les `bytes décompressés (BOM + header + data rows + CRLF)`. Le test recompute le SHA-256 sur les bytes lus via `entry.read_to_end(&mut bytes)` après décompression ZIP. Ces bytes doivent être identiques aux bytes produits par `serialize_<table>_csv`. Si la lib ZIP (v2.x) ajoute un trailing byte ou modifie l'encoding lors de la décompression, les hash divergeraient. Le test ne confirme pas explicitement que le premier byte est `0xEF` (BOM) avant le hash — il n'y aurait pas d'indice sur ce qui a divergé.",
+    "reproduction": "Difficile en pratique, mais si une lib ZIP future décompresse avec un trailing `\n` supplémentaire, le hash stocké et le hash recalculé divergeraient.",
+    "fix": "Ajouter `assert_eq!(bytes[0..3], [0xEF, 0xBB, 0xBF], \"CSV {name} doit commencer par BOM\")` avant le hash dans la boucle du test (e)."
+  },
+  {
+    "id": "C3-ECH-007",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_repo_scoping_all_list_all_by_company (AC #29u)",
+    "location": "exports_global_e2e.rs:1418-1426",
+    "title": "Assertion `invoice_lines_a.len() == 0` ne couvre pas la scoping — elle est vraie parce qu'on n'a pas inséré de lignes, pas parce que le scoping fonctionne",
+    "description": "Le test insère des invoices pour A et B mais sans `invoice_lines`. Puis il assert `invoice_lines_a.len() == 0`. Cette assertion est trivialement vraie (0 lignes insérées → 0 lignes retournées) et ne prouve pas que `list_all_lines_by_company` scope correctement — une implémentation `SELECT * FROM invoice_lines` (sans WHERE) retournerait aussi 0 car il n'y a pas de lignes. La scoping de `invoice_lines` via JOIN `invoices` n'est pas testée.",
+    "reproduction": "Remplacer `list_all_lines_by_company` par `SELECT * FROM invoice_lines` sans filtre → le test passe quand même (toujours 0 lignes).",
+    "fix": "Insérer au moins 1 `invoice_line` pour B, puis asserter que `invoice_lines_a.len() == 0` (pas de fuite de B). Ou insérer 1 ligne pour A et 1 pour B, puis asserter que A en voit 1 et B en voit 1 séparément."
+  },
+  {
+    "id": "C3-ECH-008",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_large_dataset_perf",
+    "location": "exports_global_e2e.rs:826-835",
+    "title": "Références à AC #20 et AC #22 dans les messages d'assertion au lieu de AC #29(g) — indicateur de copier-coller depuis une autre story",
+    "description": "Les messages d'assertion disent `\"AC #20 perf : export > 10s\"` et `\"AC #22 perf : ZIP > 5 MB\"` alors que la story 9-2b cite AC #29(g). Ces références incorrectes rendraient un échec de test difficile à tracer dans la story — un développeur chercherait AC #20/#22 dans la spec 9-2b sans les trouver.",
+    "reproduction": "Le test fail → message \"AC #20 perf\" → impossible de retrouver dans la spec.",
+    "fix": "Remplacer `\"AC #20 perf\"` par `\"AC #29(g) perf\"` et `\"AC #22 perf\"` par `\"AC #29(g) perf\"`."
+  },
+  {
+    "id": "C3-ECH-009",
+    "severity": "MEDIUM",
+    "test": "export_global_zip_audit_log_inserted",
+    "location": "exports_global_e2e.rs:979",
+    "title": "Sleep de 100ms pour attendre l'audit best-effort : race condition possible sous forte charge CI",
+    "description": "L'audit est émis best-effort de manière asynchrone après la réponse HTTP. Le test attend 100ms via `tokio::time::sleep`. Sous forte charge CI (parallélisation `sqlx::test`), 100ms peut être insuffisant — le `fetch_one` échouera avec \"no rows\" et causera un échec flaky. Le test ne documente pas explicitement pourquoi 100ms est jugé suffisant ni ne prévoir de retry.",
+    "reproduction": "En CI saturée, le thread Tokio du handler qui exécute `emit_global_export_audit` peut être deschedulé après la réponse HTTP mais avant l'INSERT — le sleep de 100ms expire avant l'INSERT.",
+    "fix": "Utiliser un wait with retry (ex. boucle `tokio::time::timeout(Duration::from_secs(2), ...)`) ou augmenter le sleep à 500ms avec un commentaire explicite sur le worst-case CI."
+  },
+  {
+    "id": "C3-ECH-010",
+    "severity": "LOW",
+    "test": "export_global_zip_metadata_shape_and_exact_values",
+    "location": "exports_global_e2e.rs:622",
+    "title": "Assertion `keshVersion == env!(CARGO_PKG_VERSION)` dépend du build-time du test — si kesh-api et kesh-db sont compilés séparément avec des versions différentes, la valeur diverge",
+    "description": "L'assertion compare `meta[\"keshVersion\"]` avec `env!(\"CARGO_PKG_VERSION\")` évalué au build-time du **test**. Si le test est dans le même crate que `kesh-api`, les versions sont forcément identiques. Mais si la crate de test est séparée (ex. integration test externe), `env!(\"CARGO_PKG_VERSION\")` lirait la version du test-crate, pas de `kesh-api`. Ce n'est pas un bug actuel (le test est dans `kesh-api/tests/`) mais c'est une hypothèse implicite fragile.",
+    "reproduction": "Déplacer le test dans une crate externe avec une version différente.",
+    "fix": "Documenter l'hypothèse dans un commentaire : `// env!(\"CARGO_PKG_VERSION\") == kesh-api version car ce test est dans kesh-api/tests/`."
+  },
+  {
+    "id": "C3-ECH-011",
+    "severity": "LOW",
+    "test": "export_global_zip_error_500_sql_wired / export_global_zip_error_500_zip_wired",
+    "location": "exports_global_e2e.rs:1019-1033",
+    "title": "Tests (n) et (o) sont des no-ops sans assertion — ils compilent mais ne testent rien ; le comptage \"21 tests\" est artificiel",
+    "description": "Les deux tests AC #29(n) et AC #29(o) sont des fonctions vides avec juste un commentaire. Ils ne valident pas de comportement observable. Le commentaire dans le module doc `//! 21 tests minimum (AC #29 a-u)` inclut ces deux tests pour atteindre 21, mais ils n'exercent aucun chemin de code.",
+    "reproduction": "Supprimer le handler de 500 → les tests (n) et (o) passent quand même.",
+    "fix": "Soit supprimer ces tests et remettre à jour le comptage à 19 tests, soit les implémenter avec au minimum une assertion sur le wiring des erreurs (ex. vérifier que `AppError::GlobalExportFailed` implémente `IntoResponse` avec status 500 via un appel direct)."
+  },
+  {
+    "id": "C3-ECH-012",
+    "severity": "LOW",
+    "test": "export_global_zip_repo_scoping_all_list_all_by_company (AC #29u)",
+    "location": "exports_global_e2e.rs:1233-1238",
+    "title": "Seed des products A et B dans une seule requête multi-VALUES — si la FK company_id échoue silencieusement, les 2 rows pourraient atterrir dans la même company",
+    "description": "L'INSERT `VALUES (?, 'pa', ...), (?, 'pb', ...)` bind `.bind(a.company_id).bind(b.company_id)`. Si les placeholders `?` sont résolus dans un ordre différent par sqlx (peu probable mais dépend de l'implémentation), les assignments pourraient être inversés. Plus important : si `a.company_id == b.company_id` (ce qui ne peut pas arriver avec `sqlx::test` par design, mais un futur refactor du seed pourrait le causer), le test serait toujours vert. L'assertion `assert_ne!(ctx_a.company_id, ctx_b.company_id)` présente dans le test (b) est absente ici.",
+    "reproduction": "Difficile avec le setup actuel, mais l'absence de `assert_ne!` crée une dépendance implicite sur l'isolation de `sqlx::test`.",
+    "fix": "Ajouter `assert_ne!(a.company_id, b.company_id, \"seeds must use distinct companies\");` au début du test (u)."
+  },
+  {
+    "id": "C3-ECH-013",
+    "severity": "LOW",
+    "test": "Tous les tests avec BOM strip",
+    "location": "exports_global_e2e.rs:525",
+    "title": "Assumption CSV delimiter `;` non vérifiée — si un futur refactor passe à `,`, le split(';') retourne 1 seule colonne et `position(company_id)` panique",
+    "description": "Le test IDOR splitte les lignes CSV par `;` (`row.split(';')`) sans asserter que le delimiter correct est `;`. Si `make_csv_writer` était modifié pour utiliser `,` (ex. pour compatibilité Excel US), le split retournerait une seule cellule et `cid_pos` serait `None` → `expect(\"company_id column present\")` panics avec un message trompeur.",
+    "reproduction": "Changer `delimiter(b';')` en `delimiter(b',')` dans `csv_tables.rs` → le test passe le header-parse mais trouve `company_id` à position correcte avec `,`-split, mais les lignes de données seraient aussi splittées par `,`.",
+    "fix": "Ajouter une vérification du délimiteur dans le header ou documenter l'invariant explicitement dans le test."
+  }
+]

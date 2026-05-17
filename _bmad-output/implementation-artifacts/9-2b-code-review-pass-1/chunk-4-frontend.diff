@@ -1,0 +1,521 @@
+diff --git a/frontend/src/lib/features/export/exports.api.test.ts b/frontend/src/lib/features/export/exports.api.test.ts
+new file mode 100644
+index 0000000..4215caf
+--- /dev/null
++++ b/frontend/src/lib/features/export/exports.api.test.ts
+@@ -0,0 +1,137 @@
++// Story 9-2b — Tests Vitest pour `downloadGlobalExport` + parser RFC 5987 / 6266.
++
++import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
++import { authState } from '$lib/app/stores/auth.svelte';
++import {
++	downloadGlobalExport,
++	parseContentDispositionFilename,
++} from './exports.api';
++
++function fakeJwt(): string {
++	const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
++		.replace(/\+/g, '-')
++		.replace(/\//g, '_')
++		.replace(/=+$/, '');
++	const payload = btoa(JSON.stringify({ sub: '1', role: 'Comptable', exp: 9999999999 }))
++		.replace(/\+/g, '-')
++		.replace(/\//g, '_')
++		.replace(/=+$/, '');
++	return `${header}.${payload}.sig`;
++}
++
++describe('exports.api — Story 9-2b', () => {
++	// ----------------------------------------------------------------------
++	// T12.1(d) + (e) — parseContentDispositionFilename (Pass 3 ECH3-H4)
++	// ----------------------------------------------------------------------
++
++	describe('parseContentDispositionFilename', () => {
++		it('AC #31(d) ASCII fallback : filename="…"', () => {
++			expect(
++				parseContentDispositionFilename(
++					'attachment; filename="kesh-export-foo-2026-05-15.zip"',
++				),
++			).toBe('kesh-export-foo-2026-05-15.zip');
++		});
++
++		it('AC #31(e) RFC 5987 UTF-8 percent-decoded (no language tag)', () => {
++			expect(
++				parseContentDispositionFilename(
++					"attachment; filename*=UTF-8''kesh-export-%C3%A9t%C3%A9-2026.zip",
++				),
++			).toBe('kesh-export-été-2026.zip');
++		});
++
++		it('AC #31(e) RFC 5987 UTF-8 percent-decoded WITH language tag (fr-CH)', () => {
++			// Story 9-2a Pass 1 code-review M14 — backend insère le tag langue.
++			expect(
++				parseContentDispositionFilename(
++					"attachment; filename=\"kesh-export-ci-test-company-2026-05-17.zip\"; filename*=UTF-8'fr-CH'kesh-export-ci-test-company-2026-05-17.zip",
++				),
++			).toBe('kesh-export-ci-test-company-2026-05-17.zip');
++		});
++
++		it('AC #31(e) returns null on null or empty header', () => {
++			expect(parseContentDispositionFilename(null)).toBeNull();
++			expect(parseContentDispositionFilename('')).toBeNull();
++		});
++
++		it('returns null on header without filename', () => {
++			expect(parseContentDispositionFilename('attachment')).toBeNull();
++		});
++	});
++
++	// ----------------------------------------------------------------------
++	// T12.1(a) — downloadGlobalExport happy path
++	// T12.1(b) — error path (500)
++	// T12.1(c) — double-clic guard re-entrancy (testé au niveau caller ; ici
++	//             on confirme que la fn est resolvable concurrently et
++	//             réutilisable en série — le guard est dans `+page.svelte`).
++	// ----------------------------------------------------------------------
++
++	describe('downloadGlobalExport', () => {
++		let mockFetch: ReturnType<typeof vi.fn>;
++		let createObjectURLSpy: ReturnType<typeof vi.fn>;
++		let revokeObjectURLSpy: ReturnType<typeof vi.fn>;
++
++		beforeEach(() => {
++			authState.clearSession();
++			authState.login(fakeJwt(), 'refresh-uuid', 900);
++			createObjectURLSpy = vi.fn().mockReturnValue('blob:http://localhost/zip');
++			revokeObjectURLSpy = vi.fn();
++			vi.stubGlobal('URL', {
++				createObjectURL: createObjectURLSpy,
++				revokeObjectURL: revokeObjectURLSpy,
++			});
++		});
++
++		afterEach(() => {
++			vi.unstubAllGlobals();
++			authState.clearSession();
++		});
++
++		it('AC #31(a) appelle fetch /api/v1/exports/global.zip + déclenche download via Blob', async () => {
++			const zipBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
++			const mockBlob = new Blob([zipBytes], { type: 'application/zip' });
++			mockFetch = vi.fn().mockResolvedValue({
++				ok: true,
++				status: 200,
++				blob: () => Promise.resolve(mockBlob),
++				headers: new Headers({
++					'content-type': 'application/zip',
++					'content-disposition':
++						'attachment; filename="kesh-export-ci-test-company-2026-05-17.zip"',
++				}),
++			} as unknown as Response);
++			vi.stubGlobal('fetch', mockFetch);
++
++			await downloadGlobalExport();
++
++			expect(mockFetch).toHaveBeenCalledTimes(1);
++			const calledUrl = mockFetch.mock.calls[0][0] as string;
++			expect(calledUrl).toContain('/api/v1/exports/global.zip');
++			// Blob path effectivement utilisé
++			expect(createObjectURLSpy).toHaveBeenCalledOnce();
++			expect(revokeObjectURLSpy).toHaveBeenCalledOnce();
++		});
++
++		it('AC #31(b) rejette quand backend retourne 500', async () => {
++			mockFetch = vi.fn().mockResolvedValue({
++				ok: false,
++				status: 500,
++				json: () =>
++					Promise.resolve({
++						error: {
++							code: 'GLOBAL_EXPORT_FAILED',
++							message: "Échec de la génération de l'export global.",
++						},
++					}),
++				headers: new Headers({ 'content-type': 'application/json' }),
++			} as unknown as Response);
++			vi.stubGlobal('fetch', mockFetch);
++
++			await expect(downloadGlobalExport()).rejects.toThrow();
++			// pas de download tenté
++			expect(createObjectURLSpy).not.toHaveBeenCalled();
++		});
++	});
++});
+diff --git a/frontend/src/lib/features/export/exports.api.ts b/frontend/src/lib/features/export/exports.api.ts
+new file mode 100644
+index 0000000..a027e46
+--- /dev/null
++++ b/frontend/src/lib/features/export/exports.api.ts
+@@ -0,0 +1,105 @@
++// Story 9-2b — API frontend pour l'export global ZIP de souveraineté.
++//
++// Cohérent pattern Story 9-2a `reports.api.ts::downloadReport` +
++// `triggerDownload` cleanup (Pass 1 code-review M11 — try/finally pour
++// `removeChild` + `revokeObjectURL` même si `a.click()` jette).
++
++import { apiClient } from '$lib/shared/utils/api-client';
++
++const GLOBAL_EXPORT_URL = '/api/v1/exports/global.zip';
++const FALLBACK_FILENAME = 'kesh-export.zip';
++
++/**
++ * Télécharge l'export global ZIP via `fetch` + Blob + lien `<a download>` éphémère.
++ *
++ * Le filename est extrait du header `Content-Disposition` retourné par le
++ * backend (Story 9-2b §filename + AC #28) — le frontend ne le calcule pas.
++ *
++ * `apiClient.getBlob` jette déjà une `ApiError` sur HTTP non-2xx via
++ * `parseErrorResponse` (Pass 3 ECH3-M2 — pas de `response.ok` redondant ici).
++ * L'exception remonte à `+page.svelte` qui formate l'`errorMsg` (Pass 1 M13).
++ *
++ * Pass 1 ECH-H2 + AC #25/26 : le caller (`+page.svelte`) gère le flag
++ * `exporting` + guard re-entrancy first-line.
++ */
++export async function downloadGlobalExport(): Promise<void> {
++	const response = await apiClient.getBlob(GLOBAL_EXPORT_URL);
++	const blob = await response.blob();
++	const filename =
++		parseContentDispositionFilename(response.headers.get('Content-Disposition')) ??
++		FALLBACK_FILENAME;
++	triggerDownload(blob, filename);
++}
++
++/**
++ * Parse un header `Content-Disposition` au format RFC 6266 / RFC 5987.
++ *
++ * Reconnait deux formes :
++ *
++ * 1. **RFC 5987 préféré** (`filename*=UTF-8''<percent-encoded>`) — supporte
++ *    les caractères non-ASCII via `decodeURIComponent`. La forme avec tag
++ *    langue (`filename*=UTF-8'fr-CH'…`) est aussi acceptée — le tag est
++ *    skip après le second `'`.
++ * 2. **RFC 6266 fallback** (`filename="…"`) — ASCII strict, retour as-is.
++ *
++ * Retourne `null` si :
++ * - `header` est `null` ou chaîne vide
++ * - aucune des deux formes ne matche
++ *
++ * Pass 3 ECH3-H4 : implémenté localement (pas un pattern réutilisé de 9-2a,
++ * qui passait le filename par paramètre côté caller).
++ */
++export function parseContentDispositionFilename(header: string | null): string | null {
++	if (!header) return null;
++
++	// RFC 5987 form (priority) : `filename*=UTF-8''<percent>` or `filename*=UTF-8'<lang>'<percent>`.
++	const rfc5987 = header.match(/filename\*\s*=\s*UTF-8'[^']*'([^;\r\n]+)/i);
++	if (rfc5987 && rfc5987[1]) {
++		try {
++			const decoded = decodeURIComponent(rfc5987[1].trim());
++			if (decoded.length > 0) return decoded;
++		} catch {
++			// Percent-decode failure → fall through to RFC 6266 form below.
++		}
++	}
++
++	// RFC 6266 fallback : `filename="…"` (ASCII strict).
++	const rfc6266 = header.match(/filename\s*=\s*"([^"]+)"/i);
++	if (rfc6266 && rfc6266[1]) {
++		return rfc6266[1];
++	}
++
++	// RFC 6266 unquoted : `filename=…` (rare, accepté défensivement).
++	const rfc6266Unq = header.match(/filename\s*=\s*([^;\s]+)/i);
++	if (rfc6266Unq && rfc6266Unq[1]) {
++		return rfc6266Unq[1];
++	}
++
++	return null;
++}
++
++/**
++ * Déclenche le download navigateur via un lien `<a download>` éphémère.
++ *
++ * **Decision §triggerDownload-reuse** (Pass 1 BH-MEDIUM-02) : duplication
++ * locale de la fn `triggerDownload` de `reports.api.ts:237` (~10 lignes) —
++ * refactor d'extraction vers `lib/shared/utils/download.ts` reporté Epic 15
++ * v0.2 si > 2 features dupliquent.
++ *
++ * Cleanup robuste (Pass 1 code-review M11) : `removeChild` + `revokeObjectURL`
++ * dans un `finally` pour éviter une fuite mémoire si `a.click()` jette
++ * (CSP, popup blocker, etc.).
++ */
++function triggerDownload(blob: Blob, filename: string): void {
++	const objectUrl = URL.createObjectURL(blob);
++	const a = document.createElement('a');
++	a.href = objectUrl;
++	a.download = filename;
++	try {
++		document.body.appendChild(a);
++		a.click();
++	} finally {
++		if (a.parentNode) a.parentNode.removeChild(a);
++		URL.revokeObjectURL(objectUrl);
++	}
++}
+diff --git a/frontend/src/routes/(app)/+layout.svelte b/frontend/src/routes/(app)/+layout.svelte
+index 9de6a47..31de285 100644
+--- a/frontend/src/routes/(app)/+layout.svelte
++++ b/frontend/src/routes/(app)/+layout.svelte
+@@ -63,7 +63,10 @@
+ 		},
+ 		{
+ 			label: null,
+-			items: [{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' }],
++			items: [
++				{ i18nKey: 'nav-export-global', fallback: 'Export global', href: '/export' },
++				{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' },
++			],
+ 		},
+ 	];
+ 
+diff --git a/frontend/src/routes/(app)/export/+page.svelte b/frontend/src/routes/(app)/export/+page.svelte
+new file mode 100644
+index 0000000..3cccca2
+--- /dev/null
++++ b/frontend/src/routes/(app)/export/+page.svelte
+@@ -0,0 +1,128 @@
++<script lang="ts">
++	// Story 9-2b — Page export global ZIP (souveraineté des données).
++	//
++	// Bouton unique « Lancer l'export » qui déclenche un GET
++	// `/api/v1/exports/global.zip` (16 CSV + metadata.json packagés en ZIP).
++	// Flag dédié `exporting` (Pass 1 ECH-H2 / AC #25), guard re-entrancy
++	// first-line (Pass 1 code-review M12 / AC #26), fallback i18n
++	// `export-global-error-generic` sur erreur non-`isApiError` (Pass 1 M13 /
++	// AC #27).
++
++	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
++	import { isApiError } from '$lib/shared/utils/api-client';
++	import { downloadGlobalExport } from '$lib/features/export/exports.api';
++
++	let exporting = $state(false);
++	let errorMsg = $state<string | null>(null);
++	let successMsg = $state<string | null>(null);
++
++	/**
++	 * Formate l'erreur en string i18n.
++	 *
++	 * Pass 1 BH-MEDIUM-03 / ECH-LOW-04 : duplication locale (5 lignes
++	 * identiques à `reports/+page.svelte:75`) — refactor vers
++	 * `lib/shared/utils/error-format.ts` reporté Epic 15 v0.2 si > 2 pages.
++	 */
++	function formatError(err: unknown): string {
++		if (isApiError(err)) {
++			return err.message;
++		}
++		return i18nMsg(
++			'export-global-error-generic',
++			"Impossible de générer l'export global. Vérifiez votre connexion et réessayez.",
++		);
++	}
++
++	async function startExport(): Promise<void> {
++		// Pass 1 code-review M12 / AC #26 — guard first-line.
++		if (exporting) return;
++
++		exporting = true;
++		errorMsg = null;
++		successMsg = null;
++
++		try {
++			await downloadGlobalExport();
++			successMsg = i18nMsg('export-global-success', 'Export téléchargé.');
++		} catch (e) {
++			errorMsg = formatError(e);
++		} finally {
++			exporting = false;
++		}
++	}
++</script>
++
++<svelte:head>
++	<title>{i18nMsg('export-global-title', 'Export global de vos données')} – Kesh</title>
++</svelte:head>
++
++<section class="mx-auto max-w-3xl space-y-6 p-6">
++	<header class="space-y-2">
++		<h1 class="text-2xl font-bold">
++			{i18nMsg('export-global-title', 'Export global de vos données')}
++		</h1>
++		<p class="text-sm text-gray-700">
++			{i18nMsg(
++				'export-global-description',
++				'Exportez toutes vos données comptables (comptes, écritures, contacts, factures, transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver, migrer vers un autre logiciel, ou conserver vos données 10 ans (Swiss CO Art. 958f).',
++			)}
++		</p>
++	</header>
++
++	<div class="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
++		<p>
++			{i18nMsg(
++				'export-global-content-includes',
++				"L'export contient : plan comptable, écritures, contacts, produits, factures, comptes bancaires, transactions, règles de réconciliation, et un manifeste metadata.json avec hash SHA-256 de chaque fichier pour vérification d'intégrité.",
++			)}
++		</p>
++		<p class="mt-2">
++			{i18nMsg(
++				'export-global-content-excludes',
++				"Ne contient pas : utilisateurs (PII + mots de passe), tokens de session, journal d'audit interne, état d'onboarding (raisons de sécurité et technicité).",
++			)}
++		</p>
++		<p class="mt-2 italic">
++			{i18nMsg(
++				'export-global-souverainete-note',
++				'Vos données vous appartiennent. Kesh ne fait aucune copie de cet export sur ses serveurs.',
++			)}
++		</p>
++	</div>
++
++	<div class="flex items-center gap-3">
++		<button
++			type="button"
++			class="rounded bg-blue-600 px-4 py-2 text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
++			disabled={exporting}
++			onclick={startExport}
++			data-testid="export-global-start"
++		>
++			{#if exporting}
++				{i18nMsg('export-global-loading', "Génération de l'export…")}
++			{:else}
++				{i18nMsg('export-global-button', "Lancer l'export")}
++			{/if}
++		</button>
++	</div>
++
++	{#if errorMsg}
++		<p
++			class="rounded bg-red-50 p-3 text-sm text-red-900"
++			role="alert"
++			data-testid="export-global-error"
++		>
++			{errorMsg}
++		</p>
++	{/if}
++
++	{#if successMsg}
++		<p
++			class="rounded bg-green-50 p-3 text-sm text-green-900"
++			role="status"
++			data-testid="export-global-success"
++		>
++			{successMsg}
++		</p>
++	{/if}
++</section>
+diff --git a/frontend/src/routes/(app)/export/+page.ts b/frontend/src/routes/(app)/export/+page.ts
+new file mode 100644
+index 0000000..8f1ee93
+--- /dev/null
++++ b/frontend/src/routes/(app)/export/+page.ts
+@@ -0,0 +1,10 @@
++// Story 9-2b — Page export global ZIP.
++//
++// `ssr = false` : la page nécessite un browser réel pour déclencher le
++// download (`URL.createObjectURL` + `<a download>`), cohérent
++// reports/+page.ts pattern.
++//
++// Pas de `load()` initial — pas de données à pré-charger (le bouton
++// déclenche tout le pipeline backend).
++
++export const ssr = false;
+diff --git a/frontend/tests/e2e/export-global.spec.ts b/frontend/tests/e2e/export-global.spec.ts
+new file mode 100644
+index 0000000..02393f0
+--- /dev/null
++++ b/frontend/tests/e2e/export-global.spec.ts
+@@ -0,0 +1,95 @@
++/**
++ * Story 9-2b — Test Playwright E2E : export global ZIP via UI.
++ *
++ * Scénario AC #32 :
++ *   1. Login admin.
++ *   2. Navigation `/export`.
++ *   3. Assert page contient titre `export-global-title` + bouton « Lancer
++ *      l'export » visible.
++ *   4. Cliquer « Lancer l'export ».
++ *   5. Pendant la génération, assert bouton `disabled` avec libellé
++ *      « Génération de l'export… » (AC #25 état UX).
++ *   6. `await page.waitForEvent('download')` → `await download.saveAs(...)`.
++ *   7. `fs.readFile(filepath)` → assert byte signature `PK\x03\x04` + filename
++ *      pattern `kesh-export-.+-YYYY-MM-DD.zip` (AC #28).
++ *   8. Assert bouton redevient `enabled` post-download.
++ *
++ * Pattern download : `download.saveAs(...)` puis `fs.readFile()` — PAS
++ * `download.path()` qui peut retourner `null` (cohérent Story 9-2a Pass 1
++ * ECH-M5).
++ *
++ * Pré-requis : MariaDB up + KESH_TEST_MODE=true + seed `with-company` +
++ * Playwright browsers (Ubuntu 26.04+ : PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64).
++ *
++ * Pas exécuté par la CI principale (cf. CLAUDE.md — Test Locally First, run
++ * manuel pré-push).
++ */
++
++import { expect, test, type Page } from '@playwright/test';
++import * as fs from 'node:fs';
++import { seedTestState, clearAuthStorage } from './helpers/test-state';
++
++test.beforeAll(async () => {
++	await seedTestState('with-company');
++});
++
++test.afterEach(async ({ page }) => {
++	await clearAuthStorage(page);
++});
++
++async function login(page: Page): Promise<void> {
++	await page.goto('/login');
++	await page.fill('#username', 'admin');
++	await page.fill('#password', 'admin123');
++	await page.click('button[type="submit"]');
++	await expect(page).toHaveURL('/');
++}
++
++test('export global ZIP via UI (AC #32)', async ({ page }) => {
++	await login(page);
++	await page.goto('/export');
++	await page.waitForLoadState('networkidle');
++
++	// AC #2 — assert UI elements présents
++	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
++	const startButton = page.getByTestId('export-global-start');
++	await expect(startButton).toBeVisible();
++	await expect(startButton).toBeEnabled();
++
++	// AC #25 — pendant la génération, le bouton passe en disabled + libellé
++	// « Génération de l'export… ».
++	const downloadPromise = page.waitForEvent('download');
++	await startButton.click();
++	// Race : selon la vitesse backend, le download peut résoudre avant qu'on
++	// observe le `disabled`. On checke le `disabled` au mieux mais on tolère
++	// le fast-path (assertion non-bloquante).
++	await expect(startButton).toBeDisabled({ timeout: 1000 }).catch(() => {
++		// Backend très rapide — le bouton est déjà revenu enabled.
++	});
++
++	const download = await downloadPromise;
++
++	// AC #32 — saveAs puis read
++	const savedPath = '/tmp/kesh-test-9-2b.zip';
++	await download.saveAs(savedPath);
++	const bytes = fs.readFileSync(savedPath);
++
++	// AC #4 — byte signature ZIP `PK\x03\x04`
++	expect(bytes.length).toBeGreaterThan(4);
++	expect(bytes[0]).toBe(0x50);
++	expect(bytes[1]).toBe(0x4b);
++	expect(bytes[2]).toBe(0x03);
++	expect(bytes[3]).toBe(0x04);
++
++	// AC #28 — filename pattern `kesh-export-.+-YYYY-MM-DD.zip`
++	const suggested = download.suggestedFilename();
++	expect(suggested).toMatch(/^kesh-export-.+-\d{4}-\d{2}-\d{2}\.zip$/);
++
++	// AC #25 — bouton redevient enabled post-download
++	await expect(startButton).toBeEnabled({ timeout: 5000 });
++
++	// Cleanup
++	if (fs.existsSync(savedPath)) {
++		fs.unlinkSync(savedPath);
++	}
++});

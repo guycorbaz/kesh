@@ -192,6 +192,16 @@ pub enum AppError {
     #[error("Échec génération CSV : {0}")]
     CsvGenerationFailed(String),
 
+    /// Story 9-2b §error-variant — Échec interne du packaging ZIP de l'export
+    /// global souveraineté (sérialisation CSV per-table, calcul SHA-256,
+    /// écriture ZIP, panne pool DB). Distinct de [`AppError::CsvGenerationFailed`]
+    /// car la sémantique côté client est différente (export ZIP ≠ export CSV
+    /// d'un rapport). HTTP 500, i18n key `error-global-export-failed`. Le
+    /// détail est loggé (ops debug) mais jamais exposé en HTTP body (UX-DR38 :
+    /// message client générique actionable + diagnostic serveur).
+    #[error("Échec génération export global : {0}")]
+    GlobalExportFailed(String),
+
     // --- Story 5.4 — Échéancier factures ---
     /// Dépassement du plafond d'export (> 10'000 lignes en v0.1) — 400.
     /// Code client dédié pour permettre au frontend de proposer un raffinage
@@ -761,6 +771,21 @@ impl IntoResponse for AppError {
                     &t(
                         "error-csv-generation-failed",
                         "Échec de la génération du CSV.",
+                    ),
+                )
+            }
+
+            // Story 9-2b §error-variant + Pass 3 ECH3-C2 — variant dédié export
+            // global ZIP. Pattern strictement aligné avec `PdfGenerationFailed`
+            // / `CsvGenerationFailed` ground-truth (build_response = 3 args).
+            AppError::GlobalExportFailed(detail) => {
+                tracing::error!("global export failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "GLOBAL_EXPORT_FAILED",
+                    &t(
+                        "error-global-export-failed",
+                        "Échec de la génération de l'export global. Réessayez dans quelques instants.",
                     ),
                 )
             }
@@ -1580,5 +1605,19 @@ mod tests {
         assert_eq!(body["error"]["code"], "PDF_GENERATION_FAILED");
         let msg = body["error"]["message"].as_str().unwrap();
         assert!(!msg.contains("0xdeadbeef"), "detail leaked: {msg}");
+    }
+
+    // Story 9-2b T6.4 (Pass 1 AA-LOW-03 promu MEDIUM + Pass 3 ECH3-C2) — couvre
+    // AC #17 et AC #18 : variant `GlobalExportFailed` → status 500 + code stable
+    // `GLOBAL_EXPORT_FAILED` + détail jamais leaké en body (UX-DR38).
+    #[tokio::test]
+    async fn global_export_failed_maps_to_500_without_leaking_detail() {
+        let resp = AppError::GlobalExportFailed("zip finish: stream truncated 0xfeedface".into())
+            .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["error"]["code"], "GLOBAL_EXPORT_FAILED");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(!msg.contains("0xfeedface"), "detail leaked: {msg}");
     }
 }

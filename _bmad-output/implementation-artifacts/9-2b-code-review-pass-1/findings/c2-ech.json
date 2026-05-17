@@ -1,0 +1,68 @@
+[
+  {
+    "id": "C2-ECH-001",
+    "severity": "MEDIUM",
+    "category": "missing-bound",
+    "location": "crates/kesh-db/src/repositories/{bank_imports,bank_transactions,bank_profiles,products,invoices,journal_entries,reconciliation_rules,vat_rates}.rs — toutes les fonctions list_all_by_company",
+    "title": "Aucune LIMIT sur les 10 requêtes list_all_by_company — vecteur OOM non borné",
+    "description": "Les 10 nouvelles fonctions list_all_by_company émettent `fetch_all` sans LIMIT. Une company avec >100 000 transactions (import CSV massif, migration historique) charge l'intégralité en RAM avant d'écrire le ZIP. Aucun garde-fou côté handler ni orchestrateur (timeout applicatif absent, body_limit ne protège pas les réponses sortantes). Contrairement à fiscal_years::list_by_company qui applique MAX_LIST_LIMIT=1000, ces nouvelles fonctions n'ont pas d'équivalent. En v0.1 TPE le risque est accepté, mais le chemin est entièrement non borné — un seul export sur un compte bancaire actif depuis 3 ans (~50k lignes CSV) peut monter à plusieurs dizaines de Mo RAM server-side.",
+    "path": "crates/kesh-db/src/repositories/bank_transactions.rs:169",
+    "unhandled_path": "company avec >50 000 bank_transactions → fetch_all charge tout en Vec<BankTransaction> → serialize → zip : aucun streaming, aucune pagination, aucun LIMIT",
+    "suggested_fix": "Documenter la borne acceptable (ex. 500k rows max) ou ajouter un guard: après fetch_all vérifier rows.len() > LIMIT et retourner AppError::ExportTooLarge. Alternative long-terme : streaming CSV via OFFSET-based chunked fetch ou async_stream."
+  },
+  {
+    "id": "C2-ECH-002",
+    "severity": "LOW",
+    "category": "missing-handling",
+    "location": "crates/kesh-db/src/repositories/reconciliation_rules.rs:44-73",
+    "title": "Doc-comment de find_active_for_company volée par list_all_by_company — perte de doc publique",
+    "description": "Dans le diff, le bloc doc de list_all_by_company est inséré ENTRE le doc existant de find_active_for_company et son `pub async fn`. Résultat dans le fichier courant : list_all_by_company porte deux blocs /// fusionnés (le doc de find_active_for_company + le sien), tandis que find_active_for_company n'a plus aucun doc comment. La pub API find_active_for_company perd sa documentation Rustdoc. Vérifié lignes 44-80 du fichier courant.",
+    "path": "crates/kesh-db/src/repositories/reconciliation_rules.rs:72",
+    "unhandled_path": "find_active_for_company pub fn sans doc → cargo doc génère entrée vide → confusion API consumers",
+    "suggested_fix": "Déplacer le bloc /// T3.2.9 immédiatement au-dessus de `pub async fn list_all_by_company` et restaurer le /// bloc original de find_active_for_company juste avant cette fn."
+  },
+  {
+    "id": "C2-ECH-003",
+    "severity": "LOW",
+    "category": "missing-handling",
+    "location": "crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl",
+    "title": "Clé export-global-filename-hint définie dans les 4 locales mais jamais rendue côté frontend",
+    "description": "La clé export-global-filename-hint (ex: 'Le fichier sera téléchargé sous le nom kesh-export-{ $companyShort }-{ $date }.zip') est ajoutée à tous les bundles FTL mais n'est pas utilisée dans +page.svelte ni dans exports.api.ts. Le backend (build_global_export) ne l'utilise pas non plus — le filename est construit par build_export_filename (routes/exports.rs:103-114). De plus, la clé contient des variables Fluent { $companyShort } et { $date } : quand all_messages les pré-résout sans args, Fluent les rend en littéral '{companyShort}' (sans $), que le regex i18nMsg (cherche `\\{\\s*\\$...`) ne capte pas — donc si la clé était appelée avec args via i18nMsg, la substitution échouerait silencieusement (fallback string inchangée avec placeholders visibles).",
+    "path": "crates/kesh-i18n/locales/fr-CH/messages.ftl:866",
+    "unhandled_path": "clé définie → jamais appelée → si un jour appelée avec i18nMsg('export-global-filename-hint', fallback, {companyShort: 'acme', date: '2026-05-17'}) : le regex pattern /\\{\\s*\\$(...)/g ne matche pas le rendu Fluent '{companyShort}' (pas de $) → placeholders visibles dans l'UI",
+    "suggested_fix": "Soit supprimer la clé (dead key), soit la rendre dans +page.svelte et corriger le regex i18nMsg pour gérer les deux formes ({$var} et {var}), soit remplacer la syntaxe FTL variables par un format string littéral compatible i18nMsg (ex: 'kesh-export-{{ companyShort }}-{{ date }}.zip')."
+  },
+  {
+    "id": "C2-ECH-004",
+    "severity": "LOW",
+    "category": "missing-feature",
+    "location": "crates/kesh-api/Cargo.toml:92",
+    "title": "zip 2.x sans feature 'time' : last_modified_time des entrées ZIP forcé à l'époque DOS (1980-01-01 00:00:00)",
+    "description": "SimpleFileOptions::default() dans zip 2.x sans la feature 'time' (ou 'chrono') définit last_modified_time à l'époque DOS (1980-01-01). Les archiveurs (unzip, 7-zip, macOS) affichent donc '1980-01-01' pour chaque entrée du ZIP d'export. Ce n'est pas une corruption de données — les fichiers CSV sont intègres — mais c'est trompeur pour l'utilisateur qui vérifie la date d'archivage dans son outil ZIP. Le Cargo.lock confirme l'absence de dépendance 'time' dans les deps transitifs de 'zip'.",
+    "path": "crates/kesh-api/Cargo.toml:92",
+    "unhandled_path": "utilisateur ouvre kesh-export-acme-2026-05-17.zip dans 7-zip → liste 17 entrées toutes datées '1980-01-01 00:00:00' → confusion sur l'authenticité de l'archive",
+    "suggested_fix": "Ajouter la feature 'time' (ou 'chrono') à la dépendance zip et appeler `.last_modified_time(zip::DateTime::from_date_and_time(now.year() as u16, now.month() as u8, now.day() as u8, now.hour() as u8, now.minute() as u8, now.second() as u8).unwrap_or_default())` sur les options. Alternative minimaliste : ajouter un commentaire expliquant l'époque DOS intentionnelle."
+  },
+  {
+    "id": "C2-ECH-005",
+    "severity": "LOW",
+    "category": "missing-test",
+    "location": "crates/kesh-db/src/repositories/{bank_imports,bank_transactions,bank_profiles,vat_rates,reconciliation_rules}.rs",
+    "title": "Aucun test unitaire ni d'intégration pour les 10 nouvelles fonctions list_all_by_company",
+    "description": "Les 5 repos modifiés (bank_imports, bank_transactions, bank_profiles, vat_rates, reconciliation_rules) n'ont aucun #[tokio::test] pour list_all_by_company. Les 2 fonctions JOIN (invoices::list_all_lines_by_company et journal_entries::list_all_lines_by_company) n'ont pas de test d'intégration DB non plus. Seul build_zip (global.rs) est testé unitairement. Les cas limites non testés : company avec 0 lignes (retourne Vec vide → CSV header-only → SHA-256 stable), multi-tenant isolation (query WHERE company_id=? ne fuie pas vers une autre company).",
+    "path": "crates/kesh-db/src/repositories/bank_imports.rs:199",
+    "unhandled_path": "company_id=0 ou company inexistante → fetch_all retourne [] → serialize produit un CSV header-only → SHA-256 non-null → metadata.json valide : chemin heureux non couvert par test",
+    "suggested_fix": "Ajouter au minimum un test d'intégration par fn list_all_by_company vérifiant : (a) company vide retourne vec![], (b) company avec données retourne les rows scopées, (c) company_id d'une autre company n'est pas inclus (multi-tenant isolation)."
+  },
+  {
+    "id": "C2-ECH-006",
+    "severity": "LOW",
+    "category": "dependency-risk",
+    "location": "Cargo.lock:5075-5098 (zip 2.4.2 + zopfli 0.8.3)",
+    "title": "zopfli inclus dans le binaire même avec features=[\"deflate\"] — dépendance non-optionnelle inattendue",
+    "description": "Le Cargo.lock montre que zip 2.4.2 dépend de zopfli 0.8.3 même avec default-features=false,features=[\"deflate\"]. Dans zip 2.x, zopfli est une dépendance non-optionnelle du graph de compilation (pas gated par une feature flag 'deflate-zopfli'). Zopfli est ~1 500 lignes de C/Rust — augmente la taille du binaire et la surface d'attaque sans bénéfice (CompressionMethod::Deflated utilise flate2, pas zopfli). Ce n'est pas un bug de correctness mais un risque de supply-chain silencieux.",
+    "path": "crates/kesh-api/Cargo.toml:92",
+    "unhandled_path": "binaire kesh-api inclut zopfli dans ses dépendances transitives sans l'utiliser → audit de sécurité signale dépendance superflue",
+    "suggested_fix": "Vérifier si zip 2.5+ corrige ce comportement (feature flag gating correct pour zopfli). Alternative : envisager le crate 'zip' version pinned avec patch ou passer à 'async-zip' si streaming est requis de toute façon pour C2-ECH-001."
+  }
+]

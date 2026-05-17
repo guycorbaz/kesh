@@ -40,6 +40,9 @@ csv = "1"
 # Story 8-1b — hash SHA-256 du fichier importé (dédup company-scope).
 sha2 = "0.10"
 
+# Story 9-2b — export global ZIP (souveraineté des données).
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

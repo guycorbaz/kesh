@@ -63,7 +63,10 @@
 		},
 		{
 			label: null,
-			items: [{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' }],
+			items: [
+				{ i18nKey: 'nav-export-global', fallback: 'Export global', href: '/export' },
+				{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' },
+			],
 		},
 	];
 

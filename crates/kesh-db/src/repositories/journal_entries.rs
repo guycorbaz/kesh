@@ -880,6 +880,56 @@ pub async fn delete_by_id(
     Ok(())
 }
 
+/// Story 9-2b T3.2.1 — Liste **toutes** les écritures d'une company sans
+/// pagination ni filtre, pour l'export global ZIP (souveraineté).
+///
+/// Distincte de [`list_by_company_paginated`] (qui charge aussi les lignes par
+/// N+1 pour l'UI). Cette fn retourne uniquement les en-têtes ; les lignes sont
+/// fournies en un seul JOIN par [`list_all_lines_by_company`] pour éviter le
+/// N+1 sur 5 000+ écritures (spec §scope-tables).
+///
+/// Tri stable `entry_date, id` (cohérent format d'export reproductible).
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<JournalEntry>, DbError> {
+    sqlx::query_as::<_, JournalEntry>(&format!(
+        "SELECT {ENTRY_COLUMNS} FROM journal_entries \
+         WHERE company_id = ? \
+         ORDER BY entry_date, id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Story 9-2b T3.2.2 — Liste **toutes** les lignes d'écriture d'une company
+/// via un **single-query JOIN** (anti-N+1).
+///
+/// `JournalEntryLine` n'a pas de `company_id` direct ground-truth
+/// (`entities/journal_entry.rs:144-151`) — le scoping multi-tenant passe par
+/// `journal_entries.company_id` via `JOIN`.
+///
+/// Tri `entry_id, line_order` pour stabilité d'export (les lignes d'une même
+/// entry sont contiguës et ordonnées).
+pub async fn list_all_lines_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<JournalEntryLine>, DbError> {
+    sqlx::query_as::<_, JournalEntryLine>(
+        "SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit \
+         FROM journal_entry_lines jel \
+         JOIN journal_entries je ON jel.entry_id = je.id \
+         WHERE je.company_id = ? \
+         ORDER BY jel.entry_id, jel.line_order",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Supprime toutes les écritures d'une company (utilisé par `reset_demo`).
 ///
 /// Les lignes suivent par `ON DELETE CASCADE`.

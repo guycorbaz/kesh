@@ -1339,6 +1339,56 @@ pub async fn list_for_export(
     Ok((rows, truncated))
 }
 
+/// Story 9-2b T3.2.4 — Liste **toutes** les factures d'une company sans filtre
+/// `status`, pour l'export global ZIP (souveraineté : drafts + validated +
+/// paid + archived).
+///
+/// Distincte de [`list_for_export`] (qui force `status = 'validated'`) et de
+/// [`list_by_company_paginated`]. Tri stable `id ASC`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<Invoice>, DbError> {
+    sqlx::query_as::<_, Invoice>(
+        "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
+         payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
+         FROM invoices \
+         WHERE company_id = ? \
+         ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Story 9-2b T3.2.5 — Liste **toutes** les lignes de facture d'une company
+/// via un **single-query JOIN** (anti-N+1).
+///
+/// `InvoiceLine` n'a pas de `company_id` direct ground-truth
+/// (`entities/invoice.rs:41-51`) — le scoping multi-tenant passe par
+/// `invoices.company_id` via `JOIN`.
+///
+/// Tri `invoice_id, position` pour stabilité d'export (les lignes d'une même
+/// facture sont contiguës et ordonnées).
+pub async fn list_all_lines_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<InvoiceLine>, DbError> {
+    sqlx::query_as::<_, InvoiceLine>(
+        "SELECT il.id, il.invoice_id, il.position, il.description, il.quantity, \
+         il.unit_price, il.vat_rate, il.line_total, il.created_at \
+         FROM invoice_lines il \
+         JOIN invoices i ON il.invoice_id = i.id \
+         WHERE i.company_id = ? \
+         ORDER BY il.invoice_id, il.position",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 // ---------------------------------------------------------------------------
 // Tests d'intégration DB (Story 5.1)
 // ---------------------------------------------------------------------------

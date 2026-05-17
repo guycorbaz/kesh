@@ -7,9 +7,11 @@
 pub mod auth;
 pub mod config;
 pub mod errors;
+pub mod exports;
 pub mod helpers;
 pub mod middleware;
 pub mod routes;
+pub(crate) mod util;
 
 use std::sync::Arc;
 
@@ -389,6 +391,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reports/journals/export",
             get(routes::reports::export_journal_report),
+        )
+        // Story 9-2b : export global ZIP de souveraineté. Route DOIT rester
+        // dans `authenticated_routes` AVANT le `;` (Pass 1 BH-H1 anti-IDOR) ;
+        // sinon middleware auth bypass silencieux → IDOR cross-tenant.
+        .route(
+            "/api/v1/exports/global.zip",
+            get(routes::exports::export_global),
         );
 
     // Merge + auth JWT (couche de base pour toutes les routes protégées)

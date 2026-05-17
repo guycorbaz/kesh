@@ -1,0 +1,50 @@
+[
+  {
+    "location": "crates/kesh-api/src/routes/exports.rs:71-73",
+    "trigger_condition": "span.enter() guard held across .await — `let _enter = span.enter()` at line 71 remains alive through `build_global_export(...).await?` at line 73 and `emit_global_export_audit(...).await` at line 90. In a multi-threaded async runtime (tokio), the span can be entered on thread A and exited on thread B after a task reschedule, corrupting the span context for all events recorded on the new thread.",
+    "guard_snippet": "let _enter = span.enter();\n    let (zip_bytes, meta) = build_global_export(&state.pool, &company, locale_bcp47).await?;",
+    "potential_consequence": "Span context corruption: events emitted by other tasks on the rescheduled thread are incorrectly attributed to the `global_export` span. Tracing docs explicitly forbid holding `span::Entered` across `.await` points in async code. Use `.instrument(span)` or `#[instrument]` instead."
+  },
+  {
+    "location": "crates/kesh-api/src/exports/global.rs:265",
+    "trigger_condition": "`start.elapsed().as_millis()` returns `u128`; the cast `as u64` is a narrowing truncation. Triggers when elapsed time exceeds u64::MAX milliseconds (~584 million years). Practically unreachable, but the cast is semantically incorrect — a timeout/hang scenario lasting > ~49 days (u32::MAX ms) would overflow u32 silently if the type were ever changed to u32.",
+    "guard_snippet": "let duration_ms = start.elapsed().as_millis() as u64;",
+    "potential_consequence": "Silent truncation of duration_ms to 0 in the extreme case. No guard or assertion. Low real-world risk but the cast discards the high 64 bits of u128 with no `try_from` or saturation."
+  },
+  {
+    "location": "crates/kesh-api/src/exports/csv_tables.rs:110-113 (write_csv_bom)",
+    "trigger_condition": "When the underlying `W: Write` is a `Vec<u8>` passed as `&mut Vec<u8>`, `write_all` never fails. However, if `W` is a type that can fail (e.g., a future refactor swapping to a file or network sink), the BOM write error is mapped to `GlobalExportFailed` but the BOM bytes may have been partially written (0, 1, or 2 bytes out of 3) before the error, leaving the writer in a partially-written state that callers cannot detect.",
+    "guard_snippet": "writer\n        .write_all(&[0xEF, 0xBB, 0xBF])\n        .map_err(|e| AppError::GlobalExportFailed(format!(\"csv bom write: {e}\")))",
+    "potential_consequence": "Partial BOM written to the underlying writer before the error; if the error is recovered and the same writer is reused, a corrupt file with a partial BOM prefix is produced. No atomicity guard (the writer is not reset on failure)."
+  },
+  {
+    "location": "crates/kesh-api/src/exports/csv_tables.rs:816-839 (serialize_bank_profiles_csv)",
+    "trigger_condition": "BankProfile.column_mapping_json is a raw JSON string that may contain embedded newline characters (\\n or \\r\\n) from a manually-edited profile or a future migration that injects pretty-printed JSON. The csv crate will RFC 4180-escape the field (wrap in double-quotes), but a JSON value containing a bare \\r\\n sequence could produce a cell that passes CSV parsing but confuses tools that treat CRLF as a row separator before unquoting.",
+    "guard_snippet": "bp.column_mapping_json.clone(),",
+    "potential_consequence": "CSV viewers that tokenise rows before unquoting fields (e.g., some Excel CSV import wizards in legacy mode) could split the JSON cell at the embedded CRLF, producing an extra phantom row. The csv crate produces a spec-compliant file, but interoperability with non-compliant readers is broken for this specific field."
+  },
+  {
+    "location": "crates/kesh-api/src/exports/global.rs:1147-1150 (get_or_create_default side-effect)",
+    "trigger_condition": "If the `company_invoice_settings` row does not exist, `get_or_create_default` performs a DB WRITE (INSERT) inside a GET handler that is supposed to be a read-only export. If a subsequent query or serialization step fails (returning `GlobalExportFailed`), the INSERT is NOT rolled back — it was committed by the repository function before the failure.",
+    "guard_snippet": "let cis_row = company_invoice_settings::get_or_create_default(pool, company_id)\n        .await\n        .map_err(map_db)?;",
+    "potential_consequence": "A failed export silently creates a `company_invoice_settings` row with default values. On retry, the export succeeds but may export unexpected default settings that were never explicitly configured by the user. No guard prevents this write in the export path."
+  },
+  {
+    "location": "crates/kesh-api/src/exports/global.rs:1063 (build_zip — no dedup guard on entry names)",
+    "trigger_condition": "The `build_zip` function accepts any `files: &[(String, Vec<u8>)]` slice and adds all entries unconditionally. If two entries share the same name (e.g., a future refactor of `push_csv!` introduces a duplicate literal), the zip crate adds both without error. ZIP format allows duplicate names; extraction tools vary in which entry they use (first or last).",
+    "guard_snippet": "for (name, bytes) in files {\n            zip.start_file(name.as_str(), options)",
+    "potential_consequence": "If a duplicate name is ever introduced (e.g., a copy-paste error in `push_csv!` calls), the resulting ZIP contains two entries with the same name. The manifest SHA-256 will only include one entry (BTreeMap key dedup), creating a mismatch between manifest.json table count and actual ZIP entries that cannot be detected without extracting both files."
+  },
+  {
+    "location": "crates/kesh-api/src/exports/global.rs:1238 (debug_assert only in debug builds)",
+    "trigger_condition": "`debug_assert_eq!(files.len(), 16)` and `debug_assert_eq!(tables_meta.len(), 16)` are compiled out in release builds. If a future edit adds or removes a `push_csv!` invocation without updating both the assert and the CSV count hardcoded in `GlobalExportMeta { csv_count: 16, ... }`, the bug is invisible in production.",
+    "guard_snippet": "debug_assert_eq!(files.len(), 16, \"16 CSV expected before manifest\");\n    debug_assert_eq!(tables_meta.len(), 16, \"16 TableMeta expected\");",
+    "potential_consequence": "A production binary can produce a ZIP with N != 16 CSV files while the metadata.json still reports `csv_count: 16`, and the manifest lists only 16 TableMeta entries (or however many the BTreeMap received). No runtime error; the mismatch is silently exported."
+  },
+  {
+    "location": "crates/kesh-api/src/util.rs:2259-2271 (strip_diacritics_char — incomplete coverage)",
+    "trigger_condition": "The manual diacritics map does not cover: ß (German sharp s), œ/æ (French ligatures), ø (Nordic), Þ/ð (Icelandic), č/š/ž/ř (Czech/Slovak), ł (Polish), ğ/ş/ı (Turkish), and characters from fully non-Latin scripts (Arabic, Greek, Cyrillic, CJK). These are mapped to their original codepoints, which then hit the `_ => '-'` branch in the cleaned stage. This may produce unexpected slug shapes for non-Swiss-Latin company names.",
+    "guard_snippet": "other => other,",
+    "potential_consequence": "A company name like 'Gesellschaft für Österreich' produces slug 'gesellschaft-fur-osterreich' (ü covered) but 'straße' → 'stra-e' (ß not covered, becomes '-'). The filename is still valid ASCII but the company name is mangled. No crash, but the filename may be confusing in audit logs."
+  }
+]

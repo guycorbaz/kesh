@@ -1,0 +1,92 @@
+[
+  {
+    "id": "C4-ECH-M1",
+    "severity": "MEDIUM",
+    "category": "Test Coverage",
+    "location": "frontend/tests/e2e/export-global.spec.ts:562-565",
+    "title": "Patch M7 — route.continue() doit être awaité pour effectivité du délai",
+    "description": "Le handler `page.route()` appelle `await route.continue()` sans l'attendre (ligne 564). Cela signifie que le délai de 500ms est appliqué AVANT de relâcher la requête réelle, mais le handler async retourne immédiatement après lancer `route.continue()` de manière fire-and-forget. Résultat : le backend peut répondre très rapidement (ex. 10ms), et la réponse totale arrives en ~510ms seulement si le backend est lent, mais peut être beaucoup plus rapide si le backend cache ou court-circuite. L'intention était de garantir que le bouton est observable en état `disabled` + libellé « Génération… » pendant au minimum 500ms (assertion ligne 582-583 avec timeout 2000ms). Mais sans attendre `route.continue()`, le délai n'est pas garanti sur la réponse effective.\n\nConséquence : l'assertion `await expect(startButton).toBeDisabled({ timeout: 2000 })` peut flaker si le backend répond en < 50ms après les 500ms du délai, car le bouton deviendrait `enabled` avant le timeout 2000ms, causant une faux-positive ou une vraie détection tardive.\n\nFix : changer ligne 564 en `await route.continue();`",
+    "context": {
+      "code": "await page.route('**/api/v1/exports/global.zip', async (route) => {\n  await new Promise((r) => setTimeout(r, 500));\n  await route.continue();  // SANS AWAIT\n});",
+      "expected": "await page.route('**/api/v1/exports/global.zip', async (route) => {\n  await new Promise((r) => setTimeout(r, 500));\n  await route.continue();  // AVEC AWAIT\n});"
+    },
+    "affectedTests": ["export global ZIP via UI (AC #32)"],
+    "status": "UNRESOLVED"
+  },
+  {
+    "id": "C4-ECH-H1",
+    "severity": "HIGH",
+    "category": "Concurrency & Race Condition",
+    "location": "frontend/tests/e2e/export-global.spec.ts:538, 540-546",
+    "title": "Patch H7 — Variable partagée module-level pour tests Playwright parallèles causera collisions",
+    "description": "Ligne 538 déclare `let savedZipPath: string | null = null;` au niveau module, partagée par tous les tests du fichier. Le handler `test.afterEach()` (ligne 540) cleanup ce chemin global. PROBLÈME : Playwright exécute les tests en parallèle par défaut. Si d'autres tests `test('...')` sont ajoutés au même fichier (ex. test de cancel, test de retry), ils s'exécuteront en parallèle avec le test actuel. Exemple scenario :\n\n1. Test A (ligne 557) : `savedZipPath = '/tmp/kesh-test-9-2b-123.zip'`\n2. Test B (parallèle) : `savedZipPath = '/tmp/kesh-test-9-2b-124.zip'` → **écrase** Test A\n3. `afterEach` Test A : tente cleanup `/tmp/kesh-test-9-2b-124.zip` (mauvais fichier !)\n4. `afterEach` Test B : cleanup `/tmp/kesh-test-9-2b-124.zip` (déjà supprimé, double-delete potentiel)\n\nRésultat : **fuite de fichiers ZIP**, cleanup inversée, risque de données corrompues en `/tmp`. Le nom unique `${Date.now()}` aide (ligne 590), mais la variable partagée ne l'est pas.\n\nContrainte actuelle : il n'y a qu'un seul test dans ce fichier, donc pas de symptôme aujourd'hui. Mais c'est une **dette technique** — le code est non-scalable pour l'ajout de tests futurs (C4 Blind F13 identifiait le chemin hardcodé, ce patch a donné un `Date.now()` unique, mais la variable partagée reste).\n\nFix : utiliser une fixture Playwright ou déplacer la variable en scope local par test (si possible via test context).",
+    "context": {
+      "code": "// Module-level, partagée par tous les tests\nlet savedZipPath: string | null = null;\n\ntest.afterEach(async ({ page }) => {\n  if (savedZipPath && fs.existsSync(savedZipPath)) {\n    fs.unlinkSync(savedZipPath);\n  }\n  savedZipPath = null;\n  await clearAuthStorage(page);\n});",
+      "expected": "// Option 1 : Fixture Playwright (recommandé)\ntest.afterEach(async ({ page }, testInfo) => {\n  const zipPath = testInfo.testDir + '/../../../tmp/kesh-' + testInfo.testId + '.zip';\n  if (zipPath && fs.existsSync(zipPath)) {\n    fs.unlinkSync(zipPath);\n  }\n});\n\n// Option 2 : Utiliser un Map<string, string> par test ID (si pas de fixture)"
+    },
+    "affectedTests": ["Tous les tests futurs ajoutés au fichier"],
+    "status": "UNRESOLVED",
+    "debt": true,
+    "dueEpic": "v0.2"
+  },
+  {
+    "id": "C4-ECH-H2",
+    "severity": "HIGH",
+    "category": "Edge Case Validation",
+    "location": "frontend/src/lib/features/export/exports.api.ts:272-276 (regex RFC 5987) + test ligne 72-76",
+    "title": "Patch H6 — Cas limite : RFC 5987 avec valeur vide après deuxième quote DOIT retourner null",
+    "description": "Le patch H6 ajoute un lookahead négatif `(?!\\*)` au regex unquoted (ligne 294) pour éviter matcher `filename*=UTF-8''` comme unquoted. Le test ligne 72-76 valide ce cas ('returns null on RFC 5987 filename* with empty percent-encoded value'). CEPENDANT, le vrai problème est au sein du RFC 5987 parser lui-même (ligne 272-276) :\n\nLa regex RFC 5987 ligne 272 est :\n```\n/filename\\*\\s*=\\s*UTF-8'[^']*'([^;\\r\\n]+)/i\n```\n\nCette regex capture ce qui vient APRÈS le deuxième quote jusqu'à `;` ou fin de ligne. Cas limite :\n- Header: `filename*=UTF-8''` (deux quotes consécutives, rien après)\n- Capture `[^;\\r\\n]+` : rien à capturer → pas de match\n- La regex nécessite `[^;\\r\\n]+` (au moins 1 caractère) → donc `rfc5987` est `null`\n- Ligne 273 check `if (rfc5987 && rfc5987[1])` → condition fausse\n- Continue au RFC 6266 fallback\n- RFC 6266 quoted (ligne 283) : ne match pas (pas de `filename=\"\"` exact)\n- RFC 6266 unquoted (ligne 294) : AVANT le patch H6, matcherait `filename*=UTF-8''` comme unquoted (capturant `UTF-8''` ou autre)\n- **APRÈS le patch H6** : le lookahead `(?!\\*)` empêche le match si le caractère après `filename` est `*`\n- Donc retourne `null` ✓\n\nLE CAS LIMITE NON COUVERT : header `filename*=UTF-8'' ;` (avec espace avant `;`). La regex RFC 5987 `[^;\\r\\n]+` capturerait ` ` (l'espace), puis ligne 275 `.trim()` le removerait, donnant une chaîne vide, et ligne 276 reject car `decoded.length > 0` est faux. OK, pas de régression.\n\nAUTRE CAS LIMITE : header mal-formé `filename*=UTF-8''\\r\\n` (juste un retour à la ligne après les quotes vides). Le `[^;\\r\\n]+` n'aurait rien à capturer car le `\\r\\n` est exclu. Pas de match RFC 5987, fall through. OK.\n\nLe patch H6 lookahead couvre bien le cas. **Pas de régression trouvée**, test adéquat.",
+    "context": {
+      "regex": "/filename\\*\\s*=\\s*UTF-8'[^']*'([^;\\r\\n]+)/i",
+      "testCase": "it('returns null on RFC 5987 filename* with empty percent-encoded value', () => { expect(parseContentDispositionFilename(\"attachment; filename*=UTF-8''\")).toBeNull(); });"
+    },
+    "affectedTests": ["parseContentDispositionFilename"],
+    "status": "RESOLVED",
+    "confidence": "HIGH"
+  },
+  {
+    "id": "C4-ECH-H3",
+    "severity": "HIGH",
+    "category": "Async Promise Handling",
+    "location": "frontend/src/lib/features/export/exports.api.test.ts:159-208 (H8 test) + 161",
+    "title": "Patch H8 — Non-null assertion `resolveDownload!` sans guarantee de setup synchrone",
+    "description": "Ligne 161 : `let resolveDownload!: () => void;` — TypeScript non-null assertion `!` indique que la variable sera affectée avant utilisation, mais sans vérification réelle. Le flux du test :\n\n1. Ligne 162-180 : créer `slowFetch` mock qui affecte `resolveDownload` dans sa closure\n2. Ligne 181 : `vi.stubGlobal('fetch', slowFetch)`\n3. Ligne 199 : `const p1 = startExport()` → déclenche `downloadGlobalExport()` → appelle `apiClient.getBlob(...)` → fait un `await` (suspension)\n4. Simultanément, ligne 200 : `const p2 = startExport()` → guard `if (exporting) return` court-circuite (car `p1` a mis `exporting = true`)\n5. Ligne 202 : `resolveDownload()` appelée\n\nCAS LIMITE : si `apiClient.getBlob()` encapsule `fetch` avec du caching ou de la logique de court-circuit, et que le mock `slowFetch` n'est **jamais** appelé, alors `resolveDownload` ne serait jamais affectée. L'appel ligne 202 jetterait une erreur `TypeError: resolveDownload is not a function` ou `Cannot read properties of undefined`.\n\nCEPENDANT : regardez `apiClient.getBlob()` — c'est censé être un wrapper autour de `fetch`. Le test assume que `vi.stubGlobal('fetch', slowFetch)` garantit que `fetch` sera appelée. Si `apiClient.getBlob()` utilise vraiment `fetch`, c'est OK. Mais c'est une **dépendance implicite** sur l'implémentation de `apiClient.getBlob()`.\n\nLE VRAI PROBLÈME : le code du test ne **valide pas** que `fetch` a été appelée avec le mock attendu. Il assume juste que `resolveDownload` sera affectée. Si `apiClient.getBlob()` change d'implémentation (ex. switch vers `XMLHttpRequest`, `axios`, etc.), le test pourrait passer mais ne plus tester la chose qu'il prétend tester.\n\nAu niveau du patch H8 lui-même, le non-null assertion est défendu par le scénario du test (factory mock synchrone), mais le test manque une assertion pour valider le prérequis.\n\nFix : ajouter `expect(slowFetch).toHaveBeenCalled();` après le test, pour garantir que le mock a réellement été invoqué.",
+    "context": {
+      "code": "let resolveDownload!: () => void;\nconst slowFetch = vi.fn().mockImplementation(\n  () => new Promise<Response>((resolve) => {\n    resolveDownload = () => { /* ... */ };\n  }),\n);\nvi.stubGlobal('fetch', slowFetch);\n// ...\nresolveDownload();  // Assume resolveDownload est setté",
+      "expected": "// After the test: \nexpect(slowFetch).toHaveBeenCalledTimes(1);  // Valide que le mock a été appelé"
+    },
+    "affectedTests": ["AC #31(c) guard re-entrancy"],
+    "status": "UNRESOLVED",
+    "recommendation": "Ajouter une assertion `expect(slowFetch).toHaveBeenCalledTimes(1)` ligne 207 ou après `await Promise.all(...)`"
+  },
+  {
+    "id": "C4-ECH-LOW-1",
+    "severity": "LOW",
+    "category": "Code Clarity",
+    "location": "frontend/tests/e2e/export-global.spec.ts:590",
+    "title": "Pas de validation que saveAs() chemin temporaire est unique globalement",
+    "description": "Le patch H7 utilise `path.join(os.tmpdir(), \\`kesh-test-9-2b-\\${Date.now()}.zip\\`)` pour générer un chemin unique. `Date.now()` retourne un millisecond epoch, qui est unique **généralement**, mais dans un scénario où deux tests parallèles sont lancés dans la même milliseconde (possible sur une machine très rapide), il y aurait collision. Moderne Playwright utilise `testInfo.testId` ou UUID pour les fixtures — c'est plus robuste. Cependant, le risque est faible en pratique (collision milliseconde extrêmement rare). **Classification LOW** car la probabilité est << 1%.",
+    "context": {
+      "code": "savedZipPath = path.join(os.tmpdir(), \\`kesh-test-9-2b-\\${Date.now()}.zip\\`);",
+      "expected": "savedZipPath = path.join(os.tmpdir(), \\`kesh-test-9-2b-\\${Date.now()}-\\${Math.random().toString(36).slice(2)}.zip\\`);"
+    },
+    "affectedTests": ["export global ZIP via UI (AC #32)"],
+    "status": "ACKNOWLEDGED",
+    "risk": "Very Low"
+  },
+  {
+    "id": "C4-ECH-LOW-2",
+    "severity": "LOW",
+    "category": "Test Assertion Fragility",
+    "location": "frontend/tests/e2e/export-global.spec.ts:582-583",
+    "title": "Assertions avec timeout 2000ms peuvent flaker sur machine lente",
+    "description": "Les assertions ligne 582-583 utilisent `{ timeout: 2000 }` pour attendre que le bouton soit `disabled` et contienne le libellé « Génération… ». Sur une machine très lente ou un CI parallèle surchargé, le backend peut mettre > 2500ms à répondre, causant un timeout faux-positif. Le délai M7 de 500ms est intentionnel pour rendre l'état observable, mais sans le `await route.continue()`, le timing est imprévisible. **Classification LOW** car c'est une fragility cosmétique, pas un bug fonctionnel.",
+    "context": {
+      "code": "await expect(startButton).toBeDisabled({ timeout: 2000 });\nawait expect(startButton).toContainText(/G[ée]n[ée]ration/i, { timeout: 2000 });",
+      "expected": "// Après fix du M7 (await route.continue), vérifier que 2000ms est suffisant\n// Si flakiness persiste sur CI, augmenter à 5000ms ou utiliser retry logic"
+    },
+    "affectedTests": ["export global ZIP via UI (AC #32)"],
+    "status": "ACKNOWLEDGED",
+    "relatedToM7": true
+  }
+]

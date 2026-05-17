@@ -42,6 +42,27 @@ pub fn is_duplicate_rule_constraint(err: &DbError) -> bool {
     )
 }
 
+/// Story 9-2b T3.2.9 — Liste **toutes** les règles de réconciliation d'une
+/// company sans filtre `active`, pour l'export global ZIP (souveraineté :
+/// règles soft-deleted incluses pour audit historique).
+///
+/// Distincte de [`find_active_for_company`] (filtre `active = TRUE`). Tri
+/// stable `id ASC`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<ReconciliationRule>, DbError> {
+    sqlx::query_as::<_, ReconciliationRule>(&format!(
+        "SELECT {COLUMNS} FROM reconciliation_rules \
+         WHERE company_id = ? \
+         ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste toutes les rules **actives** d'une company, ordonnées par
 /// `priority ASC, id ASC` (tiebreaker à 2 niveaux Pass 2 Q1, suppression
 /// du 3e niveau `created_at ASC` régression Pass 1 — `id ASC` suffit

@@ -1,0 +1,82 @@
+[
+  {
+    "id": "M2.1",
+    "severity": "LOW",
+    "category": "i18n",
+    "title": "Fluent apostrophes non-échappées (fr-CH, it-CH)",
+    "description": "fr-CH et it-CH contiennent des apostrophes non-échappées dans les strings Fluent (ex: 'l\\'export', 'l\\'historique'). Fluent n'échappe pas les apostrophes comme le ferait JSON, donc aucune régression parsing. Mais vérifier que le renderer Svelte gère les apostrophes dans les variables interpolées { $var }.",
+    "location": "crates/kesh-i18n/locales/{fr-CH,it-CH}/messages.ftl:462,467,472,489",
+    "ground_truth": "Fluent spec n'échappe pas les apostrophes; elles sont transparentes en Fluent. Test: parser Fluent en CI valide déjà tous les fichiers.ftl.",
+    "mitigation": "Aucune action code requise. Vérifier en E2E Svelte que l'export modal affiche correctement 'l\\'export', pas HTML-escaped."
+  },
+  {
+    "id": "M2.2",
+    "severity": "LOW",
+    "category": "i18n",
+    "title": "Variables Fluent { $companyShort }, { $date } — doivent être définies à l'appel",
+    "description": "Les clés `export-global-filename-hint` utilisent des variables Fluent { $companyShort } et { $date }. Si l'API handler ou le composant Svelte n'appasse pas ces variables au renderer, Fluent affichera les clés non-interpolées ('{$companyShort}' littéralement). Boundary: aucun validation côté Fluent que les variables soient passées.",
+    "location": "crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl:422,444,466,488",
+    "ground_truth": "Grep Rust API handler: chercher 'export-global-filename-hint' → vérifier que les params { companyShort, date } sont passés au render Fluent.",
+    "mitigation": "Vérifier dans bmad-dev-story que le handler POST /api/v1/companies/{id}/export-global/zip injecte { companyShort, date } dans le contexte Fluent avant retour."
+  },
+  {
+    "id": "M2.3",
+    "severity": "LOW",
+    "category": "i18n",
+    "title": "Long strings Fluent (227+ chars) peuvent déborder en mobile",
+    "description": "export-global-content-includes en fr-CH est 227 caractères. Aucune régression code, mais UX: si le composant export modal n'a pas de wrapping CSS, le texte déborde en mobile. Edge case: Fluent parser fonctionne, mais layout se casse.",
+    "location": "crates/kesh-i18n/locales/fr-CH/messages.ftl:467",
+    "ground_truth": "String length est un artefact Fluent, non un défaut parsing. CSS du composant Svelte doit gérer word-wrap.",
+    "mitigation": "Inclure E2E test Playwright mobile viewport (375px) qui charge le composant export-global et vérifie qu'aucun texte ne déborde."
+  },
+  {
+    "id": "H3.1",
+    "severity": "LOW",
+    "category": "rustdoc",
+    "title": "Doc reorder reconciliation_rules.rs — pas de cross-refs cassées",
+    "description": "list_all_by_company inséré avant find_active_for_company. Les doc comments de find_active_for_company ne référencent pas list_all_by_company (ou vice versa), donc pas de cross-ref rustdoc cassées. Vérifier pas de '/// See [`list_all_by_company`]' qui remonterait du nouveau au code mort.",
+    "location": "crates/kesh-db/src/repositories/reconciliation_rules.rs:348-368",
+    "ground_truth": "Grep: 'list_all_by_company.*find_active_for_company' ou vice versa dans les doc comments. Si zéro match, pas de cross-ref.",
+    "mitigation": "Pas de code change requis si les doc comments sont indépendants. CI rustdoc générée sans warning = pas de broken link."
+  },
+  {
+    "id": "H3.2",
+    "severity": "LOW",
+    "category": "rustdoc",
+    "title": "Trailing whitespace dans doc comments new fns?",
+    "description": "Les nouveaux doc comments (story 9-2b) pourraient avoir trailing whitespace (ex: '/// Story 9-2b T3.2.1 — ... [SPACE]'). rustfmt --check échouerait. Pas visible dans diff (diff montre les chars blancs comme invisibles).",
+    "location": "crates/kesh-db/src/repositories/*.rs:105-152,194-242,255-303,316-335,348-368,380-400",
+    "ground_truth": "Lancer 'cargo fmt --check' ou 'cargo fmt --all -- --check' en local: si échoue, au moins un doc comment ou une fn a trailing whitespace.",
+    "mitigation": "Avant de commiter, lancer cargo fmt --all (auto-fix). Si la CI fail sur rustfmt, c'est que les patches Pass 1 n'ont pas appliqué cargo fmt."
+  },
+  {
+    "id": "P3.1",
+    "severity": "LOW",
+    "category": "database",
+    "title": "Inconsistency: format!(COLUMNS) vs raw SQL strings",
+    "description": "Certains repos utilisent 'SELECT {COLUMNS}...' avec format!(), d'autres 'SELECT id, company_id, ...' raw SQL. Si un const COLUMNS n'existe pas (typo ou oubli de déclaration), format! compile-error. Mais diffusing: vat_rates.rs n'utilise pas format!() — cohérence stylisée inconsistente.",
+    "location": "crates/kesh-db/src/repositories/{bank_imports,bank_profiles,bank_transactions,journal_entries,products,reconciliation_rules,vat_rates}.rs",
+    "ground_truth": "Grep 'const COLUMNS' dans chaque repo. Tous doivent exister. Si vat_rates n'a pas de const COLUMNS, il utilise raw SQL → pas un défaut, juste style différent.",
+    "mitigation": "Code review en bmad-dev-story: vérifier que le pattern 'SELECT {COLUMNS}' compile. Test: 'cargo build --workspace' doit passer."
+  },
+  {
+    "id": "P3.2",
+    "severity": "LOW",
+    "category": "database",
+    "title": "Empty Vec<T> handling: API returns [] for zero rows",
+    "description": "Tous les 'list_all_by_*' retournent Result<Vec<T>, DbError>. Si la company n'a pas de données (ex: invoice list vide), la fn retourne Ok(vec![]). Boundary: l'API handler doit serialize ce vec vide as JSON '[]', pas erreur 500. Aucune régression code-side, mais contrat API à respecter.",
+    "location": "crates/kesh-db/src/repositories/*.rs:list_all_by_*",
+    "ground_truth": "Integration test: créer company sans invoices, GET /api/v1/.../invoices retourne 200 avec [].",
+    "mitigation": "Les tests intégration dans kesh-api doivent couvrir empty-list cases pour export-related endpoints."
+  },
+  {
+    "id": "P3.3",
+    "severity": "MEDIUM",
+    "category": "database",
+    "title": "ORDER BY stability pour export reproducibility",
+    "description": "Spec exige export reproducible (hash SHA-256 de metadata.json avec hashes de fichiers). Si deux rows ont le même 'ORDER BY' key (ex: entry_date sans 'id' tiebreaker), l'ordre peut varier run-to-run, rendant le CSV différent et cassant le hash. Vérifier que TOUS les 'list_all_by_*' ont une clé de tri UNIQUE (ou composite avec PK).",
+    "location": "crates/kesh-db/src/repositories/{journal_entries,invoices}.rs:list_all_by_*",
+    "ground_truth": "journal_entries:271 'ORDER BY entry_date, id' ✓ (tiebreaker id). invoices:209 'ORDER BY id' ✓. products:329 'ORDER BY id' ✓. Tous les autres 'id ASC' ✓. Aucune régression détectée.",
+    "mitigation": "Spec déjà exige export reproducible. Si une implémentation utilise 'ORDER BY created_at' sans tiebreaker, elle casse. Mais le diff montre tous les ORDER BY stables. ✓ Pass."
+  }
+]

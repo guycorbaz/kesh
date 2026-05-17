@@ -798,3 +798,17 @@ reports-filename-trial-balance = kontensaldenliste
 reports-filename-journals = journale
 reports-pdf-header-period = Zeitraum
 reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
+
+# Story 9-2b — Globaler ZIP-Export (Datensouveränität) — 12 Schlüssel
+nav-export-global = Globaler Export
+export-global-title = Globaler Export Ihrer Daten
+export-global-description = Exportieren Sie alle Ihre Buchhaltungsdaten (Konten, Buchungen, Kontakte, Rechnungen, Banktransaktionen) im CSV-Format in einer ZIP-Datei. Verwenden Sie diesen Export zur Archivierung, zur Migration in eine andere Software oder zur 10-jährigen Aufbewahrung (Schweizerisches OR Art. 958f).
+export-global-button = Export starten
+export-global-loading = Export wird erstellt…
+export-global-success = Export heruntergeladen.
+export-global-error-generic = Globaler Export konnte nicht erstellt werden. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.
+export-global-filename-hint = Die Datei wird unter dem Namen kesh-export-{ $companyShort }-{ $date }.zip heruntergeladen
+export-global-content-includes = Der Export enthält: Kontenplan, Geschäftsjahre, Buchungen, Kontakte, Produkte, Rechnungen, Bankkonten, Bankimport-Historie, Transaktionen, aktive und historische Mehrwertsteuersätze, Rechnungseinstellungen, Abstimmungsregeln, Bankimport-Profile und ein metadata.json-Manifest mit SHA-256-Hash jeder Datei zur Integritätsprüfung.
+export-global-content-excludes = Nicht enthalten: Benutzer (PII + Passwörter), Session-Tokens, internes Audit-Log, Onboarding-Status (Sicherheits- und technische Gründe).
+export-global-souverainete-note = Ihre Daten gehören Ihnen. Kesh erstellt keine Kopien dieses Exports auf seinen Servern.
+error-global-export-failed = Der globale Export konnte nicht erstellt werden. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.
