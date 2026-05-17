@@ -20,7 +20,7 @@ use axum::{
     Extension, Json,
     body::Body,
     extract::{Query, State},
-    http::{HeaderValue, StatusCode, header},
+    http::{StatusCode, header},
     response::Response,
 };
 use chrono::NaiveDate;
@@ -568,21 +568,9 @@ async fn load_pdf_context(
     // libellés PDF est reportée à v0.2 (L4 + L11). Le code locale est exposé
     // via PdfContext pour traceability future.
     //
-    // Pass 1 code-review M3 (ECH2-M1) : `"FR" =>` explicite avec warning sur
-    // valeur inconnue pour faciliter le diagnostic d'une row corrompue.
-    let bcp47 = match locale_code.as_str() {
-        "FR" => "fr-CH",
-        "DE" => "de-CH",
-        "IT" => "it-CH",
-        "EN" => "en-CH",
-        other => {
-            tracing::warn!(
-                unknown_locale = %other,
-                "accounting_language inconnu, fallback fr-CH"
-            );
-            "fr-CH"
-        }
-    };
+    // Story 9-2b T5.1 (Pass 3 ECH3-H2) : mapping extrait vers `util::map_language_to_bcp47`
+    // pour réutilisation par `routes::exports`. Politique fallback inchangée.
+    let bcp47 = crate::util::map_language_to_bcp47(&locale_code);
 
     let mut ctx = PdfContext::fr_ch_default(company_name.clone());
     ctx.locale = bcp47.to_string();
@@ -642,7 +630,7 @@ fn build_export_response_with_locale(
 ) -> Result<Response, AppError> {
     let filename = build_filename(type_slug, company_name, period, format.extension());
 
-    let content_disposition = build_content_disposition(&filename, locale_bcp47)?;
+    let content_disposition = crate::util::build_content_disposition(&filename, locale_bcp47)?;
 
     let response = Response::builder()
         .status(StatusCode::OK)
@@ -654,143 +642,17 @@ fn build_export_response_with_locale(
     Ok(response)
 }
 
-/// Construit le Content-Disposition header avec ASCII fallback + RFC 5987 UTF-8
-/// (T5.3 + Pass 1 ECH-M2 — sans ça, `HeaderValue::from_str` panic sur
-/// company name `"Müller AG"` — caractères non-ISO-8859-1).
-///
-/// Pass 1 code-review M14 (BH2-M2) : ajoute le tag langue BCP-47 entre les
-/// deux apostrophes simples (`filename*=UTF-8'fr-CH'…`) pour respecter la
-/// syntaxe complète RFC 5987 (charset, language, value). `locale_bcp47=""`
-/// retombe sur l'ancien format `filename*=UTF-8''…` (sans tag) — rétro-compat
-/// pour les tests existants.
-fn build_content_disposition(filename: &str, locale_bcp47: &str) -> Result<HeaderValue, AppError> {
-    let ascii_fallback = ascii_fallback_filename(filename);
-    let percent_encoded = percent_encode_filename(filename);
-    let value = format!(
-        "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8'{locale_bcp47}'{percent_encoded}"
-    );
-    HeaderValue::from_str(&value)
-        .map_err(|e| AppError::Internal(format!("invalid Content-Disposition header: {e}")))
-}
-
-/// Remplace les caractères non-ASCII par `_` pour le fallback `filename="..."`.
-fn ascii_fallback_filename(filename: &str) -> String {
-    filename
-        .chars()
-        .map(|c| {
-            if c.is_ascii() && c != '"' && c != '\\' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-/// Percent-encode RFC 5987 (réservé + non-ASCII).
-///
-/// Pass 1 code-review H7 (BH2-H3) : le cast `b as char` n'est correct que si
-/// `b < 128` (ASCII). La branche `is_safe` est aujourd'hui garantie ASCII via
-/// `is_ascii_alphanumeric()` + le set `-._~`, mais un refactor élargissant
-/// le filtre (e.g. à `is_alphanumeric()` Unicode) introduirait silencieusement
-/// un bug — le `debug_assert!` ci-dessous protège contre cette régression.
-fn percent_encode_filename(filename: &str) -> String {
-    let mut out = String::with_capacity(filename.len());
-    for b in filename.bytes() {
-        let is_safe = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~');
-        if is_safe {
-            debug_assert!(
-                b < 128,
-                "is_safe doit garantir un byte ASCII (b < 128) avant `b as char`"
-            );
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
-
 /// Construit le filename `kesh-{type_slug}-{company_slug}-{periodStart}_{periodEnd}.{ext}`
 /// (T5.4 + AC #22 + Pass 1 ECH-C1 + Pass 3 BH3-M3 + Pass 4 ECH4-L3).
 ///
-/// Le `type_slug` et le `company_name` sont **tous les deux** slugifiés (regex
-/// inline `[^a-z0-9-]` → `-` + collapse `-+` → `-` + truncate 20 chars +
-/// strip trailing `-`) avec fallback `"report"` / `"company"` si vide post-slug.
+/// Story 9-2b §util : `slugify` factorisé dans `crate::util` (réutilisé par
+/// `routes::exports::build_global_filename`).
 fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ext: &str) -> String {
-    let slug_type = slugify(type_slug, "report");
-    let slug_company = slugify(company_name, "company");
+    let slug_type = crate::util::slugify(type_slug, "report");
+    let slug_company = crate::util::slugify(company_name, "company");
     let period_start = period.start_date.format("%Y-%m-%d").to_string();
     let period_end = period.end_date.format("%Y-%m-%d").to_string();
     format!("kesh-{slug_type}-{slug_company}-{period_start}_{period_end}.{ext}")
-}
-
-/// Slugifie une chaîne pour usage dans un filename ASCII strict.
-///
-/// Pipeline :
-/// 1. NFD-strip diacritics (manuelle : remplace les variantes connues).
-/// 2. lowercase + ASCII-only (les caractères non-Latin → remplacés par `-`).
-/// 3. `[^a-z0-9-]` → `-`.
-/// 4. Collapse `-+` → `-`.
-/// 5. Truncate à 20 chars.
-/// 6. Strip trailing `-` (Pass 1 ECH-H3).
-/// 7. Si le résultat est vide → `fallback` (Pass 4 ECH4-L3).
-fn slugify(input: &str, fallback: &str) -> String {
-    let lowered: String = input
-        .to_lowercase()
-        .chars()
-        .map(strip_diacritics_char)
-        .collect();
-    let cleaned: String = lowered
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    // Collapse repeated dashes
-    let mut collapsed = String::with_capacity(cleaned.len());
-    let mut prev_dash = false;
-    for c in cleaned.chars() {
-        if c == '-' {
-            if !prev_dash {
-                collapsed.push(c);
-            }
-            prev_dash = true;
-        } else {
-            collapsed.push(c);
-            prev_dash = false;
-        }
-    }
-    // Truncate à 20 chars (bytes-safe car ASCII)
-    let truncated: String = collapsed.chars().take(20).collect();
-    // Strip trailing `-`
-    let stripped = truncated.trim_end_matches('-');
-    if stripped.is_empty() {
-        fallback.to_string()
-    } else {
-        stripped.to_string()
-    }
-}
-
-/// Strip diacritics manuels (fallback car std n'a pas `unicode-normalization`).
-/// Couvre les caractères Latin-1 + Extended-A les plus courants.
-fn strip_diacritics_char(c: char) -> char {
-    match c {
-        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => 'a',
-        'ç' => 'c',
-        'è' | 'é' | 'ê' | 'ë' => 'e',
-        'ì' | 'í' | 'î' | 'ï' => 'i',
-        'ñ' => 'n',
-        'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
-        'ù' | 'ú' | 'û' | 'ü' => 'u',
-        'ý' | 'ÿ' => 'y',
-        // Casing — already lowered, but defensive
-        other => other,
-    }
 }
 
 // ===========================================================================
@@ -926,34 +788,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn slugify_strips_diacritics_lowercase() {
-        assert_eq!(slugify("Müller AG", "fallback"), "muller-ag");
-        assert_eq!(slugify("Café Crème", "fallback"), "cafe-creme");
-    }
-
-    #[test]
-    fn slugify_collapses_repeated_dashes() {
-        assert_eq!(slugify("Kesh ---   SA", "fallback"), "kesh-sa");
-    }
-
-    #[test]
-    fn slugify_truncates_to_20_chars_and_strips_trailing_dash() {
-        // 23 chars : "acme-sa-fribourg-exten" (truncated to 20 + strip)
-        let result = slugify("Acme SA Fribourg Extension Long", "fallback");
-        assert!(result.len() <= 20);
-        assert!(
-            !result.ends_with('-'),
-            "result must not end with `-`, got: {result}"
-        );
-    }
-
-    #[test]
-    fn slugify_empty_falls_back() {
-        assert_eq!(slugify("", "company"), "company");
-        // Chinese chars → all replaced by `-` → empty after collapse+strip
-        assert_eq!(slugify("北京公司", "company"), "company");
-    }
+    // Tests `slugify*` migrés vers `crate::util::tests` (Story 9-2b §util).
 
     #[test]
     fn validate_format_accepts_lowercase_pdf_csv() {
@@ -1000,44 +835,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn content_disposition_handles_unicode_via_rfc5987() {
-        // Cohérent T9.4 — Pass 1 ECH-M2 : pas de panic sur "Müller AG"
-        // Locale vide = rétro-compat `filename*=UTF-8''…`
-        let header = build_content_disposition("kesh-bilan-müller-ag-2026.pdf", "").unwrap();
-        let header_str = header.to_str().unwrap();
-        assert!(header_str.contains("filename="));
-        assert!(header_str.contains("filename*=UTF-8''"));
-        // ASCII fallback : `ü` remplacé par `_`
-        assert!(header_str.contains("kesh-bilan-m_ller-ag-2026.pdf"));
-        // Percent-encoded : `ü` = `%C3%BC`
-        assert!(header_str.contains("%C3%BC"));
-    }
-
-    /// Pass 1 code-review M14 (BH2-M2) : RFC 5987 complet avec tag langue
-    /// `filename*=UTF-8'fr-CH'…`. Vérifie que la locale est insérée entre les
-    /// deux apostrophes simples (et pas autour, ni omise).
-    #[test]
-    fn content_disposition_with_locale_tag_includes_language() {
-        let header = build_content_disposition("kesh-bilan-test-2026.pdf", "fr-CH").unwrap();
-        let header_str = header.to_str().unwrap();
-        assert!(
-            header_str.contains("filename*=UTF-8'fr-CH'"),
-            "RFC 5987 tag langue manquant, got: {header_str}"
-        );
-    }
-
-    #[test]
-    fn percent_encode_keeps_safe_chars() {
-        assert_eq!(
-            percent_encode_filename("file-name_2026.pdf"),
-            "file-name_2026.pdf"
-        );
-    }
-
-    #[test]
-    fn percent_encode_encodes_unicode() {
-        let result = percent_encode_filename("ü");
-        assert_eq!(result, "%C3%BC");
-    }
+    // Tests `content_disposition_*` + `percent_encode_*` migrés vers
+    // `crate::util::tests` (Story 9-2b §util).
 }

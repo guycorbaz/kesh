@@ -10,6 +10,7 @@ pub mod errors;
 pub mod helpers;
 pub mod middleware;
 pub mod routes;
+pub(crate) mod util;
 
 use std::sync::Arc;
 
