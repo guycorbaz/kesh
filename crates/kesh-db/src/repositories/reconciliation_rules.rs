@@ -49,6 +49,27 @@ pub fn is_duplicate_rule_constraint(err: &DbError) -> bool {
 ///
 /// Utilisé par `kesh_reconciliation::rules::first_matching_rule` au
 /// flow `GET /api/v1/reconciliation/proposals`.
+/// Story 9-2b T3.2.9 — Liste **toutes** les règles de réconciliation d'une
+/// company sans filtre `active`, pour l'export global ZIP (souveraineté :
+/// règles soft-deleted incluses pour audit historique).
+///
+/// Distincte de [`find_active_for_company`] (filtre `active = TRUE`). Tri
+/// stable `id ASC`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<ReconciliationRule>, DbError> {
+    sqlx::query_as::<_, ReconciliationRule>(&format!(
+        "SELECT {COLUMNS} FROM reconciliation_rules \
+         WHERE company_id = ? \
+         ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 pub async fn find_active_for_company<'e, E>(
     executor: E,
     company_id: i64,

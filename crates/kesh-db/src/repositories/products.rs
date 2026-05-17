@@ -445,6 +445,27 @@ pub async fn archive(
     Ok(product)
 }
 
+/// Story 9-2b T3.2.3 — Liste **tous** les produits d'une company sans filtre
+/// `active`, pour l'export global ZIP (souveraineté complète : produits
+/// archivés inclus pour cohérence référentielle factures).
+///
+/// Distincte de [`list_by_company_paginated`] (qui propose un filtre
+/// `active`). Tri stable `id ASC`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<Product>, DbError> {
+    sqlx::query_as::<_, Product>(&format!(
+        "SELECT {COLUMNS} FROM products \
+         WHERE company_id = ? \
+         ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 // ---------------------------------------------------------------------------
 // Tests d'intégration DB (Story 4.2)
 // ---------------------------------------------------------------------------

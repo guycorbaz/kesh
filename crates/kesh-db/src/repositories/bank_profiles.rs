@@ -113,6 +113,24 @@ where
         .map_err(map_db_error)
 }
 
+/// Story 9-2b T3.2.10 — Liste **tous** les profils bancaires d'une company
+/// sans pagination, pour l'export global ZIP. Tri stable `id ASC`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<BankProfile>, DbError> {
+    sqlx::query_as::<_, BankProfile>(&format!(
+        "SELECT {} FROM bank_profiles \
+         WHERE company_id = ? \
+         ORDER BY id",
+        COLUMNS
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste paginée des profils d'une company. Retourne `(profils, count_total)`.
 pub async fn list_by_company(
     pool: &MySqlPool,

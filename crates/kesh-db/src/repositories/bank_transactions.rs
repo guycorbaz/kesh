@@ -23,6 +23,24 @@ const COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date,
      counterparty_iban, counterparty_name, status, matched_entry_id, \
      auto_match_rejected_at, version, created_at, updated_at";
 
+/// Story 9-2b T3.2.7 — Liste **toutes** les transactions bancaires d'une
+/// company sans filtre `import_id`, pour l'export global ZIP. Tri stable
+/// `id ASC` (ordre d'insertion).
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<BankTransaction>, DbError> {
+    sqlx::query_as::<_, BankTransaction>(&format!(
+        "SELECT {COLUMNS} FROM bank_transactions \
+         WHERE company_id = ? \
+         ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste les transactions d'un import donné, scopées multi-tenant.
 ///
 /// Tri par `id` (= ordre d'insertion = ordre du fichier source pour

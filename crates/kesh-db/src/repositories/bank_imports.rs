@@ -191,6 +191,26 @@ pub async fn find_by_company_id(
     }
 }
 
+/// Story 9-2b T3.2.6 — Liste **tous** les imports bancaires d'une company sans
+/// pagination ni filtre `bank_account_id`, pour l'export global ZIP.
+///
+/// Distincte de [`find_by_company_id`] (paginée + filtrée). Tri stable `id ASC`
+/// (les `imported_at` peuvent être identiques sur des imports batch).
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<BankImport>, DbError> {
+    sqlx::query_as::<_, BankImport>(&format!(
+        "SELECT {COLUMNS} FROM bank_imports \
+         WHERE company_id = ? \
+         ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Compte total des imports d'une company pour la pagination
 /// (review code Pass 1 H5 : `total: 0` hardcoded était un contrat
 /// JSON menteur — `BankImportListResponse.total` doit refléter la

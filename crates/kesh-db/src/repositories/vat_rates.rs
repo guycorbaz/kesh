@@ -14,6 +14,28 @@ use sqlx::mysql::MySqlPool;
 use crate::entities::VatRate;
 use crate::errors::{DbError, map_db_error};
 
+/// Story 9-2b T3.2.8 — Liste **tous** les taux TVA d'une company sans filtre
+/// `active`, pour l'export global ZIP (souveraineté : taux historiques inclus
+/// pour permettre la reconstruction des calculs TVA passés).
+///
+/// Distincte de [`list_active_for_company`] (filtre `active = TRUE`). Tri
+/// stable `id ASC`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<VatRate>, DbError> {
+    sqlx::query_as::<_, VatRate>(
+        "SELECT id, company_id, label, rate, valid_from, valid_to, active, created_at, updated_at \
+         FROM vat_rates \
+         WHERE company_id = ? \
+         ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Liste les taux TVA actifs d'une company, triés par taux décroissant.
 ///
 /// Utilisé par `GET /api/v1/vat-rates` (handler `list_vat_rates`) et
