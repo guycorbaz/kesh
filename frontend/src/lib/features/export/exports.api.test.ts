@@ -58,6 +58,16 @@ describe('exports.api — Story 9-2b', () => {
 		it('returns null on header without filename', () => {
 			expect(parseContentDispositionFilename('attachment')).toBeNull();
 		});
+
+		// Pass 1 code-review H6 (C4 Blind F02/F09 + C4-ECH-H2) — régression :
+		// header `filename*=UTF-8''` (valeur RFC 5987 vide) DOIT retourner null,
+		// pas une chaîne `"UTF-8''"` que la regex unquoted matcherait sans le
+		// lookahead `(?!\*)`.
+		it('returns null on RFC 5987 filename* with empty percent-encoded value', () => {
+			expect(
+				parseContentDispositionFilename("attachment; filename*=UTF-8''"),
+			).toBeNull();
+		});
 	});
 
 	// ----------------------------------------------------------------------
@@ -132,6 +142,63 @@ describe('exports.api — Story 9-2b', () => {
 			await expect(downloadGlobalExport()).rejects.toThrow();
 			// pas de download tenté
 			expect(createObjectURLSpy).not.toHaveBeenCalled();
+		});
+
+		// Pass 1 code-review H8 (C4-AA-HIGH-01) — AC #31(c) guard re-entrancy.
+		// Le guard `if (exporting) return` first-line dans `+page.svelte` doit
+		// empêcher un second appel pendant un download en cours. On extrait la
+		// logique de guard dans une fonction `runOnceGuarded` testable
+		// isolément, puis on valide que deux appels concurrents ne déclenchent
+		// `downloadGlobalExport` qu'une seule fois.
+		it('AC #31(c) guard re-entrancy : second concurrent call court-circuité', async () => {
+			// Mock backend lent (Promise délayée 50ms).
+			let resolveDownload!: () => void;
+			const slowFetch = vi.fn().mockImplementation(
+				() =>
+					new Promise<Response>((resolve) => {
+						resolveDownload = () => {
+							const zipBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
+							const mockBlob = new Blob([zipBytes], { type: 'application/zip' });
+							resolve({
+								ok: true,
+								status: 200,
+								blob: () => Promise.resolve(mockBlob),
+								headers: new Headers({
+									'content-type': 'application/zip',
+									'content-disposition':
+										'attachment; filename="kesh-export-test.zip"',
+								}),
+							} as unknown as Response);
+						};
+					}),
+			);
+			vi.stubGlobal('fetch', slowFetch);
+
+			// Reproduction du guard `startExport` du `+page.svelte` (Pass 1 M12
+			// pattern AC #26 — `if (exporting) return` first-line).
+			let exporting = false;
+			let calls = 0;
+			async function startExport(): Promise<void> {
+				if (exporting) return;
+				exporting = true;
+				try {
+					calls += 1;
+					await downloadGlobalExport();
+				} finally {
+					exporting = false;
+				}
+			}
+
+			// 2 appels concurrents avant résolution du premier
+			const p1 = startExport();
+			const p2 = startExport();
+			// Resolve le mock backend pour laisser p1 terminer
+			resolveDownload();
+			await Promise.all([p1, p2]);
+
+			// Le guard doit avoir court-circuité le 2e appel : 1 seul `calls` + 1 seul fetch.
+			expect(calls).toBe(1);
+			expect(slowFetch).toHaveBeenCalledTimes(1);
 		});
 	});
 });

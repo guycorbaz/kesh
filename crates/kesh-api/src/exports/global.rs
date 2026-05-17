@@ -34,7 +34,7 @@ use crate::exports::metadata::{TableMeta, build_metadata_json, sha256_hex};
 
 use kesh_db::entities::Company;
 use kesh_db::repositories::{
-    accounts, bank_accounts, bank_imports, bank_profiles, bank_transactions, companies,
+    accounts, bank_accounts, bank_imports, bank_profiles, bank_transactions,
     company_invoice_settings, contacts, fiscal_years, invoices, journal_entries,
     reconciliation_rules, vat_rates,
 };
@@ -281,15 +281,6 @@ pub async fn build_global_export(
 /// jamais exposé en HTTP body, juste loggé dans `IntoResponse` arm).
 fn map_db(e: kesh_db::errors::DbError) -> AppError {
     AppError::GlobalExportFailed(format!("db: {e}"))
-}
-
-// Re-utiliser un usage pour éviter "unused import" sur companies (au cas où) :
-#[allow(dead_code)]
-fn _ensure_companies_used() {
-    // L'orchestrateur reçoit la Company déjà chargée (caller fetch), donc le
-    // module `companies` n'est pas utilisé dans le chemin nominal ici.
-    // On garde l'import pour réutilisation future (filtrage par exercice v0.2).
-    let _ = companies::find_by_id;
 }
 
 // ===========================================================================

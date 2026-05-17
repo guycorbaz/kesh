@@ -1,0 +1,492 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 0798275..6ffb924 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -109,6 +109,9 @@ name = "arbitrary"
+ version = "1.4.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
++dependencies = [
++ "derive_arbitrary",
++]
+ 
+ [[package]]
+ name = "arg_enum_proc_macro"
+@@ -772,6 +775,17 @@ dependencies = [
+  "powerfmt",
+ ]
+ 
++[[package]]
++name = "derive_arbitrary"
++version = "1.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 2.0.117",
++]
++
+ [[package]]
+ name = "digest"
+ version = "0.10.7"
+@@ -1847,6 +1861,7 @@ dependencies = [
+  "tracing-subscriber",
+  "unicode-normalization",
+  "uuid",
++ "zip",
+ ]
+ 
+ [[package]]
+@@ -5056,12 +5071,41 @@ dependencies = [
+  "syn 2.0.117",
+ ]
+ 
++[[package]]
++name = "zip"
++version = "2.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
++dependencies = [
++ "arbitrary",
++ "crc32fast",
++ "crossbeam-utils",
++ "displaydoc",
++ "flate2",
++ "indexmap",
++ "memchr",
++ "thiserror 2.0.18",
++ "zopfli",
++]
++
+ [[package]]
+ name = "zmij"
+ version = "1.0.21"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+ 
++[[package]]
++name = "zopfli"
++version = "0.8.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f05cd8797d63865425ff89b5c4a48804f35ba0ce8d125800027ad6017d2b5249"
++dependencies = [
++ "bumpalo",
++ "crc32fast",
++ "log",
++ "simd-adler32",
++]
++
+ [[package]]
+ name = "zune-core"
+ version = "0.4.12"
+diff --git a/crates/kesh-api/Cargo.toml b/crates/kesh-api/Cargo.toml
+index c60b75b..970344e 100644
+--- a/crates/kesh-api/Cargo.toml
++++ b/crates/kesh-api/Cargo.toml
+@@ -40,6 +40,9 @@ csv = "1"
+ # Story 8-1b — hash SHA-256 du fichier importé (dédup company-scope).
+ sha2 = "0.10"
+ 
++# Story 9-2b — export global ZIP (souveraineté des données).
++zip = { version = "2", default-features = false, features = ["deflate"] }
++
+ [dev-dependencies]
+ tower = { version = "0.5", features = ["util"] }
+ http-body-util = "0.1"
+diff --git a/crates/kesh-db/src/repositories/bank_imports.rs b/crates/kesh-db/src/repositories/bank_imports.rs
+index 0c8f571..ba746a4 100644
+--- a/crates/kesh-db/src/repositories/bank_imports.rs
++++ b/crates/kesh-db/src/repositories/bank_imports.rs
+@@ -191,6 +191,26 @@ pub async fn find_by_company_id(
+     }
+ }
+ 
++/// Story 9-2b T3.2.6 — Liste **tous** les imports bancaires d'une company sans
++/// pagination ni filtre `bank_account_id`, pour l'export global ZIP.
++///
++/// Distincte de [`find_by_company_id`] (paginée + filtrée). Tri stable `id ASC`
++/// (les `imported_at` peuvent être identiques sur des imports batch).
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<BankImport>, DbError> {
++    sqlx::query_as::<_, BankImport>(&format!(
++        "SELECT {COLUMNS} FROM bank_imports \
++         WHERE company_id = ? \
++         ORDER BY id"
++    ))
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ /// Compte total des imports d'une company pour la pagination
+ /// (review code Pass 1 H5 : `total: 0` hardcoded était un contrat
+ /// JSON menteur — `BankImportListResponse.total` doit refléter la
+diff --git a/crates/kesh-db/src/repositories/bank_profiles.rs b/crates/kesh-db/src/repositories/bank_profiles.rs
+index 5ace797..6628e95 100644
+--- a/crates/kesh-db/src/repositories/bank_profiles.rs
++++ b/crates/kesh-db/src/repositories/bank_profiles.rs
+@@ -113,6 +113,24 @@ where
+         .map_err(map_db_error)
+ }
+ 
++/// Story 9-2b T3.2.10 — Liste **tous** les profils bancaires d'une company
++/// sans pagination, pour l'export global ZIP. Tri stable `id ASC`.
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<BankProfile>, DbError> {
++    sqlx::query_as::<_, BankProfile>(&format!(
++        "SELECT {} FROM bank_profiles \
++         WHERE company_id = ? \
++         ORDER BY id",
++        COLUMNS
++    ))
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ /// Liste paginée des profils d'une company. Retourne `(profils, count_total)`.
+ pub async fn list_by_company(
+     pool: &MySqlPool,
+diff --git a/crates/kesh-db/src/repositories/bank_transactions.rs b/crates/kesh-db/src/repositories/bank_transactions.rs
+index cf38ace..5919e69 100644
+--- a/crates/kesh-db/src/repositories/bank_transactions.rs
++++ b/crates/kesh-db/src/repositories/bank_transactions.rs
+@@ -23,6 +23,24 @@ const COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date,
+      counterparty_iban, counterparty_name, status, matched_entry_id, \
+      auto_match_rejected_at, version, created_at, updated_at";
+ 
++/// Story 9-2b T3.2.7 — Liste **toutes** les transactions bancaires d'une
++/// company sans filtre `import_id`, pour l'export global ZIP. Tri stable
++/// `id ASC` (ordre d'insertion).
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<BankTransaction>, DbError> {
++    sqlx::query_as::<_, BankTransaction>(&format!(
++        "SELECT {COLUMNS} FROM bank_transactions \
++         WHERE company_id = ? \
++         ORDER BY id"
++    ))
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ /// Liste les transactions d'un import donné, scopées multi-tenant.
+ ///
+ /// Tri par `id` (= ordre d'insertion = ordre du fichier source pour
+diff --git a/crates/kesh-db/src/repositories/invoices.rs b/crates/kesh-db/src/repositories/invoices.rs
+index 65ddac2..9a53beb 100644
+--- a/crates/kesh-db/src/repositories/invoices.rs
++++ b/crates/kesh-db/src/repositories/invoices.rs
+@@ -1339,6 +1339,56 @@ pub async fn list_for_export(
+     Ok((rows, truncated))
+ }
+ 
++/// Story 9-2b T3.2.4 — Liste **toutes** les factures d'une company sans filtre
++/// `status`, pour l'export global ZIP (souveraineté : drafts + validated +
++/// paid + archived).
++///
++/// Distincte de [`list_for_export`] (qui force `status = 'validated'`) et de
++/// [`list_by_company_paginated`]. Tri stable `id ASC`.
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<Invoice>, DbError> {
++    sqlx::query_as::<_, Invoice>(
++        "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
++         payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
++         FROM invoices \
++         WHERE company_id = ? \
++         ORDER BY id",
++    )
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
++/// Story 9-2b T3.2.5 — Liste **toutes** les lignes de facture d'une company
++/// via un **single-query JOIN** (anti-N+1).
++///
++/// `InvoiceLine` n'a pas de `company_id` direct ground-truth
++/// (`entities/invoice.rs:41-51`) — le scoping multi-tenant passe par
++/// `invoices.company_id` via `JOIN`.
++///
++/// Tri `invoice_id, position` pour stabilité d'export (les lignes d'une même
++/// facture sont contiguës et ordonnées).
++pub async fn list_all_lines_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<InvoiceLine>, DbError> {
++    sqlx::query_as::<_, InvoiceLine>(
++        "SELECT il.id, il.invoice_id, il.position, il.description, il.quantity, \
++         il.unit_price, il.vat_rate, il.line_total, il.created_at \
++         FROM invoice_lines il \
++         JOIN invoices i ON il.invoice_id = i.id \
++         WHERE i.company_id = ? \
++         ORDER BY il.invoice_id, il.position",
++    )
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ // ---------------------------------------------------------------------------
+ // Tests d'intégration DB (Story 5.1)
+ // ---------------------------------------------------------------------------
+diff --git a/crates/kesh-db/src/repositories/journal_entries.rs b/crates/kesh-db/src/repositories/journal_entries.rs
+index 3e4c054..1d6e9d7 100644
+--- a/crates/kesh-db/src/repositories/journal_entries.rs
++++ b/crates/kesh-db/src/repositories/journal_entries.rs
+@@ -880,6 +880,56 @@ pub async fn delete_by_id(
+     Ok(())
+ }
+ 
++/// Story 9-2b T3.2.1 — Liste **toutes** les écritures d'une company sans
++/// pagination ni filtre, pour l'export global ZIP (souveraineté).
++///
++/// Distincte de [`list_by_company_paginated`] (qui charge aussi les lignes par
++/// N+1 pour l'UI). Cette fn retourne uniquement les en-têtes ; les lignes sont
++/// fournies en un seul JOIN par [`list_all_lines_by_company`] pour éviter le
++/// N+1 sur 5 000+ écritures (spec §scope-tables).
++///
++/// Tri stable `entry_date, id` (cohérent format d'export reproductible).
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<JournalEntry>, DbError> {
++    sqlx::query_as::<_, JournalEntry>(&format!(
++        "SELECT {ENTRY_COLUMNS} FROM journal_entries \
++         WHERE company_id = ? \
++         ORDER BY entry_date, id"
++    ))
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
++/// Story 9-2b T3.2.2 — Liste **toutes** les lignes d'écriture d'une company
++/// via un **single-query JOIN** (anti-N+1).
++///
++/// `JournalEntryLine` n'a pas de `company_id` direct ground-truth
++/// (`entities/journal_entry.rs:144-151`) — le scoping multi-tenant passe par
++/// `journal_entries.company_id` via `JOIN`.
++///
++/// Tri `entry_id, line_order` pour stabilité d'export (les lignes d'une même
++/// entry sont contiguës et ordonnées).
++pub async fn list_all_lines_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<JournalEntryLine>, DbError> {
++    sqlx::query_as::<_, JournalEntryLine>(
++        "SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit \
++         FROM journal_entry_lines jel \
++         JOIN journal_entries je ON jel.entry_id = je.id \
++         WHERE je.company_id = ? \
++         ORDER BY jel.entry_id, jel.line_order",
++    )
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ /// Supprime toutes les écritures d'une company (utilisé par `reset_demo`).
+ ///
+ /// Les lignes suivent par `ON DELETE CASCADE`.
+diff --git a/crates/kesh-db/src/repositories/products.rs b/crates/kesh-db/src/repositories/products.rs
+index 37dc346..36bb013 100644
+--- a/crates/kesh-db/src/repositories/products.rs
++++ b/crates/kesh-db/src/repositories/products.rs
+@@ -445,6 +445,27 @@ pub async fn archive(
+     Ok(product)
+ }
+ 
++/// Story 9-2b T3.2.3 — Liste **tous** les produits d'une company sans filtre
++/// `active`, pour l'export global ZIP (souveraineté complète : produits
++/// archivés inclus pour cohérence référentielle factures).
++///
++/// Distincte de [`list_by_company_paginated`] (qui propose un filtre
++/// `active`). Tri stable `id ASC`.
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<Product>, DbError> {
++    sqlx::query_as::<_, Product>(&format!(
++        "SELECT {COLUMNS} FROM products \
++         WHERE company_id = ? \
++         ORDER BY id"
++    ))
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ // ---------------------------------------------------------------------------
+ // Tests d'intégration DB (Story 4.2)
+ // ---------------------------------------------------------------------------
+diff --git a/crates/kesh-db/src/repositories/reconciliation_rules.rs b/crates/kesh-db/src/repositories/reconciliation_rules.rs
+index 455f762..4a50500 100644
+--- a/crates/kesh-db/src/repositories/reconciliation_rules.rs
++++ b/crates/kesh-db/src/repositories/reconciliation_rules.rs
+@@ -49,6 +49,27 @@ pub fn is_duplicate_rule_constraint(err: &DbError) -> bool {
+ ///
+ /// Utilisé par `kesh_reconciliation::rules::first_matching_rule` au
+ /// flow `GET /api/v1/reconciliation/proposals`.
++/// Story 9-2b T3.2.9 — Liste **toutes** les règles de réconciliation d'une
++/// company sans filtre `active`, pour l'export global ZIP (souveraineté :
++/// règles soft-deleted incluses pour audit historique).
++///
++/// Distincte de [`find_active_for_company`] (filtre `active = TRUE`). Tri
++/// stable `id ASC`.
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<ReconciliationRule>, DbError> {
++    sqlx::query_as::<_, ReconciliationRule>(&format!(
++        "SELECT {COLUMNS} FROM reconciliation_rules \
++         WHERE company_id = ? \
++         ORDER BY id"
++    ))
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ pub async fn find_active_for_company<'e, E>(
+     executor: E,
+     company_id: i64,
+diff --git a/crates/kesh-db/src/repositories/vat_rates.rs b/crates/kesh-db/src/repositories/vat_rates.rs
+index 99a5cf5..a8d458c 100644
+--- a/crates/kesh-db/src/repositories/vat_rates.rs
++++ b/crates/kesh-db/src/repositories/vat_rates.rs
+@@ -14,6 +14,28 @@ use sqlx::mysql::MySqlPool;
+ use crate::entities::VatRate;
+ use crate::errors::{DbError, map_db_error};
+ 
++/// Story 9-2b T3.2.8 — Liste **tous** les taux TVA d'une company sans filtre
++/// `active`, pour l'export global ZIP (souveraineté : taux historiques inclus
++/// pour permettre la reconstruction des calculs TVA passés).
++///
++/// Distincte de [`list_active_for_company`] (filtre `active = TRUE`). Tri
++/// stable `id ASC`.
++pub async fn list_all_by_company(
++    pool: &MySqlPool,
++    company_id: i64,
++) -> Result<Vec<VatRate>, DbError> {
++    sqlx::query_as::<_, VatRate>(
++        "SELECT id, company_id, label, rate, valid_from, valid_to, active, created_at, updated_at \
++         FROM vat_rates \
++         WHERE company_id = ? \
++         ORDER BY id",
++    )
++    .bind(company_id)
++    .fetch_all(pool)
++    .await
++    .map_err(map_db_error)
++}
++
+ /// Liste les taux TVA actifs d'une company, triés par taux décroissant.
+ ///
+ /// Utilisé par `GET /api/v1/vat-rates` (handler `list_vat_rates`) et
+diff --git a/crates/kesh-i18n/locales/de-CH/messages.ftl b/crates/kesh-i18n/locales/de-CH/messages.ftl
+index 8de811c..4cb0864 100644
+--- a/crates/kesh-i18n/locales/de-CH/messages.ftl
++++ b/crates/kesh-i18n/locales/de-CH/messages.ftl
+@@ -798,3 +798,17 @@ reports-filename-trial-balance = kontensaldenliste
+ reports-filename-journals = journale
+ reports-pdf-header-period = Zeitraum
+ reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
++
++# Story 9-2b — Globaler ZIP-Export (Datensouveränität) — 12 Schlüssel
++nav-export-global = Globaler Export
++export-global-title = Globaler Export Ihrer Daten
++export-global-description = Exportieren Sie alle Ihre Buchhaltungsdaten (Konten, Buchungen, Kontakte, Rechnungen, Banktransaktionen) im CSV-Format in einer ZIP-Datei. Verwenden Sie diesen Export zur Archivierung, zur Migration in eine andere Software oder zur 10-jährigen Aufbewahrung (Schweizerisches OR Art. 958f).
++export-global-button = Export starten
++export-global-loading = Export wird erstellt…
++export-global-success = Export heruntergeladen.
++export-global-error-generic = Globaler Export konnte nicht erstellt werden. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.
++export-global-filename-hint = Die Datei wird unter dem Namen kesh-export-{ $companyShort }-{ $date }.zip heruntergeladen
++export-global-content-includes = Der Export enthält: Kontenplan, Buchungen, Kontakte, Produkte, Rechnungen, Bankkonten, Transaktionen, Abstimmungsregeln und ein metadata.json-Manifest mit SHA-256-Hash jeder Datei zur Integritätsprüfung.
++export-global-content-excludes = Nicht enthalten: Benutzer (PII + Passwörter), Session-Tokens, internes Audit-Log, Onboarding-Status (Sicherheits- und technische Gründe).
++export-global-souverainete-note = Ihre Daten gehören Ihnen. Kesh erstellt keine Kopien dieses Exports auf seinen Servern.
++error-global-export-failed = Der globale Export konnte nicht erstellt werden. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.
+diff --git a/crates/kesh-i18n/locales/en-CH/messages.ftl b/crates/kesh-i18n/locales/en-CH/messages.ftl
+index 5c66896..db00a26 100644
+--- a/crates/kesh-i18n/locales/en-CH/messages.ftl
++++ b/crates/kesh-i18n/locales/en-CH/messages.ftl
+@@ -798,3 +798,17 @@ reports-filename-trial-balance = trial-balance
+ reports-filename-journals = journals
+ reports-pdf-header-period = Period
+ reports-pdf-empty-message = No entries in the selected period.
++
++# Story 9-2b — Global ZIP export (data sovereignty) — 12 keys
++nav-export-global = Global export
++export-global-title = Global export of your data
++export-global-description = Export all your accounting data (accounts, journal entries, contacts, invoices, bank transactions) in CSV format inside a ZIP file. Use this export to archive, migrate to another software, or keep your data for 10 years (Swiss CO Art. 958f).
++export-global-button = Start export
++export-global-loading = Generating export…
++export-global-success = Export downloaded.
++export-global-error-generic = Could not generate the global export. Check your connection and try again.
++export-global-filename-hint = The file will be downloaded as kesh-export-{ $companyShort }-{ $date }.zip
++export-global-content-includes = The export contains: chart of accounts, journal entries, contacts, products, invoices, bank accounts, transactions, reconciliation rules, and a metadata.json manifest with SHA-256 hash of each file for integrity verification.
++export-global-content-excludes = Does not contain: users (PII + passwords), session tokens, internal audit log, onboarding state (security and technical reasons).
++export-global-souverainete-note = Your data belongs to you. Kesh keeps no copy of this export on its servers.
++error-global-export-failed = The global export could not be generated. If the problem persists, please contact support.
+diff --git a/crates/kesh-i18n/locales/fr-CH/messages.ftl b/crates/kesh-i18n/locales/fr-CH/messages.ftl
+index f0d863e..7e1a1ef 100644
+--- a/crates/kesh-i18n/locales/fr-CH/messages.ftl
++++ b/crates/kesh-i18n/locales/fr-CH/messages.ftl
+@@ -854,3 +854,17 @@ reports-filename-trial-balance = balance-comptes
+ reports-filename-journals = journaux
+ reports-pdf-header-period = Période
+ reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
++
++# Story 9-2b — Export global ZIP (souveraineté des données) — 12 clés
++nav-export-global = Export global
++export-global-title = Export global de vos données
++export-global-description = Exportez toutes vos données comptables (comptes, écritures, contacts, factures, transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver, migrer vers un autre logiciel, ou conserver vos données 10 ans (Swiss CO Art. 958f).
++export-global-button = Lancer l'export
++export-global-loading = Génération de l'export…
++export-global-success = Export téléchargé.
++export-global-error-generic = Impossible de générer l'export global. Vérifiez votre connexion et réessayez.
++export-global-filename-hint = Le fichier sera téléchargé sous le nom kesh-export-{ $companyShort }-{ $date }.zip
++export-global-content-includes = L'export contient : plan comptable, écritures, contacts, produits, factures, comptes bancaires, transactions, règles de réconciliation, et un manifeste metadata.json avec hash SHA-256 de chaque fichier pour vérification d'intégrité.
++export-global-content-excludes = Ne contient pas : utilisateurs (PII + mots de passe), tokens de session, journal d'audit interne, état d'onboarding (raisons de sécurité et technicité).
++export-global-souverainete-note = Vos données vous appartiennent. Kesh ne fait aucune copie de cet export sur ses serveurs.
++error-global-export-failed = L'export global n'a pas pu être généré. Si le problème persiste, contactez le support.
+diff --git a/crates/kesh-i18n/locales/it-CH/messages.ftl b/crates/kesh-i18n/locales/it-CH/messages.ftl
+index f0aabc0..67be9d7 100644
+--- a/crates/kesh-i18n/locales/it-CH/messages.ftl
++++ b/crates/kesh-i18n/locales/it-CH/messages.ftl
+@@ -798,3 +798,17 @@ reports-filename-trial-balance = bilancio-verifica
+ reports-filename-journals = giornali
+ reports-pdf-header-period = Periodo
+ reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
++
++# Story 9-2b — Esportazione globale ZIP (sovranità dei dati) — 12 chiavi
++nav-export-global = Esportazione globale
++export-global-title = Esportazione globale dei vostri dati
++export-global-description = Esportate tutti i vostri dati contabili (conti, scritture, contatti, fatture, transazioni bancarie) in formato CSV in un file ZIP. Utilizzate questa esportazione per archiviare, migrare verso un altro software o conservare i vostri dati per 10 anni (CO svizzero Art. 958f).
++export-global-button = Avvia esportazione
++export-global-loading = Generazione esportazione…
++export-global-success = Esportazione scaricata.
++export-global-error-generic = Impossibile generare l'esportazione globale. Verificate la connessione e riprovate.
++export-global-filename-hint = Il file sarà scaricato con il nome kesh-export-{ $companyShort }-{ $date }.zip
++export-global-content-includes = L'esportazione contiene: piano dei conti, scritture, contatti, prodotti, fatture, conti bancari, transazioni, regole di riconciliazione e un manifesto metadata.json con hash SHA-256 di ogni file per la verifica di integrità.
++export-global-content-excludes = Non contiene: utenti (PII + password), token di sessione, registro audit interno, stato onboarding (motivi di sicurezza e tecnici).
++export-global-souverainete-note = I vostri dati vi appartengono. Kesh non effettua alcuna copia di questa esportazione sui suoi server.
++error-global-export-failed = L'esportazione globale non è potuta essere generata. Se il problema persiste, contattate l'assistenza.

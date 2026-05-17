@@ -27,13 +27,24 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
 });
 
+// Pass 1 code-review H7 (C4-ECH-H3) — variable partagée pour cleanup robuste
+// même si le test fail entre `saveAs` et la fin de la suite.
+let savedZipPath: string | null = null;
+
 test.afterEach(async ({ page }) => {
+	// Cleanup ZIP éphémère sauvegardé pendant le test (n'importe l'issue).
+	if (savedZipPath && fs.existsSync(savedZipPath)) {
+		fs.unlinkSync(savedZipPath);
+	}
+	savedZipPath = null;
 	await clearAuthStorage(page);
 });
 
@@ -46,6 +57,15 @@ async function login(page: Page): Promise<void> {
 }
 
 test('export global ZIP via UI (AC #32)', async ({ page }) => {
+	// Pass 1 code-review M7 (C4 Blind F08 + C4-ECH-M3 + C4-AA-MEDIUM-01) —
+	// intercepter la requête API pour ralentir la réponse de ~500ms, rendant
+	// l'état `disabled` + libellé "Génération de l'export…" observable de
+	// manière fiable (sans `.catch(() => {})` qui swallowait les vrais bugs).
+	await page.route('**/api/v1/exports/global.zip', async (route) => {
+		await new Promise((r) => setTimeout(r, 500));
+		await route.continue();
+	});
+
 	await login(page);
 	await page.goto('/export');
 	await page.waitForLoadState('networkidle');
@@ -56,23 +76,22 @@ test('export global ZIP via UI (AC #32)', async ({ page }) => {
 	await expect(startButton).toBeVisible();
 	await expect(startButton).toBeEnabled();
 
-	// AC #25 — pendant la génération, le bouton passe en disabled + libellé
-	// « Génération de l'export… ».
 	const downloadPromise = page.waitForEvent('download');
 	await startButton.click();
-	// Race : selon la vitesse backend, le download peut résoudre avant qu'on
-	// observe le `disabled`. On checke le `disabled` au mieux mais on tolère
-	// le fast-path (assertion non-bloquante).
-	await expect(startButton).toBeDisabled({ timeout: 1000 }).catch(() => {
-		// Backend très rapide — le bouton est déjà revenu enabled.
-	});
+
+	// AC #25 — pendant la génération, bouton disabled + libellé "Génération de l'export…"
+	// observable maintenant grâce au délai backend ci-dessus.
+	await expect(startButton).toBeDisabled({ timeout: 2000 });
+	await expect(startButton).toContainText(/G[ée]n[ée]ration/i, { timeout: 2000 });
 
 	const download = await downloadPromise;
 
-	// AC #32 — saveAs puis read
-	const savedPath = '/tmp/kesh-test-9-2b.zip';
-	await download.saveAs(savedPath);
-	const bytes = fs.readFileSync(savedPath);
+	// AC #32 — saveAs avec chemin unique par run pour éviter collision parallèle
+	// (Pass 1 code-review C4 Blind F13 — `/tmp/kesh-test-9-2b.zip` hardcodé pouvait
+	// causer faux positifs si runs parallèles utilisent même chemin).
+	savedZipPath = path.join(os.tmpdir(), `kesh-test-9-2b-${Date.now()}.zip`);
+	await download.saveAs(savedZipPath);
+	const bytes = fs.readFileSync(savedZipPath);
 
 	// AC #4 — byte signature ZIP `PK\x03\x04`
 	expect(bytes.length).toBeGreaterThan(4);
@@ -87,9 +106,5 @@ test('export global ZIP via UI (AC #32)', async ({ page }) => {
 
 	// AC #25 — bouton redevient enabled post-download
 	await expect(startButton).toBeEnabled({ timeout: 5000 });
-
-	// Cleanup
-	if (fs.existsSync(savedPath)) {
-		fs.unlinkSync(savedPath);
-	}
+	// Cleanup délégué à `test.afterEach` via `savedZipPath`.
 });

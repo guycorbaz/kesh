@@ -42,13 +42,6 @@ pub fn is_duplicate_rule_constraint(err: &DbError) -> bool {
     )
 }
 
-/// Liste toutes les rules **actives** d'une company, ordonnées par
-/// `priority ASC, id ASC` (tiebreaker à 2 niveaux Pass 2 Q1, suppression
-/// du 3e niveau `created_at ASC` régression Pass 1 — `id ASC` suffit
-/// comme tiebreaker total puisque `id` est AUTO_INCREMENT unique).
-///
-/// Utilisé par `kesh_reconciliation::rules::first_matching_rule` au
-/// flow `GET /api/v1/reconciliation/proposals`.
 /// Story 9-2b T3.2.9 — Liste **toutes** les règles de réconciliation d'une
 /// company sans filtre `active`, pour l'export global ZIP (souveraineté :
 /// règles soft-deleted incluses pour audit historique).
@@ -70,6 +63,13 @@ pub async fn list_all_by_company(
     .map_err(map_db_error)
 }
 
+/// Liste toutes les rules **actives** d'une company, ordonnées par
+/// `priority ASC, id ASC` (tiebreaker à 2 niveaux Pass 2 Q1, suppression
+/// du 3e niveau `created_at ASC` régression Pass 1 — `id ASC` suffit
+/// comme tiebreaker total puisque `id` est AUTO_INCREMENT unique).
+///
+/// Utilisé par `kesh_reconciliation::rules::first_matching_rule` au
+/// flow `GET /api/v1/reconciliation/proposals`.
 pub async fn find_active_for_company<'e, E>(
     executor: E,
     company_id: i64,

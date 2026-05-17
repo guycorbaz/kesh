@@ -468,6 +468,53 @@ Audit log nouveau action `exports.global` (séparé de `report.exported` Story 9
   - [x] T14.5 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` — clean (0 errors).
   - [x] T14.6 Playwright `npx playwright test export-global.spec.ts` — green (manuel, MariaDB + browsers requis).
 
+
+## Review Findings (Pass 1 — Sonnet 4.6 × 12 reviewers parallèles)
+
+**Date** : 2026-05-17 — **Modèle** : Sonnet 4.6 (4 chunks × 3 layers : Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+**Total bruts** : 108 findings — **Post-dédup + triage** : 0 CRITICAL, 8 HIGH + 7 MEDIUM patches actionables, 5 defer, 31 dismiss
+
+### Patches à appliquer (15)
+
+#### HIGH (8)
+
+- [x] [Review][Patch] **H1 — Tracing span `_enter` traverse `.await`** (`crates/kesh-api/src/routes/exports.rs:71-90`) — `let _enter = span.enter()` est tenu à travers `build_global_export(...).await` + `emit_global_export_audit(...).await`. Anti-pattern documenté `tracing` : guard non-`Send`, span peut être entré sur thread A et sorti sur thread B après reschedule. **Fix** : utiliser `build_global_export(...).instrument(span.clone()).await` puis `span.record(...)` post-render.
+- [x] [Review][Patch] **H2 — `details_json` clés camelCase au lieu de snake_case spec** (`crates/kesh-api/src/routes/exports.rs:155-161`) — Spec AC #23/#29(m) prescrit explicitement `details_json->>'$.company_id'` (SQL JSON path snake_case). Impl utilise `companyId`, `byteSize`, `csvCount`, `fiscalYearScope`, `durationMs`. **Fix** : passer toutes les clés en snake_case + update assertions E2E `c3 export_global_zip_audit_log_inserted`.
+- [x] [Review][Patch] **H3 — Doc-comment `find_active_for_company` absorbé par `list_all_by_company`** (`crates/kesh-db/src/repositories/reconciliation_rules.rs:45-73`) — Le bloc `///` continu fusionne 2 fonctions. `cargo doc` génère doc trompeuse. **Fix** : ajouter ligne vide entre les blocs ou reordonner les fns avec leurs `///` propres.
+- [x] [Review][Patch] **H4 — Empty company AC #29(f) : test utilise setup minimal au lieu du preset `with-company-no-fy`** (`crates/kesh-api/tests/exports_global_e2e.rs:735-759`) — Spec exige HashMap `{accounts.csv=5, vat_rates.csv=4, company.csv=1, cis.csv=1, 12 autres=0}` (ground-truth `test_fixtures.rs:202-275`). Test asserte `accounts.csv=0, vat_rates.csv=0` (faux). **Fix** : remplacer `companies::create + users::create` minimal par `kesh_db::test_fixtures::seed_accounting_company_no_fy(pool)` + corriger la HashMap.
+- [x] [Review][Patch] **H5 — IDOR `journal_entry_lines.csv` + `invoice_lines.csv` vérifié par rowCount seul** (`crates/kesh-api/tests/exports_global_e2e.rs:545-555`) — Pour `journal_entry_lines`, assert `rowCount == 6` ne détecte pas une fuite si A et B ont 3 lignes chacun (total = 6). Pour `invoice_lines`, AC #29(u) asserte `len() == 0` mais 0 lignes insérées pour B = tautologique. **Fix** : (a) parser `journal_entry_lines.csv` et asserter que chaque `entry_id` ∈ entries de A ; (b) AC #29(u) insère 1 `invoice_line` pour B et asserte que A en voit 0.
+- [x] [Review][Patch] **H6 — `parseContentDispositionFilename` retourne `"UTF-8''"` au lieu de `null` sur valeur vide** (`frontend/src/lib/features/export/exports.api.ts:222-225`) — Header `attachment; filename*=UTF-8''` : la regex RFC 5987 échoue (`decoded.length === 0`), puis la regex RFC 6266 unquoted matche `filename*=` lui-même → retourne `"UTF-8''"` qu'on utilise comme filename. **Fix** : lookahead négatif `/filename(?!\*)\s*=\s*([^;\s]+)/i` sur la regex unquoted + ajouter test Vitest.
+- [x] [Review][Patch] **H7 — Playwright cleanup `/tmp/kesh-test-9-2b.zip` non-déterministe** (`frontend/tests/e2e/export-global.spec.ts:499-519`) — `fs.unlinkSync` n'est appelé que dans le happy path. Si une assertion intermédiaire lève, le fichier persiste et un run suivant peut lire un ZIP stale. **Fix** : déplacer le cleanup dans `test.afterEach` avec variable partagée, ou utiliser path unique `/tmp/kesh-test-9-2b-${Date.now()}.zip`.
+- [x] [Review][Patch] **H8 — AC #31(c) test guard re-entrancy ABSENT** (`frontend/src/lib/features/export/exports.api.test.ts`) — Spec AC #31(c) marqué AA-HIGH-05 Pass 1 validate. Commentaire dans le fichier dit "testé au niveau caller" mais aucun test n'existe ni en Vitest ni en Playwright. **Fix** : ajouter test Vitest avec `vi.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)))` simulant `downloadGlobalExport` lent + appeler 2× le handler → assert mock appelée 1× seule.
+
+#### MEDIUM (7)
+
+- [x] [Review][Patch] **M1 — `_ensure_companies_used()` dead_code hack** (`crates/kesh-api/src/exports/global.rs:1269-1276`) — Pattern anti-pattern. Si `companies` n'est pas utilisé, retirer l'import. **Fix** : supprimer la fn + l'import `companies` (l'orchestrateur reçoit `Company` en paramètre).
+- [x] [Review][Patch] **M2 — `content-includes` i18n omet `vat_rates`, `bank_imports`, `bank_profiles`** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) — La description UI ment sur le contenu réel du ZIP. **Fix** : ajouter ces 3 tables × 4 locales (TVA, historique imports bancaires, profils CSV bancaires).
+- [x] [Review][Patch] **M3 — BOM strip aveugle dans test IDOR sans assertion** (`crates/kesh-api/tests/exports_global_e2e.rs:524-525`) — `std::str::from_utf8(&raw[3..])` consomme 3 octets sans vérifier BOM. Régression sur `write_csv_bom` masquée. **Fix** : `assert_eq!(&raw[0..3], &[0xEF, 0xBB, 0xBF], "BOM manquant pour {name}")` avant le strip.
+- [x] [Review][Patch] **M4 — Sleep `100ms` audit log → flakiness CI** (`crates/kesh-api/tests/exports_global_e2e.rs:979`) — Audit est best-effort async. 100ms peut être insuffisant en CI saturée. **Fix** : poll loop avec timeout 2s : `for _ in 0..20 { sleep(100ms); if row exists break; }`.
+- [x] [Review][Patch] **M5 — Messages d'assertion perf citent AC #20/#22 au lieu de AC #29(g)** (`crates/kesh-api/tests/exports_global_e2e.rs:828-835`) — Diagnostic régression trompeur. **Fix** : remplacer par `"AC #29(g) perf"` dans les 2 messages.
+- [x] [Review][Patch] **M6 — `exportDate` regex faible (séparateurs seuls, pas chiffres)** (`crates/kesh-api/tests/exports_global_e2e.rs:628-643`) — `"XXXX-XX-XXTXX:XX:XXZ"` passerait. **Fix** : checker `date.chars().enumerate().all(|(i, c)| match i { 4|7|10|13|16 => true, 19 => c == 'Z', _ => c.is_ascii_digit() })`.
+- [x] [Review][Patch] **M7 — Playwright `.catch(() => {})` swallow real bugs sur AC #32 `disabled`+libellé** (`frontend/tests/e2e/export-global.spec.ts:67-71`) — Le `.catch(() => {})` rend la vérification non-bloquante. Libellé "Génération de l'export…" jamais asserté. **Fix** : `page.route('/api/v1/exports/global.zip', async route => { await new Promise(r => setTimeout(r, 500)); route.continue(); })` puis assertion ferme bouton disabled + libellé visible.
+
+### Deferred (5)
+
+- [x] [Review][Defer] **D1 — `journal_entries` `ORDER BY entry_date, id` vs index `DESC` → filesort** (`crates/kesh-db/src/repositories/journal_entries.rs:897-899`) — deferred, perf v0.2 cohérent L4 streaming
+- [x] [Review][Defer] **D2 — `zopfli` transitive dep ~120 Ko + clause license** (`Cargo.lock`) — deferred, audit license v0.2
+- [x] [Review][Defer] **D3 — `hex_encode` `format!` par byte = 32 allocs par hash** (`crates/kesh-api/src/util.rs:hex_encode`) — deferred, perf optimisation v0.2 (`write!` in-place)
+- [x] [Review][Defer] **D4 — `export_date` capturée en fin de pipeline (post-queries)** — deferred, spec non explicite sur start vs end, écart < 10s acceptable
+- [x] [Review][Defer] **D5 — `aria-busy` manquant sur bouton `disabled`** (`frontend/src/routes/(app)/export/+page.svelte`) — deferred, dette a11y cohérente avec Story 9-2a (KF-027 #91 résiduel)
+
+### Dismissed (31)
+
+Faux positifs ou comportements spec-acceptés (résumé concis) :
+- **Spec-acceptés** : `get_or_create_default` lazy-create (§scope-tables row 14), `list_all_by_company` unbounded (L4+L15 documentés), `map_language_to_bcp47(&str)` (§locale-source intentionnel), single-INSERT tx pattern (cohérent 9-2a `emit_report_export_audit`), tests `(n)(o)` no-ops (AC #29 placeholder wired).
+- **Faux positifs** : `JournalEntryLine` colonnes manquantes (entité a 6 champs réels), 16 noms canoniques non testés (couvert par AC #29(c) `structure_17_entries_exact_set`), `invoices.rs` hardcoded vs `LINE_COLUMNS` (JOIN `il.` alias diffère), `format!` per-call (pattern existant), RFC 5987 regex `/i` (analyse self-dismiss reviewer), revokeObjectURL race (pattern Story 9-2a project convention), `exporting` flag race Svelte 5 (sync model), `role="alert"` re-render (pattern acceptable), Vitest revokeObjectURL timing (dépendant de H7 défer), `successMsg` 2e clic (UX intentionnel), separator `;` hardcoded (contrat figé §csv-format), ISO-8859-1 charset fallback (backend toujours UTF-8), `isApiError(e)` sans `&& e.code` (différence non-observable), T8.4 nav-group structure (spec autorise).
+- **Hors scope** : RBAC Admin/Comptable tests dédiés (AC #11 mandate Consultation seul), JWT forgé role invalide (pas dans spec).
+
+---
+
+
 ## Dev Notes
 
 ### Décisions de conception verrouillées

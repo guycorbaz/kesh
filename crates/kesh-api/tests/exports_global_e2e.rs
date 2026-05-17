@@ -492,6 +492,7 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
     let ctx_b = seed_with_full_data(&pool, "co_b_idor", Role::Comptable).await;
     assert_ne!(ctx_a.company_id, ctx_b.company_id);
 
+    let pool_for_assert = pool.clone();
     let app = spawn_app(pool).await;
     let resp = app
         .client
@@ -507,6 +508,7 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
     // 5 directes : parse le CSV de A, trouve la position de la colonne
     // `company_id` dans le header, puis pour chaque data row vérifie que la
     // valeur de cette colonne == ctx_a.company_id (PAS B).
+    // Pass 1 code-review M3 (C3 Blind F1 + C3-ECH-001) — assert BOM avant strip.
     for name in [
         "accounts.csv",
         "contacts.csv",
@@ -515,7 +517,11 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
         "journal_entries.csv",
     ] {
         let raw = entry_bytes(&entries, name);
-        // Strip BOM
+        assert_eq!(
+            &raw[0..3],
+            &[0xEF, 0xBB, 0xBF],
+            "{name} doit commencer par UTF-8 BOM (régression `write_csv_bom`?)"
+        );
         let body = std::str::from_utf8(&raw[3..]).unwrap();
         let mut lines = body.split("\r\n").filter(|l| !l.is_empty());
         let header = lines.next().expect("header present");
@@ -536,16 +542,53 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
         }
     }
 
-    // 2 JOINées (journal_entry_lines / invoice_lines) : on vérifie via le
-    // metadata.json — rowCounts isolés de A, ne peuvent pas contenir entrées
-    // de B (FK scoping JOIN obligatoire dans `list_all_lines_by_company`).
+    // Pass 1 code-review H5 (C3-AA-HIGH-02 + C3-ECH-002 + C3 Blind F6) — IDOR JOIN tables
+    // (journal_entry_lines / invoice_lines) NE PAS se contenter de `rowCount == 6` (faux
+    // négatif si |A| == |B|). On parse `journal_entry_lines.csv` column-by-column et on
+    // assert que chaque `entry_id` ∈ entries de A (via SELECT depuis pool_for_assert).
+    let entry_ids_a: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM journal_entries WHERE company_id = ?")
+            .bind(ctx_a.company_id)
+            .fetch_all(&pool_for_assert)
+            .await
+            .unwrap();
+    let allowed_entry_ids: std::collections::HashSet<String> =
+        entry_ids_a.iter().map(|id| id.to_string()).collect();
+
+    let raw = entry_bytes(&entries, "journal_entry_lines.csv");
+    assert_eq!(
+        &raw[0..3],
+        &[0xEF, 0xBB, 0xBF],
+        "journal_entry_lines.csv doit commencer par UTF-8 BOM"
+    );
+    let body = std::str::from_utf8(&raw[3..]).unwrap();
+    let mut lines = body.split("\r\n").filter(|l| !l.is_empty());
+    let header = lines.next().expect("header present");
+    let cols: Vec<&str> = header.split(';').collect();
+    let entry_id_pos = cols
+        .iter()
+        .position(|c| *c == "entry_id")
+        .expect("entry_id column present");
+    let mut jel_data_count = 0;
+    for row in lines {
+        let cells: Vec<&str> = row.split(';').collect();
+        let entry_id = cells[entry_id_pos].trim_matches('"');
+        assert!(
+            allowed_entry_ids.contains(entry_id),
+            "journal_entry_lines.csv row has foreign entry_id={entry_id} (allowed for A: {allowed_entry_ids:?}): {row}",
+        );
+        jel_data_count += 1;
+    }
+    // Garde la vérification rowCount metadata.json en sus (cohérence manifest ↔ CSV).
     let meta = extract_meta(&entries);
-    let jel_count = meta["tables"]["journal_entry_lines.csv"]["rowCount"]
+    let jel_meta_count = meta["tables"]["journal_entry_lines.csv"]["rowCount"]
         .as_u64()
         .unwrap();
-    // Chaque entry de A insère 2 lignes (debit + credit) × 3 entries = 6 lignes
-    // pour A. B en a aussi 6 mais ne doivent PAS être visibles.
-    assert_eq!(jel_count, 6, "expected 6 lines for A only (no B leak)");
+    assert_eq!(
+        jel_data_count, jel_meta_count as usize,
+        "rowCount metadata ({jel_meta_count}) ≠ data rows ({jel_data_count}) pour journal_entry_lines.csv"
+    );
+    assert_eq!(jel_meta_count, 6, "expected 6 lines for A only (no B leak)");
 }
 
 // ============================================================
@@ -618,18 +661,25 @@ async fn export_global_zip_metadata_shape_and_exact_values(pool: MySqlPool) {
     assert_eq!(meta["locale"], "fr-CH");
     // fiscalYearScope = "all" v0.1
     assert_eq!(meta["fiscalYearScope"], "all");
-    // exportDate strict regex (`YYYY-MM-DDTHH:MM:SSZ`, 20 chars, suffix Z)
+    // exportDate strict regex (`YYYY-MM-DDTHH:MM:SSZ`, 20 chars, suffix Z).
+    // Pass 1 code-review M6 (C3-AA-MEDIUM-03 + C3-ECH-004) — vérifier aussi
+    // que les segments YYYY/MM/DD/HH/MM/SS sont composés de chiffres (la
+    // validation séparateurs seule laisserait passer `XXXX-XX-XXTXX:XX:XXZ`).
     let date = meta["exportDate"].as_str().unwrap();
     assert_eq!(date.len(), 20, "exportDate must be 20 chars, got: {date}");
-    assert!(
-        date.ends_with('Z'),
-        "exportDate must end with Z, got: {date}"
-    );
-    assert_eq!(&date[4..5], "-", "exportDate format invalid: {date}");
-    assert_eq!(&date[7..8], "-", "exportDate format invalid: {date}");
-    assert_eq!(&date[10..11], "T", "exportDate format invalid: {date}");
-    assert_eq!(&date[13..14], ":", "exportDate format invalid: {date}");
-    assert_eq!(&date[16..17], ":", "exportDate format invalid: {date}");
+    for (i, c) in date.chars().enumerate() {
+        let valid = match i {
+            4 | 7 => c == '-',
+            10 => c == 'T',
+            13 | 16 => c == ':',
+            19 => c == 'Z',
+            _ => c.is_ascii_digit(),
+        };
+        assert!(
+            valid,
+            "exportDate format invalid at pos {i} (char {c:?}): {date}"
+        );
+    }
     // tables.len() == 16
     let tables = meta["tables"].as_object().unwrap();
     assert_eq!(tables.len(), 16, "expected 16 tables in metadata");
@@ -676,38 +726,28 @@ async fn export_global_zip_sha256_integrity(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn export_global_zip_empty_company_explicit_row_count_map(pool: MySqlPool) {
-    // On simule le preset `with-company-no-fy` manuellement : company seule,
-    // pas de FY, pas de plan comptable. Seul l'orchestrateur lazy-create
-    // company_invoice_settings (1 row injectée par defaults).
-    let company_id = companies::create(
-        &pool,
-        NewCompany {
-            name: "CI Empty".into(),
-            address: "Rue 1".into(),
-            ide_number: None,
-            org_type: OrgType::Independant,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
+    // Pass 1 code-review H4 (C3-AA-HIGH-01) — utilise le PRESET CI réel
+    // `seed_accounting_company_no_fy` (ground-truth `test_fixtures.rs:202-275`).
+    // Le preset injecte par défaut : 1 company + 5 accounts (1000-4000) +
+    // 1 company_invoice_settings (direct INSERT defaults) + 4 vat_rates
+    // (product-vat-{normal,special,reduced,exempt}). Pas de fiscal_year, pas
+    // d'écritures, pas de contacts, pas d'invoices.
+    kesh_db::test_fixtures::seed_accounting_company_no_fy(&pool)
+        .await
+        .expect("seed preset OK");
+    let company_id: i64 =
+        sqlx::query_scalar("SELECT id FROM companies WHERE name = 'CI Test Company No FY' LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let user_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM users WHERE username = 'admin' AND company_id = ? LIMIT 1",
     )
+    .bind(company_id)
+    .fetch_one(&pool)
     .await
-    .unwrap()
-    .id;
-
-    let user_id = users::create(
-        &pool,
-        NewUser {
-            username: "empty_user".into(),
-            password_hash: hash_password("password123").unwrap(),
-            role: Role::Comptable,
-            active: true,
-            company_id,
-        },
-    )
-    .await
-    .unwrap()
-    .id;
-    let jwt = forge_jwt(user_id, "Comptable", company_id);
+    .unwrap();
+    let jwt = forge_jwt(user_id, "Admin", company_id);
 
     let app = spawn_app(pool).await;
     let resp = app
@@ -723,14 +763,14 @@ async fn export_global_zip_empty_company_explicit_row_count_map(pool: MySqlPool)
     let meta = extract_meta(&entries);
     let tables = meta["tables"].as_object().unwrap();
 
-    // HashMap explicite — différent du preset `with-company-no-fy` ground-truth
-    // (qui aurait 5 accounts + 4 vat_rates seedés). Ici on a un setup minimal
-    // manuel : company seule + lazy-create CIS.
+    // HashMap ground-truth `test_fixtures.rs:202-275` — 4 exceptions non-zéro :
     let expected: BTreeMap<&str, u64> = BTreeMap::from([
-        ("company.csv", 1),
-        ("company_invoice_settings.csv", 1), // lazy-create defaults
+        ("company.csv", 1),                  // la company elle-même
+        ("accounts.csv", 5),                 // 5 accounts seedés (1000-4000)
+        ("company_invoice_settings.csv", 1), // direct INSERT defaults par le preset
+        ("vat_rates.csv", 4),                // 4 vat_rates Swiss seedés
+        // 12 autres tables : 0 rows (pas de FY, écritures, contacts, invoices, bank)
         ("fiscal_years.csv", 0),
-        ("accounts.csv", 0),
         ("journal_entries.csv", 0),
         ("journal_entry_lines.csv", 0),
         ("contacts.csv", 0),
@@ -740,7 +780,6 @@ async fn export_global_zip_empty_company_explicit_row_count_map(pool: MySqlPool)
         ("bank_accounts.csv", 0),
         ("bank_imports.csv", 0),
         ("bank_transactions.csv", 0),
-        ("vat_rates.csv", 0),
         ("reconciliation_rules.csv", 0),
         ("bank_profiles.csv", 0),
     ]);
@@ -819,12 +858,12 @@ async fn export_global_zip_large_dataset_perf(pool: MySqlPool) {
     let elapsed = start.elapsed();
     assert!(
         elapsed < std::time::Duration::from_secs(10),
-        "AC #20 perf : export > 10s pour ~1000 entries (got {:?})",
+        "AC #29(g) perf : export > 10s pour ~1000 entries (got {:?})",
         elapsed
     );
     assert!(
         body.len() < 5 * 1024 * 1024,
-        "AC #22 perf : ZIP > 5 MB pour ~1000 entries (got {} bytes)",
+        "AC #29(g) perf : ZIP > 5 MB pour ~1000 entries (got {} bytes)",
         body.len()
     );
 }
@@ -969,33 +1008,45 @@ async fn export_global_zip_audit_log_inserted(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
-    // Petite latence pour la transaction audit best-effort.
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
+    // Pass 1 code-review M4 (C3 Blind F5 + C3-ECH-009) — poll loop avec timeout
+    // 2s au lieu de sleep fixe 100ms (audit best-effort async, latence variable
+    // selon charge CI). Si l'audit n'arrive pas dans 2s, on échoue.
     // Pass 3 ECH3-C1 ground-truth : `audit_log` n'a PAS de colonne company_id ;
     // on filtre par user_id (FK users.company_id garante isolation multi-tenant).
-    // `details_json` est une colonne MariaDB `JSON` qui se décode en `serde_json::Value` directement
-    // (alors qu'un `Option<String>` panique avec « SQL type BLOB incompatible »).
-    let row: (i64, String, String, i64, serde_json::Value) = sqlx::query_as(
-        "SELECT id, action, entity_type, entity_id, details_json FROM audit_log \
-         WHERE user_id = ? AND action = 'exports.global' \
-         ORDER BY id DESC LIMIT 1",
-    )
-    .bind(ctx.user_id)
-    .fetch_one(&pool_for_assert)
-    .await
-    .expect("audit row inserted");
+    // `details_json` est une colonne MariaDB `JSON` qui se décode en `serde_json::Value`
+    // directement (alors qu'un `Option<String>` panique avec « SQL type BLOB incompatible »).
+    let mut row: Option<(i64, String, String, i64, serde_json::Value)> = None;
+    for _ in 0..20 {
+        let candidate = sqlx::query_as::<_, (i64, String, String, i64, serde_json::Value)>(
+            "SELECT id, action, entity_type, entity_id, details_json FROM audit_log \
+             WHERE user_id = ? AND action = 'exports.global' \
+             ORDER BY id DESC LIMIT 1",
+        )
+        .bind(ctx.user_id)
+        .fetch_optional(&pool_for_assert)
+        .await
+        .unwrap();
+        if candidate.is_some() {
+            row = candidate;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let row = row
+        .expect("audit row not inserted after 2s — emit_global_export_audit best-effort failed?");
 
     assert_eq!(row.1, "exports.global");
     assert_eq!(row.2, "export");
     // entity_id = AUDIT_ENTITY_ID_NONE (i64::MIN, cf. kesh_db::entities::audit_log)
     assert_eq!(row.3, kesh_db::entities::AUDIT_ENTITY_ID_NONE);
     let details: Value = row.4;
-    assert_eq!(details["companyId"].as_i64().unwrap(), ctx.company_id);
-    assert!(details["byteSize"].as_u64().unwrap() > 0);
-    assert_eq!(details["csvCount"].as_u64().unwrap(), 16);
-    assert_eq!(details["fiscalYearScope"], "all");
-    assert!(details["durationMs"].is_number());
+    // Pass 1 code-review H2 (C1 AA-MEDIUM-03) — clés snake_case cohérent spec AC #23.
+    assert_eq!(details["company_id"].as_i64().unwrap(), ctx.company_id);
+    assert!(details["byte_size"].as_u64().unwrap() > 0);
+    assert_eq!(details["csv_count"].as_u64().unwrap(), 16);
+    assert_eq!(details["fiscal_year_scope"], "all");
+    assert!(details["duration_ms"].is_number());
 }
 
 // ============================================================
@@ -1354,10 +1405,25 @@ async fn export_global_zip_repo_scoping_all_list_all_by_company(pool: MySqlPool)
         sqlx::query("INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier, active, version) VALUES (?, 'Personne', 'CB', TRUE, FALSE, TRUE, 1)")
             .bind(b.company_id).execute(&pool).await.unwrap().last_insert_id() as i64
     };
-    sqlx::query("INSERT INTO invoices (company_id, contact_id, status, date, total_amount, version) VALUES (?, ?, 'draft', '2026-05-01', 100.00, 1), (?, ?, 'draft', '2026-05-02', 200.00, 1)")
-        .bind(a.company_id).bind(contact_a)
-        .bind(b.company_id).bind(contact_b)
-        .execute(&pool).await.unwrap();
+    let invoice_a_id: i64 = {
+        sqlx::query("INSERT INTO invoices (company_id, contact_id, status, date, total_amount, version) VALUES (?, ?, 'draft', '2026-05-01', 100.00, 1)")
+            .bind(a.company_id).bind(contact_a)
+            .execute(&pool).await.unwrap().last_insert_id() as i64
+    };
+    let invoice_b_id: i64 = {
+        sqlx::query("INSERT INTO invoices (company_id, contact_id, status, date, total_amount, version) VALUES (?, ?, 'draft', '2026-05-02', 200.00, 1)")
+            .bind(b.company_id).bind(contact_b)
+            .execute(&pool).await.unwrap().last_insert_id() as i64
+    };
+    // Pass 1 code-review H5 (C3-AA-HIGH-02 + C3-ECH-007) — insérer 1 invoice_line
+    // pour A et 1 pour B pour que l'assertion `list_all_lines_by_company(A) == 1`
+    // prouve effectivement le scoping JOIN (vs tautologique `== 0` quand 0 lignes
+    // partout). Si la query JOIN ne filtre pas correctement par `i.company_id`,
+    // le résultat sera 2 au lieu de 1 → IDOR détecté.
+    sqlx::query("INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) VALUES (?, 1, 'Line A', 1.00, 100.00, 8.10, 100.00)")
+        .bind(invoice_a_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) VALUES (?, 1, 'Line B', 1.00, 200.00, 8.10, 200.00)")
+        .bind(invoice_b_id).execute(&pool).await.unwrap();
 
     // Assert scoping de chaque fn list_all_by_company sur company A.
     let prods_a = products::list_all_by_company(&pool, a.company_id)
@@ -1416,6 +1482,16 @@ async fn export_global_zip_repo_scoping_all_list_all_by_company(pool: MySqlPool)
     let invoice_lines_a = invoices::list_all_lines_by_company(&pool, a.company_id)
         .await
         .unwrap();
-    // 1 invoice sans ligne → 0 (l'INSERT direct SQL ne pose pas de invoice_lines)
-    assert_eq!(invoice_lines_a.len(), 0);
+    // Pass 1 code-review H5 — 1 invoice + 1 ligne pour A, 1 invoice + 1 ligne
+    // pour B. Le JOIN doit isoler strictement A → exactement 1 row retournée.
+    assert_eq!(
+        invoice_lines_a.len(),
+        1,
+        "invoice_lines scoping cassé : attendu 1 ligne pour A, reçu {} (probable fuite B)",
+        invoice_lines_a.len()
+    );
+    assert_eq!(
+        invoice_lines_a[0].invoice_id, invoice_a_id,
+        "ligne retournée pour A ne pointe pas vers l'invoice de A — fuite cross-tenant"
+    );
 }

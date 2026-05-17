@@ -61,6 +61,14 @@ pub async fn export_global(
     // Tracing span — fields populated post-render via `span.record(...)`
     // (cohérent Story 9-2a Pass 3 BH3-M1 — `info_span!` évalue les fields à
     // la création, donc placeholder `tracing::field::Empty` mandaté).
+    //
+    // Pass 1 code-review H1 (C1 Blind F01 + C1 ECH 1 + C1 AA-MEDIUM-02) :
+    // utiliser `.instrument(span.clone()).await` plutôt que `let _enter = span.enter()`.
+    // En contexte async, `span.enter()` retourne un guard non-`Send` qui peut
+    // corrompre le contexte de tracing si la future est re-schedulée sur un
+    // autre thread tokio. `.instrument()` propage le span proprement à travers
+    // tous les points `.await`.
+    use tracing::Instrument;
     let span = tracing::info_span!(
         "global_export",
         company_id = current_user.company_id,
@@ -68,9 +76,10 @@ pub async fn export_global(
         csv_count = tracing::field::Empty,
         duration_ms = tracing::field::Empty,
     );
-    let _enter = span.enter();
 
-    let (zip_bytes, meta) = build_global_export(&state.pool, &company, locale_bcp47).await?;
+    let (zip_bytes, meta) = build_global_export(&state.pool, &company, locale_bcp47)
+        .instrument(span.clone())
+        .await?;
 
     span.record("byte_size", meta.byte_size);
     span.record("csv_count", meta.csv_count);
@@ -87,6 +96,7 @@ pub async fn export_global(
         "all",
         meta.duration_ms,
     )
+    .instrument(span.clone())
     .await;
 
     // Content-Disposition RFC 5987 + ASCII fallback (helper partagé Story 9-2a).
@@ -145,12 +155,15 @@ async fn emit_global_export_audit(
                 action: "exports.global".to_string(),
                 entity_type: "export".to_string(),
                 entity_id: AUDIT_ENTITY_ID_NONE,
+                // Pass 1 code-review H2 (C1 AA-MEDIUM-03) — clés snake_case pour
+                // permettre les SQL JSON paths `details_json->>'$.company_id'`
+                // (cohérent AC #23 + AC #29(m) ground-truth spec).
                 details_json: Some(serde_json::json!({
-                    "companyId": company_id,
-                    "byteSize": byte_size,
-                    "csvCount": csv_count,
-                    "fiscalYearScope": fiscal_year_scope,
-                    "durationMs": duration_ms,
+                    "company_id": company_id,
+                    "byte_size": byte_size,
+                    "csv_count": csv_count,
+                    "fiscal_year_scope": fiscal_year_scope,
+                    "duration_ms": duration_ms,
                 })),
             },
         )

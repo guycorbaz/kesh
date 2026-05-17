@@ -70,7 +70,12 @@ export function parseContentDispositionFilename(header: string | null): string |
 	}
 
 	// RFC 6266 unquoted : `filename=…` (rare, accepté défensivement).
-	const rfc6266Unq = header.match(/filename\s*=\s*([^;\s]+)/i);
+	// Pass 1 code-review H6 (C4 Blind F02/F09 + C4-ECH-H2) — lookahead négatif
+	// `(?!\*)` pour exclure les tokens `filename*=...` : header `filename*=UTF-8''`
+	// (RFC 5987 valeur vide) ne doit PAS être matché par la regex unquoted, sinon
+	// retour `"UTF-8''"` au lieu de `null`. La regex `\s*=` matche zéro espace, donc
+	// le lookahead vérifie le caractère immédiatement après `filename` lui-même.
+	const rfc6266Unq = header.match(/filename(?!\*)\s*=\s*([^;\s]+)/i);
 	if (rfc6266Unq && rfc6266Unq[1]) {
 		return rfc6266Unq[1];
 	}

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "C4-ECH-H1",
+    "severity": "HIGH",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "201-228",
+    "title": "parseContentDispositionFilename — filename* RFC 5987 sans préfixe UTF-8 (case-insensitive manquant sur charset)",
+    "path": "RFC 5987 : charset autre que 'UTF-8' (ex. 'utf-8' minuscules, 'ISO-8859-1')",
+    "description": "La regex `/filename\\*\\s*=\\s*UTF-8'[^']*'([^;\\r\\n]+)/i` matche correctement `utf-8` et `UTF-8` grâce au flag `i`. Cependant, si le backend retourne `ISO-8859-1'fr-CH'...` (autorisé RFC 5987), la fonction tombe en fallback `filename=\"...\"` sans aucun avertissement. Ce n'est pas le cas du backend Kesh (qui produit toujours UTF-8), mais si un proxy ou CDN réécrit le header avec un charset différent, la fonction retourne silencieusement le fallback ASCII — ce qui peut être un nom tronqué ou sans accentuation. Pas de log, pas d'indication que le décodage UTF-8 a été bypassé.",
+    "impact": "Filename incorrect (ASCII dégradé) sans indication d'erreur, l'utilisateur ne voit pas le problème.",
+    "reproduction": "Header: `Content-Disposition: attachment; filename*=ISO-8859-1''kesh-export.zip` — retourne `null` si aucun `filename=` ASCII présent, ce qui déclenche le FALLBACK_FILENAME.",
+    "remediation": "Documenter explicitement dans le JSDoc que seul UTF-8 est supporté (pas ISO-8859-1) ; ajouter un test `parseContentDispositionFilename('attachment; filename*=ISO-8859-1\\'\\'\\'kesh.zip')` attendant `null` ou le fallback FALLBACK_FILENAME pour valider le comportement documented."
+  },
+  {
+    "id": "C4-ECH-H2",
+    "severity": "HIGH",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "201-228",
+    "title": "parseContentDispositionFilename — filename* avec valeur vide (`filename*=UTF-8''`) retourne null MAIS RFC 5987 fallback unquoted matche sur la chaîne `UTF-8`",
+    "path": "RFC 5987 avec encoded-value vide puis fallback RFC 6266 unquoted",
+    "description": "Si le header est `attachment; filename*=UTF-8''` (valeur percent-encoded vide après le second quote), `rfc5987[1]` = `''` après trim = `''`, `decoded.length === 0` → `decoded` retourné est falsy → on fall-through. Ensuite la regex RFC 6266 unquoted `/filename\\s*=\\s*([^;\\s]+)/i` matche aussi le segment `filename*=UTF-8''` lui-même: elle prend `filename*` comme clé puis cherche `=\\s*([^;\\s]+)`, ce qui matche `UTF-8''` comme valeur. Résultat : `parseContentDispositionFilename('attachment; filename*=UTF-8\\'\\''`) retourne `\"UTF-8''\"` au lieu de `null`.",
+    "impact": "FALLBACK_FILENAME n'est pas utilisé ; l'ancre `<a>` reçoit le download attribute `\"UTF-8''\"` et le fichier téléchargé sera nommé `UTF-8''` au lieu de `kesh-export.zip`.",
+    "reproduction": "parseContentDispositionFilename(\"attachment; filename*=UTF-8''\")",
+    "remediation": "La regex unquoted RFC 6266 doit exclure les tokens `filename*` : utiliser `/(?<!\\*)filename\\s*=\\s*([^;\\s\"]+)/i` ou valider que la valeur capturée ne contient pas `'`. Alternative : tester explicitement ce cas dans `exports.api.test.ts`."
+  },
+  {
+    "id": "C4-ECH-H3",
+    "severity": "HIGH",
+    "file": "frontend/tests/e2e/export-global.spec.ts",
+    "lines": "499-519",
+    "title": "Playwright — cleanup `fs.unlinkSync` seulement dans le happy path, pas dans `test.afterEach`",
+    "path": "Test fail entre `download.saveAs` et `fs.unlinkSync`",
+    "description": "Le fichier `/tmp/kesh-test-9-2b.zip` est sauvegardé à la ligne 500 et supprimé à la ligne 519. Si l'une des assertions intermédiaires (byte signature, filename pattern, bouton enabled) lève une exception Playwright, `fs.unlinkSync` n'est jamais appelé. Le `if (fs.existsSync(savedPath))` guard en fin de test n'est jamais atteint. Le fichier ZIP subsiste en `/tmp/` entre les runs. Sur un CI partagé ou local avec runs répétés, cela peut causer des faux positifs (readFileSync lit un ZIP stale d'un run précédent) si Playwright réutilise le même chemin hardcodé.",
+    "impact": "Faux positifs CI potentiels : un run précédent cassé laisse un fichier ZIP partiel/invalide que le run suivant lit comme le sien. Ou bien le fichier valide du run précédent masque l'échec du run courant si `download.saveAs` échoue silencieusement.",
+    "reproduction": "Forcer une assertion failure sur `expect(bytes[0]).toBe(0x50)` → le test s'arrête, le `fs.unlinkSync` n'est pas exécuté.",
+    "remediation": "Déplacer le cleanup dans `test.afterEach` via une variable partagée dans le scope du describe-block, ou utiliser un path unique par run (`/tmp/kesh-test-9-2b-${Date.now()}.zip`) et le supprimer dans `test.afterEach`."
+  },
+  {
+    "id": "C4-ECH-M1",
+    "severity": "MEDIUM",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "242-253",
+    "title": "triggerDownload — `URL.createObjectURL` indisponible dans jsdom (absence de polyfill dans le test T12.1(a))",
+    "path": "Tests Vitest avec jsdom : `URL.createObjectURL` non disponible nativement",
+    "description": "Dans `exports.api.test.ts`, le test AC #31(a) stubGlobal `URL` avec `{ createObjectURL, revokeObjectURL }`. Cependant, `triggerDownload` appelle aussi `document.createElement('a')` et `document.body.appendChild(a)` — ces appels fonctionnent dans jsdom. Mais `a.click()` dans jsdom est un no-op (pas de vrai navigateur). Ce comportement est acceptable pour les tests unitaires. Le vrai risque est que le stub `vi.stubGlobal('URL', {...})` remplace l'objet `URL` entier, incluant `URL.createObjectURL` et `URL.revokeObjectURL`, mais aussi `new URL(...)` utilisé par d'autres modules si importés. Si `apiClient` utilise `new URL(...)` en interne (vérifier), le stub pourrait casser d'autres fonctions dans le même test.",
+    "impact": "Potentiel : TypeError sur `new URL(...)` si apiClient l'utilise et si les tests évoluent pour importer des modules supplémentaires.",
+    "reproduction": "Vérifier si `api-client.ts` ou `auth.svelte.ts` appelle `new URL(...)` dans le chemin de code exercé par T12.1(a).",
+    "remediation": "Stubber uniquement les méthodes plutôt que l'objet entier : `vi.spyOn(URL, 'createObjectURL').mockReturnValue(...)` et `vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})`. Évite d'écraser `new URL()`."
+  },
+  {
+    "id": "C4-ECH-M2",
+    "severity": "MEDIUM",
+    "file": "frontend/src/routes/(app)/export/+page.svelte",
+    "lines": "312-328",
+    "title": "Exporting FSM — `exporting = true` avant `downloadGlobalExport()`, mais si `apiClient.getBlob` jette synchroniquement (ex. `AbortError` via timeout), le `finally` reset bien `exporting = false`",
+    "path": "Timeout AbortError synchrone vs asynchrone — état `exporting` correct dans le finally",
+    "description": "Le `finally` est en place et reset `exporting = false` correctement même sur exception. Cependant, la `successMsg` ET l'`errorMsg` sont toutes deux displayées via `{#if errorMsg}` / `{#if successMsg}`. Si l'utilisateur clique une seconde fois après une erreur (bouton re-enabled), `errorMsg = null` est bien remis à zero au début de `startExport`. Le FSM est donc correct pour ce chemin. **Mais** : si `downloadGlobalExport()` résout avec succès (`successMsg` est setté) et que l'utilisateur clique une nouvelle fois sur le bouton, les deux states sont clearés puis `successMsg` est repositionné. Ce n'est pas un bug mais le successMsg précédent disparaît visuellement pendant la génération (remis à null ligne 318), ce qui peut être confus si la génération suivante prend 30 secondes.",
+    "impact": "UX : le message de succès précédent disparaît dès le deuxième clic, l'utilisateur n'a aucun feedback visuel pendant la génération si le `exporting` visual indicator n'est pas assez visible. Impact faible en pratique.",
+    "reproduction": "Cliquer « Lancer l'export » deux fois de suite (après le premier succès).",
+    "remediation": "Laisser `successMsg` affiché jusqu'au début effectif du download (après `await downloadGlobalExport()`) plutôt qu'au début du handler. Ou accepter comme comportement voulu (nit UX)."
+  },
+  {
+    "id": "C4-ECH-M3",
+    "severity": "MEDIUM",
+    "file": "frontend/tests/e2e/export-global.spec.ts",
+    "lines": "492-494",
+    "title": "Playwright — assertion disabled swallowed via `.catch(() => {})` masque les vrais bugs de timing",
+    "path": "`.catch(() => {})` sur `expect(startButton).toBeDisabled` avale silencieusement les TimeoutErrors",
+    "description": "Le commentaire dit : \"Backend très rapide — le bouton est déjà revenu enabled\". Mais `.catch(() => {})` avale aussi les erreurs Playwright non-liées au timing : `Element not found`, `Frame navigated`, `Detached from page`. Si la page crash entre le click et l'attente du disabled (ex. error 500 immédiate), l'assertion passe silencieusement et le test continue sur `await downloadPromise` qui lui peut timeout avec un message d'erreur obscur. Le vrai problème (`exporting` flag non mis à true à cause d'un bug de rendering) reste invisible.",
+    "impact": "Faux positifs : un bug sur le flag `exporting` peut passer inaperçu si le backend est suffisamment rapide en CI.",
+    "reproduction": "Simuler un backend 0ms (mock Playwright) → le bouton ne passe jamais disabled → `.catch(() => {})` avale l'erreur → test green malgré AC #25 non-vérifié.",
+    "remediation": "Utiliser `await expect(startButton).toBeDisabled({ timeout: 1000 }).catch((e) => { if (!e.message.includes('Expected to be disabled')) throw e; })` pour ne swallow que les `AssertionError` de timing, pas les erreurs de frame/détachement. Ou utiliser un mock backend qui simule une réponse lente (1-2s) pour rendre l'assertion fiable."
+  },
+  {
+    "id": "C4-ECH-L1",
+    "severity": "LOW",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "201-228",
+    "title": "parseContentDispositionFilename — header case-insensitivity sur `Content-Disposition` clé (pas valeur)",
+    "path": "Header retourné en `content-disposition` minuscule (HTTP/2 normalise en lowercase)",
+    "description": "Dans `downloadGlobalExport`, l'appel est `response.headers.get('Content-Disposition')`. La WHATWG Fetch API normalise les noms de headers en lowercase avant stockage, donc `headers.get('Content-Disposition')` et `headers.get('content-disposition')` retournent la même valeur. Ce comportement est correct dans les navigateurs. Dans les tests Vitest, le mock utilise `new Headers({ 'content-disposition': '...' })` qui est correct. Pas de bug réel — noting informationnel.",
+    "impact": "Aucun en pratique.",
+    "reproduction": "N/A",
+    "remediation": "Nit documentaire : préciser dans le commentaire JSDoc de `downloadGlobalExport` que `headers.get()` est case-insensitive (WHATWG spec) pour rassurer les relecteurs futurs."
+  },
+  {
+    "id": "C4-ECH-L2",
+    "severity": "LOW",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "201-228",
+    "title": "parseContentDispositionFilename — filename=\"\" avec valeur vide retourne null via le guard `rfc6266[1]`",
+    "path": "filename=\"\" (quoted empty string)",
+    "description": "La regex `/filename\\s*=\\s*\"([^\"]+)\"/i` requiert `[^\"]+` (un ou plusieurs caractères non-guillemets). Si le header contient `filename=\"\"`, le groupe capture `\"\"` avec zéro chars, la regex ne matche pas. On fall-through à la regex unquoted `/filename\\s*=\\s*([^;\\s]+)/i` qui matche... `filename=\"\"` → groupe = `\"\"` (les guillemets eux-mêmes inclus dans `[^;\\s]+`). Résultat : `parseContentDispositionFilename('attachment; filename=\"\"')` retourne `\"\\\"\\\"\"` au lieu de `null`.",
+    "impact": "Edge case très rare (backend Kesh ne retourne jamais `filename=\"\"`). Si cela arrive (proxy dégradé), le fichier sera nommé `\"\"` (deux guillemets) au lieu du fallback FALLBACK_FILENAME.",
+    "reproduction": "parseContentDispositionFilename('attachment; filename=\"\"')",
+    "remediation": "Ajouter un test unitaire `expect(parseContentDispositionFilename('attachment; filename=\"\"')).toBeNull()` et corriger la regex unquoted pour exclure les valeurs contenant uniquement des guillemets."
+  },
+  {
+    "id": "C4-ECH-L3",
+    "severity": "LOW",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "201-228",
+    "title": "parseContentDispositionFilename — multiple occurrences de `filename=` dans le header",
+    "path": "Header malformé avec deux `filename=` tokens (ex. `filename=\"a.zip\"; filename=\"b.zip\"`)",
+    "description": "`.match()` avec un pattern non-global retourne la première occurrence. Pour `filename=`, les trois regexes matchent toutes la **première** occurrence. Comportement défensif acceptable. Le seul risque est si le header contient `filename*=...` suivi d'un second `filename*=...` : la première RFC 5987 regex matche la première, qui est correcte selon RFC 6266 (priorité au premier token). Ce comportement est donc conforme à la spec.",
+    "impact": "Aucun bug réel — comportement conforme RFC 6266.",
+    "reproduction": "N/A",
+    "remediation": "Nit documentaire uniquement."
+  },
+  {
+    "id": "C4-ECH-L4",
+    "severity": "LOW",
+    "file": "frontend/src/lib/features/export/exports.api.ts",
+    "lines": "174-181",
+    "title": "downloadGlobalExport — `response.blob()` peut rejeter (réseau coupé après 200 reçu mais avant body complet)",
+    "path": "Fetch réseau coupé pendant la lecture du body blob (status 200 reçu, body streaming interrompu)",
+    "description": "`apiClient.getBlob` ne jette que si `!res.ok`. Si la connexion réseau est coupée **après** réception des headers 200 mais pendant la lecture du body, `response.blob()` rejettera avec une `TypeError: Failed to fetch` ou `DOMException: AbortError`. Cette erreur n'est pas un `ApiError` (pas de `.code`/`.status`). Elle remontera correctement dans `startExport catch(e)` et `formatError(e)` retournera le message générique via `i18nMsg('export-global-error-generic', ...)`. Comportement correct — mais le message est \"Impossible de générer l'export global\" alors que le problème est un réseau coupé pendant le téléchargement. Message légèrement trompeur.",
+    "impact": "UX mineur : message d'erreur imprécis pour l'interruption réseau pendant download.",
+    "reproduction": "Simuler une déconnexion réseau après les headers HTTP 200 mais avant la fin du body.",
+    "remediation": "Optionnel : distinguer les erreurs réseau en vérifiant `err instanceof TypeError && err.message.includes('fetch')` pour afficher un message \"Téléchargement interrompu. Vérifiez votre connexion.\" Peut attendre v0.2."
+  }
+]
