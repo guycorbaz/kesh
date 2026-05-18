@@ -166,6 +166,24 @@ so that ces règles deviennent appliquées systématiquement par tout futur cycl
   - [x] T8.1 Cette étape est gérée par le workflow `bmad-create-story` automatiquement (status `backlog → ready-for-dev`). Pas d'action dev manuelle requise.
   - [x] T8.2 Au moment `dev-story` complétée (Status `review → done`), mettre à jour `sprint-status.yaml` `9-5-3-process-codification-claude-md` : `ready-for-dev → in-progress → review → done`.
 
+### Review Findings
+
+Pass 1 code-review 2026-05-18, 3 reviewers parallèles Sonnet 4.6 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, contextes frais isolés). 22 findings (0C + 6H + 8M + 8L) → 10 patch + 1 defer + 11 dismiss.
+
+- [x] [Review][Patch] E11 — Contradiction sémantique `AppError::Internal` (HIGH, FailedProposal pattern) : préconisé garde-fou `unreachable!()` mais listé comme exception globale interdite per-proposal — clarifier que le cas variant manquant est une dégradation d'urgence acceptable [CLAUDE.md:174]
+- [x] [Review][Patch] E1 — Pattern grep avec métacaractères regex (HIGH, Haiku guardrail) : ajouter `-F` (fixed-string) ou échappement explicite pour patterns contenant `.`, `*`, `[`, etc. [CLAUDE.md:144]
+- [x] [Review][Patch] E2 — Pattern multi-ligne non couvert (HIGH, Haiku guardrail) : préciser que `grep -n` opère ligne par ligne → choisir une ligne représentative unique [CLAUDE.md:144]
+- [x] [Review][Patch] E12 — Dette catégorie A découverte en cours d'Epic N+1 (HIGH, Tech debt) : règle silencieuse sur le triage hors fenêtre rétrospective — ajouter clarification (créer story de fix dans Epic en cours OU bloquer kickoff Epic N+2 selon sévérité) [CLAUDE.md:209]
+- [x] [Review][Patch] E13 — Conflit labels v0.2-milestone vs gate v0.1 explicite (HIGH, Tech debt) : clarifier que gate v0.1 explicite > label v0.2-milestone → catégorie A [CLAUDE.md:204]
+- [x] [Review][Patch] E3 — Règle Haiku grep couvre uniquement « absence d'un fix », pas « présence d'un bug affirmée » (MEDIUM) : étendre la règle d'application à présence [CLAUDE.md:144]
+- [x] [Review][Patch] E4 — Finding architectural sans pattern grepable (MEDIUM, Haiku guardrail) : préciser « si pattern grepable ; sinon vérification manuelle/Read direct » [CLAUDE.md:144]
+- [x] [Review][Patch] E15 — Item A résistant à 3+ tentatives de fix (MEDIUM, Tech debt) : ajouter soupape « exceptionnellement reclassement en B avec justification résistance constatée + story remédiation Epic+2 » [CLAUDE.md:208]
+- [x] [Review][Patch] F1 — Définition Catégorie B + exception v0.2-milestone contradiction apparente (LOW, Tech debt) : reformuler définition pour intégrer alternative au lieu de poser exception immédiate [CLAUDE.md:204]
+- [x] [Review][Patch] F6 — « Cause root » → « Cause racine » (LOW, Haiku guardrail FR cohérence) [CLAUDE.md:142]
+- [x] [Review][Defer] E14 — Story remédiation B bloquée/annulée — mécanisme de réévaluation périodique [CLAUDE.md:204] — deferred, processus operational hors scope CLAUDE.md (suivi backlog v0.2)
+
+**Dismissed (11)** : F2 (renvoi Markdown navigabilité, convention maison OK), F3 (asymétrie format BH identifiants, nit), F4 (déjà couvert E11 plus précis), F5 (observation informative non-actionnable), E5 (mitigation diff aplati non-actionnable, complexifier serait pire), E10 (ironie rotation Sonnet→Haiku, grep ground-truth EST le filet par design), E16 (seuil OU déjà marqué « indicatif »), E6/E7/E8/E9 (edge cases batch 3-buckets/doublons/vide/100%fail — scope Epic 11 spec future, pas CLAUDE.md durable).
+
 ## Dev Notes
 
 ### Pattern de référence : édit purement documentation
@@ -368,3 +386,32 @@ Aucun debug nécessaire — édits Markdown ciblés via Edit tool avec ancres un
 **Story status** : `in-progress` → `review`. Prête pour `bmad-code-review 9-5-3` (Sonnet 4.6 ou Haiku 4.5 recommandé — Opus déjà utilisé pour dev-story, rotation CLAUDE.md cohérence).
 
 **Modèle dev-story** : Claude Opus 4.7 (1M context, session orchestratrice — pas de subagent isolation nécessaire pour une story doc-only à faible surface).
+
+### Pass 1 code-review — 2026-05-18, Sonnet 4.6 × 3 reviewers parallèles
+
+**Setup** : 3 subagents Sonnet 4.6 parallèles (Blind Hunter + Edge Case Hunter + Acceptance Auditor), contextes frais isolés. Diff cible : commit `7456bdc` (dev unique). Discipline « diff unique » respectée (cf. règle codifiée Haiku-specific guardrails — un seul commit, pas une séquence multi-commit). Spec context fourni à Acceptance Auditor.
+
+**Verdict trend** : 0 CRITICAL + 6 HIGH + 8 MEDIUM + 8 LOW = 22 findings (Convergence Pass 1 : NON).
+
+**Triage** : 10 patch + 1 defer + 11 dismiss.
+
+**Patches appliqués (10/10 ; sur CLAUDE.md, 324 → 342 lignes, +18)** :
+
+1. **E11 (HIGH)** — Contradiction sémantique `AppError::Internal` clarifiée : variant manquant = bug structurel runtime = cas d'usage de l'exception globale ligne 500, pas une violation du pattern per-proposal. Le pattern `FailedProposal` reste inviolable pour erreurs métier ordinaires.
+2. **E1 (HIGH)** — Pattern grep `-nF` (fixed-string) obligatoire pour éviter faux-positifs sur métacaractères regex (`.`, `*`, `[`, etc.).
+3. **E2 (HIGH)** — Pattern multi-ligne : préciser que `grep -n` est line-by-line → choisir ligne représentative discriminante ou utiliser `grep -nFA <N>`.
+4. **E3 (MEDIUM)** — Règle étendue à « présence d'un anti-pattern non-corrigé » (pas seulement absence d'un fix).
+5. **E4 (MEDIUM)** — Finding architectural sans pattern grepable : vérification manuelle par `Read` direct, documentée dans Change Log.
+6. **E12 (HIGH)** — Triage hors fenêtre rétrospective : si dette A découverte en cours d'Epic N+1, arbitrage Project Lead selon sévérité (critique = fix immédiat dans Epic en cours ; non-critique = report kickoff Epic N+2).
+7. **E13 (HIGH)** — Conflit labels v0.2-milestone vs gate v0.1 explicite : gate v0.1 prime → reste en catégorie A jusqu'à fix ou levée explicite du gate.
+8. **E15 (MEDIUM)** — Soupape « item A résistant 3+ tentatives » : reclassement exceptionnel en B avec justification + Epic+2 + label GitHub + suivi rétro spécifique.
+9. **F1 (LOW)** — Définition Catégorie B refactorée : alternative « story dédiée OU label v0.2-milestone » intégrée dans la définition (vs exception apparente posée séparément).
+10. **F6 (LOW)** — « Cause root » → « Cause racine » (FR cohérence).
+
+**Defer (1)** : E14 (MEDIUM) — mécanisme de réévaluation périodique des stories de remédiation B bloquées/annulées. Ajouté à `_bmad-output/implementation-artifacts/deferred-work.md` (« Deferred from: code review of 9-5-3-process-codification-claude-md (2026-05-18) »). Processus operational hors scope CLAUDE.md durable.
+
+**Dismiss (11)** : F2/F3/F4/F5 (4 LOW Blind nits ou observations non-actionnables), E5/E10/E16 (3 méta-observations valides mais complexifier le texte serait pire), E6/E7/E8/E9 (4 edge cases batch — endpoint 3-buckets, doublons identifiant, batch vide, batch 100% fail — relèvent de la spec Epic 11 future, pas de la règle CLAUDE.md durable).
+
+**Trend cumulé** : Pass 1 (Sonnet × 3 reviewers) : 0C + 6H + 8M + 8L → 10 patches + 1 defer + 11 dismiss → Pass 2 Haiku 4.5 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`, LLM différent passe précédente respectée).
+
+**Modèles Pass 1** : 3 × Sonnet 4.6 subagents isolés contextes frais (Blind Hunter sans context, Edge Case Hunter avec project access, Acceptance Auditor avec spec + project).

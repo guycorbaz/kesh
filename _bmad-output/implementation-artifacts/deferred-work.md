@@ -5,6 +5,14 @@ Source de vérité unique pour la dette technique non-bloquante post-merge.
 
 ---
 
+## Deferred from: code review of 9-5-3-process-codification-claude-md (2026-05-18)
+
+Pass 1 code-review Sonnet 4.6 × 3 reviewers parallèles (Blind Hunter + Edge Case Hunter + Acceptance Auditor, contextes frais), 22 findings bruts → 10 patches appliqués + 1 deferred ci-dessous + 11 dismiss.
+
+- **E14 — Story de remédiation Catégorie B bloquée ou annulée — mécanisme de réévaluation périodique manquant** (MEDIUM, §Tech debt management — Catégorie B) : si la story de remédiation d'une dette B est elle-même bloquée (dépendance amont reportée) ou fermée `wontfix`, la dette B reste tracée indéfiniment sans révision. Acceptable v0.1 (cohérent zero carry-forward, la rétrospective d'epic est le point de contrôle implicite). À traiter v0.2+ : ajouter un mécanisme operational (e.g. revue trimestrielle du backlog v0.2-milestone GitHub Milestone, ou règle « si la story B est `wontfix`, la dette revient en A et doit être triée »). Hors scope CLAUDE.md durable — relève d'un processus operational projet.
+
+---
+
 ## Deferred from: code review of 9-2b-export-global-zip (2026-05-17)
 
 Pass 1 Sonnet 4.6 × 12 reviewers (4 chunks × 3 layers BH+ECH+AA), 108 findings bruts → 5 deferred ci-dessous + 15 patches appliqués + 31 dismiss.

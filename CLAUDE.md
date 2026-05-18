@@ -139,12 +139,16 @@ Cette règle s'applique à :
 
 **Symptôme observé** : les reviewers Haiku 4.5 (`BlindHunter` / `EdgeCaseHunter` typiquement) peuvent affirmer **CRITICAL** ou **HIGH** « REGRESSION-P1 — patch X n'a pas été appliqué » sur un diff combiné multi-commit, alors que le patch **est** présent dans le fichier.
 
-**Cause root** : Haiku traite mal l'indexation des line numbers d'un diff `git show A B` quand le 2e commit `B` re-touche des hunks du 1er commit `A`. Les line numbers du 2e hunk correspondent au file post-A (pas au file final post-B), et Haiku peut chercher la ligne X et y voir le contenu de A, ratant le patch de B.
+**Cause racine** : Haiku traite mal l'indexation des line numbers d'un diff `git show A B` quand le 2e commit `B` re-touche des hunks du 1er commit `A`. Les line numbers du 2e hunk correspondent au file post-A (pas au file final post-B), et Haiku peut chercher la ligne X et y voir le contenu de A, ratant le patch de B.
 
-**Règle d'application** — pour tout finding `CRITICAL` ou `HIGH` affirmant l'absence d'un code attendu, l'orchestrateur **DOIT** exécuter `grep -n "<pattern issu du patch>" <file>` avant de traiter le finding comme réel :
+**Règle d'application** — pour tout finding `CRITICAL` ou `HIGH` affirmant **soit l'absence d'un code attendu** (« patch X n'a pas été appliqué »), **soit la présence d'un anti-pattern non-corrigé** (« ligne Y contient encore un `unwrap()` non-sécurisé »), l'orchestrateur **DOIT** vérifier ground-truth avant de traiter le finding comme réel :
 
-- Si grep trouve le pattern → **dismiss** le finding comme faux-positif. Documenter le dismiss dans le Change Log de la passe (e.g. « BH2-1 CRITICAL réfuté par grep ligne X — faux-positif Haiku indexing »).
-- Si grep retourne `(no matches)` → finding confirmé, appliquer le patch.
+- **Pattern textuel grepable sur une ligne précise** : exécuter `grep -nF "<chaîne issue du patch>" <file>` — le flag `-F` (fixed-string) est **obligatoire** pour éviter les faux-positifs sur les métacaractères regex (`.`, `*`, `[`, `(`, `\`, etc.) qui apparaissent fréquemment dans du code Rust/TS (e.g. `Vec<i64>`, `amount * rate`, `unwrap_or(0.0)`).
+- **Pattern multi-ligne** (struct sur 4 lignes, bloc `if let` indenté, chaîne de méthodes) : `grep -n` opère ligne par ligne. Choisir une **ligne unique représentative** discriminante (ouverture de la struct + 1 mot unique), ou utiliser `grep -nFA <N>` pour récupérer les N lignes suivantes et vérifier le bloc complet.
+- **Finding architectural ou comportement runtime** (e.g. « le middleware CORS est appliqué après l'auth », « la fonction ne retourne pas d'erreur en cas d'overflow ») où aucun pattern textuel précis n'est grepable : **vérification manuelle par `Read` direct** du fichier concerné + inspection ciblée du flux. Documenter la vérification dans le Change Log avec extrait pertinent.
+- **Résultat** :
+  - Vérification confirme l'observation (pattern absent OU anti-pattern présent OU comportement architectural confirmé) → finding réel, appliquer le patch.
+  - Vérification réfute l'observation → **dismiss** comme faux-positif Haiku. Documenter dans le Change Log (e.g. « BH2-1 CRITICAL réfuté par `grep -nF` ligne X — faux-positif Haiku indexing diff multi-commit »).
 
 **Mitigation préférée** : à partir de la Pass 2 d'un cycle review, donner à Haiku un **diff unique** (le commit final `HEAD vs main` aplati) plutôt que la séquence de commits intermédiaires. Évite la confusion d'indexation à la source.
 
@@ -171,7 +175,7 @@ Toute erreur **qui dépend de la proposal individuelle** (validation `amount > 0
 - `error_code: String` — constante canonique recommandée (e.g. `"BANK_ACCOUNT_NOT_CONFIGURED"`, `"RECONCILIATION_RULE_NO_LONGER_MATCHES"`). **JAMAIS** interpolation `format!("error: {}", e)` ; pour contexte dynamique utiliser le champ `details`.
 - `details: Option<serde_json::Value>` — JSON object additionnel pour contexte spécifique au code (e.g. `{ "bankAccountId": 17 }`).
 
-**Garde-fou défensif** — dans un `match` exhaustif sur les variants d'un type sum (`Rule`, `ProposalType`, etc.), **NE PAS** utiliser `unreachable!()` aux sites variants. Préférer `tracing::error!(...) + AppError::Internal(...)`. Justification : un `unreachable!()` crashe la Tokio task en cas de refactor introduisant un variant manquant ; le pattern log + return est défensif et permet à l'endpoint de retourner une `FailedProposal` propre plutôt qu'une 500 silencieuse.
+**Garde-fou défensif** — dans un `match` exhaustif sur les variants d'un type sum (`Rule`, `ProposalType`, etc.), **NE PAS** utiliser `unreachable!()` aux sites variants (un `unreachable!()` crashe la Tokio task sans log si un futur refactor introduit un variant manquant). Préférer `tracing::error!(...) + retour d'AppError::Internal(...)`. **Important** : cette `AppError::Internal` tombe sous l'exception globale ligne « 500 Internal Server Error » ci-dessus — un variant manquant est un **bug structurel détecté à l'exécution** (refactor incomplet), **pas** une erreur business per-proposal ordinaire. C'est précisément le cas d'usage de cette exception globale. Le pattern `FailedProposal` per-proposal reste inviolable pour toute erreur métier ordinaire.
 
 **Référence canonique** : `accept_one_invoice` (Story 8-4), `accept_one_split` (Story 8-5a-bis), `accept_one_rule` (Story 8-5b). Le pattern est inviolable sur ces 3 implémentations Epic 8.
 
@@ -201,12 +205,26 @@ Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un s
 ### Triage obligatoire — 3 catégories à chaque rétrospective
 
 - **Catégorie A — vraie dette** : bug latent, incohérence non-documentée, action retrospective non-complétée d'un Epic antérieur, KF dormante GitHub ouverte (sans label `v0.2-milestone`). **DOIT être fixée** avant kickoff Epic suivant.
-- **Catégorie B — limitation v0.2 légitime** : feature ou limitation documentée avec scope explicite (style `L1` / `L2` / ... dans story file ou Dev Notes) **et** story de remédiation planifiée Epic futur. Acceptable indéfiniment tant que tracée. Les KFs labellées `v0.2-milestone` qualifient en B même sans story Epic spécifique créée — le label tient lieu de planification implicite (la story de remédiation sera créée au plus tard au kickoff de l'Epic qui consommera le backlog v0.2).
+- **Catégorie B — limitation v0.2 légitime** : feature ou limitation documentée avec scope explicite (style `L1` / `L2` / ... dans story file ou Dev Notes) **et** mécanisme de planification de la remédiation (au choix : story dédiée créée pour un Epic futur, OU label `v0.2-milestone` sur l'issue GitHub qui tient lieu de planification implicite — la story de remédiation sera créée au plus tard au kickoff de l'Epic qui consommera le backlog v0.2). Acceptable indéfiniment tant que tracée. **Exception au reclassement automatique** : si une KF labellée `v0.2-milestone` est **également** marquée gate bloquant v0.1 (e.g. dans le PRD, une story spec, ou une décision de release explicite), le gate v0.1 prime → la KF reste catégorie **A** jusqu'à fix ou levée explicite du gate.
 - **Catégorie C — décision design intentionnelle** : pattern volontaire (e.g. tables exclues d'un export pour raison de sécurité, INNER JOIN avec FK garante, audit-trail-only acceptée v0.1). **Pas une dette.**
 
 ### Critical path
 
 Les items catégorie **A** passent du « cleanup parallèle optionnel » au **bloquant kickoff Epic suivant** dans la section Action Items de chaque rétrospective. Cette transition est non-négociable : si un item A traîne au moment du kickoff, soit on le fixe immédiatement, soit on le reclasse formellement en B (avec justification écrite + story remédiation planifiée).
+
+**Triage hors fenêtre rétrospective** — si une dette catégorie A est découverte **en cours d'Epic N+1** (e.g. semaine 2 d'un Epic feature, pas pendant une rétrospective), triage immédiat selon sévérité :
+
+- **Critique pour l'Epic en cours** (bloque une story active OU introduit une régression imminente sur des baselines vertes) → créer une story de fix **dans l'Epic N+1 en cours**, traiter immédiatement.
+- **Non-critique pour l'Epic en cours** → ajouter à la liste des items A bloquant le **kickoff de l'Epic N+2** (équivalent du carry-forward d'un Epic à l'autre, c'est l'exception au zero carry-forward pour les découvertes hors-rétrospective). Documenter dans la rétrospective courante quand elle viendra.
+
+L'arbitrage de sévérité est fait par le Project Lead au moment de la découverte, pas par l'orchestrateur LLM.
+
+**Soupape — item A résistant** : si un item A résiste à **3+ tentatives de fix successives** (bug reproductible mais sans root cause claire, ou fix introduisant systématiquement une régression sur d'autres baselines), il peut être **exceptionnellement** reclassé en catégorie B avec :
+
+- Justification écrite « résistance constatée après N tentatives » dans la rétrospective.
+- Story de remédiation planifiée **Epic+2** (pas Epic+1 — laisser le temps d'investigation hors charge feature).
+- Issue GitHub labellée `technical-debt` + `v0.2-milestone` + commentaire détaillé des tentatives de fix et de leurs échecs.
+- Suivi spécifique (revue à chaque rétrospective Epic+1, Epic+2) pour éviter que la résistance ne devienne un `wontfix` de facto.
 
 ### Pattern Epic dédié cleanup
 
