@@ -1,6 +1,6 @@
 # Story 9.5-3: Process codification CLAUDE.md
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -456,3 +456,31 @@ Aucun debug nécessaire — édits Markdown ciblés via Edit tool avec ancres un
 **Trend cumulé** : Pass 1 (Sonnet × 3) 0C+6H+8M+8L → 10 patches → Pass 2 (Haiku × 2) 0C+0H+6M+2L → 6 patches → Pass 3 Opus 4.7 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`, LLM différent passe précédente respectée).
 
 **Modèles Pass 2** : 2 × Haiku 4.5 subagents isolés contextes frais. **Discipline grep ground-truth Haiku** respectée (codifiée par cette story elle-même — test du pudding réussi).
+
+### Pass 3 code-review — 2026-05-18, Opus 4.7 (subagent contexte frais, anti-rubber-stamp)
+
+**Setup** : 1 subagent Opus 4.7 (anti-rubber-stamp historique Epic 9 Insight I1), contexte frais isolé. Diff cible : commit `7a40f6a` (Pass 2 patches uniquement, diff unique). Spec + état CLAUDE.md final fournis pour vérification cohérence.
+
+**Discipline ground-truth obligatoire** appliquée pour anti-rubber-stamp validation : Opus a explicitement vérifié 8 pistes adversariales (régressions Pass 2 sur P2-F2/F5/F8, cohérence inter-sections, memories valides, style cumulé, dismissed Pass 1+2 réévalués, cohérence pratique 9-5-3 elle-même, hallucinations Haiku MEDIUM, limite règle CRITICAL/HIGH).
+
+**Verdict trend** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 2 LOW = 2 findings cosmétiques (**Convergence : OUI** — critère d'arrêt CLAUDE.md `0 > LOW` atteint).
+
+**Patches appliqués (1/2 LOW polish — LOW-02 dismissed sur recommandation Opus)** :
+
+1. **LOW-01** — Notation mixte `Epic+2` vs `Epic N+2` dans §Tech debt (CLAUDE.md L225/L227/L229) : uniformisé sur `Epic N+2` / `Epic N+1` partout (3 occurrences modifiées). Cosmétique mais lisibilité améliorée.
+
+**LOW-02 dismissed** : redondance « sous § » dans le bullet renvoi cross-section (L64). Opus recommande explicitement « à ignorer » — la mention de la section parente aide l'humain qui lit linéairement sans grepper. Style choice valide.
+
+**Régressions Pass 2 introduites** : NON (Opus a vérifié chacun des 6 patches Pass 2, aucune incohérence introduite).
+
+**Trend cumulé code-review final** :
+- Pass 1 (Sonnet × 3) : 0C + 6H + 8M + 8L → 10 patches
+- Pass 2 (Haiku × 2) : 0C + 0H + 6M + 2L → 6 patches
+- Pass 3 (Opus × 1) : 0C + 0H + 0M + 2L → 1 patch polish + 1 dismiss
+- **Convergence atteinte après 3 passes** (sous la limite CLAUDE.md de 8 passes max)
+
+**Modèles cycle code-review** : Sonnet 4.6 × 3 → Haiku 4.5 × 2 → Opus 4.7 × 1 (rotation CLAUDE.md `Sonnet → Haiku → Opus → Sonnet` respectée, chaque pass LLM différent + contexte frais).
+
+**Note méthodologique Opus** : « Verdict honnête : je n'ai pas trouvé de CRITICAL ground-truth raté par Sonnet+Haiku. La spec a été validée 3 fois et le code-review 2 fois. Pas de faux finding inventé pour "justifier" la Pass 3. » Pattern anti-rubber-stamp Opus 4.7 validé empiriquement (Epic 9 Insight I1) — convergence honnête.
+
+**Story status final** : `review → done`. Code-review converge. CLAUDE.md 252 → 346 lignes (+94 lignes totales sur 3 dev/review cycles). Toutes les ACs satisfaites (16/16 Pass 1 Acceptance Auditor + cohérence post-patches Pass 2 + Pass 3 vérifié).

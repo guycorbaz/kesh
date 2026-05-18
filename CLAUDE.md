@@ -222,11 +222,11 @@ L'arbitrage de sévérité est fait par le Project Lead au moment de la découve
 **Soupape — item A résistant** : si un item A résiste à **3+ tentatives de fix successives** (1 tentative = 1 cycle complet `bmad-dev-story` → `bmad-code-review` où le fix échoue à résoudre l'item OU introduit une régression sur d'autres baselines), il peut être **exceptionnellement** reclassé en catégorie B avec :
 
 - Justification écrite « résistance constatée après N tentatives » dans la rétrospective, avec liste des cycles et raisons d'échec.
-- Story de remédiation planifiée **Epic+2** (pas Epic+1 — laisser le temps d'investigation hors charge feature).
+- Story de remédiation planifiée **Epic N+2** (pas Epic N+1 — laisser le temps d'investigation hors charge feature).
 - Issue GitHub labellée `technical-debt` + `v0.2-milestone` + commentaire détaillé des tentatives de fix et de leurs échecs.
-- Suivi spécifique (revue à chaque rétrospective Epic+1, Epic+2) pour éviter que la résistance ne devienne un `wontfix` de facto.
+- Suivi spécifique (revue à chaque rétrospective Epic N+1, Epic N+2) pour éviter que la résistance ne devienne un `wontfix` de facto.
 
-Cette soupape est l'**exception explicitement codifiée** à la règle zero carry-forward du paragraphe initial — pas une contradiction. L'item reclassé en B reste tracé (story de remédiation Epic+2 + label GitHub + suivi rétro), ce qui le distingue d'un report silencieux. Si l'Epic N+1 est lui-même un Epic « Technical Debt Closure » dédié, la soupape Epic+2 reste applicable (la résistance documentée justifie de laisser le fix mûrir un cycle de plus).
+Cette soupape est l'**exception explicitement codifiée** à la règle zero carry-forward du paragraphe initial — pas une contradiction. L'item reclassé en B reste tracé (story de remédiation Epic N+2 + label GitHub + suivi rétro), ce qui le distingue d'un report silencieux. Si l'Epic N+1 est lui-même un Epic « Technical Debt Closure » dédié, la soupape Epic N+2 reste applicable (la résistance documentée justifie de laisser le fix mûrir un cycle de plus).
 
 ### Pattern Epic dédié cleanup
 
