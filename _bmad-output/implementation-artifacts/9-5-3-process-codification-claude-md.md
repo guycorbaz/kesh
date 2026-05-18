@@ -1,0 +1,291 @@
+# Story 9.5-3: Process codification CLAUDE.md
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a mainteneur projet Kesh,
+I want codifier dans `CLAUDE.md` les trois patterns de process découverts ou validés lors des Epics 7/8/9 mais pas encore documentés formellement (Haiku grep ground-truth obligatoire, AcceptedProposal/FailedProposal batch pattern strict, zero tech debt carry-forward policy),
+so that ces règles deviennent appliquées systématiquement par tout futur cycle review/dev/retro et résistent au turnover développeurs ou agents LLM.
+
+## Scope
+
+Édite **`CLAUDE.md` à la racine du repo uniquement**. Ajoute **3 nouvelles sections** documentaires (et 0 nouvelle règle de code).
+
+1. **Sous-section « Haiku 4.5 grep ground-truth obligatoire »** insérée sous la section `## Review Iteration Rule` existante, juste après le bloc `**Boucle automatique** :` (avant la sous-section `### Règle de splitting préventif` ligne 137). Cible : la règle déjà connue (memory `feedback_haiku_review_diff_combined`) est promue de user-memory à règle projet, et l'orchestrateur qui lance Haiku peut la citer textuellement.
+
+2. **Sous-section « AcceptedProposal / FailedProposal batch pattern strict »** insérée comme nouvelle sous-section `### Pattern batch — FailedProposal per-proposal` toujours à l'intérieur de `## Review Iteration Rule` (juste après la nouvelle sous-section Haiku ci-dessus), OU comme nouvelle section H2 top-level `## Pattern batch — FailedProposal per-proposal` après `## Review Iteration Rule`. **Décision §placement-batch-pattern** ci-dessous = sous-section H3 à l'intérieur de `## Review Iteration Rule` (cohérent avec « règles process » thématique). Cible : tout endpoint `accept_batch`-style (Epic 8 `accept_one_invoice/split/rule`, Epic 11 pain.001 paiements batch, Epic 12 si applicable) sait que **aucune escalade `AppError` globale** n'est autorisée pour des erreurs per-proposal.
+
+3. **Nouvelle section top-level `## Tech debt management — zero carry-forward policy`** insérée **après** `## Review Iteration Rule` et **avant** `## Issue Tracking Rule` (ligne 152). Cible : la rétrospective de chaque epic doit catégoriser (A/B/C) tous les items résiduels, et la catégorie A bloque le kickoff de l'Epic N+1.
+
+**Hors scope** :
+
+- Édition de `docs/` ou de `_bmad-output/planning-artifacts/architecture.md` — les 3 patterns sont des règles **process projet**, pas des décisions architecture (cf. distinction CLAUDE.md = règles méta workflow, architecture.md = décisions techniques durables).
+- Suppression des memories user-level concernées (`feedback_haiku_review_diff_combined`, `feedback_zero_tech_debt_carryforward`) — la promotion vers CLAUDE.md project-level **ne supprime pas** les memories. Elles restent en place pour traçabilité historique des décisions (cohérent §Q4 epic-9-5.md).
+- Ajout d'une 4ème règle « rotation LLM Sonnet → Haiku → Opus → Sonnet ». Le pattern est **déjà** codifié dans la section existante `## Review Iteration Rule` (ligne 121 : « cycle Opus → Sonnet → Haiku → Opus »). Ne pas dupliquer ni reformuler — risque dérive. Si l'ordre canonique a évolué (Insight I1 retro Epic 9 mentionne Sonnet → Haiku → Opus → Sonnet), la **mise à jour de l'ordre est in-scope** mais conserve une **seule** mention canonique.
+- Modification du `README.md` (la « Feuille de route » n'est pas impactée — Epic 9.5 est interne process, pas une feature utilisateur).
+- Ajout de nouveaux hooks `pre-commit` ou scripts d'automatisation des 3 règles. La codification est documentaire ; l'application reste manuelle (orchestrateur LLM ou dev humain).
+- Toute modification de `cargo`/`npm` packages ou de tests. **Story 100% documentation.**
+
+## Acceptance Criteria
+
+### Section 1 — Haiku grep ground-truth
+
+1. **Given** `CLAUDE.md` post-Story 9.5-3, **When** la section `## Review Iteration Rule` est lue, **Then** elle contient une sous-section nommée explicitement `### Haiku-specific guardrails — grep ground-truth obligatoire` (titre déterministe pour faciliter renvoi textuel par d'autres docs / agents).
+
+2. **Given** cette sous-section, **When** elle est lue, **Then** elle contient au minimum :
+   - Description du symptôme : Haiku 4.5 reviewers (`BlindHunter` / `EdgeCaseHunter`) peuvent affirmer **CRITICAL/HIGH** « REGRESSION-P1 — patch X n'a pas été appliqué » sur un diff combiné multi-commit, alors que le patch est présent.
+   - Cause root : Haiku traite mal l'indexation des line numbers d'un diff `git show A B` quand le 2e commit `B` re-touche des hunks du 1er `A` ; les line numbers du 2e hunk correspondent au file post-A, et Haiku peut chercher la ligne X et y voir le contenu de A, ratant le patch de B.
+   - Règle d'application : **pour tout finding `CRITICAL` ou `HIGH` affirmant l'absence de code attendu**, l'orchestrateur **DOIT** lancer `grep -n "<pattern issu du patch>" <file>` avant de traiter comme réel. Si présent → dismiss comme faux-positif. Documenter le dismiss dans le Change Log de la passe.
+   - Mitigation préférée : à partir de la Pass 2 d'un cycle review, passer à Haiku un **diff unique** (le commit final `HEAD vs main`) plutôt qu'une séquence de commits multi-patches.
+   - Scope du bug : spécifique Haiku 4.5. Sonnet 4.6 et Opus 4.7 ne reproduisent pas l'erreur d'indexation (validé Epic 9 et antérieur).
+   - Référence traçabilité : `(cf. memory feedback_haiku_review_diff_combined, validé empiriquement Stories 8-5a-bis Pass 2 Haiku 2026-05-12 [BH2-1 missing scale() validation ligne 2120 + BH2-2 missing != bank_ledger guard ligne 2172] et 9-2b Pass 2 Haiku 2026-05-15 [route.continue() sans await ligne 66 + resolveDownload! sans validation ligne 201] — 4 hallucinations CRITICAL/HIGH réfutées par grep ground-truth)`.
+
+3. **And** cette sous-section est placée **à l'intérieur** de la section H2 `## Review Iteration Rule` (sous-titre H3 `### Haiku-specific guardrails — grep ground-truth obligatoire`), **après** le bloc `**Boucle automatique** :` et **avant** la sous-section existante `### Règle de splitting préventif` (ligne 137 actuelle). Ordre logique : règle générale → cas spécifique Haiku → règle splitting préventif.
+
+4. **And** la mention du cycle de rotation LLM existante (`Opus → Sonnet → Haiku → Opus` actuelle dans `## Review Iteration Rule`) **est harmonisée** vers `Sonnet → Haiku → Opus → Sonnet` (validé empiriquement Epic 9 retro Insight I1, 3 cycles complets — l'ordre actuel est une intuition initiale non-validée par observation systématique). Patcher la ligne en une **seule occurrence canonique** pour éviter toute duplication ou ambiguïté entre la section Review Iteration Rule pré-existante et la nouvelle sous-section Haiku. **Décision §rotation-order-update tranchée Pass 1 spec validate Sonnet 4.6** (cf. §Décisions et Change Log).
+
+### Section 2 — AcceptedProposal/FailedProposal batch pattern
+
+5. **Given** `CLAUDE.md` post-Story 9.5-3, **When** la section `## Review Iteration Rule` est lue, **Then** elle contient une sous-section nommée explicitement `### Pattern batch — FailedProposal per-proposal` (titre déterministe).
+
+6. **Given** cette sous-section, **When** elle est lue, **Then** elle contient au minimum :
+   - Énoncé de la règle : pour tout endpoint type `accept_batch` (qui traite N proposals/operations en une seule requête et retourne `{ accepted: [...], failed: [...] }`), **aucune erreur per-proposal ne doit escalader en `AppError` global** retournée comme HTTP error code (4xx/5xx). Chaque erreur d'une proposal individuelle est encapsulée en `FailedProposal { proposal_index, error_code, details }` dans le `failed[]` du response body, avec HTTP `200 OK` au niveau de la requête (succès partiel reste un succès HTTP).
+   - Exceptions explicites : les `AppError` global sont autorisées **uniquement** pour les erreurs qui invalident la requête entière en amont du traitement per-proposal — exemples : `401 Unauthorized` (auth middleware), `403 Forbidden` (RBAC global), `400 Bad Request` (body parse fail / schéma JSON invalide), `500 Internal Server Error` (DB pool fermé, panic, etc.). Toute erreur **qui dépend de la proposal individuelle** (validation amount > 0, FK manquant, race condition optimistic lock, currency mismatch, business rule) → `FailedProposal`.
+   - Exemple canonique référencé : `accept_one_invoice` (Story 8-4), `accept_one_split` (Story 8-5a-bis), `accept_one_rule` (Story 8-5b). Cf. retro Epic 8 Insight I2 « accept_one_X strict (FailedProposal per-proposal) inviolable » + Story 8-5b Pass 4 ECH4-1 correction (`BANK_ACCOUNT_NOT_CONFIGURED` `200 + failed[]` au lieu de `412` AppError).
+   - Garde-fou défensif : dans un `match` exhaustif sur les variants de `Rule` / `ProposalType`, **NE PAS** utiliser `unreachable!()` aux sites variants (piège pour futur refactor + risque crash Tokio task). Préférer `tracing::error + AppError::Internal` (cohérent Story 8-5b code-review Pass 1 patch).
+   - Champs obligatoires de `FailedProposal` (signature canonique Epic 8 ground-truth — `crates/kesh-api/src/routes/reconciliation.rs:152-156` à l'heure de la spec) :
+     - **identifiant business de la proposition** (e.g. `bank_transaction_id: i64` pour Epic 8 réconciliation ; pour Epic 11 pain.001 ce sera probablement `payment_id` ou équivalent, à adapter selon le type de proposition du batch). **Anti-pattern explicite** : NE PAS utiliser un index positionnel `proposal_index: usize` — fragile à toute réorganisation du batch par le client.
+     - `error_code: String` (valeur recommandée = constante canonique e.g. `"BANK_ACCOUNT_NOT_CONFIGURED".to_string()`, **jamais** interpolation `format!("error: {}", e)`. Pour contexte dynamique, utiliser `details`).
+     - `details: Option<serde_json::Value>` (JSON object additionnel pour contexte spécifique au code, e.g. `{ "bankAccountId": 17 }`).
+   - Réutilisation prévue : Epic 11 (pain.001 paiements batch — un fichier XML contient N transactions, chaque transaction peut échouer indépendamment), Epic 12 (CAMT.053 batch matching), tout autre endpoint qui retourne un summary `{ accepted, failed }`.
+   - Référence traçabilité : `(pattern hérité Epic 8 — cf. retro Epic 8 Insight I2 + Story 8-5b Pass 4 ECH4-1)`.
+
+7. **And** cette sous-section est placée **à l'intérieur** de la section H2 `## Review Iteration Rule` (sous-titre H3 `### Pattern batch — FailedProposal per-proposal`), **immédiatement après** la sous-section Haiku (AC #3) et **avant** la sous-section existante `### Règle de splitting préventif`. Ordre logique : règles review (Haiku, splitting) → règle architecture batch.
+
+   **Note placement alternative considérée** : section H2 top-level dédiée `## Pattern batch — FailedProposal per-proposal`. **Rejetée** car (a) le pattern a été détecté en review (Pass 4 ECH4-1 Story 8-5b), (b) éviter de fragmenter CLAUDE.md en trop de sections H2 (déjà 8 sections), (c) sous-section sous Review Iteration Rule reste discoverable via grep `FailedProposal`.
+
+7bis. **And** un **renvoi cross-section** est ajouté dans `## Code Quality Rules` (après le bullet `**E2E Testing**` actuel) sous forme d'un nouveau bullet `- **Batch API conventions** — Pour les endpoints batch (style \`accept_batch\` qui retournent \`{ accepted, failed }\`), cf. §"Pattern batch — FailedProposal per-proposal" sous §"Review Iteration Rule".` Justification : un futur agent LLM cherchant des conventions HTTP API ne fouillera pas spontanément `## Review Iteration Rule` — le renvoi pallie le déficit de discoverability sans dupliquer le contenu (Pass 1 HIGH-02 patch minimal vs section H2 top-level dédiée).
+
+### Section 3 — Zero tech debt carry-forward
+
+8. **Given** `CLAUDE.md` post-Story 9.5-3, **When** le fichier est lu, **Then** une nouvelle section H2 top-level `## Tech debt management — zero carry-forward policy` existe (titre déterministe).
+
+9. **And** cette section est placée **après** la section H2 `## Review Iteration Rule` (qui se termine par sa sous-section `### Règle de splitting préventif`) et **avant** la section H2 `## Issue Tracking Rule`. Ordre logique : règles review/process → règle gestion dette → règle tracking issues GitHub. **Note** : aucune référence aux numéros de ligne de CLAUDE.md dans les ACs (fragiles à toute insertion antérieure dans le fichier) — utiliser les titres canoniques de section comme ancres stables.
+
+10. **And** cette section contient au minimum :
+    - Énoncé de la politique : pas de cumul de dette technique inter-epic. À chaque rétrospective d'epic, **toutes les vraies dettes (catégorie A ci-dessous) doivent être adressées (fix appliqué OU explicitement reclassées en catégorie B avec justification + story de remédiation planifiée)** avant le kickoff de l'Epic N+1.
+    - Triage obligatoire en 3 catégories à chaque rétrospective :
+      - **Catégorie A — vraie dette** : bug latent, incohérence non-documentée, action retrospective non-complétée, KF dormante GitHub ouverte (sans label `v0.2-milestone`). **Doit être fixée** avant kickoff Epic suivant.
+      - **Catégorie B — limitation v0.2 légitime** : feature/limitation documentée avec scope explicite (`L1`/`L2`/... style dans story file) ET story de remédiation planifiée Epic futur. Acceptable indéfiniment tant que tracée.
+      - **Catégorie C — décision design intentionnelle** : pattern volontaire (e.g. tables exclues du global export pour raison sécurité, INNER JOIN FK garante, audit-trail-only acceptée v0.1). **Pas une dette.**
+    - Critère « critical path » : les items catégorie A passent du « cleanup parallèle optionnel » au « bloquant kickoff Epic suivant » dans la section Action Items de chaque rétro.
+    - Pattern « Epic dédié cleanup » : si le volume d'items catégorie A est élevé (seuil indicatif > 8 items ou couvre > 2 axes — KFs + code consistency + process), créer un **Epic dédié `« Technical Debt Closure »`** plutôt que faire un méga-Epic suivant qui mélange feature + dette. Précédents : **Epic 7 historique** (KF-001..007 fermées pré-Epic 8), **Epic 9.5 actuel** (~13 items A post-Epic 9, 4 stories).
+    - Distinction critique au triage : limitations documentées (`L1-L18` style dans story files) = catégorie **B** si scope explicite **+** story remédiation planifiée. Sinon → catégorie **A** (dette implicite). Mémo : KFs ouvertes GitHub Issues = candidates catégorie A par défaut sauf labelling `v0.2-milestone` (cohérent §"Issue Tracking Rule").
+    - Référence traçabilité : `(politique formalisée 2026-05-17 rétro Epic 9 — cf. memory feedback_zero_tech_debt_carryforward + pattern Epic 7 historique)`.
+
+### Cohérence globale + non-régression
+
+11. **Given** `CLAUDE.md` post-Story 9.5-3, **When** parcouru de bout en bout, **Then** **toutes les sections existantes pré-Story** sont conservées intactes (Project Overview, Communication, Repository Structure, BMAD Architecture, Key Patterns, Code Quality Rules, Test Locally First, Review Iteration Rule body, Issue Tracking Rule, Règle de commit et push). Diff = **insertion-only** (3 nouvelles sous-sections/sections), pas de modification du contenu existant **sauf** AC #4 si harmonisation `rotation-order` choisie.
+
+12. **And** **aucun référence cassée** : tous les liens internes existants (e.g. mentions « cf. §Test Locally First », « cf. memory ... ») restent valides. Si une nouvelle référence interne est ajoutée (e.g. « cf. §Tech debt management »), elle pointe vers une section qui existe maintenant.
+
+13. **And** les **3 nouvelles sections respectent le style éditorial existant** de CLAUDE.md :
+    - Français (cohérent §Communication : « The user (Guy) works in French »).
+    - Format Markdown idem (titres `##` / `###`, emphasis `**...**`, listes `-`, blocks code triple-backtick si exemple code utile).
+    - Pas d'emoji (cohérent style sobre CLAUDE.md).
+    - Renvois textuels au style existant CLAUDE.md (noms de fonctions, stories, memories, sections) — les paths Rust absolus type `crates/kesh-api/...` sont **évités** dans CLAUDE.md (référence cassable au refactor code), conservés uniquement dans les story files de référence et les memories.
+
+14. **And** **aucun lien externe cassé** : si une URL est ajoutée (e.g. lien GitHub Issues), elle est testée valide ou utilise pattern relatif `(`[guycorbaz/kesh/issues](https://github.com/guycorbaz/kesh/issues)`)` déjà présent CLAUDE.md.
+
+15. **Given** `git diff CLAUDE.md` post-implémentation, **When** lu, **Then** lignes ajoutées entre `~80` et `~180` (3 sections × ~30-60 lignes). Si > 200 lignes : alerte verbosité, splitter en fichiers de référence sous `docs/` (anti-pattern à éviter — CLAUDE.md doit rester lisible bout en bout).
+
+16. **And** **aucun test ni code Rust/TS/Svelte n'est modifié**. `git diff --stat` doit montrer **uniquement** `CLAUDE.md | XX +/-` (plus éventuellement `sprint-status.yaml` pour le marquage `done` et le story file `9-5-3-...md` pour le Change Log final). Story documentation-only stricte.
+
+## Tasks / Subtasks
+
+- [ ] **T1** Pre-flight : lire `CLAUDE.md` actuel et identifier ancres d'insertion exactes (AC: #3, #7, #9)
+  - [ ] T1.1 `Read /home/gcorbaz/Synology/devel/kesh/CLAUDE.md` ligne 111-152 pour confirmer structure section `## Review Iteration Rule` + position `### Règle de splitting préventif` (ligne 137) + position `## Issue Tracking Rule` (ligne 152).
+  - [ ] T1.2 Identifier le **point d'insertion 1** : **après** le bloc `**Exception** : si un finding MEDIUM+ est explicitement reclassé...` (dernière ligne de contenu de la section H2 `## Review Iteration Rule` avant la sous-section H3 `### Règle de splitting préventif` — ligne 135 actuelle de CLAUDE.md à l'heure de la spec, mais l'ancre est le **texte** de la ligne Exception, pas le numéro) et **avant** la ligne vide précédant `### Règle de splitting préventif`. C'est le seul point propre qui ne fragmente pas le bloc logique « Boucle automatique → Cette règle s'applique à → Exception » qui forme une unité cohérente.
+  - [ ] T1.3 Identifier le **point d'insertion 2** : entre la nouvelle sous-section Haiku (T2) et la sous-section existante `### Règle de splitting préventif`. Logiquement : ce sera juste après la nouvelle sous-section H3 Haiku écrite en T2.
+  - [ ] T1.4 Identifier le **point d'insertion 3** : exactement entre la fin de la sous-section `### Règle de splitting préventif` (avant ligne 152 actuelle `## Issue Tracking Rule`). Note : la dérogation paragraphe en fin de §splitting préventif (ligne 150) est la dernière ligne avant la nouvelle section H2.
+
+- [ ] **T2** Rédiger sous-section H3 `### Haiku-specific guardrails — grep ground-truth obligatoire` (AC: #1-#4)
+  - [ ] T2.1 Titre H3 exact : `### Haiku-specific guardrails — grep ground-truth obligatoire`.
+  - [ ] T2.2 Paragraphe d'intro : énoncé symptôme (CRITICAL/HIGH affirmation fausse), cause root (indexation diff multi-commit), 2 cas concrets Story 9-2b Pass 2 (BH2-1 + BH2-2) référencés en exemples sans recopier le texte verbatim de la memory.
+  - [ ] T2.3 Bloc règle « **Règle d'application** » avec mots-clés MAJUSCULES `DOIT` cohérents avec style CLAUDE.md (cf. ligne 75-79).
+  - [ ] T2.4 Bloc « **Mitigation préférée** » : à partir Pass 2 d'un cycle, passer diff unique.
+  - [ ] T2.5 Bloc « **Scope du bug** » : spécifique Haiku 4.5, Sonnet 4.6 / Opus 4.7 indemnes.
+  - [ ] T2.6 Ligne de référence finale italique : `(cf. memory feedback_haiku_review_diff_combined, validé empiriquement Stories 8-5a-bis Pass 2 Haiku 2026-05-12 + 9-2b Pass 2 Haiku 2026-05-15 — 4 hallucinations CRITICAL/HIGH réfutées par grep ground-truth)`.
+  - [ ] T2.7 Vérifier longueur sous-section : entre 25 et 60 lignes Markdown (cohérent §existant `### Quand sauter` ~15 lignes, `### Règle de splitting préventif` ~25 lignes).
+
+- [ ] **T3** Rédiger sous-section H3 `### Pattern batch — FailedProposal per-proposal` (AC: #5-#7)
+  - [ ] T3.1 Titre H3 exact : `### Pattern batch — FailedProposal per-proposal`.
+  - [ ] T3.2 Paragraphe énoncé de la règle (HTTP 200 OK + `failed[]` per-proposal, jamais AppError global).
+  - [ ] T3.3 Bloc « **Exceptions explicites** » : 401 / 403 / 400 body parse / 500 panic restent en AppError global (erreurs amont).
+  - [ ] T3.4 Bloc « **Champs obligatoires `FailedProposal`** » (signature ground-truth `crates/kesh-api/src/routes/reconciliation.rs:152-156`) : identifiant business de la proposition (e.g. `bank_transaction_id: i64` Epic 8, à adapter `payment_id` Epic 11 etc.) + `error_code: String` (valeur = constante canonique recommandée, pas interpolation `format!`) + `details: Option<serde_json::Value>`. **Anti-pattern explicite** dans le texte CLAUDE.md : NE PAS utiliser un index positionnel `proposal_index: usize` (fragile à toute réorganisation batch).
+  - [ ] T3.5 Bloc « **Garde-fou `match` exhaustif** » : pas de `unreachable!()` aux sites variants Rule/ProposalType, préférer `tracing::error + AppError::Internal` (cohérent Story 8-5b Pass 1 patch).
+  - [ ] T3.6 Bloc « **Référence canonique** » : `accept_one_invoice` (Story 8-4), `accept_one_split` (Story 8-5a-bis), `accept_one_rule` (Story 8-5b) — implémentations historiques sous `crates/kesh-api/src/routes/reconciliation.rs` au moment de la spec. **Dans la section CLAUDE.md cible, NE PAS inclure le path Rust complet** (référence cassée silencieusement si le fichier est refactoré/splitté) ; conserver uniquement les noms de fonctions + numéro de story de référence. Le path est utile uniquement dans cette spec pour le dev agent qui implémentera la section, pas dans le texte CLAUDE.md durable.
+  - [ ] T3.7 Bloc « **Réutilisation prévue** » : Epic 11 pain.001 batch, Epic 12 CAMT.053, autres endpoints `{ accepted, failed }`.
+  - [ ] T3.8 Ligne de référence finale italique : `(pattern hérité Epic 8 — cf. _bmad-output/implementation-artifacts/epic-8-retro-2026-05-14.md Insight I2 + Story 8-5b Pass 4 ECH4-1 correction)`.
+  - [ ] T3.9 Vérifier longueur sous-section : entre 30 et 70 lignes Markdown.
+
+- [ ] **T4** Rédiger section H2 `## Tech debt management — zero carry-forward policy` (AC: #8-#10)
+  - [ ] T4.1 Titre H2 exact : `## Tech debt management — zero carry-forward policy`.
+  - [ ] T4.2 Paragraphe énoncé politique : pas de cumul inter-epic, dettes A fixées avant kickoff Epic N+1.
+  - [ ] T4.3 Bloc « **Triage obligatoire — 3 catégories** » en liste à puces avec définitions A / B / C complètes (cf. AC #10).
+  - [ ] T4.4 Bloc « **Critical path** » : items A passent de « cleanup parallèle optionnel » à « bloquant kickoff » dans la section Action Items de chaque rétro.
+  - [ ] T4.5 Bloc « **Pattern Epic dédié cleanup** » : seuil indicatif > 8 items A ou > 2 axes → Epic dédié type « Technical Debt Closure » (précédents Epic 7 + Epic 9.5).
+  - [ ] T4.6 Bloc « **Distinction A vs B au triage** » : limitations `L1-L18` style = B **si** scope explicite + story remédiation. Sinon = A. KFs GitHub par défaut = A sauf label `v0.2-milestone`.
+  - [ ] T4.7 Ligne de référence finale italique : `(politique formalisée 2026-05-17 rétro Epic 9 — cf. memory feedback_zero_tech_debt_carryforward + pattern Epic 7 historique « Technical Debt Closure »)`.
+  - [ ] T4.8 Vérifier longueur section : entre 40 et 80 lignes Markdown (section H2 top-level, cf. ~63 lignes `## Test Locally First`, ~40 lignes `## Issue Tracking Rule`).
+
+- [ ] **T5** Appliquer édits via Edit tool (3 insertions) — préserver intégralement le contenu pré-existant (AC: #11-#16)
+  - [ ] T5.1 Insertion 1 (sous-section Haiku) via Edit avec `old_string` ancré sur **les 2-3 dernières lignes du bloc Exception** (la ligne `**Exception** : si un finding MEDIUM+ est explicitement reclassé...` + ligne vide qui la suit + ligne `### Règle de splitting préventif`). `new_string` = même bloc Exception + ligne vide + nouvelle sous-section H3 Haiku complète + ligne vide + `### Règle de splitting préventif`. **NE PAS** ancrer sur le bloc `**Boucle automatique** :` — cela fragmenterait le bloc logique « Boucle automatique → Cette règle s'applique à → Exception » qui est cohérent et doit rester contigu.
+  - [ ] T5.2 Insertion 2 (sous-section FailedProposal batch) via Edit : `old_string` ancré sur la **dernière ligne** de la nouvelle sous-section Haiku (juste insérée) + 1ère ligne `### Règle de splitting préventif`. `new_string` = bloc Haiku final + ligne blanche + nouvelle sous-section H3 FailedProposal + ligne blanche + `### Règle de splitting préventif`.
+  - [ ] T5.3 Insertion 3 (section H2 Tech debt) via Edit : `old_string` ancré sur **dernière ligne** de `### Règle de splitting préventif` (la ligne dérogation actuelle ligne 150) + ligne blanche + `## Issue Tracking Rule`. `new_string` = dernière ligne dérogation + ligne blanche + nouvelle section H2 `## Tech debt management — zero carry-forward policy` complète + ligne blanche + `## Issue Tracking Rule`.
+  - [ ] T5.4 Patch ordre rotation LLM (AC #4 décision tranchée Pass 1) : `grep -n "Opus → Sonnet → Haiku → Opus" CLAUDE.md` → identifier l'unique occurrence dans `## Review Iteration Rule`, patcher en `Sonnet → Haiku → Opus → Sonnet` (un seul Edit, ancré sur la ligne complète). Validé empiriquement Epic 9 Insight I1 (3 cycles complets). Documenter le patch en Change Log.
+  - [ ] T5.5 Insertion 4 (renvoi cross-section Code Quality Rules) via Edit (AC #7bis Pass 1 patch HIGH-02) : `old_string` ancré sur le bullet `**E2E Testing**` actuel de `## Code Quality Rules` + ligne blanche qui le suit + 1ère ligne `## Test Locally First`. `new_string` = bullet E2E Testing inchangé + ligne blanche + nouveau bullet `- **Batch API conventions** — Pour les endpoints batch (style \`accept_batch\` qui retournent \`{ accepted, failed }\`), cf. §"Pattern batch — FailedProposal per-proposal" sous §"Review Iteration Rule".` + ligne blanche + `## Test Locally First`.
+
+- [ ] **T6** Validation manuelle post-édition (AC: #11-#16)
+  - [ ] T6.1 `Read CLAUDE.md` complet bout en bout — vérifier diff = insertion-only (sauf AC #4 ligne 121 si harmonisation).
+  - [ ] T6.2 `grep -n "^## " CLAUDE.md` → assert nouvelle section H2 `## Tech debt management — zero carry-forward policy` présente entre `## Review Iteration Rule` et `## Issue Tracking Rule`.
+  - [ ] T6.3 `grep -n "^### " CLAUDE.md` → assert 2 nouvelles sous-sections H3 `### Haiku-specific guardrails` + `### Pattern batch — FailedProposal per-proposal` présentes.
+  - [ ] T6.3bis `grep "Batch API conventions" CLAUDE.md` → assert 1 match dans la section `## Code Quality Rules` (renvoi cross-section T5.5 ajouté Pass 1 spec validate HIGH-02 patch).
+  - [ ] T6.4 `wc -l CLAUDE.md` avant vs après : delta lignes attendu ~80 à ~180 (cohérent AC #15).
+  - [ ] T6.5 Spot-check style : pas d'emoji, FR cohérent, blocks code triple-backtick si exemples (probable T3 pour `FailedProposal { ... }` struct sketch).
+  - [ ] T6.6 `markdownlint CLAUDE.md` si dispo (sinon skip — pas dans toolchain projet) — sinon vérifier rendu manuel sur titres H2/H3/H4 + tables/lists.
+
+- [ ] **T7** Pas de tests automatisés (story documentation-only) — note exception explicite (AC: #16)
+  - [ ] T7.1 Documenter dans le Change Log final : « Story 9-5-3 est documentation-only — aucun test ajouté ni modifié. `cargo test --workspace` + `npm run test:unit` baselines préservées par construction (zéro édit code). »
+  - [ ] T7.2 **Pas de skip de la règle « Test Locally First »** : la règle CLAUDE.md §"Quand sauter" exempt explicitement les commits doc-only (`Cette règle ne s'applique pas aux commits doc-only`) — donc cette story tombe dans l'exception. Pas de `cargo test --workspace` ni `npm run test:e2e` requis. Reste à exécuter localement uniquement si la modif a touché autre chose que `CLAUDE.md` (ce qui ne devrait pas être le cas).
+
+- [ ] **T8** Mise à jour `sprint-status.yaml` (AC: post-validation)
+  - [ ] T8.1 Cette étape est gérée par le workflow `bmad-create-story` automatiquement (status `backlog → ready-for-dev`). Pas d'action dev manuelle requise.
+  - [ ] T8.2 Au moment `dev-story` complétée (Status `review → done`), mettre à jour `sprint-status.yaml` `9-5-3-process-codification-claude-md` : `ready-for-dev → in-progress → review → done`.
+
+## Dev Notes
+
+### Pattern de référence : édit purement documentation
+
+Cette story est **documentation-only** stricte. Aucun code Rust/TS/Svelte n'est touché. Aucun test n'est ajouté ni modifié. Le pattern de référence le plus proche dans l'historique projet est probablement aucun — les stories Epic 7-9 ont toutes touché du code. C'est une **première**, justifiée par la nature de l'Epic 9.5 (Technical Debt Closure, cleanup process).
+
+**Conséquence pratique pour le dev agent** :
+
+- `bmad-dev-story` peut converger en 1 seule passe avec un seul commit `docs(claude): codify 3 patterns (Haiku grep / FailedProposal batch / zero tech debt)`.
+- `bmad-code-review` post-dev a peu de surface : cohérence rédactionnelle FR, placement sections correctes, références traçabilité valides (memories existent encore — cf. T6.1). Pas de logique métier à vérifier.
+- Le cycle review multi-pass (Sonnet → Haiku → Opus → Sonnet) reste applicable mais convergera vite (effort attendu : 1-2 passes max).
+
+### Pourquoi codifier dans CLAUDE.md plutôt que ailleurs
+
+- **CLAUDE.md** = règles **process projet appliquées par tout agent LLM** (Claude Code, cycle review, dev-story). Chargé automatiquement en contexte à chaque session.
+- **architecture.md** = décisions techniques durables (choix lib, schémas DB, contrats API). Pas le bon endroit pour règles de workflow review.
+- **docs/** = documentation utilisateur ou archives historiques (cf. `docs/change_request.md` archivé). Pas chargé automatiquement en contexte LLM.
+- **Memories user-level** = trace historique des décisions. Persistantes mais user-scoped (pas project-scoped). Ne survivent pas si un autre dev clone le repo.
+
+CLAUDE.md est l'unique emplacement qui combine **(a) chargement automatique en contexte LLM** + **(b) versionning Git + accessibilité tout dev humain ou agent** + **(c) source de vérité projet (vs user-level memories)**.
+
+### Choix éditoriaux tranchés Pass 1 spec validate
+
+**Décision §placement-batch-pattern** (AC #7 + #7bis — **tranchée Pass 1**) : sous-section H3 à l'intérieur de `## Review Iteration Rule` **avec** ajout d'un renvoi cross-section depuis `## Code Quality Rules` (T5.5). Justifications :
+
+1. Le pattern a été détecté en review (Story 8-5b Pass 4 ECH4-1) → contextuellement lié au workflow review.
+2. Évite la fragmentation de CLAUDE.md en trop de sections H2 (déjà 8 actuelles).
+3. Reste discoverable via grep `FailedProposal`.
+4. **Le renvoi depuis `## Code Quality Rules` pallie le déficit de discoverability sémantique** (Pass 1 HIGH-02) : un agent cherchant les conventions HTTP API ne fouillera pas spontanément Review Iteration Rule, mais Code Quality Rules est l'emplacement attendu. Le renvoi est cheap (1 bullet) et évite d'avoir une section H2 dédiée.
+
+**Décision §rotation-order-update** (AC #4 — **tranchée Pass 1**) : harmoniser vers l'ordre `Sonnet → Haiku → Opus → Sonnet` (validé empiriquement Epic 9 retro Insight I1, 3 cycles complets). L'ordre antérieur `Opus → Sonnet → Haiku → Opus` actuellement dans CLAUDE.md `## Review Iteration Rule` reflète une intuition initiale non-validée empiriquement. Patcher l'unique occurrence (T5.4) pour éviter ambiguïté et duplication avec la nouvelle sous-section Haiku.
+
+### Pattern strict insertion-only
+
+Pour minimiser le risque de régression rédactionnelle :
+
+- **Utiliser exclusivement le tool `Edit`** (pas `Write` complet) avec `old_string` ancré sur 2-3 lignes contextuelles existantes pour disambiguation.
+- **Une insertion par Edit** (pas batched). Si l'Edit échoue (non-unique match), reformuler l'ancre avec plus de contexte.
+- **Vérifier après chaque insertion** : `Read CLAUDE.md offset=<ligne autour>` pour confirmer placement.
+- **Pas de `replace_all=true`** — toutes les insertions sont uniques par construction (ancres ciblées sur lignes spécifiques).
+
+### Risques identifiés
+
+| # | Risque | Mitigation |
+|---|---|---|
+| R1 | Dérive éditoriale style (anglais accidentel, emoji, MAJUSCULES erratiques) | Spot-check T6.5 + comparer à sections existantes (style sobre, FR, MAJUSCULES limitées à mots-clés impératifs `DOIT`, pas d'emoji) |
+| R2 | Référence externe cassée (memory renommée, file path obsolète) | T6.1 + vérifier `ls /home/gcorbaz/.claude/projects/.../memory/` post-édition que les 2 memories citées existent encore (`feedback_haiku_review_diff_combined.md`, `feedback_zero_tech_debt_carryforward.md`) |
+| R3 | Insertion 2 (FailedProposal batch) ratée car ancre Haiku non-unique (deux insertions séquentielles) | Lire après T5.1, re-construire ancre T5.2 avec contexte frais (dernières 2-3 lignes Haiku qui viennent d'être insérées) |
+| R4 | Décision §rotation-order-update divergente avec Guy → Change Request | Spec validate Pass 1 Sonnet 4.6 tranchera. Si Guy préfère minimal, fallback alternative documentée dans §Décision §rotation-order-update |
+| R5 | Verbosité explosive (> 200 lignes ajoutées) → CLAUDE.md devient illisible | T6.4 wc -l + AC #15 cap 180 lignes. Si dépassé : refactoriser en `docs/process/` linked depuis CLAUDE.md (anti-pattern à éviter) |
+| R6 | KF #91 (DropdownMenu a11y) résolu en Story 9-5-1 entre temps → mention obsolète dans Tech debt section | T4.6 mentionne KFs en général (label `v0.2-milestone`), pas KF #91 spécifique. Aucune dépendance temporelle inter-stories. |
+
+### Project Structure Notes
+
+- Fichier édité : `/home/gcorbaz/Synology/devel/kesh/CLAUDE.md` (racine repo, **un seul fichier**).
+- Pas de création de fichier nouveau.
+- Pas de suppression de fichier ni de section existante.
+- Le story file lui-même `/home/gcorbaz/Synology/devel/kesh/_bmad-output/implementation-artifacts/9-5-3-process-codification-claude-md.md` (créé par `bmad-create-story`).
+- Sprint-status `/home/gcorbaz/Synology/devel/kesh/_bmad-output/implementation-artifacts/sprint-status.yaml` mis à jour par le workflow.
+
+### Testing standards summary
+
+- **Pas de tests** ajoutés (story documentation-only).
+- **Baselines préservées par construction** : aucun fichier `.rs` / `.ts` / `.svelte` édité → `cargo test --workspace` + `npm run test:unit` + `npm run test:e2e` doivent rendre **strictement identiques** à pré-Story 9-5-3 (sanity-check optionnel post-implementation : 1 cargo test run pour confirmer).
+- **Test Locally First** §"Quand sauter" : commits doc-only sont explicitement exemptés → pas de check CI local requis. Pré-push : juste vérifier que le diff `git diff CLAUDE.md` reflète bien insertion-only (sauf AC #4 si harmonisation).
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/epic-9-5.md#Story-9.5-3](_bmad-output/planning-artifacts/epic-9-5.md) — spec parent epic
+- [Source: _bmad-output/implementation-artifacts/epic-9-retro-2026-05-17.md#C1](_bmad-output/implementation-artifacts/epic-9-retro-2026-05-17.md) — challenge C1 « Memory feedback_haiku_review_diff_combined validée 2× Epic 9 »
+- [Source: _bmad-output/implementation-artifacts/epic-8-retro-2026-05-14.md#I2](_bmad-output/implementation-artifacts/epic-8-retro-2026-05-14.md) — insight I2 « Pattern accept_one_X strict (FailedProposal per-proposal) inviolable »
+- [Source: _bmad-output/implementation-artifacts/epic-8-retro-2026-05-14.md#PROCESS](_bmad-output/implementation-artifacts/epic-8-retro-2026-05-14.md) — Action item #6 retro Epic 8 marquée non-codifiée (la dette que cette story résout)
+- [Source: _bmad-output/implementation-artifacts/8-5b-reconciliation-rules-engine.md] — ground-truth canonique du pattern `FailedProposal` (route `accept_one_rule` Pass 4 ECH4-1)
+- [Source: CLAUDE.md#Review-Iteration-Rule] — section H2 cible pour insertions 1 + 2 (sous-sections H3)
+- [Source: CLAUDE.md#Issue-Tracking-Rule] — section H2 immédiatement après la nouvelle insertion 3 (Tech debt management)
+- [Source: feedback_haiku_review_diff_combined.md] — memory à promouvoir (NE PAS supprimer post-codification, cohérent AC §Hors scope)
+- [Source: feedback_zero_tech_debt_carryforward.md] — memory à promouvoir (idem)
+
+## Dev Agent Record
+
+### Agent Model Used
+
+(À renseigner par le dev agent — typiquement Claude Opus 4.7 pour dev-story.)
+
+### Debug Log References
+
+(Vide à la création — sera renseigné post-dev si nécessaire.)
+
+### Completion Notes List
+
+(Vide à la création — sera renseigné post-dev avec résumé : lignes ajoutées, décisions §rotation-order-update tranchée, exceptions Test Locally First confirmées.)
+
+### File List
+
+- `CLAUDE.md` — modifié (insertion-only 3 sections, possiblement 1 patch ligne 121 si harmonisation rotation order)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — modifié (status `9-5-3` ready-for-dev → in-progress → review → done)
+- `_bmad-output/implementation-artifacts/9-5-3-process-codification-claude-md.md` — modifié (Change Log final + section File List + Completion Notes)
+
+## Change Log
+
+### Pass 1 spec validate — 2026-05-18, Sonnet 4.6 (subagent contexte frais)
+
+**Verdict trend** : 1 CRITICAL + 2 HIGH + 3 MEDIUM + 3 LOW = 9 findings (Convergence : NON).
+
+**Patches appliqués (9/9 findings)** :
+
+1. **CRITICAL-01** — `FailedProposal` ground-truth : la spec décrivait `proposal_index: usize` + `error_code: &'static str`. Le code réel (`crates/kesh-api/src/routes/reconciliation.rs:152-156` grep ground-truth Pass 1) utilise `bank_transaction_id: i64` + `error_code: String` + `details: Option<serde_json::Value>`. Patch : AC #6 + T3.4 réécrits avec signature canonique + anti-pattern explicite « NE PAS utiliser index positionnel ».
+2. **HIGH-01** — Ancre d'insertion 1 (sous-section Haiku) ambiguë entre 2 positions. Patch : T1.2 + T5.1 précisent l'ancre = bloc `**Exception** : si un finding MEDIUM+...` (dernière ligne contenu Review Iteration Rule avant H3 Splitting), pas le bloc Boucle automatique qui fragmenterait « Boucle → Cette règle s'applique → Exception » bloc logique.
+3. **HIGH-02** — Placement H3 `### Pattern batch — FailedProposal per-proposal` sous `## Review Iteration Rule` crée déficit discoverability sémantique (un agent cherchant conventions HTTP API ne fouille pas Review Iteration Rule). Patch : ajout AC #7bis + T5.5 → renvoi cross-section depuis `## Code Quality Rules` (1 bullet « Batch API conventions »).
+4. **MEDIUM-01** — `error_code: &'static str` corrigé en `error_code: String` (cohérent ground-truth + serde sans lifetime).
+5. **MEDIUM-02** — AC #4 conditionnel (`soit conservée, soit harmonisée`) tranché définitivement en faveur de l'harmonisation `Sonnet → Haiku → Opus → Sonnet` (validé Epic 9 Insight I1).
+6. **MEDIUM-03** — Path `crates/kesh-api/src/routes/reconciliation.rs` dans T3.6 maintenu pour le dev agent, mais explicitement exclu du texte CLAUDE.md cible (risque de référence cassée si refactoré).
+7. **LOW-01** — Référence à « ligne 111 / 152 actuelle » remplacée par « titre canonique de section » dans AC #9 (références aux numéros de ligne fragiles).
+8. **LOW-02** — Référence traçabilité enrichie : Stories 8-5a-bis Pass 2 + 9-2b Pass 2 (4 hallucinations Haiku réfutées au total, pas 2).
+9. **LOW-03** — AC #13 style absolu paths `crates/...` relâché : style CLAUDE.md existant n'utilise pas ce pattern, on n'invente pas une règle inexistante.
+
+**Décisions ouvertes tranchées Pass 1** :
+- §rotation-order-update : **harmoniser** vers `Sonnet → Haiku → Opus → Sonnet` (T5.4).
+- §placement-batch-pattern : **H3 sous Review Iteration Rule** + renvoi cross-section depuis Code Quality Rules (AC #7bis + T5.5).
+
+**Trend cumulé** : Pass 1 : 1C + 2H + 3M + 3L → patches appliqués → Pass 2 Haiku 4.5 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — story créée par Opus 4.7 dans la session orchestratrice).
