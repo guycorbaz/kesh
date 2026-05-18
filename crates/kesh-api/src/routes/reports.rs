@@ -675,6 +675,27 @@ fn validate_fiscal_year_id(fiscal_year_id: i64) -> Result<(), AppError> {
 /// Audit log `report.generated` — best-effort (Pass 1 ECH-15).
 ///
 /// Pattern strict : log `warn!` sur erreur, ne JAMAIS faire échouer la réponse rapport.
+///
+/// ## Convention projet — `audit_log.details_json` JSON keys
+///
+/// **Snake_case obligatoire** pour les clés JSON de `details_json` (cohérent SQL
+/// JSON path `details_json->>'$.field_name'` future-proof, AC #23 Story 9-2b
+/// explicite). Les autres surfaces API restent **camelCase** par convention
+/// REST/JS :
+///
+/// | Surface | Convention | Exemple |
+/// |---|---|---|
+/// | Query params HTTP URL | camelCase | `?fiscalYearId=...&periodStart=...` |
+/// | Request/Response body HTTP | camelCase (via `#[serde(rename_all = "camelCase")]`) | `{"reportType": "..."}` |
+/// | Frontend `metadata.json` | camelCase | `{"keshVersion", "exportDate"}` |
+/// | **`audit_log.details_json` (serveur)** | **snake_case** | `{"report_type", "fiscal_year_id"}` |
+///
+/// **Référence canonique** : `emit_global_export_audit` (Story 9-2b
+/// `crates/kesh-api/src/routes/exports.rs`) — premier `emit_*_audit` snake_case.
+/// Migration camelCase → snake_case appliquée 2026-05-18 Story 9-5-2 pour
+/// `emit_report_audit` (Story 9-1) + `emit_report_export_audit` (Story 9-2a).
+/// Référence pour futures fonctions audit Epic 10+ (`vat.calculated`,
+/// `payment.created`, etc.).
 async fn emit_report_audit(
     pool: &MySqlPool,
     user_id: i64,
@@ -693,12 +714,15 @@ async fn emit_report_audit(
                 action: "report.generated".to_string(),
                 entity_type: "report".to_string(),
                 entity_id: AUDIT_ENTITY_ID_NONE,
+                // Story 9-5-2 (Epic 9.5) — clés snake_case pour cohérence SQL JSON
+                // path `details_json->>'$.field_name'` future-proof (cf. convention
+                // §audit_log JSON keys documentée au-dessus de la fonction).
                 details_json: Some(serde_json::json!({
-                    "reportType": report_type,
-                    "fiscalYearId": fiscal_year_id,
-                    "periodStart": period_start.format("%Y-%m-%d").to_string(),
-                    "periodEnd": period_end.format("%Y-%m-%d").to_string(),
-                    "journalFilter": journal_filter,
+                    "report_type": report_type,
+                    "fiscal_year_id": fiscal_year_id,
+                    "period_start": period_start.format("%Y-%m-%d").to_string(),
+                    "period_end": period_end.format("%Y-%m-%d").to_string(),
+                    "journal_filter": journal_filter,
                 })),
             },
         )
@@ -744,13 +768,15 @@ async fn emit_report_export_audit(
                 action: "report.exported".to_string(),
                 entity_type: "report".to_string(),
                 entity_id: AUDIT_ENTITY_ID_NONE,
+                // Story 9-5-2 (Epic 9.5) — clés snake_case (cf. convention
+                // §audit_log JSON keys au-dessus de `emit_report_audit`).
                 details_json: Some(serde_json::json!({
-                    "reportType": report_type,
+                    "report_type": report_type,
                     "format": format,
-                    "fiscalYearId": fiscal_year_id,
-                    "periodStart": period_start.format("%Y-%m-%d").to_string(),
-                    "periodEnd": period_end.format("%Y-%m-%d").to_string(),
-                    "journalFilter": journal_filter,
+                    "fiscal_year_id": fiscal_year_id,
+                    "period_start": period_start.format("%Y-%m-%d").to_string(),
+                    "period_end": period_end.format("%Y-%m-%d").to_string(),
+                    "journal_filter": journal_filter,
                 })),
             },
         )
