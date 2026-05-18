@@ -302,3 +302,30 @@ Si l'approche T3.1 option (d) est choisie (skip dotenv en test), vérifier que l
 **Trend** : Pass 1 (Sonnet) 0C+2H+1M+2L → 3 patches → Pass 2 Haiku 4.5 attendue (cycle CLAUDE.md).
 
 **Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — spec créée par Opus 4.7).
+
+### Pass 2 spec validate — 2026-05-18, Haiku 4.5 (subagent contexte frais)
+
+**Verdict trend** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW = **CONVERGENCE COMPLÈTE Pass 2**.
+
+**Discipline grep ground-truth Haiku** appliquée conformément à la règle codifiée Story 9-5-3 §"Haiku-specific guardrails" — ~5 vérifications documentées (comptage tests exact 34, cause root dotenvy ligne 309, ancre commentaire test ligne 742, options reclassées « insuffisantes seules » lignes 164-166, référence canonique `emit_global_export_audit` snake_case dans scope + AC #13). **Aucune hallucination CRITICAL/HIGH** détectée.
+
+**Régressions Pass 1 introduites** : NON. Les 3 patches Pass 1 (P1 cause root + P2 24→34 + P3 option d primaire) s'appliquent proprement sans contradiction interne.
+
+**Vérifications anti-régression positives** :
+- AC #1 mentionne bien 34/34 (chiffre correct post-patch).
+- AC #2 référence option (d) primaire + (d-bis) alternative explicite (pas d'ambiguïté).
+- AC #3 affirme « aucun test ne dépend de `.env` chargement » — confirmé grep : 34 tests tous reset_env → from_env, sauf 2 tests `is_loopback_host_*` + `with_test_mode_*` qui utilisent `from_fields_for_test()` (pas d'appel `from_env()`).
+- Dev Notes options (a)/(b)/(c) explicitement marquées « insuffisantes seules » avec justifications individuelles.
+- T3.1 pointe option (d) recommandée + T3.2 cohérent (pas de référence orpheline aux options rejetées).
+- Référence `emit_global_export_audit` snake_case canonique présente Scope + T7.2 + AC #13.
+
+**Critère d'arrêt CLAUDE.md atteint** : 0 > LOW après Pass 2 (sous la limite 8 passes max).
+
+**Trend cumulé final** :
+- Pass 1 (Sonnet × 1) : 0C+2H+1M+2L → 3 patches (2 hallucinations Opus attrapées par grep ground-truth)
+- Pass 2 (Haiku × 1) : 0C+0H+0M+0L → 0 patches (aucune régression introduite)
+- **Convergence après 2 passes** (vs 3 passes typique pour 9-5-3 sur règles complexes — story 9-5-2 plus chirurgicale)
+
+**Modèles cycle** : Sonnet 4.6 → Haiku 4.5 (rotation CLAUDE.md respectée, chaque pass LLM différent + contexte frais isolé).
+
+**Story status final** : `ready-for-dev` **confirmé définitif**. Prête pour `bmad-dev-story 9-5-2`.
