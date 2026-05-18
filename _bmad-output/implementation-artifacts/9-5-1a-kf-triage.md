@@ -1,6 +1,6 @@
 # Story 9.5-1a: KF triage rapide — re-test + closures résolues
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -271,8 +271,8 @@ Claude Opus 4.7 (1M context) — dev-story single-pass triage en mode `static an
 Vérifications statiques exécutées :
 
 - **KF #47** : `grep "test.skip(true" frontend/tests/e2e/fiscal-years.spec.ts` → ligne 121 confirmée présente, block `test.describe('AC #22 — fallback toast actionnable')` ligne 93 contient 1 seul test entièrement skippé statiquement.
-- **KF #50** : `grep "race\|REPEATABLE\|FOR UPDATE\|tokio::join" crates/kesh-api/tests/kf004_no_op_e2e.rs` → commentaires lignes 686-789 confirment explicitement « la race §race-condition (le snapshot stale leak en 200 OK) n'existe » pas de test déterministe. Smoke test séquentiel `no_op_with_parallel_mutation_returns_409_when_sequential` ligne 707 seul présent.
-- **KF #54** : `grep "createContact failed: 401" frontend/tests/e2e/baseline-{pre,post}-7-5.log` → 3 occurrences identiques pre et post 7-5 (pas d'amélioration). `git log --since="2026-04-30"` sur les fichiers concernés → seuls `107f81a` Story 7-5 (selectors strict-mode, orthogonal) + `ef07548` chore preset (orthogonal) — aucun fix cascade 401.
+- **KF #50** : `grep "race\|REPEATABLE\|FOR UPDATE\|tokio::join" crates/kesh-api/tests/kf004_no_op_e2e.rs` → docstring lignes 684-705 + commentaires inline lignes 764-790 confirment explicitement « la race §race-condition (le snapshot stale leak en 200 OK) n'existe » pas de test déterministe. Smoke test séquentiel `no_op_with_parallel_mutation_returns_409_when_sequential` ligne 707 seul présent.
+- **KF #54** : `grep -c "createContact.*failed: 401" frontend/tests/e2e/baseline-{pre,post}-7-5.log` → 6 erreurs 401 dans chaque baseline (1 `createContact` + 2 `createContactViaApi` + 3 `createContactWithAddress`), **stables pre et post Story 7-5** (pas d'amélioration). `git log --since="2026-04-30"` sur les fichiers concernés → seuls `107f81a` Story 7-5 (selectors strict-mode, orthogonal) + `ef07548` chore preset (orthogonal) — aucun fix cascade 401.
 - **KF #55** : `grep "AxeBuilder\|axe-core sans violations" frontend/tests/e2e/{auth,contacts,homepage-settings,invoices,products}.spec.ts` → 6 tests axe-core présents (auth 2 + 4 autres x1). `grep "axe a11y\|nested-interactive\|color-contrast" baseline-post-7-5.log` → 32 occurrences violations. Aucun commit a11y depuis 2026-04-30.
 - **KF #57** : `grep "Test timeout\|toBeVisible.*fail\|toHaveURL.*fail\|seedTestState.*failed" baseline-post-7-5.log` → 9 occurrences state/timing failures. Aucun commit relevant depuis 2026-04-30.
 - **KF #91** : `grep -A8 "DropdownMenu.Trigger" "frontend/src/routes/(app)/+layout.svelte"` → ligne 136 `<DropdownMenu.Trigger>` + ligne 137 `<Button variant="ghost">` + ligne 143 `</Button>` + ligne 144 `</DropdownMenu.Trigger>` (nested-interactive wcag2a 4.1.2 toujours présent). Tests `reports page has zero axe a11y violations (empty/populated state)` aux lignes 85/96 toujours présents.
@@ -357,3 +357,35 @@ Aucune sub-story annulée.
 **Status** : `in-progress → review`. Prêt pour `bmad-code-review 9-5-1a` (review du Change Log + cohérence triage + scope sub-stories — surface review faible vu nature documentaire).
 
 **Modèle dev-story** : Claude Opus 4.7 (1M context, session orchestratrice — pas de subagent isolation nécessaire pour mode static analysis).
+
+### Pass 1 code-review — 2026-05-18, Sonnet 4.6 (subagent contexte frais)
+
+**Setup** : 1 reviewer Sonnet 4.6 unique (vs 3 parallèles pour 9-5-3 — nature documentaire/triage permet review unique). Contexte frais isolé. Diff cible : commit `451c2b2` (dev-story unique). Discipline grep ground-truth obligatoire appliquée.
+
+**Verdict trend** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 2 LOW = 2 findings cosmétiques (**Convergence Pass 1 : OUI** — critère d'arrêt CLAUDE.md atteint).
+
+**Vérifications ground-truth positives (10/10)** : Sonnet a confirmé par grep/Read direct toutes les affirmations triage du dev :
+1. KF #47 `test.skip(true, ...)` ligne 121 fiscal-years.spec.ts ✓
+2. KF #50 smoke test ligne 707 + commentaires race non-testée ✓
+3. KF #54 erreurs 401 stables pre/post Story 7-5 ✓ (mais comptage imprécis — voir F-01 LOW)
+4. KF #55 6 tests axe-core + 34 mentions a11y baseline ✓
+5. KF #57 9 occurrences state/timing failures baseline ✓
+6. KF #91 DropdownMenu.Trigger>Button lignes 136-144 ✓
+7. Commit 451c2b2 = 3 fichiers `_bmad-output/` only ✓
+8. Sprint-status entry `review` + scopes 1b/c/d ✓
+9. Epic-9-5.md section split mise à jour ✓
+10. Tableau récapitulatif 6 KFs complet Completion Notes ✓
+
+**Patches appliqués (2/2 LOW polish)** :
+
+1. **F-01 LOW** — Comptage KF #54 imprécis : « 3 occurrences identiques » dans le Debug Log → corrigé en « 6 erreurs 401 dans chaque baseline (1 `createContact` + 2 `createContactViaApi` + 3 `createContactWithAddress`), stables pre et post Story 7-5 ». Le pattern grep `"createContact failed: 401"` retournait 1 (forme exacte), mais le pattern global `createContact*` = 6. Triage reste correct (KF active confirmée), juste comptage Change Log précisé.
+
+2. **F-02 LOW** — Numéros lignes kf004 imprécis : « lignes 686-789 » → corrigé en « docstring lignes 684-705 + commentaires inline lignes 764-790 ». L'affirmation centrale (race non testée déterministe) reste 100% confirmée.
+
+**Cohérence ACs** : 16/16 satisfaits (Sonnet a vérifié chacun individuellement). Mapping KF → sub-story logiquement cohérent. Limitation mode static analysis documentée honnêtement avec recommandation run E2E baseline frais en début 9-5-1b/c.
+
+**Trend cumulé** : Pass 1 spec validate (Sonnet) 0C+2H+2M+3L → 7 patches → Dev-story Opus single-pass triage → Pass 1 code-review (Sonnet) 0C+0H+0M+2L → 2 patches polish → **Convergence après 1 passe code-review** (vs 3 passes pour 9-5-3 sur règles complexes).
+
+**Modèle Pass 1 code-review** : Sonnet 4.6 (subagent isolé, contexte frais — dev-story par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
+
+**Story status final** : `review → done`. Sprint-status synchronisé. Prête pour 9-5-1b/c/d sub-stories (à créer séquentiellement ou en parallèle selon ordre Guy).
