@@ -80,6 +80,15 @@ Total catégorie A : ~13 items répartis sur 4 stories.
 
 **Path-dependency :** indépendant des autres stories Epic 9.5. Peut démarrer immédiatement après création epic.
 
+**Décision split préventif appliquée 2026-05-18** : la règle CLAUDE.md §"Règle de splitting préventif" se déclenche (> 5 modules touchés : ~10-12 fichiers `.spec.ts` E2E + `tests/e2e/helpers/test-state.ts` + composant bits-ui DropdownMenu pour KF #91). Q3 ci-dessous anticipait précisément ce cas. Décomposition :
+
+- **9.5-1a — Triage rapide** : re-test des 6 KFs E2E, fermeture des KFs résolues par effet de bord (`closes #N` dans commit message), documentation du résiduel. Cycle attendu rapide (1 spec + 1 dev + 1 review). Output bloquant = scope précis des sous-stories suivantes.
+- **9.5-1b — Fix E2E infrastructure** : typiquement KFs #54 (helpers cascade 401) + #57 (state/timing/redirect dispersés). Scope ajusté post-triage. Placeholder en backlog.
+- **9.5-1c — Fix a11y violations** : typiquement KFs #55 (axe-core 6 pages) + #91 (DropdownMenu bits-ui wcag). Scope ajusté post-triage. Placeholder en backlog.
+- **9.5-1d — Fix specific KFs** : typiquement KFs #47 (AC#22 fallback toast) + #50 (AC#29 race REPEATABLE READ). Scope ajusté post-triage. Placeholder en backlog.
+
+L'entrée `9-5-1-kf-re-evaluation-closure` dans `sprint-status.yaml` passe en status `split` (ne sera pas implémentée directement). Les ACs ci-dessus restent référencés via les sous-stories qui héritent du critère « 6 KFs fermées » comme condition de complétion globale.
+
 ---
 
 ### Story 9.5-2 : Code consistency fixes
