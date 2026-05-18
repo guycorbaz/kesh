@@ -305,7 +305,18 @@ impl Config {
     }
 
     /// Charge la configuration depuis les variables d'environnement.
+    ///
+    /// **Note isolation tests (Story 9-5-2)** : `dotenvy::dotenv()` n'est chargé
+    /// qu'en mode non-test (`#[cfg(not(test))]`). En mode test, le module
+    /// `#[cfg(test)] mod tests` ci-dessous gère l'environnement explicitement
+    /// via `reset_env()` + `env::set_var(...)` per test ; recharger `.env`
+    /// projet (qui peut contenir `KESH_HOST=0.0.0.0` + `KESH_TEST_MODE=true`)
+    /// annulerait `reset_env()` et provoquerait des fails déterministes sur
+    /// `ConfigError::TestModeWithPublicBind` (20/34 tests fail observé avant
+    /// ce patch). Aucun test ne valide le comportement « lit `.env` » — tous
+    /// set leurs vars explicitement.
     pub fn from_env() -> Result<Self, ConfigError> {
+        #[cfg(not(test))]
         dotenvy::dotenv().ok();
 
         let database_url =
