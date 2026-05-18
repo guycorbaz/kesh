@@ -52,7 +52,7 @@ so that ces règles deviennent appliquées systématiquement par tout futur cycl
 5. **Given** `CLAUDE.md` post-Story 9.5-3, **When** la section `## Review Iteration Rule` est lue, **Then** elle contient une sous-section nommée explicitement `### Pattern batch — FailedProposal per-proposal` (titre déterministe).
 
 6. **Given** cette sous-section, **When** elle est lue, **Then** elle contient au minimum :
-   - Énoncé de la règle : pour tout endpoint type `accept_batch` (qui traite N proposals/operations en une seule requête et retourne `{ accepted: [...], failed: [...] }`), **aucune erreur per-proposal ne doit escalader en `AppError` global** retournée comme HTTP error code (4xx/5xx). Chaque erreur d'une proposal individuelle est encapsulée en `FailedProposal { proposal_index, error_code, details }` dans le `failed[]` du response body, avec HTTP `200 OK` au niveau de la requête (succès partiel reste un succès HTTP).
+   - Énoncé de la règle : pour tout endpoint type `accept_batch` (qui traite N proposals/operations en une seule requête et retourne `{ accepted: [...], failed: [...] }`), **aucune erreur per-proposal ne doit escalader en `AppError` global** retournée comme HTTP error code (4xx/5xx). Chaque erreur d'une proposal individuelle est encapsulée en `FailedProposal` (signature détaillée bloc « Champs obligatoires » ci-dessous — identifiant business de la proposition + `error_code` + `details` optionnels) dans le `failed[]` du response body, avec HTTP `200 OK` au niveau de la requête (succès partiel reste un succès HTTP).
    - Exceptions explicites : les `AppError` global sont autorisées **uniquement** pour les erreurs qui invalident la requête entière en amont du traitement per-proposal — exemples : `401 Unauthorized` (auth middleware), `403 Forbidden` (RBAC global), `400 Bad Request` (body parse fail / schéma JSON invalide), `500 Internal Server Error` (DB pool fermé, panic, etc.). Toute erreur **qui dépend de la proposal individuelle** (validation amount > 0, FK manquant, race condition optimistic lock, currency mismatch, business rule) → `FailedProposal`.
    - Exemple canonique référencé : `accept_one_invoice` (Story 8-4), `accept_one_split` (Story 8-5a-bis), `accept_one_rule` (Story 8-5b). Cf. retro Epic 8 Insight I2 « accept_one_X strict (FailedProposal per-proposal) inviolable » + Story 8-5b Pass 4 ECH4-1 correction (`BANK_ACCOUNT_NOT_CONFIGURED` `200 + failed[]` au lieu de `412` AppError).
    - Garde-fou défensif : dans un `match` exhaustif sur les variants de `Rule` / `ProposalType`, **NE PAS** utiliser `unreachable!()` aux sites variants (piège pour futur refactor + risque crash Tokio task). Préférer `tracing::error + AppError::Internal` (cohérent Story 8-5b code-review Pass 1 patch).
@@ -88,7 +88,7 @@ so that ces règles deviennent appliquées systématiquement par tout futur cycl
 
 ### Cohérence globale + non-régression
 
-11. **Given** `CLAUDE.md` post-Story 9.5-3, **When** parcouru de bout en bout, **Then** **toutes les sections existantes pré-Story** sont conservées intactes (Project Overview, Communication, Repository Structure, BMAD Architecture, Key Patterns, Code Quality Rules, Test Locally First, Review Iteration Rule body, Issue Tracking Rule, Règle de commit et push). Diff = **insertion-only** (3 nouvelles sous-sections/sections), pas de modification du contenu existant **sauf** AC #4 si harmonisation `rotation-order` choisie.
+11. **Given** `CLAUDE.md` post-Story 9.5-3, **When** parcouru de bout en bout, **Then** **toutes les sections existantes pré-Story** sont conservées intactes dans leur contenu de fond (Project Overview, Communication, Repository Structure, BMAD Architecture, Key Patterns, Code Quality Rules body, Test Locally First, Review Iteration Rule body, Issue Tracking Rule, Règle de commit et push). Diff **de CLAUDE.md** = **insertion-only** pour les 3 nouvelles sous-sections/sections (T5.1 Haiku + T5.2 FailedProposal + T5.3 Tech debt) + 1 nouveau bullet renvoi cross-section dans `## Code Quality Rules` (T5.5) + **1 modification ligne sur place** pour l'harmonisation de l'ordre rotation LLM dans `## Review Iteration Rule` body (T5.4 — `Opus → Sonnet → Haiku → Opus` → `Sonnet → Haiku → Opus → Sonnet`, AC #4 tranchée Pass 1). Aucune autre modification de contenu existant.
 
 12. **And** **aucun référence cassée** : tous les liens internes existants (e.g. mentions « cf. §Test Locally First », « cf. memory ... ») restent valides. Si une nouvelle référence interne est ajoutée (e.g. « cf. §Tech debt management »), elle pointe vers une section qui existe maintenant.
 
@@ -289,3 +289,26 @@ Pour minimiser le risque de régression rédactionnelle :
 **Trend cumulé** : Pass 1 : 1C + 2H + 3M + 3L → patches appliqués → Pass 2 Haiku 4.5 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
 
 **Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — story créée par Opus 4.7 dans la session orchestratrice).
+
+### Pass 2 spec validate — 2026-05-18, Haiku 4.5 (subagent contexte frais)
+
+**Verdict trend** : 1 CRITICAL + 0 HIGH + 2 MEDIUM + 2 LOW = 5 findings (Convergence : NON — présence CRITICAL régression Pass 1).
+
+**Discipline grep ground-truth obligatoire** appliquée par Haiku conformément à la mémoire `feedback_haiku_review_diff_combined` (exactement la règle que la story codifie). Le CRITICAL trouvé est confirmé par grep, pas une hallucination.
+
+**Patches appliqués (2/5 findings — 3 non-blockers)** :
+
+1. **CRITICAL-01 (régression Pass 1)** — AC #6 ligne 54 (énoncé de la règle) disait encore `FailedProposal { proposal_index, error_code, details }` alors que le bloc « Champs obligatoires » 6 lignes plus bas l'avait corrigé en `bank_transaction_id` + anti-pattern explicite. Régression introduite par Pass 1 (patch incomplet cross-bloc). **Patch Pass 2** : ligne 54 réécrite pour omettre les noms de champs et renvoyer au bloc « Champs obligatoires » canonique (« signature détaillée bloc Champs obligatoires ci-dessous »).
+2. **MEDIUM-02** — AC #11 ambiguïté « diff insertion-only sauf AC #4 ». **Patch Pass 2** : AC #11 réécrit pour expliciter « diff **de CLAUDE.md** » + énumération des modifs attendues (3 nouvelles sections insertion-only + 1 bullet renvoi cross-section T5.5 + 1 modification ligne sur place T5.4 harmonisation rotation).
+
+**Findings reclassés sans patch (3/5)** :
+
+3. **MEDIUM-01** — Doctrine rotation `Opus → Sonnet → Haiku → Opus` mentionnée dans le story file lui-même (lignes 27 + 48) vs nouvelle doctrine `Sonnet → Haiku → Opus → Sonnet` tranchée Pass 1 (ligne 199). Reclassé **non-blocker** : la spec est un document historique qui décrit l'état CLAUDE.md pré-édit puis prescrit le changement (cohérence narrative correcte). Aucune ambiguïté pour le dev agent. **Aucun patch.**
+4. **LOW-01** — Style descriptif vs imperatif ligne 40. Haiku reclasse lui-même en non-finding. **Aucun patch.**
+5. **LOW-02** — Spéculation Epic 11 `payment_id`. Pédagogique, utile pour montrer généricité du pattern. **Aucun patch.**
+
+**Régressions Pass 1 introduites** : OUI (CRITICAL-01 — patch Sonnet 4.6 incomplet cross-bloc AC #6 vs T3.4). Détectée et fixée Pass 2 Haiku grâce à la discipline grep ground-truth.
+
+**Trend cumulé** : Pass 1 : 1C + 2H + 3M + 3L → Pass 2 : 1C + 0H + 2M + 2L → 2 patches appliqués (CRITICAL-01 + MEDIUM-02) → Pass 3 Opus 4.7 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
+
+**Modèle Pass 2** : Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée).
