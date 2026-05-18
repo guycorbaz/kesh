@@ -184,6 +184,20 @@ Pass 1 code-review 2026-05-18, 3 reviewers parallèles Sonnet 4.6 (Blind Hunter 
 
 **Dismissed (11)** : F2 (renvoi Markdown navigabilité, convention maison OK), F3 (asymétrie format BH identifiants, nit), F4 (déjà couvert E11 plus précis), F5 (observation informative non-actionnable), E5 (mitigation diff aplati non-actionnable, complexifier serait pire), E10 (ironie rotation Sonnet→Haiku, grep ground-truth EST le filet par design), E16 (seuil OU déjà marqué « indicatif »), E6/E7/E8/E9 (edge cases batch 3-buckets/doublons/vide/100%fail — scope Epic 11 spec future, pas CLAUDE.md durable).
 
+### Review Findings Pass 2
+
+Pass 2 code-review 2026-05-18, 2 reviewers parallèles Haiku 4.5 (Blind Hunter + Edge Case Hunter, contextes frais isolés). Diff cible : commit `be1dfce` (Pass 1 patches uniquement, diff unique respectant la règle Haiku indexing codifiée). 8 findings (0C + 0H + 6M + 2L) → 6 patch + 1 defer + 1 dismiss.
+
+- [x] [Review][Patch] P2-F1 — Paramètre `<N>` non défini dans `grep -nFA <N>` (MEDIUM, §Haiku guardrails) : ajouter recommandation par défaut « N typiquement 3-5, ajuster selon longueur estimée du bloc patché » [CLAUDE.md:147]
+- [x] [Review][Patch] P2-F2 — Critère « pattern architectural » subjectif (MEDIUM, §Haiku guardrails) : ajouter contre-exemple textuel grepable (ordre `app.use()`, séquence d'appels intra-fonction) pour réserver « architectural » aux flux cross-fonction/cross-fichier [CLAUDE.md:148]
+- [x] [Review][Patch] P2-F3 — Change Log location implicite (LOW, §Haiku guardrails) : préciser « Change Log de la story (section `### Pass N review`) avec extrait du code lu » [CLAUDE.md:148]
+- [x] [Review][Patch] P2-F5 — Bug structurel vs validation métier sans exemples (MEDIUM, §Pattern batch) : ajouter exemples concrets de variant manquant (refactor incomplet : `Rule::NewType` oublié, signature modifiée, type Send par erreur) vs erreur business (amount négatif, currency manquante legacy). Critère décidable explicite : « est-ce que le code compile ? si oui mais match incomplet à cause d'un refactor → bug structurel → AppError::Internal » [CLAUDE.md:178]
+- [x] [Review][Patch] P2-F7 — « 3+ tentatives » non-défini (MEDIUM, §Tech debt soupape) : définir 1 tentative = 1 cycle complet `bmad-dev-story` → `bmad-code-review` où fix échoue ou introduit régression [CLAUDE.md:222]
+- [x] [Review][Patch] P2-F8 — Contradiction zero carry-forward vs soupape Epic+2 (MEDIUM, §Tech debt) : expliciter que la soupape EST l'exception codifiée à la règle, pas une contradiction. L'item reste tracé (story Epic+2 + label + suivi rétro), distingué d'un report silencieux. Cas spécial Epic N+1 = Debt Closure dédié : soupape Epic+2 reste applicable [CLAUDE.md:227]
+- [x] [Review][Defer] P2-F6 — Workflow Project Lead indisponible (MEDIUM, §Tech debt) [CLAUDE.md:220] — deferred, processus opérationnel rare hors scope CLAUDE.md durable. Ajouté à deferred-work.md.
+
+**Dismissed (1)** : P2-F4 — ID business post-persist edge case (MEDIUM) : hypothétique pour Epic non-encore-défini, prématuré ; CAMT.053 est explicitement listé NON-pattern, et pain.001 Epic 11 fournit ID interne client. Pas pertinent v0.1.
+
 ## Dev Notes
 
 ### Pattern de référence : édit purement documentation
@@ -415,3 +429,30 @@ Aucun debug nécessaire — édits Markdown ciblés via Edit tool avec ancres un
 **Trend cumulé** : Pass 1 (Sonnet × 3 reviewers) : 0C + 6H + 8M + 8L → 10 patches + 1 defer + 11 dismiss → Pass 2 Haiku 4.5 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`, LLM différent passe précédente respectée).
 
 **Modèles Pass 1** : 3 × Sonnet 4.6 subagents isolés contextes frais (Blind Hunter sans context, Edge Case Hunter avec project access, Acceptance Auditor avec spec + project).
+
+### Pass 2 code-review — 2026-05-18, Haiku 4.5 × 2 reviewers parallèles
+
+**Setup** : 2 subagents Haiku 4.5 parallèles (Blind Hunter + Edge Case Hunter, contextes frais isolés). Acceptance Auditor non-relancé (Pass 1 a confirmé 16/16 ACs et les patches Pass 1 sont des clarifications intra-AC). Diff cible : commit `be1dfce` (Pass 1 patches uniquement, **diff unique** respectant la règle Haiku indexing codifiée — test du pudding réussi).
+
+**Discipline grep ground-truth obligatoire** appliquée par les 2 Haiku conformément à la règle codifiée. Blind Hunter a documenté 10 vérifications grep. Aucune hallucination détectée.
+
+**Verdict trend** : 0 CRITICAL + 0 HIGH + 6 MEDIUM + 2 LOW = 8 findings (Convergence Pass 2 : NON — 6 MEDIUM résiduels).
+
+**Triage Pass 2** : 6 patch + 1 defer + 1 dismiss.
+
+**Patches appliqués Pass 2 (6/6 ; CLAUDE.md 342 → 344 lignes, +2 net après reformulations)** :
+
+1. **P2-F1 (MEDIUM)** — Paramètre `<N>` non défini dans `grep -nFA <N>` : ajouté « N typiquement 3-5, ajuster selon longueur estimée du bloc patché ».
+2. **P2-F2 (MEDIUM)** — Critère « pattern architectural » subjectif : ajouté contre-exemple textuel grepable (`app.use(...)` middleware order). Réservé « architectural » aux flux cross-fonction/cross-fichier sans pattern unique discriminant.
+3. **P2-F3 (LOW)** — Change Log location précisée : « Change Log de la story (section `### Pass N review`) avec extrait du code lu ».
+4. **P2-F5 (MEDIUM)** — Bug structurel vs validation métier : ajouté exemples concrets de variant manquant (`Rule::NewType` oublié dans match post-refactor, signature modifiée, type Send par erreur) vs erreur business (amount négatif, currency legacy). Critère décidable explicite : « est-ce que le code compile ? si oui mais match incomplet à cause d'un refactor → bug structurel → AppError::Internal ».
+5. **P2-F7 (MEDIUM)** — « 3+ tentatives » défini formellement : 1 tentative = 1 cycle complet `bmad-dev-story` → `bmad-code-review` où le fix échoue à résoudre l'item OU introduit régression sur autres baselines.
+6. **P2-F8 (MEDIUM)** — Contradiction zero carry-forward vs soupape Epic+2 explicitée : « soupape EST l'exception codifiée à la règle, pas une contradiction. L'item reste tracé (story Epic+2 + label + suivi rétro), distingué d'un report silencieux. Cas spécial Epic N+1 = Debt Closure : soupape Epic+2 reste applicable ».
+
+**Defer Pass 2 (1)** : P2-F6 (MEDIUM) — workflow Project Lead indisponible. Ajouté à `deferred-work.md` (processus opérationnel rare hors scope CLAUDE.md durable).
+
+**Dismiss Pass 2 (1)** : P2-F4 (MEDIUM) — ID business post-persist edge case hypothétique pour Epic non-encore-défini, prématuré.
+
+**Trend cumulé** : Pass 1 (Sonnet × 3) 0C+6H+8M+8L → 10 patches → Pass 2 (Haiku × 2) 0C+0H+6M+2L → 6 patches → Pass 3 Opus 4.7 attendue (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`, LLM différent passe précédente respectée).
+
+**Modèles Pass 2** : 2 × Haiku 4.5 subagents isolés contextes frais. **Discipline grep ground-truth Haiku** respectée (codifiée par cette story elle-même — test du pudding réussi).

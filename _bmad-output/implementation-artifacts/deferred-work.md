@@ -7,9 +7,10 @@ Source de vérité unique pour la dette technique non-bloquante post-merge.
 
 ## Deferred from: code review of 9-5-3-process-codification-claude-md (2026-05-18)
 
-Pass 1 code-review Sonnet 4.6 × 3 reviewers parallèles (Blind Hunter + Edge Case Hunter + Acceptance Auditor, contextes frais), 22 findings bruts → 10 patches appliqués + 1 deferred ci-dessous + 11 dismiss.
+Pass 1 + Pass 2 code-review (Sonnet 4.6 × 3 reviewers + Haiku 4.5 × 2 reviewers), 30 findings bruts cumulés → 16 patches appliqués + 2 deferred ci-dessous + 12 dismiss.
 
 - **E14 — Story de remédiation Catégorie B bloquée ou annulée — mécanisme de réévaluation périodique manquant** (MEDIUM, §Tech debt management — Catégorie B) : si la story de remédiation d'une dette B est elle-même bloquée (dépendance amont reportée) ou fermée `wontfix`, la dette B reste tracée indéfiniment sans révision. Acceptable v0.1 (cohérent zero carry-forward, la rétrospective d'epic est le point de contrôle implicite). À traiter v0.2+ : ajouter un mécanisme operational (e.g. revue trimestrielle du backlog v0.2-milestone GitHub Milestone, ou règle « si la story B est `wontfix`, la dette revient en A et doit être triée »). Hors scope CLAUDE.md durable — relève d'un processus operational projet.
+- **P2-F6 — Workflow Project Lead indisponible** (MEDIUM, §Tech debt — Triage hors fenêtre rétrospective) : la règle dit que l'arbitrage est fait par le Project Lead, mais aucun fallback si le Project Lead est absent/indisponible au moment de la découverte d'une dette A en cours d'Epic. Pour v0.2+ : ajouter un workflow d'escalade type « ouvrir une issue GitHub `[TRIAGE-NEEDED]` avec scénario d'impact, attendre triage humain avant action — ne pas auto-classer ». Hors scope codification CLAUDE.md durable — processus opérationnel rare.
 
 ---
 
