@@ -44,21 +44,21 @@ Story **focused sur le triage** (re-exécution de tests existants + tracking iss
 
 ### Pré-flight environnement
 
-1. **Given** un workspace Kesh à jour avec `main` `35344c9` + branche `chore/epic-9-5-planning` checkée, **When** le triage démarre, **Then** prérequis CI confirmés : `cargo build --workspace` clean, `cd frontend && npm install && npm run build` clean, MariaDB démarré + seed CI appliqué, Playwright browsers installés via `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install` (cf. memory `reference_playwright_ubuntu26`).
+1. **Given** un workspace Kesh à jour avec `main` `35344c9` + branche `chore/epic-9-5-planning` checkée, **When** le triage démarre, **Then** prérequis confirmés : `cargo build --workspace` clean, `cd frontend && npm install && npm run build` clean, MariaDB démarré + migrations appliquées + seed CI inline (cf. T1.4 pour procédure exacte — pas de script `seed-ci.sh` standalone, le SQL est dans `.github/workflows/ci.yml:127-163`), Playwright Chromium installé via `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium` (memory `reference_playwright_ubuntu26`). **Variable d'environnement requise pour TOUS les `npx playwright test` / `npm run test:e2e` sur Ubuntu 26.04** : exporter une fois en début de session : `export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (sinon Playwright refuse de démarrer sur Ubuntu 26.04 ≥ 1.49 — limitation upstream).
 
 ### Re-test par KF (6 ACs individuels)
 
 2. **Given** KF #47 (Story 3-7 AC#22 fallback toast), **When** `npm run test:e2e -- fiscal-years.spec.ts` est exécuté avec capture du reporter Playwright HTML, **Then** documenter dans Change Log :
-   - Statut `test.skip` dans `frontend/tests/e2e/fiscal-years.spec.ts` (block `describe('AC #22 — fallback toast actionnable')`) : présent / supprimé / modifié.
+   - Statut du block `describe('AC #22 — fallback toast actionnable')` dans `frontend/tests/e2e/fiscal-years.spec.ts` : présence d'un `test.skip(true, ...)` (test désactivé statiquement, même s'il existe en stub), ou test actif avec assertions réelles.
    - Tests réellement exécutés vs skippés.
-   - **Décision** : si `test.skip` toujours présent ET aucun test AC #22 réel n'existe → KF encore active → route vers 9-5-1d.
+   - **Décision** : si `test.skip(true, ...)` toujours présent → KF **encore active** (le test stub désactivé statiquement ne couvre pas AC #22) → route vers 9-5-1d. Si test actif avec assertions sur toast + navigation `/settings/fiscal-years` → KF résolue → fermer.
 
 3. **Given** KF #50 (Story 7-3 AC#29 race REPEATABLE READ), **When** `cargo test --workspace -p kesh-api --test kf004_no_op_e2e -- --test-threads=1` est exécuté, **Then** documenter :
    - Test `no_op_with_parallel_mutation_returns_409_when_sequential` actuel : passe / échoue / absent.
    - Si test existe en mode smoke séquentiel et passe : KF encore active (le smoke ne détecte pas la race, c'est le sujet de la KF) → route vers 9-5-1d.
    - Si un test déterministe race a été ajouté entre-temps : vérifier qu'il échoue sur `200 stale` (comportement v0.1 attendu) — si OK → fermer.
 
-4. **Given** KF #54 (cascade 401 helpers E2E), **When** `npm run test:e2e -- invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts` est exécuté, **Then** documenter le compte de failures avec message `401 Unauthorized` ou `expect(resp.ok()).toBeTruthy()` à `tests/e2e/helpers/test-state.ts:46`. Si zéro failure de ce type → KF résolue par effet de bord (probablement Story 7-x ou 8-x fix middleware) → fermer. Sinon → route vers 9-5-1b (avec liste précise des tests touchés).
+4. **Given** KF #54 (cascade 401 helpers E2E), **When** `npm run test:e2e -- invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts` est exécuté, **Then** documenter le compte de failures dont le message Playwright contient `401` (status code) OU `seedTestState(<preset>) failed:` (message thrown par le helper `frontend/tests/e2e/helpers/test-state.ts:71-85`, fonction `seedTestState`) OU `createContact failed: 401` (helper API direct). Si zéro failure de ce type → KF résolue par effet de bord (probablement Story 7-x ou 8-x fix middleware/storage) → fermer. Sinon → route vers 9-5-1b (avec liste précise des tests touchés).
 
 5. **Given** KF #55 (axe-core 6 pages a11y), **When** `npm run test:e2e -- auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts --reporter=html` est exécuté, **Then** documenter :
    - Nombre de violations actuelles par page (vs baseline 2026-04-30 : 109 login + 82 layout principal + ~6 autres pages).
@@ -124,12 +124,12 @@ Story **focused sur le triage** (re-exécution de tests existants + tracking iss
   - [ ] T1.1 Vérifier branche `chore/epic-9-5-planning` checkée + à jour avec `git status`.
   - [ ] T1.2 `cargo build --workspace` propre (aucune erreur de compilation).
   - [ ] T1.3 `cd frontend && npm install` (si modifs `package.json` depuis dernière fois) + `npm run build` propre.
-  - [ ] T1.4 Démarrer MariaDB local + appliquer seed CI (`crates/kesh-db/scripts/seed-ci.sh` ou équivalent — vérifier README.md du projet pour la commande exacte).
-  - [ ] T1.5 Installer Playwright browsers : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install` (memory `reference_playwright_ubuntu26`).
+  - [ ] T1.4 Démarrer MariaDB local + appliquer migrations + seed de base. **Procédure exacte** : (a) `docker compose -f docker-compose.dev.yml up -d db` (ou démarrer MariaDB locale équivalente écoutant sur le port standard) ; (b) appliquer migrations `crates/kesh-db/migrations/*.sql` dans l'ordre (le binaire `kesh-api` les applique automatiquement au démarrage avec `KESH_TEST_MODE=true` — sinon `sqlx migrate run` depuis `crates/kesh-db/`) ; (c) appliquer le bloc SQL « Seed CI fixtures » de `.github/workflows/ci.yml:127-163` (company + admin + fiscal_year + accounts minimum). Pas de script `seed-ci.sh` standalone — le SQL est inline dans le workflow CI.
+  - [ ] T1.5 Installer Playwright browser Chromium : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium` (browser unique cohérent `playwright.config.ts` — pas `install` tout-court qui installe Firefox+WebKit inutiles, cf. memory `reference_playwright_ubuntu26`).
   - [ ] T1.6 Démarrer le backend en mode test : `KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_STATIC_DIR=frontend/build cargo run -p kesh-api &` (background).
 
 - [ ] **T2** Re-test KF #47 KF-019 fiscal-years AC#22 fallback toast (AC: #2)
-  - [ ] T2.1 `cd frontend && npx playwright test fiscal-years.spec.ts --reporter=list` (depuis frontend/).
+  - [ ] T2.1 `cd frontend && PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test fiscal-years.spec.ts --reporter=list` (depuis frontend/ ; la variable d'env est requise sur Ubuntu 26.04 — cf. AC #1, peut être omise si exportée en session).
   - [ ] T2.2 Grep le fichier pour annotations skip : `grep -n "test.skip" tests/e2e/fiscal-years.spec.ts`.
   - [ ] T2.3 Documenter dans Change Log : nb tests pass/fail/skip + état AC #22 block + décision (closed vs route to 9-5-1d).
   - [ ] T2.4 Si résolue : commit `chore(9-5-1a): close KF #47 KF-019 (...)` avec `closes #47`. Sinon : ajouter à liste 9-5-1d résiduel.
@@ -141,29 +141,29 @@ Story **focused sur le triage** (re-exécution de tests existants + tracking iss
   - [ ] T3.4 Si résolue : commit avec `closes #50`. Sinon : ajouter à 9-5-1d résiduel.
 
 - [ ] **T4** Re-test KF #54 KF-022 cascade 401 helpers E2E (AC: #4)
-  - [ ] T4.1 `cd frontend && npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=html` (HTML reporter pour faciliter diagnostic 401).
-  - [ ] T4.2 Compter occurrences `401 Unauthorized` ou `createContact failed: 401` ou `tests/e2e/helpers/test-state.ts:46` dans le rapport.
+  - [ ] T4.1 `cd frontend && PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=html` (HTML reporter pour faciliter diagnostic 401).
+  - [ ] T4.2 Dans `playwright-report/index.html`, compter occurrences des messages : `401 Unauthorized` (status code) OU `createContact failed: 401` OU `seedTestState(...) failed:` (message thrown par `frontend/tests/e2e/helpers/test-state.ts:79` — la fonction `seedTestState` ligne 71 valide via `res.ok()` mais throw, pas `expect()`).
   - [ ] T4.3 Si zéro failure 401 : `git log -- frontend/tests/e2e/helpers/test-state.ts` pour identifier le commit auteur du fix (typiquement Story 6-x ou 8-x).
-  - [ ] T4.4 Documenter dans Change Log : nb tests 401 fail/pass + commit auteur résolution si identifiable + décision.
-  - [ ] T4.5 Si résolue : commit avec `closes #54`. Sinon : ajouter scope précis à 9-5-1b (liste exacte tests + helpers à fixer).
+  - [ ] T4.4 Documenter dans Change Log : nb tests 401 fail/pass + commit auteur résolution si identifiable + décision. **Garde anti-faux-positif** : avant de conclure « résolue », confirmer que le nombre total de tests *passés* est cohérent avec le baseline (e.g. ≥ 15 tests pass sur les 3 specs combinés). Un run avec 0 test exécuté ou tous skippés serait aussi un run sans failure 401 — ne pas interpréter comme résolution.
+  - [ ] T4.5 Si résolue (zéro failure 401 ET baseline tests pass count cohérent) : commit avec `closes #54`. Sinon : ajouter scope précis à 9-5-1b (liste exacte tests + helpers à fixer).
 
 - [ ] **T5** Re-test KF #55 KF-023 axe-core a11y 6 pages (AC: #5)
-  - [ ] T5.1 `cd frontend && npx playwright test auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts --reporter=html` + ouvrir `playwright-report/index.html`.
+  - [ ] T5.1 `cd frontend && PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts --reporter=html` + ouvrir `playwright-report/index.html`.
   - [ ] T5.2 Compter violations axe-core par page : login (baseline 109) / layout (baseline 82) / contacts / homepage / invoices empty / products.
   - [ ] T5.3 Top 3 catégories de violations (`color-contrast` / `region` / `landmark-one-main` / `heading-order` / `nested-interactive` / etc.) à documenter.
   - [ ] T5.4 Documenter dans Change Log : tableau violations par page + top 3 catégories + décision.
   - [ ] T5.5 Si toutes < 10 ET total < 30 violations résiduelles : commit avec `closes #55`. Sinon : ajouter scope précis à 9-5-1c (pages prioritaires + types violations).
 
 - [ ] **T6** Re-test KF #57 KF-025 state/timing/redirect dispersés (AC: #6)
-  - [ ] T6.1 `cd frontend && npx playwright test fiscal-years.spec.ts mode-expert.spec.ts onboarding.spec.ts onboarding-path-b.spec.ts homepage-settings.spec.ts users.spec.ts journal-entries.spec.ts --reporter=list 2>&1 | tee /tmp/kf57-output.log`.
+  - [ ] T6.1 `cd frontend && PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test fiscal-years.spec.ts mode-expert.spec.ts onboarding.spec.ts onboarding-path-b.spec.ts homepage-settings.spec.ts users.spec.ts journal-entries.spec.ts --reporter=list 2>&1 | tee /tmp/kf57-output.log`.
   - [ ] T6.2 Compter failures (vs baseline ~13) en filtrant les motifs : `toBeVisible` / `toBeEnabled` / `toHaveURL` / timeout 30s.
   - [ ] T6.3 Catégoriser par root cause probable (seedTestState manquant fiscal_year / auth state shift / brittle selectors `getByText`).
   - [ ] T6.4 Documenter dans Change Log : liste tests échouant + root cause par catégorie + décision.
   - [ ] T6.5 Si zéro failure : commit `closes #57`. Sinon : ajouter scope précis à 9-5-1b ou 9-5-1d selon root cause (timing → 9-5-1b ; specifics → 9-5-1d).
 
 - [ ] **T7** Re-test KF #91 KF-027 DropdownMenu reports a11y (AC: #7)
-  - [ ] T7.1 `cd frontend && npx playwright test reports.spec.ts --reporter=list` + capturer les 5 tests (3 pass attendus tabs/balance-sheet/T12.4 + 2 fail attendus a11y).
-  - [ ] T7.2 Vérifier `frontend/src/routes/(app)/+layout.svelte:132-141` : `<DropdownMenu.Trigger><Button>...` toujours présent ?
+  - [ ] T7.1 `cd frontend && PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test reports.spec.ts --reporter=list` + capturer les 5 tests (3 pass attendus tabs/balance-sheet/T12.4 + 2 fail attendus a11y).
+  - [ ] T7.2 Vérifier composant DropdownMenu.Trigger via `grep -n "DropdownMenu.Trigger" "frontend/src/routes/(app)/+layout.svelte"` (à l'heure de la spec : lignes 136-144 avec `<DropdownMenu.Trigger><Button variant="ghost">` imbriqué — pattern wcag `nested-interactive`). **Ancre par grep textuel** plutôt que par numéro de ligne (robuste aux décalages futurs).
   - [ ] T7.3 Documenter dans Change Log : statut 5 tests + état composant +layout.svelte + décision.
   - [ ] T7.4 Si 2 fail a11y résolus : commit `closes #91`. Sinon : ajouter scope précis à 9-5-1c (composant bits-ui wrap à patcher).
 
@@ -283,4 +283,22 @@ Cette décision est documentée dans 9-5-1a si nécessaire, et bloque le passage
 
 ## Change Log
 
-(Vide à la création — sera renseigné post-dev avec tableau récapitulatif des 6 KFs + statut + sous-story affectée + commit closure.)
+### Pass 1 spec validate — 2026-05-18, Sonnet 4.6 (subagent contexte frais)
+
+**Verdict trend** : 0 CRITICAL + 2 HIGH + 2 MEDIUM + 3 LOW = 7 findings (Convergence : NON).
+
+**Discipline grep ground-truth Sonnet** appliquée — toutes les affirmations HIGH/MEDIUM vérifiées par lecture directe des fichiers. Aucun faux-positif détecté.
+
+**Patches appliqués (7/7 — tous patchables sans defer)** :
+
+1. **F-01 (HIGH)** — Ancre fausse `frontend/tests/e2e/helpers/test-state.ts:46` : la ligne 46 est `*/` (fin JSDoc), pas `expect(resp.ok()).toBeTruthy()`. La fonction `seedTestState` est ligne 71 et throw via `res.ok()` check ligne 79 — pas `expect()`. **Patch** : AC #4 + T4.2 réécrits pour cibler messages réels (`401`, `createContact failed: 401`, `seedTestState(...) failed:`).
+2. **F-02 (HIGH)** — Script `crates/kesh-db/scripts/seed-ci.sh` inexistant : le seed CI est inline dans `.github/workflows/ci.yml:127-163` (« Seed CI fixtures »). **Patch** : T1.4 réécrit avec procédure réelle (`docker compose -f docker-compose.dev.yml up -d db` + migrations `sqlx migrate run` + seed SQL inline copié du workflow CI).
+3. **F-03 (MEDIUM)** — `npx playwright install` → `npx playwright install chromium` (cohérent memory `reference_playwright_ubuntu26` — Chromium seul, Firefox+WebKit inutiles vu `playwright.config.ts`). **Patch** : T1.5 + AC #1.
+4. **F-04 (MEDIUM)** — `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` manquant sur T2-T7 commandes. **Patch** : variable ajoutée sur T2.1/T4.1/T5.1/T6.1/T7.1 + note AC #1 mentionnant `export` unique en début de session comme alternative.
+5. **F-05 (LOW)** — AC #2 reformulé : « si `test.skip(true, ...)` présent → KF encore active (test stub désactivé statiquement, ne couvre pas AC #22) » au lieu de la formulation antérieure « aucun test AC #22 réel n'existe » potentiellement trompeuse (le test stub existe mais est skippé).
+6. **F-06 (LOW)** — Ancre `+layout.svelte:132-141` décalée (réel : 136-144). **Patch** : T7.2 utilise maintenant `grep -n "DropdownMenu.Trigger"` (ancre par texte, robuste aux décalages futurs) avec note « à l'heure de la spec : lignes 136-144 ».
+7. **F-07 (LOW)** — Garde anti-faux-positif ajoutée T4.4 : avant de conclure « KF #54 résolue », confirmer baseline tests pass count cohérent (e.g. ≥ 15 tests pass) — évite l'erreur « 0 test exécuté = 0 failure 401 = résolue ».
+
+**Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
