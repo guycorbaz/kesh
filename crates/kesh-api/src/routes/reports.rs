@@ -687,6 +687,7 @@ fn validate_fiscal_year_id(fiscal_year_id: i64) -> Result<(), AppError> {
 /// |---|---|---|
 /// | Query params HTTP URL | camelCase | `?fiscalYearId=...&periodStart=...` |
 /// | Request/Response body HTTP | camelCase (via `#[serde(rename_all = "camelCase")]`) | `{"reportType": "..."}` |
+/// | `AppError.details` HTTP error body | camelCase | `{"details": {"fiscalYearId": ...}}` (cf. `errors.rs`) |
 /// | Frontend `metadata.json` | camelCase | `{"keshVersion", "exportDate"}` |
 /// | **`audit_log.details_json` (serveur)** | **snake_case** | `{"report_type", "fiscal_year_id"}` |
 ///

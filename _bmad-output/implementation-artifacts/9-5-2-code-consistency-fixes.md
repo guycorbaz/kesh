@@ -1,6 +1,6 @@
 # Story 9.5-2: Code consistency fixes (config tests env + audit JSON keys snake_case)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -403,3 +403,43 @@ Plus commit 3 closure documentaire (ce commit) pour story file + sprint-status r
 **Story status** : `in-progress → review`. Prête pour `bmad-code-review 9-5-2`.
 
 **Modèle dev-story** : Claude Opus 4.7 (1M context, session orchestratrice). Pas de subagent isolation nécessaire (modifs ciblées et déjà fortement spécifiées par 2 passes validate).
+
+### Pass 1 code-review — 2026-05-18, Sonnet 4.6 × 2 reviewers parallèles
+
+**Setup** : 2 reviewers parallèles Sonnet 4.6 (Edge Case Hunter + Acceptance Auditor — Blind Hunter skip car migration JSON keys nécessite spec context). Contextes frais isolés. Diff cible : `git diff f77ee27^..1fefb89` (Item 1 + Item 2 combinés, diff aplati). Discipline grep ground-truth obligatoire appliquée.
+
+**Verdict trend** :
+- Edge Case Hunter : 0C + 0H + 0M + 4L
+- Acceptance Auditor : 0C + 0H + 0M + 0L (**16/16 ACs satisfaits**)
+- **Total cumulé** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 4 LOW (**Convergence Pass 1 atteinte** — critère CLAUDE.md `0 > LOW`)
+
+**Vérifications Acceptance Auditor (16/16 ACs OK)** :
+- AC #1, #4 : `cargo test config::tests` → 34/34 pass (vs 14/34 pré-fix) — run réel confirmé.
+- AC #5, #6 : grep snake_case keys `emit_report_audit` lignes 721-725 (5 keys) + `emit_report_export_audit` lignes 774-779 (6 keys) confirmés.
+- AC #7 : 5 assertions test migrées `reports_e2e.rs:983-1001` confirmées par Read + commentaire migration documenté.
+- AC #8, #10 : run réel `reports_e2e 28/28` + `reports_export_e2e 20/20` + `exports_global_e2e 20/20+1ig` — baselines préservées.
+- AC #9 : grep 0 résidu `details["reportType"]` etc. dans `tests/`.
+- AC #11 : `cargo fmt --check` + `cargo clippy -D warnings` clean.
+- AC #12 : docstring convention §audit_log JSON keys (lignes 679-698) avec table 4 surfaces + référence canonique + forward-reference Epic 10+.
+- AC #13 : `git log f77ee27^..1fefb89 -- exports.rs` vide (0 commit sur ce fichier).
+- AC #14 : 3 occurrences `#[serde(rename_all = "camelCase")]` préservées (ReportQuery/JournalReportQuery/ExportQuery).
+- AC #15, #16 : 2 commits distincts (f77ee27 + 1fefb89), uniquement 3 fichiers `crates/kesh-api/*`, 0 frontend, 0 Cargo.toml.
+
+**Patches appliqués Pass 1 (1/4 LOW polish)** :
+
+- **L2 + L4 combinés (LOW)** — Edge Case Hunter signale que la docstring convention §audit_log JSON keys ne mentionne pas explicitement la surface `AppError.details` HTTP error body (camelCase intentionnel — cf. `errors.rs:1295` `{"details": {"fiscalYearId": ...}}`) comme 5e surface distincte. **Patch** : table convention étendue avec ligne « `AppError.details` HTTP error body | camelCase | `{"details": {"fiscalYearId": ...}}` (cf. `errors.rs`) ». Évite confusion future Epic 10+.
+
+**Findings LOW dismissed (3/4)** :
+- **L1 (cfg test integration)** — risque théorique inactif : `grep -rn 'from_env()' crates/kesh-api/tests/` retourne 0 — aucun test d'intégration n'appelle `from_env()` directement (tous via `from_env_for_test()`). Pas de risque actif.
+- **L3 (0 test E2E `report.exported`)** — déjà documenté comme limite L1 dans la spec §Hors scope. Hors scope cette story.
+
+**Trend cumulé final 9-5-2** :
+- Spec validate Pass 1 (Sonnet) : 0C+2H+1M+2L → 3 patches
+- Spec validate Pass 2 (Haiku) : 0C+0H+0M+0L → 0 patches (convergence)
+- Dev-story (Opus single-pass) : 14→34 tests config + 0 régression baselines
+- Code-review Pass 1 (Sonnet × 2) : 0C+0H+0M+4L → 1 patch (L2+L4 combinés)
+- **Convergence après 1 passe code-review** (vs 3 passes pour 9-5-3 sur règles complexes — story chirurgicale).
+
+**Modèles cycle code-review** : Sonnet 4.6 (subagents isolés, contextes frais — dev-story par Opus 4.7, règle CLAUDE.md `LLM différent` respectée).
+
+**Story status final** : `review → done`. Sprint-status synchronisé.
