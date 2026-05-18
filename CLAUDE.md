@@ -61,6 +61,7 @@ BMAD module config: `_bmad/bmm/config.yaml` — defines project name, user name,
 - **Documentation** — Source code must be documented following best practices: public APIs, complex logic, module-level docs. Rust: use `///` doc comments. Svelte: use JSDoc where appropriate.
 - **Testing** — Test everything that can be tested. Unit tests for all business logic (especially the accounting engine, VAT calculations, and financial computations). Integration tests for parsers (CAMT.053, QR Bill, pain.001).
 - **E2E Testing** — Use Playwright for all end-to-end tests. Each user journey from the PRD maps to a Playwright test scenario.
+- **Batch API conventions** — Pour les endpoints batch (style `accept_batch` qui retournent `{ accepted, failed }`), cf. §"Pattern batch — FailedProposal per-proposal" sous §"Review Iteration Rule".
 
 ## Test Locally First
 
@@ -118,7 +119,7 @@ Tant qu'une passe de revue remonte **au moins un finding de sévérité supérie
 - **Maximum 8 passes atteint** (limite de budget LLM)
 
 Pour chaque nouvelle passe de revue sur la même story :
-- **Utiliser un LLM différent** de la passe précédente si possible (cycle Opus → Sonnet → Haiku → Opus), afin de contourner le biais d'auteur sur les patches qu'on vient d'appliquer. Les régressions introduites par la remédiation ne sont souvent détectables que par un modèle orthogonal.
+- **Utiliser un LLM différent** de la passe précédente si possible (cycle Sonnet → Haiku → Opus → Sonnet, validé empiriquement Epic 9 retrospective Insight I1 sur 3 cycles complets), afin de contourner le biais d'auteur sur les patches qu'on vient d'appliquer. Les régressions introduites par la remédiation ne sont souvent détectables que par un modèle orthogonal.
 - **Fenêtre de contexte fraîche** — ne pas réutiliser le contexte de la passe précédente.
 - **Patches appliqués avant passe N+1** : chaque finding trouvé en passe N est remédié avant relancer la passe N+1.
 - **Documenter dans le Change Log final** (pas une entrée par passe) : résumé du trend numérique (passe 1: X findings → passe 2: Y → ... → passe N: 0 > LOW), modèles LLM utilisés, décisions de reclassement.
@@ -134,6 +135,50 @@ Cette règle s'applique à :
 
 **Exception** : si un finding `MEDIUM+` est explicitement reclassé en **dette technique documentée** (dans une section `Security debt` / `Performance debt` / équivalente du story file ou des Dev Notes) avec un propriétaire et une story de remédiation planifiée, il compte comme « résolu » pour cette itération.
 
+### Haiku-specific guardrails — grep ground-truth obligatoire
+
+**Symptôme observé** : les reviewers Haiku 4.5 (`BlindHunter` / `EdgeCaseHunter` typiquement) peuvent affirmer **CRITICAL** ou **HIGH** « REGRESSION-P1 — patch X n'a pas été appliqué » sur un diff combiné multi-commit, alors que le patch **est** présent dans le fichier.
+
+**Cause root** : Haiku traite mal l'indexation des line numbers d'un diff `git show A B` quand le 2e commit `B` re-touche des hunks du 1er commit `A`. Les line numbers du 2e hunk correspondent au file post-A (pas au file final post-B), et Haiku peut chercher la ligne X et y voir le contenu de A, ratant le patch de B.
+
+**Règle d'application** — pour tout finding `CRITICAL` ou `HIGH` affirmant l'absence d'un code attendu, l'orchestrateur **DOIT** exécuter `grep -n "<pattern issu du patch>" <file>` avant de traiter le finding comme réel :
+
+- Si grep trouve le pattern → **dismiss** le finding comme faux-positif. Documenter le dismiss dans le Change Log de la passe (e.g. « BH2-1 CRITICAL réfuté par grep ligne X — faux-positif Haiku indexing »).
+- Si grep retourne `(no matches)` → finding confirmé, appliquer le patch.
+
+**Mitigation préférée** : à partir de la Pass 2 d'un cycle review, donner à Haiku un **diff unique** (le commit final `HEAD vs main` aplati) plutôt que la séquence de commits intermédiaires. Évite la confusion d'indexation à la source.
+
+**Scope du bug** : spécifique Haiku 4.5. Sonnet 4.6 et Opus 4.7 ne reproduisent pas l'erreur d'indexation diff multi-commit (validé empiriquement Epic 9 et antérieur). Pour autant, la discipline grep ground-truth s'applique à **tous** les modèles par hygiène — Haiku reste le cas pathologique connu, les autres modèles l'appliquent par défense en profondeur.
+
+*(cf. memory `feedback_haiku_review_diff_combined`, validé empiriquement Stories 8-5a-bis Pass 2 Haiku 2026-05-12 [BH2-1 missing scale() validation ligne 2120 + BH2-2 missing != bank_ledger guard ligne 2172] et 9-2b Pass 2 Haiku 2026-05-15 [route.continue() sans await ligne 66 + resolveDownload! sans validation ligne 201] — 4 hallucinations CRITICAL/HIGH réfutées par grep ground-truth)*
+
+### Pattern batch — FailedProposal per-proposal
+
+**Règle** : pour tout endpoint type `accept_batch` (qui traite N proposals/operations en une seule requête HTTP et retourne un body `{ accepted: [...], failed: [...] }`), **aucune erreur per-proposal ne doit escalader en `AppError` global** retournée comme HTTP error code (4xx/5xx). Chaque erreur d'une proposal individuelle est encapsulée en `FailedProposal` dans le `failed[]` du response body, avec **HTTP 200 OK** au niveau de la requête (un succès partiel reste un succès HTTP).
+
+**Exceptions explicites** — les `AppError` global restent autorisées **uniquement** pour les erreurs qui invalident la requête entière en amont du traitement per-proposal :
+
+- `401 Unauthorized` — auth middleware (token absent / expiré)
+- `403 Forbidden` — RBAC global (rôle insuffisant pour l'endpoint)
+- `400 Bad Request` — body parse fail / schéma JSON invalide
+- `500 Internal Server Error` — DB pool fermé, panic, IO catastrophique
+
+Toute erreur **qui dépend de la proposal individuelle** (validation `amount > 0`, FK manquant, race condition optimistic lock, currency mismatch, business rule violation) → `FailedProposal` per-proposal.
+
+**Champs obligatoires de `FailedProposal`** (signature canonique Epic 8) :
+
+- **identifiant business de la proposition** (e.g. `bank_transaction_id: i64` pour la réconciliation Epic 8 ; pour pain.001 paiements batch Epic 11 ce sera probablement `payment_id` ou équivalent, à adapter selon le type de proposition). **Anti-pattern** : NE PAS utiliser un index positionnel `proposal_index: usize` — fragile à toute réorganisation du batch par le client.
+- `error_code: String` — constante canonique recommandée (e.g. `"BANK_ACCOUNT_NOT_CONFIGURED"`, `"RECONCILIATION_RULE_NO_LONGER_MATCHES"`). **JAMAIS** interpolation `format!("error: {}", e)` ; pour contexte dynamique utiliser le champ `details`.
+- `details: Option<serde_json::Value>` — JSON object additionnel pour contexte spécifique au code (e.g. `{ "bankAccountId": 17 }`).
+
+**Garde-fou défensif** — dans un `match` exhaustif sur les variants d'un type sum (`Rule`, `ProposalType`, etc.), **NE PAS** utiliser `unreachable!()` aux sites variants. Préférer `tracing::error!(...) + AppError::Internal(...)`. Justification : un `unreachable!()` crashe la Tokio task en cas de refactor introduisant un variant manquant ; le pattern log + return est défensif et permet à l'endpoint de retourner une `FailedProposal` propre plutôt qu'une 500 silencieuse.
+
+**Référence canonique** : `accept_one_invoice` (Story 8-4), `accept_one_split` (Story 8-5a-bis), `accept_one_rule` (Story 8-5b). Le pattern est inviolable sur ces 3 implémentations Epic 8.
+
+**Réutilisation prévue** : Epic 11 (pain.001 paiements batch — un fichier XML contient N transactions, chaque transaction peut échouer indépendamment) + tout endpoint futur retournant `{ accepted, failed }`. **Note** : CAMT.053 (Epic 12) est de l'**import** raw (parser → INSERT bank_transactions sans décision utilisateur per-transaction), donc ne suit PAS ce pattern — sa réconciliation post-import utilise déjà l'API Epic 8 `accept_batch` qui implémente ce pattern.
+
+*(pattern hérité Epic 8 — cf. rétrospective Epic 8 Insight I2 + Story 8-5b Pass 4 ECH4-1 correction `BANK_ACCOUNT_NOT_CONFIGURED` `200 + failed[]` au lieu de `412` AppError global)*
+
 ### Règle de splitting préventif
 
 **Si une story qui n'est pas encore en spec validate satisfait l'un de ces deux critères, la splitter en sous-stories avant de lancer `bmad-create-story`** :
@@ -148,6 +193,33 @@ Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un s
 **Comment splitter** : dégager d'abord un story-zero qui pose le **pattern** (helper, type, helper test) sur 1-2 modules pilotes, puis enchaîner des sous-stories de **rollout** strictement mécaniques (apply pattern aux N-2 modules restants). La sous-story rollout est revue au file-by-file plutôt qu'en passes adversariales globales.
 
 **Exception** : si un *split forcé* introduit des cycles de dépendance Cargo ou des merges intermédiaires impossibles à tester en isolation, garder la story unique et documenter explicitement la dérogation dans le story file (section `Dérogation règle de splitting` avec justification + accepted risk).
+
+## Tech debt management — zero carry-forward policy
+
+**Règle projet** : pas de cumul de dette technique inter-epic. À chaque rétrospective d'epic, **toutes les vraies dettes (catégorie A ci-dessous) doivent être adressées (fix appliqué OU explicitement reclassées en catégorie B avec justification + story de remédiation planifiée)** avant le kickoff de l'Epic N+1.
+
+### Triage obligatoire — 3 catégories à chaque rétrospective
+
+- **Catégorie A — vraie dette** : bug latent, incohérence non-documentée, action retrospective non-complétée d'un Epic antérieur, KF dormante GitHub ouverte (sans label `v0.2-milestone`). **DOIT être fixée** avant kickoff Epic suivant.
+- **Catégorie B — limitation v0.2 légitime** : feature ou limitation documentée avec scope explicite (style `L1` / `L2` / ... dans story file ou Dev Notes) **et** story de remédiation planifiée Epic futur. Acceptable indéfiniment tant que tracée. Les KFs labellées `v0.2-milestone` qualifient en B même sans story Epic spécifique créée — le label tient lieu de planification implicite (la story de remédiation sera créée au plus tard au kickoff de l'Epic qui consommera le backlog v0.2).
+- **Catégorie C — décision design intentionnelle** : pattern volontaire (e.g. tables exclues d'un export pour raison de sécurité, INNER JOIN avec FK garante, audit-trail-only acceptée v0.1). **Pas une dette.**
+
+### Critical path
+
+Les items catégorie **A** passent du « cleanup parallèle optionnel » au **bloquant kickoff Epic suivant** dans la section Action Items de chaque rétrospective. Cette transition est non-négociable : si un item A traîne au moment du kickoff, soit on le fixe immédiatement, soit on le reclasse formellement en B (avec justification écrite + story remédiation planifiée).
+
+### Pattern Epic dédié cleanup
+
+Si le volume d'items catégorie A est élevé (seuil indicatif : **> 8 items** OU couvre **> 2 axes distincts** — e.g. KFs + code consistency + process codification), créer un **Epic dédié de type « Technical Debt Closure »** plutôt qu'un méga-Epic suivant mélangeant feature + dette. Précédents projet :
+
+- **Epic 7 historique « Technical Debt Closure »** — KF-001..007 fermées pré-Epic 8. Pattern de référence.
+- **Epic 9.5 « Technical Debt Closure »** — ~13 items A post-Epic 9, 4 stories. Applique cette politique de manière systématique.
+
+### Distinction au triage
+
+Les limitations documentées (style `L1-L18` dans story files) qualifient en catégorie **B** si **et seulement si** scope explicite **+** story de remédiation planifiée. Sinon → catégorie **A** (dette implicite). KFs ouvertes GitHub Issues = candidates catégorie A par défaut sauf labelling explicite `v0.2-milestone` (cohérent §"Issue Tracking Rule").
+
+*(politique formalisée 2026-05-17 rétrospective Epic 9 — cf. memory `feedback_zero_tech_debt_carryforward` + pattern Epic 7 historique « Technical Debt Closure »)*
 
 ## Issue Tracking Rule
 
