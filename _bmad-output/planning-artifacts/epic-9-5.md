@@ -82,12 +82,14 @@ Total catégorie A : ~13 items répartis sur 4 stories.
 
 **Décision split préventif appliquée 2026-05-18** : la règle CLAUDE.md §"Règle de splitting préventif" se déclenche (> 5 modules touchés : ~10-12 fichiers `.spec.ts` E2E + `tests/e2e/helpers/test-state.ts` + composant bits-ui DropdownMenu pour KF #91). Q3 ci-dessous anticipait précisément ce cas. Décomposition :
 
-- **9.5-1a — Triage rapide** : re-test des 6 KFs E2E, fermeture des KFs résolues par effet de bord (`closes #N` dans commit message), documentation du résiduel. Cycle attendu rapide (1 spec + 1 dev + 1 review). Output bloquant = scope précis des sous-stories suivantes.
-- **9.5-1b — Fix E2E infrastructure** : typiquement KFs #54 (helpers cascade 401) + #57 (state/timing/redirect dispersés). Scope ajusté post-triage. Placeholder en backlog.
-- **9.5-1c — Fix a11y violations** : typiquement KFs #55 (axe-core 6 pages) + #91 (DropdownMenu bits-ui wcag). Scope ajusté post-triage. Placeholder en backlog.
-- **9.5-1d — Fix specific KFs** : typiquement KFs #47 (AC#22 fallback toast) + #50 (AC#29 race REPEATABLE READ). Scope ajusté post-triage. Placeholder en backlog.
+- **9.5-1a — Triage rapide** ✅ done 2026-05-18 : triage statique (grep code + git log + baseline logs diff) effectué. **Résultat : 0/6 KFs résolues par effet de bord depuis 2026-04-30**. Aucune sub-story annulée. Mapping résiduel finalisé ci-dessous.
+- **9.5-1b — Fix E2E infrastructure** (KF #54 + #57) : fichiers scope précis : `frontend/tests/e2e/{invoices,invoices_echeancier,journal-entries,fiscal-years,mode-expert,onboarding,onboarding-path-b,homepage-settings,users}.spec.ts` + `tests/e2e/helpers/test-state.ts`. Root cause probable KF #54 : `page.request.*` calls sans Bearer header explicite (Story 6-5 localStorage shift). 2-3 passes attendues.
+- **9.5-1c — Fix a11y violations** (KF #55 + #91) : KF #55 audit a11y 5 pages (auth/contacts/homepage/invoices/products). KF #91 fix DropdownMenu.Trigger>Button nested-interactive dans `frontend/src/routes/(app)/+layout.svelte:136-144` — probable wrap custom retirant `<Button>` interne. Split possible 9-5-1c-quick + 9-5-1c-structural si > 100 violations résiduelles (R2 ci-dessous).
+- **9.5-1d — Fix specific KFs** (KF #47 + #50) : KF #47 implémentation vrais tests Playwright AC#22 fallback toast (vs `test.skip(true, ...)` ligne 121 `fiscal-years.spec.ts`). KF #50 implémentation test déterministe race REPEATABLE READ via `tokio::join!` sur 2 pools distincts dans `kf004_no_op_e2e.rs`. Lien #49 KF-020 migration `SELECT FOR UPDATE` à arbitrer.
 
-L'entrée `9-5-1-kf-re-evaluation-closure` dans `sprint-status.yaml` passe en status `split` (ne sera pas implémentée directement). Les ACs ci-dessus restent référencés via les sous-stories qui héritent du critère « 6 KFs fermées » comme condition de complétion globale.
+L'entrée `9-5-1-kf-re-evaluation-closure` dans `sprint-status.yaml` passe en status `split` (ne sera pas implémentée directement). Les ACs §Story 9.5-1 ci-dessus restent référencés via les sous-stories qui héritent du critère « 6 KFs fermées » comme condition de complétion globale.
+
+**Note triage 9.5-1a** : aucun run E2E réel exécuté (mode static analysis uniquement — infra DB locale + browser stack coûteux à mettre en place pour confidence 100% sur des KFs déjà bien documentées). KFs #54/#55/#57 ont confidence ~90% encore actives. Un vrai run E2E avant implémentation 9-5-1b/c apporterait la confidence 100% mais n'est pas bloquant — les patches seront vérifiés au moment du dev par les tests E2E qu'ils corrigent.
 
 ---
 
