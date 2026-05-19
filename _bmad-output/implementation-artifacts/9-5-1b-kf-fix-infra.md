@@ -160,11 +160,11 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
   - [x] T4.4 `npx playwright test invoices.spec.ts --reporter=list` : tests qui échouaient en 401 doivent maintenant passer (sauf failures non-401 hors scope KF #54). **Résultat empirique** : 1 passed / 6 failed / 0 skipped (15.4s). **0 occurrences 401** ✓ (Bearer fix actif). Failures résiduelles : 1 a11y `:87` (KF #55 hors scope) + 2 combobox strict-mode `:97/:122` (KF #57 cascade-cleared, T8 catégorisation) + 3 PDF tests `:243/:265/:288` qui passent maintenant à un nouveau stade `create invoice failed: 400` (validation backend — KF #57 cascade-cleared aussi).
   - [x] T4.5 Commit `fix(e2e/invoices): use authedApiContext in 4 helper functions (refs #54)`.
 
-- [ ] **T5** Refactor `invoices_echeancier.spec.ts` — 2 helpers (AC: #6)
-  - [ ] T5.1 Identifier helpers via `grep -n "page.request" frontend/tests/e2e/invoices_echeancier.spec.ts` (attendu : **3 occurrences** aux lignes 45, 65, 78 — les helpers `createContactViaApi` (ligne 41, post ligne 45) et `createAndValidateInvoice` (ligne 58, 2 posts lignes 65 + 78) à refactorer).
-  - [ ] T5.2 Refactor identique T4.2 — les **2 helpers** doivent être patchés (pas seulement `createContactViaApi`, sinon cascade 401 se déplace sur `createAndValidateInvoice`).
-  - [ ] T5.3 `npx playwright test invoices_echeancier.spec.ts --reporter=list` : tests 401 → pass.
-  - [ ] T5.4 Commit `fix(e2e/invoices_echeancier): use authedApiContext in 2 helper functions (refs #54)`.
+- [x] **T5** Refactor `invoices_echeancier.spec.ts` — 2 helpers (AC: #6)
+  - [x] T5.1 Identifier helpers via `grep -n "page.request" frontend/tests/e2e/invoices_echeancier.spec.ts` (attendu : **3 occurrences** aux lignes 45, 65, 78 — les helpers `createContactViaApi` (ligne 41, post ligne 45) et `createAndValidateInvoice` (ligne 58, 2 posts lignes 65 + 78) à refactorer).
+  - [x] T5.2 Refactor identique T4.2 — les **2 helpers** doivent être patchés (pas seulement `createContactViaApi`, sinon cascade 401 se déplace sur `createAndValidateInvoice`).
+  - [x] T5.3 `npx playwright test invoices_echeancier.spec.ts --reporter=list` : tests 401 → pass. **Résultat empirique** : 1 passed / 1 failed (9.7s). 0 occurrences 401 ✓. Failure résiduelle `:100` golden path — assertion `toHaveCount(0)` timeout 5s sur la liste post-reload (KF #57 cascade-cleared, état post-paiement UI — T8 à catégoriser).
+  - [x] T5.4 Commit `fix(e2e/invoices_echeancier): use authedApiContext in 2 helper functions (refs #54)`.
 
 - [ ] **T6** Refactor `journal-entries.spec.ts` (AC: #7)
   - [ ] T6.1 Identifier helper via `grep -n "page.request" frontend/tests/e2e/journal-entries.spec.ts` (attendu : `getSeedAccountNumbers` ligne ~42-56 utilisant GET).
