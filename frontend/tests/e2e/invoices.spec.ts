@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -34,18 +34,23 @@ function uniq(prefix: string): string {
 }
 
 async function createContactViaApi(page: import('@playwright/test').Page, name: string): Promise<number> {
-	const res = await page.request.post('/api/v1/contacts', {
-		data: {
-			contactType: 'Entreprise',
-			name,
-			isClient: true,
-			isSupplier: false,
-			defaultPaymentTerms: '30 jours net',
-		},
-	});
-	expect(res.ok(), `createContactViaApi failed: ${res.status()}`).toBeTruthy();
-	const json = await res.json();
-	return json.id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/contacts', {
+			data: {
+				contactType: 'Entreprise',
+				name,
+				isClient: true,
+				isSupplier: false,
+				defaultPaymentTerms: '30 jours net',
+			},
+		});
+		expect(res.ok(), `createContactViaApi failed: ${res.status()}`).toBeTruthy();
+		const json = await res.json();
+		return json.id as number;
+	} finally {
+		await ctx.dispose();
+	}
 }
 
 async function createProductViaApi(
@@ -54,12 +59,17 @@ async function createProductViaApi(
 	unitPrice: string,
 	vatRate: string,
 ): Promise<number> {
-	const res = await page.request.post('/api/v1/products', {
-		data: { name, unitPrice, vatRate },
-	});
-	expect(res.ok(), `createProductViaApi failed: ${res.status()}`).toBeTruthy();
-	const json = await res.json();
-	return json.id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/products', {
+			data: { name, unitPrice, vatRate },
+		});
+		expect(res.ok(), `createProductViaApi failed: ${res.status()}`).toBeTruthy();
+		const json = await res.json();
+		return json.id as number;
+	} finally {
+		await ctx.dispose();
+	}
 }
 
 test.describe('Factures — liste', () => {
@@ -177,18 +187,23 @@ async function createContactWithAddressViaApi(
 	page: import('@playwright/test').Page,
 	name: string,
 ): Promise<number> {
-	const res = await page.request.post('/api/v1/contacts', {
-		data: {
-			contactType: 'Personne',
-			name,
-			isClient: true,
-			isSupplier: false,
-			address: 'Marktgasse 28\n9400 Rorschach',
-			defaultPaymentTerms: '30 jours net',
-		},
-	});
-	expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
-	return (await res.json()).id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/contacts', {
+			data: {
+				contactType: 'Personne',
+				name,
+				isClient: true,
+				isSupplier: false,
+				address: 'Marktgasse 28\n9400 Rorschach',
+				defaultPaymentTerms: '30 jours net',
+			},
+		});
+		expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
+		return (await res.json()).id as number;
+	} finally {
+		await ctx.dispose();
+	}
 }
 
 async function createAndValidateInvoiceViaApi(
@@ -196,27 +211,32 @@ async function createAndValidateInvoiceViaApi(
 	contactId: number,
 ): Promise<number> {
 	const today = new Date().toISOString().slice(0, 10);
-	const createRes = await page.request.post('/api/v1/invoices', {
-		data: {
-			contactId,
-			date: today,
-			dueDate: today,
-			paymentTerms: '30 jours net',
-			lines: [
-				{
-					description: 'Conseil stratégique',
-					quantity: '4.5',
-					unitPrice: '200.00',
-					vatRate: '7.70',
-				},
-			],
-		},
-	});
-	expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
-	const invoice = await createRes.json();
-	const validateRes = await page.request.post(`/api/v1/invoices/${invoice.id}/validate`);
-	expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
-	return invoice.id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const createRes = await ctx.post('/api/v1/invoices', {
+			data: {
+				contactId,
+				date: today,
+				dueDate: today,
+				paymentTerms: '30 jours net',
+				lines: [
+					{
+						description: 'Conseil stratégique',
+						quantity: '4.5',
+						unitPrice: '200.00',
+						vatRate: '7.70',
+					},
+				],
+			},
+		});
+		expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
+		const invoice = await createRes.json();
+		const validateRes = await ctx.post(`/api/v1/invoices/${invoice.id}/validate`);
+		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
+		return invoice.id as number;
+	} finally {
+		await ctx.dispose();
+	}
 }
 
 test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
@@ -229,11 +249,17 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 		await expect(page.getByRole('heading', { name: 'Facture' })).toBeVisible();
 
 		// Intercepte l'appel direct à l'endpoint PDF (plus robuste que window.open).
-		const pdfRes = await page.request.get(`/api/v1/invoices/${invoiceId}/pdf`);
-		expect(pdfRes.status()).toBe(200);
-		expect(pdfRes.headers()['content-type']).toContain('application/pdf');
-		const buf = await pdfRes.body();
-		expect(buf.slice(0, 7).toString('utf8')).toMatch(/^%PDF-1\./);
+		// Use authedApiContext (KF #54) — page.request.* n'a pas le Bearer header.
+		const pdfCtx = await authedApiContext(page);
+		try {
+			const pdfRes = await pdfCtx.get(`/api/v1/invoices/${invoiceId}/pdf`);
+			expect(pdfRes.status()).toBe(200);
+			expect(pdfRes.headers()['content-type']).toContain('application/pdf');
+			const buf = await pdfRes.body();
+			expect(buf.slice(0, 7).toString('utf8')).toMatch(/^%PDF-1\./);
+		} finally {
+			await pdfCtx.dispose();
+		}
 	});
 
 	test('bouton visible uniquement si status=validated', async ({ page }) => {
