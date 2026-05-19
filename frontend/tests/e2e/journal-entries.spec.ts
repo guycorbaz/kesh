@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -42,17 +42,22 @@ async function goToJournalEntries(page: import('@playwright/test').Page) {
 async function getSeedAccountNumbers(
 	page: import('@playwright/test').Page
 ): Promise<{ debitNumber: string; creditNumber: string }> {
-	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
-	expect(resp.ok()).toBeTruthy();
-	const accounts: Array<{ number: string; name: string }> = await resp.json();
+	const ctx = await authedApiContext(page);
+	try {
+		const resp = await ctx.get('/api/v1/accounts?includeArchived=false');
+		expect(resp.ok()).toBeTruthy();
+		const accounts: Array<{ number: string; name: string }> = await resp.json();
 
-	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
-	const asset = accounts.find((a) => /^10[0-9]{2}$/.test(a.number)) ?? accounts[0];
-	const revenue = accounts.find((a) => /^3[0-9]{3}$/.test(a.number)) ??
-		accounts.find((a) => /^2[0-9]{3}$/.test(a.number)) ??
-		accounts[1];
+		// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+		const asset = accounts.find((a) => /^10[0-9]{2}$/.test(a.number)) ?? accounts[0];
+		const revenue = accounts.find((a) => /^3[0-9]{3}$/.test(a.number)) ??
+			accounts.find((a) => /^2[0-9]{3}$/.test(a.number)) ??
+			accounts[1];
 
-	return { debitNumber: asset.number, creditNumber: revenue.number };
+		return { debitNumber: asset.number, creditNumber: revenue.number };
+	} finally {
+		await ctx.dispose();
+	}
 }
 
 test.describe('Page écritures — affichage', () => {

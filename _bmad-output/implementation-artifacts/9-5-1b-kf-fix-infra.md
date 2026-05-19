@@ -166,11 +166,11 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
   - [x] T5.3 `npx playwright test invoices_echeancier.spec.ts --reporter=list` : tests 401 → pass. **Résultat empirique** : 1 passed / 1 failed (9.7s). 0 occurrences 401 ✓. Failure résiduelle `:100` golden path — assertion `toHaveCount(0)` timeout 5s sur la liste post-reload (KF #57 cascade-cleared, état post-paiement UI — T8 à catégoriser).
   - [x] T5.4 Commit `fix(e2e/invoices_echeancier): use authedApiContext in 2 helper functions (refs #54)`.
 
-- [ ] **T6** Refactor `journal-entries.spec.ts` (AC: #7)
-  - [ ] T6.1 Identifier helper via `grep -n "page.request" frontend/tests/e2e/journal-entries.spec.ts` (attendu : `getSeedAccountNumbers` ligne ~42-56 utilisant GET).
-  - [ ] T6.2 Refactor : pattern `const ctx = await authedApiContext(page); try { const res = await ctx.get('/api/v1/accounts?includeArchived=false'); ...; } finally { await ctx.dispose(); }`.
-  - [ ] T6.3 `npx playwright test journal-entries.spec.ts --reporter=list` : 12 failures cascade 401 → pass (peut révéler des failures KF #57 résiduelles non-cascade — documenter dans T7).
-  - [ ] T6.4 Commit `fix(e2e/journal-entries): use authedApiContext in getSeedAccountNumbers helper (refs #54)`.
+- [x] **T6** Refactor `journal-entries.spec.ts` (AC: #7)
+  - [x] T6.1 Identifier helper via `grep -n "page.request" frontend/tests/e2e/journal-entries.spec.ts` (attendu : `getSeedAccountNumbers` ligne ~42-56 utilisant GET).
+  - [x] T6.2 Refactor : pattern `const ctx = await authedApiContext(page); try { const res = await ctx.get('/api/v1/accounts?includeArchived=false'); ...; } finally { await ctx.dispose(); }`.
+  - [x] T6.3 `npx playwright test journal-entries.spec.ts --reporter=list` : 12 failures cascade 401 → pass (peut révéler des failures KF #57 résiduelles non-cascade — documenter dans T7). **Résultat empirique** : 14 passed / 3 failed / 6 skipped (36.9s, vs 5 passed / 12 failed baseline). **0 occurrences 401** ✓. **+9 tests pass**. Failures résiduelles : `:70` (affiche message liste vide UI), `:220` (suppression confirmation UI), `:409` (tooltips pédagogiques — KF #57 canonique line 404 baseline, shifted +5).
+  - [x] T6.4 Commit `fix(e2e/journal-entries): use authedApiContext in getSeedAccountNumbers helper (refs #54)`.
 
 - [ ] **T7** Validation cascade 401 résolue (AC: #8)
   - [ ] T7.1 Re-run combiné : `npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=list 2>&1 | tee tests/e2e/post-kf54-9-5-1b.log` (depuis `frontend/`).
