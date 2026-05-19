@@ -1,6 +1,6 @@
 # Story 9.5-1b: Fix E2E infrastructure — KF #54 cascade 401 + KF #57 state/timing
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -550,3 +550,41 @@ Vérifications empiriques exécutées :
 **Modèle Pass 1** : 3 × Sonnet 4.6 subagents isolés (contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Opus dev → Sonnet review).
 
 **Recommandation Pass 2** : Haiku 4.5 sur diff cumul HEAD vs `950feea` (aplati) per CLAUDE.md §Haiku guardrails « donner un diff unique plutôt qu'une séquence multi-commit ». Vérifier que les patches MEDIUM (ECH-M1 + AA-M1) sont bien intégrés et que les 2 MEDIUM acceptés (BH-M3 pré-existant + AA-M2 self-documented) restent acceptables. Cycle attendu : convergence Pass 2 (scope minimaliste + patches mécaniques).
+
+### Pass 2 code-review — 2026-05-19, Haiku 4.5 (subagent contexte frais, diff aplati)
+
+**Setup** : 1 reviewer Haiku 4.5 isolé, diff aplati `950feea..HEAD` **focused** (sans baselines logs `frontend/tests/e2e/baseline-*.log` — 2540 → 1169 lignes après exclusion). Discipline grep ground-truth Haiku obligatoire per CLAUDE.md §"Haiku-specific guardrails" (mitigation préférée : diff unique vs séquence multi-commit).
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 1 LOW = 1 finding.
+
+**Verdict effectif après dismiss faux-positif** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW = **CONVERGENCE PASS 2** (critère CLAUDE.md `Uniquement findings LOW` largement atteint).
+
+**Discipline grep ground-truth Haiku** : 11/11 vérifications positives :
+1. `disposeContextSafe` exporté + 3 imports dans spec files ✓
+2. Wrapper `disposeContextSafe` lignes 116-123 avec `.catch((err) => console.warn(...))` ✓
+3. 9 occurrences `await disposeContextSafe(...)` aux call sites attendus (seedTestState + 5 invoices + 2 echeancier + 1 journal-entries) ✓
+4. 0 occurrence raw `page.request.post/get` dans les 3 spec files refactorés ✓
+5. `authedApiContext(page)` signature + impl lignes 150-161 ✓
+6. Message d'erreur exact `test-state.ts:154` ↔ `test-state.test.ts:75/84` ✓
+7. `vi.hoisted` pattern ligne 21 (anti ReferenceError) ✓
+8. `vi.stubEnv` + `vi.unstubAllEnvs` lignes 48/52 + import `afterEach` ligne 15 ✓
+9. `newContextMock.mockResolvedValue({ dispose: vi.fn() })` ligne 44 ✓
+10. `vite.config.ts:32` glob étendu ✓
+11. `test-state.test.ts` 3 cas (nominal/null/empty) présents ✓
+
+**Finding L1 (LOW) dismissed comme faux-positif Haiku** :
+
+- **L1 allégué** : « `readAccessTokenFromStorage` internal utility missing JSDoc — only inline comment, no JSDoc block ».
+- **Réfutation ground-truth orchestrateur** : `sed -n '87,97p' frontend/tests/e2e/helpers/test-state.ts` retourne le bloc JSDoc complet lignes 87-93 (`/** ... @returns ... */`) placé immédiatement avant la signature ligne 94. Haiku a manqué le bloc JSDoc adjacent (oversight de skim — peut-être confusion par la JSDoc volumineuse de `disposeContextSafe` qui suit).
+- **Action** : dismiss L1. Aucun patch nécessaire. JSDoc bel et bien présent.
+
+**Régressions Pass 1 patches** : 0 régression détectée. Les 6 patches Pass 1 (ECH-M1 + AA-M1 + BH-L1 + BH-L3 + ECH-L2 + AA-D1) tous correctement intégrés et vérifiés.
+
+**Trend cumulé code-review** :
+- Pass 1 Sonnet 4.6 × 3 subagents : 0C+0H+7M+11L brut → 0C+0H+6M+9L dedup → 6 patches appliqués + 9 acceptés/déférés
+- Pass 2 Haiku 4.5 : 0C+0H+0M+1L brut → 0C+0H+0M+0L après dismiss faux-positif
+- **Convergence Pass 2** (cycle court 2 passes, scope minimaliste Epic 9.5 respecté).
+
+**Modèle Pass 2** : Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Pass 1 Sonnet → Pass 2 Haiku).
+
+**Statut final story** : `review → done`. Sprint-status synchronisé. Branche `chore/epic-9-5-planning` cumul Epic 9.5 (pattern « avoid parallel PRs »), push différé fin Epic 9.5.
