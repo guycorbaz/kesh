@@ -23,7 +23,7 @@
  * le helper throw avec un message explicite listant les vérifications.
  */
 
-import { request as playwrightRequest, type APIRequestContext } from '@playwright/test';
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 export type Preset =
 	| 'fresh'
@@ -86,6 +86,55 @@ export async function seedTestState(preset: Preset): Promise<void> {
 }
 
 /**
+ * Lit le token d'accès JWT depuis le `localStorage` côté `page`. Helper
+ * interne pour `authedApiContext`.
+ *
+ * @returns Le token sous forme de string, ou `null` si la clé est absente
+ *          (utilisateur non-loggé ou storage vidé par `clearAuthStorage`).
+ */
+async function readAccessTokenFromStorage(page: Page): Promise<string | null> {
+	return page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY_ACCESS_TOKEN);
+}
+
+/**
+ * Construit un `APIRequestContext` Playwright avec le Bearer token de la
+ * session courante automatiquement injecté en header `Authorization`.
+ *
+ * Utilisation : remplace les appels directs `page.request.post/get(...)`
+ * dans les helpers de seed de spec files E2E quand l'endpoint cible est
+ * authentifié. `page.request.*` est un client HTTP raw Playwright qui ne
+ * lit pas le `localStorage` Svelte — donc n'injecte pas le Bearer token
+ * du store `authState`. Sans ce helper, les appels API authentifiés
+ * reçoivent 401 (régression Story 6-5 KF-007 storage shift cookie →
+ * localStorage — cf. KF #54 / KF-022).
+ *
+ * Pré-condition : `login(page)` doit avoir été appelé avant — sinon throw
+ * (cf. AC #3 spec 9-5-1b — anti-pattern « 401 silencieux »).
+ *
+ * Le caller est responsable de `await ctx.dispose()` après usage (try/finally
+ * cohérent avec le pattern `seedTestState` ci-dessus). Le context n'est PAS
+ * cached entre appels — chaque invocation crée un nouveau context, ce qui
+ * évite les fuites de tokens entre tests (cohérent avec `clearAuthStorage`).
+ *
+ * @param page Page Playwright avec session authentifiée (post-`login`).
+ * @returns APIRequestContext avec baseURL backend + Bearer header injecté.
+ * @throws Error si `localStorage.kesh:auth:accessToken` est absent / vide
+ *               (token non présent en storage = `login(page)` non appelé).
+ */
+export async function authedApiContext(page: Page): Promise<APIRequestContext> {
+	const token = await readAccessTokenFromStorage(page);
+	if (!token) {
+		throw new Error(
+			'authedApiContext: no accessToken in localStorage — call login(page) before this helper',
+		);
+	}
+	return playwrightRequest.newContext({
+		baseURL: resolveBackendUrl(),
+		extraHTTPHeaders: { Authorization: `Bearer ${token}` },
+	});
+}
+
+/**
  * Nettoie les clés d'authentification du localStorage côté client.
  * Appelé dans afterEach() pour isoler les tokens entre tests.
  *
@@ -94,7 +143,7 @@ export async function seedTestState(preset: Preset): Promise<void> {
  *
  * @throws {Error} if page context is invalid or localStorage access fails
  */
-export async function clearAuthStorage(page: import('@playwright/test').Page): Promise<void> {
+export async function clearAuthStorage(page: Page): Promise<void> {
 	try {
 		await page.evaluate((keys) => {
 			for (const key of keys) {
