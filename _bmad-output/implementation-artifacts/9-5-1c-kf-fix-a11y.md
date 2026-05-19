@@ -8,13 +8,13 @@ Status: ready-for-dev
 
 As a mainteneur projet Kesh,
 I want fixer la violation `nested-interactive` wcag2a 4.1.2 dans le composant app-shell `+layout.svelte` (KF #91), mesurer empiriquement la cascade de réduction de violations qu'elle apporte sur les 6 tests axe-core des 5 pages KF #55 (login + layout principal + contacts + homepage + invoices + products), catégoriser les violations résiduelles par root cause (color-contrast / alt-text / ARIA / landmarks / heading-order / focus-management / nested-interactive autres), puis appliquer la **règle R2 du parent epic-9-5.md** : si cumul violations résiduelles > 100 → splitter en sous-stories 9-5-1c-quick (fixes mécaniques) + 9-5-1c-structural (refactor architecture a11y) ; sinon → fixer en-story,
-so that la porte d'entrée principale de l'app (page login) ne présente plus 109 violations dont ~50 cascading nested-interactive depuis le shell, la conformité WCAG 2 niveau A est restaurée sur les flux critiques v0.1, le pattern bits-ui `child` snippet est documenté pour les futurs DropdownMenu/Sheet/Dialog wrappers, et les KFs #55 + #91 sont fermées (ou transférées vers des sous-stories spécifiques avec scope précis).
+so that les 6 pages testées en axe-core ne présentent plus les violations KF #55 + KF #91 : la violation `nested-interactive` du DropdownMenu profile (1 occurrence × 6 pages `(app)/*` cascadées, **page login `/login` non affectée car elle utilise `routes/login/+page.svelte` sans le layout app-shell**) est éliminée par fix Phase A, la conformité WCAG 2 niveau A est restaurée sur les flux critiques v0.1, le pattern bits-ui `child` snippet (ou classes Tailwind directes sur `<DropdownMenu.Trigger>`) est documenté pour les futurs wrappers DropdownMenu/Sheet/Dialog, et les KFs #55 + #91 sont fermées (ou transférées vers des sous-stories spécifiques 9-5-1c-quick + 9-5-1c-structural avec scope précis si R2 déclenché Phase C).
 
 ## Scope
 
 Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètre précis :
 
-- **Composant app-shell** : `frontend/src/routes/(app)/+layout.svelte` (1 fichier — lignes 135-144 actuelles : `<DropdownMenu.Root><DropdownMenu.Trigger><Button>...</Button></DropdownMenu.Trigger>...`).
+- **Composant app-shell** : `frontend/src/routes/(app)/+layout.svelte` (1 fichier — lignes 136-143 actuelles : `<DropdownMenu.Trigger><Button variant="ghost">...</Button></DropdownMenu.Trigger>` ; le `<DropdownMenu.Root>` ligne 135 + `</DropdownMenu.Trigger>` ligne 144 ne sont pas touchés). **Note ground-truth** : `bits-ui 2.16.5` confirmé installé (`package.json`), `child` snippet API disponible (`MenuTriggerPropsWithoutHTML = WithChild<{...}>` dans `node_modules/bits-ui/dist/bits/menu/types.d.ts`), et `DropdownMenu.Trigger` accepte `class` prop directement (variant A préféré — `...restProps` forwarded). Une seconde occurrence dans `frontend/src/routes/design-system/+page.svelte:151` utilise **déjà** le pattern `{#snippet child({ props })}` correct — ne pas la modifier.
 - **Tests axe-core à mesurer** (6 KF #55 + 2 KF #91) :
   - `frontend/tests/e2e/auth.spec.ts:90` (page login — 109 violations baseline 2026-04-30)
   - `frontend/tests/e2e/auth.spec.ts:98` (layout principal — 82 violations baseline)
@@ -42,13 +42,13 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 
 ### Pré-flight environnement et baseline
 
-1. **Given** un workspace Kesh à jour avec `main` `35344c9` + branche `chore/epic-9-5-planning` checkée + commit BMAD upgrade `c6f9444` localement (PR #95 toujours en attente merge à ce stade), **When** la story démarre, **Then** prérequis confirmés : `cargo build --workspace` clean, `cd frontend && npm install && npm run build` clean, MariaDB démarré + migrations appliquées, Playwright Chromium installé via `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium` (memory `reference_playwright_ubuntu26`), backend kesh-api démarré KESH_TEST_MODE=true + KESH_HOST=127.0.0.1 (override .env qui a KESH_HOST=0.0.0.0). Si backend déjà running depuis 9-5-1b → réutiliser.
+1. **Given** un workspace Kesh à jour avec `main` `35344c9` + branche `chore/epic-9-5-planning` checkée, **When** la story démarre, **Then** prérequis confirmés : `cargo build --workspace` clean, `cd frontend && npm install && npm run build` clean, MariaDB démarré + migrations appliquées, Playwright Chromium installé via `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium` (memory `reference_playwright_ubuntu26`), backend kesh-api démarré KESH_TEST_MODE=true + KESH_HOST=127.0.0.1 (override .env qui a KESH_HOST=0.0.0.0). Si backend déjà running depuis 9-5-1b → réutiliser. **Note contexte (pas un prerequis actif)** : commit BMAD upgrade `c6f9444` sur branche `chore/bmad-upgrade-6.6.0` en attente de merge via PR #95 — aucune action requise pour 9-5-1c, ce commit ne touche pas le code frontend/Rust applicatif.
 
 2. **Given** la baseline a11y pré-fix, **When** `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 KESH_BACKEND_URL=http://127.0.0.1:3000 npx playwright test auth.spec.ts:90 auth.spec.ts:98 contacts.spec.ts:150 homepage-settings.spec.ts:61 invoices.spec.ts:87 products.spec.ts:78 reports.spec.ts:85 reports.spec.ts:96 --reporter=list 2>&1 | tee tests/e2e/baseline-pre-9-5-1c-a11y.log` est exécuté depuis `frontend/`, **Then** confirmer **8/8 tests fail** avec violations axe-core (≥ 600 violations cumul). Si l'une des conditions n'est PAS satisfaite (e.g. cascade-clear post-9-5-1b a déjà fixé certaines), réviser le scope avant de continuer.
 
 ### Phase A — Fix KF #91 DropdownMenu nested-interactive
 
-3. **Given** la cause racine documentée KF #91 (`<DropdownMenu.Trigger><Button>...</Button></DropdownMenu.Trigger>` produit 2 `<button>` imbriqués → `nested-interactive` wcag2a 4.1.2 serious), **When** le fix est appliqué à `frontend/src/routes/(app)/+layout.svelte:135-144`, **Then** il satisfait :
+3. **Given** la cause racine documentée KF #91 (`<DropdownMenu.Trigger><Button>...</Button></DropdownMenu.Trigger>` produit 2 `<button>` imbriqués → `nested-interactive` wcag2a 4.1.2 serious), **When** le fix est appliqué à `frontend/src/routes/(app)/+layout.svelte:136-143` (Trigger ouvrante + bloc Button + fermeture Button — la ligne `</DropdownMenu.Trigger>:144` peut être préservée selon la variante choisie), **Then** il satisfait :
    - **Pattern bits-ui recommandé** : utiliser le snippet `child` (ou équivalent `asChild`) de `DropdownMenu.Trigger` pour forwarder les props/ref au `<Button>` intérieur **OU** simplement utiliser le styling Tailwind directement sur le `<DropdownMenu.Trigger>` natif sans wrapper `<Button>` (préférer cette option si elle préserve le look — un seul `<button>` rendu, classes appliquées directement sur lui).
    - **Préservation visuelle** : le look-and-feel du bouton profil (icône User + texte rôle + chevron) reste identique. Aucune régression visuelle perceptible utilisateur (manual check via headless browser ou Playwright screenshot avant/après si dispo).
    - **Préservation fonctionnelle** : click ouvre le menu, keyboard navigation (Tab, Enter, Escape) inchangée, focus visible préservé.
@@ -60,7 +60,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 
 ### Phase B — Mesure cascade + catégorisation R2
 
-5. **Given** le patch AC #3 (Phase A) appliqué, **When** `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 KESH_BACKEND_URL=http://127.0.0.1:3000 npx playwright test auth.spec.ts:90 auth.spec.ts:98 contacts.spec.ts:150 homepage-settings.spec.ts:61 invoices.spec.ts:87 products.spec.ts:78 reports.spec.ts:85 reports.spec.ts:96 --reporter=list 2>&1 | tee tests/e2e/post-kf91-9-5-1c.log` est ré-exécuté, **Then** mesurer le **delta cascade** : (a) compter le nombre de violations par test post-fix vs baseline AC #2, (b) calculer la **réduction cumulée** : `sum(baseline_violations) - sum(post_kf91_violations)`, (c) confirmer la prédiction : le fix KF #91 devrait retirer ~5-10 violations `nested-interactive` par page `(app)/*` (les pages login `/login` n'utilisent pas le layout app-shell donc non affectées).
+5. **Given** le patch AC #3 (Phase A) appliqué, **When** `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 KESH_BACKEND_URL=http://127.0.0.1:3000 npx playwright test auth.spec.ts:90 auth.spec.ts:98 contacts.spec.ts:150 homepage-settings.spec.ts:61 invoices.spec.ts:87 products.spec.ts:78 reports.spec.ts:85 reports.spec.ts:96 --reporter=list 2>&1 | tee tests/e2e/post-kf91-9-5-1c.log` est ré-exécuté, **Then** mesurer le **delta cascade** : (a) compter le nombre de violations par test post-fix vs baseline AC #2, (b) calculer la **réduction cumulée** : `sum(baseline_violations) - sum(post_kf91_violations)`, (c) confirmer la prédiction empirique : le fix KF #91 devrait retirer **~1 violation `nested-interactive` par page `(app)/*`** (1 seul noeud `#bits-c1` par page dans le DOM bits-ui — confirmé par `grep -c "nested-interactive" baseline-post-9-5-1b.log` → 1 violation par page, pas un cluster). Délivrable cascade attendue : **-6 violations cumul** (6 pages `(app)/*` × 1 violation). Marginal vs total ≥ 600. La page `/login` (auth.spec.ts:90) n'utilise pas le layout app-shell donc non-cascade.
 
 6. **Given** les violations résiduelles post-fix-KF #91, **When** la catégorisation est effectuée, **Then** un **tableau Markdown** par catégorie axe-core est produit dans le Change Log :
    - `color-contrast` (4.1.3 wcag2aa, ratio insuffisant) — fix mécanique : ajuster les couleurs CSS du design system.
@@ -77,10 +77,10 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 
 ### Phase C — Décision R2 (gate)
 
-8. **Given** le tableau de catégorisation Phase B (AC #6 + #7), **When** la règle R2 du parent epic-9-5.md §"Risque R2 — KF #55 si > 100 violations" est évaluée, **Then** :
+8. **Given** le tableau de catégorisation Phase B (AC #6 + #7), **When** la règle R2 du parent epic-9-5.md est évaluée (description inline §"Story 9.5-1c" ligne 87 : « Split possible 9-5-1c-quick + 9-5-1c-structural si > 100 violations résiduelles » ; aucune section §"Risque R2" séparée — R2 est référencé par anticipation dans cette spec story), **Then** :
    - **Si cumul violations résiduelles post-KF #91 < 100** : passer directement à Phase D (fix in-story) — AC #9-#12 applicables.
    - **Si cumul violations résiduelles post-KF #91 ≥ 100** : **R2 déclenché** → splitter en sous-stories AC #13-#14 applicables (Phase D skip).
-   - **Garde-fou de classification** : si parmi les violations résiduelles, **plus de 80% relèvent de catégories architecturales** (landmark-* / heading-order / region / focus-management), même avec un total < 100 violations, considérer R2 déclenché (le scope architectural justifie le split même à faible volume).
+   - **Garde-fou de classification** : si parmi les violations résiduelles, **plus de 80% relèvent de catégories architecturales** (landmark-* / heading-order / region / focus-management) — calculé sur le **nombre total de violations** (formule explicite : `sum(violations dans catégories architecturales) / sum(toutes violations résiduelles) > 0.80`, PAS un comptage par catégorie qui pourrait donner un ratio différent), même avec un total < 100 violations, considérer R2 déclenché (le scope architectural justifie le split même à faible volume).
 
 ### Phase D — Implémentation in-story (si R2 NON déclenché AC #8)
 
@@ -114,7 +114,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
     - Frontend Svelte : `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` — les 4 checks obligatoires.
     - E2E : la mesure axe-core de Phases B et D EST le travail de la story, sert d'évidence Test Locally First sur le scope a11y.
 
-17. **And** aucune régression sur les autres tests E2E hors scope a11y : run rapide `npx playwright test auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts reports.spec.ts users.spec.ts --grep -v "axe-core"` (ou équivalent — exclure les tests axe-core eux-mêmes pour ne mesurer que les régressions UI) → identique aux baselines pré-9-5-1c. **Note** : `+layout.svelte` est rendu sur toutes les pages `(app)/*`, donc une régression visuelle/comportementale sur le DropdownMenu impacterait l'ensemble de la suite E2E — vigilance requise.
+17. **And** aucune régression sur les autres tests E2E hors scope a11y : run rapide `npx playwright test auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts reports.spec.ts users.spec.ts --grep-invert "axe a11y|axe-core"` (flag `--grep-invert`, **PAS** `--grep -v` qui matche literalement le test name `-v` et fait tourner aucun test — bug de syntaxe Playwright CLI 1.59.1 ; pattern alternation regex standard `|`, pas l'échappement sed `\|`) → exclut les tests axe-core eux-mêmes pour ne mesurer que les régressions UI/comportement. Comparer aux baselines pré-9-5-1c. **Note** : `+layout.svelte` est rendu sur toutes les pages `(app)/*`, donc une régression visuelle/comportementale sur le DropdownMenu impacterait l'ensemble de la suite E2E — vigilance requise.
 
 18. **And** `npm run test:unit` reste à 253/253 pass post-changes (sauf si AC #10 nécessite ajout de tests Vitest pour helpers a11y partagés, auquel cas le compte peut augmenter).
 
@@ -132,7 +132,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
   - [ ] T2.3 `git add -f tests/e2e/baseline-pre-9-5-1c-a11y.log` (cohérent précédent `baseline-pre-9-5-1b.log` 9-5-1b force-add). Commit `chore(9-5-1c): baseline pre-fix a11y — 8 tests axe-core failing`.
 
 - [ ] **T3** Phase A — Fix KF #91 DropdownMenu pattern (AC: #3)
-  - [ ] T3.1 Lire `frontend/src/routes/(app)/+layout.svelte:135-144` + grep tout autre usage `DropdownMenu.Trigger` dans le repo : `grep -rn "DropdownMenu.Trigger" frontend/src/`. Si > 1 occurrence, élargir le fix à toutes les occurrences problématiques (pattern wcag2a 4.1.2 doit être uniformément résolu).
+  - [ ] T3.1 Lire `frontend/src/routes/(app)/+layout.svelte:136-143` + grep tout autre usage `DropdownMenu.Trigger` dans le repo : `grep -rn "DropdownMenu.Trigger" frontend/src/`. **Attendu : 2 occurrences** validées ground-truth Pass 1 validate : (a) `+layout.svelte:136` — wrapper `<Button>` à l'intérieur → **problématique** (violation WCAG 2.1 4.1.2 `nested-interactive`) → **à patcher** ; (b) `design-system/+page.svelte:151` — utilise déjà `{#snippet child({ props })}` (pattern bits-ui 2.x correct, non-violating) → **NE PAS modifier**. Si une 3ᵉ occurrence émerge (régression future ou ajout post-spec), évaluer individuellement avant patch.
   - [ ] T3.2 Consulter https://bits-ui.com/docs/components/dropdown-menu pour le pattern `child` snippet ou `asChild` (à adapter selon version `bits-ui` du projet — voir `frontend/package.json` pour la version installée).
   - [ ] T3.3 Appliquer le fix : (a) variante préférée — supprimer le wrapper `<Button>` et appliquer ses classes Tailwind directement sur `<DropdownMenu.Trigger>` ; (b) variante fallback — `<DropdownMenu.Trigger>{#snippet child(...)}<button class="...">...</button>{/snippet}</DropdownMenu.Trigger>` (selon API bits-ui exacte). Préserver les attributs ARIA + le `aria-hidden` sur les icônes.
   - [ ] T3.4 `npm run check` : 0 erreurs Svelte (les warnings pré-existants 25 restent acceptables). Pas de nouveau warning sur le composant patché.
@@ -187,7 +187,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 - [ ] **T10** Test Locally First — checks CI complets (AC: #16, #17)
   - [ ] T10.1 Backend Rust : `cargo fmt --all -- --check` + `cargo build --workspace --all-targets` + `cargo clippy --workspace --all-targets -- -D warnings`. Skip `cargo test --workspace` si 0 modif Rust.
   - [ ] T10.2 Frontend Svelte : `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` (4 checks doivent tous passer).
-  - [ ] T10.3 AC #17 non-régression : `npx playwright test auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts reports.spec.ts users.spec.ts --grep -v "axe a11y\|axe-core"` (exclure les tests axe-core eux-mêmes pour isoler les régressions UI/comportement post-fix `+layout.svelte`). Comparer aux baselines pré-9-5-1c.
+  - [ ] T10.3 AC #17 non-régression : `npx playwright test auth.spec.ts contacts.spec.ts homepage-settings.spec.ts invoices.spec.ts products.spec.ts reports.spec.ts users.spec.ts --grep-invert "axe a11y|axe-core"` (flag `--grep-invert` correct CLI Playwright 1.59.1 vs `--grep -v` invalide qui matche literalement `-v` ; pattern alternation `|` standard regex). Comparer aux baselines pré-9-5-1c.
   - [ ] T10.4 Push branche `chore/epic-9-5-planning` reporté à fin Epic 9.5 (pattern « avoid parallel PRs »).
 
 ## Dev Notes
@@ -212,7 +212,7 @@ Les chiffres de violations sont mesurés empiriquement le 2026-05-19 (run combin
 
 ### Pattern bits-ui `DropdownMenu.Trigger` — KF #91 fix probable
 
-La lib `bits-ui` (cf. `frontend/package.json` pour la version exacte) fournit des composants headless. Le pattern actuel `+layout.svelte:136-144` :
+La lib `bits-ui` (version `^2.16.5` confirmée ground-truth Pass 1 validate) fournit des composants headless. Le pattern actuel `+layout.svelte:136-143` (Trigger ouvrante l.136 → Button l.137-143) :
 
 ```svelte
 <DropdownMenu.Trigger>
@@ -275,9 +275,9 @@ Le cumul baseline ≥ 600 violations est très supérieur au seuil R2 (100). Mê
 
 ### Risque R3 — `+layout.svelte` modif peut casser tests E2E hors a11y
 
-Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26 — déjà KF-029 #97), pour le logout, et pour la sélection langue (non fonctionnel v0.1 mais visible). Une modif sur `+layout.svelte:136-144` peut casser le toggle mode-expert (le sélecteur `button:has-text("Mode")` cible probablement le bouton Mode dans le menu).
+Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26 — déjà KF-029 #97), pour le logout, et pour la sélection langue (non fonctionnel v0.1 mais visible). Une modif sur `+layout.svelte:136-143` peut casser le toggle mode-expert (le sélecteur `button:has-text("Mode")` cible probablement le bouton Mode dans le menu).
 
-**Mitigation T10.3** : non-régression run E2E avec `--grep -v "axe a11y\|axe-core"` exclut les tests axe-core eux-mêmes (qu'on patche par construction) et valide que le reste de la suite reste verte. Si mode-expert ou un autre test régresse, le fix `+layout.svelte` doit préserver le DOM structure du DropdownMenu (id, data-testid, aria-attrs) — pas seulement supprimer le `<Button>` interne. Verifier que `button:has-text("Mode")` (KF-029 cas) reste cible-able.
+**Mitigation T10.3** : non-régression run E2E avec `--grep-invert "axe a11y|axe-core"` (flag correct Playwright CLI 1.59.1 — `--grep -v` est invalide, matcherait literalement le nom de test `-v`) exclut les tests axe-core eux-mêmes (qu'on patche par construction) et valide que le reste de la suite reste verte. Si mode-expert ou un autre test régresse, le fix `+layout.svelte` doit préserver le DOM structure du DropdownMenu (id, data-testid, aria-attrs) — pas seulement supprimer le `<Button>` interne. Vérifier que `button:has-text("Mode")` (KF-029 #97 cas) reste cible-able post-fix.
 
 ### Coordination avec 9-5-1d (KF #47 + #50)
 
@@ -292,7 +292,7 @@ Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26
 ### Project Structure Notes
 
 - **Fichiers édités par 9-5-1c (Phase A — toujours)** :
-  - `frontend/src/routes/(app)/+layout.svelte` (lignes ~135-144 — fix DropdownMenu pattern, ~10-15 LoC modifiées).
+  - `frontend/src/routes/(app)/+layout.svelte` (lignes 136-143 — fix DropdownMenu pattern, ~5-10 LoC modifiées selon variante A ou B).
   - `_bmad-output/implementation-artifacts/9-5-1c-kf-fix-a11y.md` (cette spec, Change Log final).
   - `_bmad-output/implementation-artifacts/sprint-status.yaml` (statut entry).
   - `_bmad-output/planning-artifacts/epic-9-5.md` (section split mise à jour).
@@ -335,7 +335,8 @@ Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26
 - [Source: _bmad-output/planning-artifacts/epic-9-5.md#Story-9.5-1] — spec parent + R2 split rule.
 - [Source: _bmad-output/implementation-artifacts/9-5-1a-kf-triage.md] — triage amont (mapping KF #55 + #91 → 9-5-1c a11y).
 - [Source: _bmad-output/implementation-artifacts/9-5-1b-kf-fix-infra.md] — pattern dev-story mode orchestré complet réutilisable + baselines force-add precedent.
-- [Source: frontend/src/routes/(app)/+layout.svelte:135-144] — code cible KF #91 fix.
+- [Source: frontend/src/routes/(app)/+layout.svelte:136-143] — code cible KF #91 fix (Trigger ouvrante + Button + Button fermante).
+- [Source: frontend/src/routes/design-system/+page.svelte:151] — référence pattern correct bits-ui 2.x `{#snippet child({ props })}`, ne pas modifier.
 - [Source: frontend/tests/e2e/baseline-post-9-5-1b.log] — baseline empirique 2026-05-19 (homepage + invoices a11y violations).
 - [GitHub Issue #55 KF-023] — axe-core 6 pages a11y violations.
 - [GitHub Issue #91 KF-027] — DropdownMenu.Trigger nested-interactive wcag2a 4.1.2.
@@ -358,3 +359,38 @@ Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26
 ### File List
 
 ## Change Log
+
+### Pass 1 spec validate — 2026-05-19, Sonnet 4.6 (subagent contexte frais)
+
+**Verdict trend** : 0 CRITICAL + 2 HIGH + 4 MEDIUM + 3 LOW = 9 findings (Convergence : NON).
+
+**Discipline grep ground-truth Sonnet** appliquée — 9/9 ground-truth verifications positives (chaque CRITICAL/HIGH vérifié par lecture directe ou commande CLI avant émission).
+
+**Patches appliqués (9/9 — tous patchables sans defer)** :
+
+1. **HIGH-01 — Playwright `--grep -v` syntaxe invalide (3 occurrences AC #17 + T10.3 + Dev Notes R3)** : la CLI Playwright 1.59.1 n'accepte que `--grep-invert`, pas `--grep -v`. Vérifié `npx playwright test --help` → `-g, --grep <grep> ... --grep-invert <grep>` uniquement. **Patch** : `--grep -v "axe-core"` → `--grep-invert "axe a11y|axe-core"` (alternation regex standard `|` sans backslash `\|` qui est syntaxe sed inadéquate). 3 occurrences corrigées + commentaire de garde-fou explicite « PAS `--grep -v` qui matche literalement le test name `-v` ».
+
+2. **HIGH-02 — AC #5 prédiction cascade incohérente avec Dev Notes** : AC #5 disait « ~5-10 violations `nested-interactive` par page », Dev Notes disaient « ~1 violation × 6 pages = -6 cumul ». Empirique baseline-post-9-5-1b.log confirme 1 noeud `#bits-c1` par page (pas un cluster). **Patch** : AC #5 réécrit pour aligner : « ~1 violation `nested-interactive` par page `(app)/*` (1 seul noeud `#bits-c1` par page dans le DOM bits-ui) ; cascade attendue -6 violations cumul (marginal vs total ≥ 600) ».
+
+3. **MEDIUM-01 — Story "so that" factuellement faux sur login** : disait « page login ne présente plus 109 violations dont ~50 cascading nested-interactive depuis le shell », mais `/login` utilise `routes/login/+page.svelte` sans le layout app-shell (vérifié ground-truth — aucun layout `(auth)/+layout.svelte` n'existe, login est sous le layout racine sans `DropdownMenu`). **Patch** : "so that" réécrit pour distinguer login (109 violations d'autres catégories, non-cascade) et les 6 pages `(app)/*` (cascade KF #91 applicable).
+
+4. **MEDIUM-02 — Référence inexistante §"Risque R2 — KF #55 si > 100 violations"** : `grep -nF "Risque R2" epic-9-5.md` → aucun résultat. R2 est mentionné inline ligne 87 description Story 9.5-1c « (R2 ci-dessous) » qui promet une section non-écrite. **Patch** : AC #8 réécrit pour citer la source réelle (« description inline §"Story 9.5-1c" ligne 87 ; aucune section §"Risque R2" séparée — R2 est référencé par anticipation dans cette spec story »).
+
+5. **MEDIUM-03 — T3.1 ambiguïté sur 2 occurrences DropdownMenu.Trigger** : `grep -rn "DropdownMenu.Trigger" frontend/src/` retourne 2 hits : (a) `+layout.svelte:136` problématique → patcher, (b) `design-system/+page.svelte:151` utilise déjà `{#snippet child({ props })}` correct → NE PAS modifier. Sans précision, le dev pourrait « fixer » le pattern déjà correct. **Patch** : T3.1 réécrit pour énumérer explicitement les 2 occurrences ground-truth avec verdict per-fichier.
+
+6. **MEDIUM-04 — Garde-fou 80% architectural calcul non spécifié** : « plus de 80% relèvent de catégories architecturales » ambigu entre (a) 80% du nombre de violations OU (b) 80% du nombre de catégories. Les deux donnent des résultats opposés (e.g. 1 cat architectural × 200 violations + 4 cat mécaniques × 10 = 71% par count vs 20% par catégorie). **Patch** : AC #8 garde-fou précise « calculé sur le nombre total de violations : `sum(violations dans catégories architecturales) / sum(toutes violations résiduelles) > 0.80`, PAS un comptage par catégorie ».
+
+7. **LOW-01 — Incohérence `:135-144` vs `:136-144` vs `:136-143`** : 4+ occurrences avec numéros divergents. Ligne réelle à modifier = 136-143 (Trigger ouvrante + Button + ferme Button), 144 = `</DropdownMenu.Trigger>` non-modifiée. **Patch** : alignement uniforme sur `:136-143` (Scope + AC #3 + T3.1 + Dev Notes + Project Structure + References).
+
+8. **LOW-02 — AC #17 pattern manque `axe a11y`** : disait `--grep -v "axe-core"`, mais les tests `reports.spec.ts:85/96` utilisent la description `reports page has zero axe a11y violations` (sans le terme `axe-core`). Sans pattern complet ils auraient été inclus en non-régression. **Patch** : AC #17 aligné sur T10.3 (`--grep-invert "axe a11y|axe-core"`).
+
+9. **LOW-03 — AC #1 `c6f9444` BMAD upgrade ambigu** : disait « commit BMAD upgrade `c6f9444` localement (PR #95 toujours en attente merge à ce stade) » présenté comme un prérequis. Le commit est sur branche `chore/bmad-upgrade-6.6.0`, pas sur `chore/epic-9-5-planning` — un dev pourrait penser devoir cherry-pick/merger. C'est juste du contexte. **Patch** : AC #1 reformulé en « **Note contexte (pas un prerequis actif)** : commit BMAD upgrade `c6f9444` sur branche `chore/bmad-upgrade-6.6.0` en attente de merge via PR #95 — aucune action requise pour 9-5-1c ».
+
+**Bonus ground-truth findings ajoutés au Scope** (utiles pour le dev) :
+- `bits-ui 2.16.5` installé confirmé (`MenuTriggerPropsWithoutHTML = WithChild<{...}>` dans `types.d.ts`).
+- `DropdownMenu.Trigger` accepte `class` prop directement (variant A préféré — `...restProps` forwarded).
+- Référence cross-spec ajoutée vers `design-system/+page.svelte:151` comme pattern correct.
+
+**Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
