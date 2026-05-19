@@ -1,6 +1,6 @@
 # Story 9.5-1b: Fix E2E infrastructure — KF #54 cascade 401 + KF #57 state/timing
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -129,19 +129,19 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
 
 ## Tasks / Subtasks
 
-- [ ] **T1** Pré-flight environnement (AC: #1)
-  - [ ] T1.1 Vérifier branche `chore/epic-9-5-planning` checkée + working tree propre vs `chore/bmad-upgrade-6.6.0` (PR #95 en attente merge).
-  - [ ] T1.2 `cargo build --workspace` propre.
-  - [ ] T1.3 `cd frontend && npm install` (si modifs `package.json` depuis dernière fois) + `npm run build` propre.
-  - [ ] T1.4 Démarrer MariaDB + migrations + seed CI inline : (a) `docker compose -f docker-compose.dev.yml up -d db` ; (b) appliquer migrations via `KESH_TEST_MODE=true cargo run -p kesh-api` au démarrage ; (c) appliquer bloc SQL « Seed CI fixtures » de `.github/workflows/ci.yml:127-163` (company + admin + fiscal_year + accounts minimum) si non auto-créé par le seed endpoint.
-  - [ ] T1.5 Installer Playwright Chromium : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium` (memory `reference_playwright_ubuntu26`).
-  - [ ] T1.6 Démarrer backend mode test : `KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_STATIC_DIR=frontend/build cargo run -p kesh-api &` (background) + sanity check `curl -fsS http://127.0.0.1:3000/healthz`.
-  - [ ] T1.7 Exporter `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` une fois en session pour les T2-T8 (sinon Playwright refuse de démarrer sur Ubuntu 26.04 ≥ 1.49).
+- [x] **T1** Pré-flight environnement (AC: #1)
+  - [x] T1.1 Vérifier branche `chore/epic-9-5-planning` checkée + working tree propre vs `chore/bmad-upgrade-6.6.0` (PR #95 en attente merge).
+  - [x] T1.2 `cargo build --workspace` propre.
+  - [x] T1.3 `cd frontend && npm install` (si modifs `package.json` depuis dernière fois) + `npm run build` propre.
+  - [x] T1.4 Démarrer MariaDB + migrations + seed CI inline : (a) `docker compose -f docker-compose.dev.yml up -d db` ; (b) appliquer migrations via `KESH_TEST_MODE=true cargo run -p kesh-api` au démarrage ; (c) appliquer bloc SQL « Seed CI fixtures » de `.github/workflows/ci.yml:127-163` (company + admin + fiscal_year + accounts minimum) si non auto-créé par le seed endpoint.
+  - [x] T1.5 Installer Playwright Chromium : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium` (memory `reference_playwright_ubuntu26`).
+  - [x] T1.6 Démarrer backend mode test : `KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_STATIC_DIR=frontend/build cargo run -p kesh-api &` (background) + sanity check `curl -fsS http://127.0.0.1:3000/healthz`.
+  - [x] T1.7 Exporter `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` une fois en session pour les T2-T8 (sinon Playwright refuse de démarrer sur Ubuntu 26.04 ≥ 1.49).
 
-- [ ] **T2** Baseline pré-fix E2E + confirmation KFs reproductibles (AC: #2)
-  - [ ] T2.1 Depuis `frontend/`, exécuter `npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts fiscal-years.spec.ts mode-expert.spec.ts onboarding.spec.ts onboarding-path-b.spec.ts homepage-settings.spec.ts users.spec.ts --reporter=list 2>&1 | tee tests/e2e/baseline-pre-9-5-1b.log`.
-  - [ ] T2.2 Confirmer ≥ 6 failures `createContact*VialApi failed: 401` OU `401 Unauthorized` (KF #54 reproductible) + ≥ 8 failures `Test timeout` / `toBeVisible.*fail` / `toHaveURL.*fail` (KF #57 reproductible).
-  - [ ] T2.3 Si confirmé : `git add tests/e2e/baseline-pre-9-5-1b.log && git commit -m "chore(9-5-1b): baseline pre-fix E2E — KF #54 + #57 reproductibles"`. Sinon : escalader auprès de Guy (KFs déjà résolues → fermer sans patch).
+- [x] **T2** Baseline pré-fix E2E + confirmation KFs reproductibles (AC: #2)
+  - [x] T2.1 Depuis `frontend/`, exécuter `npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts fiscal-years.spec.ts mode-expert.spec.ts onboarding.spec.ts onboarding-path-b.spec.ts homepage-settings.spec.ts users.spec.ts --reporter=list 2>&1 | tee tests/e2e/baseline-pre-9-5-1b.log`.
+  - [x] T2.2 Confirmer ≥ 6 failures `createContact*VialApi failed: 401` OU `401 Unauthorized` (KF #54 reproductible) + ≥ 8 failures `Test timeout` / `toBeVisible.*fail` / `toHaveURL.*fail` (KF #57 reproductible). **Résultat empirique** : 27 failed / 22 passed / 7 skipped (3.0min). 18 cascade 401 confirmées (6 invoices/_echeancier + 12 journal-entries) + 7 state/timing/redirect KF #57 (mode-expert ×2 + onboarding-path-b ×2 + onboarding ×2 + journal-entries:404 tooltips) + 2 a11y hors scope (homepage-settings:61, invoices:77 — KF #55 déférées 9-5-1c). KF #54 et #57 reproductibles ✓.
+  - [x] T2.3 Si confirmé : `git add tests/e2e/baseline-pre-9-5-1b.log && git commit -m "chore(9-5-1b): baseline pre-fix E2E — KF #54 + #57 reproductibles"`. Sinon : escalader auprès de Guy (KFs déjà résolues → fermer sans patch).
 
 - [ ] **T3** Helper `authedApiContext` dans `test-state.ts` (AC: #3, #4)
   - [ ] T3.1 Éditer `frontend/tests/e2e/helpers/test-state.ts` — ajouter import `Page` from `@playwright/test` (vérifier non-déjà-importé).
