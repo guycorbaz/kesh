@@ -103,8 +103,11 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
 
 		// Sélection du contact via le combobox
-		await page.getByRole('combobox').click();
-		await page.getByRole('combobox').fill(contactName);
+		// Strict-mode fix (KF #57 cascade-cleared) : `getByRole('combobox')` matche
+		// 2 éléments (contact picker + VAT rate select `data-testid=invoice-line-vat-rate`).
+		// Discriminer par placeholder du picker contact (cf. ContactPicker component).
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
 		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
 
 		// Ligne libre par défaut : remplir description, quantité, prix
@@ -131,8 +134,11 @@ test.describe('Factures — création brouillon', () => {
 		await page.goto('/invoices/new');
 
 		// Contact
-		await page.getByRole('combobox').click();
-		await page.getByRole('combobox').fill(contactName);
+		// Strict-mode fix (KF #57 cascade-cleared) : `getByRole('combobox')` matche
+		// 2 éléments (contact picker + VAT rate select `data-testid=invoice-line-vat-rate`).
+		// Discriminer par placeholder du picker contact (cf. ContactPicker component).
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
 		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
 
 		// Ligne libre (celle par défaut)
@@ -268,8 +274,11 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 		await createContactWithAddressViaApi(page, contactName);
 		// Facture brouillon non validée
 		await page.goto('/invoices/new');
-		await page.getByRole('combobox').click();
-		await page.getByRole('combobox').fill(contactName);
+		// Strict-mode fix (KF #57 cascade-cleared) : `getByRole('combobox')` matche
+		// 2 éléments (contact picker + VAT rate select `data-testid=invoice-line-vat-rate`).
+		// Discriminer par placeholder du picker contact (cf. ContactPicker component).
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
 		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
 		const firstRow = page.locator('tbody tr').first();
 		await firstRow.locator('input[type="text"]').first().fill('Item');
