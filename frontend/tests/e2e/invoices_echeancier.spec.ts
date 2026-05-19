@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	// Story 6.4 : preset `with-data` (= with-company + 1 contact + 1 product,
@@ -56,7 +56,7 @@ async function createContactViaApi(
 		expect(res.ok(), `createContact failed: ${res.status()}`).toBeTruthy();
 		return (await res.json()).id as number;
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 
@@ -86,7 +86,7 @@ async function createAndValidateInvoice(
 		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
 		return inv.id as number;
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 

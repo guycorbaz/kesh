@@ -81,7 +81,7 @@ export async function seedTestState(preset: Preset): Promise<void> {
 			);
 		}
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 
@@ -94,6 +94,32 @@ export async function seedTestState(preset: Preset): Promise<void> {
  */
 async function readAccessTokenFromStorage(page: Page): Promise<string | null> {
 	return page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY_ACCESS_TOKEN);
+}
+
+/**
+ * Dispose un `APIRequestContext` en swallowing les erreurs de teardown.
+ *
+ * Motivation (Pass 1 code-review ECH-M1) : si `ctx.dispose()` throw dans un
+ * `finally`, l'erreur originelle du `try` (e.g. assertion `expect(res.ok())
+ * .toBeTruthy()` qui révèle un 401 ou 400) est silencieusement écrasée par
+ * l'erreur de teardown. La cause originelle est perdue → diagnostic E2E très
+ * difficile. Le wrapper console.warn préserve l'erreur originelle tout en
+ * loggant la défaillance de teardown (cohérent avec le pattern défensif de
+ * `clearAuthStorage` lignes ~104-107).
+ *
+ * Utilisation typique :
+ * ```
+ * const ctx = await authedApiContext(page);
+ * try { ... } finally { await disposeContextSafe(ctx); }
+ * ```
+ */
+export async function disposeContextSafe(ctx: APIRequestContext): Promise<void> {
+	await ctx.dispose().catch((err) => {
+		console.warn(
+			'[test] APIRequestContext dispose failed:',
+			err instanceof Error ? err.message : String(err),
+		);
+	});
 }
 
 /**

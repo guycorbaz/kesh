@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -56,7 +56,7 @@ async function getSeedAccountNumbers(
 
 		return { debitNumber: asset.number, creditNumber: revenue.number };
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 

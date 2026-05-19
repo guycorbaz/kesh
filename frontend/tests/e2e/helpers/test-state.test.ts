@@ -12,7 +12,7 @@
  *  3. Cas erreur (token vide) → throw (validation `!token` couvre les 3 cas)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock du module `@playwright/test` AVANT l'import du helper sous test.
 // `vi.mock` est hoisted, donc on utilise `vi.hoisted` pour déclarer la mock
@@ -38,7 +38,18 @@ function makePage(tokenValue: string | null): FakePage {
 
 beforeEach(() => {
 	newContextMock.mockReset();
-	newContextMock.mockResolvedValue({ /* fake APIRequestContext */ });
+	// Fake APIRequestContext minimal — inclut `dispose` pour rester compatible
+	// avec un caller qui appellerait `await ctx.dispose()` (anti-régression Pass 1
+	// code-review BH-L3).
+	newContextMock.mockResolvedValue({ dispose: vi.fn().mockResolvedValue(undefined) });
+	// Stub explicite `KESH_BACKEND_URL` pour rendre le test hermétique vs CI env
+	// (Pass 1 code-review ECH-L2). Sans ce stub, `resolveBackendUrl()` lit
+	// `process.env.KESH_BACKEND_URL` qui peut être inattendu sur certains runners.
+	vi.stubEnv('KESH_BACKEND_URL', 'http://test.example:3000');
+});
+
+afterEach(() => {
+	vi.unstubAllEnvs();
 });
 
 describe('authedApiContext', () => {

@@ -25,7 +25,7 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
   - `frontend/tests/e2e/onboarding-path-b.spec.ts` — KF #57 (`:60` flux Path B 30s timeout).
   - `frontend/tests/e2e/homepage-settings.spec.ts` — KF #57 (`:43` 4 sections toBeVisible).
   - `frontend/tests/e2e/users.spec.ts` — KF #57 (`:44` liste users affichée).
-- **0 fichier de production** modifié : aucun `.rs`, aucun `.svelte`, aucun `.ts` hors `frontend/tests/`.
+- **0 fichier de production applicatif** modifié : aucun `.rs`, aucun `.svelte`, aucun `.ts` sous `frontend/src/`. **Exception infra test** : `frontend/vite.config.ts:32` (glob Vitest étendu pour découvrir le nouveau test `tests/e2e/helpers/test-state.test.ts`) — modification ciblée 1 ligne config Vitest, sans impact sur le bundle production (vite build vs vitest sont des phases distinctes).
 
 **Hors scope 9-5-1b** :
 
@@ -172,7 +172,6 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
   - [x] T6.3 `npx playwright test journal-entries.spec.ts --reporter=list` : 12 failures cascade 401 → pass (peut révéler des failures KF #57 résiduelles non-cascade — documenter dans T7). **Résultat empirique** : 14 passed / 3 failed / 6 skipped (36.9s, vs 5 passed / 12 failed baseline). **0 occurrences 401** ✓. **+9 tests pass**. Failures résiduelles : `:70` (affiche message liste vide UI), `:220` (suppression confirmation UI), `:409` (tooltips pédagogiques — KF #57 canonique line 404 baseline, shifted +5).
   - [x] T6.4 Commit `fix(e2e/journal-entries): use authedApiContext in getSeedAccountNumbers helper (refs #54)`.
 
-- [ ] **T7** Validation cascade 401 résolue (AC: #8)
 - [x] **T7** Validation cascade 401 résolue (AC: #8)
   - [x] T7.1 Re-run combiné : `npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=list 2>&1 | tee tests/e2e/post-kf54-9-5-1b.log` (depuis `frontend/`).
   - [x] T7.2 `grep -cE "createContact.*failed: 401|createProduct.*failed: 401|create invoice failed: 401|401 Unauthorized|authedApiContext: no accessToken" tests/e2e/post-kf54-9-5-1b.log` : 0 attendu (pattern élargi pour couvrir les 4 helpers `invoices.spec.ts` + les 2 helpers `invoices_echeancier.spec.ts`). **Résultat : 0 ✓**.
@@ -502,3 +501,52 @@ Vérifications empiriques exécutées :
 **Status** : `in-progress → review`. Prête pour `bmad-code-review 9-5-1b`. Cycle review attendu : 2-3 passes (Sonnet → Haiku → Opus selon Review Iteration Rule), LLM différent dev (Opus 4.7) → Sonnet 4.6 recommandé Pass 1.
 
 **Modèle dev-story** : Claude Opus 4.7 (1M context, session orchestratrice — multi-runs E2E avec background tasks + grep ground-truth Bash discipline).
+
+### Pass 1 code-review — 2026-05-19, Sonnet 4.6 (3 subagents parallèles contexte frais)
+
+**Setup** : 3 reviewers Sonnet 4.6 parallèles isolés (Blind Hunter sans contexte + Edge Case Hunter avec project read + Acceptance Auditor avec spec). Discipline grep ground-truth obligatoire en triage orchestrateur. Cycle CLAUDE.md respecté (dev Opus → review Sonnet, LLM ≠ passe précédente).
+
+**Verdict trend cumulé brut** :
+- Blind Hunter : 0 CRITICAL + 0 HIGH + 3 MEDIUM + 4 LOW
+- Edge Case Hunter : 0 CRITICAL + 0 HIGH + 2 MEDIUM + 3 LOW
+- Acceptance Auditor : 0 CRITICAL + 0 HIGH + 2 MEDIUM + 4 LOW
+- **Total brut (avant dedup)** : 0 CRITICAL + 0 HIGH + 7 MEDIUM + 11 LOW = 18 findings
+
+**Dedup** :
+- BH-M3 = ECH-M2 (null deref `getSeedAccountNumbers`)
+- BH-L1 = AA-D2 (T7 doublon)
+- AA-D1/D2/D3 reclassés LOW (déviations cosmétiques)
+
+**Effectif après dedup : 0C + 0H + 6 MEDIUM + 9 LOW = 15 findings**.
+
+**Triage par orchestrateur** :
+- 4 MEDIUM patchés : ECH-M1 (dispose throw masque erreur) + AA-M1 (baselines non commitées AC #14)
+- 2 MEDIUM acceptés : BH-M3/ECH-M2 (null deref pré-existant — scope discipline) + AA-M2 (delta +18 self-documented)
+- 2 MEDIUM → LOW : BH-M1 (mock bleed spéculatif futur) + BH-M2 (await oublié — TS strict catch)
+- 4 LOW patchés : BH-L1/AA-D2 (T7 doublon) + BH-L3 (mock dispose) + ECH-L2 (env stub) + AA-D1 (Scope vs vite.config.ts)
+- 5 LOW acceptés/déférés : BH-L2 (`as never` test mock OK) + BH-L4 (glob current OK) + ECH-L1 (FR placeholder no current path) + ECH-L3 (squash precedent) + AA-D3 (closes #N body=subject)
+
+**Patches appliqués (6/15)** :
+
+1. **ECH-M1 → fix-here** (MEDIUM) — `dispose()` throw masque `AssertionError` originale. Pattern défensif identique à `clearAuthStorage` ligne ~104. **Patch** : ajout `disposeContextSafe(ctx)` exporté dans `test-state.ts` (wrap `dispose().catch(console.warn)`), remplacement des 9 occurrences `await ctx.dispose()` / `await pdfCtx.dispose()` par `await disposeContextSafe(ctx)` dans helpers/test-state.ts (seedTestState) + invoices.spec.ts (5) + invoices_echeancier.spec.ts (2) + journal-entries.spec.ts (1). Import `disposeContextSafe` ajouté dans les 3 spec files.
+
+2. **AA-M1 → fix-here** (MEDIUM) — AC #14 baseline-post-9-5-1b.log non commitée. Précédent `baseline-post-7-5.log` tracé. **Patch** : `git add -f frontend/tests/e2e/baseline-pre-9-5-1b.log frontend/tests/e2e/baseline-post-9-5-1b.log` (1359 lignes cumul). Le post-baseline copié depuis `/tmp/kesh-9-5-1b/post-kf54-9-specs.log` (T8.1 33 specs run combiné).
+
+3. **BH-L1 / AA-D2 → fix-here** (LOW) — T7 doublon `- [ ] **T7**` + `- [x] **T7**`. **Patch** : suppression ligne unchecked, conservation ligne checked.
+
+4. **BH-L3 → fix-here** (LOW) — Vitest mock retournait `{}` sans `dispose`. Anti-régression future si un caller appelle `ctx.dispose()` dans le test runtime. **Patch** : `newContextMock.mockResolvedValue({ dispose: vi.fn().mockResolvedValue(undefined) })`.
+
+5. **ECH-L2 → fix-here** (LOW) — Vitest non-hermétique vs `KESH_BACKEND_URL` env. **Patch** : `vi.stubEnv('KESH_BACKEND_URL', 'http://test.example:3000')` en `beforeEach` + `vi.unstubAllEnvs()` en `afterEach`. Import `afterEach` ajouté.
+
+6. **AA-D1 → fix-here** (LOW) — Scope section disait « 0 fichier production modifié », contredisait modif `vite.config.ts` AC #1 par HIGH-01 spec validate. **Patch** : Scope clarifié « 0 fichier de production applicatif » + exception explicite `vite.config.ts:32` infra test, sans impact bundle production.
+
+**Verdict effectif Pass 1 final** : 0 CRITICAL + 0 HIGH + 2 MEDIUM accepté (pré-existant + auto-documenté) + ~5 LOW accepté/déféré = **Convergence ≠ atteinte** (2 MEDIUM acceptés au lieu de « uniquement LOW » strict). Pass 2 Haiku 4.5 requise pour ré-évaluer.
+
+**Vérification post-patches** :
+- `npm run test:unit -- tests/e2e/helpers/test-state.test.ts` : 3/3 pass (754ms, stable) ✓
+- `npm run check` : 0 errors / 25 warnings pré-existants ✓ (aucun nouveau warning)
+- Re-run E2E 3 specs (T7 narrative) : 16 pass / 10 fail / 6 skipped (identique pré-patches, 0 régression) + 0 occurrences 401 ✓
+
+**Modèle Pass 1** : 3 × Sonnet 4.6 subagents isolés (contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Opus dev → Sonnet review).
+
+**Recommandation Pass 2** : Haiku 4.5 sur diff cumul HEAD vs `950feea` (aplati) per CLAUDE.md §Haiku guardrails « donner un diff unique plutôt qu'une séquence multi-commit ». Vérifier que les patches MEDIUM (ECH-M1 + AA-M1) sont bien intégrés et que les 2 MEDIUM acceptés (BH-M3 pré-existant + AA-M2 self-documented) restent acceptables. Cycle attendu : convergence Pass 2 (scope minimaliste + patches mécaniques).

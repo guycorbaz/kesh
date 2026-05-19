@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -49,7 +49,7 @@ async function createContactViaApi(page: import('@playwright/test').Page, name: 
 		const json = await res.json();
 		return json.id as number;
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 
@@ -68,7 +68,7 @@ async function createProductViaApi(
 		const json = await res.json();
 		return json.id as number;
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 
@@ -208,7 +208,7 @@ async function createContactWithAddressViaApi(
 		expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
 		return (await res.json()).id as number;
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 
@@ -241,7 +241,7 @@ async function createAndValidateInvoiceViaApi(
 		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
 		return invoice.id as number;
 	} finally {
-		await ctx.dispose();
+		await disposeContextSafe(ctx);
 	}
 }
 
@@ -264,7 +264,7 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 			const buf = await pdfRes.body();
 			expect(buf.slice(0, 7).toString('utf8')).toMatch(/^%PDF-1\./);
 		} finally {
-			await pdfCtx.dispose();
+			await disposeContextSafe(pdfCtx);
 		}
 	});
 
