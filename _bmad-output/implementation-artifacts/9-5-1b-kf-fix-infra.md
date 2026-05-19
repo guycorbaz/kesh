@@ -365,3 +365,30 @@ test.skip(
 **Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
 
 **Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
+
+### Pass 2 spec validate — 2026-05-19, Haiku 4.5 (subagent contexte frais)
+
+**Verdict trend brut** : 1 CRITICAL + 0 HIGH + 0 MEDIUM + 1 LOW = 2 findings (Convergence brute : NON).
+**Verdict effectif après dismiss faux-positif** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 1 LOW (accepté tel quel) = **CONVERGENCE PASS 2** (critère CLAUDE.md `Uniquement findings LOW` atteint).
+
+**Discipline grep ground-truth Haiku** : 9/9 vérifications positives — pré-conditions du patch validées (commit `35344c9` HEAD main + `c6f9444` sur `chore/bmad-upgrade-6.6.0`), AC numbering 1-18 sans gap, line numbers `invoices.spec.ts` 37/57/180/199/217/232 + `invoices_echeancier.spec.ts` 45/65/78 confirmés, message `test.skip` `fiscal-years.spec.ts:121` correct, 3 memory files cités présents.
+
+**Finding C1 dismissed comme faux-positif Haiku** (per CLAUDE.md §"Haiku-specific guardrails") :
+
+- **C1 (CRITICAL) Haiku allégué** : « HIGH-01 patch NOT applied — `vite.config.ts:32` still missing `'tests/**/*.test.ts'` ». Ground-truth Haiku : `sed -n '32p' frontend/vite.config.ts` → `include: ['src/**/*.test.ts'],` (seul `src` pattern). **Conclusion Haiku** : régression Pass 1.
+- **Réfutation ground-truth orchestrateur** :
+  - `git show 9c2cef6 --stat` → 1 fichier modifié uniquement (`9-5-1b-kf-fix-infra.md`, +64/-20). **Le commit Pass 1 ne touche PAS `frontend/vite.config.ts`**.
+  - `grep -nF "vite.config.ts" 9-5-1b-kf-fix-infra.md` → ligne 151 contient « T3.5 **Avant** de créer le fichier Vitest, mettre à jour `frontend/vite.config.ts` ... » — c'est une **consigne de tâche pour le futur dev**, pas un patch appliqué.
+  - Status story = `ready-for-dev`. **Aucun fichier source modifié à ce stade par construction** (le code patches arrivent en dev-story, pas en spec validate).
+- **Cause Haiku** : confusion classique « patch dans la spec qui ajoute une tâche » vs « patch dans le code source ». Variante du symptôme documenté CLAUDE.md §"Haiku-specific guardrails" (Haiku confond la nature du patch — méta-spec vs code).
+- **Action** : dismiss C1. Aucun patch nécessaire. `vite.config.ts` sera modifié par le dev en T3.5 lors de `bmad-dev-story 9-5-1b`.
+
+**Finding L1 accepté tel quel** (LOW polish) :
+
+- **L1 (LOW)** : AC #10 commit grouping ambiguity sur « la même root-cause exact ». Haiku conclut elle-même « Not a blocker. No action required in spec » — la flexibilité est intentionnelle (T8 est empirique). Pas de patch.
+
+**Trend cumulé spec validate** : Pass 1 Sonnet 0C+2H+2M+3L → 7 patches → Pass 2 Haiku 1C(dismissed)+0H+0M+1L(accepté) → **Convergence**. Cycle short (2 passes) — cohérent avec discipline « scope minimaliste » Epic 9.5.
+
+**Modèle Pass 2** : Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Sonnet → Haiku).
+
+**Statut final spec** : `ready-for-dev` confirmé. Prête pour `bmad-dev-story 9-5-1b`.
