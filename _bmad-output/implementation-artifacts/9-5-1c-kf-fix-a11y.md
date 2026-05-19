@@ -122,7 +122,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 
 - [ ] **T1** Pré-flight environnement (AC: #1)
   - [ ] T1.1 Vérifier branche `chore/epic-9-5-planning` checkée + working tree propre.
-  - [ ] T1.2 Backend kesh-api running KESH_TEST_MODE=true + KESH_HOST=127.0.0.1 (réutiliser si déjà up depuis 9-5-1b, sinon redémarrer). Sanity check `curl -fsS http://127.0.0.1:3000/api/v1/_test/seed -X POST -H 'Content-Type: application/json' -d '{"preset":"with-company"}'` → `{"preset":"with-company","ok":true}`.
+  - [ ] T1.2 Backend kesh-api running KESH_TEST_MODE=true + KESH_HOST=127.0.0.1 (réutiliser si déjà up depuis 9-5-1b, sinon redémarrer). Sanity check `curl -fsS http://127.0.0.1:3000/api/v1/_test/seed -X POST -H 'Content-Type: application/json' -d '{"preset":"with-company"}'` → `{"preset":"with-company","ok":true}`. **Important** : ce curl truncate + re-seed la DB — c'est volontaire et nécessaire pour repartir d'un état déterministe pour AC #2 (sinon comparaison violations baseline vs post-fix invalidée par état stale 9-5-1b). Si le backend a été tué depuis 9-5-1b, le redémarrage seul appliquera les migrations sans seed — le seed `with-company` reste nécessaire avant T2.1.
   - [ ] T1.3 `cargo build --workspace` propre. `cd frontend && npm run build` propre.
   - [ ] T1.4 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` exporté en session (ou inline par commande).
 
@@ -146,7 +146,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 
 - [ ] **T5** Phase B — Mesure cascade + catégorisation (AC: #5, #6, #7)
   - [ ] T5.1 Re-run 8 tests : `npx playwright test auth.spec.ts:90 auth.spec.ts:98 contacts.spec.ts:150 homepage-settings.spec.ts:61 invoices.spec.ts:87 products.spec.ts:78 reports.spec.ts:85 reports.spec.ts:96 --reporter=list 2>&1 | tee tests/e2e/post-kf91-all-9-5-1c.log`.
-  - [ ] T5.2 Compter violations résiduelles par test : `grep -E "Received  \+ [0-9]+" tests/e2e/post-kf91-all-9-5-1c.log` → produire un tableau Markdown 9 colonnes : `Test path:line`, `Baseline violations` (T2.2), `Post-KF #91 violations`, `Delta`, `Categories breakdown (top 3)`.
+  - [ ] T5.2 **Étape prep per-test** : compter violations résiduelles par test : `grep -E "Received  \+ [0-9]+" tests/e2e/post-kf91-all-9-5-1c.log` → produire un tableau Markdown **5 colonnes** (intermédiaire pour traçabilité, **distinct** de T5.5 qui aggrège par catégorie cumul) : `Test path:line` | `Baseline violations (T2.2)` | `Post-KF #91 violations` | `Delta` | `Top 3 categories observées (id axe-core, e.g. heading-order,color-contrast,landmark-one-main)`. La dernière colonne est une string CSV courte — pas 3 colonnes séparées. Ce tableau alimente T5.3-T5.4 qui font l'aggregation per-catégorie pour T5.5.
   - [ ] T5.3 Catégoriser **chaque type de violation** par règle axe-core (id `color-contrast`, `image-alt`, `landmark-one-main`, `heading-order`, `region`, `nested-interactive`, `aria-*`, etc.) — extraire via `grep -A 5 "\"id\":" tests/e2e/post-kf91-all-9-5-1c.log` ou Playwright HTML reporter.
   - [ ] T5.4 Classifier **chaque catégorie** : (a) **mécanique** (color-contrast, image-alt, aria-label simple, attribute fixes) — fix < 5 LoC par occurrence ; (b) **architectural** (landmark-one-main, heading-order, region, focus-management, refactor HTML sémantique) — fix nécessite restructure 10+ LoC par occurrence ; (c) **mixte** (e.g. aria-* qui peut être simple ou refactor selon contexte).
   - [ ] T5.5 Produire tableau récapitulatif dans Change Log :
@@ -394,3 +394,19 @@ Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26
 **Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
 
 **Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
+
+### Pass 2 spec validate — 2026-05-19, Haiku 4.5 (subagent contexte frais)
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 1 MEDIUM + 1 LOW = 2 findings (Convergence : NON — 1 MEDIUM > LOW déclenche Pass 3).
+
+**Discipline grep ground-truth Haiku** : appliquée — toutes les vérifications Pass 1 patches (`--grep-invert`, `~1 violation`, `description inline`, `2 occurrences`, `sum(violations`, `:136-143`, `Note contexte`) confirmées intégrées correctement par Haiku via Read direct. **0 régression** détectée par Pass 1 patches. **0 faux-positif Haiku** observé (cycle court 2-passes pour `9-5-1b` avait dismissed 1C faux-positif méta-spec vs code source — pas reproductible ici car les 2 findings Haiku Pass 2 sont des observations légitimes de la spec elle-même, pas d'allégations de patches non appliqués).
+
+**Patches appliqués (2/2)** :
+
+1. **MEDIUM-01 — T5.2 « 9 colonnes » incohérent avec énumération 5 items** : T5.2 disait « tableau Markdown 9 colonnes » suivi de 5 colonnes listées (`Test path:line`, `Baseline`, `Post-KF #91`, `Delta`, `Categories breakdown (top 3)`). Ambiguïté : (a) 5 colonnes + last comme CSV string OU (b) 5 + 3 sub-colonnes catégories = 8 (toujours ≠ 9). Confusion supplémentaire avec T5.5 qui aggrège per-catégorie cumul (AC #7) — structure totalement différente. **Patch** : T5.2 réécrit explicitement « **5 colonnes** » + clarification « last colonne CSV string courte — pas 3 colonnes séparées » + précision que T5.2 est étape prep per-test, distincte de T5.5 aggregation per-catégorie cumul. Lien T5.3-T5.4 mentionné comme passerelle.
+
+2. **LOW-01 — AC #1 backend session reuse stale seed risk** : « Si backend déjà running depuis 9-5-1b → réutiliser » sans mention de re-seed. Risque que T2.1 baseline pre-fix tourne sur état stale 9-5-1b → comparaison violations baseline vs post-fix invalidée. **Patch** : T1.2 sanity check curl `/api/v1/_test/seed` annoté « truncate + re-seed la DB — c'est volontaire et nécessaire pour repartir d'un état déterministe ». Garde-fou explicite « si le backend a été tué depuis 9-5-1b, le redémarrage seul applique les migrations sans seed — le seed reste nécessaire avant T2.1 ».
+
+**Recommandation Haiku** : Pass 3 Opus 4.7 (cycle CLAUDE.md `Sonnet → Haiku → Opus` validé empiriquement Epic 9 retrospective Insight I1). Vérifier les 2 patches MEDIUM-01 + LOW-01 + une dernière passe d'audit holistique de la spec post-Pass 1 + Pass 2 patches.
+
+**Modèle Pass 2** : Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Sonnet → Haiku).
