@@ -14,7 +14,7 @@ so that les 6 pages testées en axe-core ne présentent plus les violations KF #
 
 Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètre précis :
 
-- **Composant app-shell** : `frontend/src/routes/(app)/+layout.svelte` (1 fichier — lignes 136-143 actuelles : `<DropdownMenu.Trigger><Button variant="ghost">...</Button></DropdownMenu.Trigger>` ; le `<DropdownMenu.Root>` ligne 135 + `</DropdownMenu.Trigger>` ligne 144 ne sont pas touchés). **Note ground-truth** : `bits-ui 2.16.5` confirmé installé (`package.json`), `child` snippet API disponible (`MenuTriggerPropsWithoutHTML = WithChild<{...}>` dans `node_modules/bits-ui/dist/bits/menu/types.d.ts`), et `DropdownMenu.Trigger` accepte `class` prop directement (variant A préféré — `...restProps` forwarded). Une seconde occurrence dans `frontend/src/routes/design-system/+page.svelte:151` utilise **déjà** le pattern `{#snippet child({ props })}` correct — ne pas la modifier.
+- **Composant app-shell** : `frontend/src/routes/(app)/+layout.svelte` (1 fichier — lignes 136-143 actuelles : `<DropdownMenu.Trigger><Button variant="ghost">...</Button></DropdownMenu.Trigger>` ; le `<DropdownMenu.Root>` ligne 135 + `</DropdownMenu.Trigger>` ligne 144 ne sont pas touchés). **Note ground-truth** : `bits-ui 2.16.5` confirmé installé (`package.json`), `child` snippet API disponible (`MenuTriggerPropsWithoutHTML = WithChild<{...}>` dans `node_modules/bits-ui/dist/bits/menu/types.d.ts`), et `DropdownMenu.Trigger` accepte `class` prop directement (variant A fonctionnel — `...restProps` forwarded). **Préférence projet** = variante B snippet `child` (cohérent `design-system/+page.svelte:151` — voir Dev Notes §"Pattern bits-ui"). Une seconde occurrence `DropdownMenu.Trigger` dans `frontend/src/routes/design-system/+page.svelte:151` utilise **déjà** le pattern `{#snippet child({ props })}` correct — ne pas la modifier.
 - **Tests axe-core à mesurer** (6 KF #55 + 2 KF #91) :
   - `frontend/tests/e2e/auth.spec.ts:90` (page login — 109 violations baseline 2026-04-30)
   - `frontend/tests/e2e/auth.spec.ts:98` (layout principal — 82 violations baseline)
@@ -60,7 +60,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 
 ### Phase B — Mesure cascade + catégorisation R2
 
-5. **Given** le patch AC #3 (Phase A) appliqué, **When** `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 KESH_BACKEND_URL=http://127.0.0.1:3000 npx playwright test auth.spec.ts:90 auth.spec.ts:98 contacts.spec.ts:150 homepage-settings.spec.ts:61 invoices.spec.ts:87 products.spec.ts:78 reports.spec.ts:85 reports.spec.ts:96 --reporter=list 2>&1 | tee tests/e2e/post-kf91-9-5-1c.log` est ré-exécuté, **Then** mesurer le **delta cascade** : (a) compter le nombre de violations par test post-fix vs baseline AC #2, (b) calculer la **réduction cumulée** : `sum(baseline_violations) - sum(post_kf91_violations)`, (c) confirmer la prédiction empirique : le fix KF #91 devrait retirer **~1 violation `nested-interactive` par page `(app)/*`** (1 seul noeud `#bits-c1` par page dans le DOM bits-ui — confirmé par `grep -c "nested-interactive" baseline-post-9-5-1b.log` → 1 violation par page, pas un cluster). Délivrable cascade attendue : **-6 violations cumul** (6 pages `(app)/*` × 1 violation). Marginal vs total ≥ 600. La page `/login` (auth.spec.ts:90) n'utilise pas le layout app-shell donc non-cascade.
+5. **Given** le patch AC #3 (Phase A) appliqué, **When** `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 KESH_BACKEND_URL=http://127.0.0.1:3000 npx playwright test auth.spec.ts:90 auth.spec.ts:98 contacts.spec.ts:150 homepage-settings.spec.ts:61 invoices.spec.ts:87 products.spec.ts:78 reports.spec.ts:85 reports.spec.ts:96 --reporter=list 2>&1 | tee tests/e2e/post-kf91-9-5-1c.log` est ré-exécuté, **Then** mesurer le **delta cascade** : (a) compter le nombre de violations par test post-fix vs baseline AC #2, (b) calculer la **réduction cumulée** : `sum(baseline_violations) - sum(post_kf91_violations)`, (c) confirmer la prédiction empirique : le fix KF #91 devrait retirer **~1 violation `nested-interactive` par page `(app)/*`** (1 seul noeud `#bits-c1` par page dans le DOM bits-ui — confirmé par `grep -c "nested-interactive" baseline-post-9-5-1b.log` → 1 violation par page, pas un cluster). Délivrable cascade attendue : **-7 à -8 violations cumul** (6 routes `(app)/*` distinctes × 1 violation chacune, dont `/` testée 2× par `auth.spec.ts:98` + `homepage-settings.spec.ts:61` qui ciblent le même DOM — cf. Dev Notes §"Cascade KF #91"). Marginal vs total ≥ 600. La page `/login` (auth.spec.ts:90) n'utilise pas le layout app-shell donc non-cascade.
 
 6. **Given** les violations résiduelles post-fix-KF #91, **When** la catégorisation est effectuée, **Then** un **tableau Markdown** par catégorie axe-core est produit dans le Change Log :
    - `color-contrast` (4.1.3 wcag2aa, ratio insuffisant) — fix mécanique : ajuster les couleurs CSS du design system.
@@ -134,7 +134,7 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 - [ ] **T3** Phase A — Fix KF #91 DropdownMenu pattern (AC: #3)
   - [ ] T3.1 Lire `frontend/src/routes/(app)/+layout.svelte:136-143` + grep tout autre usage `DropdownMenu.Trigger` dans le repo : `grep -rn "DropdownMenu.Trigger" frontend/src/`. **Attendu : 2 occurrences** validées ground-truth Pass 1 validate : (a) `+layout.svelte:136` — wrapper `<Button>` à l'intérieur → **problématique** (violation WCAG 2.1 4.1.2 `nested-interactive`) → **à patcher** ; (b) `design-system/+page.svelte:151` — utilise déjà `{#snippet child({ props })}` (pattern bits-ui 2.x correct, non-violating) → **NE PAS modifier**. Si une 3ᵉ occurrence émerge (régression future ou ajout post-spec), évaluer individuellement avant patch.
   - [ ] T3.2 Consulter https://bits-ui.com/docs/components/dropdown-menu pour le pattern `child` snippet ou `asChild` (à adapter selon version `bits-ui` du projet — voir `frontend/package.json` pour la version installée).
-  - [ ] T3.3 Appliquer le fix : (a) variante préférée — supprimer le wrapper `<Button>` et appliquer ses classes Tailwind directement sur `<DropdownMenu.Trigger>` ; (b) variante fallback — `<DropdownMenu.Trigger>{#snippet child(...)}<button class="...">...</button>{/snippet}</DropdownMenu.Trigger>` (selon API bits-ui exacte). Préserver les attributs ARIA + le `aria-hidden` sur les icônes.
+  - [ ] T3.3 Appliquer le fix selon **une des 2 variantes Dev Notes §"Pattern bits-ui DropdownMenu.Trigger"** (post-Pass 3 MEDIUM-01 correctif) — **NE PAS copier les classes Tailwind manuellement** (risque régression a11y focus-visible) : (a) **variante A DRY** — `import { buttonVariants } from '$lib/components/ui/button/button.svelte'` + `<DropdownMenu.Trigger class={buttonVariants({ variant: 'ghost' })}>` ; (b) **variante B (préférence projet)** — `<DropdownMenu.Trigger>{#snippet child({ props })}<Button variant="ghost" {...props}>...</Button>{/snippet}</DropdownMenu.Trigger>` (cohérent `design-system/+page.svelte:151`). Préserver les attributs ARIA + le `aria-hidden` sur les icônes User/ChevronDown.
   - [ ] T3.4 `npm run check` : 0 erreurs Svelte (les warnings pré-existants 25 restent acceptables). Pas de nouveau warning sur le composant patché.
   - [ ] T3.5 `npm run build` : build OK (adapter-static génère `frontend/build/`).
   - [ ] T3.6 Commit `fix(a11y): close KF #91 KF-027 DropdownMenu.Trigger nested-interactive (closes #91)` — body cite le pattern bits-ui utilisé + diff `+layout.svelte`.
@@ -159,9 +159,9 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
     ```
 
 - [ ] **T6** Phase C — Décision R2 (gate) (AC: #8)
-  - [ ] T6.1 Évaluer la règle R2 : cumul violations résiduelles ≥ 100 ?
+  - [ ] T6.1 Évaluer la règle R2 : cumul violations résiduelles **> 100** ? (seuil strict cohérent AC #8 + parent epic-9-5.md ligne 87)
   - [ ] T6.2 Si cumul < 100 ET ≤ 80% architectural → **R2 NON déclenché** → continuer vers T7 (Phase D in-story).
-  - [ ] T6.3 Si cumul ≥ 100 OU > 80% architectural → **R2 déclenché** → skip T7, aller à T8 (Phase D-bis split).
+  - [ ] T6.3 Si cumul **> 100** OU > 80% architectural → **R2 déclenché** → skip T7, aller à T8 (Phase D-bis split).
   - [ ] T6.4 Documenter la décision R2 dans Change Log avec justification chiffrée (cumul violations + ratio mécanique/architectural).
 
 - [ ] **T7** Phase D — Fix in-story (si R2 NON, AC: #9, #10, #11, #12)
@@ -453,3 +453,32 @@ Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26
 **Recommandation Opus** : Pass 4 Sonnet 4.6 (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`) pour valider convergence post-Pass 3 patches. Cycle 4-passes attendu cohérent Story 8-5b (5 passes) + Story 9-2b (4 passes).
 
 **Modèle Pass 3** : Claude Opus 4.7 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Haiku → Opus).
+
+### Pass 4 spec validate — 2026-05-19, Sonnet 4.6 (subagent contexte frais, cycle clos)
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 3 LOW = 3 findings (Convergence : **OUI** — critère CLAUDE.md « Uniquement findings LOW » atteint).
+
+**Discipline grep ground-truth Sonnet** : 10/10 positive — toutes les 15 patches prior (9 Pass 1 + 2 Pass 2 + 4 Pass 3) confirmées intégrées + cross-verification des inconsistances résiduelles par grep -nF.
+
+**3 LOW findings identifiées** (inconsistances Pass 3 patches non-propagées dans tasks/AC adjacents — toutes patchables triviales) :
+
+1. **LOW-01 — T6.1/T6.3 seuil `≥ 100` vs AC #8 `> 100`** : Pass 3 LOW-01 a patché AC #8 ligne 82 à `> 100` strict mais T6.1 + T6.3 lignes 162/164 conservaient `≥ 100`. Inconsistance task vs AC. **Patch** : T6.1 + T6.3 alignés à `> 100` strict avec note explicite « cohérent AC #8 + parent epic-9-5.md ligne 87 ».
+
+2. **LOW-02 — AC #5 cascade `-6` vs Dev Notes `-7 à -8` corrigé Pass 3** : Pass 3 LOW-03 a corrigé Dev Notes ligne 286 mais AC #5 ligne 63 conservait `-6 violations cumul`. **Patch** : AC #5 aligné à `-7 à -8 violations cumul` avec référence Dev Notes §"Cascade KF #91" + explicite route `/` testée 2× par auth.spec.ts:98 + homepage-settings.spec.ts:61.
+
+3. **LOW-03 — T3.3 + Scope ligne 17 décrivent l'ancienne approche pré-Pass 3 MEDIUM-01** : T3.3 disait `(a) variante préférée — appliquer ses classes Tailwind directement sur <DropdownMenu.Trigger>` (l'approche que Pass 3 MEDIUM-01 a identifiée comme risquée focus-visible). Scope ligne 17 disait `variant A préféré`. Dev Notes Pass 3 disait préférence variante B. **Patch** : T3.3 réécrite avec garde-fou explicite « **NE PAS copier les classes Tailwind manuellement** (risque régression a11y focus-visible) » + énumère les 2 variantes A/B Dev Notes-compatibles + précise préférence projet B ; Scope ligne 17 soft « variant A fonctionnel » + ajoute « **Préférence projet** = variante B snippet `child` (cohérent design-system/+page.svelte:151) ».
+
+**Verdict effectif Pass 4 final** (après 3 micro-patches LOW résiduels) : **0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW = CONVERGENCE COMPLÈTE** atteinte. Critère arrêt cycle CLAUDE.md largement satisfait.
+
+**Trend cumul cycle 4-passes** :
+- Pass 1 Sonnet 4.6 : 0C+2H+4M+3L = 9 → 9 patches.
+- Pass 2 Haiku 4.5 : 0C+0H+1M+1L = 2 → 2 patches.
+- Pass 3 Opus 4.7 : 0C+0H+1M+3L = 4 → 4 patches.
+- Pass 4 Sonnet 4.6 : 0C+0H+0M+3L = 3 → 3 patches → **0 résiduel**.
+- **Total : 18 patches sur 4 passes. Cycle complet `Sonnet → Haiku → Opus → Sonnet` respecté.**
+
+**Pattern « Pass 3 Opus catches the subtle stuff »** confirmé empiriquement (cf. retrospective Epic 9 Insight I1) : Pass 3 Opus a identifié le risque focus-visible a11y critique que Pass 1 Sonnet + Pass 2 Haiku avaient missé. Pass 4 Sonnet ferme le cycle en validant la propagation des patches Pass 3.
+
+**Modèle Pass 4** : Sonnet 4.6 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Opus → Sonnet, ferme le cycle).
+
+**Statut final spec** : `ready-for-dev` confirmé. Prête pour `bmad-dev-story 9-5-1c` (mode orchestré complet attendu vu nature E2E + a11y mesure empirique). LLM dev ≠ Pass 4 → recommandé Opus 4.7 (cohérent dev-story 9-5-1b).
