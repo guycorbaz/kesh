@@ -7,7 +7,7 @@ Status: ready-for-dev
 ## Story
 
 As a mainteneur projet Kesh,
-I want fixer la violation `nested-interactive` wcag2a 4.1.2 dans le composant app-shell `+layout.svelte` (KF #91), mesurer empiriquement la cascade de réduction de violations qu'elle apporte sur les 6 tests axe-core des 5 pages KF #55 (login + layout principal + contacts + homepage + invoices + products), catégoriser les violations résiduelles par root cause (color-contrast / alt-text / ARIA / landmarks / heading-order / focus-management / nested-interactive autres), puis appliquer la **règle R2 du parent epic-9-5.md** : si cumul violations résiduelles > 100 → splitter en sous-stories 9-5-1c-quick (fixes mécaniques) + 9-5-1c-structural (refactor architecture a11y) ; sinon → fixer en-story,
+I want fixer la violation `nested-interactive` wcag2a 4.1.2 dans le composant app-shell `+layout.svelte` (KF #91), mesurer empiriquement la cascade de réduction de violations qu'elle apporte sur les **6 tests axe-core** distribués sur **5 spec files** (`auth.spec.ts` qui contient 2 tests `:90` login + `:98` layout principal + `contacts.spec.ts:150` + `homepage-settings.spec.ts:61` + `invoices.spec.ts:87` + `products.spec.ts:78`) couvrant les routes KF #55 (login + layout principal + contacts + homepage + invoices + products), catégoriser les violations résiduelles par root cause (color-contrast / alt-text / ARIA / landmarks / heading-order / focus-management / nested-interactive autres), puis appliquer la **règle R2 du parent epic-9-5.md** : si cumul violations résiduelles > 100 → splitter en sous-stories 9-5-1c-quick (fixes mécaniques) + 9-5-1c-structural (refactor architecture a11y) ; sinon → fixer en-story,
 so that les 6 pages testées en axe-core ne présentent plus les violations KF #55 + KF #91 : la violation `nested-interactive` du DropdownMenu profile (1 occurrence × 6 pages `(app)/*` cascadées, **page login `/login` non affectée car elle utilise `routes/login/+page.svelte` sans le layout app-shell**) est éliminée par fix Phase A, la conformité WCAG 2 niveau A est restaurée sur les flux critiques v0.1, le pattern bits-ui `child` snippet (ou classes Tailwind directes sur `<DropdownMenu.Trigger>`) est documenté pour les futurs wrappers DropdownMenu/Sheet/Dialog, et les KFs #55 + #91 sont fermées (ou transférées vers des sous-stories spécifiques 9-5-1c-quick + 9-5-1c-structural avec scope précis si R2 déclenché Phase C).
 
 ## Scope
@@ -78,8 +78,8 @@ Story d'implémentation **a11y scopée app-shell + audit empirique**. Périmètr
 ### Phase C — Décision R2 (gate)
 
 8. **Given** le tableau de catégorisation Phase B (AC #6 + #7), **When** la règle R2 du parent epic-9-5.md est évaluée (description inline §"Story 9.5-1c" ligne 87 : « Split possible 9-5-1c-quick + 9-5-1c-structural si > 100 violations résiduelles » ; aucune section §"Risque R2" séparée — R2 est référencé par anticipation dans cette spec story), **Then** :
-   - **Si cumul violations résiduelles post-KF #91 < 100** : passer directement à Phase D (fix in-story) — AC #9-#12 applicables.
-   - **Si cumul violations résiduelles post-KF #91 ≥ 100** : **R2 déclenché** → splitter en sous-stories AC #13-#14 applicables (Phase D skip).
+   - **Si cumul violations résiduelles post-KF #91 ≤ 100** : passer directement à Phase D (fix in-story) — AC #9-#12 applicables.
+   - **Si cumul violations résiduelles post-KF #91 > 100** : **R2 déclenché** (seuil strict `> 100` cohérent parent epic-9-5.md ligne 87) → splitter en sous-stories AC #13-#14 applicables (Phase D skip).
    - **Garde-fou de classification** : si parmi les violations résiduelles, **plus de 80% relèvent de catégories architecturales** (landmark-* / heading-order / region / focus-management) — calculé sur le **nombre total de violations** (formule explicite : `sum(violations dans catégories architecturales) / sum(toutes violations résiduelles) > 0.80`, PAS un comptage par catégorie qui pourrait donner un ratio différent), même avec un total < 100 violations, considérer R2 déclenché (le scope architectural justifie le split même à faible volume).
 
 ### Phase D — Implémentation in-story (si R2 NON déclenché AC #8)
@@ -226,34 +226,48 @@ La lib `bits-ui` (version `^2.16.5` confirmée ground-truth Pass 1 validate) fou
 
 produit 2 `<button>` imbriqués : un par `<DropdownMenu.Trigger>` (rendered par bits-ui) + un par `<Button>` (composant projet). Violation `nested-interactive` wcag2a 4.1.2 « serious ».
 
-**Fix variante préférée (simple)** : supprimer le wrapper `<Button>` et appliquer ses classes Tailwind directement sur `<DropdownMenu.Trigger>` :
+**⚠️ Attention focus-visible a11y** : `<Button variant="ghost">` applique ~19 classes Tailwind via `buttonVariants` (helper `tailwind-variants`) — `base` (10 classes inclut `focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3` **critique a11y** + `aria-invalid:*` + `transition-all` + sizing icons) + `variant.ghost` (`hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground`) + `size.default` (`h-8 gap-1.5 px-2.5`). **Une story a11y ne doit PAS introduire une régression `focus-visible`** — copier les classes à la main est risqué et non-DRY.
+
+**Fix variante A préférée — import `buttonVariants` helper** : utiliser le helper exporté pour générer la string de classes complète, identique au `<Button>` d'origine :
 
 ```svelte
-<DropdownMenu.Trigger class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent">
+<script>
+    import { buttonVariants } from '$lib/components/ui/button/button.svelte';
+    // ... autres imports
+</script>
+
+<DropdownMenu.Trigger class={buttonVariants({ variant: 'ghost' })}>
     <User class="h-4 w-4" aria-hidden="true" />
     <span class="text-sm">{authState.currentUser?.role ?? 'Utilisateur'}</span>
     <ChevronDown class="h-3 w-3" aria-hidden="true" />
 </DropdownMenu.Trigger>
 ```
 
-(La déco exacte du `variant="ghost"` du Button doit être copiée — extraire le code source de `frontend/src/lib/shared/ui/Button.svelte` pour avoir les classes Tailwind exactes correspondant à `variant="ghost"`.)
+**Avantage** : focus-visible + sizing + transitions préservés à 100% identiques à `<Button variant="ghost">`. Pas de duplication classes. Future-proof si `buttonVariants` évolue. Cohérent design-system.
 
-**Fix variante fallback (si bits-ui 1.x doesn't allow direct class on Trigger)** : utiliser le snippet `child` (bits-ui 2.x) :
+**Fix variante B fallback — snippet `child` (pattern bits-ui 2.x utilisé déjà dans `design-system/+page.svelte:151`)** : préserver le composant `<Button>` en passant ses props via le snippet :
 
 ```svelte
 <DropdownMenu.Trigger>
     {#snippet child({ props })}
-        <button {...props} class="inline-flex items-center gap-2 ...">
+        <Button variant="ghost" class="flex items-center gap-2" {...props}>
             <User class="h-4 w-4" aria-hidden="true" />
-            ...
-        </button>
+            <span class="text-sm">{authState.currentUser?.role ?? 'Utilisateur'}</span>
+            <ChevronDown class="h-3 w-3" aria-hidden="true" />
+        </Button>
     {/snippet}
 </DropdownMenu.Trigger>
 ```
 
-Cette variante fusionne `Trigger` + bouton custom en un seul DOM element (snippet pattern Svelte 5).
+**Avantage** : le composant `<Button>` reste utilisé tel quel, le snippet `child` indique à bits-ui de **remplacer son trigger natif** par le `<Button>` du child (un seul `<button>` rendu, `nested-interactive` résolu). Pattern identique à `design-system/+page.svelte:151` — cohérence projet.
 
-**À déterminer en T3.1-T3.2** selon version `bits-ui` installée. Le commit T3.6 documente le pattern retenu.
+**À déterminer T3.1-T3.3** selon préférence (les 2 variantes sont fonctionnellement équivalentes a11y-wise) :
+- **A** plus DRY (le helper `buttonVariants` est la source de vérité unique), 1 LoC import + class={...}.
+- **B** plus minimal au niveau diff (snippet wrap autour du Button existant), 2 LoC supplémentaires (snippet + close).
+
+Préférence projet : **variante B** car le pattern est déjà utilisé dans `design-system/+page.svelte:151` (cohérence intra-codebase). Choix final documenté T3.6 commit body.
+
+**Path correct de `Button.svelte`** : `frontend/src/lib/components/ui/button/button.svelte` (et NON `frontend/src/lib/shared/ui/Button.svelte` qui n'existe pas — vérifié ground-truth Pass 3 Opus).
 
 ### Cascade KF #91 sur les 7 autres tests KF #55
 
@@ -265,9 +279,11 @@ Hypothèse : le DropdownMenu profile est rendu via `+layout.svelte` sur **toutes
 - `products.spec.ts:78` charge `/products` → idem.
 - `reports.spec.ts:85/96` charge `/reports` → idem (KF #91 canonique).
 
-**Pages non-cascade KF #91** : `auth.spec.ts:90` charge `/login` qui utilise un layout `(auth)` séparé sans DropdownMenu profile. `auth.spec.ts:98` charge le layout principal mais après login — donc cascade KF #91 applicable.
+**Pages non-cascade KF #91** : `auth.spec.ts:90` charge `/login` qui utilise un layout `(auth)` séparé sans DropdownMenu profile. `auth.spec.ts:98` charge le layout principal `/` après login — donc cascade KF #91 applicable.
 
-**Prédiction T5** : fix KF #91 retire ~1 violation `nested-interactive` × 6 pages = -6 violations cumul. Marginale vu le total ≥ 600. La majorité des violations sont structurelles (heading-order, landmarks, color-contrast) et nécessitent fix per-page.
+**Important — route `/` testée deux fois** : `auth.spec.ts:98` et `homepage-settings.spec.ts:61` ciblent **tous deux la route `/`** (vérifié ground-truth Pass 3 Opus : `await expect(page).toHaveURL('/')` dans les 2 tests, **82 violations identiques** dans la baseline empirique 2026-05-19). Un fix layout `(app)` clear ces 2 tests simultanément avec un seul changement.
+
+**Prédiction T5 corrigée** : fix KF #91 retire ~1 violation `nested-interactive` × 8 occurrences (6 routes `(app)/*` distinctes, dont `/` testé 2× → +1 occurrence supplémentaire dans le cumul) = **-7 à -8 violations cumul** (au lieu du -6 initialement annoncé qui ne comptait pas la duplication test `/`). Marginale vu le total ≥ 600 — la majorité des violations sont structurelles (heading-order, landmarks, color-contrast) et nécessitent fix per-page.
 
 ### Risque R2 — probabilité quasi-certaine vu les chiffres baseline
 
@@ -410,3 +426,30 @@ Le DropdownMenu profile est utilisé pour le toggle mode (mode-expert.spec.ts:26
 **Recommandation Haiku** : Pass 3 Opus 4.7 (cycle CLAUDE.md `Sonnet → Haiku → Opus` validé empiriquement Epic 9 retrospective Insight I1). Vérifier les 2 patches MEDIUM-01 + LOW-01 + une dernière passe d'audit holistique de la spec post-Pass 1 + Pass 2 patches.
 
 **Modèle Pass 2** : Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Sonnet → Haiku).
+
+### Pass 3 spec validate — 2026-05-19, Opus 4.7 (subagent contexte frais)
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 1 MEDIUM + 3 LOW = 4 findings (Convergence : NON — 1 MEDIUM > LOW déclenche Pass 4).
+
+**Discipline grep ground-truth Opus** : 11/11 positive — toutes les 11 patches prior (Pass 1 + Pass 2) confirmés intégrés par grep -nF + Read direct. Toutes les claims externes (Button.svelte, bits-ui types.d.ts, menu-trigger.svelte, layout.svelte, auth.spec.ts:98 + homepage-settings.spec.ts:61 cibles `/`, baseline-post-9-5-1b.log violations) vérifiées via Read.
+
+**Patches appliqués (4/4 — tous patchables sans defer)** :
+
+1. **MEDIUM-01 — Dev Notes `variante préférée` ghost classes ≠ réel + path Button.svelte faux** : l'exemple Dev Notes proposait `class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"` (~7 classes simplifiées) alors que `<Button variant="ghost">` applique ~19 classes via `buttonVariants` (`base` ligne 7 inclut `focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3` **critique a11y** + `aria-invalid:*` + `transition-all` + sizing icons ; `variant.ghost` ligne 13 ; `size.default` ligne 18). Un dev appliquant l'exemple littéralement introduirait une **régression a11y `focus-visible`** sur une story qui devrait l'améliorer (ironie). Path `frontend/src/lib/shared/ui/Button.svelte` cité dans Dev Notes n'existe pas — vrai path = `frontend/src/lib/components/ui/button/button.svelte`. **Patch** : section Dev Notes « Pattern bits-ui DropdownMenu.Trigger » réécrite avec :
+   - **Avertissement focus-visible** explicite en tête (« une story a11y ne doit PAS introduire une régression `focus-visible` — copier les classes à la main est risqué et non-DRY »).
+   - **Variante A préférée DRY** : `import { buttonVariants } from '$lib/components/ui/button/button.svelte'` + `<DropdownMenu.Trigger class={buttonVariants({ variant: 'ghost' })}>` — helper `tailwind-variants` génère la string complète identique à `<Button>`.
+   - **Variante B fallback minimal-diff** : snippet `child` cohérent `design-system/+page.svelte:151` (pattern projet déjà utilisé) — préserve `<Button variant="ghost">` tel quel, bits-ui remplace son trigger natif par le child Button.
+   - **Préférence projet documentée** : variante B (cohérence intra-codebase avec design-system).
+   - **Path corrigé** : `frontend/src/lib/components/ui/button/button.svelte` (vérifié ground-truth Pass 3 Opus).
+
+2. **LOW-01 — Seuil R2 `≥ 100` vs parent epic `> 100` strict** : AC #8 disait `< 100 → Phase D, ≥ 100 → split`, mais parent epic-9-5.md ligne 87 dit `> 100 strict`. Boundary case `cumul == 100` : spec disait split, parent disait non-split. Inconsistance cross-document. **Patch** : AC #8 aligné sur `> 100` strict cohérent parent : `≤ 100 → Phase D, > 100 → split` (+ référence explicite « seuil strict `> 100` cohérent parent epic-9-5.md ligne 87 »).
+
+3. **LOW-02 — « 5 pages KF #55 » avec 6 éléments énumérés** : Story line 10 disait « 6 tests axe-core des 5 pages KF #55 (login + layout principal + contacts + homepage + invoices + products) » — 6 items énumérés mais compte annoncé 5. Source : parent epic-9-5.md dit « 5 pages » référant aux **5 spec files** (`auth.spec.ts` contient 2 tests). **Patch** : reformulé « 6 tests axe-core distribués sur 5 spec files (`auth.spec.ts` qui contient 2 tests `:90` login + `:98` layout principal + ...) couvrant les routes KF #55 ».
+
+4. **LOW-03 — Cascade prédiction -6 sous-estimait duplication `/`** : `auth.spec.ts:98` et `homepage-settings.spec.ts:61` ciblent **tous deux** la route `/` (vérifié ground-truth Opus : `await expect(page).toHaveURL('/')` + 82 violations identiques empirique). Le fix layout `(app)` clear ces 2 tests simultanément. Prédiction Dev Notes « -6 cumul (6 pages × 1 violation) » sous-comptait — c'est plutôt -7 à -8 (6 routes app distinctes, dont `/` testée 2× → +1 dans le cumul tests). **Patch** : Dev Notes section « Cascade KF #91 » ajoute note « auth.spec.ts:98 + homepage-settings.spec.ts:61 ciblent tous deux `/` (DOM identique, 82 violations identiques baseline). Prédiction T5 corrigée : -7 à -8 violations cumul ».
+
+**Note Opus** : aucun finding CRITICAL / HIGH détecté après 11 patches prior — la spec convergeait déjà sur le fond. Les 4 findings Pass 3 Opus sont des polish/precision (1 sérieux : focus-visible a11y risk) que les passes Sonnet+Haiku n'avaient pas creusé. Pattern cohérent retro Epic 9 Insight I1 : « Opus catches subtle UX-for-dev-agent issues that Sonnet+Haiku miss ».
+
+**Recommandation Opus** : Pass 4 Sonnet 4.6 (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`) pour valider convergence post-Pass 3 patches. Cycle 4-passes attendu cohérent Story 8-5b (5 passes) + Story 9-2b (4 passes).
+
+**Modèle Pass 3** : Claude Opus 4.7 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Haiku → Opus).
