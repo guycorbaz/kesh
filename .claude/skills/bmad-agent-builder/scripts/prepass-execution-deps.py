@@ -5,14 +5,14 @@ Extracts dependency graph data and execution patterns from a BMad agent skill
 so the LLM scanner can evaluate efficiency from compact structured data.
 
 Covers:
-- Dependency graph from bmad-manifest.json (bmad-requires, bmad-prefer-after)
+- Dependency graph from skill structure
 - Circular dependency detection
 - Transitive dependency redundancy
 - Parallelizable stage groups (independent nodes)
 - Sequential pattern detection in prompts (numbered Read/Grep/Glob steps)
 - Subagent-from-subagent detection
 - Loop patterns (read all, analyze each, for each file)
-- Memory loading pattern detection (load all memory, read all sidecar, etc.)
+- Memory loading pattern detection (load all memory, read all memory, etc.)
 - Multi-source operation detection
 """
 
@@ -149,8 +149,8 @@ def scan_sequential_patterns(filepath: Path, rel_path: str) -> list[dict]:
     # Memory loading patterns (agent-specific)
     memory_loading_patterns = [
         (r'[Ll]oad all (?:memory|memories)', 'load-all-memory'),
-        (r'[Rr]ead all sidecar (?:files|data)', 'read-all-sidecar'),
-        (r'[Ll]oad (?:entire|full|complete) sidecar', 'load-entire-sidecar'),
+        (r'[Rr]ead all (?:memory|agent memory) (?:files|data)', 'read-all-memory'),
+        (r'[Ll]oad (?:entire|full|complete) (?:memory|agent memory)', 'load-entire-memory'),
         (r'[Ll]oad all (?:context|state)', 'load-all-context'),
         (r'[Rr]ead (?:entire|full|complete) memory', 'read-entire-memory'),
     ]
@@ -199,42 +199,12 @@ def scan_sequential_patterns(filepath: Path, rel_path: str) -> list[dict]:
 
 def scan_execution_deps(skill_path: Path) -> dict:
     """Run all deterministic execution efficiency checks."""
-    # Parse bmad-manifest.json for dependency graph
+    # Build dependency graph from skill structure
     dep_graph: dict[str, list[str]] = {}
     prefer_after: dict[str, list[str]] = {}
     all_stages: set[str] = set()
-    manifest_found = False
 
-    manifest_path = skill_path / 'bmad-manifest.json'
-    if manifest_path.exists():
-        manifest_found = True
-        try:
-            data = json.loads(manifest_path.read_text(encoding='utf-8'))
-            if isinstance(data, dict):
-                # Parse capabilities for dependency info
-                capabilities = data.get('capabilities', [])
-                if isinstance(capabilities, list):
-                    for cap in capabilities:
-                        if isinstance(cap, dict):
-                            name = cap.get('name')
-                            if name:
-                                all_stages.add(name)
-                                dep_graph[name] = cap.get('bmad-requires', []) or []
-                                prefer_after[name] = cap.get('bmad-prefer-after', []) or []
-
-                # Also check top-level dependencies
-                top_name = data.get('name')
-                if top_name and top_name not in all_stages:
-                    all_stages.add(top_name)
-                    top_requires = data.get('bmad-requires', []) or []
-                    top_prefer = data.get('bmad-prefer-after', []) or []
-                    if top_requires or top_prefer:
-                        dep_graph[top_name] = top_requires
-                        prefer_after[top_name] = top_prefer
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Also check for stage-level manifests or stage definitions in SKILL.md
+    # Check for stage definitions in prompt files
     prompts_dir = skill_path / 'prompts'
     if prompts_dir.exists():
         for f in sorted(prompts_dir.iterdir()):
@@ -282,7 +252,7 @@ def scan_execution_deps(skill_path: Path) -> dict:
     for p in sequential_patterns:
         if p['type'] == 'subagent-chain-violation':
             severity = 'critical'
-        elif p['type'] in ('load-all-memory', 'read-all-sidecar', 'load-entire-sidecar',
+        elif p['type'] in ('load-all-memory', 'read-all-memory', 'load-entire-memory',
                            'load-all-context', 'read-entire-memory'):
             severity = 'high'
         else:
@@ -314,7 +284,6 @@ def scan_execution_deps(skill_path: Path) -> dict:
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'status': status,
         'dependency_graph': {
-            'manifest_found': manifest_found,
             'stages': sorted(all_stages),
             'hard_dependencies': dep_graph,
             'soft_dependencies': prefer_after,

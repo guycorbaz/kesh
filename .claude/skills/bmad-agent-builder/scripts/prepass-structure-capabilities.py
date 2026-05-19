@@ -6,13 +6,12 @@ can use instead of reading all files itself. Covers:
 - Frontmatter parsing and validation
 - Section inventory (H2/H3 headers)
 - Template artifact detection
-- Agent name validation (bmad-{code}-agent-{name} or bmad-agent-{name})
-- Required agent sections (Overview, Identity, Communication Style, Principles, On Activation)
-- bmad-manifest.json validation (persona field for agent detection, capabilities)
-- Capability cross-referencing with prompt files at skill root
+- Agent name validation (kebab-case, must contain 'agent')
+- Required agent sections (stateless vs memory agent bootloader detection)
 - Memory path consistency checking
 - Language/directness pattern grep
 - On Exit / Exiting section detection (invalid)
+- Capability file scanning in references/ directory
 """
 
 # /// script
@@ -46,7 +45,11 @@ TEMPLATE_ARTIFACTS = [
     r'\{if-module\}', r'\{/if-module\}',
     r'\{if-headless\}', r'\{/if-headless\}',
     r'\{if-autonomous\}', r'\{/if-autonomous\}',
-    r'\{if-sidecar\}', r'\{/if-sidecar\}',
+    r'\{if-memory\}', r'\{/if-memory\}',
+    r'\{if-memory-agent\}', r'\{/if-memory-agent\}',
+    r'\{if-stateless-agent\}', r'\{/if-stateless-agent\}',
+    r'\{if-evolvable\}', r'\{/if-evolvable\}',
+    r'\{if-pulse\}', r'\{/if-pulse\}',
     r'\{displayName\}', r'\{skillName\}',
 ]
 # Runtime variables that ARE expected (not artifacts)
@@ -115,12 +118,11 @@ def parse_frontmatter(content: str) -> tuple[dict | None, list[dict]]:
             'severity': 'high', 'category': 'frontmatter',
             'issue': f'Name "{name}" is not kebab-case',
         })
-    elif not (re.match(r'^bmad-[a-z0-9]+-agent-[a-z0-9]+(-[a-z0-9]+)*$', name)
-              or re.match(r'^bmad-agent-[a-z0-9]+(-[a-z0-9]+)*$', name)):
+    elif 'agent' not in name.split('-'):
         findings.append({
             'file': 'SKILL.md', 'line': 1,
             'severity': 'medium', 'category': 'frontmatter',
-            'issue': f'Name "{name}" does not follow bmad-{{code}}-agent-{{name}} or bmad-agent-{{name}} pattern',
+            'issue': f'Name "{name}" should contain "agent" (e.g., agent-{{name}} or {{code}}-agent-{{name}})',
         })
 
     # description check
@@ -165,21 +167,49 @@ def extract_sections(content: str) -> list[dict]:
     return sections
 
 
-def check_required_sections(sections: list[dict]) -> list[dict]:
+def detect_memory_agent(skill_path: Path, content: str) -> bool:
+    """Detect if this is a memory agent bootloader (vs stateless agent).
+
+    Memory agents have assets/ with sanctum template files and contain
+    Three Laws / Sacred Truth in their SKILL.md.
+    """
+    assets_dir = skill_path / 'assets'
+    has_templates = (
+        assets_dir.exists()
+        and any(f.name.endswith('-template.md') for f in assets_dir.iterdir() if f.is_file())
+    )
+    has_three_laws = 'First Law:' in content and 'Second Law:' in content
+    has_sacred_truth = 'Sacred Truth' in content
+    return has_templates or (has_three_laws and has_sacred_truth)
+
+
+def check_required_sections(sections: list[dict], is_memory_agent: bool) -> list[dict]:
     """Check for required and invalid sections."""
     findings = []
     h2_titles = [s['title'] for s in sections if s['level'] == 2]
 
-    required = ['Overview', 'Identity', 'Communication Style', 'Principles', 'On Activation']
-    for req in required:
-        if req not in h2_titles:
-            findings.append({
-                'file': 'SKILL.md', 'line': 1,
-                'severity': 'high', 'category': 'sections',
-                'issue': f'Missing ## {req} section',
-            })
+    if is_memory_agent:
+        # Memory agent bootloaders have a different required structure
+        required = ['The Three Laws', 'The Sacred Truth', 'On Activation']
+        for req in required:
+            if req not in h2_titles:
+                findings.append({
+                    'file': 'SKILL.md', 'line': 1,
+                    'severity': 'high', 'category': 'sections',
+                    'issue': f'Missing ## {req} section (required for memory agent bootloader)',
+                })
+    else:
+        # Stateless agents use the traditional full structure
+        required = ['Overview', 'Identity', 'Communication Style', 'Principles', 'On Activation']
+        for req in required:
+            if req not in h2_titles:
+                findings.append({
+                    'file': 'SKILL.md', 'line': 1,
+                    'severity': 'high', 'category': 'sections',
+                    'issue': f'Missing ## {req} section',
+                })
 
-    # Invalid sections
+    # Invalid sections (both types)
     for s in sections:
         if s['level'] == 2:
             for pattern, message in INVALID_SECTIONS:
@@ -214,190 +244,13 @@ def find_template_artifacts(filepath: Path, rel_path: str) -> list[dict]:
     return findings
 
 
-def validate_manifest(skill_path: Path) -> tuple[dict, list[dict]]:
-    """Validate bmad-manifest.json for agent requirements."""
-    findings = []
-    validation = {
-        'found': False,
-        'valid_json': False,
-        'is_agent': False,
-        'has_capabilities': False,
-        'capability_count': 0,
-        'menu_codes': [],
-        'duplicate_menu_codes': [],
-        'capability_issues': [],
-    }
-
-    manifest_path = skill_path / 'bmad-manifest.json'
-    if not manifest_path.exists():
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'high', 'category': 'manifest',
-            'issue': 'bmad-manifest.json not found at skill root',
-        })
-        return validation, findings
-
-    validation['found'] = True
-
-    try:
-        data = json.loads(manifest_path.read_text(encoding='utf-8'))
-    except json.JSONDecodeError as e:
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'critical', 'category': 'manifest',
-            'issue': f'Invalid JSON in bmad-manifest.json: {e}',
-        })
-        return validation, findings
-
-    validation['valid_json'] = True
-
-    # Check if this is an agent (agents have a persona field)
-    has_persona = 'persona' in data
-    validation['is_agent'] = has_persona
-    if not has_persona:
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'high', 'category': 'manifest',
-            'issue': 'Missing "persona" field — agents are identified by having a persona field',
-        })
-
-    # Check capabilities
-    capabilities = data.get('capabilities')
-    if capabilities is None:
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'high', 'category': 'manifest',
-            'issue': 'Missing "capabilities" field',
-        })
-        return validation, findings
-
-    if not isinstance(capabilities, list):
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'high', 'category': 'manifest',
-            'issue': '"capabilities" is not an array',
-        })
-        return validation, findings
-
-    validation['has_capabilities'] = True
-    validation['capability_count'] = len(capabilities)
-
-    # Check each capability for required fields and unique menu codes
-    required_fields = {'name', 'menu-code', 'description'}
-    menu_codes = []
-
-    for i, cap in enumerate(capabilities):
-        if not isinstance(cap, dict):
-            findings.append({
-                'file': 'bmad-manifest.json', 'line': 0,
-                'severity': 'high', 'category': 'manifest',
-                'issue': f'Capability at index {i} is not an object',
-            })
-            continue
-
-        missing = required_fields - set(cap.keys())
-        if missing:
-            cap_name = cap.get('name', f'index-{i}')
-            findings.append({
-                'file': 'bmad-manifest.json', 'line': 0,
-                'severity': 'high', 'category': 'manifest',
-                'issue': f'Capability "{cap_name}" missing required fields: {", ".join(sorted(missing))}',
-            })
-
-        mc = cap.get('menu-code')
-        if mc:
-            menu_codes.append(mc)
-
-    validation['menu_codes'] = menu_codes
-
-    # Check for duplicate menu codes
-    seen = set()
-    dupes = set()
-    for mc in menu_codes:
-        if mc in seen:
-            dupes.add(mc)
-        seen.add(mc)
-
-    if dupes:
-        validation['duplicate_menu_codes'] = sorted(dupes)
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'high', 'category': 'manifest',
-            'issue': f'Duplicate menu codes: {", ".join(sorted(dupes))}',
-        })
-
-    return validation, findings
-
-
-def cross_reference_capabilities(skill_path: Path) -> tuple[dict, list[dict]]:
-    """Cross-reference manifest capabilities with prompt files."""
-    findings = []
-    crossref = {
-        'manifest_prompt_caps': [],
-        'missing_prompt_files': [],
-        'orphaned_prompt_files': [],
-    }
-
-    manifest_path = skill_path / 'bmad-manifest.json'
-
-    if not manifest_path.exists():
-        return crossref, findings
-
-    try:
-        data = json.loads(manifest_path.read_text(encoding='utf-8'))
-    except (json.JSONDecodeError, OSError):
-        return crossref, findings
-
-    capabilities = data.get('capabilities', [])
-    if not isinstance(capabilities, list):
-        return crossref, findings
-
-    # Get prompt-type capabilities from manifest
-    prompt_cap_names = set()
-    for cap in capabilities:
-        if isinstance(cap, dict) and cap.get('type') == 'prompt':
-            name = cap.get('name')
-            if name:
-                prompt_cap_names.add(name)
-                crossref['manifest_prompt_caps'].append(name)
-
-    # Get actual prompt files (at skill root, excluding SKILL.md and non-prompt files)
-    actual_prompts = set()
-    skip_files = {'SKILL.md', 'bmad-manifest.json', 'bmad-skill-manifest.yaml'}
-    for f in skill_path.iterdir():
-        if f.is_file() and f.suffix == '.md' and f.name not in skip_files:
-                actual_prompts.add(f.stem)
-
-    # Missing prompt files (in manifest but no file)
-    missing = prompt_cap_names - actual_prompts
-    for name in sorted(missing):
-        crossref['missing_prompt_files'].append(name)
-        findings.append({
-            'file': 'bmad-manifest.json', 'line': 0,
-            'severity': 'high', 'category': 'capability-crossref',
-            'issue': f'Prompt capability "{name}" has no matching file {name}.md at skill root',
-        })
-
-    # Orphaned prompt files (file exists but not in manifest)
-    orphaned = actual_prompts - prompt_cap_names
-    for name in sorted(orphaned):
-        crossref['orphaned_prompt_files'].append(name)
-        findings.append({
-            'file': f'{name}.md', 'line': 0,
-            'severity': 'medium', 'category': 'capability-crossref',
-            'issue': f'Prompt file {name}.md not referenced as a prompt capability in manifest',
-        })
-
-    return crossref, findings
-
-
 def extract_memory_paths(skill_path: Path) -> tuple[list[str], list[dict]]:
     """Extract all memory path references across files and check consistency."""
     findings = []
     memory_paths = set()
 
     # Memory path patterns
-    mem_pattern = re.compile(r'(?:memory/|sidecar/|\.memory/|\.sidecar/)[\w\-/]+(?:\.\w+)?')
+    mem_pattern = re.compile(r'memory/[\w\-/]+(?:\.\w+)?')
 
     files_to_scan = []
 
@@ -405,7 +258,7 @@ def extract_memory_paths(skill_path: Path) -> tuple[list[str], list[dict]]:
     if skill_md.exists():
         files_to_scan.append(('SKILL.md', skill_md))
 
-    for subdir in ['prompts', 'resources']:
+    for subdir in ['prompts', 'resources', 'references']:
         d = skill_path / subdir
         if d.exists():
             for f in sorted(d.iterdir()):
@@ -419,27 +272,19 @@ def extract_memory_paths(skill_path: Path) -> tuple[list[str], list[dict]]:
 
     sorted_paths = sorted(memory_paths)
 
-    # Check for inconsistent formats (e.g., mixing memory/ and .memory/)
+    # Check for inconsistent formats
     prefixes = set()
     for p in sorted_paths:
         prefix = p.split('/')[0]
         prefixes.add(prefix)
 
     memory_prefixes = {p for p in prefixes if 'memory' in p.lower()}
-    sidecar_prefixes = {p for p in prefixes if 'sidecar' in p.lower()}
 
     if len(memory_prefixes) > 1:
         findings.append({
             'file': 'multiple', 'line': 0,
             'severity': 'medium', 'category': 'memory-paths',
             'issue': f'Inconsistent memory path prefixes: {", ".join(sorted(memory_prefixes))}',
-        })
-
-    if len(sidecar_prefixes) > 1:
-        findings.append({
-            'file': 'multiple', 'line': 0,
-            'severity': 'medium', 'category': 'memory-paths',
-            'issue': f'Inconsistent sidecar path prefixes: {", ".join(sorted(sidecar_prefixes))}',
         })
 
     return sorted_paths, findings
@@ -449,10 +294,19 @@ def check_prompt_basics(skill_path: Path) -> tuple[list[dict], list[dict]]:
     """Check each prompt file for config header and progression conditions."""
     findings = []
     prompt_details = []
-    skip_files = {'SKILL.md', 'bmad-manifest.json', 'bmad-skill-manifest.yaml'}
+    skip_files = {'SKILL.md'}
 
     prompt_files = [f for f in sorted(skill_path.iterdir())
                     if f.is_file() and f.suffix == '.md' and f.name not in skip_files]
+
+    # Also scan references/ for capability prompts (memory agents keep prompts here)
+    refs_dir = skill_path / 'references'
+    if refs_dir.exists():
+        prompt_files.extend(
+            f for f in sorted(refs_dir.iterdir())
+            if f.is_file() and f.suffix == '.md'
+        )
+
     if not prompt_files:
         return prompt_details, findings
 
@@ -523,13 +377,16 @@ def scan_structure_capabilities(skill_path: Path) -> dict:
 
     skill_content = skill_md.read_text(encoding='utf-8')
 
+    # Detect agent type
+    is_memory_agent = detect_memory_agent(skill_path, skill_content)
+
     # Frontmatter
     frontmatter, fm_findings = parse_frontmatter(skill_content)
     all_findings.extend(fm_findings)
 
     # Sections
     sections = extract_sections(skill_content)
-    section_findings = check_required_sections(sections)
+    section_findings = check_required_sections(sections, is_memory_agent)
     all_findings.extend(section_findings)
 
     # Template artifacts in SKILL.md
@@ -544,15 +401,6 @@ def scan_structure_capabilities(skill_path: Path) -> dict:
                 'severity': 'low', 'category': 'language',
                 'issue': message,
             })
-
-    # Manifest validation
-    manifest_validation, manifest_findings = validate_manifest(skill_path)
-    all_findings.extend(manifest_findings)
-    has_manifest = manifest_validation['found']
-
-    # Capability cross-reference
-    capability_crossref, crossref_findings = cross_reference_capabilities(skill_path)
-    all_findings.extend(crossref_findings)
 
     # Memory path consistency
     memory_paths, memory_findings = extract_memory_paths(skill_path)
@@ -585,9 +433,7 @@ def scan_structure_capabilities(skill_path: Path) -> dict:
         'metadata': {
             'frontmatter': frontmatter,
             'sections': sections,
-            'has_manifest': has_manifest,
-            'manifest_validation': manifest_validation,
-            'capability_crossref': capability_crossref,
+            'is_memory_agent': is_memory_agent,
         },
         'prompt_details': prompt_details,
         'memory_paths': memory_paths,
