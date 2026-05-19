@@ -63,21 +63,29 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
 
 ### Refactor helpers cascade 401 (KF #54 — 3 fichiers)
 
-5. **Given** `frontend/tests/e2e/invoices.spec.ts`, **When** les helpers locaux `createContactViaApi` (lignes 36-49) et `createProductViaApi` (lignes 51-63) sont refactorés pour utiliser `authedApiContext`, **Then** :
-   - Chaque helper instancie un context via `const ctx = await authedApiContext(page)` puis appelle `ctx.post('/api/v1/contacts', { data: {...} })` (au lieu de `page.request.post(...)`).
+5. **Given** `frontend/tests/e2e/invoices.spec.ts`, **When** les **4 helpers locaux** suivants sont refactorés pour utiliser `authedApiContext`, **Then** chacun satisfait les critères ci-dessous :
+   - `createContactViaApi` (définition lignes 36-49 — `page.request.post` ligne 37).
+   - `createProductViaApi` (définition lignes 51-63 — `page.request.post` ligne 57).
+   - `createContactWithAddressViaApi` (définition à la ligne 176 — call sites aux lignes 225, 242, 268 — utilise `page.request.post` ligne 180).
+   - `createAndValidateInvoiceViaApi` (définition à la ligne 194 — utilise `page.request.post` aux lignes 199 et 217 ; **non listée dans KF #54** car cascade-hidden derrière `createContactWithAddressViaApi`, mais sera la prochaine source de 401 après fix des 3 autres).
+
+   Critères communs aux 4 helpers :
+   - Chaque helper instancie un context via `const ctx = await authedApiContext(page)` puis appelle `ctx.post('/api/v1/...', { data: {...} })` (au lieu de `page.request.post(...)`).
    - `try/finally` enveloppe l'appel pour `await ctx.dispose()` (parallélisme cohérent avec `seedTestState`).
    - Aucun changement de signature externe (l'appelant continue d'invoquer `await createContactViaApi(page, name)` sans modification).
-   - Si la spec contient une 3ᵉ fonction non listée KF #54 (e.g. `createContactWithAddress` ligne ~220 selon KF body), l'ajouter au refactor même si non listée explicitement en T-AC.
 
-6. **Given** `frontend/tests/e2e/invoices_echeancier.spec.ts`, **When** le helper local équivalent (probable `createContact` ou `createAndValidateInvoice` ligne ~41-81) est refactoré, **Then** mêmes critères que AC #5 — utilisation `authedApiContext` + `try/finally` + dispose.
+6. **Given** `frontend/tests/e2e/invoices_echeancier.spec.ts`, **When** les **2 helpers locaux** sont refactorés, **Then** :
+   - `createContactViaApi` (ligne 41 — `page.request.post` ligne 45).
+   - `createAndValidateInvoice` (ligne 58 — `page.request.post` aux lignes 65 et 78).
+   - Mêmes critères que AC #5 : utilisation `authedApiContext` + `try/finally` + dispose.
 
 7. **Given** `frontend/tests/e2e/journal-entries.spec.ts`, **When** le helper `getSeedAccountNumbers` (lignes 42-56 environ) est refactoré, **Then** mêmes critères + adaptation à la signature GET (`ctx.get('/api/v1/accounts?includeArchived=false')`).
 
 ### Validation cascade 401 résolue
 
 8. **Given** les patches AC #5/6/7 appliqués, **When** `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=list` est exécuté depuis `frontend/`, **Then** :
-   - **0 failure** avec le message `401 Unauthorized` ou `createContact*VialApi failed: 401` ou `expect(received).toBeTruthy()` originant de `helpers/test-state.ts` ligne `authedApiContext`.
-   - Le compte de tests passants augmente d'au moins **+18** vs baseline (`tests/e2e/baseline-pre-9-5-1b.log`) — couvre les 6 failures invoices + 12 failures journal-entries documentées dans KF #54.
+   - **0 failure** avec un message contenant `401 Unauthorized` OU `createContact*VialApi failed: 401` OU `createProduct.*failed: 401` OU `create invoice failed: 401` OU `expect(received).toBeTruthy()` originant de `helpers/test-state.ts` ligne `authedApiContext`.
+   - Le compte de tests passants augmente d'au moins **+18** vs baseline (`tests/e2e/baseline-pre-9-5-1b.log`) — couvre 5 failures `invoices.spec.ts` (lignes 87/112/220/236/259) + 1 failure `invoices_echeancier.spec.ts` (ligne 90) + 12 failures `journal-entries.spec.ts` documentées dans KF #54 = 18 combinés.
    - **Garde anti-faux-positif** : si l'augmentation < 18 mais 0 failure 401 résiduel, vérifier qu'aucun test n'est passé en `test.skip()` masquant le succès. `grep "test.skip" tests/e2e/{invoices,invoices_echeancier,journal-entries}.spec.ts | wc -l` — le compte doit être identique entre baseline et post-fix (sinon documenter pourquoi un test a été skippé).
 
 ### Fix résiduel state/timing (KF #57 — 6 fichiers)
@@ -140,22 +148,23 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
   - [ ] T3.2 Ajouter constante `STORAGE_KEY_ACCESS_TOKEN` réutilisée (déjà présente ligne 36 — pas de duplication).
   - [ ] T3.3 Ajouter fonction `readAccessTokenFromStorage(page: Page): Promise<string | null>` (utilitaire interne — extrait via `page.evaluate`).
   - [ ] T3.4 Ajouter fonction publique `export async function authedApiContext(page: Page): Promise<APIRequestContext>` suivant la spec AC #3 (résolution token, garde-fou null/empty, construction context avec `extraHTTPHeaders: { Authorization: Bearer <token> }`).
-  - [ ] T3.5 Créer `frontend/tests/e2e/helpers/test-state.test.ts` (Vitest) avec 3 cas de test AC #4 (mock `playwrightRequest.newContext` via `vi.mock`, mock `page.evaluate` via stub).
-  - [ ] T3.6 Lancer `cd frontend && npm run test:unit -- tests/e2e/helpers/test-state.test.ts` : 3/3 pass attendu.
-  - [ ] T3.7 Commit `feat(e2e): add authedApiContext helper for Bearer-authed API calls (refs #54)`.
+  - [ ] T3.5 **Avant** de créer le fichier Vitest, mettre à jour `frontend/vite.config.ts` pour inclure les tests sous `tests/` dans le glob Vitest : `include: ['src/**/*.test.ts', 'tests/**/*.test.ts']` (sans cette modification, `npm run test:unit` ignore silencieusement le nouveau test — vérifié par lecture directe de `vite.config.ts:32`).
+  - [ ] T3.6 Créer `frontend/tests/e2e/helpers/test-state.test.ts` (Vitest) avec 3 cas de test AC #4 (mock `playwrightRequest.newContext` via `vi.mock`, mock `page.evaluate` via stub).
+  - [ ] T3.7 Lancer (a) `cd frontend && npm run test:unit -- tests/e2e/helpers/test-state.test.ts` : 3/3 pass attendu (chemin explicite, robuste au glob) **et** (b) `cd frontend && npm run test:unit 2>&1 | grep "test-state.test"` : confirmer que le nouveau fichier est bien découvert par le glob mis à jour en T3.5.
+  - [ ] T3.8 Commit `feat(e2e): add authedApiContext helper for Bearer-authed API calls (refs #54)` — inclut la modif `vite.config.ts` + helper + tests Vitest.
 
-- [ ] **T4** Refactor `invoices.spec.ts` (AC: #5)
-  - [ ] T4.1 Identifier helpers locaux à patcher : `grep -n "page.request" frontend/tests/e2e/invoices.spec.ts` (attendu : 2-4 occurrences sur `createContactViaApi`, `createProductViaApi`, éventuellement `createContactWithAddress`).
+- [ ] **T4** Refactor `invoices.spec.ts` — 4 helpers (AC: #5)
+  - [ ] T4.1 Identifier helpers locaux à patcher : `grep -n "page.request" frontend/tests/e2e/invoices.spec.ts` (attendu : **6 occurrences** aux lignes 37, 57, 180, 199, 217, 232 — les 4 helpers `createContactViaApi`/`createProductViaApi`/`createContactWithAddressViaApi`/`createAndValidateInvoiceViaApi` à refactorer ; la ligne 232 est une assertion de test PDF directe — laisser en place si le test passe après refactor des 4 helpers, sinon la traiter comme un 5ᵉ call site à wrapper en `authedApiContext`).
   - [ ] T4.2 Refactor chaque helper : pattern `const ctx = await authedApiContext(page); try { const res = await ctx.post(...); ...; } finally { await ctx.dispose(); }`.
   - [ ] T4.3 Vérifier aucun changement de signature externe — les call sites doivent rester inchangés.
   - [ ] T4.4 `npx playwright test invoices.spec.ts --reporter=list` : tests qui échouaient en 401 doivent maintenant passer (sauf failures non-401 hors scope KF #54).
-  - [ ] T4.5 Commit `fix(e2e/invoices): use authedApiContext in createContact*VialApi helpers (refs #54)`.
+  - [ ] T4.5 Commit `fix(e2e/invoices): use authedApiContext in 4 helper functions (refs #54)`.
 
-- [ ] **T5** Refactor `invoices_echeancier.spec.ts` (AC: #6)
-  - [ ] T5.1 Identifier helpers via `grep -n "page.request" frontend/tests/e2e/invoices_echeancier.spec.ts`.
-  - [ ] T5.2 Refactor identique T4.2.
+- [ ] **T5** Refactor `invoices_echeancier.spec.ts` — 2 helpers (AC: #6)
+  - [ ] T5.1 Identifier helpers via `grep -n "page.request" frontend/tests/e2e/invoices_echeancier.spec.ts` (attendu : **3 occurrences** aux lignes 45, 65, 78 — les helpers `createContactViaApi` (ligne 41, post ligne 45) et `createAndValidateInvoice` (ligne 58, 2 posts lignes 65 + 78) à refactorer).
+  - [ ] T5.2 Refactor identique T4.2 — les **2 helpers** doivent être patchés (pas seulement `createContactViaApi`, sinon cascade 401 se déplace sur `createAndValidateInvoice`).
   - [ ] T5.3 `npx playwright test invoices_echeancier.spec.ts --reporter=list` : tests 401 → pass.
-  - [ ] T5.4 Commit `fix(e2e/invoices_echeancier): use authedApiContext in createContact helper (refs #54)`.
+  - [ ] T5.4 Commit `fix(e2e/invoices_echeancier): use authedApiContext in 2 helper functions (refs #54)`.
 
 - [ ] **T6** Refactor `journal-entries.spec.ts` (AC: #7)
   - [ ] T6.1 Identifier helper via `grep -n "page.request" frontend/tests/e2e/journal-entries.spec.ts` (attendu : `getSeedAccountNumbers` ligne ~42-56 utilisant GET).
@@ -164,10 +173,10 @@ Story d'implémentation E2E **scopée infrastructure tests + helpers** (pas de m
   - [ ] T6.4 Commit `fix(e2e/journal-entries): use authedApiContext in getSeedAccountNumbers helper (refs #54)`.
 
 - [ ] **T7** Validation cascade 401 résolue (AC: #8)
-  - [ ] T7.1 Re-run combiné : `npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=list 2>&1 | tee tests/e2e/post-kf54-9-5-1b.log`.
-  - [ ] T7.2 `grep -cE "createContact.*failed: 401|401 Unauthorized|authedApiContext: no accessToken" tests/e2e/post-kf54-9-5-1b.log` : 0 attendu.
+  - [ ] T7.1 Re-run combiné : `npx playwright test invoices.spec.ts invoices_echeancier.spec.ts journal-entries.spec.ts --reporter=list 2>&1 | tee tests/e2e/post-kf54-9-5-1b.log` (depuis `frontend/`).
+  - [ ] T7.2 `grep -cE "createContact.*failed: 401|createProduct.*failed: 401|create invoice failed: 401|401 Unauthorized|authedApiContext: no accessToken" tests/e2e/post-kf54-9-5-1b.log` : 0 attendu (pattern élargi pour couvrir les 4 helpers `invoices.spec.ts` + les 2 helpers `invoices_echeancier.spec.ts`).
   - [ ] T7.3 Compter le delta pass count : `grep -c "✓" tests/e2e/post-kf54-9-5-1b.log` vs `grep -c "✓" tests/e2e/baseline-pre-9-5-1b.log` → delta ≥ +18 attendu.
-  - [ ] T7.4 Anti-faux-positif : `grep -c "test.skip" frontend/tests/e2e/{invoices,invoices_echeancier,journal-entries}.spec.ts` pré-fix vs post-fix → identique.
+  - [ ] T7.4 Anti-faux-positif (**depuis la racine du repo**, pas depuis `frontend/`) : `grep -c "test.skip" frontend/tests/e2e/invoices.spec.ts frontend/tests/e2e/invoices_echeancier.spec.ts frontend/tests/e2e/journal-entries.spec.ts` pré-fix vs post-fix → identique. (Chemins explicites au lieu d'expansion brace `{...}` pour éviter ambiguïté working-dir.)
   - [ ] T7.5 Si conditions T7.2 + T7.3 + T7.4 OK : `git add tests/e2e/post-kf54-9-5-1b.log && git commit -m "chore(9-5-1b): KF #54 cascade 401 cleared — baseline post-kf54 attached"`.
 
 - [ ] **T8** Catégorisation + fix résiduel KF #57 (AC: #9, #10, #11, #12)
@@ -237,7 +246,16 @@ L'AC #12 interdit explicitement les `waitForTimeout > 500ms` comme « patch » p
 
 ### Coordination avec 9-5-1d (KF #47)
 
-`frontend/tests/e2e/fiscal-years.spec.ts:121` contient `test.skip(true, 'AC #22 fallback toast - deferred to KF #47')` (vérifié 9-5-1a Dev Notes). 9-5-1b touche `fiscal-years.spec.ts` aux lignes `:44`, `:50`, `:59` (KF #57 issues), **mais ne touche PAS** la ligne `:121` (KF #47 — déférée 9-5-1d). Les éditions de 9-5-1b sur ce fichier doivent préserver le `test.skip` ligne 121 — vérifier explicitement après le dernier commit T8 ou T9 que `grep "test.skip(true" frontend/tests/e2e/fiscal-years.spec.ts` retourne toujours la ligne ~121.
+`frontend/tests/e2e/fiscal-years.spec.ts:121` contient un `test.skip(true, ...)` dont le message exact est :
+
+```
+test.skip(
+    true,
+    "Skipped — helper testé via TS compile-time + tests backend ; un vrai E2E nécessite un setup form complexe (validate_invoice). Voir Story 5.2 e2e + JournalEntryForm wiring."
+);
+```
+
+(Le message a évolué — 9-5-1a Dev Notes en référait sous une forme paraphrasée. La sémantique reste : test E2E AC #22 déféré, KF #47 le tracke.) 9-5-1b touche `fiscal-years.spec.ts` aux lignes `:44`, `:50`, `:59` (KF #57 issues), **mais ne touche PAS** le bloc à la ligne `:121` (KF #47 — déférée 9-5-1d). Les éditions de 9-5-1b sur ce fichier doivent préserver le `test.skip` ligne 121 — vérifier explicitement après le dernier commit T8 ou T9 via `grep -nF "test.skip" frontend/tests/e2e/fiscal-years.spec.ts` (flag `-F` fixed-string obligatoire car le message contient des caractères regex `.`/`-`) : doit retourner la ligne 121 toujours présente.
 
 ### Memory carries
 
@@ -321,3 +339,29 @@ L'AC #12 interdit explicitement les `waitForTimeout > 500ms` comme « patch » p
 ### File List
 
 ## Change Log
+
+### Pass 1 spec validate — 2026-05-19, Sonnet 4.6 (subagent contexte frais)
+
+**Verdict trend** : 0 CRITICAL + 2 HIGH + 2 MEDIUM + 3 LOW = 7 findings (Convergence : NON).
+
+**Discipline grep ground-truth Sonnet** appliquée — 16/16 ground-truth verifications positives (every CRITICAL/HIGH claim verified by `Read` direct sur fichier source ou `grep -nF` avant d'être levée). Aucun faux-positif détecté.
+
+**Patches appliqués (7/7 — tous patchables sans defer)** :
+
+1. **HIGH-01 — `vite.config.ts:32` include pattern** : le test Vitest proposé `frontend/tests/e2e/helpers/test-state.test.ts` tombe hors du glob `include: ['src/**/*.test.ts']` → `npm run test:unit` l'ignorerait silencieusement. **Patch** : T3.5 ajouté pour étendre le glob à `['src/**/*.test.ts', 'tests/**/*.test.ts']` *avant* de créer le fichier de test ; T3.7 dédoublé pour vérifier (a) exécution explicite + (b) découverte par le glob mis à jour.
+
+2. **HIGH-02 — `createAndValidateInvoiceViaApi` manquant du refactor** : ligne 194 de `invoices.spec.ts` utilise `page.request.post` (lignes 199 + 217) et est appelée immédiatement après `createContactWithAddressViaApi` aux lignes 225/242/268. **Cascade-hidden** dans KF #54 mais réémerge après fix des autres helpers. **Patch** : AC #5 réécrit pour lister explicitement les **4 helpers** (createContactViaApi/createProductViaApi/createContactWithAddressViaApi/createAndValidateInvoiceViaApi avec lignes exactes) ; T4.1 mis à jour avec 6 occurrences attendues lignes 37/57/180/199/217/232 ; T7.2 grep élargi à `create invoice failed: 401|createProduct.*failed: 401` ; AC #8 message d'erreur élargi.
+
+3. **MEDIUM-01 — Ambiguïté « ou » AC #6** : `invoices_echeancier.spec.ts` a **2 helpers** (createContactViaApi ligne 41 + createAndValidateInvoice ligne 58) qui utilisent tous deux `page.request.post`. **Patch** : AC #6 réécrit pour énumérer les 2 helpers ; T5.1 mis à jour avec 3 occurrences attendues lignes 45/65/78 ; T5.2 clarifié sur la nécessité de patcher les 2 (sinon cascade 401 se déplace sur le second).
+
+4. **MEDIUM-02 — Message `test.skip` faussé dans Dev Notes** : le message cité (« AC #22 fallback toast - deferred to KF #47 ») est paraphrasé — le message réel mentionne « helper testé via TS compile-time + tests backend ; un vrai E2E nécessite un setup form complexe (validate_invoice). Voir Story 5.2 e2e + JournalEntryForm wiring. ». **Patch** : Dev Notes §Coordination avec 9-5-1d cite maintenant le message textuel exact + précise l'usage de `grep -nF` (fixed-string) pour vérification ground-truth future.
+
+5. **LOW-01 — Compte ambigu « 6 failures invoices »** : ambigu entre `invoices.spec.ts` seul vs invoices + invoices_echeancier combinés. **Patch** : AC #8 explicite « 5 failures `invoices.spec.ts` (lignes 87/112/220/236/259) + 1 failure `invoices_echeancier.spec.ts` (ligne 90) + 12 failures `journal-entries.spec.ts` = 18 combinés ».
+
+6. **LOW-02 — « ligne ~220 » pointe call site vs définition** : confusion possible entre call site (ligne 225) et définition de fonction (ligne 176). **Patch** : AC #5 précise « définition à la ligne 176 — call sites aux lignes 225, 242, 268 ».
+
+7. **LOW-03 — Expansion brace `{...}` shell ambiguë** : `grep ... frontend/tests/e2e/{invoices,invoices_echeancier,journal-entries}.spec.ts` peut s'exécuter depuis `frontend/` ou racine selon contexte, expansion brace pas garantie portable. **Patch** : T7.4 reformulé avec working dir explicite (« depuis la racine du repo ») + chemins complets sans expansion brace.
+
+**Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`).
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé, contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
