@@ -4,10 +4,9 @@
 
 \documentclass[a4paper,11pt,oneside]{article}
 
-\usepackage[french]{babel}
+\usepackage{polyglossia}
+\setdefaultlanguage{french}
 \usepackage{../shared/kesh-style}
-
-\renewcommand{\Kesh@logo@path}{../shared/kesh-logo.svg}
 
 \title{Manuel utilisateur Kesh}
 \author{\keshAuthor}
@@ -45,7 +44,7 @@ Ce manuel s'adresse aux utilisateurs finaux : comptables internes d'une PME, ind
     \item Les \emph{noms d'écrans} et \emph{libellés de boutons} apparaissent en italique.
     \item Les chemins de navigation utilisent → : \emph{Paramètres} → \emph{Utilisateurs} signifie « cliquer sur Paramètres dans le menu, puis sur Utilisateurs ».
     \item \keshkey{Ctrl+S} indique une combinaison de touches clavier.
-    \item Les boîtes colorées : \keshnote{} (information), \keshtip{} (astuce), \keshwarning{} (attention).
+    \item Les boîtes colorées : \emph{Note} (information), \emph{Astuce}, \emph{Attention} (avertissement).
 \end{itemize}
 
 \begin{keshnote}
@@ -654,7 +653,7 @@ Si aucune proposition automatique n'est pertinente :
     \item Cliquer sur \emph{Rapprocher manuellement} sur une transaction non rapprochée.
     \item Sélectionner une facture impayée OU une écriture comptable existante OU créer une nouvelle écriture à la volée.
     \item Valider.
-\end{enumerate>
+\end{enumerate}
 
 \subsection{Éclatement d'une transaction (split)}
 
@@ -738,7 +737,7 @@ Tous les rapports peuvent être :
     \item \textbf{Visualisés en HTML} dans l'interface (interactif, tri, filtre).
     \item \textbf{Exportés en PDF} (format paginé, conforme structure Art. 959/959a/959b).
     \item \textbf{Exportés en CSV} (analyse Excel ou import dans un autre outil).
-\end{itemize>
+\end{itemize}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Exports de souveraineté}
@@ -803,7 +802,7 @@ Pour la conservation légale 10 ans (CO Art. 958f al. 1) :
     \item Stocker le ZIP + le fichier hash sur un support adapté (cloud avec immutabilité, NAS avec snapshot, DVD-R, etc.).
     \item Re-vérifier le hash périodiquement (recommandation : annuel) pour détecter toute corruption.
     \item Conserver le manuel utilisateur correspondant à la version Kesh utilisée (procédure documentée OLICo Art. 9 al. 1.b ch. 4).
-\end{enumerate>
+\end{enumerate}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Multi-tenant pour fiduciaires}
@@ -837,7 +836,7 @@ L'icône cloche dans la barre supérieure affiche les notifications récentes :
     \item Transactions bancaires non rapprochées depuis > 7 jours.
     \item Écritures en brouillon non validées depuis > 7 jours.
     \item Anomalies détectées (doublons, déséquilibres, etc.).
-\end{itemize>
+\end{itemize}
 
 \subsection{Audit-trail}
 
@@ -890,7 +889,7 @@ Oui, si :
     \item Le montant ne correspond à aucune facture impayée à 1 CHF près.
     \item La référence ne correspond à aucune référence QR Bill structurée.
     \item Le libellé est trop vague (« Virement », « Versement », sans détail).
-\end{itemize>
+\end{itemize}
 
 Procédez à un rapprochement manuel, ou créez une règle d'affectation pour les transactions récurrentes.
 

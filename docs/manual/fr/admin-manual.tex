@@ -4,11 +4,9 @@
 
 \documentclass[a4paper,11pt,oneside]{article}
 
-\usepackage[french]{babel}
+\usepackage{polyglossia}
+\setdefaultlanguage{french}
 \usepackage{../shared/kesh-style}
-
-% Cette définition est nécessaire car le SVG est dans shared/, pas dans fr/
-\renewcommand{\Kesh@logo@path}{../shared/kesh-logo.svg}
 
 \title{Manuel administrateur Kesh}
 \author{\keshAuthor}
@@ -63,7 +61,7 @@ Le lecteur est supposé familier avec :
     \item \keshcommand{commande shell} : commande à exécuter dans un terminal.
     \item \keshpath{/chemin/fichier} : chemin vers un fichier ou répertoire sur le système.
     \item \keshkey{Ctrl+S} : combinaison de touches clavier.
-    \item Les boîtes colorées indiquent : \keshnote{} (information), \keshtip{} (astuce), \keshwarning{} (attention), \keshdanger{} (danger).
+    \item Les boîtes colorées : \emph{Note} (information), \emph{Astuce}, \emph{Attention} (avertissement), \emph{Danger} (risque critique).
 \end{itemize}
 
 \begin{keshnote}
@@ -858,7 +856,7 @@ En production multi-instances, centraliser via :
 
 Exemple de driver logging Loki dans \keshpath{docker-compose.yml} :
 
-\begin{lstlisting}[language=yaml]
+\begin{lstlisting}[]
 services:
   kesh:
     image: guycorbaz/kesh:latest
@@ -881,7 +879,7 @@ KESH_METRICS_PORT=9090
 
 Scraper avec Prometheus :
 
-\begin{lstlisting}[language=yaml]
+\begin{lstlisting}[]
 # prometheus.yml
 scrape_configs:
   - job_name: 'kesh'

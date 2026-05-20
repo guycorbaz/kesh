@@ -23,11 +23,35 @@
 \RequirePackage{booktabs}
 \RequirePackage{tabularx}
 \RequirePackage{array}
+\RequirePackage{colortbl}
 \RequirePackage{hyperref}
 \RequirePackage{graphicx}
 \RequirePackage{listings}
-\RequirePackage{fontawesome5}
 \RequirePackage{setspace}
+\RequirePackage{afterpage}
+
+% Icônes textuelles simples (compatibles toutes polices, look minimaliste moderne)
+% Remplace fontawesome5 (non disponible par défaut sur tous les TeX Live)
+\providecommand{\faInfoCircle}{\textbf{i}}
+\providecommand{\faLightbulb}{\textbf{!}}
+\providecommand{\faExclamationTriangle}{\textbf{!}}
+\providecommand{\faRadiation}{\textbf{X}}
+\providecommand{\faCheckCircle}{\textbf{✓}}
+\providecommand{\faUniversity}{\textbf{§}}
+\providecommand{\faQrcode}{\textbf{::}}
+\providecommand{\faExchangeAlt}{\textbf{⇄}}
+\providecommand{\faLanguage}{\textbf{A/B}}
+\providecommand{\faLock}{\textbf{[lock]}}
+\providecommand{\faUsers}{\textbf{[users]}}
+\providecommand{\faUserTie}{\textbf{[user]}}
+\providecommand{\faBuilding}{\textbf{[corp]}}
+\providecommand{\faHandshake}{\textbf{[deal]}}
+\providecommand{\faBalanceScale}{\textbf{[fid]}}
+\providecommand{\faCog}{\textbf{[cfg]}}
+\providecommand{\faClock}{\textbf{[time]}}
+\providecommand{\faRocket}{\textbf{→}}
+\providecommand{\faGithub}{\textbf{[GH]}}
+\providecommand{\faComments}{\textbf{[chat]}}
 \RequirePackage[strict]{changepage}
 
 % tcolorbox libraries (tous chargés ensemble pour éviter problèmes de dépendance)
@@ -66,43 +90,13 @@
 %% Fallback Inter si disponible sur le système (look encore plus moderne)
 %%─────────────────────────────────────────────────────────────────────────────
 
-% On préfère Inter si installée (apt install fonts-inter), sinon TeX Gyre Heros
-\IfFontExistsTF{Inter}{%
-    \setmainfont{Inter}[%
-        UprightFont = * Regular,
-        BoldFont    = * Bold,
-        ItalicFont  = * Italic,
-        BoldItalicFont = * Bold Italic,
-        Numbers = Lining,
-        Scale = 1.0%
-    ]%
-    \setsansfont{Inter}[%
-        UprightFont = * Regular,
-        BoldFont    = * Bold,
-        ItalicFont  = * Italic,
-        Numbers = Lining%
-    ]%
-}{%
-    \setmainfont{TeX Gyre Heros}[%
-        UprightFont = *-regular,
-        BoldFont = *-bold,
-        ItalicFont = *-italic,
-        BoldItalicFont = *-bolditalic,
-        Scale = 1.0%
-    ]%
-    \setsansfont{TeX Gyre Heros}[%
-        UprightFont = *-regular,
-        BoldFont = *-bold,
-        ItalicFont = *-italic%
-    ]%
-}
+% TeX Gyre Heros (inclus TeX Live) — Helvetica-like moderne portable
+% fontspec auto-détecte les variantes bold/italic via le système font.
+\setmainfont{TeX Gyre Heros}[Scale=1.0]
+\setsansfont{TeX Gyre Heros}[Scale=1.0]
 
-% Police monospace pour code — JetBrains Mono si dispo, sinon TeX Gyre Cursor
-\IfFontExistsTF{JetBrains Mono}{%
-    \setmonofont{JetBrains Mono}[Scale = 0.92]%
-}{%
-    \setmonofont{TeX Gyre Cursor}[Scale = 0.92]%
-}
+% Police monospace pour code — TeX Gyre Cursor (inclus TeX Live)
+\setmonofont{TeX Gyre Cursor}[Scale=0.92]
 
 %%─────────────────────────────────────────────────────────────────────────────
 %% Mise en page (marges aérées, look moderne)
@@ -157,11 +151,7 @@
 %% Table des matières — moderne, sans points de suspension
 %%─────────────────────────────────────────────────────────────────────────────
 
-\renewcommand{\cftsecfont}{\sffamily\bfseries\color{keshPrimary}}
-\renewcommand{\cftsubsecfont}{\sffamily\color{keshText}}
-\renewcommand{\cftsubsubsecfont}{\sffamily\color{keshTextMuted}}
-
-% On supprime les dots du toc pour un look plus clean
+% On supprime les dots du toc pour un look plus clean via titletoc
 \titlecontents{section}[0em]
     {\addvspace{0.6em}\sffamily\bfseries\color{keshPrimary}}
     {\contentslabel{1.4em}}{}
@@ -370,10 +360,10 @@
 \setlength{\arrayrulewidth}{0.4pt}
 \arrayrulecolor{keshBorder}
 
-% En-tête de tableau coloré
+% En-tête de tableau : formatage texte uniquement (pas de rowcolor pour
+% rester compatible tabularx + booktabs)
 \newcommand{\keshtableheader}[1]{%
-    \rowcolor{keshSurfaceAlt}%
-    \color{keshPrimary}\sffamily\bfseries #1%
+    {\color{keshPrimary}\sffamily\bfseries #1}%
 }
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -398,18 +388,12 @@
 }
 \RequirePackage{tikz}
 
-% Logo Kesh inline (à utiliser dans header et page de garde)
-% La SVG est convertie via svglatex ou simplement référencée en PDF si disponible
-% Pour ce skel on suppose un fallback : si pas de PDF, on affiche texte stylisé
+% Logo Kesh inline (fallback texte si pas de support SVG)
+% La conversion SVG→PDF nécessite inkscape/rsvg-convert non garantis, donc
+% on affiche le wordmark texte stylisé qui est tout aussi efficace.
 \newcommand{\keshlogo}[1][1cm]{%
-    \IfFileExists{\Kesh@logo@path}{%
-        \includegraphics[height=#1]{\Kesh@logo@path}%
-    }{%
-        % Fallback texte si pas de logo trouvé
-        \textbf{\color{keshPrimary}\Large\sffamily Kesh}%
-    }%
+    \textbf{\color{keshPrimary}\fontsize{#1}{#1}\selectfont\sffamily Kesh}%
 }
-\providecommand{\Kesh@logo@path}{shared/kesh-logo.svg}
 
 %%─────────────────────────────────────────────────────────────────────────────
 %% Page de garde commune — full-bleed couleur brand
