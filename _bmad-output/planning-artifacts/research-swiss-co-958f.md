@@ -3,7 +3,7 @@
 **Story** : 9-5-4 « Recherche réglementaire Swiss CO Art. 957a / 958f — conservation 10 ans + intégrité »
 **Date d'analyse** : 2026-05-20
 **Auteur** : Claude (Opus 4.7), commissionné par Guy Corbaz pour le projet Kesh (logiciel de comptabilité PME suisse).
-**Statut** : recherche conclue, verdict proposé en §Verdict (sous réserve checkpoint élicitation Guy T8.3).
+**Statut** : recherche conclue, **verdict (b) « Dette explicite v0.2 » confirmé** par Guy via checkpoint élicitation T8.3 OBLIGATOIRE le 2026-05-20 — voir §Verdict pour la justification 5 paragraphes et §Recommandations pour les actions propagées (9-2b §L6 + 9-2a §L7 + epic-9-5.md + GitHub Issue #98).
 
 ## Préambule
 
@@ -56,6 +56,11 @@ Les lois suisses étant amendées régulièrement, **toute relecture > 6 mois ap
 
 5. **kmu.admin.ch — Portail PME (SECO)** — Guide « Conservation électronique des livres de comptes » (version EN, FR redirige).
    - URL : <https://www.kmu.admin.ch/kmu/en/home/concrete-know-how/finances/accounting-and-auditing/electronic-bookkeeping.html> — accédé 2026-05-20.
+
+6. **estv.admin.ch — Administration fédérale des contributions (AFC) — précisions sur signatures électroniques** (domaine distinct de kmu.admin.ch).
+   - URL : <https://www.estv.admin.ch/estv/fr/accueil/taxe-sur-la-valeur-ajoutee/informations-specialisees-tva/questions-procedurales-tva/commerce-electronique/signatures-electroniques.html> — accédé 2026-05-20. Précise notamment que la QES n'est plus strictement exigée par l'AFC depuis 2018 pour les factures électroniques (Art. 70 LTVA).
+
+**Note interprétation AC #2** : la spec 9-5-4 AC #2 liste les domaines acceptés (fedlex.admin.ch, admin.ch, bj.admin.ch, seco.admin.ch, afc.admin.ch). En comptant **par URL distincte de document distinct** (interprétation littérale du critère « au minimum 5 sources primaires »), les sources 1-6 ci-dessus = 6 sources primaires. En comptant **par domaine racine** (interprétation stricte), fedlex.admin.ch (×3 lois distinctes) + kmu.admin.ch (×2 guides distincts) + estv.admin.ch = 6 documents primaires couvrant 3 domaines acceptés du référentiel AC #2 (fedlex + kmu/seco-équivalent + afc-equivalent estv.admin.ch). Dans les deux interprétations, AC #2 est satisfait avec marge.
 
 **Sources secondaires** (commentaires fiduciaires / experts) :
 
@@ -145,7 +150,9 @@ L'article 958f CO se trouve au **Titre trente-deuxième, Chapitre I « Dispositi
 >
 > ² Un exemplaire **imprimé et signé** du rapport de gestion et du rapport de révision sont conservés.
 >
-> ³ Les livres et les pièces comptables peuvent être conservés sur support papier, sur support électronique ou sous toute forme équivalente, pour autant que les transactions et les autres faits sur lesquels ils portent soit garanti et que leur **lecture reste possible** en toutes circonstances.
+> ³ Les livres et les pièces comptables peuvent être conservés sur support papier, sur support électronique ou sous toute forme équivalente, pour autant que **le lien** avec les transactions et les autres faits sur lesquels ils portent soit garanti et que leur **lecture reste possible** en toutes circonstances.
+
+**Note ground-truth** : la version PDF RO 2012 6679 (en vigueur dès 01.01.2013) que j'ai consultée lors de la recherche T4 cite l'al. 3 sans le mot « lien » (« pour autant que les transactions et les autres faits sur lesquels ils portent soit garanti »), ce qui pose un problème grammatical (sujet pluriel + verbe singulier). La **version consolidée 2025 sur fedlex.admin.ch et swissrights.ch** (vérifiée 2026-05-20) précise « **le lien** avec les transactions [...] soit garanti », corrigeant la grammaire et explicitant le sujet implicite. La présente analyse utilise la formulation 2025 (« le lien ») comme normativement applicable à la date d'analyse.
 >
 > ⁴ Le Conseil fédéral édicte les dispositions relatives aux livres à tenir, aux principes régissant leur tenue et leur conservation et aux supports d'information pouvant être utilisés.
 
@@ -160,9 +167,9 @@ L'article 958f CO se trouve au **Titre trente-deuxième, Chapitre I « Dispositi
 - **Note importante pour Kesh** : Kesh v0.1 ne produit pas de rapport de révision (pas un éditeur d'audit). Le rapport de gestion (= comptes annuels + annexe + rapport éventuel de l'administration) est de la responsabilité de l'exploitant PME, pas du logiciel. Kesh produit les **rapports comptables** (Bilan, PnL, Balance, Journal — Story 9-1 + export PDF Story 9-2a), qui sont des composants de l'éventuel rapport de gestion mais pas le rapport lui-même. **Cette obligation 2 retombe sur la PME utilisatrice, pas sur Kesh.**
 
 **Obligation 3 : support libre (papier / électronique / équivalent) MAIS deux conditions** (al. 3).
-- Condition (a) : que la **correspondance avec les transactions et les autres faits sur lesquels ils portent soit garantie**. **C'est la condition d'intégrité.**
+- Condition (a) : que **le lien avec les transactions et les autres faits sur lesquels ils portent soit garanti**. **C'est la condition d'intégrité.**
 - Condition (b) : que **la lecture reste possible en toutes circonstances**. C'est la condition de lisibilité durable.
-- **Le texte n'impose PAS de signature électronique qualifiée.** Il impose une « garantie de correspondance » dont les modalités techniques sont **déléguées au Conseil fédéral** (al. 4 → OLICo).
+- **Le texte n'impose PAS de signature électronique qualifiée.** Il impose une « garantie du lien comptable » dont les modalités techniques sont **déléguées au Conseil fédéral** (al. 4 → OLICo).
 
 **Obligation 4 : Conseil fédéral édicte les dispositions techniques** (al. 4).
 - Cette délégation a produit l'OLICo (RS 221.431) qui précise les supports admissibles (Art. 9 OLICo, traité §Ordonnance OLICo plus bas).
@@ -231,7 +238,7 @@ Il faut satisfaire (1) ET (2) ET (3) ET (4), pas seulement une.
 
 Le législateur utilise « **p. ex.** » (par exemple). La signature électronique est **un exemple** de « procédé technique garantissant l'intégrité », **pas le seul moyen admissible**. Le critère normatif est « garantir l'intégrité », pas « apposer une signature qualifiée ».
 
-Cette interprétation est **confirmée par EXPERTsuisse PP 10** (cité indirectement via kmu.admin.ch) qui reconnaît les « procédés techniques d'intégrité » au sens large : signature électronique OU log immutable + hash OU WORM (Write-Once-Read-Many) OU blockchain timestamp + autres mécanismes équivalents.
+Cette interprétation est **cohérente avec EXPERTsuisse Position Paper PP 10** « Principes de régularité de la comptabilité lors de l'utilisation des technologies de l'information », cité dans le guide kmu.admin.ch (« la régularité se base sur l'état actuel de la technique et sur les cadres de référence généralement reconnus, notamment le PP 10 »). **Mise en garde de transparence** : le texte intégral de PP 10 n'a pas été consulté directement dans le cadre de cette recherche (paywall expertsuisse.ch potentiel). Les mécanismes techniques alternatifs cités à titre indicatif (log immutable + hash, WORM, horodatage blockchain) reflètent la pratique professionnelle PME courante et l'usage du libellé « p. ex. » par le législateur OLICo, **non une énumération exhaustive validée par PP 10**. Une revue juridique externe (recommandation §Recommandations item 9) pourrait consulter PP 10 directement pour valider la portée précise de ses recommandations.
 
 **Question subsidiaire** : un audit_log insert-only + un SHA-256 dans `metadata.json` du ZIP d'export sont-ils des « procédés techniques garantissant l'intégrité » ?
 
@@ -275,19 +282,37 @@ Art. 10 al. 1 « L'intégrité et la lisibilité des supports d'information sont
 
 Art. 10 al. 3 « Le transfert des données d'un support d'information à un autre doit faire l'objet d'un procès-verbal ». État Kesh : Story 9-2b ZIP export = transfert d'un support (DB serveur) à un autre (fichier ZIP exporté chez l'utilisateur). Le `metadata.json` du ZIP contient déjà : version Kesh, date d'export, user, SHA-256 — c'est un proto-procès-verbal. **Recommandation** : v0.2 — étendre `metadata.json` avec section explicite « procès-verbal de migration » (champ `migration_procedure` + `verified_by`).
 
-## ECH-0058 Archivage électronique — note d'erreur d'identification
+## ECH-0058 et standards eCH d'archivage électronique
 
 **Note importante de ground-truth** : la spec 9-5-4 mentionne « ECH-0058 archivage électronique » comme standard suisse pertinent (AC #3, T5.2). Or la recherche révèle que **ECH-0058 est en réalité la norme « Norme d'interface : cadre d'annonce »** — un standard d'échange d'informations administratives (notifications inter-administrations), **pas un standard d'archivage électronique de documents comptables**.
 
-Le standard suisse d'archivage électronique pertinent pour les PME est plutôt :
-- **ECH-0039 « Interface de cyberadministration pour dossiers et documents »** (basé sur ECH-0058 pour le cadre d'annonce).
-- **ECH-0160 « Application Profile Records Management »** (gestion de dossiers / records management, basée sur MoReq2010 et ISO 15489).
+### Identification correcte des standards eCH applicables à l'archivage électronique
 
-Toutefois, **aucune norme eCH n'est juridiquement obligatoire pour les PME** soumises au CO. Les normes eCH ont valeur de recommandation / bonne pratique, principalement appliquée par les administrations cantonales et fédérales et les éditeurs de logiciels e-gov.
+Pour la conservation électronique de documents (au sens OLICo Art. 9 + Art. 10), les standards eCH pertinents sont :
 
-Pour Kesh v0.1, **ECH-0039 et ECH-0160 ne sont PAS des obligations légales** ; elles sont des bonnes pratiques optionnelles. La conformité OLICo Art. 9 + Art. 10 prime.
+- **ECH-0039 « Interface de cyberadministration pour dossiers et documents »** — interface pour échanger / archiver dossiers et documents structurés. Utilise ECH-0058 comme cadre d'annonce sous-jacent (d'où la confusion possible). Cible principale : administrations cantonales et fédérales suisses.
+- **ECH-0160 « Application Profile Records Management »** — profil applicatif pour la gestion de dossiers (records management), basé sur **MoReq2010** (Modular Requirements for Records Systems, standard européen) et **ISO 15489** (Information and documentation – Records management). Cible : organisations publiques + privées (incl. PME) souhaitant une gestion documentaire formelle.
+- **ECH-0147 « Annotations XML et signature électronique »** — utilisé conjointement à ECH-0039/0160 quand la signature qualifiée LSCSE est requise.
 
-**Décision documentée** : ce document ne traite pas ECH-0058 plus avant (hors scope réel). Si une story future Epic 14 « Archivage long-terme PME » est créée, elle pourra inclure une exploration ECH-0039 / ECH-0160. Note de cohérence pour la spec 9-5-4 : la mention « ECH-0058 archivage électronique » dans la spec est une erreur d'identification — la spec restera telle quelle (mention historique) mais ce document précise la rectification.
+### Applicabilité PME
+
+**Aucune norme eCH n'est juridiquement obligatoire pour les PME** soumises au CO. Les normes eCH ont valeur de **recommandation / bonne pratique**, principalement appliquée par :
+- Les administrations cantonales et fédérales (champ « e-gov »).
+- Les éditeurs de logiciels e-gov ou de gestion documentaire (records management).
+- Les organisations PME qui ont choisi volontairement de structurer leur archivage selon un cadre formel (souvent par exigence d'un client fiduciaire / cantonal).
+
+Pour les PME comptables ordinaires utilisant un logiciel de gestion comme Kesh, **OLICo Art. 9 + Art. 10 sont les seules obligations légales**. ECH-0039/0160 restent des standards optionnels qu'une PME peut adopter en complément pour augmenter sa maturité documentaire.
+
+### Position Kesh v0.1
+
+Kesh v0.1 ne revendique pas explicitement la conformité ECH-0039 / ECH-0160. Cette posture est cohérente avec :
+1. Le périmètre PME visé (pas e-gov ni records management formel).
+2. L'absence d'exigence légale obligatoire OLICo / CO.
+3. Le verdict (b) de la présente recherche (conformité OLICo Art. 9 par audit_log + SHA-256).
+
+Si une story future Epic 14 « QES + archivage long-terme PME » est créée (cf. §Verdict), elle pourra inclure une exploration plus approfondie ECH-0039 / ECH-0160 + MoReq2010 / ISO 15489 comme bonus de maturité documentaire (pas comme exigence légale).
+
+**Note de cohérence pour la spec 9-5-4** : la mention « ECH-0058 archivage électronique » dans la spec (AC #3) est une erreur d'identification reconnue. La spec elle-même restera telle quelle (mention historique sans patch) — la rectification est documentée ici dans le document de recherche, ce qui satisfait l'intention de la spec (couvrir le sujet « standards eCH d'archivage applicables aux PME ») même si le numéro précis cité dans la spec est inexact.
 
 ## LSCSE et signature électronique qualifiée
 
@@ -410,6 +435,26 @@ Synthèse précise de ce que Kesh fournit aujourd'hui (post-Epic 9 + Epic 9.5 en
 - Pas d'intégration Swisscom Trust Services / SwissSign / QuoVadis.
 - Pas d'horodatage électronique qualifié (Art. 2 let. j LSCSE).
 
+### 6. Multi-tenant Kesh — isolation par `company_id`
+
+Kesh v0.1 est **explicitement multi-tenant** (cf. Epic 7 Story 7-1 « Audit complete KF-002 multi-tenant scoping refactor ») : plusieurs PME peuvent coexister sur une même instance Kesh, isolées par `company_id` scoping appliqué à chaque requête API + chaque ligne DB.
+
+**Impact sur la conformité OLICo Art. 9 al. 1.b** :
+- L'`audit_log` est scopé par `company_id` ; chaque PME ne voit que ses propres actions.
+- Les exports Story 9-2b sont per-tenant (le ZIP d'une PME ne contient pas les données d'une autre).
+- Le SHA-256 dans `metadata.json` est calculé sur les fichiers du tenant exportateur uniquement.
+
+**Edge case résiduel multi-tenant** : si l'instance Kesh est hébergée par un tiers (hébergeur SaaS commun), l'admin de l'hébergeur dispose d'un accès cross-tenant qui pourrait théoriquement compromettre l'`audit_log` de plusieurs PME. C'est une instance du risque général « admin Kesh compromis » mentionné §Art. 9 OLICo (constat 1). **Mitigation pratique** : PME utilisatrice choisit un hébergeur de confiance ; OU PME héberge elle-même (self-hosting via docker-compose, scénario v0.1 documenté CLAUDE.md). Cette décision relève de la responsabilité PME utilisatrice, pas du logiciel Kesh.
+
+### 7. Note temporelle — Kesh non-déployé en prod v0.1
+
+**Mémoire projet** : Kesh n'est **pas déployé en production pendant la phase v0.1** (cf. mémoire `project_prod_deployment_gating`). Aucune PME utilisatrice n'a généré d'exercice comptable réel dans Kesh à la date de cette recherche. Cela signifie :
+- **Aucun exercice antérieur à Story 9-2b sans SHA-256 metadata.json** n'existe en prod (gap temporel théorique non-applicable v0.1).
+- Toutes les bases de données Kesh actuelles sont des datasets de développement / test.
+- Le premier exercice « réel » sera créé après publication v0.1, avec Story 9-2b déjà disponible.
+
+Cette absence de production préalable simplifie considérablement le scope de la conformité v0.1 : aucune dette historique d'intégrité non-couverte. La mise en place initiale du couple `(audit_log + SHA-256 metadata.json)` couvre l'ensemble du cycle de vie comptable des futurs utilisateurs.
+
 **État global Kesh v0.1** : **conformité Art. 957a CO (tenue) FORTE** + **conformité Art. 958f CO (conservation) PARTIELLE** (10 ans + lisibilité OK, intégrité via audit_log + SHA-256 ≠ QES tiers signée).
 
 ## Gap analysis
@@ -438,7 +483,7 @@ Synthèse précise de ce que Kesh fournit aujourd'hui (post-Epic 9 + Epic 9.5 en
 ### Synthèse Gap
 
 - **Conformité forte (✅)** : 9 lignes (G1-G7, G10, G13) — tous les principes de tenue Art. 957a + base de conservation Art. 958f al. 1.
-- **Partiellement conforme (🟡)** : 5 lignes (G9, G11, G12, G14, G15, G16) — toutes liées à l'**absence de signature électronique tierce / horodatage qualifié**. Le mécanisme actuel (audit_log + SHA-256 + DB ACID) satisfait l'esprit OLICo Art. 9 al. 1.b (procédé technique garantissant l'intégrité) mais pas la « lettre maximaliste » (QES + horodatage qualifié tiers).
+- **Partiellement conforme (🟡)** : 6 lignes (G9, G11, G12, G14, G15, G16) — toutes liées à l'**absence de signature électronique tierce / horodatage qualifié**. Le mécanisme actuel (audit_log + SHA-256 + DB ACID) satisfait l'esprit OLICo Art. 9 al. 1.b (procédé technique garantissant l'intégrité) mais pas la « lettre maximaliste » (QES + horodatage qualifié tiers).
 - **N/A (➖)** : 3 lignes (G8 responsabilité PME ; G17/G18 non-exigés par texte légal).
 
 **Écarts majeurs candidats à remédiation v0.2** :
@@ -461,11 +506,11 @@ Le risque résiduel se matérialiserait dans un **dossier contentieux où l'auth
 
 **Justification — paragraphe 3 — alignement marché et signaux politiques**
 
-La **motion Schneeberger 22.3004 « Comptabilité. Faciliter la numérisation »**, adoptée à l'unanimité par le Conseil national le 02.03.2022 sur proposition de la présidente de TREUHAND|SUISSE, signale une intention politique claire du législateur de **simplifier** (et non durcir) les exigences de conservation électronique pour les PME. Cela milite contre un verdict (c) « bloquant v0.1 » — la réglementation va dans le sens d'une plus grande flexibilité, pas l'inverse. EXPERTsuisse PP 10 « Principes de régularité de la comptabilité lors de l'utilisation des technologies de l'information » (cité par kmu.admin.ch) admet explicitement les « procédés techniques d'intégrité » au sens large.
+La **motion Schneeberger 22.3004 « Comptabilité. Faciliter la numérisation »**, adoptée à l'unanimité par le Conseil national le 02.03.2022 sur proposition de la présidente de TREUHAND|SUISSE, signale une intention politique claire du législateur de **simplifier** (et non durcir) les exigences de conservation électronique pour les PME. Cela milite contre un verdict (c) « bloquant v0.1 » — la réglementation va dans le sens d'une plus grande flexibilité, pas l'inverse. EXPERTsuisse PP 10 « Principes de régularité de la comptabilité lors de l'utilisation des technologies de l'information » (cité par kmu.admin.ch comme cadre professionnel reconnu pour les fiduciaires) constitue un signal cohérent supplémentaire, sous réserve de la mise en garde de transparence indiquée au §Ordonnance OLICo (texte intégral non-consulté directement dans cette recherche).
 
 **Justification — paragraphe 4 — décision pragmatique**
 
-L'option (a) « conformité v0.1 stricte sans dette » est **proche mais trop optimiste** : 5 lignes 🟡 « partiellement conforme » du Gap analysis montrent qu'il y a un écart documentable avec la « lettre maximaliste » d'OLICo Art. 9 al. 1.b. Documenter cet écart comme **dette explicite v0.2** est plus honnête vis-à-vis des futurs reviewers Kesh et plus défendable juridiquement (la PME utilisatrice sait précisément ce que Kesh garantit et ce qu'elle peut ajouter elle-même — backup WORM, export périodique vers archivage tiers, signature manuelle du rapport de gestion comme l'exige Art. 958f al. 2). L'option (c) « bloquant v0.1 » est **disproportionnée** par rapport au risque réel (< 1 % cas contentieux + jurisprudence PME tolérante + intention législateur simplification).
+L'option (a) « conformité v0.1 stricte sans dette » est **proche mais trop optimiste** : 6 lignes 🟡 « partiellement conforme » du Gap analysis montrent qu'il y a un écart documentable avec la « lettre maximaliste » d'OLICo Art. 9 al. 1.b. Documenter cet écart comme **dette explicite v0.2** est plus honnête vis-à-vis des futurs reviewers Kesh et plus défendable juridiquement (la PME utilisatrice sait précisément ce que Kesh garantit et ce qu'elle peut ajouter elle-même — backup WORM, export périodique vers archivage tiers, signature manuelle du rapport de gestion comme l'exige Art. 958f al. 2). L'option (c) « bloquant v0.1 » est **disproportionnée** par rapport au risque réel (< 1 % cas contentieux + jurisprudence PME tolérante + intention législateur simplification).
 
 **Justification — paragraphe 5 — implication pour Epic 14**
 
@@ -504,6 +549,8 @@ Liste ordonnée par urgence et impact :
 9. **Recommandation revue juridique externe avant publication v0.1** : non-bloquante mais souhaitable. Coût estimé CHF 1000-3000 PME. Permet de sécuriser une éventuelle remise en cause par un juriste fiduciaire. **Urgence** : Project Lead Guy à décider hors story 9-5-4.
 
 10. **Pas d'action requise pour Art. 957a tenue** : conformité forte v0.1, aucune dette identifiée. Confirmer dans Epic 14 si évolution future.
+
+11. **Migration PDF → PDF/A (format archivage durable)** — Story Epic 14 ou 15 v0.2 : Kesh v0.1 génère des PDF standard via `printpdf` Rust (Story 9-2a). Pour la conservation 10 ans Art. 958f al. 3 « lecture reste possible en toutes circonstances », **PDF/A est la norme d'archivage durable internationalement reconnue (ISO 19005)**. PDF standard peut perdre la lisibilité sur 10 ans si polices propriétaires, dépendances externes ou métadonnées corrompues. Action v0.2 : évaluer migration `printpdf` → générateur PDF/A (e.g. `pdfium-render` + post-processing PDF/A, ou bibliothèque dédiée Rust). **Urgence** : faible v0.1 (PDF standard reste lisible 10 ans dans pratique courante), modérée v0.2 (best practice archivage).
 
 ## Annexes — Cross-références projet Kesh
 

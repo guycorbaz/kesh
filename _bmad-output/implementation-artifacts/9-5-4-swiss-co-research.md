@@ -324,6 +324,60 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 
 ## Change Log
 
+### Pass 1 code-review — 2026-05-20, Sonnet 4.6 (3 subagents parallèles : BlindHunter + EdgeCaseHunter + AcceptanceAuditor)
+
+**Verdict trend brut** : 0 CRITICAL + 1 HIGH + 6 MEDIUM + 5 LOW + 1 dedup = **13 findings bruts** (15 - 2 dédupliqués entre layers).
+
+**Reviewer breakdown** :
+- **BlindHunter** Sonnet 4.6 (diff only, no context) : 5 findings (1 HIGH + 2 MEDIUM + 2 LOW).
+- **EdgeCaseHunter** Sonnet 4.6 (diff + projet read access) : 9 findings (4 MEDIUM + 5 LOW).
+- **AcceptanceAuditor** Sonnet 4.6 (diff + spec + context docs) : 11/11 ACs Satisfied + 1 LOW (typo dedup BlindHunter).
+
+**Triage discipline ground-truth Sonnet** :
+- Cross-check Art. 958f al. 3 « lien » vs « correspondance » via WebFetch swissrights.ch version 2025 (confirmé version 2025 dit « le lien » — interpolation « correspondance » de la Pass dev incorrecte → patch P1-2 documenté).
+- Cross-check « 5 lignes » → 6 lignes via `grep -c "🟡"` Gap table (6 confirmé G9-G16, typo confirmée → patch P1-1).
+- Cross-check labels GitHub Issue #98 via `gh issue view 98` (4 labels confirmés → AA-AC #6 satisfied).
+- Cross-check 9-2a §L7 ligne 424 ground-truth `grep -n "| L7 "` (modification chirurgicale confirmée).
+
+**Patches appliqués (9 PATCH = 6 MED + 3 LOW)** :
+
+1. **MEDIUM P1-1** — Typo « 5 lignes » → « 6 lignes » dans 2 occurrences §Synthèse Gap + §Verdict para 4. Ground-truth grep : tableau Gap a 6 items 🟡 (G9, G11, G12, G14, G15, G16), pas 5. Affecte la fiabilité visible du document.
+
+2. **MEDIUM P1-2** — Citation Art. 958f al. 3 utilisait « pour autant que les transactions [...] soit garanti » (PDF RO 2012, grammaticalement bancal — sujet pluriel + verbe singulier). Analyse interpolait « la correspondance » comme sujet implicite. Ground-truth swissrights.ch version 2025 + Fedlex moderne : le texte officiel actuel dit « **le lien** avec les transactions [...] soit garanti ». Patch : citation utilise version 2025 avec « le lien » + note de ground-truth explicite + analyse alignée sur « lien » (non « correspondance »).
+
+3. **LOW P1-3** — §Statut Préambule disait « sous réserve checkpoint élicitation Guy T8.3 » alors que T8.3 exécuté + verdict (b) confirmé. Patch : reformulé en « verdict (b) confirmé par Guy le 2026-05-20 » avec référence §Verdict + §Recommandations.
+
+4. **MEDIUM P1-4** — EXPERTsuisse PP 10 §Ordonnance OLICo Analyse Art. 9 attribuait à PP 10 une énumération précise (« log immutable + hash OU WORM OU blockchain ») non-vérifiée (texte intégral PP 10 non-consulté, paywall potentiel). Sur-attribution force probante. Patch : reformulé en « cohérent avec EXPERTsuisse PP 10 » + mise en garde de transparence explicite (« texte intégral PP 10 non consulté, mécanismes cités à titre indicatif ») + recommandation revue juridique externe pour validation portée précise PP 10. Idem para 3 §Verdict.
+
+5. **MEDIUM P1-5** — Section ECH-0058 limitée à note d'erreur d'identification + 2 lignes ECH-0039/ECH-0160. AC #3 demande « applicabilité PME (généralement non-obligatoire, mais bonne pratique) » qui n'était que partiellement développée. Patch : section étendue avec 3 sous-sections (Identification correcte des standards eCH applicables + Applicabilité PME + Position Kesh v0.1) sur ECH-0039, ECH-0160, ECH-0147, MoReq2010, ISO 15489. Posture Kesh v0.1 explicitée (pas de conformité revendiquée, cohérent verdict (b) + Epic 14 future).
+
+6. **MEDIUM P1-6** — Edge case multi-tenant non couvert. Kesh est explicitement multi-tenant (Epic 7 Story 7-1). Le verdict (b) reposait sur audit_log + SHA-256 sans traiter l'isolation inter-tenant. Patch : ajouté section §6 « Multi-tenant Kesh » dans §Implémentation actuelle Kesh expliquant scoping `company_id` + mitigation pratique (responsabilité PME utilisatrice pour choix hébergeur ou self-hosting).
+
+7. **MEDIUM P1-7** — Edge case exercices pré-Story 9-2b sans SHA-256 non couvert. Patch : ajouté section §7 « Note temporelle — Kesh non-déployé en prod v0.1 » référençant mémoire `project_prod_deployment_gating` : aucun exercice prod préexistant, gap temporel théorique non-applicable v0.1. Premier exercice « réel » sera créé après publication v0.1 avec Story 9-2b déjà disponible. Simplifie scope conformité.
+
+8. **LOW P1-8** — AC #2 : 5 sources primaires comptées via 2 URLs kmu.admin.ch + 3 URLs fedlex.admin.ch — domaines uniques ambigus. Patch : ajout 6e source primaire claire estv.admin.ch (déjà citée §LSCSE mais pas listée biblio) → 6 sources primaires couvrant 3 domaines acceptés AC #2 (fedlex + kmu + estv). Note d'interprétation AC #2 ajoutée pour expliciter le décompte par URL vs par domaine.
+
+9. **LOW P1-9** — PDF/A vs PDF standard non traité. Patch : ajout recommandation actionable #11 « Migration PDF → PDF/A » §Recommandations comme item v0.2 Epic 14/15.
+
+**Findings rejetés (2)** :
+
+- **BH-1 HIGH "T10.2 in-progress→review vs spec backlog→done"** : REJECT. Le workflow `bmad-dev-story` Step 9 prescrit explicitement la transition vers `review` (pas `done`). C'est le workflow `bmad-code-review` qui amène à `done`. AC #9 décrit le lifecycle complet de manière descriptive, pas une exigence single-commit. Faux-positif BlindHunter sans contexte projet.
+- **BH-4 LOW "Titre section LSCSE abrégé"** : REJECT. Cosmétique pure, le titre concis « LSCSE et signature électronique qualifiée » est légitime pour une section de doc — pas d'ambiguïté factuelle.
+
+**Findings différés (1)** :
+
+- **ECH-9 LOW "Issue #98 manque dépendance Epic 11 + ACs préliminaires"** : DEFER. L'issue est un traçage suffisant pour catégorie B (CLAUDE.md §Tech debt management). Les ACs préliminaires Epic 14 + dépendance Epic 11 (LTVA Art. 70 QES factures) seront élaborés au kickoff Epic 14, pas dans le scope de 9-5-4.
+
+**Trend cumul** :
+- Avant patches : 1 HIGH + 6 MEDIUM + 5 LOW = 12 findings actionables (1 dedup AA + 1 reject HIGH + 1 reject LOW + 1 defer LOW = nets après triage : 0 HIGH + 6 MEDIUM + 3 LOW = 9 PATCH).
+- Après 9 patches : **0 CRITICAL + 0 HIGH + 0 MEDIUM résiduel attendu**. À vérifier en Pass 2 Haiku 4.5.
+
+**Document final post-patches** : 577 lignes (vs 530 avant patches, +47 lignes — toujours dans cible AC #4 [300-1200]). 7 occurrences « accédé 2026-05-20 » (vs 6 — estv ajoutée). 6 sources primaires + 3 secondaires (vs 5+3).
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Opus 4.7 dev → Sonnet 4.6 review).
+
+**Recommandation Pass 2** : Haiku 4.5 (cycle Sonnet → **Haiku** → Opus). Discipline grep ground-truth obligatoire pour Haiku (cf. CLAUDE.md §Haiku-specific guardrails). Vérifier propagation patches Pass 1 P1-1 à P1-9 + chercher éventuelles régressions ou inconsistances résiduelles.
+
 ### Dev-story — 2026-05-20, Opus 4.7 single-pass
 
 **Cycle** : `bmad-dev-story 9-5-4` single-pass (Opus 4.7, contexte frais après spec validate Sonnet 4.6 → Haiku 4.5 convergé). Cohérent règle CLAUDE.md `Review Iteration Rule` cycle `Sonnet → Haiku → Opus`.
