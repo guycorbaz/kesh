@@ -1,0 +1,782 @@
+
+Running 8 tests using 1 worker
+
+  ✘  1 tests/e2e/auth.spec.ts:90:2 › Accessibilité › page login — axe-core sans violations (808ms)
+  ✘  2 tests/e2e/auth.spec.ts:98:2 › Accessibilité › layout principal — axe-core sans violations (1.1s)
+  ✘  3 tests/e2e/contacts.spec.ts:150:2 › Page contacts — accessibilité › axe-core sans violations sur la liste contacts (2.0s)
+  ✘  4 tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil (1.4s)
+  ✘  5 tests/e2e/invoices.spec.ts:87:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) (1.8s)
+  ✘  6 tests/e2e/products.spec.ts:78:2 › Page catalogue — accessibilité › axe-core sans violations sur la liste produits (1.7s)
+  ✘  7 tests/e2e/reports.spec.ts:85:1 › reports page has zero axe a11y violations (empty state) (1.6s)
+  ✘  8 tests/e2e/reports.spec.ts:96:1 › reports page has zero axe a11y violations (populated state) (1.4s)
+
+
+  1) tests/e2e/auth.spec.ts:90:2 › Accessibilité › page login — axe-core sans violations ───────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -   1[39m
+    [31m+ Received  + 109[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure each HTML document contains a non-empty <title> element",[39m
+    [31m+     "help": "Documents must have <title> element to aid in navigation",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/document-title?application=playwright",[39m
+    [31m+     "id": "document-title",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "doc-has-title",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Document does not have a non-empty <title> element",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Document does not have a non-empty <title> element",[39m
+    [31m+         "html": "<html lang=\"fr\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.text-alternatives",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag242",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT12.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.2.4.2",[39m
+    [31m+       "ACT",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-8.5.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure the document has a main landmark",[39m
+    [31m+     "help": "Document should have one main landmark",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/landmark-one-main?application=playwright",[39m
+    [31m+     "id": "landmark-one-main",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "page-has-main",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Document does not have a main landmark",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "any": Array [],[39m
+    [31m+         "failureSummary": "Fix all of the following:[39m
+    [31m+   Document does not have a main landmark",[39m
+    [31m+         "html": "<html lang=\"fr\">",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure that the page, or at least one of its frames contains a level-one heading",[39m
+    [31m+     "help": "Page should contain a level-one heading",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/page-has-heading-one?application=playwright",[39m
+    [31m+     "id": "page-has-heading-one",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "page-has-heading-one",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Page must have a level-one heading",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "any": Array [],[39m
+    [31m+         "failureSummary": "Fix all of the following:[39m
+    [31m+   Page must have a level-one heading",[39m
+    [31m+         "html": "<html lang=\"fr\">",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      93 | 		const results = await new AxeBuilder({ page }).analyze();
+      94 |
+    > 95 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      96 | 	});
+      97 |
+      98 | 	test('layout principal — axe-core sans violations', async ({ page }) => {
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/auth.spec.ts:95:30
+
+    Error Context: test-results/auth-Accessibilité-page-login-—-axe-core-sans-violations/error-context.md
+
+  2) tests/e2e/auth.spec.ts:98:2 › Accessibilité › layout principal — axe-core sans violations ─────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 82[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure the order of headings is semantically correct",[39m
+    [31m+     "help": "Heading levels should only increase by one",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/heading-order?application=playwright",[39m
+    [31m+     "id": "heading-order",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "heading-order",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Heading order invalid",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Heading order invalid",[39m
+    [31m+         "html": "<h3 class=\"text-lg font-semibold text-text\">Dernières écritures</h3>",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "div[data-testid=\"homepage-card-recent-entries\"] > h3",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".border-transparent",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      106 | 		const results = await new AxeBuilder({ page }).analyze();
+      107 |
+    > 108 | 		expect(results.violations).toEqual([]);
+          | 		                           ^
+      109 | 	});
+      110 | });
+      111 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/auth.spec.ts:108:30
+
+    Error Context: test-results/auth-Accessibilité-layout--707f0--—-axe-core-sans-violations/error-context.md
+
+  3) tests/e2e/contacts.spec.ts:150:2 › Page contacts — accessibilité › axe-core sans violations sur la liste contacts 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 90[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure each HTML document contains a non-empty <title> element",[39m
+    [31m+     "help": "Documents must have <title> element to aid in navigation",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/document-title?application=playwright",[39m
+    [31m+     "id": "document-title",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "doc-has-title",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Document does not have a non-empty <title> element",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Document does not have a non-empty <title> element",[39m
+    [31m+         "html": "<html lang=\"fr\" data-mode=\"guided\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.text-alternatives",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag242",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT12.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.2.4.2",[39m
+    [31m+       "ACT",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-8.5.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".dark\\:hover\\:bg-muted\\/50",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      152 | 		await page.waitForLoadState('networkidle');
+      153 | 		const results = await new AxeBuilder({ page }).analyze();
+    > 154 | 		expect(results.violations).toEqual([]);
+          | 		                           ^
+      155 | 	});
+      156 | });
+      157 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/contacts.spec.ts:154:30
+
+    Error Context: test-results/contacts-Page-contacts-—-a-cc85c-tions-sur-la-liste-contacts/error-context.md
+
+  4) tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 82[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure the order of headings is semantically correct",[39m
+    [31m+     "help": "Heading levels should only increase by one",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/heading-order?application=playwright",[39m
+    [31m+     "id": "heading-order",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "heading-order",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Heading order invalid",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Heading order invalid",[39m
+    [31m+         "html": "<h3 class=\"text-lg font-semibold text-text\">Dernières écritures</h3>",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "div[data-testid=\"homepage-card-recent-entries\"] > h3",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".border-transparent",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      63 | 		await page.waitForLoadState('networkidle');
+      64 | 		const results = await new AxeBuilder({ page }).analyze();
+    > 65 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      66 | 	});
+      67 | });
+      68 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/homepage-settings.spec.ts:65:30
+
+    Error Context: test-results/homepage-settings-Homepage-f7daa-tions-sur-la-page-d-accueil/error-context.md
+
+  5) tests/e2e/invoices.spec.ts:87:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 49[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".hover\\:bg-muted",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      90 | 		await page.waitForLoadState('networkidle');
+      91 | 		const results = await new AxeBuilder({ page }).analyze();
+    > 92 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      93 | 	});
+      94 | });
+      95 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:92:30
+
+    Error Context: test-results/invoices-Factures-—-liste--0247b-liste-factures-empty-state-/error-context.md
+
+  6) tests/e2e/products.spec.ts:78:2 › Page catalogue — accessibilité › axe-core sans violations sur la liste produits 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 90[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure each HTML document contains a non-empty <title> element",[39m
+    [31m+     "help": "Documents must have <title> element to aid in navigation",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/document-title?application=playwright",[39m
+    [31m+     "id": "document-title",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "doc-has-title",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Document does not have a non-empty <title> element",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Document does not have a non-empty <title> element",[39m
+    [31m+         "html": "<html lang=\"fr\" data-mode=\"guided\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.text-alternatives",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag242",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT12.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.2.4.2",[39m
+    [31m+       "ACT",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-8.5.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".dark\\:hover\\:bg-muted\\/50",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      80 | 		await page.waitForLoadState('networkidle');
+      81 | 		const results = await new AxeBuilder({ page }).analyze();
+    > 82 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      83 | 	});
+      84 | });
+      85 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:82:30
+
+    Error Context: test-results/products-Page-catalogue-—--de8fb-tions-sur-la-liste-produits/error-context.md
+
+  7) tests/e2e/reports.spec.ts:85:1 › reports page has zero axe a11y violations (empty state) ──────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 49[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".bg-clip-padding",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      91 | 		.withTags(['wcag2a', 'wcag2aa'])
+      92 | 		.analyze();
+    > 93 | 	expect(results.violations).toEqual([]);
+         | 	                           ^
+      94 | });
+      95 |
+      96 | test('reports page has zero axe a11y violations (populated state)', async ({ page }) => {
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/reports.spec.ts:93:29
+
+    Error Context: test-results/reports-reports-page-has-z-98f4a-11y-violations-empty-state-/error-context.md
+
+  8) tests/e2e/reports.spec.ts:96:1 › reports page has zero axe a11y violations (populated state) ──
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 49[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".bg-clip-padding",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      108 | 		.withTags(['wcag2a', 'wcag2aa'])
+      109 | 		.analyze();
+    > 110 | 	expect(results.violations).toEqual([]);
+          | 	                           ^
+      111 | });
+      112 |
+      113 | // Issue #90 — AC #34 / T12.4 : ce test reseed la DB avec `with-company-no-fy`
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/reports.spec.ts:110:29
+
+    Error Context: test-results/reports-reports-page-has-z-cc42c-violations-populated-state-/error-context.md
+
+  8 failed
+    tests/e2e/auth.spec.ts:90:2 › Accessibilité › page login — axe-core sans violations ────────────
+    tests/e2e/auth.spec.ts:98:2 › Accessibilité › layout principal — axe-core sans violations ──────
+    tests/e2e/contacts.spec.ts:150:2 › Page contacts — accessibilité › axe-core sans violations sur la liste contacts 
+    tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil 
+    tests/e2e/invoices.spec.ts:87:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) 
+    tests/e2e/products.spec.ts:78:2 › Page catalogue — accessibilité › axe-core sans violations sur la liste produits 
+    tests/e2e/reports.spec.ts:85:1 › reports page has zero axe a11y violations (empty state) ───────
+    tests/e2e/reports.spec.ts:96:1 › reports page has zero axe a11y violations (populated state) ───

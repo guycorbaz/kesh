@@ -953,9 +953,14 @@ async fn report_generated_audit_emitted_on_success(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 
     // Vérifier audit row + details_json content (Pass 1 code review patch P15 —
-    // AC #25 exige `details_json = { reportType, fiscalYearId, periodStart,
-    // periodEnd, journalFilter }`. Auparavant seuls user/action/entity_* étaient
+    // AC #25 exige `details_json = { report_type, fiscal_year_id, period_start,
+    // period_end, journal_filter }`. Auparavant seuls user/action/entity_* étaient
     // assertés → faux-vert si une régression renommait les clés JSON.)
+    //
+    // **Migration Story 9-5-2 (Epic 9.5)** : clés JSON migrées camelCase →
+    // snake_case (cohérent convention §audit_log JSON keys documentée au-dessus
+    // de `emit_report_audit` dans `crates/kesh-api/src/routes/reports.rs`).
+    //
     // Colonne `details_json` est de type `JSON` côté MariaDB (stockée comme blob
     // binaire) → fetch en `Vec<u8>` puis parse UTF-8 + JSON.
     let row: (i64, String, String, i64, Option<Vec<u8>>) = sqlx::query_as(
@@ -975,19 +980,25 @@ async fn report_generated_audit_emitted_on_success(pool: MySqlPool) {
     let details_bytes = row.4.expect("details_json doit être non-NULL");
     let details: Value =
         serde_json::from_slice(&details_bytes).expect("details_json doit être JSON valide");
-    assert_eq!(details["reportType"], "balance-sheet", "AC #25 reportType");
-    assert_eq!(details["fiscalYearId"], ctx.fy_id, "AC #25 fiscalYearId");
-    assert!(
-        details.get("periodStart").is_some(),
-        "AC #25 periodStart présent (peut être null)"
+    assert_eq!(
+        details["report_type"], "balance-sheet",
+        "AC #25 report_type"
+    );
+    assert_eq!(
+        details["fiscal_year_id"], ctx.fy_id,
+        "AC #25 fiscal_year_id"
     );
     assert!(
-        details.get("periodEnd").is_some(),
-        "AC #25 periodEnd présent (peut être null)"
+        details.get("period_start").is_some(),
+        "AC #25 period_start présent (peut être null)"
     );
     assert!(
-        details.get("journalFilter").is_some(),
-        "AC #25 journalFilter présent (peut être null)"
+        details.get("period_end").is_some(),
+        "AC #25 period_end présent (peut être null)"
+    );
+    assert!(
+        details.get("journal_filter").is_some(),
+        "AC #25 journal_filter présent (peut être null)"
     );
 }
 

@@ -38,9 +38,9 @@
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
 	<!-- Widget : Dernières écritures -->
 	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-recent-entries">
-		<h3 class="text-lg font-semibold text-text">
+		<h2 class="text-lg font-semibold text-text">
 			{msg('homepage-entries-title', 'Dernières écritures')}
-		</h3>
+		</h2>
 		{#if isGuided}
 			<p class="mt-2 text-sm text-text-muted">
 				{msg('homepage-entries-empty-guided', 'Aucune écriture pour le moment. Commencez par saisir votre première écriture comptable.')}
@@ -57,9 +57,9 @@
 
 	<!-- Widget : Factures ouvertes -->
 	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-open-invoices">
-		<h3 class="text-lg font-semibold text-text">
+		<h2 class="text-lg font-semibold text-text">
 			{msg('homepage-invoices-title', 'Factures ouvertes')}
-		</h3>
+		</h2>
 		{#if isGuided}
 			<p class="mt-2 text-sm text-text-muted">
 				{msg('homepage-invoices-empty-guided', 'Aucune facture ouverte. Créez votre première facture pour facturer vos clients.')}
@@ -76,9 +76,9 @@
 
 	<!-- Widget : Soldes comptes bancaires -->
 	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-bank-accounts">
-		<h3 class="text-lg font-semibold text-text">
+		<h2 class="text-lg font-semibold text-text">
 			{msg('homepage-bank-title', 'Comptes bancaires')}
-		</h3>
+		</h2>
 		{#if !bankLoaded}
 			<p class="mt-2 text-sm text-text-muted">Chargement...</p>
 		{:else if bankAccounts.length > 0}

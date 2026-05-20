@@ -11,11 +11,13 @@
 //!   `200 OK` possible) **fermé par KF-020 (#49) 2026-05-02** — `invoices::update`
 //!   utilise maintenant `SELECT ... FOR UPDATE` (cf. test concurrent
 //!   `test_update_concurrent_no_op_vs_mutation_no_stale_snapshot_kf020` dans
-//!   `crates/kesh-db/src/repositories/invoices.rs`). Le test sequential
-//!   ci-dessous (`no_op_with_parallel_mutation_returns_409_when_sequential`)
-//!   reste pertinent pour les **autres** entités variant A (contacts,
-//!   products, etc.) qui n'ont pas FOR UPDATE — voir KF-021 #50 pour le test
-//!   déterministe inter-entités.
+//!   `crates/kesh-db/src/repositories/invoices.rs`). Le test concurrent E2E
+//!   `no_op_with_parallel_mutation_returns_409_under_concurrency` ci-dessous
+//!   (closure KF-021 #50 2026-05-20) couvre la même invariant au niveau
+//!   HTTP/API : sous `tokio::join!` réel sur deux requêtes parallèles, le
+//!   X-lock `FOR UPDATE` sérialise les deux PUT et la 2ᵉ reçoit 409 stale
+//!   (au lieu du `200 stale` que la spec v0.1 d'origine documentait pour
+//!   l'absence de FOR UPDATE).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -681,30 +683,44 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
     );
 }
 
-/// AC #29 (reclassé v0.1 — voir Story 7-3 Change Log code-review pass 1) :
-/// **smoke test du verrouillage séquentiel**, pas régression detector de la
-/// race REPEATABLE READ.
+/// KF-021 (closes #50) regression detector for KF-020 SELECT FOR UPDATE (closes #49).
 ///
-/// Spec AC #29 d'origine demandait d'asserter `200 + body stale` sous race
-/// concurrente (`tokio::join!` ou délai contrôlé). Reproduire la race de
-/// manière déterministe en CI exige une vraie concurrence sur deux pools
-/// distincts ou un hook d'injection dans `is_no_op_change` — non livré v0.1.
-/// Tracé via issue [KF-021 #50](https://github.com/guycorbaz/kesh/issues/50)
-/// pour livraison ultérieure (idéalement avant ou avec la migration
-/// `SELECT FOR UPDATE` tracée par [KF-020 #49](https://github.com/guycorbaz/kesh/issues/49)).
+/// Test concurrent E2E de la fenêtre de race REPEATABLE READ documentée dans
+/// l'issue [#49 KF-020](https://github.com/guycorbaz/kesh/issues/49) sur
+/// `invoices::update`. Sous l'ancien comportement (plain `SELECT` sans
+/// `FOR UPDATE`), deux PUT concurrents — l'un modification effective, l'autre
+/// no-op avec snapshot stale — pouvaient produire `200 + body v=N stale` pour
+/// le no-op au lieu du `409 OPTIMISTIC_LOCK_CONFLICT` attendu (cf. spec
+/// originale issue #50 « comportement v0.1 attendu `200 OK + body snapshot stale` »).
 ///
-/// Ce que ce test couvre actuellement (smoke test séquentiel) :
-/// 1. A GET → version=N.
-/// 2. A PUT modification effective → 200, version=N+1.
-/// 3. B PUT no-op avec son v_initial=N (snapshot stale) → **409**.
+/// **Depuis le fix #49** (commit `ebdea4b` `fix(db): KF-020 SELECT FOR UPDATE
+/// in invoices::update`), le `SELECT … FOR UPDATE` étape 1 de `update()`
+/// sérialise les deux transactions au niveau du X-lock InnoDB : si la mutation
+/// gagne la course au X-lock et commit v=N+1 avant que le no-op n'acquière le
+/// lock, le no-op ré-SELECT post-lock voit v=N+1, déclenche la version-check
+/// applicative et retourne **409**.
 ///
-/// Le 409 confirme que le verrouillage optimiste applicatif protège
-/// correctement contre les snapshot stale en exécution séquentielle. La
-/// vraie race §race-condition (le snapshot stale leak en `200 OK`) n'existe
-/// que si A et B sont *vraiment* concurrents (pas de version-check
-/// sequentiel entre eux) — non couvert ici.
+/// **Régression detector** : si un futur refactor retire accidentellement le
+/// `FOR UPDATE` de `invoices::update` (cf. `crates/kesh-db/src/repositories/invoices.rs:674`),
+/// le no-op concurrent reviendrait à `200 stale` et ce test échouerait
+/// (le compte de `409` post-mutation sur N itérations tomberait à 0) →
+/// red signal en CI.
+///
+/// Cible **entité `invoices`** spécifiquement (PAS `contacts` ni `products`)
+/// car le `FOR UPDATE` est appliqué uniquement à `invoices::update` (cf. issue
+/// #49 §"Remediation story" — les autres entités variant A étaient hors scope).
+///
+/// **Approche choisie : stress loop N=20** (Approche 3 du spec 9-5-1d §"Approche
+/// concurrence à privilégier"). Approche 1 (`tokio::join!` simple) testée
+/// initialement mais non-déterministe : la course est symétrique (si le no-op
+/// gagne le X-lock en premier, il commit v=N inchangée, puis la mutation
+/// commit v=N+1 → 200/200 légitime sans race-condition observable).
+/// Le stress loop N=20 vise un taux de détection ≥ 99% en cumulant des
+/// itérations indépendantes (probabilité « jamais aucune mutation-avant-no-op »
+/// sur 20 itérations ≈ négligeable). On asserte **au moins 1 cas 200/409**
+/// (mutation puis no-op avec X-lock + version-check = 409) sur l'ensemble.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn no_op_with_parallel_mutation_returns_409_when_sequential(pool: MySqlPool) {
+async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "alice", "password123").await;
@@ -714,16 +730,18 @@ async fn no_op_with_parallel_mutation_returns_409_when_sequential(pool: MySqlPoo
     let token_a = login(&app, "alice", "password123").await;
     let token_b = login(&app, "bob", "password123").await;
 
-    let create_resp = app
+    // Setup : créer un contact + une facture brouillon v=N avec 1 ligne.
+    // Pattern réutilisé de `put_invoice_no_op_returns_200_unchanged_version` (ligne 345).
+    let contact_resp = app
         .client
         .post(app.url("/api/v1/contacts"))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&json!({
             "contactType": "Entreprise",
-            "name": "Race Co",
+            "name": "Race Invoice Co",
             "isClient": true,
             "isSupplier": false,
-            "address": null,
+            "address": "Rue 1\n1000 Lausanne",
             "email": null,
             "phone": null,
             "ideNumber": null,
@@ -732,61 +750,209 @@ async fn no_op_with_parallel_mutation_returns_409_when_sequential(pool: MySqlPoo
         .send()
         .await
         .unwrap();
-    let contact: serde_json::Value = create_resp.json().await.unwrap();
-    let id = contact["id"].as_i64().unwrap();
-    let v_initial = contact["version"].as_i64().unwrap();
+    assert_eq!(contact_resp.status(), 201);
+    let contact: serde_json::Value = contact_resp.json().await.unwrap();
+    let contact_id = contact["id"].as_i64().unwrap();
 
-    // 1) A fait une mutation effective → 200, version=N+1.
-    let put_a = app
+    let create_resp = app
         .client
-        .put(app.url(&format!("/api/v1/contacts/{id}")))
+        .post(app.url("/api/v1/invoices"))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&json!({
-            "contactType": "Entreprise",
-            "name": "Race Co (renamed)",
-            "isClient": true,
-            "isSupplier": false,
-            "address": null,
-            "email": null,
-            "phone": null,
-            "ideNumber": null,
-            "defaultPaymentTerms": null,
-            "version": v_initial
+            "contactId": contact_id,
+            "date": "2026-04-29",
+            "dueDate": "2026-05-29",
+            "paymentTerms": "30 jours net",
+            "lines": [
+                {
+                    "description": "Conseil",
+                    "quantity": "2",
+                    "unitPrice": "150.00",
+                    "vatRate": "8.10"
+                }
+            ]
         }))
         .send()
         .await
         .unwrap();
-    assert_eq!(put_a.status(), 200);
+    assert_eq!(create_resp.status(), 201);
+    let invoice: serde_json::Value = create_resp.json().await.unwrap();
+    let id = invoice["id"].as_i64().unwrap();
 
-    // 2) B PUT avec son `v_initial` stale ET un body qui *aurait été* no-op
-    //    par rapport à l'état initial v=N. La version-check applicatif
-    //    rejette → 409. Smoke test du verrouillage optimiste séquentiel.
-    //    Le test déterministe de la race §race-condition (200 + body stale
-    //    sous concurrence réelle) est tracé via [KF-021 #50].
-    let put_b = app
-        .client
-        .put(app.url(&format!("/api/v1/contacts/{id}")))
-        .header("Authorization", format!("Bearer {token_b}"))
-        .json(&json!({
-            "contactType": "Entreprise",
-            "name": "Race Co",
-            "isClient": true,
-            "isSupplier": false,
-            "address": null,
-            "email": null,
-            "phone": null,
-            "ideNumber": null,
-            "defaultPaymentTerms": null,
-            "version": v_initial
-        }))
-        .send()
-        .await
-        .unwrap();
+    // Stress loop N=20 : à chaque itération, on (a) ré-récupère la version
+    // courante via GET (l'invoice peut être en v=N+k après les itérations
+    // précédentes), puis (b) lance `tokio::join!` sur PUT mutation + PUT no-op,
+    // les 2 avec la même version stale. La fenêtre de race est exercée si la
+    // mutation gagne le X-lock en premier : la 2ᵉ tx (no-op) ré-SELECT post-lock
+    // voit la version bumped et retourne 409 (version-check applicative).
+    //
+    // Anti-flake : si le no-op gagne le X-lock en premier (race symétrique),
+    // les 2 retournent 200/200 (commit v=N inchangée puis v=N+1) sans test
+    // de la propriété cible. C'est légitime — on cumule 20 itérations pour
+    // garantir ≥ 1 cas mutation-en-premier (probabilité d'échec total ≈ 1/2^20
+    // sous distribution équiprobable, en pratique encore plus faible vu la
+    // serialization MySQL X-lock).
+    // N_ITERATIONS=20 : compromis budget CI / probabilité de détection.
+    // Sous distribution équiprobable de la course X-lock, probabilité que
+    // jamais aucune mutation ne gagne sur 20 itérations ≈ 1/2^20 ≈ 1e-6.
+    // En pratique le serialization MySQL X-lock rend cette probabilité encore
+    // plus faible. Augmenter N coûte ~50ms × ΔN en runtime CI ; baisser N
+    // dégrade la garantie d'invariant testé (Pass 1 code-review BH-7 polish).
+    const N_ITERATIONS: u32 = 20;
+    let url = app.url(&format!("/api/v1/invoices/{id}"));
+    let client = app.client.clone();
+    let mut mutation_409_count = 0u32;
+    let mut both_200_count = 0u32;
+    // `noop_409_mut_200_count` (cas `(409, 200)`) : diagnostic explicite — ne
+    // devrait jamais survenir avec les 2 seules requêtes concurrentes ciblées
+    // sur cette invoice (pas de tiers writer). Si > 0, soupçonner une régression
+    // dans `is_no_op_change` qui bumperait la version sur un no-op détecté
+    // comme mutation (Pass 1 code-review BH-2 + ECH-1 diagnostic).
+    let mut noop_409_mut_200_count = 0u32;
+    let mut other_count = 0u32;
+
+    for iteration in 0..N_ITERATIONS {
+        // Récupérer version courante (peut avoir bougé entre itérations).
+        let get_resp = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {token_a}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(get_resp.status(), 200, "GET initial iteration {iteration}");
+        let current: serde_json::Value = get_resp.json().await.unwrap();
+        let v_current = current["version"].as_i64().unwrap();
+        let current_unit_price = current["lines"][0]["unitPrice"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // Payload no-op : identique au snapshot courant v=v_current.
+        let no_op_body = json!({
+            "contactId": contact_id,
+            "date": "2026-04-29",
+            "dueDate": "2026-05-29",
+            "paymentTerms": "30 jours net",
+            "lines": [
+                {
+                    "description": "Conseil",
+                    "quantity": "2",
+                    "unitPrice": current_unit_price,
+                    "vatRate": "8.10"
+                }
+            ],
+            "version": v_current
+        });
+
+        // Payload mutation : changement réel sur `unitPrice` (incrément à
+        // chaque itération pour éviter no-op si on tombe sur l'ancienne valeur
+        // — `total_amount` est server-computed, hors `UpdateInvoiceRequest`).
+        // Range `200..220` : choisi disjoint de l'init `150.00` (toujours ≠
+        // init), et `iteration` u32 → arithmétique sans overflow (Pass 1
+        // code-review BH-7 polish).
+        let mutated_price = format!("{}.00", 200 + iteration);
+        let mutation_body = json!({
+            "contactId": contact_id,
+            "date": "2026-04-29",
+            "dueDate": "2026-05-29",
+            "paymentTerms": "30 jours net",
+            "lines": [
+                {
+                    "description": "Conseil",
+                    "quantity": "2",
+                    "unitPrice": mutated_price,
+                    "vatRate": "8.10"
+                }
+            ],
+            "version": v_current
+        });
+
+        let url_a = url.clone();
+        let url_b = url.clone();
+        let client_a = client.clone();
+        let client_b = client.clone();
+        let token_a_clone = token_a.clone();
+        let token_b_clone = token_b.clone();
+
+        let tx_a = async move {
+            client_a
+                .put(&url_a)
+                .header("Authorization", format!("Bearer {token_a_clone}"))
+                .json(&mutation_body)
+                .send()
+                .await
+                .unwrap()
+        };
+        let tx_b = async move {
+            client_b
+                .put(&url_b)
+                .header("Authorization", format!("Bearer {token_b_clone}"))
+                .json(&no_op_body)
+                .send()
+                .await
+                .unwrap()
+        };
+
+        let (resp_a, resp_b) = tokio::join!(tx_a, tx_b);
+        let status_a = resp_a.status();
+        let status_b = resp_b.status();
+
+        // Classification des outcomes :
+        // - mutation_409 : tx_a=200 (mutation gagne X-lock, commit v+1) + tx_b=409
+        //   (no-op perd, ré-SELECT voit v+1, version-check rejette) — cas cible
+        //   qui prouve le fix KF-020.
+        // - both_200 : tx_b=200 (no-op gagne X-lock, commit v inchangée) + tx_a=200
+        //   (mutation post-no-op, commit v+1) — race symétrique légitime.
+        // - noop_409_mut_200 : tx_a=200 + tx_b=409 INVERSÉ → impossible avec
+        //   seulement 2 requêtes ciblées + pas de tiers writer + `is_no_op_change`
+        //   correct. Si > 0 : soupçonner une régression où le no-op bumperait
+        //   la version (pattern `update_with_optimistic_lock` cassé).
+        // - other : tout autre combinaison (e.g. 500/X, infra/timeout) — anomalie
+        //   distincte du diagnostic noop_409_mut_200.
+        match (status_a.as_u16(), status_b.as_u16()) {
+            (200, 409) => mutation_409_count += 1,
+            (200, 200) => both_200_count += 1,
+            (409, 200) => noop_409_mut_200_count += 1,
+            _ => other_count += 1,
+        }
+    }
+
+    // Log diagnostic explicite avant assertions (Pass 1 code-review ECH-5) :
+    // si les deux assertions échouent ensemble (e.g. mutation_409=0 + other>0),
+    // l'utilisateur voit d'abord ces compteurs en clair, puis le message
+    // d'assert détaillé du cas d'échec.
+    eprintln!(
+        "[kf004 stress N={N_ITERATIONS}] mutation_409={mutation_409_count} \
+         both_200={both_200_count} noop_409_mut_200={noop_409_mut_200_count} \
+         other={other_count}"
+    );
+
+    // Sans le `SELECT FOR UPDATE` du fix #49, le no-op verrait toujours v=N
+    // (snapshot REPEATABLE READ pré-lock), court-circuiterait via
+    // `is_no_op_change` et retournerait `200 stale` — `mutation_409_count`
+    // resterait à 0 sur les 20 itérations. **C'est l'invariant testé**.
+    assert!(
+        mutation_409_count >= 1,
+        "Régression KF-020 SELECT FOR UPDATE (#49) probable : 0 cas 200/409 sur {N_ITERATIONS} \
+         itérations stress loop. Counts: mutation_409={mutation_409_count}, \
+         both_200={both_200_count}, noop_409_mut_200={noop_409_mut_200_count}, \
+         other={other_count}. \
+         Vérifier `crates/kesh-db/src/repositories/invoices.rs:674` (SELECT … FOR UPDATE)."
+    );
+    // `noop_409_mut_200_count > 0` ⇒ régression distincte (no-op bumping
+    // version). Diagnostic spécifique pour ne pas confondre avec infra (500/etc.).
     assert_eq!(
-        put_b.status(),
-        409,
-        "exécution séquentielle : la version-check rejette le payload v=N quand la DB est en v=N+1 \
-         (la race §race-condition exige tokio::join concurrent — voir issue [KF-021 #50] pour \
-         le test déterministe + [KF-020 #49] pour la migration SELECT FOR UPDATE)"
+        noop_409_mut_200_count, 0,
+        "Régression `is_no_op_change` probable : {noop_409_mut_200_count} cas (409, 200) \
+         détectés sur {N_ITERATIONS} itérations. Le no-op devrait toujours \
+         court-circuiter sans bumper la version. Vérifier la logique \
+         `is_no_op_change` dans `crates/kesh-db/src/repositories/invoices.rs`."
+    );
+    assert_eq!(
+        other_count, 0,
+        "Anomalie infra : {other_count}/{N_ITERATIONS} itérations avec status \
+         combinations inattendues (e.g. 500/X, timeout). \
+         mutation_409={mutation_409_count}, both_200={both_200_count}, \
+         noop_409_mut_200={noop_409_mut_200_count}, other={other_count}."
     );
 }

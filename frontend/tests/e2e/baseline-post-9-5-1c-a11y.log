@@ -1,0 +1,104 @@
+
+Running 8 tests using 1 worker
+
+  ✘  1 tests/e2e/auth.spec.ts:90:2 › Accessibilité › page login — axe-core sans violations (327ms)
+  ✓  2 tests/e2e/auth.spec.ts:98:2 › Accessibilité › layout principal — axe-core sans violations (1.2s)
+  ✓  3 tests/e2e/contacts.spec.ts:150:2 › Page contacts — accessibilité › axe-core sans violations sur la liste contacts (1.7s)
+  ✓  4 tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil (1.3s)
+  ✓  5 tests/e2e/invoices.spec.ts:87:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) (2.1s)
+  ✓  6 tests/e2e/products.spec.ts:78:2 › Page catalogue — accessibilité › axe-core sans violations sur la liste produits (1.8s)
+  ✓  7 tests/e2e/reports.spec.ts:85:1 › reports page has zero axe a11y violations (empty state) (1.6s)
+  ✓  8 tests/e2e/reports.spec.ts:96:1 › reports page has zero axe a11y violations (populated state) (1.6s)
+
+
+  1) tests/e2e/auth.spec.ts:90:2 › Accessibilité › page login — axe-core sans violations ───────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 68[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure the document has a main landmark",[39m
+    [31m+     "help": "Document should have one main landmark",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/landmark-one-main?application=playwright",[39m
+    [31m+     "id": "landmark-one-main",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "page-has-main",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Document does not have a main landmark",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "any": Array [],[39m
+    [31m+         "failureSummary": "Fix all of the following:[39m
+    [31m+   Document does not have a main landmark",[39m
+    [31m+         "html": "<html lang=\"fr\">",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure that the page, or at least one of its frames contains a level-one heading",[39m
+    [31m+     "help": "Page should contain a level-one heading",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/page-has-heading-one?application=playwright",[39m
+    [31m+     "id": "page-has-heading-one",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "page-has-heading-one",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Page must have a level-one heading",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "any": Array [],[39m
+    [31m+         "failureSummary": "Fix all of the following:[39m
+    [31m+   Page must have a level-one heading",[39m
+    [31m+         "html": "<html lang=\"fr\">",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "html",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      93 | 		const results = await new AxeBuilder({ page }).analyze();
+      94 |
+    > 95 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      96 | 	});
+      97 |
+      98 | 	test('layout principal — axe-core sans violations', async ({ page }) => {
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/auth.spec.ts:95:30
+
+    Error Context: test-results/auth-Accessibilité-page-login-—-axe-core-sans-violations/error-context.md
+
+  1 failed
+    tests/e2e/auth.spec.ts:90:2 › Accessibilité › page login — axe-core sans violations ────────────
+  7 passed (18.2s)

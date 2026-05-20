@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running tests/kf004_no_op_e2e.rs (target/debug/deps/kf004_no_op_e2e-279de3c167950b86)
+
+running 6 tests
+test concurrent_no_op_returns_200_200_not_200_409 ... ok
+test no_op_then_real_conflict_returns_409 ... ok
+test no_op_with_parallel_mutation_returns_409_under_concurrency ... ok
+test put_contact_no_op_returns_200_unchanged_version ... ok
+test put_invoice_no_op_returns_200_unchanged_version ... ok
+test put_product_no_op_returns_200_unchanged_version ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.44s
+

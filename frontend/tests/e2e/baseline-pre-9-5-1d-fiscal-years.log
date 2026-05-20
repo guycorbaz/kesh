@@ -1,0 +1,10 @@
+
+Running 4 tests using 1 worker
+
+  ✓  1 tests/e2e/fiscal-years.spec.ts:44:2 › Page exercices — affichage › affiche le titre et le bouton Nouvel exercice (2.6s)
+  ✓  2 tests/e2e/fiscal-years.spec.ts:50:2 › Page exercices — affichage › affiche le fiscal_year seedé (2020-2030) (1.5s)
+  ✓  3 tests/e2e/fiscal-years.spec.ts:59:2 › Page exercices — création + clôture › crée un exercice 2031, le renomme puis le clôture (3.3s)
+  -  4 tests/e2e/fiscal-years.spec.ts:100:2 › AC #22 — fallback toast actionnable › FISCAL_YEAR_INVALID déclenche le toast actionnable « Créez d'abord un exercice »
+
+  1 skipped
+  3 passed (10.8s)
