@@ -1,0 +1,490 @@
+%% kesh-style.sty — style LaTeX moderne pour les manuels Kesh
+%% Compile avec xelatex (fontspec requis)
+%% Polices : TeX Gyre Heros (inclus TeX Live, look moderne Helvetica-like)
+%% Couleurs brand : #1e40af primary blue (cohérent design system frontend)
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{kesh-style}[2026/05/20 v0.1.0 Kesh modern documentation style]
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Packages requis
+%%─────────────────────────────────────────────────────────────────────────────
+
+\RequirePackage{fontspec}
+\RequirePackage{xcolor}
+\RequirePackage{geometry}
+\RequirePackage{titlesec}
+\RequirePackage{titletoc}
+\RequirePackage{fancyhdr}
+\RequirePackage{tcolorbox}
+\RequirePackage{enumitem}
+\RequirePackage{microtype}
+\RequirePackage{parskip}
+\RequirePackage{booktabs}
+\RequirePackage{tabularx}
+\RequirePackage{array}
+\RequirePackage{hyperref}
+\RequirePackage{graphicx}
+\RequirePackage{listings}
+\RequirePackage{fontawesome5}
+\RequirePackage{setspace}
+\RequirePackage[strict]{changepage}
+
+% tcolorbox libraries (tous chargés ensemble pour éviter problèmes de dépendance)
+\tcbuselibrary{skins,breakable,raster}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Variables produit (à mettre à jour à chaque release)
+%%─────────────────────────────────────────────────────────────────────────────
+
+\providecommand{\keshVersion}{0.1.0-dev}
+\providecommand{\keshReleaseDate}{2026-05-20}
+\providecommand{\keshTargetRelease}{v0.1}
+\providecommand{\keshAuthor}{Équipe Kesh}
+\providecommand{\keshWebsite}{https://github.com/guycorbaz/kesh}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Palette de couleurs brand (cohérent frontend/src/app.css)
+%%─────────────────────────────────────────────────────────────────────────────
+
+\definecolor{keshPrimary}{HTML}{1E40AF}        % primary blue
+\definecolor{keshPrimaryLight}{HTML}{3B82F6}   % primary light
+\definecolor{keshSuccess}{HTML}{16A34A}        % success green
+\definecolor{keshError}{HTML}{DC2626}          % error red
+\definecolor{keshWarning}{HTML}{D97706}        % warning amber
+\definecolor{keshInfo}{HTML}{0EA5E9}           % info sky
+\definecolor{keshText}{HTML}{1E293B}           % main text (slate-800)
+\definecolor{keshTextMuted}{HTML}{64748B}      % muted text (slate-500)
+\definecolor{keshBorder}{HTML}{E2E8F0}         % border (slate-200)
+\definecolor{keshSurface}{HTML}{FFFFFF}        % surface
+\definecolor{keshSurfaceAlt}{HTML}{F8FAFC}     % alt surface (slate-50)
+\definecolor{keshCode}{HTML}{0F172A}           % code background (slate-900)
+\definecolor{keshCodeText}{HTML}{E2E8F0}       % code foreground (slate-200)
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Polices — TeX Gyre Heros (Helvetica-like, inclus TeX Live)
+%% Fallback Inter si disponible sur le système (look encore plus moderne)
+%%─────────────────────────────────────────────────────────────────────────────
+
+% On préfère Inter si installée (apt install fonts-inter), sinon TeX Gyre Heros
+\IfFontExistsTF{Inter}{%
+    \setmainfont{Inter}[%
+        UprightFont = * Regular,
+        BoldFont    = * Bold,
+        ItalicFont  = * Italic,
+        BoldItalicFont = * Bold Italic,
+        Numbers = Lining,
+        Scale = 1.0%
+    ]%
+    \setsansfont{Inter}[%
+        UprightFont = * Regular,
+        BoldFont    = * Bold,
+        ItalicFont  = * Italic,
+        Numbers = Lining%
+    ]%
+}{%
+    \setmainfont{TeX Gyre Heros}[%
+        UprightFont = *-regular,
+        BoldFont = *-bold,
+        ItalicFont = *-italic,
+        BoldItalicFont = *-bolditalic,
+        Scale = 1.0%
+    ]%
+    \setsansfont{TeX Gyre Heros}[%
+        UprightFont = *-regular,
+        BoldFont = *-bold,
+        ItalicFont = *-italic%
+    ]%
+}
+
+% Police monospace pour code — JetBrains Mono si dispo, sinon TeX Gyre Cursor
+\IfFontExistsTF{JetBrains Mono}{%
+    \setmonofont{JetBrains Mono}[Scale = 0.92]%
+}{%
+    \setmonofont{TeX Gyre Cursor}[Scale = 0.92]%
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Mise en page (marges aérées, look moderne)
+%%─────────────────────────────────────────────────────────────────────────────
+
+\geometry{
+    a4paper,
+    top=2.5cm,
+    bottom=2.8cm,
+    left=2.6cm,
+    right=2.6cm,
+    headheight=14pt,
+    headsep=0.8cm,
+    footskip=1.2cm
+}
+
+% Espacements paragraphes (parskip charge déjà mais on tune)
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em plus 0.2em minus 0.1em}
+
+% Ligne de couleur sous les titres
+\onehalfspacing
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Style des titres — moderne, coloré, avec accent visuel
+%%─────────────────────────────────────────────────────────────────────────────
+
+% Chapter (book class) ou Section (article class)
+\titleformat{\section}
+    {\sffamily\Huge\bfseries\color{keshPrimary}}
+    {\thesection}{1em}{}
+    [\vspace{-0.3em}\color{keshBorder}\rule{\linewidth}{0.5pt}]
+
+\titleformat{\subsection}
+    {\sffamily\LARGE\bfseries\color{keshPrimary}}
+    {\thesubsection}{0.8em}{}
+
+\titleformat{\subsubsection}
+    {\sffamily\Large\bfseries\color{keshText}}
+    {\thesubsubsection}{0.6em}{}
+
+\titleformat{\paragraph}[runin]
+    {\sffamily\large\bfseries\color{keshPrimaryLight}}
+    {}{0em}{}
+    [\hspace{0.3em}]
+
+\titlespacing*{\section}{0pt}{2.2em}{0.8em}
+\titlespacing*{\subsection}{0pt}{1.6em}{0.5em}
+\titlespacing*{\subsubsection}{0pt}{1.2em}{0.3em}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Table des matières — moderne, sans points de suspension
+%%─────────────────────────────────────────────────────────────────────────────
+
+\renewcommand{\cftsecfont}{\sffamily\bfseries\color{keshPrimary}}
+\renewcommand{\cftsubsecfont}{\sffamily\color{keshText}}
+\renewcommand{\cftsubsubsecfont}{\sffamily\color{keshTextMuted}}
+
+% On supprime les dots du toc pour un look plus clean
+\titlecontents{section}[0em]
+    {\addvspace{0.6em}\sffamily\bfseries\color{keshPrimary}}
+    {\contentslabel{1.4em}}{}
+    {\hfill\contentspage}
+\titlecontents{subsection}[1.8em]
+    {\addvspace{0.2em}\sffamily\color{keshText}}
+    {\contentslabel{2.2em}}{}
+    {\hfill\contentspage}
+\titlecontents{subsubsection}[4em]
+    {\sffamily\small\color{keshTextMuted}}
+    {\contentslabel{2.8em}}{}
+    {\hfill\contentspage}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Headers et footers — minimalistes, modernes
+%%─────────────────────────────────────────────────────────────────────────────
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Header : titre doc à gauche, version à droite
+\fancyhead[L]{\sffamily\small\color{keshTextMuted}\nouppercase{\leftmark}}
+\fancyhead[R]{\sffamily\small\color{keshTextMuted}Kesh \keshVersion}
+
+% Footer : numéro de page centré dans un cercle coloré
+\fancyfoot[C]{%
+    \sffamily\small\color{keshTextMuted}\thepage%
+}
+\fancyfoot[L]{\sffamily\footnotesize\color{keshTextMuted}\textcopyright\ \keshAuthor}
+\fancyfoot[R]{\sffamily\footnotesize\color{keshTextMuted}\keshReleaseDate}
+
+% Style de la 1ère page (plain) pour qu'il y ait quand même un footer
+\fancypagestyle{plain}{%
+    \fancyhf{}%
+    \renewcommand{\headrulewidth}{0pt}%
+    \renewcommand{\footrulewidth}{0pt}%
+    \fancyfoot[C]{\sffamily\small\color{keshTextMuted}\thepage}%
+}
+
+% Le \leftmark génère "1 SECTION" — on rétablit en minuscules
+\renewcommand{\sectionmark}[1]{\markboth{#1}{}}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Style hyperref — liens colorés brand
+%%─────────────────────────────────────────────────────────────────────────────
+
+\hypersetup{
+    colorlinks   = true,
+    linkcolor    = keshPrimary,
+    urlcolor     = keshPrimaryLight,
+    citecolor    = keshPrimary,
+    filecolor    = keshPrimary,
+    pdftitle     = {Manuel Kesh},
+    pdfauthor    = {\keshAuthor},
+    pdfsubject   = {Documentation Kesh \keshVersion},
+    pdfkeywords  = {Kesh, comptabilité, PME, Suisse, QR Bill, OLICo, multi-tenant},
+    bookmarksopen = true,
+    bookmarksnumbered = true
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Listings — code source avec fond sombre style moderne
+%%─────────────────────────────────────────────────────────────────────────────
+
+\lstdefinestyle{kesh}{
+    backgroundcolor   = \color{keshCode},
+    basicstyle        = \ttfamily\small\color{keshCodeText},
+    breaklines        = true,
+    breakatwhitespace = true,
+    captionpos        = b,
+    keepspaces        = true,
+    showspaces        = false,
+    showstringspaces  = false,
+    showtabs          = false,
+    tabsize           = 2,
+    frame             = none,
+    framerule         = 0pt,
+    framesep          = 8pt,
+    xleftmargin       = 14pt,
+    xrightmargin      = 6pt,
+    aboveskip         = 1em,
+    belowskip         = 1em,
+    keywordstyle      = \color{keshInfo}\bfseries,
+    commentstyle      = \color{keshTextMuted}\itshape,
+    stringstyle       = \color{keshSuccess}
+}
+\lstset{style=kesh}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Boîtes d'information modernes (note, warning, tip, danger)
+%%─────────────────────────────────────────────────────────────────────────────
+
+\newtcolorbox{keshnote}[1][]{%
+    enhanced,
+    breakable,
+    colback=keshInfo!8,
+    colframe=keshInfo,
+    boxrule=0pt,
+    leftrule=4pt,
+    arc=2pt,
+    fonttitle=\sffamily\bfseries,
+    coltitle=keshInfo,
+    title=\faInfoCircle\ Note,
+    attach boxed title to top left={xshift=10pt, yshift=-2pt},
+    boxed title style={colback=white, colframe=keshInfo},
+    top=14pt,
+    bottom=6pt,
+    left=8pt,
+    right=8pt,
+    #1
+}
+
+\newtcolorbox{keshtip}[1][]{%
+    enhanced,
+    breakable,
+    colback=keshSuccess!8,
+    colframe=keshSuccess,
+    boxrule=0pt,
+    leftrule=4pt,
+    arc=2pt,
+    fonttitle=\sffamily\bfseries,
+    coltitle=keshSuccess,
+    title=\faLightbulb\ Astuce,
+    attach boxed title to top left={xshift=10pt, yshift=-2pt},
+    boxed title style={colback=white, colframe=keshSuccess},
+    top=14pt,
+    bottom=6pt,
+    left=8pt,
+    right=8pt,
+    #1
+}
+
+\newtcolorbox{keshwarning}[1][]{%
+    enhanced,
+    breakable,
+    colback=keshWarning!8,
+    colframe=keshWarning,
+    boxrule=0pt,
+    leftrule=4pt,
+    arc=2pt,
+    fonttitle=\sffamily\bfseries,
+    coltitle=keshWarning,
+    title=\faExclamationTriangle\ Attention,
+    attach boxed title to top left={xshift=10pt, yshift=-2pt},
+    boxed title style={colback=white, colframe=keshWarning},
+    top=14pt,
+    bottom=6pt,
+    left=8pt,
+    right=8pt,
+    #1
+}
+
+\newtcolorbox{keshdanger}[1][]{%
+    enhanced,
+    breakable,
+    colback=keshError!8,
+    colframe=keshError,
+    boxrule=0pt,
+    leftrule=4pt,
+    arc=2pt,
+    fonttitle=\sffamily\bfseries,
+    coltitle=keshError,
+    title=\faRadiation\ Danger,
+    attach boxed title to top left={xshift=10pt, yshift=-2pt},
+    boxed title style={colback=white, colframe=keshError},
+    top=14pt,
+    bottom=6pt,
+    left=8pt,
+    right=8pt,
+    #1
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Listes — bullets stylés brand
+%%─────────────────────────────────────────────────────────────────────────────
+
+\setlist[itemize,1]{
+    label=\color{keshPrimaryLight}\textbullet,
+    leftmargin=*,
+    topsep=0.4em,
+    itemsep=0.2em,
+    parsep=0pt
+}
+\setlist[itemize,2]{
+    label=\color{keshPrimaryLight}--,
+    leftmargin=*,
+    topsep=0.2em,
+    itemsep=0.1em,
+    parsep=0pt
+}
+\setlist[enumerate,1]{
+    label=\color{keshPrimary}\bfseries\arabic*.,
+    leftmargin=*,
+    topsep=0.4em,
+    itemsep=0.2em,
+    parsep=0pt
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Tableaux — style moderne sans bordures lourdes
+%%─────────────────────────────────────────────────────────────────────────────
+
+\renewcommand{\arraystretch}{1.4}
+\setlength{\arrayrulewidth}{0.4pt}
+\arrayrulecolor{keshBorder}
+
+% En-tête de tableau coloré
+\newcommand{\keshtableheader}[1]{%
+    \rowcolor{keshSurfaceAlt}%
+    \color{keshPrimary}\sffamily\bfseries #1%
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Macros utilitaires
+%%─────────────────────────────────────────────────────────────────────────────
+
+% \keshcommand{xxx} — affiche une commande inline avec fond surface-alt
+\newcommand{\keshcommand}[1]{%
+    \colorbox{keshSurfaceAlt}{\color{keshPrimary}\ttfamily\small #1}%
+}
+
+% \keshpath{/path/to/file} — affiche un chemin en monospace coloré
+\newcommand{\keshpath}[1]{%
+    \textcolor{keshPrimaryLight}{\ttfamily\small #1}%
+}
+
+% \keshkey{Ctrl+S} — affiche une combinaison de touches
+\newcommand{\keshkey}[1]{%
+    \tikz[baseline=(K.base)]{%
+        \node[draw=keshBorder, fill=keshSurfaceAlt, rounded corners=2pt, inner sep=2pt, font=\sffamily\small](K){#1};%
+    }%
+}
+\RequirePackage{tikz}
+
+% Logo Kesh inline (à utiliser dans header et page de garde)
+% La SVG est convertie via svglatex ou simplement référencée en PDF si disponible
+% Pour ce skel on suppose un fallback : si pas de PDF, on affiche texte stylisé
+\newcommand{\keshlogo}[1][1cm]{%
+    \IfFileExists{\Kesh@logo@path}{%
+        \includegraphics[height=#1]{\Kesh@logo@path}%
+    }{%
+        % Fallback texte si pas de logo trouvé
+        \textbf{\color{keshPrimary}\Large\sffamily Kesh}%
+    }%
+}
+\providecommand{\Kesh@logo@path}{shared/kesh-logo.svg}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Page de garde commune — full-bleed couleur brand
+%%─────────────────────────────────────────────────────────────────────────────
+
+\newcommand{\keshcover}[3]{%
+    % #1 = titre du document
+    % #2 = sous-titre / description
+    % #3 = type de manuel (e.g. "Manuel administrateur")
+    \begin{titlepage}
+        \pagecolor{keshPrimary}\afterpage{\nopagecolor}
+        \color{white}
+        \vspace*{2cm}
+        \begin{center}
+            % Logo en haut
+            \begin{tcolorbox}[%
+                enhanced, colback=white, colframe=white,
+                width=4cm, height=4cm,
+                boxsep=0pt, boxrule=0pt, arc=8pt,
+                halign=center, valign=center%
+            ]
+                \textbf{\color{keshPrimary}\Huge\sffamily Kesh}
+            \end{tcolorbox}
+
+            \vspace{2cm}
+
+            % Type de manuel (label)
+            {\sffamily\Large\color{keshPrimaryLight}#3}
+
+            \vspace{0.5cm}
+
+            % Titre principal
+            {\sffamily\fontsize{36pt}{42pt}\selectfont\bfseries\color{white} #1\par}
+
+            \vspace{0.8cm}
+
+            % Sous-titre
+            {\sffamily\Large\color{white}#2\par}
+
+            \vfill
+
+            % Version + date en bas
+            \begin{tcolorbox}[%
+                enhanced, colback=white!10!keshPrimary, colframe=white,
+                width=10cm, boxsep=8pt, boxrule=1pt, arc=4pt%
+            ]
+                \begin{center}
+                    {\sffamily\large Version \textbf{\keshVersion} \quad\textbar\quad \keshReleaseDate}\\
+                    {\sffamily\small\color{white}Cible release : \textbf{\keshTargetRelease}}
+                \end{center}
+            \end{tcolorbox}
+
+            \vspace{1cm}
+
+            % URL projet
+            {\sffamily\small\color{white}\keshWebsite}
+        \end{center}
+    \end{titlepage}
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Note de version (à inclure en fin de document)
+%%─────────────────────────────────────────────────────────────────────────────
+
+\newcommand{\keshversionnote}{%
+    \begin{keshnote}
+        \textbf{À propos de cette version}\\
+        Ce document décrit Kesh version \textbf{\keshVersion} (cible release : \keshTargetRelease, publié le \keshReleaseDate). Les manuels Kesh sont mis à jour à chaque release. Pour la dernière version, consultez \keshWebsite.
+
+        Si vous identifiez une incohérence entre ce manuel et le comportement effectif du logiciel, merci d'ouvrir une issue sur GitHub avec le template \texttt{bug\_report.yml}.
+    \end{keshnote}
+}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Fin du package
+%%─────────────────────────────────────────────────────────────────────────────
+
+\endinput

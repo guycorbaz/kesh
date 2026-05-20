@@ -1,0 +1,1195 @@
+%% Manuel administrateur Kesh
+%% Version canonique française
+%% À mettre à jour à chaque release Kesh (cf. ../README.md)
+
+\documentclass[a4paper,11pt,oneside]{article}
+
+\usepackage[french]{babel}
+\usepackage{../shared/kesh-style}
+
+% Cette définition est nécessaire car le SVG est dans shared/, pas dans fr/
+\renewcommand{\Kesh@logo@path}{../shared/kesh-logo.svg}
+
+\title{Manuel administrateur Kesh}
+\author{\keshAuthor}
+\date{\keshReleaseDate}
+
+\begin{document}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Page de garde
+%%─────────────────────────────────────────────────────────────────────────────
+
+\keshcover{Manuel administrateur}{Installation, configuration et exploitation de Kesh dans un environnement de production}{Documentation technique}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Table des matières
+%%─────────────────────────────────────────────────────────────────────────────
+
+\tableofcontents
+\clearpage
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{À propos de ce manuel}
+
+Ce manuel s'adresse aux administrateurs système, responsables DevOps et fiduciaires souhaitant déployer et exploiter Kesh dans un environnement de production. Il couvre l'ensemble du cycle de vie opérationnel d'une instance Kesh : installation, configuration, sauvegarde, mise à jour, sécurité, conformité légale suisse et dépannage.
+
+\subsection{Public cible}
+
+Ce document est rédigé pour :
+
+\begin{itemize}
+    \item Les administrateurs système (Linux ou macOS) responsables de l'hébergement d'une instance Kesh pour une ou plusieurs PME.
+    \item Les fiduciaires souhaitant proposer Kesh comme solution comptable à leurs clients en mode self-hosting.
+    \item Les développeurs internes d'une PME prenant en charge l'auto-hébergement de leur instance.
+    \item Les responsables sécurité ou conformité devant valider la posture Kesh face aux exigences du Code des obligations suisse (CO Art. 957a, 958f) et de l'Ordonnance OLICo (RS 221.431).
+\end{itemize}
+
+\subsection{Pré-requis de lecture}
+
+Le lecteur est supposé familier avec :
+
+\begin{itemize}
+    \item Les concepts de base de Docker et Docker Compose (images, volumes, networks).
+    \item L'administration d'un système Linux (CLI, systemd, gestion de paquets, permissions de fichiers).
+    \item Les principes d'une base de données relationnelle (MariaDB/MySQL).
+    \item Les concepts de reverse proxy HTTPS (Nginx, Traefik ou équivalent).
+    \item Les notions de base de cryptographie appliquée (TLS, certificats, secrets).
+\end{itemize}
+
+\subsection{Conventions typographiques}
+
+\begin{itemize}
+    \item \keshcommand{commande shell} : commande à exécuter dans un terminal.
+    \item \keshpath{/chemin/fichier} : chemin vers un fichier ou répertoire sur le système.
+    \item \keshkey{Ctrl+S} : combinaison de touches clavier.
+    \item Les boîtes colorées indiquent : \keshnote{} (information), \keshtip{} (astuce), \keshwarning{} (attention), \keshdanger{} (danger).
+\end{itemize}
+
+\begin{keshnote}
+Ce manuel décrit Kesh version \keshVersion. Pour la dernière version, consultez \keshWebsite. Voir la section finale « \emph{À propos de cette version} » pour les modalités de mise à jour.
+\end{keshnote}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Présentation de Kesh}
+
+\subsection{Objectif du logiciel}
+
+Kesh est un \textbf{logiciel de comptabilité et de gestion} destiné aux indépendants, petites et moyennes entreprises (PME) et associations en Suisse. Il fournit un système complet conforme aux exigences du Code des obligations suisse, incluant :
+
+\begin{itemize}
+    \item \textbf{Comptabilité en partie double} avec plan comptable suisse PME (Sterchi, KMU, ou personnalisé).
+    \item \textbf{Facturation QR Bill 2.2} conforme au standard SIX Interbank Clearing (norme suisse 2020+).
+    \item \textbf{Import bancaire} CAMT.053 (ISO 20022) et CSV multi-encodage avec profils banque réutilisables.
+    \item \textbf{Réconciliation automatique et manuelle} des transactions bancaires avec règles d'affectation.
+    \item \textbf{Rapports comptables} : bilan, compte de résultat, balance, journal.
+    \item \textbf{Exports} légaux : PDF par rapport, ZIP global de souveraineté avec SHA-256 d'intégrité.
+    \item \textbf{Multi-utilisateurs} avec contrôle d'accès basé sur les rôles (RBAC).
+    \item \textbf{Multi-tenant} : isolation stricte des données par société (\emph{company\_id}).
+    \item \textbf{Multilingue} : interface utilisateur en français, allemand, italien et anglais.
+\end{itemize}
+
+\subsection{Public cible du produit}
+
+Kesh est conçu pour :
+
+\begin{itemize}
+    \item Les \textbf{entreprises individuelles} et les \textbf{sociétés de personnes} avec un chiffre d'affaires supérieur à CHF 500'000 (régime « comptabilité complète » selon CO Art. 957 al. 1).
+    \item Les \textbf{entreprises individuelles} et \textbf{sociétés de personnes} avec un chiffre d'affaires inférieur à CHF 500'000 (régime « recettes-dépenses + patrimoine » selon CO Art. 957 al. 2).
+    \item Les \textbf{personnes morales} (SA, Sàrl, coopératives, associations, fondations).
+    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients via le mode multi-tenant.
+\end{itemize}
+
+Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 727 CO, seuils 20/40/250 selon Art. 727 al. 1 ch. 2 CO) ni aux entités cotées en bourse soumises à IFRS / Swiss GAAP RPC obligatoires.
+
+\subsection{Architecture technique haute}
+
+\begin{itemize}
+    \item \textbf{Backend} : Rust 1.85+ (édition 2024) avec le framework HTTP Axum et le client SQL SQLx.
+    \item \textbf{Frontend} : SvelteKit 2 avec Svelte 5 et TypeScript, bundler Vite, CSS via Tailwind 4.
+    \item \textbf{Base de données} : MariaDB 11.4 (compatibilité MySQL 8 maintenue, mais MariaDB recommandée pour les optimisations spécifiques utilisées).
+    \item \textbf{Déploiement} : Docker Compose, image officielle \keshpath{guycorbaz/kesh:latest} sur Docker Hub.
+    \item \textbf{Authentification} : JWT (HS256) avec refresh tokens et rotation, durée d'expiration courte (15 min) compensée par rafraîchissement automatique côté frontend.
+    \item \textbf{Multi-tenant} : claim \texttt{company\_id} dans le JWT et scoping strict sur toutes les requêtes API et toutes les requêtes SQL (cf. Story Epic 7-1 « audit multi-tenant scoping refactor »).
+\end{itemize}
+
+\subsection{Licence}
+
+Kesh est distribué sous \href{https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12}{licence EUPL 1.2} (European Union Public Licence). Cette licence est compatible GPL et permet l'usage commercial, la modification et la redistribution sous réserve de conserver la licence et les mentions d'attribution.
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Prérequis système}
+
+\subsection{Système d'exploitation}
+
+Kesh est officiellement supporté sur :
+
+\begin{itemize}
+    \item \textbf{Linux} : Debian 12+, Ubuntu 22.04 LTS+, Fedora 38+, RHEL 9+, Arch Linux (rolling).
+    \item \textbf{macOS} : 13 Ventura+ (architecture Intel ou Apple Silicon).
+\end{itemize}
+
+Le déploiement est officiellement supporté sur Linux uniquement. macOS est utilisable pour le développement et l'évaluation, mais non recommandé en production.
+
+Le déploiement sur Windows (avec WSL2) est possible mais non officiellement testé.
+
+\subsection{Logiciels requis}
+
+\begin{itemize}
+    \item \textbf{Docker} ≥ 24.0 (Docker Engine ou Docker Desktop).
+    \item \textbf{Docker Compose} ≥ 2.20 (plugin officiel \keshcommand{docker compose}).
+    \item Un \textbf{reverse proxy HTTPS} en production (Nginx, Caddy, Traefik, HAProxy, ou équivalent).
+    \item Un système de \textbf{sauvegarde MariaDB} (mariadb-dump cron, mariabackup, ou solution tierce).
+    \item Optionnel : \textbf{Git} pour cloner le dépôt et suivre les mises à jour.
+\end{itemize}
+
+\subsection{Ressources matérielles minimales}
+
+\begin{tabularx}{\linewidth}{>{\bfseries}lXX}
+    \toprule
+    \keshtableheader{Ressource} & \keshtableheader{Minimum} & \keshtableheader{Recommandé} \\
+    \midrule
+    CPU & 1 vCPU & 2--4 vCPU \\
+    RAM & 1 Go & 4 Go \\
+    Stockage & 5 Go (DB + logs) & 50 Go (conservation 10 ans incluse) \\
+    Réseau & 1 Mbps stable & 10 Mbps + IPv4 publique \\
+    Disque & SSD recommandé pour DB & SSD obligatoire pour DB \\
+    \bottomrule
+\end{tabularx}
+
+\begin{keshnote}
+Le stockage est dominé par l'\emph{audit\_log} et les pièces justificatives. Comptez environ \textbf{50--200 Mo par exercice} pour une PME standard. Pour une conservation OLICo 10 ans, prévoyez \textbf{1--3 Go} en moyenne.
+\end{keshnote}
+
+\subsection{Ports réseau}
+
+\begin{tabularx}{\linewidth}{>{\bfseries}llXl}
+    \toprule
+    \keshtableheader{Port} & \keshtableheader{Protocole} & \keshtableheader{Usage} & \keshtableheader{Exposition} \\
+    \midrule
+    443 & HTTPS & Accès utilisateur via reverse proxy & Publique (Internet) \\
+    3000 & HTTP & API Axum backend (interne) & Localhost uniquement \\
+    5173 & HTTP & SvelteKit dev server (dev seul) & Localhost uniquement \\
+    3306 & MySQL/MariaDB & Connexion base de données & Localhost ou réseau privé \\
+    \bottomrule
+\end{tabularx}
+
+\begin{keshwarning}
+\textbf{Ne jamais exposer le port 3000 (API Axum) ni le port 3306 (MariaDB) directement sur Internet}. Toujours passer par un reverse proxy HTTPS qui termine TLS et fait suivre vers \texttt{localhost:3000}.
+\end{keshwarning}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Installation}
+
+\subsection{Méthode recommandée : Docker Compose}
+
+Kesh est livré sous forme d'image Docker. Le déploiement standard utilise Docker Compose.
+
+\subsubsection{Étape 1 — Préparer l'environnement}
+
+Créer un répertoire dédié pour l'instance Kesh :
+
+\begin{lstlisting}[language=bash]
+sudo mkdir -p /opt/kesh
+sudo chown $USER:$USER /opt/kesh
+cd /opt/kesh
+\end{lstlisting}
+
+\subsubsection{Étape 2 — Récupérer le \texttt{docker-compose.yml}}
+
+Télécharger le fichier de référence depuis le dépôt officiel :
+
+\begin{lstlisting}[language=bash]
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.yml \
+    -o docker-compose.yml
+\end{lstlisting}
+
+\subsubsection{Étape 3 — Créer le fichier \texttt{.env}}
+
+Copier le fichier d'exemple et l'adapter :
+
+\begin{lstlisting}[language=bash]
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example \
+    -o .env
+\end{lstlisting}
+
+Éditer \keshpath{.env} et renseigner au minimum les variables suivantes (cf. section \ref{sec:env-vars} pour la liste complète) :
+
+\begin{lstlisting}[language=bash]
+# Secret JWT — générer avec : openssl rand -hex 64
+JWT_SECRET=<long secret aleatoire 128+ caracteres>
+
+# Mot de passe DB
+MARIADB_ROOT_PASSWORD=<mot de passe fort>
+MARIADB_PASSWORD=<mot de passe utilisateur applicatif>
+MARIADB_DATABASE=kesh
+MARIADB_USER=kesh
+
+# URL de connexion DB (composée à partir des variables ci-dessus)
+DATABASE_URL=mysql://kesh:<MARIADB_PASSWORD>@db:3306/kesh
+
+# URL publique (pour les liens dans emails, QR Bills, etc.)
+KESH_PUBLIC_URL=https://compta.exemple.ch
+\end{lstlisting}
+
+\begin{keshdanger}
+\textbf{Ne jamais committer le fichier \keshpath{.env} dans un dépôt Git}. Il contient les secrets de production. Ajoutez-le à \keshpath{.gitignore}.
+\end{keshdanger}
+
+\subsubsection{Étape 4 — Démarrer les services}
+
+\begin{lstlisting}[language=bash]
+docker compose up -d
+\end{lstlisting}
+
+Vérifier que les services sont démarrés :
+
+\begin{lstlisting}[language=bash]
+docker compose ps
+docker compose logs -f kesh
+\end{lstlisting}
+
+Au premier démarrage, Kesh exécute automatiquement les migrations de schéma DB. Cela peut prendre 10--30 secondes selon la machine.
+
+\subsubsection{Étape 5 — Vérifier l'installation}
+
+Tester l'accès à l'API :
+
+\begin{lstlisting}[language=bash]
+curl http://localhost:3000/health
+# Attendu : {"status":"ok","version":"<keshVersion>"}
+\end{lstlisting}
+
+\subsection{Configuration du reverse proxy HTTPS}
+
+En production, Kesh \textbf{doit} être accessible via HTTPS uniquement. Voici un exemple minimal avec Nginx :
+
+\begin{lstlisting}[language=bash]
+# /etc/nginx/sites-available/kesh
+server {
+    listen 443 ssl http2;
+    server_name compta.exemple.ch;
+
+    ssl_certificate     /etc/letsencrypt/live/compta.exemple.ch/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/compta.exemple.ch/privkey.pem;
+
+    # Strong cipher suite
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    # Headers de securite
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # Pour les uploads de pieces comptables et imports CAMT.053
+        client_max_body_size 50M;
+
+        # Timeouts adaptes pour les operations longues (exports ZIP)
+        proxy_read_timeout 300s;
+    }
+}
+
+server {
+    listen 80;
+    server_name compta.exemple.ch;
+    return 301 https://$host$request_uri;
+}
+\end{lstlisting}
+
+Activer la configuration :
+
+\begin{lstlisting}[language=bash]
+sudo ln -s /etc/nginx/sites-available/kesh /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+\end{lstlisting}
+
+\subsection{Alternative : déploiement via Caddy}
+
+Caddy gère automatiquement les certificats Let's Encrypt et représente une alternative plus simple :
+
+\begin{lstlisting}[language=bash]
+# /etc/caddy/Caddyfile
+compta.exemple.ch {
+    reverse_proxy localhost:3000 {
+        header_up X-Forwarded-Proto https
+    }
+    encode gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+    }
+}
+\end{lstlisting}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Configuration}\label{sec:configuration}
+
+\subsection{Variables d'environnement complètes}\label{sec:env-vars}
+
+Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}. Le fichier \keshpath{.env} est chargé automatiquement par Docker Compose.
+
+\subsubsection{Variables obligatoires}
+
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} \\
+    \midrule
+    JWT\_SECRET & Secret de signature des JWT. Doit faire \textbf{au moins 64 caractères}. Générer avec \keshcommand{openssl rand -hex 64}. \\
+    MARIADB\_ROOT\_PASSWORD & Mot de passe root MariaDB. Utilisé uniquement à l'initialisation. \\
+    MARIADB\_PASSWORD & Mot de passe utilisateur applicatif (kesh). \\
+    MARIADB\_DATABASE & Nom de la base de données (par défaut : \texttt{kesh}). \\
+    MARIADB\_USER & Nom de l'utilisateur applicatif (par défaut : \texttt{kesh}). \\
+    DATABASE\_URL & URL complète de connexion DB. Format : \texttt{mysql://USER:PASS@HOST:PORT/DB}. \\
+    KESH\_PUBLIC\_URL & URL publique de l'instance (HTTPS). Utilisée dans les emails, QR Bills, liens partagés. \\
+    \bottomrule
+\end{tabularx}
+
+\subsubsection{Variables optionnelles avec valeurs par défaut}
+
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_HOST & Adresse d'écoute de l'API. & \texttt{0.0.0.0} \\
+    KESH\_PORT & Port d'écoute de l'API. & \texttt{3000} \\
+    KESH\_LOG\_LEVEL & Niveau de log (trace, debug, info, warn, error). & \texttt{info} \\
+    KESH\_LOG\_FORMAT & Format des logs (json, pretty). & \texttt{json} \\
+    JWT\_EXPIRY\_SECONDS & Durée de vie d'un access token. & \texttt{900} (15 min) \\
+    JWT\_REFRESH\_EXPIRY\_DAYS & Durée de vie d'un refresh token. & \texttt{30} \\
+    KESH\_CORS\_ORIGINS & Origines CORS autorisées (séparées par virgule). & \texttt{KESH\_PUBLIC\_URL} \\
+    KESH\_RATE\_LIMIT\_PER\_MINUTE & Nombre de requêtes max par IP par minute. & \texttt{300} \\
+    KESH\_SESSION\_COOKIE\_SECURE & Force le flag \texttt{Secure} sur les cookies. & \texttt{true} \\
+    KESH\_DEFAULT\_LOCALE & Langue par défaut de l'instance (fr, de, it, en). & \texttt{fr} \\
+    KESH\_DEFAULT\_TIMEZONE & Timezone par défaut. & \texttt{Europe/Zurich} \\
+    KESH\_DEFAULT\_CURRENCY & Devise par défaut. & \texttt{CHF} \\
+    KESH\_MAX\_UPLOAD\_BYTES & Taille max upload (pièces, CAMT.053). & \texttt{52428800} (50 Mo) \\
+    KESH\_FEATURE\_FLAGS & Liste de feature flags activés. & vide \\
+    \bottomrule
+\end{tabularx}
+
+\subsubsection{Variables liées au monitoring (optionnelles)}
+
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} \\
+    \midrule
+    KESH\_METRICS\_ENABLED & Active l'endpoint Prometheus \texttt{/metrics}. \\
+    KESH\_METRICS\_PORT & Port d'écoute pour les métriques (séparé). \\
+    KESH\_SENTRY\_DSN & DSN Sentry pour le tracking d'erreurs (optionnel, externe). \\
+    \bottomrule
+\end{tabularx}
+
+\subsection{Configuration MariaDB}
+
+\subsubsection{Paramètres recommandés}
+
+Modifier la configuration MariaDB pour optimiser l'usage Kesh. Créer \keshpath{/etc/mysql/mariadb.conf.d/99-kesh.cnf} :
+
+\begin{lstlisting}[language=bash]
+[mariadb]
+# Encodage strict pour la conformite Unicode (factures multilingues)
+character-set-server  = utf8mb4
+collation-server      = utf8mb4_unicode_ci
+
+# Niveau d'isolation par defaut (REPEATABLE READ par defaut MariaDB,
+# Kesh utilise des transactions explicites SERIALIZABLE pour les
+# operations critiques comme la numerotation des factures et la
+# reconciliation bancaire)
+transaction-isolation = REPEATABLE-READ
+
+# Mode SQL strict pour eviter les coercions silencieuses
+sql_mode = STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO
+
+# Innodb buffer pool (~ 50% de la RAM disponible)
+innodb_buffer_pool_size = 1G
+innodb_log_file_size    = 256M
+innodb_flush_log_at_trx_commit = 1
+innodb_flush_method     = O_DIRECT
+
+# Logs lents pour audit performance
+slow_query_log          = 1
+slow_query_log_file     = /var/log/mysql/slow.log
+long_query_time         = 2
+
+# Binlog pour replication ou point-in-time recovery
+log_bin                 = /var/log/mysql/mariadb-bin
+binlog_format           = ROW
+expire_logs_days        = 14
+\end{lstlisting}
+
+\begin{keshtip}
+Pour une PME standard (1 société, < 50'000 écritures/an), les paramètres par défaut MariaDB suffisent largement. Cette configuration avancée n'est utile qu'à partir de plusieurs sociétés ou de très gros volumes.
+\end{keshtip}
+
+\subsubsection{Initialisation manuelle de la base}
+
+Si vous ne passez pas par Docker Compose, voici comment initialiser manuellement la DB :
+
+\begin{lstlisting}[language=bash]
+mariadb -u root -p <<SQL
+CREATE DATABASE kesh CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'kesh'@'%' IDENTIFIED BY 'mot_de_passe_fort';
+GRANT ALL PRIVILEGES ON kesh.* TO 'kesh'@'%';
+FLUSH PRIVILEGES;
+SQL
+\end{lstlisting}
+
+Au premier démarrage, l'application exécute les migrations Diesel.
+
+\subsection{Configuration multi-tenant}
+
+Kesh supporte plusieurs sociétés (\emph{companies}) sur une même instance, avec isolation stricte des données.
+
+\subsubsection{Concept de \emph{company}}
+
+Une \emph{company} représente une entité comptable (PME, association, fondation). Chaque company possède :
+
+\begin{itemize}
+    \item Un nom commercial et une raison sociale.
+    \item Un numéro IDE (Identifiant Unique des Entreprises suisse).
+    \item Une langue et timezone par défaut.
+    \item Un plan comptable propre.
+    \item Un ou plusieurs utilisateurs (avec rôles).
+    \item Un ou plusieurs exercices comptables.
+    \item Ses propres factures, contacts, écritures, transactions bancaires, rapports.
+\end{itemize}
+
+\subsubsection{Isolation des données}
+
+Toutes les requêtes API et toutes les requêtes SQL Kesh sont filtrées par \texttt{company\_id} (cf. Story Epic 7-1 « audit multi-tenant scoping refactor »). Un utilisateur de la company A ne peut en aucun cas accéder aux données de la company B, même via une URL forgée (défense en profondeur contre IDOR).
+
+\subsubsection{Cas d'usage fiduciaire}
+
+Un fiduciaire peut créer une seule instance Kesh avec N companies, une par dossier client. L'isolation par \texttt{company\_id} garantit la confidentialité inter-client. Le fiduciaire peut être membre de toutes les companies avec un rôle d'administrateur ; chaque utilisateur PME ne voit que sa propre company.
+
+\begin{keshnote}
+La création d'une company se fait via l'interface utilisateur après connexion d'un administrateur. Voir le \emph{Manuel utilisateur} pour les détails opérationnels.
+\end{keshnote}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Premier démarrage}
+
+\subsection{Création du super-administrateur initial}
+
+Au tout premier démarrage de Kesh sur une instance vide, le système expose un endpoint d'\textbf{onboarding initial} qui permet de créer le premier compte super-administrateur \emph{sans authentification}.
+
+Cet endpoint est désactivé automatiquement dès qu'un utilisateur existe dans la base. Il est donc critique de \textbf{créer le super-admin immédiatement après le premier démarrage}.
+
+\subsubsection{Procédure via l'interface Web}
+
+\begin{enumerate}
+    \item Ouvrir \keshpath{https://compta.exemple.ch} dans un navigateur.
+    \item L'écran d'onboarding initial apparaît automatiquement (titre « Bienvenue dans Kesh »).
+    \item Saisir l'email, le mot de passe (fort, ≥ 12 caractères) et la confirmation.
+    \item Choisir la langue par défaut de l'interface.
+    \item Cliquer sur « Créer le compte administrateur ».
+    \item Se connecter avec les identifiants créés.
+\end{enumerate}
+
+\subsubsection{Procédure via la CLI (sans navigateur disponible)}
+
+\begin{lstlisting}[language=bash]
+docker compose exec kesh kesh-cli admin create \
+    --email admin@exemple.ch \
+    --password '<mot_de_passe_fort>' \
+    --locale fr
+\end{lstlisting}
+
+\begin{keshwarning}
+Si vous oubliez l'étape d'onboarding initial et qu'un attaquant arrive sur votre instance avant vous, il peut créer le super-admin à votre place. \textbf{Bloquez l'accès réseau jusqu'à création du super-admin}, ou désactivez l'endpoint via la variable \texttt{KESH\_DISABLE\_INITIAL\_ONBOARDING=true} et utilisez la CLI.
+\end{keshwarning}
+
+\subsection{Création de la première company}
+
+Une fois connecté en tant que super-administrateur, créer la première company :
+
+\begin{enumerate}
+    \item Aller dans \emph{Paramètres} → \emph{Sociétés}.
+    \item Cliquer sur « Nouvelle société ».
+    \item Renseigner les informations légales (raison sociale, IDE, adresse, langue, timezone, devise).
+    \item Choisir le plan comptable de référence (Sterchi, KMU, ou import personnalisé CSV).
+    \item Cliquer sur « Créer ».
+\end{enumerate}
+
+\subsection{Choix du plan comptable}
+
+Kesh inclut plusieurs plans comptables suisses pré-configurés :
+
+\begin{tabularx}{\linewidth}{>{\bfseries}lX}
+    \toprule
+    \keshtableheader{Plan} & \keshtableheader{Description} \\
+    \midrule
+    Sterchi PME & Plan comptable standard PME suisse, version Sterchi (la plus répandue). Recommandé pour la majorité des cas. \\
+    KMU & Plan KMU (Käfer / Treuhand-Kammer), version simplifiée orientée artisans et indépendants. \\
+    Personnalisé CSV & Import d'un plan personnalisé depuis un fichier CSV (format spécifié dans le manuel utilisateur). \\
+    \bottomrule
+\end{tabularx}
+
+\begin{keshtip}
+Le plan comptable peut être modifié après création (ajout de comptes auxiliaires, sous-comptes, etc.) mais sa structure globale reste stable. Choisir le plan le plus proche de votre activité dès la création évite des migrations ultérieures.
+\end{keshtip}
+
+\subsection{Configuration des exercices comptables}
+
+Chaque company doit définir au moins un exercice comptable (\emph{fiscal year}). Par défaut, l'exercice civil 1\textsuperscript{er} janvier -- 31 décembre est créé automatiquement à la création de la company. Pour d'autres exercices (décalés, courts, longs), aller dans \emph{Paramètres} → \emph{Exercices}.
+
+\subsection{Création des utilisateurs et rôles}
+
+Kesh utilise un système de contrôle d'accès basé sur les rôles (RBAC) :
+
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
+    \toprule
+    \keshtableheader{Rôle} & \keshtableheader{Permissions} \\
+    \midrule
+    super\_admin & Accès total à toutes les companies, gestion des sociétés, gestion des utilisateurs cross-company. Réservé au fiduciaire ou à l'administrateur système. \\
+    admin & Gestion complète d'une company (utilisateurs, paramètres, plan comptable, exercices). \\
+    accountant & Saisie d'écritures, validation, modification, import bancaire, réconciliation, génération de factures et rapports. \\
+    operator & Saisie d'écritures en brouillon, génération de factures, consultation des rapports. Pas de validation finale ni de modification d'écritures validées. \\
+    viewer & Lecture seule. Consultation des rapports, factures, écritures, sans modification possible. \\
+    \bottomrule
+\end{tabularx}
+
+Création d'un utilisateur via l'UI : \emph{Paramètres} → \emph{Utilisateurs} → \emph{Inviter}.
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Sauvegarde et restauration}
+
+\subsection{Importance de la sauvegarde}
+
+La sauvegarde régulière de l'instance Kesh est \textbf{critique} pour deux raisons :
+
+\begin{enumerate}
+    \item \textbf{Continuité d'activité} : perte de données = arrêt de la comptabilité PME.
+    \item \textbf{Conformité OLICo Art. 6} (Disponibilité) : « jusqu'à la fin du délai de conservation [10 ans], toute personne autorisée doit pouvoir, en tout temps et dans un délai raisonnable, consulter et vérifier les livres et les pièces comptables ». Une perte de données rend l'instance non-conforme.
+\end{enumerate}
+
+\subsection{Stratégie recommandée}
+
+\begin{itemize}
+    \item \textbf{Quotidienne} : \keshcommand{mariadb-dump} complet, conservé 30 jours, stocké en local + offsite (cloud).
+    \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/kesh\_db\_data} (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
+    \item \textbf{Mensuelle} : export ZIP de souveraineté (Story 9-2b) pour chaque company depuis l'interface utilisateur.
+    \item \textbf{Annuelle} : archivage long terme conforme OLICo Art. 9 (support non-modifiable type CD-R, ou hash signé sur support modifiable WORM).
+\end{itemize}
+
+\subsection{Script de sauvegarde mariadb-dump}
+
+Voici un script bash de référence à exécuter via cron quotidien :
+
+\begin{lstlisting}[language=bash]
+#!/bin/bash
+# /usr/local/bin/kesh-backup.sh
+# Sauvegarde quotidienne de la base Kesh
+
+set -euo pipefail
+
+BACKUP_DIR="/var/backups/kesh"
+RETENTION_DAYS=30
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="${BACKUP_DIR}/kesh_${TIMESTAMP}.sql.gz"
+
+mkdir -p "${BACKUP_DIR}"
+
+# Dump avec gzip et stockage hash SHA-256
+docker compose exec -T db \
+    mariadb-dump \
+    --single-transaction \
+    --routines \
+    --triggers \
+    --events \
+    --add-drop-database \
+    --databases kesh \
+    -u root \
+    -p"${MARIADB_ROOT_PASSWORD}" \
+    | gzip > "${BACKUP_FILE}"
+
+# Hash SHA-256 pour verification ulterieure (OLICo Art. 9 al. 1.b ch. 1)
+sha256sum "${BACKUP_FILE}" > "${BACKUP_FILE}.sha256"
+
+# Conservation 30 jours
+find "${BACKUP_DIR}" -name "kesh_*.sql.gz" -mtime +${RETENTION_DAYS} -delete
+find "${BACKUP_DIR}" -name "kesh_*.sql.gz.sha256" -mtime +${RETENTION_DAYS} -delete
+
+echo "✓ Sauvegarde terminee : ${BACKUP_FILE}"
+\end{lstlisting}
+
+Crontab d'exemple (sauvegarde à 2h du matin chaque jour) :
+
+\begin{lstlisting}[language=bash]
+0 2 * * * /usr/local/bin/kesh-backup.sh >> /var/log/kesh-backup.log 2>&1
+\end{lstlisting}
+
+\subsection{Stockage offsite}
+
+Synchroniser les sauvegardes vers un stockage distant (S3, Backblaze B2, Wasabi, Hetzner Storage Box, OVH C14, etc.) :
+
+\begin{lstlisting}[language=bash]
+# Exemple avec rclone
+rclone sync /var/backups/kesh remote:kesh-backups \
+    --transfers 4 \
+    --checksum \
+    --log-file /var/log/kesh-backup-sync.log
+\end{lstlisting}
+
+\subsection{Restauration depuis sauvegarde}
+
+\begin{lstlisting}[language=bash]
+# 1. Verifier l'integrite de la sauvegarde (SHA-256)
+cd /var/backups/kesh
+sha256sum -c kesh_20260520_020000.sql.gz.sha256
+
+# 2. Arreter Kesh (pas la DB)
+docker compose stop kesh
+
+# 3. Restaurer la base
+zcat kesh_20260520_020000.sql.gz | docker compose exec -T db \
+    mariadb -u root -p"${MARIADB_ROOT_PASSWORD}"
+
+# 4. Redemarrer Kesh
+docker compose start kesh
+
+# 5. Verifier le fonctionnement
+curl http://localhost:3000/health
+\end{lstlisting}
+
+\subsection{Test de restauration périodique (OLICo Art. 10 al. 1)}
+
+L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des supports d'information sont régulièrement contrôlées ». Cela implique de \textbf{tester effectivement la restauration} au moins \textbf{annuellement}, sur un environnement de test isolé :
+
+\begin{enumerate}
+    \item Provisionner une instance Kesh de test (machine virtuelle ou container isolé).
+    \item Restaurer la sauvegarde la plus récente.
+    \item Vérifier que l'application démarre, que les écritures sont accessibles, qu'un export ZIP de souveraineté peut être généré et que son SHA-256 est identique à celui généré sur l'instance de production avant la sauvegarde.
+    \item Documenter le test dans un procès-verbal écrit (date, opérateur, résultat, anomalies éventuelles). Conservation 10 ans avec les sauvegardes.
+\end{enumerate}
+
+\begin{keshtip}
+Automatisez ce test annuel via un workflow CI/CD : provisioning Docker éphémère, restauration, exécution de tests E2E Playwright basiques, génération du procès-verbal. Cette automatisation peut être traitée comme une story Epic 10 « Déploiement \& Opérations » ou Epic ultérieur.
+\end{keshtip}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Mise à jour de Kesh}
+
+\subsection{Process de release Kesh}
+
+Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (versionnage sémantique). À chaque release :
+
+\begin{itemize}
+    \item Une nouvelle image Docker \texttt{guycorbaz/kesh:X.Y.Z} et \texttt{guycorbaz/kesh:latest} sont poussées sur Docker Hub.
+    \item Un changelog (\keshpath{CHANGELOG.md}) liste les nouveautés, corrections de bugs et changements compatibilité.
+    \item Les manuels (admin, utilisateur, brochure marketing) sont rebuild en PDF et attachés au release GitHub.
+    \item Les notes de breaking changes sont mises en évidence avec instructions de migration.
+\end{itemize}
+
+\subsection{Suivre les notifications de release}
+
+\begin{itemize}
+    \item Activer les notifications GitHub : \emph{Watch} le dépôt \texttt{guycorbaz/kesh} → \emph{Custom} → \emph{Releases}.
+    \item Souscrire au flux RSS Atom des releases : \keshpath{https://github.com/guycorbaz/kesh/releases.atom}.
+\end{itemize}
+
+\subsection{Procédure de mise à jour standard}
+
+\begin{enumerate}
+    \item \textbf{Sauvegarder} la base de données et le volume \texttt{kesh\_db\_data} (cf. section précédente).
+    \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
+    \item \textbf{Mettre à jour} \keshpath{docker-compose.yml} si nécessaire (nouvelles env vars, changement d'image).
+    \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh}.
+    \item \textbf{Redémarrer} : \keshcommand{docker compose up -d kesh}.
+    \item \textbf{Vérifier} les logs : \keshcommand{docker compose logs -f kesh} pour s'assurer que les migrations DB se sont bien déroulées.
+    \item \textbf{Tester} l'accès UI et les fonctionnalités critiques (login, saisie d'une écriture, génération d'une facture).
+\end{enumerate}
+
+\begin{keshwarning}
+Toujours sauvegarder \textbf{avant} la mise à jour. Une migration DB peut être irréversible. En cas de problème, la restauration depuis sauvegarde reste votre filet de sécurité.
+\end{keshwarning}
+
+\subsection{Mise à jour majeure (changement de version X)}
+
+Une mise à jour majeure (par exemple v0.1 → v1.0) peut comporter des breaking changes. Procédure recommandée :
+
+\begin{enumerate}
+    \item Lire intégralement le changelog et les notes de migration.
+    \item Provisionner une instance de test en parallèle de la production.
+    \item Restaurer une copie récente de la base de production sur l'instance de test.
+    \item Faire la mise à jour sur l'instance de test.
+    \item Valider toutes les fonctionnalités critiques sur l'instance de test.
+    \item Sauvegarder la production, puis appliquer la mise à jour.
+    \item Surveiller les logs pendant 24--48h post-update.
+\end{enumerate}
+
+\subsection{Rollback en cas d'échec}
+
+Si une mise à jour échoue ou révèle un bug bloquant :
+
+\begin{lstlisting}[language=bash]
+# 1. Arreter le service
+docker compose stop kesh
+
+# 2. Restaurer la version precedente de l'image
+docker compose down
+# Editer docker-compose.yml : image: guycorbaz/kesh:0.1.0  (ancien tag)
+docker compose up -d
+
+# 3. Si les migrations DB ont ete appliquees et sont irreversibles, restaurer
+# la sauvegarde DB d'avant la mise a jour (cf. section Restauration).
+\end{lstlisting}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Sécurité}
+
+\subsection{HTTPS obligatoire en production}
+
+Kesh \textbf{doit} être accessible uniquement via HTTPS en production. Le mode HTTP plain doit être réservé strictement au développement local.
+
+Configurations recommandées du reverse proxy :
+
+\begin{itemize}
+    \item TLS 1.2 minimum, TLS 1.3 préféré.
+    \item Suites de chiffrement modernes uniquement (cf. \href{https://ssl-config.mozilla.org/}{Mozilla SSL Config Generator}).
+    \item HSTS activé avec \texttt{max-age=31536000; includeSubDomains}.
+    \item Certificats Let's Encrypt (renouvellement automatique via Certbot ou Caddy intégré).
+    \item Headers de sécurité : \texttt{X-Content-Type-Options: nosniff}, \texttt{X-Frame-Options: DENY}, \texttt{Referrer-Policy: strict-origin-when-cross-origin}.
+\end{itemize}
+
+\subsection{Gestion des secrets}
+
+\begin{itemize}
+    \item \textbf{Jamais committer \keshpath{.env}} dans Git. Ajouter à \keshpath{.gitignore}.
+    \item Utiliser un secrets manager (HashiCorp Vault, AWS Secrets Manager, Doppler, ou simplement \texttt{systemd-creds} sous Linux) pour les déploiements multi-instances.
+    \item Permissions strictes sur \keshpath{.env} : \keshcommand{chmod 600 .env} (lecture/écriture propriétaire uniquement).
+    \item Rotation périodique du \texttt{JWT\_SECRET} : tous les 6--12 mois en production. Une rotation invalide tous les tokens existants, forçant les utilisateurs à se reconnecter.
+\end{itemize}
+
+\subsection{Authentification JWT + refresh tokens}
+
+Kesh utilise un modèle JWT avec rotation de refresh tokens :
+
+\begin{itemize}
+    \item L'access token (JWT court, 15 min par défaut) est envoyé en cookie \texttt{HttpOnly; Secure; SameSite=Lax}.
+    \item Le refresh token (durée 30 jours par défaut) est stocké en DB (table \texttt{refresh\_tokens}) avec hash SHA-256 (jamais stocké en clair).
+    \item À chaque refresh, le token précédent est invalidé (rotation), une trace est conservée pour détection d'attaque par replay.
+    \item La déconnexion révoque tous les refresh tokens de la session.
+\end{itemize}
+
+\subsection{RBAC et permissions}
+
+Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de chaque endpoint API} via un middleware Tower (Axum). Les 5 rôles standards (cf. section Premier démarrage) sont définis dans le code (pas de rôles custom dynamiques v0.1).
+
+\subsection{Audit-trail (audit\_log)}
+
+Toute action métier mutante est enregistrée dans la table \texttt{audit\_log} :
+
+\begin{itemize}
+    \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log} (défense en profondeur).
+    \item Champs : \texttt{user\_id}, \texttt{company\_id}, \texttt{timestamp}, \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{metadata\_json}.
+    \item Conservation 10 ans (selon CO Art. 958f al. 1).
+\end{itemize}
+
+\subsection{Conformité OLICo Art. 9 — intégrité des supports modifiables}
+
+Conformément à l'analyse réglementaire (cf. \keshpath{\_bmad-output/planning-artifacts/research-swiss-co-958f.md}), Kesh satisfait l'OLICo Art. 9 al. 1.b par le couple :
+
+\begin{itemize}
+    \item \texttt{audit\_log} \textbf{immutable} insert-only (procédé technique garantissant l'intégrité, condition 1).
+    \item \texttt{SHA-256} dans \texttt{metadata.json} du ZIP d'export de souveraineté (Story 9-2b, condition 1 renforcée).
+    \item Timestamp DB \texttt{created\_at} pour preuve de moment d'enregistrement (condition 2).
+    \item Documentation des procédures dans ce manuel + journal de bord (conditions 3 et 4).
+\end{itemize}
+
+\begin{keshnote}
+La signature électronique qualifiée LSCSE (QES) n'est \textbf{pas requise} par l'OLICo pour les exports comptables des PME (interprétation « p. ex. » du législateur). Le verdict (b) « Dette explicite v0.2 » du document de recherche 9-5-4 confirme la conformité v0.1. Une implémentation QES est prévue en v0.2 via Epic 14 (issue GitHub \#98).
+\end{keshnote}
+
+\subsection{Sécurité réseau (firewall)}
+
+Configuration firewall minimale (UFW sur Ubuntu/Debian) :
+
+\begin{lstlisting}[language=bash]
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp comment 'SSH'
+sudo ufw allow 80/tcp comment 'HTTP (redirect to HTTPS)'
+sudo ufw allow 443/tcp comment 'HTTPS'
+sudo ufw enable
+\end{lstlisting}
+
+\subsection{Mises à jour de sécurité du système hôte}
+
+\begin{itemize}
+    \item Appliquer les mises à jour OS automatiquement (\texttt{unattended-upgrades} sur Debian/Ubuntu).
+    \item Surveiller les CVE Docker (mise à jour de la version Docker Engine régulière).
+    \item Surveiller les CVE MariaDB (mise à jour de l'image MariaDB lors des releases mineures).
+    \item Souscrire aux annonces de sécurité Kesh (label \texttt{security} sur les issues GitHub).
+\end{itemize}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Monitoring et logs}
+
+\subsection{Logs applicatifs}
+
+Par défaut, Kesh écrit ses logs sur \texttt{stdout} en format JSON (variable \texttt{KESH\_LOG\_FORMAT=json}). Docker les capture et les rend accessibles via :
+
+\begin{lstlisting}[language=bash]
+docker compose logs -f kesh
+docker compose logs --tail=100 kesh
+docker compose logs --since=1h kesh
+\end{lstlisting}
+
+\subsection{Centralisation des logs}
+
+En production multi-instances, centraliser via :
+
+\begin{itemize}
+    \item \textbf{ELK Stack} : Elasticsearch + Logstash + Kibana.
+    \item \textbf{Loki + Grafana} : plus léger, recommandé pour les déploiements modestes.
+    \item \textbf{Syslog distant} : configuration via le driver Docker logging \texttt{syslog}.
+\end{itemize}
+
+Exemple de driver logging Loki dans \keshpath{docker-compose.yml} :
+
+\begin{lstlisting}[language=yaml]
+services:
+  kesh:
+    image: guycorbaz/kesh:latest
+    logging:
+      driver: loki
+      options:
+        loki-url: "https://loki.exemple.ch/loki/api/v1/push"
+        loki-retries: "5"
+        loki-batch-size: "400"
+\end{lstlisting}
+
+\subsection{Métriques Prometheus}
+
+Activer l'endpoint metrics :
+
+\begin{lstlisting}[language=bash]
+KESH_METRICS_ENABLED=true
+KESH_METRICS_PORT=9090
+\end{lstlisting}
+
+Scraper avec Prometheus :
+
+\begin{lstlisting}[language=yaml]
+# prometheus.yml
+scrape_configs:
+  - job_name: 'kesh'
+    static_configs:
+      - targets: ['localhost:9090']
+\end{lstlisting}
+
+Métriques exposées :
+
+\begin{itemize}
+    \item \texttt{kesh\_http\_requests\_total} : compteur requêtes HTTP par route + status.
+    \item \texttt{kesh\_http\_request\_duration\_seconds} : histogramme durée des requêtes.
+    \item \texttt{kesh\_db\_queries\_total} : compteur requêtes DB.
+    \item \texttt{kesh\_active\_users} : jauge utilisateurs actifs (sessions valides).
+    \item \texttt{kesh\_invoices\_generated\_total} : compteur factures générées.
+    \item \texttt{kesh\_imports\_processed\_total} : compteur imports CAMT.053 traités.
+\end{itemize}
+
+\subsection{Alerting recommandé}
+
+Alertes Prometheus / AlertManager suggérées :
+
+\begin{itemize}
+    \item Taux d'erreurs HTTP 5xx > 1\% sur 5 minutes.
+    \item Latence p95 > 2 secondes sur les requêtes API.
+    \item Connexion DB perdue (échec \texttt{kesh\_db\_queries\_total}).
+    \item Disque DB > 80\% utilisé.
+    \item Backup quotidien échoué (exit code non-zéro).
+\end{itemize}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Conformité légale suisse}
+
+\subsection{Code des obligations Art. 957a — Tenue de la comptabilité}
+
+Kesh satisfait intégralement les exigences de l'Art. 957a CO pour les PME suisses. Les détails de cette conformité sont documentés dans \keshpath{\_bmad-output/planning-artifacts/research-swiss-co-958f.md} (Story 9-5-4 « Recherche réglementaire Swiss CO Art. 957a / 958f »).
+
+Synthèse :
+
+\begin{itemize}
+    \item al. 1 : enregistrement intégral, fidèle et systématique → garanti par la saisie partie double et l'\texttt{audit\_log} immutable.
+    \item al. 2 : principe de régularité → instancié par les patterns techniques Kesh (clarté multilingue, justification, traçabilité).
+    \item al. 3 : pièce comptable papier ou électronique → support électronique autorisé.
+    \item al. 4 : monnaie nationale ou monnaie principale → CHF par défaut, multi-monnaies prévu v0.2.
+    \item al. 5 : langues nationales ou anglais → i18n FR/DE/IT/EN actif.
+\end{itemize}
+
+\subsection{Code des obligations Art. 958f — Conservation 10 ans}
+
+\begin{itemize}
+    \item al. 1 : conservation 10 ans à compter de la fin de l'exercice → garanti par la persistance MariaDB (sous réserve d'admin DB + backup approprié).
+    \item al. 2 : rapport de gestion imprimé et signé → \textbf{responsabilité de la PME utilisatrice}, hors scope logiciel.
+    \item al. 3 : support libre + lien garanti + lisibilité possible → garanti par \texttt{audit\_log} + SHA-256 + format CSV/PDF ouverts du ZIP d'export.
+\end{itemize}
+
+\subsection{Ordonnance OLICo (RS 221.431)}
+
+\begin{itemize}
+    \item Art. 1 : grand livre + journal → implémentés Kesh.
+    \item Art. 3 : intégrité (modification apparente) → garanti par \texttt{audit\_log} insert-only.
+    \item Art. 9 al. 1.b : supports modifiables (disque dur, SSD) → conditions 1-4 satisfaites (cf. section sécurité plus haut).
+    \item Art. 10 : contrôle et migration → test de restauration annuel obligatoire (cf. section Sauvegarde).
+\end{itemize}
+
+\subsection{LSCSE (signature électronique qualifiée)}
+
+La signature électronique qualifiée n'est \textbf{pas obligatoire} pour la conservation comptable PME selon l'OLICo Art. 9 (« p. ex. signature électronique »). Une implémentation QES est prévue en v0.2 (Epic 14, issue \#98) pour les PME souhaitant un niveau supplémentaire de défense.
+
+\subsection{Loi sur la TVA (LTVA)}
+
+Kesh v0.1 ne couvre pas encore la TVA (prévue Epic 11). La conformité LTVA Art. 70 (factures électroniques) sera couverte dans cette future implémentation.
+
+\subsection{Documentation à conserver}
+
+Conformément à OLICo Art. 9 al. 1.b ch. 4 (« procédures et modes d'utilisation consignés »), conserver dans votre archive comptable :
+
+\begin{itemize}
+    \item Une copie de ce manuel administrateur (version utilisée).
+    \item Une copie du manuel utilisateur.
+    \item Une copie du document de recherche réglementaire (\keshpath{research-swiss-co-958f.md}).
+    \item Les procès-verbaux de test de restauration annuels.
+    \item Le procès-verbal de migration (cf. metadata.json des ZIP de souveraineté).
+\end{itemize}
+
+\begin{keshtip}
+Une revue juridique externe (avocat suisse spécialisé en droit commercial / IT) est recommandée mais non bloquante pour une publication commerciale. Coût ordre-de-grandeur : CHF 1'000--3'000 pour une PME. Voir le document de recherche §Verdict pour les détails.
+\end{keshtip}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Dépannage}
+
+\subsection{Kesh ne démarre pas}
+
+\paragraph{Symptômes} Le container \texttt{kesh} sort immédiatement après \texttt{docker compose up}, ou \texttt{docker compose ps} montre \texttt{kesh} en \texttt{Restarting}.
+
+\paragraph{Diagnostic}
+
+\begin{lstlisting}[language=bash]
+docker compose logs kesh | tail -50
+\end{lstlisting}
+
+Causes courantes :
+
+\begin{itemize}
+    \item \textbf{DATABASE\_URL invalide} : vérifier le format \texttt{mysql://user:pass@host:port/db}.
+    \item \textbf{DB pas encore prête} : ajouter un \texttt{depends\_on} avec \texttt{condition: service\_healthy} dans \keshpath{docker-compose.yml}.
+    \item \textbf{JWT\_SECRET trop court} : doit faire au moins 64 caractères.
+    \item \textbf{Migrations DB échouées} : voir log détaillé. Solution : restaurer depuis sauvegarde et investiguer.
+\end{itemize}
+
+\subsection{Erreurs 401 en cascade côté frontend}
+
+\paragraph{Symptômes} Plusieurs appels API consécutifs échouent en \texttt{401 Unauthorized} alors que l'utilisateur est censé être authentifié.
+
+\paragraph{Cause} Refresh token expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
+
+\paragraph{Solution} L'utilisateur doit se reconnecter. Si le problème persiste pour tous les utilisateurs, vérifier l'horloge système (drift NTP).
+
+\subsection{Performance lente sur de gros datasets}
+
+\paragraph{Symptômes} Génération de rapports ou exports ZIP > 30 secondes sur des companies avec > 50'000 écritures.
+
+\paragraph{Diagnostic}
+
+\begin{lstlisting}[language=bash]
+docker compose exec db mariadb -u root -p"${MARIADB_ROOT_PASSWORD}" -e \
+    "SELECT COUNT(*) FROM kesh.journal_entries GROUP BY company_id;"
+\end{lstlisting}
+
+\paragraph{Solutions}
+
+\begin{itemize}
+    \item Augmenter \texttt{innodb\_buffer\_pool\_size} (cf. config MariaDB).
+    \item Vérifier que les index FULLTEXT sont en place (Story 7-4).
+    \item Surveiller \texttt{slow.log} et optimiser les requêtes lentes éventuelles.
+    \item Considérer une migration vers MariaDB 11.5+ qui inclut des optimisations supplémentaires.
+\end{itemize}
+
+\subsection{Reset du mot de passe administrateur}
+
+Si l'administrateur a perdu son mot de passe et qu'il n'y a pas d'autre administrateur :
+
+\begin{lstlisting}[language=bash]
+docker compose exec kesh kesh-cli admin reset-password \
+    --email admin@exemple.ch \
+    --new-password '<nouveau_mot_de_passe>'
+\end{lstlisting}
+
+L'opération est tracée dans l'\texttt{audit\_log}.
+
+\subsection{Données corrompues détectées}
+
+Si une vérification d'intégrité (SHA-256 d'un export ZIP ne correspond plus, audit\_log incohérent, etc.) révèle une corruption :
+
+\begin{enumerate}
+    \item \textbf{Arrêter immédiatement} l'instance : \keshcommand{docker compose stop kesh}.
+    \item Conserver une copie de l'état actuel : \keshcommand{tar czf kesh-corrupted-\$(date +\%F).tar.gz /opt/kesh}.
+    \item Restaurer depuis la dernière sauvegarde saine (vérifier le SHA-256 de la sauvegarde elle-même avant restauration).
+    \item Analyser la cause racine : intrusion sécurité ? corruption disque ? bug applicatif ?
+    \item Documenter l'incident pour l'audit OLICo.
+\end{enumerate}
+
+\begin{keshdanger}
+Une corruption de données comptables peut avoir des implications légales sévères. Ne pas tenter de « réparer » manuellement les données corrompues — restaurer depuis sauvegarde et investiguer hors production.
+\end{keshdanger}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Maintenance}
+
+\subsection{Rotation des logs}
+
+Configurer logrotate pour éviter que les logs Docker ne saturent le disque :
+
+\begin{lstlisting}[language=bash]
+# /etc/docker/daemon.json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "5"
+  }
+}
+\end{lstlisting}
+
+Puis redémarrer Docker : \keshcommand{sudo systemctl restart docker}.
+
+\subsection{Maintenance MariaDB}
+
+Tâches périodiques recommandées :
+
+\begin{tabularx}{\linewidth}{>{\bfseries}lXl}
+    \toprule
+    \keshtableheader{Tâche} & \keshtableheader{Description} & \keshtableheader{Fréquence} \\
+    \midrule
+    OPTIMIZE TABLE & Défragmentation des tables InnoDB. & Trimestrielle \\
+    ANALYZE TABLE & Mise à jour des statistiques d'optimiseur. & Mensuelle \\
+    Vérification cohérence & \texttt{mariadb-check --all-databases}. & Mensuelle \\
+    Purge binlog & Suppression des binary logs expirés (auto via \texttt{expire\_logs\_days}). & Quotidienne (auto) \\
+    \bottomrule
+\end{tabularx}
+
+\subsection{Vérification périodique de l'intégrité (OLICo Art. 10)}
+
+Conformément à OLICo Art. 10 al. 1, vérifier l'intégrité des supports d'information régulièrement :
+
+\begin{lstlisting}[language=bash]
+#!/bin/bash
+# /usr/local/bin/kesh-integrity-check.sh
+# Verification mensuelle de l'integrite des sauvegardes
+
+BACKUP_DIR="/var/backups/kesh"
+LOG_FILE="/var/log/kesh-integrity.log"
+
+echo "═══ Verification integrite $(date +%F) ═══" >> "${LOG_FILE}"
+
+cd "${BACKUP_DIR}"
+for backup in kesh_*.sql.gz; do
+    if sha256sum -c "${backup}.sha256" >> "${LOG_FILE}" 2>&1; then
+        echo "✓ ${backup} OK" >> "${LOG_FILE}"
+    else
+        echo "✗ ${backup} INTEGRITE COMPROMISE — ALERTE" >> "${LOG_FILE}"
+        # Envoyer une alerte (mail, Slack, PagerDuty, etc.)
+    fi
+done
+\end{lstlisting}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Annexes}
+
+\subsection{Liste complète des variables d'environnement}
+
+Voir section \ref{sec:env-vars}.
+
+\subsection{Commandes CLI utiles}
+
+\begin{lstlisting}[language=bash]
+# Statistiques globales d'une instance
+docker compose exec kesh kesh-cli stats
+
+# Liste des companies
+docker compose exec kesh kesh-cli company list
+
+# Forcer la regeneration des QR Bills d'une company
+docker compose exec kesh kesh-cli invoice regenerate-qr --company-id <ID>
+
+# Forcer la re-execution des migrations DB
+docker compose exec kesh kesh-cli migrate
+
+# Export complet de la base au format SQL (alternative a mariadb-dump)
+docker compose exec kesh kesh-cli export --company-id <ID> --format sql
+
+# Verification de l'integrite d'un export ZIP (verification SHA-256)
+docker compose exec kesh kesh-cli verify --export-id <UUID>
+\end{lstlisting}
+
+\subsection{Référence des ports}
+
+\begin{tabularx}{\linewidth}{>{\bfseries}lll}
+    \toprule
+    \keshtableheader{Service} & \keshtableheader{Port} & \keshtableheader{Notes} \\
+    \midrule
+    Frontend HTTPS (utilisateur) & 443 & Via reverse proxy \\
+    API Axum (interne) & 3000 & Localhost uniquement \\
+    MariaDB & 3306 & Localhost ou réseau privé \\
+    Prometheus metrics (optionnel) & 9090 & Réseau interne monitoring \\
+    \bottomrule
+\end{tabularx}
+
+\subsection{Glossaire}
+
+\begin{description}
+    \item[Audit-trail] Trace immuable de toutes les actions métier (table \texttt{audit\_log}).
+    \item[CAMT.053] Standard ISO 20022 d'extrait de compte bancaire suisse.
+    \item[Company] Entité comptable (PME, association) dans Kesh ; isolation multi-tenant par \texttt{company\_id}.
+    \item[Fiscal year] Exercice comptable, généralement annuel (1\textsuperscript{er} janvier -- 31 décembre par défaut).
+    \item[IDOR] Insecure Direct Object Reference, classe d'attaque évitée via le scoping \texttt{company\_id}.
+    \item[Journal entry] Écriture comptable en partie double.
+    \item[OLICo] Ordonnance sur la tenue et la conservation des livres de comptes (RS 221.431).
+    \item[pain.001] Standard ISO 20022 d'ordre de paiement (Customer Credit Transfer Initiation).
+    \item[QES] Qualified Electronic Signature (LSCSE Art. 2 let. e).
+    \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX).
+    \item[RBAC] Role-Based Access Control.
+    \item[Refresh token] Token longue durée pour renouveler un access token JWT.
+    \item[Tenant] Synonyme de \emph{company} dans un contexte multi-tenant.
+\end{description}
+
+\subsection{Liens externes}
+
+\begin{itemize}
+    \item \href{\keshWebsite}{Dépôt GitHub Kesh}
+    \item \href{https://www.fedlex.admin.ch/eli/cc/27/317_321_377/fr}{Code des obligations RS 220}
+    \item \href{https://www.fedlex.admin.ch/eli/cc/2002/216/fr}{Ordonnance OLICo RS 221.431}
+    \item \href{https://www.fedlex.admin.ch/eli/cc/2016/752/fr}{Loi LSCSE RS 943.03}
+    \item \href{https://www.kmu.admin.ch/kmu/fr/home/savoir-pratique/finances/comptabilite-et-revision.html}{Guide PME comptabilité (SECO)}
+    \item \href{https://www.six-group.com/en/products-services/banking-services/standardization/qr-bill.html}{QR Bill SIX}
+    \item \href{https://www.iso.org/standard/55119.html}{ISO 20022 (CAMT.053, pain.001)}
+\end{itemize}
+
+\subsection{Support et communauté}
+
+\begin{itemize}
+    \item Issues GitHub : \keshpath{https://github.com/guycorbaz/kesh/issues}
+    \item Discussions : \keshpath{https://github.com/guycorbaz/kesh/discussions}
+    \item Documentation technique : \keshpath{https://github.com/guycorbaz/kesh/tree/main/docs}
+\end{itemize}
+
+\clearpage
+
+\keshversionnote
+
+\end{document}
