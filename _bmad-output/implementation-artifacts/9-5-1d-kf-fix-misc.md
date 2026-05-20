@@ -20,7 +20,7 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
 - **Tests à implémenter** : 3 vrais tests Playwright remplaçant le `test.skip(true, ...)` ligne 121 :
   1. **`FISCAL_YEAR_INVALID`** via flow `validate_invoice` avec date facture **hors** plage `with-company` fiscal_year seedé (2020-2030 → utiliser `1900-01-01`). Helper instrumenté `frontend/src/routes/(app)/invoices/[id]/+page.svelte:94-96` via `notifyMissingFiscalYearOrFallback`. Vérifier toast rendu + clic « Ouvrir Paramètres » → `/settings/fiscal-years`.
   2. **`NO_FISCAL_YEAR`** via flow `JournalEntryForm` avec preset `with-company-no-fy` (preset existant `crates/kesh-api/src/routes/test_endpoints.rs:20`). Helper instrumenté `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte:140-141`. Vérifier toast « Créez d'abord un exercice » + clic → `/settings/fiscal-years`.
-  3. **`FISCAL_YEAR_CLOSED`** via flow `validate_invoice` après clôture du fiscal_year `with-company` seedé (2020-2030) puis tentative validation facture avec date dans la plage clôturée. Vérifier toast distinct « L'exercice qui couvre cette date est clôturé… » (différent du message NO_FISCAL_YEAR).
+  3. **`FISCAL_YEAR_CLOSED`** via flow `JournalEntryForm` (PAS `validate_invoice` — vérifié ground-truth : `validate_invoice` utilise `find_open_covering_date` qui produit `FiscalYearInvalid` pour un FY clos, le code `FiscalYearClosed` n'est levé que par `journal_entries::create/update` lignes 109/598/836). Setup : clôturer le fiscal_year `with-company` seedé (2020-2030) via API, puis soumettre une écriture via `JournalEntryForm` avec date in-range (e.g. `2025-06-15`). Vérifier toast distinct « L'exercice qui couvre cette date est clôturé… » (différent du message NO_FISCAL_YEAR).
 
 - **0 modification source applicative** (helper `notifyMissingFiscalYearOrFallback` `frontend/src/lib/shared/utils/notify.ts:98-123` déjà implémenté + 2 call sites instrumentés depuis Story 3-7).
 
@@ -33,8 +33,12 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
   - **Assertion mise à jour** : asserter **`409 OPTIMISTIC_LOCK_CONFLICT`** (comportement post-#49 fix `ebdea4b`). NON plus `200 + stale snapshot` qui était le comportement v0.1 obsolète documenté dans la spec originale KF #50.
   - **Documenter** dans le code (commentaire inline ou doc rust ///) que le test sert de **régression detector** pour la migration `SELECT FOR UPDATE` (#49 closed) — si le `FOR UPDATE` était accidentellement retiré, le test reviendrait à `200 stale` (failed assert 409) → red signal.
 
+- **Changement d'entité critique** : le test courant `no_op_with_parallel_mutation_returns_409_when_sequential` (`kf004_no_op_e2e.rs:707-792`) opère sur `/api/v1/contacts` (lignes 720, 743, 769). Le refactor **doit changer l'entité de `contacts` à `invoices`** pour cibler le `SELECT FOR UPDATE` de la migration #49 (l'entité `contacts` ne dispose PAS de `FOR UPDATE`, c'est spécifique à `invoices::update` `kesh-db/src/repositories/invoices.rs:674`). Pattern de setup invoice à réutiliser : voir `put_invoice_no_op_returns_200_unchanged_version` (`kf004_no_op_e2e.rs:345`) qui montre le setup complet (`create_seeded_company` fournit déjà un fiscal_year + 2 users `alice`/`bob` ; il reste à POST `/api/v1/contacts` puis POST `/api/v1/invoices` avec lignes).
+
+- **Pattern référence `tokio::join!`** — **vérifié ground-truth Pass 1 : ZÉRO invocation `tokio::join!` dans `kf004_no_op_e2e.rs`**. Les 2 mentions du fichier (lignes 689 + 789) sont en **commentaires** uniquement, pas en code exécutable. Conclusion : le pattern concurrent doit être **créé depuis zéro** dans cette story, pas adapté d'un existant. La fonction `concurrent_no_op_returns_200_200_not_200_409` (ligne 488) — malgré son nom — est **séquentielle** (2 PUT contacts consécutifs sans `tokio::join!`). Source de référence pour le setup invoice : `put_invoice_no_op_returns_200_unchanged_version` (ligne 345).
+
 - **Approche concurrence à privilégier** (à arbitrer T5) :
-  - **Approche 1 (recommandée)** : `tokio::join!` sur 2 closures async, chacune obtenant son `pool.acquire()` distinct. La concurrence MySQL via 2 connections séparées est suffisante pour exercer la fenêtre — pas besoin de 2 pools complètement séparés.
+  - **Approche 1 (recommandée)** : `tokio::join!` sur 2 closures async, chacune utilisant le même `pool` partagé (les connections sont acquises automatiquement par les helpers `app.client.put(...)` via `reqwest::Client` qui partage le pool HTTP — la concurrence DB se produit côté `kesh-db/repositories/invoices.rs` via `pool.acquire()` interne à `update()`). 1 pool partagé suffit ; les 2 tx parallèles se sérialisent au niveau du `SELECT FOR UPDATE` X-lock.
   - **Approche 2 (fallback)** : 2 `MySqlPool::connect` distincts pointant sur la même DB. Plus lourd setup mais isolation complète.
   - **Approche 3 (dégradé)** : stress test en boucle N=100 itérations qui valide *présence* d'au moins 1 cas `409 OPTIMISTIC_LOCK_CONFLICT` (cf. issue #50 description). Last-resort si Approches 1+2 sont non-déterministes en CI.
 
@@ -75,6 +79,7 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
 
 4. **Given** le test 2 `NO_FISCAL_YEAR` implémenté, **When** il est exécuté, **Then** il satisfait :
    - **Setup** : `seedTestState('with-company-no-fy')` (preset existant `test_endpoints.rs:20` — company sans fiscal_year). **Override beforeEach** pour ce test spécifique (le default `with-company` ne convient pas — le test a son propre `seedTestState` au début).
+   - **Re-login obligatoire** : `seedTestState` truncate + re-seed la DB ⇒ invalide les sessions JWT/localStorage existantes du `beforeEach`. Après l'override seed, appeler `login(page)` (ou `goToFiscalYears(page)` qui inclut le login) pour ré-authentifier avec les credentials du nouveau seed `admin/admin` avant toute navigation. Sans ce re-login, les requêtes `/api/v1/journal-entries` redirigeraient vers `/login` (cascade 401) et le toast ne serait jamais déclenché.
    - **Action 1** : naviguer vers `/journal-entries` via `page.goto(...)`.
    - **Action 2** : cliquer le bouton « Nouvelle écriture » ou équivalent ouvrant `JournalEntryForm` (sélecteur à confirmer ground-truth `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`).
    - **Action 3** : remplir le minimum requis pour soumission (date, montant, comptes), puis cliquer « Enregistrer ».
@@ -82,8 +87,9 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
    - **Assertion 2** : clic action button → navigation `/settings/fiscal-years`.
 
 5. **Given** le test 3 `FISCAL_YEAR_CLOSED` implémenté, **When** il est exécuté, **Then** il satisfait :
-   - **Setup spécifique** : `seedTestState('with-company')` puis appel API direct pour clôturer le fiscal_year `2020-2030` seedé. Approche A : `await page.request.post('/api/v1/fiscal-years/{id}/close', { headers: { Authorization: 'Bearer ...' } })`. Approche B : naviguer vers `/settings/fiscal-years`, cliquer bouton « Clôturer » sur le fiscal_year affiché. Privilégier Approche A (plus rapide + déterministe — pas de scrape UI).
-   - **Action** : créer + valider une facture avec date `2025-06-15` (date in-range mais l'exercice est maintenant clos).
+   - **Routage critique** — le code racine `FISCAL_YEAR_CLOSED` est levé **uniquement** par `journal_entries::create` (ligne 109 `journal_entries.rs`) et `journal_entries::update` (lignes 598 + 836). Le flow `validate_invoice` utilise `find_open_covering_date` (`invoices.rs:970`) qui ne retourne que les FY ouverts → un FY clos donne `FiscalYearInvalid` (PAS `FiscalYearClosed`). **Test 3 doit donc passer par `JournalEntryForm`**, pas `validate_invoice`.
+   - **Setup spécifique** : `seedTestState('with-company')` puis appel API direct pour clôturer le fiscal_year `2020-2030` seedé. Approche A : `await page.request.post('/api/v1/fiscal-years/{id}/close', { headers: { Authorization: 'Bearer ...' } })` (à vérifier ground-truth la signature exacte — T4.4 inclut step lecture `crates/kesh-api/src/routes/fiscal_years.rs`). Approche B : naviguer vers `/settings/fiscal-years`, cliquer bouton « Clôturer » sur le fiscal_year affiché. Privilégier Approche A (plus rapide + déterministe — pas de scrape UI).
+   - **Action** : naviguer `/journal-entries`, ouvrir `JournalEntryForm`, remplir minimum + date `2025-06-15` (in-range FY 2020-2030 mais l'exercice est clos), soumettre. Le backend `journal_entries::create` ligne 109 retourne `DbError::FiscalYearClosed` → HTTP error code `FISCAL_YEAR_CLOSED` → helper `notifyMissingFiscalYearOrFallback` détecte `FY_CLOSED_CODE` → toast distinct.
    - **Assertion 1** : toast distinct avec message i18n `error-fiscal-year-closed-for-date` (« L'exercice qui couvre cette date est clôturé. Vérifiez la date saisie ou consultez vos exercices. »). Pattern selector : `await expect(page.getByRole('alert').filter({ hasText: /clôturé/ })).toBeVisible()`.
    - **Assertion 2** : message **différent** du test 2 (NO_FISCAL_YEAR) — vérifier que le toast ne contient PAS « Créez d'abord » : `await expect(page.getByRole('alert').filter({ hasText: /Créez d'abord/ })).toHaveCount(0)`.
    - **Assertion 3** : clic action button → navigation `/settings/fiscal-years` (même behavior que tests 1 et 2 — le helper unifie l'action).
@@ -96,7 +102,7 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
 
 8. **Given** le test existant `no_op_with_parallel_mutation_returns_409_when_sequential` (`crates/kesh-api/tests/kf004_no_op_e2e.rs:707`), **When** le refactor est appliqué, **Then** :
    - **Renommage** : `no_op_with_parallel_mutation_returns_409_when_sequential` → `no_op_with_parallel_mutation_returns_409_under_concurrency`.
-   - **Comportement** : ajouter `tokio::join!` sur 2 closures qui exécutent (a) tx1 modification non-no-op via PUT `/api/v1/invoices/{id}` avec changement réel (e.g. modifier `total_amount`), (b) tx2 PUT no-op (payload identique au snapshot v=N initial). Les 2 tx s'exécutent en parallèle via pool partagé `pool.acquire()` × 2 ou 2 pools distincts.
+   - **Comportement** : ajouter `tokio::join!` sur 2 closures qui exécutent (a) tx1 modification non-no-op via PUT `/api/v1/invoices/{id}` avec changement réel sur les `lines[]` (e.g. modifier `description` ou `unit_price` d'une ligne existante — **NE PAS** modifier `total_amount` qui est server-computed à partir des lignes et n'existe pas dans `UpdateInvoiceRequest` `crates/kesh-api/src/routes/invoices.rs:86` qui contient uniquement `{ contact_id, date, due_date, payment_terms, lines, version }`), (b) tx2 PUT no-op (payload identique au snapshot v=N initial). Les 2 tx s'exécutent en parallèle via pool partagé.
    - **Pré-condition** : créer une facture initiale v=N via PUT créé séquentiel (avec contact + items minimaux) avant le `tokio::join!`. Les 2 tx parallèles ciblent la même facture.
    - **Assertion mise à jour** : asserter que **au moins l'un** des 2 retours est `409 OPTIMISTIC_LOCK_CONFLICT` (le perdant de la race). L'autre retourne `200 OK` (le gagnant). Pattern :
      ```rust
@@ -168,19 +174,19 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
 - [ ] **T4** Phase A — Implémentation 3 tests Playwright AC #22 (AC: #3, #4, #5, #6, #7)
   - [ ] T4.1 Lire `frontend/src/lib/shared/utils/notify.ts:98-123` pour comprendre exactement les messages i18n et le label action du toast. Lire `frontend/src/routes/(app)/invoices/[id]/+page.svelte:83-130` pour comprendre le flow `validateInvoice` + integration `notifyMissingFiscalYearOrFallback`. Lire `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte:140-145` pour comprendre le flow `JournalEntryForm` + intégration helper.
   - [ ] T4.2 **Test 1 `FISCAL_YEAR_INVALID`** : créer test via flow `validateInvoice` end-to-end (POST `/api/v1/invoices` avec `issueDate: '1900-01-01'` → naviguer `/invoices/<id>` → clic « Valider »). Vérifier toast `role="alert"` avec message « Créez d'abord un exercice » + clic action → `/settings/fiscal-years`. Sélecteurs à adapter selon le DOM réel.
-  - [ ] T4.3 **Test 2 `NO_FISCAL_YEAR`** : override `seedTestState('with-company-no-fy')` au début du test (le default beforeEach utilise `with-company`). Flow JournalEntryForm — naviguer `/journal-entries`, ouvrir form, remplir minimum, soumettre. Vérifier toast distinct + clic action.
-  - [ ] T4.4 **Test 3 `FISCAL_YEAR_CLOSED`** : preset `with-company`, puis appel API direct pour clôturer fiscal_year via `page.request.post('/api/v1/fiscal-years/{id}/close', ...)` ou `page.request.patch(...)` selon l'API réelle (à vérifier). Puis flow validateInvoice avec date in-range (e.g. `2025-06-15`). Vérifier toast distinct « clôturé » (≠ test 2 « Créez d'abord »).
+  - [ ] T4.3 **Test 2 `NO_FISCAL_YEAR`** : override `seedTestState('with-company-no-fy')` au début du test (le default beforeEach utilise `with-company`). **Re-login obligatoire après l'override seed** : appeler `login(page)` (helper projet) pour ré-authentifier — sans ça, les requêtes API tombent en cascade 401 et le toast n'est jamais déclenché (le re-seed truncate les sessions). Flow JournalEntryForm — naviguer `/journal-entries`, ouvrir form, remplir minimum, soumettre. Vérifier toast distinct + clic action.
+  - [ ] T4.4 **Test 3 `FISCAL_YEAR_CLOSED`** : preset `with-company`, puis appel API direct pour clôturer fiscal_year — **vérifier l'endpoint exact dans `crates/kesh-api/src/routes/fiscal_years.rs` avant** (probablement `POST /api/v1/fiscal-years/{id}/close` ou `PATCH` selon convention projet). **Routage critique** : `FISCAL_YEAR_CLOSED` n'est PAS levé par `validate_invoice` (qui retourne `FISCAL_YEAR_INVALID` via `find_open_covering_date` `invoices.rs:970`). `FISCAL_YEAR_CLOSED` est levé **uniquement** par `journal_entries::create` (`journal_entries.rs:109`) + `journal_entries::update` (`journal_entries.rs:598` + `:836`). **Test 3 doit donc utiliser le flow `JournalEntryForm`**, pas `validateInvoice`. Soumettre une écriture avec date in-range (e.g. `2025-06-15`) après clôture du FY. Vérifier toast distinct « clôturé » (≠ test 2 « Créez d'abord »).
   - [ ] T4.5 Retirer le `test.skip(true, ...)` ligne 121 et le bloc commentaire qui le précède (lignes 94-99 — l'explication Pass 1 F7 n'est plus pertinente une fois les vrais tests implémentés). Préserver le `test.describe('AC #22 — fallback toast actionnable')` + restructurer le bloc avec les 3 sous-tests.
   - [ ] T4.6 `npm run check` : 0 errors Svelte (25 warnings pré-existants acceptables — pas de nouveau warning sur le test modifié).
   - [ ] T4.7 Run isolé chaque test : `npx playwright test fiscal-years.spec.ts:<line> --reporter=list` pour chacun (vérification isolation).
   - [ ] T4.8 Run groupé : `npx playwright test fiscal-years.spec.ts --reporter=list` — confirmer 3 tests AC #22 pass + tests existants pass (affichage + création/clôture).
 
 - [ ] **T5** Phase B — Refactor test concurrent KF #50 (AC: #8, #9, #10, #11)
-  - [ ] T5.1 Lire `crates/kesh-api/tests/kf004_no_op_e2e.rs:706-792` (fonction `no_op_with_parallel_mutation_returns_409_when_sequential`) pour comprendre le setup actuel (création company + 2 users + invoice initiale + mode séquentiel current).
-  - [ ] T5.2 Lire `crates/kesh-api/tests/kf004_no_op_e2e.rs:487-577` (fonction `concurrent_no_op_returns_200_200_not_200_409`) — cette fonction existante utilise probablement déjà `tokio::join!` pour le concurrent no-op + no-op. C'est le pattern de référence à réutiliser/adapter pour le test no-op + mutation. **Pré-vérification ground-truth** : `grep -nA5 "tokio::join\|tokio::spawn" crates/kesh-api/tests/kf004_no_op_e2e.rs` pour confirmer le pattern projet.
-  - [ ] T5.3 Choisir l'**approche concurrence** parmi Scope §"Approche concurrence à privilégier" (privilégier Approche 1 : `tokio::join!` sur 2 closures async avec `pool.clone()` — les `MySqlPool` SQLx supportent connection-per-task naturellement).
-  - [ ] T5.4 **Renommer** la fonction : `no_op_with_parallel_mutation_returns_409_when_sequential` → `no_op_with_parallel_mutation_returns_409_under_concurrency`. Mettre à jour tout commentaire/doc associé.
-  - [ ] T5.5 **Réécrire le corps** : remplacer la séquence tx1 → tx2 séquentielle par `let (resp_a, resp_b) = tokio::join!(tx_a, tx_b)` où `tx_a` modifie réellement la facture (e.g. `total_amount` changé) et `tx_b` envoie un no-op (payload identique au snapshot v=N initial). Asserter `statuses.contains(&CONFLICT) && statuses.contains(&OK)`.
+  - [ ] T5.1 Lire `crates/kesh-api/tests/kf004_no_op_e2e.rs:707-792` (fonction `no_op_with_parallel_mutation_returns_409_when_sequential`) pour comprendre le setup actuel — **important** : la fonction utilise `/api/v1/contacts` (lignes 720, 743, 769), pas `/api/v1/invoices`. Le refactor doit **changer l'entité** à `invoices` (cf. Scope §"Changement d'entité critique").
+  - [ ] T5.2 Lire `crates/kesh-api/tests/kf004_no_op_e2e.rs:345-485` (fonction `put_invoice_no_op_returns_200_unchanged_version`) — c'est le **vrai** pattern de référence pour le setup invoice (POST `/api/v1/contacts` puis POST `/api/v1/invoices` avec `lines`). La fonction `concurrent_no_op_returns_200_200_not_200_409` (ligne 488) est **séquentielle** malgré son nom (2 PUT consécutifs sans `tokio::join!`) — vérifié ground-truth : `grep -nF "tokio::join" kf004_no_op_e2e.rs` retourne uniquement 2 mentions en commentaires (lignes 689, 789), aucune invocation. **Conclusion** : le pattern `tokio::join!` doit être **créé depuis zéro** dans cette story.
+  - [ ] T5.3 Choisir l'**approche concurrence** parmi Scope §"Approche concurrence à privilégier" (privilégier Approche 1 : `tokio::join!` sur 2 closures async — le `pool` partagé suffit, les helpers `app.client.put(...)` via `reqwest::Client` gèrent la concurrence HTTP, et `kesh-db/repositories/invoices.rs::update()` gère sa propre `pool.acquire()` interne).
+  - [ ] T5.4 **Renommer** la fonction : `no_op_with_parallel_mutation_returns_409_when_sequential` → `no_op_with_parallel_mutation_returns_409_under_concurrency`. Mettre à jour tout commentaire/doc associé (incluant le module doc-comment ligne 13-19 qui réfère au test séquentiel).
+  - [ ] T5.5 **Réécrire le corps complet** : (a) setup — `create_seeded_company` (déjà fait, fournit `company_id` + fiscal_year), puis créer 2 users alice/bob (déjà fait), POST `/api/v1/contacts` (1 contact pour la facture), POST `/api/v1/invoices` (1 facture initiale v=N avec 1 ou 2 lignes via `CreateInvoiceLineRequest` — voir `put_invoice_no_op_returns_200_unchanged_version:345` pour le pattern exact JSON) ; (b) concurrent — `let (resp_a, resp_b) = tokio::join!(tx_a, tx_b)` où `tx_a` modifie réellement la facture (e.g. changer `description` ou `unit_price` d'une ligne dans `lines[]` — **pas** `total_amount` qui est server-computed et n'existe pas dans `UpdateInvoiceRequest` `routes/invoices.rs:86`) et `tx_b` envoie un no-op (payload identique au snapshot v=N initial). Asserter `statuses.contains(&CONFLICT) && statuses.contains(&OK)`.
   - [ ] T5.6 **Doc commentaire** : ajouter `/// KF-021 (closes #50) regression detector for KF-020 SELECT FOR UPDATE (closes #49)` en tête de la fonction. Préserver les comments T0-T6 existants si pertinents (adapter pour décrire la nouvelle race window post-#49).
   - [ ] T5.7 **Verif déterminisme** : exécuter le test 5 fois localement (`for i in 1 2 3 4 5; do cargo test ... no_op_with_parallel_mutation_returns_409_under_concurrency; done`). Si tous 5 pass → déterministe ≥ 99%, OK. Si < 5/5 pass → basculer sur Approche 3 (stress loop) — modifier le test pour boucler N=100 itérations et asserter `count(409) >= 1`. Documenter le choix final dans le commentaire.
   - [ ] T5.8 `cargo clippy --workspace --all-targets -- -D warnings` : 0 warning (les nouveaux unused imports `tokio::join` ou similaire doivent être proprement gérés).
@@ -252,7 +258,7 @@ export function notifyMissingFiscalYearOrFallback(err: ApiError): boolean {
 
 **Migration #49 closed** par commit `ebdea4b` `fix(db): KF-020 SELECT FOR UPDATE in invoices::update (closes #49) (#64)`. Le code actuel `crates/kesh-db/src/repositories/invoices.rs:674` utilise `&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE")` au début de `update()`. La race T0-T6 documentée issue #49 n'est plus reproductible — `200 stale` est devenu `409 OPTIMISTIC_LOCK_CONFLICT`.
 
-**Pattern référence concurrent** : la fonction `concurrent_no_op_returns_200_200_not_200_409` ligne 488 existante utilise déjà du `tokio::join` ou pattern similaire pour le concurrent no-op + no-op. **À vérifier en T5.2 ground-truth** par lecture directe — c'est le pattern à adapter pour le concurrent no-op + mutation réelle.
+**Pattern référence concurrent** : **vérifié ground-truth Pass 1 validate** — `grep -nF "tokio::join" crates/kesh-api/tests/kf004_no_op_e2e.rs` retourne 2 mentions UNIQUEMENT en commentaires (lignes 689 + 789), AUCUNE invocation exécutable. La fonction `concurrent_no_op_returns_200_200_not_200_409` (ligne 488) — malgré son nom — est **séquentielle** (2 PUT contacts consécutifs sans `tokio::join!`). **Conclusion** : aucun pattern `tokio::join!` existant à réutiliser. Le pattern doit être créé depuis zéro. **Vrai source de référence pour setup invoice** : `put_invoice_no_op_returns_200_unchanged_version` (ligne 345) — montre POST contact + POST invoice + PUT invoice no-op.
 
 ### Pattern bits-ui + svelte-sonner toast assertion E2E
 
@@ -360,3 +366,55 @@ La spec originale KF #50 (issue #50) demandait d'asserter `200 + stale`. Cette s
 ### File List
 
 ## Change Log
+
+### Pass 1 spec validate — 2026-05-20, Sonnet 4.6 (subagent contexte frais)
+
+**Verdict trend brut** : 1 CRITICAL + 2 HIGH + 2 MEDIUM + 2 LOW = 7 findings (Convergence : NON).
+
+**Discipline grep ground-truth Sonnet** : 5/5 patches majeurs grep-vérifiés par le reviewer + cross-checked par l'orchestrateur (chaque CRITICAL/HIGH/MEDIUM vérifié par `grep -nF` ou `Read` direct des fichiers cités).
+
+**Patches appliqués (5/7 — 2 LOW dismissed)** :
+
+1. **CRITICAL — Test 3 `FISCAL_YEAR_CLOSED` routage incorrect** : `validate_invoice` utilise `find_open_covering_date` (`invoices.rs:970`) qui retourne `FiscalYearInvalid` (PAS `FiscalYearClosed`) pour un FY clos. `FiscalYearClosed` est levé uniquement par `journal_entries::create` (`journal_entries.rs:109`) + `journal_entries::update` (`journal_entries.rs:598 + :836`). **Patch** : AC #5 + T4.4 + Scope §"KF #47" reroutés sur flow `JournalEntryForm` (journal_entries::create) avec submit écriture comptable après clôture FY. Le toast distinct « clôturé » devient testable. Justification ground-truth : `grep -n "FiscalYearClosed" crates/kesh-db/src/repositories/*.rs` → 5 hits dans journal_entries.rs uniquement, 0 dans invoices.rs.
+
+2. **HIGH-01 — Pattern référence `tokio::join!` inexistant dans `kf004_no_op_e2e.rs`** : la spec affirmait que `concurrent_no_op_returns_200_200_not_200_409` (ligne 488) utilisait `tokio::join!` comme pattern référence. Ground-truth : `grep -nF "tokio::join" crates/kesh-api/tests/kf004_no_op_e2e.rs` → 2 mentions uniquement en commentaires (lignes 689, 789), 0 invocation exécutable. La fonction référencée est séquentielle (2 PUT consécutifs). **Patch** : Scope §"Pattern référence" + Dev Notes §"Context KF #50" + T5.2 mis à jour pour clarifier : (a) aucun pattern `tokio::join!` existant à réutiliser, le pattern doit être créé from scratch ; (b) vrai source de référence pour setup invoice = `put_invoice_no_op_returns_200_unchanged_version` (`kf004_no_op_e2e.rs:345`).
+
+3. **HIGH-02 — KF #50 entity switch `contacts` → `invoices` non explicite** : le test courant (`no_op_with_parallel_mutation_returns_409_when_sequential`) utilise `/api/v1/contacts` (`kf004_no_op_e2e.rs:720, 743, 769`), mais le SELECT FOR UPDATE (#49) est appliqué uniquement à `invoices::update`. Le refactor doit changer l'entité de contacts à invoices, ce qui implique réécriture complète du setup (POST contact + POST invoice avec lignes). **Patch** : Scope §"Refactor approche" + T5.5 mis à jour pour expliciter le changement d'entité + référence `put_invoice_no_op_returns_200_unchanged_version:345` pour le setup pattern.
+
+4. **MEDIUM-01 — `total_amount` non settable via `UpdateInvoiceRequest`** : la spec disait « modifier `total_amount` » comme mutation réelle. Ground-truth : `crates/kesh-api/src/routes/invoices.rs:86-95` montre `UpdateInvoiceRequest { contact_id, date, due_date, payment_terms, lines, version }` — pas de `total_amount` (computed server-side from `lines`). **Patch** : AC #8 + T5.5 remplacés « modifier `total_amount` » par « changer `description` ou `unit_price` d'une ligne dans `lines[]` ».
+
+5. **MEDIUM-02 — Test 2 NO_FISCAL_YEAR re-login après seed override** : la spec instruisait `seedTestState('with-company-no-fy')` mid-test mais n'incluait pas l'étape `login(page)` requise après le truncate + re-seed (invalide les sessions JWT). Sans re-login, cascade 401 et le toast NO_FISCAL_YEAR n'est jamais déclenché. **Patch** : AC #4 + T4.3 ajoutent l'étape `login(page)` obligatoire après l'override seed avec justification cascade 401.
+
+**Findings dismissed (2 LOW)** :
+
+- **LOW-01 — Dev Notes inline code block compacté** : observation cosmétique sur le compactage du `notifyMissingFiscalYearOrFallback` dans la section Dev Notes (les lignes `i18nMsg(...)` multi-lignes sont compactées). Pas d'impact implémentation. **Dismiss**.
+- **LOW-02 — Sprint-status progression `5/7 → 6/7` à vérifier** : observation que l'implémenteur doit confirmer le compteur réel au démarrage de la story (cohérent rapide). Pas un défaut de spec — vérification routine T1. **Dismiss**.
+
+**Cross-verification orchestrateur ground-truth** (avant application patches) :
+
+```
+grep -n "find_open_covering_date" crates/kesh-db/src/repositories/invoices.rs
+→ 906:/// 2. fiscal_years::find_open_covering_date
+→ 970:        let fy = fiscal_years::find_open_covering_date(...)
+
+grep -n "FiscalYearClosed" crates/kesh-db/src/repositories/journal_entries.rs
+→ 109, 514, 598, 798, 836, 1180, 1181, 1997 (8 hits dans journal_entries.rs)
+grep -n "FiscalYearClosed" crates/kesh-db/src/repositories/invoices.rs
+→ 0 hit dans invoices.rs ✓ (confirme CRITICAL Sonnet)
+
+grep -F "tokio::join" crates/kesh-api/tests/kf004_no_op_e2e.rs
+→ 689:/// concurrente (`tokio::join!` ou ...)   ← commentaire
+→ 789:        "exécution séquentielle ... (... tokio::join concurrent ...)   ← commentaire
+0 invocation exécutable ✓ (confirme HIGH-01 Sonnet)
+
+sed -n '707,792p' crates/kesh-api/tests/kf004_no_op_e2e.rs | grep "api/v1/"
+→ 3 occurrences "api/v1/contacts" lignes 720, 743, 769 ✓ (confirme HIGH-02 Sonnet)
+
+cat crates/kesh-api/src/routes/invoices.rs lignes 86-95
+→ struct UpdateInvoiceRequest { contact_id, date, due_date, payment_terms, lines, version }
+0 champ total_amount ✓ (confirme MEDIUM-01 Sonnet)
+```
+
+**Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`). Vérifier propagation patches Pass 1 + chercher inconsistances résiduelles AC↔T mapping post-patches CRITICAL.
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
