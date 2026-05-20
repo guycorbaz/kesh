@@ -251,10 +251,12 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 - **T5 (OLICo + ECH-0058)** : 30 min.
 - **T6 (LSCSE)** : 20-40 min.
 - **T7 (État + Gap)** : 30-60 min (synthèse cross-référencée — phase critique).
-- **T8 (Verdict + Recommandations)** : 20-40 min + checkpoint Guy.
-- **T9 (cross-stories updates)** : 15-30 min selon verdict.
+- **T8 (Verdict + Recommandations + checkpoint Guy)** :
+  - T8.1-T8.3 : 20-40 min (synthèse + recommandations + checkpoint élicitation).
+  - **T8.4 (conditionnel si verdict (a))** : 20-40 min revue adversariale `bmad-review-adversarial-general` (skip si verdict (b) ou (c)). Patch Pass 2 spec validate P2-1.
+- **T9 (cross-stories updates)** : 15-30 min selon verdict (incluant T9.0 création labels GitHub si verdict (b), ~5 min).
 - **T10 (commit + sprint-status)** : 10 min.
-- **Total** : ~3-5h, **research subagent parallélisable T3+T4+T5 pour économiser ~1h**.
+- **Total** : **~3-5h si verdict (b/c) confirmé direct** ; **~3.5-5.5h si verdict (a)** (avec revue adversariale T8.4). `research subagent parallélisable T3+T4+T5 pour économiser ~1h`. Patch Pass 2 P2-1 : effort post-T8.4 ajout explicité.
 
 ### References
 
@@ -328,3 +330,47 @@ grep "| L6 " 9-2b-export-global-zip.md
 **Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`). Vérifier propagation patches Pass 1 + chercher inconsistances résiduelles AC↔T mapping post-patches (notamment AC #6 ↔ T8.3 + T8.4 nouveau).
 
 **Modèle Pass 1** : Sonnet 4.6 (subagent isolé contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
+
+### Pass 2 spec validate — 2026-05-20, Haiku 4.5 (subagent contexte frais)
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 1 LOW = 1 finding (Convergence : **OUI** — critère CLAUDE.md « Uniquement findings LOW » atteint).
+
+**Discipline grep ground-truth Haiku** : 6/6 propagations Pass 1 vérifiées via `grep -nF` direct par le reviewer Haiku, **aucune hallucination ni régression** détectée. Ground-truths cross-checked :
+
+```
+grep -nF "9-2a §L7" 9-5-4-swiss-co-research.md
+→ 2 hits (Scope + T9.2) ✓ (confirme propagation P1-1)
+
+grep -nF "9-2a §L6" 9-5-4-swiss-co-research.md
+→ 1 hit (explication explicite « PAS §L6 = PDF pagination cosmétique » dans T9.2) ✓ (référence correcte, pas régression)
+
+grep -nF "gh label create" 9-5-4-swiss-co-research.md
+→ 2 hits T9.0 (v0.2-milestone + legal-compliance) ✓ (confirme propagation P1-2)
+
+grep -nF "OBLIGATOIRE" 9-5-4-swiss-co-research.md
+→ 2 hits (T8.3 task + Change Log entry) ✓ (confirme propagation P1-3)
+
+grep -nF "T8.4" 9-5-4-swiss-co-research.md
+→ 4 hits (AC #6 + T8.4 task def + Change Log + recommandations) ✓ (confirme propagation P1-4)
+
+grep -nF "eitsa" 9-5-4-swiss-co-research.md
+→ 1 hit (Change Log P1-5 documentation patch) ; 0 hit en tant que source AC #1 ✓ (confirme propagation P1-5)
+
+AC #9 ligne 97 : « 4/4 stories niveau 1 satisfait » + « 8 entrées sprint-status (sub-stories) »
+✓ (confirme propagation P1-6)
+```
+
+**Patch appliqué (1 LOW polish)** :
+
+1. **LOW-P2-1 — Effort estimation post-T8.4 ajout** : §"Estimation effort" Dev Notes ne reflétait pas le coût additionnel `+20-40 min` de T8.4 (revue adversariale conditionnelle si verdict (a)). Le total `~3-5h` ne distinguait pas le chemin verdict (b/c) du chemin (a) avec T8.4. **Patch** : §"Estimation effort" T8 décomposée (T8.1-T8.3 baseline + T8.4 conditionnel), total reformulé `~3-5h (b/c) | ~3.5-5.5h (a)`, T9 mentionne explicitement T9.0 +5 min création labels.
+
+**Trend cumul cycle 2-passes** :
+- Pass 1 Sonnet 4.6 : 0C+2H+2M+2L = 6 findings → 6 patches (tous ground-truth validés).
+- Pass 2 Haiku 4.5 : 0C+0H+0M+1L = 1 finding → 1 LOW polish → **0 résiduel**.
+- **Total : 7 patches sur 2 passes. Cycle court (Sonnet → Haiku) cohérent 9-5-1d / 9-5-1b spec validate done en 2 passes.**
+
+**Cycle complet `Sonnet → Haiku`** : convergence atteinte sans nécessité Opus Pass 3 (scope research-only, pas de subtilité architecturale requise). Pattern cohérent retro Epic 9 Insight I1 « Opus catches subtle stuff » qui s'applique aux scopes complexes — pas le cas ici.
+
+**Modèle Pass 2** : Claude Haiku 4.5 (subagent isolé contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Sonnet → Haiku). Discipline grep ground-truth Haiku **0 hallucination** sur ce cycle, **6/6 propagations vérifiées positives**.
+
+**Statut final spec** : `ready-for-dev` confirmé définitif post-Pass 2. Prête pour `bmad-dev-story 9-5-4` (LLM recommandé Opus 4.7 ou Sonnet 4.6 — différent de Pass 2 Haiku, cycle suivant `Sonnet → Haiku → Opus → Sonnet`).
