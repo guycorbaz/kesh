@@ -1,0 +1,617 @@
+%% Brochure marketing Kesh
+%% Version canonique française
+%% À mettre à jour à chaque release Kesh (cf. ../README.md)
+
+\documentclass[a4paper,11pt,oneside]{article}
+
+\usepackage{polyglossia}
+\setdefaultlanguage{french}
+\usepackage{../shared/kesh-style}
+\usepackage{afterpage}
+\usepackage{multicol}
+
+% La brochure utilise des marges plus généreuses pour aérer
+\geometry{
+    a4paper,
+    top=2.2cm,
+    bottom=2.2cm,
+    left=2.0cm,
+    right=2.0cm,
+    headheight=14pt,
+    headsep=0.6cm,
+    footskip=1cm
+}
+
+% Pas de TOC pour la brochure (format court et visuel)
+
+% Pas de header/footer standards pour la brochure (look plus magazine)
+\pagestyle{empty}
+
+\begin{document}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Page de couverture impactante full-bleed
+%%─────────────────────────────────────────────────────────────────────────────
+
+\begin{titlepage}
+    \pagecolor{keshPrimary}\afterpage{\nopagecolor}
+    \color{white}
+
+    \vspace*{1.5cm}
+
+    \begin{center}
+        \begin{tcolorbox}[%
+            enhanced, colback=white, colframe=white,
+            width=5cm, height=5cm,
+            boxsep=0pt, boxrule=0pt, arc=12pt,
+            halign=center, valign=center%
+        ]
+            \textbf{\color{keshPrimary}\fontsize{60pt}{72pt}\selectfont\sffamily Kesh}
+        \end{tcolorbox}
+
+        \vspace{2.5cm}
+
+        % Slogan principal
+        {\sffamily\fontsize{40pt}{48pt}\selectfont\bfseries\color{white} Votre comptabilité\par
+        \vspace{0.3cm}
+        suisse, souveraine\par
+        \vspace{0.3cm}
+        et open-source.\par}
+
+        \vspace{2cm}
+
+        {\sffamily\Large\color{white}%
+        Pour les PME, indépendants et associations\par
+        en quête de simplicité, conformité et liberté.\par}
+
+        \vfill
+
+        \begin{tcolorbox}[%
+            enhanced, colback=white!10!keshPrimary, colframe=white,
+            width=12cm, boxsep=10pt, boxrule=1pt, arc=4pt%
+        ]
+            \begin{center}
+                {\sffamily\large \textbf{Conformité} Code des obligations CH\par
+                \vspace{4pt}
+                \textbf{QR Bill} 2.2 \quad\textbar\quad
+                \textbf{CAMT.053} \quad\textbar\quad
+                \textbf{Multilingue}\par
+                \vspace{4pt}
+                \textbf{Self-hosting} Docker \quad\textbar\quad
+                \textbf{Open-source} EUPL 1.2}
+            \end{center}
+        \end{tcolorbox}
+
+        \vspace{0.5cm}
+
+        {\sffamily\small\color{white}Version \textbf{\keshVersion} \quad\textbar\quad \keshReleaseDate \quad\textbar\quad \keshWebsite}
+    \end{center}
+\end{titlepage}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Pourquoi Kesh — pitch principal
+%%─────────────────────────────────────────────────────────────────────────────
+
+\section*{\color{keshPrimary}Pourquoi Kesh ?}
+
+Vous êtes \textbf{indépendant}, dirigeant de \textbf{PME suisse}, trésorier d'\textbf{association} ou fiduciaire gérant plusieurs dossiers clients ? Vous cherchez un logiciel de comptabilité qui soit à la fois :
+
+\begin{multicols}{2}
+\begin{itemize}
+    \item[\faCheckCircle] Conforme au Code des obligations suisse
+    \item[\faCheckCircle] Compatible QR Bill 2.2
+    \item[\faCheckCircle] Capable d'importer du CAMT.053 ISO 20022
+    \item[\faCheckCircle] Multilingue (FR, DE, IT, EN)
+    \item[\faCheckCircle] Souverain (vos données restent chez vous)
+    \item[\faCheckCircle] Open-source et auditable
+    \item[\faCheckCircle] Sans frais récurrents par utilisateur
+    \item[\faCheckCircle] Self-hostable avec Docker
+\end{itemize}
+\end{multicols}
+
+\textbf{Kesh répond à tous ces critères.} Conçu spécifiquement pour le tissu PME suisse, ce logiciel combine la rigueur exigée par le droit comptable helvétique avec une expérience utilisateur moderne et fluide.
+
+\vspace{0.5cm}
+
+\begin{keshtip}
+\textbf{Notre conviction.} La comptabilité d'une PME ne devrait pas dépendre d'un éditeur de logiciel basé à l'étranger, ni transmettre les données financières sensibles à un cloud propriétaire. Kesh est conçu pour respecter votre souveraineté : code source ouvert, déploiement chez vous, exports standards à tout moment.
+\end{keshtip}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Différenciateurs clés
+%%─────────────────────────────────────────────────────────────────────────────
+
+\clearpage
+
+\section*{\color{keshPrimary}Ce qui distingue Kesh}
+
+\vspace{0.5cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=keshSurfaceAlt, colframe=keshPrimary,
+    boxrule=0pt, leftrule=4pt, arc=4pt,
+    title=\sffamily\bfseries\color{keshPrimary}{\faUniversity\ Conformité réglementaire suisse}
+]
+\sffamily
+Kesh implémente nativement les exigences du \textbf{Code des obligations suisse Art. 957a (tenue de la comptabilité) et Art. 958f (conservation 10 ans)}, ainsi que l'\textbf{Ordonnance OLICo RS 221.431} sur la conservation des livres de comptes.
+
+L'\emph{audit-trail immutable} (insert-only) + le \emph{hash SHA-256} sur tous les exports garantissent l'intégrité légale au sens de l'OLICo Art. 9. Une recherche réglementaire dédiée (605 lignes documentées) accompagne le logiciel.
+\end{tcolorbox}
+
+\vspace{0.3cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=keshSurfaceAlt, colframe=keshSuccess,
+    boxrule=0pt, leftrule=4pt, arc=4pt,
+    title=\sffamily\bfseries\color{keshSuccess}{\faQrcode\ QR Bill 2.2 natif}
+]
+\sffamily
+Génération automatique de PDF de factures conformes au \textbf{standard suisse QR Bill 2.2} (norme SIX 2020+). Compatible avec toutes les applications e-banking suisses : PostFinance, Raiffeisen, UBS, Credit Suisse, Migros Bank, Twint Pro.
+
+Calcul automatique de la \emph{référence structurée} (ISO 11649 ou QRR selon votre IBAN), validation des données par checksum, support QR-IBAN et IBAN standard.
+\end{tcolorbox}
+
+\vspace{0.3cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=keshSurfaceAlt, colframe=keshInfo,
+    boxrule=0pt, leftrule=4pt, arc=4pt,
+    title=\sffamily\bfseries\color{keshInfo}{\faExchangeAlt\ Import bancaire automatisé}
+]
+\sffamily
+Import natif des extraits de compte \textbf{CAMT.053 ISO 20022} (standard suisse officiel) et CSV multi-encodage avec \emph{profils banque réutilisables}. Détection automatique des doublons, gestion du rejet partiel.
+
+Réconciliation \emph{automatique avec scoring} (date, montant, référence, libellé) et \emph{manuelle} pour les cas complexes. Éclatement de transactions agrégées (split). Règles d'affectation automatique pour les écritures récurrentes (loyers, salaires, abonnements).
+\end{tcolorbox}
+
+\vspace{0.3cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=keshSurfaceAlt, colframe=keshWarning,
+    boxrule=0pt, leftrule=4pt, arc=4pt,
+    title=\sffamily\bfseries\color{keshWarning}{\faLanguage\ Multilingue à 100\%}
+]
+\sffamily
+Interface utilisateur entièrement traduite en \textbf{français, allemand, italien et anglais}. Idéal pour les PME couvrant plusieurs régions linguistiques suisses, les entreprises romandes en partenariat avec des fournisseurs alémaniques, ou les fiduciaires multilingues.
+
+Les factures peuvent être émises dans la langue du client (différente de la langue d'interface). Les rapports comptables sont disponibles dans chacune des 4 langues.
+\end{tcolorbox}
+
+\vspace{0.3cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=keshSurfaceAlt, colframe=keshError,
+    boxrule=0pt, leftrule=4pt, arc=4pt,
+    title=\sffamily\bfseries\color{keshError}{\faLock\ Souveraineté des données}
+]
+\sffamily
+Self-hosting via \textbf{Docker Compose} chez vous ou votre fiduciaire. Aucune donnée transmise à un cloud tiers sans votre consentement explicite.
+
+Export ZIP de souveraineté en format ouvert (CSV + PDF + metadata SHA-256) téléchargeable à tout moment. Vous n'êtes \textbf{jamais prisonnier} de Kesh : migration vers un autre logiciel toujours possible.
+\end{tcolorbox}
+
+\vspace{0.3cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=keshSurfaceAlt, colframe=keshPrimaryLight,
+    boxrule=0pt, leftrule=4pt, arc=4pt,
+    title=\sffamily\bfseries\color{keshPrimaryLight}{\faUsers\ Multi-tenant pour fiduciaires}
+]
+\sffamily
+Gérez \textbf{plusieurs sociétés} sur une seule instance Kesh. Isolation stricte des données par \texttt{company\_id} (défense en profondeur contre IDOR), audit-trail cross-company pour les super-administrateurs.
+
+Idéal pour les \textbf{fiduciaires} souhaitant offrir Kesh comme solution à leurs clients tout en gardant une vue d'ensemble sur leur portefeuille de dossiers.
+\end{tcolorbox}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Cas d'usage par profil
+%%─────────────────────────────────────────────────────────────────────────────
+
+\clearpage
+
+\section*{\color{keshPrimary}Pour qui est Kesh ?}
+
+\vspace{0.5cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=white, colframe=keshBorder,
+    boxrule=0.5pt, arc=4pt%
+]
+\sffamily
+
+\textbf{\large\color{keshPrimary}{\faUserTie\ Indépendant ou entreprise individuelle}}
+
+\vspace{0.3cm}
+
+Vous êtes consultant, artisan, freelance, médecin, avocat, architecte ou autre indépendant suisse ? Kesh vous offre une solution comptable complète sans surdimensionnement :
+
+\begin{itemize}
+    \item Comptabilité simplifiée (recettes-dépenses) ou complète selon votre CA.
+    \item Émission de factures QR Bill compatibles avec tous les e-banking.
+    \item Suivi des paiements et relances clients facilités.
+    \item Rapports de fin d'année pour votre fiduciaire ou votre déclaration personnelle.
+\end{itemize}
+
+\end{tcolorbox}
+
+\vspace{0.5cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=white, colframe=keshBorder,
+    boxrule=0.5pt, arc=4pt%
+]
+\sffamily
+
+\textbf{\large\color{keshPrimary}{\faBuilding\ PME suisse (Sàrl, SA, coopérative)}}
+
+\vspace{0.3cm}
+
+Vous dirigez une PME avec 1--50 salariés et un chiffre d'affaires allant jusqu'à plusieurs millions ? Kesh vous accompagne dans :
+
+\begin{itemize}
+    \item Gestion de plan comptable conforme Sterchi PME ou KMU.
+    \item Facturation client en lot avec QR Bill et suivi des échéances.
+    \item Import bancaire et réconciliation en un clic.
+    \item Production des comptes annuels (bilan, P\&L) conformes Art. 959/959a/959b CO.
+    \item Multi-utilisateurs avec RBAC : comptable, opérateur de saisie, dirigeant en lecture seule.
+\end{itemize}
+
+\end{tcolorbox}
+
+\vspace{0.5cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=white, colframe=keshBorder,
+    boxrule=0.5pt, arc=4pt%
+]
+\sffamily
+
+\textbf{\large\color{keshPrimary}{\faHandshake\ Association ou fondation}}
+
+\vspace{0.3cm}
+
+Trésorier d'une association sportive, culturelle, syndicale ou caritative ? Kesh gère parfaitement les structures à but non-lucratif :
+
+\begin{itemize}
+    \item Plan comptable adapté aux associations.
+    \item Suivi des cotisations membres et dons.
+    \item Comptes annuels lisibles pour l'assemblée générale.
+    \item Conservation 10 ans conforme OLICo, même pour les petites associations dispensées d'audit (Art. 83b CC).
+\end{itemize}
+
+\end{tcolorbox}
+
+\vspace{0.5cm}
+
+\begin{tcolorbox}[%
+    enhanced, breakable,
+    colback=white, colframe=keshBorder,
+    boxrule=0.5pt, arc=4pt%
+]
+\sffamily
+
+\textbf{\large\color{keshPrimary}{\faBalanceScale\ Fiduciaire}}
+
+\vspace{0.3cm}
+
+Cabinet fiduciaire ou expert-comptable indépendant ? Kesh vous offre une plateforme moderne pour vos dossiers clients :
+
+\begin{itemize}
+    \item Mode multi-tenant : N companies sur une seule instance.
+    \item Bascule rapide entre dossiers clients via le sélecteur de company.
+    \item Isolation stricte des données (conformité protection des données et secret professionnel).
+    \item Audit-trail centralisé pour la responsabilité fiduciaire.
+    \item Tarification self-hosted : pas de coût par utilisateur ni par dossier.
+\end{itemize}
+
+\end{tcolorbox}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Stack technique
+%%─────────────────────────────────────────────────────────────────────────────
+
+\clearpage
+
+\section*{\color{keshPrimary}Une stack technique moderne et robuste}
+
+\vspace{0.5cm}
+
+Kesh repose sur des technologies éprouvées et modernes, choisies pour leur performance, leur sécurité et leur pérennité :
+
+\vspace{0.5cm}
+
+\begin{tabularx}{\linewidth}{>{\bfseries\color{keshPrimary}}lX}
+    \toprule
+    \keshtableheader{Couche} & \keshtableheader{Technologie} \\
+    \midrule
+    Backend & Rust 1.85+ (édition 2024) avec le framework Axum \\
+    Frontend & SvelteKit 2 + Svelte 5, TypeScript, Tailwind CSS 4 \\
+    Base de données & MariaDB 11.4 (compatibilité MySQL 8) \\
+    Authentification & JWT + refresh tokens avec rotation \\
+    Déploiement & Docker Compose, image officielle Docker Hub \\
+    Internationalisation & Fluent (Mozilla) pour les traductions \\
+    Génération PDF & Bibliothèque Rust native \\
+    Tests & cargo test + Vitest + Playwright (E2E) \\
+    CI/CD & GitHub Actions \\
+    Licence & EUPL 1.2 (compatible GPL) \\
+    \bottomrule
+\end{tabularx}
+
+\vspace{1cm}
+
+\subsection*{\color{keshPrimary}Pourquoi ces choix ?}
+
+\textbf{Rust} apporte la sécurité mémoire et la performance native (10--100× plus rapide que des stacks Node.js ou Python équivalentes). Pas de garbage collector, pas de race conditions silencieuses.
+
+\textbf{Svelte 5} produit une interface réactive et rapide avec un bundle final compact (typiquement 50--150 Ko gzippé pour Kesh). Pas de virtual DOM coûteux comme React.
+
+\textbf{MariaDB} offre une excellente performance pour la majorité des workloads PME, avec des optimisations spécifiques (FULLTEXT, JSON, REPEATABLE READ). Compatibilité MySQL 8 maintenue pour la portabilité.
+
+\textbf{Docker Compose} simplifie le déploiement à un seul fichier \texttt{docker-compose.yml}. Idéal pour le self-hosting chez une PME ou un fiduciaire sans expertise Kubernetes.
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Roadmap visible
+%%─────────────────────────────────────────────────────────────────────────────
+
+\clearpage
+
+\section*{\color{keshPrimary}Feuille de route}
+
+Kesh est en développement actif. Voici la feuille de route publique au \keshReleaseDate :
+
+\vspace{0.5cm}
+
+\textbf{\color{keshSuccess}\faCheckCircle\ Déjà livré (Epic 1 à 9.5, v0.1 partielle)}
+
+\begin{itemize}
+    \item Fondations et authentification multi-tenant.
+    \item Onboarding guidé et expert.
+    \item Plan comptable suisse PME (Sterchi, KMU) avec saisie d'écritures partie double.
+    \item Carnet d'adresses, catalogue produits, conditions de paiement.
+    \item Facturation QR Bill 2.2 avec numérotation séquentielle automatique.
+    \item Import bancaire CAMT.053 + CSV multi-encodage.
+    \item Réconciliation automatique avec scoring + manuelle + règles d'affectation.
+    \item Éclatement de transactions agrégées.
+    \item Rapports comptables (Bilan, Compte de résultat, Balance, Journal).
+    \item Exports PDF et CSV par rapport + ZIP global de souveraineté avec SHA-256.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{\color{keshInfo}\faCog\ En préparation (Epic 10, prochaine étape)}
+
+\begin{itemize}
+    \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, guide d'installation PDF.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{\color{keshWarning}\faClock\ Backlog v0.1 (Epic 11 à 15)}
+
+\begin{itemize}
+    \item TVA Suisse : configuration des taux + calcul + rapport par période AFC.
+    \item Avoirs et notes de crédit dédiés + fichiers de paiement pain.001.001.03 (ISO 20022).
+    \item Budgets annuels + suivi.
+    \item Clôture d'exercice avec report de soldes automatique.
+    \item Justificatifs, lettrage, journaux personnalisables.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{\color{keshPrimaryLight}\faRocket\ Vision v0.2}
+
+\begin{itemize}
+    \item Signature électronique qualifiée (QES) sur les exports.
+    \item API externes avec clés PAT pour intégrations IA et logiciels tiers.
+    \item Multi-devises pour les PME à l'export.
+    \item Format PDF/A (ISO 19005) pour l'archivage durable.
+    \item Traductions DE/IT/EN des manuels.
+    \item Webhooks et MCP server pour assistants IA conversationnels.
+\end{itemize}
+
+\vspace{0.5cm}
+
+\begin{keshnote}
+Notre feuille de route est publique sur GitHub. Suivez notre progression sur \keshWebsite ou consultez la documentation projet pour le détail des epics et stories.
+\end{keshnote}
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Tarification et licence
+%%─────────────────────────────────────────────────────────────────────────────
+
+\clearpage
+
+\section*{\color{keshPrimary}Tarification et licence}
+
+\vspace{0.5cm}
+
+\begin{tcolorbox}[%
+    enhanced,
+    colback=keshSurfaceAlt, colframe=keshPrimary,
+    boxrule=2pt, arc=8pt,
+    halign=center%
+]
+\sffamily
+
+\vspace{0.3cm}
+
+{\Huge\bfseries\color{keshPrimary}Kesh est gratuit.}
+
+\vspace{0.4cm}
+
+{\large Aucun coût de licence, aucun abonnement, aucun frais par utilisateur.}
+
+\vspace{0.4cm}
+
+{\normalsize Distribué sous licence \textbf{EUPL 1.2} (European Union Public Licence).\\
+Vous pouvez l'utiliser, le modifier et le redistribuer librement, y compris en contexte commercial.}
+
+\vspace{0.3cm}
+
+\end{tcolorbox}
+
+\vspace{0.5cm}
+
+\textbf{Coûts éventuels associés au déploiement} (totalement indépendants de Kesh) :
+
+\begin{itemize}
+    \item Un serveur ou VPS pour héberger Kesh (~5--20 CHF/mois selon hébergeur).
+    \item Un nom de domaine et un certificat HTTPS (Let's Encrypt gratuit).
+    \item Optionnel : services de sauvegarde cloud externe (~5--15 CHF/mois selon volume).
+    \item Optionnel : prestation d'installation et maintenance par un fiduciaire / ESN partenaire.
+\end{itemize}
+
+\vspace{0.5cm}
+
+\subsection*{\color{keshPrimary}Pourquoi gratuit ?}
+
+Kesh est conçu comme un \emph{commun numérique} pour le tissu économique suisse. Notre conviction : la comptabilité d'une PME relève de l'infrastructure essentielle, au même titre que la route ou le réseau électrique. Elle ne devrait pas dépendre d'une rente perpétuelle versée à un éditeur étranger.
+
+Le développement de Kesh est financé par contributions volontaires, prestations partenaires (installation, formation, support) et soutiens de la communauté open-source. Si vous souhaitez contribuer financièrement ou techniquement, contactez l'équipe via GitHub.
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Call-to-action et contact
+%%─────────────────────────────────────────────────────────────────────────────
+
+\clearpage
+
+\section*{\color{keshPrimary}Commencer avec Kesh}
+
+\vspace{1cm}
+
+\begin{tcolorbox}[%
+    enhanced,
+    colback=keshPrimary, colframe=keshPrimary,
+    boxrule=0pt, arc=8pt,
+    halign=center,
+    coltext=white,
+    boxsep=20pt%
+]
+\sffamily
+
+{\Huge\bfseries\color{white}3 façons de découvrir Kesh}
+
+\end{tcolorbox}
+
+\vspace{0.8cm}
+
+\begin{tabularx}{\linewidth}{cX}
+    \begin{minipage}{2.8cm}
+        \begin{tcolorbox}[%
+            enhanced, colback=keshPrimary, colframe=keshPrimary,
+            width=2.5cm, height=2.5cm,
+            halign=center, valign=center,
+            boxsep=0pt, boxrule=0pt, arc=10pt,
+            coltext=white%
+        ]
+            {\fontsize{40pt}{40pt}\selectfont\faGithub}
+        \end{tcolorbox}
+    \end{minipage}
+    &
+    \begin{minipage}{12cm}
+        \textbf{\large\color{keshPrimary}1. Explorez le code source}
+
+        \vspace{0.3cm}
+
+        Consultez le dépôt GitHub officiel à \href{\keshWebsite}{\keshWebsite}. Vous y trouverez le code source complet, la documentation technique, la feuille de route détaillée, les issues ouvertes et l'historique de développement.
+
+        Vous pouvez \texttt{git clone} le dépôt et lancer une instance locale en moins de 5 minutes avec \texttt{docker compose up}.
+    \end{minipage}
+\end{tabularx}
+
+\vspace{1cm}
+
+\begin{tabularx}{\linewidth}{cX}
+    \begin{minipage}{2.8cm}
+        \begin{tcolorbox}[%
+            enhanced, colback=keshSuccess, colframe=keshSuccess,
+            width=2.5cm, height=2.5cm,
+            halign=center, valign=center,
+            boxsep=0pt, boxrule=0pt, arc=10pt,
+            coltext=white%
+        ]
+            {\fontsize{40pt}{40pt}\selectfont\faRocket}
+        \end{tcolorbox}
+    \end{minipage}
+    &
+    \begin{minipage}{12cm}
+        \textbf{\large\color{keshPrimary}2. Déployez votre instance}
+
+        \vspace{0.3cm}
+
+        Suivez le \emph{Manuel administrateur Kesh} pour installer une instance complète sur votre serveur ou VPS. Configuration en moins d'une heure si vous êtes familier avec Docker.
+
+        Pour une assistance professionnelle (installation, migration depuis un autre logiciel, formation), contactez un \emph{partenaire Kesh certifié} via notre annuaire en ligne.
+    \end{minipage}
+\end{tabularx}
+
+\vspace{1cm}
+
+\begin{tabularx}{\linewidth}{cX}
+    \begin{minipage}{2.8cm}
+        \begin{tcolorbox}[%
+            enhanced, colback=keshInfo, colframe=keshInfo,
+            width=2.5cm, height=2.5cm,
+            halign=center, valign=center,
+            boxsep=0pt, boxrule=0pt, arc=10pt,
+            coltext=white%
+        ]
+            {\fontsize{40pt}{40pt}\selectfont\faComments}
+        \end{tcolorbox}
+    \end{minipage}
+    &
+    \begin{minipage}{12cm}
+        \textbf{\large\color{keshPrimary}3. Rejoignez la communauté}
+
+        \vspace{0.3cm}
+
+        Posez vos questions, partagez vos retours d'expérience, contribuez au code ou à la documentation : la communauté Kesh vous accueille sur \href{\keshWebsite/discussions}{GitHub Discussions} et \href{\keshWebsite/issues}{GitHub Issues}.
+
+        Toute contribution est bienvenue : rapport de bug, demande de fonctionnalité, traduction, amélioration de la documentation, ou pull request de code.
+    \end{minipage}
+\end{tabularx}
+
+\vfill
+
+%%─────────────────────────────────────────────────────────────────────────────
+%% Footer de la dernière page
+%%─────────────────────────────────────────────────────────────────────────────
+
+\begin{tcolorbox}[%
+    enhanced,
+    colback=keshSurfaceAlt, colframe=keshBorder,
+    boxrule=0.5pt, arc=4pt,
+    halign=center%
+]
+\sffamily\small\color{keshTextMuted}
+
+\vspace{0.2cm}
+
+\textbf{\color{keshPrimary}\Large Kesh}
+
+\vspace{0.2cm}
+
+Logiciel libre de comptabilité PME suisse \quad\textbar\quad Licence \href{https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12}{EUPL 1.2}
+
+\vspace{0.2cm}
+
+Version \textbf{\keshVersion} \quad\textbar\quad Publié le \keshReleaseDate \quad\textbar\quad \keshWebsite
+
+\vspace{0.3cm}
+
+\emph{Cette brochure marketing décrit Kesh à la date de publication ci-dessus. Pour la dernière version, consultez le site officiel. La brochure est mise à jour à chaque release.}
+
+\vspace{0.2cm}
+
+\end{tcolorbox}
+
+\end{document}
