@@ -29,7 +29,7 @@ Story **recherche réglementaire pure** — **AUCUN code Rust ou Svelte modifié
 
 ### Décisions formelles produites
 
-Une des 3 options exclusives, formulée explicitement dans le document de recherche §"Verdict" et propagée dans 9-2a/9-2b §L6 :
+Une des 3 options exclusives, formulée explicitement dans le document de recherche §"Verdict" et propagée dans **9-2b §L6** (Swiss CO Art. 958f ZIP non-signé) **+ 9-2a §L7** si applicable (Swiss CO Art. 958f PDF non-signé) — ground-truth Pass 1 spec validate P1-1 : `9-2a §L6 = PDF pagination cosmétique` ≠ Swiss CO, `9-2a §L7 = horodatage signé/certificat PDF Swiss CO Art. 958f conformité partielle`, donc la cible 9-2a correcte est §L7 :
 
 - **Option (a) — Conformité v0.1 stricte** : l'implémentation actuelle (audit_log + SHA-256 dans `metadata.json` + ZIP non-signé) satisfait les exigences Swiss CO 958f pour PME, sans nécessité de signature électronique qualifiée. Pas de story additionnelle nécessaire. v0.1 publishable tel quel.
 - **Option (b) — Dette explicite v0.2** : conformité v0.1 acceptée avec dette documentée. Une story Epic 14 « Swiss CO 958f signature électronique qualifiée » est créée et labellisée GitHub Milestone `v0.2`. L'écart est jugé acceptable pour v0.1 (cible PME, audit-trail SHA-256 satisfait l'esprit de la loi à défaut d'une lettre stricte).
@@ -47,7 +47,7 @@ Une des 3 options exclusives, formulée explicitement dans le document de recher
 
 ### Pré-flight + bibliographie
 
-1. **Given** un workspace Kesh à jour avec `main` `35344c9` + branche `chore/epic-9-5-planning` checkée (HEAD `bceb112` post-9-5-1d code-review done), **When** la story démarre, **Then** prérequis confirmés : pas de cargo build / npm install nécessaire (research-only). Outils à confirmer disponibles : accès web (WebFetch / WebSearch ou subagent equivalent), accès au site `https://www.fedlex.admin.ch` (texte officiel CO consolidé), accès à `https://www.eitsa.ch` ou équivalent (jurisprudence + commentaires PME), accès à `https://www.afc.admin.ch` (AFC instructions PME).
+1. **Given** un workspace Kesh à jour avec `main` `35344c9` + branche `chore/epic-9-5-planning` checkée (HEAD `bceb112` post-9-5-1d code-review done), **When** la story démarre, **Then** prérequis confirmés : pas de cargo build / npm install nécessaire (research-only). Outils à confirmer disponibles : accès web (WebFetch / WebSearch ou subagent equivalent), accès au site `https://www.fedlex.admin.ch` (texte officiel CO consolidé), accès à `https://www.expertsuisse.ch` et/ou `https://www.treuhand-suisse.ch` (commentaires fiduciaires PME — patch Pass 1 spec validate P1-5 : remplace `eitsa.ch` qui n'est pas une source juridique suisse reconnue), accès à `https://www.afc.admin.ch` (AFC instructions PME).
 
 2. **Given** le besoin de sourcer la recherche, **When** la bibliographie est constituée, **Then** au minimum **5 sources primaires** et **3 sources secondaires** sont citées dans le document, conformes au critère ci-dessous :
    - **Sources primaires acceptées (citation obligatoire)** :
@@ -79,12 +79,12 @@ Une des 3 options exclusives, formulée explicitement dans le document de recher
 
 ### Décision formelle + mise à jour cross-stories
 
-6. **Given** le document produit + le verdict (a/b/c) statué, **When** la décision est prise (single-pass orchestré OU élicitation Guy via question explicite si ambiguïté reste), **Then** :
+6. **Given** le document produit + le verdict (a/b/c) statué, **When** la décision est prise via **checkpoint élicitation Guy obligatoire T8.3** (cf. Dev Notes §R3 — décision business engageante, jamais autonome LLM ; patch Pass 1 spec validate P1-3 : checkpoint obligatoire indépendamment du niveau de netteté du verdict), **And** si verdict confirmé = (a) la **revue adversariale T8.4** (`bmad-review-adversarial-general` sur §Verdict + §Gap analysis du document de recherche) a été déclenchée et ses findings intégrés (cf. Dev Notes §R2 ; patch Pass 1 spec validate P1-4 : matérialise la mitigation R2 dans le flux d'AC), **Then** :
    - **Si (a)** : `_bmad-output/implementation-artifacts/9-2b-export-global-zip.md` §L6 mis à jour avec verdict explicite + référence au document de recherche. Pas de nouvelle story Epic 14 créée.
-   - **Si (b)** : §L6 9-2b mis à jour avec verdict + référence au document. Une nouvelle issue GitHub `enhancement` créée avec titre `[Epic 14] Swiss CO 958f signature électronique qualifiée (option b retenue 9-5-4)` + label `v0.2-milestone` + label `enhancement` + label `legal-compliance`. **Note** : la story Epic 14 elle-même sera créée plus tard (au kickoff Epic 14) — pour 9-5-4 il suffit que l'issue de traçage existe.
+   - **Si (b)** : §L6 9-2b mis à jour avec verdict + référence au document. Une nouvelle issue GitHub créée avec titre `[Epic 14] Swiss CO 958f signature électronique qualifiée (option b retenue 9-5-4)` + 4 labels `enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt` (pré-condition : T9.0 a créé les labels manquants — ground-truth Pass 1 spec validate P1-2 : `v0.2-milestone` et `legal-compliance` n'existent pas à la date de la spec, `enhancement` et `technical-debt` existent). **Note** : la story Epic 14 elle-même sera créée plus tard (au kickoff Epic 14) — pour 9-5-4 il suffit que l'issue de traçage existe.
    - **Si (c)** : §L6 9-2b mis à jour avec verdict bloquant + référence au document. Une nouvelle story `9-5-bis-swiss-co-958f-compliance.md` créée comme placeholder (status `backlog`) dans `_bmad-output/implementation-artifacts/` + entry ajoutée dans `sprint-status.yaml` + Critère d'arrêt Epic 9.5 mis à jour. **Note** : le contenu de la story 9-5-bis est intentionnellement laissé vide (juste backlog + status backlog) — sera élaboré séparément si l'option (c) est retenue.
 
-7. **And** si applicable selon recherche, mise à jour `9-2a-export-pdf-csv.md` (e.g. conformité format légal AFC des PDF rapports Bilan/PnL — la recherche peut conclure que les PDF Kesh sont conformes Art. 957a OU partiellement seulement, dans quel cas L13/L14/L15 9-2a sont à compléter).
+7. **And** si applicable selon recherche, mise à jour `9-2a-export-pdf-csv.md` **§L7** (« Pas d'horodatage signé / certificat sur le PDF (Swiss CO Art. 958f conformité partielle) ») avec le verdict + référence document de recherche — ground-truth `9-2a:424`. **Pas** §L6 (PDF pagination cosmétique, sans rapport avec Swiss CO) ni §L13/L14/L15 (perf PDF 10k / audit timing / test format PDF — sans rapport avec Swiss CO 958f). La recherche peut aussi conclure que les PDF Kesh sont conformes Art. 957a — dans ce cas pas de mise à jour §L7 nécessaire.
 
 8. **And** `_bmad-output/planning-artifacts/epic-9-5.md` §"Critères d'arrêt Epic 9.5" item « Document `research-swiss-co-958f.md` produit + décision formelle (a/b/c) appliquée à 9-2a/9-2b si applicable » coché `[x]` avec référence au commit de fermeture story.
 
@@ -94,7 +94,7 @@ Une des 3 options exclusives, formulée explicitement dans le document de recher
    - **Commit closure unique** : `docs(9-5-4): close Swiss CO 958f research with verdict (a|b|c) (closes #N if applicable)` — body contient résumé verdict (option retenue) + liste fichiers modifiés + référence au document de recherche.
    - **GitHub Issue** : si une issue 9-5-4 a été créée préventivement (e.g. tracking research action #3 retro Epic 8), la fermer via le commit. **Si pas d'issue existante** (cas probable — l'action #3 retro Epic 8 n'a pas été convertie en issue GitHub formelle), **ne pas créer d'issue uniquement pour la fermer** — c'est la story file + commit qui font foi (cohérent §Issue Tracking Rule CLAUDE.md, l'issue n'est pas obligatoire pour les research stories internes).
    - `sprint-status.yaml` : entrée `9-5-4-swiss-co-research` mise à jour `backlog → ready-for-dev → in-progress → review → done`. `last_updated` field rafraîchi.
-   - Critère d'arrêt Epic 9.5 « 4/4 stories avec status `done` » → en réalité c'est 8/8 (9-5-1a/b/c/d + 9-5-2/3/4 + epic-9-5-retrospective) = 7/8 après 9-5-4 done (manque encore rétrospective).
+   - Critère d'arrêt epic-9-5.md ligne 206 « 4/4 stories avec status `done` » **satisfait à ce stade** (9-5-1/2/3/4 toutes done) — les sub-stories 1a/b/c/d sont trackées séparément dans `sprint-status.yaml` (8 entrées au total : 9-5-1a + 9-5-1b + 9-5-1c + 9-5-1d + 9-5-2 + 9-5-3 + 9-5-4 + epic-9-5-retrospective) mais ne changent pas le critère officiel `4/4` (qui compte les stories de niveau 1 dans l'epic). Patch Pass 1 spec validate P1-6 : clarification du décompte officiel vs sub-stories sprint-status. Reste la rétrospective Epic 9.5 (status `optional → done`) avant clôture complète de l'epic.
 
 ### Test Locally First — exemption documentée
 
@@ -141,13 +141,18 @@ Une des 3 options exclusives, formulée explicitement dans le document de recher
 - [ ] **T8** Verdict + Recommandations (AC: #3, #6)
   - [ ] T8.1 Synthétiser la recherche en verdict (a / b / c) avec justification 3-5 paragraphes ancrés dans T7.2 gap analysis. Probabilité a priori (cf. epic-9-5.md Q2) : **option (b) la plus probable** (PME audit-trail SHA-256 généralement accepté).
   - [ ] T8.2 Recommandations actionables numérotées (0 à N items).
-  - [ ] T8.3 **Checkpoint élicitation Guy** : si le verdict est marginalement entre (a) et (b), OU (b) et (c), poser une question explicite à Guy via `AskUserQuestion` ou texte « Verdict statué (X), confirmer avant de propager ? ». Pas de question si le verdict est net (cas attendu).
+  - [ ] T8.3 **Checkpoint élicitation Guy (OBLIGATOIRE, pas conditionnel)** : présenter à Guy le verdict proposé (a/b/c) + justification 1 paragraphe + tableau gap analysis résumé via `AskUserQuestion` avec options exclusives `Confirmer (X)` / `Rebascule sur (Y)` / `Rebascule sur (Z)`. Ne **pas** procéder à T8.4 ou T9 sans confirmation explicite. Justification : la décision (a/b/c) est business + acceptation de risque légal — décision Guy, pas LLM autonome (Dev Notes §R3). Patch Pass 1 spec validate P1-3 : remplace le checkpoint conditionnel original « pas de question si net » qui contredisait R3 — le checkpoint est obligatoire indépendamment du niveau de netteté du verdict.
+  - [ ] T8.4 **Si verdict confirmé = (a)** : déclencher revue adversariale `bmad-review-adversarial-general` sur §Verdict + §Gap analysis du document de recherche avant toute propagation cross-stories (cf. Dev Notes §R2 — verdict (a) suspect a priori, ZIP non-signé QES, revue critique obligatoire pour valider que la justification n'est pas une rationalisation insuffisante). Intégrer les findings adversariaux dans `research-swiss-co-958f.md` §Verdict (sous-section « Revue adversariale » ou note explicite). **Si verdict (b) ou (c)** : T8.4 skip (pas de revue adversariale conditionnelle additionnelle nécessaire). Patch Pass 1 spec validate P1-4 : T8.4 ajoutée pour matérialiser la mitigation R2 qui n'était que dans Dev Notes auparavant.
 
 - [ ] **T9** Mise à jour cross-stories (AC: #6, #7, #8)
+  - [ ] T9.0 **(Pré-flight T9.4 si verdict (b))** Vérifier l'existence des labels GitHub requis via `gh label list --repo guycorbaz/kesh`. Ground-truth Pass 1 spec validate P1-2 : `v0.2-milestone` et `legal-compliance` **n'existent pas** dans le repo à la date de la spec. Si absent au moment de T9.4 :
+    - `gh label create v0.2-milestone --color "0075ca" --description "Tracked for v0.2 release milestone (cf. CLAUDE.md §Tech debt management Catégorie B)"`
+    - `gh label create legal-compliance --color "e4e669" --description "Swiss legal compliance (CO, LTVA, LSCSE)"`
+    - Si les labels existent déjà (créés par une autre story entretemps) : skip.
   - [ ] T9.1 Mettre à jour `9-2b-export-global-zip.md` §L6 avec verdict + référence document.
-  - [ ] T9.2 Si applicable selon T8.1 verdict : mise à jour `9-2a-export-pdf-csv.md` (probablement non — les PDF Kesh sont conformes Art. 957a a priori, à vérifier T3.3).
+  - [ ] T9.2 Si applicable selon T8.1 verdict : mise à jour `9-2a-export-pdf-csv.md` **§L7** (Swiss CO Art. 958f PDF non-signé — ground-truth `9-2a:424`, **PAS** §L6 = PDF pagination cosmétique). Probablement non si les PDF Kesh sont conformes Art. 957a a priori — à vérifier T3.3.
   - [ ] T9.3 Mettre à jour `epic-9-5.md` §Critères d'arrêt Epic 9.5 — cocher l'item correspondant.
-  - [ ] T9.4 Si verdict (b) : créer GitHub Issue `[Epic 14] Swiss CO 958f signature électronique qualifiée` avec labels `enhancement` + `v0.2-milestone` + `legal-compliance` (via `gh issue create`).
+  - [ ] T9.4 Si verdict (b) : créer GitHub Issue `[Epic 14] Swiss CO 958f signature électronique qualifiée` avec labels `enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt` (4 labels via `gh issue create --label "enhancement,v0.2-milestone,legal-compliance,technical-debt"`). Pré-condition : T9.0 exécuté (labels créés si manquants).
   - [ ] T9.5 Si verdict (c) : créer placeholder story `_bmad-output/implementation-artifacts/9-5-bis-swiss-co-958f-compliance.md` (frontmatter `Status: backlog` + 1 ligne scope, à élaborer hors story 9-5-4) + entrée sprint-status.yaml. **Probabilité faible**.
 
 - [ ] **T10** Commit closure + sprint-status (AC: #9)
@@ -285,4 +290,41 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 
 ## Change Log
 
-À compléter lors des passes spec validate + dev-story + code-review.
+### Pass 1 spec validate — 2026-05-20, Sonnet 4.6 (subagent contexte frais)
+
+**Verdict trend brut** : 0 CRITICAL + 2 HIGH + 2 MEDIUM + 2 LOW = 6 findings (Convergence : NON — 2 HIGH + 2 MEDIUM > LOW restent).
+
+**Discipline grep ground-truth Sonnet** : 4/4 vérifications majeures positives (Sonnet a grep-vérifié 9-2a `| L6 |` et `| L7 |`, `gh label list --repo guycorbaz/kesh`, et cross-checked R3 vs T8.3). Orchestrateur a également vérifié 9-2a:418-432 + gh labels avant patch application.
+
+**Patches appliqués (6/6 — tous validés ground-truth)** :
+
+1. **HIGH P1-1** — AC #7 + Scope §"Décisions formelles" : mauvais numéro de limitation dans 9-2a. Ground-truth `grep -n "| L" 9-2a-export-pdf-csv.md` : `L6 = PDF pagination cosmétique` (ligne 423), `L7 = horodatage signé/certificat PDF Swiss CO Art. 958f conformité partielle` (ligne 424 — la vraie cible Swiss CO). `L13/L14/L15` = perf PDF 10k / audit timing / test format — sans rapport avec Swiss CO. **Patch** : Scope §32 + AC #7 + T9.2 corrigés sur `9-2b §L6 + 9-2a §L7 si applicable` avec ground-truth explicite.
+
+2. **HIGH P1-2** — T9.4 labels GitHub inexistants. Ground-truth `gh label list --repo guycorbaz/kesh` : 12 labels existent (`bug`, `documentation`, `enhancement`, `known-failure`, `technical-debt`, etc.), mais **`v0.2-milestone` et `legal-compliance` n'existent pas**. **Patch** : ajouté T9.0 « Pré-flight T9.4 » qui crée les 2 labels manquants via `gh label create` si absents, avec descriptions et couleurs explicites. T9.4 mis à jour pour utiliser 4 labels (`enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt`) avec pré-condition T9.0 exécuté.
+
+3. **MEDIUM P1-3** — T8.3 contradiction R3 : T8.3 disait « pas de question si verdict net » mais R3 Dev Notes disait « toujours valider Guy avant propagation ». Un dev agent suivant T8.3 à la lettre pourrait propager 9-2b §L6 sans demander Guy si verdict (b) jugé net — contraire à la décision business engageante du R3. **Patch** : T8.3 reformulé « Checkpoint élicitation Guy (OBLIGATOIRE, pas conditionnel) » avec `AskUserQuestion` à 3 options. AC #6 mis à jour pour ancrer T8.3 obligatoire.
+
+4. **MEDIUM P1-4** — R2 mitigation absente des tasks. §R2 Dev Notes disait « si verdict (a), prévoir revue adversariale `bmad-review-adversarial-general` » mais aucun subtask T8.x ne le matérialisait. Risque : dev agent ne lit pas toujours Dev Notes, passerait directement T8.3 → T9 si verdict (a). **Patch** : ajouté T8.4 « Si verdict (a) : déclencher revue adversariale » conditionnel + ligne AC #6 ancrant T8.4 dans le flux d'AC.
+
+5. **LOW P1-5** — AC #1 source `eitsa.ch` inexistant / hallucination probable. Sources juridiques suisses reconnues : `expertsuisse.ch`, `treuhand-suisse.ch`, `schulthess.com`, `helbing.ch`, `bger.ch`. Le domaine `eitsa.ch` n'est pas une référence pertinente droit comptable suisse. **Patch** : AC #1 remplacé `eitsa.ch` par `expertsuisse.ch` + `treuhand-suisse.ch` (cohérent AC #2 bibliographie secondaire).
+
+6. **LOW P1-6** — AC #9 confusion `4/4 stories` vs `8/8 sub-stories`. La spec disait « en réalité c'est 8/8 » qui prêtait à confusion avec le critère officiel epic-9-5.md ligne 206. **Patch** : AC #9 reformulé pour clarifier que le critère officiel `4/4` (stories niveau 1 : 9-5-1/2/3/4) est satisfait, et que les 8 entrées sprint-status incluent les sub-stories trackées séparément sans changer le critère.
+
+**Cross-verification orchestrateur ground-truth** (avant patches) :
+
+```
+grep -n "| L[0-9]" 9-2a-export-pdf-csv.md
+→ 418:L1 + 419:L2 + ... + 423:L6 PDF pagination + 424:L7 Swiss CO Art. 958f ✓ (confirme P1-1)
+
+gh label list --repo guycorbaz/kesh --limit 50
+→ 12 labels existants, AUCUN nommé "v0.2-milestone" ni "legal-compliance" ✓ (confirme P1-2)
+
+grep "| L6 " 9-2b-export-global-zip.md
+→ 802:L6 Swiss CO Art. 958f ✓ (9-2b cible inchangée, P1-1 ne porte que sur 9-2a)
+```
+
+**Findings dismissed** : 0 — tous les 6 findings sont validés et patchés.
+
+**Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`). Vérifier propagation patches Pass 1 + chercher inconsistances résiduelles AC↔T mapping post-patches (notamment AC #6 ↔ T8.3 + T8.4 nouveau).
+
+**Modèle Pass 1** : Sonnet 4.6 (subagent isolé contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
