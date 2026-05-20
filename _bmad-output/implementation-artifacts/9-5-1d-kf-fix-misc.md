@@ -1,6 +1,6 @@
 # Story 9.5-1d: Fix specific KFs — KF #47 fallback toast E2E + KF #50 race REPEATABLE READ test concurrent
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -72,7 +72,7 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
    - **Action 1** : créer une facture (POST `/api/v1/invoices`) avec champs minimaux (contact, items) — peu importe les détails business sauf que la date d'émission est **hors plage** `2020-2030`. Suggestion : `issueDate: '1900-01-01'`. Stocker l'`id` de la facture créée.
    - **Action 2** : naviguer vers `/invoices/<id>` via `page.goto(...)`.
    - **Action 3** : cliquer le bouton « Valider la facture » (sélecteur à adapter selon le composant — probablement `data-testid="invoice-validate-button"` ou `getByRole('button', { name: /valider/i })`).
-   - **Assertion 1** : `await expect(page.getByRole('alert').filter({ hasText: /exercice comptable/ })).toBeVisible()` — le toast `svelte-sonner` est rendu avec `role="alert"`.
+   - **Assertion 1** : `await expect(page.locator('[data-sonner-toast]').filter({ hasText: /Créez d'abord un exercice/ })).toBeVisible()` — `svelte-sonner` rend le container toast avec `data-sonner-toast=""` + `aria-live="polite"` (PAS de `role="alert"`, vérifié ground-truth `node_modules/svelte-sonner/dist/Toast.svelte:344-360` — voir Pass 1 code-review AA-1).
    - **Assertion 2** : cliquer le bouton action du toast (label « Ouvrir Paramètres » i18n `go-to-settings`). Selector possible : `await page.getByRole('button', { name: /ouvrir paramètres/i }).click()`.
    - **Assertion 3** : `await expect(page).toHaveURL(/\/settings\/fiscal-years/)` — la navigation a eu lieu.
    - **Test isolation** : le bloc `afterEach` existant (`clearAuthStorage(page)` ligne 25) + `beforeEach` `seedTestState('with-company')` ligne 22 garantissent l'isolation. Pas besoin de cleanup spécifique.
@@ -83,15 +83,15 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
    - **Action 1** : naviguer vers `/journal-entries` via `page.goto(...)`.
    - **Action 2** : cliquer le bouton « Nouvelle écriture » ou équivalent ouvrant `JournalEntryForm` (sélecteur à confirmer ground-truth `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`).
    - **Action 3** : remplir le minimum requis pour soumission (date, montant, comptes), puis cliquer « Enregistrer ».
-   - **Assertion 1** : toast rendu avec message i18n `error-fiscal-year-missing` (« Créez d'abord un exercice comptable dans Paramètres → Exercices »). Pattern selector : `await expect(page.getByRole('alert').filter({ hasText: /Créez d'abord un exercice/ })).toBeVisible()`.
+   - **Assertion 1** : toast rendu avec message i18n `error-fiscal-year-missing` (« Créez d'abord un exercice comptable dans Paramètres → Exercices »). Pattern selector : `await expect(page.locator('[data-sonner-toast]').filter({ hasText: /Créez d'abord un exercice/ })).toBeVisible()` (svelte-sonner sans `role="alert"` — Pass 1 code-review AA-1).
    - **Assertion 2** : clic action button → navigation `/settings/fiscal-years`.
 
 5. **Given** le test 3 `FISCAL_YEAR_CLOSED` implémenté, **When** il est exécuté, **Then** il satisfait :
    - **Routage critique** — le code racine `FISCAL_YEAR_CLOSED` est levé **uniquement** par `journal_entries::create` (ligne 109 `journal_entries.rs`) et `journal_entries::update` (lignes 598 + 836). Le flow `validate_invoice` utilise `find_open_covering_date` (`invoices.rs:970`) qui ne retourne que les FY ouverts → un FY clos donne `FiscalYearInvalid` (PAS `FiscalYearClosed`). **Test 3 doit donc passer par `JournalEntryForm`**, pas `validate_invoice`.
    - **Setup spécifique** : `seedTestState('with-company')` puis appel API direct pour clôturer le fiscal_year `2020-2030` seedé. Approche A : `await page.request.post('/api/v1/fiscal-years/{id}/close', { headers: { Authorization: 'Bearer ...' } })` (à vérifier ground-truth la signature exacte — T4.4 inclut step lecture `crates/kesh-api/src/routes/fiscal_years.rs`). Approche B : naviguer vers `/settings/fiscal-years`, cliquer bouton « Clôturer » sur le fiscal_year affiché. Privilégier Approche A (plus rapide + déterministe — pas de scrape UI).
    - **Action** : naviguer `/journal-entries`, ouvrir `JournalEntryForm`, remplir minimum + date `2025-06-15` (in-range FY 2020-2030 mais l'exercice est clos), soumettre. Le backend `journal_entries::create` ligne 109 retourne `DbError::FiscalYearClosed` → HTTP error code `FISCAL_YEAR_CLOSED` → helper `notifyMissingFiscalYearOrFallback` détecte `FY_CLOSED_CODE` → toast distinct.
-   - **Assertion 1** : toast distinct avec message i18n `error-fiscal-year-closed-for-date` (« L'exercice qui couvre cette date est clôturé. Vérifiez la date saisie ou consultez vos exercices. »). Pattern selector : `await expect(page.getByRole('alert').filter({ hasText: /clôturé/ })).toBeVisible()`.
-   - **Assertion 2** : message **différent** du test 2 (NO_FISCAL_YEAR) — vérifier que le toast ne contient PAS « Créez d'abord » : `await expect(page.getByRole('alert').filter({ hasText: /Créez d'abord/ })).toHaveCount(0)`.
+   - **Assertion 1** : toast distinct avec message i18n `error-fiscal-year-closed-for-date` (« L'exercice qui couvre cette date est clôturé. Vérifiez la date saisie ou consultez vos exercices. »). Pattern selector : `await expect(page.locator('[data-sonner-toast]').filter({ hasText: /clôturé/ })).toBeVisible()` (svelte-sonner sans `role="alert"` — Pass 1 code-review AA-1).
+   - **Assertion 2** : message **différent** du test 2 (NO_FISCAL_YEAR) — vérifier que le toast ne contient PAS « Créez d'abord » : `await expect(page.locator('[data-sonner-toast]').filter({ hasText: /Créez d'abord/ })).toHaveCount(0)`.
    - **Assertion 3** : clic action button → navigation `/settings/fiscal-years` (même behavior que tests 1 et 2 — le helper unifie l'action).
 
 6. **And** les 3 tests passent en isolation ET groupés (run `npx playwright test fiscal-years.spec.ts:93 fiscal-years.spec.ts:NNN fiscal-years.spec.ts:MMM` puis run complet `npx playwright test fiscal-years.spec.ts` — résultats identiques).
@@ -104,18 +104,25 @@ Story d'implémentation **dual-backend-frontend scopée tests E2E + tests intég
    - **Renommage** : `no_op_with_parallel_mutation_returns_409_when_sequential` → `no_op_with_parallel_mutation_returns_409_under_concurrency`.
    - **Comportement** : ajouter `tokio::join!` sur 2 closures qui exécutent (a) tx1 modification non-no-op via PUT `/api/v1/invoices/{id}` avec changement réel sur les `lines[]` (e.g. modifier `description` ou `unit_price` d'une ligne existante — **NE PAS** modifier `total_amount` qui est server-computed à partir des lignes et n'existe pas dans `UpdateInvoiceRequest` `crates/kesh-api/src/routes/invoices.rs:86` qui contient uniquement `{ contact_id, date, due_date, payment_terms, lines, version }`), (b) tx2 PUT no-op (payload identique au snapshot v=N initial). Les 2 tx s'exécutent en parallèle via pool partagé.
    - **Pré-condition** : créer une facture initiale v=N via PUT créé séquentiel (avec contact + items minimaux) avant le `tokio::join!`. Les 2 tx parallèles ciblent la même facture.
-   - **Assertion mise à jour** : asserter que **au moins l'un** des 2 retours est `409 OPTIMISTIC_LOCK_CONFLICT` (le perdant de la race). L'autre retourne `200 OK` (le gagnant). Pattern :
+   - **Assertion (Approche 3 retenue post-R1)** : stress loop N=20 itérations, classification 4 buckets `mutation_409 | both_200 | noop_409_mut_200 | other`. Assertions : `mutation_409_count >= 1` (invariant cible KF-020) ET `noop_409_mut_200_count == 0` (régression `is_no_op_change`) ET `other_count == 0` (anomalie infra). Pattern (post-Pass 1 code-review BH-2 + ECH-1 + AA-5) :
      ```rust
-     let (resp_a, resp_b) = tokio::join!(tx_a, tx_b);
-     let statuses = [resp_a.status(), resp_b.status()];
-     assert!(statuses.contains(&StatusCode::CONFLICT), "expected at least one 409, got {:?}", statuses);
-     assert!(statuses.contains(&StatusCode::OK), "expected at least one 200, got {:?}", statuses);
+     match (status_a.as_u16(), status_b.as_u16()) {
+         (200, 409) => mutation_409_count += 1,        // cas cible
+         (200, 200) => both_200_count += 1,             // race symétrique légitime
+         (409, 200) => noop_409_mut_200_count += 1,     // diagnostic régression no-op
+         _          => other_count += 1,                // anomalie infra (500/X, timeout)
+     }
+     // post-loop : eprintln!(counts) + 3 asserts distincts
+     assert!(mutation_409_count >= 1, "...KF-020 régression : 0 cas 200/409...");
+     assert_eq!(noop_409_mut_200_count, 0, "...régression is_no_op_change...");
+     assert_eq!(other_count, 0, "...anomalie infra...");
      ```
+     L'**Approche 1 originale** (`tokio::join!` simple + `statuses.contains(&CONFLICT)`) est documentée dans le Change Log §T5.3 comme abandonnée pour non-déterminisme empirique (2/5 PASS) au profit de l'Approche 3.
    - **Anti-pattern (à éviter)** : asserter `200 + stale` (comportement v0.1 obsolète pré-#49). Le `SELECT FOR UPDATE` de #49 ferme la race — `409` est le comportement actuel et attendu.
 
 9. **And** un commentaire inline `/// KF-021 (closes #50) regression detector for KF-020 SELECT FOR UPDATE (closes #49)` documenté en tête de la fonction — si un futur refactor retire accidentellement `FOR UPDATE` de `invoices::update`, le test échouera (`200 stale` au lieu de `409`) → red signal en CI.
 
-10. **And** le test reste déterministe en CI : viser ≥ 99% de taux de détection de la race en concurrence. **Garde-fou** : si non-déterminisme observé après 5 runs locaux (i.e. test pass partiel < 5/5), basculer sur Approche 3 (stress loop N=100 + assert présence ≥ 1 cas 409) documentée Scope §"Approche concurrence à privilégier".
+10. **And** le test reste déterministe en CI : viser ≥ 99% de taux de détection de la race en concurrence. **Garde-fou (Approche 3 retenue post-R1)** : stress loop **N=20** itérations (post-Pass 1 code-review AA-2 + BH-7 — choix N=20 vs N=100 spec originale justifié par probabilité d'échec total ≈ 1/2^20 ≈ 1e-6 sous distribution équiprobable, en pratique encore plus faible vu serialization MySQL X-lock ; budget CI ~50ms × ΔN). Assert `mutation_409_count >= 1` (cas cible) + `noop_409_mut_200_count == 0` (régression `is_no_op_change`) + `other_count == 0` (anomalie infra).
 
 11. **And** le test ne dépend PAS d'un ordre spécifique des 2 tx (race symétrique — le `tokio::join!` non-déterministe doit produire `409` peu importe quelle tx gagne la course au `FOR UPDATE` X-lock).
 
@@ -253,7 +260,7 @@ export function notifyMissingFiscalYearOrFallback(err: ApiError): boolean {
 - `FY_CLOSED_CODE = 'FISCAL_YEAR_CLOSED'`.
 - L'ordre dans le tableau est sans importance fonctionnelle (`.includes()` est order-agnostic ligne 99).
 
-**Toast UI** : `svelte-sonner` library, role `alert` sur le container rendu, button action label = i18n `go-to-settings`.
+**Toast UI** : `svelte-sonner` library — container rendu avec `data-sonner-toast=""` + `aria-live="polite"` (PAS de `role="alert"`, ground-truth `node_modules/svelte-sonner/dist/Toast.svelte:344-360`, vérifié Pass 1 code-review AA-4). Button action label = i18n `go-to-settings`.
 
 ### Context KF #50 — état migration + pattern référence
 
@@ -263,16 +270,18 @@ export function notifyMissingFiscalYearOrFallback(err: ApiError): boolean {
 
 ### Pattern bits-ui + svelte-sonner toast assertion E2E
 
-**Toast Playwright selector recommandé** :
+**Toast Playwright selector recommandé** (post-Pass 1 code-review AA-3 — sync ground-truth `Toast.svelte:344-360`) :
 ```ts
-const alertLocator = page.getByRole('alert').filter({ hasText: /exercice comptable/ });
-await expect(alertLocator).toBeVisible();
-const actionButton = alertLocator.getByRole('button', { name: /ouvrir paramètres/i });
+const toast = page.locator('[data-sonner-toast]').filter({ hasText: /Créez d'abord un exercice/ });
+await expect(toast).toBeVisible({ timeout: 5000 });
+const actionButton = toast.getByRole('button', { name: /ouvrir paramètres/i });
 await actionButton.click();
 await expect(page).toHaveURL(/\/settings\/fiscal-years/);
 ```
 
-**Pitfall connu** : `svelte-sonner` peut rendre plusieurs toasts simultanément (queue). Si le test précédent (`beforeEach` seed) déclenche un toast résiduel, le selector `getByRole('alert')` peut retourner plusieurs éléments. **Mitigation** : utiliser `.filter({ hasText: ... })` pour cibler le bon toast, OU appeler `await page.evaluate(() => window.dismissAllToasts?.())` si une API existe (à vérifier — probablement pas).
+**Important** : svelte-sonner rend `aria-live="polite"` + `data-sonner-toast=""` sans `role="alert"`. Le selector `getByRole('alert')` ne match pas — découverte empirique T4.2 (cf. Change Log §T4 item 2).
+
+**Pitfall connu** : `svelte-sonner` peut rendre plusieurs toasts simultanément (queue). Si le test précédent (`beforeEach` seed) déclenche un toast résiduel, le selector `[data-sonner-toast]` peut retourner plusieurs éléments. **Mitigation** : utiliser `.filter({ hasText: ... })` pour cibler le bon toast, OU appeler `await page.evaluate(() => window.dismissAllToasts?.())` si une API existe (à vérifier — probablement pas).
 
 ### Cascade KF #50 sur autres tests kf004_no_op_e2e
 
@@ -318,7 +327,7 @@ La spec originale KF #50 (issue #50) demandait d'asserter `200 + stale`. Cette s
 
 ### Testing standards summary
 
-- **Pattern Playwright E2E AC #22** : tests utilisent `seedTestState` (override per-test si besoin), `page.getByRole('alert').filter({ hasText: ... })` pour toast selector, `page.getByRole('button', { name: ... }).click()` pour action button, `await expect(page).toHaveURL(...)` pour navigation assertion. Pattern cohérent avec autres specs E2E projet (auth, invoices, etc.).
+- **Pattern Playwright E2E AC #22** : tests utilisent `seedTestState` (override per-test si besoin), `page.locator('[data-sonner-toast]').filter({ hasText: ... })` pour toast selector (svelte-sonner ne rend PAS `role="alert"` — sync post-Pass 1 code-review AA-3), `toast.getByRole('button', { name: ... }).click()` pour action button scopé au toast, `await expect(page).toHaveURL(...)` pour navigation assertion. Pour la modale `Dialog.Root` bits-ui : `await expect(page.getByRole('dialog', { name: ... })).toBeVisible()` puis `dialog.getByRole('button')` pour cibler le bouton confirmation (cohérent guard ajouté Test 1 post-Pass 1 BH-3).
 - **Pattern Rust integration test** : `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` + `truncate_all(&pool)` + `create_seeded_company` + `spawn_app` + `login` (helpers existants). Pour le concurrent test : `tokio::join!` sur 2 closures async qui partagent le `pool` (chaque task obtient sa `pool.acquire()` automatiquement).
 - **Test isolation** : `truncate_all` au début de chaque test garantit DB clean. Pas de cross-pollution entre tests.
 
@@ -597,3 +606,48 @@ cat crates/kesh-api/src/routes/invoices.rs lignes 86-95
 **Modèle Pass 2** : Claude Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Sonnet → Haiku).
 
 **Statut final spec** : `ready-for-dev` confirmé. Prête pour `bmad-dev-story 9-5-1d` (mode orchestré complet attendu cohérent 9-5-1b/c, LLM recommandé Opus 4.7 ou Sonnet 4.6 — différent de Pass 2 Haiku).
+
+### Pass 1 code-review — 2026-05-20, Sonnet 4.6 × 3 reviewers parallèles (Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+**Trend brut** : 0 CRITICAL + 2 HIGH + 7 MEDIUM + 8 LOW = 17 findings cumulés sur les 3 layers.
+
+**Discipline grep ground-truth orchestrateur** appliquée sur chaque HIGH/MEDIUM avant triage final. 4 findings réfutés empirique (BH-1 self-refuted analyste, BH-5 server normalization refuted par 5/5 PASS, BH-6 inter-test state refuted par `test.beforeEach:21-22` re-seed `with-company`, BH-8 défensif inutile seed-controlled). 2 HIGH bruts (BH-2 + BH-3) ramenés à LOW post-grep (modal race empirique 6/6 PASS via Playwright auto-wait — défensif structurel ; diagnostic `(409,200)` est polish message pas correctness).
+
+**Triage final** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 8 LOW patches + 4 REJECT + 1 DEFER. **CONVERGENCE Pass 1 atteinte** par critère CLAUDE.md « Uniquement findings LOW ».
+
+**Patches appliqués (8 LOW, 2 commits)** :
+
+*Code patches (commit `4677c43` — `crates/kesh-api/tests/kf004_no_op_e2e.rs` + `frontend/tests/e2e/fiscal-years.spec.ts`)* :
+
+1. **BH-3 (HIGH → LOW post-grep)** : guard explicite modale bits-ui `Dialog.Root` title "Valider la facture" entre les 2 clics Valider Test 1 FISCAL_YEAR_INVALID — empirique 6/6 PASS sans guard (Playwright auto-wait), mais structurellement améliorable. Cible précisément le bouton "Valider" de la modale via `validateDialog.getByRole('button')`.
+2. **BH-4 (MEDIUM → LOW)** : commentaire `fillJournalEntryFormForSubmit` expliquant l'indexation `nth(0)` debit / `nth(3)` credit (4 inputs decimal stables — ground-truth `JournalEntryForm.svelte` toujours 2 lignes initiales).
+3. **ECH-6 (LOW)** : `closeSeededFiscalYearViaApi` assertion explicite exactement 1 FY Open dans le seed `with-company`. Fail-fast plutôt que timeout confus si un futur seed change.
+4. **BH-2 + ECH-1 (HIGH → LOW post-grep)** : bucket dédié `noop_409_mut_200_count` pour cas `(409, 200)` (no-op bumping version régression) — assertion distincte du `other_count` (anomalie infra). Diagnostic plus actionnable.
+5. **ECH-5 (LOW)** : log diagnostic `eprintln!` des 4 compteurs avant assertions, contexte visible avant message du premier fail.
+6. **BH-7 (LOW)** : commentaires inline justifiant magic numbers `N_ITERATIONS=20` (probabilité 1/2^20) et range `mutated_price` 200-219 (disjoint init 150.00).
+
+*Doc/spec patches (commit suivant — `_bmad-output/implementation-artifacts/9-5-1d-kf-fix-misc.md`)* :
+
+7. **AA-1 (MEDIUM → LOW)** : AC #3 + #4 + #5 Assertion 1 selector synced `[data-sonner-toast]` + pattern `/Créez d'abord un exercice/` (au lieu de `getByRole('alert')` + `/exercice comptable/`). AC #5 negative assertion `getByRole('alert')` → `[data-sonner-toast]`.
+8. **AA-2 (MEDIUM → LOW)** : AC #10 + AC #8 sync N=20 avec justification probabiliste 1/2^20 (au lieu de N=100 spec originale). Pattern Approche 3 retenue avec 4 buckets explicites.
+9. **AA-3 + AA-4 + AA-5 (LOW)** : Dev Notes §"Pattern bits-ui" + ligne 263 "Toast UI" + §"Testing standards summary" synced sur ground-truth empirique `Toast.svelte:344-360` (svelte-sonner sans `role="alert"`). AC #8 assertion pattern sync Approche 3 + commentaire sur Approche 1 abandonnée.
+
+**Findings rejetés (4)** :
+- **BH-1** : analyste self-refuted (« benign on closer inspection »).
+- **BH-5** : hardcoded `description/quantity/vatRate` dans no_op_body — empirique 5/5 PASS prouve que le serveur ne normalise pas.
+- **BH-6** : Test 3 inter-test state — réfuté ground-truth `test.beforeEach` ligne 21-22 re-seed `with-company` avant chaque test.
+- **BH-8** : `accounts[0]/[1]` bounds check — défensif seed-controlled (seed garantit ≥ 2 accounts).
+
+**Deferred (1)** :
+- **ECH-7** : `getByRole('option').first()` global scoping — Playwright auto-wait + click-to-close suffit empiriquement. Refactor futur si flake observé.
+
+**Test Locally First post-patches code (commit `4677c43`)** :
+- `cargo fmt --all --check` + `cargo build` + `cargo clippy -D warnings` + `cargo test -p kesh-api --test kf004_no_op_e2e -- --test-threads=1` ✓ 6/6 PASS.
+- `npm run check` ✓ (0 errors, 25 warnings idem baseline) + `npm run lint-i18n-ownership` ✓ + `npm run test:unit` ✓ 253/253 + `npm run build` ✓.
+- Playwright `fiscal-years.spec.ts` ✓ **6/6 PASS** post-modal-guard + nth-comment + exactly-1-FY assertion.
+
+**Modèle Pass 1** : Sonnet 4.6 × 3 subagents parallèles (BH, ECH, AA), tous isolés contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée (dev = Opus 4.7 single-pass).
+
+**Cycle complet single-pass Sonnet** : convergence atteinte sans nécessité Pass 2 Haiku (cohérent précédent 9-5-1c convergence Pass 1 Sonnet × 3, scope minimaliste 2 fichiers post-orchestré dev complet).
+
+**Statut final story** : `review → done`. **Epic 9.5 maintenant 6/7 stories done** (restent 9-5-4 backlog + epic-9-5-retrospective optional).
