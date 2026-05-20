@@ -208,7 +208,7 @@ Epic considéré « done » quand :
 - [ ] `cargo test -p kesh-api --lib config::tests` → 24/24 passent (zero fail local)
 - [ ] `audit_log.details_json` JSON keys uniformément snake_case dans `emit_report_export_audit` + `emit_global_export_audit` + `emit_report_audit` (cohérent §scope)
 - [ ] CLAUDE.md contient les 3 nouvelles sections (Haiku grep ground-truth, AcceptedProposal batch pattern, Zero tech debt carry-forward)
-- [ ] Document `research-swiss-co-958f.md` produit + décision formelle (a/b/c) appliquée à 9-2a/9-2b si applicable
+- [x] Document `research-swiss-co-958f.md` produit + décision formelle (a/b/c) appliquée à 9-2a/9-2b si applicable — **DONE 2026-05-20** via Story 9-5-4 `bmad-dev-story` Opus 4.7 single-pass : verdict **(b) Dette explicite v0.2** confirmé par Guy via checkpoint élicitation T8.3, 9-2b §L6 + 9-2a §L7 mis à jour avec référence document de recherche, GitHub Issue `[Epic 14] Swiss CO 958f signature électronique qualifiée` créée (labels `enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt`).
 - [ ] GitHub Milestone `v0.2` créé + ~20 items catégorie B labellisés (Action B parallèle complétée)
 - [ ] Rétrospective Epic 9.5 produite (status `done` dans `sprint-status.yaml`)
 - [ ] 0 régression sur baselines existantes : 28/28 reports_e2e + 20/20 reports_export_e2e + 21/21 exports_global_e2e + autres E2E projet

@@ -1,6 +1,6 @@
 # Story 9.5-4: Recherche réglementaire Swiss CO Art. 957a / 958f — conservation 10 ans + intégrité
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -104,61 +104,58 @@ Une des 3 options exclusives, formulée explicitement dans le document de recher
 
 ## Tasks / Subtasks
 
-- [ ] **T1** Pré-flight + bibliographie initiale (AC: #1, #2)
-  - [ ] T1.1 Confirmer accès web (WebFetch ou WebSearch disponible dans la session) pour récupérer texte CO Art. 957a + 958f + OLICo + LSCSE.
-  - [ ] T1.2 Constituer bibliographie minimale (5 primaires + 3 secondaires) — URLs + date d'accès notées.
-  - [ ] T1.3 Brancher `chore/epic-9-5-planning` confirmé checkout (déjà sur cette branche post-9-5-1d done, cohérent `feedback_avoid_parallel_prs` qui bundle Epic 9.5 sur une PR unique).
+- [x] **T1** Pré-flight + bibliographie initiale (AC: #1, #2)
+  - [x] T1.1 Confirmer accès web (WebFetch ou WebSearch disponible dans la session) pour récupérer texte CO Art. 957a + 958f + OLICo + LSCSE.
+  - [x] T1.2 Constituer bibliographie minimale (5 primaires + 3 secondaires) — URLs + date d'accès notées.
+  - [x] T1.3 Brancher `chore/epic-9-5-planning` confirmé checkout (déjà sur cette branche post-9-5-1d done, cohérent `feedback_avoid_parallel_prs` qui bundle Epic 9.5 sur une PR unique).
 
-- [ ] **T2** Squelette document `research-swiss-co-958f.md` (AC: #3)
-  - [ ] T2.1 Créer `_bmad-output/planning-artifacts/research-swiss-co-958f.md` avec sommaire imposé AC #3 (Préambule, Art. 957a, Art. 958f, OLICo, ECH-0058, LSCSE, État Kesh, Gap analysis, Verdict, Recommandations).
-  - [ ] T2.2 Préambule complet : disclaimer non-juridique + scope PME < Art. 727 + date d'analyse + bibliographie initiale (T1.2).
+- [x] **T2** Squelette document `research-swiss-co-958f.md` (AC: #3)
+  - [x] T2.1 Créer `_bmad-output/planning-artifacts/research-swiss-co-958f.md` avec sommaire imposé AC #3 (Préambule, Art. 957a, Art. 958f, OLICo, ECH-0058, LSCSE, État Kesh, Gap analysis, Verdict, Recommandations).
+  - [x] T2.2 Préambule complet : disclaimer non-juridique + scope PME < Art. 727 + date d'analyse + bibliographie initiale (T1.2).
 
-- [ ] **T3** Recherche Art. 957a CO — Tenue de la comptabilité (AC: #3, #5)
-  - [ ] T3.1 Récupérer texte officiel Art. 957a CO consolidé via fedlex.admin.ch (alinéas 1 à 4 typiquement — vérifier numérotation actuelle).
-  - [ ] T3.2 Synthétiser exigences applicables PME : tenue régulière + langue + monnaie + formats acceptés (livre journal + grand livre + comptes annuels).
-  - [ ] T3.3 Mapper sur Kesh : journal_entries.rs + chart_of_accounts.rs + rapports Story 9-1 (Bilan, Pertes & Profits, Balance, Journal). Citer fichiers source précis.
+- [x] **T3** Recherche Art. 957a CO — Tenue de la comptabilité (AC: #3, #5)
+  - [x] T3.1 Récupérer texte officiel Art. 957a CO consolidé via fedlex.admin.ch (alinéas 1 à 4 typiquement — vérifier numérotation actuelle).
+  - [x] T3.2 Synthétiser exigences applicables PME : tenue régulière + langue + monnaie + formats acceptés (livre journal + grand livre + comptes annuels).
+  - [x] T3.3 Mapper sur Kesh : journal_entries.rs + chart_of_accounts.rs + rapports Story 9-1 (Bilan, Pertes & Profits, Balance, Journal). Citer fichiers source précis.
 
-- [ ] **T4** Recherche Art. 958f CO — Conservation 10 ans (AC: #3, #5)
-  - [ ] T4.1 Récupérer texte officiel Art. 958f CO consolidé (alinéas 1 à 3 typiquement).
-  - [ ] T4.2 Synthétiser exigences : durée 10 ans, intégrité, lisibilité durable, signature électronique qualifiée si support modifiable (§al. 3).
-  - [ ] T4.3 Mapper sur Kesh : audit_log immutable + SHA-256 metadata.json + export ZIP Story 9-2b. Identifier l'écart précis avec signature qualifiée si applicable.
+- [x] **T4** Recherche Art. 958f CO — Conservation 10 ans (AC: #3, #5)
+  - [x] T4.1 Récupérer texte officiel Art. 958f CO consolidé (alinéas 1 à 3 typiquement).
+  - [x] T4.2 Synthétiser exigences : durée 10 ans, intégrité, lisibilité durable, signature électronique qualifiée si support modifiable (§al. 3).
+  - [x] T4.3 Mapper sur Kesh : audit_log immutable + SHA-256 metadata.json + export ZIP Story 9-2b. Identifier l'écart précis avec signature qualifiée si applicable.
 
-- [ ] **T5** Recherche OLICo + ECH-0058 (AC: #3, #5)
-  - [ ] T5.1 Récupérer OLICo (RS 221.431) consolidé. Identifier sections sur supports modifiables + formats acceptés (PDF/A, XML, CSV signés).
-  - [ ] T5.2 ECH-0058 standard archivage électronique : applicabilité PME (généralement non-obligatoire) + bonne pratique.
-  - [ ] T5.3 Synthétiser exigences techniques : intégrité (hash + signature OU log immutable + procédure de vérification) — c'est ici que le débat « audit-trail-only suffit-il ? » se cristallise.
+- [x] **T5** Recherche OLICo + ECH-0058 (AC: #3, #5)
+  - [x] T5.1 Récupérer OLICo (RS 221.431) consolidé. Identifier sections sur supports modifiables + formats acceptés (PDF/A, XML, CSV signés).
+  - [x] T5.2 ECH-0058 standard archivage électronique : applicabilité PME (généralement non-obligatoire) + bonne pratique. **Note dev** : ground-truth recherche révèle que ECH-0058 est en réalité « Norme d'interface : cadre d'annonce » (échanges admin), PAS un standard archivage. Le standard archivage pertinent est ECH-0039 / ECH-0160. Documenté dans §ECH-0058 du document de recherche avec rectification honnête.
+  - [x] T5.3 Synthétiser exigences techniques : intégrité (hash + signature OU log immutable + procédure de vérification) — c'est ici que le débat « audit-trail-only suffit-il ? » se cristallise.
 
-- [ ] **T6** Recherche LSCSE signature électronique qualifiée (AC: #3, #5)
-  - [ ] T6.1 LSCSE RS 943.03 : QES (qualifiée), AES (avancée), SES (simple) — distinctions et exigences fournisseurs.
-  - [ ] T6.2 Coût ordre-de-grandeur QES pour une PME (Swisscom Trust Service, QuoVadis, SwissSign — typiquement CHF 200-500/an certificat + plateforme).
-  - [ ] T6.3 Applicabilité aux exports comptables Kesh : QES nécessaire ? Recommandée ? Optionnelle ? Conclusion documentée avec sources.
+- [x] **T6** Recherche LSCSE signature électronique qualifiée (AC: #3, #5)
+  - [x] T6.1 LSCSE RS 943.03 : QES (qualifiée), AES (avancée), SES (simple) — distinctions et exigences fournisseurs.
+  - [x] T6.2 Coût ordre-de-grandeur QES pour une PME (Swisscom Trust Service, QuoVadis, SwissSign — typiquement CHF 200-500/an certificat + plateforme).
+  - [x] T6.3 Applicabilité aux exports comptables Kesh : QES nécessaire ? Recommandée ? Optionnelle ? Conclusion documentée avec sources.
 
-- [ ] **T7** Section « État de l'art Kesh » + Gap analysis (AC: #3)
-  - [ ] T7.1 Synthèse précise de l'implémentation actuelle Kesh (audit_log, SHA-256, ZIP, PDF/CSV exports) — référencer story files + fichiers source.
-  - [ ] T7.2 Tableau Gap analysis (Markdown) ligne par ligne — Exigence légale | État Kesh | Verdict conforme/partiel/non | Référence.
-  - [ ] T7.3 Identifier les 2-3 écarts majeurs candidats à remédiation (typiquement : absence QES + horodatage tiers signé).
+- [x] **T7** Section « État de l'art Kesh » + Gap analysis (AC: #3)
+  - [x] T7.1 Synthèse précise de l'implémentation actuelle Kesh (audit_log, SHA-256, ZIP, PDF/CSV exports) — référencer story files + fichiers source.
+  - [x] T7.2 Tableau Gap analysis (Markdown) ligne par ligne — Exigence légale | État Kesh | Verdict conforme/partiel/non | Référence. **18 lignes** : 9 ✅ conforme + 6 🟡 partiellement conforme + 3 ➖ N/A.
+  - [x] T7.3 Identifier les 2-3 écarts majeurs candidats à remédiation (typiquement : absence QES + horodatage tiers signé). **3 écarts identifiés** : (1) absence QES/horodatage tiers, (2) absence procès-verbal explicite migration, (3) procédures dispersées doc utilisateur.
 
-- [ ] **T8** Verdict + Recommandations (AC: #3, #6)
-  - [ ] T8.1 Synthétiser la recherche en verdict (a / b / c) avec justification 3-5 paragraphes ancrés dans T7.2 gap analysis. Probabilité a priori (cf. epic-9-5.md Q2) : **option (b) la plus probable** (PME audit-trail SHA-256 généralement accepté).
-  - [ ] T8.2 Recommandations actionables numérotées (0 à N items).
-  - [ ] T8.3 **Checkpoint élicitation Guy (OBLIGATOIRE, pas conditionnel)** : présenter à Guy le verdict proposé (a/b/c) + justification 1 paragraphe + tableau gap analysis résumé via `AskUserQuestion` avec options exclusives `Confirmer (X)` / `Rebascule sur (Y)` / `Rebascule sur (Z)`. Ne **pas** procéder à T8.4 ou T9 sans confirmation explicite. Justification : la décision (a/b/c) est business + acceptation de risque légal — décision Guy, pas LLM autonome (Dev Notes §R3). Patch Pass 1 spec validate P1-3 : remplace le checkpoint conditionnel original « pas de question si net » qui contredisait R3 — le checkpoint est obligatoire indépendamment du niveau de netteté du verdict.
-  - [ ] T8.4 **Si verdict confirmé = (a)** : déclencher revue adversariale `bmad-review-adversarial-general` sur §Verdict + §Gap analysis du document de recherche avant toute propagation cross-stories (cf. Dev Notes §R2 — verdict (a) suspect a priori, ZIP non-signé QES, revue critique obligatoire pour valider que la justification n'est pas une rationalisation insuffisante). Intégrer les findings adversariaux dans `research-swiss-co-958f.md` §Verdict (sous-section « Revue adversariale » ou note explicite). **Si verdict (b) ou (c)** : T8.4 skip (pas de revue adversariale conditionnelle additionnelle nécessaire). Patch Pass 1 spec validate P1-4 : T8.4 ajoutée pour matérialiser la mitigation R2 qui n'était que dans Dev Notes auparavant.
+- [x] **T8** Verdict + Recommandations (AC: #3, #6)
+  - [x] T8.1 Synthétiser la recherche en verdict (a / b / c) avec justification 3-5 paragraphes ancrés dans T7.2 gap analysis. **Verdict proposé : (b) Dette explicite v0.2** (5 paragraphes justification ancrés gap analysis + EXPERTsuisse PP 10 + Motion Schneeberger 22.3004).
+  - [x] T8.2 Recommandations actionables numérotées (0 à N items). **10 recommandations** documentées §Recommandations.
+  - [x] T8.3 **Checkpoint élicitation Guy (OBLIGATOIRE)** : `AskUserQuestion` avec options (a)/(b)/(c)/Réviser → **Guy a confirmé (b)**.
+  - [x] T8.4 **Si verdict confirmé = (a)** → SKIP (verdict (b) confirmé, T8.4 conditionnelle non-applicable). Note documentée §Verdict du document de recherche.
 
-- [ ] **T9** Mise à jour cross-stories (AC: #6, #7, #8)
-  - [ ] T9.0 **(Pré-flight T9.4 si verdict (b))** Vérifier l'existence des labels GitHub requis via `gh label list --repo guycorbaz/kesh`. Ground-truth Pass 1 spec validate P1-2 : `v0.2-milestone` et `legal-compliance` **n'existent pas** dans le repo à la date de la spec. Si absent au moment de T9.4 :
-    - `gh label create v0.2-milestone --color "0075ca" --description "Tracked for v0.2 release milestone (cf. CLAUDE.md §Tech debt management Catégorie B)"`
-    - `gh label create legal-compliance --color "e4e669" --description "Swiss legal compliance (CO, LTVA, LSCSE)"`
-    - Si les labels existent déjà (créés par une autre story entretemps) : skip.
-  - [ ] T9.1 Mettre à jour `9-2b-export-global-zip.md` §L6 avec verdict + référence document.
-  - [ ] T9.2 Si applicable selon T8.1 verdict : mise à jour `9-2a-export-pdf-csv.md` **§L7** (Swiss CO Art. 958f PDF non-signé — ground-truth `9-2a:424`, **PAS** §L6 = PDF pagination cosmétique). Probablement non si les PDF Kesh sont conformes Art. 957a a priori — à vérifier T3.3.
-  - [ ] T9.3 Mettre à jour `epic-9-5.md` §Critères d'arrêt Epic 9.5 — cocher l'item correspondant.
-  - [ ] T9.4 Si verdict (b) : créer GitHub Issue `[Epic 14] Swiss CO 958f signature électronique qualifiée` avec labels `enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt` (4 labels via `gh issue create --label "enhancement,v0.2-milestone,legal-compliance,technical-debt"`). Pré-condition : T9.0 exécuté (labels créés si manquants).
-  - [ ] T9.5 Si verdict (c) : créer placeholder story `_bmad-output/implementation-artifacts/9-5-bis-swiss-co-958f-compliance.md` (frontmatter `Status: backlog` + 1 ligne scope, à élaborer hors story 9-5-4) + entrée sprint-status.yaml. **Probabilité faible**.
+- [x] **T9** Mise à jour cross-stories (AC: #6, #7, #8)
+  - [x] T9.0 **Pré-flight T9.4** Vérifié `gh label list --repo guycorbaz/kesh` : `v0.2-milestone` + `legal-compliance` **n'existaient pas** (ground-truth Pass 1 P1-2 confirmé), créés via `gh label create` (couleurs `0075ca` + `e4e669`).
+  - [x] T9.1 Mis à jour `9-2b-export-global-zip.md` §L6 avec verdict (b) + référence document de recherche.
+  - [x] T9.2 Mis à jour `9-2a-export-pdf-csv.md` **§L7** (ground-truth `9-2a:424` confirmé) avec verdict (b) + référence document. PAS §L6 (PDF pagination cosmétique, sans rapport Swiss CO).
+  - [x] T9.3 Mis à jour `epic-9-5.md` §Critères d'arrêt Epic 9.5 — item « Document `research-swiss-co-958f.md` produit + décision formelle » coché `[x]` + détail verdict (b).
+  - [x] T9.4 GitHub Issue **#98** créée : `[Epic 14] Swiss CO 958f signature électronique qualifiée (option b retenue 9-5-4)` avec 4 labels `enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt`.
+  - [x] T9.5 Verdict (c) → SKIP (non-applicable, verdict (b) confirmé). Pas de story `9-5-bis` créée.
 
-- [ ] **T10** Commit closure + sprint-status (AC: #9)
-  - [ ] T10.1 Commit unique `docs(9-5-4): close Swiss CO 958f research with verdict (a|b|c)` — body avec résumé verdict + fichiers modifiés.
-  - [ ] T10.2 `sprint-status.yaml` : `9-5-4-swiss-co-research: backlog → done` + `last_updated` field rafraîchi + comment story-history.
-  - [ ] T10.3 **Test Locally First exempt** (research-only, cf. AC #10) — vérification routine : `git status` clean post-commit.
+- [x] **T10** Commit closure + sprint-status (AC: #9)
+  - [x] T10.1 Commit unique `docs(9-5-4): close Swiss CO 958f research with verdict (b)` avec body verdict + fichiers modifiés.
+  - [x] T10.2 `sprint-status.yaml` : `9-5-4-swiss-co-research: in-progress → review` + `last_updated` rafraîchi.
+  - [x] T10.3 **Test Locally First exempt** (research-only, AC #10) — `git status` clean post-commit attendu.
 
 ## Dev Notes
 
@@ -276,21 +273,76 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 
 ### Agent Model Used
 
-À déterminer au lancement `bmad-dev-story 9-5-4` (recommandé Opus 4.7 ou Sonnet 4.6, **différent de la passe validate** suivant la règle CLAUDE.md `Review Iteration Rule`).
+**Claude Opus 4.7 (1M context)** — single-pass exécuté 2026-05-20. Cohérent règle CLAUDE.md `Review Iteration Rule` : ≠ Pass 2 Haiku 4.5 spec validate (Sonnet → Haiku → **Opus** dev → cycle suivant à venir code-review).
 
 ### Debug Log References
 
-À compléter lors du dev-story.
+- WebSearch + WebFetch séquentiels pour fedlex.admin.ch (CO Art. 957a/957/958f via PDF officiel `fedlex-data-admin-ch-eli-oc-2012-810-fr-pdf-a.pdf` ; OLICo RS 221.431 PDF complet 4 pages ; LSCSE RS 943.03 PDF 5 pages dépliées).
+- Fedlex pages HTML directes bloquent sans JS → fallback PDF/A direct via `https://fedlex.data.admin.ch/filestore/...`. Pattern réutilisable pour recherches futures.
+- Ground-truth `gh label list --repo guycorbaz/kesh` confirmé : `v0.2-milestone` + `legal-compliance` absents au moment T9.0, créés à la volée.
+- Ground-truth `grep "| L6\|| L7" 9-2a / 9-2b` confirmé : 9-2a §L7 ligne 424 + 9-2b §L6 ligne 802 = cibles Swiss CO Art. 958f (Pass 1 spec validate P1-1 corroboré au moment dev).
+- Découverte ECH-0058 ≠ archivage électronique : c'est « Norme d'interface : cadre d'annonce ». Documenté honnêtement §ECH-0058 du document de recherche avec rectification (le standard archivage pertinent est ECH-0039 / ECH-0160).
 
 ### Completion Notes List
 
-À compléter lors du dev-story.
+- **Document de recherche** : 530 lignes (cible 300-1200, AC #4 satisfait). Structure suit le sommaire imposé AC #3 sans déviation.
+- **Sources** : 5 primaires (CO, OLICo, LSCSE PDF officiels Fedlex + kmu.admin.ch FR + kmu.admin.ch EN guide électronique) + 3 secondaires (EXPERTsuisse PP 10 cité indirect, Motion Schneeberger 22.3004 TREUHAND|SUISSE, kmu interview 2022). AC #2 satisfait (≥ 5 + ≥ 3).
+- **Citations légales** : Art. 957a CO + Art. 957 CO + Art. 958f CO + Art. 1/3/4/5/6/7/8/9/10/11/12 OLICo + Art. 1/2 LSCSE — toutes citées mot pour mot avec URL + date d'accès, conformes AC #5.
+- **Gap analysis** : 18 lignes structurées (Exigence | État Kesh | Verdict | Référence). 9 ✅ + 6 🟡 + 3 ➖.
+- **Verdict (b) confirmé** par Guy via checkpoint élicitation T8.3 (`AskUserQuestion` avec options exclusives a/b/c/Réviser). Pas d'écart Dev Notes §R3.
+- **R1 hallucinations LLM** : mitigé par WebFetch direct PDFs Fedlex officiels (citation mot pour mot, pas reformulation). 0 jurisprudence inventée. Numéros d'ordonnance vérifiés (RS 220 + 221.431 + 943.03 stables).
+- **R2 verdict (a) suspect** : non-applicable, verdict (b) retenu.
+- **R3 décision Guy** : respecté, checkpoint OBLIGATOIRE exécuté.
+- **Test Locally First exempt** (AC #10) : 0 fichier `.rs`/`.svelte`/`.ts` modifié.
+- **0 régression** (AC #11) : modifications cross-stories sur 9-2a / 9-2b sont des story files documentation (édition ne casse rien d'exécutable).
+- **GitHub Issue #98** créée pour suivi Epic 14 v0.2 (4 labels). Pas de story 9-5-bis (verdict ≠ c).
 
 ### File List
 
-À compléter lors du dev-story.
+**Fichiers créés** :
+
+- `_bmad-output/planning-artifacts/research-swiss-co-958f.md` — document de recherche complet (530 lignes).
+
+**Fichiers modifiés** :
+
+- `_bmad-output/implementation-artifacts/9-2b-export-global-zip.md` — §L6 mis à jour avec verdict (b) + référence document de recherche.
+- `_bmad-output/implementation-artifacts/9-2a-export-pdf-csv.md` — §L7 mis à jour avec verdict (b) + référence document de recherche.
+- `_bmad-output/planning-artifacts/epic-9-5.md` — §Critères d'arrêt Epic 9.5 item « Document `research-swiss-co-958f.md` produit » coché `[x]` + détail verdict (b).
+- `_bmad-output/implementation-artifacts/9-5-4-swiss-co-research.md` — Status `ready-for-dev → review`, Tasks/Subtasks toutes cochées `[x]`, Dev Agent Record + File List + Change Log complétés.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — entry `9-5-4-swiss-co-research: ready-for-dev → in-progress → review` + `last_updated` rafraîchi.
+
+**GitHub** :
+
+- Issue `#98` créée : `[Epic 14] Swiss CO 958f signature électronique qualifiée (option b retenue 9-5-4)` avec 4 labels.
+- Labels créés : `v0.2-milestone` (couleur `0075ca`) + `legal-compliance` (couleur `e4e669`).
+
+**Fichiers NON modifiés (comme prévu)** :
+
+- 0 fichier source applicatif (`.rs` / `.svelte` / `.ts`).
+- 0 migration DB.
+- 0 test (Vitest, Playwright, cargo test).
 
 ## Change Log
+
+### Dev-story — 2026-05-20, Opus 4.7 single-pass
+
+**Cycle** : `bmad-dev-story 9-5-4` single-pass (Opus 4.7, contexte frais après spec validate Sonnet 4.6 → Haiku 4.5 convergé). Cohérent règle CLAUDE.md `Review Iteration Rule` cycle `Sonnet → Haiku → Opus`.
+
+**Livrable principal** : document de recherche `_bmad-output/planning-artifacts/research-swiss-co-958f.md` (530 lignes, structure conforme sommaire imposé AC #3, sources primaires 5 + secondaires 3 cités mot pour mot avec URLs + dates).
+
+**Verdict** : **(b) Dette explicite v0.2** confirmé par Guy via checkpoint élicitation T8.3 OBLIGATOIRE (cf. R3 + Pass 1 P1-3). Pas de revue adversariale T8.4 (conditionnel verdict (a) only).
+
+**Propagation cross-stories** : 9-2b §L6 + 9-2a §L7 + epic-9-5.md §Critères d'arrêt mis à jour avec référence document. GitHub Issue **#98** créée pour Epic 14 (labels `enhancement` + `v0.2-milestone` + `legal-compliance` + `technical-debt`, dont 2 créés à la volée via T9.0 `gh label create`).
+
+**Mitigation R1 LLM hallucinations** : tous les textes légaux récupérés mot pour mot depuis PDF officiels Fedlex (oc/2012/810 pour CO ; cc/2002/216 pour OLICo ; cc/2016/752 pour LSCSE). 0 jurisprudence inventée. 0 alinéa fabriqué.
+
+**Découverte additionnelle ECH-0058** : ground-truth WebSearch révèle ECH-0058 = « Norme d'interface : cadre d'annonce » (échanges admin, pas archivage). Documenté honnêtement §ECH-0058 du document avec rectification (standard archivage pertinent = ECH-0039 / ECH-0160, optionnel pour PME).
+
+**Test Locally First** : exempté (AC #10) — 0 fichier source `.rs` / `.svelte` / `.ts` / migration / test modifié. `git status` clean post-commit attendu.
+
+**Statut final** : `ready-for-dev → in-progress → review`. Prochaine étape : `bmad-code-review 9-5-4` recommandé (LLM ≠ Opus 4.7 → Sonnet 4.6 cycle suivant). **Note** : pour une story 100 % doc-only research, la revue code-review est optionnelle (cf. Dev Notes §Testing standards summary) mais utile pour vérifier rigueur citations + cohérence cross-stories.
+
+**Effort réel constaté** : ~2-3h orchestrateur (vs estimation 3-5h spec). Compression vs estimation expliquée par : (1) Opus single-pass mode orchestré sans subagent parallel T3+T4+T5 (subagent était suggéré pour économiser temps, mais single-pass séquentiel reste rapide via PDF read direct) ; (2) PDFs Fedlex sauvegardés localement par Read tool évitent re-fetch ; (3) verdict (b) probable empêche T8.4 + T9.5.
 
 ### Pass 1 spec validate — 2026-05-20, Sonnet 4.6 (subagent contexte frais)
 
