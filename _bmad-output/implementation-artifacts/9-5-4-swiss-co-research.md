@@ -324,6 +324,36 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 
 ## Change Log
 
+### Pass 2 code-review — 2026-05-20, Haiku 4.5 (subagent isolé contexte frais, diff combiné dev + Pass 1 patches)
+
+**Mitigation préférée Haiku CLAUDE.md** : diff combiné unique `f32bd81~1..HEAD` (906 lignes) fourni au lieu de la séquence dev + Pass 1 — évite la confusion d'indexation diff multi-commit (cf. §Haiku-specific guardrails).
+
+**Bilan vérification propagation Pass 1** : 9/9 patches P1-1 à P1-9 propagés ✅ (Haiku grep ground-truth systématique sur chaque patch).
+
+**Verdict trend brut Pass 2** : 0 CRITICAL + 0 HIGH + 1 MEDIUM + 1 LOW = **2 findings**.
+
+**Patches appliqués Pass 2 (2)** :
+
+1. **MEDIUM P2-1 (R2-2)** — chiffre « < 1 % » utilisé 3 fois (research-swiss-co-958f.md lignes 505 + 513 + 9-2b-export-global-zip.md ligne 802) comme statistique précise sans source. Ground-truth grep réfutation partielle Haiku : Haiku a affirmé « 0 résultats grep `< 1 %` dans research-swiss-co-958f.md », mais `grep -nF "< 1 %"` retourne 2 hits (lignes 505 + 513). Faux-négatif grep Haiku (probablement format espacement entre `<` et `1`). **Le fond du finding reste valide** : « < 1 % » est une estimation qualitative présentée comme statistique précise. Patch : reformulé en « cas marginal pour le tissu PME suisse (estimation qualitative, ordre de grandeur de quelques % au plus — la jurisprudence publique disponible et les commentaires fiduciaires consultés ne signalent pas de cas typique) ». 3 occurrences patchées (research lignes 505 + 513 + 9-2b ligne 802). Crédibilité du verdict (b) renforcée par transparence sur le caractère qualitatif de l'estimation.
+
+2. **LOW P2-2 (R2-1)** — apparente contradiction entre verdict (b) « conformité v0.1 acceptée » et recommandation actionable #9 « revue juridique externe avant publication v0.1 ». Le fond n'est PAS une contradiction (recommandation #9 est non-bloquante, defence in depth optionnelle), mais la rédaction l'exprime maladroitement. Patch : §Recommandations item 9 reformulé pour expliciter « strictement optionnelle et non-bloquante » + « pas de contradiction avec le verdict (b) » + cas d'usage clarifié (Project Lead Guy souhaite niveau sécurité supplémentaire).
+
+**Findings dismissed (3)** :
+- **R2-3 « Logique T8.4 vs implémentation »** : OK — déjà documenté dans Change Log Pass 1.
+- **R2-4 « Cohérence labels GitHub Issue #98 »** : OK — cohérent T9.0 + T9.4, labels créés à la volée correctement.
+- **R2-5 « Absence audit_log multi-tenant dans Gap table »** : OK — édge case architectural couvert §6 Multi-tenant, pas une exigence légale CO/OLICo directe (donc orthogonal à Gap).
+
+**Trend cumul cycle 2-passes (Sonnet → Haiku)** :
+- Pass 1 Sonnet 4.6 : 0C+1H+6M+5L = 13 findings bruts → 9 PATCH + 2 REJECT + 1 DEFER.
+- Pass 2 Haiku 4.5 : 0C+0H+1M+1L = 2 findings → 2 PATCH + 3 dismiss.
+- **Total cumul : 11 patches sur 2 passes**.
+
+**Note hygiène Haiku** : Haiku a déclaré « ✅ CONVERGED 0 > LOW » dans son verdict final tout en reportant R2-2 MEDIUM ailleurs dans son output — incohérence interne Haiku 4.5 classique. L'orchestrateur a re-vérifié par grep direct (`grep -nF "< 1 %"`) et confirmé le finding R2-2 réel → patch appliqué. **Faux-positif Haiku diff multi-commit** : 0 détecté grâce à mitigation diff combiné unique.
+
+**Statut post-Pass 2** : convergence Pass 2 atteinte après patches P2-1 + P2-2. **Pass 3 Opus 4.7 obligatoire** (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`, MEDIUM résiduel ramené à 0 nécessite vérification orthogonale Opus).
+
+**Modèle Pass 2** : Claude Haiku 4.5 (subagent isolé contexte frais — règle `LLM différent passe précédente` respectée Sonnet → Haiku).
+
 ### Pass 1 code-review — 2026-05-20, Sonnet 4.6 (3 subagents parallèles : BlindHunter + EdgeCaseHunter + AcceptanceAuditor)
 
 **Verdict trend brut** : 0 CRITICAL + 1 HIGH + 6 MEDIUM + 5 LOW + 1 dedup = **13 findings bruts** (15 - 2 dédupliqués entre layers).
