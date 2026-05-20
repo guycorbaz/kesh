@@ -248,9 +248,10 @@ export function notifyMissingFiscalYearOrFallback(err: ApiError): boolean {
 - `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte:140-141`
 - `frontend/src/routes/(app)/invoices/[id]/+page.svelte:94-96`
 
-**Codes erreur backend** :
-- `FY_MISSING_CODES = ['NO_FISCAL_YEAR', 'FISCAL_YEAR_INVALID']` (à vérifier dans notify.ts les constantes exactes).
+**Codes erreur backend** (ground-truth `notify.ts:71-72`) :
+- `FY_MISSING_CODES = ['FISCAL_YEAR_INVALID', 'NO_FISCAL_YEAR'] as const`.
 - `FY_CLOSED_CODE = 'FISCAL_YEAR_CLOSED'`.
+- L'ordre dans le tableau est sans importance fonctionnelle (`.includes()` est order-agnostic ligne 99).
 
 **Toast UI** : `svelte-sonner` library, role `alert` sur le container rendu, button action label = i18n `go-to-settings`.
 
@@ -418,3 +419,36 @@ cat crates/kesh-api/src/routes/invoices.rs lignes 86-95
 **Recommandation Sonnet** : Pass 2 Haiku 4.5 avec discipline grep ground-truth obligatoire (cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet`). Vérifier propagation patches Pass 1 + chercher inconsistances résiduelles AC↔T mapping post-patches CRITICAL.
 
 **Modèle Pass 1** : Sonnet 4.6 (subagent isolé contexte frais — spec créée par Opus 4.7, règle CLAUDE.md `LLM différent passe précédente` respectée).
+
+### Pass 2 spec validate — 2026-05-20, Haiku 4.5 (subagent contexte frais)
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 1 LOW = 1 finding (Convergence : **OUI** — critère CLAUDE.md « Uniquement findings LOW » atteint).
+
+**Discipline grep ground-truth Haiku** appliquée — 11/11 verifications positives. Toutes les 5 patches Pass 1 (1C+2H+2M) confirmées propagées correctement par Haiku via Read direct du spec post-Pass 1. **Aucune hallucination Haiku** observée sur ce cycle (la mitigation diff aplati cross-modèle n'a pas eu de cas pathologique à traiter — la spec est un fichier unique, pas un diff multi-commit).
+
+**Ground-truths cross-verified par Haiku** :
+- ✓ `validateInvoice` route inchangée pour Test 1 (FY_INVALID), Test 3 routé sur JournalEntryForm.
+- ✓ `tokio::join!` claim retiré, pattern référence corrigée vers `put_invoice_no_op_returns_200_unchanged_version:345`.
+- ✓ Entity switch `contacts` → `invoices` documenté explicitement Scope + T5.5.
+- ✓ `total_amount` remplacé par `description`/`unit_price` (ground-truth `UpdateInvoiceRequest:86-95`).
+- ✓ `login(page)` step ajouté AC #4 + T4.3 avec justification cascade 401.
+- ✓ `FY_MISSING_CODES` + `FY_CLOSED_CODE` existent (`notify.ts:71-72`).
+- ✓ Helper `login(page)` défini localement `fiscal-years.spec.ts:29`.
+- ✓ Preset `with-company-no-fy` existe (`test_endpoints.rs:20`).
+- ✓ Endpoint `POST /api/v1/fiscal-years/{id}/close` confirmé.
+- ✓ Effort estimation §"Estimation effort" reste raisonnable post-patches (T5 2-3h cohérent).
+
+**Patch appliqué (1 LOW polish)** :
+
+1. **LOW-01 — `FY_MISSING_CODES` ordre cosmétique** : Dev Notes claimait `['NO_FISCAL_YEAR', 'FISCAL_YEAR_INVALID']` mais ground-truth `notify.ts:71` montre `['FISCAL_YEAR_INVALID', 'NO_FISCAL_YEAR'] as const`. Impact fonctionnel **nul** (`includes()` ligne 99 est order-agnostic), polish documentation. **Patch** : aligné Dev Notes sur l'ordre source réel + note explicite « ordre sans importance fonctionnelle ».
+
+**Trend cumul cycle 2-passes** :
+- Pass 1 Sonnet 4.6 : 1C+2H+2M+2L = 7 findings → 5 patches + 2 LOW dismissed.
+- Pass 2 Haiku 4.5 : 0C+0H+0M+1L = 1 finding → 1 LOW polish → **0 résiduel**.
+- **Total : 6 patches sur 2 passes. Cycle court (Sonnet → Haiku) cohérent 9-5-1b spec validate done en 2 passes.**
+
+**Cycle complet `Sonnet → Haiku`** : convergence atteinte sans nécessité Opus Pass 3 (scope minimaliste 2 fichiers — pas de subtilité architecturale qui requiert Opus). Pattern cohérent avec retro Epic 9 Insight I1 « Opus catches subtle stuff » qui s'applique aux scopes complexes — pas le cas ici.
+
+**Modèle Pass 2** : Claude Haiku 4.5 (subagent isolé, contexte frais — règle CLAUDE.md `LLM différent passe précédente` respectée Sonnet → Haiku).
+
+**Statut final spec** : `ready-for-dev` confirmé. Prête pour `bmad-dev-story 9-5-1d` (mode orchestré complet attendu cohérent 9-5-1b/c, LLM recommandé Opus 4.7 ou Sonnet 4.6 — différent de Pass 2 Haiku).
