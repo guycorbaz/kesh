@@ -1,6 +1,6 @@
 # Story 9.5-4: Recherche réglementaire Swiss CO Art. 957a / 958f — conservation 10 ans + intégrité
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -323,6 +323,39 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 - 0 test (Vitest, Playwright, cargo test).
 
 ## Change Log
+
+### Pass 4 code-review — 2026-05-20, Sonnet 4.6 (subagent isolé, diff combiné aplati `f32bd81~1..HEAD` 1001 lignes)
+
+**Mission Pass 4 convergence définitive** : cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet` Pass 4 = Sonnet. Vérifier que les 15 patches cumulés (9 P1 + 2 P2 + 4 P3) sont propagés et cohérents holistiquement.
+
+**Bilan validation propagation Pass 3** : 4/4 patches Pass 3 propagés ✅ (Sonnet grep ground-truth systématique).
+
+**Bilan validation absence régression Pass 1 + Pass 2** : 11/11 patches précédents toujours présents, 0 régression.
+
+**Cohérence holistique post-15 patches** :
+- Lignes document : 605 (cible AC #4 [300-1200]) ✅
+- Gap analysis : 18 lignes G1-G18, décompte cohérent §Synthèse Gap et §Verdict para 4 (6 🟡, 9 ✅, 3 ➖) ✅
+- Recommandations : items 1 à 12, séquence continue sans saut ✅
+- Sources primaires : 6 ✅
+- Cross-références internes (« voir §Verdict », « cf. §Recommandations item N ») toutes vérifiées valides ✅
+- Aucune contradiction inter-paragraphes ajoutés à différentes passes ✅
+
+**Verdict trend brut Pass 4** : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW + 3 OBSERVATIONS purement cosmétiques (non-findings actionables) = **CONVERGENCE DÉFINITIVE 0 > LOW**.
+
+**Cycle complet 4-passes — bilan final** :
+- Pass 1 Sonnet 4.6 : 13 findings bruts → 9 PATCH + 2 REJECT + 1 DEFER.
+- Pass 2 Haiku 4.5 : 2 findings → 2 PATCH + 3 dismiss.
+- Pass 3 Opus 4.7 : 4 findings → 4 PATCH + 3 dismiss.
+- Pass 4 Sonnet 4.6 : **0 finding actionnable, CONVERGENCE confirmée**.
+- **Total cumul cycle : 15 patches sur 4 passes**, 8 dismiss / 1 defer / 2 reject.
+
+**Décisions cycle** :
+- Story status `review → done` autorisée.
+- Issue GitHub #98 [Epic 14] traçage v0.2 confirmée OK.
+- Critère d'arrêt Epic 9.5 ligne 211 « Document research-swiss-co-958f.md produit + décision formelle (a/b/c) appliquée » resté coché ✅.
+- Epic 9.5 maintenant : **7/7 stories `done`** (9-5-1a/b/c/d + 9-5-2 + 9-5-3 + 9-5-4) + rétrospective Epic 9.5 (status `optional`) avant clôture complète.
+
+**Modèle Pass 4** : Claude Sonnet 4.6 (subagent isolé contexte frais — règle `LLM différent passe précédente` respectée Opus → Sonnet). Cycle complet Sonnet → Haiku → Opus → Sonnet.
 
 ### Pass 3 code-review — 2026-05-20, Opus 4.7 (subagent isolé, diff combiné aplati `f32bd81~1..HEAD`)
 
