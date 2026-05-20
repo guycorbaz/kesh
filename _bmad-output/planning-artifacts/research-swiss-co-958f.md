@@ -122,6 +122,8 @@ L'article 957a CO se trouve au **Titre trente-deuxième « De la comptabilité c
 
 Pour les deux régimes, **Art. 957a al. 5** autorise explicitement le **support électronique** (« Elle peut être établie sur support papier, sur support électronique ou sous toute forme équivalente »). C'est le fondement légal de l'existence même de Kesh comme logiciel de comptabilité.
 
+**Précision sur le régime simplifié Art. 957 al. 2 « recettes-dépenses + patrimoine »** : le principe de régularité s'applique « par analogie » (al. 3). En pratique, **OLICo Art. 9 conditions cumulatives s'appliquent identiquement** aux deux régimes — le législateur n'a pas prévu d'allégement spécifique pour le régime simplifié sur la conservation. Le mécanisme Kesh `audit_log` + SHA-256 metadata.json couvre donc **les deux régimes** (PME ≥ 500 kCHF + PME < 500 kCHF) sans différenciation technique. Le verdict (b) du présent document s'applique uniformément quelle que soit la PME utilisatrice.
+
 ### Checklist Art. 957a vs Kesh
 
 | # | Exigence Art. 957a | Implémentation Kesh v0.1 (Epic 1-9.5) | Verdict |
@@ -139,6 +141,16 @@ Pour les deux régimes, **Art. 957a al. 5** autorise explicitement le **support 
 **Synthèse Art. 957a** : Kesh v0.1 satisfait **toutes** les exigences Art. 957a CO pour PME — le support électronique est explicitement autorisé al. 5, le principe de régularité al. 2 est instancié par les patterns Kesh (audit_log + saisie partie double + plan comptable adapté + clarté multilingue). **Conformité forte pour ce volet.**
 
 ## Art. 958f CO — Conservation des livres et des pièces comptables
+
+### Articulation Art. 957a al. 5 vs 958f al. 3 — distinction tenue / conservation
+
+Avant d'entrer dans le texte de l'Art. 958f, il faut clarifier l'articulation conceptuelle entre **tenue** (régie par Art. 957a) et **conservation** (régie par Art. 958f).
+
+- **Art. 957a al. 5** autorise la **tenue** électronique de la comptabilité **sans condition supplémentaire** (« Elle peut être établie sur support papier, sur support électronique ou sous toute forme équivalente »).
+- **Art. 958f al. 3** autorise la **conservation** électronique des livres et pièces **sous deux conditions cumulatives** : (a) le lien avec les transactions garanti, (b) lecture possible en toutes circonstances.
+- La **délégation Art. 958f al. 4 → OLICo Art. 9** détaille les modalités techniques permettant de satisfaire ces deux conditions (notamment l'Art. 9 al. 1.b pour les supports modifiables).
+
+Cette **asymétrie législative entre tenue (inconditionnelle) et conservation (conditionnelle)** est centrale au verdict Gap analysis du présent document : elle explique pourquoi les lignes G5/G6 du Gap (qui mappent Art. 957a al. 5 « support électronique autorisé ») sont ✅ conformes sans réserve, tandis que la ligne G9 (qui mappe Art. 958f al. 3 + OLICo Art. 9 al. 1.b conditions cumulatives) est 🟡 partiellement conforme. C'est sur la **phase de conservation** que se joue la conformité réelle de Kesh — pas sur la phase de tenue, qui est triviale.
 
 ### Texte officiel (RS 220, état 01.01.2013)
 
@@ -455,6 +467,20 @@ Kesh v0.1 est **explicitement multi-tenant** (cf. Epic 7 Story 7-1 « Audit comp
 
 Cette absence de production préalable simplifie considérablement le scope de la conformité v0.1 : aucune dette historique d'intégrité non-couverte. La mise en place initiale du couple `(audit_log + SHA-256 metadata.json)` couvre l'ensemble du cycle de vie comptable des futurs utilisateurs.
 
+### 8. Continuity-of-business — Kesh open-source self-hostable
+
+OLICo Art. 6 (« disponibilité ») exige que toute personne autorisée puisse consulter et vérifier les livres et pièces comptables **jusqu'à la fin du délai de conservation** (10 ans Art. 958f al. 1). Cette obligation incombe à la PME comptable, mais sa réalisation dépend implicitement de la pérennité du logiciel utilisé.
+
+**Risque éditeur — continuity of business** : si l'éditeur Kesh cesse son activité durant la période de conservation 10 ans d'une PME utilisatrice, la PME doit néanmoins pouvoir produire ses livres lisibles en cas de contrôle fiscal ou audit.
+
+**Mitigation structurelle Kesh v0.1** :
+- Kesh est **open-source** (licence à confirmer v0.1 release notes — typiquement MIT / Apache 2.0 / AGPL).
+- Kesh est **self-hostable** via docker-compose (CLAUDE.md « deployment via docker-compose »).
+- Le code source + schéma DB MariaDB + format CSV/JSON ouverts du ZIP 9-2b sont **pérennement utilisables** indépendamment de l'éditeur.
+- Une PME utilisatrice peut maintenir son instance Kesh même après cessation d'activité de l'éditeur, ou exporter ses données vers un autre logiciel de comptabilité via le ZIP 9-2b.
+
+**Cette posture open-source + self-hostable + ZIP de souveraineté est un argument structurel fort en faveur du verdict (b)** : Kesh n'enferme pas la PME utilisatrice dans une dépendance propriétaire ; la PME peut prouver sa comptabilité 10 ans même si Kesh éditeur disparaît. C'est une garantie de continuité absente des solutions SaaS propriétaires comparables.
+
 **État global Kesh v0.1** : **conformité Art. 957a CO (tenue) FORTE** + **conformité Art. 958f CO (conservation) PARTIELLE** (10 ans + lisibilité OK, intégrité via audit_log + SHA-256 ≠ QES tiers signée).
 
 ## Gap analysis
@@ -551,6 +577,8 @@ Liste ordonnée par urgence et impact :
 10. **Pas d'action requise pour Art. 957a tenue** : conformité forte v0.1, aucune dette identifiée. Confirmer dans Epic 14 si évolution future.
 
 11. **Migration PDF → PDF/A (format archivage durable)** — Story Epic 14 ou 15 v0.2 : Kesh v0.1 génère des PDF standard via `printpdf` Rust (Story 9-2a). Pour la conservation 10 ans Art. 958f al. 3 « lecture reste possible en toutes circonstances », **PDF/A est la norme d'archivage durable internationalement reconnue (ISO 19005)**. PDF standard peut perdre la lisibilité sur 10 ans si polices propriétaires, dépendances externes ou métadonnées corrompues. Action v0.2 : évaluer migration `printpdf` → générateur PDF/A (e.g. `pdfium-render` + post-processing PDF/A, ou bibliothèque dédiée Rust). **Urgence** : faible v0.1 (PDF standard reste lisible 10 ans dans pratique courante), modérée v0.2 (best practice archivage).
+
+12. **Test périodique de restauration de backup MariaDB** (responsabilité PME utilisatrice / hébergeur) — recommandation **opérationnelle**, non Kesh code : Art. 10 al. 1 OLICo « L'intégrité et la lisibilité des supports d'information sont régulièrement contrôlées » impose un contrôle régulier. L'endpoint `verify_export_integrity` (recommandation #7) couvre la moitié logicielle ; la moitié opérationnelle requiert un test annuel `mariadb-dump → mariadb-restore` sur environnement de test + vérification lisibilité des écritures restaurées + génération d'un export ZIP post-restore identique. À inclure dans le guide utilisateur PME « Conformité OLICo Art. 9 et 10 » (recommandation #5). **Urgence** : faible v0.1, à matérialiser dans documentation Epic 14 ou Epic 10.
 
 ## Annexes — Cross-références projet Kesh
 

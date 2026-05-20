@@ -324,6 +324,43 @@ Le scope explicite **hors-scope** une revue par un avocat suisse spécialisé (c
 
 ## Change Log
 
+### Pass 3 code-review — 2026-05-20, Opus 4.7 (subagent isolé, diff combiné aplati `f32bd81~1..HEAD`)
+
+**Mission Pass 3 focus subtilités** : Opus = « subtle catches » cohérent retrospective Epic 9 Insight I1. Cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet` Pass 3 = Opus.
+
+**Bilan validation post-patches Pass 1 + Pass 2** : 11/11 patches Pass 1 + Pass 2 propagés ✅ (Opus grep ground-truth systématique), 0 régression détectée.
+
+**Verdict trend brut Pass 3** : 0 CRITICAL + 0 HIGH + **1 MEDIUM** + 3 LOW = 4 findings orthogonaux Sonnet+Haiku.
+
+**Patches appliqués Pass 3 (4 PATCH)** :
+
+1. **MEDIUM P3-1** — Articulation Art. 957a al. 5 (tenue) vs Art. 958f al. 3 (conservation) jamais explicitée. Subtilité juridique : les deux articles utilisent le mot « support électronique » mais avec des conditions différentes (957a al. 5 inconditionnelle, 958f al. 3 conditionnelle). Cette asymétrie explique pourquoi Gap G5/G6 ✅ tenue vs G9 🟡 conservation. Sans cette articulation explicite, un futur reviewer peut mal interpréter le verdict (b). Patch : ajouté sous-section §"Articulation Art. 957a al. 5 vs 958f al. 3 — distinction tenue / conservation" au début de §Art. 958f CO (4 paragraphes explicatifs).
+
+2. **LOW P3-2** — Continuity-of-business risk (éditeur Kesh cesse activité durant les 10 ans de conservation PME) non couvert. C'est un argument structurel **fort en faveur du verdict (b)** non-exploité : Kesh étant open-source + self-hostable + ZIP de souveraineté format ouvert, la PME utilisatrice n'est pas verrouillée. Patch : ajouté §8 « Continuity-of-business — Kesh open-source self-hostable » dans §Implémentation actuelle Kesh, articulant la mitigation structurelle vs solutions SaaS propriétaires comparables.
+
+3. **LOW P3-3** — Recommandation #12 manquante : test périodique de restauration backup MariaDB (Art. 10 al. 1 OLICo « contrôle régulier intégrité + lisibilité »). L'endpoint `verify_export_integrity` (recommandation #7) couvre la moitié logicielle ; la moitié opérationnelle (PME / hébergeur) requiert test annuel `mariadb-dump → mariadb-restore`. Patch : ajouté recommandation actionable #12 §Recommandations.
+
+4. **LOW P3-4** — Régime simplifié Art. 957 al. 2/3 « par analogie » non détaillé pratiquement. Une PME < 500 kCHF a-t-elle un standard de conservation différent ? Réponse : non, OLICo Art. 9 conditions cumulatives s'appliquent identiquement. Patch : ajouté précision §Art. 957a après citation Art. 957 al. 1-3.
+
+**Findings dismissed (3 orthogonaux confirmés OK)** :
+- « PME utilisant outil tiers (paie séparée) » : hors scope Kesh-only, le verdict (b) ne porte que sur le périmètre Kesh.
+- « Art. 14 al. 2bis CO QES = signature manuscrite » : correctement contextualisé comme cas connu hors comptable §LSCSE.
+- « Art. 70 LTVA factures » : explicitement scope-out §Préambule (couvert Epic 11) + mentionné §LSCSE.
+
+**Argumentation §Verdict 5 paragraphes relue par Opus** : 0 finding. Verdict tient. Opposition (a) vs (b) vs (c) équilibrée. Coûts Epic 14 cohérents.
+
+**Trend cumul cycle 3-passes (Sonnet → Haiku → Opus)** :
+- Pass 1 Sonnet 4.6 : 0C+1H+6M+5L = 13 findings → 9 PATCH + 2 REJECT + 1 DEFER.
+- Pass 2 Haiku 4.5 : 0C+0H+1M+1L = 2 findings → 2 PATCH + 3 dismiss.
+- Pass 3 Opus 4.7 : 0C+0H+1M+3L = 4 findings → 4 PATCH + 3 dismiss.
+- **Total cumul : 15 patches sur 3 passes**.
+
+**Document final post-Pass 3** : 605 lignes (vs 577 post-Pass 2, vs 530 dev initial — +75 lignes Pass 1 + +28 lignes Pass 3). Toujours dans cible AC #4 [300-1200]. Crédibilité document maximalement renforcée (transparence PP 10 + ECH-0058 rectification + multi-tenant + continuity + asymétrie tenue/conservation).
+
+**Recommandation Opus** : Pass 4 Sonnet 4.6 trivial après patches (cycle cohérent Sonnet → Haiku → Opus → Sonnet). Convergence définitive attendue 0 > LOW.
+
+**Modèle Pass 3** : Claude Opus 4.7 (subagent isolé contexte frais — règle `LLM différent passe précédente` respectée Haiku → Opus).
+
 ### Pass 2 code-review — 2026-05-20, Haiku 4.5 (subagent isolé contexte frais, diff combiné dev + Pass 1 patches)
 
 **Mitigation préférée Haiku CLAUDE.md** : diff combiné unique `f32bd81~1..HEAD` (906 lignes) fourni au lieu de la séquence dev + Pass 1 — évite la confusion d'indexation diff multi-commit (cf. §Haiku-specific guardrails).
