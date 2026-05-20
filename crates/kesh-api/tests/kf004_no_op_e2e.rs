@@ -810,7 +810,10 @@ async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlP
         assert_eq!(get_resp.status(), 200, "GET initial iteration {iteration}");
         let current: serde_json::Value = get_resp.json().await.unwrap();
         let v_current = current["version"].as_i64().unwrap();
-        let current_unit_price = current["lines"][0]["unitPrice"].as_str().unwrap().to_string();
+        let current_unit_price = current["lines"][0]["unitPrice"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Payload no-op : identique au snapshot courant v=v_current.
         let no_op_body = json!({

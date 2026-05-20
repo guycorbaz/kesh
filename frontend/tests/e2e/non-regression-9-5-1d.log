@@ -1,0 +1,216 @@
+
+Running 40 tests using 1 worker
+
+  ✓   1 tests/e2e/auth.spec.ts:22:2 › Login › login réussi → redirection accueil, affichage header/sidebar (680ms)
+  ✓   2 tests/e2e/auth.spec.ts:40:2 › Login › login échoué → message d'erreur affiché (375ms)
+  ✓   3 tests/e2e/auth.spec.ts:54:2 › Login › accès page protégée sans auth → redirect login (396ms)
+  ✓   4 tests/e2e/auth.spec.ts:62:2 › Login › raccourci Ctrl+S déclenche l'événement kesh:save (633ms)
+  ✓   5 tests/e2e/contacts.spec.ts:39:2 › Page contacts — affichage › affiche le titre et le bouton Nouveau contact (768ms)
+  ✓   6 tests/e2e/contacts.spec.ts:47:2 › Page contacts — CRUD › création nominale d'un contact Entreprise (1.1s)
+  ✓   7 tests/e2e/contacts.spec.ts:69:2 › Page contacts — CRUD › validation IDE invalide affiche un message d'erreur (784ms)
+  ✓   8 tests/e2e/contacts.spec.ts:91:2 › Page contacts — CRUD › archivage avec confirmation et disparition de la liste (1.1s)
+  ✓   9 tests/e2e/contacts.spec.ts:113:2 › Page contacts — CRUD › filtre par type Entreprise (1.2s)
+  ✓  10 tests/e2e/contacts.spec.ts:127:2 › Page contacts — CRUD › URL state préservé après reload (1.7s)
+  -  11 tests/e2e/contacts.spec.ts:145:7 › Page contacts — CRUD › filtre combinés (type + client + search)
+  -  12 tests/e2e/contacts.spec.ts:146:7 › Page contacts — CRUD › pagination navigation précédent/suivant
+  ✓  13 tests/e2e/homepage-settings.spec.ts:33:2 › Homepage › affiche 3 widgets sur la page d'accueil (637ms)
+  ✓  14 tests/e2e/homepage-settings.spec.ts:46:2 › Settings › page Paramètres affiche 4 sections (768ms)
+  ✓  15 tests/e2e/invoices.spec.ts:76:2 › Factures — liste › affiche le titre et le bouton Nouvelle facture (749ms)
+  ✘  16 tests/e2e/invoices.spec.ts:97:2 › Factures — création brouillon › crée une facture avec une ligne libre et la persiste (6.0s)
+  ✘  17 tests/e2e/invoices.spec.ts:125:2 › Factures — création brouillon › crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2) (6.3s)
+  ✘  18 tests/e2e/invoices.spec.ts:249:2 › Factures — téléchargement PDF (Story 5.3) › télécharge le PDF d'une facture validée (golden path) (567ms)
+  ✘  19 tests/e2e/invoices.spec.ts:271:2 › Factures — téléchargement PDF (Story 5.3) › bouton visible uniquement si status=validated (6.0s)
+  ✘  20 tests/e2e/invoices.spec.ts:297:2 › Factures — téléchargement PDF (Story 5.3) › erreur 400 INVOICE_NOT_PDF_READY affichée comme toast (823ms)
+  ✓  21 tests/e2e/products.spec.ts:70:2 › Page catalogue — affichage › affiche le titre et le bouton Nouveau produit (1.3s)
+  ✓  22 tests/e2e/products.spec.ts:87:2 › Page catalogue — CRUD › création nominale d'un produit (1.5s)
+  ✓  23 tests/e2e/products.spec.ts:109:2 › Page catalogue — CRUD › archivage avec confirmation et disparition de la liste (1.2s)
+  ✓  24 tests/e2e/products.spec.ts:128:2 › Page catalogue — CRUD › filtre recherche reflété dans URL et résultats (1.9s)
+  ✓  25 tests/e2e/products.spec.ts:152:2 › Page catalogue — validation & erreurs › format prix invalide affiche un message inline et désactive Créer (855ms)
+  ✘  26 tests/e2e/products.spec.ts:166:2 › Page catalogue — validation & erreurs › création d'un nom en doublon remonte une erreur (30.0s)
+  ✘  27 tests/e2e/products.spec.ts:185:2 › Page catalogue — filtres, tri & pagination › toggle "Inclure archivés" réaffiche un produit archivé (30.0s)
+  ✓  28 tests/e2e/products.spec.ts:202:2 › Page catalogue — filtres, tri & pagination › tri par nom : clic sur en-tête bascule Asc/Desc et URL (1.0s)
+  ✓  29 tests/e2e/products.spec.ts:211:2 › Page catalogue — filtres, tri & pagination › AC #9 : filtres/tri/pagination restaurés depuis l'URL après reload (1.6s)
+  ✓  30 tests/e2e/products.spec.ts:236:2 › Page catalogue — filtres, tri & pagination › sélection taux TVA 2.60 % persiste après édition (1.4s)
+  ✓  31 tests/e2e/products.spec.ts:256:2 › Contact — conditions de paiement (Story 4.2 T1) › le champ conditions de paiement persiste après création+édition (1.4s)
+  ✓  32 tests/e2e/reports.spec.ts:42:1 › reports page loads with 4 tabs (AC #27 + #33) (839ms)
+  ✓  33 tests/e2e/reports.spec.ts:53:1 › reports page generates balance sheet end-to-end (AC #28, T12.1) (1.4s)
+  ✓  34 tests/e2e/reports.spec.ts:117:1 › reports page disables Générer when company has no fiscal year (AC #34, T12.4) (2.0s)
+  ✓  35 tests/e2e/users.spec.ts:33:2 › Page utilisateurs — CRUD › admin voit le lien Utilisateurs dans le sidebar (736ms)
+  ✓  36 tests/e2e/users.spec.ts:44:2 › Page utilisateurs — CRUD › liste des utilisateurs affichée avec tableau (874ms)
+  ✓  37 tests/e2e/users.spec.ts:57:2 › Page utilisateurs — CRUD › création d'un utilisateur (1.1s)
+  ✓  38 tests/e2e/users.spec.ts:79:2 › Page utilisateurs — CRUD › validation mot de passe trop court (914ms)
+  ✓  39 tests/e2e/users.spec.ts:95:2 › Page utilisateurs — CRUD › validation mots de passe non identiques (968ms)
+  ✓  40 tests/e2e/users.spec.ts:112:2 › Page utilisateurs — Erreurs › le bouton désactiver est absent pour soi-même (843ms)
+
+
+  1) tests/e2e/invoices.spec.ts:97:2 › Factures — création brouillon › crée une facture avec une ligne libre et la persiste 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected: [32m"http://127.0.0.1:3000/invoices"[39m
+    Received: [31m"http://127.0.0.1:3000/invoices[7m/1[27m"[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    2 × unexpected value "http://127.0.0.1:3000/invoices/new"[22m
+    [2m    7 × unexpected value "http://127.0.0.1:3000/invoices/1"[22m
+
+
+      119 |
+      120 | 		await page.getByRole('button', { name: 'Créer la facture' }).click();
+    > 121 | 		await expect(page).toHaveURL('/invoices');
+          | 		                   ^
+      122 | 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
+      123 | 	});
+      124 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:121:22
+
+    Error Context: test-results/invoices-Factures-—-créati-a8769--ligne-libre-et-la-persiste/error-context.md
+
+  2) tests/e2e/invoices.spec.ts:125:2 › Factures — création brouillon › crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2) 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveValue[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('tbody tr').nth(1).locator('input[inputmode="decimal"]').nth(1)
+    Expected: [32m"150.00"[39m
+    Received: [31m"150.00[7m00[27m"[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveValue" with timeout 5000ms[22m
+    [2m  - waiting for locator('tbody tr').nth(1).locator('input[inputmode="decimal"]').nth(1)[22m
+    [2m    9 × locator resolved to <input type="text" data-slot="input" inputmode="decimal" class="dark:bg-input/30 border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 disabled:bg-input/50 dark:disabled:bg-input/80 h-8 rounded-lg border bg-transparent px-2.5 py-1 text-base transition-colors file:h-6 file:text-sm file:font-medium focus-visible:ring-3 aria-invalid:ring-3 md:text-sm …/>[22m
+    [2m      - unexpected value "150.0000"[22m
+
+
+      165 | 		await expect(secondRow.locator('input[type="text"]').first()).toHaveValue(productName);
+      166 | 		const secondRowNumerics = secondRow.locator('input[inputmode="decimal"]');
+    > 167 | 		await expect(secondRowNumerics.nth(1)).toHaveValue('150.00');
+          | 		                                       ^
+      168 |
+      169 | 		// Soumettre
+      170 | 		await page.getByRole('button', { name: 'Créer la facture' }).click();
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:167:42
+
+    Error Context: test-results/invoices-Factures-—-créati-e61ef-rsiste-après-reload-AC-1-2-/error-context.md
+
+  3) tests/e2e/invoices.spec.ts:249:2 › Factures — téléchargement PDF (Story 5.3) › télécharge le PDF d'une facture validée (golden path) 
+
+    Error: create invoice failed: 400
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      236 | 			},
+      237 | 		});
+    > 238 | 		expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
+          | 		                                                                       ^
+      239 | 		const invoice = await createRes.json();
+      240 | 		const validateRes = await ctx.post(`/api/v1/invoices/${invoice.id}/validate`);
+      241 | 		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
+        at createAndValidateInvoiceViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:238:74)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:252:21
+
+    Error Context: test-results/invoices-Factures-—-téléch-33b69-acture-validée-golden-path-/error-context.md
+
+  4) tests/e2e/invoices.spec.ts:271:2 › Factures — téléchargement PDF (Story 5.3) › bouton visible uniquement si status=validated 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected: [32m"http://127.0.0.1:3000/invoices"[39m
+    Received: [31m"http://127.0.0.1:3000/invoices[7m/1[27m"[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    2 × unexpected value "http://127.0.0.1:3000/invoices/new"[22m
+    [2m    7 × unexpected value "http://127.0.0.1:3000/invoices/1"[22m
+
+
+      287 | 		await inputs.nth(1).fill('50');
+      288 | 		await page.getByRole('button', { name: 'Créer la facture' }).click();
+    > 289 | 		await expect(page).toHaveURL('/invoices');
+          | 		                   ^
+      290 |
+      291 | 		// Ouvre la facture brouillon → pas de bouton PDF
+      292 | 		const row = page.locator('tbody tr', { hasText: contactName }).first();
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:289:22
+
+    Error Context: test-results/invoices-Factures-—-téléch-30a42-quement-si-status-validated/error-context.md
+
+  5) tests/e2e/invoices.spec.ts:297:2 › Factures — téléchargement PDF (Story 5.3) › erreur 400 INVOICE_NOT_PDF_READY affichée comme toast 
+
+    Error: create invoice failed: 400
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      236 | 			},
+      237 | 		});
+    > 238 | 		expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
+          | 		                                                                       ^
+      239 | 		const invoice = await createRes.json();
+      240 | 		const validateRes = await ctx.post(`/api/v1/invoices/${invoice.id}/validate`);
+      241 | 		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
+        at createAndValidateInvoiceViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:238:74)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:304:21
+
+    Error Context: test-results/invoices-Factures-—-téléch-2362b--READY-affichée-comme-toast/error-context.md
+
+  6) tests/e2e/products.spec.ts:166:2 › Page catalogue — validation & erreurs › création d'un nom en doublon remonte une erreur 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#username')[22m
+
+
+      22 | async function login(page: import('@playwright/test').Page) {
+      23 | 	await page.goto('/login');
+    > 24 | 	await page.fill('#username', 'admin');
+         | 	           ^
+      25 | 	await page.fill('#password', 'admin123');
+      26 | 	await page.click('button[type="submit"]');
+      27 | 	await expect(page).toHaveURL('/');
+        at login (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:24:13)
+        at goToProducts (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:31:2)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:167:3
+
+    Error Context: test-results/products-Page-catalogue-—--df7b3--doublon-remonte-une-erreur/error-context.md
+
+  7) tests/e2e/products.spec.ts:185:2 › Page catalogue — filtres, tri & pagination › toggle "Inclure archivés" réaffiche un produit archivé 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('#username')[22m
+
+
+      22 | async function login(page: import('@playwright/test').Page) {
+      23 | 	await page.goto('/login');
+    > 24 | 	await page.fill('#username', 'admin');
+         | 	           ^
+      25 | 	await page.fill('#password', 'admin123');
+      26 | 	await page.click('button[type="submit"]');
+      27 | 	await expect(page).toHaveURL('/');
+        at login (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:24:13)
+        at goToProducts (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:31:2)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/products.spec.ts:186:3
+
+    Error Context: test-results/products-Page-catalogue-—--4e9a2-éaffiche-un-produit-archivé/error-context.md
+
+  7 failed
+    tests/e2e/invoices.spec.ts:97:2 › Factures — création brouillon › crée une facture avec une ligne libre et la persiste 
+    tests/e2e/invoices.spec.ts:125:2 › Factures — création brouillon › crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2) 
+    tests/e2e/invoices.spec.ts:249:2 › Factures — téléchargement PDF (Story 5.3) › télécharge le PDF d'une facture validée (golden path) 
+    tests/e2e/invoices.spec.ts:271:2 › Factures — téléchargement PDF (Story 5.3) › bouton visible uniquement si status=validated 
+    tests/e2e/invoices.spec.ts:297:2 › Factures — téléchargement PDF (Story 5.3) › erreur 400 INVOICE_NOT_PDF_READY affichée comme toast 
+    tests/e2e/products.spec.ts:166:2 › Page catalogue — validation & erreurs › création d'un nom en doublon remonte une erreur 
+    tests/e2e/products.spec.ts:185:2 › Page catalogue — filtres, tri & pagination › toggle "Inclure archivés" réaffiche un produit archivé 
+  2 skipped
+  31 passed (2.1m)
