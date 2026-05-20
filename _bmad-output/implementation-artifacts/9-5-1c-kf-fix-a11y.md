@@ -1,6 +1,6 @@
 # Story 9.5-1c: Fix a11y violations — KF #91 layout DropdownMenu + KF #55 axe-core 6 pages
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -485,6 +485,12 @@ Vérification ground-truth Pass 3 Opus respectée : 2 occurrences `DropdownMenu.
 | `landmark-one-main` | 1 | login | architectural (CSR pre-hydration) | `<html lang="fr">` sans `<main>` (post-hydration : login a `<main>` ligne 64) |
 | `page-has-main` | 1 | login (alias) | architectural (CSR pre-hydration) | idem |
 | `page-has-heading-one` | 2 | login | architectural (CSR pre-hydration) | `<html lang="fr">` sans `<h1>` (post-hydration : login a `<h1>` ligne 66) |
+| `color-contrast` | 0 | — | (catégorie absente) | non-observée empiriquement post-fix KF #91 |
+| `image-alt` | 0 | — | (catégorie absente) | non-observée |
+| `aria-*` (label/role/state) | 0 | — | (catégorie absente) | non-observée |
+| `region` | 0 | — | (catégorie absente) | non-observée |
+| `focus-management` | 0 | — | (catégorie absente) | non-observée |
+| `nested-interactive` autres | 0 | — | (catégorie absente post-KF #91) | clear par cascade fix KF #91 (commit `0e84fa2`) |
 
 #### T6 décision R2 gate
 
@@ -569,6 +575,71 @@ Le DOM **post-hydration** est correct. Les 4 violations sont des **artefacts de 
 #### Prochaine étape
 
 `bmad-code-review 9-5-1c` avec LLM ≠ Opus 4.7 (recommandé Sonnet 4.6 Pass 1, cycle CLAUDE.md `Sonnet → Haiku → Opus → Sonnet` validé empiriquement Epic 9 retro Insight I1). Convergence attendue 1-3 passes vu scope minimaliste (5 fichiers source + 2 logs).
+
+### Pass 1 code-review — 2026-05-20, Sonnet 4.6 × 3 subagents parallèles (Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+**Verdict trend brut** : 0 CRITICAL + 0 HIGH + 2 MEDIUM + 7 LOW = 9 findings cumul 3 reviewers.
+
+**Discipline grep ground-truth Sonnet** : 11/11 ground-truth verifications positives par les 3 reviewers (les 3 reviewers ont eu accès au diff `/tmp/9-5-1c-diff.patch` flattened `5a97f07..HEAD` — mitigation Haiku multi-commit confusion appliquée par discipline cross-modèle même si Pass 1 = Sonnet, cf. memory `feedback_haiku_review_diff_combined`).
+
+**Triage classification** (per `bmad-code-review/steps/step-03-triage.md`) :
+
+| # | Source | Sév brute | Title | Verdict triage |
+|---|---|---|---|---|
+| 1 | blind | MEDIUM | Static `<title>Kesh</title>` app.html + `<svelte:head><title>` per-page → duplicate `<title>` DOM post-hydration | **MERGE avec ECH-1** + reclassify LOW |
+| 2 | blind | MEDIUM | Homepage h2 promotion sans h1 vérifié | **REJECT** — empiriquement réfuté ground-truth : `(app)/+page.svelte:34` a `<h1>` explicite + test `auth.spec.ts:98` PASS confirme |
+| 3 | blind | LOW | bits-ui `child` snippet API stability concern (future upgrade) | **DEFER** — théorique, pas actionnable scope actuel |
+| 4 | edge | LOW | Duplicate `<title>` (observation identique BH-1) | **MERGE → blind+edge** |
+| 5 | edge | LOW | Profile dropdown aria-label gap (a11y SR UX) | **DEFER** — pré-existant, scope creep |
+| 6 | edge | LOW | auth.spec.ts:90 résiduel permanent rouge | **DEFER** — déjà documenté known v0.1 dans Change Log + commit `2babd2f` |
+| 7 | auditor | LOW | Baseline metric reinterpretation `Received + N` ≠ violations | **REJECT** — déjà adressé exhaustivement Change Log §T2 + commit msg `2babd2f` |
+| 8 | auditor | LOW | Tableau T5.5 absent-category rows manquantes | **PATCH** — doc completeness |
+| 9 | auditor | LOW | Non-régression formal baseline missing (claim-based reasoning) | **DEFER** — low value, expensive backfill |
+
+**Bilan triage** :
+- 2 REJECT (BH-2 false positive empiriquement réfuté + AA-1 déjà adressé)
+- 4 DEFER (BH-3 future-proof + ECH-2 pré-existant scope + ECH-3 déjà documenté + AA-3 low value)
+- **2 PATCH LOW** (BH-1/ECH-1 merged note hygiene HTML + AA-2 table completeness)
+
+**Effectif Pass 1 final** : **0C+0H+0M+2L** → **CONVERGENCE** atteinte au critère CLAUDE.md « Uniquement des findings de sévérité LOW » dès Pass 1.
+
+**Patches appliqués (2/2 LOW)** :
+
+1. **AA-2 patch — Tableau T5.5 absent-category rows** : ajout de 6 lignes « 0 violations » pour les catégories `color-contrast`, `image-alt`, `aria-*`, `region`, `focus-management`, `nested-interactive autres` non-observées empiriquement post-fix KF #91. Documente la classification complète attendue par AC #6/#7 spec (le template T5.5 listait des exemples comme `color-contrast` et `heading-order`).
+
+2. **BH-1/ECH-1 patch — Hygiène HTML duplicate title note** : section ajoutée ci-dessous documente la limitation `<title>` × 2 dans le DOM post-hydration pour les pages avec `<svelte:head><title>`. Comportement fonctionnel correct (axe-core passe, browser tab affiche dernière, screen reader OK, `document.title` JS = dernière), seul le W3C HTML validator warnerait (hors CI projet). Fix non-trivial sans régression sur login (retirer le static title réintroduit 2 violations login `document-title` + `doc-has-title`). Accepté comme limitation v0.1 connue.
+
+#### Pass 1 code-review — Hygiène HTML duplicate `<title>` (BH-1/ECH-1 merged LOW)
+
+**Constat empirique** : `app.html` ajoute un `<title>Kesh</title>` statique (commit `21b30c9`) pour couvrir le cas pre-hydration de `auth.spec.ts:90` (clear `document-title` + `doc-has-title` sur login qui dropent de 6 à 4 violations). Les pages avec leur propre `<svelte:head><title>...</title></svelte:head>` (contacts, products, invoices, reports, journal-entries, etc.) injectent leur `<title>` post-hydration via le runtime SvelteKit.
+
+**Comportement DOM post-hydration sur ces pages** : 2 éléments `<title>` coexistent dans `<head>` :
+- `<title>Kesh</title>` statique (jamais retiré, hors gestion `<svelte:head>` SvelteKit).
+- `<title>Contacts — Kesh</title>` (etc.) ajouté par SvelteKit avec attribut tracker.
+
+**Impact fonctionnel** :
+- Browser tab : affiche dernier `<title>` (post-hydration → correct).
+- `document.title` JS API : retourne dernier (correct).
+- Screen readers : annoncent `document.title` (correct).
+- axe-core `document-title` rule : passe (vérifie présence ≥ 1 non-vide, pas unicité).
+- HTML5 spec : violation formelle (« exactly one `<title>` element »). W3C Nu validator warnerait — hors CI Kesh.
+
+**Trade-off accepté v0.1** : la « fix » correcte serait de retirer le static title et ajouter un mécanisme JS d'injection pré-hydration (e.g. inline `<script>` dans `app.html` qui crée le title avant SvelteKit). Coût d'ingénierie > bénéfice. Le fix actuel sacrifie la hygiène HTML5 stricte pour la conformité a11y axe-core.
+
+**Suivi recommandé** : ajouter à `docs/known-failures.md` legacy (archivé mais traçable) OU laisser dans le story Change Log comme accepted v0.1 sans KF dédiée (l'impact utilisateur est nul). Closure 9-5-1c maintenue, ce n'est pas un blocker.
+
+#### Pass 1 code-review — Findings DEFER documentés (pour suivi futur)
+
+| Finding | Source | Statut | Suivi recommandé |
+|---|---|---|---|
+| bits-ui `child` snippet API stability | BH-3 | Defer | Documentation projet `docs/architecture-frontend.md` si écrite — note pattern fragile sur major bump bits-ui |
+| Profile dropdown aria-label gap | ECH-2 | Defer | Story dédiée a11y UX SR enhancements (hors KF #55 axe-core compliance) |
+| auth.spec.ts:90 waitForLoadState fix | ECH-3 | Defer | KF follow-up ou story test hygiène (alignement pattern projet — autres tests a11y l'utilisent déjà) |
+| Non-régression formal baseline | AA-3 | Defer | Process amélioration : capturer baseline E2E pré-story dans T2 future stories (pas appliqué rétro 9-5-1c, low value backfill) |
+
+**Modèles Pass 1** : 3 × Sonnet 4.6 subagents isolés contexte frais. Règle CLAUDE.md « LLM différent passe précédente » respectée (dev-story = Opus 4.7 → code-review = Sonnet 4.6).
+
+**Verdict cycle code-review** : **CONVERGENCE Pass 1** (0 > LOW, 2 LOW patches appliqués). Pas de Pass 2 nécessaire. Story `review → done`.
 
 ### Pass 1 spec validate — 2026-05-19, Sonnet 4.6 (subagent contexte frais)
 
