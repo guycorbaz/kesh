@@ -792,11 +792,23 @@ async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlP
     // garantir ≥ 1 cas mutation-en-premier (probabilité d'échec total ≈ 1/2^20
     // sous distribution équiprobable, en pratique encore plus faible vu la
     // serialization MySQL X-lock).
+    // N_ITERATIONS=20 : compromis budget CI / probabilité de détection.
+    // Sous distribution équiprobable de la course X-lock, probabilité que
+    // jamais aucune mutation ne gagne sur 20 itérations ≈ 1/2^20 ≈ 1e-6.
+    // En pratique le serialization MySQL X-lock rend cette probabilité encore
+    // plus faible. Augmenter N coûte ~50ms × ΔN en runtime CI ; baisser N
+    // dégrade la garantie d'invariant testé (Pass 1 code-review BH-7 polish).
     const N_ITERATIONS: u32 = 20;
     let url = app.url(&format!("/api/v1/invoices/{id}"));
     let client = app.client.clone();
     let mut mutation_409_count = 0u32;
     let mut both_200_count = 0u32;
+    // `noop_409_mut_200_count` (cas `(409, 200)`) : diagnostic explicite — ne
+    // devrait jamais survenir avec les 2 seules requêtes concurrentes ciblées
+    // sur cette invoice (pas de tiers writer). Si > 0, soupçonner une régression
+    // dans `is_no_op_change` qui bumperait la version sur un no-op détecté
+    // comme mutation (Pass 1 code-review BH-2 + ECH-1 diagnostic).
+    let mut noop_409_mut_200_count = 0u32;
     let mut other_count = 0u32;
 
     for iteration in 0..N_ITERATIONS {
@@ -835,6 +847,9 @@ async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlP
         // Payload mutation : changement réel sur `unitPrice` (incrément à
         // chaque itération pour éviter no-op si on tombe sur l'ancienne valeur
         // — `total_amount` est server-computed, hors `UpdateInvoiceRequest`).
+        // Range `200..220` : choisi disjoint de l'init `150.00` (toujours ≠
+        // init), et `iteration` u32 → arithmétique sans overflow (Pass 1
+        // code-review BH-7 polish).
         let mutated_price = format!("{}.00", 200 + iteration);
         let mutation_body = json!({
             "contactId": contact_id,
@@ -888,13 +903,29 @@ async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlP
         //   qui prouve le fix KF-020.
         // - both_200 : tx_b=200 (no-op gagne X-lock, commit v inchangée) + tx_a=200
         //   (mutation post-no-op, commit v+1) — race symétrique légitime.
-        // - other : tout autre combinaison (e.g. 409/200, 500/X, etc.) — anomalie.
+        // - noop_409_mut_200 : tx_a=200 + tx_b=409 INVERSÉ → impossible avec
+        //   seulement 2 requêtes ciblées + pas de tiers writer + `is_no_op_change`
+        //   correct. Si > 0 : soupçonner une régression où le no-op bumperait
+        //   la version (pattern `update_with_optimistic_lock` cassé).
+        // - other : tout autre combinaison (e.g. 500/X, infra/timeout) — anomalie
+        //   distincte du diagnostic noop_409_mut_200.
         match (status_a.as_u16(), status_b.as_u16()) {
             (200, 409) => mutation_409_count += 1,
             (200, 200) => both_200_count += 1,
+            (409, 200) => noop_409_mut_200_count += 1,
             _ => other_count += 1,
         }
     }
+
+    // Log diagnostic explicite avant assertions (Pass 1 code-review ECH-5) :
+    // si les deux assertions échouent ensemble (e.g. mutation_409=0 + other>0),
+    // l'utilisateur voit d'abord ces compteurs en clair, puis le message
+    // d'assert détaillé du cas d'échec.
+    eprintln!(
+        "[kf004 stress N={N_ITERATIONS}] mutation_409={mutation_409_count} \
+         both_200={both_200_count} noop_409_mut_200={noop_409_mut_200_count} \
+         other={other_count}"
+    );
 
     // Sans le `SELECT FOR UPDATE` du fix #49, le no-op verrait toujours v=N
     // (snapshot REPEATABLE READ pré-lock), court-circuiterait via
@@ -904,12 +935,24 @@ async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlP
         mutation_409_count >= 1,
         "Régression KF-020 SELECT FOR UPDATE (#49) probable : 0 cas 200/409 sur {N_ITERATIONS} \
          itérations stress loop. Counts: mutation_409={mutation_409_count}, \
-         both_200={both_200_count}, other={other_count}. \
+         both_200={both_200_count}, noop_409_mut_200={noop_409_mut_200_count}, \
+         other={other_count}. \
          Vérifier `crates/kesh-db/src/repositories/invoices.rs:674` (SELECT … FOR UPDATE)."
+    );
+    // `noop_409_mut_200_count > 0` ⇒ régression distincte (no-op bumping
+    // version). Diagnostic spécifique pour ne pas confondre avec infra (500/etc.).
+    assert_eq!(
+        noop_409_mut_200_count, 0,
+        "Régression `is_no_op_change` probable : {noop_409_mut_200_count} cas (409, 200) \
+         détectés sur {N_ITERATIONS} itérations. Le no-op devrait toujours \
+         court-circuiter sans bumper la version. Vérifier la logique \
+         `is_no_op_change` dans `crates/kesh-db/src/repositories/invoices.rs`."
     );
     assert_eq!(
         other_count, 0,
-        "Anomalie : status combinations inattendues détectées ({other_count}/{N_ITERATIONS} itérations). \
-         mutation_409={mutation_409_count}, both_200={both_200_count}, other={other_count}."
+        "Anomalie infra : {other_count}/{N_ITERATIONS} itérations avec status \
+         combinations inattendues (e.g. 500/X, timeout). \
+         mutation_409={mutation_409_count}, both_200={both_200_count}, \
+         noop_409_mut_200={noop_409_mut_200_count}, other={other_count}."
     );
 }

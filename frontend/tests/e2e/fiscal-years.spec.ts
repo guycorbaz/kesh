@@ -196,18 +196,36 @@ async function closeSeededFiscalYearViaApi(
 		const listRes = await ctx.get('/api/v1/fiscal-years');
 		expect(listRes.ok()).toBeTruthy();
 		const fys: Array<{ id: number; status: string }> = await listRes.json();
-		const open = fys.find((f) => f.status === 'Open');
-		expect(open, 'expected at least one Open fiscal_year').toBeTruthy();
-		const closeRes = await ctx.post(`/api/v1/fiscal-years/${open!.id}/close`);
+		// Assertion explicite : exactement 1 FY Open dans le seed `with-company`
+		// (cohérent fixture `test_fixtures.rs:170-176` qui seed 1 unique FY).
+		// Si un futur seed produit ≥ 2 Open, ce test deviendrait silencieusement
+		// fragile (find pick le premier, le 2ᵉ reste ouvert → journal_entries::create
+		// trouve toujours un FY couvrant 2025-06-15 → pas de FISCAL_YEAR_CLOSED).
+		// Fail fast plutôt que timeout confus (Pass 1 code-review ECH-6 polish).
+		const openFys = fys.filter((f) => f.status === 'Open');
+		expect(openFys.length, 'expected exactly one Open fiscal_year in with-company seed').toBe(1);
+		const open = openFys[0]!;
+		const closeRes = await ctx.post(`/api/v1/fiscal-years/${open.id}/close`);
 		expect(closeRes.ok(), `close FY failed: ${closeRes.status()}`).toBeTruthy();
-		return open!.id;
+		return open.id;
 	} finally {
 		await disposeContextSafe(ctx);
 	}
 }
 
 /** Remplit le formulaire JournalEntryForm jusqu'à activer le bouton Valider.
- * Pattern : 2 lignes équilibrées avec 2 comptes du seed. */
+ * Pattern : 2 lignes équilibrées avec 2 comptes du seed.
+ *
+ * Indexation `input[inputmode="decimal"]` — vérifié ground-truth
+ * `JournalEntryForm.svelte` : le formulaire initialise toujours exactement 2
+ * lignes (`{ accountId, debit, credit } × 2`), rendant 4 inputs decimal stables
+ * dans l'ordre DOM :
+ *   - `nth(0)` = ligne 0 debit  ← rempli ici (100.00)
+ *   - `nth(1)` = ligne 0 credit
+ *   - `nth(2)` = ligne 1 debit
+ *   - `nth(3)` = ligne 1 credit ← rempli ici (100.00 → équilibre)
+ * Le skip `nth(1)/(2)` est intentionnel : on construit la paire debit ligne 0
+ * + credit ligne 1 = 2 lignes équilibrées (Pass 1 code-review BH-4 polish). */
 async function fillJournalEntryFormForSubmit(
 	page: import('@playwright/test').Page,
 	{ entryDate, debitNumber, creditNumber }: { entryDate: string; debitNumber: string; creditNumber: string }
@@ -243,10 +261,18 @@ test.describe('AC #22 — fallback toast actionnable', () => {
 		await expect(page.getByRole('heading', { name: /Facture/ })).toBeVisible({ timeout: 5000 });
 		// Cliquer le bouton "Valider" principal (ouvre la modale de confirmation).
 		await page.getByRole('button', { name: 'Valider' }).first().click();
+		// Guard : attendre que la modale bits-ui `Dialog.Root` (title "Valider la
+		// facture") soit rendue avant de cibler le bouton confirmation, sinon
+		// `.last()` pourrait re-sélectionner le bouton page si la modale n'a pas
+		// encore monté (Pass 1 code-review BH-3 — Playwright auto-wait empirique
+		// suffit 6/6 mais ce guard rend l'intention explicite et le test robuste
+		// à un futur ralentissement du portal mount).
+		const validateDialog = page.getByRole('dialog', { name: 'Valider la facture' });
+		await expect(validateDialog).toBeVisible({ timeout: 5000 });
 		// Cliquer "Valider" dans la modale → confirmValidate() → backend retourne
 		// FISCAL_YEAR_INVALID (find_open_covering_date renvoie None pour 1900-01-01).
 		// `confirmValidate` invoque `notifyMissingFiscalYearOrFallback(err)` qui rend le toast.
-		await page.getByRole('button', { name: 'Valider' }).last().click();
+		await validateDialog.getByRole('button', { name: 'Valider' }).click();
 
 		// Assertion 1 : toast actionnable visible avec message NO/INVALID (« Créez d'abord »).
 		// svelte-sonner rend les toasts avec `data-sonner-toast=""` + `aria-live="polite"`
