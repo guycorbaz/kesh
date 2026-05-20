@@ -10,11 +10,26 @@ inputDocuments:
   - _bmad-output/planning-artifacts/ux-design-specification.md
 ---
 
-> ⚠️ **Archive historique — numérotage pré-2026-04-20.**
+> ⚠️ **Archive historique — numérotage pré-2026-04-20 (+ Epic 9.5 inséré 2026-05-17).**
 >
-> Ce document utilise l'ancien numérotage des epics, antérieur à l'insertion d'Epic 6 (« Qualité & CI/CD », décision rétro Epic 5 du 2026-04-16) puis d'Epic 7 (« Technical Debt Closure », décision rétro Epic 6 du 2026-04-20). Suite au renumérotage en chaîne (ex-Epic 6 → Epic 8 « Import bancaire », ex-Epic 7 → Epic 9 « Rapports », …, ex-Epic 13 → Epic 15), **les numéros et titres des sections ci-dessous ne correspondent pas à `sprint-status.yaml` ni aux fichiers `epic-N.md`**.
+> Ce document utilise l'ancien numérotage des epics, antérieur à l'insertion d'Epic 6 (« Qualité & CI/CD », décision rétro Epic 5 du 2026-04-16) puis d'Epic 7 (« Technical Debt Closure », décision rétro Epic 6 du 2026-04-20). Plus tard, **Epic 9.5 « Technical Debt Closure (bis) »** a été inséré entre Epic 9 (Rapports) et Epic 10 (Déploiement) selon décision rétro Epic 9 du 2026-05-17 (politique « zero tech debt carry-forward »). **Les numéros et titres des sections ci-dessous ne correspondent ni à `sprint-status.yaml` ni aux fichiers `epic-N.md`.**
 >
-> **Source de vérité** : un fichier `epic-N.md` par epic dans `_bmad-output/planning-artifacts/`. Premier exemple : [`epic-8.md`](epic-8.md) (créé 2026-05-02). Tous les Epic 9+ suivront cette convention.
+> **Mapping ancien → courant (post 2026-05-20)** :
+>
+> | Section ci-dessous | Sprint-status courant |
+> |---|---|
+> | Epic 6 « Qualité & CI/CD » | Epic 6 (inchangé) |
+> | Epic 7 « Import Bancaire & Réconciliation » | **Epic 8** (Epic 7 = Technical Debt Closure inséré) |
+> | Epic 8 « Rapports & Exports » | **Epic 9** |
+> | — (n'existait pas) | **Epic 9.5** Technical Debt Closure (bis) — inséré 2026-05-17 |
+> | Epic 9 « Déploiement & Opérations » | **Epic 10** |
+> | Epic 10 « TVA Suisse » | **Epic 11** |
+> | Epic 11 « Avoirs & Paiements » | **Epic 12** |
+> | Epic 12 « Budgets » | **Epic 13** |
+> | Epic 13 « Clôture d'Exercice » | **Epic 14** |
+> | Epic 14 « Justificatifs, Lettrage & Compléments v0.2 » | **Epic 15** |
+>
+> **Source de vérité** : `_bmad-output/implementation-artifacts/sprint-status.yaml` (statuts par story) + un fichier `epic-N.md` par epic dans `_bmad-output/planning-artifacts/`. Exemples créés : [`epic-8.md`](epic-8.md) (2026-05-02), [`epic-9.md`](epic-9.md), [`epic-9-5.md`](epic-9-5.md). Tous les Epic 10+ suivront cette convention.
 >
 > Décision tracée par [CR-009 #61](https://github.com/guycorbaz/kesh/issues/61) — fermée `not planned` le 2026-05-03 : coût > bénéfice de renumérotter un fichier en voie d'obsolescence.
 
