@@ -75,11 +75,11 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 ### `.env.example` (nouveau fichier racine)
 
-18. **Given** la racine du repo, **When** `.env.example` est mis à jour (fichier existant — voir Scope), **Then** il contient **toutes** les variables d'environnement documentées dans `crates/kesh-api/src/config.rs` : `DATABASE_URL`, `KESH_PORT`, `KESH_HOST`, `KESH_ADMIN_USERNAME`, `KESH_ADMIN_PASSWORD`, `KESH_JWT_SECRET`, `KESH_JWT_EXPIRY_MINUTES`, `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS`, `KESH_REFRESH_INACTIVITY_MINUTES`, `KESH_RATE_LIMIT_WINDOW_MINUTES`, `KESH_RATE_LIMIT_MAX_ATTEMPTS`, `KESH_RATE_LIMIT_BLOCK_MINUTES`, `KESH_LANG`, `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`, `RUST_LOG` — **16 variables**. Le `KESH_TEST_MODE` est **explicitement absent** du `.env.example` avec un commentaire d'avertissement à la place : `# DO NOT SET KESH_TEST_MODE IN PRODUCTION — réservé exclusivement aux tests intégrés CI/dev. L'activation en prod désactive des garde-fous sécurité.`. Chaque variable a un commentaire avant elle expliquant son rôle.
+18. **Given** la racine du repo, **When** `.env.example` est mis à jour (fichier existant — voir Scope), **Then** il documente **toutes** les variables d'environnement consommées par `crates/kesh-api/src/config.rs` : `DATABASE_URL`, `KESH_PORT`, `KESH_ADMIN_USERNAME`, `KESH_ADMIN_PASSWORD`, `KESH_JWT_SECRET`, `KESH_JWT_EXPIRY_MINUTES`, `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS`, `KESH_REFRESH_INACTIVITY_MINUTES`, `KESH_RATE_LIMIT_WINDOW_MINUTES`, `KESH_RATE_LIMIT_MAX_ATTEMPTS`, `KESH_RATE_LIMIT_BLOCK_MINUTES`, `KESH_LANG`, `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`, `RUST_LOG` — **15 variables actives** définies + `KESH_HOST` **documentée en commentaire** (non-définie pour éviter override du compose prod, cf. T3.2 section Application ligne 162 + patch #13 Pass 2). Le `KESH_TEST_MODE` est aussi **explicitement absent** du `.env.example` avec un commentaire d'avertissement à la place : `# DO NOT SET KESH_TEST_MODE IN PRODUCTION — réservé exclusivement aux tests intégrés CI/dev. L'activation en prod désactive des garde-fous sécurité.`. Chaque variable active a un commentaire avant elle expliquant son rôle.
 
 19. **Given** `.env.example`, **When** review, **Then** **aucune** valeur par défaut insecure n'apparaît : `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>`, `KESH_ADMIN_PASSWORD=<GENERATE_ME: openssl rand -base64 24>`, `DATABASE_URL=<EDIT: mysql://kesh:<password>@<mariadb-host>:3306/kesh>`. Pas de `changeme`, pas de `change-me-32-bytes...`.
 
-20. **Given** `.env.example`, **When** un utilisateur copie le fichier en `.env` puis tente `docker compose -f docker-compose.prod.yml up` sans rien modifier, **Then** `kesh-api` exit immédiatement avec un message d'erreur identifiable (`InsecureJwtSecret` ou `InsecureAdminPassword` ou `MissingVar`). Le fail-fast est l'effet voulu — pas de boot accidentel sur defaults.
+20. **Given** `.env.example`, **When** un utilisateur copie le fichier en `.env` puis tente `docker compose -f docker-compose.prod.yml up` sans rien modifier, **Then** `kesh-api` **ne démarre pas correctement** — soit un `ConfigError` fatal (si un placeholder rencontre un check existant, e.g. `KESH_ADMIN_PASSWORD` absent du `.env.example` → `MissingVar`), soit une erreur de connexion DB sur l'URL placeholder `<EDIT: mysql://...>` invalide. Le comportement voulu est : **aucun boot silencieux sur des valeurs non-fonctionnelles**. Pas obligatoirement un `ConfigError` spécifique (les placeholders `<GENERATE_ME: openssl rand -hex 32>` 35 chars passent `WeakJwtSecret`+`InsecureJwtSecret`, donc le fail-fast peut survenir en aval de Config — toujours avec exit non-zero et message log identifiable côté DB pool init).
 
 21. **Given** `.gitignore` du repo, **When** review, **Then** `.env` est listé (le fichier user-side ne doit jamais être committé). `.env.example` reste committé. *(à vérifier — si déjà présent, no-op)*
 
@@ -312,9 +312,15 @@ grep -rn "KESH_ADMIN_PASSWORD" crates --include="*.rs" 2>&1 | grep -v "src/confi
 
 → identifier tout test d'intégration (`crates/*/tests/*.rs`) ou code source (`crates/*/src/*.rs` hors `config.rs`) qui set ou consume `KESH_ADMIN_PASSWORD` dans une valeur < 12 chars ou `"changeme"`. Si trouvé, patcher (mêmes patches que T1.2.2). Si rien trouvé : OK. Cet audit n'est pas couvert par T1.2.1 + T1.2.2 qui ciblent uniquement `kesh-api/src/config.rs`.
 
-### Dette latente — `docker-compose.dev.yml` post-Story 10-1 (Pass 3 Opus insight #7)
+### Dette latente — compose dev `KESH_ADMIN_PASSWORD` défaut faible post-Story 10-1 (Pass 3 Opus insight #7 + Pass 4 Sonnet L-2)
 
-`docker-compose.dev.yml:25` utilise `KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}` (default `"admin"` = 5 chars). Post-T1.4 (check `< 12 chars` → `WeakAdminPassword`), tout dev qui lance `docker compose -f docker-compose.dev.yml up` sans set `KESH_ADMIN_PASSWORD` dans son `.env` local fera un fail-fast au boot (au lieu d'un boot dev). **Pas une action de Story 10-1** (compose dev hors-scope), mais à noter dans le commit message + à patcher dans une PR de suivi (e.g. story de cleanup) en mettant `KESH_ADMIN_PASSWORD:-adminadminad` (12 chars dev-friendly). Vérification au commit : si la CI dev compose était lancée (elle n'est pas dans `ci.yml`), elle aurait failed.
+**Deux fichiers compose dev affectés symétriquement** :
+- `docker-compose.yml:49` (compose dev **primaire** pour les contributeurs) : `KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-changeme}`. Post-T1.3 (rejet case-insensitive `"changeme"`), tout dev qui lance `docker compose up` sans `.env` valide fera un fail-fast `InsecureAdminPassword`.
+- `docker-compose.dev.yml:25` (compose dev alternatif) : `KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}` (5 chars). Post-T1.4 (rejet `< 12 chars`), même symptôme — fail-fast `WeakAdminPassword`.
+
+**Conséquence** : tout contributeur post-Story 10-1 qui lance un compose dev sans `.env` local valide rencontrera un fail-fast (au lieu d'un boot dev). C'est le comportement voulu par la sécurité globale, mais c'est une friction dev qu'il faut documenter.
+
+**Pas une action Story 10-1** (les composes dev restent hors-scope du compose prod). À patcher dans une PR de suivi (e.g. story de cleanup post-Epic 10) en mettant `KESH_ADMIN_PASSWORD:-adminadminad12` (12+ chars dev-friendly) dans les **deux** composes — OU mieux, en documentant dans le `README.md` ou `CONTRIBUTING.md` que `.env` local doit être créé depuis `.env.example` avant tout `docker compose up`. La CI principale (`ci.yml`) ne lance pas le compose, donc pas de breakage CI.
 
 ### Project Structure Notes
 
@@ -396,9 +402,23 @@ Cycle de revue adversariale CLAUDE.md §"Review Iteration Rule" — relance jusq
 
 **Critère d'arrêt CLAUDE.md** : 1 CRITICAL + 3 MEDIUM + 2 LOW (dont 1 déféré) > LOW → relancer Pass 4 obligatoire.
 
-**Trend numérique cumul** : Pass 1 (11) → Pass 2 (2) → Pass 3 (6 dont 1 déféré = 5 appliqués). Convergence en cours mais pas atteinte. Pass 4 Sonnet devrait converger ou identifier ≤ 2 nouveaux findings MEDIUM, ouvrant la voie à Pass 5 Haiku pour validation finale. Budget restant : 5 passes max (sur 8 autorisés CLAUDE.md).
+### Pass 4 — Sonnet 4.6 (2026-05-21)
 
-**Suivi Pass 4** : Sonnet 4.6 contexte frais. Cycle CLAUDE.md Sonnet → Haiku → Opus → **Sonnet**. Focus particulier sur les 2 patches T1.2.1 + T1.2.2 + T3.2.1 (les plus récents et complexes — cible probable de bugs résiduels).
+**Trend** : 3 findings bruts → 3 patches appliqués (1 MEDIUM + 2 LOW). **Quasi-convergence**.
+
+**Tous les 18 patches Pass 1+2+3 vérifiés** par Sonnet via grep+Read direct → **0 régression détectée**, tous OK. Tableau verdict complet dans le rapport Pass 4.
+
+| # | Sév | Cat | Résumé | Patch |
+|---|---|---|---|---|
+| 20 | MEDIUM | SPEC | AC #20 promettait `ConfigError` (`InsecureJwtSecret`/`InsecureAdminPassword`/`MissingVar`) sur copie `.env.example` → `.env` sans modif. Mais placeholders `<GENERATE_ME: openssl rand -hex 32>` (35 chars, sans "change-me") passent les checks → exit non-zero via DB error mais pas via `ConfigError`. Tension architecturale AC #18 / #19 / #20 mutuellement exclusives. | AC #20 reformulé en Option A Sonnet : « ne démarre pas correctement » (soit `ConfigError`, soit DB error sur URL placeholder invalide). Objectif = aucun boot silencieux, pas exigence spécifique du variant. |
+| 21 | LOW | SPEC | AC #18 disait "16 variables" mais T3.2 (patch #13 Pass 2) a retiré `KESH_HOST` du `.env.example` → 15 actives + 1 commentée | AC #18 reformulé en "15 variables actives + `KESH_HOST` documentée en commentaire" |
+| 22 | LOW | DOCS | Dev Notes ne mentionnait que `docker-compose.dev.yml:25` (alt) mais oubliait `docker-compose.yml:49` (compose dev primaire) — même problème de défaut faible | Section « Dette latente » enrichie pour couvrir symétriquement les **2 composes dev**, avec recommandation patch + alternative `CONTRIBUTING.md` |
+
+**Critère d'arrêt CLAUDE.md** : 0 CRITICAL + 0 HIGH + 0 MEDIUM post-patches Pass 4 (M-1 traité = MEDIUM résolu, L-1 + L-2 = LOW traités). **Probable convergence**.
+
+**Trend numérique cumul** : Pass 1 (11) → Pass 2 (2) → Pass 3 (5 appliqués + 1 déféré) → Pass 4 (3). Total 21 patches appliqués + 1 déféré = 22 findings résolus en 4 passes. Budget restant : 4 passes max (sur 8 autorisés CLAUDE.md).
+
+**Suivi Pass 5** : Haiku 4.5 contexte frais (re-cycle CLAUDE.md Sonnet → **Haiku** → Opus → Sonnet itéré 2). **Objectif** : confirmer convergence (0 > LOW) ou identifier résiduels marginaux. Si Pass 5 = 0 findings > LOW, déclarer **CONVERGED** et arrêter le cycle.
 
 ## Dev Agent Record
 
