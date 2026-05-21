@@ -152,8 +152,8 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 - [ ] T3.1 — **Mettre à jour** le fichier `.env.example` existant à la racine du repo (**NE PAS** le recréer from scratch — partir du contenu actuel et patcher chirurgicalement). Au minimum, remplacer ligne 20 `KESH_ADMIN_PASSWORD=changeme` → `KESH_ADMIN_PASSWORD=<GENERATE_ME: openssl rand -base64 24>` et ligne ~24 `KESH_JWT_SECRET=change-me-32-bytes-minimum-...` → `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>`. Vérifier ensuite l'exhaustivité des variables documentées (AC #18).
 - [ ] T3.2 — Documenter chaque variable d'env consommée par `crates/kesh-api/src/config.rs` :
-  - Section `# Base de données` : `DATABASE_URL=<EDIT: mysql://kesh:<password>@<mariadb-host>:3306/kesh>` avec commentaire « URL de connexion MariaDB 10.11+. Sur Synology DSM, pointer vers le hostname du service MariaDB sur le réseau Docker externe `kesh-net`. »
-  - Section `# Application` : `KESH_PORT=3000`, `KESH_HOST=127.0.0.1` (commenter que `0.0.0.0` serait pour reverse proxy futur v0.2+).
+  - Section `# Base de données` : `DATABASE_URL=<EDIT: mysql://kesh:<password>@<mariadb-host>:3306/kesh>` avec commentaire « URL de connexion MariaDB 10.11+. Sur Synology DSM, pointer vers le hostname du service MariaDB sur le réseau Docker externe `frontend` (cf. AC #3 + T2.7). Si MariaDB tourne sur l'hôte NAS via Package Center DSM et que le réseau Docker n'a pas accès direct, utiliser l'IP LAN du NAS au lieu du hostname Docker. »
+  - Section `# Application` : `KESH_PORT=3000`. **NE PAS définir `KESH_HOST=` dans `.env.example`** — le compose prod `docker-compose.prod.yml` force `KESH_HOST=0.0.0.0` (bind interne Docker requis sinon le container est inaccessible, cf. AC #8 + T2.3). Si l'utilisateur ajoute `KESH_HOST=127.0.0.1` dans son `.env` user-side, il override le compose prod et casse son install. Le default applicatif `127.0.0.1` du code (`config.rs:346`) reste valable pour exécution hors-container en dev local. **Action concrète T3.2** : laisser un commentaire pédagogique au lieu de la variable : `# KESH_HOST volontairement non défini ici — le compose prod le force à 0.0.0.0. Pour dev hors Docker, set explicitement KESH_HOST=127.0.0.1 dans votre .env local.`
   - Section `# Admin initial` : `KESH_ADMIN_USERNAME=admin`, `KESH_ADMIN_PASSWORD=<GENERATE_ME: openssl rand -base64 24>` avec commentaire « Utilisé uniquement au tout premier boot avec table `users` vide. Le bootstrap est idempotent (cf. `bootstrap.rs:39-47`), donc une fois l'admin créé via UI, ces vars ne sont plus consultées. »
   - Section `# Authentification` : `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>` (`-hex 32` produit 32 bytes = 256 bits de random encodés en 64 caractères hex, bien au-delà du minimum 32 chars imposé) avec commentaire « Doit faire au moins 32 caractères et ne pas contenir 'change-me'. »
   - Section `# Session & rate limiting` : `KESH_JWT_EXPIRY_MINUTES=15`, `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS=30`, `KESH_REFRESH_INACTIVITY_MINUTES=15`, `KESH_RATE_LIMIT_WINDOW_MINUTES=15`, `KESH_RATE_LIMIT_MAX_ATTEMPTS=5`, `KESH_RATE_LIMIT_BLOCK_MINUTES=30`.
@@ -338,7 +338,20 @@ Cycle de revue adversariale CLAUDE.md §"Review Iteration Rule" — relance jusq
 
 **Critère d'arrêt CLAUDE.md** : 3 CRITICAL + 2 HIGH + 4 MEDIUM > LOW → relancer Pass 2 obligatoire.
 
-**Suivi Pass 2** : Haiku 4.5 contexte frais, mêmes inputs, post-patches. Focus particulier sur les claims CRITICAL/HIGH (cf. §"Haiku-specific guardrails" — grep ground-truth de tout finding affirmant existence/absence d'un pattern textuel précis).
+### Pass 2 — Haiku 4.5 (2026-05-21)
+
+**Trend** : 2 findings bruts → 2 patches appliqués (2 CRITICAL [REGR] = patches Pass 1 incomplets sur 2 emplacements de T3.2).
+
+**Ground-truth check** : `grep -nF` exécuté sur les 2 claims CRITICAL Haiku → **0 hallucination détectée**, les 2 findings sont VALIDES (vrais oublis Sonnet Pass 1 patches #7 et patch #3 qui n'ont pas propagé à T3.2). Haiku a fait son job correctement, pas de pattern `feedback_haiku_review_diff_combined` (faux-positifs Haiku) cette fois.
+
+| # | Sév | Cat | Résumé | Patch |
+|---|---|---|---|---|
+| 12 | CRITICAL | REGR | T3.2 ligne 155 commentaire DATABASE_URL référence encore `kesh-net` (oubli propagation patch #7) | Ligne 155 mise à jour : `frontend` + note alternative IP LAN NAS si réseau Docker n'a pas accès direct à MariaDB Package Center hôte |
+| 13 | CRITICAL | REGR | T3.2 ligne 156 `.env.example` proposait `KESH_HOST=127.0.0.1` qui aurait override le `0.0.0.0` du compose prod (AC #8) → container inaccessible | Ligne 156 reformulée : `KESH_HOST` **non défini** dans `.env.example` (compose prod le force à `0.0.0.0`), commentaire pédagogique expliquant le contexte dev hors-container |
+
+**Critère d'arrêt CLAUDE.md** : 2 CRITICAL + 0 HIGH + 0 MEDIUM > LOW → relancer Pass 3 obligatoire.
+
+**Suivi Pass 3** : Opus 4.7 contexte frais. Cycle CLAUDE.md Sonnet → Haiku → **Opus** → Sonnet. Opus apporte typiquement la profondeur architecturale + détection de patterns transverses ratés par les autres modèles (cf. Epic 9 retro Insight I1 — Opus catches 2 CRITICAL ground-truth missed par Sonnet+Haiku en Story 9-2b).
 
 ## Dev Agent Record
 
