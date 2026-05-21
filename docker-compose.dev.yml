@@ -40,7 +40,7 @@ services:
       start_period: 15s
 
   mariadb:
-    image: mariadb:11.4
+    image: mariadb:10.11
     container_name: kesh-mariadb-dev
     restart: unless-stopped
     ports:

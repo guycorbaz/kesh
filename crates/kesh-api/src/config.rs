@@ -32,6 +32,20 @@ pub enum ConfigError {
     /// explicitement pour éviter qu'un opérateur ayant tapé `"True"` ou
     /// `"yes"` croie test_mode activé alors que l'endpoint est 404.
     InvalidTestModeValue { got: String },
+    /// `KESH_JWT_SECRET` contient la sous-chaîne `change-me` (placeholder
+    /// du `.env.example`). Story 10-1 : refus fail-fast au lieu du warn
+    /// existant pour empêcher un boot prod sur un secret non-changé.
+    /// **Display ne loggue jamais la valeur** — fuite via `tracing::error!`.
+    InsecureJwtSecret,
+    /// `KESH_ADMIN_PASSWORD` égale (case-insensitive après trim) le
+    /// placeholder `"changeme"` du `.env.example`. Story 10-1 : refus
+    /// fail-fast au lieu du warn existant. **Display ne loggue jamais
+    /// la valeur**.
+    InsecureAdminPassword,
+    /// `KESH_ADMIN_PASSWORD` trop court (< 12 caractères après trim).
+    /// Story 10-1 : minimum OWASP / NIST SP 800-63B. **Display loggue
+    /// uniquement le count, jamais la valeur**.
+    WeakAdminPassword { actual_chars: usize },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -73,6 +87,27 @@ impl std::fmt::Display for ConfigError {
                      'True', 'TRUE', 'yes', 'on', etc. sont explicitement refusés \
                      pour éviter les ambiguïtés de configuration.",
                     got
+                )
+            }
+            ConfigError::InsecureJwtSecret => {
+                write!(
+                    f,
+                    "KESH_JWT_SECRET contient le placeholder 'change-me'. \
+                     Générer un vrai secret via : openssl rand -hex 32"
+                )
+            }
+            ConfigError::InsecureAdminPassword => {
+                write!(
+                    f,
+                    "KESH_ADMIN_PASSWORD est la valeur par défaut 'changeme' \
+                     (case-insensitive). Changez-le avant la mise en production."
+                )
+            }
+            ConfigError::WeakAdminPassword { actual_chars } => {
+                write!(
+                    f,
+                    "KESH_ADMIN_PASSWORD trop court : {} chars, minimum 12.",
+                    actual_chars
                 )
             }
         }
@@ -355,7 +390,10 @@ impl Config {
             .trim()
             .to_string();
 
-        let admin_password = env::var("KESH_ADMIN_PASSWORD").unwrap_or_else(|_| "changeme".into());
+        // Story 10-1 T1.2 : suppression du fallback `"changeme"`. La var est
+        // désormais obligatoire — pas de default insecure silencieux.
+        let admin_password = env::var("KESH_ADMIN_PASSWORD")
+            .map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?;
 
         // Rejeter empty / whitespace-only (patch #7) : on ne veut pas hasher
         // une chaîne vide et créer un admin avec un password vide.
@@ -363,10 +401,21 @@ impl Config {
             return Err(ConfigError::EmptyAdminPassword);
         }
 
-        if admin_password == "changeme" {
-            tracing::warn!(
-                "KESH_ADMIN_PASSWORD est 'changeme' — changez-le avant toute utilisation en production"
-            );
+        // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme"
+        // (placeholder `.env.example`) — au lieu du warn existant qui laissait
+        // booter un admin trivialement compromis.
+        if admin_password.trim().eq_ignore_ascii_case("changeme") {
+            return Err(ConfigError::InsecureAdminPassword);
+        }
+
+        // Story 10-1 T1.4 : minimum 12 chars (OWASP / NIST SP 800-63B). Utilise
+        // `.chars().count()` (pas `.len()`) pour compter les chars Unicode
+        // correctement (un emoji ou accent n'est pas 1 byte).
+        let admin_password_len = admin_password.trim().chars().count();
+        if admin_password_len < 12 {
+            return Err(ConfigError::WeakAdminPassword {
+                actual_chars: admin_password_len,
+            });
         }
 
         let db_connect_timeout = Duration::from_secs(10);
@@ -382,10 +431,10 @@ impl Config {
             });
         }
 
+        // Story 10-1 T1.5 : refus fail-fast si le secret contient le
+        // placeholder `change-me` — au lieu du warn existant.
         if jwt_secret.contains("change-me") {
-            tracing::warn!(
-                "KESH_JWT_SECRET contient 'change-me' — générez un vrai secret via : openssl rand -hex 32"
-            );
+            return Err(ConfigError::InsecureJwtSecret);
         }
 
         // KESH_JWT_EXPIRY_MINUTES : optionnel, défaut 15, borne 1-1440
@@ -741,6 +790,11 @@ mod tests {
         unsafe {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
             env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            // Story 10-1 T1.2.1 : KESH_ADMIN_PASSWORD désormais obligatoire
+            // (suppression du fallback `"changeme"` ligne 358 T1.2). Sans ce
+            // set, les 24 tests appelant `set_minimum_required()` cassent par
+            // `ConfigError::MissingVar("KESH_ADMIN_PASSWORD")`.
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
         }
     }
 
@@ -815,6 +869,11 @@ mod tests {
         reset_env();
         unsafe {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            // Story 10-1 T1.2.2 : KESH_ADMIN_PASSWORD désormais obligatoire,
+            // check ADMIN_PASSWORD intervient AVANT JWT_SECRET dans from_env().
+            // Sans ce set, le test reçoit MissingVar(KESH_ADMIN_PASSWORD) au
+            // lieu de MissingVar(KESH_JWT_SECRET) qu'il attend.
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
         }
 
         let result = Config::from_env();
@@ -831,6 +890,9 @@ mod tests {
         unsafe {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
             env::set_var("KESH_JWT_SECRET", "too-short");
+            // Story 10-1 T1.2.2 : ADMIN_PASSWORD check intervient avant
+            // WeakJwtSecret check → set pour atteindre l'assertion attendue.
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
         }
 
         let result = Config::from_env();
@@ -903,6 +965,9 @@ mod tests {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
             env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
             env::set_var("KESH_ADMIN_USERNAME", "  admin  ");
+            // Story 10-1 T1.2.2 : ADMIN_PASSWORD désormais obligatoire pour
+            // arriver jusqu'à l'assertion sur admin_username trim.
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
         }
 
         let config = Config::from_env().expect("should load");
@@ -924,6 +989,96 @@ mod tests {
 
         let result = Config::from_env();
         assert!(matches!(result, Err(ConfigError::EmptyAdminPassword)));
+    }
+
+    // --- Story 10-1 T1.7 : 4 nouveaux tests fail-fast secrets ---
+
+    /// Story 10-1 AC #17(a) — `KESH_JWT_SECRET` ≥ 32 chars **mais** contenant
+    /// le placeholder `change-me` → `InsecureJwtSecret`. La longueur ≥ 32 est
+    /// critique car sinon `WeakJwtSecret` court-circuite le check (ordre des
+    /// checks `from_env()` : ligne `len() < 32` AVANT ligne `contains("change-me")`).
+    #[test]
+    fn config_rejects_jwt_secret_containing_change_me() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+            // 34 chars, ≥ 32 → passe WeakJwtSecret, contient "change-me" → fail
+            env::set_var("KESH_JWT_SECRET", "abcdefghij-change-me-abcdefghijabc");
+        }
+
+        let result = Config::from_env();
+        assert!(
+            matches!(result, Err(ConfigError::InsecureJwtSecret)),
+            "expected InsecureJwtSecret, got {result:?}"
+        );
+    }
+
+    /// Story 10-1 AC #17(b) — `KESH_ADMIN_PASSWORD` égale (case-insensitive
+    /// après trim) le placeholder `"changeme"` → `InsecureAdminPassword`.
+    /// Couvre lowercase, uppercase, et variantes avec whitespace.
+    #[test]
+    fn config_rejects_admin_password_changeme_case_insensitive() {
+        for value in &[
+            "changeme",
+            "CHANGEME",
+            "Changeme",
+            "  changeme  ",
+            "  CHANGEME  ",
+        ] {
+            let _guard = env_lock();
+            reset_env();
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+                env::set_var("KESH_ADMIN_PASSWORD", value);
+            }
+
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InsecureAdminPassword)),
+                "expected InsecureAdminPassword for {value:?}, got {result:?}"
+            );
+        }
+    }
+
+    /// Story 10-1 AC #17(c) — `KESH_ADMIN_PASSWORD` < 12 chars (après trim)
+    /// → `WeakAdminPassword`. Utilise `chars().count()` (pas `len()`) pour
+    /// gérer Unicode correctement.
+    #[test]
+    fn config_rejects_admin_password_short() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            env::set_var("KESH_ADMIN_PASSWORD", "short-pw-11"); // 11 chars
+        }
+
+        let result = Config::from_env();
+        match result {
+            Err(ConfigError::WeakAdminPassword { actual_chars }) => {
+                assert_eq!(actual_chars, 11);
+            }
+            other => panic!("expected WeakAdminPassword(11), got {other:?}"),
+        }
+    }
+
+    /// Story 10-1 AC #17(d) — `KESH_ADMIN_PASSWORD` = 12 chars exactement
+    /// passe (limite basse acceptée).
+    #[test]
+    fn config_accepts_admin_password_exactly_12_chars() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            env::set_var("KESH_ADMIN_PASSWORD", "abcdefghijkl"); // 12 chars exact
+        }
+
+        let config = Config::from_env().expect("12-char password should pass");
+        assert_eq!(config.admin_password, "abcdefghijkl");
     }
 
     #[test]
