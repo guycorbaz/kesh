@@ -71,7 +71,7 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 16. **Given** chacun des cas 12, 14, 15 ci-dessus, **When** le binaire `kesh-api` boot, **Then** exit avec un code non-zero **et** émet un log explicite via `tracing::error!` qui guide l'utilisateur (e.g. « FATAL: KESH_JWT_SECRET contains 'change-me' placeholder — generate a real secret via `openssl rand -hex 32` and update your .env file »).
 
-17. **Given** la suite de tests `cargo test -p kesh-api --lib config::tests`, **When** exécutée, **Then** au moins **4 nouveaux tests** couvrent les nouveaux cas : (a) JWT secret contenant `change-me` → `InsecureJwtSecret`, (b) admin password `changeme` case-insensitive (lowercase + uppercase + variantes avec whitespace) → `InsecureAdminPassword`, (c) admin password < 12 chars → `WeakAdminPassword`, (d) admin password = 12 chars exactement → OK (limite basse). Les cas déjà couverts par les tests existants `config_rejects_missing_jwt_secret` (ligne 813), `config_rejects_weak_jwt_secret` (ligne 828), `config_rejects_empty_admin_password` (ligne 882), `config_rejects_whitespace_only_admin_password` (ligne 916) restent VERTS. La suppression du default fallback `"changeme"` (ligne 358) doit être validée par mise à jour de `set_minimum_required()` helper (T1.2.1) — sans cela ~23 tests appelant `set_minimum_required()` cassent. 0 régression sur la suite `config::tests` complète après le patch T1.2.1.
+17. **Given** la suite de tests `cargo test -p kesh-api --lib config::tests`, **When** exécutée, **Then** au moins **4 nouveaux tests** couvrent les nouveaux cas : (a) JWT secret de **≥ 32 chars contenant `change-me`** (e.g. `"abcdefghij-change-me-abcdefghijabc"` 34 chars — la longueur évite que `WeakJwtSecret` ne court-circuite le check `InsecureJwtSecret`, l'ordre des checks ligne 379 puis 385 imposant que le secret passe d'abord le check longueur) → `InsecureJwtSecret`, (b) admin password `changeme` case-insensitive (lowercase + uppercase + variantes avec whitespace) → `InsecureAdminPassword`, (c) admin password < 12 chars → `WeakAdminPassword`, (d) admin password = 12 chars exactement → OK (limite basse). Les cas déjà couverts par les tests existants `config_rejects_missing_jwt_secret` (ligne 813), `config_rejects_weak_jwt_secret` (ligne 828), `config_rejects_empty_admin_password` (ligne 882), `config_rejects_whitespace_only_admin_password` (ligne 916) restent VERTS **après application des patches T1.2.1 (helper) + T1.2.2 (3 tests hors helper)** — la suppression du default fallback `"changeme"` (ligne 358) doit être validée par ces patches sinon `MissingVar("KESH_ADMIN_PASSWORD")` court-circuite les assertions originales. 0 régression sur la suite `config::tests` complète après application T1.2.1 + T1.2.2.
 
 ### `.env.example` (nouveau fichier racine)
 
@@ -109,18 +109,24 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 ### T1: Fail-fast secrets dans `kesh-api/src/config.rs` (AC #10-17)
 
-- [ ] T1.1 — Ajouter 3 nouveaux variants à `enum ConfigError` (dans `kesh-api/src/config.rs`) :
-  - `InsecureJwtSecret` (avec impl Display message clair)
-  - `InsecureAdminPassword` (avec impl Display message clair)
-  - `WeakAdminPassword { actual_chars: usize }` (avec impl Display)
+- [ ] T1.1 — Ajouter 3 nouveaux variants à `enum ConfigError` (dans `kesh-api/src/config.rs`). **Sécurité IMPORTANTE** : les impl Display **ne loggent jamais la valeur du secret**, uniquement le pattern reconnu ou la longueur (pattern existant `WeakJwtSecret` ligne 43-50 montre `actual_bytes` count, pas la valeur). Le `tracing::error!(e.to_string())` consume le Display, donc toute valeur incluse fuiterait dans les logs Docker.
+  - `InsecureJwtSecret` Display : « KESH_JWT_SECRET contient le placeholder `change-me`. Générer un vrai secret via : `openssl rand -hex 32` » — **pas** la valeur.
+  - `InsecureAdminPassword` Display : « KESH_ADMIN_PASSWORD est la valeur par défaut `changeme` (case-insensitive). Changez-le avant la mise en production. » — **pas** la valeur (qui peut être `Changeme  ` avec whitespace).
+  - `WeakAdminPassword { actual_chars: usize }` Display : « KESH_ADMIN_PASSWORD trop court : {actual_chars} chars, minimum 12. » — `actual_chars` est OK (juste le compte, pas le contenu).
 - [ ] T1.2 — Modifier ligne 358 `let admin_password = env::var("KESH_ADMIN_PASSWORD").unwrap_or_else(|_| "changeme".into())` → **supprimer le fallback** et utiliser `.map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?`. Plus de default `"changeme"`.
-- [ ] T1.2.1 — **Mettre à jour `set_minimum_required()` helper de tests** (`crates/kesh-api/src/config.rs:740-745`) en ajoutant `env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");` dans le bloc `unsafe`. Sans cette mise à jour, ~23 tests appelant `set_minimum_required()` (lignes 751, 770, 786, 814, 849, 859, 872, 933, 948, 958, 971, 984, 996, 1013, 1030, 1040, 1053, 1066, 1081, 1091, 1106, 1123, 1142, 1159, 1173, 1192, 1208…) retournent `ConfigError::MissingVar("KESH_ADMIN_PASSWORD")` au lieu de `Ok(Config)` → régression garantie. Cette sous-tâche doit être exécutée **dans la même PR que T1.2**.
+- [ ] T1.2.1 — **Mettre à jour `set_minimum_required()` helper de tests** (`crates/kesh-api/src/config.rs:740-745`) en ajoutant `env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");` dans le bloc `unsafe`. Sans cette mise à jour, les **24 tests** appelant `set_minimum_required()` (`grep -cE "^\s*set_minimum_required\(\);"` = 24) retournent `ConfigError::MissingVar("KESH_ADMIN_PASSWORD")` au lieu de `Ok(Config)` → régression garantie. Cette sous-tâche doit être exécutée **dans la même PR que T1.2**.
+- [ ] T1.2.2 — **Patcher les ~3 tests hors helper** qui set manuellement leurs env vars sans passer par `set_minimum_required()` et qui n'incluent pas `KESH_ADMIN_PASSWORD` :
+  - `config_rejects_missing_jwt_secret` (ligne 813) — ajouter `env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");` dans le bloc `unsafe` après la ligne 817. Sans ça : test fail car il attendait `MissingVar("KESH_JWT_SECRET")` mais reçoit `MissingVar("KESH_ADMIN_PASSWORD")` (ordre des checks `from_env()` post-T1.2 : DATABASE_URL → KESH_ADMIN_PASSWORD → KESH_JWT_SECRET, donc ADMIN_PASSWORD check intervient AVANT JWT check).
+  - `config_rejects_weak_jwt_secret` (ligne 828) — même patch (ajout `KESH_ADMIN_PASSWORD`). Sans ça : test fail car il attendait `WeakJwtSecret` mais reçoit `MissingVar("KESH_ADMIN_PASSWORD")`.
+  - `config_trims_admin_username` (ligne 899) — même patch. Sans ça : test fail `expect("should load")` panic car `from_env()` retourne `Err(MissingVar("KESH_ADMIN_PASSWORD"))`.
+  - **Audit complémentaire recommandé** : exécuter `grep -nB2 "Config::from_env()" crates/kesh-api/src/config.rs` pour identifier tout autre test qui appelle `from_env()` sans set `KESH_ADMIN_PASSWORD` ni `set_minimum_required()`. Patcher tous les sites trouvés.
+  - **Non affectés (à laisser intacts)** : `config_rejects_empty_admin_password` (882) et `config_rejects_whitespace_only_admin_password` (916) — ces tests set explicitement `KESH_ADMIN_PASSWORD=""` ou `"   "` → `env::var()` retourne `Ok("")` (pas `Err`), donc pas `MissingVar` mais bien `EmptyAdminPassword` qui est ce qu'ils attendent. ✓
 - [ ] T1.3 — Modifier ligne 366-370 (warn `KESH_ADMIN_PASSWORD == "changeme"`) en `return Err(ConfigError::InsecureAdminPassword)` après comparaison case-insensitive sur la valeur trimée. Pattern recommandé : `if admin_password.trim().eq_ignore_ascii_case("changeme") { return Err(ConfigError::InsecureAdminPassword); }`.
 - [ ] T1.4 — Ajouter check longueur après le check `eq_ignore_ascii_case` : `if admin_password.trim().chars().count() < 12 { return Err(ConfigError::WeakAdminPassword { actual_chars: admin_password.trim().chars().count() }); }`. Utiliser `.chars().count()` (pas `.len()`) pour compter les chars Unicode correctement.
 - [ ] T1.5 — Modifier ligne 385-389 (warn `KESH_JWT_SECRET.contains("change-me")`) en `return Err(ConfigError::InsecureJwtSecret)`.
 - [ ] T1.6 — Vérifier que `main.rs` propage bien le `ConfigError` en exit non-zero (pattern existant — `Config::from_env().map_err(|e| { tracing::error!(...); std::process::exit(1) })` ou équivalent). Si déjà en place pour les autres variants, no-op.
-- [ ] T1.7 — Ajouter **4 nouveaux tests** unitaires dans le module `config::tests` (les cas « JWT empty/missing » et « admin password empty » sont déjà couverts par les tests existants `config_rejects_missing_jwt_secret` ligne 813, `config_rejects_weak_jwt_secret` ligne 828, `config_rejects_empty_admin_password` ligne 882, `config_rejects_whitespace_only_admin_password` ligne 916 — à laisser intacts) :
-  - `config_rejects_jwt_secret_containing_change_me`
+- [ ] T1.7 — Ajouter **4 nouveaux tests** unitaires dans le module `config::tests` (les cas « JWT empty/missing » et « admin password empty » sont déjà couverts par les tests existants `config_rejects_missing_jwt_secret` ligne 813, `config_rejects_weak_jwt_secret` ligne 828, `config_rejects_empty_admin_password` ligne 882, `config_rejects_whitespace_only_admin_password` ligne 916 — à patcher T1.2.2 pour les 2 premiers, à laisser intacts pour les 2 derniers) :
+  - `config_rejects_jwt_secret_containing_change_me` — utiliser un secret de **≥ 32 chars** (e.g. `"abcdefghij-change-me-abcdefghijabc"` 34 chars) pour passer le check `WeakJwtSecret` ligne 379 et arriver au check `InsecureJwtSecret` ligne 385. Avec un secret < 32 chars comme `"change-me"` (10 chars), le test fail car il reçoit `WeakJwtSecret` au lieu de `InsecureJwtSecret`.
   - `config_rejects_admin_password_changeme_case_insensitive` (couvre lowercase + uppercase + leading/trailing whitespace en 1 test paramétrisé, OU 3 tests distincts)
   - `config_rejects_admin_password_short` (< 12 chars)
   - `config_accepts_admin_password_exactly_12_chars` (limite basse OK)
@@ -162,6 +168,10 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
   - Section `# Politique mot de passe utilisateur` : `KESH_PASSWORD_MIN_LENGTH=8` (FR6 PRD — politique pour users créés via UI, distinct du `KESH_ADMIN_PASSWORD` 12 chars seedé via env).
   - Section `# Import bancaire` : `KESH_BANK_IMPORT_MAX_MB=10` (Story 8-1 limite upload bank statement).
   - Section `# Test mode (NE JAMAIS ACTIVER EN PRODUCTION)` : commenté/absent. Ajouter le bloc commentaire : `# DO NOT SET KESH_TEST_MODE IN PRODUCTION — réservé exclusivement aux tests intégrés CI/dev. L'activation en prod désactive des garde-fous sécurité (bind loopback, etc.).` Le commentaire est dans le fichier mais la variable n'est pas définie.
+- [ ] T3.2.1 — **Traitement des variables legacy** déjà présentes dans `.env.example` mais hors des 16 listées AC #18 :
+  - `MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`, `MARIADB_USER`, `MARIADB_PASSWORD` (lignes 6-9 actuelles) — **CONSERVER** (utilisées par `docker-compose.yml` dev pour le service `mariadb` bundled qui reste l'outil dev primaire post-Story 10-1). Ajouter un commentaire de section : `# --- Service MariaDB bundled (DEV ONLY — docker-compose.yml + docker-compose.dev.yml) ---`. Section explicitement séparée des 16 variables Kesh + DATABASE_URL.
+  - `COMPOSE_PROJECT_NAME` (ligne 49 actuelle) — **RETIRER** (low-value default Docker, pas utilisé par Kesh, juste un namespace cosmétique).
+  - `KESH_PRODUCTION_RESET` (ligne 46 actuelle, commenté) — **CONSERVER** commenté (utilisé par `docker-compose.dev.yml:30` + `kesh-core/onboarding`, dette documentée KF-002). Section dev only.
 - [ ] T3.3 — Vérifier `.gitignore` (AC #21) : `.env` ligne 14 + `.env.local` ligne 15 déjà présents — **aucune action requise** (vérifié pre-flight 2026-05-21 Pass 1).
 
 ### T4: Alignment MariaDB 10.11 (AC #22-26)
@@ -292,6 +302,20 @@ Référencé dans epic-10.md décision D10 + AC #18 commentaire `.env.example` :
 
 Cette story touche `.github/workflows/ci.yml` ET `docker-compose.yml` → la CI **va re-runner** et utiliser `mariadb:10.11`. Si une migration ou un test ne passait que sur MariaDB 11 par accident, on le verra à la PR. Le sanity check pre-flight 2026-05-21 a déjà confirmé que les 26 migrations passent sur 10.11 vierge → confidence haute, mais le `cargo test --workspace` complet en CI est la vraie validation.
 
+### Audit complémentaire `KESH_ADMIN_PASSWORD` cross-crates (Pass 3 Opus insight #6)
+
+Avant push (dans T5.1 Test Locally First), exécuter :
+
+```sh
+grep -rn "KESH_ADMIN_PASSWORD" crates --include="*.rs" 2>&1 | grep -v "src/config.rs"
+```
+
+→ identifier tout test d'intégration (`crates/*/tests/*.rs`) ou code source (`crates/*/src/*.rs` hors `config.rs`) qui set ou consume `KESH_ADMIN_PASSWORD` dans une valeur < 12 chars ou `"changeme"`. Si trouvé, patcher (mêmes patches que T1.2.2). Si rien trouvé : OK. Cet audit n'est pas couvert par T1.2.1 + T1.2.2 qui ciblent uniquement `kesh-api/src/config.rs`.
+
+### Dette latente — `docker-compose.dev.yml` post-Story 10-1 (Pass 3 Opus insight #7)
+
+`docker-compose.dev.yml:25` utilise `KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}` (default `"admin"` = 5 chars). Post-T1.4 (check `< 12 chars` → `WeakAdminPassword`), tout dev qui lance `docker compose -f docker-compose.dev.yml up` sans set `KESH_ADMIN_PASSWORD` dans son `.env` local fera un fail-fast au boot (au lieu d'un boot dev). **Pas une action de Story 10-1** (compose dev hors-scope), mais à noter dans le commit message + à patcher dans une PR de suivi (e.g. story de cleanup) en mettant `KESH_ADMIN_PASSWORD:-adminadminad` (12 chars dev-friendly). Vérification au commit : si la CI dev compose était lancée (elle n'est pas dans `ci.yml`), elle aurait failed.
+
 ### Project Structure Notes
 
 Story 10-1 ne crée pas de nouveau module Rust ni de nouvelle route HTTP. Les fichiers modifiés respectent la structure existante :
@@ -351,7 +375,30 @@ Cycle de revue adversariale CLAUDE.md §"Review Iteration Rule" — relance jusq
 
 **Critère d'arrêt CLAUDE.md** : 2 CRITICAL + 0 HIGH + 0 MEDIUM > LOW → relancer Pass 3 obligatoire.
 
-**Suivi Pass 3** : Opus 4.7 contexte frais. Cycle CLAUDE.md Sonnet → Haiku → **Opus** → Sonnet. Opus apporte typiquement la profondeur architecturale + détection de patterns transverses ratés par les autres modèles (cf. Epic 9 retro Insight I1 — Opus catches 2 CRITICAL ground-truth missed par Sonnet+Haiku en Story 9-2b).
+### Pass 3 — Opus 4.7 (2026-05-21)
+
+**Trend** : 6 findings bruts → 5 patches appliqués + 1 finding déféré (5 LOW #19 drift `epic-10.md` `kesh-net` à propager post-merge, non-bloquant Story 10-1 per Opus recommendation).
+
+**Ground-truth check** : `grep -nE` + `Read` direct des 3 tests CRITICAL #14 (Opus) ainsi que count `set_minimum_required` → **0 hallucination**. Opus a identifié un pattern transverse que Sonnet+Haiku ont raté (cf. CLAUDE.md §"Review Iteration Rule" : « Pour autant, la discipline grep ground-truth s'applique à tous les modèles par hygiène » — appliqué Pass 3 par défense en profondeur).
+
+| # | Sév | Cat | Résumé | Patch |
+|---|---|---|---|---|
+| 14 | CRITICAL | REGR | T1.2.1 (Pass 1) couvre `set_minimum_required()` helper mais ~3 tests hors helper (`config_rejects_missing_jwt_secret` 813, `config_rejects_weak_jwt_secret` 828, `config_trims_admin_username` 899) set leurs env vars manuellement sans `KESH_ADMIN_PASSWORD` → fail post-T1.2. Sonnet+Haiku ratés. | T1.2.2 ajoutée : patch des 3 tests + audit complémentaire `grep -nB2 "Config::from_env()"` |
+| 15 | MEDIUM | SPEC | T1.2.1 + AC #17 disaient « ~23 tests » — réel 24 (`grep -c "^\s*set_minimum_required\(\);"` = 24) | Texte corrigé en « 24 tests » |
+| 16 | MEDIUM | SPEC | AC #17 + T1.7 cas (a) « JWT contenant `change-me` » ambigu — sans préciser longueur ≥ 32, le test peut catcher `WeakJwtSecret` au lieu de `InsecureJwtSecret` | AC #17 + T1.7 précisent ≥ 32 chars + donnent exemple concret `"abcdefghij-change-me-abcdefghijabc"` (34 chars) |
+| 17 | MEDIUM | SPEC | `.env.example` contient `MARIADB_*` + `COMPOSE_PROJECT_NAME` + `KESH_PRODUCTION_RESET` hors des 16 listées AC #18 → choix arbitraire dev | T3.2.1 ajoutée : conserver `MARIADB_*` (compose dev), retirer `COMPOSE_PROJECT_NAME`, conserver `KESH_PRODUCTION_RESET` commenté |
+| 18 | LOW | SEC | T1.1 ne précise pas que les Display ne loggent PAS la valeur du secret (risque fuite dans logs Docker) | T1.1 reformulée avec 3 exemples Display sans la valeur + rappel `tracing::error!(e.to_string())` consume Display |
+| 19 | LOW | DOCS | `epic-10.md` mentionne encore `kesh-net` 5 fois (drift post-décision `frontend` Pass 1) — non-bloquant Story 10-1 | **DÉFÉRÉ** post-merge Story 10-1 vers Story 10-4 (manuel install qui rééditera la section) ou PR séparée. Per Opus recommendation |
+
+**Analyse architecturale transverse (Opus-specific value)** :
+- 4 patterns sains observés : fail-fast cohérent ConfigError, env_lock+reset_env pattern stable, bind loopback host-side D5 cohérent compose dev, idempotence bootstrap admin confirmée.
+- 4 patterns douteux signalés : test `config_debug_hides_secrets` OK post-T1.5 (vérifié), audit `KESH_ADMIN_PASSWORD` cross-crates (insight #6, ajouté Dev Notes), dette latente `docker-compose.dev.yml:25` (insight #7, ajouté Dev Notes), `.env.example:24` actuel `KESH_JWT_SECRET=change-me-...` comportement fail-fast attendu post-T1.5 ✓.
+
+**Critère d'arrêt CLAUDE.md** : 1 CRITICAL + 3 MEDIUM + 2 LOW (dont 1 déféré) > LOW → relancer Pass 4 obligatoire.
+
+**Trend numérique cumul** : Pass 1 (11) → Pass 2 (2) → Pass 3 (6 dont 1 déféré = 5 appliqués). Convergence en cours mais pas atteinte. Pass 4 Sonnet devrait converger ou identifier ≤ 2 nouveaux findings MEDIUM, ouvrant la voie à Pass 5 Haiku pour validation finale. Budget restant : 5 passes max (sur 8 autorisés CLAUDE.md).
+
+**Suivi Pass 4** : Sonnet 4.6 contexte frais. Cycle CLAUDE.md Sonnet → Haiku → Opus → **Sonnet**. Focus particulier sur les 2 patches T1.2.1 + T1.2.2 + T3.2.1 (les plus récents et complexes — cible probable de bugs résiduels).
 
 ## Dev Agent Record
 
