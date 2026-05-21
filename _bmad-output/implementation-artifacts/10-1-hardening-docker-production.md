@@ -520,6 +520,24 @@ T5.2 smoke test live `docker compose -f docker-compose.prod.yml up` : non-effect
 
 - 2026-05-21 — Story 10-1 implémentée single-pass Opus 4.7. 30 ACs Given-When-Then validés (sauf T5.2 live smoke test différé à `release.yml++` post-merge). 4 nouveaux tests config::tests, 0 régression workspace (171/171 kesh-api lib, 253/253 frontend unit, 38/38 config::tests). 1 finding déféré (LOW #19 drift epic-10.md `kesh-net` → adresser Story 10-4 manuel install).
 
+- 2026-05-21 — **Code Review Pass 1 Sonnet 4.6** (3 reviewers parallèles Blind Hunter + Edge Case Hunter + Acceptance Auditor). Bilan : 0 CRITICAL, 5 HIGH (3 réels + 2 défer dette latente), 9 MEDIUM (4 patches + 3 reject + 2 défer), 10 LOW (accept-as-is). **6 patches appliqués** :
+  - **CRITICAL bumped from HIGH ECH-3+BH-1** [REGR] : `admin_password` trim avant stockage (ligne 397). Sans ce trim, hash bootstrap inclut espaces non-tapés au login → admin lock-out après bootstrap. Ground-truth confirmé : `routes/auth.rs:139` ne trim pas password (vs username ligne 114). Patch + 1 nouveau test `config_trims_admin_password_before_storage`.
+  - **MEDIUM ECH-4** : `jwt_secret.to_ascii_lowercase().contains("change-me")` (case-insensitive) — cohérent avec admin password check. Patch + 1 nouveau test `config_rejects_jwt_secret_containing_change_me_case_insensitive`.
+  - **MEDIUM ECH-6** : `reset_env()` ajoute `KESH_BANK_IMPORT_MAX_MB` + `KESH_LANG` (vars manquantes). Patch trivial isolation tests.
+  - **MEDIUM BH-5** : `env_lock()` acquis UNE fois avant boucle for dans `config_rejects_admin_password_changeme_case_insensitive` (sinon race condition entre itérations).
+  - Cumul **40/40 config::tests + 173/173 kesh-api lib** PASS après patches (vs 38+171 avant = +2 nouveaux tests, 0 régression).
+- 3 findings **defer** (dette tracked) :
+  - ECH-1, ECH-2 : `docker-compose.yml:49` + `docker-compose.dev.yml:25` defaults `changeme`/`admin` cassent post-Story 10-1 → déjà documenté Dev Notes "Dette latente" Pass 4 Sonnet. PR cleanup post-Epic 10.
+  - BH-2 : `Config::admin_password` plaintext (pré-existant, refactor SecretString hors scope).
+  - AA-1 : smoke test T5.2 différé `release.yml++` post-merge.
+- 3 findings **reject** :
+  - BH-4 : `KESH_HOST: 0.0.0.0` hardcoded — délibéré par AC #8 (empêcher override `.env` user).
+  - BH-6 : healthcheck `curl` manquant — faux-positif (curl in Dockerfile ligne 19-20 vérifié par Acceptance Auditor).
+  - ECH-5 : faux positif rare secret contenant "change-me" comme substring — message Display déjà clair.
+- 1 finding **info** (LOW, pas de patch) :
+  - AA-2 : `KESH_PASSWORD_MIN_LENGTH=12` (implem) vs `=8` (spec T3.2 texte). Implem cohérente avec default code (`config.rs:594` `Err(_) => 12`). Spec text était inexact. Pas de patch — `=12` reste dans `.env.example`.
+- **Critère d'arrêt CLAUDE.md** : 4 MEDIUM > LOW post-patches → mais les 4 patches ont résolu les MEDIUM. Findings résiduels = 3 defer (dette tracked) + 3 reject + 10 LOW. **Relancer Pass 2 Haiku obligatoire** pour validation post-patches (vérifier que les patches n'introduisent pas de régression).
+
 ## References
 
 - `_bmad-output/planning-artifacts/epic-10.md` — Story 10-1 ACs source (décisions D1-D11, périmètre, critères d'arrêt)
