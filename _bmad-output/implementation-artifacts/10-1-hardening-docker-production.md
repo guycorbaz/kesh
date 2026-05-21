@@ -1,6 +1,6 @@
 # Story 10.1: Hardening Docker production
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -469,24 +469,56 @@ Cycle de revue adversariale CLAUDE.md §"Review Iteration Rule" — relance jusq
 
 ### Agent Model Used
 
-À renseigner par dev agent au début de l'implémentation.
+Claude Opus 4.7 (1M context) — single-pass implementation 2026-05-21.
 
 ### Debug Log References
 
+Aucune anomalie significative pendant l'implémentation. Test Locally First validé :
+- `cargo fmt --all -- --check` : PASS
+- `cargo clippy --workspace --all-targets -- -D warnings` : PASS
+- `cargo build --workspace --all-targets` : PASS (36.87s)
+- `cargo test -p kesh-api --lib config::tests` : **38/38 PASS** (34 existants + 4 nouveaux T1.7)
+- `cargo test -p kesh-api --lib` : **171/171 PASS** (0 régression workspace kesh-api)
+- `cargo test --workspace --lib -j1 -- --test-threads=1` : 149 PASS, 20 fails dans `repositories::journal_entries::tests` **pré-existants** (vérifié via git stash : fails sur main sans Story 10-1) — état DB locale kesh-mariadb avec fiscal_years closed accumulés depuis 3+ jours. AC #29 « 0 régression » respecté (baselines pré-existantes inchangées). La CI utilise un container neuf à chaque run → passera.
+- `npm run check` : 0 errors (25 warnings pré-existantes)
+- `npm run lint-i18n-ownership` : PASS
+- `npm run test:unit` : 253/253 PASS
+- `npm run build` : PASS
+- `docker compose -f docker-compose.prod.yml config` : PASS (validation YAML structurelle, AC #2)
+
+Audit complémentaire Opus #6 : `grep -rn KESH_ADMIN_PASSWORD crates --include="*.rs"` → 1 seule occurrence hors `config.rs` (`bootstrap.rs:18` commentaire docstring) — **0 patch nécessaire** cross-crates.
+
+T5.2 smoke test live `docker compose -f docker-compose.prod.yml up` : non-effectué localement (requires image Docker Hub `guycorbaz/kesh:latest` avec patches Story 10-1 — pas encore publiée). Sera couvert par `release.yml++` smoke test job (amélioration parallèle Epic 10) avant le 1er tag git `v0.1.0-rc1`.
+
 ### Completion Notes List
+
+- T1 Fail-fast secrets config.rs : implémenté 3 nouveaux variants `ConfigError` (`InsecureJwtSecret`, `InsecureAdminPassword`, `WeakAdminPassword { actual_chars }`) avec Display sans valeur secrets. Suppression fallback `"changeme"` ligne 358. Check case-insensitive `"changeme"` via `eq_ignore_ascii_case` après trim. Check `< 12` chars via `chars().count()` (Unicode-safe). Check JWT `contains("change-me")` converti warn → return Err. `set_minimum_required()` helper étendu pour set `KESH_ADMIN_PASSWORD`. 3 tests hors helper patchés (`config_rejects_missing_jwt_secret`, `config_rejects_weak_jwt_secret`, `config_trims_admin_username`). 4 nouveaux tests T1.7 ajoutés.
+- T2 docker-compose.prod.yml créé : 1 service `kesh-api`, réseau external `frontend`, `KESH_HOST=0.0.0.0` (bind interne Docker), `ports: "127.0.0.1:3000:3000"` (restriction host-side LAN privé), log rotation json-file 10m×5, mem_limit 1g, healthcheck curl /health. Pas de bind-mount source, pas de service mariadb bundled.
+- T3 .env.example mis à jour : structure réorganisée, 15 variables Kesh actives + KESH_HOST commentée + KESH_TEST_MODE warning + KESH_LANG + KESH_PASSWORD_MIN_LENGTH + KESH_BANK_IMPORT_MAX_MB ajoutées. Defaults insecure remplacés par placeholders `<GENERATE_ME: ...>` / `<EDIT: ...>`. Section dev-only séparée pour MARIADB_* (compose dev). `COMPOSE_PROJECT_NAME` retirée. `KESH_PRODUCTION_RESET` conservé commenté.
+- T4 Alignement MariaDB 10.11 : 4 fichiers patchés (`docker-compose.yml:4`, `docker-compose.dev.yml:43`, `.github/workflows/ci.yml:27`, migration `reconciliation_rules.sql:28` commentaire). Bonus T4.5 audit : `DOCKER_START.md:107`, `README.md:38`, `docs/ci.md:36+192+194` mis à jour (cohérence user-facing docs). Commentaires migrations historiques (`invoices.sql:13`, `products.sql:10`, `kf005_fulltext_indexes.sql:11`, `invoice_validation.sql:19`, `util/search.rs:31`, `MULTI-TENANT-QUERY-PATTERNS.md:167`) laissés intacts — descriptions valides pour MariaDB 10.6+.
+- T5 Validation end-to-end : Test Locally First Backend + Frontend PASS. Audit grep cross-crates 0 régression. 20 tests `journal_entries` pré-existants vérifiés non-Story-10-1 via git stash.
 
 ### File List
 
-À renseigner par dev agent à la fin de l'implémentation. Liste prévisionnelle :
+**Modifiés** (8) :
+- `crates/kesh-api/src/config.rs` — 3 nouveaux variants ConfigError + Display + fail-fast checks + helper set_minimum_required étendu + 3 tests hors helper patchés + 4 nouveaux tests T1.7
+- `docker-compose.yml` — image `mariadb:10.11` (était `mariadb:11-jammy`)
+- `docker-compose.dev.yml` — image `mariadb:10.11` (était `mariadb:11.4`)
+- `.github/workflows/ci.yml` — image `mariadb:10.11` + commentaire D3 (était `mariadb:11.4`)
+- `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql` — commentaire ligne 28 pin `mariadb:10.11` (était `mariadb:11-jammy`)
+- `.env.example` — restructure complète (15 variables actives + placeholders + sections + KESH_TEST_MODE warning)
+- `README.md` — version MariaDB 10.11+
+- `DOCKER_START.md` — version MariaDB 10.11
+- `docs/ci.md` — Pré-requis MariaDB 10.11 + section "Décision MariaDB 10.11 (Story 10-1 D3)" mise à jour
 
-- `crates/kesh-api/src/config.rs` (M) — fail-fast secrets + 6 tests nouveaux
-- `docker-compose.prod.yml` (A) — fichier nouveau
-- `docker-compose.yml` (M) — image MariaDB 10.11
-- `docker-compose.dev.yml` (M) — image MariaDB 10.11
-- `.github/workflows/ci.yml` (M) — image MariaDB 10.11
-- `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql` (M) — commentaire ligne 28
-- `.env.example` (A) — fichier nouveau
-- `.gitignore` (M si nécessaire) — ajout `.env` si absent
+**Créés** (1) :
+- `docker-compose.prod.yml` — compose production sans MariaDB bundled, réseau external `frontend`, log rotation, mem_limit, ports restricted host-side
+
+**Aucun fichier supprimé.**
+
+### Change Log
+
+- 2026-05-21 — Story 10-1 implémentée single-pass Opus 4.7. 30 ACs Given-When-Then validés (sauf T5.2 live smoke test différé à `release.yml++` post-merge). 4 nouveaux tests config::tests, 0 régression workspace (171/171 kesh-api lib, 253/253 frontend unit, 38/38 config::tests). 1 finding déféré (LOW #19 drift epic-10.md `kesh-net` → adresser Story 10-4 manuel install).
 
 ## References
 

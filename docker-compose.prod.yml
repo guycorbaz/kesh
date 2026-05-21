@@ -1,0 +1,116 @@
+# =============================================================================
+# Kesh — Docker Compose production
+# =============================================================================
+#
+# Compose pour déploiement production (NAS Synology DSM 7.2+ x86_64).
+#
+# **Pas de service MariaDB bundled** — décision Story 10-1 / Epic 10 D2 :
+# l'utilisateur fournit sa propre instance MariaDB 10.11+ (NAS Package Center
+# DSM, conteneur externe, ou DB managée).
+#
+# **Réseau Docker externe** (décision D9) : `frontend` doit exister avant
+# `docker compose up`. Pour le créer :
+#
+#     docker network create frontend
+#
+# Le service MariaDB (Synology Package Center ou conteneur séparé) doit aussi
+# être joignable depuis ce réseau, sinon utiliser l'IP LAN du NAS dans
+# `DATABASE_URL` au lieu d'un hostname Docker.
+#
+# **Sécurité** :
+#   - `KESH_HOST=0.0.0.0` (bind interne au container — sans cela, kesh-api
+#     écouterait uniquement sur la loopback du container et serait inaccessible
+#     même avec port mapping).
+#   - `ports: "127.0.0.1:3000:3000"` (restriction host-side au loopback de
+#     l'hôte NAS — accès LAN privé v0.1.0, décision D5). Reverse proxy DSM
+#     futur v0.2+ déposera son frontal en façade.
+#   - `KESH_JWT_SECRET` et `KESH_ADMIN_PASSWORD` doivent être définis dans le
+#     `.env` user-side (cf. `.env.example`). Les defaults insecure type
+#     `changeme` ou `change-me-32-bytes-...` font fail-fast au boot (Story 10-1).
+#
+# **Logs & ressources** :
+#   - Log rotation `json-file` 10 MB × 5 fichiers max = 50 MB plafond.
+#   - `mem_limit: 1g` protège le NAS d'un runaway (overkill pour usage solo,
+#     ajuster si besoin).
+#
+# Lancement typique :
+#
+#     # 1. Créer le réseau (une fois)
+#     docker network create frontend
+#
+#     # 2. Configurer .env depuis le template
+#     cp .env.example .env
+#     # éditer .env : DATABASE_URL, KESH_JWT_SECRET, KESH_ADMIN_PASSWORD
+#
+#     # 3. Démarrer
+#     docker compose -f docker-compose.prod.yml up -d
+#
+#     # 4. Vérifier
+#     curl http://127.0.0.1:3000/health
+#
+# =============================================================================
+
+services:
+  kesh-api:
+    image: guycorbaz/kesh:latest
+    container_name: kesh-api
+    restart: unless-stopped
+    environment:
+      # Base de données — URL exacte fournie par l'utilisateur via .env
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Application — KESH_HOST=0.0.0.0 obligatoire pour exposition via
+      # port mapping (cf. commentaire ci-dessus).
+      KESH_PORT: ${KESH_PORT:-3000}
+      KESH_HOST: 0.0.0.0
+
+      # Admin initial — utilisé uniquement au tout premier boot avec table
+      # users vide (bootstrap.rs idempotent). Doit ≥ 12 chars et ≠ "changeme"
+      # (case-insensitive) sinon fail-fast Story 10-1.
+      KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD}
+
+      # Authentification — KESH_JWT_SECRET doit ≥ 32 chars et NE PAS
+      # contenir "change-me" sinon fail-fast Story 10-1.
+      KESH_JWT_SECRET: ${KESH_JWT_SECRET}
+      KESH_JWT_EXPIRY_MINUTES: ${KESH_JWT_EXPIRY_MINUTES:-15}
+      KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS: ${KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS:-30}
+
+      # Session & Rate Limiting
+      KESH_REFRESH_INACTIVITY_MINUTES: ${KESH_REFRESH_INACTIVITY_MINUTES:-15}
+      KESH_RATE_LIMIT_WINDOW_MINUTES: ${KESH_RATE_LIMIT_WINDOW_MINUTES:-15}
+      KESH_RATE_LIMIT_MAX_ATTEMPTS: ${KESH_RATE_LIMIT_MAX_ATTEMPTS:-5}
+      KESH_RATE_LIMIT_BLOCK_MINUTES: ${KESH_RATE_LIMIT_BLOCK_MINUTES:-30}
+
+      # Localisation (FR75)
+      KESH_LANG: ${KESH_LANG:-fr}
+
+      # Politique mot de passe utilisateur (FR6)
+      KESH_PASSWORD_MIN_LENGTH: ${KESH_PASSWORD_MIN_LENGTH:-12}
+
+      # Import bancaire
+      KESH_BANK_IMPORT_MAX_MB: ${KESH_BANK_IMPORT_MAX_MB:-10}
+
+      # Logging — stdout/stderr standard Docker
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      # Restriction host-side au loopback NAS (LAN privé v0.1.0, D5).
+      # Accès via SSH tunnel ou reverse proxy DSM (futur v0.2+).
+      - "127.0.0.1:3000:3000"
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    mem_limit: 1g
+
+networks:
+  frontend:
+    external: true

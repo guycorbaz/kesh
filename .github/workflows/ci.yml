@@ -24,7 +24,9 @@ jobs:
     timeout-minutes: 30
     services:
       mariadb:
-        image: mariadb:11.4
+        # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.
+        # Compat MariaDB ≥ 10.6 (cf. migration reconciliation_rules.sql VIRTUAL+UNIQUE).
+        image: mariadb:10.11
         env:
           MARIADB_ROOT_PASSWORD: kesh_root
           MARIADB_DATABASE: kesh
