@@ -16,7 +16,7 @@ Cette story livre le **fichier `docker-compose.prod.yml`** distinct du compose d
 
 **Renforcement boot** dans `crates/kesh-api/src/config.rs` : refuser le démarrage du serveur si `KESH_JWT_SECRET` ou `KESH_ADMIN_PASSWORD` contiennent un placeholder ou sont trop faibles. Les warnings existants (lignes 366-370 et 385-389 actuelles) deviennent des `ConfigError` qui font exit le binaire (vs `tracing::warn!` qui laisse passer).
 
-**Création `.env.example`** à la racine du repo (référencé dans `architecture.md:429` mais inexistant à ce jour) avec toutes les variables d'env documentées, **aucun default insecure** (placeholders explicites `<GENERATE_ME: openssl rand -base64 32>` etc.), et commentaires pédagogiques.
+**Mise à jour `.env.example`** existant à la racine du repo (référencé dans `architecture.md:429`, fichier déjà tracké — 2.5 Ko avec des defaults insecure type `KESH_ADMIN_PASSWORD=changeme` ligne 20 et `KESH_JWT_SECRET=change-me-32-bytes-minimum-...` ligne 24). Remplacement des defaults insecure par des placeholders explicites `<GENERATE_ME: openssl rand -hex 32>` etc., ajout des variables manquantes (`KESH_LANG`, `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`), commentaires pédagogiques homogénéisés. `KESH_TEST_MODE` **explicitement absent** avec avertissement. Le fichier reste committé (déjà tracké), `.env` reste ignoré (`.gitignore:14` + `.env.local:15` — vérifié pre-flight 2026-05-21).
 
 **Alignement MariaDB 10.11 partout** (décision D3 epic-10.md) :
 - `docker-compose.yml:4` `mariadb:11-jammy` → `mariadb:10.11`
@@ -41,7 +41,7 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 2. **Given** `docker-compose.prod.yml`, **When** `docker compose -f docker-compose.prod.yml config` est exécuté, **Then** la validation YAML PASS et aucune référence à un service `mariadb` interne n'apparaît dans la sortie.
 
-3. **Given** `docker-compose.prod.yml`, **When** review, **Then** il déclare un réseau **externe** explicite : `networks: { kesh-net: { external: true } }` (nom `kesh-net` ou équivalent, à valider Q1 spec validate). Le service `kesh-api` rejoint ce réseau. Aucun port host n'est exposé (`ports:` absent ou commenté).
+3. **Given** `docker-compose.prod.yml`, **When** review, **Then** il déclare un réseau **externe** explicite : `networks: { frontend: { external: true } }` (nom `frontend` **confirmé** Pass 1 spec validate 2026-05-21 — réseau Docker existant sur le NAS de Guy, hébergeant l'interface externe). Le service `kesh-api` rejoint ce réseau (`networks: [frontend]`). Le port HTTP est exposé via `ports: "127.0.0.1:3000:3000"` (binding host-side restreint au loopback de l'hôte NAS — accès LAN privé via SSH tunnel v0.1.0, ou via reverse proxy DSM dans une future story v0.2+).
 
 4. **Given** `docker-compose.prod.yml`, **When** review, **Then** il **ne contient pas** de bind-mount `./crates:ro` ni `./frontend:ro` (anti-pattern prod — uniquement docker-compose dev).
 
@@ -51,7 +51,7 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 7. **Given** `docker-compose.prod.yml`, **When** review, **Then** il définit `mem_limit: 1g` sur `kesh-api` (protection runaway sur NAS partagé).
 
-8. **Given** `docker-compose.prod.yml`, **When** review, **Then** `KESH_HOST` est `127.0.0.1` par défaut (loopback — HTTP only LAN privé v0.1.0, décision D5 epic-10.md). Pas de `0.0.0.0` puisque pas de reverse proxy en v0.1.0.
+8. **Given** `docker-compose.prod.yml`, **When** review, **Then** `KESH_HOST=0.0.0.0` (bind interne au container — sans cela, le service Rust n'écouterait que sur la loopback du container et serait inaccessible depuis l'hôte NAS même avec port mapping correct). La restriction LAN privé v0.1.0 (décision D5) est appliquée **au niveau du port mapping host-side** via `ports: "127.0.0.1:3000:3000"` (AC #3), **pas au bind interne**. Cf. `docker-compose.dev.yml:17-23` qui documente ce pattern (loopback container vs loopback hôte).
 
 9. **Given** `docker-compose.prod.yml`, **When** review, **Then** un healthcheck `curl -f http://localhost:3000/health` est défini (cohérent docker-compose.yml dev actuel).
 
@@ -63,7 +63,7 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 12. **Given** `KESH_JWT_SECRET` contient la sous-chaîne `change-me`, **When** `Config::from_env()` est appelé, **Then** retourne `Err(ConfigError::InsecureJwtSecret)` (nouveau variant) — **PAS** un `tracing::warn!` qui laisse passer (comportement actuel ligne 385-389 à **changer**).
 
-13. **Given** `KESH_ADMIN_PASSWORD` non défini, **When** `Config::from_env()` est appelé, **Then** retourne `Err(ConfigError::EmptyAdminPassword)` (default actuel `"changeme"` à **supprimer** ligne 358 — plus de fallback vers default insecure).
+13. **Given** `KESH_ADMIN_PASSWORD` non défini (variable d'env absente), **When** `Config::from_env()` est appelé, **Then** retourne `Err(ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))` — cohérent avec le pattern existant `KESH_JWT_SECRET` ligne 376-377 (default fallback `"changeme"` ligne 358 à **supprimer**). Le variant `EmptyAdminPassword` existant (ligne 362-364) reste utilisé pour le cas var définie mais composée de whitespace uniquement.
 
 14. **Given** `KESH_ADMIN_PASSWORD` égal à `"changeme"` (ou n'importe quelle variante : `"Changeme"`, `"CHANGEME"`, leading/trailing whitespace), **When** `Config::from_env()` est appelé, **Then** retourne `Err(ConfigError::InsecureAdminPassword)` (nouveau variant) — **PAS** un `tracing::warn!` (comportement actuel ligne 366-370 à **changer**). Vérification case-insensitive après trim.
 
@@ -71,11 +71,11 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 16. **Given** chacun des cas 12, 14, 15 ci-dessus, **When** le binaire `kesh-api` boot, **Then** exit avec un code non-zero **et** émet un log explicite via `tracing::error!` qui guide l'utilisateur (e.g. « FATAL: KESH_JWT_SECRET contains 'change-me' placeholder — generate a real secret via `openssl rand -hex 32` and update your .env file »).
 
-17. **Given** la suite de tests `cargo test -p kesh-api --lib config::tests`, **When** exécutée, **Then** au moins **6 nouveaux tests** couvrent : (a) JWT secret vide, (b) JWT secret < 32, (c) JWT secret contenant `change-me`, (d) admin password absent/empty, (e) admin password `changeme` case-insensitive, (f) admin password < 12 chars. Et 0 régression sur les tests `config::tests` existants.
+17. **Given** la suite de tests `cargo test -p kesh-api --lib config::tests`, **When** exécutée, **Then** au moins **4 nouveaux tests** couvrent les nouveaux cas : (a) JWT secret contenant `change-me` → `InsecureJwtSecret`, (b) admin password `changeme` case-insensitive (lowercase + uppercase + variantes avec whitespace) → `InsecureAdminPassword`, (c) admin password < 12 chars → `WeakAdminPassword`, (d) admin password = 12 chars exactement → OK (limite basse). Les cas déjà couverts par les tests existants `config_rejects_missing_jwt_secret` (ligne 813), `config_rejects_weak_jwt_secret` (ligne 828), `config_rejects_empty_admin_password` (ligne 882), `config_rejects_whitespace_only_admin_password` (ligne 916) restent VERTS. La suppression du default fallback `"changeme"` (ligne 358) doit être validée par mise à jour de `set_minimum_required()` helper (T1.2.1) — sans cela ~23 tests appelant `set_minimum_required()` cassent. 0 régression sur la suite `config::tests` complète après le patch T1.2.1.
 
 ### `.env.example` (nouveau fichier racine)
 
-18. **Given** la racine du repo, **When** `.env.example` est créé, **Then** il contient **toutes** les variables d'environnement documentées dans `crates/kesh-api/src/config.rs` (`KESH_PORT`, `KESH_HOST`, `KESH_ADMIN_USERNAME`, `KESH_ADMIN_PASSWORD`, `KESH_JWT_SECRET`, `KESH_JWT_EXPIRY_MINUTES`, `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS`, `KESH_REFRESH_INACTIVITY_MINUTES`, `KESH_RATE_LIMIT_*`, `RUST_LOG`, `DATABASE_URL`) avec un commentaire avant chaque variable expliquant son rôle.
+18. **Given** la racine du repo, **When** `.env.example` est mis à jour (fichier existant — voir Scope), **Then** il contient **toutes** les variables d'environnement documentées dans `crates/kesh-api/src/config.rs` : `DATABASE_URL`, `KESH_PORT`, `KESH_HOST`, `KESH_ADMIN_USERNAME`, `KESH_ADMIN_PASSWORD`, `KESH_JWT_SECRET`, `KESH_JWT_EXPIRY_MINUTES`, `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS`, `KESH_REFRESH_INACTIVITY_MINUTES`, `KESH_RATE_LIMIT_WINDOW_MINUTES`, `KESH_RATE_LIMIT_MAX_ATTEMPTS`, `KESH_RATE_LIMIT_BLOCK_MINUTES`, `KESH_LANG`, `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`, `RUST_LOG` — **16 variables**. Le `KESH_TEST_MODE` est **explicitement absent** du `.env.example` avec un commentaire d'avertissement à la place : `# DO NOT SET KESH_TEST_MODE IN PRODUCTION — réservé exclusivement aux tests intégrés CI/dev. L'activation en prod désactive des garde-fous sécurité.`. Chaque variable a un commentaire avant elle expliquant son rôle.
 
 19. **Given** `.env.example`, **When** review, **Then** **aucune** valeur par défaut insecure n'apparaît : `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>`, `KESH_ADMIN_PASSWORD=<GENERATE_ME: openssl rand -base64 24>`, `DATABASE_URL=<EDIT: mysql://kesh:<password>@<mariadb-host>:3306/kesh>`. Pas de `changeme`, pas de `change-me-32-bytes...`.
 
@@ -113,16 +113,15 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
   - `InsecureJwtSecret` (avec impl Display message clair)
   - `InsecureAdminPassword` (avec impl Display message clair)
   - `WeakAdminPassword { actual_chars: usize }` (avec impl Display)
-- [ ] T1.2 — Modifier ligne 358 `let admin_password = env::var("KESH_ADMIN_PASSWORD").unwrap_or_else(|_| "changeme".into())` → **supprimer le fallback** et utiliser `.map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?` (ou similaire). Plus de default `"changeme"`.
+- [ ] T1.2 — Modifier ligne 358 `let admin_password = env::var("KESH_ADMIN_PASSWORD").unwrap_or_else(|_| "changeme".into())` → **supprimer le fallback** et utiliser `.map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?`. Plus de default `"changeme"`.
+- [ ] T1.2.1 — **Mettre à jour `set_minimum_required()` helper de tests** (`crates/kesh-api/src/config.rs:740-745`) en ajoutant `env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");` dans le bloc `unsafe`. Sans cette mise à jour, ~23 tests appelant `set_minimum_required()` (lignes 751, 770, 786, 814, 849, 859, 872, 933, 948, 958, 971, 984, 996, 1013, 1030, 1040, 1053, 1066, 1081, 1091, 1106, 1123, 1142, 1159, 1173, 1192, 1208…) retournent `ConfigError::MissingVar("KESH_ADMIN_PASSWORD")` au lieu de `Ok(Config)` → régression garantie. Cette sous-tâche doit être exécutée **dans la même PR que T1.2**.
 - [ ] T1.3 — Modifier ligne 366-370 (warn `KESH_ADMIN_PASSWORD == "changeme"`) en `return Err(ConfigError::InsecureAdminPassword)` après comparaison case-insensitive sur la valeur trimée. Pattern recommandé : `if admin_password.trim().eq_ignore_ascii_case("changeme") { return Err(ConfigError::InsecureAdminPassword); }`.
 - [ ] T1.4 — Ajouter check longueur après le check `eq_ignore_ascii_case` : `if admin_password.trim().chars().count() < 12 { return Err(ConfigError::WeakAdminPassword { actual_chars: admin_password.trim().chars().count() }); }`. Utiliser `.chars().count()` (pas `.len()`) pour compter les chars Unicode correctement.
 - [ ] T1.5 — Modifier ligne 385-389 (warn `KESH_JWT_SECRET.contains("change-me")`) en `return Err(ConfigError::InsecureJwtSecret)`.
 - [ ] T1.6 — Vérifier que `main.rs` propage bien le `ConfigError` en exit non-zero (pattern existant — `Config::from_env().map_err(|e| { tracing::error!(...); std::process::exit(1) })` ou équivalent). Si déjà en place pour les autres variants, no-op.
-- [ ] T1.7 — Ajouter 6 tests unitaires dans le module `config::tests` :
+- [ ] T1.7 — Ajouter **4 nouveaux tests** unitaires dans le module `config::tests` (les cas « JWT empty/missing » et « admin password empty » sont déjà couverts par les tests existants `config_rejects_missing_jwt_secret` ligne 813, `config_rejects_weak_jwt_secret` ligne 828, `config_rejects_empty_admin_password` ligne 882, `config_rejects_whitespace_only_admin_password` ligne 916 — à laisser intacts) :
   - `config_rejects_jwt_secret_containing_change_me`
-  - `config_rejects_admin_password_changeme_lowercase`
-  - `config_rejects_admin_password_changeme_uppercase`
-  - `config_rejects_admin_password_changeme_with_whitespace`
+  - `config_rejects_admin_password_changeme_case_insensitive` (couvre lowercase + uppercase + leading/trailing whitespace en 1 test paramétrisé, OU 3 tests distincts)
   - `config_rejects_admin_password_short` (< 12 chars)
   - `config_accepts_admin_password_exactly_12_chars` (limite basse OK)
 
@@ -132,11 +131,11 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
   - le bloc `depends_on: { mariadb: ... }` (ligne 36-38)
   - le bloc volume `./crates:/app/crates:ro` (ligne 67-68)
 - [ ] T2.2 — Retirer le bloc `services: mariadb` entier (lignes 1-28 du compose actuel).
-- [ ] T2.3 — Modifier `KESH_HOST: ${KESH_HOST:-127.0.0.1}` (au lieu de `0.0.0.0` — décision D5 LAN privé).
+- [ ] T2.3 — Conserver `KESH_HOST: ${KESH_HOST:-0.0.0.0}` dans le compose prod (bind interne Docker — pattern identique compose dev). La restriction LAN privé v0.1.0 (D5) est appliquée via le port mapping host-side `127.0.0.1:3000:3000` (T2.6), pas au bind interne. Cf. `docker-compose.dev.yml:17-23` qui documente ce pattern.
 - [ ] T2.4 — Modifier `DATABASE_URL` pour pointer vers une env var sans default vers le nom de service interne : `DATABASE_URL: ${DATABASE_URL}` (l'utilisateur fournit la valeur exacte dans son `.env`, on ne préfixe pas avec un hostname interne `mariadb:3306`).
-- [ ] T2.5 — Retirer le mapping de ports `3306:3306` (le service mariadb n'est plus interne).
-- [ ] T2.6 — Conserver le port `3000:3000` pour kesh-api (à exposer pour le reverse proxy DSM futur OU pour l'accès direct LAN v0.1.0).
-- [ ] T2.7 — Ajouter le bloc `networks: kesh-net` au service kesh-api + déclaration `networks: { kesh-net: { external: true } }` en bas du fichier.
+- [ ] T2.5 — Note informative : le port 3306 (MariaDB) disparaît automatiquement avec la suppression du service mariadb en T2.2 — **aucune action requise** sur le service kesh-api (qui n'a pas et n'a jamais eu de port 3306 mappé). Cette sous-tâche est documentaire, ne pas chercher de ligne à éditer.
+- [ ] T2.6 — Modifier le mapping ports de `"3000:3000"` en `"127.0.0.1:3000:3000"` (restriction host-side — port accessible uniquement via la loopback de l'hôte NAS, donc via SSH tunnel ou reverse proxy DSM local v0.2+). Décision D5 LAN privé v0.1.0 appliquée au niveau du port mapping host-side.
+- [ ] T2.7 — Ajouter le bloc `networks: [frontend]` au service kesh-api + déclaration `networks: { frontend: { external: true } }` en bas du fichier. Nom `frontend` confirmé Pass 1 spec validate 2026-05-21 (réseau Docker existant NAS de Guy, hébergeant l'interface externe). Le service MariaDB Synology Package Center DSM doit être accessible depuis ce réseau (à valider via T5.2 smoke test — sinon `DATABASE_URL` devra utiliser l'IP LAN du NAS au lieu d'un hostname Docker).
 - [ ] T2.8 — Ajouter le bloc `logging` (AC #6) :
   ```yaml
   logging:
@@ -151,15 +150,19 @@ Cette story n'ajoute **aucune feature comptable** et ne touche aucun code métie
 
 ### T3: Création `.env.example` (AC #18-21)
 
-- [ ] T3.1 — Créer `.env.example` à la racine du repo (pas dans un sous-dossier).
+- [ ] T3.1 — **Mettre à jour** le fichier `.env.example` existant à la racine du repo (**NE PAS** le recréer from scratch — partir du contenu actuel et patcher chirurgicalement). Au minimum, remplacer ligne 20 `KESH_ADMIN_PASSWORD=changeme` → `KESH_ADMIN_PASSWORD=<GENERATE_ME: openssl rand -base64 24>` et ligne ~24 `KESH_JWT_SECRET=change-me-32-bytes-minimum-...` → `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>`. Vérifier ensuite l'exhaustivité des variables documentées (AC #18).
 - [ ] T3.2 — Documenter chaque variable d'env consommée par `crates/kesh-api/src/config.rs` :
   - Section `# Base de données` : `DATABASE_URL=<EDIT: mysql://kesh:<password>@<mariadb-host>:3306/kesh>` avec commentaire « URL de connexion MariaDB 10.11+. Sur Synology DSM, pointer vers le hostname du service MariaDB sur le réseau Docker externe `kesh-net`. »
   - Section `# Application` : `KESH_PORT=3000`, `KESH_HOST=127.0.0.1` (commenter que `0.0.0.0` serait pour reverse proxy futur v0.2+).
   - Section `# Admin initial` : `KESH_ADMIN_USERNAME=admin`, `KESH_ADMIN_PASSWORD=<GENERATE_ME: openssl rand -base64 24>` avec commentaire « Utilisé uniquement au tout premier boot avec table `users` vide. Le bootstrap est idempotent (cf. `bootstrap.rs:39-47`), donc une fois l'admin créé via UI, ces vars ne sont plus consultées. »
-  - Section `# Authentification` : `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>` (32 chars hex = 16 bytes random) avec commentaire « Doit faire au moins 32 caractères et ne pas contenir 'change-me'. »
+  - Section `# Authentification` : `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>` (`-hex 32` produit 32 bytes = 256 bits de random encodés en 64 caractères hex, bien au-delà du minimum 32 chars imposé) avec commentaire « Doit faire au moins 32 caractères et ne pas contenir 'change-me'. »
   - Section `# Session & rate limiting` : `KESH_JWT_EXPIRY_MINUTES=15`, `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS=30`, `KESH_REFRESH_INACTIVITY_MINUTES=15`, `KESH_RATE_LIMIT_WINDOW_MINUTES=15`, `KESH_RATE_LIMIT_MAX_ATTEMPTS=5`, `KESH_RATE_LIMIT_BLOCK_MINUTES=30`.
   - Section `# Logging` : `RUST_LOG=info`.
-- [ ] T3.3 — Vérifier `.gitignore` (AC #21) : si `.env` y est déjà, no-op. Sinon ajouter la ligne `.env`.
+  - Section `# Localisation` : `KESH_LANG=fr` (locale par défaut interface — fr/de/it/en, FR75 PRD).
+  - Section `# Politique mot de passe utilisateur` : `KESH_PASSWORD_MIN_LENGTH=8` (FR6 PRD — politique pour users créés via UI, distinct du `KESH_ADMIN_PASSWORD` 12 chars seedé via env).
+  - Section `# Import bancaire` : `KESH_BANK_IMPORT_MAX_MB=10` (Story 8-1 limite upload bank statement).
+  - Section `# Test mode (NE JAMAIS ACTIVER EN PRODUCTION)` : commenté/absent. Ajouter le bloc commentaire : `# DO NOT SET KESH_TEST_MODE IN PRODUCTION — réservé exclusivement aux tests intégrés CI/dev. L'activation en prod désactive des garde-fous sécurité (bind loopback, etc.).` Le commentaire est dans le fichier mais la variable n'est pas définie.
+- [ ] T3.3 — Vérifier `.gitignore` (AC #21) : `.env` ligne 14 + `.env.local` ligne 15 déjà présents — **aucune action requise** (vérifié pre-flight 2026-05-21 Pass 1).
 
 ### T4: Alignment MariaDB 10.11 (AC #22-26)
 
@@ -237,10 +240,23 @@ if admin_password == "changeme" {
 
 Le module `config::tests` (`kesh-api/src/config.rs:670-880+`) utilise déjà :
 - `make_test_config(admin_username, admin_password)` helper (`config.rs:674`) pour bypass env vars dans les tests.
-- `serial_test` crate (probablement, à vérifier) pour éviter contention env var entre tests parallèles.
-- Pattern de tests existant : `config_rejects_empty_admin_password` (ligne 882) — modèle à suivre pour les 6 nouveaux tests.
+- Helpers `env_lock()` + `reset_env()` (lignes 712-745) pour éviter contention env var entre tests parallèles (pattern projet — pas de crate `serial_test`).
+- Helper `set_minimum_required()` (ligne 740-745) qui set actuellement `DATABASE_URL` + `KESH_JWT_SECRET`. À étendre par T1.2.1 pour ajouter `KESH_ADMIN_PASSWORD` (sinon ~23 tests cassent).
+- Pattern de tests existant : `config_rejects_empty_admin_password` (ligne 882) + `config_rejects_whitespace_only_admin_password` (ligne 916) — modèles à suivre pour les 4 nouveaux tests.
 
-Avant de coder les nouveaux tests, lire le module `config::tests` complet pour reprendre exactement le helper `with_env_vars` ou équivalent (probablement) et reproduire le style. Les tests qui touchent à `env::var` partagent un état global → besoin de serialisation.
+Avant de coder les nouveaux tests, lire le module `config::tests` lignes 700-900 pour reprendre exactement le pattern :
+```rust
+let _guard = env_lock();
+reset_env();
+unsafe {
+    env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+    env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+    env::set_var("KESH_ADMIN_PASSWORD", "<valeur testée>");
+}
+let result = Config::from_env();
+assert!(matches!(result, Err(ConfigError::<variant_attendu>)));
+```
+Les tests qui touchent à `env::var` partagent un état global → la sérialisation via `env_lock()` est obligatoire.
 
 ### Spec mariadb image tag
 
@@ -290,11 +306,39 @@ Aucun conflit avec la structure unifiée du projet documentée dans `architectur
 
 | # | Question | Statut |
 |---|---|---|
-| Q1 | Nom du réseau Docker externe — `kesh-net` ? `kesh` ? `mariadb-net` ? À aligner avec ce que Guy a déjà créé sur son NAS. | Spec validate — Guy fournit le nom exact |
+| Q1 | ~~Nom du réseau Docker externe~~ — **RÉSOLU Pass 1 spec validate 2026-05-21** : nom = **`frontend`** (réseau Docker existant sur NAS de Guy, hébergeant l'interface externe). Figé dans AC #3, T2.7, scope. | — (résolu) |
 | Q2 | Distinction `docker-compose.yml` vs `docker-compose.dev.yml` — pourquoi 2 compose dev distincts ? Si l'un est obsolète, le supprimer dans cette story. Sinon, documenter quand utiliser lequel. | Spec validate — investigation usage |
 | Q3 | `mem_limit` exact pour kesh-api : 1g suffit-il pour les cas extrêmes (export ZIP global 50+ MB en mémoire — Story 9-2b L3 buffered RAM dette v0.2) ? Sinon, 2g et noter en docs. | Spec validate — estimation |
 | Q4 | Faut-il aussi ajouter un `cpus: 2.0` resource limit ? Le bénéfice est faible sur NAS Synology single-app, l'effort est trivial. Décision : à inclure ou pas selon préférence Guy. | Spec validate — décision Guy |
 | Q5 | Story 10-5 (httpOnly tokens) ajoutera-t-elle des cookies qui requièrent un domaine spécifique dans le compose (e.g. `KESH_COOKIE_DOMAIN`) ? Si oui, prévoir un placeholder dans `.env.example`. Sinon, ajouter en Story 10-5 plutôt qu'ici. | Spec validate Story 10-5 — à arbitrer en amont |
+
+## Spec Validate Cycle
+
+Cycle de revue adversariale CLAUDE.md §"Review Iteration Rule" — relance jusqu'à 0 finding > MEDIUM ou 8 passes.
+
+### Pass 1 — Sonnet 4.6 (2026-05-21)
+
+**Trend** : 11 findings bruts → 11 patches appliqués (3 CRITICAL + 2 HIGH + 4 MEDIUM + 2 LOW).
+
+**Tous ground-truthed** par grep/Read avant application (CLAUDE.md §"Haiku-specific guardrails — grep ground-truth obligatoire", appliqué par hygiène défensive même sur Sonnet).
+
+| # | Sév | Cat | Résumé | Patch |
+|---|---|---|---|---|
+| 1 | CRITICAL | REGR | `set_minimum_required()` ligne 740-745 ne set pas `KESH_ADMIN_PASSWORD`, ~23 tests cassent si fallback `"changeme"` supprimé | T1.2.1 ajoutée |
+| 2 | CRITICAL | SPEC | AC #13 disait `EmptyAdminPassword`, T1.2 disait `MissingVar` (contradiction interne) | AC #13 unifié sur `MissingVar` (cohérent JWT pattern) |
+| 3 | CRITICAL | SPEC | `KESH_HOST=127.0.0.1` dans container = inaccessible depuis hôte NAS même avec port mapping | AC #8 + T2.3 corrigés : `KESH_HOST=0.0.0.0` + ports `127.0.0.1:3000:3000` (restriction host-side) |
+| 4 | HIGH | SPEC | AC #3 « ports absent » contredisait T2.6 « conserver 3000:3000 » | AC #3 + T2.6 alignés sur `ports: "127.0.0.1:3000:3000"` |
+| 5 | HIGH | REINV | `.env.example` existe déjà (`changeme` ligne 20, `change-me-32-bytes-...` ligne 24) — story disait « créer » | Scope + T3.1 reformulés « mettre à jour » + T3.3 vérifié `.env` ligne 14 `.gitignore` |
+| 6 | MEDIUM | SPEC | AC #18 omettait `KESH_LANG`, `KESH_TEST_MODE`, `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB` | AC #18 + T3.2 enrichis (16 vars + warning KESH_TEST_MODE) |
+| 7 | MEDIUM | SPEC | Q1 nom réseau Docker non-résolu en status ready-for-dev | Résolu : nom = `frontend` (confirmé Guy 2026-05-21) — figé partout |
+| 8 | MEDIUM | TEST | T1.7 listait 6 tests dont 2 existent déjà (`weak_jwt_secret` ligne 828, `empty_admin_password` ligne 882) | T1.7 + AC #17 réduits à 4 nouveaux tests, mention tests existants |
+| 9 | MEDIUM | SPEC | T3.2 disait « `openssl rand -hex 32` = 32 chars hex = 16 bytes random » — faux | Corrigé : 64 chars hex = 32 bytes = 256 bits random |
+| 10 | LOW | DOCS | Dev Notes mentionnait helper `with_env_vars` qui n'existe pas | Remplacé par pattern réel `env_lock() + reset_env() + env::set_var(...)` avec exemple code |
+| 11 | LOW | DOCS | T2.5 redondant (port 3306 appartenait à service mariadb retiré par T2.2) | Reformulé en note documentaire (no-op action) |
+
+**Critère d'arrêt CLAUDE.md** : 3 CRITICAL + 2 HIGH + 4 MEDIUM > LOW → relancer Pass 2 obligatoire.
+
+**Suivi Pass 2** : Haiku 4.5 contexte frais, mêmes inputs, post-patches. Focus particulier sur les claims CRITICAL/HIGH (cf. §"Haiku-specific guardrails" — grep ground-truth de tout finding affirmant existence/absence d'un pattern textuel précis).
 
 ## Dev Agent Record
 
