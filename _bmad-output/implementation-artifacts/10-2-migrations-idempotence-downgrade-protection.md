@@ -40,20 +40,29 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 - Résilience frontend si DB inaccessible — Story 10-3.
 - Manuel install Synology mentionnant la procédure update + check `_kesh_version` — Story 10-4 (section "Update").
 - Tokens cookies httpOnly — Story 10-5.
-- FR78 « le système détecte une nouvelle version au démarrage et avertit de faire un backup » — **partiellement adressé** par cette story (la détection de version existe via `_kesh_version`, le log au boot mentionne « New migrations pending, backup recommended » avant `MIGRATOR.run()`). Le warning visuel UI utilisateur reste hors scope v0.1.0 (admin opère via SSH/Container Manager, le log est suffisant).
+- FR78 « le système détecte une nouvelle version au démarrage et avertit de faire un backup » — **partiellement adressé** par cette story : la détection de version existe via `_kesh_version` + le log informatif **APRÈS** `MIGRATOR.run()` réussi (« Migrations appliquées »). Pas de warning **AVANT** `MIGRATOR.run()` (qui imposerait à l'admin d'arrêter le boot et redémarrer après backup — pattern fragile en pratique, voir Dev Notes §"Dette latente identifiée"). Le warning visuel UI utilisateur reste hors scope v0.1.0 (admin opère via SSH/Container Manager). FR78 textuel sera ré-évalué Story 10-4 si insuffisant.
 
 ## Acceptance Criteria
 
 ### Audit idempotence migrations (AC #1-3)
 
-1. **Given** chacun des 26 fichiers `crates/kesh-db/migrations/*.sql`, **When** review, **Then** chaque fichier porte un commentaire d'idempotence explicite **après le commentaire d'en-tête existant** et **avant la première instruction DDL/DML**, au format strict :
-   - `-- idempotent: yes` (si re-exécution serait no-op : usage `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... IF [NOT] EXISTS`, `CREATE INDEX IF NOT EXISTS`)
-   - `-- idempotent: no — re-running fails with <error code/condition>` (si re-exécution échouerait : usage `CREATE TABLE <name>` sans `IF NOT EXISTS` → erreur 1050 ; `ALTER TABLE ADD COLUMN` sans `IF NOT EXISTS` → erreur 1060)
-   - `-- idempotent: tracked-by-sqlx` (si l'idempotence est garantie uniquement par le tracking `_sqlx_migrations` — cas par défaut pour la majorité des 26 fichiers historiques, qui n'utilisent pas les guards `IF NOT EXISTS`).
+> **Note Pass 1 spec validate** : la stratégie initiale (commentaires `-- idempotent: ...` ajoutés in-SQL) a été abandonnée. `MIGRATOR.run()` valide le checksum SHA-384 de chaque migration tracked dans `_sqlx_migrations` (cf. `sqlx-core-0.8.6/src/migrate/migrator.rs:175-176` — retour `MigrateError::VersionMismatch` garanti si checksum diffère). Modifier les fichiers `.sql` historiques (même un commentaire) casserait toute DB déjà migrée. Plan retenu : audit dans un fichier markdown séparé `docs/migrations-idempotence-audit.md`, zéro modification des fichiers `.sql` historiques.
 
-2. **Given** le commentaire d'idempotence d'une migration historique, **When** review, **Then** **aucune migration historique** ne reçoit de modification SQL effective — uniquement l'ajout du commentaire. Pas de refactor de `CREATE TABLE foo (...)` en `CREATE TABLE IF NOT EXISTS foo (...)` (changement de comportement non-trivial qui pourrait masquer un bug futur où une migration croit faire un fresh create alors qu'elle hérite d'une table préexistante).
+1. **Given** un nouveau fichier `docs/migrations-idempotence-audit.md`, **When** review, **Then** il contient un tableau markdown auditant chacun des 26 fichiers `crates/kesh-db/migrations/*.sql` au format :
+   ```
+   | Fichier | Idempotence | Justification |
+   |---|---|---|
+   | 20260404000001_initial_schema.sql | tracked-by-sqlx | `CREATE TABLE` sans `IF NOT EXISTS` — re-exécution manuelle hors sqlx échouerait avec erreur 1050. Le tracking `_sqlx_migrations` empêche la ré-application. |
+   | ... | ... | ... |
+   ```
+   Verdicts admis (un seul par ligne) :
+   - `yes` — re-exécution serait no-op (usage `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... IF [NOT] EXISTS`, `CREATE INDEX IF NOT EXISTS`, `DROP INDEX IF EXISTS`).
+   - `no` — re-exécution échouerait (avec code d'erreur MariaDB ciblé dans la justification : 1050 table exists, 1060 duplicate column, 1061 duplicate key, 1091 index not found).
+   - `tracked-by-sqlx` — l'idempotence est garantie uniquement par le tracking `_sqlx_migrations` — cas par défaut pour la majorité des fichiers historiques sans guards `IF NOT EXISTS`.
 
-3. **Given** la migration `20260507000001_bank_imports_relax_hash_unique.sql` (déjà documentée idempotente lignes 15-18 par Story 8-3), **When** review, **Then** son commentaire d'idempotence existant est **conservé tel quel** (mention « L4 (Pass 1 review) — idempotency: support re-application or partial-state re-runs without crashing on MariaDB error 1091 (index not found) or 1061 (duplicate key) »). L'ajout du marqueur `-- idempotent: yes` au-dessus de ce commentaire historique est suffisant pour normaliser au format AC #1.
+2. **Given** les 26 fichiers `crates/kesh-db/migrations/*.sql` historiques, **When** review post-Story-10-2, **Then** **aucun fichier `.sql` historique ne reçoit de modification** (pas de commentaire ajouté, pas de refactor, pas de bytes changés). Cela évite tout `MigrateError::VersionMismatch` sur les DB existantes. La seule migration `.sql` créée par cette story est `20260522000001_kesh_version.sql` (AC #4-7). Pour la nouvelle migration, le verdict d'idempotence figure dans son commentaire d'en-tête ET dans le fichier audit.
+
+3. **Given** la migration `20260507000001_bank_imports_relax_hash_unique.sql` (déjà documentée idempotente lignes 15-18 par Story 8-3), **When** review, **Then** son commentaire d'idempotence existant **n'est pas modifié** (cohérent AC #2). Son entrée dans `docs/migrations-idempotence-audit.md` est verdict `yes` avec justification renvoyant aux lignes 15-18 du fichier.
 
 ### Migration `_kesh_version` (AC #4-7)
 
@@ -78,7 +87,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ### Module `kesh-db/src/version.rs` + boot integration (AC #8-13)
 
-8. **Given** `crates/kesh-db/Cargo.toml`, **When** review, **Then** une nouvelle dépendance `semver = "1"` est ajoutée à la section `[dependencies]`. La feature `serde` n'est **pas** activée (pas de serde sur les structures `Version` cross-process — uniquement parsing).
+8. **Given** `crates/kesh-db/Cargo.toml`, **When** review, **Then** une nouvelle dépendance `semver = "1"` est ajoutée à la section `[dependencies]`. La feature `serde` n'est **pas** activée (pas de serde sur les structures `Version` cross-process — uniquement parsing). Note : `semver 1.0.x` est déjà résolu dans `Cargo.lock` comme dépendance transitive (cargo-metadata) — l'ajout en dépendance directe ne provoque pas de re-résolution.
 
 9. **Given** `crates/kesh-db/src/lib.rs`, **When** review, **Then** un nouveau module public `pub mod version;` est exposé (cohérent avec le pattern `pub mod repositories;` existant).
 
@@ -97,12 +106,12 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
     avec un enum `DowngradeCheckOutcome { FreshInstall, Aligned, BinaryAhead { db_min: Version, binary: Version } }` (3 variants couvrant les 3 états possibles : table n'existe pas / binaire == ou > min_required / binaire > min_required quand min_required est juste informationnel d'une version antérieure). Le 4e cas `BinaryBehind { db_min, binary }` n'est **pas** un variant `Outcome` — il est **converti en `VersionError::DowngradeRefused { db_min, binary }`** car c'est le seul cas qui doit faire échouer le boot.
 
 11. **Given** `check_downgrade_protection()`, **When** invoquée :
-    - **Sur DB sans table `_kesh_version`** (fresh install) — la requête `SELECT kesh_version_min_required FROM _kesh_version WHERE id=1` retourne `sqlx::Error::Database(...)` avec MariaDB error code `1146` (ER_NO_SUCH_TABLE). **Then** la fonction retourne `Ok(DowngradeCheckOutcome::FreshInstall)` (table sera créée par `MIGRATOR.run()` ensuite).
+    - **Sur DB sans table `_kesh_version`** (fresh install) — la requête `SELECT kesh_version_min_required FROM _kesh_version WHERE id=1` retourne `sqlx::Error::Database(db_err)` qui est downcastable en `sqlx::mysql::MySqlDatabaseError` dont `.number() == 1146` (ER_NO_SUCH_TABLE). **⚠️** La méthode `code()` retourne le SQLSTATE `"42S02"`, **pas** le numéro 1146 — utiliser obligatoirement le pattern `try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` (référence canonique : `crates/kesh-db/src/errors.rs:150` + `crates/kesh-db/src/retry.rs:73`). **Then** la fonction retourne `Ok(DowngradeCheckOutcome::FreshInstall)` (table sera créée par `MIGRATOR.run()` ensuite).
     - **Sur DB où `_kesh_version` existe et `kesh_version_min_required = "0.1.0"` + binaire `0.1.0`** — **Then** retourne `Ok(DowngradeCheckOutcome::Aligned)`.
     - **Sur DB où `kesh_version_min_required = "0.1.0"` + binaire `"0.2.0"`** — **Then** retourne `Ok(DowngradeCheckOutcome::BinaryAhead { db_min: 0.1.0, binary: 0.2.0 })` (le binaire est plus récent que le min_required, c'est un upgrade légitime).
     - **Sur DB où `kesh_version_min_required = "0.2.0"` + binaire `"0.1.0"`** — **Then** retourne `Err(VersionError::DowngradeRefused { db_min: 0.2.0, binary: 0.1.0 })`.
 
-12. **Given** `record_boot_version()`, **When** invoquée après `MIGRATOR.run()` réussi — la table `_kesh_version` existe nécessairement (créée par la migration `20260522000001_kesh_version.sql` au plus tard à l'instant). **Then** exécute `UPDATE _kesh_version SET kesh_version_last_applied = $1, last_boot_at = NOW() WHERE id = 1` puis retourne `Ok(())`. Si l'UPDATE échoue (e.g. pool fermé entre-temps), retourne `Err(VersionError::Sqlx(sqlx::Error))` mais ne fait **pas** exit le binaire — c'est un log warning au caller, pas une erreur fatale (le serveur reste utilisable même si le boot version metadata n'a pas pu être enregistré).
+12. **Given** `record_boot_version()`, **When** invoquée après `MIGRATOR.run()` réussi — la table `_kesh_version` existe nécessairement (créée par la migration `20260522000001_kesh_version.sql` au plus tard à l'instant). **Then** exécute `UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1` puis vérifie défensivement `rows_affected() == 1` (si != 1 → log warning « row missing? » mais retourne quand même `Ok(())` — défense en profondeur, ne devrait jamais arriver vu la migration AC #6). Si l'UPDATE échoue (e.g. pool fermé entre-temps), retourne `Err(VersionError::Sqlx(sqlx::Error))` mais ne fait **pas** exit le binaire — c'est un log warning au caller, pas une erreur fatale (le serveur reste utilisable même si le boot version metadata n'a pas pu être enregistré).
 
 13. **Given** `crates/kesh-api/src/main.rs`, **When** review, **Then** l'ordre de boot est étendu autour de l'appel actuel `MIGRATOR.run()` (ligne 62 main actuelle) :
     ```rust
@@ -139,7 +148,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 ### Tests d'intégration migrations (AC #14-18)
 
 14. **Given** un nouveau fichier `crates/kesh-db/tests/migrations_fresh_install.rs`, **When** `cargo test -p kesh-db --test migrations_fresh_install`, **Then** au moins **3 tests `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`** vérifient :
-    - (a) Après migration, **toutes les tables attendues** existent. Liste minimale à valider : `companies`, `users`, `accounts`, `journal_entries`, `journal_entry_lines`, `invoices`, `invoice_lines`, `contacts`, `products`, `vat_rates`, `bank_accounts`, `bank_imports`, `bank_transactions`, `bank_profiles`, `reconciliation_rules`, `audit_log`, `refresh_tokens`, `onboarding_state`, `company_invoice_settings`, `invoice_number_sequences`, `_kesh_version`, `_sqlx_migrations` (~22 tables). Test via `SHOW TABLES` parsing.
+    - (a) Après migration, **toutes les tables attendues** existent. Liste minimale à valider : `companies`, `users`, `fiscal_years`, `accounts`, `journal_entries`, `journal_entry_lines`, `invoices`, `invoice_lines`, `contacts`, `products`, `vat_rates`, `bank_accounts`, `bank_imports`, `bank_transactions`, `bank_profiles`, `reconciliation_rules`, `audit_log`, `refresh_tokens`, `onboarding_state`, `company_invoice_settings`, `invoice_number_sequences`, `_kesh_version`, `_sqlx_migrations` (~23 tables). Test via `SHOW TABLES` parsing.
     - (b) **Seed minimal** round-trip OK : INSERT company → INSERT user (avec `password_hash` Argon2 mock) → INSERT account (Asset class) → INSERT invoice avec validated_at NULL → INSERT journal_entry avec status='Draft' → SELECT chaque ligne avec assertion sur les colonnes clés. Aucune validation business comptable lourde (pas d'invariant partie-double sur 1 ligne) — c'est un test de schéma, pas un test métier.
     - (c) **Row initiale `_kesh_version`** : SELECT kesh_version_min_required, kesh_version_last_applied FROM _kesh_version WHERE id=1 retourne `("0.1.0", "0.1.0")`.
 
@@ -184,13 +193,16 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ## Tasks / Subtasks
 
-### T1: Audit idempotence des 26 migrations historiques (AC #1-3)
+### T1: Audit idempotence des 26 migrations historiques → fichier `docs/migrations-idempotence-audit.md` (AC #1-3)
 
-- [ ] T1.1 — Pour chacun des 26 fichiers `crates/kesh-db/migrations/*.sql`, ajouter un commentaire `-- idempotent: ...` immédiatement après le commentaire d'en-tête et avant la première instruction DDL/DML.
-- [ ] T1.2 — Pour la migration `20260507000001_bank_imports_relax_hash_unique.sql` (déjà documentée idempotente lignes 15-18), ajouter `-- idempotent: yes` au-dessus du bloc existant **sans le modifier**.
-- [ ] T1.3 — Pour les 19 migrations historiques utilisant `CREATE TABLE <name>` sans `IF NOT EXISTS`, le marqueur est `-- idempotent: tracked-by-sqlx`. Liste : `initial_schema.sql`, `auth_refresh_tokens.sql`, `onboarding_state.sql`, `bank_accounts.sql`, `accounts.sql`, `journal_entries.sql`, `audit_log.sql`, `contacts.sql`, `products.sql`, `invoices.sql`, `invoice_validation.sql`, `vat_rates.sql`, `bank_imports.sql`, `bank_profiles.sql`, `reconciliation_rules.sql`.
-- [ ] T1.4 — Pour les 6 migrations `ALTER TABLE` historiques (`refresh_tokens_revoked_reason.sql`, `country_code.sql`, `invoice_paid_at.sql`, `users_company_id.sql`, `company_invoice_settings.sql`, `invoice_lines_line_total_check.sql`, `invoice_validated_journal_entry_check.sql`, `kf005_fulltext_indexes.sql`, `reconciliation_8_4.sql`, `bank_account_journal_link.sql`), classifier par inspection : si `ADD COLUMN`/`ADD INDEX`/`ADD CONSTRAINT` sans guard → `-- idempotent: tracked-by-sqlx`. Si guard `IF NOT EXISTS` présent → `-- idempotent: yes`.
-- [ ] T1.5 — Validation par grep : `grep -l "^-- idempotent:" crates/kesh-db/migrations/*.sql | wc -l` doit retourner `26` (toutes auditées). Si < 26, identifier les manquantes et compléter.
+- [ ] T1.1 — Créer `docs/migrations-idempotence-audit.md` avec en-tête (paragraphe d'intro renvoyant à Story 10-2 et au paragraphe « Note Pass 1 spec validate » d'AC #1-3) + tableau markdown 26 rows.
+- [ ] T1.2 — Pour les **15 migrations** historiques utilisant `CREATE TABLE <name>` sans `IF NOT EXISTS` (`initial_schema.sql`, `auth_refresh_tokens.sql`, `onboarding_state.sql`, `bank_accounts.sql`, `accounts.sql`, `journal_entries.sql`, `audit_log.sql`, `contacts.sql`, `products.sql`, `invoices.sql`, `invoice_validation.sql`, `vat_rates.sql`, `bank_imports.sql`, `bank_profiles.sql`, `reconciliation_rules.sql`) → verdict `tracked-by-sqlx`, justification : « `CREATE TABLE` sans `IF NOT EXISTS` ; re-exécution manuelle hors sqlx échouerait avec erreur MariaDB 1050. ».
+- [ ] T1.3 — Pour les **10 migrations** `ALTER TABLE` historiques (`refresh_tokens_revoked_reason.sql`, `invoice_lines_line_total_check.sql`, `invoice_validated_journal_entry_check.sql`, `country_code.sql`, `invoice_paid_at.sql`, `users_company_id.sql`, `kf005_fulltext_indexes.sql`, `bank_imports_relax_hash_unique.sql`, `reconciliation_8_4.sql`, `bank_account_journal_link.sql`), classifier par inspection :
+  - Si `ADD COLUMN`/`ADD INDEX`/`ADD CONSTRAINT` sans guard → verdict `tracked-by-sqlx`, justification : « `ALTER TABLE ADD ...` sans `IF NOT EXISTS` ; re-exécution échouerait erreur 1060 (colonne) ou 1061 (index/constraint). ».
+  - Si guard `IF [NOT] EXISTS` présent → verdict `yes`, justification courte (exemple `bank_imports_relax_hash_unique.sql` lignes 15-18 — verdict `yes`).
+- [ ] T1.4 — Pour la **migration `company_invoice_settings.sql`** (CREATE INDEX only, pas d'ALTER TABLE) → verdict `tracked-by-sqlx`, justification : « `CREATE INDEX` sans `IF NOT EXISTS` ; re-exécution échouerait erreur 1061. ».
+- [ ] T1.5 — Validation par count : `grep -c "^|" docs/migrations-idempotence-audit.md` ≥ 27 (header row + séparateur + 26 data rows). Chacun des 26 fichiers `.sql` historiques apparaît exactement une fois dans le tableau (`for f in crates/kesh-db/migrations/*.sql; do grep -q "$(basename $f)" docs/migrations-idempotence-audit.md || echo "manquant: $f"; done` retourne vide).
+- [ ] T1.6 — Référencer `docs/migrations-idempotence-audit.md` depuis `crates/kesh-db/README.md` (s'il existe) OU depuis `docs/ci.md` section migrations (fallback si pas de README crate-level).
 
 ### T2: Migration `_kesh_version.sql` + boot integration (AC #4-13)
 
@@ -200,11 +212,11 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
   - `use semver::Version; use sqlx::MySqlPool;`
   - `#[derive(Debug, thiserror::Error)] pub enum VersionError { ... }` avec variants `DowngradeRefused { db_min: Version, binary: Version }`, `Sqlx(#[from] sqlx::Error)`, `InvalidSemver(#[from] semver::Error)`.
   - `#[derive(Debug)] pub enum DowngradeCheckOutcome { FreshInstall, Aligned, BinaryAhead { db_min: Version, binary: Version } }`.
-  - `pub async fn check_downgrade_protection(pool: &MySqlPool, binary_version: &str) -> Result<DowngradeCheckOutcome, VersionError>` — parse `binary_version` via `Version::parse()` (semver crate), execute `sqlx::query_scalar!("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1").fetch_one(pool).await`, match sur l'erreur `sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("1146")` → `Ok(FreshInstall)`, parse le VARCHAR retourné en `Version`, compare via `binary.cmp(&db_min)` → 3 cas mapping vers `Aligned` / `BinaryAhead` / `Err(DowngradeRefused)`. ⚠️ `sqlx::query_scalar!` macro vérifie le schema à compile-time ; si la table `_kesh_version` n'existe pas encore en local au moment du build, soit utiliser `sqlx::query_scalar` (sans `!`) dynamique pour éviter la pré-compilation, soit s'assurer que `cargo sqlx prepare` est exécuté après création de la migration en local. **Recommandé Story 10-2** : utiliser `sqlx::query_scalar` (sans macro `!`) pour éviter cette dépendance ordonnée — perte de check compile-time tolérable pour 1 requête trivialement testée par les tests d'intégration.
-  - `pub async fn record_boot_version(pool: &MySqlPool, binary_version: &str) -> Result<(), VersionError>` — `sqlx::query("UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1").bind(binary_version).execute(pool).await` → `Ok(())` ou `Err(Sqlx)`.
-  - Aucun unit test interne au module — couvert par les tests d'intégration T4. Le module entier devrait faire ~70-100 lignes Rust.
+  - `pub async fn check_downgrade_protection(pool: &MySqlPool, binary_version: &str) -> Result<DowngradeCheckOutcome, VersionError>` — parse `binary_version` via `Version::parse()` (semver crate), execute `sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1").fetch_one(pool).await` (version dynamique sans macro `!` — évite la dépendance compile-time sur l'existence de la table en local). Détecter le cas fresh install via le pattern canonique projet : `sqlx::Error::Database(ref db_err) if db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` → `Ok(FreshInstall)`. ⚠️ **NE PAS utiliser** `db_err.code() == Some("1146")` : `code()` retourne le SQLSTATE `"42S02"` (string) et **pas** le numéro MariaDB 1146. Référence canonique du pattern correct : `crates/kesh-db/src/errors.rs:150-151` et `crates/kesh-db/src/retry.rs:73-74`. Sinon parse le VARCHAR retourné en `Version`, compare via `binary.cmp(&db_min)` → 3 cas mapping vers `Aligned` / `BinaryAhead` / `Err(DowngradeRefused)`.
+  - `pub async fn record_boot_version(pool: &MySqlPool, binary_version: &str) -> Result<(), VersionError>` — `let r = sqlx::query("UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1").bind(binary_version).execute(pool).await?;` puis `if r.rows_affected() != 1 { tracing::warn!(rows = r.rows_affected(), "record_boot_version: row id=1 missing?"); }` puis `Ok(())`.
+  - Aucun unit test interne au module — couvert par les tests d'intégration T3. Le module entier devrait faire ~80-110 lignes Rust.
 - [ ] T2.4 — Exposer le module dans `crates/kesh-db/src/lib.rs` : ajouter `pub mod version;` après les autres `pub mod` existants.
-- [ ] T2.5 — Modifier `crates/kesh-api/src/main.rs` selon AC #13 : insérer le bloc `check_downgrade_protection` entre l'init du pool (fin ligne 61 actuelle) et `MIGRATOR.run()` (ligne 62 actuelle), et `record_boot_version` après le `tracing::info!("Migrations appliquées")` (ligne 67 actuelle). Adjuster les commentaires de la docstring `//! Ordre de démarrage` en haut du fichier (lignes 1-13) pour refléter les nouveaux steps 3b et 4b.
+- [ ] T2.5 — Modifier `crates/kesh-api/src/main.rs` selon AC #13 : insérer le bloc `check_downgrade_protection` entre l'init du pool (fin ligne 49 actuelle `tracing::info!("Base de données : connectée")`) et `MIGRATOR.run()` (ligne 62 actuelle), et `record_boot_version` après le `tracing::info!("Migrations appliquées")` (ligne 66 actuelle). Ajuster les commentaires de la docstring `//! Ordre de démarrage` en haut du fichier (lignes 1-13) pour refléter les nouveaux steps 3b et 4b.
 
 ### T3: Tests d'intégration migrations (AC #14-18)
 
@@ -215,8 +227,8 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 - [ ] T3.2 — Créer `crates/kesh-db/tests/migrations_upgrade_path.rs` avec 2 tests :
   - `upgrade_path_preserves_data` (AC #15a) — utilise helper `apply_migrations_up_to` (à inclure inline dans le même fichier de test).
   - `downgrade_protection_rejects_old_binary` (AC #15b) — UPDATE de `kesh_version_min_required` à `'0.99.0'` puis appel `check_downgrade_protection` avec `"0.1.0"` → assertion `Err(DowngradeRefused)`.
-- [ ] T3.3 — Implémenter le helper `apply_migrations_up_to(pool, n)` inline dans `migrations_upgrade_path.rs`. Pattern proposé Dev Notes §"Pattern test migrations". Si l'API sqlx 0.8 ne permet pas d'appliquer une sub-slice via `Migrator::iter()`, fallback : exécution manuelle des fichiers SQL via `std::fs::read_to_string` sur les 23 premiers fichiers tri-alpha, exécution séquentielle via `sqlx::raw_sql` + INSERT manuel d'une row par migration dans `_sqlx_migrations` (pattern visible dans `.github/workflows/ci.yml:122-127` mais sans le tracking, à adapter).
-- [ ] T3.4 — Si l'helper T3.3 nécessite plus de 50 lignes Rust, extraire dans un sous-module `tests/common/migrations_helper.rs` (pattern Cargo `#[path = "common/migrations_helper.rs"] mod migrations_helper;` au début du fichier de test). Sinon laisser inline.
+- [ ] T3.3 — Implémenter le helper `apply_migrations_up_to(pool, n)` inline dans `migrations_upgrade_path.rs` via la **sub-Migrator approach** (cf. Dev Notes §"Pattern test migrations" pour le code complet). Le champ `Migrator::migrations` est `pub Cow<'static, [Migration]>` (semver-exempt mais public) — slicer `&kesh_db::MIGRATOR.migrations[..n]` et construire un sub-Migrator avec ce slice puis appeler `.run(pool)`. Cela préserve les checksums SHA-384 réels et alimente correctement `_sqlx_migrations`, contrairement à toute approche d'INSERT manuel.
+- [ ] T3.4 — Si l'helper T3.3 nécessite plus de 30 lignes Rust, extraire dans un sous-module `tests/common/migrations_helper.rs` (pattern Cargo `#[path = "common/migrations_helper.rs"] mod migrations_helper;` au début du fichier de test). Sinon laisser inline.
 - [ ] T3.5 — Vérifier que les 5 nouveaux tests passent en local : `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` avec MariaDB 10.11 démarré sur 127.0.0.1:3306 (kesh-mariadb container projet).
 
 ### T4: CI matrice MariaDB 10.11 doc + planning artifact sync (AC #19-21)
@@ -245,52 +257,36 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ### Pattern test migrations
 
-L'helper `apply_migrations_up_to(pool, n)` pour T3.3 — deux approches selon ce que l'API sqlx 0.8 permet :
+L'helper `apply_migrations_up_to(pool, n)` pour T3.3 utilise la **sub-Migrator approach**. Le champ `Migrator::migrations` est `pub Cow<'static, [Migration]>` dans sqlx-core 0.8.6 (cf. `src/migrate/migrator.rs:14-22` — annoté `#[doc(hidden)]` + commentaire « semver-exempt may be changed in future version », acceptable pour un test interne — alerte de breaking si bump sqlx) :
 
-**Approche A (préférée si sqlx 0.8 expose `.iter()` itérable)** :
 ```rust
 use sqlx::migrate::Migrator;
 use sqlx::MySqlPool;
+use std::borrow::Cow;
 
-async fn apply_migrations_up_to(pool: &MySqlPool, n: usize) -> sqlx::Result<()> {
-    let migrator: &Migrator = &kesh_db::MIGRATOR;
-    for (i, migration) in migrator.iter().enumerate() {
-        if i >= n { break; }
-        // sqlx 0.8 may expose Migration::apply directly, or via Migrator internals.
-        // Verify via `cargo doc -p sqlx --open` chap. migrate::Migrator before relying on this.
-        // Fallback if not exposed: switch to Approche B.
-    }
-    Ok(())
+async fn apply_migrations_up_to(pool: &MySqlPool, n: usize) -> Result<(), sqlx::migrate::MigrateError> {
+    let all = &kesh_db::MIGRATOR.migrations;
+    assert!(n <= all.len(), "apply_migrations_up_to: n={} > total={}", n, all.len());
+    let sub = Migrator {
+        migrations: Cow::Borrowed(&all[..n]),
+        ignore_missing: kesh_db::MIGRATOR.ignore_missing,
+        locking: kesh_db::MIGRATOR.locking,
+        no_tx: kesh_db::MIGRATOR.no_tx,
+    };
+    sub.run(pool).await
 }
 ```
 
-**Approche B (fallback robuste — utilisée par CI step `Apply migrations to kesh DB` ligne 122-127)** :
-```rust
-async fn apply_migrations_up_to(pool: &MySqlPool, n: usize) -> sqlx::Result<()> {
-    let mut entries: Vec<_> = std::fs::read_dir("./migrations")?
-        .collect::<Result<_, _>>()?;
-    entries.sort_by_key(|e| e.path()); // sort alpha = sort by timestamp prefix
-    for entry in entries.into_iter().take(n) {
-        let sql = std::fs::read_to_string(entry.path())?;
-        sqlx::raw_sql(&sql).execute(pool).await?;
-        // Insert tracking row for this migration so MIGRATOR.run() later skips it.
-        let version = filename_to_version(entry.file_name());
-        sqlx::query(
-            "INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time) \
-             VALUES (?, ?, NOW(), TRUE, ?, 0)"
-        )
-        .bind(version)
-        .bind("backfill via apply_migrations_up_to")
-        .bind(vec![0u8; 32])
-        .execute(pool).await?;
-    }
-    Ok(())
-}
-```
+Avantages :
+- Checksums SHA-384 réels préservés → `MIGRATOR.run()` final ne déclenche pas `MigrateError::VersionMismatch`.
+- `_sqlx_migrations` correctement alimentée par `sub.run()` → les migrations restantes sont vues comme "à appliquer" par le `MIGRATOR.run()` final.
+- Pas de duplication des fichiers `.sql` ni de logique custom de read+exec.
 
-⚠️ L'approche B requiert que le path `./migrations` soit relatif au manifest dir de `kesh-db` au moment du test — utiliser `env!("CARGO_MANIFEST_DIR")` pour résoudre absolu. Et la table `_sqlx_migrations` doit exister, ce qui est le cas dès qu'**une** migration sqlx a été exécutée — donc il faut soit pré-exécuter `MIGRATOR.run` sur les 0 migrations (no-op qui crée `_sqlx_migrations`), soit créer manuellement la table.
+**Anti-pattern à éviter** : INSERT manuel dans `_sqlx_migrations` avec un checksum bidon (`vec![0u8; 32]` ou similaire). Le checksum sqlx est **SHA-384 = 48 bytes** (`Sha384::digest`, `sqlx-core-0.8.6/src/migrate/migration.rs:25`), pas SHA-256 ; et même avec la bonne taille un faux checksum cause `MigrateError::VersionMismatch` à l'appel `MIGRATOR.run()` final.
 
-**Approche recommandée Story 10-2** : essayer Approche A d'abord (15 min d'investigation API sqlx 0.8). Si bloqué > 1h, basculer Approche B.
+**Anti-pattern à éviter** : `Migration::apply(&pool)` n'existe **pas** comme méthode publique sur `Migration` en sqlx 0.8 (la struct ne contient que des données : `version`, `description`, `sql`, `checksum`, etc. — l'apply est porté par le trait `Migrate` implémenté sur les connexions, non-stable). Utiliser sub-Migrator est la voie correcte.
+
+Note : si sqlx bumpe vers 0.9+ et que `migrations` perd la visibilité publique, le pattern devra basculer en fallback custom (read+exec+INSERT avec **vrai** checksum SHA-384 calculé runtime via `sha2 = "0.10"`). Le test échouera proprement (compile error) le cas échéant.
 
 ### Décision Q7 (epic-10.md) — résolue
 
@@ -353,8 +349,12 @@ pub async fn check_downgrade_protection(
     .await;
 
     match row {
-        Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("1146") => {
-            // ER_NO_SUCH_TABLE — fresh install, the migration `_kesh_version` hasn't run yet.
+        Err(sqlx::Error::Database(ref db_err))
+            if db_err
+                .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+                .map_or(false, |e| e.number() == 1146) =>
+        {
+            // ER_NO_SUCH_TABLE 1146 — fresh install, the migration `_kesh_version` hasn't run yet.
             Ok(DowngradeCheckOutcome::FreshInstall)
         }
         Err(e) => Err(VersionError::Sqlx(e)),
@@ -378,19 +378,39 @@ pub async fn record_boot_version(
     binary_version: &str,
 ) -> Result<(), VersionError> {
     Version::parse(binary_version)?; // validate semver but don't store the Version struct
-    sqlx::query(
+    let result = sqlx::query(
         "UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1"
     )
     .bind(binary_version)
     .execute(pool)
     .await?;
+    if result.rows_affected() != 1 {
+        tracing::warn!(
+            rows_affected = result.rows_affected(),
+            "record_boot_version: UPDATE affected unexpected number of rows (expected 1) — _kesh_version row id=1 missing?"
+        );
+    }
     Ok(())
 }
 ```
 
 ### MariaDB error code 1146 (ER_NO_SUCH_TABLE) — référence
 
-L'erreur SQLSTATE 42S02, MariaDB code 1146 « Table 'database.table' doesn't exist » est ce que retourne le SELECT contre `_kesh_version` sur fresh install. Vérification API sqlx 0.8 : `sqlx::Error::Database` exposait `code()` en 0.7, conservé en 0.8 (cf. `cargo doc -p sqlx --open`). Si l'API évolue (peu probable patch-level), fallback : `e.to_string().contains("1146")` (textuel, plus fragile mais robuste contre refactor type-level).
+L'erreur SQLSTATE `"42S02"`, **MariaDB number 1146** « Table 'database.table' doesn't exist » est ce que retourne le SELECT contre `_kesh_version` sur fresh install. **Important** : en sqlx 0.8, `sqlx::Error::Database::code()` retourne le **SQLSTATE string** (`"42S02"`) — pas le numéro MariaDB. Pour matcher le numéro 1146, il faut downcast vers `sqlx::mysql::MySqlDatabaseError` puis appeler `.number()`. Le pattern canonique projet est implémenté dans :
+
+- `crates/kesh-db/src/errors.rs:150-151` (matching sur deadlock, lock timeout, etc.)
+- `crates/kesh-db/src/retry.rs:64-74` (detection deadlock pour retry)
+
+Code attendu pour `version.rs` :
+```rust
+sqlx::Error::Database(ref db_err)
+    if db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map_or(false, |e| e.number() == 1146)
+```
+
+**NE PAS utiliser** :
+- `db_err.code() == Some("1146")` — `code()` retourne `Some("42S02")` (SQLSTATE), pas le numéro.
+- `e.to_string().contains("1146")` — textuel fragile, dépend de la formulation du message + casse les tests si le message change.
 
 ### Dette latente identifiée pour audit cross-story
 
@@ -400,9 +420,11 @@ L'erreur SQLSTATE 42S02, MariaDB code 1146 « Table 'database.table' doesn't exi
 
 ### Anti-patterns à éviter (extrait des codes review Story 10-1)
 
-- **NE PAS faire** : modifier rétroactivement le SQL des migrations historiques (T1.2 explicite). Risque : rupture d'idempotence du hash sqlx `_sqlx_migrations.checksum`, lequel ferait échouer `MIGRATOR.run` sur toute install existante avec « migration X checksum mismatch ». Le seul changement autorisé est l'ajout d'un **commentaire** (`-- ...`) qui modifie le checksum mais sqlx tolère un checksum différent pour les migrations déjà tracked **si on lance via `MIGRATOR.run` sur une DB ayant le tracking** — à vérifier en local. Si checksum mismatch bloque : se contenter de marquer une seule migration historique (e.g. l'`initial_schema.sql`) avec le commentaire d'idempotence — l'audit reste informationnel et n'est pas mass-éditable rétroactivement.
-- **NE PAS faire** : ajouter `serde` feature à `semver` (AC #8). La struct `Version` ne traverse pas de boundary serialisée — uniquement parsée depuis VARCHAR DB et comparée. La feature `serde` augmente le scope binaire sans gain.
-- **NE PAS faire** : utiliser `.unwrap()` ou `.expect()` dans `version.rs` (clippy + CLAUDE.md). Toutes les erreurs descendent via `?` → `VersionError`. Le caller (`main.rs`) décide d'exit ou de log warn selon le type d'erreur.
+- **NE PAS modifier les fichiers `.sql` historiques** (AC #2 explicite). Risque : `MigrateError::VersionMismatch` **garanti** sur toute DB déjà migrée. Le checksum sqlx est SHA-384 du contenu complet du fichier (cf. `sqlx-core-0.8.6/src/migrate/migration.rs:25`) et le `MIGRATOR.run()` compare strictement (cf. `migrator.rs:175-176`). **Même l'ajout d'un commentaire `-- ...` casse le checksum**. C'est la raison pour laquelle Pass 1 spec validate a pivoté l'audit AC #1-3 vers un fichier markdown séparé `docs/migrations-idempotence-audit.md`.
+- **NE PAS** ajouter `serde` feature à `semver` (AC #8). La struct `Version` ne traverse pas de boundary serialisée — uniquement parsée depuis VARCHAR DB et comparée. La feature `serde` augmente le scope binaire sans gain.
+- **NE PAS** utiliser `.unwrap()` ou `.expect()` dans `version.rs` (clippy + CLAUDE.md). Toutes les erreurs descendent via `?` → `VersionError`. Le caller (`main.rs`) décide d'exit ou de log warn selon le type d'erreur.
+- **NE PAS** utiliser `db_err.code() == Some("1146")` pour détecter ER_NO_SUCH_TABLE — `code()` retourne le SQLSTATE `"42S02"`. Pattern correct : `try_downcast_ref::<MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` (cf. `crates/kesh-db/src/errors.rs:150`).
+- **NE PAS** simuler le tracking `_sqlx_migrations` par INSERT manuel avec checksum bidon dans les tests (cf. Dev Notes §"Pattern test migrations" — anti-pattern documenté). Utiliser sub-Migrator avec `&kesh_db::MIGRATOR.migrations[..n]`.
 
 ### Test Locally First — MariaDB 10.11 requis
 
@@ -452,8 +474,12 @@ Aucune Issue spécifique fermée par cette story (KF Epic 7/9 toutes closes par 
 ### Code existant à toucher / référencer
 
 - `crates/kesh-db/src/lib.rs:21` — `pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");` — point d'entrée à conserver, ajout `pub mod version;` ici
+- `crates/kesh-db/src/errors.rs:150-151` — pattern canonique `db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == ...)` à reproduire dans `version.rs` (T2.3) pour matcher ER_NO_SUCH_TABLE 1146
+- `crates/kesh-db/src/retry.rs:64-74` — deuxième occurrence du même pattern (deadlock detection)
 - `crates/kesh-db/Cargo.toml:11` — ligne sqlx existante (référence features actives), `semver = "1"` à ajouter en `[dependencies]`
-- `crates/kesh-api/src/main.rs:62` — `if let Err(e) = kesh_db::MIGRATOR.run(&pool).await` — code à étendre avant + après par les nouveaux blocs T2.5
+- `crates/kesh-api/src/main.rs:49` — `tracing::info!("Base de données : connectée")` — ancre AVANT laquelle insérer le bloc `check_downgrade_protection` (étape boot 3b) T2.5
+- `crates/kesh-api/src/main.rs:62` — `if let Err(e) = kesh_db::MIGRATOR.run(&pool).await` — code à conserver, étape boot 4
+- `crates/kesh-api/src/main.rs:66` — `tracing::info!("Migrations appliquées")` — ancre APRÈS laquelle insérer `record_boot_version` (étape boot 4b) T2.5
 - `crates/kesh-api/src/exports/metadata.rs:77` — `env!("CARGO_PKG_VERSION")` pattern de référence (résout Q7)
 - `crates/kesh-api/Cargo.toml:3` — `version = "0.1.0"` source de la string passée à `check_downgrade_protection`
 - `crates/kesh-api/src/auth/bootstrap.rs:136,170,202,254` — pattern `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` à reproduire dans T3.1 + T3.2
@@ -481,15 +507,15 @@ Aucune Issue spécifique fermée par cette story (KF Epic 7/9 toutes closes par 
 - D10 epic-10.md — Bootstrap admin idempotent (déjà vérifié Story 10-1)
 - D11 epic-10.md — Pas d'autre install Kesh, breaking change OK (donc pas de souci si min_required = 0.1.0 hardcoded — Guy = single user)
 
-## 🚨 Questions ouvertes (à clarifier en spec validate Pass 1)
+## 🚨 Questions ouvertes (résolues Pass 1)
 
-| # | Question | Hypothèse Story 10-2 ready-for-dev | À résoudre par |
-|---|---|---|---|
-| Q1 | sqlx 0.8 expose-t-il `Migration::apply` publiquement pour Approche A T3.3 ? | Inconnu — à vérifier par `cargo doc -p sqlx --open` au début dev-story | dev-story T3.3 (15 min investigation, fallback approche B définie) |
-| Q2 | Le checksum sqlx tolère-t-il l'ajout de commentaires `-- idempotent: ...` rétroactif sans break du `MIGRATOR.run` sur DB existante ? | Inconnu — à vérifier par smoke test local : modif d'1 migration historique commentaire + run kesh-api boot, observer log. Si checksum mismatch → fallback Plan B (cf. Dev Notes anti-patterns) | dev-story T1 (smoke test 5 min avant T1.1-T1.5) |
-| Q3 | Migration `20260522000001_kesh_version.sql` doit-elle être appliquée AVANT ou APRÈS le check downgrade au boot ? | **APRÈS** (cf. AC #11 — check retourne `FreshInstall` si table absente, puis `MIGRATOR.run` crée la table, puis `record_boot_version` UPDATE). Le risque : sur un upgrade de Kesh v0.0.x (jamais existé) → v0.1.0, la première fois où le check tournerait, la table n'existerait pas. C'est OK car v0.0.x n'existe pas en pratique. | (résolu spec) |
-| Q4 | Faut-il un test de **pure idempotence run twice** (`MIGRATOR.run` + `MIGRATOR.run` second appel = no-op) ? | Pas en AC #14-15 mais bon à avoir comme test 6e (e.g. `migrations_idempotent_double_run`). À ajouter si dev-story le souhaite, sinon différer à code review pass. | spec validate Pass 1 ou dev-story optionnel |
-| Q5 | Le commentaire P3 de CLAUDE.md §"Migration breaking policy" (AC #22) mentionne « finding CRITICAL » en code review — doit-on aussi formaliser une **check automatique** (script grep dans CI) ? | Pas immédiatement (overhead — un check `grep -lE "DROP TABLE|DROP COLUMN|RENAME ..." migrations/*.sql | xargs grep -L "UPDATE _kesh_version SET kesh_version_min_required"` serait fragile pour les exceptions P4). Laissé à la discipline code review humain + LLM. | (résolu spec — pas de check auto en v0.1) |
+| # | Question | Résolution Pass 1 spec validate |
+|---|---|---|
+| Q1 | sqlx 0.8 expose-t-il un moyen d'appliquer une sub-slice du Migrator ? | **Résolu** : oui, via `kesh_db::MIGRATOR.migrations[..n]` (champ `Cow<'static, [Migration]>`, semver-exempt mais public en 0.8.6). Sub-Migrator construit avec ce slice → `.run(pool)`. Voir Dev Notes §"Pattern test migrations" pour le code complet. |
+| Q2 | Le checksum sqlx tolère-t-il l'ajout de commentaires `-- idempotent: ...` rétroactif ? | **Résolu** : non. SHA-384 comparé strictement (`sqlx-core-0.8.6/src/migrate/migrator.rs:175-176`) → `MigrateError::VersionMismatch` garanti si checksum diffère. **Plan adopté** : audit dans `docs/migrations-idempotence-audit.md` (markdown séparé, zéro modif des `.sql`). Cf. AC #1-3 réécrits + Anti-patterns. |
+| Q3 | Migration `_kesh_version.sql` doit-elle être appliquée AVANT ou APRÈS le check downgrade au boot ? | **Résolu** : APRÈS (cf. AC #11 — check retourne `FreshInstall` si table absente via match `MySqlDatabaseError::number() == 1146`, puis `MIGRATOR.run` crée la table, puis `record_boot_version` UPDATE). Les tests upgrade_path AC #15a n'invoquent pas `check_downgrade_protection` avant le full `MIGRATOR.run` — pas de régression possible. |
+| Q4 | Faut-il un test de **pure idempotence run twice** (`MIGRATOR.run` × 2) ? | **Résolu** : différé à code review. Couvert implicitement par `#[sqlx::test]` qui invoque `MIGRATOR` et par `_sqlx_migrations` tracking déjà éprouvé par 600+ tests existants. Non-requis par les ACs Epic. |
+| Q5 | Faut-il formaliser une check CI automatique pour P3 « migration breaking » ? | **Résolu** : non en v0.1. Overhead non-justifié, exceptions P4 fragiles à grep. Laissé à la discipline code review humain + LLM (cohérent CLAUDE.md §"Migration breaking policy" P3). |
 
 ## Dev Agent Record
 
@@ -511,4 +537,28 @@ Aucune Issue spécifique fermée par cette story (KF Epic 7/9 toutes closes par 
 
 ### Change Log
 
-(à compléter — entrée par passe spec validate puis dev-story puis code review)
+#### Pass 1 spec validate — Sonnet 4.6 (2026-05-21)
+
+Verdict initial : 2 CRITICAL + 4 HIGH + 5 MEDIUM + 4 LOW = 15 findings → NEEDS PASS 2.
+
+**Patches appliqués (15 patches, tous findings ≥ MEDIUM)** :
+
+- **F1 (CRITICAL)** — Pattern erreur `db_err.code() == Some("1146")` (incorrect : retourne le SQLSTATE `"42S02"`) → corrigé partout pour `try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)`. Modifications : Dev Notes §"Pattern version.rs", Dev Notes §"MariaDB error code 1146", AC #11, T2.3, Anti-patterns. Référence canonique projet : `crates/kesh-db/src/errors.rs:150-151` (ajouté aux References).
+- **F2 (CRITICAL)** — Approche B "fake checksum" (`vec![0u8; 32]`) → `MigrateError::VersionMismatch` garanti (SHA-384 réel = 48 bytes, et même la bonne taille avec faux contenu casse). `Migration::apply()` n'existe pas comme méthode publique. Solution adoptée : sub-Migrator approach via `kesh_db::MIGRATOR.migrations[..n]` (champ public en sqlx 0.8.6, doc(hidden) mais accessible). Dev Notes §"Pattern test migrations" et T3.3 entièrement réécrits.
+- **F3 (HIGH)** — Anti-patterns §"sqlx tolère un checksum différent" (FAUX : VersionMismatch déterministe ligne 175-176 de migrator.rs) → réécrit pour refléter la réalité source-confirmée.
+- **F4 (HIGH)** — Compteurs T1.3 « 19 » et T1.4 « 6 » incorrects → corrigés (15 CREATE TABLE + 10 ALTER + 1 CREATE INDEX = 26 fichiers vérifiés par grep). T1 entièrement réécrit avec listes correctes et `company_invoice_settings.sql` reclassifié CREATE INDEX-only.
+- **F5 (HIGH)** — Table `fiscal_years` manquante dans liste minimale AC #14a → ajoutée (compte « ~22 » → « ~23 »). Vérifié par `grep -n "^CREATE TABLE" migrations/*.sql` : `initial_schema.sql:39`.
+- **F6 (HIGH)** — Contradiction scope L43 « log AVANT MIGRATOR.run » vs Dev Notes L399 « APRÈS, pas AVANT » → scope harmonisé sur position APRÈS (cohérent Dev Notes + AC #13 qui n'ajoute aucun log pre-migration).
+- **F7 (MEDIUM)** — `Migration::apply(&pool)` skeleton fantôme → supprimé, remplacé par sub-Migrator correct.
+- **F8 (MEDIUM)** — Q2 décision architecturale : audit ne peut PAS être in-SQL (F3 le prouve). **Décision Guy** : Plan B — créer `docs/migrations-idempotence-audit.md` markdown séparé, zéro modif des `.sql` historiques. AC #1-3 + T1 entièrement réécrits.
+- **F9 (MEDIUM)** — `record_boot_version` sans check `rows_affected` → ajouté défensivement (warn si != 1). AC #12 + Dev Notes §"Pattern version.rs" mis à jour.
+- **F10 (MEDIUM)** — T2.5 « ligne 67 » incorrect → corrigé « ligne 66 actuelle » (grep confirmé : `tracing::info!("Migrations appliquées")` est à `main.rs:66`).
+- **F11 (MEDIUM)** — Q3 « résolu spec » trop vague → reformulé précisément en termes de tests upgrade_path.
+- **F12 (LOW)** — AC #12 `$1` (style PostgreSQL) → `?` (style MariaDB).
+- **F13 (LOW)** — Q4 fermé (différé à code review).
+- **F14 (LOW)** — AC #8 note ajoutée : `semver 1.0.x` déjà résolu dans Cargo.lock transitivement (cargo-metadata).
+- **F15 (LOW)** — Dev Notes "15 min d'investigation" supprimé (API connue ground-truth).
+
+**Vérification ground-truth orchestrateur** : tous les findings CRITICAL et HIGH ont été vérifiés par grep/Read avant patch (Bash commands : `grep -rn "try_downcast_ref" crates/kesh-db/src/`, `find sqlx-core-0.8 source for Sha384/VersionMismatch`, classification réelle des 26 migrations par `for f; do head; grep CREATE/ALTER; done`, vérification `fiscal_years` dans `initial_schema:39`).
+
+Prochaine étape : Pass 2 spec validate avec **Haiku 4.5** (rotation cycle Sonnet → Haiku → Opus → Sonnet, conformément CLAUDE.md §"Review Iteration Rule"). Discipline grep ground-truth obligatoire pour tout finding Haiku CRITICAL/HIGH (cf. memory `feedback_haiku_review_diff_combined`).
