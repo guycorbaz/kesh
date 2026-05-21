@@ -25,7 +25,7 @@
 -- match_type, active_uniq)` exploite la convention SQL « NULL n'est
 -- jamais égal à NULL » → les rules archivées (active_uniq=NULL) ne
 -- participent pas au UNIQUE. Pre-requis : MariaDB ≥ 10.6 pour UNIQUE
--- sur VIRTUAL column (Docker Compose pin `mariadb:11-jammy`, OK).
+-- sur VIRTUAL column (Docker Compose pin `mariadb:10.11`, OK — requis MariaDB ≥ 10.6).
 --
 -- Cohérence cross-tenant : pas de CHECK trigger DELIMITER pour
 -- garantir `rule.company_id == counterparty_account.company_id`

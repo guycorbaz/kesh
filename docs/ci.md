@@ -33,7 +33,7 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 
 ## Reproduction locale
 
-Toutes les commandes du CI peuvent être reproduites en local. Pré-requis : MariaDB 11.4 démarré et accessible via `DATABASE_URL`.
+Toutes les commandes du CI peuvent être reproduites en local. Pré-requis : MariaDB 10.11 démarré et accessible via `DATABASE_URL` (alignement Story 10-1 D3 — parité prod NAS Synology Package Center DSM).
 
 ### Backend (Rust)
 
@@ -189,11 +189,11 @@ Garde-fou sécurité : le backend refuse de démarrer si `KESH_TEST_MODE=true` *
 
 Un smoke test `curl POST /api/v1/_test/seed` s'exécute avant Playwright pour fail-fast si la config CI est cassée.
 
-## Décision MariaDB 11.4 (vs 10.11 de l'AC Epic §6.1)
+## Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS)
 
-L'AC Epic §6.1 mentionne « MariaDB 10.11 » par erreur (copier-coller stub de planification 2026-04-03, avant que le choix 11.4 soit entériné). La pipeline utilise **MariaDB 11.4**, identique à `docker-compose.dev.yml` — cohérence dev/CI essentielle.
+**Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b).
 
-`architecture.md` impose « MariaDB 10.6+ » comme minimum — 11.4 respecte largement le minimum. La story 6-1 amende explicitement l'AC dans son Change Log.
+**Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose toujours « MariaDB 10.6+ » comme minimum — 10.11 respecte le minimum avec marge.
 
 ## Dette technique CI
 

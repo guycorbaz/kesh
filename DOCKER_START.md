@@ -104,7 +104,7 @@ docker-compose up --build
 
 ## Notes
 
-- Base de données: MariaDB 11 (jammy)
+- Base de données: MariaDB 10.11 (parité prod NAS Synology, cf. Story 10-1 D3)
 - Runtime: Debian Bookworm Slim
 - Rust: 1.85 (build stage uniquement)
 - Node.js: 22 (build stage uniquement)
