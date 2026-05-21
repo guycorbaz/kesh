@@ -1,6 +1,6 @@
 # Story 10.1: Hardening Docker production
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -537,6 +537,42 @@ T5.2 smoke test live `docker compose -f docker-compose.prod.yml up` : non-effect
 - 1 finding **info** (LOW, pas de patch) :
   - AA-2 : `KESH_PASSWORD_MIN_LENGTH=12` (implem) vs `=8` (spec T3.2 texte). Implem cohérente avec default code (`config.rs:594` `Err(_) => 12`). Spec text était inexact. Pas de patch — `=12` reste dans `.env.example`.
 - **Critère d'arrêt CLAUDE.md** : 4 MEDIUM > LOW post-patches → mais les 4 patches ont résolu les MEDIUM. Findings résiduels = 3 defer (dette tracked) + 3 reject + 10 LOW. **Relancer Pass 2 Haiku obligatoire** pour validation post-patches (vérifier que les patches n'introduisent pas de régression).
+
+- 2026-05-21 — **Code Review Pass 2 Haiku 4.5 → CYCLE CONVERGED** ✅. Cycle code review arrêté Pass 2/8 (vs spec validate qui avait pris 5 passes). Bilan Pass 2 : **0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW**. Critère d'arrêt CLAUDE.md atteint.
+  - **Méthode Haiku** : `grep -nF` + `Read` direct sur les 6 patches Pass 1 → **0 hallucination détectée** (discipline `feedback_haiku_review_diff_combined` respectée). 6/6 patches vérifiés ground-truth.
+  - **Verdict ground-truth** :
+    - ECH-3+BH-1 trim admin_password ligne 403 : ✅ APPLIQUÉ
+    - ECH-4 JWT case-insensitive ligne 448 : ✅ APPLIQUÉ
+    - ECH-6 reset_env vars lignes 799-801 : ✅ APPLIQUÉ
+    - BH-5 env_lock outside for ligne 1042 : ✅ APPLIQUÉ
+    - Nouveau test `config_trims_admin_password_before_storage` ligne 1108 : ✅ EXISTE
+    - Nouveau test `config_rejects_jwt_secret_containing_change_me_case_insensitive` ligne 1128 : ✅ EXISTE
+  - **Validation régression** : 40/40 config::tests + 173/173 kesh-api lib PASS — 0 régression introduite par les patches Pass 1.
+  - **Story 10-1 status `review → done`**. Branche `chore/story-10-1-spec` ready pour PR merge sur main (post PR #103 epic-10 planning merged).
+
+## 🎯 Cycle code review Story 10-1 — Bilan final
+
+**Statut** : **CONVERGED** ✅ Pass 2 Haiku 4.5 (2026-05-21).
+
+**Métrique cycle** : **2 passes**, **6 patches appliqués + 14 reject/defer/info**.
+
+| Pass | LLM | Findings bruts | Patches appliqués | Verdict |
+|---|---|---|---|---|
+| 1 | Sonnet 4.6 × 3 (Blind + Edge + Auditor) | 23 agrégés | 6 (1 CRIT bumped + 3 MED + 2 LOW post-patch nouveaux tests) | Continue Pass 2 |
+| 2 | Haiku 4.5 | **0** | 0 | **CONVERGED** |
+
+**Patches Pass 1 résumé** :
+- CRITICAL trim admin_password (admin lock-out fix)
+- MEDIUM JWT case-insensitive cohérent
+- MEDIUM reset_env() vars manquantes
+- MEDIUM env_lock() position fix
+- 2 nouveaux tests pour les fixes (+ tests existants intacts)
+
+**Trends LLM rotation observée** :
+- **Sonnet Pass 1** : 3 reviewers parallèles ont chacun produit 9, 9, 4 findings avec recouvrement partiel (dédup → 23 uniques). Couverture exhaustive multi-angles.
+- **Haiku Pass 2** : 0 finding après ground-truth strict — discipline `feedback_haiku_review_diff_combined` respectée, pas d'hallucination, validation propre.
+
+**Story 10-1 prête pour merge** ✅. Workflow `bmad-dev-story` Step 10 : code-review « auto-marks done » → status `review → done` appliqué. Sprint-status `10-1-hardening-docker-production: done`.
 
 ### Pass 2 — Haiku 4.5 (2026-05-21) — CONVERGED ✅
 
