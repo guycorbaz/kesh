@@ -392,26 +392,34 @@ impl Config {
 
         // Story 10-1 T1.2 : suppression du fallback `"changeme"`. La var est
         // désormais obligatoire — pas de default insecure silencieux.
+        // Code review Pass 1 ECH-3 + BH-1 : trim AVANT toutes les validations
+        // et le stockage. Sans ce trim, un password `"  pw12chars  "` valide
+        // les checks longueur (trimmed) mais est stocké brut → hash inclut
+        // les espaces. Au login, `routes/auth.rs:139` ne trim pas le password
+        // (`let plain = req.password.clone()`) → admin lock-out après bootstrap.
+        // Cohérent avec le trim de `admin_username` ligne 388.
         let admin_password = env::var("KESH_ADMIN_PASSWORD")
-            .map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?;
+            .map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?
+            .trim()
+            .to_string();
 
         // Rejeter empty / whitespace-only (patch #7) : on ne veut pas hasher
         // une chaîne vide et créer un admin avec un password vide.
-        if admin_password.trim().is_empty() {
+        if admin_password.is_empty() {
             return Err(ConfigError::EmptyAdminPassword);
         }
 
         // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme"
         // (placeholder `.env.example`) — au lieu du warn existant qui laissait
         // booter un admin trivialement compromis.
-        if admin_password.trim().eq_ignore_ascii_case("changeme") {
+        if admin_password.eq_ignore_ascii_case("changeme") {
             return Err(ConfigError::InsecureAdminPassword);
         }
 
         // Story 10-1 T1.4 : minimum 12 chars (OWASP / NIST SP 800-63B). Utilise
         // `.chars().count()` (pas `.len()`) pour compter les chars Unicode
         // correctement (un emoji ou accent n'est pas 1 byte).
-        let admin_password_len = admin_password.trim().chars().count();
+        let admin_password_len = admin_password.chars().count();
         if admin_password_len < 12 {
             return Err(ConfigError::WeakAdminPassword {
                 actual_chars: admin_password_len,
@@ -433,7 +441,11 @@ impl Config {
 
         // Story 10-1 T1.5 : refus fail-fast si le secret contient le
         // placeholder `change-me` — au lieu du warn existant.
-        if jwt_secret.contains("change-me") {
+        // Code review Pass 1 ECH-4 : check **case-insensitive** pour cohérence
+        // avec l'admin password check (`eq_ignore_ascii_case` ligne 408). Sans
+        // `to_ascii_lowercase()`, un secret `"CHANGE-ME-32bytes-..."` (majuscules)
+        // passe le check alors qu'il signale clairement un placeholder.
+        if jwt_secret.to_ascii_lowercase().contains("change-me") {
             return Err(ConfigError::InsecureJwtSecret);
         }
 
@@ -783,6 +795,9 @@ mod tests {
             env::remove_var("KESH_RATE_LIMIT_BLOCK_MINUTES");
             env::remove_var("KESH_PASSWORD_MIN_LENGTH");
             env::remove_var("KESH_TEST_MODE");
+            // Code review Pass 1 ECH-6 : vars manquantes du reset.
+            env::remove_var("KESH_BANK_IMPORT_MAX_MB");
+            env::remove_var("KESH_LANG");
         }
     }
 
@@ -1020,6 +1035,11 @@ mod tests {
     /// Couvre lowercase, uppercase, et variantes avec whitespace.
     #[test]
     fn config_rejects_admin_password_changeme_case_insensitive() {
+        // Code review Pass 1 BH-5 : acquérir env_lock() UNE fois avant la
+        // boucle pour éviter qu'un autre test ne s'intercale entre 2 itérations
+        // (sinon `_guard` drop en fin de scope de chaque itération → fenêtre
+        // de race condition sur env vars process-global).
+        let _guard = env_lock();
         for value in &[
             "changeme",
             "CHANGEME",
@@ -1027,7 +1047,6 @@ mod tests {
             "  changeme  ",
             "  CHANGEME  ",
         ] {
-            let _guard = env_lock();
             reset_env();
             unsafe {
                 env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
@@ -1079,6 +1098,52 @@ mod tests {
 
         let config = Config::from_env().expect("12-char password should pass");
         assert_eq!(config.admin_password, "abcdefghijkl");
+    }
+
+    /// Code review Pass 1 ECH-3 + BH-1 : `admin_password` doit être trimmé
+    /// AVANT stockage pour éviter l'admin lock-out (login `routes/auth.rs:139`
+    /// ne trim PAS le password, donc si bootstrap hash `"  pw  "` avec espaces,
+    /// l'admin tape `pw` (sans espaces) et le hash ne match jamais).
+    #[test]
+    fn config_trims_admin_password_before_storage() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            env::set_var("KESH_ADMIN_PASSWORD", "  pw-12-chars-x  "); // 17 chars avec spaces, 13 après trim
+        }
+
+        let config = Config::from_env().expect("trimmed password should pass");
+        assert_eq!(
+            config.admin_password, "pw-12-chars-x",
+            "admin_password must be trimmed before storage to avoid admin lock-out at login"
+        );
+    }
+
+    /// Code review Pass 1 ECH-4 : `KESH_JWT_SECRET` contenant `"CHANGE-ME"`
+    /// (majuscules) doit aussi être rejeté → cohérent avec le check
+    /// admin_password case-insensitive (`eq_ignore_ascii_case`).
+    #[test]
+    fn config_rejects_jwt_secret_containing_change_me_case_insensitive() {
+        let _guard = env_lock();
+        for variant in &[
+            "abcdefghij-CHANGE-ME-abcdefghijabc", // uppercase
+            "abcdefghij-Change-Me-abcdefghijabc", // mixed case
+            "abcdefghij-cHaNgE-mE-abcdefghijabc", // alternating
+        ] {
+            reset_env();
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+                env::set_var("KESH_JWT_SECRET", variant);
+            }
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InsecureJwtSecret)),
+                "expected InsecureJwtSecret for {variant:?}, got {result:?}"
+            );
+        }
     }
 
     #[test]
