@@ -538,6 +538,40 @@ T5.2 smoke test live `docker compose -f docker-compose.prod.yml up` : non-effect
   - AA-2 : `KESH_PASSWORD_MIN_LENGTH=12` (implem) vs `=8` (spec T3.2 texte). Implem cohérente avec default code (`config.rs:594` `Err(_) => 12`). Spec text était inexact. Pas de patch — `=12` reste dans `.env.example`.
 - **Critère d'arrêt CLAUDE.md** : 4 MEDIUM > LOW post-patches → mais les 4 patches ont résolu les MEDIUM. Findings résiduels = 3 defer (dette tracked) + 3 reject + 10 LOW. **Relancer Pass 2 Haiku obligatoire** pour validation post-patches (vérifier que les patches n'introduisent pas de régression).
 
+### Pass 2 — Haiku 4.5 (2026-05-21) — CONVERGED ✅
+
+**Trend** : 0 findings (0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW).
+
+**Méthode Haiku Pass 2** : ground-truth grep -nF strict sur tous les 6 patches Pass 1 + régression test suite complet.
+
+**Vérification ground-truth des 6 patches** :
+1. ✅ admin_password trim (ligne 403) — présent, appliqué avant validations
+2. ✅ JWT case-insensitive (ligne 448) — to_ascii_lowercase().contains("change-me") présent
+3. ✅ reset_env vars (lignes 799-801) — KESH_BANK_IMPORT_MAX_MB + KESH_LANG supprimés
+4. ✅ env_lock() pattern (ligne 1042) — `let _guard = env_lock();` UNE fois AVANT boucle for
+5. ✅ Test trim password (ligne 1108) — config_trims_admin_password_before_storage présent + assertion OK
+6. ✅ Test JWT case-insensitive (ligne 1128) — config_rejects_jwt_secret_containing_change_me_case_insensitive + 3 variantes majuscules
+
+**Régression test suite** :
+- `cargo test -p kesh-api --lib config::tests` : **40/40 PASS** (34 existants + 6 nouveaux)
+- `cargo test -p kesh-api --lib` : **173/173 PASS** (0 régression kesh-api)
+- Tous les 34 tests pré-existants PASSENT ✅
+- Les 6 nouveaux tests PASSENT ✅
+- Zéro régression détectée ✅
+
+**Analyse adversariale complémentaire** :
+- Ordre checks from_env() : DATABASE_URL → ADMIN_PASSWORD (4 checks) → JWT_SECRET (2 checks) ✅
+- Trim appliqué AVANT validations (pas après) ✅
+- Aucun secret loggué dans Display messages ✅
+- Fallback supprimé correctement ✅
+- env_lock() élimine race condition ✅
+- Intégration bootstrap.rs : consomme password trimé ✅
+- Intégration routes/auth.rs : pas d'impact (ne trim pas input utilisateur) ✅
+- 3 nouveaux ConfigError variants avec impl Display ✅
+- Pattern checks corrects (case-insensitive, Unicode-safe chars().count()) ✅
+
+**Critère d'arrêt CLAUDE.md** : 0 findings > LOW → **CONVERGED**. Cycle arrêté à Pass 2/8.
+
 ## References
 
 - `_bmad-output/planning-artifacts/epic-10.md` — Story 10-1 ACs source (décisions D1-D11, périmètre, critères d'arrêt)
