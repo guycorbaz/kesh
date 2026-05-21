@@ -416,9 +416,54 @@ Cycle de revue adversariale CLAUDE.md §"Review Iteration Rule" — relance jusq
 
 **Critère d'arrêt CLAUDE.md** : 0 CRITICAL + 0 HIGH + 0 MEDIUM post-patches Pass 4 (M-1 traité = MEDIUM résolu, L-1 + L-2 = LOW traités). **Probable convergence**.
 
-**Trend numérique cumul** : Pass 1 (11) → Pass 2 (2) → Pass 3 (5 appliqués + 1 déféré) → Pass 4 (3). Total 21 patches appliqués + 1 déféré = 22 findings résolus en 4 passes. Budget restant : 4 passes max (sur 8 autorisés CLAUDE.md).
+### Pass 5 — Haiku 4.5 (2026-05-21) — CONVERGED ✅
 
-**Suivi Pass 5** : Haiku 4.5 contexte frais (re-cycle CLAUDE.md Sonnet → **Haiku** → Opus → Sonnet itéré 2). **Objectif** : confirmer convergence (0 > LOW) ou identifier résiduels marginaux. Si Pass 5 = 0 findings > LOW, déclarer **CONVERGED** et arrêter le cycle.
+**Trend** : **0 findings** (0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW).
+
+**Méthode Haiku** : analyse adversariale de cohérence interne (AC ↔ Tasks ↔ Dev Notes) + comptage variables + verdict sur les 21 patches cumulés Pass 1-4. Aucun grep ground-truth nécessaire (pas de claim CRITICAL/HIGH affirmant existence/absence) — discipline `feedback_haiku_review_diff_combined` respectée par défaut (rien à hallucinationner sur 0 findings).
+
+**Verdict détaillé Haiku** :
+- AC #3 (réseau `frontend` external) ↔ T2.7 : ✅ alignés
+- AC #8 (`KESH_HOST=0.0.0.0`) ↔ T2.3 + T2.6 : ✅ cohérents
+- AC #13 (`MissingVar` pattern) ↔ T1.2 : ✅ unifié
+- AC #17 + T1.7 (4 nouveaux tests) ↔ T1.2.1 + T1.2.2 : ✅ couverture complète tests existants + nouveaux
+- AC #18 (15 variables actives + KESH_HOST commentée) ↔ T3.2 : ✅ post-patch #21 Pass 4
+- AC #20 (fail-fast Option A) : ✅ tension architecturale résolue par patch #20 Pass 4
+- Variables `.env.example` (T3.2 + T3.2.1) : ✅ 15 actives comptées, MARIADB_* conservées, COMPOSE_PROJECT_NAME retirée, KESH_PRODUCTION_RESET commentée
+- T1.1 Display sans log valeur secret : ✅
+- T4 MariaDB 10.11 alignement 4 fichiers : ✅ + audit grep T4.5
+- Dev Notes dette latente symétrique composes dev : ✅
+
+**Critère d'arrêt CLAUDE.md** : **0 findings > LOW → CONVERGED**. Cycle arrêté à Pass 5/8.
+
+---
+
+## 🎯 Cycle spec validate Story 10-1 — Bilan final
+
+**Statut** : **CONVERGED** ✅ (Pass 5 Haiku 4.5, 2026-05-21).
+
+**Métrique cycle** : **5 passes**, **21 patches appliqués + 1 déféré = 22 findings résolus**.
+
+**Trend cumul** :
+| Pass | LLM | Findings bruts | Patches appliqués | Délta |
+|---|---|---|---|---|
+| 1 | Sonnet 4.6 | 11 | 11 (3 CRIT + 2 HIGH + 4 MED + 2 LOW) | +11 |
+| 2 | Haiku 4.5 | 2 | 2 (2 CRIT REGR) | +2 |
+| 3 | Opus 4.7 | 6 | 5 + 1 déféré (1 CRIT + 3 MED + 1 LOW + 1 LOW déféré) | +5 |
+| 4 | Sonnet 4.6 | 3 | 3 (1 MED + 2 LOW) | +3 |
+| 5 | Haiku 4.5 | **0** | 0 | — |
+
+**Insights LLM rotation** :
+- **Sonnet 4.6 Pass 1** a posé le périmètre et identifié 11 findings cross-spec (excellent baseline).
+- **Haiku 4.5 Pass 2** a catché 2 régressions par grep ground-truth strict — propagation Pass 1 patch #7 et patch #13 incomplètes sur T3.2 (zone éloignée des modifs Pass 1 immédiates).
+- **Opus 4.7 Pass 3** a apporté une valeur transverse unique (CRITICAL #14 — 3 tests hors helper que Sonnet+Haiku n'ont pas catché), confirmant Insight I1 retro Epic 9 (Opus catches transverse patterns).
+- **Sonnet 4.6 Pass 4** a clôt la tension architecturale AC #18/#19/#20 (patch #20) que les passes précédentes n'avaient pas vue.
+- **Haiku 4.5 Pass 5** a confirmé la cohérence interne (re-cycle iter 2) avec 0 finding.
+
+**1 finding déféré** :
+- LOW #19 (Pass 3 Opus) — drift `epic-10.md` mentionne `kesh-net` 5 fois (à propager vers `frontend`). Non-bloquant Story 10-1. **À adresser** dans Story 10-4 (manuel install Synology qui rééditera la section « Réseau Docker externe »), OU PR de cohérence séparée post-merge Story 10-1.
+
+**Story 10-1 prête pour `bmad-dev-story 10-1`** ✅ — l'implémenteur Rust+Docker peut démarrer avec confiance.
 
 ## Dev Agent Record
 
