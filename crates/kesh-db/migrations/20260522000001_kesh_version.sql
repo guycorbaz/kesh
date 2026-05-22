@@ -11,8 +11,16 @@
 -- (e.g. `1.0.0-rc1.20260522+build.20260522.001` = 37 chars). Évite la
 -- troncature silencieuse en mode non-strict ou l'échec d'UPDATE en mode
 -- strict si une release future utilise un format complet.
--- DEFAULT '0.1.0' figé : version Kesh courante à la création de cette
--- migration. Sera écrasé par record_boot_version() au prochain boot.
+--
+-- INSERT row initiale figée à '0.1.0' : version Kesh courante au moment
+-- de la création de cette migration. Cette valeur devient **historique**
+-- dès le premier boot : `record_boot_version()` écrase
+-- `kesh_version_last_applied` avec `CARGO_PKG_VERSION` au prochain
+-- démarrage, et `kesh_version_min_required` n'est mis à jour qu'à
+-- l'introduction d'une migration breaking (cf. politique P2 CLAUDE.md
+-- `## Migration breaking policy`). La valeur '0.1.0' ne suit donc PAS
+-- la version Kesh courante — refactor futur ne doit pas tenter de
+-- « synchroniser » ce DEFAULT avec Cargo.toml.
 --
 -- Décision idempotence (cf. docs/migrations-idempotence-audit.md) :
 -- tracked-by-sqlx — pas de IF NOT EXISTS ni INSERT IGNORE, conforme

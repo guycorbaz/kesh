@@ -30,7 +30,7 @@ pub enum VersionError {
     /// Le binaire est plus ancien que `kesh_version_min_required` de la DB.
     /// Le boot DOIT être refusé pour éviter une corruption silencieuse.
     #[error(
-        "Database was migrated by Kesh v{db_min}, current binary v{binary} cannot downgrade safely. Restore a backup predating Kesh v{db_min}, or upgrade the binary to at least v{db_min}."
+        "La base a été migrée par Kesh v{db_min}, le binaire courant v{binary} ne peut pas la downgrader sans risque. Restaurer un backup antérieur à Kesh v{db_min}, ou mettre à jour le binaire vers au moins v{db_min}."
     )]
     DowngradeRefused { db_min: Version, binary: Version },
 
@@ -39,18 +39,45 @@ pub enum VersionError {
     /// Le boot DOIT être refusé pour éviter un boot silencieux sans tracking
     /// de version. Diagnostic explicite pour l'opérateur.
     #[error(
-        "Table _kesh_version exists but row id=1 is missing (truncated or partial restore?). Fix: INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '<version>', '<version>'); — use a kesh_version_min_required value compatible with the backup origin."
+        "La table _kesh_version existe mais la row id=1 est absente (TRUNCATE accidentel ou restore partiel ?). Correction : INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '<version>', '<version>'); — utiliser une valeur de kesh_version_min_required compatible avec l'origine du backup."
     )]
     RowMissing,
 
     /// Erreur sqlx (DB inaccessible, query échouée, etc.).
-    #[error("Database error during version check: {0}")]
+    #[error("Erreur base de données pendant la vérification de version : {0}")]
     Sqlx(#[from] sqlx::Error),
 
-    /// La string semver fournie (CARGO_PKG_VERSION ou colonne DB) n'est
-    /// pas un SemVer valide.
-    #[error("Invalid semver string: {0}")]
-    InvalidSemver(#[from] semver::Error),
+    /// La string SemVer fournie (CARGO_PKG_VERSION ou colonne DB) n'est
+    /// pas un SemVer valide. Le champ `origin` distingue la provenance
+    /// (`"binaire"` pour `binary_version`, `"base de données"` pour la
+    /// colonne `_kesh_version`) afin que l'opérateur sache où chercher.
+    /// `value` inclut la string fautive (tronquée à 64 chars pour éviter
+    /// de polluer les logs si la colonne contient un payload aberrant).
+    #[error("SemVer invalide ({origin}) — valeur reçue : {value:?} — détail parser : {error}")]
+    InvalidSemver {
+        origin: &'static str,
+        value: String,
+        error: semver::Error,
+    },
+}
+
+impl VersionError {
+    /// Helper interne : wrap `semver::Error` en `VersionError::InvalidSemver`
+    /// avec origin + valeur (tronquée 64 chars). Utilisé par les deux
+    /// `Version::parse()` du module (binary_version et db_min_str).
+    fn invalid_semver(origin: &'static str, value: &str, error: semver::Error) -> Self {
+        const MAX_LEN: usize = 64;
+        let truncated = if value.len() > MAX_LEN {
+            format!("{}…", &value[..MAX_LEN])
+        } else {
+            value.to_string()
+        };
+        Self::InvalidSemver {
+            origin,
+            value: truncated,
+            error,
+        }
+    }
 }
 
 /// Résultat non-erreur de [`check_downgrade_protection`].
@@ -82,7 +109,8 @@ pub async fn check_downgrade_protection(
     pool: &MySqlPool,
     binary_version: &str,
 ) -> Result<DowngradeCheckOutcome, VersionError> {
-    let binary = Version::parse(binary_version)?;
+    let binary = Version::parse(binary_version)
+        .map_err(|e| VersionError::invalid_semver("binaire", binary_version, e))?;
 
     let row: Result<String, sqlx::Error> =
         sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
@@ -90,13 +118,15 @@ pub async fn check_downgrade_protection(
             .await;
 
     match row {
+        // ER_NO_SUCH_TABLE 1146 — fresh install : la table `_kesh_version`
+        // n'existe pas encore (sera créée par MIGRATOR.run() juste après).
+        // À distinguer du cas `RowNotFound` (table présente, row id=1
+        // absente — état pathologique géré par le bras suivant).
         Err(sqlx::Error::Database(ref db_err))
             if db_err
                 .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
                 .is_some_and(|e| e.number() == 1146) =>
         {
-            // ER_NO_SUCH_TABLE 1146 — fresh install, `_kesh_version` n'a
-            // pas encore été créée par MIGRATOR.run().
             Ok(DowngradeCheckOutcome::FreshInstall)
         }
         // Table présente mais row id=1 absente (TRUNCATE accidentel ou
@@ -105,7 +135,8 @@ pub async fn check_downgrade_protection(
         Err(sqlx::Error::RowNotFound) => Err(VersionError::RowMissing),
         Err(e) => Err(VersionError::Sqlx(e)),
         Ok(db_min_str) => {
-            let db_min = Version::parse(&db_min_str)?;
+            let db_min = Version::parse(&db_min_str)
+                .map_err(|e| VersionError::invalid_semver("base de données", &db_min_str, e))?;
             match binary.cmp(&db_min) {
                 std::cmp::Ordering::Less => Err(VersionError::DowngradeRefused { db_min, binary }),
                 std::cmp::Ordering::Equal => Ok(DowngradeCheckOutcome::Aligned),
@@ -141,7 +172,8 @@ pub async fn record_boot_version(
     // passent des strings ad-hoc — pour qu'une string invalide soit
     // signalée immédiatement plutôt que de polluer la colonne
     // `kesh_version_last_applied` avec une valeur malformée.
-    Version::parse(binary_version)?;
+    Version::parse(binary_version)
+        .map_err(|e| VersionError::invalid_semver("binaire", binary_version, e))?;
 
     let result = sqlx::query(
         "UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1",
@@ -150,10 +182,16 @@ pub async fn record_boot_version(
     .execute(pool)
     .await?;
 
+    // Note couverture : la branche `rows_affected != 1` n'est exercée par
+    // aucun test (l'invariant CHECK id=1 + INSERT migration garantit la
+    // row en pratique). Elle existe comme défense contre TRUNCATE/DELETE
+    // manuel : `warn!` non-fatal pour ne pas casser le serveur sur cet
+    // état pathologique (l'audit de version est informationnel), tout en
+    // alertant clairement l'opérateur via les logs.
     if result.rows_affected() != 1 {
         tracing::warn!(
             rows_affected = result.rows_affected(),
-            "record_boot_version: UPDATE affected unexpected number of rows (expected 1) — _kesh_version row id=1 missing?"
+            "record_boot_version: UPDATE a affecté un nombre de rows inattendu (attendu 1) — row _kesh_version id=1 absente ?"
         );
     }
 

@@ -72,14 +72,14 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
    ```sql
    CREATE TABLE _kesh_version (
        id TINYINT UNSIGNED NOT NULL PRIMARY KEY DEFAULT 1,
-       kesh_version_min_required VARCHAR(20) NOT NULL,
-       kesh_version_last_applied VARCHAR(20) NOT NULL,
+       kesh_version_min_required VARCHAR(40) NOT NULL,
+       kesh_version_last_applied VARCHAR(40) NOT NULL,
        applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
        last_boot_at DATETIME NULL,
        CONSTRAINT chk_kesh_version_single_row CHECK (id = 1)
    );
    ```
-   Le `CHECK (id = 1)` enforce le singleton-row pattern (une seule row utile, AUTO_INCREMENT inutile). VARCHAR(20) couvre largement SemVer (`major.minor.patch[-pre][+build]` typiquement ≤ 20 chars pour Kesh — pas de pré-release `1.0.0-rc1.20260522.canary` envisagée).
+   Le `CHECK (id = 1)` enforce le singleton-row pattern (une seule row utile, AUTO_INCREMENT inutile). VARCHAR(40) couvre SemVer 2.0 complet incluant pre-release + build metadata (e.g. `1.0.0-rc1.20260522+build.20260522.001` = 37 chars). Initialement spécifié VARCHAR(20), bumpé à VARCHAR(40) en Pass 1 code-review F4 pour défense en profondeur (évite la troncature silencieuse en mode non-strict ou l'échec d'UPDATE en mode strict sur les bumps `kesh_version_min_required` futurs P2 si Epic 14 release process introduit des tags RC).
 
 6. **Given** `20260522000001_kesh_version.sql` appliquée, **When** review, **Then** la migration **insère la row initiale** : `INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '0.1.0', '0.1.0')`. La version `0.1.0` est figée dans le SQL — c'est la version Kesh courante au moment où cette migration est créée (cf. `crates/kesh-api/Cargo.toml:3`). L'`UPDATE` du `kesh_version_last_applied` par le boot logic (AC #11) écrasera ce default au prochain démarrage.
 
@@ -315,8 +315,8 @@ Note : si sqlx bumpe vers 0.9+ et que `migrations` perd la visibilité publique,
 | Colonne | Type | Raison |
 |---|---|---|
 | `id` | `TINYINT UNSIGNED PRIMARY KEY DEFAULT 1` | Singleton row. CHECK constraint `id = 1` enforce. Tinyint suffit largement (0-255). |
-| `kesh_version_min_required` | `VARCHAR(20) NOT NULL` | SemVer string, bumpé par migrations breaking (cf. CLAUDE.md §"Migration breaking policy"). |
-| `kesh_version_last_applied` | `VARCHAR(20) NOT NULL` | Updated au boot par `record_boot_version()`. Informationnel — pour debug/audit, pas utilisé par downgrade check. |
+| `kesh_version_min_required` | `VARCHAR(40) NOT NULL` | SemVer string (40 chars couvrent pre-release + build metadata), bumpé par migrations breaking (cf. CLAUDE.md §"Migration breaking policy"). |
+| `kesh_version_last_applied` | `VARCHAR(40) NOT NULL` | Updated au boot par `record_boot_version()`. Informationnel — pour debug/audit, pas utilisé par downgrade check. |
 | `applied_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | Timestamp de l'INSERT initial par la migration. Référence historique première install. |
 | `last_boot_at` | `DATETIME NULL` | Updated par `record_boot_version()`. NULL avant le premier boot effectif post-migration. |
 
@@ -762,3 +762,51 @@ Verdict initial brut : 2 CRITICAL + 4 HIGH + 5 MEDIUM + 4 LOW (BlindHunter) + 1 
 **Cycle status** : encore 1 HIGH + 4 MEDIUM > LOW présents originellement, tous patchés → Pass 2 obligatoire selon CLAUDE.md §"Review Iteration Rule" (relancer après application des patches avec LLM différent + contexte frais pour valider absence de régression).
 
 Prochaine étape : Pass 2 code-review avec **Haiku 4.5** (rotation cycle Sonnet → Haiku → Opus → Sonnet). Discipline grep ground-truth obligatoire pour tout finding Haiku CRITICAL/HIGH (cf. memory `feedback_haiku_review_diff_combined`). Mitigation : donner à Haiku le diff aplati (HEAD vs main final) plutôt que la séquence multi-commit, pour éviter le bug d'indexation diff combiné.
+
+#### Pass 2 code-review — Haiku 4.5 (2026-05-22)
+
+Verdict initial brut Haiku : 2 CRITICAL + 0 HIGH + 2 MEDIUM + 1 LOW (BH) + 1 CRITICAL + 3 HIGH + 3 MEDIUM + 1 LOW (ECH) + 1 MEDIUM (AA) = 14 findings agrégés.
+
+**Reclassements après ground-truth grep** (discipline CLAUDE.md §"Haiku-specific guardrails") :
+- **BH2-1 CRITICAL → REJECT** : pattern `is_some_and(|e| e.number() == 1146)` est valide Rust 1.85.0 (rust-toolchain.toml channel 1.85.0). `Option::is_some_and()` stable depuis Rust 1.70. Build PASS Pass 1 → faux-positif méta-spec (Haiku réagit à la divergence spec-vs-code, sans réaliser que `is_some_and` et `map_or(false, ...)` sont fonctionnellement équivalents).
+- **BH2-2 CRITICAL → REJECT** : Haiku auto-réfute son finding (« La logique est correcte ») et propose juste une amélioration de commentaire LOW. La logique des bras `Database(1146)` vs `RowNotFound` est correcte.
+- **BH2-4 MEDIUM → REJECT** : « doc audit 27 figé peut dériver » — c'est exactement ce que la **politique P5** codifie (toute PR ajoutant migration DOIT mettre à jour l'audit doc, finding MEDIUM en code review). Pas une dette, c'est par design.
+- **BH2-5 LOW → REJECT** : dépend de BH2-1 faux-positif.
+- **ECH-3 HIGH → REJECT** : `record_boot_version` est explicitement non-fatale par design (cf. docstring + `if let Err = ... warn` dans main.rs). Pas un bug.
+- **BH2-3 MEDIUM → VALIDÉ** : ground-truth grep confirme — `grep "#[error" crates/kesh-db/src/errors.rs crates/kesh-api/src/errors.rs` = 30+ messages tous en **français** (« Entité non trouvée », « Erreur SQLx : {0} », « Identifiants invalides », etc.). Les 4 `#[error]` de `version.rs` en anglais sont une **incohérence projet** réelle.
+- **ECH-1 MEDIUM** : `grep "RowMissing" tests/ src/` = 2 occurrences (déclaration + arm) mais aucune dans tests → variant Pass 1 sans test runtime. Branche défensive dead code potentielle. Valide.
+- **ECH-4 HIGH → MEDIUM** : enrichir le message `InvalidSemver` avec la string fautive est valide mais pas HIGH (l'exit reste correct, c'est juste l'UX opérateur).
+- **ECH-2/5/6/7/8 + AA-1** → reclassés LOW (améliorations doc/wording, pas blockers).
+
+**Triage final Pass 2** : 0 CRITICAL + 0 HIGH + **2 MEDIUM** + 7 LOW = 9 patches + 5 REJECT.
+
+**Patches appliqués (Pass 2)** :
+
+- **G1 (MEDIUM, BH2-3)** — `version.rs:32-65` 4 messages `#[error(...)]` traduits en français (cohérent convention projet `kesh-db/errors.rs` + `kesh-api/errors.rs`). Patch couvre `DowngradeRefused`, `RowMissing`, `Sqlx`, `InvalidSemver`.
+- **G2 (MEDIUM, ECH-1)** — Nouveau test `check_downgrade_protection_row_missing_after_truncate` (`migrations_upgrade_path.rs`) avec `#[sqlx::test(migrator = ...)]` qui DELETE row id=1 puis appelle `check_downgrade_protection` → assertion `Err(RowMissing)`. Couvre le variant Pass 1 F2 qui n'avait pas de test runtime.
+- **G3 (MEDIUM/LOW, ECH-4)** — Refactor `VersionError::InvalidSemver(semver::Error)` → `InvalidSemver { origin: &'static str, value: String, error: semver::Error }`. Le `origin` distingue `"binaire"` vs `"base de données"`. Le `value` inclut la string fautive tronquée à 64 chars (évite pollution log si payload aberrant). Helper interne `VersionError::invalid_semver(origin, value, error)` centralise la troncature. Sites d'appel `Version::parse(...)?` remplacés par `.map_err(|e| VersionError::invalid_semver(...))?`. NB : suppression du `#[from] semver::Error` (plus utilisable directement avec `?`). Note thiserror : le champ initialement nommé `source` a dû être renommé en `origin` car thiserror interprète automatiquement `source: T` comme un implementor de `std::error::Error` (chain) ; `&'static str` n'implémente pas Error. Nouveau test `check_downgrade_protection_invalid_db_semver` valide le variant runtime avec `UPDATE _kesh_version SET kesh_version_min_required = 'not-a-semver'`.
+- **G4 (LOW, ECH-6)** — `apply_migrations_up_to` helper : message d'assertion enrichi pour expliquer la fenêtre `total - 4` (Story 10-2) + suggérer la mise à jour si une migration est ajoutée.
+- **G5 (LOW, ECH-7/AA-1)** — Spec AC #5 + tableau Dev Notes : `VARCHAR(20)` → `VARCHAR(40)` (3 occurrences). Aligne la spec avec l'implémentation Pass 1 F4 + justification ajoutée dans le texte d'AC #5.
+- **G6 (LOW, ECH-8)** — Migration `_kesh_version.sql` commentaire : INSERT row initiale `'0.1.0'` figée devient **historique** dès le 1er boot ; refactor futur ne doit pas tenter de la « synchroniser » avec Cargo.toml.
+- **G7 (LOW, BH2-2)** — `version.rs:84-92` commentaire bras `Database(1146)` clarifié : distingue explicitement le cas fresh install (`1146`) du cas pathologique row absente (`RowNotFound`) géré par le bras suivant.
+- **G9 (LOW, ECH-5)** — `version.rs:140-145` commentaire `record_boot_version` documente la limitation de couverture du `rows_affected != 1` (dead code en pratique, warn non-fatal par design).
+- **G8 (LOW, ECH-2) → defer** : déplacer la note "single-instance v0.1" du commentaire `main.rs` vers une section CLAUDE.md formalisée est une amélioration nice-to-have, hors scope code-review (politique de concurrence multi-instance v0.2 sera traitée par l'Epic correspondant).
+
+**Vérification ground-truth orchestrateur Pass 2** :
+- BH2-1 : `grep -nF "is_some_and" version.rs` confirme usage + `cat rust-toolchain.toml` confirme 1.85.0 (stable >= 1.70 où API arrivée). Build PASS Pass 1.
+- BH2-3 : `grep -rhn "#[error" kesh-db/src/ kesh-api/src/` confirme français pour 30+ messages projets vs anglais sur 4 messages version.rs.
+- ECH-1 : `grep -nF "RowMissing" tests/ src/` confirme 0 occurrence dans tests/.
+
+**Régression non-introduite par Pass 2** — vérifié :
+- Sites d'appel `VersionError::InvalidSemver(...)` : `grep -rn "VersionError::InvalidSemver" crates/` = 0 caller externe au module + 1 dans tests (mis à jour) → refactor variant safe.
+- `#[from] semver::Error` retiré → pas de propagation `?` cassée (vérifié `Version::parse` appelée 2 fois dans le module, les deux sites mis à jour avec `.map_err`).
+
+**Validation locale Test Locally First (post-Pass-2)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build -p kesh-db -p kesh-api` PASS (7.44s)
+- `cargo clippy -p kesh-db -p kesh-api --all-targets -- -D warnings` PASS (5.20s)
+- `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` : **11/11 verts** (3 fresh_install + 8 upgrade_path, +2 nouveaux tests Pass 2 : RowMissing + InvalidSemver).
+
+**Cycle status** : 2 MEDIUM (G1, G2) ont été patchés. Pass 3 obligatoire selon CLAUDE.md §"Review Iteration Rule" (relancer après chaque passe avec ≥ 1 finding > LOW). LLM rotation : Pass 3 = **Opus 4.7** (cycle Sonnet → Haiku → Opus).
+
+Prochaine étape : Pass 3 code-review avec **Opus 4.7** sur diff aplati (1 commit Pass 2 + Pass 1 + 6 commits dev story). Focus attendu Opus : cohérence cross-fichier post-refactor `VersionError::InvalidSemver` + détection de régression subtile introduite par les patches Pass 1+2.

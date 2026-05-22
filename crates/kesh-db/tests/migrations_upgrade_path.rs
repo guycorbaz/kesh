@@ -34,7 +34,11 @@ async fn apply_migrations_up_to(
     let all = &kesh_db::MIGRATOR.migrations;
     assert!(
         n <= all.len(),
-        "apply_migrations_up_to: n={} > total={}",
+        "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
+         `total - 4` (Story 10-2 fenêtre d'upgrade) reste cohérent avec \
+         l'ajout de migrations futures. Si une migration a été ajoutée à \
+         la branche, l'assertion `total == 27` du test upgrade_path_preserves_data \
+         devrait également fail pour signaler le besoin de mise à jour.",
         n,
         all.len()
     );
@@ -263,6 +267,64 @@ async fn check_downgrade_protection_fresh_install_on_empty_db(pool: MySqlPool) {
         DowngradeCheckOutcome::FreshInstall,
         "DB vierge sans _kesh_version → FreshInstall via ER_NO_SUCH_TABLE 1146"
     );
+}
+
+/// Couvre explicitement le bras `VersionError::RowMissing` de
+/// `check_downgrade_protection` — table `_kesh_version` présente mais
+/// row id=1 absente (TRUNCATE accidentel ou restore partiel). Ce variant
+/// existe comme défense contre une corruption silencieuse, sans test
+/// runtime il serait dead code (un bump sqlx 0.9+ modifiant le mapping
+/// de `fetch_one` sur empty result casserait la branche silencieusement).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn check_downgrade_protection_row_missing_after_truncate(pool: MySqlPool) {
+    // Pre-state : MIGRATOR appliqué → _kesh_version existe + row id=1 présente.
+    // On simule un TRUNCATE / DELETE manuel qui vide la table sans la dropper.
+    sqlx::query("DELETE FROM _kesh_version WHERE id = 1")
+        .execute(&pool)
+        .await
+        .expect("DELETE _kesh_version row failed");
+
+    let result = check_downgrade_protection(&pool, "0.1.0").await;
+    match result {
+        Err(VersionError::RowMissing) => {
+            // OK — la table existe (pas FreshInstall) mais la row est
+            // absente → diagnostic explicite pour l'opérateur.
+        }
+        other => panic!(
+            "Expected Err(RowMissing) après DELETE row id=1, got {:?}",
+            other
+        ),
+    }
+}
+
+/// Couvre le bras `VersionError::InvalidSemver { origin: "base de données", .. }`
+/// — la colonne `kesh_version_min_required` contient une string non-SemVer
+/// (corruption manuelle, downgrade depuis un binaire qui aurait écrit
+/// n'importe quoi). Ce variant inclut la valeur fautive (tronquée 64
+/// chars) pour aider l'opérateur à diagnostiquer.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn check_downgrade_protection_invalid_db_semver(pool: MySqlPool) {
+    // Injecte une string non-SemVer dans la colonne.
+    sqlx::query("UPDATE _kesh_version SET kesh_version_min_required = 'not-a-semver' WHERE id = 1")
+        .execute(&pool)
+        .await
+        .expect("UPDATE _kesh_version with invalid semver failed");
+
+    let result = check_downgrade_protection(&pool, "0.1.0").await;
+    match result {
+        Err(VersionError::InvalidSemver {
+            origin,
+            value,
+            error: _,
+        }) => {
+            assert_eq!(origin, "base de données");
+            assert_eq!(value, "not-a-semver");
+        }
+        other => panic!(
+            "Expected Err(InvalidSemver {{ origin: \"base de données\", value: \"not-a-semver\", .. }}), got {:?}",
+            other
+        ),
+    }
 }
 
 /// AC #15b — cas downgrade détecté : DB migrée full, on simule un futur
