@@ -239,14 +239,14 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ### T4: CI matrice MariaDB 10.11 doc + planning artifact sync (AC #19-21)
 
-- [ ] T4.1 — Vérifier que `ci.yml:29` contient bien `image: mariadb:10.11` (déjà aligné Story 10-1). **No-op** Rust/YAML.
-- [ ] T4.2 — Compléter `docs/ci.md` section « Décision MariaDB 10.11 (Story 10-1 D3) » par une sous-section « Justification mono-version 10.11 » ≤ 8 lignes selon AC #20.
-- [ ] T4.3 — Cocher `[x]` la ligne 360 de `_bmad-output/planning-artifacts/epic-10.md` (« CI matrice MariaDB 10.11 verte sur tous les tests Rust workspace ») dans le checklist § "Critères de done Epic 10" — uniquement après que la CI Story 10-2 PR ait passé verte (vérification fonctionnelle effective, pas juste l'alignement statique de Story 10-1).
+- [x] T4.1 — Vérifié : `ci.yml:29` contient `image: mariadb:10.11` (no-op, déjà aligné Story 10-1).
+- [x] T4.2 — `docs/ci.md` section « Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS) » complétée par sous-section « Justification mono-version 10.11 (Story 10-2 AC #20) » (3 paragraphes : cible prod unique, bugs 10.11-specific masqués, compat upstream documentée non-testée).
+- [ ] T4.3 — Cocher `[x]` la ligne 360 de `_bmad-output/planning-artifacts/epic-10.md` — **différé à T6.4** (post-CI verte sur PR Story 10-2, condition explicite spec).
 
 ### T5: Politique migration breaking dans CLAUDE.md (AC #22-23)
 
-- [ ] T5.1 — Ajouter la section `## Migration breaking policy` à `CLAUDE.md` selon AC #22 (5 paragraphes P1-P5), positionnée après `## Issue Tracking Rule` et avant `## Règle de commit et push`.
-- [ ] T5.2 — Vérifier qu'aucune migration historique du repo ne reçoit rétroactivement de marker `-- breaking-skip-bump:` (cf. AC #23). Aucun marker n'est ajouté aux fichiers `.sql` historiques par cette story — l'audit d'idempotence est dans `docs/migrations-idempotence-audit.md` (cf. AC #2 + T1).
+- [x] T5.1 — Section `## Migration breaking policy` ajoutée à `CLAUDE.md` entre `## Issue Tracking Rule` (ligne 244) et `## Règle de commit et push` (ligne 281), avec les 5 paragraphes P1-P5 conformément à AC #22 final (post-Pass 3 F2-P3).
+- [x] T5.2 — Vérifié par `grep -l "breaking-skip-bump" crates/kesh-db/migrations/*.sql` = vide. Aucun marker `-- breaking-skip-bump:` introduit dans les fichiers `.sql` historiques (cohérent AC #23 + AC #2).
 
 ### T6: Validation end-to-end (AC #24-26)
 
