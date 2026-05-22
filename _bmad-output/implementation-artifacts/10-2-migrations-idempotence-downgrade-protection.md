@@ -241,7 +241,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 - [x] T4.1 — Vérifié : `ci.yml:29` contient `image: mariadb:10.11` (no-op, déjà aligné Story 10-1).
 - [x] T4.2 — `docs/ci.md` section « Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS) » complétée par sous-section « Justification mono-version 10.11 (Story 10-2 AC #20) » (3 paragraphes : cible prod unique, bugs 10.11-specific masqués, compat upstream documentée non-testée).
-- [ ] T4.3 — Cocher `[x]` la ligne 360 de `_bmad-output/planning-artifacts/epic-10.md` — **différé à T6.4** (post-CI verte sur PR Story 10-2, condition explicite spec).
+- [x] T4.3 — Lignes 359 + 360 de `_bmad-output/planning-artifacts/epic-10.md` cochées après CI verte PR #106 (2026-05-22 — les 3 jobs Backend Rust + Frontend Svelte + Docker sanity PASS).
 
 ### T5: Politique migration breaking dans CLAUDE.md (AC #22-23)
 
@@ -262,8 +262,8 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
     - **kesh-db lib : 149/169 PASS** — 20 failures `journal_entries::FiscalYearClosed` = **flakiness pré-existante documentée** `kesh-db/README.md:56-85` (`#[sqlx::test]` parallèle MariaDB). Vérifié par stash-pop : 20 failures baseline sans Story 10-2 = identique → **0 régression introduite**.
   - **Régression interceptée + corrigée pendant T6** : `test_fixtures::tests::truncate_all_inventory_matches_schema` cassée par l'ajout de `_kesh_version` au schéma. Fix : exclure `_kesh_version` du `SELECT TABLE_NAME ... NOT IN ('_sqlx_migrations', '_kesh_version')` et documenter dans le commentaire de `TABLES_TO_TRUNCATE` que les 2 tables système (sqlx + kesh metadata) sont exclues du truncate. Test re-vert après fix.
 - [x] T6.2 — Frontend `Test Locally First` no-op vérifié : `git status -s | grep frontend` = vide. Aucun fichier frontend touché par Story 10-2. Skip des 4 commandes npm.
-- [ ] T6.3 — Push branche `chore/story-10-2-spec` + vérifier CI verte sur les 3 jobs (Backend Rust + Frontend + Docker sanity). **Différé : action utilisateur Guy via `git push` (cohérent CLAUDE.md §"Règle de commit et push" — pas de push automatique).**
-- [ ] T6.4 — Post-CI verte : T4.3 (cocher epic-10.md ligne 360) + bascule sprint-status `10-2-... : review` + `bmad-code-review 10-2` (LLM rotation Sonnet → Haiku → Opus). **Bascule status story file → review immédiate** (T6.4a) puis push + CI = précondition T6.4b code review.
+- [x] T6.3 — Branche `chore/story-10-2-spec` pushée (commit `13bde5d` puis ajout commit T4.3). **PR #106** ouverte 2026-05-22 (https://github.com/guycorbaz/kesh/pull/106). CI verte sur les 3 jobs : **Backend (Rust) PASS** + **Frontend (Svelte) PASS** + **Docker build (sanity) PASS**.
+- [ ] T6.4 — Post-CI verte : T4.3 fait. **Prochaine étape : `bmad-code-review 10-2`** (LLM rotation Sonnet 4.6 → Haiku 4.5 → Opus 4.7 jusqu'à CONVERGED 0 finding > LOW conformément CLAUDE.md §"Review Iteration Rule").
 
 ## Dev Notes
 
