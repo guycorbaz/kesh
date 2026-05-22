@@ -30,9 +30,18 @@ pub enum VersionError {
     /// Le binaire est plus ancien que `kesh_version_min_required` de la DB.
     /// Le boot DOIT être refusé pour éviter une corruption silencieuse.
     #[error(
-        "Database was migrated by Kesh v{db_min}, current binary v{binary} cannot downgrade safely. Restore a backup compatible with v{binary} or upgrade the binary."
+        "Database was migrated by Kesh v{db_min}, current binary v{binary} cannot downgrade safely. Restore a backup predating Kesh v{db_min}, or upgrade the binary to at least v{db_min}."
     )]
     DowngradeRefused { db_min: Version, binary: Version },
+
+    /// La table `_kesh_version` existe mais la row singleton `id=1` est
+    /// absente — état pathologique (restore partiel, TRUNCATE accidentel).
+    /// Le boot DOIT être refusé pour éviter un boot silencieux sans tracking
+    /// de version. Diagnostic explicite pour l'opérateur.
+    #[error(
+        "Table _kesh_version exists but row id=1 is missing (truncated or partial restore?). Fix: INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '<version>', '<version>'); — use a kesh_version_min_required value compatible with the backup origin."
+    )]
+    RowMissing,
 
     /// Erreur sqlx (DB inaccessible, query échouée, etc.).
     #[error("Database error during version check: {0}")]
@@ -90,6 +99,10 @@ pub async fn check_downgrade_protection(
             // pas encore été créée par MIGRATOR.run().
             Ok(DowngradeCheckOutcome::FreshInstall)
         }
+        // Table présente mais row id=1 absente (TRUNCATE accidentel ou
+        // restore partiel) — état pathologique. Refus de boot avec
+        // message diagnostique explicite plutôt que message sqlx générique.
+        Err(sqlx::Error::RowNotFound) => Err(VersionError::RowMissing),
         Err(e) => Err(VersionError::Sqlx(e)),
         Ok(db_min_str) => {
             let db_min = Version::parse(&db_min_str)?;
@@ -121,6 +134,13 @@ pub async fn record_boot_version(
 ) -> Result<(), VersionError> {
     // Valide la string SemVer côté binaire (mais on stocke la string
     // brute, pas la struct Version, dans le VARCHAR).
+    //
+    // En production, l'appelant passe `env!("CARGO_PKG_VERSION")` (résolu
+    // compile-time, toujours SemVer-valide). Le parse défensif protège
+    // les callers hors `env!` — typiquement les tests unitaires qui
+    // passent des strings ad-hoc — pour qu'une string invalide soit
+    // signalée immédiatement plutôt que de polluer la colonne
+    // `kesh_version_last_applied` avec une valeur malformée.
     Version::parse(binary_version)?;
 
     let result = sqlx::query(

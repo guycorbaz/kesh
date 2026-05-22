@@ -245,15 +245,27 @@ async fn migrations_kesh_version_initial_row(pool: MySqlPool) {
     );
 
     // Vérifie que la singleton-row constraint est appliquée : impossible
-    // d'insérer une 2e row avec id=2.
-    let result = sqlx::query(
+    // d'insérer une 2e row avec id=2. On vérifie en plus le SQLSTATE
+    // (classe 23xxx — integrity constraint violation) pour s'assurer que
+    // l'erreur vient bien d'une violation de contrainte et non d'une autre
+    // cause (table absente, pool fermé, etc.) qui passerait l'assertion
+    // `is_err()` silencieusement.
+    let err = sqlx::query(
         "INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (2, '0.2.0', '0.2.0')",
     )
     .execute(&pool)
-    .await;
+    .await
+    .expect_err("CHECK (id = 1) devrait empêcher INSERT id=2, got Ok");
 
+    let sqlstate = err
+        .as_database_error()
+        .and_then(|db_err| db_err.code())
+        .map(|c| c.to_string())
+        .unwrap_or_default();
     assert!(
-        result.is_err(),
-        "CHECK (id = 1) devrait empêcher INSERT id=2, got Ok"
+        sqlstate.starts_with("23"),
+        "INSERT id=2 devrait échouer avec SQLSTATE 23xxx (integrity constraint violation), got {:?} ({})",
+        sqlstate,
+        err
     );
 }

@@ -66,16 +66,37 @@ async fn main() {
     };
 
     // 3b. Downgrade protection (story 10-2)
+    //
+    // Hypothèse mono-instance v0.1 : Kesh tourne en single-process sur NAS
+    // Synology (docker-compose 1 replica). Le pattern check → MIGRATOR.run()
+    // → record n'est pas protégé contre 2 instances concurrentes — le bump
+    // multi-instance sera traité en v0.2 (advisory lock GET_LOCK ou similaire).
     match kesh_db::version::check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION")).await {
-        Ok(outcome) => {
-            tracing::info!("Database version check: {:?}", outcome);
+        Ok(kesh_db::version::DowngradeCheckOutcome::FreshInstall) => {
+            tracing::info!(
+                "Database version check: fresh install (table _kesh_version absent, will be created by MIGRATOR.run())"
+            );
+        }
+        Ok(kesh_db::version::DowngradeCheckOutcome::Aligned) => {
+            tracing::info!(
+                "Database version check: binary v{} aligned with db_min_required",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        Ok(kesh_db::version::DowngradeCheckOutcome::BinaryAhead { db_min, binary }) => {
+            tracing::info!(
+                "Database version check: binary v{} > db_min_required v{} (upgrade)",
+                binary,
+                db_min
+            );
         }
         Err(kesh_db::version::VersionError::DowngradeRefused { db_min, binary }) => {
             tracing::error!(
-                "FATAL: Database was migrated by Kesh v{}, current binary v{} cannot downgrade safely. Restore a backup compatible with v{} or upgrade the binary.",
+                "FATAL: Database was migrated by Kesh v{}, current binary v{} cannot downgrade safely. Restore a backup predating Kesh v{}, or upgrade the binary to at least v{}.",
                 db_min,
                 binary,
-                binary
+                db_min,
+                db_min
             );
             std::process::exit(1);
         }

@@ -60,10 +60,16 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
         "Story 10-2 attend 27 migrations totales (26 historiques + _kesh_version)"
     );
 
-    // Étape 1 : appliquer les 23 premières migrations historiques (= 26 − 3).
-    apply_migrations_up_to(&pool, 23)
+    // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
+    // migrations sauf les 4 dernières (reconciliation_8_4,
+    // bank_account_journal_link, reconciliation_rules, _kesh_version).
+    // `total - 4` rend l'expression robuste à l'ajout futur de migrations
+    // qui pousserait l'index — l'assertion `total == 27` ci-dessus garde
+    // le fail-loud sur toute évolution non-revue, mais `n` reste relatif.
+    let n_before_upgrade_window = total - 4;
+    apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(23) failed");
+        .expect("apply_migrations_up_to(total - 4) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -145,35 +151,35 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
             sqlx::query_scalar("SELECT COUNT(*) FROM companies")
                 .fetch_one(&pool)
                 .await
-                .unwrap(),
+                .expect("SELECT COUNT(*) FROM companies failed"),
         ),
         (
             "users".into(),
             sqlx::query_scalar("SELECT COUNT(*) FROM users")
                 .fetch_one(&pool)
                 .await
-                .unwrap(),
+                .expect("SELECT COUNT(*) FROM users failed"),
         ),
         (
             "accounts".into(),
             sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
                 .fetch_one(&pool)
                 .await
-                .unwrap(),
+                .expect("SELECT COUNT(*) FROM accounts failed"),
         ),
         (
             "contacts".into(),
             sqlx::query_scalar("SELECT COUNT(*) FROM contacts")
                 .fetch_one(&pool)
                 .await
-                .unwrap(),
+                .expect("SELECT COUNT(*) FROM contacts failed"),
         ),
         (
             "invoices".into(),
             sqlx::query_scalar("SELECT COUNT(*) FROM invoices")
                 .fetch_one(&pool)
                 .await
-                .unwrap(),
+                .expect("SELECT COUNT(*) FROM invoices failed"),
         ),
     ];
     let expected = [
@@ -196,35 +202,35 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
         .bind(company_id)
         .fetch_one(&pool)
         .await
-        .unwrap();
+        .expect("SELECT name FROM companies failed");
     assert_eq!(c_name, "Upgrade Path SA");
 
     let u_username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
         .bind(user_id)
         .fetch_one(&pool)
         .await
-        .unwrap();
+        .expect("SELECT username FROM users failed");
     assert_eq!(u_username, "upgrade_admin");
 
     let a_caisse_number: String = sqlx::query_scalar("SELECT number FROM accounts WHERE id = ?")
         .bind(account_caisse_id)
         .fetch_one(&pool)
         .await
-        .unwrap();
+        .expect("SELECT number FROM accounts (caisse) failed");
     assert_eq!(a_caisse_number, "1000");
 
     let a_ventes_number: String = sqlx::query_scalar("SELECT number FROM accounts WHERE id = ?")
         .bind(account_ventes_id)
         .fetch_one(&pool)
         .await
-        .unwrap();
+        .expect("SELECT number FROM accounts (ventes) failed");
     assert_eq!(a_ventes_number, "3000");
 
     let i_status: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
         .bind(invoice_id)
         .fetch_one(&pool)
         .await
-        .unwrap();
+        .expect("SELECT status FROM invoices failed");
     assert_eq!(i_status, "draft");
 
     // Étape 6 : assertion `_kesh_version` créée + row initiale, last_boot_at NULL.
@@ -238,6 +244,24 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     assert!(
         last_boot_at.is_none(),
         "last_boot_at NULL avant record_boot_version() — le test n'invoque pas la boot integration"
+    );
+}
+
+/// Couvre explicitement le bras `FreshInstall` de `check_downgrade_protection`
+/// — ER_NO_SUCH_TABLE 1146 → `Ok(FreshInstall)`. Sans ce test, le pattern
+/// `try_downcast_ref::<MySqlDatabaseError>().is_some_and(|e| e.number() == 1146)`
+/// n'est exercé runtime par aucun autre test (tous les autres utilisent
+/// `#[sqlx::test(migrator = ...)]` qui crée la table avant le corps du test).
+/// Un futur bump sqlx qui modifierait le downcast passerait silencieusement
+/// jusqu'à un premier déploiement sur DB vierge.
+#[sqlx::test(migrations = false)]
+async fn check_downgrade_protection_fresh_install_on_empty_db(pool: MySqlPool) {
+    // DB éphémère sans aucune migration appliquée → table `_kesh_version` absente.
+    let result = check_downgrade_protection(&pool, "0.1.0").await;
+    assert_eq!(
+        result.expect("check_downgrade_protection on empty DB should succeed"),
+        DowngradeCheckOutcome::FreshInstall,
+        "DB vierge sans _kesh_version → FreshInstall via ER_NO_SUCH_TABLE 1146"
     );
 }
 
@@ -302,6 +326,15 @@ async fn downgrade_protection_binary_ahead_when_binary_greater(pool: MySqlPool) 
 
 /// Test additionnel : `record_boot_version` met à jour `last_boot_at` à
 /// non-NULL et `kesh_version_last_applied` à la version passée.
+///
+/// AC #17 autorise explicitement une assertion `IS NOT NULL` plutôt qu'une
+/// fenêtre temporelle. On préfère cette forme : la comparaison
+/// `chrono::Utc::now().naive_utc()` (côté Rust UTC) vs `NOW()` (côté
+/// MariaDB, dépend de `time_zone`) introduit une flakiness sur les
+/// installations locales où MariaDB n'est pas configuré en UTC (typique
+/// NAS Synology Europe/Zurich). L'objectif du test est de prouver que
+/// l'UPDATE met bien le champ à une valeur — l'exactitude horloge relève
+/// d'un test d'horloge, pas d'un test de migration.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn record_boot_version_updates_row(pool: MySqlPool) {
     // Pre-state : last_boot_at NULL (set par la migration).
@@ -309,10 +342,8 @@ async fn record_boot_version_updates_row(pool: MySqlPool) {
         sqlx::query_scalar("SELECT last_boot_at FROM _kesh_version WHERE id = 1")
             .fetch_one(&pool)
             .await
-            .unwrap();
+            .expect("SELECT last_boot_at pre-record failed");
     assert!(pre_last_boot.is_none());
-
-    let test_start = chrono::Utc::now().naive_utc();
 
     record_boot_version(&pool, "0.1.0")
         .await
@@ -323,18 +354,11 @@ async fn record_boot_version_updates_row(pool: MySqlPool) {
     )
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .expect("SELECT _kesh_version post-record failed");
 
     assert_eq!(last_applied, "0.1.0");
-    let last_boot = last_boot_at.expect("last_boot_at devrait être non-NULL après record");
-    // Assertion borne (pas égalité exacte — cf. AC #17).
-    let test_end = chrono::Utc::now().naive_utc();
     assert!(
-        last_boot >= test_start - chrono::TimeDelta::seconds(2)
-            && last_boot <= test_end + chrono::TimeDelta::seconds(2),
-        "last_boot_at hors fenêtre test : start={:?}, last_boot={:?}, end={:?}",
-        test_start,
-        last_boot,
-        test_end
+        last_boot_at.is_some(),
+        "last_boot_at devrait être non-NULL après record_boot_version()"
     );
 }

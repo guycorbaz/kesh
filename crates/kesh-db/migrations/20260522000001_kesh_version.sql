@@ -7,7 +7,10 @@
 --             MIGRATOR.run() et écrite par record_boot_version après.
 --
 -- Singleton-row pattern via CHECK (id = 1) — enforce MariaDB ≥ 10.2.
--- VARCHAR(20) couvre largement SemVer (`major.minor.patch[-pre][+build]`).
+-- VARCHAR(40) couvre SemVer 2.0 incluant pre-release + build metadata
+-- (e.g. `1.0.0-rc1.20260522+build.20260522.001` = 37 chars). Évite la
+-- troncature silencieuse en mode non-strict ou l'échec d'UPDATE en mode
+-- strict si une release future utilise un format complet.
 -- DEFAULT '0.1.0' figé : version Kesh courante à la création de cette
 -- migration. Sera écrasé par record_boot_version() au prochain boot.
 --
@@ -19,8 +22,8 @@
 
 CREATE TABLE _kesh_version (
     id TINYINT UNSIGNED NOT NULL PRIMARY KEY DEFAULT 1,
-    kesh_version_min_required VARCHAR(20) NOT NULL,
-    kesh_version_last_applied VARCHAR(20) NOT NULL,
+    kesh_version_min_required VARCHAR(40) NOT NULL,
+    kesh_version_last_applied VARCHAR(40) NOT NULL,
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_boot_at DATETIME NULL,
     CONSTRAINT chk_kesh_version_single_row CHECK (id = 1)
