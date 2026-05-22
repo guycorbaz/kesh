@@ -67,9 +67,15 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
     // migrations sauf les 4 dernières (reconciliation_8_4,
     // bank_account_journal_link, reconciliation_rules, _kesh_version).
-    // `total - 4` rend l'expression robuste à l'ajout futur de migrations
-    // qui pousserait l'index — l'assertion `total == 27` ci-dessus garde
-    // le fail-loud sur toute évolution non-revue, mais `n` reste relatif.
+    //
+    // Note `total - 4` : expression relative à la longueur totale, mais
+    // l'assertion `total == 27` ci-dessus est INTENTIONNELLEMENT hardcode
+    // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
+    // migration future, le mainteneur doit (1) bumper le `27` à la nouvelle
+    // longueur (2) revoir si `total - 4` cible toujours la bonne fenêtre
+    // (la fenêtre vise les 4 migrations introduites par Story 10-2 qui
+    // testent l'upgrade depuis l'état pré-10-2 ; une nouvelle migration
+    // insérée AVANT cette fenêtre fait dériver la sémantique du test).
     let n_before_upgrade_window = total - 4;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
@@ -407,7 +413,12 @@ async fn record_boot_version_updates_row(pool: MySqlPool) {
             .expect("SELECT last_boot_at pre-record failed");
     assert!(pre_last_boot.is_none());
 
-    record_boot_version(&pool, "0.1.0")
+    // Utilise une valeur DIFFÉRENTE du pré-state ('0.1.0' figé par la migration
+    // initiale) pour prouver que l'UPDATE écrit bien kesh_version_last_applied
+    // — sinon assertion `'0.1.0' == '0.1.0'` serait toujours vraie et ne
+    // détecterait pas une régression où la fonction oublierait d'écrire la
+    // colonne (Pass 3 BH3-2 catch).
+    record_boot_version(&pool, "9.9.9")
         .await
         .expect("record_boot_version failed");
 
@@ -418,7 +429,10 @@ async fn record_boot_version_updates_row(pool: MySqlPool) {
     .await
     .expect("SELECT _kesh_version post-record failed");
 
-    assert_eq!(last_applied, "0.1.0");
+    assert_eq!(
+        last_applied, "9.9.9",
+        "record_boot_version doit écrire kesh_version_last_applied (pré-state '0.1.0' devait être remplacé par '9.9.9')"
+    );
     assert!(
         last_boot_at.is_some(),
         "last_boot_at devrait être non-NULL après record_boot_version()"

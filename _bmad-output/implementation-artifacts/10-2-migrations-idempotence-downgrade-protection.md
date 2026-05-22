@@ -810,3 +810,51 @@ Verdict initial brut Haiku : 2 CRITICAL + 0 HIGH + 2 MEDIUM + 1 LOW (BH) + 1 CRI
 **Cycle status** : 2 MEDIUM (G1, G2) ont été patchés. Pass 3 obligatoire selon CLAUDE.md §"Review Iteration Rule" (relancer après chaque passe avec ≥ 1 finding > LOW). LLM rotation : Pass 3 = **Opus 4.7** (cycle Sonnet → Haiku → Opus).
 
 Prochaine étape : Pass 3 code-review avec **Opus 4.7** sur diff aplati (1 commit Pass 2 + Pass 1 + 6 commits dev story). Focus attendu Opus : cohérence cross-fichier post-refactor `VersionError::InvalidSemver` + détection de régression subtile introduite par les patches Pass 1+2.
+
+#### Pass 3 code-review — Opus 4.7 (2026-05-22)
+
+Verdict initial brut Opus : 0 CRITICAL + 1 HIGH + 3 MEDIUM + 4 LOW (BH) + 0 CRITICAL + 1 HIGH + 2 MEDIUM + 3 LOW (ECH) + 0 CRITICAL + 0 HIGH + 0 MEDIUM + 4 LOW (AA) = 18 findings agrégés.
+
+**Reclassements après ground-truth + déduplication** :
+- BH3-1 HIGH (UTF-8 panic dans `invalid_semver`) = ECH3-1 HIGH (même finding, reproduit par Opus bash sur `'α'.repeat(40)`). **Catch majeur Pass 3 raté par Sonnet et Haiku — exactement le type de bug subtle que la rotation LLM est censée trouver.**
+- BH3-8 LOW (couverture test troncature manquante) = ECH3-2 MEDIUM (même finding, dégradé MEDIUM par BH, escaladé par ECH à cause du lien avec BH3-1).
+- BH3-3 MEDIUM (`std::process::exit(1)` skip destructors) → reclassé LOW : mono-instance v0.1 NAS Synology, pool fait juste un SELECT court (pas de transactions ouvertes). Documenté en commentaire.
+
+**Triage final Pass 3** : **1 HIGH + 3 MEDIUM + 9 LOW** = 13 patches + 0 REJECT.
+
+**Patches appliqués (Pass 3)** :
+
+- **H1 (HIGH, BH3-1/ECH3-1)** — **CRITIQUE** : remplacement `&value[..MAX_LEN]` par `value.chars().take(MAX_LEN).collect::<String>()` dans le helper `invalid_semver` (`version.rs:80-92`). `MAX_LEN` devient un nombre de **caractères logiques** (pas de bytes), éliminant le panic UTF-8 sur les chars multi-byte (accents `é`=2b, idéogrammes CJK=3b, emojis=4b). Trois nouveaux tests unitaires en `#[cfg(test)] mod tests` couvrent : (a) passthrough ASCII court, (b) troncature ASCII long avec ellipsis, (c) **régression Pass 3 BH3-1** : `"α".repeat(65)` = 130 bytes UTF-8, l'ancienne logique panic, la nouvelle retourne 65 chars + `…`. Note charset migration : table `_kesh_version` désormais explicite `CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` (H10) — confirme que le payload UTF-8 multi-byte est réellement stockable côté MariaDB.
+- **H2 (MEDIUM, BH3-2)** — Test `record_boot_version_updates_row` : `record_boot_version(&pool, "0.1.0")` → `"9.9.9"` + assertion `last_applied == "9.9.9"`. Le pré-state était `'0.1.0'` (INSERT migration), donc l'assertion `'0.1.0' == '0.1.0'` était toujours vraie et ne prouvait pas que la fonction écrivait la colonne. Une régression où l'UPDATE oublierait `kesh_version_last_applied` passerait silencieusement.
+- **H3 (MEDIUM → LOW, BH3-3)** — `std::process::exit(1)` dans `main.rs:88,109` skip les destructors Rust (pool MariaDB pas fermé gracefully). Reclassé LOW : mono-instance v0.1, pool n'a fait qu'un SELECT court. Commentaire docstring `main.rs:71-77` documente la limitation + signale qu'à reviser si une future Story introduit des transactions writeable avant le check.
+- **H4 (MEDIUM, BH3-4)** — `record_boot_version` parse `binary_version` 2 fois (validation jetée). Refactor : `let parsed = Version::parse(...)?; let canonical = parsed.to_string();` puis bind `canonical` au lieu de la string brute. Bénéfice : la colonne `kesh_version_last_applied` contient toujours la forme canonique SemVer (cohérent avec la lecture `check_downgrade_protection` qui re-parse).
+- **H5 (MEDIUM, ECH3-3)** — Message d'erreur `VersionError::RowMissing` (`version.rs:48-57`) enrichi pour distinguer 2 origines : (a) crash migration partielle (CREATE TABLE OK + INSERT échoué, MariaDB non-DDL-transactionnelle) → diagnostic `SELECT success FROM _sqlx_migrations WHERE version = 20260522000001` + DELETE dirty + re-run binaire ; (b) DELETE/TRUNCATE manuel post-migration → INSERT recovery (`INSERT INTO _kesh_version VALUES (1, '0.1.0', '0.1.0')` avec rappel de remplacer si version différente).
+- **H6 (LOW, BH3-8/ECH3-2)** — Couvert par les 3 tests unitaires ajoutés H1 (mod tests dans version.rs). Pas de patch additionnel requis.
+- **H7 (LOW, ECH3-6)** — `main.rs:80-110` : 3 messages `tracing::info!` traduits en français + bras `DowngradeRefused` utilise désormais `{}` (Display du variant) au lieu de dupliquer le message anglais. Évite drift maintenance si le Display français évolue.
+- **H8 (LOW, BH3-6)** — Warn message `record_boot_version` distingue `rows_affected == 0` vs `> 1` (deux cas pathologiques différents : DELETE manuel vs PK violé).
+- **H9 (LOW, BH3-7)** — Décision : garder l'INSERT inline dans le message `RowMissing` mais l'inclure dans la procédure (a)/(b) du H5 (procédure plus longue mais utile à l'opérateur). Mention `docs/operations.md` ajoutée comme référence future (doc à créer Story 10-4 manuel install Synology).
+- **H10 (LOW, ECH3-5)** — Migration `_kesh_version.sql` : ajout `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` (parité avec les 15 autres CREATE TABLE historiques + élimine couplage au default serveur).
+- **H11 (LOW, ECH3-4)** — Commentaire `migrations_upgrade_path.rs:68-79` réécrit pour clarifier l'incohérence apparente : `total == 27` hardcode = INTENTIONNEL fail-loud sur évolution, `total - 4` = expression relative cohérente mais qui requiert maintenance manuelle à chaque ajout de migration. Le commentaire « robuste à l'ajout futur » de Pass 1 retiré (contradictoire avec hardcode).
+- **H12 (LOW, AA3-1/AA3-4)** — Note explicative ajoutée dans la spec T2.3 + Dev Notes "Pattern complet" pour signaler que le sketch est PRE-DEV (« à raffiner ») et que la version définitive post-Pass-2 G3 est dans `crates/kesh-db/src/version.rs:1-260`. Évite le drift trompeur pour un reviewer futur.
+- **H13 (LOW, AA3-2/AA3-3)** — Change Log Pass 2 « 141 lignes » → « 199 lignes (post-Pass-2 G1/G3) » (le code post-Pass-3 fait ~260 lignes avec mod tests). T3.1 « round-trip 7 lignes » → « round-trip 6 SELECT (contact seedé en glue FK pour invoice, sans SELECT explicite) ».
+
+**Vérification ground-truth orchestrateur Pass 3** :
+- H1 UTF-8 panic : reproduit bash par Opus ECH (`'α'.repeat(40)` → panic byte boundary). Fix validé par 3 tests unitaires (un dont le test multibyte qui aurait paniqué avant le fix).
+- H2 test laxiste : grep pré-state migration confirme `'0.1.0'` figé → assertion `'0.1.0' == '0.1.0'` toujours vraie.
+- H5 RowMissing origine : sqlx-mysql `apply()` source confirme MariaDB DDL non-transactionnelle (commentaire `sqlx-mysql-0.8.6/src/migrate.rs:183-184`) → état intermédiaire CREATE-OK + INSERT-KO réel.
+
+**Régression non-introduite par Pass 3** — vérifié :
+- Pas de caller externe à `VersionError::InvalidSemver` (grep) → H4 refactor `parse + canonical` safe.
+- Pas de caller externe à `record_boot_version` autre que `main.rs` → H2 changement valeur de test safe.
+- `tracing::error!("FATAL : {}", err)` via Display de `DowngradeRefused` (H7) : Display contient déjà le diagnostic complet (« Restaurer un backup antérieur à Kesh v… ou mettre à jour le binaire… ») validé Pass 2 G1 traduction française.
+
+**Validation locale Test Locally First (post-Pass-3)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build -p kesh-db -p kesh-api` PASS (5.05s)
+- `cargo clippy -p kesh-db -p kesh-api --all-targets -- -D warnings` PASS (3.26s)
+- `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` : **11/11 verts** (3 fresh + 8 upgrade — pas de nouveau test intégration Pass 3, le test runtime troncature est en mod tests dans `version.rs`).
+- `cargo test -p kesh-db --lib version::tests` : **3/3 verts** (nouveaux tests unitaires UTF-8 H1).
+
+**Cycle status** : 1 HIGH + 3 MEDIUM patchés. Pass 4 obligatoire selon CLAUDE.md §"Review Iteration Rule" (> LOW présents originellement, tous patchés). LLM rotation : Pass 4 = **Sonnet 4.6** (cycle Sonnet → Haiku → Opus → **Sonnet** retour début).
+
+Prochaine étape : Pass 4 code-review avec **Sonnet 4.6** sur diff aplati. Focus attendu Pass 4 : valider que les patches Pass 3 (notamment H1 UTF-8 fix, H4 canonicalize, H5 message enrichi) n'ont pas introduit de régression cachée, et confirmer convergence (0 finding > LOW). Trend : 14 (Pass 1) → 9 (Pass 2) → 13 (Pass 3) → ?

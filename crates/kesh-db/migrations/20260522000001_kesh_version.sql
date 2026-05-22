@@ -35,7 +35,7 @@ CREATE TABLE _kesh_version (
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_boot_at DATETIME NULL,
     CONSTRAINT chk_kesh_version_single_row CHECK (id = 1)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied)
     VALUES (1, '0.1.0', '0.1.0');

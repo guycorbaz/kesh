@@ -35,11 +35,15 @@ pub enum VersionError {
     DowngradeRefused { db_min: Version, binary: Version },
 
     /// La table `_kesh_version` existe mais la row singleton `id=1` est
-    /// absente — état pathologique (restore partiel, TRUNCATE accidentel).
+    /// absente — état pathologique (restore partiel, TRUNCATE accidentel,
+    /// crash entre `CREATE TABLE` et `INSERT` de la migration initiale —
+    /// rappel : MariaDB ne supporte pas la DDL transactionnelle).
     /// Le boot DOIT être refusé pour éviter un boot silencieux sans tracking
-    /// de version. Diagnostic explicite pour l'opérateur.
+    /// de version. Diagnostic explicite pour l'opérateur. Voir
+    /// `docs/operations.md` (section « Récupération `_kesh_version` ») pour
+    /// la procédure complète selon l'origine présumée.
     #[error(
-        "La table _kesh_version existe mais la row id=1 est absente (TRUNCATE accidentel ou restore partiel ?). Correction : INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '<version>', '<version>'); — utiliser une valeur de kesh_version_min_required compatible avec l'origine du backup."
+        "La table _kesh_version existe mais la row id=1 est absente. Diagnostic : (a) vérifier `SELECT success FROM _sqlx_migrations WHERE version = 20260522000001` — si `success = 0`, la migration initiale a crashé entre CREATE TABLE et INSERT : DELETE cette ligne dirty puis re-démarrer le binaire. (b) Sinon (TRUNCATE/DELETE manuel post-migration) : INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '0.1.0', '0.1.0'); — remplacer '0.1.0' par la version cible si différente."
     )]
     RowMissing,
 
@@ -63,12 +67,22 @@ pub enum VersionError {
 
 impl VersionError {
     /// Helper interne : wrap `semver::Error` en `VersionError::InvalidSemver`
-    /// avec origin + valeur (tronquée 64 chars). Utilisé par les deux
-    /// `Version::parse()` du module (binary_version et db_min_str).
+    /// avec origin + valeur (tronquée 64 chars logiques). Utilisé par les
+    /// deux `Version::parse()` du module (binary_version et db_min_str).
+    ///
+    /// Troncature par `chars().take(MAX_LEN)` (jamais par bytes) — un slice
+    /// `&value[..N]` sur une string UTF-8 panic si N tombe au milieu d'un
+    /// caractère multi-byte (accent `é` = 2 bytes, idéogramme CJK = 3 bytes,
+    /// emoji = 4 bytes). Le payload DB peut contenir ce genre de string si
+    /// la colonne `_kesh_version` a été UPDATE manuellement avec une valeur
+    /// non-ASCII corrompue — il serait ironique que le helper conçu pour
+    /// éviter de polluer les logs panique avant que le log soit écrit.
     fn invalid_semver(origin: &'static str, value: &str, error: semver::Error) -> Self {
         const MAX_LEN: usize = 64;
-        let truncated = if value.len() > MAX_LEN {
-            format!("{}…", &value[..MAX_LEN])
+        let truncated = if value.chars().count() > MAX_LEN {
+            let mut s: String = value.chars().take(MAX_LEN).collect();
+            s.push('…');
+            s
         } else {
             value.to_string()
         };
@@ -76,6 +90,66 @@ impl VersionError {
             origin,
             value: truncated,
             error,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_semver_passes_short_ascii_through() {
+        let err = VersionError::invalid_semver(
+            "test",
+            "not-a-semver",
+            semver::Version::parse("nope").unwrap_err(),
+        );
+        match err {
+            VersionError::InvalidSemver { origin, value, .. } => {
+                assert_eq!(origin, "test");
+                assert_eq!(value, "not-a-semver");
+            }
+            _ => panic!("expected InvalidSemver variant"),
+        }
+    }
+
+    #[test]
+    fn invalid_semver_truncates_long_ascii_with_ellipsis() {
+        let long = "x".repeat(100);
+        let err = VersionError::invalid_semver(
+            "test",
+            &long,
+            semver::Version::parse("nope").unwrap_err(),
+        );
+        match err {
+            VersionError::InvalidSemver { value, .. } => {
+                assert!(value.ends_with('…'), "truncated value should end with …");
+                assert_eq!(value.chars().count(), 65, "64 chars + ellipsis");
+            }
+            _ => panic!("expected InvalidSemver variant"),
+        }
+    }
+
+    /// Régression Pass 3 BH3-1/ECH3-1 : le slice `&value[..MAX_LEN]` byte-based
+    /// panic si MAX_LEN tombe au milieu d'un caractère UTF-8 multi-byte.
+    /// La troncature `chars().take(MAX_LEN)` est char-safe par construction.
+    #[test]
+    fn invalid_semver_handles_multibyte_utf8_at_boundary() {
+        // 65 caractères grecs (α = 2 bytes UTF-8) → 130 bytes total.
+        // La 65e position en bytes tomberait au milieu d'un caractère.
+        let multibyte = "α".repeat(65);
+        let err = VersionError::invalid_semver(
+            "test",
+            &multibyte,
+            semver::Version::parse("nope").unwrap_err(),
+        );
+        match err {
+            VersionError::InvalidSemver { value, .. } => {
+                assert!(value.ends_with('…'));
+                assert_eq!(value.chars().count(), 65, "64 chars + ellipsis");
+            }
+            _ => panic!("expected InvalidSemver variant"),
         }
     }
 }
@@ -163,22 +237,20 @@ pub async fn record_boot_version(
     pool: &MySqlPool,
     binary_version: &str,
 ) -> Result<(), VersionError> {
-    // Valide la string SemVer côté binaire (mais on stocke la string
-    // brute, pas la struct Version, dans le VARCHAR).
-    //
-    // En production, l'appelant passe `env!("CARGO_PKG_VERSION")` (résolu
-    // compile-time, toujours SemVer-valide). Le parse défensif protège
-    // les callers hors `env!` — typiquement les tests unitaires qui
-    // passent des strings ad-hoc — pour qu'une string invalide soit
-    // signalée immédiatement plutôt que de polluer la colonne
-    // `kesh_version_last_applied` avec une valeur malformée.
-    Version::parse(binary_version)
+    // Valide la string SemVer côté binaire ET canonicalize la représentation
+    // stockée. `binary_version` passé par l'appelant peut être `env!("CARGO_PKG_VERSION")`
+    // (résolu compile-time, toujours SemVer-valide) ou une string ad-hoc (tests).
+    // On stocke `parsed.to_string()` plutôt que la string brute pour s'assurer
+    // que la colonne contient toujours une forme canonique SemVer (cohérent
+    // avec la lecture côté `check_downgrade_protection` qui parse à nouveau).
+    let parsed = Version::parse(binary_version)
         .map_err(|e| VersionError::invalid_semver("binaire", binary_version, e))?;
+    let canonical = parsed.to_string();
 
     let result = sqlx::query(
         "UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1",
     )
-    .bind(binary_version)
+    .bind(&canonical)
     .execute(pool)
     .await?;
 
@@ -189,9 +261,17 @@ pub async fn record_boot_version(
     // état pathologique (l'audit de version est informationnel), tout en
     // alertant clairement l'opérateur via les logs.
     if result.rows_affected() != 1 {
+        let n = result.rows_affected();
+        let cause = if n == 0 {
+            "row _kesh_version id=1 absente (DELETE/TRUNCATE manuel ?)"
+        } else {
+            "plusieurs rows id=1 (invariant CHECK + PK violé manuellement ?)"
+        };
         tracing::warn!(
-            rows_affected = result.rows_affected(),
-            "record_boot_version: UPDATE a affecté un nombre de rows inattendu (attendu 1) — row _kesh_version id=1 absente ?"
+            rows_affected = n,
+            "record_boot_version: UPDATE a affecté {} rows (attendu 1) — {}",
+            n,
+            cause
         );
     }
 

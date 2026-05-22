@@ -71,38 +71,40 @@ async fn main() {
     // Synology (docker-compose 1 replica). Le pattern check → MIGRATOR.run()
     // → record n'est pas protégé contre 2 instances concurrentes — le bump
     // multi-instance sera traité en v0.2 (advisory lock GET_LOCK ou similaire).
+    //
+    // Note `std::process::exit(1)` : termine le processus sans exécuter les
+    // destructors Rust (pool MariaDB pas fermé gracefully). Acceptable v0.1
+    // sur ce path car le pool n'a fait qu'un SELECT court (pas de transactions
+    // ouvertes côté serveur). Pattern à reviser si une future Story introduit
+    // des transactions writeable avant le check.
     match kesh_db::version::check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION")).await {
         Ok(kesh_db::version::DowngradeCheckOutcome::FreshInstall) => {
             tracing::info!(
-                "Database version check: fresh install (table _kesh_version absent, will be created by MIGRATOR.run())"
+                "Vérification de version DB : fresh install (table _kesh_version absente, sera créée par MIGRATOR.run())"
             );
         }
         Ok(kesh_db::version::DowngradeCheckOutcome::Aligned) => {
             tracing::info!(
-                "Database version check: binary v{} aligned with db_min_required",
+                "Vérification de version DB : binaire v{} aligné avec kesh_version_min_required",
                 env!("CARGO_PKG_VERSION")
             );
         }
         Ok(kesh_db::version::DowngradeCheckOutcome::BinaryAhead { db_min, binary }) => {
             tracing::info!(
-                "Database version check: binary v{} > db_min_required v{} (upgrade)",
+                "Vérification de version DB : binaire v{} > kesh_version_min_required v{} (upgrade)",
                 binary,
                 db_min
             );
         }
-        Err(kesh_db::version::VersionError::DowngradeRefused { db_min, binary }) => {
-            tracing::error!(
-                "FATAL: Database was migrated by Kesh v{}, current binary v{} cannot downgrade safely. Restore a backup predating Kesh v{}, or upgrade the binary to at least v{}.",
-                db_min,
-                binary,
-                db_min,
-                db_min
-            );
+        Err(err @ kesh_db::version::VersionError::DowngradeRefused { .. }) => {
+            // Réutilise le Display français du variant plutôt que de dupliquer
+            // le message ici (évite drift maintenance).
+            tracing::error!("FATAL : {}", err);
             std::process::exit(1);
         }
         Err(e) => {
             tracing::error!(
-                "Database version check failed (refusing to boot to avoid data corruption risk): {}",
+                "Vérification de version DB échouée (refus du boot pour éviter une corruption silencieuse de données) : {}",
                 e
             );
             std::process::exit(1);
