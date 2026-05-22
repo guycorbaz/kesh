@@ -7,8 +7,15 @@
 //!    sans DB, l'auth ne peut pas fonctionner, le serveur refuse de
 //!    démarrer. Le healthcheck `/health` conserve son comportement
 //!    dégradé (503) pour les pertes de DB **après** démarrage.
+//!    Downgrade protection (story 10-2) — `check_downgrade_protection`
+//!    lit `_kesh_version.kesh_version_min_required` et refuse le boot si
+//!    le binaire courant est plus ancien que ce min_required (évite une
+//!    corruption silencieuse sur downgrade par erreur).
 //! 4. Migrations (`MIGRATOR.run()`) — avance partielle de la story 8.2,
 //!    strictement limitée à `run()`.
+//!    Record boot version (story 10-2) — `record_boot_version` met à
+//!    jour `_kesh_version.kesh_version_last_applied` + `last_boot_at`
+//!    pour audit. Non-fatal si échec.
 //! 5. Bootstrap admin (`ensure_admin_user`) si la table users est vide.
 //! 6. Build router + axum::serve.
 
@@ -58,12 +65,40 @@ async fn main() {
         }
     };
 
+    // 3b. Downgrade protection (story 10-2)
+    match kesh_db::version::check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION")).await {
+        Ok(outcome) => {
+            tracing::info!("Database version check: {:?}", outcome);
+        }
+        Err(kesh_db::version::VersionError::DowngradeRefused { db_min, binary }) => {
+            tracing::error!(
+                "FATAL: Database was migrated by Kesh v{}, current binary v{} cannot downgrade safely. Restore a backup compatible with v{} or upgrade the binary.",
+                db_min,
+                binary,
+                binary
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!(
+                "Database version check failed (refusing to boot to avoid data corruption risk): {}",
+                e
+            );
+            std::process::exit(1);
+        }
+    }
+
     // 4. Migrations
     if let Err(e) = kesh_db::MIGRATOR.run(&pool).await {
         tracing::error!("Échec des migrations : {}", e);
         std::process::exit(1);
     }
     tracing::info!("Migrations appliquées");
+
+    // 4b. Record boot version (story 10-2) — non-fatal si échec
+    if let Err(e) = kesh_db::version::record_boot_version(&pool, env!("CARGO_PKG_VERSION")).await {
+        tracing::warn!("Failed to record boot version metadata (non-fatal): {}", e);
+    }
 
     // 5. Bootstrap admin
     if let Err(e) = bootstrap::ensure_admin_user(&pool, &config).await {
