@@ -1,6 +1,6 @@
 # Story 10.2: Migrations idempotence + downgrade protection + CI MariaDB 10.11
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -198,14 +198,12 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ### T1: Audit idempotence des 26 migrations historiques → fichier `docs/migrations-idempotence-audit.md` (AC #1-3)
 
-- [ ] T1.1 — Créer `docs/migrations-idempotence-audit.md` avec en-tête (paragraphe d'intro renvoyant à Story 10-2 et au paragraphe « Note Pass 1 spec validate » d'AC #1-3) + tableau markdown 26 rows.
-- [ ] T1.2 — Pour les **15 migrations** historiques dont l'instruction principale est `CREATE TABLE <name>` sans `IF NOT EXISTS` (peuvent contenir aussi des `CREATE INDEX`/`INSERT` secondaires mais pas de `ALTER TABLE` significatif) : `initial_schema.sql`, `auth_refresh_tokens.sql`, `onboarding_state.sql`, `bank_accounts.sql`, `accounts.sql`, `journal_entries.sql`, `audit_log.sql`, `contacts.sql`, `products.sql`, `invoices.sql`, `invoice_validation.sql`, `vat_rates.sql`, `bank_imports.sql`, `bank_profiles.sql`, `reconciliation_rules.sql` → verdict `tracked-by-sqlx`, justification : « `CREATE TABLE` sans `IF NOT EXISTS` ; re-exécution manuelle hors sqlx échouerait avec erreur MariaDB 1050. ».
-- [ ] T1.3 — Pour les **10 migrations** dont l'instruction principale est `ALTER TABLE` (peuvent contenir aussi un `CREATE TABLE` secondaire — la classification ici repose sur le `ALTER` comme statement principal d'idempotence à auditer) : `refresh_tokens_revoked_reason.sql`, `invoice_lines_line_total_check.sql`, `invoice_validated_journal_entry_check.sql`, `country_code.sql`, `invoice_paid_at.sql`, `users_company_id.sql`, `kf005_fulltext_indexes.sql`, `bank_imports_relax_hash_unique.sql`, `reconciliation_8_4.sql`, `bank_account_journal_link.sql`. Classifier par inspection :
-  - Si `ADD COLUMN`/`ADD INDEX`/`ADD CONSTRAINT` sans guard → verdict `tracked-by-sqlx`, justification : « `ALTER TABLE ADD ...` sans `IF NOT EXISTS` ; re-exécution échouerait erreur 1060 (colonne) ou 1061 (index/constraint). ».
-  - Si guard `IF [NOT] EXISTS` présent → verdict `yes`, justification courte (exemple `bank_imports_relax_hash_unique.sql` lignes 15-18 — verdict `yes`).
-- [ ] T1.4 — Pour la **migration `company_invoice_settings.sql`** (CREATE INDEX only, pas d'ALTER TABLE) → verdict `tracked-by-sqlx`, justification : « `CREATE INDEX` sans `IF NOT EXISTS` ; re-exécution échouerait erreur 1061. ».
-- [ ] T1.5 — Validation par count : `grep -c "^|" docs/migrations-idempotence-audit.md` ≥ 27 (header row + séparateur + 26 data rows). Chacun des 26 fichiers `.sql` historiques apparaît exactement une fois dans le tableau (`for f in crates/kesh-db/migrations/*.sql; do grep -q "$(basename $f)" docs/migrations-idempotence-audit.md || echo "manquant: $f"; done` retourne vide).
-- [ ] T1.6 — Référencer `docs/migrations-idempotence-audit.md` depuis `crates/kesh-db/README.md` (s'il existe) OU depuis `docs/ci.md` section migrations (fallback si pas de README crate-level).
+- [x] T1.1 — Créer `docs/migrations-idempotence-audit.md` avec en-tête (paragraphe d'intro renvoyant à Story 10-2 et au paragraphe « Note Pass 1 spec validate » d'AC #1-3) + tableau markdown 26 rows.
+- [x] T1.2 — Pour les **15 migrations** historiques dont l'instruction principale est `CREATE TABLE <name>` sans `IF NOT EXISTS` (peuvent contenir aussi des `CREATE INDEX`/`INSERT` secondaires mais pas de `ALTER TABLE` significatif) : `initial_schema.sql`, `auth_refresh_tokens.sql`, `onboarding_state.sql`, `bank_accounts.sql`, `accounts.sql`, `journal_entries.sql`, `audit_log.sql`, `contacts.sql`, `products.sql`, `invoices.sql`, `invoice_validation.sql`, `vat_rates.sql`, `bank_imports.sql`, `bank_profiles.sql`, `reconciliation_rules.sql` → verdict `tracked-by-sqlx`, justification : « `CREATE TABLE` sans `IF NOT EXISTS` ; re-exécution manuelle hors sqlx échouerait avec erreur MariaDB 1050. ».
+- [x] T1.3 — Pour les **10 migrations** dont l'instruction principale est `ALTER TABLE` : 5 avec guards `IF [NOT] EXISTS` complets → verdict `yes` (`country_code.sql`, `invoice_paid_at.sql`, `bank_imports_relax_hash_unique.sql`), 5 sans guards → verdict `tracked-by-sqlx` (`refresh_tokens_revoked_reason.sql`, `invoice_lines_line_total_check.sql`, `invoice_validated_journal_entry_check.sql`, `users_company_id.sql`, `kf005_fulltext_indexes.sql`), 2 partiels (ALTER unguarded + CREATE INDEX guarded) → verdict `tracked-by-sqlx` (`reconciliation_8_4.sql`, `bank_account_journal_link.sql`).
+- [x] T1.4 — Pour la **migration `company_invoice_settings.sql`** (CREATE INDEX only, pas d'ALTER TABLE) → verdict `tracked-by-sqlx`, justification : « `CREATE INDEX` sans `IF NOT EXISTS` ; re-exécution échouerait erreur 1061. ».
+- [x] T1.5 — Validation par count : `grep -c "^|" docs/migrations-idempotence-audit.md` = 29 (header row + séparateur + 27 data rows incluant la nouvelle `_kesh_version.sql`). Chacun des 26 fichiers `.sql` historiques apparaît exactement une fois.
+- [x] T1.6 — Référencé depuis `crates/kesh-db/README.md` (ligne 14 : commentaire sur `migrations/` dir).
 
 ### T2: Migration `_kesh_version.sql` + boot integration (AC #4-13)
 
