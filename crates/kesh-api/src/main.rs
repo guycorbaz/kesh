@@ -7,8 +7,15 @@
 //!    sans DB, l'auth ne peut pas fonctionner, le serveur refuse de
 //!    démarrer. Le healthcheck `/health` conserve son comportement
 //!    dégradé (503) pour les pertes de DB **après** démarrage.
+//!    Downgrade protection (story 10-2) — `check_downgrade_protection`
+//!    lit `_kesh_version.kesh_version_min_required` et refuse le boot si
+//!    le binaire courant est plus ancien que ce min_required (évite une
+//!    corruption silencieuse sur downgrade par erreur).
 //! 4. Migrations (`MIGRATOR.run()`) — avance partielle de la story 8.2,
 //!    strictement limitée à `run()`.
+//!    Record boot version (story 10-2) — `record_boot_version` met à
+//!    jour `_kesh_version.kesh_version_last_applied` + `last_boot_at`
+//!    pour audit. Non-fatal si échec.
 //! 5. Bootstrap admin (`ensure_admin_user`) si la table users est vide.
 //! 6. Build router + axum::serve.
 
@@ -58,12 +65,66 @@ async fn main() {
         }
     };
 
+    // 3b. Downgrade protection (story 10-2)
+    //
+    // Hypothèse mono-instance v0.1 : Kesh tourne en single-process sur NAS
+    // Synology (docker-compose 1 replica). Le pattern check → MIGRATOR.run()
+    // → record n'est pas protégé contre 2 instances concurrentes — le bump
+    // multi-instance sera traité en v0.2 (advisory lock GET_LOCK ou similaire).
+    //
+    // Note `std::process::exit(1)` : termine le processus sans exécuter les
+    // destructors Rust (pool MariaDB pas fermé gracefully). Acceptable v0.1
+    // sur ce path car le pool n'a fait qu'un SELECT court (pas de transactions
+    // ouvertes côté serveur). Pattern à reviser si une future Story introduit
+    // des transactions writeable avant le check.
+    match kesh_db::version::check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION")).await {
+        Ok(kesh_db::version::DowngradeCheckOutcome::FreshInstall) => {
+            tracing::info!(
+                "Vérification de version DB : fresh install (table _kesh_version absente, sera créée par MIGRATOR.run())"
+            );
+        }
+        Ok(kesh_db::version::DowngradeCheckOutcome::Aligned) => {
+            tracing::info!(
+                "Vérification de version DB : binaire v{} aligné avec kesh_version_min_required",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        Ok(kesh_db::version::DowngradeCheckOutcome::BinaryAhead { db_min, binary }) => {
+            tracing::info!(
+                "Vérification de version DB : binaire v{} > kesh_version_min_required v{} (upgrade)",
+                binary,
+                db_min
+            );
+        }
+        Err(err @ kesh_db::version::VersionError::DowngradeRefused { .. }) => {
+            // Réutilise le Display français du variant plutôt que de dupliquer
+            // le message ici (évite drift maintenance).
+            tracing::error!("FATAL : {}", err);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!(
+                "Vérification de version DB échouée (refus du boot pour éviter une corruption silencieuse de données) : {}",
+                e
+            );
+            std::process::exit(1);
+        }
+    }
+
     // 4. Migrations
     if let Err(e) = kesh_db::MIGRATOR.run(&pool).await {
         tracing::error!("Échec des migrations : {}", e);
         std::process::exit(1);
     }
     tracing::info!("Migrations appliquées");
+
+    // 4b. Record boot version (story 10-2) — non-fatal si échec
+    if let Err(e) = kesh_db::version::record_boot_version(&pool, env!("CARGO_PKG_VERSION")).await {
+        tracing::warn!(
+            "Impossible d'enregistrer la version de boot (non-fatal) : {}",
+            e
+        );
+    }
 
     // 5. Bootstrap admin
     if let Err(e) = bootstrap::ensure_admin_user(&pool, &config).await {

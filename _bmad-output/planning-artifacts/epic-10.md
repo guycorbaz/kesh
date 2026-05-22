@@ -356,8 +356,8 @@ Epic considéré « done » quand **toutes** les conditions ci-dessous sont sati
 - [ ] `CHANGELOG.md` v0.1.0 humanisé + joint à la GitHub Release v0.1.0
 - [ ] **Install effective sur NAS Synology Guy** + login + création company + saisie d'1 écriture comptable + 1 facture → tout fonctionne (validation prod réelle)
 - [ ] Backup natif DSM Package Center MariaDB testé sur le NAS de Guy (planifié + 1 backup manuel exécuté avec succès + restore validé sur DB de test)
-- [ ] Migrations idempotence + downgrade protection validés (test fresh install + test upgrade path PASS en CI)
-- [ ] CI matrice MariaDB 10.11 verte sur tous les tests Rust workspace
+- [x] Migrations idempotence + downgrade protection validés (test fresh install + test upgrade path PASS en CI) — Story 10-2 PR #106 verte 2026-05-22
+- [x] CI matrice MariaDB 10.11 verte sur tous les tests Rust workspace — Story 10-2 PR #106 verte 2026-05-22 (mono-version 10.11, no matrice, cf. docs/ci.md §"Justification mono-version 10.11")
 - [ ] Rétrospective Epic 10 produite (status `done` dans `sprint-status.yaml`)
 - [ ] PR Epic 10 mergée sur `main` (pattern « avoid parallel PRs » memory `feedback_avoid_parallel_prs` — rétro incluse dans PR de la dernière story)
 - [ ] **0 régression** sur baselines existantes : 250+ Vitest + cargo test workspace + 76 Playwright E2E

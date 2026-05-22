@@ -12,6 +12,7 @@ pub mod repositories;
 pub mod retry;
 pub mod test_fixtures;
 pub mod util;
+pub mod version;
 
 /// Migrator SQLx chargé depuis `crates/kesh-db/migrations/`.
 ///

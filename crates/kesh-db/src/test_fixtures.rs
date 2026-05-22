@@ -285,6 +285,15 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
 /// `truncate_all_inventory_matches_schema` (code review P5) compare
 /// cette liste vs `information_schema.TABLES` et échoue fort si un
 /// delta apparaît → force la mise à jour.
+///
+/// **Exceptions système** (exclues du truncate) :
+/// - `_sqlx_migrations` : tracking sqlx, ne doit jamais être vidé sinon
+///   MIGRATOR.run() ré-applique tout au prochain test.
+/// - `_kesh_version` : Story 10-2 — métadonnée singleton-row gérée par
+///   la migration `20260522000001_kesh_version.sql` (qui INSERT la row
+///   initiale `('0.1.0', '0.1.0')`). Truncer effacerait la row, ce qui
+///   ferait warn `rows_affected != 1` sur le premier `record_boot_version`
+///   suivant sans casser le boot. Cohérent traitement `_sqlx_migrations`.
 pub(crate) const TABLES_TO_TRUNCATE: &[&str] = &[
     "invoice_lines",
     "journal_entry_lines",
@@ -665,9 +674,13 @@ mod tests {
         // `sqlx::test` crée une DB éphémère par test — DATABASE() renvoie
         // le nom de cette DB et non `kesh`. Cela capture aussi les tables
         // ajoutées par les migrations dans l'exact contexte du test.
+        // Exclut les tables système `_sqlx_migrations` (tracking sqlx) et
+        // `_kesh_version` (Story 10-2 metadata singleton-row) — toutes deux
+        // exclues du TABLES_TO_TRUNCATE par design.
         let db_tables: Vec<String> = sqlx::query_scalar(
             "SELECT TABLE_NAME FROM information_schema.TABLES \
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_sqlx_migrations' \
+             WHERE TABLE_SCHEMA = DATABASE() \
+               AND TABLE_NAME NOT IN ('_sqlx_migrations', '_kesh_version') \
              ORDER BY TABLE_NAME",
         )
         .fetch_all(&pool)
