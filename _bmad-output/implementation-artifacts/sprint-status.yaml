@@ -175,7 +175,7 @@ development_status:
   #   - 10-5-httponly-tokens-security AJOUTÉE (nouvelle story sécurité — Issue #41 cat A closure, Option A décidée pre-flight 2026-05-21)
   epic-10: in-progress
   10-1-hardening-docker-production: done
-  10-2-migrations-idempotence-downgrade-protection: review
+  10-2-migrations-idempotence-downgrade-protection: review  # code-review cycle CONVERGED Pass 4 2026-05-22 (Sonnet→Haiku→Opus→Sonnet, 38 patches, 0 dette A reclassée). Prêt merge PR #106 post-push.
   10-3-resilience-frontend-db-inaccessible: backlog
   10-4-manuel-install-synology-backup-dsm-changelog: backlog
   10-5-httponly-tokens-security: backlog

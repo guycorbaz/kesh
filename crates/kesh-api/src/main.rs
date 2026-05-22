@@ -120,7 +120,10 @@ async fn main() {
 
     // 4b. Record boot version (story 10-2) — non-fatal si échec
     if let Err(e) = kesh_db::version::record_boot_version(&pool, env!("CARGO_PKG_VERSION")).await {
-        tracing::warn!("Failed to record boot version metadata (non-fatal): {}", e);
+        tracing::warn!(
+            "Impossible d'enregistrer la version de boot (non-fatal) : {}",
+            e
+        );
     }
 
     // 5. Bootstrap admin

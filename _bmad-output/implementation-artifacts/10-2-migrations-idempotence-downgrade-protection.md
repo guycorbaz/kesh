@@ -227,7 +227,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
   - `migrations_apply_all_tables_present` (AC #14a) — `SHOW TABLES` + assertion subset 23 tables minimales.
   - `migrations_minimal_seed_roundtrips` (AC #14b) — INSERT 1 company + 1 fiscal_year (Open) + 1 user (Argon2 mock, company_id requis post-Story 6-2) + 1 contact (type 'Personne') + 1 account (number/name/type) + 1 journal_entry (entry_number=1) + 1 invoice (draft, total=0) → SELECT round-trip 7 lignes.
   - `migrations_kesh_version_initial_row` (AC #14c) — SELECT `_kesh_version` row 1 = `('0.1.0', '0.1.0', NULL last_boot_at)` + assertion CHECK (id=1) refuse INSERT id=2.
-- [x] T3.2 — `crates/kesh-db/tests/migrations_upgrade_path.rs` créé avec **5 tests** (5/5 PASS) :
+- [x] T3.2 — `crates/kesh-db/tests/migrations_upgrade_path.rs` créé avec **5 tests initiaux** (T3 dev) puis enrichi par les passes code-review (Pass 1 F5 + Pass 2 G2/G3) à **8 tests upgrade_path** (8/8 PASS final, total 11/11 avec 3 fresh_install) :
   - `upgrade_path_preserves_data` (AC #15a) — `#[sqlx::test(migrations = false)]` (disable inference) + helper `apply_migrations_up_to(pool, 23)` + seed 5 tables (1 company + 1 user + 2 accounts + 1 contact + 1 invoice) + `MIGRATOR.run()` final (applique 4 migrations restantes) + assertions COUNT inchangé + colonnes seed préservées + `_kesh_version` created.
   - `downgrade_protection_rejects_old_binary` (AC #15b) — `#[sqlx::test(migrator = ...)]` + UPDATE min_required='0.99.0' + check_downgrade_protection("0.1.0") → assertion `Err(DowngradeRefused { db_min: 0.99.0, binary: 0.1.0 })`.
   - `downgrade_protection_aligned_when_binary_equals_min` (test additionnel) — binary == db_min → `Ok(Aligned)`.
@@ -235,7 +235,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
   - `record_boot_version_updates_row` (test additionnel) — record_boot_version("0.1.0") → last_boot_at non-NULL borné `[test_start, test_end]` (AC #17 contre flakiness exact).
 - [x] T3.3 — Helper `apply_migrations_up_to(pool, n)` inline dans `migrations_upgrade_path.rs` lignes 30-48 via **sub-Migrator approach** : slice `&kesh_db::MIGRATOR.migrations[..n]` + construction d'un `Migrator` ad-hoc + `.run(pool)`. Préserve checksums SHA-384 → `MIGRATOR.run()` final ne déclenche pas `MigrateError::VersionMismatch`.
 - [x] T3.4 — Helper inline (~20 lignes, sous seuil 30 — pas d'extraction nécessaire).
-- [x] T3.5 — **5 nouveaux tests upgrade_path + 3 fresh_install = 8 tests verts** : `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` PASS en 10.7s sur MariaDB local (container `kesh-mariadb` actuellement 11-jammy, compat MariaDB ≥ 10.6 confirmée). `cargo clippy -p kesh-db --tests -- -D warnings` PASS. `cargo fmt` PASS.
+- [x] T3.5 — **8 tests upgrade_path + 3 fresh_install = 11 tests verts post-code-review** (T3 dev livrait 5+3=8 initial, enrichi à 11 par les passes code-review : Pass 1 F5 add FreshInstall test, Pass 2 G2 add RowMissing test, Pass 2 G3 add InvalidSemver test) : `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` PASS sur MariaDB local. `cargo clippy -p kesh-db --tests -- -D warnings` PASS. `cargo fmt` PASS.
 
 ### T4: CI matrice MariaDB 10.11 doc + planning artifact sync (AC #19-21)
 
@@ -858,3 +858,67 @@ Verdict initial brut Opus : 0 CRITICAL + 1 HIGH + 3 MEDIUM + 4 LOW (BH) + 0 CRIT
 **Cycle status** : 1 HIGH + 3 MEDIUM patchés. Pass 4 obligatoire selon CLAUDE.md §"Review Iteration Rule" (> LOW présents originellement, tous patchés). LLM rotation : Pass 4 = **Sonnet 4.6** (cycle Sonnet → Haiku → Opus → **Sonnet** retour début).
 
 Prochaine étape : Pass 4 code-review avec **Sonnet 4.6** sur diff aplati. Focus attendu Pass 4 : valider que les patches Pass 3 (notamment H1 UTF-8 fix, H4 canonicalize, H5 message enrichi) n'ont pas introduit de régression cachée, et confirmer convergence (0 finding > LOW). Trend : 14 (Pass 1) → 9 (Pass 2) → 13 (Pass 3) → ?
+
+#### Pass 4 code-review — Sonnet 4.6 (2026-05-22) — CONVERGED
+
+Verdict initial brut Sonnet : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 6 LOW (BH) + 0 CRITICAL + 0 HIGH + 0 MEDIUM + 2 LOW (ECH) + 0 CRITICAL + 0 HIGH + 0 MEDIUM + 2 LOW (AA, 26/26 AC met) = 10 findings agrégés, **tous LOW**.
+
+**Critère d'arrêt CLAUDE.md §"Review Iteration Rule" atteint** : 0 finding > LOW → CONVERGED.
+
+**Scan régressions Pass 3 confirmées non-introduites** (par 3 reviewers Pass 4) :
+- H1 UTF-8 fix : 3 tests unitaires verts (passthrough ASCII court / troncature ASCII long / régression `"α".repeat(65)` qui aurait panic avant).
+- H2 test "9.9.9" : prouve réellement que l'UPDATE écrit la colonne.
+- H4 canonicalize : `parsed.to_string()` stable pour les versions cargo standard.
+- H5 RowMissing enrichi : Display contient diagnostic complet, accessible via catch-all `Err(e) => tracing::error!("...: {}", e)`.
+- H7 main.rs FR + Display via `{}` : pas de drift, le Display de `DowngradeRefused` est utilisé.
+- H10 CHARSET utf8mb4 : confirme stockage UTF-8 multi-byte (motive ECH4-2 grapheme cluster note).
+
+**Patches LOW appliqués (Pass 4, sélection des plus utiles)** :
+
+- **I1 (LOW, ECH4-1)** — `main.rs:123-124` : `tracing::warn!("Failed to record boot version metadata (non-fatal): {}", ...)` traduit FR `"Impossible d'enregistrer la version de boot (non-fatal) : {}"` (cohérence convention projet, dernière incohérence FR/EN dans `main.rs`).
+- **I2 (LOW, BH4-4/AA4-L2)** — T3.2 `5 tests` → `5 tests initiaux + enrichi à 8 par Pass 1 F5 / Pass 2 G2 / Pass 2 G3` (annotation explicite du trend). T3.5 `5 tests upgrade_path + 3 fresh_install = 8 tests verts` → `8 + 3 = 11 tests verts post-code-review` (count final reflète la réalité post-cycle).
+
+**LOWs laissés** (cosmétiques sans impact fonctionnel, optimisations prématurées ou redondances acceptables) :
+- BH4-1 LOW : double itération `chars().count()` + `chars().take()` → optimisation prématurée (path d'erreur rare, MAX_LEN=64 borne).
+- BH4-2 LOW : commentaire `canonical` stable — explicite dans le code (`let parsed = Version::parse(...)?; let canonical = parsed.to_string();` self-documenting).
+- BH4-3 LOW : test intégration `origin: "binaire"` manquant — couvert par mod tests `version.rs` (les 3 tests unitaires exercent le helper directement, pas le caller).
+- BH4-5 LOW : `RowMissing` dans catch-all `Err(e)` au lieu de bras dédié — Display contient le diagnostic complet (procédure (a)/(b) H5), prefix « Vérification de version DB échouée » + Display reste lisible. Coût d'un bras explicite vs bénéfice : marginal.
+- BH4-6 LOW : commentaire incohérence spec ligne 199 « expression relative » vs code ligne hardcode — la spec sera archivée au merge, drift acceptable.
+- ECH4-2 LOW : grapheme cluster NFD séparé par `chars().take()` — purement cosmétique sur un message d'erreur d'audit, sur-engineering d'utiliser `unicode-segmentation`. Documenté comme observation.
+- AA4-L1 LOW : T2.3 mentionne encore `InvalidSemver(#[from] semver::Error)` (pré-refactor Pass 2 G3) — annotation `(refactoré Pass 2 G3)` ajoutée Pass 3 H12, suffisante pour un lecteur futur.
+
+**Vérification ground-truth orchestrateur Pass 4** :
+- Régression H1 fix : `cargo test -p kesh-db --lib version::tests` = 3/3 verts (les 3 tests unitaires UTF-8 incluant le multibyte).
+- Pas de nouveau caller externe à `VersionError` introduit par Pass 1+2+3 (grep `VersionError::` outside `version.rs` + tests).
+
+**Validation locale Test Locally First final (post-Pass-4)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build --workspace --all-targets` PASS (36.91s)
+- `cargo clippy --workspace --all-targets -- -D warnings` PASS (8.50s)
+- Tests intégration Story 10-2 : 11/11 verts (3 fresh + 8 upgrade — Pass 4 patches sont docs + 1 message FR, pas de nouveau test runtime).
+- Tests unitaires version.rs : 3/3 verts (mod tests UTF-8 H1).
+
+**Cycle complet code-review** :
+- **Pass 1 Sonnet 4.6** : 14 patches (1H BH-4 log Debug + 4M F2 RowMissing/F3 timezone/F4 VARCHAR(40)/F5 test FreshInstall + 9L mécaniques)
+- **Pass 2 Haiku 4.5** : 9 patches (2M G1 messages FR + G2 test RowMissing + 7L dont G3 InvalidSemver refactor escaladé MEDIUM)
+- **Pass 3 Opus 4.7** : 13 patches (**1H H1 panic UTF-8** raté par Sonnet+Haiku + 3M H2 test laxiste/H4 canonicalize/H5 RowMissing enrichi + 9L)
+- **Pass 4 Sonnet 4.6** : 2 patches LOW (I1 warn FR + I2 count tests stale) + 8 LOW laissés → **CONVERGED**
+
+**Trend numérique** : 14 → 9 → 13 → **2 (LOW only)**. Cycle décroissant après Pass 3 (Opus catch UTF-8 dilate temporairement le compte). Total : 38 patches répartis sur 4 passes + 0 dette technique reclassée.
+
+**Discipline grep ground-truth** : appliquée systématiquement à tous les findings ≥ MEDIUM des 4 passes, conformément CLAUDE.md §"Haiku-specific guardrails" étendu par hygiène à Sonnet + Opus. 5 faux-positifs Haiku Pass 2 réfutés par grep (BH2-1 `is_some_and` valide Rust 1.85, BH2-2 auto-réfuté, BH2-4 P5 par design, BH2-5 dépendance, ECH-3 par design). 1 faux-positif Sonnet Pass 1 réfuté (BH-6 FK `fiscal_year_id` invoices inexistante).
+
+**Rotation LLM respectée** : Sonnet → Haiku → Opus → Sonnet (cycle complet 4 passes, retour début). Opus Pass 3 a catch le bug majeur UTF-8 (BH3-1/ECH3-1) raté par Sonnet+Haiku — confirme la valeur de la rotation LLM (memory `feedback_haiku_review_diff_combined` + retro Epic 9 I1).
+
+**Statut final code-review** : cycle CONVERGED, statut `review` maintenu (sera bumped `review → done` au merge effectif PR #106 sur `main`, conformément convention projet BMAD).
+
+**Décisions reclassement** :
+- Aucune dette catégorie A reclassée (zero carry-forward policy CLAUDE.md §"Tech debt management"). Les 2 defers v0.2 (BH-3 rolling-restart race, BH-11 `semver::Error` API surface) sont en catégorie **B** : limitations documentées + planification Epic v0.2 future, conformes politique.
+- G8 LOW Pass 2 (déplacer note single-instance v0.1 de `main.rs` vers CLAUDE.md `## Concurrence et multi-instance`) → defer Epic v0.2 (commentaire `main.rs:71-77` post-H3 Pass 3 documente déjà le caveat, formaliser CLAUDE.md attendra l'Epic correspondant).
+
+**Prochaine étape utilisateur** :
+1. `git push origin chore/story-10-2-spec` (4 nouveaux commits Pass 1+2+3+4 à pousser)
+2. PR #106 sera mise à jour automatiquement, CI rejouera sur les nouveaux commits
+3. Vérifier CI verte (Backend Rust + Frontend Svelte + Docker sanity)
+4. Merger PR #106 sur main
+5. Sprint-status : `10-2-migrations-idempotence-downgrade-protection: review → done`
