@@ -83,7 +83,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 6. **Given** `20260522000001_kesh_version.sql` appliquée, **When** review, **Then** la migration **insère la row initiale** : `INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '0.1.0', '0.1.0')`. La version `0.1.0` est figée dans le SQL — c'est la version Kesh courante au moment où cette migration est créée (cf. `crates/kesh-api/Cargo.toml:3`). L'`UPDATE` du `kesh_version_last_applied` par le boot logic (AC #11) écrasera ce default au prochain démarrage.
 
-7. **Given** la migration `20260522000001_kesh_version.sql`, **When** review, **Then** elle est **idempotente en pratique sous tracking sqlx** : le `CREATE TABLE` n'utilise pas `IF NOT EXISTS` (cohérent avec les 19 autres migrations `CREATE TABLE` non-guarded historiques) et l'`INSERT` initial ne porte pas de `INSERT IGNORE` ni `ON DUPLICATE KEY UPDATE`. La ré-exécution manuelle hors sqlx échouerait avec erreur 1050 (table existe) — c'est intentionnel et documenté par `-- idempotent: tracked-by-sqlx` au format AC #1.
+7. **Given** la migration `20260522000001_kesh_version.sql`, **When** review, **Then** elle est **idempotente en pratique sous tracking sqlx** : le `CREATE TABLE` n'utilise pas `IF NOT EXISTS` (cohérent avec les 14 autres fichiers-migration contenant `CREATE TABLE` sans `IF NOT EXISTS` — 15 au total incluant la nouvelle, confirmé : aucun `IF NOT EXISTS` dans les 26 migrations historiques) et l'`INSERT` initial ne porte pas de `INSERT IGNORE` ni `ON DUPLICATE KEY UPDATE`. La ré-exécution manuelle hors sqlx échouerait avec erreur 1050 (table existe) — c'est intentionnel et documenté par `-- idempotent: tracked-by-sqlx` dans le commentaire d'en-tête de la migration ET dans l'entrée correspondante de `docs/migrations-idempotence-audit.md`.
 
 ### Module `kesh-db/src/version.rs` + boot integration (AC #8-13)
 
@@ -103,7 +103,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
         binary_version: &str,
     ) -> Result<(), VersionError>
     ```
-    avec un enum `DowngradeCheckOutcome { FreshInstall, Aligned, BinaryAhead { db_min: Version, binary: Version } }` (3 variants couvrant les 3 états possibles : table n'existe pas / binaire == ou > min_required / binaire > min_required quand min_required est juste informationnel d'une version antérieure). Le 4e cas `BinaryBehind { db_min, binary }` n'est **pas** un variant `Outcome` — il est **converti en `VersionError::DowngradeRefused { db_min, binary }`** car c'est le seul cas qui doit faire échouer le boot.
+    avec un enum `DowngradeCheckOutcome { FreshInstall, Aligned, BinaryAhead { db_min: Version, binary: Version } }` (3 variants couvrant les 3 états non-erreur possibles : table n'existe pas (`FreshInstall`) / binaire == min_required (`Aligned`) / binaire > min_required (`BinaryAhead`)). Le 4e cas binaire < min_required n'est **pas** un variant `Outcome` — il est **converti en `VersionError::DowngradeRefused { db_min, binary }`** car c'est le seul cas qui doit faire échouer le boot.
 
 11. **Given** `check_downgrade_protection()`, **When** invoquée :
     - **Sur DB sans table `_kesh_version`** (fresh install) — la requête `SELECT kesh_version_min_required FROM _kesh_version WHERE id=1` retourne `sqlx::Error::Database(db_err)` qui est downcastable en `sqlx::mysql::MySqlDatabaseError` dont `.number() == 1146` (ER_NO_SUCH_TABLE). **⚠️** La méthode `code()` retourne le SQLSTATE `"42S02"`, **pas** le numéro 1146 — utiliser obligatoirement le pattern `try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` (référence canonique : `crates/kesh-db/src/errors.rs:150` + `crates/kesh-db/src/retry.rs:73`). **Then** la fonction retourne `Ok(DowngradeCheckOutcome::FreshInstall)` (table sera créée par `MIGRATOR.run()` ensuite).
@@ -224,7 +224,7 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 ### T3: Tests d'intégration migrations (AC #14-18)
 
 - [ ] T3.1 — Créer `crates/kesh-db/tests/migrations_fresh_install.rs` avec 3 tests :
-  - `migrations_apply_all_tables_present` (AC #14a) — `SHOW TABLES` + assertion liste tables minimale (~22 tables).
+  - `migrations_apply_all_tables_present` (AC #14a) — `SHOW TABLES` + assertion liste tables minimale (23 tables — cf. AC #14a pour la liste exacte).
   - `migrations_minimal_seed_roundtrips` (AC #14b) — INSERT/SELECT round-trip 5 lignes minimales.
   - `migrations_kesh_version_initial_row` (AC #14c) — SELECT `_kesh_version` row 1 → assertion `(0.1.0, 0.1.0)`.
 - [ ] T3.2 — Créer `crates/kesh-db/tests/migrations_upgrade_path.rs` avec 2 tests :
@@ -242,8 +242,8 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ### T5: Politique migration breaking dans CLAUDE.md (AC #22-23)
 
-- [ ] T5.1 — Ajouter la section `## Migration breaking policy` à `CLAUDE.md` selon AC #22 (4 paragraphes P1-P4), positionnée après `## Issue Tracking Rule` et avant `## Règle de commit et push`.
-- [ ] T5.2 — Vérifier qu'aucune migration historique du repo ne reçoit rétroactivement de marker `-- breaking-skip-bump:` (cf. AC #23). Le seul marker méta-ajouté à 26 migrations historiques est `-- idempotent: ...` (T1).
+- [ ] T5.1 — Ajouter la section `## Migration breaking policy` à `CLAUDE.md` selon AC #22 (5 paragraphes P1-P5), positionnée après `## Issue Tracking Rule` et avant `## Règle de commit et push`.
+- [ ] T5.2 — Vérifier qu'aucune migration historique du repo ne reçoit rétroactivement de marker `-- breaking-skip-bump:` (cf. AC #23). Aucun marker n'est ajouté aux fichiers `.sql` historiques par cette story — l'audit d'idempotence est dans `docs/migrations-idempotence-audit.md` (cf. AC #2 + T1).
 
 ### T6: Validation end-to-end (AC #24-26)
 
@@ -453,7 +453,7 @@ Note pré-dev : à confirmer si Guy souhaite restart son container local mainten
 ### Splitting check (CLAUDE.md §"Règle de splitting préventif")
 
 Story 10-2 touche **2 crates** :
-- `crates/kesh-db/` — Cargo.toml + lib.rs + version.rs (nouveau) + migrations/ (1 nouveau + 26 commentaires) + tests/ (2 nouveaux)
+- `crates/kesh-db/` — Cargo.toml + lib.rs + version.rs (nouveau) + migrations/ (1 nouveau fichier `_kesh_version.sql`) + tests/ (2 nouveaux)
 - `crates/kesh-api/` — main.rs (boot logic insert)
 
 Plus 4 fichiers infra/doc : `docs/ci.md`, `docs/migrations-idempotence-audit.md` (créé par cette story), `CLAUDE.md`, `_bmad-output/planning-artifacts/epic-10.md`.
@@ -611,3 +611,32 @@ Verdict initial : 1 CRITICAL + 0 HIGH + 1 MEDIUM + 5 LOW = 7 findings → NEEDS 
 **Cycle status** : encore 1 MEDIUM (F2-P3) appliqué. Pass 4 nécessaire pour valider que F2-P3 est correctement adressé et que les patches Pass 3 n'ont pas introduit de régression.
 
 Prochaine étape : Pass 4 spec validate avec **Sonnet 4.6** (rotation cycle Sonnet → Haiku → Opus → Sonnet, retour à Sonnet pour la 4e passe).
+
+#### Pass 4 spec validate — Sonnet 4.6 (2026-05-22) — CONVERGED
+
+Verdict : **CONVERGED** — 0 CRITICAL + 0 HIGH + 0 MEDIUM + 6 LOW = 6 findings (uniquement LOW).
+
+**Patches appliqués (6 LOW, mécaniques)** :
+
+- **F1-P4** — T3.1 « (~22 tables) » → « (23 tables — cf. AC #14a pour la liste exacte) » (cohérence avec AC #14a Pass 3 F6-P3).
+- **F2-P4** — T5.1 « (4 paragraphes P1-P4) » → « (5 paragraphes P1-P5) » (cohérence avec AC #22 Pass 3 F2-P3 qui a ajouté P5).
+- **F3-P4** — T5.2 phrase stale « Le seul marker méta-ajouté à 26 migrations historiques est `-- idempotent: ...` » réécrite (post-Pass-1, aucun marker n'est ajouté aux `.sql` historiques — l'audit est dans le markdown).
+- **F4-P4** — Dev Notes §"Splitting check" « migrations/ (1 nouveau + 26 commentaires) » → « migrations/ (1 nouveau fichier) » (stale pré-Pass-1).
+- **F5-P4** — AC #7 « 19 autres migrations CREATE TABLE non-guarded historiques » → « 14 autres fichiers-migration contenant CREATE TABLE sans IF NOT EXISTS (15 au total incluant la nouvelle) » (compteur stale ; ground-truth verifié).
+- **F6-P4** — AC #10 prose ambiguë « binaire == ou > min_required » sur le variant `Aligned` → réécrit strict : `Aligned` = `==`, `BinaryAhead` = `>` (cohérent avec le code sketch Dev Notes).
+
+**Pass 3 regression scan** (par Sonnet Pass 4) — vérifié :
+- F1-P3 (sqlx-macros attribute) — AC #15a, AC #15b, AC #18 et Dev Notes §"Pattern test migrations" sont internally consistent. Aucune référence rémanente du wrong attribute. ✓
+- F2-P3 (P5 garde-fou) — phrasé cohérent avec P3 (même severity, même trigger condition), scope « new .sql migrations only », pas de contradiction avec AC #23. ✓
+- F3-F7 LOW Pass 3 — tous appliqués correctement, pas de régression. ✓
+
+**Cycle status final** :
+- Trend numérique : Pass 1 (15) → Pass 2 (3 + 2 régressions) → Pass 3 (7) → **Pass 4 (6 LOW)** → CONVERGED.
+- LLM rotation respectée : Sonnet → Haiku → Opus → Sonnet (cycle complet).
+- 4 passes (limite max 8 jamais atteinte).
+- Total patches appliqués sur les 4 passes : 33 patches (15 + 5 + 7 + 6).
+
+**Décisions reclassement** :
+- Aucune. Tous les findings ≥ MEDIUM ont été patchés au fil des passes — aucun item reclassé en dette technique.
+
+**Statut final spec** : `ready-for-dev` — `bmad-dev-story 10-2` peut démarrer.
