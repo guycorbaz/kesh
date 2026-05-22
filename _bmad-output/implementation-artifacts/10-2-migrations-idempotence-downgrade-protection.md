@@ -223,16 +223,19 @@ Cette story livre **trois protections complémentaires** au flow de migrations D
 
 ### T3: Tests d'intégration migrations (AC #14-18)
 
-- [ ] T3.1 — Créer `crates/kesh-db/tests/migrations_fresh_install.rs` avec 3 tests :
-  - `migrations_apply_all_tables_present` (AC #14a) — `SHOW TABLES` + assertion liste tables minimale (23 tables — cf. AC #14a pour la liste exacte).
-  - `migrations_minimal_seed_roundtrips` (AC #14b) — INSERT/SELECT round-trip 5 lignes minimales.
-  - `migrations_kesh_version_initial_row` (AC #14c) — SELECT `_kesh_version` row 1 → assertion `(0.1.0, 0.1.0)`.
-- [ ] T3.2 — Créer `crates/kesh-db/tests/migrations_upgrade_path.rs` avec 2 tests :
-  - `upgrade_path_preserves_data` (AC #15a) — utilise helper `apply_migrations_up_to` (à inclure inline dans le même fichier de test).
-  - `downgrade_protection_rejects_old_binary` (AC #15b) — UPDATE de `kesh_version_min_required` à `'0.99.0'` puis appel `check_downgrade_protection` avec `"0.1.0"` → assertion `Err(DowngradeRefused)`.
-- [ ] T3.3 — Implémenter le helper `apply_migrations_up_to(pool, n)` inline dans `migrations_upgrade_path.rs` via la **sub-Migrator approach** (cf. Dev Notes §"Pattern test migrations" pour le code complet). Le champ `Migrator::migrations` est `pub Cow<'static, [Migration]>` (semver-exempt mais public) — slicer `&kesh_db::MIGRATOR.migrations[..n]` et construire un sub-Migrator avec ce slice puis appeler `.run(pool)`. Cela préserve les checksums SHA-384 réels et alimente correctement `_sqlx_migrations`, contrairement à toute approche d'INSERT manuel.
-- [ ] T3.4 — Si l'helper T3.3 nécessite plus de 30 lignes Rust, extraire dans un sous-module `tests/common/migrations_helper.rs` (pattern Cargo `#[path = "common/migrations_helper.rs"] mod migrations_helper;` au début du fichier de test). Sinon laisser inline.
-- [ ] T3.5 — Vérifier que les 5 nouveaux tests passent en local : `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` avec MariaDB 10.11 démarré sur 127.0.0.1:3306 (kesh-mariadb container projet).
+- [x] T3.1 — `crates/kesh-db/tests/migrations_fresh_install.rs` créé avec **3 tests** (3/3 PASS) :
+  - `migrations_apply_all_tables_present` (AC #14a) — `SHOW TABLES` + assertion subset 23 tables minimales.
+  - `migrations_minimal_seed_roundtrips` (AC #14b) — INSERT 1 company + 1 fiscal_year (Open) + 1 user (Argon2 mock, company_id requis post-Story 6-2) + 1 contact (type 'Personne') + 1 account (number/name/type) + 1 journal_entry (entry_number=1) + 1 invoice (draft, total=0) → SELECT round-trip 7 lignes.
+  - `migrations_kesh_version_initial_row` (AC #14c) — SELECT `_kesh_version` row 1 = `('0.1.0', '0.1.0', NULL last_boot_at)` + assertion CHECK (id=1) refuse INSERT id=2.
+- [x] T3.2 — `crates/kesh-db/tests/migrations_upgrade_path.rs` créé avec **5 tests** (5/5 PASS) :
+  - `upgrade_path_preserves_data` (AC #15a) — `#[sqlx::test(migrations = false)]` (disable inference) + helper `apply_migrations_up_to(pool, 23)` + seed 5 tables (1 company + 1 user + 2 accounts + 1 contact + 1 invoice) + `MIGRATOR.run()` final (applique 4 migrations restantes) + assertions COUNT inchangé + colonnes seed préservées + `_kesh_version` created.
+  - `downgrade_protection_rejects_old_binary` (AC #15b) — `#[sqlx::test(migrator = ...)]` + UPDATE min_required='0.99.0' + check_downgrade_protection("0.1.0") → assertion `Err(DowngradeRefused { db_min: 0.99.0, binary: 0.1.0 })`.
+  - `downgrade_protection_aligned_when_binary_equals_min` (test additionnel) — binary == db_min → `Ok(Aligned)`.
+  - `downgrade_protection_binary_ahead_when_binary_greater` (test additionnel) — binary > db_min → `Ok(BinaryAhead { db_min, binary })`.
+  - `record_boot_version_updates_row` (test additionnel) — record_boot_version("0.1.0") → last_boot_at non-NULL borné `[test_start, test_end]` (AC #17 contre flakiness exact).
+- [x] T3.3 — Helper `apply_migrations_up_to(pool, n)` inline dans `migrations_upgrade_path.rs` lignes 30-48 via **sub-Migrator approach** : slice `&kesh_db::MIGRATOR.migrations[..n]` + construction d'un `Migrator` ad-hoc + `.run(pool)`. Préserve checksums SHA-384 → `MIGRATOR.run()` final ne déclenche pas `MigrateError::VersionMismatch`.
+- [x] T3.4 — Helper inline (~20 lignes, sous seuil 30 — pas d'extraction nécessaire).
+- [x] T3.5 — **5 nouveaux tests upgrade_path + 3 fresh_install = 8 tests verts** : `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` PASS en 10.7s sur MariaDB local (container `kesh-mariadb` actuellement 11-jammy, compat MariaDB ≥ 10.6 confirmée). `cargo clippy -p kesh-db --tests -- -D warnings` PASS. `cargo fmt` PASS.
 
 ### T4: CI matrice MariaDB 10.11 doc + planning artifact sync (AC #19-21)
 
