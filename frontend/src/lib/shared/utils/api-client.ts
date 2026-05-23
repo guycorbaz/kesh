@@ -188,7 +188,18 @@ function isIdempotentMethod(method: string | undefined): boolean {
 	return method === undefined || method === 'GET' || method === 'HEAD';
 }
 
-/** Un fetch unique avec timeout. Throw en cas de NETWORK_ERROR / TIMEOUT. */
+/**
+ * Un fetch unique avec timeout. Throw en cas de NETWORK_ERROR / TIMEOUT.
+ *
+ * **⚠️ Pass 3 M2** : si `init.signal` est passé par le caller, il est
+ * **silencieusement overridé** par `controller.signal` (spread ordre :
+ * `{ ...init, signal: controller.signal }` → l'override gagne). Aucun caller
+ * du `apiClient.*` actuel ne passe `signal`, donc OK aujourd'hui. Si un futur
+ * caller a besoin d'une cancellation externe (e.g. "abort upload on route
+ * change") il faudra composer les signaux via `AbortSignal.any([init.signal,
+ * controller.signal])` (API stable Chrome 116+ / Safari 17.4+) plutôt que
+ * d'écraser.
+ */
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -265,11 +276,17 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
 				// Give-up : retourne la 503 → caller la traitera via parseErrorResponse
 				return res;
 			}
-			// Succès du fetch (status != 503) → la DB répond, masquer le banner si actif.
-			// `clearDegraded()` est idempotent (cf. `api-health.svelte.ts:63` early-return
-			// si !_isDegraded) — pas besoin de garder le check `if (apiHealth.isDegraded)`
-			// ici (Pass 2 BH2-M1).
-			apiHealth.clearDegraded();
+			// Succès end-to-end (res.ok = 2xx) → la DB a forcément répondu pour
+			// produire ce statut → masquer le banner si actif. Pass 3 H1 : on
+			// **NE PAS** clearDegraded sur les non-2xx (401, 403, 4xx, 5xx-non-503)
+			// car ces statuts peuvent être produits AVANT tout accès DB (JWT
+			// middleware in-memory pour 401, RBAC claims pour 403, body parse
+			// pour 422, sqlx::Error::Protocol/WorkerCrashed mappé vers 500 etc.) —
+			// ne prouvent rien sur la santé DB. `clearDegraded()` est idempotent
+			// (cf. `api-health.svelte.ts:63` early-return si !_isDegraded).
+			if (res.ok) {
+				apiHealth.clearDegraded();
+			}
 			return res;
 		} catch (err) {
 			apiHealth.setDegraded();
