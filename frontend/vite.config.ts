@@ -7,8 +7,18 @@ import { defineConfig } from 'vitest/config';
 // Sans preview proxy, Playwright (qui lance `npm run preview` sur :4173) ne
 // peut pas acheminer `/api/v1/*` vers le backend kesh-api (:3000) → tous les
 // appels API du frontend et des tests retournent 404/401. Corrigé Story 6-4.
+//
+// Story 10.3 : `/health` est aussi proxifié — sans ça, `npm run dev` bascule
+// en état dégradé perpétuel car le boot-ping `fetch('/health')` du layout
+// root (cf. `+layout.svelte` onMount) ainsi que `pollHealth()` hit
+// `:5173/health` au lieu de `:3000/health` → 404 vite → `setDegraded()` fire
+// → DegradedBanner permanent même quand kesh-api backend est healthy.
 const apiProxy = {
 	'/api': {
+		target: 'http://localhost:3000',
+		changeOrigin: true
+	},
+	'/health': {
 		target: 'http://localhost:3000',
 		changeOrigin: true
 	}

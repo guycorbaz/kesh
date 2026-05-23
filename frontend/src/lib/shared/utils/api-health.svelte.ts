@@ -22,13 +22,20 @@ export const HEALTH_POLL_INTERVAL_MS = 5000;
 /**
  * Ping `/health` non-récursif (fetch natif, **pas** `apiClient.get`) pour
  * éviter le retry-during-degraded. Wrappé dans try/catch : toute erreur
- * (network failure, CORS, mixed content, JSON parse) est swallow — le prochain
- * tick réessaiera. Garantit que la `Promise<void>` retournée à `setInterval`
- * ne rejette jamais (pas d'`unhandledrejection` pollution).
+ * (network failure, CORS, mixed content, JSON parse, **timeout 2s**) est
+ * swallow — le prochain tick réessaiera. Garantit que la `Promise<void>`
+ * retournée à `setInterval` ne rejette jamais (pas d'`unhandledrejection`
+ * pollution).
+ *
+ * AC #14ter : `AbortSignal.timeout(2000)` borne le fetch à 2s. Sans ce
+ * timeout, un kesh-api qui accepte TCP mais hang HTTP (frozen server) ferait
+ * accumuler une Promise pendante par tick `setInterval` (1 par 5s = 720 en
+ * 1h) → saturation du pool de connexions HTTP/1.1 du browser (6 par origine)
+ * → l'app entière voit ses requêtes API legitime se ralentir.
  */
 async function pollHealth(): Promise<void> {
 	try {
-		const res = await fetch('/health');
+		const res = await fetch('/health', { signal: AbortSignal.timeout(2000) });
 		if (!res.ok) return;
 		const body = (await res.json()) as { db?: unknown };
 		if (body.db === true) {

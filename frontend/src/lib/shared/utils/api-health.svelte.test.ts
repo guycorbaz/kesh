@@ -80,9 +80,14 @@ describe('apiHealth (Story 10.3)', () => {
 	});
 
 	it("(e) pollHealth() resiliency : fetch qui throw ne pollue pas unhandledrejection, isDegraded reste true", async () => {
+		// Pass 1 code review F8 : on **ajoute** un spy à la liste des listeners existants
+		// (incluant celui de Vitest) sans les retirer. Si pollHealth's try/catch swallow
+		// fonctionne correctement, aucun unhandledRejection ne fire → ni Vitest ni notre
+		// spy ne sont appelés. L'ancien pattern `removeAllListeners + restore in finally`
+		// créait une fenêtre où une rejection legitime d'un autre test concurrent serait
+		// masquée. process.on append-only n'a pas ce risque (et permet de restore proprement
+		// avec un seul removeListener ciblé).
 		const unhandledSpy = vi.fn();
-		const previousListeners = process.listeners('unhandledRejection');
-		process.removeAllListeners('unhandledRejection');
 		process.on('unhandledRejection', unhandledSpy);
 
 		try {
@@ -106,9 +111,6 @@ describe('apiHealth (Story 10.3)', () => {
 			expect(apiHealth.isDegraded).toBe(true);
 		} finally {
 			process.removeListener('unhandledRejection', unhandledSpy);
-			for (const listener of previousListeners) {
-				process.on('unhandledRejection', listener);
-			}
 		}
 	});
 });

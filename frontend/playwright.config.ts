@@ -24,6 +24,13 @@ const config: PlaywrightTestConfig = {
 	// résident dans `tests/e2e/`) et la double-import de `@vitest/expect`
 	// dans le contexte Playwright produit `TypeError: Cannot redefine
 	// property: Symbol($$jest-matchers-object)` qui abort la suite entière.
+	//
+	// CONVENTION (Pass 1 code review F3) : tout test Playwright DOIT être
+	// nommé `*.spec.[jt]s`. Les fichiers `*.test.[jt]s` dans `tests/e2e/`
+	// sont **silencieusement ignorés** par Playwright (picked up par Vitest
+	// via `vite.config.ts:test.include`). Si une future spec Playwright est
+	// nommée par erreur `*.test.ts`, elle ne s'exécutera jamais — convention
+	// à respecter strictement.
 	testMatch: /(.+\.)?spec\.[jt]s/,
 	// Story 6.4 — serialisation inter-specs obligatoire.
 	//

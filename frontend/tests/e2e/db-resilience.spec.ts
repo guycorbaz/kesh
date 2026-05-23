@@ -132,7 +132,12 @@ test.describe('DB resilience (Story 10.3)', () => {
 		await page.unroute('/api/v1/**');
 		await page.unroute('/health');
 
-		// Le banner disparaît dans les 5-6s (1 tick pollHealth + marge)
-		await expect(banner).toBeHidden({ timeout: 7000 });
+		// Le banner disparaît dans les 5-6s (1 tick pollHealth + marge). Pass 1
+		// code review F9 : timeout porté à 10s (vs 7s) pour défense en
+		// profondeur — en CI loaded (GitHub Actions shared runner, Docker
+		// overhead), un backend `SELECT 1` peut dépasser 200ms sous pression
+		// mémoire ; 1 tick pollHealth (5s) + jusqu'à 5s de margin couvre les
+		// pires cas observés. Tampon vs flakiness, pas un timeout absolu.
+		await expect(banner).toBeHidden({ timeout: 10000 });
 	});
 });

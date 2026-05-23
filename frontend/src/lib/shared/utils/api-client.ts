@@ -252,6 +252,13 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
 			if (res.status === 503) {
 				apiHealth.setDegraded();
 				if (attempt < maxAttempts - 1) {
+					// Story 10.3 F7 (Pass 1 code review) : drain le body 503 abandonné
+					// avant le retry pour libérer la connexion HTTP/1.1 (sinon le browser
+					// la garde réservée jusqu'au TCP idle → réduit le pool effectif de 6
+					// connexions/origine pendant la fenêtre de sleep + retry suivants).
+					await res.body?.cancel().catch(() => {
+						// body déjà consommé ou pas de body — no-op
+					});
 					await sleep(delays[attempt]);
 					continue;
 				}

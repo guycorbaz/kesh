@@ -70,6 +70,12 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         i18n,
     };
 
+    // Pass 1 code review F4 : `static_dir` non-existant intentionnel — ce test n'exerce
+    // que `GET /health` qui résout via le router Axum avant que le fallback `ServeDir`
+    // (servant la SPA statique) ne soit consulté. Un path bidon évite de coupler ce test
+    // au build frontend (`frontend/build/index.html`). Cohérent avec le pattern
+    // `spa_resilience.rs` qui, lui, utilise `spa_stub_dir()` car il **teste** explicitement
+    // le fallback `ServeDir` (GET / → index.html).
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

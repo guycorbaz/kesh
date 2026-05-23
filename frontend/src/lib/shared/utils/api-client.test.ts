@@ -631,5 +631,30 @@ describe('apiClient', () => {
 			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
 			expect(mockApiHealth.clearDegraded).toHaveBeenCalled();
 		});
+
+		it("(e) GET avec TIMEOUT puis 200 au 2e essai → retry déclenché, setDegraded, clearDegraded", async () => {
+			// Pass 1 code review F2 : couvre le path TIMEOUT (AbortError de fetchWithTimeout)
+			// du retry exponentiel. Le path NETWORK_ERROR (tests a, b, c) et 503 (test d)
+			// étaient déjà couverts, mais TIMEOUT (DOMException AbortError) partage la même
+			// branche `catch (err)` dans `fetchWithRetry` ligne 266 — sans test dédié, une
+			// régression future qui exclurait AbortError du retry passerait silencieusement.
+			mockFetch
+				.mockImplementationOnce(
+					() =>
+						new Promise((_, reject) => {
+							reject(new DOMException('The operation was aborted', 'AbortError'));
+						}),
+				)
+				.mockResolvedValueOnce(mockResponse(200, { data: 'recovered-timeout' }));
+
+			const promise = apiClient.get<{ data: string }>('/api/v1/users');
+			await vi.advanceTimersByTimeAsync(FAST_DELAYS[0]);
+
+			const result = await promise;
+			expect(result).toEqual({ data: 'recovered-timeout' });
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
+			expect(mockApiHealth.clearDegraded).toHaveBeenCalled();
+		});
 	});
 });
