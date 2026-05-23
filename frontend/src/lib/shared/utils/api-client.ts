@@ -6,10 +6,14 @@
  * 2. Interception 401 → refresh token → retry transparent
  * 3. Mutex de refresh (une seule tentative simultanée)
  * 4. Parsing erreurs structurées → ApiError
+ * 5. Retry exponentiel sur NETWORK_ERROR / TIMEOUT / 503 pour les méthodes
+ *    idempotentes (GET, HEAD) — Story 10.3. Pilote l'état dégradé global via
+ *    `apiHealth.setDegraded()` / `clearDegraded()` (banner DegradedBanner).
  */
 
 import type { ApiError } from '$lib/shared/types/api';
 import { authState } from '$lib/app/stores/auth.svelte';
+import { apiHealth } from '$lib/shared/utils/api-health.svelte';
 
 /** Type guard pour vérifier qu'une erreur est un ApiError. */
 export function isApiError(err: unknown): err is ApiError {
@@ -25,6 +29,22 @@ export function isApiError(err: unknown): err is ApiError {
 
 /** URLs exclues de l'injection du header Authorization. */
 const AUTH_EXCLUDED_URLS = ['/api/v1/auth/login', '/api/v1/auth/logout', '/api/v1/auth/refresh'];
+
+/**
+ * Délais de retry exponentiels pour les fetch échouant en NETWORK_ERROR /
+ * TIMEOUT / 503 sur méthodes idempotentes (Story 10.3). Total : ~14.3s avant
+ * give-up. 4 délais ⇒ 5 tentatives totales = 1 initiale + 4 retries.
+ *
+ * Exporté pour permettre aux tests Vitest de l'override (le mock global
+ * `vi.mock` n'est pas nécessaire si on remplace le module ou si on l'override
+ * via `window.__KESH_RETRY_DELAYS` pour les tests E2E Playwright).
+ */
+export const DEGRADED_RETRY_DELAYS_MS = [300, 1000, 3000, 10000] as const;
+
+/** Timeout par défaut pour les requêtes fetch (30 secondes). */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Promise partagée pour le mutex de refresh. */
 let refreshPromise: Promise<boolean> | null = null;
@@ -163,18 +183,109 @@ async function parseErrorResponse(res: Response): Promise<ApiError> {
 	};
 }
 
+/** True si la méthode HTTP est idempotente — éligible au retry exponentiel. */
+function isIdempotentMethod(method: string | undefined): boolean {
+	return method === undefined || method === 'GET' || method === 'HEAD';
+}
+
+/** Un fetch unique avec timeout. Throw en cas de NETWORK_ERROR / TIMEOUT. */
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+	try {
+		return await fetch(url, { ...init, signal: controller.signal });
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+/** Construit l'ApiError correspondant à un fetch échoué (network ou timeout). */
+function toFetchApiError(err: unknown): ApiError {
+	const isTimeout = err instanceof DOMException && err.name === 'AbortError';
+	return {
+		code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+		message: isTimeout
+			? 'Le serveur ne répond pas. Réessayez ultérieurement.'
+			: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
+		status: 0,
+	};
+}
+
+/**
+ * Délais de retry actifs — lit `window.__KESH_RETRY_DELAYS` si défini (hook
+ * E2E Playwright pour accélérer les tests, cf. Story 10.3 AC #21). Fallback
+ * sur `DEGRADED_RETRY_DELAYS_MS` en production. Lecture à chaque appel pour
+ * que les tests qui mutent window juste avant le call voient le changement.
+ */
+function getRetryDelays(): readonly number[] {
+	if (typeof window !== 'undefined') {
+		const override = (window as unknown as { __KESH_RETRY_DELAYS?: readonly number[] })
+			.__KESH_RETRY_DELAYS;
+		if (Array.isArray(override)) return override;
+	}
+	return DEGRADED_RETRY_DELAYS_MS;
+}
+
+/**
+ * Helper retry partagé entre `request<T>` et `requestRaw`. Enveloppe
+ * uniquement la tentative `fetch + timeout` (le refresh 401, le parsing
+ * d'erreur, et la résolution du body restent dans le caller).
+ *
+ * - **Méthodes idempotentes (GET, HEAD)** : retry sur NETWORK_ERROR / TIMEOUT
+ *   / response 503 jusqu'à épuisement des délais ; à l'épuisement, throw
+ *   l'ApiError de la dernière tentative (ou retourne la 503 pour que le
+ *   caller la traite via `parseErrorResponse`).
+ * - **Méthodes non-idempotentes (POST/PUT/PATCH/DELETE)** : aucun retry —
+ *   throw l'ApiError immédiatement (ou retourne la 503 pour le caller).
+ * - **Pilotage banner** : `apiHealth.setDegraded()` au 1er échec retry-eligible
+ *   (même pour les non-retryables) ; `clearDegraded()` au 1er succès de fetch
+ *   ne retournant pas 503 (réponse 200, 4xx, 5xx-non-503 → la DB répond).
+ */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+	const idempotent = isIdempotentMethod(init.method);
+	const delays = getRetryDelays();
+	const maxAttempts = idempotent ? delays.length + 1 : 1;
+
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
+		try {
+			const res = await fetchWithTimeout(url, init);
+			if (res.status === 503) {
+				apiHealth.setDegraded();
+				if (attempt < maxAttempts - 1) {
+					await sleep(delays[attempt]);
+					continue;
+				}
+				// Give-up : retourne la 503 → caller la traitera via parseErrorResponse
+				return res;
+			}
+			// Succès du fetch (status != 503) → la DB répond, masquer le banner si actif
+			if (apiHealth.isDegraded) {
+				apiHealth.clearDegraded();
+			}
+			return res;
+		} catch (err) {
+			apiHealth.setDegraded();
+			if (attempt < maxAttempts - 1) {
+				await sleep(delays[attempt]);
+				continue;
+			}
+			throw toFetchApiError(err);
+		}
+	}
+
+	// Unreachable — la boucle return ou throw toujours
+	throw toFetchApiError(new Error('retry exhausted'));
+}
+
 /**
  * Exécute une requête fetch avec gestion des erreurs et du refresh token.
  *
  * @param url - URL relative (ex: `/api/v1/users`)
  * @param options - Options fetch (method, body, etc.)
- * @param isRetry - Guard anti-boucle : si `true`, ne pas retenter le refresh
+ * @param isRetry - Guard anti-boucle 401-refresh : si `true`, ne pas retenter le refresh
  * @returns La réponse parsée en JSON, typée `T`
  * @throws {ApiError} En cas d'erreur HTTP ou réseau
  */
-/** Timeout par défaut pour les requêtes fetch (30 secondes). */
-const REQUEST_TIMEOUT_MS = 30_000;
-
 async function request<T>(url: string, options: RequestInit = {}, isRetry = false): Promise<T> {
 	const headers = buildHeaders(
 		url,
@@ -182,25 +293,7 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
 		options.body ?? null,
 	);
 
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-	let res: Response;
-	try {
-		res = await fetch(url, { ...options, headers, signal: controller.signal });
-	} catch (err) {
-		const isTimeout = err instanceof DOMException && err.name === 'AbortError';
-		const error: ApiError = {
-			code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
-			message: isTimeout
-				? 'Le serveur ne répond pas. Réessayez ultérieurement.'
-				: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
-			status: 0,
-		};
-		throw error;
-	} finally {
-		clearTimeout(timeout);
-	}
+	const res = await fetchWithRetry(url, { ...options, headers });
 
 	// 401 sur une URL non-auth → tenter un refresh
 	if (
@@ -242,34 +335,20 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
  * Variante binaire de `request()` — retourne la `Response` brute.
  *
  * Utilisée pour télécharger des blobs (PDF, exports CSV) : applique la même
- * logique JWT + refresh 401 + parsing erreurs 4xx/5xx en `ApiError`, mais ne
- * parse pas le body en JSON. Le caller appelle `.blob()` / `.arrayBuffer()`.
+ * logique JWT + refresh 401 + retry exponentiel + parsing erreurs 4xx/5xx en
+ * `ApiError`, mais ne parse pas le body en JSON. Le caller appelle `.blob()`
+ * / `.arrayBuffer()`.
  *
  * @throws {ApiError} En cas d'erreur HTTP ou réseau.
  */
-async function requestRaw(url: string, options: RequestInit = {}, isRetry = false): Promise<Response> {
+async function requestRaw(
+	url: string,
+	options: RequestInit = {},
+	isRetry = false,
+): Promise<Response> {
 	const headers = buildHeaders(url, options.headers as Record<string, string> | undefined);
-	// `Content-Type: application/json` n'a pas de sens pour un GET binaire —
-	// on le laisse par cohérence, le serveur ignore sur GET sans body.
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-	let res: Response;
-	try {
-		res = await fetch(url, { ...options, headers, signal: controller.signal });
-	} catch (err) {
-		const isTimeout = err instanceof DOMException && err.name === 'AbortError';
-		const error: ApiError = {
-			code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
-			message: isTimeout
-				? 'Le serveur ne répond pas. Réessayez ultérieurement.'
-				: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
-			status: 0,
-		};
-		throw error;
-	} finally {
-		clearTimeout(timeout);
-	}
+	const res = await fetchWithRetry(url, { ...options, headers });
 
 	if (
 		res.status === 401 &&

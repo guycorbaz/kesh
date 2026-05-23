@@ -19,7 +19,12 @@ import type { PlaywrightTestConfig } from '@playwright/test';
 // Cf. docs/testing.md section « Prérequis Playwright local ».
 const config: PlaywrightTestConfig = {
 	testDir: 'tests/e2e',
-	testMatch: /(.+\.)?(test|spec)\.[jt]s/,
+	// Story 10.3 — narrow à `*.spec.[jt]s` uniquement. Sans ça, Playwright
+	// picke aussi `helpers/test-state.test.ts` (test Vitest unitaire
+	// résident dans `tests/e2e/`) et la double-import de `@vitest/expect`
+	// dans le contexte Playwright produit `TypeError: Cannot redefine
+	// property: Symbol($$jest-matchers-object)` qui abort la suite entière.
+	testMatch: /(.+\.)?spec\.[jt]s/,
 	// Story 6.4 — serialisation inter-specs obligatoire.
 	//
 	// Chaque spec appelle `seedTestState(...)` dans son `beforeAll`, qui
