@@ -265,10 +265,11 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
 				// Give-up : retourne la 503 → caller la traitera via parseErrorResponse
 				return res;
 			}
-			// Succès du fetch (status != 503) → la DB répond, masquer le banner si actif
-			if (apiHealth.isDegraded) {
-				apiHealth.clearDegraded();
-			}
+			// Succès du fetch (status != 503) → la DB répond, masquer le banner si actif.
+			// `clearDegraded()` est idempotent (cf. `api-health.svelte.ts:63` early-return
+			// si !_isDegraded) — pas besoin de garder le check `if (apiHealth.isDegraded)`
+			// ici (Pass 2 BH2-M1).
+			apiHealth.clearDegraded();
 			return res;
 		} catch (err) {
 			apiHealth.setDegraded();
@@ -280,8 +281,11 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
 		}
 	}
 
-	// Unreachable — la boucle return ou throw toujours
-	throw toFetchApiError(new Error('retry exhausted'));
+	// Pass 2 BH2-L1 + ECH2-1 : la boucle for-loop a un invariant : chaque
+	// itération `return` OU `throw` avant l'incrément naturel. Le `throw`
+	// post-loop documentait l'invariant mais n'était jamais exécuté → dead
+	// code retiré pour clarté.
+	throw toFetchApiError(new Error('unreachable'));
 }
 
 /**
