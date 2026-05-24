@@ -134,13 +134,15 @@
 			<!-- Menu profil -->
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
-					<Button variant="ghost" class="flex items-center gap-2">
-						<User class="h-4 w-4" aria-hidden="true" />
-						<span class="text-sm">
-							{authState.currentUser?.role ?? 'Utilisateur'}
-						</span>
-						<ChevronDown class="h-3 w-3" aria-hidden="true" />
-					</Button>
+					{#snippet child({ props })}
+						<Button variant="ghost" class="flex items-center gap-2" {...props}>
+							<User class="h-4 w-4" aria-hidden="true" />
+							<span class="text-sm">
+								{authState.currentUser?.role ?? 'Utilisateur'}
+							</span>
+							<ChevronDown class="h-3 w-3" aria-hidden="true" />
+						</Button>
+					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end">
 					<!-- Sélecteur de langue (non fonctionnel — Story 2.1) -->

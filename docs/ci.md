@@ -33,7 +33,7 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 
 ## Reproduction locale
 
-Toutes les commandes du CI peuvent être reproduites en local. Pré-requis : MariaDB 11.4 démarré et accessible via `DATABASE_URL`.
+Toutes les commandes du CI peuvent être reproduites en local. Pré-requis : MariaDB 10.11 démarré et accessible via `DATABASE_URL` (alignement Story 10-1 D3 — parité prod NAS Synology Package Center DSM).
 
 ### Backend (Rust)
 
@@ -189,11 +189,19 @@ Garde-fou sécurité : le backend refuse de démarrer si `KESH_TEST_MODE=true` *
 
 Un smoke test `curl POST /api/v1/_test/seed` s'exécute avant Playwright pour fail-fast si la config CI est cassée.
 
-## Décision MariaDB 11.4 (vs 10.11 de l'AC Epic §6.1)
+## Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS)
 
-L'AC Epic §6.1 mentionne « MariaDB 10.11 » par erreur (copier-coller stub de planification 2026-04-03, avant que le choix 11.4 soit entériné). La pipeline utilise **MariaDB 11.4**, identique à `docker-compose.dev.yml` — cohérence dev/CI essentielle.
+**Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b).
 
-`architecture.md` impose « MariaDB 10.6+ » comme minimum — 11.4 respecte largement le minimum. La story 6-1 amende explicitement l'AC dans son Change Log.
+**Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose toujours « MariaDB 10.6+ » comme minimum — 10.11 respecte le minimum avec marge.
+
+### Justification mono-version 10.11 (Story 10-2 AC #20)
+
+La pipeline CI utilise **un seul service MariaDB** en version 10.11 — aucune matrice `strategy.matrix.mariadb-version` n'est introduite. Trois raisons :
+
+- **Cible prod unique** : le NAS Synology Package Center DSM ≥ 7.2 ne propose que MariaDB 10.x stable (10.11 spécifiquement). Une matrice qui inclurait 11.x ferait passer des tests sur un moteur que personne ne tournera en prod, sans gain de couverture.
+- **Bugs 10.11-specific seraient masqués par 11** : si une feature dépend d'un comportement spécifique à MariaDB 11, elle passerait sur la branche matrice 11 mais casserait silencieusement sur 10.11 — sans matrice, le test 10.11 attrape immédiatement.
+- **Compat upstream MariaDB ≥ 10.6 documentée** : la migration `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql:27-28` documente la compat 10.6+ pour les opérateurs hors NAS Synology qui voudraient tourner sur 10.6/10.7/10.8/10.9/10.10. Cette compat **n'est pas testée par la CI projet** — c'est de la documentation, pas une garantie.
 
 ## Dette technique CI
 

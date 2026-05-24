@@ -1,7 +1,7 @@
 services:
   # --- Base de données MariaDB ---
   mariadb:
-    image: mariadb:11-jammy
+    image: mariadb:10.11
     container_name: kesh-mariadb
     restart: unless-stopped
     environment:

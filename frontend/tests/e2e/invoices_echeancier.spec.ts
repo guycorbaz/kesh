@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
 
 test.beforeAll(async () => {
 	// Story 6.4 : preset `with-data` (= with-company + 1 contact + 1 product,
@@ -42,17 +42,22 @@ async function createContactViaApi(
 	page: import('@playwright/test').Page,
 	name: string,
 ): Promise<number> {
-	const res = await page.request.post('/api/v1/contacts', {
-		data: {
-			contactType: 'Entreprise',
-			name,
-			isClient: true,
-			isSupplier: false,
-			defaultPaymentTerms: '30 jours net',
-		},
-	});
-	expect(res.ok(), `createContact failed: ${res.status()}`).toBeTruthy();
-	return (await res.json()).id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/contacts', {
+			data: {
+				contactType: 'Entreprise',
+				name,
+				isClient: true,
+				isSupplier: false,
+				defaultPaymentTerms: '30 jours net',
+			},
+		});
+		expect(res.ok(), `createContact failed: ${res.status()}`).toBeTruthy();
+		return (await res.json()).id as number;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
 }
 
 async function createAndValidateInvoice(
@@ -62,22 +67,27 @@ async function createAndValidateInvoice(
 	dueDate: string,
 	amount: string,
 ): Promise<number> {
-	const createRes = await page.request.post('/api/v1/invoices', {
-		data: {
-			contactId,
-			date,
-			dueDate,
-			paymentTerms: null,
-			lines: [
-				{ description: 'Prestation', quantity: '1', unitPrice: amount, vatRate: '8.10' },
-			],
-		},
-	});
-	expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
-	const inv = await createRes.json();
-	const validateRes = await page.request.post(`/api/v1/invoices/${inv.id}/validate`);
-	expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
-	return inv.id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const createRes = await ctx.post('/api/v1/invoices', {
+			data: {
+				contactId,
+				date,
+				dueDate,
+				paymentTerms: null,
+				lines: [
+					{ description: 'Prestation', quantity: '1', unitPrice: amount, vatRate: '8.10' },
+				],
+			},
+		});
+		expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
+		const inv = await createRes.json();
+		const validateRes = await ctx.post(`/api/v1/invoices/${inv.id}/validate`);
+		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
+		return inv.id as number;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
 }
 
 function daysFromToday(offset: number): string {

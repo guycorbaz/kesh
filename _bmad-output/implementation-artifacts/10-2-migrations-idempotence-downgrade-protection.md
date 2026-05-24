@@ -1,0 +1,924 @@
+# Story 10.2: Migrations idempotence + downgrade protection + CI MariaDB 10.11
+
+Status: review
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a administrateur Kesh en production sur NAS Synology,
+I want que toute mise à jour de Kesh applique automatiquement les migrations DB de façon idempotente et qu'un binaire plus ancien refuse de démarrer sur une DB déjà migrée par une version plus récente,
+so that je puisse updater (et même downgrader par erreur) sans risque silencieux de corruption ou de perte de données — soit ça marche, soit le binaire s'arrête tout net avec un message explicite, jamais d'état intermédiaire compromis.
+
+## Scope
+
+Cette story livre **trois protections complémentaires** au flow de migrations DB :
+
+1. **Audit d'idempotence des 26 migrations existantes** (`crates/kesh-db/migrations/*.sql`) — ajout d'un commentaire `-- idempotent: yes/no + détail` en tête de chaque fichier. Le tracking sqlx via la table `_sqlx_migrations` garantit déjà qu'une migration appliquée ne ré-exécute pas, mais l'audit est une défense en profondeur : si `_sqlx_migrations` est corrompue, perdue lors d'un restore partiel, ou si un opérateur force la ré-application manuellement (e.g. exécution directe via `mariadb < migration.sql`, comme la step CI `Apply migrations to kesh DB` ligne 122-127 de `ci.yml`), on documente quel comportement attendre. Aucune modification SQL des migrations historiques n'est requise — uniquement des commentaires SQL.
+
+2. **Table `_kesh_version` + downgrade protection** :
+   - Nouvelle migration `20260522000001_kesh_version.sql` qui crée `_kesh_version` (single-row config table).
+   - Nouveau module `crates/kesh-db/src/version.rs` qui expose `check_downgrade_protection(pool, &binary_version)` et `record_boot_version(pool, &binary_version)`.
+   - Intégration dans `crates/kesh-api/src/main.rs` :
+     - **AVANT** `MIGRATOR.run()` → `check_downgrade_protection()` : si la table existe et `binary_version < kesh_version_min_required`, exit non-zero + log « FATAL: Database migrated by Kesh vX, current binary vY cannot downgrade safely ». Si la table n'existe pas (fresh install), continue silencieusement.
+     - **APRÈS** `MIGRATOR.run()` → `record_boot_version()` : UPDATE de `kesh_version_last_applied` + `last_boot_at`. La table aura été créée par la nouvelle migration `20260522000001_kesh_version.sql` au plus tard ici.
+   - Version binaire lue via `env!("CARGO_PKG_VERSION")` (résout Q7 epic-10.md — déjà pattern établi dans `crates/kesh-api/src/exports/metadata.rs:77` Story 9-2b).
+   - Comparaison sémantique via le crate `semver` 1.x à ajouter à `crates/kesh-db/Cargo.toml` (NIH absolu sinon — parsing manuel semver = source d'edge-cases insolubles).
+
+3. **Tests d'intégration migrations** (deux fichiers nouveaux dans `crates/kesh-db/tests/`) :
+   - `migrations_fresh_install.rs` — DB vierge → `MIGRATOR.run()` → vérification structurelle (toutes les tables attendues existent) + seed minimal (1 company + 1 invoice + 1 journal_entry) qui round-trip OK.
+   - `migrations_upgrade_path.rs` — applique migrations[..N-3] manuellement, insère sample data (rows dans tables historiques antérieures à `bank_imports`, e.g. `companies` + `users` + `accounts` + `invoices`), puis `MIGRATOR.run()` applique les 3+ migrations restantes (`bank_imports_relax_hash_unique`, `reconciliation_8_4`, `bank_account_journal_link`, `reconciliation_rules`), assertion que la sample data est préservée (COUNT(*) + checksum déterministe sur quelques colonnes).
+
+**CI matrice MariaDB 10.11** (décision D3 epic-10.md déjà appliquée Story 10-1) :
+
+- `ci.yml` utilise déjà `mariadb:10.11` depuis Story 10-1 (commit `b5a156b`). Cette story **documente la décision** dans `docs/ci.md` §"Décision MariaDB 10.11" et ajoute un AC explicite vérifiant qu'**aucune** matrice multi-version n'est introduite (la matrice serait contre-productive — pas de valeur de tester `mariadb:11.x` puisque la cible prod est 10.11 et qu'une feature 11 passant sur 11 mais cassant sur 10.11 ne serait pas détectée par 11).
+- Aucune modification CI workflow effective n'est requise (l'alignement a été fait Story 10-1).
+
+**Hors scope** (couverts par d'autres stories Epic 10) :
+
+- Bumping de `kesh_version_min_required` à chaque release future qui introduit une migration breaking → **politique** à documenter dans `CLAUDE.md` §"Migration breaking policy" en fin de cette story, **mécanique** triviale (UPDATE inline dans la migration breaking elle-même quand elle apparaîtra).
+- Résilience frontend si DB inaccessible — Story 10-3.
+- Manuel install Synology mentionnant la procédure update + check `_kesh_version` — Story 10-4 (section "Update").
+- Tokens cookies httpOnly — Story 10-5.
+- FR78 « le système détecte une nouvelle version au démarrage et avertit de faire un backup » — **partiellement adressé** par cette story : la détection de version existe via `_kesh_version` + le log informatif **APRÈS** `MIGRATOR.run()` réussi (« Migrations appliquées »). Pas de warning **AVANT** `MIGRATOR.run()` (qui imposerait à l'admin d'arrêter le boot et redémarrer après backup — pattern fragile en pratique, voir Dev Notes §"Dette latente identifiée"). Le warning visuel UI utilisateur reste hors scope v0.1.0 (admin opère via SSH/Container Manager). FR78 textuel sera ré-évalué Story 10-4 si insuffisant.
+
+## Acceptance Criteria
+
+### Audit idempotence migrations (AC #1-3)
+
+> **Note Pass 1 spec validate** : la stratégie initiale (commentaires `-- idempotent: ...` ajoutés in-SQL) a été abandonnée. `MIGRATOR.run()` valide le checksum SHA-384 de chaque migration tracked dans `_sqlx_migrations` (cf. `sqlx-core-0.8.6/src/migrate/migrator.rs:175-176` — retour `MigrateError::VersionMismatch` garanti si checksum diffère). Modifier les fichiers `.sql` historiques (même un commentaire) casserait toute DB déjà migrée. Plan retenu : audit dans un fichier markdown séparé `docs/migrations-idempotence-audit.md`, zéro modification des fichiers `.sql` historiques.
+
+1. **Given** un nouveau fichier `docs/migrations-idempotence-audit.md`, **When** review, **Then** il contient un tableau markdown auditant chacun des 26 fichiers `crates/kesh-db/migrations/*.sql` au format :
+   ```
+   | Fichier | Idempotence | Justification |
+   |---|---|---|
+   | 20260404000001_initial_schema.sql | tracked-by-sqlx | `CREATE TABLE` sans `IF NOT EXISTS` — re-exécution manuelle hors sqlx échouerait avec erreur 1050. Le tracking `_sqlx_migrations` empêche la ré-application. |
+   | ... | ... | ... |
+   ```
+   Verdicts admis (un seul par ligne) :
+   - `yes` — re-exécution serait no-op (usage `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... IF [NOT] EXISTS`, `CREATE INDEX IF NOT EXISTS`, `DROP INDEX IF EXISTS`).
+   - `no` — re-exécution échouerait (avec code d'erreur MariaDB ciblé dans la justification : 1050 table exists, 1060 duplicate column, 1061 duplicate key, 1091 index not found).
+   - `tracked-by-sqlx` — l'idempotence est garantie uniquement par le tracking `_sqlx_migrations` — cas par défaut pour la majorité des fichiers historiques sans guards `IF NOT EXISTS`.
+
+2. **Given** les 26 fichiers `crates/kesh-db/migrations/*.sql` historiques, **When** review post-Story-10-2, **Then** **aucun fichier `.sql` historique ne reçoit de modification** (pas de commentaire ajouté, pas de refactor, pas de bytes changés). Cela évite tout `MigrateError::VersionMismatch` sur les DB existantes. La seule migration `.sql` créée par cette story est `20260522000001_kesh_version.sql` (AC #4-7). Pour la nouvelle migration, le verdict d'idempotence figure dans son commentaire d'en-tête ET dans le fichier audit.
+
+3. **Given** la migration `20260507000001_bank_imports_relax_hash_unique.sql` (déjà documentée idempotente lignes 15-18 par Story 8-3), **When** review, **Then** son commentaire d'idempotence existant **n'est pas modifié** (cohérent AC #2). Son entrée dans `docs/migrations-idempotence-audit.md` est verdict `yes` avec justification renvoyant aux lignes 15-18 du fichier.
+
+### Migration `_kesh_version` (AC #4-7)
+
+4. **Given** le répertoire `crates/kesh-db/migrations/`, **When** review, **Then** une **nouvelle migration** `20260522000001_kesh_version.sql` existe avec une en-tête conforme au pattern projet (commentaire d'introduction expliquant le contexte Story 10-2 + decision references + `-- idempotent: tracked-by-sqlx`).
+
+5. **Given** `20260522000001_kesh_version.sql`, **When** appliquée sur une DB vierge, **Then** crée la table `_kesh_version` avec le schéma :
+   ```sql
+   CREATE TABLE _kesh_version (
+       id TINYINT UNSIGNED NOT NULL PRIMARY KEY DEFAULT 1,
+       kesh_version_min_required VARCHAR(40) NOT NULL,
+       kesh_version_last_applied VARCHAR(40) NOT NULL,
+       applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       last_boot_at DATETIME NULL,
+       CONSTRAINT chk_kesh_version_single_row CHECK (id = 1)
+   );
+   ```
+   Le `CHECK (id = 1)` enforce le singleton-row pattern (une seule row utile, AUTO_INCREMENT inutile). VARCHAR(40) couvre SemVer 2.0 complet incluant pre-release + build metadata (e.g. `1.0.0-rc1.20260522+build.20260522.001` = 37 chars). Initialement spécifié VARCHAR(20), bumpé à VARCHAR(40) en Pass 1 code-review F4 pour défense en profondeur (évite la troncature silencieuse en mode non-strict ou l'échec d'UPDATE en mode strict sur les bumps `kesh_version_min_required` futurs P2 si Epic 14 release process introduit des tags RC).
+
+6. **Given** `20260522000001_kesh_version.sql` appliquée, **When** review, **Then** la migration **insère la row initiale** : `INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '0.1.0', '0.1.0')`. La version `0.1.0` est figée dans le SQL — c'est la version Kesh courante au moment où cette migration est créée (cf. `crates/kesh-api/Cargo.toml:3`). L'`UPDATE` du `kesh_version_last_applied` par le boot logic (AC #11) écrasera ce default au prochain démarrage.
+
+7. **Given** la migration `20260522000001_kesh_version.sql`, **When** review, **Then** elle est **idempotente en pratique sous tracking sqlx** : le `CREATE TABLE` n'utilise pas `IF NOT EXISTS` (cohérent avec les 14 autres fichiers-migration contenant `CREATE TABLE` sans `IF NOT EXISTS` — 15 au total incluant la nouvelle, confirmé : aucun `IF NOT EXISTS` dans les 26 migrations historiques) et l'`INSERT` initial ne porte pas de `INSERT IGNORE` ni `ON DUPLICATE KEY UPDATE`. La ré-exécution manuelle hors sqlx échouerait avec erreur 1050 (table existe) — c'est intentionnel et documenté par `-- idempotent: tracked-by-sqlx` dans le commentaire d'en-tête de la migration ET dans l'entrée correspondante de `docs/migrations-idempotence-audit.md`.
+
+### Module `kesh-db/src/version.rs` + boot integration (AC #8-13)
+
+8. **Given** `crates/kesh-db/Cargo.toml`, **When** review, **Then** une nouvelle dépendance `semver = "1"` est ajoutée à la section `[dependencies]`. La feature `serde` n'est **pas** activée (pas de serde sur les structures `Version` cross-process — uniquement parsing). Note : `semver 1.0.x` est déjà résolu dans `Cargo.lock` comme dépendance transitive (cargo-metadata) — l'ajout en dépendance directe ne provoque pas de re-résolution.
+
+9. **Given** `crates/kesh-db/src/lib.rs`, **When** review, **Then** un nouveau module public `pub mod version;` est exposé (cohérent avec le pattern `pub mod repositories;` existant).
+
+10. **Given** le nouveau fichier `crates/kesh-db/src/version.rs`, **When** review, **Then** il expose deux fonctions publiques :
+    ```rust
+    pub async fn check_downgrade_protection(
+        pool: &MySqlPool,
+        binary_version: &str,  // e.g. env!("CARGO_PKG_VERSION") = "0.1.0"
+    ) -> Result<DowngradeCheckOutcome, VersionError>
+
+    pub async fn record_boot_version(
+        pool: &MySqlPool,
+        binary_version: &str,
+    ) -> Result<(), VersionError>
+    ```
+    avec un enum `DowngradeCheckOutcome { FreshInstall, Aligned, BinaryAhead { db_min: Version, binary: Version } }` (3 variants couvrant les 3 états non-erreur possibles : table n'existe pas (`FreshInstall`) / binaire == min_required (`Aligned`) / binaire > min_required (`BinaryAhead`)). Le 4e cas binaire < min_required n'est **pas** un variant `Outcome` — il est **converti en `VersionError::DowngradeRefused { db_min, binary }`** car c'est le seul cas qui doit faire échouer le boot.
+
+11. **Given** `check_downgrade_protection()`, **When** invoquée :
+    - **Sur DB sans table `_kesh_version`** (fresh install) — la requête `SELECT kesh_version_min_required FROM _kesh_version WHERE id=1` retourne `sqlx::Error::Database(db_err)` qui est downcastable en `sqlx::mysql::MySqlDatabaseError` dont `.number() == 1146` (ER_NO_SUCH_TABLE). **⚠️** La méthode `code()` retourne le SQLSTATE `"42S02"`, **pas** le numéro 1146 — utiliser obligatoirement le pattern `try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` (référence canonique : `crates/kesh-db/src/errors.rs:150` + `crates/kesh-db/src/retry.rs:73`). **Then** la fonction retourne `Ok(DowngradeCheckOutcome::FreshInstall)` (table sera créée par `MIGRATOR.run()` ensuite).
+    - **Sur DB où `_kesh_version` existe et `kesh_version_min_required = "0.1.0"` + binaire `0.1.0`** — **Then** retourne `Ok(DowngradeCheckOutcome::Aligned)`.
+    - **Sur DB où `kesh_version_min_required = "0.1.0"` + binaire `"0.2.0"`** — **Then** retourne `Ok(DowngradeCheckOutcome::BinaryAhead { db_min: 0.1.0, binary: 0.2.0 })` (le binaire est plus récent que le min_required, c'est un upgrade légitime).
+    - **Sur DB où `kesh_version_min_required = "0.2.0"` + binaire `"0.1.0"`** — **Then** retourne `Err(VersionError::DowngradeRefused { db_min: 0.2.0, binary: 0.1.0 })`.
+
+12. **Given** `record_boot_version()`, **When** invoquée après `MIGRATOR.run()` réussi — la table `_kesh_version` existe nécessairement (créée par la migration `20260522000001_kesh_version.sql` au plus tard à l'instant). **Then** exécute `UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1` puis vérifie défensivement `rows_affected() == 1` (si != 1 → log warning « row missing? » mais retourne quand même `Ok(())` — défense en profondeur, ne devrait jamais arriver vu la migration AC #6). Si l'UPDATE échoue (e.g. pool fermé entre-temps), retourne `Err(VersionError::Sqlx(sqlx::Error))` mais ne fait **pas** exit le binaire — c'est un log warning au caller, pas une erreur fatale (le serveur reste utilisable même si le boot version metadata n'a pas pu être enregistré).
+
+13. **Given** `crates/kesh-api/src/main.rs`, **When** review, **Then** l'ordre de boot est étendu autour de l'appel actuel `MIGRATOR.run()` (ligne 62 main actuelle) :
+    ```rust
+    // (existant) 3. Pool MariaDB
+    // (existant) ligne 61 — tracing::info!(« Base de données : connectée »);
+
+    // NOUVEAU 3b. Downgrade protection
+    match kesh_db::version::check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION")).await {
+        Ok(outcome) => tracing::info!("Database version check: {:?}", outcome),
+        Err(kesh_db::version::VersionError::DowngradeRefused { db_min, binary }) => {
+            tracing::error!(
+                "FATAL: Database was migrated by Kesh v{}, current binary v{} cannot downgrade safely. Restore a backup compatible with v{} or upgrade the binary.",
+                db_min, binary, binary
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!("Database version check failed (refusing to boot to avoid data corruption risk): {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    // (existant) 4. Migrations
+    if let Err(e) = kesh_db::MIGRATOR.run(&pool).await { ... }
+
+    // NOUVEAU 4b. Record boot version
+    if let Err(e) = kesh_db::version::record_boot_version(&pool, env!("CARGO_PKG_VERSION")).await {
+        tracing::warn!("Failed to record boot version metadata (non-fatal): {}", e);
+    }
+
+    // (existant) 5. Bootstrap admin (...)
+    ```
+
+### Tests d'intégration migrations (AC #14-18)
+
+14. **Given** un nouveau fichier `crates/kesh-db/tests/migrations_fresh_install.rs`, **When** `cargo test -p kesh-db --test migrations_fresh_install`, **Then** au moins **3 tests `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`** vérifient :
+    - (a) Après migration, **toutes les tables attendues** existent. Liste minimale à valider : `companies`, `users`, `fiscal_years`, `accounts`, `journal_entries`, `journal_entry_lines`, `invoices`, `invoice_lines`, `contacts`, `products`, `vat_rates`, `bank_accounts`, `bank_imports`, `bank_transactions`, `bank_profiles`, `reconciliation_rules`, `audit_log`, `refresh_tokens`, `onboarding_state`, `company_invoice_settings`, `invoice_number_sequences`, `_kesh_version`, `_sqlx_migrations` (23 tables exactement à la date de cette story — peut grossir par migrations futures). Test via `SHOW TABLES` parsing + assertion **subset** : chaque table de la liste minimale existe dans le résultat (pas d'égalité stricte qui casserait sur ajout d'une table future).
+    - (b) **Seed minimal** round-trip OK : INSERT company → INSERT user (avec `password_hash` Argon2 mock) → INSERT account (Asset class) → INSERT invoice avec validated_at NULL → INSERT journal_entry avec status='Draft' → SELECT chaque ligne avec assertion sur les colonnes clés. Aucune validation business comptable lourde (pas d'invariant partie-double sur 1 ligne) — c'est un test de schéma, pas un test métier.
+    - (c) **Row initiale `_kesh_version`** : SELECT kesh_version_min_required, kesh_version_last_applied FROM _kesh_version WHERE id=1 retourne `("0.1.0", "0.1.0")`.
+
+15. **Given** un nouveau fichier `crates/kesh-db/tests/migrations_upgrade_path.rs`, **When** `cargo test -p kesh-db --test migrations_upgrade_path`, **Then** au moins **2 tests** valident le upgrade path :
+    - (a) **Cas générique** : un helper interne au test, `apply_migrations_up_to(pool, n)`, applique les `n` premières migrations via le **sub-Migrator pattern** documenté dans Dev Notes §"Pattern test migrations" (slice `&kesh_db::MIGRATOR.migrations[..n]` + construction d'un `Migrator` ad-hoc + `.run(pool)`). Le test utilise `#[sqlx::test(migrations = false)]` — l'attribut `migrations = false` désactive l'inference path par défaut qui appliquerait `./migrations` automatiquement (confirmé `sqlx-macros-core-0.8.6/src/test_attr.rs:144-164` + `196` : default est `MigrationsOpt::InferredPath` qui détecte `crates/kesh-db/migrations/` et applique le full migrator avant le corps du test). Avec `migrations = false`, la DB éphémère reste vide pour que le test contrôle l'application. L'helper applique `total - 4` migrations (= 23 à la date Story 10-2, expression relative pour rester robuste à l'ajout futur de migrations), INSERT 1 company + 1 user + 2 accounts + 1 contact + 1 invoice (le contact est requis pour la FK `invoices.contact_id` ; pas de journal_entry car non-nécessaire au seed et `journal_entries.fiscal_year_id` aurait imposé une dépendance supplémentaire), puis appelle `kesh_db::MIGRATOR.run(&pool)` qui applique les 3 dernières migrations historiques + `20260522000001_kesh_version.sql` (4 migrations totales par le full run, post-story le repo contient 27 migrations). Assertion : COUNT(*) sur les 5 tables seedées **inchangé**, et SELECT sur les rows seedées retourne les mêmes valeurs (vérification quelques colonnes scalaires, pas de checksum complet — surcharge inutile pour test smoke). Plus assertion : `_kesh_version` existe avec `kesh_version_last_applied = '0.1.0'` après le test (mais `last_boot_at` reste NULL car le test n'invoque pas `record_boot_version`).
+    - (b) **Cas downgrade détecté** : test utilise `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` (full migrator avant le corps — comportement souhaité ici contrairement au cas (a)), puis UPDATE `_kesh_version SET kesh_version_min_required = '0.99.0'` (simule un binaire futur qui aurait bumped le min), puis appelle `version::check_downgrade_protection(&pool, "0.1.0")` → assertion `Err(VersionError::DowngradeRefused { db_min, binary })` avec `db_min == "0.99.0"` et `binary == "0.1.0"`. Deux tests dans le même fichier peuvent avoir des attributs `#[sqlx::test]` différents — pattern supporté nativement par sqlx-macros 0.8.
+
+16. **Given** la suite `cargo test --workspace -j1 -- --test-threads=1` (mode CI serial), **When** exécutée après ajout des nouveaux tests, **Then** **tous les tests passent** y compris les 5 nouveaux tests (3 fresh_install + 2 upgrade_path). Aucune flakiness sur les `#[sqlx::test]` (chaque test isole sa DB via le mécanisme de DB éphémère sqlx-test).
+
+17. **Given** un test exhibant un comportement non-déterministe (e.g. `last_boot_at` capturé in-test ≠ NOW() à l'instant de l'assertion), **When** review, **Then** le test **ne capture pas** `last_boot_at` avec assertion d'égalité exacte — soit l'assertion est `IS NOT NULL` (suffisant pour valider que l'UPDATE a eu lieu), soit l'assertion borne `last_boot_at >= test_start_time AND last_boot_at <= NOW()`. Idem pour `applied_at`.
+
+18. **Given** un test du fichier `migrations_fresh_install.rs`, **When** review, **Then** il déclare `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` avec migrator explicite — provisionne une DB éphémère puis applique le migrator complet avant le corps du test (cohérent `crates/kesh-api/src/auth/bootstrap.rs:136`, référence canonique projet).
+    **Given** le test `upgrade_path_preserves_data` du fichier `migrations_upgrade_path.rs`, **When** review, **Then** il déclare `#[sqlx::test(migrations = false)]` — l'attribut `migrations = false` désactive l'inference par défaut qui appliquerait `./migrations` automatiquement (default `MigrationsOpt::InferredPath` détecte `crates/kesh-db/migrations/` et applique le full migrator, cf. `sqlx-macros-core-0.8.6/src/test_attr.rs:144-164`). Avec `migrations = false` (mapped à `MigrationsOpt::Disabled`, cf. `test_attr.rs:265`), la DB éphémère reste vide pour que le test contrôle l'application des migrations via `apply_migrations_up_to(pool, 23)` puis `kesh_db::MIGRATOR.run(&pool)`.
+    **Given** le test `downgrade_protection_rejects_old_binary` du fichier `migrations_upgrade_path.rs`, **When** review, **Then** il déclare `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` (full migrator + UPDATE) — deux tests dans le même fichier peuvent avoir des attributs différents (pattern natif sqlx-macros 0.8).
+
+### CI matrice MariaDB 10.11 (AC #19-21)
+
+19. **Given** `.github/workflows/ci.yml`, **When** review **après cette story**, **Then** un **seul service MariaDB** est déclaré (lignes 25-41 actuelles) avec `image: mariadb:10.11` (déjà en place depuis Story 10-1 D3 — pas de changement requis cette story). **Aucune matrice `strategy.matrix.mariadb-version`** n'est introduite.
+
+20. **Given** `docs/ci.md`, **When** review, **Then** la section existante « Décision MariaDB 10.11 (Story 10-1 D3) » (cf. story 10-1 file list `docs/ci.md`) est **complétée** par une sous-section « Justification mono-version 10.11 » (ajout ≤ 8 lignes) expliquant explicitement :
+    - Pas de matrice 10.11 + 11 car la cible prod est unique (NAS Synology Package Center DSM ≥ 7.2 ne propose que MariaDB 10.x stable).
+    - Une matrice 11 ferait passer des tests sur un moteur que personne ne tournera en prod ; un bug 10.11-specific masqué par une feature 11 ne serait pas détecté par la branche 11 et serait par contre détecté par 10.11 — le test 10.11 est suffisant.
+    - Compat upstream MariaDB ≥ 10.6 reste documentée (migration `reconciliation_rules.sql:27-28`) pour les opérateurs qui voudraient tourner sur 10.6/10.7/10.8/10.9/10.10 hors NAS Synology, mais pas testée par la CI projet.
+
+21. **Given** `_bmad-output/planning-artifacts/epic-10.md` ligne 360 « CI matrice MariaDB 10.11 verte sur tous les tests Rust workspace », **When** review post-Story 10-2 merged, **Then** cette ligne est **cochée** dans le checklist § "Critères de done Epic 10" (note : modification éditoriale du planning artifact à inclure dans la PR).
+
+### Politique « migration breaking » dans CLAUDE.md (AC #22-23)
+
+22. **Given** `CLAUDE.md`, **When** review, **Then** une nouvelle section `## Migration breaking policy` est ajoutée après la section actuelle `## Issue Tracking Rule` (avant `## Règle de commit et push`), avec exactement les **5** paragraphes ci-dessous (P5 ajouté Pass 3 spec validate F2-P3) :
+    - **(P1) Définition** : Une migration est **breaking** si elle introduit un état du schéma qu'un binaire Kesh antérieur ne peut **plus** consommer correctement (ex. `DROP COLUMN` d'une colonne lue par un SELECT du binaire antérieur, `RENAME TABLE`, `MODIFY COLUMN` ou `CHANGE COLUMN` introduisant un type incompatible ex. DECIMAL → VARCHAR). La majorité des migrations (`ADD COLUMN` nullable, `ADD INDEX`, `CREATE TABLE` de nouvelle entité) sont **non-breaking** car les anciens binaires les ignorent.
+    - **(P2) Procédure de bump** : Quand une migration breaking est introduite, la migration elle-même DOIT contenir, **en dernière instruction**, un `UPDATE _kesh_version SET kesh_version_min_required = '<version-de-la-PR-qui-introduit-la-migration>' WHERE id = 1;`. La version est figée dans le SQL (pas via paramètre runtime), comme la version d'origine `'0.1.0'` figée dans `20260522000001_kesh_version.sql`.
+    - **(P3) Garde-fou code review** : Si une PR introduit une migration `DROP TABLE`, `DROP COLUMN`, `RENAME TABLE`, `RENAME COLUMN`, `MODIFY COLUMN <type>`, ou `CHANGE COLUMN <name> <type>` **sans** UPDATE de `kesh_version_min_required`, c'est un finding **CRITICAL** à remonter en passe `bmad-code-review`. Note dialecte : MariaDB utilise `MODIFY COLUMN <type>` ou `CHANGE COLUMN <old> <new> <type>` pour les changements de type (la syntaxe PostgreSQL `ALTER COLUMN <name> TYPE <type>` n'est **pas** supportée en MariaDB — référence locale `crates/kesh-db/migrations/20260419000002_users_company_id.sql:23` utilise bien `MODIFY COLUMN`). Le rationale : ces opérations sont celles dont l'omission du bump min_required exposerait silencieusement les utilisateurs à un downgrade corrupteur. Inversement, `ADD COLUMN nullable` / `ADD INDEX` / `CREATE TABLE` n'imposent pas de bump.
+    - **(P4) Exception documentée** : Si une migration utilise une de ces opérations mais reste **techniquement compatible** avec un binaire antérieur (rare — typiquement `DROP` d'une colonne jamais lue), l'auteur de la PR doit ajouter un commentaire SQL `-- breaking-skip-bump: <justification>` dans la migration, et un Pass code-review devra confirmer la justification. Sinon par défaut → bump obligatoire.
+    - **(P5) Garde-fou audit idempotence** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT ajouter une ligne correspondante au tableau `docs/migrations-idempotence-audit.md` avec verdict (`yes` / `no` / `tracked-by-sqlx`) + justification. Si une PR ajoute un `.sql` migration sans modifier `docs/migrations-idempotence-audit.md`, c'est un finding **MEDIUM** à remonter en passe `bmad-code-review`. Rationale : éviter que l'audit doc dérive silencieusement au fil des Epics suivants — symétrique de la discipline P3.
+
+23. **Given** la stratégie audit Pass 1 (AC #1-3 — audit dans `docs/migrations-idempotence-audit.md`, zéro modif des `.sql` historiques), **When** review, **Then** le marqueur `-- breaking-skip-bump:` (P4) **n'est introduit dans aucune migration historique** par cette story — il sera introduit dans une PR future si/quand une migration concrète déclenche le cas exception P4. La migration `20260522000001_kesh_version.sql` créée par cette story ne reçoit pas non plus de `-- breaking-skip-bump:` (c'est l'introduction du système de versioning, pas un changement breaking pré-existant — `kesh_version_min_required = '0.1.0'` figé initialement, à bumper par les futures migrations breaking via P2).
+
+### Validation end-to-end (AC #24-26)
+
+24. **Given** le workflow `Test Locally First` (CLAUDE.md), **When** exécuté avant push de cette story, **Then** les 4 commandes Backend Rust passent (`cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`) **avec MariaDB 10.11 démarré localement** (les nouveaux tests `migrations_*` requièrent un service DB).
+
+25. **Given** la CI lancée sur la PR Story 10-2, **When** le job `Backend (Rust)` exécute `cargo test --workspace -j1 -- --test-threads=1` contre `mariadb:10.11`, **Then** tous les tests Rust passent : 250+ baselines pré-existantes + 5 nouveaux tests `migrations_fresh_install` (3) + `migrations_upgrade_path` (2). Aucune flakiness sur 3 runs CI consécutifs (vérifié par re-run manuel de la CI si nécessaire).
+
+26. **And** **0 régression** sur les baselines hors `migrations_*` : kesh-api lib (173+), frontend Vitest (253), Playwright E2E (76, à condition que le job E2E soit exécuté — non par CI principale, par `Test Locally First`).
+
+## Tasks / Subtasks
+
+### T1: Audit idempotence des 26 migrations historiques → fichier `docs/migrations-idempotence-audit.md` (AC #1-3)
+
+- [x] T1.1 — Créer `docs/migrations-idempotence-audit.md` avec en-tête (paragraphe d'intro renvoyant à Story 10-2 et au paragraphe « Note Pass 1 spec validate » d'AC #1-3) + tableau markdown 26 rows.
+- [x] T1.2 — Pour les **15 migrations** historiques dont l'instruction principale est `CREATE TABLE <name>` sans `IF NOT EXISTS` (peuvent contenir aussi des `CREATE INDEX`/`INSERT` secondaires mais pas de `ALTER TABLE` significatif) : `initial_schema.sql`, `auth_refresh_tokens.sql`, `onboarding_state.sql`, `bank_accounts.sql`, `accounts.sql`, `journal_entries.sql`, `audit_log.sql`, `contacts.sql`, `products.sql`, `invoices.sql`, `invoice_validation.sql`, `vat_rates.sql`, `bank_imports.sql`, `bank_profiles.sql`, `reconciliation_rules.sql` → verdict `tracked-by-sqlx`, justification : « `CREATE TABLE` sans `IF NOT EXISTS` ; re-exécution manuelle hors sqlx échouerait avec erreur MariaDB 1050. ».
+- [x] T1.3 — Pour les **10 migrations** dont l'instruction principale est `ALTER TABLE` : 3 avec guards `IF [NOT] EXISTS` complets → verdict `yes` (`country_code.sql`, `invoice_paid_at.sql`, `bank_imports_relax_hash_unique.sql`), 5 sans guards → verdict `tracked-by-sqlx` (`refresh_tokens_revoked_reason.sql`, `invoice_lines_line_total_check.sql`, `invoice_validated_journal_entry_check.sql`, `users_company_id.sql`, `kf005_fulltext_indexes.sql`), 2 partiels (ALTER unguarded + CREATE INDEX guarded) → verdict `tracked-by-sqlx` (`reconciliation_8_4.sql`, `bank_account_journal_link.sql`).
+- [x] T1.4 — Pour la **migration `company_invoice_settings.sql`** (CREATE INDEX only, pas d'ALTER TABLE) → verdict `tracked-by-sqlx`, justification : « `CREATE INDEX` sans `IF NOT EXISTS` ; re-exécution échouerait erreur 1061. ».
+- [x] T1.5 — Validation par count : `grep -c "^|" docs/migrations-idempotence-audit.md` = 29 (header row + séparateur + 27 data rows incluant la nouvelle `_kesh_version.sql`). Chacun des 26 fichiers `.sql` historiques apparaît exactement une fois.
+- [x] T1.6 — Référencé depuis `crates/kesh-db/README.md` (ligne 14 : commentaire sur `migrations/` dir).
+
+### T2: Migration `_kesh_version.sql` + boot integration (AC #4-13)
+
+- [x] T2.1 — Créer `crates/kesh-db/migrations/20260522000001_kesh_version.sql` avec en-tête conforme (commentaire bloc référençant Story 10-2 + AC #4-7) + verdict `tracked-by-sqlx` documenté + `CREATE TABLE _kesh_version` schéma AC #5 + `INSERT INTO _kesh_version (...) VALUES (1, '0.1.0', '0.1.0')` AC #6.
+- [x] T2.2 — Ajouter `semver = "1"` à `crates/kesh-db/Cargo.toml` `[dependencies]` (sans feature `serde`). `cargo build -p kesh-db` PASS (13.34s).
+- [ ] T2.3 — Créer `crates/kesh-db/src/version.rs` :
+  - `use semver::Version; use sqlx::MySqlPool;`
+  - `#[derive(Debug, thiserror::Error)] pub enum VersionError { ... }` avec variants `DowngradeRefused { db_min: Version, binary: Version }`, `Sqlx(#[from] sqlx::Error)`, `InvalidSemver(#[from] semver::Error)`.
+  - `#[derive(Debug)] pub enum DowngradeCheckOutcome { FreshInstall, Aligned, BinaryAhead { db_min: Version, binary: Version } }`.
+  - `pub async fn check_downgrade_protection(pool: &MySqlPool, binary_version: &str) -> Result<DowngradeCheckOutcome, VersionError>` — parse `binary_version` via `Version::parse()` (semver crate), execute `sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1").fetch_one(pool).await` (version dynamique sans macro `!` — évite la dépendance compile-time sur l'existence de la table en local). Détecter le cas fresh install via le pattern canonique projet : `sqlx::Error::Database(ref db_err) if db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` → `Ok(FreshInstall)`. ⚠️ **NE PAS utiliser** `db_err.code() == Some("1146")` : `code()` retourne le SQLSTATE `"42S02"` (string) et **pas** le numéro MariaDB 1146. Référence canonique du pattern correct : `crates/kesh-db/src/errors.rs:150-151` et `crates/kesh-db/src/retry.rs:73-74`. Sinon parse le VARCHAR retourné en `Version`, compare via `binary.cmp(&db_min)` → 3 cas mapping vers `Aligned` / `BinaryAhead` / `Err(DowngradeRefused)`.
+  - `pub async fn record_boot_version(pool: &MySqlPool, binary_version: &str) -> Result<(), VersionError>` — `let r = sqlx::query("UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1").bind(binary_version).execute(pool).await?;` puis `if r.rows_affected() != 1 { tracing::warn!(rows = r.rows_affected(), "record_boot_version: row id=1 missing?"); }` puis `Ok(())`.
+  - Aucun unit test interne au module — couvert par les tests d'intégration T3. Le module entier devrait faire ~80-110 lignes Rust.
+  - **Implémenté** : `crates/kesh-db/src/version.rs` 141 lignes (avec docstrings ~30 lignes + code ~110 lignes — cohérent avec l'estimation). Pattern erreur 1146 via `try_downcast_ref::<MySqlDatabaseError>().is_some_and(|e| e.number() == 1146)`. `rows_affected != 1` warn défensif.
+- [x] T2.3 — Module `version.rs` créé selon Dev Notes §"Pattern complet" avec VersionError + DowngradeCheckOutcome + check_downgrade_protection + record_boot_version. `cargo clippy -p kesh-db --all-targets -- -D warnings` PASS.
+- [x] T2.4 — Exposé dans `crates/kesh-db/src/lib.rs:15` via `pub mod version;` après les autres `pub mod`.
+- [x] T2.5 — `crates/kesh-api/src/main.rs` modifié : bloc `check_downgrade_protection` inséré entre l'init du pool (lignes 49-66, étape 3) et `MIGRATOR.run()` (ligne 92, étape 4), `record_boot_version` après `tracing::info!("Migrations appliquées")` (lignes 98-101, étape 4b). Docstring `//! Ordre de démarrage` mise à jour avec les nouveaux steps (downgrade protection ajoutée comme suite logique de step 3, record_boot_version comme suite de step 4 — fmt clippy passant sans `doc_lazy_continuation` lint). `cargo clippy -p kesh-api --all-targets -- -D warnings` PASS.
+
+### T3: Tests d'intégration migrations (AC #14-18)
+
+- [x] T3.1 — `crates/kesh-db/tests/migrations_fresh_install.rs` créé avec **3 tests** (3/3 PASS) :
+  - `migrations_apply_all_tables_present` (AC #14a) — `SHOW TABLES` + assertion subset 23 tables minimales.
+  - `migrations_minimal_seed_roundtrips` (AC #14b) — INSERT 1 company + 1 fiscal_year (Open) + 1 user (Argon2 mock, company_id requis post-Story 6-2) + 1 contact (type 'Personne') + 1 account (number/name/type) + 1 journal_entry (entry_number=1) + 1 invoice (draft, total=0) → SELECT round-trip 7 lignes.
+  - `migrations_kesh_version_initial_row` (AC #14c) — SELECT `_kesh_version` row 1 = `('0.1.0', '0.1.0', NULL last_boot_at)` + assertion CHECK (id=1) refuse INSERT id=2.
+- [x] T3.2 — `crates/kesh-db/tests/migrations_upgrade_path.rs` créé avec **5 tests initiaux** (T3 dev) puis enrichi par les passes code-review (Pass 1 F5 + Pass 2 G2/G3) à **8 tests upgrade_path** (8/8 PASS final, total 11/11 avec 3 fresh_install) :
+  - `upgrade_path_preserves_data` (AC #15a) — `#[sqlx::test(migrations = false)]` (disable inference) + helper `apply_migrations_up_to(pool, 23)` + seed 5 tables (1 company + 1 user + 2 accounts + 1 contact + 1 invoice) + `MIGRATOR.run()` final (applique 4 migrations restantes) + assertions COUNT inchangé + colonnes seed préservées + `_kesh_version` created.
+  - `downgrade_protection_rejects_old_binary` (AC #15b) — `#[sqlx::test(migrator = ...)]` + UPDATE min_required='0.99.0' + check_downgrade_protection("0.1.0") → assertion `Err(DowngradeRefused { db_min: 0.99.0, binary: 0.1.0 })`.
+  - `downgrade_protection_aligned_when_binary_equals_min` (test additionnel) — binary == db_min → `Ok(Aligned)`.
+  - `downgrade_protection_binary_ahead_when_binary_greater` (test additionnel) — binary > db_min → `Ok(BinaryAhead { db_min, binary })`.
+  - `record_boot_version_updates_row` (test additionnel) — record_boot_version("0.1.0") → last_boot_at non-NULL borné `[test_start, test_end]` (AC #17 contre flakiness exact).
+- [x] T3.3 — Helper `apply_migrations_up_to(pool, n)` inline dans `migrations_upgrade_path.rs` lignes 30-48 via **sub-Migrator approach** : slice `&kesh_db::MIGRATOR.migrations[..n]` + construction d'un `Migrator` ad-hoc + `.run(pool)`. Préserve checksums SHA-384 → `MIGRATOR.run()` final ne déclenche pas `MigrateError::VersionMismatch`.
+- [x] T3.4 — Helper inline (~20 lignes, sous seuil 30 — pas d'extraction nécessaire).
+- [x] T3.5 — **8 tests upgrade_path + 3 fresh_install = 11 tests verts post-code-review** (T3 dev livrait 5+3=8 initial, enrichi à 11 par les passes code-review : Pass 1 F5 add FreshInstall test, Pass 2 G2 add RowMissing test, Pass 2 G3 add InvalidSemver test) : `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` PASS sur MariaDB local. `cargo clippy -p kesh-db --tests -- -D warnings` PASS. `cargo fmt` PASS.
+
+### T4: CI matrice MariaDB 10.11 doc + planning artifact sync (AC #19-21)
+
+- [x] T4.1 — Vérifié : `ci.yml:29` contient `image: mariadb:10.11` (no-op, déjà aligné Story 10-1).
+- [x] T4.2 — `docs/ci.md` section « Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS) » complétée par sous-section « Justification mono-version 10.11 (Story 10-2 AC #20) » (3 paragraphes : cible prod unique, bugs 10.11-specific masqués, compat upstream documentée non-testée).
+- [x] T4.3 — Lignes 359 + 360 de `_bmad-output/planning-artifacts/epic-10.md` cochées après CI verte PR #106 (2026-05-22 — les 3 jobs Backend Rust + Frontend Svelte + Docker sanity PASS).
+
+### T5: Politique migration breaking dans CLAUDE.md (AC #22-23)
+
+- [x] T5.1 — Section `## Migration breaking policy` ajoutée à `CLAUDE.md` entre `## Issue Tracking Rule` (ligne 244) et `## Règle de commit et push` (ligne 281), avec les 5 paragraphes P1-P5 conformément à AC #22 final (post-Pass 3 F2-P3).
+- [x] T5.2 — Vérifié par `grep -l "breaking-skip-bump" crates/kesh-db/migrations/*.sql` = vide. Aucun marker `-- breaking-skip-bump:` introduit dans les fichiers `.sql` historiques (cohérent AC #23 + AC #2).
+
+### T6: Validation end-to-end (AC #24-26)
+
+- [x] T6.1 — `Test Locally First` Backend complet (cf. CLAUDE.md §"Test Locally First / Backend (Rust)") avec MariaDB local actif :
+  - `cargo fmt --all -- --check` **PASS**
+  - `cargo build --workspace --all-targets` **PASS** (56s)
+  - `cargo clippy --workspace --all-targets -- -D warnings` **PASS** (14s). `version.rs` sans `unwrap()`/`expect()`, erreurs via `?` → `VersionError`.
+  - `cargo test --workspace -j1 -- --test-threads=1` (mode CI serial) :
+    - **Nouveau scope Story 10-2 : 8/8 PASS** (3 fresh_install + 5 upgrade_path) ✓
+    - **kesh-api lib : 173/173 PASS** ✓
+    - **kesh-report : 53/53 PASS** ✓
+    - **kesh-reconciliation/import/core/i18n : 125/125 PASS** ✓
+    - **kesh-db lib : 149/169 PASS** — 20 failures `journal_entries::FiscalYearClosed` = **flakiness pré-existante documentée** `kesh-db/README.md:56-85` (`#[sqlx::test]` parallèle MariaDB). Vérifié par stash-pop : 20 failures baseline sans Story 10-2 = identique → **0 régression introduite**.
+  - **Régression interceptée + corrigée pendant T6** : `test_fixtures::tests::truncate_all_inventory_matches_schema` cassée par l'ajout de `_kesh_version` au schéma. Fix : exclure `_kesh_version` du `SELECT TABLE_NAME ... NOT IN ('_sqlx_migrations', '_kesh_version')` et documenter dans le commentaire de `TABLES_TO_TRUNCATE` que les 2 tables système (sqlx + kesh metadata) sont exclues du truncate. Test re-vert après fix.
+- [x] T6.2 — Frontend `Test Locally First` no-op vérifié : `git status -s | grep frontend` = vide. Aucun fichier frontend touché par Story 10-2. Skip des 4 commandes npm.
+- [x] T6.3 — Branche `chore/story-10-2-spec` pushée (commit `13bde5d` puis ajout commit T4.3). **PR #106** ouverte 2026-05-22 (https://github.com/guycorbaz/kesh/pull/106). CI verte sur les 3 jobs : **Backend (Rust) PASS** + **Frontend (Svelte) PASS** + **Docker build (sanity) PASS**.
+- [ ] T6.4 — Post-CI verte : T4.3 fait. **Prochaine étape : `bmad-code-review 10-2`** (LLM rotation Sonnet 4.6 → Haiku 4.5 → Opus 4.7 jusqu'à CONVERGED 0 finding > LOW conformément CLAUDE.md §"Review Iteration Rule").
+
+## Dev Notes
+
+### Pattern test migrations
+
+⚠️ **Prérequis attribut test** : l'helper requiert obligatoirement `#[sqlx::test(migrations = false)]` sur le test appelant. Le default `#[sqlx::test]` (sans `migrations = false`) déclenche `MigrationsOpt::InferredPath` qui détecte `crates/kesh-db/migrations/` (existe avec 27 fichiers post-story) et applique le full migrator avant le corps du test — ce qui rendrait l'helper no-op silencieux (les 23 premières migrations sont déjà tracked dans `_sqlx_migrations`, le sub-Migrator les saute). Source : `sqlx-macros-core-0.8.6/src/test_attr.rs:196` (default) + `:265` (`migrations = false` → `MigrationsOpt::Disabled`).
+
+L'helper `apply_migrations_up_to(pool, n)` pour T3.3 utilise la **sub-Migrator approach**. Le champ `Migrator::migrations` est `pub Cow<'static, [Migration]>` dans sqlx-core 0.8.6 (cf. `src/migrate/migrator.rs:14-22` — annoté `#[doc(hidden)]` + commentaire « semver-exempt may be changed in future version », acceptable pour un test interne — alerte de breaking si bump sqlx) :
+
+```rust
+use sqlx::migrate::Migrator;
+use sqlx::MySqlPool;
+use std::borrow::Cow;
+
+async fn apply_migrations_up_to(pool: &MySqlPool, n: usize) -> Result<(), sqlx::migrate::MigrateError> {
+    let all = &kesh_db::MIGRATOR.migrations;
+    assert!(n <= all.len(), "apply_migrations_up_to: n={} > total={}", n, all.len());
+    let sub = Migrator {
+        migrations: Cow::Borrowed(&all[..n]),
+        ignore_missing: kesh_db::MIGRATOR.ignore_missing,
+        locking: kesh_db::MIGRATOR.locking,
+        no_tx: kesh_db::MIGRATOR.no_tx,
+    };
+    sub.run(pool).await
+}
+```
+
+Avantages :
+- Checksums SHA-384 réels préservés → `MIGRATOR.run()` final ne déclenche pas `MigrateError::VersionMismatch`.
+- `_sqlx_migrations` correctement alimentée par `sub.run()` → les migrations restantes sont vues comme "à appliquer" par le `MIGRATOR.run()` final.
+- Pas de duplication des fichiers `.sql` ni de logique custom de read+exec.
+
+**Anti-pattern à éviter** : INSERT manuel dans `_sqlx_migrations` avec un checksum bidon (`vec![0u8; 32]` ou similaire). Le checksum sqlx est **SHA-384 = 48 bytes** (`Sha384::digest`, `sqlx-core-0.8.6/src/migrate/migration.rs:25`), pas SHA-256 ; et même avec la bonne taille un faux checksum cause `MigrateError::VersionMismatch` à l'appel `MIGRATOR.run()` final.
+
+**Anti-pattern à éviter** : `Migration::apply(&pool)` n'existe **pas** comme méthode publique sur `Migration` en sqlx 0.8 (la struct ne contient que des données : `version`, `description`, `sql`, `checksum`, etc. — l'apply est porté par le trait `Migrate` implémenté sur les connexions, non-stable). Utiliser sub-Migrator est la voie correcte.
+
+Note : si sqlx bumpe vers 0.9+ et que `migrations` perd la visibilité publique, le pattern devra basculer en fallback custom (read+exec+INSERT avec **vrai** checksum SHA-384 calculé runtime via `sha2 = "0.10"`). Le test échouera proprement (compile error) le cas échéant.
+
+### Décision Q7 (epic-10.md) — résolue
+
+`env!("CARGO_PKG_VERSION")` retenu pour lire la version binaire au runtime. Pattern déjà établi dans `crates/kesh-api/src/exports/metadata.rs:77` (Story 9-2b export ZIP). La version est figée au build (pas runtime via `KESH_VERSION` env var) — c'est intentionnel : un binaire est associé à une seule version, l'env override serait une porte ouverte à des inconsistences.
+
+`crates/kesh-api/Cargo.toml:3` = `version = "0.1.0"` à la date de cette story. Cette version sera bumpée à `0.2.0` au kickoff Epic v0.2 (cf. memory `project_prod_deployment_gating`).
+
+**Pré-releases & semver ordering** : `semver::Version` traite `0.1.0-rc1 < 0.1.0` (pre-release < release par semver SPEC). Si la pipeline release future (Epic 14) bumpe `Cargo.toml` en `0.1.0-rc1` pour générer un binaire RC distinct du stable, attention : un rc1-binaire booté contre une DB stable-0.1.0 sera refusé par `check_downgrade_protection` (binary 0.1.0-rc1 < db_min 0.1.0 ⇒ `DowngradeRefused`). Workaround possible : ne pas bumper Cargo.toml pour les tags `*-rc*` (laisser `0.1.0` jusqu'au stable), ou hardcoder `kesh_version_min_required = "0.1.0-rc1"` dans la migration initiale. Décision laissée à Epic 14 Release Process si pré-releases deviennent un workflow récurrent — pas un problème pour Story 10-2.
+
+### Schéma `_kesh_version` — discussion
+
+| Colonne | Type | Raison |
+|---|---|---|
+| `id` | `TINYINT UNSIGNED PRIMARY KEY DEFAULT 1` | Singleton row. CHECK constraint `id = 1` enforce. Tinyint suffit largement (0-255). |
+| `kesh_version_min_required` | `VARCHAR(40) NOT NULL` | SemVer string (40 chars couvrent pre-release + build metadata), bumpé par migrations breaking (cf. CLAUDE.md §"Migration breaking policy"). |
+| `kesh_version_last_applied` | `VARCHAR(40) NOT NULL` | Updated au boot par `record_boot_version()`. Informationnel — pour debug/audit, pas utilisé par downgrade check. |
+| `applied_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | Timestamp de l'INSERT initial par la migration. Référence historique première install. |
+| `last_boot_at` | `DATETIME NULL` | Updated par `record_boot_version()`. NULL avant le premier boot effectif post-migration. |
+
+Le pattern singleton avec `CHECK (id = 1)` est cohérent avec MariaDB 10.11 (le CHECK est enforce contrairement à versions très antérieures). Si pour une raison X le CHECK pose problème, l'alternative `UNIQUE KEY (id) + INSERT ... ON DUPLICATE KEY UPDATE` est équivalente fonctionnellement.
+
+### Pattern `crates/kesh-db/src/version.rs` complet
+
+Esquisse de ~90 lignes Rust (à raffiner pendant dev-story) :
+
+```rust
+//! Version tracking + downgrade protection for Kesh DB schema.
+//! Story 10-2 — cf. _bmad-output/implementation-artifacts/10-2-...md
+
+use semver::Version;
+use sqlx::MySqlPool;
+
+#[derive(Debug, thiserror::Error)]
+pub enum VersionError {
+    #[error("Database was migrated by Kesh v{db_min}, current binary v{binary} cannot downgrade safely. Restore a backup compatible with v{binary} or upgrade the binary.")]
+    DowngradeRefused { db_min: Version, binary: Version },
+
+    #[error("Database error during version check: {0}")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("Invalid semver string: {0}")]
+    InvalidSemver(#[from] semver::Error),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DowngradeCheckOutcome {
+    FreshInstall,
+    Aligned,
+    BinaryAhead { db_min: Version, binary: Version },
+}
+
+pub async fn check_downgrade_protection(
+    pool: &MySqlPool,
+    binary_version: &str,
+) -> Result<DowngradeCheckOutcome, VersionError> {
+    let binary = Version::parse(binary_version)?;
+
+    let row: Result<String, sqlx::Error> = sqlx::query_scalar(
+        "SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1"
+    )
+    .fetch_one(pool)
+    .await;
+
+    match row {
+        Err(sqlx::Error::Database(ref db_err))
+            if db_err
+                .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+                .map_or(false, |e| e.number() == 1146) =>
+        {
+            // ER_NO_SUCH_TABLE 1146 — fresh install, the migration `_kesh_version` hasn't run yet.
+            Ok(DowngradeCheckOutcome::FreshInstall)
+        }
+        Err(e) => Err(VersionError::Sqlx(e)),
+        Ok(db_min_str) => {
+            let db_min = Version::parse(&db_min_str)?;
+            match binary.cmp(&db_min) {
+                std::cmp::Ordering::Less => {
+                    Err(VersionError::DowngradeRefused { db_min, binary })
+                }
+                std::cmp::Ordering::Equal => Ok(DowngradeCheckOutcome::Aligned),
+                std::cmp::Ordering::Greater => {
+                    Ok(DowngradeCheckOutcome::BinaryAhead { db_min, binary })
+                }
+            }
+        }
+    }
+}
+
+pub async fn record_boot_version(
+    pool: &MySqlPool,
+    binary_version: &str,
+) -> Result<(), VersionError> {
+    Version::parse(binary_version)?; // validate semver but don't store the Version struct
+    let result = sqlx::query(
+        "UPDATE _kesh_version SET kesh_version_last_applied = ?, last_boot_at = NOW() WHERE id = 1"
+    )
+    .bind(binary_version)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() != 1 {
+        tracing::warn!(
+            rows_affected = result.rows_affected(),
+            "record_boot_version: UPDATE affected unexpected number of rows (expected 1) — _kesh_version row id=1 missing?"
+        );
+    }
+    Ok(())
+}
+```
+
+### MariaDB error code 1146 (ER_NO_SUCH_TABLE) — référence
+
+L'erreur SQLSTATE `"42S02"`, **MariaDB number 1146** « Table 'database.table' doesn't exist » est ce que retourne le SELECT contre `_kesh_version` sur fresh install. **Important** : en sqlx 0.8, `sqlx::Error::Database::code()` retourne le **SQLSTATE string** (`"42S02"`) — pas le numéro MariaDB. Pour matcher le numéro 1146, il faut downcast vers `sqlx::mysql::MySqlDatabaseError` puis appeler `.number()`. Le pattern canonique projet est implémenté dans :
+
+- `crates/kesh-db/src/errors.rs:150-151` (matching sur deadlock, lock timeout, etc.)
+- `crates/kesh-db/src/retry.rs:64-74` (detection deadlock pour retry)
+
+Code attendu pour `version.rs` :
+```rust
+sqlx::Error::Database(ref db_err)
+    if db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map_or(false, |e| e.number() == 1146)
+```
+
+**NE PAS utiliser** :
+- `db_err.code() == Some("1146")` — `code()` retourne `Some("42S02")` (SQLSTATE), pas le numéro.
+- `e.to_string().contains("1146")` — textuel fragile, dépend de la formulation du message + casse les tests si le message change.
+
+### Dette latente identifiée pour audit cross-story
+
+- **Story 10-3 « Résilience frontend si DB down »** dépend de `/health` qui pourrait étendre le body retourné par `record_boot_version` (e.g. `{ status: "ok", db: true, version: "0.1.0", min_required: "0.1.0" }`). Hors scope Story 10-2 mais à coordonner.
+- **Story 10-4 « Manuel install Synology »** doit documenter dans la section "Update" : « après pull image + restart container, vérifier `docker logs kesh-api | grep _kesh_version` pour confirmer le bump si une migration breaking a été appliquée ». Hors scope Story 10-2 mais à mémoriser.
+- **FR78 « avertir backup avant migration »** : Story 10-2 livre la **détection** (count des migrations pending via `MIGRATOR.iter()` vs `SELECT version FROM _sqlx_migrations`), mais le **log warning** « Backup recommended before applying N pending migrations » au boot est un AC borderline. Décision pre-dev : couvert par le log informatif ajouté **APRÈS** `MIGRATOR.run()` réussi (« Migrations appliquées : N nouvelles »), pas par un warning AVANT (qui imposerait à l'admin d'arrêter le boot et redémarrer après backup — pattern fragile en pratique). FR78 textuel sera ré-évalué Story 10-4 manuel install si insuffisant.
+
+### Anti-patterns à éviter (extrait des codes review Story 10-1)
+
+- **NE PAS modifier les fichiers `.sql` historiques** (AC #2 explicite). Risque : `MigrateError::VersionMismatch` **garanti** sur toute DB déjà migrée. Le checksum sqlx est SHA-384 du contenu complet du fichier (cf. `sqlx-core-0.8.6/src/migrate/migration.rs:25`) et le `MIGRATOR.run()` compare strictement (cf. `migrator.rs:175-176`). **Même l'ajout d'un commentaire `-- ...` casse le checksum**. C'est la raison pour laquelle Pass 1 spec validate a pivoté l'audit AC #1-3 vers un fichier markdown séparé `docs/migrations-idempotence-audit.md`.
+- **NE PAS** ajouter `serde` feature à `semver` (AC #8). La struct `Version` ne traverse pas de boundary serialisée — uniquement parsée depuis VARCHAR DB et comparée. La feature `serde` augmente le scope binaire sans gain.
+- **NE PAS** utiliser `.unwrap()` ou `.expect()` dans `version.rs` (clippy + CLAUDE.md). Toutes les erreurs descendent via `?` → `VersionError`. Le caller (`main.rs`) décide d'exit ou de log warn selon le type d'erreur.
+- **NE PAS** utiliser `db_err.code() == Some("1146")` pour détecter ER_NO_SUCH_TABLE — `code()` retourne le SQLSTATE `"42S02"`. Pattern correct : `try_downcast_ref::<MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)` (cf. `crates/kesh-db/src/errors.rs:150`).
+- **NE PAS** simuler le tracking `_sqlx_migrations` par INSERT manuel avec checksum bidon dans les tests (cf. Dev Notes §"Pattern test migrations" — anti-pattern documenté). Utiliser sub-Migrator avec `&kesh_db::MIGRATOR.migrations[..n]`.
+
+### Test Locally First — MariaDB 10.11 requis
+
+Les nouveaux tests `migrations_*` requièrent un service MariaDB joignable sur `DATABASE_URL`. Le container projet `kesh-mariadb` (actuellement `mariadb:11-jammy` selon session-state 2026-05-20) doit être restart sur `mariadb:10.11` pour parité prod **pour cette story** :
+
+```sh
+docker stop kesh-mariadb && docker rm kesh-mariadb
+docker run -d --name kesh-mariadb \
+  -e MARIADB_ROOT_PASSWORD=kesh_root \
+  -e MARIADB_DATABASE=kesh \
+  -e MARIADB_USER=kesh \
+  -e MARIADB_PASSWORD=kesh_dev \
+  -p 3306:3306 \
+  mariadb:10.11
+```
+
+Note pré-dev : à confirmer si Guy souhaite restart son container local maintenant ou continuer à dev sur 11-jammy en local et compter sur la CI (qui tourne déjà 10.11 depuis Story 10-1). Les 5 nouveaux tests passeront sur les deux versions tant que les features SQL utilisées sont compat 10.6+ — ce qui est le cas (pas de window function avancée, pas de feature 11-only).
+
+### Splitting check (CLAUDE.md §"Règle de splitting préventif")
+
+Story 10-2 touche **2 crates** :
+- `crates/kesh-db/` — Cargo.toml + lib.rs + version.rs (nouveau) + migrations/ (1 nouveau fichier `_kesh_version.sql`) + tests/ (2 nouveaux)
+- `crates/kesh-api/` — main.rs (boot logic insert)
+
+Plus 4 fichiers infra/doc : `docs/ci.md`, `docs/migrations-idempotence-audit.md` (créé par cette story), `CLAUDE.md`, `_bmad-output/planning-artifacts/epic-10.md`.
+
+**Total : 2 crates + 4 docs. Largement sous le seuil 5 modules métier**. Pas de split nécessaire.
+
+### Issue GitHub fermée
+
+Aucune Issue spécifique fermée par cette story (KF Epic 7/9 toutes closes par Epic 9.5). Si un comportement d'auto-migration ou de downgrade est découvert défectueux pendant dev-story, ouvrir une Issue `bug` taggée Epic 10 (cf. CLAUDE.md §"Issue Tracking Rule").
+
+## References
+
+### Sources spec
+
+- `_bmad-output/planning-artifacts/epic-10.md:145-181` — Story 10-2 ACs source (épic), périmètre, effort estimé
+- `_bmad-output/planning-artifacts/epic-10.md:359-360` — Critères de done Epic 10 (lignes à cocher post-merge)
+- `_bmad-output/planning-artifacts/epic-10.md:377` — Q7 « env!("CARGO_PKG_VERSION") » à confirmer (résolu cette story)
+- `_bmad-output/planning-artifacts/epic-10.md:394` — référence « 26 migrations à auditer pour idempotence »
+- `_bmad-output/planning-artifacts/epics.md:1174-1186` — Story 9.2 legacy mapping (numérotation pré-Epic 9.5 retro, redirigée vers 10-2 par PR #101)
+- `_bmad-output/planning-artifacts/prd.md:496-497` — FR78 (détection version + warning backup) + FR79 (migrations auto)
+- `_bmad-output/planning-artifacts/prd.md:228` — NFR-REL-5 (migrations préservent intégrité données exercices passés)
+- `_bmad-output/planning-artifacts/architecture.md:214` — décision archi « Migrations: sqlx migrate, fichiers versionnés dans crates/kesh-db/migrations/ »
+- `_bmad-output/planning-artifacts/architecture.md:276` — ARCH-12 « Migrations SQLx dans crates/kesh-db/migrations/ — fichiers versionnés, zéro perte de données »
+
+### Code existant à toucher / référencer
+
+- `crates/kesh-db/src/lib.rs:21` — `pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");` — point d'entrée à conserver, ajout `pub mod version;` ici
+- `crates/kesh-db/src/errors.rs:150-151` — pattern canonique `db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == ...)` à reproduire dans `version.rs` (T2.3) pour matcher ER_NO_SUCH_TABLE 1146
+- `crates/kesh-db/src/retry.rs:64-74` — deuxième occurrence du même pattern (deadlock detection)
+- `crates/kesh-db/Cargo.toml:11` — ligne sqlx existante (référence features actives), `semver = "1"` à ajouter en `[dependencies]`
+- `crates/kesh-api/src/main.rs:49` — `tracing::info!("Base de données : connectée")` — ancre AVANT laquelle insérer le bloc `check_downgrade_protection` (étape boot 3b) T2.5
+- `crates/kesh-api/src/main.rs:62` — `if let Err(e) = kesh_db::MIGRATOR.run(&pool).await` — code à conserver, étape boot 4
+- `crates/kesh-api/src/main.rs:66` — `tracing::info!("Migrations appliquées")` — ancre APRÈS laquelle insérer `record_boot_version` (étape boot 4b) T2.5
+- `crates/kesh-api/src/exports/metadata.rs:77` — `env!("CARGO_PKG_VERSION")` pattern de référence (résout Q7)
+- `crates/kesh-api/Cargo.toml:3` — `version = "0.1.0"` source de la string passée à `check_downgrade_protection`
+- `crates/kesh-api/src/auth/bootstrap.rs:136,170,202,254` — pattern `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` à reproduire dans T3.1 + T3.2
+- `crates/kesh-db/migrations/20260507000001_bank_imports_relax_hash_unique.sql:15-18` — commentaire idempotence existant à conserver (T1.3 / verdict `yes` dans l'audit doc)
+- `docs/migrations-idempotence-audit.md` — **fichier créé par cette story** (T1.1-T1.5), audit des 26 migrations historiques + entrée pour `_kesh_version.sql` post-story
+- `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql:27-28` — référence MariaDB 10.6+ compat (cohérence cross-doc)
+- `.github/workflows/ci.yml:25-41` — service MariaDB 10.11 (référence T4.1, aucune modif)
+- `.github/workflows/ci.yml:122-127` — step `Apply migrations to kesh DB` (pattern fallback Approche B helper T3.3)
+- `docs/ci.md` — section « Décision MariaDB 10.11 (Story 10-1 D3) » à étendre T4.2
+
+### Documents projet
+
+- `CLAUDE.md` §"Test Locally First" — checks Backend obligatoires (T6.1)
+- `CLAUDE.md` §"Issue Tracking Rule" — pas d'Issue à fermer cette story
+- `CLAUDE.md` §"Règle de splitting préventif" — Story 10-2 sous le seuil (cf. Dev Notes)
+- `CLAUDE.md` §"Review Iteration Rule" — cycle spec validate + code review jusqu'à CONVERGED LOW
+- Memory `project_session_state_2026_05_21_end` — état pré-Story 10-2 (Story 10-1 done, PRs #103 + #105 merged)
+- Memory `feedback_haiku_review_diff_combined` — grep ground-truth obligatoire pendant code review (T6.4)
+- Memory `feedback_avoid_parallel_prs` — éventuelle retro Epic 10 groupée dans PR de Story 10-5 (pas immédiat Story 10-2)
+- Memory `feedback_subagent_unauthorized_commits` — surveiller commits Agent tool pendant subagent reviews
+
+### Décisions pré-figées
+
+- D3 epic-10.md — MariaDB 10.11 partout (appliqué Story 10-1, justifié docs/ci.md T4.2)
+- D7 epic-10.md — Continuité données garantie dès v0.1.0 (livré cette story par downgrade protection + tests upgrade path)
+- D10 epic-10.md — Bootstrap admin idempotent (déjà vérifié Story 10-1)
+- D11 epic-10.md — Pas d'autre install Kesh, breaking change OK (donc pas de souci si min_required = 0.1.0 hardcoded — Guy = single user)
+
+## 🚨 Questions ouvertes (résolues Pass 1)
+
+| # | Question | Résolution Pass 1 spec validate |
+|---|---|---|
+| Q1 | sqlx 0.8 expose-t-il un moyen d'appliquer une sub-slice du Migrator ? | **Résolu** : oui, via `kesh_db::MIGRATOR.migrations[..n]` (champ `Cow<'static, [Migration]>`, semver-exempt mais public en 0.8.6). Sub-Migrator construit avec ce slice → `.run(pool)`. Voir Dev Notes §"Pattern test migrations" pour le code complet. |
+| Q2 | Le checksum sqlx tolère-t-il l'ajout de commentaires `-- idempotent: ...` rétroactif ? | **Résolu** : non. SHA-384 comparé strictement (`sqlx-core-0.8.6/src/migrate/migrator.rs:175-176`) → `MigrateError::VersionMismatch` garanti si checksum diffère. **Plan adopté** : audit dans `docs/migrations-idempotence-audit.md` (markdown séparé, zéro modif des `.sql`). Cf. AC #1-3 réécrits + Anti-patterns. |
+| Q3 | Migration `_kesh_version.sql` doit-elle être appliquée AVANT ou APRÈS le check downgrade au boot ? | **Résolu** : APRÈS (cf. AC #11 — check retourne `FreshInstall` si table absente via match `MySqlDatabaseError::number() == 1146`, puis `MIGRATOR.run` crée la table, puis `record_boot_version` UPDATE). Les tests upgrade_path AC #15a n'invoquent pas `check_downgrade_protection` avant le full `MIGRATOR.run` — pas de régression possible. |
+| Q4 | Faut-il un test de **pure idempotence run twice** (`MIGRATOR.run` × 2) ? | **Résolu** : différé à code review. Couvert implicitement par `#[sqlx::test]` qui invoque `MIGRATOR` et par `_sqlx_migrations` tracking déjà éprouvé par 600+ tests existants. Non-requis par les ACs Epic. |
+| Q5 | Faut-il formaliser une check CI automatique pour P3 « migration breaking » ? | **Résolu** : non en v0.1. Overhead non-justifié, exceptions P4 fragiles à grep. Laissé à la discipline code review humain + LLM (cohérent CLAUDE.md §"Migration breaking policy" P3). |
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 4.7 (1M context) — single-pass dev-story orchestré complet (T1 → T6.2). 2026-05-22.
+
+### Debug Log References
+
+- `cargo build -p kesh-db` PASS (T2 incrementaal, 13.34s).
+- `cargo clippy -p kesh-api --all-targets -- -D warnings` initial FAIL sur `doc_lazy_continuation` (steps 3b/4b dans docstring non-indentés correctement) → fix par sub-bullets implicites continuant items 3 et 4.
+- `cargo fmt --all` modifié 2 fichiers (main.rs + version.rs) — rustfmt préfère `Less => Err(...)` sur une ligne.
+- `cargo test -p kesh-db --test migrations_fresh_install` initial FAIL avec 3 erreurs successives : (a) `org_type doesn't have default` → ajout colonnes NOT NULL companies, (b) `company_id doesn't have default` (users.company_id NOT NULL post-Story 6-2) → ajout binding, (c) `chk_contacts_type` → `'individual'` → `'Personne'`.
+- `cargo test -p kesh-db --test migrations_upgrade_path` initial FAIL avec `chk_users_password_hash_len` (mock `$argon2id$mock` trop court) → fix avec hash mock plus long (≥80 chars).
+- `cargo test --workspace -j1 -- --test-threads=1` initial FAIL avec 21 failures, dont 1 régression mienne (`truncate_all_inventory_matches_schema` cassée par ajout `_kesh_version` au schéma). Fix : exclure `_kesh_version` du SELECT NOT IN + documenter dans le comment block de `TABLES_TO_TRUNCATE`. Post-fix : 20 failures = baseline pré-existante (`journal_entries::FiscalYearClosed` flakiness #[sqlx::test] parallèle MariaDB).
+
+### Completion Notes List
+
+- T1 (audit doc) : `docs/migrations-idempotence-audit.md` créé avec 27 entrées (26 historiques + 1 nouvelle). Validation grep T1.5 : 29 rows total (1 header + 1 sep + 27 data), chaque migration .sql historique référencée exactement 1 fois. Référence ajoutée dans `crates/kesh-db/README.md:14` pour discoverability. Verdicts statistiques : 3 `yes` (country_code, invoice_paid_at, bank_imports_relax_hash_unique — toutes avec IF [NOT] EXISTS), 24 `tracked-by-sqlx`, 0 `no`.
+- T2 (migration + version.rs + boot) : migration `_kesh_version.sql` créée avec schéma AC #5 (TINYINT PK CHECK id=1, VARCHAR(20) min/last_applied, DATETIME applied_at/last_boot_at NULL) + INSERT initial AC #6. Module `kesh-db/src/version.rs` 141 lignes avec `VersionError` enum (DowngradeRefused/Sqlx/InvalidSemver), `DowngradeCheckOutcome` enum (FreshInstall/Aligned/BinaryAhead), `check_downgrade_protection` (pattern `try_downcast_ref::<MySqlDatabaseError>().is_some_and(|e| e.number() == 1146)` — ground-truth source `errors.rs:150`), `record_boot_version` (avec warn défensif `rows_affected != 1`). `semver = "1"` ajouté à Cargo.toml sans feature serde (déjà résolu transitivement dans Cargo.lock via cargo-metadata). Intégration `main.rs` : 3b check_downgrade AVANT MIGRATOR.run + 4b record_boot APRÈS, docstring boot sequence mise à jour.
+- T3 (tests intégration) : **8 tests verts**. `migrations_fresh_install.rs` 3 tests `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` (tables present subset 23, seed minimal round-trip 7 rows, _kesh_version initial row + CHECK id=1 refuse INSERT id=2). `migrations_upgrade_path.rs` 5 tests : 1 avec `#[sqlx::test(migrations = false)]` (upgrade_path_preserves_data — sub-Migrator pattern, F1-P3 Opus catch validé), 4 avec `#[sqlx::test(migrator = ...)]` (downgrade refused, aligned, binary ahead, record_boot updates). Helper `apply_migrations_up_to` inline 19 lignes via `&MIGRATOR.migrations[..n]` slice + sub-Migrator.
+- T4 (CI doc) : `docs/ci.md` sous-section « Justification mono-version 10.11 » ajoutée (3 paragraphes : cible prod unique, bugs 10.11-specific, compat upstream non-testée). T4.3 (cocher epic-10.md L360) différé à T6.4 post-CI verte.
+- T5 (CLAUDE.md) : section `## Migration breaking policy` insérée entre `## Issue Tracking Rule` (L244) et `## Règle de commit et push` (L281). 5 paragraphes P1-P5 incluant P5 garde-fou audit doc lifecycle (codifié Pass 3 spec validate F2-P3 Opus). Vérifié `grep -l "breaking-skip-bump" crates/kesh-db/migrations/*.sql` = vide.
+- T6 (Test Locally First) : fmt + build + clippy PASS, cargo test workspace PASS hors flakiness pré-existante (20 failures baseline). **Régression `truncate_all_inventory_matches_schema` interceptée + corrigée pendant T6** : `_kesh_version` exclu du SELECT comme `_sqlx_migrations`.
+- **Status story : `in-progress` → `review`**. Prochaine étape (utilisateur) : `git push origin chore/story-10-2-spec` + ouvrir PR + `bmad-code-review 10-2` Sonnet 4.6 (rotation LLM).
+
+### File List
+
+**Créés** :
+- `crates/kesh-db/migrations/20260522000001_kesh_version.sql` (30 lignes — migration `_kesh_version` table + row initiale)
+- `crates/kesh-db/src/version.rs` (141 lignes — module check_downgrade_protection + record_boot_version)
+- `crates/kesh-db/tests/migrations_fresh_install.rs` (218 lignes — 3 tests AC #14)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` (276 lignes — 5 tests AC #15 + helper sub-Migrator)
+- `docs/migrations-idempotence-audit.md` (90 lignes — audit 27 migrations)
+
+**Modifiés** :
+- `crates/kesh-db/Cargo.toml` (+8 lignes — `semver = "1"` + commentaire)
+- `crates/kesh-db/src/lib.rs` (+1 ligne — `pub mod version;`)
+- `crates/kesh-db/src/test_fixtures.rs` (+14/-1 — documentation exceptions système + SELECT NOT IN exclusion `_kesh_version`, fix régression T6)
+- `crates/kesh-db/README.md` (+1 line — référence audit doc)
+- `crates/kesh-api/src/main.rs` (+25 lignes — boot integration 3b + 4b + docstring update)
+- `docs/ci.md` (+10 lignes — sous-section « Justification mono-version 10.11 »)
+- `CLAUDE.md` (+14 lignes — section `## Migration breaking policy` P1-P5)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (last_updated annotation + status 10-2)
+- `_bmad-output/implementation-artifacts/10-2-migrations-idempotence-downgrade-protection.md` (Tasks/Subtasks marqués + Dev Agent Record + File List + Change Log + Status `ready-for-dev` → `in-progress` → `review`)
+
+**Total** : 5 fichiers créés + 9 modifiés = 14 fichiers touchés.
+
+### Change Log
+
+#### Pass 1 spec validate — Sonnet 4.6 (2026-05-21)
+
+Verdict initial : 2 CRITICAL + 4 HIGH + 5 MEDIUM + 4 LOW = 15 findings → NEEDS PASS 2.
+
+**Patches appliqués (15 patches, tous findings ≥ MEDIUM)** :
+
+- **F1 (CRITICAL)** — Pattern erreur `db_err.code() == Some("1146")` (incorrect : retourne le SQLSTATE `"42S02"`) → corrigé partout pour `try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>().map_or(false, |e| e.number() == 1146)`. Modifications : Dev Notes §"Pattern version.rs", Dev Notes §"MariaDB error code 1146", AC #11, T2.3, Anti-patterns. Référence canonique projet : `crates/kesh-db/src/errors.rs:150-151` (ajouté aux References).
+- **F2 (CRITICAL)** — Approche B "fake checksum" (`vec![0u8; 32]`) → `MigrateError::VersionMismatch` garanti (SHA-384 réel = 48 bytes, et même la bonne taille avec faux contenu casse). `Migration::apply()` n'existe pas comme méthode publique. Solution adoptée : sub-Migrator approach via `kesh_db::MIGRATOR.migrations[..n]` (champ public en sqlx 0.8.6, doc(hidden) mais accessible). Dev Notes §"Pattern test migrations" et T3.3 entièrement réécrits.
+- **F3 (HIGH)** — Anti-patterns §"sqlx tolère un checksum différent" (FAUX : VersionMismatch déterministe ligne 175-176 de migrator.rs) → réécrit pour refléter la réalité source-confirmée.
+- **F4 (HIGH)** — Compteurs T1.3 « 19 » et T1.4 « 6 » incorrects → corrigés (15 CREATE TABLE + 10 ALTER + 1 CREATE INDEX = 26 fichiers vérifiés par grep). T1 entièrement réécrit avec listes correctes et `company_invoice_settings.sql` reclassifié CREATE INDEX-only.
+- **F5 (HIGH)** — Table `fiscal_years` manquante dans liste minimale AC #14a → ajoutée (compte « ~22 » → « ~23 »). Vérifié par `grep -n "^CREATE TABLE" migrations/*.sql` : `initial_schema.sql:39`.
+- **F6 (HIGH)** — Contradiction scope L43 « log AVANT MIGRATOR.run » vs Dev Notes L399 « APRÈS, pas AVANT » → scope harmonisé sur position APRÈS (cohérent Dev Notes + AC #13 qui n'ajoute aucun log pre-migration).
+- **F7 (MEDIUM)** — `Migration::apply(&pool)` skeleton fantôme → supprimé, remplacé par sub-Migrator correct.
+- **F8 (MEDIUM)** — Q2 décision architecturale : audit ne peut PAS être in-SQL (F3 le prouve). **Décision Guy** : Plan B — créer `docs/migrations-idempotence-audit.md` markdown séparé, zéro modif des `.sql` historiques. AC #1-3 + T1 entièrement réécrits.
+- **F9 (MEDIUM)** — `record_boot_version` sans check `rows_affected` → ajouté défensivement (warn si != 1). AC #12 + Dev Notes §"Pattern version.rs" mis à jour.
+- **F10 (MEDIUM)** — T2.5 « ligne 67 » incorrect → corrigé « ligne 66 actuelle » (grep confirmé : `tracing::info!("Migrations appliquées")` est à `main.rs:66`).
+- **F11 (MEDIUM)** — Q3 « résolu spec » trop vague → reformulé précisément en termes de tests upgrade_path.
+- **F12 (LOW)** — AC #12 `$1` (style PostgreSQL) → `?` (style MariaDB).
+- **F13 (LOW)** — Q4 fermé (différé à code review).
+- **F14 (LOW)** — AC #8 note ajoutée : `semver 1.0.x` déjà résolu dans Cargo.lock transitivement (cargo-metadata).
+- **F15 (LOW)** — Dev Notes "15 min d'investigation" supprimé (API connue ground-truth).
+
+**Vérification ground-truth orchestrateur** : tous les findings CRITICAL et HIGH ont été vérifiés par grep/Read avant patch (Bash commands : `grep -rn "try_downcast_ref" crates/kesh-db/src/`, `find sqlx-core-0.8 source for Sha384/VersionMismatch`, classification réelle des 26 migrations par `for f; do head; grep CREATE/ALTER; done`, vérification `fiscal_years` dans `initial_schema:39`).
+
+Prochaine étape : Pass 2 spec validate avec **Haiku 4.5** (rotation cycle Sonnet → Haiku → Opus → Sonnet, conformément CLAUDE.md §"Review Iteration Rule"). Discipline grep ground-truth obligatoire pour tout finding Haiku CRITICAL/HIGH (cf. memory `feedback_haiku_review_diff_combined`).
+
+#### Pass 2 spec validate — Haiku 4.5 (2026-05-21)
+
+Verdict initial : 0 CRITICAL + 0 HIGH + 1 MEDIUM + 2 LOW = 3 findings → CONDITIONAL PASS (encore 1 MEDIUM bloquant convergence).
+
+**Patches appliqués (3 findings Haiku + 2 régressions Pass 1 détectées par l'orchestrateur)** :
+
+- **F1-P2 (MEDIUM Haiku)** — AC #22 P3 listait `ALTER COLUMN type` (syntaxe PostgreSQL invalide en MariaDB). Ground-truth verifié : la migration `users_company_id.sql:23` utilise `ALTER TABLE ... MODIFY COLUMN`. P3 corrigé pour lister `MODIFY COLUMN <type>` et `CHANGE COLUMN <old> <new> <type>` (syntaxe MariaDB) + note dialecte ajoutée. P1 (définition) aligné de même.
+- **F2-P2 (LOW Haiku, escaladé à MEDIUM)** — AC #15a référençait encore `Migration::apply(&pool)` (méthode publique inexistante en sqlx 0.8) malgré la pivot sub-Migrator de Pass 1 Dev Notes. AC #15a réécrit pour pointer explicitement sur le sub-Migrator pattern, et précise que le test upgrade utilise `#[sqlx::test]` SANS attribut `migrator` (sinon MIGRATOR complet s'applique avant le corps du test, ce qui invaliderait le scénario).
+- **F3-P2 (LOW Haiku)** — Math clarté AC #15a : explicité que post-story le repo contient 27 migrations totales (26 historiques + 1 nouvelle) et que `MIGRATOR.run()` final applique 4 migrations dans le test (3 historiques restantes + `_kesh_version.sql`).
+- **R1-P2 (MEDIUM régression Pass 1, manquée par Haiku)** — AC #23 référençait encore « commentaire d'idempotence ajouté par AC #1 sur chaque migration historique » alors que Pass 1 a pivoté AC #1 vers `docs/migrations-idempotence-audit.md` séparé (zéro modif des `.sql`). AC #23 réécrit pour parler uniquement de la décision « pas de marker `-- breaking-skip-bump:` dans les migrations historiques » sans plus référencer l'in-SQL commentaire d'idempotence retiré.
+- **R2-P2 (MEDIUM régression Pass 1, manquée par Haiku)** — Contradiction AC #15a (post-F2-P2 : « `#[sqlx::test]` sans migrator ») vs AC #18 (« chacun déclare `#[sqlx::test(migrator = ...)]` » historiquement). AC #18 amendé : `migrations_fresh_install.rs` utilise migrator (full migration avant le test), `migrations_upgrade_path.rs` utilise `#[sqlx::test]` sans migrator (le test contrôle l'application).
+
+**Vérification ground-truth orchestrateur** :
+- F1-P2 vérifié par `grep -nE "ALTER COLUMN|MODIFY COLUMN|CHANGE COLUMN" crates/kesh-db/migrations/*.sql` → `users_company_id.sql:23` confirme MariaDB syntax.
+- R1-P2 vérifié par lecture directe AC #23 vs AC #1 (post-Pass-1).
+- R2-P2 vérifié par contradiction logique entre AC #15a réécrit et AC #18 inchangé.
+
+**Note sur Haiku** : conformément feedback_haiku_review_diff_combined memory, Haiku 4.5 a fait un travail solide sur la vérification ground-truth (16 vérifications listées : table count, line numbers, error patterns, etc.) mais a manqué les régressions internes entre ACs (R1, R2). Pattern attendu — Haiku est bon pour vérifier l'existence d'éléments mais moins fort sur la cohérence cross-AC du document. Pass 3 (Opus 4.7) sera utile pour boucler la cohérence globale.
+
+Prochaine étape : Pass 3 spec validate avec **Opus 4.7** (rotation cycle).
+
+#### Pass 3 spec validate — Opus 4.7 (2026-05-22)
+
+Verdict initial : 1 CRITICAL + 0 HIGH + 1 MEDIUM + 5 LOW = 7 findings → NEEDS PASS 4.
+
+**Patches appliqués (7 patches)** :
+
+- **F1-P3 (CRITICAL)** — `#[sqlx::test]` sans `migrator = ...` applique quand même `./migrations` automatiquement par défaut (`MigrationsOpt::InferredPath`, cf. `sqlx-macros-core-0.8.6/src/test_attr.rs:144-164,196`). Pass 1+2 assumaient (à tort) que l'absence d'attribut = DB vide. **Conséquence** : le test `upgrade_path_preserves_data` AC #15a passait silencieusement en no-op (les 23 migrations déjà appliquées par le default, le sub-Migrator les sautait). Correction : `#[sqlx::test(migrations = false)]` pour test (a), `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` pour test (b) downgrade. AC #15a, AC #15b, AC #18 réécrits avec référence ground-truth source sqlx-macros. Dev Notes §"Pattern test migrations" prefixée d'un warning prérequis attribut. Ground-truth verifié orchestrateur via lecture directe `test_attr.rs:144-164,196,265`.
+- **F2-P3 (MEDIUM)** — Audit doc `docs/migrations-idempotence-audit.md` introduit Pass 1 mais sans mécanisme de mise à jour pour futures migrations. Asymétrie vs P3 (garde-fou breaking) qui est codifié. Correction : ajout d'une 5e clause P5 à `## Migration breaking policy` AC #22 — toute PR ajoutant un `.sql` migration sans modifier l'audit doc = finding MEDIUM en code review.
+- **F3-P3 (LOW)** — Pre-release semver edge case (`0.1.0-rc1 < 0.1.0`) documenté dans Dev Notes §"Décision Q7" pour mémoire architecturale Epic 14.
+- **F4-P3 (LOW)** — Splitting check « 3 docs » → « 4 docs » (audit doc ajouté). Reste sous seuil 5 modules.
+- **F5-P3 (LOW)** — References §"Code existant à toucher" ajoute `docs/migrations-idempotence-audit.md` comme fichier créé par cette story.
+- **F6-P3 (LOW)** — AC #14a : « (~23 tables) » → « (23 tables exactement à la date de cette story — peut grossir) » + clarification sémantique **subset** (pas équivalence stricte).
+- **F7-P3 (LOW)** — T1.2/T1.3 wording amélioré : « instruction principale est CREATE TABLE / ALTER TABLE » (vs « utilisant CREATE TABLE ») pour clarifier que certains fichiers contiennent les deux (e.g. `invoice_validation.sql`).
+
+**Vérification ground-truth orchestrateur** : F1-P3 (CRITICAL) confirmé par lecture directe `sqlx-macros-core-0.8.6/src/test_attr.rs` — le default est bien `MigrationsOpt::InferredPath` (ligne 196), qui appelle `resolve_path("./migrations", ...)` relatif à `CARGO_MANIFEST_DIR` (= `crates/kesh-db/`) et applique le migrator si le dir existe (lignes 149-159). `migrations = false` mappe à `MigrationsOpt::Disabled` (ligne 265) qui tombe sur le bras `_` (ligne 163) → `quote! {}` (rien appliqué). Patches alignés sur cette mécanique.
+
+**Cycle status** : encore 1 MEDIUM (F2-P3) appliqué. Pass 4 nécessaire pour valider que F2-P3 est correctement adressé et que les patches Pass 3 n'ont pas introduit de régression.
+
+Prochaine étape : Pass 4 spec validate avec **Sonnet 4.6** (rotation cycle Sonnet → Haiku → Opus → Sonnet, retour à Sonnet pour la 4e passe).
+
+#### Pass 4 spec validate — Sonnet 4.6 (2026-05-22) — CONVERGED
+
+Verdict : **CONVERGED** — 0 CRITICAL + 0 HIGH + 0 MEDIUM + 6 LOW = 6 findings (uniquement LOW).
+
+**Patches appliqués (6 LOW, mécaniques)** :
+
+- **F1-P4** — T3.1 « (~22 tables) » → « (23 tables — cf. AC #14a pour la liste exacte) » (cohérence avec AC #14a Pass 3 F6-P3).
+- **F2-P4** — T5.1 « (4 paragraphes P1-P4) » → « (5 paragraphes P1-P5) » (cohérence avec AC #22 Pass 3 F2-P3 qui a ajouté P5).
+- **F3-P4** — T5.2 phrase stale « Le seul marker méta-ajouté à 26 migrations historiques est `-- idempotent: ...` » réécrite (post-Pass-1, aucun marker n'est ajouté aux `.sql` historiques — l'audit est dans le markdown).
+- **F4-P4** — Dev Notes §"Splitting check" « migrations/ (1 nouveau + 26 commentaires) » → « migrations/ (1 nouveau fichier) » (stale pré-Pass-1).
+- **F5-P4** — AC #7 « 19 autres migrations CREATE TABLE non-guarded historiques » → « 14 autres fichiers-migration contenant CREATE TABLE sans IF NOT EXISTS (15 au total incluant la nouvelle) » (compteur stale ; ground-truth verifié).
+- **F6-P4** — AC #10 prose ambiguë « binaire == ou > min_required » sur le variant `Aligned` → réécrit strict : `Aligned` = `==`, `BinaryAhead` = `>` (cohérent avec le code sketch Dev Notes).
+
+**Pass 3 regression scan** (par Sonnet Pass 4) — vérifié :
+- F1-P3 (sqlx-macros attribute) — AC #15a, AC #15b, AC #18 et Dev Notes §"Pattern test migrations" sont internally consistent. Aucune référence rémanente du wrong attribute. ✓
+- F2-P3 (P5 garde-fou) — phrasé cohérent avec P3 (même severity, même trigger condition), scope « new .sql migrations only », pas de contradiction avec AC #23. ✓
+- F3-F7 LOW Pass 3 — tous appliqués correctement, pas de régression. ✓
+
+**Cycle status final** :
+- Trend numérique : Pass 1 (15) → Pass 2 (3 + 2 régressions) → Pass 3 (7) → **Pass 4 (6 LOW)** → CONVERGED.
+- LLM rotation respectée : Sonnet → Haiku → Opus → Sonnet (cycle complet).
+- 4 passes (limite max 8 jamais atteinte).
+- Total patches appliqués sur les 4 passes : 33 patches (15 + 5 + 7 + 6).
+
+**Décisions reclassement** :
+- Aucune. Tous les findings ≥ MEDIUM ont été patchés au fil des passes — aucun item reclassé en dette technique.
+
+**Statut final spec** : `ready-for-dev` — `bmad-dev-story 10-2` peut démarrer.
+
+#### Dev-story — Opus 4.7 single-pass orchestré complet (2026-05-22)
+
+Tasks T1-T6 exécutés en séquence, **0 régression finale**, status `in-progress` → `review`.
+
+**Trend dev-story** :
+- T1 audit doc : 1 commit (`fae9d3a`).
+- T2 migration + version.rs + main.rs : 1 commit (`9e9aa19`). Corrections clippy `doc_lazy_continuation` + rustfmt en cours d'implémentation.
+- T3 tests intégration : 1 commit (`46cc696`). 4 corrections schéma successives sur fresh_install + 1 sur upgrade_path (mock password trop court).
+- T4+T5 docs : 1 commit (`ae2401c`). T4.3 différé post-CI.
+- T6 régression fix + status review : 1 commit final (à venir). Régression `truncate_all_inventory_matches_schema` causée par l'ajout de `_kesh_version` au schéma → fix exclusion système.
+
+**Validation finale Test Locally First (T6.1)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build --workspace --all-targets` PASS
+- `cargo clippy --workspace --all-targets -- -D warnings` PASS
+- `cargo test --workspace -j1 -- --test-threads=1` :
+  - Nouveau scope Story 10-2 : **8/8 tests verts** (3 fresh_install + 5 upgrade_path)
+  - kesh-api lib : **173/173 PASS**
+  - kesh-report : **53/53 PASS**
+  - autres crates (reconciliation/import/core/i18n) : **125/125 PASS**
+  - kesh-db lib : 149/169 (20 failures `journal_entries::FiscalYearClosed` = baseline pré-existante stash-pop confirmée, documentée `kesh-db/README.md:56-85`).
+
+**Validation orthogonale Pass 3 Opus F1-P3** : le test `upgrade_path_preserves_data` utilise bien `#[sqlx::test(migrations = false)]`. Vérification ground-truth runtime : l'assertion explicite `kesh_db::MIGRATOR.migrations.len() == 27` au début du test est cohérente avec le repo post-Story 10-2 (26 historiques + nouvelle `_kesh_version.sql`). Sans `migrations = false`, le helper `apply_migrations_up_to(pool, 23)` aurait été un no-op silencieux (les 27 migrations déjà appliquées).
+
+**Issues GitHub** : aucune Issue à fermer cette story (cf. AC §"Issue GitHub fermée").
+
+**Prochaine étape** :
+1. `git push origin chore/story-10-2-spec` (action utilisateur Guy)
+2. Ouvrir PR + vérifier CI verte (Backend Rust + Frontend + Docker sanity)
+3. T6.4a : cocher `_bmad-output/planning-artifacts/epic-10.md` ligne 360 (« CI matrice MariaDB 10.11 verte sur tous les tests Rust workspace ») dans la PR
+4. T6.4b : `bmad-code-review 10-2` Sonnet 4.6 puis rotation Haiku/Opus jusqu'à CONVERGED 0 finding > LOW
+
+#### Pass 1 code-review — Sonnet 4.6 (2026-05-22)
+
+Verdict initial brut : 2 CRITICAL + 4 HIGH + 5 MEDIUM + 4 LOW (BlindHunter) + 1 HIGH + 3 MEDIUM + 2 LOW (EdgeCaseHunter) + 0 CRITICAL/HIGH/MEDIUM + 4 LOW (AcceptanceAuditor) = 25 findings agrégés.
+
+**Reclassements après ground-truth** (`Read` direct sur `version.rs`, `main.rs`, tests + migrations) :
+- BH-1 CRITICAL → MEDIUM : `RowNotFound` est catché par le bras `Err(e) => Err(VersionError::Sqlx(e))` (refus de boot correct), seul le message est trompeur — pas un bug critique.
+- BH-2 CRITICAL → LOW : hardcode `apply_migrations_up_to(pool, 23)` est protégé par `assert_eq!(total, 27)` (fail loud). Scenario "réorganisation sans changement de total" très improbable.
+- BH-3 HIGH → defer v0.2 : race rolling-restart hors scope v0.1 (Kesh single-instance NAS Synology, cohérent project_prod_deployment_gating).
+- BH-5 HIGH → LOW : `parse(binary_version)?` no-op est défense en profondeur valide (protège callers hors `env!`).
+- BH-6 HIGH → REJECT : faux-positif. `invoices` n'a pas de FK `fiscal_year_id` (vérifié `20260416000001_invoices.sql:15-39`). Le test n'insère pas de journal_entry → pas besoin de fiscal_year.
+- BH-11 MEDIUM → defer : exposition `semver::Error` API publique acceptable v0.1.
+- BH-15 LOW + BH-13 LOW → REJECT : observations non-actionnables.
+
+**Triage final** : 0 CRITICAL + 1 HIGH + 4 MEDIUM + 9 LOW = 14 patches + 2 defer v0.2 + 3 reject.
+
+**Patches appliqués (14 patches)** :
+
+- **F1 (HIGH)** — `tracing::info!("Database version check: {:?}", outcome)` (`main.rs:71`) exposait les internals `semver::Version` (`Version { major: 0, minor: 1, patch: 0, pre: Prerelease(""), build: BuildMetadata("") }`). Remplacé par match explicite sur les 3 variants avec messages Display lisibles type `"binary v{} > db_min_required v{} (upgrade)"`.
+- **F2 (MEDIUM)** — Nouveau variant `VersionError::RowMissing` (`version.rs:48-52`) pour distinguer le cas pathologique "table existe mais row id=1 absente" (TRUNCATE accidentel ou restore partiel) du `Sqlx` générique. Arm `Err(sqlx::Error::RowNotFound) => Err(VersionError::RowMissing)` ajouté dans `check_downgrade_protection` (`version.rs:93`) AVANT le catch-all. Message diagnostique explicite avec INSERT de récupération inline.
+- **F3 (MEDIUM)** — Flakiness timezone `record_boot_version_updates_row` : `chrono::Utc::now().naive_utc()` (Rust UTC) vs `NOW()` (MariaDB time_zone, typique NAS Synology Europe/Zurich +1/+2). Assertion fenêtre 2s symétrique relax à `IS NOT NULL` uniquement (AC #17 autorise explicitement cette forme), supprime également la dette F7 (fenêtre 2s non-justifiée).
+- **F4 (MEDIUM)** — Migration `_kesh_version.sql` : `VARCHAR(20)` → `VARCHAR(40)` pour couvrir SemVer 2.0 complet avec pre-release + build metadata (e.g. `1.0.0-rc1.20260522+build.20260522.001` = 37 chars). Évite la troncature silencieuse (mode non-strict) ou l'échec UPDATE (mode strict) sur les bumps `kesh_version_min_required` futurs P2. Migration non encore mergée → modif SQL sans risque `MigrateError::VersionMismatch` sur DB live.
+- **F5 (MEDIUM)** — Nouveau test `check_downgrade_protection_fresh_install_on_empty_db` (`migrations_upgrade_path.rs`) avec `#[sqlx::test(migrations = false)]` qui exerce explicitement le bras ER_NO_SUCH_TABLE 1146 → `Ok(FreshInstall)`. Aucun test n'exerçait ce chemin runtime avant ce patch (tous utilisaient `migrator = ...` qui crée la table avant le test). Régression future sur le `try_downcast_ref` aurait été invisible jusqu'au premier déploiement DB vierge.
+- **F6 (LOW)** — Assertion CHECK constraint id=2 (`migrations_fresh_install.rs:256`) : `result.is_err()` muet → vérification SQLSTATE classe 23xxx (integrity constraint violation) pour s'assurer que l'erreur vient bien d'une violation de contrainte (pas table absente, pool fermé, etc.).
+- **F7 (LOW)** — Supprimée (couverte par F3).
+- **F8 (LOW)** — `.unwrap()` sans message sur SELECT COUNT(*) et SELECT scalaires (`migrations_upgrade_path.rs` 9 occurrences) → `.expect("SELECT … failed")` avec nom de la table pour debugging panic-trace.
+- **F9 (LOW)** — Message FATAL ambigu (`version.rs:33` + `main.rs:75-78`) : "Restore a backup compatible with v{binary}" → "Restore a backup predating Kesh v{db_min}, or upgrade the binary to at least v{db_min}" (3e argument `binary` → `db_min` dans les 2 occurrences).
+- **F10 (LOW)** — Hardcode `apply_migrations_up_to(pool, 23)` (`migrations_upgrade_path.rs:64`) → expression relative `total - 4` (= 23 actuellement, mais robuste à l'ajout futur de migrations). Commentaire explique l'intention.
+- **F11 (LOW)** — Commentaire `main.rs:69-71` documente l'hypothèse single-instance v0.1 (rolling-restart race acceptée, GET_LOCK multi-instance v0.2).
+- **F12 (LOW)** — Commentaire `version.rs:120-127` explique le rationale du `Version::parse(binary_version)?` no-op en production (`env!`), valide pour les callers hors `env!` (tests).
+- **F13 (LOW)** — Reclassé defer : code MariaDB exact pour `ADD CONSTRAINT CHECK` dupliqué varie entre versions (1068 / 4025 / autre) — éviter d'introduire une nouvelle imprécision.
+- **F14 (LOW)** — 3 inconsistances texte spec corrigées : (a) AC #22 intro « exactement les 4 paragraphes » → « 5 paragraphes » (cohérent F2-P3 ajout P5) ; (b) T1.3 « 5 avec guards » → « 3 avec guards » (cohérent audit doc Statistiques) ; (c) AC #15a seed text « 1 journal_entry » → « 1 contact » + explication (FK `invoices.contact_id` requise, pas de journal_entry au seed). Plus (d) audit doc ligne 43 « lignes 15-16 » → « lignes 15-18 » (couvrir commentaire + instructions SQL).
+
+**Defers** (acceptable v0.1) :
+- BH-3 race TOCTOU rolling-restart → v0.2 multi-instance (GET_LOCK ou similaire). Documenté en commentaire `main.rs`.
+- BH-11 `semver::Error` exposé dans API publique → v0.2 si refactor stabilisation API.
+
+**Vérification ground-truth orchestrateur** :
+- BH-1 RowNotFound : lecture `version.rs:83-104` confirme catch-all `Err(e)` route bien vers `VersionError::Sqlx(RowNotFound)` mais sans contexte spécifique → MEDIUM (pas CRITICAL).
+- BH-2 hardcode 23 : lecture `migrations_upgrade_path.rs:56-66` confirme `assert_eq!(total, 27)` fail-loud → LOW.
+- BH-6 fiscal_year FK : grep `fiscal_year_id` dans `20260416000001_invoices.sql` confirme aucune FK directe → REJECT faux-positif.
+- BH-4 `{:?}` Version : lecture `main.rs:71` confirme `tracing::info!("...: {:?}", outcome)` → HIGH confirmé, patch F1.
+
+**Validation locale Test Locally First** (post-patches) :
+- `cargo fmt --all -- --check` PASS
+- `cargo build -p kesh-db -p kesh-api` PASS (12.27s)
+- `cargo clippy -p kesh-db -p kesh-api --all-targets -- -D warnings` PASS (5.38s)
+- `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` : **9/9 verts** (3 fresh_install + 6 upgrade_path, +1 nouveau test FreshInstall)
+
+**Cycle status** : encore 1 HIGH + 4 MEDIUM > LOW présents originellement, tous patchés → Pass 2 obligatoire selon CLAUDE.md §"Review Iteration Rule" (relancer après application des patches avec LLM différent + contexte frais pour valider absence de régression).
+
+Prochaine étape : Pass 2 code-review avec **Haiku 4.5** (rotation cycle Sonnet → Haiku → Opus → Sonnet). Discipline grep ground-truth obligatoire pour tout finding Haiku CRITICAL/HIGH (cf. memory `feedback_haiku_review_diff_combined`). Mitigation : donner à Haiku le diff aplati (HEAD vs main final) plutôt que la séquence multi-commit, pour éviter le bug d'indexation diff combiné.
+
+#### Pass 2 code-review — Haiku 4.5 (2026-05-22)
+
+Verdict initial brut Haiku : 2 CRITICAL + 0 HIGH + 2 MEDIUM + 1 LOW (BH) + 1 CRITICAL + 3 HIGH + 3 MEDIUM + 1 LOW (ECH) + 1 MEDIUM (AA) = 14 findings agrégés.
+
+**Reclassements après ground-truth grep** (discipline CLAUDE.md §"Haiku-specific guardrails") :
+- **BH2-1 CRITICAL → REJECT** : pattern `is_some_and(|e| e.number() == 1146)` est valide Rust 1.85.0 (rust-toolchain.toml channel 1.85.0). `Option::is_some_and()` stable depuis Rust 1.70. Build PASS Pass 1 → faux-positif méta-spec (Haiku réagit à la divergence spec-vs-code, sans réaliser que `is_some_and` et `map_or(false, ...)` sont fonctionnellement équivalents).
+- **BH2-2 CRITICAL → REJECT** : Haiku auto-réfute son finding (« La logique est correcte ») et propose juste une amélioration de commentaire LOW. La logique des bras `Database(1146)` vs `RowNotFound` est correcte.
+- **BH2-4 MEDIUM → REJECT** : « doc audit 27 figé peut dériver » — c'est exactement ce que la **politique P5** codifie (toute PR ajoutant migration DOIT mettre à jour l'audit doc, finding MEDIUM en code review). Pas une dette, c'est par design.
+- **BH2-5 LOW → REJECT** : dépend de BH2-1 faux-positif.
+- **ECH-3 HIGH → REJECT** : `record_boot_version` est explicitement non-fatale par design (cf. docstring + `if let Err = ... warn` dans main.rs). Pas un bug.
+- **BH2-3 MEDIUM → VALIDÉ** : ground-truth grep confirme — `grep "#[error" crates/kesh-db/src/errors.rs crates/kesh-api/src/errors.rs` = 30+ messages tous en **français** (« Entité non trouvée », « Erreur SQLx : {0} », « Identifiants invalides », etc.). Les 4 `#[error]` de `version.rs` en anglais sont une **incohérence projet** réelle.
+- **ECH-1 MEDIUM** : `grep "RowMissing" tests/ src/` = 2 occurrences (déclaration + arm) mais aucune dans tests → variant Pass 1 sans test runtime. Branche défensive dead code potentielle. Valide.
+- **ECH-4 HIGH → MEDIUM** : enrichir le message `InvalidSemver` avec la string fautive est valide mais pas HIGH (l'exit reste correct, c'est juste l'UX opérateur).
+- **ECH-2/5/6/7/8 + AA-1** → reclassés LOW (améliorations doc/wording, pas blockers).
+
+**Triage final Pass 2** : 0 CRITICAL + 0 HIGH + **2 MEDIUM** + 7 LOW = 9 patches + 5 REJECT.
+
+**Patches appliqués (Pass 2)** :
+
+- **G1 (MEDIUM, BH2-3)** — `version.rs:32-65` 4 messages `#[error(...)]` traduits en français (cohérent convention projet `kesh-db/errors.rs` + `kesh-api/errors.rs`). Patch couvre `DowngradeRefused`, `RowMissing`, `Sqlx`, `InvalidSemver`.
+- **G2 (MEDIUM, ECH-1)** — Nouveau test `check_downgrade_protection_row_missing_after_truncate` (`migrations_upgrade_path.rs`) avec `#[sqlx::test(migrator = ...)]` qui DELETE row id=1 puis appelle `check_downgrade_protection` → assertion `Err(RowMissing)`. Couvre le variant Pass 1 F2 qui n'avait pas de test runtime.
+- **G3 (MEDIUM/LOW, ECH-4)** — Refactor `VersionError::InvalidSemver(semver::Error)` → `InvalidSemver { origin: &'static str, value: String, error: semver::Error }`. Le `origin` distingue `"binaire"` vs `"base de données"`. Le `value` inclut la string fautive tronquée à 64 chars (évite pollution log si payload aberrant). Helper interne `VersionError::invalid_semver(origin, value, error)` centralise la troncature. Sites d'appel `Version::parse(...)?` remplacés par `.map_err(|e| VersionError::invalid_semver(...))?`. NB : suppression du `#[from] semver::Error` (plus utilisable directement avec `?`). Note thiserror : le champ initialement nommé `source` a dû être renommé en `origin` car thiserror interprète automatiquement `source: T` comme un implementor de `std::error::Error` (chain) ; `&'static str` n'implémente pas Error. Nouveau test `check_downgrade_protection_invalid_db_semver` valide le variant runtime avec `UPDATE _kesh_version SET kesh_version_min_required = 'not-a-semver'`.
+- **G4 (LOW, ECH-6)** — `apply_migrations_up_to` helper : message d'assertion enrichi pour expliquer la fenêtre `total - 4` (Story 10-2) + suggérer la mise à jour si une migration est ajoutée.
+- **G5 (LOW, ECH-7/AA-1)** — Spec AC #5 + tableau Dev Notes : `VARCHAR(20)` → `VARCHAR(40)` (3 occurrences). Aligne la spec avec l'implémentation Pass 1 F4 + justification ajoutée dans le texte d'AC #5.
+- **G6 (LOW, ECH-8)** — Migration `_kesh_version.sql` commentaire : INSERT row initiale `'0.1.0'` figée devient **historique** dès le 1er boot ; refactor futur ne doit pas tenter de la « synchroniser » avec Cargo.toml.
+- **G7 (LOW, BH2-2)** — `version.rs:84-92` commentaire bras `Database(1146)` clarifié : distingue explicitement le cas fresh install (`1146`) du cas pathologique row absente (`RowNotFound`) géré par le bras suivant.
+- **G9 (LOW, ECH-5)** — `version.rs:140-145` commentaire `record_boot_version` documente la limitation de couverture du `rows_affected != 1` (dead code en pratique, warn non-fatal par design).
+- **G8 (LOW, ECH-2) → defer** : déplacer la note "single-instance v0.1" du commentaire `main.rs` vers une section CLAUDE.md formalisée est une amélioration nice-to-have, hors scope code-review (politique de concurrence multi-instance v0.2 sera traitée par l'Epic correspondant).
+
+**Vérification ground-truth orchestrateur Pass 2** :
+- BH2-1 : `grep -nF "is_some_and" version.rs` confirme usage + `cat rust-toolchain.toml` confirme 1.85.0 (stable >= 1.70 où API arrivée). Build PASS Pass 1.
+- BH2-3 : `grep -rhn "#[error" kesh-db/src/ kesh-api/src/` confirme français pour 30+ messages projets vs anglais sur 4 messages version.rs.
+- ECH-1 : `grep -nF "RowMissing" tests/ src/` confirme 0 occurrence dans tests/.
+
+**Régression non-introduite par Pass 2** — vérifié :
+- Sites d'appel `VersionError::InvalidSemver(...)` : `grep -rn "VersionError::InvalidSemver" crates/` = 0 caller externe au module + 1 dans tests (mis à jour) → refactor variant safe.
+- `#[from] semver::Error` retiré → pas de propagation `?` cassée (vérifié `Version::parse` appelée 2 fois dans le module, les deux sites mis à jour avec `.map_err`).
+
+**Validation locale Test Locally First (post-Pass-2)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build -p kesh-db -p kesh-api` PASS (7.44s)
+- `cargo clippy -p kesh-db -p kesh-api --all-targets -- -D warnings` PASS (5.20s)
+- `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` : **11/11 verts** (3 fresh_install + 8 upgrade_path, +2 nouveaux tests Pass 2 : RowMissing + InvalidSemver).
+
+**Cycle status** : 2 MEDIUM (G1, G2) ont été patchés. Pass 3 obligatoire selon CLAUDE.md §"Review Iteration Rule" (relancer après chaque passe avec ≥ 1 finding > LOW). LLM rotation : Pass 3 = **Opus 4.7** (cycle Sonnet → Haiku → Opus).
+
+Prochaine étape : Pass 3 code-review avec **Opus 4.7** sur diff aplati (1 commit Pass 2 + Pass 1 + 6 commits dev story). Focus attendu Opus : cohérence cross-fichier post-refactor `VersionError::InvalidSemver` + détection de régression subtile introduite par les patches Pass 1+2.
+
+#### Pass 3 code-review — Opus 4.7 (2026-05-22)
+
+Verdict initial brut Opus : 0 CRITICAL + 1 HIGH + 3 MEDIUM + 4 LOW (BH) + 0 CRITICAL + 1 HIGH + 2 MEDIUM + 3 LOW (ECH) + 0 CRITICAL + 0 HIGH + 0 MEDIUM + 4 LOW (AA) = 18 findings agrégés.
+
+**Reclassements après ground-truth + déduplication** :
+- BH3-1 HIGH (UTF-8 panic dans `invalid_semver`) = ECH3-1 HIGH (même finding, reproduit par Opus bash sur `'α'.repeat(40)`). **Catch majeur Pass 3 raté par Sonnet et Haiku — exactement le type de bug subtle que la rotation LLM est censée trouver.**
+- BH3-8 LOW (couverture test troncature manquante) = ECH3-2 MEDIUM (même finding, dégradé MEDIUM par BH, escaladé par ECH à cause du lien avec BH3-1).
+- BH3-3 MEDIUM (`std::process::exit(1)` skip destructors) → reclassé LOW : mono-instance v0.1 NAS Synology, pool fait juste un SELECT court (pas de transactions ouvertes). Documenté en commentaire.
+
+**Triage final Pass 3** : **1 HIGH + 3 MEDIUM + 9 LOW** = 13 patches + 0 REJECT.
+
+**Patches appliqués (Pass 3)** :
+
+- **H1 (HIGH, BH3-1/ECH3-1)** — **CRITIQUE** : remplacement `&value[..MAX_LEN]` par `value.chars().take(MAX_LEN).collect::<String>()` dans le helper `invalid_semver` (`version.rs:80-92`). `MAX_LEN` devient un nombre de **caractères logiques** (pas de bytes), éliminant le panic UTF-8 sur les chars multi-byte (accents `é`=2b, idéogrammes CJK=3b, emojis=4b). Trois nouveaux tests unitaires en `#[cfg(test)] mod tests` couvrent : (a) passthrough ASCII court, (b) troncature ASCII long avec ellipsis, (c) **régression Pass 3 BH3-1** : `"α".repeat(65)` = 130 bytes UTF-8, l'ancienne logique panic, la nouvelle retourne 65 chars + `…`. Note charset migration : table `_kesh_version` désormais explicite `CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` (H10) — confirme que le payload UTF-8 multi-byte est réellement stockable côté MariaDB.
+- **H2 (MEDIUM, BH3-2)** — Test `record_boot_version_updates_row` : `record_boot_version(&pool, "0.1.0")` → `"9.9.9"` + assertion `last_applied == "9.9.9"`. Le pré-state était `'0.1.0'` (INSERT migration), donc l'assertion `'0.1.0' == '0.1.0'` était toujours vraie et ne prouvait pas que la fonction écrivait la colonne. Une régression où l'UPDATE oublierait `kesh_version_last_applied` passerait silencieusement.
+- **H3 (MEDIUM → LOW, BH3-3)** — `std::process::exit(1)` dans `main.rs:88,109` skip les destructors Rust (pool MariaDB pas fermé gracefully). Reclassé LOW : mono-instance v0.1, pool n'a fait qu'un SELECT court. Commentaire docstring `main.rs:71-77` documente la limitation + signale qu'à reviser si une future Story introduit des transactions writeable avant le check.
+- **H4 (MEDIUM, BH3-4)** — `record_boot_version` parse `binary_version` 2 fois (validation jetée). Refactor : `let parsed = Version::parse(...)?; let canonical = parsed.to_string();` puis bind `canonical` au lieu de la string brute. Bénéfice : la colonne `kesh_version_last_applied` contient toujours la forme canonique SemVer (cohérent avec la lecture `check_downgrade_protection` qui re-parse).
+- **H5 (MEDIUM, ECH3-3)** — Message d'erreur `VersionError::RowMissing` (`version.rs:48-57`) enrichi pour distinguer 2 origines : (a) crash migration partielle (CREATE TABLE OK + INSERT échoué, MariaDB non-DDL-transactionnelle) → diagnostic `SELECT success FROM _sqlx_migrations WHERE version = 20260522000001` + DELETE dirty + re-run binaire ; (b) DELETE/TRUNCATE manuel post-migration → INSERT recovery (`INSERT INTO _kesh_version VALUES (1, '0.1.0', '0.1.0')` avec rappel de remplacer si version différente).
+- **H6 (LOW, BH3-8/ECH3-2)** — Couvert par les 3 tests unitaires ajoutés H1 (mod tests dans version.rs). Pas de patch additionnel requis.
+- **H7 (LOW, ECH3-6)** — `main.rs:80-110` : 3 messages `tracing::info!` traduits en français + bras `DowngradeRefused` utilise désormais `{}` (Display du variant) au lieu de dupliquer le message anglais. Évite drift maintenance si le Display français évolue.
+- **H8 (LOW, BH3-6)** — Warn message `record_boot_version` distingue `rows_affected == 0` vs `> 1` (deux cas pathologiques différents : DELETE manuel vs PK violé).
+- **H9 (LOW, BH3-7)** — Décision : garder l'INSERT inline dans le message `RowMissing` mais l'inclure dans la procédure (a)/(b) du H5 (procédure plus longue mais utile à l'opérateur). Mention `docs/operations.md` ajoutée comme référence future (doc à créer Story 10-4 manuel install Synology).
+- **H10 (LOW, ECH3-5)** — Migration `_kesh_version.sql` : ajout `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` (parité avec les 15 autres CREATE TABLE historiques + élimine couplage au default serveur).
+- **H11 (LOW, ECH3-4)** — Commentaire `migrations_upgrade_path.rs:68-79` réécrit pour clarifier l'incohérence apparente : `total == 27` hardcode = INTENTIONNEL fail-loud sur évolution, `total - 4` = expression relative cohérente mais qui requiert maintenance manuelle à chaque ajout de migration. Le commentaire « robuste à l'ajout futur » de Pass 1 retiré (contradictoire avec hardcode).
+- **H12 (LOW, AA3-1/AA3-4)** — Note explicative ajoutée dans la spec T2.3 + Dev Notes "Pattern complet" pour signaler que le sketch est PRE-DEV (« à raffiner ») et que la version définitive post-Pass-2 G3 est dans `crates/kesh-db/src/version.rs:1-260`. Évite le drift trompeur pour un reviewer futur.
+- **H13 (LOW, AA3-2/AA3-3)** — Change Log Pass 2 « 141 lignes » → « 199 lignes (post-Pass-2 G1/G3) » (le code post-Pass-3 fait ~260 lignes avec mod tests). T3.1 « round-trip 7 lignes » → « round-trip 6 SELECT (contact seedé en glue FK pour invoice, sans SELECT explicite) ».
+
+**Vérification ground-truth orchestrateur Pass 3** :
+- H1 UTF-8 panic : reproduit bash par Opus ECH (`'α'.repeat(40)` → panic byte boundary). Fix validé par 3 tests unitaires (un dont le test multibyte qui aurait paniqué avant le fix).
+- H2 test laxiste : grep pré-state migration confirme `'0.1.0'` figé → assertion `'0.1.0' == '0.1.0'` toujours vraie.
+- H5 RowMissing origine : sqlx-mysql `apply()` source confirme MariaDB DDL non-transactionnelle (commentaire `sqlx-mysql-0.8.6/src/migrate.rs:183-184`) → état intermédiaire CREATE-OK + INSERT-KO réel.
+
+**Régression non-introduite par Pass 3** — vérifié :
+- Pas de caller externe à `VersionError::InvalidSemver` (grep) → H4 refactor `parse + canonical` safe.
+- Pas de caller externe à `record_boot_version` autre que `main.rs` → H2 changement valeur de test safe.
+- `tracing::error!("FATAL : {}", err)` via Display de `DowngradeRefused` (H7) : Display contient déjà le diagnostic complet (« Restaurer un backup antérieur à Kesh v… ou mettre à jour le binaire… ») validé Pass 2 G1 traduction française.
+
+**Validation locale Test Locally First (post-Pass-3)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build -p kesh-db -p kesh-api` PASS (5.05s)
+- `cargo clippy -p kesh-db -p kesh-api --all-targets -- -D warnings` PASS (3.26s)
+- `cargo test -p kesh-db --test migrations_fresh_install --test migrations_upgrade_path` : **11/11 verts** (3 fresh + 8 upgrade — pas de nouveau test intégration Pass 3, le test runtime troncature est en mod tests dans `version.rs`).
+- `cargo test -p kesh-db --lib version::tests` : **3/3 verts** (nouveaux tests unitaires UTF-8 H1).
+
+**Cycle status** : 1 HIGH + 3 MEDIUM patchés. Pass 4 obligatoire selon CLAUDE.md §"Review Iteration Rule" (> LOW présents originellement, tous patchés). LLM rotation : Pass 4 = **Sonnet 4.6** (cycle Sonnet → Haiku → Opus → **Sonnet** retour début).
+
+Prochaine étape : Pass 4 code-review avec **Sonnet 4.6** sur diff aplati. Focus attendu Pass 4 : valider que les patches Pass 3 (notamment H1 UTF-8 fix, H4 canonicalize, H5 message enrichi) n'ont pas introduit de régression cachée, et confirmer convergence (0 finding > LOW). Trend : 14 (Pass 1) → 9 (Pass 2) → 13 (Pass 3) → ?
+
+#### Pass 4 code-review — Sonnet 4.6 (2026-05-22) — CONVERGED
+
+Verdict initial brut Sonnet : 0 CRITICAL + 0 HIGH + 0 MEDIUM + 6 LOW (BH) + 0 CRITICAL + 0 HIGH + 0 MEDIUM + 2 LOW (ECH) + 0 CRITICAL + 0 HIGH + 0 MEDIUM + 2 LOW (AA, 26/26 AC met) = 10 findings agrégés, **tous LOW**.
+
+**Critère d'arrêt CLAUDE.md §"Review Iteration Rule" atteint** : 0 finding > LOW → CONVERGED.
+
+**Scan régressions Pass 3 confirmées non-introduites** (par 3 reviewers Pass 4) :
+- H1 UTF-8 fix : 3 tests unitaires verts (passthrough ASCII court / troncature ASCII long / régression `"α".repeat(65)` qui aurait panic avant).
+- H2 test "9.9.9" : prouve réellement que l'UPDATE écrit la colonne.
+- H4 canonicalize : `parsed.to_string()` stable pour les versions cargo standard.
+- H5 RowMissing enrichi : Display contient diagnostic complet, accessible via catch-all `Err(e) => tracing::error!("...: {}", e)`.
+- H7 main.rs FR + Display via `{}` : pas de drift, le Display de `DowngradeRefused` est utilisé.
+- H10 CHARSET utf8mb4 : confirme stockage UTF-8 multi-byte (motive ECH4-2 grapheme cluster note).
+
+**Patches LOW appliqués (Pass 4, sélection des plus utiles)** :
+
+- **I1 (LOW, ECH4-1)** — `main.rs:123-124` : `tracing::warn!("Failed to record boot version metadata (non-fatal): {}", ...)` traduit FR `"Impossible d'enregistrer la version de boot (non-fatal) : {}"` (cohérence convention projet, dernière incohérence FR/EN dans `main.rs`).
+- **I2 (LOW, BH4-4/AA4-L2)** — T3.2 `5 tests` → `5 tests initiaux + enrichi à 8 par Pass 1 F5 / Pass 2 G2 / Pass 2 G3` (annotation explicite du trend). T3.5 `5 tests upgrade_path + 3 fresh_install = 8 tests verts` → `8 + 3 = 11 tests verts post-code-review` (count final reflète la réalité post-cycle).
+
+**LOWs laissés** (cosmétiques sans impact fonctionnel, optimisations prématurées ou redondances acceptables) :
+- BH4-1 LOW : double itération `chars().count()` + `chars().take()` → optimisation prématurée (path d'erreur rare, MAX_LEN=64 borne).
+- BH4-2 LOW : commentaire `canonical` stable — explicite dans le code (`let parsed = Version::parse(...)?; let canonical = parsed.to_string();` self-documenting).
+- BH4-3 LOW : test intégration `origin: "binaire"` manquant — couvert par mod tests `version.rs` (les 3 tests unitaires exercent le helper directement, pas le caller).
+- BH4-5 LOW : `RowMissing` dans catch-all `Err(e)` au lieu de bras dédié — Display contient le diagnostic complet (procédure (a)/(b) H5), prefix « Vérification de version DB échouée » + Display reste lisible. Coût d'un bras explicite vs bénéfice : marginal.
+- BH4-6 LOW : commentaire incohérence spec ligne 199 « expression relative » vs code ligne hardcode — la spec sera archivée au merge, drift acceptable.
+- ECH4-2 LOW : grapheme cluster NFD séparé par `chars().take()` — purement cosmétique sur un message d'erreur d'audit, sur-engineering d'utiliser `unicode-segmentation`. Documenté comme observation.
+- AA4-L1 LOW : T2.3 mentionne encore `InvalidSemver(#[from] semver::Error)` (pré-refactor Pass 2 G3) — annotation `(refactoré Pass 2 G3)` ajoutée Pass 3 H12, suffisante pour un lecteur futur.
+
+**Vérification ground-truth orchestrateur Pass 4** :
+- Régression H1 fix : `cargo test -p kesh-db --lib version::tests` = 3/3 verts (les 3 tests unitaires UTF-8 incluant le multibyte).
+- Pas de nouveau caller externe à `VersionError` introduit par Pass 1+2+3 (grep `VersionError::` outside `version.rs` + tests).
+
+**Validation locale Test Locally First final (post-Pass-4)** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build --workspace --all-targets` PASS (36.91s)
+- `cargo clippy --workspace --all-targets -- -D warnings` PASS (8.50s)
+- Tests intégration Story 10-2 : 11/11 verts (3 fresh + 8 upgrade — Pass 4 patches sont docs + 1 message FR, pas de nouveau test runtime).
+- Tests unitaires version.rs : 3/3 verts (mod tests UTF-8 H1).
+
+**Cycle complet code-review** :
+- **Pass 1 Sonnet 4.6** : 14 patches (1H BH-4 log Debug + 4M F2 RowMissing/F3 timezone/F4 VARCHAR(40)/F5 test FreshInstall + 9L mécaniques)
+- **Pass 2 Haiku 4.5** : 9 patches (2M G1 messages FR + G2 test RowMissing + 7L dont G3 InvalidSemver refactor escaladé MEDIUM)
+- **Pass 3 Opus 4.7** : 13 patches (**1H H1 panic UTF-8** raté par Sonnet+Haiku + 3M H2 test laxiste/H4 canonicalize/H5 RowMissing enrichi + 9L)
+- **Pass 4 Sonnet 4.6** : 2 patches LOW (I1 warn FR + I2 count tests stale) + 8 LOW laissés → **CONVERGED**
+
+**Trend numérique** : 14 → 9 → 13 → **2 (LOW only)**. Cycle décroissant après Pass 3 (Opus catch UTF-8 dilate temporairement le compte). Total : 38 patches répartis sur 4 passes + 0 dette technique reclassée.
+
+**Discipline grep ground-truth** : appliquée systématiquement à tous les findings ≥ MEDIUM des 4 passes, conformément CLAUDE.md §"Haiku-specific guardrails" étendu par hygiène à Sonnet + Opus. 5 faux-positifs Haiku Pass 2 réfutés par grep (BH2-1 `is_some_and` valide Rust 1.85, BH2-2 auto-réfuté, BH2-4 P5 par design, BH2-5 dépendance, ECH-3 par design). 1 faux-positif Sonnet Pass 1 réfuté (BH-6 FK `fiscal_year_id` invoices inexistante).
+
+**Rotation LLM respectée** : Sonnet → Haiku → Opus → Sonnet (cycle complet 4 passes, retour début). Opus Pass 3 a catch le bug majeur UTF-8 (BH3-1/ECH3-1) raté par Sonnet+Haiku — confirme la valeur de la rotation LLM (memory `feedback_haiku_review_diff_combined` + retro Epic 9 I1).
+
+**Statut final code-review** : cycle CONVERGED, statut `review` maintenu (sera bumped `review → done` au merge effectif PR #106 sur `main`, conformément convention projet BMAD).
+
+**Décisions reclassement** :
+- Aucune dette catégorie A reclassée (zero carry-forward policy CLAUDE.md §"Tech debt management"). Les 2 defers v0.2 (BH-3 rolling-restart race, BH-11 `semver::Error` API surface) sont en catégorie **B** : limitations documentées + planification Epic v0.2 future, conformes politique.
+- G8 LOW Pass 2 (déplacer note single-instance v0.1 de `main.rs` vers CLAUDE.md `## Concurrence et multi-instance`) → defer Epic v0.2 (commentaire `main.rs:71-77` post-H3 Pass 3 documente déjà le caveat, formaliser CLAUDE.md attendra l'Epic correspondant).
+
+**Prochaine étape utilisateur** :
+1. `git push origin chore/story-10-2-spec` (4 nouveaux commits Pass 1+2+3+4 à pousser)
+2. PR #106 sera mise à jour automatiquement, CI rejouera sur les nouveaux commits
+3. Vérifier CI verte (Backend Rust + Frontend Svelte + Docker sanity)
+4. Merger PR #106 sur main
+5. Sprint-status : `10-2-migrations-idempotence-downgrade-protection: review → done`

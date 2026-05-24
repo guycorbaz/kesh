@@ -1,0 +1,768 @@
+
+Running 56 tests using 1 worker
+
+  ✓   1 tests/e2e/fiscal-years.spec.ts:44:2 › Page exercices — affichage › affiche le titre et le bouton Nouvel exercice (2.5s)
+  ✓   2 tests/e2e/fiscal-years.spec.ts:50:2 › Page exercices — affichage › affiche le fiscal_year seedé (2020-2030) (1.6s)
+  ✓   3 tests/e2e/fiscal-years.spec.ts:59:2 › Page exercices — création + clôture › crée un exercice 2031, le renomme puis le clôture (3.0s)
+  -   4 tests/e2e/fiscal-years.spec.ts:100:2 › AC #22 — fallback toast actionnable › FISCAL_YEAR_INVALID déclenche le toast actionnable « Créez d'abord un exercice »
+  ✓   5 tests/e2e/homepage-settings.spec.ts:33:2 › Homepage › affiche 3 widgets sur la page d'accueil (1.2s)
+  ✓   6 tests/e2e/homepage-settings.spec.ts:46:2 › Settings › page Paramètres affiche 4 sections (1.4s)
+  ✘   7 tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil (1.6s)
+  ✘   8 tests/e2e/invoices_echeancier.spec.ts:90:2 › Échéancier factures — Story 5.4 › golden path : création → échéancier → marquer payée → dé-marquer → export CSV (831ms)
+  ✓   9 tests/e2e/invoices_echeancier.spec.ts:164:2 › Échéancier factures — Story 5.4 › page échéancier exige une session authentifiée (498ms)
+  ✓  10 tests/e2e/invoices.spec.ts:66:2 › Factures — liste › affiche le titre et le bouton Nouvelle facture (883ms)
+  ✘  11 tests/e2e/invoices.spec.ts:77:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) (1.8s)
+  ✘  12 tests/e2e/invoices.spec.ts:87:2 › Factures — création brouillon › crée une facture avec une ligne libre et la persiste (774ms)
+  ✘  13 tests/e2e/invoices.spec.ts:112:2 › Factures — création brouillon › crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2) (821ms)
+  ✘  14 tests/e2e/invoices.spec.ts:223:2 › Factures — téléchargement PDF (Story 5.3) › télécharge le PDF d'une facture validée (golden path) (848ms)
+  ✘  15 tests/e2e/invoices.spec.ts:239:2 › Factures — téléchargement PDF (Story 5.3) › bouton visible uniquement si status=validated (827ms)
+  ✘  16 tests/e2e/invoices.spec.ts:262:2 › Factures — téléchargement PDF (Story 5.3) › erreur 400 INVOICE_NOT_PDF_READY affichée comme toast (765ms)
+  ✓  17 tests/e2e/journal-entries.spec.ts:59:2 › Page écritures — affichage › affiche le titre et le bouton Nouvelle écriture (1.0s)
+  ✘  18 tests/e2e/journal-entries.spec.ts:65:2 › Page écritures — affichage › affiche un message si liste vide (1.2s)
+  ✘  19 tests/e2e/journal-entries.spec.ts:83:2 › Page écritures — saisie › saisie nominale d'une écriture équilibrée (1.4s)
+  ✘  20 tests/e2e/journal-entries.spec.ts:115:2 › Page écritures — saisie › indicateur de déséquilibre et bouton Valider désactivé (857ms)
+  ✘  21 tests/e2e/journal-entries.spec.ts:139:2 › Page écritures — saisie › rejet client d'un montant avec plus de 4 décimales (899ms)
+  ✓  22 tests/e2e/journal-entries.spec.ts:162:2 › Page écritures — saisie › raccourci Ctrl+N ouvre le formulaire (1.5s)
+  -  23 tests/e2e/journal-entries.spec.ts:172:7 › Page écritures — saisie › refus écriture sans exercice couvrant la date (3.3)
+  -  24 tests/e2e/journal-entries.spec.ts:173:7 › Page écritures — saisie › refus écriture exercice clos FR24 (12.1)
+  ✘  25 tests/e2e/journal-entries.spec.ts:193:2 › Page écritures — modification (Story 3.3) › édition nominale — modification du libellé (806ms)
+  ✘  26 tests/e2e/journal-entries.spec.ts:215:2 › Page écritures — modification (Story 3.3) › suppression avec confirmation (849ms)
+  ✘  27 tests/e2e/journal-entries.spec.ts:234:2 › Page écritures — modification (Story 3.3) › annulation suppression (804ms)
+  ✘  28 tests/e2e/journal-entries.spec.ts:250:2 › Page écritures — modification (Story 3.3) › conflit 409 affiche la modale de reload (813ms)
+  ✘  29 tests/e2e/journal-entries.spec.ts:316:2 › Page écritures — recherche & pagination (Story 3.4) › filtre par libellé avec debounce (876ms)
+  ✘  30 tests/e2e/journal-entries.spec.ts:330:2 › Page écritures — recherche & pagination (Story 3.4) › filtre par plage de montants (971ms)
+  ✘  31 tests/e2e/journal-entries.spec.ts:342:2 › Page écritures — recherche & pagination (Story 3.4) › tri ascendant puis descendant sur Date (836ms)
+  ✓  32 tests/e2e/journal-entries.spec.ts:356:2 › Page écritures — recherche & pagination (Story 3.4) › pagination — changement de taille de page (843ms)
+  ✘  33 tests/e2e/journal-entries.spec.ts:366:2 › Page écritures — recherche & pagination (Story 3.4) › URL state préservé après rafraîchissement (815ms)
+  ✓  34 tests/e2e/journal-entries.spec.ts:384:2 › Page écritures — recherche & pagination (Story 3.4) › bouton Réinitialiser efface tous les filtres (1.5s)
+  -  35 tests/e2e/journal-entries.spec.ts:400:7 › Page écritures — recherche & pagination (Story 3.4) › filtre par numéro de facture (story 5.x)
+  ✘  36 tests/e2e/journal-entries.spec.ts:404:2 › Page écritures — tooltips pédagogiques (Story 3.5) › hover sur l'en-tête Débit affiche la définition naturelle et technique (6.0s)
+  -  37 tests/e2e/journal-entries.spec.ts:430:7 › Page écritures — tooltips pédagogiques (Story 3.5) › hover crédit — même pattern que débit, couverture implicite
+  -  38 tests/e2e/journal-entries.spec.ts:431:7 › Page écritures — tooltips pédagogiques (Story 3.5) › hover journal — même pattern que débit, couverture implicite
+  -  39 tests/e2e/journal-entries.spec.ts:432:7 › Page écritures — tooltips pédagogiques (Story 3.5) › hover équilibré — même pattern que débit, couverture implicite
+  ✘  40 tests/e2e/mode-expert.spec.ts:26:2 › Mode toggle › toggle mode changes data-mode attribute on html (30.0s)
+  ✘  41 tests/e2e/mode-expert.spec.ts:41:2 › Ctrl+N shortcut (Expert mode) › Ctrl+N navigates to journal-entries in Expert mode (5.5s)
+  ✘  42 tests/e2e/onboarding-path-b.spec.ts:27:2 › Onboarding Path B › flux complet Path B : langue → mode → production → org → accounting → coords → bank (7.8s)
+  ✘  43 tests/e2e/onboarding-path-b.spec.ts:60:2 › Onboarding Path B › flux Path B avec banque configurée → pas de bannière bleue (30.0s)
+  ✓  44 tests/e2e/onboarding.spec.ts:33:2 › Onboarding Wizard › étape 1 — choix de langue affiche 4 options (2.0s)
+  ✓  45 tests/e2e/onboarding.spec.ts:39:2 › Onboarding Wizard › flux complet : langue → mode → démo → bannière visible (2.2s)
+  ✘  46 tests/e2e/onboarding.spec.ts:57:2 › Onboarding Wizard › bannière démo — reset redirige vers onboarding (7.3s)
+  ✘  47 tests/e2e/onboarding.spec.ts:77:2 › Onboarding — Reprise après interruption › F5 à étape 2 reprend à étape 2 (5.4s)
+  ✓  48 tests/e2e/onboarding.spec.ts:119:2 › Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6) › AC 5: Path A (démo) — comptes de facturation pré-remplis automatiquement (2.4s)
+  ✓  49 tests/e2e/onboarding.spec.ts:150:2 › Onboarding — Story 2.6: Invoice Settings Pre-fill (AC 5-6) › AC 6: Path B (production) — comptes de facturation pré-remplis après onboarding (2.6s)
+  ✓  50 tests/e2e/users.spec.ts:33:2 › Page utilisateurs — CRUD › admin voit le lien Utilisateurs dans le sidebar (747ms)
+  ✓  51 tests/e2e/users.spec.ts:44:2 › Page utilisateurs — CRUD › liste des utilisateurs affichée avec tableau (1.3s)
+  ✓  52 tests/e2e/users.spec.ts:57:2 › Page utilisateurs — CRUD › création d'un utilisateur (1.3s)
+  ✓  53 tests/e2e/users.spec.ts:79:2 › Page utilisateurs — CRUD › validation mot de passe trop court (1.5s)
+  ✓  54 tests/e2e/users.spec.ts:95:2 › Page utilisateurs — CRUD › validation mots de passe non identiques (963ms)
+  ✓  55 tests/e2e/users.spec.ts:112:2 › Page utilisateurs — Erreurs › le bouton désactiver est absent pour soi-même (890ms)
+  ✓  56 tests/e2e/users.spec.ts:125:2 › Page utilisateurs — Accessibilité › axe-core : pas de violations critiques (1.2s)
+
+
+  1) tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 82[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure the order of headings is semantically correct",[39m
+    [31m+     "help": "Heading levels should only increase by one",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/heading-order?application=playwright",[39m
+    [31m+     "id": "heading-order",[39m
+    [31m+     "impact": "moderate",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "heading-order",[39m
+    [31m+             "impact": "moderate",[39m
+    [31m+             "message": "Heading order invalid",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Heading order invalid",[39m
+    [31m+         "html": "<h3 class=\"text-lg font-semibold text-text\">Dernières écritures</h3>",[39m
+    [31m+         "impact": "moderate",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "div[data-testid=\"homepage-card-recent-entries\"] > h3",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.semantics",[39m
+    [31m+       "best-practice",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".border-transparent",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      63 | 		await page.waitForLoadState('networkidle');
+      64 | 		const results = await new AxeBuilder({ page }).analyze();
+    > 65 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      66 | 	});
+      67 | });
+      68 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/homepage-settings.spec.ts:65:30
+
+    Error Context: test-results/homepage-settings-Homepage-f7daa-tions-sur-la-page-d-accueil/error-context.md
+
+  2) tests/e2e/invoices_echeancier.spec.ts:90:2 › Échéancier factures — Story 5.4 › golden path : création → échéancier → marquer payée → dé-marquer → export CSV 
+
+    Error: createContact failed: 401
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      52 | 		},
+      53 | 	});
+    > 54 | 	expect(res.ok(), `createContact failed: ${res.status()}`).toBeTruthy();
+         | 	                                                          ^
+      55 | 	return (await res.json()).id as number;
+      56 | }
+      57 |
+        at createContactViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices_echeancier.spec.ts:54:60)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices_echeancier.spec.ts:96:21
+
+    Error Context: test-results/invoices_echeancier-Échéan-62e2f-e-→-dé-marquer-→-export-CSV/error-context.md
+
+  3) tests/e2e/invoices.spec.ts:77:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 49[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies",[39m
+    [31m+     "help": "Interactive controls must not be nested",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/nested-interactive?application=playwright",[39m
+    [31m+     "id": "nested-interactive",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "no-focusable-content",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has focusable descendants",[39m
+    [31m+             "relatedNodes": Array [[39m
+    [31m+               Object {[39m
+    [31m+                 "html": "<button data-slot=\"button\" class=\"focus-visible:border...\" type=\"button\">",[39m
+    [31m+                 "target": Array [[39m
+    [31m+                   ".hover\\:bg-muted",[39m
+    [31m+                 ],[39m
+    [31m+               },[39m
+    [31m+             ],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element has focusable descendants",[39m
+    [31m+         "html": "<button data-slot=\"dropdown-menu-trigger\" id=\"bits-c1\" aria-haspopup=\"menu\" aria-expanded=\"false\" data-state=\"closed\" data-dropdown-menu-trigger=\"\" type=\"button\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#bits-c1",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.keyboard",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT6.a",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      80 | 		await page.waitForLoadState('networkidle');
+      81 | 		const results = await new AxeBuilder({ page }).analyze();
+    > 82 | 		expect(results.violations).toEqual([]);
+         | 		                           ^
+      83 | 	});
+      84 | });
+      85 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:82:30
+
+    Error Context: test-results/invoices-Factures-—-liste--0247b-liste-factures-empty-state-/error-context.md
+
+  4) tests/e2e/invoices.spec.ts:87:2 › Factures — création brouillon › crée une facture avec une ligne libre et la persiste 
+
+    Error: createContactViaApi failed: 401
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | 		},
+      45 | 	});
+    > 46 | 	expect(res.ok(), `createContactViaApi failed: ${res.status()}`).toBeTruthy();
+         | 	                                                                ^
+      47 | 	const json = await res.json();
+      48 | 	return json.id as number;
+      49 | }
+        at createContactViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:46:66)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:90:3
+
+    Error Context: test-results/invoices-Factures-—-créati-a8769--ligne-libre-et-la-persiste/error-context.md
+
+  5) tests/e2e/invoices.spec.ts:112:2 › Factures — création brouillon › crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2) 
+
+    Error: createContactViaApi failed: 401
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | 		},
+      45 | 	});
+    > 46 | 	expect(res.ok(), `createContactViaApi failed: ${res.status()}`).toBeTruthy();
+         | 	                                                                ^
+      47 | 	const json = await res.json();
+      48 | 	return json.id as number;
+      49 | }
+        at createContactViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:46:66)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:118:3
+
+    Error Context: test-results/invoices-Factures-—-créati-e61ef-rsiste-après-reload-AC-1-2-/error-context.md
+
+  6) tests/e2e/invoices.spec.ts:223:2 › Factures — téléchargement PDF (Story 5.3) › télécharge le PDF d'une facture validée (golden path) 
+
+    Error: createContactWithAddress failed: 401
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      188 | 		},
+      189 | 	});
+    > 190 | 	expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
+          | 	                                                                     ^
+      191 | 	return (await res.json()).id as number;
+      192 | }
+      193 |
+        at createContactWithAddressViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:190:71)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:225:21
+
+    Error Context: test-results/invoices-Factures-—-téléch-33b69-acture-validée-golden-path-/error-context.md
+
+  7) tests/e2e/invoices.spec.ts:239:2 › Factures — téléchargement PDF (Story 5.3) › bouton visible uniquement si status=validated 
+
+    Error: createContactWithAddress failed: 401
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      188 | 		},
+      189 | 	});
+    > 190 | 	expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
+          | 	                                                                     ^
+      191 | 	return (await res.json()).id as number;
+      192 | }
+      193 |
+        at createContactWithAddressViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:190:71)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:242:3
+
+    Error Context: test-results/invoices-Factures-—-téléch-30a42-quement-si-status-validated/error-context.md
+
+  8) tests/e2e/invoices.spec.ts:262:2 › Factures — téléchargement PDF (Story 5.3) › erreur 400 INVOICE_NOT_PDF_READY affichée comme toast 
+
+    Error: createContactWithAddress failed: 401
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      188 | 		},
+      189 | 	});
+    > 190 | 	expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
+          | 	                                                                     ^
+      191 | 	return (await res.json()).id as number;
+      192 | }
+      193 |
+        at createContactWithAddressViaApi (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:190:71)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/invoices.spec.ts:268:21
+
+    Error Context: test-results/invoices-Factures-—-téléch-2362b--READY-affichée-comme-toast/error-context.md
+
+  9) tests/e2e/journal-entries.spec.ts:65:2 › Page écritures — affichage › affiche un message si liste vide 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      76 | 			.isVisible()
+      77 | 			.catch(() => false);
+    > 78 | 		expect(hasEmpty || hasTable).toBeTruthy();
+         | 		                             ^
+      79 | 	});
+      80 | });
+      81 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:78:32
+
+    Error Context: test-results/journal-entries-Page-écrit-a5c56-he-un-message-si-liste-vide/error-context.md
+
+  10) tests/e2e/journal-entries.spec.ts:83:2 › Page écritures — saisie › saisie nominale d'une écriture équilibrée 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:85:41
+
+    Error Context: test-results/journal-entries-Page-écrit-db67f-e-d-une-écriture-équilibrée/error-context.md
+
+  11) tests/e2e/journal-entries.spec.ts:115:2 › Page écritures — saisie › indicateur de déséquilibre et bouton Valider désactivé 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:117:41
+
+    Error Context: test-results/journal-entries-Page-écrit-b3e60-et-bouton-Valider-désactivé/error-context.md
+
+  12) tests/e2e/journal-entries.spec.ts:139:2 › Page écritures — saisie › rejet client d'un montant avec plus de 4 décimales 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:141:41
+
+    Error Context: test-results/journal-entries-Page-écrit-1c3b8-nt-avec-plus-de-4-décimales/error-context.md
+
+  13) tests/e2e/journal-entries.spec.ts:193:2 › Page écritures — modification (Story 3.3) › édition nominale — modification du libellé 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntry (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:179:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:195:3
+
+    Error Context: test-results/journal-entries-Page-écrit-c8ee0-e-—-modification-du-libellé/error-context.md
+
+  14) tests/e2e/journal-entries.spec.ts:215:2 › Page écritures — modification (Story 3.3) › suppression avec confirmation 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntry (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:179:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:217:3
+
+    Error Context: test-results/journal-entries-Page-écrit-f7b00-ppression-avec-confirmation/error-context.md
+
+  15) tests/e2e/journal-entries.spec.ts:234:2 › Page écritures — modification (Story 3.3) › annulation suppression 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntry (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:179:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:236:3
+
+    Error Context: test-results/journal-entries-Page-écrit-8e2a7--3-3-annulation-suppression/error-context.md
+
+  16) tests/e2e/journal-entries.spec.ts:250:2 › Page écritures — modification (Story 3.3) › conflit 409 affiche la modale de reload 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntry (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:179:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:252:3
+
+    Error Context: test-results/journal-entries-Page-écrit-6a027-affiche-la-modale-de-reload/error-context.md
+
+  17) tests/e2e/journal-entries.spec.ts:316:2 › Page écritures — recherche & pagination (Story 3.4) › filtre par libellé avec debounce 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntries (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:298:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:318:3
+
+    Error Context: test-results/journal-entries-Page-écrit-2f950-e-par-libellé-avec-debounce/error-context.md
+
+  18) tests/e2e/journal-entries.spec.ts:330:2 › Page écritures — recherche & pagination (Story 3.4) › filtre par plage de montants 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntries (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:298:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:332:3
+
+    Error Context: test-results/journal-entries-Page-écrit-5ded1-iltre-par-plage-de-montants/error-context.md
+
+  19) tests/e2e/journal-entries.spec.ts:342:2 › Page écritures — recherche & pagination (Story 3.4) › tri ascendant puis descendant sur Date 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntries (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:298:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:344:3
+
+    Error Context: test-results/journal-entries-Page-écrit-48085-nt-puis-descendant-sur-Date/error-context.md
+
+  20) tests/e2e/journal-entries.spec.ts:366:2 › Page écritures — recherche & pagination (Story 3.4) › URL state préservé après rafraîchissement 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      44 | ): Promise<{ debitNumber: string; creditNumber: string }> {
+      45 | 	const resp = await page.request.get('/api/v1/accounts?includeArchived=false');
+    > 46 | 	expect(resp.ok()).toBeTruthy();
+         | 	                  ^
+      47 | 	const accounts: Array<{ number: string; name: string }> = await resp.json();
+      48 |
+      49 | 	// On prend un compte d'actif (1xxx) et un compte de produit/passif (3xxx ou 2xxx).
+        at getSeedAccountNumbers (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:46:20)
+        at createSeedEntries (/home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:298:41)
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:368:3
+
+    Error Context: test-results/journal-entries-Page-écrit-3d2b0-ervé-après-rafraîchissement/error-context.md
+
+  21) tests/e2e/journal-entries.spec.ts:404:2 › Page écritures — tooltips pédagogiques (Story 3.5) › hover sur l'en-tête Débit affiche la définition naturelle et technique 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/L'argent entre dans ce compte/)
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText(/L'argent entre dans ce compte/)[22m
+
+
+      422 | 		// On utilise le timeout global Playwright (pas d'override) — un
+      423 | 		// timeout trop court rend le test flaky sur CI avec fade-in.
+    > 424 | 		await expect(page.getByText(/L'argent entre dans ce compte/)).toBeVisible();
+          | 		                                                              ^
+      425 | 		await expect(page.getByText(/colonne de gauche/)).toBeVisible();
+      426 | 	});
+      427 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/journal-entries.spec.ts:424:65
+
+    Error Context: test-results/journal-entries-Page-écrit-e251a-tion-naturelle-et-technique/error-context.md
+
+  22) tests/e2e/mode-expert.spec.ts:26:2 › Mode toggle › toggle mode changes data-mode attribute on html 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('button:has-text("Mode")')[22m
+
+
+      30 |
+      31 | 		// Open profile dropdown and click mode toggle
+    > 32 | 		await page.click('button:has-text("Mode")');
+         | 		           ^
+      33 |
+      34 | 		// Check data-mode changed
+      35 | 		const newMode = await page.locator('html').getAttribute('data-mode');
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/mode-expert.spec.ts:32:14
+
+    Error Context: test-results/mode-expert-Mode-toggle-to-c44b7-data-mode-attribute-on-html/error-context.md
+
+  23) tests/e2e/mode-expert.spec.ts:41:2 › Ctrl+N shortcut (Expert mode) › Ctrl+N navigates to journal-entries in Expert mode 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/journal-entries/[39m
+    Received string:  [31m"http://127.0.0.1:3000/"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    3 × unexpected value "http://127.0.0.1:3000/login"[22m
+    [2m    6 × unexpected value "http://127.0.0.1:3000/"[22m
+
+
+      54 |
+      55 | 		// Should navigate to journal-entries
+    > 56 | 		await expect(page).toHaveURL(/\/journal-entries/);
+         | 		                   ^
+      57 | 	});
+      58 | });
+      59 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/mode-expert.spec.ts:56:22
+
+    Error Context: test-results/mode-expert-Ctrl-N-shortcu-c2fa3-rnal-entries-in-Expert-mode/error-context.md
+
+  24) tests/e2e/onboarding-path-b.spec.ts:27:2 › Onboarding Path B › flux complet Path B : langue → mode → production → org → accounting → coords → bank 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('[data-testid="incomplete-config-banner"]')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for locator('[data-testid="incomplete-config-banner"]')[22m
+
+
+      55 | 		// Should be in app with blue banner
+      56 | 		await expect(page).toHaveURL('/');
+    > 57 | 		await expect(page.locator('[data-testid="incomplete-config-banner"]')).toBeVisible();
+         | 		                                                                       ^
+      58 | 	});
+      59 |
+      60 | 	test('flux Path B avec banque configurée → pas de bannière bleue', async ({ page }) => {
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/onboarding-path-b.spec.ts:57:74
+
+    Error Context: test-results/onboarding-path-b-Onboardi-8e43c--accounting-→-coords-→-bank/error-context.md
+
+  25) tests/e2e/onboarding-path-b.spec.ts:60:2 › Onboarding Path B › flux Path B avec banque configurée → pas de bannière bleue 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('button:has-text("Enregistrer")')[22m
+
+
+      72 | 		await page.fill('#bank-name', 'UBS');
+      73 | 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
+    > 74 | 		await page.click('button:has-text("Enregistrer")');
+         | 		           ^
+      75 |
+      76 | 		// Should be in app WITHOUT blue banner
+      77 | 		await expect(page).toHaveURL('/');
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/onboarding-path-b.spec.ts:74:14
+
+    Error Context: test-results/onboarding-path-b-Onboardi-e91d8-rée-→-pas-de-bannière-bleue/error-context.md
+
+  26) tests/e2e/onboarding.spec.ts:57:2 › Onboarding Wizard › bannière démo — reset redirige vers onboarding 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/onboarding/[39m
+    Received string:  [31m"http://127.0.0.1:3000/"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://127.0.0.1:3000/"[22m
+
+
+      70 |
+      71 | 		// Should redirect to onboarding
+    > 72 | 		await expect(page).toHaveURL(/\/onboarding/);
+         | 		                   ^
+      73 | 	});
+      74 | });
+      75 |
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/onboarding.spec.ts:72:22
+
+    Error Context: test-results/onboarding-Onboarding-Wiza-658d1-et-redirige-vers-onboarding/error-context.md
+
+  27) tests/e2e/onboarding.spec.ts:77:2 › Onboarding — Reprise après interruption › F5 à étape 2 reprend à étape 2 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/onboarding/[39m
+    Received string:  [31m"http://127.0.0.1:3000/login"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://127.0.0.1:3000/login"[22m
+
+
+      81 | 		await page.fill('#password', 'changeme');
+      82 | 		await page.click('button[type="submit"]');
+    > 83 | 		await expect(page).toHaveURL(/\/onboarding/);
+         | 		                   ^
+      84 |
+      85 | 		// Complete step 1
+      86 | 		await page.click('button:has-text("Français")');
+        at /home/gcorbaz/Synology/devel/kesh/frontend/tests/e2e/onboarding.spec.ts:83:22
+
+    Error Context: test-results/onboarding-Onboarding-—-Re-be73a-à-étape-2-reprend-à-étape-2/error-context.md
+
+  27 failed
+    tests/e2e/homepage-settings.spec.ts:61:2 › Homepage — accessibilité › axe-core sans violations sur la page d'accueil 
+    tests/e2e/invoices_echeancier.spec.ts:90:2 › Échéancier factures — Story 5.4 › golden path : création → échéancier → marquer payée → dé-marquer → export CSV 
+    tests/e2e/invoices.spec.ts:77:2 › Factures — liste › axe-core sans violations sur la liste factures (empty state) 
+    tests/e2e/invoices.spec.ts:87:2 › Factures — création brouillon › crée une facture avec une ligne libre et la persiste 
+    tests/e2e/invoices.spec.ts:112:2 › Factures — création brouillon › crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2) 
+    tests/e2e/invoices.spec.ts:223:2 › Factures — téléchargement PDF (Story 5.3) › télécharge le PDF d'une facture validée (golden path) 
+    tests/e2e/invoices.spec.ts:239:2 › Factures — téléchargement PDF (Story 5.3) › bouton visible uniquement si status=validated 
+    tests/e2e/invoices.spec.ts:262:2 › Factures — téléchargement PDF (Story 5.3) › erreur 400 INVOICE_NOT_PDF_READY affichée comme toast 
+    tests/e2e/journal-entries.spec.ts:65:2 › Page écritures — affichage › affiche un message si liste vide 
+    tests/e2e/journal-entries.spec.ts:83:2 › Page écritures — saisie › saisie nominale d'une écriture équilibrée 
+    tests/e2e/journal-entries.spec.ts:115:2 › Page écritures — saisie › indicateur de déséquilibre et bouton Valider désactivé 
+    tests/e2e/journal-entries.spec.ts:139:2 › Page écritures — saisie › rejet client d'un montant avec plus de 4 décimales 
+    tests/e2e/journal-entries.spec.ts:193:2 › Page écritures — modification (Story 3.3) › édition nominale — modification du libellé 
+    tests/e2e/journal-entries.spec.ts:215:2 › Page écritures — modification (Story 3.3) › suppression avec confirmation 
+    tests/e2e/journal-entries.spec.ts:234:2 › Page écritures — modification (Story 3.3) › annulation suppression 
+    tests/e2e/journal-entries.spec.ts:250:2 › Page écritures — modification (Story 3.3) › conflit 409 affiche la modale de reload 
+    tests/e2e/journal-entries.spec.ts:316:2 › Page écritures — recherche & pagination (Story 3.4) › filtre par libellé avec debounce 
+    tests/e2e/journal-entries.spec.ts:330:2 › Page écritures — recherche & pagination (Story 3.4) › filtre par plage de montants 
+    tests/e2e/journal-entries.spec.ts:342:2 › Page écritures — recherche & pagination (Story 3.4) › tri ascendant puis descendant sur Date 
+    tests/e2e/journal-entries.spec.ts:366:2 › Page écritures — recherche & pagination (Story 3.4) › URL state préservé après rafraîchissement 
+    tests/e2e/journal-entries.spec.ts:404:2 › Page écritures — tooltips pédagogiques (Story 3.5) › hover sur l'en-tête Débit affiche la définition naturelle et technique 
+    tests/e2e/mode-expert.spec.ts:26:2 › Mode toggle › toggle mode changes data-mode attribute on html 
+    tests/e2e/mode-expert.spec.ts:41:2 › Ctrl+N shortcut (Expert mode) › Ctrl+N navigates to journal-entries in Expert mode 
+    tests/e2e/onboarding-path-b.spec.ts:27:2 › Onboarding Path B › flux complet Path B : langue → mode → production → org → accounting → coords → bank 
+    tests/e2e/onboarding-path-b.spec.ts:60:2 › Onboarding Path B › flux Path B avec banque configurée → pas de bannière bleue 
+    tests/e2e/onboarding.spec.ts:57:2 › Onboarding Wizard › bannière démo — reset redirige vers onboarding 
+    tests/e2e/onboarding.spec.ts:77:2 › Onboarding — Reprise après interruption › F5 à étape 2 reprend à étape 2 
+  7 skipped
+  22 passed (3.0m)

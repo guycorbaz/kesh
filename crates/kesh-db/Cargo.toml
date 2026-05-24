@@ -23,6 +23,12 @@ tracing = "0.1"
 # le scope ajouté ; cargo unifie les features avec sqlx via la version
 # semver `"1"` partagée entre tout le workspace.
 tokio = { version = "1", default-features = false, features = ["time"] }
+# Story 10-2 : parsing + comparaison SemVer pour le module `version.rs`
+# (check_downgrade_protection). Feature `serde` non-activée — pas de
+# serialisation cross-process des `Version`, uniquement parsing depuis
+# VARCHAR DB et comparaison via `Ord`. Crate déjà résolu transitivement
+# dans Cargo.lock (cargo-metadata), pas de re-résolution.
+semver = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

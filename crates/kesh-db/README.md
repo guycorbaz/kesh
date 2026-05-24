@@ -11,7 +11,7 @@ src/
 ├── pool.rs          # create_pool(url, max_conn, timeout)
 ├── entities/        # Structs de données (Company, User, FiscalYear, ...)
 └── repositories/    # CRUD par entité (companies, users, fiscal_years)
-migrations/          # Migrations SQLx (sqlx migrate run)
+migrations/          # Migrations SQLx (sqlx migrate run) — audit dans docs/migrations-idempotence-audit.md
 tests/               # Tests d'intégration (#[sqlx::test])
 ```
 
