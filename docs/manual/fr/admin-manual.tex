@@ -329,6 +329,288 @@ compta.exemple.ch {
 }
 \end{lstlisting}
 
+\subsection{Alternative : déploiement via Traefik (avec firewall applicatif)}\label{sec:traefik}
+
+Traefik est particulièrement adapté quand Kesh est exposé sur Internet : il intègre nativement des middlewares de \emph{firewall applicatif} (rate limiting, IP whitelist, headers de sécurité) et supporte des plugins communautaires plus avancés (CrowdSec pour la détection d'intrusion, ModSecurity-CRS pour des règles WAF type OWASP). La configuration ci-dessous suppose Traefik 3.x déployé en sidecar dans le même Docker Compose que Kesh.
+
+\subsubsection{Compose Traefik en sidecar}
+
+Ajouter le service Traefik à votre \keshpath{docker-compose.yml} (ou utiliser un \keshpath{docker-compose.override.yml} dédié) :
+
+\begin{lstlisting}[language=bash]
+services:
+  traefik:
+    image: traefik:v3.2
+    container_name: kesh-traefik
+    restart: unless-stopped
+    command:
+      # Entrypoints HTTP/HTTPS (HTTP redirige vers HTTPS).
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      # Certificats Let's Encrypt automatiques (challenge HTTP-01).
+      - --certificatesresolvers.le.acme.email=admin@exemple.ch
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      # Provider Docker — lit les labels sur les autres services.
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      # Logs format JSON pour ingestion ultérieure (Loki, ELK, etc.).
+      - --accesslog=true
+      - --accesslog.format=json
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
+    networks:
+      - kesh-internal
+
+  kesh-api:
+    # ... votre config kesh-api existante ...
+    # NE PAS publier le port 3000 sur l'hôte (Traefik y accède via réseau Docker).
+    expose:
+      - "3000"
+    networks:
+      - kesh-internal
+    labels:
+      - traefik.enable=true
+      # Router HTTPS + cert Let's Encrypt.
+      - traefik.http.routers.kesh.rule=Host(`compta.exemple.ch`)
+      - traefik.http.routers.kesh.entrypoints=websecure
+      - traefik.http.routers.kesh.tls.certresolver=le
+      - traefik.http.services.kesh.loadbalancer.server.port=3000
+      # Chaîne de middlewares firewall applicatif (cf. ci-dessous).
+      - traefik.http.routers.kesh.middlewares=kesh-ratelimit@docker,kesh-headers@docker
+
+volumes:
+  traefik-letsencrypt:
+
+networks:
+  kesh-internal:
+    driver: bridge
+\end{lstlisting}
+
+\subsubsection{Middlewares firewall applicatif}
+
+Définir les middlewares via labels sur le service \keshcommand{kesh-api} (ou dans un \keshpath{dynamic.yml} dédié) :
+
+\begin{lstlisting}[language=bash]
+    labels:
+      # ... labels routeur ci-dessus ...
+
+      # 1. Rate limiting global — défense contre brute-force et scraping.
+      #    Limite moyenne 50 req/s par IP, burst 100. Défense en
+      #    profondeur du rate-limit applicatif Kesh (KESH_RATE_LIMIT_*).
+      - traefik.http.middlewares.kesh-ratelimit.ratelimit.average=50
+      - traefik.http.middlewares.kesh-ratelimit.ratelimit.burst=100
+      - traefik.http.middlewares.kesh-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1
+
+      # 2. Headers de sécurité (durcissement OWASP).
+      - traefik.http.middlewares.kesh-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.kesh-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.kesh-headers.headers.stsPreload=true
+      - traefik.http.middlewares.kesh-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.kesh-headers.headers.framedeny=true
+      - traefik.http.middlewares.kesh-headers.headers.referrerPolicy=strict-origin-when-cross-origin
+      - traefik.http.middlewares.kesh-headers.headers.permissionsPolicy=geolocation=(),microphone=(),camera=()
+
+      # 3. (OPTIONNEL) IP whitelist pour endpoints sensibles — exemple
+      #    pour bloquer /api/v1/_test/* (qui n'existe qu'en KESH_TEST_MODE
+      #    mais on défense en profondeur). À adapter à vos IPs admin.
+      # - traefik.http.middlewares.kesh-admin-only.ipallowlist.sourcerange=192.168.1.0/24,2001:db8::/32
+\end{lstlisting}
+
+\subsubsection{Plugins WAF avancés (optionnel, recommandé Internet-exposed)}
+
+Pour un firewall applicatif complet face à Internet, deux plugins Traefik communautaires sont éprouvés :
+
+\paragraph{CrowdSec — détection d'intrusion collaborative}
+
+CrowdSec analyse les logs Traefik en temps réel, détecte les scans/scrapes/brute-force, et partage les IPs malveillantes avec une CTI communautaire (équivalent crowd-sourced de \emph{Fail2Ban} + base de réputation IP globale).
+
+\begin{lstlisting}[language=bash]
+# Activer le plugin dans la commande Traefik (ajouter dans le `command:` ci-dessus) :
+- --experimental.plugins.crowdsec-bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+- --experimental.plugins.crowdsec-bouncer.version=v1.3.5
+
+# Puis sur kesh-api, ajouter le middleware :
+labels:
+  - traefik.http.middlewares.kesh-crowdsec.plugin.crowdsec-bouncer.enabled=true
+  - traefik.http.middlewares.kesh-crowdsec.plugin.crowdsec-bouncer.crowdsecLapiKey=<API_KEY>
+  # Puis chainer dans la liste des middlewares du routeur :
+  - traefik.http.routers.kesh.middlewares=kesh-crowdsec@docker,kesh-ratelimit@docker,kesh-headers@docker
+\end{lstlisting}
+
+Installation locale CrowdSec : voir \href{https://docs.crowdsec.net/}{crowdsec.net}. Inscription gratuite à la CTI communautaire pour partager les détections.
+
+\paragraph{ModSecurity / OWASP Core Rule Set (CRS) — règles WAF traditionnelles}
+
+Pour les organisations soumises à audit conformité (RGPD, LPD Suisse, exigences clients), un WAF basé sur OWASP CRS détecte les patterns d'attaque classiques (SQL injection, XSS, path traversal, etc.). Plusieurs intégrations sont disponibles :
+
+\begin{itemize}
+    \item \textbf{Coraza} (plugin Traefik officiel WASM) — \href{https://github.com/jcchavezs/coraza-http-wasm}{github.com/jcchavezs/coraza-http-wasm}. Engine WAF Go natif, performance élevée, règles CRS supportées.
+    \item \textbf{ModSecurity v3 + Nginx} en frontal de Traefik — option plus complexe mais plus complète si déjà utilisé en interne.
+\end{itemize}
+
+\subsubsection{Considérations sécurité spécifiques}
+
+\begin{itemize}
+    \item \textbf{Sock Docker exposé} (\keshpath{/var/run/docker.sock}) : Traefik y accède en lecture seule (\keshcommand{:ro}). En haute exigence sécurité, préférer le \keshcommand{docker-proxy} (image \keshcommand{tecnativa/docker-socket-proxy}) qui filtre les endpoints Docker API accessibles à Traefik.
+    \item \textbf{Renouvellement Let's Encrypt} : Traefik gère automatiquement le renouvellement 30 jours avant expiration. Surveiller via \keshcommand{docker logs kesh-traefik | grep acme}.
+    \item \textbf{Backup de \keshpath{acme.json}} : ce fichier contient la clé privée TLS — l'inclure dans votre stratégie de backup (volume \keshcommand{traefik-letsencrypt} ci-dessus).
+    \item \textbf{Dashboard Traefik désactivé par défaut} dans cette config (pas de label \keshcommand{api}, pas d'option \keshcommand{--api}). Si vous l'activez en debug, protégez-le impérativement avec une auth + IP whitelist.
+\end{itemize}
+
+\subsection{Alternative : déploiement sur Synology DSM}\label{sec:synology}
+
+Synology DSM (DiskStation Manager) 7.2+ inclut le paquet \emph{Container Manager} (anciennement \emph{Docker}) qui permet de déployer Kesh sans utiliser le CLI Docker. Cette section couvre le scénario standard d'un déploiement Kesh sur un NAS Synology personnel ou de PME (DS220+, DS920+, DS1522+, DS1821+, ou modèles supérieurs avec ≥ 2 GiB RAM).
+
+\subsubsection{Prérequis Synology DSM}
+
+\begin{itemize}
+    \item \textbf{DSM} ≥ 7.2 (Container Manager n'est pas disponible sur DSM 6.x).
+    \item \textbf{Modèle NAS} compatible Docker — vérifier sur la liste officielle Synology : modèles avec processeur Intel/AMD x86\_64 (DS220+, DS720+, DS920+, DS1522+, DS1821+, etc.). Les modèles ARM (DS120j, DS220j, DS418, etc.) ne supportent pas Container Manager.
+    \item \textbf{RAM} : minimum 2 GiB (4 GiB recommandés pour confort utilisateur multi-tenant avec plusieurs companies actives).
+    \item \textbf{Stockage} : au moins 10 GiB libres sur le volume \keshpath{/volume1} (5 GiB pour l'image Kesh + 1 GiB pour MariaDB initial + 4 GiB marge pour les imports bancaires, exports PDF/ZIP, et croissance données).
+    \item \textbf{Paquet Container Manager} installé via Package Center (gratuit, fourni par Synology). Pour DSM 7.2+, c'est l'unique paquet officiel — il remplace l'ancien paquet \emph{Docker}.
+\end{itemize}
+
+\subsubsection{Étape 1 — Préparer la structure de répertoires}
+
+Via SSH (recommandé) ou File Station (alternative GUI), créer la structure suivante sous \keshpath{/volume1/docker/kesh/} :
+
+\begin{lstlisting}[language=bash]
+# Connexion SSH au NAS (activer SSH dans Panneau de configuration > Terminal et SNMP)
+ssh admin@<IP-NAS>
+
+# Création des dossiers
+sudo mkdir -p /volume1/docker/kesh
+cd /volume1/docker/kesh
+
+# Permissions : utilisateur DSM courant + group docker (uid/gid varient selon DSM)
+# Container Manager rendra les volumes accessibles automatiquement
+sudo chown -R $(id -u):$(id -g) /volume1/docker/kesh
+\end{lstlisting}
+
+\subsubsection{Étape 2 — Récupérer docker-compose.yml et .env}
+
+Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh et créer le fichier \keshpath{.env} à partir du template (voir section \ref{sec:env-vars} pour la liste complète) :
+
+\begin{lstlisting}[language=bash]
+cd /volume1/docker/kesh
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.prod.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example -o .env
+
+# Générer les secrets obligatoires (DOIVENT remplacer les placeholders dans .env)
+openssl rand -hex 32   # → KESH_JWT_SECRET
+openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
+openssl rand -base64 32 # → MARIADB_ROOT_PASSWORD et MARIADB_PASSWORD
+
+# Éditer .env avec vi/nano pour remplacer les <GENERATE_ME: ...> et <EDIT: ...>
+sudo nano .env
+\end{lstlisting}
+
+\begin{keshwarning}
+\textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...} dans \keshpath{.env}. Story 10-1 du hardening Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
+\end{keshwarning}
+
+\subsubsection{Étape 3 — Importer le projet dans Container Manager}
+
+\paragraph{Méthode GUI (recommandée pour débutants)}
+
+\begin{enumerate}
+    \item Ouvrir \textbf{Container Manager} depuis le menu DSM.
+    \item Aller dans l'onglet \textbf{Projet} (panneau gauche).
+    \item Cliquer \textbf{Créer}.
+    \item Renseigner :
+        \begin{itemize}
+            \item \textbf{Nom du projet} : \keshcommand{kesh}
+            \item \textbf{Chemin} : naviguer vers \keshpath{/volume1/docker/kesh}
+            \item \textbf{Source} : \emph{Utiliser docker-compose.yml existant}
+        \end{itemize}
+    \item Container Manager affiche un preview du compose. Vérifier que les services attendus apparaissent (\keshcommand{kesh-api}, \keshcommand{mariadb}, éventuellement \keshcommand{traefik} si vous l'avez ajouté).
+    \item Cliquer \textbf{Suivant} → \textbf{Démarrer le projet maintenant} → \textbf{Terminé}.
+\end{enumerate}
+
+\paragraph{Méthode CLI (équivalente, scriptable)}
+
+\begin{lstlisting}[language=bash]
+cd /volume1/docker/kesh
+
+# Container Manager DSM expose `docker compose` (plugin v2)
+sudo docker compose pull
+sudo docker compose up -d
+
+# Vérifier l'état
+sudo docker compose ps
+sudo docker compose logs -f kesh-api  # Ctrl+C pour quitter
+\end{lstlisting}
+
+\subsubsection{Étape 4 — Configurer le reverse proxy DSM (Application Portal)}
+
+DSM intègre nativement un reverse proxy HTTPS via le \emph{Portail des applications}. Cette option est plus simple que Nginx/Caddy/Traefik pour les petites installations qui n'exposent pas Kesh à Internet (LAN-only).
+
+\begin{enumerate}
+    \item Ouvrir \textbf{Panneau de configuration} → \textbf{Portail de connexion} → onglet \textbf{Avancé} → bouton \textbf{Proxy inversé}.
+    \item Cliquer \textbf{Créer}.
+    \item Renseigner :
+        \begin{itemize}
+            \item \textbf{Nom de la description} : \keshcommand{Kesh comptabilité}
+            \item \textbf{Source} : Protocole \keshcommand{HTTPS}, Hostname \keshcommand{kesh.local} (ou votre domaine), Port \keshcommand{443}
+            \item \textbf{Destination} : Protocole \keshcommand{HTTP}, Hostname \keshcommand{localhost}, Port \keshcommand{3000}
+        \end{itemize}
+    \item Onglet \textbf{En-têtes personnalisés} → ajouter :
+        \begin{itemize}
+            \item \keshcommand{X-Forwarded-Proto} : \keshcommand{https}
+            \item \keshcommand{X-Real-IP} : \keshcommand{\$remote\_addr}
+        \end{itemize}
+    \item Onglet \textbf{Avancé} → cocher \keshcommand{HTTP/2} et \keshcommand{HSTS} (Strict-Transport-Security).
+    \item Cliquer \textbf{Enregistrer}.
+\end{enumerate}
+
+\paragraph{Certificat HTTPS via DSM Let's Encrypt}
+
+DSM intègre un client ACME pour Let's Encrypt :
+
+\begin{enumerate}
+    \item \textbf{Panneau de configuration} → \textbf{Portail de connexion} → onglet \textbf{Certificat}.
+    \item Cliquer \textbf{Ajouter} → \textbf{Obtenir un certificat de Let's Encrypt}.
+    \item Renseigner le domaine (\keshcommand{kesh.exemple.ch}), l'email, et un \emph{Subject Alternative Name} optionnel.
+    \item DSM valide le challenge HTTP-01 ou DNS-01 selon configuration, et installe le certificat automatiquement.
+    \item Lier le certificat au hostname dans \textbf{Paramètres} → sélectionner le service \keshcommand{kesh.exemple.ch} et choisir le nouveau certificat.
+\end{enumerate}
+
+\begin{keshnote}
+Pour les déploiements exposés sur Internet avec besoin de firewall applicatif (rate limiting, WAF), préférer \textbf{Traefik en sidecar} (section \ref{sec:traefik}) au Portail DSM. Le Portail couvre les besoins LAN-only ou les déploiements simples derrière un VPN/WireGuard.
+\end{keshnote}
+
+\subsubsection{Étape 5 — Vérification post-installation}
+
+Tester l'instance via le hostname configuré :
+
+\begin{lstlisting}[language=bash]
+# Healthcheck (doit retourner JSON avec db:true)
+curl -k https://kesh.local/health
+
+# Réponse attendue (Story 10-3) :
+# {"status":"ok","db":true,"version":"0.1.0"}
+\end{lstlisting}
+
+Ouvrir un navigateur sur \keshcommand{https://kesh.local} et se connecter avec le compte admin renseigné dans \keshpath{.env}. Le wizard d'onboarding démarre automatiquement (création de la première company, choix du plan comptable, configuration des exercices).
+
+\subsubsection{Limitations Container Manager DSM}
+
+\begin{itemize}
+    \item \textbf{Auto-restart} : Container Manager redémarre automatiquement les containers au reboot DSM (équivalent \keshcommand{restart: unless-stopped} dans compose). Pas de configuration supplémentaire requise.
+    \item \textbf{Logs} : accessibles via Container Manager GUI (onglet \emph{Container} → sélectionner \keshcommand{kesh-api} → \emph{Détails} → \emph{Journaux}) ou via SSH \keshcommand{docker compose logs -f}.
+    \item \textbf{Mises à jour Kesh} : nécessitent un \keshcommand{docker compose pull \&\& docker compose up -d} via SSH (Container Manager GUI ne propose pas de rebuild automatique sur push d'image). Voir section \ref{sec:mise-a-jour} pour la procédure complète.
+    \item \textbf{Backup et restore} : voir section dédiée \ref{sec:backup-dsm} pour les méthodes natives DSM (Hyper Backup, Snapshot Replication).
+\end{itemize}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Configuration}\label{sec:configuration}
 
@@ -675,8 +957,109 @@ L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des suppor
 Automatisez ce test annuel via un workflow CI/CD : provisioning Docker éphémère, restauration, exécution de tests E2E Playwright basiques, génération du procès-verbal. Cette automatisation peut être traitée comme une story Epic 10 « Déploiement \& Opérations » ou Epic ultérieur.
 \end{keshtip}
 
+\subsection{Backup natif sur Synology DSM (Hyper Backup + Snapshot Replication)}\label{sec:backup-dsm}
+
+Pour les installations sur Synology DSM (cf. section \ref{sec:synology}), DSM intègre nativement deux outils de backup éprouvés : \textbf{Hyper Backup} (backup incrémental versionné, idéal cloud + LAN) et \textbf{Snapshot Replication} (snapshot Btrfs point-in-time, idéal recovery instantané). Ces outils remplacent ou complètent le script \keshcommand{mariadb-dump} CLI ci-dessus selon votre stratégie.
+
+\subsubsection{Hyper Backup — backup incrémental + offsite intégré}
+
+Hyper Backup est l'outil principal Synology pour les backups versionnés vers stockage local externe (HDD USB, NAS distant), cloud (Synology C2 Backup, S3, Backblaze B2, Wasabi, Google Drive, OneDrive, etc.), ou serveur rsync distant. Il supporte la déduplication, le chiffrement client-side AES-256, et la rotation Smart (équivalent grandfather-father-son).
+
+\paragraph{Configuration Hyper Backup pour Kesh}
+
+\begin{enumerate}
+    \item Installer \textbf{Hyper Backup} via Package Center (gratuit).
+    \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
+    \item Cocher les dossiers à backup :
+        \begin{itemize}
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé).
+            \item \textbf{Optionnel} : volumes Docker nommés si vous n'utilisez pas le bind-mount (rare sur DSM) — accessibles via \keshpath{/volume1/@docker/volumes/kesh\_*}.
+        \end{itemize}
+    \item Cocher l'application \textbf{Container Manager} dans \emph{Applications} pour backup automatique de la configuration des projets.
+    \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
+    \item Configurer la rotation \textbf{Smart Recycle} : recommandé \emph{Conservez toutes les versions des derniers 30 jours + 1 par semaine pour 12 semaines + 1 par mois pour 12 mois}. Convertit OLICo 10 ans en pratique via archivage annuel séparé (cf. \emph{Stockage offsite} ci-dessus).
+    \item Planifier la fréquence : \textbf{quotidienne à 2h du matin} (équivalent du cron du script CLI).
+    \item Activer les notifications email/push DSM pour alerter d'un échec de backup.
+\end{enumerate}
+
+\paragraph{Cohérence transactionnelle MariaDB}
+
+Hyper Backup copie les fichiers data au niveau système sans coordination avec MariaDB. Pour garantir un dump cohérent (pas de transactions partielles capturées), utiliser un \textbf{pre-script Hyper Backup} qui dump MariaDB juste avant le backup, et un post-script qui nettoie après :
+
+\begin{lstlisting}[language=bash]
+#!/bin/bash
+# /volume1/docker/kesh/pre-backup.sh
+# Configure dans Hyper Backup > Parametres > Pre-script
+
+set -euo pipefail
+cd /volume1/docker/kesh
+
+# Dump MariaDB juste avant Hyper Backup capture les fichiers
+sudo docker compose exec -T mariadb \
+    mariadb-dump --single-transaction --routines --triggers --events \
+    --add-drop-database --databases kesh \
+    -u root -p"$(grep MARIADB_ROOT_PASSWORD .env | cut -d= -f2)" \
+    | gzip > /volume1/docker/kesh/kesh_pre_backup.sql.gz
+
+sha256sum /volume1/docker/kesh/kesh_pre_backup.sql.gz \
+    > /volume1/docker/kesh/kesh_pre_backup.sql.gz.sha256
+\end{lstlisting}
+
+Le post-script peut être laissé vide ou utilisé pour supprimer le dump intermédiaire si on préfère minimiser l'espace disque local (au prix de devoir restorer via Hyper Backup pour recovery).
+
+\begin{keshnote}
+Pour les charges légères (mono-fiduciaire, < 100 écritures/jour), le simple backup des volumes Docker via Hyper Backup sans pre-script suffit dans 99\% des cas — MariaDB redémarre depuis un état semi-cohérent à la restauration, et les éventuelles transactions perdues correspondent à la fraction de seconde du backup. Le pre-script devient utile pour les fiduciaires avec saisie 9-17h continue.
+\end{keshnote}
+
+\subsubsection{Snapshot Replication — recovery instantané point-in-time}
+
+\emph{Snapshot Replication} fournit des snapshots Btrfs natifs du volume \keshpath{/volume1/} avec recovery quasi-instantané (< 1 minute) et point-in-time precision (jusqu'à 1 snapshot par 5 minutes). Idéal pour se prémunir contre erreurs humaines récentes (suppression accidentelle d'une écriture, corruption logique) où Hyper Backup serait trop coûteux à restorer (téléchargement cloud + déchiffrement + restore).
+
+\paragraph{Prérequis Snapshot Replication}
+
+\begin{itemize}
+    \item Modèle NAS supportant \textbf{Btrfs} (DS220+, DS720+, DS920+, DS1522+, DS1821+ — vérifier la liste officielle Synology).
+    \item Volume principal formaté en \textbf{Btrfs} (pas EXT4). Si déjà en EXT4, migration nécessaire (sauvegarde complète + recréation du volume + restore — opération longue, planifiée hors période d'activité).
+    \item Paquet \textbf{Snapshot Replication} installé via Package Center.
+\end{itemize}
+
+\paragraph{Configuration Snapshot Replication pour Kesh}
+
+\begin{enumerate}
+    \item Ouvrir \textbf{Snapshot Replication} → onglet \textbf{Snapshots}.
+    \item Sélectionner le dossier partagé \keshcommand{docker} (qui contient \keshpath{/volume1/docker/kesh}).
+    \item \textbf{Paramètres} → onglet \textbf{Snapshot} → activer \emph{Programmer la création de snapshots automatiques}.
+    \item Fréquence recommandée : \textbf{toutes les heures, du lundi au vendredi 6h-22h} (couvre les périodes de saisie active fiduciaire).
+    \item Rotation : conserver \textbf{72 snapshots horaires} (3 jours d'historique) + \textbf{14 snapshots quotidiens} + \textbf{12 snapshots hebdomadaires}.
+    \item Activer \emph{Visible aux utilisateurs} si vous voulez permettre aux utilisateurs DSM de naviguer les snapshots via File Station (utile pour récupérer manuellement un fichier supprimé sans intervention admin).
+\end{enumerate}
+
+\paragraph{Recovery depuis Snapshot}
+
+\begin{enumerate}
+    \item Snapshot Replication → \textbf{Snapshots} → sélectionner le dossier \keshcommand{docker}.
+    \item Choisir le snapshot avec le timestamp pre-incident.
+    \item \textbf{Actions} → \textbf{Restaurer} → \emph{Restaurer dans un nouveau dossier} (recommandé, préserve l'état actuel pour comparaison) OU \emph{Écraser le dossier original} (si certain).
+    \item Après restore : \keshcommand{cd /volume1/docker/kesh \&\& sudo docker compose down \&\& sudo docker compose up -d} pour recharger l'instance Kesh sur le state restoré.
+\end{enumerate}
+
+\subsubsection{Stratégie 3-2-1 sur DSM}
+
+Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des données, sur 2 supports différents, dont 1 offsite) :
+
+\begin{itemize}
+    \item \textbf{Copie 1 (primaire)} : volume Btrfs DSM avec Snapshot Replication actif (recovery rapide erreurs récentes).
+    \item \textbf{Copie 2 (locale, support différent)} : Hyper Backup vers HDD USB externe attaché au NAS, rotation Smart Recycle 30 jours + 12 mois.
+    \item \textbf{Copie 3 (offsite)} : Hyper Backup vers cloud (Synology C2 Backup pour le confort, ou S3/Backblaze B2 pour le coût optimal), chiffré client-side.
+    \item \textbf{Archivage long terme (OLICo 10 ans)} : 1 dump annuel par year exporté manuellement sur média WORM (CD-R ou DVD-R inscriptible une fois) ou archivage tape LTO si volume.
+\end{itemize}
+
+\begin{keshwarning}
+\textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
+\end{keshwarning}
+
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Mise à jour de Kesh}
+\section{Mise à jour de Kesh}\label{sec:mise-a-jour}
 
 \subsection{Process de release Kesh}
 
