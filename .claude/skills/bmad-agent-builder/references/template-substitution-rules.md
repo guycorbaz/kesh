@@ -1,72 +1,92 @@
 # Template Substitution Rules
 
-When building the agent, you MUST apply these conditional blocks to the templates:
+The SKILL-template provides a minimal skeleton: frontmatter, overview, agent identity sections, memory, and activation with config loading. Everything beyond that is crafted by the builder based on what was learned during discovery and requirements phases.
 
-## For Module-Based Agents
+## Frontmatter
+
+- `{module-code-or-empty}` → Module code prefix with hyphen (e.g., `cis-`) or empty for standalone. The `bmad-` prefix is reserved for official BMad creations; user agents should not include it.
+- `{agent-name}` → Agent functional name (kebab-case)
+- `{skill-description}` → Two parts: [4-6 word summary]. [trigger phrases]
+- `{displayName}` → Friendly display name
+- `{skillName}` → Full skill name with module prefix
+
+## Module Conditionals
+
+### For Module-Based Agents
 
 - `{if-module}` ... `{/if-module}` → Keep the content inside
 - `{if-standalone}` ... `{/if-standalone}` → Remove the entire block including markers
-- `{custom-config-properties}` → Replace with comma-separated custom property names (e.g., `journal_folder, adventure_logs_folder`) or remove line if none
-- `{module-code-or-empty}` → Replace with module code (e.g., `cis-`) or empty string for standalone
+- `{module-code}` → Module code without trailing hyphen (e.g., `cis`)
+- `{module-setup-skill}` → Name of the module's setup skill (e.g., `cis-setup`)
 
-## For Standalone Agents
+### For Standalone Agents
 
 - `{if-module}` ... `{/if-module}` → Remove the entire block including markers
 - `{if-standalone}` ... `{/if-standalone}` → Keep the content inside
-- `{custom-config-properties}` → Remove (not used for standalone)
-- `{module-code-or-empty}` → Empty string
-- `{custom-init-questions}` → Add user's additional questions here (remove placeholder if none)
 
-## For Agents With Sidecar (Memory)
+## Memory Conditionals (legacy — stateless agents)
 
-- `{if-sidecar}` ... `{/if-sidecar}` → Keep the content inside
-- `{if-no-sidecar}` ... `{/if-no-sidecar}` → Remove the entire block including markers
+- `{if-memory}` ... `{/if-memory}` → Keep if agent has persistent memory, otherwise remove
+- `{if-no-memory}` ... `{/if-no-memory}` → Inverse of above
 
-## For Agents Without Sidecar
+## Headless Conditional (legacy — stateless agents)
 
-- `{if-sidecar}` ... `{/if-sidecar}` → Remove the entire block including markers
-- `{if-no-sidecar}` ... `{/if-no-sidecar}` → Keep the content inside
+- `{if-headless}` ... `{/if-headless}` → Keep if agent supports headless mode, otherwise remove
 
-## External Skills
+## Agent Type Conditionals
 
-- `{if-external-skills}` ... `{/if-external-skills}` → Keep if agent uses external skills, otherwise remove entire block
-- `{external-skills-list}` → Replace with bulleted list of exact skill names:
-  ```markdown
-  - `bmad-skill-name-one` — Description
-  - `bmad-skill-name-two` — Description
-  ```
+These replace the legacy memory/headless conditionals for the new agent type system:
 
-## Custom Init Questions
+- `{if-memory-agent}` ... `{/if-memory-agent}` → Keep for memory and autonomous agents, remove for stateless
+- `{if-stateless-agent}` ... `{/if-stateless-agent}` → Keep for stateless agents, remove for memory/autonomous
+- `{if-evolvable}` ... `{/if-evolvable}` → Keep if agent has evolvable capabilities (owner can teach new capabilities)
+- `{if-pulse}` ... `{/if-pulse}` → Keep if agent has autonomous mode (PULSE enabled)
 
-Add user's additional questions to the init.md template, replacing `{custom-init-questions}` placeholder. Remove the placeholder line if no custom questions.
+**Mapping from legacy conditionals:**
+- `{if-memory}` is equivalent to `{if-memory-agent}` — both mean the agent has persistent state
+- `{if-headless}` maps to `{if-pulse}` — both mean the agent can operate autonomously
+
+## Template Selection
+
+The builder selects the appropriate SKILL.md template based on agent type:
+
+- **Stateless agent:** Use `./assets/SKILL-template.md` (full identity, no Three Laws/Sacred Truth)
+- **Memory/autonomous agent:** Use `./assets/SKILL-template-bootloader.md` (lean bootloader with Three Laws, Sacred Truth, 3-path activation)
+
+## Customize.toml Emission
+
+Every agent ships `customize.toml` alongside SKILL.md. The template is `./assets/customize-template.toml`. Fill the `[agent]` metadata block from Phase 3's metadata gathering:
+
+- `{agent-code}` → stable identifier (skill dir basename without module prefix)
+- `{agent-name-or-empty}` → display name, or empty string for First-Breath-named agents
+- `{agent-title}` → role title
+- `{agent-icon}` → single emoji
+- `{agent-description}` → one-sentence description
+- `{agent-type}` → `stateless` | `memory` | `autonomous`
+
+### Customization Opt-In Conditional
+
+- `{if-customizable}` ... `{/if-customizable}` → Keep the content inside when the author opted in to the override surface; add the resolver step to SKILL.md; reference lifted scalars as `{agent.<name>}` in SKILL.md body.
+- When not opted in → Remove the entire block including markers; `customize.toml` ships with metadata only; SKILL.md has no resolver step and uses hardcoded paths.
+
+Lifted configurable scalars are referenced in SKILL.md as `{agent.<name>}` (e.g. `{agent.style_guide_template}`). These are resolved at runtime by the resolver, not at build time — emit them verbatim.
+
+## Beyond the Template
+
+The builder determines the rest of the agent structure — capabilities, activation flow, sanctum templates, init script, First Breath, capability routing, external skills, scripts — based on the agent's requirements. The template intentionally does not prescribe these.
 
 ## Path References
 
-All generated agents use these paths:
-- `init.md` — First-run setup
-- `{name}.md` — Individual capability prompts
-- `references/memory-system.md` — Memory discipline (if sidecar needed)
-- `bmad-manifest.json` — Capabilities and metadata with menu codes
-- `scripts/` — Python/shell scripts for deterministic operations (if needed)
+All generated agents use `./` prefix for skill-internal paths:
 
-## Frontmatter Placeholders
+**Stateless agents:**
+- `./references/{capability}.md` — Individual capability prompts
+- `./scripts/` — Python/shell scripts for deterministic operations
 
-Replace all frontmatter placeholders in SKILL-template.md:
-- `{module-code-or-empty}` → Module code (e.g., `cis-`) or empty
-- `{agent-name}` → Agent functional name (kebab-case)
-- `{short phrase what agent does}` → One-line description
-- `{displayName}` → Friendly name
-- `{title}` → Role title
-- `{role}` → Functional role
-- `{skillName}` → Full skill name with module prefix
-- `{user_name}` → From config
-- `{communication_language}` → From config
-
-## Content Placeholders
-
-Replace all content placeholders with agent-specific values:
-- `{overview-template}` → Overview paragraph (2-3 sentences) following the 3-part formula (What, How, Why/Outcome)
-- `{One-sentence identity.}` → Brief identity statement
-- `{Who is this agent? One clear sentence.}` → Identity description
-- `{How does this agent communicate? Be specific with examples.}` → Communication style
-- `{Guiding principle 1/2/3}` → Agent's principles
+**Memory agents:**
+- `./references/first-breath.md` — First Breath onboarding (loaded when no sanctum exists)
+- `./references/memory-guidance.md` — Memory philosophy
+- `./references/capability-authoring.md` — Capability evolution framework (if evolvable)
+- `./references/{capability}.md` — Individual capability prompts
+- `./assets/{FILE}-template.md` — Sanctum templates (copied by init script)
+- `./scripts/init-sanctum.py` — Deterministic sanctum scaffolding
