@@ -1,4 +1,38 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock apiHealth store BEFORE importing api-client (hoisted by vi).
+// L'état isDegraded est toggled par les fn mock pour permettre aux tests de
+// vérifier la séquence setDegraded → clearDegraded (les anciens tests 401,
+// timeout, etc. ne l'observent pas — c'est silencieux).
+const { mockApiHealth, resetApiHealthMock } = vi.hoisted(() => {
+	const state = { isDegraded: false };
+	const setDegraded = vi.fn(() => {
+		state.isDegraded = true;
+	});
+	const clearDegraded = vi.fn(() => {
+		state.isDegraded = false;
+	});
+	return {
+		mockApiHealth: {
+			get isDegraded(): boolean {
+				return state.isDegraded;
+			},
+			setDegraded,
+			clearDegraded,
+		},
+		resetApiHealthMock: (): void => {
+			state.isDegraded = false;
+			setDegraded.mockClear();
+			clearDegraded.mockClear();
+		},
+	};
+});
+
+vi.mock('$lib/shared/utils/api-health.svelte', () => ({
+	apiHealth: mockApiHealth,
+	HEALTH_POLL_INTERVAL_MS: 5000,
+}));
+
 import { apiClient, isApiError } from './api-client';
 import { authState } from '$lib/app/stores/auth.svelte';
 
@@ -44,6 +78,13 @@ describe('apiClient', () => {
 		// Reset auth state
 		authState.clearSession();
 
+		// Reset apiHealth mock state
+		resetApiHealthMock();
+
+		// Désactiver le retry exponentiel par défaut (1 seule tentative). Les
+		// tests Story 10.3 qui exercent le retry overrident explicitement.
+		(window as unknown as { __KESH_RETRY_DELAYS: readonly number[] }).__KESH_RETRY_DELAYS = [];
+
 		// Mock fetch
 		mockFetch = vi.fn();
 		vi.stubGlobal('fetch', mockFetch);
@@ -59,6 +100,8 @@ describe('apiClient', () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.useRealTimers();
+		delete (window as unknown as { __KESH_RETRY_DELAYS?: readonly number[] }).__KESH_RETRY_DELAYS;
 		Object.defineProperty(window, 'location', {
 			value: originalLocation,
 			writable: true,
@@ -139,7 +182,7 @@ describe('apiClient', () => {
 			);
 		});
 
-		it('n\'ajoute PAS Authorization sur /api/v1/auth/login', async () => {
+		it("n'ajoute PAS Authorization sur /api/v1/auth/login", async () => {
 			mockFetch.mockResolvedValue(
 				mockResponse(200, { accessToken: VALID_TOKEN, refreshToken: 'r', expiresIn: 900 }),
 			);
@@ -161,7 +204,9 @@ describe('apiClient', () => {
 			// 2e appel → refresh OK
 			// 3e appel → retry OK
 			mockFetch
-				.mockResolvedValueOnce(mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'Token expiré' } }))
+				.mockResolvedValueOnce(
+					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'Token expiré' } }),
+				)
 				.mockResolvedValueOnce(
 					mockResponse(200, {
 						accessToken: NEW_TOKEN,
@@ -186,7 +231,9 @@ describe('apiClient', () => {
 			// 1er appel → 401
 			// 2e appel → refresh 401 (INVALID_REFRESH_TOKEN)
 			mockFetch
-				.mockResolvedValueOnce(mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }))
+				.mockResolvedValueOnce(
+					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+				)
 				.mockResolvedValueOnce(
 					mockResponse(401, {
 						error: { code: 'INVALID_REFRESH_TOKEN', message: 'Session expirée' },
@@ -202,7 +249,7 @@ describe('apiClient', () => {
 			expect(locationReplaceMock).toHaveBeenCalledWith('/login?reason=session_expired');
 		});
 
-		it('mutex de refresh — 2 requêtes 401 simultanées n\'appellent refresh qu\'une fois', async () => {
+		it("mutex de refresh — 2 requêtes 401 simultanées n'appellent refresh qu'une fois", async () => {
 			authState.login(VALID_TOKEN, 'old-refresh', 900);
 
 			let refreshCallCount = 0;
@@ -227,10 +274,7 @@ describe('apiClient', () => {
 				return Promise.resolve(mockResponse(200, { ok: true }));
 			});
 
-			await Promise.all([
-				apiClient.get('/api/v1/users'),
-				apiClient.get('/api/v1/accounts'),
-			]);
+			await Promise.all([apiClient.get('/api/v1/users'), apiClient.get('/api/v1/accounts')]);
 
 			expect(refreshCallCount).toBe(1);
 		});
@@ -243,7 +287,9 @@ describe('apiClient', () => {
 			authState.login(VALID_TOKEN, 'old-refresh', 900);
 
 			mockFetch
-				.mockResolvedValueOnce(mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }))
+				.mockResolvedValueOnce(
+					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+				)
 				// Refresh retourne 200 mais sans accessToken
 				.mockResolvedValueOnce(mockResponse(200, { refreshToken: 'x', expiresIn: 900 }));
 
@@ -403,7 +449,9 @@ describe('apiClient', () => {
 
 			mockFetch
 				// 1er appel → 401
-				.mockResolvedValueOnce(mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }))
+				.mockResolvedValueOnce(
+					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+				)
 				// Refresh → OK
 				.mockResolvedValueOnce(
 					mockResponse(200, {
@@ -413,7 +461,9 @@ describe('apiClient', () => {
 					}),
 				)
 				// Retry → encore 401
-				.mockResolvedValueOnce(mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }));
+				.mockResolvedValueOnce(
+					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+				);
 
 			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
 				code: 'UNAUTHENTICATED',
@@ -465,7 +515,9 @@ describe('apiClient', () => {
 			authState.login(VALID_TOKEN, 'old-refresh', 900);
 
 			mockFetch
-				.mockResolvedValueOnce(mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }))
+				.mockResolvedValueOnce(
+					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
+				)
 				.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
 			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
@@ -492,6 +544,117 @@ describe('apiClient', () => {
 			expect(isApiError(null)).toBe(false);
 			expect(isApiError(undefined)).toBe(false);
 			expect(isApiError('error')).toBe(false);
+		});
+	});
+
+	// --- Story 10.3 : retry exponentiel + apiHealth degraded ---
+
+	describe('retry exponentiel + apiHealth (Story 10.3)', () => {
+		const FAST_DELAYS = [10, 10, 10, 10] as const;
+
+		beforeEach(() => {
+			authState.login(VALID_TOKEN, 'r', 900);
+			// Active le retry exponentiel avec délais accélérés (10ms × 4)
+			(window as unknown as { __KESH_RETRY_DELAYS: readonly number[] }).__KESH_RETRY_DELAYS =
+				FAST_DELAYS;
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("(a) GET avec NETWORK_ERROR puis 200 au 2e essai → succès retourné, setDegraded puis clearDegraded", async () => {
+			mockFetch
+				.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+				.mockResolvedValueOnce(mockResponse(200, { data: 'ok' }));
+
+			const promise = apiClient.get<{ data: string }>('/api/v1/users');
+			// Avance le 1er délai (10ms) pour déclencher la 2e tentative
+			await vi.advanceTimersByTimeAsync(FAST_DELAYS[0]);
+
+			const result = await promise;
+			expect(result).toEqual({ data: 'ok' });
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
+			expect(mockApiHealth.clearDegraded).toHaveBeenCalled();
+		});
+
+		it("(b) GET avec 5× NETWORK_ERROR → throw NETWORK_ERROR, setDegraded, clearDegraded non-appelé", async () => {
+			mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+			const promise = apiClient.get('/api/v1/users');
+			// Détache le rejet pour éviter unhandled rejection pendant les advance
+			const expectation = expect(promise).rejects.toMatchObject({
+				code: 'NETWORK_ERROR',
+				status: 0,
+			});
+			// Avance les 4 délais de retry pour épuiser les 5 tentatives totales
+			for (const delay of FAST_DELAYS) {
+				await vi.advanceTimersByTimeAsync(delay);
+			}
+			await expectation;
+
+			expect(mockFetch).toHaveBeenCalledTimes(5);
+			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
+			expect(mockApiHealth.clearDegraded).not.toHaveBeenCalled();
+		});
+
+		it("(c) POST avec NETWORK_ERROR → throw immédiatement (pas de retry), setDegraded appelé", async () => {
+			mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+			await expect(apiClient.post('/api/v1/users', { name: 'x' })).rejects.toMatchObject({
+				code: 'NETWORK_ERROR',
+				status: 0,
+			});
+
+			expect(mockFetch).toHaveBeenCalledTimes(1);
+			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
+			expect(mockApiHealth.clearDegraded).not.toHaveBeenCalled();
+		});
+
+		it("(d) GET avec 503 puis 200 au 2e essai → retry déclenché, succès", async () => {
+			mockFetch
+				.mockResolvedValueOnce(
+					mockResponse(503, {
+						error: { code: 'SERVICE_UNAVAILABLE', message: 'DB down' },
+					}),
+				)
+				.mockResolvedValueOnce(mockResponse(200, { data: 'recovered' }));
+
+			const promise = apiClient.get<{ data: string }>('/api/v1/users');
+			await vi.advanceTimersByTimeAsync(FAST_DELAYS[0]);
+
+			const result = await promise;
+			expect(result).toEqual({ data: 'recovered' });
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
+			expect(mockApiHealth.clearDegraded).toHaveBeenCalled();
+		});
+
+		it("(e) GET avec TIMEOUT puis 200 au 2e essai → retry déclenché, setDegraded, clearDegraded", async () => {
+			// Pass 1 code review F2 : couvre le path TIMEOUT (AbortError de fetchWithTimeout)
+			// du retry exponentiel. Le path NETWORK_ERROR (tests a, b, c) et 503 (test d)
+			// étaient déjà couverts, mais TIMEOUT (DOMException AbortError) partage la même
+			// branche `catch (err)` dans `fetchWithRetry` ligne 266 — sans test dédié, une
+			// régression future qui exclurait AbortError du retry passerait silencieusement.
+			mockFetch
+				.mockImplementationOnce(
+					() =>
+						new Promise((_, reject) => {
+							reject(new DOMException('The operation was aborted', 'AbortError'));
+						}),
+				)
+				.mockResolvedValueOnce(mockResponse(200, { data: 'recovered-timeout' }));
+
+			const promise = apiClient.get<{ data: string }>('/api/v1/users');
+			await vi.advanceTimersByTimeAsync(FAST_DELAYS[0]);
+
+			const result = await promise;
+			expect(result).toEqual({ data: 'recovered-timeout' });
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+			expect(mockApiHealth.setDegraded).toHaveBeenCalled();
+			expect(mockApiHealth.clearDegraded).toHaveBeenCalled();
 		});
 	});
 });

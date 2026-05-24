@@ -27,6 +27,7 @@ error-username-too-long = Der Benutzername darf nicht länger als { $max } Zeich
 # Systemfehler
 error-internal = Interner Fehler
 error-service-unavailable = Dienst vorübergehend nicht verfügbar
+db-unavailable-banner = Datenbank vorübergehend nicht verfügbar — automatischer Wiederholungsversuch läuft
 
 # Onboarding-Fehler (Story 2.2)
 error-onboarding-step-already-completed = Dieser Konfigurationsschritt wurde bereits abgeschlossen

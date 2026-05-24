@@ -27,6 +27,7 @@ error-username-too-long = Username must not exceed { $max } characters
 # System errors
 error-internal = Internal error
 error-service-unavailable = Service temporarily unavailable
+db-unavailable-banner = Database temporarily unavailable — retrying automatically
 
 # Onboarding errors (Story 2.2)
 error-onboarding-step-already-completed = This configuration step has already been completed

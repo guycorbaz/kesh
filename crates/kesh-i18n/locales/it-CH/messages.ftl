@@ -27,6 +27,7 @@ error-username-too-long = Il nome utente non deve superare { $max } caratteri
 # Errori di sistema
 error-internal = Errore interno
 error-service-unavailable = Servizio temporaneamente non disponibile
+db-unavailable-banner = Database temporaneamente non disponibile — nuovo tentativo automatico in corso
 
 # Errori onboarding (Story 2.2)
 error-onboarding-step-already-completed = Questo passaggio di configurazione è già stato completato

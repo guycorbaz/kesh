@@ -22,9 +22,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
-const FIXTURE_DIR = path.join(__dirname, 'fixtures');
+const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const FIXTURE_MINIMAL = path.join(FIXTURE_DIR, 'camt053_v04_minimal.xml');
 const FIXTURE_BALANCE_MISMATCH = path.join(FIXTURE_DIR, 'camt053_v04_balance_mismatch.xml');
 

@@ -7,6 +7,11 @@
 //! toujours présent au démarrage (l'application refuse de démarrer sans
 //! DB), donc plus de gestion `Option<MySqlPool>`. Le comportement dégradé
 //! 503 reste déclenché uniquement par l'échec du `SELECT 1`.
+//!
+//! Story 10.3 : shape body alignée sur `{ status, db, version }` consommée
+//! par le frontend `apiHealth.pollHealth()` (banner dégradé + auto-recovery)
+//! et par le smoke test post-build `release.yml` (epic-10.md). `version` est
+//! résolu via `env!("CARGO_PKG_VERSION")`, donc figé à la compilation.
 
 use axum::Json;
 use axum::extract::State;
@@ -17,12 +22,14 @@ use serde_json::json;
 use crate::AppState;
 
 pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let version = env!("CARGO_PKG_VERSION");
     match sqlx::query("SELECT 1").execute(&state.pool).await {
         Ok(_) => (
             StatusCode::OK,
             Json(json!({
                 "status": "ok",
-                "database": "connected"
+                "db": true,
+                "version": version,
             })),
         ),
         Err(e) => {
@@ -31,7 +38,8 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(json!({
                     "status": "degraded",
-                    "database": "disconnected"
+                    "db": false,
+                    "version": version,
                 })),
             )
         }

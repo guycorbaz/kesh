@@ -143,4 +143,11 @@
 			</Button>
 		</form>
 	</div>
+
+	<footer
+		class="absolute bottom-4 left-0 right-0 text-center text-xs text-muted-foreground"
+		data-testid="app-version"
+	>
+		Kesh v{__APP_VERSION__}
+	</footer>
 </main>
