@@ -329,6 +329,142 @@ compta.exemple.ch {
 }
 \end{lstlisting}
 
+\subsection{Alternative : déploiement via Traefik (avec firewall applicatif)}\label{sec:traefik}
+
+Traefik est particulièrement adapté quand Kesh est exposé sur Internet : il intègre nativement des middlewares de \emph{firewall applicatif} (rate limiting, IP whitelist, headers de sécurité) et supporte des plugins communautaires plus avancés (CrowdSec pour la détection d'intrusion, ModSecurity-CRS pour des règles WAF type OWASP). La configuration ci-dessous suppose Traefik 3.x déployé en sidecar dans le même Docker Compose que Kesh.
+
+\subsubsection{Compose Traefik en sidecar}
+
+Ajouter le service Traefik à votre \keshpath{docker-compose.yml} (ou utiliser un \keshpath{docker-compose.override.yml} dédié) :
+
+\begin{lstlisting}[language=bash]
+services:
+  traefik:
+    image: traefik:v3.2
+    container_name: kesh-traefik
+    restart: unless-stopped
+    command:
+      # Entrypoints HTTP/HTTPS (HTTP redirige vers HTTPS).
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      # Certificats Let's Encrypt automatiques (challenge HTTP-01).
+      - --certificatesresolvers.le.acme.email=admin@exemple.ch
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      # Provider Docker — lit les labels sur les autres services.
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      # Logs format JSON pour ingestion ultérieure (Loki, ELK, etc.).
+      - --accesslog=true
+      - --accesslog.format=json
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
+    networks:
+      - kesh-internal
+
+  kesh-api:
+    # ... votre config kesh-api existante ...
+    # NE PAS publier le port 3000 sur l'hôte (Traefik y accède via réseau Docker).
+    expose:
+      - "3000"
+    networks:
+      - kesh-internal
+    labels:
+      - traefik.enable=true
+      # Router HTTPS + cert Let's Encrypt.
+      - traefik.http.routers.kesh.rule=Host(`compta.exemple.ch`)
+      - traefik.http.routers.kesh.entrypoints=websecure
+      - traefik.http.routers.kesh.tls.certresolver=le
+      - traefik.http.services.kesh.loadbalancer.server.port=3000
+      # Chaîne de middlewares firewall applicatif (cf. ci-dessous).
+      - traefik.http.routers.kesh.middlewares=kesh-ratelimit@docker,kesh-headers@docker
+
+volumes:
+  traefik-letsencrypt:
+
+networks:
+  kesh-internal:
+    driver: bridge
+\end{lstlisting}
+
+\subsubsection{Middlewares firewall applicatif}
+
+Définir les middlewares via labels sur le service \keshcommand{kesh-api} (ou dans un \keshpath{dynamic.yml} dédié) :
+
+\begin{lstlisting}[language=bash]
+    labels:
+      # ... labels routeur ci-dessus ...
+
+      # 1. Rate limiting global — défense contre brute-force et scraping.
+      #    Limite moyenne 50 req/s par IP, burst 100. Défense en
+      #    profondeur du rate-limit applicatif Kesh (KESH_RATE_LIMIT_*).
+      - traefik.http.middlewares.kesh-ratelimit.ratelimit.average=50
+      - traefik.http.middlewares.kesh-ratelimit.ratelimit.burst=100
+      - traefik.http.middlewares.kesh-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1
+
+      # 2. Headers de sécurité (durcissement OWASP).
+      - traefik.http.middlewares.kesh-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.kesh-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.kesh-headers.headers.stsPreload=true
+      - traefik.http.middlewares.kesh-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.kesh-headers.headers.framedeny=true
+      - traefik.http.middlewares.kesh-headers.headers.referrerPolicy=strict-origin-when-cross-origin
+      - traefik.http.middlewares.kesh-headers.headers.permissionsPolicy=geolocation=(),microphone=(),camera=()
+
+      # 3. (OPTIONNEL) IP whitelist pour endpoints sensibles — exemple
+      #    pour bloquer /api/v1/_test/* (qui n'existe qu'en KESH_TEST_MODE
+      #    mais on défense en profondeur). À adapter à vos IPs admin.
+      # - traefik.http.middlewares.kesh-admin-only.ipallowlist.sourcerange=192.168.1.0/24,2001:db8::/32
+\end{lstlisting}
+
+\subsubsection{Plugins WAF avancés (optionnel, recommandé Internet-exposed)}
+
+Pour un firewall applicatif complet face à Internet, deux plugins Traefik communautaires sont éprouvés :
+
+\paragraph{CrowdSec — détection d'intrusion collaborative}
+
+CrowdSec analyse les logs Traefik en temps réel, détecte les scans/scrapes/brute-force, et partage les IPs malveillantes avec une CTI communautaire (équivalent crowd-sourced de \emph{Fail2Ban} + base de réputation IP globale).
+
+\begin{lstlisting}[language=bash]
+# Activer le plugin dans la commande Traefik (ajouter dans le `command:` ci-dessus) :
+- --experimental.plugins.crowdsec-bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+- --experimental.plugins.crowdsec-bouncer.version=v1.3.5
+
+# Puis sur kesh-api, ajouter le middleware :
+labels:
+  - traefik.http.middlewares.kesh-crowdsec.plugin.crowdsec-bouncer.enabled=true
+  - traefik.http.middlewares.kesh-crowdsec.plugin.crowdsec-bouncer.crowdsecLapiKey=<API_KEY>
+  # Puis chainer dans la liste des middlewares du routeur :
+  - traefik.http.routers.kesh.middlewares=kesh-crowdsec@docker,kesh-ratelimit@docker,kesh-headers@docker
+\end{lstlisting}
+
+Installation locale CrowdSec : voir \href{https://docs.crowdsec.net/}{crowdsec.net}. Inscription gratuite à la CTI communautaire pour partager les détections.
+
+\paragraph{ModSecurity / OWASP Core Rule Set (CRS) — règles WAF traditionnelles}
+
+Pour les organisations soumises à audit conformité (RGPD, LPD Suisse, exigences clients), un WAF basé sur OWASP CRS détecte les patterns d'attaque classiques (SQL injection, XSS, path traversal, etc.). Plusieurs intégrations sont disponibles :
+
+\begin{itemize}
+    \item \textbf{Coraza} (plugin Traefik officiel WASM) — \href{https://github.com/jcchavezs/coraza-http-wasm}{github.com/jcchavezs/coraza-http-wasm}. Engine WAF Go natif, performance élevée, règles CRS supportées.
+    \item \textbf{ModSecurity v3 + Nginx} en frontal de Traefik — option plus complexe mais plus complète si déjà utilisé en interne.
+\end{itemize}
+
+\subsubsection{Considérations sécurité spécifiques}
+
+\begin{itemize}
+    \item \textbf{Sock Docker exposé} (\keshpath{/var/run/docker.sock}) : Traefik y accède en lecture seule (\keshcommand{:ro}). En haute exigence sécurité, préférer le \keshcommand{docker-proxy} (image \keshcommand{tecnativa/docker-socket-proxy}) qui filtre les endpoints Docker API accessibles à Traefik.
+    \item \textbf{Renouvellement Let's Encrypt} : Traefik gère automatiquement le renouvellement 30 jours avant expiration. Surveiller via \keshcommand{docker logs kesh-traefik | grep acme}.
+    \item \textbf{Backup de \keshpath{acme.json}} : ce fichier contient la clé privée TLS — l'inclure dans votre stratégie de backup (volume \keshcommand{traefik-letsencrypt} ci-dessus).
+    \item \textbf{Dashboard Traefik désactivé par défaut} dans cette config (pas de label \keshcommand{api}, pas d'option \keshcommand{--api}). Si vous l'activez en debug, protégez-le impérativement avec une auth + IP whitelist.
+\end{itemize}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Configuration}\label{sec:configuration}
 
