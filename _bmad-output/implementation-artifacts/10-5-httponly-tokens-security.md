@@ -374,4 +374,44 @@ _(à remplir au commit final — récapitulatif des fichiers A/M)_
 
 ## Change Log
 
-_(à remplir aux passes spec validate et code-review)_
+### Spec validate CYCLE CONVERGED Pass 5 — 2026-05-25
+
+`bmad-create-story 10-5 validate` cycle adversarial complet 5-passes selon CLAUDE.md §"Review Iteration Rule" :
+
+**Rotation modèles** : Sonnet 4.6 → Haiku 4.5 → Opus 4.7 → Sonnet 4.6 → Haiku 4.5.
+
+**Trend findings** :
+
+| Pass | Modèle | Raw | Réels | Patches |
+|------|--------|-----|-------|---------|
+| 1 | Sonnet 4.6 | 16 (4C+3H+4M+5L) | 15 | 15 patches |
+| 2 | Haiku 4.5 | 10 (4C+3H+2M+1L) | 2 (8 dismissed grep ground-truth) | 2 patches |
+| 3 | Opus 4.7 | 15 (1C+4H+6M+4L) | 15 | 8 patches + 7 LOW notes consolidées |
+| 4 | Sonnet 4.6 | 6 (0C+0H+2M+4L) | 6 | 6 patches |
+| 5 | Haiku 4.5 | 1 (1C) | **0** (1 dismissed grep ground-truth) | 0 patch — **CONVERGED** |
+
+**Total** : **31 patches code-prevention** + 13 LOW notes consolidées (Dev Notes §"Pass 3 — edge cases LOW acceptés v0.1") + **9 faux-positifs Haiku dismissed via grep ground-truth** + 6 décisions D1-D6 explicitement actées.
+
+**Highlights patches majeurs** :
+- Pass 1 (Sonnet) — 4 CRITICAL bug-prevention : `hooks.client.ts` async init manquant (régression UX redirect /login systématique), `doRefresh` guard non-supprimée (déconnexion 15min), CSP `script-src 'self'` whitepage SvelteKit, T2.3 logout source refresh_token non-spécifiée.
+- Pass 3 (Opus) — pattern catch-architectural confirmé (memory `project_9_2b/10-2/10-3_validate_converged`) : 1 CRITICAL cookie `Max-Age` désaligné `refresh_inactivity` 15min vs `refresh_token_max_lifetime` 30 jours (régression silencieuse), 3 HIGH architectural (Playwright APIRequestContext cookie isolation, Axum 0.8 layer hierarchy + ServeDir, `routes/login/+page.svelte` caller décodage JWT).
+- Pass 4 (Sonnet) — 2 MEDIUM cohérence post-patches : CSP snippet code vs AC #13/D3 contradiction, T2.3 logout `.secure(true)` vs T2.1/T2.2/T2.4 `.secure(!state.config.test_mode)`.
+
+**Faux-positifs Haiku dismissed via grep ground-truth** (9 total, dont 1 CRITICAL Pass 5 + 8 CRITICAL/HIGH/MEDIUM Pass 2) — Haiku confond **spec** (qui décrit ce qui DOIT être modifié) vs **code source actuel** (qui n'a PAS encore été modifié — c'est précisément la spec qui prépare la dev-story future). Notable Pass 5 : Haiku a affirmé "SvelteKit `init` hook n'existe pas en 2.x" → réfuté par `grep -nE "ClientInit" frontend/node_modules/@sveltejs/kit/types/index.d.ts` → ligne 957 `export type ClientInit = () => MaybePromise<void>`. Pattern documenté CLAUDE.md §"Haiku-specific guardrails — méta-spec false positives" et memory `feedback_haiku_review_diff_combined`.
+
+**Décisions actées (D1-D6)** :
+- D1 : Tokens conservés en body `LoginResponse`/`RefreshResponse` (rétro-compat 19+ tests historiques).
+- D2 : `CurrentUser` struct étendue avec `pub exp: i64` (T4.1 prerequisite).
+- D3 : CSP `script-src 'self' 'unsafe-inline'` v0.1 (SvelteKit inline script).
+- D4 : Tests E2E refactor `helpers/test-state.ts` via Option (a-ii) `storageState clone` dispose-safe.
+- D5 : `isAuthenticated` getter dépend `_currentUser !== null` (getter `accessToken` retiré).
+- D6 : `LoginResponse` étendu `user_id + username + role` (évite round-trip /me post-login).
+
+**13 LOW notes consolidées** v0.1 acceptées dans Dev Notes "Pass 3 — edge cases LOW acceptés v0.1" : AC #18 closes #41 humain, CSP filter case-sensitivity, `__Host-` prefix v0.2, length-side-channel D6 théorique, frame-ancestors iframe forward-looking, CSRF defense-in-depth L3 v0.2, cookie crate semver pin.
+
+**Stop criterion atteint** Pass 5 : 0 finding > LOW réel (1 CRITICAL dismissed faux-positif Haiku). Spec ready-for-dev définitive.
+
+**Status story** : `ready-for-dev` (inchangé — validate ne bumpe pas au-delà). Sprint-status `10-5-httponly-tokens-security: ready-for-dev` (set au commit initial spec creation `ef7c92a`).
+
+**Prochaine étape** : `bmad-dev-story 10-5` Opus 4.7 single-pass orchestré (cohérent pattern Story 10-2/10-3 dev-story DONE en 1 pass). Effort estimé 1-2 jours per epic-10.md ligne 316.
+
