@@ -356,3 +356,38 @@ Vérifier en particulier après :
 Si une mise à jour est nécessaire, l'inclure **dans le même commit** que le changement qui l'a déclenchée (typiquement le merge de la dernière story de l'epic, ou la rétro). Pas de commit séparé « sync README » a posteriori — sinon le `git log` ne raconte plus l'histoire.
 
 Si le commit ne change rien à la planification (refactor interne, fix de bug, code review patches) le README reste tel quel.
+
+**Synchroniser TOUTES les docs avant tout push / création de release** :
+
+Au-delà du planning README à chaque commit (ci-dessus), élargir la vérification à **tous les supports de documentation** au moment d'**actions visibles à l'extérieur du repo** :
+
+- **À tout `git push` qui ouvre/met à jour une PR** → vérifier que les docs touchées par la branche sont cohérentes.
+- **À toute création de release** (tag annoté `vX.Y.Z` + push tag déclenchant `.github/workflows/release.yml`) → audit complet de toutes les docs.
+- **À toute clôture d'epic** (post-`bmad-retrospective`) → idem audit complet.
+
+**Supports de doc à auditer** :
+
+| Support | Localisation | Trigger CI/CD | Quand vérifier |
+|---------|--------------|---------------|----------------|
+| `README.md` (racine) | `/README.md` | rendu auto par GitHub sur la page repo | À chaque commit (cf. paragraphe précédent) + push/release |
+| Site GitHub Pages | `website/` (HTML statique) | `.github/workflows/deploy-pages.yml` déclenché par push sur `main` touchant `website/**` | Push/release (rebuild automatique) |
+| Manuel admin LaTeX FR | `docs/manual/fr/admin-manual.tex` (+ `.pdf` régénéré) | release (PDF attaché ?) | Release + clôture d'epic majeure (changement install/config/sécurité) |
+| Manuel user LaTeX FR | `docs/manual/fr/user-manual.tex` (+ `.pdf`) | idem | Release + stories qui ajoutent/modifient des features visibles utilisateur |
+| Brochure marketing LaTeX FR | `docs/manual/fr/marketing-brochure.tex` (+ `.pdf`) | idem | Release (changements de positionnement / pricing) |
+| Manuels DE/IT/EN | `docs/manual/{de,en,it}/` (vide v0.1, traductions v0.2+) | idem | Release majeure ; v0.1 = noter "à traduire" si gap |
+| CHANGELOG | `CHANGELOG.md` racine (à créer Story 10-4) | release (lecture par tooling release) | Release **obligatoire**, push de fin d'epic recommandé |
+
+**Liste de contrôle pré-push / pré-release** :
+
+1. **README.md « Feuille de route »** : tableau des versions à jour (✅/🚧/📋 par epic), section « Fonctionnalités » sans `(à venir)` pour ce qui est livré.
+2. **`website/index.html` + `website/roadmap.html`** : claims marketing alignés avec ce qui est *réellement* dans `main` à la release. Pas d'over-promise sur des features non-mergées. Pas d'under-claim sur des features livrées (visibilité Google Search Console).
+3. **`website/issues.html`** : si la page liste les KFs ou roadmap connue, synchroniser avec l'état actuel des labels GitHub Issues (`known-failure`, `enhancement`, `v0.2-milestone`).
+4. **Manuels LaTeX FR** : si la story touche install/config/sécurité/usage utilisateur, mettre à jour la section correspondante (admin-manual pour DevOps, user-manual pour fiduciaires/comptables). Régénérer le PDF (`latexmk -xelatex` dans `docs/manual/fr/`) et le commiter (la convention projet est de versionner les PDFs cf. PR #102).
+5. **CHANGELOG** (une fois créé Story 10-4) : entrée pour la release courante avec sections `Added` / `Changed` / `Fixed` / `Security` / `Removed` (style [Keep a Changelog](https://keepachangelog.com/)).
+6. **`docs/known-failures.md` + `docs/change_request.md`** : déjà archivés depuis 2026-04-16/18 — **pas** d'update ici, juste vérifier qu'aucune nouvelle entrée n'a été ajoutée par erreur (les KF/CR vont sur GitHub Issues désormais, cf. §"Issue Tracking Rule").
+
+**Règle d'inclusion** : tout update de doc déclenché par la story DOIT être **dans le même commit** ou la même PR que le code qui le motive (pas de PR doc séparée a posteriori, sauf cas où plusieurs stories y contribuent et que la doc serait rejouée — alors batched dans la PR de la dernière story de l'epic, cohérent `feedback_avoid_parallel_prs`).
+
+**Si la doc n'est pas touchée** (refactor interne, fix de bug sans changement comportemental visible, code review patches cosmétiques) : tous les supports restent tels quels — pas de "doc-only commit" cosmétique pour la forme.
+
+**Coût d'oubli** : un manuel admin obsolète après une story qui change le format `.env` ou les ports réseau induit du support utilisateur cassé. Une feuille de route README qui ment fait perdre la confiance d'un éval/contributeur. Un CHANGELOG manquant à la release rend impossible le diff "qu'est-ce qui change pour mes utilisateurs". Les 3 minutes de vérification valent les heures de support en aval.
