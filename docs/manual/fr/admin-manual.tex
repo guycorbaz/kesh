@@ -465,6 +465,152 @@ Pour les organisations soumises à audit conformité (RGPD, LPD Suisse, exigence
     \item \textbf{Dashboard Traefik désactivé par défaut} dans cette config (pas de label \keshcommand{api}, pas d'option \keshcommand{--api}). Si vous l'activez en debug, protégez-le impérativement avec une auth + IP whitelist.
 \end{itemize}
 
+\subsection{Alternative : déploiement sur Synology DSM}\label{sec:synology}
+
+Synology DSM (DiskStation Manager) 7.2+ inclut le paquet \emph{Container Manager} (anciennement \emph{Docker}) qui permet de déployer Kesh sans utiliser le CLI Docker. Cette section couvre le scénario standard d'un déploiement Kesh sur un NAS Synology personnel ou de PME (DS220+, DS920+, DS1522+, DS1821+, ou modèles supérieurs avec ≥ 2 GiB RAM).
+
+\subsubsection{Prérequis Synology DSM}
+
+\begin{itemize}
+    \item \textbf{DSM} ≥ 7.2 (Container Manager n'est pas disponible sur DSM 6.x).
+    \item \textbf{Modèle NAS} compatible Docker — vérifier sur la liste officielle Synology : modèles avec processeur Intel/AMD x86\_64 (DS220+, DS720+, DS920+, DS1522+, DS1821+, etc.). Les modèles ARM (DS120j, DS220j, DS418, etc.) ne supportent pas Container Manager.
+    \item \textbf{RAM} : minimum 2 GiB (4 GiB recommandés pour confort utilisateur multi-tenant avec plusieurs companies actives).
+    \item \textbf{Stockage} : au moins 10 GiB libres sur le volume \keshpath{/volume1} (5 GiB pour l'image Kesh + 1 GiB pour MariaDB initial + 4 GiB marge pour les imports bancaires, exports PDF/ZIP, et croissance données).
+    \item \textbf{Paquet Container Manager} installé via Package Center (gratuit, fourni par Synology). Pour DSM 7.2+, c'est l'unique paquet officiel — il remplace l'ancien paquet \emph{Docker}.
+\end{itemize}
+
+\subsubsection{Étape 1 — Préparer la structure de répertoires}
+
+Via SSH (recommandé) ou File Station (alternative GUI), créer la structure suivante sous \keshpath{/volume1/docker/kesh/} :
+
+\begin{lstlisting}[language=bash]
+# Connexion SSH au NAS (activer SSH dans Panneau de configuration > Terminal et SNMP)
+ssh admin@<IP-NAS>
+
+# Création des dossiers
+sudo mkdir -p /volume1/docker/kesh
+cd /volume1/docker/kesh
+
+# Permissions : utilisateur DSM courant + group docker (uid/gid varient selon DSM)
+# Container Manager rendra les volumes accessibles automatiquement
+sudo chown -R $(id -u):$(id -g) /volume1/docker/kesh
+\end{lstlisting}
+
+\subsubsection{Étape 2 — Récupérer docker-compose.yml et .env}
+
+Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh et créer le fichier \keshpath{.env} à partir du template (voir section \ref{sec:env-vars} pour la liste complète) :
+
+\begin{lstlisting}[language=bash]
+cd /volume1/docker/kesh
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.prod.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example -o .env
+
+# Générer les secrets obligatoires (DOIVENT remplacer les placeholders dans .env)
+openssl rand -hex 32   # → KESH_JWT_SECRET
+openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
+openssl rand -base64 32 # → MARIADB_ROOT_PASSWORD et MARIADB_PASSWORD
+
+# Éditer .env avec vi/nano pour remplacer les <GENERATE_ME: ...> et <EDIT: ...>
+sudo nano .env
+\end{lstlisting}
+
+\begin{keshwarning}
+\textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...} dans \keshpath{.env}. Story 10-1 du hardening Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
+\end{keshwarning}
+
+\subsubsection{Étape 3 — Importer le projet dans Container Manager}
+
+\paragraph{Méthode GUI (recommandée pour débutants)}
+
+\begin{enumerate}
+    \item Ouvrir \textbf{Container Manager} depuis le menu DSM.
+    \item Aller dans l'onglet \textbf{Projet} (panneau gauche).
+    \item Cliquer \textbf{Créer}.
+    \item Renseigner :
+        \begin{itemize}
+            \item \textbf{Nom du projet} : \keshcommand{kesh}
+            \item \textbf{Chemin} : naviguer vers \keshpath{/volume1/docker/kesh}
+            \item \textbf{Source} : \emph{Utiliser docker-compose.yml existant}
+        \end{itemize}
+    \item Container Manager affiche un preview du compose. Vérifier que les services attendus apparaissent (\keshcommand{kesh-api}, \keshcommand{mariadb}, éventuellement \keshcommand{traefik} si vous l'avez ajouté).
+    \item Cliquer \textbf{Suivant} → \textbf{Démarrer le projet maintenant} → \textbf{Terminé}.
+\end{enumerate}
+
+\paragraph{Méthode CLI (équivalente, scriptable)}
+
+\begin{lstlisting}[language=bash]
+cd /volume1/docker/kesh
+
+# Container Manager DSM expose `docker compose` (plugin v2)
+sudo docker compose pull
+sudo docker compose up -d
+
+# Vérifier l'état
+sudo docker compose ps
+sudo docker compose logs -f kesh-api  # Ctrl+C pour quitter
+\end{lstlisting}
+
+\subsubsection{Étape 4 — Configurer le reverse proxy DSM (Application Portal)}
+
+DSM intègre nativement un reverse proxy HTTPS via le \emph{Portail des applications}. Cette option est plus simple que Nginx/Caddy/Traefik pour les petites installations qui n'exposent pas Kesh à Internet (LAN-only).
+
+\begin{enumerate}
+    \item Ouvrir \textbf{Panneau de configuration} → \textbf{Portail de connexion} → onglet \textbf{Avancé} → bouton \textbf{Proxy inversé}.
+    \item Cliquer \textbf{Créer}.
+    \item Renseigner :
+        \begin{itemize}
+            \item \textbf{Nom de la description} : \keshcommand{Kesh comptabilité}
+            \item \textbf{Source} : Protocole \keshcommand{HTTPS}, Hostname \keshcommand{kesh.local} (ou votre domaine), Port \keshcommand{443}
+            \item \textbf{Destination} : Protocole \keshcommand{HTTP}, Hostname \keshcommand{localhost}, Port \keshcommand{3000}
+        \end{itemize}
+    \item Onglet \textbf{En-têtes personnalisés} → ajouter :
+        \begin{itemize}
+            \item \keshcommand{X-Forwarded-Proto} : \keshcommand{https}
+            \item \keshcommand{X-Real-IP} : \keshcommand{\$remote\_addr}
+        \end{itemize}
+    \item Onglet \textbf{Avancé} → cocher \keshcommand{HTTP/2} et \keshcommand{HSTS} (Strict-Transport-Security).
+    \item Cliquer \textbf{Enregistrer}.
+\end{enumerate}
+
+\paragraph{Certificat HTTPS via DSM Let's Encrypt}
+
+DSM intègre un client ACME pour Let's Encrypt :
+
+\begin{enumerate}
+    \item \textbf{Panneau de configuration} → \textbf{Portail de connexion} → onglet \textbf{Certificat}.
+    \item Cliquer \textbf{Ajouter} → \textbf{Obtenir un certificat de Let's Encrypt}.
+    \item Renseigner le domaine (\keshcommand{kesh.exemple.ch}), l'email, et un \emph{Subject Alternative Name} optionnel.
+    \item DSM valide le challenge HTTP-01 ou DNS-01 selon configuration, et installe le certificat automatiquement.
+    \item Lier le certificat au hostname dans \textbf{Paramètres} → sélectionner le service \keshcommand{kesh.exemple.ch} et choisir le nouveau certificat.
+\end{enumerate}
+
+\begin{keshnote}
+Pour les déploiements exposés sur Internet avec besoin de firewall applicatif (rate limiting, WAF), préférer \textbf{Traefik en sidecar} (section \ref{sec:traefik}) au Portail DSM. Le Portail couvre les besoins LAN-only ou les déploiements simples derrière un VPN/WireGuard.
+\end{keshnote}
+
+\subsubsection{Étape 5 — Vérification post-installation}
+
+Tester l'instance via le hostname configuré :
+
+\begin{lstlisting}[language=bash]
+# Healthcheck (doit retourner JSON avec db:true)
+curl -k https://kesh.local/health
+
+# Réponse attendue (Story 10-3) :
+# {"status":"ok","db":true,"version":"0.1.0"}
+\end{lstlisting}
+
+Ouvrir un navigateur sur \keshcommand{https://kesh.local} et se connecter avec le compte admin renseigné dans \keshpath{.env}. Le wizard d'onboarding démarre automatiquement (création de la première company, choix du plan comptable, configuration des exercices).
+
+\subsubsection{Limitations Container Manager DSM}
+
+\begin{itemize}
+    \item \textbf{Auto-restart} : Container Manager redémarre automatiquement les containers au reboot DSM (équivalent \keshcommand{restart: unless-stopped} dans compose). Pas de configuration supplémentaire requise.
+    \item \textbf{Logs} : accessibles via Container Manager GUI (onglet \emph{Container} → sélectionner \keshcommand{kesh-api} → \emph{Détails} → \emph{Journaux}) ou via SSH \keshcommand{docker compose logs -f}.
+    \item \textbf{Mises à jour Kesh} : nécessitent un \keshcommand{docker compose pull \&\& docker compose up -d} via SSH (Container Manager GUI ne propose pas de rebuild automatique sur push d'image). Voir section \ref{sec:mise-a-jour} pour la procédure complète.
+    \item \textbf{Backup et restore} : voir section dédiée \ref{sec:backup-dsm} pour les méthodes natives DSM (Hyper Backup, Snapshot Replication).
+\end{itemize}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Configuration}\label{sec:configuration}
 
