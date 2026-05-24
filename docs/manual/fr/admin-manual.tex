@@ -957,8 +957,109 @@ L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des suppor
 Automatisez ce test annuel via un workflow CI/CD : provisioning Docker éphémère, restauration, exécution de tests E2E Playwright basiques, génération du procès-verbal. Cette automatisation peut être traitée comme une story Epic 10 « Déploiement \& Opérations » ou Epic ultérieur.
 \end{keshtip}
 
+\subsection{Backup natif sur Synology DSM (Hyper Backup + Snapshot Replication)}\label{sec:backup-dsm}
+
+Pour les installations sur Synology DSM (cf. section \ref{sec:synology}), DSM intègre nativement deux outils de backup éprouvés : \textbf{Hyper Backup} (backup incrémental versionné, idéal cloud + LAN) et \textbf{Snapshot Replication} (snapshot Btrfs point-in-time, idéal recovery instantané). Ces outils remplacent ou complètent le script \keshcommand{mariadb-dump} CLI ci-dessus selon votre stratégie.
+
+\subsubsection{Hyper Backup — backup incrémental + offsite intégré}
+
+Hyper Backup est l'outil principal Synology pour les backups versionnés vers stockage local externe (HDD USB, NAS distant), cloud (Synology C2 Backup, S3, Backblaze B2, Wasabi, Google Drive, OneDrive, etc.), ou serveur rsync distant. Il supporte la déduplication, le chiffrement client-side AES-256, et la rotation Smart (équivalent grandfather-father-son).
+
+\paragraph{Configuration Hyper Backup pour Kesh}
+
+\begin{enumerate}
+    \item Installer \textbf{Hyper Backup} via Package Center (gratuit).
+    \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
+    \item Cocher les dossiers à backup :
+        \begin{itemize}
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé).
+            \item \textbf{Optionnel} : volumes Docker nommés si vous n'utilisez pas le bind-mount (rare sur DSM) — accessibles via \keshpath{/volume1/@docker/volumes/kesh\_*}.
+        \end{itemize}
+    \item Cocher l'application \textbf{Container Manager} dans \emph{Applications} pour backup automatique de la configuration des projets.
+    \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
+    \item Configurer la rotation \textbf{Smart Recycle} : recommandé \emph{Conservez toutes les versions des derniers 30 jours + 1 par semaine pour 12 semaines + 1 par mois pour 12 mois}. Convertit OLICo 10 ans en pratique via archivage annuel séparé (cf. \emph{Stockage offsite} ci-dessus).
+    \item Planifier la fréquence : \textbf{quotidienne à 2h du matin} (équivalent du cron du script CLI).
+    \item Activer les notifications email/push DSM pour alerter d'un échec de backup.
+\end{enumerate}
+
+\paragraph{Cohérence transactionnelle MariaDB}
+
+Hyper Backup copie les fichiers data au niveau système sans coordination avec MariaDB. Pour garantir un dump cohérent (pas de transactions partielles capturées), utiliser un \textbf{pre-script Hyper Backup} qui dump MariaDB juste avant le backup, et un post-script qui nettoie après :
+
+\begin{lstlisting}[language=bash]
+#!/bin/bash
+# /volume1/docker/kesh/pre-backup.sh
+# Configure dans Hyper Backup > Parametres > Pre-script
+
+set -euo pipefail
+cd /volume1/docker/kesh
+
+# Dump MariaDB juste avant Hyper Backup capture les fichiers
+sudo docker compose exec -T mariadb \
+    mariadb-dump --single-transaction --routines --triggers --events \
+    --add-drop-database --databases kesh \
+    -u root -p"$(grep MARIADB_ROOT_PASSWORD .env | cut -d= -f2)" \
+    | gzip > /volume1/docker/kesh/kesh_pre_backup.sql.gz
+
+sha256sum /volume1/docker/kesh/kesh_pre_backup.sql.gz \
+    > /volume1/docker/kesh/kesh_pre_backup.sql.gz.sha256
+\end{lstlisting}
+
+Le post-script peut être laissé vide ou utilisé pour supprimer le dump intermédiaire si on préfère minimiser l'espace disque local (au prix de devoir restorer via Hyper Backup pour recovery).
+
+\begin{keshnote}
+Pour les charges légères (mono-fiduciaire, < 100 écritures/jour), le simple backup des volumes Docker via Hyper Backup sans pre-script suffit dans 99\% des cas — MariaDB redémarre depuis un état semi-cohérent à la restauration, et les éventuelles transactions perdues correspondent à la fraction de seconde du backup. Le pre-script devient utile pour les fiduciaires avec saisie 9-17h continue.
+\end{keshnote}
+
+\subsubsection{Snapshot Replication — recovery instantané point-in-time}
+
+\emph{Snapshot Replication} fournit des snapshots Btrfs natifs du volume \keshpath{/volume1/} avec recovery quasi-instantané (< 1 minute) et point-in-time precision (jusqu'à 1 snapshot par 5 minutes). Idéal pour se prémunir contre erreurs humaines récentes (suppression accidentelle d'une écriture, corruption logique) où Hyper Backup serait trop coûteux à restorer (téléchargement cloud + déchiffrement + restore).
+
+\paragraph{Prérequis Snapshot Replication}
+
+\begin{itemize}
+    \item Modèle NAS supportant \textbf{Btrfs} (DS220+, DS720+, DS920+, DS1522+, DS1821+ — vérifier la liste officielle Synology).
+    \item Volume principal formaté en \textbf{Btrfs} (pas EXT4). Si déjà en EXT4, migration nécessaire (sauvegarde complète + recréation du volume + restore — opération longue, planifiée hors période d'activité).
+    \item Paquet \textbf{Snapshot Replication} installé via Package Center.
+\end{itemize}
+
+\paragraph{Configuration Snapshot Replication pour Kesh}
+
+\begin{enumerate}
+    \item Ouvrir \textbf{Snapshot Replication} → onglet \textbf{Snapshots}.
+    \item Sélectionner le dossier partagé \keshcommand{docker} (qui contient \keshpath{/volume1/docker/kesh}).
+    \item \textbf{Paramètres} → onglet \textbf{Snapshot} → activer \emph{Programmer la création de snapshots automatiques}.
+    \item Fréquence recommandée : \textbf{toutes les heures, du lundi au vendredi 6h-22h} (couvre les périodes de saisie active fiduciaire).
+    \item Rotation : conserver \textbf{72 snapshots horaires} (3 jours d'historique) + \textbf{14 snapshots quotidiens} + \textbf{12 snapshots hebdomadaires}.
+    \item Activer \emph{Visible aux utilisateurs} si vous voulez permettre aux utilisateurs DSM de naviguer les snapshots via File Station (utile pour récupérer manuellement un fichier supprimé sans intervention admin).
+\end{enumerate}
+
+\paragraph{Recovery depuis Snapshot}
+
+\begin{enumerate}
+    \item Snapshot Replication → \textbf{Snapshots} → sélectionner le dossier \keshcommand{docker}.
+    \item Choisir le snapshot avec le timestamp pre-incident.
+    \item \textbf{Actions} → \textbf{Restaurer} → \emph{Restaurer dans un nouveau dossier} (recommandé, préserve l'état actuel pour comparaison) OU \emph{Écraser le dossier original} (si certain).
+    \item Après restore : \keshcommand{cd /volume1/docker/kesh \&\& sudo docker compose down \&\& sudo docker compose up -d} pour recharger l'instance Kesh sur le state restoré.
+\end{enumerate}
+
+\subsubsection{Stratégie 3-2-1 sur DSM}
+
+Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des données, sur 2 supports différents, dont 1 offsite) :
+
+\begin{itemize}
+    \item \textbf{Copie 1 (primaire)} : volume Btrfs DSM avec Snapshot Replication actif (recovery rapide erreurs récentes).
+    \item \textbf{Copie 2 (locale, support différent)} : Hyper Backup vers HDD USB externe attaché au NAS, rotation Smart Recycle 30 jours + 12 mois.
+    \item \textbf{Copie 3 (offsite)} : Hyper Backup vers cloud (Synology C2 Backup pour le confort, ou S3/Backblaze B2 pour le coût optimal), chiffré client-side.
+    \item \textbf{Archivage long terme (OLICo 10 ans)} : 1 dump annuel par year exporté manuellement sur média WORM (CD-R ou DVD-R inscriptible une fois) ou archivage tape LTO si volume.
+\end{itemize}
+
+\begin{keshwarning}
+\textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
+\end{keshwarning}
+
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Mise à jour de Kesh}
+\section{Mise à jour de Kesh}\label{sec:mise-a-jour}
 
 \subsection{Process de release Kesh}
 
