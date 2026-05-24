@@ -1,97 +1,90 @@
+<!--
+  STATELESS AGENT TEMPLATE
+  Use this for agents without persistent memory. No Three Laws, no Sacred Truth, no sanctum.
+  For memory/autonomous agents, use SKILL-template-bootloader.md instead.
+-->
 ---
-name: bmad-{module-code-or-empty}-agent-{agent-name}
-description: {skill-description} # Format: [4-6 word summary]. [trigger: "User wants to talk to or ask {displayName}" or "{title}" or "{role}"]
+name: {module-code-or-empty}agent-{agent-name}
+description: { skill-description } # [4-6 word summary]. [trigger phrases]
 ---
 
 # {displayName}
 
 ## Overview
 
-{overview-template}
+{overview — concise: who this agent is, what it does, args/modes supported, and the outcome. This is the main help output for the skill — any user-facing help info goes here, not in a separate CLI Usage section.}
 
-{if-headless}
-## Activation Mode Detection
-
-**Check activation context immediately:**
-
-1. **Autonomous mode**: Skill invoked with `--headless` or `-H` flag or with task parameter
-   - Look for `--headless` in the activation context
-   - If `--headless:{task-name}` → run that specific autonomous task
-   - If just `--headless` → run default autonomous wake behavior
-   - Load and execute `headless-wake.md` with task context
-   - Do NOT load config, do NOT greet user, do NOT show menu
-   - Execute task, write results, exit silently
-
-2. **Interactive mode** (default): User invoked the skill directly
-   - Proceed to `## On Activation` section below
-
-**Example headless activation:**
-```bash
-# Autonomous - default wake
-/bmad-{agent-skill-name} --headless
-
-# Autonomous - specific task
-/bmad-{agent-skill-name} --headless:refine-memories
-```
-{/if-headless}
+**Your Mission:** {species-mission}
 
 ## Identity
+
 {Who is this agent? One clear sentence.}
 
 ## Communication Style
+
 {How does this agent communicate? Be specific with examples.}
 
 ## Principles
+
 - {Guiding principle 1}
 - {Guiding principle 2}
 - {Guiding principle 3}
 
-{if-sidecar}
-## Sidecar
-Memory location: `_bmad/_memory/{skillName}-sidecar/`
+## Conventions
 
-Load `references/memory-system.md` for memory discipline and structure.
-{/if-sidecar}
+- Bare paths (e.g. `references/guide.md`) resolve from the skill root.
+- `{skill-root}` resolves to this skill's installed directory (where `customize.toml` lives).
+- `{project-root}`-prefixed paths resolve from the project working directory.
+- `{skill-name}` resolves to the skill directory's basename.
 
 ## On Activation
 
-1. **Load config via bmad-init skill** — Store all returned vars for use:
-   - Use `{user_name}` from config for greeting
-   - Use `{communication_language}` from config for all communications
-   - Store any other config variables as `{var-name}` and use appropriately
+{if-customizable}
+### Step 1: Resolve the Agent Block
 
-{if-autonomous}
-2. **If autonomous mode** — Load and run `autonomous-wake.md` (default wake behavior), or load the specified prompt and execute its autonomous section without interaction
+Run: `python3 {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --key agent`
 
-3. **If interactive mode** — Continue with steps below:
-{/if-autonomous}
-{if-no-autonomous}
-2. **Continue with steps below:**
-{/if-no-autonomous}
-   {if-sidecar}- **Check first-run** — If no `{skillName}-sidecar/` folder exists in `_bmad/_memory/`, load `init.md` for first-run setup
-   - **Load access boundaries** — Read `_bmad/_memory/{skillName}-sidecar/access-boundaries.md` to enforce read/write/deny zones (load before any file operations)
-   - **Load memory** — Read `_bmad/_memory/{skillName}-sidecar/index.md` for essential context and previous session{/if-sidecar}
-   - **Load manifest** — Read `bmad-manifest.json` to set `{capabilities}` list of actions the agent can perform (internal prompts and available skills)
-   - **Greet the user** — Welcome `{user_name}`, speaking in `{communication_language}` and applying your persona and principles throughout the session
-   {if-sidecar}- **Check for autonomous updates** — Briefly check if autonomous tasks ran since last session and summarize any changes{/if-sidecar}
-   - **Present menu from bmad-manifest.json** — Generate menu dynamically by reading all capabilities from bmad-manifest.json:
+If the script fails, resolve the `agent` block yourself by reading these three files in base → team → user order and applying structural merge rules: `{skill-root}/customize.toml`, `{project-root}/_bmad/custom/{skill-name}.toml`, `{project-root}/_bmad/custom/{skill-name}.user.toml`. Scalars override, tables deep-merge, arrays of tables keyed by `code`/`id` replace matching entries and append new ones, all other arrays append.
 
-   ```
-   {if-sidecar}Last time we were working on X. Would you like to continue, or:{/if-sidecar}{if-no-sidecar}What would you like to do today?{/if-no-sidecar}
+### Step 2: Execute Prepend Steps
 
-   {if-sidecar}💾 **Tip:** You can ask me to save our progress to memory at any time.{/if-sidecar}
+Execute each entry in `{agent.activation_steps_prepend}` in order before proceeding.
 
-   **Available capabilities:**
-   (For each capability in bmad-manifest.json capabilities array, display as:)
-   {number}. [{menu-code}] - {description} → {prompt}:{name} or {skill}:{name}
-   ```
+### Step 3: Load Persistent Facts
 
-   **Menu generation rules:**
-   - Read bmad-manifest.json and iterate through `capabilities` array
-   - For each capability: show sequential number, menu-code in brackets, description, and invocation type
-   - Type `prompt` → show `prompt:{name}`, type `skill` → show `skill:{name}`
-   - DO NOT hardcode menu examples — generate from actual manifest data
+Treat every entry in `{agent.persistent_facts}` as foundational context for the session. Entries prefixed `file:` are paths or globs — expand globs and load each matching file's contents as its own fact entry, skip missing files with a warning rather than failing activation. All other entries are facts verbatim.
 
-**CRITICAL Handling:** When user selects a code/number, consult the bmad-manifest.json capability mapping:
-- **prompt:{name}** — Load and use the actual prompt from `{name}.md` — DO NOT invent the capability on the fly
-- **skill:{name}** — Invoke the skill by its exact registered name
+### Step 4: Load Config
+
+{/if-customizable}
+{if-module}
+Load available config from `{project-root}/_bmad/config.yaml` and `{project-root}/_bmad/config.user.yaml` (root level and `{module-code}` section). If config is missing, let the user know `{module-setup-skill}` can configure the module at any time. Resolve and apply throughout the session (defaults in parens):
+
+- `{user_name}` ({default}) — address the user by name
+- `{communication_language}` ({default}) — use for all communications
+- `{document_output_language}` ({default}) — use for generated document content
+- plus any module-specific output paths with their defaults
+  {/if-module}
+  {if-standalone}
+  Load available config from `{project-root}/_bmad/config.yaml` and `{project-root}/_bmad/config.user.yaml` if present. Resolve and apply throughout the session (defaults in parens):
+- `{user_name}` ({default}) — address the user by name
+- `{communication_language}` ({default}) — use for all communications
+- `{document_output_language}` ({default}) — use for generated document content
+  {/if-standalone}
+{if-customizable}
+
+### Step 5: Execute Append Steps
+
+Execute each entry in `{agent.activation_steps_append}` in order before accepting user input.
+
+{/if-customizable}
+
+Greet the user and offer to show available capabilities.
+
+## Capabilities
+
+{Succinct routing table — each capability routes to a progressive disclosure file in ./references/:}
+
+| Capability        | Route                               |
+| ----------------- | ----------------------------------- |
+| {Capability Name} | Load `./references/{capability}.md` |

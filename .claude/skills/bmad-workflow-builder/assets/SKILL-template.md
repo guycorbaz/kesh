@@ -1,117 +1,53 @@
 ---
-name: bmad-{module-code-or-empty}{skill-name}
-description: {skill-description} # Format: [5-8 word summary]. [trigger phrase, e.g. Use when user says "create xyz"]
+name: {module-code-or-empty}{skill-name}
+description: { skill-description } # [5-8 word summary]. [trigger phrases, e.g. Use when user says create xyz or wants to do abc]
 ---
 
 # {skill-name}
 
 ## Overview
 
-{overview-template}
+{overview — concise: what it does, args supported, and the outcome for the singular or different paths. This overview needs to contain succinct information for the llm as this is the main provision of help output for the skill.}
 
-{if-simple-utility}
-## Input
+## Conventions
 
-{input-format-description}
-
-## Process
-
-{processing-steps}
-
-## Output
-
-{output-format-description}
-{/if-simple-utility}
-
-{if-simple-workflow}
-Act as {role-guidance}.
+- Bare paths (e.g. `references/guide.md`) resolve from the skill root.
+- `{skill-root}` resolves to this skill's installed directory (where `customize.toml` lives).
+- `{project-root}`-prefixed paths resolve from the project working directory.
+- `{skill-name}` resolves to the skill directory's basename.
 
 ## On Activation
 
-{if-bmad-init}
-1. **Load config via bmad-init skill** — Store all returned vars for use:
-   - Use `{user_name}` from config for greeting
-   - Use `{communication_language}` for all communications
-   {if-creates-docs}- Use `{document_output_language}` for output documents{/if-creates-docs}
+{if-customizable}
+### Step 1: Resolve the Workflow Block
 
-2. **Greet user** as `{user_name}`, speaking in `{communication_language}`
-{/if-bmad-init}
+Run: `python3 {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --key workflow`
 
-3. **Proceed to workflow steps below**
+If the script fails, resolve the `workflow` block yourself by reading these three files in base → team → user order and applying structural merge rules: `{skill-root}/customize.toml`, `{project-root}/_bmad/custom/{skill-name}.toml`, `{project-root}/_bmad/custom/{skill-name}.user.toml`. Scalars override, tables deep-merge, arrays of tables keyed by `code`/`id` replace matching entries and append new ones, all other arrays append.
 
-## Workflow Steps
+### Step 2: Execute Prepend Steps
 
-### Step 1: {step-1-name}
-{step-1-instructions}
+Execute each entry in `{workflow.activation_steps_prepend}` in order before proceeding.
 
-### Step 2: {step-2-name}
-{step-2-instructions}
+### Step 3: Load Persistent Facts
 
-### Step 3: {step-3-name}
-{step-3-instructions}
-{/if-simple-workflow}
+Treat every entry in `{workflow.persistent_facts}` as foundational context for the whole run. Entries prefixed `file:` are paths or globs — load the referenced contents as facts. All other entries are facts verbatim.
 
-{if-complex-workflow}
-Act as {role-guidance}.
+### Step 4: Load Config
 
-{if-headless}
-## Activation Mode Detection
+{/if-customizable}
+{if-module}
+Load available config from `{project-root}/_bmad/config.yaml` and `{project-root}/_bmad/config.user.yaml` (root level and `{module-code}` section). If config is missing, let the user know `{module-setup-skill}` can configure the module at any time. Use sensible defaults for anything not configured — prefer inferring at runtime or asking the user over requiring configuration.
+{/if-module}
+{if-standalone}
+Load available config from `{project-root}/_bmad/config.yaml` and `{project-root}/_bmad/config.user.yaml` if present. Use sensible defaults for anything not configured.
+{/if-standalone}
+{if-customizable}
 
-**Check activation context immediately:**
+### Step 5: Execute Append Steps
 
-1. **Headless mode**: If the user passes `--headless` or `-H` flags, or if their intent clearly indicates non-interactive execution:
-   - Skip questions, proceed with safe defaults, output structured results
-   - If `--headless:{task-name}` → run that specific task headless mode
-   - If just `--headless` → run default headless behavior
+Execute each entry in `{workflow.activation_steps_append}` in order before entering the workflow's first stage.
 
-2. **Interactive mode** (default): Proceed to `## On Activation` section below
-{/if-headless}
+{/if-customizable}
 
-## On Activation
-
-{if-bmad-init}
-1. **Load config via bmad-init skill** — Store all returned vars for use:
-   - Use `{user_name}` from config for greeting
-   - Use `{communication_language}` for all communications
-   {if-creates-docs}- Use `{document_output_language}` for output documents{/if-creates-docs}
-   - Store any other config variables as `{var-name}` and use appropriately
-
-2. **Greet user** as `{user_name}`, speaking in `{communication_language}`
-{/if-bmad-init}
-
-3. **Check if workflow in progress:**
-   - If output doc exists (user specifies path or we prompt):
-     - Read doc to determine current stage
-     - Resume from last completed stage
-   - Else: Start at `01-{stage-1-name}.md`
-
-4. **Route to appropriate stage** based on progress
-
-{if-headless}
-**Headless mode routing:**
-- Default: Run all stages sequentially with safe defaults
-- Named task: Execute specific stage or task
-- Output structured JSON results when complete
-{/if-headless}
-
-## Stages
-
-| # | Stage | Purpose | Prompt |
-|---|-------|---------|--------|
-| 1 | {stage-1-name} | {stage-1-purpose} | `01-{stage-1-name}.md` |
-| 2 | {stage-2-name} | {stage-2-purpose} | `02-{stage-2-name}.md` |
-{/if-complex-workflow}
-
-{if-external-skills}
-## External Skills
-
-This workflow uses:
-{external-skills-list}
-{/if-external-skills}
-
-{if-scripts}
-## Scripts
-
-Available scripts in `scripts/`:
-- `{script-name}` — {script-description}
-{/if-scripts}
+{The rest of the skill — body structure, sections, phases, stages, scripts, external skills — is determined entirely by what the skill needs. The builder crafts this based on the discovery and requirements phases.}
