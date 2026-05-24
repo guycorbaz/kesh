@@ -298,10 +298,11 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
 		}
 	}
 
-	// Pass 2 BH2-L1 + ECH2-1 : la boucle for-loop a un invariant : chaque
-	// itération `return` OU `throw` avant l'incrément naturel. Le `throw`
-	// post-loop documentait l'invariant mais n'était jamais exécuté → dead
-	// code retiré pour clarté.
+	// Pass 2 BH2-L1 + ECH2-1 / Pass 4 L1 : la boucle for-loop a un invariant :
+	// chaque itération `return` OU `throw` avant l'incrément naturel. Ce
+	// `throw` est requis pour le type-narrowing TypeScript (TS2366 sinon —
+	// la boucle for-loop n'est pas exhaustive aux yeux du compiler même si
+	// elle l'est à l'exécution). Jamais exécuté en pratique.
 	throw toFetchApiError(new Error('unreachable'));
 }
 
