@@ -79,10 +79,27 @@ test.describe('XSS token protection (Story 10-5)', () => {
 		expect(expiresIn).toBeNull();
 	});
 
-	test("Scénario (c) — fetch avec credentials: 'omit' reçoit 401 (XSS-simulated, cookie protégé)", async ({
+	test("Scénario (c) — cookie HttpOnly flag visible via Playwright context.cookies() (defense-in-depth)", async ({
 		page,
+		context,
 	}) => {
-		// Login pour avoir une session active.
+		// CR Pass 1 M3 — scénario (c) reformulé : la version initiale testait
+		// `credentials: 'omit'` (qui exclut le cookie côté JS) puis 401 — mais
+		// ça ne testait PAS la protection XSS (un attaquant XSS peut tout à
+		// fait utiliser `credentials: 'include'` pour pivoter via le cookie ;
+		// la vraie défense est SameSite=Strict + CSP qui empêchent l'exfiltration
+		// cross-site). Le test est donc reformulé pour valider l'invariant
+		// concret : Playwright voit bien le flag httpOnly sur le cookie côté
+		// browser context — preuve directe que le navigateur cache le token
+		// du JS via la spec HTML5 Cookie API.
+		//
+		// Note v0.1 : un attaquant XSS in-page peut effectivement appeler
+		// fetch('/api/v1/auth/me', {credentials:'include'}) et faire des
+		// requêtes authentifiées. C'est ACCEPTÉ — `HttpOnly` protège contre
+		// l'exfiltration du token via document.cookie (scénario a), pas
+		// contre le pivot. La défense en profondeur passe par SameSite=Strict
+		// (anti-CSRF), CSP `'self'` (anti-injection script externe) et
+		// audit-trail backend (log des actions sensibles).
 		await page.goto('/login');
 		await page.fill('#username', 'admin');
 		await page.fill('#password', 'admin123');
@@ -90,24 +107,21 @@ test.describe('XSS token protection (Story 10-5)', () => {
 		await expect(page).toHaveURL('/');
 		await page.waitForLoadState('networkidle');
 
-		// Simule un script XSS qui voudrait utiliser le cookie HttpOnly
-		// pour faire une requête authentifiée — sans `credentials: 'include'`,
-		// le browser N'envoie PAS le cookie (defaut credentials = 'same-origin'
-		// inclut les cookies, mais `'omit'` les exclut explicitement).
-		const status = await page.evaluate(async () => {
-			const res = await fetch('/api/v1/auth/me', { credentials: 'omit' });
-			return res.status;
-		});
+		// Inspecte les cookies du browser context (Playwright API expose
+		// les cookies HttpOnly via context.cookies() — c'est cette API qui
+		// permet aux tests E2E de les manipuler, pas le JS de la page).
+		const cookies = await context.cookies();
+		const accessCookie = cookies.find((c) => c.name === 'kesh_access_token');
+		const refreshCookie = cookies.find((c) => c.name === 'kesh_refresh_token');
 
-		// Sans cookie + sans header Authorization → 401.
-		expect(status).toBe(401);
+		expect(accessCookie).toBeDefined();
+		expect(accessCookie?.httpOnly).toBe(true);
+		expect(accessCookie?.sameSite).toBe('Strict');
 
-		// Vérification croisée : avec `credentials: 'include'`, le cookie
-		// est envoyé et la requête réussit (200).
-		const statusWithCreds = await page.evaluate(async () => {
-			const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
-			return res.status;
-		});
-		expect(statusWithCreds).toBe(200);
+		expect(refreshCookie).toBeDefined();
+		expect(refreshCookie?.httpOnly).toBe(true);
+		expect(refreshCookie?.sameSite).toBe('Strict');
+		// Vérifie le scope path-restricted du refresh cookie (defense-in-depth).
+		expect(refreshCookie?.path).toBe('/api/v1/auth');
 	});
 });

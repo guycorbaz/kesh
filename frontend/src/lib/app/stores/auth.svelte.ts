@@ -85,10 +85,18 @@ export const authState = {
 	 * Nettoie le state d'authentification SANS appeler l'API logout.
 	 * Utilisé quand le refresh a échoué (le cookie est déjà invalidé côté
 	 * serveur, inutile d'appeler logout).
+	 *
+	 * CR Pass 1 M2 : réinitialise `_hydrated = false` pour permettre un
+	 * éventuel ré-hydrate dans la même SPA session (post-logout puis
+	 * re-login intra-SPA). Pré-Story-10-5, `_hydrated` était set au boot
+	 * via `hooks.client.ts` synchrone et restait true — pas re-utilisé.
+	 * Post-Story 10-5, `hydrate()` est async via /me et pourrait être
+	 * appelée à nouveau si l'app détecte un état desynchronisé.
 	 */
 	clearSession() {
 		_expiresIn = null;
 		_currentUser = null;
+		_hydrated = false;
 		// Defensive cleanup localStorage pour utilisateurs migrant depuis pre-Story 10-5.
 		if (typeof window !== 'undefined' && window.localStorage) {
 			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
@@ -109,6 +117,7 @@ export const authState = {
 		}).catch(() => {});
 		_expiresIn = null;
 		_currentUser = null;
+		_hydrated = false; // CR Pass 1 M2 — permet re-hydrate intra-SPA session
 		// Defensive cleanup localStorage.
 		if (typeof window !== 'undefined' && window.localStorage) {
 			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);

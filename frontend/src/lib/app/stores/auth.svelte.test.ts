@@ -113,9 +113,9 @@ describe('authState (Story 10-5)', () => {
 	// --- Tests hydrate (Story 10-5 T6.3) ---
 
 	it('hydrate() fetch /me, peuple `_currentUser` + `_expiresIn` si 200', async () => {
-		// Hack reset _hydrated via logout (qui ne touche pas _hydrated mais
-		// le test isolation se fera via re-import dans une session fresh).
-		// Vu que _hydrated est module-level, ce test est sensible à l'ordre.
+		// CR Pass 1 H2 — assertions complètes + reset _hydrated via logout
+		// (M2 patch : logout() réinitialise maintenant _hydrated = false).
+		// Le beforeEach appelle logout(), donc _hydrated est false ici.
 		const mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
 			json: () =>
@@ -130,7 +130,52 @@ describe('authState (Story 10-5)', () => {
 
 		await authState.hydrate();
 
-		// Note: _hydrated guard may cause 2nd call to no-op; relevant pour le 1er call uniquement.
-		// L'assertion fetch dépend du state initial (testé séparément).
+		// CR Pass 1 H2 — assertions explicites sur le state post-hydrate.
+		expect(mockFetch).toHaveBeenCalledWith('/api/v1/auth/me', {
+			credentials: 'include',
+		});
+		expect(authState.isAuthenticated).toBe(true);
+		expect(authState.currentUser).toEqual({
+			userId: '42', // body.userId (number) converti en String
+			username: 'alice',
+			role: 'Admin',
+		});
+		expect(authState.expiresIn).toBe(900);
+	});
+
+	it('hydrate() avec 401 laisse l\'état non-auth (cookie absent ou expiré)', async () => {
+		// CR Pass 1 H2 complémentaire — couvre le branch 401 explicite.
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 401,
+			json: () => Promise.resolve({ error: { code: 'UNAUTHENTICATED', message: '' } }),
+		});
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+
+		expect(mockFetch).toHaveBeenCalledOnce();
+		expect(authState.isAuthenticated).toBe(false);
+		expect(authState.currentUser).toBeNull();
+		expect(authState.expiresIn).toBeNull();
+	});
+
+	it('hydrate() guard idempotence — 2e appel = no-op (fetch appelé 1 seule fois)', async () => {
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () =>
+				Promise.resolve({
+					userId: 1,
+					username: 'u',
+					role: 'Admin',
+					expiresIn: 900,
+				}),
+		});
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+		await authState.hydrate(); // 2e appel — guard _hydrated empêche le re-fetch
+
+		expect(mockFetch).toHaveBeenCalledOnce();
 	});
 });

@@ -338,4 +338,76 @@ mod tests {
             .unwrap();
         assert_eq!(response_status(app, req).await, StatusCode::UNAUTHORIZED);
     }
+
+    /// Story 10-5 (T3.2 — CR Pass 1 AA-C1) : middleware lit le cookie
+    /// `kesh_access_token` en priorité, sans header Authorization présent.
+    #[tokio::test]
+    async fn require_auth_accepts_cookie_no_authorization() {
+        let token = jwt::encode(
+            42,
+            Role::Comptable,
+            7,
+            TEST_JWT_SECRET,
+            TimeDelta::minutes(15),
+        )
+        .expect("encode");
+
+        let app = protected_router(test_state());
+        let req = Request::builder()
+            .uri("/protected")
+            .header("Cookie", format!("kesh_access_token={}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "cookie-only auth should succeed (Story 10-5 T3.1)"
+        );
+
+        use http_body_util::BodyExt;
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(body, "42:Comptable:7");
+    }
+
+    /// Story 10-5 (T3.2 — CR Pass 1 AA-C1) : si cookie ET header sont
+    /// présents, le cookie est utilisé en priorité (T3.1 strict cookie-first).
+    #[tokio::test]
+    async fn require_auth_prefers_cookie_over_header_when_both_present() {
+        // Cookie token : user 42 / Admin
+        let cookie_token = jwt::encode(42, Role::Admin, 5, TEST_JWT_SECRET, TimeDelta::minutes(15))
+            .expect("encode cookie token");
+
+        // Header token : user 99 / Comptable (rôle différent pour discriminer)
+        let header_token = jwt::encode(
+            99,
+            Role::Comptable,
+            5,
+            TEST_JWT_SECRET,
+            TimeDelta::minutes(15),
+        )
+        .expect("encode header token");
+
+        let app = protected_router(test_state());
+        let req = Request::builder()
+            .uri("/protected")
+            .header("Cookie", format!("kesh_access_token={}", cookie_token))
+            .header("Authorization", format!("Bearer {}", header_token))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Le handler doit retourner les claims du COOKIE (42:Admin), pas du header (99:Comptable).
+        use http_body_util::BodyExt;
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(
+            body, "42:Admin:5",
+            "cookie should take precedence over Authorization header"
+        );
+    }
 }

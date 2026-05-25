@@ -323,8 +323,11 @@ async fn authenticated_request_with_authorization_only(pool: MySqlPool) {
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn logout_invalidates_cookie(pool: MySqlPool) {
-    // AC #4 — logout émet Set-Cookie Max-Age=0 + révoque refresh_token DB.
+    // AC #4 / AC #15(d) — logout émet Set-Cookie Max-Age=0 + révoque refresh_token DB.
+    // CR Pass 1 H1 : ajout DB revocation check + 401 post-logout (cohérent
+    // pattern auth_e2e.rs:638-645 `logout_revokes_refresh_token`).
     let (admin_username, _company_id) = setup_admin(&pool).await;
+    let pool_for_query = pool.clone(); // Clone pour DB query post-logout (pool est moved par spawn_app)
     let app = spawn_app_with_cookie_jar(pool).await;
 
     // Login.
@@ -339,6 +342,25 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(login_resp.status(), 200);
+
+    // Capture le refresh_token depuis le body (D1 Option A — tokens conservés en body).
+    let login_body: serde_json::Value = login_resp.json().await.unwrap();
+    let refresh_token = login_body["refreshToken"]
+        .as_str()
+        .expect("login response should contain refreshToken (D1)")
+        .to_string();
+
+    // Vérifier que le refresh_token est NON-révoqué avant logout (sanity check).
+    let revoked_before: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE token = ?")
+            .bind(&refresh_token)
+            .fetch_one(&pool_for_query)
+            .await
+            .expect("refresh_token should exist post-login");
+    assert!(
+        revoked_before.is_none(),
+        "refresh_token should NOT be revoked before logout, got: {revoked_before:?}"
+    );
 
     // Logout (sans body — le browser envoie le cookie automatiquement).
     let logout_resp = app
@@ -379,4 +401,18 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
             "logout expired cookie should still have HttpOnly: {cookie}"
         );
     }
+
+    // CR Pass 1 H1 — AC #15(d) DB revocation check : le refresh_token doit
+    // être marqué `revoked_at IS NOT NULL` en base après logout (révocation
+    // applicative préservée Story 1.6 + Story 10-5 cookie-only flow).
+    let revoked_after: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE token = ?")
+            .bind(&refresh_token)
+            .fetch_one(&pool_for_query)
+            .await
+            .expect("refresh_token row should still exist post-logout");
+    assert!(
+        revoked_after.is_some(),
+        "refresh_token should be revoked_at IS NOT NULL after logout, got: {revoked_after:?}"
+    );
 }
