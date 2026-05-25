@@ -1,6 +1,6 @@
 # Story 10.5: httpOnly tokens (sécurité — Option A)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Validate optional via `bmad-create-story validate 10-5` avant `bmad-dev-story 10-5` -->
 

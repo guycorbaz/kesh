@@ -85,7 +85,7 @@ describe('exports.api — Story 9-2b', () => {
 
 		beforeEach(() => {
 			authState.clearSession();
-			authState.login(fakeJwt(), 'refresh-uuid', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			createObjectURLSpy = vi.fn().mockReturnValue('blob:http://localhost/zip');
 			revokeObjectURLSpy = vi.fn();
 			vi.stubGlobal('URL', {

@@ -48,6 +48,7 @@ mod tests {
             user_id: 123,
             role: kesh_db::entities::Role::Admin,
             company_id: 5,
+            exp: 9_999_999_999, // Story 10-5 — exp claim added to CurrentUser
         };
         assert_eq!(user.user_id, 123);
         assert_eq!(user.company_id, 5);

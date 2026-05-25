@@ -484,21 +484,25 @@ async fn protected_route_accepts_lowercase_bearer_scheme(pool: MySqlPool) {
 /// Document le comportement attendu et prévient toute future régression
 /// vers un 500 ou un 204 silencieux.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn logout_with_missing_refresh_token_field_returns_422(pool: MySqlPool) {
+async fn logout_with_missing_refresh_token_field_returns_204(pool: MySqlPool) {
+    // Story 10-5 (T2.3) : LogoutRequest.refresh_token est maintenant Option<String>
+    // pour permettre le logout cookie-only (sans body). Donc un POST /logout
+    // avec body `{}` est valide → 204 No Content (logout idempotent sans token).
+    // Pré-Story 10-5 : refresh_token required → serde rejetait avec 422.
     let app = spawn_app(pool).await;
 
     let resp = app
         .client
         .post(app.url("/api/v1/auth/logout"))
-        .json(&json!({})) // champ refreshToken absent
+        .json(&json!({})) // champ refreshToken absent (Option<String> accepte None)
         .send()
         .await
         .unwrap();
 
     assert_eq!(
         resp.status(),
-        422,
-        "missing refreshToken field should be rejected by serde with 422"
+        204,
+        "missing refreshToken should be accepted (cookie-only logout) and return 204"
     );
 }
 

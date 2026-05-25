@@ -32,7 +32,7 @@ describe('bank-import.api', () => {
 
 	beforeEach(() => {
 		authState.clearSession();
-		authState.login(fakeJwt(), 'refresh-uuid', 900);
+		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 		mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 201,
@@ -56,7 +56,11 @@ describe('bank-import.api', () => {
 		// Le browser pose lui-même Content-Type: multipart/form-data; boundary=...
 		// L'api-client NE force PAS application/json pour FormData (§api-client).
 		expect(headers['Content-Type']).toBeUndefined();
-		expect(headers['Authorization']).toMatch(/^Bearer /);
+		// Story 10-5 (T7.2) : header Authorization plus injecté — le browser
+		// envoie automatiquement le cookie HttpOnly `kesh_access_token` via
+		// `credentials: 'include'`.
+		expect(headers['Authorization']).toBeUndefined();
+		expect(init.credentials).toBe('include');
 	});
 
 	it('createBankImport ajoute confirmBalanceMismatch quand demandé', async () => {

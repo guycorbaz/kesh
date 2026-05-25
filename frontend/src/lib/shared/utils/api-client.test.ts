@@ -111,12 +111,16 @@ describe('apiClient', () => {
 
 	// --- HTTP methods with Authorization header ---
 
-	describe('requêtes avec Authorization header', () => {
+	describe("requêtes avec credentials: 'include' (Story 10-5 — cookie HttpOnly remplace Authorization Bearer)", () => {
+		// Pré-Story 10-5 : 4 tests "GET/POST/PUT/DELETE ajoute le header Authorization".
+		// Post-Story 10-5 (T7.1/T7.2 D5 acté) : le browser envoie automatiquement
+		// le cookie HttpOnly `kesh_access_token` via `credentials: 'include'`.
+		// L'header Authorization n'est plus injecté par le frontend.
 		beforeEach(() => {
-			authState.login(VALID_TOKEN, 'refresh-uuid', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 		});
 
-		it('GET ajoute le header Authorization', async () => {
+		it("GET inclut credentials: 'include' et n'ajoute PAS Authorization", async () => {
 			mockFetch.mockResolvedValue(mockResponse(200, [{ id: 1 }]));
 
 			await apiClient.get('/api/v1/users');
@@ -125,14 +129,14 @@ describe('apiClient', () => {
 				'/api/v1/users',
 				expect.objectContaining({
 					method: 'GET',
-					headers: expect.objectContaining({
-						Authorization: `Bearer ${VALID_TOKEN}`,
-					}),
+					credentials: 'include',
 				}),
 			);
+			const callOpts = mockFetch.mock.calls[0][1];
+			expect(callOpts.headers).not.toHaveProperty('Authorization');
 		});
 
-		it('POST ajoute le header Authorization', async () => {
+		it("POST inclut credentials: 'include' et n'ajoute PAS Authorization", async () => {
 			mockFetch.mockResolvedValue(mockResponse(200, { id: 2 }));
 
 			await apiClient.post('/api/v1/users', { username: 'test' });
@@ -141,15 +145,15 @@ describe('apiClient', () => {
 				'/api/v1/users',
 				expect.objectContaining({
 					method: 'POST',
-					headers: expect.objectContaining({
-						Authorization: `Bearer ${VALID_TOKEN}`,
-					}),
+					credentials: 'include',
 					body: JSON.stringify({ username: 'test' }),
 				}),
 			);
+			const callOpts = mockFetch.mock.calls[0][1];
+			expect(callOpts.headers).not.toHaveProperty('Authorization');
 		});
 
-		it('PUT ajoute le header Authorization', async () => {
+		it("PUT inclut credentials: 'include' et n'ajoute PAS Authorization", async () => {
 			mockFetch.mockResolvedValue(mockResponse(200, { id: 1 }));
 
 			await apiClient.put('/api/v1/users/1', { role: 'Comptable' });
@@ -158,15 +162,15 @@ describe('apiClient', () => {
 				'/api/v1/users/1',
 				expect.objectContaining({
 					method: 'PUT',
-					headers: expect.objectContaining({
-						Authorization: `Bearer ${VALID_TOKEN}`,
-					}),
+					credentials: 'include',
 					body: JSON.stringify({ role: 'Comptable' }),
 				}),
 			);
+			const callOpts = mockFetch.mock.calls[0][1];
+			expect(callOpts.headers).not.toHaveProperty('Authorization');
 		});
 
-		it('DELETE ajoute le header Authorization', async () => {
+		it("DELETE inclut credentials: 'include' et n'ajoute PAS Authorization", async () => {
 			mockFetch.mockResolvedValue(mockResponse(204));
 
 			await apiClient.delete('/api/v1/users/1');
@@ -175,11 +179,11 @@ describe('apiClient', () => {
 				'/api/v1/users/1',
 				expect.objectContaining({
 					method: 'DELETE',
-					headers: expect.objectContaining({
-						Authorization: `Bearer ${VALID_TOKEN}`,
-					}),
+					credentials: 'include',
 				}),
 			);
+			const callOpts = mockFetch.mock.calls[0][1];
+			expect(callOpts.headers).not.toHaveProperty('Authorization');
 		});
 
 		it("n'ajoute PAS Authorization sur /api/v1/auth/login", async () => {
@@ -198,7 +202,7 @@ describe('apiClient', () => {
 
 	describe('refresh automatique sur 401', () => {
 		it('refresh et retry sur 401', async () => {
-			authState.login(VALID_TOKEN, 'old-refresh', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			// 1er appel → 401
 			// 2e appel → refresh OK
@@ -226,7 +230,7 @@ describe('apiClient', () => {
 		});
 
 		it('refresh échoué → clearSession + redirect login', async () => {
-			authState.login(VALID_TOKEN, 'old-refresh', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			// 1er appel → 401
 			// 2e appel → refresh 401 (INVALID_REFRESH_TOKEN)
@@ -250,7 +254,7 @@ describe('apiClient', () => {
 		});
 
 		it("mutex de refresh — 2 requêtes 401 simultanées n'appellent refresh qu'une fois", async () => {
-			authState.login(VALID_TOKEN, 'old-refresh', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			let refreshCallCount = 0;
 
@@ -282,16 +286,20 @@ describe('apiClient', () => {
 
 	// --- Refresh 200 avec JSON malformé ---
 
-	describe('refresh réponse malformée', () => {
-		it('refresh 200 sans accessToken → clearSession + redirect', async () => {
-			authState.login(VALID_TOKEN, 'old-refresh', 900);
+	describe('refresh réponse malformée (Story 10-5 — valide uniquement expiresIn)', () => {
+		// Pré-Story 10-5 : doRefresh validait accessToken + refreshToken + expiresIn.
+		// Post-Story 10-5 (T7.3c) : seul `expiresIn` est validé (les tokens sont
+		// dans les cookies HttpOnly émis par le backend via Set-Cookie, pas en body
+		// JS-accessible). Test adapté pour le nouveau contrat.
+		it('refresh 200 sans expiresIn → clearSession + redirect', async () => {
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			mockFetch
 				.mockResolvedValueOnce(
 					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
 				)
-				// Refresh retourne 200 mais sans accessToken
-				.mockResolvedValueOnce(mockResponse(200, { refreshToken: 'x', expiresIn: 900 }));
+				// Refresh retourne 200 mais sans expiresIn (body malformé).
+				.mockResolvedValueOnce(mockResponse(200, { accessToken: 'x', refreshToken: 'r' }));
 
 			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
 				code: 'UNAUTHENTICATED',
@@ -307,7 +315,7 @@ describe('apiClient', () => {
 
 	describe('timeout', () => {
 		it('requête qui dépasse le timeout → ApiError TIMEOUT', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockImplementation(
 				() => new Promise(() => {}), // never resolves
 			);
@@ -327,7 +335,7 @@ describe('apiClient', () => {
 
 	describe('parsing erreurs structurées', () => {
 		it('parse une erreur structurée → ApiError', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockResolvedValue(
 				mockResponse(403, {
 					error: { code: 'FORBIDDEN', message: 'Accès refusé' },
@@ -342,7 +350,7 @@ describe('apiClient', () => {
 		});
 
 		it('parse une erreur avec details', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockResolvedValue(
 				mockResponse(400, {
 					error: {
@@ -365,7 +373,7 @@ describe('apiClient', () => {
 
 	describe('réseau injoignable', () => {
 		it('fetch qui throw → ApiError NETWORK_ERROR', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
 
 			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
@@ -379,7 +387,7 @@ describe('apiClient', () => {
 
 	describe('503 SERVICE_UNAVAILABLE', () => {
 		it('parse 503 avec message DB → ApiError SERVICE_UNAVAILABLE', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockResolvedValue(
 				mockResponse(503, {
 					error: {
@@ -401,7 +409,7 @@ describe('apiClient', () => {
 
 	describe('401 sur URL auth exclue', () => {
 		it('401 INVALID_CREDENTIALS sur /auth/login → pas de refresh, erreur retournée', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockResolvedValue(
 				mockResponse(401, {
 					error: { code: 'INVALID_CREDENTIALS', message: 'Identifiants invalides' },
@@ -424,7 +432,7 @@ describe('apiClient', () => {
 
 	describe('429 RATE_LIMITED', () => {
 		it('parse 429 RATE_LIMITED → ApiError', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockResolvedValue(
 				mockResponse(429, {
 					error: { code: 'RATE_LIMITED', message: 'Trop de tentatives' },
@@ -445,7 +453,7 @@ describe('apiClient', () => {
 
 	describe('guard anti-boucle', () => {
 		it('retry après refresh retourne 401 → clearSession, pas de 2e refresh', async () => {
-			authState.login(VALID_TOKEN, 'old-refresh', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			mockFetch
 				// 1er appel → 401
@@ -482,7 +490,7 @@ describe('apiClient', () => {
 
 	describe('réponse non-JSON', () => {
 		it('réponse HTML erreur proxy → ApiError UNKNOWN_ERROR', async () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			mockFetch.mockResolvedValue(mockNonJsonResponse(502));
 
 			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
@@ -496,14 +504,14 @@ describe('apiClient', () => {
 
 	describe('clearSession', () => {
 		it('nettoie le state sans appeler fetch', () => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			expect(authState.isAuthenticated).toBe(true);
 
 			authState.clearSession();
 
 			expect(authState.isAuthenticated).toBe(false);
-			expect(authState.accessToken).toBeNull();
-			expect(authState.refreshToken).toBeNull();
+			expect(authState.currentUser).toBeNull();
+			expect(authState.expiresIn).toBeNull();
 			expect(mockFetch).not.toHaveBeenCalled();
 		});
 	});
@@ -512,7 +520,7 @@ describe('apiClient', () => {
 
 	describe('refresh réseau injoignable', () => {
 		it('refresh fetch échoue (réseau) → clearSession + redirect', async () => {
-			authState.login(VALID_TOKEN, 'old-refresh', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			mockFetch
 				.mockResolvedValueOnce(
@@ -553,7 +561,7 @@ describe('apiClient', () => {
 		const FAST_DELAYS = [10, 10, 10, 10] as const;
 
 		beforeEach(() => {
-			authState.login(VALID_TOKEN, 'r', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			// Active le retry exponentiel avec délais accélérés (10ms × 4)
 			(window as unknown as { __KESH_RETRY_DELAYS: readonly number[] }).__KESH_RETRY_DELAYS =
 				FAST_DELAYS;

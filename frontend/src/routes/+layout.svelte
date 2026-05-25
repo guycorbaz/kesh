@@ -46,7 +46,7 @@
 		// Skip le call si pas authentifié — fallback FR figé reste affiché sur
 		// `/login` (Swiss FR fallback acceptable v0.1). Limitation à corriger
 		// v0.2 via endpoint i18n public.
-		if (authState.accessToken !== null) {
+		if (authState.isAuthenticated) {
 			void loadI18nMessages();
 		}
 

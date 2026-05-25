@@ -1,12 +1,17 @@
 /**
- * Store d'authentification global (Svelte 5 runes).
+ * Store d'authentification global (Svelte 5 runes) — Story 10-5 refactor.
  *
  * Pattern objet avec getters — l'export direct `$state` est non
  * réassignable depuis un importeur (voir Story 1.9 pattern mode.svelte.ts).
  *
- * Le JWT est décodé côté client (base64url, sans vérification de
- * signature) pour extraire `sub` (userId) et `role`.
- * `username` n'est PAS dans le JWT — absent de `CurrentUser`.
+ * Story 10-5 (D5 acté) : `_accessToken` et `_refreshToken` ne sont plus
+ * stockés. Les tokens sont en cookies `HttpOnly` + `Secure` + `SameSite=Strict`
+ * inaccessibles au JavaScript. `_currentUser` est peuplé depuis le body de
+ * la réponse `/login` (D6 — body étendu avec `userId/username/role`) ou via
+ * un fetch `/api/v1/auth/me` au boot (`hydrate()` — restaure l'identité
+ * sans pouvoir décoder le JWT).
+ *
+ * `isAuthenticated` getter dépend de `_currentUser !== null` (D5).
  */
 
 import { resetVatRatesCache } from '$lib/features/vat-rates';
@@ -14,53 +19,35 @@ import { resetVatRatesCache } from '$lib/features/vat-rates';
 export interface CurrentUser {
 	/** `sub` du JWT — user_id (i64 sérialisé en string côté backend). */
 	userId: string;
+	/** Username pour affichage UI (Story 10-5 D6 — récupéré depuis body /login ou /me). */
+	username: string;
 	/** Rôle RBAC : `Admin`, `Comptable`, `Consultation`. */
 	role: string;
 }
 
-let _accessToken = $state<string | null>(null);
-let _refreshToken = $state<string | null>(null);
 let _expiresIn = $state<number | null>(null);
 let _currentUser = $state<CurrentUser | null>(null);
 let _hydrated = false;
 
 /**
- * Décode le payload JWT (segment central, base64url) sans
- * vérification de signature. Ajoute le padding `=` manquant
- * pour compatibilité `atob()`.
+ * Story 10-5 : constantes STORAGE_KEY_* conservées comme **defensive cleanup**
+ * pour purger les sessions pre-Story 10-5 qui auraient persisté ces clés dans
+ * localStorage avant le déploiement de cette version. À retirer dans une
+ * release v0.2+ une fois tous les utilisateurs migrés.
  */
-function decodeJwtPayload(token: string): { sub: string; role: string; exp: number } {
-	const parts = token.split('.');
-	if (parts.length !== 3) {
-		throw new Error(`JWT malformé : ${parts.length} segment(s) au lieu de 3`);
-	}
-	const segment = parts[1];
-	// Restaurer le base64 standard + padding
-	const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
-	const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-	let payload: Record<string, unknown>;
-	try {
-		payload = JSON.parse(atob(padded));
-	} catch {
-		throw new Error('Impossible de décoder le payload JWT');
-	}
-	if (typeof payload.sub !== 'string' || !payload.sub || typeof payload.role !== 'string' || !payload.role) {
-		throw new Error(`Claims JWT manquants ou vides : sub=${payload.sub}, role=${payload.role}`);
-	}
-	return payload as { sub: string; role: string; exp: number };
-}
-
 export const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';
 export const STORAGE_KEY_REFRESH_TOKEN = 'kesh:auth:refreshToken';
 export const STORAGE_KEY_EXPIRES_IN = 'kesh:auth:expiresIn';
 
+/** Body de réponse `POST /api/v1/auth/login` (D6 acté). */
+export interface LoginPayload {
+	userId: string;
+	username: string;
+	role: string;
+	expiresIn: number;
+}
+
 export const authState = {
-	get accessToken(): string | null {
-		return _accessToken;
-	},
-	get refreshToken(): string | null {
-		return _refreshToken;
-	},
 	get expiresIn(): number | null {
 		return _expiresIn;
 	},
@@ -68,118 +55,112 @@ export const authState = {
 		return _currentUser;
 	},
 	get isAuthenticated(): boolean {
-		return _accessToken !== null;
+		// Story 10-5 D5 : dépend de _currentUser (les tokens sont en cookies HttpOnly).
+		return _currentUser !== null;
 	},
 
-	login(accessToken: string, refreshToken: string, expiresIn: number) {
-		// Valider AVANT d'affecter — garantir l'atomicité du state
-		const claims = decodeJwtPayload(accessToken);
-		_accessToken = accessToken;
-		_refreshToken = refreshToken;
+	/**
+	 * Set l'état authentifié depuis le body de réponse `/login` ou `/me`.
+	 * Le navigateur a déjà set les cookies HttpOnly via les headers Set-Cookie
+	 * du backend — pas besoin de stocker les tokens côté JS.
+	 */
+	login(payload: LoginPayload) {
+		_currentUser = {
+			userId: payload.userId,
+			username: payload.username,
+			role: payload.role,
+		};
+		_expiresIn = payload.expiresIn;
+	},
+
+	/**
+	 * Met à jour `expiresIn` après un refresh proactif réussi (T6.7).
+	 * Pas d'effet sur `_currentUser` (même utilisateur, juste JWT refreshed).
+	 */
+	updateExpiresIn(expiresIn: number) {
 		_expiresIn = expiresIn;
-		_currentUser = { userId: claims.sub, role: claims.role };
-		// Persister à localStorage pour survire aux navigations de page
-		if (typeof window !== 'undefined' && window.localStorage) {
-			window.localStorage.setItem(STORAGE_KEY_ACCESS_TOKEN, accessToken);
-			window.localStorage.setItem(STORAGE_KEY_REFRESH_TOKEN, refreshToken);
-			window.localStorage.setItem(STORAGE_KEY_EXPIRES_IN, String(expiresIn));
-		}
 	},
 
 	/**
 	 * Nettoie le state d'authentification SANS appeler l'API logout.
-	 * Utilisé quand le refresh token a échoué (le token est déjà
-	 * invalide côté serveur, inutile d'appeler logout).
+	 * Utilisé quand le refresh a échoué (le cookie est déjà invalidé côté
+	 * serveur, inutile d'appeler logout).
 	 */
 	clearSession() {
-		_accessToken = null;
-		_refreshToken = null;
 		_expiresIn = null;
 		_currentUser = null;
-		// Nettoyer localStorage aussi
+		// Defensive cleanup localStorage pour utilisateurs migrant depuis pre-Story 10-5.
 		if (typeof window !== 'undefined' && window.localStorage) {
 			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
 			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
-		// Story 7.2 : invalider le cache des taux TVA pour éviter qu'un
-		// user suivant sur le même browser hérite des taux du précédent
-		// (cross-tenant si la même session web sert plusieurs companies).
 		resetVatRatesCache();
 	},
 
 	async logout() {
-		// POST /api/v1/auth/logout — PAS de header Authorization requis
-		// (design intentionnel backend : accepte logout même avec JWT expiré)
-		if (_refreshToken) {
-			await fetch('/api/v1/auth/logout', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ refreshToken: _refreshToken }),
-			}).catch(() => {});
-		}
-		_accessToken = null;
-		_refreshToken = null;
+		// POST /api/v1/auth/logout avec credentials: 'include' — le browser
+		// envoie automatiquement le cookie HttpOnly. Pas de body refresh_token.
+		await fetch('/api/v1/auth/logout', {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({}),
+		}).catch(() => {});
 		_expiresIn = null;
 		_currentUser = null;
-		// Nettoyer localStorage aussi
+		// Defensive cleanup localStorage.
 		if (typeof window !== 'undefined' && window.localStorage) {
 			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
 			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
-		// Story 7.2 : invalider le cache des taux TVA (cf. clearSession).
 		resetVatRatesCache();
 	},
 
 	/**
-	 * Restaure les tokens depuis localStorage (appelé au démarrage de l'app).
-	 * Safe pour SSR : vérifie typeof window avant d'accéder à localStorage.
-	 * Valide l'expiration du token avant restauration.
+	 * Restaure l'identité utilisateur depuis le cookie HttpOnly via
+	 * `GET /api/v1/auth/me` (Story 10-5 T6.3).
+	 *
+	 * Appelé une seule fois au boot via `hooks.client.ts` (ClientInit async
+	 * hook). Garantit que `_currentUser` est peuplé AVANT que les `load()`
+	 * functions s'exécutent — sans quoi `(app)/+layout.ts:10` redirige
+	 * vers /login pour tous les utilisateurs authentifiés.
+	 *
+	 * Si 200 → peuple `_currentUser` + `_expiresIn`.
+	 * Si 401 (cookie absent ou expiré) → état non-auth (utilisateur doit relog).
+	 * Si erreur réseau → swallow silencieux, état non-auth.
 	 */
-	hydrate() {
-		// Guard: Only hydrate once (prevent concurrent load() functions from restoring multiple times)
+	async hydrate(): Promise<void> {
+		// Guard idempotence : éviter double-fetch concurrents /me.
 		if (_hydrated) {
 			return;
 		}
-		if (typeof window === 'undefined' || !window.localStorage) {
+		if (typeof window === 'undefined') {
 			return;
 		}
-		const accessToken = window.localStorage.getItem(STORAGE_KEY_ACCESS_TOKEN);
-		const refreshToken = window.localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
-		const expiresInStr = window.localStorage.getItem(STORAGE_KEY_EXPIRES_IN);
 
 		try {
-			if (accessToken && refreshToken && expiresInStr) {
-				const expiresIn = parseInt(expiresInStr, 10);
-				if (isNaN(expiresIn)) {
-					throw new Error('expiresIn is not a valid number');
-				}
-				// Valider le token AVANT de l'affecter
-				const claims = decodeJwtPayload(accessToken);
-
-				// Vérifier que le token n'est pas expiré (exp en secondes, Date.now() en ms)
-				const nowSeconds = Math.floor(Date.now() / 1000);
-				if (claims.exp < nowSeconds) {
-					console.warn('[auth] Token expired during hydration, clearing session');
-					window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
-					window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
-					window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
-				} else {
-					_accessToken = accessToken;
-					_refreshToken = refreshToken;
-					_expiresIn = expiresIn;
-					_currentUser = { userId: claims.sub, role: claims.role };
-				}
+			const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
+			if (res.ok) {
+				const body = (await res.json()) as {
+					userId: number;
+					username: string;
+					role: string;
+					expiresIn: number;
+				};
+				_currentUser = {
+					userId: String(body.userId),
+					username: body.username,
+					role: body.role,
+				};
+				_expiresIn = body.expiresIn;
 			}
+			// res.status === 401 → state non-auth (default null state)
+			// res.status autre → swallow, state non-auth
 		} catch (error) {
-			// Token invalide ou décodage échoué — nettoyer localStorage
-			console.error('[auth] Hydration failed, clearing session:', error instanceof Error ? error.message : String(error));
-			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
-			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
-			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
+			console.error('[auth] Hydration via /me failed:', error instanceof Error ? error.message : String(error));
 		} finally {
-			// Mark hydration as complete regardless of outcome (prevents duplicate attempts)
 			_hydrated = true;
 		}
 	},
