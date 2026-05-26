@@ -59,7 +59,7 @@ Status: review
 14. **Given** test E2E Playwright `frontend/tests/e2e/security/xss-token-protection.spec.ts` (nouveau fichier), **When** exécuté, **Then** il vérifie 3 invariants :
     - **(a)** Après login, `document.cookie` lu en console JavaScript retourne une chaîne qui ne contient **pas** le JWT ni le refresh UUID (assertion `expect(cookie).not.toContain(token)`).
     - **(b)** Après login, `localStorage.getItem('kesh:auth:accessToken')` retourne `null` (assertion `expect(value).toBeNull()`).
-    - **(c)** Un payload XSS simulé injecté via `page.evaluate()` qui tente `fetch('/api/v1/auth/me', { credentials: 'omit' })` reçoit **401** (cookie non-envoyé sans `credentials: include`), prouvant que le cookie reste protégé même si du JS hostile s'exécute dans la page.
+    - **(c)** Le contexte Playwright après login expose, via `context.cookies()`, deux entrées `kesh_access_token` et `kesh_refresh_token` dont les flags satisfont **simultanément** `httpOnly === true`, `sameSite === 'Strict'`, `secure === true` (en dehors du `test_mode` qui désactive `secure`) et `path === '/'` pour l'access cookie / `path === '/api/v1/auth'` pour le refresh cookie. **Reformulation Pass 1 Sonnet M3 (BH-F-SEC-P1-4) + Pass 2 Haiku AA2-M1** : la formulation initiale exigeait un test `fetch('/api/v1/auth/me', { credentials: 'omit' })` → 401. Cette version a été reformulée pour valider l'invariant *concret* de sécurité (les flags du cookie qui garantissent qu'il est exclu de `document.cookie`, soumis au scoping path et indisponible cross-site) plutôt qu'un comportement *indirect* (`credentials: 'omit'` n'est pas un vector XSS réaliste — un attaquant XSS in-page utilise `credentials: 'include'` par défaut, et c'est la protection HttpOnly contre exfiltration via `document.cookie` qui prévient le pivot, pas le refus de cookies par fetch). Le test reformulé est strictement plus discriminant : il échoue si l'un des 4 flags est manquant, alors que le test original passerait à tort si le cookie était volable mais juste non-envoyé sur fetch sans credentials.
 
 15. **Given** `crates/kesh-api/tests/auth_cookies_e2e.rs` (nouveau fichier d'intégration), **When** exécuté via `cargo test -p kesh-api --test auth_cookies_e2e -- --test-threads=1`, **Then** il valide les 4 scénarios :
     - **(a)** Login → réponse contient `Set-Cookie: kesh_access_token=...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=...` + idem pour `kesh_refresh_token` Path=/api/v1/auth.
@@ -216,6 +216,10 @@ Status: review
 
 - [ ] **T11.1** : éditer `CHANGELOG.md` (créé Story 10-4) — ajouter une nouvelle sous-section `### Sécurité` (ou `### Security`) dans l'entrée `[0.1.0]`, après la sous-section `Multi-utilisateurs et sécurité` actuelle. Contenu : description du durcissement httpOnly + Secure + SameSite, mention nouveau endpoint `/me`, mention CSP headers défensifs, mention breaking change accepté (single-user pre-prod = pas de migration utilisateur nécessaire).
 - [ ] **T11.2** : éditer `docs/manual/fr/admin-manual.tex` §"Sécurité" (existante, ~ligne 1071+ pour `\subsection{Authentification JWT + refresh tokens}`) — ajouter mention "Story 10-5 : tokens stockés en cookies `HttpOnly` + `Secure` + `SameSite=Strict`, inaccessibles au JavaScript ; nouveau endpoint `GET /api/v1/auth/me` pour restoration d'état frontend ; headers CSP défensifs sur réponses HTML." Régénérer PDF via `latexmk -xelatex`.
+
+### Review Findings (Pass 2 Haiku 4.5 — 2026-05-26)
+
+- [x] [Review][Patch] **AA2-M1** AC #14(c) — reformulation documentée dans la spec [`_bmad-output/implementation-artifacts/10-5-httponly-tokens-security.md:62`] — Option (a) retenue 2026-05-26 : AC #14(c) réécrit pour décrire le test réel `context.cookies()` flags (`httpOnly === true` + `sameSite === 'Strict'` + `secure === true` hors test_mode + `path` scoped) avec rationale Pass 1 M3 + Pass 2 AA2-M1 inline ("test reformulé strictement plus discriminant que le `credentials: 'omit'` original, qui n'est pas un vector XSS réaliste"). Aucun changement de code requis — le test `xss-token-protection.spec.ts:83-130` est inchangé.
 
 ### T12: Test Locally First + commit + sprint-status (AC #16, #17)
 
@@ -480,4 +484,28 @@ _(à remplir au commit final — récapitulatif des fichiers A/M)_
 - `cargo fmt --all` PASS
 
 **Prochaine étape** : Pass 2 Haiku 4.5 (rotation Sonnet→Haiku→Opus→Sonnet) avec discipline grep ground-truth obligatoire (CLAUDE.md §"Haiku-specific guardrails — méta-spec false positives").
+
+### Code review Pass 2 Haiku 4.5 — 2026-05-26
+
+`bmad-code-review 10-5` Pass 2 cycle adversarial Haiku 4.5 (Blind Hunter + Edge Case Hunter + Acceptance Auditor) from-scratch après reboot PC (CR Pass 2 antérieur tronqué non-commité — reset propre sur `034d8b8` avant relancement).
+
+**Diff source** : `git diff main..HEAD` aplati (29 fichiers, +1982/-392, 3355 lignes) — mitigation préférée CLAUDE.md §"Haiku-specific guardrails" (single-commit view évite confusion indexation diff multi-commit).
+
+**Trend** : ~5 findings raw → **1 patch > LOW + 4 reclassements LOW post-grep ground-truth + 0 faux-positif Haiku méta-spec**.
+
+**Findings par reviewer** :
+- **Blind Hunter** : 0 finding > LOW (cycle convergé pour Blind Hunter). Diff-only review, pas de regression / vulnérabilité / race / validation manquante observée.
+- **Edge Case Hunter** : 0 finding > LOW. 4 observations initiales (ECH2-H1 empty token in `build_auth_cookies` hypothétique, ECH2-H2 empty refresh_token to `revoke_by_token` cookie vide collatéral, ECH2-M5 `LoginResponse` tokens no warning rétro-compat D1, ECH2-M6 D1 assumption unchecked `unwrap()` test safe par contrat) **reclassées LOW/documentation** post-grep ground-truth. Observations positives validées : `/api/v1/auth/me` correctement protégée par `require_auth`, logout sans token graceful, refresh sans token 401 `InvalidRefreshToken`, `/me` exp=0 boundary `.max(0)`, CSP middleware ordering Pass 3 confirmé, hydrate idempotence guard `if (_hydrated) return` atomic suffisant.
+- **Acceptance Auditor** : **1 MEDIUM AA2-M1** — AC #14(c) test E2E XSS reformulé Pass 1 Sonnet M3 (`context.cookies()` flags assertions au lieu de `credentials: 'omit'` → 401) sans mise à jour parallèle de l'AC #14(c) lui-même dans la spec → écart documentaire.
+
+**MEDIUM (1)** :
+- **AA2-M1** — AC #14(c) écart spec↔code suite reformulation Pass 1 M3 (BH-F-SEC-P1-4). Option **(a)** retenue 2026-05-26 (Guy) : AC #14(c) réécrit pour décrire le test réel `context.cookies()` flags (`httpOnly === true` + `sameSite === 'Strict'` + `secure === true` hors test_mode + `path` scoped `/` pour access / `/api/v1/auth` pour refresh) avec rationale Pass 1 M3 + Pass 2 AA2-M1 inline ("test reformulé strictement plus discriminant que le `credentials: 'omit'` original, qui n'est pas un vector XSS réaliste — un attaquant XSS in-page utilise `credentials: 'include'` par défaut, et c'est la protection HttpOnly contre exfiltration via `document.cookie` qui prévient le pivot, pas le refus de cookies par fetch"). Patch doc-only sur spec file `_bmad-output/implementation-artifacts/10-5-httponly-tokens-security.md:62` ; aucun changement code (le test `xss-token-protection.spec.ts:83-130` est inchangé).
+
+**Discipline grep ground-truth Haiku** : appliquée systématiquement par les 3 reviewers. **0 faux-positif CRITICAL/HIGH remonté** — contraste avec Pass 2 spec-validate Haiku (8 dismissed) où Haiku confondait spec↔code-actuel. Ici les reviewers ont correctement opéré sur le diff aplati `main..HEAD` comme code final consolidé. Edge Case Hunter a notamment auto-réfuté ses 4 observations initiales H1/H2 via vérification ground-truth avant remontée — 0 finding raw atteint la couche triage.
+
+**Validation post-patch** : patch doc-only (spec file markdown), pas de code exécutable touché → Test Locally First sauté selon CLAUDE.md §"Quand sauter" (commits doc-only).
+
+**Status story** : `review` (inchangé — Pass 2 a remonté 1 MEDIUM > LOW, cycle non-convergé). Sprint-status inchangé.
+
+**Prochaine étape** : **Pass 3 Opus 4.7** obligatoire selon CLAUDE.md §"Review Iteration Rule" (cycle continue tant qu'au moins 1 finding > LOW). Rotation Sonnet→Haiku→**Opus**→Sonnet. Pattern Opus catch-architectural attendu (cf. Story 9-2b/10-2/10-3 Pass 3 Opus a systématiquement attrapé ≥ 1 CRITICAL/HIGH architectural raté par Sonnet+Haiku).
 
