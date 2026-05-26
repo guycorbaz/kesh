@@ -51,6 +51,12 @@ impl TestApp {
 }
 
 fn test_config() -> Config {
+    // CR Pass 3 ECH3-H2 : `.with_test_mode(true)` est REQUIS pour que les
+    // cookies émis aient `Secure=false` — sans ça, reqwest peut refuser de
+    // renvoyer les cookies `Secure` sur l'URL HTTP du test (RFC 6265 §5.4).
+    // Le commentaire historique ligne ~219 (« Note Pass 4 F-TEST-SECURE-
+    // ASSERTION-P4-5 : flag Secure ABSENT en test_mode → false ») partait du
+    // postulat — corrigé ici — que test_mode était bien activé.
     kesh_api::config::Config::from_fields_for_test(
         "mysql://test:test@localhost:3306/test".to_string(),
         "admin".to_string(),
@@ -64,6 +70,7 @@ fn test_config() -> Config {
         TimeDelta::minutes(30),
         12,
     )
+    .with_test_mode(true)
 }
 
 /// Helper LOCAL Story 10-5 — TestApp avec cookie jar reqwest activé.
@@ -216,9 +223,10 @@ async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
         .expect("kesh_refresh_token cookie missing");
 
     // AC #1 + AC #2 — flags HttpOnly et SameSite=Strict obligatoires.
-    // Note Pass 4 F-TEST-SECURE-ASSERTION-P4-5 : flag `Secure` ABSENT en
-    // test_mode (.secure(!test_mode) → false) — ne PAS asserter ici, c'est
-    // testé par les tests E2E Playwright en browser context.
+    // CR Pass 3 ECH3-H2 : `test_config()` active maintenant `test_mode=true`,
+    // donc `.secure(!test_mode)` → `false`. Le flag `Secure` est ABSENT des
+    // headers ici — testé en présence par les tests E2E Playwright en browser
+    // context (xss-token-protection.spec.ts Scénario c).
     assert!(
         access_cookie.contains("HttpOnly"),
         "access cookie missing HttpOnly: {access_cookie}"
@@ -230,6 +238,15 @@ async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
     assert!(
         access_cookie.contains("Path=/;") || access_cookie.contains("Path=/ "),
         "access cookie path should be /, got: {access_cookie}"
+    );
+    // CR Pass 3 AA3-M3 : asserter la valeur exacte `Max-Age=900` (= jwt_expiry
+    // 15 minutes de `test_config()` paramètre 5 `TimeDelta::minutes(15)`).
+    // Protège contre une régression silencieuse F-COOKIE-LIFETIME-P3-1 qui
+    // utiliserait `refresh_inactivity` (15 min sliding) au lieu de la durée
+    // canonique du token sur l'access cookie.
+    assert!(
+        access_cookie.contains("Max-Age=900"),
+        "access cookie Max-Age should be 900 (jwt_expiry 15min), got: {access_cookie}"
     );
 
     assert!(
@@ -243,6 +260,14 @@ async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
     assert!(
         refresh_cookie.contains("Path=/api/v1/auth"),
         "refresh cookie path should be /api/v1/auth (scope restriction), got: {refresh_cookie}"
+    );
+    // CR Pass 3 AA3-M3 : asserter la valeur exacte `Max-Age=2592000` (= refresh
+    // hard ceiling 30 jours de `test_config()` paramètre 6 `TimeDelta::days(30)`).
+    // F-COOKIE-LIFETIME-P3-1 : ce ceiling est `refresh_token_max_lifetime` (30j
+    // hard côté browser), PAS `refresh_inactivity` (15 min sliding côté serveur).
+    assert!(
+        refresh_cookie.contains("Max-Age=2592000"),
+        "refresh cookie Max-Age should be 2592000 (refresh_token_max_lifetime 30d hard ceiling, NOT refresh_inactivity 15min sliding), got: {refresh_cookie}"
     );
 }
 
@@ -391,16 +416,48 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
         "logout should emit 2 expired Set-Cookie headers, got {set_cookies:?}"
     );
 
-    for cookie in &set_cookies {
-        assert!(
-            cookie.contains("Max-Age=0"),
-            "logout cookie should have Max-Age=0 for invalidation: {cookie}"
-        );
-        assert!(
-            cookie.contains("HttpOnly"),
-            "logout expired cookie should still have HttpOnly: {cookie}"
-        );
-    }
+    // CR Pass 3 BH3-M1 ∪ AA3-M4 : discriminer par nom et asserter `Path` par
+    // cookie expiré. HTML5 cookie deletion (RFC 6265 §3.1) exige que le triple
+    // `(name, path, domain)` du Set-Cookie expiré matche celui du cookie
+    // stocké pour le supprimer. Sans assertion `Path=`, un futur refactor qui
+    // mettrait `Path=/api/v1/auth` sur l'access cookie expiré ne purgerait
+    // PAS le cookie access stocké `Path=/` → user resterait apparemment
+    // authentifié sur les autres routes API. Le test passait silencieusement
+    // (Max-Age=0 + HttpOnly OK), masquant la régression.
+    let expired_access = set_cookies
+        .iter()
+        .find(|c| c.starts_with("kesh_access_token="))
+        .expect("expired kesh_access_token cookie missing post-logout");
+    let expired_refresh = set_cookies
+        .iter()
+        .find(|c| c.starts_with("kesh_refresh_token="))
+        .expect("expired kesh_refresh_token cookie missing post-logout");
+
+    assert!(
+        expired_access.contains("Max-Age=0"),
+        "expired access cookie should have Max-Age=0 for invalidation: {expired_access}"
+    );
+    assert!(
+        expired_access.contains("HttpOnly"),
+        "expired access cookie should still have HttpOnly: {expired_access}"
+    );
+    assert!(
+        expired_access.contains("Path=/;") || expired_access.contains("Path=/ "),
+        "expired access cookie must keep Path=/ to match the original (HTML5 RFC 6265 §3.1), got: {expired_access}"
+    );
+
+    assert!(
+        expired_refresh.contains("Max-Age=0"),
+        "expired refresh cookie should have Max-Age=0 for invalidation: {expired_refresh}"
+    );
+    assert!(
+        expired_refresh.contains("HttpOnly"),
+        "expired refresh cookie should still have HttpOnly: {expired_refresh}"
+    );
+    assert!(
+        expired_refresh.contains("Path=/api/v1/auth"),
+        "expired refresh cookie must keep Path=/api/v1/auth to match the original (HTML5 RFC 6265 §3.1), got: {expired_refresh}"
+    );
 
     // CR Pass 1 H1 — AC #15(d) DB revocation check : le refresh_token doit
     // être marqué `revoked_at IS NOT NULL` en base après logout (révocation
@@ -414,5 +471,89 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
     assert!(
         revoked_after.is_some(),
         "refresh_token should be revoked_at IS NOT NULL after logout, got: {revoked_after:?}"
+    );
+}
+
+/// CR Pass 3 AA3-M2 — T4.3 — test intégration sur le **vrai** endpoint
+/// `GET /api/v1/auth/me` (AC #5). Les 4 tests précédents montaient un handler
+/// custom `/api/v1/_test/me` qui ne couvrait PAS la route réelle consommée par
+/// le frontend (`hydrate()` dans `auth.svelte.ts`). Une régression sur le
+/// shape de `MeResponse` (e.g. `user_id` au lieu de `userId`, `format!("{:?}",
+/// role)` qui diverge de `role.as_str()`, `expires_in` négatif sans clamp,
+/// `username` manquant) passerait silencieusement les autres tests.
+///
+/// Vérifie : login → cookie auto-stocké → GET /api/v1/auth/me → 200 + body
+/// `{ userId, username, role, expiresIn }` avec valeurs cohérentes.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn me_endpoint_returns_user_identity_from_cookie(pool: MySqlPool) {
+    let (admin_username, _company_id) = setup_admin(&pool).await;
+    let app = spawn_app_with_cookie_jar(pool).await;
+
+    // Login → cookie store reqwest stocke automatiquement les cookies HttpOnly.
+    let login_resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({
+            "username": admin_username,
+            "password": TEST_ADMIN_PASSWORD,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), 200, "login should succeed");
+    let login_body: serde_json::Value = login_resp.json().await.unwrap();
+    let expected_user_id = login_body["userId"]
+        .as_i64()
+        .expect("login response should contain userId i64 (D6)");
+
+    // GET /api/v1/auth/me — vraie route prod, pas le handler custom /_test/me.
+    let me_resp = app
+        .client
+        .get(app.url("/api/v1/auth/me"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        me_resp.status(),
+        200,
+        "GET /api/v1/auth/me should return 200 OK with cookie auth (AC #5)"
+    );
+
+    let body: serde_json::Value = me_resp.json().await.unwrap();
+
+    // Shape strict — chaque champ exigé par AC #5 doit être présent et bien typé.
+    let user_id = body["userId"]
+        .as_i64()
+        .expect("MeResponse.userId should be present as i64 (AC #5 + camelCase serde)");
+    let username = body["username"]
+        .as_str()
+        .expect("MeResponse.username should be present as string (AC #5)");
+    let role = body["role"]
+        .as_str()
+        .expect("MeResponse.role should be present as string (AC #5)");
+    let expires_in = body["expiresIn"]
+        .as_i64()
+        .expect("MeResponse.expiresIn should be present as i64 (AC #5 + camelCase serde)");
+
+    assert_eq!(
+        user_id, expected_user_id,
+        "MeResponse.userId should match login response userId"
+    );
+    assert_eq!(
+        username, admin_username,
+        "MeResponse.username should match the logged-in admin username"
+    );
+    assert_eq!(
+        role, "Admin",
+        "MeResponse.role should be the canonical string 'Admin' for the admin user"
+    );
+    assert!(
+        expires_in > 0,
+        "MeResponse.expiresIn should be positive (token fresh post-login), got: {expires_in}"
+    );
+    assert!(
+        expires_in <= 900,
+        "MeResponse.expiresIn should be ≤ 900s (jwt_expiry 15min ceiling), got: {expires_in}"
     );
 }

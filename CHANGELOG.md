@@ -64,13 +64,18 @@ Première version publique de Kesh. Cette release fournit un système comptable 
 #### Multi-utilisateurs et sécurité
 
 - **Authentification JWT** avec refresh tokens et rotation automatique (durée d'expiration courte de 15 minutes compensée par rafraîchissement transparent côté frontend).
-- **Tokens en cookies HttpOnly + Secure + SameSite=Strict** (Story 10-5) : les tokens d'authentification (`access_token` JWT + `refresh_token` UUID) sont stockés dans des cookies inaccessibles au JavaScript du navigateur. Élimine la possibilité de vol immédiat des tokens via une faille XSS hypothétique (un script malveillant ne peut ni lire `document.cookie`, ni accéder à `localStorage`). Nouveau endpoint `GET /api/v1/auth/me` permet au frontend de restaurer l'identité utilisateur sans pouvoir décoder le JWT côté JS. Closes Issue [#41 [KF-002]](https://github.com/guycorbaz/kesh/issues/41).
-- **Content-Security-Policy défensif** (Story 10-5) sur les réponses HTML : restreint les sources de scripts, styles, images, connexions ; bloque l'incrustation iframe (`frame-ancestors 'none'`) anti-clickjacking. Défense en profondeur même si l'app reste sans XSS connu.
 - **Rôles RBAC** : Administrateur (toutes opérations) et Utilisateur (saisie sans gestion des paramètres système).
 - **Isolation multi-tenant stricte** : chaque utilisateur n'accède qu'aux données de sa propre société (`company_id`). Audit complet du scoping effectué Epic 7 (Story 7-1) sur toutes les requêtes API et SQL.
 - **Politique de mot de passe** : minimum 12 caractères pour le compte administrateur initial (hardening Story 10-1), configurable pour les autres utilisateurs.
 - **Rate limiting** sur la connexion : protection contre les attaques par force brute (5 tentatives échouées par IP avant blocage 30 minutes, paramétrable).
 - **Sessions à expiration glissante** : durée d'inactivité de 15 minutes avant déconnexion automatique (paramétrable).
+
+#### Sécurité durcie (Story 10-5)
+
+- **Tokens en cookies HttpOnly + Secure + SameSite=Strict** : les tokens d'authentification (`access_token` JWT + `refresh_token` UUID) sont stockés dans des cookies inaccessibles au JavaScript du navigateur. Élimine la possibilité de vol immédiat des tokens via une faille XSS hypothétique (un script malveillant ne peut ni lire `document.cookie`, ni accéder à `localStorage`). Nouveau endpoint `GET /api/v1/auth/me` permet au frontend de restaurer l'identité utilisateur sans pouvoir décoder le JWT côté JS. Closes Issue [#41 [KF-002]](https://github.com/guycorbaz/kesh/issues/41).
+- **Content-Security-Policy défensif** sur les réponses HTML : restreint les sources de scripts, styles, images, connexions ; bloque l'incrustation iframe (`frame-ancestors 'none'`) anti-clickjacking. Défense en profondeur même si l'app reste sans XSS connu.
+
+> **Note pour les administrateurs** : en mode `KESH_TEST_MODE=true` (CI + dev local sur HTTP loopback `127.0.0.1`), le flag `Secure` est désactivé pour permettre les tests E2E sans certificat. En production HTTPS, le flag `Secure` est inconditionnellement actif.
 
 #### Multilingue (FR / DE / IT / EN)
 

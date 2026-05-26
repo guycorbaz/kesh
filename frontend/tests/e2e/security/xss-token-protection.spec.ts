@@ -114,14 +114,27 @@ test.describe('XSS token protection (Story 10-5)', () => {
 		const accessCookie = cookies.find((c) => c.name === 'kesh_access_token');
 		const refreshCookie = cookies.find((c) => c.name === 'kesh_refresh_token');
 
+		// CR Pass 3 AA3-M1 — asserter les 4 flags simultanément exigés par
+		// l'AC #14(c) : `httpOnly === true` + `sameSite === 'Strict'` +
+		// `secure === true` (hors test_mode) + `path` scoped. Le test passait
+		// précédemment à tort si `Path=/` était changé en `Path=/api/v1/...`
+		// sur l'access cookie ou si `Secure` était omis en prod.
+		const inTestMode = process.env.KESH_TEST_MODE === 'true';
+
 		expect(accessCookie).toBeDefined();
 		expect(accessCookie?.httpOnly).toBe(true);
 		expect(accessCookie?.sameSite).toBe('Strict');
+		expect(accessCookie?.path).toBe('/');
+		// `Secure` doit être présent en prod HTTPS (test_mode désactive cette
+		// exigence pour les tests E2E sur HTTP loopback — cf. CHANGELOG §Sécurité
+		// durcie ligne « Note pour les administrateurs »).
+		expect(accessCookie?.secure).toBe(!inTestMode);
 
 		expect(refreshCookie).toBeDefined();
 		expect(refreshCookie?.httpOnly).toBe(true);
 		expect(refreshCookie?.sameSite).toBe('Strict');
 		// Vérifie le scope path-restricted du refresh cookie (defense-in-depth).
 		expect(refreshCookie?.path).toBe('/api/v1/auth');
+		expect(refreshCookie?.secure).toBe(!inTestMode);
 	});
 });

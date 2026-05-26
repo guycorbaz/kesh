@@ -573,7 +573,11 @@ pub async fn me(
         .ok_or_else(|| AppError::Internal("current user not found in DB".into()))?;
 
     let now_secs = chrono::Utc::now().timestamp();
-    let expires_in = (current_user.exp - now_secs).max(0);
+    // CR Pass 3 ECH3-L3 : `saturating_sub` protège contre un `exp` théoriquement
+    // négatif extrême (`i64::MIN`) qui produirait un panic en debug build sur la
+    // soustraction native. `.max(0)` reste nécessaire pour clamper les expirations
+    // déjà passées (cas normal d'un token expiré).
+    let expires_in = current_user.exp.saturating_sub(now_secs).max(0);
 
     Ok(Json(MeResponse {
         user_id: user.id,

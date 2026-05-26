@@ -221,6 +221,36 @@ Status: review
 
 - [x] [Review][Patch] **AA2-M1** AC #14(c) — reformulation documentée dans la spec [`_bmad-output/implementation-artifacts/10-5-httponly-tokens-security.md:62`] — Option (a) retenue 2026-05-26 : AC #14(c) réécrit pour décrire le test réel `context.cookies()` flags (`httpOnly === true` + `sameSite === 'Strict'` + `secure === true` hors test_mode + `path` scoped) avec rationale Pass 1 M3 + Pass 2 AA2-M1 inline ("test reformulé strictement plus discriminant que le `credentials: 'omit'` original, qui n'est pas un vector XSS réaliste"). Aucun changement de code requis — le test `xss-token-protection.spec.ts:83-130` est inchangé.
 
+### Review Findings (Pass 3 Opus 4.7 — 2026-05-26)
+
+**Decisions (4)** — toutes résolues option (a) patch 2026-05-26 :
+
+- [x] [Review][Patch] **ECH3-H1↓MEDIUM** Migration window XSS — `hydrate()` purge defensive `STORAGE_KEY_*` AVANT fetch `/me` (option a) [`frontend/src/lib/app/stores/auth.svelte.ts:hydrate`]
+- [x] [Review][Patch] **BH3-M2** `doRefresh` post-200 fait un `await fetch('/api/v1/auth/me')` puis `authState.login(payload, {broadcast: false})` pour resync `_currentUser` (option a) [`frontend/src/lib/shared/utils/api-client.ts:doRefresh`]
+- [x] [Review][Patch] **ECH3-M4** `BroadcastChannel('kesh:auth')` listener cross-tab + broadcast sur login/logout/clearSession (option a) [`frontend/src/lib/app/stores/auth.svelte.ts`]
+- [x] [Review][Patch] **BH3-L3** `authedApiContext` re-ajout throw `if (storageState.cookies.length === 0)` (option a) [`frontend/tests/e2e/helpers/test-state.ts:authedApiContext`]
+
+**Patches (12)** — tous appliqués 2026-05-26 :
+
+- [x] [Review][Patch] **ECH3-H2↓MEDIUM** `test_config()` ajoute `.with_test_mode(true)` + commentaire ligne 219-221 corrigé [`crates/kesh-api/tests/auth_cookies_e2e.rs:test_config`]
+- [x] [Review][Patch] **BH3-M1∪AA3-M4** `logout_invalidates_cookie` discrimine `expired_access` / `expired_refresh` par nom et assert `Path=/` / `Path=/api/v1/auth` (RFC 6265 §3.1 deletion) [`crates/kesh-api/tests/auth_cookies_e2e.rs:logout_invalidates_cookie`]
+- [x] [Review][Patch] **BH3-M3** `hydrate()` branche `else { console.warn(... non-OK status ${res.status} ...) ; reset state à null }` discrimine 5xx vs 401 [`frontend/src/lib/app/stores/auth.svelte.ts:hydrate`]
+- [x] [Review][Patch] **ECH3-M1** `hydrate()` branche `else if (res.status === 401) { _currentUser = null; _expiresIn = null; }` après `if (res.ok)` [`frontend/src/lib/app/stores/auth.svelte.ts:hydrate`]
+- [x] [Review][Patch] **ECH3-M2** `login(payload, options?)` set `_hydrated = false` au début + `_hydrated = true` à la fin pour symétrie [`frontend/src/lib/app/stores/auth.svelte.ts:login`]
+- [x] [Review][Patch] **ECH3-M3** Docstring `authedApiContext` réécrite — contrat explicite throw si `storageState.cookies.length === 0`, `@throws` à jour [`frontend/tests/e2e/helpers/test-state.ts:authedApiContext`]
+- [x] [Review][Patch] **AA3-M1** Test E2E XSS Scénario (c) assert maintenant 4 flags simultanés : `httpOnly` + `sameSite` + `path` + `secure === !inTestMode` sur les 2 cookies [`frontend/tests/e2e/security/xss-token-protection.spec.ts`]
+- [x] [Review][Patch] **AA3-M2** 5e test `me_endpoint_returns_user_identity_from_cookie` ajouté qui appelle le **vrai** `GET /api/v1/auth/me` (pas le handler custom `/_test/me`) [`crates/kesh-api/tests/auth_cookies_e2e.rs`]
+- [x] [Review][Patch] **AA3-M3** `login_sets_two_httponly_cookies` assert `Max-Age=900` access + `Max-Age=2592000` refresh (F-COOKIE-LIFETIME-P3-1 protégé) [`crates/kesh-api/tests/auth_cookies_e2e.rs:login_sets_two_httponly_cookies`]
+- [x] [Review][Patch] **BH3-L4** CHANGELOG note explicite `test_mode=true` désactive `Secure` ajoutée dans nouvelle sous-section Sécurité durcie [`CHANGELOG.md`]
+- [x] [Review][Patch] **ECH3-L3** `me` handler utilise `current_user.exp.saturating_sub(now_secs).max(0)` pour protéger contre `exp` théoriquement `i64::MIN` [`crates/kesh-api/src/routes/auth.rs:me`]
+- [x] [Review][Patch] **AA3-L1** CHANGELOG : nouvelle sous-section `#### Sécurité durcie (Story 10-5)` créée, entrées HttpOnly + CSP déplacées depuis `#### Multi-utilisateurs et sécurité` [`CHANGELOG.md`]
+
+**Defer (3)** :
+
+- [x] [Review][Defer] **BH3-L1∪ECH3-L2** STORAGE_KEY_* dead exports + redéclaration drift risk dans `test-state.ts` [`frontend/src/lib/app/stores/auth.svelte.ts:38-40`] — deferred, cleanup v0.2 quand defensive removeItem retiré
+- [x] [Review][Defer] **BH3-L2** `AUTH_EXCLUDED_URLS` dead code post-buildHeaders refactor [`frontend/src/lib/shared/utils/api-client.ts:buildHeaders`] — deferred, scope cleanup v0.2
+- [x] [Review][Defer] **ECH3-L1** Regex JWT trop large dans `xss-token-protection.spec.ts` Scénario (a) [`frontend/tests/e2e/security/xss-token-protection.spec.ts:3307`] — deferred, faux-positif futur seulement
+
 ### T12: Test Locally First + commit + sprint-status (AC #16, #17)
 
 - [ ] **T12.1** : Test Locally First Backend : `cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace -j1 -- --test-threads=1` — tous PASS. Vérifier en particulier 0 régression sur `tests/auth_e2e.rs` existants (rate-limit, refresh rotation, change_password, dummy_verify) — le fallback Authorization header (AC #6) doit garantir ça.
@@ -509,3 +539,75 @@ _(à remplir au commit final — récapitulatif des fichiers A/M)_
 
 **Prochaine étape** : **Pass 3 Opus 4.7** obligatoire selon CLAUDE.md §"Review Iteration Rule" (cycle continue tant qu'au moins 1 finding > LOW). Rotation Sonnet→Haiku→**Opus**→Sonnet. Pattern Opus catch-architectural attendu (cf. Story 9-2b/10-2/10-3 Pass 3 Opus a systématiquement attrapé ≥ 1 CRITICAL/HIGH architectural raté par Sonnet+Haiku).
 
+
+### Code review Pass 3 Opus 4.7 — 2026-05-26
+
+`bmad-code-review 10-5` Pass 3 cycle adversarial Opus 4.7 (Blind Hunter + Edge Case Hunter + Acceptance Auditor) — pattern catch-architectural confirmé empiriquement (cohérent Story 9-2b/10-2/10-3).
+
+**Diff source** : `git diff main..HEAD` aplati (29 fichiers, +2010/-392, 3383 lignes) — incluant dev-story + Pass 1 Sonnet + backfill CL + Pass 2 Haiku.
+
+**Trend** : 19 findings raw → **17 distincts post-dédup** (BH3-M1 ∪ AA3-M4 même Path logout cookies + BH3-L1 ∪ ECH3-L2 STORAGE_KEY dead exports + drift risk) → 2 HIGH downgradés MEDIUM post-grep ground-truth (ECH3-H1 context v0.1 gate, ECH3-H2 tests passent grâce à reqwest permissif localhost) → **16 patches appliqués + 3 defer LOW + 0 dismiss**.
+
+**Findings par reviewer** :
+
+- **Blind Hunter Opus** : 3 MEDIUM (BH3-M1 Path logout cookies, BH3-M2 doRefresh role staleness, BH3-M3 hydrate swallow 5xx) + 4 LOW (BH3-L1 STORAGE_KEY exports, BH3-L2 AUTH_EXCLUDED_URLS dead, BH3-L3 authedApiContext throw retiré, BH3-L4 CHANGELOG test_mode mention).
+- **Edge Case Hunter Opus** : 2 HIGH (ECH3-H1 migration window XSS localStorage, ECH3-H2 test_config pas de with_test_mode) + 4 MEDIUM (ECH3-M1 hydrate reset 401, ECH3-M2 _hydrated reset login, ECH3-M3 docstring authedApiContext, ECH3-M4 cross-tab BroadcastChannel) + 3 LOW (ECH3-L1 regex JWT, ECH3-L2 STORAGE_KEY redéclaration, ECH3-L3 me exp overflow).
+- **Acceptance Auditor Opus** : 4 MEDIUM (AA3-M1 test 4 flags simultanés, AA3-M2 pas de test /me réel, AA3-M3 test Max-Age values, AA3-M4 test logout Path) + 1 LOW (AA3-L1 CHANGELOG sous-section Sécurité).
+
+**Pattern Opus catch-architectural confirmé** — 5 axes ratés par Sonnet+Haiku :
+
+1. **Test gaps** (5 findings AA3-M1/2/3/4 + BH3-M1) : Sonnet+Haiku ont validé l'implémentation côté code mais raté l'audit couverture de tests vs énumération exacte des ACs (assertions sur les valeurs `Max-Age`, sur les 4 flags simultanés du Scénario c, sur les `Path` des cookies expirés logout, et absence totale de test sur le vrai endpoint `/api/v1/auth/me`).
+2. **State machine subtleties** (4 findings BH3-M3 + ECH3-M1/M2/M4) : transitions d'état frontend mal couvertes (hydrate 5xx swallow, hydrate reset 401, login _hydrated asymétrie, cross-tab divergence).
+3. **Lib gotcha** (1 finding ECH3-H2) : reqwest `cookie_store` Secure-on-HTTP commentaire faux dans le test (test_mode pas activé mais tests passent grâce à reqwest permissif sur localhost — fragile robustesse non-documentée).
+4. **Migration security** (1 finding ECH3-H1) : localStorage legacy XSS window 30 jours post-upgrade jusqu'au prochain logout — défense en profondeur trivial à appliquer (3 lignes purge defensive dans hydrate boot).
+5. **Refresh UX regression** (1 finding BH3-M2) : `doRefresh` ne re-synchronisait plus `_currentUser` post-Story-10-5 (cookie HttpOnly bloque décodage JWT côté JS) → frontend role cache lag 15 min après backend role change.
+
+**Discipline grep ground-truth Opus** : appliquée par défense en profondeur (CLAUDE.md §"Haiku-specific guardrails" stipule discipline pour TOUS modèles). Opus a downgradé 2 findings raw HIGH → MEDIUM post-vérification : ECH3-H1 par contexte CLAUDE.md memory `project_prod_deployment_gating` (pas de prod pendant v0.1), ECH3-H2 par observation runtime ("4/4 PASS" CR Pass 1 → reqwest fait une exception permissive Secure-on-localhost non-documentée).
+
+**16 patches appliqués** :
+
+| # | Code | Sévérité | Fichier |
+|---|------|----------|---------|
+| 1 | ECH3-L3 | LOW | `crates/kesh-api/src/routes/auth.rs:me` — `saturating_sub` overflow protection |
+| 2 | ECH3-H2 | MEDIUM | `crates/kesh-api/tests/auth_cookies_e2e.rs:test_config` — `.with_test_mode(true)` + commentaire fix |
+| 3 | AA3-M3 | MEDIUM | `crates/kesh-api/tests/auth_cookies_e2e.rs:login_sets_two_httponly_cookies` — assert `Max-Age=900` access + `Max-Age=2592000` refresh |
+| 4 | BH3-M1 ∪ AA3-M4 | MEDIUM | `crates/kesh-api/tests/auth_cookies_e2e.rs:logout_invalidates_cookie` — discriminer par nom + assert Path par cookie (RFC 6265 §3.1 deletion) |
+| 5 | AA3-M2 | MEDIUM | `crates/kesh-api/tests/auth_cookies_e2e.rs` — 5e test `me_endpoint_returns_user_identity_from_cookie` (vrai endpoint /me) |
+| 6 | ECH3-H1 | MEDIUM | `frontend/src/lib/app/stores/auth.svelte.ts:hydrate` — purge defensive `STORAGE_KEY_*` AVANT fetch /me |
+| 7 | BH3-M3 | MEDIUM | `frontend/src/lib/app/stores/auth.svelte.ts:hydrate` — discriminer 401 vs 5xx avec console.warn |
+| 8 | ECH3-M1 | MEDIUM | `frontend/src/lib/app/stores/auth.svelte.ts:hydrate` — reset state à null si 401 |
+| 9 | ECH3-M2 | MEDIUM | `frontend/src/lib/app/stores/auth.svelte.ts:login` — `_hydrated = false` au début pour symétrie |
+| 10 | ECH3-M4 | MEDIUM | `frontend/src/lib/app/stores/auth.svelte.ts` — `BroadcastChannel('kesh:auth')` cross-tab listener + broadcast sur login/logout/clearSession |
+| 11 | BH3-M2 | MEDIUM | `frontend/src/lib/shared/utils/api-client.ts:doRefresh` — re-fetch /me post-200 pour resync `_currentUser` |
+| 12 | ECH3-M3 | MEDIUM | `frontend/tests/e2e/helpers/test-state.ts:authedApiContext` — docstring réécrite contrat throw explicite |
+| 13 | BH3-L3 | LOW | `frontend/tests/e2e/helpers/test-state.ts:authedApiContext` — re-ajout throw sur cookies vides (anti-pattern « 401 silencieux » Story 9-5-1b) |
+| 14 | AA3-M1 | MEDIUM | `frontend/tests/e2e/security/xss-token-protection.spec.ts:Scénario(c)` — assert 4 flags simultanés (`httpOnly` + `sameSite` + `path` + `secure` conditionnel test_mode) |
+| 15 | BH3-L4 | LOW | `CHANGELOG.md` — mention `test_mode=true` désactive `Secure` flag |
+| 16 | AA3-L1 | LOW | `CHANGELOG.md` — nouvelle sous-section `#### Sécurité durcie (Story 10-5)` créée |
+
+**3 LOW defer** (appendés `_bmad-output/implementation-artifacts/deferred-work.md` section `## Deferred from: code review of 10-5-httponly-tokens-security (2026-05-26)`) : BH3-L1 ∪ ECH3-L2 STORAGE_KEY dead exports + drift risk, BH3-L2 `AUTH_EXCLUDED_URLS` dead code, ECH3-L1 regex JWT trop large.
+
+**Tests adaptés post-patch** :
+- `frontend/tests/e2e/helpers/test-state.test.ts` — 3 tests adaptés : (a) cast `page.context` pour fix pré-existant svelte-check error ligne 74, (b) test « n'injecte PAS Authorization Bearer » fournit maintenant un cookie placeholder pour franchir la garde-fou throw, (c) ancien test « storageState vide → context » réécrit en `throw si storageState est vide (CR Pass 3 BH3-L3)` qui asserte le throw + `newContext` non-appelé.
+- `frontend/src/lib/shared/utils/api-client.test.ts` — 2 tests adaptés : (a) « refresh et retry sur 401 » ajoute `mockResolvedValueOnce` pour /me re-fetch (4 calls au lieu de 3) + assert séquence URLs, (b) « guard anti-boucle » idem + bump count 3 → 4.
+
+**Validation Test Locally First** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build --workspace --all-targets` PASS
+- `cargo clippy --workspace --all-targets -- -D warnings` PASS
+- `cargo test -p kesh-api --test auth_cookies_e2e -- --test-threads=1` PASS 5/5 (incluant nouveau `me_endpoint_returns_user_identity_from_cookie`)
+- `cargo test --workspace -j1 -- --test-threads=1` lancé en background (kesh-db sqlx tests longs ~10min, validé indépendamment par `cargo test -p kesh-api` PASS 100%)
+- `npm run check` 0 errors / 25 warnings pré-existants (fix l.74 svelte-check Mock type cast inclus)
+- `npm run test:unit` 260/260 PASS
+
+**Status story** : `review` (inchangé — cycle non-convergé même après application des 16 patches Pass 3 ; Pass 4 Sonnet 4.6 obligatoire selon CLAUDE.md §"Review Iteration Rule" pour vérifier qu'aucune régression n'a été introduite par les patches Opus).
+
+**Trend cycle CR Story 10-5** :
+
+| Pass | Modèle | Findings > LOW | Patches |
+|------|--------|----------------|---------|
+| 1 | Sonnet 4.6 | 5 (1C + 2H + 2M) | 5 |
+| 2 | Haiku 4.5 | 1 (1M) | 1 |
+| 3 | Opus 4.7 | 16 (0C + 0H + 13M + 3L) | 16 |
+
+**Prochaine étape** : **Pass 4 Sonnet 4.6** obligatoire CLAUDE.md §"Review Iteration Rule" (cycle continue tant qu'au moins 1 finding > LOW Pass N). Rotation **Sonnet**→Haiku→Opus→Sonnet retour au début. Focus Pass 4 attendu : détection de régressions introduites par les 16 patches Pass 3 (notamment les patches frontend state machine `hydrate()` 4 branches + `BroadcastChannel` cross-tab + `doRefresh` re-fetch /me — beaucoup de surface modifiée, risque régression non-négligeable).

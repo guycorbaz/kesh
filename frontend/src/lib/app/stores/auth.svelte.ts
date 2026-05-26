@@ -16,6 +16,25 @@
 
 import { resetVatRatesCache } from '$lib/features/vat-rates';
 
+/**
+ * CR Pass 3 ECH3-M4 — `BroadcastChannel` singleton pour la synchronisation
+ * cross-tab du state d'authentification. Tab1 émet `{ type: 'auth-change' }`
+ * sur login/logout/clearSession ; les autres tabs reçoivent l'event, resettent
+ * `_hydrated = false`, puis `hydrate()` se re-déclenche pour resync le state
+ * depuis le serveur (cookie HttpOnly partagé pour le domaine, le state JS
+ * peut diverger sans cette synchronisation).
+ *
+ * Fallback `null` si l'API n'est pas disponible (SSR / browsers sans
+ * BroadcastChannel — Chrome 54+, Firefox 38+, Safari 15.4+, sufficient v0.1).
+ * Tests Vitest jsdom : `BroadcastChannel` peut être indéfini selon la version
+ * — le code tolère.
+ */
+const AUTH_BROADCAST_CHANNEL_NAME = 'kesh:auth';
+const authBroadcast: BroadcastChannel | null =
+	typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined'
+		? new BroadcastChannel(AUTH_BROADCAST_CHANNEL_NAME)
+		: null;
+
 export interface CurrentUser {
 	/** `sub` du JWT — user_id (i64 sérialisé en string côté backend). */
 	userId: string;
@@ -63,14 +82,28 @@ export const authState = {
 	 * Set l'état authentifié depuis le body de réponse `/login` ou `/me`.
 	 * Le navigateur a déjà set les cookies HttpOnly via les headers Set-Cookie
 	 * du backend — pas besoin de stocker les tokens côté JS.
+	 *
+	 * CR Pass 3 ECH3-M2 : `_hydrated = false` au début pour symétrie avec
+	 * `clearSession()` / `logout()` (qui resettent aussi `_hydrated`). Sans
+	 * ça, un boot 401 → login intra-SPA → futur `hydrate()` aurait early-
+	 * return malgré un state à re-syncer côté serveur. Le re-set à `true`
+	 * en fin signale « state synchronisé via login payload, pas besoin de /me ».
+	 *
+	 * CR Pass 3 ECH3-M4 : broadcast `auth-change` cross-tab pour que les
+	 * autres tabs resync via `hydrate()`.
 	 */
-	login(payload: LoginPayload) {
+	login(payload: LoginPayload, options?: { broadcast?: boolean }) {
+		_hydrated = false;
 		_currentUser = {
 			userId: payload.userId,
 			username: payload.username,
 			role: payload.role,
 		};
 		_expiresIn = payload.expiresIn;
+		_hydrated = true;
+		if (options?.broadcast !== false) {
+			authBroadcast?.postMessage({ type: 'auth-change' });
+		}
 	},
 
 	/**
@@ -93,7 +126,7 @@ export const authState = {
 	 * Post-Story 10-5, `hydrate()` est async via /me et pourrait être
 	 * appelée à nouveau si l'app détecte un état desynchronisé.
 	 */
-	clearSession() {
+	clearSession(options?: { broadcast?: boolean }) {
 		_expiresIn = null;
 		_currentUser = null;
 		_hydrated = false;
@@ -104,6 +137,10 @@ export const authState = {
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
 		resetVatRatesCache();
+		// CR Pass 3 ECH3-M4 : broadcast cross-tab pour resync les autres tabs.
+		if (options?.broadcast !== false) {
+			authBroadcast?.postMessage({ type: 'auth-change' });
+		}
 	},
 
 	async logout() {
@@ -125,6 +162,8 @@ export const authState = {
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
 		resetVatRatesCache();
+		// CR Pass 3 ECH3-M4 : broadcast cross-tab pour resync les autres tabs.
+		authBroadcast?.postMessage({ type: 'auth-change' });
 	},
 
 	/**
@@ -137,8 +176,15 @@ export const authState = {
 	 * vers /login pour tous les utilisateurs authentifiés.
 	 *
 	 * Si 200 → peuple `_currentUser` + `_expiresIn`.
-	 * Si 401 (cookie absent ou expiré) → état non-auth (utilisateur doit relog).
+	 * Si 401 (cookie absent ou expiré) → reset state à null (CR Pass 3 ECH3-M1).
+	 * Si 5xx (backend KO transitoire) → reset state à null + console.warn
+	 *   explicite, mais NE redirige PAS vers /login en silence (CR Pass 3 BH3-M3).
 	 * Si erreur réseau → swallow silencieux, état non-auth.
+	 *
+	 * CR Pass 3 ECH3-H1 : purge defensive `STORAGE_KEY_*` AVANT le fetch /me
+	 * pour éliminer la fenêtre XSS de migration pre-Story-10-5 → post-Story-10-5
+	 * (anciens tokens en localStorage volables jusqu'au prochain logout). 3 keys
+	 * purgées au boot de chaque session est negligible côté perf.
 	 */
 	async hydrate(): Promise<void> {
 		// Guard idempotence : éviter double-fetch concurrents /me.
@@ -147,6 +193,16 @@ export const authState = {
 		}
 		if (typeof window === 'undefined') {
 			return;
+		}
+
+		// CR Pass 3 ECH3-H1 — defensive cleanup pré-fetch : purge les 3 keys
+		// localStorage pre-Story-10-5 au boot de chaque session. Élimine la
+		// fenêtre XSS migration où un refresh JWT legacy (TTL 30j) resterait
+		// volable jusqu'au prochain logout/clearSession.
+		if (window.localStorage) {
+			window.localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_REFRESH_TOKEN);
+			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
 
 		try {
@@ -164,13 +220,51 @@ export const authState = {
 					role: body.role,
 				};
 				_expiresIn = body.expiresIn;
+			} else if (res.status === 401) {
+				// CR Pass 3 ECH3-M1 — reset state si /me retourne 401 : couvre le
+				// cas où `hydrate()` est appelé sur un state déjà populé (e.g.
+				// cookie révoqué côté serveur entre 2 hydrates intra-SPA).
+				_currentUser = null;
+				_expiresIn = null;
+			} else {
+				// CR Pass 3 BH3-M3 — discriminer 5xx (backend KO transitoire) de
+				// 401 (non-auth légitime). Reset state à null pour cohérence
+				// d'isAuthenticated, mais console.warn explicite pour ne pas
+				// perdre le signal d'indisponibilité backend (ex: cold start,
+				// DB down 5s, restart Axum) — l'observabilité externe (Sentry-
+				// like) peut capturer ce warn pour distinguer une vraie panne
+				// d'une session expirée normale.
+				console.warn(
+					`[auth] Hydration via /me returned non-OK status ${res.status} — backend may be temporarily unavailable`,
+				);
+				_currentUser = null;
+				_expiresIn = null;
 			}
-			// res.status === 401 → state non-auth (default null state)
-			// res.status autre → swallow, state non-auth
 		} catch (error) {
 			console.error('[auth] Hydration via /me failed:', error instanceof Error ? error.message : String(error));
+			_currentUser = null;
+			_expiresIn = null;
 		} finally {
 			_hydrated = true;
 		}
 	},
 };
+
+/**
+ * CR Pass 3 ECH3-M4 — Listener cross-tab : si une autre tab émet `auth-change`
+ * (login/logout/clearSession), reset `_hydrated = false` puis re-déclenche
+ * `hydrate()` pour resync le state depuis le serveur (cookie HttpOnly partagé
+ * pour le domaine, le state JS de cette tab doit refléter la réalité serveur).
+ *
+ * Le broadcast est `same-origin` et `same-browser-profile` — pas de fuite
+ * d'info cross-domain. Le code ignore les events que cette tab elle-même a
+ * émis (BroadcastChannel ne livre PAS au sender — comportement spec WHATWG).
+ */
+authBroadcast?.addEventListener('message', (event) => {
+	if (event.data?.type === 'auth-change') {
+		_hydrated = false;
+		// Re-déclenche hydrate asynchroniquement — pas besoin d'await ici,
+		// l'API reactive Svelte propagera la mise à jour du state aux callers.
+		void authState.hydrate();
+	}
+});

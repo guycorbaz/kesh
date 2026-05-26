@@ -71,7 +71,10 @@ describe('authedApiContext (Story 10-5 storageState clone)', () => {
 		await authedApiContext(page as never);
 
 		// storageState a été lu sur le browser context (clone).
-		const ctxResult = page.context();
+		// Cast nécessaire — `page.context` est mocké en `vi.fn()` mais le type
+		// inféré `Mock<Procedure | Constructable>` n'est pas reconnu callable
+		// par TS strict (pré-existant). Le runtime est OK.
+		const ctxResult = (page.context as unknown as () => FakeBrowserContext)();
 		expect(ctxResult.storageState).toHaveBeenCalledTimes(1);
 
 		// newContext a reçu le storageState cloné + le baseURL.
@@ -85,7 +88,21 @@ describe('authedApiContext (Story 10-5 storageState clone)', () => {
 	});
 
 	it("n'injecte PAS d'header Authorization Bearer (Story 10-5 — cookies HttpOnly remplacent Bearer)", async () => {
-		const page = makePage({ cookies: [], origins: [] });
+		// CR Pass 3 BH3-L3 : `authedApiContext` throw désormais si `storageState.cookies`
+		// est vide → fournir au moins 1 cookie placeholder pour franchir la garde-fou.
+		const page = makePage({
+			cookies: [
+				{
+					name: 'kesh_access_token',
+					value: 'jwt-placeholder',
+					domain: '127.0.0.1',
+					path: '/',
+					httpOnly: true,
+					sameSite: 'Strict',
+				},
+			],
+			origins: [],
+		});
 
 		await authedApiContext(page as never);
 
@@ -98,16 +115,23 @@ describe('authedApiContext (Story 10-5 storageState clone)', () => {
 		expect(call.extraHTTPHeaders).toBeUndefined();
 	});
 
-	it('avec un storageState vide (pas de cookies), retourne quand même un context (login() pas appelé avant)', async () => {
-		// Différence vs pre-Story-10-5 : pas de throw « no accessToken in localStorage »
-		// — le contexte est créé même sans cookies. Les appels API authentifiés
-		// échoueront en 401 si le user n'est pas authentifié (sémantique
-		// browser HTTP standard).
+	it('throw si storageState est vide (CR Pass 3 BH3-L3 — garde-fou anti-pattern « 401 silencieux »)', async () => {
+		// Story 9-5-1b avait corrigé l'anti-pattern « 401 silencieux » via un
+		// throw dans `authedApiContext` quand aucun token n'était présent.
+		// CR Pass 1 avait silencieusement retiré ce throw lors du refactor
+		// storageState clone. CR Pass 3 BH3-L3 le réintroduit : si aucun
+		// cookie n'est dans le storageState, le helper throw avec un message
+		// explicite plutôt que de retourner un context qui produira des 401
+		// plusieurs lignes plus bas.
 		const emptyStorageState = { cookies: [], origins: [] };
 		const page = makePage(emptyStorageState);
 
-		await authedApiContext(page as never);
+		await expect(authedApiContext(page as never)).rejects.toThrow(
+			/no cookies in storageState — call login\(page\) before this helper/,
+		);
 
-		expect(newContextMock).toHaveBeenCalledTimes(1);
+		// Le throw doit intervenir AVANT l'appel à `newContext` (pas de
+		// création de context inutile + dispose orphelin).
+		expect(newContextMock).not.toHaveBeenCalled();
 	});
 });

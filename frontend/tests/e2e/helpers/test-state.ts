@@ -127,19 +127,31 @@ export async function disposeContextSafe(ctx: APIRequestContext): Promise<void> 
 }
 
 /**
- * Construit un `APIRequestContext` Playwright avec le Bearer token de la
- * session courante automatiquement injecté en header `Authorization`.
+ * Construit un `APIRequestContext` Playwright qui partage la session
+ * authentifiée du `page.context()` via clone du `storageState` (cookies
+ * HttpOnly inclus).
  *
  * Utilisation : remplace les appels directs `page.request.post/get(...)`
  * dans les helpers de seed de spec files E2E quand l'endpoint cible est
  * authentifié. `page.request.*` est un client HTTP raw Playwright qui ne
- * lit pas le `localStorage` Svelte — donc n'injecte pas le Bearer token
- * du store `authState`. Sans ce helper, les appels API authentifiés
- * reçoivent 401 (régression Story 6-5 KF-007 storage shift cookie →
- * localStorage — cf. KF #54 / KF-022).
+ * propage pas automatiquement les cookies du browser context sur tous les
+ * builds — le clone explicite garantit que les cookies HttpOnly
+ * `kesh_access_token` + `kesh_refresh_token` (set par `login(page)`) sont
+ * envoyés sur les appels API.
  *
- * Pré-condition : `login(page)` doit avoir été appelé avant — sinon throw
- * (cf. AC #3 spec 9-5-1b — anti-pattern « 401 silencieux »).
+ * Story 10-5 (T12.3.a Pass 3 F-PLAYWRIGHT-COOKIE-CROSS-CONTEXT-P3-2 D4 acté
+ * Option a-ii) : plus de lecture `localStorage` ni d'injection
+ * `Authorization: Bearer` header (Story 9-5-1b historique) — uniquement le
+ * clone storageState pour propager les cookies HttpOnly. Le `dispose()`
+ * reste safe sur ce context cloné (pas d'impact sur le browser context partagé).
+ *
+ * CR Pass 3 ECH3-M3 + BH3-L3 — **contrat strict** : `login(page)` doit
+ * avoir été appelé avant `authedApiContext(page)`. Le helper throw si le
+ * storageState ne contient aucun cookie (preuve qu'aucune session n'a été
+ * établie). Préserve l'anti-pattern « 401 silencieux » que Story 9-5-1b
+ * avait explicitement corrigé : sans ce throw, un dev qui oublie
+ * `await login(page)` voit les requêtes API échouer en 401 plusieurs
+ * lignes plus bas, debug plus difficile.
  *
  * Le caller est responsable de `await ctx.dispose()` après usage (try/finally
  * cohérent avec le pattern `seedTestState` ci-dessus). Le context n'est PAS
@@ -147,23 +159,23 @@ export async function disposeContextSafe(ctx: APIRequestContext): Promise<void> 
  * évite les fuites de tokens entre tests (cohérent avec `clearAuthStorage`).
  *
  * @param page Page Playwright avec session authentifiée (post-`login`).
- * @returns APIRequestContext avec baseURL backend + Bearer header injecté.
- * @throws Error si `localStorage.kesh:auth:accessToken` est absent / vide
- *               (token non présent en storage = `login(page)` non appelé).
+ * @returns APIRequestContext avec baseURL backend + cookies HttpOnly propagés.
+ * @throws Error si `storageState.cookies` est vide (= `login(page)` non
+ *               appelé). Le message d'erreur dirige le caller vers le fix.
  */
 export async function authedApiContext(page: Page): Promise<APIRequestContext> {
-	// Story 10-5 (T12.3.a Pass 3 F-PLAYWRIGHT-COOKIE-CROSS-CONTEXT-P3-2 D4 acté
-	// Option (a-ii)) : cloner le `storageState` du browser context (qui inclut
-	// les cookies HttpOnly `kesh_access_token` et `kesh_refresh_token` set par
-	// `login(page)`) dans un APIRequestContext isolé. Plus de lecture
-	// localStorage ni d'injection Authorization Bearer header — les cookies
-	// HttpOnly du browser context sont propagés automatiquement.
-	//
-	// Sans clone storageState, `playwrightRequest.newContext()` créerait un
-	// context HTTP isolé sans aucun cookie → tous les appels API
-	// authentifiés recevraient 401 (régression). Le `dispose()` reste safe
-	// sur ce context cloné (pas d'impact sur le browser context partagé).
 	const storageState = await page.context().storageState();
+	// CR Pass 3 BH3-L3 — garde-fou diagnostic : si aucun cookie n'est présent
+	// dans le storageState, c'est qu'aucun login n'a eu lieu (ou clearCookies
+	// vient d'être appelé). Throw avec message explicite plutôt que de
+	// retourner un context qui produira des 401 plusieurs lignes plus bas.
+	// Cohérent anti-pattern « 401 silencieux » Story 9-5-1b.
+	if (storageState.cookies.length === 0) {
+		throw new Error(
+			'authedApiContext: no cookies in storageState — call login(page) before this helper ' +
+				'(cf. anti-pattern « 401 silencieux » Story 9-5-1b)',
+		);
+	}
 	return playwrightRequest.newContext({
 		baseURL: resolveBackendUrl(),
 		storageState,

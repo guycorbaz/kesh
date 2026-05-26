@@ -99,6 +99,48 @@ async function doRefresh(): Promise<boolean> {
 			return false;
 		}
 		authState.updateExpiresIn(data.expiresIn);
+
+		// CR Pass 3 BH3-M2 — re-fetch `/me` post-refresh pour rafraîchir
+		// `_currentUser`. Sans ça, le frontend conserve le `role` snapshotté au
+		// login original ; si un admin a été rétrogradé en Comptable côté DB
+		// pendant la session, la sidebar Admin reste affichée jusqu'au prochain
+		// logout/relog. Le RBAC backend reste correct (chaque action sera 403),
+		// mais l'UX trompeuse est un papier-cul de bug-report. Le fetch /me
+		// est best-effort — si /me échoue (rare), on garde l'ancien
+		// `_currentUser` et on log un warn (pas d'invalidation de session).
+		try {
+			const meRes = await fetch('/api/v1/auth/me', { credentials: 'include' });
+			if (meRes.ok) {
+				const meBody = (await meRes.json()) as {
+					userId: number;
+					username: string;
+					role: string;
+					expiresIn: number;
+				};
+				// Refresh ne doit pas broadcast cross-tab (option `broadcast: false`)
+				// — sinon chaque refresh proactif ferait re-hydrate les autres tabs
+				// alors qu'elles partagent déjà le même cookie HttpOnly. Le
+				// broadcast cross-tab est réservé aux transitions login/logout.
+				authState.login(
+					{
+						userId: String(meBody.userId),
+						username: meBody.username,
+						role: meBody.role,
+						expiresIn: meBody.expiresIn,
+					},
+					{ broadcast: false },
+				);
+			} else {
+				console.warn(
+					`[auth] doRefresh: /me re-fetch returned non-OK status ${meRes.status} — _currentUser may be stale until next login`,
+				);
+			}
+		} catch (error) {
+			console.warn(
+				'[auth] doRefresh: /me re-fetch network error:',
+				error instanceof Error ? error.message : String(error),
+			);
+		}
 		return true;
 	}
 

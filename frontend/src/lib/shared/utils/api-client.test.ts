@@ -204,9 +204,13 @@ describe('apiClient', () => {
 		it('refresh et retry sur 401', async () => {
 			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
-			// 1er appel → 401
+			// 1er appel → 401 sur /api/v1/users
 			// 2e appel → refresh OK
-			// 3e appel → retry OK
+			// 3e appel → CR Pass 3 BH3-M2 : doRefresh re-fetch /me pour resync
+			//            `_currentUser` post-refresh (le cookie HttpOnly bloque le
+			//            décodage JWT côté JS, donc re-fetch est le seul moyen
+			//            d'obtenir le role courant côté frontend).
+			// 4e appel → retry OK sur /api/v1/users
 			mockFetch
 				.mockResolvedValueOnce(
 					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'Token expiré' } }),
@@ -218,15 +222,24 @@ describe('apiClient', () => {
 						expiresIn: 900,
 					}),
 				)
+				.mockResolvedValueOnce(
+					mockResponse(200, {
+						userId: 1,
+						username: 'test',
+						role: 'Admin',
+						expiresIn: 900,
+					}),
+				)
 				.mockResolvedValueOnce(mockResponse(200, { data: 'success' }));
 
 			const result = await apiClient.get<{ data: string }>('/api/v1/users');
 
 			expect(result).toEqual({ data: 'success' });
-			expect(mockFetch).toHaveBeenCalledTimes(3);
+			expect(mockFetch).toHaveBeenCalledTimes(4);
 
-			// Vérifier que le refresh a été appelé
+			// Vérifier la séquence : initial 401, refresh, /me re-sync, retry.
 			expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/auth/refresh');
+			expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/auth/me');
 		});
 
 		it('refresh échoué → clearSession + redirect login', async () => {
@@ -456,7 +469,7 @@ describe('apiClient', () => {
 			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			mockFetch
-				// 1er appel → 401
+				// 1er appel → 401 sur /api/v1/users
 				.mockResolvedValueOnce(
 					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
 				)
@@ -468,7 +481,18 @@ describe('apiClient', () => {
 						expiresIn: 900,
 					}),
 				)
-				// Retry → encore 401
+				// CR Pass 3 BH3-M2 : doRefresh re-fetch /me post-refresh pour resync
+				// `_currentUser`. Le re-fetch /me est best-effort — log warn si non-OK
+				// mais ne fait pas échouer le refresh.
+				.mockResolvedValueOnce(
+					mockResponse(200, {
+						userId: 1,
+						username: 'test',
+						role: 'Admin',
+						expiresIn: 900,
+					}),
+				)
+				// Retry sur /api/v1/users → encore 401
 				.mockResolvedValueOnce(
 					mockResponse(401, { error: { code: 'UNAUTHENTICATED', message: '' } }),
 				);
@@ -478,9 +502,10 @@ describe('apiClient', () => {
 				status: 401,
 			});
 
-			// Doit avoir fait 3 appels : requête initiale, refresh, retry
-			// PAS de 2e refresh
-			expect(mockFetch).toHaveBeenCalledTimes(3);
+			// Doit avoir fait 4 appels : requête initiale, refresh, /me re-sync, retry.
+			// PAS de 2e refresh (le guard anti-boucle empêche un nouveau cycle refresh
+			// après que le retry ait re-échoué).
+			expect(mockFetch).toHaveBeenCalledTimes(4);
 			const urls = mockFetch.mock.calls.map((c: unknown[]) => c[0] as string);
 			expect(urls.filter((u) => u === '/api/v1/auth/refresh')).toHaveLength(1);
 		});
