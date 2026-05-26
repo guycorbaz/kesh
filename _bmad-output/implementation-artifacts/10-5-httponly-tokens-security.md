@@ -415,3 +415,69 @@ _(à remplir au commit final — récapitulatif des fichiers A/M)_
 
 **Prochaine étape** : `bmad-dev-story 10-5` Opus 4.7 single-pass orchestré (cohérent pattern Story 10-2/10-3 dev-story DONE en 1 pass). Effort estimé 1-2 jours per epic-10.md ligne 316.
 
+### Dev-story implementation Opus 4.7 — 2026-05-25
+
+`bmad-dev-story 10-5` single-pass orchestré T1→T12 selon Spec ready-for-dev définitive (Pass 5 CONVERGED). Commit `cf83e3a feat(story-10-5): httpOnly cookies tokens + CSP + endpoint /me (closes #41)` — 28 fichiers (1259 +, 353 -).
+
+**Backend (~9 fichiers M/A)** :
+- **T1** `crates/kesh-api/Cargo.toml` : `axum-extra 0.12` (features `typed-header` + `cookie`) + `reqwest` feature `cookies` + `time 0.3`.
+- **T2** `crates/kesh-api/src/routes/auth.rs` : handlers `login` / `refresh` / `logout` / `change_password` retournent `(CookieJar, Json<...>)`. Helpers centralisés `build_auth_cookies` + `build_expired_auth_cookies`. `LoginResponse` étendu D6 (`user_id` + `username` + `role`) pour éviter round-trip `/me` post-login. `LogoutRequest` + `RefreshRequest` : `refresh_token: Option<String>` (cookie-only autorisé). `Max-Age` aligné Pass 3 Opus (`refresh_token_max_lifetime` 30j, pas `refresh_inactivity` 15min).
+- **T3** `crates/kesh-api/src/middleware/auth.rs` : `require_auth` extrait `CookieJar`, lit `kesh_access_token` cookie en priorité, fallback `Authorization: Bearer` header (compat 19+ tests `*_e2e.rs` historiques + clients API non-browser). `CurrentUser` étendu D2 `pub exp: i64` pour endpoint `/me`.
+- **T4** `crates/kesh-api/src/routes/auth.rs::me` : nouveau handler `GET /api/v1/auth/me` retourne `MeResponse { userId, username, role, expiresIn }` depuis `CurrentUser` (cookie-decoded). Monté ligne 270 `lib.rs` dans bloc `require_auth`.
+- **T5** `crates/kesh-api/src/middleware/csp.rs` (A) : middleware Axum `csp_html(request, next)` ajoute header `Content-Security-Policy` sur réponses `text/html` (filter `starts_with "text/html"` couvre `;charset=utf-8`). Value D3 : `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`. Monté **après** `.fallback_service(fallback)` dans `lib.rs` (Pass 3 Opus gotcha Axum 0.8 layer hierarchy — sinon CSP n'enveloppe pas `ServeDir`).
+- **T9** `crates/kesh-api/tests/auth_cookies_e2e.rs` (A) : 4 tests intégration PASS — `login_sets_two_httponly_cookies` (AC #1), `authenticated_request_with_cookie_only` (AC #6), `authenticated_request_with_authorization_only` (AC #6 fallback), `logout_invalidates_cookie` (AC #4 Max-Age=0 + DB revoke). Helper local `spawn_app_with_cookie_jar` avec `reqwest::Client::builder().cookie_store(true)` pour ne pas modifier le `spawn_app()` global d'`auth_e2e.rs`.
+- 1 régression intentionnelle adaptée `auth_e2e.rs::logout_with_missing_refresh_token_field` : `422 → 204` (cookie-only logout = body `refresh_token` optionnel).
+
+**Frontend (~7 fichiers M/A)** :
+- **T6** `frontend/src/lib/app/stores/auth.svelte.ts` : retrait `_accessToken`/`_refreshToken`/`_storageGuard`. State minimal `_currentUser` + `_expiresIn` + `_hydrated`. `hydrate()` async consume `GET /api/v1/auth/me` (D5 `isAuthenticated` getter dépend `_currentUser !== null`). Getter `accessToken` retiré (D5).
+- **T7** `frontend/src/lib/shared/utils/api-client.ts` : retrait `Authorization: Bearer` header injection. Ajout `credentials: 'include'` sur tous les fetch (cookies envoyés automatiquement).
+- `frontend/src/hooks.client.ts` : `init` async wrapper await `hydrate()` avant routing (Pass 1 Sonnet CRITICAL — sinon redirect /login systématique sur reload).
+- `frontend/src/routes/login/+page.svelte` : décodage JWT côté caller retiré (D6 `LoginResponse` étendu).
+- `frontend/src/routes/+layout.svelte` : `doRefresh` guard supprimée (Pass 1 Sonnet CRITICAL — sinon déconnexion 15min).
+- `frontend/tests/e2e/helpers/test-state.ts` : refactor D4 Option (a-ii) `storageState clone` dispose-safe (Pass 3 Opus HIGH Playwright APIRequestContext cookie isolation).
+- **T10** `frontend/tests/e2e/security/xss-token-protection.spec.ts` (A) : 3 scénarios XSS via `context.cookies()` API.
+- **T8** ~16 fichiers `*.api.test.ts` + `auth.svelte.test.ts` + `api-client.test.ts` : adaptation mocks (retrait Authorization, ajout cookies/credentials).
+
+**Doc** : `CHANGELOG.md` Security section (AC #18). T11.2 `admin-manual.tex` enrichment skipped (M1 Pass 1 reclassé acceptable v0.1).
+
+**Validation Test Locally First** :
+- `cargo fmt --all -- --check` PASS
+- `cargo build --workspace --all-targets` PASS
+- `cargo clippy --workspace --all-targets -- -D warnings` PASS
+- `cargo test --workspace -j1 -- --test-threads=1` PASS 100%
+- `npm run check` 0 errors / 25 warnings pré-existants
+- `npm run test:unit` 258/258 PASS
+- `npm run build` PASS
+
+**Sprint-status** : `10-5-httponly-tokens-security: ready-for-dev → in-progress → review`. Closes #41 [KF-002].
+
+### Code review Pass 1 Sonnet 4.6 — 2026-05-25
+
+`bmad-code-review 10-5` Pass 1 cycle adversarial Sonnet 4.6 (Blind Hunter + Edge Case Hunter + Acceptance Auditor). Commit `034d8b8 fix(story-10-5): CR Pass 1 Sonnet — 1 CRITICAL + 2 HIGH + 2 MEDIUM patches` — 6 fichiers (264 +, 63 -).
+
+**Trend** : 32 findings raw → **5 patches > LOW + 1 faux-positif dismissed via grep ground-truth**.
+
+**CRITICAL (1)** :
+- **AA-C1** — T3.2 spec exigeait 2 tests inline middleware `require_auth` absents du diff. Patch : ajout `require_auth_accepts_cookie_no_authorization` (cookie-only sans header → 200) + `require_auth_prefers_cookie_over_header_when_both_present` (cookie 42/Admin + header 99/Comptable → handler retourne `42:Admin:5`, cookie wins). 10/10 middleware tests verts.
+
+**HIGH (2)** :
+- **H1** (BH-F-TEST-P1-2 + AA-H1) — `logout_invalidates_cookie` ne vérifiait pas la révocation DB (AC #15(d) exigeait `revoked_at IS NOT NULL` check). Patch : capture `refresh_token` depuis login body (D1 Option A), sanity check `revoked_at IS NULL` pre-logout, + `revoked_at IS NOT NULL` post-logout via `sqlx::query_scalar`. Cohérent pattern `auth_e2e.rs:638-645`.
+- **H2** (BH-F-FE-P1-3 + AA-H2 + ECH-F-TEST-P1-4) — test `hydrate()` Vitest sans assertions sur `_currentUser`/`_expiresIn` + `_hydrated` non-reset entre tests = test no-op silencieux. Patch combiné M2 : reset `_hydrated = false` dans `clearSession()` et `logout()` (permet re-hydrate intra-SPA + isolation tests via `beforeEach logout()`). Assertions complètes + 2 nouveaux tests (401 → state non-auth, idempotence guard 2 calls). 11/11 `auth.svelte` tests verts.
+
+**MEDIUM (2)** :
+- **M2** (ECH-F-HYDRATE-P1-3) — `_hydrated` non-reset par `clearSession()` / `logout()` fragilité architecturale (composant appelant `hydrate()` intra-SPA post-logout no-op). Patch combiné H2.
+- **M3** (BH-F-SEC-P1-4) — scénario (c) E2E XSS test description trompeuse (testait `credentials: 'omit'` 401, qui n'est pas un vrai vector XSS — attaquant XSS peut `credentials: 'include'`). Patch : scénario reformulé pour valider l'invariant concret via `context.cookies()` Playwright API (flag `httpOnly: true` + `sameSite: 'Strict'` + `path: '/api/v1/auth'` sur refresh cookie). Note limitation HttpOnly (protège exfiltration via `document.cookie`, pas pivot XSS in-page).
+
+**Faux-positif dismissed (1)** :
+- ECH-F-ROLE-P1-8 — `format!("{:?}", role)` vs `as_str()` : techniquement non-stable mais `Role.as_str()` retourne mêmes strings. Refusé.
+
+**LOW notes consolidées** : `readAccessTokenFromStorage deprecated`, `hydrate order-sensitive` (résolu M2), `admin123 hardcoded test`, `CHANGELOG Security sous-section ordre`, `closes #41 discipline humaine`.
+
+**Validation post-patches** :
+- 260/260 Vitest PASS
+- 10/10 middleware/auth unit tests (2 nouveaux cookies)
+- 4/4 `auth_cookies_e2e` (DB revocation check inclus)
+- `cargo fmt --all` PASS
+
+**Prochaine étape** : Pass 2 Haiku 4.5 (rotation Sonnet→Haiku→Opus→Sonnet) avec discipline grep ground-truth obligatoire (CLAUDE.md §"Haiku-specific guardrails — méta-spec false positives").
+
