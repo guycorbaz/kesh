@@ -98,16 +98,22 @@ async function doRefresh(): Promise<boolean> {
 			window.location.replace('/login?reason=session_expired');
 			return false;
 		}
-		authState.updateExpiresIn(data.expiresIn);
 
 		// CR Pass 3 BH3-M2 — re-fetch `/me` post-refresh pour rafraîchir
 		// `_currentUser`. Sans ça, le frontend conserve le `role` snapshotté au
 		// login original ; si un admin a été rétrogradé en Comptable côté DB
 		// pendant la session, la sidebar Admin reste affichée jusqu'au prochain
 		// logout/relog. Le RBAC backend reste correct (chaque action sera 403),
-		// mais l'UX trompeuse est un papier-cul de bug-report. Le fetch /me
-		// est best-effort — si /me échoue (rare), on garde l'ancien
-		// `_currentUser` et on log un warn (pas d'invalidation de session).
+		// mais l'UX trompeuse est un papier-cul de bug-report.
+		//
+		// CR Pass 4 BH4-L1 — l'update `_expiresIn` se fait via :
+		// - success path : `authState.login(payload, {broadcast: false})` qui
+		//   set explicitement `_expiresIn = meBody.expiresIn` (source de vérité
+		//   server-side).
+		// - fallback path (/me non-OK ou network error) : `authState.updateExpiresIn(data.expiresIn)`
+		//   pour au moins bumper le timer avec la valeur du refresh body
+		//   (l'ancien `updateExpiresIn` immédiat post-refresh était dead code,
+		//   écrasé systématiquement par `login()` du success path).
 		try {
 			const meRes = await fetch('/api/v1/auth/me', { credentials: 'include' });
 			if (meRes.ok) {
@@ -134,12 +140,15 @@ async function doRefresh(): Promise<boolean> {
 				console.warn(
 					`[auth] doRefresh: /me re-fetch returned non-OK status ${meRes.status} — _currentUser may be stale until next login`,
 				);
+				// Au moins update le timer pour éviter retry refresh boucle.
+				authState.updateExpiresIn(data.expiresIn);
 			}
 		} catch (error) {
 			console.warn(
 				'[auth] doRefresh: /me re-fetch network error:',
 				error instanceof Error ? error.message : String(error),
 			);
+			authState.updateExpiresIn(data.expiresIn);
 		}
 		return true;
 	}

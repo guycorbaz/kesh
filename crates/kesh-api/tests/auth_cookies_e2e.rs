@@ -472,6 +472,27 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
         revoked_after.is_some(),
         "refresh_token should be revoked_at IS NOT NULL after logout, got: {revoked_after:?}"
     );
+
+    // CR Pass 4 AA4-L1 — AC #15(d) scénario (iii) : « requête authentifiée
+    // subséquente avec l'ancien cookie → 401 ». L'invariant était documenté
+    // en commentaire Pass 1 H1 mais sans assertion exécutable. La requête
+    // GET sur la route protégée `_test/me` utilise le même `app.client`
+    // qui a déjà reçu les `Set-Cookie: Max-Age=0` du logout — reqwest
+    // `cookie_store` les a purgés automatiquement → cookie absent →
+    // middleware require_auth retourne 401. Si une régression future
+    // (e.g. cookie pas purgé ou révocation DB cassée) laissait le cookie
+    // valide post-logout, ce test échouerait explicitement.
+    let post_logout_resp = app
+        .client
+        .get(app.url("/api/v1/_test/me"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        post_logout_resp.status(),
+        401,
+        "authenticated request after logout should return 401 (cookie purged client-side + DB revoked, AC #15(d) scenario iii)"
+    );
 }
 
 /// CR Pass 3 AA3-M2 — T4.3 — test intégration sur le **vrai** endpoint

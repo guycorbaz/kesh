@@ -160,6 +160,60 @@ describe('authState (Story 10-5)', () => {
 		expect(authState.expiresIn).toBeNull();
 	});
 
+	it('hydrate() avec 5xx (backend KO transitoire) reset state à null + console.warn (CR Pass 3 BH3-M3 / Pass 4 ECH4-L1)', async () => {
+		// CR Pass 3 BH3-M3 a ajouté la branche else (non-OK et non-401) qui
+		// log warn + reset state à null pour discriminer panne backend
+		// (5xx) vs session expirée légitime (401). Couvre Pass 4 ECH4-L1.
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 503,
+			json: () => Promise.resolve({ error: { code: 'SERVICE_UNAVAILABLE', message: '' } }),
+		});
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+
+		expect(mockFetch).toHaveBeenCalledOnce();
+		expect(authState.isAuthenticated).toBe(false);
+		expect(authState.currentUser).toBeNull();
+		expect(authState.expiresIn).toBeNull();
+		// Le warn doit signaler la non-OK status pour observabilité.
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining('Hydration via /me returned non-OK status 503'),
+		);
+		warnSpy.mockRestore();
+	});
+
+	it('hydrate() avec body /me malformé (CR Pass 4 BH4-M1↓) — guards runtime reset state à null', async () => {
+		// CR Pass 4 BH4-M1↓ defense-in-depth : si /me 200 retourne un body
+		// malformé (e.g. {userId: null} via proxy/WAF/migration), les guards
+		// runtime typeof empêchent de pourrir `_currentUser` avec des undefined.
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () =>
+				Promise.resolve({
+					userId: null, // shape violation
+					username: 'alice',
+					role: 'Admin',
+					expiresIn: 900,
+				}),
+		});
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+
+		expect(authState.isAuthenticated).toBe(false);
+		expect(authState.currentUser).toBeNull();
+		expect(authState.expiresIn).toBeNull();
+		expect(errorSpy).toHaveBeenCalledWith(
+			expect.stringContaining('/me returned malformed body'),
+			expect.anything(),
+		);
+		errorSpy.mockRestore();
+	});
+
 	it('hydrate() guard idempotence — 2e appel = no-op (fetch appelé 1 seule fois)', async () => {
 		const mockFetch = vi.fn().mockResolvedValue({
 			ok: true,

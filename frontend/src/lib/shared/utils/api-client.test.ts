@@ -270,6 +270,11 @@ describe('apiClient', () => {
 			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 
 			let refreshCallCount = 0;
+			// CR Pass 4 ECH4-L2 — track /me re-fetch (ajouté Pass 3 BH3-M2) pour
+			// asserter qu'il n'est appelé qu'une seule fois (parallèle à refresh
+			// via le mutex). Sans ce mock, /me tombait dans la branche 401
+			// fallback et le test passait silencieusement.
+			let meCallCount = 0;
 
 			mockFetch.mockImplementation((url: string) => {
 				if (url === '/api/v1/auth/refresh') {
@@ -278,6 +283,17 @@ describe('apiClient', () => {
 						mockResponse(200, {
 							accessToken: NEW_TOKEN,
 							refreshToken: 'new-refresh',
+							expiresIn: 900,
+						}),
+					);
+				}
+				if (url === '/api/v1/auth/me') {
+					meCallCount++;
+					return Promise.resolve(
+						mockResponse(200, {
+							userId: 1,
+							username: 'test',
+							role: 'Admin',
 							expiresIn: 900,
 						}),
 					);
@@ -294,6 +310,9 @@ describe('apiClient', () => {
 			await Promise.all([apiClient.get('/api/v1/users'), apiClient.get('/api/v1/accounts')]);
 
 			expect(refreshCallCount).toBe(1);
+			// Le /me re-fetch doit aussi être protégé par le mutex (1 seul refresh
+			// → 1 seul /me post-refresh).
+			expect(meCallCount).toBe(1);
 		});
 	});
 

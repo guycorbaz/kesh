@@ -214,12 +214,30 @@ export const authState = {
 					role: string;
 					expiresIn: number;
 				};
-				_currentUser = {
-					userId: String(body.userId),
-					username: body.username,
-					role: body.role,
-				};
-				_expiresIn = body.expiresIn;
+				// CR Pass 4 BH4-M1↓ : validation runtime de la shape /me — endpoint
+				// est server-controlled typé strict (MeResponse Rust), mais defense-
+				// in-depth contre proxy/WAF/migration retournant `{userId: null}` ou
+				// fields manquants. Cast TS `as` ne fournit AUCUNE protection runtime.
+				if (
+					typeof body.userId !== 'number' ||
+					typeof body.username !== 'string' ||
+					typeof body.role !== 'string' ||
+					typeof body.expiresIn !== 'number'
+				) {
+					console.error(
+						'[auth] /me returned malformed body — expected { userId: number, username: string, role: string, expiresIn: number }, got:',
+						body,
+					);
+					_currentUser = null;
+					_expiresIn = null;
+				} else {
+					_currentUser = {
+						userId: String(body.userId),
+						username: body.username,
+						role: body.role,
+					};
+					_expiresIn = body.expiresIn;
+				}
 			} else if (res.status === 401) {
 				// CR Pass 3 ECH3-M1 — reset state si /me retourne 401 : couvre le
 				// cas où `hydrate()` est appelé sur un state déjà populé (e.g.
