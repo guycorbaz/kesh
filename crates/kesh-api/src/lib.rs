@@ -267,6 +267,9 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             get(routes::company_invoice_settings::get_invoice_settings),
         )
         .route("/api/v1/auth/password", put(routes::auth::change_password))
+        // Story 10-5 — endpoint /me pour restaurer l'état frontend post-hydrate
+        // (le JWT en cookie HttpOnly n'est pas décodable côté JS).
+        .route("/api/v1/auth/me", get(routes::auth::me))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(
             "/api/v1/companies/current",
@@ -429,7 +432,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         main_router = main_router.nest("/api/v1/_test", routes::test_endpoints::router());
     }
 
-    main_router.fallback_service(fallback).with_state(state)
+    // Story 10-5 (T5.2 / Pass 3 F-CSP-API-ATTACK-SURFACE-P3-3) — CSP middleware
+    // appliqué APRÈS `fallback_service()` pour envelopper aussi le ServeDir
+    // (gotcha Axum 0.8 : `.layer()` AVANT `.fallback_service()` n'enveloppe
+    // PAS le fallback qui est un Service séparé). Le filtre content-type
+    // dans `csp_html` n'émet le header que pour les réponses HTML, donc
+    // application globale safe (pas de pollution JSON `/api/v1/*`).
+    main_router
+        .fallback_service(fallback)
+        .layer(axum::middleware::from_fn(crate::middleware::csp::csp_html))
+        .with_state(state)
 }
 
 // NOTE: les stories futures ajouteront leurs routes protégées en

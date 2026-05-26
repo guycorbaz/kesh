@@ -24,8 +24,7 @@ describe('users page auth guard', () => {
 	});
 
 	it('redirige les non-admins (Comptable) vers /', async () => {
-		const token = fakeJwt({ sub: '1', role: 'Comptable', exp: 9999999999 });
-		authState.login(token, 'refresh', 3600);
+		authState.login({ userId: '1', username: 'test', role: 'Comptable', expiresIn: 3600 });
 
 		const { load } = await import('./+page');
 
@@ -40,8 +39,7 @@ describe('users page auth guard', () => {
 	});
 
 	it('redirige les non-admins (Consultation) vers /', async () => {
-		const token = fakeJwt({ sub: '1', role: 'Consultation', exp: 9999999999 });
-		authState.login(token, 'refresh', 3600);
+		authState.login({ userId: '1', username: 'test', role: 'Consultation', expiresIn: 3600 });
 
 		const { load } = await import('./+page');
 
@@ -57,7 +55,7 @@ describe('users page auth guard', () => {
 
 	it('permet l\'accès aux admins (pas de redirect)', async () => {
 		const token = fakeJwt({ sub: '1', role: 'Admin', exp: 9999999999 });
-		authState.login(token, 'refresh', 3600);
+		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 3600 });
 
 		const { load } = await import('./+page');
 
@@ -76,19 +74,17 @@ describe('sidebar conditionnel (logique rôle)', () => {
 
 	it('admin a le rôle Admin dans currentUser', () => {
 		const token = fakeJwt({ sub: '1', role: 'Admin', exp: 9999999999 });
-		authState.login(token, 'refresh', 3600);
+		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 3600 });
 		expect(authState.currentUser?.role).toBe('Admin');
 	});
 
 	it('comptable n\'a pas le rôle Admin', () => {
-		const token = fakeJwt({ sub: '1', role: 'Comptable', exp: 9999999999 });
-		authState.login(token, 'refresh', 3600);
+		authState.login({ userId: '1', username: 'test', role: 'Comptable', expiresIn: 3600 });
 		expect(authState.currentUser?.role).not.toBe('Admin');
 	});
 
 	it('consultation n\'a pas le rôle Admin', () => {
-		const token = fakeJwt({ sub: '1', role: 'Consultation', exp: 9999999999 });
-		authState.login(token, 'refresh', 3600);
+		authState.login({ userId: '1', username: 'test', role: 'Consultation', expiresIn: 3600 });
 		expect(authState.currentUser?.role).not.toBe('Admin');
 	});
 });

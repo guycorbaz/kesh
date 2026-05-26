@@ -25,11 +25,15 @@ use crate::errors::AppError;
 /// Identité extraite du JWT valide, injectée dans la requête.
 ///
 /// Story 6.2: `company_id` ajouté pour multi-tenant scoping.
+/// Story 10-5 (D2 acté Pass 1 F-L-P1-14): `exp` ajouté pour permettre au
+/// handler `/api/v1/auth/me` de calculer `expires_in` (secondes restantes
+/// avant expiration JWT) sans re-décoder le token.
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub user_id: i64,
     pub role: Role,
     pub company_id: i64,
+    pub exp: i64,
 }
 
 /// Middleware qui exige un JWT valide.
@@ -60,30 +64,41 @@ pub struct CurrentUser {
 // company_id est 8h. Risque accepté pour l'architecture multi-tenant mono-user.
 pub async fn require_auth(
     State(state): State<AppState>,
+    jar: axum_extra::extract::CookieJar,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let header = req
-        .headers()
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| AppError::Unauthenticated("missing authorization header".into()))?;
+    // Story 10-5 (T3.1) : lecture du JWT en priorité depuis le cookie
+    // `kesh_access_token` (HttpOnly, set par /login + /refresh), fallback sur
+    // le header `Authorization: Bearer` (préserve la compat avec les 19+
+    // tests `*_e2e.rs` historiques et les éventuels clients API non-browser).
+    let token = if let Some(cookie) = jar.get("kesh_access_token") {
+        cookie.value().to_string()
+    } else {
+        let header = req
+            .headers()
+            .get(AUTHORIZATION)
+            .and_then(|h| h.to_str().ok())
+            .ok_or_else(|| {
+                AppError::Unauthenticated("missing authorization header or cookie".into())
+            })?;
 
-    // RFC 7235 §2.1 : le scheme HTTP auth est case-insensitive.
-    // On accepte `Bearer`, `bearer`, `BEARER`, etc. via un test sur les
-    // 7 premiers caractères (6 pour le scheme + 1 espace obligatoire).
-    const BEARER_PREFIX_LEN: usize = 7; // "Bearer "
-    if header.len() < BEARER_PREFIX_LEN
-        || !header.as_bytes()[..6].eq_ignore_ascii_case(b"bearer")
-        || header.as_bytes()[6] != b' '
-    {
-        return Err(AppError::Unauthenticated(
-            "malformed authorization header".into(),
-        ));
-    }
-    let token = header[BEARER_PREFIX_LEN..].trim();
+        // RFC 7235 §2.1 : le scheme HTTP auth est case-insensitive.
+        // On accepte `Bearer`, `bearer`, `BEARER`, etc. via un test sur les
+        // 7 premiers caractères (6 pour le scheme + 1 espace obligatoire).
+        const BEARER_PREFIX_LEN: usize = 7; // "Bearer "
+        if header.len() < BEARER_PREFIX_LEN
+            || !header.as_bytes()[..6].eq_ignore_ascii_case(b"bearer")
+            || header.as_bytes()[6] != b' '
+        {
+            return Err(AppError::Unauthenticated(
+                "malformed authorization header".into(),
+            ));
+        }
+        header[BEARER_PREFIX_LEN..].trim().to_string()
+    };
 
-    let claims = jwt::decode(token, state.config.jwt_secret_bytes())?;
+    let claims = jwt::decode(&token, state.config.jwt_secret_bytes())?;
 
     let user_id: i64 = claims
         .sub
@@ -94,11 +109,13 @@ pub async fn require_auth(
         .map_err(|_| AppError::Unauthenticated("invalid role claim".into()))?;
 
     let company_id = claims.company_id;
+    let exp = claims.exp;
 
     req.extensions_mut().insert(CurrentUser {
         user_id,
         role,
         company_id,
+        exp,
     });
     Ok(next.run(req).await)
 }
@@ -320,5 +337,77 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert_eq!(response_status(app, req).await, StatusCode::UNAUTHORIZED);
+    }
+
+    /// Story 10-5 (T3.2 — CR Pass 1 AA-C1) : middleware lit le cookie
+    /// `kesh_access_token` en priorité, sans header Authorization présent.
+    #[tokio::test]
+    async fn require_auth_accepts_cookie_no_authorization() {
+        let token = jwt::encode(
+            42,
+            Role::Comptable,
+            7,
+            TEST_JWT_SECRET,
+            TimeDelta::minutes(15),
+        )
+        .expect("encode");
+
+        let app = protected_router(test_state());
+        let req = Request::builder()
+            .uri("/protected")
+            .header("Cookie", format!("kesh_access_token={}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "cookie-only auth should succeed (Story 10-5 T3.1)"
+        );
+
+        use http_body_util::BodyExt;
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(body, "42:Comptable:7");
+    }
+
+    /// Story 10-5 (T3.2 — CR Pass 1 AA-C1) : si cookie ET header sont
+    /// présents, le cookie est utilisé en priorité (T3.1 strict cookie-first).
+    #[tokio::test]
+    async fn require_auth_prefers_cookie_over_header_when_both_present() {
+        // Cookie token : user 42 / Admin
+        let cookie_token = jwt::encode(42, Role::Admin, 5, TEST_JWT_SECRET, TimeDelta::minutes(15))
+            .expect("encode cookie token");
+
+        // Header token : user 99 / Comptable (rôle différent pour discriminer)
+        let header_token = jwt::encode(
+            99,
+            Role::Comptable,
+            5,
+            TEST_JWT_SECRET,
+            TimeDelta::minutes(15),
+        )
+        .expect("encode header token");
+
+        let app = protected_router(test_state());
+        let req = Request::builder()
+            .uri("/protected")
+            .header("Cookie", format!("kesh_access_token={}", cookie_token))
+            .header("Authorization", format!("Bearer {}", header_token))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Le handler doit retourner les claims du COOKIE (42:Admin), pas du header (99:Comptable).
+        use http_body_util::BodyExt;
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(
+            body, "42:Admin:5",
+            "cookie should take precedence over Authorization header"
+        );
     }
 }

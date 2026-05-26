@@ -53,21 +53,26 @@ let refreshPromise: Promise<boolean> | null = null;
  * Tente un refresh des tokens via POST /api/v1/auth/refresh.
  * Retourne `true` si le refresh a réussi, `false` sinon.
  * En cas d'échec : clearSession() + redirect login.
+ *
+ * Story 10-5 (T7.3) :
+ * - Plus de guard `!currentRefreshToken` (Pass 1 F-AH-P1-2) — le refresh
+ *   passe par le cookie HttpOnly, pas accessible côté JS. Le browser envoie
+ *   automatiquement le cookie via `credentials: 'include'`.
+ * - Plus de body JSON `{refreshToken: ...}` — le backend lit le cookie.
+ * - Pas d'appel à `authState.login(...)` (qui voulait stocker les tokens en
+ *   localStorage et décoder le JWT côté JS — anti-pattern D5). On utilise
+ *   `authState.updateExpiresIn()` (T6.7) pour bumper `_expiresIn` sans
+ *   toucher à `_currentUser` (qui reste inchangé, même utilisateur, juste
+ *   nouveau JWT refreshed côté cookie).
  */
 async function doRefresh(): Promise<boolean> {
-	const currentRefreshToken = authState.refreshToken;
-	if (!currentRefreshToken) {
-		authState.clearSession();
-		window.location.replace('/login?reason=session_expired');
-		return false;
-	}
-
 	let res: Response;
 	try {
 		res = await fetch('/api/v1/auth/refresh', {
 			method: 'POST',
+			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refreshToken: currentRefreshToken }),
+			body: JSON.stringify({}),
 		});
 	} catch {
 		authState.clearSession();
@@ -84,16 +89,67 @@ async function doRefresh(): Promise<boolean> {
 			window.location.replace('/login?reason=session_expired');
 			return false;
 		}
-		if (
-			typeof data?.accessToken !== 'string' ||
-			typeof data?.refreshToken !== 'string' ||
-			typeof data?.expiresIn !== 'number'
-		) {
+		// D1 Option A acté : body conserve `accessToken/refreshToken/expiresIn`
+		// pour rétro-compat tests 19+ `*_e2e.rs` historiques. On valide
+		// uniquement `expiresIn` (les tokens sont ignorés côté JS — ils sont
+		// dans les cookies HttpOnly).
+		if (typeof data?.expiresIn !== 'number') {
 			authState.clearSession();
 			window.location.replace('/login?reason=session_expired');
 			return false;
 		}
-		authState.login(data.accessToken, data.refreshToken, data.expiresIn);
+
+		// CR Pass 3 BH3-M2 — re-fetch `/me` post-refresh pour rafraîchir
+		// `_currentUser`. Sans ça, le frontend conserve le `role` snapshotté au
+		// login original ; si un admin a été rétrogradé en Comptable côté DB
+		// pendant la session, la sidebar Admin reste affichée jusqu'au prochain
+		// logout/relog. Le RBAC backend reste correct (chaque action sera 403),
+		// mais l'UX trompeuse est un papier-cul de bug-report.
+		//
+		// CR Pass 4 BH4-L1 — l'update `_expiresIn` se fait via :
+		// - success path : `authState.login(payload, {broadcast: false})` qui
+		//   set explicitement `_expiresIn = meBody.expiresIn` (source de vérité
+		//   server-side).
+		// - fallback path (/me non-OK ou network error) : `authState.updateExpiresIn(data.expiresIn)`
+		//   pour au moins bumper le timer avec la valeur du refresh body
+		//   (l'ancien `updateExpiresIn` immédiat post-refresh était dead code,
+		//   écrasé systématiquement par `login()` du success path).
+		try {
+			const meRes = await fetch('/api/v1/auth/me', { credentials: 'include' });
+			if (meRes.ok) {
+				const meBody = (await meRes.json()) as {
+					userId: number;
+					username: string;
+					role: string;
+					expiresIn: number;
+				};
+				// Refresh ne doit pas broadcast cross-tab (option `broadcast: false`)
+				// — sinon chaque refresh proactif ferait re-hydrate les autres tabs
+				// alors qu'elles partagent déjà le même cookie HttpOnly. Le
+				// broadcast cross-tab est réservé aux transitions login/logout.
+				authState.login(
+					{
+						userId: String(meBody.userId),
+						username: meBody.username,
+						role: meBody.role,
+						expiresIn: meBody.expiresIn,
+					},
+					{ broadcast: false },
+				);
+			} else {
+				console.warn(
+					`[auth] doRefresh: /me re-fetch returned non-OK status ${meRes.status} — _currentUser may be stale until next login`,
+				);
+				// Au moins update le timer pour éviter retry refresh boucle.
+				authState.updateExpiresIn(data.expiresIn);
+			}
+		} catch (error) {
+			console.warn(
+				'[auth] doRefresh: /me re-fetch network error:',
+				error instanceof Error ? error.message : String(error),
+			);
+			authState.updateExpiresIn(data.expiresIn);
+		}
 		return true;
 	}
 
@@ -119,10 +175,14 @@ async function refreshTokens(): Promise<boolean> {
 
 /**
  * Construit les headers pour une requête.
- * Ajoute Authorization sauf pour les URLs d'auth exclues.
+ *
+ * Story 10-5 (T7.2) : ne plus injecter le header `Authorization: Bearer ...`
+ * (le browser envoie automatiquement le cookie HttpOnly via `credentials: 'include'`
+ * dans `fetchWithTimeout`). La constante `AUTH_EXCLUDED_URLS` est conservée
+ * pour traçabilité mais n'a plus de rôle actif post-Story 10-5.
  */
 function buildHeaders(
-	url: string,
+	_url: string,
 	customHeaders?: Record<string, string>,
 	body?: BodyInit | null,
 ): Record<string, string> {
@@ -136,10 +196,6 @@ function buildHeaders(
 	// n'ajoute le default JSON que si le body n'est PAS un FormData.
 	if (!(body instanceof FormData) && !headers['Content-Type']) {
 		headers['Content-Type'] = 'application/json';
-	}
-
-	if (!AUTH_EXCLUDED_URLS.some((excluded) => url.startsWith(excluded)) && authState.accessToken) {
-		headers['Authorization'] = `Bearer ${authState.accessToken}`;
 	}
 
 	return headers;
@@ -204,7 +260,12 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 	try {
-		return await fetch(url, { ...init, signal: controller.signal });
+		// Story 10-5 (T7.1) : `credentials: 'include'` pour permettre l'envoi
+		// automatique du cookie HttpOnly `kesh_access_token` par le browser.
+		// Le cookie n'est pas envoyé par défaut sur cross-origin, et Vite
+		// dev `:5173` vs API `:3000` est same-site mais credentials default
+		// 'same-origin' peut bloquer selon le browser — `'include'` explicite.
+		return await fetch(url, { ...init, credentials: 'include', signal: controller.signal });
 	} finally {
 		clearTimeout(timeout);
 	}

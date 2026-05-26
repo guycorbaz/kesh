@@ -23,7 +23,7 @@ describe('bank-accounts.api', () => {
 
 	beforeEach(() => {
 		authState.clearSession();
-		authState.login(fakeJwt(), 'refresh-uuid', 900);
+		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 		mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,

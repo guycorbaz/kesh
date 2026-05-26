@@ -25,12 +25,26 @@
 		errorIcon = null;
 
 		try {
+			// Story 10-5 (T6.4bis Pass 3 F-LOGIN-PAGE-DECODES-JWT-P3-4) :
+			// signature `authState.login()` change pour un objet payload
+			// (sans tokens — ils sont dans les cookies HttpOnly émis par le
+			// backend via Set-Cookie). Les champs `userId/username/role` du
+			// body (D6 acté Pass 2) permettent de peupler `_currentUser`
+			// sans décoder le JWT côté JS.
 			const data = await apiClient.post<{
 				accessToken: string;
 				refreshToken: string;
 				expiresIn: number;
+				userId: number;
+				username: string;
+				role: string;
 			}>('/api/v1/auth/login', { username, password });
-			authState.login(data.accessToken, data.refreshToken, data.expiresIn);
+			authState.login({
+				userId: String(data.userId),
+				username: data.username,
+				role: data.role,
+				expiresIn: data.expiresIn,
+			});
 			await goto('/');
 		} catch (err) {
 			if (isApiError(err)) {

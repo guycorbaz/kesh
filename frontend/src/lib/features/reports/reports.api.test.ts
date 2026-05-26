@@ -153,7 +153,7 @@ describe('reports.api — Story 9-2a', () => {
 
 		beforeEach(() => {
 			authState.clearSession();
-			authState.login(fakeJwt(), 'refresh-uuid', 900);
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
 			// Mock URL.createObjectURL / revokeObjectURL (pas dispo dans jsdom par défaut)
 			createObjectURLSpy = vi.fn().mockReturnValue('blob:http://localhost/abc');
 			revokeObjectURLSpy = vi.fn();

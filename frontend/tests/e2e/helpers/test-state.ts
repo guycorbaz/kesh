@@ -86,13 +86,17 @@ export async function seedTestState(preset: Preset): Promise<void> {
 }
 
 /**
- * Lit le token d'accès JWT depuis le `localStorage` côté `page`. Helper
- * interne pour `authedApiContext`.
+ * Story 10-5 (T12.3.a) : helper obsolète post-Story 10-5 — le token JWT
+ * n'est plus en localStorage, il est en cookie HttpOnly inaccessible JS.
+ * Conservé pour rétro-compat documentaire, mais retourne `null` pour signaler
+ * aux callers que cette voie ne fonctionne plus.
  *
- * @returns Le token sous forme de string, ou `null` si la clé est absente
- *          (utilisateur non-loggé ou storage vidé par `clearAuthStorage`).
+ * @deprecated Use `authedApiContext(page)` qui clone le storageState
+ * (incluant les cookies HttpOnly) du browser context.
  */
 async function readAccessTokenFromStorage(page: Page): Promise<string | null> {
+	// Defensive : check localStorage au cas où un test pré-Story 10-5 setrait
+	// encore manuellement le token. Toujours retourne null en flow normal post-Story.
 	return page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY_ACCESS_TOKEN);
 }
 
@@ -123,19 +127,31 @@ export async function disposeContextSafe(ctx: APIRequestContext): Promise<void> 
 }
 
 /**
- * Construit un `APIRequestContext` Playwright avec le Bearer token de la
- * session courante automatiquement injecté en header `Authorization`.
+ * Construit un `APIRequestContext` Playwright qui partage la session
+ * authentifiée du `page.context()` via clone du `storageState` (cookies
+ * HttpOnly inclus).
  *
  * Utilisation : remplace les appels directs `page.request.post/get(...)`
  * dans les helpers de seed de spec files E2E quand l'endpoint cible est
  * authentifié. `page.request.*` est un client HTTP raw Playwright qui ne
- * lit pas le `localStorage` Svelte — donc n'injecte pas le Bearer token
- * du store `authState`. Sans ce helper, les appels API authentifiés
- * reçoivent 401 (régression Story 6-5 KF-007 storage shift cookie →
- * localStorage — cf. KF #54 / KF-022).
+ * propage pas automatiquement les cookies du browser context sur tous les
+ * builds — le clone explicite garantit que les cookies HttpOnly
+ * `kesh_access_token` + `kesh_refresh_token` (set par `login(page)`) sont
+ * envoyés sur les appels API.
  *
- * Pré-condition : `login(page)` doit avoir été appelé avant — sinon throw
- * (cf. AC #3 spec 9-5-1b — anti-pattern « 401 silencieux »).
+ * Story 10-5 (T12.3.a Pass 3 F-PLAYWRIGHT-COOKIE-CROSS-CONTEXT-P3-2 D4 acté
+ * Option a-ii) : plus de lecture `localStorage` ni d'injection
+ * `Authorization: Bearer` header (Story 9-5-1b historique) — uniquement le
+ * clone storageState pour propager les cookies HttpOnly. Le `dispose()`
+ * reste safe sur ce context cloné (pas d'impact sur le browser context partagé).
+ *
+ * CR Pass 3 ECH3-M3 + BH3-L3 — **contrat strict** : `login(page)` doit
+ * avoir été appelé avant `authedApiContext(page)`. Le helper throw si le
+ * storageState ne contient aucun cookie (preuve qu'aucune session n'a été
+ * établie). Préserve l'anti-pattern « 401 silencieux » que Story 9-5-1b
+ * avait explicitement corrigé : sans ce throw, un dev qui oublie
+ * `await login(page)` voit les requêtes API échouer en 401 plusieurs
+ * lignes plus bas, debug plus difficile.
  *
  * Le caller est responsable de `await ctx.dispose()` après usage (try/finally
  * cohérent avec le pattern `seedTestState` ci-dessus). Le context n'est PAS
@@ -143,34 +159,53 @@ export async function disposeContextSafe(ctx: APIRequestContext): Promise<void> 
  * évite les fuites de tokens entre tests (cohérent avec `clearAuthStorage`).
  *
  * @param page Page Playwright avec session authentifiée (post-`login`).
- * @returns APIRequestContext avec baseURL backend + Bearer header injecté.
- * @throws Error si `localStorage.kesh:auth:accessToken` est absent / vide
- *               (token non présent en storage = `login(page)` non appelé).
+ * @returns APIRequestContext avec baseURL backend + cookies HttpOnly propagés.
+ * @throws Error si `storageState.cookies` est vide (= `login(page)` non
+ *               appelé). Le message d'erreur dirige le caller vers le fix.
  */
 export async function authedApiContext(page: Page): Promise<APIRequestContext> {
-	const token = await readAccessTokenFromStorage(page);
-	if (!token) {
+	const storageState = await page.context().storageState();
+	// CR Pass 3 BH3-L3 — garde-fou diagnostic : si aucun cookie n'est présent
+	// dans le storageState, c'est qu'aucun login n'a eu lieu (ou clearCookies
+	// vient d'être appelé). Throw avec message explicite plutôt que de
+	// retourner un context qui produira des 401 plusieurs lignes plus bas.
+	// Cohérent anti-pattern « 401 silencieux » Story 9-5-1b.
+	if (storageState.cookies.length === 0) {
 		throw new Error(
-			'authedApiContext: no accessToken in localStorage — call login(page) before this helper',
+			'authedApiContext: no cookies in storageState — call login(page) before this helper ' +
+				'(cf. anti-pattern « 401 silencieux » Story 9-5-1b)',
 		);
 	}
 	return playwrightRequest.newContext({
 		baseURL: resolveBackendUrl(),
-		extraHTTPHeaders: { Authorization: `Bearer ${token}` },
+		storageState,
 	});
 }
 
 /**
- * Nettoie les clés d'authentification du localStorage côté client.
- * Appelé dans afterEach() pour isoler les tokens entre tests.
+ * Story 10-5 (T12.3.a) : nettoie les cookies HttpOnly d'auth entre tests
+ * pour garantir l'isolation de session E2E.
  *
- * Note: `page.context().clearCookies()` n'efface QUE les cookies, pas localStorage.
- * Cette fonction efface explicitement les clés kesh:auth:* du localStorage.
+ * Pré-Story 10-5 : effaçait les clés `kesh:auth:*` de localStorage (les
+ * tokens y étaient stockés). Post-Story 10-5 : les tokens sont en cookies
+ * HttpOnly → `page.context().clearCookies()` est la bonne API. Le clean
+ * localStorage est conservé en defensive cleanup pour purger les sessions
+ * pre-Story 10-5 d'un browser context qui aurait persisté ces clés.
  *
- * @throws {Error} if page context is invalid or localStorage access fails
+ * @throws {Error} if page context is invalid (logged, not rethrown)
  */
 export async function clearAuthStorage(page: Page): Promise<void> {
 	try {
+		// Story 10-5 — clear cookies (où sont les tokens HttpOnly post-Story).
+		await page.context().clearCookies();
+	} catch (error) {
+		console.warn(
+			'[test] clearAuthStorage clearCookies failed:',
+			error instanceof Error ? error.message : String(error),
+		);
+	}
+	try {
+		// Defensive cleanup localStorage (purge sessions pre-Story 10-5).
 		await page.evaluate((keys) => {
 			for (const key of keys) {
 				localStorage.removeItem(key);
@@ -178,6 +213,9 @@ export async function clearAuthStorage(page: Page): Promise<void> {
 		}, [STORAGE_KEY_ACCESS_TOKEN, STORAGE_KEY_REFRESH_TOKEN, STORAGE_KEY_EXPIRES_IN]);
 	} catch (error) {
 		// If Playwright context is destroyed, log but don't fail test teardown
-		console.warn('[test] clearAuthStorage failed (page context may be destroyed):', error instanceof Error ? error.message : String(error));
+		console.warn(
+			'[test] clearAuthStorage localStorage cleanup failed (page context may be destroyed):',
+			error instanceof Error ? error.message : String(error),
+		);
 	}
 }

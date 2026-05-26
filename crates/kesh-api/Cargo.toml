@@ -15,6 +15,10 @@ kesh-report = { path = "../kesh-report" }
 kesh-seed = { path = "../kesh-seed" }
 
 axum = { version = "0.8", features = ["multipart"] }
+# Story 10-5 — extracteur CookieJar pour les cookies HttpOnly d'auth.
+axum-extra = { version = "0.12", features = ["typed-header", "cookie"] }
+# Story 10-5 — `time::Duration` pour Cookie::max_age (cookie crate dépend de time, pas chrono).
+time = "0.3"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
@@ -46,5 +50,5 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "cookies"] }
 rust_decimal_macros = "1.40"
