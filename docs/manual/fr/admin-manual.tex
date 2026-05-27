@@ -106,7 +106,7 @@ Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 
     \item \textbf{Backend} : Rust 1.85+ (édition 2024) avec le framework HTTP Axum et le client SQL SQLx.
     \item \textbf{Frontend} : SvelteKit 2 avec Svelte 5 et TypeScript, bundler Vite, CSS via Tailwind 4.
     \item \textbf{Base de données} : MariaDB 11.4 (compatibilité MySQL 8 maintenue, mais MariaDB recommandée pour les optimisations spécifiques utilisées).
-    \item \textbf{Déploiement} : Docker Compose, image officielle \keshpath{guycorbaz/kesh:latest} sur Docker Hub.
+    \item \textbf{Déploiement} : Docker Compose, image officielle \keshpath{gcorbaz/kesh:latest} sur Docker Hub.
     \item \textbf{Authentification} : JWT (HS256) avec refresh tokens et rotation, durée d'expiration courte (15 min) compensée par rafraîchissement automatique côté frontend.
     \item \textbf{Multi-tenant} : claim \texttt{company\_id} dans le JWT et scoping strict sur toutes les requêtes API et toutes les requêtes SQL (cf. Story Epic 7-1 « audit multi-tenant scoping refactor »).
 \end{itemize}
@@ -1066,7 +1066,7 @@ Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des donné
 Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (versionnage sémantique). À chaque release :
 
 \begin{itemize}
-    \item Une nouvelle image Docker \texttt{guycorbaz/kesh:X.Y.Z} et \texttt{guycorbaz/kesh:latest} sont poussées sur Docker Hub.
+    \item Une nouvelle image Docker \texttt{gcorbaz/kesh:X.Y.Z} et \texttt{gcorbaz/kesh:latest} sont poussées sur Docker Hub.
     \item Un changelog (\keshpath{CHANGELOG.md}) liste les nouveautés, corrections de bugs et changements compatibilité.
     \item Les manuels (admin, utilisateur, brochure marketing) sont rebuild en PDF et attachés au release GitHub.
     \item Les notes de breaking changes sont mises en évidence avec instructions de migration.
@@ -1119,7 +1119,7 @@ docker compose stop kesh
 
 # 2. Restaurer la version precedente de l'image
 docker compose down
-# Editer docker-compose.yml : image: guycorbaz/kesh:0.1.0  (ancien tag)
+# Editer docker-compose.yml : image: gcorbaz/kesh:0.1.0  (ancien tag)
 docker compose up -d
 
 # 3. Si les migrations DB ont ete appliquees et sont irreversibles, restaurer
@@ -1242,7 +1242,7 @@ Exemple de driver logging Loki dans \keshpath{docker-compose.yml} :
 \begin{lstlisting}[]
 services:
   kesh:
-    image: guycorbaz/kesh:latest
+    image: gcorbaz/kesh:latest
     logging:
       driver: loki
       options:

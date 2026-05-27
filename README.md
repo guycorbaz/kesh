@@ -74,7 +74,7 @@ L'application est accessible sur http://localhost:5173 (frontend dev) et http://
 Les images officielles sont publiées sur Docker Hub à chaque tag `v*.*.*` :
 
 ```bash
-docker pull guycorbaz/kesh:latest
+docker pull gcorbaz/kesh:latest
 ```
 
 ## Structure du projet
