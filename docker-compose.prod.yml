@@ -52,7 +52,7 @@
 
 services:
   kesh-api:
-    image: guycorbaz/kesh:latest
+    image: gcorbaz/kesh:latest
     container_name: kesh-api
     restart: unless-stopped
     environment:

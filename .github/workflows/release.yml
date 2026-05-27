@@ -54,8 +54,8 @@ jobs:
           load: true
           push: false
           tags: |
-            guycorbaz/kesh:${{ steps.version.outputs.version }}
-            guycorbaz/kesh:latest
+            gcorbaz/kesh:${{ steps.version.outputs.version }}
+            gcorbaz/kesh:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          IMAGE="guycorbaz/kesh:${VERSION}"
+          IMAGE="gcorbaz/kesh:${VERSION}"
 
           # Secrets bidon générés à la volée, suffisants pour passer la validation
           # de config (jwt ≥ 32 bytes, admin password ≥ 12 chars). Container jeté
@@ -145,8 +145,8 @@ jobs:
 
       - name: Push image to Docker Hub
         run: |
-          docker push guycorbaz/kesh:${{ steps.version.outputs.version }}
-          docker push guycorbaz/kesh:latest
+          docker push gcorbaz/kesh:${{ steps.version.outputs.version }}
+          docker push gcorbaz/kesh:latest
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

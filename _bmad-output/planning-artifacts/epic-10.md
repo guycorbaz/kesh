@@ -41,7 +41,7 @@ stories:
 
 ## Vue d'ensemble
 
-**Objectif :** Livrer une image Docker `guycorbaz/kesh:v0.1.0` publiée sur Docker Hub, installable sur un NAS Synology x86_64 récent avec MariaDB 10.11 (Package Center DSM), prête pour usage production réel avec données comptables. La clôture d'Epic 10 = release v0.1.0 = passage en prod (sauf blocker découvert).
+**Objectif :** Livrer une image Docker `gcorbaz/kesh:v0.1.0` publiée sur Docker Hub, installable sur un NAS Synology x86_64 récent avec MariaDB 10.11 (Package Center DSM), prête pour usage production réel avec données comptables. La clôture d'Epic 10 = release v0.1.0 = passage en prod (sauf blocker découvert).
 
 **Périmètre :** 5 stories de hardening + livrable manuel install + amélioration pipeline release.yml. Aucune feature comptable nouvelle. Toutes les fonctions métier de v0.1 (Epics 1-9.5) sont déjà livrées et stables.
 
@@ -70,7 +70,7 @@ stories:
 
 | # | Décision | Implication |
 |---|---|---|
-| D1 | v0.1.0 = Docker Hub `guycorbaz/kesh` + install NAS Guy en prod réelle | Pas de release intermédiaire v0.1.x — la 1ère release publiée est la 1ère en prod |
+| D1 | v0.1.0 = Docker Hub `gcorbaz/kesh` + install NAS Guy en prod réelle | Pas de release intermédiaire v0.1.x — la 1ère release publiée est la 1ère en prod |
 | D2 | MariaDB externe NAS Synology (10.11.11 Package Center DSM) | `docker-compose.prod.yml` sans service `mariadb`. Connexion via `DATABASE_URL` à l'hôte. Backup = outils DSM natifs |
 | D3 | Compat MariaDB 10.6+ confirmée (audit code) — pas de feature 11-only utilisée | CI test matrix bloqué à MariaDB 10.11 (parity NAS Synology). Alignement composes + commentaires migrations |
 | D4 | Tokens auth en cookies httpOnly + Secure + SameSite=Strict (pas localStorage) | Refonte storage Story 10-5 : backend `Set-Cookie` + frontend retire localStorage + endpoint `/me` consumer. Issue #41 cat A closure |
@@ -351,7 +351,7 @@ Epic considéré « done » quand **toutes** les conditions ci-dessous sont sati
 - [ ] 5/5 stories avec status `done` dans `sprint-status.yaml` (10-1, 10-2, 10-3, 10-4, 10-5)
 - [ ] Issue #41 [KF-002] httpOnly token storage **fermée** sur GitHub (via Story 10-5)
 - [ ] `release.yml++` smoke test implémenté et testé (au moins un tag de test `v0.1.0-rc1` PASS)
-- [ ] Image Docker Hub `guycorbaz/kesh:v0.1.0` + `:latest` publiée (via tag git `v0.1.0`)
+- [ ] Image Docker Hub `gcorbaz/kesh:v0.1.0` + `:latest` publiée (via tag git `v0.1.0`)
 - [ ] Manuel `install-synology.pdf` finalisé + joint à la GitHub Release v0.1.0
 - [ ] `CHANGELOG.md` v0.1.0 humanisé + joint à la GitHub Release v0.1.0
 - [ ] **Install effective sur NAS Synology Guy** + login + création company + saisie d'1 écriture comptable + 1 facture → tout fonctionne (validation prod réelle)
@@ -389,7 +389,7 @@ Epic considéré « done » quand **toutes** les conditions ci-dessous sont sati
 - Memory `feedback_zero_tech_debt_carryforward` — politique projet
 - `Dockerfile` — multi-stage Rust + Svelte build → debian:slim (à conserver)
 - `docker-compose.yml` — dev compose, à aligner MariaDB 10.11 + dépublier de prod (création `docker-compose.prod.yml` séparé)
-- `.github/workflows/release.yml` — pipeline Docker Hub `guycorbaz/kesh` sur tag `v*.*.*` (à enrichir smoke test)
+- `.github/workflows/release.yml` — pipeline Docker Hub `gcorbaz/kesh` sur tag `v*.*.*` (à enrichir smoke test)
 - `.github/workflows/ci.yml` — CI MariaDB 10.11 to align (décision D3)
 - `crates/kesh-db/migrations/*.sql` — 26 migrations à auditer pour idempotence (Story 10-2)
 - `crates/kesh-api/src/routes/auth.rs` — refonte cookies httpOnly (Story 10-5)

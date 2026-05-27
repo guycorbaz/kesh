@@ -85,7 +85,7 @@ Première version publique de Kesh. Cette release fournit un système comptable 
 
 #### Déploiement et opérations
 
-- **Docker Compose** : déploiement standard via une image officielle `guycorbaz/kesh:latest` publiée sur Docker Hub. Documentation complète dans le manuel administrateur.
+- **Docker Compose** : déploiement standard via une image officielle `gcorbaz/kesh:latest` publiée sur Docker Hub. Documentation complète dans le manuel administrateur.
 - **Synology DSM Container Manager** : support natif documenté pour le déploiement sur NAS Synology (DSM 7.2+, modèles x86_64), avec utilisation du Portail des applications DSM comme reverse proxy HTTPS (alternative simple à Nginx/Caddy/Traefik pour LAN-only).
 - **Reverse proxy HTTPS** : exemples documentés pour Nginx, Caddy (Let's Encrypt automatique), Traefik (avec firewall applicatif rate-limiting + headers OWASP + plugin CrowdSec optionnel).
 - **Healthcheck** `/health` DB-aware (Story 10-3) : retourne `{ status, db, version }` permettant aux orchestrateurs (Docker, Kubernetes, monitoring) de détecter l'état réel de la base de données.
