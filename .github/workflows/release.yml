@@ -121,17 +121,23 @@ jobs:
           STATUS=$(jq -r '.status' /tmp/health.json)
           DB=$(jq -r '.db' /tmp/health.json)
           REPORTED_VERSION=$(jq -r '.version' /tmp/health.json)
+          # Le binaire renvoie `env!("CARGO_PKG_VERSION")` (= Cargo.toml). Pour un
+          # tag pré-release `vX.Y.Z-rcN`, Cargo.toml reste figé à `X.Y.Z` (convention
+          # SemVer). On compare donc la base du tag (suffixe strip) à la version
+          # reportée. Pour un tag final `vX.Y.Z` les deux valent X.Y.Z, assertion
+          # équivalente.
+          BASE_VERSION="${VERSION%%-*}"
           FAIL=0
           [ "$STATUS" = "ok" ]           || { echo "✗ status=$STATUS, want ok"; FAIL=1; }
           [ "$DB" = "true" ]             || { echo "✗ db=$DB, want true"; FAIL=1; }
-          [ "$REPORTED_VERSION" = "$VERSION" ] \
-            || { echo "✗ version=$REPORTED_VERSION, want $VERSION"; FAIL=1; }
+          [ "$REPORTED_VERSION" = "$BASE_VERSION" ] \
+            || { echo "✗ version=$REPORTED_VERSION, want $BASE_VERSION (base of tag $VERSION)"; FAIL=1; }
           if [ $FAIL -ne 0 ]; then
             echo "--- container logs ---"
             docker logs kesh-smoke || true
             exit 1
           fi
-          echo "✓ smoke test passed: status=ok, db=true, version=$VERSION"
+          echo "✓ smoke test passed: status=ok, db=true, version=$REPORTED_VERSION (tag $VERSION)"
 
       - name: Cleanup smoke container
         if: always()
