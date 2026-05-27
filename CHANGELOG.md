@@ -14,7 +14,7 @@ Aucun changement post-v0.1.0 pour le moment.
 
 ---
 
-## [0.1.0] — À paraître
+## [0.1.0] — 2026-05-27
 
 Première version publique de Kesh. Cette release fournit un système comptable complet et conforme au Code des obligations suisse (Art. 957a et suivants) ainsi qu'à l'Ordonnance OLICo (RS 221.431), prêt pour un usage productif chez un indépendant, une PME ou un fiduciaire mono-poste.
 
