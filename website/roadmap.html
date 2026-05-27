@@ -156,45 +156,57 @@
 
 				<!-- E8 -->
 				<div class="relative">
-					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-amber-400 border-4 border-slate-950 ring-2 ring-amber-400/30 pulse-glow"></div>
-					<div class="p-5 rounded-xl bg-slate-900 border border-amber-400/40">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
 							<h3 class="text-lg font-semibold">E8 — Bank Import &amp; Reconciliation</h3>
-							<span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">In progress</span>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
-						<p class="text-sm text-slate-400 mb-3">CAMT.053 ISO 20022 parser, CSV import (multi-bank profiles), automatic reconciliation against open invoices.</p>
+						<p class="text-sm text-slate-400 mb-3">CAMT.053 ISO 20022 parser, CSV import (multi-bank profiles), automatic reconciliation against open invoices, manual reconciliation with transaction splitting and assignment rules engine.</p>
 						<div class="text-xs font-mono text-slate-500 space-y-1">
 							<div>↳ 8-1a CAMT.053 parser <span class="text-emerald-400">✓ done</span></div>
 							<div>↳ 8-1b CAMT.053 persistence + UI <span class="text-emerald-400">✓ done</span></div>
 							<div>↳ 8-2 CSV import (multi-bank profiles) <span class="text-emerald-400">✓ done</span></div>
 							<div>↳ 8-3 duplicate detection + partial reject <span class="text-emerald-400">✓ done</span></div>
 							<div>↳ 8-4 automatic reconciliation + scoring <span class="text-emerald-400">✓ done</span></div>
-							<div>↳ 8-5 manual reconciliation + assignment rules <span class="text-slate-500">backlog</span></div>
+							<div>↳ 8-5 manual reconciliation + assignment rules <span class="text-emerald-400">✓ done</span></div>
 						</div>
 					</div>
 				</div>
 
 				<!-- E9 -->
 				<div class="relative">
-					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-slate-600 border-4 border-slate-950"></div>
-					<div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold text-slate-300">E9 — Reports &amp; Exports</h3>
-							<span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Backlog</span>
+							<h3 class="text-lg font-semibold">E9 — Reports &amp; Exports</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
-						<p class="text-sm text-slate-500">Balance sheet, P&amp;L, trial balance, CSV/PDF exports.</p>
+						<p class="text-sm text-slate-400">Balance sheet, P&amp;L, trial balance, CSV/PDF exports, global ZIP export (sovereignty).</p>
+					</div>
+				</div>
+
+				<!-- E9.5 -->
+				<div class="relative">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
+						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+							<h3 class="text-lg font-semibold">E9.5 — Technical Debt Closure</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+						</div>
+						<p class="text-sm text-slate-400">Zero-carry-forward debt sweep before v0.1 release: closed 6 KFs, codified review &amp; commit rules, Swiss CO 958f research.</p>
 					</div>
 				</div>
 
 				<!-- E10 -->
 				<div class="relative">
-					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-slate-600 border-4 border-slate-950"></div>
-					<div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800">
+					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
+					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold text-slate-300">E10 — Deployment &amp; Operations</h3>
-							<span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Backlog</span>
+							<h3 class="text-lg font-semibold">E10 — Deployment &amp; Operations</h3>
+							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
-						<p class="text-sm text-slate-500">Production docker-compose, backup/restore tooling, observability dashboards, security baseline.</p>
+						<p class="text-sm text-slate-400">Production hardening (Docker, env vars, log rotation), migrations idempotence with downgrade protection, frontend resilience when DB unreachable, Synology DSM install manual + native backup, httpOnly auth cookies.</p>
 					</div>
 				</div>
 			</div>
