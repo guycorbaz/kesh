@@ -669,6 +669,29 @@ Toute la configuration Kesh passe par des variables d'environnement, conforméme
     \bottomrule
 \end{tabularx}
 
+\subsection{Configuration des logs fichier}\label{sec:logs-fichier}
+
+Depuis la version 0.1.1, Kesh peut écrire ses logs dans un fichier avec rotation native, \textbf{en plus} de la sortie standard consultable via \keshcommand{docker logs kesh-api}. C'est utile car la rétention de \texttt{docker logs} est purgée à chaque recréation du conteneur, alors qu'un fichier persiste et peut être inclus dans le backup.
+
+En production (\keshpath{docker-compose.prod.yml}), cette sortie est \textbf{activée par défaut} : les logs sont écrits dans \keshpath{/var/log/kesh/kesh.log} à l'intérieur du conteneur, monté sur le répertoire \keshpath{./log/} de l'hôte (à côté du \keshpath{.env} et de la base, donc couvert par le même backup).
+
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_LOG\_FILE\_PATH & Chemin complet du fichier de log. \textbf{Vide} = logs fichier désactivés (sortie standard uniquement). & \texttt{/var/log/kesh/kesh.log} (en prod) \\
+    KESH\_LOG\_FILE\_ROTATION & Stratégie de rotation : \texttt{daily}, \texttt{hourly} ou \texttt{never}. & \texttt{daily} \\
+    KESH\_LOG\_FILE\_MAX\_FILES & Nombre de fichiers conservés. Ignoré si rotation = \texttt{never}. & \texttt{7} \\
+    KESH\_LOG\_FILE\_FORMAT & Format : \texttt{pretty} (lisible) ou \texttt{json} (ingestion outillée). & \texttt{pretty} \\
+    \bottomrule
+\end{tabularx}
+
+\begin{keshwarning}
+Le conteneur \texttt{kesh-api} s'exécute en tant que \texttt{root}, donc le répertoire \keshpath{./log/} et ses fichiers appartiennent à \texttt{root:root} sur l'hôte NAS. Hyper Backup (qui tourne en root) les sauvegarde sans problème. Pour consulter les logs avec un compte non-root, utilisez \keshcommand{sudo tail -f ./log/kesh.log} ou ajustez les permissions du répertoire.
+\end{keshwarning}
+
+Pour \textbf{désactiver} les logs fichier (sortie standard uniquement), définir \keshcommand{KESH\_LOG\_FILE\_PATH=} (valeur vide) dans le \keshpath{.env}.
+
 \subsection{Configuration MariaDB}
 
 \subsubsection{Paramètres recommandés}

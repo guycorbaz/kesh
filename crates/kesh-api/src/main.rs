@@ -24,17 +24,39 @@ use std::sync::Arc;
 use std::net::SocketAddr;
 
 use kesh_api::{
-    AppState, auth::bootstrap, build_router, config::Config, middleware::rate_limit::RateLimiter,
+    AppState,
+    auth::bootstrap,
+    build_router,
+    config::{Config, LogConfig},
+    logging,
+    middleware::rate_limit::RateLimiter,
 };
 use sqlx::mysql::MySqlPoolOptions;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    // 1. Logging
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    // 1. Logging — Story v011-1.
+    //
+    // `.env` est chargé ICI (avant `LogConfig::from_env()`) pour que les vars
+    // `KESH_LOG_FILE_*` d'un fichier `.env` soient visibles ; `Config::from_env()`
+    // le rechargera (idempotent, n'écrase pas les vars déjà définies).
+    dotenvy::dotenv().ok();
+
+    // `LogConfig` (parsing infaillible) est lu AVANT l'init du subscriber : son
+    // layer fichier en a besoin. Les warnings de fallback sont rejoués APRÈS
+    // l'init (sinon perdus). Le `WorkerGuard` doit rester vivant tout le
+    // programme → lié à `_log_guard` (non droppé avant la fin de `main`).
+    //
+    // Limitation connue v0.1 : les `std::process::exit(1)` sur les paths
+    // d'erreur fatale de boot (config, DB, migrations) ci-dessous ne droppent
+    // PAS `_log_guard` → les tout derniers logs fichier du buffer non-bloquant
+    // peuvent être perdus. stdout (`docker logs`) reste fiable pour ces erreurs ;
+    // acceptable v0.1 (cf. note process::exit du bloc downgrade protection).
+    let (log_config, log_warnings) = LogConfig::from_env();
+    let _log_guard = logging::init_tracing(&log_config);
+    for warning in &log_warnings {
+        tracing::warn!("{warning}");
+    }
 
     // 2. Config
     let config = match Config::from_env() {

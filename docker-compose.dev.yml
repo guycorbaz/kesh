@@ -29,6 +29,13 @@ services:
       # NEVER enable in production — see docs/MULTI-TENANT-SCOPING-PATTERNS.md.
       KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
       RUST_LOG: ${RUST_LOG:-info}
+      # Logs fichier (Story v011-1, Issue #119) — DÉSACTIVÉS par défaut en dev
+      # (stdout/`docker logs` suffit). Pour les activer : set KESH_LOG_FILE_PATH
+      # (ex. /var/log/kesh/kesh.log) + ajouter un mount `- ./log:/var/log/kesh`.
+      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH:-}
+      KESH_LOG_FILE_ROTATION: ${KESH_LOG_FILE_ROTATION:-daily}
+      KESH_LOG_FILE_MAX_FILES: ${KESH_LOG_FILE_MAX_FILES:-7}
+      KESH_LOG_FILE_FORMAT: ${KESH_LOG_FILE_FORMAT:-pretty}
     depends_on:
       mariadb:
         condition: service_healthy
