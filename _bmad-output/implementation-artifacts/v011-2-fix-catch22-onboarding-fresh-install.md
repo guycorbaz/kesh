@@ -63,14 +63,16 @@ Champs disponibles : `admin_username` (l.127), `admin_password` (l.128). **Pas d
 
 ### Sites à modifier si `is_stub` ajouté à l'entité `Company` (FromRow)
 
-`sqlx::query_as::<_, Company>` mappe par nom de colonne → **tout** SELECT mappant `Company` sans `is_stub` casse au runtime (`no column found for name: is_stub`). Les 6 sites SELECT complets `Company` :
+`sqlx::query_as::<_, Company>` mappe par nom de colonne → **tout** SELECT mappant `Company` sans `is_stub` casse au runtime (`no column found for name: is_stub`). Il y a **6 chaînes SQL/constantes distinctes** à patcher, qui couvrent **11 sites d'exécution** (certaines constantes sont réutilisées). Patcher les 6 chaînes ci-dessous est **complet** :
 
-1. `crates/kesh-db/src/repositories/companies.rs:17` `FIND_BY_ID_SQL`
-2. `crates/kesh-db/src/repositories/companies.rs:21` `LIST_SQL`
-3. `crates/kesh-seed/src/lib.rs:89-90`
-4. `crates/kesh-api/src/routes/onboarding.rs:630-631` (finalize, company lock)
-5. `crates/kesh-api/src/routes/onboarding.rs:794-795` (`ensure_company_with_language`)
-6. `crates/kesh-api/src/routes/onboarding.rs:843-844` `COMPANY_SELECT_FOR_UPDATE`
+1. `crates/kesh-db/src/repositories/companies.rs:17` `FIND_BY_ID_SQL` — **constante partagée** par 4 sites (`companies.rs:64/86/134/189`).
+2. `crates/kesh-db/src/repositories/companies.rs:21` `LIST_SQL` — utilisée par `companies.rs:100`.
+3. `crates/kesh-seed/src/lib.rs:88-90` — SQL inline (`seed_demo` company lock).
+4. `crates/kesh-api/src/routes/onboarding.rs:629-631` — SQL inline (`finalize_inner`, company lock).
+5. `crates/kesh-api/src/routes/onboarding.rs:793-795` — SQL inline (`ensure_company_with_language`).
+6. `crates/kesh-api/src/routes/onboarding.rs:843-844` `COMPANY_SELECT_FOR_UPDATE` — **constante partagée** par 3 helpers (`update_company_org_type` l.860, `update_company_accounting_language` l.891, `update_company_coordinates` l.924).
+
+> ⚠️ Vérifier après patch : `grep -rn "query_as::<_, .*Company>" crates/ --include=*.rs` → chaque site doit pointer vers une des 6 chaînes patchées. Aucun `SELECT ... FROM companies` mappant `Company` ne doit omettre `is_stub`.
 
 Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquement où stub) :
 - `companies.rs:33` repository `create` → DEFAULT FALSE (non-stub) ✓ inchangé.
@@ -94,7 +96,7 @@ Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquem
 
 ### Bootstrap backend (AC #4-7)
 
-- [ ] **AC #4** `bootstrap::ensure_admin_user` : si `company_count == 0 AND user_count == 0`, crée une company stub (`name="Setup en cours"`, `address="À configurer"`, `org_type=Independant`, `accounting_language=Fr`, `instance_language=Fr`, `is_stub=TRUE`) PUIS l'admin attaché à cette company. Valeurs placeholder satisfaisant les CHECK NOT NULL.
+- [ ] **AC #4** `bootstrap::ensure_admin_user` : si `company_count == 0 AND user_count == 0`, crée une company stub PUIS l'admin attaché. Valeurs placeholder **partagées avec `ensure_company_with_language`** via deux constantes communes `STUB_COMPANY_NAME = "(en cours de configuration)"` et `STUB_COMPANY_ADDRESS = "-"` (DRY — réutiliser les valeurs déjà en place `onboarding.rs:808-809`, ne PAS introduire une 2e paire divergente type `"Setup en cours"`). Reste : `org_type=Independant`, `accounting_language=Fr`, `instance_language=Fr`, `is_stub=TRUE`. Toutes les valeurs satisfont les CHECK NOT NULL (`name`/`address` non-vides). La constante `STUB_COMPANY_NAME` permet aussi au test/frontend de reconnaître un nom placeholder.
 - [ ] **AC #5** Idempotence préservée : appels répétés ne dupliquent ni company ni admin ; si `user_count > 0` → skip (inchangé) ; si `company_count > 0 AND user_count == 0` (partial state, ex. company créée par wizard mais admin pas bootstrappé) → créer l'admin sur la company existante (comportement actuel préservé, ne PAS recréer de stub).
 - [ ] **AC #6** Tolérance race (TOCTOU) préservée : `DbError::UniqueConstraintViolation` sur l'INSERT admin reste un succès silencieux ; le sanity-check post-insert (`bootstrap.rs:98-119`) reste non-fatal.
 - [ ] **AC #7** Log `tracing::info!` explicite après création stub+admin (id company stub + username, rappel de compléter l'onboarding + CHANGER LE MOT DE PASSE).
@@ -102,18 +104,19 @@ Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquem
 ### Exposition état onboarding (AC #8-10)
 
 - [ ] **AC #8** `OnboardingResponse` (`onboarding.rs:58`) gagne `is_stub: bool` (serde camelCase → `isStub`). Valeur lue sur la company courante (première company ; `false` si aucune company).
-- [ ] **AC #9** `get_state` (`onboarding.rs:75`) renseigne `isStub` depuis la company (sans casser la signature `From<OnboardingState>` — fetch company séparé dans le handler, pas dans le `From`).
-- [ ] **AC #10** `set_coordinates` (step 5→6) repasse `is_stub=FALSE` dans le même UPDATE que name/address/ide_number (`onboarding.rs:928`). Après cet UPDATE, `isStub` vaut `false` dans les réponses suivantes.
+- [ ] **AC #9** `get_state` (`onboarding.rs:75`) renseigne `isStub` via une **requête dédiée légère** dans le handler : `SELECT is_stub FROM companies ORDER BY id LIMIT 1` → `Option<bool>` (`false` si aucune company). NE PAS passer par `get_company()`/`LIST_SQL` (couplage inutile + dépend du patch T1). La signature `From<OnboardingState>` reste inchangée ; le handler combine `OnboardingResponse::from(state)` + override du champ `is_stub`.
+- [ ] **AC #10** `update_company_coordinates` (`onboarding.rs:916`, **appelé uniquement** depuis `set_coordinates` l.408 — vérifié unique appelant) injecte `is_stub = FALSE` de façon **inconditionnelle** dans son UPDATE (`onboarding.rs:928`) : `SET name = ?, address = ?, ide_number = ?, is_stub = FALSE, version = version + 1`. Acceptable car appelant unique. Après cet UPDATE (step 5→6), `isStub` vaut `false`. Documenter dans le code que l'injection inconditionnelle suppose l'appelant unique (si un 2e appelant émerge, extraire un paramètre `reset_stub`).
+- [ ] **AC #10bis** Path A (demo) : `set_coordinates` n'est **jamais** atteint (demo terminé à step 3). Pour éviter que `is_stub` reste `TRUE` éternellement sur un tenant demo, `seed_demo` (`onboarding.rs:154`, step 2→3) repasse `is_stub=FALSE` sur la company (la demo est considérée « configurée »). Test associé : après `seed_demo`, `isStub == false`.
 
 ### Frontend (AC #11-13)
 
 - [ ] **AC #11** `OnboardingState` (types + store) gagne `isStub: boolean` ; `fetchState()` et les POST le propagent.
-- [ ] **AC #12** Bannière/notice non-bloquante visible tant que `isStub == true` (texte i18n « Votre entreprise a un nom provisoire — complétez vos coordonnées »), affichée dans le flux onboarding. Disparaît dès `isStub == false`.
-- [ ] **AC #13** Le routage existant (`(app)/+layout.ts` force `/onboarding` si `step < 6`) **n'est pas régressé** — `isStub` est additif, ne modifie pas les seuils de redirection (Q2 : non-bloquant v0.1).
+- [ ] **AC #12** Bannière/notice non-bloquante affichée **dans le flux wizard `/onboarding`** (PAS dans le layout `(app)`) tant que `isStub == true`, texte i18n « Votre entreprise a un nom provisoire — complétez vos coordonnées ». Rationale ground-truth : `(app)/+layout.ts:39-43` redirige vers `/onboarding` dès `step < 6` (prod) / `< 3` (demo), et `is_stub` repasse `FALSE` à `set_coordinates` (step 5→6) **avant** que l'app prod soit accessible → une bannière dans `(app)` serait **dead UI** (jamais `step >= 6 && is_stub == true` en flux normal). La bannière vit donc dans le wizard, où `is_stub == true` coïncide avec un utilisateur authentifié à `step < 6`. Disparaît dès `isStub == false`.
+- [ ] **AC #13** Le routage existant (`(app)/+layout.ts` force `/onboarding` si `step < 6` prod / `< 3` demo ; `onboarding/+layout.ts` redirige vers `/` si `step >= 7` prod / `>= 3` demo) **n'est pas régressé** — `isStub` est purement additif, ne modifie aucun seuil de redirection (Q2 : non-bloquant v0.1).
 
 ### Tests (AC #14-16)
 
-- [ ] **AC #14** Tests unitaires `bootstrap.rs` (sqlx::test) : (a) fresh install DB vide → 1 company `is_stub=TRUE` + 1 admin ; (b) idempotent (2 appels → pas de doublon) ; (c) partial state company-sans-user → admin créé sur company existante, pas de stub ; (d) `users` existants → skip. Le test existant `bootstrap_skips_silently_when_no_company_exists` (`bootstrap.rs:255`) est **mis à jour** (sur DB vide on crée désormais stub+admin, plus de skip).
+- [ ] **AC #14** Tests unitaires `bootstrap.rs` (sqlx::test) : (a) fresh install DB vide → 1 company `is_stub=TRUE` + 1 admin attaché ; (b) idempotent (2 appels → pas de doublon company ni admin) ; (c) partial state company-sans-user → admin créé sur company existante, **pas** de nouveau stub ; (d) `users` existants → skip (inchangé). Le test existant `bootstrap_skips_silently_when_no_company_exists` (`bootstrap.rs:255`) est **renommé** (ex. `bootstrap_creates_stub_and_admin_on_empty_db`) et son assertion **inversée** (sur DB vide on crée désormais stub+admin — le nom actuel deviendrait mensonger). (e) après bootstrap, `get_state` (ou `onboarding::get_or_init_state` + lecture `is_stub`) retourne `step_completed == 0` ET `is_stub == true` sur la company stub (vérifie le séquencement : `onboarding_state` créé au premier fetch, `is_stub` lu sur la company stub du bootstrap).
 - [ ] **AC #15** Test du cycle `is_stub` : après `set_coordinates`, la company a `is_stub=false`.
 - [ ] **AC #16** Test E2E Playwright `fresh-install` : DB vide → login admin `.env` → wizard prod complet → company renommée → `isStub` false → app accessible. (Réutiliser les helpers E2E existants ; cf. `feedback_avoid_parallel_prs` pour le bundling PR.)
 
@@ -132,16 +135,17 @@ Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquem
 - [ ] **T2 — Bootstrap stub+admin** (AC #4-7)
   - [ ] Refactor `ensure_admin_user` : nouvelle branche `company_count == 0 && user_count == 0` → INSERT stub (`is_stub=TRUE`) + admin. Factoriser les valeurs placeholder (helper partagé avec `ensure_company_with_language` si DRY net, sinon constantes locales documentées).
   - [ ] Préserver branches existantes : `user_count > 0` skip ; `company_count > 0 && user_count == 0` → admin sur company existante ; race `UniqueConstraintViolation`.
-- [ ] **T3 — Exposition isStub** (AC #8-10)
-  - [ ] `OnboardingResponse` + `is_stub` field, handler `get_state` fetch company is_stub.
-  - [ ] `set_coordinates` UPDATE inclut `is_stub = FALSE`.
+- [ ] **T3 — Exposition isStub** (AC #8-10bis)
+  - [ ] `OnboardingResponse` + `is_stub` field (serde camelCase) ; handler `get_state` lit `is_stub` via `SELECT is_stub FROM companies ORDER BY id LIMIT 1` (Option<bool>, false si None) et l'override sur `OnboardingResponse::from(state)`.
+  - [ ] `update_company_coordinates` UPDATE inclut `is_stub = FALSE` (inconditionnel, appelant unique).
+  - [ ] `seed_demo` (step 2→3) repasse `is_stub = FALSE` sur la company (AC #10bis).
 - [ ] **T4 — Frontend** (AC #11-13)
   - [ ] `onboarding.types.ts` + store + api : `isStub`.
   - [ ] Bannière i18n non-bloquante (clés FR/DE/IT/EN — vérifier ownership i18n `npm run lint-i18n-ownership`).
 - [ ] **T5 — Tests** (AC #14-16)
-  - [ ] Tests unitaires bootstrap (4 cas) + maj `bootstrap_skips_silently_when_no_company_exists`.
-  - [ ] Test cycle is_stub.
-  - [ ] E2E Playwright fresh-install.
+  - [ ] Tests unitaires bootstrap : cas (a)-(d) + **renommer** `bootstrap_skips_silently_when_no_company_exists` → `bootstrap_creates_stub_and_admin_on_empty_db` (assertion inversée) + cas (e) `get_state` post-bootstrap (`step==0` + `is_stub==true`).
+  - [ ] Test cycle is_stub : après `set_coordinates` → `is_stub==false` ; après `seed_demo` → `is_stub==false`.
+  - [ ] E2E Playwright fresh-install (login admin .env → wizard prod → renommage → isStub false → app).
 - [ ] **T6 — Docs + quality gate** (AC #17-18)
   - [ ] CHANGELOG Fixed + `closes #120`.
   - [ ] Série Test Locally First complète.
@@ -150,7 +154,7 @@ Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquem
 
 ### Patterns à respecter (ground-truth)
 
-- **Placeholder cohérent** : aligner les valeurs stub bootstrap avec `ensure_company_with_language` (`onboarding.rs:808-812`). Aujourd'hui le wizard utilise `"(en cours de configuration)"` / `"-"`. Le bootstrap peut utiliser `"Setup en cours"` / `"À configurer"` ; **décision spec** : harmoniser sur une seule paire de constantes partagées pour éviter la divergence (DRY). À trancher Pass 1.
+- **Placeholder cohérent (DÉCIDÉ Pass 1)** : deux constantes partagées `STUB_COMPANY_NAME = "(en cours de configuration)"` + `STUB_COMPANY_ADDRESS = "-"` (valeurs déjà en place `onboarding.rs:808-809`), réutilisées par le bootstrap ET `ensure_company_with_language`. Pas de 2e paire divergente. Localisation des constantes : à placer là où les deux modules y accèdent sans cycle (ex. `crates/kesh-api/src/auth/bootstrap.rs` `pub(crate) const` réutilisé par `onboarding.rs`, OU un petit module partagé `kesh-api/src/onboarding_defaults.rs`). Décision finale d'emplacement au dev-story.
 - **Optimistic locking** : tous les UPDATE company passent par SELECT FOR UPDATE + `version = version + 1 WHERE version = ?` (cf. `onboarding.rs` helpers). Le bootstrap, lui, tourne au boot mono-process avant l'ouverture du serveur HTTP — pas de contention HTTP, mais garder la tolérance `UniqueConstraintViolation`.
 - **`is_stub` n'est PAS le mécanisme de routage** — `onboarding_state.step_completed` l'est (layouts existants). `is_stub` est un nudge additif. Ne pas dupliquer la logique de complétion.
 
@@ -169,7 +173,7 @@ Cette story touche ~5 modules de 1er niveau (kesh-db, kesh-api/auth, kesh-api/ro
 ### Questions ouvertes (à trancher en spec validate Pass 1 — cf. epic Q1/Q2)
 
 - **Q-A (epic Q2)** : bannière `is_stub` strictement bloquante (interdit l'accès app) ou non-bloquante (nudge) ? **Proposition spec : non-bloquante v0.1** (l'app force déjà l'onboarding via `step_completed`, un blocage strict supplémentaire serait redondant et risquerait de piéger un user en demo path). À confirmer Guy.
-- **Q-B** : valeurs placeholder harmonisées (bootstrap vs `ensure_company_with_language`) — une seule paire de constantes partagées ? **Proposition : oui, DRY.**
+- **Q-B (RÉSOLU Pass 1)** : valeurs placeholder harmonisées via constantes partagées `STUB_COMPANY_NAME`/`STUB_COMPANY_ADDRESS` (= `"(en cours de configuration)"` / `"-"`, valeurs existantes du wizard). DRY confirmé, emplacement des constantes au dev-story.
 - **Q-C (epic Q1)** : `is_stub` rétro-compat — les déploiements v0.1.0 existants (seul Guy, qui sera reset) auront `is_stub=FALSE`. Aucun impact runtime (les vraies companies déjà nommées ne sont pas stub). Confirmé non-problématique.
 
 ## Change Log
