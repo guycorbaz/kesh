@@ -67,7 +67,7 @@ Pas de `tracing-appender`. Pas de feature `json` sur `tracing-subscriber` (requi
    | `KESH_LOG_FILE_MAX_FILES` | `usize` | `7` | `0` ou non-numérique → `warn!` + fallback `7` |
    | `KESH_LOG_FILE_FORMAT` | enum `pretty`/`json` | `pretty` | valeur inconnue → `warn!` + fallback `pretty` |
 
-   Le pattern de parsing (match sur `env::var`, fallback sur valeur invalide, jamais de panic) suit le pattern existant `KESH_PORT` / `KESH_BANK_IMPORT_MAX_MB` (`config.rs:360-375`, `config.rs:642+`). **Nuance d'ordonnancement (cf. Dev Notes §"Ordonnancement boot")** : contrairement à `KESH_PORT` (parsé après l'init du subscriber), `LogConfig::from_env()` est appelé **avant** l'init du subscriber. Il ne doit donc PAS émettre `tracing::warn!` directement (perdu silencieusement). Il **collecte** les messages de fallback dans un `Vec<String>` retourné au caller, qui les **rejoue via `tracing::warn!` après `.init()`**.
+   Le pattern de parsing (match sur `env::var`, fallback sur valeur invalide, jamais de panic) suit le pattern existant `KESH_PORT` / `KESH_BANK_IMPORT_MAX_MB` (`config.rs:360-375`, `config.rs:642+`). **Nuance d'ordonnancement (cf. Dev Notes §"Ordonnancement boot")** : contrairement à `KESH_PORT` (parsé après l'init du subscriber), `LogConfig::from_env()` est appelé **avant** l'init du subscriber. Il ne doit donc PAS émettre `tracing::warn!` directement (perdu silencieusement). Il **collecte** les messages de fallback dans un `Vec<String>` retourné au caller, qui les **rejoue via `tracing::warn!` après `.init()`** (signature recommandée : `LogConfig::from_env() -> (LogConfig, Vec<String>)` — pas de `Result` car le parsing est infaillible par construction, tout est fallback).
 
 3. **Given** `KESH_LOG_FILE_PATH` absent OU chaîne vide, **When** boot, **Then** le layer fichier n'est **pas** créé (`None`), le comportement est identique à aujourd'hui (stdout uniquement), aucun fichier n'est ouvert, aucune erreur. Garantit la **rétro-compatibilité totale** : un déploiement v0.1.0 qui n'a pas la var continue à logger en stdout exactement comme avant.
 
@@ -228,6 +228,19 @@ Le container `kesh-api` tourne en **root** (pas de directive `USER` dans le `Doc
 - [Source: docker-compose.prod.yml] — service kesh-api, section environment + logging json-file existant + commentaires d'en-tête.
 - [Source: CLAUDE.md#Test Locally First] — checks backend obligatoires avant push.
 - Issue GitHub #119 — demande initiale logs fichier rotation.
+
+## Change Log
+
+### Spec validate (cycle convergé en 2 passes — 2026-05-28)
+
+Boucle adversariale LLMs rotatifs, contexte frais par passe (CLAUDE.md Review Iteration Rule) :
+
+| Passe | LLM | Findings | Détail |
+|---|---|---|---|
+| 1 | Sonnet 4.6 | 2 MEDIUM + 3 LOW | F1 warn! avant subscriber → collecte+replay post-init ; F2 algo décomposition path + cas limites ; F3 NEVER ignore max_log_files ; F4 tempfile dev-dep ; F5 CHANGELOG rename [Non publié]→[0.1.1] |
+| 2 | Haiku 4.5 | **0 > LOW** (1 LOW) | signature `LogConfig::from_env() -> (LogConfig, Vec<String>)` précisée. Discipline grep ground-truth appliquée, 0 faux-positif. |
+
+**Trend** : passe 1 = 5 findings (2M+3L) → passe 2 = 1 finding (0 > LOW). Critère d'arrêt atteint (uniquement LOW). Spec `ready-for-dev` confirmée. Prochaine étape : `dev-story`.
 
 ## Dev Agent Record
 
