@@ -1,6 +1,6 @@
 # Story v011.1: Logs fichier avec rotation (Issue #119)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -152,6 +152,13 @@ Pas de `tracing-appender`. Pas de feature `json` sur `tracing-subscriber` (requi
 - [ ] **T8 — Quality gate** (AC: #17)
   - [ ] Série Test Locally First backend complète, 0 régression.
 
+### Review Findings (Pass 1 Sonnet 4.6 — 2026-05-28) — CYCLE CONVERGÉ
+
+**Trend** : Pass 1 = 0C/0H/0M/**2 LOW** → critère d'arrêt CLAUDE.md §"Review Iteration Rule" atteint dès la passe 1 (uniquement LOW). Aucune passe supplémentaire requise.
+
+- [x] [Review][Patch] **R2 LOW** `decompose_path` rejette un chemin se terminant par séparateur (`/` ou `\`) : sans ce guard, `Path::file_stem` renverrait le nom du répertoire (`/var/log/kesh/` → stem `kesh`, parent `/var/log`) et écrirait le log un niveau trop haut → `None` → dégradation gracieuse stdout-only + test `decompose_trailing_slash_is_invalid` [`crates/kesh-api/src/logging.rs:decompose_path`]
+- [x] [Review][Patch] **R1 LOW** Note de limitation v0.1 ajoutée : les `std::process::exit(1)` des paths d'erreur fatale de boot ne droppent pas `_log_guard` → les derniers logs fichier bufferisés (non-bloquants) peuvent être perdus ; stdout (`docker logs`) reste fiable pour ces erreurs — acceptable v0.1 [`crates/kesh-api/src/main.rs`]
+
 ## Dev Notes
 
 ### Ordonnancement boot (le point critique)
@@ -241,6 +248,16 @@ Boucle adversariale LLMs rotatifs, contexte frais par passe (CLAUDE.md Review It
 | 2 | Haiku 4.5 | **0 > LOW** (1 LOW) | signature `LogConfig::from_env() -> (LogConfig, Vec<String>)` précisée. Discipline grep ground-truth appliquée, 0 faux-positif. |
 
 **Trend** : passe 1 = 5 findings (2M+3L) → passe 2 = 1 finding (0 > LOW). Critère d'arrêt atteint (uniquement LOW). Spec `ready-for-dev` confirmée. Prochaine étape : `dev-story`.
+
+### Code-review (cycle convergé en 1 passe Sonnet — 2026-05-28)
+
+Boucle adversariale post-`dev-story` (CLAUDE.md §"Review Iteration Rule") :
+
+| Passe | LLM | Findings | Patches |
+|---|---|---|---|
+| 1 | Sonnet 4.6 | 0C / 0H / 0M / **2 LOW** | R2 guard trailing-slash `decompose_path` + test ; R1 note limitation flush `process::exit(1)` |
+
+**Trend** : passe 1 = 2 findings (0 > LOW) → critère d'arrêt atteint dès la passe 1. Patches commités `fb43d50`. Détail des findings : cf. §"Review Findings (Pass 1 Sonnet 4.6)" sous Tasks / Subtasks. Status `review` (bump `done` au merge de la PR, convention projet `done` = mergé). Prochaine étape : Test Locally First complet (T8) + git push + PR.
 
 ## Dev Agent Record
 
