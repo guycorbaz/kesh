@@ -181,6 +181,16 @@ development_status:
   10-5-httponly-tokens-security: done  # `bmad-code-review 10-5` CYCLE CONVERGÉ 2026-05-26 Pass 4 Sonnet 4.6 (rotation Sonnet→Haiku→Opus→Sonnet bouclée). 4 passes review : Pass 1 Sonnet 5 patches (1C+2H+2M) → Pass 2 Haiku 1 patch (1M AC #14(c) reformulation) → Pass 3 Opus 16 patches (13M+3L pattern catch-architectural confirmé : test gaps + state machine + lib gotcha + migration security + refresh UX regression) → Pass 4 Sonnet 0 finding > LOW + 5 LOW defense-in-depth patchés (BH4-M1↓ runtime validation /me body + BH4-L1 updateExpiresIn dead code + ECH4-L1/L2 coverage gaps + AA4-L1 assertion 401 post-logout). Total 27 patches cumulés sur le cycle (22 > LOW + 5 LOW). 9 faux-positifs Haiku dismissed via grep ground-truth. 2 HIGH downgradés MEDIUM par contexte. 5 tests auth_cookies_e2e.rs PASS (4 originaux + me_endpoint_returns_user_identity_from_cookie + assertion 401 post-logout). 262/262 Vitest PASS (260 + 2 nouveaux hydrate 5xx + body malformé). Backend `me` saturating_sub overflow protection. Frontend `hydrate()` 4 branches (200/401/5xx/network) + defensive localStorage purge migration window + `BroadcastChannel('kesh:auth')` cross-tab sync + `doRefresh` re-fetch /me re-sync `_currentUser`. CHANGELOG sous-section dédiée `#### Sécurité durcie (Story 10-5)` + note test_mode désactive Secure. Test Locally First : cargo fmt + build + clippy + test workspace PASS, npm check 0 errors + test:unit 262/262. Closes #41 [KF-002]. Effort 1.5 jour. Prochaine étape : git push + PR vers main (squash-merge attendu sur 13 commits locaux). // Précédent : 2026-05-25 dev-story Opus 4.7 DONE single-pass orchestré T1→T12.
   epic-10-retrospective: optional
 
+  # === v0.1.1 — Hotfix prod (post-déploiement NAS Synology 2026-05-27) ===
+  # Planning : _bmad-output/planning-artifacts/epic-hotfix-v0.1.1.md (PR #123)
+  # Ordre figé : v011-1 logs (story-zéro) → v011-2 catch-22 (cat A bloquant) → v011-3 break-glass → v011-4 port 80
+  epic-hotfix-v0.1.1: in-progress
+  v011-1-file-logs-rotation: ready-for-dev
+  v011-2-fix-catch22-onboarding-fresh-install: backlog
+  v011-3-break-glass-admin-reset: backlog
+  v011-4-default-port-80: backlog
+  epic-hotfix-v0.1.1-retrospective: optional
+
   # === v0.2 — Complétude comptable ===
 
   # Epic 11: TVA Suisse (ex-Epic 9, renumbered 2026-04-20)
