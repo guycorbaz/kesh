@@ -46,6 +46,12 @@ async fn main() {
     // layer fichier en a besoin. Les warnings de fallback sont rejoués APRÈS
     // l'init (sinon perdus). Le `WorkerGuard` doit rester vivant tout le
     // programme → lié à `_log_guard` (non droppé avant la fin de `main`).
+    //
+    // Limitation connue v0.1 : les `std::process::exit(1)` sur les paths
+    // d'erreur fatale de boot (config, DB, migrations) ci-dessous ne droppent
+    // PAS `_log_guard` → les tout derniers logs fichier du buffer non-bloquant
+    // peuvent être perdus. stdout (`docker logs`) reste fiable pour ces erreurs ;
+    // acceptable v0.1 (cf. note process::exit du bloc downgrade protection).
     let (log_config, log_warnings) = LogConfig::from_env();
     let _log_guard = logging::init_tracing(&log_config);
     for warning in &log_warnings {

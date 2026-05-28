@@ -35,6 +35,13 @@ use crate::config::{LogConfig, LogFormat, LogRotation};
 /// Retourne `None` si aucun `file_stem` exploitable (chemin vide, se terminant
 /// par `/`, etc.) → le caller bascule en stdout-only (dégradation gracieuse).
 fn decompose_path(path: &str) -> Option<(PathBuf, String, String)> {
+    // Un chemin se terminant par un séparateur désigne un répertoire, pas un
+    // fichier. `Path::file_stem` ne le détecte pas (`/var/log/kesh/` → stem
+    // `kesh`), ce qui écrirait le log un niveau trop haut. On rejette → le
+    // caller bascule en stdout-only (dégradation gracieuse).
+    if path.ends_with('/') || path.ends_with('\\') {
+        return None;
+    }
     let p = Path::new(path);
     let stem = p.file_stem()?.to_str()?.to_string();
     if stem.is_empty() {
@@ -160,6 +167,14 @@ mod tests {
     #[test]
     fn decompose_empty_path_is_invalid() {
         assert!(decompose_path("").is_none());
+    }
+
+    #[test]
+    fn decompose_trailing_slash_is_invalid() {
+        // Sans le guard, file_stem renverrait "kesh" + parent "/var/log",
+        // écrivant le log un niveau trop haut. Doit être rejeté.
+        assert!(decompose_path("/var/log/kesh/").is_none());
+        assert!(decompose_path("relative/dir/").is_none());
     }
 
     #[test]
