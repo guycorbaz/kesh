@@ -186,7 +186,7 @@ development_status:
   # Ordre figé : v011-1 logs (story-zéro) → v011-2 catch-22 (cat A bloquant) → v011-3 break-glass → v011-4 port 80
   epic-hotfix-v0.1.1: in-progress
   v011-1-file-logs-rotation: done  # 2026-05-28 : MERGED via PR #123 (squash f33cf5f) en groupe avec planning Epic Hotfix v0.1.1. Cycle qualité : spec validate 2 passes (Sonnet→Haiku, 0 > LOW) + code-review 1 passe (Sonnet, 0C/0H/0M/2L convergé). closes #119. CI verte (Backend 13m50s + Frontend + Docker build). 190 tests kesh-api PASS. Bump review→done au démarrage v011-2 (pattern avoid-parallel-prs).
-  v011-2-fix-catch22-onboarding-fresh-install: ready-for-dev  # 2026-05-28 : create-story (Opus 4.7). Fix catch-22 #120, Option A complète (bootstrap stub company + admin sur DB vide + is_stub explicite). Ground-truth corrigé vs pseudo-code epic (schéma companies réel, 6 sites SELECT Company, mécanisme onboarding existant réutilisé). Scope ~5 modules (au seuil split). Prochaine étape : bmad-create-story validate v011-2 Pass 1 Sonnet 4.6.
+  v011-2-fix-catch22-onboarding-fresh-install: ready-for-dev  # 2026-05-28 : create-story (Opus) + spec validate CONVERGÉ 2 passes (Sonnet 8 patches → Haiku 0 > LOW, 0 faux-positif). Fix catch-22 #120, Option A (bootstrap stub company + admin sur DB vide + is_stub explicite). Ground-truth corrigé vs pseudo-code epic. Scope ~5 modules (au seuil split). Prochaine étape : bmad-dev-story v011-2 (Opus single-pass orchestré).
   v011-3-break-glass-admin-reset: backlog
   v011-4-default-port-80: backlog
   epic-hotfix-v0.1.1-retrospective: optional

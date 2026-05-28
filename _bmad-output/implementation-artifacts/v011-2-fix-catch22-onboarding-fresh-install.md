@@ -91,7 +91,7 @@ Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquem
 ### Migration & DB (AC #1-3)
 
 - [ ] **AC #1** Migration `crates/kesh-db/migrations/<timestamp>_companies_is_stub.sql` : `ALTER TABLE companies ADD COLUMN is_stub BOOLEAN NOT NULL DEFAULT FALSE;`. Non-breaking (ADD COLUMN avec default → anciens binaires l'ignorent) → **pas** de bump `kesh_version_min_required` (CLAUDE.md migration breaking policy, epic H8).
-- [ ] **AC #2** Ligne ajoutée à `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx` ou justification — CLAUDE.md P5).
+- [ ] **AC #2** Ligne ajoutée à `docs/migrations-idempotence-audit.md`, verdict **`tracked-by-sqlx`** (`ADD COLUMN` sans `IF NOT EXISTS` → re-exécution hors sqlx échouerait sur erreur 1060 duplicate column ; l'idempotence est garantie par le tracking sqlx, cf. précédent `20260419000002`). CLAUDE.md P5.
 - [ ] **AC #3** Entité `kesh_db::entities::Company` gagne `pub is_stub: bool` ; les **6 sites SELECT** (cf. §Contexte) ajoutent `is_stub` à leur liste de colonnes.
 
 ### Bootstrap backend (AC #4-7)
@@ -110,7 +110,7 @@ Sites INSERT company (le DEFAULT FALSE couvre les tests/repo ; explicite uniquem
 
 ### Frontend (AC #11-13)
 
-- [ ] **AC #11** `OnboardingState` (types + store) gagne `isStub: boolean` ; `fetchState()` et les POST le propagent.
+- [ ] **AC #11** `OnboardingState` (types + store) gagne `isStub: boolean`. Tous les handlers retournent déjà `Json<OnboardingResponse>` (`onboarding.rs:58`) — donc `isStub` est présent dans la réponse de `fetchState()` (GET) **et** de chaque POST (`setLanguage`/`setMode`/`seedDemo`/`setOrgType`/`setAccountingLanguage`/`setCoordinates`/`skipBank`). Le store doit donc assigner `_state` (incluant `isStub`) à partir de la réponse sur **chaque** appel (le pattern existant `_state = await api.xxx()` le fait déjà — vérifier que le type `OnboardingState` mis à jour propage bien `isStub`).
 - [ ] **AC #12** Bannière/notice non-bloquante affichée **dans le flux wizard `/onboarding`** (PAS dans le layout `(app)`) tant que `isStub == true`, texte i18n « Votre entreprise a un nom provisoire — complétez vos coordonnées ». Rationale ground-truth : `(app)/+layout.ts:39-43` redirige vers `/onboarding` dès `step < 6` (prod) / `< 3` (demo), et `is_stub` repasse `FALSE` à `set_coordinates` (step 5→6) **avant** que l'app prod soit accessible → une bannière dans `(app)` serait **dead UI** (jamais `step >= 6 && is_stub == true` en flux normal). La bannière vit donc dans le wizard, où `is_stub == true` coïncide avec un utilisateur authentifié à `step < 6`. Disparaît dès `isStub == false`.
 - [ ] **AC #13** Le routage existant (`(app)/+layout.ts` force `/onboarding` si `step < 6` prod / `< 3` demo ; `onboarding/+layout.ts` redirige vers `/` si `step >= 7` prod / `>= 3` demo) **n'est pas régressé** — `isStub` est purement additif, ne modifie aucun seuil de redirection (Q2 : non-bloquant v0.1).
 
@@ -180,7 +180,18 @@ Cette story touche ~5 modules de 1er niveau (kesh-db, kesh-api/auth, kesh-api/ro
 
 ### Create-story (2026-05-28)
 
-Story créée par `bmad-create-story v011-2` (Opus 4.7). Analyse ground-truth exhaustive : Issue #120, `bootstrap.rs`, schéma `companies` réel (≠ pseudo-code epic), mécanisme onboarding existant (`ensure_company_with_language` + `step_completed` + layouts forçant le wizard), 6 sites SELECT `Company`, `config.rs` (pas de champ `lang`). **Scope tranché par Guy : Option A complète** (is_stub explicite) malgré la redondance partielle identifiée avec `step_completed`. Status `ready-for-dev`. Prochaine étape : `bmad-create-story validate v011-2` Pass 1 (Sonnet 4.6, cycle CLAUDE.md Review Iteration Rule).
+Story créée par `bmad-create-story v011-2` (Opus 4.7). Analyse ground-truth exhaustive : Issue #120, `bootstrap.rs`, schéma `companies` réel (≠ pseudo-code epic), mécanisme onboarding existant (`ensure_company_with_language` + `step_completed` + layouts forçant le wizard), 6 sites SELECT `Company`, `config.rs` (pas de champ `lang`). **Scope tranché par Guy : Option A complète** (is_stub explicite) malgré la redondance partielle identifiée avec `step_completed`.
+
+### Spec validate (cycle convergé en 2 passes — 2026-05-28)
+
+Boucle adversariale LLMs rotatifs, contexte frais par passe (CLAUDE.md Review Iteration Rule) :
+
+| Passe | LLM | Findings | Détail |
+|---|---|---|---|
+| 1 | Sonnet 4.6 | 1C + 2H + 3M + 2L → **8 patches** | C1 (reclassé clarté : 6 chaînes SQL = 11 sites, complet) ; H1 injection `is_stub=FALSE` inconditionnelle ; H2 bannière dans wizard (pas (app) dead UI) ; M1 renommer test ; M2 `seed_demo` reset `is_stub` ; M3 `get_state` SELECT dédié ; L1 constantes placeholder DRY ; L2 cas test (e). |
+| 2 | Haiku 4.5 | **0 > LOW** (2 LOW) | Discipline grep ground-truth appliquée, **0 faux-positif** (aucun CRITICAL/HIGH halluciné). Patches Pass 1 validés cohérents. 2 LOW clarté : verdict audit `tracked-by-sqlx` explicite + phrasing AC #11 propagation isStub. |
+
+**Trend** : passe 1 = 8 findings (1C+2H+3M+2L) → passe 2 = 2 findings (0 > LOW). Critère d'arrêt atteint (uniquement LOW). Convergence rapide cohérente avec une spec issue d'une analyse ground-truth exhaustive (cf. v011-1, 2 passes). Status `ready-for-dev`. Prochaine étape : `bmad-dev-story v011-2` (Opus 4.7 single-pass orchestré).
 
 ## Dev Agent Record
 
