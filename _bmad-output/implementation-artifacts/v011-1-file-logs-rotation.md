@@ -67,7 +67,7 @@ Pas de `tracing-appender`. Pas de feature `json` sur `tracing-subscriber` (requi
    | `KESH_LOG_FILE_MAX_FILES` | `usize` | `7` | `0` ou non-numérique → `warn!` + fallback `7` |
    | `KESH_LOG_FILE_FORMAT` | enum `pretty`/`json` | `pretty` | valeur inconnue → `warn!` + fallback `pretty` |
 
-   Le pattern de parsing (match sur `env::var`, `warn!` + fallback sur valeur invalide, jamais de panic) suit exactement le pattern existant `KESH_PORT` / `KESH_BANK_IMPORT_MAX_MB` (`config.rs:360-375`, `config.rs:642+`).
+   Le pattern de parsing (match sur `env::var`, fallback sur valeur invalide, jamais de panic) suit le pattern existant `KESH_PORT` / `KESH_BANK_IMPORT_MAX_MB` (`config.rs:360-375`, `config.rs:642+`). **Nuance d'ordonnancement (cf. Dev Notes §"Ordonnancement boot")** : contrairement à `KESH_PORT` (parsé après l'init du subscriber), `LogConfig::from_env()` est appelé **avant** l'init du subscriber. Il ne doit donc PAS émettre `tracing::warn!` directement (perdu silencieusement). Il **collecte** les messages de fallback dans un `Vec<String>` retourné au caller, qui les **rejoue via `tracing::warn!` après `.init()`**.
 
 3. **Given** `KESH_LOG_FILE_PATH` absent OU chaîne vide, **When** boot, **Then** le layer fichier n'est **pas** créé (`None`), le comportement est identique à aujourd'hui (stdout uniquement), aucun fichier n'est ouvert, aucune erreur. Garantit la **rétro-compatibilité totale** : un déploiement v0.1.0 qui n'a pas la var continue à logger en stdout exactement comme avant.
 
@@ -85,7 +85,8 @@ Pas de `tracing-appender`. Pas de feature `json` sur `tracing-subscriber` (requi
    - un **layer fichier conditionnel** (`Option`) : `Some` si `KESH_LOG_FILE_PATH` est défini, `None` sinon (un `Option<Layer>` est lui-même un `Layer` no-op si `None` — pattern natif `tracing-subscriber`).
 
 8. **Given** `KESH_LOG_FILE_PATH=/var/log/kesh/kesh.log`, **When** le serveur démarre, **Then** :
-   - Le répertoire parent (`/var/log/kesh`) et le préfixe de fichier (`kesh.log`) sont passés à `RollingFileAppender::builder().rotation(...).filename_prefix(...).max_log_files(...).build(dir)`.
+   - Le chemin est décomposé via `std::path::Path` : `dir = parent()`, `prefix = file_stem()`, `suffix = extension()`. Pour `/var/log/kesh/kesh.log` → `dir=/var/log/kesh`, `prefix=kesh`, `suffix=log`. Cas limites à gérer explicitement : `extension()` = `None` (ex. `.../kesh`) → `suffix=""` (valide pour tracing-appender) ; `parent()` = `None` ou vide (ex. `kesh.log` sans dir) → fallback dir `.` (cwd) ; chemin se terminant par `/` ou `file_stem()` vide → chemin invalide → dégradation gracieuse AC #9 (stdout-only + message d'erreur).
+   - `dir`, `prefix`, `suffix` sont passés à `RollingFileAppender::builder().rotation(...).filename_prefix(prefix).filename_suffix(suffix).max_log_files(...).build(dir)`.
    - Le writer est wrappé par `tracing_appender::non_blocking(appender)` qui retourne `(NonBlocking, WorkerGuard)`.
    - **Le `WorkerGuard` est conservé vivant pour toute la durée du programme** (lié à une variable dans `main`, p.ex. `let _log_guard = ...;` qui n'est PAS droppée avant `axum::serve`). Sans cela, le writer non-bloquant flush partiellement et des logs sont perdus à l'arrêt. **C'est le gotcha le plus important de `tracing-appender`.**
 
@@ -113,7 +114,7 @@ Pas de `tracing-appender`. Pas de feature `json` sur `tracing-subscriber` (requi
 
 15. **Given** `docs/manual/fr/admin-manual.tex`, **When** review, **Then** une sous-section « Configuration des logs fichier » est ajoutée dans le § Configuration : explique les 4 vars, l'emplacement par défaut, la rotation, le format JSON pour ingestion outillée, et la consultation côté NAS (`tail -f ./log/kesh.log`). Le PDF est régénéré (`latexmk -xelatex` dans `docs/manual/fr/`) et committé (convention projet PR #102).
 
-16. **Given** `CHANGELOG.md`, **When** review, **Then** une entrée sous `## [0.1.1]` section `Added` documente les logs fichier avec rotation (style Keep a Changelog).
+16. **Given** `CHANGELOG.md` (qui contient aujourd'hui `## [Non publié]` vide + `## [0.1.0]`), **When** review, **Then** la section `## [Non publié]` est renommée `## [0.1.1] — <date>` (convention Keep a Changelog) et reçoit une entrée `Added` documentant les logs fichier avec rotation. **Ne pas** créer de section `[0.1.1]` dupliquée ni laisser un `[Non publié]` vide en double. (Les stories v011-2/3/4 ajouteront leurs entrées dans cette même section `[0.1.1]`.)
 
 ### Qualité (AC #17)
 
@@ -138,6 +139,7 @@ Pas de `tracing-appender`. Pas de feature `json` sur `tracing-subscriber` (requi
   - [ ] Restructurer `main.rs` : lire `LogConfig` tôt, init `registry().with(filter).with(stdout_layer).with(file_layer)`, **conserver le `WorkerGuard`** dans `main` (cf. §"Ordonnancement boot").
   - [ ] Vérifier que les erreurs de config (étape 2) restent loggées.
 - [ ] **T5 — Test d'intégration fichier** (AC: #11)
+  - [ ] Ajouter `tempfile = "3"` à `[dev-dependencies]` de `crates/kesh-api/Cargo.toml` (confirmé absent au 2026-05-28).
   - [ ] Test : layers construits avec un path temporaire → émission → flush → assertion contenu fichier.
 - [ ] **T6 — Infra** (AC: #12-14)
   - [ ] `docker-compose.prod.yml` : mount `./log:/var/log/kesh` + env `KESH_LOG_FILE_PATH` + commentaires.
@@ -179,7 +181,7 @@ let (non_blocking, guard) = tracing_appender::non_blocking(appender);
 ```
 
 - Décomposer `KESH_LOG_FILE_PATH` (`/var/log/kesh/kesh.log`) en `dir = /var/log/kesh`, `prefix = kesh`, `suffix = log` pour le builder. Documenter clairement le mapping (le builder ne prend pas un chemin de fichier unique mais dir+prefix+suffix ; avec rotation `NEVER`, le fichier reste `kesh.log`).
-- `Rotation::NEVER` + `max_log_files` : se comporte comme un fichier unique (pas de suffixe date) — vérifier le comportement attendu et le documenter.
+- `Rotation::NEVER` + `max_log_files` : `max_log_files` n'est honoré que quand la rotation crée de **nouveaux** fichiers. Avec `NEVER`, un fichier unique est réutilisé indéfiniment et `max_log_files` est **silencieusement ignoré** (aucun ancien fichier à élaguer). Le documenter dans le commentaire `KESH_LOG_FILE_MAX_FILES` de `.env.example` (AC #14) et ne PAS écrire de test attendant un plafonnement du nombre de fichiers avec `NEVER`.
 
 ### Layers tracing-subscriber
 
