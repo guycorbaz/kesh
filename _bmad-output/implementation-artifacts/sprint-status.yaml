@@ -185,7 +185,7 @@ development_status:
   # Planning : _bmad-output/planning-artifacts/epic-hotfix-v0.1.1.md (PR #123)
   # Ordre figé : v011-1 logs (story-zéro) → v011-2 catch-22 (cat A bloquant) → v011-3 break-glass → v011-4 port 80
   epic-hotfix-v0.1.1: in-progress
-  v011-1-file-logs-rotation: ready-for-dev
+  v011-1-file-logs-rotation: review
   v011-2-fix-catch22-onboarding-fresh-install: backlog
   v011-3-break-glass-admin-reset: backlog
   v011-4-default-port-80: backlog

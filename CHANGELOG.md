@@ -8,9 +8,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [Non publié]
+## [0.1.1] — Non publié
 
-Aucun changement post-v0.1.0 pour le moment.
+Hotfix post-déploiement v0.1.0 : corrections et améliorations opérationnelles découvertes lors du premier déploiement en production sur NAS Synology.
+
+### Ajouts
+
+- **Logs fichier avec rotation** : en plus de la sortie standard (`docker logs`), Kesh peut désormais écrire ses logs dans un fichier avec rotation automatique (quotidienne, horaire, ou désactivée), conservés sur le disque et inclus dans le backup. Activé par défaut en production (répertoire `./log/`). Configurable via `KESH_LOG_FILE_PATH`, `KESH_LOG_FILE_ROTATION`, `KESH_LOG_FILE_MAX_FILES` et `KESH_LOG_FILE_FORMAT` (format lisible ou JSON structuré). (#119)
 
 ---
 

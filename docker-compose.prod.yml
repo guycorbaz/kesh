@@ -93,10 +93,25 @@ services:
 
       # Logging — stdout/stderr standard Docker
       RUST_LOG: ${RUST_LOG:-info}
+
+      # Logs fichier avec rotation (Story v011-1, Issue #119) — EN PLUS de
+      # stdout/`docker logs`. Écrits dans /var/log/kesh (monté sur ./log côté
+      # hôte, co-localisé avec .env + DB pour le scope unique Hyper Backup).
+      # Opt-out : `KESH_LOG_FILE_PATH=""` dans .env → stdout pur (le mount
+      # ./log devient alors inutilisé mais inoffensif).
+      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH:-/var/log/kesh/kesh.log}
+      KESH_LOG_FILE_ROTATION: ${KESH_LOG_FILE_ROTATION:-daily}
+      KESH_LOG_FILE_MAX_FILES: ${KESH_LOG_FILE_MAX_FILES:-7}
+      KESH_LOG_FILE_FORMAT: ${KESH_LOG_FILE_FORMAT:-pretty}
     ports:
       # Restriction host-side au loopback NAS (LAN privé v0.1.0, D5).
       # Accès via SSH tunnel ou reverse proxy DSM (futur v0.2+).
       - "127.0.0.1:3000:3000"
+    volumes:
+      # Logs fichier (Story v011-1) — répertoire host ./log/ relatif au cwd
+      # du compose. Créé au 1er boot, owned root:root (le container tourne en
+      # root) — cf. warning permissions dans .env.example.
+      - ./log:/var/log/kesh
     networks:
       - frontend
     healthcheck:

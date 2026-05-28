@@ -30,3 +30,5 @@ Thumbs.db
 
 # Logs
 *.log
+# Story v011-1 : répertoire de logs fichier monté par docker-compose.prod.yml
+log/

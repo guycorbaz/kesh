@@ -246,8 +246,36 @@ Boucle adversariale LLMs rotatifs, contexte frais par passe (CLAUDE.md Review It
 
 ### Agent Model Used
 
+Opus 4.7 (1M context) — dev-story single-pass orchestré 2026-05-28.
+
 ### Debug Log References
+
+- `cargo fmt --all -- --check` : clean (après auto-format de 4 tests log_config).
+- `cargo clippy --workspace --all-targets -- -D warnings` : clean (0 warning).
+- `cargo test -p kesh-api --lib` : 189 passed / 0 failed (dont 14 nouveaux : 8 `config::tests::log_config_*` + 6 `logging::tests::*` incl. test fichier d'intégration `file_appender_writes_entries`).
+- Échecs `kesh-db` en run groupé (`cargo test --workspace`) : environnementaux (état DB dev partagé, non réinitialisé comme en CI) — `test_filter_by_search` passe en isolation. Aucun code kesh-db touché par cette story → non régression. Verts en CI (DB seedée + `-j1 --test-threads=1`).
 
 ### Completion Notes List
 
+- T1 deps : `tracing-appender = "0.2"` + feature `json` sur `tracing-subscriber` + `tempfile` dev-dep.
+- T2 `LogConfig` (séparé de `Config`, parsing infaillible, warnings collectés) + 8 tests parsing purs.
+- T3/T4 `crates/kesh-api/src/logging.rs` : `decompose_path`, `build_appender` (NEVER ignore `max_log_files`), `init_tracing` (registry stdout + fichier conditionnel `Option<BoxedLayer>`, `with_ansi(false)`, `json()` selon format), `WorkerGuard` retourné `#[must_use]`.
+- main.rs : `dotenvy::dotenv()` AVANT `LogConfig::from_env()`, `_log_guard` gardé vivant, warnings rejoués post-init.
+- T5 test fichier via subscriber local scoped (`with_default`) + flush sur drop guard.
+- T6 infra : mount `./log:/var/log/kesh` + 4 env vars prod compose, alignement dev (off par défaut), `.gitignore log/`, `.env.example` section + warning perms root.
+- T7 doc : `admin-manual.tex` §"Configuration des logs fichier" + PDF régénéré (xelatex), `CHANGELOG.md` [0.1.1] Ajouts.
+
 ### File List
+
+- `crates/kesh-api/Cargo.toml` (deps tracing-appender + json + tempfile)
+- `crates/kesh-api/src/config.rs` (LogConfig + enums + parsing + tests)
+- `crates/kesh-api/src/logging.rs` (NEW — layers + init)
+- `crates/kesh-api/src/lib.rs` (`pub mod logging`)
+- `crates/kesh-api/src/main.rs` (bootstrap logging restructuré)
+- `Cargo.lock` (tracing-appender 0.2.5 + tempfile 3)
+- `docker-compose.prod.yml` (mount + env logs)
+- `docker-compose.dev.yml` (env logs, off par défaut)
+- `.gitignore` (`log/`)
+- `.env.example` (section Logs fichier)
+- `docs/manual/fr/admin-manual.tex` + `admin-manual.pdf`
+- `CHANGELOG.md` ([0.1.1] Ajouts)

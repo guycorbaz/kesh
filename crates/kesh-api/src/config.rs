@@ -682,6 +682,166 @@ impl Config {
     }
 }
 
+// =============================================================================
+// Story v011-1 — Configuration des logs fichier (tracing-appender)
+// =============================================================================
+//
+// `LogConfig` est volontairement **séparé** de `Config` : il est lu **avant**
+// l'initialisation du subscriber tracing (cf. `main.rs`), alors que `Config`
+// est validé après. Son parsing est **infaillible** (jamais de panic ni
+// d'erreur fatale — tout est fallback) car une mauvaise valeur de log ne doit
+// jamais empêcher le serveur de démarrer. Les messages de fallback sont
+// **collectés** dans un `Vec<String>` retourné au caller, qui les rejoue via
+// `tracing::warn!` une fois le subscriber installé (émettre `tracing::*` avant
+// l'init les perdrait silencieusement).
+
+/// Stratégie de rotation des fichiers de log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogRotation {
+    Daily,
+    Hourly,
+    Never,
+}
+
+impl LogRotation {
+    /// Parse case-insensitive avec fallback `Daily` sur valeur inconnue.
+    fn parse(raw: &str, warnings: &mut Vec<String>) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "daily" => Self::Daily,
+            "hourly" => Self::Hourly,
+            "never" => Self::Never,
+            other => {
+                warnings.push(format!(
+                    "KESH_LOG_FILE_ROTATION='{other}' invalide (attendu daily/hourly/never), fallback 'daily'"
+                ));
+                Self::Daily
+            }
+        }
+    }
+}
+
+/// Format de sérialisation des entrées de log fichier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFormat {
+    Pretty,
+    Json,
+}
+
+impl LogFormat {
+    /// Parse case-insensitive avec fallback `Pretty` sur valeur inconnue.
+    fn parse(raw: &str, warnings: &mut Vec<String>) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "pretty" => Self::Pretty,
+            "json" => Self::Json,
+            other => {
+                warnings.push(format!(
+                    "KESH_LOG_FILE_FORMAT='{other}' invalide (attendu pretty/json), fallback 'pretty'"
+                ));
+                Self::Pretty
+            }
+        }
+    }
+}
+
+/// Nombre de fichiers de log conservés par défaut (rotation).
+const DEFAULT_LOG_MAX_FILES: usize = 7;
+
+fn parse_max_files(raw: &str, warnings: &mut Vec<String>) -> usize {
+    match raw.trim().parse::<usize>() {
+        Ok(0) => {
+            warnings.push(format!(
+                "KESH_LOG_FILE_MAX_FILES=0 invalide, fallback {DEFAULT_LOG_MAX_FILES}"
+            ));
+            DEFAULT_LOG_MAX_FILES
+        }
+        Ok(n) => n,
+        Err(_) => {
+            warnings.push(format!(
+                "KESH_LOG_FILE_MAX_FILES='{}' invalide, fallback {DEFAULT_LOG_MAX_FILES}",
+                raw.trim()
+            ));
+            DEFAULT_LOG_MAX_FILES
+        }
+    }
+}
+
+/// Configuration des logs fichier (Story v011-1, Issue #119).
+///
+/// - `file_path == None` → logs fichier désactivés (stdout-only, comportement
+///   identique à v0.1.0). Rétro-compatibilité totale.
+/// - Toutes les valeurs invalides retombent sur un défaut sain avec un warning
+///   collecté (cf. doc du module).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogConfig {
+    /// Chemin complet du fichier de log (ex. `/var/log/kesh/kesh.log`).
+    /// `None` désactive la sortie fichier.
+    pub file_path: Option<String>,
+    pub rotation: LogRotation,
+    pub max_files: usize,
+    pub format: LogFormat,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            file_path: None,
+            rotation: LogRotation::Daily,
+            max_files: DEFAULT_LOG_MAX_FILES,
+            format: LogFormat::Pretty,
+        }
+    }
+}
+
+impl LogConfig {
+    /// Parsing pur depuis des valeurs déjà extraites de l'environnement.
+    /// Testable sans toucher l'état global du process.
+    fn from_raw(
+        file_path: Option<String>,
+        rotation: Option<String>,
+        max_files: Option<String>,
+        format: Option<String>,
+    ) -> (LogConfig, Vec<String>) {
+        let mut warnings = Vec::new();
+        let file_path = file_path
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let rotation = rotation
+            .map(|v| LogRotation::parse(&v, &mut warnings))
+            .unwrap_or(LogRotation::Daily);
+        let max_files = max_files
+            .map(|v| parse_max_files(&v, &mut warnings))
+            .unwrap_or(DEFAULT_LOG_MAX_FILES);
+        let format = format
+            .map(|v| LogFormat::parse(&v, &mut warnings))
+            .unwrap_or(LogFormat::Pretty);
+        (
+            LogConfig {
+                file_path,
+                rotation,
+                max_files,
+                format,
+            },
+            warnings,
+        )
+    }
+
+    /// Charge la config logging depuis l'environnement. **Infaillible** :
+    /// retourne toujours une `LogConfig` valide + la liste des warnings de
+    /// fallback à rejouer après l'init du subscriber.
+    ///
+    /// Précondition : `dotenvy::dotenv()` doit avoir été appelé en amont par
+    /// `main.rs` pour que les vars d'un fichier `.env` soient visibles (cet
+    /// appel précède `Config::from_env()` qui charge `.env` de son côté).
+    pub fn from_env() -> (LogConfig, Vec<String>) {
+        Self::from_raw(
+            env::var("KESH_LOG_FILE_PATH").ok(),
+            env::var("KESH_LOG_FILE_ROTATION").ok(),
+            env::var("KESH_LOG_FILE_MAX_FILES").ok(),
+            env::var("KESH_LOG_FILE_FORMAT").ok(),
+        )
+    }
+}
+
 /// Teste si le host est une adresse loopback stricte.
 ///
 /// Accepte :
@@ -1505,5 +1665,100 @@ mod tests {
         )
         .with_test_mode(true);
         assert!(config.test_mode);
+    }
+
+    // --- Story v011-1 : parsing LogConfig (pur, sans env) ---
+
+    #[test]
+    fn log_config_defaults_when_all_absent() {
+        let (cfg, warnings) = LogConfig::from_raw(None, None, None, None);
+        assert_eq!(cfg, LogConfig::default());
+        assert_eq!(cfg.file_path, None);
+        assert_eq!(cfg.rotation, LogRotation::Daily);
+        assert_eq!(cfg.max_files, 7);
+        assert_eq!(cfg.format, LogFormat::Pretty);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn log_config_empty_path_disables_file_output() {
+        let (cfg, warnings) = LogConfig::from_raw(Some("   ".to_string()), None, None, None);
+        assert_eq!(cfg.file_path, None, "whitespace-only path → opt-out");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn log_config_path_is_trimmed() {
+        let (cfg, _) = LogConfig::from_raw(
+            Some("  /var/log/kesh/kesh.log  ".to_string()),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(cfg.file_path.as_deref(), Some("/var/log/kesh/kesh.log"));
+    }
+
+    #[test]
+    fn log_config_rotation_valid_values_case_insensitive() {
+        for (raw, expected) in [
+            ("daily", LogRotation::Daily),
+            ("HOURLY", LogRotation::Hourly),
+            ("Never", LogRotation::Never),
+        ] {
+            let mut w = Vec::new();
+            assert_eq!(LogRotation::parse(raw, &mut w), expected);
+            assert!(w.is_empty(), "valeur valide ne doit pas warner: {raw}");
+        }
+    }
+
+    #[test]
+    fn log_config_rotation_invalid_falls_back_with_warning() {
+        let (cfg, warnings) = LogConfig::from_raw(None, Some("weekly".to_string()), None, None);
+        assert_eq!(cfg.rotation, LogRotation::Daily);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("KESH_LOG_FILE_ROTATION"));
+    }
+
+    #[test]
+    fn log_config_format_valid_and_invalid() {
+        let mut w = Vec::new();
+        assert_eq!(LogFormat::parse("JSON", &mut w), LogFormat::Json);
+        assert_eq!(LogFormat::parse("pretty", &mut w), LogFormat::Pretty);
+        assert!(w.is_empty());
+        let (cfg, warnings) = LogConfig::from_raw(None, None, None, Some("xml".to_string()));
+        assert_eq!(cfg.format, LogFormat::Pretty);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("KESH_LOG_FILE_FORMAT"));
+    }
+
+    #[test]
+    fn log_config_max_files_valid_zero_and_invalid() {
+        // valeur valide
+        let (cfg, w) = LogConfig::from_raw(None, None, Some("30".to_string()), None);
+        assert_eq!(cfg.max_files, 30);
+        assert!(w.is_empty());
+        // zéro → fallback 7 + warning
+        let (cfg, w) = LogConfig::from_raw(None, None, Some("0".to_string()), None);
+        assert_eq!(cfg.max_files, 7);
+        assert_eq!(w.len(), 1);
+        // non-numérique → fallback 7 + warning
+        let (cfg, w) = LogConfig::from_raw(None, None, Some("abc".to_string()), None);
+        assert_eq!(cfg.max_files, 7);
+        assert_eq!(w.len(), 1);
+    }
+
+    #[test]
+    fn log_config_accumulates_multiple_warnings() {
+        let (cfg, warnings) = LogConfig::from_raw(
+            Some("/tmp/k.log".to_string()),
+            Some("bad".to_string()),
+            Some("nope".to_string()),
+            Some("bad".to_string()),
+        );
+        assert_eq!(cfg.file_path.as_deref(), Some("/tmp/k.log"));
+        assert_eq!(cfg.rotation, LogRotation::Daily);
+        assert_eq!(cfg.max_files, 7);
+        assert_eq!(cfg.format, LogFormat::Pretty);
+        assert_eq!(warnings.len(), 3, "3 vars invalides → 3 warnings");
     }
 }
