@@ -14,21 +14,22 @@ relatedDecisions:
   - "Break-glass via KESH_ADMIN_RESET=true (quick fix recovery offline, complète .env-driven bootstrap)"
   - "Recovery production-grade (forgot-password SMTP, 2FA, lockout) reportée v0.2+ via Issue #122"
   - "Logs fichier en ./log/ relatif au cwd docker-compose (cohérent Hyper Backup scope unique)"
-  - "Workflow full BMAD pour les 3 stories (qualité Epic 10 maintenue)"
-  - "Port défaut 80 (Issue #118) PAS dans cette release — Guy utilise Traefik, déprioritisé"
+  - "Workflow full BMAD pour les 4 stories (qualité Epic 10 maintenue)"
+  - "Port défaut 80 (Issue #118) AJOUTÉ à v0.1.1 (Guy 2026-05-28) — qualité install pour les autres utilisateurs ; le mapping host reste au choix de l'utilisateur (ex. 3000:80, IP dédiée container)"
 crates:
-  - kesh-api (bootstrap stub company + admin, break-glass reset, tracing-appender layer fichier)
+  - kesh-api (bootstrap stub company + admin, break-glass reset, tracing-appender layer fichier, port défaut 80 config.rs)
   - kesh-db (audit_log event break_glass_reset)
-  - infra (docker-compose.prod.yml mount ./log/, .env.example sections nouvelles)
-  - docs (manuel admin sections « J'ai oublié mon mot de passe » + « Configuration logs fichier » + PDF régénéré)
-  - .github/workflows (release.yml inchangé, ci.yml inchangé)
+  - infra (docker-compose.{prod,dev,base}.yml port 80 + mount ./log/, Dockerfile EXPOSE 80, .env.example sections nouvelles)
+  - docs (manuel admin sections « J'ai oublié mon mot de passe » + « Configuration logs fichier » + « Changer le port d'écoute » + PDF régénéré)
+  - .github/workflows (release.yml smoke test sur port 80, ci.yml inchangé)
 stories:
   - v011-1-file-logs-rotation
   - v011-2-fix-catch22-onboarding-fresh-install
   - v011-3-break-glass-admin-reset
+  - v011-4-default-port-80
 ---
 
-# Epic Hotfix v0.1.1 — Onboarding fresh-install + admin recovery + logs fichier
+# Epic Hotfix v0.1.1 — Onboarding fresh-install + admin recovery + logs fichier + port 80
 
 ## Vue d'ensemble
 
@@ -36,11 +37,10 @@ stories:
 
 **Objectif :** Livrer une image Docker `gcorbaz/kesh:v0.1.1` qui corrige le bug d'install + ajoute deux features de qualité de vie ops (recovery admin break-glass + logs fichier accessibles hors `docker logs`) découvertes en même temps que le bug bloquant.
 
-**Périmètre :** 3 stories. Aucune feature comptable nouvelle (pure ops). Toute la base v0.1.0 reste utilisable telle quelle après upgrade — pas de migration utilisateur breaking.
+**Périmètre :** 4 stories. Aucune feature comptable nouvelle (pure ops). Toute la base v0.1.0 reste utilisable telle quelle après upgrade — pas de migration utilisateur DB breaking (le changement de port par défaut est un breaking *de configuration*, documenté CHANGELOG, pas un breaking DB → pas de bump `kesh_version_min_required`, cf. H8).
 
 **Hors scope v0.1.1 :**
 - Recovery password production-grade (forgot-password email, 2FA, lockout policies) → reporté v0.2+ via Issue #122 (large scope, demande PRD dédiée + infra SMTP).
-- Port défaut 80 (Issue #118) → déprioritisé : Guy utilise Traefik, le port interne 3000 est invisible aux utilisateurs ; à reconsidérer en v0.2+.
 - TVA Suisse (= Epic 11, première vraie feature v0.2) → kickoff Epic 11 conditionné à v0.1.1 mergée + Guy capable d'utiliser sa prod NAS sans bug bloquant.
 
 **Provenance :**
@@ -66,7 +66,7 @@ stories:
 | H3 | **Break-glass `KESH_ADMIN_RESET=true`** comme recovery v0.1.1 | Quick fix offline, ~30 lignes Rust, pas de schema change, pas de SMTP. Trade-off : exige accès SSH au NAS. Acceptable v0.1.x ; recovery production-grade reportée Issue #122 v0.2+ |
 | H4 | **Logs fichier en `./log/`** relatif au cwd docker-compose (pas `/var/log/kesh` host) | Backup Hyper Backup scope unique sur `/volume1/docker/kesh/` (env + compose + log + DB sont co-localisés). Opt-out via `KESH_LOG_FILE_PATH=""` pour Docker users qui préfèrent stdout pur |
 | H5 | **Workflow full BMAD uniforme** pour les 3 stories | Cycle complet `create-story + spec validate 4 passes + dev-story + code-review 4 passes` par story. Qualité Epic 10 maintenue. ~1.5-2 jours total |
-| H6 | **Port défaut 80 (Issue #118) PAS dans v0.1.1** | Guy utilise Traefik → port interne 3000 invisible. Déprioritisé. Re-trier au triage Issue #118 (probablement v0.2 ou won't fix) |
+| H6 | **Port défaut 80 (Issue #118) AJOUTÉ à v0.1.1** (révisé 2026-05-28) | Qualité install pour les autres utilisateurs : URL HTTP standard sans `:3000`. Défaut applicatif `KESH_PORT=80` (`config.rs`) + `EXPOSE 80` (`Dockerfile`) + les 3 compose pointent le container sur `:80`. Le **mapping host reste au choix de l'utilisateur** (ex. `3000:80`, IP dédiée container macvlan) — doc explique comment remapper si conflit port 80 (notamment Synology DSM / Web Station). **N'inverse PAS D5** : le bind loopback `127.0.0.1` du compose prod est conservé (reverse proxy reste le modèle d'exposition LAN recommandé). Décision Guy 2026-05-28 |
 | H7 | **Pas de PRs parallèles** — 3 stories en commits stackés sur `epic-hotfix-v0.1.1` ou PRs séquentielles | Cohérent `feedback_avoid_parallel_prs`. À décider au moment de la 1ère PR selon scope effectif |
 | H8 | **0 breaking change** depuis v0.1.0 — pas de bump `kesh_version_min_required` | Migration P3 (CLAUDE.md migration breaking policy) : aucune migration de cette release ne tombe dans les opérations breaking (`DROP COLUMN`, `RENAME`, `MODIFY COLUMN`). Si une story introduit `ADD COLUMN nullable`, c'est non-breaking → pas de bump |
 | H9 | **Logs fichier en premier** (Story v011-1) — pas en dernier | Sans logs accessibles, le debugging des Stories v011-2 (catch-22) et v011-3 (break-glass) en dev/test serait pénible. Livrer cette story-zéro d'abord donne aux 2 autres une infrastructure d'observabilité. Décision Guy 2026-05-27 |
@@ -167,19 +167,55 @@ if company_count == 0 && user_count == 0 {
 
 **Effort estimé :** ~0.5 jour (scope contenu — pas de schema change, code Rust limité, doc).
 
+### Story v011-4 : Port par défaut 80 (Issue #118)
+
+**Severity : amélioration qualité install.** Décidée 2026-05-28 (révision décision H6). Guy veut éviter les soucis de port en prod, **surtout pour les autres utilisateurs** qui installeront Kesh — URL HTTP standard `http://kesh.local` sans `:3000`.
+
+**Scope :** Changer le port applicatif par défaut de `3000` à `80` (port interne du container) et aligner les artefacts Docker + doc. Le **mapping host reste au choix de l'utilisateur** : si le port 80 est occupé (Synology DSM, Web Station), l'utilisateur remappe lui-même (`3000:80`, IP dédiée container, etc.) sans toucher au défaut applicatif. Le bind loopback `127.0.0.1` du compose prod (D5) est conservé.
+
+**Surface (ground-truth 2026-05-28) :**
+- `crates/kesh-api/src/config.rs` — défaut `port: 3000` (ligne ~293) + 4 fallbacks `3000` (lignes ~363/364, ~369/372, ~375) → `80` ; doc comment (ligne ~27).
+- `Dockerfile` — `EXPOSE 3000` (ligne 28) → `EXPOSE 80`. Container tourne en root (pas de `USER`) → bind 80 OK sans `CAP_NET_BIND_SERVICE`.
+- `docker-compose.prod.yml` — `KESH_PORT: ${KESH_PORT:-80}`, mapping `127.0.0.1:80:80` (loopback D5 conservé), healthcheck `http://localhost/health`, commentaires d'exposition mis à jour.
+- `docker-compose.yml` — `KESH_PORT: ${KESH_PORT:-80}`, mapping `80:80`, healthcheck.
+- `docker-compose.dev.yml` — `KESH_PORT: "80"`, mapping `127.0.0.1:80:80`, healthcheck. ⚠️ cf. Q7 (friction `cargo run` natif).
+- `crates/kesh-api/src/config.rs` tests — assertions sur le port défaut `3000` → `80`.
+- `.github/workflows/release.yml` — smoke test `docker run` + `curl` sur port 80.
+- `.env.example` — commentaire `KESH_PORT` + note conflit port 80 / procédure d'override.
+- `README.md` quickstart — `curl http://localhost/health` (sans `:3000`).
+- `docs/manual/fr/admin-manual.tex` (+ PDF régénéré) — sous-section « Changer le port d'écoute (conflit port 80, ex. Synology DSM) ».
+- `CHANGELOG.md` v0.1.1 — entrée `Changed`.
+
+**Acceptance criteria (high-level — à détailler en spec validate) :**
+- [ ] `config.rs` défaut `KESH_PORT=80` + tests assertions mis à jour.
+- [ ] `Dockerfile` `EXPOSE 80`.
+- [ ] 3 compose pointent le container sur `:80` (healthchecks alignés), bind loopback prod conservé.
+- [ ] `.env.example` documente le défaut 80 + procédure override en cas de conflit (Synology DSM / Web Station) avec exemples (`3000:80`, IP dédiée container).
+- [ ] Manuel admin FR : sous-section « Changer le port d'écoute » (+ PDF régénéré).
+- [ ] README quickstart : `curl http://localhost/health` (sans `:3000`).
+- [ ] Release smoke test (`release.yml`) curl sur port 80 vert.
+- [ ] CHANGELOG v0.1.1 entrée `Changed` documente le breaking *de configuration* (utilisateurs v0.1.0 doivent accepter le défaut 80 OU setter `KESH_PORT=3000` dans leur `.env`/mapping).
+- [ ] CI verte, 0 régression (vérifier que les E2E Playwright + smoke test référencent le port via env/config et non en dur).
+
+**Effort estimé :** ~0.5 jour (Small — pas de schema change ; config + Docker + doc ; vigilance sur les références de port en dur dans tests/smoke).
+
+**Séquencement :** Livré **en dernier** (v011-4), après le fix bloquant catch-22 (v011-2). Si l'E2E fresh-install de v011-2 ou le smoke test release référencent le port en dur, les re-valider contre 80 dans cette story.
+
 ---
 
 ## Critères d'arrêt Epic Hotfix v0.1.1 (= release v0.1.1 prête)
 
-- [ ] 3/3 stories avec status `done` dans `sprint-status.yaml` (`v011-1`, `v011-2`, `v011-3`).
+- [ ] 4/4 stories avec status `done` dans `sprint-status.yaml` (`v011-1`, `v011-2`, `v011-3`, `v011-4`).
 - [ ] Issue #119 [logs fichier rotation] **fermée** sur GitHub (via Story v011-1).
 - [ ] Issue #120 [catch-22 onboarding] **fermée** sur GitHub (via Story v011-2).
 - [ ] Issue #121 [break-glass admin reset] **fermée** sur GitHub (via Story v011-3).
+- [ ] Issue #118 [port défaut 80] **fermée** sur GitHub (via Story v011-4).
 - [ ] Image Docker Hub `gcorbaz/kesh:v0.1.1` + `:latest` (re-pointé) publiée (via tag git `v0.1.1`).
 - [ ] CHANGELOG.md v0.1.1 humanisé + section `[0.1.1] — YYYY-MM-DD` complète.
 - [ ] **Install fresh effective sur NAS Synology Guy** (re-deploy de zéro) : `docker compose up -d` → wizard accessible → company créée → admin loggé → 0 friction.
 - [ ] **Cycle break-glass testé sur prod NAS** : `KESH_ADMIN_RESET=true` + nouveau mdp → restart → login OK avec nouveau mdp → audit_log entry présent.
 - [ ] **Logs fichier visibles** dans `./log/` côté NAS, rotation fonctionnelle (testée en simulant `docker compose restart` répétés).
+- [ ] **Port 80 effectif** : install fresh joignable sur le port standard (`http://<nas>` ou via mapping/proxy de l'utilisateur), procédure d'override en cas de conflit documentée et vérifiée.
 - [ ] Rétrospective Hotfix v0.1.1 produite (court — 3 stories, ~2 jours, peu de findings attendus).
 - [ ] PR(s) Epic Hotfix v0.1.1 mergée(s) sur `main`.
 - [ ] **0 régression** sur baselines existantes : 250+ Vitest + cargo test workspace + 76 Playwright E2E + smoke test release.yml.
@@ -197,6 +233,7 @@ if company_count == 0 && user_count == 0 {
 | Q4 | **Logs fichier perms volume Docker** — si `kesh-api` tourne avec UID 0 (root, cas actuel) et écrit dans `./log/`, le owner host-side sera `root`. Synology DSM peut-il backuper proprement ? Tester avant clôture v0.1.1 | Story v011-1 dev (test en prod réelle Guy) |
 | Q5 | **Bundle des 3 stories en 1 PR ou 3 PRs séquentielles ?** Cohérent `feedback_avoid_parallel_prs` mais 1 grosse PR peut être lourde. À trancher après spec validate Story v011-2 (selon taille des patches estimée) | Pré-PR Story v011-2 |
 | Q6 | **CHANGELOG entry v0.1.1 = 1 section ou 1 section par story ?** Cohérent Keep a Changelog : sections par type (Added/Fixed/Changed/Security) regroupant tous les changements de la release | Doc avant release tag |
+| Q7 | **Friction `cargo run` natif (Story v011-4)** — défaut `KESH_PORT=80` impose à un dev qui lance `cargo run` sans env de binder le port 80 (privilégié < 1024 sur Linux/macOS) : le bind échoue sans `CAP_NET_BIND_SERVICE`/root. (Le mapping host Docker, lui, ne demande pas root car c'est le daemon qui binde.) Mitigation : doc dev + `.env` local `KESH_PORT=3000`, ou défaut dev distinct. À trancher | Story v011-4 spec validate Pass 1 |
 
 ---
 
@@ -206,7 +243,9 @@ if company_count == 0 && user_count == 0 {
 - Issue #121 : Break-glass admin reset via `.env`
 - Issue #119 : Logs fichier avec rotation
 - Issue #122 : Recovery production-grade SMTP+2FA (v0.2+, NOT in v0.1.1)
-- Issue #118 : Port défaut 80 (déprioritisé, NOT in v0.1.1)
+- Issue #118 : Port défaut 80 (AJOUTÉ v0.1.1 via Story v011-4)
+- `crates/kesh-api/src/config.rs` — port défaut 3000→80 Story v011-4 (+ `KESH_LOG_FILE_*` v011-1, `KESH_ADMIN_RESET` v011-3)
+- `Dockerfile:28` (`EXPOSE 3000`→80) + `docker-compose.{prod,dev,yml}` mappings + `.github/workflows/release.yml` smoke test — Story v011-4
 - `crates/kesh-api/src/auth/bootstrap.rs` — code à modifier Story v011-2 + v011-3
 - `crates/kesh-api/src/routes/users.rs:264` — `PUT /reset-password` existant (admin RBAC, ne couvre pas le break-glass solo)
 - `crates/kesh-api/src/config.rs` — nouvelles env vars à ajouter (`KESH_LOG_FILE_*` Story v011-1, `KESH_ADMIN_RESET` Story v011-3)
