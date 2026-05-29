@@ -782,47 +782,39 @@ La création d'une company se fait via l'interface utilisateur après connexion 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Premier démarrage}
 
-\subsection{Création du super-administrateur initial}
+\subsection{Création du compte administrateur initial}
 
-Au tout premier démarrage de Kesh sur une instance vide, le système expose un endpoint d'\textbf{onboarding initial} qui permet de créer le premier compte super-administrateur \emph{sans authentification}.
+Au tout premier démarrage de Kesh sur une base de données vide, le \emph{bootstrap} crée automatiquement le compte administrateur défini par les variables \keshpath{KESH\_ADMIN\_USERNAME} et \keshpath{KESH\_ADMIN\_PASSWORD} du fichier \keshpath{.env}, ainsi qu'une \textbf{company provisoire} (placeholder) à laquelle ce compte est rattaché.
 
-Cet endpoint est désactivé automatiquement dès qu'un utilisateur existe dans la base. Il est donc critique de \textbf{créer le super-admin immédiatement après le premier démarrage}.
+Cette company provisoire débloque le premier accès : sans elle, l'administrateur ne pourrait pas être créé (contrainte d'intégrité \keshcommand{users.company\_id NOT NULL}), et le wizard d'onboarding — protégé par l'authentification — serait inatteignable. La company provisoire est renommée et complétée lors de l'onboarding.
 
-\subsubsection{Procédure via l'interface Web}
+\subsubsection{Procédure}
 
 \begin{enumerate}
-    \item Ouvrir \keshpath{https://compta.exemple.ch} dans un navigateur.
-    \item L'écran d'onboarding initial apparaît automatiquement (titre « Bienvenue dans Kesh »).
-    \item Saisir l'email, le mot de passe (fort, ≥ 12 caractères) et la confirmation.
-    \item Choisir la langue par défaut de l'interface.
-    \item Cliquer sur « Créer le compte administrateur ».
-    \item Se connecter avec les identifiants créés.
+    \item Renseigner \keshpath{KESH\_ADMIN\_USERNAME} et \keshpath{KESH\_ADMIN\_PASSWORD} (mot de passe fort, ≥ 12 caractères) dans \keshpath{.env} \emph{avant} le premier démarrage.
+    \item Démarrer la stack (\keshcommand{docker compose up -d}).
+    \item Ouvrir \keshpath{https://compta.exemple.ch} dans un navigateur et se connecter avec ces identifiants.
+    \item Le wizard d'onboarding démarre automatiquement.
+    \item \textbf{Changer immédiatement le mot de passe administrateur} après la première connexion (les logs affichent un rappel « CHANGEZ LE MOT DE PASSE » au premier démarrage).
 \end{enumerate}
-
-\subsubsection{Procédure via la CLI (sans navigateur disponible)}
-
-\begin{lstlisting}[language=bash]
-docker compose exec kesh kesh-cli admin create \
-    --email admin@exemple.ch \
-    --password '<mot_de_passe_fort>' \
-    --locale fr
-\end{lstlisting}
 
 \begin{keshwarning}
-Si vous oubliez l'étape d'onboarding initial et qu'un attaquant arrive sur votre instance avant vous, il peut créer le super-admin à votre place. \textbf{Bloquez l'accès réseau jusqu'à création du super-admin}, ou désactivez l'endpoint via la variable \texttt{KESH\_DISABLE\_INITIAL\_ONBOARDING=true} et utilisez la CLI.
+Tant que le mot de passe administrateur du \keshpath{.env} n'a pas été changé, toute personne ayant accès au fichier peut se connecter. Restreindre les permissions du fichier \keshpath{.env} (\keshcommand{chmod 600}) et changer le mot de passe dès la première connexion. La récupération en cas de mot de passe perdu (\emph{break-glass}) est traitée par une procédure dédiée — voir les notes de version v0.1.1.
 \end{keshwarning}
 
-\subsection{Création de la première company}
+\subsection{Configuration de la company via l'onboarding}
 
-Une fois connecté en tant que super-administrateur, créer la première company :
+Une fois connecté, l'\textbf{assistant d'onboarding} (wizard) configure la company provisoire — il n'y a pas d'écran séparé de création de société :
 
 \begin{enumerate}
-    \item Aller dans \emph{Paramètres} → \emph{Sociétés}.
-    \item Cliquer sur « Nouvelle société ».
-    \item Renseigner les informations légales (raison sociale, IDE, adresse, langue, timezone, devise).
-    \item Choisir le plan comptable de référence (Sterchi, KMU, ou import personnalisé CSV).
-    \item Cliquer sur « Créer ».
+    \item \textbf{Langue} de l'interface, puis \textbf{mode} (guidé ou expert).
+    \item \textbf{Parcours} : données de démonstration (exploration) ou configuration de production.
+    \item \textbf{Type d'organisation} (indépendant, association, PME) et \textbf{langue comptable}.
+    \item \textbf{Coordonnées} de l'organisation (raison sociale, adresse, numéro IDE) — ceci renomme la company provisoire et lève la bannière « nom provisoire ».
+    \item \textbf{Compte bancaire} principal (optionnel, configurable plus tard).
 \end{enumerate}
+
+Tant que les coordonnées ne sont pas renseignées, une bannière non-bloquante rappelle que l'entreprise porte un nom provisoire (correctif catch-22 fresh-install, v0.1.1).
 
 \subsection{Choix du plan comptable}
 
