@@ -226,11 +226,21 @@ Analyse de couverture (demandée par le Project Lead) :
 
 - [ ] [Review][Decision] Race boot concurrent — `bootstrap` crée une company stub sans guard d'unicité (`companies.name` non-unique ; seul `ide_number` l'est). 2 process kesh-api démarrant simultanément sur une DB vide pourraient créer 2 stubs (le 2e admin échoue sur `uq_users_username` → géré, mais laisse une company stub orpheline). Impact réel limité : déploiement mono-container (pas de boot concurrent), et `response_with_stub`/wizard utilisent `ORDER BY id LIMIT 1` → l'orpheline (id 2) est bénigne. Décision : (a) guard auto-nettoyant (DELETE stub orphelin sur `UniqueConstraintViolation` si stub créé ce boot) ; (b) documenter comme limitation concurrence acceptée (cohérent avec la tolérance `UniqueConstraintViolation` existante) ; (c) dismiss.
 
-### Patches
+### Patches (appliqués Pass 1, commit `2d48cc9`)
 
-- [ ] [Review][Patch] Message `expect` stale « total - 4 » (var = `total - 5`) [crates/kesh-db/tests/migrations_upgrade_path.rs:85]
-- [ ] [Review][Patch] `bootstrap_idempotent_on_empty_db` n'assert pas la préservation de `is_stub=TRUE` ni le lien FK admin↔stub après 2e appel [crates/kesh-api/src/auth/bootstrap.rs]
-- [ ] [Review][Patch] `test_endpoints_e2e::seed_fresh_*` n'assert pas `is_stub=TRUE` sur la company du preset `fresh` (contrat fixture non gardé) [crates/kesh-api/tests/test_endpoints_e2e.rs]
+- [x] [Review][Patch] Guard race boot concurrent : DELETE stub orphelin (`WHERE id=?`) sur `UniqueConstraintViolation` si `company_count==0` (stub créé ce boot) — bootstrap self-healing [crates/kesh-api/src/auth/bootstrap.rs]
+- [x] [Review][Patch] Message `expect` stale « total - 4 » → « total - 5 » [crates/kesh-db/tests/migrations_upgrade_path.rs:85]
+- [x] [Review][Patch] `bootstrap_idempotent_on_empty_db` assert désormais `is_stub=TRUE` préservé + lien FK admin↔stub après 2e appel [crates/kesh-api/src/auth/bootstrap.rs]
+- [x] [Review][Patch] `test_endpoints_e2e::seed_fresh_*` assert désormais `is_stub=TRUE` sur la company du preset `fresh` [crates/kesh-api/tests/test_endpoints_e2e.rs]
+
+### Trend (cycle convergé en 2 passes — Review Iteration Rule)
+
+| Passe | LLM | Findings | Détail |
+|---|---|---|---|
+| 1 | Sonnet 4.6 | 1 HIGH + 3 MEDIUM + LOWs → **4 patches** + ~11 dismiss | HIGH race boot (→ guard) ; patches P1-P3 tests ; Auditor 18/18 ACs. Dismiss : M3 colonnes (réfuté grep), seed_demo batch (per-spec AC#10bis), reset-réentrée (correct), response_with_stub hors txn (lecture post-commit), CHANGELOG (convention #119). |
+| 2 | Haiku 4.5 | **0 finding réel > LOW** | Auditor **18/18 ACs, 0 > LOW**. 2 HIGH Haiku réfutés en ground-truth : (1) « guard DELETE stale company_count » — faux-positif (DELETE cible `WHERE id=?` notre stub précis, pas un count) ; (2) seed_demo blanket UPDATE — per-spec single-tenant AC#10bis. MEDIUM Haiku tous by-design/per-spec/documentés. |
+
+**Trend** : passe 1 = 1 HIGH + 3 MEDIUM (4 patches) → passe 2 = 0 > LOW. Critère d'arrêt atteint. Discipline grep ground-truth appliquée aux 2 HIGH Haiku (CLAUDE.md garde-fou) → tous réfutés. Revue **convergée**. Tests post-patches verts (bootstrap 5, migrations_upgrade 8, seed_fresh 1, fmt + clippy `-D warnings`).
 
 ## Dev Agent Record
 
