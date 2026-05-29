@@ -165,6 +165,15 @@ async fn seed_fresh_produces_expected_db_state(pool: MySqlPool) {
         "expected 1 placeholder company for fresh preset"
     );
 
+    // Story v011-2 (code-review Pass 1) : la company placeholder du preset `fresh`
+    // doit être marquée `is_stub = TRUE` — c'est ce qui reflète l'état post-bootstrap
+    // réel et déclenche la bannière de nudge dans le wizard E2E (#120).
+    let is_stub: bool = sqlx::query_scalar("SELECT is_stub FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(is_stub, "fresh preset company must be is_stub=TRUE");
+
     for table in ["accounts", "fiscal_years", "onboarding_state"] {
         let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
             .fetch_one(&pool)

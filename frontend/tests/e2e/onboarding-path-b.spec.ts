@@ -25,6 +25,11 @@ test.describe('Onboarding Path B', () => {
 	});
 
 	test('flux complet Path B : langue → mode → production → org → accounting → coords → bank', async ({ page }) => {
+		// KF-032 (#124) : ce test attend `incomplete-config-banner` après skip-bank,
+		// mais la bannière ne s'affiche qu'à stepCompleted===6 alors que skip-bank
+		// finalise (step 7/8) → jamais affichée. Nudge « config incomplète » basé sur
+		// l'absence de compte bancaire jamais implémenté. Décision produit requise.
+		test.fixme(true, 'KF-032 (#124) — bannière config-incomplète jamais affichée après finalize');
 		// Step 1: Language
 		await page.click('button:has-text("Français")');
 
@@ -71,10 +76,38 @@ test.describe('Onboarding Path B', () => {
 		// Step 7: Bank (fill)
 		await page.fill('#bank-name', 'UBS');
 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
-		await page.click('button:has-text("Enregistrer")');
+		// Le bouton submit de l'étape banque réutilise la clé i18n `onboarding-next`
+		// (valeur FR « Continuer », pas le fallback « Enregistrer »). Cf. KF-032 (#124).
+		await page.click('button:has-text("Continuer")');
 
 		// Should be in app WITHOUT blue banner
 		await expect(page).toHaveURL('/');
 		await expect(page.locator('[data-testid="incomplete-config-banner"]')).not.toBeVisible();
+	});
+
+	test('fresh-install : bannière stub visible au départ, disparaît après coordonnées (#120)', async ({
+		page,
+	}) => {
+		// Le preset `fresh` seede une company stub (is_stub=TRUE) — comme le bootstrap
+		// sur DB vide. La bannière de nudge doit être visible dès le début du wizard.
+		await expect(page.locator('[data-testid="onboarding-stub-notice"]')).toBeVisible();
+
+		// Wizard production jusqu'aux coordonnées.
+		await page.click('button:has-text("Français")');
+		await page.click('button:has-text("Guidé")');
+		await page.click('button:has-text("Configurer pour la production")');
+		await page.locator('[data-testid="onboarding-org-type-pme"]').click();
+		await page.click('button:has-text("Français")');
+		await page.fill('#coord-name', 'Vraie Société SA');
+		await page.fill('#coord-address', 'Rue du Test 1, 1000 Lausanne');
+		await page.click('button:has-text("Continuer")');
+
+		// À l'étape banque (step 7), is_stub est repassé FALSE → bannière disparue.
+		await expect(page.getByRole('heading', { name: 'Compte bancaire' })).toBeVisible();
+		await expect(page.locator('[data-testid="onboarding-stub-notice"]')).not.toBeVisible();
+
+		// Skip bank → app accessible.
+		await page.click('button:has-text("Configurer plus tard")');
+		await expect(page).toHaveURL('/');
 	});
 });

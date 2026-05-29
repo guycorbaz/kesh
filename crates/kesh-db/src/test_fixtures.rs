@@ -372,10 +372,15 @@ pub async fn truncate_all(pool: &MySqlPool) -> Result<(), FixtureError> {
 /// Insère seulement le user `changeme/changeme` (preset `fresh` — cf. AC #7).
 /// Post-T1 migration: creates a temporary placeholder company (required for users.company_id NOT NULL FK).
 /// Aucun account, aucun fiscal_year, aucun onboarding_state.
+///
+/// Story v011-2 (Issue #120) : la company placeholder est marquée `is_stub=TRUE`,
+/// pour que le preset `fresh` reflète fidèlement l'état post-bootstrap d'un
+/// vrai fresh-install (DB vide → bootstrap crée une company stub + admin). C'est
+/// ce qui déclenche la bannière de nudge non-bloquante dans le wizard E2E.
 pub async fn seed_changeme_user_only(pool: &MySqlPool) -> Result<i64, FixtureError> {
     // T1bis: Create placeholder company (required post-migration for users.company_id FK)
     let company_result =
-        sqlx::query("INSERT INTO companies (name, address, org_type, accounting_language, instance_language) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO companies (name, address, org_type, accounting_language, instance_language, is_stub) VALUES (?, ?, ?, ?, ?, TRUE)")
             .bind("_MIGRATION_PLACEHOLDER_DO_NOT_USE_")
             .bind("Placeholder Address")
             .bind("Independant")

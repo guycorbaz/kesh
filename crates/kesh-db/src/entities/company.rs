@@ -150,6 +150,13 @@ pub struct Company {
     pub accounting_language: Language,
     /// Langue de l'interface utilisateur.
     pub instance_language: Language,
+    /// `true` si la company est un placeholder créé automatiquement par le
+    /// bootstrap (DB vide) pour permettre la création de l'admin du `.env`
+    /// (cf. fix catch-22 onboarding, Story v011-2). Repassé à `false` quand
+    /// l'utilisateur renseigne ses vraies coordonnées (`set_coordinates`) ou
+    /// choisit le path demo (`seed_demo`). Le frontend l'utilise pour un
+    /// nudge de renommage non-bloquant.
+    pub is_stub: bool,
     /// Version pour optimistic locking (incrémentée à chaque update).
     pub version: i32,
     pub created_at: NaiveDateTime,

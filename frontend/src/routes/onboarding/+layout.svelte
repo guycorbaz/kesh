@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onboardingState, i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
+
 	let { children } = $props();
 </script>
 
@@ -10,6 +12,21 @@
 
 	<!-- Contenu wizard -->
 	<div class="w-full max-w-lg">
+		{#if onboardingState.isStub}
+			<!-- Nudge non-bloquant (Story v011-2, Issue #120) : la company a été créée
+			     en placeholder par le bootstrap (DB vide). Disparaît dès que l'utilisateur
+			     renseigne ses coordonnées (set_coordinates repasse is_stub=FALSE). -->
+			<div
+				role="status"
+				data-testid="onboarding-stub-notice"
+				class="mb-6 rounded-md border border-primary/30 bg-primary-light/10 px-4 py-3 text-sm text-text"
+			>
+				{i18nMsg(
+					'onboarding-stub-name-notice',
+					'Votre entreprise a un nom provisoire — complétez vos coordonnées'
+				)}
+			</div>
+		{/if}
 		{@render children()}
 	</div>
 

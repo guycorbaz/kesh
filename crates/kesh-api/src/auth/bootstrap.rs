@@ -5,7 +5,7 @@
 //! et tolérant aux race conditions (démarrage concurrent de plusieurs
 //! instances contre la même DB).
 
-use kesh_db::entities::{NewUser, Role};
+use kesh_db::entities::{Language, NewUser, OrgType, Role};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::users;
 use sqlx::MySqlPool;
@@ -14,45 +14,91 @@ use crate::auth::password::hash_password_async;
 use crate::config::Config;
 use crate::errors::AppError;
 
-/// Vérifie si la table `users` est vide, et si oui crée un compte admin
-/// à partir de `KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD`.
+/// Valeurs placeholder d'une company stub. Partagées entre le bootstrap
+/// (DB vide, Story v011-2) et le wizard onboarding (`ensure_company_with_language`
+/// quand aucune company n'existe) pour éviter une divergence (DRY). Le wizard
+/// repasse `is_stub = FALSE` quand l'utilisateur renseigne ses vraies
+/// coordonnées (`set_coordinates`).
+pub(crate) const STUB_COMPANY_NAME: &str = "(en cours de configuration)";
+pub(crate) const STUB_COMPANY_ADDRESS: &str = "-";
+
+/// Crée le compte admin initial (`KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD`)
+/// quand la table `users` est vide.
 ///
-/// Idempotent : appelé plusieurs fois, n'écrase jamais un user existant.
+/// Story v011-2 (fix catch-22 #120) : sur fresh install où `companies` ET
+/// `users` sont vides, crée aussi une **company stub** (`is_stub = TRUE`) à
+/// laquelle rattacher l'admin (sinon `users.company_id NOT NULL` empêche la
+/// création et le wizard d'onboarding, gardé par auth, est inatteignable).
+/// Si une company existe déjà sans user (partial state), l'admin est rattaché
+/// à cette company existante sans créer de stub.
+///
+/// Idempotent : appelé plusieurs fois, n'écrase jamais un user existant et ne
+/// crée pas de company en double (la garde `user_count > 0` court-circuite).
 /// Tolérant aux races : si une autre instance a bootstrappé entre notre
 /// `COUNT(*)` et notre `INSERT`, la branche `UniqueConstraintViolation`
 /// est traitée comme succès silencieux.
 pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), AppError> {
-    // Story 6.2: Check if companies exist before creating a user
-    // (users.company_id is NOT NULL, so at least one company must exist)
+    // Story v011-2 (fix catch-22 onboarding, Issue #120) : on lit d'abord les
+    // deux compteurs. La règle d'origine (Story 6.2) skippait la création admin
+    // quand aucune company n'existait, mais le wizard d'onboarding exige une
+    // auth → deadlock sur fresh install. On crée donc une company stub + admin
+    // quand TOUT est vide.
     let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
         .fetch_one(pool)
         .await
         .map_err(|e| AppError::Internal(format!("bootstrap company count: {e}")))?;
 
-    if company_count == 0 {
-        tracing::warn!(
-            "⚠️  bootstrap: no company exists yet, skipping admin user creation (complete onboarding to create company + admin)"
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("bootstrap user count: {e}")))?;
+
+    if user_count > 0 {
+        tracing::info!(
+            existing_users = user_count,
+            "bootstrap: users déjà initialisés"
         );
         return Ok(());
     }
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(pool)
+    // user_count == 0 à partir d'ici.
+    let company_id: i64 = if company_count == 0 {
+        // Fresh install : créer une company stub minimaliste (is_stub=TRUE).
+        // Le wizard la complétera ; `set_coordinates` repassera is_stub=FALSE.
+        // Valeurs placeholder satisfaisant les CHECK NOT NULL de `companies`.
+        let result = sqlx::query(
+            "INSERT INTO companies \
+             (name, address, org_type, accounting_language, instance_language, is_stub) \
+             VALUES (?, ?, ?, ?, ?, TRUE)",
+        )
+        .bind(STUB_COMPANY_NAME)
+        .bind(STUB_COMPANY_ADDRESS)
+        .bind(OrgType::Independant)
+        .bind(Language::Fr)
+        .bind(Language::Fr)
+        .execute(pool)
         .await
-        .map_err(|e| AppError::Internal(format!("bootstrap count: {e}")))?;
+        .map_err(|e| AppError::Internal(format!("bootstrap create stub company: {e}")))?;
 
-    if count > 0 {
-        tracing::info!(existing_users = count, "bootstrap: users déjà initialisés");
-        return Ok(());
-    }
+        let stub_id = i64::try_from(result.last_insert_id()).map_err(|_| {
+            AppError::Internal("bootstrap stub company last_insert_id dépasse i64::MAX".into())
+        })?;
+
+        tracing::info!(
+            stub_company_id = stub_id,
+            "bootstrap: company stub créée (DB vide). Compléter l'onboarding via l'UI pour renommer/configurer."
+        );
+        stub_id
+    } else {
+        // Partial state : une company existe (ex. créée par le wizard) mais
+        // aucun user → créer l'admin sur la company existante (pas de nouveau stub).
+        sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| AppError::Internal(format!("bootstrap get first company: {e}")))?
+    };
 
     let hash = hash_password_async(config.admin_password.clone()).await?;
-
-    // Get the first company to assign to the bootstrap admin
-    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
-        .fetch_one(pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("bootstrap get first company: {e}")))?;
 
     let result = users::create(
         pool,
@@ -78,6 +124,30 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
             // COUNT et notre INSERT. Branche défensive, non testable
             // déterministiquement en mono-thread.
             tracing::info!("bootstrap: admin créé en parallèle par un autre process");
+
+            // Story v011-2 (code-review Pass 1) : si on a créé une company stub
+            // ce boot (`company_count == 0`) mais perdu la race sur l'admin, notre
+            // stub est orpheline (aucun user attaché car l'INSERT admin a échoué)
+            // → la supprimer pour ne pas laisser de company stub en double.
+            // DELETE sûr : aucune FK entrante sur un fresh boot (ni user, ni
+            // account). Non-fatal : un échec de cleanup ne doit pas tuer le boot.
+            if company_count == 0 {
+                match sqlx::query("DELETE FROM companies WHERE id = ?")
+                    .bind(company_id)
+                    .execute(pool)
+                    .await
+                {
+                    Ok(_) => tracing::info!(
+                        orphan_company_id = company_id,
+                        "bootstrap: company stub orpheline supprimée après race admin"
+                    ),
+                    Err(e) => tracing::warn!(
+                        orphan_company_id = company_id,
+                        error = %e,
+                        "bootstrap: échec suppression company stub orpheline après race (non-fatal)"
+                    ),
+                }
+            }
         }
         Err(other) => return Err(AppError::Database(other)),
     }
@@ -134,8 +204,10 @@ mod tests {
     }
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-    async fn bootstrap_creates_admin_on_empty_db(pool: MySqlPool) {
-        // Create a company first (required by users.company_id FK)
+    async fn bootstrap_creates_admin_on_existing_company(pool: MySqlPool) {
+        // Story v011-2 (Issue #120) cas (c) — partial state : une company existe
+        // déjà (ex. créée par le wizard) mais aucun user. Le bootstrap crée l'admin
+        // sur la company existante, sans créer de nouveau stub.
         sqlx::query(
             "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
              VALUES (?, ?, ?, ?, ?)"
@@ -165,6 +237,21 @@ mod tests {
         assert_eq!(users[0].1, "admin");
         assert_eq!(users[0].2, "Admin");
         assert!(users[0].3);
+
+        // Pas de nouveau stub : la company préexistante reste unique et is_stub=FALSE.
+        let companies: Vec<(bool,)> = sqlx::query_as("SELECT is_stub FROM companies")
+            .fetch_all(&pool)
+            .await
+            .expect("select companies should succeed");
+        assert_eq!(
+            companies.len(),
+            1,
+            "partial state must not create a new stub company"
+        );
+        assert!(
+            !companies[0].0,
+            "existing company must not be marked is_stub"
+        );
     }
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -252,27 +339,95 @@ mod tests {
     }
 
     #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-    async fn bootstrap_skips_silently_when_no_company_exists(pool: MySqlPool) {
-        // Story 6.2: If no company exists, bootstrap should skip and return Ok (T0.2 Option A)
-        // This verifies the idempotent behavior: API boots without error even if onboarding hasn't created a company yet
-
+    async fn bootstrap_creates_stub_and_admin_on_empty_db(pool: MySqlPool) {
+        // Story v011-2 (Issue #120) cas (a) — fresh install : sur DB vide (ni company
+        // ni user), le bootstrap crée une company stub (is_stub=TRUE) ET l'admin du
+        // `.env` attaché. Casse le catch-22 (pas d'admin sans company, pas de company
+        // sans auth). Remplace l'ancien comportement Story 6.2 (skip silencieux), dont
+        // le test affirmait l'inverse — l'assertion est donc inversée.
         let config = test_config();
 
-        // Call ensure_admin_user on empty DB (no companies)
-        let result = ensure_admin_user(&pool, &config).await;
+        ensure_admin_user(&pool, &config)
+            .await
+            .expect("bootstrap should succeed on empty DB");
 
+        // Exactement 1 company, marquée stub.
+        let companies: Vec<(i64, bool)> = sqlx::query_as("SELECT id, is_stub FROM companies")
+            .fetch_all(&pool)
+            .await
+            .expect("select companies should succeed");
+        assert_eq!(
+            companies.len(),
+            1,
+            "exactly one stub company must be created"
+        );
         assert!(
-            result.is_ok(),
-            "bootstrap should not error when no company exists"
+            companies[0].1,
+            "bootstrap company must be marked is_stub=TRUE"
+        );
+
+        // Exactement 1 admin, attaché à la company stub.
+        let users: Vec<(String, String, i64)> =
+            sqlx::query_as("SELECT username, role, company_id FROM users")
+                .fetch_all(&pool)
+                .await
+                .expect("select users should succeed");
+        assert_eq!(users.len(), 1, "exactly one admin must be created");
+        assert_eq!(users[0].0, "admin");
+        assert_eq!(users[0].1, "Admin");
+        assert_eq!(
+            users[0].2, companies[0].0,
+            "admin must be attached to the stub company"
+        );
+    }
+
+    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    async fn bootstrap_idempotent_on_empty_db(pool: MySqlPool) {
+        // Story v011-2 (Issue #120) cas (b) — deux appels sur DB vide ne doivent
+        // créer qu'une seule company stub et un seul admin (idempotence fresh-install).
+        let config = test_config();
+
+        ensure_admin_user(&pool, &config)
+            .await
+            .expect("first bootstrap should succeed");
+        ensure_admin_user(&pool, &config)
+            .await
+            .expect("second bootstrap should succeed");
+
+        let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+            .fetch_one(&pool)
+            .await
+            .expect("count companies should succeed");
+        assert_eq!(
+            company_count, 1,
+            "no duplicate stub company on repeated calls"
         );
 
         let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
             .fetch_one(&pool)
             .await
-            .expect("count should succeed");
+            .expect("count users should succeed");
+        assert_eq!(user_count, 1, "no duplicate admin on repeated calls");
+
+        // Code-review Pass 1 : la company stub reste marquée is_stub=TRUE après le
+        // 2e appel (le guard `user_count > 0` court-circuite sans toucher companies),
+        // et l'admin reste attaché à cette même company.
+        let (company_id, is_stub): (i64, bool) =
+            sqlx::query_as("SELECT id, is_stub FROM companies ORDER BY id LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .expect("select stub company should succeed");
+        assert!(
+            is_stub,
+            "stub company must stay is_stub=TRUE across repeated calls"
+        );
+        let admin_company_id: i64 = sqlx::query_scalar("SELECT company_id FROM users LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("select admin company_id should succeed");
         assert_eq!(
-            user_count, 0,
-            "admin user should not be created if no company exists"
+            admin_company_id, company_id,
+            "admin must stay attached to the stub company"
         );
     }
 

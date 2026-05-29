@@ -27,20 +27,23 @@ describe('onboardingState', () => {
 		expect(onboardingState.stepCompleted).toBe(0);
 		expect(onboardingState.isDemo).toBe(false);
 		expect(onboardingState.uiMode).toBeNull();
+		expect(onboardingState.isStub).toBe(false);
 		expect(onboardingState.loaded).toBe(false);
 	});
 
-	it('fetchState updates state from API', async () => {
+	it('fetchState updates state from API (incl. isStub)', async () => {
 		mockApi.fetchState.mockResolvedValue({
 			stepCompleted: 2,
 			isDemo: false,
 			uiMode: 'guided',
+			isStub: true,
 		});
 
 		await onboardingState.fetchState();
 
 		expect(onboardingState.stepCompleted).toBe(2);
 		expect(onboardingState.uiMode).toBe('guided');
+		expect(onboardingState.isStub).toBe(true);
 		expect(onboardingState.loaded).toBe(true);
 	});
 
@@ -49,6 +52,7 @@ describe('onboardingState', () => {
 			stepCompleted: 1,
 			isDemo: false,
 			uiMode: null,
+			isStub: true,
 		});
 
 		await onboardingState.setLanguage('FR');
@@ -62,6 +66,7 @@ describe('onboardingState', () => {
 			stepCompleted: 2,
 			isDemo: false,
 			uiMode: 'expert',
+			isStub: true,
 		});
 
 		await onboardingState.setMode('expert');
@@ -75,6 +80,7 @@ describe('onboardingState', () => {
 			stepCompleted: 3,
 			isDemo: true,
 			uiMode: 'guided',
+			isStub: false,
 		});
 
 		await onboardingState.seedDemo();
@@ -82,6 +88,8 @@ describe('onboardingState', () => {
 		expect(mockApi.seedDemo).toHaveBeenCalled();
 		expect(onboardingState.stepCompleted).toBe(3);
 		expect(onboardingState.isDemo).toBe(true);
+		// seed_demo repasse is_stub=FALSE côté backend (AC #10bis) — la réponse le reflète.
+		expect(onboardingState.isStub).toBe(false);
 	});
 
 	it('resetDemo calls API and resets state', async () => {
@@ -89,6 +97,7 @@ describe('onboardingState', () => {
 			stepCompleted: 0,
 			isDemo: false,
 			uiMode: null,
+			isStub: false,
 		});
 
 		await onboardingState.resetDemo();
@@ -109,7 +118,7 @@ describe('onboardingState', () => {
 		const fetchPromise = onboardingState.fetchState();
 		expect(onboardingState.loading).toBe(true);
 
-		resolvePromise!({ stepCompleted: 0, isDemo: false, uiMode: null });
+		resolvePromise!({ stepCompleted: 0, isDemo: false, uiMode: null, isStub: false });
 		await fetchPromise;
 		expect(onboardingState.loading).toBe(false);
 	});
