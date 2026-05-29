@@ -208,6 +208,16 @@ Implémentation Opus 4.7. La session initiale a écrit le backend (T1-T3) puis a
 
 Status `review`. Prochaine étape : `bmad-code-review v011-2` (Sonnet 4.6, contexte frais).
 
+### Post-dev-story — E2E réels + analyse de couverture (2026-05-29)
+
+Run E2E navigateur (stack complète : kesh-api `KESH_TEST_MODE` + SPA buildée + Playwright) :
+- ✅ Nouveau test `fresh-install : bannière stub #120` PASS. Log backend confirme `bootstrap: company stub créée (DB vide)` en conditions réelles.
+- 2 tests path-b **préexistants** en échec (confirmés sur baseline sans mes changements → rot, l'E2E n'étant pas dans la CI) → **KF-032 (#124)**. Fix appliqués (commit `3ca5831`) : `Enregistrer`→`Continuer` (clé i18n `onboarding-next`) ; `flux complet` marqué `test.fixme` (bannière config-incomplète jamais affichée après finalize — décision produit). Spec désormais : 2 passed + 1 skipped.
+
+Analyse de couverture (demandée par le Project Lead) :
+- Backend `cargo llvm-cov` : **lignes 89.0% / fonctions 85.8% / régions 77.4%** (0 test en échec, DB seedée). Gaps → **KF-033 (#125)** : handlers de routes sans test d'intégration (`journal_entries` 17.6%, `company_invoice_settings` 11.6%, `accounts` 49.6%).
+- Frontend `vitest --coverage` : **lignes 14.3%** (unit-only ; faible par conception car stratégie E2E-centric). Gaps logique pure → **KF-034 (#126)** : `fiscal-years.helpers.ts` + wrappers `*.api.ts`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
