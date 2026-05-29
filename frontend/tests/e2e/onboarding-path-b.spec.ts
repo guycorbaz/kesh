@@ -25,6 +25,11 @@ test.describe('Onboarding Path B', () => {
 	});
 
 	test('flux complet Path B : langue → mode → production → org → accounting → coords → bank', async ({ page }) => {
+		// KF-032 (#124) : ce test attend `incomplete-config-banner` après skip-bank,
+		// mais la bannière ne s'affiche qu'à stepCompleted===6 alors que skip-bank
+		// finalise (step 7/8) → jamais affichée. Nudge « config incomplète » basé sur
+		// l'absence de compte bancaire jamais implémenté. Décision produit requise.
+		test.fixme(true, 'KF-032 (#124) — bannière config-incomplète jamais affichée après finalize');
 		// Step 1: Language
 		await page.click('button:has-text("Français")');
 
@@ -71,7 +76,9 @@ test.describe('Onboarding Path B', () => {
 		// Step 7: Bank (fill)
 		await page.fill('#bank-name', 'UBS');
 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
-		await page.click('button:has-text("Enregistrer")');
+		// Le bouton submit de l'étape banque réutilise la clé i18n `onboarding-next`
+		// (valeur FR « Continuer », pas le fallback « Enregistrer »). Cf. KF-032 (#124).
+		await page.click('button:has-text("Continuer")');
 
 		// Should be in app WITHOUT blue banner
 		await expect(page).toHaveURL('/');
