@@ -15,11 +15,11 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
-            instance_language, version, created_at, updated_at \
+            instance_language, is_stub, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
-            instance_language, version, created_at, updated_at \
+            instance_language, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.

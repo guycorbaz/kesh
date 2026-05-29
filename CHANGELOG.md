@@ -16,6 +16,10 @@ Hotfix post-déploiement v0.1.0 : corrections et améliorations opérationnelles
 
 - **Logs fichier avec rotation** : en plus de la sortie standard (`docker logs`), Kesh peut désormais écrire ses logs dans un fichier avec rotation automatique (quotidienne, horaire, ou désactivée), conservés sur le disque et inclus dans le backup. Activé par défaut en production (répertoire `./log/`). Configurable via `KESH_LOG_FILE_PATH`, `KESH_LOG_FILE_ROTATION`, `KESH_LOG_FILE_MAX_FILES` et `KESH_LOG_FILE_FORMAT` (format lisible ou JSON structuré). (#119)
 
+### Corrections
+
+- **Premier démarrage débloqué (catch-22 onboarding)** : sur une nouvelle installation avec une base de données vide, il était impossible de terminer la configuration — l'utilisateur administrateur du `.env` n'était jamais créé tant qu'aucune entreprise n'existait, alors que la création d'une entreprise passe par un assistant qui exige justement d'être connecté. Désormais, au tout premier démarrage, Kesh crée automatiquement un compte administrateur **et** une entreprise provisoire, ce qui permet de se connecter immédiatement et de compléter l'onboarding. Une bannière non-bloquante rappelle, pendant l'assistant, que l'entreprise porte un nom provisoire jusqu'à la saisie des vraies coordonnées. (#120)
+
 ---
 
 ## [0.1.0] — 2026-05-27

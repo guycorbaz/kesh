@@ -16,6 +16,7 @@ let _state = $state<OnboardingState>({
 	stepCompleted: 0,
 	isDemo: false,
 	uiMode: null,
+	isStub: false,
 });
 let _loaded = $state(false);
 let _loading = $state(false);
@@ -29,6 +30,9 @@ export const onboardingState = {
 	},
 	get uiMode(): 'guided' | 'expert' | null {
 		return _state.uiMode;
+	},
+	get isStub(): boolean {
+		return _state.isStub;
 	},
 	get loaded(): boolean {
 		return _loaded;

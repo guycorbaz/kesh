@@ -45,12 +45,13 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 | `20260507200001_bank_account_journal_link.sql` | tracked-by-sqlx | `ALTER TABLE bank_accounts ADD COLUMN journal_account_id` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060 sur le ADD COLUMN. Le `CREATE INDEX IF NOT EXISTS idx_bank_accounts_journal_account` qui suit est lui guarded. |
 | `20260513000001_reconciliation_rules.sql` | tracked-by-sqlx | `CREATE TABLE reconciliation_rules` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1050. |
 | `20260522000001_kesh_version.sql` | tracked-by-sqlx | `CREATE TABLE _kesh_version` sans `IF NOT EXISTS` + `INSERT INTO _kesh_version (id, kesh_version_min_required, kesh_version_last_applied) VALUES (1, '0.1.0', '0.1.0')` sans `INSERT IGNORE` ni `ON DUPLICATE KEY UPDATE` ; re-exécution hors sqlx échouerait erreur 1050 sur le CREATE puis 1062 sur l'INSERT. Intentionnel : la nouvelle migration suit la convention historique majoritaire (non-guarded) plutôt que d'introduire une dissymétrie. |
+| `20260528000001_companies_is_stub.sql` | tracked-by-sqlx | `ALTER TABLE companies ADD COLUMN is_stub BOOLEAN NOT NULL DEFAULT FALSE` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060 (colonne déjà présente). Non-breaking (ADD COLUMN avec DEFAULT) → pas de bump `kesh_version_min_required` (Story v011-2 / epic H8). |
 
 ## Statistiques
 
-- **Total** : 27 migrations (26 historiques + 1 nouvelle Story 10-2).
+- **Total** : 28 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2).
 - **Idempotence `yes`** : 3 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`).
-- **Idempotence `tracked-by-sqlx`** : 24 (toutes les autres).
+- **Idempotence `tracked-by-sqlx`** : 25 (toutes les autres).
 - **Idempotence `no`** : 0.
 
 ## Maintenance future

@@ -518,3 +518,54 @@ async fn seed_demo_at_wrong_step_returns_400(pool: MySqlPool) {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
 }
+
+/// Story v011-2 (Issue #120, AC #10bis) — fresh install : pas de `create_test_company`,
+/// le bootstrap crée la company stub (`is_stub=TRUE`). Le path demo considère la
+/// company comme configurée : `seed_demo` repasse `is_stub=FALSE`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn fresh_install_stub_cleared_by_seed_demo(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    // PAS de create_test_company : le bootstrap crée la company stub.
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    // Sanity : isStub true au départ.
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["isStub"], true);
+
+    // Avance à step 2 (langue + mode).
+    app.client
+        .post(app.url("/api/v1/onboarding/language"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "language": "FR" }))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/mode"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "mode": "guided" }))
+        .send()
+        .await
+        .unwrap();
+
+    // seed-demo → step 3, isStub doit retomber à false.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/seed-demo"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 3);
+    assert_eq!(body["isStub"], false);
+}

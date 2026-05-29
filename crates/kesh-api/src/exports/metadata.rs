@@ -119,6 +119,7 @@ mod tests {
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
             instance_language: Language::Fr,
+            is_stub: false,
             version: 1,
             created_at: naive_dt(2026, 1, 1),
             updated_at: naive_dt(2026, 1, 1),

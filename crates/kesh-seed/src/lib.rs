@@ -87,7 +87,7 @@ pub async fn seed_demo(
         let mut tx = pool.begin().await?;
         let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
             "SELECT id, name, address, ide_number, org_type, accounting_language, \
-                    instance_language, version, created_at, updated_at \
+                    instance_language, is_stub, version, created_at, updated_at \
              FROM companies ORDER BY id FOR UPDATE",
         )
         .fetch_all(&mut *tx)

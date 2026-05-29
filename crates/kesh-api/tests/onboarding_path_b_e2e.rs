@@ -382,3 +382,76 @@ async fn bank_account_validates_iban(pool: MySqlPool) {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
+
+/// Story v011-2 (Issue #120) — fresh install : pas de `create_test_company`, le
+/// bootstrap crée lui-même la company stub (`is_stub=TRUE`). `GET /state` expose
+/// `isStub=true` à step 0 (AC #8-9, #14e), et le flag retombe à `false` une fois
+/// les coordonnées renseignées (AC #10, #15).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn fresh_install_stub_exposed_then_cleared_by_coordinates(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    // PAS de create_test_company : le bootstrap doit créer la company stub.
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    // GET /state : step 0 + isStub true (company issue du bootstrap stub).
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 0);
+    assert_eq!(body["isStub"], true);
+
+    // Avance jusqu'aux coordonnées (step 5→6).
+    advance_to_step_2(&app, &token).await;
+    app.client
+        .post(app.url("/api/v1/onboarding/start-production"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/org-type"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "orgType": "Pme" }))
+        .send()
+        .await
+        .unwrap();
+    app.client
+        .post(app.url("/api/v1/onboarding/accounting-language"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "language": "FR" }))
+        .send()
+        .await
+        .unwrap();
+
+    // set_coordinates → isStub doit retomber à false.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/coordinates"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "Vraie Société SA", "address": "Rue 1, 1000 Lausanne", "ideNumber": null }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 6);
+    assert_eq!(body["isStub"], false);
+
+    // Persistance : GET /state reflète isStub=false.
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["isStub"], false);
+}

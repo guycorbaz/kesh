@@ -59,6 +59,12 @@ pub struct OnboardingResponse {
     pub step_completed: i32,
     pub is_demo: bool,
     pub ui_mode: Option<UiMode>,
+    /// `true` si la company courante est un placeholder (créée par le bootstrap
+    /// sur DB vide, ou par le wizard avant complétion). Le frontend l'utilise
+    /// pour un nudge de renommage non-bloquant. Renseigné par `response_with_stub`
+    /// (le `From<OnboardingState>` met `false` par défaut car il n'a pas accès
+    /// à la company — toujours passer par `response_with_stub` pour le valuer).
+    pub is_stub: bool,
 }
 
 impl From<kesh_db::entities::OnboardingState> for OnboardingResponse {
@@ -67,8 +73,27 @@ impl From<kesh_db::entities::OnboardingState> for OnboardingResponse {
             step_completed: s.step_completed,
             is_demo: s.is_demo,
             ui_mode: s.ui_mode,
+            is_stub: false,
         }
     }
+}
+
+/// Construit une `OnboardingResponse` en renseignant `is_stub` depuis la
+/// company courante (première company ; `false` si aucune company). Toute
+/// réponse onboarding renvoyée au client DOIT passer par ce helper pour que
+/// le frontend ait toujours le `isStub` à jour (sinon le `From` met `false`).
+async fn response_with_stub(
+    pool: &sqlx::MySqlPool,
+    state: kesh_db::entities::OnboardingState,
+) -> Result<OnboardingResponse, AppError> {
+    let is_stub: Option<bool> =
+        sqlx::query_scalar("SELECT is_stub FROM companies ORDER BY id LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| AppError::Internal(format!("onboarding read is_stub: {e}")))?;
+    let mut resp = OnboardingResponse::from(state);
+    resp.is_stub = is_stub.unwrap_or(false);
+    Ok(resp)
 }
 
 /// GET /api/v1/onboarding/state
@@ -76,7 +101,7 @@ pub async fn get_state(
     State(state): State<AppState>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
-    Ok(Json(current.into()))
+    Ok(Json(response_with_stub(&state.pool, current).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,7 +140,7 @@ pub async fn set_language(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,7 +172,7 @@ pub async fn set_mode(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 /// POST /api/v1/onboarding/seed-demo — step 2→3
@@ -178,9 +203,19 @@ pub async fn seed_demo(
 
     // seed_demo already calls insert_with_defaults internally (Story 2.6)
     // to pre-fill invoice accounts with 1100 (receivable) and 3000 (revenue).
+
+    // Story v011-2 : le path demo n'atteint jamais `set_coordinates` (terminé
+    // à step 3), donc une company stub créée par le bootstrap resterait
+    // `is_stub = TRUE` indéfiniment. On la considère configurée pour la demo →
+    // clear `is_stub`. No-op si aucune company stub (mono-tenant).
+    sqlx::query("UPDATE companies SET is_stub = FALSE WHERE is_stub = TRUE")
+        .execute(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("seed_demo clear is_stub: {e}")))?;
+
     // seed_demo updates onboarding_state to step=3 via update_step — relire l'état
     let updated = get_or_init_state(&state).await?;
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 /// POST /api/v1/onboarding/reset — Step gating: allow demo, block post-production (E2-002 fix)
@@ -257,7 +292,7 @@ pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingRespo
 
     // reset_demo recrée onboarding_state à step=0
     let updated = get_or_init_state(&state).await?;
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 // --- Path B endpoints (Story 2.3) ---
@@ -274,7 +309,7 @@ pub async fn start_production(
     let updated =
         onboarding::update_step(&state.pool, 3, false, current.ui_mode, current.version).await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -308,7 +343,7 @@ pub async fn set_org_type(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,7 +397,7 @@ pub async fn set_accounting_language(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -416,7 +451,7 @@ pub async fn set_coordinates(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -491,7 +526,7 @@ pub async fn set_bank_account(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 /// POST /api/v1/onboarding/skip-bank — step 6→7 without creating bank account
@@ -512,7 +547,7 @@ pub async fn skip_bank(
     )
     .await?;
 
-    Ok(Json(updated.into()))
+    Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
@@ -617,7 +652,7 @@ async fn finalize_inner(
     // have changed it before we release.
     if onboarding.step_completed == 8 {
         best_effort_rollback(tx).await;
-        return Ok(onboarding.into());
+        return response_with_stub(pool, onboarding).await;
     }
 
     // F3 CRITICAL FIX: Lock company row before insert_with_defaults()
@@ -628,7 +663,7 @@ async fn finalize_inner(
     // and protects against multi-tenant drift in dev/test DBs.
     let company = match sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, address, ide_number, org_type, accounting_language, \
-                instance_language, version, created_at, updated_at \
+                instance_language, is_stub, version, created_at, updated_at \
          FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
@@ -764,7 +799,7 @@ async fn finalize_inner(
     };
 
     tx.commit().await.map_err(map_db_error)?;
-    Ok(updated.into())
+    response_with_stub(pool, updated).await
 }
 
 // --- Helpers ---
@@ -792,7 +827,7 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
     // P5: ORDER BY id pour déterminisme (cf. Pattern 5 lock-discipline).
     let existing = sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, address, ide_number, org_type, accounting_language, \
-                instance_language, version, created_at, updated_at \
+                instance_language, is_stub, version, created_at, updated_at \
          FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
@@ -801,12 +836,17 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
 
     match existing {
         None => {
+            // Story v011-2 : placeholder marqué `is_stub = TRUE` (cohérent avec
+            // le stub du bootstrap, mêmes constantes partagées). `set_coordinates`
+            // repassera is_stub=FALSE. Ce chemin ne se déclenche que si aucune
+            // company n'existe (rare hors bootstrap, ex. company supprimée).
             sqlx::query(
-                "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
-                 VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO companies \
+                 (name, address, org_type, accounting_language, instance_language, is_stub) \
+                 VALUES (?, ?, ?, ?, ?, TRUE)",
             )
-            .bind("(en cours de configuration)")
-            .bind("-")
+            .bind(crate::auth::bootstrap::STUB_COMPANY_NAME)
+            .bind(crate::auth::bootstrap::STUB_COMPANY_ADDRESS)
             .bind(OrgType::Independant)
             .bind(Language::Fr)
             .bind(lang)
@@ -841,7 +881,7 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
 
 // P5: ORDER BY id for deterministic row selection (Pattern 5 lock-discipline).
 const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
-            instance_language, version, created_at, updated_at \
+            instance_language, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT 1 FOR UPDATE";
 
 /// Retourne la company (première et unique). Erreur si aucune company n'existe.
@@ -925,8 +965,12 @@ async fn update_company_coordinates(
         .fetch_one(&mut *tx)
         .await
         .map_err(map_db_error)?;
+    // `is_stub = FALSE` inconditionnel : l'utilisateur a renseigné ses vraies
+    // coordonnées → la company n'est plus un placeholder. Sûr car
+    // `update_company_coordinates` n'a qu'un seul appelant (`set_coordinates`,
+    // step 5→6). Si un 2e appelant émerge, extraire un paramètre `reset_stub`.
     let rows = sqlx::query(
-        "UPDATE companies SET name = ?, address = ?, ide_number = ?, version = version + 1 \
+        "UPDATE companies SET name = ?, address = ?, ide_number = ?, is_stub = FALSE, version = version + 1 \
          WHERE id = ? AND version = ?",
     )
     .bind(name)

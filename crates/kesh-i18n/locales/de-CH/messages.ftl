@@ -81,6 +81,7 @@ onboarding-field-iban = IBAN
 onboarding-field-qr-iban = QR-IBAN
 onboarding-skip-bank = Später konfigurieren
 onboarding-next = Weiter
+onboarding-stub-name-notice = Ihr Unternehmen hat einen vorläufigen Namen — vervollständigen Sie Ihre Angaben
 incomplete-banner-text = Konfiguration unvollständig — Einrichtung abschliessen
 incomplete-banner-cta = Einrichtung abschliessen
 

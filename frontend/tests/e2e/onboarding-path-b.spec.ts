@@ -77,4 +77,30 @@ test.describe('Onboarding Path B', () => {
 		await expect(page).toHaveURL('/');
 		await expect(page.locator('[data-testid="incomplete-config-banner"]')).not.toBeVisible();
 	});
+
+	test('fresh-install : bannière stub visible au départ, disparaît après coordonnées (#120)', async ({
+		page,
+	}) => {
+		// Le preset `fresh` seede une company stub (is_stub=TRUE) — comme le bootstrap
+		// sur DB vide. La bannière de nudge doit être visible dès le début du wizard.
+		await expect(page.locator('[data-testid="onboarding-stub-notice"]')).toBeVisible();
+
+		// Wizard production jusqu'aux coordonnées.
+		await page.click('button:has-text("Français")');
+		await page.click('button:has-text("Guidé")');
+		await page.click('button:has-text("Configurer pour la production")');
+		await page.locator('[data-testid="onboarding-org-type-pme"]').click();
+		await page.click('button:has-text("Français")');
+		await page.fill('#coord-name', 'Vraie Société SA');
+		await page.fill('#coord-address', 'Rue du Test 1, 1000 Lausanne');
+		await page.click('button:has-text("Continuer")');
+
+		// À l'étape banque (step 7), is_stub est repassé FALSE → bannière disparue.
+		await expect(page.getByRole('heading', { name: 'Compte bancaire' })).toBeVisible();
+		await expect(page.locator('[data-testid="onboarding-stub-notice"]')).not.toBeVisible();
+
+		// Skip bank → app accessible.
+		await page.click('button:has-text("Configurer plus tard")');
+		await expect(page).toHaveURL('/');
+	});
 });
