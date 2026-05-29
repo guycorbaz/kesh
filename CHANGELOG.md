@@ -8,9 +8,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.1.1] — Non publié
+## [0.1.1] — 2026-05-29
 
-Hotfix post-déploiement v0.1.0 : corrections et améliorations opérationnelles découvertes lors du premier déploiement en production sur NAS Synology.
+Hotfix post-déploiement v0.1.0 : corrections et améliorations opérationnelles découvertes lors du premier déploiement en production sur NAS Synology. Cette release embarque les **2 stories critiques** de l'épic hotfix (logs fichier + déblocage du premier démarrage). Les stories restantes de l'épic (break-glass admin reset, port 80 par défaut) sont reportées à une release ultérieure.
 
 ### Ajouts
 
