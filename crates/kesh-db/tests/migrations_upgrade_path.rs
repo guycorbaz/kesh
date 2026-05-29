@@ -82,7 +82,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     let n_before_upgrade_window = total - 5;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 4) failed");
+        .expect("apply_migrations_up_to(total - 5) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

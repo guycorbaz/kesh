@@ -124,6 +124,30 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<(), 
             // COUNT et notre INSERT. Branche défensive, non testable
             // déterministiquement en mono-thread.
             tracing::info!("bootstrap: admin créé en parallèle par un autre process");
+
+            // Story v011-2 (code-review Pass 1) : si on a créé une company stub
+            // ce boot (`company_count == 0`) mais perdu la race sur l'admin, notre
+            // stub est orpheline (aucun user attaché car l'INSERT admin a échoué)
+            // → la supprimer pour ne pas laisser de company stub en double.
+            // DELETE sûr : aucune FK entrante sur un fresh boot (ni user, ni
+            // account). Non-fatal : un échec de cleanup ne doit pas tuer le boot.
+            if company_count == 0 {
+                match sqlx::query("DELETE FROM companies WHERE id = ?")
+                    .bind(company_id)
+                    .execute(pool)
+                    .await
+                {
+                    Ok(_) => tracing::info!(
+                        orphan_company_id = company_id,
+                        "bootstrap: company stub orpheline supprimée après race admin"
+                    ),
+                    Err(e) => tracing::warn!(
+                        orphan_company_id = company_id,
+                        error = %e,
+                        "bootstrap: échec suppression company stub orpheline après race (non-fatal)"
+                    ),
+                }
+            }
         }
         Err(other) => return Err(AppError::Database(other)),
     }
@@ -384,6 +408,27 @@ mod tests {
             .await
             .expect("count users should succeed");
         assert_eq!(user_count, 1, "no duplicate admin on repeated calls");
+
+        // Code-review Pass 1 : la company stub reste marquée is_stub=TRUE après le
+        // 2e appel (le guard `user_count > 0` court-circuite sans toucher companies),
+        // et l'admin reste attaché à cette même company.
+        let (company_id, is_stub): (i64, bool) =
+            sqlx::query_as("SELECT id, is_stub FROM companies ORDER BY id LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .expect("select stub company should succeed");
+        assert!(
+            is_stub,
+            "stub company must stay is_stub=TRUE across repeated calls"
+        );
+        let admin_company_id: i64 = sqlx::query_scalar("SELECT company_id FROM users LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("select admin company_id should succeed");
+        assert_eq!(
+            admin_company_id, company_id,
+            "admin must stay attached to the stub company"
+        );
     }
 
     // NOTE: la branche `DbError::UniqueConstraintViolation` du step 3 est

@@ -218,6 +218,20 @@ Analyse de couverture (demandée par le Project Lead) :
 - Backend `cargo llvm-cov` : **lignes 89.0% / fonctions 85.8% / régions 77.4%** (0 test en échec, DB seedée). Gaps → **KF-033 (#125)** : handlers de routes sans test d'intégration (`journal_entries` 17.6%, `company_invoice_settings` 11.6%, `accounts` 49.6%).
 - Frontend `vitest --coverage` : **lignes 14.3%** (unit-only ; faible par conception car stratégie E2E-centric). Gaps logique pure → **KF-034 (#126)** : `fiscal-years.helpers.ts` + wrappers `*.api.ts`.
 
+## Review Findings — code-review Pass 1 (Sonnet 4.6, 2026-05-29)
+
+3 reviewers adversariaux Sonnet (Blind Hunter / Edge Case Hunter / Acceptance Auditor), diff aplati `main...HEAD`. Acceptance Auditor : **18/18 ACs satisfaits** (0 > LOW). Triage : 1 decision-needed + 3 patches + ~11 dismiss.
+
+### Decision needed
+
+- [ ] [Review][Decision] Race boot concurrent — `bootstrap` crée une company stub sans guard d'unicité (`companies.name` non-unique ; seul `ide_number` l'est). 2 process kesh-api démarrant simultanément sur une DB vide pourraient créer 2 stubs (le 2e admin échoue sur `uq_users_username` → géré, mais laisse une company stub orpheline). Impact réel limité : déploiement mono-container (pas de boot concurrent), et `response_with_stub`/wizard utilisent `ORDER BY id LIMIT 1` → l'orpheline (id 2) est bénigne. Décision : (a) guard auto-nettoyant (DELETE stub orphelin sur `UniqueConstraintViolation` si stub créé ce boot) ; (b) documenter comme limitation concurrence acceptée (cohérent avec la tolérance `UniqueConstraintViolation` existante) ; (c) dismiss.
+
+### Patches
+
+- [ ] [Review][Patch] Message `expect` stale « total - 4 » (var = `total - 5`) [crates/kesh-db/tests/migrations_upgrade_path.rs:85]
+- [ ] [Review][Patch] `bootstrap_idempotent_on_empty_db` n'assert pas la préservation de `is_stub=TRUE` ni le lien FK admin↔stub après 2e appel [crates/kesh-api/src/auth/bootstrap.rs]
+- [ ] [Review][Patch] `test_endpoints_e2e::seed_fresh_*` n'assert pas `is_stub=TRUE` sur la company du preset `fresh` (contrat fixture non gardé) [crates/kesh-api/tests/test_endpoints_e2e.rs]
+
 ## Dev Agent Record
 
 ### Agent Model Used
