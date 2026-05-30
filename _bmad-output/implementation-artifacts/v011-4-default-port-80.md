@@ -314,12 +314,23 @@ Deux différences spec-vs-implémentation acceptées et documentées ici :
 
 3 reviewers adversariaux Sonnet (Blind/Edge/Auditor), diff aplati `main...HEAD`. 0 CRITICAL + 2 HIGH + 2 MEDIUM + 5 LOW (raw). Tous HIGH/MEDIUM ground-truth confirmés.
 
-### Patches
+### Patches (appliqués Pass 1, commit `3befba9`)
 
-- [ ] [Review][Patch] **HIGH** `DOCKER_START.md` troubleshooting : instruction `KESH_PORT=8080` + mapping `"8080:80"` est contradictoire (host:8080 → container:80 où rien n'écoute si app sur 8080). Aligner sur `.env.example` option (a) : garder KESH_PORT=80 par défaut, ne changer que le mapping côté host.
-- [ ] [Review][Patch] **HIGH** `frontend/vite.config.ts:19,22` proxy target hardcodé `http://localhost` → native dev (`cargo run` + `npm run dev`) cassé sur Linux non-root (qui doit `KESH_PORT=3000`). Rendre env-driven via `process.env.KESH_BACKEND_URL ?? 'http://localhost'` + doc `npm run dev` README.
-- [ ] [Review][Patch] **MEDIUM** `CHANGELOG.md` "garder 3000" via `docker-compose.override.yml ports:` : Docker Compose merge concatène les ports listes (pas remplacement) → `80:80` reste actif → fail bind sur host avec port 80 occupé (Synology DSM). Procédure cassée pour le cas-cible. Corriger en instruction "direct edit `docker-compose.prod.yml`" (cohérent admin-manual option b).
-- [ ] [Review][Patch] **MEDIUM** Change Log notes documentant 2 exceptions spec-vs-impl déjà acceptées : (a) AC #14 gate text dit "0 hit" mais 3 hits subsistent dans la nouvelle sous-section `\subsubsection{Changer le port d'écoute}` (intentionnels, override docs) ; (b) AC #17 gate exclusions étendues post-dev (CHANGELOG, README, .env.example, manuel admin nouvelle sous-section, KF archivées, BMAD framework `_bmad/` + `_bmad-output/`) — toutes ces docs contiennent intentionnellement « port 3000 » comme procédure de migration legacy/override.
+- [x] [Review][Patch] **HIGH** `DOCKER_START.md` troubleshooting : instruction réécrite, aligne sur `.env.example` option (a) (garder KESH_PORT=80, remap mapping host vers `"8080:80"`).
+- [x] [Review][Patch] **HIGH** `frontend/vite.config.ts` proxy env-driven via `process.env.KESH_BACKEND_URL ?? 'http://localhost'` + commentaire détaillé (note shell-export obligatoire, pas via `.env`) + README updated avec procédure complète native dev.
+- [x] [Review][Patch] **MEDIUM** `CHANGELOG.md` « garder 3000 » : procédure corrigée → édition directe de `docker-compose.prod.yml` avec WARNING explicite « ne PAS utiliser `docker-compose.override.yml` (Compose concatène `ports:`) ».
+- [x] [Review][Patch] **MEDIUM** Change Log notes documentant les 2 exceptions spec-vs-impl acceptées (AC #14 gate intentional override docs, AC #17 gate exclusions étendues).
+
+### Trend (cycle convergé en 2 passes — Review Iteration Rule)
+
+| Passe | LLM | Findings | Détail |
+|---|---|---|---|
+| 1 | Sonnet 4.6 | 0C + 2H + 2M + 5L → **4 patches** + ~5 dismiss | HIGH DOCKER_START mapping incohérent + HIGH vite proxy native dev regression ; MEDIUM CHANGELOG override.yml ports merge bug + MEDIUM gate exceptions. Dismiss LOW : release.yml port collision spéculatif, comment diagnostic, parenthèse, « Modifié » FR cohérent, « Non publié » KAC standard. |
+| 2 | Haiku 4.5 | **0 finding réel > LOW** | Edge Case Hunter Haiku verdict explicite « READY FOR MERGE » — 0 issue. **5 HIGH/MEDIUM Haiku réfutés en grep ground-truth (CLAUDE.md guardrail)** : (1) Auditor CRIT-1 « CHANGELOG override.yml as instruction » — misread du warning « ne PAS l'utiliser » ; (2) Auditor CRIT-2 « AC #17 gate self-contradiction » — déjà documenté comme exception acceptée ; (3-4) Blind HIGH-1/-2 « vite.config.ts shell vs .env ambiguity » — le commentaire l.20-25 explique déjà « exportée avant la commande, pas via .env PUBLIC_* » ; (5) Blind MEDIUM-1 « CHANGELOG contredit .env.example option (a) » — confusion Haiku, CHANGELOG option 2 = .env.example option (b), pas (a). |
+
+**Trend** : Pass 1 = 9 findings (2H+2M+5L → 4 patches) → Pass 2 = 0 réel > LOW. **Critère d'arrêt Review Iteration Rule atteint** (uniquement LOW restant). Discipline grep ground-truth appliquée systématiquement aux HIGH/MEDIUM Haiku → 5/5 faux-positifs réfutés. Revue **convergée**.
+
+Status `review` confirmé. Bump `done` au merge (convention projet, pattern avoid-parallel-prs).
 
 ## Dev Agent Record
 
