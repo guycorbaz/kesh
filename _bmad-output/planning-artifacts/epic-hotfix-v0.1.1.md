@@ -147,11 +147,15 @@ if company_count == 0 && user_count == 0 {
 
 **Effort estimé :** ~1 jour (story complexe — backend + DB migration + frontend + tests E2E).
 
-### Story v011-3 : Break-glass admin reset via KESH_ADMIN_RESET (Issue #121)
+### Story v011-3 : Break-glass admin reset via KESH_ADMIN_RESET (Issue #121) — **SUPERSEDED par v011-5**
+
+> ⚠️ **Superseded 2026-05-30 par v011-5** (décision Guy). Le mécanisme de recovery est désormais absorbé dans la story v011-5 (onboarding self-service unifié) : pas de flag `KESH_ADMIN_RESET=true` explicite — la simple présence de `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` dans `.env` au boot avec un user matching et un hash différent déclenche le reset (no-op si hash identique → pas de piège « reset à chaque reboot »). Voir Story v011-5 ci-dessous pour la spec unifiée. Issue #121 reste ouverte comme tracker de la fonctionnalité recovery (sera fermée par v011-5).
+>
+> Contenu d'origine conservé ci-dessous pour traçabilité.
 
 **Severity : amélioration ops (recovery offline).** Sans ce fix, un admin qui oublie son mdp est lock-out sans recovery propre.
 
-**Scope :** Ajouter une variable `KESH_ADMIN_RESET=true` qui déclenche au boot un reset du hash password de l'admin matching `KESH_ADMIN_USERNAME` vers `KESH_ADMIN_PASSWORD`.
+**Scope (d'origine, superseded) :** Ajouter une variable `KESH_ADMIN_RESET=true` qui déclenche au boot un reset du hash password de l'admin matching `KESH_ADMIN_USERNAME` vers `KESH_ADMIN_PASSWORD`.
 
 **Acceptance criteria (high-level) :**
 - [ ] `KESH_ADMIN_RESET` lu dans `config.rs` (bool, default `false`, validation strict des valeurs `"true"`/`"1"`/`"yes"` case-insensitive).
@@ -200,6 +204,70 @@ if company_count == 0 && user_count == 0 {
 **Effort estimé :** ~0.5 jour (Small — pas de schema change ; config + Docker + doc ; vigilance sur les références de port en dur dans tests/smoke).
 
 **Séquencement :** Livré **en dernier** (v011-4), après le fix bloquant catch-22 (v011-2). Si l'E2E fresh-install de v011-2 ou le smoke test release référencent le port en dur, les re-valider contre 80 dans cette story.
+
+---
+
+### Story v011-5 : Onboarding self-service + recovery unifié (Issue #121, absorbe v011-3)
+
+**Severity : amélioration UX install + recovery offline (post-v0.1.1, ajoutée 2026-05-30, design unifié 2026-05-30).** Le mécanisme `.env`-bootstrap livré par v011-2 fonctionne mais exige que l'utilisateur édite `.env` avant le 1er `docker compose up`. Pattern non-standard pour les apps self-hosted (Jellyfin, Bitwarden, Sonarr, Vaultwarden, etc. demandent l'admin via un formulaire web au 1er lancement). Cette story remplace le bootstrap `.env` par un flow web self-service ET absorbe le break-glass recovery (initialement story v011-3) dans un mécanisme unifié.
+
+**Idée centrale (Guy 2026-05-30)** : `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` deviennent une **variable double usage** dont le comportement dépend de l'état DB au boot — bootstrap déclaratif si DB vide, recovery break-glass si user matching existe et hash diffère. Pas de flag `KESH_ADMIN_RESET=true` explicite (élimine 1 var). Le no-op sur hash identique évite le piège « reset à chaque reboot tant que les vars traînent dans `.env` ».
+
+**Matrice de comportement (boot) :**
+
+| État DB | `KESH_ADMIN_*` | Action bootstrap |
+|---|---|---|
+| `users` vide | non set | Crée company stub seule → frontend redirige sur `/setup` |
+| `users` vide | set | Crée company stub + admin (≡ v011-2 actuel — CI/Test/déclaratif) |
+| user matching, hash diffère | set | UPDATE password (recovery) + révoque refresh_tokens + audit_log + `tracing::warn!` répété |
+| user matching, hash identique | set | No-op silencieux (vars laissées par oubli, password déjà à jour) + `tracing::warn!` répété « retirer les vars » |
+| user not matching, env set | set | No-op + `tracing::warn!` explicite (« no admin matches KESH_ADMIN_USERNAME=X ») |
+| Au moins 1 user | non set | No-op (régime normal) |
+
+**Scope (backend) :**
+- `bootstrap.rs` : refactor `ensure_admin_user` selon la matrice ci-dessus. Détection « env vars présentes » = `KESH_ADMIN_USERNAME` ET `KESH_ADMIN_PASSWORD` tous deux non-vides.
+- Route ouverte unique `POST /api/v1/setup/admin` : accepte `{ username, password }` (≥ politique `KESH_PASSWORD_MIN_LENGTH`), refuse si `user_count > 0` (410 Gone — auto-disable au 1er succès), crée l'admin attaché à la company stub, renvoie cookies HttpOnly (Story 10-5 réutilisée).
+- Middleware (ou error mapping) : routes API protégées renvoient `423 Locked` tant que `users` est vide (permet au frontend de distinguer « pas authentifié » vs « pas encore setup »).
+- Recovery path (existing user + hash diff) : `revoke_all_refresh_tokens` (réutilise helper Story 10-5) + `audit_log` event `admin_break_glass_reset` + log `tracing::error!` rappelant de retirer les vars.
+- Rate-limit IP-based sur `POST /setup/admin` (réutilise `RateLimiter` existant si possible — auto-disable au 1er succès, mais protège l'instant T0 d'ouverture réseau).
+
+**Scope (frontend) :**
+- Route `/setup` publique avec formulaire username/password + validation côté client.
+- Détection 423 Locked global (hook auth-svelte) → redirection vers `/setup`.
+- Redirection automatique vers `/onboarding` (wizard existant) après création admin réussie.
+
+**Scope (doc + ops) :**
+- Manuel admin FR `docs/manual/fr/admin-manual.tex` (+ PDF régénéré) : section « Premier démarrage » réécrite (création admin via UI + warning « bloquer l'accès réseau public avant 1er boot — qui touche `/setup/admin` en premier devient admin »). Nouvelle sous-section « J'ai oublié mon mot de passe administrateur » avec procédure step-by-step (stop, set env vars, restart, login, change mdp, remove env vars, restart). KF-035 (#127) partiellement adressée.
+- `.env.example` : section « Recovery break-glass » avec exemple commenté + warning de retirer post-reset.
+- `CHANGELOG.md` : entrée `Changed` (mécanisme onboarding) + entrée recovery (« Recovery break-glass admin password via `.env` + restart »).
+- `feedback`/memory : pattern « env vars double-usage no-op-si-hash-identique » documenté pour réutilisation future.
+
+**Acceptance criteria (high-level — à détailler en spec validate) :**
+- [ ] Bootstrap respecte la matrice 6 cas (tests unitaires couvrent chaque cas).
+- [ ] No-op si hash identique → idempotent sur reboots successifs avec `.env` non purgé.
+- [ ] Recovery → révoque refresh_tokens + audit_log event + log ERROR explicite.
+- [ ] Route `POST /api/v1/setup/admin` : create si `user_count==0`, 410 Gone sinon.
+- [ ] Validation password ≥ `KESH_PASSWORD_MIN_LENGTH` (politique existante).
+- [ ] Login direct post-création (cookies HttpOnly).
+- [ ] Middleware/error : 423 Locked tant que `users` vide sur routes protégées.
+- [ ] Frontend `/setup` : formulaire + détection 423 + redirection `/onboarding`.
+- [ ] Rate-limit IP-based sur `/setup/admin`.
+- [ ] Manuel admin FR : sections « Premier démarrage » (setup-UI) + « Récupération mot de passe » (env vars procedure) + PDF régénéré.
+- [ ] `.env.example` section recovery commentée.
+- [ ] CHANGELOG entrées `Changed` + recovery.
+- [ ] Tests : unit (6 cas bootstrap), intégration (`/setup/admin` success/410/423, recovery path), E2E Playwright (fresh-install setup → wizard → app).
+- [ ] Issue #121 fermée (recovery absorbé) + KF-035 (#127) revisitée.
+
+**Questions ouvertes (à trancher en spec validate) :**
+- **Cible release** : v0.1.2 (hotfix UX) ou v0.2 (refactor onboarding plus large) ?
+- **Deprecation déclaration `.env` bootstrap-initial** : couper net en v0.2 (`.env` admin = recovery only) ou maintenir indéfiniment comme fallback CI/Test ?
+- **Bind loopback obligatoire avant setup** : forcer 127.0.0.1 tant que `users` vide (sécurité — pas de fenêtre Internet ouverte au 1er boot), ou s'appuyer uniquement sur le warning manuel ?
+- **Recovery sans match username** : warn + skip (proposition actuelle) ou fail-fast au boot (refus de démarrer) ?
+- **Audit recovery** : faut-il aussi écraser `last_boot_at` de `_kesh_version` ou exposer un endpoint `GET /api/v1/auth/recovery-history` pour traçabilité opérateur ?
+
+**Effort estimé :** ~2.5 jours (Medium-Large — refactor `ensure_admin_user` 6 cas + route + middleware backend + écran frontend + security review du gate setup + 2 sections manuel admin).
+
+**Séquencement :** Cible probable **v0.1.2** (hotfix UX combiné avec recovery — les déploiements v0.1.1 existants en bénéficient pour la recovery). Indépendant de v011-4 port 80.
 
 ---
 
