@@ -75,6 +75,7 @@ so that je puisse accéder à l'app sans surprise sur le port et que la doc d'in
 - `frontend/tests/e2e/helpers/test-state.ts:51,58` — messages d'erreur exemples « ex: http://127.0.0.1:3000 » → `« ex: http://127.0.0.1 »`.
 - `frontend/vite.config.ts:6,8,14` — commentaires du header expliquant le proxy `/api → :3000` → mise à jour cohérente.
 - `frontend/vite.config.ts:18,22` — proxy targets `target: 'http://localhost:3000'` → `'http://localhost'`.
+- `frontend/src/lib/shared/utils/api-client.ts:266` — commentaire `« dev :5173 vs API :3000 est same-site »` → `« :5173 vs API :80 (Docker) »` (commentaire-only, sans impact runtime mais cohérence Pass 2).
 
 ### Doc utilisateur
 
@@ -142,7 +143,7 @@ so that je puisse accéder à l'app sans surprise sur le port et que la doc d'in
 ### Frontend dev/test config (AC #9-10)
 
 - [ ] **AC #9** `frontend/playwright.config.ts` (l.8-9 commentaires + l.56 baseURL fallback) **ET** `frontend/vite.config.ts` (l.6/8/14 commentaires + l.18/22 proxy targets) mis à jour. **Gate** : `grep -nE ':3000' frontend/playwright.config.ts frontend/vite.config.ts` retourne 0 hit.
-- [ ] **AC #10** `frontend/tests/e2e/global-setup.ts:37` **ET** `frontend/tests/e2e/helpers/test-state.ts` (l.14-15 commentaires + l.48 fallback + l.51,58 exemples messages) mis à jour. Les 3 spec files `users.spec.ts:17`, `auth.spec.ts:8`, `journal-entries.spec.ts:17` ont leurs commentaires d'en-tête mis à jour (`localhost:3000` → `localhost`). **Gate** : `grep -rnE ':3000' frontend/tests/e2e/` retourne 0 hit (hors `*.log` qui sont des archives historiques ET hors `test-state.test.ts:46` qui est un stub arbitraire — cf. Dev Notes).
+- [ ] **AC #10** `frontend/tests/e2e/global-setup.ts:37` **ET** `frontend/tests/e2e/helpers/test-state.ts` (l.14-15 commentaires + l.48 fallback + l.51,58 exemples messages) mis à jour. Les 3 spec files `users.spec.ts:17`, `auth.spec.ts:8`, `journal-entries.spec.ts:17` ont leurs commentaires d'en-tête mis à jour (`localhost:3000` → `localhost`). **Aussi** : commentaire dans `frontend/src/lib/shared/utils/api-client.ts:266` (« `dev :5173 vs API :3000 est same-site »`) mis à jour vers `« :5173 vs API :80 (Docker) »`. **Gate** : `grep -rnE ':3000' frontend/tests/e2e/ frontend/src/lib/shared/utils/api-client.ts --exclude="*.log" --exclude="test-state.test.ts"` retourne 0 hit (l'exclusion `test-state.test.ts` est inline dans la commande, le stub arbitraire l.46 est documenté en Dev Notes).
 
 ### Doc utilisateur (AC #11-13)
 
@@ -153,12 +154,12 @@ so that je puisse accéder à l'app sans surprise sur le port et que la doc d'in
 ### Doc admin LaTeX (AC #14-15)
 
 - [ ] **AC #14** `docs/manual/fr/admin-manual.tex` : **les 11 occurrences de `3000`** mises à jour (lignes 169, 176, 257, 285, 320, 374, 376, 385, 564, 644, 957, 1543 — `3306` MariaDB exclus du gate). Inclut les 3 sites **FONCTIONNELLEMENT BLOQUANTS** (Traefik `expose:` l.376, label `loadbalancer.server.port=` l.385, Synology DSM Portal `Port 3000` l.564) sans lesquels le déploiement Traefik/DSM est cassé. **Gate** : `grep -nF '3000' docs/manual/fr/admin-manual.tex | grep -v '3306'` retourne 0 hit.
-- [ ] **AC #15** Nouvelle sous-section « Changer le port d'écoute (conflit port 80, ex. Synology DSM Web Station) » ajoutée au manuel admin avec les **4 options d'override** (cohérent `.env.example` AC #11). PDF régénéré (`latexmk -xelatex docs/manual/fr/admin-manual.tex`) commité. **Gate** : PDF re-régénéré localement produit zero content diff vs PDF commité (vérification manuelle du dev avant commit) ; `pdfgrep '3000' docs/manual/fr/admin-manual.pdf` retourne 0 hit (sauf `3306` MariaDB).
+- [ ] **AC #15** Nouvelle sous-section `\subsubsection{Changer le port d'écoute (conflit port 80, ex. Synology DSM Web Station)}` ajoutée au manuel admin, au même niveau hiérarchique que la sous-section « Ports utilisés » (typiquement sous le `\section` qui contient la table des ports l.169), avec les **4 options d'override** (cohérent `.env.example` AC #11). PDF régénéré (`latexmk -xelatex docs/manual/fr/admin-manual.tex`) et commité. **Gate** : la régénération `.tex → .pdf` aboutit sans erreur (`latexmk` exit 0) — la cohérence sémantique du PDF est garantie par le gate `.tex` de AC #14 (qui assert grep `3000` = 0 hit dans le source `.tex`). Pas de gate `pdfgrep` séparé (outil non-standard, sensible aux timestamps embarqués).
 
 ### CHANGELOG + Quality gate (AC #16-17)
 
 - [ ] **AC #16** `CHANGELOG.md` **nouvelle section** `## [0.1.2] — <date du tag>` avec sous-section `### Changed` contenant les **3 points obligatoires** : (1) raison du changement, (2) procédure « adopter le défaut 80 » (retirer `KESH_PORT=3000` du `.env`), (3) procédure « garder 3000 » (conserver `KESH_PORT=3000` + override mapping compose). Pointe vers la sous-section manuel admin AC #15. **Pas de modification de la section `[0.1.1]` existante** (déjà publiée).
-- [ ] **AC #17** Série Test Locally First complète verte : backend `cargo fmt --check + clippy --workspace --all-targets -- -D warnings + build + test --workspace` ; frontend `npm run check + lint-i18n-ownership + test:unit + build`. **Gate récap** : `grep -rnE ':3000|:3000|EXPOSE 3000|KESH_PORT.*3000|3000:3000' --include="*.rs" --include="*.ts" --include="*.svelte" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.tex" --include="Dockerfile*" --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.svelte-kit --exclude-dir=build --exclude="*.log" --exclude="*.aux" --exclude="*.fdb_latexmk" --exclude="*.fls" --exclude="*.toc" --exclude="*.xdv" .` retourne **0 hit** (hors `.claude/skills/bmad-testarch-*/resources/knowledge/*.md` qui sont du BMAD framework vendored, et hors `test-state.test.ts:46` qui est un stub arbitraire documenté en Dev Notes).
+- [ ] **AC #17** Série Test Locally First complète verte : backend `cargo fmt --check + clippy --workspace --all-targets -- -D warnings + build + test --workspace` ; frontend `npm run check + lint-i18n-ownership + test:unit + build`. **Gate récap** (toutes les exclusions sont **inline dans la commande**, exécutable telle quelle) : `grep -rnE ':3000|EXPOSE 3000|KESH_PORT.*3000|3000:3000' --include="*.rs" --include="*.ts" --include="*.svelte" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.tex" --include="Dockerfile*" --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.svelte-kit --exclude-dir=build --exclude-dir=.claude --exclude="*.log" --exclude="*.aux" --exclude="*.fdb_latexmk" --exclude="*.fls" --exclude="*.toc" --exclude="*.xdv" --exclude="test-state.test.ts" --exclude="v011-4-default-port-80.md" --exclude="epic-hotfix-v0.1.1.md" --exclude="sprint-status.yaml" .` retourne **0 hit**. (Exclusions justifiées : `.claude/skills/bmad-testarch-*` = BMAD framework vendored ; `test-state.test.ts:46` = stub arbitraire de test unitaire ; les 3 fichiers BMAD `_bmad-output/...` excluent la spec elle-même qui contient les references descriptives.)
 
 ## Tasks / Subtasks
 
@@ -177,6 +178,7 @@ so that je puisse accéder à l'app sans surprise sur le port et que la doc d'in
   - [ ] `tests/e2e/global-setup.ts` fallback l.37.
   - [ ] `tests/e2e/helpers/test-state.ts` (commentaires l.14-15 + fallback l.48 + messages exemples l.51/58).
   - [ ] 3 spec files commentaires-doc (`users.spec.ts:17`, `auth.spec.ts:8`, `journal-entries.spec.ts:17`).
+  - [ ] `frontend/src/lib/shared/utils/api-client.ts:266` commentaire (Pass 2 add).
 - [ ] **T5 — Doc utilisateur** (AC #11-13)
   - [ ] `.env.example` commentaire + variable + nouvelle section override 4 cas (dont dev natif).
   - [ ] `README.md` quickstart (décision Q1 (b) appliquée).
@@ -261,9 +263,29 @@ Story créée par `bmad-create-story v011-4` (Opus 4.7) à partir du planning ep
 - **Dev Notes corrigées** : assertion fausse sur `test-state.ts` retirée ; `test-state.test.ts:46` stub explicitement documenté comme arbitraire ; ligne TcpListener corrigée 46 → 69.
 - **Tasks** : nouvelle **T4 Frontend dev/test config** ajoutée pour couvrir le scope élargi.
 
-Trend Pass 1 : ~13 findings (2 CRITICAL + 6 HIGH/MEDIUM + 5 MEDIUM/LOW) → spec entièrement refondue. Pass 2 attendu : faible findings (LOW cosmétiques uniquement) si pas de régression introduite par les patches.
+Trend Pass 1 : ~13 findings (2 CRITICAL + 6 HIGH/MEDIUM + 5 MEDIUM/LOW) → spec entièrement refondue.
 
-Status `ready-for-dev`. Prochaine étape : Pass 2 (Haiku 4.5, diff aplati anti-indexing) pour valider la convergence Review Iteration Rule.
+### Spec validate Pass 2 (Haiku 4.5, 2026-05-30)
+
+3 reviewers adversariaux Haiku (Blind/Edge/Auditor), discipline grep ground-truth appliquée. Findings remontés : 3 CRITICAL + 3 HIGH + 4 MEDIUM + 2 LOW (raw).
+
+**Réfutés en grep ground-truth (faux-positifs Haiku CLAUDE.md guardrail)** :
+- Blind CRITICAL-1 « admin-manual.tex line shift » : grep confirme `expose:` l.375 et `loadbalancer.server.port=3000` l.385 — lignes stables, spec correcte.
+- Blind CRITICAL-3 « silent port strip » : browser HTTP standard = port 80 par défaut, cosmétique.
+- Blind HIGH-4 « CHANGELOG file missing edge case » : `CHANGELOG.md` existe (`[0.1.0]`, `[0.1.1]` présents), edge case sans pertinence.
+- Auditor MEDIUM « CHANGELOG version v0.1.1 vs v0.1.2 » : grep CHANGELOG confirme `[0.1.1]` publié 2026-05-29 avec « stories reportées à une release ultérieure » — spec v0.1.2 cohérent avec réalité. L'epic planning doc reste sur v0.1.1 mais c'est lui qui est obsolète (épic Hotfix v0.1.1 a shipped 2/4 stories).
+
+**Patches Pass 2 appliqués** :
+- **P1 (AC #10 gate)** : ajout `--exclude="test-state.test.ts"` inline dans la commande grep (sinon le gate retournait 1 hit sur le stub légitime).
+- **P2 (AC #17 gate)** : ajout `--exclude-dir=.claude --exclude="test-state.test.ts"` inline + 3 fichiers BMAD exclus + suppression du duplicate `:3000|:3000` cosmétique.
+- **P3 (api-client.ts:266)** : commentaire `« dev :5173 vs API :3000 »` ajouté au scope (Contexte technique + T4) — commentaire-only, sans impact runtime.
+- **P4 (AC #15 PDF gate)** : suppression du gate `pdfgrep` subjectif (outil non-standard + sensible aux timestamps embarqués) ; gate simplifié à « `latexmk` exit 0 », la cohérence sémantique est garantie par le gate `.tex` de AC #14. Hiérarchie LaTeX (`\subsubsection`) explicitée.
+
+**Findings restants (LOW cosmétiques uniquement)** : aucun bloquant, tous adressés ou justifiés.
+
+**Trend Pass 2** : 3 CRITICAL (tous réfutés) + 3 HIGH (2 patchés P1+P2, 1 réfuté) + 4 MEDIUM (3 patchés P3+P4 + Q1 gate déjà acceptable, 1 réfuté CHANGELOG) + 2 LOW (1 cosmétique réfuté, 1 LaTeX hiérarchie adressé P4) → **0 finding réel > LOW restant**. **Critère d'arrêt Review Iteration Rule atteint** (uniquement LOW / 0 réel).
+
+Status `ready-for-dev` confirmé. Prochaine étape : `bmad-dev-story v011-4`.
 
 ## Dev Agent Record
 
