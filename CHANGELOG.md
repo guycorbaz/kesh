@@ -8,6 +8,31 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.1.2] — Non publié
+
+Évolution de configuration : URL HTTP standard pour simplifier l'installation des nouveaux utilisateurs.
+
+### Modifié
+
+- **Port d'écoute par défaut : 3000 → 80** : Kesh écoute désormais sur le port HTTP standard (80) au lieu de 3000. L'URL d'accès est `http://kesh.local` (sans suffixe `:port`), conforme à ce que les utilisateurs attendent d'une application web. Le container Docker tourne en root et peut donc bind ce port privilégié sans configuration supplémentaire ; le bind loopback `127.0.0.1` de la prod est conservé.
+
+  **⚠️ Breaking de configuration — utilisateurs existants v0.1.1, choisissez l'une des deux procédures :**
+
+  1. **Adopter le nouveau défaut 80** (recommandé) : retirer la ligne `KESH_PORT=` de votre `.env` si présente. Le mapping `docker-compose.{prod,dev}.yml` (`127.0.0.1:80:80` ou `80:80`) prend effet automatiquement au prochain `docker compose up`. URL d'accès : `http://localhost`.
+
+  2. **Garder le port 3000** (si conflit port 80, ex. Synology DSM Web Station, ou mode `cargo run` natif sur Linux non-root) : conserver `KESH_PORT=3000` dans `.env` ET surcharger le mapping compose via `docker-compose.override.yml` :
+     ```yaml
+     services:
+       kesh-api:
+         ports:
+           - "127.0.0.1:3000:3000"
+     ```
+     URL d'accès : `http://localhost:3000`.
+
+  Le manuel administrateur (section « Changer le port d'écoute (conflit port 80, ex. Synology DSM) ») détaille les 4 options d'override (remap host, override KESH_PORT, IP dédiée macvlan, mode dev natif).
+
+---
+
 ## [0.1.1] — 2026-05-29
 
 Hotfix post-déploiement v0.1.0 : corrections et améliorations opérationnelles découvertes lors du premier déploiement en production sur NAS Synology. Cette release embarque les **2 stories critiques** de l'épic hotfix (logs fichier + déblocage du premier démarrage). Les stories restantes de l'épic (break-glass admin reset, port 80 par défaut) sont reportées à une release ultérieure.

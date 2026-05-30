@@ -95,7 +95,7 @@ L'endpoint `/api/v1/_test/*` est une porte ouverte sur la DB complète (truncate
 
 1. **Gate runtime dans `build_router`** : les routes ne sont montées que si `config.test_mode == true`. Une requête POST vers `/api/v1/_test/seed` avec `test_mode=false` retombe sur le fallback `ServeDir` → `404 Not Found` ou `405 Method Not Allowed` (jamais 200). Vérifié par les tests `test_endpoints_e2e::seed_endpoint_not_available_when_test_mode_off`.
 2. **Refus de démarrage si bind non-loopback** : `Config::from_env()` retourne `ConfigError::TestModeWithPublicBind` si `KESH_TEST_MODE=true` **et** `KESH_HOST ∉ {127.0.0.1, ::1, localhost}`. Le binaire exit 1 avec un message explicite avant même d'écouter.
-3. **`0.0.0.0` explicitement rejeté** : pas accepté comme alias loopback. Raison : en Docker avec `-p 3000:3000`, un container qui bind `0.0.0.0` en interne expose le port sur le réseau hôte — l'endpoint `/api/v1/_test/*` deviendrait accessible publiquement. La CI et `docker-compose.dev.yml` **doivent** utiliser `KESH_HOST=127.0.0.1` quand `KESH_TEST_MODE=true`.
+3. **`0.0.0.0` explicitement rejeté** : pas accepté comme alias loopback. Raison : en Docker avec `-p 80:80`, un container qui bind `0.0.0.0` en interne expose le port sur le réseau hôte — l'endpoint `/api/v1/_test/*` deviendrait accessible publiquement. La CI et `docker-compose.dev.yml` **doivent** utiliser `KESH_HOST=127.0.0.1` quand `KESH_TEST_MODE=true`.
 
 Le défaut applicatif de `KESH_HOST` est passé de `0.0.0.0` à `127.0.0.1` (Story 6.4 T7.6) — sécurité par défaut, opt-in explicite pour bind public en prod.
 

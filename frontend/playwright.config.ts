@@ -6,7 +6,8 @@ import type { PlaywrightTestConfig } from '@playwright/test';
 // mauvaise chaîne ou de nécessiter des assertions inutilement larges).
 //
 // Story 6.4 (bugfix post-CI 24573000451) : Playwright cible le backend
-// kesh-api sur `:3000` qui sert AUSSI la SPA statique (via `ServeDir`
+// kesh-api (port défaut configuré côté backend) qui sert AUSSI la SPA
+// statique (via `ServeDir`
 // fallback configuré par `KESH_STATIC_DIR`). Avant, Playwright ciblait
 // `vite preview` sur `:4173` qui n'a pas de proxy fonctionnel vers
 // `/api/v1/*` en mode preview (seul `vite dev` avait le proxy) — d'où
@@ -53,7 +54,7 @@ const config: PlaywrightTestConfig = {
 	// Story 6.4 T7.7 : fail-fast si backend/KESH_TEST_MODE pas configuré.
 	globalSetup: './tests/e2e/global-setup.ts',
 	use: {
-		baseURL: process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000',
+		baseURL: process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1',
 		locale: 'fr-CH',
 		timezoneId: 'Europe/Zurich',
 	},

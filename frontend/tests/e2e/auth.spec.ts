@@ -5,7 +5,7 @@ import { seedTestState, clearAuthStorage } from './helpers/test-state';
 /**
  * Tests E2E — Authentification & Accessibilité (Story 1.11)
  *
- * Ces tests nécessitent un backend Kesh fonctionnel sur localhost:3000
+ * Ces tests nécessitent un backend Kesh fonctionnel sur localhost
  * avec `KESH_TEST_MODE=true` (cf. Story 6.4).
  */
 

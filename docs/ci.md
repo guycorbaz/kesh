@@ -58,7 +58,7 @@ npm run build       # Vite build
 
 ### E2E (Playwright)
 
-Nécessite un backend démarré sur `localhost:3000`.
+Nécessite un backend démarré sur `localhost` (port défaut 80 ; override par `KESH_PORT` dans `.env`).
 
 ```bash
 cd frontend

@@ -24,7 +24,7 @@ pub enum ConfigError {
     /// explicite pour éviter d'exposer `/api/v1/_test/*` en staging/prod
     /// (Story 6.4 garde-fou sécurité). Acceptés : `127.0.0.1`, `::1`,
     /// `localhost`. **`0.0.0.0` est explicitement rejeté** car en Docker
-    /// `-p 3000:3000` avec bind interne `0.0.0.0` expose la route au
+    /// `-p 80:80` avec bind interne `0.0.0.0` expose la route au
     /// réseau hôte (cf. décision pass 2 / N3).
     TestModeWithPublicBind { host: String },
     /// `KESH_TEST_MODE` présent mais pas `"true"` / `"1"` / vide (code
@@ -290,7 +290,7 @@ impl Config {
 
         Config {
             database_url,
-            port: 3000,
+            port: 80,
             host: "127.0.0.1".to_string(),
             admin_username,
             admin_password,
@@ -360,19 +360,19 @@ impl Config {
         let port = match env::var("KESH_PORT") {
             Ok(val) => match val.parse::<u16>() {
                 Ok(0) => {
-                    tracing::warn!("KESH_PORT=0 invalide, utilisation du port par défaut 3000");
-                    3000
+                    tracing::warn!("KESH_PORT=0 invalide, utilisation du port par défaut 80");
+                    80
                 }
                 Ok(p) => p,
                 Err(_) => {
                     tracing::warn!(
-                        "KESH_PORT='{}' n'est pas un numéro de port valide, utilisation du port par défaut 3000",
+                        "KESH_PORT='{}' n'est pas un numéro de port valide, utilisation du port par défaut 80",
                         val
                     );
-                    3000
+                    80
                 }
             },
-            Err(_) => 3000,
+            Err(_) => 80,
         };
 
         // Défaut `127.0.0.1` (sécurité par défaut — Story 6.4 T7.6). Pour
@@ -849,7 +849,7 @@ impl LogConfig {
 /// - `localhost` / `Localhost` / `LOCALHOST` / `localhost.` (case-insensitive + trailing dot FQDN, RFC 1035 hostname matching — code review pass 2 E5 pour compat Windows où `.env` et shell traitent les hostnames case-insensitive).
 /// - Toute adresse qui parse via `IpAddr` et dont `is_loopback()` est vrai (127.0.0.0/8, ::1). Supporte les IPv6 bracketés (`[::1]`) et les zone IDs (`::1%eth0`).
 ///
-/// **`0.0.0.0` est explicitement rejeté** car en Docker `-p 3000:3000`
+/// **`0.0.0.0` est explicitement rejeté** car en Docker `-p 80:80`
 /// avec bind interne `0.0.0.0` expose la route au réseau hôte.
 /// `0.0.0.0` ne passe pas `is_loopback()` (c'est `is_unspecified()`).
 ///
@@ -895,7 +895,7 @@ pub(crate) mod test_helpers {
     pub fn make_test_config(admin_username: &str, admin_password: &str) -> Config {
         Config {
             database_url: "mysql://test:test@localhost:3306/test".to_string(),
-            port: 3000,
+            port: 80,
             host: "127.0.0.1".to_string(),
             admin_username: admin_username.to_string(),
             admin_password: admin_password.to_string(),
@@ -987,7 +987,7 @@ mod tests {
 
         let config = Config::from_env().expect("Config should load");
         assert_eq!(config.database_url, "mysql://test:test@localhost:3306/test");
-        assert_eq!(config.port, 3000);
+        assert_eq!(config.port, 80);
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.jwt_expiry, TimeDelta::minutes(15));
         assert_eq!(config.refresh_token_max_lifetime, TimeDelta::days(30));

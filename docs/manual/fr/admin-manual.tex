@@ -166,15 +166,37 @@ Le stockage est dominé par l'\emph{audit\_log} et les pièces justificatives. C
     \keshtableheader{Port} & \keshtableheader{Protocole} & \keshtableheader{Usage} & \keshtableheader{Exposition} \\
     \midrule
     443 & HTTPS & Accès utilisateur via reverse proxy & Publique (Internet) \\
-    3000 & HTTP & API Axum backend (interne) & Localhost uniquement \\
+    80 & HTTP & API Axum backend (interne) & Localhost uniquement \\
     5173 & HTTP & SvelteKit dev server (dev seul) & Localhost uniquement \\
     3306 & MySQL/MariaDB & Connexion base de données & Localhost ou réseau privé \\
     \bottomrule
 \end{tabularx}
 
 \begin{keshwarning}
-\textbf{Ne jamais exposer le port 3000 (API Axum) ni le port 3306 (MariaDB) directement sur Internet}. Toujours passer par un reverse proxy HTTPS qui termine TLS et fait suivre vers \texttt{localhost:3000}.
+\textbf{Ne jamais exposer le port 80 (API Axum) ni le port 3306 (MariaDB) directement sur Internet}. Toujours passer par un reverse proxy HTTPS qui termine TLS et fait suivre vers \texttt{localhost}.
 \end{keshwarning}
+
+\subsubsection{Changer le port d'écoute (conflit port 80, ex. Synology DSM Web Station)}
+
+Le port \keshcommand{80} par défaut peut entrer en conflit avec un service existant sur l'hôte — typiquement \textbf{Synology DSM Web Station} qui occupe également ce port, ou un \texttt{nginx} local, un \texttt{IIS}, etc. Quatre options d'override existent, selon votre contexte :
+
+\begin{enumerate}
+    \item \textbf{Garder le port applicatif 80 mais remapper côté host} (recommandé) — dans \keshpath{docker-compose.{prod,dev}.yml}, changer le mapping \keshcommand{"127.0.0.1:80:80"} vers \keshcommand{"127.0.0.1:8080:80"} (ou tout autre \texttt{HOST\_PORT} libre). L'application reste sur 80 côté container ; URL d'accès : \keshpath{http://localhost:8080}.
+
+    \item \textbf{Changer le port applicatif lui-même} — dans \keshpath{.env}, décommenter et adapter :
+    \begin{lstlisting}[language=bash]
+KESH_PORT=3000
+    \end{lstlisting}
+    puis aligner le mapping \keshpath{docker-compose.*.yml} sur \keshcommand{"127.0.0.1:3000:3000"}. URL d'accès : \keshpath{http://localhost:3000}.
+
+    \item \textbf{Container sur une IP dédiée (Docker macvlan/ipvlan)} — configurer le container avec sa propre IP via réseau \texttt{macvlan} ; le mapping host devient inutile (le container répond directement sur son \texttt{IP:80}). Procédure spécifique à votre infrastructure réseau.
+
+    \item \textbf{Mode \keshcommand{cargo run} natif (hors Docker) sur Linux non-root} — Linux n'autorise pas les utilisateurs non-root à bind un port \texttt{<1024} (\emph{security feature}). Dans ce contexte, set \textbf{obligatoirement} \keshcommand{KESH\_PORT=3000} (ou un autre port \texttt{≥ 1024}) dans votre \keshpath{.env} local. Alternatives possibles mais déconseillées : lancer avec \keshcommand{sudo}, ou ajouter la \emph{capability} via \keshcommand{sudo setcap 'cap\_net\_bind\_service=+ep' target/debug/kesh-api}.
+\end{enumerate}
+
+\begin{keshtip}
+Sur Synology DSM, le port 80 est par défaut redirigé vers DSM Web Station. Sans override, le container Kesh ne pourra pas démarrer (« port already in use »). La méthode (1) « remap côté host » est la plus simple pour cohabiter — par exemple \keshcommand{"127.0.0.1:8080:80"} + reverse proxy DSM vers \texttt{localhost:8080}.
+\end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Installation}
@@ -254,7 +276,7 @@ Au premier démarrage, Kesh exécute automatiquement les migrations de schéma D
 Tester l'accès à l'API :
 
 \begin{lstlisting}[language=bash]
-curl http://localhost:3000/health
+curl http://localhost/health
 # Attendu : {"status":"ok","version":"<keshVersion>"}
 \end{lstlisting}
 
@@ -282,7 +304,7 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -317,7 +339,7 @@ Caddy gère automatiquement les certificats Let's Encrypt et représente une alt
 \begin{lstlisting}[language=bash]
 # /etc/caddy/Caddyfile
 compta.exemple.ch {
-    reverse_proxy localhost:3000 {
+    reverse_proxy localhost {
         header_up X-Forwarded-Proto https
     }
     encode gzip
@@ -371,9 +393,9 @@ services:
 
   kesh-api:
     # ... votre config kesh-api existante ...
-    # NE PAS publier le port 3000 sur l'hôte (Traefik y accède via réseau Docker).
+    # NE PAS publier le port 80 sur l'hôte (Traefik y accède via réseau Docker).
     expose:
-      - "3000"
+      - "80"
     networks:
       - kesh-internal
     labels:
@@ -382,7 +404,7 @@ services:
       - traefik.http.routers.kesh.rule=Host(`compta.exemple.ch`)
       - traefik.http.routers.kesh.entrypoints=websecure
       - traefik.http.routers.kesh.tls.certresolver=le
-      - traefik.http.services.kesh.loadbalancer.server.port=3000
+      - traefik.http.services.kesh.loadbalancer.server.port=80
       # Chaîne de middlewares firewall applicatif (cf. ci-dessous).
       - traefik.http.routers.kesh.middlewares=kesh-ratelimit@docker,kesh-headers@docker
 
@@ -561,7 +583,7 @@ DSM intègre nativement un reverse proxy HTTPS via le \emph{Portail des applicat
         \begin{itemize}
             \item \textbf{Nom de la description} : \keshcommand{Kesh comptabilité}
             \item \textbf{Source} : Protocole \keshcommand{HTTPS}, Hostname \keshcommand{kesh.local} (ou votre domaine), Port \keshcommand{443}
-            \item \textbf{Destination} : Protocole \keshcommand{HTTP}, Hostname \keshcommand{localhost}, Port \keshcommand{3000}
+            \item \textbf{Destination} : Protocole \keshcommand{HTTP}, Hostname \keshcommand{localhost}, Port \keshcommand{80}
         \end{itemize}
     \item Onglet \textbf{En-têtes personnalisés} → ajouter :
         \begin{itemize}
@@ -641,7 +663,7 @@ Toute la configuration Kesh passe par des variables d'environnement, conforméme
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
     KESH\_HOST & Adresse d'écoute de l'API. & \texttt{0.0.0.0} \\
-    KESH\_PORT & Port d'écoute de l'API. & \texttt{3000} \\
+    KESH\_PORT & Port d'écoute de l'API. & \texttt{80} \\
     KESH\_LOG\_LEVEL & Niveau de log (trace, debug, info, warn, error). & \texttt{info} \\
     KESH\_LOG\_FORMAT & Format des logs (json, pretty). & \texttt{json} \\
     JWT\_EXPIRY\_SECONDS & Durée de vie d'un access token. & \texttt{900} (15 min) \\
@@ -954,7 +976,7 @@ zcat kesh_20260520_020000.sql.gz | docker compose exec -T db \
 docker compose start kesh
 
 # 5. Verifier le fonctionnement
-curl http://localhost:3000/health
+curl http://localhost/health
 \end{lstlisting}
 
 \subsection{Test de restauration périodique (OLICo Art. 10 al. 1)}
@@ -1540,7 +1562,7 @@ docker compose exec kesh kesh-cli verify --export-id <UUID>
     \keshtableheader{Service} & \keshtableheader{Port} & \keshtableheader{Notes} \\
     \midrule
     Frontend HTTPS (utilisateur) & 443 & Via reverse proxy \\
-    API Axum (interne) & 3000 & Localhost uniquement \\
+    API Axum (interne) & 80 & Localhost uniquement \\
     MariaDB & 3306 & Localhost ou réseau privé \\
     Prometheus metrics (optionnel) & 9090 & Réseau interne monitoring \\
     \bottomrule

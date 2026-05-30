@@ -67,7 +67,7 @@ npm install
 npm run dev
 ```
 
-L'application est accessible sur http://localhost:5173 (frontend dev) et http://localhost:3000 (API).
+L'application est accessible sur http://localhost:5173 (frontend dev) et http://localhost (API en mode Docker, port 80 ; en mode `cargo run` natif sur Linux non-root, lancer avec `KESH_PORT=3000`).
 
 ### Image Docker (production)
 

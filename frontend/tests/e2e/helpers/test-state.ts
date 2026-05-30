@@ -11,8 +11,8 @@
  *
  * **Routing backend absolu** (cf. F1 review pass 1) : Playwright tourne
  * contre `:4173` (SvelteKit `preview`) et `:4173` ne proxy pas `/api/v1/*`
- * vers le backend `:3000`. Le helper crée donc son propre
- * `APIRequestContext` ciblant `http://127.0.0.1:3000` (override via
+ * vers le backend `:80` (défaut post-Story v011-4). Le helper crée donc son
+ * propre `APIRequestContext` ciblant `http://127.0.0.1` (override via
  * `KESH_BACKEND_URL`). On **ne dépend pas** de la `page`/`request`
  * injectés par Playwright.
  *
@@ -45,17 +45,17 @@ const STORAGE_KEY_EXPIRES_IN = 'kesh:auth:expiresIn';
  * (`:4173`) → erreurs opaques. On throw early avec un message clair.
  */
 function resolveBackendUrl(): string {
-	const raw = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000';
+	const raw = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1';
 	const trimmed = raw.trim();
 	if (trimmed === '') {
-		throw new Error('KESH_BACKEND_URL est vide — attendu URL absolue (ex: http://127.0.0.1:3000).');
+		throw new Error('KESH_BACKEND_URL est vide — attendu URL absolue (ex: http://127.0.0.1).');
 	}
 	try {
 		// Lance TypeError si l'URL est malformée.
 		new URL(trimmed);
 	} catch {
 		throw new Error(
-			`KESH_BACKEND_URL="${trimmed}" n'est pas une URL valide — attendu ex: http://127.0.0.1:3000.`,
+			`KESH_BACKEND_URL="${trimmed}" n'est pas une URL valide — attendu ex: http://127.0.0.1.`,
 		);
 	}
 	return trimmed;

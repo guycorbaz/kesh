@@ -14,7 +14,7 @@ test.afterEach(async ({ page }) => {
 /**
  * Tests E2E — Gestion des utilisateurs (Story 1.12)
  *
- * Ces tests nécessitent un backend Kesh fonctionnel sur localhost:3000
+ * Ces tests nécessitent un backend Kesh fonctionnel sur localhost
  * avec un admin bootstrap (admin / admin123).
  */
 

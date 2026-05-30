@@ -3,7 +3,7 @@
 ## Prérequis
 
 - Docker & Docker Compose installés
-- Port 3000 et 3306 disponibles sur la machine hôte
+- Port 80 et 3306 disponibles sur la machine hôte
 
 ## Démarrage rapide
 
@@ -28,13 +28,13 @@ docker-compose up -d --build
 Les logs vous indiqueront quand la base est prête :
 ```
 kesh-mariadb | ... ready for connections
-kesh-api    | 2026-04-24T12:00:00 INFO kesh_api: listening on 0.0.0.0:3000
+kesh-api    | 2026-04-24T12:00:00 INFO kesh_api: listening on 0.0.0.0:80
 ```
 
 ### 3. Accéder à l'application
 
-- **API:** http://localhost:3000
-- **Frontend (si implémenté):** http://localhost:3000
+- **API:** http://localhost
+- **Frontend (si implémenté):** http://localhost
 - **Admin initial:**
   - Nom: `admin`
   - Mot de passe: `admin`
@@ -89,11 +89,12 @@ docker volume ls | grep kesh
 docker-compose logs kesh-api
 ```
 
-### Erreur "port 3000 already in use"
-Changez le port dans `.env` :
+### Erreur "port 80 already in use"
+Changez le port dans `.env` (cf. section "Conflit port 80" de `.env.example`) :
 ```env
-KESH_PORT=3001
+KESH_PORT=8080
 ```
+Pensez aussi à aligner le mapping host dans `docker-compose.yml` (`"8080:80"`).
 Et redémarrez.
 
 ### Base de données ne s'initialise pas
