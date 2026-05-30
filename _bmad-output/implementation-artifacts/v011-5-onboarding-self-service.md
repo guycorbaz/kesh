@@ -17,7 +17,7 @@ so that l'expérience d'install soit conforme aux apps self-hosted modernes (Jel
 **Idée centrale (Guy 2026-05-30, design tranché)** : les variables `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` deviennent **double-usage** dont le comportement au boot dépend de l'état DB :
 - **DB vide + env non set** → bootstrap crée *uniquement* la company stub. Frontend détecte 423 Locked sur les routes protégées et redirige vers `/setup` (formulaire web).
 - **DB vide + env set** → bootstrap crée stub + admin (≡ v011-2 actuel, conservé pour CI/Test/déploiements déclaratifs).
-- **DB avec user matching username + hash diffère** → **reset password** (recovery break-glass) + révocation refresh_tokens + audit_log + `tracing::error!` rappelant de retirer les vars post-recovery.
+- **DB avec user matching username + hash diffère** → **reset password** (recovery break-glass) + révocation refresh_tokens + audit_log + **`tracing::error!`** (`error!` retenu Pass 1 AUD1-9 — event de sécurité critique, pas un simple warning) rappelant de retirer les vars post-recovery, **précédé d'un warning AVANT l'UPDATE** : « ⚠️ Recovery break-glass déclenché pour <username>. Si vous avez changé votre mdp via l'UI, votre mdp actuel sera écrasé. Retirez la var de .env pour annuler. » (Pass 1 BH1-2 patch).
 - **DB avec user matching + hash identique** → no-op silencieux + `tracing::warn!` répété « retirer les vars de `.env` ».
 - **DB avec user not matching + env set** → no-op + `tracing::warn!` explicite (« no admin matches KESH_ADMIN_USERNAME=X »).
 - **DB avec users + env non set** → no-op (régime nominal post-bootstrap).
@@ -75,21 +75,66 @@ Pas de flag `KESH_ADMIN_RESET=true` explicite (élimine 1 var ; le no-op-si-hash
 État actuel (post-v011-2, lignes ~40-170) : `ensure_admin_user(pool, config)` lit `company_count` + `user_count`, court-circuite si `user_count > 0`, puis branche selon `company_count` (0 → INSERT stub + admin, >0 → admin sur company existante). Tolérance race `UniqueConstraintViolation` admin → cleanup orphan stub (Story v011-2 Pass 1 code-review). Constantes `STUB_COMPANY_NAME = "(en cours de configuration)"` + `STUB_COMPANY_ADDRESS = "-"` partagées avec `onboarding.rs`.
 
 **Refactor v011-5** :
-- Détecter env vars : `let has_admin_env = !config.admin_username.is_empty() && !config.admin_password.is_empty();`. ⚠️ Vérifier que `Config::from_env` accepte des `KESH_ADMIN_*` vides ou absents sans fail-fast (cf. `config.rs:388-405` actuel — peut nécessiter relâcher la validation). Vérifier en spec validate / dev-story.
-- 6 branches selon la matrice :
+- Détecter env vars : `let has_admin_env = config.admin_username.as_deref().is_some_and(|u| !u.is_empty()) && config.admin_password.as_deref().is_some_and(|p| !p.is_empty());`. ⚠️ **Pré-requis bloquant** : `Config::from_env` accepte actuellement seulement des `KESH_ADMIN_*` présents et valides → fail-fast `MissingVar` / `EmptyAdminPassword` / `WeakAdminPassword` / `InsecureAdminPassword` (`config.rs:401-427`). **Le cas 1 de la matrice n'est PAS atteignable sans refactor préalable de `Config`** (Pass 1 BH1-1 / ECH1-1 / AUD1-1 / AUD1-3 — voir sous-section dédiée ci-dessous). Refactor de `Config` est T1 prérequis avant le refactor `ensure_admin_user`.
+- **Ordre des branches dans le refactor** (Pass 1 BH1-10 — clarification) : la détection `has_admin_env` se fait AVANT le guard `user_count > 0`. Le guard `user_count > 0` actuel (ligne 56) disparaît, remplacé par la logique matrice. `company_count` et `user_count` sont lus **une seule fois** au tout début de `ensure_admin_user` (Pass 1 BH1-8) et utilisés par toutes les branches y compris le cleanup orphan stub race du cas 2.
+- Pseudo-code attendu :
+  ```text
+  let company_count = SELECT COUNT FROM companies
+  let user_count = SELECT COUNT FROM users
+  let has_admin_env = <détection vars optionnelles>
+  match (user_count, has_admin_env) {
+    (0, false) => cas 1: créer stub seule (skip admin)
+    (0, true)  => cas 2: créer stub (si company_count==0) + admin (v011-2 actuel, avec cleanup orphan stub race)
+    (n, false) => cas 3: no-op
+    (n, true)  => SELECT user WHERE username=KESH_ADMIN_USERNAME → match {
+      None       => cas 6: warn "no user matches", skip
+      Some(u) if argon2_verify(u.password_hash, KESH_ADMIN_PASSWORD).is_ok() => cas 4: warn "retirer les vars" + no-op
+      Some(u)    => cas 5: warn préventif "⚠️ recovery déclenché..." + transaction { UPDATE u.password_hash; INSERT audit_log }; revoke_all_for_user(u.id, "admin_break_glass_reset"); error! "RETIRER LES VARS"
+    }
+  }
+  ```
+- 6 branches détaillées :
   1. `users` vide + `!has_admin_env` → ne créer QUE la company stub (skip création admin). Log info « setup-required : créer l'admin via POST /api/v1/setup/admin ».
-  2. `users` vide + `has_admin_env` → comportement v011-2 actuel (stub + admin créé déclarativement).
+  2. `users` vide + `has_admin_env` → comportement v011-2 actuel (stub + admin créé déclarativement), cleanup orphan stub préservé sur race admin (`UniqueConstraintViolation`).
   3. `users` non vide + `!has_admin_env` → no-op (régime nominal).
   4. `users` non vide + `has_admin_env` + match `username` + hash identique → no-op + `tracing::warn!` répété « retirer les vars ».
-  5. `users` non vide + `has_admin_env` + match `username` + hash diffère → **recovery** : UPDATE password_hash + `refresh_tokens::revoke_all_for_user(pool, user_id, "admin_break_glass_reset")` + `audit_log::create` event `admin_break_glass_reset` + `tracing::error!` « Recovery effectué — RETIRER LES VARS DE .ENV ».
+  5. `users` non vide + `has_admin_env` + match `username` + hash diffère → **warning AVANT UPDATE** (« ⚠️ Recovery déclenché... ») puis **transaction atomique** `UPDATE password_hash WHERE username=? + audit_log::insert_in_tx(tx, NewAuditLogEntry { event: "admin_break_glass_reset", user_id: u.id, details: {...} })` (Pass 1 ECH1-2 — `audit_log::insert_in_tx` exige `&mut Transaction`, donc ouvrir une `pool.begin().await?` qui englobe UPDATE + audit). Hors transaction : `refresh_tokens::revoke_all_for_user(pool, user_id, "admin_break_glass_reset")` (idempotent + non-critique partiellement exécuté) + `tracing::error!` final « Recovery effectué — RETIRER LES VARS DE .ENV ». Rollback strategy : si la transaction UPDATE+audit échoue → password inchangé (état avant recovery préservé), revoke_all et log error skipped, bootstrap retourne l'erreur DB.
   6. `users` non vide + `has_admin_env` + no match → no-op + `tracing::warn!` « no user matches KESH_ADMIN_USERNAME=<x>, recovery skipped ».
+
+### Backend Rust — Refactor `Config::from_env` (PRÉ-REQUIS BLOQUANT T1)
+
+Pass 1 a identifié que le cas 1 de la matrice est **structurellement inatteignable** sans modification préalable de `Config`. Ground-truth `config.rs:401-427` (vérifié 2026-05-30) :
+```rust
+let admin_username = env::var("KESH_ADMIN_USERNAME").map_err(|_| ConfigError::MissingVar("KESH_ADMIN_USERNAME".into()))?...;
+let admin_password = env::var("KESH_ADMIN_PASSWORD").map_err(|_| ConfigError::MissingVar(...))?.trim().to_string();
+if admin_password.is_empty() { return Err(ConfigError::EmptyAdminPassword); }
+if admin_password.eq_ignore_ascii_case("changeme") { return Err(ConfigError::InsecureAdminPassword); }
+if admin_password.chars().count() < 12 { return Err(ConfigError::WeakAdminPassword { ... }); }
+```
+Aucune valeur de `KESH_ADMIN_PASSWORD` ne signifie « pas de bootstrap déclaratif » dans le code actuel : absence → fail, vide → fail, < 12 chars → fail.
+
+**Décision tranchée Pass 1 (T1 prérequis)** :
+- `Config::admin_username: Option<String>` et `Config::admin_password: Option<String>`.
+- Si `env::var("KESH_ADMIN_USERNAME")` ou `env::var("KESH_ADMIN_PASSWORD")` retourne `Err(NotPresent)` → champ correspondant = `None`.
+- Si présent et vide après `trim()` → traité comme `None` (équivalence absent ↔ vide pour ces deux vars seulement).
+- Les **validations de sécurité** (`InsecureAdminPassword` = "changeme", `WeakAdminPassword` < 12 chars) s'appliquent **uniquement si Some(p) avec p non-vide**. Logique : un opérateur qui set explicitement une valeur s'engage à respecter la politique ; un opérateur qui omet la var délègue au flow self-service.
+- `make_test_config` (utilisé par tests unitaires) adapté pour retourner `Some("admin".into())` / `Some("admin-test-password-123".into())` par défaut (préserve les tests existants v011-2 qui dépendent de credentials valides).
+- Tous les downstream qui lisent `config.admin_username` / `config.admin_password` adaptés :
+  - `auth/bootstrap.rs` : `has_admin_env` = both `Some(non_empty)`.
+  - Tests existants v011-2 du bootstrap : déjà couverts par `make_test_config` adapté.
+- Tests unitaires `config.rs` :
+  - `from_env_admin_vars_absent_returns_none_none` (NEW)
+  - `from_env_admin_vars_empty_returns_none_none` (NEW)
+  - `from_env_admin_vars_set_short_password_fails` (existant, conservé)
+  - `from_env_admin_vars_set_changeme_fails` (existant, conservé)
+  - `from_env_admin_vars_set_valid_returns_some` (renommé)
 
 ### Backend Rust — `crates/kesh-api/src/routes/setup.rs` (NEW)
 
 Référence pattern : `routes/auth.rs:162` (`fn login`) pour la création de cookies HttpOnly post-création. Réutiliser :
 - `auth::password::hash_password_async` pour le hash.
 - `kesh_db::repositories::users::create(pool, NewUser { ... })` (helper existant).
-- Le helper de set-cookie session (cf. `auth.rs` post-Story 10-5) — extraire en helper public `set_session_cookies(jar, user_id, role, ...)` si pas déjà fait.
+- **Helper de set-cookie session** : ground-truth `auth.rs:31` confirme `fn build_auth_cookies(...)` actuellement **privée** (Pass 1 BH1-3). Rendre `pub(crate) fn build_auth_cookies(...)` (ou extraire un helper public `set_session_cookies`) **pour éviter toute duplication** de la logique HttpOnly + Secure + SameSite=Strict + Path + Max-Age. Test post-refactor par `grep -nF "HttpOnly" crates/kesh-api/src/routes/` : un seul site (auth.rs), pas de duplication dans setup.rs.
 - Body request : `SetupAdminRequest { username: String, password: String }` (serde camelCase via `#[serde(rename_all = "camelCase")]`). Validation : `username.trim()` non-vide ; `password.len() >= config.password_min_length` (cf. `Config::password_min_length` Story 10-1 hardening).
 - Body response : identique à `LoginResponse` (avec `userId`/`username`/`role`/`expiresIn`).
 - Erreurs :
@@ -107,9 +152,13 @@ Rate-limit : envelopper la route avec le `RateLimiter` existant (5 tentatives/15
 
 ### Backend Rust — `crates/kesh-api/src/middleware/auth.rs` (423 Locked gate)
 
-Approche minimaliste : dans `require_auth`, avant la vérification JWT, faire un `SELECT EXISTS(SELECT 1 FROM users LIMIT 1)`. Si users vide → retourner `AppError::SetupRequired` (423) au lieu de continuer la vérif JWT (qui retournerait 401 confusément).
+**Décision Pass 1 (perf + résilience)** : optimisation `AppState::users_exist: Arc<AtomicBool>` retenue (Pass 1 BH1-4) plutôt que SELECT par requête. Initialisée au boot post-`ensure_admin_user` à `user_count > 0`. Mise à `true` par `setup.rs::create_admin` après INSERT réussi (`state.users_exist.store(true, Ordering::Relaxed)`). Lue lock-free par `require_auth` au début (`if !state.users_exist.load(Ordering::Relaxed) → return AppError::SetupRequired`). Évite la query DB perpétuelle post-setup.
 
-**Perf** : query par requête. Acceptable en mode setup-required (transition courte). Alternative : cacher l'état « users vide » dans `AppState` et invalider sur création réussie via setup-admin. Plus complexe ; commencer simple.
+**Fail-open sur erreur DB** (Pass 1 ECH1-8) : la valeur est mémoire-only — pas de query DB dans le path requête. Aucun fail-closed sur transient DB error (cohérent avec la résilience visée Story 10-3). Le state `users_exist` n'est jamais re-synchronisé à partir de la DB après le boot — si un admin est supprimé en SQL direct hors API, le middleware ne le détecte pas. **Acceptable v0.1** (suppression d'admin via SQL direct = ops manuel hors-spec).
+
+**Routes exemptes du gate** (AC #14) : la gate est appliquée sur le sous-routeur `protected` (cohérent existant). Les routes `main_router` publiques (`/health`, `/api/v1/auth/login`, `/api/v1/auth/logout`, `/api/v1/auth/refresh`, `/api/v1/setup/admin`) ne sont pas gated. Le `ServeDir` fallback non plus (sinon page blanche, le JS ne peut pas charger pour rediriger vers `/setup`).
+
+**Cas spécial `/api/v1/auth/login` quand users vide** (Pass 1 ECH1-10) : `login` est sur `main_router` (public, hors `protected`), donc le middleware 423 ne s'y applique pas. `login` recherche le user → aucun match → fallback `dummy_verify` constant-time → retourne 401 (cohérent). Fingerprinting mineur (401 sur `/login` + 423 sur `/me`) accepté v0.1 — l'attacker découvre seulement que l'instance est en mode setup, pas une information secrète. À documenter dans Dev Notes Sécurité.
 
 ### Backend Rust — `crates/kesh-api/src/errors.rs` (variants)
 
@@ -131,14 +180,32 @@ Nouvelle route SvelteKit (cohérent structure `routes/onboarding/`). `+page.svel
 
 ### Frontend Svelte — `frontend/src/lib/app/stores/auth.svelte.ts`
 
-Le `hydrate()` actuel (Story 10-5) fait un `GET /api/v1/auth/me` au boot pour restaurer l'identité depuis le cookie. v011-5 :
-- Si `me()` retourne 423 → set state `setupRequired = true`, ne pas set `_currentUser`.
-- Le store expose un getter `isSetupRequired` (boolean).
-- `+layout.ts` au boot : si `auth.isSetupRequired` → goto `/setup`.
+Le `hydrate()` actuel (Story 10-5) fait un `fetch('/api/v1/auth/me')` **direct** (pas via `apiClient.get()`) au boot pour restaurer l'identité depuis le cookie. Ground-truth `auth.svelte.ts:241-260` : branches actuelles = `res.ok` (200) / `res.status === 401` / `else` (warn + reset null).
+
+**Décision Pass 1 (ECH1-3)** : ajouter **explicitement** une 3e branche `else if (res.status === 423)` entre la branche 401 et la branche `else`. Comportement : `_currentUser = null` + `_setupRequired = true`, **sans `console.warn`** (le 423 est un état légal pas un backend KO). La branche `else` (4xx/5xx restants) reste pour les erreurs réelles. Code attendu :
+```ts
+} else if (res.status === 423) {
+  _currentUser = null;
+  _setupRequired = true;
+} else {
+  console.warn(`auth hydrate: ${res.status}`);
+  _currentUser = null;
+}
+```
+Le store expose un getter `isSetupRequired` (boolean, lit `_setupRequired`).
+
+**Sync cross-tab** (Pass 1 ECH1-6) : `setup.api.ts::setupAdmin()` doit appeler `authState.login(payload)` après le succès POST `/setup/admin` (réutilise le pattern existant Story 10-5 qui broadcast `auth-change`). Les autres onglets ouverts sur `/setup` reçoivent le broadcast → re-hydrate → `/me` retourne 200 → goto `/onboarding` ou `/`. Ne PAS oublier le broadcast, sinon les onglets parallèles restent bloqués sur `/setup` avec form-submit → 410.
 
 ### Frontend Svelte — `frontend/src/lib/shared/utils/api-client.ts`
 
-Interceptor 423 global (cohérent avec interceptor 401 existant qui redirige vers /login post-Story 10-5). Si réponse 423 → goto `/setup` (sauf si déjà sur `/setup`, pour éviter boucle).
+**Décision Pass 1 (BH1-6)** : interceptor 423 placé dans `request<T>()` **avant** `parseErrorResponse(res)`, miroir du flow 401 existant (lignes ~389-406). Comportement :
+```ts
+if (res.status === 423 && window.location.pathname !== '/setup') {
+  window.location.replace('/setup');
+  throw new ApiError('SETUP_REQUIRED', 423);  // early-return semantique
+}
+```
+Utiliser `window.location.replace` (pas `goto` SvelteKit — `goto` est composant-context-dépendant et peut ne pas marcher hors layout). Le guard `pathname !== '/setup'` empêche la boucle infinie. Si le 423 atteint malgré tout `parseErrorResponse` (ex. import hors `request<T>`), pas critique (404 ou error UI cohérent).
 
 ### Tests
 
@@ -178,8 +245,8 @@ Section actuelle « Premier démarrage » (lignes ~785-825 post-v011-2 commit `d
    - Redémarrer (`docker compose up -d kesh-api`).
    - Les logs affichent « Recovery effectué — RETIRER LES VARS DE .ENV ».
    - Se connecter avec username + nouveau password.
-   - **Retirer les vars `KESH_ADMIN_*` du `.env`** (ou les recommenter) — sinon chaque restart resetera le password (no-op si hash identique, mais warning persistant).
-   - Redémarrer une dernière fois pour confirmer le warning a disparu.
+   - **Retirer les vars `KESH_ADMIN_*` du `.env`** (ou les recommenter) — sinon chaque restart loggue un warning « retirer les vars » (no-op si hash identique, mais bruit dans les logs).
+   - **(Optionnel)** Redémarrer une dernière fois pour confirmer que les warnings bootstrap ont disparu — preuve que les variables `KESH_ADMIN_*` sont bien retirées.
 5. Warning sécurité recovery : « ⚠️ Tant que `KESH_ADMIN_PASSWORD` est non-vide dans `.env`, toute personne y ayant accès peut reset le mdp. Restreindre `chmod 600 .env`. »
 
 PDF régénéré avec `latexmk -xelatex docs/manual/fr/admin-manual.tex`.
@@ -193,12 +260,16 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
 
 ## Acceptance Criteria
 
+### Pré-requis Config refactor (AC #0)
+
+- [ ] **AC #0** (NEW Pass 1) `crates/kesh-api/src/config.rs` : `Config::admin_username` et `Config::admin_password` deviennent `Option<String>`. Vars absentes OU présentes-mais-vides après trim → `None`. Validations `EmptyAdminPassword`/`InsecureAdminPassword`/`WeakAdminPassword` s'appliquent uniquement si `Some(p)` non-vide. `make_test_config` adapté pour préserver les tests v011-2 (retourne `Some(...)` par défaut). Tests unitaires `config.rs` : `from_env_admin_vars_absent_returns_none_none` + `from_env_admin_vars_empty_returns_none_none` + `from_env_admin_vars_set_valid_returns_some` (renommé) + validations longueur/changeme conservées. **Bloquant T1** — sans cette étape, le cas 1 de la matrice est inatteignable.
+
 ### Backend bootstrap matrice 6 cas (AC #1-7)
 
-- [ ] **AC #1** `crates/kesh-api/src/auth/bootstrap.rs::ensure_admin_user` refactoré pour respecter exactement la matrice 6 cas (cf. Story Scope). Détection `has_admin_env = !username.is_empty() && !password.is_empty()` au début de la fonction.
+- [ ] **AC #1** `crates/kesh-api/src/auth/bootstrap.rs::ensure_admin_user` refactoré pour respecter exactement la matrice 6 cas (cf. Story Scope). Détection `has_admin_env = config.admin_username.as_deref().is_some_and(|u| !u.is_empty()) && config.admin_password.as_deref().is_some_and(|p| !p.is_empty())` au début de la fonction. `company_count` et `user_count` lus une **seule fois** au début (pré-requis cleanup orphan stub race AC #7). Le guard `user_count > 0` actuel disparaît — remplacé par le pattern `match`.
 - [ ] **AC #2** Cas 1 (DB vide + no env) : INSERT company stub uniquement, **pas** d'INSERT user. Log info `setup-required: créer l'admin via POST /api/v1/setup/admin`. Vérifié par test `bootstrap_db_empty_no_env_creates_stub_only`.
 - [ ] **AC #3** Cas 2 (DB vide + env set) : comportement v011-2 strictement préservé (stub + admin déclaratif). Vérifié par tests bootstrap existants (renommés/conservés).
-- [ ] **AC #4** Cas 5 (recovery, hash diff) : UPDATE password_hash + `refresh_tokens::revoke_all_for_user(pool, user_id, "admin_break_glass_reset")` + `audit_log::create` avec event `admin_break_glass_reset` + `tracing::error!` rappelant de retirer les vars. Vérifié par test `bootstrap_recovery_diff_hash_resets`.
+- [ ] **AC #4** Cas 5 (recovery, hash diff) : **warning préventif AVANT toute mutation** (`tracing::warn!` « ⚠️ Recovery break-glass déclenché pour <username>... ») PUIS **transaction atomique** `pool.begin() → UPDATE users SET password_hash WHERE username=? → audit_log::insert_in_tx(tx, NewAuditLogEntry { event: "admin_break_glass_reset", user_id, details })` → `tx.commit()`. HORS transaction (post-commit) : `refresh_tokens::revoke_all_for_user(pool, user_id, "admin_break_glass_reset")` (idempotent, non-critique partiellement exécuté) + `tracing::error!` final « RETIRER LES VARS DE .ENV ». Si la transaction échoue (lock timeout, DB error, audit_log insert error) → rollback automatique, password inchangé, bootstrap retourne l'erreur DB. Vérifié par test `bootstrap_recovery_diff_hash_resets` (vérification : password_hash modifié + audit_log entry présente + refresh_tokens révoqués + log error présent).
 - [ ] **AC #5** Cas 4 (recovery, hash identique) : **no-op silencieux** sur `users.password_hash` (pas d'UPDATE), pas de révocation tokens, pas d'audit log. `tracing::warn!` répété « retirer les vars de .env ». Vérifié par test `bootstrap_recovery_same_hash_noop`. Garantit l'idempotence sur reboots avec `.env` non purgé.
 - [ ] **AC #6** Cas 6 (env set, no match username) : no-op + `tracing::warn!` « no user matches KESH_ADMIN_USERNAME=<x>, recovery skipped ». Vérifié par test `bootstrap_recovery_no_match_username_warns`.
 - [ ] **AC #7** Tolérance race admin (Story v011-2 Pass 1) préservée : cleanup orphan stub sur `UniqueConstraintViolation` (cas 2 race) conservé.
@@ -208,38 +279,38 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
 - [ ] **AC #8** Route `POST /api/v1/setup/admin` montée dans `main_router` (`lib.rs:417-422`, public sans `require_auth`), avec rate-limit `RateLimiter` (5 tentatives/15 min/IP, réutilise config existante).
 - [ ] **AC #9** Body request `{ username, password }` (serde camelCase). Validation : `username.trim()` non-vide ; `password.len() >= config.password_min_length` (≥ 12 par défaut).
 - [ ] **AC #10** Gate `user_count > 0` → `AppError::SetupAlreadyComplete` (410 Gone) avec code `SETUP_ALREADY_COMPLETE`. Vérifié par test intégration.
-- [ ] **AC #11** Happy path : hash password (Argon2id), INSERT user `role=Admin` attaché à la company stub existante (SELECT id FROM companies ORDER BY id LIMIT 1), set cookies HttpOnly session (réutilise helper `auth.rs` login), renvoie body `LoginResponse` (userId/username/role/expiresIn). Vérifié par test E2E.
-- [ ] **AC #12** Aucun side-effect supplémentaire en cas d'échec : pas de user créé partiellement, pas de cookies set, transaction safe.
+- [ ] **AC #11** Happy path : hash password (Argon2id), INSERT user `role=Admin` attaché à la company stub existante (SELECT id FROM companies ORDER BY id LIMIT 1), set cookies HttpOnly session via le helper extrait **`pub(crate) fn build_auth_cookies(...)`** rendu accessible depuis `routes::setup` (Pass 1 BH1-3 — sinon duplication de la logique HttpOnly + Secure + SameSite=Strict + Path + Max-Age). Renvoie body `LoginResponse` (userId/username/role/expiresIn). Met `state.users_exist.store(true, Ordering::Relaxed)` après l'INSERT réussi (gate 423 désactivée pour les requêtes suivantes). Vérifié par test E2E. **`username.trim()`** stocké en DB (cohérent avec `routes/auth.rs::login` qui trim au lookup — Pass 1 ECH1-9).
+- [ ] **AC #12** Aucun side-effect supplémentaire en cas d'échec : pas de user créé partiellement, pas de cookies set, pas de mise à jour `state.users_exist`. **Race TOCTOU 2 usernames distincts** (Pass 1 BH1-5 / ECH1-4) documentée comme **limitation acceptée v0.1** (cf. Dev Notes L1) — le SELECT count + INSERT user n'est pas atomique, les 2 requêtes peuvent toutes deux réussir et créer 2 admins. Rate-limit IP réduit la fenêtre d'exploitation. Limitation tracée en GitHub Issue à créer label `v0.2-milestone`.
 
 ### Middleware 423 Locked (AC #13-14)
 
-- [ ] **AC #13** `crates/kesh-api/src/middleware/auth.rs::require_auth` : avant la vérif JWT, si `SELECT EXISTS(SELECT 1 FROM users LIMIT 1)` retourne `false` → `AppError::SetupRequired` (423 Locked) avec code `SETUP_REQUIRED`. Acceptable perf : query par requête en mode setup uniquement, transition courte.
-- [ ] **AC #14** Route `/api/v1/setup/admin` elle-même PAS gated par ce middleware (elle est publique). `/health` non gated non plus.
+- [ ] **AC #13** `crates/kesh-api/src/middleware/auth.rs::require_auth` : utilise `AppState::users_exist: Arc<AtomicBool>` (cache mémoire init au boot post-`ensure_admin_user`) lu lock-free au début du middleware. Si `false` → `AppError::SetupRequired` (423 Locked) avec code `SETUP_REQUIRED`. Pas de query DB par requête (perf nominal post-setup préservée). Fail-open implicite sur DB error (la valeur est mémoire-only — aucun fail-closed sur DB transient down, cohérent résilience Story 10-3).
+- [ ] **AC #14** Routes exemptes du gate 423 : `/health`, `/api/v1/auth/login`, `/api/v1/auth/logout`, `/api/v1/auth/refresh`, `/api/v1/setup/admin`, ServeDir fallback SPA (sinon page blanche au boot, le JS ne peut pas charger pour `goto /setup`). La gate est appliquée sur le sous-routeur `protected` uniquement.
 
 ### Frontend setup screen (AC #15-19)
 
 - [ ] **AC #15** Route `/setup` créée (`frontend/src/routes/setup/+page.svelte` + `+layout.ts`). `+layout.ts` route publique sans auth check ; redirige `/` si user déjà authentifié.
-- [ ] **AC #16** Formulaire avec champs `username` + `password` + `password-confirm` + submit. Validation client : password ≥ 12 chars (afficher message d'erreur i18n) + match confirmation. Le bouton submit reste désactivé tant que validation invalide.
-- [ ] **AC #17** Sur submit : appel `POST /api/v1/setup/admin` via `setup.api.ts`. Success → goto `/onboarding`. Error 410 → afficher « Compte admin déjà créé, redirection... » + goto `/login`. Error 400 (validation backend) → afficher le message d'erreur backend (réutilise pattern existant). Error 429 (rate-limit) → afficher « Trop de tentatives, réessayer dans X minutes ».
-- [ ] **AC #18** `auth.svelte.ts::hydrate()` détecte 423 sur `/me` → `_setupRequired = true` (pas d'erreur fatale, juste set state). Le store expose un getter `isSetupRequired`.
-- [ ] **AC #19** `api-client.ts` interceptor 423 global → goto `/setup` (sauf si déjà sur `/setup` pour éviter boucle). `+layout.ts` racine au boot : si `auth.isSetupRequired` → goto `/setup`.
+- [ ] **AC #16** Formulaire avec champs `username` + `password` + `password-confirm` + submit. Validation client : password ≥ 12 chars (afficher message d'erreur i18n `setup-password-min`) + match confirmation (`setup-password-mismatch`) + username non-vide après trim. Le bouton submit reste désactivé tant que validation invalide.
+- [ ] **AC #17** Sur submit : appel `POST /api/v1/setup/admin` via `setup.api.ts`. Success → **appel `authState.login(payload)` AVANT redirect** (broadcast `auth-change` aux onglets parallèles, sinon piège 2 onglets — Pass 1 ECH1-6) → goto `/onboarding`. Error 410 → afficher i18n `setup-error-already-complete` + goto `/login` (Q5 tranchée). Error 400 (validation backend) → afficher le message d'erreur backend (réutilise pattern existant). Error 429 (rate-limit) → afficher i18n `setup-error-rate-limit` avec délai estimé.
+- [ ] **AC #18** `auth.svelte.ts::hydrate()` : ajouter une **3e branche explicite** `else if (res.status === 423)` entre les branches 401 et `else` actuelles. Comportement : `_currentUser = null` + `_setupRequired = true`, **sans `console.warn`** (état légal). La branche `else` (4xx/5xx) reste pour les erreurs réelles. Le store expose un getter `isSetupRequired` (boolean, lit `_setupRequired`).
+- [ ] **AC #19** `api-client.ts` : ajouter intercepteur 423 dans `request<T>()` **avant** `parseErrorResponse(res)` (miroir flow 401). Comportement : `if (res.status === 423 && window.location.pathname !== '/setup') { window.location.replace('/setup'); throw new ApiError('SETUP_REQUIRED', 423); }`. Utiliser `window.location.replace` (pas `goto` SvelteKit qui est context-dépendant). `+layout.ts` racine au boot : si `auth.isSetupRequired` → goto `/setup` (cas où le boot-ping a déjà détecté 423 et set state).
 
 ### i18n (AC #20)
 
-- [ ] **AC #20** ~10 nouvelles clés `setup-*` dans les 4 locales `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` : `setup-welcome` (titre), `setup-intro` (texte explicatif), `setup-username-label`, `setup-username-placeholder`, `setup-password-label`, `setup-password-min` (`Au moins 12 caractères`), `setup-password-confirm-label`, `setup-password-mismatch`, `setup-submit`, `setup-error-already-complete`, `setup-error-rate-limit`. `npm run lint-i18n-ownership` PASS.
+- [ ] **AC #20** Clés `setup-*` (11 au total) dans les 4 locales `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` : `setup-welcome` (titre H1), `setup-intro` (paragraphe explicatif), `setup-username-label`, `setup-username-placeholder`, `setup-username-required`, `setup-password-label`, `setup-password-min` (`Au moins 12 caractères`), `setup-password-confirm-label`, `setup-password-mismatch`, `setup-submit`, `setup-error-already-complete`, `setup-error-rate-limit`. **Note linter** (Pass 1 BH1-7) : `lint-i18n-ownership.js` scanne `src/lib/features/` uniquement — la route `src/routes/setup/+page.svelte` est **hors-scope** du linter, donc `npm run lint-i18n-ownership` reste PASS sans garantir l'usage correct de ces clés. Mitigation : la logique UI est extraite dans `src/lib/features/setup/SetupForm.svelte` (composant) pour permettre au linter de couvrir les usages, et `+page.svelte` ne contient qu'un `<SetupForm />`. Pas de validation `setup-success` (success → redirect immédiate, pas de message affiché).
 
 ### Tests (AC #21-24)
 
-- [ ] **AC #21** Tests unitaires bootstrap : 6 nouveaux cas matrice (`bootstrap_db_empty_no_env_creates_stub_only`, `bootstrap_db_empty_with_env_creates_stub_and_admin` renommé, `bootstrap_users_exist_no_env_noop`, `bootstrap_recovery_same_hash_noop`, `bootstrap_recovery_diff_hash_resets`, `bootstrap_recovery_no_match_username_warns`). Tests existants v011-2 renommés/conservés. Total ≥ 8 tests bootstrap verts.
-- [ ] **AC #22** Test intégration `setup_admin_e2e.rs` : happy path 200 + Set-Cookie ; 410 si user existe ; 423 sur route protégée pré-setup ; 429 rate-limit après N tentatives.
-- [ ] **AC #23** Test E2E Playwright `setup.spec.ts` : nouveau preset `setup-required` (stub company seule, pas d'admin) → navigation root → redirect `/setup` → submit form → land on `/onboarding` → wizard prod → app.
-- [ ] **AC #24** `test_fixtures.rs` : nouveau preset `setup-required` ajouté ; preset `fresh` (post-v011-2, crée changeme user) **inchangé** pour préserver compat tests existants. Endpoint `_test/seed?preset=setup-required` câblé.
+- [ ] **AC #21** Tests unitaires bootstrap : 6 nouveaux cas matrice (`bootstrap_db_empty_no_env_creates_stub_only`, `bootstrap_db_empty_with_env_creates_stub_and_admin` renommé, `bootstrap_users_exist_no_env_noop`, `bootstrap_recovery_same_hash_noop`, `bootstrap_recovery_diff_hash_resets`, `bootstrap_recovery_no_match_username_warns`). Tests existants v011-2 renommés/conservés. Total ≥ 8 tests bootstrap verts. **Vérification atomicité recovery** (cas 5) dans le test : forcer `audit_log::insert_in_tx` à échouer (FK manquant simulé ou table truncate) → vérifier que `password_hash` n'a PAS été modifié (rollback).
+- [ ] **AC #22** Test intégration `setup_admin_e2e.rs` : happy path 200 + Set-Cookie ; 410 si user existe (séquentiel) ; 423 sur route protégée pré-setup ; 429 rate-limit après N tentatives ; **scénario race TOCTOU documenté** : test (peut être `#[ignore]`) qui lance 2 POST concurrents avec usernames différents et **documente le comportement réel** (2 admins créés OU UniqueConstraintViolation 500) dans le commentaire du test — pas un AC d'assertion, mais une trace de la limitation L1 (Pass 1 BH1-5/ECH1-4).
+- [ ] **AC #23** Test E2E Playwright `setup.spec.ts` : nouveau preset `setup-required` (stub company seule, pas d'admin) → navigation root → redirect `/setup` (via 423 + interceptor api-client) → submit form → cookies HttpOnly présents → land on `/onboarding` → wizard prod (au moins step 1 « Bienvenue ») → app accessible. Test password mismatch côté client + test redirect /setup si user déjà authentifié (`+layout.ts` `redirect /`).
+- [ ] **AC #24** `test_fixtures.rs` : nouveau preset `setup-required` ajouté (helper `seed_stub_company_only(pool)` qui truncate puis INSERT seule la company stub). Preset `fresh` (post-v011-2, crée changeme user) **inchangé** pour préserver compat tests existants. **Endpoint `_test/seed?preset=setup-required` câblé** (Pass 1 ECH1-5) : ajouter variant `SetupRequired` à l'enum `Preset` dans `crates/kesh-api/src/routes/test_endpoints.rs:68` + branche match dans le handler + mise à jour de la constante `VALID_PRESETS` (l.94) pour inclure `setup-required`. **File List étendue** : `routes/test_endpoints.rs` ajouté aux fichiers modifiés.
 
 ### Doc & CHANGELOG (AC #25-27)
 
-- [ ] **AC #25** `docs/manual/fr/admin-manual.tex` : section « Premier démarrage » réécrite complète (setup-UI + warning bloquage réseau public). Nouvelle sous-section « J'ai oublié mon mot de passe administrateur » (procédure recovery 7 étapes). PDF régénéré (`latexmk -xelatex`). Adresse partiellement KF-035 #127.
+- [ ] **AC #25** `docs/manual/fr/admin-manual.tex` : section « Premier démarrage » réécrite complète (setup-UI + warning bloquage réseau public). Nouvelle sous-section « J'ai oublié mon mot de passe administrateur » (procédure recovery 7 étapes, étape 7 reformulée Pass 1 BH1-12 « (Optionnel) Redémarrez une dernière fois pour confirmer que les warnings bootstrap ont disparu des logs — preuve que les variables `KESH_ADMIN_*` sont bien retirées »). PDF régénéré (`latexmk -xelatex`). **Issue #127 (KF-035)** : laisser **OPEN** avec commentaire de merge « v011-5 adresse la section Premier démarrage du manuel admin — les autres dérives (RBAC 5 rôles fictifs vs 2 réels, kesh-cli inexistant utilisé partout) restent ouvertes et seront adressées par stories ultérieures » (Pass 1 AUD1-7).
 - [ ] **AC #26** `.env.example` section « Compte admin initial » réécrite pour clarifier double-usage (optionnel bootstrap déclaratif / obligatoire recovery). Pas de modification fonctionnelle des vars (compat v011-2 préservée).
-- [ ] **AC #27** `CHANGELOG.md` `[0.1.2]` : étendre section `### Modifié` avec onboarding self-service + ajouter section `### Ajout` avec recovery break-glass + note migration utilisateurs v0.1.1 existants (no-op + warning vars).
+- [ ] **AC #27** `CHANGELOG.md` `[0.1.2]` : étendre section `### Modifié` avec onboarding self-service + ajouter section `### Ajout` avec recovery break-glass. **Section dédiée `### ⚠️ Action requise — upgrade v0.1.1 → v0.1.2`** (Pass 1 BH1-2 / ECH1-7 / AUD1-2 — Q1 tranchée Option B) avec format visible : « **Si vous avez changé votre mot de passe administrateur via l'UI depuis l'installation v0.1.0/v0.1.1**, vous devez retirer `KESH_ADMIN_PASSWORD` de votre `.env` AVANT de redémarrer en v0.1.2. Sinon, le password sera resetté au password de `.env` au prochain boot (Recovery break-glass déclenché). Visible dans les logs Docker : `RETIRER LES VARS DE .ENV`. **Aucune action si le mdp n'a pas été changé** depuis l'installation (no-op + warning persistant uniquement). »
 
 ### Quality gate (AC #28-29)
 
@@ -251,40 +322,47 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
 - [ ] **T1 — Bootstrap matrice 6 cas** (AC #1-7)
   - [ ] Refactor `ensure_admin_user` selon la matrice. Détection `has_admin_env`.
   - [ ] Vérifier `Config::from_env` tolère `KESH_ADMIN_*` absents/vides (adapter `config.rs:388-405` si fail-fast actuel).
-  - [ ] Renommer/réécrire les 5 tests bootstrap existants pour mapper les 6 cas matrice. Ajouter les 3 cas manquants (recovery diff hash, same hash, no match).
-- [ ] **T2 — Setup endpoint** (AC #8-12)
-  - [ ] Nouveau fichier `crates/kesh-api/src/routes/setup.rs` avec handler `create_admin`.
-  - [ ] Extraire helper `set_session_cookies` depuis `auth.rs::login` si pas déjà public (rendre `pub(crate)`).
-  - [ ] Monter la route dans `lib.rs:417-422` (avant `.merge(protected)`) + rate-limit wrapper.
-  - [ ] Variants `AppError::SetupAlreadyComplete` + i18n keys (4 locales).
-- [ ] **T3 — Middleware 423 Locked** (AC #13-14)
-  - [ ] Ajouter le SELECT EXISTS users en début de `require_auth`. Retourner `SetupRequired` si vide.
-  - [ ] Variant `AppError::SetupRequired` + i18n keys (4 locales).
-  - [ ] Vérifier que `/api/v1/setup/admin` et `/health` ne sont pas gated.
+  - [ ] Renommer/réécrire les 5 tests bootstrap existants pour mapper les 6 cas matrice. Ajouter les 3 cas manquants (recovery diff hash, same hash, no match) + test atomicité transaction recovery (audit_log force-fail → password rollback).
+  - [ ] **(T1 prérequis — Pass 1 BH1-1/AUD1-1)** Refactor `Config::from_env` : `admin_username` + `admin_password` deviennent `Option<String>`. Vars absentes/vides → `None`. Validations sécu (changeme, < 12 chars, EmptyAdminPassword) ne s'appliquent que si `Some(non-empty)`. `make_test_config` adapté. 3 tests unitaires Config NEW + 2 conservés.
+  - [ ] Adapter `AppState` pour héberger `users_exist: Arc<AtomicBool>` (init au boot post-`ensure_admin_user`).
+- [ ] **T2 — Setup endpoint + helper cookies** (AC #8-12)
+  - [ ] **Rendre `build_auth_cookies` `pub(crate)`** dans `routes/auth.rs:31` (Pass 1 BH1-3 — pas de duplication HttpOnly/Secure/SameSite=Strict).
+  - [ ] Nouveau fichier `crates/kesh-api/src/routes/setup.rs` avec handler `create_admin` : Body `SetupAdminRequest { username, password }`, validation (trim, longueurs), guard `user_count > 0` → 410, hash password, INSERT user attaché à company stub, set cookies via helper, set `state.users_exist.store(true, Relaxed)`, retourne `LoginResponse`.
+  - [ ] Monter la route dans `lib.rs:417-422` sur `main_router` (public) + rate-limit `RateLimiter` (5/15min/IP cohérent /auth/login).
+  - [ ] Variants `AppError::SetupAlreadyComplete` (410) + i18n keys (4 locales).
+- [ ] **T3 — Middleware 423 Locked + AppState** (AC #13-14)
+  - [ ] Étendre `AppState` avec `users_exist: Arc<AtomicBool>`. Initialiser au boot dans `lib.rs::create_state(...)` après `ensure_admin_user` (`AtomicBool::new(user_count > 0)`).
+  - [ ] Modifier `middleware/auth.rs::require_auth` : lire `state.users_exist.load(Relaxed)` au début ; si `false` → return `AppError::SetupRequired` (423).
+  - [ ] Variant `AppError::SetupRequired` (423) + i18n keys (4 locales).
+  - [ ] Vérifier exemptions : `/api/v1/setup/admin`, `/api/v1/auth/login`, `/api/v1/auth/logout`, `/api/v1/auth/refresh`, `/health`, ServeDir fallback NON gated.
 - [ ] **T4 — Frontend setup screen** (AC #15-19, AC #20)
-  - [ ] Nouvelle route `routes/setup/+page.svelte` + `+layout.ts`.
-  - [ ] Nouveau wrapper API `lib/features/setup/setup.api.ts`.
-  - [ ] Extension `auth.svelte.ts::hydrate()` : détecter 423.
-  - [ ] Extension `api-client.ts` : interceptor 423 → /setup.
-  - [ ] Extension `routes/+layout.ts` : redirect /setup si setupRequired.
-  - [ ] 10 nouvelles clés i18n FR/DE/IT/EN.
+  - [ ] Nouveau composant `src/lib/features/setup/SetupForm.svelte` (UI form + validation client) — Pass 1 BH1-7 : isole le code i18n-scopé dans `features/` pour permettre au linter de couvrir les usages des clés `setup-*`.
+  - [ ] Nouvelle route `routes/setup/+page.svelte` (importe `<SetupForm />`) + `+layout.ts` (route publique, redirect `/` si user authentifié).
+  - [ ] Nouveau wrapper API `lib/features/setup/setup.api.ts::setupAdmin(username, password)` qui appelle `POST /api/v1/setup/admin`. **Sur succès → appel `authState.login(payload)` AVANT redirect** (broadcast cross-tab — Pass 1 ECH1-6).
+  - [ ] Extension `auth.svelte.ts::hydrate()` : **ajouter explicitement la branche `else if (res.status === 423)`** entre 401 et `else` actuelles, set `_currentUser = null` + `_setupRequired = true`, **sans `console.warn`**.
+  - [ ] Extension `api-client.ts::request<T>()` : intercepteur 423 **avant `parseErrorResponse`**, guard `pathname !== '/setup'`, `window.location.replace('/setup')`.
+  - [ ] Extension `routes/+layout.ts` racine : si `auth.isSetupRequired` au boot → goto `/setup`.
+  - [ ] 11 clés i18n FR/DE/IT/EN (cf. AC #20 liste exacte).
 - [ ] **T5 — Tests** (AC #21-24)
-  - [ ] 6 tests unitaires bootstrap matrice + adapter les tests v011-2 existants.
-  - [ ] Nouveau `crates/kesh-api/tests/setup_admin_e2e.rs` (4 scénarios : happy / 410 / 423 / 429).
-  - [ ] Preset `setup-required` dans `test_fixtures.rs` + câblage `_test/seed`.
+  - [ ] 6 tests unitaires bootstrap matrice + test atomicité recovery + adapter les tests v011-2 existants.
+  - [ ] 3 tests unitaires Config NEW (`admin_vars_absent`, `admin_vars_empty`, `admin_vars_set_valid`).
+  - [ ] Nouveau `crates/kesh-api/tests/setup_admin_e2e.rs` (4 scénarios + 1 race documenté ignoré).
+  - [ ] Preset `setup-required` dans `test_fixtures.rs` + **variant `SetupRequired` ajouté à l'enum `Preset` de `routes/test_endpoints.rs:68`** + `VALID_PRESETS` (l.94) mis à jour.
   - [ ] Spec E2E Playwright `frontend/tests/e2e/setup.spec.ts`.
-  - [ ] Frontend unit test `setup.svelte.test.ts` (validation client).
-- [ ] **T6 — Doc admin + CHANGELOG** (AC #25-27)
+  - [ ] Frontend unit test `SetupForm.svelte.test.ts` (validation client + match confirmation).
+- [ ] **T6 — Doc admin + CHANGELOG + website** (AC #25-27, Pass 1 AUD1-5)
   - [ ] Réécriture section « Premier démarrage » `admin-manual.tex` (setup-UI + warning bloquage réseau).
-  - [ ] Nouvelle sous-section « J'ai oublié mon mot de passe administrateur » (procédure recovery 7 étapes + warning).
+  - [ ] Nouvelle sous-section « J'ai oublié mon mot de passe administrateur » (procédure recovery 7 étapes, étape 7 reformulée Pass 1 BH1-12).
   - [ ] PDF régénéré.
   - [ ] `.env.example` section « Compte admin initial » double-usage.
-  - [ ] CHANGELOG `[0.1.2]` : extension `Modifié` + nouveau `Ajout`.
+  - [ ] CHANGELOG `[0.1.2]` : extension `Modifié` + nouveau `Ajout` + **section `### ⚠️ Action requise — upgrade v0.1.1 → v0.1.2`** (Pass 1 BH1-2 / AUD1-2 — Q1 tranchée).
+  - [ ] **Vérifier `website/index.html` + `website/roadmap.html`** (Pass 1 AUD1-5) : section v0.1.2 alignée (mention onboarding self-service + recovery break-glass si déjà visibles ; sinon mettre à jour la roadmap).
+  - [ ] **Créer Issue GitHub L1 TOCTOU double-admin** (Pass 1 AUD1-8) label `technical-debt` + `v0.2-milestone`, référencer dans le Change Log final.
+  - [ ] **Commentaire de merge Issue #127 (KF-035)** : « v011-5 adresse partiellement (section Premier démarrage). RBAC fictif + kesh-cli inexistant restent ouverts. » (Pass 1 AUD1-7)
 - [ ] **T7 — Quality gate + sprint status** (AC #28-29)
-  - [ ] Série Test Locally First complète.
-  - [ ] Sprint-status : bump v011-4 review→done + v011-5 in-progress→review.
-  - [ ] Story file v011-4 Change Log entry « MERGED PR #132 squash 4c9558b ».
-  - [ ] Commit + push.
+  - [ ] Série Test Locally First complète (backend + frontend + E2E avec `KESH_TEST_MODE=true` + `KESH_HOST=127.0.0.1`).
+  - [ ] Sprint-status : v011-5 in-progress→review.
+  - [ ] Commit + push à la demande.
 
 ## Dev Notes
 
@@ -293,7 +371,7 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
 - **Constantes stub partagées** (Story v011-2) : `STUB_COMPANY_NAME` / `STUB_COMPANY_ADDRESS` dans `auth/bootstrap.rs:22-23` (pub(crate) const) réutilisées par `onboarding.rs:808-809`. Préserver le pattern.
 - **Tolérance race admin** (Story v011-2 Pass 1 patches) : sur `UniqueConstraintViolation` lors de l'INSERT user, si on a créé un stub ce boot (`company_count==0`), DELETE l'orphan stub. Préserver pour le cas 2.
 - **Helper revocation tokens** : `refresh_tokens::revoke_all_for_user(pool, user_id, reason: &str) -> Result<u64, DbError>` (Story 1.6 / Story 10-5). Réutiliser tel quel pour le cas 5 recovery. Reason = `"admin_break_glass_reset"`.
-- **Audit log create** : `audit_log::create` ou via la helper `NewAuditLogEntry` dans `crates/kesh-db/src/entities/audit_log.rs`. Vérifier la signature exacte au dev-story. Event name = `admin_break_glass_reset`. Details JSON = `{ "username": "<x>", "trigger": "env_vars_present_hash_diff" }`.
+- **Audit log create** : ground-truth `audit_log.rs:26` confirme `pub async fn insert_in_tx(tx: &mut Transaction<'_, MySql>, entry: NewAuditLogEntry) -> Result<...>` — **signature transaction-only, pas de variante pool** (Pass 1 ECH1-2). Pour le cas 5 recovery, ouvrir une `pool.begin().await?` qui englobe l'UPDATE password + `insert_in_tx`. Event name = `admin_break_glass_reset`. Details JSON = `{ "username": "<x>", "trigger": "env_vars_present_hash_diff" }`. Si transaction échoue → rollback automatique → password inchangé.
 - **Cookies HttpOnly** (Story 10-5) : pattern `set_session_cookies(jar, access_token, refresh_token, expires)` dans `auth.rs`. Extraire helper public si nécessaire. **Ne pas réimplémenter** la logique cookies.
 - **i18n FR/DE/IT/EN** (CLAUDE.md) : toute clé `setup-*` doit avoir les 4 traductions. `npm run lint-i18n-ownership` enforce le préfixe `setup-*` pour la feature `setup`.
 
@@ -304,6 +382,12 @@ L'endpoint `POST /api/v1/setup/admin` est **publique sans auth** tant que `user_
 1. **Course "first-to-setup" attacker** : qui touche `/setup/admin` en premier devient admin. Atténuation : (a) warning manuel d'admin de bloquer réseau public avant le 1er boot, (b) rate-limit IP brute-force, (c) auto-disable au 1er succès (410 Gone). **Pas de protection serveur-side automatique** (pas de fenêtre temporelle, pas de token offline). Acceptable v0.1, à reconsidérer v0.2 si retour terrain.
 2. **Brute-force du formulaire** : rate-limit IP 5/15min/30min block (cohérent `/auth/login`). À documenter dans le manuel.
 3. **MITM si HTTP non-TLS** : v0.1 ne force pas HTTPS (reverse proxy externe en charge). Documenter dans le manuel le risque MITM si setup-UI exposé HTTP non-loopback.
+4. **CSRF justification** (Pass 1 AUD1-6) : pas de token CSRF explicite. `POST /api/v1/setup/admin` accepte uniquement `Content-Type: application/json` (body JSON, pas de form-urlencoded). Les navigateurs n'envoient pas de requêtes cross-origin JSON sans CORS preflight → protection SOP implicite. Pas de cookie de session existant au moment de l'appel (les cookies sont définis dans la **réponse**, pas envoyés en input). Si la politique CORS globale était permissive (`Access-Control-Allow-Origin: *` + `Allow-Credentials`), ce serait un finding séparé — mais la config CORS de Kesh v0.1 ne wildcardent pas avec credentials. Le risque CSRF est donc N/A pour cet endpoint.
+5. **Fingerprinting setup-mode** (Pass 1 ECH1-10) : un attacker découvre que l'instance est en mode setup en comparant `/api/v1/auth/me` (423) vs `/api/v1/auth/login` (401 si users vide via dummy_verify constant-time). Info non-secrète (l'écran `/setup` est visible publiquement). Acceptable v0.1.
+
+### Limitations documentées (catégorie B per CLAUDE.md §Tech debt management)
+
+- **L1 — TOCTOU double-admin sur `POST /setup/admin`** (Pass 1 AUD1-8 / BH1-5 / ECH1-4) : 2 requêtes concurrentes avec usernames distincts lisent `user_count == 0` simultanément et créent 2 admins. Atténuation v0.1 : rate-limit IP (5/15min) + auto-disable au 1er succès (410). Remédiation v0.2 : transaction `SELECT ... FOR UPDATE` sur une row sentinelle ou advisory lock. **GitHub Issue à créer** label `technical-debt` + `v0.2-milestone` (référencer le numéro dans le Change Log final story).
 
 ### Sécurité — recovery break-glass (cas 5)
 
@@ -334,21 +418,25 @@ Au boot v0.1.2 :
 
 C'est un piège ! Pour les utilisateurs v0.1.1 qui ont changé leur mdp via UI mais ont gardé `KESH_ADMIN_PASSWORD` dans `.env`, le boot v0.1.2 va resetter leur mdp au mdp de `.env`.
 
-**Mitigation à trancher en spec validate :**
-- Option A : ajouter une migration ou un flag DB (`recovery_enabled_at` timestamp ?) pour distinguer « 1er boot post-upgrade » vs « recovery intentionnel ». Complexe.
-- Option B : documenter agressivement dans CHANGELOG + warning de boot très visible — l'utilisateur doit RETIRER `KESH_ADMIN_PASSWORD` de `.env` avant d'upgrader v0.1.1→v0.1.2. Pragmatique.
-- Option C : ajouter un opt-in `KESH_ADMIN_RECOVERY=true` flag explicite pour activer le cas 5 — revient à la design v011-3 original. Casserait l'unification.
+**Mitigation TRANCHÉE Pass 1 (Q1) — Option B confirmée :**
+- Option A (flag DB) écartée : complexe et ajoute un schema change qu'on évite pour un cas de migration ponctuelle.
+- **Option B retenue** : documenter agressivement dans CHANGELOG + warning préventif au boot avant l'UPDATE password (cas 5).
+- Option C (opt-in `KESH_ADMIN_RECOVERY=true`) écartée : casserait l'unification design (retour au flag explicite éliminé du double-usage).
 
-→ Option B retenue par défaut. Question ouverte si Guy préfère A ou C.
-
-### `Config::from_env` — vars optionnelles
-
-Actuellement `crates/kesh-api/src/config.rs:388-405` (post-v011-2) :
-```rust
-let admin_username = env::var("KESH_ADMIN_USERNAME")
-    .map_err(|_| ConfigError::MissingVar("KESH_ADMIN_USERNAME".into()))?;
+**Format du warning préventif au boot v0.1.2** (avant l'UPDATE cas 5) :
 ```
-Probable fail-fast sur var manquante. v011-5 doit relâcher : `unwrap_or_default()` ou `Option<String>`. Adapter Config struct + tests config. **Vérifier en dev-story le comportement exact + impact downstream**.
+WARN bootstrap: ⚠️ Recovery break-glass déclenché pour user 'admin'
+WARN bootstrap: Si vous avez changé votre mdp via l'UI, votre mdp sera écrasé
+WARN bootstrap: par KESH_ADMIN_PASSWORD. Pour annuler : Ctrl-C + retirer la var
+WARN bootstrap: de .env + redémarrer.
+```
+Le warning précède l'UPDATE de quelques millisecondes — l'opérateur attentif aux logs peut Ctrl-C avant le commit transaction. C'est imparfait mais c'est une **mitigation visible** vs un reset complètement silencieux.
+
+**CHANGELOG section dédiée** (AC #27) : `### ⚠️ Action requise — upgrade v0.1.1 → v0.1.2` avec wording exact « **Si vous avez changé votre mot de passe administrateur via l'UI depuis l'installation** » (vs la note migration v011-2 trop optimiste « aucune action requise »).
+
+### `Config::from_env` — vars optionnelles (TRANCHÉ Pass 1 — cf. section dédiée "Refactor `Config::from_env`" dans Contexte technique)
+
+Décision Pass 1 : `Config::admin_username: Option<String>` + `Config::admin_password: Option<String>`. Vars absentes/vides → `None`. Validations sécu (longueur, changeme) uniquement si `Some(non-empty)`. Détail complet dans la section dédiée du Contexte technique. **AC #0 prérequis bloquant T1.**
 
 ### Frontend hydrate flow — détection 423
 
@@ -384,13 +472,13 @@ Le `.env` du dev (Guy) actuel contient `KESH_ADMIN_USERNAME=admin` + `KESH_ADMIN
 
 **Action manuelle requise avant tag v0.1.2** : Guy doit retirer `KESH_ADMIN_PASSWORD` de son `.env` local (ou le commenter) AVANT le merge de v011-5, pour éviter le piège lors de son prochain `docker compose up`. À mentionner dans la CHANGELOG migration note.
 
-### Questions ouvertes (à trancher en spec validate)
+### Questions tranchées Pass 1 (Sonnet 4.6, 2026-05-30)
 
-- **Q1 — Compatibilité v0.1.1 → v0.1.2 piège recovery** : option A (flag DB), B (doc + warning agressif, default), C (opt-in flag `KESH_ADMIN_RECOVERY=true`) ?
-- **Q2 — Bind loopback obligatoire avant setup** : forcer `KESH_HOST=127.0.0.1` tant que `users` vide (sécurité dur), ou rely on warning manuel uniquement (default actuel) ?
-- **Q3 — Rate-limit setup-admin** : 5 tentatives/15 min IP (cohérent /auth/login) ou plus strict (3 tentatives / window plus large) ? L'auto-disable au 1er succès limite la valeur d'un rate-limit strict.
-- **Q4 — Audit log details** : minimal `{ username, trigger }` ou inclure aussi `client_ip` + `user_agent` du `.env`-recovery (mais ce sont pas applicables car c'est un boot side-effect, pas une requête HTTP) ?
-- **Q5 — Frontend `/setup` accessible directement par URL** : si user navigue `/setup` alors qu'un admin existe déjà → redirect `/login` (proposition) ou afficher un message d'erreur permanent ?
+- **Q1 — Piège recovery v0.1.1 → v0.1.2** : **TRANCHÉE → Option B** (doc agressive + warning préventif au boot avant l'UPDATE cas 5). Détail dans la section "Compatibilité v0.1.1 → v0.1.2" + AC #27 section CHANGELOG dédiée `### ⚠️ Action requise`.
+- **Q2 — Bind loopback obligatoire avant setup** : **TRANCHÉE → Warning manuel uniquement (option soft)**. Pas de hard-enforce `KESH_HOST=127.0.0.1` tant que `users` vide. Rationale : le binding host est une décision opérateur (cf. memory `feedback_deployment_port_mapping_user_concern`), et le warning manuel + rate-limit IP suffisent à atténuer le risque. À reconsidérer v0.2 si retour terrain.
+- **Q3 — Rate-limit setup-admin** : **TRANCHÉE → 5 tentatives/15 min/30 min block IP** (cohérent `/auth/login`). L'auto-disable au 1er succès (410 Gone) limite la valeur d'un rate-limit strict. Pas d'arbitrage à durcir.
+- **Q4 — Audit log details** : **TRANCHÉE → minimal**. Details JSON = `{ "username": "<x>", "trigger": "env_vars_present_hash_diff" }`. Pas de `client_ip`/`user_agent` (non applicables — boot side-effect, pas requête HTTP). Si forensic-needs futur, ajouter dans v0.2.
+- **Q5 — Frontend `/setup` accessible directement par URL si admin existe** : **TRANCHÉE → redirect `/login`**. Cohérent AC #17 (« Error 410 → goto /login »). Le `+layout.ts` route guard vérifie aussi au montage : si `auth.isAuthenticated` → redirect `/`, sinon → afficher form (qui peut échouer en 410 si admin créé entre-temps, géré par AC #17).
 
 ## Change Log
 
@@ -409,6 +497,61 @@ Story unifie v011-3 break-glass (SUPERSEDED) dans la matrice 6 cas via le double
 5 questions ouvertes (Q1 piège recovery v0.1.1→v0.1.2, Q2 bind loopback, Q3 rate-limit, Q4 audit details, Q5 /setup URL direct) à trancher en spec validate.
 
 Status `ready-for-dev`. Prochaine étape : `bmad-create-story validate v011-5` (boucle Sonnet → Haiku → ... jusqu'à 0 > LOW).
+
+### Pass 1 spec validate (2026-05-30, Sonnet 4.6 × 3 lentilles parallèles)
+
+3 reviewers adversariaux Sonnet (BlindHunter / EdgeCaseHunter / Auditor) sur le spec initial. **28 findings raw** (3 CRITICAL + 8 HIGH + 11 MEDIUM + 6 LOW), **convergence forte** sur 2 CRITICAL :
+
+| Code(s) convergents | Sev | Title court |
+|---|---|---|
+| BH1-1 + ECH1-1 + AUD1-1/AUD1-3 | CRITICAL | `Config::from_env` fail-fast rend cas 1 inatteignable sans refactor préalable |
+| BH1-2 + ECH1-7 + AUD1-2 | CRITICAL/HIGH | Piège recovery v0.1.1→v0.1.2 si user a changé mdp UI (Q1 non tranchée) |
+| ECH1-2 | CRITICAL | `audit_log::insert_in_tx` exige transaction — atomicité UPDATE+audit non spécifiée |
+| BH1-3 | HIGH | `build_auth_cookies` privée → dupliquerait dans setup.rs sans refactor `pub(crate)` |
+| BH1-4 | HIGH | Middleware 423 par-requête SELECT EXISTS non-invalidé post-setup (perf perpétuelle) |
+| BH1-5 + ECH1-4 | HIGH | Race TOCTOU 2 usernames distincts non testée |
+| ECH1-3 | HIGH | `hydrate()` utilise `fetch()` direct (pas apiClient) → besoin de branche 423 explicite |
+| ECH1-5 | HIGH | Preset `setup-required` doit être whitelisté dans enum Rust `Preset` + `VALID_PRESETS` |
+
+**Patches appliqués Pass 1 (~22 patches structurels)** :
+
+1. **AC #0 NEW** — pré-requis bloquant T1 : `Config::admin_username`/`admin_password` deviennent `Option<String>`, validations sécu uniquement si `Some(non-empty)`, 3 tests config (NEW absent/vide/valide).
+2. **Section dédiée "Refactor `Config::from_env`"** — décision tranchée + détail downstream + tests.
+3. **AC #1 amendé** — détection `has_admin_env` Option-based + lecture unique `company_count`/`user_count`.
+4. **Pseudo-code matrice** ajouté en Dev Notes.
+5. **AC #4 amendé** — transaction atomique UPDATE+audit_log, rollback strategy, warning préventif avant UPDATE.
+6. **AC #7 + Dev Notes** — `company_count` lu une seule fois, cleanup orphan stub préservé.
+7. **AC #11 amendé** — `build_auth_cookies` rendue `pub(crate)`, `username.trim()` stocké, `state.users_exist.store(true)` après INSERT.
+8. **AC #12 amendé** — race TOCTOU L1 tracée comme limitation acceptée v0.1.
+9. **AC #13 amendé** — `AppState::users_exist: Arc<AtomicBool>` cache mémoire (vs SELECT par requête), fail-open sur DB error.
+10. **AC #14 amendé** — exemptions étendues (login/logout/refresh/setup/admin/ServeDir).
+11. **AC #18 amendé** — branche 423 explicite dans `hydrate()` sans `console.warn`.
+12. **AC #19 amendé** — interceptor 423 dans `request<T>()` avant `parseErrorResponse`, `window.location.replace`, guard pathname.
+13. **AC #17 amendé** — `authState.login(payload)` broadcast cross-tab avant goto.
+14. **AC #20 amendé** — 11 clés `setup-*` détaillées, mitigation linter scope via `SetupForm` composant dans `src/lib/features/setup/`.
+15. **AC #22 amendé** — test race TOCTOU documenté (#[ignore] OK) + test atomicité recovery.
+16. **AC #24 amendé** — variant `SetupRequired` enum Preset + `VALID_PRESETS` + File List étendue.
+17. **AC #27 amendé** — section CHANGELOG `### ⚠️ Action requise — upgrade v0.1.1 → v0.1.2` avec wording exact.
+18. **T1 enrichi** — sous-task Config refactor + AppState `users_exist`.
+19. **T2 enrichi** — `build_auth_cookies pub(crate)`.
+20. **T3 enrichi** — AppState + middleware via cache mémoire.
+21. **T4 enrichi** — `SetupForm.svelte` composant `features/setup/`, broadcast cross-tab, hydrate explicite.
+22. **T5 enrichi** — atomicité tests + Preset enum update.
+23. **T6 enrichi** — website/, Issue L1 TOCTOU, commentaire Issue #127.
+24. **5 questions ouvertes Q1-Q5 → TRANCHÉES** (Q1 Option B, Q2 warning manuel uniquement, Q3 5/15min, Q4 minimal, Q5 redirect /login).
+25. **Dev Notes Sécurité** — CSRF justification ajoutée (AUD1-6), fingerprinting login vs me (ECH1-10).
+26. **Dev Notes Limitations** — L1 TOCTOU formalisée catégorie B avec remédiation v0.2.
+27. **Procédure recovery étape 7** reformulée optionnelle (BH1-12).
+28. **Audit log** ground-truth `insert_in_tx` transaction-only documentée.
+29. **Tableau matrice** : `tracing::warn!` cas 5 → `tracing::error!` (AUD1-9 corrigé).
+
+**Findings dismissed / non-patché** :
+- ECH1-9 (`username.trim()` stocké) — couvert par AC #11 mention « `username.trim()` stocké ».
+- BH1-11 (LOW liste i18n keys `setup-success`) — couvert par AC #20 mention « pas de `setup-success` (success → redirect immédiat) ».
+- ECH1-10 (LOW fingerprinting login/me) — documenté section Sécurité.
+- AUD1-10 (LOW Test Locally First `KESH_HOST=127.0.0.1`) — pré-requis Playwright déjà documenté dans `docs/testing.md` et T7 mention `KESH_HOST=127.0.0.1`.
+
+**Trend Pass 1** : 28 findings raw → **0 CRITICAL/HIGH restant** (tous patchés ou tranchés), reste à confirmer en Pass 2 Haiku avec LLM orthogonal. Critère d'arrêt Review Iteration Rule non atteint (Pass 1 unique modèle Sonnet, biais d'auteur sur patches). Prochaine passe obligatoire : **Pass 2 Haiku 4.5 contexte frais**.
 
 ## Dev Agent Record
 
