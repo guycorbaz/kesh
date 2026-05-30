@@ -3,7 +3,7 @@
 ## Prérequis
 
 - Docker & Docker Compose installés
-- Port 3000 et 3306 disponibles sur la machine hôte
+- Port 80 et 3306 disponibles sur la machine hôte
 
 ## Démarrage rapide
 
@@ -28,13 +28,13 @@ docker-compose up -d --build
 Les logs vous indiqueront quand la base est prête :
 ```
 kesh-mariadb | ... ready for connections
-kesh-api    | 2026-04-24T12:00:00 INFO kesh_api: listening on 0.0.0.0:3000
+kesh-api    | 2026-04-24T12:00:00 INFO kesh_api: listening on 0.0.0.0:80
 ```
 
 ### 3. Accéder à l'application
 
-- **API:** http://localhost:3000
-- **Frontend (si implémenté):** http://localhost:3000
+- **API:** http://localhost
+- **Frontend (si implémenté):** http://localhost
 - **Admin initial:**
   - Nom: `admin`
   - Mot de passe: `admin`
@@ -89,11 +89,20 @@ docker volume ls | grep kesh
 docker-compose logs kesh-api
 ```
 
-### Erreur "port 3000 already in use"
-Changez le port dans `.env` :
-```env
-KESH_PORT=3001
+### Erreur "port 80 already in use"
+Le port 80 par défaut est occupé sur l'hôte (souvent Synology DSM Web Station,
+nginx local, IIS…). Garder Kesh sur le port 80 **côté container** et remapper
+**côté host** est la solution la plus simple : éditer `docker-compose.yml` et
+changer le mapping `"80:80"` vers `"8080:80"` (ou tout autre HOST_PORT libre) :
+```yaml
+ports:
+  - "8080:80"
 ```
+Pas de modification de `KESH_PORT` nécessaire. URL d'accès : `http://localhost:8080`.
+
+Cf. `.env.example` section "Conflit port 80" et le manuel admin section
+"Changer le port d'écoute" pour les autres options d'override
+(macvlan IP dédiée, dev `cargo run` natif sur Linux non-root, etc.).
 Et redémarrez.
 
 ### Base de données ne s'initialise pas

@@ -263,7 +263,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 		// Story 10-5 (T7.1) : `credentials: 'include'` pour permettre l'envoi
 		// automatique du cookie HttpOnly `kesh_access_token` par le browser.
 		// Le cookie n'est pas envoyé par défaut sur cross-origin, et Vite
-		// dev `:5173` vs API `:3000` est same-site mais credentials default
+		// dev `:5173` vs API `:80` (Docker) est same-site mais credentials default
 		// 'same-origin' peut bloquer selon le browser — `'include'` explicite.
 		return await fetch(url, { ...init, credentials: 'include', signal: controller.signal });
 	} finally {

@@ -34,7 +34,7 @@ async function globalSetup(): Promise<void> {
 				'      (ex: cargo run -p kesh-api)\n' +
 				'   2. KESH_TEST_MODE=true est dans l\'env du backend\n' +
 				'   3. KESH_HOST=127.0.0.1 (sinon refus démarrage par ConfigError)\n' +
-				`   4. Le backend répond sur ${process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1:3000'}\n`,
+				`   4. Le backend répond sur ${process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1'}\n`,
 			e,
 		);
 		throw e;

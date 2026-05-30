@@ -25,5 +25,5 @@ COPY --from=frontend-builder /app/frontend/build ./static
 COPY crates/kesh-i18n/locales ./locales
 ENV KESH_STATIC_DIR=/app/static
 ENV KESH_LOCALES_DIR=/app/locales
-EXPOSE 3000
+EXPOSE 80
 CMD ["./kesh-api"]

@@ -14,7 +14,7 @@ test.afterEach(async ({ page }) => {
  * Tests E2E — Saisie d'écritures en partie double (Story 3.2)
  *
  * Ces tests nécessitent :
- * - un backend Kesh fonctionnel sur localhost:3000
+ * - un backend Kesh fonctionnel sur localhost
  * - un admin bootstrap (admin / admin123)
  * - un seed démo effectué (plan comptable PME + exercice ouvert de
  *   l'année courante créés par `kesh_seed::seed_demo`)
