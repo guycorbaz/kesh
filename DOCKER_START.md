@@ -90,11 +90,19 @@ docker-compose logs kesh-api
 ```
 
 ### Erreur "port 80 already in use"
-Changez le port dans `.env` (cf. section "Conflit port 80" de `.env.example`) :
-```env
-KESH_PORT=8080
+Le port 80 par défaut est occupé sur l'hôte (souvent Synology DSM Web Station,
+nginx local, IIS…). Garder Kesh sur le port 80 **côté container** et remapper
+**côté host** est la solution la plus simple : éditer `docker-compose.yml` et
+changer le mapping `"80:80"` vers `"8080:80"` (ou tout autre HOST_PORT libre) :
+```yaml
+ports:
+  - "8080:80"
 ```
-Pensez aussi à aligner le mapping host dans `docker-compose.yml` (`"8080:80"`).
+Pas de modification de `KESH_PORT` nécessaire. URL d'accès : `http://localhost:8080`.
+
+Cf. `.env.example` section "Conflit port 80" et le manuel admin section
+"Changer le port d'écoute" pour les autres options d'override
+(macvlan IP dédiée, dev `cargo run` natif sur Linux non-root, etc.).
 Et redémarrez.
 
 ### Base de données ne s'initialise pas

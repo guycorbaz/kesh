@@ -299,6 +299,28 @@ Quality gate :
 
 Status `review`. Prochaine étape : `bmad-code-review v011-4` (Sonnet 4.6, contexte frais).
 
+#### Notes complémentaires sur les exceptions de gate (AC #14, AC #17)
+
+Deux différences spec-vs-implémentation acceptées et documentées ici :
+
+**AC #14 gate** — texte spec : « `grep -nF '3000' docs/manual/fr/admin-manual.tex | grep -v '3306'` retourne 0 hit ». Réalité post-T6 : **3 hits subsistent** dans la nouvelle sous-section `\subsubsection{Changer le port d'écoute}` aux lignes 188, 190, 194. Ces hits sont **intentionnels** : ils documentent les options d'override (KESH_PORT=3000 dans .env, mapping 127.0.0.1:3000:3000, URL http://localhost:3000) conformément à AC #15 qui mandate la création de cette sous-section avec les 4 options. Spec auto-contradictoire (AC #14 vs AC #15) tranchée en faveur de AC #15 (sous-section opérationnelle prioritaire sur gate strict).
+
+**AC #17 gate récap** — exclusions étendues post-dev vs spec :
+- Spec : excludes `.claude/skills/bmad-testarch-*` + `test-state.test.ts` + 3 fichiers BMAD-output spécifiques (`v011-4-*.md`, `epic-hotfix-*.md`, `sprint-status.yaml`).
+- Implémentation : ajoute `_bmad/` (toute la framework BMAD), `_bmad-output/` (tous les story files historiques), `CHANGELOG.md` (procédure migration legacy), `README.md` (parenthèse dev natif), `.env.example` (section override 4 options), `admin-manual.tex` (nouvelle sous-section), `docs/known-failures.md` (archivé per CLAUDE.md).
+- Justification : ces docs contiennent **intentionnellement** la mention « port 3000 » comme procédure de migration legacy/override ; les exclure du gate récap ne masque aucun site actif manqué. Le gate avec exclusions étendues retourne 0 hit sur code/config actif.
+
+## Review Findings — code-review Pass 1 (Sonnet 4.6, 2026-05-30)
+
+3 reviewers adversariaux Sonnet (Blind/Edge/Auditor), diff aplati `main...HEAD`. 0 CRITICAL + 2 HIGH + 2 MEDIUM + 5 LOW (raw). Tous HIGH/MEDIUM ground-truth confirmés.
+
+### Patches
+
+- [ ] [Review][Patch] **HIGH** `DOCKER_START.md` troubleshooting : instruction `KESH_PORT=8080` + mapping `"8080:80"` est contradictoire (host:8080 → container:80 où rien n'écoute si app sur 8080). Aligner sur `.env.example` option (a) : garder KESH_PORT=80 par défaut, ne changer que le mapping côté host.
+- [ ] [Review][Patch] **HIGH** `frontend/vite.config.ts:19,22` proxy target hardcodé `http://localhost` → native dev (`cargo run` + `npm run dev`) cassé sur Linux non-root (qui doit `KESH_PORT=3000`). Rendre env-driven via `process.env.KESH_BACKEND_URL ?? 'http://localhost'` + doc `npm run dev` README.
+- [ ] [Review][Patch] **MEDIUM** `CHANGELOG.md` "garder 3000" via `docker-compose.override.yml ports:` : Docker Compose merge concatène les ports listes (pas remplacement) → `80:80` reste actif → fail bind sur host avec port 80 occupé (Synology DSM). Procédure cassée pour le cas-cible. Corriger en instruction "direct edit `docker-compose.prod.yml`" (cohérent admin-manual option b).
+- [ ] [Review][Patch] **MEDIUM** Change Log notes documentant 2 exceptions spec-vs-impl déjà acceptées : (a) AC #14 gate text dit "0 hit" mais 3 hits subsistent dans la nouvelle sous-section `\subsubsection{Changer le port d'écoute}` (intentionnels, override docs) ; (b) AC #17 gate exclusions étendues post-dev (CHANGELOG, README, .env.example, manuel admin nouvelle sous-section, KF archivées, BMAD framework `_bmad/` + `_bmad-output/`) — toutes ces docs contiennent intentionnellement « port 3000 » comme procédure de migration legacy/override.
+
 ## Dev Agent Record
 
 ### Agent Model Used

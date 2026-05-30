@@ -20,14 +20,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
   1. **Adopter le nouveau défaut 80** (recommandé) : retirer la ligne `KESH_PORT=` de votre `.env` si présente. Le mapping `docker-compose.{prod,dev}.yml` (`127.0.0.1:80:80` ou `80:80`) prend effet automatiquement au prochain `docker compose up`. URL d'accès : `http://localhost`.
 
-  2. **Garder le port 3000** (si conflit port 80, ex. Synology DSM Web Station, ou mode `cargo run` natif sur Linux non-root) : conserver `KESH_PORT=3000` dans `.env` ET surcharger le mapping compose via `docker-compose.override.yml` :
+  2. **Garder le port 3000** (si conflit port 80, ex. Synology DSM Web Station, ou mode `cargo run` natif sur Linux non-root) : conserver `KESH_PORT=3000` dans `.env` ET **éditer directement** `docker-compose.prod.yml` (ou `docker-compose.dev.yml` selon votre déploiement) pour remplacer la ligne du mapping :
      ```yaml
-     services:
-       kesh-api:
-         ports:
-           - "127.0.0.1:3000:3000"
+     # Avant :
+     # - "127.0.0.1:80:80"
+     # Après :
+     - "127.0.0.1:3000:3000"
      ```
-     URL d'accès : `http://localhost:3000`.
+     ⚠️ Ne PAS utiliser `docker-compose.override.yml` pour surcharger : Docker Compose **concatène** les listes `ports:` (ne les remplace pas) — le mapping `80:80` resterait actif et échouerait sur un hôte avec port 80 occupé. L'édition directe est la procédure officielle (alignée avec le manuel administrateur, section « Changer le port d'écoute »). URL d'accès : `http://localhost:3000`.
 
   Le manuel administrateur (section « Changer le port d'écoute (conflit port 80, ex. Synology DSM) ») détaille les 4 options d'override (remap host, override KESH_PORT, IP dédiée macvlan, mode dev natif).
 
