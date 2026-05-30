@@ -203,6 +203,45 @@ if company_count == 0 && user_count == 0 {
 
 ---
 
+### Story v011-5 : Onboarding self-service (admin créé via UI au 1er boot)
+
+**Severity : amélioration UX install (post-v0.1.1, ajoutée 2026-05-30).** Le mécanisme `.env`-bootstrap livré par v011-2 fonctionne mais exige que l'utilisateur édite `.env` avant le 1er `docker compose up`, connaisse le mot de passe choisi, et le change après login. Pattern non-standard pour les apps self-hosted (Jellyfin, Bitwarden, Sonarr, Vaultwarden, etc. demandent l'admin via un formulaire web au 1er lancement). C'est très exactement ce que décrivait la section « fictive » du manuel admin (réécrite v011-2 commit `d36953a`) — concept connu, jamais implémenté.
+
+**Scope :** Remplacer le mécanisme `.env`-bootstrap par un flow web self-service. Au 1er boot sur DB vide :
+- Le bootstrap crée **uniquement** la company stub (`is_stub=TRUE`, pas d'admin) si `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` ne sont pas renseignés.
+- Toutes les routes API protégées renvoient `423 Locked` tant que `users` est vide ; le frontend détecte et redirige vers `/setup`.
+- Route ouverte unique `POST /api/v1/setup/admin` qui accepte `{ username, password }`, refuse si un user existe déjà (auto-disable au 1er succès), hash le password, crée l'admin attaché à la company stub, renvoie les cookies de session HttpOnly (réutilise Story 10-5).
+- Frontend : écran « Bienvenue dans Kesh » avec formulaire username/password (≥12 chars) + redirection automatique vers le wizard onboarding existant après création.
+- `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` deviennent **optionnels** : si présents au bootstrap, comportement v011-2 inchangé (legacy/CI/Test/déploiements v0.1.1 existants) ; sinon mode setup-UI.
+
+**Interaction avec v011-3 (break-glass) :** si l'admin est créé via UI (pas de `KESH_ADMIN_USERNAME` en `.env`), `KESH_ADMIN_RESET` n'a pas de cible naturelle. v011-3 devra soit (a) accepter un override `KESH_ADMIN_RESET_USERNAME` au boot, soit (b) cibler par défaut le seul user Admin si unique. À trancher au spec validate.
+
+**Acceptance criteria (high-level — à détailler en spec validate) :**
+- [ ] Bootstrap : si `users` vide et `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` non renseignés → ne crée que la company stub (pas d'admin).
+- [ ] Bootstrap : si `KESH_ADMIN_*` présents → comportement v011-2 strictement inchangé (legacy/CI/Test).
+- [ ] Route `POST /api/v1/setup/admin` (open, sans auth) : crée l'admin si `user_count == 0`, renvoie 410 Gone sinon (auto-disable).
+- [ ] Validation password ≥ 12 chars (politique `KESH_PASSWORD_MIN_LENGTH` existante).
+- [ ] Login direct post-création (cookies HttpOnly Story 10-5 réutilisés, pas de re-login manuel).
+- [ ] Routes API protégées renvoient 423 Locked (ou code équivalent) tant que `users` est vide ; permet au frontend de distinguer « pas authentifié » vs « pas encore setup ».
+- [ ] Frontend : route `/setup` (publique) avec formulaire + détection 423 + redirection ; redirection vers `/onboarding` post-création.
+- [ ] Rate-limit IP-based sur `/setup/admin` (l'endpoint s'auto-disable au 1er succès, mais protège contre brute-force username avant succès).
+- [ ] Manuel admin FR : section « Premier démarrage » à nouveau réécrite (création admin via UI) + warning « bloquer l'accès réseau public avant 1er boot — qui touche `/setup/admin` en premier devient admin ».
+- [ ] CHANGELOG : entrée `Changed` (mécanisme onboarding) + `Deprecated` (`.env` admin si décision deprecation tranchée v0.2).
+- [ ] PDF manuel admin régénéré + KF-035 (#127) partiellement adressée (la section onboarding du manuel devient ground-truth).
+- [ ] Tests : unit (bootstrap skip admin si env non set), intégration (POST /setup/admin success + 410 si user existe + 423 sur routes protégées), E2E Playwright (fresh-install setup form → wizard → app).
+
+**Questions ouvertes (à trancher en spec validate) :**
+- **Cible release** : v0.1.2 (hotfix UX) ou v0.2 (refactor onboarding plus large) ?
+- **Deprecation `.env` admin** : couper net en v0.2 ou maintenir indéfiniment comme fallback CI/Test ?
+- **Interaction v011-3 break-glass** : `KESH_ADMIN_RESET_USERNAME` override ou « single-admin auto-target » ?
+- **Bind loopback obligatoire avant setup** : forcer 127.0.0.1 tant que `users` vide (sécurité), ou s'appuyer uniquement sur le warning manuel ?
+
+**Effort estimé :** ~2 jours (Medium — schema change léger, route + middleware backend, écran frontend, security review obligatoire sur le gate de setup).
+
+**Séquencement :** À planifier APRÈS v011-3 (le break-glass reste utile pour les déploiements v0.1.1 existants qui ont déjà un admin `.env`). Probablement cible v0.2 (refactor pas hotfix), mais peut être v0.1.2 si décision rapide. Indépendant de v011-4 port 80.
+
+---
+
 ## Critères d'arrêt Epic Hotfix v0.1.1 (= release v0.1.1 prête)
 
 - [ ] 4/4 stories avec status `done` dans `sprint-status.yaml` (`v011-1`, `v011-2`, `v011-3`, `v011-4`).
