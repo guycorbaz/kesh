@@ -1,6 +1,6 @@
 # Story v011.4: Port applicatif par défaut 80 (Issue #118)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -331,6 +331,10 @@ Deux différences spec-vs-implémentation acceptées et documentées ici :
 **Trend** : Pass 1 = 9 findings (2H+2M+5L → 4 patches) → Pass 2 = 0 réel > LOW. **Critère d'arrêt Review Iteration Rule atteint** (uniquement LOW restant). Discipline grep ground-truth appliquée systématiquement aux HIGH/MEDIUM Haiku → 5/5 faux-positifs réfutés. Revue **convergée**.
 
 Status `review` confirmé. Bump `done` au merge (convention projet, pattern avoid-parallel-prs).
+
+### MERGED (2026-05-30, PR #132)
+
+PR #132 mergée 2026-05-30, squash commit `4c9558b`. closes #118. CI verte (Backend + Frontend + Docker build). Branche `story/v011-4-default-port-80` supprimée remote. Status bump `review → done` réalisé lors du commit de création de v011-5 (pattern avoid-parallel-prs).
 
 ## Dev Agent Record
 
