@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.1.3] — Non publié
+## [0.1.3] — 2026-05-31
 
 Hotfix critique : déblocage des déploiements LAN strict HTTP-only (cookies session inutilisables sans HTTPS dans v0.1.2).
 

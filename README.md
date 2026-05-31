@@ -168,7 +168,8 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 |---------|-------|--------|
 | v0.1 | E1 Fondations & Authentification, E2 Onboarding & Configuration, E3 Plan comptable & Écritures, E4 Carnet d'adresses & Catalogue, E5 Facturation QR Bill, E6 Qualité & CI/CD, E7 Technical Debt Closure, E8 Import bancaire & Réconciliation, E9 Rapports & Exports, E9.5 Technical Debt Closure, E10 Déploiement & Opérations | ✅ Done |
 | v0.1.1 (hotfix) | Logs fichier avec rotation, fix onboarding catch-22 (fresh install) | ✅ Done |
-| v0.1.2 (hotfix) | Port 80 par défaut, onboarding self-service unifié (admin créé via UI au 1er boot, recovery break-glass via `.env`) | 🚧 Code complet, tag release en attente |
+| v0.1.2 (hotfix) | Port 80 par défaut, onboarding self-service unifié (admin créé via UI au 1er boot, recovery break-glass via `.env`) | ✅ Done |
+| v0.1.3 (hotfix) | Déblocage déploiements LAN HTTP-only (`KESH_COOKIE_SECURE=false` pour LAN privé `*.home.arpa` derrière Traefik sans HTTPS) | 🚧 Code complet, tag release en cours |
 | v0.2 | E11 TVA Suisse, E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
