@@ -90,6 +90,23 @@ pub enum AppError {
     #[error("Impossible de désactiver le dernier administrateur")]
     CannotDisableLastAdmin,
 
+    // --- Story v011-5 — onboarding self-service ---
+    /// **Story v011-5 (AC #13 / 423 Locked)** : la table `users` est vide,
+    /// le frontend doit rediriger vers `/setup` pour créer le 1er admin.
+    /// Émis par `require_auth` middleware quand `state.users_exist.load() == false`.
+    /// Code client `SETUP_REQUIRED`, HTTP 423 Locked (distinct du 401 « pas
+    /// authentifié » — permet au frontend de distinguer « pas connecté » de
+    /// « pas encore configuré »).
+    #[error("Configuration initiale requise")]
+    SetupRequired,
+
+    /// **Story v011-5 (AC #10 / 410 Gone)** : `POST /api/v1/setup/admin`
+    /// appelé après qu'un admin a déjà été créé (auto-disable). Code client
+    /// `SETUP_ALREADY_COMPLETE`, HTTP 410 Gone. Le frontend redirige vers
+    /// `/login` à la réception (cf. AC #17).
+    #[error("Compte administrateur déjà créé")]
+    SetupAlreadyComplete,
+
     // --- Story 1.6 ---
     /// Rate limiting déclenché : trop de tentatives de login depuis cette IP.
     /// `retry_after` = secondes avant déblocage, transmis dans le header `Retry-After`.
@@ -603,6 +620,25 @@ impl IntoResponse for AppError {
             AppError::Validation(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)
             }
+
+            // Story v011-5 — onboarding self-service.
+            AppError::SetupRequired => build_response(
+                StatusCode::LOCKED,
+                "SETUP_REQUIRED",
+                &t(
+                    "error-setup-required",
+                    "Configuration initiale requise. Créer le compte administrateur via /setup.",
+                ),
+            ),
+
+            AppError::SetupAlreadyComplete => build_response(
+                StatusCode::GONE,
+                "SETUP_ALREADY_COMPLETE",
+                &t(
+                    "error-setup-already-complete",
+                    "Le compte administrateur a déjà été créé.",
+                ),
+            ),
 
             AppError::Forbidden => build_response(
                 StatusCode::FORBIDDEN,

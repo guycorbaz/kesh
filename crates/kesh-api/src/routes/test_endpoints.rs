@@ -33,7 +33,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{Router, post};
 use kesh_db::test_fixtures::{
     mark_onboarding_complete, seed_accounting_company, seed_accounting_company_no_fy,
-    seed_changeme_user_only, seed_contact_and_product, truncate_all,
+    seed_changeme_user_only, seed_contact_and_product, seed_stub_company_only, truncate_all,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
@@ -84,6 +84,10 @@ pub enum Preset {
     /// company sans exercice comptable (bouton « Générer » disabled +
     /// message i18n `reports-error-no-fiscal-year-available`).
     WithCompanyNoFy,
+    /// **Story v011-5 AC #24** : DB vidée + 1 company stub seule (aucun user).
+    /// Le frontend `/me` retournera 423 Locked → redirect `/setup` → submit
+    /// → l'admin est créé via `POST /setup/admin` → flow onboarding self-service.
+    SetupRequired,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,7 +95,8 @@ pub struct SeedRequest {
     pub preset: Preset,
 }
 
-const VALID_PRESETS: &str = "fresh, post-onboarding, with-company, with-data, with-company-no-fy";
+const VALID_PRESETS: &str =
+    "fresh, post-onboarding, with-company, with-data, with-company-no-fy, setup-required";
 
 /// Extracteur custom (code review AC #11) qui wrappe `Json<SeedRequest>`
 /// et intercepte les rejets serde pour produire un **400 Bad Request** avec
@@ -204,7 +209,29 @@ async fn seed_handler(
                 .map_err(|e| AppError::Internal(format!("mark_onboarding_complete: {e}")))?;
             "with-company-no-fy"
         }
+        // Story v011-5 AC #24 — DB vidée + 1 company stub seule (aucun user).
+        // Le test setup_admin_e2e + Playwright setup.spec.ts utilisent ce preset
+        // pour valider le flow `/setup` complet (423 → submit → cookies + redirect).
+        Preset::SetupRequired => {
+            seed_stub_company_only(&state.pool)
+                .await
+                .map_err(|e| AppError::Internal(format!("seed_stub_company_only: {e}")))?;
+            "setup-required"
+        }
     };
+
+    // Story v011-5 (BH2-3) — synchroniser le flag mémoire `users_exist` après
+    // chaque seed pour éviter une divergence cache mémoire vs DB. Après
+    // `truncate_all + seed`, `users_exist` doit refléter la nouvelle réalité :
+    // `false` pour `setup-required` (preset sans user), `true` pour tous les
+    // autres presets qui ré-INSERT un user `changeme` ou les users d'une company.
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("seed user_count refresh: {e}")))?;
+    state
+        .users_exist
+        .store(user_count > 0, std::sync::atomic::Ordering::Release);
 
     Ok(Json(SeedResponse {
         preset: preset_label,
@@ -223,6 +250,10 @@ async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedRespons
     seed_changeme_user_only(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("seed_changeme_user_only: {e}")))?;
+    // Story v011-5 (BH2-3) — sync users_exist post-reset (preset fresh inclut un user).
+    state
+        .users_exist
+        .store(true, std::sync::atomic::Ordering::Release);
     Ok(Json(SeedResponse {
         preset: "fresh",
         ok: true,

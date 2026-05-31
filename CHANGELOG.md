@@ -10,7 +10,19 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.1.2] — Non publié
 
-Évolution de configuration : URL HTTP standard pour simplifier l'installation des nouveaux utilisateurs.
+Évolutions de l'expérience d'installation pour s'aligner sur les standards des applications self-hosted modernes (Jellyfin, Bitwarden, Vaultwarden) et URL HTTP standard.
+
+### ⚠️ Action requise — upgrade v0.1.1 → v0.1.2
+
+**Si vous avez changé votre mot de passe administrateur via l'UI depuis l'installation v0.1.0/v0.1.1**, vous devez **retirer `KESH_ADMIN_PASSWORD` de votre `.env`** AVANT de redémarrer en v0.1.2. Sinon, le password sera resetté au password de `.env` au prochain boot (mécanisme **Recovery break-glass** déclenché automatiquement quand un admin existe avec le même `KESH_ADMIN_USERNAME` mais un hash différent). Visible dans les logs Docker au démarrage : `🔓 Recovery effectué — RETIRER LES VARS DE .ENV`.
+
+**Aucune action requise** si vous n'avez pas changé votre mot de passe administrateur depuis l'installation : le boot v0.1.2 détecte que le hash en base correspond toujours à `KESH_ADMIN_PASSWORD`, ne touche pas au password, et émet un simple warning (« retirer les vars de .env ») qui disparaîtra dès que vous les retirez.
+
+### Ajouts
+
+- **Onboarding self-service au 1er démarrage** : sur une nouvelle installation avec une base de données vide, Kesh affiche désormais un écran **« Bienvenue dans Kesh »** au lieu d'exiger une édition `.env` préalable. L'administrateur initial est créé via un formulaire web (`/setup`) — pattern conforme à Jellyfin/Bitwarden/Sonarr/Vaultwarden. L'écran de setup est automatiquement désactivé (`410 Gone`) dès qu'un administrateur existe. Variables `KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD` deviennent **optionnelles** et conservent un double-usage : (a) **bootstrap déclaratif** (CI, Test, déploiements automatisés) si renseignées sur DB vide, (b) **recovery break-glass** si un administrateur existe avec ce username mais un mot de passe différent (cf. ci-dessous). **⚠️ Sécurité** : avant le 1er démarrage en production, bloquez l'accès réseau public — la personne qui touche `/setup` en premier devient administrateur. Recommandé : binder loopback `127.0.0.1` ou LAN privé en attendant la création du compte. (closes #121)
+
+- **Recovery break-glass administrateur** : si vous perdez votre mot de passe administrateur, vous pouvez désormais le réinitialiser en renseignant `KESH_ADMIN_USERNAME` et `KESH_ADMIN_PASSWORD` dans `.env` puis en redémarrant le container. Le hash de l'administrateur correspondant est resetté en transaction atomique (avec rollback automatique si l'audit log fail), ses sessions actives (refresh tokens) sont révoquées, et un événement `admin_break_glass_reset` est enregistré dans le journal d'audit (conservation 10 ans Swiss CO Art. 958f). Un warning préventif est émis dans les logs avant l'UPDATE : « ⚠️ Recovery break-glass déclenché — si vous avez changé votre mdp via l'UI, votre mdp sera écrasé par KESH_ADMIN_PASSWORD ». Procédure complète step-by-step dans le manuel administrateur (section « J'ai oublié mon mot de passe administrateur »). **Pensez à retirer les variables `KESH_ADMIN_*` de votre `.env` après recovery** — un warning persistant le rappelle dans les logs à chaque boot tant qu'elles traînent. (closes #121)
 
 ### Modifié
 

@@ -17,6 +17,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use kesh_db::entities::Role;
 use std::str::FromStr;
+use std::sync::atomic::Ordering;
 
 use crate::AppState;
 use crate::auth::jwt;
@@ -72,30 +73,48 @@ pub async fn require_auth(
     // `kesh_access_token` (HttpOnly, set par /login + /refresh), fallback sur
     // le header `Authorization: Bearer` (préserve la compat avec les 19+
     // tests `*_e2e.rs` historiques et les éventuels clients API non-browser).
-    let token = if let Some(cookie) = jar.get("kesh_access_token") {
-        cookie.value().to_string()
+    let token_opt: Option<String> = if let Some(cookie) = jar.get("kesh_access_token") {
+        Some(cookie.value().to_string())
     } else {
-        let header = req
-            .headers()
-            .get(AUTHORIZATION)
-            .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| {
-                AppError::Unauthenticated("missing authorization header or cookie".into())
-            })?;
+        req.headers().get(AUTHORIZATION).and_then(|h| {
+            h.to_str().ok().and_then(|header| {
+                // RFC 7235 §2.1 : le scheme HTTP auth est case-insensitive.
+                const BEARER_PREFIX_LEN: usize = 7; // "Bearer "
+                if header.len() < BEARER_PREFIX_LEN
+                    || !header.as_bytes()[..6].eq_ignore_ascii_case(b"bearer")
+                    || header.as_bytes()[6] != b' '
+                {
+                    None
+                } else {
+                    Some(header[BEARER_PREFIX_LEN..].trim().to_string())
+                }
+            })
+        })
+    };
 
-        // RFC 7235 §2.1 : le scheme HTTP auth est case-insensitive.
-        // On accepte `Bearer`, `bearer`, `BEARER`, etc. via un test sur les
-        // 7 premiers caractères (6 pour le scheme + 1 espace obligatoire).
-        const BEARER_PREFIX_LEN: usize = 7; // "Bearer "
-        if header.len() < BEARER_PREFIX_LEN
-            || !header.as_bytes()[..6].eq_ignore_ascii_case(b"bearer")
-            || header.as_bytes()[6] != b' '
-        {
+    // Story v011-5 (AC #13) — gate 423 Locked APRÈS extraction du token,
+    // AVANT JWT decode. Si aucun token + users vide → 423 (setup-required,
+    // plus précis que 401). Si token + users vide → 423 (theoretical edge :
+    // ancien JWT en cookie mais DB truncate, force redirect /setup).
+    // Si aucun token + users existent → 401 nominal (handled ci-dessous).
+    // Lecture lock-free `Acquire` cohérente avec le `Release` au store
+    // (setup::create_admin + main.rs init).
+    if !state.users_exist.load(Ordering::Acquire) {
+        return Err(AppError::SetupRequired);
+    }
+
+    let token = match token_opt {
+        Some(t) => t,
+        None => {
+            // Pas de cookie, pas de header Authorization valide → distinguer
+            // le « missing » du « malformed » pour le diagnostic. Vu que
+            // l'absence de header retourne None ci-dessus mais aussi un
+            // header présent mais malformé, on rapporte un message générique.
+            // (Préserve la compat des tests existants sur 401 + message.)
             return Err(AppError::Unauthenticated(
-                "malformed authorization header".into(),
+                "missing or malformed authorization (no cookie, no Bearer header)".into(),
             ));
         }
-        header[BEARER_PREFIX_LEN..].trim().to_string()
     };
 
     let claims = jwt::decode(&token, state.config.jwt_secret_bytes())?;
@@ -183,11 +202,16 @@ mod tests {
                 .as_path(),
         )
         .expect("load test i18n");
+        // Story v011-5 — test_state défaute `users_exist=true` (régime
+        // nominal middleware tests qui veulent tester 401/200, pas 423).
+        // Les tests qui veulent valider le gate 423 utilisent un store
+        // dédié (cf. tests `users_exist_false_returns_423`).
         AppState {
             pool: stub_pool(),
             config: Arc::new(config),
             rate_limiter: std::sync::Arc::new(rate_limiter),
             i18n: std::sync::Arc::new(i18n),
+            users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         }
     }
 
@@ -337,6 +361,47 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert_eq!(response_status(app, req).await, StatusCode::UNAUTHORIZED);
+    }
+
+    /// Story v011-5 AC #13 — `users_exist=false` + pas de token → 423 Locked.
+    #[tokio::test]
+    async fn users_exist_false_returns_423_no_token() {
+        let mut state = test_state();
+        state.users_exist = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let app = protected_router(state);
+        let req = Request::builder()
+            .uri("/protected")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            response_status(app, req).await,
+            StatusCode::LOCKED,
+            "users_exist=false should trigger 423 SETUP_REQUIRED"
+        );
+    }
+
+    /// Story v011-5 AC #13 — `users_exist=false` + JWT cookie présent → 423 quand même.
+    /// Edge theoretical : ancien JWT en cookie mais DB truncate. Force redirect /setup.
+    #[tokio::test]
+    async fn users_exist_false_returns_423_even_with_valid_jwt() {
+        let mut state = test_state();
+        state.users_exist = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let token = jwt::encode(42, Role::Admin, 5, TEST_JWT_SECRET, TimeDelta::minutes(15))
+            .expect("encode");
+
+        let app = protected_router(state);
+        let req = Request::builder()
+            .uri("/protected")
+            .header("Cookie", format!("kesh_access_token={}", token))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            response_status(app, req).await,
+            StatusCode::LOCKED,
+            "users_exist=false must short-circuit even valid JWT"
+        );
     }
 
     /// Story 10-5 (T3.2 — CR Pass 1 AA-C1) : middleware lit le cookie

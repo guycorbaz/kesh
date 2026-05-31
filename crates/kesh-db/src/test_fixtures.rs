@@ -401,6 +401,25 @@ pub async fn seed_changeme_user_only(pool: &MySqlPool) -> Result<i64, FixtureErr
     Ok(result.last_insert_id() as i64)
 }
 
+/// **Story v011-5 AC #24** : seede UNIQUEMENT 1 company stub (`is_stub=TRUE`),
+/// PAS d'admin. Le test setup_admin_e2e + Playwright setup.spec.ts utilisent
+/// ce fixture pour reproduire l'état post-bootstrap cas 1 (DB vide + no env).
+/// Le frontend doit alors recevoir 423 sur `/me` → redirect `/setup`.
+pub async fn seed_stub_company_only(pool: &MySqlPool) -> Result<i64, FixtureError> {
+    let result = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language, is_stub) \
+         VALUES (?, ?, ?, ?, ?, TRUE)",
+    )
+    .bind("(en cours de configuration)")
+    .bind("-")
+    .bind("Independant")
+    .bind("FR")
+    .bind("FR")
+    .execute(pool)
+    .await?;
+    Ok(result.last_insert_id() as i64)
+}
+
 /// Marque l'`onboarding_state` singleton à `step_completed = 10` (preset
 /// `post-onboarding` / `with-company` — cf. AC #8). À appeler APRÈS
 /// `seed_accounting_company`.

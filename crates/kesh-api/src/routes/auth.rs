@@ -28,7 +28,13 @@ use crate::middleware::auth::CurrentUser;
 /// - `refresh` : `Path=/api/v1/auth`, `Max-Age=refresh_token_max_lifetime` (30 jours hard ceiling browser
 ///   — distinct de `refresh_inactivity` sliding window DB côté `expires_at`, cf. Pass 3 F-COOKIE-LIFETIME-P3-1)
 /// - `.secure(!test_mode)` : permet tests E2E en HTTP local + dev mode (Pass 3 F-COOKIE-DEV-LOCAL-NO-HTTPS-P3-7)
-fn build_auth_cookies(
+///
+/// **Story v011-5** — promu `pub(crate)` pour réutilisation par
+/// `routes::setup::create_admin` (le 1er admin créé via web reçoit les mêmes
+/// cookies HttpOnly que post-`/login`). Sans cette promotion, le helper
+/// serait dupliqué dans setup.rs → risque de dérive sécu (cookies
+/// HttpOnly/SameSite=Strict).
+pub(crate) fn build_auth_cookies(
     state: &AppState,
     access_token: &str,
     refresh_token: &str,

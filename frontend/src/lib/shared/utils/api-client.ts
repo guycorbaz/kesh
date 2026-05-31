@@ -385,6 +385,25 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
 
 	const res = await fetchWithRetry(url, { ...options, headers });
 
+	// Story v011-5 (AC #19) — interceptor 423 Locked AVANT parseErrorResponse.
+	// La table `users` est vide côté backend → redirect vers `/setup` (sauf si
+	// on est déjà sur `/setup` pour éviter la boucle infinie ou si l'URL ciblée
+	// est elle-même `/api/v1/setup/admin` — appel volontaire à l'endpoint).
+	if (
+		res.status === 423 &&
+		typeof window !== 'undefined' &&
+		window.location.pathname !== '/setup' &&
+		!url.startsWith('/api/v1/setup/')
+	) {
+		window.location.replace('/setup');
+		const error: ApiError = {
+			code: 'SETUP_REQUIRED',
+			message: 'Configuration initiale requise',
+			status: 423,
+		};
+		throw error;
+	}
+
 	// 401 sur une URL non-auth → tenter un refresh
 	if (
 		res.status === 401 &&

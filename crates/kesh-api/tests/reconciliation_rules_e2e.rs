@@ -78,6 +78,7 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n,
+        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
     };
     let app = build_router(state.clone(), "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -124,8 +124,17 @@ pub struct Config {
     pub database_url: String,
     pub port: u16,
     pub host: String,
-    pub admin_username: String,
-    pub admin_password: String,
+    /// Story v011-5 : double-usage `KESH_ADMIN_USERNAME` (bootstrap déclaratif
+    /// si DB vide, OU recovery break-glass si admin existe avec ce username +
+    /// hash diff). **Optionnel** — var absente ou vide après trim → `None`.
+    /// **Invariant garanti par `from_env`** : `Some(s) ⟹ !s.is_empty()`.
+    pub admin_username: Option<String>,
+    /// Story v011-5 : voir `admin_username`. **Optionnel** — var absente ou
+    /// vide après trim → `None`. **Invariant garanti par `from_env`** :
+    /// `Some(p) ⟹ !p.is_empty()`. Les validations sécu
+    /// (`InsecureAdminPassword` "changeme", `WeakAdminPassword` < 12 chars)
+    /// s'appliquent uniquement si `Some(non-empty)`.
+    pub admin_password: Option<String>,
     pub db_connect_timeout: Duration,
 
     // --- Story 1.5 : authentification ---
@@ -181,7 +190,10 @@ impl std::fmt::Debug for Config {
             .field("port", &self.port)
             .field("host", &self.host)
             .field("admin_username", &self.admin_username)
-            .field("admin_password", &"***")
+            .field(
+                "admin_password",
+                &self.admin_password.as_ref().map(|_| "***"),
+            )
             .field("db_connect_timeout", &self.db_connect_timeout)
             .field("jwt_secret", &"***")
             .field("jwt_expiry", &self.jwt_expiry)
@@ -288,12 +300,16 @@ impl Config {
             "from_fields_for_test: password_min_length must be in [8, 128], got {password_min_length}"
         );
 
+        // Story v011-5 : `Config::admin_username`/`admin_password` sont
+        // `Option<String>`. Le constructeur test wrap `Some(...)` après
+        // l'assertion non-vide (cf. l.257) — la signature reste `String, String`
+        // pour éviter la migration des 30 sites de tests d'intégration.
         Config {
             database_url,
             port: 80,
             host: "127.0.0.1".to_string(),
-            admin_username,
-            admin_password,
+            admin_username: Some(admin_username),
+            admin_password: Some(admin_password),
             db_connect_timeout: Duration::from_secs(10),
             jwt_secret,
             jwt_expiry,
@@ -380,50 +396,60 @@ impl Config {
         // `KESH_HOST=0.0.0.0` dans `.env` ou docker-compose.prod.yml.
         let host = env::var("KESH_HOST").unwrap_or_else(|_| "127.0.0.1".into());
 
-        // Trim explicite (patch V1) : un `KESH_ADMIN_USERNAME=" admin"`
-        // (espace initial accidentel dans un copier-coller) créerait un
-        // admin avec un username contenant un espace. Au login, le handler
-        // trim l'input utilisateur — le lookup ne matcherait jamais.
-        // On normalise ici pour éviter l'admin inloggable.
-        let admin_username = env::var("KESH_ADMIN_USERNAME")
-            .unwrap_or_else(|_| "admin".into())
-            .trim()
-            .to_string();
+        // Story v011-5 — admin vars OPTIONNELLES (refactor AC #0).
+        //
+        // Comportement :
+        // - Var absente OU vide après trim → `None`.
+        // - Var renseignée non-vide → `Some(s)`, validée sécu.
+        //
+        // Rationale : un opérateur qui set explicitement les vars s'engage à
+        // respecter la politique sécu (longueur, pas "changeme"). Un opérateur
+        // qui omet les vars délègue au flow self-service `/setup` (route web
+        // au 1er boot sur DB vide). Cf. AC #0 / story v011-5.
+        //
+        // Préserve le trim (patch V1 — admin inloggable si username/password
+        // trimmé côté client mais stocké brut côté DB).
+        let admin_username: Option<String> = match env::var("KESH_ADMIN_USERNAME") {
+            Ok(v) => {
+                let trimmed = v.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+            Err(_) => None,
+        };
 
-        // Story 10-1 T1.2 : suppression du fallback `"changeme"`. La var est
-        // désormais obligatoire — pas de default insecure silencieux.
-        // Code review Pass 1 ECH-3 + BH-1 : trim AVANT toutes les validations
-        // et le stockage. Sans ce trim, un password `"  pw12chars  "` valide
-        // les checks longueur (trimmed) mais est stocké brut → hash inclut
-        // les espaces. Au login, `routes/auth.rs:139` ne trim pas le password
-        // (`let plain = req.password.clone()`) → admin lock-out après bootstrap.
-        // Cohérent avec le trim de `admin_username` ligne 388.
-        let admin_password = env::var("KESH_ADMIN_PASSWORD")
-            .map_err(|_| ConfigError::MissingVar("KESH_ADMIN_PASSWORD".into()))?
-            .trim()
-            .to_string();
+        let admin_password: Option<String> = match env::var("KESH_ADMIN_PASSWORD") {
+            Ok(v) => {
+                let trimmed = v.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+            Err(_) => None,
+        };
 
-        // Rejeter empty / whitespace-only (patch #7) : on ne veut pas hasher
-        // une chaîne vide et créer un admin avec un password vide.
-        if admin_password.is_empty() {
-            return Err(ConfigError::EmptyAdminPassword);
-        }
+        // Validations sécu UNIQUEMENT si Some(non-empty) (l'invariant
+        // « Some ⟹ !is_empty() » est garanti par le branchement ci-dessus).
+        if let Some(ref p) = admin_password {
+            // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme"
+            // (placeholder `.env.example`) — sécurité fail-fast.
+            if p.eq_ignore_ascii_case("changeme") {
+                return Err(ConfigError::InsecureAdminPassword);
+            }
 
-        // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme"
-        // (placeholder `.env.example`) — au lieu du warn existant qui laissait
-        // booter un admin trivialement compromis.
-        if admin_password.eq_ignore_ascii_case("changeme") {
-            return Err(ConfigError::InsecureAdminPassword);
-        }
-
-        // Story 10-1 T1.4 : minimum 12 chars (OWASP / NIST SP 800-63B). Utilise
-        // `.chars().count()` (pas `.len()`) pour compter les chars Unicode
-        // correctement (un emoji ou accent n'est pas 1 byte).
-        let admin_password_len = admin_password.chars().count();
-        if admin_password_len < 12 {
-            return Err(ConfigError::WeakAdminPassword {
-                actual_chars: admin_password_len,
-            });
+            // Story 10-1 T1.4 : minimum 12 chars (OWASP / NIST SP 800-63B).
+            // `.chars().count()` (pas `.len()`) pour Unicode correct.
+            let admin_password_len = p.chars().count();
+            if admin_password_len < 12 {
+                return Err(ConfigError::WeakAdminPassword {
+                    actual_chars: admin_password_len,
+                });
+            }
         }
 
         let db_connect_timeout = Duration::from_secs(10);
@@ -897,8 +923,12 @@ pub(crate) mod test_helpers {
             database_url: "mysql://test:test@localhost:3306/test".to_string(),
             port: 80,
             host: "127.0.0.1".to_string(),
-            admin_username: admin_username.to_string(),
-            admin_password: admin_password.to_string(),
+            // Story v011-5 : `Config::admin_username`/`admin_password` sont
+            // `Option<String>`. Signature de `make_test_config` inchangée pour
+            // ne pas migrer les call-sites tests existants — les callers
+            // passent explicitement creds (AC #0 Pass 2 BH2-1).
+            admin_username: Some(admin_username.to_string()),
+            admin_password: Some(admin_password.to_string()),
             db_connect_timeout: Duration::from_secs(10),
             jwt_secret: "test-secret-32-bytes-minimum-test-secret-padding".to_string(),
             jwt_expiry: TimeDelta::minutes(15),
@@ -1115,23 +1145,27 @@ mod tests {
         assert_eq!(config.jwt_expiry, TimeDelta::minutes(15));
     }
 
+    /// Story v011-5 AC #0 — vars admin OPTIONNELLES.
+    /// Var `KESH_ADMIN_PASSWORD` vide après trim → `Config::admin_password = None`
+    /// (plus d'erreur `EmptyAdminPassword`). Le flow setup-UI prend le relais sur DB vide.
     #[test]
-    fn config_rejects_empty_admin_password() {
+    fn from_env_admin_vars_empty_returns_none() {
         let _guard = env_lock();
         reset_env();
         unsafe {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
             env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            env::set_var("KESH_ADMIN_USERNAME", "");
             env::set_var("KESH_ADMIN_PASSWORD", "");
         }
 
-        let result = Config::from_env();
-        assert!(
-            matches!(result, Err(ConfigError::EmptyAdminPassword)),
-            "empty admin password should be rejected, got {result:?}"
-        );
+        let config = Config::from_env().expect("empty admin vars should be Ok (Option=None)");
+        assert!(config.admin_username.is_none());
+        assert!(config.admin_password.is_none());
     }
 
+    /// Story v011-5 AC #0 — admin_username trim. `Some("  admin  ")` après
+    /// trim devient `Some("admin")`, non-vide après trim.
     #[test]
     fn config_trims_admin_username() {
         let _guard = env_lock();
@@ -1140,20 +1174,21 @@ mod tests {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
             env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
             env::set_var("KESH_ADMIN_USERNAME", "  admin  ");
-            // Story 10-1 T1.2.2 : ADMIN_PASSWORD désormais obligatoire pour
-            // arriver jusqu'à l'assertion sur admin_username trim.
             env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
         }
 
         let config = Config::from_env().expect("should load");
         assert_eq!(
-            config.admin_username, "admin",
+            config.admin_username.as_deref(),
+            Some("admin"),
             "admin_username should be trimmed to avoid unreachable admin"
         );
     }
 
+    /// Story v011-5 AC #0 — `KESH_ADMIN_PASSWORD="   "` (whitespace-only) →
+    /// trim donne string vide → `None` (cohérent avec absent). Pas d'erreur.
     #[test]
-    fn config_rejects_whitespace_only_admin_password() {
+    fn from_env_admin_password_whitespace_only_returns_none() {
         let _guard = env_lock();
         reset_env();
         unsafe {
@@ -1162,8 +1197,47 @@ mod tests {
             env::set_var("KESH_ADMIN_PASSWORD", "   ");
         }
 
-        let result = Config::from_env();
-        assert!(matches!(result, Err(ConfigError::EmptyAdminPassword)));
+        let config = Config::from_env().expect("whitespace-only password should be Ok (None)");
+        assert!(config.admin_password.is_none());
+    }
+
+    /// Story v011-5 AC #0 — vars admin ABSENTES → `None`/`None`.
+    /// Vérifie qu'on peut booter sans aucun `KESH_ADMIN_*` (le flow setup-UI
+    /// au 1er boot DB-vide prend le relais).
+    #[test]
+    fn from_env_admin_vars_absent_returns_none_none() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            // KESH_ADMIN_* NOT set
+        }
+
+        let config = Config::from_env().expect("absent admin vars should be Ok");
+        assert!(config.admin_username.is_none(), "username should be None");
+        assert!(config.admin_password.is_none(), "password should be None");
+    }
+
+    /// Story v011-5 AC #0 — vars admin renseignées valides → `Some`/`Some`.
+    /// Le check « bootstrap déclaratif » downstream lit `has_admin_env`.
+    #[test]
+    fn from_env_admin_vars_set_valid_returns_some() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            env::set_var("KESH_ADMIN_USERNAME", "admin");
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+        }
+
+        let config = Config::from_env().expect("valid admin vars should be Ok");
+        assert_eq!(config.admin_username.as_deref(), Some("admin"));
+        assert_eq!(
+            config.admin_password.as_deref(),
+            Some("valid-test-pw-12chars")
+        );
     }
 
     // --- Story 10-1 T1.7 : 4 nouveaux tests fail-fast secrets ---
@@ -1257,7 +1331,7 @@ mod tests {
         }
 
         let config = Config::from_env().expect("12-char password should pass");
-        assert_eq!(config.admin_password, "abcdefghijkl");
+        assert_eq!(config.admin_password.as_deref(), Some("abcdefghijkl"));
     }
 
     /// Code review Pass 1 ECH-3 + BH-1 : `admin_password` doit être trimmé
@@ -1276,7 +1350,8 @@ mod tests {
 
         let config = Config::from_env().expect("trimmed password should pass");
         assert_eq!(
-            config.admin_password, "pw-12-chars-x",
+            config.admin_password.as_deref(),
+            Some("pw-12-chars-x"),
             "admin_password must be trimmed before storage to avoid admin lock-out at login"
         );
     }

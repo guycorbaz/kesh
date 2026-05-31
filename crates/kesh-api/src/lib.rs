@@ -15,6 +15,7 @@ pub mod routes;
 pub(crate) mod util;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::routing::{get, patch, post, put};
@@ -25,12 +26,47 @@ use crate::config::Config;
 use crate::middleware::rate_limit::RateLimiter;
 
 /// État partagé injecté dans tous les handlers via `State<AppState>`.
+///
+/// Story v011-5 — ajout `users_exist: Arc<AtomicBool>` : cache mémoire
+/// (initialisé au boot post-`ensure_admin_user`) qui dit si la table `users`
+/// contient au moins une ligne. Lu lock-free par `require_auth` (`Acquire`)
+/// pour décider du gate `423 Locked` (setup-required) vs `401` nominal. Set
+/// à `true` par `setup::create_admin` après INSERT (`Release`). Pas de query
+/// DB par requête après le boot (perf préservée). Re-synchronisé par les
+/// preset seeds en mode test (TRUNCATE+INSERT, cohérent route `/_test/seed`).
 #[derive(Clone)]
 pub struct AppState {
     pub pool: MySqlPool,
     pub config: Arc<Config>,
     pub rate_limiter: Arc<RateLimiter>,
     pub i18n: Arc<kesh_i18n::I18nBundle>,
+    pub users_exist: Arc<AtomicBool>,
+}
+
+impl AppState {
+    /// Story v011-5 — constructeur **test-only** qui défaute
+    /// `users_exist: Arc::new(AtomicBool::new(true))` (cohérent presets
+    /// E2E qui créent des users post-bootstrap). Minimise le churn sur
+    /// les 28+ sites de tests d'intégration qui construisaient `AppState { ... }`
+    /// par struct literal — ces sites utilisent désormais `AppState::new_for_tests`.
+    ///
+    /// **À ne jamais appeler depuis du code de production** : `main.rs`
+    /// construit `AppState` inline avec la valeur réelle (`user_count > 0`).
+    #[doc(hidden)]
+    pub fn new_for_tests(
+        pool: MySqlPool,
+        config: Arc<Config>,
+        rate_limiter: Arc<RateLimiter>,
+        i18n: Arc<kesh_i18n::I18nBundle>,
+    ) -> Self {
+        Self {
+            pool,
+            config,
+            rate_limiter,
+            i18n,
+            users_exist: Arc::new(AtomicBool::new(true)),
+        }
+    }
 }
 
 /// Construit le routeur principal de l'application (routes publiques
@@ -419,6 +455,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route("/api/v1/auth/login", post(routes::auth::login))
         .route("/api/v1/auth/logout", post(routes::auth::logout))
         .route("/api/v1/auth/refresh", post(routes::auth::refresh))
+        // Story v011-5 — endpoint setup-admin self-service (route publique,
+        // auto-disable au 1er admin créé via gate `user_count > 0` → 410).
+        // Pas de `route_layer(require_auth)` — c'est précisément le but : créer
+        // le 1er admin SANS auth préalable. Le handler intègre son propre
+        // check rate-limit IP (cohérent /login).
+        .route("/api/v1/setup/admin", post(routes::setup::create_admin))
         .merge(protected);
 
     // Story 6.4 : routes /api/v1/_test/* gated par test_mode (runtime branch,

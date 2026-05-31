@@ -96,6 +96,7 @@ async fn spawn_app_with_cookie_jar(pool: MySqlPool) -> TestApp {
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n: i18n.clone(),
+        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
     };
 
     let protected_test_router: Router<AppState> = Router::new()
@@ -177,7 +178,15 @@ async fn setup_admin(pool: &MySqlPool) -> (String, i64) {
     ensure_admin_user(pool, &config)
         .await
         .expect("ensure admin");
-    (config.admin_username.clone(), 1)
+    // Story v011-5 — `Config::admin_username` est `Option<String>` désormais.
+    // En contexte test, `from_fields_for_test` wrappe `Some(...)` ; on déballe ici.
+    (
+        config
+            .admin_username
+            .clone()
+            .expect("test config admin_username should be Some"),
+        1,
+    )
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

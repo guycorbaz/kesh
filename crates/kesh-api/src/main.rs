@@ -148,11 +148,15 @@ async fn main() {
         );
     }
 
-    // 5. Bootstrap admin
-    if let Err(e) = bootstrap::ensure_admin_user(&pool, &config).await {
-        tracing::error!("Échec du bootstrap admin : {}", e);
-        std::process::exit(1);
-    }
+    // 5. Bootstrap admin (Story v011-5 matrice 6 cas — retourne user_count
+    //    post-bootstrap pour initialiser AppState::users_exist).
+    let user_count = match bootstrap::ensure_admin_user(&pool, &config).await {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Échec du bootstrap admin : {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // 5b. Pré-chauffage du DUMMY_HASH — fait au démarrage pour que toute
     // défaillance d'Argon2 (OsRng indisponible) apparaisse ici et pas
@@ -222,6 +226,11 @@ async fn main() {
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n: i18n_bundle,
+        // Story v011-5 — cache mémoire `users_exist` init avec la valeur réelle
+        // DB post-bootstrap. Le middleware 423 Locked lit ce flag lock-free
+        // (`Ordering::Acquire`) ; setup-admin.create_admin le bascule à `true`
+        // après INSERT réussi (`Ordering::Release`, paire happens-before).
+        users_exist: Arc::new(std::sync::atomic::AtomicBool::new(user_count > 0)),
     };
 
     let app = build_router(state, static_dir);

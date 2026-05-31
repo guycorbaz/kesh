@@ -30,7 +30,10 @@ export type Preset =
 	| 'post-onboarding'
 	| 'with-company'
 	| 'with-data'
-	| 'with-company-no-fy';
+	| 'with-company-no-fy'
+	// Story v011-5 AC #24 — DB vidée + 1 company stub seule (aucun user).
+	// Le frontend `/me` retournera 423 → redirect /setup.
+	| 'setup-required';
 
 // Storage key constants (must match auth.svelte.ts — if keys change there, update here too)
 const STORAGE_KEY_ACCESS_TOKEN = 'kesh:auth:accessToken';

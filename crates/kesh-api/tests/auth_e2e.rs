@@ -107,6 +107,7 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n: i18n.clone(),
+        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
     };
 
     // Sous-routeur de test protégé : route AVANT layer (Axum 0.8 exige
@@ -958,6 +959,7 @@ async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n: i18n.clone(),
+        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
     };
 
     // build_router already includes login, logout, refresh (public) and

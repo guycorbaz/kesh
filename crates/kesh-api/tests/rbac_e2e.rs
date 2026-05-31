@@ -79,6 +79,7 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n: i18n.clone(),
+        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
     };
 
     // Route de test protégée par require_comptable_role (inner) + require_auth (outer)
