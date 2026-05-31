@@ -1,6 +1,6 @@
 # Story v011.5: Onboarding self-service + recovery unifié (Issue #121, absorbe v011-3)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -414,6 +414,41 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
 #### Dismiss (1)
 
 - BH1-6 LOW — `test_config_no_env` mutates public `Config` fields directly — dismissed, design intentionnel test-only.
+
+### Review Findings — Pass 2 (2026-05-31, Haiku 4.5 × 3 lentilles parallèles, contexte frais)
+
+**Trend brut** : 7 findings → triage 6 dismiss + 1 defer = **0 finding > LOW restant**.
+
+#### Patches à appliquer (0)
+
+_Aucun patch — critère d'arrêt Review Iteration Rule atteint stricto sensu._
+
+#### Defer (1, persisté `deferred-work.md`)
+
+- [x] [Review][Defer] BH2-4 LOW — message d'erreur backend `"password 'changeme' is forbidden (placeholder)"` non-i18n (le frontend reçoit string en anglais quel que soit le locale browser) — deferred v0.2 cleanup, marginal (un user ne tape pas "changeme" en pratique) [crates/kesh-api/src/routes/setup.rs:95]
+
+#### Dismiss (6 — vérifiés ground-truth)
+
+- **BH2-1 HIGH** réfuté grep ground-truth — Haiku affirmait « HTTP 200 + cookies retournés si `refresh_tokens::create` fail ». **Faux** : `setup.rs:201` → `refresh_tokens::create(...).await?` — le `?` propage `Err`, le handler retourne `Err`, axum mappe vers 5xx via `IntoResponse`. Aucune réponse 200/cookies n'est émise sur ce path. Pattern Haiku misanalyse complex flows (cohérent `feedback_haiku_review_diff_combined`).
+- **BH2-2 MEDIUM** dismissed — race « SELECT company stub avant commit bootstrap » structurellement impossible : `main.rs:152` await `ensure_admin_user` complet AVANT `axum::serve` (`main.rs:235`). Aucune requête HTTP n'est servie avant que la stub soit commitée à la DB.
+- **BH2-3 MEDIUM** dismissed — Haiku self-acknowledge « code is correct, included for validation ». Sa propre vérification grep confirme `validate_password` couvre whitespace-only.
+- **AUD2-1 LOW** dismissed — Haiku self-marked ✅ ACCEPTABLE (CHANGELOG action requise wording suffisamment clair).
+- **AUD2-2 LOW** dismissed — Haiku self-marked ✅ OK (Issue #133 L1 tracking déjà fait).
+- **AUD2-3 LOW** doublon — déjà couvert par AUD1-4 (website non mis à jour) dans defer Pass 1.
+
+#### Verdict Pass 2
+
+- **Edge Case Hunter** : 0 finding. Verdict explicite « READY APPROVAL — 11 patches Pass 1 verified ground-truth, 0 CRITICAL/HIGH réel ».
+- **Acceptance Auditor** : 29/29 ACs ✅, 11/11 patches Pass 1 verified présents, 0 finding actionnable.
+- **Blind Hunter** : 1 hallucination HIGH réfutée par grep + Read direct du flow `?` propagation.
+
+**Critère d'arrêt Review Iteration Rule strictement ATTEINT** (uniquement findings LOW post-triage). Cycle théorique CLAUDE.md = Sonnet→Haiku→Opus→Sonnet, mais arrêt **anticipé Pass 2** validé par Guy car (a) ECH+AA 0 finding (b) BH unique HIGH réfuté ground-truth (c) defer BH2-4 = cleanup cosmétique marginal.
+
+**Trend cumulatif final v011-5** :
+- Pass 1 Sonnet : 16 findings → 11 patches + 3 defer + 1 dismiss + 1 merge
+- Pass 2 Haiku : 7 findings → 0 patches + 1 defer + 6 dismiss (1 HIGH faux-positif réfuté)
+
+Story status : `review → done`.
 
 ## Dev Notes
 
