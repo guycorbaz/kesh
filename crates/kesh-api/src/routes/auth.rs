@@ -27,7 +27,13 @@ use crate::middleware::auth::CurrentUser;
 /// - `access` : `Path=/`, `Max-Age=jwt_expiry` (typiquement 15 min)
 /// - `refresh` : `Path=/api/v1/auth`, `Max-Age=refresh_token_max_lifetime` (30 jours hard ceiling browser
 ///   — distinct de `refresh_inactivity` sliding window DB côté `expires_at`, cf. Pass 3 F-COOKIE-LIFETIME-P3-1)
-/// - `.secure(!test_mode)` : permet tests E2E en HTTP local + dev mode (Pass 3 F-COOKIE-DEV-LOCAL-NO-HTTPS-P3-7)
+/// - `.secure(state.config.cookie_secure)` : hotfix v0.1.3 (Issue #136) — par
+///   défaut `true` (sécurité maximale, requiert HTTPS côté client). Override
+///   via `KESH_COOKIE_SECURE=false` pour les déploiements LAN strict HTTP-only
+///   (e.g. domaine RFC 8375 `*.home.arpa` derrière un Traefik en HTTP). Avant
+///   v0.1.3 cette logique était `!test_mode` (couplée au mode test E2E), ce
+///   qui rendait impossible un déploiement HTTP-only prod sans activer
+///   simultanément les endpoints `/api/v1/_test/*` (footgun sécu).
 ///
 /// **Story v011-5** — promu `pub(crate)` pour réutilisation par
 /// `routes::setup::create_admin` (le 1er admin créé via web reçoit les mêmes
@@ -41,7 +47,7 @@ pub(crate) fn build_auth_cookies(
 ) -> (Cookie<'static>, Cookie<'static>) {
     let access = Cookie::build(("kesh_access_token", access_token.to_string()))
         .http_only(true)
-        .secure(!state.config.test_mode)
+        .secure(state.config.cookie_secure)
         .same_site(SameSite::Strict)
         .path("/")
         .max_age(time::Duration::seconds(
@@ -51,7 +57,7 @@ pub(crate) fn build_auth_cookies(
 
     let refresh = Cookie::build(("kesh_refresh_token", refresh_token.to_string()))
         .http_only(true)
-        .secure(!state.config.test_mode)
+        .secure(state.config.cookie_secure)
         .same_site(SameSite::Strict)
         .path("/api/v1/auth")
         .max_age(time::Duration::seconds(
@@ -64,10 +70,15 @@ pub(crate) fn build_auth_cookies(
 
 /// Story 10-5 — construit les 2 cookies d'auth expirés (Max-Age=0) pour logout.
 /// Browser purge immédiatement à la réception.
+///
+/// v0.1.3 hotfix — `secure` lit `state.config.cookie_secure` cohérent
+/// avec `build_auth_cookies` pour la symétrie. Sans ce match, un browser en
+/// HTTP-only LAN ne reconnaîtrait pas les cookies expirés (Secure mismatch)
+/// et garderait les cookies de session jusqu'à expiration max-age naturelle.
 fn build_expired_auth_cookies(state: &AppState) -> (Cookie<'static>, Cookie<'static>) {
     let access = Cookie::build(("kesh_access_token", ""))
         .http_only(true)
-        .secure(!state.config.test_mode)
+        .secure(state.config.cookie_secure)
         .same_site(SameSite::Strict)
         .path("/")
         .max_age(time::Duration::seconds(0))
@@ -75,7 +86,7 @@ fn build_expired_auth_cookies(state: &AppState) -> (Cookie<'static>, Cookie<'sta
 
     let refresh = Cookie::build(("kesh_refresh_token", ""))
         .http_only(true)
-        .secure(!state.config.test_mode)
+        .secure(state.config.cookie_secure)
         .same_site(SameSite::Strict)
         .path("/api/v1/auth")
         .max_age(time::Duration::seconds(0))

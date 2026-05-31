@@ -46,6 +46,10 @@ pub enum ConfigError {
     /// Story 10-1 : minimum OWASP / NIST SP 800-63B. **Display loggue
     /// uniquement le count, jamais la valeur**.
     WeakAdminPassword { actual_chars: usize },
+    /// v0.1.3 hotfix (Issue #136) — `KESH_COOKIE_SECURE` présent mais pas
+    /// `"true"` / `"1"` / `"false"` / `"0"`. Pattern strict identique à
+    /// `KESH_TEST_MODE` pour éviter ambiguïté (`"True"`, `"yes"`, `"on"`...).
+    InvalidCookieSecureValue { got: String },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -108,6 +112,16 @@ impl std::fmt::Display for ConfigError {
                     f,
                     "KESH_ADMIN_PASSWORD trop court : {} chars, minimum 12.",
                     actual_chars
+                )
+            }
+            ConfigError::InvalidCookieSecureValue { got } => {
+                write!(
+                    f,
+                    "KESH_COOKIE_SECURE='{}' non reconnu — valeurs acceptées : \
+                     'true'/'1' (cookies Secure activés, HTTPS requis client-side — défaut) \
+                     ou 'false'/'0' (cookies sans Secure, HTTP-only LAN strict — \
+                     ⚠️ cookies sniffables, ne jamais activer en prod Internet sans HTTPS).",
+                    got
                 )
             }
         }
@@ -180,6 +194,24 @@ pub struct Config {
     /// Lu depuis `KESH_BANK_IMPORT_MAX_MB` ; défaut 10, borne [1, 100]
     /// (O4 validate Pass 3 — borne haute évite OOM côté `axum::body::Bytes`).
     pub bank_import_max_mib: u32,
+
+    // --- v0.1.3 hotfix (Issue #136) — cookies Secure flag override ---
+    /// Émettre les cookies session (`kesh_access_token`, `kesh_refresh_token`)
+    /// avec le flag `Secure` (requiert HTTPS côté client). **Défaut `true`**
+    /// (sécurité maximale). Lu depuis `KESH_COOKIE_SECURE` (`"true"` / `"1"`
+    /// → `true` ; `"false"` / `"0"` → `false`). Toute autre valeur fail-fast
+    /// `ConfigError::InvalidCookieSecureValue`.
+    ///
+    /// **⚠️ Sécurité** : passer à `false` désactive la protection navigateur
+    /// qui force HTTPS pour transmettre le cookie. Les cookies session
+    /// deviennent sniffables sur tout réseau HTTP non-TLS (LAN privé compris).
+    /// **Utiliser uniquement** pour les déploiements LAN strict HTTP-only
+    /// (Docker dev local, NAS LAN privé sans reverse proxy HTTPS).
+    /// **NE JAMAIS** activer en production exposée Internet sans HTTPS.
+    ///
+    /// L'alternative recommandée est de mettre HTTPS via reverse proxy
+    /// (Traefik + Let's Encrypt, Caddy, nginx, Synology DSM intégré, ...).
+    pub cookie_secure: bool,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -208,6 +240,7 @@ impl std::fmt::Debug for Config {
             .field("password_min_length", &self.password_min_length)
             .field("locale", &self.locale)
             .field("test_mode", &self.test_mode)
+            .field("cookie_secure", &self.cookie_secure)
             .finish()
     }
 }
@@ -322,6 +355,7 @@ impl Config {
             locale: kesh_i18n::Locale::FrCh,
             test_mode: false,
             bank_import_max_mib: 10,
+            cookie_secure: true,
         }
     }
 
@@ -686,6 +720,32 @@ impl Config {
             Err(_) => 10,
         };
 
+        // v0.1.3 hotfix (Issue #136) — KESH_COOKIE_SECURE override.
+        // Parsing strict (cohérent KESH_TEST_MODE P7) : seules `"true"`/`"1"`/
+        // `"false"`/`"0"` acceptées. Toute autre valeur (`"True"`, `"yes"`,
+        // `" true"`...) → fail-fast pour éviter qu'un opérateur croie avoir
+        // désactivé Secure alors qu'il reste actif (= cookies sniffables
+        // silencieusement OU UX broken silencieusement).
+        let cookie_secure = match env::var("KESH_COOKIE_SECURE") {
+            Ok(val) if val == "true" || val == "1" => true,
+            Ok(val) if val == "false" || val == "0" => false,
+            Ok(val) if val.is_empty() => true,
+            Ok(val) => return Err(ConfigError::InvalidCookieSecureValue { got: val }),
+            Err(_) => true,
+        };
+
+        // Warning explicite au boot si Secure désactivé — l'opérateur doit voir
+        // que les cookies session sont sniffables sur le LAN. Ne pas afficher
+        // si Secure actif (régime nominal).
+        if !cookie_secure {
+            tracing::warn!(
+                "KESH_COOKIE_SECURE=false — cookies session émis SANS le flag `Secure`. \
+                 Acceptable uniquement pour déploiement HTTP-only LAN strict (e.g. domaine \
+                 RFC 8375 `*.home.arpa`, NAS privé). NE JAMAIS activer en prod exposée \
+                 Internet sans HTTPS — cookies sniffables sur tout réseau non-TLS."
+            );
+        }
+
         Ok(Config {
             database_url,
             port,
@@ -704,6 +764,7 @@ impl Config {
             locale,
             test_mode,
             bank_import_max_mib,
+            cookie_secure,
         })
     }
 }
@@ -941,6 +1002,7 @@ pub(crate) mod test_helpers {
             locale: kesh_i18n::Locale::FrCh,
             test_mode: false,
             bank_import_max_mib: 10,
+            cookie_secure: true,
         }
     }
 }
@@ -960,7 +1022,7 @@ mod tests {
     /// tests se marchent dessus. On accepte un peu de poison safety :
     /// si un test panique en tenant le lock, on unwrap le poison et on
     /// continue (les tests suivants re-init l'état).
-    fn env_lock() -> MutexGuard<'static, ()> {
+    pub(super) fn env_lock() -> MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
@@ -968,7 +1030,7 @@ mod tests {
     }
 
     /// Reset des variables d'environnement communes entre tests.
-    fn reset_env() {
+    pub(super) fn reset_env() {
         // SAFETY: caller must hold env_lock()
         unsafe {
             env::remove_var("DATABASE_URL");
@@ -988,6 +1050,8 @@ mod tests {
             // Code review Pass 1 ECH-6 : vars manquantes du reset.
             env::remove_var("KESH_BANK_IMPORT_MAX_MB");
             env::remove_var("KESH_LANG");
+            // v0.1.3 hotfix Issue #136 — KESH_COOKIE_SECURE reset entre tests.
+            env::remove_var("KESH_COOKIE_SECURE");
         }
     }
 
@@ -1835,5 +1899,149 @@ mod tests {
         assert_eq!(cfg.max_files, 7);
         assert_eq!(cfg.format, LogFormat::Pretty);
         assert_eq!(warnings.len(), 3, "3 vars invalides → 3 warnings");
+    }
+}
+
+// =============================================================================
+// v0.1.3 hotfix (Issue #136) — KESH_COOKIE_SECURE tests
+// =============================================================================
+
+#[cfg(test)]
+mod cookie_secure_tests {
+    use super::tests::{env_lock, reset_env};
+    use super::*;
+    use std::env;
+
+    /// Cas nominal : var absente → cookie_secure = true (défaut sécurisé).
+    #[test]
+    fn cookie_secure_defaults_to_true_when_var_absent() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::remove_var("KESH_COOKIE_SECURE");
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+        }
+        let config = Config::from_env().expect("config should load");
+        assert!(config.cookie_secure, "défaut sécurisé = true");
+    }
+
+    /// `KESH_COOKIE_SECURE=true` → cookie_secure = true.
+    #[test]
+    fn cookie_secure_true_string_parses_true() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::set_var("KESH_COOKIE_SECURE", "true");
+        }
+        let config = Config::from_env().expect("true is valid");
+        assert!(config.cookie_secure);
+    }
+
+    /// `KESH_COOKIE_SECURE=1` → cookie_secure = true (équivalent à "true").
+    #[test]
+    fn cookie_secure_one_parses_true() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::set_var("KESH_COOKIE_SECURE", "1");
+        }
+        let config = Config::from_env().expect("1 is valid");
+        assert!(config.cookie_secure);
+    }
+
+    /// `KESH_COOKIE_SECURE=false` → cookie_secure = false (override LAN HTTP).
+    #[test]
+    fn cookie_secure_false_string_parses_false() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::set_var("KESH_COOKIE_SECURE", "false");
+        }
+        let config = Config::from_env().expect("false is valid");
+        assert!(!config.cookie_secure, "explicit override pour LAN HTTP");
+    }
+
+    /// `KESH_COOKIE_SECURE=0` → cookie_secure = false (équivalent à "false").
+    #[test]
+    fn cookie_secure_zero_parses_false() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::set_var("KESH_COOKIE_SECURE", "0");
+        }
+        let config = Config::from_env().expect("0 is valid");
+        assert!(!config.cookie_secure);
+    }
+
+    /// `KESH_COOKIE_SECURE=True` (capitalisé) → fail-fast.
+    /// Strict parse pour éviter ambiguïté (cohérent KESH_TEST_MODE).
+    #[test]
+    fn cookie_secure_invalid_value_fails_fast() {
+        let _guard = env_lock();
+        for invalid_val in &["True", "TRUE", "yes", "on", "  true  ", "True ", "no"] {
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var(
+                    "KESH_JWT_SECRET",
+                    "test-secret-32-bytes-minimum-test-secret-padding",
+                );
+                env::set_var("KESH_HOST", "127.0.0.1");
+                env::set_var("KESH_COOKIE_SECURE", invalid_val);
+            }
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InvalidCookieSecureValue { .. })),
+                "value '{}' should fail-fast, got {:?}",
+                invalid_val,
+                result
+            );
+        }
+    }
+
+    /// `KESH_COOKIE_SECURE` vide → traité comme absent (défaut true).
+    #[test]
+    fn cookie_secure_empty_string_defaults_to_true() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::set_var("KESH_COOKIE_SECURE", "");
+        }
+        let config = Config::from_env().expect("empty is treated as absent");
+        assert!(config.cookie_secure);
     }
 }

@@ -8,6 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.1.3] — Non publié
+
+Hotfix critique : déblocage des déploiements LAN strict HTTP-only (cookies session inutilisables sans HTTPS dans v0.1.2).
+
+### Corrections
+
+- **Cookies session sur HTTP-only LAN** (Issue #136) : avant v0.1.3, les cookies `kesh_access_token` et `kesh_refresh_token` portaient systématiquement le flag `Secure` en mode production (sauf en mode test E2E). Le browser refuse de stocker/envoyer un cookie `Secure` sur une connexion HTTP non-TLS, ce qui rendait Kesh inutilisable sur tout déploiement LAN privé sans HTTPS (domaine RFC 8375 `*.home.arpa`, NAS Synology derrière Traefik HTTP sans Let's Encrypt, etc.) : l'utilisateur pouvait se logger côté backend mais aucun cookie ne persistait, déclenchant une boucle d'erreurs 401 sur tous les calls subséquents. Le couplage à `KESH_TEST_MODE` (qui active aussi les endpoints dangereux `/api/v1/_test/*`) interdisait par ailleurs tout workaround propre. Désormais découplé via une variable d'environnement dédiée `KESH_COOKIE_SECURE` (défaut `true` — sécurité préservée). Les déploiements LAN HTTP-only peuvent passer à `false` avec warning explicite au boot ; les autres déploiements continuent en mode sécurisé sans changement.
+
+### Ajouts
+
+- **Variable d'environnement `KESH_COOKIE_SECURE`** : contrôle explicitement le flag `Secure` des cookies session, indépendamment du mode test E2E. Valeurs `true`/`1` (défaut) ou `false`/`0` ; toute autre valeur (`True`, `yes`, `on`, espaces, etc.) refuse le démarrage pour éviter toute ambiguïté. Documentée dans `.env.example` avec warning de sécurité explicite et alternative HTTPS recommandée. Le manuel administrateur ajoute une sous-section dédiée au déploiement LAN HTTP-only avec procédure et matrice de risque.
+
+---
+
 ## [0.1.2] — 2026-05-31
 
 Évolutions de l'expérience d'installation pour s'aligner sur les standards des applications self-hosted modernes (Jellyfin, Bitwarden, Vaultwarden) et URL HTTP standard.
