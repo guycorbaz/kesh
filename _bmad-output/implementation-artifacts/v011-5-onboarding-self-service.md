@@ -162,7 +162,17 @@ Rate-limit : envelopper la route avec le `RateLimiter` existant (5 tentatives/15
 pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64, AppError>
 //                                                                          ^^^^^ user_count final
 ```
-Le `main.rs` capture le retour : `let user_count = bootstrap::ensure_admin_user(&pool, &config).await?;`, puis à la construction `AppState` inline (`main.rs:220`), passe `users_exist: Arc::new(AtomicBool::new(user_count > 0))`. **Note** : le spec se référait initialement à `lib.rs::create_state` (Pass 1 — fonction inexistante dans le ground-truth ; cf. Pass 3 OP3-4) — corrigé : le site réel de construction `AppState` est `main.rs:220` inline.
+**`main.rs` capture le retour avec le pattern `match` cohérent avec le reste du fichier** (Pass 4 CC4-1) — `async fn main() -> ()` (pas `Result`), donc le `?` ne compile pas. Pattern à utiliser, miroir des 10+ autres appels fallibles dans `main.rs` :
+```rust
+let user_count = match bootstrap::ensure_admin_user(&pool, &config).await {
+    Ok(count) => count,
+    Err(e) => {
+        tracing::error!("Échec du bootstrap admin : {}", e);
+        std::process::exit(1);
+    }
+};
+```
+Puis à la construction `AppState` inline (`main.rs:220`), passe `users_exist: Arc::new(AtomicBool::new(user_count > 0))`. **Note** : le spec se référait initialement à `lib.rs::create_state` (Pass 1 — fonction inexistante dans le ground-truth ; cf. Pass 3 OP3-4) — corrigé : le site réel de construction `AppState` est `main.rs:220` inline.
 
 **Fail-open sur erreur DB** (Pass 1 ECH1-8) : la valeur est mémoire-only — pas de query DB dans le path requête. Aucun fail-closed sur transient DB error (cohérent avec la résilience visée Story 10-3). Le state `users_exist` n'est jamais re-synchronisé à partir de la DB après le boot — si un admin est supprimé en SQL direct hors API, le middleware ne le détecte pas. **Acceptable v0.1** (suppression d'admin via SQL direct = ops manuel hors-spec).
 
@@ -307,7 +317,7 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
 
 ### i18n (AC #20)
 
-- [ ] **AC #20** Clés `setup-*` (11 au total) dans les 4 locales `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` : `setup-welcome` (titre H1), `setup-intro` (paragraphe explicatif), `setup-username-label`, `setup-username-placeholder`, `setup-username-required`, `setup-password-label`, `setup-password-min` (`Au moins 12 caractères`), `setup-password-confirm-label`, `setup-password-mismatch`, `setup-submit`, `setup-error-already-complete`, `setup-error-rate-limit`. **Note linter** (Pass 1 BH1-7) : `lint-i18n-ownership.js` scanne `src/lib/features/` uniquement — la route `src/routes/setup/+page.svelte` est **hors-scope** du linter, donc `npm run lint-i18n-ownership` reste PASS sans garantir l'usage correct de ces clés. Mitigation : la logique UI est extraite dans `src/lib/features/setup/SetupForm.svelte` (composant) pour permettre au linter de couvrir les usages, et `+page.svelte` ne contient qu'un `<SetupForm />`. Pas de validation `setup-success` (success → redirect immédiate, pas de message affiché).
+- [ ] **AC #20** Clés `setup-*` (12 au total) dans les 4 locales `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` : `setup-welcome` (titre H1), `setup-intro` (paragraphe explicatif), `setup-username-label`, `setup-username-placeholder`, `setup-username-required`, `setup-password-label`, `setup-password-min` (`Au moins 12 caractères`), `setup-password-confirm-label`, `setup-password-mismatch`, `setup-submit`, `setup-error-already-complete`, `setup-error-rate-limit`. **Note linter** (Pass 1 BH1-7) : `lint-i18n-ownership.js` scanne `src/lib/features/` uniquement — la route `src/routes/setup/+page.svelte` est **hors-scope** du linter, donc `npm run lint-i18n-ownership` reste PASS sans garantir l'usage correct de ces clés. Mitigation : la logique UI est extraite dans `src/lib/features/setup/SetupForm.svelte` (composant) pour permettre au linter de couvrir les usages, et `+page.svelte` ne contient qu'un `<SetupForm />`. Pas de validation `setup-success` (success → redirect immédiate, pas de message affiché).
 
 ### Tests (AC #21-24)
 
@@ -335,7 +345,7 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
   - [ ] Renommer/réécrire les 5 tests bootstrap existants pour mapper les 6 cas matrice. Ajouter les 3 cas manquants (recovery diff hash, same hash, no match) + test atomicité transaction recovery (audit_log force-fail → password rollback).
   - [ ] **(T1 prérequis — Pass 1 BH1-1/AUD1-1)** Refactor `Config::from_env` : `admin_username` + `admin_password` deviennent `Option<String>`. Vars absentes/vides → `None`. Validations sécu (changeme, < 12 chars, EmptyAdminPassword) ne s'appliquent que si `Some(non-empty)`. `make_test_config` adapté. 3 tests unitaires Config NEW + 2 conservés.
   - [ ] Adapter `AppState` (lib.rs:29-34) pour héberger `users_exist: Arc<AtomicBool>` (init au boot post-`ensure_admin_user`). Ajouter constructeur `AppState::new_for_tests(...)` avec `users_exist: Arc::new(AtomicBool::new(true))` par défaut (Pass 3 OP3-3 — minimise churn sur 28 sites tests + 1 site `middleware/auth.rs::test_state`).
-  - [ ] **Modifier signature `ensure_admin_user`** (Pass 3 OP3-4) : `Result<(), AppError>` → `Result<i64, AppError>` (retourne `user_count` final). `main.rs:152` capture le retour. `main.rs:220` construction `AppState` inline initialise `users_exist: Arc::new(AtomicBool::new(user_count > 0))`.
+  - [ ] **Modifier signature `ensure_admin_user`** (Pass 3 OP3-4) : `Result<(), AppError>` → `Result<i64, AppError>` (retourne `user_count` final). `main.rs:152` capture le retour via `match ... { Ok(c) => c, Err(e) => { tracing::error!(...); std::process::exit(1); } }` (Pass 4 CC4-1 — `main()` retourne `()`, le `?` ne compile pas, cohérent pattern existant). `main.rs:220` construction `AppState` inline initialise `users_exist: Arc::new(AtomicBool::new(user_count > 0))`.
   - [ ] **Refactor `from_fields_for_test`** (Pass 3 OP3-2) : signature inchangée (`admin_username: String, admin_password: String`) pour éviter migration des 30 sites tests d'intégration. Wrappe en interne `admin_username = Some(...)` / `admin_password = Some(...)` après l'assertion non-vide existante (l.257).
 - [ ] **T2 — Setup endpoint + helper cookies** (AC #8-12)
   - [ ] **Rendre `build_auth_cookies` `pub(crate)`** dans `routes/auth.rs:31` (Pass 1 BH1-3 — pas de duplication HttpOnly/Secure/SameSite=Strict).
@@ -641,6 +651,38 @@ Pass 2 ne converge **pas** (3 HIGH légitimes remontés Pass 2). **Pass 3 Opus 4
 - Pass 3 Opus : 8 findings → 8 patches (3 HIGH + 3 MEDIUM + 2 LOW)
 
 **Convergence à évaluer Pass 4** : 0 CRITICAL/HIGH restant après Pass 3 patches. Per Review Iteration Rule, le critère d'arrêt est « 0 finding > LOW ». L2 (refresh token timing) et L1 (TOCTOU) sont catégorie B documentées avec Issue GitHub planifiée — résolues par reclassement. Pass 4 Sonnet 4.6 (cycle pair Sonnet→Haiku→Opus→Sonnet) **recommandée** pour confirmer convergence sur contexte frais avant dev-story. Si Pass 4 converge → STOP.
+
+### Pass 4 spec validate (2026-05-31, Sonnet 4.6 comprehensive convergence check, contexte frais)
+
+1 reviewer Sonnet 4.6 comprehensive (lentilles cumulées, focus convergence). **2 findings** :
+
+| Code | Sev | Title | Patch |
+|---|---|---|---|
+| CC4-1 | HIGH | Pseudo-code `await?` dans `main()` → `error: ? in async fn returning ()` | Pseudo-code remplacé par pattern `match { Ok(c) => c, Err(e) => exit(1) }` cohérent existant `main.rs` |
+| CC4-2 | LOW | AC #20 dit « 11 clés » mais liste nominative en compte 12 | « 11 au total » → « 12 au total » |
+
+**Pass 4 Sonnet a validé ground-truth toutes les autres dimensions** :
+- ✓ `NewAuditLogEntry` schema `action/entity_type/entity_id/details_json` cohérent partout
+- ✓ `Config::admin_*: Option<String>` cohérent AC #0/Tasks/Config section
+- ✓ `Ordering::Acquire/Release` paire correcte (load=Acquire AC #13, store=Release AC #11/#24)
+- ✓ Rate-limiter check manuel handler (pas middleware Axum) cohérent
+- ✓ `insert_in_tx` + `revoke_all_for_user` signatures alignées ground-truth
+- ✓ `build_auth_cookies` actuellement privée → `pub(crate)` demandé cohérent
+- ✓ `AppState` extension via `new_for_tests` constructeur cohérent
+- ✓ `type Preset` TypeScript/`enum Preset` Rust sync demandés cohérents
+- ✓ Couverture tests 6 cas matrice + atomicité + race + E2E
+- ✓ Migration breaking N/A confirmé
+- ✓ Issues GitHub planifiées L1 + L2 catégorie B
+- ✓ Issue #121 fermée au merge + #127 commentaire spécifié
+- ✓ Splitting rule documentée avec soupape
+
+**Trend cumulatif final** :
+- Pass 1 Sonnet : 28 findings → 22 patches (3C + 8H adressés)
+- Pass 2 Haiku : ~20 findings → 8 patches + 2 CRITICAL réfutés grep
+- Pass 3 Opus : 8 findings → 8 patches (3H architecturaux ratés par Sonnet+Haiku)
+- Pass 4 Sonnet : 2 findings → 2 patches (1 HIGH typo `?` + 1 LOW cosmétique)
+
+**Critère d'arrêt Review Iteration Rule ATTEINT** (post-Pass 4 patches) : 0 CRITICAL/HIGH/MEDIUM restant, uniquement L1+L2 catégorie B reclassées en dette technique tracée v0.2 + 0 finding LOW restant après patch CC4-2. **CYCLE CONVERGÉ** en 4 passes (cycle complet Sonnet→Haiku→Opus→Sonnet per Review Iteration Rule). Status `ready-for-dev` confirmé. Prochaine étape : **`bmad-dev-story v011-5`** (Opus 4.7 recommandé pour scope architectural).
 
 ## Dev Agent Record
 
