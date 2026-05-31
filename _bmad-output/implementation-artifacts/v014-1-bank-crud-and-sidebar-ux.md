@@ -22,7 +22,7 @@ Aujourd'hui le seul endpoint qui crée un `bank_account` est `POST /api/v1/onboa
 
 **Nouveaux endpoints** :
 
-1. **`POST /api/v1/bank-accounts`** (Comptable+ — cohérent `comptable_routes` Story 8-5a-zero PATCH). Body `{ bankName, iban, qrIban?, isPrimary?, journalAccountId? }`. Réutilise les validations de `routes/onboarding.rs::set_bank_account` (lignes 470-489) : `bank_name.trim()` non-vide, IBAN via `kesh_core::types::Iban::new`, QR-IBAN via `kesh_core::types::QrIban::new` si fourni. Si `journalAccountId` fourni : pré-flight Account exists + actif + Asset|Liability (cohérent PATCH existant lignes 115-148). Si `isPrimary=true` ET un primary existe déjà : retourner 409 `BANK_ACCOUNT_PRIMARY_ALREADY_EXISTS` (vs. silencieux qui pourrait perdre le primary précédent). Retourne 201 + body `BankAccount`. Audit log `bank_account.created` émis depuis le handler (same tx).
+1. **`POST /api/v1/bank-accounts`** (Comptable+ — cohérent `comptable_routes` Story 8-5a-zero PATCH). Body `{ bankName, iban, qrIban?, isPrimary?, journalAccountId? }`. Réutilise les validations de `routes/onboarding.rs::set_bank_account` (lignes 470-489) : `bank_name.trim()` non-vide, IBAN via `kesh_core::types::Iban::new`, QR-IBAN via `kesh_core::types::QrIban::new` si fourni. Si `journalAccountId` fourni : pré-flight Account exists + actif + Asset|Liability (cohérent PATCH existant lignes 115-148). **Politique transition primary uniforme POST + PUT (FINDING-3 Pass 3 Opus)** : si `isPrimary=true` ET un primary existe déjà, **transition silencieuse atomique** dans la même tx : flip de l'ancien à `is_primary=FALSE` + INSERT du nouveau avec `is_primary=TRUE` + audit log explicite `bank_account.updated` avec `details_json.trigger = "primary_transition"` sur l'ancien primary + `bank_account.created` standard sur le nouveau. Pas de 409 — symétrique au PUT. Le client n'a jamais à coder de logique « créer puis re-PUT primary ». Retourne 201 + body `BankAccount`. **Note** : le variant `AppError::BankAccountPrimaryAlreadyExists` (409) précédemment envisagé est **supprimé du périmètre v014-1** (variant + key i18n correspondante non-nécessaires).
 
 2. **`PUT /api/v1/bank-accounts/{id}`** (Comptable+). Body `{ bankName, iban, qrIban?, isPrimary?, journalAccountId?, version }`. Édite tous les champs métier (vs. PATCH actuel qui ne touche que `journal_account_id`). Optimistic lock via `version`. Si `isPrimary=true` et un autre compte est primary : transition primary (mettre old_primary à false, set new à true) — atomique tx. Audit log `bank_account.updated` avec before/after JSON.
 
@@ -38,18 +38,25 @@ Aujourd'hui le seul endpoint qui crée un `bank_account` est `POST /api/v1/onboa
 
 ### Backend — migration DB `bank_accounts.archived`
 
-Nouvelle migration `crates/kesh-db/migrations/<timestamp>_bank_accounts_archived.sql` :
+Nouvelle migration `crates/kesh-db/migrations/20260531000001_bank_accounts_archived.sql` (timestamp > dernière migration existante, format `YYYYMMDDhhmmss_xxx.sql`) :
 
 ```sql
 ALTER TABLE bank_accounts
     ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE,
     ALGORITHM=INSTANT, LOCK=NONE;
 
-CREATE INDEX idx_bank_accounts_company_active
-    ON bank_accounts (company_id, archived);
+-- Pas d'index ajouté (FINDING-8 Pass 3 Opus YAGNI) : la table bank_accounts
+-- a ~10 rows max par company (L3 spec) et les query plans existants utilisent
+-- déjà la FK company_id pour scoper. Un index (company_id, archived) n'apporte
+-- aucun bénéfice perf vs full scan d'une table <100 rows + introduirait un
+-- coût de maintenance write (PATCH/PUT/DELETE). Si un volume futur > 1000
+-- rows/company impose un index, l'ajouter ultérieurement dans une migration
+-- dédiée avec EXPLAIN à l'appui.
 ```
 
-Non-breaking (`ADD COLUMN nullable... DEFAULT FALSE`, anciens binaires ignorent). Pas de bump `kesh_version_min_required` requis (P3 CLAUDE.md). Audit doc à ajouter dans `docs/migrations-idempotence-audit.md` (P5 CLAUDE.md).
+**Choix de nomenclature `archived` (vs `active` pattern `accounts`/`contacts`) — FINDING-5 Pass 3 Opus** : sémantique positive « archivé = action explicite » plus claire pour les bank_accounts (un compte n'est jamais « inactif par défaut »). L'API repo reste cohérente avec le pattern projet : signature `list_by_company(pool, company_id, include_archived: bool)` — l'argument booléen porte le même nom qu'`accounts::list_by_company` (cf. `exports/global.rs:129, 139, 151`). Cohérent aussi avec `companies.is_stub` (flag positif booléen DEFAULT FALSE introduit v011-5).
+
+**Migration policy** : non-breaking (`ADD COLUMN NOT NULL DEFAULT FALSE`, anciens binaires ignorent). Pas de bump `kesh_version_min_required` requis (P3 CLAUDE.md). Audit doc à ajouter dans `docs/migrations-idempotence-audit.md` (P5 CLAUDE.md) avec verdict `tracked-by-sqlx` (l'`ADD COLUMN` sans `IF NOT EXISTS` échouerait erreur 1060 en re-run hors sqlx). Note explicite « pas de UNIQUE INDEX partial sur `(company_id, is_primary=TRUE)` v0.1 » — invariant garanti applicatif uniquement (cf. FINDING-9 Pass 3 Opus L5).
 
 Repository `crates/kesh-db/src/repositories/bank_accounts.rs` mis à jour :
 - `list_by_company()` : ajouter `AND archived = FALSE` au WHERE (filtrer archivés par défaut). Nouveau paramètre `include_archived: bool` (défaut `false`) pour le frontend qui veut un toggle « Afficher les archivés ».
@@ -170,6 +177,14 @@ const adminOnlyItems: NavItem[] = [
 
 **Accessibilité** : `<details>`/`<summary>` est natif a11y (ARIA expanded géré par le browser, focus keyboard, lecteurs d'écran). Pas de custom ARIA nécessaire. CSS animation chevron via `details[open] summary svg { transform: rotate(180deg); }`.
 
+**Auto-expand groupe contenant la route active (FINDING-12 Pass 3 Opus — a11y + UX)** :
+- Au mount (`onMount`), déterminer la route active via `$page.url.pathname` (Svelte/SvelteKit store) et résoudre le groupe qui contient l'item correspondant via lookup `navGroups[i].items.find(it => it.href === pathname)`.
+- Si le groupe correspondant est `defaultExpanded=false` OU persisté `kesh:sidebar:expanded:{label}="false"`, **forcer l'ouverture** (open=true) au mount pour cette session — l'utilisateur ne devrait jamais être sur une page dont l'entrée sidebar est cachée. Cela écrase la persistance pour le groupe contenant la route active uniquement, sans toucher les autres groupes.
+- **Ne PAS persister cet auto-expand en localStorage** (sinon l'utilisateur ne peut plus jamais cacher le groupe contenant sa route fréquente).
+- Test E2E (AC#33) : reload sur `/accounts` → `details[summary:has-text("Administration")][open]` vérifié.
+
+**Focus management** : si l'auto-expand ouvre un groupe, ne pas changer le focus (pas de `summary.focus()` automatique — disruptif). L'utilisateur reste sur le `<main>` ou ce qui était focused.
+
 **i18n** : nouvelles clés `nav-accounts`, `nav-fiscal-years`, `nav-bank-accounts`, `nav-bank-profiles`, `nav-reconciliation-rules`, `nav-administration` (label groupe), `nav-quotidien`, `nav-mensuel` dans les 4 locales `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`.
 
 ### Frontend — page `/settings/+page.svelte`
@@ -201,7 +216,13 @@ Supprime le `notYet()` toast et la fonction `notYet()` (ligne 27-29) si elle n'e
 
 **Backend support requis** : nouvelle route ou extension de `GET /api/v1/bank-accounts` pour retourner les soldes calculés.
 
-**Décision** : étendre le payload `BankAccount` retourné par `GET /api/v1/bank-accounts` avec un champ `currentBalance: Decimal` calculé côté backend. **Important** : le calcul n'est fait que si `journal_account_id IS NOT NULL` (sinon le solde est `None`). Implémentation : query SQL avec LEFT JOIN sur `journal_entry_lines` + GROUP BY. Performance OK v0.1 (max ~10 comptes par company, query rapide).
+**Décision** : étendre le payload `BankAccount` retourné par `GET /api/v1/bank-accounts` avec un champ `currentBalance: Decimal` calculé côté backend. **Important** : le calcul n'est fait que si `journal_account_id IS NOT NULL` (sinon le solde est `None`). Implémentation : query SQL avec LEFT JOIN sur `journal_entry_lines` + GROUP BY.
+
+**Périmètre du calcul v0.1 (FINDING-10 Pass 3 Opus — documenter explicitement)** :
+- **Statut écritures** : inclure UNIQUEMENT `journal_entries.status = 'Posted'` (vérifier nom exact du flag dans `crates/kesh-db/migrations/` et `repositories/journal_entries.rs`). Exclure les drafts — un draft est un brouillon, ne pas le compter dans le solde affiché homepage.
+- **Périmètre temporel** : « solde depuis création » (toutes années confondues) v0.1 — pas de filtre `fiscal_year_id`. Documenter dans le tooltip homepage : « Solde cumulé depuis la création (toutes années confondues) ». Story Epic 12+ pour un toggle « solde de l'exercice courant ».
+- **Hiérarchie auxiliaire (DOC §3 bis recommande sous-comptes `1030.001 BCV CHF`)** : v0.1 le calcul est sur le `journal_account_id` lié **uniquement**, pas sur ses enfants `parent_id`. Donc si un user lie son `bank_account` au compte parent `1030` et que les écritures sont sur les enfants `1030.001`/`1030.002`, le solde affiché sera 0 (trompeur). **Mitigation** : le tooltip helper text AC#27 doit recommander de lier le `bank_account` au sous-compte spécifique (`1030.001 BCV CHF`), pas au parent. Documentation §3 bis (AC#34) doit le préciser explicitement. Story Epic 12+ pour rollup hiérarchique (`WITH RECURSIVE` MariaDB).
+- **Performance v0.1 (L3 cache miss)** : query sans cache, ~10 comptes × full scan `journal_entry_lines` filtré sur `account_id IN (...)`. Estimation 300k lignes × 10 comptes = 3M lignes scannées si user a 3 ans d'historique avec ~100 écritures/jour. **Acceptable v0.1 mono-user** mais à monitorer (logger `query_duration_ms` sur ce GET via `tracing::info!`). Si > 200ms en pratique, prioriser un cache `bank_account_balance_cache` (table dénormalisée mise à jour par trigger MariaDB ou par job async) — Story Epic 12+.
 
 **Alternative** : nouveau endpoint `GET /api/v1/bank-accounts/balances` qui retourne `[{ bankAccountId, balance, lastTransactionDate }]`. Moins de coupling, mais 2 requêtes pour le frontend. **Recommandation Pass 1 spec validate** : étendre `GET /api/v1/bank-accounts` (1 endpoint, moins de churn).
 
@@ -243,6 +264,7 @@ Supprime le `notYet()` toast et la fonction `notYet()` (ligne 27-29) si elle n'e
 - **Multi-tenant fiduciaire** (1 utilisateur Kesh = 1 company v0.1).
 - **Page « Payer » réelle** (génération `pain.001` paiements bancaires automatisés) → Epic 12.
 - **Refactor adresse structurée** (Issue à créer suite à Q précédente Guy 19:00 — pain.001/QR Bill Structured Address).
+- **Harmonisation `nav-invoices` fallback `Facturer` vs valeur i18n `Factures` (FR) / `Rechnungen` (DE) / `Fatture` (IT)** (FINDING-14 Pass 3 Opus) : incohérence pré-v014-1 ; le fallback n'est jamais affiché en pratique (la clé existe en 4 locales). À harmoniser v0.2 si besoin marketing (« Facturer » plus action-oriented que « Factures »).
 
 ## Contexte technique (ground-truth post-v011-5 + v0.1.3, vérifié 2026-05-31)
 
@@ -271,7 +293,16 @@ Supprime le `notYet()` toast et la fonction `notYet()` (ligne 27-29) si elle n'e
 - `is_no_op_change(existing, new)` helper KF-004.
 
 **Ajouts v014-1** :
-- **MANDATORY (FINDING-1 Pass 1)** : Mettre à jour **toutes** les requêtes SELECT explicites de ce fichier (`FIND_BY_ID_SQL` ligne 9 + les autres lignes 56-57, 80-82, 96-98, 124-125, 253-255, plus les nouvelles queries `update_for_company`, `archive_for_company`) pour inclure la colonne `archived` dans la liste des colonnes sélectionnées. Sinon `sqlx::FromRow` crashera à runtime avec `ColumnNotFound("archived")` (aucun `#[sqlx(default)]` sur l'entité `BankAccount`). Également : ajouter le champ `pub archived: bool` à l'entité `BankAccount` dans `crates/kesh-db/src/entities/bank_account.rs`.
+- **MANDATORY (FINDING-1 Pass 1)** : Mettre à jour **toutes** les requêtes SELECT explicites de ce fichier (`FIND_BY_ID_SQL` ligne 9 + les autres lignes 56-57, 80-82, 96-98, 124-125, 253-255, plus les nouvelles queries `update_for_company`, `archive_for_company`) pour inclure la colonne `archived` dans la liste des colonnes sélectionnées. Sinon `sqlx::FromRow` crashera à runtime avec `ColumnNotFound("archived")` (aucun `#[sqlx(default)]` sur l'entité `BankAccount`). Également : ajouter le champ `pub archived: bool` à l'entité `BankAccount` dans `crates/kesh-db/src/entities/bank_account.rs` avec doc-comment `/// 'true' = soft-deleted, exclu de list_by_company par défaut + des mutations post-archivage. v0.1 : pas de UI restoration (L1).`.
+- **MANDATORY (FINDING-6 Pass 3 Opus)** — sémantique cross-fonction du flag `archived` (au-delà du simple ajout de colonne au SELECT) :
+  - `find_primary(pool, company_id)` : ajouter `AND archived = FALSE` au WHERE → garantit que `routes/invoice_pdf.rs:83` ne retourne jamais un primary archivé (cf. FINDING-1 Pass 3 Opus AC#10).
+  - `find_by_id_for_company(pool, company_id, id)` : **NE PAS** filtrer `archived` au niveau repo (le call site décide). Documenter le contrat dans une doc-comment Rust : la fonction retourne la row même si archivée — c'est aux call sites de checker `bank_account.archived` après le `find_by_id_for_company` et de rejeter avec `AppError::BankAccountNotFound` (anti-énumération KF-002) pour les **mutations post-archivage**. Pattern à appliquer aux **7 call sites identifiés** :
+    - `crates/kesh-api/src/routes/bank_imports.rs:862, 1006` (POST /bank-imports/preview, /commit) — cf. FINDING-4 Pass 3 Opus AC#8 bis.
+    - `crates/kesh-api/src/routes/reconciliation.rs:349, 629, 1962, 2278, 2699` (manual match, split, accept_batch) — pattern : `let bank_account = bank_accounts::find_by_id_for_company(...).await?.ok_or(AppError::BankAccountNotFound)?; if bank_account.archived { return Err(AppError::BankAccountNotFound); }`.
+  - `list_by_company(pool, company_id, include_archived: bool)` : filtre `AND archived = FALSE` quand `include_archived=false` (défaut), retourne tout quand `true` (export ZIP + toggle UI).
+  - `set_journal_account_id_for_company(tx, ...)` : ajouter `AND archived = FALSE` au SELECT FOR UPDATE → `DbError::NotFound` si archivé (cf. AC#11 patch FINDING-2).
+  - Nouveaux `update_for_company` et `archive_for_company` : idem `AND archived = FALSE` au SELECT FOR UPDATE.
+  - **Test contrat MANDATORY** : ajouter un test unit `bank_accounts_repo_archived_invariants` qui vérifie pour chaque fonction le comportement attendu (archivée → exclu/erreur pour `find_primary`/`list_by_company`/`set_journal_account_id`/`update_for_company`/`archive_for_company` ; archivée → retournée pour `find_by_id_for_company`).
 - `update_for_company(tx, company_id, id, new: NewBankAccount, expected_version) -> Result<(BankAccount, BankAccount), DbError>` : transaction-bound, SELECT FOR UPDATE + UPDATE + retour `(updated, before)`. Vérifie optimistic lock. Vérifie primary collision (si new.is_primary=true ET un autre compte primary existe → la transaction délègue à `transition_primary` helper qui flip l'ancien à false).
 - `archive_for_company(tx, company_id, id, expected_version) -> Result<BankAccount, DbError>` : SELECT FOR UPDATE + UPDATE archived=TRUE + retour entity. Vérifie optimistic lock.
 - `count_transactions_for_bank_account(pool, bank_account_id, company_id) -> i64` : helper pour guard 412.
@@ -301,15 +332,15 @@ Et ligne 380-395 :
 
 ### Backend Rust — `crates/kesh-api/src/errors.rs` (variants à ajouter)
 
-Nouveaux variants `AppError` :
-- `BankAccountPrimaryAlreadyExists` → 409 Conflict, code `BANK_ACCOUNT_PRIMARY_ALREADY_EXISTS`.
+Nouveaux variants `AppError` (FINDING-3 Pass 3 Opus : variant `BankAccountPrimaryAlreadyExists` 409 supprimé — transition primary uniforme silencieuse POST + PUT) :
 - `BankAccountHasTransactions { transaction_count: i64 }` → 412 Precondition Failed, code `BANK_ACCOUNT_HAS_TRANSACTIONS`, body inclut `details.transactionCount`.
 - `BankAccountCannotArchivePrimary` → 412 Precondition Failed, code `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`, message « Le compte principal ne peut pas être archivé tant qu'un autre compte non-archivé existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci. »
 
 **i18n keys correspondantes pour les 4 locales FR/DE/IT/EN** (cohérent pattern projet `errors.rs:980,997` `bank-accounts-errors-account-not-found` / `bank-accounts-errors-invalid-account-type`) :
-- `bank-accounts-errors-primary-already-exists`
 - `bank-accounts-errors-has-transactions`
 - `bank-accounts-errors-cannot-archive-primary`
+
+(Note FINDING-3 Pass 3 Opus : la key `bank-accounts-errors-primary-already-exists` n'est pas créée — le variant `BankAccountPrimaryAlreadyExists` étant supprimé.)
 
 ### Frontend — `frontend/src/routes/(app)/+layout.svelte`
 
@@ -346,9 +377,10 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
 
 **Ajouts v014-1** :
 - `bank-accounts.api.ts` étendu (mêmes conventions : types inline dans le même fichier) :
-  - Fonctions : `createBankAccount(payload)`, `updateBankAccount(id, payload)`, `archiveBankAccount(id, expectedVersion)`.
-  - Types inline : `NewBankAccountPayload`, `UpdateBankAccountPayload` (camelCase pour serde matching), extension `BankAccountSummary` avec `currentBalance: number | null` ou `string | null` selon décision de précision Decimal (cf. FINDING-13).
+  - Fonctions : `createBankAccount(payload)`, `updateBankAccount(id, payload)`, `archiveBankAccount(id, expectedVersion)`, `listBankAccounts(includeArchived?: boolean)` (signature étendue avec param optionnel pour AC#26).
+  - Types inline : `NewBankAccountPayload`, `UpdateBankAccountPayload` (camelCase pour serde matching), extension `BankAccountSummary` avec **`currentBalance: number | null`** (cf. T5 conversion serde-str) ET **`archived: boolean`** (FINDING-13 Pass 3 Opus — cohérent backend qui sérialise la nouvelle colonne ; sans ce champ TS, AC#26 « toggle archivés » ne peut pas appliquer le style désaturé).
 - **Ne pas créer** de fichier `bank-accounts.types.ts` séparé (n'existe pas et n'est pas le pattern du module).
+- **Settings types** (`frontend/src/lib/features/settings/settings.types.ts`) : étendre `BankAccountJson` avec `archived: boolean` également (le `GET /api/v1/companies/current` retournera la colonne). Page `/settings` (AC#28 read-only) : filtrer côté affichage les comptes archivés ou les rendre en style désaturé — cohérent UX.
 - Composants Svelte nouveaux dans `frontend/src/lib/features/bank-accounts/` : `CreateBankAccountModal.svelte`, `EditBankAccountModal.svelte`, `ArchiveBankAccountConfirmDialog.svelte`.
 
 ## Acceptance Criteria
@@ -356,17 +388,24 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
 ### Backend — CRUD endpoints (AC #1-12)
 
 - [ ] **AC #1** Migration `bank_accounts.archived BOOLEAN NOT NULL DEFAULT FALSE` ajoutée. Non-breaking. Audit `docs/migrations-idempotence-audit.md` mis à jour (P5 CLAUDE.md).
-- [ ] **AC #2** `POST /api/v1/bank-accounts` route montée dans `comptable_routes` (`lib.rs`). RBAC Comptable+ requis (test 403 pour Consultation).
-- [ ] **AC #3** `POST /api/v1/bank-accounts` body validation : `bankName.trim()` non-vide, IBAN format via `kesh_core::types::Iban::new`, QR-IBAN format via `kesh_core::types::QrIban::new` si fourni. Si `isPrimary=true` ET un primary existe déjà : 409 `BANK_ACCOUNT_PRIMARY_ALREADY_EXISTS`. Si `journalAccountId` fourni : Account exists + actif + Asset|Liability (réutilise pré-flight PATCH lignes 115-148).
+- [ ] **AC #2** `POST /api/v1/bank-accounts` route montée dans `comptable_routes` (`lib.rs`). RBAC Comptable+ requis (test 403 pour Consultation). **Guard onboarding (FINDING-11 Pass 3 Opus)** : refuser 412 `AppError::OnboardingNotComplete` si `onboarding_state.step_completed < 7` (variant à créer ou réutiliser un variant proche d'existant — vérifier `errors.rs` ; `OnboardingStepAlreadyCompleted` n'est PAS le bon variant). Justification : pendant l'onboarding (step 6), c'est `POST /api/v1/onboarding/bank-account` qui doit créer le primary — pas le CRUD post-onboarding (sinon 2 primary parallèles, race condition). Idem AC#5 (PUT) et AC#7 (DELETE) : refuser 412 si `step_completed < 7`. Mode demo (`is_demo=true`) : **autoriser le CRUD** (cohérent UX demo = full feature set), mais Dev Notes documente : « En mode demo, les CRUD bank_accounts persistent ; pour reset complet, repasser par `/api/v1/onboarding/reset` ».
+- [ ] **AC #3** `POST /api/v1/bank-accounts` body validation : `bankName.trim()` non-vide, IBAN format via `kesh_core::types::Iban::new`, QR-IBAN format via `kesh_core::types::QrIban::new` si fourni. Si `isPrimary=true` ET un primary existe déjà : **transition silencieuse atomique** (cohérent PUT — cf. FINDING-3 Pass 3 Opus) — flip de l'ancien à `is_primary=FALSE` + INSERT nouveau primary + audit log `bank_account.updated` avec `details_json.trigger = "primary_transition"` sur l'ancien + `bank_account.created` sur le nouveau, le tout dans la même tx. Pas de 409. Si `journalAccountId` fourni : Account exists + actif + Asset|Liability (réutilise pré-flight PATCH lignes 115-148).
 - [ ] **AC #4** `POST /api/v1/bank-accounts` happy path retourne 201 + body `BankAccount` complet. Audit log `bank_account.created` émis en transaction avec INSERT.
 - [ ] **AC #5** `PUT /api/v1/bank-accounts/{id}` route montée. RBAC Comptable+. Body avec tous les champs métier + `version` optimistic lock.
 - [ ] **AC #6** `PUT /api/v1/bank-accounts/{id}` édition complète tous champs. Transition primary atomique si `isPrimary` change. Optimistic lock 409 si version stale. Audit log `bank_account.updated` avec `details_json.trigger = "full_update"` + before/after snapshot.
 - [ ] **AC #7** `DELETE /api/v1/bank-accounts/{id}` route montée. RBAC Comptable+. Soft-delete via `archived=TRUE`.
-- [ ] **AC #8** `DELETE` refuse 412 `BANK_ACCOUNT_HAS_TRANSACTIONS` si des `bank_transactions` existent sur ce compte (toutes statuts confondus — `pending` ET `reconciled`). Condition SQL : `SELECT COUNT(*) FROM bank_transactions WHERE bank_account_id = ? AND company_id = ?`. Note : `bank_transactions` n'a pas de colonne `archived` — le terme « non-archivées » dans le Scope §Backend était impropre. Refus inconditionnel dès qu'au moins une transaction existe (auditabilité CO Art. 958f — l'archivage d'un compte avec historique reconcilé serait problématique pour les rapports). Body inclut `details.transactionCount`.
+- [ ] **AC #8** `DELETE` refuse 412 `BANK_ACCOUNT_HAS_TRANSACTIONS` si des `bank_transactions` existent sur ce compte (toutes statuts confondus — `pending` ET `reconciled`). Condition SQL : `SELECT COUNT(*) FROM bank_transactions WHERE bank_account_id = ? AND company_id = ?`. Note : `bank_transactions` n'a pas de colonne `archived` — le terme « non-archivées » dans le Scope §Backend était impropre. Refus inconditionnel dès qu'au moins une transaction existe (auditabilité CO Art. 958f). Body inclut `details.transactionCount`.
+- [ ] **AC #8 bis (FINDING-4 Pass 3 Opus)** Garde-fou symétrique côté `bank_imports` : les handlers `POST /bank-imports/preview` et `POST /bank-imports/commit` (`crates/kesh-api/src/routes/bank_imports.rs:862, 1006`) DOIVENT rejeter un `bank_account_id` archivé avec `AppError::BankAccountNotFound` (anti-énumération KF-002 — pas un 410 Gone). Implémentation : après le `find_by_id_for_company`, ajouter `if bank_account.archived { return Err(AppError::BankAccountNotFound); }`. Cela prévient l'état illégal « compte archivé avec transactions » qui rendrait l'AC#8 ré-archivage impossible à débloquer côté UI v0.1 (L1 — pas de restoration). Test intégration : tentative upload CSV/CAMT sur compte archivé → 404 propre.
 - [ ] **AC #9** `DELETE` refuse 412 `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` si le compte est primary ET au moins 1 autre compte non-archivé existe.
-- [ ] **AC #10** `DELETE` autorise l'archivage du primary unique (cas dégénéré — l'utilisateur sait ce qu'il fait). Audit log `bank_account.archived`.
-- [ ] **AC #11** `PATCH /api/v1/bank-accounts/{id}` existant **inchangé** (scope strict `journal_account_id`). Le PUT n'écrase pas le PATCH.
-- [ ] **AC #12** Repository `bank_accounts::list_by_company` étendu avec paramètre `include_archived: bool` (défaut `false`). Le handler `GET /api/v1/bank-accounts` accepte query param `?includeArchived=true` (défaut false).
+- [ ] **AC #10** `DELETE` autorise l'archivage du primary unique (cas dégénéré — l'utilisateur sait ce qu'il fait). Audit log `bank_account.archived`. **Important — cohérence cross-fichier (FINDING-1 Pass 3 Opus)** : si le primary unique est archivé, la fonction repo `bank_accounts::find_primary` (utilisée par `routes/invoice_pdf.rs:83` pour générer le QR Bill PDF) DOIT être étendue pour filtrer `AND archived = FALSE` dans son SELECT. Sinon `find_primary` continuera à retourner un compte invisible côté UI (`list_by_company` filtre archivés par défaut) mais actif côté génération PDF — état fantôme. Le handler `get_invoice_pdf` retournera alors `AppError::InvoiceNotPdfReady("Aucun compte bancaire principal n'est configuré pour cette company.")` (i18n key `invoice-pdf-error-no-primary-bank` existante) — comportement attendu UX (force l'utilisateur à reconfigurer un primary avant d'émettre des factures). Ajouter test intégration : archiver le primary unique puis tenter `GET /api/v1/invoices/{id}/pdf` → 412/422 selon mapping AppError.
+- [ ] **AC #11** `PATCH /api/v1/bank-accounts/{id}` existant : scope strict `journal_account_id` inchangé, MAIS deux ajustements MANDATORY pour cohérence cross-handler (FINDING-2 + FINDING-7 Pass 3 Opus) :
+  - (a) **Sémantique archived** : SELECT FOR UPDATE de `set_journal_account_id_for_company` (lignes 252-255) étendu avec `AND archived = FALSE` ; row archivée → `DbError::NotFound` → handler `AppError::BankAccountNotFound` (anti-énumération KF-002 pattern). Un compte archivé est immuable hors `un-archive` workflow (L1 reportée v0.2 — pas de backdoor via PATCH silencieux). De même pour les nouveaux `update_for_company` et `archive_for_company` : tous deux DOIVENT inclure `AND archived = FALSE` au SELECT FOR UPDATE (un PUT sur compte archivé → 404 anti-énumération ; un DELETE sur compte déjà archivé → 404, cohérent KF-002).
+  - (b) **Audit log `details_json.trigger`** : modifier `routes/bank_accounts.rs` lignes 182-192 pour ajouter `"trigger": "journal_account_link"` dans le `serde_json::json!({ ... })` du PATCH (cohérent avec PUT qui émet `"trigger": "full_update"`). Sinon un script audit qui filtre par `details_json->>"$.trigger" = "journal_account_link"` ne retournera rien (champ absent en PATCH actuel → trou de traçabilité CO Art. 958f). Adapter les tests intégration `bank_accounts_e2e.rs` qui asserte sur `details_json`.
+- [ ] **AC #12** Repository `bank_accounts::list_by_company` étendu avec paramètre `include_archived: bool` (défaut `false` côté handler GET). Le handler `GET /api/v1/bank-accounts` accepte query param `?includeArchived=true` (défaut false). **3 sites d'appel à mettre à jour** sinon le code ne compile pas (signature change) — cf. FINDING-2 Pass 3 Opus + pattern existant `accounts::list_by_company(pool, company_id, include_archived: bool)` :
+  - `routes/bank_accounts.rs:97` (handler GET) : passer `query.include_archived.unwrap_or(false)`.
+  - `routes/companies.rs:82` (settings page) : passer `false` (l'utilisateur ne veut pas voir ses comptes archivés dans la page settings).
+  - `exports/global.rs:151` (export ZIP) : passer `true` — souveraineté CO Art. 957 (conservation 10 ans), cohérent pattern `accounts::list_by_company(pool, company_id, /*include_archived=*/ true)` ligne 129 et `contacts::list_by_company(pool, company_id, /*include_archived=*/ true)` ligne 139.
+  - Idem pour le nouveau `list_by_company_with_balances` (T5) qui prend `include_archived: bool` → passer `query.include_archived.unwrap_or(false)` au handler GET.
 
 ### Backend — solde calculé (AC #13-15)
 
@@ -390,7 +429,7 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
 - [ ] **AC #24** Modal édition (PUT) : remplace l'édition actuelle limitée à `journalAccountId`. Tous les champs éditables. Optimistic lock via version.
 - [ ] **AC #25** Bouton archive 📦 par ligne → confirm dialog. Appel `DELETE`. Si 412 transactions → toast affiche `transactionCount`. Si 412 primary → toast explique procédure.
 - [ ] **AC #26** Toggle « Afficher les archivés » en haut. Appel `GET /bank-accounts?includeArchived=true`. Lignes archivées affichées avec style désaturé.
-- [ ] **AC #27** Tooltip ou helper text inline sur le champ `journalAccountId` : « Lie ce compte bancaire à un compte du plan comptable (typiquement 1020 Caisse, 1030 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte. Modifiable plus tard. »
+- [ ] **AC #27** Tooltip ou helper text inline sur le champ `journalAccountId` : « Lie ce compte bancaire à un compte du plan comptable (typiquement 1020 Caisse, 1030 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l'affichage du solde sur la page d'accueil. Modifiable plus tard. **Note pour multi-comptes** : si vous avez plusieurs comptes courants distincts (BCV + PostFinance), liez ce `bank_account` au sous-compte auxiliaire spécifique (`1030.001 BCV CHF`), pas au compte parent `1030` — le solde affiché ne ferait pas la somme des enfants v0.1 (FINDING-10 Pass 3 Opus). »
 
 ### Frontend — page `/settings/+page.svelte` (AC #28)
 
@@ -436,10 +475,11 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
   - [ ] Helper transition primary (flip old primary à false dans même tx que set new à true).
 - [ ] **T2 — POST /api/v1/bank-accounts** (AC #2, #3, #4)
   - [ ] Handler `create_bank_account()` + `CreateBankAccountBodyExtractor`.
-  - [ ] Variant `AppError::BankAccountPrimaryAlreadyExists` + i18n keys 4 locales.
+  - [ ] Guard onboarding `step_completed < 7` → 412 (FINDING-11 Pass 3 Opus).
   - [ ] Mount route dans `comptable_routes`.
   - [ ] Audit log `bank_account.created` dans transaction INSERT.
-  - [ ] Tests intégration `bank_accounts_e2e.rs` : happy path, IBAN invalide, QR-IBAN invalide, primary collision 409, RBAC 403.
+  - [ ] Helper `transition_primary(tx, company_id, new_primary_id)` partagé POST/PUT : flip ancien primary à FALSE + audit log `bank_account.updated` `details_json.trigger = "primary_transition"` (FINDING-3 Pass 3 Opus). Note : variant `AppError::BankAccountPrimaryAlreadyExists` PAS créé (transition silencieuse uniforme).
+  - [ ] Tests intégration `bank_accounts_e2e.rs` : happy path, IBAN invalide, QR-IBAN invalide, **primary transition silencieuse** (POST avec isPrimary=true alors qu'un autre primary existe → vérifier ancien primary flippé à FALSE + audit log `primary_transition`), RBAC 403, guard onboarding 412 (step < 7).
 - [ ] **T3 — PUT /api/v1/bank-accounts/{id}** (AC #5, #6)
   - [ ] Handler `update_bank_account()` + `UpdateBankAccountBodyExtractor`.
   - [ ] Mount route (chaîne avec PATCH/DELETE existants).
@@ -509,9 +549,9 @@ L'invariant `is_primary` doit être unique par company (au plus 1 primary). Quan
 3. INSERT/UPDATE new account set is_primary=TRUE.
 4. Audit log entry pour les deux changements (old_primary démoté + new_primary promu).
 
-**Décision Pass 1 (à trancher en spec validate)** : transition silencieuse (le user souhaite changer le primary, OK) OU explicite (refuser 409 et exiger un PUT explicite sur l'ancien primary d'abord) ?
+**Décision Pass 3 Opus (FINDING-3)** : transition silencieuse **uniforme POST + PUT** avec audit log explicite `details_json.trigger = "primary_transition"` sur l'ancien primary + `bank_account.created` (POST) ou `bank_account.updated` (PUT) sur le nouveau. UX user-friendly, symétrie POST/PUT, élimine 1 variant AppError + 4 keys i18n + complexité frontend.
 
-**Recommandation** : silencieux mais avec audit log explicite (`details_json.trigger = "primary_transition"` sur l'ancien). UX user-friendly.
+**Limitation v0.1 — race condition rare (L5, FINDING-9 Pass 3 Opus)** : l'invariant « au plus 1 primary par company » est garanti **applicatif** (pattern `transition_primary` helper avec SELECT FOR UPDATE), **pas DB**. Deux transactions POST/PUT concurrentes avec `isPrimary=true` peuvent en théorie créer 2 rows avec `is_primary=TRUE`. Mitigation v0.1 : (a) la table `bank_accounts` est mutée par 1 user à la fois en pratique (UI mono-user, mono-tenant v0.1), (b) ajouter au début des handlers POST/PUT un `SELECT id FROM companies WHERE id = ? FOR UPDATE` (advisory lock sentinel sur la row `companies.id` du company concerné) pour serializer toutes les mutations CRUD bank_accounts d'un même tenant (acquise au début de tx, libérée au commit). Story Epic 12+ pour ajouter une contrainte DB stricte (`generated column` MariaDB + UNIQUE INDEX partial — coût migration breaking). Documenter L5 dans `bank-accounts.api.ts` (limitation côté frontend) et dans `migrations-idempotence-audit.md` (note explicite « pas de UNIQUE INDEX primary par company v0.1 »).
 
 ### Limitations documentées v0.1 (catégorie B)
 
@@ -566,6 +606,43 @@ _(à remplir au dev-story)_
 _(à remplir au dev-story)_
 
 ## Change Log
+
+### Pass 3 Opus 4.7 spec validate (2026-05-31)
+
+**Modèle** : Opus 4.7 (general-purpose sub-agent, fenêtre contexte fraîche). Pattern empirique CLAUDE.md « Opus catch les angles architecturaux cross-fichiers ratés par Sonnet+Haiku » CONFIRMÉ sur cette story.
+**Total findings** : 14 — 2 CRITICAL + 5 HIGH + 5 MEDIUM + 2 LOW.
+**Verdict** : `CONTINUE_TO_PASS_4` (12 findings > LOW).
+
+**Patches appliqués** (14/14) :
+
+- **F1 CRITICAL** — `find_primary` non-filtré → casse PDF QR Bill (cross-fichier `routes/invoice_pdf.rs:83`). AC#10 patché pour exiger filtre `AND archived = FALSE` dans `find_primary` repo, sinon état fantôme (compte invisible UI + actif PDF).
+- **F2 CRITICAL** — Sémantique cross-fonction du flag `archived`. AC#11 PATCH étendu (filtre `archived=FALSE` SELECT FOR UPDATE + audit log `details_json.trigger`). AC#12 : 3 sites d'appel `list_by_company` (handler GET, settings, exports/global.rs:151 souveraineté = `true`).
+- **F3 HIGH** — Asymétrie POST 409 vs PUT silencieuse → uniformisation **transition silencieuse atomique POST + PUT** (élimine `BankAccountPrimaryAlreadyExists` variant + key i18n). Helper `transition_primary` partagé. AC#3, T2, section variants AppError, section i18n keys, recommandation pattern primary tous patchés.
+- **F4 HIGH** — `bank_imports.rs:862, 1006` accepte création transactions sur compte archivé → AC#8 bis ajouté : `if bank_account.archived { return Err(AppError::BankAccountNotFound); }` après find_by_id, anti-énumération KF-002.
+- **F5 HIGH** — Nomenclature `archived` (positif) vs `active` (pattern accounts/contacts) : drift défendable mais à expliciter. Spec §Migration patché avec rationale + timestamp explicite `20260531000001` + nom index corrigé (mais index supprimé par F8).
+- **F6 HIGH** — Sémantique cross-fonction enrichie : MANDATORY (F6 Pass 3 Opus) ajouté à FINDING-1 Pass 1 avec règles par fonction (`find_primary` filtre / `find_by_id_for_company` NE filtre PAS, c'est le call site qui décide / `list_by_company` filtre via param / `set_journal_account_id_for_company` + nouveaux `update_for_company` + `archive_for_company` filtrent SELECT FOR UPDATE). 7 call sites `bank_imports.rs` + `reconciliation.rs` identifiés. Test contrat `bank_accounts_repo_archived_invariants` MANDATORY.
+- **F7 HIGH** — PATCH actuel audit log manque `details_json.trigger = "journal_account_link"` → trou de traçabilité CO Art. 958f. AC#11 (b) patché.
+- **F8 MEDIUM** — Index `idx_bank_accounts_company_active` redondant + nommage trompeur → **supprimé** YAGNI (~10 rows max). Comment SQL explicatif dans la migration.
+- **F9 MEDIUM** — Race condition primary applicatif-only (pas DB partial unique index) → documenté L5 limitation v0.1 + advisory lock sentinel `SELECT id FROM companies WHERE id = ? FOR UPDATE` au début des handlers POST/PUT pour serializer mutations CRUD bank_accounts d'un même tenant.
+- **F10 MEDIUM** — Solde calculé sans filtre `status='Posted'` / `fiscal_year` / hiérarchie `parent_id` → solde incorrect/trompeur. Périmètre v0.1 explicité : Posted uniquement, toutes années (tooltip clarifie), liaison sous-compte recommandée (AC#27 patché). Performance monitoring `query_duration_ms` + cache v0.2 si > 200ms.
+- **F11 MEDIUM** — Race onboarding step 6 vs POST/PUT/DELETE post-onboarding → AC#2 patché : guard `step_completed < 7` → 412 `AppError::OnboardingNotComplete` (variant à créer ou réutiliser). Mode demo autorise CRUD (note Dev Notes).
+- **F12 MEDIUM** — A11y auto-expand groupe contenant route active manquant → spec §Accessibilité étendue : lookup `$page.url.pathname` au mount + `open=true` forcé pour cette session sans persister, focus management préservé.
+- **F13 LOW** — Champ `archived: boolean` manquant types TS frontend (`BankAccountSummary` + `BankAccountJson`) → patché avec extension + signature `listBankAccounts(includeArchived?: boolean)`.
+- **F14 LOW** — Incohérence `nav-invoices` fallback `Facturer` vs valeur i18n `Factures` (pré-existante) → documentée explicitement Hors Scope v0.2.
+
+**Angles découverts (architecturaux ratés par Sonnet+Haiku)** :
+- **Sémantique cross-fichier du flag `archived`** : 4 findings (F1, F2, F4, F6) — Sonnet+Haiku ont vu uniquement « ajouter colonne au SELECT pour éviter crash sqlx » (F1 Pass 1) mais ont raté que 7 call sites `reconciliation.rs` + `bank_imports.rs` + `invoice_pdf.rs` consomment bank_accounts sans filtre archived. Le flag introduit n'avait pas de sémantique propagée.
+- **Asymétrie POST 409 vs PUT silencieux** : 1 finding HIGH-3 — incohérence d'UX entre 2 endpoints du même CRUD.
+- **Audit log incohérent PATCH (existant) vs PUT (nouveau)** : 1 finding HIGH-7 — trou de traçabilité CO Art. 958f.
+- **Naming/indexation DB** : 2 findings (MED-8, HIGH-5) — index mal nommé + redondant.
+- **Race conditions DB-level** : 1 finding MED-9 — invariant primary applicatif-only.
+- **Calcul du solde** : 1 finding MED-10 — agrégation naïve produit soldes incorrects/trompeurs.
+- **Onboarding state machine** : 1 finding MED-11 — race onboarding/CRUD non-protégée.
+- **A11y `<details>` + focus / route active** : 1 finding MED-12 — auto-expand manque.
+- **Frontend types `archived`** : 1 finding LOW-13 — interfaces TS incomplètes.
+- **i18n drift pré-existante** : 1 finding LOW-14 — hors scope documenté.
+
+**Bilan trend convergence** : Pass 1 14 findings → Pass 2 8 findings (dont 1 doublon Pass 1) → Pass 3 14 findings architecturaux nouveaux (pattern Opus catch-architectural confirmé). **Prochaine étape** : Pass 4 Sonnet 4.6 (fenêtre fraîche, validation des patches Opus + recherche de régressions/incohérences introduites).
 
 ### Pass 2 Haiku 4.5 spec validate (2026-05-31)
 
