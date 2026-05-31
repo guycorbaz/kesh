@@ -610,6 +610,39 @@ _(à remplir au dev-story)_
 
 ## Change Log
 
+### Pass 5 Haiku 4.5 spec validate — CONVERGED (2026-05-31)
+
+**Modèle** : Haiku 4.5 (general-purpose sub-agent, fenêtre contexte fraîche — discipline grep ground-truth).
+**Total findings** : 0 — **0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW**.
+**Verdict** : **CONVERGED**. Critère d'arrêt Review Iteration Rule CLAUDE.md strictement ATTEINT (0 finding > LOW). Spec **ready-for-dev définitive**.
+
+**Validation Pass 4 patches** (3/3 confirmés ground-truth) :
+- **F1 `OnboardingNotComplete` variant** : ✅ confirmé section canonique variants AppError (ligne ~340).
+- **F2 Change Log Pass 2 correctif** : ✅ confirmé note correctif 3 keys finales.
+- **F3 L5 limitation canonique** : ✅ confirmé liste canonique limitations v0.1 (catégorie B).
+
+**Audit final de cohérence** (Haiku) :
+- 36 ACs ↔ 12 Tasks ↔ 7 sections Backend/Frontend/Doc : couverture 100%.
+- Références cross-fichiers précises (7 call sites bank_imports + reconciliation identifiés ; 3 sites list_by_company ; invoice_pdf.rs:83 find_primary).
+- Variants AppError canoniques : 3 nouveaux (`BankAccountHasTransactions`, `BankAccountCannotArchivePrimary`, `OnboardingNotComplete`) + suppression `BankAccountPrimaryAlreadyExists` cohérente partout (Scope + AC + T2 + variants section + i18n + Change Log Pass 2 corrigé).
+- Limitations v0.1 L1-L5 toutes définies dans la liste canonique.
+- Hors scope clair (5 items) avec pointage Epic 12+ approprié.
+- Status `ready-for-dev` approprié.
+
+**Bilan trend convergence final** :
+
+| Passe | Modèle | Findings | dont > LOW | Patches |
+|-------|--------|----------|-----------:|---------|
+| Pass 1 | Sonnet 4.6 | 14 | 10 | 14 |
+| Pass 2 | Haiku 4.5 | 8 | 4 (post-triage) | 6 (+1 dismissed +1 skipped) |
+| Pass 3 | Opus 4.7 | 14 | 12 | 14 (4 axes architecturaux cross-fichiers ratés par Sonnet+Haiku) |
+| Pass 4 | Sonnet 4.6 | 3 | 1 | 3 |
+| Pass 5 | Haiku 4.5 | **0** | **0** | **0** |
+
+**Total cycle** : 37 patches sur 5 passes. Décroissance attendue (14→8→14→3→0). Pic Pass 3 Opus = architectural cross-fichiers (pattern empirique CLAUDE.md confirmé sur cette story : Opus catch 4 angles archived semantic cross-fichier ratés par Sonnet+Haiku).
+
+**Prochaine étape** : `bmad-dev-story v014-1-bank-crud-and-sidebar-ux` (Opus 4.7 recommandé — scope cross-stack ~12-15 fichiers, 36 ACs, dette F1 Pass 1 SELECT colonnes archived + F6 Pass 3 Opus 7 call sites cross-modules nécessitant attention architecturale).
+
 ### Pass 4 Sonnet 4.6 spec validate (2026-05-31)
 
 **Modèle** : Sonnet 4.6 (general-purpose sub-agent, fenêtre contexte fraîche).
