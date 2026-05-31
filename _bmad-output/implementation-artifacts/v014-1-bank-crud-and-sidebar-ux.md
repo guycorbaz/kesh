@@ -335,10 +335,12 @@ Et ligne 380-395 :
 Nouveaux variants `AppError` (FINDING-3 Pass 3 Opus : variant `BankAccountPrimaryAlreadyExists` 409 supprimé — transition primary uniforme silencieuse POST + PUT) :
 - `BankAccountHasTransactions { transaction_count: i64 }` → 412 Precondition Failed, code `BANK_ACCOUNT_HAS_TRANSACTIONS`, body inclut `details.transactionCount`.
 - `BankAccountCannotArchivePrimary` → 412 Precondition Failed, code `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`, message « Le compte principal ne peut pas être archivé tant qu'un autre compte non-archivé existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci. »
+- `OnboardingNotComplete` → 412 Precondition Failed, code `ONBOARDING_NOT_COMPLETE`, message « L'onboarding doit être terminé (étape 7 complétée) avant de pouvoir gérer les comptes bancaires. » (FINDING-11 Pass 3 Opus — guard POST/PUT/DELETE `step_completed < 7`, sauf mode demo `is_demo=true` qui autorise le CRUD).
 
 **i18n keys correspondantes pour les 4 locales FR/DE/IT/EN** (cohérent pattern projet `errors.rs:980,997` `bank-accounts-errors-account-not-found` / `bank-accounts-errors-invalid-account-type`) :
 - `bank-accounts-errors-has-transactions`
 - `bank-accounts-errors-cannot-archive-primary`
+- `bank-accounts-errors-onboarding-not-complete` (mapping FR/DE/IT/EN du message du variant `OnboardingNotComplete`)
 
 (Note FINDING-3 Pass 3 Opus : la key `bank-accounts-errors-primary-already-exists` n'est pas créée — le variant `BankAccountPrimaryAlreadyExists` étant supprimé.)
 
@@ -559,6 +561,7 @@ L'invariant `is_primary` doit être unique par company (au plus 1 primary). Quan
 - **L2 — Pas de bulk-archive ni bulk-edit** : opérations 1-par-1 v0.1.
 - **L3 — Solde calculé non-cached** : recalculé à chaque GET. Acceptable v0.1 (max ~10 comptes), v0.2 si volume devient gros.
 - **L4 — `currentBalance: null` UX message « lier au plan comptable »** : sous-optimal — idéalement on devrait pré-suggérer un compte par défaut (1030 Banque) à la création du compte bancaire. Story Epic 11+ pour auto-suggestion intelligente.
+- **L5 — Race condition rare sur l'invariant `is_primary` (applicatif-only, pas DB)** : deux transactions POST/PUT concurrentes avec `isPrimary=true` peuvent en théorie créer 2 rows `is_primary=TRUE`. Mitigation v0.1 : advisory lock sentinel `SELECT id FROM companies WHERE id = ? FOR UPDATE` au début des handlers POST/PUT pour serializer les mutations CRUD bank_accounts d'un même tenant. Contrainte DB stricte (UNIQUE INDEX partiel via generated column MariaDB) → Story Epic 12+. Cf. Dev Notes §Pattern primary transition + FINDING-9 Pass 3 Opus.
 
 ### Test Locally First (CLAUDE.md)
 
@@ -607,6 +610,24 @@ _(à remplir au dev-story)_
 
 ## Change Log
 
+### Pass 4 Sonnet 4.6 spec validate (2026-05-31)
+
+**Modèle** : Sonnet 4.6 (general-purpose sub-agent, fenêtre contexte fraîche).
+**Total findings** : 3 — 0 CRITICAL + 0 HIGH + 1 MEDIUM + 2 LOW.
+**Verdict** : `CONTINUE_TO_PASS_5` (1 finding MEDIUM restant — variant `OnboardingNotComplete` absent de la section canonique des variants).
+
+**Validation des patches Pass 3 Opus** : tous validés cohérents par Pass 4 — F1 `find_primary` filtre OK ; F2-F6 sémantique cross-fonction propagée OK ; F3 `BankAccountPrimaryAlreadyExists` supprimé de Scope + variants + T2 + Change Log Pass 3 OK ; F8 index supprimé OK ; F11 `OnboardingNotComplete` partiellement intégré (référencé AC#2 + T2 + Change Log Pass 3 mais absent section canonique variants → finding Pass 4).
+
+**Patches appliqués** (3/3) :
+
+- **F1 MEDIUM** — variant `OnboardingNotComplete` ajouté à la section canonique `Backend Rust — errors.rs (variants à ajouter)` avec code `ONBOARDING_NOT_COMPLETE`, message et i18n key `bank-accounts-errors-onboarding-not-complete` (4 locales). Cohérent F11 Pass 3 Opus.
+- **F2 LOW** — Change Log Pass 2 patché avec note correctif post-Pass 3 (3 keys planifiées → 2 keys retenues + 1 ajoutée Pass 4 = 3 keys finales). Évite création key orpheline `bank-accounts-errors-primary-already-exists`.
+- **F3 LOW** — L5 (race condition primary applicatif-only) ajoutée à la liste canonique des Limitations documentées v0.1 (catégorie B). Cohérent F9 Pass 3 Opus.
+
+**Bilan trend convergence** : Pass 1 14 findings → Pass 2 8 (dont 1 doublon) → Pass 3 14 architecturaux → Pass 4 3 (post-validation Opus). Décroissance attendue (14 → 8 → 14 → 3). Pass 4 finding MEDIUM = simple omission de copier le variant `OnboardingNotComplete` dans la section canonique (référence orpheline introduite par Pass 3 F11) — pas un finding architectural.
+
+**Prochaine étape** : Pass 5 Haiku 4.5 (fenêtre contexte fraîche, discipline grep ground-truth). Objectif : converger à 0 finding > LOW.
+
 ### Pass 3 Opus 4.7 spec validate (2026-05-31)
 
 **Modèle** : Opus 4.7 (general-purpose sub-agent, fenêtre contexte fraîche). Pattern empirique CLAUDE.md « Opus catch les angles architecturaux cross-fichiers ratés par Sonnet+Haiku » CONFIRMÉ sur cette story.
@@ -653,7 +674,7 @@ _(à remplir au dev-story)_
 **Triage orchestrateur post-grep ground-truth** :
 
 - **F1 CRITICAL DISMISSED** (doublon Pass 1) : « SELECT de bank_accounts manquent colonne archived » — déjà documenté MANDATORY ligne 273 du story file par F1 Pass 1. Haiku n'a pas remarqué que la spec post-Pass 1 contient déjà la directive. Grep ground-truth orchestrateur confirme `MANDATORY (FINDING-1 Pass 1)` présent ligne 273. Faux-positif typique Haiku « contexte combiné » (cf. CLAUDE.md §Haiku-specific guardrails).
-- **F2 HIGH appliqué** : 3 i18n keys explicites pour les variants AppError (`bank-accounts-errors-primary-already-exists` / `-has-transactions` / `-cannot-archive-primary`). Confirmé ground-truth pattern `bank-accounts-errors-*` ligne 980, 997 `errors.rs`.
+- **F2 HIGH appliqué** : 3 i18n keys initialement planifiées pour les variants AppError (`bank-accounts-errors-primary-already-exists` / `-has-transactions` / `-cannot-archive-primary`). **Note correctif post-Pass 3** : la key `bank-accounts-errors-primary-already-exists` est ensuite **supprimée** par Pass 3 FINDING-3 Opus (variant `BankAccountPrimaryAlreadyExists` éliminé, transition silencieuse uniforme POST+PUT). État final : 2 keys retenues (`-has-transactions` / `-cannot-archive-primary`) + 1 ajoutée par Pass 4 (`-onboarding-not-complete`). Confirmé ground-truth pattern `bank-accounts-errors-*` ligne 980, 997 `errors.rs`.
 - **F3 HIGH → reclassé MEDIUM, appliqué** : SSR-safe localStorage. Confirmé pattern `typeof localStorage !== 'undefined'` ligne 21, 30 `mode.svelte.ts`. Reclassé car dev expérimenté l'appliquerait spontanément.
 - **F4 HIGH → reclassé MEDIUM, appliqué** : AC#31 dépendance ligne 37 `homepage-settings.spec.ts` confirmée grep (`toBeVisible()` ferme sur `homepage-card-bank-accounts`). Option (a) « FORTEMENT RECOMMANDÉ » au lieu de « recommandé ». Amélioration éditoriale (pas architecturale).
 - **F5 MEDIUM → reclassé LOW, appliqué** : AC#21 note explicite que admin-only items + Mensuel items restent `label:` hardcodé v0.1 (cohérent pattern existant).
