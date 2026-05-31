@@ -387,6 +387,34 @@ Section déjà créée par v011-4 (CHANGELOG section `## [0.1.2] — Non publié
   - [x] Sprint-status : v011-5 in-progress→review.
   - [x] Commit + push à la demande.
 
+### Review Findings — Pass 1 (2026-05-31, Sonnet 4.6 × 3 lentilles parallèles)
+
+**Trend brut** : 16 findings (3 HIGH + 6 MEDIUM + 5 LOW + 2 chevauchements). Après triage : 11 patches + 3 defer + 1 dismiss + 1 merge.
+
+#### Patches à appliquer (11)
+
+- [ ] [Review][Patch] BH1-1 HIGH — `users::create UniqueConstraintViolation` retourne 409 générique au lieu de 410 `SetupAlreadyComplete` [crates/kesh-api/src/routes/setup.rs:131]
+- [ ] [Review][Patch] BH1-2 HIGH — chemin 410 saute `record_failed_attempt(ip)` (déviation AC #8) [crates/kesh-api/src/routes/setup.rs:104-108]
+- [ ] [Review][Patch] ECH1-1 HIGH — `users_exist.store(true)` après `refresh_tokens::create` ; échec transient lock l'app jusqu'à restart [crates/kesh-api/src/routes/setup.rs:131-171]
+- [ ] [Review][Patch] BH1-4 MEDIUM — `seed_stub_company_only` sans `truncate_all` doc-comment précondition manquant [crates/kesh-db/src/test_fixtures.rs:401-419]
+- [ ] [Review][Patch] ECH1-2 MEDIUM — validation password whitespace-only manquante (12 espaces valide) [crates/kesh-api/src/routes/setup.rs:83-95]
+- [ ] [Review][Patch] ECH1-3 MEDIUM — frontend `password.length` (UTF-16) vs backend `chars().count()` (Unicode scalars) → 11 emojis false-valide front [frontend/src/lib/features/setup/SetupForm.svelte:25]
+- [ ] [Review][Patch] AUD1-1 MEDIUM — test `429 rate-limit` absent de setup_admin_e2e.rs (AC #22) [crates/kesh-api/tests/setup_admin_e2e.rs]
+- [ ] [Review][Patch] AUD1-2 MEDIUM — test race TOCTOU `#[ignore]` absent (AC #22 explicit demand) [crates/kesh-api/tests/setup_admin_e2e.rs]
+- [ ] [Review][Patch] BH1-3+AUD1-3 MEDIUM — `authState.login(payload)` sans `await` (delta spec AC #17) — sync en pratique mais doc trompeuse [frontend/src/lib/features/setup/setup.api.ts:47]
+- [ ] [Review][Patch] ECH1-5 LOW — `requestRaw` (getBlob) sans intercepteur 423 (defense-in-depth) [frontend/src/lib/shared/utils/api-client.ts:453-484]
+- [ ] [Review][Patch] BH1-7 LOW — `setTimeout(goto/login, 2000)` leak si SetupForm unmount avant 2s [frontend/src/lib/features/setup/SetupForm.svelte]
+
+#### Defer (3, persistés dans `deferred-work.md`)
+
+- [x] [Review][Defer] BH1-5 MEDIUM — `+layout.ts::load` redirect `_setupRequired` likely dead code first paint (mais defense-in-depth client-nav) — deferred, valeur défensive sur navigations subséquentes [frontend/src/routes/+layout.ts:14-17]
+- [x] [Review][Defer] ECH1-4 MEDIUM — `KESH_PASSWORD_MIN_LENGTH` non-propagé au frontend (hardcoded 12) — deferred v0.2, nécessite endpoint public config [frontend/src/lib/features/setup/SetupForm.svelte:22 + locales `setup-password-min`]
+- [x] [Review][Defer] AUD1-4 LOW — `website/index.html` + `roadmap.html` non mis à jour v0.1.2 — deferred, non-bloquant pour PR (à faire avant release tag v0.1.2)
+
+#### Dismiss (1)
+
+- BH1-6 LOW — `test_config_no_env` mutates public `Config` fields directly — dismissed, design intentionnel test-only.
+
 ## Dev Notes
 
 ### Patterns à respecter (ground-truth code)

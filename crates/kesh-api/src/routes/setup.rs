@@ -31,6 +31,7 @@ use axum::extract::{ConnectInfo, State};
 use axum_extra::extract::CookieJar;
 use chrono::Utc;
 use kesh_db::entities::{NewRefreshToken, NewUser, Role};
+use kesh_db::errors::DbError;
 use kesh_db::repositories::{refresh_tokens, users};
 use serde::Deserialize;
 
@@ -80,12 +81,13 @@ pub async fn create_admin(
         state.rate_limiter.record_failed_attempt(ip);
         return Err(AppError::Validation("username must be non-empty".into()));
     }
-    let min_len = state.config.password_min_length as usize;
-    if req.password.chars().count() < min_len {
+    // CR Pass 1 ECH1-2 — réutiliser `validate_password` (story 1.7) qui couvre :
+    // empty, whitespace-only, length < min. Évite que `"            "` (12 espaces)
+    // passe `chars().count() >= 12` et se retrouve hashé. Cohérent
+    // `auth.rs::change_password` qui appelle déjà `validate_password`.
+    if let Err(e) = password::validate_password(&req.password, state.config.password_min_length) {
         state.rate_limiter.record_failed_attempt(ip);
-        return Err(AppError::Validation(format!(
-            "password must be at least {min_len} characters"
-        )));
+        return Err(e);
     }
     if req.password.eq_ignore_ascii_case("changeme") {
         state.rate_limiter.record_failed_attempt(ip);
@@ -102,8 +104,13 @@ pub async fn create_admin(
         .await
         .map_err(|e| AppError::Internal(format!("setup user count: {e}")))?;
     if user_count > 0 {
-        // Pas de record_failed_attempt — cas non-attaquant (frontend qui appelle
-        // par erreur après setup terminé). Just 410.
+        // CR Pass 1 BH1-2 — `record_failed_attempt` AVANT 410 (cohérent AC #8
+        // qui demande explicitement le décompte sur user_count > 0). Un attacker
+        // qui spam ce path après setup sera rate-limited. Synchronise aussi le
+        // cache mémoire (defense-in-depth si le bootstrap cas 1 a tourné sur une
+        // DB non-vide — improbable, mais cohérent invariant).
+        state.rate_limiter.record_failed_attempt(ip);
+        state.users_exist.store(true, Ordering::Release);
         return Err(AppError::SetupAlreadyComplete);
     }
 
@@ -128,7 +135,14 @@ pub async fn create_admin(
     let hash = password::hash_password_async(req.password.clone()).await?;
 
     // Step 5 — INSERT user Admin.
-    let user = users::create(
+    //
+    // CR Pass 1 BH1-1 — gérer `UniqueConstraintViolation` explicitement : si une
+    // requête concurrente avec le même username a réussi entre notre SELECT
+    // user_count (line 100) et notre INSERT, le 2e INSERT échoue. Le user existe
+    // → l'état logique est « setup déjà complété », pas un conflit de ressource.
+    // On flip aussi `users_exist=true` car la contrainte UNIQUE garantit qu'au
+    // moins un user existe en DB. Retourner 410 cohérent avec la 1ère gate AC #8.
+    let user = match users::create(
         &state.pool,
         NewUser {
             username: username.clone(),
@@ -138,13 +152,33 @@ pub async fn create_admin(
             company_id,
         },
     )
-    .await?;
+    .await
+    {
+        Ok(u) => u,
+        Err(DbError::UniqueConstraintViolation(_)) => {
+            state.users_exist.store(true, Ordering::Release);
+            state.rate_limiter.record_failed_attempt(ip);
+            tracing::info!(
+                "setup: UniqueConstraintViolation sur INSERT user — race concurrente, setup déjà complété"
+            );
+            return Err(AppError::SetupAlreadyComplete);
+        }
+        Err(e) => return Err(AppError::Database(e)),
+    };
 
     tracing::info!(
         user_id = user.id,
         username = %user.username,
         "setup: 1er admin créé via /setup"
     );
+
+    // CR Pass 1 ECH1-1 — flip `users_exist` IMMÉDIATEMENT après l'INSERT user
+    // réussi, AVANT `refresh_tokens::create`. Si le 2e INSERT (refresh token)
+    // échoue (transient DB error, pool exhaustion), le user est déjà commité
+    // mais sans cache mémoire à jour → toutes les routes protégées retournent
+    // 423 jusqu'au prochain restart et `/setup/admin` retourne 410 → app
+    // verrouillée. Le store immédiat heal le state en mémoire avec la réalité DB.
+    state.users_exist.store(true, Ordering::Release);
 
     // Step 6 — JWT + refresh token (cohérent /login).
     let access_token = jwt::encode(
@@ -165,10 +199,6 @@ pub async fn create_admin(
         },
     )
     .await?;
-
-    // Step 7 — flip `users_exist` flag (Release pair avec Acquire dans
-    // `require_auth`). Désactive immédiatement le gate 423.
-    state.users_exist.store(true, Ordering::Release);
 
     // Reset rate-limit pour cette IP (cohérent /login).
     state.rate_limiter.reset(ip);

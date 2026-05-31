@@ -44,5 +44,14 @@ export async function setupAdmin(username: string, password: string): Promise<vo
 
 	// Story v011-5 ECH1-6 : broadcast cross-tab AVANT le redirect (le goto vient
 	// du caller, après cette fonction). `authState.login` broadcast par défaut.
+	//
+	// CR Pass 1 BH1-3+AUD1-3 — `authState.login` est SYNCHRONE (pas async dans
+	// le store Svelte 5 — cf. auth.svelte.ts:95). Le `postMessage` du
+	// BroadcastChannel est lui-même synchrone (WHATWG spec). Pas besoin de
+	// `await`. La spec ECH2-3 demandait `await` par sécurité contre un futur
+	// passage à async — si `login()` devient async un jour, ce site sera à
+	// re-vérifier (pas couvert par TypeScript car `await` sur fn sync = no-op
+	// silencieux). Le `await goto('/onboarding')` côté caller `SetupForm`
+	// garantit la séquence ordonnée du POV utilisateur.
 	authState.login(payload);
 }

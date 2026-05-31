@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -18,11 +19,29 @@
 	let errorMessage = $state('');
 	let errorIcon = $state<'validation' | 'rate' | 'gone' | 'server' | null>(null);
 
+	// CR Pass 1 BH1-7 — timer ID pour nettoyage via onDestroy. Sinon, si le
+	// composant unmount entre le `setTimeout` (410) et son fire 2s plus tard,
+	// `goto('/login')` s'exécute hors contexte → navigation surprenante.
+	let redirectTimer: ReturnType<typeof setTimeout> | null = null;
+	onDestroy(() => {
+		if (redirectTimer !== null) {
+			clearTimeout(redirectTimer);
+		}
+	});
+
 	// Le backend impose ≥ 12 chars (cohérent KESH_PASSWORD_MIN_LENGTH défaut).
+	// CR Pass 1 ECH1-4 limitation : valeur hardcoded — si l'opérateur set
+	// KESH_PASSWORD_MIN_LENGTH ≠ 12, le frontend pourrait diverger. v0.2 fix
+	// via endpoint public config (cf. deferred-work.md).
 	const MIN_PASSWORD = 12;
 
 	let usernameValid = $derived(username.trim().length > 0);
-	let passwordValid = $derived(password.length >= MIN_PASSWORD);
+	// CR Pass 1 ECH1-3 — utiliser `[...password].length` (Unicode code points)
+	// au lieu de `password.length` (UTF-16 code units). Pour les passwords
+	// composés d'emojis (caractères astraux 4 bytes UTF-16), `.length` compte
+	// 2 par emoji alors que le backend Rust `chars().count()` en compte 1 →
+	// 11 emojis = false-valide frontend (11×2=22 ≥ 12) puis 400 backend.
+	let passwordValid = $derived([...password].length >= MIN_PASSWORD);
 	let passwordMatch = $derived(password === passwordConfirm);
 	let formValid = $derived(usernameValid && passwordValid && passwordMatch);
 
@@ -48,8 +67,10 @@
 						'Le compte administrateur a déjà été créé. Vous allez être redirigé vers la page de connexion.',
 					);
 					errorIcon = 'gone';
-					// Redirect /login après 2s pour laisser le user lire le message.
-					setTimeout(() => {
+					// CR Pass 1 BH1-7 — track timer pour clearTimeout via onDestroy si
+					// le composant unmount avant 2s (sinon goto sur contexte démonté).
+					redirectTimer = setTimeout(() => {
+						redirectTimer = null;
 						void goto('/login');
 					}, 2000);
 				} else if (err.status === 429 || err.code === 'RATE_LIMITED') {
