@@ -160,12 +160,13 @@ const adminOnlyItems: NavItem[] = [
 {/each}
 ```
 
-**Persistence** via `localStorage` :
+**Persistence** via `localStorage` (**SSR-safe obligatoire** — cohérent pattern `frontend/src/lib/app/stores/mode.svelte.ts:21,30`) :
 - Clés : `kesh:sidebar:expanded:quotidien`, `kesh:sidebar:expanded:mensuel`, `kesh:sidebar:expanded:administration`.
 - Valeurs : `"true"` / `"false"`.
-- Lecture au mount, écriture sur `ontoggle`.
-- Fallback à `group.defaultExpanded` si absent.
-- Helper functions `isGroupExpanded(group): boolean` + `persistGroupState(label, open)`.
+- **Lecture** : utiliser `typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null` (ne pas crasher en SSR / hydration phase).
+- **Écriture sur `ontoggle`** : guard `if (typeof localStorage !== 'undefined') { localStorage.setItem(key, ...) }`.
+- Fallback à `group.defaultExpanded` si clé absente ou côté serveur.
+- Helper functions `isGroupExpanded(group): boolean` + `persistGroupState(label, open)` appliquant ces guards.
 
 **Accessibilité** : `<details>`/`<summary>` est natif a11y (ARIA expanded géré par le browser, focus keyboard, lecteurs d'écran). Pas de custom ARIA nécessaire. CSS animation chevron via `details[open] summary svg { transform: rotate(180deg); }`.
 
@@ -305,7 +306,10 @@ Nouveaux variants `AppError` :
 - `BankAccountHasTransactions { transaction_count: i64 }` → 412 Precondition Failed, code `BANK_ACCOUNT_HAS_TRANSACTIONS`, body inclut `details.transactionCount`.
 - `BankAccountCannotArchivePrimary` → 412 Precondition Failed, code `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`, message « Le compte principal ne peut pas être archivé tant qu'un autre compte non-archivé existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci. »
 
-i18n keys correspondantes dans 4 locales.
+**i18n keys correspondantes pour les 4 locales FR/DE/IT/EN** (cohérent pattern projet `errors.rs:980,997` `bank-accounts-errors-account-not-found` / `bank-accounts-errors-invalid-account-type`) :
+- `bank-accounts-errors-primary-already-exists`
+- `bank-accounts-errors-has-transactions`
+- `bank-accounts-errors-cannot-archive-primary`
 
 ### Frontend — `frontend/src/routes/(app)/+layout.svelte`
 
@@ -377,7 +381,7 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
 - [ ] **AC #18** Implémentation `<details>`/`<summary>` HTML natif pour chaque groupe. État par défaut : QUOTIDIEN + MENSUEL `open`, ADMINISTRATION fermé.
 - [ ] **AC #19** Chevron `▾` / `▸` SVG (Lucide `ChevronDown`) à droite du label, rotation CSS via `details[open] summary svg { transform: rotate(180deg); }`.
 - [ ] **AC #20** Persistence localStorage : 3 clés `kesh:sidebar:expanded:{quotidien,mensuel,administration}`. Lecture au mount, écriture sur `ontoggle`. Fallback à `defaultExpanded` si clé absente.
-- [ ] **AC #21** i18n FR/DE/IT/EN ajoutées : `nav-accounts`, `nav-fiscal-years`, `nav-bank-accounts`, `nav-bank-profiles`, `nav-reconciliation-rules`, `nav-administration`, `nav-quotidien`, `nav-mensuel`.
+- [ ] **AC #21** i18n FR/DE/IT/EN ajoutées pour les 8 entrées sidebar principales : `nav-accounts`, `nav-fiscal-years`, `nav-bank-accounts`, `nav-bank-profiles`, `nav-reconciliation-rules`, `nav-administration`, `nav-quotidien`, `nav-mensuel`. **Note** : les 2 admin-only items (`/users` « Utilisateurs », `/settings/invoicing` « Facturation ») et les 3 items Mensuel restent en `label:` hardcodé FR (cohérent pattern existant — i18n complète reportée v0.2, hors scope du hotfix UX v0.1.4).
 
 ### Frontend — page `/bank-accounts` CRUD complet (AC #22-27)
 
@@ -401,14 +405,20 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
 
 - [ ] **AC #31** Tests Playwright existants qui cliquent sur la sidebar adaptés : ouvrir programmatiquement le `<details>` `Administration` via `page.locator('details summary:has-text("Administration")').click()` avant de cliquer sur un item Administration. **Cas spécifiques à adapter** :
   - `frontend/tests/e2e/users.spec.ts` (test `admin voit le lien Utilisateurs dans le sidebar` ligne 41) : ajouter un clic sur `details summary:has-text("Administration")` avant l'assertion `toBeVisible()` sur `nav-link-users` — un enfant d'un `<details>` fermé est dans le DOM mais **pas visible** (hidden via UA stylesheet) et fera échouer `toBeVisible()` (FINDING-14 Pass 1).
-  - `frontend/tests/e2e/homepage-settings.spec.ts` (test « affiche 3 widgets sur la page d'accueil » lignes 33-38) : le widget `homepage-card-bank-accounts` est conditionnel (`{#if bankAccounts.length > 0}`) après AC#29. Le seed `with-company` (`seed_accounting_company`) ne crée aucun `bank_account`. Options : **(a)** étendre le seed pour créer un bank_account (recommandé pour préserver la couverture du test), **(b)** mettre à jour le test pour vérifier uniquement les widgets inconditionnels + asserter que `homepage-card-bank-accounts` est absent quand `bankAccounts.length === 0`. Décision dev-story selon impact sur autres tests.
+  - `frontend/tests/e2e/homepage-settings.spec.ts` (test « affiche 3 widgets sur la page d'accueil » lignes 33-38) : le widget `homepage-card-bank-accounts` est conditionnel (`{#if bankAccounts.length > 0}`) après AC#29. Le seed `with-company` (`seed_accounting_company`) ne crée aucun `bank_account`. **Dépendance confirmée grep** : ligne 37 du test contient `await expect(page.locator('[data-testid="homepage-card-bank-accounts"]')).toBeVisible();` — assertion ferme de visibilité du widget. Options : **(a) FORTEMENT RECOMMANDÉ — étendre le seed pour créer un bank_account** (préserve la visibilité attendue et la couverture du test ligne 37 sans modification du test), **(b)** mettre à jour le test pour asserter l'absence du widget (cassure ligne 37 acceptée, à reformuler en `toBeHidden()` ou `.count()===0`). Décision dev-story, mais (a) fortement préférée — évite régression du test ligne 37.
 - [ ] **AC #32** Nouveau `frontend/tests/e2e/bank-accounts-crud.spec.ts` : 7 tests minimum (création happy path, IBAN invalide, QR-IBAN invalide, édition, archivage sans transactions, archivage avec transactions blocage 412, toggle archivés).
 - [ ] **AC #33** Nouveau `frontend/tests/e2e/sidebar-navigation.spec.ts` : navigation vers les 5 entrées Administration (Plan comptable, Exercices, Comptes bancaires, Profils bancaires, Règles d'affectation) via clic sidebar. Test persistence localStorage : toggle expand Administration → reload page → état préservé.
 
 ### Documentation (AC #34-35)
 
 - [ ] **AC #34** **CRÉER** `docs/user-guide/fr/getting-started.md` (nouveau fichier — **le répertoire `docs/user-guide/fr/` n'existe pas encore et doit être créé aussi**). Structure minimale : §1 vue d'ensemble, §2 connexion, §3 exercice comptable, **§3 bis** « Lier ses comptes bancaires au plan comptable » expliquant le rationale + procédure step-by-step + cas multi-comptes via sous-comptes auxiliaires (cf. Scope §Documentation pour le contenu détaillé de §3 bis).
-- [ ] **AC #35** `CHANGELOG.md` : section `## [0.1.4] — Non publié` avec entrées Ajouts (CRUD bank_accounts + sidebar UX) + Modifié (renommage Payer + widget homepage refactor + structure sidebar). **`README.md`** : ajouter ligne `v0.1.4 (hotfix) | CRUD bank_accounts post-onboarding + sidebar collapsible + restructuration UX | 🚧 En cours` (puis `✅ Done` au release) dans le tableau « Feuille de route » (section §Feuille de route, après la ligne v0.1.3) — cohérent CLAUDE.md §« Synchroniser le planning du README à chaque commit ».
+- [ ] **AC #35** `CHANGELOG.md` : section `## [0.1.4] — Non publié` avec entrées standardisées [Keep a Changelog](https://keepachangelog.com/) :
+  - **Added** : POST/PUT/DELETE `/api/v1/bank-accounts` (CRUD post-onboarding) ; sidebar collapsible `<details>`/`<summary>` avec persistence localStorage ; page `/bank-accounts` CRUD complet ; solde calculé `currentBalance` dans payload GET ; 5 entrées sidebar `nav-accounts/fiscal-years/bank-accounts/bank-profiles/reconciliation-rules` (pages plus accessibles via navigation).
+  - **Changed** : widget homepage « Comptes bancaires » affiche les soldes au lieu d'un CTA configuration ; entrée sidebar « Payer » renommée en « Comptes bancaires » (sous Administration) ; structure sidebar réorganisée en 3 groupes (Quotidien/Mensuel/Administration).
+  - **Removed** : bouton « Modifier » sur `/settings` § Comptes bancaires (remplacé par lien vers `/bank-accounts` AC#28) ; fonction `notYet()` supprimée si plus utilisée.
+  - **Fixed** : pages orphelines (`/accounts`, `/bank-import/profiles`, `/reconciliation/rules`, `/settings/fiscal-years`) ajoutées à la sidebar (Issue #138).
+
+  **`README.md`** : ajouter ligne `v0.1.4 (hotfix) | CRUD bank_accounts post-onboarding + sidebar collapsible + restructuration UX | 🚧 En cours` (puis `✅ Done` au release) dans le tableau « Feuille de route » (section §Feuille de route, après la ligne v0.1.3) — cohérent CLAUDE.md §« Synchroniser le planning du README à chaque commit ».
 
 ### Quality gate (AC #36)
 
@@ -445,7 +455,7 @@ Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `
 - [ ] **T5 — Solde calculé** (AC #13, #14, #15)
   - [ ] Repository : nouvelle fonction `list_by_company_with_balances(pool, company_id, include_archived) -> Vec<BankAccountWithBalance>` avec LEFT JOIN sur `journal_entry_lines`.
   - [ ] Handler `list_bank_accounts()` retourne le payload étendu.
-  - [ ] Frontend : interface `BankAccountSummary` dans `bank-accounts.api.ts` (nom réel — **pas** `BankAccountResponse`) étendue avec `currentBalance: number | null` (Decimal sérialisé en string par serde, parsé en number côté TS — ou `string | null` si la précision CHF 4 décimales risque de perdre de la précision via Number). Adapter `listBankAccounts()` pour retourner le nouveau payload.
+  - [ ] Frontend : interface `BankAccountSummary` dans `bank-accounts.api.ts` (nom réel — **pas** `BankAccountResponse`) étendue avec `currentBalance: number | null`. **Conversion explicite obligatoire (FINDING-6 Pass 2)** : le backend Rust sérialise `rust_decimal::Decimal` en **string** via feature `serde-str` (cf. `crates/kesh-api/Cargo.toml:39`, pattern documenté `routes/products.rs:95` et `routes/vat.rs:109`). Donc le JSON reçu contient `{ "currentBalance": "1234.56" }` (ou `null`). Ajouter dans `listBankAccounts()` un helper de transformation : `currentBalance = item.currentBalance == null ? null : Number(item.currentBalance)`. Si la précision CHF 4 décimales est critique pour des calculs (au-delà de l'affichage), envisager une lib Decimal côté TS (`decimal.js`) — pour v0.1 (affichage uniquement, ≤ 2 décimales CHF), `Number()` suffit. Adapter `listBankAccounts()` pour retourner le payload avec conversion appliquée.
   - [ ] Tests : compte sans journal_account_id → null, avec écritures → solde correct.
 - [ ] **T6 — Sidebar collapsible + restructuration** (AC #16-21)
   - [ ] Refactor `(app)/+layout.svelte` `navGroups`.
@@ -556,6 +566,27 @@ _(à remplir au dev-story)_
 _(à remplir au dev-story)_
 
 ## Change Log
+
+### Pass 2 Haiku 4.5 spec validate (2026-05-31)
+
+**Modèle** : Haiku 4.5 (general-purpose sub-agent, fenêtre contexte fraîche — discipline CLAUDE.md grep ground-truth NON-NÉGOCIABLE pour CRIT/HIGH).
+**Total findings remontés** : 8 — 1 CRITICAL + 3 HIGH + 3 MEDIUM + 1 LOW.
+**Verdict** : `CONTINUE_TO_PASS_3` (post-triage 4 findings > LOW restants).
+
+**Triage orchestrateur post-grep ground-truth** :
+
+- **F1 CRITICAL DISMISSED** (doublon Pass 1) : « SELECT de bank_accounts manquent colonne archived » — déjà documenté MANDATORY ligne 273 du story file par F1 Pass 1. Haiku n'a pas remarqué que la spec post-Pass 1 contient déjà la directive. Grep ground-truth orchestrateur confirme `MANDATORY (FINDING-1 Pass 1)` présent ligne 273. Faux-positif typique Haiku « contexte combiné » (cf. CLAUDE.md §Haiku-specific guardrails).
+- **F2 HIGH appliqué** : 3 i18n keys explicites pour les variants AppError (`bank-accounts-errors-primary-already-exists` / `-has-transactions` / `-cannot-archive-primary`). Confirmé ground-truth pattern `bank-accounts-errors-*` ligne 980, 997 `errors.rs`.
+- **F3 HIGH → reclassé MEDIUM, appliqué** : SSR-safe localStorage. Confirmé pattern `typeof localStorage !== 'undefined'` ligne 21, 30 `mode.svelte.ts`. Reclassé car dev expérimenté l'appliquerait spontanément.
+- **F4 HIGH → reclassé MEDIUM, appliqué** : AC#31 dépendance ligne 37 `homepage-settings.spec.ts` confirmée grep (`toBeVisible()` ferme sur `homepage-card-bank-accounts`). Option (a) « FORTEMENT RECOMMANDÉ » au lieu de « recommandé ». Amélioration éditoriale (pas architecturale).
+- **F5 MEDIUM → reclassé LOW, appliqué** : AC#21 note explicite que admin-only items + Mensuel items restent `label:` hardcodé v0.1 (cohérent pattern existant).
+- **F6 MEDIUM appliqué** : Decimal serde-str conversion. Confirmé ground-truth `serde-str` feature 5 occurrences `Cargo.toml` + 2 doc patterns (`products.rs:95`, `vat.rs:109`). T5 explicite la step `Number(item.currentBalance)` avec note v0.2 si précision Decimal.js nécessaire.
+- **F7 LOW appliqué** : AC#35 sections Keep a Changelog (`Added/Changed/Removed/Fixed`) explicites.
+- **F8 LOW skipped** : note spéculative CSS chevron timing — non-actionnable, no patch.
+
+**Bilan patches Pass 2** : 6 appliqués / 1 dismissed (F1) / 1 skipped (F8). Trend : Pass 1 14 findings → Pass 2 8 findings (dont 1 doublon Pass 1) → décroissance attendue, convergence en cours.
+
+**Prochaine étape** : Pass 3 Opus 4.7 (fenêtre contexte fraîche, recherche d'angles architecturaux cross-fichiers ratés par Sonnet+Haiku — pattern empirique CLAUDE.md §Review Iteration Rule).
 
 ### Pass 1 Sonnet 4.6 spec validate (2026-05-31)
 
