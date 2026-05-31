@@ -804,25 +804,85 @@ La création d'une company se fait via l'interface utilisateur après connexion 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Premier démarrage}
 
-\subsection{Création du compte administrateur initial}
+\subsection{Création du compte administrateur initial (onboarding self-service)}
 
-Au tout premier démarrage de Kesh sur une base de données vide, le \emph{bootstrap} crée automatiquement le compte administrateur défini par les variables \keshpath{KESH\_ADMIN\_USERNAME} et \keshpath{KESH\_ADMIN\_PASSWORD} du fichier \keshpath{.env}, ainsi qu'une \textbf{company provisoire} (placeholder) à laquelle ce compte est rattaché.
+Depuis la version \textbf{v0.1.2}, Kesh adopte l'approche \emph{self-service} commune aux applications self-hosted modernes (Jellyfin, Bitwarden, Vaultwarden) : au tout premier démarrage sur une base de données vide, un écran web \keshpath{/setup} accueille l'administrateur pour créer son compte via un formulaire — sans édition préalable du fichier \keshpath{.env}.
 
-Cette company provisoire débloque le premier accès : sans elle, l'administrateur ne pourrait pas être créé (contrainte d'intégrité \keshcommand{users.company\_id NOT NULL}), et le wizard d'onboarding — protégé par l'authentification — serait inatteignable. La company provisoire est renommée et complétée lors de l'onboarding.
+Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder) au boot. L'administrateur est ensuite créé via le formulaire \keshpath{POST /api/v1/setup/admin} (route publique gated par \keshcommand{user\_count == 0} → désactivée automatiquement en 410 Gone dès le 1\textsuperscript{er} admin créé).
 
-\subsubsection{Procédure}
+\subsubsection{Procédure (nouveau flow recommandé v0.1.2+)}
 
 \begin{enumerate}
-    \item Renseigner \keshpath{KESH\_ADMIN\_USERNAME} et \keshpath{KESH\_ADMIN\_PASSWORD} (mot de passe fort, ≥ 12 caractères) dans \keshpath{.env} \emph{avant} le premier démarrage.
-    \item Démarrer la stack (\keshcommand{docker compose up -d}).
-    \item Ouvrir \keshpath{https://compta.exemple.ch} dans un navigateur et se connecter avec ces identifiants.
-    \item Le wizard d'onboarding démarre automatiquement.
-    \item \textbf{Changer immédiatement le mot de passe administrateur} après la première connexion (les logs affichent un rappel « CHANGEZ LE MOT DE PASSE » au premier démarrage).
+    \item Démarrer la stack (\keshcommand{docker compose up -d}) \textbf{sans} renseigner \keshpath{KESH\_ADMIN\_*} dans \keshpath{.env}.
+    \item Ouvrir \keshpath{https://compta.exemple.ch} dans un navigateur. L'écran « \textbf{Bienvenue dans Kesh} » apparaît automatiquement.
+    \item Saisir un nom d'utilisateur (ex. \keshcommand{admin}), un mot de passe fort (≥ 12 caractères) et sa confirmation.
+    \item Cliquer sur « \textbf{Créer le compte administrateur} ».
+    \item Le wizard d'onboarding démarre automatiquement (langue, mode, coordonnées de la société, banque).
 \end{enumerate}
 
 \begin{keshwarning}
-Tant que le mot de passe administrateur du \keshpath{.env} n'a pas été changé, toute personne ayant accès au fichier peut se connecter. Restreindre les permissions du fichier \keshpath{.env} (\keshcommand{chmod 600}) et changer le mot de passe dès la première connexion. La récupération en cas de mot de passe perdu (\emph{break-glass}) est traitée par une procédure dédiée — voir les notes de version v0.1.1.
+\textbf{Sécurité — bloquer l'accès réseau public avant le 1\textsuperscript{er} démarrage.} La personne qui touche \keshpath{/api/v1/setup/admin} en premier devient administrateur. Recommandé : binder loopback \keshcommand{127.0.0.1} (mapping Docker par défaut en prod) ou LAN privé via reverse proxy en attendant la création du compte. Le rate-limit IP (5 tentatives/15~min) limite le brute-force du formulaire.
 \end{keshwarning}
+
+\subsubsection{Procédure alternative — bootstrap déclaratif via \keshpath{.env}}
+
+Pour les déploiements automatisés (CI, Test, scripts de provisioning), il reste possible de créer l'administrateur \emph{déclarativement} via les variables \keshpath{.env} — équivalent strict du comportement v0.1.0/v0.1.1 :
+
+\begin{enumerate}
+    \item Renseigner \keshpath{KESH\_ADMIN\_USERNAME=admin} et \keshpath{KESH\_ADMIN\_PASSWORD=<mot-de-passe-fort-12-chars>} dans \keshpath{.env} \emph{avant} le premier démarrage.
+    \item Démarrer la stack (\keshcommand{docker compose up -d}). Le boot crée la company stub \textbf{et} l'administrateur en une seule passe.
+    \item Se connecter directement avec ces identifiants — pas d'écran \keshpath{/setup}.
+    \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} après la première connexion réussie (sinon, chaque redémarrage logge un warning « retirer les vars »).
+    \item Changer le mot de passe administrateur via l'UI dès que possible.
+\end{enumerate}
+
+\begin{keshtip}
+Le flow self-service \keshpath{/setup} est préférable pour les déploiements interactifs — il évite la mauvaise pratique consistant à laisser un mot de passe en clair dans \keshpath{.env}.
+\end{keshtip}
+
+\subsection{J'ai oublié mon mot de passe administrateur (recovery break-glass)}
+
+Depuis la version \textbf{v0.1.2}, Kesh permet de réinitialiser le mot de passe administrateur sans accès à la base de données. Le mécanisme \emph{recovery break-glass} réutilise les variables \keshpath{KESH\_ADMIN\_*} dans un double-usage : sur une instance déjà configurée (au moins un user existe), renseigner ces variables avec un mot de passe différent du hash actuel déclenche un \textbf{reset du password de l'administrateur correspondant au username configuré}.
+
+\subsubsection{Procédure step-by-step}
+
+\begin{enumerate}
+    \item \textbf{Stopper le container} : \keshcommand{docker compose stop kesh-api} (la DB reste accessible pour les autres clients).
+    \item \textbf{Éditer \keshpath{.env}} : décommenter (ou ajouter) les deux variables :
+\begin{lstlisting}[language=bash]
+KESH_ADMIN_USERNAME=admin            # le username de votre compte admin
+KESH_ADMIN_PASSWORD=<nouveau-mdp-12+>  # nouveau mot de passe (>= 12 chars)
+\end{lstlisting}
+    \item \textbf{Redémarrer le container} : \keshcommand{docker compose up -d kesh-api}. Au boot, les logs affichent :
+\begin{lstlisting}[language=bash]
+WARN bootstrap: Recovery break-glass declenche pour user 'admin'...
+ERROR bootstrap: Recovery effectue -- RETIRER LES VARS DE .ENV
+\end{lstlisting}
+    \item \textbf{Se connecter} via l'écran de login avec le nouveau mot de passe. Les sessions actives sur ce compte ont été révoquées par le recovery — les autres onglets/devices devront se reconnecter.
+    \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} (les recommenter ou les supprimer). Tant qu'elles restent en place, un \keshpath{WARN bootstrap: retirer les vars de .env} apparaît à chaque redémarrage (no-op silencieux côté DB grâce à la détection « hash identique »).
+    \item \emph{(Optionnel)} Redémarrer une dernière fois (\keshcommand{docker compose restart kesh-api}) pour confirmer que les warnings bootstrap ont disparu des logs — preuve que les variables \keshpath{KESH\_ADMIN\_*} sont bien retirées.
+\end{enumerate}
+
+\begin{keshwarning}
+\textbf{Sécurité du fichier \keshpath{.env}}. Tant que \keshpath{KESH\_ADMIN\_PASSWORD} est non-vide dans \keshpath{.env}, toute personne ayant accès à ce fichier peut reset le mot de passe de l'administrateur. Restreindre les permissions : \keshcommand{chmod 600 .env}. Le recovery génère également une entrée \keshcommand{admin\_break\_glass\_reset} dans le journal d'audit (\keshcommand{audit\_log}, conservation 10~ans Swiss CO Art.~958f) pour traçabilité.
+\end{keshwarning}
+
+\subsubsection{Matrice de comportement au boot — vue d'ensemble}
+
+Selon l'état de la base de données et la présence des variables \keshpath{KESH\_ADMIN\_*}, le bootstrap se comporte ainsi :
+
+\begin{tabularx}{\linewidth}{cccX}
+    \toprule
+    \keshtableheader{users} & \keshtableheader{env set ?} & \keshtableheader{match ?} & \keshtableheader{Comportement} \\
+    \midrule
+    vide & non & --- & Crée la company stub seule, écran \keshpath{/setup} actif \\
+    vide & oui & --- & Crée stub + admin déclaratif (équivalent v011-2) \\
+    existant & non & --- & No-op (régime nominal post-bootstrap) \\
+    existant & oui & match + hash identique & No-op silencieux, warning « retirer les vars » \\
+    existant & oui & match + hash différent & \textbf{RECOVERY} : reset password + révocation tokens + audit\_log \\
+    existant & oui & no match username & No-op + warning « no user matches » \\
+    \bottomrule
+\end{tabularx}
 
 \subsection{Configuration de la company via l'onboarding}
 

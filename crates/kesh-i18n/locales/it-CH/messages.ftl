@@ -814,3 +814,19 @@ export-global-content-includes = L'esportazione contiene: piano dei conti, eserc
 export-global-content-excludes = Non contiene: utenti (PII + password), token di sessione, registro audit interno, stato onboarding (motivi di sicurezza e tecnici).
 export-global-souverainete-note = I vostri dati vi appartengono. Kesh non effettua alcuna copia di questa esportazione sui suoi server.
 error-global-export-failed = L'esportazione globale non è potuta essere generata. Se il problema persiste, contattate l'assistenza.
+
+# Story v011-5 — Onboarding self-service (12 chiavi UI + 2 chiavi errore)
+error-setup-required = Configurazione iniziale richiesta. Creare l'account amministratore tramite /setup.
+error-setup-already-complete = L'account amministratore è già stato creato.
+setup-welcome = Benvenuti in Kesh
+setup-intro = Per completare l'installazione, creare l'account amministratore iniziale. Questo account avrà i diritti completi sulla vostra istanza Kesh.
+setup-username-label = Nome utente
+setup-username-placeholder = admin
+setup-username-required = Il nome utente è obbligatorio.
+setup-password-label = Password
+setup-password-min = Almeno 12 caratteri.
+setup-password-confirm-label = Conferma password
+setup-password-mismatch = Le password non corrispondono.
+setup-submit = Crea account amministratore
+setup-error-already-complete = L'account amministratore è già stato creato. Sarete reindirizzati alla pagina di accesso.
+setup-error-rate-limit = Troppi tentativi. Riprova tra qualche minuto.

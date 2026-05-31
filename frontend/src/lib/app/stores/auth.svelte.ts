@@ -49,6 +49,16 @@ let _currentUser = $state<CurrentUser | null>(null);
 let _hydrated = false;
 
 /**
+ * Story v011-5 — flag « setup-required » set à `true` quand `/me` ou tout autre
+ * route protégée retourne `423 Locked` (table `users` vide côté backend, le
+ * 1er admin n'a pas encore été créé via `/setup`). Le `+layout.ts` racine
+ * inspecte ce flag au boot et redirige vers `/setup` ; `clearSession()` et
+ * `login()` le resettent à `false` (un login réussi implique que les users
+ * existent → state cohérent).
+ */
+let _setupRequired = $state<boolean>(false);
+
+/**
  * Story 10-5 : constantes STORAGE_KEY_* conservées comme **defensive cleanup**
  * pour purger les sessions pre-Story 10-5 qui auraient persisté ces clés dans
  * localStorage avant le déploiement de cette version. À retirer dans une
@@ -77,6 +87,10 @@ export const authState = {
 		// Story 10-5 D5 : dépend de _currentUser (les tokens sont en cookies HttpOnly).
 		return _currentUser !== null;
 	},
+	/** Story v011-5 — true si `/me` ou autre route protégée retourne 423 Locked. */
+	get isSetupRequired(): boolean {
+		return _setupRequired;
+	},
 
 	/**
 	 * Set l'état authentifié depuis le body de réponse `/login` ou `/me`.
@@ -100,6 +114,10 @@ export const authState = {
 			role: payload.role,
 		};
 		_expiresIn = payload.expiresIn;
+		// Story v011-5 — un login réussi implique que les users existent côté
+		// backend → state cohérent. Reset le flag (cas use : setup réussit dans
+		// une autre tab → broadcast → cette tab re-hydrate via login()).
+		_setupRequired = false;
 		_hydrated = true;
 		if (options?.broadcast !== false) {
 			authBroadcast?.postMessage({ type: 'auth-change' });
@@ -129,6 +147,7 @@ export const authState = {
 	clearSession(options?: { broadcast?: boolean }) {
 		_expiresIn = null;
 		_currentUser = null;
+		_setupRequired = false;
 		_hydrated = false;
 		// Defensive cleanup localStorage pour utilisateurs migrant depuis pre-Story 10-5.
 		if (typeof window !== 'undefined' && window.localStorage) {
@@ -244,6 +263,17 @@ export const authState = {
 				// cookie révoqué côté serveur entre 2 hydrates intra-SPA).
 				_currentUser = null;
 				_expiresIn = null;
+				_setupRequired = false;
+			} else if (res.status === 423) {
+				// Story v011-5 (AC #18) — `/me` retourne 423 Locked : la table
+				// `users` est vide côté backend, le 1er admin n'a pas encore été
+				// créé via `/setup`. Set `_setupRequired = true` pour que le
+				// layout racine redirige vers `/setup`. **Sans `console.warn`** :
+				// 423 est un état légal documenté, pas un signal d'indisponibilité
+				// backend (distingué du else 5xx ci-dessous).
+				_currentUser = null;
+				_expiresIn = null;
+				_setupRequired = true;
 			} else {
 				// CR Pass 3 BH3-M3 — discriminer 5xx (backend KO transitoire) de
 				// 401 (non-auth légitime). Reset state à null pour cohérence

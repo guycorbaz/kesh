@@ -85,6 +85,7 @@ async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> Te
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
         i18n,
+        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

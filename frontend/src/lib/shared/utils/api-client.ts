@@ -385,6 +385,18 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
 
 	const res = await fetchWithRetry(url, { ...options, headers });
 
+	// Story v011-5 (AC #19) + CR Pass 1 ECH1-5 — interceptor 423 Locked partagé
+	// avec requestRaw via le helper. La table `users` est vide côté backend →
+	// redirect vers `/setup`.
+	if (handle423Redirect(res, url)) {
+		const error: ApiError = {
+			code: 'SETUP_REQUIRED',
+			message: 'Configuration initiale requise',
+			status: 423,
+		};
+		throw error;
+	}
+
 	// 401 sur une URL non-auth → tenter un refresh
 	if (
 		res.status === 401 &&
@@ -422,6 +434,35 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
 }
 
 /**
+ * CR Pass 1 ECH1-5 — Helper partagé pour le redirect 423 Locked → /setup.
+ *
+ * Story v011-5 : la table `users` est vide côté backend → frontend doit
+ * basculer vers l'écran `/setup`. Cette logique était dupliquée entre
+ * `request<T>` (déjà fait) et `requestRaw` (manquant — getBlob/PDF/CSV path).
+ *
+ * Retourne `true` si le redirect a été déclenché (l'appelant doit alors
+ * `throw` un `ApiError SETUP_REQUIRED` pour court-circuiter le flow). Retourne
+ * `false` sinon — l'appelant continue son traitement normal.
+ *
+ * Guards anti-boucle :
+ * - on est déjà sur `/setup` (sinon → boucle infinie)
+ * - l'URL ciblée est elle-même `/api/v1/setup/admin` (appel volontaire)
+ * - pas dans un contexte browser (SSR / unit tests)
+ */
+function handle423Redirect(res: Response, url: string): boolean {
+	if (
+		res.status === 423 &&
+		typeof window !== 'undefined' &&
+		window.location.pathname !== '/setup' &&
+		!url.startsWith('/api/v1/setup/')
+	) {
+		window.location.replace('/setup');
+		return true;
+	}
+	return false;
+}
+
+/**
  * Variante binaire de `request()` — retourne la `Response` brute.
  *
  * Utilisée pour télécharger des blobs (PDF, exports CSV) : applique la même
@@ -439,6 +480,19 @@ async function requestRaw(
 	const headers = buildHeaders(url, options.headers as Record<string, string> | undefined);
 
 	const res = await fetchWithRetry(url, { ...options, headers });
+
+	// CR Pass 1 ECH1-5 — interceptor 423 partagé via handle423Redirect : sans
+	// ce check, un export blob (PDF/CSV/ZIP) fait pendant la fenêtre théorique
+	// `users_exist=false` ne déclencherait pas le redirect → utilisateur reçoit
+	// un ApiError générique au lieu de basculer vers /setup. Defense-in-depth.
+	if (handle423Redirect(res, url)) {
+		const error: ApiError = {
+			code: 'SETUP_REQUIRED',
+			message: 'Configuration initiale requise',
+			status: 423,
+		};
+		throw error;
+	}
 
 	if (
 		res.status === 401 &&

@@ -401,6 +401,38 @@ pub async fn seed_changeme_user_only(pool: &MySqlPool) -> Result<i64, FixtureErr
     Ok(result.last_insert_id() as i64)
 }
 
+/// **Story v011-5 AC #24** : seede UNIQUEMENT 1 company stub (`is_stub=TRUE`),
+/// PAS d'admin. Le test setup_admin_e2e + Playwright setup.spec.ts utilisent
+/// ce fixture pour reproduire l'état post-bootstrap cas 1 (DB vide + no env).
+/// Le frontend doit alors recevoir 423 sur `/me` → redirect `/setup`.
+///
+/// # Précondition (CR Pass 1 BH1-4)
+///
+/// **Le caller doit avoir invoqué `truncate_all(pool)` AVANT** (ou utiliser
+/// un pool fresh via `#[sqlx::test]`). Cette fonction se contente d'un INSERT
+/// brut — appelée sur un pool non-vide, elle empile une seconde company stub
+/// et le bootstrap `SELECT id FROM companies ORDER BY id LIMIT 1` retourne
+/// alors la mauvaise. Cohérent avec le pattern existant des autres helpers
+/// `seed_*` (cf. doc-comment `seed_changeme_user_only` plus haut).
+///
+/// Le handler `/_test/seed` (`routes/test_endpoints.rs::seed_handler`) appelle
+/// `truncate_all` puis dispatche au preset — pour ce path, la précondition est
+/// satisfaite automatiquement.
+pub async fn seed_stub_company_only(pool: &MySqlPool) -> Result<i64, FixtureError> {
+    let result = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language, is_stub) \
+         VALUES (?, ?, ?, ?, ?, TRUE)",
+    )
+    .bind("(en cours de configuration)")
+    .bind("-")
+    .bind("Independant")
+    .bind("FR")
+    .bind("FR")
+    .execute(pool)
+    .await?;
+    Ok(result.last_insert_id() as i64)
+}
+
 /// Marque l'`onboarding_state` singleton à `step_completed = 10` (preset
 /// `post-onboarding` / `with-company` — cf. AC #8). À appeler APRÈS
 /// `seed_accounting_company`.
