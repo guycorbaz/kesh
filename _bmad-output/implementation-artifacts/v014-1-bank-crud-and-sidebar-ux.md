@@ -26,11 +26,11 @@ Aujourd'hui le seul endpoint qui crée un `bank_account` est `POST /api/v1/onboa
 
 2. **`PUT /api/v1/bank-accounts/{id}`** (Comptable+). Body `{ bankName, iban, qrIban?, isPrimary?, journalAccountId?, version }`. Édite tous les champs métier (vs. PATCH actuel qui ne touche que `journal_account_id`). Optimistic lock via `version`. Si `isPrimary=true` et un autre compte est primary : transition primary (mettre old_primary à false, set new à true) — atomique tx. Audit log `bank_account.updated` avec before/after JSON.
 
-3. **`DELETE /api/v1/bank-accounts/{id}`** (Comptable+). Soft-delete via flag `archived` (NOUVELLE colonne migration, défaut `false`) — préserve audit + traçabilité. Refus 412 `BANK_ACCOUNT_HAS_TRANSACTIONS` si des `bank_transactions` non-archivées existent sur ce compte. Refus 412 `BANK_ACCOUNT_IS_PRIMARY` si le compte est primary ET d'autres comptes existent (forcer transition primary avant suppression — sinon l'instance n'aurait plus de primary). Si compte primary unique + pas de transactions : autoriser archivage (l'utilisateur peut tout casser s'il veut, on warn juste). Audit log `bank_account.deleted`.
+3. **`DELETE /api/v1/bank-accounts/{id}`** (Comptable+). Soft-delete via flag `archived` (NOUVELLE colonne migration, défaut `false`) — préserve audit + traçabilité. Refus 412 `BANK_ACCOUNT_HAS_TRANSACTIONS` si des `bank_transactions` existent sur ce compte (toutes statuts — pas de colonne `archived` sur `bank_transactions`, voir AC#8). Refus 412 `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` si le compte est primary ET au moins 1 autre compte non-archivé existe (forcer transition primary avant suppression — sinon l'instance n'aurait plus de primary). Si compte primary unique + pas de transactions : autoriser archivage (l'utilisateur peut tout casser s'il veut, on warn juste). Audit log `bank_account.archived`.
 
 **Pas un PATCH générique multi-fields** (cf. comment ligne 38-40 de `bank_accounts.rs` actuel : « créer un handler dédié plutôt qu'un mega-PATCH »). On garde le PATCH actuel (`PATCH /bank-accounts/{id}` pour `journal_account_id` uniquement) **et** on ajoute le PUT pour l'édition complète. 2 endpoints distincts, scope clair.
 
-**Audit log** : 3 nouveaux events `bank_account.created` / `bank_account.updated` / `bank_account.deleted` (cohérent Story 8-5a-zero TODO L65 — à clôturer ici). `entity_type = "bank_account"`, `entity_id = bank_account.id`, `details_json` = snapshot before/after pour update, snapshot pour create/delete.
+**Audit log** : 3 nouveaux events `bank_account.created` / `bank_account.updated` / `bank_account.archived` (cohérent Story 8-5a-zero TODO L65 — à clôturer ici). `entity_type = "bank_account"`, `entity_id = bank_account.id`, `details_json` = snapshot before/after pour update, snapshot pour create/archive. **Note FINDING-10 Pass 1** : l'événement DELETE émet `bank_account.archived` (et **pas** `bank_account.deleted`) — terme précis pour un soft-delete, évite d'induire en erreur les auditeurs CO Art. 958f qui consulteraient l'audit log pour voir un compte « supprimé » encore présent en DB.
 
 **Tests intégration backend** :
 - `crates/kesh-api/tests/bank_accounts_e2e.rs` étendu (le fichier existe Story 8-5a-zero) : ajouter tests POST happy path + IBAN invalide + QR-IBAN invalide + primary collision 409 + PUT happy path + DELETE refus 412 si transactions + DELETE happy path archive + RBAC Consultation rejeté 403.
@@ -95,6 +95,9 @@ const navGroups: Array<{ label: string | null; items: NavItem[]; defaultExpanded
     {
         label: 'Mensuel',
         defaultExpanded: true,
+        // Note FINDING-12 Pass 1 : items Mensuel conservés en `label:` hardcodé FR
+        // (cohérent avec l'existant pré-v014-1). Migration i18n complète reportée
+        // v0.2 — hors scope du hotfix UX v0.1.4.
         items: [
             { label: 'Écritures', href: '/journal-entries' },
             { label: 'Réconciliation', href: '/reconciliation' },
@@ -105,11 +108,11 @@ const navGroups: Array<{ label: string | null; items: NavItem[]; defaultExpanded
         label: 'Administration',
         defaultExpanded: false,
         items: [
-            { label: 'Plan comptable', href: '/accounts' },
-            { label: 'Exercices comptables', href: '/settings/fiscal-years' },
-            { label: 'Comptes bancaires', href: '/bank-accounts' },
-            { label: 'Profils bancaires', href: '/bank-import/profiles' },
-            { label: 'Règles d\'affectation', href: '/reconciliation/rules' },
+            { i18nKey: 'nav-accounts', fallback: 'Plan comptable', href: '/accounts' },
+            { i18nKey: 'nav-fiscal-years', fallback: 'Exercices comptables', href: '/settings/fiscal-years' },
+            { i18nKey: 'nav-bank-accounts', fallback: 'Comptes bancaires', href: '/bank-accounts' },
+            { i18nKey: 'nav-bank-profiles', fallback: 'Profils bancaires', href: '/bank-import/profiles' },
+            { i18nKey: 'nav-reconciliation-rules', fallback: 'Règles d\'affectation', href: '/reconciliation/rules' },
             { i18nKey: 'nav-export-global', fallback: 'Export global', href: '/export' },
             { i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' },
         ],
@@ -117,6 +120,9 @@ const navGroups: Array<{ label: string | null; items: NavItem[]; defaultExpanded
 ];
 
 // Admin-only items appended to "Administration" group dynamically
+// Note FINDING-7 Pass 1 : conservés en `label:` hardcodé FR (cohérent avec le pattern existant
+// des items Mensuel — i18n complète pour ces 2 entrées reportée v0.2 pour éviter d'étendre
+// le scope i18n keys de AC#21 au-delà des 5 entrées Administration découvertes orphelines).
 const adminOnlyItems: NavItem[] = [
     { label: 'Utilisateurs', href: '/users' },
     { label: 'Facturation', href: '/settings/invoicing' },
@@ -249,7 +255,7 @@ Supprime le `notYet()` toast et la fonction `notYet()` (ligne 27-29) si elle n'e
 **Ajouts v014-1** :
 - `create_bank_account()` handler — `POST /api/v1/bank-accounts`, Comptable+. Validation IBAN/QR-IBAN/primary collision. Audit `bank_account.created`.
 - `update_bank_account()` handler — `PUT /api/v1/bank-accounts/{id}`, Comptable+. Édition complète tous champs. Optimistic lock. Audit `bank_account.updated` (étend l'usage du même action que le PATCH actuel — distinguer dans `details_json.trigger` = `"full_update"` vs `"journal_account_link"`).
-- `archive_bank_account()` handler — `DELETE /api/v1/bank-accounts/{id}`, Comptable+. Soft-delete via `archived=TRUE`. Guards : 412 si transactions existent, 412 si primary unique. Audit `bank_account.deleted`.
+- `archive_bank_account()` handler — `DELETE /api/v1/bank-accounts/{id}`, Comptable+. Soft-delete via `archived=TRUE`. Guards : 412 si transactions existent, 412 si primary unique. Audit `bank_account.archived`.
 - `CreateBankAccountBodyExtractor`, `UpdateBankAccountBodyExtractor` (pattern Pass 1 P-H1 code review Story 8-5a-zero).
 
 ### Backend Rust — `crates/kesh-db/src/repositories/bank_accounts.rs` (existing 350+ lignes)
@@ -264,6 +270,7 @@ Supprime le `notYet()` toast et la fonction `notYet()` (ligne 27-29) si elle n'e
 - `is_no_op_change(existing, new)` helper KF-004.
 
 **Ajouts v014-1** :
+- **MANDATORY (FINDING-1 Pass 1)** : Mettre à jour **toutes** les requêtes SELECT explicites de ce fichier (`FIND_BY_ID_SQL` ligne 9 + les autres lignes 56-57, 80-82, 96-98, 124-125, 253-255, plus les nouvelles queries `update_for_company`, `archive_for_company`) pour inclure la colonne `archived` dans la liste des colonnes sélectionnées. Sinon `sqlx::FromRow` crashera à runtime avec `ColumnNotFound("archived")` (aucun `#[sqlx(default)]` sur l'entité `BankAccount`). Également : ajouter le champ `pub archived: bool` à l'entité `BankAccount` dans `crates/kesh-db/src/entities/bank_account.rs`.
 - `update_for_company(tx, company_id, id, new: NewBankAccount, expected_version) -> Result<(BankAccount, BankAccount), DbError>` : transaction-bound, SELECT FOR UPDATE + UPDATE + retour `(updated, before)`. Vérifie optimistic lock. Vérifie primary collision (si new.is_primary=true ET un autre compte primary existe → la transaction délègue à `transition_primary` helper qui flip l'ancien à false).
 - `archive_for_company(tx, company_id, id, expected_version) -> Result<BankAccount, DbError>` : SELECT FOR UPDATE + UPDATE archived=TRUE + retour entity. Vérifie optimistic lock.
 - `count_transactions_for_bank_account(pool, bank_account_id, company_id) -> i64` : helper pour guard 412.
@@ -296,7 +303,7 @@ Et ligne 380-395 :
 Nouveaux variants `AppError` :
 - `BankAccountPrimaryAlreadyExists` → 409 Conflict, code `BANK_ACCOUNT_PRIMARY_ALREADY_EXISTS`.
 - `BankAccountHasTransactions { transaction_count: i64 }` → 412 Precondition Failed, code `BANK_ACCOUNT_HAS_TRANSACTIONS`, body inclut `details.transactionCount`.
-- `BankAccountCannotArchivePrimary` → 412 Precondition Failed, code `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`, message « Le compte principal ne peut pas être archivé tant qu'il est l'unique compte. Définissez un autre compte comme principal d'abord. »
+- `BankAccountCannotArchivePrimary` → 412 Precondition Failed, code `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`, message « Le compte principal ne peut pas être archivé tant qu'un autre compte non-archivé existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci. »
 
 i18n keys correspondantes dans 4 locales.
 
@@ -325,17 +332,19 @@ Structure actuelle (lignes 43-71) — voir extrait dans la section « Frontend �
 - Retirer le bouton « Configurer » (lignes 99-101).
 - Étendre l'affichage pour chaque compte : nom banque + IBAN raccourci (slice 4 derniers chars) + solde + date dernière transaction.
 - Ajouter une ligne de pied « Total liquidités » sommant tous les soldes.
-- `bankAccounts` est probablement chargé via `fetchBankAccounts` → adapter pour récupérer le champ `currentBalance` étendu.
+- **Ground-truth FINDING-5 Pass 1** : `bankAccounts` est actuellement chargé via `fetchCompanyCurrent()` (settings API, retourne `BankAccountJson` sans `currentBalance`). T9 doit **remplacer** par `listBankAccounts()` (depuis `bank-accounts.api.ts` — nom réel, pas `fetchBankAccounts`) qui retournera `BankAccountSummary` étendu avec `currentBalance`. Adapter les types côté composant (remplacer `BankAccountJson` par `BankAccountSummary`).
 
 ### Frontend — `frontend/src/lib/features/bank-accounts/`
 
-Fichiers existants Story 8-5a-zero :
-- `bank-accounts.api.ts` : `fetchBankAccounts()`, `updateBankAccountJournalLink(id, payload)`.
-- `bank-accounts.types.ts` : type `BankAccountSummary` + `AccountResponse`.
+Fichiers existants Story 8-5a-zero (**ground-truth FINDING-8 Pass 1** : pas de `bank-accounts.types.ts` séparé — les types `BankAccountSummary` + `AccountResponse` sont définis inline dans `bank-accounts.api.ts`) :
+- `bank-accounts.api.ts` : `listBankAccounts()` (nom réel — **pas** `fetchBankAccounts`), `updateBankAccountJournalLink(id, payload)`, types `BankAccountSummary` + `AccountResponse` inline.
+- `BankAccountList.svelte`, `BankAccountJournalLinkForm.svelte`.
 
 **Ajouts v014-1** :
-- `bank-accounts.api.ts` étendu : `createBankAccount(payload)`, `updateBankAccount(id, payload)`, `archiveBankAccount(id, expectedVersion)`.
-- `bank-accounts.types.ts` étendu : `NewBankAccountPayload`, `UpdateBankAccountPayload` (camelCase pour serde matching).
+- `bank-accounts.api.ts` étendu (mêmes conventions : types inline dans le même fichier) :
+  - Fonctions : `createBankAccount(payload)`, `updateBankAccount(id, payload)`, `archiveBankAccount(id, expectedVersion)`.
+  - Types inline : `NewBankAccountPayload`, `UpdateBankAccountPayload` (camelCase pour serde matching), extension `BankAccountSummary` avec `currentBalance: number | null` ou `string | null` selon décision de précision Decimal (cf. FINDING-13).
+- **Ne pas créer** de fichier `bank-accounts.types.ts` séparé (n'existe pas et n'est pas le pattern du module).
 - Composants Svelte nouveaux dans `frontend/src/lib/features/bank-accounts/` : `CreateBankAccountModal.svelte`, `EditBankAccountModal.svelte`, `ArchiveBankAccountConfirmDialog.svelte`.
 
 ## Acceptance Criteria
@@ -349,9 +358,9 @@ Fichiers existants Story 8-5a-zero :
 - [ ] **AC #5** `PUT /api/v1/bank-accounts/{id}` route montée. RBAC Comptable+. Body avec tous les champs métier + `version` optimistic lock.
 - [ ] **AC #6** `PUT /api/v1/bank-accounts/{id}` édition complète tous champs. Transition primary atomique si `isPrimary` change. Optimistic lock 409 si version stale. Audit log `bank_account.updated` avec `details_json.trigger = "full_update"` + before/after snapshot.
 - [ ] **AC #7** `DELETE /api/v1/bank-accounts/{id}` route montée. RBAC Comptable+. Soft-delete via `archived=TRUE`.
-- [ ] **AC #8** `DELETE` refuse 412 `BANK_ACCOUNT_HAS_TRANSACTIONS` si `bank_transactions` non-archivées existent sur ce compte. Body inclut `details.transactionCount`.
+- [ ] **AC #8** `DELETE` refuse 412 `BANK_ACCOUNT_HAS_TRANSACTIONS` si des `bank_transactions` existent sur ce compte (toutes statuts confondus — `pending` ET `reconciled`). Condition SQL : `SELECT COUNT(*) FROM bank_transactions WHERE bank_account_id = ? AND company_id = ?`. Note : `bank_transactions` n'a pas de colonne `archived` — le terme « non-archivées » dans le Scope §Backend était impropre. Refus inconditionnel dès qu'au moins une transaction existe (auditabilité CO Art. 958f — l'archivage d'un compte avec historique reconcilé serait problématique pour les rapports). Body inclut `details.transactionCount`.
 - [ ] **AC #9** `DELETE` refuse 412 `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` si le compte est primary ET au moins 1 autre compte non-archivé existe.
-- [ ] **AC #10** `DELETE` autorise l'archivage du primary unique (cas dégénéré — l'utilisateur sait ce qu'il fait). Audit log `bank_account.deleted`.
+- [ ] **AC #10** `DELETE` autorise l'archivage du primary unique (cas dégénéré — l'utilisateur sait ce qu'il fait). Audit log `bank_account.archived`.
 - [ ] **AC #11** `PATCH /api/v1/bank-accounts/{id}` existant **inchangé** (scope strict `journal_account_id`). Le PUT n'écrase pas le PATCH.
 - [ ] **AC #12** Repository `bank_accounts::list_by_company` étendu avec paramètre `include_archived: bool` (défaut `false`). Le handler `GET /api/v1/bank-accounts` accepte query param `?includeArchived=true` (défaut false).
 
@@ -390,14 +399,16 @@ Fichiers existants Story 8-5a-zero :
 
 ### Tests E2E (AC #31-33)
 
-- [ ] **AC #31** Tests Playwright existants qui cliquent sur la sidebar adaptés : ouvrir programmatiquement le `<details>` `Administration` via `page.locator('details summary:has-text("Administration")').click()` avant de cliquer sur un item Administration.
+- [ ] **AC #31** Tests Playwright existants qui cliquent sur la sidebar adaptés : ouvrir programmatiquement le `<details>` `Administration` via `page.locator('details summary:has-text("Administration")').click()` avant de cliquer sur un item Administration. **Cas spécifiques à adapter** :
+  - `frontend/tests/e2e/users.spec.ts` (test `admin voit le lien Utilisateurs dans le sidebar` ligne 41) : ajouter un clic sur `details summary:has-text("Administration")` avant l'assertion `toBeVisible()` sur `nav-link-users` — un enfant d'un `<details>` fermé est dans le DOM mais **pas visible** (hidden via UA stylesheet) et fera échouer `toBeVisible()` (FINDING-14 Pass 1).
+  - `frontend/tests/e2e/homepage-settings.spec.ts` (test « affiche 3 widgets sur la page d'accueil » lignes 33-38) : le widget `homepage-card-bank-accounts` est conditionnel (`{#if bankAccounts.length > 0}`) après AC#29. Le seed `with-company` (`seed_accounting_company`) ne crée aucun `bank_account`. Options : **(a)** étendre le seed pour créer un bank_account (recommandé pour préserver la couverture du test), **(b)** mettre à jour le test pour vérifier uniquement les widgets inconditionnels + asserter que `homepage-card-bank-accounts` est absent quand `bankAccounts.length === 0`. Décision dev-story selon impact sur autres tests.
 - [ ] **AC #32** Nouveau `frontend/tests/e2e/bank-accounts-crud.spec.ts` : 7 tests minimum (création happy path, IBAN invalide, QR-IBAN invalide, édition, archivage sans transactions, archivage avec transactions blocage 412, toggle archivés).
 - [ ] **AC #33** Nouveau `frontend/tests/e2e/sidebar-navigation.spec.ts` : navigation vers les 5 entrées Administration (Plan comptable, Exercices, Comptes bancaires, Profils bancaires, Règles d'affectation) via clic sidebar. Test persistence localStorage : toggle expand Administration → reload page → état préservé.
 
 ### Documentation (AC #34-35)
 
-- [ ] **AC #34** `docs/user-guide/fr/getting-started.md` : nouvelle section §3 bis « Lier ses comptes bancaires au plan comptable » expliquant le rationale + procédure step-by-step + cas multi-comptes via sous-comptes auxiliaires.
-- [ ] **AC #35** `CHANGELOG.md` : section `## [0.1.4] — Non publié` avec entrées Ajouts (CRUD bank_accounts + sidebar UX) + Modifié (renommage Payer + widget homepage refactor + structure sidebar).
+- [ ] **AC #34** **CRÉER** `docs/user-guide/fr/getting-started.md` (nouveau fichier — **le répertoire `docs/user-guide/fr/` n'existe pas encore et doit être créé aussi**). Structure minimale : §1 vue d'ensemble, §2 connexion, §3 exercice comptable, **§3 bis** « Lier ses comptes bancaires au plan comptable » expliquant le rationale + procédure step-by-step + cas multi-comptes via sous-comptes auxiliaires (cf. Scope §Documentation pour le contenu détaillé de §3 bis).
+- [ ] **AC #35** `CHANGELOG.md` : section `## [0.1.4] — Non publié` avec entrées Ajouts (CRUD bank_accounts + sidebar UX) + Modifié (renommage Payer + widget homepage refactor + structure sidebar). **`README.md`** : ajouter ligne `v0.1.4 (hotfix) | CRUD bank_accounts post-onboarding + sidebar collapsible + restructuration UX | 🚧 En cours` (puis `✅ Done` au release) dans le tableau « Feuille de route » (section §Feuille de route, après la ligne v0.1.3) — cohérent CLAUDE.md §« Synchroniser le planning du README à chaque commit ».
 
 ### Quality gate (AC #36)
 
@@ -429,12 +440,12 @@ Fichiers existants Story 8-5a-zero :
   - [ ] Handler `archive_bank_account()`.
   - [ ] Variants `AppError::BankAccountHasTransactions{ transaction_count }` + `AppError::BankAccountCannotArchivePrimary` + i18n keys 4 locales.
   - [ ] Mount route.
-  - [ ] Audit log `bank_account.deleted`.
+  - [ ] Audit log `bank_account.archived`.
   - [ ] Tests intégration : happy path soft-delete, refus 412 transactions, refus 412 primary, archivage primary unique OK.
 - [ ] **T5 — Solde calculé** (AC #13, #14, #15)
   - [ ] Repository : nouvelle fonction `list_by_company_with_balances(pool, company_id, include_archived) -> Vec<BankAccountWithBalance>` avec LEFT JOIN sur `journal_entry_lines`.
   - [ ] Handler `list_bank_accounts()` retourne le payload étendu.
-  - [ ] Frontend type `BankAccountResponse` étendu `currentBalance: Option<Decimal>`.
+  - [ ] Frontend : interface `BankAccountSummary` dans `bank-accounts.api.ts` (nom réel — **pas** `BankAccountResponse`) étendue avec `currentBalance: number | null` (Decimal sérialisé en string par serde, parsé en number côté TS — ou `string | null` si la précision CHF 4 décimales risque de perdre de la précision via Number). Adapter `listBankAccounts()` pour retourner le nouveau payload.
   - [ ] Tests : compte sans journal_account_id → null, avec écritures → solde correct.
 - [ ] **T6 — Sidebar collapsible + restructuration** (AC #16-21)
   - [ ] Refactor `(app)/+layout.svelte` `navGroups`.
@@ -545,6 +556,33 @@ _(à remplir au dev-story)_
 _(à remplir au dev-story)_
 
 ## Change Log
+
+### Pass 1 Sonnet 4.6 spec validate (2026-05-31)
+
+**Modèle** : Sonnet 4.6 (general-purpose sub-agent, fenêtre contexte fraîche).
+**Total findings** : 14 — 1 CRITICAL + 6 HIGH + 3 MEDIUM + 4 LOW.
+**Verdict** : `CONTINUE_TO_PASS_2` (≥1 finding > LOW).
+
+**Patches appliqués** (14/14) :
+
+- **FINDING-1 CRITICAL** — toutes les requêtes SELECT existantes de `crates/kesh-db/src/repositories/bank_accounts.rs` (FIND_BY_ID_SQL + 6 autres) doivent inclure la colonne `archived` ; sinon `sqlx::FromRow` crashera runtime avec `ColumnNotFound("archived")`. Field `pub archived: bool` à ajouter à l'entité `BankAccount`.
+- **FINDING-2 HIGH** — message variant `BankAccountCannotArchivePrimary` inversé sémantiquement (« tant qu'il est l'unique compte » → « tant qu'un autre compte non-archivé existe »).
+- **FINDING-3 HIGH** — code error Scope ligne 29 `BANK_ACCOUNT_IS_PRIMARY` → `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` (alignement avec AC#9 + variants section).
+- **FINDING-4 HIGH** — AC#8 condition SQL clarifiée : `bank_transactions` n'a pas de colonne `archived`, count toutes statuts (`pending` + `reconciled`). Terme « non-archivées » corrigé dans Scope §3 aussi.
+- **FINDING-5 HIGH** — `fetchBankAccounts()` n'existe pas → `listBankAccounts()` (nom réel). Homepage charge actuellement via `fetchCompanyCurrent()` (settings API) à remplacer par `listBankAccounts()` dans T9.
+- **FINDING-6 HIGH** — test `homepage-settings.spec.ts` cassera après AC#29 (widget conditionnel `{#if bankAccounts.length > 0}` + seed `with-company` ne crée pas de bank_account). AC#31 étendu avec 2 options : étendre seed OU adapter test pour absence du widget.
+- **FINDING-7 HIGH** — navGroups Administration utilisent `i18nKey:` + `fallback:` au lieu de `label:` hardcodé pour les 5 entrées listées dans AC#21 (cohérence pattern Quotidien). Admin-only items conservés en `label:` (i18n reportée v0.2 hors scope).
+- **FINDING-8 MEDIUM** — `bank-accounts.types.ts` n'existe pas → types inline dans `bank-accounts.api.ts` (pattern actuel du module). Ne pas créer le fichier.
+- **FINDING-9 MEDIUM** — AC#34 explicite que `docs/user-guide/fr/getting-started.md` ET son répertoire parent doivent être **créés** (n'existent pas encore).
+- **FINDING-10 MEDIUM** — audit log `bank_account.deleted` → `bank_account.archived` (5 occurrences). Terme précis pour soft-delete + cohérent CO Art. 958f auditabilité.
+- **FINDING-11 MEDIUM** — AC#35 étendu : `README.md` Feuille de route doit recevoir ligne v0.1.4 (CLAUDE.md §Synchroniser planning README).
+- **FINDING-12 LOW** — items Mensuel sans `i18nKey:` documentés explicitement comme choix conscient (hors scope hotfix).
+- **FINDING-13 LOW** — T5 type frontend `BankAccountResponse` → `BankAccountSummary` (nom réel) avec note précision Decimal/Number.
+- **FINDING-14 LOW** — couvert par FINDING-6 (AC#31 mentionne explicitement `users.spec.ts` cas `nav-link-users` + `toBeVisible()` qui exige groupe Administration ouvert).
+
+**Ground-truth vérifications** (par sub-agent Pass 1) : 7 fichiers lus pour confirmer les findings (`bank_accounts.rs` route+repo, `errors.rs`, `bank-accounts.api.ts`, homepage `+page.svelte`, `test_fixtures.rs`, migration `bank_imports.sql`, `homepage-settings.spec.ts`).
+
+**Prochaine étape** : `bmad-create-story validate` Pass 2 Haiku 4.5 (fenêtre contexte fraîche, cycle CLAUDE.md Review Iteration Rule — appliquer discipline grep ground-truth obligatoire pour tout finding CRITICAL/HIGH affirmant absence d'un code attendu ou présence d'un anti-pattern non-corrigé).
 
 ### Create-story (2026-05-31)
 
