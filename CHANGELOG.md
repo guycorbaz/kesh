@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.1.2] — Non publié
+## [0.1.2] — 2026-05-31
 
 Évolutions de l'expérience d'installation pour s'aligner sur les standards des applications self-hosted modernes (Jellyfin, Bitwarden, Vaultwarden) et URL HTTP standard.
 
