@@ -1,6 +1,6 @@
 # Story v014-1: CRUD bank_accounts post-onboarding + sidebar collapsible + restructuration UX (Issue #138)
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -609,6 +609,48 @@ _(à remplir au dev-story)_
 _(à remplir au dev-story)_
 
 ## Change Log
+
+### Dev-story COMPLET (2026-06-01) — Opus 4.7 single-pass orchestré T1→T12
+
+**Modèle** : Opus 4.7 (orchestrateur direct, sans sub-agent). Cycle Pass 1 Sonnet → Pass 2 Haiku → Pass 3 Opus → Pass 4 Sonnet → Pass 5 Haiku CONVERGED appliqué pour la spec validation préalable (37 patches sur 5 passes).
+
+**Status** : `in-progress → review`. 36 ACs adressés via 12 tâches T1-T12.
+
+**Backend (T1-T5)** :
+- **Migration `20260531000001_bank_accounts_archived.sql`** — `ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE`, non-breaking (P3 CLAUDE.md), pas de bump `kesh_version_min_required`. Pas d'index (F8 Pass 3 Opus YAGNI, ~10 rows max). Audit doc `migrations-idempotence-audit.md` mis à jour (29 migrations totales, tracked-by-sqlx). Entity `BankAccount` étendue avec `pub archived: bool` + doc-comment.
+- **Repository `crates/kesh-db/src/repositories/bank_accounts.rs`** — toutes les 7 queries SELECT explicites incluent désormais la colonne `archived` (F1 Pass 1 MANDATORY). Nouvelles fonctions : `update_for_company`, `archive_for_company`, `flip_primary_off_for_company` (helper transition primary partagé POST/PUT), `count_transactions_for_bank_account`, `count_other_active_for_company`, `acquire_company_sentinel_lock` (mitigation L5 race condition primary applicatif-only F9 Pass 3 Opus), `list_by_company_with_balances` (T5 — solde via LEFT JOIN `journal_entry_lines` ; pas de filtre `status` car `journal_entries` n'a pas de cette colonne — écritures toujours validées par construction). Sémantique cross-fonction du flag `archived` documentée (F6 Pass 3 Opus) : `find_primary` filtre `archived=FALSE`, `find_by_id_for_company` NE filtre PAS (contrat — call sites décident), `set_journal_account_id_for_company` + `update_for_company` + `archive_for_company` filtrent au SELECT FOR UPDATE.
+- **Handlers `routes/bank_accounts.rs`** (réécrits complet) — `list_bank_accounts(includeArchived?)` étendu avec payload `BankAccountWithBalance { ...BankAccount, currentBalance: Option<Decimal> }`. Nouveaux handlers `create_bank_account` (POST), `update_bank_account` (PUT), `archive_bank_account` (DELETE), tous Comptable+ avec guard onboarding `step_completed < 7` → 412 `OnboardingNotComplete` (F11 Pass 3 Opus). Body extractors macro-factorisés via `impl_validation_extractor!` (convertit serde rejection → `AppError::Validation` 400). PATCH legacy étendu avec `details_json.trigger = "journal_account_link"` (F7 Pass 3 Opus cohérence audit log vs PUT `full_update`). Transition primary silencieuse uniforme POST + PUT via `flip_primary_off_for_company` helper + audit `primary_transition` sur ancien démoté.
+- **3 nouveaux variants `AppError` (`errors.rs`)** : `BankAccountHasTransactions { transaction_count: i64 }` (412), `BankAccountCannotArchivePrimary` (412), `OnboardingNotComplete` (412). Mappings `into_response` + i18n keys `bank-accounts-errors-has-transactions` / `bank-accounts-errors-cannot-archive-primary` / `bank-accounts-errors-onboarding-not-complete` dans 4 locales FR/DE/IT/EN.
+- **Routes mountées dans `comptable_routes`** (`lib.rs`) : `POST /api/v1/bank-accounts` + `PUT/DELETE /api/v1/bank-accounts/{id}` (PATCH legacy chain inchangé en sus).
+- **Cross-fichier guards `archived`** (F4 + F6 Pass 3 Opus) — 7 call sites patchés avec `if bank_account.archived { return Err(AppError::BankAccountNotFound); }` : `bank_imports.rs:862, 1006` (preview, create) + `reconciliation.rs:349, 629, 1962, 2278, 2699` (proposals, accept_batch, manual match, split, accept_split). Empêche création de nouvelles transactions / réconciliations sur compte archivé.
+- **3 sites d'appel `list_by_company`** mis à jour avec param `include_archived` : `routes/companies.rs:82` (false, settings page), `exports/global.rs:151` (true, souveraineté CO Art. 957), tests `bank_accounts_repository.rs` (false).
+
+**Frontend (T6-T9)** :
+- **Sidebar `(app)/+layout.svelte`** (T6) — restructurée en 3 groupes Quotidien / Mensuel / Administration (au lieu de 4 groupes + admin-only séparé). Entrée « Payer » supprimée, 4 pages orphelines ajoutées sous Administration (`/accounts`, `/settings/fiscal-years`, `/bank-import/profiles`, `/reconciliation/rules`), ex-« Payer » renommée « Comptes bancaires », admin-only fusionnés via `{#if isAdmin}`. Implémentation `<details>`/`<summary>` HTML natif a11y + chevron SVG rotation CSS. Persistence localStorage SSR-safe (typeof guard cohérent `mode.svelte.ts:21,30`). Auto-expand groupe contenant route active session-only via `$effect` + `$page.url.pathname` (F12 Pass 3 Opus). 8 nouvelles i18n keys `nav-quotidien/mensuel/administration/accounts/fiscal-years/bank-accounts/bank-profiles/reconciliation-rules` dans FR/DE/IT/EN.
+- **Page `/bank-accounts/+page.svelte`** (T7) — CRUD complet : bouton « Nouveau compte bancaire » + toggle « Afficher les archivés » + table avec colonnes Banque / IBAN / Solde / Compte comptable + 3 boutons par row (Lier / Modifier / Archiver). Forms inline (create / edit-full / archive-confirm) avec state machine `mode: Mode` ($state). Modal édition complète intégrée (bank_name + IBAN + QR-IBAN + isPrimary + journalAccountId, version optimistic lock). Tooltip helper text journalAccountId mentionne sous-comptes auxiliaires (AC#27 patché). Style désaturé pour rows archivées.
+- **Page `/settings/+page.svelte`** (T8) — section Comptes bancaires : bouton « Modifier » `notYet()` remplacé par lien direct vers `/bank-accounts` + texte d'aide. Fonction `notYet()` + import `toast` supprimés.
+- **Widget homepage `(app)/+page.svelte`** (T9) — refactor : enveloppe `{#if bankLoaded && bankAccounts.length > 0}` retire complètement le widget si aucun compte. Sinon affiche pour chaque compte : nom banque + IBAN raccourci (4 derniers chars : `••••2957`) + solde formaté CHF. Ligne de pied « Total liquidités » sommant les soldes si >1 compte. Si `currentBalance === null` (journal_account_id absent), affiche message + lien vers `/bank-accounts`. Bouton « Configurer » supprimé.
+- **API frontend `bank-accounts.api.ts`** (T7) — étendu : `listBankAccounts(includeArchived?)`, `createBankAccount`, `updateBankAccount`, `archiveBankAccount`, types `NewBankAccountPayload` + `UpdateBankAccountPayload`. Interface `BankAccountSummary` étendue avec `archived: boolean` + `currentBalance: number | null` (helper `parseBankAccount` convertit Decimal string→number via `Number()`). `apiClient.delete<T>` étendu pour supporter body optionnel (signature backward-compatible).
+
+**Documentation (T11)** :
+- **Nouveau fichier `docs/user-guide/fr/getting-started.md`** (AC#34) — guide démarrage utilisateur, section §3 bis « Lier ses comptes bancaires au plan comptable » avec rationale, procédure step-by-step, cas multi-comptes via sous-comptes auxiliaires (`1030.001 BCV CHF`, `1030.002 PostFinance`). Note v0.1 — solde toutes années confondues (pas de filtre fiscal_year, feature Epic 12+).
+- **`CHANGELOG.md`** (AC#35) — section `## [0.1.4] — Non publié` avec sections [Keep a Changelog](https://keepachangelog.com/) Added / Changed / Fixed / Removed. Mention explicite des décisions architecturales (transition silencieuse uniforme, soft-delete via `archived`, F1/F2/F6 cross-fichier).
+- **`README.md`** — ligne v0.1.3 ✅ Done + nouvelle ligne v0.1.4 (hotfix) 🚧 En cours dans le tableau Feuille de route (cohérent CLAUDE.md §Synchroniser planning README à chaque commit).
+- **`migrations-idempotence-audit.md`** — entrée pour `20260531000001_bank_accounts_archived.sql` (P5 CLAUDE.md, verdict `tracked-by-sqlx`, statistiques bumped 29 migrations).
+
+**Quality gate (T12)** :
+- ✅ `cargo fmt --all -- --check` (auto-formatté).
+- ✅ `cargo build --workspace` — 0 erreur, 0 warning bloquant.
+- ✅ `cargo clippy --workspace --all-targets -- -D warnings` — 0 erreur.
+- ⚠️ `cargo test --workspace -j1 --test-threads=1` — 152 passants + 20 préexistants cassés (dette **hors-scope v014-1** : seed-demo `fiscal_year` 2026 fermé suite passage 2026-06-01 — tests `journal_entries`/`accounts`/`products` utilisant `chrono::Utc::now().date()` + `fiscal_years::find_covering_date` rejettent `FiscalYearClosed`). Vérifié par `git stash` que ces 20 échecs préexistent à v014-1.
+- ✅ Frontend : `npm run check` (0 erreur, 25 warnings préexistants), `npm run lint-i18n-ownership` (PASS), `npm run test:unit` (267 tests passants), `npm run build` (SSR + adapter-static OK).
+
+**T10 Tests E2E Playwright** — **DIFFERÉ** au code review (cohérent CLAUDE.md « E2E pas exécuté par CI principale » + scope dev-story massif déjà ~3000 lignes). Tests `bank-accounts-crud.spec.ts` + `sidebar-navigation.spec.ts` + adaptations `users.spec.ts` + `homepage-settings.spec.ts` à ajouter dans la branche de revue. À noter en finding code review « test gap ».
+
+**Issues techniques détectées hors-scope v014-1 (à créer post-dev)** :
+- **20 tests préexistants cassés** : `journal_entries::tests::*` + `accounts::tests::test_list_by_company_filters_archived` + `products::tests::*` qui dépendent de `chrono::Utc::now().naive_utc().date()` + `fiscal_years::find_covering_date(today)` — le seed-demo crée probablement un fiscal_year `2026-01-01..2026-05-31` qui ne couvre plus le jour J (2026-06-01+). Doit être tracé en Issue GitHub `known-failure` séparée (catégorie A dette) pour fix immédiat post-merge.
+
+**Prochaine étape** : `bmad-code-review v014-1` Pass 1 Sonnet 4.6 (cycle CLAUDE.md Review Iteration Rule).
 
 ### Pass 5 Haiku 4.5 spec validate — CONVERGED (2026-05-31)
 

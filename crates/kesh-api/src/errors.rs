@@ -409,9 +409,7 @@ pub enum AppError {
     /// compte non-archivé existe → `412 Precondition Failed`, code
     /// `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`. AC#9 — l'utilisateur doit
     /// d'abord transférer le primary à un autre compte.
-    #[error(
-        "Compte principal — définir un autre compte comme principal avant d'archiver celui-ci"
-    )]
+    #[error("Compte principal — définir un autre compte comme principal avant d'archiver celui-ci")]
     BankAccountCannotArchivePrimary,
 
     /// Tentative d'utiliser le CRUD `/api/v1/bank-accounts` pendant

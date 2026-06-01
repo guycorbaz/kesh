@@ -341,8 +341,14 @@ pub async fn create_bank_account(
 ) -> Result<(StatusCode, Json<BankAccount>), AppError> {
     assert_onboarding_complete(&state.pool).await?;
 
-    let (bank_name, iban, qr_iban) = validate_bank_input(&body.bank_name, &body.iban, body.qr_iban.as_deref())?;
-    validate_journal_account_id(&state.pool, current_user.company_id, body.journal_account_id).await?;
+    let (bank_name, iban, qr_iban) =
+        validate_bank_input(&body.bank_name, &body.iban, body.qr_iban.as_deref())?;
+    validate_journal_account_id(
+        &state.pool,
+        current_user.company_id,
+        body.journal_account_id,
+    )
+    .await?;
 
     let mut tx = state
         .pool
@@ -443,8 +449,14 @@ pub async fn update_bank_account(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    let (bank_name, iban, qr_iban) = validate_bank_input(&body.bank_name, &body.iban, body.qr_iban.as_deref())?;
-    validate_journal_account_id(&state.pool, current_user.company_id, body.journal_account_id).await?;
+    let (bank_name, iban, qr_iban) =
+        validate_bank_input(&body.bank_name, &body.iban, body.qr_iban.as_deref())?;
+    validate_journal_account_id(
+        &state.pool,
+        current_user.company_id,
+        body.journal_account_id,
+    )
+    .await?;
 
     let mut tx = state
         .pool
@@ -572,12 +584,9 @@ pub async fn archive_bank_account(
 
     // Guard primary + autres comptes actifs (AC#9 / AC#10).
     if existing.is_primary {
-        let others = bank_accounts::count_other_active_for_company(
-            &state.pool,
-            current_user.company_id,
-            id,
-        )
-        .await?;
+        let others =
+            bank_accounts::count_other_active_for_company(&state.pool, current_user.company_id, id)
+                .await?;
         if others > 0 {
             return Err(AppError::BankAccountCannotArchivePrimary);
         }
@@ -645,7 +654,12 @@ pub async fn patch_bank_account_journal_link(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    validate_journal_account_id(&state.pool, current_user.company_id, body.journal_account_id).await?;
+    validate_journal_account_id(
+        &state.pool,
+        current_user.company_id,
+        body.journal_account_id,
+    )
+    .await?;
 
     let mut tx = state
         .pool

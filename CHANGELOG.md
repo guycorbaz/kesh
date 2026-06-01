@@ -8,6 +8,36 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.1.4] — Non publié
+
+Hotfix UX consolidé suite à dogfooding live sur prod NAS Synology v0.1.3 : CRUD complet des comptes bancaires post-onboarding (le seul endpoint existant `POST /api/v1/onboarding/bank-account` refusait les appels post-onboarding), restructuration de la sidebar avec groupes collapsibles, ajout des 4 pages orphelines précédemment accessibles uniquement via URL directe, widget homepage avec soldes calculés.
+
+### Added
+
+- **CRUD `bank_accounts` post-onboarding** (`POST` / `PUT` / `DELETE` `/api/v1/bank-accounts`) — création, édition complète et soft-delete (archivage) accessibles depuis Administration → Comptes bancaires (Comptable+). Transition primary silencieuse atomique POST/PUT (l'ancien primary est démoté automatiquement avec audit `details_json.trigger = "primary_transition"`). Audit log à 3 actions (`bank_account.created`, `bank_account.updated`, `bank_account.archived`) cohérent CO Art. 958f.
+- **Soft-delete via `archived` BOOLEAN** sur `bank_accounts` (migration `20260531000001_bank_accounts_archived.sql`, non-breaking) — préserve audit + historique de transactions. Toggle « Afficher les archivés » côté UI. Refus 412 sur archivage si transactions existent (`BANK_ACCOUNT_HAS_TRANSACTIONS`) ou si compte principal avec d'autres comptes actifs (`BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`). Archivage du primary unique autorisé.
+- **Solde calculé serveur-side** sur `GET /api/v1/bank-accounts` (champ `currentBalance: Decimal | null`) — agrégation `SUM(debit) - SUM(credit)` sur `journal_entry_lines` du `journal_account_id` lié. Affiché sur la page d'accueil (par compte + total liquidités) et sur la page Comptes bancaires. `null` si le compte n'a pas de `journal_account_id` configuré (lien plan comptable manquant).
+- **Sidebar collapsible** via `<details>`/`<summary>` HTML natif (a11y intégrée) avec persistence de l'état via `localStorage` (SSR-safe). 3 groupes structurés : Quotidien (déplié par défaut), Mensuel (déplié), Administration (replié). Auto-expand du groupe contenant la route active (UX + screen reader).
+- **5 pages orphelines ajoutées à la sidebar** (Administration) : Plan comptable, Exercices comptables, Comptes bancaires, Profils bancaires, Règles d'affectation. Précédemment accessibles uniquement via URL directe.
+- **Guide de démarrage utilisateur** (`docs/user-guide/fr/getting-started.md`) avec section dédiée à la liaison `bank_account` ↔ plan comptable et au cas multi-comptes (sous-comptes auxiliaires 1030.001/1030.002).
+
+### Changed
+
+- **Widget « Comptes bancaires » homepage** : affiche les soldes calculés au lieu d'un CTA configuration. Retiré complètement du DOM si aucun compte bancaire n'existe (`{#if bankAccounts.length > 0}`). Total liquidités affiché en pied de carte si plusieurs comptes.
+- **Sidebar restructurée** : entrée « Payer » (qui pointait vers `/bank-accounts` — nom trompeur car c'était la configuration, pas un flow paiement) renommée en « Comptes bancaires » et déplacée sous Administration. Items « Export global » / « Paramètres » / admin-only (« Utilisateurs », « Facturation ») fusionnés dans Administration plutôt que dispersés en groupes séparés.
+- **Page `/settings` — section Comptes bancaires** : remplacement du bouton « Modifier » (qui affichait un toast `notYet()`) par un lien direct vers `/bank-accounts`. Texte d'aide explicite.
+
+### Fixed
+
+- **Cohérence cross-fichier du flag `archived`** (FINDING-1/2/6 Pass 3 Opus spec-validate) : la fonction repo `bank_accounts::find_primary` (utilisée par `routes/invoice_pdf.rs:83` pour le QR Bill) filtre désormais `archived = FALSE` — sans ce filtre, un primary archivé continuerait à servir d'IBAN pour les PDF de factures alors qu'il n'apparaît plus côté UI (état fantôme). Idem pour `set_journal_account_id_for_company`, `update_for_company`, `archive_for_company` — un PATCH/PUT/DELETE sur un compte archivé retourne désormais 404 anti-énumération (KF-002). 7 call sites cross-modules patchés (`bank_imports.rs:862, 1006` + `reconciliation.rs:349, 629, 1962, 2278, 2699`) — empêche la création de nouvelles `bank_transactions` ou réconciliations manuelles sur un compte archivé.
+- **PATCH `/bank-accounts/{id}` (legacy 8-5a-zero) — cohérence audit log** : l'event `bank_account.updated` émis par le PATCH inclut désormais `details_json.trigger = "journal_account_link"` (cohérent avec le PUT qui émet `trigger = "full_update"`). Sans ce champ, un script audit qui filtre par trigger raterait toutes les écritures PATCH.
+
+### Removed
+
+- **Fonction `notYet()` dans `/settings`** (plus utilisée après remplacement du bouton « Modifier » par lien direct).
+
+---
+
 ## [0.1.3] — 2026-05-31
 
 Hotfix critique : déblocage des déploiements LAN strict HTTP-only (cookies session inutilisables sans HTTPS dans v0.1.2).

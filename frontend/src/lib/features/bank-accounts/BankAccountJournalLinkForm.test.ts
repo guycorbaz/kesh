@@ -49,6 +49,8 @@ function makeBankAccount(journalAccountId: number | null): BankAccountSummary {
 		isPrimary: true,
 		journalAccountId,
 		version: 3,
+		archived: false,
+		currentBalance: null,
 	};
 }
 

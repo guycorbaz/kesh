@@ -562,7 +562,10 @@ export const apiClient = {
 		});
 	},
 
-	delete(url: string): Promise<void> {
-		return request<void>(url, { method: 'DELETE' });
+	delete<T = void>(url: string, body?: unknown): Promise<T> {
+		return request<T>(url, {
+			method: 'DELETE',
+			body: body !== undefined ? JSON.stringify(body) : undefined,
+		});
 	},
 };

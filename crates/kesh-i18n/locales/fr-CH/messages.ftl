@@ -759,6 +759,26 @@ bank-accounts-errors-invalid-account-type = Type de compte invalide (Actif ou Pa
 bank-accounts-errors-has-transactions = Le compte bancaire contient des transactions — archivage refusé pour préserver l'audit comptable.
 bank-accounts-errors-cannot-archive-primary = Le compte principal ne peut pas être archivé tant qu'un autre compte non-archivé existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci.
 bank-accounts-errors-onboarding-not-complete = L'onboarding doit être terminé (étape 7 complétée) avant de pouvoir gérer les comptes bancaires.
+# Story v014-1 — CRUD UI labels & actions
+bank-accounts-actions-create = Nouveau compte bancaire
+bank-accounts-actions-edit = Modifier
+bank-accounts-actions-archive = Archiver
+bank-accounts-actions-confirm-archive = Archiver
+bank-accounts-actions-show-archived = Afficher les archivés
+bank-accounts-actions-hide-archived = Masquer les archivés
+bank-accounts-actions-submit-create = Créer
+bank-accounts-actions-submit-update = Enregistrer
+bank-accounts-labels-balance = Solde
+bank-accounts-labels-balance-unavailable = Solde non disponible (lier au plan comptable)
+bank-accounts-labels-qr-iban = QR-IBAN (optionnel)
+bank-accounts-labels-is-primary = Compte principal
+bank-accounts-labels-primary-badge = Principal
+bank-accounts-labels-archived-badge = Archivé
+bank-accounts-confirm-archive = Confirmer l'archivage de ce compte bancaire ? Cette action est irréversible v0.1.
+bank-accounts-tooltip-journal-account = Lie ce compte bancaire à un compte du plan comptable (typiquement 1020 Caisse, 1030 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l'affichage du solde sur la page d'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1030.001 BCV CHF), pas au parent 1030.
+bank-accounts-toast-create-success = Compte bancaire créé.
+bank-accounts-toast-update-success = Compte bancaire modifié.
+bank-accounts-toast-archive-success = Compte bancaire archivé.
 bank-accounts-toast-link-success = Compte bancaire lié avec succès au plan comptable.
 bank-accounts-toast-unlink-success = Compte bancaire délié du plan comptable.
 
