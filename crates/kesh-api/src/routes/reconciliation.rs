@@ -345,14 +345,18 @@ pub async fn get_proposals(
         .map(|l| l.min(MAX_PROPOSALS_LIMIT))
         .unwrap_or(DEFAULT_PROPOSALS_LIMIT);
 
-    // Pré-flight HP3-4 — bank_account ownership check.
-    bank_accounts::find_by_id_for_company(
+    // Pré-flight HP3-4 — bank_account ownership check + archived guard
+    // (Story v014-1, FINDING-6 Pass 3 Opus — anti-énumération KF-002).
+    let ba_check = bank_accounts::find_by_id_for_company(
         &state.pool,
         current_user.company_id,
         query.bank_account_id,
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+    if ba_check.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
 
     // Pass 1 : load all pending transactions (1 query).
     // H6 Pass 1 — fetch `limit + 1` pour détecter la présence de plus
@@ -625,14 +629,18 @@ pub async fn post_accept(
         }
     }
 
-    // Step 0bis — bank_account ownership pré-flight (HP3-4).
-    bank_accounts::find_by_id_for_company(
+    // Step 0bis — bank_account ownership pré-flight (HP3-4) + archived guard
+    // (Story v014-1, FINDING-6 Pass 3 Opus — anti-énumération KF-002).
+    let ba_check = bank_accounts::find_by_id_for_company(
         &state.pool,
         current_user.company_id,
         body.bank_account_id,
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+    if ba_check.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
 
     // Step 0ter — bank_transactions ownership pré-flight batch (MP3-3).
     let tx_ids: Vec<i64> = body
@@ -1958,14 +1966,17 @@ pub async fn post_reject(
         }
     }
 
-    // Pré-flight ownership.
-    bank_accounts::find_by_id_for_company(
+    // Pré-flight ownership + archived guard (Story v014-1, FINDING-6 Pass 3 Opus).
+    let ba_check = bank_accounts::find_by_id_for_company(
         &state.pool,
         current_user.company_id,
         body.bank_account_id,
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+    if ba_check.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
 
     let tx_map = reconciliation_repo::find_pending_by_ids(
         &state.pool,
@@ -2271,7 +2282,8 @@ pub async fn post_manual(
         }
     }
 
-    // Step 1 — bank_account ownership pré-flight (KF-002 multi-tenant).
+    // Step 1 — bank_account ownership pré-flight (KF-002 multi-tenant)
+    // + archived guard (Story v014-1, FINDING-6 Pass 3 Opus).
     // F1''' Pass 3 Opus : `AppError::BankAccountNotFound` est unit-struct
     // (pas `{ bank_account_id }`) — code HTTP réel
     // `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` v0.1, dette héritée 8-1b.
@@ -2282,6 +2294,9 @@ pub async fn post_manual(
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+    if bank_account.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
 
     // Step 2 — bank_account.journal_account_id configuré (foundation 8-5a-zero).
     // → 412 BANK_ACCOUNT_NOT_CONFIGURED si NULL.
@@ -2695,7 +2710,8 @@ pub async fn post_split(
         }
     }
 
-    // Step 3 — bank_account ownership pré-flight (KF-002 multi-tenant).
+    // Step 3 — bank_account ownership pré-flight (KF-002 multi-tenant)
+    // + archived guard (Story v014-1, FINDING-6 Pass 3 Opus).
     let bank_account = bank_accounts::find_by_id_for_company(
         &state.pool,
         current_user.company_id,
@@ -2703,6 +2719,9 @@ pub async fn post_split(
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+    if bank_account.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
 
     // Step 4 — bank_account.journal_account_id configuré (foundation 8-5a-zero).
     let bank_ledger_account_id =

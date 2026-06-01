@@ -77,7 +77,7 @@ async fn list_by_company(pool: MySqlPool) {
     .await
     .unwrap();
 
-    let list = bank_accounts::list_by_company(&pool, company_id)
+    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -120,7 +120,7 @@ async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
     assert_eq!(updated.id, created.id); // Same row updated
 
     // Only one account in DB
-    let list = bank_accounts::list_by_company(&pool, company_id)
+    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
         .await
         .unwrap();
     assert_eq!(list.len(), 1);

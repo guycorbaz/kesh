@@ -52,13 +52,22 @@ demo-reset-confirm-body = All demo data will be deleted. Do you want to continue
 demo-reset-confirm-ok = Confirm
 demo-reset-confirm-cancel = Cancel
 
-# Navigation sidebar (Story 6.3)
+# Navigation sidebar (Story 6.3 + v014-1)
 nav-home = Home
 nav-contacts = Contacts
 nav-products = Catalog
 nav-invoices = Invoices
 nav-invoicing-due-dates = Due Dates
 nav-settings = Settings
+# Story v014-1 — restructuration sidebar
+nav-quotidien = Daily
+nav-mensuel = Monthly
+nav-administration = Administration
+nav-accounts = Chart of accounts
+nav-fiscal-years = Fiscal years
+nav-bank-accounts = Bank accounts
+nav-bank-profiles = Bank profiles
+nav-reconciliation-rules = Reconciliation rules
 
 # Onboarding — Path B (Story 2.3)
 onboarding-choose-org-type = Organisation type
@@ -696,6 +705,10 @@ bank-accounts-actions-cancel = Cancel
 bank-accounts-actions-submit = Link
 bank-accounts-errors-account-not-found = Ledger account not found.
 bank-accounts-errors-invalid-account-type = Invalid account type (Asset or Liability required).
+# Story v014-1 — CRUD bank_accounts post-onboarding
+bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit.
+bank-accounts-errors-cannot-archive-primary = The primary account cannot be archived while another non-archived account exists. First set another account as primary, then archive this one.
+bank-accounts-errors-onboarding-not-complete = Onboarding must be completed (step 7) before bank accounts can be managed.
 bank-accounts-toast-link-success = Bank account successfully linked to chart of accounts.
 bank-accounts-toast-unlink-success = Bank account unlinked from chart of accounts.
 

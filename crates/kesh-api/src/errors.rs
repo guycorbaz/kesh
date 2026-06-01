@@ -396,6 +396,31 @@ pub enum AppError {
     #[error("Compte bancaire non configuré (journal_account_id manquant) : id={bank_account_id}")]
     BankAccountNotConfigured { bank_account_id: i64 },
 
+    // ----- Story v014-1 — CRUD bank_accounts post-onboarding -----
+    /// Tentative d'archivage d'un compte bancaire qui a encore des
+    /// `bank_transactions` associées → `412 Precondition Failed`, code
+    /// `BANK_ACCOUNT_HAS_TRANSACTIONS`, body inclut `details.transactionCount`.
+    /// Story v014-1 AC#8 — refus inconditionnel toutes statuts confondus
+    /// (auditabilité CO Art. 958f).
+    #[error("Compte bancaire avec {transaction_count} transaction(s) — archivage refusé")]
+    BankAccountHasTransactions { transaction_count: i64 },
+
+    /// Tentative d'archivage du compte principal alors qu'au moins un autre
+    /// compte non-archivé existe → `412 Precondition Failed`, code
+    /// `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`. AC#9 — l'utilisateur doit
+    /// d'abord transférer le primary à un autre compte.
+    #[error(
+        "Compte principal — définir un autre compte comme principal avant d'archiver celui-ci"
+    )]
+    BankAccountCannotArchivePrimary,
+
+    /// Tentative d'utiliser le CRUD `/api/v1/bank-accounts` pendant
+    /// l'onboarding (step < 7) → `412 Precondition Failed`, code
+    /// `ONBOARDING_NOT_COMPLETE`. Story v014-1 AC#2 — pendant l'onboarding,
+    /// utiliser `POST /api/v1/onboarding/bank-account`.
+    #[error("L'onboarding doit être terminé avant de gérer les comptes bancaires")]
+    OnboardingNotComplete,
+
     /// L'exercice fiscal couvrant `entry_date` est inexistant ou
     /// `Closed` lors du flow `/reconciliation/manual` (8-5a-base) →
     /// `409 RECONCILIATION_FISCAL_YEAR_CLOSED`.
@@ -1169,6 +1194,52 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+            }
+
+            // ----- Story v014-1 — CRUD bank_accounts post-onboarding -----
+            AppError::BankAccountHasTransactions { transaction_count } => {
+                let msg = t(
+                    "bank-accounts-errors-has-transactions",
+                    "Le compte bancaire contient des transactions — \
+                     archivage refusé pour préserver l'audit comptable.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_ACCOUNT_HAS_TRANSACTIONS",
+                        "message": msg,
+                        "details": {
+                            "transactionCount": transaction_count,
+                        },
+                    }
+                });
+                (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+            }
+
+            AppError::BankAccountCannotArchivePrimary => {
+                let msg = t(
+                    "bank-accounts-errors-cannot-archive-primary",
+                    "Le compte principal ne peut pas être archivé tant qu'un \
+                     autre compte non-archivé existe. Définissez d'abord un autre \
+                     compte comme principal, puis archivez celui-ci.",
+                );
+                build_response(
+                    StatusCode::PRECONDITION_FAILED,
+                    "BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY",
+                    &msg,
+                )
+            }
+
+            AppError::OnboardingNotComplete => {
+                let msg = t(
+                    "bank-accounts-errors-onboarding-not-complete",
+                    "L'onboarding doit être terminé (étape 7 complétée) avant de \
+                     pouvoir gérer les comptes bancaires.",
+                );
+                build_response(
+                    StatusCode::PRECONDITION_FAILED,
+                    "ONBOARDING_NOT_COMPLETE",
+                    &msg,
+                )
             }
 
             // ----- Story 8-5a-base — réconciliation manuelle FR45 -----

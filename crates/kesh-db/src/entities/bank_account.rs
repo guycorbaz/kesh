@@ -30,6 +30,10 @@ pub struct BankAccount {
     /// (livré par 8-5a-base, pas par 8-5a-zero).
     pub journal_account_id: Option<i64>,
     pub version: i32,
+    /// Story v014-1 — `true` = soft-deleted, exclu de `list_by_company` par
+    /// défaut + des mutations post-archivage (PATCH/PUT/DELETE/imports/reco).
+    /// v0.1 : pas de UI restoration (L1 limitation v0.1).
+    pub archived: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

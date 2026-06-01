@@ -52,13 +52,22 @@ demo-reset-confirm-body = Tutti i dati dimostrativi verranno eliminati. Vuoi con
 demo-reset-confirm-ok = Conferma
 demo-reset-confirm-cancel = Annulla
 
-# Navigation sidebar (Story 6.3)
+# Navigation sidebar (Story 6.3 + v014-1)
 nav-home = Home
 nav-contacts = Contatti
 nav-products = Catalogo
 nav-invoices = Fatture
 nav-invoicing-due-dates = Scadenze
 nav-settings = Impostazioni
+# Story v014-1 — restructuration sidebar
+nav-quotidien = Quotidiano
+nav-mensuel = Mensile
+nav-administration = Amministrazione
+nav-accounts = Piano dei conti
+nav-fiscal-years = Esercizi contabili
+nav-bank-accounts = Conti bancari
+nav-bank-profiles = Profili bancari
+nav-reconciliation-rules = Regole di assegnazione
 
 # Onboarding — Percorso B (Story 2.3)
 onboarding-choose-org-type = Tipo di organizzazione
@@ -696,6 +705,10 @@ bank-accounts-actions-cancel = Annulla
 bank-accounts-actions-submit = Collega
 bank-accounts-errors-account-not-found = Conto contabile non trovato.
 bank-accounts-errors-invalid-account-type = Tipo di conto non valido (Attivo o Passivo richiesto).
+# Story v014-1 — CRUD bank_accounts post-onboarding
+bank-accounts-errors-has-transactions = Il conto bancario contiene transazioni — archiviazione rifiutata per preservare l'audit contabile.
+bank-accounts-errors-cannot-archive-primary = Il conto principale non può essere archiviato finché esiste un altro conto non archiviato. Definire prima un altro conto come principale, poi archiviare questo.
+bank-accounts-errors-onboarding-not-complete = L'onboarding deve essere completato (passo 7) prima di poter gestire i conti bancari.
 bank-accounts-toast-link-success = Conto bancario collegato con successo al piano dei conti.
 bank-accounts-toast-unlink-success = Conto bancario scollegato dal piano dei conti.
 

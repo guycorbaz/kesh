@@ -52,13 +52,22 @@ demo-reset-confirm-body = Alle Demonstrationsdaten werden gelöscht. Möchten Si
 demo-reset-confirm-ok = Bestätigen
 demo-reset-confirm-cancel = Abbrechen
 
-# Navigation sidebar (Story 6.3)
+# Navigation sidebar (Story 6.3 + v014-1)
 nav-home = Startseite
 nav-contacts = Kontakte
 nav-products = Katalog
 nav-invoices = Rechnungen
 nav-invoicing-due-dates = Fälligkeiten
 nav-settings = Einstellungen
+# Story v014-1 — restructuration sidebar
+nav-quotidien = Täglich
+nav-mensuel = Monatlich
+nav-administration = Administration
+nav-accounts = Kontenrahmen
+nav-fiscal-years = Geschäftsjahre
+nav-bank-accounts = Bankkonten
+nav-bank-profiles = Bankprofile
+nav-reconciliation-rules = Zuordnungsregeln
 
 # Onboarding — Pfad B (Story 2.3)
 onboarding-choose-org-type = Organisationstyp
@@ -696,6 +705,10 @@ bank-accounts-actions-cancel = Abbrechen
 bank-accounts-actions-submit = Verbinden
 bank-accounts-errors-account-not-found = Buchhaltungskonto nicht gefunden.
 bank-accounts-errors-invalid-account-type = Ungültiger Kontotyp (Aktiv- oder Passivkonto erforderlich).
+# Story v014-1 — CRUD bank_accounts post-onboarding
+bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren.
+bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archiviert werden, solange ein anderes nicht-archiviertes Konto besteht. Setzen Sie zuerst ein anderes Konto als Hauptkonto und archivieren Sie dieses dann.
+bank-accounts-errors-onboarding-not-complete = Das Onboarding muss abgeschlossen sein (Schritt 7), bevor Bankkonten verwaltet werden können.
 bank-accounts-toast-link-success = Bankkonto erfolgreich mit dem Kontorahmen verbunden.
 bank-accounts-toast-unlink-success = Bankkonto vom Kontorahmen getrennt.
 
