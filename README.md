@@ -170,7 +170,7 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.1.1 (hotfix) | Logs fichier avec rotation, fix onboarding catch-22 (fresh install) | ✅ Done |
 | v0.1.2 (hotfix) | Port 80 par défaut, onboarding self-service unifié (admin créé via UI au 1er boot, recovery break-glass via `.env`) | ✅ Done |
 | v0.1.3 (hotfix) | Déblocage déploiements LAN HTTP-only (`KESH_COOKIE_SECURE=false` pour LAN privé `*.home.arpa` derrière Traefik sans HTTPS) | ✅ Done |
-| v0.1.4 (hotfix) | CRUD `bank_accounts` post-onboarding + sidebar collapsible + restructuration UX (pages orphelines, widget solde homepage) | 🚧 En cours |
+| v0.1.4 (hotfix) | CRUD `bank_accounts` post-onboarding + sidebar collapsible + restructuration UX (pages orphelines, widget solde homepage) | ✅ Done |
 | v0.2 | E11 TVA Suisse, E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
