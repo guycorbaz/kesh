@@ -58,28 +58,30 @@ async fn apply_migrations_up_to(
 #[sqlx::test(migrations = false)]
 async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Total migrations attendues : 26 historiques + _kesh_version (Story 10-2)
-    // + companies_is_stub (Story v011-2) = 28.
+    // + companies_is_stub (Story v011-2) + bank_accounts_archived (Story v014-1) = 29.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 28,
-        "28 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2)"
+        total, 29,
+        "29 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
-    // migrations sauf les 5 dernières (reconciliation_8_4,
-    // bank_account_journal_link, reconciliation_rules, _kesh_version, et
-    // companies_is_stub ajoutée Story v011-2).
+    // migrations sauf les 6 dernières (reconciliation_8_4,
+    // bank_account_journal_link, reconciliation_rules, _kesh_version,
+    // companies_is_stub ajoutée Story v011-2, et bank_accounts_archived
+    // ajoutée Story v014-1).
     //
-    // Note `total - 5` : expression relative à la longueur totale, mais
-    // l'assertion `total == 28` ci-dessus est INTENTIONNELLEMENT hardcode
+    // Note `total - 6` : expression relative à la longueur totale, mais
+    // l'assertion `total == 29` ci-dessus est INTENTIONNELLEMENT hardcode
     // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
     // migration future, le mainteneur doit (1) bumper le compte à la nouvelle
     // longueur (2) revoir si `total - N` cible toujours la bonne fenêtre.
     // La frontière reste à 23 (état pré-10-2) : les migrations ajoutées APRÈS
-    // la fenêtre Story 10-2 (comme companies_is_stub, la plus récente)
-    // élargissent la fenêtre d'upgrade et incrémentent donc le `N` soustrait
-    // (de 4 à 5), sans déplacer la frontière des 23 migrations historiques.
-    let n_before_upgrade_window = total - 5;
+    // la fenêtre Story 10-2 (comme companies_is_stub Story v011-2 et
+    // bank_accounts_archived Story v014-1) élargissent la fenêtre d'upgrade
+    // et incrémentent donc le `N` soustrait (de 4 à 5 à 6), sans déplacer la
+    // frontière des 23 migrations historiques.
+    let n_before_upgrade_window = total - 6;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
         .expect("apply_migrations_up_to(total - 5) failed");
