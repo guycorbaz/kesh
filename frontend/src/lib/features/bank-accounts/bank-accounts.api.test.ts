@@ -38,6 +38,7 @@ describe('bank-accounts.api', () => {
 					version: 4,
 					archived: false,
 					currentBalance: null,
+					lastTransactionDate: null,
 				}),
 			headers: new Headers(),
 		} as Response);

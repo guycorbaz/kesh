@@ -22,6 +22,7 @@
 		type NewBankAccountPayload,
 		type UpdateBankAccountPayload,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
+	import { formatChfBalance } from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
@@ -96,16 +97,7 @@
 				'Solde non disponible (lier au plan comptable)',
 			);
 		}
-		return new Intl.NumberFormat('fr-CH', {
-			style: 'currency',
-			currency: 'CHF',
-			minimumFractionDigits: 2,
-		}).format(balance);
-	}
-
-	function shortIban(iban: string): string {
-		if (iban.length < 8) return iban;
-		return `••••${iban.slice(-4)}`;
+		return formatChfBalance(balance);
 	}
 
 	function resetForm() {
@@ -216,8 +208,15 @@
 	}
 
 	async function handleToggleArchived() {
+		// F18 Pass 1 code review : indicateur de chargement pendant le reload
+		// pour feedback UX cohérent avec onMount.
 		includeArchived = !includeArchived;
-		await reload();
+		loading = true;
+		try {
+			await reload();
+		} finally {
+			loading = false;
+		}
 	}
 </script>
 

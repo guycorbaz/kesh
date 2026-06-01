@@ -4,6 +4,7 @@
 	import { modeState } from '$lib/app/stores/mode.svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { listBankAccounts, type BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { shortIban, formatChfBalance } from '$lib/features/bank-accounts/format';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
@@ -26,24 +27,22 @@
 
 	let isGuided = $derived(modeState.value === 'guided');
 
-	function shortIban(iban: string): string {
-		if (iban.length < 4) return iban;
-		return `••••${iban.slice(-4)}`;
-	}
-
 	function formatBalance(balance: number | null): string {
 		if (balance === null) return '—';
-		return new Intl.NumberFormat('fr-CH', {
-			style: 'currency',
-			currency: 'CHF',
-			minimumFractionDigits: 2,
-		}).format(balance);
+		return formatChfBalance(balance);
 	}
 
+	// F9 Pass 1 code review : afficher le total inconditionnellement (même avec
+	// 1 compte) si au moins un solde est calculé, avec note si certains
+	// comptes ont currentBalance=null (somme partielle).
+	let accountsWithBalance = $derived(bankAccounts.filter((ba) => ba.currentBalance !== null));
 	let totalLiquidity = $derived(
-		bankAccounts.reduce((acc, ba) => acc + (ba.currentBalance ?? 0), 0),
+		accountsWithBalance.reduce((acc, ba) => acc + (ba.currentBalance ?? 0), 0),
 	);
-	let hasAnyBalance = $derived(bankAccounts.some((ba) => ba.currentBalance !== null));
+	let hasAnyBalance = $derived(accountsWithBalance.length > 0);
+	let totalIsPartial = $derived(
+		accountsWithBalance.length > 0 && accountsWithBalance.length < bankAccounts.length,
+	);
 </script>
 
 <svelte:head>
@@ -113,6 +112,11 @@
 								<p class="font-mono text-sm" data-testid="homepage-bank-balance-{account.id}">
 									{formatBalance(account.currentBalance)}
 								</p>
+								{#if account.lastTransactionDate}
+									<p class="text-xs text-text-muted" data-testid="homepage-bank-last-tx-{account.id}">
+										{msg('homepage-bank-last-transaction', 'Dernière transaction')} : {account.lastTransactionDate}
+									</p>
+								{/if}
 							{:else}
 								<p class="text-xs text-text-muted" data-testid="homepage-bank-balance-unavailable-{account.id}">
 									<a class="underline" href="/bank-accounts">
@@ -123,10 +127,15 @@
 						</div>
 					</div>
 				{/each}
-				{#if hasAnyBalance && bankAccounts.length > 1}
+				{#if hasAnyBalance}
 					<div class="mt-1 flex items-center justify-between border-t border-border pt-2">
 						<p class="text-sm font-semibold">
 							{msg('homepage-bank-total-liquidity', 'Total liquidités')}
+							{#if totalIsPartial}
+								<span class="ml-1 text-xs font-normal text-text-muted" data-testid="homepage-bank-total-partial">
+									{msg('homepage-bank-total-partial', '(comptes liés uniquement)')}
+								</span>
+							{/if}
 						</p>
 						<p class="font-mono text-sm font-semibold" data-testid="homepage-bank-total-liquidity">
 							{formatBalance(totalLiquidity)}

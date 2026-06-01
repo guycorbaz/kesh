@@ -476,14 +476,18 @@ pub async fn archive_for_company(
 /// autre primary existe, on flip silencieusement l'ancien (transition).
 ///
 /// Filtre `archived = FALSE` + exclut `excluded_id` (le compte qu'on est en
-/// train d'updater — ne pas se flip soi-même). Retourne l'ancien primary
-/// flippé (ou `None` s'il n'y en avait pas), pour que le caller émette
-/// l'audit log `bank_account.updated` avec `trigger = "primary_transition"`.
+/// train d'updater — ne pas se flip soi-même).
+///
+/// **F15 Pass 1 code review** : retourne `Option<(updated, existing)>` cohérent
+/// avec `update_for_company` et `archive_for_company`. Le `existing` est le
+/// snapshot pré-flip (capturé par le SELECT FOR UPDATE) — le caller l'utilise
+/// directement comme source `before` de l'audit log `primary_transition` sans
+/// arithmétique fragile sur `version`.
 pub async fn flip_primary_off_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     excluded_id: i64,
-) -> Result<Option<BankAccount>, DbError> {
+) -> Result<Option<(BankAccount, BankAccount)>, DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
         "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
          version, archived, created_at, updated_at FROM bank_accounts \
@@ -524,17 +528,19 @@ pub async fn flip_primary_off_for_company(
         .await
         .map_err(map_db_error)?;
 
-    Ok(Some(updated))
+    Ok(Some((updated, old_primary)))
 }
 
-/// Compte le nombre de `bank_transactions` associées à un bank_account.
+/// Compte le nombre de `bank_transactions` associées à un bank_account
+/// **dans une transaction fournie par le caller** (F2 Pass 1 code review —
+/// élimine la fenêtre TOCTOU entre count hors-tx et archive dans tx).
 ///
 /// Story v014-1 (AC#8) — utilisé par DELETE pour refuser 412
 /// BANK_ACCOUNT_HAS_TRANSACTIONS si une transaction (pending ou reconciled)
 /// existe. `bank_transactions` n'a pas de colonne `archived` — comptage
 /// inconditionnel (auditabilité CO Art. 958f).
 pub async fn count_transactions_for_bank_account(
-    pool: &MySqlPool,
+    tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     bank_account_id: i64,
 ) -> Result<i64, DbError> {
@@ -543,18 +549,18 @@ pub async fn count_transactions_for_bank_account(
     )
     .bind(bank_account_id)
     .bind(company_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
     Ok(row.0)
 }
 
 /// Compte le nombre d'autres bank_accounts non-archivés du même company
-/// (exclut le compte courant). Utilisé par DELETE pour décider si on
-/// autorise l'archivage d'un primary (autorisé seulement si c'est le
-/// dernier compte non-archivé — AC#10).
+/// (exclut le compte courant) **dans une transaction fournie par le caller**.
+/// Utilisé par DELETE pour décider si on autorise l'archivage d'un primary
+/// (autorisé seulement si c'est le dernier compte non-archivé — AC#10).
 pub async fn count_other_active_for_company(
-    pool: &MySqlPool,
+    tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     excluded_id: i64,
 ) -> Result<i64, DbError> {
@@ -564,7 +570,7 @@ pub async fn count_other_active_for_company(
     )
     .bind(company_id)
     .bind(excluded_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
     Ok(row.0)
@@ -591,8 +597,8 @@ pub async fn acquire_company_sentinel_lock(
     Ok(())
 }
 
-/// Liste les comptes bancaires avec leurs soldes calculés depuis
-/// `journal_entry_lines`.
+/// Liste les comptes bancaires avec leurs soldes calculés + date dernière
+/// transaction depuis `journal_entry_lines`.
 ///
 /// Story v014-1 T5 (FINDING-10 Pass 3 Opus — périmètre du calcul) :
 /// - **Pas de filtre de status** : `journal_entries` n'a pas de colonne
@@ -604,38 +610,44 @@ pub async fn acquire_company_sentinel_lock(
 /// - Pas de rollup hiérarchique (uniquement sur `journal_account_id` exact —
 ///   pas sur les enfants `parent_id`). Tooltip helper text AC#27 recommande
 ///   de lier le bank_account au sous-compte spécifique.
+/// - **F13 Pass 1 code review (AC#30)** : retourne aussi `last_transaction_date`
+///   = `MAX(je.entry_date)` agrégé sur le `journal_account_id` du compte.
+///   `None` si journal_account_id NULL OU aucune écriture sur ce compte.
 ///
-/// Retourne `Vec<(BankAccount, Option<Decimal>)>` — le solde est `None` si
-/// le bank_account n'a pas de `journal_account_id` configuré (`L4`).
+/// Retourne `Vec<(BankAccount, Option<Decimal>, Option<NaiveDate>)>` — le
+/// solde et la date sont `None` si le bank_account n'a pas de
+/// `journal_account_id` configuré (`L4`).
 pub async fn list_by_company_with_balances(
     pool: &MySqlPool,
     company_id: i64,
     include_archived: bool,
-) -> Result<Vec<(BankAccount, Option<rust_decimal::Decimal>)>, DbError> {
-    // On charge d'abord les comptes (réutilise list_by_company pour cohérence),
-    // puis on calcule le solde par bank_account via une seconde query agrégée
-    // (LEFT JOIN sur journal_entry_lines + journal_entries).
+) -> Result<
+    Vec<(
+        BankAccount,
+        Option<rust_decimal::Decimal>,
+        Option<chrono::NaiveDate>,
+    )>,
+    DbError,
+> {
     let accounts = list_by_company(pool, company_id, include_archived).await?;
 
     if accounts.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Récupère les journal_account_id non-NULL pour le calcul.
     let account_ids: Vec<i64> = accounts
         .iter()
         .filter_map(|b| b.journal_account_id)
         .collect();
 
     if account_ids.is_empty() {
-        // Tous les comptes ont journal_account_id NULL → solde None pour tous.
-        return Ok(accounts.into_iter().map(|b| (b, None)).collect());
+        return Ok(accounts.into_iter().map(|b| (b, None, None)).collect());
     }
 
-    // Construire la clause IN dynamiquement (sqlx ne supporte pas IN ? avec
-    // Vec<i64> directement en MySQL). Builder QueryBuilder pour sécurité.
     let mut builder = sqlx::QueryBuilder::<MySql>::new(
-        "SELECT jel.account_id, COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) AS balance \
+        "SELECT jel.account_id, \
+                COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) AS balance, \
+                MAX(je.entry_date) AS last_entry_date \
          FROM journal_entry_lines jel \
          INNER JOIN journal_entries je ON jel.entry_id = je.id \
          WHERE je.company_id = ",
@@ -648,26 +660,28 @@ pub async fn list_by_company_with_balances(
     }
     builder.push(") GROUP BY jel.account_id");
 
-    let rows: Vec<(i64, rust_decimal::Decimal)> = builder
+    let rows: Vec<(i64, rust_decimal::Decimal, Option<chrono::NaiveDate>)> = builder
         .build_query_as()
         .fetch_all(pool)
         .await
         .map_err(map_db_error)?;
 
     use std::collections::HashMap;
-    let balance_by_account: HashMap<i64, rust_decimal::Decimal> = rows.into_iter().collect();
+    let agg_by_account: HashMap<i64, (rust_decimal::Decimal, Option<chrono::NaiveDate>)> = rows
+        .into_iter()
+        .map(|(aid, bal, dt)| (aid, (bal, dt)))
+        .collect();
 
     Ok(accounts
         .into_iter()
-        .map(|b| {
-            let balance = b
-                .journal_account_id
-                .and_then(|aid| balance_by_account.get(&aid).copied())
-                .or_else(|| {
-                    // journal_account_id existe mais aucune ligne → solde = 0.00
-                    b.journal_account_id.map(|_| rust_decimal::Decimal::ZERO)
-                });
-            (b, balance)
+        .map(|b| match b.journal_account_id {
+            Some(aid) => match agg_by_account.get(&aid) {
+                Some((balance, date)) => (b, Some(*balance), *date),
+                // journal_account_id existe mais aucune ligne → solde = 0.00,
+                // date = None.
+                None => (b, Some(rust_decimal::Decimal::ZERO), None),
+            },
+            None => (b, None, None),
         })
         .collect())
 }

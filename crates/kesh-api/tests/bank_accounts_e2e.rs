@@ -625,3 +625,369 @@ async fn patch_bank_account_idempotent_no_op_does_not_duplicate_audit_log(pool: 
         "double PATCH idempotent : audit_count doit rester 1 (KF-004 court-circuit)"
     );
 }
+
+// ===========================================================================
+// Story v014-1 — Tests intégration POST/PUT/DELETE (F6 Pass 1 code review)
+// ===========================================================================
+
+/// Marque onboarding step_completed=7 pour permettre les CRUD post-onboarding.
+/// La table `onboarding_state` est singleton (UNIQUE constraint sur `singleton`).
+async fn complete_onboarding(pool: &MySqlPool) {
+    sqlx::query(
+        "INSERT INTO onboarding_state (singleton, step_completed, is_demo, ui_mode) \
+         VALUES (TRUE, 7, FALSE, 'guided') \
+         ON DUPLICATE KEY UPDATE step_completed = 7, version = version + 1",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_bank_account_happy_path_returns_201_with_entity(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+            "isPrimary": false,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 201, "body: {body}");
+    assert_eq!(body["bankName"], "PostFinance");
+    assert_eq!(body["iban"], "CH3908704016075473007");
+    assert_eq!(body["isPrimary"], false);
+    assert_eq!(body["archived"], false);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_bank_account_invalid_iban_returns_400(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "Bad Bank",
+            "iban": "INVALID_IBAN",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_bank_account_without_onboarding_complete_returns_412(pool: MySqlPool) {
+    // Ne PAS appeler complete_onboarding — step_completed < 7.
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 412);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ONBOARDING_NOT_COMPLETE");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_bank_account_consultation_role_returns_403(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 403);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_bank_account_primary_collision_silently_demotes_old(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Premier compte est primary (setup_full crée bank_account avec is_primary=true).
+    // Vérifier.
+    let initial_primary_is_primary: bool =
+        sqlx::query_scalar("SELECT is_primary FROM bank_accounts WHERE id = ?")
+            .bind(ctx.bank_account_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(initial_primary_is_primary);
+
+    // POST un nouveau compte avec isPrimary=true → transition silencieuse atomique.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+            "isPrimary": true,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // F3 Pass 3 Opus : pas de 409 — transition silencieuse atomique.
+    assert_eq!(resp.status(), 201);
+
+    // L'ancien primary a été démoté.
+    let old_is_primary: bool =
+        sqlx::query_scalar("SELECT is_primary FROM bank_accounts WHERE id = ?")
+            .bind(ctx.bank_account_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        !old_is_primary,
+        "ancien primary doit être démoté silencieusement"
+    );
+
+    // Audit log primary_transition présent.
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'bank_account.updated' \
+         AND entity_id = ? \
+         AND JSON_EXTRACT(details_json, '$.trigger') = 'primary_transition'",
+    )
+    .bind(ctx.bank_account_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit_count, 1,
+        "audit log primary_transition doit être présent"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn put_bank_account_happy_path_full_update(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "Updated Bank",
+            "iban": "CH3908704016075473007",
+            "isPrimary": true,
+            "version": version,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["bankName"], "Updated Bank");
+    assert_eq!(body["iban"], "CH3908704016075473007");
+    assert_eq!(body["version"], version + 1);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn put_bank_account_stale_version_returns_409(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // version=0 → stale (la version réelle est 1+).
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "Stale",
+            "iban": "CH3908704016075473007",
+            "version": 0,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // version < 1 → 400 Validation (handler check), pas 409.
+    assert_eq!(resp.status(), 400);
+
+    // Avec version=99 stale (mais valide).
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "Stale",
+            "iban": "CH3908704016075473007",
+            "version": 99,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 409);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn delete_bank_account_happy_path_archive(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["archived"], true);
+
+    // Audit log bank_account.archived présent.
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'bank_account.archived' AND entity_id = ?",
+    )
+    .bind(ctx.bank_account_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_count, 1);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn delete_bank_account_with_transactions_returns_412(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Insère un bank_import puis une bank_transaction directement (bypass parser).
+    let import_id: i64 = sqlx::query(
+        "INSERT INTO bank_imports \
+         (company_id, bank_account_id, filename, file_hash, source_format, period_from, period_to, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'test.csv', 'a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd', 'CSV', '2026-01-01', '2026-01-31', 1, ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.bank_account_id)
+    .bind(ctx.user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    sqlx::query(
+        "INSERT INTO bank_transactions \
+         (company_id, import_id, bank_account_id, booking_date, amount, currency, details, status) \
+         VALUES (?, ?, ?, '2026-01-15', 100.00, 'CHF', 'test tx', 'pending')",
+    )
+    .bind(ctx.company_id)
+    .bind(import_id)
+    .bind(ctx.bank_account_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 412);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "BANK_ACCOUNT_HAS_TRANSACTIONS");
+    assert_eq!(body["error"]["details"]["transactionCount"], 1);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn delete_primary_with_other_active_returns_412(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Crée un 2e compte actif (le 1er ctx.bank_account_id reste primary).
+    let _second_id = create_bank_account(&pool, ctx.company_id, "CH3908704016075473007").await;
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 412);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn delete_primary_unique_is_allowed_ac10(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Aucun autre compte actif → AC#10 autorise l'archivage du primary unique.
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+}

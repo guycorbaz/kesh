@@ -31,6 +31,12 @@ export interface BankAccountSummary {
 	 * vers `decimal.js`.
 	 */
 	currentBalance: number | null;
+	/**
+	 * Story v014-1 F13 Pass 1 code review (AC#30) — date `MAX(je.entry_date)`
+	 * agrégée sur le `journal_account_id` lié. Format ISO `YYYY-MM-DD`.
+	 * `null` si journal_account_id NULL ou aucune écriture.
+	 */
+	lastTransactionDate: string | null;
 }
 
 /**
@@ -47,6 +53,7 @@ interface BankAccountSummaryRaw {
 	version: number;
 	archived: boolean;
 	currentBalance: string | null;
+	lastTransactionDate: string | null;
 }
 
 function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
@@ -60,6 +67,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		version: raw.version,
 		archived: raw.archived,
 		currentBalance: raw.currentBalance == null ? null : Number(raw.currentBalance),
+		lastTransactionDate: raw.lastTransactionDate,
 	};
 }
 
@@ -90,7 +98,7 @@ export async function updateBankAccountJournalLink(
 		journalAccountId,
 		version,
 	});
-	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null });
+	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null });
 }
 
 /**
@@ -114,7 +122,7 @@ export async function createBankAccount(
 	payload: NewBankAccountPayload,
 ): Promise<BankAccountSummary> {
 	const raw = await apiClient.post<BankAccountSummaryRaw>('/api/v1/bank-accounts', payload);
-	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null });
+	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null });
 }
 
 /**
@@ -138,7 +146,7 @@ export async function updateBankAccount(
 	payload: UpdateBankAccountPayload,
 ): Promise<BankAccountSummary> {
 	const raw = await apiClient.put<BankAccountSummaryRaw>(`/api/v1/bank-accounts/${id}`, payload);
-	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null });
+	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null });
 }
 
 /**
@@ -153,5 +161,5 @@ export async function archiveBankAccount(
 	const raw = await apiClient.delete<BankAccountSummaryRaw>(`/api/v1/bank-accounts/${id}`, {
 		version,
 	});
-	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null });
+	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null });
 }

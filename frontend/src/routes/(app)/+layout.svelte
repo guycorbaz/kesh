@@ -145,13 +145,24 @@
 		administration: initialOpen('administration', false),
 	});
 
-	// Force-open groupe contenant la route active (session uniquement, pas persisté).
+	// F10 Pass 1 code review — set des groupes déjà auto-expandés cette session
+	// pour éviter que le $effect re-ouvre le groupe quand l'utilisateur le
+	// ferme manuellement (cf. ECH-7/BH-6). On track UNIQUEMENT le pathname
+	// pour lequel l'auto-expand a déjà été appliqué.
+	let autoExpandedPaths = $state<Set<string>>(new Set());
+
+	// Force-open groupe contenant la route active (session uniquement, pas
+	// persisté). N'auto-expand qu'UNE seule fois par pathname — si l'utilisateur
+	// ferme ensuite le groupe, on respecte son choix jusqu'à navigation vers
+	// une autre route.
 	$effect(() => {
-		const groupKey = findGroupKeyForPath(page.url.pathname);
+		const pathname = page.url.pathname;
+		if (autoExpandedPaths.has(pathname)) return;
+		const groupKey = findGroupKeyForPath(pathname);
 		if (groupKey && !expandedState[groupKey]) {
-			// Set state via setter direct sans appeler persistGroupState (session-only).
 			expandedState = { ...expandedState, [groupKey]: true };
 		}
+		autoExpandedPaths = new Set(autoExpandedPaths).add(pathname);
 	});
 
 	function handleToggle(key: string, e: Event): void {

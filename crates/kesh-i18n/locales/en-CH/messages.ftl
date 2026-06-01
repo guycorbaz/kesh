@@ -709,6 +709,33 @@ bank-accounts-errors-invalid-account-type = Invalid account type (Asset or Liabi
 bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit.
 bank-accounts-errors-cannot-archive-primary = The primary account cannot be archived while another non-archived account exists. First set another account as primary, then archive this one.
 bank-accounts-errors-onboarding-not-complete = Onboarding must be completed (step 7) before bank accounts can be managed.
+# Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
+bank-accounts-actions-create = New bank account
+bank-accounts-actions-edit = Edit
+bank-accounts-actions-archive = Archive
+bank-accounts-actions-confirm-archive = Archive
+bank-accounts-actions-show-archived = Show archived
+bank-accounts-actions-hide-archived = Hide archived
+bank-accounts-actions-submit-create = Create
+bank-accounts-actions-submit-update = Save
+bank-accounts-labels-balance = Balance
+bank-accounts-labels-balance-unavailable = Balance unavailable (link to chart of accounts)
+bank-accounts-labels-qr-iban = QR-IBAN (optional)
+bank-accounts-labels-is-primary = Primary account
+bank-accounts-labels-primary-badge = Primary
+bank-accounts-labels-archived-badge = Archived
+bank-accounts-confirm-archive = Confirm archiving this bank account? This action is irreversible in v0.1.
+bank-accounts-tooltip-journal-account = Links this bank account to a ledger account (typically 1020 Cash, 1030 Bank). Allows automatic reconciliation to create entries on the right account, and balance display on the homepage. Multiple accounts: if you have several distinct current accounts (BCV + PostFinance), link to a specific sub-account (1030.001 BCV CHF), not the parent 1030.
+bank-accounts-toast-create-success = Bank account created.
+bank-accounts-toast-update-success = Bank account updated.
+bank-accounts-toast-archive-success = Bank account archived.
+# Story v014-1 — Homepage widget bank accounts (F14)
+homepage-bank-total-liquidity = Total liquidity
+homepage-bank-total-partial = (linked accounts only)
+homepage-bank-balance-unavailable = Balance unavailable — link to chart of accounts
+homepage-bank-last-transaction = Last transaction
+settings-bank-manage = Manage in Administration → Bank accounts
+settings-bank-manage-hint = To add, edit or archive a bank account, use the dedicated page Administration → Bank accounts.
 bank-accounts-toast-link-success = Bank account successfully linked to chart of accounts.
 bank-accounts-toast-unlink-success = Bank account unlinked from chart of accounts.
 

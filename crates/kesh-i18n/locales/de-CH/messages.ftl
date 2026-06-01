@@ -709,6 +709,33 @@ bank-accounts-errors-invalid-account-type = Ungültiger Kontotyp (Aktiv- oder Pa
 bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren.
 bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archiviert werden, solange ein anderes nicht-archiviertes Konto besteht. Setzen Sie zuerst ein anderes Konto als Hauptkonto und archivieren Sie dieses dann.
 bank-accounts-errors-onboarding-not-complete = Das Onboarding muss abgeschlossen sein (Schritt 7), bevor Bankkonten verwaltet werden können.
+# Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
+bank-accounts-actions-create = Neues Bankkonto
+bank-accounts-actions-edit = Bearbeiten
+bank-accounts-actions-archive = Archivieren
+bank-accounts-actions-confirm-archive = Archivieren
+bank-accounts-actions-show-archived = Archivierte anzeigen
+bank-accounts-actions-hide-archived = Archivierte ausblenden
+bank-accounts-actions-submit-create = Erstellen
+bank-accounts-actions-submit-update = Speichern
+bank-accounts-labels-balance = Saldo
+bank-accounts-labels-balance-unavailable = Saldo nicht verfügbar (mit Kontenrahmen verbinden)
+bank-accounts-labels-qr-iban = QR-IBAN (optional)
+bank-accounts-labels-is-primary = Hauptkonto
+bank-accounts-labels-primary-badge = Hauptkonto
+bank-accounts-labels-archived-badge = Archiviert
+bank-accounts-confirm-archive = Archivierung dieses Bankkontos bestätigen? Diese Aktion ist in v0.1 unwiderruflich.
+bank-accounts-tooltip-journal-account = Verbindet dieses Bankkonto mit einem Konto aus dem Kontenrahmen (typisch 1020 Kasse, 1030 Bank). Ermöglicht der automatischen Abstimmung, Buchungen auf das richtige Konto zu erstellen, und die Anzeige des Saldos auf der Startseite. Mehrere Konten: Wenn Sie mehrere separate Kontokorrente haben, verbinden Sie mit einem spezifischen Unterkonto (1030.001 BCV CHF), nicht mit dem übergeordneten Konto 1030.
+bank-accounts-toast-create-success = Bankkonto erstellt.
+bank-accounts-toast-update-success = Bankkonto geändert.
+bank-accounts-toast-archive-success = Bankkonto archiviert.
+# Story v014-1 — Homepage widget bank accounts (F14)
+homepage-bank-total-liquidity = Liquide Mittel insgesamt
+homepage-bank-total-partial = (nur verbundene Konten)
+homepage-bank-balance-unavailable = Saldo nicht verfügbar — mit Kontenrahmen verbinden
+homepage-bank-last-transaction = Letzte Transaktion
+settings-bank-manage = In Administration → Bankkonten verwalten
+settings-bank-manage-hint = Um ein Bankkonto hinzuzufügen, zu ändern oder zu archivieren, nutzen Sie die spezielle Seite Administration → Bankkonten.
 bank-accounts-toast-link-success = Bankkonto erfolgreich mit dem Kontorahmen verbunden.
 bank-accounts-toast-unlink-success = Bankkonto vom Kontorahmen getrennt.
 

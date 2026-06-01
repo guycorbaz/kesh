@@ -38,6 +38,11 @@ test.describe('Page utilisateurs — CRUD', () => {
 		await expect(page).toHaveURL('/');
 
 		const sidebar = page.locator('nav[aria-label="Navigation principale"]');
+		// Story v014-1 AC#31 — l'item Utilisateurs est désormais sous le groupe
+		// Administration (`<details>` defaultExpanded:false). Le lien est dans
+		// le DOM mais hidden via UA stylesheet si le groupe est fermé →
+		// toBeVisible() échouerait. Ouvrir programmatiquement le groupe.
+		await sidebar.locator('details summary:has-text("Administration")').click();
 		await expect(sidebar.locator('[data-testid="nav-link-users"]')).toBeVisible();
 	});
 

@@ -30,11 +30,15 @@ test.describe('Homepage', () => {
 		await loginAsAdmin(page);
 	});
 
-	test('affiche 3 widgets sur la page d\'accueil', async ({ page }) => {
+	test('affiche les widgets inconditionnels sur la page d\'accueil', async ({ page }) => {
+		// Story v014-1 AC#29 — widget bank-accounts est conditionnel
+		// (`{#if bankAccounts.length > 0}`) ; le seed `with-company` ne crée
+		// pas de bank_account donc widget absent. Option (b) AC#31 adopté :
+		// asserter explicitement l'absence.
 		await expect(page).toHaveURL('/');
 		await expect(page.locator('[data-testid="homepage-card-recent-entries"]')).toBeVisible();
 		await expect(page.locator('[data-testid="homepage-card-open-invoices"]')).toBeVisible();
-		await expect(page.locator('[data-testid="homepage-card-bank-accounts"]')).toBeVisible();
+		await expect(page.locator('[data-testid="homepage-card-bank-accounts"]')).toHaveCount(0);
 	});
 });
 

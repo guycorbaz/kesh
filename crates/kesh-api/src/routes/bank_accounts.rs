@@ -110,7 +110,12 @@ pub struct ListBankAccountsQuery {
 ///
 /// `currentBalance: Option<Decimal>` — `None` si `journal_account_id` n'est
 /// pas configuré sur ce compte ; sinon solde calculé `SUM(debit) - SUM(credit)`
-/// sur `journal_entry_lines` (status='Posted', toutes années).
+/// sur `journal_entry_lines` (toutes les écritures du compte sont par
+/// construction validées — pas de colonne `status` v0.1).
+///
+/// `lastTransactionDate: Option<NaiveDate>` — F13 Pass 1 code review (AC#30) :
+/// date `MAX(je.entry_date)` agrégée sur le `journal_account_id` lié.
+/// `None` si journal_account_id NULL ou aucune écriture.
 ///
 /// `Decimal` est sérialisé via `serde-str` → JSON string. Le frontend convertit
 /// via `Number(item.currentBalance)`.
@@ -120,6 +125,7 @@ pub struct BankAccountWithBalance {
     #[serde(flatten)]
     pub account: BankAccount,
     pub current_balance: Option<Decimal>,
+    pub last_transaction_date: Option<chrono::NaiveDate>,
 }
 
 // ===========================================================================
@@ -187,14 +193,20 @@ impl_validation_extractor!(
 // Helpers communs
 // ===========================================================================
 
-/// Guard onboarding (FINDING-11 Pass 3 Opus) — refuse les CRUD post-onboarding
-/// si l'onboarding n'est pas terminé (step_completed < 7). Mode demo
-/// autorise le CRUD (cohérent UX demo = full feature set).
+/// Guard onboarding (FINDING-11 Pass 3 Opus + F1 Pass 1 code review) — refuse
+/// les CRUD post-onboarding si l'onboarding n'est pas terminé (step_completed
+/// < 7). Mode demo autorise le CRUD (cohérent UX demo = full feature set).
+///
+/// **F1 Pass 1 code review** : `None` (DB fresh, onboarding_state jamais
+/// initialisée) → `Err(OnboardingNotComplete)`. Defense-in-depth : en théorie
+/// le middleware 423 Locked redirige vers `/setup` avant tout call de ces
+/// endpoints, mais si `users_exist=true` sans `onboarding_state` (cas
+/// pathologique post-recovery par exemple), le guard doit refuser le CRUD.
 async fn assert_onboarding_complete(pool: &sqlx::MySqlPool) -> Result<(), AppError> {
     let state = onboarding::get_state(pool).await?;
     match state {
-        Some(s) if s.step_completed < 7 && !s.is_demo => Err(AppError::OnboardingNotComplete),
-        Some(_) | None => Ok(()),
+        Some(s) if s.step_completed >= 7 || s.is_demo => Ok(()),
+        Some(_) | None => Err(AppError::OnboardingNotComplete),
     }
 }
 
@@ -271,18 +283,22 @@ async fn validate_journal_account_id(
 
 /// Émet l'audit log `bank_account.updated` `trigger=primary_transition` sur
 /// l'ancien primary démoté (helper FINDING-3 Pass 3 Opus).
+///
+/// **F15 Pass 1 code review** : reçoit `(updated, before)` snapshot — pas
+/// d'arithmétique sur `version` (cf. doc-comment `flip_primary_off_for_company`).
 async fn audit_primary_transition(
     tx: &mut Transaction<'_, MySql>,
     user_id: i64,
-    old_primary: &BankAccount,
+    updated: &BankAccount,
+    before: &BankAccount,
     new_primary_id: i64,
 ) -> Result<(), AppError> {
     let details = serde_json::json!({
-        "bank_account_id": old_primary.id,
+        "bank_account_id": updated.id,
         "trigger": "primary_transition",
         "new_primary_id": new_primary_id,
-        "before": { "is_primary": true, "version": old_primary.version - 1 },
-        "after": { "is_primary": false, "version": old_primary.version },
+        "before": { "is_primary": before.is_primary, "version": before.version },
+        "after": { "is_primary": updated.is_primary, "version": updated.version },
     });
     audit_log::insert_in_tx(
         tx,
@@ -290,7 +306,7 @@ async fn audit_primary_transition(
             user_id,
             action: "bank_account.updated".to_string(),
             entity_type: "bank_account".to_string(),
-            entity_id: old_primary.id,
+            entity_id: updated.id,
             details_json: Some(details),
         },
     )
@@ -307,6 +323,16 @@ async fn audit_primary_transition(
 ///
 /// Story v014-1 T5 — payload étendu avec `currentBalance` calculé.
 /// Query `?includeArchived=true` retourne aussi les archivés (défaut false).
+///
+/// **Périmètre du solde calculé** (F4 Pass 1 code review — clarification
+/// vs F10 Pass 3 Opus) : `journal_entries` n'a **pas** de colonne `status`
+/// dans le schéma v0.1 — toute écriture insérée est par construction validée
+/// (la double-partie est balanced + toutes les FK existent + pas de notion
+/// de draft). Le calcul `SUM(debit) - SUM(credit)` agrège donc toutes les
+/// `journal_entry_lines` du `journal_account_id` lié, sans filtre de statut.
+/// La spec F10 Pass 3 Opus prévoyait initialement un filtre `status='Posted'`
+/// mais la vérification du schéma a invalidé cette hypothèse. Pas de filtre
+/// `fiscal_year_id` non plus (« solde depuis création » v0.1).
 pub async fn list_bank_accounts(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -321,10 +347,13 @@ pub async fn list_bank_accounts(
 
     let payload: Vec<BankAccountWithBalance> = rows
         .into_iter()
-        .map(|(account, current_balance)| BankAccountWithBalance {
-            account,
-            current_balance,
-        })
+        .map(
+            |(account, current_balance, last_transaction_date)| BankAccountWithBalance {
+                account,
+                current_balance,
+                last_transaction_date,
+            },
+        )
         .collect();
 
     Ok(Json(payload))
@@ -360,9 +389,12 @@ pub async fn create_bank_account(
     bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
 
     // Si is_primary=true et un autre primary existe → flip silencieux atomique.
-    // L'INSERT n'a pas encore d'id, on passe 0 comme excluded_id (jamais matchera).
+    // L'INSERT n'a pas encore d'id, on passe -1 comme excluded_id sentinel
+    // (les ids MariaDB AUTO_INCREMENT sont toujours > 0 — F8 Pass 1 code review,
+    // plus défensif que 0 qui pourrait coïncider avec un id dans des fixtures
+    // pathologiques avec `AUTO_INCREMENT=0`).
     let demoted_primary = if body.is_primary {
-        bank_accounts::flip_primary_off_for_company(&mut tx, current_user.company_id, 0)
+        bank_accounts::flip_primary_off_for_company(&mut tx, current_user.company_id, -1)
             .await
             .map_err(AppError::Database)?
     } else {
@@ -405,8 +437,15 @@ pub async fn create_bank_account(
     .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
 
     // Audit log primary_transition sur l'ancien primary démoté, puis création.
-    if let Some(old_primary) = demoted_primary.as_ref() {
-        audit_primary_transition(&mut tx, current_user.user_id, old_primary, new_id).await?;
+    if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
+        audit_primary_transition(
+            &mut tx,
+            current_user.user_id,
+            updated_old,
+            before_old,
+            new_id,
+        )
+        .await?;
     }
 
     let details = serde_json::json!({
@@ -499,8 +538,9 @@ pub async fn update_bank_account(
         Err(e) => return Err(AppError::Database(e)),
     };
 
-    if let Some(old_primary) = demoted_primary.as_ref() {
-        audit_primary_transition(&mut tx, current_user.user_id, old_primary, id).await?;
+    if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
+        audit_primary_transition(&mut tx, current_user.user_id, updated_old, before_old, id)
+            .await?;
     }
 
     let details = serde_json::json!({
@@ -560,7 +600,10 @@ pub async fn archive_bank_account(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    // Pré-flight : compte existe et non-archivé.
+    // Pré-flight hors-tx pour 404 rapide (économise begin tx si compte
+    // inexistant/cross-tenant/déjà archivé). Les guards "fonds" (transactions
+    // existantes, primary + autres actifs) sont déplacés DANS la tx pour
+    // éliminer la fenêtre TOCTOU (F2 Pass 1 code review).
     let existing = bank_accounts::find_by_id_for_company(&state.pool, current_user.company_id, id)
         .await?
         .ok_or(AppError::BankAccountNotFound)?;
@@ -569,37 +612,38 @@ pub async fn archive_bank_account(
         return Err(AppError::BankAccountNotFound);
     }
 
-    // Guard transactions (AC#8).
-    let tx_count = bank_accounts::count_transactions_for_bank_account(
-        &state.pool,
-        current_user.company_id,
-        id,
-    )
-    .await?;
-    if tx_count > 0 {
-        return Err(AppError::BankAccountHasTransactions {
-            transaction_count: tx_count,
-        });
-    }
-
-    // Guard primary + autres comptes actifs (AC#9 / AC#10).
-    if existing.is_primary {
-        let others =
-            bank_accounts::count_other_active_for_company(&state.pool, current_user.company_id, id)
-                .await?;
-        if others > 0 {
-            return Err(AppError::BankAccountCannotArchivePrimary);
-        }
-        // others == 0 : primary unique → autorisé (AC#10).
-    }
-
     let mut tx = state
         .pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
 
+    // Advisory lock sentinel — serialize les mutations CRUD bank_accounts d'un
+    // même tenant ET protège contre une création concurrente de
+    // bank_transactions via le même chemin (mais bank_imports n'acquiert pas
+    // ce lock — L5 limitation v0.1 documentée).
     bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
+
+    // Guard transactions (AC#8) — DANS la tx, après sentinel lock.
+    let tx_count =
+        bank_accounts::count_transactions_for_bank_account(&mut tx, current_user.company_id, id)
+            .await?;
+    if tx_count > 0 {
+        return Err(AppError::BankAccountHasTransactions {
+            transaction_count: tx_count,
+        });
+    }
+
+    // Guard primary + autres comptes actifs (AC#9 / AC#10) — DANS la tx.
+    if existing.is_primary {
+        let others =
+            bank_accounts::count_other_active_for_company(&mut tx, current_user.company_id, id)
+                .await?;
+        if others > 0 {
+            return Err(AppError::BankAccountCannotArchivePrimary);
+        }
+        // others == 0 : primary unique → autorisé (AC#10).
+    }
 
     let (updated, before) = match bank_accounts::archive_for_company(
         &mut tx,

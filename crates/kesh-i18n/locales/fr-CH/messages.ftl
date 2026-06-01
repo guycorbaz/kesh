@@ -779,6 +779,14 @@ bank-accounts-tooltip-journal-account = Lie ce compte bancaire à un compte du p
 bank-accounts-toast-create-success = Compte bancaire créé.
 bank-accounts-toast-update-success = Compte bancaire modifié.
 bank-accounts-toast-archive-success = Compte bancaire archivé.
+
+# Story v014-1 — Homepage widget bank accounts (F14 Pass 1 code review)
+homepage-bank-total-liquidity = Total liquidités
+homepage-bank-total-partial = (comptes liés uniquement)
+homepage-bank-balance-unavailable = Solde non disponible — lier au plan comptable
+homepage-bank-last-transaction = Dernière transaction
+settings-bank-manage = Gérer dans Administration → Comptes bancaires
+settings-bank-manage-hint = Pour ajouter, modifier ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.
 bank-accounts-toast-link-success = Compte bancaire lié avec succès au plan comptable.
 bank-accounts-toast-unlink-success = Compte bancaire délié du plan comptable.
 
