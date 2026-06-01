@@ -1,6 +1,6 @@
 # Story v014-1: CRUD bank_accounts post-onboarding + sidebar collapsible + restructuration UX (Issue #138)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -609,6 +609,49 @@ _(à remplir au dev-story)_
 _(à remplir au dev-story)_
 
 ## Change Log
+
+### Code review CYCLE CONVERGED (2026-06-01) — Pass 2 Haiku 4.5
+
+**Cycle complet** : Pass 1 Sonnet 4.6 (3 reviewers BH+ECH+AA) → Pass 2 Haiku 4.5 (3 rôles simultanés) → **CONVERGED**.
+
+**Status story** : `review → done`. Critère arrêt Review Iteration Rule CLAUDE.md strictement ATTEINT (0 finding > LOW post-Pass 2).
+
+**Pass 1 Sonnet 4.6** (3 reviewers parallèles, fenêtre contexte fraîche) :
+- 29 findings bruts : 8 Blind Hunter + 10 Edge Case Hunter + 11 Acceptance Auditor.
+- Triage : **19 patches appliqués** + 2 dismiss (BH-4 réfuté `buildHeaders:197`, ECH-9 PATCH intentionnel) + 3 defer (ECH-8 proxy théorique, ECH-4/AA-10 BankAccountJson, AA-11 modals séparés).
+- HIGH (5) : F1 onboarding None→Err defense-in-depth, F2 race TOCTOU archive (counts dans tx + signatures `&mut Transaction`), F3 i18n parity 19 keys CRUD UI DE/IT/EN, F4 doc-comment balance (journal_entries n'a pas colonne status), F5/F6 tests MANDATORY (6 contrat archived_invariants + 11 intégration POST/PUT/DELETE — 17/17 verts).
+- MEDIUM (8) : F8 sentinel id=-1, F9 totalLiquidity inconditionnel + partial note, F10 autoExpandedPaths set, F13 lastTransactionDate backend+frontend AC#30, F14 i18n homepage/settings 4 locales, F15 flip_primary retourne (updated, existing), F11/F12 adaptations tests E2E, F7 2 specs Playwright (`bank-accounts-crud.spec.ts` + `sidebar-navigation.spec.ts`).
+- LOW (3) : F17 `shortIban` factorisé `format.ts`, F18 `handleToggleArchived` loading, F19 Issue GitHub #140 créée (20 tests préexistants cassés fiscal_year 2026-06-01, dette catégorie A bloquant kickoff Epic suivant).
+- Commit : `e5fa7be` (855+ insertions, 110- deletions, 16 fichiers + 3 nouveaux).
+
+**Pass 2 Haiku 4.5** (3 rôles BH+ECH+AA simultanés, fenêtre contexte fraîche, **discipline grep ground-truth NON-NÉGOCIABLE** appliquée) :
+- **Validation 19/19 patches Pass 1 confirmés** via grep ground-truth (assert_onboarding_complete `None => Err`, sentinel `, -1)`, `last_transaction_date` field, `audit_primary_transition(updated, before)` snapshots, `shortIban` import `format.ts`, 7 call-sites archived guards `bank_imports.rs:2 + reconciliation.rs:4`, 6 + 11 tests, autoExpandedPaths Set, BankAccountWithBalance flatten, 8 i18n keys × 4 locales, CHANGELOG [0.1.4]).
+- **Régressions détectées : 0** — toutes les signatures changées (`flip_primary_off_for_company → Option<(updated, before)>`, `count_* → &mut Transaction`, `BankAccountSummary +archived +currentBalance +lastTransactionDate`) ont leurs call sites + mocks/fixtures mis à jour cohérents.
+- **Findings totaux Pass 2 : 0** (0 CRITICAL + 0 HIGH + 0 MEDIUM + 0 LOW).
+- Verdict : **CONVERGED**.
+
+**Bilan trend convergence code review** :
+
+| Passe | Modèle | Reviewers | Findings | dont > LOW | Patches | Régressions |
+|-------|--------|-----------|----------|-----------:|--------:|------------:|
+| Pass 1 | Sonnet 4.6 | BH+ECH+AA (3 // ) | 29 | 12 (5 HIGH + 8 MED post-triage) | 19 | 0 |
+| Pass 2 | Haiku 4.5 | BH+ECH+AA (3 simul) | 0 | **0** | 0 | **0** |
+
+**Pattern empirique CLAUDE.md confirmé** : Pass 2 Haiku 4.5 a appliqué la discipline grep ground-truth avec rigueur — aucun faux-positif hallucinatoire CRITICAL/HIGH cette fois (vs précédentes stories qui en avaient typiquement 1-2). 19/19 patches Pass 1 validés sans réfutation.
+
+**Quality gate final** :
+- ✅ `cargo fmt --all -- --check`
+- ✅ `cargo clippy --workspace --all-targets -- -D warnings`
+- ✅ `cargo build --workspace`
+- ✅ `cargo test bank_accounts_e2e -j1 --test-threads=1` : 11/11 nouveaux + tests legacy verts
+- ✅ `cargo test bank_accounts_repository archived_invariants` : 6/6 verts
+- ✅ `npm run check` : 0 erreurs (25 warnings préexistants)
+- ✅ `npm run lint-i18n-ownership` : PASS
+- ✅ `npm run test:unit` : 267/267 verts
+- ✅ `npm run build` : SSR + adapter-static OK
+- ⚠️ 20 tests backend préexistants cassés (fiscal_year 2026 fermé) → **Issue GitHub #140** créée, dette catégorie A hors-scope v014-1.
+
+**Prochaine étape** : push branche `story/v014-1-bank-crud-and-sidebar-ux` + ouverture PR squash-merge (closes #138, refs #140).
 
 ### Dev-story COMPLET (2026-06-01) — Opus 4.7 single-pass orchestré T1→T12
 
