@@ -3,28 +3,46 @@
 	import { Button } from '$lib/components/ui/button';
 	import { modeState } from '$lib/app/stores/mode.svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
-	import type { BankAccountJson } from '$lib/features/settings/settings.types';
+	import { listBankAccounts, type BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { shortIban, formatChfBalance } from '$lib/features/bank-accounts/format';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
 	}
 
-	let bankAccounts = $state<BankAccountJson[]>([]);
+	// Story v014-1 (F5 Pass 1) — basculer vers listBankAccounts() qui retourne
+	// le payload étendu avec `currentBalance` calculé serveur-side.
+	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let bankLoaded = $state(false);
 
 	onMount(async () => {
 		try {
-			const data = await fetchCompanyCurrent();
-			bankAccounts = data.bankAccounts;
+			bankAccounts = await listBankAccounts(false);
 		} catch {
-			// Company may not exist yet (404) — that's OK
+			// API not reachable — graceful degradation (widget caché si vide).
 		} finally {
 			bankLoaded = true;
 		}
 	});
 
 	let isGuided = $derived(modeState.value === 'guided');
+
+	function formatBalance(balance: number | null): string {
+		if (balance === null) return '—';
+		return formatChfBalance(balance);
+	}
+
+	// F9 Pass 1 code review : afficher le total inconditionnellement (même avec
+	// 1 compte) si au moins un solde est calculé, avec note si certains
+	// comptes ont currentBalance=null (somme partielle).
+	let accountsWithBalance = $derived(bankAccounts.filter((ba) => ba.currentBalance !== null));
+	let totalLiquidity = $derived(
+		accountsWithBalance.reduce((acc, ba) => acc + (ba.currentBalance ?? 0), 0),
+	);
+	let hasAnyBalance = $derived(accountsWithBalance.length > 0);
+	let totalIsPartial = $derived(
+		accountsWithBalance.length > 0 && accountsWithBalance.length < bankAccounts.length,
+	);
 </script>
 
 <svelte:head>
@@ -74,30 +92,57 @@
 		</Button>
 	</div>
 
-	<!-- Widget : Soldes comptes bancaires -->
-	<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-bank-accounts">
-		<h2 class="text-lg font-semibold text-text">
-			{msg('homepage-bank-title', 'Comptes bancaires')}
-		</h2>
-		{#if !bankLoaded}
-			<p class="mt-2 text-sm text-text-muted">Chargement...</p>
-		{:else if bankAccounts.length > 0}
-			{#each bankAccounts as account}
-				<div class="mt-2">
-					<p class="font-medium">{account.bankName}</p>
-					<p class="text-sm text-text-muted">{account.iban}</p>
-					<p class="text-xs text-text-muted">
-						{msg('homepage-bank-no-transactions', 'Aucune transaction importée')}
-					</p>
-				</div>
-			{/each}
-		{:else if isGuided}
-			<p class="mt-2 text-sm text-text-muted">
-				{msg('homepage-bank-empty-guided', 'Aucun compte bancaire configuré. Ajoutez votre compte pour importer vos relevés.')}
-			</p>
-		{/if}
-		<Button variant="outline" class="mt-4" href="/settings">
-			{msg('homepage-bank-action', 'Configurer')}
-		</Button>
-	</div>
+	<!-- Story v014-1 (AC#29) — widget Comptes bancaires retiré si aucun compte.
+	     Affiche les soldes calculés sinon (currentBalance peut être null si
+	     journal_account_id non-configuré → indication UX + lien). -->
+	{#if bankLoaded && bankAccounts.length > 0}
+		<div class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="homepage-card-bank-accounts">
+			<h2 class="text-lg font-semibold text-text">
+				{msg('homepage-bank-title', 'Comptes bancaires')}
+			</h2>
+			<div class="mt-3 flex flex-col gap-3">
+				{#each bankAccounts as account (account.id)}
+					<div class="flex items-center justify-between border-b border-border pb-2 last:border-b-0 last:pb-0">
+						<div class="min-w-0 flex-1">
+							<p class="font-medium">{account.bankName}</p>
+							<p class="font-mono text-xs text-text-muted">{shortIban(account.iban)}</p>
+						</div>
+						<div class="text-right">
+							{#if account.currentBalance !== null}
+								<p class="font-mono text-sm" data-testid="homepage-bank-balance-{account.id}">
+									{formatBalance(account.currentBalance)}
+								</p>
+								{#if account.lastTransactionDate}
+									<p class="text-xs text-text-muted" data-testid="homepage-bank-last-tx-{account.id}">
+										{msg('homepage-bank-last-transaction', 'Dernière transaction')} : {account.lastTransactionDate}
+									</p>
+								{/if}
+							{:else}
+								<p class="text-xs text-text-muted" data-testid="homepage-bank-balance-unavailable-{account.id}">
+									<a class="underline" href="/bank-accounts">
+										{msg('homepage-bank-balance-unavailable', 'Solde non disponible — lier au plan comptable')}
+									</a>
+								</p>
+							{/if}
+						</div>
+					</div>
+				{/each}
+				{#if hasAnyBalance}
+					<div class="mt-1 flex items-center justify-between border-t border-border pt-2">
+						<p class="text-sm font-semibold">
+							{msg('homepage-bank-total-liquidity', 'Total liquidités')}
+							{#if totalIsPartial}
+								<span class="ml-1 text-xs font-normal text-text-muted" data-testid="homepage-bank-total-partial">
+									{msg('homepage-bank-total-partial', '(comptes liés uniquement)')}
+								</span>
+							{/if}
+						</p>
+						<p class="font-mono text-sm font-semibold" data-testid="homepage-bank-total-liquidity">
+							{formatBalance(totalLiquidity)}
+						</p>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 </div>

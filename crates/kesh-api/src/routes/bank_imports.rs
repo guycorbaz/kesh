@@ -867,6 +867,13 @@ pub async fn preview(
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
 
+    // Story v014-1 (FINDING-4 Pass 3 Opus) — guard archived anti-énumération
+    // sur les mutations post-archivage. Empêche d'importer des transactions
+    // sur un compte archivé (AC#8 invariant rendu non-récupérable v0.1, L1).
+    if bank_account.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
+
     // Story 8-2 — détection format upload.
     let format = detect_import_format(
         &fields.filename,
@@ -1010,6 +1017,11 @@ pub async fn create(
     )
     .await?
     .ok_or(AppError::BankAccountNotFound)?;
+
+    // Story v014-1 (FINDING-4 Pass 3 Opus) — guard archived anti-énumération.
+    if bank_account.archived {
+        return Err(AppError::BankAccountNotFound);
+    }
 
     // Story 8-2 — détection format upload + dispatch CSV.
     let format = detect_import_format(

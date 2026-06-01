@@ -77,7 +77,7 @@ async fn list_by_company(pool: MySqlPool) {
     .await
     .unwrap();
 
-    let list = bank_accounts::list_by_company(&pool, company_id)
+    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -120,7 +120,7 @@ async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
     assert_eq!(updated.id, created.id); // Same row updated
 
     // Only one account in DB
-    let list = bank_accounts::list_by_company(&pool, company_id)
+    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -710,5 +710,199 @@ async fn set_journal_account_id_no_op_with_stale_version_returns_conflict(pool: 
     assert!(
         matches!(result, Err(DbError::OptimisticLockConflict)),
         "no-op avec version stale doit retourner OptimisticLockConflict, got: {result:?}"
+    );
+}
+
+// ===========================================================================
+// Story v014-1 — Tests contrat archived invariants (F5 Pass 1 code review,
+// MANDATORY FINDING-6 Pass 3 Opus)
+// ===========================================================================
+
+/// Helper : insère un bank_account avec `archived=true` directement en DB
+/// (bypasse `archive_for_company` qui exige tx). Utilisé par les tests
+/// contrat pour préparer l'état "compte déjà archivé".
+async fn create_archived_bank_account(pool: &MySqlPool, company_id: i64, iban: &str) -> i64 {
+    let ba = bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "Archived Bank".into(),
+            iban: iban.into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(ba.id)
+        .execute(pool)
+        .await
+        .unwrap();
+    ba.id
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_invariants_find_primary_excludes_archived(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+
+    // Crée un primary actif.
+    let primary = bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "Active Primary".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    // find_primary retourne le compte actif.
+    let found = bank_accounts::find_primary(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().id, primary.id);
+
+    // Archive le primary (UPDATE direct car archive_for_company exige tx).
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(primary.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // find_primary retourne désormais None (filtre archived=FALSE — F1 Pass 3 Opus
+    // → garantit que invoice_pdf.rs:83 ne renvoie jamais un primary archivé).
+    let found_after = bank_accounts::find_primary(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(
+        found_after.is_none(),
+        "find_primary doit exclure le primary archivé (F1 Pass 3 Opus)"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_invariants_find_by_id_returns_archived(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let archived_id =
+        create_archived_bank_account(&pool, company_id, "CH9300762011623852957").await;
+
+    // Contrat F6 Pass 3 Opus : find_by_id_for_company NE filtre PAS archived
+    // (les call sites décident). Ce contrat est nécessaire pour que les call
+    // sites de mutation puissent eux-mêmes décider de rejeter avec 404
+    // anti-énumération KF-002.
+    let found = bank_accounts::find_by_id_for_company(&pool, company_id, archived_id)
+        .await
+        .unwrap();
+    assert!(
+        found.is_some(),
+        "find_by_id_for_company doit retourner la row même si archivée (contrat F6 Pass 3 Opus)"
+    );
+    assert!(found.unwrap().archived);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_invariants_list_by_company_filters_or_includes(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+
+    // Crée 1 actif + 1 archivé.
+    bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "Active".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    create_archived_bank_account(&pool, company_id, "CH4431999123000889012").await;
+
+    // include_archived=false (défaut UI) : exclut.
+    let active_only = bank_accounts::list_by_company(&pool, company_id, false)
+        .await
+        .unwrap();
+    assert_eq!(active_only.len(), 1);
+    assert!(!active_only[0].archived);
+
+    // include_archived=true (export ZIP souveraineté) : retourne tout.
+    let all = bank_accounts::list_by_company(&pool, company_id, true)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 2);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_invariants_set_journal_account_id_on_archived_returns_not_found(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let archived_id =
+        create_archived_bank_account(&pool, company_id, "CH9300762011623852957").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let result = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        archived_id,
+        Some(1),
+        1,
+    )
+    .await;
+    let _ = tx.rollback().await;
+
+    // F2 Pass 3 Opus : compte archivé → DbError::NotFound (anti-énumération
+    // KF-002). Le handler convertit en AppError::BankAccountNotFound (404).
+    assert!(
+        matches!(result, Err(DbError::NotFound)),
+        "set_journal_account_id sur compte archivé doit retourner NotFound (F2 Pass 3 Opus), got: {result:?}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_invariants_update_for_company_on_archived_returns_not_found(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let archived_id =
+        create_archived_bank_account(&pool, company_id, "CH9300762011623852957").await;
+
+    let new = NewBankAccount {
+        company_id,
+        bank_name: "Updated".into(),
+        iban: "CH4431999123000889012".into(),
+        qr_iban: None,
+        is_primary: false,
+    };
+    let mut tx = pool.begin().await.unwrap();
+    let result =
+        bank_accounts::update_for_company(&mut tx, company_id, archived_id, &new, None, 1).await;
+    let _ = tx.rollback().await;
+
+    assert!(
+        matches!(result, Err(DbError::NotFound)),
+        "update_for_company sur compte archivé doit retourner NotFound (F6 Pass 3 Opus), got: {result:?}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_invariants_archive_for_company_on_already_archived_returns_not_found(
+    pool: MySqlPool,
+) {
+    let company_id = create_test_company(&pool).await;
+    let archived_id =
+        create_archived_bank_account(&pool, company_id, "CH9300762011623852957").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let result = bank_accounts::archive_for_company(&mut tx, company_id, archived_id, 1).await;
+    let _ = tx.rollback().await;
+
+    // Cohérent avec F6 Pass 3 Opus : idempotence non-supportée v0.1 (L1) —
+    // un DELETE sur compte déjà archivé retourne 404 plutôt que 200 idempotent.
+    assert!(
+        matches!(result, Err(DbError::NotFound)),
+        "archive_for_company sur compte déjà archivé doit retourner NotFound (F6 Pass 3 Opus), got: {result:?}"
     );
 }

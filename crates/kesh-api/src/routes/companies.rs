@@ -79,7 +79,9 @@ pub async fn get_current(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<CompanyCurrentResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let accounts = bank_accounts::list_by_company(&state.pool, company.id).await?;
+    let accounts =
+        bank_accounts::list_by_company(&state.pool, company.id, /*include_archived=*/ false)
+            .await?;
 
     Ok(Json(CompanyCurrentResponse {
         company: company.into(),

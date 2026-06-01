@@ -5,7 +5,6 @@
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
-	import { toast } from 'svelte-sonner';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
@@ -24,9 +23,6 @@
 		}
 	});
 
-	function notYet() {
-		toast.info(msg('settings-edit-coming-soon', 'Édition bientôt disponible'));
-	}
 </script>
 
 <svelte:head>
@@ -87,8 +83,16 @@
 		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
 			<div class="flex items-center justify-between">
 				<h2 class="text-lg font-semibold">{msg('settings-bank-title', 'Comptes bancaires')}</h2>
-				<Button variant="outline" size="sm" onclick={notYet}>{msg('settings-edit', 'Modifier')}</Button>
+				<Button variant="outline" size="sm" href="/bank-accounts" data-testid="settings-bank-manage-link">
+					{msg('settings-bank-manage', 'Gérer dans Administration → Comptes bancaires')}
+				</Button>
 			</div>
+			<p class="mt-2 text-xs text-text-muted">
+				{msg(
+					'settings-bank-manage-hint',
+					'Pour ajouter, modifier ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.',
+				)}
+			</p>
 			{#if data.bankAccounts.length > 0}
 				{#each data.bankAccounts as account}
 					<div class="mt-3 text-sm">

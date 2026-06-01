@@ -250,9 +250,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).
+        // Story v014-1 : CRUD complet post-onboarding (POST/PUT/DELETE).
+        .route(
+            "/api/v1/bank-accounts",
+            post(routes::bank_accounts::create_bank_account),
+        )
         .route(
             "/api/v1/bank-accounts/{id}",
-            patch(routes::bank_accounts::patch_bank_account_journal_link),
+            patch(routes::bank_accounts::patch_bank_account_journal_link)
+                .put(routes::bank_accounts::update_bank_account)
+                .delete(routes::bank_accounts::archive_bank_account),
         )
         // Story 8-5b : CRUD règles d'affectation (Comptable+ mutations).
         .route(
