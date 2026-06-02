@@ -15,13 +15,14 @@
 	};
 	let { selected, onSelect, placeholder = 'Rechercher un contact…' }: Props = $props();
 
-	// ID unique par instance — généré au mount côté client pour garantir
-	// la stabilité hydration (évite qu'un rendu SSR produise une valeur
-	// différente du client). Suit le pattern combobox ARIA : les IDs doivent
-	// exister au premier render, donc on initialise immédiatement avec
-	// `crypto.randomUUID` (supporté par tous les runtimes cibles de Kesh :
-	// navigateurs modernes + Node 18+ pour SSR).
-	const instanceId = crypto.randomUUID().slice(0, 8);
+	// ID unique par instance pour le pattern combobox ARIA (les IDs doivent
+	// exister au premier render). On utilise le rune `$props.id()` de Svelte 5,
+	// unique par instance et stable en hydration. NE PAS utiliser
+	// `crypto.randomUUID()` : cette API n'est disponible qu'en contexte
+	// sécurisé (HTTPS ou http://localhost) et lève `TypeError: crypto.randomUUID
+	// is not a function` sur un déploiement HTTP LAN (cf. NAS Synology), ce qui
+	// crashe au rendu toute page consommant ce composant (#145).
+	const instanceId = $props.id();
 	const listboxId = `contact-picker-list-${instanceId}`;
 	const optionId = (contactId: number) => `contact-picker-opt-${instanceId}-${contactId}`;
 
