@@ -8,6 +8,17 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Non publié]
+
+Correctifs issus du dogfooding live sur prod NAS Synology v0.1.4 (déploiement HTTP réseau local).
+
+### Fixed
+
+- **Pages « Facturer » et « Échéancier » blanches en déploiement HTTP** (#145) — sur une installation servie en HTTP sur le réseau local (sans HTTPS), ces deux pages s'affichaient entièrement vides. Cause : une fonctionnalité du navigateur (`crypto.randomUUID`) n'est disponible qu'en contexte sécurisé (HTTPS ou `localhost`) et provoquait une erreur bloquant le rendu. Les pages se chargent désormais correctement quel que soit le mode de déploiement.
+- **Liste déroulante « Compte parent » non défilable** (#143) — lors de la création d'un compte dans le plan comptable, la liste des comptes parents n'était pas défilable quand elle dépassait la hauteur de l'écran (cas d'un plan comptable suisse complet), rendant les comptes du bas inaccessibles. La liste est désormais plafonnée en hauteur et défilable. Le correctif s'applique à toutes les listes déroulantes longues de l'application.
+
+---
+
 ## [0.1.4] — 2026-06-01
 
 Hotfix UX consolidé suite à dogfooding live sur prod NAS Synology v0.1.3 : CRUD complet des comptes bancaires post-onboarding (le seul endpoint existant `POST /api/v1/onboarding/bank-account` refusait les appels post-onboarding), restructuration de la sidebar avec groupes collapsibles, ajout des 4 pages orphelines précédemment accessibles uniquement via URL directe, widget homepage avec soldes calculés.
