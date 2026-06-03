@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen, Download } from '@lucide/svelte';
+	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen, Printer } from '@lucide/svelte';
 
 	import {
 		getInvoice,
@@ -308,8 +308,8 @@
 					{ number: invoice.invoiceNumber ?? '' },
 				)}
 			>
-				<Download class="h-4 w-4" aria-hidden="true" />
-				{i18nMsg('invoices-download-pdf', 'Télécharger PDF')}
+				<Printer class="h-4 w-4" aria-hidden="true" />
+				{i18nMsg('invoices-download-pdf', 'Imprimer / Télécharger PDF')}
 			</Button>
 			{#if invoice.journalEntryId}
 				<Button

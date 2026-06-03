@@ -28,6 +28,14 @@ export async function fetchJournalEntries(
 	return apiClient.get<ListResponse<JournalEntryResponse>>(url);
 }
 
+/**
+ * Récupère le détail d'une écriture (lignes incluses) par son id.
+ * `404` si l'écriture n'existe pas ou appartient à une autre company.
+ */
+export async function getJournalEntry(id: number): Promise<JournalEntryResponse> {
+	return apiClient.get<JournalEntryResponse>(`/api/v1/journal-entries/${id}`);
+}
+
 export async function createJournalEntry(
 	req: CreateJournalEntryRequest
 ): Promise<JournalEntryResponse> {

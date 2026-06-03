@@ -364,6 +364,27 @@ const MAX_LINES_PER_ENTRY: usize = 500;
 /// Longueur maximale du libellé (alignée sur la colonne `description VARCHAR(500)`).
 const MAX_DESCRIPTION_LEN: usize = 500;
 
+/// GET /api/v1/journal-entries/{id} — détail d'une écriture (lignes incluses),
+/// scopée à la company courante.
+///
+/// **P10 defense in depth** : le scoping `company_id` est délégué à
+/// [`journal_entries::find_by_id`] (anti-énumération cross-tenant KF-002).
+/// Une écriture inexistante OU appartenant à une autre company retourne
+/// `404 NOT_FOUND`, jamais `403` (pas de fuite d'existence).
+pub async fn get_journal_entry(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<JournalEntryResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    let entry = journal_entries::find_by_id(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    Ok(Json(JournalEntryResponse::from(entry)))
+}
+
 /// POST /api/v1/journal-entries — crée une écriture en partie double.
 pub async fn create_journal_entry(
     State(state): State<AppState>,

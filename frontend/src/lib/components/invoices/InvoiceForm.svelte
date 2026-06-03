@@ -456,19 +456,7 @@
 	</div>
 
 	<div>
-		<div class="mb-2 flex items-center justify-between">
-			<h3 class="text-lg font-semibold">Lignes</h3>
-			<div class="flex gap-2">
-				<Button type="button" variant="outline" onclick={addFreeLine}>
-					<Plus class="h-4 w-4" aria-hidden="true" />
-					Ligne libre
-				</Button>
-				<Button type="button" variant="outline" onclick={() => (productPickerOpen = true)}>
-					<Package class="h-4 w-4" aria-hidden="true" />
-					Depuis catalogue
-				</Button>
-			</div>
-		</div>
+		<h3 class="mb-2 text-lg font-semibold">Lignes</h3>
 
 		<table class="w-full border-collapse text-sm" data-testid="invoice-lines-table">
 			<thead>
@@ -534,6 +522,17 @@
 				</tr>
 			</tfoot>
 		</table>
+
+		<div class="mt-3 flex gap-2">
+			<Button type="button" variant="outline" onclick={addFreeLine}>
+				<Plus class="h-4 w-4" aria-hidden="true" />
+				Ligne libre
+			</Button>
+			<Button type="button" variant="outline" onclick={() => (productPickerOpen = true)}>
+				<Package class="h-4 w-4" aria-hidden="true" />
+				Depuis catalogue
+			</Button>
+		</div>
 	</div>
 
 	<div class="flex justify-end gap-2">
