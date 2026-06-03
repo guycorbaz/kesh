@@ -308,6 +308,92 @@ async fn idor_contacts_cross_company_returns_404(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn idor_journal_entries_cross_company_returns_404(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+
+    // Setup: two companies with users
+    let (company_a_id, accounts_a) = create_seeded_company(&pool).await;
+    let (company_b_id, _accounts_b) = create_seeded_company(&pool).await;
+
+    let _user_a_id = create_company_user(&pool, company_a_id, "alice", "password123").await;
+    let _user_b_id = create_company_user(&pool, company_b_id, "bob", "password123").await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token_a = login(&app, "alice", "password123").await;
+    let token_b = login(&app, "bob", "password123").await;
+
+    // Create a balanced journal entry in company A (debit 1000 / credit 3000).
+    let create_resp = app
+        .client
+        .post(app.url("/api/v1/journal-entries"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .json(&json!({
+            "entryDate": "2025-06-15",
+            "journal": "Ventes",
+            "description": "Écriture IDOR test",
+            "lines": [
+                { "accountId": accounts_a["1000"], "debit": "100.00", "credit": "0.00" },
+                { "accountId": accounts_a["3000"], "debit": "0.00", "credit": "100.00" }
+            ]
+        }))
+        .send()
+        .await
+        .expect("create should succeed");
+
+    assert_eq!(create_resp.status(), 201);
+    let entry_data: serde_json::Value = create_resp.json().await.expect("json body");
+    let entry_a_id = entry_data["id"].as_i64().expect("id present");
+
+    // Attempt to access entry A as user B (cross-company) → 404 anti-énumération.
+    let get_resp = app
+        .client
+        .get(app.url(&format!("/api/v1/journal-entries/{}", entry_a_id)))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(
+        get_resp.status(),
+        404,
+        "User B cannot access journal entry from company A"
+    );
+
+    // Non-existent entry id → 404 (jamais 200 vide).
+    let missing_resp = app
+        .client
+        .get(app.url("/api/v1/journal-entries/99999999"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .send()
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(
+        missing_resp.status(),
+        404,
+        "Non-existent journal entry returns 404"
+    );
+
+    // User A can access own entry → 200 avec ses lignes.
+    let own_access = app
+        .client
+        .get(app.url(&format!("/api/v1/journal-entries/{}", entry_a_id)))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .send()
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(own_access.status(), 200, "User A can access own entry");
+    let body: serde_json::Value = own_access.json().await.expect("json body");
+    assert_eq!(body["id"].as_i64(), Some(entry_a_id));
+    assert_eq!(
+        body["lines"].as_array().map(|a| a.len()),
+        Some(2),
+        "le détail inclut les 2 lignes"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn idor_products_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 

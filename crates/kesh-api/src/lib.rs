@@ -281,6 +281,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/journal-entries",
             get(routes::journal_entries::list_journal_entries),
         )
+        // Détail d'une écriture (lecture, tout rôle authentifié — symétrique
+        // de la liste ci-dessus ; mutations PUT/DELETE en comptable_routes).
+        .route(
+            "/api/v1/journal-entries/{id}",
+            get(routes::journal_entries::get_journal_entry),
+        )
         // Story 4.1 : lecture carnet d'adresses (tout rôle authentifié)
         .route("/api/v1/contacts", get(routes::contacts::list_contacts))
         .route("/api/v1/contacts/{id}", get(routes::contacts::get_contact))
