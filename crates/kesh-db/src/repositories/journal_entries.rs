@@ -974,12 +974,9 @@ mod tests {
         // Nettoyer les écritures existantes pour éviter les interférences.
         delete_all_by_company(pool, company_id).await.unwrap();
 
-        // Récupérer l'exercice ouvert courant.
+        // Garantir un exercice OUVERT couvrant aujourd'hui (auto-réparation #140).
         let today = chrono::Utc::now().naive_utc().date();
-        let fy = fiscal_years::find_covering_date(pool, company_id, today)
-            .await
-            .expect("find_covering_date")
-            .expect("need fiscal year for today (run seed-demo)");
+        let fy = ensure_open_fiscal_year(pool, company_id, today).await;
 
         // Récupérer l'admin user pour l'audit log (dupliqué depuis
         // audit_log::tests story 3.3 — voir spec 3.5 Dev Notes L1).
@@ -990,6 +987,56 @@ mod tests {
                 .expect("need at least one admin user (run seed-demo or bootstrap)");
 
         (company_id, fy.id, admin_user_id)
+    }
+
+    /// Garantit qu'un exercice fiscal **ouvert** couvre `date` et le retourne.
+    ///
+    /// Auto-réparation #140 : la suite dépend d'un exercice ouvert couvrant le
+    /// jour J, récupéré via `find_covering_date`. Or un run précédent peut
+    /// laisser l'exercice clos (p. ex. `update_no_op_in_closed_fy_*` clôt sans
+    /// recréer), tout comme une clôture manuelle en base dev pendant le
+    /// dogfooding. Dans ces cas, `setup` récupérait un exercice `Closed` et tous
+    /// les tests suivants échouaient en `FiscalYearClosed`. On rétablit donc un
+    /// exercice ouvert : si l'exercice couvrant est clos, on le supprime (après
+    /// purge des écritures pour respecter la FK) et on en recrée un ouvert pour
+    /// l'année calendaire ; si aucun exercice ne couvre la date, on en crée un.
+    /// Même pattern delete+recreate que `test_create_rejects_closed_fiscal_year`.
+    async fn ensure_open_fiscal_year(
+        pool: &MySqlPool,
+        company_id: i64,
+        date: NaiveDate,
+    ) -> crate::entities::FiscalYear {
+        use crate::entities::FiscalYearStatus;
+
+        if let Some(fy) = fiscal_years::find_covering_date(pool, company_id, date)
+            .await
+            .expect("find_covering_date")
+        {
+            if fy.status == FiscalYearStatus::Open {
+                return fy;
+            }
+            // Exercice couvrant mais clos → purge des écritures puis suppression
+            // (un exercice clos ne peut pas être rouvert par politique métier).
+            delete_all_by_company(pool, company_id).await.unwrap();
+            sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
+                .bind(fy.id)
+                .execute(pool)
+                .await
+                .expect("delete closed fiscal year");
+        }
+
+        let year = date.year();
+        fiscal_years::create_for_seed(
+            pool,
+            crate::entities::NewFiscalYear {
+                company_id,
+                name: format!("Exercice {year}"),
+                start_date: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
+                end_date: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
+            },
+        )
+        .await
+        .expect("create open fiscal year for tests")
     }
 
     /// Récupère 2 comptes actifs pour les tests (premier actif puis un autre).
