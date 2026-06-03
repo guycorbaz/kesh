@@ -8,6 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.1.7] — Non publié
+
+Correctifs issus du dogfooding live de la facturation sur prod NAS Synology v0.1.6.
+
+### Changed
+
+- **Compte bancaire — aide sur le champ QR-IBAN** (#155) : un texte explicatif précise désormais que le champ « QR-IBAN » ne doit être rempli **que** si la banque a fourni un QR-IBAN dédié aux QR-factures (identifiant 30000–31999), et qu'il faut sinon le laisser vide (l'IBAN normal suffit pour générer des QR-factures). En cas de saisie d'un IBAN qui n'est pas un QR-IBAN, le message d'erreur est désormais actionnable (« laissez ce champ vide ») au lieu du message technique « QR-IID … hors plage 30000-31999 ».
+
+### Fixed
+
+- **Suite de tests `journal_entries` auto-réparante** (#140) : 20 tests backend échouaient en `FiscalYearClosed` lorsque l'exercice de l'année courante était clos en base de développement (clôture manuelle pendant le dogfooding, ou test antérieur le laissant clos). Le helper de test garantit désormais un exercice **ouvert** couvrant la date du jour, indépendamment de l'état du seed. Aucun impact sur l'application ni sur les données — correctif purement test (dette technique catégorie A levée avant le passage à v0.2).
+
+---
+
 ## [0.1.6] — 2026-06-03
 
 Correctifs et améliorations issus du dogfooding live de la facturation sur prod NAS Synology v0.1.5.
