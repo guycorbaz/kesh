@@ -139,9 +139,37 @@
 		resetForm();
 	}
 
+	/**
+	 * #155 — un QR-IBAN valide porte une QR-IID (positions 5–9 de l'IBAN) dans
+	 * la plage 30000–31999. On valide côté client pour afficher un message
+	 * actionnable (« laissez ce champ vide ») plutôt que l'erreur backend
+	 * technique « QR-IID … hors plage … ». Cas le plus fréquent : l'utilisateur
+	 * recopie son IBAN normal (ex. BCV, IID 00767) dans ce champ optionnel.
+	 */
+	function qrIbanHasValidQrIid(value: string): boolean {
+		const normalized = value.replace(/\s+/g, '').toUpperCase();
+		if (normalized.length < 9) return false;
+		const iid = Number(normalized.slice(4, 9));
+		return Number.isInteger(iid) && iid >= 30000 && iid <= 31999;
+	}
+
+	/** Retourne false (et positionne `formError`) si le QR-IBAN saisi n'en est pas un. */
+	function validateQrIbanField(): boolean {
+		const qrIban = formQrIban.trim();
+		if (qrIban !== '' && !qrIbanHasValidQrIid(qrIban)) {
+			formError = i18nMsg(
+				'bank-accounts-error-qr-iban-not-qr',
+				"Cet IBAN n'est pas un QR-IBAN. Si votre banque ne vous a pas fourni de QR-IBAN dédié aux QR-factures, laissez ce champ vide : votre IBAN normal suffit."
+			);
+			return false;
+		}
+		return true;
+	}
+
 	async function submitCreate(e: Event) {
 		e.preventDefault();
 		formError = null;
+		if (!validateQrIbanField()) return;
 		submitting = true;
 		try {
 			const payload: NewBankAccountPayload = {
@@ -165,6 +193,7 @@
 	async function submitUpdateFull(e: Event, id: number) {
 		e.preventDefault();
 		formError = null;
+		if (!validateQrIbanField()) return;
 		submitting = true;
 		try {
 			const payload: UpdateBankAccountPayload = {
@@ -282,6 +311,7 @@
 					<div>
 						<label for="form-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
 						<Input id="form-qr-iban" bind:value={formQrIban} placeholder="CH..." data-testid="form-qr-iban" />
+						<p class="mt-1 text-xs text-text-muted" data-testid="form-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
 					</div>
 					<div>
 						<label for="form-journal-account" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
@@ -432,6 +462,7 @@
 											<div>
 												<label for="edit-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
 												<Input id="edit-qr-iban" bind:value={formQrIban} data-testid="edit-qr-iban" />
+												<p class="mt-1 text-xs text-text-muted" data-testid="edit-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
 											</div>
 											<div>
 												<label for="edit-journal-account" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
