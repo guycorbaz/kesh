@@ -8,6 +8,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.1.8] — Non publié
+
+Correctif issu du dogfooding live sur prod NAS Synology v0.1.7.
+
+### Fixed
+
+- **Numéro de version affiché incorrect** (#159) : le pied de page (ainsi que les écrans de connexion et de configuration) affichaient « Kesh v0.1.0 » au lieu de la version réellement installée. La version affichée provient désormais du **backend au runtime** (champ `version` de la réponse `/health`, résolu depuis `crates/kesh-api/Cargo.toml` à la compilation), garantissant qu'elle correspond toujours au binaire qui tourne — sans dépendre d'un fichier frontend à mettre à jour manuellement à chaque release. Cause : pieds de page codant la version en dur + source frontend (`package.json`) jamais bumpée.
+
+---
+
 ## [0.1.7] — 2026-06-03
 
 Correctifs issus du dogfooding live de la facturation sur prod NAS Synology v0.1.6.
