@@ -8,6 +8,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Non publié]
+
+Correctifs et améliorations issus du dogfooding live de la facturation sur prod NAS Synology v0.1.5.
+
+### Fixed
+
+- **« Voir l'écriture comptable » → page 404** (#148) : sur une facture validée, le bouton menait à une route inexistante. Ajout de la **page détail d'une écriture comptable** (`/journal-entries/{id}`, affichage des lignes débit/crédit + comptes + totaux) et de l'endpoint backend `GET /api/v1/journal-entries/{id}` (scopé société, 404 anti-énumération cross-tenant).
+
+### Changed
+
+- **Facture — placement des boutons d'ajout de ligne** (#149) : « Ligne libre » et « Depuis catalogue » sont désormais placés **sous le tableau des lignes** (au lieu de l'en-tête) pour un flux d'ajout plus naturel.
+- **Facture — bouton d'impression** (#150) : « Télécharger PDF » renommé **« Imprimer / Télécharger PDF »** avec une icône imprimante, pour la découvrabilité (la fonction existait déjà mais n'était pas identifiée comme l'impression).
+
+---
+
 ## [0.1.5] — 2026-06-03
 
 Correctifs issus du dogfooding live sur prod NAS Synology v0.1.4 (déploiement HTTP réseau local).
