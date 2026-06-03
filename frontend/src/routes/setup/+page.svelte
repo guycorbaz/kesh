@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SetupForm from '$lib/features/setup/SetupForm.svelte';
+	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 </script>
 
 <svelte:head>
@@ -13,6 +14,6 @@
 		class="absolute bottom-4 left-0 right-0 text-center text-xs text-muted-foreground"
 		data-testid="app-version"
 	>
-		Kesh v{__APP_VERSION__}
+		Kesh v{appVersion.value}
 	</footer>
 </main>

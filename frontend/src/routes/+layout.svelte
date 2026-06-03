@@ -5,6 +5,7 @@
 	import { modeState } from '$lib/app/stores/mode.svelte';
 	import DegradedBanner from '$lib/shared/components/DegradedBanner.svelte';
 	import { apiHealth } from '$lib/shared/utils/api-health.svelte';
+	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { loadI18nMessages } from '$lib/shared/utils/i18n.svelte';
 	import { Toaster } from 'svelte-sonner';
@@ -52,12 +53,12 @@
 
 		try {
 			const res = await fetch('/health', { signal: AbortSignal.timeout(2000) });
-			if (!res.ok) {
-				apiHealth.setDegraded();
-				return;
-			}
-			const body = (await res.json()) as { db?: unknown };
-			if (body.db !== true) {
+			// #159 : `/health` renvoie aussi `version` (même en 503 DB-down) — on la
+			// capte avant le check d'état pour que le footer/login affiche la version
+			// du binaire backend qui tourne, y compris quand la DB est inaccessible.
+			const body = (await res.json().catch(() => ({}))) as { db?: unknown; version?: unknown };
+			appVersion.set(body.version);
+			if (!res.ok || body.db !== true) {
 				apiHealth.setDegraded();
 			}
 		} catch {

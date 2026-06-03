@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onboardingState, i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
+	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 
 	let { children } = $props();
 </script>
@@ -32,6 +33,6 @@
 
 	<!-- Footer disclaimer FR7 -->
 	<footer class="mt-8 text-center text-xs text-text-muted">
-		Kesh v0.1.0 &mdash; Logiciel libre (EUPL 1.2). Les donn&eacute;es ne remplacent pas un fiduciaire.
+		Kesh v{appVersion.value} &mdash; Logiciel libre (EUPL 1.2). Les donn&eacute;es ne remplacent pas un fiduciaire.
 	</footer>
 </div>

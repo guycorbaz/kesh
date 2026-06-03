@@ -5,6 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
+	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 	import { AlertTriangle, Clock, WifiOff, XCircle } from '@lucide/svelte';
 
 	let username = $state('');
@@ -162,6 +163,6 @@
 		class="absolute bottom-4 left-0 right-0 text-center text-xs text-muted-foreground"
 		data-testid="app-version"
 	>
-		Kesh v{__APP_VERSION__}
+		Kesh v{appVersion.value}
 	</footer>
 </main>
