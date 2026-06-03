@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [Non publié]
+## [0.1.6] — Non publié
 
 Correctifs et améliorations issus du dogfooding live de la facturation sur prod NAS Synology v0.1.5.
 
