@@ -227,3 +227,17 @@ development_status:
   15-3-versioning-parseurs-modeles-manuels: backlog
   15-4-journaux-personnalisables: backlog  # Reclassified from 3-6 (Epic 3) on 2026-04-28. Scope à spécifier — voir options A/B/C présentées lors du /bmad-create-story 3-6 du 2026-04-28. Pas urgent v0.2 si pas de demande utilisateur post-v0.1.
   epic-15-retrospective: optional
+  # --- v0.2 : Epics ajoutés au scoping 2026-06-04 (cf. _bmad-output/planning-artifacts/epic-17.md) ---
+  # Ordre d'exécution v0.2 : E17 (infra) DÉMARRE, puis E11 TVA, E16 Facturation, E12, E13, E14, E15.
+  # Numéro Epic = identifiant domaine ; ordre d'exécution indépendant.
+  epic-16: backlog  # Facturation avancée (#144/#152/#151) — Epic dédié acté 2026-06-04
+  16-1-compte-produit-catalogue: backlog  # #144 allouer un compte du plan comptable à un produit
+  16-2-compte-produit-par-ligne: backlog  # #152 choisir le compte de produit par ligne facture
+  16-3-facture-pdf-champs-complets: backlog  # #151 coordonnées émetteur + n° client + récap TVA
+  epic-16-retrospective: optional
+  epic-17: in-progress  # Infra & Souveraineté — démarre v0.2 (2026-06-04)
+  17-1-fix-toctou-setup-admin: ready-for-dev  # 2026-06-04 `bmad-create-story 17-1` (Opus) — spec créée `17-1-fix-toctou-setup-admin.md`, 8 ACs / 6 tasks. Fix TOCTOU #133 : wrapper SELECT COUNT + INSERT dans une tx avec verrou sentinelle `SELECT _kesh_version id=1 FOR UPDATE` (calque `acquire_company_sentinel_lock`). Besoin `users::create_in_tx` (create actuel ouvre sa propre tx). Test race `#[ignore]` → assertion stricte exactly-1-admin. Aucune migration. Prochaine : `bmad-create-story validate 17-1` (optionnel) OU `bmad-dev-story 17-1`.
+  17-2-api-pat-integrations: backlog  # #100 API externe clé PAT (split probable)
+  17-3-export-import-installation: backlog  # #112 export/import installation via UI admin (split probable)
+  17-4-recovery-mot-de-passe: backlog  # #122 forgot-password email + alternatives (split probable)
+  epic-17-retrospective: optional
