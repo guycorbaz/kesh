@@ -217,11 +217,34 @@ La règle de splitting préventif CLAUDE.md (> 5 modules) est **dépassée par l
 - [Source: memory feedback_no_secure_context_apis_http_lan] — clipboard/crypto HTTP LAN.
 - [Source: CLAUDE.md §Migration breaking policy P1/P3/P5, §Règle de splitting préventif, §Synchroniser TOUTES les docs] — contraintes process.
 
+## Change Log — spec validate
+
+**Cycle `bmad-create-story validate 17-2` CONVERGÉ en 5 passes (2026-06-04)** — critère d'arrêt CLAUDE.md atteint (0 finding > LOW), budget 5/8. Rotation complète Sonnet → Haiku → Opus → Sonnet → Haiku.
+
+| Passe | Modèle | Findings | > LOW | Patches |
+|---|---|---|---|---|
+| 1 | Sonnet 4.6 | 1C + 2H + 3M + 3L | 6 | 9 |
+| 2 | Haiku 4.5 | 1H + 3M + 2L | 4 | 6 |
+| 3 | Opus 4.8 | 1H + 2M + 4L | 3 | 7 |
+| 4 | Sonnet 4.6 | 1M + 1L | 1 | 2 |
+| 5 | Haiku 4.5 | 0 | 0 | 0 (convergé) |
+
+- **Trend > LOW** : 6 → 4 → 3 → 1 → **0** (convergé).
+- **Findings structurants (par passe)** :
+  - **Pass 1 (Sonnet) F1 CRITICAL** : contradiction AC8(b) « actor_type=api_key sur routes métier » vs « aucun call-site ne change » — `CurrentUser` ne portait pas `api_key_id` → résolu en étendant `CurrentUser { …, api_key_id: Option<i64> }` + helper `from_current_user` + limitation L1 (repos kesh-db). + ordre discrimination JWT/PAT (préfixe `kesh_pat_` avant `jwt::decode`), deps `rand`/`base62` (sha2 déjà présent), ~48 call-sites audit dont `bootstrap.rs`.
+  - **Pass 2 (Haiku)** : DC6 (durcissement réel) — gestion des clés interdite via PAT même `read-write` (403 `API_KEY_MANAGEMENT_FORBIDDEN`, évite l'auto-propagation d'une clé fuitée). + base62 inline tranché, case-sensitivity préfixe, `touch_last_used` best-effort, `user_id` reste NOT NULL. **0 hallucination Haiku** (findings = clarifications/design, pas de claims grepables faux).
+  - **Pass 3 (Opus) — catch-architectural** : **F-OPUS-1 HIGH** — `from_current_user` inapplicable aux ~9 call-sites *helper* qui prennent `user_id: i64` nu (`bank-imports::create`, `accept_one_*`, `emit_*_audit`, `audit_primary_transition`, `insert_canonical_audit_log`) ; la vraie frontière `api_key` vs `user` = « a `&CurrentUser` vs `user_id` nu », **pas** kesh-api/kesh-db → reframe DC5/AC8(b)/T-A4 en 3 catégories + threading `actor_api_key_id`. + F-OPUS-2 (structure réelle `require_auth` = token aplati + gate `users_exist`→423 avant decode) + F-OPUS-3 (`COLUMNS` const/FromRow `insert_in_tx` → sinon `ColumnNotFound` runtime). Concerns invisibles à Sonnet+Haiku, ground-truthés.
+  - **Pass 4 (Sonnet)** : vérif cohérence inter-patches Pass 1-3 (tous cohérents) + **S4-1 MEDIUM** préfixe i18n `api-key-` ≠ dossier `api-keys` → casse `lint-i18n-ownership` (corrigé `api-keys-`, comme `bank-accounts-`) + S4-2 (champ `exp` PAT).
+  - **Pass 5 (Haiku)** : convergence confirmée, patch S4-1 vérifié appliqué partout (ground-truth), 0 > LOW.
+- **Décisions de reclassement** : aucune (tous les findings traités par patch).
+- **Découpage** : split **17-2a / 17-2b / 17-2c** confirmé justifié par 3 passes (Partie A backend seule > 5 modules ; F-OPUS-1 montre que le ripple audit n'est PAS purement mécanique → 17-2a = sous-story à risque). **Recommandation forte : splitter au dev-story** ou créer 17-2a comme story-foundation.
+- **Validations positives ground-truth** (non-findings) : `sha2` présent ; `rand_core`/`base62` absents ; `utoipa` absent (estimation OpenAPI « si faisable » réaliste) ; migrations non-breaking confirmées ; pattern `AppError` i18n `build_response(code, t())` confirmé pour les 2 nouveaux codes 403.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-(à compléter par dev-story — recommandation : Opus pour le middleware auth factorisé + le ripple audit cross-call-site ; story large → split 17-2a/b/c quasi-certain au validate)
+(à compléter par dev-story — recommandation : Opus pour le middleware auth factorisé + le ripple audit cross-call-site. **Split 17-2a/b/c CONFIRMÉ au validate (5 passes) : créer la sous-story 17-2a backend en premier — c'est la plus risquée — avant 17-2b frontend / 17-2c doc.** Le ripple audit n'est PAS purement mécanique (F-OPUS-1 : 3 catégories de call-sites).)
 
 ### Debug Log References
 
