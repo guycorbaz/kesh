@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.1.8] — Non publié
+## [0.1.8] — 2026-06-04
 
 Correctif issu du dogfooding live sur prod NAS Synology v0.1.7.
 
