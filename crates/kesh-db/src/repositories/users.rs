@@ -5,6 +5,7 @@
 //! aucune validation ni transformation du hash.
 
 use sqlx::mysql::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 use crate::entities::{NewUser, User, UserUpdate};
 use crate::errors::{DbError, map_db_error};
@@ -20,9 +21,33 @@ const LIST_SQL: &str = "SELECT id, username, password_hash, role, active, compan
      FROM users ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée un nouvel utilisateur et retourne l'entité persistée.
+///
+/// Wrapper auto-transactionnel : ouvre sa propre transaction, délègue l'INSERT
+/// à [`create_in_tx`] puis committe. Préserve l'API publique historique — tous
+/// les call sites existants restent inchangés.
 pub async fn create(pool: &MySqlPool, new: NewUser) -> Result<User, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    // Sur erreur, le `?` retourne immédiatement → `tx` est droppé → rollback
+    // automatique sqlx (cohérent avec l'ancien rollback explicite, en plus DRY).
+    let user = create_in_tx(&mut tx, new).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(user)
+}
 
+/// Crée un nouvel utilisateur **à l'intérieur d'une transaction fournie par
+/// l'appelant** et retourne l'entité persistée.
+///
+/// Variant transaction-aware de [`create`] : n'ouvre ni ne committe aucune
+/// transaction — l'appelant gère le cycle de vie (`begin`/`commit`/`rollback`).
+/// Utilisé par le handler `POST /setup/admin` (Story 17-1) pour fusionner le
+/// check `user_count == 0` et l'INSERT du 1er admin dans une seule transaction
+/// verrouillée (fermeture de la race TOCTOU). Sur erreur, l'appelant doit
+/// rollback (ou laisser la `Transaction` être droppée → rollback automatique
+/// sqlx).
+///
+/// Préserve la gestion `last_insert_id() == 0 → DbError::Invariant` et le
+/// mapping `map_db_error` (incl. `UniqueConstraintViolation` code 1062).
+pub async fn create_in_tx(tx: &mut Transaction<'_, MySql>, new: NewUser) -> Result<User, DbError> {
     let result = sqlx::query(
         "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, ?, ?, ?)",
     )
@@ -31,45 +56,72 @@ pub async fn create(pool: &MySqlPool, new: NewUser) -> Result<User, DbError> {
     .bind(new.role)
     .bind(new.active)
     .bind(new.company_id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     let last_id = result.last_insert_id();
     if last_id == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::Invariant(
             "last_insert_id == 0 après INSERT user".into(),
         ));
     }
-    let id = match i64::try_from(last_id) {
-        Ok(v) => v,
-        Err(_) => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::Invariant(format!(
-                "last_insert_id {last_id} dépasse i64::MAX"
-            )));
-        }
-    };
+    let id = i64::try_from(last_id)
+        .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
-    let user_opt = sqlx::query_as::<_, User>(FIND_BY_ID_SQL)
+    let user = sqlx::query_as::<_, User>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| DbError::Invariant(format!("user {id} introuvable après INSERT")))?;
+
+    Ok(user)
+}
+
+/// Acquiert un verrou exclusif sérialisant sur la row sentinelle globale
+/// `_kesh_version (id = 1)` au sein de la transaction fournie (Story 17-1,
+/// fermeture race TOCTOU `POST /setup/admin`, issue #133).
+///
+/// Calque de [`acquire_company_sentinel_lock`](crate::repositories::bank_accounts::acquire_company_sentinel_lock)
+/// **avec une divergence critique** : le helper companies retourne `Ok(())`
+/// même si la row est absente (acceptable car le `company_id` y est pré-validé
+/// en amont). Ici la sentinelle est **globale** et **sans pré-validation** : si
+/// la row `_kesh_version id=1` est absente, le `FOR UPDATE` ne verrouille rien
+/// et la race TOCTOU persisterait *silencieusement*. On traite donc `None`
+/// comme une erreur structurelle d'installation → [`DbError::Invariant`]
+/// (mappé `AppError::Internal` → HTTP 500 côté handler).
+///
+/// # Garanties d'ordonnancement (à respecter par l'appelant)
+///
+/// - Verrou **install-wide**, relâché automatiquement au `commit`/`rollback`
+///   de la transaction (pas de `GET_LOCK`/`RELEASE_LOCK` manuel à gérer).
+/// - **DOIT être la PREMIÈRE instruction de la transaction**, avant tout
+///   `SELECT` non-locking. Sous l'isolation par défaut InnoDB (REPEATABLE
+///   READ), le snapshot MVCC d'une transaction est figé à son premier
+///   *consistent read* non-locking. Placer ce `SELECT … FOR UPDATE` (locking
+///   read, qui ne fige pas le snapshot consistent) en tête garantit que le
+///   `SELECT COUNT(*)` suivant — premier non-locking read — fige son snapshot
+///   APRÈS le commit de la transaction concurrente, donc voit les données
+///   committées (`user_count == 1`).
+/// - `None` (row absente) = bug structurel d'installation (migration
+///   `20260522000001` non appliquée ou `DELETE` manuel) → `Invariant`.
+pub async fn acquire_setup_sentinel_lock(tx: &mut Transaction<'_, MySql>) -> Result<(), DbError> {
+    // `query` (pas `query_as`) + `fetch_optional` : on ne décode AUCUNE colonne,
+    // on teste seulement la présence de la row. `_kesh_version.id` est un
+    // `TINYINT UNSIGNED` (≠ `companies.id` BIGINT) — un décodage strict en
+    // `(i64,)` échouerait (type mismatch). Le `FOR UPDATE` verrouille la row
+    // matchée indépendamment de la liste de projection.
+    let row = sqlx::query("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
-
-    let user = match user_opt {
-        Some(u) => u,
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::Invariant(format!(
-                "user {id} introuvable après INSERT"
-            )));
-        }
-    };
-
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(user)
+    if row.is_none() {
+        return Err(DbError::Invariant(
+            "row _kesh_version id=1 absente — migration 20260522000001 non appliquée ou DELETE manuel".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Retrouve un utilisateur par son id.

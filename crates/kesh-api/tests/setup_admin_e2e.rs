@@ -345,27 +345,29 @@ async fn setup_admin_rate_limit_returns_429(pool: MySqlPool) {
     assert!(retry_after.is_some(), "Retry-After header expected on 429");
 }
 
-/// AC #22 + L1 — Race TOCTOU 2 usernames distincts (limitation v0.1 documentée).
+/// AC #6 / AC1 — Race TOCTOU 2 usernames distincts : **garantie stricte** que le
+/// verrou sentinelle (`SELECT _kesh_version id=1 FOR UPDATE`, Story 17-1) crée
+/// au plus 1 admin (fermeture issue #133, ex-limitation L1 Story v011-5).
 ///
-/// **Ce test n'asserte pas un comportement strict** — il documente le
-/// comportement observé d'un INSERT user concurrent avec usernames distincts
-/// après que tous deux ont passé le check `user_count == 0`. Trace pour Issue #133
-/// (v0.2-milestone TOCTOU fix via advisory lock ou SELECT ... FOR UPDATE).
-///
-/// `#[ignore]` car le test dépend du timing du runtime async et de la latence
-/// DB — pas déterministe. À lancer manuellement via :
-/// `cargo test --test setup_admin_e2e -- --ignored toctou`
-#[ignore = "documente la limitation L1 race TOCTOU — comportement non-déterministe"]
+/// Deux requêtes concurrentes avec des usernames DIFFÉRENTS (`alice`/`bob`) — donc
+/// non bloquées entre elles par la contrainte `UNIQUE username` — se sérialisent
+/// sur le verrou sentinelle. Résultat **déterministe** :
+/// - exactement **1** utilisateur en base après les deux requêtes ;
+/// - l'ensemble des deux status HTTP == `{200, 410}` (un succès, un auto-disable),
+///   dans un ordre quelconque (l'ordre alice/bob gagnant reste non déterministe).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn toctou_race_two_distinct_usernames_documents_l1(pool: MySqlPool) {
+async fn toctou_race_two_distinct_usernames_creates_exactly_one_admin(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
+    // La row sentinelle `_kesh_version (id=1)` est posée par la migration
+    // 20260522000001 (`INSERT ... VALUES (1, '0.1.0', '0.1.0')`) appliquée par
+    // `kesh_db::MIGRATOR` — indispensable pour que le `FOR UPDATE` verrouille.
 
     let app = spawn_app(pool.clone(), false).await;
     let base_url = app.base_url.clone();
 
-    // Lancer 2 requêtes en parallèle avec des usernames DIFFÉRENTS (donc pas
-    // de UniqueConstraintViolation pour les bloquer entre elles).
+    // Les deux requêtes partagent le même process backend (même AppState/pool)
+    // → la contention DB se produit réellement sur le verrou sentinelle.
     let client_a = app.client.clone();
     let client_b = app.client.clone();
     let url_a = format!("{}/api/v1/setup/admin", base_url);
@@ -395,24 +397,25 @@ async fn toctou_race_two_distinct_usernames_documents_l1(pool: MySqlPool) {
     let res_a = fut_a.await.expect("join A").expect("send A");
     let res_b = fut_b.await.expect("join B").expect("send B");
 
-    // Observation attendue : les 2 requêtes ont pu passer le check user_count==0
-    // simultanément → 2 INSERTs sur usernames distincts → 2 admins créés.
-    // OU : la 2e arrive après le 1er INSERT → user_count > 0 lu à temps → 410.
-    // Pas d'assertion stricte ; on documente uniquement le nombre final d'admins.
+    // Exactement 1 admin : le verrou sentinelle garantit la sérialisation.
     let final_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
         .await
         .expect("count");
-
-    eprintln!(
-        "TOCTOU race observation : status A={} status B={} → {} user(s) final(aux) en DB",
+    assert_eq!(
+        final_count,
+        1,
+        "le verrou sentinelle garantit exactement 1 admin (status A={}, B={})",
         res_a.status(),
-        res_b.status(),
-        final_count
+        res_b.status()
     );
 
-    // Au moins 1 admin (l'1er a réussi). 2 = race effectivement observée
-    // (limitation L1 Issue #133). Pas d'assertion d'égalité — le test trace.
-    assert!(final_count >= 1, "au moins un admin doit être créé");
-    assert!(final_count <= 2, "au plus 2 admins (alice + bob)");
+    // Le set des deux status == {200, 410}, ordre indifférent.
+    let mut statuses = [res_a.status().as_u16(), res_b.status().as_u16()];
+    statuses.sort_unstable();
+    assert_eq!(
+        statuses,
+        [200, 410],
+        "un succès (200) et un auto-disable (410), ordre indifférent"
+    );
 }

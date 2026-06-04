@@ -9,16 +9,21 @@
 //! Flow :
 //! 1. Rate-limit IP (5/15min, cohérent `/auth/login`, quota partagé).
 //! 2. Validation : username trim non-vide ; password ≥ `KESH_PASSWORD_MIN_LENGTH` (12).
-//! 3. Gate `user_count > 0` → 410 SETUP_ALREADY_COMPLETE.
-//! 4. Hash Argon2id.
-//! 5. INSERT user `Admin` attaché à la company stub existante.
-//! 6. Set cookies HttpOnly (réutilise `build_auth_cookies` pub(crate)).
-//! 7. Set `state.users_exist = true` (Release) → désactive le gate 423.
-//! 8. Retourne `LoginResponse` (cohérent /login pour fluidité du frontend).
+//! 3. Fetch company stub + hash Argon2id (hors transaction).
+//! 4. Section critique atomique (Story 17-1) : `begin` → verrou sentinelle
+//!    `_kesh_version id=1 FOR UPDATE` → re-check `user_count == 0` sous verrou
+//!    (`> 0` → 410 SETUP_ALREADY_COMPLETE) → INSERT user `Admin` → `commit`.
+//! 5. Set `state.users_exist = true` (Release) → désactive le gate 423.
+//! 6. JWT + refresh token + reset rate-limit (post-commit).
+//! 7. Set cookies HttpOnly (réutilise `build_auth_cookies` pub(crate)) et
+//!    retourne `LoginResponse` (cohérent /login pour fluidité du frontend).
 //!
 //! **Sécurité** :
-//! - Race TOCTOU 2 usernames distincts : limitation v0.1 L1 (rate-limit IP +
-//!   auto-disable réduisent la fenêtre d'exploitation). Issue v0.2.
+//! - Race TOCTOU 2 usernames distincts (issue #133, ex-limitation L1) : **fermée
+//!   Story 17-1**. Le check+insert est sérialisé par un `SELECT _kesh_version
+//!   id=1 FOR UPDATE` en tête de transaction → au plus 1 admin créé même sous
+//!   requêtes concurrentes à usernames distincts. Rate-limit IP + auto-disable
+//!   410 conservés en défense en profondeur.
 //! - CSRF : pas de token (endpoint accepte uniquement `Content-Type: application/json`,
 //!   pas de cookie de session présent au moment de l'appel).
 //! - MITM : v0.1 ne force pas HTTPS (reverse proxy externe en charge).
@@ -96,25 +101,10 @@ pub async fn create_admin(
         ));
     }
 
-    // Step 2 — gate auto-disable. Lecture user_count fraîche (pas le cache
-    // `users_exist` mémoire — cette route doit observer la DB réelle pour
-    // éviter une race au boot tandis que le cache n'est pas encore set).
-    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("setup user count: {e}")))?;
-    if user_count > 0 {
-        // CR Pass 1 BH1-2 — `record_failed_attempt` AVANT 410 (cohérent AC #8
-        // qui demande explicitement le décompte sur user_count > 0). Un attacker
-        // qui spam ce path après setup sera rate-limited. Synchronise aussi le
-        // cache mémoire (defense-in-depth si le bootstrap cas 1 a tourné sur une
-        // DB non-vide — improbable, mais cohérent invariant).
-        state.rate_limiter.record_failed_attempt(ip);
-        state.users_exist.store(true, Ordering::Release);
-        return Err(AppError::SetupAlreadyComplete);
-    }
-
-    // Step 3 — récupérer la company stub (créée par bootstrap cas 1).
+    // Step 2 — fetch de la company stub (créée par bootstrap cas 1). Lecture
+    // hors transaction (non-locking) AVANT d'ouvrir la tx verrouillée : évite de
+    // figer prématurément le snapshot MVCC de la section critique (F3) et garde
+    // la tenue du verrou InnoDB minimale.
     let company_id: i64 = match sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
         .fetch_optional(&state.pool)
         .await
@@ -131,19 +121,61 @@ pub async fn create_admin(
         }
     };
 
-    // Step 4 — hash Argon2id.
+    // Step 3 — hash Argon2id (CPU coûteux). Réalisé HORS de la section
+    // verrouillée pour minimiser la durée de tenue du verrou InnoDB ; ne dépend
+    // que du password déjà validé (Step 1).
     let hash = password::hash_password_async(req.password.clone()).await?;
 
-    // Step 5 — INSERT user Admin.
+    // Step 4 — section critique atomique (Story 17-1, fix TOCTOU #133).
     //
-    // CR Pass 1 BH1-1 — gérer `UniqueConstraintViolation` explicitement : si une
-    // requête concurrente avec le même username a réussi entre notre SELECT
-    // user_count (line 100) et notre INSERT, le 2e INSERT échoue. Le user existe
-    // → l'état logique est « setup déjà complété », pas un conflit de ressource.
-    // On flip aussi `users_exist=true` car la contrainte UNIQUE garantit qu'au
-    // moins un user existe en DB. Retourner 410 cohérent avec la 1ère gate AC #8.
-    let user = match users::create(
-        &state.pool,
+    // Le check `user_count == 0` et l'INSERT du 1er admin s'exécutent dans UNE
+    // seule transaction précédée d'un verrou sérialisant sur la row sentinelle
+    // globale `_kesh_version id=1`. Deux requêtes concurrentes avec des usernames
+    // distincts se sérialisent sur ce verrou → au plus 1 admin créé.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("setup begin tx: {e}")))?;
+
+    // 4a — verrou sentinelle EN PREMIÈRE INSTRUCTION de la tx (avant tout SELECT
+    // non-locking — cf. snapshot MVCC REPEATABLE READ). `None` (row sentinelle
+    // absente) → DbError::Invariant → AppError::Database → 500 (bug structurel
+    // d'installation, migration 20260522000001 manquante).
+    users::acquire_setup_sentinel_lock(&mut tx)
+        .await
+        .map_err(AppError::Database)?;
+
+    // 4b — re-check `user_count` SOUS verrou. C'est le 1er read non-locking de la
+    // tx → son snapshot MVCC est figé APRÈS le commit de toute tx concurrente
+    // déjà sérialisée par le verrou ci-dessus (donc voit ses INSERT committés).
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(format!("setup user count: {e}")))?;
+    if user_count > 0 {
+        // Rollback explicite (relâche le verrou sentinelle) avant le 410.
+        // record_failed_attempt + users_exist : comportement identique à l'ancien
+        // gate hors-tx, désormais race-safe. Un échec de rollback est loggé (et
+        // non propagé) : la connexion sera de toute façon recyclée par sqlx, ce
+        // qui relâchera le verrou — mais on trace l'anomalie pour l'observabilité.
+        if let Err(e) = tx.rollback().await {
+            tracing::warn!(error = %e, "setup: rollback échoué (chemin 410 user_count>0)");
+        }
+        state.rate_limiter.record_failed_attempt(ip);
+        state.users_exist.store(true, Ordering::Release);
+        return Err(AppError::SetupAlreadyComplete);
+    }
+
+    // 4c — INSERT du 1er admin DANS la même tx via le variant transaction-aware
+    // (`users::create` ouvrirait sa propre tx interne et casserait l'atomicité).
+    //
+    // Gestion `UniqueConstraintViolation` (défense en profondeur same-username) :
+    // désormais redondante avec le verrou — la tx concurrente a déjà committé et
+    // le re-check 4b l'aurait vue — mais conservée, inoffensive. État logique =
+    // « setup déjà complété » → 410 + flip `users_exist`.
+    let user = match users::create_in_tx(
+        &mut tx,
         NewUser {
             username: username.clone(),
             password_hash: hash,
@@ -156,6 +188,9 @@ pub async fn create_admin(
     {
         Ok(u) => u,
         Err(DbError::UniqueConstraintViolation(_)) => {
+            if let Err(e) = tx.rollback().await {
+                tracing::warn!(error = %e, "setup: rollback échoué (chemin 410 UniqueConstraintViolation)");
+            }
             state.users_exist.store(true, Ordering::Release);
             state.rate_limiter.record_failed_attempt(ip);
             tracing::info!(
@@ -163,8 +198,14 @@ pub async fn create_admin(
             );
             return Err(AppError::SetupAlreadyComplete);
         }
+        // Toute autre erreur : le `return` droppe `tx` → rollback automatique sqlx.
         Err(e) => return Err(AppError::Database(e)),
     };
+
+    // 4d — commit : valide check+insert ensemble et relâche le verrou sentinelle.
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("setup commit tx: {e}")))?;
 
     tracing::info!(
         user_id = user.id,
