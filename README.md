@@ -175,7 +175,7 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.1.6 (hotfix) | Page détail d'une écriture comptable (`/journal-entries/{id}`) + fix bouton 404 « Voir l'écriture comptable » + UX facture (placement boutons ajout de ligne, libellé bouton impression) | ✅ Done |
 | v0.1.7 (hotfix) | Aide + message d'erreur actionnable sur le champ QR-IBAN (compte bancaire) + fiabilisation de la suite de tests `fiscal_year` (dette technique) | ✅ Done |
 | v0.1.8 (hotfix) | Numéro de version affiché corrigé : provient désormais du backend au runtime (champ `version` de `/health`) au lieu d'être codé en dur dans le frontend | ✅ Done |
-| v0.2 | E11 TVA Suisse, E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
+| v0.2 | **E17 Infra & Souveraineté** (API PAT, export/import installation, recovery mot de passe, fix sécurité — *démarre v0.2*), E11 TVA Suisse, **E16 Facturation avancée** (compte produit par ligne, PDF complet), E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
 
