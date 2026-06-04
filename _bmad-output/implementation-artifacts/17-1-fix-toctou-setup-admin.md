@@ -78,6 +78,7 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
   - [ ] **Ordre non négociable (F3 correctness)** : le `FOR UPDATE` (verrou sentinelle) doit précéder TOUT SELECT non-locking dans la tx. Le fetch du company stub (read) doit donc se faire soit **hors tx avant `begin()`** (recommandé — simple), soit dans la tx mais **strictement après** `acquire_setup_sentinel_lock`. Ne JAMAIS lire la company (ni aucun non-locking SELECT) avant le verrou : cela figerait prématurément le snapshot MVCC de la 2e requête → `COUNT(*)` stale → race rouverte. Le hash Argon2id se fait aussi hors tx (cf. sous-tâche suivante).
   - [ ] Conserver APRÈS le commit (hors section critique) : `state.users_exist.store(true, Release)`, création JWT + refresh token, `reset` rate-limit IP, `build_auth_cookies`, retour `200 + LoginResponse`. **Rationale** : la fenêtre TOCTOU concerne uniquement count+insert user ; le refresh token reste post-commit comme aujourd'hui (un échec y produit un 500 mais l'admin existe — comportement actuel préservé).
   - [ ] Garder la gestion `UniqueConstraintViolation` (mappée depuis `create_in_tx`) → `users_exist=true` + `410` (défense en profondeur même-username, désormais redondante avec le verrou mais inoffensive).
+  - [ ] **Gestion d'erreur de la tx** : si `create_in_tx` (ou le `COUNT`, ou le verrou) remonte une erreur **autre** que `UniqueConstraintViolation`, laisser le `tx` (non-committé) être droppé → rollback automatique sqlx, puis retourner l'erreur (`Err(AppError::Database(e))` / `AppError::Internal` selon le cas). Pas de `tx.rollback().await` explicite requis (le drop suffit) ; un `rollback()` explicite est acceptable si jugé plus lisible — trancher et noter le choix dans le Change Log du dev-story. Sur le chemin 410 « user_count > 0 sous verrou », le rollback (explicite ou par drop) doit précéder le retour.
   - [ ] Hash Argon2id : le réaliser **hors** de la section verrouillée si possible (CPU coûteux) pour minimiser la durée de tenue du verrou — soit avant `pool.begin()`, soit le déplacer. ⚠️ Mais le hash dépend du password validé : valider username/password AVANT d'ouvrir la tx (déjà le cas lignes 78-97), puis hasher avant `begin()`. Documenter ce choix (minimise la fenêtre de contention du verrou InnoDB).
 
 - [ ] **T4 — Convertir le test race en garantie stricte** (AC: #6)
@@ -201,6 +202,23 @@ Résultat **déterministe et assertable** : `final_count == 1`, status set = `{2
 - [Source: _bmad-output/planning-artifacts/epic-17.md#Story 17-1 + décision D10] — story-zéro sécurité, ordre Epic 17.
 - [Source: GitHub #133] — issue d'origine, dette L1 Story v011-5.
 - [Source: CLAUDE.md §Migration breaking policy] — pas de migration ici → pas de bump/audit.
+
+## Change Log — spec validate
+
+**Cycle `bmad-create-story validate 17-1` CONVERGÉ en 2 passes (2026-06-04)** — critère d'arrêt CLAUDE.md atteint (0 finding > LOW), budget 2/8.
+
+| Passe | Modèle | Findings | > LOW | Patches |
+|---|---|---|---|---|
+| 1 | Sonnet 4.6 | 1C + 1H + 1M + 4L | 3 | 7 |
+| 2 | Haiku 4.5 | 1L | 0 | 1 |
+
+- **Trend > LOW** : Passe 1 = 3 → Passe 2 = 0 (**convergé**).
+- **Patches notables Passe 1** :
+  - **F1 (CRITICAL)** : le helper sentinelle ne doit PAS calquer aveuglément `acquire_company_sentinel_lock` (qui retourne `Ok(())` sur `None`) — pour la sentinelle globale `_kesh_version id=1`, `None` → `DbError::Invariant` → 500, sinon la race reste ouverte silencieusement si la migration 10-2 manque.
+  - **F2 (HIGH)** : colocaliser le helper dans `users.rs` (module déjà déclaré) pour éviter l'oubli `pub mod` dans `mod.rs`.
+  - **F3 (MEDIUM)** : `FOR UPDATE` doit être la 1re instruction de la tx (snapshot MVCC REPEATABLE READ) — aucun SELECT non-locking avant le verrou.
+- **Passe 2 Haiku** : ground-truth propre (aucune hallucination), a confirmé `DbError::Invariant → 500` (`crates/kesh-api/src/errors.rs`), 1 seul LOW (clarté rollback du tx) patché.
+- **Décisions de reclassement** : aucune.
 
 ## Dev Agent Record
 

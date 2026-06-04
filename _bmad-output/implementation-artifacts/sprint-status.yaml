@@ -236,7 +236,7 @@ development_status:
   16-3-facture-pdf-champs-complets: backlog  # #151 coordonnées émetteur + n° client + récap TVA
   epic-16-retrospective: optional
   epic-17: in-progress  # Infra & Souveraineté — démarre v0.2 (2026-06-04)
-  17-1-fix-toctou-setup-admin: ready-for-dev  # 2026-06-04 `bmad-create-story 17-1` (Opus) — spec créée `17-1-fix-toctou-setup-admin.md`, 8 ACs / 6 tasks. Fix TOCTOU #133 : wrapper SELECT COUNT + INSERT dans une tx avec verrou sentinelle `SELECT _kesh_version id=1 FOR UPDATE` (calque `acquire_company_sentinel_lock`). Besoin `users::create_in_tx` (create actuel ouvre sa propre tx). Test race `#[ignore]` → assertion stricte exactly-1-admin. Aucune migration. Prochaine : `bmad-create-story validate 17-1` (optionnel) OU `bmad-dev-story 17-1`.
+  17-1-fix-toctou-setup-admin: ready-for-dev  # 2026-06-04 `bmad-create-story validate 17-1` CONVERGÉ Pass 2 (Sonnet→Haiku, 8 patches : 7 Pass1 + 1 Pass2, trend > LOW 3→0, budget 2/8). Spec 8 ACs / 6 tasks. Fix TOCTOU #133 : tx + verrou sentinelle `SELECT _kesh_version id=1 FOR UPDATE` (calque `acquire_company_sentinel_lock` MAIS None→DbError::Invariant→500, divergence F1 Pass1). Helper colocalisé `users.rs`. FOR UPDATE = 1re instruction tx (snapshot MVCC REPEATABLE READ F3). Besoin `users::create_in_tx`. Test race `#[ignore]`→assertion stricte exactly-1-admin + status set {200,410}. Aucune migration. Prochaine : `bmad-dev-story 17-1` (Opus reco flux transactionnel cross-crate).
   17-2-api-pat-integrations: backlog  # #100 API externe clé PAT (split probable)
   17-3-export-import-installation: backlog  # #112 export/import installation via UI admin (split probable)
   17-4-recovery-mot-de-passe: backlog  # #122 forgot-password email + alternatives (split probable)
