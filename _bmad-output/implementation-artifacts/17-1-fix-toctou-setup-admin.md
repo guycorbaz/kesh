@@ -1,6 +1,6 @@
 # Story 17.1: Fix race condition TOCTOU sur la création du 1er admin (`POST /setup/admin`)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -229,6 +229,36 @@ Résultat **déterministe et assertable** : `final_count == 1`, status set = `{2
 - **Quality gate** : fmt ✅ / build ✅ / clippy `-D warnings` ✅ / `cargo test --workspace -j1 --test-threads=1` = **1349 passed, 0 failed**. Test race désormais actif et déterministe (vert).
 - **0 régression** sur les tests `setup_admin_e2e` (8/8) et l'ensemble du workspace.
 - Prochaine étape : `bmad-code-review 17-1` avec un LLM ≠ Opus pour briser le biais d'auteur (Sonnet 4.6 recommandé pour la Pass 1).
+
+### Review Findings
+
+- [x] [Review][Patch] Logger l'échec de `tx.rollback()` sur les chemins 410 (count>0 + UniqueConstraintViolation) [`crates/kesh-api/src/routes/setup.rs`:160,187] — appliqué Pass 1 (`tracing::warn!`).
+- [x] [Review][Defer] Mapping lock-wait-timeout InnoDB 1205 → erreur dédiée (503) [`crates/kesh-db/src/errors.rs`] — déféré : verrou tenu ~ms (hash hors tx) → 50s inatteignable ; toucher `map_db_error` (partagé tout le codebase) sort du scope 17-1. Amélioration possible v0.2 si un endpoint à forte contention apparaît.
+- [x] [Review][Defer] Barrière de synchronisation explicite dans le test race (forcer le chevauchement simultané) [`crates/kesh-api/tests/setup_admin_e2e.rs`] — déféré : l'invariant asserté (`final_count==1`, status `{200,410}`) reste correct quel que soit l'ordonnancement Tokio ; renforcement optionnel.
+
+## Change Log — code review
+
+**Cycle `bmad-code-review 17-1` CONVERGÉ en 2 passes (2026-06-04)** — critère d'arrêt CLAUDE.md atteint (0 finding > LOW réel), budget 2/8.
+
+| Passe | Modèle | Findings bruts | > LOW (post-triage) | Patches |
+|---|---|---|---|---|
+| 1 | Sonnet 4.6 | 1 MED (blind) + 1 MED (edge) + 1 MED (blind) + 5 LOW | 1 (réel) | 1 |
+| 2 | Haiku 4.5 | 2 CRITICAL + 1 HIGH + 3 MED + LOW | 0 (tous réfutés) | 0 |
+
+- **Trend > LOW (réel, post-ground-truth)** : Passe 1 = 1 → Passe 2 = 0 (**convergé**).
+- **Patch Passe 1 (Sonnet)** : unique finding actionnable retenu = les deux `let _ = tx.rollback().await` sur les chemins 410 avalaient une éventuelle erreur de rollback → ajout `tracing::warn!` (observabilité ; le verrou est de toute façon relâché au recyclage de connexion sqlx). Commit `…` (fix code-review Pass 1).
+- **Décisions de reclassement Passe 1** : 2 findings MEDIUM déclassés LOW avec justification grep ground-truth :
+  - *lock-wait-timeout 1205 → 500* : la section critique (count+insert+commit) tient le verrou ~ms (hash Argon2id déplacé hors tx, `setup.rs:127` avant `begin()` `:135`), donc le timeout InnoDB de 50s est inatteignable → ni 500 prod ni flakiness test réalistes.
+  - *hypothèse isolation REPEATABLE READ implicite* : `SELECT … FOR UPDATE` sérialise sous **tout** niveau d'isolation (le reviewer admet « pas de bug en prod ») → robustesse documentaire, pas un bug.
+- **Passe 2 (Haiku) — 3 hallucinations CRITICAL/HIGH réfutées par grep ground-truth** (pattern Haiku documenté CLAUDE.md §Haiku-specific guardrails) :
+  - **E2 CRITICAL** « `users_exist` flippé après commit, stale si JWT/refresh échoue → lockout 423 » → **FAUX POSITIF**. Ground-truth `grep -nF` : `tx.commit()` `:206` → `users_exist.store(true)` `:222` → `jwt::encode` `:225` → `refresh_tokens::create` `:234`. Le flip est **avant** JWT/refresh (fix ECH1-1 d'origine v011-5). Si JWT/refresh échoue, `users_exist` est déjà `true`.
+  - **E4 CRITICAL** « multi-row `_kesh_version id=1`, corruption silencieuse » → **FAUX POSITIF**. Ground-truth : `id TINYINT UNSIGNED NOT NULL PRIMARY KEY` (migration `:32`) → la PK garantit l'unicité de `id=1` ; >1 row impossible. Le reviewer admet lui-même « impossible via CHECK normal ».
+  - **Blind HIGH** « fragilité snapshot MVCC » → non-bug : le reviewer écrit « current code is safe, no intermediate SELECTs » ; le verrou EST la 1re instruction (vérifié) et le helper documente déjà la contrainte d'ordre. Reclassé LOW.
+  - **E1 MEDIUM** « cause Invariant non loggée » → réfuté : `errors.rs:1561 tracing::error!("db invariant violated: {m}")` logge le message complet de l'Invariant (« row _kesh_version id=1 absente — migration… »). Reclassé LOW.
+  - **E3 MEDIUM** déterminisme test = doublon Passe 1 (LOW déféré).
+- **Acceptance Auditor (Passes 1 & 2)** : 8/8 ACs pleinement satisfaits, aucun écart.
+- **Quality gate post-patch** : fmt ✅ / clippy `-D warnings` ✅ / 8/8 `setup_admin_e2e` ✅.
+- **Statut** : `review → done`. Prochaine étape : push + PR squash-merge.
 
 ## Dev Agent Record
 
