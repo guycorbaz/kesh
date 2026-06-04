@@ -11,6 +11,7 @@
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 	import { page } from '$app/state';
 
 	type NavItem =
@@ -327,7 +328,7 @@
 
 	<!-- Footer discret -->
 	<footer class="border-t border-border px-4 py-2 text-center text-xs text-text-muted">
-		Kesh v0.1.0 &mdash; Logiciel libre (EUPL 1.2). Les données ne remplacent pas un fiduciaire.
+		Kesh v{appVersion.value} &mdash; Logiciel libre (EUPL 1.2). Les données ne remplacent pas un fiduciaire.
 		{#if modeState.value === 'expert'}
 			<span class="ml-4">{i18nMsg('shortcut-new-entry', 'Ctrl+N : Nouvelle écriture')}</span>
 		{/if}

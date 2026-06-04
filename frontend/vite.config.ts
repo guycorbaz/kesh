@@ -43,14 +43,11 @@ const apiProxy = {
 // server-side par défaut).
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), svelteTesting()],
-	// Story 10.3 : injecte la version Kesh depuis `package.json` au build pour
-	// l'afficher en pied de la page de login (preuve que le frontend est servi
-	// correctement même DB down). Fallback `'dev'` pour les build hors-npm
-	// (npx vite build sans cycle npm) — sans fallback, `__APP_VERSION__`
-	// vaudrait le mot-clé JS `undefined` → render `Kesh vundefined`.
-	define: {
-		__APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? 'dev')
-	},
+	// #159 : la version affichée provient désormais du backend au runtime
+	// (champ `version` de `GET /health` → store `app-version.svelte.ts`), source
+	// unique = `crates/kesh-api/Cargo.toml` via `env!("CARGO_PKG_VERSION")`. Plus
+	// de `__APP_VERSION__` build-time depuis `package.json` (qui dérivait, figé à
+	// 0.1.0). Cf. `app-version.svelte.ts`.
 	server: {
 		proxy: apiProxy
 	},
