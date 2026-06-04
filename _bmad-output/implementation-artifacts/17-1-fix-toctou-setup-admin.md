@@ -34,7 +34,7 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
 
 1. **AC1 — Atomicité du check+insert** : la séquence « vérifier `user_count == 0` » puis « INSERT du 1er admin » s'exécute à l'intérieur d'**une seule transaction** ouverte sur `state.pool`, précédée de l'acquisition d'un **verrou exclusif sérialisant** (`SELECT ... FOR UPDATE`) sur une row sentinelle globale. Deux appels concurrents à `POST /api/v1/setup/admin` ne peuvent JAMAIS aboutir à plus d'un utilisateur en base, quels que soient leurs usernames.
 
-2. **AC2 — Sentinelle = `_kesh_version` (row globale `id = 1`)** : le verrou est pris via `SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE` au tout début de la transaction, AVANT le `SELECT COUNT(*)`. Choix justifié : `_kesh_version` est un singleton **install-wide** (garanti par migration `20260522000001_kesh_version.sql` + CHECK `id = 1`), sémantiquement aligné avec un gate « premier admin de l'installation » (global, pas per-tenant). Le verrou est relâché automatiquement au `commit`/`rollback` de la transaction (pas de `GET_LOCK`/`RELEASE_LOCK` manuel à gérer).
+2. **AC2 — Sentinelle = `_kesh_version` (row globale `id = 1`)** : le verrou est pris via `SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE` en **première instruction** de la transaction, AVANT le `SELECT COUNT(*)` et avant tout autre SELECT non-locking. Choix justifié : `_kesh_version` est un singleton **install-wide** (garanti par migration `20260522000001_kesh_version.sql` + CHECK `id = 1`), sémantiquement aligné avec un gate « premier admin de l'installation » (global, pas per-tenant). Le verrou est relâché automatiquement au `commit`/`rollback` de la transaction (pas de `GET_LOCK`/`RELEASE_LOCK` manuel à gérer). **Si la row `_kesh_version id=1` est absente** (`fetch_optional → None`, ex. migration 10-2 non appliquée), le helper retourne `DbError::Invariant` → `AppError::Internal` → **HTTP 500** (bug structurel d'installation) — il NE retourne PAS `Ok(())` silencieusement (sinon aucun verrou acquis → race rouverte).
 
 3. **AC3 — Re-check sous verrou** : le `SELECT COUNT(*) FROM users` est ré-exécuté **à l'intérieur de la transaction verrouillée** (pas avant). Si `user_count > 0` sous verrou → `rollback` + `410 SETUP_ALREADY_COMPLETE` + `state.users_exist.store(true, Release)` + `record_failed_attempt(ip)` (comportement identique à l'actuel, mais désormais race-safe).
 
@@ -56,11 +56,26 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
   - [ ] Vérifier que la gestion `last_insert_id() == 0 → DbError::Invariant` et le `map_db_error` (incl. `UniqueConstraintViolation` code 1062) sont préservés dans `create_in_tx`.
 
 - [ ] **T2 — Helper de verrou sentinelle setup** (AC: #1, #2)
-  - [ ] Choisir l'emplacement : soit un helper réutilisable `acquire_setup_sentinel_lock(tx)` (miroir de `acquire_company_sentinel_lock` mais sur `_kesh_version`), soit inline dans le handler. Préférer un helper court documenté (réutilisable par 17-2/17-4 si besoin futur de sérialiser un setup global). Si helper : le placer près du pattern existant (`crates/kesh-db/src/repositories/` — un module `system.rs`/`kesh_version.rs` ou réutiliser un module existant).
-  - [ ] Le helper exécute `SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE` via `fetch_optional(&mut **tx)` et map les erreurs DB. Documenter (`///`) : verrou install-wide relâché au commit/rollback, à appeler en 1re instruction de la tx setup.
+  - [ ] **Emplacement = `crates/kesh-db/src/repositories/users.rs`** (colocalisation avec `create_in_tx`, module déjà déclaré dans `mod.rs` → PAS de nouveau fichier ni de `pub mod` à ajouter). Ne PAS créer un nouveau module `system.rs`/`kesh_version.rs` (sinon il faut ajouter `pub mod …;` dans `crates/kesh-db/src/repositories/mod.rs`, oubli fréquent → erreur de compilation). `onboarding.rs` est une alternative acceptable (existe déjà) mais `users.rs` est préféré.
+  - [ ] Signature : `pub async fn acquire_setup_sentinel_lock(tx: &mut Transaction<'_, MySql>) -> Result<(), DbError>`. **`pub` OBLIGATOIRE** (appelé depuis la crate `kesh-api` — `pub(crate)` casserait la compilation).
+  - [ ] Le helper exécute `SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE` via `fetch_optional(&mut **tx)`.
+  - [ ] **⚠️ DIVERGENCE CRITIQUE vs `acquire_company_sentinel_lock`** : ce dernier retourne `Ok(())` même si `fetch_optional` rend `None` (acceptable pour `companies` car le `company_id` est pré-validé en amont par l'appelant). Pour la sentinelle GLOBALE `_kesh_version id=1`, il n'y a AUCUNE pré-validation : si la row est absente, le `FOR UPDATE` ne verrouille rien et la race TOCTOU **persiste silencieusement**. Donc le helper DOIT traiter `None` comme une erreur :
+    ```rust
+    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
+        .fetch_optional(&mut **tx).await.map_err(map_db_error)?;
+    if row.is_none() {
+        return Err(DbError::Invariant(
+            "row _kesh_version id=1 absente — migration 20260522000001 non appliquée ou DELETE manuel".into()
+        ));
+    }
+    Ok(())
+    ```
+    Côté handler, `DbError::Invariant` → `AppError::Internal` → **500** (bug structurel d'installation, ni 410 ni 400).
+  - [ ] Documenter (`///`) : (a) verrou install-wide relâché au commit/rollback ; (b) **DOIT être la PREMIÈRE instruction de la tx, avant tout SELECT non-locking** (sous REPEATABLE READ InnoDB, le snapshot MVCC est figé au 1er *consistent read* non-locking ; placer le `FOR UPDATE` en tête garantit que le `SELECT COUNT(*)` suivant — 1er non-locking read — fige son snapshot APRÈS le commit de la tx concurrente, donc voit les données committées) ; (c) `None` = bug structurel → `Invariant`.
 
 - [ ] **T3 — Réécrire la section critique de `create_admin`** (AC: #1, #3, #4, #5)
-  - [ ] Dans `crates/kesh-api/src/routes/setup.rs`, remplacer la séquence non-transactionnelle (lignes ~99-167) par : `let mut tx = state.pool.begin().await?;` → acquérir le verrou sentinelle (T2) → `SELECT COUNT(*) FROM users` sur `&mut *tx` → si `> 0` : `tx.rollback()` + `users_exist=true` + `record_failed_attempt` + `Err(SetupAlreadyComplete)` → sinon fetch company stub (read, peut rester sur `&mut *tx` ou pool) → hash password → `users::create_in_tx(&mut tx, ...)` → `tx.commit()`.
+  - [ ] Dans `crates/kesh-api/src/routes/setup.rs`, remplacer la séquence non-transactionnelle (lignes ~99-167) par : `let mut tx = state.pool.begin().await?;` → **acquérir le verrou sentinelle EN PREMIÈRE INSTRUCTION de la tx** (T2) → `SELECT COUNT(*) FROM users` sur `&mut *tx` → si `> 0` : `tx.rollback()` + `users_exist=true` + `record_failed_attempt` + `Err(SetupAlreadyComplete)` → sinon `users::create_in_tx(&mut tx, ...)` → `tx.commit()`.
+  - [ ] **Ordre non négociable (F3 correctness)** : le `FOR UPDATE` (verrou sentinelle) doit précéder TOUT SELECT non-locking dans la tx. Le fetch du company stub (read) doit donc se faire soit **hors tx avant `begin()`** (recommandé — simple), soit dans la tx mais **strictement après** `acquire_setup_sentinel_lock`. Ne JAMAIS lire la company (ni aucun non-locking SELECT) avant le verrou : cela figerait prématurément le snapshot MVCC de la 2e requête → `COUNT(*)` stale → race rouverte. Le hash Argon2id se fait aussi hors tx (cf. sous-tâche suivante).
   - [ ] Conserver APRÈS le commit (hors section critique) : `state.users_exist.store(true, Release)`, création JWT + refresh token, `reset` rate-limit IP, `build_auth_cookies`, retour `200 + LoginResponse`. **Rationale** : la fenêtre TOCTOU concerne uniquement count+insert user ; le refresh token reste post-commit comme aujourd'hui (un échec y produit un 500 mais l'admin existe — comportement actuel préservé).
   - [ ] Garder la gestion `UniqueConstraintViolation` (mappée depuis `create_in_tx`) → `users_exist=true` + `410` (défense en profondeur même-username, désormais redondante avec le verrou mais inoffensive).
   - [ ] Hash Argon2id : le réaliser **hors** de la section verrouillée si possible (CPU coûteux) pour minimiser la durée de tenue du verrou — soit avant `pool.begin()`, soit le déplacer. ⚠️ Mais le hash dépend du password validé : valider username/password AVANT d'ouvrir la tx (déjà le cas lignes 78-97), puis hasher avant `begin()`. Documenter ce choix (minimise la fenêtre de contention du verrou InnoDB).
@@ -71,8 +86,8 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
   - [ ] Vérifier que la row sentinelle `_kesh_version (id=1)` existe bien dans la DB de test (créée par `kesh_db::MIGRATOR` via la migration `20260522000001`) — sinon le `FOR UPDATE` ne verrouille rien. (Elle existe : la migration fait `INSERT ... VALUES (1, '0.1.0', '0.1.0')`.)
   - [ ] S'assurer que les deux requêtes partagent réellement le même process backend (même `AppState`/pool) pour que la contention DB se produise — le test spawn déjà 2 `tokio::spawn` sur le même serveur de test.
 
-- [ ] **T5 — CHANGELOG (optionnel, section Non publié)** (AC: #7)
-  - [ ] Ajouter une section `## [Non publié]` en tête de `CHANGELOG.md` (au-dessus de `[0.1.8]`) avec une entrée `### Sécurité` : « Création du 1er administrateur (`POST /setup/admin`) désormais atomique — fermeture d'une race condition TOCTOU qui pouvait, sous requêtes concurrentes, créer deux comptes admin (#133). » Sera datée/versionnée au prep de release v0.2.0. Comportement utilisateur inchangé.
+- [ ] **T5 — CHANGELOG (requis — fix de sécurité)** (AC: #7)
+  - [ ] Ajouter une section `## [Non publié]` en tête de `CHANGELOG.md` (au-dessus de `[0.1.8]`) avec une entrée `### Sécurité` : « Création du 1er administrateur (`POST /setup/admin`) désormais atomique — fermeture d'une race condition TOCTOU qui pouvait, sous requêtes concurrentes, créer deux comptes admin (#133). » Sera datée/versionnée au prep de release v0.2.0. Comportement utilisateur inchangé. (Un fix de sécurité se trace au CHANGELOG — cf. CLAUDE.md §Synchroniser TOUTES les docs.)
 
 - [ ] **T6 — Quality gate** (AC: #8)
   - [ ] `cargo fmt --all -- --check` + `cargo build --workspace --all-targets` + `cargo clippy --workspace --all-targets -- -D warnings`.
@@ -87,7 +102,7 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
 |---|---|---|
 | `crates/kesh-api/src/routes/setup.rs` | **UPDATE** | Handler `create_admin` (63-221). Section critique non-transactionnelle 99-167 → wrappée dans tx + verrou sentinelle. Le reste (rate-limit, validation, JWT, cookies) préservé. |
 | `crates/kesh-db/src/repositories/users.rs` | **UPDATE** | `create(pool, new)` (23+) ouvre sa propre tx interne → ajouter `create_in_tx(&mut tx, new)` + faire déléguer `create`. |
-| `crates/kesh-db/src/repositories/*` (helper lock) | **UPDATE/NEW** | Helper `acquire_setup_sentinel_lock(tx)` miroir de `acquire_company_sentinel_lock` (`bank_accounts.rs:588-598`) mais sur `_kesh_version id=1`. |
+| `crates/kesh-db/src/repositories/users.rs` (helper lock) | **UPDATE** | Helper `pub async fn acquire_setup_sentinel_lock(tx)` colocalisé avec `create_in_tx` (module déjà déclaré → PAS de `pub mod` à ajouter). Miroir de `acquire_company_sentinel_lock` (`bank_accounts.rs:588-598`) sur `_kesh_version id=1`, **mais `None` → `DbError::Invariant`** (divergence critique, cf. T2). |
 | `crates/kesh-api/tests/setup_admin_e2e.rs` | **UPDATE** | Test race 348-418 : retirer `#[ignore]`, asserts stricts. |
 | `CHANGELOG.md` | **UPDATE** (optionnel) | Section `## [Non publié]` § Sécurité. |
 
@@ -146,6 +161,7 @@ Le helper setup en est le calque exact sur `_kesh_version WHERE id = 1` (pas de 
 - **Codes HTTP** : `SetupRequired` = 423, `SetupAlreadyComplete` = 410 (`errors.rs:648-661`). Inchangés.
 - **Bootstrap matrice 6 cas** (`auth/bootstrap.rs:51-307`) : NE PAS toucher. Le bootstrap au boot et le endpoint setup au runtime sont des chemins distincts ; le fix ne concerne que le runtime endpoint. (Le cas 1 du bootstrap crée le stub company + initialise `users_exist`.)
 - **Rate-limiter partagé** (`state.rate_limiter`, quota commun avec `/login`) : conserver `record_failed_attempt` sur le chemin 410 et `reset` sur le chemin succès.
+- **Note perf (non bloquante)** : la version actuelle fait un pre-check `SELECT COUNT(*)` hors-tx sur `&state.pool` (lignes 99-115) permettant un early-exit 410 sans ouvrir de transaction. Le fix supprime ce pre-check : chaque POST sur DB déjà initialisée paie désormais une `begin()` + verrou InnoDB. Acceptable — le rate-limiter (5/15 min) plafonne le débit et la route n'est sollicitée que pendant la fenêtre d'onboarding. Comportement observable (410) identique.
 
 ### Dialecte & compat MariaDB
 
@@ -159,6 +175,8 @@ Avec le verrou, les deux requêtes se sérialisent sur `_kesh_version id=1 FOR U
 - La 2e (bloquée jusqu'au commit de la 1re) : voit `user_count == 1` → rollback → `410`.
 
 Résultat **déterministe et assertable** : `final_count == 1`, status set = `{200, 410}`. L'ordre (qui de alice/bob gagne) reste non déterministe — n'asserter QUE le set des codes et le count, pas qui gagne.
+
+**Pourquoi le `COUNT(*)` de la 2e tx voit bien la donnée committée (REPEATABLE READ)** : sous l'isolation par défaut InnoDB (REPEATABLE READ), le snapshot MVCC d'une transaction est figé à son **premier consistent read non-locking**, pas au `BEGIN`. Comme le `BEGIN` de tx2 est immédiatement suivi du `SELECT … FOR UPDATE` (locking read, qui ne fige PAS le snapshot consistent et bloque tx2 jusqu'au commit de tx1), le `SELECT COUNT(*)` qui suit est le **1er non-locking read** de tx2 → il fige son snapshot APRÈS le déblocage (donc après le commit de tx1) → voit `user_count == 1`. C'est précisément pourquoi le `FOR UPDATE` DOIT être la 1re instruction (aucun non-locking SELECT avant lui).
 
 ### Hors-scope (ne PAS faire dans 17-1)
 
