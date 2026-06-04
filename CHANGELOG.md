@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Non publié]
+
+### Sécurité
+
+- **Création du 1er administrateur désormais atomique** (#133) : l'endpoint de configuration initiale (`POST /setup/admin`) fermait une fenêtre de *race condition* (TOCTOU) qui pouvait, sous deux requêtes concurrentes avec des identifiants distincts, créer **deux comptes administrateur** non concertés au lieu d'un seul. La vérification « aucun utilisateur n'existe » et la création du premier admin s'exécutent maintenant dans une **transaction unique sérialisée par un verrou exclusif**, garantissant qu'au plus un administrateur est créé même en cas d'accès simultané pendant la fenêtre d'onboarding. Comportement utilisateur inchangé en usage nominal.
+
+---
+
 ## [0.1.8] — 2026-06-04
 
 Correctif issu du dogfooding live sur prod NAS Synology v0.1.7.

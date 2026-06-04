@@ -1,6 +1,6 @@
 # Story 17.1: Fix race condition TOCTOU sur la création du 1er admin (`POST /setup/admin`)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -50,16 +50,16 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Ajouter `users::create_in_tx` transaction-aware** (AC: #4)
-  - [ ] Dans `crates/kesh-db/src/repositories/users.rs`, extraire le corps INSERT de `create` (lignes ~23-end) dans un nouveau `pub async fn create_in_tx(tx: &mut sqlx::Transaction<'_, sqlx::MySql>, new: NewUser) -> Result<User, DbError>` qui exécute l'INSERT sur `&mut **tx` SANS ouvrir/committer de transaction (l'appelant gère le cycle de vie).
-  - [ ] Refactorer `create(pool, new)` pour DÉLÉGUER : `let mut tx = pool.begin()?; let user = create_in_tx(&mut tx, new).await?; tx.commit()?; Ok(user)` — préserve l'API publique existante (DRY, cf. CLAUDE.md). Tous les call sites actuels de `users::create` restent inchangés.
-  - [ ] Vérifier que la gestion `last_insert_id() == 0 → DbError::Invariant` et le `map_db_error` (incl. `UniqueConstraintViolation` code 1062) sont préservés dans `create_in_tx`.
+- [x] **T1 — Ajouter `users::create_in_tx` transaction-aware** (AC: #4)
+  - [x] Dans `crates/kesh-db/src/repositories/users.rs`, extraire le corps INSERT de `create` (lignes ~23-end) dans un nouveau `pub async fn create_in_tx(tx: &mut sqlx::Transaction<'_, sqlx::MySql>, new: NewUser) -> Result<User, DbError>` qui exécute l'INSERT sur `&mut **tx` SANS ouvrir/committer de transaction (l'appelant gère le cycle de vie).
+  - [x] Refactorer `create(pool, new)` pour DÉLÉGUER : `let mut tx = pool.begin()?; let user = create_in_tx(&mut tx, new).await?; tx.commit()?; Ok(user)` — préserve l'API publique existante (DRY, cf. CLAUDE.md). Tous les call sites actuels de `users::create` restent inchangés.
+  - [x] Vérifier que la gestion `last_insert_id() == 0 → DbError::Invariant` et le `map_db_error` (incl. `UniqueConstraintViolation` code 1062) sont préservés dans `create_in_tx`.
 
-- [ ] **T2 — Helper de verrou sentinelle setup** (AC: #1, #2)
-  - [ ] **Emplacement = `crates/kesh-db/src/repositories/users.rs`** (colocalisation avec `create_in_tx`, module déjà déclaré dans `mod.rs` → PAS de nouveau fichier ni de `pub mod` à ajouter). Ne PAS créer un nouveau module `system.rs`/`kesh_version.rs` (sinon il faut ajouter `pub mod …;` dans `crates/kesh-db/src/repositories/mod.rs`, oubli fréquent → erreur de compilation). `onboarding.rs` est une alternative acceptable (existe déjà) mais `users.rs` est préféré.
-  - [ ] Signature : `pub async fn acquire_setup_sentinel_lock(tx: &mut Transaction<'_, MySql>) -> Result<(), DbError>`. **`pub` OBLIGATOIRE** (appelé depuis la crate `kesh-api` — `pub(crate)` casserait la compilation).
-  - [ ] Le helper exécute `SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE` via `fetch_optional(&mut **tx)`.
-  - [ ] **⚠️ DIVERGENCE CRITIQUE vs `acquire_company_sentinel_lock`** : ce dernier retourne `Ok(())` même si `fetch_optional` rend `None` (acceptable pour `companies` car le `company_id` est pré-validé en amont par l'appelant). Pour la sentinelle GLOBALE `_kesh_version id=1`, il n'y a AUCUNE pré-validation : si la row est absente, le `FOR UPDATE` ne verrouille rien et la race TOCTOU **persiste silencieusement**. Donc le helper DOIT traiter `None` comme une erreur :
+- [x] **T2 — Helper de verrou sentinelle setup** (AC: #1, #2)
+  - [x] **Emplacement = `crates/kesh-db/src/repositories/users.rs`** (colocalisation avec `create_in_tx`, module déjà déclaré dans `mod.rs` → PAS de nouveau fichier ni de `pub mod` à ajouter). Ne PAS créer un nouveau module `system.rs`/`kesh_version.rs` (sinon il faut ajouter `pub mod …;` dans `crates/kesh-db/src/repositories/mod.rs`, oubli fréquent → erreur de compilation). `onboarding.rs` est une alternative acceptable (existe déjà) mais `users.rs` est préféré.
+  - [x] Signature : `pub async fn acquire_setup_sentinel_lock(tx: &mut Transaction<'_, MySql>) -> Result<(), DbError>`. **`pub` OBLIGATOIRE** (appelé depuis la crate `kesh-api` — `pub(crate)` casserait la compilation).
+  - [x] Le helper exécute `SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE` via `fetch_optional(&mut **tx)`.
+  - [x] **⚠️ DIVERGENCE CRITIQUE vs `acquire_company_sentinel_lock`** : ce dernier retourne `Ok(())` même si `fetch_optional` rend `None` (acceptable pour `companies` car le `company_id` est pré-validé en amont par l'appelant). Pour la sentinelle GLOBALE `_kesh_version id=1`, il n'y a AUCUNE pré-validation : si la row est absente, le `FOR UPDATE` ne verrouille rien et la race TOCTOU **persiste silencieusement**. Donc le helper DOIT traiter `None` comme une erreur :
     ```rust
     let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
         .fetch_optional(&mut **tx).await.map_err(map_db_error)?;
@@ -71,29 +71,29 @@ Atténuations v0.1 existantes (à **conserver**, défense en profondeur) : rate-
     Ok(())
     ```
     Côté handler, `DbError::Invariant` → `AppError::Internal` → **500** (bug structurel d'installation, ni 410 ni 400).
-  - [ ] Documenter (`///`) : (a) verrou install-wide relâché au commit/rollback ; (b) **DOIT être la PREMIÈRE instruction de la tx, avant tout SELECT non-locking** (sous REPEATABLE READ InnoDB, le snapshot MVCC est figé au 1er *consistent read* non-locking ; placer le `FOR UPDATE` en tête garantit que le `SELECT COUNT(*)` suivant — 1er non-locking read — fige son snapshot APRÈS le commit de la tx concurrente, donc voit les données committées) ; (c) `None` = bug structurel → `Invariant`.
+  - [x] Documenter (`///`) : (a) verrou install-wide relâché au commit/rollback ; (b) **DOIT être la PREMIÈRE instruction de la tx, avant tout SELECT non-locking** (sous REPEATABLE READ InnoDB, le snapshot MVCC est figé au 1er *consistent read* non-locking ; placer le `FOR UPDATE` en tête garantit que le `SELECT COUNT(*)` suivant — 1er non-locking read — fige son snapshot APRÈS le commit de la tx concurrente, donc voit les données committées) ; (c) `None` = bug structurel → `Invariant`.
 
-- [ ] **T3 — Réécrire la section critique de `create_admin`** (AC: #1, #3, #4, #5)
-  - [ ] Dans `crates/kesh-api/src/routes/setup.rs`, remplacer la séquence non-transactionnelle (lignes ~99-167) par : `let mut tx = state.pool.begin().await?;` → **acquérir le verrou sentinelle EN PREMIÈRE INSTRUCTION de la tx** (T2) → `SELECT COUNT(*) FROM users` sur `&mut *tx` → si `> 0` : `tx.rollback()` + `users_exist=true` + `record_failed_attempt` + `Err(SetupAlreadyComplete)` → sinon `users::create_in_tx(&mut tx, ...)` → `tx.commit()`.
-  - [ ] **Ordre non négociable (F3 correctness)** : le `FOR UPDATE` (verrou sentinelle) doit précéder TOUT SELECT non-locking dans la tx. Le fetch du company stub (read) doit donc se faire soit **hors tx avant `begin()`** (recommandé — simple), soit dans la tx mais **strictement après** `acquire_setup_sentinel_lock`. Ne JAMAIS lire la company (ni aucun non-locking SELECT) avant le verrou : cela figerait prématurément le snapshot MVCC de la 2e requête → `COUNT(*)` stale → race rouverte. Le hash Argon2id se fait aussi hors tx (cf. sous-tâche suivante).
-  - [ ] Conserver APRÈS le commit (hors section critique) : `state.users_exist.store(true, Release)`, création JWT + refresh token, `reset` rate-limit IP, `build_auth_cookies`, retour `200 + LoginResponse`. **Rationale** : la fenêtre TOCTOU concerne uniquement count+insert user ; le refresh token reste post-commit comme aujourd'hui (un échec y produit un 500 mais l'admin existe — comportement actuel préservé).
-  - [ ] Garder la gestion `UniqueConstraintViolation` (mappée depuis `create_in_tx`) → `users_exist=true` + `410` (défense en profondeur même-username, désormais redondante avec le verrou mais inoffensive).
-  - [ ] **Gestion d'erreur de la tx** : si `create_in_tx` (ou le `COUNT`, ou le verrou) remonte une erreur **autre** que `UniqueConstraintViolation`, laisser le `tx` (non-committé) être droppé → rollback automatique sqlx, puis retourner l'erreur (`Err(AppError::Database(e))` / `AppError::Internal` selon le cas). Pas de `tx.rollback().await` explicite requis (le drop suffit) ; un `rollback()` explicite est acceptable si jugé plus lisible — trancher et noter le choix dans le Change Log du dev-story. Sur le chemin 410 « user_count > 0 sous verrou », le rollback (explicite ou par drop) doit précéder le retour.
-  - [ ] Hash Argon2id : le réaliser **hors** de la section verrouillée si possible (CPU coûteux) pour minimiser la durée de tenue du verrou — soit avant `pool.begin()`, soit le déplacer. ⚠️ Mais le hash dépend du password validé : valider username/password AVANT d'ouvrir la tx (déjà le cas lignes 78-97), puis hasher avant `begin()`. Documenter ce choix (minimise la fenêtre de contention du verrou InnoDB).
+- [x] **T3 — Réécrire la section critique de `create_admin`** (AC: #1, #3, #4, #5)
+  - [x] Dans `crates/kesh-api/src/routes/setup.rs`, remplacer la séquence non-transactionnelle (lignes ~99-167) par : `let mut tx = state.pool.begin().await?;` → **acquérir le verrou sentinelle EN PREMIÈRE INSTRUCTION de la tx** (T2) → `SELECT COUNT(*) FROM users` sur `&mut *tx` → si `> 0` : `tx.rollback()` + `users_exist=true` + `record_failed_attempt` + `Err(SetupAlreadyComplete)` → sinon `users::create_in_tx(&mut tx, ...)` → `tx.commit()`.
+  - [x] **Ordre non négociable (F3 correctness)** : le `FOR UPDATE` (verrou sentinelle) doit précéder TOUT SELECT non-locking dans la tx. Le fetch du company stub (read) doit donc se faire soit **hors tx avant `begin()`** (recommandé — simple), soit dans la tx mais **strictement après** `acquire_setup_sentinel_lock`. Ne JAMAIS lire la company (ni aucun non-locking SELECT) avant le verrou : cela figerait prématurément le snapshot MVCC de la 2e requête → `COUNT(*)` stale → race rouverte. Le hash Argon2id se fait aussi hors tx (cf. sous-tâche suivante).
+  - [x] Conserver APRÈS le commit (hors section critique) : `state.users_exist.store(true, Release)`, création JWT + refresh token, `reset` rate-limit IP, `build_auth_cookies`, retour `200 + LoginResponse`. **Rationale** : la fenêtre TOCTOU concerne uniquement count+insert user ; le refresh token reste post-commit comme aujourd'hui (un échec y produit un 500 mais l'admin existe — comportement actuel préservé).
+  - [x] Garder la gestion `UniqueConstraintViolation` (mappée depuis `create_in_tx`) → `users_exist=true` + `410` (défense en profondeur même-username, désormais redondante avec le verrou mais inoffensive).
+  - [x] **Gestion d'erreur de la tx** : si `create_in_tx` (ou le `COUNT`, ou le verrou) remonte une erreur **autre** que `UniqueConstraintViolation`, laisser le `tx` (non-committé) être droppé → rollback automatique sqlx, puis retourner l'erreur (`Err(AppError::Database(e))` / `AppError::Internal` selon le cas). Pas de `tx.rollback().await` explicite requis (le drop suffit) ; un `rollback()` explicite est acceptable si jugé plus lisible — trancher et noter le choix dans le Change Log du dev-story. Sur le chemin 410 « user_count > 0 sous verrou », le rollback (explicite ou par drop) doit précéder le retour.
+  - [x] Hash Argon2id : le réaliser **hors** de la section verrouillée si possible (CPU coûteux) pour minimiser la durée de tenue du verrou — soit avant `pool.begin()`, soit le déplacer. ⚠️ Mais le hash dépend du password validé : valider username/password AVANT d'ouvrir la tx (déjà le cas lignes 78-97), puis hasher avant `begin()`. Documenter ce choix (minimise la fenêtre de contention du verrou InnoDB).
 
-- [ ] **T4 — Convertir le test race en garantie stricte** (AC: #6)
-  - [ ] Dans `crates/kesh-api/tests/setup_admin_e2e.rs`, retirer `#[ignore = "..."]` du test race (lignes 348-418), le renommer (ex. `toctou_race_two_distinct_usernames_creates_exactly_one_admin`).
-  - [ ] Remplacer l'observation `eprintln!` + asserts laxistes (`>= 1`, `<= 2`) par : `assert_eq!(final_count, 1, "le verrou sentinelle garantit exactement 1 admin")` + assertion que `{res_a.status(), res_b.status()}` == `{200, 410}` (set, ordre indifférent — ex. trier les deux codes et comparer à `[200, 410]`).
-  - [ ] Vérifier que la row sentinelle `_kesh_version (id=1)` existe bien dans la DB de test (créée par `kesh_db::MIGRATOR` via la migration `20260522000001`) — sinon le `FOR UPDATE` ne verrouille rien. (Elle existe : la migration fait `INSERT ... VALUES (1, '0.1.0', '0.1.0')`.)
-  - [ ] S'assurer que les deux requêtes partagent réellement le même process backend (même `AppState`/pool) pour que la contention DB se produise — le test spawn déjà 2 `tokio::spawn` sur le même serveur de test.
+- [x] **T4 — Convertir le test race en garantie stricte** (AC: #6)
+  - [x] Dans `crates/kesh-api/tests/setup_admin_e2e.rs`, retirer `#[ignore = "..."]` du test race (lignes 348-418), le renommer (ex. `toctou_race_two_distinct_usernames_creates_exactly_one_admin`).
+  - [x] Remplacer l'observation `eprintln!` + asserts laxistes (`>= 1`, `<= 2`) par : `assert_eq!(final_count, 1, "le verrou sentinelle garantit exactement 1 admin")` + assertion que `{res_a.status(), res_b.status()}` == `{200, 410}` (set, ordre indifférent — ex. trier les deux codes et comparer à `[200, 410]`).
+  - [x] Vérifier que la row sentinelle `_kesh_version (id=1)` existe bien dans la DB de test (créée par `kesh_db::MIGRATOR` via la migration `20260522000001`) — sinon le `FOR UPDATE` ne verrouille rien. (Elle existe : la migration fait `INSERT ... VALUES (1, '0.1.0', '0.1.0')`.)
+  - [x] S'assurer que les deux requêtes partagent réellement le même process backend (même `AppState`/pool) pour que la contention DB se produise — le test spawn déjà 2 `tokio::spawn` sur le même serveur de test.
 
-- [ ] **T5 — CHANGELOG (requis — fix de sécurité)** (AC: #7)
-  - [ ] Ajouter une section `## [Non publié]` en tête de `CHANGELOG.md` (au-dessus de `[0.1.8]`) avec une entrée `### Sécurité` : « Création du 1er administrateur (`POST /setup/admin`) désormais atomique — fermeture d'une race condition TOCTOU qui pouvait, sous requêtes concurrentes, créer deux comptes admin (#133). » Sera datée/versionnée au prep de release v0.2.0. Comportement utilisateur inchangé. (Un fix de sécurité se trace au CHANGELOG — cf. CLAUDE.md §Synchroniser TOUTES les docs.)
+- [x] **T5 — CHANGELOG (requis — fix de sécurité)** (AC: #7)
+  - [x] Ajouter une section `## [Non publié]` en tête de `CHANGELOG.md` (au-dessus de `[0.1.8]`) avec une entrée `### Sécurité` : « Création du 1er administrateur (`POST /setup/admin`) désormais atomique — fermeture d'une race condition TOCTOU qui pouvait, sous requêtes concurrentes, créer deux comptes admin (#133). » Sera datée/versionnée au prep de release v0.2.0. Comportement utilisateur inchangé. (Un fix de sécurité se trace au CHANGELOG — cf. CLAUDE.md §Synchroniser TOUTES les docs.)
 
-- [ ] **T6 — Quality gate** (AC: #8)
-  - [ ] `cargo fmt --all -- --check` + `cargo build --workspace --all-targets` + `cargo clippy --workspace --all-targets -- -D warnings`.
-  - [ ] `cargo test --workspace -j1 -- --test-threads=1` (serial, car touche `kesh-db` + tests intégration DB). Pré-requis : MariaDB démarré + droits `CREATE/DROP` sur `*.*` (cf. README §Tests, sqlx crée des bases éphémères `_sqlx_test_*`).
-  - [ ] Confirmer 0 régression sur les 8 tests `setup_admin_e2e.rs` + le test race désormais actif.
+- [x] **T6 — Quality gate** (AC: #8)
+  - [x] `cargo fmt --all -- --check` + `cargo build --workspace --all-targets` + `cargo clippy --workspace --all-targets -- -D warnings`.
+  - [x] `cargo test --workspace -j1 -- --test-threads=1` (serial, car touche `kesh-db` + tests intégration DB). Pré-requis : MariaDB démarré + droits `CREATE/DROP` sur `*.*` (cf. README §Tests, sqlx crée des bases éphémères `_sqlx_test_*`).
+  - [x] Confirmer 0 régression sur les 8 tests `setup_admin_e2e.rs` + le test race désormais actif.
 
 ## Dev Notes
 
@@ -220,14 +220,39 @@ Résultat **déterministe et assertable** : `final_count == 1`, status set = `{2
 - **Passe 2 Haiku** : ground-truth propre (aucune hallucination), a confirmé `DbError::Invariant → 500` (`crates/kesh-api/src/errors.rs`), 1 seul LOW (clarté rollback du tx) patché.
 - **Décisions de reclassement** : aucune.
 
+## Change Log — dev-story
+
+**`bmad-dev-story 17-1` complétée single-pass Opus 4.8 (2026-06-04)** — T1→T6 en traversée continue, `in-progress → review`.
+
+- **6 tâches / toutes sous-tâches** cochées. 4 fichiers modifiés (2 code crate, 1 test, 1 doc).
+- **1 bug intercepté et corrigé en cours de T6** : type-mismatch sqlx sur le décodage de `_kesh_version.id` (`TINYINT UNSIGNED` ≠ `BIGINT companies.id`) provoquait 500 sur tous les appels → switch `query_as::<(i64,)>` vers `query().fetch_optional()` sans décodage de colonne (cf. Debug Log). Divergence notable vs le pattern de référence `acquire_company_sentinel_lock` au-delà de la divergence `None → Invariant` déjà spécifiée.
+- **Quality gate** : fmt ✅ / build ✅ / clippy `-D warnings` ✅ / `cargo test --workspace -j1 --test-threads=1` = **1349 passed, 0 failed**. Test race désormais actif et déterministe (vert).
+- **0 régression** sur les tests `setup_admin_e2e` (8/8) et l'ensemble du workspace.
+- Prochaine étape : `bmad-code-review 17-1` avec un LLM ≠ Opus pour briser le biais d'auteur (Sonnet 4.6 recommandé pour la Pass 1).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-(à compléter par dev-story — recommandation : Opus pour l'attention au flux transactionnel cross-crate, mais story petite → Sonnet acceptable)
+Opus 4.8 (`claude-opus-4-8[1m]`) — single-pass orchestré T1→T6, le 2026-06-04.
 
 ### Debug Log References
 
+- **Bug intercepté pendant T6 (type-mismatch sqlx)** : la 1re version du helper `acquire_setup_sentinel_lock` calquait littéralement `acquire_company_sentinel_lock` avec `query_as` décodant en `Option<(i64,)>`. Les 8 tests `setup_admin_e2e` (y compris happy path) sont alors tous tombés en **HTTP 500**. Cause racine : `_kesh_version.id` est un **`TINYINT UNSIGNED`** (≠ `companies.id` qui est `BIGINT`), donc le décodage strict sqlx en `i64` échoue (`DbError::Sqlx` → 500). Correctif : utiliser `sqlx::query(...).fetch_optional()` (renvoie `Option<MySqlRow>`, **aucun décodage de colonne**, on teste seulement la présence ; le `FOR UPDATE` verrouille la row matchée indépendamment de la liste de projection). Après correctif : 8/8 verts.
+
 ### Completion Notes List
 
+- **AC1/AC2/AC3/AC4 (atomicité)** : la section critique de `create_admin` est désormais wrappée dans une transaction `state.pool.begin()` ouverte juste après le hash Argon2id (hors tx). 1re instruction de la tx = `users::acquire_setup_sentinel_lock(&mut tx)` (`SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE`), puis re-check `SELECT COUNT(*) FROM users` sur `&mut *tx`, puis `users::create_in_tx(&mut tx, …)`, puis `tx.commit()`. Row sentinelle absente → `DbError::Invariant` → `AppError::Database` → **500** (vérifié : `errors.rs:1560` mappe `Invariant` → `INTERNAL_SERVER_ERROR`).
+- **Décision rollback (sous-tâche T3)** : rollback **explicite** (`let _ = tx.rollback().await;`) sur les deux chemins business d'early-exit 410 (count>0 sous verrou + `UniqueConstraintViolation`) pour la lisibilité ; **rollback par drop** (auto sqlx) sur le chemin générique `Err(e)` (`return` immédiat) et sur les échecs infra `begin`/`commit`. Cohérent avec la latitude laissée par la spec.
+- **AC5 (HTTP inchangé)** : 8/8 tests `setup_admin_e2e` verts (happy path 200 + cookies, 410 second appel, 423 gate, validations 400, rate-limit 429). Hash déplacé hors tx (minimise la tenue du verrou) ; company stub lue hors tx avant `begin()` (évite de figer prématurément le snapshot MVCC, F3).
+- **AC6 (test strict)** : `toctou_race_two_distinct_usernames_documents_l1` → renommé `toctou_race_two_distinct_usernames_creates_exactly_one_admin`, `#[ignore]` retiré, asserts stricts `final_count == 1` + set des status `{200, 410}` (tri puis comparaison à `[200, 410]`). Déterministe et vert.
+- **AC7** : aucune migration touchée, aucun bump `kesh_version_min_required`, pas d'entrée `migrations-idempotence-audit.md`.
+- **AC8 (quality gate)** : `cargo fmt --all -- --check` ✅, `cargo build --workspace --all-targets` ✅, `cargo clippy --workspace --all-targets -- -D warnings` ✅, `cargo test --workspace -j1 -- --test-threads=1` → **1349 passed, 0 failed, 0 régression** ✅. Frontend non touché.
+- **DRY** : `users::create` délègue désormais à `create_in_tx` (API publique inchangée, tous les call sites existants préservés).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/users.rs` — **MODIFIÉ** : ajout `pub async fn create_in_tx(tx, new)` (extraction du corps INSERT) + `create` délègue ; ajout `pub async fn acquire_setup_sentinel_lock(tx)` ; import `sqlx::{MySql, Transaction}`.
+- `crates/kesh-api/src/routes/setup.rs` — **MODIFIÉ** : section critique `create_admin` réécrite en transaction verrouillée (verrou sentinelle 1re instruction → re-check count → `create_in_tx` → commit) ; hash + fetch company déplacés hors tx ; doc module mise à jour (race #133 fermée).
+- `crates/kesh-api/tests/setup_admin_e2e.rs` — **MODIFIÉ** : test race converti en garantie stricte (renommé, `#[ignore]` retiré, asserts `final_count == 1` + status set `{200,410}`).
+- `CHANGELOG.md` — **MODIFIÉ** : section `## [Non publié]` § Sécurité (fix TOCTOU #133).
