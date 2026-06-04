@@ -156,8 +156,12 @@ pub async fn create_admin(
     if user_count > 0 {
         // Rollback explicite (relâche le verrou sentinelle) avant le 410.
         // record_failed_attempt + users_exist : comportement identique à l'ancien
-        // gate hors-tx, désormais race-safe.
-        let _ = tx.rollback().await;
+        // gate hors-tx, désormais race-safe. Un échec de rollback est loggé (et
+        // non propagé) : la connexion sera de toute façon recyclée par sqlx, ce
+        // qui relâchera le verrou — mais on trace l'anomalie pour l'observabilité.
+        if let Err(e) = tx.rollback().await {
+            tracing::warn!(error = %e, "setup: rollback échoué (chemin 410 user_count>0)");
+        }
         state.rate_limiter.record_failed_attempt(ip);
         state.users_exist.store(true, Ordering::Release);
         return Err(AppError::SetupAlreadyComplete);
@@ -184,7 +188,9 @@ pub async fn create_admin(
     {
         Ok(u) => u,
         Err(DbError::UniqueConstraintViolation(_)) => {
-            let _ = tx.rollback().await;
+            if let Err(e) = tx.rollback().await {
+                tracing::warn!(error = %e, "setup: rollback échoué (chemin 410 UniqueConstraintViolation)");
+            }
             state.users_exist.store(true, Ordering::Release);
             state.rate_limiter.record_failed_attempt(ip);
             tracing::info!(
