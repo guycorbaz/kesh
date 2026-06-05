@@ -63,16 +63,16 @@ pub async fn create(
     // Audit log atomique
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "bank_profile.created".to_string(),
-            entity_type: "bank_profiles".to_string(),
-            entity_id: id,
-            details_json: Some(serde_json::json!({
+            "bank_profile.created".to_string(),
+            "bank_profiles".to_string(),
+            id,
+            Some(serde_json::json!({
                 "bank_name": new_profile.bank_name,
                 "filename_pattern": new_profile.filename_pattern,
             })),
-        },
+        ),
     )
     .await?;
 
@@ -280,16 +280,16 @@ pub async fn update(
 
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "bank_profile.updated".to_string(),
-            entity_type: "bank_profiles".to_string(),
-            entity_id: id,
-            details_json: Some(serde_json::json!({
+            "bank_profile.updated".to_string(),
+            "bank_profiles".to_string(),
+            id,
+            Some(serde_json::json!({
                 "bank_name": new_profile.bank_name,
                 "fields_changed": fields_changed,
             })),
-        },
+        ),
     )
     .await?;
 
@@ -325,15 +325,15 @@ pub async fn delete(
 
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "bank_profile.deleted".to_string(),
-            entity_type: "bank_profiles".to_string(),
-            entity_id: id,
-            details_json: Some(serde_json::json!({
+            "bank_profile.deleted".to_string(),
+            "bank_profiles".to_string(),
+            id,
+            Some(serde_json::json!({
                 "bank_name": existing.bank_name,
             })),
-        },
+        ),
     )
     .await?;
 

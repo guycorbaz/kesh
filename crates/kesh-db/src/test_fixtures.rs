@@ -301,6 +301,7 @@ pub(crate) const TABLES_TO_TRUNCATE: &[&str] = &[
     "invoice_number_sequences",
     "journal_entries",
     "audit_log",
+    "api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).
     "company_invoice_settings",
     "bank_transactions", // Story 8-1b — enfant de bank_imports + bank_accounts.
     "bank_imports",      // Story 8-1b — enfant de bank_accounts + companies.

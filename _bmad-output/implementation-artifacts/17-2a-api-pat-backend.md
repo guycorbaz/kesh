@@ -1,6 +1,6 @@
 # Story 17.2a: API externe à clé PAT — Backend (table, repo, middleware factorisé, audit)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Issue de la scission de la story 17-2 (spec convergée 5 passes validate, 2026-06-04). 17-2a = Partie A backend (story-foundation, la plus risquée : middleware auth + ripple audit). Voir 17-2-api-pat-integrations.md pour le contexte parent complet. -->
 
@@ -72,40 +72,40 @@ Reprises verbatim de la spec parente 17-2 convergée — ces points engagent la 
 
 ## Tasks / Subtasks
 
-- [ ] **T-A1 — Migration `api_keys` + audit idempotence** (AC: #1)
-  - [ ] Créer `crates/kesh-db/migrations/<timestamp>_api_keys.sql` (calque `20260410000001_bank_accounts.sql` + `20260531000001_bank_accounts_archived.sql`). CHECK `scope IN ('read','read-write')`, CHECK name non-vide, UNIQUE `key_hash`, FK company + created_by_user ON DELETE RESTRICT, index `company_id` + `created_at DESC`.
-  - [ ] Ajouter la ligne correspondante à `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx` + justification, CLAUDE.md P5).
+- [x] **T-A1 — Migration `api_keys` + audit idempotence** (AC: #1)
+  - [x] Créer `crates/kesh-db/migrations/<timestamp>_api_keys.sql` (calque `20260410000001_bank_accounts.sql` + `20260531000001_bank_accounts_archived.sql`). CHECK `scope IN ('read','read-write')`, CHECK name non-vide, UNIQUE `key_hash`, FK company + created_by_user ON DELETE RESTRICT, index `company_id` + `created_at DESC`.
+  - [x] Ajouter la ligne correspondante à `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx` + justification, CLAUDE.md P5).
 
-- [ ] **T-A2 — Entité `ApiKey` + enum `ApiKeyScope`** (AC: #1, #3)
-  - [ ] `crates/kesh-db/src/entities/api_key.rs` : structs `ApiKey` / `NewApiKey`, enum `ApiKeyScope { Read, ReadWrite }` avec `Type<MySql>`/`Encode`/`Decode`/`FromStr`/`as_str` (calque `entities/account.rs` enum `AccountType` L43-66, et `Role` `entities/user.rs`). `impl Debug` masquant tout secret (calque `RefreshToken` `entities/refresh_token.rs` L34-45).
-  - [ ] Déclarer `pub mod api_key;` dans `crates/kesh-db/src/entities/mod.rs`.
+- [x] **T-A2 — Entité `ApiKey` + enum `ApiKeyScope`** (AC: #1, #3)
+  - [x] `crates/kesh-db/src/entities/api_key.rs` : structs `ApiKey` / `NewApiKey`, enum `ApiKeyScope { Read, ReadWrite }` avec `Type<MySql>`/`Encode`/`Decode`/`FromStr`/`as_str` (calque `entities/account.rs` enum `AccountType` L43-66, et `Role` `entities/user.rs`). `impl Debug` masquant tout secret (calque `RefreshToken` `entities/refresh_token.rs` L34-45).
+  - [x] Déclarer `pub mod api_key;` dans `crates/kesh-db/src/entities/mod.rs`.
 
-- [ ] **T-A3 — Repo `api_keys`** (AC: #2, #3)
-  - [ ] `crates/kesh-db/src/repositories/api_keys.rs` (calque `repositories/bank_accounts.rs`) : `create_in_tx`, `list_by_company`, `find_by_id_for_company`, `find_active_by_key_hash` (lookup auth, **idéalement JOIN users pour récupérer rôle/active du créateur en 1 requête — DC2**), `revoke_for_company` (optimistic lock `version`), `touch_last_used`.
-  - [ ] Génération token : helper `generate_pat()` (RNG crypto ≥ 160 bits → encodage, préfixe `kesh_pat_`) + `sha256_hex(token)` — emplacement `crates/kesh-api/src/auth/` (nouveau `api_key.rs` ou `pat.rs`). **Dépendances (ground-truth Pass 1)** : `sha2 = "0.10"` est **DÉJÀ** dans `crates/kesh-api/Cargo.toml` (L47) → rien à ajouter pour le hash. `rand` n'est que **transitive** (via uuid) et `base62` est **absente du workspace** → à AJOUTER explicitement à `kesh-api/Cargo.toml` : `rand_core = "0.6"` + `getrandom` (ou `rand = "0.8"`) pour `OsRng`. **Encodage : base62 INLINE** (~15 lignes, alphabet `0-9A-Za-z`) — NE PAS ajouter de crate `base62`. ⚠️ L'`OsRng` de `auth/password.rs:17` vient de `argon2::password_hash::rand_core::OsRng` (chemin ré-exporté) — ne PAS supposer `rand::OsRng` accessible sans déclarer la crate. **DRY** : réutiliser le même `OsRng` que le salt Argon2. **(F-OPUS-6)** Pour remplir un buffer ≥ 20 octets (160 bits), importer `OsRng` **ET le trait `RngCore`** depuis le même `rand_core` (réexporté via `argon2::password_hash::rand_core`), puis `OsRng.fill_bytes(&mut buf)` sur `buf: [u8; 20]` — sans le trait `RngCore` en scope, `fill_bytes` est introuvable. Tester l'encodage base62 inline (roundtrip + longueur attendue pour 160+ bits).
-  - [ ] Déclarer `pub mod api_keys;` dans `crates/kesh-db/src/repositories/mod.rs`.
+- [x] **T-A3 — Repo `api_keys`** (AC: #2, #3)
+  - [x] `crates/kesh-db/src/repositories/api_keys.rs` (calque `repositories/bank_accounts.rs`) : `create_in_tx`, `list_by_company`, `find_by_id_for_company`, `find_active_by_key_hash` (lookup auth, **idéalement JOIN users pour récupérer rôle/active du créateur en 1 requête — DC2**), `revoke_for_company` (optimistic lock `version`), `touch_last_used`.
+  - [x] Génération token : helper `generate_pat()` (RNG crypto ≥ 160 bits → encodage, préfixe `kesh_pat_`) + `sha256_hex(token)` — emplacement `crates/kesh-api/src/auth/` (nouveau `api_key.rs` ou `pat.rs`). **Dépendances (ground-truth Pass 1)** : `sha2 = "0.10"` est **DÉJÀ** dans `crates/kesh-api/Cargo.toml` (L47) → rien à ajouter pour le hash. `rand` n'est que **transitive** (via uuid) et `base62` est **absente du workspace** → à AJOUTER explicitement à `kesh-api/Cargo.toml` : `rand_core = "0.6"` + `getrandom` (ou `rand = "0.8"`) pour `OsRng`. **Encodage : base62 INLINE** (~15 lignes, alphabet `0-9A-Za-z`) — NE PAS ajouter de crate `base62`. ⚠️ L'`OsRng` de `auth/password.rs:17` vient de `argon2::password_hash::rand_core::OsRng` (chemin ré-exporté) — ne PAS supposer `rand::OsRng` accessible sans déclarer la crate. **DRY** : réutiliser le même `OsRng` que le salt Argon2. **(F-OPUS-6)** Pour remplir un buffer ≥ 20 octets (160 bits), importer `OsRng` **ET le trait `RngCore`** depuis le même `rand_core` (réexporté via `argon2::password_hash::rand_core`), puis `OsRng.fill_bytes(&mut buf)` sur `buf: [u8; 20]` — sans le trait `RngCore` en scope, `fill_bytes` est introuvable. Tester l'encodage base62 inline (roundtrip + longueur attendue pour 160+ bits).
+  - [x] Déclarer `pub mod api_keys;` dans `crates/kesh-db/src/repositories/mod.rs`.
 
-- [ ] **T-A4 — Extension `audit_log` (actor_type / actor_api_key_id)** (AC: #8) ⚠️ **ripple — voir DC5**
-  - [ ] Migration `<timestamp>_audit_log_actor.sql` : `ALTER TABLE audit_log ADD COLUMN actor_type ENUM('user','api_key') NOT NULL DEFAULT 'user'`, `ADD COLUMN actor_api_key_id BIGINT NULL`. **Non-breaking** (DEFAULT, ADD COLUMN). ⚠️ **Ne PAS toucher à `user_id`** : il reste `NOT NULL FK users(id)` (tout audit a un acteur user — même via PAT, `user_id = créateur de la clé`). Pas de FK sur `actor_api_key_id` (la clé peut être révoquée/supprimée alors que l'audit doit survivre 10 ans — pointeur logique, cohérent `entity_id` sans FK). Ajouter à `migrations-idempotence-audit.md`. Note dialecte MariaDB (`ADD COLUMN`, pas `ALTER COLUMN TYPE`).
-  - [ ] Étendre `NewAuditLogEntry` / `AuditLogEntry` (`entities/audit_log.rs`) avec `actor_type: ActorType` + `actor_api_key_id: Option<i64>` + enum `ActorType { User, ApiKey }` (sqlx Type). **Constructeurs rétro-compat** : `NewAuditLogEntry::user(user_id, action, entity_type, entity_id, details)` (= sémantique actuelle) et `::api_key(api_key_id, creator_user_id, action, entity_type, entity_id, details)`.
-  - [ ] Adapter `repositories/audit_log.rs::insert_in_tx` (INSERT des 2 nouvelles colonnes) **sans** changer la signature publique si possible. Mettre à jour **tous** les call-sites existants vers `NewAuditLogEntry::user(...)` (refactor mécanique). **Inventaire ground-truth (Pass 1) : ~48 occurrences `NewAuditLogEntry { … }` dans `crates/`** — ~29 kesh-db repos, ~19 kesh-api routes, **+1 dans `crates/kesh-api/src/auth/bootstrap.rs` (hors `routes/`)**. Commande : `grep -rn "NewAuditLogEntry {" crates/`.
-  - [ ] Ajouter le helper `NewAuditLogEntry::from_current_user(&CurrentUser, action, entity_type, entity_id, details_json)` (DC5). **Migration par catégorie (DC5 (i)/(ii)/(iii), F-OPUS-1)** : (i) handlers kesh-api avec `&CurrentUser` → `from_current_user` ; (ii) helpers kesh-api à `user_id: i64` nu (`audit_primary_transition`, `emit_global_export_audit`, `emit_report_audit`, `insert_canonical_audit_log`, `accept_one_invoice/split/rule`) → étendre signature avec `actor_api_key_id: Option<i64>` → `::user`/`::api_key` ; (iii) repos kesh-db → `::user`. **Lister dans les Completion Notes toute mutation PAT laissée en `actor_type='user'`** (exception documentée v0.3).
-  - [ ] **Cohérence INSERT/SELECT (F-OPUS-3)** : dans `repositories/audit_log.rs`, mettre à jour la const `COLUMNS` (L17 : `+ actor_type, actor_api_key_id`), binder les 2 nouvelles colonnes dans l'`INSERT` de `insert_in_tx`, et garder en **bijection** les champs de `AuditLogEntry` (FromRow) avec le `SELECT {COLUMNS}` du re-fetch (L62) ET de toute fonction de liste (L84) — sinon `sqlx` échoue runtime `ColumnNotFound`.
+- [x] **T-A4 — Extension `audit_log` (actor_type / actor_api_key_id)** (AC: #8) ⚠️ **ripple — voir DC5**
+  - [x] Migration `<timestamp>_audit_log_actor.sql` : `ALTER TABLE audit_log ADD COLUMN actor_type ENUM('user','api_key') NOT NULL DEFAULT 'user'`, `ADD COLUMN actor_api_key_id BIGINT NULL`. **Non-breaking** (DEFAULT, ADD COLUMN). ⚠️ **Ne PAS toucher à `user_id`** : il reste `NOT NULL FK users(id)` (tout audit a un acteur user — même via PAT, `user_id = créateur de la clé`). Pas de FK sur `actor_api_key_id` (la clé peut être révoquée/supprimée alors que l'audit doit survivre 10 ans — pointeur logique, cohérent `entity_id` sans FK). Ajouter à `migrations-idempotence-audit.md`. Note dialecte MariaDB (`ADD COLUMN`, pas `ALTER COLUMN TYPE`).
+  - [x] Étendre `NewAuditLogEntry` / `AuditLogEntry` (`entities/audit_log.rs`) avec `actor_type: ActorType` + `actor_api_key_id: Option<i64>` + enum `ActorType { User, ApiKey }` (sqlx Type). **Constructeurs rétro-compat** : `NewAuditLogEntry::user(user_id, action, entity_type, entity_id, details)` (= sémantique actuelle) et `::api_key(api_key_id, creator_user_id, action, entity_type, entity_id, details)`.
+  - [x] Adapter `repositories/audit_log.rs::insert_in_tx` (INSERT des 2 nouvelles colonnes) **sans** changer la signature publique si possible. Mettre à jour **tous** les call-sites existants vers `NewAuditLogEntry::user(...)` (refactor mécanique). **Inventaire ground-truth (Pass 1) : ~48 occurrences `NewAuditLogEntry { … }` dans `crates/`** — ~29 kesh-db repos, ~19 kesh-api routes, **+1 dans `crates/kesh-api/src/auth/bootstrap.rs` (hors `routes/`)**. Commande : `grep -rn "NewAuditLogEntry {" crates/`.
+  - [x] Ajouter le helper `NewAuditLogEntry::from_current_user(&CurrentUser, action, entity_type, entity_id, details_json)` (DC5). **Migration par catégorie (DC5 (i)/(ii)/(iii), F-OPUS-1)** : (i) handlers kesh-api avec `&CurrentUser` → `from_current_user` ; (ii) helpers kesh-api à `user_id: i64` nu (`audit_primary_transition`, `emit_global_export_audit`, `emit_report_audit`, `insert_canonical_audit_log`, `accept_one_invoice/split/rule`) → étendre signature avec `actor_api_key_id: Option<i64>` → `::user`/`::api_key` ; (iii) repos kesh-db → `::user`. **Lister dans les Completion Notes toute mutation PAT laissée en `actor_type='user'`** (exception documentée v0.3).
+  - [x] **Cohérence INSERT/SELECT (F-OPUS-3)** : dans `repositories/audit_log.rs`, mettre à jour la const `COLUMNS` (L17 : `+ actor_type, actor_api_key_id`), binder les 2 nouvelles colonnes dans l'`INSERT` de `insert_in_tx`, et garder en **bijection** les champs de `AuditLogEntry` (FromRow) avec le `SELECT {COLUMNS}` du re-fetch (L62) ET de toute fonction de liste (L84) — sinon `sqlx` échoue runtime `ColumnNotFound`.
 
-- [ ] **T-A5 — Middleware auth factorisé (JWT OU PAT)** (AC: #4, #5, #6)
-  - [ ] Helper `validate_pat(token, &state.pool) -> Result<(CurrentUser, ApiKeyScope), AppError>` dans `auth/api_key.rs` : `sha256_hex` → `find_active_by_key_hash` → vérifier créateur actif → construire `CurrentUser` (DC2, `api_key_id = Some(id)`) → **`touch_last_used(key_hash)` best-effort** (échec loggé `warn`, n'échoue PAS la requête — eventual consistency, AC5). Retourne aussi le `scope` pour le gate.
-  - [ ] Étendre `middleware/auth.rs::require_auth` (L75-141) selon la **structure réelle AC4** : conserver l'extraction du `token` unifié cookie‖bearer ET le gate `users_exist → 423` à leur place ; **après** ces deux étapes, brancher `if token.starts_with("kesh_pat_") { validate_pat } else { jwt::decode }`. Injecter `CurrentUser` (`api_key_id` selon le chemin — `None` pour JWT). Appliquer le **gate de scope** (DC3) **uniquement sur le chemin PAT** : si `scope=Read` et `req.method()` mutante → `403 API_KEY_READ_ONLY`. Chemin JWT inchangé.
-  - [ ] **Étendre le struct `CurrentUser` (`middleware/auth.rs:33`) avec `api_key_id: Option<i64>`** et mettre à jour TOUS ses sites de construction (chemin JWT cookie + JWT bearer → `api_key_id: None`). Vérifier que les tests middleware existants compilent (refactor mécanique).
-  - [ ] Variants `AppError` : `ApiKeyReadOnly` (403, code `API_KEY_READ_ONLY`) + `ApiKeyManagementForbidden` (403, code `API_KEY_MANAGEMENT_FORBIDDEN`, DC6). Réutiliser `Unauthenticated` (401) pour token invalide/révoqué/expiré. i18n des messages (4 langues, AC11b).
+- [x] **T-A5 — Middleware auth factorisé (JWT OU PAT)** (AC: #4, #5, #6)
+  - [x] Helper `validate_pat(token, &state.pool) -> Result<(CurrentUser, ApiKeyScope), AppError>` dans `auth/api_key.rs` : `sha256_hex` → `find_active_by_key_hash` → vérifier créateur actif → construire `CurrentUser` (DC2, `api_key_id = Some(id)`) → **`touch_last_used(key_hash)` best-effort** (échec loggé `warn`, n'échoue PAS la requête — eventual consistency, AC5). Retourne aussi le `scope` pour le gate.
+  - [x] Étendre `middleware/auth.rs::require_auth` (L75-141) selon la **structure réelle AC4** : conserver l'extraction du `token` unifié cookie‖bearer ET le gate `users_exist → 423` à leur place ; **après** ces deux étapes, brancher `if token.starts_with("kesh_pat_") { validate_pat } else { jwt::decode }`. Injecter `CurrentUser` (`api_key_id` selon le chemin — `None` pour JWT). Appliquer le **gate de scope** (DC3) **uniquement sur le chemin PAT** : si `scope=Read` et `req.method()` mutante → `403 API_KEY_READ_ONLY`. Chemin JWT inchangé.
+  - [x] **Étendre le struct `CurrentUser` (`middleware/auth.rs:33`) avec `api_key_id: Option<i64>`** et mettre à jour TOUS ses sites de construction (chemin JWT cookie + JWT bearer → `api_key_id: None`). Vérifier que les tests middleware existants compilent (refactor mécanique).
+  - [x] Variants `AppError` : `ApiKeyReadOnly` (403, code `API_KEY_READ_ONLY`) + `ApiKeyManagementForbidden` (403, code `API_KEY_MANAGEMENT_FORBIDDEN`, DC6). Réutiliser `Unauthenticated` (401) pour token invalide/révoqué/expiré. i18n des messages (4 langues, AC11b).
 
-- [ ] **T-A6 — Routes CRUD `/settings/api-keys` + audit création/révocation** (AC: #7, #8)
-  - [ ] `crates/kesh-api/src/routes/api_keys.rs` (calque `routes/bank_accounts.rs`) : handlers `list` / `create` / `revoke`. **Garde DC6 en tête de chaque handler** : si `current_user.api_key_id.is_some()` → `403 API_KEY_MANAGEMENT_FORBIDDEN`. `list` appelle `list_by_company(..., include_revoked=true)` (AC7). Payloads + réponses (création retourne le secret clair **une fois**). Audit `api_key.created` / `api_key.revoked` (`actor_type=user`, jamais le secret).
-  - [ ] Enregistrer les routes dans `crates/kesh-api/src/lib.rs` sous `comptable_routes` (avant le `.route_layer(require_comptable_role)`, calque enregistrement `bank_accounts` ≈ lib.rs L255-263).
-  - [ ] Module `pub mod api_keys;` dans `routes/mod.rs`.
+- [x] **T-A6 — Routes CRUD `/settings/api-keys` + audit création/révocation** (AC: #7, #8)
+  - [x] `crates/kesh-api/src/routes/api_keys.rs` (calque `routes/bank_accounts.rs`) : handlers `list` / `create` / `revoke`. **Garde DC6 en tête de chaque handler** : si `current_user.api_key_id.is_some()` → `403 API_KEY_MANAGEMENT_FORBIDDEN`. `list` appelle `list_by_company(..., include_revoked=true)` (AC7). Payloads + réponses (création retourne le secret clair **une fois**). Audit `api_key.created` / `api_key.revoked` (`actor_type=user`, jamais le secret).
+  - [x] Enregistrer les routes dans `crates/kesh-api/src/lib.rs` sous `comptable_routes` (avant le `.route_layer(require_comptable_role)`, calque enregistrement `bank_accounts` ≈ lib.rs L255-263).
+  - [x] Module `pub mod api_keys;` dans `routes/mod.rs`.
 
-- [ ] **T-A7 — Tests backend** (AC: #13)
-  - [ ] Unit : `generate_pat` format + entropie, `sha256_hex` déterminisme, enum `ApiKeyScope`/`ActorType` roundtrip sqlx, gate de scope (GET autorisé / POST refusé en read).
-  - [ ] Integration (`#[sqlx::test]`) : CRUD scopé company (isolation cross-company → NotFound), `find_active_by_key_hash` (révoqué/expiré exclus), middleware PAT (Bearer valide → 200 ; read + POST → 403 `API_KEY_READ_ONLY` ; créateur désactivé → 401 ; token inconnu → 401 ; **PAT read-write sur `/settings/api-keys` → 403 `API_KEY_MANAGEMENT_FORBIDDEN`**, DC6), audit `api_key.created`/`api_key.revoked` (`actor_type='user'`), et audit d'**une mutation via PAT sur une route métier kesh-api** → `actor_type='api_key'` + `actor_api_key_id` correct (via `CurrentUser.api_key_id` + `from_current_user`, DC2/DC5). Choisir une route mutante kesh-api simple comme cible (ex. POST `bank_accounts` ou équivalent disponible en read-write).
+- [x] **T-A7 — Tests backend** (AC: #13)
+  - [x] Unit : `generate_pat` format + entropie, `sha256_hex` déterminisme, enum `ApiKeyScope`/`ActorType` roundtrip sqlx, gate de scope (GET autorisé / POST refusé en read).
+  - [x] Integration (`#[sqlx::test]`) : CRUD scopé company (isolation cross-company → NotFound), `find_active_by_key_hash` (révoqué/expiré exclus), middleware PAT (Bearer valide → 200 ; read + POST → 403 `API_KEY_READ_ONLY` ; créateur désactivé → 401 ; token inconnu → 401 ; **PAT read-write sur `/settings/api-keys` → 403 `API_KEY_MANAGEMENT_FORBIDDEN`**, DC6), audit `api_key.created`/`api_key.revoked` (`actor_type='user'`), et audit d'**une mutation via PAT sur une route métier kesh-api** → `actor_type='api_key'` + `actor_api_key_id` correct (via `CurrentUser.api_key_id` + `from_current_user`, DC2/DC5). Choisir une route mutante kesh-api simple comme cible (ex. POST `bank_accounts` ou équivalent disponible en read-write).
 
 ## Dev Notes
 
@@ -188,10 +188,61 @@ Reprises verbatim de la spec parente 17-2 convergée — ces points engagent la 
 
 ### Agent Model Used
 
-(à compléter par dev-story — **recommandation : Opus** pour le middleware auth factorisé + le ripple audit cross-call-site. Le ripple audit n'est PAS purement mécanique : F-OPUS-1 distingue 3 catégories de call-sites (i handlers `&CurrentUser` / ii helpers `user_id` nu / iii repos kesh-db). Attention particulière à T-A4 (~48 call-sites) et T-A5 (extension `CurrentUser` + insertion PAT post-gate `users_exist`).)
+Claude Opus 4.8 (1M context) — `bmad-dev-story 17-2a`, single-pass orchestré T-A1→T-A7 (2026-06-05).
 
 ### Debug Log References
 
+- `cargo build --workspace --all-targets` : vert (après ajout `use axum::Extension` dans `routes/api_keys.rs`).
+- `cargo clippy --workspace --all-targets -- -D warnings` : vert (après `#[allow(clippy::too_many_arguments)]` sur `accept_one_invoice` — 7→8 args suite au threading `actor_api_key_id`).
+- `cargo fmt --all -- --check` : vert.
+- `cargo test -p kesh-api --test api_keys_e2e` : **11/11 verts**.
+- Tests unitaires nouveaux : `auth::api_key` 4/4, `entities::api_key` 2/2.
+
 ### Completion Notes List
 
+**Implémentation conforme à la spec convergée (DC1-DC6, AC1-AC8, AC11b, AC13).** Points notables :
+
+- **Aucune nouvelle dépendance Cargo** (amélioration vs plan spec T-A3) : `sha2` déjà présent ; `OsRng` + trait `RngCore` réutilisés via le réexport `argon2::password_hash::rand_core` (le même CSPRNG que le salt Argon2) → pas d'ajout de `rand_core`/`getrandom`. base62 inline (~18 lignes), pas de crate.
+- **F-OPUS-1 — correction d'architecture vs wording spec** : `from_current_user` ne peut PAS être une méthode sur `NewAuditLogEntry` dans kesh-db (cycle kesh-db→kesh-api interdit). Implémenté comme **trait d'extension `crate::audit::AuditActor`** dans **kesh-api** (où `CurrentUser` + `NewAuditLogEntry` coexistent), conservant la syntaxe `NewAuditLogEntry::from_current_user(&current_user, …)`. Les constructeurs bas-niveau (i64 nus) `::user`/`::api_key`/`for_actor` vivent dans kesh-db.
+- **Ripple audit (T-A4) — 49 call-sites migrés** (inventaire réel = 49, dont 1 faux-positif `-> NewAuditLogEntry {` return-type dans `fiscal_years.rs`). Répartition par catégorie F-OPUS-1 :
+  - **(i) handlers kesh-api avec `&CurrentUser`** → `from_current_user` : `bank_accounts.rs` (created/updated/archived/patch), `reconciliation_rules.rs` (deleted noop).
+  - **(ii) helpers kesh-api `user_id: i64` nu** → param `actor_api_key_id: Option<i64>` threadé + `for_actor` : `bank_accounts::audit_primary_transition`, `bank_imports::insert_canonical_audit_log`, `exports::emit_global_export_audit`, et la chaîne reconciliation **accept** (`post_accept`→`accept_batch`→`accept_one`→`accept_one_invoice/split/rule`) + **reject** (`post_reject`→`reject_batch`) + `post_manual` + `post_split` (8 sites audit). Couvre les mutations PAT FR44-48 (cœur du cas d'usage intégration).
+  - **(iii) repos kesh-db + bootstrap** → `::user` : 24 sites repos (accounts/bank_profiles/company_invoice_settings/contacts/fiscal_years/invoices/journal_entries/products/reconciliation_rules) + `auth/bootstrap.rs` + tests `audit_log.rs`.
+- **Exceptions `actor_type='user'` documentées (limitation L2, v0.3)** — call-sites READ-path laissés en `::user` (chemin lecture non-mutation, hors scope strict AC8(b), threading sur 4+ callers jugé excessif) :
+  - `reports::emit_report_audit` (`report.generated`) — 4 callers GET.
+  - `reports::emit_report_export_audit` (`report.exported`).
+  - Une consultation/export déclenchée par un PAT `read` logge donc `actor_type='user'`. Imputabilité préservée (`user_id` = créateur de la clé).
+  - **Limitation L1 (v0.3)** : les audits internes kesh-db (catégorie iii) restent `actor_type='user'` même via PAT (cf. DC5) — threading jusqu'aux repos changerait N signatures, hors scope v0.2.
+- **Migrations non-breaking** (CLAUDE.md P1/P3) : `CREATE TABLE api_keys` + `ALTER TABLE audit_log ADD COLUMN` (DEFAULT/nullable) → **aucun bump `kesh_version_min_required`**. 2 entrées ajoutées à `docs/migrations-idempotence-audit.md` (P5, verdict `tracked-by-sqlx`).
+- **Invariant non-régression** : chemin JWT inchangé (`from_current_user` produit `actor_type='user'` à l'identique) ; gate `users_exist→423` non déplacé ; branche PAT insérée après extraction token + après le gate setup.
+- **Hors-scope confirmé** : frontend (17-2b) et doc/OpenAPI (17-2c) non touchés. La synchro doc visible (CHANGELOG/README/manuel) sera faite en 17-2c (feature non encore exposée UI).
+- **2 tests fail-loud de synchro schéma mis à jour** (déclenchés par les 2 nouvelles migrations, comportement attendu) : (1) `test_fixtures::truncate_all_inventory_matches_schema` → ajout de `api_keys` à `TABLES_TO_TRUNCATE` ; (2) `migrations_upgrade_path::upgrade_path_preserves_data` → bump `total` 29→31 + fenêtre `total - 6`→`total - 8` (frontière historique 23 inchangée).
+- **Quality gate final** : `cargo fmt --all -- --check` ✅, `cargo build --workspace --all-targets` ✅, `cargo clippy --workspace --all-targets -- -D warnings` ✅, `cargo test --workspace -j1 -- --test-threads=1` ✅ **1366 passed / 0 failed**. Migrations appliquées localement via `sqlx migrate run` (la DB `kesh` persistante était aussi en retard de 2 migrations préexistantes — companies_is_stub + bank_accounts_archived — désormais à jour).
+
 ### File List
+
+**Nouveaux fichiers :**
+- `crates/kesh-db/migrations/20260605000001_api_keys.sql`
+- `crates/kesh-db/migrations/20260605000002_audit_log_actor.sql`
+- `crates/kesh-db/src/entities/api_key.rs`
+- `crates/kesh-db/src/repositories/api_keys.rs`
+- `crates/kesh-api/src/auth/api_key.rs`
+- `crates/kesh-api/src/audit.rs`
+- `crates/kesh-api/src/routes/api_keys.rs`
+- `crates/kesh-api/tests/api_keys_e2e.rs`
+
+**Fichiers modifiés :**
+- `crates/kesh-db/src/entities/mod.rs` (re-exports ApiKey/ApiKeyScope/NewApiKey/ActorType)
+- `crates/kesh-db/src/entities/audit_log.rs` (ActorType enum, structs étendues, constructeurs `::user`/`::api_key`/`for_actor`)
+- `crates/kesh-db/src/repositories/mod.rs` (`pub mod api_keys`)
+- `crates/kesh-db/src/repositories/audit_log.rs` (COLUMNS, INSERT 2 colonnes, tests)
+- `crates/kesh-db/src/repositories/{accounts,bank_profiles,company_invoice_settings,contacts,fiscal_years,invoices,journal_entries,products,reconciliation_rules}.rs` (migration `::user`)
+- `crates/kesh-api/src/lib.rs` (`pub mod audit`, import `delete`, routes `/settings/api-keys`)
+- `crates/kesh-api/src/auth/mod.rs` (`pub mod api_key`)
+- `crates/kesh-api/src/errors.rs` (variants `ApiKeyReadOnly`/`ApiKeyManagementForbidden` + mapping 403)
+- `crates/kesh-api/src/middleware/auth.rs` (`CurrentUser.api_key_id`, branche PAT + gate scope `is_safe_method`)
+- `crates/kesh-api/src/helpers.rs` (test `api_key_id: None`)
+- `crates/kesh-api/src/routes/{bank_accounts,reconciliation_rules,bank_imports,exports,reports,reconciliation}.rs` (ripple audit)
+- `crates/kesh-api/src/auth/bootstrap.rs` (`::user`)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (2 clés erreur 403)
+- `docs/migrations-idempotence-audit.md` (2 entrées + stats)

@@ -14,7 +14,10 @@ use sqlx::{MySql, Transaction};
 use crate::entities::audit_log::{AuditLogEntry, NewAuditLogEntry};
 use crate::errors::{DbError, map_db_error};
 
-const COLUMNS: &str = "id, user_id, action, entity_type, entity_id, details_json, created_at";
+// Story 17-2a (F-OPUS-3) — `actor_type` + `actor_api_key_id` ajoutés. Doit
+// rester en bijection avec les champs de `AuditLogEntry` (FromRow) sinon sqlx
+// échoue runtime `ColumnNotFound`.
+const COLUMNS: &str = "id, user_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, created_at";
 
 /// Insère une entrée d'audit dans une transaction en cours.
 ///
@@ -28,14 +31,16 @@ pub async fn insert_in_tx(
     new: NewAuditLogEntry,
 ) -> Result<AuditLogEntry, DbError> {
     let result = sqlx::query(
-        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details_json) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.user_id)
     .bind(&new.action)
     .bind(&new.entity_type)
     .bind(new.entity_id)
     .bind(&new.details_json)
+    .bind(new.actor_type)
+    .bind(new.actor_api_key_id)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -121,13 +126,13 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         let inserted = insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            NewAuditLogEntry::user(
                 user_id,
-                action: "test.inserted".to_string(),
-                entity_type: "test_entity".to_string(),
+                "test.inserted",
+                "test_entity",
                 entity_id,
-                details_json: Some(json!({"foo": "bar"})),
-            },
+                Some(json!({"foo": "bar"})),
+            ),
         )
         .await
         .unwrap();
@@ -135,6 +140,8 @@ mod tests {
 
         assert_eq!(inserted.user_id, user_id);
         assert_eq!(inserted.action, "test.inserted");
+        assert_eq!(inserted.actor_type, crate::entities::ActorType::User);
+        assert_eq!(inserted.actor_api_key_id, None);
 
         let found = find_by_entity(&pool, "test_entity", entity_id, 10)
             .await
@@ -163,13 +170,13 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         let inserted = insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            NewAuditLogEntry::user(
                 user_id,
-                action: "test.json".to_string(),
-                entity_type: "test_entity".to_string(),
+                "test.json",
+                "test_entity",
                 entity_id,
-                details_json: Some(details.clone()),
-            },
+                Some(details.clone()),
+            ),
         )
         .await
         .unwrap();
@@ -193,13 +200,7 @@ mod tests {
         let mut tx = pool.begin().await.unwrap();
         let inserted = insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
-                user_id,
-                action: "test.rollback".to_string(),
-                entity_type: "test_entity".to_string(),
-                entity_id,
-                details_json: None,
-            },
+            NewAuditLogEntry::user(user_id, "test.rollback", "test_entity", entity_id, None),
         )
         .await
         .unwrap();

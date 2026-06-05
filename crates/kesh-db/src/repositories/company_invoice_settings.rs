@@ -192,13 +192,13 @@ pub async fn update(
     });
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "company_invoice_settings.updated".to_string(),
-            entity_type: "company_invoice_settings".to_string(),
-            entity_id: company_id,
-            details_json: Some(audit_details),
-        },
+            "company_invoice_settings.updated".to_string(),
+            "company_invoice_settings".to_string(),
+            company_id,
+            Some(audit_details),
+        ),
     )
     .await
     {

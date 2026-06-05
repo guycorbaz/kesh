@@ -29,12 +29,19 @@ use crate::errors::AppError;
 /// Story 10-5 (D2 acté Pass 1 F-L-P1-14): `exp` ajouté pour permettre au
 /// handler `/api/v1/auth/me` de calculer `expires_in` (secondes restantes
 /// avant expiration JWT) sans re-décoder le token.
+/// Story 17-2a (DC2) : `api_key_id` ajouté pour distinguer le chemin
+/// d'authentification. `None` = session JWT (UI web). `Some(id)` = PAT
+/// (`Authorization: Bearer kesh_pat_…`). Ce champ permet à l'audit des routes
+/// métier de marquer `actor_type='api_key'` (cf. `crate::audit::AuditActor`),
+/// et au gate de gestion des clés (DC6) de rejeter les requêtes PAT.
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub user_id: i64,
     pub role: Role,
     pub company_id: i64,
     pub exp: i64,
+    /// Story 17-2a (DC2) — `Some(<id clé>)` si authentifié par PAT, `None` si JWT.
+    pub api_key_id: Option<i64>,
 }
 
 /// Middleware qui exige un JWT valide.
@@ -117,26 +124,56 @@ pub async fn require_auth(
         }
     };
 
-    let claims = jwt::decode(&token, state.config.jwt_secret_bytes())?;
+    // Story 17-2a (AC4/AC6, DC3) — discrimination JWT vs PAT APRÈS extraction
+    // du token ET le gate `users_exist`. Le préfixe `kesh_pat_` est testé
+    // case-sensitive exact (octets) : `KESH_PAT_` / `kesh_pat ` (espace)
+    // tombent en `jwt::decode` (échec 401). Un cookie ne contient jamais
+    // `kesh_pat_` (en pratique seul le chemin bearer déclenche le PAT), et un
+    // vrai JWS base64url ne commence jamais par `kesh_pat_`. Ne JAMAIS passer
+    // un PAT à `jwt::decode` (fausse erreur loggée + fuite timing).
+    let current_user = if token.starts_with(crate::auth::api_key::PAT_PREFIX) {
+        let (current_user, scope) = crate::auth::api_key::validate_pat(&token, &state.pool).await?;
 
-    let user_id: i64 = claims
-        .sub
-        .parse()
-        .map_err(|_| AppError::Unauthenticated("invalid sub claim".into()))?;
+        // Gate de scope (DC3/AC6) — UNIQUEMENT sur le chemin PAT. `scope=read`
+        // → seules GET/HEAD/OPTIONS autorisées ; toute méthode mutante →
+        // 403 API_KEY_READ_ONLY (rejet global en amont, jamais FailedProposal,
+        // F-OPUS-7). Le chemin JWT (UI web) n'est jamais soumis à ce gate.
+        if scope == kesh_db::entities::ApiKeyScope::Read && !is_safe_method(req.method()) {
+            return Err(AppError::ApiKeyReadOnly);
+        }
+        current_user
+    } else {
+        let claims = jwt::decode(&token, state.config.jwt_secret_bytes())?;
 
-    let role: Role = Role::from_str(&claims.role)
-        .map_err(|_| AppError::Unauthenticated("invalid role claim".into()))?;
+        let user_id: i64 = claims
+            .sub
+            .parse()
+            .map_err(|_| AppError::Unauthenticated("invalid sub claim".into()))?;
 
-    let company_id = claims.company_id;
-    let exp = claims.exp;
+        let role: Role = Role::from_str(&claims.role)
+            .map_err(|_| AppError::Unauthenticated("invalid role claim".into()))?;
 
-    req.extensions_mut().insert(CurrentUser {
-        user_id,
-        role,
-        company_id,
-        exp,
-    });
+        CurrentUser {
+            user_id,
+            role,
+            company_id: claims.company_id,
+            exp: claims.exp,
+            api_key_id: None,
+        }
+    };
+
+    req.extensions_mut().insert(current_user);
     Ok(next.run(req).await)
+}
+
+/// Méthode HTTP « sûre » (lecture seule) au sens du gate de scope PAT (DC3).
+/// `GET`/`HEAD`/`OPTIONS` sont autorisées pour une clé `read` ; toute autre
+/// méthode (POST/PUT/PATCH/DELETE) est une mutation refusée.
+fn is_safe_method(method: &axum::http::Method) -> bool {
+    matches!(
+        *method,
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    )
 }
 
 #[cfg(test)]

@@ -180,13 +180,13 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewProduct) -> Result<P
 
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "product.created".to_string(),
-            entity_type: "product".to_string(),
-            entity_id: product.id,
-            details_json: Some(product_snapshot_json(&product)),
-        },
+            "product.created".to_string(),
+            "product".to_string(),
+            product.id,
+            Some(product_snapshot_json(&product)),
+        ),
     )
     .await
     {
@@ -347,13 +347,13 @@ pub async fn update(
     });
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "product.updated".to_string(),
-            entity_type: "product".to_string(),
-            entity_id: id,
-            details_json: Some(audit_details),
-        },
+            "product.updated".to_string(),
+            "product".to_string(),
+            id,
+            Some(audit_details),
+        ),
     )
     .await
     {
@@ -427,13 +427,13 @@ pub async fn archive(
 
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "product.archived".to_string(),
-            entity_type: "product".to_string(),
-            entity_id: id,
-            details_json: Some(product_snapshot_json(&product)),
-        },
+            "product.archived".to_string(),
+            "product".to_string(),
+            id,
+            Some(product_snapshot_json(&product)),
+        ),
     )
     .await
     {

@@ -76,13 +76,13 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     // Rollback explicite pour cohérence avec les autres branches d'erreur.
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "account.created".to_string(),
-            entity_type: "account".to_string(),
-            entity_id: account.id,
-            details_json: Some(account_snapshot_json(&account)),
-        },
+            "account.created".to_string(),
+            "account".to_string(),
+            account.id,
+            Some(account_snapshot_json(&account)),
+        ),
     )
     .await
     {
@@ -247,13 +247,13 @@ pub async fn update(
     });
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "account.updated".to_string(),
-            entity_type: "account".to_string(),
-            entity_id: id,
-            details_json: Some(audit_details),
-        },
+            "account.updated".to_string(),
+            "account".to_string(),
+            id,
+            Some(audit_details),
+        ),
     )
     .await
     {
@@ -326,13 +326,13 @@ pub async fn archive(
     // implicitement, mais être explicite évite tout ambiguïté).
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "account.archived".to_string(),
-            entity_type: "account".to_string(),
-            entity_id: id,
-            details_json: Some(account_snapshot_json(&account)),
-        },
+            "account.archived".to_string(),
+            "account".to_string(),
+            id,
+            Some(account_snapshot_json(&account)),
+        ),
     )
     .await
     {

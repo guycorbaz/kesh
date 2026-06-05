@@ -82,13 +82,7 @@ fn build_audit_entry(
     entity_id: i64,
     details: serde_json::Value,
 ) -> NewAuditLogEntry {
-    NewAuditLogEntry {
-        user_id,
-        action: action.to_string(),
-        entity_type: "fiscal_year".to_string(),
-        entity_id,
-        details_json: Some(details),
-    }
+    NewAuditLogEntry::user(user_id, action, "fiscal_year", entity_id, Some(details))
 }
 
 // --- Création ---

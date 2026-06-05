@@ -206,12 +206,12 @@ pub async fn create_in_tx(
 
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "reconciliation_rule.created".to_string(),
-            entity_type: "reconciliation_rules".to_string(),
-            entity_id: id,
-            details_json: Some(serde_json::json!({
+            "reconciliation_rule.created".to_string(),
+            "reconciliation_rules".to_string(),
+            id,
+            Some(serde_json::json!({
                 "rule_id": id,
                 "label": new_rule.label,
                 "match_type": new_rule.match_type.as_str(),
@@ -220,7 +220,7 @@ pub async fn create_in_tx(
                 "priority": new_rule.priority,
                 "active": true,
             })),
-        },
+        ),
     )
     .await?;
 
@@ -316,12 +316,12 @@ pub async fn update_in_tx(
 
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "reconciliation_rule.updated".to_string(),
-            entity_type: "reconciliation_rules".to_string(),
-            entity_id: id,
-            details_json: Some(serde_json::json!({
+            "reconciliation_rule.updated".to_string(),
+            "reconciliation_rules".to_string(),
+            id,
+            Some(serde_json::json!({
                 "rule_id": id,
                 "before": {
                     "label": before.label,
@@ -336,7 +336,7 @@ pub async fn update_in_tx(
                     "active": after.active,
                 },
             })),
-        },
+        ),
     )
     .await?;
 
@@ -372,18 +372,18 @@ pub async fn soft_delete_by_id_for_company(
     if transitioned {
         audit_log::insert_in_tx(
             tx,
-            NewAuditLogEntry {
+            NewAuditLogEntry::user(
                 user_id,
-                action: "reconciliation_rule.deleted".to_string(),
-                entity_type: "reconciliation_rules".to_string(),
-                entity_id: id,
-                details_json: Some(serde_json::json!({
+                "reconciliation_rule.deleted".to_string(),
+                "reconciliation_rules".to_string(),
+                id,
+                Some(serde_json::json!({
                     "rule_id": id,
                     "soft_delete": true,
                     "before": { "active": true },
                     "after": { "active": false },
                 })),
-            },
+            ),
         )
         .await?;
     }

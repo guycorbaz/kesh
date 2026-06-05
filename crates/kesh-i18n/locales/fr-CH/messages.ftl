@@ -8,6 +8,8 @@ error-rate-limited = Trop de tentatives
 
 # Erreurs d'autorisation
 error-forbidden = Accès interdit
+error-api-key-read-only = Cette clé API est en lecture seule (scope « read »). Seules les requêtes GET sont autorisées.
+error-api-key-management-forbidden = La gestion des clés API n'est pas autorisée via une clé API. Utilisez l'interface web.
 error-cannot-disable-self = Impossible de désactiver son propre compte
 error-cannot-disable-last-admin = Impossible de désactiver le dernier administrateur
 

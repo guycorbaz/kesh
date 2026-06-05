@@ -710,22 +710,25 @@ async fn emit_report_audit(
         let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            // Story 9-5-2 (Epic 9.5) — clés snake_case pour cohérence SQL JSON
+            // path `details_json->>'$.field_name'` future-proof.
+            // Story 17-2a (DC5) — `::user` : audit READ-path (report.generated).
+            // Limitation L2 documentée : non threadé actor_api_key_id (4 callers,
+            // chemin lecture non-mutation hors scope strict AC8(b)) → `actor_type='user'`
+            // même via PAT. Couverture exhaustive = v0.3.
+            NewAuditLogEntry::user(
                 user_id,
-                action: "report.generated".to_string(),
-                entity_type: "report".to_string(),
-                entity_id: AUDIT_ENTITY_ID_NONE,
-                // Story 9-5-2 (Epic 9.5) — clés snake_case pour cohérence SQL JSON
-                // path `details_json->>'$.field_name'` future-proof (cf. convention
-                // §audit_log JSON keys documentée au-dessus de la fonction).
-                details_json: Some(serde_json::json!({
+                "report.generated",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
                     "report_type": report_type,
                     "fiscal_year_id": fiscal_year_id,
                     "period_start": period_start.format("%Y-%m-%d").to_string(),
                     "period_end": period_end.format("%Y-%m-%d").to_string(),
                     "journal_filter": journal_filter,
                 })),
-            },
+            ),
         )
         .await?;
         tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
@@ -764,14 +767,15 @@ async fn emit_report_export_audit(
         let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            // Story 9-5-2 (Epic 9.5) — clés snake_case.
+            // Story 17-2a (DC5) — `::user` : audit READ-path (report.exported),
+            // limitation L2 (cf. emit_report_audit) → `actor_type='user'` même via PAT.
+            NewAuditLogEntry::user(
                 user_id,
-                action: "report.exported".to_string(),
-                entity_type: "report".to_string(),
-                entity_id: AUDIT_ENTITY_ID_NONE,
-                // Story 9-5-2 (Epic 9.5) — clés snake_case (cf. convention
-                // §audit_log JSON keys au-dessus de `emit_report_audit`).
-                details_json: Some(serde_json::json!({
+                "report.exported",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
                     "report_type": report_type,
                     "format": format,
                     "fiscal_year_id": fiscal_year_id,
@@ -779,7 +783,7 @@ async fn emit_report_export_audit(
                     "period_end": period_end.format("%Y-%m-%d").to_string(),
                     "journal_filter": journal_filter,
                 })),
-            },
+            ),
         )
         .await?;
         tx.commit().await.map_err(kesh_db::errors::map_db_error)?;

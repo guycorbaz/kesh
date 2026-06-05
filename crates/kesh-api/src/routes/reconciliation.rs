@@ -676,6 +676,8 @@ pub async fn post_accept(
     let bank_account_id = body.bank_account_id;
     let proposals = body.proposals.clone();
     let user_id = current_user.user_id;
+    // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
+    let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
 
     // C2 Pass 1 — `tx_map` (snapshot pré-flight 0ter) n'est plus passé
@@ -690,7 +692,15 @@ pub async fn post_accept(
         bank_account_id,
         LOCK_TIMEOUT_SECS,
         async move |tx_inner| {
-            accept_batch(tx_inner, company_id, bank_account_id, user_id, &proposals).await
+            accept_batch(
+                tx_inner,
+                company_id,
+                bank_account_id,
+                user_id,
+                actor_api_key_id,
+                &proposals,
+            )
+            .await
         },
     )
     .await;
@@ -795,6 +805,7 @@ async fn accept_batch(
     company_id: i64,
     bank_account_id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     proposals: &[AcceptProposalInput],
 ) -> Result<AcceptResponse, ReconciliationError> {
     let mut accepted: Vec<AcceptedProposal> = Vec::new();
@@ -812,6 +823,7 @@ async fn accept_batch(
             company_id,
             bank_account_id,
             user_id,
+            actor_api_key_id,
             proposal,
             batch_size,
         )
@@ -845,6 +857,7 @@ async fn accept_one(
     company_id: i64,
     bank_account_id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     proposal: &AcceptProposalInput,
     batch_size: i64,
 ) -> Result<AcceptedProposal, FailedProposal> {
@@ -858,6 +871,7 @@ async fn accept_one(
                 company_id,
                 bank_account_id,
                 user_id,
+                actor_api_key_id,
                 *bank_transaction_id,
                 *invoice_id,
                 batch_size,
@@ -874,6 +888,7 @@ async fn accept_one(
                 company_id,
                 bank_account_id,
                 user_id,
+                actor_api_key_id,
                 *bank_transaction_id,
                 splits,
                 *value_date,
@@ -890,6 +905,7 @@ async fn accept_one(
                 company_id,
                 bank_account_id,
                 user_id,
+                actor_api_key_id,
                 *bank_transaction_id,
                 *rule_id,
                 *counterparty_account_id,
@@ -907,11 +923,13 @@ async fn accept_one(
 /// pour fermer la fenêtre TOCTOU. `bank_account_id` est nécessaire
 /// pour scope le SELECT (l'invariant batch « tous les tx du même
 /// bank_account_id » a été validé au pré-flight 0ter).
+#[allow(clippy::too_many_arguments)]
 async fn accept_one_invoice(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     bank_account_id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     bank_transaction_id: i64,
     invoice_id: i64,
     batch_size: i64,
@@ -1154,13 +1172,14 @@ async fn accept_one_invoice(
     });
     let entry_accepted = audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "reconciliation.accepted".to_string(),
-            entity_type: "bank_transaction".to_string(),
-            entity_id: bank_transaction_id,
-            details_json: Some(details_accepted),
-        },
+            actor_api_key_id,
+            "reconciliation.accepted",
+            "bank_transaction",
+            bank_transaction_id,
+            Some(details_accepted),
+        ),
     )
     .await
     .map_err(|e| FailedProposal {
@@ -1180,13 +1199,14 @@ async fn accept_one_invoice(
     });
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "invoice.paid".to_string(),
-            entity_type: "invoice".to_string(),
-            entity_id: invoice_id,
-            details_json: Some(details_paid),
-        },
+            actor_api_key_id,
+            "invoice.paid",
+            "invoice",
+            invoice_id,
+            Some(details_paid),
+        ),
     )
     .await
     .map_err(|e| FailedProposal {
@@ -1222,6 +1242,7 @@ async fn accept_one_split(
     company_id: i64,
     bank_account_id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     bank_transaction_id: i64,
     splits: &[SplitProposalLine],
     value_date: Option<NaiveDate>,
@@ -1531,13 +1552,14 @@ async fn accept_one_split(
     });
     if let Err(e) = audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "reconciliation.split_applied".to_string(),
-            entity_type: "bank_transaction".to_string(),
-            entity_id: bank_transaction_id,
-            details_json: Some(details),
-        },
+            actor_api_key_id,
+            "reconciliation.split_applied",
+            "bank_transaction",
+            bank_transaction_id,
+            Some(details),
+        ),
     )
     .await
     {
@@ -1589,6 +1611,7 @@ async fn accept_one_rule(
     company_id: i64,
     bank_account_id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     bank_transaction_id: i64,
     rule_id: i64,
     counterparty_account_id: i64,
@@ -1862,13 +1885,14 @@ async fn accept_one_rule(
     });
     if let Err(e) = audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "reconciliation_rule.applied".to_string(),
-            entity_type: "reconciliation_rules".to_string(),
-            entity_id: rule_id,
-            details_json: Some(rule_applied_details),
-        },
+            actor_api_key_id,
+            "reconciliation_rule.applied",
+            "reconciliation_rules",
+            rule_id,
+            Some(rule_applied_details),
+        ),
     )
     .await
     {
@@ -1897,13 +1921,14 @@ async fn accept_one_rule(
     });
     if let Err(e) = audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "reconciliation.accepted".to_string(),
-            entity_type: "bank_transaction".to_string(),
-            entity_id: bank_transaction_id,
-            details_json: Some(accepted_details),
-        },
+            actor_api_key_id,
+            "reconciliation.accepted",
+            "bank_transaction",
+            bank_transaction_id,
+            Some(accepted_details),
+        ),
     )
     .await
     {
@@ -2005,6 +2030,8 @@ pub async fn post_reject(
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
     let bank_account_id = body.bank_account_id;
     let user_id = current_user.user_id;
+    // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
+    let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
     let ids = body.bank_transaction_ids.clone();
 
@@ -2013,7 +2040,17 @@ pub async fn post_reject(
         company_id,
         bank_account_id,
         LOCK_TIMEOUT_SECS,
-        async move |tx_inner| reject_batch(tx_inner, company_id, user_id, &ids, &tx_map).await,
+        async move |tx_inner| {
+            reject_batch(
+                tx_inner,
+                company_id,
+                user_id,
+                actor_api_key_id,
+                &ids,
+                &tx_map,
+            )
+            .await
+        },
     )
     .await;
 
@@ -2093,6 +2130,7 @@ async fn reject_batch(
     tx_outer: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     ids: &[i64],
     tx_map: &HashMap<i64, BankTransaction>,
 ) -> Result<RejectResponse, ReconciliationError> {
@@ -2178,13 +2216,14 @@ async fn reject_batch(
         });
         audit_log::insert_in_tx(
             tx_outer,
-            NewAuditLogEntry {
+            NewAuditLogEntry::for_actor(
                 user_id,
-                action: "reconciliation.rejected".to_string(),
-                entity_type: "bank_transaction".to_string(),
-                entity_id: rejected[0].bank_transaction_id,
-                details_json: Some(details),
-            },
+                actor_api_key_id,
+                "reconciliation.rejected",
+                "bank_transaction",
+                rejected[0].bank_transaction_id,
+                Some(details),
+            ),
         )
         .await
         // C3 Pass 1 — toute `DbError` non-Sqlx (e.g. `NotFound`,
@@ -2392,6 +2431,8 @@ pub async fn post_manual(
     // P-H3 Pass 1 code review : suppression `counterparty_number` (dead
     // code spéculatif pour logging futur).
     let user_id = current_user.user_id;
+    // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
+    let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
     // `counterparty` (Account complet) consommé jusque ici par les checks
     // step 3 (active=true). Drop explicite pour signaler la fin d'usage.
@@ -2496,13 +2537,14 @@ pub async fn post_manual(
             });
             audit_log::insert_in_tx(
                 tx_inner,
-                NewAuditLogEntry {
+                NewAuditLogEntry::for_actor(
                     user_id,
-                    action: "reconciliation.manual_matched".to_string(),
-                    entity_type: "bank_transaction".to_string(),
-                    entity_id: bank_transaction_id,
-                    details_json: Some(details),
-                },
+                    actor_api_key_id,
+                    "reconciliation.manual_matched",
+                    "bank_transaction",
+                    bank_transaction_id,
+                    Some(details),
+                ),
             )
             .await?;
 
@@ -2859,6 +2901,8 @@ pub async fn post_split(
     let bank_transaction_id = body.bank_transaction_id;
     let body_value_date = body.value_date;
     let user_id = current_user.user_id;
+    // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
+    let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
 
     let lock_result: Result<i64, ReconciliationError> = with_account_lock(
@@ -2935,13 +2979,14 @@ pub async fn post_split(
             });
             audit_log::insert_in_tx(
                 tx_inner,
-                NewAuditLogEntry {
+                NewAuditLogEntry::for_actor(
                     user_id,
-                    action: "reconciliation.split_applied".to_string(),
-                    entity_type: "bank_transaction".to_string(),
-                    entity_id: bank_transaction_id,
-                    details_json: Some(details),
-                },
+                    actor_api_key_id,
+                    "reconciliation.split_applied",
+                    "bank_transaction",
+                    bank_transaction_id,
+                    Some(details),
+                ),
             )
             .await?;
 

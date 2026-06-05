@@ -4,6 +4,7 @@
 //! bibliothèque (`lib.rs`) pour permettre aux tests d'intégration
 //! d'importer `build_router` et les helpers de configuration.
 
+pub mod audit;
 pub mod auth;
 pub mod config;
 pub mod errors;
@@ -18,7 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use axum::Router;
-use axum::routing::{get, patch, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use sqlx::MySqlPool;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -269,6 +270,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reconciliation/rules/{id}",
             patch(routes::reconciliation_rules::patch).delete(routes::reconciliation_rules::delete),
+        )
+        // Story 17-2a : gestion des clés API externes (PAT). Guard Comptable+
+        // (DC4). DC6 : gestion interdite via PAT — les handlers rejettent
+        // 403 API_KEY_MANAGEMENT_FORBIDDEN si current_user.api_key_id.is_some().
+        .route(
+            "/api/v1/settings/api-keys",
+            get(routes::api_keys::list).post(routes::api_keys::create),
+        )
+        .route(
+            "/api/v1/settings/api-keys/{id}",
+            delete(routes::api_keys::revoke),
         )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,

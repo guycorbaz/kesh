@@ -8,6 +8,8 @@ error-rate-limited = Too many attempts
 
 # Authorization errors
 error-forbidden = Access denied
+error-api-key-read-only = This API key is read-only (scope "read"). Only GET requests are allowed.
+error-api-key-management-forbidden = API key management is not allowed via an API key. Use the web interface.
 error-cannot-disable-self = Cannot disable your own account
 error-cannot-disable-last-admin = Cannot disable the last administrator
 
