@@ -211,7 +211,10 @@ async fn create_returns_secret_once_and_list_hides_hash(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
     let raw = resp.text().await.unwrap();
     assert!(raw.contains("\"id\":"), "liste non vide");
-    assert!(!raw.contains("keyHash"), "le hash ne doit pas être sérialisé");
+    assert!(
+        !raw.contains("keyHash"),
+        "le hash ne doit pas être sérialisé"
+    );
     assert!(!raw.contains(&key), "le secret ne doit jamais réapparaître");
 
     let body: Value = serde_json::from_str(&raw).unwrap();
@@ -335,7 +338,11 @@ async fn revoked_pat_returns_401(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 401, "clé révoquée → 401 dès la requête suivante");
+    assert_eq!(
+        resp.status(),
+        401,
+        "clé révoquée → 401 dès la requête suivante"
+    );
 
     // Audit api_key.revoked.
     let actor: String = sqlx::query_scalar(

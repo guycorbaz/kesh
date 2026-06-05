@@ -120,8 +120,26 @@ pub async fn create(
     if name.is_empty() {
         return Err(AppError::Validation("le nom de la clé est requis".into()));
     }
+    // Borne la longueur côté handler : `name` alimente une colonne VARCHAR(255).
+    // Sans ce garde, MySQL renvoie 1406 « Data too long » → `DbError::Sqlx` → HTTP 500
+    // au lieu d'un 400 actionnable côté client (code-review 17-2a Pass 1).
+    if name.chars().count() > 255 {
+        return Err(AppError::Validation(
+            "le nom de la clé est trop long (255 caractères maximum)".into(),
+        ));
+    }
     let scope = ApiKeyScope::from_str(&req.scope)
         .map_err(|_| AppError::Validation("scope invalide (read | read-write)".into()))?;
+    // Refuse une expiration déjà passée : sinon la clé est créée « mort-née »
+    // (201 + secret retourné, mais `find_active_by_key_hash` l'exclut aussitôt via
+    // `expires_at > NOW(3)`), sans feedback au client (code-review 17-2a Pass 1).
+    if let Some(exp) = req.expires_at {
+        if exp <= Utc::now() {
+            return Err(AppError::Validation(
+                "la date d'expiration doit être dans le futur".into(),
+            ));
+        }
+    }
     let expires_at: Option<NaiveDateTime> = req.expires_at.map(|dt| dt.naive_utc());
 
     // Génère le secret : (token_clair, key_hash). Seul le hash est persisté.

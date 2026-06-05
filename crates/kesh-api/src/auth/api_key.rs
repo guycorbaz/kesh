@@ -32,6 +32,11 @@ pub const PAT_PREFIX: &str = "kesh_pat_";
 /// Nombre d'octets aléatoires du secret (160 bits — AC2).
 const PAT_ENTROPY_BYTES: usize = 20;
 
+/// Largeur fixe de la partie base62 du token. 160 bits big-endian tiennent dans
+/// 27 digits base62 (`62^27 > 2^160 > 62^26`) ; on left-pad au digit zéro pour
+/// garantir une longueur de token constante (code-review 17-2a Pass 1).
+const PAT_BASE62_LEN: usize = 27;
+
 /// Alphabet base62 (`0-9A-Za-z`) — encodage inline (pas de crate dédiée, DC).
 const BASE62_ALPHABET: &[u8; 62] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -60,6 +65,19 @@ fn base62_encode(bytes: &[u8]) -> String {
     String::from_utf8(out).expect("base62 alphabet is ASCII")
 }
 
+/// Encode `bytes` en base62 à **largeur fixe** `PAT_BASE62_LEN`, left-padé au
+/// digit zéro (`'0'`). Garantit une longueur de token constante quels que soient
+/// les octets de tête (un buffer big-endian commençant par des `0x00` produit
+/// moins de digits). Le padding est déterministe et injectif → l'entropie et
+/// l'unicité du secret sont préservées (code-review 17-2a Pass 1).
+fn base62_fixed_width(bytes: &[u8]) -> String {
+    let mut body = base62_encode(bytes);
+    if body.len() < PAT_BASE62_LEN {
+        body.insert_str(0, &"0".repeat(PAT_BASE62_LEN - body.len()));
+    }
+    body
+}
+
 /// Calcule `SHA-256(token)` encodé en hex (64 chars minuscules).
 pub fn sha256_hex(token: &str) -> String {
     let mut hasher = Sha256::new();
@@ -80,7 +98,7 @@ pub fn sha256_hex(token: &str) -> String {
 pub fn generate_pat() -> (String, String) {
     let mut buf = [0u8; PAT_ENTROPY_BYTES];
     OsRng.fill_bytes(&mut buf);
-    let token = format!("{PAT_PREFIX}{}", base62_encode(&buf));
+    let token = format!("{PAT_PREFIX}{}", base62_fixed_width(&buf));
     let key_hash = sha256_hex(&token);
     (token, key_hash)
 }
@@ -143,11 +161,13 @@ mod tests {
     fn generate_pat_format_and_entropy() {
         let (token, hash) = generate_pat();
         assert!(token.starts_with("kesh_pat_"), "préfixe attendu");
-        // Partie base62 non vide et suffisamment longue pour 160 bits (~27 chars).
+        // Partie base62 à largeur fixe : 160 bits → exactement 27 chars (left-padés
+        // au digit zéro si octets de tête nuls — voir PAT_BASE62_LEN).
         let body = token.strip_prefix("kesh_pat_").unwrap();
-        assert!(
-            body.len() >= 20,
-            "base62 de 160 bits doit faire ~27 chars, got {}",
+        assert_eq!(
+            body.len(),
+            PAT_BASE62_LEN,
+            "token base62 doit faire exactement {PAT_BASE62_LEN} chars (largeur fixe), got {}",
             body.len()
         );
         assert!(
@@ -187,5 +207,33 @@ mod tests {
         assert!(a.bytes().all(|c| c.is_ascii_alphanumeric()));
         assert_eq!(base62_encode(&[0, 0, 0]), "0", "all-zero → '0'");
         assert_ne!(base62_encode(&[1]), base62_encode(&[2]));
+    }
+
+    #[test]
+    fn base62_fixed_width_pads_to_constant_length() {
+        // Buffer 20 octets dont la valeur est petite (octets de tête nuls) :
+        // l'encodage brut fait < 27 chars, le helper doit le padder à 27.
+        let mut small = [0u8; PAT_ENTROPY_BYTES];
+        small[PAT_ENTROPY_BYTES - 1] = 1; // valeur = 1
+        let padded = base62_fixed_width(&small);
+        assert_eq!(padded.len(), PAT_BASE62_LEN, "largeur fixe");
+        assert!(padded.starts_with('0'), "left-padé au digit zéro");
+        assert!(padded.ends_with('1'), "valeur significative préservée");
+
+        // All-zero → 27 zéros (cas extrême, jamais produit par OsRng en pratique).
+        assert_eq!(
+            base62_fixed_width(&[0u8; PAT_ENTROPY_BYTES]),
+            "0".repeat(PAT_BASE62_LEN)
+        );
+
+        // Injectivité : deux valeurs distinctes restent distinctes après padding.
+        let mut two = [0u8; PAT_ENTROPY_BYTES];
+        two[PAT_ENTROPY_BYTES - 1] = 2;
+        assert_ne!(base62_fixed_width(&small), base62_fixed_width(&two));
+
+        // Une valeur maximale (tous les bits à 1 = 160 bits) tient en 27 chars
+        // sans dépassement (pas de padding, pas de troncature).
+        let max = [0xFFu8; PAT_ENTROPY_BYTES];
+        assert_eq!(base62_fixed_width(&max).len(), PAT_BASE62_LEN);
     }
 }
