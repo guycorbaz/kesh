@@ -872,3 +872,48 @@ setup-password-mismatch = Passwords do not match.
 setup-submit = Create administrator account
 setup-error-already-complete = The administrator account has already been created. You will be redirected to the login page.
 setup-error-rate-limit = Too many attempts. Try again in a few minutes.
+
+# === Story 17-2b — API keys (PAT) frontend (36 keys) ===
+# Settings → link
+settings-api-keys-title = API keys
+settings-api-keys-manage = Manage
+settings-api-keys-hint = Create API access keys for your integrations (external AI, scripts, third-party software).
+# API keys page — labels
+api-keys-labels-page-title = API keys
+api-keys-labels-page-subtitle = Create API access keys for your integrations (external AI, scripts, third-party software). Present the key via the "Authorization: Bearer" header.
+api-keys-labels-name = Name
+api-keys-labels-name-placeholder = e.g. Accounting script, AI agent…
+api-keys-labels-scope = Scope
+api-keys-labels-scope-read = Read-only
+api-keys-labels-scope-read-write = Read-write
+api-keys-labels-expires = Expiry (optional)
+api-keys-labels-expires-hint = Leave empty for a permanent key.
+api-keys-labels-created-at = Created on
+api-keys-labels-last-used = Last used
+api-keys-labels-never-used = Never used
+api-keys-labels-status = Status
+api-keys-labels-status-active = Active
+api-keys-labels-status-expires = Active (expires on { $date })
+api-keys-labels-status-revoked = Revoked on { $date }
+api-keys-labels-empty = No API keys. Create one for your integrations.
+api-keys-labels-loading = Loading…
+api-keys-labels-secret-warning = Copy this key now: it will never be shown again.
+# Actions
+api-keys-actions-create = New key
+api-keys-actions-submit-create = Create key
+api-keys-actions-cancel = Cancel
+api-keys-actions-copy = Copy
+api-keys-actions-close = Close
+api-keys-actions-revoke = Revoke
+api-keys-actions-confirm-revoke = Revoke
+# Confirmation
+api-keys-confirm-revoke = Revoke this key? Any integration using it will immediately stop working. This action is irreversible.
+# Errors
+api-keys-errors-name-required = The key name is required.
+api-keys-errors-name-too-long = The key name is too long (255 characters maximum).
+api-keys-errors-conflict = The key changed in the meantime — list reloaded, please retry.
+# Toasts
+api-keys-toast-create-success = API key created.
+api-keys-toast-copied = Key copied to clipboard.
+api-keys-toast-copy-failed = Copy failed — please select and copy manually.
+api-keys-toast-revoke-success = Key revoked.

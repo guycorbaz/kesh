@@ -929,3 +929,48 @@ setup-password-mismatch = Les mots de passe ne correspondent pas.
 setup-submit = Créer le compte administrateur
 setup-error-already-complete = Le compte administrateur a déjà été créé. Vous allez être redirigé vers la page de connexion.
 setup-error-rate-limit = Trop de tentatives. Réessayez dans quelques minutes.
+
+# === Story 17-2b — Clés API (PAT) frontend (36 clés) ===
+# Page Paramètres → lien
+settings-api-keys-title = Clés API
+settings-api-keys-manage = Gérer
+settings-api-keys-hint = Créez des clés d'accès API pour vos intégrations (IA externe, scripts, logiciels tiers).
+# Page clés API — labels
+api-keys-labels-page-title = Clés API
+api-keys-labels-page-subtitle = Créez des clés d'accès API pour vos intégrations (IA externe, scripts, logiciels tiers). Présentez la clé via l'en-tête « Authorization: Bearer ».
+api-keys-labels-name = Nom
+api-keys-labels-name-placeholder = ex. Script comptable, Agent IA…
+api-keys-labels-scope = Portée
+api-keys-labels-scope-read = Lecture seule
+api-keys-labels-scope-read-write = Lecture-écriture
+api-keys-labels-expires = Expiration (optionnelle)
+api-keys-labels-expires-hint = Laissez vide pour une clé permanente.
+api-keys-labels-created-at = Créée le
+api-keys-labels-last-used = Dernière utilisation
+api-keys-labels-never-used = Jamais utilisée
+api-keys-labels-status = Statut
+api-keys-labels-status-active = Active
+api-keys-labels-status-expires = Active (expire le { $date })
+api-keys-labels-status-revoked = Révoquée le { $date }
+api-keys-labels-empty = Aucune clé API. Créez-en une pour vos intégrations.
+api-keys-labels-loading = Chargement…
+api-keys-labels-secret-warning = Copiez cette clé maintenant : elle ne sera plus jamais affichée.
+# Actions
+api-keys-actions-create = Nouvelle clé
+api-keys-actions-submit-create = Créer la clé
+api-keys-actions-cancel = Annuler
+api-keys-actions-copy = Copier
+api-keys-actions-close = Fermer
+api-keys-actions-revoke = Révoquer
+api-keys-actions-confirm-revoke = Révoquer
+# Confirmation
+api-keys-confirm-revoke = Révoquer cette clé ? Toute intégration l'utilisant cessera immédiatement de fonctionner. Cette action est irréversible.
+# Erreurs
+api-keys-errors-name-required = Le nom de la clé est requis.
+api-keys-errors-name-too-long = Le nom de la clé est trop long (255 caractères maximum).
+api-keys-errors-conflict = La clé a changé entre-temps — liste rechargée, réessayez.
+# Toasts
+api-keys-toast-create-success = Clé API créée.
+api-keys-toast-copied = Clé copiée dans le presse-papiers.
+api-keys-toast-copy-failed = Copie impossible — sélectionnez et copiez manuellement.
+api-keys-toast-revoke-success = Clé révoquée.

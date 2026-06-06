@@ -110,6 +110,24 @@
 
 		<Separator />
 
+		<!-- Section Clés API (Story 17-2b) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{msg('settings-api-keys-title', 'Clés API')}</h2>
+				<Button variant="outline" size="sm" href="/settings/api-keys" data-testid="settings-api-keys-manage-link">
+					{msg('settings-api-keys-manage', 'Gérer')}
+				</Button>
+			</div>
+			<p class="mt-2 text-xs text-text-muted">
+				{msg(
+					'settings-api-keys-hint',
+					'Créez des clés d\'accès API pour vos intégrations (IA externe, scripts, logiciels tiers).',
+				)}
+			</p>
+		</section>
+
+		<Separator />
+
 		<!-- Section Utilisateurs -->
 		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
 			<div class="flex items-center justify-between">
