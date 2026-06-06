@@ -90,6 +90,7 @@ pub async fn export_global(
     emit_global_export_audit(
         &state.pool,
         current_user.user_id,
+        current_user.api_key_id,
         current_user.company_id,
         meta.byte_size,
         meta.csv_count,
@@ -140,6 +141,7 @@ pub(crate) fn build_global_filename(company_name: &str, export_date: NaiveDate) 
 async fn emit_global_export_audit(
     pool: &MySqlPool,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     company_id: i64,
     byte_size: usize,
     csv_count: usize,
@@ -150,22 +152,24 @@ async fn emit_global_export_audit(
         let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            // Pass 1 code-review H2 (C1 AA-MEDIUM-03) — clés snake_case pour
+            // permettre les SQL JSON paths `details_json->>'$.company_id'`
+            // (cohérent AC #23 + AC #29(m) ground-truth spec).
+            // Story 17-2a (DC5 cat ii) — actor_api_key_id threadé (export via PAT read).
+            NewAuditLogEntry::for_actor(
                 user_id,
-                action: "exports.global".to_string(),
-                entity_type: "export".to_string(),
-                entity_id: AUDIT_ENTITY_ID_NONE,
-                // Pass 1 code-review H2 (C1 AA-MEDIUM-03) — clés snake_case pour
-                // permettre les SQL JSON paths `details_json->>'$.company_id'`
-                // (cohérent AC #23 + AC #29(m) ground-truth spec).
-                details_json: Some(serde_json::json!({
+                actor_api_key_id,
+                "exports.global",
+                "export",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
                     "company_id": company_id,
                     "byte_size": byte_size,
                     "csv_count": csv_count,
                     "fiscal_year_scope": fiscal_year_scope,
                     "duration_ms": duration_ms,
                 })),
-            },
+            ),
         )
         .await?;
         tx.commit().await.map_err(kesh_db::errors::map_db_error)?;

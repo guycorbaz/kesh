@@ -248,16 +248,17 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64,
 
                         audit_log::insert_in_tx(
                             &mut tx,
-                            NewAuditLogEntry {
-                                user_id: u.id,
-                                action: "admin_break_glass_reset".to_string(),
-                                entity_type: "user".to_string(),
-                                entity_id: u.id,
-                                details_json: Some(serde_json::json!({
+                            // Story 17-2a — bootstrap (pas de CurrentUser ni de PAT) → ::user.
+                            NewAuditLogEntry::user(
+                                u.id,
+                                "admin_break_glass_reset",
+                                "user",
+                                u.id,
+                                Some(serde_json::json!({
                                     "username": u.username,
                                     "trigger": "env_vars_present_hash_diff",
                                 })),
-                            },
+                            ),
                         )
                         .await?;
 

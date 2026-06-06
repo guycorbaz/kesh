@@ -24,6 +24,7 @@
 //! que les UPDATEs — atomicité garantie. Court-circuit no-op KF-004 sur le
 //! PATCH legacy.
 
+use crate::audit::AuditActor;
 use axum::Extension;
 use axum::Json;
 use axum::extract::Query;
@@ -289,6 +290,7 @@ async fn validate_journal_account_id(
 async fn audit_primary_transition(
     tx: &mut Transaction<'_, MySql>,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     updated: &BankAccount,
     before: &BankAccount,
     new_primary_id: i64,
@@ -300,15 +302,18 @@ async fn audit_primary_transition(
         "before": { "is_primary": before.is_primary, "version": before.version },
         "after": { "is_primary": updated.is_primary, "version": updated.version },
     });
+    // Story 17-2a (DC5 cat ii) — `actor_api_key_id` threadé depuis le handler
+    // appelant (current_user.api_key_id) : attribue la mutation au PAT le cas échéant.
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "bank_account.updated".to_string(),
-            entity_type: "bank_account".to_string(),
-            entity_id: updated.id,
-            details_json: Some(details),
-        },
+            actor_api_key_id,
+            "bank_account.updated",
+            "bank_account",
+            updated.id,
+            Some(details),
+        ),
     )
     .await?;
     Ok(())
@@ -441,6 +446,7 @@ pub async fn create_bank_account(
         audit_primary_transition(
             &mut tx,
             current_user.user_id,
+            current_user.api_key_id,
             updated_old,
             before_old,
             new_id,
@@ -457,13 +463,13 @@ pub async fn create_bank_account(
     });
     audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
-            user_id: current_user.user_id,
-            action: "bank_account.created".to_string(),
-            entity_type: "bank_account".to_string(),
-            entity_id: new_id,
-            details_json: Some(details),
-        },
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "bank_account.created",
+            "bank_account",
+            new_id,
+            Some(details),
+        ),
     )
     .await?;
 
@@ -539,8 +545,15 @@ pub async fn update_bank_account(
     };
 
     if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
-        audit_primary_transition(&mut tx, current_user.user_id, updated_old, before_old, id)
-            .await?;
+        audit_primary_transition(
+            &mut tx,
+            current_user.user_id,
+            current_user.api_key_id,
+            updated_old,
+            before_old,
+            id,
+        )
+        .await?;
     }
 
     let details = serde_json::json!({
@@ -565,13 +578,13 @@ pub async fn update_bank_account(
     });
     audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
-            user_id: current_user.user_id,
-            action: "bank_account.updated".to_string(),
-            entity_type: "bank_account".to_string(),
-            entity_id: id,
-            details_json: Some(details),
-        },
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "bank_account.updated",
+            "bank_account",
+            id,
+            Some(details),
+        ),
     )
     .await?;
 
@@ -666,13 +679,13 @@ pub async fn archive_bank_account(
     });
     audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
-            user_id: current_user.user_id,
-            action: "bank_account.archived".to_string(),
-            entity_type: "bank_account".to_string(),
-            entity_id: id,
-            details_json: Some(details),
-        },
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "bank_account.archived",
+            "bank_account",
+            id,
+            Some(details),
+        ),
     )
     .await?;
 
@@ -740,13 +753,13 @@ pub async fn patch_bank_account_journal_link(
         });
         audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
-                user_id: current_user.user_id,
-                action: "bank_account.updated".to_string(),
-                entity_type: "bank_account".to_string(),
-                entity_id: id,
-                details_json: Some(details),
-            },
+            NewAuditLogEntry::from_current_user(
+                &current_user,
+                "bank_account.updated",
+                "bank_account",
+                id,
+                Some(details),
+            ),
         )
         .await?;
     }

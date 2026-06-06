@@ -5,6 +5,7 @@
 //! `list_by_company`, `close`) s'ajoutent là où c'est nécessaire.
 
 pub mod accounts;
+pub mod api_keys;
 pub mod audit_log;
 pub mod bank_accounts;
 pub mod bank_imports;

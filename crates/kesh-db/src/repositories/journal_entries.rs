@@ -238,13 +238,13 @@ pub async fn create_in_tx(
     let snapshot = entry_snapshot_json(&entry, &lines);
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "journal_entry.created".to_string(),
-            entity_type: "journal_entry".to_string(),
-            entity_id: entry_id,
-            details_json: Some(snapshot),
-        },
+            "journal_entry.created".to_string(),
+            "journal_entry".to_string(),
+            entry_id,
+            Some(snapshot),
+        ),
     )
     .await?;
 
@@ -771,13 +771,13 @@ pub async fn update(
     });
     audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "journal_entry.updated".to_string(),
-            entity_type: "journal_entry".to_string(),
-            entity_id: id,
-            details_json: Some(audit_details),
-        },
+            "journal_entry.updated".to_string(),
+            "journal_entry".to_string(),
+            id,
+            Some(audit_details),
+        ),
     )
     .await?;
 
@@ -859,13 +859,13 @@ pub async fn delete_by_id(
     // trace doit exister avant que la source disparaisse).
     audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "journal_entry.deleted".to_string(),
-            entity_type: "journal_entry".to_string(),
-            entity_id: id,
-            details_json: Some(snapshot),
-        },
+            "journal_entry.deleted".to_string(),
+            "journal_entry".to_string(),
+            id,
+            Some(snapshot),
+        ),
     )
     .await?;
 

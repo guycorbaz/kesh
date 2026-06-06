@@ -397,13 +397,13 @@ pub async fn create(
 
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "invoice.created".to_string(),
-            entity_type: "invoice".to_string(),
-            entity_id: invoice.id,
-            details_json: Some(invoice_snapshot_json(&invoice, &lines)),
-        },
+            "invoice.created".to_string(),
+            "invoice".to_string(),
+            invoice.id,
+            Some(invoice_snapshot_json(&invoice, &lines)),
+        ),
     )
     .await
     {
@@ -785,13 +785,13 @@ pub async fn update(
 
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "invoice.updated".to_string(),
-            entity_type: "invoice".to_string(),
-            entity_id: id,
-            details_json: Some(audit_details),
-        },
+            "invoice.updated".to_string(),
+            "invoice".to_string(),
+            id,
+            Some(audit_details),
+        ),
     )
     .await
     {
@@ -863,13 +863,13 @@ pub async fn delete(
 
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "invoice.deleted".to_string(),
-            entity_type: "invoice".to_string(),
-            entity_id: id,
-            details_json: Some(snapshot),
-        },
+            "invoice.deleted".to_string(),
+            "invoice".to_string(),
+            id,
+            Some(snapshot),
+        ),
     )
     .await
     {
@@ -1105,13 +1105,13 @@ pub async fn validate_invoice(
 
         audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            NewAuditLogEntry::user(
                 user_id,
-                action: "invoice.validated".to_string(),
-                entity_type: "invoice".to_string(),
-                entity_id: invoice_id,
-                details_json: Some(audit_details),
-            },
+                "invoice.validated".to_string(),
+                "invoice".to_string(),
+                invoice_id,
+                Some(audit_details),
+            ),
         )
         .await?;
 
@@ -1256,13 +1256,13 @@ pub async fn mark_as_paid(
 
         audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
+            NewAuditLogEntry::user(
                 user_id,
-                action: action.to_string(),
-                entity_type: "invoice".to_string(),
-                entity_id: id,
-                details_json: Some(audit_details),
-            },
+                action.to_string(),
+                "invoice".to_string(),
+                id,
+                Some(audit_details),
+            ),
         )
         .await?;
 

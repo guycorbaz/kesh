@@ -6,6 +6,7 @@
 //! gérés par la base.
 
 pub mod account;
+pub mod api_key;
 pub mod audit_log;
 pub mod bank_account;
 pub mod bank_import;
@@ -26,7 +27,8 @@ pub mod user;
 pub mod vat_rate;
 
 pub use account::{Account, AccountType, AccountUpdate, NewAccount};
-pub use audit_log::{AUDIT_ENTITY_ID_NONE, AuditLogEntry, NewAuditLogEntry};
+pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
+pub use audit_log::{AUDIT_ENTITY_ID_NONE, ActorType, AuditLogEntry, NewAuditLogEntry};
 pub use bank_account::{BankAccount, NewBankAccount};
 pub use bank_import::{BankImport, BankImportSourceFormat, NewBankImport};
 pub use bank_profile::{BankProfile, NewBankProfile};

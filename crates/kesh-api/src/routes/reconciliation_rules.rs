@@ -21,6 +21,7 @@ use axum::http::StatusCode;
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 
+use crate::audit::AuditActor;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::{
     NewReconciliationRule, ReconciliationMatchType, ReconciliationRule, UpdateReconciliationRule,
@@ -442,17 +443,17 @@ pub async fn delete(
     if !transitioned {
         audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry {
-                user_id: current_user.user_id,
-                action: "reconciliation_rule.deleted".to_string(),
-                entity_type: "reconciliation_rules".to_string(),
-                entity_id: id,
-                details_json: Some(serde_json::json!({
+            NewAuditLogEntry::from_current_user(
+                &current_user,
+                "reconciliation_rule.deleted",
+                "reconciliation_rules",
+                id,
+                Some(serde_json::json!({
                     "rule_id": id,
                     "soft_delete": true,
                     "idempotent_noop": true,
                 })),
-            },
+            ),
         )
         .await?;
     }

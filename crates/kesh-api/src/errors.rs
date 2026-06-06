@@ -82,6 +82,23 @@ pub enum AppError {
     #[error("Accès interdit")]
     Forbidden,
 
+    // --- Story 17-2a — API externe à clé PAT (#100) ---
+    /// Une clé API `scope='read'` tente une méthode HTTP mutante
+    /// (POST/PUT/PATCH/DELETE) → `403` code `API_KEY_READ_ONLY` (DC3/AC6).
+    /// Rejet global en amont (méthode HTTP) — jamais encapsulé en
+    /// `FailedProposal` sur les endpoints batch (F-OPUS-7, exception
+    /// « 403 RBAC global » du §Pattern batch).
+    #[error("Clé API en lecture seule")]
+    ApiKeyReadOnly,
+
+    /// Une requête authentifiée par PAT tente d'accéder aux routes de gestion
+    /// des clés (`/settings/api-keys`) → `403` code
+    /// `API_KEY_MANAGEMENT_FORBIDDEN` (DC6/AC7). Même une clé `read-write` ne
+    /// peut pas lister/créer/révoquer des clés (anti auto-propagation d'une
+    /// clé fuitée). Gestion réservée à la session JWT cookie (UI web).
+    #[error("Gestion des clés API interdite via clé API")]
+    ApiKeyManagementForbidden,
+
     /// L'administrateur tente de désactiver son propre compte (400).
     #[error("Impossible de désactiver son propre compte")]
     CannotDisableSelf,
@@ -667,6 +684,26 @@ impl IntoResponse for AppError {
                 StatusCode::FORBIDDEN,
                 "FORBIDDEN",
                 &t("error-forbidden", "Accès interdit"),
+            ),
+
+            // Story 17-2a — clé API en lecture seule (DC3/AC6).
+            AppError::ApiKeyReadOnly => build_response(
+                StatusCode::FORBIDDEN,
+                "API_KEY_READ_ONLY",
+                &t(
+                    "error-api-key-read-only",
+                    "Cette clé API est en lecture seule (scope read). Seules les requêtes GET sont autorisées.",
+                ),
+            ),
+
+            // Story 17-2a — gestion des clés interdite via PAT (DC6/AC7).
+            AppError::ApiKeyManagementForbidden => build_response(
+                StatusCode::FORBIDDEN,
+                "API_KEY_MANAGEMENT_FORBIDDEN",
+                &t(
+                    "error-api-key-management-forbidden",
+                    "La gestion des clés API n'est pas autorisée via une clé API. Utilisez l'interface web.",
+                ),
             ),
 
             AppError::CannotDisableSelf => build_response(

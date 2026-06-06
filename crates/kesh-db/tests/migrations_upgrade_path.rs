@@ -35,9 +35,10 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 5` (fenêtre d'upgrade Story 10-2 + companies_is_stub v011-2) reste \
+         `total - 8` (fenêtre d'upgrade Story 10-2 + companies_is_stub v011-2 \
+         + bank_accounts_archived v014-1 + api_keys/audit_log_actor 17-2a) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 28` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 31` du test upgrade_path_preserves_data \
          devrait également fail pour signaler le besoin de mise à jour.",
         n,
         all.len()
@@ -58,33 +59,34 @@ async fn apply_migrations_up_to(
 #[sqlx::test(migrations = false)]
 async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Total migrations attendues : 26 historiques + _kesh_version (Story 10-2)
-    // + companies_is_stub (Story v011-2) + bank_accounts_archived (Story v014-1) = 29.
+    // + companies_is_stub (Story v011-2) + bank_accounts_archived (Story v014-1)
+    // + api_keys & audit_log_actor (Story 17-2a) = 31.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 29,
-        "29 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1)"
+        total, 31,
+        "31 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
-    // migrations sauf les 6 dernières (reconciliation_8_4,
+    // migrations sauf les 8 dernières (reconciliation_8_4,
     // bank_account_journal_link, reconciliation_rules, _kesh_version,
-    // companies_is_stub ajoutée Story v011-2, et bank_accounts_archived
-    // ajoutée Story v014-1).
+    // companies_is_stub ajoutée Story v011-2, bank_accounts_archived
+    // ajoutée Story v014-1, et api_keys + audit_log_actor ajoutées Story 17-2a).
     //
-    // Note `total - 6` : expression relative à la longueur totale, mais
-    // l'assertion `total == 29` ci-dessus est INTENTIONNELLEMENT hardcode
+    // Note `total - 8` : expression relative à la longueur totale, mais
+    // l'assertion `total == 31` ci-dessus est INTENTIONNELLEMENT hardcode
     // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
     // migration future, le mainteneur doit (1) bumper le compte à la nouvelle
     // longueur (2) revoir si `total - N` cible toujours la bonne fenêtre.
     // La frontière reste à 23 (état pré-10-2) : les migrations ajoutées APRÈS
-    // la fenêtre Story 10-2 (comme companies_is_stub Story v011-2 et
-    // bank_accounts_archived Story v014-1) élargissent la fenêtre d'upgrade
-    // et incrémentent donc le `N` soustrait (de 4 à 5 à 6), sans déplacer la
+    // la fenêtre Story 10-2 (companies_is_stub v011-2, bank_accounts_archived
+    // v014-1, api_keys + audit_log_actor 17-2a) élargissent la fenêtre d'upgrade
+    // et incrémentent donc le `N` soustrait (de 4 à 6 à 8), sans déplacer la
     // frontière des 23 migrations historiques.
-    let n_before_upgrade_window = total - 6;
+    let n_before_upgrade_window = total - 8;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 5) failed");
+        .expect("apply_migrations_up_to(total - 8) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

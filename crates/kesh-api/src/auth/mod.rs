@@ -4,6 +4,7 @@
 //! middleware d'extraction JWT dans `middleware/auth.rs`. Ce module
 //! regroupe la logique pure (pas de HTTP).
 
+pub mod api_key;
 pub mod bootstrap;
 pub mod jwt;
 pub mod password;

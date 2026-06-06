@@ -1210,6 +1210,7 @@ pub async fn create(
     insert_canonical_audit_log(
         &mut tx,
         current_user.user_id,
+        current_user.api_key_id,
         header.id,
         &header.filename,
         header.transaction_count,
@@ -1435,6 +1436,7 @@ fn apply_duplicate_lines_filter(
 async fn insert_canonical_audit_log(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     import_id: i64,
     filename: &str,
     transaction_count: i32,
@@ -1473,13 +1475,14 @@ async fn insert_canonical_audit_log(
 
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::for_actor(
             user_id,
-            action: "bank_import.created".to_string(),
-            entity_type: "bank_imports".to_string(),
-            entity_id: import_id,
-            details_json: Some(details),
-        },
+            actor_api_key_id,
+            "bank_import.created",
+            "bank_imports",
+            import_id,
+            Some(details),
+        ),
     )
     .await?;
     Ok(())
@@ -1947,6 +1950,7 @@ async fn create_csv(
     insert_canonical_audit_log(
         &mut tx,
         current_user.user_id,
+        current_user.api_key_id,
         header.id,
         &header.filename,
         header.transaction_count,

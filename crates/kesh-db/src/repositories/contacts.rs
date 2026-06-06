@@ -222,13 +222,13 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     // Audit log (snapshot direct, pattern Story 3.5 create).
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "contact.created".to_string(),
-            entity_type: "contact".to_string(),
-            entity_id: contact.id,
-            details_json: Some(contact_snapshot_json(&contact)),
-        },
+            "contact.created".to_string(),
+            "contact".to_string(),
+            contact.id,
+            Some(contact_snapshot_json(&contact)),
+        ),
     )
     .await
     {
@@ -449,13 +449,13 @@ pub async fn update(
     });
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "contact.updated".to_string(),
-            entity_type: "contact".to_string(),
-            entity_id: id,
-            details_json: Some(audit_details),
-        },
+            "contact.updated".to_string(),
+            "contact".to_string(),
+            id,
+            Some(audit_details),
+        ),
     )
     .await
     {
@@ -527,13 +527,13 @@ pub async fn archive(
     // Audit log (snapshot direct, pattern Story 3.5 archive).
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry {
+        NewAuditLogEntry::user(
             user_id,
-            action: "contact.archived".to_string(),
-            entity_type: "contact".to_string(),
-            entity_id: id,
-            details_json: Some(contact_snapshot_json(&contact)),
-        },
+            "contact.archived".to_string(),
+            "contact".to_string(),
+            id,
+            Some(contact_snapshot_json(&contact)),
+        ),
     )
     .await
     {
