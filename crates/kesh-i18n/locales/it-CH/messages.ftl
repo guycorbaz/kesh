@@ -872,3 +872,50 @@ setup-password-mismatch = Le password non corrispondono.
 setup-submit = Crea account amministratore
 setup-error-already-complete = L'account amministratore è già stato creato. Sarete reindirizzati alla pagina di accesso.
 setup-error-rate-limit = Troppi tentativi. Riprova tra qualche minuto.
+
+# === Story 17-2b — Chiavi API (PAT) frontend (36 chiavi) ===
+# Impostazioni → link
+settings-api-keys-title = Chiavi API
+settings-api-keys-manage = Gestisci
+settings-api-keys-hint = Crea chiavi di accesso API per le tue integrazioni (IA esterna, script, software di terze parti).
+# Pagina chiavi API — etichette
+api-keys-labels-page-title = Chiavi API
+api-keys-labels-page-subtitle = Crea chiavi di accesso API per le tue integrazioni (IA esterna, script, software di terze parti). Presenta la chiave tramite l'intestazione «Authorization: Bearer».
+api-keys-labels-name = Nome
+api-keys-labels-name-placeholder = es. Script contabile, Agente IA…
+api-keys-labels-scope = Ambito
+api-keys-labels-scope-read = Sola lettura
+api-keys-labels-scope-read-write = Lettura-scrittura
+api-keys-labels-expires = Scadenza (facoltativa)
+api-keys-labels-expires-hint = Lascia vuoto per una chiave permanente.
+api-keys-labels-created-at = Creata il
+api-keys-labels-last-used = Ultimo utilizzo
+api-keys-labels-never-used = Mai utilizzata
+api-keys-labels-status = Stato
+api-keys-labels-status-active = Attiva
+api-keys-labels-status-expires = Attiva (scade il { $date })
+api-keys-labels-status-revoked = Revocata il { $date }
+api-keys-labels-status-expired = Scaduta il { $date }
+api-keys-labels-empty = Nessuna chiave API. Creane una per le tue integrazioni.
+api-keys-labels-loading = Caricamento…
+api-keys-labels-secret-created = Chiave «{ $name }» creata.
+api-keys-labels-secret-warning = Copia questa chiave ora: non sarà più visualizzata.
+# Azioni
+api-keys-actions-create = Nuova chiave
+api-keys-actions-submit-create = Crea la chiave
+api-keys-actions-cancel = Annulla
+api-keys-actions-copy = Copia
+api-keys-actions-close = Chiudi
+api-keys-actions-revoke = Revoca
+api-keys-actions-confirm-revoke = Revoca
+# Conferma
+api-keys-confirm-revoke = Revocare questa chiave? Ogni integrazione che la utilizza smetterà immediatamente di funzionare. Questa azione è irreversibile.
+# Errori
+api-keys-errors-name-required = Il nome della chiave è obbligatorio.
+api-keys-errors-name-too-long = Il nome della chiave è troppo lungo (massimo 255 caratteri).
+api-keys-errors-conflict = La chiave è cambiata nel frattempo — elenco ricaricato, riprova.
+# Toast
+api-keys-toast-create-success = Chiave API creata.
+api-keys-toast-copied = Chiave copiata negli appunti.
+api-keys-toast-copy-failed = Copia non riuscita — seleziona e copia manualmente.
+api-keys-toast-revoke-success = Chiave revocata.

@@ -872,3 +872,50 @@ setup-password-mismatch = Die Passwörter stimmen nicht überein.
 setup-submit = Administratorkonto erstellen
 setup-error-already-complete = Das Administratorkonto wurde bereits erstellt. Sie werden zur Anmeldeseite weitergeleitet.
 setup-error-rate-limit = Zu viele Versuche. Bitte versuchen Sie es in einigen Minuten erneut.
+
+# === Story 17-2b — API-Schlüssel (PAT) Frontend (36 Schlüssel) ===
+# Einstellungen → Link
+settings-api-keys-title = API-Schlüssel
+settings-api-keys-manage = Verwalten
+settings-api-keys-hint = Erstellen Sie API-Zugriffsschlüssel für Ihre Integrationen (externe KI, Skripte, Drittanbieter-Software).
+# API-Schlüssel-Seite — Labels
+api-keys-labels-page-title = API-Schlüssel
+api-keys-labels-page-subtitle = Erstellen Sie API-Zugriffsschlüssel für Ihre Integrationen (externe KI, Skripte, Drittanbieter-Software). Übermitteln Sie den Schlüssel über den Header «Authorization: Bearer».
+api-keys-labels-name = Name
+api-keys-labels-name-placeholder = z. B. Buchhaltungsskript, KI-Agent…
+api-keys-labels-scope = Berechtigung
+api-keys-labels-scope-read = Nur Lesen
+api-keys-labels-scope-read-write = Lesen und Schreiben
+api-keys-labels-expires = Ablauf (optional)
+api-keys-labels-expires-hint = Leer lassen für einen permanenten Schlüssel.
+api-keys-labels-created-at = Erstellt am
+api-keys-labels-last-used = Zuletzt verwendet
+api-keys-labels-never-used = Nie verwendet
+api-keys-labels-status = Status
+api-keys-labels-status-active = Aktiv
+api-keys-labels-status-expires = Aktiv (läuft ab am { $date })
+api-keys-labels-status-revoked = Widerrufen am { $date }
+api-keys-labels-status-expired = Abgelaufen am { $date }
+api-keys-labels-empty = Keine API-Schlüssel. Erstellen Sie einen für Ihre Integrationen.
+api-keys-labels-loading = Wird geladen…
+api-keys-labels-secret-created = Schlüssel «{ $name }» erstellt.
+api-keys-labels-secret-warning = Kopieren Sie diesen Schlüssel jetzt: Er wird nie wieder angezeigt.
+# Aktionen
+api-keys-actions-create = Neuer Schlüssel
+api-keys-actions-submit-create = Schlüssel erstellen
+api-keys-actions-cancel = Abbrechen
+api-keys-actions-copy = Kopieren
+api-keys-actions-close = Schliessen
+api-keys-actions-revoke = Widerrufen
+api-keys-actions-confirm-revoke = Widerrufen
+# Bestätigung
+api-keys-confirm-revoke = Diesen Schlüssel widerrufen? Jede Integration, die ihn verwendet, funktioniert sofort nicht mehr. Diese Aktion ist unwiderruflich.
+# Fehler
+api-keys-errors-name-required = Der Name des Schlüssels ist erforderlich.
+api-keys-errors-name-too-long = Der Name des Schlüssels ist zu lang (maximal 255 Zeichen).
+api-keys-errors-conflict = Der Schlüssel wurde zwischenzeitlich geändert — Liste neu geladen, bitte erneut versuchen.
+# Toasts
+api-keys-toast-create-success = API-Schlüssel erstellt.
+api-keys-toast-copied = Schlüssel in die Zwischenablage kopiert.
+api-keys-toast-copy-failed = Kopieren nicht möglich — bitte manuell markieren und kopieren.
+api-keys-toast-revoke-success = Schlüssel widerrufen.
