@@ -175,10 +175,15 @@ pub async fn revoke_in_tx(
 /// eventual consistency : un échec est ignoré par l'appelant (n'échoue pas la
 /// requête authentifiée). Identifié par `key_hash` (indexé UNIQUE).
 pub async fn touch_last_used(pool: &MySqlPool, key_hash: &str) -> Result<(), DbError> {
-    sqlx::query("UPDATE api_keys SET last_used_at = NOW(3) WHERE key_hash = ?")
-        .bind(key_hash)
-        .execute(pool)
-        .await
-        .map_err(map_db_error)?;
+    // `revoked_at IS NULL` : ne pas réveiller l'horodatage d'usage d'une clé
+    // révoquée entre le lookup d'auth et ce best-effort (race) — code-review
+    // 17-2a Pass 2.
+    sqlx::query(
+        "UPDATE api_keys SET last_used_at = NOW(3) WHERE key_hash = ? AND revoked_at IS NULL",
+    )
+    .bind(key_hash)
+    .execute(pool)
+    .await
+    .map_err(map_db_error)?;
     Ok(())
 }

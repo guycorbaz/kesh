@@ -198,3 +198,39 @@ impl NewAuditLogEntry {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn actor_type_roundtrip_str() {
+        // Doit correspondre exactement aux valeurs de l'ENUM SQL
+        // `actor_type ENUM('user','api_key')` (migration 20260605000002).
+        assert_eq!(ActorType::User.as_str(), "user");
+        assert_eq!(ActorType::ApiKey.as_str(), "api_key");
+        assert_eq!(ActorType::from_str("user").unwrap(), ActorType::User);
+        assert_eq!(ActorType::from_str("api_key").unwrap(), ActorType::ApiKey);
+        // Valeurs invalides rejetées (fail-loud au décodage sqlx).
+        assert!(ActorType::from_str("apikey").is_err());
+        assert!(ActorType::from_str("User").is_err());
+        assert!(ActorType::from_str("").is_err());
+        // `Default` = User (rend la migration non-breaking, DC5).
+        assert_eq!(ActorType::default(), ActorType::User);
+    }
+
+    #[test]
+    fn constructors_set_actor_fields() {
+        let u = NewAuditLogEntry::user(7, "x.created", "x", 1, None);
+        assert_eq!(u.actor_type, ActorType::User);
+        assert_eq!(u.actor_api_key_id, None);
+        assert_eq!(u.user_id, 7);
+
+        // `::api_key(api_key_id, creator_user_id, …)` : imputabilité = créateur.
+        let k = NewAuditLogEntry::api_key(42, 7, "x.created", "x", 1, None);
+        assert_eq!(k.actor_type, ActorType::ApiKey);
+        assert_eq!(k.actor_api_key_id, Some(42));
+        assert_eq!(k.user_id, 7);
+    }
+}

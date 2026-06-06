@@ -193,6 +193,27 @@ mod tests {
 
     const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 
+    /// Gate de scope PAT (DC3) : seules GET/HEAD/OPTIONS sont « safe » ; toute
+    /// autre méthode est une mutation refusée pour une clé `scope='read'`.
+    /// Couvre l'unité demandée par AC13 (le comportement bout-en-bout est aussi
+    /// testé dans `api_keys_e2e.rs`).
+    #[test]
+    fn is_safe_method_allows_only_read_methods() {
+        use axum::http::Method;
+        // Méthodes sûres (lecture) → autorisées même en scope read.
+        assert!(is_safe_method(&Method::GET));
+        assert!(is_safe_method(&Method::HEAD));
+        assert!(is_safe_method(&Method::OPTIONS));
+        // Méthodes mutantes → refusées en scope read (403 API_KEY_READ_ONLY).
+        assert!(!is_safe_method(&Method::POST));
+        assert!(!is_safe_method(&Method::PUT));
+        assert!(!is_safe_method(&Method::PATCH));
+        assert!(!is_safe_method(&Method::DELETE));
+        // Méthode hors-liste (deny par défaut, conservateur).
+        assert!(!is_safe_method(&Method::TRACE));
+        assert!(!is_safe_method(&Method::CONNECT));
+    }
+
     /// Handler factice protégé qui renvoie 200 + l'id extrait (Story 6.2: include company_id).
     async fn echo_handler(Extension(user): Extension<CurrentUser>) -> String {
         format!(

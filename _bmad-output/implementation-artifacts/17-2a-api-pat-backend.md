@@ -118,6 +118,20 @@ Reprises verbatim de la spec parente 17-2 convergée — ces points engagent la 
 
 Dismissed (7, noise/by-design/documentés) : code `API_KEY_READ_ONLY` masque `API_KEY_MANAGEMENT_FORBIDDEN` pour clé `read` (les deux dénient en 403) ; write-amplification `touch_last_used` (best-effort, acceptable v0.2) ; cookie shadow PAT (by-design, cookie gagne) ; pas de plafond de rôle si créateur promu (DC2 by-design) ; `exp=i64::MAX` dans `/auth/me` (`saturating_sub` gère, sémantiquement bénin) ; reports read-path `actor_type='user'` (limitation L2 documentée v0.3) + repos kesh-db cat-iii (limitation L1 documentée v0.3) ; `revoke` garde `version<1` (belt-and-suspenders, pas un défaut).
 
+### Pass 2 code-review (Sonnet 4.6 — Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+Diff aplati unique (impl + patches Pass 1). **0 CRITICAL/HIGH** ; Acceptance Auditor confirme 0 > LOW et patches Pass 1 sans régression. Findings reclassés/patchés :
+
+- [x] [Review][Patch] `base62_fixed_width` : `debug_assert_eq!(bytes.len(), PAT_ENTROPY_BYTES)` (garde défensive futur appelant) [crates/kesh-api/src/auth/api_key.rs]
+- [x] [Review][Patch] test unit `actor_type_roundtrip_str` + `constructors_set_actor_fields` (AC13 réclamait un roundtrip `ActorType` — n'existait que pour `ApiKeyScope`) [crates/kesh-db/src/entities/audit_log.rs]
+- [x] [Review][Patch] test unit `is_safe_method_allows_only_read_methods` (AC13 réclamait un test unit du gate de scope — n'existait qu'en e2e) [crates/kesh-api/src/middleware/auth.rs]
+- [x] [Review][Patch] `touch_last_used` : ajout `AND revoked_at IS NULL` (évite de réveiller `last_used_at` sur une clé révoquée en race) [crates/kesh-db/src/repositories/api_keys.rs]
+- [x] [Review][Doc] L1 précisé : incohérence intra-transaction `actor_type` (reconciliation.accepted=`api_key` / journal_entry.created=`user` dans la même tx PAT), remédiation v0.3.
+
+Décision contrat API (résolue) : **DELETE revoke `version` en body JSON conservé** — reclassé **dismiss**, c'est la convention projet canonique (`bank_accounts::archive_bank_account` DELETE+body+version, livré v0.1.4/v014-1, mergé+revu). Consommateur unique = frontend 17-2b en session JWT cookie (DC6 bloque tout PAT), `fetch` même-origine → aucun risque de strip de body. Changer pour `If-Match`/query-param introduirait une divergence de convention (anti-DRY).
+
+Dismissed Pass 2 (5) : `ActorType` decode d'une valeur DB inconnue → erreur runtime (fail-loud **by-design**, symétrique `Role`/`AccountType`) ; cookie commençant par `kesh_pat_` → chemin PAT (aucun gain de privilège, un PAT valide marche déjà via Bearer ; cookie httpOnly server-set) ; pas de cap clés/company (enhancement v0.3, pas un défaut) ; pas de rate-limit sur le lookup PAT (pré-existant — `require_auth` n'en a pas non plus pour JWT, non introduit par cette story) ; double-revoke `409` vs `404` (information-leak faible, comportement acceptable).
+
 ## Dev Notes
 
 > Contexte hérité de la spec parente 17-2 (convergée 5 passes). 17-2a couvre la **Partie A backend uniquement**. Les notes frontend/doc sont volontairement omises (→ 17-2b/17-2c).
@@ -223,7 +237,7 @@ Claude Opus 4.8 (1M context) — `bmad-dev-story 17-2a`, single-pass orchestré 
   - `reports::emit_report_audit` (`report.generated`) — 4 callers GET.
   - `reports::emit_report_export_audit` (`report.exported`).
   - Une consultation/export déclenchée par un PAT `read` logge donc `actor_type='user'`. Imputabilité préservée (`user_id` = créateur de la clé).
-  - **Limitation L1 (v0.3)** : les audits internes kesh-db (catégorie iii) restent `actor_type='user'` même via PAT (cf. DC5) — threading jusqu'aux repos changerait N signatures, hors scope v0.2.
+  - **Limitation L1 (v0.3)** : les audits internes kesh-db (catégorie iii) restent `actor_type='user'` même via PAT (cf. DC5) — threading jusqu'aux repos changerait N signatures, hors scope v0.2. **Précision (code-review Pass 2)** : une même opération PAT peut produire des entrées d'audit à `actor_type` mixte dans une seule transaction — ex. `POST /reconciliation/accept` via PAT logge `reconciliation.accepted` en `actor_type='api_key'` (helper kesh-api catégorie ii, threadé) **mais** le `journal_entry.created` corrélé en `actor_type='user'` (repo `journal_entries::create_in_tx`, catégorie iii). Imputabilité préservée (`user_id` = créateur dans les deux cas) ; seul le canal d'origine n'est pas distingué sur les lignes catégorie iii. Remédiation v0.3 = threading `actor_api_key_id` jusqu'aux repos kesh-db.
 - **Limitation L3 (v0.3) — frontière DC6 non-exhaustive (code-review Pass 1)** : DC6 bloque la gestion de **clés** par un PAT mais pas les **autres** routes `require_admin_role` (`/api/v1/users` CRUD/reset-password, `/api/v1/company/invoice-settings`). Un PAT `read-write` créé par un **Admin** peut donc créer un nouvel admin / reset un mot de passe → auto-propagation partielle contournant l'esprit de DC6 (clé fuitée → nouvel admin → login UI → nouvelles clés). Affecte uniquement les clés créées par un Admin (un Comptable est bloqué par `require_admin_role`). **Décision Project Lead : catégorie B accepté v0.3.** Remédiation : généraliser le blocage PAT à tout `require_admin_role`. Tracé **KF-036 ([#167](https://github.com/guycorbaz/kesh/issues/167))** (`known-failure`+`technical-debt`+`v0.2-milestone`).
 - **Migrations non-breaking** (CLAUDE.md P1/P3) : `CREATE TABLE api_keys` + `ALTER TABLE audit_log ADD COLUMN` (DEFAULT/nullable) → **aucun bump `kesh_version_min_required`**. 2 entrées ajoutées à `docs/migrations-idempotence-audit.md` (P5, verdict `tracked-by-sqlx`).
 - **Invariant non-régression** : chemin JWT inchangé (`from_current_user` produit `actor_type='user'` à l'identique) ; gate `users_exist→423` non déplacé ; branche PAT insérée après extraction token + après le gate setup.

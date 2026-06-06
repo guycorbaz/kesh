@@ -71,6 +71,15 @@ fn base62_encode(bytes: &[u8]) -> String {
 /// moins de digits). Le padding est déterministe et injectif → l'entropie et
 /// l'unicité du secret sont préservées (code-review 17-2a Pass 1).
 fn base62_fixed_width(bytes: &[u8]) -> String {
+    // L'invariant de largeur fixe ne tient que pour un secret de `PAT_ENTROPY_BYTES`
+    // octets (160 bits → ≤ 27 digits base62). Un buffer plus long encoderait sur
+    // plus de 27 digits et le left-pad ne tronquerait pas → invariant cassé. Garde
+    // défensive en debug pour tout futur appelant (code-review 17-2a Pass 2).
+    debug_assert_eq!(
+        bytes.len(),
+        PAT_ENTROPY_BYTES,
+        "base62_fixed_width attend exactement {PAT_ENTROPY_BYTES} octets"
+    );
     let mut body = base62_encode(bytes);
     if body.len() < PAT_BASE62_LEN {
         body.insert_str(0, &"0".repeat(PAT_BASE62_LEN - body.len()));
