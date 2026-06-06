@@ -1,6 +1,6 @@
 # Story 17.2a: API externe à clé PAT — Backend (table, repo, middleware factorisé, audit)
 
-Status: review
+Status: done
 
 <!-- Issue de la scission de la story 17-2 (spec convergée 5 passes validate, 2026-06-04). 17-2a = Partie A backend (story-foundation, la plus risquée : middleware auth + ripple audit). Voir 17-2-api-pat-integrations.md pour le contexte parent complet. -->
 
@@ -131,6 +131,20 @@ Diff aplati unique (impl + patches Pass 1). **0 CRITICAL/HIGH** ; Acceptance Aud
 Décision contrat API (résolue) : **DELETE revoke `version` en body JSON conservé** — reclassé **dismiss**, c'est la convention projet canonique (`bank_accounts::archive_bank_account` DELETE+body+version, livré v0.1.4/v014-1, mergé+revu). Consommateur unique = frontend 17-2b en session JWT cookie (DC6 bloque tout PAT), `fetch` même-origine → aucun risque de strip de body. Changer pour `If-Match`/query-param introduirait une divergence de convention (anti-DRY).
 
 Dismissed Pass 2 (5) : `ActorType` decode d'une valeur DB inconnue → erreur runtime (fail-loud **by-design**, symétrique `Role`/`AccountType`) ; cookie commençant par `kesh_pat_` → chemin PAT (aucun gain de privilège, un PAT valide marche déjà via Bearer ; cookie httpOnly server-set) ; pas de cap clés/company (enhancement v0.3, pas un défaut) ; pas de rate-limit sur le lookup PAT (pré-existant — `require_auth` n'en a pas non plus pour JWT, non introduit par cette story) ; double-revoke `409` vs `404` (information-leak faible, comportement acceptable).
+
+### Pass 3 code-review (Haiku 4.5 — Blind Hunter + Edge Case Hunter + Acceptance Auditor) — CONVERGÉ
+
+Diff aplati unique (impl + patches Pass 1+2). **0 finding > LOW** sur les 3 reviewers. Le seul MEDIUM remonté (« timing attack sur le lookup `key_hash` ») est **auto-dismissé par Haiku** comme trade-off DC1 assumé (secret haute-entropie 160 bits, pas de bruteforce possible). Aucun CRITICAL/HIGH → pas de vérification grep ground-truth requise (guardrail Haiku). Edge Case Hunter : toutes les frontières confirmées gérées (prefix case-sensitive, expires_at==NOW(3), creator inactif, double-revoke, base62 all-zero, multi-tenant). Acceptance Auditor : **PASS — ready for merge**, AC1–AC8/AC11b/AC13 ✅, DC1–DC6 ✅, patches Pass 1+2 vérifiés présents, L1/L2/L3 limitations genuine.
+
+### Convergence — synthèse du cycle code-review
+
+| Passe | Modèle | CRITICAL | HIGH | MEDIUM | LOW | Issue |
+|-------|--------|:---:|:---:|:---:|:---:|-------|
+| 1 | Opus 4.8 | 0 | 1 | 1 | 2 | HIGH→dette KF-036, MED+2LOW patchés |
+| 2 | Sonnet 4.6 | 0 | 0 | 0 | 4 | 4 LOW patchés + doc L1 + 1 décision contrat résolue |
+| 3 | Haiku 4.5 | 0 | 0 | 0 | 0 | **CONVERGÉ (0 > LOW)** |
+
+Rotation complète Opus→Sonnet→Haiku (cycle empirique CLAUDE.md, biais d'auteur contourné). Pattern « Opus catch-architectural Pass 1 » confirmé (HIGH auto-propagation DC6 raté par personne d'autre — c'était la 1ʳᵉ passe). 7 patches code au total (3 Pass 1 + 4 Pass 2) + 1 fix fmt drift + 1 dette tracée (KF-036 #167). 1370 tests verts, 0 régression. **Critère d'arrêt atteint : 0 CRITICAL/HIGH/MEDIUM en Pass 3.**
 
 ## Dev Notes
 
