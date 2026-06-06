@@ -206,7 +206,7 @@ Opus 4.8 (1M context) — `bmad-dev-story 17-2b`, single-pass T-B1→T-B7.
 - `npm run test:unit` : 31 fichiers / **275 tests** verts (dont 8 nouveaux : 4 `api-keys.api` + 4 `clipboard`).
 - `npm run build` : OK (adapter-static).
 - `cargo test -p kesh-i18n` : **21 tests** verts (`load_all_locales` + parse des 4 `.ftl` avec les 36 nouvelles clés).
-- E2E `playwright test api-keys --list` : 2 tests parsés OK. Run complet non exécuté (nécessite backend `KESH_TEST_MODE` + preview + browsers — gate séparé hors CI principale).
+- E2E `playwright test api-keys` : **2/2 PASS** contre le backend live (2026-06-06). Stack : `cargo run -p kesh-api` (`KESH_HOST=127.0.0.1 KESH_PORT=3001 KESH_TEST_MODE=true KESH_STATIC_DIR=frontend/build`) servant la SPA buildée + API, `KESH_BACKEND_URL=http://127.0.0.1:3001 PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`. Validé bout-en-bout : token `kesh_pat_…` réel en Bearer (read-write GET 200 / POST 201 / révoqué 401 ; read POST 403 `API_KEY_READ_ONLY`). Gate E2E satisfait avant PR.
 
 ### Completion Notes List
 
