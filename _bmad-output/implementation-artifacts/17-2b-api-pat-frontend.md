@@ -1,6 +1,6 @@
 # Story 17.2b: API externe à clé PAT — Frontend (page de gestion `/settings/api-keys`)
 
-Status: review
+Status: done
 
 <!-- Issue de la scission de la story 17-2 (spec convergée 5 passes validate, 2026-06-04). 17-2b = Partie B frontend (rollout après la story-foundation 17-2a backend, mergée PR #168). Voir 17-2-api-pat-integrations.md pour le contexte parent complet et 17-2a-api-pat-backend.md pour le contrat backend réel consommé ici. -->
 
@@ -111,6 +111,22 @@ so that **je puisse gérer mes intégrations IA / logiciels tiers depuis l'UI we
 - [x] [Review][Patch] (LOW) afficher le nom de la clé dans l'encart secret (`createdSecret.name` état mort → valeur UX) [+page.svelte]
 
 Dismissed (5) : expiry `T23:59:59Z` UTC vs CH (généreux de quelques heures, inoffensif pour une expiration — le hint dit « optionnelle ») ; E2E sélecteur `getByRole('Révoquer')` (Edge vérifié : bouton ligne masqué quand `mode≠none` → 1 seul match au click) ; E2E clé `read` non-révoquée (DB re-seedée par `beforeAll`, pas d'accumulation intra-run) ; `data-testid="api-key-row-{id}"` singulier (convention projet, cf. `bank-account-row-`) ; écart count 36→37 clés (la 37ᵉ = `api-keys-labels-page-subtitle`, bien présente — doc spec corrigée).
+
+### Pass 2 code-review (Haiku 4.5 — Blind Hunter + Edge Case Hunter + Acceptance Auditor) — CONVERGÉ
+
+Diff aplati unique (`28640c7..HEAD` = impl + patches Pass 1). **0 finding > LOW.** Blind Hunter : aucun défaut, ready-for-merge. Acceptance Auditor : AC1-9 + DC-B1..B6 ✅, 8 patches Pass 1 confirmés appliqués sans régression. Edge Case Hunter : 3 findings **tous LOW**, tous dismiss :
+- **Grapheme vs codepoint** (name length) — fausse prémisse Haiku : Rust `name.chars().count()` compte les **codepoints** (scalar values), identique à `[...name].length` JS. Le patch Pass 1 est correct, aucun écart. Dismiss.
+- **TZ expiry** — déjà dismiss Pass 1 (généreux ~1-2h pour un Suisse UTC+1/+2, inoffensif ; « almost a full day » exagéré).
+- **E2E sélecteur i18n** — déjà dismiss Pass 1 (Edge vérifié 1 seul match ; fixture `fr-CH`, fallback FR « Révoquer »).
+
+### Convergence — synthèse du cycle code-review
+
+| Passe | Modèle | CRITICAL | HIGH | MEDIUM | LOW | Issue |
+|-------|--------|:---:|:---:|:---:|:---:|-------|
+| 1 | Sonnet 4.6 | 0 | 0 | 3 | 5 | 8 patches (clipboard finally, statut expirée, revoke reload-on-error, codepoint, garde double-clic, minDate, test cleanup, nom encart) |
+| 2 | Haiku 4.5 | 0 | 0 | 0 | 0 | **CONVERGÉ (0 > LOW)** |
+
+Rotation complète dev Opus 4.8 → review Sonnet 4.6 → Haiku 4.5 (3 modèles orthogonaux). Quality gate vert après patches : check 0-err, lint-i18n PASS, test:unit **276/276**, build OK, cargo test -p kesh-i18n 21/21. **Critère d'arrêt atteint.** E2E full-run = gate séparé (stack live) avant PR.
 
 ## Dev Notes
 
