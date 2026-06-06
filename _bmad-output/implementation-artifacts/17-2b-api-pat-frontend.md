@@ -95,6 +95,23 @@ so that **je puisse gérer mes intégrations IA / logiciels tiers depuis l'UI we
 - [x] **T-B7 — Quality gate** (AC: #8, #9)
   - [x] `npm run check` ✅ (0 erreur), `lint-i18n-ownership` ✅, `npm run test:unit` ✅ **275/275** (8 nouveaux), `npm run build` ✅, `cargo test -p kesh-i18n` ✅ **21/21**. E2E full-run avant PR.
 
+## Review Findings
+
+### Pass 1 code-review (Sonnet 4.6 — Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+0 CRITICAL/HIGH. Acceptance Auditor : AC1-9 + DC-B1..B6 tous ok. Findings patchés :
+
+- [x] [Review][Patch] (MEDIUM) `clipboard.ts` : `removeChild` dans un `finally` (textarea orpheline si `execCommand` throw) + test du cas throw [frontend/src/lib/shared/utils/clipboard.ts]
+- [x] [Review][Patch] (MEDIUM) `statusLabel` : clé `expiresAt` passé + `revokedAt` null → statut « Expirée le … » distinct, ligne dimmée, bouton Révoquer masqué [frontend/src/routes/(app)/settings/api-keys/+page.svelte]
+- [x] [Review][Patch] (MEDIUM) `confirmRevoke` : sur erreur non-409 (404/réseau), `reload()` + `closeForm()` aussi (évite panneau ouvert + boucle 404 sur liste périmée) [+page.svelte]
+- [x] [Review][Patch] (LOW) name length en codepoints `[...name].length > 255` (match backend `chars().count()`, edge emoji) [+page.svelte]
+- [x] [Review][Patch] (LOW) garde `if (submitting) return` en tête de `submitCreate`/`confirmRevoke` (double-clic avant flush `disabled`) [+page.svelte]
+- [x] [Review][Patch] (LOW) `tomorrow` recalculé dans `openCreate()` (stale après minuit si page ouverte) [+page.svelte]
+- [x] [Review][Patch] (LOW) `clipboard.test.ts` : sauver/restaurer `document.execCommand` (assignation directe non nettoyée par `restoreAllMocks`) [frontend/src/lib/shared/utils/clipboard.test.ts]
+- [x] [Review][Patch] (LOW) afficher le nom de la clé dans l'encart secret (`createdSecret.name` état mort → valeur UX) [+page.svelte]
+
+Dismissed (5) : expiry `T23:59:59Z` UTC vs CH (généreux de quelques heures, inoffensif pour une expiration — le hint dit « optionnelle ») ; E2E sélecteur `getByRole('Révoquer')` (Edge vérifié : bouton ligne masqué quand `mode≠none` → 1 seul match au click) ; E2E clé `read` non-révoquée (DB re-seedée par `beforeAll`, pas d'accumulation intra-run) ; `data-testid="api-key-row-{id}"` singulier (convention projet, cf. `bank-account-row-`) ; écart count 36→37 clés (la 37ᵉ = `api-keys-labels-page-subtitle`, bien présente — doc spec corrigée).
+
 ## Dev Notes
 
 > Frontend uniquement. Le backend (routes, codes d'erreur, audit) est figé par 17-2a (PR #168). Ne pas modifier le Rust sauf ajout de clés `.ftl`.

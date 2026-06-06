@@ -28,8 +28,8 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
 	// Fallback `execCommand('copy')` — fonctionne sur HTTP LAN.
 	if (typeof document === 'undefined') return false;
+	const textarea = document.createElement('textarea');
 	try {
-		const textarea = document.createElement('textarea');
 		textarea.value = text;
 		// Hors-écran + non-focusable visuellement, mais sélectionnable.
 		textarea.setAttribute('readonly', '');
@@ -38,10 +38,12 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 		textarea.style.opacity = '0';
 		document.body.appendChild(textarea);
 		textarea.select();
-		const ok = document.execCommand('copy');
-		document.body.removeChild(textarea);
-		return ok;
+		return document.execCommand('copy');
 	} catch {
 		return false;
+	} finally {
+		// `finally` : retire le textarea même si `execCommand` throw (sinon
+		// élément orphelin accumulé dans le DOM à chaque échec — code-review P1).
+		textarea.remove();
 	}
 }

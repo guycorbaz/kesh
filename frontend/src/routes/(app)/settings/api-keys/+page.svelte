@@ -41,8 +41,19 @@
 	let createdSecret = $state<{ name: string; key: string } | null>(null);
 
 	// Borne `min` du date-picker = demain (évite une expiration « aujourd'hui »
-	// que le backend pourrait refuser comme déjà passée selon l'heure).
-	const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+	// que le backend pourrait refuser comme déjà passée selon l'heure). Recalculée
+	// à l'ouverture du form (`openCreate`) pour ne pas rester périmée si la page
+	// reste ouverte au-delà de minuit (code-review Pass 1).
+	let formMinDate = $state('');
+
+	function computeMinDate(): string {
+		return new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+	}
+
+	/** True si la clé est expirée par date (sans révocation explicite). */
+	function isExpired(k: ApiKey): boolean {
+		return !k.revokedAt && k.expiresAt !== null && new Date(k.expiresAt).getTime() < Date.now();
+	}
 
 	async function reload() {
 		try {
@@ -82,6 +93,11 @@
 				date: formatDate(k.revokedAt),
 			});
 		}
+		if (isExpired(k)) {
+			return i18nMsg('api-keys-labels-status-expired', 'Expirée le {$date}', {
+				date: formatDate(k.expiresAt),
+			});
+		}
 		if (k.expiresAt) {
 			return i18nMsg('api-keys-labels-status-expires', 'Active (expire le {$date})', {
 				date: formatDate(k.expiresAt),
@@ -99,6 +115,7 @@
 
 	function openCreate() {
 		resetForm();
+		formMinDate = computeMinDate();
 		mode = { kind: 'create' };
 	}
 
@@ -109,13 +126,16 @@
 
 	async function submitCreate(e: Event) {
 		e.preventDefault();
+		if (submitting) return; // garde double-soumission avant flush du `disabled`
 		formError = null;
 		const name = formName.trim();
 		if (name === '') {
 			formError = i18nMsg('api-keys-errors-name-required', 'Le nom de la clé est requis.');
 			return;
 		}
-		if (name.length > 255) {
+		// Compte en points de code Unicode (`[...name]`) pour matcher le backend
+		// (`name.chars().count()`) — sinon un emoji ferait diverger `.length` (UTF-16).
+		if ([...name].length > 255) {
 			formError = i18nMsg(
 				'api-keys-errors-name-too-long',
 				'Le nom de la clé est trop long (255 caractères maximum).',
@@ -159,26 +179,31 @@
 	}
 
 	async function confirmRevoke(id: number) {
+		if (submitting) return; // garde double-clic
+		const k = keys.find((x) => x.id === id);
+		if (!k) {
+			closeForm();
+			return;
+		}
 		submitting = true;
 		try {
-			const k = keys.find((x) => x.id === id);
-			if (!k) return;
 			await revokeApiKey(id, k.version);
 			toast.success(i18nMsg('api-keys-toast-revoke-success', 'Clé révoquée.'));
-			await reload();
-			closeForm();
 		} catch (err) {
 			if (isApiError(err) && err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 				toast.error(
 					i18nMsg('api-keys-errors-conflict', 'La clé a changé entre-temps — liste rechargée, réessayez.'),
 				);
-				await reload();
-				closeForm();
 			} else {
 				toast.error(isApiError(err) ? err.message : String(err));
 			}
 		} finally {
+			// Toujours recharger + fermer : sur 404 (clé déjà supprimée ailleurs) ou
+			// réseau, éviter de laisser le panneau ouvert avec une liste périmée
+			// (sinon retry → boucle 404 sur la clé fantôme — code-review Pass 1).
 			submitting = false;
+			await reload();
+			closeForm();
 		}
 	}
 </script>
@@ -211,7 +236,12 @@
 		data-testid="api-keys-secret"
 		role="alert"
 	>
-		<p class="text-sm font-medium text-amber-900">
+		<p class="text-sm font-medium text-amber-900" data-testid="api-keys-secret-name">
+			{i18nMsg('api-keys-labels-secret-created', 'Clé « {$name} » créée.', {
+				name: createdSecret.name,
+			})}
+		</p>
+		<p class="mt-1 text-sm font-medium text-amber-900">
 			{i18nMsg(
 				'api-keys-labels-secret-warning',
 				'Copiez cette clé maintenant : elle ne sera plus jamais affichée.',
@@ -286,7 +316,7 @@
 							id="api-key-expires"
 							type="date"
 							bind:value={formExpiresAt}
-							min={tomorrow}
+							min={formMinDate}
 							data-testid="api-keys-expires-input"
 						/>
 						<p class="mt-1 text-xs text-text-muted">
@@ -332,7 +362,7 @@
 				<tbody>
 					{#each keys as k (k.id)}
 						<tr
-							class="border-b border-border {k.revokedAt ? 'opacity-50' : ''}"
+							class="border-b border-border {k.revokedAt || isExpired(k) ? 'opacity-50' : ''}"
 							data-testid="api-key-row-{k.id}"
 						>
 							<td class="py-2 pr-4">{k.name}</td>
@@ -341,7 +371,7 @@
 							<td class="py-2 pr-4 font-mono text-xs">{formatDateTime(k.lastUsedAt)}</td>
 							<td class="py-2 pr-4" data-testid="api-key-status-{k.id}">{statusLabel(k)}</td>
 							<td class="py-2 whitespace-nowrap">
-								{#if !k.revokedAt && mode.kind === 'none'}
+								{#if !k.revokedAt && !isExpired(k) && mode.kind === 'none'}
 									<button
 										type="button"
 										class="rounded border border-border px-2 py-1 text-xs text-red-600"

@@ -4,9 +4,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { copyToClipboard } from './clipboard';
 
 describe('copyToClipboard', () => {
+	// `document.execCommand` est assigné directement (pas via `vi.spyOn`) → non
+	// restauré par `restoreAllMocks`. On sauve/restaure manuellement (code-review P1).
+	const originalExecCommand = (document as unknown as { execCommand?: unknown }).execCommand;
+
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
+		(document as unknown as { execCommand: unknown }).execCommand = originalExecCommand;
 	});
 
 	it('utilise navigator.clipboard.writeText quand disponible (secure-context)', async () => {
@@ -44,5 +49,18 @@ describe('copyToClipboard', () => {
 		(document as unknown as { execCommand: typeof execCommand }).execCommand = execCommand;
 		const ok = await copyToClipboard('x');
 		expect(ok).toBe(false);
+	});
+
+	it('retourne false ET ne laisse pas de textarea orpheline si execCommand throw', async () => {
+		vi.stubGlobal('navigator', {});
+		const execCommand = vi.fn().mockImplementation(() => {
+			throw new Error('SecurityError');
+		});
+		(document as unknown as { execCommand: typeof execCommand }).execCommand = execCommand;
+		const before = document.querySelectorAll('textarea').length;
+		const ok = await copyToClipboard('x');
+		expect(ok).toBe(false);
+		// Le `finally` retire la textarea malgré le throw (pas de fuite DOM).
+		expect(document.querySelectorAll('textarea').length).toBe(before);
 	});
 });

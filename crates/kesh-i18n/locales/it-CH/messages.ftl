@@ -895,8 +895,10 @@ api-keys-labels-status = Stato
 api-keys-labels-status-active = Attiva
 api-keys-labels-status-expires = Attiva (scade il { $date })
 api-keys-labels-status-revoked = Revocata il { $date }
+api-keys-labels-status-expired = Scaduta il { $date }
 api-keys-labels-empty = Nessuna chiave API. Creane una per le tue integrazioni.
 api-keys-labels-loading = Caricamento…
+api-keys-labels-secret-created = Chiave «{ $name }» creata.
 api-keys-labels-secret-warning = Copia questa chiave ora: non sarà più visualizzata.
 # Azioni
 api-keys-actions-create = Nuova chiave
