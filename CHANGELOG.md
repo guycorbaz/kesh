@@ -10,6 +10,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+### Added
+
+- **API externe à clé d'accès (PAT)** (#100) : Kesh peut désormais être branché à des intégrations externes — IA (Claude API, ChatGPT, agents), scripts, ETL, dashboards BI ou ERP — via des **clés d'accès API** liées à une entreprise. Chaque clé a une portée *lecture seule* ou *lecture-écriture* et agit au nom de l'utilisateur qui l'a créée, sans partager d'identifiants. Les clés se créent et se révoquent depuis la nouvelle page **Paramètres → Clés API** (`/settings/api-keys`) ; le secret n'est affiché qu'une seule fois et seul son condensé est conservé côté serveur. L'authentification se fait par l'en-tête HTTP `Authorization: Bearer kesh_pat_…` sur les routes `/api/v1/*` existantes. Guide complet d'intégration (exemples curl, Python, JavaScript, MCP) : [`docs/api-external.md`](docs/api-external.md).
+
 ### Sécurité
 
 - **Création du 1er administrateur désormais atomique** (#133) : l'endpoint de configuration initiale (`POST /setup/admin`) fermait une fenêtre de *race condition* (TOCTOU) qui pouvait, sous deux requêtes concurrentes avec des identifiants distincts, créer **deux comptes administrateur** non concertés au lieu d'un seul. La vérification « aucun utilisateur n'existe » et la création du premier admin s'exécutent maintenant dans une **transaction unique sérialisée par un verrou exclusif**, garantissant qu'au plus un administrateur est créé même en cas d'accès simultané pendant la fenêtre d'onboarding. Comportement utilisateur inchangé en usage nominal.

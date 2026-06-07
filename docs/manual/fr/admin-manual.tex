@@ -1305,6 +1305,25 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
     \item La déconnexion révoque tous les refresh tokens de la session.
 \end{itemize}
 
+\subsection{Clés API (PAT) — accès programmatique}\label{sec:api-keys}
+
+En complément de l'authentification web par cookie, Kesh permet à des \textbf{intégrations externes} (IA, scripts, ETL, dashboards BI, ERP) de consommer l'API via des \textbf{clés d'accès personnelles} (PAT --- \emph{Personal Access Token}). Une clé s'utilise sur les routes \texttt{/api/v1/*} existantes, présentée dans l'en-tête \texttt{Authorization: Bearer kesh\_pat\_\ldots}.
+
+\begin{itemize}
+    \item \textbf{Gestion} : les clés se créent et se révoquent depuis l'interface web, page \textbf{Paramètres → Clés API} (\texttt{/settings/api-keys}), accessible aux rôles Comptable et Administrateur. La gestion des clés est \textbf{impossible via l'API elle-même} (protection anti-auto-propagation : une clé compromise ne peut pas en créer d'autres).
+    \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET/HEAD/OPTIONS) ou \emph{lecture-écriture} (\texttt{read-write} --- toutes les méthodes). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur.
+    \item \textbf{Périmètre} : une clé est liée à \textbf{une seule entreprise} (\emph{company}) et agit au nom de son créateur (rôle relu en base à chaque requête --- désactiver le créateur invalide ses clés immédiatement).
+    \item \textbf{Stockage} : seul un condensé SHA-256 de la clé est conservé en base (table \texttt{api\_keys}) ; le secret en clair n'est affiché qu'une seule fois, à la création.
+    \item \textbf{Expiration / révocation} : une clé peut avoir une date d'expiration optionnelle ; la révocation prend effet immédiatement.
+    \item \textbf{Audit} : les mutations effectuées via une clé sont tracées dans \texttt{audit\_log} avec \texttt{actor\_type = 'api\_key'} (et l'identifiant de la clé), conformément à l'OLICo Art.~9.
+\end{itemize}
+
+\begin{keshwarning}
+\textbf{Moindre privilège.} Une clé \texttt{read-write} créée par un \textbf{Administrateur} hérite des pouvoirs d'Administrateur (gestion d'utilisateurs, réinitialisation de mots de passe, paramètres de facturation) --- limitation connue de la v0.2 (suivi GitHub \texttt{KF-036 / \#167}). Ne créez de clés qu'avec le rôle minimal nécessaire, et privilégiez la portée \texttt{read} lorsque la lecture suffit. La v0.2 n'applique \textbf{pas} de limitation de débit (\emph{rate-limiting}) par clé : utilisez l'expiration et la révocation pour limiter l'exposition.
+\end{keshwarning}
+
+Le guide d'intégration complet (exemples \texttt{curl}, Python, JavaScript, MCP, table des codes d'erreur) est fourni dans le dépôt à \texttt{docs/api-external.md}.
+
 \subsection{RBAC et permissions}
 
 Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de chaque endpoint API} via un middleware Tower (Axum). Les 5 rôles standards (cf. section Premier démarrage) sont définis dans le code (pas de rôles custom dynamiques v0.1).
