@@ -1311,7 +1311,7 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
 
 \begin{itemize}
     \item \textbf{Gestion} : les clés se créent et se révoquent depuis l'interface web, page \textbf{Paramètres → Clés API} (\texttt{/settings/api-keys}), accessible aux rôles Comptable et Administrateur. La gestion des clés est \textbf{impossible via l'API elle-même} (protection anti-auto-propagation : une clé compromise ne peut pas en créer d'autres).
-    \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET uniquement) ou \emph{lecture-écriture} (\texttt{read-write}). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur.
+    \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET/HEAD/OPTIONS) ou \emph{lecture-écriture} (\texttt{read-write} --- toutes les méthodes). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur.
     \item \textbf{Périmètre} : une clé est liée à \textbf{une seule entreprise} (\emph{company}) et agit au nom de son créateur (rôle relu en base à chaque requête --- désactiver le créateur invalide ses clés immédiatement).
     \item \textbf{Stockage} : seul un condensé SHA-256 de la clé est conservé en base (table \texttt{api\_keys}) ; le secret en clair n'est affiché qu'une seule fois, à la création.
     \item \textbf{Expiration / révocation} : une clé peut avoir une date d'expiration optionnelle ; la révocation prend effet immédiatement.

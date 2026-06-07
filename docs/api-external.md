@@ -68,7 +68,7 @@ La liste affiche aussi la date de dernière utilisation et le statut (active / e
 | Portée | Méthodes HTTP autorisées | Usage |
 |--------|--------------------------|-------|
 | `read` | `GET`, `HEAD`, `OPTIONS` | Lecture seule. Toute tentative d'écriture → `403 API_KEY_READ_ONLY`. |
-| `read-write` | Toutes (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) | Lecture **et** modification, **sous réserve du rôle du créateur**. |
+| `read-write` | Toutes les méthodes (`GET`, `HEAD`, `OPTIONS`, `POST`, `PUT`, `PATCH`, `DELETE`) | Lecture **et** modification, **sous réserve du rôle du créateur**. |
 
 **La permission effective est l'intersection du rôle du créateur et de la portée de la clé.** Une clé `read-write` créée par un Comptable ne pourra pas faire ce que seul un Administrateur peut faire : la portée `read-write` ne *promeut* jamais le créateur. Appliquez le **principe du moindre privilège** (voir §8).
 
@@ -204,7 +204,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, … |
 | Taux de TVA | `GET /vat-rates` | — |
 
-*(Préfixe `…/api/v1` omis dans le tableau. Vérifiez les corps de requête attendus en observant les réponses de lecture correspondantes.)*
+*(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
 ---
 
@@ -215,7 +215,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 - **Principe du moindre privilège** :
   - utilisez une clé **`read`** dès que la lecture suffit (analyse, reporting, IA d'observation) ;
   - faites créer la clé par un utilisateur au **rôle le plus restreint** possible.
-- ⚠️ **Une clé créée par un Administrateur hérite des pouvoirs d'Administrateur** (création d'utilisateurs, réinitialisation de mots de passe, paramètres de facturation de la company). C'est une limitation connue de la v0.2 (voir §9, [KF-036](https://github.com/guycorbaz/kesh/issues/167)). **N'utilisez une clé d'origine Administrateur que si l'intégration en a réellement besoin.**
+- ⚠️ **Une clé créée par un Administrateur hérite des pouvoirs d'Administrateur** (création d'utilisateurs, réinitialisation de mots de passe, paramètres de facturation de la company). C'est une limitation connue de la v0.2 (voir §9, [KF-036 / #167](https://github.com/guycorbaz/kesh/issues/167)). **N'utilisez une clé d'origine Administrateur que si l'intégration en a réellement besoin.**
 - **Révoquez immédiatement** toute clé suspectée compromise : l'effet est instantané. Désactiver le compte créateur invalide également toutes ses clés.
 
 ---
@@ -224,8 +224,8 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 
 | Limitation | Détail | Suivi |
 |------------|--------|-------|
-| **Portée binaire globale** | Pas de permissions fines par ressource (ex. `invoices:read` seul). Une clé est `read` ou `read-write` sur **toute** l'API de sa company. | [#100](https://github.com/guycorbaz/kesh/issues/100) §2 |
-| **Pas de limitation de débit (*rate-limiting*) par clé** | Aucun plafond de requêtes par clé en v0.2. Mitigez via l'expiration et la révocation. | [#100](https://github.com/guycorbaz/kesh/issues/100) §7 |
+| **Portée binaire globale** | Pas de permissions fines par ressource (ex. `invoices:read` seul). Une clé est `read` ou `read-write` sur **toute** l'API de sa company. | [#100](https://github.com/guycorbaz/kesh/issues/100) |
+| **Pas de limitation de débit (*rate-limiting*) par clé** | Aucun plafond de requêtes par clé en v0.2. Mitigez via l'expiration et la révocation. | [#100](https://github.com/guycorbaz/kesh/issues/100) |
 | **Gestion des clés réservée à l'UI web** | Lister/créer/révoquer une clé via l'API est interdit (`403 API_KEY_MANAGEMENT_FORBIDDEN`), même en `read-write` — protection anti-auto-propagation. | DC6 |
 | **Auto-propagation des clés Administrateur** | Une clé `read-write` créée par un Admin atteint les routes réservées aux Admins. | [KF-036 / #167](https://github.com/guycorbaz/kesh/issues/167) (v0.3) |
 | **Pas de spécification OpenAPI** | Aucun schéma OpenAPI/Swagger n'est publié en v0.2 (la base de code n'embarque pas `utoipa`). Documentez vos appels à partir de ce guide. | v0.3 |
@@ -248,9 +248,9 @@ Les erreurs sont renvoyées en JSON avec ce format :
 |------|--------|-------|
 | `401` | `UNAUTHENTICATED` | Clé absente, invalide, révoquée, expirée — ou créateur désactivé. |
 | `403` | `API_KEY_READ_ONLY` | Méthode d'écriture (`POST`/`PUT`/`PATCH`/`DELETE`) avec une clé `read`. |
-| `403` | `API_KEY_MANAGEMENT_FORBIDDEN` | Tentative de gérer des clés (`/settings/api-keys`) via l'API. |
+| `403` | `API_KEY_MANAGEMENT_FORBIDDEN` | Tentative de gérer des clés (`/api/v1/settings/api-keys`) via l'API. |
 | `400` | `VALIDATION_ERROR` | Corps de requête invalide (champ manquant, valeur hors limites, …). |
-| `404` | — | Ressource absente ou appartenant à une autre company (anti-énumération). |
+| `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |
 
 ---
 

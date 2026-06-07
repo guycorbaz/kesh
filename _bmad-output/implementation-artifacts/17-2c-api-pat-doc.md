@@ -1,6 +1,6 @@
 # Story 17.2c: API externe à clé PAT — Documentation (`docs/api-external.md` + synchro docs visibles)
 
-Status: review
+Status: done
 
 <!-- Issue de la scission de la story 17-2 (spec convergée 5 passes validate, 2026-06-04). 17-2c = Partie C documentation. Dépend de 17-2a (backend, comportement auth final figé, MERGÉE PR #168) et 17-2b (frontend, page /settings/api-keys, MERGÉE PR #169). Voir 17-2-api-pat-integrations.md pour le contexte parent complet. -->
 
@@ -174,11 +174,38 @@ Toutes les valeurs techniques de `docs/api-external.md` (routes, méthodes, code
 - **Scope conservé (17-2c)** : AC12 parent (`docs/api-external.md`, OpenAPI éval), T-C1/T-C2/T-C3, synchro CHANGELOG/README/manuel admin, fermeture #100.
 - **Re-validate** : optionnel. Story doc-only à faible risque adversarial ; le contrat technique est ground-truthé sur le code mergé. Un `bmad-create-story validate 17-2c` reste possible si l'on veut challenger l'exhaustivité des sections doc.
 
+## Change Log — code review
+
+**Cycle `bmad-code-review 17-2c` CONVERGÉ en 3 passes (2026-06-07)** — critère d'arrêt CLAUDE.md atteint (0 finding > LOW après triage ground-truth). Rotation modèles Opus 4.8 → Sonnet 4.6 → Haiku 4.5. Story doc-only : revue centrée exactitude factuelle (contrat HTTP vs code mergé), cohérence des exemples, qualité éditoriale.
+
+| Passe | Modèles (3 reviewers //) | Findings bruts | > LOW réels (post-triage) | Patches |
+|---|---|---|---|---|
+| 1 | Opus 4.8 (Blind + EdgeCase + Acceptance) | 1C + 2H + 1M + ~7L | 2 (H2, M2) | 3 |
+| 2 | Sonnet 4.6 (Blind + EdgeCase) | 2M + 3L | 1 (F2) | 2 |
+| 3 | Haiku 4.5 (Blind + EdgeCase) | 1H + 1M + 1L | 0 (sur-évaluations reclassées) | 2 (LOW polish) |
+
+- **Trend > LOW réel** : 2 → 1 → **0** (convergé).
+- **Patches appliqués (7)** :
+  - **H2 (P1)** : manuel LaTeX résumait scope `read` = « GET uniquement » ; aligné sur le ground-truth `is_safe_method` = GET/HEAD/OPTIONS (`middleware/auth.rs:172-177`). PDF régénéré (`latexmk`, 52 p.).
+  - **M2 (P1)** : §10 affichait `404 | —` (code absent), trompeur dans un guide qui dit « fiez-vous au code ». Réalité : `DbError::NotFound → 404 NOT_FOUND` (`errors.rs:1470-1473`) + codes spécifiques (`ACCOUNT_NOT_FOUND`). Corrigé.
+  - **nit §7 (P1)** : conseil « déduire le POST depuis le GET » reformulé (shapes req ≠ res).
+  - **F2 (P2)** : §10 citait `/settings/api-keys` (page frontend) pour une erreur API → corrigé en `/api/v1/settings/api-keys` (route API réelle du 403, DC6).
+  - **F1 (P2)** : refs `#100 §2`/`§7` ambiguës (sections de l'issue) → simplifiées en `[#100]`.
+  - **F1-p3 / F2-p3 (P3)** : clarté wording cellule `read-write` (« Toutes les méthodes (…) » explicite HEAD/OPTIONS) + normalisation lien `[KF-036 / #167]`. LOW cosmétiques.
+- **Findings dismissés (6, dont 3 faux positifs ground-truthés)** :
+  - **C1 CRITICAL (P1 Blind)** « exemple token = 26 chars ≠ 27 » → **FAUX POSITIF**, réfuté par comptage mécanique `${#body}=27` (token complet 36, `PAT_BASE62_LEN=27`). Mauvais comptage visuel du reviewer.
+  - **H1 HIGH (P1 Blind)** « code `UNAUTHENTICATED` détonne vs `API_KEY_*` » → dismiss : c'est le **vrai** code renvoyé (`errors.rs:655`), la doc reflète le code réel (nomenclature pré-existante hors-scope).
+  - **F4 LOW (P2 Blind)** « OLICo Art. 9 = mauvaise réf légale (anti-blanchiment) » → **FAUX POSITIF** : OLICo = Ordonnance livres de comptes (RS 221.431), référence projet établie (le manuel a déjà `\subsection{Conformité OLICo Art. 9}`).
+  - **F3 (entropie 160 bits)** vérifiée correcte (27 × log2(62) ≈ 160,8). **F5** (JS `fetch` sans `r.ok`) nit cosmétique laissé. **F3-p3** (réf manuel en texte) intentionnel (PDF).
+  - **Sur-évaluations Haiku P3** : F1 HIGH (« Toutes » est explicite, pas une contradiction) + F2 MEDIUM (style de lien) reclassés LOW — l'Edge Case Hunter Haiku a confirmé **0 > LOW** sur 14 axes ground-truthés au grep.
+- **Décisions de reclassement** : H2 HIGH→LOW (simplification manuel acceptable mais corrigée), M2 MEDIUM (réel, corrigé), F1/F2-p2 MEDIUM→LOW, F1/F2-p3 HIGH/MEDIUM→LOW (interprétatifs). Aucun reclassement en dette.
+- **Validations positives ground-truth (non-findings)** : format token, 5 codes d'erreur + enveloppe JSON, 8 familles de routes, payload contacts (`contactType`/`ContactType::Entreprise`), gate de scope, DC6 `ensure_not_pat`, env LaTeX `keshwarning`, comportements (révocation/expiration/créateur désactivé→401/rôle relu) — tous confirmés exacts vs code mergé 17-2a/17-2b.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-Claude Opus 4.8 (1M context) — `bmad-dev-story 17-2c`, single-pass T-C1→T-C4 (2026-06-07). Story doc-only.
+Claude Opus 4.8 (1M context) — `bmad-dev-story 17-2c`, single-pass T-C1→T-C4 (2026-06-07). Story doc-only. Code-review : cycle 3 passes Opus→Sonnet→Haiku (convergé 0 > LOW).
 
 ### Debug Log References
 
