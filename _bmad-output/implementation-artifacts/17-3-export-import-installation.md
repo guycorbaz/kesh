@@ -27,46 +27,62 @@ so that **je puisse migrer ou sauvegarder l'intégralité de mes données sans a
 
 **Migrations DB :** cette story **n'introduit aucune nouvelle migration** (export/import opèrent sur les tables existantes). Donc : pas de mise à jour `docs/migrations-idempotence-audit.md`, pas de bump `kesh_version_min_required` (cf. CLAUDE.md §Migration breaking policy — N/A ici).
 
+## Décision de split (actée au validate Pass 1)
+
+Le split **A–F est confirmé**, 6 sous-stories :
+- **17-3a** backend export (`admin_backup/` + `GET /admin/full-export`) — **story-zéro** : pose le format `.keshbackup` que tout consomme. **Doit merger en premier.**
+- **17-3b** UI export (`/admin/backup`) — dépend de 17-3a.
+- **17-3c** backend import (`POST /admin/full-import` + restore) — dépend de 17-3a (format).
+- **17-3d** UI import (`/admin/restore`) — dépend de 17-3c.
+- **17-3e** E2E end-to-end (test d'intégration Rust) — dépend de 17-3a + 17-3c.
+- **17-3f** doc — dépend de toutes.
+
+**17-3b et 17-3c sont parallélisables** après le merge de 17-3a (aucune dépendance entre elles).
+
 ## Acceptance Criteria
 
-> ACs groupés par **Partie A–F** (= frontières de split pressenties). Numérotation continue pour traçabilité.
+> ACs groupés par **Partie A–F** (= frontières de split). Numérotation continue pour traçabilité.
 
-### Partie A — Backend export (`POST /api/v1/admin/full-export`)
+### Partie A — Backend export (`GET /api/v1/admin/full-export`)
 
-1. `POST /api/v1/admin/full-export` retourne un fichier `.keshbackup` (conteneur ZIP) téléchargeable, **réservé rôle Admin strict** (test : `Comptable` et `Consultation` → `403`).
-2. L'endpoint est **inaccessible via clé PAT** : une requête authentifiée par `Authorization: Bearer kesh_pat_…` (même scope `read-write`) → `403` code `API_KEY_MANAGEMENT_FORBIDDEN` (cohérent Story 17-2a DC6 — opérations d'infra interdites aux PAT).
-3. Le `.keshbackup` contient : (a) un fichier de données **par table applicative Kesh** (les **22 tables**, voir Dev Notes §Inventaire), (b) un `manifest.json` (métadonnées + intégrité), (c) un dossier `files/` (vide en v0.2, forward-compat). Tables **système exclues** : `_sqlx_migrations`, `_kesh_version`.
-4. `manifest.json` contient au minimum : `keshVersion` (= `env!("CARGO_PKG_VERSION")` de la source), `keshVersionMinRequired` (lu de `_kesh_version`), `exportDate` (ISO 8601 UTC `…Z`), `formatVersion` (entier, ex. `1`), et par table : `rowCount` + `sha256` (hash des bytes de données décompressés de la table). Schéma JSON camelCase, pretty-printed (cohérent `crates/kesh-api/src/exports/metadata.rs`).
-5. **Intégrité vérifiable** : recalculer le SHA-256 des données de chaque table doit redonner exactement la valeur stockée dans `manifest.json[tables][*].sha256`.
-6. **Audit-trail** : chaque export insère une entrée `audit_log` (action `admin.full_export`, `entity_type` `installation`, `details_json` snake_case : taille fichier, nb tables, nb lignes total, version source). Discrimine l'actor JWT vs PAT via `NewAuditLogEntry::from_current_user` — mais ici toujours JWT (AC2 interdit le PAT).
-7. **Maîtrise mémoire (streaming)** : l'export d'une installation volumineuse ne sature pas la RAM serveur. *(Décision d'implémentation DC8 — voir Dev Notes ; soit streaming depuis fichier temporaire, soit in-memory avec plafond documenté ; à trancher au validate.)*
+1. `GET /api/v1/admin/full-export` retourne un fichier `.keshbackup` (conteneur ZIP) téléchargeable (**GET** — pas de corps de requête, cohérent 9-2b `GET /exports/global.zip` et `apiClient.getBlob` qui est câblé sur GET), `Content-Type: application/octet-stream` (force le download sans réinterprétation d'extension) + `Content-Disposition: attachment; filename="kesh-installation-{YYYY-MM-DD}.keshbackup"`. **Réservé rôle Admin strict** (test : `Comptable` et `Consultation` → `403`).
+2. L'endpoint est **inaccessible via clé PAT** : une requête authentifiée par `Authorization: Bearer kesh_pat_…` (même scope `read-write`) → `403` code `API_KEY_MANAGEMENT_FORBIDDEN` (cohérent Story 17-2a DC6 — opérations d'infra interdites aux PAT ; le backup contient hash de mots de passe + tokens, fuite critique si exposé via API).
+3. Le `.keshbackup` contient : (a) un fichier de données NDJSON **par table applicative Kesh** (les **22 tables**, voir Dev Notes §Inventaire), (b) un `manifest.json` (métadonnées + intégrité), (c) un dossier `files/` (vide en v0.2, forward-compat). Tables **système exclues** : `_sqlx_migrations`, `_kesh_version`.
+4. `manifest.json` (schéma JSON camelCase, pretty-printed) contient :
+   - `formatVersion: 1` (entier **figé** = format NDJSON-per-table introduit par 17-3a ; l'import refuse `400` si `> 1`),
+   - `keshVersion` (= `env!("CARGO_PKG_VERSION")` source), `keshVersionMinRequired` (lu de `_kesh_version`), `exportDate` (ISO 8601 UTC `…Z`),
+   - `instanceId` (identifiant de l'installation source pour traçabilité migration : `id` de la 1ʳᵉ `company`, toujours présente),
+   - par table : `rowCount` (usize), `sha256` (hash des bytes NDJSON décompressés), **`columnNames: string[]`** (liste **ordonnée et explicite** des colonnes sérialisées — **exclut les colonnes générées** type `reconciliation_rules.active_uniq` `GENERATED … VIRTUAL`, non-insérables). Source de vérité des colonnes pour l'INSERT au restore, y compris pour les tables vides (NDJSON 0 ligne).
+5. **Intégrité vérifiable** : recalculer le SHA-256 du NDJSON de chaque table redonne exactement `manifest.json[tables][*].sha256`.
+6. **Audit-trail** : chaque export insère une entrée `audit_log` (action `admin.full_export`, `entity_type` `installation`, `details_json` snake_case : taille fichier, nb tables, nb lignes total, version source) via `NewAuditLogEntry::from_current_user` (actor JWT — AC2 interdit le PAT).
+7. **Maîtrise mémoire (DC8 figé)** : assemblage **in-memory** sous un plafond `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50) ; **au-delà → fichier temporaire** (`tokio::fs`) streamé via `Body::from_stream` (`tokio_util::io::ReaderStream`). Le plafond est documenté.
 
 ### Partie B — UI admin export (`/admin/backup`)
 
-8. Page `/admin/backup` (route `(app)/admin/backup/+page.svelte`), **visible uniquement pour rôle Admin** (gating `isAdmin` sidebar), avec un bouton « Exporter toute l'installation » qui déclenche `full-export` et **télécharge** le fichier (pattern blob → `<a download>` de `exports.api.ts`).
-9. Pendant l'export : indicateur de chargement (bouton désactivé + libellé « Export en cours… »), gestion d'erreur (toast + encart), succès → toast. Le nom de fichier provient de l'en-tête `Content-Disposition` (RFC 5987/6266), fallback `kesh-installation-{YYYY-MM-DD}.keshbackup`.
+8. Page `/admin/backup` (route `(app)/admin/backup/+page.svelte`), **visible uniquement pour rôle Admin** (gating `isAdmin` sidebar), avec un bouton « Exporter toute l'installation » qui déclenche `GET full-export` via `apiClient.getBlob` et **télécharge** le fichier (pattern `triggerDownload` de `exports.api.ts`).
+9. Pendant l'export : indicateur de chargement (bouton désactivé + libellé « Export en cours… »), gestion d'erreur (encart/toast), succès → message de succès. Le nom de fichier provient de l'en-tête `Content-Disposition`, fallback `kesh-installation-{YYYY-MM-DD}.keshbackup`. *(Aligner le pattern succès — toast `svelte-sonner` ou encart inline — sur celui retenu, cf. T-B2.)*
 10. Lien « Sauvegarde / Export installation » ajouté au groupe `administration` de la sidebar (`adminOnly`), i18n FR/DE/IT/EN.
 
 ### Partie C — Backend import (`POST /api/v1/admin/full-import`)
 
-11. `POST /api/v1/admin/full-import` accepte un **upload multipart** (champ `file` = `.keshbackup`), **réservé rôle Admin strict** (non-Admin → `403`) et **interdit via PAT** (`403 API_KEY_MANAGEMENT_FORBIDDEN`). Limite de taille via `DefaultBodyLimit::max(...)` configurable (`KESH_ADMIN_IMPORT_MAX_MB`, pattern `bank_import_max_mib`).
-12. **Validation pré-restore (ordre)** : (a) format/ZIP valide + `manifest.json` présent ; (b) **intégrité SHA-256** de chaque table re-vérifiée vs manifest → refus `400` si mismatch (tamper) ; (c) **compat version** (DC4) : refus `409`/`422` si `manifest.keshVersion` > version du binaire destination (impossible d'importer des données plus récentes dans un binaire plus ancien), ou si `manifest.keshVersionMinRequired` > version destination. Réutilise la logique SemVer de `crates/kesh-db/src/version.rs`.
-13. **Backup automatique pré-import (D7/DC5)** : avant toute opération destructrice, l'état actuel est intégralement exporté (réutilise le moteur de la Partie A) vers un emplacement temporaire (`KESH_ADMIN_BACKUP_DIR` ou `/tmp`, fichier `kesh-pre-import-{timestamp}.keshbackup`). Si le restore échoue en cours de route → **rollback** depuis ce backup. Le chemin du backup est loggé + retourné dans la réponse.
-14. **Restore destructeur** : truncate + re-insert de **toutes les tables applicatives** sous `SET FOREIGN_KEY_CHECKS = 0` (connexion unique), ordre enfants→parents pour le truncate (réutilise/promeut `TABLES_TO_TRUNCATE`), INSERT **paramétrés** (DC1 — pas de SQL brut concaténé) avec **liste de colonnes explicite issue du manifest** (compat source-plus-ancienne : colonnes ajoutées depuis = nullable/defaulted), réactivation `FOREIGN_KEY_CHECKS = 1`. `_sqlx_migrations` et `_kesh_version` **non touchées**.
-15. **Re-run migrations** : `kesh_db::MIGRATOR.run(&pool)` est appelé après le restore (idempotent via `_sqlx_migrations`) pour aligner le schéma si la source était plus ancienne.
-16. **Audit-trail import** : entrée `audit_log` (action `admin.full_import`, `entity_type` `installation`, `details_json` : version source, nb tables/lignes restaurées, chemin backup pré-import, succès/échec). L'audit de l'import est **lui-même restauré depuis le backup** (l'`audit_log` source écrase l'actuel) — documenter ce comportement (OLICo Art. 9 : l'historique source est préservé tel quel).
-17. **Atomicité & cohérence post-import** : en cas d'échec partiel, l'installation est laissée soit dans l'état source complet, soit restaurée depuis le backup pré-import — **jamais** dans un état mi-truncate. Le compte admin source est fonctionnel sur la destination (login possible).
+11. `POST /api/v1/admin/full-import` accepte un **upload multipart** (champ `file` = `.keshbackup`), **réservé rôle Admin strict** (non-Admin → `403`) et **interdit via PAT** (`403 API_KEY_MANAGEMENT_FORBIDDEN`). Limite de taille via `DefaultBodyLimit::max(...)` configurable `KESH_ADMIN_IMPORT_MAX_MB` (**défaut 512**, bornes `[1, 10240]`, pattern parse+borne+warn de `bank_import_max_mib`). **Succès → HTTP 200** + corps JSON camelCase `{ backupCreated: bool, tablesRestored: number, rowsRestored: number, sourceVersion: string, sessionInvalidated: true }`.
+12. **Validation pré-restore (ordre)** : (a) format/ZIP valide + `manifest.json` présent + `formatVersion ≤ 1` (sinon `400`) ; (b) **intégrité SHA-256** de chaque table re-vérifiée vs manifest → refus `400` si mismatch (tamper) ; (c) **compat version** (DC4) : refus `409` si `manifest.keshVersionMinRequired > version binaire destination` (= sémantique exacte downgrade-protection 10-2 ; un binaire plus ancien que le min requis de la source ne peut pas lire ces données). **NE PAS** refuser sur `keshVersion > dest` seul (sur-restrictif : une source `0.2.1` sans migration breaking est importable dans `0.2.0`). Réutilise la comparaison SemVer de `crates/kesh-db/src/version.rs` via une **nouvelle** fonction `check_import_version_compat(manifest_min_required, binary_version)` (params strings, pas de lecture DB).
+13. **Backup automatique pré-import (D7/DC5)** : avant toute opération destructrice, l'état actuel est intégralement exporté (réutilise le moteur Partie A) vers `KESH_ADMIN_BACKUP_DIR` (défaut `/tmp`), fichier `kesh-pre-import-{timestamp}.keshbackup`. Le répertoire est créé si absent (`tokio::fs::create_dir_all`) ; échec d'écriture → `500` diagnostique clair (jamais d'import sans backup réussi). Si le restore échoue ensuite → **rollback** depuis ce backup. Le chemin est **loggé serveur** (pas exposé comme chemin actionnable à l'utilisateur, cf. AC20).
+14. **Restore destructeur** : dans **une transaction DB** (`pool.begin()`), `SET FOREIGN_KEY_CHECKS = 0` (même connexion), puis **`DELETE FROM <table>`** (DML, **pas** `TRUNCATE` qui est DDL non-rollbackable) pour toutes les tables applicatives, puis INSERT **paramétrés** (DC1 — `query(...).bind(...)`, jamais de SQL concaténé) avec la **liste de colonnes explicite du manifest** (`columnNames`, exclut les colonnes générées ; compat source-plus-ancienne : colonnes ajoutées depuis = nullable/defaulted), `SET FOREIGN_KEY_CHECKS = 1`, `COMMIT`. `_sqlx_migrations` et `_kesh_version` **non touchées**. AUTO_INCREMENT : non requis (IDs réinsérés explicitement).
+15. **Re-run migrations** : `kesh_db::MIGRATOR.run(&pool)` est appelé après le COMMIT du restore (idempotent via `_sqlx_migrations`) pour aligner le schéma si la source était plus ancienne.
+16. **Audit-trail import** : l'entrée `audit_log` `admin.full_import` (`entity_type` `installation` ; `details_json` : version source, `instanceId`, nb tables/lignes restaurées, succès) est **insérée APRÈS le restore** (dans la DB restaurée) — ainsi elle n'est jamais écrasée par l'`audit_log` source et la trace de l'import est **toujours préservée** (OLICo Art. 9). L'`audit_log` source remplace l'historique destination (comportement migration assumé, documenté).
+17. **Atomicité & cohérence post-import** : le restore étant dans une transaction (DELETE+INSERT, AC14), un échec **rollback la transaction** → état source intègre ou destination intacte ; **jamais d'état mi-effacé**. Le backup pré-import (AC13) couvre les échecs hors-transaction (process crash). Le compte admin source est fonctionnel sur la destination (login possible avec credentials source).
 
 ### Partie D — UI admin import (`/admin/restore`)
 
 18. Page `/admin/restore` (route `(app)/admin/restore/+page.svelte`), **Admin only**, avec sélecteur de fichier `.keshbackup` (input file, pattern `bank-import`, FormData via `apiClient.postFormData`).
-19. **Confirmation forte** : avant l'envoi, un **modal `Dialog`** (composant `lib/components/ui/dialog/`) avertit explicitement « Cette action va **remplacer TOUTES les données** de l'installation actuelle. Une sauvegarde automatique de l'état actuel sera créée avant l'import. » + double action (confirmer/annuler). Pas d'envoi sans confirmation explicite.
-20. Pendant l'import : indicateur de progression (chargement), gestion d'erreurs typées (mismatch SHA → message intégrité ; incompat version → message version source/dest ; `413` taille → message limite), succès → toast + rappel du chemin du backup pré-import.
+19. **Confirmation forte** : avant l'envoi, un **modal `Dialog`** (composant `lib/components/ui/dialog/`) avertit explicitement « Cette action va **remplacer TOUTES les données** de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. **Vous serez déconnecté** et devrez vous reconnecter avec les identifiants de l'instance importée. » + double action (confirmer/annuler). Pas d'envoi sans confirmation explicite.
+20. Pendant l'import : indicateur de progression, gestion d'erreurs typées (mismatch SHA → message intégrité ; incompat version `409` → message version source/dest ; `400 formatVersion` → format inconnu ; `413` → message limite taille). **Succès** → message + **déconnexion propre** (le corps JSON `sessionInvalidated: true`, AC11, déclenche une redirection vers `/login` ; les refresh_tokens destination ayant été remplacés, la session courante est invalide). Pas d'affichage d'un chemin de backup interne (non accessible à l'utilisateur sans SSH).
 21. Lien « Restaurer / Importer installation » ajouté au groupe `administration` (`adminOnly`), i18n FR/DE/IT/EN.
 
-### Partie E — Test E2E end-to-end (double instance)
+### Partie E — Test end-to-end (intégration Rust)
 
-22. Test E2E **« export A → import B → équivalence fonctionnelle »** : sur une instance source seedée (companies/users/écritures/factures), exporter ; importer le `.keshbackup` sur une instance destination distincte (DB vierge) ; vérifier l'équivalence (login admin source disponible sur destination avec même mot de passe, companies/users/écritures/factures intactes, `audit_log` préservé). *(Modalité d'orchestration double-instance à trancher au validate — voir Dev Notes §Test E2E ; candidat fort à devenir sa propre sous-story 17-3e.)*
+22. **Test d'intégration Rust** (`crates/kesh-api/tests/admin_backup_e2e.rs`, DC8/F16) : seed DB source (companies/users/écritures/factures) → export en mémoire → `DELETE`-all → import → **assert équivalence** (row counts par table, login admin source possible, FKs intègres, `audit_log` source présent + entrée `admin.full_import` post-restore). Couvre aussi : refus version incompat, refus SHA tamper, rollback transactionnel sur échec injecté. *(Le test Playwright double-instance Docker Compose — fidèle au use-case migration cross-instance — est reporté **v0.3** comme dette documentée : trop lourd pour le MVP, le test d'intégration Rust couvre l'équivalence fonctionnelle.)*
 
 ### Partie F — Documentation
 
@@ -76,7 +92,7 @@ so that **je puisse migrer ou sauvegarder l'intégralité de mes données sans a
 
 ### Transverses (toutes parties)
 
-26. **Sécurité** : pas de chiffrement du `.keshbackup` par défaut (responsabilité utilisateur — doc recommande GPG/age pour transit hors infra contrôlée, cohérent Epic 17 hors-scope). Le SHA-256 sert à la **détection d'altération**, pas à la confidentialité.
+26. **Sécurité** : pas de chiffrement du `.keshbackup` par défaut (responsabilité utilisateur — doc recommande GPG/age pour transit hors infra contrôlée, cohérent Epic 17 hors-scope). Le SHA-256 sert à la **détection d'altération**, pas à la confidentialité. ⚠️ **Le fichier contient les hash de mots de passe (`users.password_hash`) et les `refresh_tokens`** → la doc (AC23) doit avertir explicitement que le `.keshbackup` est un **secret** à manipuler comme tel. L'auth par cookie (pas de token dans un header custom) ⇒ pas de surface CSRF nouvelle (les endpoints sont POST/GET protégés par `require_admin_role` + cookie SameSite ; le GET export ne mute rien).
 27. **i18n ownership** : les clés frontend respectent `lint-i18n-ownership` (feature-scoped `backup-*` / `restore-*`, ou namespace global pour UI élémentaire). `npm run lint-i18n-ownership` PASS.
 28. **HTTP-LAN safe** : aucune API secure-context-only en runtime (`crypto.randomUUID`/`subtle`/`navigator.clipboard` non-gardé). Utiliser `$props.id()` pour les IDs DOM et `copyToClipboard` (fallback `execCommand`) si copie. `URL.createObjectURL` (download) est sûr en HTTP (cf. `feedback_no_secure_context_apis_http_lan`).
 
@@ -86,41 +102,41 @@ so that **je puisse migrer ou sauvegarder l'intégralité de mes données sans a
 
 ### Partie A — Backend export (story-foundation, pose le format)
 
-- [ ] **T-A1** Définir le format `.keshbackup` (DC1) : module `crates/kesh-api/src/admin_backup/` (format.rs/manifest.rs). Conteneur ZIP, `manifest.json` (schéma AC4, camelCase), un fichier de données par table (DC1 : **JSON/NDJSON ligne-par-ligne** recommandé pour fidélité de type + restore paramétré sans injection — alternative SQL-dump documentée), dossier `files/` vide. (AC: 3, 4)
-- [ ] **T-A2** Lister/sérialiser les **22 tables applicatives** (Dev Notes §Inventaire) : récupérer toutes les lignes (pas de scope company — installation entière), sérialiser chaque ligne avec ses colonnes (liste de colonnes explicite). Réutiliser `sha2` (`sha256_hex`, `exports/metadata.rs`) pour le hash par table. (AC: 3, 5)
-- [ ] **T-A3** Handler `full_export` (`crates/kesh-api/src/routes/admin.rs`) : assemble le `.keshbackup`, en-têtes `Content-Type` + `Content-Disposition` (réutiliser `util::build_content_disposition`). (AC: 1, 9)
-- [ ] **T-A4** Streaming/mémoire (DC8) : implémenter selon décision validate (fichier temp + `Body::from_stream`, ou in-memory + plafond doc). (AC: 7)
-- [ ] **T-A5** RBAC + anti-PAT : monter la route dans `admin_routes` (`lib.rs`, `route_layer(require_admin_role)`) + garde `ensure_not_pat`/`api_key_id.is_some()` → `403 API_KEY_MANAGEMENT_FORBIDDEN`. (AC: 1, 2)
+- [ ] **T-A1** Définir le format `.keshbackup` (DC1) : module `crates/kesh-api/src/admin_backup/` (`format.rs`/`manifest.rs`). Conteneur ZIP, `manifest.json` (schéma AC4 : `formatVersion=1`, `instanceId`, `columnNames` par table **excluant colonnes générées**), un fichier **NDJSON** par table, dossier `files/` vide. **Créer `build_backup_manifest_json(&BackupManifest) -> Result<Vec<u8>, AppError>`** dans `admin_backup/manifest.rs` (NE PAS modifier `exports::metadata::build_metadata_json`, signature per-company incompatible). (AC: 3, 4)
+- [ ] **T-A2** Lister/sérialiser les **22 tables applicatives** (Dev Notes §Inventaire) : récupérer toutes les lignes (installation entière, pas de scope company), sérialiser en NDJSON avec **liste de colonnes explicite excluant les colonnes générées** (`reconciliation_rules.active_uniq` VIRTUAL → exclue). Réutiliser `sha2`/`sha256_hex` (`exports/metadata.rs`) pour le hash NDJSON par table. (AC: 3, 4, 5)
+- [ ] **T-A3** Handler `full_export` (`crates/kesh-api/src/routes/admin.rs`) en **GET** : assemble le `.keshbackup`, `Content-Type: application/octet-stream` + `Content-Disposition` (réutiliser `util::build_content_disposition`). (AC: 1)
+- [ ] **T-A4** Mémoire (DC8) : in-memory sous `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50, `config.rs`), au-delà fichier temp `tokio::fs` + `Body::from_stream` (`tokio_util::io::ReaderStream`). (AC: 7)
+- [ ] **T-A5** RBAC + anti-PAT : monter la route GET dans `admin_routes` (`lib.rs`, `route_layer(require_admin_role)`) + garde anti-PAT. **Promouvoir `ensure_not_pat` en `pub(crate)`** dans `routes/api_keys.rs` (ou extraire dans `routes/common.rs`) pour réutilisation sans duplication. (AC: 1, 2)
 - [ ] **T-A6** Audit `admin.full_export` via `NewAuditLogEntry::from_current_user` + `audit_log::insert_in_tx`. (AC: 6)
-- [ ] **T-A7** `AppError` variant(s) (`AdminFullExportFailed`/réutiliser) + codes i18n (`errors.rs`). Tests unit (manifest shape, sha256 round-trip, RBAC, anti-PAT). (AC: 1, 2, 5)
+- [ ] **T-A7** `AppError` variant(s) (`AdminFullExportFailed`/réutiliser) + codes i18n (`errors.rs`). Tests unit (manifest shape `formatVersion`/`columnNames`/`instanceId`, sha256 round-trip, exclusion colonne générée, RBAC, anti-PAT). (AC: 1, 2, 4, 5)
 
 ### Partie B — UI export
 
-- [ ] **T-B1** Feature front `lib/features/admin-backup/` : `admin-backup.api.ts` (`downloadFullExport()` via `apiClient.getBlob` + `triggerDownload`, pattern `exports.api.ts`). (AC: 8, 9)
+- [ ] **T-B1** Feature front `lib/features/admin-backup/` : `admin-backup.api.ts` (`downloadFullExport()` via `apiClient.getBlob` sur `GET /api/v1/admin/full-export` + `triggerDownload`, pattern `exports.api.ts`). (AC: 8, 9)
 - [ ] **T-B2** Page `(app)/admin/backup/+page.svelte` (runes Svelte 5, bouton + état chargement + toasts). (AC: 8, 9)
 - [ ] **T-B3** Lien sidebar `administration.adminOnly` + i18n `backup-*` 4 locales. (AC: 10, 27)
 - [ ] **T-B4** Test unit composant + `lint-i18n-ownership` PASS. (AC: 27)
 
 ### Partie C — Backend import
 
-- [ ] **T-C1** Handler `full_import` multipart (`routes/admin.rs`), extracteur `Multipart` (pattern `bank_imports::parse_multipart`), `DefaultBodyLimit` + `KESH_ADMIN_IMPORT_MAX_MB` (`config.rs`). RBAC Admin + anti-PAT. (AC: 11)
-- [ ] **T-C2** Validation : ZIP/manifest, SHA-256 par table, compat version SemVer (réutilise `version.rs`). Mapping erreurs (`400` tamper, `409`/`422` version, `413` taille). (AC: 12)
-- [ ] **T-C3** Backup auto pré-import (DC5) : appelle le moteur Partie A → `KESH_ADMIN_BACKUP_DIR`/`/tmp`. Rollback depuis ce backup si restore échoue. (AC: 13, 17)
-- [ ] **T-C4** Restore (DC6) : `FOREIGN_KEY_CHECKS=0`, truncate enfants→parents (promouvoir `TABLES_TO_TRUNCATE` hors test_fixtures vers module production partagé), INSERT paramétrés colonnes-explicites, `FOREIGN_KEY_CHECKS=1`. (AC: 14, 17)
-- [ ] **T-C5** `MIGRATOR.run(&pool)` post-restore (idempotent). (AC: 15)
-- [ ] **T-C6** Audit `admin.full_import` (note : audit_log restauré depuis la source — documenter). (AC: 16)
-- [ ] **T-C7** Tests intégration DB : round-trip (export → truncate → import → équivalence row counts/clés), refus version incompat, refus SHA tamper, rollback sur échec injecté. (AC: 12, 13, 14, 17)
+- [ ] **T-C1** Handler `full_import` multipart (`routes/admin.rs`), extracteur `Multipart` (pattern `bank_imports::parse_multipart`), `DefaultBodyLimit` + `KESH_ADMIN_IMPORT_MAX_MB` (**défaut 512, bornes [1,10240]**, `config.rs`). RBAC Admin + anti-PAT. Réponse succès **200 + JSON** `{ backupCreated, tablesRestored, rowsRestored, sourceVersion, sessionInvalidated:true }`. (AC: 11)
+- [ ] **T-C2** Validation : ZIP/manifest, `formatVersion ≤ 1` (sinon `400`), SHA-256 par table (`400` tamper), **`check_import_version_compat(min_required, binary)`** nouvelle fn dans `version.rs` réutilisant le compare SemVer (`409` si `min_required > binary`). Mapping erreurs (`400`/`409`/`413`). (AC: 12)
+- [ ] **T-C3** Backup auto pré-import (DC5) : appelle le moteur Partie A → `KESH_ADMIN_BACKUP_DIR` (défaut `/tmp`, `create_dir_all` si absent ; échec écriture → `500` diagnostique, jamais d'import sans backup). Chemin loggé serveur. Rollback depuis ce backup si restore hors-transaction échoue. (AC: 13, 17)
+- [ ] **T-C4** Restore (DC6) **transactionnel** : `pool.begin()` → `SET FOREIGN_KEY_CHECKS=0` → **`DELETE FROM`** (pas TRUNCATE) toutes tables → INSERT paramétrés colonnes-explicites du manifest → `FOREIGN_KEY_CHECKS=1` → `COMMIT`. **Promouvoir `TABLES_TO_TRUNCATE` + helper delete hors `test_fixtures` vers `kesh-db/src/backup.rs` en visibilité `pub`** (cross-crate, pas `pub(crate)`). (AC: 14, 17)
+- [ ] **T-C5** `MIGRATOR.run(&pool)` post-COMMIT (idempotent). (AC: 15)
+- [ ] **T-C6** Audit `admin.full_import` **inséré APRÈS le restore** (jamais écrasé, OLICo). (AC: 16)
+- [ ] **T-C7** Tests intégration DB : round-trip (export → DELETE-all → import → équivalence row counts/clés/login admin), refus version incompat (`409`), refus SHA tamper (`400`), refus `formatVersion>1` (`400`), **rollback transactionnel sur échec injecté** (état intact). (AC: 12, 14, 17)
 
 ### Partie D — UI import
 
 - [ ] **T-D1** `admin-restore.api.ts` (`uploadFullImport(file)` via `postFormData`). (AC: 18)
-- [ ] **T-D2** Page `(app)/admin/restore/+page.svelte` : input file + **modal `Dialog` de confirmation forte** + progression + erreurs typées + rappel chemin backup. (AC: 18, 19, 20)
+- [ ] **T-D2** Page `(app)/admin/restore/+page.svelte` : input file + **modal `Dialog` de confirmation forte** (avertit remplacement total + déconnexion) + progression + erreurs typées (`409`/`400`/`413`) + **redirection `/login`** sur succès (`sessionInvalidated`). Pas d'affichage de chemin backup interne. (AC: 18, 19, 20)
 - [ ] **T-D3** Lien sidebar + i18n `restore-*` 4 locales. (AC: 21, 27)
 - [ ] **T-D4** Test unit composant (confirmation bloque l'envoi) + `lint-i18n-ownership` PASS. (AC: 19, 27)
 
-### Partie E — E2E
+### Partie E — Test end-to-end (intégration Rust)
 
-- [ ] **T-E1** Test E2E double-instance « export A → import B → équivalence » (`frontend/tests/e2e/admin-backup-restore.spec.ts` ou test d'intégration Rust selon décision validate). (AC: 22)
+- [ ] **T-E1** Test d'intégration Rust `crates/kesh-api/tests/admin_backup_e2e.rs` : round-trip équivalence + refus version/tamper/format + rollback (cf. AC22). *(Playwright double-instance = dette v0.3 documentée.)* (AC: 22)
 
 ### Partie F — Doc
 
@@ -133,15 +149,16 @@ so that **je puisse migrer ou sauvegarder l'intégralité de mes données sans a
 
 | # | Décision | Rationale | Statut |
 |---|---|---|---|
-| **DC1** | Format données = **JSON/NDJSON ligne-par-ligne par table**, restore via **INSERT paramétrés** | Fidélité de type (NULL vs vide, Decimal, DATETIME), **zéro risque d'injection** (pas de SQL concaténé), pas de dépendance `mariadb-dump` CLI (Alt-1 #112 rejetée). SQL-dump considéré mais escaping manuel risqué + couplage dialecte | **proposé** |
+| **DC1** | Format données = **NDJSON ligne-par-ligne par table**, restore via **INSERT paramétrés** avec liste de colonnes du manifest (`columnNames`) | Fidélité de type (NULL, `rust_decimal` via serde, `NaiveDateTime`), **zéro injection** (pas de SQL concaténé), pas de dépendance `mariadb-dump` CLI (Alt-1 #112 rejetée). SQL-dump écarté (escaping manuel risqué + couplage dialecte). `columnNames` requis car NDJSON vide n'expose pas les colonnes ; **exclut les colonnes générées** (`active_uniq` VIRTUAL, non-insérable) | **figé (Pass 1)** |
 | **DC2** | Scope = **22 tables applicatives, installation entière** (PAS per-company) | D6. Distinct de 9-2b (16 tables, 1 company, exclut users/audit_log). Inclut users, audit_log, refresh_tokens, onboarding_state, api_keys… | **figé** |
 | **DC3** | **Aucun fichier binaire** en v0.2 (no-op), dossier `files/` réservé forward-compat | Ground-truth : Kesh ne stocke aucun upload sur disque. NE PAS inventer de file-store | **figé** |
-| **DC4** | Compat version à l'import via **SemVer** (`version.rs`) : refus si source > destination | Réutilise downgrade-protection 10-2. Empêche d'importer des données d'un Kesh plus récent dans un binaire plus ancien (schéma inconnu) | **figé** |
-| **DC5** | **Backup auto pré-import** (réutilise moteur export) + rollback | D7. Safety net non-négociable (opération destructrice) | **figé** |
-| **DC6** | Restore sous `FOREIGN_KEY_CHECKS=0`, truncate enfants→parents, INSERT colonnes-explicites du manifest | Tolère source-plus-ancienne (nouvelles colonnes nullable/defaulted). `_kesh_version`/`_sqlx_migrations` préservées | **figé** |
+| **DC4** | Compat version import : refus `409` **ssi `manifest.keshVersionMinRequired > version binaire dest`** (sémantique downgrade-protection 10-2). PAS de refus sur `keshVersion > dest` seul | `min_required` est le seul critère sûr (politique migration breaking). Refuser sur `keshVersion` sur-restreint sans gain. **Nouvelle** fn `check_import_version_compat(min_required, binary)` (strings, pas de lecture DB) réutilisant le compare SemVer de `version.rs` | **figé (Pass 1)** |
+| **DC5** | **Backup auto pré-import** (réutilise moteur export) → `KESH_ADMIN_BACKUP_DIR` (défaut `/tmp`, créé si absent) + rollback. Jamais d'import sans backup réussi | D7. Safety net non-négociable (opération destructrice) | **figé** |
+| **DC6** | Restore **dans une transaction** : `FOREIGN_KEY_CHECKS=0` → **`DELETE FROM`** (pas TRUNCATE, DDL non-rollbackable) → INSERT colonnes-explicites → `FK=1` → COMMIT | DELETE est DML ⇒ vrai rollback DB (AC17). Tolère source-plus-ancienne (colonnes ajoutées = nullable/defaulted). `_kesh_version`/`_sqlx_migrations` préservées. ⚠️ `FOREIGN_KEY_CHECKS` est **session-scoped** ⇒ tout sur **une même connexion/transaction** | **figé (Pass 1)** |
 | **DC7** | Admin strict **+ anti-PAT** (`403 API_KEY_MANAGEMENT_FORBIDDEN`) | Opérations d'infra destructrices ⇒ jamais via clé API (cohérent 17-2a DC6) | **figé** |
-| **DC8** | **Streaming** export/import : temp-file + `Body::from_stream` **vs** in-memory + plafond doc | 9-2b est in-memory (`Body::from(Vec<u8>)`, supposé < 5 Mo). Installation complète peut dépasser. Trancher au validate selon complexité acceptable | **à trancher** |
+| **DC8** | Export **in-memory sous plafond `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50)**, au-delà → fichier temp + `Body::from_stream` | 99 % des installations PME Kesh < 50 Mo ⇒ chemin simple identique 9-2b ; les grosses ne saturent pas la RAM. Plafond documenté | **figé (Pass 1)** |
 | **DC9** | **Aucune migration DB** | Opère sur tables existantes. Pas d'audit idempotence, pas de bump min_required | **figé** |
+| **DC10** | `audit_log` import inséré **après** le restore ; `refresh_tokens` restaurés ⇒ **sessions destination invalidées** (réponse `sessionInvalidated:true` → redirection `/login`) | Trace d'import jamais écrasée (OLICo). L'invalidation de session est une conséquence assumée du remplacement complet, signalée à l'UI | **figé (Pass 1)** |
 
 ### Inventaire des 22 tables applicatives (DC2) — source : migrations + `TABLES_TO_TRUNCATE`
 
@@ -155,7 +172,7 @@ bank_accounts, accounts (FK self-ref parent_id), products, contacts,
 fiscal_years, vat_rates, refresh_tokens, onboarding_state, users, companies
 ```
 
-**INSERT (restore)** = ordre **inverse** (parents→enfants), OU INSERT dans n'importe quel ordre avec `FOREIGN_KEY_CHECKS=0` (plus simple). **Exclues** : `_sqlx_migrations`, `_kesh_version` (système, jamais touchées). ⚠️ `accounts` a une **FK self-référente** (`parent_id`) → `FOREIGN_KEY_CHECKS=0` indispensable pendant le restore.
+**DELETE (restore)** : dans la transaction avec `FOREIGN_KEY_CHECKS=0`, l'ordre importe peu (FK désactivées) ; conserver l'ordre enfants→parents par prudence. **INSERT** : ordre inverse (parents→enfants) OU quelconque sous `FK=0`. **Exclues** : `_sqlx_migrations`, `_kesh_version` (système, jamais touchées). ⚠️ `accounts` a une **FK self-référente** (`parent_id`) → `FOREIGN_KEY_CHECKS=0` indispensable. ⚠️ **Colonnes générées exclues de l'INSERT** : `reconciliation_rules.active_uniq` (`GENERATED ALWAYS AS … VIRTUAL`, `migrations/20260513000001_reconciliation_rules.sql:54`) — insérer dedans = erreur SQL. La liste `columnNames` du manifest (AC4) ne doit JAMAIS contenir de colonne générée. ⚠️ Tout (DELETE+INSERT+SET) sur **une seule connexion/transaction** car `FOREIGN_KEY_CHECKS` est **session-scoped**.
 
 ### Réutilisation — moteur d'export existant (Story 9-2b) — `crates/kesh-api/src/exports/`
 
@@ -165,7 +182,7 @@ fiscal_years, vat_rates, refresh_tokens, onboarding_state, users, companies
 |---|---|---|
 | Construction ZIP | `exports/global.rs:80-99` (`build_zip`, crate `zip` v2 deflate, `Cargo.toml:50`) | Directe |
 | SHA-256 | `exports/metadata.rs:89-95` (`sha256_hex`, `sha2` 0.10, `Cargo.toml:47`) | Directe |
-| Manifest JSON camelCase | `exports/metadata.rs:39-95` (`build_metadata_json`, `serde_json::to_vec_pretty`) | Adapter (champs AC4) |
+| Manifest JSON camelCase | `exports/metadata.rs:71` (`build_metadata_json(company:&Company, locale, tables)` — signature **per-company incompatible**) | **NE PAS réutiliser**. Créer `build_backup_manifest_json(&BackupManifest)` dans `admin_backup/manifest.rs` (champs AC4, sans company/locale) |
 | `Content-Disposition` RFC 5987 | `util::build_content_disposition` (`util.rs:104-170`) | Directe |
 | Handler de référence | `routes/exports.rs:37-112` (`export_global`) | **Pattern** (scope ≠) |
 | `AppError::GlobalExportFailed` | `errors.rs:236-237` → 500 | Modèle pour `AdminFullExportFailed` |
@@ -178,10 +195,11 @@ fiscal_years, vat_rates, refresh_tokens, onboarding_state, users, companies
 | Brique | Chemin:ligne | Usage 17-3 |
 |---|---|---|
 | `_kesh_version` schéma | `migrations/20260522000001_kesh_version.sql:31-41` (`id` TINYINT UNSIGNED singleton) | Lire `kesh_version_min_required` pour manifest + compat |
-| Compat SemVer | `version.rs` (`check_downgrade_protection:182-223`, `VersionError::DowngradeRefused`) | **Réutiliser la comparaison** `semver::Version` pour refus import (AC12). ⚠️ détection table absente via `.number()==1146` (PAS `.code()`) |
+| Compat SemVer | `version.rs` (`check_downgrade_protection:182-223` lit la DB ≠ usage import) | **Écrire une nouvelle** `pub fn check_import_version_compat(manifest_min_required:&str, binary:&str) -> Result<(), VersionError>` réutilisant le **compare `semver::Version`** (params strings, pas de lecture DB). Refus `409` ssi `min_required > binary` (DC4). ⚠️ détection table absente via `.number()==1146` (PAS `.code()`) — sans objet ici |
 | Version binaire | `env!("CARGO_PKG_VERSION")` (`Cargo.toml:3` = `0.1.8`), exposée `/health` `routes/health.rs:25` | Manifest source + comparaison destination |
 | `MIGRATOR` | `kesh-db/src/lib.rs:22` (`sqlx::migrate!("./migrations")`), run `main.rs:137-141` | `MIGRATOR.run(&pool)` post-restore (AC15) |
-| Truncate FK-safe | `test_fixtures.rs:337-371` (`truncate_all`, `SET FOREIGN_KEY_CHECKS=0/1`, **connexion unique**) | **Promouvoir** en module production |
+| Truncate FK-safe | `test_fixtures.rs:297-371` (`TABLES_TO_TRUNCATE` `pub(crate)` + `truncate_all`, **connexion unique**) | **Promouvoir** vers `kesh-db/src/backup.rs` en **`pub`** (cross-crate ; `pub(crate)` insuffisant pour `kesh-api`). Adapter en **DELETE transactionnel** (pas TRUNCATE) |
+| Config defaults | `config.rs:357` (`bank_import_max_mib:10`) | `KESH_ADMIN_IMPORT_MAX_MB` **défaut 512** [1,10240] ; `KESH_ADMIN_EXPORT_INMEM_MB` défaut 50 ; `KESH_ADMIN_BACKUP_DIR` défaut `/tmp` (créé si absent) |
 | Pool / SQL brut | `MySqlPool`, `sqlx::query(...).bind(...).execute(...)`, settings `pool.rs:28-49` | INSERT paramétrés |
 | Audit idempotence | `docs/migrations-idempotence-audit.md` (31 migrations) | **Pas de modif** (DC9) |
 
@@ -215,9 +233,7 @@ fiscal_years, vat_rates, refresh_tokens, onboarding_state, users, companies
 
 ### Test E2E double-instance (AC22) — point d'attention / candidat sous-story
 
-L'infra E2E actuelle (Playwright, `frontend/tests/e2e/`, `playwright.config.ts`) lance **une seule** stack `kesh-api` seedée. Le test « export A → import B » exige **deux états** distincts. Options à trancher au validate :
-- **(a)** Test d'**intégration Rust** (`crates/kesh-api/tests/admin_backup_e2e.rs`) : seed DB A → export en mémoire → `truncate_all` → import → assert équivalence (row counts, login admin, FKs). Plus simple, pas de double Docker. **Recommandé pour le MVP.**
-- **(b)** Test Playwright **double-instance** via `docker-compose` (2 services api/db). Plus fidèle au use-case migration mais lourd (orchestration, ports, seeds). **Candidat sous-story dédiée 17-3e** si retenu.
+**Décision Pass 1 (F16) : Option (a) retenue pour le MVP.** Test d'**intégration Rust** (`crates/kesh-api/tests/admin_backup_e2e.rs`) : seed DB A → export en mémoire → `DELETE`-all → import → assert équivalence (row counts, login admin, FKs, audit_log source + entrée import post-restore). Pas de double Docker. **Option (b)** Playwright double-instance (`docker-compose` 2 stacks) = **dette v0.3 documentée** (fidèle au use-case migration cross-instance mais trop lourd pour le MVP ; à tracer en issue `v0.2-milestone`/`v0.3` au moment de la livraison).
 
 ### Standards projet (rappels CLAUDE.md)
 
@@ -231,7 +247,7 @@ L'infra E2E actuelle (Playwright, `frontend/tests/e2e/`, `playwright.config.ts`)
 
 - **Backend** : nouveau module `crates/kesh-api/src/admin_backup/` (format/manifest/export/import) + `crates/kesh-api/src/routes/admin.rs` (handlers). Promotion d'un helper `kesh-db/src/backup.rs` (truncate + ordre tables) hors `test_fixtures`. Aligné avec la séparation existante `exports/` (logique) vs `routes/exports.rs` (handler).
 - **Frontend** : `lib/features/admin-backup/` + `lib/features/admin-restore/` ; routes `(app)/admin/backup/` + `(app)/admin/restore/`. **Premier usage du préfixe `/admin/` côté front** — cohérent avec le gating `isAdmin` existant.
-- **Router** : premier namespace `/api/v1/admin/*` (aujourd'hui les routes admin sont disséminées sous chemins métier). Monter dans `admin_routes` existant (RBAC déjà câblé).
+- **Router** : premier namespace `/api/v1/admin/*` (aujourd'hui les routes admin sont disséminées : `/api/v1/users`, `/api/v1/company/invoice-settings`). Monter dans `admin_routes` existant (RBAC déjà câblé). **L1 (limitation documentée)** : les routes admin existantes ne sont **pas** renommées sous `/api/v1/admin/` en v0.2 (asymétrie API assumée ; cohérence complète reportée v0.3, hors-scope).
 - **Aucun conflit** détecté avec 9-2b (chemins, format et scope distincts).
 
 ### References
@@ -263,3 +279,4 @@ _(à compléter par dev-story)_
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
 | 2026-06-08 | create-story (umbrella) | Opus 4.8 | Spec parente 17-3 créée. Option A (spec umbrella → split au validate, choix Guy). 4 agents Explore (export 9-2b, version/DB 10-2, RBAC/audit/multipart, frontend). 28 ACs groupés Parties A–F. 9 DC (DC2/3/4/5/6/7/9 figés, DC1/DC8 à trancher validate). Découverte clé : **aucun fichier binaire stocké** (volet binaires #112 = no-op v0.2). Aucune migration (DC9). Split pressenti 17-3a..f, story-zéro = Partie A (format `.keshbackup`). |
+| 2026-06-08 | validate Pass 1 | Sonnet 4.6 | 21 findings (4C+6H+7M+4L), tous ground-truthés. Patches : **F1** export→`GET` (getBlob GET-only) ; **F2** `columnNames` au manifest + exclusion colonnes générées (`active_uniq` VIRTUAL) ; **F3** restore `DELETE` transactionnel (pas TRUNCATE DDL non-rollbackable) ; **F4** `ensure_not_pat`→`pub(crate)` ; **F6** compat version = `min_required>dest` seul + nouvelle fn ; **F7/DC10** session invalidée (refresh_tokens remplacés) → `sessionInvalidated`+redirect login ; **F8** chemin backup non exposé UI ; **F9** `KESH_ADMIN_IMPORT_MAX_MB` défaut 512 ; **F10** `formatVersion=1` figé ; **F11/F16** audit import inséré APRÈS restore ; **F12** `pub` cross-crate ; **F13** Content-Type octet-stream ; **F14** réponse import 200+JSON ; **F15** `instanceId` manifest ; **F16** E2E = intégration Rust (Playwright v0.3 dette) ; **F20** namespace `/admin/` L1 doc ; **F21** `build_backup_manifest_json` nouvelle fn. **Split A–F acté**, DC1 (NDJSON) + DC8 (in-mem<50Mo sinon stream) + DC4 figés → DC10 ajouté. Prochaine : Pass 2 Haiku 4.5. |
