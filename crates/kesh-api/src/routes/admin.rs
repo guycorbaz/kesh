@@ -69,13 +69,18 @@ pub async fn full_export(
 /// Le fichier est unlink immédiatement après ouverture en lecture (Unix : le
 /// descripteur reste valide, le fichier est auto-nettoyé à la fin du stream).
 async fn stream_via_tempfile(bytes: Vec<u8>) -> Result<Body, AppError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use tokio::io::AsyncWriteExt;
     use tokio_util::io::ReaderStream;
 
+    // Unicité du nom même pour des exports concurrents (même PID, même
+    // horodatage) : compteur atomique process-global (review 17-3a Pass 1).
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
-        "kesh-export-{}-{}.keshbackup.tmp",
+        "kesh-export-{}-{}-{}.keshbackup.tmp",
         std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        Utc::now().timestamp_nanos_opt().unwrap_or(0),
+        SEQ.fetch_add(1, Ordering::Relaxed)
     ));
 
     let mut f = tokio::fs::File::create(&path)
@@ -89,11 +94,19 @@ async fn stream_via_tempfile(bytes: Vec<u8>) -> Result<Body, AppError> {
         .map_err(|e| AppError::AdminFullExportFailed(format!("temp flush: {e}")))?;
     drop(f);
 
-    let file = tokio::fs::File::open(&path)
-        .await
-        .map_err(|e| AppError::AdminFullExportFailed(format!("temp open: {e}")))?;
-    // Unlink best-effort — sous Unix le fd ouvert garde le contenu accessible.
-    let _ = tokio::fs::remove_file(&path).await;
+    let file = match tokio::fs::File::open(&path).await {
+        Ok(file) => file,
+        Err(e) => {
+            // Nettoyage si l'ouverture échoue (sinon fuite du fichier temp).
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(AppError::AdminFullExportFailed(format!("temp open: {e}")));
+        }
+    };
+    // Unlink — sous Unix le fd ouvert garde le contenu accessible (auto-clean
+    // à la fin du stream). Échec loggé (FS read-only, non-Unix) plutôt qu'avalé.
+    if let Err(e) = tokio::fs::remove_file(&path).await {
+        tracing::warn!(error = ?e, path = ?path, "tempfile unlink failed (non-blocking)");
+    }
 
     Ok(Body::from_stream(ReaderStream::new(file)))
 }

@@ -4,7 +4,9 @@
 //! bibliothèque (`lib.rs`) pour permettre aux tests d'intégration
 //! d'importer `build_router` et les helpers de configuration.
 
-pub mod admin_backup;
+// `pub(crate)` : module manipulant des secrets (dump complet incl. hash de mots
+// de passe), pas d'API publique nécessaire hors crate (review 17-3a Pass 1).
+pub(crate) mod admin_backup;
 pub mod audit;
 pub mod auth;
 pub mod config;

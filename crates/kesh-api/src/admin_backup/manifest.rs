@@ -57,10 +57,14 @@ impl BackupManifest {
     }
 }
 
-/// Sérialise le manifeste en JSON pretty (+ trailing `\n` implicite).
+/// Sérialise le manifeste en JSON pretty **suivi d'un `\n` final** (le format
+/// normatif `.keshbackup` l'exige ; `serde_json::to_vec_pretty` n'en ajoute
+/// pas — review 17-3a Pass 1 F1).
 pub fn build_backup_manifest_json(manifest: &BackupManifest) -> Result<Vec<u8>, AppError> {
-    serde_json::to_vec_pretty(manifest)
-        .map_err(|e| AppError::AdminFullExportFailed(format!("manifest serialize: {e}")))
+    let mut bytes = serde_json::to_vec_pretty(manifest)
+        .map_err(|e| AppError::AdminFullExportFailed(format!("manifest serialize: {e}")))?;
+    bytes.push(b'\n');
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -84,6 +88,11 @@ mod tests {
     fn manifest_json_has_canonical_shape() {
         let manifest = BackupManifest::new("0.1.0".into(), 1, sample_tables());
         let bytes = build_backup_manifest_json(&manifest).unwrap();
+        assert_eq!(
+            bytes.last(),
+            Some(&b'\n'),
+            "manifest doit finir par \\n (format normatif)"
+        );
         let parsed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
         assert_eq!(parsed["formatVersion"], 1);

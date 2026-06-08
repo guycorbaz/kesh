@@ -328,16 +328,22 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn full_export_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
-    let ctx = seed(&pool, "Acme", Role::Comptable).await;
 
-    let resp = app
-        .client
-        .get(app.url("/api/v1/admin/full-export"))
-        .header("Authorization", format!("Bearer {}", ctx.jwt))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 403, "Comptable → 403");
+    // AC1 — les deux rôles non-Admin sont refusés (Comptable ET Consultation).
+    for (label, role) in [
+        ("comptable", Role::Comptable),
+        ("consultation", Role::Consultation),
+    ] {
+        let ctx = seed(&pool, label, role).await;
+        let resp = app
+            .client
+            .get(app.url("/api/v1/admin/full-export"))
+            .header("Authorization", format!("Bearer {}", ctx.jwt))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 403, "{label} → 403");
+    }
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

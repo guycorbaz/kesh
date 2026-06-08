@@ -13,8 +13,8 @@
 //!
 //! Le format NDJSON est figé par la spec parente 17-3 (§Format normatif) :
 //! UTF-8, fin de ligne LF, NULL → `null`, ordre des clés = `column_names`,
-//! `Decimal` → string, `NaiveDateTime` → ISO 8601 `YYYY-MM-DDTHH:MM:SS`,
-//! entiers → nombre JSON.
+//! `Decimal` → string, `NaiveDateTime` → ISO 8601 `YYYY-MM-DDTHH:MM:SS[.mmm]`
+//! (précision sub-seconde préservée — colonnes `DATETIME(3)`), entiers → nombre JSON.
 
 use serde_json::Value;
 use sqlx::{MySqlPool, Row};
@@ -109,6 +109,16 @@ pub async fn export_table(pool: &MySqlPool, table: &str) -> Result<TableExport, 
     }
     let column_names: Vec<String> = columns.iter().map(|(name, _)| name.clone()).collect();
 
+    // Défense en profondeur (review 17-3a Pass 1) : bien que les noms viennent
+    // d'INFORMATION_SCHEMA (source SGBD) et que MariaDB n'autorise pas de
+    // back-quote nu dans un identifiant, on rejette explicitement tout `\`` qui
+    // casserait le back-quoting du SELECT (panne, pas injection).
+    if let Some((name, _)) = columns.iter().find(|(n, _)| n.contains('`')) {
+        return Err(DbError::Invariant(format!(
+            "table '{table}' column '{name}' contains a backtick (unsupported)"
+        )));
+    }
+
     // SELECT explicite (back-quote des identifiants).
     let select_cols = column_names
         .iter()
@@ -202,7 +212,12 @@ fn decode_cell(row: &sqlx::mysql::MySqlRow, idx: usize, data_type: &str) -> Resu
             .try_get_unchecked::<Option<chrono::NaiveDateTime>, _>(idx)
             .map_err(map_db_error)?
         {
-            Some(dt) => Value::String(dt.format("%Y-%m-%dT%H:%M:%S").to_string()),
+            // `%.f` préserve la précision sub-seconde sans trailing zeros et
+            // l'omet si nulle. **Toutes** les colonnes timestamp Kesh sont
+            // `DATETIME(3)` (millisecondes) — un format sec-only tronquerait
+            // (review 17-3a Pass 1, fidélité backup). Round-trip : MariaDB
+            // reparse `…:SS.mmm` ou `…:SS` indifféremment.
+            Some(dt) => Value::String(dt.format("%Y-%m-%dT%H:%M:%S%.f").to_string()),
             None => Value::Null,
         },
         // varchar, char, text*, enum, set, et JSON (reporté `longtext` par
@@ -318,9 +333,13 @@ mod tests {
         assert!(v["id"].is_i64(), "id doit être un entier JSON");
         assert_eq!(v["name"], "Acme");
         assert!(v["ide_number"].is_null(), "ide_number NULL → null JSON");
-        // created_at : DATETIME → ISO 8601 'YYYY-MM-DDTHH:MM:SS'
+        // created_at : DATETIME(3) → ISO 8601 'YYYY-MM-DDTHH:MM:SS[.mmm]'
+        // (précision sub-seconde préservée). Doit reparse en NaiveDateTime.
         let created = v["created_at"].as_str().expect("created_at string");
-        assert_eq!(created.len(), 19, "datetime ISO sec-precision: {created}");
         assert_eq!(&created[10..11], "T", "séparateur T: {created}");
+        assert!(
+            chrono::NaiveDateTime::parse_from_str(created, "%Y-%m-%dT%H:%M:%S%.f").is_ok(),
+            "created_at doit reparse (round-trip) : {created}"
+        );
     }
 }
