@@ -4,6 +4,7 @@
 //! bibliothèque (`lib.rs`) pour permettre aux tests d'intégration
 //! d'importer `build_router` et les helpers de configuration.
 
+pub mod admin_backup;
 pub mod audit;
 pub mod auth;
 pub mod config;
@@ -121,6 +122,8 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/company/invoice-settings",
             put(routes::company_invoice_settings::update_invoice_settings),
         )
+        // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
+        .route("/api/v1/admin/full-export", get(routes::admin::full_export))
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
         ));

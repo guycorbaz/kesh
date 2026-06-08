@@ -88,7 +88,11 @@ pub struct RevokeApiKeyRequest {
 
 /// DC6 — refuse l'accès aux routes de gestion si la requête est authentifiée
 /// par PAT (même `read-write`).
-fn ensure_not_pat(current_user: &CurrentUser) -> Result<(), AppError> {
+///
+/// Story 17-3a — promu `pub(crate)` : réutilisé par les endpoints d'infra
+/// destructeurs (`admin/full-export`, et 17-3c `full-import`) qui doivent eux
+/// aussi être interdits aux clés PAT (AC2).
+pub(crate) fn ensure_not_pat(current_user: &CurrentUser) -> Result<(), AppError> {
     if current_user.api_key_id.is_some() {
         return Err(AppError::ApiKeyManagementForbidden);
     }

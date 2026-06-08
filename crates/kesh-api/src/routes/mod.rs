@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod admin;
 pub mod api_keys;
 pub mod auth;
 pub mod bank_accounts;

@@ -856,6 +856,7 @@ export-global-content-includes = Der Export enthält: Kontenplan, Geschäftsjahr
 export-global-content-excludes = Nicht enthalten: Benutzer (PII + Passwörter), Session-Tokens, internes Audit-Log, Onboarding-Status (Sicherheits- und technische Gründe).
 export-global-souverainete-note = Ihre Daten gehören Ihnen. Kesh erstellt keine Kopien dieses Exports auf seinen Servern.
 error-global-export-failed = Der globale Export konnte nicht erstellt werden. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.
+error-admin-full-export-failed = Der vollständige Export der Installation konnte nicht erstellt werden. Versuchen Sie es in Kürze erneut; wenn das Problem weiterhin besteht, wenden Sie sich an den Support.
 
 # Story v011-5 — Self-Service Onboarding (12 UI-Schlüssel + 2 Fehlerschlüssel)
 error-setup-required = Erstkonfiguration erforderlich. Administratorkonto über /setup erstellen.

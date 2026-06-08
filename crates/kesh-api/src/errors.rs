@@ -236,6 +236,13 @@ pub enum AppError {
     #[error("Échec génération export global : {0}")]
     GlobalExportFailed(String),
 
+    /// Story 17-3a — échec de génération du `.keshbackup` (export complet
+    /// d'installation : sérialisation NDJSON des 22 tables, SHA-256, ZIP,
+    /// panne pool DB, IO fichier temporaire). HTTP 500, i18n key
+    /// `error-admin-full-export-failed`. Détail loggé, jamais exposé en HTTP body.
+    #[error("Échec génération export installation : {0}")]
+    AdminFullExportFailed(String),
+
     // --- Story 5.4 — Échéancier factures ---
     /// Dépassement du plafond d'export (> 10'000 lignes en v0.1) — 400.
     /// Code client dédié pour permettre au frontend de proposer un raffinage
@@ -882,6 +889,19 @@ impl IntoResponse for AppError {
                     &t(
                         "error-global-export-failed",
                         "Échec de la génération de l'export global. Réessayez dans quelques instants.",
+                    ),
+                )
+            }
+
+            // Story 17-3a — export complet d'installation (.keshbackup).
+            AppError::AdminFullExportFailed(detail) => {
+                tracing::error!("admin full export failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ADMIN_FULL_EXPORT_FAILED",
+                    &t(
+                        "error-admin-full-export-failed",
+                        "Échec de la génération de l'export d'installation. Réessayez dans quelques instants.",
                     ),
                 )
             }

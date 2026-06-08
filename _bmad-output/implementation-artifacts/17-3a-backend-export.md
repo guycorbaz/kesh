@@ -1,6 +1,6 @@
 # Story 17.3a: Backend export complet d'installation (`GET /api/v1/admin/full-export`)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Story-zéro de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella `17-3-export-import-installation.md` convergée au validate en 5 passes (Sonnet→Haiku→Opus→Sonnet→Haiku, trend 21→16→10→3→0, ~50 patches, dont catch-architectural Opus P3). Contenu déjà adversarialement revu. Re-validate optionnel. -->
 <!-- POSE LE FORMAT `.keshbackup` consommé par 17-3b..f. Bloque 17-3b (UI export) et 17-3c (backend import). -->
@@ -34,13 +34,13 @@ so that **je dispose d'un artefact de sauvegarde/migration complet, dont le form
 
 ## Tasks / Subtasks
 
-- [ ] **T-A1** Module `crates/kesh-api/src/admin_backup/` (`mod.rs` + `format.rs` + `manifest.rs`). Définir `BackupManifest`/`TableMeta` (schéma AC4). **`build_backup_manifest_json(&BackupManifest) -> Result<Vec<u8>, AppError>`** (NE PAS modifier `exports::metadata::build_metadata_json`, signature per-company incompatible). **Cœur factorisé `build_keshbackup(pool) -> Result<…, AppError>` SANS audit** (réutilisé en 17-3c par le backup pré-import). Conteneur ZIP via crate `zip` v2 (réutiliser `exports::global::build_zip`). (AC: 3, 4)
-- [ ] **T-A2** Sérialiser les **22 tables** en NDJSON (installation entière, pas de scope company) avec **liste de colonnes explicite excluant les colonnes générées** (`active_uniq` VIRTUAL exclue). Hash NDJSON par table via `sha256_hex` (`exports/metadata.rs`). **Promouvoir la liste canonique de tables** : **déplacer** (move, pas copy) `TABLES_TO_TRUNCATE` de `crates/kesh-db/src/test_fixtures.rs:297` vers **`crates/kesh-db/src/backup.rs` en `pub`** ; `test_fixtures.rs` **réexporte** la constante canonique ; déplacer/adapter le test de synchro `truncate_all_inventory_matches_schema` (`test_fixtures.rs:711`) pour valider la constante de `backup.rs`. (AC: 3, 4, 5)
-- [ ] **T-A3** Handler `full_export` en **GET** (`crates/kesh-api/src/routes/admin.rs`, nouveau module) : appelle `build_keshbackup`, `Content-Type: application/octet-stream` + `Content-Disposition` (réutiliser `util::build_content_disposition`). (AC: 1)
-- [ ] **T-A4** Mémoire/streaming (DC8) : in-memory sous `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50, bornes [1,2048], `config.rs` pattern `bank_import_max_mib`), au-delà fichier temp `tokio::fs` + `Body::from_stream` (`tokio_util::io::ReaderStream`). **Ajouter `tokio-util` 0.7 à `crates/kesh-api/Cargo.toml`** (absent actuellement). (AC: 7)
-- [ ] **T-A5** RBAC + anti-PAT : monter la route GET dans `admin_routes` (`lib.rs:101-127`, `route_layer(require_admin_role)` déjà câblé). **Promouvoir `ensure_not_pat` en `pub(crate)`** dans `routes/api_keys.rs:91` (signature `fn ensure_not_pat(&CurrentUser) -> Result<(), AppError>` : si `api_key_id.is_some()` → `Err(AppError::ApiKeyManagementForbidden)`) ; l'appeler en tête du handler. (AC: 1, 2)
-- [ ] **T-A6** Audit `admin.full_export` via `NewAuditLogEntry::from_current_user` + `audit_log::insert_in_tx`, **dans le handler** (pas dans `build_keshbackup`). (AC: 6)
-- [ ] **T-A7** `AppError` variant(s) (`AdminFullExportFailed` ou réutiliser `GlobalExportFailed`) + codes i18n (`errors.rs`). Doc `///` avertissant que le `.keshbackup` est un secret (AC8). **Tests** : unit (manifest shape `formatVersion`/`columnNames`/`instanceId`, sha256 round-trip, **exclusion de la colonne générée**, structure ZIP) + E2E/intégration (`crates/kesh-api/tests/admin_full_export_e2e.rs` : 200+ZIP valide, RBAC non-Admin 403, anti-PAT 403, structure 22 `.ndjson`+manifest+`files/`, intégrité SHA, audit inséré). (AC: 1, 2, 3, 4, 5, 6, 8)
+- [x] **T-A1** Module `crates/kesh-api/src/admin_backup/` (`mod.rs` + `format.rs` + `manifest.rs`). Définir `BackupManifest`/`TableMeta` (schéma AC4). **`build_backup_manifest_json(&BackupManifest) -> Result<Vec<u8>, AppError>`** (NE PAS modifier `exports::metadata::build_metadata_json`, signature per-company incompatible). **Cœur factorisé `build_keshbackup(pool) -> Result<…, AppError>` SANS audit** (réutilisé en 17-3c par le backup pré-import). Conteneur ZIP via crate `zip` v2 (réutiliser `exports::global::build_zip`). (AC: 3, 4)
+- [x] **T-A2** Sérialiser les **22 tables** en NDJSON (installation entière, pas de scope company) avec **liste de colonnes explicite excluant les colonnes générées** (`active_uniq` VIRTUAL exclue). Hash NDJSON par table via `sha256_hex` (`exports/metadata.rs`). **Promouvoir la liste canonique de tables** : **déplacer** (move, pas copy) `TABLES_TO_TRUNCATE` de `crates/kesh-db/src/test_fixtures.rs:297` vers **`crates/kesh-db/src/backup.rs` en `pub`** ; `test_fixtures.rs` **réexporte** la constante canonique ; déplacer/adapter le test de synchro `truncate_all_inventory_matches_schema` (`test_fixtures.rs:711`) pour valider la constante de `backup.rs`. (AC: 3, 4, 5)
+- [x] **T-A3** Handler `full_export` en **GET** (`crates/kesh-api/src/routes/admin.rs`, nouveau module) : appelle `build_keshbackup`, `Content-Type: application/octet-stream` + `Content-Disposition` (réutiliser `util::build_content_disposition`). (AC: 1)
+- [x] **T-A4** Mémoire/streaming (DC8) : in-memory sous `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50, bornes [1,2048], `config.rs` pattern `bank_import_max_mib`), au-delà fichier temp `tokio::fs` + `Body::from_stream` (`tokio_util::io::ReaderStream`). **Ajouter `tokio-util` 0.7 à `crates/kesh-api/Cargo.toml`** (absent actuellement). (AC: 7)
+- [x] **T-A5** RBAC + anti-PAT : monter la route GET dans `admin_routes` (`lib.rs:101-127`, `route_layer(require_admin_role)` déjà câblé). **Promouvoir `ensure_not_pat` en `pub(crate)`** dans `routes/api_keys.rs:91` (signature `fn ensure_not_pat(&CurrentUser) -> Result<(), AppError>` : si `api_key_id.is_some()` → `Err(AppError::ApiKeyManagementForbidden)`) ; l'appeler en tête du handler. (AC: 1, 2)
+- [x] **T-A6** Audit `admin.full_export` via `NewAuditLogEntry::from_current_user` + `audit_log::insert_in_tx`, **dans le handler** (pas dans `build_keshbackup`). (AC: 6)
+- [x] **T-A7** `AppError` variant(s) (`AdminFullExportFailed` ou réutiliser `GlobalExportFailed`) + codes i18n (`errors.rs`). Doc `///` avertissant que le `.keshbackup` est un secret (AC8). **Tests** : unit (manifest shape `formatVersion`/`columnNames`/`instanceId`, sha256 round-trip, **exclusion de la colonne générée**, structure ZIP) + E2E/intégration (`crates/kesh-api/tests/admin_full_export_e2e.rs` : 200+ZIP valide, RBAC non-Admin 403, anti-PAT 403, structure 22 `.ndjson`+manifest+`files/`, intégrité SHA, audit inséré). (AC: 1, 2, 3, 4, 5, 6, 8)
 
 ## Dev Notes
 
@@ -162,16 +162,47 @@ refresh_tokens, onboarding_state, users, companies
 
 ### Agent Model Used
 
-_(à compléter par dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — single-pass orchestré T-A1→T-A7.
 
 ### Debug Log References
 
+Quality gate vert (DATABASE_URL local MariaDB) : `cargo fmt --all --check` OK, `clippy --workspace --all-targets -D warnings` 0 warning, tests ciblés verts (kesh-db backup 3/3 + manifest unit + admin_full_export_e2e **7/7**), `cargo test --workspace -j1 --test-threads=1` (non-régression) — voir Completion Notes.
+
 ### Completion Notes List
 
+- **Sérialiseur générique dynamique** (kesh-db `backup::export_table`) plutôt que 22 sérialiseurs typés : énumère les colonnes non générées via `INFORMATION_SCHEMA.COLUMNS` (`EXTRA NOT LIKE '%GENERATED%'`), `SELECT` explicite back-quoté, décode chaque cellule par `DATA_TYPE` avec `try_get_unchecked` (entiers→nombre, decimal→string, date/datetime→ISO, reste→string, NULL→null). Placé en **kesh-db** (features sqlx `chrono`/`rust_decimal` présentes + co-localisé avec la constante de tables). NDJSON construit manuellement pour **préserver l'ordre des colonnes** (déterminisme SHA).
+- **Colonnes générées exclues** : `reconciliation_rules.active_uniq` (VIRTUAL) absente de `columnNames` et du NDJSON (testé). Confirmé : aucune colonne BLOB/TIME/DOUBLE/TIMESTAMP réelle ; colonnes `JSON` reportées `longtext` par MariaDB → branche string (round-trip exact).
+- **Promotion `TABLES_TO_TRUNCATE`** : déplacée (move) de `test_fixtures.rs` vers `kesh-db/src/backup.rs` en `pub` ; `test_fixtures` la réexporte (`pub(crate) use`). Test de synchro `backup_inventory_matches_schema` déplacé dans `backup.rs` (vert).
+- **DC8 (streaming)** : assemblage **in-memory** (Vec<u8>) ; le handler spille vers fichier temporaire (`std::env::temp_dir`, unlink-après-ouverture) + `Body::from_stream` (`tokio-util` ReaderStream) si la taille dépasse `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50, [1,2048]). **Limitation documentée** : l'assemblage reste in-memory (peak ~ taille archive, borné par la taille d'install — 99 % PME < 50 Mo per DC8) ; le streaming réduit le buffer de réponse pour les grosses installs. Le row-streaming zéro-copie (jamais l'archive entière en RAM) est une optimisation v0.3 documentée. Test `full_export_streaming_path_delivers_valid_zip` (plafond 0) couvre le chemin streaming.
+- **Anti-PAT** : `ensure_not_pat` promu `pub(crate)`, appelé en tête du handler (testé : PAT read-write → 403 `API_KEY_MANAGEMENT_FORBIDDEN`).
+- **Audit** émis dans le handler (best-effort), `build_keshbackup` reste sans audit (réutilisable par le backup pré-import 17-3c).
+- **Déviation mineure vs spec** : le fichier de logique cœur est `admin_backup/export.rs` (pas `format.rs` mentionné en T-A1) ; `manifest.rs` créé comme prévu. Aucun impact fonctionnel.
+- i18n : clé `error-admin-full-export-failed` ajoutée aux 4 locales FR/DE/IT/EN.
+
 ### File List
+
+**Nouveaux fichiers :**
+- `crates/kesh-db/src/backup.rs` — constante `TABLES_TO_TRUNCATE` (promue) + sérialiseur générique `export_table` + `read_min_required`/`read_instance_id` + tests.
+- `crates/kesh-api/src/admin_backup/mod.rs` — module + avertissement secret.
+- `crates/kesh-api/src/admin_backup/manifest.rs` — `BackupManifest`/`BackupTableMeta` + `build_backup_manifest_json` + tests.
+- `crates/kesh-api/src/admin_backup/export.rs` — cœur `build_keshbackup` (sans audit).
+- `crates/kesh-api/src/routes/admin.rs` — handler `full_export` (GET, anti-PAT, audit, streaming).
+- `crates/kesh-api/tests/admin_full_export_e2e.rs` — 7 tests E2E.
+
+**Fichiers modifiés :**
+- `crates/kesh-db/src/lib.rs` — `pub mod backup;`.
+- `crates/kesh-db/src/test_fixtures.rs` — ré-export `TABLES_TO_TRUNCATE` + retrait du test de synchro (déplacé).
+- `crates/kesh-api/src/lib.rs` — `pub mod admin_backup;` + route `GET /api/v1/admin/full-export` dans `admin_routes`.
+- `crates/kesh-api/src/routes/mod.rs` — `pub mod admin;`.
+- `crates/kesh-api/src/routes/api_keys.rs` — `ensure_not_pat` → `pub(crate)`.
+- `crates/kesh-api/src/errors.rs` — variant `AdminFullExportFailed` + arm 500.
+- `crates/kesh-api/src/config.rs` — champ `admin_export_inmem_mib` + parsing `KESH_ADMIN_EXPORT_INMEM_MB` + 2 builders test.
+- `crates/kesh-api/Cargo.toml` — dépendance `tokio-util` 0.7 (feature `io`).
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` — clé `error-admin-full-export-failed`.
 
 ### Change Log
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
 | 2026-06-08 | create-story (sous-story) | Opus 4.8 | Story-zéro 17-3a extraite de l'umbrella 17-3 convergée 5 passes (contenu déjà adversarialement revu, dont catch-architectural Opus P3). Scope : module `admin_backup/` + `build_keshbackup` (sans audit) + `build_backup_manifest_json` + `GET /admin/full-export` (Admin + anti-PAT) + streaming DC8 + audit + promotion `TABLES_TO_TRUNCATE` (move-not-copy) + dep `tokio-util`. Pose le format `.keshbackup` (§normative). AC1-8. Bloque 17-3b/c. Re-validate optionnel. Prochaine : `bmad-dev-story 17-3a` (Opus). |
+| 2026-06-08 | dev-story | Opus 4.8 | Implémentation single-pass T-A1→T-A7. Sérialiseur générique dynamique (kesh-db `backup::export_table`, décodage par DATA_TYPE), promotion `TABLES_TO_TRUNCATE`, manifest `.keshbackup`, `GET /admin/full-export` (anti-PAT + audit), streaming DC8 (temp-file + ReaderStream au-delà du plafond). 6 nouveaux fichiers + 9 modifiés + clé i18n ×4. Quality gate vert : fmt OK, clippy 0 warning, **kesh-db backup 3/3 + manifest unit + E2E admin_full_export 7/7**, test workspace non-régression. Limitation documentée : assemblage in-memory (row-streaming v0.3). Status review. Prochaine : `bmad-code-review 17-3a` (Sonnet 4.6). |

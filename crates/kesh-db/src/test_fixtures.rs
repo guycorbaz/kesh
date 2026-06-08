@@ -294,30 +294,10 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
 ///   initiale `('0.1.0', '0.1.0')`). Truncer effacerait la row, ce qui
 ///   ferait warn `rows_affected != 1` sur le premier `record_boot_version`
 ///   suivant sans casser le boot. Cohérent traitement `_sqlx_migrations`.
-pub(crate) const TABLES_TO_TRUNCATE: &[&str] = &[
-    "invoice_lines",
-    "journal_entry_lines",
-    "invoices",
-    "invoice_number_sequences",
-    "journal_entries",
-    "audit_log",
-    "api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).
-    "company_invoice_settings",
-    "bank_transactions", // Story 8-1b — enfant de bank_imports + bank_accounts.
-    "bank_imports",      // Story 8-1b — enfant de bank_accounts + companies.
-    "bank_profiles",     // Story 8-2 — enfant de companies (CASCADE).
-    "reconciliation_rules", // Story 8-5b — enfant de companies + accounts (RESTRICT).
-    "bank_accounts",
-    "accounts", // FK self-ref via parent_id
-    "products",
-    "contacts",
-    "fiscal_years",
-    "vat_rates", // Story 7.2 (KF-003) — table enfant de companies (FK fk_vat_rates_company), aucune table ne référence vat_rates.
-    "refresh_tokens",
-    "onboarding_state",
-    "users",
-    "companies",
-];
+// Story 17-3a — la liste canonique des tables a été promue vers
+// `crate::backup::TABLES_TO_TRUNCATE` (source de vérité unique, réutilisée par
+// l'export d'installation). On la ré-exporte ici pour `truncate_all`.
+pub(crate) use crate::backup::TABLES_TO_TRUNCATE;
 
 /// Truncate toutes les tables (sauf `_sqlx_migrations`) dans l'ordre
 /// FK enfants → parents, avec `FOREIGN_KEY_CHECKS = 0` pour bypasser
@@ -703,41 +683,7 @@ mod tests {
         assert_eq!(vat_count, 4, "4 vat_rates expected");
     }
 
-    /// Code review P5 : garantit que `TABLES_TO_TRUNCATE` reste synchro
-    /// avec les migrations. Si une future migration ajoute une table,
-    /// ce test échoue immédiatement avec la liste du delta, forçant la
-    /// mise à jour de la const avant merge.
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
-    async fn truncate_all_inventory_matches_schema(pool: MySqlPool) {
-        // `sqlx::test` crée une DB éphémère par test — DATABASE() renvoie
-        // le nom de cette DB et non `kesh`. Cela capture aussi les tables
-        // ajoutées par les migrations dans l'exact contexte du test.
-        // Exclut les tables système `_sqlx_migrations` (tracking sqlx) et
-        // `_kesh_version` (Story 10-2 metadata singleton-row) — toutes deux
-        // exclues du TABLES_TO_TRUNCATE par design.
-        let db_tables: Vec<String> = sqlx::query_scalar(
-            "SELECT TABLE_NAME FROM information_schema.TABLES \
-             WHERE TABLE_SCHEMA = DATABASE() \
-               AND TABLE_NAME NOT IN ('_sqlx_migrations', '_kesh_version') \
-             ORDER BY TABLE_NAME",
-        )
-        .fetch_all(&pool)
-        .await
-        .expect("information_schema query");
-
-        let mut hardcoded: Vec<&str> = TABLES_TO_TRUNCATE.to_vec();
-        hardcoded.sort();
-        let mut from_db: Vec<String> = db_tables.clone();
-        from_db.sort();
-
-        let hardcoded_str: Vec<String> = hardcoded.iter().map(|s| s.to_string()).collect();
-
-        assert_eq!(
-            hardcoded_str, from_db,
-            "\nTABLES_TO_TRUNCATE désynchronisé avec information_schema :\n\
-             - tables DB : {from_db:?}\n\
-             - hardcoded : {hardcoded_str:?}\n\
-             → mettre à jour `TABLES_TO_TRUNCATE` dans `crates/kesh-db/src/test_fixtures.rs`"
-        );
-    }
+    // Story 17-3a — le test de synchro `TABLES_TO_TRUNCATE` ↔ schéma a été
+    // déplacé vers `crate::backup::tests::backup_inventory_matches_schema`
+    // (la const vit désormais dans `backup.rs`).
 }
