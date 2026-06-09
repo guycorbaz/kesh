@@ -1,6 +1,6 @@
 # Story 17.3b: UI admin export complet d'installation (`/admin/backup`)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella `17-3-export-import-installation.md` (Partie B), convergée au validate en 5 passes. Contenu déjà adversarialement revu. Re-validate optionnel. -->
 <!-- CONSOMME `GET /api/v1/admin/full-export` posé par 17-3a (DONE, `fb43669`). Ne dépend QUE de 17-3a (pas de 17-3c). Parallélisable. Première route `(app)/admin/` côté front. -->
@@ -39,10 +39,10 @@ so that **je puisse déclencher une sauvegarde complète depuis l'interface web,
 
 ## Tasks / Subtasks
 
-- [ ] **T-B1** Feature front `src/lib/features/admin-backup/admin-backup.api.ts` : fonction `downloadFullExport(): Promise<void>` via `apiClient.getBlob('/api/v1/admin/full-export')` → `response.blob()` → filename depuis `Content-Disposition` → `triggerDownload`. **DC-B1 (réutilisation download)** : voir Dev Notes — dupliquer localement `parseContentDispositionFilename` + `triggerDownload` (~30 lignes, scope-safety, zéro régression sur 9-2b), OU réutiliser via extraction shared-util si le dev préfère (tracé comme cleanup v0.2). (AC: 8)
-- [ ] **T-B2** Page `src/routes/(app)/admin/backup/+page.svelte` (runes Svelte 5 : `$state` pour `exporting`/`errorMsg`, `$derived` au besoin) : bouton « Exporter toute l'installation », état chargement (désactivé + « Export en cours… »), **guard ré-entrance** (`if (exporting) return;` first-line), gestion d'erreur typée (message lisible depuis `ApiError`), succès. **Header de page** expliquant brièvement la différence avec l'export per-company. Import `i18nMsg` depuis `$lib/shared/utils/i18n.svelte`. (AC: 8, 9, 28)
-- [ ] **T-B3** Sidebar : ajouter l'item à `navGroups` groupe `administration` → `adminOnly` (`src/routes/(app)/+layout.svelte`), forme `{ i18nKey: 'nav-admin-backup', fallback: 'Sauvegarde complète', href: '/admin/backup' }`. **Vérifier que le rendu de la boucle `adminOnly` (≈ ligne 304-305) gère la forme `i18nKey`** (les `items` principaux la gèrent ; les `adminOnly` actuels sont en `label:` hardcodé FR — FINDING-7) ; sinon, adapter le rendu pour supporter `i18nKey` (utiliser le même helper que les items principaux). Clé `nav-admin-backup` + i18n **FR/DE/IT/EN** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`). (AC: 10, 27)
-- [ ] **T-B4** Tests : **unit composant** (vitest) — bouton rend, clic appelle `downloadFullExport` (mocké), état chargement désactive le bouton + guard ré-entrance (2e clic ne relance pas), erreur affichée. Test unit `admin-backup.api.ts` (`parseContentDispositionFilename` si dupliqué localement : RFC 5987 + 6266 + fallback). **`npm run lint-i18n-ownership` PASS.** *(E2E Playwright optionnel — non bloquant ; un test « bouton visible Admin / déclenche download » peut être ajouté en 17-3e ou ici si trivial.)* (AC: 27)
+- [x] **T-B1** Feature front `src/lib/features/admin-backup/admin-backup.api.ts` : fonction `downloadFullExport(): Promise<void>` via `apiClient.getBlob('/api/v1/admin/full-export')` → `response.blob()` → filename depuis `Content-Disposition` → `triggerDownload`. **DC-B1 (réutilisation download)** : voir Dev Notes — dupliquer localement `parseContentDispositionFilename` + `triggerDownload` (~30 lignes, scope-safety, zéro régression sur 9-2b), OU réutiliser via extraction shared-util si le dev préfère (tracé comme cleanup v0.2). (AC: 8)
+- [x] **T-B2** Page `src/routes/(app)/admin/backup/+page.svelte` (runes Svelte 5 : `$state` pour `exporting`/`errorMsg`, `$derived` au besoin) : bouton « Exporter toute l'installation », état chargement (désactivé + « Export en cours… »), **guard ré-entrance** (`if (exporting) return;` first-line), gestion d'erreur typée (message lisible depuis `ApiError`), succès. **Header de page** expliquant brièvement la différence avec l'export per-company. Import `i18nMsg` depuis `$lib/shared/utils/i18n.svelte`. (AC: 8, 9, 28)
+- [x] **T-B3** Sidebar : ajouter l'item à `navGroups` groupe `administration` → `adminOnly` (`src/routes/(app)/+layout.svelte`), forme `{ i18nKey: 'nav-admin-backup', fallback: 'Sauvegarde complète', href: '/admin/backup' }`. **Vérifier que le rendu de la boucle `adminOnly` (≈ ligne 304-305) gère la forme `i18nKey`** (les `items` principaux la gèrent ; les `adminOnly` actuels sont en `label:` hardcodé FR — FINDING-7) ; sinon, adapter le rendu pour supporter `i18nKey` (utiliser le même helper que les items principaux). Clé `nav-admin-backup` + i18n **FR/DE/IT/EN** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`). (AC: 10, 27)
+- [x] **T-B4** Tests : **unit composant** (vitest) — bouton rend, clic appelle `downloadFullExport` (mocké), état chargement désactive le bouton + guard ré-entrance (2e clic ne relance pas), erreur affichée. Test unit `admin-backup.api.ts` (`parseContentDispositionFilename` si dupliqué localement : RFC 5987 + 6266 + fallback). **`npm run lint-i18n-ownership` PASS.** *(E2E Playwright optionnel — non bloquant ; un test « bouton visible Admin / déclenche download » peut être ajouté en 17-3e ou ici si trivial.)* (AC: 27)
 
 ## Dev Notes
 
@@ -105,16 +105,38 @@ so that **je puisse déclencher une sauvegarde complète depuis l'interface web,
 
 ### Agent Model Used
 
-_(à compléter par dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — single-pass orchestré T-B1→T-B4.
 
 ### Debug Log References
 
+Quality gate frontend (Test Locally First) : `npm run check` **0 erreurs** (25 warnings pré-existants, aucun dans admin-backup), `npm run lint-i18n-ownership` **PASS**, `npm run test:unit` **33 fichiers / 287 tests** (dont 11 nouveaux admin-backup), `npm run build` ✓. E2E `sidebar-navigation.spec.ts` vérifié non-impacté (navigue 5 items non-adminOnly, pas de compte total).
+
 ### Completion Notes List
 
+- **Architecture** : logique + UI extraites dans le composant feature `lib/features/admin-backup/AdminBackupPanel.svelte` (testable + ownership i18n) ; la route `(app)/admin/backup/+page.svelte` est un thin wrapper qui le rend. Première route sous `(app)/admin/` côté front.
+- **`admin-backup.api.ts`** : `downloadFullExport()` via `apiClient.getBlob('/api/v1/admin/full-export')` + parse `Content-Disposition` + `triggerDownload`. DC-B1 : `parseContentDispositionFilename` + `triggerDownload` **dupliqués localement** (pas d'import cross-feature, zéro régression 9-2b ; extraction shared-util tracée v0.2/Epic 15).
+- **`AdminBackupPanel.svelte`** : `$state` `exporting`/`errorMsg`, **guard ré-entrance** (`if (exporting) return`), bouton désactivé + libellé « Export en cours… » pendant l'export, succès → `toast.success`, erreur → encart `role="alert"` + `toast.error` (message `ApiError` ou fallback). `i18nMsg` importé de `$lib/shared/utils/i18n.svelte` (pas cross-feature). HTTP-LAN safe (`URL.createObjectURL`, aucune API secure-context).
+- **Sidebar** : item `adminOnly` `{ i18nKey: 'nav-admin-backup', ... href: '/admin/backup' }` — rendu via `getItemLabel` existant (gère déjà `i18nKey`, aucune modif de rendu nécessaire). Distinct du lien `/export` per-company (9-2b).
+- **i18n** : clés renommées `backup-*` → **`admin-backup-*`** (le lint exige préfixe = nom du dossier feature `admin-backup`) + `nav-admin-backup`, **FR/DE/IT/EN** (8 clés ×4 locales).
+- **Tests** : `admin-backup.api.test.ts` (parseContentDispositionFilename RFC 5987/6266/fallback + downloadFullExport happy/403) + `AdminBackupPanel.test.ts` (rend, clic→downloadFullExport, état désactivé + guard ré-entrance, erreur→encart+toast). 11 tests verts.
+- **Backend** : aucun changement (consomme l'endpoint 17-3a). Aucune migration.
+
 ### File List
+
+**Nouveaux fichiers :**
+- `frontend/src/lib/features/admin-backup/admin-backup.api.ts`
+- `frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte`
+- `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts`
+- `frontend/src/lib/features/admin-backup/AdminBackupPanel.test.ts`
+- `frontend/src/routes/(app)/admin/backup/+page.svelte`
+
+**Fichiers modifiés :**
+- `frontend/src/routes/(app)/+layout.svelte` — item sidebar `administration.adminOnly`.
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` — 8 clés (`nav-admin-backup` + `admin-backup-*`).
 
 ### Change Log
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
+| 2026-06-09 | dev-story | Opus 4.8 | Implémentation single-pass T-B1→T-B4. Feature `lib/features/admin-backup/` (`admin-backup.api.ts` downloadFullExport + `AdminBackupPanel.svelte` testable) + route thin `(app)/admin/backup/+page.svelte` + item sidebar `adminOnly` (i18nKey, rendu via getItemLabel existant) + 8 clés i18n ×4 locales (renommées `admin-backup-*` pour satisfaire le lint = préfixe dossier feature). DC-B1 download dupliqué localement (pas d'import cross-feature). 5 nouveaux + 5 modifiés fichiers. **Quality gate** : check 0 erreurs, lint-i18n-ownership PASS, test:unit 33/33 fichiers 287 tests (11 nouveaux), build ✓. E2E sidebar non-impacté. Backend inchangé. Status review. Prochaine : `bmad-code-review 17-3b` (Sonnet 4.6, LLM différent). |
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3b (UI export) extraite de l'umbrella Partie B (AC8-10). Ancrée sur les patterns frontend réels : `apiClient.getBlob:527`, pattern download `exports.api.ts` (triggerDownload + parseContentDispositionFilename), sidebar navGroups `administration.adminOnly`, page de réf `settings/api-keys`. Décisions : DC-B1 dupliquer download localement (scope-safety, extraction shared-util tracée v0.2) ; DC-B2 distinction stricte vs export per-company 9-2b ; clé sidebar `nav-admin-backup` i18nKey (vérifier rendu adminOnly). T-B1..T-B4. Frontend pur, aucun backend. Re-validate optionnel. Prochaine : `bmad-dev-story 17-3b`. |

@@ -902,6 +902,15 @@ reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
 
 # Story 9-2b — Export global ZIP (souveraineté des données) — 12 clés
 nav-export-global = Export global
+# Story 17-3b — sauvegarde complète d'installation (.keshbackup, Admin)
+nav-admin-backup = Sauvegarde complète
+admin-backup-page-title = Sauvegarde complète de l'installation
+admin-backup-page-description = Télécharge l'intégralité de l'installation (toutes les sociétés, les utilisateurs et les données système) dans un fichier .keshbackup unique, pour migrer ou sauvegarder. À distinguer de l'export global d'une seule société.
+admin-backup-action-export = Exporter toute l'installation
+admin-backup-action-exporting = Export en cours…
+admin-backup-toast-success = Sauvegarde de l'installation téléchargée.
+admin-backup-error-generic = Échec de l'export de l'installation. Réessayez dans quelques instants.
+admin-backup-page-hint-secret = Le fichier .keshbackup contient des données sensibles (identifiants, jetons). Conservez-le en lieu sûr.
 export-global-title = Export global de vos données
 export-global-description = Exportez toutes vos données comptables (comptes, écritures, contacts, factures, transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver, migrer vers un autre logiciel, ou conserver vos données 10 ans (Swiss CO Art. 958f).
 export-global-button = Lancer l'export

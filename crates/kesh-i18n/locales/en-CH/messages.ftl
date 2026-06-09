@@ -845,6 +845,15 @@ reports-pdf-empty-message = No entries in the selected period.
 
 # Story 9-2b — Global ZIP export (data sovereignty) — 12 keys
 nav-export-global = Global export
+# Story 17-3b — full installation backup (.keshbackup, Admin)
+nav-admin-backup = Full backup
+admin-backup-page-title = Full installation backup
+admin-backup-page-description = Downloads the entire installation (all companies, users and system data) into a single .keshbackup file, for migration or backup. Distinct from a single company's global export.
+admin-backup-action-export = Export the entire installation
+admin-backup-action-exporting = Exporting…
+admin-backup-toast-success = Installation backup downloaded.
+admin-backup-error-generic = Installation export failed. Please try again shortly.
+admin-backup-page-hint-secret = The .keshbackup file contains sensitive data (credentials, tokens). Keep it in a safe place.
 export-global-title = Global export of your data
 export-global-description = Export all your accounting data (accounts, journal entries, contacts, invoices, bank transactions) in CSV format inside a ZIP file. Use this export to archive, migrate to another software, or keep your data for 10 years (Swiss CO Art. 958f).
 export-global-button = Start export

@@ -93,6 +93,14 @@
 			adminOnly: [
 				{ label: 'Utilisateurs', href: '/users' },
 				{ label: 'Facturation', href: '/settings/invoicing' },
+				// Story 17-3b — sauvegarde complète de l'installation (.keshbackup).
+				// i18nKey (rendu via getItemLabel, AC10/AC27). Distinct de
+				// l'« Export global » per-company (/export, Story 9-2b).
+				{
+					i18nKey: 'nav-admin-backup',
+					fallback: 'Sauvegarde complète',
+					href: '/admin/backup',
+				},
 			],
 		},
 	];

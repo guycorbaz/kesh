@@ -845,6 +845,15 @@ reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
 
 # Story 9-2b — Globaler ZIP-Export (Datensouveränität) — 12 Schlüssel
 nav-export-global = Globaler Export
+# Story 17-3b — vollständige Installationssicherung (.keshbackup, Admin)
+nav-admin-backup = Vollständige Sicherung
+admin-backup-page-title = Vollständige Sicherung der Installation
+admin-backup-page-description = Lädt die gesamte Installation (alle Firmen, Benutzer und Systemdaten) in eine einzige .keshbackup-Datei zur Migration oder Sicherung herunter. Zu unterscheiden vom globalen Export einer einzelnen Firma.
+admin-backup-action-export = Gesamte Installation exportieren
+admin-backup-action-exporting = Export läuft…
+admin-backup-toast-success = Installationssicherung heruntergeladen.
+admin-backup-error-generic = Export der Installation fehlgeschlagen. Versuchen Sie es in Kürze erneut.
+admin-backup-page-hint-secret = Die .keshbackup-Datei enthält sensible Daten (Anmeldedaten, Tokens). Bewahren Sie sie sicher auf.
 export-global-title = Globaler Export Ihrer Daten
 export-global-description = Exportieren Sie alle Ihre Buchhaltungsdaten (Konten, Buchungen, Kontakte, Rechnungen, Banktransaktionen) im CSV-Format in einer ZIP-Datei. Verwenden Sie diesen Export zur Archivierung, zur Migration in eine andere Software oder zur 10-jährigen Aufbewahrung (Schweizerisches OR Art. 958f).
 export-global-button = Export starten

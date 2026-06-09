@@ -845,6 +845,15 @@ reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
 
 # Story 9-2b — Esportazione globale ZIP (sovranità dei dati) — 12 chiavi
 nav-export-global = Esportazione globale
+# Story 17-3b — backup completo dell'installazione (.keshbackup, Admin)
+nav-admin-backup = Backup completo
+admin-backup-page-title = Backup completo dell'installazione
+admin-backup-page-description = Scarica l'intera installazione (tutte le società, gli utenti e i dati di sistema) in un unico file .keshbackup, per migrare o salvare. Da distinguere dall'esportazione globale di una singola società.
+admin-backup-action-export = Esporta l'intera installazione
+admin-backup-action-exporting = Esportazione in corso…
+admin-backup-toast-success = Backup dell'installazione scaricato.
+admin-backup-error-generic = Esportazione dell'installazione non riuscita. Riprovate tra poco.
+admin-backup-page-hint-secret = Il file .keshbackup contiene dati sensibili (credenziali, token). Conservatelo in un luogo sicuro.
 export-global-title = Esportazione globale dei vostri dati
 export-global-description = Esportate tutti i vostri dati contabili (conti, scritture, contatti, fatture, transazioni bancarie) in formato CSV in un file ZIP. Utilizzate questa esportazione per archiviare, migrare verso un altro software o conservare i vostri dati per 10 anni (CO svizzero Art. 958f).
 export-global-button = Avvia esportazione
