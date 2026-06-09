@@ -123,7 +123,9 @@ async fn stream_via_tempfile(bytes: Vec<u8>) -> Result<Body, AppError> {
 /// 2. **validation avant tout DELETE** : structure ZIP + intégrité SHA-256
 ///    ([`parse_and_verify`]), compat version 409 ([`check_import_version_compat`]),
 ///    compat colonnes bidirectionnelle 400 ([`check_schema_compat`]) ;
-/// 3. **verrou d'installation** (`GET_LOCK`) sérialisant backup + restore ;
+/// 3. ouverture de la transaction + **verrou d'installation**
+///    (`_kesh_version id=1 FOR UPDATE`, pattern 17-1) sérialisant backup +
+///    restore (acquis **avant** le backup, AC13) ;
 /// 4. **backup automatique pré-import** (cœur `build_keshbackup` sans audit) →
 ///    disque (`KESH_ADMIN_BACKUP_DIR`) — jamais d'import sans backup réussi ;
 /// 5. **restore transactionnel** (`DELETE`+`INSERT`, FK_CHECKS=0) + audit
@@ -221,23 +223,17 @@ async fn run_backup_and_restore(
     parsed: &ParsedBackup,
     current_user: &CurrentUser,
 ) -> Result<(bool, usize, usize), AppError> {
-    // 4. Backup automatique de l'état courant (cœur sans audit, O-4) → disque.
-    //    Jamais d'import sans backup réussi (DC5).
-    let (backup_bytes, _meta) = build_keshbackup(&state.pool).await?;
-    let backup_created =
-        write_pre_import_backup(&state.config.admin_backup_dir, &backup_bytes).await?;
-
-    // 5. Restore transactionnel (DELETE+INSERT, FK_CHECKS gérés dans kesh-db).
+    // Ouvre la transaction de restore et acquiert **d'abord** le verrou
+    // d'installation (pattern Story 17-1), AVANT le backup pré-import (AC13 :
+    // « acquérir d'abord un verrou… tenu sur toute la durée backup+restore »).
+    // Un 2e import bloque ici jusqu'au COMMIT/rollback du 1er. `_kesh_version`
+    // n'est jamais supprimée (table système), la row id=1 existe toujours
+    // (migration). Auto-relâché avec la transaction (robuste aux panics).
     let mut tx = state
         .pool
         .begin()
         .await
         .map_err(|e| AppError::AdminFullImportFailed(format!("ouverture transaction : {e}")))?;
-
-    // Verrou d'installation (pattern Story 17-1) : sérialise les imports
-    // destructeurs concurrents. Un 2e import bloque ici jusqu'au COMMIT/rollback
-    // du 1er. `_kesh_version` n'est jamais supprimée (table système), la row
-    // id=1 existe toujours (migration). Auto-relâché avec la transaction.
     sqlx::query("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
         .fetch_optional(&mut *tx)
         .await
@@ -253,6 +249,18 @@ async fn run_backup_and_restore(
             )
         })?;
 
+    // 4. Backup automatique de l'état courant (cœur sans audit, O-4) → disque.
+    //    Jamais d'import sans backup réussi (DC5). Pris **sous le verrou**
+    //    (review Pass 4) : aucun autre import ne peut committer pendant cette
+    //    lecture (ils bloquent au FOR UPDATE ci-dessus) ⇒ pas de torn-read
+    //    inter-imports. `build_keshbackup` lit via le pool (connexions
+    //    séparées) ; le SELECT non-bloquant sur `_kesh_version` ne deadlocke
+    //    pas avec le FOR UPDATE détenu par cette transaction.
+    let (backup_bytes, _meta) = build_keshbackup(&state.pool).await?;
+    let backup_created =
+        write_pre_import_backup(&state.config.admin_backup_dir, &backup_bytes).await?;
+
+    // 5. Restore transactionnel (DELETE+INSERT, FK_CHECKS gérés dans kesh-db).
     let (tables_restored, rows_restored) =
         kesh_db::backup::restore_tables_in_tx(&mut tx, &parsed.tables)
             .await

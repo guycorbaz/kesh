@@ -194,6 +194,12 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<ParsedBackup, AppError> {
 /// Retourne [`AppError::ImportSchemaMismatch`] (→400) au premier écart.
 pub async fn check_schema_compat(pool: &MySqlPool, parsed: &ParsedBackup) -> Result<(), AppError> {
     for (table, data) in &parsed.tables {
+        // `onboarding_state` n'est jamais restaurée (DC11) → inutile de valider
+        // son schéma, et évite un faux `IMPORT_SCHEMA_MISMATCH` si son schéma
+        // destination diverge de la source (review Pass 4).
+        if table == "onboarding_state" {
+            continue;
+        }
         let dest = column_constraints(pool, table).await.map_err(|e| {
             AppError::AdminFullImportFailed(format!("lecture schéma '{table}' : {e}"))
         })?;
