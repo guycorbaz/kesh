@@ -1213,7 +1213,7 @@ Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'inté
 Menu \textbf{Administration → Sauvegarde complète} (\keshpath{/admin/backup}) → bouton \textbf{« Exporter toute l'installation »}. Le navigateur télécharge un fichier \keshcommand{kesh-installation-AAAA-MM-JJ.keshbackup}. Cette opération est en lecture seule (aucun effet de bord sur les données).
 
 \begin{keshwarning}
-Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)} ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
 \end{keshwarning}
 
 \subsubsection{Importer (restauration / migration)}
@@ -1228,7 +1228,7 @@ L'import \textbf{refuse} le fichier et préserve l'installation si :
 \begin{itemize}
     \item le fichier est \textbf{corrompu} ou n'est pas un \keshcommand{.keshbackup} valide (contrôle d'intégrité SHA-256) ;
     \item le \textbf{schéma} de la sauvegarde est incompatible avec la version de Kesh installée ;
-    \item la sauvegarde provient d'une \textbf{version de Kesh plus récente} que l'installation cible (protection anti-downgrade) — mettez à jour Kesh à une version au moins égale avant de réimporter.
+    \item la sauvegarde \textbf{exige une version minimale de Kesh supérieure} à celle de l'installation cible (protection anti-downgrade : ce seuil n'est relevé que par les migrations qui changent le schéma de façon incompatible) — mettez à jour Kesh avant de réimporter.
 \end{itemize}
 
 \paragraph{Variables d'environnement}

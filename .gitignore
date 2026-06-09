@@ -41,4 +41,4 @@ docs/manual/**/*.fls
 docs/manual/**/*.out
 docs/manual/**/*.toc
 docs/manual/**/*.xdv
-docs/manual/**/*.log
+# (*.log déjà couvert par la règle globale *.log ci-dessus)
