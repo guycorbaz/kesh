@@ -1,6 +1,6 @@
 # Story 17.3e: Test d'intégration Rust round-trip export↔import (`admin_backup_e2e.rs`)
 
-Status: review
+Status: done
 
 <!-- Sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella (Partie E, AC22 / T-E1). Dépend de 17-3a (export) + 17-3c (import), tous DONE. -->
 <!-- Test-only : aucune logique applicative, verrouille la correction fonctionnelle de bout en bout. -->
@@ -125,5 +125,6 @@ Quality gate : `cargo fmt --all --check` OK, `cargo clippy --workspace --all-tar
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
+| 2026-06-09 | code-review (cycle) | Sonnet→Haiku | **CYCLE CONVERGÉ en 2 passes** (test-only), trend > LOW : gaps couverture → 0. **P1 Sonnet** : Acceptance 0>LOW + **cross-réf vérifiée honnête** (refus/rollback existent bien dans admin_full_import_e2e.rs) ; EdgeCase a réfuté/vérifié plusieurs HIGH du Blind (audit_log+1 exact, Ghost correct) mais soulève des **faux-verts réels** sur un test garde-fou → renforcés : équivalence non-triviale (baseline>0 sur 8 tables seedées), **fidélité de VALEUR DECIMAL** (snapshot vat_rates anti-arrondi), **FK == total** (pas >=1, détecte FK pendante sous FK_CHECKS=0), onboarding **== 8** exact, check status export. Dismiss : login 200 prouve déjà la fidélité hash (corrompu→401) ; Ghost-2e-table marginal. **P2 Haiku** : **0 > LOW sur les 3 reviewers** (test sain, renforcements vérifiés corrects, 5 ACs confirmés). Quality gate : fmt OK, clippy 0, admin_backup_e2e 3/3 (changement test-only ; workspace serial exit 0 au dev-story). Status → done. |
 | 2026-06-09 | dev-story | Opus 4.8 | `admin_backup_e2e.rs` (3 tests) : round-trip riche (seed 8 tables → équivalence per-table + Ghost supprimée), login admin source 200, FK joins + audit. Découvertes (comportements DC corrects, pas bugs) : audit_log = baseline+1 (entrée import in-tx) + onboarding_state forcée done (DC11) → exclues de l'équivalence stricte + assertions DC dédiées. Refus/rollback cross-réf 17-3c (non dupliqués). Quality gate : fmt OK, clippy 0, admin_backup_e2e 3/3, workspace serial exit 0. Status review. Prochaine : `bmad-code-review 17-3e` (Sonnet). |
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3e (E2E intégration round-trip) extraite umbrella Partie E (AC22). **Delta** : round-trip riche multi-tables (seed_accounting_company) + équivalence per-table + login admin source (admin/admin123) + FK + audit ; refus/rollback déjà couverts 17-3c (cross-réf, pas de duplication). Playwright double-instance = dette v0.3. Test-only, aucun fichier applicatif. T-E1..T-E4. Prochaine : `bmad-dev-story 17-3e`. |
