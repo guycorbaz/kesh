@@ -1,6 +1,6 @@
 # Story 17.3f: Documentation export/import installation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Dernière sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella (Partie F, AC23-25). Dépend de toutes (17-3a..e DONE). Doc-only. -->
 
@@ -47,10 +47,10 @@ so that **je sache quand et comment utiliser l'export/import UI vs Hyper Backup 
 
 ## Tasks / Subtasks
 
-- [ ] **T-F1** Manuel admin : ajouter la sous-section « Export/import d'installation via l'interface Kesh » + la matrice des méthodes dans `\section{Sauvegarde et restauration}` (`admin-manual.tex`, après la sous-section Hyper Backup `:1102` ou à un emplacement logique). Cohérence des libellés UI + variables d'env. (AC: 1, 2, 6)
-- [ ] **T-F2** Régénérer le PDF : `cd docs/manual/fr && latexmk -xelatex admin-manual.tex` (puis nettoyer les aux). Committer `admin-manual.pdf`. (AC: 3)
-- [ ] **T-F3** `CHANGELOG.md` : entrée `### Added` (#112) dans `[Non publié]`, orientée utilisateur. (AC: 4)
-- [ ] **T-F4** `README.md` : Fonctionnalités (export/import livré) + Feuille de route (cohérence E17). (AC: 5)
+- [x] **T-F1** Manuel admin : ajouter la sous-section « Export/import d'installation via l'interface Kesh » + la matrice des méthodes dans `\section{Sauvegarde et restauration}` (`admin-manual.tex`, après la sous-section Hyper Backup `:1102` ou à un emplacement logique). Cohérence des libellés UI + variables d'env. (AC: 1, 2, 6)
+- [x] **T-F2** Régénérer le PDF : `cd docs/manual/fr && latexmk -xelatex admin-manual.tex` (puis nettoyer les aux). Committer `admin-manual.pdf`. (AC: 3)
+- [x] **T-F3** `CHANGELOG.md` : entrée `### Added` (#112) dans `[Non publié]`, orientée utilisateur. (AC: 4)
+- [x] **T-F4** `README.md` : Fonctionnalités (export/import livré) + Feuille de route (cohérence E17). (AC: 5)
 
 ## Dev Notes
 
@@ -94,16 +94,35 @@ so that **je sache quand et comment utiliser l'export/import UI vs Hyper Backup 
 
 ### Agent Model Used
 
-_(à compléter par dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — single-pass T-F1→T-F4.
 
 ### Debug Log References
 
+`latexmk -xelatex admin-manual.tex` exit 0 (PDF régénéré 234→244 Ko). Warnings « missing character ✓/═ » **pré-existants** (glyphes dans les listings de code, police monospace TeX Gyre Cursor — pas mes ajouts ; les `→` de la nouvelle sous-section rendent via la police principale, 34 usages préalables). Doc-only : pas de Test Locally First code (aucun Rust/TS modifié).
+
 ### Completion Notes List
 
+- **Manuel admin** (`admin-manual.tex`) : sous-section `\subsection{Export/import d'installation via l'interface Kesh}` insérée dans `\section{Sauvegarde et restauration}` (avant `\section{Mise à jour}`). Contenu : distinction vs export per-company (keshnote), workflow export (`/admin/backup`) + import (`/admin/restore`) avec libellés UI exacts (« Sauvegarde complète » / « Restaurer / Importer »), avertissements destructeur (keshwarning : remplacement total + déconnexion + backup auto pré-import) + secret (.keshbackup = hash+tokens), garde-fous (SHA/schéma/downgrade), variables d'env (`KESH_ADMIN_IMPORT_MAX_MB` 512 / `KESH_ADMIN_EXPORT_INMEM_MB` 50 / `KESH_ADMIN_BACKUP_DIR` /tmp), + **matrice 3 méthodes** (Hyper Backup DSM / mariadb-dump / export-import UI) en tabularx + keshtip. PDF régénéré.
+- **CHANGELOG** : entrée `### Added` #112 dans `[Non publié]` (orientée utilisateur, distinction vs export per-société, renvoi au manuel).
+- **README** : ligne « Fonctionnalités » export/import livré ✓ (Admin) ; roadmap E17 inchangée (reste « En cours » car 17-4 recovery pendante).
+- **Hygiène doc (au-delà du scope strict, « maintenir la doc proprement »)** : les fichiers auxiliaires LaTeX (`.aux/.fls/.fdb_latexmk/.out/.toc/.xdv`) d'admin-manual étaient **trackés par accident** (marketing-brochure, lui, ne track que `.tex`+`.pdf`). Supprimés du suivi + ajoutés à `.gitignore` (`docs/manual/**/*.{aux,fls,...}`).
+- **Rappel pour la PR umbrella** : tracer l'issue GitHub dette v0.3 « Playwright double-instance E2E » (cf. 17-3e) au moment de la PR.
+
 ### File List
+
+**Fichiers modifiés :**
+- `docs/manual/fr/admin-manual.tex` — sous-section export/import UI + matrice méthodes.
+- `docs/manual/fr/admin-manual.pdf` — régénéré (latexmk -xelatex).
+- `CHANGELOG.md` — entrée Added #112.
+- `README.md` — Fonctionnalités (export/import livré).
+- `.gitignore` — patterns LaTeX aux `docs/manual/**`.
+
+**Fichiers supprimés (artefacts build dé-trackés) :**
+- `docs/manual/fr/admin-manual.{aux,fdb_latexmk,fls,out,toc,xdv}`.
 
 ### Change Log
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
+| 2026-06-09 | dev-story | Opus 4.8 | Doc-only. Manuel admin (sous-section export/import UI + matrice 3 méthodes + PDF régénéré latexmk exit 0) + CHANGELOG Added #112 + README fonctionnalités. Libellés UI + variables d'env ground-truthés. Hygiène : aux LaTeX dé-trackés + gitignorés (alignement marketing-brochure). Status review. Prochaine : `bmad-code-review 17-3f` (Sonnet, focus exactitude doc) → puis PR umbrella 17-3. |
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3f (doc) extraite umbrella Partie F (AC23-25). Doc-only, clôt l'épopée 17-3. Scope : manuel admin LaTeX FR (sous-section UI export/import + matrice méthodes Hyper Backup/mariadb-dump/UI dans §Sauvegarde existante :987) + PDF régénéré (latexmk dispo) + CHANGELOG Added #112 + README fonctionnalités/roadmap. Cohérence libellés UI i18n FR + variables d'env. latexmk/xelatex confirmés dispos. T-F1..T-F4. Après merge → PR umbrella 17-3 + issue dette v0.3 Playwright. Prochaine : `bmad-dev-story 17-3f`. |
