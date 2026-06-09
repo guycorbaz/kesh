@@ -32,6 +32,13 @@ const FALLBACK_FILENAME = 'kesh-installation.keshbackup';
 export async function downloadFullExport(): Promise<void> {
 	const response = await apiClient.getBlob(FULL_EXPORT_URL);
 	const blob = await response.blob();
+	// Garde intégrité (review Pass 1) : un `.keshbackup` est un ZIP, jamais
+	// 0 octet. Une réponse 200 vide (troncature stream, disque plein côté
+	// serveur) ne doit pas produire un fichier silencieusement inutilisable —
+	// on jette pour que l'UI affiche une erreur plutôt qu'un faux succès.
+	if (blob.size === 0) {
+		throw new Error('Réponse vide du serveur (0 octet) — sauvegarde invalide.');
+	}
 	const filename =
 		parseContentDispositionFilename(response.headers.get('Content-Disposition')) ??
 		FALLBACK_FILENAME;

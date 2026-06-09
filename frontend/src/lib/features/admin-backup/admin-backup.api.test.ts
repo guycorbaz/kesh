@@ -22,6 +22,14 @@ describe('admin-backup.api — Story 17-3b', () => {
 			).toBe('kesh-installation-2026-06-09.keshbackup');
 		});
 
+		it('RFC 5987 UTF-8 percent-decoded (caractères non-ASCII)', () => {
+			expect(
+				parseContentDispositionFilename(
+					"attachment; filename*=UTF-8''kesh-installation-soci%C3%A9t%C3%A9.keshbackup",
+				),
+			).toBe('kesh-installation-société.keshbackup');
+		});
+
 		it('null/empty → null', () => {
 			expect(parseContentDispositionFilename(null)).toBeNull();
 			expect(parseContentDispositionFilename('')).toBeNull();
@@ -77,6 +85,22 @@ describe('admin-backup.api — Story 17-3b', () => {
 			expect(mockFetch.mock.calls[0][0] as string).toContain('/api/v1/admin/full-export');
 			expect(createObjectURLSpy).toHaveBeenCalledOnce();
 			expect(revokeObjectURLSpy).toHaveBeenCalledOnce();
+		});
+
+		it('rejette + pas de download si la réponse 200 est vide (0 octet)', async () => {
+			const mockFetch = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				blob: () => Promise.resolve(new Blob([], { type: 'application/octet-stream' })),
+				headers: new Headers({
+					'content-type': 'application/octet-stream',
+					'content-disposition': 'attachment; filename="kesh-installation.keshbackup"',
+				}),
+			} as unknown as Response);
+			vi.stubGlobal('fetch', mockFetch);
+
+			await expect(downloadFullExport()).rejects.toThrow();
+			expect(createObjectURLSpy).not.toHaveBeenCalled();
 		});
 
 		it('rejette quand le backend retourne 403 (anti-PAT / non-Admin) — pas de download', async () => {

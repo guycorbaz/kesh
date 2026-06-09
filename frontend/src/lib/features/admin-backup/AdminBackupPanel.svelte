@@ -34,7 +34,10 @@
 			// atteinte par un non-Admin via URL directe, 500). Message lisible.
 			const msg = isApiError(err)
 				? err.message
-				: i18nMsg('admin-backup-error-generic', "Échec de l'export de l'installation. Réessayez.");
+				: i18nMsg(
+						'admin-backup-error-generic',
+						"Échec de l'export de l'installation. Réessayez dans quelques instants.",
+					);
 			errorMsg = msg;
 			toast.error(msg);
 		} finally {
@@ -42,6 +45,12 @@
 		}
 	}
 </script>
+
+<svelte:head>
+	<title
+		>{i18nMsg('admin-backup-page-title', "Sauvegarde complète de l'installation")} – Kesh</title
+	>
+</svelte:head>
 
 <section class="flex flex-col gap-4" data-testid="admin-backup-panel">
 	<header class="flex flex-col gap-1">
@@ -70,6 +79,7 @@
 		<Button
 			onclick={startExport}
 			disabled={exporting}
+			aria-busy={exporting}
 			data-testid="admin-backup-export-button"
 		>
 			{exporting
