@@ -6,8 +6,10 @@
 //! transit hors infra contrôlée). Le SHA-256 du manifeste sert à la détection
 //! d'altération, pas à la confidentialité.
 //!
-//! - [`manifest`] : schéma `manifest.json` + sérialisation.
+//! - [`manifest`] : schéma `manifest.json` + (dé)sérialisation.
 //! - [`export`] : cœur `build_keshbackup` (assemblage ZIP sans audit).
+//! - [`import`] : lecture + validation d'un `.keshbackup` au restore (17-3c).
 
 pub mod export;
+pub mod import;
 pub mod manifest;

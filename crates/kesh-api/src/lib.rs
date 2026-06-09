@@ -126,6 +126,14 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         )
         // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
         .route("/api/v1/admin/full-export", get(routes::admin::full_export))
+        // Story 17-3c : import complet d'installation (multipart, Admin + anti-PAT).
+        // DefaultBodyLimit propre (KESH_ADMIN_IMPORT_MAX_MB / admin_import_max_mib).
+        .route(
+            "/api/v1/admin/full-import",
+            post(routes::admin::full_import).layer(axum::extract::DefaultBodyLimit::max(
+                (state.config.admin_import_max_mib as usize) * 1024 * 1024,
+            )),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
         ));

@@ -16,8 +16,10 @@
 //! `Decimal` → string, `NaiveDateTime` → ISO 8601 `YYYY-MM-DDTHH:MM:SS[.mmm]`
 //! (précision sub-seconde préservée — colonnes `DATETIME(3)`), entiers → nombre JSON.
 
+use std::collections::BTreeMap;
+
 use serde_json::Value;
-use sqlx::{MySqlPool, Row};
+use sqlx::{MySql, MySqlPool, Row, Transaction};
 
 use crate::errors::{DbError, map_db_error};
 
@@ -256,6 +258,274 @@ pub async fn read_instance_id(pool: &MySqlPool) -> Result<i64, DbError> {
     Ok(v.unwrap_or(0))
 }
 
+// ===========================================================================
+// Story 17-3c — Brique import (lecture NDJSON, contraintes colonnes, restore
+// transactionnel). Symétrique de l'export ci-dessus.
+// ===========================================================================
+
+/// Parse un NDJSON (1 objet JSON par ligne) en lignes de valeurs **ordonnées
+/// selon `column_names`** — symétrique de [`export_table`] (qui écrit les clés
+/// dans cet ordre). Une clé absente d'une ligne → [`Value::Null`] (tolérance
+/// forward-compat). Les lignes vides sont ignorées.
+pub fn parse_ndjson_rows(
+    ndjson: &[u8],
+    column_names: &[String],
+) -> Result<Vec<Vec<Value>>, DbError> {
+    let text = std::str::from_utf8(ndjson)
+        .map_err(|e| DbError::Invariant(format!("NDJSON non-UTF8: {e}")))?;
+    let mut rows = Vec::new();
+    for (lineno, line) in text.lines().enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let obj: serde_json::Map<String, Value> = serde_json::from_str(line).map_err(|e| {
+            DbError::Invariant(format!("NDJSON ligne {} invalide: {e}", lineno + 1))
+        })?;
+        let values = column_names
+            .iter()
+            .map(|c| obj.get(c).cloned().unwrap_or(Value::Null))
+            .collect();
+        rows.push(values);
+    }
+    Ok(rows)
+}
+
+/// Contrainte d'une colonne destination (Story 17-3c, AC12c), lue de
+/// `INFORMATION_SCHEMA.COLUMNS`. Sert au check de compatibilité de schéma
+/// avant tout DELETE à l'import.
+#[derive(Debug, Clone)]
+pub struct ColumnConstraint {
+    pub name: String,
+    /// `IS_NULLABLE = 'YES'`.
+    pub is_nullable: bool,
+    /// `COLUMN_DEFAULT IS NOT NULL` (la colonne a une valeur par défaut).
+    pub has_default: bool,
+    /// `EXTRA` contient `auto_increment`.
+    pub is_auto_increment: bool,
+    /// `EXTRA` contient `GENERATED` (VIRTUAL/STORED).
+    pub is_generated: bool,
+}
+
+impl ColumnConstraint {
+    /// Une colonne destination est **obligatoire dans la source** (doit figurer
+    /// dans `columnNames` du backup) ssi elle est `NOT NULL`, sans `DEFAULT`,
+    /// ni auto-increment, ni générée : sinon l'`INSERT` du restore (qui ne cite
+    /// que `columnNames`) planterait sur cette colonne non fournie.
+    pub fn is_required(&self) -> bool {
+        !self.is_nullable && !self.has_default && !self.is_auto_increment && !self.is_generated
+    }
+}
+
+/// Lit les contraintes de toutes les colonnes d'une table destination.
+pub async fn column_constraints(
+    pool: &MySqlPool,
+    table: &str,
+) -> Result<Vec<ColumnConstraint>, DbError> {
+    let rows = sqlx::query_as::<_, (String, String, Option<String>, String)>(
+        "SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT, EXTRA \
+         FROM INFORMATION_SCHEMA.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? \
+         ORDER BY ORDINAL_POSITION",
+    )
+    .bind(table)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(name, is_nullable, col_default, extra)| {
+            let extra_lc = extra.to_ascii_lowercase();
+            ColumnConstraint {
+                name,
+                is_nullable: is_nullable.eq_ignore_ascii_case("YES"),
+                has_default: col_default.is_some(),
+                is_auto_increment: extra_lc.contains("auto_increment"),
+                is_generated: extra_lc.contains("generated"),
+            }
+        })
+        .collect())
+}
+
+/// Données d'une table à restaurer depuis un `.keshbackup` (Story 17-3c).
+#[derive(Debug, Clone)]
+pub struct TableRestore {
+    /// Colonnes ciblées par l'`INSERT` (= `columnNames` du manifeste, ordonné,
+    /// exclut les colonnes générées).
+    pub column_names: Vec<String>,
+    /// Lignes : chaque ligne = valeurs ordonnées selon `column_names`.
+    pub rows: Vec<Vec<Value>>,
+}
+
+/// Restaure toutes les tables applicatives dans la transaction fournie (DC6).
+///
+/// Procédure sur **une seule connexion** (la transaction — `FOREIGN_KEY_CHECKS`
+/// est session-scoped) :
+/// 1. `SET FOREIGN_KEY_CHECKS = 0` (tolère la FK self-réf `accounts.parent_id`
+///    et l'ordre d'insertion) ;
+/// 2. `DELETE FROM <table>` pour les tables applicatives — **`onboarding_state`
+///    exclue** (DC11, état local destination) — ordre enfants→parents ;
+/// 3. `INSERT` paramétrés (colonnes explicites du manifeste) parents→enfants ;
+/// 4. `SET FOREIGN_KEY_CHECKS = 1` — **rétabli systématiquement**, succès ou
+///    erreur, pour ne jamais rendre une connexion au pool avec les FK
+///    désactivées (corruption silencieuse).
+///
+/// Retourne `(tables_restaurées, lignes_restaurées)`. `_kesh_version`,
+/// `_sqlx_migrations` et `onboarding_state` ne sont jamais touchées. Le caller
+/// (handler 17-3c) insère l'audit + le COMMIT dans la **même** transaction.
+pub async fn restore_tables_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    tables: &BTreeMap<String, TableRestore>,
+) -> Result<(usize, usize), DbError> {
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    let result = restore_body(tx, tables).await;
+
+    // Rétablissement systématique (même sur erreur du corps).
+    let reset = sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+        .execute(&mut **tx)
+        .await;
+    match (result, reset) {
+        (Ok(counts), Ok(_)) => Ok(counts),
+        // Le corps a échoué : on propage son erreur (le reset a été tenté).
+        (Err(e), _) => Err(e),
+        // Le corps a réussi mais le reset a échoué : erreur dure (la connexion
+        // ne doit pas committer avec FK désactivées).
+        (Ok(_), Err(e)) => {
+            tracing::error!(error = ?e, "restore: échec rétablissement FOREIGN_KEY_CHECKS=1");
+            Err(map_db_error(e))
+        }
+    }
+}
+
+/// Corps du restore (DELETE + INSERT), hors gestion `FOREIGN_KEY_CHECKS`.
+async fn restore_body(
+    tx: &mut Transaction<'_, MySql>,
+    tables: &BTreeMap<String, TableRestore>,
+) -> Result<(usize, usize), DbError> {
+    // DELETE enfants→parents (ordre TABLES_TO_TRUNCATE), onboarding_state exclue.
+    for &table in TABLES_TO_TRUNCATE {
+        if table == "onboarding_state" {
+            continue;
+        }
+        sqlx::query(&format!("DELETE FROM `{table}`"))
+            .execute(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    }
+
+    // INSERT parents→enfants (ordre inverse) — indifférent sous FK=0, mais
+    // cohérent/lisible.
+    let mut tables_restored = 0usize;
+    let mut rows_restored = 0usize;
+    for &table in TABLES_TO_TRUNCATE.iter().rev() {
+        if table == "onboarding_state" {
+            continue;
+        }
+        let Some(data) = tables.get(table) else {
+            // Couverture validée en amont (parse_and_verify) ; défensivement,
+            // une table absente = restaurée à 0 ligne (déjà DELETE).
+            tables_restored += 1;
+            continue;
+        };
+        tables_restored += 1;
+        if data.column_names.is_empty() {
+            return Err(DbError::Invariant(format!(
+                "restore: table '{table}' sans colonnes dans le manifeste"
+            )));
+        }
+        if data.rows.is_empty() {
+            continue;
+        }
+        let cols_sql = data
+            .column_names
+            .iter()
+            .map(|c| format!("`{c}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let placeholders = vec!["?"; data.column_names.len()].join(", ");
+        let sql = format!("INSERT INTO `{table}` ({cols_sql}) VALUES ({placeholders})");
+        for row in &data.rows {
+            if row.len() != data.column_names.len() {
+                return Err(DbError::Invariant(format!(
+                    "restore: table '{table}' ligne à {} valeurs, {} colonnes attendues",
+                    row.len(),
+                    data.column_names.len()
+                )));
+            }
+            let mut q = sqlx::query(&sql);
+            for v in row {
+                q = bind_json_value(q, v);
+            }
+            q.execute(&mut **tx).await.map_err(map_db_error)?;
+            rows_restored += 1;
+        }
+    }
+    Ok((tables_restored, rows_restored))
+}
+
+/// Bind une valeur JSON (issue du NDJSON d'export) sur une requête paramétrée,
+/// en préservant la fidélité de type (DC1). MariaDB recoerce les strings vers
+/// `DECIMAL`/`DATETIME`/etc. à l'`INSERT` (l'export sérialise ces types en
+/// string fidèle).
+fn bind_json_value<'q>(
+    q: sqlx::query::Query<'q, MySql, sqlx::mysql::MySqlArguments>,
+    v: &'q Value,
+) -> sqlx::query::Query<'q, MySql, sqlx::mysql::MySqlArguments> {
+    match v {
+        Value::Null => q.bind(Option::<String>::None),
+        Value::Bool(b) => q.bind(if *b { 1_i64 } else { 0_i64 }),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                q.bind(i)
+            } else if let Some(u) = n.as_u64() {
+                q.bind(u as i64)
+            } else {
+                q.bind(n.as_f64().unwrap_or(0.0))
+            }
+        }
+        Value::String(s) => q.bind(s.as_str()),
+        // Objet/array : une colonne JSON est exportée en string (longtext) par
+        // l'export, donc ce cas est théorique — on re-sérialise par sécurité.
+        other => q.bind(other.to_string()),
+    }
+}
+
+/// DC11 (Story 17-3c) — après un restore, force `onboarding_state` à l'état
+/// terminé (`step_completed = 8`, valeur post-finalize) **si** le dataset
+/// restauré contient au moins une company non-stub et au moins un admin. Évite
+/// de rouvrir le catch-22 #120 quand on importe sur une instance fraîche /
+/// non-onboardée. `onboarding_state` n'étant pas restaurée (état local), on
+/// agit sur la row destination existante. Idempotent (ne touche que les rows
+/// `step_completed < 7`). Retourne `true` si l'état a été forcé.
+pub async fn force_onboarding_done_if_eligible(
+    tx: &mut Transaction<'_, MySql>,
+) -> Result<bool, DbError> {
+    let companies: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies WHERE is_stub = FALSE")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let admins: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    if companies >= 1 && admins >= 1 {
+        sqlx::query(
+            "UPDATE onboarding_state SET step_completed = 8 \
+             WHERE singleton = TRUE AND step_completed < 7",
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,5 +611,134 @@ mod tests {
             chrono::NaiveDateTime::parse_from_str(created, "%Y-%m-%dT%H:%M:%S%.f").is_ok(),
             "created_at doit reparse (round-trip) : {created}"
         );
+    }
+
+    // --- Story 17-3c : import (parse NDJSON, contraintes, restore) ---
+
+    #[test]
+    fn parse_ndjson_rows_orders_by_column_names_and_handles_null() {
+        let cols = vec!["id".to_string(), "name".to_string(), "note".to_string()];
+        // 2e ligne : clé `note` absente → null ; clés dans le désordre.
+        let ndjson = b"{\"name\":\"Acme\",\"id\":1,\"note\":\"x\"}\n{\"id\":2,\"name\":\"Beta\"}\n";
+        let rows = parse_ndjson_rows(ndjson, &cols).expect("parse");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0],
+            vec![Value::from(1), Value::from("Acme"), Value::from("x")]
+        );
+        assert_eq!(
+            rows[1],
+            vec![Value::from(2), Value::from("Beta"), Value::Null]
+        );
+    }
+
+    #[test]
+    fn parse_ndjson_rows_empty_input_is_empty() {
+        let cols = vec!["id".to_string()];
+        assert!(parse_ndjson_rows(b"", &cols).unwrap().is_empty());
+    }
+
+    /// `column_constraints` détecte `companies.id` comme auto-increment (donc
+    /// non requise) et `companies.name` comme NOT NULL sans défaut (requise).
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    async fn column_constraints_flags_required_and_optional(pool: MySqlPool) {
+        let cols = column_constraints(&pool, "companies")
+            .await
+            .expect("constraints companies");
+        let by_name = |n: &str| cols.iter().find(|c| c.name == n).cloned();
+
+        let id = by_name("id").expect("id column");
+        assert!(id.is_auto_increment, "id doit être auto_increment");
+        assert!(
+            !id.is_required(),
+            "id (auto_increment) ne doit pas être requise"
+        );
+
+        let name = by_name("name").expect("name column");
+        assert!(!name.is_nullable, "name est NOT NULL");
+        assert!(
+            name.is_required(),
+            "name NOT NULL sans défaut doit être requise"
+        );
+
+        // ide_number est nullable → jamais requise.
+        let ide = by_name("ide_number").expect("ide_number column");
+        assert!(!ide.is_required());
+    }
+
+    /// `reconciliation_rules.active_uniq` (GENERATED VIRTUAL) est marquée
+    /// générée → jamais requise (cohérent avec son exclusion de l'export).
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    async fn column_constraints_marks_generated_column(pool: MySqlPool) {
+        let cols = column_constraints(&pool, "reconciliation_rules")
+            .await
+            .expect("constraints reconciliation_rules");
+        let active_uniq = cols
+            .iter()
+            .find(|c| c.name == "active_uniq")
+            .expect("active_uniq present in schema");
+        assert!(active_uniq.is_generated, "active_uniq doit être générée");
+        assert!(!active_uniq.is_required());
+    }
+
+    /// Round-trip restore : insère 2 companies → exporte (export_table) →
+    /// restore_tables_in_tx (DELETE+INSERT) → les 2 companies sont rétablies
+    /// avec les mêmes valeurs (fidélité de type).
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    async fn restore_tables_in_tx_round_trips_companies(pool: MySqlPool) {
+        for (name, ide) in [("Acme SA", Some("CHE123456789")), ("Beta GmbH", None)] {
+            let ide_sql = match ide {
+                Some(v) => format!("'{v}'"),
+                None => "NULL".to_string(),
+            };
+            sqlx::query(&format!(
+                "INSERT INTO companies (name, address, ide_number, org_type, accounting_language, instance_language) \
+                 VALUES ('{name}', 'Rue 1', {ide_sql}, 'Pme', 'FR', 'FR')"
+            ))
+            .execute(&pool)
+            .await
+            .expect("insert company");
+        }
+
+        // Snapshot via export_table.
+        let export = export_table(&pool, "companies").await.expect("export");
+        let rows = parse_ndjson_rows(&export.ndjson, &export.column_names).expect("parse");
+        assert_eq!(rows.len(), 2);
+
+        let mut tables = BTreeMap::new();
+        tables.insert(
+            "companies".to_string(),
+            TableRestore {
+                column_names: export.column_names.clone(),
+                rows,
+            },
+        );
+
+        // Restore (DELETE-all + INSERT companies) dans une transaction.
+        let mut tx = pool.begin().await.expect("begin");
+        let (n_tables, n_rows) = restore_tables_in_tx(&mut tx, &tables)
+            .await
+            .expect("restore");
+        tx.commit().await.expect("commit");
+
+        // 21 tables traitées (onboarding_state exclue), 2 lignes companies.
+        assert_eq!(n_tables, TABLES_TO_TRUNCATE.len() - 1);
+        assert_eq!(n_rows, 2);
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(count, 2, "les 2 companies doivent être rétablies");
+
+        let names: Vec<String> = sqlx::query_scalar("SELECT name FROM companies ORDER BY name")
+            .fetch_all(&pool)
+            .await
+            .expect("names");
+        assert_eq!(names, vec!["Acme SA".to_string(), "Beta GmbH".to_string()]);
+
+        // FOREIGN_KEY_CHECKS rétabli sur la connexion (vérif via une nouvelle
+        // requête : la valeur de session est 1 par défaut sur une conn fraîche
+        // du pool — ce test garantit surtout que le restore a committé propre).
     }
 }

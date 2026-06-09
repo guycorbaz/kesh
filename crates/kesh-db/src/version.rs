@@ -131,6 +131,46 @@ mod tests {
         }
     }
 
+    // --- Story 17-3c : check_import_version_compat (pure, pas de DB) ---
+
+    #[test]
+    fn import_compat_ok_when_min_required_equals_or_below_binary() {
+        // min_required == binary → OK.
+        assert!(check_import_version_compat("0.1.8", "0.1.8").is_ok());
+        // min_required < binary (binaire plus récent) → OK.
+        assert!(check_import_version_compat("0.1.0", "0.2.0").is_ok());
+        assert!(check_import_version_compat("0.1.8", "0.2.0").is_ok());
+    }
+
+    #[test]
+    fn import_compat_refused_when_min_required_above_binary() {
+        // Le backup exige >= 0.2.0, le binaire est 0.1.8 → DowngradeRefused (409).
+        match check_import_version_compat("0.2.0", "0.1.8") {
+            Err(VersionError::DowngradeRefused { db_min, binary }) => {
+                assert_eq!(db_min.to_string(), "0.2.0");
+                assert_eq!(binary.to_string(), "0.1.8");
+            }
+            other => panic!("expected DowngradeRefused, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn import_compat_handles_prereleases_per_semver() {
+        // 0.2.0-rc1 < 0.2.0 (pré-release) : un binaire 0.2.0-rc1 ne peut lire
+        // un backup exigeant 0.2.0 stable.
+        assert!(check_import_version_compat("0.2.0", "0.2.0-rc1").is_err());
+        // L'inverse est OK (binaire stable >= min pré-release).
+        assert!(check_import_version_compat("0.2.0-rc1", "0.2.0").is_ok());
+    }
+
+    #[test]
+    fn import_compat_rejects_invalid_semver_as_invalid_not_refused() {
+        match check_import_version_compat("pas-semver", "0.1.8") {
+            Err(VersionError::InvalidSemver { origin, .. }) => assert_eq!(origin, "backup"),
+            other => panic!("expected InvalidSemver, got {other:?}"),
+        }
+    }
+
     /// Régression Pass 3 BH3-1/ECH3-1 : le slice `&value[..MAX_LEN]` byte-based
     /// panic si MAX_LEN tombe au milieu d'un caractère UTF-8 multi-byte.
     /// La troncature `chars().take(MAX_LEN)` est char-safe par construction.
@@ -219,6 +259,40 @@ pub async fn check_downgrade_protection(
                 }
             }
         }
+    }
+}
+
+/// Story 17-3c — Vérifie la compatibilité de version à l'**import** d'un
+/// `.keshbackup`. Contrairement à [`check_downgrade_protection`] (qui lit la
+/// DB au boot), cette fonction est **pure** : elle compare deux strings SemVer
+/// (aucune I/O), donc testable sans base.
+///
+/// Sémantique (DC4) : refus **ssi `manifest_min_required > binary`** — le
+/// binaire destination ne sait pas lire un schéma exigeant une version plus
+/// récente que lui (downgrade-protection, identique à 10-2). On **NE refuse
+/// PAS** sur `kesh_version > binary` seul (sur-restrictif : une source d'une
+/// version mineure plus récente mais non-breaking reste importable ; la compat
+/// schéma est vérifiée par ailleurs via le check colonnes bidirectionnel).
+///
+/// En cas de refus, retourne [`VersionError::DowngradeRefused`] (le caller
+/// 17-3c le mappe en `409`). Les strings non-SemVer retournent
+/// [`VersionError::InvalidSemver`] (le caller le mappe en `400`, manifeste
+/// corrompu). Gère les pré-releases per semver.org (`0.2.0-rc1 < 0.2.0`).
+pub fn check_import_version_compat(
+    manifest_min_required: &str,
+    binary: &str,
+) -> Result<(), VersionError> {
+    let min = Version::parse(manifest_min_required)
+        .map_err(|e| VersionError::invalid_semver("backup", manifest_min_required, e))?;
+    let bin =
+        Version::parse(binary).map_err(|e| VersionError::invalid_semver("binaire", binary, e))?;
+    if min > bin {
+        Err(VersionError::DowngradeRefused {
+            db_min: min,
+            binary: bin,
+        })
+    } else {
+        Ok(())
     }
 }
 

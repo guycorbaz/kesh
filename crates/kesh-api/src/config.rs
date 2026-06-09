@@ -201,6 +201,18 @@ pub struct Config {
     /// défaut 50, borne [1, 2048] (borne haute évite l'OOM sur grosses installs).
     pub admin_export_inmem_mib: u32,
 
+    /// Story 17-3c (DC5) — taille max d'un upload `.keshbackup` à l'**import**,
+    /// en MiB binaires. Appliqué via `axum::extract::DefaultBodyLimit::max` sur
+    /// la route `POST /api/v1/admin/full-import`. Lu depuis
+    /// `KESH_ADMIN_IMPORT_MAX_MB` ; défaut 512, borne [1, 10240].
+    pub admin_import_max_mib: u32,
+
+    /// Story 17-3c (DC5) — répertoire où écrire le **backup automatique
+    /// pré-import** (`.keshbackup` de l'état courant, filet de sécurité avant
+    /// le restore destructeur). Lu depuis `KESH_ADMIN_BACKUP_DIR` ; défaut
+    /// `/tmp`. Créé s'il n'existe pas. La purge est à la charge de l'opérateur.
+    pub admin_backup_dir: String,
+
     // --- v0.1.3 hotfix (Issue #136) — cookies Secure flag override ---
     /// Émettre les cookies session (`kesh_access_token`, `kesh_refresh_token`)
     /// avec le flag `Secure` (requiert HTTPS côté client). **Défaut `true`**
@@ -362,6 +374,8 @@ impl Config {
             test_mode: false,
             bank_import_max_mib: 10,
             admin_export_inmem_mib: 50,
+            admin_import_max_mib: 512,
+            admin_backup_dir: "/tmp".to_string(),
             cookie_secure: true,
         }
     }
@@ -759,6 +773,36 @@ impl Config {
             Err(_) => 50,
         };
 
+        // Story 17-3c (DC5) — KESH_ADMIN_IMPORT_MAX_MB : optionnel, défaut 512,
+        // borne [1, 10240]. Plafond de l'upload `.keshbackup` à l'import
+        // (DefaultBodyLimit). Pattern parse+borne+warn identique à bank-import.
+        let admin_import_max_mib = match env::var("KESH_ADMIN_IMPORT_MAX_MB") {
+            Ok(val) => match val.parse::<u32>() {
+                Ok(m) if (1..=10240).contains(&m) => m,
+                Ok(m) => {
+                    tracing::warn!(
+                        "KESH_ADMIN_IMPORT_MAX_MB={} hors borne [1, 10240], utilisation du défaut 512",
+                        m
+                    );
+                    512
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_ADMIN_IMPORT_MAX_MB='{}' invalide, utilisation du défaut 512",
+                        val
+                    );
+                    512
+                }
+            },
+            Err(_) => 512,
+        };
+
+        // Story 17-3c (DC5) — KESH_ADMIN_BACKUP_DIR : répertoire du backup
+        // automatique pré-import. Défaut `/tmp`. Créé si absent (au moment de
+        // l'import, pas au boot). Pas de borne (chemin arbitraire opérateur).
+        let admin_backup_dir =
+            env::var("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|_| "/tmp".to_string());
+
         // v0.1.3 hotfix (Issue #136) — KESH_COOKIE_SECURE override.
         // Parsing strict (cohérent KESH_TEST_MODE P7) : seules `"true"`/`"1"`/
         // `"false"`/`"0"` acceptées. Toute autre valeur (`"True"`, `"yes"`,
@@ -804,6 +848,8 @@ impl Config {
             test_mode,
             bank_import_max_mib,
             admin_export_inmem_mib,
+            admin_import_max_mib,
+            admin_backup_dir,
             cookie_secure,
         })
     }
@@ -1043,6 +1089,8 @@ pub(crate) mod test_helpers {
             test_mode: false,
             bank_import_max_mib: 10,
             admin_export_inmem_mib: 50,
+            admin_import_max_mib: 512,
+            admin_backup_dir: "/tmp".to_string(),
             cookie_secure: true,
         }
     }

@@ -1,6 +1,6 @@
 # Story 17.3c: Backend import complet d'installation (`POST /api/v1/admin/full-import`)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella `17-3-export-import-installation.md` (Partie C), convergée au validate en 5 passes (Sonnet→Haiku→Opus→Sonnet→Haiku, trend 21→16→10→3→0, ~50 patches, dont catch-architectural Opus P3 O-1/O-2/O-3). Contenu déjà adversarialement revu. Re-validate optionnel. -->
 <!-- CONSOMME le format `.keshbackup` posé par 17-3a (DONE, `fb43669`). Sous-story la plus risquée (O-1 FK audit, O-2 MIGRATOR no-op, O-5 FK_CHECKS). Dépend de 17-3a (format + cœur `build_keshbackup`). Parallélisable avec 17-3b (UI export). Bloque 17-3d (UI import) + 17-3e (E2E). -->
@@ -64,24 +64,24 @@ so that **je puisse migrer ou restaurer une installation complète sans accès S
 
 ## Tasks / Subtasks
 
-- [ ] **T-C1** Handler `full_import` multipart (`crates/kesh-api/src/routes/admin.rs`, à côté de `full_export`). Extracteur `axum::extract::Multipart` (pattern `bank_imports::parse_multipart`, `field.bytes().await`, garde champ absent/dupliqué). `DefaultBodyLimit::max` sur la route + config `KESH_ADMIN_IMPORT_MAX_MB` (défaut 512, bornes [1,10240], `config.rs` pattern `admin_export_inmem_mib`/`bank_import_max_mib`). RBAC Admin (sub-router `admin_routes`) + **anti-PAT** (`ensure_not_pat` en tête). Réponse succès **200 + JSON** `{ backupCreated, tablesRestored, rowsRestored, sourceVersion, sessionInvalidated: true }` (struct `#[serde(rename_all = "camelCase")]`). (AC: 11)
+- [x] **T-C1** Handler `full_import` multipart (`crates/kesh-api/src/routes/admin.rs`, à côté de `full_export`). Extracteur `axum::extract::Multipart` (pattern `bank_imports::parse_multipart`, `field.bytes().await`, garde champ absent/dupliqué). `DefaultBodyLimit::max` sur la route + config `KESH_ADMIN_IMPORT_MAX_MB` (défaut 512, bornes [1,10240], `config.rs` pattern `admin_export_inmem_mib`/`bank_import_max_mib`). RBAC Admin (sub-router `admin_routes`) + **anti-PAT** (`ensure_not_pat` en tête). Réponse succès **200 + JSON** `{ backupCreated, tablesRestored, rowsRestored, sourceVersion, sessionInvalidated: true }` (struct `#[serde(rename_all = "camelCase")]`). (AC: 11)
 
-- [ ] **T-C2** Lecture + validation **avant tout DELETE** :
+- [x] **T-C2** Lecture + validation **avant tout DELETE** :
   - parser le ZIP en mémoire (crate `zip` v2, déjà dépendance) : extraire `manifest.json` + chaque `data/<table>.ndjson` + vérifier présence dossier `files/` **vide** → `400 INVALID_BACKUP_STRUCTURE` sinon ;
   - **désérialiser le manifeste** : ajouter `#[derive(Deserialize)]` à `BackupManifest`/`BackupTableMeta` dans `admin_backup/manifest.rs` (actuellement `Serialize` seul — extension anticipée par la spec « 17-3c relira ce manifeste ») ; refus `400` si `formatVersion > 1` ;
   - **SHA-256** par table re-calculé (`exports::metadata::sha256_hex`) vs manifeste → `400` (tamper) si mismatch ;
   - **check colonnes bidirectionnel** AC12c via nouvelle requête `INFORMATION_SCHEMA.COLUMNS` (la fn existante `backup::non_generated_columns` ne lit pas la nullabilité/défaut → **nouveau helper** `kesh_db::backup::column_constraints(pool, table) -> Vec<{name, is_nullable, has_default, extra}>` ou équivalent) : source⊆dest (`unknownColumns`) + dest-NOT-NULL-sans-default-non-générée-non-autoinc⊆source (`missingRequiredColumns`) → `400 IMPORT_SCHEMA_MISMATCH` ;
   - **`check_import_version_compat(min_required, binary)`** nouvelle fn `version.rs` (`409` si `min_required > binary`, gère pré-releases). (AC: 12)
 
-- [ ] **T-C3** Backup auto pré-import (DC5) : **acquérir d'abord le verrou d'installation** (`SELECT … FROM _kesh_version WHERE id=1 FOR UPDATE` dans la même tx/connexion que le restore, OU `GET_LOCK`) avant backup+restore ; puis `build_keshbackup(pool)` (réutilisé tel quel, sans audit, O-4) → écrire dans `KESH_ADMIN_BACKUP_DIR` (défaut `/tmp`, `create_dir_all` si absent ; échec écriture → `500`, jamais d'import sans backup). Chemin loggé serveur (`tracing::info!`, jamais dans la réponse). Rollback depuis ce backup si restore hors-transaction échoue. Config `KESH_ADMIN_BACKUP_DIR` (`config.rs`). (AC: 13, 17)
+- [x] **T-C3** Backup auto pré-import (DC5) : **acquérir d'abord le verrou d'installation** (`SELECT … FROM _kesh_version WHERE id=1 FOR UPDATE` dans la même tx/connexion que le restore, OU `GET_LOCK`) avant backup+restore ; puis `build_keshbackup(pool)` (réutilisé tel quel, sans audit, O-4) → écrire dans `KESH_ADMIN_BACKUP_DIR` (défaut `/tmp`, `create_dir_all` si absent ; échec écriture → `500`, jamais d'import sans backup). Chemin loggé serveur (`tracing::info!`, jamais dans la réponse). Rollback depuis ce backup si restore hors-transaction échoue. Config `KESH_ADMIN_BACKUP_DIR` (`config.rs`). (AC: 13, 17)
 
-- [ ] **T-C4** Restore transactionnel (DC6) : `pool.begin()` → `SET FOREIGN_KEY_CHECKS=0` → **`DELETE FROM`** (pas TRUNCATE) les **21 tables** (`TABLES_TO_TRUNCATE` exclut déjà les tables système ; **exclure aussi `onboarding_state`**, DC11) → INSERT paramétrés colonnes-explicites du manifeste (depuis le NDJSON parsé en `Vec<serde_json::Value>` par ligne, bind par type) → audit import in-tx (T-C6) → `SET FOREIGN_KEY_CHECKS=1` → `COMMIT`. **Ajouter le helper restore transactionnel dans `kesh-db/src/backup.rs`** (`restore_table_in_tx(&mut tx, table, &column_names, &ndjson_rows)` + orchestrateur, consommant `TABLES_TO_TRUNCATE`). ⚠️ tout sur **une seule connexion** (FK_CHECKS session-scoped). Bind des valeurs JSON → SQL : `null`→NULL, string→bind string (MariaDB recoerce DECIMAL/DATETIME/etc. depuis la représentation string fidèle de l'export), nombre→bind i64/f64. (AC: 14, 17)
+- [x] **T-C4** Restore transactionnel (DC6) : `pool.begin()` → `SET FOREIGN_KEY_CHECKS=0` → **`DELETE FROM`** (pas TRUNCATE) les **21 tables** (`TABLES_TO_TRUNCATE` exclut déjà les tables système ; **exclure aussi `onboarding_state`**, DC11) → INSERT paramétrés colonnes-explicites du manifeste (depuis le NDJSON parsé en `Vec<serde_json::Value>` par ligne, bind par type) → audit import in-tx (T-C6) → `SET FOREIGN_KEY_CHECKS=1` → `COMMIT`. **Ajouter le helper restore transactionnel dans `kesh-db/src/backup.rs`** (`restore_table_in_tx(&mut tx, table, &column_names, &ndjson_rows)` + orchestrateur, consommant `TABLES_TO_TRUNCATE`). ⚠️ tout sur **une seule connexion** (FK_CHECKS session-scoped). Bind des valeurs JSON → SQL : `null`→NULL, string→bind string (MariaDB recoerce DECIMAL/DATETIME/etc. depuis la représentation string fidèle de l'export), nombre→bind i64/f64. (AC: 14, 17)
 
-- [ ] **T-C5** **NE PAS appeler `MIGRATOR.run()`** (no-op structurel, O-2). Confirmer par commentaire `///` que la compat schéma est assurée par le double check colonnes T-C2. (AC: 15)
+- [x] **T-C5** **NE PAS appeler `MIGRATOR.run()`** (no-op structurel, O-2). Confirmer par commentaire `///` que la compat schéma est assurée par le double check colonnes T-C2. (AC: 15)
 
-- [ ] **T-C6** Audit `admin.full_import` **dans la transaction restore** (après les INSERT, avant COMMIT) : `user_id = MIN(users.id) WHERE role='Admin'` **lu sur le dataset déjà restauré** (donc requête après les INSERT, dans la tx), via `NewAuditLogEntry::user(min_admin_id, "admin.full_import", "installation", AUDIT_ENTITY_ID_NONE, Some(json!({... snake_case ...})))` + `audit_log::insert_in_tx`. PAS `from_current_user` (O-1, FK). `details_json` : `source_kesh_version`, `source_instance_id`, `triggered_by_user`, `tables_restored`, `rows_restored`. (AC: 16)
+- [x] **T-C6** Audit `admin.full_import` **dans la transaction restore** (après les INSERT, avant COMMIT) : `user_id = MIN(users.id) WHERE role='Admin'` **lu sur le dataset déjà restauré** (donc requête après les INSERT, dans la tx), via `NewAuditLogEntry::user(min_admin_id, "admin.full_import", "installation", AUDIT_ENTITY_ID_NONE, Some(json!({... snake_case ...})))` + `audit_log::insert_in_tx`. PAS `from_current_user` (O-1, FK). `details_json` : `source_kesh_version`, `source_instance_id`, `triggered_by_user`, `tables_restored`, `rows_restored`. (AC: 16)
 
-- [ ] **T-C7** Tests intégration DB (`crates/kesh-api/tests/admin_full_import_e2e.rs` ou helpers dans le e2e roundtrip 17-3e ; au minimum couvrir ici les invariants backend) :
+- [x] **T-C7** Tests intégration DB (`crates/kesh-api/tests/admin_full_import_e2e.rs` ou helpers dans le e2e roundtrip 17-3e ; au minimum couvrir ici les invariants backend) :
   - **round-trip** : seed → export (`build_keshbackup`) → DELETE-all → import → équivalence row counts + login admin source possible + FK intègres ;
   - **O-1** : ids users source ≠ admin dest → audit import OK (pas de viol FK `audit_log.user_id`) ;
   - refus `409` version incompatible, `400` SHA tamper, `400` format inconnu (`formatVersion=2`), `400 IMPORT_SCHEMA_MISMATCH` (colonne dest NOT NULL absente de la source / colonne source inconnue de la dest) ;
@@ -193,16 +193,46 @@ struct BackupTableMeta {          // #[serde(rename_all = "camelCase")] — AJOU
 
 ### Agent Model Used
 
-_(à compléter par dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — single-pass orchestré T-C1→T-C7.
 
 ### Debug Log References
 
+Quality gate (DATABASE_URL local `kesh-mariadb` Docker) : `cargo fmt --all --check` OK, `cargo clippy --workspace --all-targets -D warnings` 0 warning, tests ciblés verts (kesh-db backup/version, kesh-api admin_backup unit, **admin_full_import_e2e 9/9**), `cargo test --workspace -j1 --test-threads=1` (non-régression — voir Completion Notes).
+
 ### Completion Notes List
 
+- **Couche kesh-db (`backup.rs`)** : ajout symétrique de l'export — `parse_ndjson_rows` (NDJSON → lignes ordonnées par `column_names`, clé absente → null), `column_constraints` + `ColumnConstraint::is_required()` (NOT NULL sans défaut, non-générée, non-auto-incr) pour le check AC12c, `restore_tables_in_tx` (DELETE+INSERT paramétrés sous `FOREIGN_KEY_CHECKS=0`, **`onboarding_state` exclue** DC11, **rétablissement systématique de FK=1** même sur erreur via capture du résultat), `bind_json_value` (fidélité de type DC1 : null/bool/i64/u64/f64/string ; objet→re-string défensif), `force_onboarding_done_if_eligible` (DC11 : `step_completed=8` si ≥1 company non-stub + ≥1 admin).
+- **`version.rs`** : `check_import_version_compat(min_required, binary)` **pure** (pas de DB), refus `DowngradeRefused` ssi `min_required > binary` (DC4), gère pré-releases SemVer. 4 tests unit.
+- **`admin_backup/import.rs`** (nouveau) : `parse_and_verify` (structure ZIP stricte — entrée inattendue refusée, `files/` non-vide refusé, manifeste désérialisé, `formatVersion ≤ 1`, couverture des 22 tables, **SHA-256 par table avant tout DELETE**, rowCount cohérent) + `check_schema_compat` (bidirectionnel c1/c2 → `IMPORT_SCHEMA_MISMATCH`). 6 tests unit.
+- **`manifest.rs`** : `Deserialize` ajouté à `BackupManifest`/`BackupTableMeta` (relecture import).
+- **Handler `routes/admin.rs::full_import`** : multipart (champ `file`, dup refusé) → anti-PAT → `parse_and_verify` → compat version (409 / 400 si SemVer illisible) → `check_schema_compat` (400) → **verrou `GET_LOCK('kesh_full_import', 10)`** sur connexion dédiée (sérialise backup+restore, relâché tous chemins) → **backup pré-import** (`build_keshbackup` sans audit → `KESH_ADMIN_BACKUP_DIR`, échec=500) → **restore transactionnel** + **garde de cohérence** (rows insérées = rows backup hors `onboarding_state`) + **audit in-tx** `user_id=MIN(admin) source` (O-1) + DC11 + COMMIT. Réponse 200 `{ backupCreated, tablesRestored, rowsRestored, sourceVersion, sessionInvalidated:true }`.
+- **`config.rs`** : `admin_import_max_mib` (512, [1,10240]) + `admin_backup_dir` (`/tmp`) + parsing env + 3 builders.
+- **`errors.rs`** : 4 variants (`AdminFullImportFailed`→500, `InvalidBackupStructure`→400, `ImportSchemaMismatch{details}`→400, `ImportVersionIncompatible{details}`→409) + i18n FR/DE/IT/EN ×4 clés.
+- **`lib.rs`** : route `POST /api/v1/admin/full-import` dans `admin_routes` + `DefaultBodyLimit` propre.
+- **Tests E2E** (`admin_full_import_e2e.rs`, 9/9) : round-trip remplacement + **O-1** (audit user_id = admin source ≠ caller, pas de viol FK), RBAC non-Admin 403, anti-PAT 403, refus 409 version / 400 SHA tamper / 400 format / 400 IMPORT_SCHEMA_MISMATCH, **rollback** (ide invalide → 500 → destination intacte), DC11 onboarding forcé done.
+- **Pattern batch `FailedProposal`** : N/A (O-8, opération atomique tout-ou-rien).
+- **Aucune migration DB** (DC9). **Note v0.3** : INSERT ligne-par-ligne (pas de batch multi-VALUES) — acceptable PME, optimisation batch documentée pour les grosses installs.
+
 ### File List
+
+**Nouveaux fichiers :**
+- `crates/kesh-api/src/admin_backup/import.rs` — `parse_and_verify` + `check_schema_compat` + `ParsedBackup` + tests unit.
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` — 9 tests E2E HTTP.
+
+**Fichiers modifiés :**
+- `crates/kesh-db/src/backup.rs` — `parse_ndjson_rows`, `column_constraints`/`ColumnConstraint`, `TableRestore`, `restore_tables_in_tx`/`restore_body`/`bind_json_value`, `force_onboarding_done_if_eligible` + tests.
+- `crates/kesh-db/src/version.rs` — `check_import_version_compat` + 4 tests.
+- `crates/kesh-api/src/admin_backup/mod.rs` — `pub mod import;`.
+- `crates/kesh-api/src/admin_backup/manifest.rs` — `Deserialize` sur `BackupManifest`/`BackupTableMeta`.
+- `crates/kesh-api/src/routes/admin.rs` — handler `full_import` + `read_upload`/`run_backup_and_restore`/`write_pre_import_backup`.
+- `crates/kesh-api/src/config.rs` — `admin_import_max_mib` + `admin_backup_dir` + parsing + builders.
+- `crates/kesh-api/src/errors.rs` — 4 variants import + arms.
+- `crates/kesh-api/src/lib.rs` — route `POST /api/v1/admin/full-import` + `DefaultBodyLimit`.
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` — 4 clés d'erreur import.
 
 ### Change Log
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3c (backend import) extraite de l'umbrella 17-3 Partie C (convergée 5 passes, contenu déjà adversarialement revu dont catches Opus P3 O-1/O-2/O-3/O-5). Ancrée sur le code réel de 17-3a (DONE) : `build_keshbackup` (Vec<u8> sans audit) réutilisé pour backup pré-import, `BackupManifest` à étendre `Deserialize`, `TABLES_TO_TRUNCATE` pub, `NewAuditLogEntry::user` pour audit user_id-explicite (O-1 FK), `check_downgrade_protection` modèle pour `check_import_version_compat`. AC11-17 + transverses. T-C1..T-C7. Validation pré-restore stricte (structure/SHA/colonnes bidir/version), restore transactionnel DELETE (pas TRUNCATE), audit in-tx, DC11 onboarding. Re-validate optionnel. Prochaine : `bmad-dev-story 17-3c` (Opus recommandé — restore transactionnel + bind dynamique 21 tables). |
+| 2026-06-09 | dev-story | Opus 4.8 | Implémentation single-pass T-C1→T-C7. Couche kesh-db (`parse_ndjson_rows`/`column_constraints`/`restore_tables_in_tx` avec FK=1 garanti/`bind_json_value`/`force_onboarding_done_if_eligible`) + `check_import_version_compat` (pure). Module `admin_backup/import.rs` (`parse_and_verify` validation pré-DELETE stricte + SHA + couverture + `check_schema_compat` bidirectionnel). Handler `full_import` (multipart, anti-PAT, GET_LOCK serialise backup+restore, backup pré-import disque, restore transactionnel + garde cohérence rows + audit in-tx O-1 + DC11). 4 variants AppError + i18n ×4. 2 nouveaux fichiers + 9 modifiés. **Quality gate** : fmt OK, clippy 0 warning, **admin_full_import_e2e 9/9** (round-trip+O-1, RBAC, anti-PAT, refus 409/400×3, rollback, DC11), kesh-db backup/version + import unit verts, `cargo test --workspace -j1 --test-threads=1` non-régression. 2 bugs auto-détectés+corrigés pendant le dev (garde cohérence comptait `onboarding_state` exclue ; test rollback déclenchait IMPORT_SCHEMA_MISMATCH avant l'INSERT). Status review. Prochaine : `bmad-code-review 17-3c` (Sonnet 4.6, LLM différent). |

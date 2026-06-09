@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{SecondsFormat, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
 
@@ -14,8 +14,9 @@ use crate::errors::AppError;
 /// introduit par 17-3a). L'import (17-3c) refusera `400` si `> 1`.
 pub const BACKUP_FORMAT_VERSION: u32 = 1;
 
-/// Manifeste du `.keshbackup` (au ROOT du ZIP).
-#[derive(Debug, Clone, Serialize)]
+/// Manifeste du `.keshbackup` (au ROOT du ZIP). `Deserialize` ajouté en 17-3c
+/// pour relire le manifeste à l'import.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupManifest {
     pub format_version: u32,
@@ -27,7 +28,7 @@ pub struct BackupManifest {
 }
 
 /// Métadonnées par table (clé du `tables` = nom de la table).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupTableMeta {
     pub row_count: usize,

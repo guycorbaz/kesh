@@ -914,6 +914,10 @@ export-global-content-excludes = Ne contient pas : utilisateurs (PII + mots de p
 export-global-souverainete-note = Vos données vous appartiennent. Kesh ne fait aucune copie de cet export sur ses serveurs.
 error-global-export-failed = L'export global n'a pas pu être généré. Si le problème persiste, contactez le support.
 error-admin-full-export-failed = L'export de l'installation n'a pas pu être généré. Réessayez dans quelques instants ; si le problème persiste, contactez le support.
+error-admin-full-import-failed = L'import de l'installation a échoué. L'état précédent a été préservé (un backup automatique a été créé avant l'opération). Vérifiez les logs serveur, puis réessayez.
+error-invalid-backup-structure = Le fichier de sauvegarde est invalide ou corrompu (structure inattendue ou contrôle d'intégrité échoué). Vérifiez qu'il s'agit bien d'un fichier .keshbackup produit par Kesh.
+error-import-schema-mismatch = Le schéma de ce backup est incompatible avec cette version de Kesh. Mettez à jour Kesh ou utilisez un backup compatible.
+error-import-version-incompatible = Ce backup requiert une version de Kesh plus récente que celle installée. Mettez à jour Kesh avant de réimporter.
 
 # Story v011-5 — Onboarding self-service (12 clés UI + 2 clés erreurs)
 error-setup-required = Configuration initiale requise. Créer le compte administrateur via /setup.
