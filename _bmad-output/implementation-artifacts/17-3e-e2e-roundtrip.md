@@ -1,6 +1,6 @@
 # Story 17.3e: Test d'intégration Rust round-trip export↔import (`admin_backup_e2e.rs`)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella (Partie E, AC22 / T-E1). Dépend de 17-3a (export) + 17-3c (import), tous DONE. -->
 <!-- Test-only : aucune logique applicative, verrouille la correction fonctionnelle de bout en bout. -->
@@ -47,10 +47,10 @@ so that **toute régression future du moteur `.keshbackup` (fidélité de séria
 
 ## Tasks / Subtasks
 
-- [ ] **T-E1** Créer `crates/kesh-api/tests/admin_backup_e2e.rs` : harness HTTP (réutiliser le pattern `spawn_app` + `forge_jwt` de `admin_full_import_e2e.rs` — `TestApp`, `test_config`, `spawn_app`, `forge_jwt`). (AC: 1)
-- [ ] **T-E2** Test `full_roundtrip_rich_dataset_preserves_all_tables` : seed riche (`seed_accounting_company`, éventuellement + `seed_contact_and_product` pour contacts/products) → baseline counts (22 tables) → GET export (JWT admin) → créer company « Ghost » → POST import → assert équivalence per-table + Ghost absente. (AC: 1)
-- [ ] **T-E3** Assertions complémentaires dans le même test (ou tests dédiés) : login admin source `200` (AC2) ; FK join (`company_invoice_settings`→`accounts`, `fiscal_years`→`companies`) (AC3) ; audit `admin.full_import` présent + rows audit source préservées (AC3). (AC: 2, 3)
-- [ ] **T-E4** Commentaire d'en-tête documentant le périmètre (delta vs 17-3a/17-3c) + cross-référence refus/rollback + dette Playwright double-instance v0.3. (AC: 4)
+- [x] **T-E1** Créer `crates/kesh-api/tests/admin_backup_e2e.rs` : harness HTTP (réutiliser le pattern `spawn_app` + `forge_jwt` de `admin_full_import_e2e.rs` — `TestApp`, `test_config`, `spawn_app`, `forge_jwt`). (AC: 1)
+- [x] **T-E2** Test `full_roundtrip_rich_dataset_preserves_all_tables` : seed riche (`seed_accounting_company`, éventuellement + `seed_contact_and_product` pour contacts/products) → baseline counts (22 tables) → GET export (JWT admin) → créer company « Ghost » → POST import → assert équivalence per-table + Ghost absente. (AC: 1)
+- [x] **T-E3** Assertions complémentaires dans le même test (ou tests dédiés) : login admin source `200` (AC2) ; FK join (`company_invoice_settings`→`accounts`, `fiscal_years`→`companies`) (AC3) ; audit `admin.full_import` présent + rows audit source préservées (AC3). (AC: 2, 3)
+- [x] **T-E4** Commentaire d'en-tête documentant le périmètre (delta vs 17-3a/17-3c) + cross-référence refus/rollback + dette Playwright double-instance v0.3. (AC: 4)
 
 ## Dev Notes
 
@@ -100,16 +100,30 @@ so that **toute régression future du moteur `.keshbackup` (fidélité de séria
 
 ### Agent Model Used
 
-_(à compléter par dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — single-pass orchestré T-E1→T-E4.
 
 ### Debug Log References
 
+Quality gate : `cargo fmt --all --check` OK, `cargo clippy --workspace --all-targets -D warnings` 0 warning (1 corrigé : `>= x+1` → `> x`), **admin_backup_e2e 3/3**, `cargo test --workspace -j1 --test-threads=1` exit 0 (0 régression).
+
 ### Completion Notes List
 
+- **`admin_backup_e2e.rs`** (nouveau, 3 tests) : harness HTTP copié de `admin_full_import_e2e.rs` (helpers non partagés entre crates de test — duplication assumée, pattern projet).
+- **`full_roundtrip_rich_dataset_preserves_all_tables`** : seed riche (`seed_accounting_company` + `seed_contact_and_product` → 8 tables peuplées) → baseline `COUNT(*)` des 22 tables → GET export → company « Ghost » → POST import 200 → **équivalence per-table** (toutes == baseline ; Ghost supprimée).
+- **`full_roundtrip_source_admin_can_login_after_import`** : après restore, `POST /auth/login` `admin`/`admin123` → 200 (fidélité `password_hash` + FK `users→companies`).
+- **`full_roundtrip_fk_integrity_and_audit_after_import`** : INNER JOIN `company_invoice_settings→accounts` + `fiscal_years→companies` (FK intègres) ; entrée `admin.full_import` présente + total audit augmenté.
+- **Découvertes (comportements DC corrects capturés par le test, pas des bugs)** : (1) `audit_log` post-import = baseline **+1** (l'entrée `admin.full_import` est insérée dans la transaction de restore, O-1/AC16) ; (2) `onboarding_state` post-import = **forcée done** (`step_completed >= 7`), row créée même si absente (DC11 `force_onboarding_done_if_eligible` upsert, dataset éligible : company non-stub + admin). Ces deux tables sont donc **exclues de l'équivalence stricte** et vérifiées par des assertions DC dédiées. ⚠️ La Dev Note spec disait « onboarding_state reste 0 » — **inexact** : DC11 la force à 1. Le test reflète le vrai comportement (correct, anti catch-22 #120).
+- **Refus/rollback** : NON ré-implémentés (cross-réf `admin_full_import_e2e.rs`, documenté en en-tête de fichier). **Playwright double-instance** = dette v0.3 (commentaire d'en-tête).
+- **Backend/applicatif** : aucun changement.
+
 ### File List
+
+**Nouveau fichier :**
+- `crates/kesh-api/tests/admin_backup_e2e.rs` — 3 tests d'intégration round-trip.
 
 ### Change Log
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
+| 2026-06-09 | dev-story | Opus 4.8 | `admin_backup_e2e.rs` (3 tests) : round-trip riche (seed 8 tables → équivalence per-table + Ghost supprimée), login admin source 200, FK joins + audit. Découvertes (comportements DC corrects, pas bugs) : audit_log = baseline+1 (entrée import in-tx) + onboarding_state forcée done (DC11) → exclues de l'équivalence stricte + assertions DC dédiées. Refus/rollback cross-réf 17-3c (non dupliqués). Quality gate : fmt OK, clippy 0, admin_backup_e2e 3/3, workspace serial exit 0. Status review. Prochaine : `bmad-code-review 17-3e` (Sonnet). |
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3e (E2E intégration round-trip) extraite umbrella Partie E (AC22). **Delta** : round-trip riche multi-tables (seed_accounting_company) + équivalence per-table + login admin source (admin/admin123) + FK + audit ; refus/rollback déjà couverts 17-3c (cross-réf, pas de duplication). Playwright double-instance = dette v0.3. Test-only, aucun fichier applicatif. T-E1..T-E4. Prochaine : `bmad-dev-story 17-3e`. |
