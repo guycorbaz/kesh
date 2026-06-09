@@ -168,6 +168,35 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
         populated >= 6,
         "le seed riche doit peupler ≥ 6 tables, got {populated} : {baseline:?}"
     );
+    // Équivalence NON-TRIVIALE (review P1) : les 8 tables peuplées par le seed
+    // doivent avoir un baseline > 0, sinon `after == baseline` serait vacuement
+    // `0 == 0`. Les autres tables (journal/bank/invoices) restent vides — leur
+    // sérialisation par type est couverte par les tests unitaires de
+    // `kesh-db/src/backup.rs` (peupler les 22 tables = enhancement v0.3).
+    for t in [
+        "companies",
+        "users",
+        "fiscal_years",
+        "accounts",
+        "company_invoice_settings",
+        "vat_rates",
+        "contacts",
+        "products",
+    ] {
+        assert!(
+            baseline[t] > 0,
+            "le seed doit peupler '{t}' pour une équivalence non-triviale (baseline={})",
+            baseline[t]
+        );
+    }
+    // Fidélité de VALEUR (pas seulement de count, review P1) : snapshot des
+    // DECIMAL `vat_rates.rate` avant export pour vérifier le round-trip EXACT
+    // (anti-arrondi binaire — la régression classique du bind f64).
+    let vat_before: Vec<String> =
+        sqlx::query_scalar("SELECT CAST(rate AS CHAR) FROM vat_rates ORDER BY rate DESC, label")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
 
     // 3. Export via GET /admin/full-export (JWT admin seedé).
     let export_resp = app
@@ -248,16 +277,31 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
         "audit_log : baseline + 1 (entrée admin.full_import in-tx) attendu"
     );
     // `onboarding_state` (DC11) : exclue du restore puis **forcée à l'état
-    // terminé** (step_completed >= 7) car le dataset restauré est éligible
-    // (company non-stub + admin). La row est créée si absente (seed = 0 row).
+    // terminé** (`step_completed == 8`, valeur post-finalize) car le dataset
+    // restauré est éligible (company non-stub + admin). La row est créée si
+    // absente (seed = 0 row). On assert la valeur EXACTE (review P1 : `>= 7`
+    // laisserait passer une régression mettant 7 = « finalize en cours »).
     let onb_step: Option<i32> =
         sqlx::query_scalar("SELECT step_completed FROM onboarding_state LIMIT 1")
             .fetch_optional(&pool)
             .await
             .unwrap();
-    assert!(
-        matches!(onb_step, Some(s) if s >= 7),
-        "onboarding_state doit être forcée done (step_completed >= 7), got {onb_step:?}"
+    assert_eq!(
+        onb_step,
+        Some(8),
+        "onboarding_state doit être forcée done (step_completed == 8, DC11), got {onb_step:?}"
+    );
+
+    // Fidélité DECIMAL end-to-end (review P1) : les taux TVA round-trippent
+    // EXACTEMENT (mêmes strings « 8.10 »/« 0.00 » qu'avant export).
+    let vat_after: Vec<String> =
+        sqlx::query_scalar("SELECT CAST(rate AS CHAR) FROM vat_rates ORDER BY rate DESC, label")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        vat_after, vat_before,
+        "round-trip DECIMAL vat_rates.rate doit être exact (anti-arrondi)"
     );
     let ghost_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies WHERE id = ?")
         .bind(ghost_id)
@@ -280,17 +324,15 @@ async fn full_roundtrip_source_admin_can_login_after_import(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
 
-    let backup_bytes = app
+    let export = app
         .client
         .get(app.url("/api/v1/admin/full-export"))
         .header("Authorization", format!("Bearer {jwt}"))
         .send()
         .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap()
-        .to_vec();
+        .unwrap();
+    assert_eq!(export.status(), 200, "export → 200");
+    let backup_bytes = export.bytes().await.unwrap().to_vec();
 
     let form = multipart::Form::new().part(
         "file",
@@ -341,17 +383,15 @@ async fn full_roundtrip_fk_integrity_and_audit_after_import(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let backup_bytes = app
+    let export = app
         .client
         .get(app.url("/api/v1/admin/full-export"))
         .header("Authorization", format!("Bearer {jwt}"))
         .send()
         .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap()
-        .to_vec();
+        .unwrap();
+    assert_eq!(export.status(), 200, "export → 200");
+    let backup_bytes = export.bytes().await.unwrap().to_vec();
     let form = multipart::Form::new().part(
         "file",
         multipart::Part::bytes(backup_bytes)
@@ -372,7 +412,14 @@ async fn full_roundtrip_fk_integrity_and_audit_after_import(pool: MySqlPool) {
     );
 
     // FK : company_invoice_settings.default_receivable_account_id pointe sur un
-    // accounts.id réel restauré (INNER JOIN → ≥ 1 ligne).
+    // accounts.id réel restauré. On compare le COUNT joint au COUNT total de la
+    // table → **TOUTES** les rows ont une FK valide (review P1 : le restore se
+    // fait sous FOREIGN_KEY_CHECKS=0, donc une FK pendante pourrait commiter ;
+    // `>= 1` la masquerait, `== total` la détecte).
+    let settings_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM company_invoice_settings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let settings_fk_ok: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM company_invoice_settings cis \
          INNER JOIN accounts a ON a.id = cis.default_receivable_account_id",
@@ -380,12 +427,17 @@ async fn full_roundtrip_fk_integrity_and_audit_after_import(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(
-        settings_fk_ok >= 1,
-        "company_invoice_settings.default_receivable_account_id doit pointer sur un account restauré"
+    assert!(settings_total >= 1, "le seed crée company_invoice_settings");
+    assert_eq!(
+        settings_fk_ok, settings_total,
+        "TOUTES les company_invoice_settings.default_receivable_account_id doivent pointer sur un account restauré (pas de FK pendante)"
     );
 
-    // FK : fiscal_years → companies.
+    // FK : fiscal_years → companies (toutes les rows, pas seulement ≥ 1).
+    let fy_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let fy_fk_ok: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM fiscal_years fy \
          INNER JOIN companies c ON c.id = fy.company_id",
@@ -393,9 +445,10 @@ async fn full_roundtrip_fk_integrity_and_audit_after_import(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(
-        fy_fk_ok >= 1,
-        "fiscal_years doit référencer une company restaurée"
+    assert!(fy_total >= 1, "le seed crée un fiscal_year");
+    assert_eq!(
+        fy_fk_ok, fy_total,
+        "TOUS les fiscal_years.company_id doivent référencer une company restaurée"
     );
 
     // Audit : l'entrée admin.full_import (post-restore) est présente, et le
