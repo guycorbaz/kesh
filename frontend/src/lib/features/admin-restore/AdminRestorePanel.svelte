@@ -32,6 +32,9 @@
 		// backend rejette aussi en 400, mais autant échouer tôt côté client).
 		if (file && !file.name.toLowerCase().endsWith('.keshbackup')) {
 			selectedFile = null;
+			// Vide aussi l'input natif (review P2) pour éviter la divergence
+			// état/DOM et permettre de re-sélectionner le même fichier corrigé.
+			input.value = '';
 			errorMsg = i18nMsg(
 				'admin-restore-error-invalid',
 				"Fichier de sauvegarde invalide ou corrompu. Vérifiez qu'il s'agit bien d'un fichier .keshbackup produit par Kesh.",
