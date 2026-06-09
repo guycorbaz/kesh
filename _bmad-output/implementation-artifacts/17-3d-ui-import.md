@@ -1,6 +1,6 @@
 # Story 17.3d: UI admin import complet d'installation (`/admin/restore`)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella `17-3-export-import-installation.md` (Partie D), convergée au validate en 5 passes. Contenu déjà adversarialement revu. Re-validate optionnel. -->
 <!-- CONSOMME `POST /api/v1/admin/full-import` posé par 17-3c (DONE, `d9e3080`). Dépend de 17-3c. Dernière brique UI de l'épopée (ferme la boucle export↔import). -->
@@ -49,10 +49,10 @@ so that **je puisse restaurer/migrer une installation complète depuis l'interfa
 
 ## Tasks / Subtasks
 
-- [ ] **T-D1** Feature front `src/lib/features/admin-restore/admin-restore.api.ts` : `uploadFullImport(file: File): Promise<FullImportResponse>` via `apiClient.postFormData('/api/v1/admin/full-import', form)` (form avec champ `file`, pattern `bank-import.api.ts`). Type `FullImportResponse` = `{ backupCreated: boolean; tablesRestored: number; rowsRestored: number; sourceVersion: string; sessionInvalidated: boolean }` (camelCase, miroir de la réponse 17-3c). (AC: 18)
-- [ ] **T-D2** Composant `src/lib/features/admin-restore/AdminRestorePanel.svelte` (runes Svelte 5, testable, possède les clés `admin-restore-*`) : input file (`accept=".keshbackup"`, `$state` du fichier sélectionné), bouton « Importer » désactivé tant qu'aucun fichier ; clic → ouvre le **modal `Dialog` de confirmation forte** (AC19) ; « Confirmer » → upload (guard ré-entrance `if (importing) return`), bouton désactivé + `aria-busy` + « Import en cours… » ; **erreurs typées** (AC20, via `isApiError` + `err.error.code`/status) ; **succès** → message + `await authState.logout()` + `window.location.replace('/login')` (AC20-succès). `<svelte:head><title>`. Import `i18nMsg` depuis `$lib/shared/utils/i18n.svelte`. (AC: 18, 19, 20, 27, 28)
-- [ ] **T-D3** Route `src/routes/(app)/admin/restore/+page.svelte` (thin wrapper rendant `<AdminRestorePanel />`) + **`src/routes/(app)/admin/restore/+page.ts`** (guard Admin, copie de `admin/backup/+page.ts`). Item sidebar `administration.adminOnly` `{ i18nKey: 'nav-admin-restore', fallback: 'Restaurer / Importer', href: '/admin/restore' }` (`+layout.svelte`, rendu via `getItemLabel` existant). Clés i18n `nav-admin-restore` + `admin-restore-*` **FR/DE/IT/EN** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`). (AC: 18, 21, 27)
-- [ ] **T-D4** Tests : **unit composant** (vitest, `@testing-library/svelte`, mock `admin-restore.api` + `i18nMsg` + `svelte-sonner` + `authState`) — (a) bouton « Importer » désactivé sans fichier ; (b) **confirmation bloque l'envoi** : clic « Importer » n'appelle PAS `uploadFullImport` (ouvre le modal) ; seul « Confirmer » l'appelle ; (c) état chargement + guard ré-entrance ; (d) erreur typée affichée ; (e) succès → `authState.logout` appelé (mocké). Test unit `admin-restore.api.ts` (form contient le champ `file`). **`npm run lint-i18n-ownership` PASS.** *(E2E Playwright déféré 17-3e.)* (AC: 19, 27)
+- [x] **T-D1** Feature front `src/lib/features/admin-restore/admin-restore.api.ts` : `uploadFullImport(file: File): Promise<FullImportResponse>` via `apiClient.postFormData('/api/v1/admin/full-import', form)` (form avec champ `file`, pattern `bank-import.api.ts`). Type `FullImportResponse` = `{ backupCreated: boolean; tablesRestored: number; rowsRestored: number; sourceVersion: string; sessionInvalidated: boolean }` (camelCase, miroir de la réponse 17-3c). (AC: 18)
+- [x] **T-D2** Composant `src/lib/features/admin-restore/AdminRestorePanel.svelte` (runes Svelte 5, testable, possède les clés `admin-restore-*`) : input file (`accept=".keshbackup"`, `$state` du fichier sélectionné), bouton « Importer » désactivé tant qu'aucun fichier ; clic → ouvre le **modal `Dialog` de confirmation forte** (AC19) ; « Confirmer » → upload (guard ré-entrance `if (importing) return`), bouton désactivé + `aria-busy` + « Import en cours… » ; **erreurs typées** (AC20, via `isApiError` + `err.error.code`/status) ; **succès** → message + `await authState.logout()` + `window.location.replace('/login')` (AC20-succès). `<svelte:head><title>`. Import `i18nMsg` depuis `$lib/shared/utils/i18n.svelte`. (AC: 18, 19, 20, 27, 28)
+- [x] **T-D3** Route `src/routes/(app)/admin/restore/+page.svelte` (thin wrapper rendant `<AdminRestorePanel />`) + **`src/routes/(app)/admin/restore/+page.ts`** (guard Admin, copie de `admin/backup/+page.ts`). Item sidebar `administration.adminOnly` `{ i18nKey: 'nav-admin-restore', fallback: 'Restaurer / Importer', href: '/admin/restore' }` (`+layout.svelte`, rendu via `getItemLabel` existant). Clés i18n `nav-admin-restore` + `admin-restore-*` **FR/DE/IT/EN** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`). (AC: 18, 21, 27)
+- [x] **T-D4** Tests : **unit composant** (vitest, `@testing-library/svelte`, mock `admin-restore.api` + `i18nMsg` + `svelte-sonner` + `authState`) — (a) bouton « Importer » désactivé sans fichier ; (b) **confirmation bloque l'envoi** : clic « Importer » n'appelle PAS `uploadFullImport` (ouvre le modal) ; seul « Confirmer » l'appelle ; (c) état chargement + guard ré-entrance ; (d) erreur typée affichée ; (e) succès → `authState.logout` appelé (mocké). Test unit `admin-restore.api.ts` (form contient le champ `file`). **`npm run lint-i18n-ownership` PASS.** *(E2E Playwright déféré 17-3e.)* (AC: 19, 27)
 
 ## Dev Notes
 
@@ -118,16 +118,39 @@ so that **je puisse restaurer/migrer une installation complète depuis l'interfa
 
 ### Agent Model Used
 
-_(à compléter par dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — single-pass orchestré T-D1→T-D4.
 
 ### Debug Log References
 
+Quality gate frontend (Test Locally First) : `npm run check` **0 erreurs** (25 warnings pré-existants), `npm run lint-i18n-ownership` **PASS**, `npm run test:unit` **35 fichiers / 295 tests** (6 nouveaux admin-restore), `npm run build` ✓. E2E sidebar non-impacté (navigue 5 items non-adminOnly). E2E dédié déféré 17-3e.
+
 ### Completion Notes List
 
+- **`admin-restore.api.ts`** : `uploadFullImport(file)` via `apiClient.postFormData('/api/v1/admin/full-import', form)` (champ `file`) + type `FullImportResponse` (miroir camelCase 17-3c).
+- **`AdminRestorePanel.svelte`** : input file (`accept=".keshbackup"`, `$state` selectedFile), bouton « Importer » désactivé sans fichier → **ouvre le modal `Dialog`** (DC-D3, n'envoie rien) ; **« Confirmer »** seul déclenche l'upload (guard ré-entrance, `aria-busy`, « Import en cours… »). **Erreurs typées** (`isApiError` + `err.code` : `IMPORT_VERSION_INCOMPATIBLE`/`IMPORT_SCHEMA_MISMATCH`/`INVALID_BACKUP_STRUCTURE` → messages dédiés avec `details`, 413/500 → `err.message`). **Succès** → toast + `authState.logout()` + `window.location.replace('/login')` (DC-D4). `<svelte:head><title>`. `i18nMsg` depuis `$lib/shared/utils/i18n.svelte`. *(Note : `ApiError` expose `err.code`/`err.details` au top-level — pas `err.error.code` ; corrigé vs la formulation de l'AC20.)*
+- **Route** : `(app)/admin/restore/+page.svelte` thin + **`+page.ts` guard Admin** (DC-D1, copie de `admin/backup/+page.ts`).
+- **Sidebar** : item `adminOnly` `nav-admin-restore` (rendu via `getItemLabel`), distinct de `nav-admin-backup` (17-3b).
+- **i18n** : 15 clés `admin-restore-*` + `nav-admin-restore`, **FR/DE/IT/EN** (placeholders `{ $src }`/`{ $bin }`/`{ $table }` pour version/schéma).
+- **Tests** : `AdminRestorePanel.test.ts` (bouton désactivé sans fichier ; **« Importer » n'appelle PAS upload, ouvre le modal** ; « Confirmer » → upload + logout + redirect ; erreur → encart, pas de redirect) + `admin-restore.api.test.ts` (FormData champ `file` + 409). 6 tests verts (modal bits-ui testé via `findByTestId`).
+- **Backend** : aucun changement. Aucune migration.
+
 ### File List
+
+**Nouveaux fichiers :**
+- `frontend/src/lib/features/admin-restore/admin-restore.api.ts`
+- `frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte`
+- `frontend/src/lib/features/admin-restore/admin-restore.api.test.ts`
+- `frontend/src/lib/features/admin-restore/AdminRestorePanel.test.ts`
+- `frontend/src/routes/(app)/admin/restore/+page.svelte`
+- `frontend/src/routes/(app)/admin/restore/+page.ts`
+
+**Fichiers modifiés :**
+- `frontend/src/routes/(app)/+layout.svelte` — item sidebar `nav-admin-restore`.
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` — 16 clés (`nav-admin-restore` + 15 `admin-restore-*`).
 
 ### Change Log
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
+| 2026-06-09 | dev-story | Opus 4.8 | Implémentation single-pass T-D1→T-D4. Feature `lib/features/admin-restore/` (`admin-restore.api.ts uploadFullImport` + `AdminRestorePanel.svelte`) : input file + **modal Dialog confirmation forte** (upload uniquement via « Confirmer », DC-D3) + erreurs typées (409/400×2/+message) + succès→`authState.logout()`+`window.location.replace('/login')` (DC-D4) + route thin + **`+page.ts` guard Admin** (DC-D1) + item sidebar `nav-admin-restore` + 16 clés i18n×4. 6 nouveaux + 5 modifiés fichiers. **Quality gate** : check 0 erreurs, lint-i18n-ownership PASS, test:unit 35/35 fichiers 295 tests (6 nouveaux), build ✓. Backend inchangé. Status review. Prochaine : `bmad-code-review 17-3d` (Sonnet 4.6, LLM différent). |
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3d (UI import) extraite de l'umbrella Partie D (AC18-21). Ancrée sur les patterns réels : `postFormData` (bank-import), Dialog (bits-ui), déconnexion `authState.logout()`+`window.location.replace('/login')` (+layout.svelte:259), guard `+page.ts` (admin/backup créé 17-3b), composant de réf `AdminBackupPanel`. **Leçons 17-3b intégrées** : DC-D1 guard +page.ts obligatoire, DC-D2 clés `admin-restore-*` (préfixe=dossier), svelte:head, aria-busy. DC-D3 confirmation forte (upload uniquement via « Confirmer » du modal). DC-D4 succès→logout+redirect /login (sessionInvalidated). Frontend pur, consomme 17-3c. T-D1..T-D4. Prochaine : `bmad-dev-story 17-3d`. |

@@ -101,6 +101,12 @@
 					fallback: 'Sauvegarde complète',
 					href: '/admin/backup',
 				},
+				// Story 17-3d — import/restauration complète de l'installation.
+				{
+					i18nKey: 'nav-admin-restore',
+					fallback: 'Restaurer / Importer',
+					href: '/admin/restore',
+				},
 			],
 		},
 	];
