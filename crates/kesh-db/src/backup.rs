@@ -490,8 +490,15 @@ fn bind_json_value<'q>(
                     DbError::Invariant(format!("entier {u} hors borne i64 (backup corrompu ?)"))
                 })?;
                 q.bind(i)
+            } else if let Some(f) = n.as_f64() {
+                q.bind(f)
             } else {
-                q.bind(n.as_f64().unwrap_or(0.0))
+                // Nombre JSON non représentable en i64/u64/f64 (n'arrive pas
+                // sans la feature serde_json `arbitrary_precision`, non activée) :
+                // rejeter plutôt que binder 0.0 silencieusement (review Pass 2).
+                return Err(DbError::Invariant(format!(
+                    "nombre JSON non représentable : {n}"
+                )));
             }
         }
         Value::String(s) => q.bind(s.as_str()),

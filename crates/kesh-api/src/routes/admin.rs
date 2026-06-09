@@ -241,7 +241,17 @@ async fn run_backup_and_restore(
     sqlx::query("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| AppError::AdminFullImportFailed(format!("verrou installation : {e}")))?;
+        .map_err(|e| AppError::AdminFullImportFailed(format!("verrou installation : {e}")))?
+        .ok_or_else(|| {
+            // Row id=1 absente = installation incohérente (le boot l'aurait
+            // refusée via check_downgrade_protection::RowMissing). Sans elle, le
+            // FOR UPDATE ne verrouille rien → refuser l'import plutôt que de
+            // risquer une course entre imports concurrents (review Pass 2).
+            AppError::AdminFullImportFailed(
+                "verrou installation : row _kesh_version id=1 absente (installation incohérente)"
+                    .into(),
+            )
+        })?;
 
     let (tables_restored, rows_restored) =
         kesh_db::backup::restore_tables_in_tx(&mut tx, &parsed.tables)
@@ -317,9 +327,16 @@ async fn write_pre_import_backup(dir: &str, bytes: &[u8]) -> Result<bool, AppErr
     tokio::fs::create_dir_all(dir).await.map_err(|e| {
         AppError::AdminFullImportFailed(format!("création répertoire backup '{dir}' : {e}"))
     })?;
+    // Nom unique même pour deux backups dans la même milliseconde (le backup
+    // pré-import est pris avant le verrou FOR UPDATE) : pid + compteur atomique
+    // process-global, comme `stream_via_tempfile` (review Pass 2).
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let path = std::path::Path::new(dir).join(format!(
-        "kesh-pre-import-{}.keshbackup",
-        Utc::now().format("%Y%m%dT%H%M%S%3f")
+        "kesh-pre-import-{}-{}-{}.keshbackup",
+        Utc::now().format("%Y%m%dT%H%M%S%3f"),
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     tokio::fs::write(&path, bytes).await.map_err(|e| {
         AppError::AdminFullImportFailed(format!("écriture backup '{}' : {e}", path.display()))
