@@ -338,6 +338,21 @@ async fn full_import_round_trip_replaces_state_and_audits_source_admin(pool: MyS
     assert_eq!(audit_uid, a.user_id, "audit user_id = admin source (O-1)");
     assert_ne!(audit_uid, b.user_id, "audit user_id ≠ caller (O-1)");
     assert_eq!(actor, "user");
+
+    // T-C7 : « login admin source possible » — le password_hash de A a été
+    // fidèlement restauré ⇒ on peut se reconnecter avec ses identifiants.
+    let login = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({"username": "Source_user", "password": "password123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        login.status(),
+        200,
+        "login admin source possible après import (password_hash + FK intègres)"
+    );
 }
 
 // ============================================================
@@ -470,6 +485,41 @@ async fn full_import_refuses_schema_mismatch_400(pool: MySqlPool) {
             .unwrap()
             .iter()
             .any(|c| c == "colonne_fantome")
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn full_import_refuses_missing_required_column_400(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Acme").await;
+    let backup = export_backup(&app, &admin.jwt).await;
+
+    // Retire une colonne destination NOT NULL sans défaut (companies.name) des
+    // columnNames source → chemin c2 `missingRequiredColumns`. Le NDJSON (bytes)
+    // est inchangé donc le SHA reste valide ; le rejet vient du check schéma.
+    let (mut manifest, data) = unzip(&backup);
+    let cols = manifest["tables"]["companies"]["columnNames"]
+        .as_array_mut()
+        .unwrap();
+    cols.retain(|c| c != "name");
+    let forged = rezip(&manifest, &data);
+
+    let resp = post_import(&app, &admin.jwt, forged).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "colonne requise absente de la source → 400"
+    );
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "IMPORT_SCHEMA_MISMATCH");
+    assert_eq!(body["error"]["details"]["table"], "companies");
+    assert!(
+        body["error"]["details"]["missingRequiredColumns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "name"),
+        "missingRequiredColumns doit contenir 'name'"
     );
 }
 

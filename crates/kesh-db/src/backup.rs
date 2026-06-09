@@ -458,7 +458,7 @@ async fn restore_body(
             }
             let mut q = sqlx::query(&sql);
             for v in row {
-                q = bind_json_value(q, v);
+                q = bind_json_value(q, v)?;
             }
             q.execute(&mut **tx).await.map_err(map_db_error)?;
             rows_restored += 1;
@@ -474,15 +474,22 @@ async fn restore_body(
 fn bind_json_value<'q>(
     q: sqlx::query::Query<'q, MySql, sqlx::mysql::MySqlArguments>,
     v: &'q Value,
-) -> sqlx::query::Query<'q, MySql, sqlx::mysql::MySqlArguments> {
-    match v {
+) -> Result<sqlx::query::Query<'q, MySql, sqlx::mysql::MySqlArguments>, DbError> {
+    let bound = match v {
         Value::Null => q.bind(Option::<String>::None),
         Value::Bool(b) => q.bind(if *b { 1_i64 } else { 0_i64 }),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 q.bind(i)
             } else if let Some(u) = n.as_u64() {
-                q.bind(u as i64)
+                // Review Pass 1 : `u64 > i64::MAX` n'est pas représentable dans
+                // le schéma Kesh (tous les entiers sont signés BIGINT/INT).
+                // Rejeter explicitement plutôt que wrapper silencieusement vers
+                // un négatif (`u64::MAX as i64 == -1`) qui corromprait la donnée.
+                let i = i64::try_from(u).map_err(|_| {
+                    DbError::Invariant(format!("entier {u} hors borne i64 (backup corrompu ?)"))
+                })?;
+                q.bind(i)
             } else {
                 q.bind(n.as_f64().unwrap_or(0.0))
             }
@@ -491,7 +498,8 @@ fn bind_json_value<'q>(
         // Objet/array : une colonne JSON est exportée en string (longtext) par
         // l'export, donc ce cas est théorique — on re-sérialise par sécurité.
         other => q.bind(other.to_string()),
-    }
+    };
+    Ok(bound)
 }
 
 /// DC11 (Story 17-3c) — après un restore, force `onboarding_state` à l'état
@@ -499,8 +507,14 @@ fn bind_json_value<'q>(
 /// restauré contient au moins une company non-stub et au moins un admin. Évite
 /// de rouvrir le catch-22 #120 quand on importe sur une instance fraîche /
 /// non-onboardée. `onboarding_state` n'étant pas restaurée (état local), on
-/// agit sur la row destination existante. Idempotent (ne touche que les rows
-/// `step_completed < 7`). Retourne `true` si l'état a été forcé.
+/// agit sur la row destination.
+///
+/// **Upsert** (review Pass 1) : couvre les deux cas que l'`UPDATE` ratait —
+/// (a) **row absente** (instance fraîche jamais onboardée : `get_state` renvoie
+/// `None` ⇒ le frontend rouvrirait le wizard malgré l'admin présent) ;
+/// (b) row à un `step_completed` quelconque < terminal. `GREATEST` évite tout
+/// downgrade. Clé unique `uq_onboarding_singleton (singleton)`. Idempotent.
+/// Retourne `true` si éligible (état forcé), `false` sinon.
 pub async fn force_onboarding_done_if_eligible(
     tx: &mut Transaction<'_, MySql>,
 ) -> Result<bool, DbError> {
@@ -514,8 +528,9 @@ pub async fn force_onboarding_done_if_eligible(
         .map_err(map_db_error)?;
     if companies >= 1 && admins >= 1 {
         sqlx::query(
-            "UPDATE onboarding_state SET step_completed = 8 \
-             WHERE singleton = TRUE AND step_completed < 7",
+            "INSERT INTO onboarding_state (singleton, step_completed, is_demo) \
+             VALUES (TRUE, 8, FALSE) \
+             ON DUPLICATE KEY UPDATE step_completed = GREATEST(step_completed, 8)",
         )
         .execute(&mut **tx)
         .await

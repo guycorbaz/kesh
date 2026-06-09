@@ -169,31 +169,15 @@ pub async fn full_import(
     // 2c. Compat colonnes bidirectionnelle (AC12c) → 400 IMPORT_SCHEMA_MISMATCH.
     check_schema_compat(&state.pool, &parsed).await?;
 
-    // 3. Verrou d'installation : sérialise les imports concurrents, tenu sur
-    //    tout le backup + restore (relâché à la sortie quel que soit le chemin).
-    let mut lock_conn = state.pool.acquire().await.map_err(|e| {
-        AppError::AdminFullImportFailed(format!("acquisition connexion verrou : {e}"))
-    })?;
-    let got: Option<i64> = sqlx::query_scalar("SELECT GET_LOCK('kesh_full_import', 10)")
-        .fetch_one(&mut *lock_conn)
-        .await
-        .map_err(|e| AppError::AdminFullImportFailed(format!("GET_LOCK : {e}")))?;
-    if got != Some(1) {
-        return Err(AppError::AdminFullImportFailed(
-            "un autre import est déjà en cours".into(),
-        ));
-    }
-
-    // 4 + 5. Backup pré-import + restore transactionnel.
-    let outcome = run_backup_and_restore(&state, &parsed, &current_user).await;
-
-    // Relâcher le verrou dans tous les cas (puis fermer la connexion).
-    let _ = sqlx::query("DO RELEASE_LOCK('kesh_full_import')")
-        .execute(&mut *lock_conn)
-        .await;
-    drop(lock_conn);
-
-    let (backup_created, tables_restored, rows_restored) = outcome?;
+    // 3 + 4 + 5. Backup pré-import + restore transactionnel. La sérialisation
+    //    des imports destructeurs concurrents est assurée par un verrou
+    //    `_kesh_version id=1 FOR UPDATE` pris **en tête de la transaction de
+    //    restore** (cf. `run_backup_and_restore`) — pattern Story 17-1,
+    //    auto-relâché au COMMIT/rollback (robuste aux panics, une seule
+    //    connexion ; review Pass 1 : remplace un `GET_LOCK` qui fuyait sur panic
+    //    et mobilisait une 2e connexion du pool).
+    let (backup_created, tables_restored, rows_restored) =
+        run_backup_and_restore(&state, &parsed, &current_user).await?;
 
     let body = serde_json::json!({
         "backupCreated": backup_created,
@@ -249,6 +233,15 @@ async fn run_backup_and_restore(
         .begin()
         .await
         .map_err(|e| AppError::AdminFullImportFailed(format!("ouverture transaction : {e}")))?;
+
+    // Verrou d'installation (pattern Story 17-1) : sérialise les imports
+    // destructeurs concurrents. Un 2e import bloque ici jusqu'au COMMIT/rollback
+    // du 1er. `_kesh_version` n'est jamais supprimée (table système), la row
+    // id=1 existe toujours (migration). Auto-relâché avec la transaction.
+    sqlx::query("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::AdminFullImportFailed(format!("verrou installation : {e}")))?;
 
     let (tables_restored, rows_restored) =
         kesh_db::backup::restore_tables_in_tx(&mut tx, &parsed.tables)

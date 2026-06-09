@@ -42,6 +42,7 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<ParsedBackup, AppError> {
 
     let mut manifest_bytes: Option<Vec<u8>> = None;
     let mut ndjson: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut has_files_dir = false;
     let mut files_non_empty = false;
 
     for i in 0..zip.len() {
@@ -73,11 +74,13 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<ParsedBackup, AppError> {
             ndjson.insert(table.to_string(), buf);
         } else if name == "files/" {
             // Dossier forward-compat attendu, vide en v0.2.
+            has_files_dir = true;
         } else if name.starts_with("files/") {
-            // Toute entrée fichier (non-dossier) sous files/ → non-vide → refus.
-            if !name.ends_with('/') {
-                files_non_empty = true;
-            }
+            // Toute entrée sous files/ (fichier OU sous-dossier) ⇒ non-vide
+            // (review Pass 1 : un sous-dossier `files/x/` finissant par '/'
+            // n'était pas détecté).
+            has_files_dir = true;
+            files_non_empty = true;
         } else {
             return Err(AppError::InvalidBackupStructure(format!(
                 "entrée inattendue dans le backup : {name}"
@@ -88,6 +91,13 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<ParsedBackup, AppError> {
     if files_non_empty {
         return Err(AppError::InvalidBackupStructure(
             "le dossier files/ doit être vide (aucun binaire en v0.2)".into(),
+        ));
+    }
+    // AC12(a) : `files/` doit être **présent** (et vide). Un backup authentique
+    // 17-3a l'émet toujours (review Pass 1 : sa présence n'était pas vérifiée).
+    if !has_files_dir {
+        return Err(AppError::InvalidBackupStructure(
+            "dossier files/ absent du backup".into(),
         ));
     }
 
@@ -112,11 +122,32 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<ParsedBackup, AppError> {
             )));
         }
     }
+    // Réciproque (review Pass 1) : aucune table hors inventaire applicatif dans
+    // le manifeste — sinon ses lignes seraient comptées dans `total_rows` mais
+    // jamais restaurées (table absente de TABLES_TO_TRUNCATE) ⇒ la garde de
+    // cohérence du handler lèverait un faux `500` au lieu d'un `400` propre.
+    let known: HashSet<&str> = TABLES_TO_TRUNCATE.iter().copied().collect();
+    for table in manifest.tables.keys() {
+        if !known.contains(table.as_str()) {
+            return Err(AppError::InvalidBackupStructure(format!(
+                "table '{table}' présente dans le manifeste mais hors inventaire applicatif"
+            )));
+        }
+    }
 
     // Intégrité SHA-256 + parsing NDJSON par table (avant tout DELETE).
     let mut tables = BTreeMap::new();
     let mut total_rows = 0usize;
     for (table, meta) in &manifest.tables {
+        // Défense en profondeur (review Pass 1, symétrie avec l'export 17-3a) :
+        // un nom de colonne contenant un backtick casserait le back-quoting de
+        // l'INSERT du restore. `check_schema_compat` le rejetterait aussi (la
+        // colonne n'existe pas côté dest), mais on refuse au plus tôt.
+        if let Some(bad) = meta.column_names.iter().find(|c| c.contains('`')) {
+            return Err(AppError::InvalidBackupStructure(format!(
+                "table '{table}' : nom de colonne invalide (backtick) : {bad}"
+            )));
+        }
         let data = ndjson.get(table).ok_or_else(|| {
             AppError::InvalidBackupStructure(format!("data/{table}.ndjson absent"))
         })?;
