@@ -426,9 +426,12 @@ async fn restore_body(
             continue;
         }
         let Some(data) = tables.get(table) else {
-            // Couverture validée en amont (parse_and_verify) ; défensivement,
-            // une table absente = restaurée à 0 ligne (déjà DELETE).
-            tables_restored += 1;
+            // Dans le flux réel, `parse_and_verify` garantit la couverture (toute
+            // table de TABLES_TO_TRUNCATE figure au manifeste). En usage isolé
+            // (tests bas-niveau avec map partielle), une table absente est
+            // simplement vidée (le DELETE a déjà eu lieu) — **non comptée** comme
+            // restaurée (review Pass 3 : évite le sur-comptage de tables_restored
+            // sans imposer la couverture complète à cette fonction).
             continue;
         };
         tables_restored += 1;
@@ -490,15 +493,15 @@ fn bind_json_value<'q>(
                     DbError::Invariant(format!("entier {u} hors borne i64 (backup corrompu ?)"))
                 })?;
                 q.bind(i)
-            } else if let Some(f) = n.as_f64() {
-                q.bind(f)
             } else {
-                // Nombre JSON non représentable en i64/u64/f64 (n'arrive pas
-                // sans la feature serde_json `arbitrary_precision`, non activée) :
-                // rejeter plutôt que binder 0.0 silencieusement (review Pass 2).
-                return Err(DbError::Invariant(format!(
-                    "nombre JSON non représentable : {n}"
-                )));
+                // Nombre non-entier : binder sa forme **string décimale exacte**.
+                // MariaDB parse exactement vers DECIMAL (fidélité financière,
+                // zéro arrondi binaire) et coerce aussi pour DOUBLE/FLOAT. Évite
+                // le `19.95 → 19.9499…` d'un bind `f64` sur une colonne DECIMAL
+                // si un backup (forgé/étranger) porte un nombre JSON au lieu de
+                // la string produite par l'export (review Pass 3). `to_string()`
+                // d'un `serde_json::Number` est sa représentation décimale exacte.
+                q.bind(n.to_string())
             }
         }
         Value::String(s) => q.bind(s.as_str()),
@@ -535,9 +538,12 @@ pub async fn force_onboarding_done_if_eligible(
         .map_err(map_db_error)?;
     if companies >= 1 && admins >= 1 {
         sqlx::query(
+            // `is_demo = FALSE` aussi à l'UPDATE (review Pass 3) : après import
+            // d'un backup réel, l'instance n'est plus en mode démo même si la
+            // row destination l'était (les seeds démo viennent d'être effacés).
             "INSERT INTO onboarding_state (singleton, step_completed, is_demo) \
              VALUES (TRUE, 8, FALSE) \
-             ON DUPLICATE KEY UPDATE step_completed = GREATEST(step_completed, 8)",
+             ON DUPLICATE KEY UPDATE step_completed = GREATEST(step_completed, 8), is_demo = FALSE",
         )
         .execute(&mut **tx)
         .await
@@ -743,8 +749,10 @@ mod tests {
             .expect("restore");
         tx.commit().await.expect("commit");
 
-        // 21 tables traitées (onboarding_state exclue), 2 lignes companies.
-        assert_eq!(n_tables, TABLES_TO_TRUNCATE.len() - 1);
+        // Seule `companies` est fournie dans la map de test → 1 table comptée
+        // (les autres sont vidées par le DELETE mais non re-restaurées, donc
+        // non comptées — cf. skip-sans-incrément). 2 lignes companies.
+        assert_eq!(n_tables, 1);
         assert_eq!(n_rows, 2);
 
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")

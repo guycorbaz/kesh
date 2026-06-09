@@ -131,7 +131,9 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/admin/full-import",
             post(routes::admin::full_import).layer(axum::extract::DefaultBodyLimit::max(
-                (state.config.admin_import_max_mib as usize) * 1024 * 1024,
+                // saturating_mul : évite l'overflow usize sur cible 32-bit
+                // (10240 MiB * 1024² > u32::MAX) — review Pass 3.
+                (state.config.admin_import_max_mib as usize).saturating_mul(1024 * 1024),
             )),
         )
         .route_layer(axum::middleware::from_fn(
