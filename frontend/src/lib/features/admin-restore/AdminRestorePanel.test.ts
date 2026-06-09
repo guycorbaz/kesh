@@ -87,10 +87,13 @@ describe('AdminRestorePanel — Story 17-3d', () => {
 		const confirm = await findByTestId('admin-restore-confirm');
 		await fireEvent.click(confirm);
 
-		expect(mockApi.uploadFullImport).toHaveBeenCalledTimes(1);
-		// Succès → déconnexion (DC-D4) + redirection /login.
-		expect(mockAuth.logout).toHaveBeenCalledTimes(1);
-		expect(replaceMock).toHaveBeenCalledWith('/login');
+		// Chaîne async (upload → logout → replace) : attendre sa complétion.
+		await vi.waitFor(() => {
+			expect(mockApi.uploadFullImport).toHaveBeenCalledTimes(1);
+			// Succès → déconnexion (DC-D4) + redirection /login.
+			expect(mockAuth.logout).toHaveBeenCalledTimes(1);
+			expect(replaceMock).toHaveBeenCalledWith('/login');
+		});
 	});
 
 	it('AC20 : erreur d’import affiche un encart + toast.error, pas de redirect', async () => {
@@ -103,7 +106,24 @@ describe('AdminRestorePanel — Story 17-3d', () => {
 		await fireEvent.click(confirm);
 
 		expect(await findByTestId('admin-restore-error')).toBeTruthy();
-		expect(replaceMock).not.toHaveBeenCalled();
-		expect(mockAuth.logout).not.toHaveBeenCalled();
+		await vi.waitFor(() => {
+			expect(replaceMock).not.toHaveBeenCalled();
+			expect(mockAuth.logout).not.toHaveBeenCalled();
+		});
+	});
+
+	it('AC20 : ré-ouvrir « Importer » après une erreur efface l’encart d’erreur', async () => {
+		mockApi.uploadFullImport.mockRejectedValue(new Error('boom'));
+		const { getByTestId, findByTestId, queryByTestId } = render(AdminRestorePanel);
+		await selectFile(getByTestId('admin-restore-file-input') as HTMLInputElement);
+		await fireEvent.click(getByTestId('admin-restore-import-button'));
+		await fireEvent.click(await findByTestId('admin-restore-confirm'));
+		// Erreur affichée.
+		expect(await findByTestId('admin-restore-error')).toBeTruthy();
+		// Re-clic « Importer » → requestImport remet errorMsg=null (rouvre le modal).
+		await fireEvent.click(getByTestId('admin-restore-import-button'));
+		await vi.waitFor(() => {
+			expect(queryByTestId('admin-restore-error')).toBeNull();
+		});
 	});
 });

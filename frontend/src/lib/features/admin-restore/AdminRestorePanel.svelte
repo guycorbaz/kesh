@@ -25,8 +25,20 @@
 
 	function onFileChange(event: Event) {
 		const input = event.target as HTMLInputElement;
-		selectedFile = input.files?.[0] ?? null;
+		const file = input.files?.[0] ?? null;
 		errorMsg = null;
+		// Rejet précoce d'une extension inattendue (review P1) : `accept` filtre le
+		// picker mais pas le drag-drop ; évite d'uploader un mauvais fichier (le
+		// backend rejette aussi en 400, mais autant échouer tôt côté client).
+		if (file && !file.name.toLowerCase().endsWith('.keshbackup')) {
+			selectedFile = null;
+			errorMsg = i18nMsg(
+				'admin-restore-error-invalid',
+				"Fichier de sauvegarde invalide ou corrompu. Vérifiez qu'il s'agit bien d'un fichier .keshbackup produit par Kesh.",
+			);
+			return;
+		}
+		selectedFile = file;
 	}
 
 	/** Ouvre le modal de confirmation (n'envoie RIEN — DC-D3). */
@@ -77,26 +89,41 @@
 
 	/** Déclenché par « Confirmer » du modal uniquement (DC-D3). */
 	async function confirmImport() {
-		confirmOpen = false;
+		// `importing = true` en TOUT PREMIER (avant de fermer le modal et avant
+		// tout `await`) — garde de ré-entrance définitive contre un double-clic
+		// « Confirmer » sur cette opération destructrice (review P1).
 		if (!selectedFile || importing) return;
 		importing = true;
+		confirmOpen = false;
 		errorMsg = null;
+
+		let imported = false;
 		try {
 			await uploadFullImport(selectedFile);
-			toast.success(
-				i18nMsg('admin-restore-toast-success', 'Import réussi — vous allez être déconnecté.'),
-			);
-			// DC-D4 : la session est invalidée (refresh_tokens remplacés). Logout
-			// best-effort (cookie déjà invalide côté serveur) + reload complet vers
-			// /login pour se reconnecter avec les identifiants de l'instance importée.
-			await authState.logout();
-			window.location.replace('/login');
+			imported = true;
 		} catch (err) {
 			const msg = importErrorMessage(err);
 			errorMsg = msg;
 			toast.error(msg);
 		} finally {
 			importing = false;
+		}
+
+		// DC-D4 : au succès, la session est invalidée (refresh_tokens remplacés).
+		// logout best-effort PUIS redirection **garantie** vers /login — même si
+		// `logout()` jetait, on redirige quand même (review P1 : ne pas laisser
+		// une exception logout masquer la redirection après un import réussi, ce
+		// qui afficherait une fausse erreur sur une installation déjà remplacée).
+		if (imported) {
+			toast.success(
+				i18nMsg('admin-restore-toast-success', 'Import réussi — vous allez être déconnecté.'),
+			);
+			try {
+				await authState.logout();
+			} catch {
+				// best-effort — le cookie est déjà invalide côté serveur.
+			}
+			window.location.replace('/login');
 		}
 	}
 </script>
@@ -130,6 +157,7 @@
 			accept=".keshbackup"
 			onchange={onFileChange}
 			disabled={importing}
+			aria-describedby={errorMsg ? 'admin-restore-error' : undefined}
 			data-testid="admin-restore-file-input"
 			class="text-sm"
 		/>
@@ -137,6 +165,7 @@
 
 	{#if errorMsg}
 		<div
+			id="admin-restore-error"
 			role="alert"
 			class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
 			data-testid="admin-restore-error"
@@ -162,7 +191,7 @@
 
 <!-- Confirmation forte (AC19) : l'upload n'est déclenché QUE par « Confirmer ». -->
 <Dialog.Root bind:open={confirmOpen}>
-	<Dialog.Content data-testid="admin-restore-confirm-dialog">
+	<Dialog.Content showCloseButton={false} data-testid="admin-restore-confirm-dialog">
 		<Dialog.Header>
 			<Dialog.Title>
 				{i18nMsg('admin-restore-confirm-title', "Remplacer toute l'installation ?")}
