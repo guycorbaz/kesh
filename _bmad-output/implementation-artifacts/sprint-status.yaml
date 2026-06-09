@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-06-09  (Story 17-3f doc CREATED ready-for-dev — dernière sous-story 17-3, doc-only. Prochaine: bmad-dev-story 17-3f → PR umbrella.)
+last_updated: "2026-06-09  (Story 17-3f doc CREATED ready-for-dev — dernière sous-story 17-3, doc-only. Prochaine: bmad-dev-story 17-3f → PR umbrella.)"
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
