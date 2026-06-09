@@ -1,6 +1,6 @@
 # Story 17.3f: Documentation export/import installation
 
-Status: review
+Status: done
 
 <!-- Dernière sous-story de l'épopée 17-3 (export/import installation, #112). Extraite de la spec umbrella (Partie F, AC23-25). Dépend de toutes (17-3a..e DONE). Doc-only. -->
 
@@ -124,5 +124,6 @@ Opus 4.8 (claude-opus-4-8[1m]) — single-pass T-F1→T-F4.
 
 | Date | Étape | Modèle | Résumé |
 |------|-------|--------|--------|
+| 2026-06-09 | code-review (cycle) | Sonnet→Haiku | **CONVERGÉ 2 passes** (doc accuracy), trend >LOW 3→0. P1 Sonnet : tous les claims vérifiés exacts (labels UI, routes, défauts env, comportements, anti-PAT, distinction per-société, E17 « En cours ») SAUF 3 imprécisions corrigées — garde version reformulée (kesh_version_min_required, pas version de création) ; ajout condensés clés API à l'avertissement secret ; retrait .gitignore *.log redondant. P2 Haiku : 0 finding (tout vérifié exact). PDF régénéré. Status → done.
 | 2026-06-09 | dev-story | Opus 4.8 | Doc-only. Manuel admin (sous-section export/import UI + matrice 3 méthodes + PDF régénéré latexmk exit 0) + CHANGELOG Added #112 + README fonctionnalités. Libellés UI + variables d'env ground-truthés. Hygiène : aux LaTeX dé-trackés + gitignorés (alignement marketing-brochure). Status review. Prochaine : `bmad-code-review 17-3f` (Sonnet, focus exactitude doc) → puis PR umbrella 17-3. |
 | 2026-06-09 | create-story (sous-story) | Opus 4.8 | Story 17-3f (doc) extraite umbrella Partie F (AC23-25). Doc-only, clôt l'épopée 17-3. Scope : manuel admin LaTeX FR (sous-section UI export/import + matrice méthodes Hyper Backup/mariadb-dump/UI dans §Sauvegarde existante :987) + PDF régénéré (latexmk dispo) + CHANGELOG Added #112 + README fonctionnalités/roadmap. Cohérence libellés UI i18n FR + variables d'env. latexmk/xelatex confirmés dispos. T-F1..T-F4. Après merge → PR umbrella 17-3 + issue dette v0.3 Playwright. Prochaine : `bmad-dev-story 17-3f`. |

@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: "2026-06-09  (Story 17-3f doc dev-story DONE → review. Manuel admin + CHANGELOG + README à jour, PDF régénéré. Dernière sous-story 17-3. Prochaine: code-review 17-3f puis PR umbrella.)"
+last_updated: "2026-06-09  (ÉPOPÉE 17-3 export/import COMPLÈTE 6/6 — 17-3f doc DONE. Prochaine: PR umbrella story/17-3 + issue dette v0.3 Playwright double-instance. Reste Epic 17: 17-4 recovery #122.)"
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -247,7 +247,7 @@ development_status:
   17-3c-backend-import: done  # 2026-06-09 code-review CONVERGÉ 5 passes Sonnet→Haiku→Opus→Sonnet→Haiku (trend >LOW ~8→~6→1→2→0, ~13 patches). Opus P3 catch fidélité DECIMAL ; P4 backup sous verrou FOR UPDATE (AC13) ; P5 1 HIGH Haiku grep-réfuté (skip onboarding_state safe). Workspace serial 53/53 ok, 964 tests, 0 régression. Prochaine: 17-3d UI import (dépend 17-3c) // 17-3e E2E. # POST /api/v1/admin/full-import (multipart, validation SHA+version+colonnes, backup pré-import+verrou, restore DELETE transactionnel, audit in-tx). Dépend 17-3a (format). Sous-story la plus risquée (O-1/O-2/O-5). Parallélisable avec 17-3b.
   17-3d-ui-import: done  # 2026-06-09 code-review CONVERGÉ 3 passes Sonnet→Haiku→Opus (trend>LOW ~2HIGH→réfutés+1fix→0). P1 durcit confirm/succès destructeur ; P2 Haiku HIGHs réfutés+1 fix input clear ; P3 Opus 0>LOW (7 axes vérifiés). check 0err+lint PASS+test:unit 296+build ✓. Épopée 17-3 = 4/6 done. Prochaine: 17-3e E2E // 17-3f doc. # UI /admin/restore (upload + modal confirmation forte + redirection login sessionInvalidated). Dépend 17-3c.
   17-3e-e2e-roundtrip: done  # 2026-06-09 code-review CONVERGÉ 2 passes Sonnet→Haiku (P1 renforce garde-fou : équivalence non-triviale + fidélité DECIMAL + FK==total + onboarding==8 ; P2 Haiku 0>LOW). 3/3, clippy 0, fmt OK. Épopée 17-3 = 5/6 done. Prochaine: 17-3f doc (dernière). # Test intégration Rust admin_backup_e2e.rs (export→DELETE→import→équivalence + refus version/tamper/format + rollback). Dépend 17-3a+17-3c. Playwright double-instance = dette v0.3.
-  17-3f-doc: review  # 2026-06-09 dev-story Opus 4.8 doc-only : manuel admin (sous-section UI export/import + matrice + PDF régénéré) + CHANGELOG Added #112 + README + hygiène aux LaTeX gitignorés. Prochaine: bmad-code-review 17-3f → PR umbrella 17-3.
+  17-3f-doc: done  # 2026-06-09 code-review CONVERGÉ 2 passes Sonnet→Haiku (P1 3 précisions exactitude, P2 0 finding). Manuel admin + CHANGELOG + README à jour, PDF régénéré, aux LaTeX gitignorés. ÉPOPÉE 17-3 COMPLÈTE (6/6). Prochaine: PR umbrella 17-3 + issue dette v0.3 Playwright.
 
   17-4-recovery-mot-de-passe: backlog  # #122 forgot-password email + alternatives (split probable)
   epic-17-retrospective: optional
