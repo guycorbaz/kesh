@@ -14,6 +14,7 @@ pub mod errors;
 pub mod exports;
 pub mod helpers;
 pub mod logging;
+pub mod mail;
 pub mod middleware;
 pub mod routes;
 pub(crate) mod util;
@@ -45,6 +46,10 @@ pub struct AppState {
     pub rate_limiter: Arc<RateLimiter>,
     pub i18n: Arc<kesh_i18n::I18nBundle>,
     pub users_exist: Arc<AtomicBool>,
+    /// Story 17-4b — couche d'envoi d'email (recovery). `NoopMailer` par défaut
+    /// (feature-off / tests), `SmtpMailer` en prod si `KESH_FEATURE_FORGOT_PASSWORD`.
+    /// Champ `pub` : les tests 17-4e le mutent (`Arc::new(MockMailer::new())`).
+    pub mailer: Arc<dyn mail::Mailer>,
 }
 
 impl AppState {
@@ -69,6 +74,9 @@ impl AppState {
             rate_limiter,
             i18n,
             users_exist: Arc::new(AtomicBool::new(true)),
+            // Story 17-4b (P4-1) — champ défauté DANS LE CORPS : signature
+            // `new_for_tests` inchangée → les call-sites de test restent intacts.
+            mailer: Arc::new(mail::NoopMailer),
         }
     }
 }

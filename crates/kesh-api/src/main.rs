@@ -29,6 +29,7 @@ use kesh_api::{
     build_router,
     config::{Config, LogConfig},
     logging,
+    mail::{self, Mailer},
     middleware::rate_limit::RateLimiter,
 };
 use sqlx::mysql::MySqlPoolOptions;
@@ -221,6 +222,40 @@ async fn main() {
 
     let rate_limiter = RateLimiter::new(&config);
 
+    // Story 17-4b — couche email recovery. Si le feature est activé, la config
+    // SMTP a déjà été validée fail-fast au boot (`ConfigError::IncompleteSmtpConfig`)
+    // → `SmtpMailer::from_config` réussit forcément ; sinon `NoopMailer`
+    // (recovery = break-glass #121). Construit avant le move de `config`/`i18n`.
+    let mailer: Arc<dyn Mailer> = if config.forgot_password_enabled {
+        match mail::SmtpMailer::from_config(
+            &config,
+            i18n_bundle.clone(),
+            mail::PASSWORD_RESET_TTL_MINUTES,
+        ) {
+            Some(m) => {
+                tracing::info!(
+                    "Recovery par email ACTIVÉ (SMTP {}:{}, TLS={})",
+                    config.smtp_host.as_deref().unwrap_or("?"),
+                    config.smtp_port,
+                    config.smtp_tls
+                );
+                Arc::new(m)
+            }
+            None => {
+                // Inatteignable si le fail-fast boot a fait son travail.
+                tracing::error!(
+                    "KESH_FEATURE_FORGOT_PASSWORD=true mais config SMTP incomplète au build du mailer — abandon."
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        tracing::info!(
+            "Recovery par email désactivé (KESH_FEATURE_FORGOT_PASSWORD=false) — fallback break-glass KESH_ADMIN_RESET."
+        );
+        Arc::new(mail::NoopMailer)
+    };
+
     let state = AppState {
         pool,
         config: Arc::new(config),
@@ -231,6 +266,8 @@ async fn main() {
         // (`Ordering::Acquire`) ; setup-admin.create_admin le bascule à `true`
         // après INSERT réussi (`Ordering::Release`, paire happens-before).
         users_exist: Arc::new(std::sync::atomic::AtomicBool::new(user_count > 0)),
+        // Story 17-4b — mailer recovery (SmtpMailer ou NoopMailer selon feature).
+        mailer,
     };
 
     let app = build_router(state, static_dir);

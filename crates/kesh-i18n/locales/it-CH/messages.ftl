@@ -950,3 +950,8 @@ api-keys-toast-create-success = Chiave API creata.
 api-keys-toast-copied = Chiave copiata negli appunti.
 api-keys-toast-copy-failed = Copia non riuscita — seleziona e copia manualmente.
 api-keys-toast-revoke-success = Chiave revocata.
+
+# Story 17-4b — Recupero della password via email (rendering backend, DC10)
+error-smtp-send-failed = Invio dell'email non riuscito. Riprova tra qualche istante.
+email-password-reset-subject = Reimpostazione della password Kesh
+email-password-reset-body = Hai richiesto la reimpostazione della tua password Kesh. Fai clic sul link seguente per scegliere una nuova password: { $resetUrl } — questo link è valido per { $ttlMinutes } minuti. Se non hai effettuato questa richiesta, ignora questa email.

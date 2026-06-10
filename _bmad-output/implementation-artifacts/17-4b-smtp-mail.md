@@ -1,6 +1,6 @@
 # Story 17.4b: Couche email/SMTP + config (recovery)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Contenu déjà adversarialement revu (Partie B : AC8-11, T-B1..T-B4, DC1/DC2/DC7/DC10). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4a (DONE) : consomme le refactor `AppState::new_for_tests` (stratégie anti-churn P4-1). SÉRIE, PAS parallélisable (P3 F2). BLOQUE 17-4c (endpoints). -->
@@ -69,11 +69,11 @@ so that **17-4c puisse générer et envoyer le magic-link de reset via une abstr
 
 ## Tasks / Subtasks
 
-- [ ] **T-B1** Vars `KESH_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS` + `KESH_PUBLIC_BASE_URL` + `KESH_FEATURE_FORGOT_PASSWORD` dans `config.rs` (struct `:137` + parse `from_env` selon patterns existants). `smtp_password` champ privé + `Debug` custom `***` (`:248`). Défauter les nouveaux champs dans `from_fields_for_test` (`:305`) sans churn de signature si possible. (AC: 8, 12a)
-- [ ] **T-B2** Fail-fast boot : nouvelle `ConfigError` variant (`:14`) si `KESH_FEATURE_FORGOT_PASSWORD=true` + SMTP/PUBLIC_BASE_URL incomplet ou `SMTP_FROM` invalide ; branchée dans `from_env` (`main.rs:62` exit(1)). Tests config (4 cas : off/ok, on/ok, on/var-manquante, on/from-invalide). (AC: 9)
-- [ ] **T-B3** Module `crates/kesh-api/src/mail/{mod,smtp}.rs` (DC1) : trait `Mailer` (`Send+Sync`) + `SmtpMailer` (lettre rustls DC2, lit config SMTP) + `NoopMailer` + `MockMailer` (capture, test). Champ `mailer: Arc<dyn Mailer>` sur `AppState` (`lib.rs:42`), **défaut `Arc::new(NoopMailer)` dans le corps de `new_for_tests` (`lib.rs:60`)** ; ajout manuel à `main.rs:224` (selon feature) + `middleware/auth.rs:267` + `tests/setup_admin_e2e.rs:81`. Dép `lettre` 0.11 rustls dans `crates/kesh-api/Cargo.toml`. (AC: 10)
-- [ ] **T-B4** `AppError::SmtpSendFailed(String)` (`errors.rs`, `500 SMTP_SEND_FAILED` + `tracing::error!`) + clé `error-smtp-send-failed` ×4 + clés `email-password-reset-subject`/`email-password-reset-body` (placeholders `{ $resetUrl }`/`{ $ttlMinutes }`) ×4 dans les FTL. (AC: 10, 11)
-- [ ] **T-B5** Quality gate Test Locally First backend (fmt/build/clippy -D/test workspace). Parallèle suffit (pas de kesh-db touché) ; serial si ajout de tests intégration DB. (AC: 13)
+- [x] **T-B1** Vars `KESH_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS` + `KESH_PUBLIC_BASE_URL` + `KESH_FEATURE_FORGOT_PASSWORD` dans `config.rs` (struct `:137` + parse `from_env` selon patterns existants). `smtp_password` champ privé + `Debug` custom `***` (`:248`). Défauter les nouveaux champs dans `from_fields_for_test` (`:305`) sans churn de signature si possible. (AC: 8, 12a)
+- [x] **T-B2** Fail-fast boot : nouvelle `ConfigError` variant (`:14`) si `KESH_FEATURE_FORGOT_PASSWORD=true` + SMTP/PUBLIC_BASE_URL incomplet ou `SMTP_FROM` invalide ; branchée dans `from_env` (`main.rs:62` exit(1)). Tests config (4 cas : off/ok, on/ok, on/var-manquante, on/from-invalide). (AC: 9)
+- [x] **T-B3** Module `crates/kesh-api/src/mail/{mod,smtp}.rs` (DC1) : trait `Mailer` (`Send+Sync`) + `SmtpMailer` (lettre rustls DC2, lit config SMTP) + `NoopMailer` + `MockMailer` (capture, test). Champ `mailer: Arc<dyn Mailer>` sur `AppState` (`lib.rs:42`), **défaut `Arc::new(NoopMailer)` dans le corps de `new_for_tests` (`lib.rs:60`)** ; ajout manuel à `main.rs:224` (selon feature) + `middleware/auth.rs:267` + `tests/setup_admin_e2e.rs:81`. Dép `lettre` 0.11 rustls dans `crates/kesh-api/Cargo.toml`. (AC: 10)
+- [x] **T-B4** `AppError::SmtpSendFailed(String)` (`errors.rs`, `500 SMTP_SEND_FAILED` + `tracing::error!`) + clé `error-smtp-send-failed` ×4 + clés `email-password-reset-subject`/`email-password-reset-body` (placeholders `{ $resetUrl }`/`{ $ttlMinutes }`) ×4 dans les FTL. (AC: 10, 11)
+- [x] **T-B5** Quality gate Test Locally First backend (fmt/build/clippy -D/test workspace). Parallèle suffit (pas de kesh-db touché) ; serial si ajout de tests intégration DB. (AC: 13)
 
 ## Dev Notes
 
@@ -118,14 +118,36 @@ so that **17-4c puisse générer et envoyer le magic-link de reset via une abstr
 
 ### Agent Model Used
 
-(à remplir au dev-story — Opus 4.8 recommandé : flux cross-fichier config↔mail↔AppState + intégration lib externe `lettre`/TLS non-mécanique)
+Opus 4.8 (run dev-story interrompu — session perdue avant finalisation du story file) ; reprise et finalisation Fable 5 (2026-06-10) : audit d'intégrité du code en working tree vs T-B1..T-B4, quality gate complet, complétion du Dev Agent Record.
 
 ### Debug Log References
 
+- Run dev-story initial interrompu après écriture du code (T-B1..T-B4 complets en working tree, story file non mis à jour, rien de commité). Reprise : audit diff (541 insertions / 13 fichiers) — couverture intégrale des 4 tâches confirmée, puis quality gate.
+
 ### Completion Notes List
 
-- Story extraite de l'umbrella 17-4 convergée 6 passes (2026-06-10). Partie B. Contenu déjà adversarialement revu (re-validate optionnel). Dépend de 17-4a (DONE). Prochaine : `bmad-dev-story 17-4b` (Opus 4.8).
+- Story extraite de l'umbrella 17-4 convergée 6 passes (2026-06-10). Partie B. Contenu déjà adversarialement revu (re-validate optionnel). Dépend de 17-4a (DONE).
+- **T-B1** : 8 champs config (`smtp_host/port/user/password/from/tls`, `public_base_url`, `forgot_password_enabled`) + helpers partagés `opt_trimmed_env` / `parse_strict_bool` (nouveau variant `ConfigError::InvalidBoolValue`, pattern strict `KESH_COOKIE_SECURE`). `smtp_password` privé, masqué `***` dans `Debug`, accès via `Config::smtp_password()`. Défauts dans le corps de `from_fields_for_test` + `test_helpers` → zéro churn de signature (P4-1).
+- **T-B2** : `ConfigError::IncompleteSmtpConfig { detail }` fail-fast dans `from_env` si feature on + var manquante OU `SMTP_FROM` invalide (`is_valid_email_simple` réutilisé de 17-4a). Module `smtp_config_tests` : 7 tests (off/ok, on/ok, on/var-manquante, on/from-invalide + port défaut/borné + strict-bool refusé).
+- **T-B3** : module `mail/` in-kesh-api (DC1) — trait `Mailer` objet-safe **sans** `async_trait` (futures boxées `MailFuture`), `SmtpMailer` (lettre 0.11 rustls DC2, STARTTLS défaut / `builder_dangerous` si `KESH_SMTP_TLS=false`), `NoopMailer`, `MockMailer` (capture + variante `failing()` pour AC23-g SMTP-down). `AppState.mailer: Arc<dyn Mailer>` défauté `NoopMailer` dans le corps de `new_for_tests` (P4-1, 33 call-sites 17-4a intacts) + 3 littéraux patchés (main.rs prod-selon-feature, auth.rs test_state, setup_admin_e2e.rs). Const partagée `PASSWORD_RESET_TTL_MINUTES = 30` (DC8) consommée par 17-4c.
+- **T-B4** : `AppError::SmtpSendFailed(String)` → 500 `SMTP_SEND_FAILED`, détail loggé `tracing::error!` jamais exposé ; clés `error-smtp-send-failed` + `email-password-reset-subject`/`email-password-reset-body` (placeholders `{ $resetUrl }`/`{ $ttlMinutes }`) dans les 4 FTL.
+- **T-B5** : quality gate Test Locally First backend 4/4 vert — `cargo fmt --check` OK, `build --workspace --all-targets` OK, `clippy -D warnings` OK, `cargo test --workspace` OK (cf. Change Log).
 
 ### File List
 
-(à remplir au dev-story)
+- `crates/kesh-api/Cargo.toml` — dép `lettre` 0.11 (`default-features = false`, rustls)
+- `Cargo.lock` — lockfile lettre + transitives
+- `crates/kesh-api/src/config.rs` — 8 champs SMTP/recovery + 2 variants ConfigError + Debug masqué + fail-fast from_env + helpers + 7 tests
+- `crates/kesh-api/src/mail/mod.rs` — **nouveau** : trait Mailer + NoopMailer + MockMailer + 3 tests unitaires
+- `crates/kesh-api/src/mail/smtp.rs` — **nouveau** : SmtpMailer (lettre rustls, rendu Fluent DC10)
+- `crates/kesh-api/src/lib.rs` — `pub mod mail` + champ `AppState.mailer` (défaut NoopMailer dans new_for_tests)
+- `crates/kesh-api/src/main.rs` — construction mailer selon feature (SmtpMailer/NoopMailer) + logs boot
+- `crates/kesh-api/src/errors.rs` — variant `SmtpSendFailed` + IntoResponse
+- `crates/kesh-api/src/middleware/auth.rs` — littéral test_state + mailer NoopMailer
+- `crates/kesh-api/tests/setup_admin_e2e.rs` — littéral spawn_app + mailer NoopMailer
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — 3 clés ×4 locales
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 17-4b in-progress → review
+
+## Change Log
+
+- 2026-06-10 — dev-story 17-4b (Opus 4.8, interrompu ; reprise+finalisation Fable 5) : T-B1..T-B5 complets, 541 insertions / 13 fichiers. Quality gate backend 4/4 vert : fmt + build + clippy -D OK ; `cargo test --workspace` parallèle = 1019 verts hors kesh-db (21 échecs `kesh-db --lib` = contention parallélisme DB connue, `OptimisticLockConflict` sur tests repository sqlx — 17-4b ne touche pas kesh-db) ; re-run `cargo test -p kesh-db --lib -- --test-threads=1` (mode CI serial) = **187/187 verts, 0 régression**. Status `ready-for-dev → review`. Prochaine : `bmad-code-review 17-4b`.

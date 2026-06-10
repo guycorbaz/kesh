@@ -251,6 +251,15 @@ pub enum AppError {
     #[error("Échec import installation : {0}")]
     AdminFullImportFailed(String),
 
+    /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
+    /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
+    /// key `error-smtp-send-failed`. Détail loggé `tracing::error!`, jamais
+    /// exposé en HTTP body. **Note 17-4c** : sur le flux forgot-password,
+    /// l'envoi est fire-and-forget (`tokio::spawn` détaché, DC4) — ce variant y
+    /// est seulement loggé côté serveur, jamais propagé au client (anti-énum).
+    #[error("Échec envoi email SMTP : {0}")]
+    SmtpSendFailed(String),
+
     /// Story 17-3c — `.keshbackup` structurellement invalide ou corrompu :
     /// ZIP malformé, `manifest.json` absent/illisible, `files/` non-vide,
     /// `formatVersion > 1`, NDJSON d'une table absent, ou SHA-256 d'une table
@@ -955,6 +964,20 @@ impl IntoResponse for AppError {
                     &t(
                         "error-admin-full-import-failed",
                         "Échec de l'import de l'installation. L'état précédent a été préservé.",
+                    ),
+                )
+            }
+
+            // Story 17-4b — échec envoi email SMTP (recovery). Détail loggé,
+            // jamais exposé. (17-4c : fire-and-forget, n'atteint pas le client.)
+            AppError::SmtpSendFailed(detail) => {
+                tracing::error!("smtp send failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "SMTP_SEND_FAILED",
+                    &t(
+                        "error-smtp-send-failed",
+                        "Échec de l'envoi de l'email. Réessayez dans quelques instants.",
                     ),
                 )
             }

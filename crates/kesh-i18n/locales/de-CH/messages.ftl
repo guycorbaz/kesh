@@ -950,3 +950,8 @@ api-keys-toast-create-success = API-Schlüssel erstellt.
 api-keys-toast-copied = Schlüssel in die Zwischenablage kopiert.
 api-keys-toast-copy-failed = Kopieren nicht möglich — bitte manuell markieren und kopieren.
 api-keys-toast-revoke-success = Schlüssel widerrufen.
+
+# Story 17-4b — Passwort-Wiederherstellung per E-Mail (Backend-Rendering, DC10)
+error-smtp-send-failed = Der E-Mail-Versand ist fehlgeschlagen. Bitte versuchen Sie es in Kürze erneut.
+email-password-reset-subject = Zurücksetzen Ihres Kesh-Passworts
+email-password-reset-body = Sie haben das Zurücksetzen Ihres Kesh-Passworts angefordert. Klicken Sie auf den folgenden Link, um ein neues Passwort festzulegen: { $resetUrl } — dieser Link ist { $ttlMinutes } Minuten gültig. Falls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.
