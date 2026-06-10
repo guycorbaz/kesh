@@ -1,6 +1,6 @@
 # Story 17.4a: DB foundation + champ email backend (recovery — story-zéro)
 
-Status: review
+Status: done
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Le contenu ci-dessous est déjà adversarialement revu (dont catch-architectural Opus P3 + P4-1 stratégie new_for_tests). Re-validate optionnel. -->
 <!-- STORY-ZÉRO : pose la migration `email`, la table `password_reset_tokens`, les repos, le refactor AppState→new_for_tests, le plumbing email DTO. BLOQUE 17-4b/c/d/e/f. DOIT MERGER EN PREMIER. -->
@@ -135,6 +135,11 @@ Opus 4.8 (1M context). Dev-story initiale interrompue par un crash système ; re
 |------|-----------|
 | 2026-06-10 | dev-story 17-4a initial (Opus 4.8) — interrompu par crash système avant T-A8 / quality gate / commit. |
 | 2026-06-10 | Reprise (Opus 4.8) — intégrité git vérifiée (0 corruption), 4 `NewUser` manqués corrigés, T-A8 (33 littéraux AppState→`new_for_tests`) complété, 2 compteurs de tests bumpés, quality gate backend complet vert. `ready-for-dev → review`. |
+| 2026-06-10 | **`bmad-code-review` 17-4a CYCLE CONVERGÉ 3 passes** (rotation Opus→Sonnet→Haiku, 3 layers/passe). Trend findings réels > LOW : **1 → 4 → 0**. Pass 1 Opus (1 MEDIUM : garde longueur email + 2 commentaires). Pass 2 Sonnet (4 MEDIUM convergents sous-pondérés P1 : garde TOCTOU `mark_used`, 7 tests validation email, sémantique PUT email reclassée dette doc, dismiss email-en-Debug by-convention). Pass 3 Haiku **0 actionable** : Edge Case + Acceptance Auditor clean (9/9 AC) ; Blind Hunter 2C/3H/4M **tous réfutés grep ground-truth** (BH3-M1 count exceptions=3 OK incl. `auth.rs:267` présent ; BH3-C2 off-by-one octets FAUX — MariaDB VARCHAR compte en caractères ; BH3-C1/H1/H3 hors-scope 17-4c by-design ; BH3-H2 `idx_prt_expires` couvre cleanup). `review → done`. |
+
+### Security / Data debt (code-review)
+
+- **ECH2-2 (MEDIUM, reclassé dette documentée)** — `PUT /api/v1/users/:id` a une sémantique de **remplacement** : un champ `email` absent/`null`/vide → `email = NULL` (effacement). Un client API/PAT qui PUT pour changer le rôle sans renvoyer l'email courant l'efface. Mitigation : doc-comment explicite sur `UpdateUserRequest.email`. **Owner** : 17-4d (le frontend renvoie toujours l'email courant) + 17-4f (doc API externe). Pas de fix code en 17-4a (décision de sémantique PUT vs PATCH à figer avec le contrat API, hors-scope story-zéro).
 
 ### File List
 
