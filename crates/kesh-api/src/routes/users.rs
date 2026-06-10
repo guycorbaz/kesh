@@ -102,15 +102,21 @@ impl From<User> for UserResponse {
 /// Valide et normalise un email optionnel de compte (Story 17-4a).
 ///
 /// `None`/vide → `Ok(None)` (pas d'email / effaçage). Non-vide → trim +
-/// validation format (`is_valid_email_simple`), sinon `400 VALIDATION_ERROR`.
-/// Réutilisé par `create_user`, `update_user` et `POST /setup/admin`.
+/// validation longueur (≤ 255) + format (`is_valid_email_simple`), sinon
+/// `400 VALIDATION_ERROR`. Réutilisé par `create_user`, `update_user` et
+/// `POST /setup/admin`.
 pub(crate) fn validate_optional_email(
     state: &AppState,
     raw: Option<String>,
 ) -> Result<Option<String>, AppError> {
     let normalized = crate::routes::contacts::normalize_optional(raw);
     if let Some(ref email) = normalized {
-        if !crate::routes::contacts::is_valid_email_simple(email) {
+        // Pré-validation longueur (colonne VARCHAR(255), sql_mode STRICT) : sans
+        // ce garde, un email > 255 chars passe la validation de format puis
+        // déclenche un 500 « Data too long » à l'INSERT/UPDATE au lieu d'un
+        // propre 400 VALIDATION_ERROR (parité avec le garde `username` et le
+        // précédent `fiscal_years.rs` Story 3.7 Pass 1 F3).
+        if email.chars().count() > 255 || !crate::routes::contacts::is_valid_email_simple(email) {
             return Err(AppError::Validation(state.i18n.format(
                 &state.config.locale,
                 "error-email-invalid",

@@ -454,5 +454,5 @@ async fn full_export_streaming_path_delivers_valid_zip(pool: MySqlPool) {
     );
     // Le ZIP streamé reste lisible.
     let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-    assert!(archive.len() >= 23, "22 data + files/ + manifest");
+    assert!(archive.len() >= 23, "23 data + files/ + manifest");
 }

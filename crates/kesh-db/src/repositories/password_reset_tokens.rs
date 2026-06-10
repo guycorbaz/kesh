@@ -76,9 +76,11 @@ pub async fn find_valid_by_hash(
 
 /// Marque un token comme consommé (`used_at = NOW(3)`), usage unique (DC8).
 ///
-/// Idempotent côté effet : un second appel ne re-modifie rien (la condition
-/// `used_at IS NULL` n'est pas réappliquée ici car l'appelant a déjà validé via
-/// [`find_valid_by_hash`] dans la même transaction de reset).
+/// Pose `used_at` de façon inconditionnelle (pas de garde `used_at IS NULL`) :
+/// l'usage unique est garanti en amont par l'appelant 17-4c, qui valide via
+/// [`find_valid_by_hash`] (lequel filtre déjà `used_at IS NULL`) dans la même
+/// transaction de reset avant d'appeler `mark_used`. `rows_affected == 0`
+/// (id inexistant) → `DbError::NotFound`.
 pub async fn mark_used(pool: &MySqlPool, id: i64) -> Result<(), DbError> {
     let rows_affected =
         sqlx::query("UPDATE password_reset_tokens SET used_at = NOW(3) WHERE id = ?")
