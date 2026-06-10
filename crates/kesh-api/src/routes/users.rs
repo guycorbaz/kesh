@@ -50,7 +50,11 @@ pub struct UpdateUserRequest {
     pub role: Role,
     pub active: bool,
     pub version: i32,
-    /// Email optionnel (Story 17-4a). Vide → efface (`NULL`).
+    /// Email optionnel (Story 17-4a). Sémantique **PUT (remplacement)** :
+    /// champ absent OU `null` OU vide → `email = NULL` (effacement). Un client
+    /// API/PAT qui PUT pour changer le rôle DOIT donc renvoyer l'email courant,
+    /// sinon il l'efface. Le frontend 17-4d renvoie toujours l'email courant.
+    /// (Limite documentée code-review Pass 2 ECH2-2 — owner 17-4d/17-4f doc API.)
     #[serde(default)]
     pub email: Option<String>,
 }

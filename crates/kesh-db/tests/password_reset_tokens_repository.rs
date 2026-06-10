@@ -88,6 +88,31 @@ async fn create_then_find_valid_then_mark_used(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn mark_used_twice_second_returns_not_found(pool: MySqlPool) {
+    // Défense en profondeur (code-review Pass 2) : la garde `AND used_at IS NULL`
+    // ferme la fenêtre TOCTOU. Un 2e mark_used sur un token déjà consommé
+    // n'affecte aucune ligne → DbError::NotFound (pas de ré-écrasement de used_at).
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_user(&pool, "carol", company_id, None).await;
+    let token_hash = hash("dbl");
+    let expires_at = (Utc::now() + ChronoDuration::minutes(30)).naive_utc();
+
+    let created = password_reset_tokens::create(&pool, user_id, &token_hash, expires_at)
+        .await
+        .expect("create should succeed");
+
+    password_reset_tokens::mark_used(&pool, created.id)
+        .await
+        .expect("1er mark_used doit réussir");
+
+    let second = password_reset_tokens::mark_used(&pool, created.id).await;
+    assert!(
+        matches!(second, Err(kesh_db::errors::DbError::NotFound)),
+        "2e mark_used sur token déjà consommé → NotFound, obtenu {second:?}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn expired_token_is_not_valid(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_user(&pool, "bob", company_id, None).await;

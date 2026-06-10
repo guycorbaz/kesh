@@ -283,6 +283,141 @@ async fn create_user_non_admin_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
+// === T-A5 (Story 17-4a) : Tests validation email ===
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_user_with_valid_email_persists_and_returns_it(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/users"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "username": "alice",
+            "password": "secure-password-12chars",
+            "role": "Comptable",
+            "email": "newuser@example.com",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["email"], "newuser@example.com");
+    let id = body["id"].as_i64().unwrap();
+
+    // Re-GET → email persisté.
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["email"], "newuser@example.com");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_user_with_invalid_email_returns_400(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/users"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "username": "alice",
+            "password": "secure-password-12chars",
+            "role": "Comptable",
+            "email": "notanemail",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_user_without_email_returns_null(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    // create_user_api ne renvoie pas de champ email → email = null.
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["email"].is_null());
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_user_with_too_long_email_returns_400(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let long_email = format!("{}@example.com", "a".repeat(260));
+    let resp = app
+        .client
+        .post(app.url("/api/v1/users"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "username": "alice",
+            "password": "secure-password-12chars",
+            "role": "Comptable",
+            "email": long_email,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_user_can_set_email(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = create_user_api(
+        &app,
+        &token,
+        "alice",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
+    let user: Value = resp.json().await.unwrap();
+    let id = user["id"].as_i64().unwrap();
+    let version = user["version"].as_i64().unwrap();
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .json(&json!({
+            "role": "Comptable",
+            "active": true,
+            "version": version,
+            "email": "alice@example.com",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["email"], "alice@example.com");
+}
+
 // === T7.3 : Tests modification ===
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

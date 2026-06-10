@@ -76,19 +76,24 @@ pub async fn find_valid_by_hash(
 
 /// Marque un token comme consommé (`used_at = NOW(3)`), usage unique (DC8).
 ///
-/// Pose `used_at` de façon inconditionnelle (pas de garde `used_at IS NULL`) :
-/// l'usage unique est garanti en amont par l'appelant 17-4c, qui valide via
-/// [`find_valid_by_hash`] (lequel filtre déjà `used_at IS NULL`) dans la même
-/// transaction de reset avant d'appeler `mark_used`. `rows_affected == 0`
-/// (id inexistant) → `DbError::NotFound`.
+/// Garde `AND used_at IS NULL` dans l'UPDATE : défense en profondeur au niveau
+/// DB contre un double-consume. `mark_used` prend `&MySqlPool` (pas la
+/// transaction de l'appelant), donc l'unicité ne peut PAS être garantie par le
+/// seul contrat applicatif 17-4c — une fenêtre TOCTOU existe entre
+/// [`find_valid_by_hash`] et `mark_used` sous requêtes concurrentes. La garde
+/// SQL la ferme : seule la 1re consommation affecte une ligne et fige
+/// l'horodatage réel. Un 2e appel sur un token déjà consommé (ou un `id`
+/// inexistant) affecte 0 ligne → `DbError::NotFound` (17-4c le mappe en
+/// `400 INVALID_OR_EXPIRED_TOKEN`).
 pub async fn mark_used(pool: &MySqlPool, id: i64) -> Result<(), DbError> {
-    let rows_affected =
-        sqlx::query("UPDATE password_reset_tokens SET used_at = NOW(3) WHERE id = ?")
-            .bind(id)
-            .execute(pool)
-            .await
-            .map_err(map_db_error)?
-            .rows_affected();
+    let rows_affected = sqlx::query(
+        "UPDATE password_reset_tokens SET used_at = NOW(3) WHERE id = ? AND used_at IS NULL",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
     if rows_affected == 0 {
         return Err(DbError::NotFound);
     }
