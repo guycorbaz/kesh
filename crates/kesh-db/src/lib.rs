@@ -5,6 +5,7 @@
 //! DB. Les types métier avec validation (ex: `CheNumber`) vivent dans
 //! `kesh-core` et sont validés côté `kesh-api` avant l'appel au repository.
 
+pub mod backup;
 pub mod entities;
 pub mod errors;
 pub mod pool;

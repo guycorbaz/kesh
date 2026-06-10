@@ -29,6 +29,7 @@
 - **Paiements pain.001.001.03** — fichiers de paiement ISO 20022 *(à venir)*
 - **TVA suisse** — calcul et rapports par période *(à venir)*
 - **API externe à clé PAT** — clés d'accès *read* / *read-write* par entreprise pour intégrations IA & logiciels tiers (auth `Authorization: Bearer`, gestion via `/settings/api-keys`) ✓ — voir [`docs/api-external.md`](docs/api-external.md)
+- **Export/import d'installation** — sauvegarde complète `.keshbackup` (toutes les sociétés, utilisateurs et données système) via l'UI admin (`Administration → Sauvegarde complète` / `Restaurer / Importer`) pour migrer ou restaurer une installation sans accès SSH ✓ — réservé au rôle Admin
 - **Multilingue** — FR, DE, IT, EN
 - **Multi-utilisateurs** — RBAC avec rôles, JWT + refresh tokens, isolation multi-tenant par `company_id`
 

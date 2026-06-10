@@ -4,6 +4,9 @@
 //! bibliothèque (`lib.rs`) pour permettre aux tests d'intégration
 //! d'importer `build_router` et les helpers de configuration.
 
+// `pub(crate)` : module manipulant des secrets (dump complet incl. hash de mots
+// de passe), pas d'API publique nécessaire hors crate (review 17-3a Pass 1).
+pub(crate) mod admin_backup;
 pub mod audit;
 pub mod auth;
 pub mod config;
@@ -120,6 +123,18 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/company/invoice-settings",
             put(routes::company_invoice_settings::update_invoice_settings),
+        )
+        // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
+        .route("/api/v1/admin/full-export", get(routes::admin::full_export))
+        // Story 17-3c : import complet d'installation (multipart, Admin + anti-PAT).
+        // DefaultBodyLimit propre (KESH_ADMIN_IMPORT_MAX_MB / admin_import_max_mib).
+        .route(
+            "/api/v1/admin/full-import",
+            post(routes::admin::full_import).layer(axum::extract::DefaultBodyLimit::max(
+                // saturating_mul : évite l'overflow usize sur cible 32-bit
+                // (10240 MiB * 1024² > u32::MAX) — review Pass 3.
+                (state.config.admin_import_max_mib as usize).saturating_mul(1024 * 1024),
+            )),
         )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,

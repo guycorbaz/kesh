@@ -845,6 +845,31 @@ reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
 
 # Story 9-2b — Globaler ZIP-Export (Datensouveränität) — 12 Schlüssel
 nav-export-global = Globaler Export
+# Story 17-3b — vollständige Installationssicherung (.keshbackup, Admin)
+nav-admin-backup = Vollständige Sicherung
+admin-backup-page-title = Vollständige Sicherung der Installation
+admin-backup-page-description = Lädt die gesamte Installation (alle Firmen, Benutzer und Systemdaten) in eine einzige .keshbackup-Datei zur Migration oder Sicherung herunter. Zu unterscheiden vom globalen Export einer einzelnen Firma.
+admin-backup-action-export = Gesamte Installation exportieren
+admin-backup-action-exporting = Export läuft…
+admin-backup-toast-success = Installationssicherung heruntergeladen.
+admin-backup-error-generic = Export der Installation fehlgeschlagen. Versuchen Sie es in Kürze erneut.
+admin-backup-page-hint-secret = Die .keshbackup-Datei enthält sensible Daten (Anmeldedaten, Tokens). Bewahren Sie sie sicher auf.
+# Story 17-3d — vollständiger Installationsimport / -wiederherstellung (.keshbackup, Admin)
+nav-admin-restore = Wiederherstellen / Importieren
+admin-restore-page-title = Wiederherstellung / Import der Installation
+admin-restore-page-description = Laden Sie eine .keshbackup-Datei hoch, um die gesamte aktuelle Installation zu ersetzen (Migration oder Wiederherstellung). Destruktiver Vorgang: Vor dem Import wird serverseitig eine Sicherung des aktuellen Zustands erstellt.
+admin-restore-file-label = Zu importierende .keshbackup-Datei
+admin-restore-action-import = Importieren und Installation ersetzen
+admin-restore-action-importing = Import läuft…
+admin-restore-confirm-title = Gesamte Installation ersetzen?
+admin-restore-confirm-body = Dieser Vorgang ersetzt ALLE Daten der aktuellen Installation. Vor dem Import wird serverseitig eine Sicherung des aktuellen Zustands erstellt. Sie werden abgemeldet und müssen sich mit den Anmeldedaten der importierten Instanz erneut anmelden.
+admin-restore-confirm-cancel = Abbrechen
+admin-restore-confirm-ok = Ersetzen bestätigen
+admin-restore-toast-success = Import erfolgreich — Sie werden abgemeldet.
+admin-restore-error-version = Dieses Backup erfordert eine neuere Kesh-Version ({ $src }) als die installierte ({ $bin }). Aktualisieren Sie Kesh vor dem erneuten Import.
+admin-restore-error-schema = Backup-Schema ist mit dieser Kesh-Version nicht kompatibel (Tabelle { $table }).
+admin-restore-error-invalid = Sicherungsdatei ungültig oder beschädigt. Stellen Sie sicher, dass es sich um eine von Kesh erzeugte .keshbackup-Datei handelt.
+admin-restore-error-generic = Import fehlgeschlagen. Der vorherige Zustand der Installation wurde beibehalten.
 export-global-title = Globaler Export Ihrer Daten
 export-global-description = Exportieren Sie alle Ihre Buchhaltungsdaten (Konten, Buchungen, Kontakte, Rechnungen, Banktransaktionen) im CSV-Format in einer ZIP-Datei. Verwenden Sie diesen Export zur Archivierung, zur Migration in eine andere Software oder zur 10-jährigen Aufbewahrung (Schweizerisches OR Art. 958f).
 export-global-button = Export starten
@@ -856,6 +881,11 @@ export-global-content-includes = Der Export enthält: Kontenplan, Geschäftsjahr
 export-global-content-excludes = Nicht enthalten: Benutzer (PII + Passwörter), Session-Tokens, internes Audit-Log, Onboarding-Status (Sicherheits- und technische Gründe).
 export-global-souverainete-note = Ihre Daten gehören Ihnen. Kesh erstellt keine Kopien dieses Exports auf seinen Servern.
 error-global-export-failed = Der globale Export konnte nicht erstellt werden. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.
+error-admin-full-export-failed = Der vollständige Export der Installation konnte nicht erstellt werden. Versuchen Sie es in Kürze erneut; wenn das Problem weiterhin besteht, wenden Sie sich an den Support.
+error-admin-full-import-failed = Der Import der Installation ist fehlgeschlagen. Der vorherige Zustand wurde beibehalten (vor dem Vorgang wurde automatisch ein Backup erstellt). Prüfen Sie die Serverprotokolle und versuchen Sie es erneut.
+error-invalid-backup-structure = Die Sicherungsdatei ist ungültig oder beschädigt (unerwartete Struktur oder fehlgeschlagene Integritätsprüfung). Stellen Sie sicher, dass es sich um eine von Kesh erzeugte .keshbackup-Datei handelt.
+error-import-schema-mismatch = Das Schema dieses Backups ist mit dieser Kesh-Version nicht kompatibel. Aktualisieren Sie Kesh oder verwenden Sie ein kompatibles Backup.
+error-import-version-incompatible = Dieses Backup erfordert eine neuere Kesh-Version als die installierte. Aktualisieren Sie Kesh vor dem erneuten Import.
 
 # Story v011-5 — Self-Service Onboarding (12 UI-Schlüssel + 2 Fehlerschlüssel)
 error-setup-required = Erstkonfiguration erforderlich. Administratorkonto über /setup erstellen.

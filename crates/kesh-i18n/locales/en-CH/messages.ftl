@@ -845,6 +845,31 @@ reports-pdf-empty-message = No entries in the selected period.
 
 # Story 9-2b — Global ZIP export (data sovereignty) — 12 keys
 nav-export-global = Global export
+# Story 17-3b — full installation backup (.keshbackup, Admin)
+nav-admin-backup = Full backup
+admin-backup-page-title = Full installation backup
+admin-backup-page-description = Downloads the entire installation (all companies, users and system data) into a single .keshbackup file, for migration or backup. Distinct from a single company's global export.
+admin-backup-action-export = Export the entire installation
+admin-backup-action-exporting = Exporting…
+admin-backup-toast-success = Installation backup downloaded.
+admin-backup-error-generic = Installation export failed. Please try again shortly.
+admin-backup-page-hint-secret = The .keshbackup file contains sensitive data (credentials, tokens). Keep it in a safe place.
+# Story 17-3d — full installation import / restore (.keshbackup, Admin)
+nav-admin-restore = Restore / Import
+admin-restore-page-title = Installation restore / import
+admin-restore-page-description = Upload a .keshbackup file to replace the entire current installation (migration or restore). Destructive operation: a backup of the current state is created server-side before the import.
+admin-restore-file-label = .keshbackup file to import
+admin-restore-action-import = Import and replace the installation
+admin-restore-action-importing = Importing…
+admin-restore-confirm-title = Replace the entire installation?
+admin-restore-confirm-body = This action will replace ALL data of the current installation. A backup of the current state will be created server-side before the import. You will be logged out and must log back in with the credentials of the imported instance.
+admin-restore-confirm-cancel = Cancel
+admin-restore-confirm-ok = Confirm replacement
+admin-restore-toast-success = Import successful — you will be logged out.
+admin-restore-error-version = This backup requires a newer version of Kesh ({ $src }) than the one installed ({ $bin }). Update Kesh before importing again.
+admin-restore-error-schema = Backup schema incompatible with this version of Kesh (table { $table }).
+admin-restore-error-invalid = Backup file invalid or corrupted. Make sure it is a .keshbackup file produced by Kesh.
+admin-restore-error-generic = Import failed. The previous state of the installation was preserved.
 export-global-title = Global export of your data
 export-global-description = Export all your accounting data (accounts, journal entries, contacts, invoices, bank transactions) in CSV format inside a ZIP file. Use this export to archive, migrate to another software, or keep your data for 10 years (Swiss CO Art. 958f).
 export-global-button = Start export
@@ -856,6 +881,11 @@ export-global-content-includes = The export contains: chart of accounts, fiscal 
 export-global-content-excludes = Does not contain: users (PII + passwords), session tokens, internal audit log, onboarding state (security and technical reasons).
 export-global-souverainete-note = Your data belongs to you. Kesh keeps no copy of this export on its servers.
 error-global-export-failed = The global export could not be generated. If the problem persists, please contact support.
+error-admin-full-export-failed = The full installation export could not be generated. Please try again shortly; if the problem persists, contact support.
+error-admin-full-import-failed = The installation import failed. The previous state was preserved (an automatic backup was created before the operation). Check the server logs, then try again.
+error-invalid-backup-structure = The backup file is invalid or corrupted (unexpected structure or failed integrity check). Make sure it is a .keshbackup file produced by Kesh.
+error-import-schema-mismatch = This backup's schema is incompatible with this version of Kesh. Update Kesh or use a compatible backup.
+error-import-version-incompatible = This backup requires a newer version of Kesh than the one installed. Update Kesh before importing again.
 
 # Story v011-5 — Self-service onboarding (12 UI keys + 2 error keys)
 error-setup-required = Initial setup required. Create the administrator account via /setup.

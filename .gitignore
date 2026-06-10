@@ -32,3 +32,13 @@ Thumbs.db
 *.log
 # Story v011-1 : répertoire de logs fichier monté par docker-compose.prod.yml
 log/
+
+# LaTeX build artifacts (manuels docs/manual/) — ne versionner que .tex + .pdf
+# (aligne admin-manual sur la convention marketing-brochure ; Story 17-3f)
+docs/manual/**/*.aux
+docs/manual/**/*.fdb_latexmk
+docs/manual/**/*.fls
+docs/manual/**/*.out
+docs/manual/**/*.toc
+docs/manual/**/*.xdv
+# (*.log déjà couvert par la règle globale *.log ci-dessus)

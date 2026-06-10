@@ -1200,6 +1200,63 @@ Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des donné
 \textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
 \end{keshwarning}
 
+\subsection{Export/import d'installation via l'interface Kesh}\label{sec:backup-ui-keshbackup}
+
+Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'intégralité d'une installation} directement depuis l'interface web d'administration, sans accès SSH ni ligne de commande. L'export produit un fichier unique \keshcommand{.keshbackup} (conteneur compressé) contenant \textbf{toutes les données d'installation} : l'ensemble des sociétés, les utilisateurs, et les données système. Cette fonction est \textbf{réservée au rôle Administrateur} et \textbf{inaccessible via une clé API (PAT)} — les opérations d'infrastructure ne transitent jamais par une intégration externe.
+
+\begin{keshnote}
+À ne pas confondre avec l'\textbf{export global per-société} (menu \textbf{Administration → Export global}, fichier CSV/ZIP) qui n'extrait les données comptables que d'\emph{une seule} entreprise pour transmission à un tiers. L'export/import \keshcommand{.keshbackup} décrit ici porte sur l'\textbf{installation complète} (toutes entreprises + comptes), pour la migration ou la restauration.
+\end{keshnote}
+
+\subsubsection{Exporter (sauvegarde complète)}
+
+Menu \textbf{Administration → Sauvegarde complète} (\keshpath{/admin/backup}) → bouton \textbf{« Exporter toute l'installation »}. Le navigateur télécharge un fichier \keshcommand{kesh-installation-AAAA-MM-JJ.keshbackup}. Cette opération est en lecture seule (aucun effet de bord sur les données).
+
+\begin{keshwarning}
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)} ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
+\end{keshwarning}
+
+\subsubsection{Importer (restauration / migration)}
+
+Menu \textbf{Administration → Restaurer / Importer} (\keshpath{/admin/restore}) → sélection du fichier \keshcommand{.keshbackup} → bouton \textbf{« Importer et remplacer l'installation »} → \textbf{confirmation forte} dans une fenêtre modale.
+
+\begin{keshwarning}
+\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants de l'instance importée} (les comptes de l'installation précédente n'existent plus). Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur (répertoire \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/tmp}) en filet de sécurité ; conservez ce répertoire à l'abri et purgez-le selon votre politique.
+\end{keshwarning}
+
+L'import \textbf{refuse} le fichier et préserve l'installation si :
+\begin{itemize}
+    \item le fichier est \textbf{corrompu} ou n'est pas un \keshcommand{.keshbackup} valide (contrôle d'intégrité SHA-256) ;
+    \item le \textbf{schéma} de la sauvegarde est incompatible avec la version de Kesh installée ;
+    \item la sauvegarde \textbf{exige une version minimale de Kesh supérieure} à celle de l'installation cible (protection anti-downgrade : ce seuil n'est relevé que par les migrations qui changent le schéma de façon incompatible) — mettez à jour Kesh avant de réimporter.
+\end{itemize}
+
+\paragraph{Variables d'environnement}
+
+\begin{itemize}
+    \item \keshcommand{KESH\_ADMIN\_IMPORT\_MAX\_MB} — taille maximale d'un fichier \keshcommand{.keshbackup} importé, en Mio (défaut \textbf{512}, bornes [1, 10240]).
+    \item \keshcommand{KESH\_ADMIN\_EXPORT\_INMEM\_MB} — plafond d'assemblage en mémoire de l'export ; au-delà, l'export est streamé via un fichier temporaire (défaut \textbf{50}, bornes [1, 2048]).
+    \item \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — répertoire de la sauvegarde automatique pré-import (défaut \keshpath{/tmp}, créé s'il n'existe pas).
+\end{itemize}
+
+\subsubsection{Quelle méthode de sauvegarde choisir ?}
+
+Kesh propose trois approches complémentaires de sauvegarde. Choisissez selon le besoin :
+
+\begin{tabularx}{\linewidth}{>{\bfseries}lXX}
+    \toprule
+    \keshtableheader{Méthode} & \keshtableheader{Périmètre} & \keshtableheader{Usage recommandé} \\
+    \midrule
+    Hyper Backup DSM & Volume Docker / MariaDB complet (niveau système, cf. \ref{sec:backup-dsm}) & Sauvegarde \textbf{planifiée automatique} quotidienne en production (NAS Synology), avec rotation et offsite. \\
+    \keshcommand{mariadb-dump} CLI & Dump SQL d'une base (niveau base de données) & Sauvegarde \textbf{ponctuelle technique} ou scriptée, pour un opérateur disposant d'un accès SSH. \\
+    Export/import \keshcommand{.keshbackup} (UI) & Installation Kesh complète, portable (niveau applicatif) & \textbf{Migration entre instances} ou restauration \textbf{self-service sans SSH}, déclenchée par un administrateur depuis l'interface. \\
+    \bottomrule
+\end{tabularx}
+
+\begin{keshtip}
+Ces méthodes ne s'excluent pas : en production, conservez une sauvegarde système \textbf{automatique} (Hyper Backup) comme filet quotidien, et utilisez l'export \keshcommand{.keshbackup} pour les \textbf{migrations ponctuelles} (changement de serveur, duplication d'environnement) où la portabilité applicative et l'absence d'accès SSH priment.
+\end{keshtip}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Mise à jour de Kesh}\label{sec:mise-a-jour}
 

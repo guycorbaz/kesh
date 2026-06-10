@@ -236,6 +236,53 @@ pub enum AppError {
     #[error("Échec génération export global : {0}")]
     GlobalExportFailed(String),
 
+    /// Story 17-3a — échec de génération du `.keshbackup` (export complet
+    /// d'installation : sérialisation NDJSON des 22 tables, SHA-256, ZIP,
+    /// panne pool DB, IO fichier temporaire). HTTP 500, i18n key
+    /// `error-admin-full-export-failed`. Détail loggé, jamais exposé en HTTP body.
+    #[error("Échec génération export installation : {0}")]
+    AdminFullExportFailed(String),
+
+    /// Story 17-3c — échec de l'**import** complet d'installation (panne DB
+    /// pendant le restore transactionnel, backup pré-import impossible, dataset
+    /// source sans aucun compte Admin). HTTP 500 ; sur échec transactionnel,
+    /// la destination reste intacte (rollback) + backup pré-import disponible.
+    /// Détail loggé, jamais exposé en HTTP body.
+    #[error("Échec import installation : {0}")]
+    AdminFullImportFailed(String),
+
+    /// Story 17-3c — `.keshbackup` structurellement invalide ou corrompu :
+    /// ZIP malformé, `manifest.json` absent/illisible, `files/` non-vide,
+    /// `formatVersion > 1`, NDJSON d'une table absent, ou SHA-256 d'une table
+    /// ne correspondant pas au manifeste (tamper). HTTP 400 — refusé **avant
+    /// tout DELETE** (la DB n'est jamais mutée).
+    #[error("Backup invalide : {0}")]
+    InvalidBackupStructure(String),
+
+    /// Story 17-3c — incompatibilité de schéma source↔destination (AC12c) :
+    /// colonne source inconnue de la destination (`unknown_columns`) ou colonne
+    /// destination `NOT NULL` sans défaut absente de la source
+    /// (`missing_required_columns`). HTTP 400 `IMPORT_SCHEMA_MISMATCH` avec
+    /// `details: { table, unknownColumns, missingRequiredColumns }`.
+    #[error("Schéma incompatible (table {table})")]
+    ImportSchemaMismatch {
+        table: String,
+        unknown_columns: Vec<String>,
+        missing_required_columns: Vec<String>,
+    },
+
+    /// Story 17-3c — la version minimale requise du backup est plus récente que
+    /// le binaire destination (downgrade impossible, DC4 = sémantique 10-2).
+    /// HTTP 409 `IMPORT_VERSION_INCOMPATIBLE` avec `details: { sourceMinRequired,
+    /// binaryVersion }`.
+    #[error(
+        "Version incompatible : source exige >= {source_min_required}, binaire {binary_version}"
+    )]
+    ImportVersionIncompatible {
+        source_min_required: String,
+        binary_version: String,
+    },
+
     // --- Story 5.4 — Échéancier factures ---
     /// Dépassement du plafond d'export (> 10'000 lignes en v0.1) — 400.
     /// Code client dédié pour permettre au frontend de proposer un raffinage
@@ -884,6 +931,86 @@ impl IntoResponse for AppError {
                         "Échec de la génération de l'export global. Réessayez dans quelques instants.",
                     ),
                 )
+            }
+
+            // Story 17-3a — export complet d'installation (.keshbackup).
+            AppError::AdminFullExportFailed(detail) => {
+                tracing::error!("admin full export failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ADMIN_FULL_EXPORT_FAILED",
+                    &t(
+                        "error-admin-full-export-failed",
+                        "Échec de la génération de l'export d'installation. Réessayez dans quelques instants.",
+                    ),
+                )
+            }
+
+            // Story 17-3c — import complet d'installation (.keshbackup).
+            AppError::AdminFullImportFailed(detail) => {
+                tracing::error!("admin full import failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ADMIN_FULL_IMPORT_FAILED",
+                    &t(
+                        "error-admin-full-import-failed",
+                        "Échec de l'import de l'installation. L'état précédent a été préservé.",
+                    ),
+                )
+            }
+
+            AppError::InvalidBackupStructure(detail) => {
+                tracing::warn!("invalid backup structure: {detail}");
+                build_response(
+                    StatusCode::BAD_REQUEST,
+                    "INVALID_BACKUP_STRUCTURE",
+                    &t(
+                        "error-invalid-backup-structure",
+                        "Le fichier de sauvegarde est invalide ou corrompu.",
+                    ),
+                )
+            }
+
+            AppError::ImportSchemaMismatch {
+                table,
+                unknown_columns,
+                missing_required_columns,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "IMPORT_SCHEMA_MISMATCH",
+                        "message": t(
+                            "error-import-schema-mismatch",
+                            "Le schéma du backup est incompatible avec cette version de Kesh.",
+                        ),
+                        "details": {
+                            "table": table,
+                            "unknownColumns": unknown_columns,
+                            "missingRequiredColumns": missing_required_columns,
+                        }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
+            AppError::ImportVersionIncompatible {
+                source_min_required,
+                binary_version,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "IMPORT_VERSION_INCOMPATIBLE",
+                        "message": t(
+                            "error-import-version-incompatible",
+                            "Ce backup requiert une version de Kesh plus récente que celle installée.",
+                        ),
+                        "details": {
+                            "sourceMinRequired": source_min_required,
+                            "binaryVersion": binary_version,
+                        }
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
             }
 
             // --- Story 8-1b — Import bancaire CAMT.053 (T6.4) ---

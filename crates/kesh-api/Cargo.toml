@@ -49,6 +49,9 @@ sha2 = "0.10"
 # Story 9-2b — export global ZIP (souveraineté des données).
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+# Story 17-3a — streaming du `.keshbackup` au-delà du plafond in-memory (DC8).
+tokio-util = { version = "0.7", features = ["io"] }
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
