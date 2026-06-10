@@ -91,13 +91,8 @@ async fn spawn_app_with_cookie_jar(pool: MySqlPool) -> TestApp {
         )
         .expect("load test i18n"),
     );
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n: i18n.clone(),
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state =
+        AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n.clone());
 
     let protected_test_router: Router<AppState> = Router::new()
         .route("/api/v1/_test/me", get(test_me_handler))

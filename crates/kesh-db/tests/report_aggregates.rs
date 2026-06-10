@@ -53,6 +53,7 @@ async fn create_user(pool: &MySqlPool, username: &str, company_id: i64) -> i64 {
             role: Role::Comptable,
             active: true,
             company_id,
+            email: None,
         },
     )
     .await

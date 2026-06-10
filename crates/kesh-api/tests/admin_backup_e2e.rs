@@ -77,13 +77,7 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         )
         .expect("load test i18n"),
     );
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n,
-        users_exist: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -128,7 +122,7 @@ fn forge_jwt(user_id: i64, role: &str, company_id: i64) -> String {
     .unwrap()
 }
 
-/// `COUNT(*)` par table applicative (les 22 de `TABLES_TO_TRUNCATE`).
+/// `COUNT(*)` par table applicative (les 23 de `TABLES_TO_TRUNCATE`).
 async fn table_counts(pool: &MySqlPool) -> BTreeMap<&'static str, i64> {
     let mut counts = BTreeMap::new();
     for &table in TABLES_TO_TRUNCATE {
@@ -172,7 +166,7 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
     // doivent avoir un baseline > 0, sinon `after == baseline` serait vacuement
     // `0 == 0`. Les autres tables (journal/bank/invoices) restent vides — leur
     // sérialisation par type est couverte par les tests unitaires de
-    // `kesh-db/src/backup.rs` (peupler les 22 tables = enhancement v0.3).
+    // `kesh-db/src/backup.rs` (peupler les 23 tables = enhancement v0.3).
     for t in [
         "companies",
         "users",

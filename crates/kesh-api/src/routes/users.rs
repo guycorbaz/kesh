@@ -27,6 +27,9 @@ pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
     pub role: Role,
+    /// Email optionnel (Story 17-4a, recovery). Validé si non-vide.
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 impl std::fmt::Debug for CreateUserRequest {
@@ -35,6 +38,7 @@ impl std::fmt::Debug for CreateUserRequest {
             .field("username", &self.username)
             .field("password", &"***")
             .field("role", &self.role)
+            .field("email", &self.email)
             .finish()
     }
 }
@@ -46,6 +50,9 @@ pub struct UpdateUserRequest {
     pub role: Role,
     pub active: bool,
     pub version: i32,
+    /// Email optionnel (Story 17-4a). Vide → efface (`NULL`).
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 /// Corps de `PUT /api/v1/users/:id/reset-password`.
@@ -71,6 +78,7 @@ pub struct UserResponse {
     pub username: String,
     pub role: Role,
     pub active: bool,
+    pub email: Option<String>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -83,11 +91,34 @@ impl From<User> for UserResponse {
             username: u.username,
             role: u.role,
             active: u.active,
+            email: u.email,
             version: u.version,
             created_at: u.created_at,
             updated_at: u.updated_at,
         }
     }
+}
+
+/// Valide et normalise un email optionnel de compte (Story 17-4a).
+///
+/// `None`/vide → `Ok(None)` (pas d'email / effaçage). Non-vide → trim +
+/// validation format (`is_valid_email_simple`), sinon `400 VALIDATION_ERROR`.
+/// Réutilisé par `create_user`, `update_user` et `POST /setup/admin`.
+pub(crate) fn validate_optional_email(
+    state: &AppState,
+    raw: Option<String>,
+) -> Result<Option<String>, AppError> {
+    let normalized = crate::routes::contacts::normalize_optional(raw);
+    if let Some(ref email) = normalized {
+        if !crate::routes::contacts::is_valid_email_simple(email) {
+            return Err(AppError::Validation(state.i18n.format(
+                &state.config.locale,
+                "error-email-invalid",
+                None,
+            )));
+        }
+    }
+    Ok(normalized)
 }
 
 /// Réponse paginée pour `GET /api/v1/users`.
@@ -142,6 +173,9 @@ pub async fn create_user(
     // Validation mot de passe (politique configurable)
     password::validate_password(&req.password, state.config.password_min_length)?;
 
+    // Validation email optionnel (Story 17-4a)
+    let email = validate_optional_email(&state, req.email)?;
+
     // Hash Argon2id (async via spawn_blocking)
     let password_hash = password::hash_password_async(req.password).await?;
 
@@ -151,6 +185,7 @@ pub async fn create_user(
         role: req.role,
         active: true,
         company_id: current_user.company_id,
+        email,
     };
 
     let user = users::create(&state.pool, new_user).await?;
@@ -196,9 +231,12 @@ pub async fn update_user(
         }
     }
 
+    let email = validate_optional_email(&state, req.email)?;
+
     let changes = UserUpdate {
         role: req.role,
         active: req.active,
+        email,
     };
 
     let updated = users::update_role_and_active(&state.pool, id, req.version, changes).await?;
@@ -248,6 +286,8 @@ pub async fn disable_user(
     let changes = UserUpdate {
         role: user.role,
         active: false,
+        // Préserve l'email existant (la désactivation ne le modifie pas).
+        email: user.email.clone(),
     };
 
     let updated = users::update_role_and_active(&state.pool, id, user.version, changes).await?;

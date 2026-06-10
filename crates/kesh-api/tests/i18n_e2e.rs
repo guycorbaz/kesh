@@ -80,13 +80,7 @@ async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> Te
     // Note: must be called within a get_i18n_lock guard from the test
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
 
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n,
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

@@ -23,6 +23,7 @@ error-illegal-state = Illegal state transition
 
 # Validation errors
 error-validation = Validation error
+error-email-invalid = Invalid email format
 error-username-empty = Username cannot be empty
 error-username-too-long = Username must not exceed { $max } characters
 

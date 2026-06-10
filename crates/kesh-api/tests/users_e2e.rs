@@ -78,13 +78,8 @@ async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
         )
         .expect("load test i18n"),
     );
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n: i18n.clone(),
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state =
+        AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n.clone());
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
 

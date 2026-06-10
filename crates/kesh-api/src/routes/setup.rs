@@ -53,6 +53,9 @@ use crate::routes::auth::{LoginResponse, build_auth_cookies};
 pub struct SetupAdminRequest {
     pub username: String,
     pub password: String,
+    /// Email optionnel du 1er admin (Story 17-4a, recovery). Validé si non-vide.
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 impl std::fmt::Debug for SetupAdminRequest {
@@ -60,6 +63,7 @@ impl std::fmt::Debug for SetupAdminRequest {
         f.debug_struct("SetupAdminRequest")
             .field("username", &self.username)
             .field("password", &"***")
+            .field("email", &self.email)
             .finish()
     }
 }
@@ -100,6 +104,14 @@ pub async fn create_admin(
             "password 'changeme' is forbidden (placeholder)".into(),
         ));
     }
+    // Email optionnel (Story 17-4a) — validé/normalisé via le helper partagé.
+    let email = match crate::routes::users::validate_optional_email(&state, req.email.clone()) {
+        Ok(e) => e,
+        Err(e) => {
+            state.rate_limiter.record_failed_attempt(ip);
+            return Err(e);
+        }
+    };
 
     // Step 2 — fetch de la company stub (créée par bootstrap cas 1). Lecture
     // hors transaction (non-locking) AVANT d'ouvrir la tx verrouillée : évite de
@@ -182,6 +194,7 @@ pub async fn create_admin(
             role: Role::Admin,
             active: true,
             company_id,
+            email,
         },
     )
     .await

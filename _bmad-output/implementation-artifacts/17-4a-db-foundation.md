@@ -1,6 +1,6 @@
 # Story 17.4a: DB foundation + champ email backend (recovery — story-zéro)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Le contenu ci-dessous est déjà adversarialement revu (dont catch-architectural Opus P3 + P4-1 stratégie new_for_tests). Re-validate optionnel. -->
 <!-- STORY-ZÉRO : pose la migration `email`, la table `password_reset_tokens`, les repos, le refactor AppState→new_for_tests, le plumbing email DTO. BLOQUE 17-4b/c/d/e/f. DOIT MERGER EN PREMIER. -->
@@ -58,15 +58,15 @@ so that **les sous-stories 17-4b (SMTP) / 17-4c (endpoints) / 17-4d (frontend) p
 
 ## Tasks / Subtasks
 
-- [ ] **T-A1** Migration `ADD COLUMN email` sur `users` (+ index `idx_users_email`), style `IF NOT EXISTS`. Étendre entité `User` (`pub email`) + les **5 SELECT** retournant `User` : consts `FIND_BY_ID_SQL`/`FIND_BY_USERNAME_SQL`/`LIST_SQL` (`users.rs:14/17/20`) **+ inline `list_by_company:228` + `find_by_id_in_company:256`** + INSERT `create_in_tx`. **Ajouter `email` à `NewUser` (`entities/user.rs:148`) et corriger les 35 littéraux `NewUser { … }`** = `email: None`. **MAJ `Debug for User` manuel (`:123`)** avec `email`. (AC: 1)
-- [ ] **T-A2** Migration `CREATE TABLE password_reset_tokens` (DC11 CASCADE). Entité `PasswordResetToken` (`entities/password_reset_token.rs`). (AC: 2)
-- [ ] **T-A3** Repo `users::find_by_email` (Vec). (AC: 3)
-- [ ] **T-A4** Nouveau repo `password_reset_tokens` (create/find_valid_by_hash/mark_used/invalidate_all_for_user), paramétrés. Tests unit repo. (AC: 4)
-- [ ] **T-A5** Plumbing `email` : promouvoir `is_valid_email_simple` `pub(crate)` (F4) ; `email` dans DTO `setup/admin` + `users` create/update + `UserResponse` + `UserUpdate`/`update_role_and_active` UPDATE (F8) + validation. Tests. (AC: 5)
-- [ ] **T-A6** `TABLES_TO_TRUNCATE += "password_reset_tokens"` (`backup.rs:34`) + vérifier `backup_inventory_matches_schema` vert. (AC: 6)
-- [ ] **T-A7** 2 lignes `docs/migrations-idempotence-audit.md`. (AC: 7)
-- [ ] **T-A8** Refactor `AppState { … }` migrables → `new_for_tests` ; 2 exceptions littérales documentées ; `main.rs` reste littéral. (AC: 8)
-- [ ] **T-A9** Quality gate Test Locally First backend (fmt/build/clippy -D/test workspace) + serial si touche kesh-db (`-j1 --test-threads=1`). (AC: 9)
+- [x] **T-A1** Migration `ADD COLUMN email` sur `users` (+ index `idx_users_email`), style `IF NOT EXISTS`. Étendre entité `User` (`pub email`) + les **5 SELECT** retournant `User` : consts `FIND_BY_ID_SQL`/`FIND_BY_USERNAME_SQL`/`LIST_SQL` (`users.rs:14/17/20`) **+ inline `list_by_company:228` + `find_by_id_in_company:256`** + INSERT `create_in_tx`. **Ajouter `email` à `NewUser` (`entities/user.rs:148`) et corriger les 35 littéraux `NewUser { … }`** = `email: None`. **MAJ `Debug for User` manuel (`:123`)** avec `email`. (AC: 1)
+- [x] **T-A2** Migration `CREATE TABLE password_reset_tokens` (DC11 CASCADE). Entité `PasswordResetToken` (`entities/password_reset_token.rs`). (AC: 2)
+- [x] **T-A3** Repo `users::find_by_email` (Vec). (AC: 3)
+- [x] **T-A4** Nouveau repo `password_reset_tokens` (create/find_valid_by_hash/mark_used/invalidate_all_for_user), paramétrés. Tests unit repo. (AC: 4)
+- [x] **T-A5** Plumbing `email` : promouvoir `is_valid_email_simple` `pub(crate)` (F4) ; `email` dans DTO `setup/admin` + `users` create/update + `UserResponse` + `UserUpdate`/`update_role_and_active` UPDATE (F8) + validation. Tests. (AC: 5)
+- [x] **T-A6** `TABLES_TO_TRUNCATE += "password_reset_tokens"` (`backup.rs:34`) + vérifier `backup_inventory_matches_schema` vert. (AC: 6)
+- [x] **T-A7** 2 lignes `docs/migrations-idempotence-audit.md`. (AC: 7)
+- [x] **T-A8** Refactor `AppState { … }` migrables → `new_for_tests` ; 2 exceptions littérales documentées ; `main.rs` reste littéral. (AC: 8)
+- [x] **T-A9** Quality gate Test Locally First backend (fmt/build/clippy -D/test workspace) + serial si touche kesh-db (`-j1 --test-threads=1`). (AC: 9)
 
 ## Dev Notes
 
@@ -112,12 +112,46 @@ so that **les sous-stories 17-4b (SMTP) / 17-4c (endpoints) / 17-4d (frontend) p
 
 ### Agent Model Used
 
-(à remplir au dev-story — Opus 4.8 recommandé : refactor cross-crate + propagation 35+40 sites non-trivial)
+Opus 4.8 (1M context). Dev-story initiale interrompue par un crash système ; reprise + complétion par une 2e session Opus 4.8 (2026-06-10).
 
 ### Debug Log References
 
+- Crash système pendant le dev-story initial : T-A1→T-A7 majoritairement écrits, T-A8 (refactor AppState) non démarré, quality gate T-A9 non passé, aucun commit. Working tree non commité récupéré intact (`git fsck` : 0 corruption, uniquement objets dangling normaux).
+
 ### Completion Notes List
 
-- Story-zéro extraite de l'umbrella 17-4 convergée 6 passes (2026-06-10). Re-validate optionnel (contenu déjà adversarialement revu). Prochaine : `bmad-dev-story 17-4a` (Opus 4.8).
+- Story-zéro extraite de l'umbrella 17-4 convergée 6 passes (2026-06-10). Contenu déjà adversarialement revu.
+- **Reprise post-crash (2026-06-10)** : audit d'intégrité git OK (aucune corruption). Travail dev pré-crash récupéré : migrations, entités `User.email`/`PasswordResetToken`, repos `find_by_email` + `password_reset_tokens`, plumbing email DTO, `TABLES_TO_TRUNCATE`, idempotence-audit, propagation `email: None` sur 32 littéraux `NewUser`.
+- **Complétion par la session de reprise** :
+  1. 4 littéraux `NewUser` manqués (`exports_global_e2e`, `admin_full_export_e2e`, `admin_full_import_e2e`, `reports_export_e2e` — fichiers test de l'épopée 17-3) → ajout `email: None`.
+  2. **T-A8** entièrement réalisé : migration des 33 littéraux de test `AppState { … }` → `AppState::new_for_tests(pool, config, rate_limiter, i18n)` (32 fichiers, `auth_e2e.rs` ×2). 3 exceptions préservées : `setup_admin_e2e.rs` (users_exist variable), `middleware/auth.rs:267` (Config::from_fields_for_test), `main.rs` (prod). Aucun nouveau champ AppState en 17-4a (anti-churn préparé pour 17-4b/c).
+  3. 2 compteurs de tests bumpés suite aux ajouts : `admin_full_export_e2e` (22→23 fichiers `data/*.ndjson` — nouvelle table exportée) ; `migrations_upgrade_path` (31→33 migrations, fenêtre upgrade `total-8`→`total-10`, frontière historique 23 inchangée).
+- **Quality gate Test Locally First backend vert** : `cargo fmt --all --check` ✓, `cargo build --workspace --all-targets` ✓, `cargo clippy --workspace --all-targets -- -D warnings` ✓ (0 warning), `cargo test --workspace -j1 -- --test-threads=1` ✓ (1125+ tests, 0 échec). MariaDB Docker `kesh-mariadb` up.
+- E2E Playwright : 17-4a est backend-only (aucune UI, aucune route exercée) → non requis ici (E2E recovery en 17-4e).
+
+### Change Log
+
+| Date | Évènement |
+|------|-----------|
+| 2026-06-10 | dev-story 17-4a initial (Opus 4.8) — interrompu par crash système avant T-A8 / quality gate / commit. |
+| 2026-06-10 | Reprise (Opus 4.8) — intégrité git vérifiée (0 corruption), 4 `NewUser` manqués corrigés, T-A8 (33 littéraux AppState→`new_for_tests`) complété, 2 compteurs de tests bumpés, quality gate backend complet vert. `ready-for-dev → review`. |
 
 ### File List
+
+**Nouveaux fichiers :**
+- `crates/kesh-db/migrations/20260610000001_users_email.sql`
+- `crates/kesh-db/migrations/20260610000002_password_reset_tokens.sql`
+- `crates/kesh-db/src/entities/password_reset_token.rs`
+- `crates/kesh-db/src/repositories/password_reset_tokens.rs`
+- `crates/kesh-db/tests/password_reset_tokens_repository.rs`
+
+**Modifiés (production) :**
+- `crates/kesh-db/src/entities/{mod,user}.rs` — export `PasswordResetToken` ; `User.email` + `Debug` manuel + `NewUser.email` + `UserUpdate`.
+- `crates/kesh-db/src/repositories/{mod,users}.rs` — export repo ; `find_by_email` (Vec) + 5 SELECT + INSERT `email` + UPDATE.
+- `crates/kesh-db/src/backup.rs` — `TABLES_TO_TRUNCATE += "password_reset_tokens"`.
+- `crates/kesh-api/src/routes/{setup,users,contacts}.rs` — plumbing DTO `email` + `is_valid_email_simple` `pub(crate)`.
+- `crates/kesh-api/src/auth/bootstrap.rs` — `NewUser.email`.
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — `error-email-invalid`.
+- `docs/migrations-idempotence-audit.md` — 2 lignes + totaux.
+
+**Modifiés (tests) :** 33 littéraux `AppState { }` → `new_for_tests` (T-A8) + propagation `NewUser.email` sur ~35 fichiers de test `crates/kesh-{api,db}/tests/*.rs` ; compteurs `admin_full_export_e2e.rs` (23) et `migrations_upgrade_path.rs` (33).

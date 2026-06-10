@@ -115,6 +115,10 @@ pub struct User {
     pub role: Role,
     pub active: bool,
     pub company_id: i64,
+    /// Email de l'utilisateur (Story 17-4a). Nullable et NON-unique
+    /// (multi-tenant). Utilisé pour le recovery self-service par email
+    /// (`find_by_email`, DC6). NULL = compte non-recouvrable par email.
+    pub email: Option<String>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -129,6 +133,7 @@ impl std::fmt::Debug for User {
             .field("role", &self.role)
             .field("active", &self.active)
             .field("company_id", &self.company_id)
+            .field("email", &self.email)
             .field("version", &self.version)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
@@ -151,6 +156,10 @@ pub struct NewUser {
     pub role: Role,
     pub active: bool,
     pub company_id: i64,
+    /// Email optionnel à la création (Story 17-4a). `None` pour les flux
+    /// qui ne renseignent pas d'email (bootstrap, tests). Renseigné par
+    /// `POST /setup/admin` et `POST /users` quand fourni.
+    pub email: Option<String>,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -161,6 +170,7 @@ impl std::fmt::Debug for NewUser {
             .field("role", &self.role)
             .field("active", &self.active)
             .field("company_id", &self.company_id)
+            .field("email", &self.email)
             .finish()
     }
 }
@@ -227,12 +237,17 @@ mod tests {
     }
 }
 
-/// Données de mise à jour d'un utilisateur : rôle et activation.
+/// Données de mise à jour d'un utilisateur : rôle, activation et email.
 ///
 /// Le `password_hash` et le `username` ne sont PAS modifiables via cet update.
 /// Story 1.7 introduira des flux dédiés (`change_password`, `rename_user`).
+///
+/// **Story 17-4a** : `email` est inclus (recovery self-service). La valeur
+/// est l'email désiré ; `None` met l'email à `NULL` (effaçage). Le handler
+/// `PUT /users/:id` envoie toujours le champ (vide → `None`).
 #[derive(Debug, Clone)]
 pub struct UserUpdate {
     pub role: Role,
     pub active: bool,
+    pub email: Option<String>,
 }

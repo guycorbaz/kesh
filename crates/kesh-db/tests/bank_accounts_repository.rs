@@ -241,6 +241,7 @@ async fn create_test_user(pool: &MySqlPool, company_id: i64, username: &str) -> 
             role: Role::Admin,
             active: true,
             company_id,
+            email: None,
         },
     )
     .await

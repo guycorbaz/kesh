@@ -11,13 +11,13 @@ use crate::entities::{NewUser, User, UserUpdate};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
-const FIND_BY_ID_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+const FIND_BY_ID_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, email, version, created_at, updated_at \
      FROM users WHERE id = ?";
 
-const FIND_BY_USERNAME_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+const FIND_BY_USERNAME_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, email, version, created_at, updated_at \
      FROM users WHERE username = ?";
 
-const LIST_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+const LIST_SQL: &str = "SELECT id, username, password_hash, role, active, company_id, email, version, created_at, updated_at \
      FROM users ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée un nouvel utilisateur et retourne l'entité persistée.
@@ -49,13 +49,14 @@ pub async fn create(pool: &MySqlPool, new: NewUser) -> Result<User, DbError> {
 /// mapping `map_db_error` (incl. `UniqueConstraintViolation` code 1062).
 pub async fn create_in_tx(tx: &mut Transaction<'_, MySql>, new: NewUser) -> Result<User, DbError> {
     let result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role, active, company_id) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO users (username, password_hash, role, active, company_id, email) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(&new.username)
     .bind(&new.password_hash)
     .bind(new.role)
     .bind(new.active)
     .bind(new.company_id)
+    .bind(&new.email)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -161,6 +162,26 @@ pub async fn find_by_username(pool: &MySqlPool, username: &str) -> Result<Option
         .map_err(map_db_error)
 }
 
+/// Retrouve les utilisateurs ayant un email donné (Story 17-4a, recovery).
+///
+/// Retourne un **`Vec`** car `users.email` est nullable et **NON-unique**
+/// (multi-tenant : deux users de companies distinctes peuvent partager un
+/// email — DC6). Le flux forgot-password ne procède que si le lookup retourne
+/// **exactement 1** match (0 ou >1 → traité comme « pas de match », anti-énum).
+///
+/// La collation `utf8mb4_unicode_ci` est case-insensitive : `find_by_email`
+/// matche indépendamment de la casse.
+pub async fn find_by_email(pool: &MySqlPool, email: &str) -> Result<Vec<User>, DbError> {
+    sqlx::query_as::<_, User>(
+        "SELECT id, username, password_hash, role, active, company_id, email, version, created_at, updated_at \
+         FROM users WHERE email = ?",
+    )
+    .bind(email)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Compte le nombre total d'utilisateurs (pour la pagination).
 pub async fn count(pool: &MySqlPool) -> Result<i64, DbError> {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
@@ -225,7 +246,7 @@ pub async fn list_by_company(
     let limit = limit.clamp(0, MAX_LIST_LIMIT);
     let offset = offset.max(0);
     sqlx::query_as::<_, User>(
-        "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+        "SELECT id, username, password_hash, role, active, company_id, email, version, created_at, updated_at \
          FROM users WHERE company_id = ? ORDER BY id LIMIT ? OFFSET ?",
     )
     .bind(company_id)
@@ -253,7 +274,7 @@ pub async fn find_by_id_in_company(
     company_id: i64,
 ) -> Result<Option<User>, DbError> {
     sqlx::query_as::<_, User>(
-        "SELECT id, username, password_hash, role, active, company_id, version, created_at, updated_at \
+        "SELECT id, username, password_hash, role, active, company_id, email, version, created_at, updated_at \
          FROM users WHERE id = ? AND company_id = ?",
     )
     .bind(id)
@@ -290,7 +311,7 @@ pub async fn update_password(
 /// Compare l'état persisté au payload — `true` si aucun champ métier ne diffère
 /// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
 fn is_no_op_change(before: &User, changes: &UserUpdate) -> bool {
-    before.role == changes.role && before.active == changes.active
+    before.role == changes.role && before.active == changes.active && before.email == changes.email
 }
 
 /// Met à jour le rôle et/ou l'activation d'un utilisateur avec verrouillage optimiste.
@@ -339,11 +360,12 @@ pub async fn update_role_and_active(
 
     let rows_affected = sqlx::query(
         "UPDATE users
-         SET role = ?, active = ?, version = version + 1
+         SET role = ?, active = ?, email = ?, version = version + 1
          WHERE id = ? AND version = ?",
     )
     .bind(changes.role)
     .bind(changes.active)
+    .bind(&changes.email)
     .bind(id)
     .bind(version)
     .execute(&mut *tx)

@@ -49,12 +49,14 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 | `20260531000001_bank_accounts_archived.sql` | tracked-by-sqlx | `ALTER TABLE bank_accounts ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060 (colonne déjà présente). Non-breaking (ADD COLUMN avec DEFAULT) → pas de bump `kesh_version_min_required` (Story v014-1). Pas d'index ajouté (YAGNI, FINDING-8 Pass 3 Opus — table ~10 rows max par company). Note : invariant primary par company toujours applicatif-only v0.1 (pas de UNIQUE INDEX partiel sur `(company_id, is_primary=TRUE)`, L5 limitation Story v014-1). |
 | `20260605000001_api_keys.sql` | tracked-by-sqlx | `CREATE TABLE api_keys` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1050. Non-breaking (nouvelle table) → pas de bump `kesh_version_min_required` (Story 17-2a, #100). |
 | `20260605000002_audit_log_actor.sql` | tracked-by-sqlx | `ALTER TABLE audit_log ADD COLUMN actor_type ENUM(...) NOT NULL DEFAULT 'user'` + `ADD COLUMN actor_api_key_id BIGINT NULL` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060 (colonne déjà présente). Non-breaking (ADD COLUMN avec DEFAULT / nullable) → pas de bump `kesh_version_min_required` (Story 17-2a, DC5). Pas de FK sur `actor_api_key_id` (pointeur logique — l'audit doit survivre 10 ans à une clé révoquée/supprimée, cohérent `entity_id` sans FK). |
+| `20260610000001_users_email.sql` | yes | `ALTER TABLE users ADD COLUMN IF NOT EXISTS email` + `CREATE INDEX IF NOT EXISTS idx_users_email` utilisent les guards (MariaDB ≥ 10.3) — migration ré-entrante. Non-breaking (ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 17-4a, #122). |
+| `20260610000002_password_reset_tokens.sql` | tracked-by-sqlx | `CREATE TABLE password_reset_tokens` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1050. Non-breaking (nouvelle table) → pas de bump `kesh_version_min_required` (Story 17-4a, #122). FK `ON DELETE CASCADE` (DC11, tokens éphémères). |
 
 ## Statistiques
 
-- **Total** : 31 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a).
-- **Idempotence `yes`** : 3 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`).
-- **Idempotence `tracked-by-sqlx`** : 28 (toutes les autres).
+- **Total** : 33 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a).
+- **Idempotence `yes`** : 4 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`, `users_email`).
+- **Idempotence `tracked-by-sqlx`** : 29 (toutes les autres).
 - **Idempotence `no`** : 0.
 
 ## Maintenance future

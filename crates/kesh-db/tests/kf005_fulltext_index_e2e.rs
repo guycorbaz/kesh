@@ -65,6 +65,7 @@ async fn create_admin(pool: &MySqlPool, company_id: i64) -> i64 {
             role: Role::Admin,
             active: true,
             company_id,
+            email: None,
         },
     )
     .await

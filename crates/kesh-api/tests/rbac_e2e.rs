@@ -74,13 +74,8 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         )
         .expect("load test i18n"),
     );
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n: i18n.clone(),
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state =
+        AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n.clone());
 
     // Route de test protégée par require_comptable_role (inner) + require_auth (outer)
     let test_comptable_router: Router<AppState> = Router::new()
