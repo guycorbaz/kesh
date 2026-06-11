@@ -11,11 +11,18 @@
 
 use chrono::NaiveDateTime;
 use sqlx::mysql::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 use crate::entities::password_reset_token::PasswordResetToken;
 use crate::errors::{DbError, map_db_error};
 
 const COLUMNS: &str = "id, user_id, token_hash, expires_at, used_at, created_at";
+
+/// SQL partagé entre [`mark_used`] et [`mark_used_in_tx`] — la garde
+/// `AND used_at IS NULL` (usage unique, DC8) doit rester strictement identique
+/// dans les deux variantes.
+const MARK_USED_SQL: &str =
+    "UPDATE password_reset_tokens SET used_at = NOW(3) WHERE id = ? AND used_at IS NULL";
 
 /// Insère un nouveau token de réinitialisation et retourne l'entité persistée.
 ///
@@ -86,14 +93,31 @@ pub async fn find_valid_by_hash(
 /// inexistant) affecte 0 ligne → `DbError::NotFound` (17-4c le mappe en
 /// `400 INVALID_OR_EXPIRED_TOKEN`).
 pub async fn mark_used(pool: &MySqlPool, id: i64) -> Result<(), DbError> {
-    let rows_affected = sqlx::query(
-        "UPDATE password_reset_tokens SET used_at = NOW(3) WHERE id = ? AND used_at IS NULL",
-    )
-    .bind(id)
-    .execute(pool)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let rows_affected = sqlx::query(MARK_USED_SQL)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+    if rows_affected == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
+/// Variante transactionnelle de [`mark_used`] (code review 17-4c Pass 1, P2).
+///
+/// Même SQL, même garde `AND used_at IS NULL` (la garde fonctionne identiquement
+/// sous verrou de ligne InnoDB dans une transaction). Permet à l'appelant de
+/// rendre atomique l'ensemble consommation-token + update-password + audit : un
+/// rollback rend le token réutilisable au lieu de le brûler sans effet.
+pub async fn mark_used_in_tx(tx: &mut Transaction<'_, MySql>, id: i64) -> Result<(), DbError> {
+    let rows_affected = sqlx::query(MARK_USED_SQL)
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
     if rows_affected == 0 {
         return Err(DbError::NotFound);
     }

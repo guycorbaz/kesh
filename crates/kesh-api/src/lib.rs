@@ -48,8 +48,8 @@ pub struct AppState {
     /// (`forgot-password`/`reset-password`), distincte de `rate_limiter` (login).
     /// Seuils hardcodés 5 req / 15 min / blocage 30 min (config par env var =
     /// L5 v0.2+). Sémantique always-200 : chaque requête recovery consomme un
-    /// slot via `record_failed_attempt` (jamais `reset`), sinon `check_rate_limit`
-    /// serait inerte (catch P3 Opus F1).
+    /// slot via `check_and_record` atomique (jamais `reset`), sinon un simple
+    /// check serait inerte (catch P3 Opus F1).
     pub rate_limiter_recovery: Arc<RateLimiter>,
     pub i18n: Arc<kesh_i18n::I18nBundle>,
     pub users_exist: Arc<AtomicBool>,
@@ -550,7 +550,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             );
     }
 
-    let mut main_router = main_router.merge(protected);
+    main_router = main_router.merge(protected);
 
     // Story 6.4 : routes /api/v1/_test/* gated par test_mode (runtime branch,
     // pas Cargo feature — évite drift build CI vs prod). Le garde-fou

@@ -26,6 +26,7 @@ error-validation = Erreur de validation
 error-email-invalid = Format d'email invalide
 error-username-empty = Le nom d'utilisateur ne peut pas être vide
 error-username-too-long = Le nom d'utilisateur ne doit pas dépasser { $max } caractères
+error-username-contains-at = Le nom d'utilisateur ne peut pas contenir le caractère « @ »
 
 # Erreurs système
 error-internal = Erreur interne

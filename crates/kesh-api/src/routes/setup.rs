@@ -90,6 +90,15 @@ pub async fn create_admin(
         state.rate_limiter.record_failed_attempt(ip);
         return Err(AppError::Validation("username must be non-empty".into()));
     }
+    // Story 17-4c (P5, DC6) — `@` est réservé à l'aiguillage email du recovery
+    // forgot-password : un username qui en contiendrait serait structurellement
+    // non-recouvrable en self-service.
+    if username.contains('@') {
+        state.rate_limiter.record_failed_attempt(ip);
+        return Err(AppError::Validation(
+            "username must not contain '@' (reserved for email recovery routing)".into(),
+        ));
+    }
     // CR Pass 1 ECH1-2 — réutiliser `validate_password` (story 1.7) qui couvre :
     // empty, whitespace-only, length < min. Évite que `"            "` (12 espaces)
     // passe `chars().count() >= 12` et se retrouve hashé. Cohérent

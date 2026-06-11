@@ -70,16 +70,16 @@ so that **le frontend 17-4d puisse consommer un contrat API stable et qu'un util
 
 > Code review Pass 1 (Fable 5, 2026-06-11) — 3 couches parallèles (Blind Hunter / Edge Case Hunter / Acceptance Auditor), 30 findings bruts → dédupliqués : 0 CRITICAL/HIGH, 8 MEDIUM, 12 LOW. Triage : 10 patch, 4 defer, 3 dismiss.
 
-- [ ] [Review][Patch] P1 (MEDIUM, blind+edge+auditor) Oracle timing + oracle 500 + audit/token orphelin — déplacer TOUT le travail post-lookup de `forgot_password` (audit, invalidate, create, mail) dans la tâche `tokio::spawn` détachée ; réponse `200` immédiate dans les 2 branches ; erreurs DB loggées jamais propagées ; audit écrit dès le match (avec `recoverable: bool`) ; résoudre `public_base_url` AVANT `create` [crates/kesh-api/src/routes/auth.rs:705-775]
-- [ ] [Review][Patch] P2 (MEDIUM, blind+edge+auditor) Atomicité + DRY transaction reset — ajouter `password_reset_tokens::mark_used_in_tx` et `users::update_password_in_tx` (garde `rows_affected`) dans kesh-db ; transaction unique mark_used + update_password + audit [crates/kesh-api/src/routes/auth.rs:828-868]
-- [ ] [Review][Patch] P3 (MEDIUM, blind+edge+auditor) `reset_password` ne re-vérifie pas `user.active` — charger le user, `!active` → même `400 INVALID_OR_EXPIRED_TOKEN` générique (cohérence gel admin, symétrie avec le gate à l'émission) [crates/kesh-api/src/routes/auth.rs:828]
-- [ ] [Review][Patch] P4 (MEDIUM, edge) Comptage `len == 1` email inclut les comptes inactifs — `candidates.retain(|u| u.active)` avant le comptage (un doublon désactivé prive un actif du recovery) [crates/kesh-api/src/routes/auth.rs:687-693]
-- [ ] [Review][Patch] P5 (MEDIUM, edge) Username contenant `@` structurellement non-recouvrable (DC6) — interdire `@` à la création/édition d'username (garde validation) ; legacy → break-glass #121 [crates/kesh-api/src/routes/users.rs:164-181]
-- [ ] [Review][Patch] P6 (LOW, edge) Token non trimé dans `reset_password` — `req.token.trim()` avant `sha256_hex` (copier-coller email avec espace/retour-ligne) [crates/kesh-api/src/routes/auth.rs:810]
-- [ ] [Review][Patch] P7 (LOW, blind) Double binding `let mut main_router` redondant après le bloc conditionnel — nettoyer [crates/kesh-api/src/lib.rs:553]
-- [ ] [Review][Patch] P8 (LOW, blind) `check_rate_limit` + `record_failed_attempt` non-atomiques sous burst concurrent — méthode `check_and_record` sous un seul lock [crates/kesh-api/src/middleware/rate_limit.rs]
-- [ ] [Review][Patch] P9 (LOW, blind+edge) Commentaire « anti-accumulation » sur-vend l'invariant — invalidate+create non-transactionnels = best-effort, corriger le wording [crates/kesh-api/src/routes/auth.rs:714]
-- [ ] [Review][Patch] P10 (MEDIUM, auditor, process) Story file non à jour — statut, checkboxes, Agent Record, File List, Change Log
+- [x] [Review][Patch] P1 (MEDIUM, blind+edge+auditor) Oracle timing + oracle 500 + audit/token orphelin — déplacer TOUT le travail post-lookup de `forgot_password` (audit, invalidate, create, mail) dans la tâche `tokio::spawn` détachée ; réponse `200` immédiate dans les 2 branches ; erreurs DB loggées jamais propagées ; audit écrit dès le match (avec `recoverable: bool`) ; résoudre `public_base_url` AVANT `create` [crates/kesh-api/src/routes/auth.rs:705-775]
+- [x] [Review][Patch] P2 (MEDIUM, blind+edge+auditor) Atomicité + DRY transaction reset — ajouter `password_reset_tokens::mark_used_in_tx` et `users::update_password_in_tx` (garde `rows_affected`) dans kesh-db ; transaction unique mark_used + update_password + audit [crates/kesh-api/src/routes/auth.rs:828-868]
+- [x] [Review][Patch] P3 (MEDIUM, blind+edge+auditor) `reset_password` ne re-vérifie pas `user.active` — charger le user, `!active` → même `400 INVALID_OR_EXPIRED_TOKEN` générique (cohérence gel admin, symétrie avec le gate à l'émission) [crates/kesh-api/src/routes/auth.rs:828]
+- [x] [Review][Patch] P4 (MEDIUM, edge) Comptage `len == 1` email inclut les comptes inactifs — `candidates.retain(|u| u.active)` avant le comptage (un doublon désactivé prive un actif du recovery) [crates/kesh-api/src/routes/auth.rs:687-693]
+- [x] [Review][Patch] P5 (MEDIUM, edge) Username contenant `@` structurellement non-recouvrable (DC6) — interdire `@` à la création/édition d'username (garde validation) ; legacy → break-glass #121 [crates/kesh-api/src/routes/users.rs:164-181]
+- [x] [Review][Patch] P6 (LOW, edge) Token non trimé dans `reset_password` — `req.token.trim()` avant `sha256_hex` (copier-coller email avec espace/retour-ligne) [crates/kesh-api/src/routes/auth.rs:810]
+- [x] [Review][Patch] P7 (LOW, blind) Double binding `let mut main_router` redondant après le bloc conditionnel — nettoyer [crates/kesh-api/src/lib.rs:553]
+- [x] [Review][Patch] P8 (LOW, blind) `check_rate_limit` + `record_failed_attempt` non-atomiques sous burst concurrent — méthode `check_and_record` sous un seul lock [crates/kesh-api/src/middleware/rate_limit.rs]
+- [x] [Review][Patch] P9 (LOW, blind+edge) Commentaire « anti-accumulation » sur-vend l'invariant — invalidate+create non-transactionnels = best-effort, corriger le wording [crates/kesh-api/src/routes/auth.rs:714]
+- [x] [Review][Patch] P10 (MEDIUM, auditor, process) Story file non à jour — statut, checkboxes, Agent Record, File List, Change Log
 - [x] [Review][Defer] D1 (MEDIUM, edge) `ConnectInfo` derrière reverse proxy → IP partagée → DoS global du recovery (record inconditionnel DC5 amplifie) — DC5 figé + pattern pré-existant login ; documenté §Limitations ci-dessous + issue GitHub enhancement trusted-proxy XFF
 - [x] [Review][Defer] D2 (LOW, edge) Lockout utilisateur légitime à mi-flux (limiter partagé forgot+reset, blocage 30 min = TTL token) — lié L5 (seuils configurables v0.2+) ; documenté §Limitations
 - [x] [Review][Defer] D3 (LOW, blind+edge) `expires_at` horloge app vs `NOW(3)` horloge MariaDB (skew/TZ) — pattern pré-existant identique `refresh_tokens` ; exigence NTP/UTC à documenter manuel admin (17-4f)
@@ -89,7 +89,7 @@ Dismissed (3) : casse email (réfuté ground-truth — collation `_ci`, `users.r
 
 ### Limitations documentées (17-4c)
 
-- **L-C1 (D1)** : derrière un reverse proxy, le rate-limit recovery voit l'IP du proxy pour tous les clients ; 5 requêtes recovery quelconques / 15 min bloquent le flux 30 min pour toute l'installation. Remédiation : support `X-Forwarded-For` opt-in (env var trusted proxy) — issue GitHub enhancement, v0.2+.
+- **L-C1 (D1)** : derrière un reverse proxy, le rate-limit recovery voit l'IP du proxy pour tous les clients ; 5 requêtes recovery quelconques / 15 min bloquent le flux 30 min pour toute l'installation. Remédiation : support `X-Forwarded-For` opt-in (env var trusted proxy) — **issue [#173](https://github.com/guycorbaz/kesh/issues/173)** (`enhancement` + `v0.2-milestone`).
 - **L-C2 (D2)** : le blocage (30 min) égale le TTL du token ; un utilisateur qui consomme ses 5 slots à mi-flux doit recommencer. Remédiation : seuils configurables (L5 umbrella, v0.2+).
 - **L-C3 (D4)** : l'envoi d'email détaché n'est pas drainé au shutdown (redeploy Docker pendant l'envoi = email perdu sans trace). Acceptable v0.1 ; piste `TaskTracker` si récurrent.
 - [x] **T-C3** Révocation refresh : **réutiliser `"password_change"`** (DC8/AC14) — **aucune migration de contrainte CHECK**. (AC: 14)
@@ -197,3 +197,23 @@ Dev-story : session interrompue avant commit (code retrouvé complet dans le wor
 - crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl — clé `error-invalid-or-expired-token` ×4
 
 ## Change Log
+
+### Pass 1 code-review (Fable 5, 2026-06-11)
+
+- **Setup** : diff = working tree non commité (dev-story interrompue avant commit ; snapshot vérifié fmt+build verts puis commité `feat` avant patches). 3 couches parallèles même modèle (Blind Hunter diff-only / Edge Case Hunter + accès projet / Acceptance Auditor + spec + umbrella).
+- **Findings** : 30 bruts → dédup → 0 CRITICAL/HIGH, 8 MEDIUM, 12 LOW → triage 10 patch / 4 defer / 3 dismiss. Forte convergence inter-couches (timing oracle ×2, mark_used hors-tx ×3, gate `active` ×3).
+- **Patches appliqués** :
+  - **P1** (MEDIUM) `forgot_password` restructuré : TOUT le travail post-match (audit, invalidate, create, envoi) déplacé dans la tâche `tokio::spawn` détachée via `process_forgot_password_match` — supprime l'oracle de timing (~6 round-trips DB synchrones seulement côté match) ET l'oracle 500 (`?` propagés seulement côté match) ET le token-créé-sans-audit (base résolue avant `create`). Audit écrit pour TOUT match (AC12) avec `details_json.recoverable`.
+  - **P2** (MEDIUM) Atomicité reset : nouvelles variantes `password_reset_tokens::mark_used_in_tx` + `users::update_password_in_tx` (kesh-db, SQL partagé par const avec les variantes pool, garde TOCTOU/rows_affected identiques) ; transaction unique mark_used + update_password + audit — un échec rollback tout, le token n'est plus brûlé sans changement de mot de passe. Remplace aussi l'UPDATE SQL inline (DRY, garde NotFound restaurée).
+  - **P3** (MEDIUM) `reset_password` re-vérifie `users.active` à la consommation (`find_by_id` + filter) → même `400` générique (gel admin respecté pendant le TTL).
+  - **P4** (MEDIUM) `candidates.retain(|u| u.active)` avant le comptage « exactement 1 » — un doublon email désactivé ne prive plus le compte actif du recovery.
+  - **P5** (MEDIUM) Garde `username.contains('@')` → 400 à la création (routes/users.rs i18n `error-username-contains-at` ×4 + setup.rs) — protège l'invariant d'aiguillage DC6. Legacy/bootstrap env-var : break-glass #121.
+  - **P6** (LOW) `req.token.trim()` avant `sha256_hex` (URLs wrappées par les clients mail).
+  - **P7** (LOW) lib.rs : re-binding `let mut main_router` redondant → simple réassignation.
+  - **P8** (LOW) `RateLimiter::check_and_record` atomique sous un seul lock (refactor helpers privés `purge_expired`/`check_locked`/`record_locked`, méthodes existantes inchangées) + test `check_and_record_atomic_blocks_at_threshold` ; `enforce_recovery_rate_limit` migré.
+  - **P9** (LOW) Commentaire anti-accumulation requalifié « best-effort » (invariant non tenu sous concurrence, impact nul — même boîte mail).
+  - **P10** (process) Story file complété : statut, checkboxes, Agent Record, File List, Review Findings, Limitations L-C1..L-C3, ce Change Log.
+- **Defers documentés** (§Limitations + deferred-work.md) : D1 MEDIUM reclassé dette documentée (XFF trusted-proxy, **issue #173** `enhancement`+`v0.2-milestone`) ; D2/D3/D4 LOW.
+- **Dismiss** (3) : casse email (réfuté ground-truth collation `_ci`), token en query param (design AC12), bypass rate-limit body malformé (pattern login identique).
+- **Décisions documentées** : gate `user.active` à l'émission = ajout hors-spec conservé (défendable sécurité) + symétrie ajoutée côté reset (P3) ; cas de test à couvrir en 17-4e (compte inactif, email dupliqué actif/inactif, username avec `@`, double-consume, trim token).
+- **Prochaine passe** : Pass 2 LLM différent (≥1 MEDIUM trouvé → Review Iteration Rule), diff aplati HEAD vs main.

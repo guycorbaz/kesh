@@ -179,6 +179,17 @@ pub async fn create_user(
             Some(&args),
         )));
     }
+    // Story 17-4c (P5, DC6) — `@` est le critère d'aiguillage du recovery
+    // forgot-password (identifiant avec `@` ⇒ lookup email) : un username qui en
+    // contiendrait serait structurellement non-recouvrable en self-service.
+    // Garde l'invariant DC6 à la source.
+    if username.contains('@') {
+        return Err(AppError::Validation(state.i18n.format(
+            &state.config.locale,
+            "error-username-contains-at",
+            None,
+        )));
+    }
 
     // Validation mot de passe (politique configurable)
     password::validate_password(&req.password, state.config.password_min_length)?;

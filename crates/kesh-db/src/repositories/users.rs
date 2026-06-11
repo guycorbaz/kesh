@@ -284,6 +284,11 @@ pub async fn find_by_id_in_company(
     .map_err(map_db_error)
 }
 
+/// SQL partagé entre [`update_password`] et [`update_password_in_tx`] — le bump
+/// de `version` (optimistic lock) doit rester identique dans les deux variantes.
+const UPDATE_PASSWORD_SQL: &str =
+    "UPDATE users SET password_hash = ?, version = version + 1 WHERE id = ?";
+
 /// Met à jour le hash du mot de passe d'un utilisateur (story 1.6).
 ///
 /// Incrémente aussi la `version` (optimistic lock). Retourne une erreur
@@ -293,14 +298,37 @@ pub async fn update_password(
     user_id: i64,
     new_password_hash: &str,
 ) -> Result<(), DbError> {
-    let rows_affected =
-        sqlx::query("UPDATE users SET password_hash = ?, version = version + 1 WHERE id = ?")
-            .bind(new_password_hash)
-            .bind(user_id)
-            .execute(pool)
-            .await
-            .map_err(map_db_error)?
-            .rows_affected();
+    let rows_affected = sqlx::query(UPDATE_PASSWORD_SQL)
+        .bind(new_password_hash)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
+/// Variante transactionnelle de [`update_password`] (code review 17-4c Pass 1, P2).
+///
+/// Même SQL (bump `version` inclus) et même garde `rows_affected == 0 →
+/// NotFound`. Utilisée par le reset-password recovery pour rendre atomique
+/// consommation-token + update-password + audit dans une seule transaction.
+pub async fn update_password_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    user_id: i64,
+    new_password_hash: &str,
+) -> Result<(), DbError> {
+    let rows_affected = sqlx::query(UPDATE_PASSWORD_SQL)
+        .bind(new_password_hash)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
 
     if rows_affected == 0 {
         return Err(DbError::NotFound);

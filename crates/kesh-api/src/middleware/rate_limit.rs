@@ -73,18 +73,9 @@ impl RateLimiter {
         }
     }
 
-    /// Vérifie si l'IP est autorisée à tenter un login.
-    ///
-    /// Effectue d'abord un nettoyage lazy des entrées expirées,
-    /// puis vérifie le blocage et le seuil de tentatives.
-    ///
-    /// Retourne `Ok(())` si autorisé, `Err(RateLimitReject)` si bloqué.
-    pub fn check_rate_limit(&self, ip: IpAddr) -> Result<(), RateLimitReject> {
-        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let now = Instant::now();
-
-        // Nettoyage lazy : supprimer les entrées dont le blocage ET la
-        // fenêtre sont tous deux expirés.
+    /// Nettoyage lazy (sous lock) : supprime les entrées dont le blocage ET la
+    /// fenêtre sont tous deux expirés.
+    fn purge_expired(&self, map: &mut HashMap<IpAddr, AttemptRecord>, now: Instant) {
         let cutoff = self.block_duration + self.window;
         map.retain(|_, record| {
             if let Some(blocked_until) = record.blocked_until {
@@ -103,7 +94,16 @@ impl RateLimiter {
                 .map(|t| now.duration_since(*t) < cutoff)
                 .unwrap_or(false)
         });
+    }
 
+    /// Vérification du blocage et du seuil (sous lock) — logique partagée entre
+    /// [`Self::check_rate_limit`] et [`Self::check_and_record`].
+    fn check_locked(
+        &self,
+        map: &HashMap<IpAddr, AttemptRecord>,
+        ip: IpAddr,
+        now: Instant,
+    ) -> Result<(), RateLimitReject> {
         let record = match map.get(&ip) {
             Some(r) => r,
             None => return Ok(()),
@@ -138,13 +138,9 @@ impl RateLimiter {
         Ok(())
     }
 
-    /// Enregistre une tentative de login échouée pour une IP.
-    ///
-    /// Si le seuil est atteint, l'IP est bloquée pour `block_duration`.
-    pub fn record_failed_attempt(&self, ip: IpAddr) {
-        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let now = Instant::now();
-
+    /// Enregistrement d'une tentative (sous lock) — logique partagée entre
+    /// [`Self::record_failed_attempt`] et [`Self::check_and_record`].
+    fn record_locked(&self, map: &mut HashMap<IpAddr, AttemptRecord>, ip: IpAddr, now: Instant) {
         let record = map.entry(ip).or_insert_with(|| AttemptRecord {
             attempts: Vec::new(),
             blocked_until: None,
@@ -159,6 +155,43 @@ impl RateLimiter {
         if record.attempts.len() as u32 >= self.max_attempts {
             record.blocked_until = Some(now + self.block_duration);
         }
+    }
+
+    /// Vérifie si l'IP est autorisée à tenter un login.
+    ///
+    /// Effectue d'abord un nettoyage lazy des entrées expirées,
+    /// puis vérifie le blocage et le seuil de tentatives.
+    ///
+    /// Retourne `Ok(())` si autorisé, `Err(RateLimitReject)` si bloqué.
+    pub fn check_rate_limit(&self, ip: IpAddr) -> Result<(), RateLimitReject> {
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let now = Instant::now();
+        self.purge_expired(&mut map, now);
+        self.check_locked(&map, ip, now)
+    }
+
+    /// Enregistre une tentative de login échouée pour une IP.
+    ///
+    /// Si le seuil est atteint, l'IP est bloquée pour `block_duration`.
+    pub fn record_failed_attempt(&self, ip: IpAddr) {
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let now = Instant::now();
+        self.record_locked(&mut map, ip, now);
+    }
+
+    /// Story 17-4c Pass 1 (P8) — « check puis record » **atomique** sous un seul
+    /// verrou, pour la sémantique always-200 du recovery (chaque requête
+    /// consomme un slot, jamais `reset`). Ferme la fenêtre entre
+    /// `check_rate_limit` et `record_failed_attempt` où un burst concurrent de
+    /// la même IP pouvait dépasser le seuil. Une requête rejetée (IP bloquée)
+    /// ne consomme PAS de slot — identique à la séquence deux-appels remplacée.
+    pub fn check_and_record(&self, ip: IpAddr) -> Result<(), RateLimitReject> {
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let now = Instant::now();
+        self.purge_expired(&mut map, now);
+        self.check_locked(&map, ip, now)?;
+        self.record_locked(&mut map, ip, now);
+        Ok(())
     }
 
     /// Réinitialise le compteur pour une IP après un login réussi.
@@ -281,6 +314,29 @@ mod tests {
         // 5e slot consommé → bloqué.
         let reject = rl.check_rate_limit(ip).unwrap_err();
         assert!(reject.retry_after_secs > 0);
+    }
+
+    #[test]
+    fn check_and_record_atomic_blocks_at_threshold() {
+        use std::time::Duration;
+        // Story 17-4c Pass 1 (P8) — variante atomique : mêmes seuils que la
+        // séquence check→record qu'elle remplace, requêtes 1..=5 passent,
+        // la 6e est rejetée (et ne consomme pas de slot supplémentaire).
+        let rl =
+            RateLimiter::with_thresholds(5, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.2.1".parse().unwrap();
+
+        for i in 1..=5 {
+            assert!(
+                rl.check_and_record(ip).is_ok(),
+                "requête {i}/5 doit passer (slot consommé)"
+            );
+        }
+        let reject = rl.check_and_record(ip).unwrap_err();
+        assert!(reject.retry_after_secs > 0, "6e requête doit être bloquée");
+        // Une IP distincte n'est pas affectée.
+        let other: IpAddr = "10.0.2.2".parse().unwrap();
+        assert!(rl.check_and_record(other).is_ok());
     }
 
     #[test]
