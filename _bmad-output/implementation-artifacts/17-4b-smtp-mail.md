@@ -1,6 +1,6 @@
 # Story 17.4b: Couche email/SMTP + config (recovery)
 
-Status: review
+Status: done
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Contenu déjà adversarialement revu (Partie B : AC8-11, T-B1..T-B4, DC1/DC2/DC7/DC10). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4a (DONE) : consomme le refactor `AppState::new_for_tests` (stratégie anti-churn P4-1). SÉRIE, PAS parallélisable (P3 F2). BLOQUE 17-4c (endpoints). -->
@@ -194,3 +194,9 @@ Quality gate post-patch : fmt + clippy -D verts, config 71/71. Trend >LOW : **7 
 - 2 LOW Edge+Auditor (IPv6 bracketé `[fd00::25]` message trompeur, `ttlMinutes` séparateur de milliers latent si TTL ≥1000) → candidats note doc 17-4f, non actionnables.
 
 Quality gate post-patch : fmt + clippy -D verts, mail 8/8 (dont 3 nouveaux), config 71/71. Trend >LOW : **7 → 1 → 3** → Pass 4 (Sonnet) requise.
+
+### Pass 4 review (Sonnet 4.6) — 2026-06-11 — CYCLE CONVERGÉ
+
+**0 finding > LOW.** Tous les patches Pass 3 grep-vérifiés sans régression : double validation `from` boot = défense en profondeur cohérente (aucune divergence pathologique dans les deux sens), `Mailbox: Clone` confirmé source lettre, placeholders ×4 locales grep-confirmés, `CARGO_MANIFEST_DIR` robuste CI, warn tls=false bien dans la branche `Ok(m)`. Analyse approfondie quoted-printable (source `email-encoding-0.4.1`) : les URLs de test < 75 bytes sont garanties non coupées par le soft line break QP — **1 LOW** (fragilité future si token long en 17-4e) → commentaire de garde ajouté dans le test, consigne « asserter sur `CapturedMail.reset_url`, pas sur `msg.formatted()` » documentée pour 17-4e.
+
+**Bilan cycle code-review 17-4b** : 4 passes Sonnet→Haiku→Opus→Sonnet, trend findings réels >LOW **7 → 1 → 3 → 0**, ~17 patches. Pattern « Opus catch-architectural en Pass 3 » re-confirmé (validation from incohérente + trou de couverture smtp.rs + AUTH en clair, tous ratés par Sonnet ET Haiku). 1 hallucination Haiku CRITICAL auto-réfutée + 1 HIGH réfutée sur le fond (backtrace ≠ dump des locales). Defer documenté : MockMailer capture-sur-échec (owner 17-4e). Candidats doc 17-4f : IPv6 bracketé, UTF-8 host, recommandation TLS. Status `review → done`.

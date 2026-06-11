@@ -166,6 +166,13 @@ mod tests {
 
     /// Le corps rendu contient l'URL de reset, le TTL substitué et le sujet
     /// est non-vide — détecte une régression de placeholder ou de clé FTL.
+    ///
+    /// NB (review Pass 4) : URLs de test volontairement < 75 bytes — au-delà,
+    /// l'encodage quoted-printable de lettre insère un soft line break `=\r\n`
+    /// qui couperait l'URL dans le MIME brut et ferait échouer `contains()`
+    /// (le lien resterait fonctionnel une fois décodé). Pour des tokens longs
+    /// (17-4e), asserter sur `CapturedMail.reset_url` du MockMailer, pas sur
+    /// `msg.formatted()`.
     #[test]
     fn build_message_renders_url_and_ttl() {
         let mailer = test_mailer();
