@@ -954,4 +954,8 @@ api-keys-toast-revoke-success = Key revoked.
 # Story 17-4b — Password recovery by email (backend rendering, DC10)
 error-smtp-send-failed = Email delivery failed. Please try again shortly.
 email-password-reset-subject = Reset your Kesh password
-email-password-reset-body = You requested a reset of your Kesh password. Click the following link to choose a new password: { $resetUrl } — this link is valid for { $ttlMinutes } minutes. If you did not request this, please ignore this email.
+email-password-reset-body =
+    You requested a reset of your Kesh password.
+    Open the following link to choose a new password (valid for { $ttlMinutes } minutes):
+    { $resetUrl }
+    If you did not request this, please ignore this email.

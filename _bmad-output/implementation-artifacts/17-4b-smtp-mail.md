@@ -150,4 +150,25 @@ Opus 4.8 (run dev-story interrompu — session perdue avant finalisation du stor
 
 ## Change Log
 
-- 2026-06-10 — dev-story 17-4b (Opus 4.8, interrompu ; reprise+finalisation Fable 5) : T-B1..T-B5 complets, 541 insertions / 13 fichiers. Quality gate backend 4/4 vert : fmt + build + clippy -D OK ; `cargo test --workspace` parallèle = 1019 verts hors kesh-db (21 échecs `kesh-db --lib` = contention parallélisme DB connue, `OptimisticLockConflict` sur tests repository sqlx — 17-4b ne touche pas kesh-db) ; re-run `cargo test -p kesh-db --lib -- --test-threads=1` (mode CI serial) = **187/187 verts, 0 régression**. Status `ready-for-dev → review`. Prochaine : `bmad-code-review 17-4b`.
+- 2026-06-10 — dev-story 17-4b (Opus 4.8, interrompu ; reprise+finalisation Fable 5) : T-B1..T-B5 complets, 852 insertions / 17 fichiers au commit `b38a30c` (code + 7 tests config + story file + sprint-status + Cargo.lock + 4 FTL). Signature `Mailer::send_password_reset` figée à `locale: Locale` (enum) plutôt que `&str` (spec : « signature à figer au dev ») — cohérent avec `config.locale` et `I18nBundle::format`, évite un parse runtime. Quality gate backend 4/4 vert : fmt + build + clippy -D OK ; `cargo test --workspace` parallèle = 1019 verts hors kesh-db (21 échecs `kesh-db --lib` = contention parallélisme DB connue, `OptimisticLockConflict` sur tests repository sqlx — 17-4b ne touche pas kesh-db) ; re-run `cargo test -p kesh-db --lib -- --test-threads=1` (mode CI serial) = **187/187 verts, 0 régression**. Status `ready-for-dev → review`. Prochaine : `bmad-code-review 17-4b`.
+
+### Pass 1 review (Sonnet 4.6) — 2026-06-11
+
+3 reviewers parallèles (Blind Hunter / Edge Case Hunter / Acceptance Auditor), 13 findings bruts → 10 dédupliqués : **7 > LOW** (3 HIGH, 4 MEDIUM après merge) → patches appliqués, Pass 2 obligatoire (rotation → Haiku).
+
+**Patches appliqués :**
+- **BH-1 HIGH** — transport SMTP reconstruit à chaque envoi → `AsyncSmtpTransport` construit une seule fois dans `SmtpMailer::from_config` (résolution relay + TLS params + credentials au boot). Bénéfice secondaire : le password n'est plus stocké dans la struct (neutralise BH-2).
+- **BH-6 MEDIUM** — `from_config` passe de `Option<Self>` à `Result<Self, String>` : l'échec d'init STARTTLS (légitimement possible) est distingué des vars absentes (inatteignables post-fail-fast) ; `main.rs` loggue le détail puis `exit(1)` (pattern boot existant).
+- **E-1/A-1 MEDIUM** (edge+auditor) — `public_base_url` : `trim_end_matches('/')` + re-filter vide (exigence umbrella P4-4 omise par la spec-fille) + 2 tests (trailing slash, "///" → None).
+- **E-2 MEDIUM** — garde boot `KESH_SMTP_HOST` contenant `:` (format `host:port` copié d'une doc → erreur SNI cryptique au 1er envoi sinon), exception IPv6 literal + 2 tests.
+- **BH-4/E-4 MEDIUM** — `parse_strict_bool` trim avant comparaison (cohérence `opt_trimmed_env`) + test `" false "`.
+- **BH-7 MEDIUM** — corps email multiline Fluent ×4 locales : URL isolée sur sa propre ligne (clickability clients mail), TTL remonté dans la phrase d'intro.
+- **E-3 LOW** — message `IncompleteSmtpConfig` from-invalide précise « sans display-name ».
+- **BH-8 LOW** — test Debug asserte la présence du masque `***` (pas seulement l'absence du secret).
+- **BH-10 LOW** — `opt_trimmed_env` distingue `NotUnicode` (warn) de `NotPresent` (message fail-fast sinon trompeur).
+- **A-2/A-3 LOW** — Change Log corrigé (852/17, note signature `Locale`).
+
+**Dismissed :** BH-2 HIGH (claim « fuite Debug » — `SmtpMailer` n'a aucun impl `Debug`, pas de chemin de fuite ; rendu sans objet par BH-1), BH-5 MEDIUM (détail erreur lettre loggé serveur-only = pattern projet, pas de secret dans les erreurs lettre), BH-9 LOW (clone Vec test-only), exit(1) boot (pattern existant).
+**Deferred :** BH-3 HIGH→reclassé design 17-4e (MockMailer capture-sur-échec : le test SMTP-down AC23-g vérifie le 200-toujours, pas la capture ; la story 17-4e adaptera si besoin — owner documenté ici).
+
+Quality gate post-patch : fmt + clippy -D (kesh-api, kesh-i18n) verts ; tests kesh-i18n 21/21, config 69/69 (dont 6 nouveaux), mail 5/5.

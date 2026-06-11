@@ -929,7 +929,12 @@ impl Config {
         let smtp_user = opt_trimmed_env("KESH_SMTP_USER");
         let smtp_password = opt_trimmed_env("KESH_SMTP_PASSWORD");
         let smtp_from = opt_trimmed_env("KESH_SMTP_FROM");
-        let public_base_url = opt_trimmed_env("KESH_PUBLIC_BASE_URL");
+        // Review 17-4b Pass 1 (P4-4 umbrella) — strip du slash final pour éviter
+        // le double-slash `{base}//reset-password` côté 17-4c. Un base-url réduit
+        // à "/" (ou "///") devient vide → None (re-filter après strip).
+        let public_base_url = opt_trimmed_env("KESH_PUBLIC_BASE_URL")
+            .map(|s| s.trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
 
         // KESH_SMTP_PORT : int borné [1, 65535] (= u16), défaut 587 (STARTTLS
         // submission). Pattern parse+borne+warn (cf. KESH_ADMIN_EXPORT_INMEM_MB).
@@ -987,7 +992,25 @@ impl Config {
             if let Some(ref from) = smtp_from {
                 if !crate::routes::contacts::is_valid_email_simple(from) {
                     return Err(ConfigError::IncompleteSmtpConfig {
-                        detail: "KESH_SMTP_FROM n'est pas un email valide".to_string(),
+                        detail: "KESH_SMTP_FROM n'est pas un email valide (format attendu : \
+                                 email@domaine.tld, sans display-name « Nom <email> »)"
+                            .to_string(),
+                    });
+                }
+            }
+            // Review 17-4b Pass 1 — un `:` dans le host trahit un format
+            // `host:port` copié d'une doc SMTP : le SNI rustls le refuserait
+            // seulement au premier envoi (« domain isn't a valid DNS name »),
+            // erreur cryptique non détectée au boot. Exception : IPv6 literal
+            // (contient des `:` légitimes, utilisable en SMTP plaintext LAN).
+            if let Some(ref host) = smtp_host {
+                if host.contains(':') && host.parse::<std::net::Ipv6Addr>().is_err() {
+                    return Err(ConfigError::IncompleteSmtpConfig {
+                        detail: format!(
+                            "KESH_SMTP_HOST='{}' contient un port — renseigner uniquement \
+                             le nom d'hôte (le port va dans KESH_SMTP_PORT)",
+                            host
+                        ),
                     });
                 }
             }
@@ -1216,7 +1239,17 @@ fn opt_trimmed_env(var: &str) -> Option<String> {
                 Some(trimmed)
             }
         }
-        Err(_) => None,
+        // Review 17-4b Pass 1 — distinguer NotUnicode de NotPresent : une var
+        // présente mais non-UTF-8 traitée silencieusement comme absente
+        // produirait un message fail-fast trompeur (« var absente/vide »).
+        Err(env::VarError::NotUnicode(_)) => {
+            tracing::warn!(
+                "{} contient des octets non-UTF-8 — ignorée (traitée comme absente)",
+                var
+            );
+            None
+        }
+        Err(env::VarError::NotPresent) => None,
     }
 }
 
@@ -1226,13 +1259,18 @@ fn opt_trimmed_env(var: &str) -> Option<String> {
 /// qu'un `"True"`/`"yes"` soit silencieusement interprété comme `false`).
 fn parse_strict_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
     match env::var(var) {
-        Ok(val) if val == "true" || val == "1" => Ok(true),
-        Ok(val) if val == "false" || val == "0" => Ok(false),
-        Ok(val) if val.is_empty() => Ok(default),
-        Ok(val) => Err(ConfigError::InvalidBoolValue {
-            var: var.to_string(),
-            got: val,
-        }),
+        // Review 17-4b Pass 1 — trim avant comparaison, cohérent avec
+        // `opt_trimmed_env` : un espace invisible dans un `.env` édité à la
+        // main (`KESH_SMTP_TLS=true `) ne doit pas échouer le boot.
+        Ok(raw) => match raw.trim() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            "" => Ok(default),
+            other => Err(ConfigError::InvalidBoolValue {
+                var: var.to_string(),
+                got: other.to_string(),
+            }),
+        },
         Err(_) => Ok(default),
     }
 }
@@ -2495,6 +2533,9 @@ mod smtp_config_tests {
             !dbg.contains("s3cr3t-app-password"),
             "le mot de passe SMTP ne doit JAMAIS apparaître dans Debug"
         );
+        // Review Pass 1 — vérifier la présence du masque lui-même, pas
+        // seulement l'absence du secret (détecte une régression du masquage).
+        assert!(dbg.contains("***"), "masque *** présent dans Debug");
         assert!(dbg.contains("smtp_password"), "champ présent (masqué ***)");
     }
 
@@ -2509,5 +2550,90 @@ mod smtp_config_tests {
         }
         let config = Config::from_env().expect("tls=false valide");
         assert!(!config.smtp_tls);
+    }
+
+    /// Review Pass 1 — bool strict avec espaces parasites (`.env` édité à la
+    /// main) : trim avant comparaison, cohérent avec `opt_trimmed_env`.
+    #[test]
+    fn strict_bool_trims_whitespace() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_TLS", " false ");
+        }
+        let config = Config::from_env().expect("' false ' trimé → valide");
+        assert!(!config.smtp_tls);
+    }
+
+    /// Review Pass 1 (P4-4 umbrella) — trailing slash strippé de
+    /// PUBLIC_BASE_URL pour éviter `{base}//reset-password` côté 17-4c.
+    #[test]
+    fn public_base_url_trailing_slash_stripped() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_PUBLIC_BASE_URL", "https://kesh.example.com/");
+        }
+        let config = Config::from_env().expect("base url valide");
+        assert_eq!(
+            config.public_base_url.as_deref(),
+            Some("https://kesh.example.com")
+        );
+    }
+
+    /// Review Pass 1 — base url réduite à des slashes → None (pas une string
+    /// vide qui fabriquerait des reset_url relatifs).
+    #[test]
+    fn public_base_url_only_slashes_is_none() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_PUBLIC_BASE_URL", "///");
+        }
+        let config = Config::from_env().expect("hors feature, pas de fail-fast");
+        assert!(config.public_base_url.is_none());
+    }
+
+    /// Review Pass 1 — `KESH_SMTP_HOST=host:port` (copié d'une doc SMTP)
+    /// détecté au boot plutôt qu'au premier envoi (erreur SNI cryptique).
+    #[test]
+    fn feature_on_host_with_port_fails_fast() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::set_var("KESH_SMTP_HOST", "smtp.example.com:587");
+        }
+        let err = Config::from_env().expect_err("host:port → Err au boot");
+        match err {
+            ConfigError::IncompleteSmtpConfig { detail } => {
+                assert!(
+                    detail.contains("KESH_SMTP_PORT"),
+                    "message guide : {detail}"
+                );
+            }
+            other => panic!("attendu IncompleteSmtpConfig, obtenu {other:?}"),
+        }
+    }
+
+    /// Review Pass 1 — IPv6 literal accepté comme host (SMTP plaintext LAN) :
+    /// les `:` d'une adresse IPv6 ne sont pas un port imbriqué.
+    #[test]
+    fn feature_on_ipv6_host_allowed() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::set_var("KESH_SMTP_HOST", "fd00::25");
+        }
+        let config = Config::from_env().expect("IPv6 literal accepté");
+        assert_eq!(config.smtp_host.as_deref(), Some("fd00::25"));
     }
 }

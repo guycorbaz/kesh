@@ -954,4 +954,8 @@ api-keys-toast-revoke-success = Chiave revocata.
 # Story 17-4b — Recupero della password via email (rendering backend, DC10)
 error-smtp-send-failed = Invio dell'email non riuscito. Riprova tra qualche istante.
 email-password-reset-subject = Reimpostazione della password Kesh
-email-password-reset-body = Hai richiesto la reimpostazione della tua password Kesh. Fai clic sul link seguente per scegliere una nuova password: { $resetUrl } — questo link è valido per { $ttlMinutes } minuti. Se non hai effettuato questa richiesta, ignora questa email.
+email-password-reset-body =
+    Hai richiesto la reimpostazione della tua password Kesh.
+    Apri il link seguente per scegliere una nuova password (valido per { $ttlMinutes } minuti):
+    { $resetUrl }
+    Se non hai effettuato questa richiesta, ignora questa email.

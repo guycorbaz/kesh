@@ -224,15 +224,16 @@ async fn main() {
 
     // Story 17-4b — couche email recovery. Si le feature est activé, la config
     // SMTP a déjà été validée fail-fast au boot (`ConfigError::IncompleteSmtpConfig`)
-    // → `SmtpMailer::from_config` réussit forcément ; sinon `NoopMailer`
-    // (recovery = break-glass #121). Construit avant le move de `config`/`i18n`.
+    // → les vars sont présentes ; sinon `NoopMailer` (recovery = break-glass
+    // #121). Construit avant le move de `config`/`i18n`. Le transport lettre
+    // (relay STARTTLS + credentials) est construit ici une seule fois.
     let mailer: Arc<dyn Mailer> = if config.forgot_password_enabled {
         match mail::SmtpMailer::from_config(
             &config,
             i18n_bundle.clone(),
             mail::PASSWORD_RESET_TTL_MINUTES,
         ) {
-            Some(m) => {
+            Ok(m) => {
                 tracing::info!(
                     "Recovery par email ACTIVÉ (SMTP {}:{}, TLS={})",
                     config.smtp_host.as_deref().unwrap_or("?"),
@@ -241,10 +242,12 @@ async fn main() {
                 );
                 Arc::new(m)
             }
-            None => {
-                // Inatteignable si le fail-fast boot a fait son travail.
+            Err(detail) => {
+                // Vars absentes = inatteignable si le fail-fast boot a fait son
+                // travail ; l'init du relay STARTTLS peut, elle, légitimement
+                // échouer ici. Même pattern exit(1) que les erreurs Config boot.
                 tracing::error!(
-                    "KESH_FEATURE_FORGOT_PASSWORD=true mais config SMTP incomplète au build du mailer — abandon."
+                    "KESH_FEATURE_FORGOT_PASSWORD=true mais le build du mailer SMTP a échoué ({detail}) — abandon."
                 );
                 std::process::exit(1);
             }

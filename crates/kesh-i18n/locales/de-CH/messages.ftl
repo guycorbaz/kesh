@@ -954,4 +954,8 @@ api-keys-toast-revoke-success = Schlüssel widerrufen.
 # Story 17-4b — Passwort-Wiederherstellung per E-Mail (Backend-Rendering, DC10)
 error-smtp-send-failed = Der E-Mail-Versand ist fehlgeschlagen. Bitte versuchen Sie es in Kürze erneut.
 email-password-reset-subject = Zurücksetzen Ihres Kesh-Passworts
-email-password-reset-body = Sie haben das Zurücksetzen Ihres Kesh-Passworts angefordert. Klicken Sie auf den folgenden Link, um ein neues Passwort festzulegen: { $resetUrl } — dieser Link ist { $ttlMinutes } Minuten gültig. Falls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.
+email-password-reset-body =
+    Sie haben das Zurücksetzen Ihres Kesh-Passworts angefordert.
+    Öffnen Sie den folgenden Link, um ein neues Passwort festzulegen (gültig für { $ttlMinutes } Minuten):
+    { $resetUrl }
+    Falls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.
