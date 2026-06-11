@@ -206,6 +206,18 @@ impl RateLimiter {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         map.remove(&ip);
     }
+
+    /// Story 17-4e (DE-2) — vide TOUTES les entrées (toutes IPs, blocages compris).
+    ///
+    /// Support de test UNIQUEMENT : appelé par le `seed_handler` `/_test/seed`
+    /// (lui-même monté seulement si `config.test_mode`) pour que chaque spec
+    /// E2E reparte avec des limiters vierges — sans ça, le budget recovery
+    /// (5 req / 15 min / IP, partagé forgot+reset) rend les re-runs locaux
+    /// flaky. Aucun appelant en production.
+    pub fn clear_all(&self) {
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        map.clear();
+    }
 }
 
 // Clone is needed because AppState derives Clone.
@@ -344,6 +356,27 @@ mod tests {
         // Une IP distincte n'est pas affectée.
         let other: IpAddr = "10.0.2.2".parse().unwrap();
         assert!(rl.check_and_record(other).is_ok());
+    }
+
+    #[test]
+    fn clear_all_unblocks_a_blocked_ip() {
+        use std::time::Duration;
+        // Story 17-4e (DE-2) — une IP bloquée redevient autorisée après clear_all.
+        let rl =
+            RateLimiter::with_thresholds(2, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.4.1".parse().unwrap();
+        assert!(rl.check_and_record(ip).is_ok());
+        assert!(rl.check_and_record(ip).is_ok());
+        assert!(
+            rl.check_and_record(ip).is_err(),
+            "3e requête bloquée (seuil 2)"
+        );
+
+        rl.clear_all();
+        assert!(
+            rl.check_and_record(ip).is_ok(),
+            "après clear_all, l'IP repart avec un compteur vierge"
+        );
     }
 
     #[test]

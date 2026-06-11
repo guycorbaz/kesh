@@ -89,6 +89,11 @@ test.describe('Login', () => {
 test.describe('Accessibilité', () => {
 	test('page login — axe-core sans violations', async ({ page }) => {
 		await page.goto('/login');
+		// Story 17-4e (T-E4) — anti-flake : attendre l'hydratation SvelteKit
+		// (CSR pur, ssr=false) avant l'analyse. Sans ce wait, axe peut analyser
+		// le shell SPA nu (aucun landmark <main> encore rendu) → faux
+		// « landmark-one-main » selon le timing machine.
+		await page.locator('main').waitFor();
 
 		const results = await new AxeBuilder({ page }).analyze();
 

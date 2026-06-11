@@ -48,6 +48,9 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/seed", post(seed_handler))
         .route("/reset", post(reset_handler))
+        // Story 17-4e (DE-1) — injection d'un token de reset pour les E2E
+        // recovery (l'email réel n'est pas vérifiable sans SMTP).
+        .route("/password-reset-token", post(password_reset_token_handler))
 }
 
 /// Mutex global sérialisant tous les appels seed/reset (code review P2).
@@ -233,10 +236,65 @@ async fn seed_handler(
         .users_exist
         .store(user_count > 0, std::sync::atomic::Ordering::Release);
 
+    // Story 17-4e (DE-2) — repartir avec des rate-limiters vierges à chaque
+    // seed : le budget recovery (5 req / 15 min / IP, partagé forgot+reset)
+    // rendrait sinon les re-runs E2E locaux flaky (état mémoire, pas DB).
+    state.rate_limiter.clear_all();
+    state.rate_limiter_recovery.clear_all();
+
     Ok(Json(SeedResponse {
         preset: preset_label,
         ok: true,
     }))
+}
+
+/// Corps de `POST /api/v1/_test/password-reset-token` (Story 17-4e, DE-1).
+#[derive(Debug, Deserialize)]
+pub struct PasswordResetTokenRequest {
+    pub username: String,
+}
+
+/// Réponse : le token de reset EN CLAIR (endpoint de test uniquement —
+/// jamais monté hors `test_mode`, cf. doc module).
+#[derive(Debug, Serialize)]
+pub struct PasswordResetTokenResponse {
+    pub token: String,
+}
+
+/// `POST /api/v1/_test/password-reset-token` — Story 17-4e (DE-1).
+///
+/// Crée un token de reset valide (TTL standard 30 min) pour `username` et
+/// retourne le **clair**, pour que les specs Playwright recovery testent
+/// `/reset-password?token=…` sans dépendre d'un vrai envoi SMTP (AC24
+/// umbrella : « le token est injecté via seed/API de test »).
+///
+/// Pas d'anti-énumération ici : c'est un endpoint de test — un username
+/// inconnu retourne un `404` franc pour diagnostiquer la spec.
+async fn password_reset_token_handler(
+    State(state): State<AppState>,
+    Json(req): Json<PasswordResetTokenRequest>,
+) -> Result<Json<PasswordResetTokenResponse>, AppError> {
+    let user = kesh_db::repositories::users::find_by_username(&state.pool, &req.username)
+        .await
+        .map_err(AppError::Database)?
+        // 404 franc via le mapping standard DbError::NotFound (endpoint de test,
+        // pas d'anti-énumération).
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+
+    let (token_clear, token_hash) = crate::auth::api_key::generate_reset_token();
+    let expires_at = (chrono::Utc::now()
+        + chrono::TimeDelta::minutes(crate::mail::PASSWORD_RESET_TTL_MINUTES))
+    .naive_utc();
+    kesh_db::repositories::password_reset_tokens::create(
+        &state.pool,
+        user.id,
+        &token_hash,
+        expires_at,
+    )
+    .await
+    .map_err(AppError::Database)?;
+
+    Ok(Json(PasswordResetTokenResponse { token: token_clear }))
 }
 
 /// `POST /api/v1/_test/reset` — alias de `seed { preset: "fresh" }`.

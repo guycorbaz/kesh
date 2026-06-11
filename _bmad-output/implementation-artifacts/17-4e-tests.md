@@ -1,6 +1,6 @@
 # Story 17.4e: Tests recovery — intégration Rust + E2E Playwright
 
-Status: ready-for-dev
+Status: review
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (validate CONVERGÉ 6 passes), Partie E : AC23-24. Re-validate optionnel. -->
 <!-- DÉPEND de 17-4c (endpoints DONE) + 17-4d (pages frontend DONE). Avant-dernière sous-story (reste 17-4f doc). -->
@@ -59,10 +59,10 @@ so that **le cœur sécurité du recovery (anti-énum DC4, usage-unique DC8, rat
 
 ## Tasks / Subtasks
 
-- [ ] **T-E1** Support test backend (gated `test_mode`) : `RateLimiter::clear_all()` (+ test unitaire) ; purge des 2 limiters dans `seed_handler` ; route `POST /_test/password-reset-token` `{username}` → `{token}` (réutilise `generate_reset_token` + `password_reset_tokens::create`, TTL standard ; 404 si user inconnu — c'est un endpoint de test, pas d'anti-énum). (AC: 24 pré-requis)
-- [ ] **T-E2** Suite `crates/kesh-api/tests/password_recovery_e2e.rs` : helpers locaux (`test_config_recovery()` DE-5, `spawn_app_with_state` littéral AppState avec MockMailer + limiter permissif DE-4, `wait_for_mail`/`wait_for_token_count` DE-3, helper création user avec email via repos), puis les 13 cas AC23 a-m. (AC: 23)
-- [ ] **T-E3** Spec `frontend/tests/e2e/password-recovery.spec.ts` : 5 scénarios AC24, header de recette backend (env vars DE-6), helper local `injectResetToken(username)` (POST `/_test/password-reset-token` via playwright request, pattern `seedTestState`). (AC: 24)
-- [ ] **T-E4** Quality gate : fmt + build + clippy -D + `cargo test --workspace -j1 -- --test-threads=1` (serial, DB up) verts ; run E2E live local de la spec (backend feature-on) vert ; baseline E2E existante non régressée (`npm run test:e2e` complet si le temps le permet, sinon spec nouvelle + setup/auth specs). (AC: transverse)
+- [x] **T-E1** Support test backend (gated `test_mode`) : `RateLimiter::clear_all()` (+ test unitaire) ; purge des 2 limiters dans `seed_handler` ; route `POST /_test/password-reset-token` `{username}` → `{token}` (réutilise `generate_reset_token` + `password_reset_tokens::create`, TTL standard ; 404 si user inconnu — c'est un endpoint de test, pas d'anti-énum). (AC: 24 pré-requis)
+- [x] **T-E2** Suite `crates/kesh-api/tests/password_recovery_e2e.rs` : helpers locaux (`test_config_recovery()` DE-5, `spawn_app_with_state` littéral AppState avec MockMailer + limiter permissif DE-4, `wait_for_mail`/`wait_for_token_count` DE-3, helper création user avec email via repos), puis les 13 cas AC23 a-m. (AC: 23)
+- [x] **T-E3** Spec `frontend/tests/e2e/password-recovery.spec.ts` : 5 scénarios AC24, header de recette backend (env vars DE-6), helper local `injectResetToken(username)` (POST `/_test/password-reset-token` via playwright request, pattern `seedTestState`). (AC: 24)
+- [x] **T-E4** Quality gate : fmt + build + clippy -D + `cargo test --workspace -j1 -- --test-threads=1` (serial, DB up) verts ; run E2E live local de la spec (backend feature-on) vert ; baseline E2E existante non régressée (`npm run test:e2e` complet si le temps le permet, sinon spec nouvelle + setup/auth specs). (AC: transverse)
 
 ## Dev Notes
 
@@ -110,10 +110,38 @@ so that **le cœur sécurité du recovery (anti-énum DC4, usage-unique DC8, rat
 
 ### Agent Model Used
 
-(à remplir au dev-story)
+Claude Fable 5 (dev-story single-pass, 2026-06-11).
 
 ### Debug Log References
 
+- `/tmp/kesh-e2e-backend.log` — boot backend E2E feature-on (2 itérations de recette : `KESH_ADMIN_PASSWORD` ≥ 12 requis même en test-mode, et la var est `KESH_SMTP_USER` pas `KESH_SMTP_USERNAME` — recette du header de spec corrigée).
+
 ### Completion Notes List
 
+- **T-E1** : `RateLimiter::clear_all()` + test unitaire `clear_all_unblocks_a_blocked_ip` ; purge des 2 limiters dans `seed_handler` (DE-2) ; route `POST /_test/password-reset-token` (DE-1, 404 franc via `DbError::NotFound` si username inconnu — pas de variant `AppError::NotFound`, mapping standard utilisé).
+- **T-E2** : 14 tests d'intégration (AC23 a-m, le cas (i) en 2 tests) — 14/14 verts en serial. Constat empirique AC23-m : routes non montées → **405** (pas 404) car le POST tombe sur le `fallback_service` statique SPA (GET-only) ; assertion ajustée avec explication — la propriété testée (aucune sémantique recovery) tient.
+- **T-E3** : spec 5 scénarios, **5/5 verts en live** (backend test-mode feature-on port 8181 — 8080 occupé par un autre service local). Skip gracieux si le flag `/health` est off (recette DE-6 en header). Le scénario happy vérifie au passage le `replaceState` PD1 (URL nettoyée) et le login UI avec le nouveau mdp.
+- **T-E4 régression** : suite E2E voisine setup/auth/users → 1 échec `auth.spec.ts` « page login axe-core » = **course pré-existante axe vs hydratation** (analyse du shell SPA avant rendu, reproduite 3/3, hydratation confirmée saine à +3 s). Fix anti-flake minimal dans le test (wait `main` avant analyse), re-vérifié 3/3 verts. Hors-scope strict mais bug de test découvert pendant la story → corrigé + documenté (règle CLAUDE.md).
+- `users.company_id` est NOT NULL (FK) → helper `reset_db` seed une company stub par test.
+
 ### File List
+
+**Nouveaux fichiers :**
+- crates/kesh-api/tests/password_recovery_e2e.rs — 14 tests intégration AC23 a-m
+- frontend/tests/e2e/password-recovery.spec.ts — 5 scénarios E2E AC24 + recette DE-6
+
+**Modifiés :**
+- crates/kesh-api/src/middleware/rate_limit.rs — `clear_all()` + 1 test (DE-2)
+- crates/kesh-api/src/routes/test_endpoints.rs — purge limiters au seed + route `/password-reset-token` (DE-1)
+- frontend/tests/e2e/auth.spec.ts — fix anti-flake hydratation du test axe login (T-E4)
+
+## Change Log
+
+### Dev-story (Fable 5, 2026-06-11)
+
+- T-E1..T-E4 single-pass. 14 tests intégration + 5 E2E + 2 tests unitaires rate-limit, tous verts.
+- Déviation documentée AC23-m : 405 (fallback SPA GET-only) au lieu de 404 — propriété « routes non montées » vérifiée.
+- Fix opportuniste : course d'hydratation pré-existante dans `auth.spec.ts` axe login (découverte par le run de régression, 3/3 reproduite puis 3/3 verte après wait).
+- Recette DE-6 corrigée sur pièces : `KESH_SMTP_USER` (pas USERNAME) + `KESH_ADMIN_PASSWORD` ≥ 12 requis.
+
+- Quality gate T-E4 final : fmt + clippy -D verts ; `cargo test --workspace -j1 -- --test-threads=1` vert (exit 0, dont les 14 nouveaux) ; suite Playwright COMPLÈTE 105 verts / 11 skipped pré-existants / 0 échec (6,6 min, backend feature-on live).
