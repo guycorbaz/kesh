@@ -901,6 +901,9 @@ setup-password-label = Password
 setup-password-min = Almeno 12 caratteri.
 setup-password-confirm-label = Conferma password
 setup-password-mismatch = Le password non corrispondono.
+setup-email-label = Email (consigliata)
+setup-email-hint = Consente di reimpostare la password via email in caso di dimenticanza.
+setup-email-invalid = Formato email non valido.
 setup-submit = Crea account amministratore
 setup-error-already-complete = L'account amministratore è già stato creato. Sarete reindirizzati alla pagina di accesso.
 setup-error-rate-limit = Troppi tentativi. Riprova tra qualche minuto.
@@ -961,3 +964,26 @@ email-password-reset-body =
     Apri il link seguente per scegliere una nuova password (valido per { $ttlMinutes } minuti):
     { $resetUrl }
     Se non hai effettuato questa richiesta, ignora questa email.
+
+# Story 17-4d — Recupero della password (pagine pubbliche frontend)
+auth-recovery-forgot-title = Password dimenticata
+auth-recovery-forgot-intro = Inserisci il tuo nome utente o il tuo indirizzo email. Se un account corrisponde, riceverai un link di reimpostazione.
+auth-recovery-identifier-label = Nome utente o email
+auth-recovery-submit = Invia il link di reimpostazione
+auth-recovery-success-generic = Se un account corrisponde a questo identificativo, gli è appena stata inviata un'email con un link di reimpostazione. Il link è valido per 30 minuti.
+auth-recovery-error-rate-limit = Troppi tentativi. Riprova tra qualche minuto.
+auth-recovery-error-network = Impossibile contattare il server. Verifica la connessione.
+auth-recovery-error-unavailable = La reimpostazione via email non è disponibile. Contatta il tuo amministratore.
+auth-recovery-error-server = Errore del server. Riprova più tardi.
+auth-recovery-back-to-login = Torna all'accesso
+auth-recovery-reset-title = Nuova password
+auth-recovery-reset-intro = Scegli la tua nuova password.
+auth-recovery-new-password-label = Nuova password
+auth-recovery-password-confirm-label = Conferma la password
+auth-recovery-password-min = Almeno 12 caratteri.
+auth-recovery-password-mismatch = Le password non corrispondono.
+auth-recovery-reset-submit = Reimposta la password
+auth-recovery-reset-success = La tua password è stata reimpostata. Ora puoi accedere.
+auth-recovery-invalid-link = Questo link di reimpostazione non è valido o è scaduto. Fai una nuova richiesta per ricevere un nuovo link.
+auth-recovery-request-new-link = Nuova richiesta
+auth-recovery-login-cta = Accedi

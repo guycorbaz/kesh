@@ -958,6 +958,9 @@ setup-password-label = Mot de passe
 setup-password-min = Au moins 12 caractères.
 setup-password-confirm-label = Confirmer le mot de passe
 setup-password-mismatch = Les mots de passe ne correspondent pas.
+setup-email-label = Email (recommandé)
+setup-email-hint = Permet la réinitialisation du mot de passe par email en cas d'oubli.
+setup-email-invalid = Format d'email invalide.
 setup-submit = Créer le compte administrateur
 setup-error-already-complete = Le compte administrateur a déjà été créé. Vous allez être redirigé vers la page de connexion.
 setup-error-rate-limit = Trop de tentatives. Réessayez dans quelques minutes.
@@ -1018,3 +1021,26 @@ email-password-reset-body =
     Pour choisir un nouveau mot de passe, ouvrez le lien suivant (valable { $ttlMinutes } minutes) :
     { $resetUrl }
     Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+
+# Story 17-4d — Recovery de mot de passe (pages publiques frontend)
+auth-recovery-forgot-title = Mot de passe oublié
+auth-recovery-forgot-intro = Saisissez votre nom d'utilisateur ou votre adresse email. Si un compte correspond, vous recevrez un lien de réinitialisation.
+auth-recovery-identifier-label = Nom d'utilisateur ou email
+auth-recovery-submit = Envoyer le lien de réinitialisation
+auth-recovery-success-generic = Si un compte correspond à cet identifiant, un email contenant un lien de réinitialisation vient de lui être envoyé. Le lien est valable 30 minutes.
+auth-recovery-error-rate-limit = Trop de tentatives. Réessayez dans quelques minutes.
+auth-recovery-error-network = Impossible de contacter le serveur. Vérifiez votre connexion.
+auth-recovery-error-unavailable = La réinitialisation par email n'est pas disponible. Contactez votre administrateur.
+auth-recovery-error-server = Erreur serveur. Réessayez ultérieurement.
+auth-recovery-back-to-login = Retour à la connexion
+auth-recovery-reset-title = Nouveau mot de passe
+auth-recovery-reset-intro = Choisissez votre nouveau mot de passe.
+auth-recovery-new-password-label = Nouveau mot de passe
+auth-recovery-password-confirm-label = Confirmer le mot de passe
+auth-recovery-password-min = Au moins 12 caractères.
+auth-recovery-password-mismatch = Les mots de passe ne correspondent pas.
+auth-recovery-reset-submit = Réinitialiser le mot de passe
+auth-recovery-reset-success = Votre mot de passe a été réinitialisé. Vous pouvez maintenant vous connecter.
+auth-recovery-invalid-link = Ce lien de réinitialisation est invalide ou expiré. Refaites une demande pour recevoir un nouveau lien.
+auth-recovery-request-new-link = Refaire une demande
+auth-recovery-login-cta = Se connecter

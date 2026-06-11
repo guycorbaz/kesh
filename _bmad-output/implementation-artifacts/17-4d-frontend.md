@@ -1,6 +1,6 @@
 # Story 17.4d: Frontend recovery (pages publiques forgot/reset-password + email UI)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes. Contenu déjà adversarialement revu (Partie D : AC17-22 + transverses AC30/31, T-D1..T-D6). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4c (DONE : contrat API forgot/reset-password + forgotPasswordEnabled dans /health) et de 17-4a (DONE : plumbing email backend setup/users). BLOQUE 17-4e (E2E Playwright des pages). -->
@@ -57,13 +57,13 @@ so that **le flux recovery self-service livré par 17-4c soit utilisable de bout
 
 ## Tasks / Subtasks
 
-- [ ] **T-D1** Module `lib/features/auth-recovery/` : `auth-recovery.api.ts` + `.types.ts` + `auth-recovery.api.test.ts` (vitest, mock fetch — vérifier corps camelCase `newPassword`, tolérance corps vide du 200 forgot DD-3, mapping erreurs). (AC: 19)
-- [ ] **T-D2** Page `/forgot-password` (runes Svelte 5, composants `Input`/`Button` ui, zone erreur `role="alert" aria-live="polite"` calque login `+page.svelte:95-115`, `data-testid`). (AC: 17)
-- [ ] **T-D3** Page `/reset-password` (token query param, 2 champs password + validation locale, états succès/erreurs typées, `$props.id()` pour IDs DOM, `data-testid`). (AC: 18, 31)
-- [ ] **T-D4** Store `feature-flags.svelte.ts` (DD-1) peuplé au boot `+layout.svelte:54-66` + `pollHealth` `api-health.svelte.ts:55-73` ; lien conditionnel sur `/login`. (AC: 20)
-- [ ] **T-D5** Email UI : `UserResponse.email` type frontend + `SetupForm` (state + validation + `setupAdmin` signature) + dialogue create users (`createEmail`) + dialogue edit users (`editEmail` pré-rempli, PUT envoie toujours `email` — ferme ECH2-2). (AC: 21)
-- [ ] **T-D6** Clés FTL ×4 locales (`auth-recovery-*` + email setup/users) + `npm run lint-i18n-ownership` PASS. (AC: 22, 30)
-- [ ] **T-D7** Quality gate Test Locally First **frontend** : `npm run check` + `npm run lint-i18n-ownership` + `npm run test:unit` + `npm run build` (depuis `frontend/`). Backend non touché → `cargo` non requis sauf si les `.ftl` changent (alors `cargo test -p kesh-i18n` rapide). (AC: transverse)
+- [x] **T-D1** Module `lib/features/auth-recovery/` : `auth-recovery.api.ts` + `.types.ts` + `auth-recovery.api.test.ts` (vitest, mock fetch — vérifier corps camelCase `newPassword`, tolérance corps vide du 200 forgot DD-3, mapping erreurs). (AC: 19)
+- [x] **T-D2** Page `/forgot-password` (runes Svelte 5, composants `Input`/`Button` ui, zone erreur `role="alert" aria-live="polite"` calque login `+page.svelte:95-115`, `data-testid`). (AC: 17)
+- [x] **T-D3** Page `/reset-password` (token query param, 2 champs password + validation locale, états succès/erreurs typées, `$props.id()` pour IDs DOM, `data-testid`). (AC: 18, 31)
+- [x] **T-D4** Store `feature-flags.svelte.ts` (DD-1) peuplé au boot `+layout.svelte:54-66` + `pollHealth` `api-health.svelte.ts:55-73` ; lien conditionnel sur `/login`. (AC: 20)
+- [x] **T-D5** Email UI : `UserResponse.email` type frontend + `SetupForm` (state + validation + `setupAdmin` signature) + dialogue create users (`createEmail`) + dialogue edit users (`editEmail` pré-rempli, PUT envoie toujours `email` — ferme ECH2-2). (AC: 21)
+- [x] **T-D6** Clés FTL ×4 locales (`auth-recovery-*` + email setup/users) + `npm run lint-i18n-ownership` PASS. (AC: 22, 30)
+- [x] **T-D7** Quality gate Test Locally First **frontend** : `npm run check` + `npm run lint-i18n-ownership` + `npm run test:unit` + `npm run build` (depuis `frontend/`). Backend non touché → `cargo` non requis sauf si les `.ftl` changent (alors `cargo test -p kesh-i18n` rapide). (AC: transverse)
 
 ## Dev Notes
 
@@ -126,10 +126,47 @@ so that **le flux recovery self-service livré par 17-4c soit utilisable de bout
 
 ### Agent Model Used
 
-(à remplir au dev-story — Opus/Fable recommandé : pages publiques sécurité anti-énum + intégration store/flag cross-fichiers + fermeture dette ECH2-2)
+Claude Fable 5 (dev-story single-pass, 2026-06-11).
 
 ### Debug Log References
 
 ### Completion Notes List
 
+- **DD-3 résolu sans contournement** : `request<T>` (`api-client.ts:429-433`) tolère nativement un `200` sans corps JSON (`res.json()` échoue → `undefined`) — `apiClient.post<void>` suffit pour le forgot-password, testé (`auth-recovery.api.test.ts` cas « corps vide »).
+- **Pattern SetupForm suivi** : formulaires dans `lib/features/auth-recovery/` (ownership i18n `auth-recovery-*` scanné par le linter), wrappers minces dans `routes/`. Les warnings svelte-check `state_referenced_locally` sur l'init de `invalidLink` depuis la prop `token` ont été levés via `$derived(missing || rejectedToken)`.
+- **Idiome par fichier respecté** : pages recovery + SetupForm = `i18nMsg(clé, fallback FR)` ; page login et dialogues users = français hardcodé (ces fichiers n'utilisent pas i18nMsg — pré-existant, hors-scope d'harmoniser). Clés FTL ×4 ajoutées : bloc `auth-recovery-*` (21 clés) + `setup-email-*` (3 clés).
+- **ECH2-2 fermée** : `UserResponse.email` typé frontend, `openEdit` pré-remplit `editEmail`, le PUT envoie **toujours** `email` (valeur éditée / inchangée / `null` si vidé délibérément — hint « Vider le champ supprime l'email » dans le dialogue).
+- **MIN_PASSWORD 12 hardcodé** dans ResetPasswordForm = même limitation documentée que SetupForm (ECH1-4 v011-5, deferred-work) ; le backend re-valide (400 VALIDATION_ERROR affiché).
+- Quality gate frontend (T-D7) : `npm run check` 0 erreur ; `lint-i18n-ownership` PASS ; vitest 36 suites / 304 tests verts (dont 6 nouveaux auth-recovery.api + 2 nouveaux SetupForm email + 1 assertion mise à jour signature 3-args) ; `npm run build` OK ; `cargo test -p kesh-i18n --all-targets` 21/21 (parité clés ×4 locales).
+
 ### File List
+
+**Nouveaux fichiers :**
+- frontend/src/lib/features/auth-recovery/auth-recovery.types.ts — types contrat 17-4c
+- frontend/src/lib/features/auth-recovery/auth-recovery.api.ts — requestPasswordReset + resetPassword
+- frontend/src/lib/features/auth-recovery/auth-recovery.api.test.ts — 6 tests vitest (URL, camelCase, corps vide, erreurs typées)
+- frontend/src/lib/features/auth-recovery/ForgotPasswordForm.svelte — formulaire AC17 (anti-énum, $props.id())
+- frontend/src/lib/features/auth-recovery/ResetPasswordForm.svelte — formulaire AC18 (états succès/lien-invalide/erreurs)
+- frontend/src/lib/shared/utils/feature-flags.svelte.ts — store DD-1 (défaut false)
+- frontend/src/routes/forgot-password/+page.svelte — wrapper public DD-2
+- frontend/src/routes/reset-password/+page.svelte — wrapper public, lit ?token=
+
+**Modifiés :**
+- frontend/src/routes/+layout.svelte — parse forgotPasswordEnabled au boot /health
+- frontend/src/lib/shared/utils/api-health.svelte.ts — idem dans pollHealth
+- frontend/src/routes/login/+page.svelte — lien conditionnel « Mot de passe oublié ? » (AC20)
+- frontend/src/lib/shared/types/user.ts — UserResponse.email: string | null (doc ECH2-2)
+- frontend/src/lib/features/setup/setup.api.ts — setupAdmin(username, password, email?)
+- frontend/src/lib/features/setup/SetupForm.svelte — champ email + validation DD-5 (AC21)
+- frontend/src/lib/features/setup/SetupForm.test.ts — +2 tests email, assertion 3-args
+- frontend/src/routes/(app)/users/+page.svelte — createEmail + editEmail (PUT envoie toujours email, ECH2-2)
+- crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl — +24 clés ×4 (auth-recovery-* + setup-email-*)
+
+## Change Log
+
+### Dev-story (Fable 5, 2026-06-11)
+
+- T-D1..T-D7 implémentés en single-pass, AC17-22 + AC30/31 satisfaits. 8 nouveaux fichiers, 9 modifiés.
+- Vérification ground-truth en ouverture : DD-3 (corps vide) résolu par lecture d'api-client (pas de code de contournement nécessaire) ; `LinkIcon` (alias lucide suffixé) et `Button href` validés avant usage.
+- Aucun changement backend (contrat 17-4c intact). `ssr=false` global → pages publiques CSR pures, pas de guard ajouté (DD-2 documenté dans les wrappers).
+- Quality gate complet vert (cf. Completion Notes). Statut `in-progress → review`. Prochaine étape : `bmad-code-review 17-4d` (LLM différent du dev — dev = Fable → Pass 1 Sonnet ou Opus).

@@ -901,6 +901,9 @@ setup-password-label = Password
 setup-password-min = At least 12 characters.
 setup-password-confirm-label = Confirm password
 setup-password-mismatch = Passwords do not match.
+setup-email-label = Email (recommended)
+setup-email-hint = Allows resetting your password by email if you forget it.
+setup-email-invalid = Invalid email format.
 setup-submit = Create administrator account
 setup-error-already-complete = The administrator account has already been created. You will be redirected to the login page.
 setup-error-rate-limit = Too many attempts. Try again in a few minutes.
@@ -961,3 +964,26 @@ email-password-reset-body =
     Open the following link to choose a new password (valid for { $ttlMinutes } minutes):
     { $resetUrl }
     If you did not request this, please ignore this email.
+
+# Story 17-4d — Password recovery (public frontend pages)
+auth-recovery-forgot-title = Forgot password
+auth-recovery-forgot-intro = Enter your username or email address. If an account matches, you will receive a reset link.
+auth-recovery-identifier-label = Username or email
+auth-recovery-submit = Send reset link
+auth-recovery-success-generic = If an account matches this identifier, an email containing a reset link has just been sent to it. The link is valid for 30 minutes.
+auth-recovery-error-rate-limit = Too many attempts. Try again in a few minutes.
+auth-recovery-error-network = Unable to reach the server. Check your connection.
+auth-recovery-error-unavailable = Password reset by email is not available. Contact your administrator.
+auth-recovery-error-server = Server error. Try again later.
+auth-recovery-back-to-login = Back to sign in
+auth-recovery-reset-title = New password
+auth-recovery-reset-intro = Choose your new password.
+auth-recovery-new-password-label = New password
+auth-recovery-password-confirm-label = Confirm password
+auth-recovery-password-min = At least 12 characters.
+auth-recovery-password-mismatch = Passwords do not match.
+auth-recovery-reset-submit = Reset password
+auth-recovery-reset-success = Your password has been reset. You can now sign in.
+auth-recovery-invalid-link = This reset link is invalid or has expired. Make a new request to receive a new link.
+auth-recovery-request-new-link = Make a new request
+auth-recovery-login-cta = Sign in

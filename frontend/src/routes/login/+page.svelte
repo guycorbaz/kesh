@@ -6,6 +6,7 @@
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import { appVersion } from '$lib/shared/utils/app-version.svelte';
+	import { featureFlags } from '$lib/shared/utils/feature-flags.svelte';
 	import { AlertTriangle, Clock, WifiOff, XCircle } from '@lucide/svelte';
 
 	let username = $state('');
@@ -143,6 +144,18 @@
 					autocomplete="current-password"
 					aria-describedby={errorMessage ? 'login-error' : undefined}
 				/>
+				<!-- Story 17-4d (AC20/DC9) : lien recovery conditionné sur le flag
+				     backend lu via /health (défaut false → absent du DOM tant que
+				     /health n'a pas répondu OU si KESH_FEATURE_FORGOT_PASSWORD=false). -->
+				{#if featureFlags.forgotPasswordEnabled}
+					<a
+						href="/forgot-password"
+						class="self-end text-sm text-primary hover:underline"
+						data-testid="forgot-password-link"
+					>
+						Mot de passe oublié ?
+					</a>
+				{/if}
 			</div>
 
 			<Button
