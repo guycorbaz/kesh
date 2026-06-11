@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
+	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { toast } from 'svelte-sonner';
 	import { UserPlus, Pencil, KeyRound, UserX } from '@lucide/svelte';
@@ -103,9 +104,9 @@
 		if (!createUsername.trim()) return 'Le nom d\'utilisateur est requis.';
 		if (createPassword.length < MIN_PASSWORD_LENGTH) return `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.`;
 		if (createPassword !== createConfirm) return 'Les mots de passe ne correspondent pas.';
-		// Story 17-4d (DD-5) : email optionnel — vide OK, sinon `@` minimal
-		// (le backend valide le format complet).
-		if (createEmail.trim() && !createEmail.includes('@')) return 'Format d\'email invalide.';
+		// Story 17-4d (DD-5, durci Pass 1 PD2) : email optionnel — vide OK,
+		// sinon pré-validation miroir du backend (autoritatif).
+		if (createEmail.trim() && !isPlausibleEmail(createEmail.trim())) return 'Format d\'email invalide.';
 		return '';
 	});
 
@@ -156,8 +157,8 @@
 
 	async function submitEdit() {
 		if (!editUser) return;
-		// Story 17-4d (DD-5) : validation minimale `@` si non-vide.
-		if (editEmail.trim() && !editEmail.includes('@')) {
+		// Story 17-4d (DD-5, durci Pass 1 PD2) : pré-validation si non-vide.
+		if (editEmail.trim() && !isPlausibleEmail(editEmail.trim())) {
 			toast.error('Format d\'email invalide.');
 			return;
 		}

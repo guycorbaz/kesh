@@ -65,6 +65,20 @@ so that **le flux recovery self-service livré par 17-4c soit utilisable de bout
 - [x] **T-D6** Clés FTL ×4 locales (`auth-recovery-*` + email setup/users) + `npm run lint-i18n-ownership` PASS. (AC: 22, 30)
 - [x] **T-D7** Quality gate Test Locally First **frontend** : `npm run check` + `npm run lint-i18n-ownership` + `npm run test:unit` + `npm run build` (depuis `frontend/`). Backend non touché → `cargo` non requis sauf si les `.ftl` changent (alors `cargo test -p kesh-i18n` rapide). (AC: transverse)
 
+### Review Findings
+
+> Code review Pass 1 (Sonnet 4.6, 2026-06-11) — 3 couches (BH 2H/5M/3L, ECH 1M/2L, AA 1L). Triage : 6 patch, 2 defer documentés, 8 dismiss (3 grep-réfutés).
+
+- [x] [Review][Patch] PD1 (HIGH, BH) Token brut persistant dans la barre d'adresse/historique — capture one-shot du token (plus de `$derived`, incompatible avec le nettoyage) + `replaceState('/reset-password')` au mount [frontend/src/routes/reset-password/+page.svelte]
+- [x] [Review][Patch] PD2 (MEDIUM, BH+ECH) Validation email `includes('@')` trop permissive (`a@`, `@b`, sans point) — helper partagé `isPlausibleEmail` (miroir approché de `is_valid_email_simple` backend) + tests, appliqué aux 3 sites [frontend/src/lib/shared/utils/email.ts + SetupForm + users create/edit]
+- [x] [Review][Patch] PD3 (LOW, AA) Dérogation AC22 documentée explicitement (cf. note ci-dessous)
+- [x] [Review][Patch] PD4 (LOW, BH) Docs : contrainte CSR-only du store feature-flags (`ssr=false`) + intent du refresh flag dans pollHealth
+- [x] [Review][Patch] PD6 (LOW, ECH) Tests composant `ResetPasswordForm.test.ts` (6 cas : token null/vide, validation, succès, INVALID_OR_EXPIRED_TOKEN, 429)
+- [x] [Review][Defer] PD5 (LOW, ECH) Flag `forgotPasswordEnabled` figé à la valeur du boot tant qu'aucun épisode dégradé ne relance pollHealth — activation à chaud non reflétée sans reload. Documenté dans le doc-comment du store, acceptable v0.2
+- [x] [Review][Defer] AA-L1 (LOW) Labels email des dialogues users en FR hardcodé — **dérogation AC22 actée** : la page users n'utilise pas `i18nMsg` (0 occurrence, pré-existant) ; harmoniser l'i18n des routes est un chantier transverse hors-scope (rejoint le cleanup i18n setup.rs/pages tracé deferred-work). Les clés `setup-email-*` et `auth-recovery-*` (fichiers qui utilisent i18nMsg) sont bien posées ×4
+
+Dismiss (8) : oracle `err.message` VALIDATION_ERROR (grep-réfuté — 17-4c ne produit que `INVALID_OR_EXPIRED_TOKEN` pour le token, 4 sites vérifiés) ; réactivité `$derived($page…)` (grep-réfuté — pattern identique `login/+page.svelte:19`, en prod depuis 10-5 ; de toute façon remplacé par capture one-shot PD1) ; lien login non-i18n (idiome fichier, 0 i18nMsg dans la page) ; `let $props()` (idiome officiel Svelte 5) ; `role=alert`+`aria-live` (markup copié de login, harmonisation hors-scope) ; double-submit (guard `loading` + `disabled` natif, ECH confirme) ; XSS token (échappement Svelte natif) ; SSR leak store (réfuté `ssr=false` global — documenté PD4).
+
 ## Dev Notes
 
 ### Ground-truth frontend (exploration 2026-06-11, 83 lectures)
@@ -170,3 +184,13 @@ Claude Fable 5 (dev-story single-pass, 2026-06-11).
 - Vérification ground-truth en ouverture : DD-3 (corps vide) résolu par lecture d'api-client (pas de code de contournement nécessaire) ; `LinkIcon` (alias lucide suffixé) et `Button href` validés avant usage.
 - Aucun changement backend (contrat 17-4c intact). `ssr=false` global → pages publiques CSR pures, pas de guard ajouté (DD-2 documenté dans les wrappers).
 - Quality gate complet vert (cf. Completion Notes). Statut `in-progress → review`. Prochaine étape : `bmad-code-review 17-4d` (LLM différent du dev — dev = Fable → Pass 1 Sonnet ou Opus).
+
+### Pass 1 code-review (Sonnet 4.6, 2026-06-11)
+
+- **Setup** : diff `1149621..23ff4d6` (1281 lignes), 3 couches Sonnet contexte frais.
+- **Findings bruts** : BH 2 HIGH + 5 MEDIUM + 3 LOW ; ECH 1 MEDIUM + 2 LOW (13 vérifications positives : parité FTL ×4, corps vide toléré, interceptors 401/423 inertes sur routes publiques, token URL-encodé géré, double-submit bloqué, ECH2-2 fermée) ; AA 1 LOW (24 conformités AC/DD vérifiées ground-truth).
+- **Grep-réfutés (3)** : HIGH oracle `err.message` (le backend 17-4c ne produit jamais VALIDATION_ERROR pour le token — 4 sites `InvalidOrExpiredToken` vérifiés) ; MEDIUM réactivité `$derived($page…)` (pattern identique login:19) ; MEDIUM SSR leak (`ssr=false` global).
+- **Patches appliqués** : PD1 (HIGH) capture one-shot + `replaceState` — le token brut ne survit pas dans la barre d'adresse/historique ; PD2 (MEDIUM) `isPlausibleEmail` partagé miroir backend + 2 tests, appliqué SetupForm + users create/edit ; PD3 dérogation AC22 documentée ; PD4 docs store CSR-only + intent pollHealth ; PD6 `ResetPasswordForm.test.ts` 6 cas.
+- **Defers** : PD5 flag figé au boot (doc-comment, v0.2) ; AA-L1 labels users non-i18n (dérogation actée).
+- **Gate post-patches** : vitest suites touchées 21/21 ; gate complet relancé (cf. ci-dessous).
+- **Trend >LOW : Pass 1 = 2 réels (1 HIGH + 1 MEDIUM, patchés)** → Pass 2 requise (LLM différent : Haiku, garde-fous grep ground-truth).

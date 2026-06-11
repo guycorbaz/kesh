@@ -65,7 +65,10 @@ async function pollHealth(capturedEpoch: number): Promise<void> {
 		// #159 : capter la version du binaire backend depuis le même ping
 		// `/health` (DRY — pas d'endpoint ni de fetch dédié).
 		appVersion.set(body.version);
-		// Story 17-4d (DD-1) : même DRY pour le flag recovery (DC9).
+		// Story 17-4d (DD-1) : même DRY pour le flag recovery (DC9). Le refresh
+		// ici est INTENTIONNEL (Pass 1 BH#9) : après un redéploiement backend qui
+		// change KESH_FEATURE_FORGOT_PASSWORD (et passe par un épisode dégradé),
+		// le lien login se met à jour sans reload.
 		featureFlags.setForgotPasswordEnabled(body.forgotPasswordEnabled);
 		if (body.db !== true) return;
 		// Stale check Pass 3 H2 : si l'epoch courant diffère de celui capturé

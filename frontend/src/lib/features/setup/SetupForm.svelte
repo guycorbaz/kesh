@@ -5,6 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { setupAdmin } from './setup.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { AlertTriangle, Clock, XCircle } from '@lucide/svelte';
 
@@ -45,9 +46,10 @@
 	// 11 emojis = false-valide frontend (11×2=22 ≥ 12) puis 400 backend.
 	let passwordValid = $derived([...password].length >= MIN_PASSWORD);
 	let passwordMatch = $derived(password === passwordConfirm);
-	// Story 17-4d (DD-5) : email optionnel — vide OK, sinon présence de `@`
-	// minimale (le backend valide le format complet, AC5 17-4a).
-	let emailValid = $derived(email.trim() === '' || email.includes('@'));
+	// Story 17-4d (DD-5, durci Pass 1 PD2) : email optionnel — vide OK, sinon
+	// pré-validation client miroir du backend (`isPlausibleEmail`), qui reste
+	// autoritatif (AC5 17-4a).
+	let emailValid = $derived(email.trim() === '' || isPlausibleEmail(email.trim()));
 	let formValid = $derived(usernameValid && passwordValid && passwordMatch && emailValid);
 
 	async function handleSubmit(e: SubmitEvent) {
