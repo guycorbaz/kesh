@@ -1,6 +1,6 @@
 # Story 17.4c: Endpoints backend publics recovery (forgot-password / reset-password)
 
-Status: review
+Status: done
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Contenu déjà adversarialement revu (Partie C : AC12-16, T-C1..T-C4, DC3/DC4/DC5/DC6/DC8/DC9). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4a (DONE : table password_reset_tokens, colonne users.email, find_by_email, repo tokens) ET 17-4b (DONE : trait Mailer, AppState.mailer, PASSWORD_RESET_TTL_MINUTES, config public_base_url/forgot_password_enabled). BLOQUE 17-4d (contrat API) + 17-4e (tests). -->
@@ -230,3 +230,21 @@ Dev-story : session interrompue avant commit (code retrouvé complet dans le wor
 - **Dismiss (hors grep-réfutés)** : DoS NAT/IP partagée (= D1, issue #173) ; couplage `sha256_hex` (nit) ; invalidation best-effort (documentée P9, fail-closed dégraderait l'UX) ; `@` seul (no-op anti-énum) ; garde `TimeDelta::minutes` (spéculatif, const 30).
 - **Defer** : AA2-L2 garde `@` non-i18n dans `setup.rs` — cohérent avec le pattern pré-existant du fichier (`"username must be non-empty"` hardcodé) ; rejoint le cleanup i18n setup.rs déjà tracé dans deferred-work.md (BH2-4 v011-5).
 - **Trend >LOW : Pass 1 = 8 MEDIUM → Pass 2 = 2 MEDIUM réels (+1 MEDIUM et 1 HIGH réfutés)** → Pass 3 requise (LLM différent : Haiku, garde-fous grep ground-truth obligatoires).
+
+### Pass 3 code-review (Haiku 4.5, 2026-06-11) — CYCLE CONVERGÉ
+
+- **Setup** : diff unique aplati `64c8050..899f31e` (1136 lignes, état final post-Pass 2), 3 couches Haiku contexte frais, mitigation anti-indexation (diff unique, obligation de citer la chaîne exacte).
+- **Findings bruts** : BH 1 CRITICAL + 2 HIGH + 4 MEDIUM + 1 LOW ; ECH 1 MEDIUM ; AA **0 finding** (16 conformités vérifiées ground-truth).
+- **Triage (pattern Haiku d'inflation de sévérité confirmé, 0 hallucination d'absence cette fois)** :
+  - BH3 « CRITICAL doublon email actifs non loggué » → **reclassé LOW réel, patché** : `tracing::warn!` ajouté quand > 1 comptes actifs partagent l'email (signal serveur diagnostic, aucun signal client).
+  - BH3 « HIGH désactivation entre lookup token et re-check » → **dismiss by-design** (le reviewer le concède lui-même : P3 acté ; le login re-vérifie `active` de toute façon).
+  - BH3 « HIGH token orphelin si email échoue, inverser envoi→create » → **dismiss contraire à la spec** (AC12 impose « stocke AVANT l'envoi » ; l'orphelin expire en 30 min).
+  - BH3 MEDIUM « branche checked_sub→None non testée » → **patché** : test `check_and_record_window_larger_than_uptime_does_not_panic` (fenêtre `u64::MAX/4` ⇒ `checked_sub` = `None`).
+  - BH3 MEDIUM « record_locked ne purge pas » → **dismiss** : sémantique pré-existante exacte préservée par le refactor (la purge tourne à chaque check, qui précède chaque record dans tous les flux).
+  - BH3 MEDIUM « pas de test concurrent OsRng » → **dismiss spéculatif** (garantie thread-safety stdlib/getrandom).
+  - BH3 MEDIUM « pas de test user inactif » → **dismiss hors-scope** : tests d'intégration des flux = 17-4e (AC23), déjà tracé Pass 1.
+  - BH3 LOW « const pour "password_change" » → **dismiss nit** (3 sites existants utilisent le littéral à l'identique, refactor cross-story).
+  - ECH3 MEDIUM « overflow chrono expires_at » → **dismiss spéculatif** (const 30 figée compilation, atteignable an ~9999).
+- **Patches** : 2 LOW (warn doublons actifs + test branche None). Gate final complet : fmt + build + clippy -D + test workspace **serial** verts.
+- **CONVERGENCE : 0 finding > LOW réel en Pass 3.** Trend cycle : Pass 1 (Fable) 8 MEDIUM → Pass 2 (Sonnet) 2 MEDIUM → Pass 3 (Haiku) 0 >LOW. Critère d'arrêt Review Iteration Rule atteint → `review` → `done`.
+- **Reste pour 17-4e (rappel)** : tests d'intégration flux complets (happy/expiré/réutilisé/inexistant/no-email/SMTP-down/rate-limit/compte-inactif/email-dupliqué/username-@/double-consume/trim).

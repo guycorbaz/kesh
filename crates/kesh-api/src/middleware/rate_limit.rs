@@ -347,6 +347,27 @@ mod tests {
     }
 
     #[test]
+    fn check_and_record_window_larger_than_uptime_does_not_panic() {
+        use std::time::Duration;
+        // Pass 3 17-4c — fenêtre immense ⇒ `now.checked_sub(window)` = `None`,
+        // équivalent d'une machine bootée depuis moins de `window` (ECH2-M1).
+        // Ne doit ni paniquer ni rejeter à tort : toutes les tentatives comptent
+        // (branche `is_none_or` exercée dans check_locked ET record_locked).
+        let rl = RateLimiter::with_thresholds(
+            2,
+            Duration::from_secs(u64::MAX / 4),
+            Duration::from_secs(60),
+        );
+        let ip: IpAddr = "10.0.3.1".parse().unwrap();
+
+        assert!(rl.check_and_record(ip).is_ok());
+        assert!(rl.check_and_record(ip).is_ok());
+        // Seuil 2 atteint → 3e requête bloquée (sans panique d'`Instant`).
+        let reject = rl.check_and_record(ip).unwrap_err();
+        assert!(reject.retry_after_secs > 0);
+    }
+
+    #[test]
     fn concurrent_same_ip_records_all_attempts() {
         use std::sync::Arc;
         use std::thread;

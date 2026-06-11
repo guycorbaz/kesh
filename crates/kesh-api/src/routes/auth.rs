@@ -715,6 +715,16 @@ async fn process_forgot_password_request(state: AppState, identifier: String) {
                 let user = if candidates.len() == 1 {
                     Some(candidates.remove(0))
                 } else {
+                    // Pass 3 BH3 (LOW) — > 1 actifs sur le même email : ces
+                    // comptes sont privés du recovery self-service (anti-énum
+                    // oblige, no-op client) ; signal SERVEUR pour le diagnostic
+                    // admin. 0 actif → no-op normal, pas de log.
+                    if candidates.len() > 1 {
+                        tracing::warn!(
+                            match_count = candidates.len(),
+                            "forgot-password: email partagé par plusieurs comptes actifs — recovery self-service impossible pour ces comptes"
+                        );
+                    }
                     None
                 };
                 (user, "email")
