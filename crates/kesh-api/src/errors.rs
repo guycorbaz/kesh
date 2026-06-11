@@ -260,6 +260,15 @@ pub enum AppError {
     #[error("Échec envoi email SMTP : {0}")]
     SmtpSendFailed(String),
 
+    /// Story 17-4c — lien de réinitialisation de mot de passe invalide ou expiré.
+    /// HTTP 400 `INVALID_OR_EXPIRED_TOKEN`, i18n key `error-invalid-or-expired-token`.
+    /// **Anti-fuite (DC4)** : couvre de manière indistincte les trois cas
+    /// (token inconnu / expiré / déjà utilisé) ainsi que la perte de course
+    /// concurrente sur `mark_used` (`DbError::NotFound`). Message générique, pas
+    /// de signal permettant de distinguer ces cas.
+    #[error("Lien de réinitialisation invalide ou expiré")]
+    InvalidOrExpiredToken,
+
     /// Story 17-3c — `.keshbackup` structurellement invalide ou corrompu :
     /// ZIP malformé, `manifest.json` absent/illisible, `files/` non-vide,
     /// `formatVersion > 1`, NDJSON d'une table absent, ou SHA-256 d'une table
@@ -981,6 +990,17 @@ impl IntoResponse for AppError {
                     ),
                 )
             }
+
+            // Story 17-4c — token reset invalide/expiré/utilisé (DC4 anti-fuite).
+            // Message générique : ne distingue pas les trois cas.
+            AppError::InvalidOrExpiredToken => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVALID_OR_EXPIRED_TOKEN",
+                &t(
+                    "error-invalid-or-expired-token",
+                    "Lien de réinitialisation invalide ou expiré.",
+                ),
+            ),
 
             AppError::InvalidBackupStructure(detail) => {
                 tracing::warn!("invalid backup structure: {detail}");

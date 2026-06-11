@@ -953,6 +953,7 @@ api-keys-toast-revoke-success = Schlüssel widerrufen.
 
 # Story 17-4b — Passwort-Wiederherstellung per E-Mail (Backend-Rendering, DC10)
 error-smtp-send-failed = Der E-Mail-Versand ist fehlgeschlagen. Bitte versuchen Sie es in Kürze erneut.
+error-invalid-or-expired-token = Ungültiger oder abgelaufener Link zum Zurücksetzen des Passworts.
 email-password-reset-subject = Zurücksetzen Ihres Kesh-Passworts
 email-password-reset-body =
     Sie haben das Zurücksetzen Ihres Kesh-Passworts angefordert.

@@ -47,3 +47,12 @@ Pass 1 Sonnet 4.6 × 3 reviewers (BH + ECH + AA), 16 findings raw → 11 patches
 Pass 2 Haiku 4.5 × 3 reviewers, 7 findings → 6 dismiss + 1 defer ci-dessous. ECH+AA 0 finding actionnable, 1 HIGH BH faux-positif réfuté grep ground-truth.
 
 - **BH2-4 LOW — `password 'changeme' is forbidden (placeholder)` message non-i18n** (`crates/kesh-api/src/routes/setup.rs:95`) : le validateur `AppError::Validation("password 'changeme' is forbidden (placeholder)".into())` renvoie un message en anglais quel que soit le locale browser. Cohérence frontend i18n divergente vs autres messages backend localisés. Marginal car le user ne tape pas "changeme" en pratique (placeholder `.env.example`). v0.2 cleanup : ajouter clés `error-password-changeme-forbidden` dans 4 locales + utiliser `t("error-password-changeme-forbidden", "...")`.
+
+## Deferred from: code review of 17-4c-backend-endpoints (2026-06-11)
+
+Pass 1 Fable 5 × 3 reviewers (BH + ECH + AA), 30 findings bruts → 10 patches + 4 deferred ci-dessous + 3 dismiss.
+
+- **D1 MEDIUM — `ConnectInfo` derrière reverse proxy → DoS global du recovery** (`crates/kesh-api/src/routes/auth.rs` `enforce_recovery_rate_limit` + `middleware/rate_limit.rs`) : l'IP vient du socket TCP, jamais de `X-Forwarded-For`. Derrière Traefik/proxy, tous les clients partagent l'IP du proxy ; le record inconditionnel DC5 fait que 5 requêtes recovery quelconques / 15 min (mêmes légitimes, utilisateurs différents) bloquent forgot-password ET reset-password 30 min pour toute l'installation. Pattern pré-existant (limiter login idem), amplifié par DC5. Remédiation : support `X-Forwarded-For` opt-in (env var trusted proxy) — issue GitHub enhancement v0.2+.
+- **D2 LOW — Lockout utilisateur légitime à mi-flux** (`routes/auth.rs` + `lib.rs::build_recovery_rate_limiter`) : limiter partagé forgot+reset, chaque requête consomme un slot (y compris un reset rejeté par la politique mdp) ; blocage 30 min = TTL token → token expiré pendant le blocage. Lié L5 (seuils configurables v0.2+).
+- **D3 LOW — `expires_at` horloge app vs `NOW(3)` horloge MariaDB** (`routes/auth.rs` + `password_reset_tokens.rs:67`) : skew NTP ou TZ MariaDB non-UTC fait dériver le TTL réel (30 min sensible à un offset d'1 h). Pattern pré-existant identique `refresh_tokens`. Documenter exigence NTP/UTC dans le manuel admin (17-4f).
+- **D4 LOW — `tokio::spawn` fire-and-forget non drainé au shutdown** (`routes/auth.rs`) : redeploy Docker pendant l'envoi SMTP = email jamais envoyé, zéro trace log. Acceptable v0.1 ; piste `tokio_util::task::TaskTracker` si récurrent.

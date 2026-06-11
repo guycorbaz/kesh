@@ -1010,6 +1010,7 @@ api-keys-toast-revoke-success = Clé révoquée.
 
 # Story 17-4b — Recovery de mot de passe par email (rendu backend, DC10)
 error-smtp-send-failed = L'envoi de l'email a échoué. Réessayez dans quelques instants.
+error-invalid-or-expired-token = Lien de réinitialisation invalide ou expiré.
 email-password-reset-subject = Réinitialisation de votre mot de passe Kesh
 email-password-reset-body =
     Vous avez demandé la réinitialisation de votre mot de passe Kesh.

@@ -82,6 +82,8 @@ async fn spawn_app_with_config(
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        // Story 17-4c — littéral-exception (E2E setup) : limiter recovery.
+        rate_limiter_recovery: Arc::new(kesh_api::build_recovery_rate_limiter()),
         i18n,
         users_exist: users_exist.clone(),
         // Story 17-4b — littéral-exception (users_exist variable) : mailer no-op.

@@ -9,13 +9,14 @@ use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use chrono::Utc;
-use kesh_db::entities::NewRefreshToken;
-use kesh_db::repositories::{refresh_tokens, users};
+use kesh_db::entities::{NewAuditLogEntry, NewRefreshToken};
+use kesh_db::repositories::{audit_log, password_reset_tokens, refresh_tokens, users};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::auth::{jwt, password};
 use crate::errors::AppError;
+use crate::mail;
 use crate::middleware::auth::CurrentUser;
 
 /// Story 10-5 — construit les 2 cookies HttpOnly d'auth (access + refresh).
@@ -602,4 +603,282 @@ pub async fn me(
         role: format!("{:?}", user.role),
         expires_in,
     }))
+}
+
+// === Story 17-4c — Recovery self-service (forgot-password / reset-password) ===
+
+/// Corps de `POST /api/v1/auth/forgot-password`.
+///
+/// `identifier` = username OU email (DC6 : un `@` aiguille vers `find_by_email`,
+/// sinon `find_by_username`). Pas de secret ici, mais on garde un `Debug` sobre
+/// par cohérence (l'identifiant n'est pas confidentiel, on l'affiche en clair).
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgotPasswordRequest {
+    pub identifier: String,
+}
+
+/// Corps de `POST /api/v1/auth/reset-password`.
+///
+/// `Debug` manuel : masque **`token`** ET **`new_password`** (calque
+/// `ChangePasswordRequest`) — ne jamais leaker le secret ni le token brut via
+/// `tracing::debug!("{:?}", req)`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPasswordRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
+impl std::fmt::Debug for ResetPasswordRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResetPasswordRequest")
+            .field("token", &"***")
+            .field("new_password", &"***")
+            .finish()
+    }
+}
+
+/// Applique le rate-limit recovery (DC5) : `check_rate_limit` puis
+/// `record_failed_attempt` **inconditionnel** (jamais `reset`).
+///
+/// Sémantique always-200 du flux forgot-password : `record_failed_attempt` est
+/// le SEUL incrément du compteur — sans cet appel inconditionnel, `check_rate_limit`
+/// serait inerte (catch P3 Opus F1). Chaque requête recovery (succès ou non)
+/// consomme un slot ; au 5e slot dans la fenêtre, l'IP est bloquée 30 min.
+fn enforce_recovery_rate_limit(state: &AppState, ip: std::net::IpAddr) -> Result<(), AppError> {
+    if let Err(reject) = state.rate_limiter_recovery.check_rate_limit(ip) {
+        tracing::warn!(ip = %ip, "recovery rate limit triggered");
+        return Err(AppError::RateLimited {
+            retry_after: reject.retry_after_secs,
+        });
+    }
+    // Inconditionnel : chaque requête consomme un slot (DC5). JAMAIS `reset`.
+    state.rate_limiter_recovery.record_failed_attempt(ip);
+    Ok(())
+}
+
+/// `POST /api/v1/auth/forgot-password` (public, gated `forgot_password_enabled`).
+///
+/// Anti-énumération (DC4) : retourne **TOUJOURS `200`** corps générique, que le
+/// compte existe ou non. Flux :
+/// 0. Rate-limit recovery (DC5, check + record inconditionnel).
+/// 1. Lookup DC6 : `@` ⇒ `find_by_email` (exactement 1 match sinon no-op),
+///    sinon `find_by_username`.
+/// 2. Si match unique avec email renseigné : génère un token base62 (DC3, sans
+///    préfixe), stocke `SHA-256` (`expires_at = now + 30 min`), construit
+///    `reset_url`, et envoie l'email en **tâche détachée `tokio::spawn`**
+///    (fire-and-forget : timing constant + échec SMTP seulement loggé, jamais
+///    propagé — sinon oracle d'énumération). Audit `auth.password_reset_requested`.
+/// 3. Toujours `200`.
+pub async fn forgot_password(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(req): Json<ForgotPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    let ip = addr.ip();
+    enforce_recovery_rate_limit(&state, ip)?;
+
+    let identifier = req.identifier.trim();
+
+    // DC6 — un identifiant contenant `@` est traité comme un email (non-unique →
+    // exactement 1 match requis), sinon comme un username (UNIQUE, ≤ 1).
+    let (matched_user, identifier_kind) = if identifier.contains('@') {
+        let mut candidates = users::find_by_email(&state.pool, identifier).await?;
+        // Exactement 1 match → procéder ; 0 ou > 1 → pas de match (anti-énum).
+        let user = if candidates.len() == 1 {
+            Some(candidates.remove(0))
+        } else {
+            None
+        };
+        (user, "email")
+    } else {
+        (
+            users::find_by_username(&state.pool, identifier).await?,
+            "username",
+        )
+    };
+
+    // Compte trouvé, actif, et email renseigné → on génère et envoie le lien.
+    // Un compte sans email (ou inactif) est non-recouvrable par ce flux
+    // (fallback break-glass #121) — mais reste un `200` générique (anti-énum).
+    if let Some(user) = matched_user {
+        if user.active {
+            if let Some(email) = user.email.clone().filter(|e| !e.trim().is_empty()) {
+                // DC3 — token base62 sans préfixe ; seul le SHA-256 est persisté.
+                let (token_clear, token_hash) = crate::auth::api_key::generate_reset_token();
+                let expires_at = (chrono::Utc::now()
+                    + chrono::TimeDelta::minutes(mail::PASSWORD_RESET_TTL_MINUTES))
+                .naive_utc();
+
+                // Anti-accumulation : invalide les tokens pendants avant d'en créer
+                // un nouveau (idempotent, best-effort — un échec ne doit pas casser
+                // le flux anti-énum). Le nouveau token reste valide même si la purge
+                // échoue.
+                if let Err(e) =
+                    password_reset_tokens::invalidate_all_for_user(&state.pool, user.id).await
+                {
+                    tracing::warn!(user_id = user.id, error = %e, "forgot-password: échec invalidate tokens pendants (non-fatal)");
+                }
+
+                // Stocke le hash AVANT l'envoi (le token doit exister en DB quand
+                // l'utilisateur clique le lien).
+                password_reset_tokens::create(&state.pool, user.id, &token_hash, expires_at)
+                    .await?;
+
+                // Construit l'URL de reset. `public_base_url` est garanti `Some`
+                // non-vide par le fail-fast boot quand le feature est activé ; on
+                // garde un fallback défensif (skip envoi) au lieu d'un `unwrap`.
+                if let Some(base) = state.config.public_base_url.clone() {
+                    let reset_url = format!("{base}/reset-password?token={token_clear}");
+
+                    // Audit AVANT le spawn : trace la demande même si l'envoi échoue.
+                    // `NewAuditLogEntry::user` (pas de CurrentUser pré-auth).
+                    let mut tx = state.pool.begin().await.map_err(|e| {
+                        AppError::Internal(format!("forgot-password audit tx begin: {e}"))
+                    })?;
+                    audit_log::insert_in_tx(
+                        &mut tx,
+                        NewAuditLogEntry::user(
+                            user.id,
+                            "auth.password_reset_requested",
+                            "user",
+                            user.id,
+                            Some(serde_json::json!({ "identifier_kind": identifier_kind })),
+                        ),
+                    )
+                    .await?;
+                    tx.commit().await.map_err(|e| {
+                        AppError::Internal(format!("forgot-password audit tx commit: {e}"))
+                    })?;
+
+                    // Fire-and-forget (DC4) : clone les Arc/String dans la closure.
+                    // L'échec SMTP est seulement loggé côté serveur, jamais propagé
+                    // (un 500 créerait un oracle d'énumération). On ne logge JAMAIS
+                    // `reset_url` ni le token brut — au plus `user_id`.
+                    let mailer = state.mailer.clone();
+                    let locale = state.config.locale;
+                    let user_id = user.id;
+                    tokio::spawn(async move {
+                        if let Err(e) = mailer.send_password_reset(&email, &reset_url, locale).await
+                        {
+                            tracing::error!(user_id, error = %e, "forgot-password: envoi email échoué (non-fatal)");
+                        }
+                    });
+                } else {
+                    tracing::error!(
+                        user_id = user.id,
+                        "forgot-password: public_base_url absent malgré feature activé — envoi sauté"
+                    );
+                }
+            }
+        }
+    }
+
+    // DC4 — toujours `200`, aucun signal existant/inexistant.
+    Ok(StatusCode::OK)
+}
+
+/// Réponse minimale de `POST /api/v1/auth/reset-password`.
+#[derive(Debug, Serialize)]
+pub struct ResetPasswordResponse {
+    pub status: &'static str,
+}
+
+/// `POST /api/v1/auth/reset-password` (public, gated `forgot_password_enabled`).
+///
+/// Flux :
+/// 0. Rate-limit recovery (DC5, check + record inconditionnel).
+/// 1. `sha256_hex(token)` → `find_valid_by_hash`. Absent/expiré/utilisé →
+///    `400 INVALID_OR_EXPIRED_TOKEN` générique (DC4, anti-fuite).
+/// 2. Valide la politique du nouveau mot de passe + hash Argon2id.
+/// 3. **Transaction** : `mark_used` (garde TOCTOU — `NotFound` ⇒ même `400`) +
+///    `update_password` + audit `auth.password_reset_completed`.
+/// 4. Post-commit best-effort : `revoke_all_for_user(_, "password_change")`
+///    (raison réutilisée, DC8/AC14 — pas de migration CHECK), loggé si échec.
+/// 5. `200 { "status": "ok" }`.
+pub async fn reset_password(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<Json<ResetPasswordResponse>, AppError> {
+    let ip = addr.ip();
+    enforce_recovery_rate_limit(&state, ip)?;
+
+    // 1. Lookup par hash. Les trois cas (inconnu/expiré/utilisé) convergent vers
+    // le même `400` générique (DC4).
+    let token_hash = crate::auth::api_key::sha256_hex(&req.token);
+    let token = password_reset_tokens::find_valid_by_hash(&state.pool, &token_hash)
+        .await?
+        .ok_or(AppError::InvalidOrExpiredToken)?;
+
+    // 2. Validation politique mdp + hash (avant toute mutation).
+    password::validate_password(&req.new_password, state.config.password_min_length)?;
+    let new_hash = password::hash_password_async(req.new_password.clone()).await?;
+
+    // 3. Transaction : mark_used (garde TOCTOU) + update password + audit.
+    //
+    // **Choix d'implémentation (note Dev)** : `mark_used` prend `&MySqlPool` (pas
+    // de variante `_in_tx`, cf. 17-4a). On l'appelle AVANT d'ouvrir la transaction
+    // d'écriture : sa garde SQL `AND used_at IS NULL` ferme la fenêtre TOCTOU
+    // (seule la 1re consommation concurrente affecte une ligne ; un 2e appel →
+    // `DbError::NotFound` → même `400`). On ne réinvente pas le SQL (DRY). L'UPDATE
+    // password (inline, comme `bootstrap.rs`) + l'audit sont, eux, atomiques dans
+    // une transaction unique — un échec rollback le password ET l'audit ensemble.
+    if let Err(e) = password_reset_tokens::mark_used(&state.pool, token.id).await {
+        return match e {
+            // Course concurrente / double-consume → même `400` anti-fuite (DC4).
+            kesh_db::errors::DbError::NotFound => Err(AppError::InvalidOrExpiredToken),
+            other => Err(AppError::Database(other)),
+        };
+    }
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("reset-password tx begin: {e}")))?;
+
+    sqlx::query("UPDATE users SET password_hash = ?, version = version + 1 WHERE id = ?")
+        .bind(&new_hash)
+        .bind(token.user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(format!("reset-password UPDATE password: {e}")))?;
+
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            token.user_id,
+            "auth.password_reset_completed",
+            "user",
+            token.user_id,
+            None,
+        ),
+    )
+    .await?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("reset-password tx commit: {e}")))?;
+
+    // 4. Post-commit best-effort : révoque tous les refresh tokens du user. Hors
+    // transaction par design (`revoke_all_for_user` prend `&MySqlPool`), pattern
+    // identique à `change_password` et break-glass `bootstrap.rs`. Raison
+    // `"password_change"` réutilisée (DC8/AC14 — le distinguo recovery est porté
+    // par `audit_log.action`, pas par `revoked_reason`).
+    match refresh_tokens::revoke_all_for_user(&state.pool, token.user_id, "password_change").await {
+        Ok(count) => tracing::info!(
+            user_id = token.user_id,
+            revoked_count = count,
+            "password reset completed"
+        ),
+        Err(e) => tracing::warn!(
+            user_id = token.user_id,
+            error = %e,
+            "reset-password: échec revoke refresh tokens post-reset (non-fatal)"
+        ),
+    }
+
+    Ok(Json(ResetPasswordResponse { status: "ok" }))
 }

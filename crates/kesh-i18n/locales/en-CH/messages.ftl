@@ -953,6 +953,7 @@ api-keys-toast-revoke-success = Key revoked.
 
 # Story 17-4b — Password recovery by email (backend rendering, DC10)
 error-smtp-send-failed = Email delivery failed. Please try again shortly.
+error-invalid-or-expired-token = Invalid or expired password reset link.
 email-password-reset-subject = Reset your Kesh password
 email-password-reset-body =
     You requested a reset of your Kesh password.

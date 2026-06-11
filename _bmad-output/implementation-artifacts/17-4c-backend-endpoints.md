@@ -1,6 +1,6 @@
 # Story 17.4c: Endpoints backend publics recovery (forgot-password / reset-password)
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Contenu déjà adversarialement revu (Partie C : AC12-16, T-C1..T-C4, DC3/DC4/DC5/DC6/DC8/DC9). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4a (DONE : table password_reset_tokens, colonne users.email, find_by_email, repo tokens) ET 17-4b (DONE : trait Mailer, AppState.mailer, PASSWORD_RESET_TTL_MINUTES, config public_base_url/forgot_password_enabled). BLOQUE 17-4d (contrat API) + 17-4e (tests). -->
@@ -59,14 +59,41 @@ so that **le frontend 17-4d puisse consommer un contrat API stable et qu'un util
 
 ## Tasks / Subtasks
 
-- [ ] **T-C1** `POST /api/v1/auth/forgot-password` (public, gated feature). (AC: 12, 16)
+- [x] **T-C1** `POST /api/v1/auth/forgot-password` (public, gated feature). (AC: 12, 16)
   - Ajouter le champ `rate_limiter_recovery: Arc<RateLimiter>` à `AppState` (`lib.rs:43`), **défauté dans le CORPS de `new_for_tests`** (signature inchangée, P4-1 — construire un `RateLimiter::new(&config)` ou un `RateLimiter` à seuils recovery ; cf. note dev sur les seuils hardcodés) + ajouté manuellement aux 3 sites littéraux préservés : `main.rs:271` (vrai limiter recovery), `middleware/auth.rs:267` (`test_state`), `tests/setup_admin_e2e.rs:81`.
   - Construire l'instance recovery dans `main.rs` avec les **seuils hardcodés 5/15min/30min** (cf. note dev : soit en clonant `config` avec ces 3 champs surchargés avant `RateLimiter::new`, soit via un constructeur dédié — figer au dev).
   - Handler : extraire `ip` via `ConnectInfo<SocketAddr>` (`auth.rs:181`) ; `rate_limiter_recovery.check_rate_limit(ip)` → `429` ; **puis `record_failed_attempt(ip)` inconditionnel** (jamais `reset`). Lookup DC6 (`@` ⇒ `find_by_email` Vec, sinon `find_by_username`). Si match **unique** : générer token base62 (DC3), `create` SHA-256, construire `reset_url`, `tokio::spawn` détaché de `state.mailer.send_password_reset(email, &reset_url, config.locale)` (cloner les `Arc`/`String` nécessaires dans la closure). Audit `auth.password_reset_requested` si match. **Toujours `200`** générique. (DC4/DC6)
-- [ ] **T-C2** `POST /api/v1/auth/reset-password` (public, gated). (AC: 13, 16)
+- [x] **T-C2** `POST /api/v1/auth/reset-password` (public, gated). (AC: 13, 16)
   - Même rate-limit recovery (check+record inconditionnel, DC5). `sha256_hex(token)` → `find_valid_by_hash` → `None` ⇒ `400 INVALID_OR_EXPIRED_TOKEN`. `validate_password` + `hash_password_async`. Transaction : `mark_used` (mapper `DbError::NotFound` → `400 INVALID_OR_EXPIRED_TOKEN`) + `update_password` + `audit_log::insert_in_tx`. Commit. Post-commit best-effort : `revoke_all_for_user(user_id, "password_change")` (loggé si échec). `200`.
-- [ ] **T-C3** Révocation refresh : **réutiliser `"password_change"`** (DC8/AC14) — **aucune migration de contrainte CHECK**. (AC: 14)
-- [ ] **T-C4** `forgotPasswordEnabled` dans `/health` (DC9, **deux branches** 200/503). Montage **conditionnel** des routes `/api/v1/auth/forgot-password` + `/reset-password` dans le bloc public de `build_router` (`lib.rs:501-512`) selon `state.config.forgot_password_enabled` (si `false` → routes non montées → `404`). (AC: 15, 16)
+
+### Review Findings
+
+> Code review Pass 1 (Fable 5, 2026-06-11) — 3 couches parallèles (Blind Hunter / Edge Case Hunter / Acceptance Auditor), 30 findings bruts → dédupliqués : 0 CRITICAL/HIGH, 8 MEDIUM, 12 LOW. Triage : 10 patch, 4 defer, 3 dismiss.
+
+- [ ] [Review][Patch] P1 (MEDIUM, blind+edge+auditor) Oracle timing + oracle 500 + audit/token orphelin — déplacer TOUT le travail post-lookup de `forgot_password` (audit, invalidate, create, mail) dans la tâche `tokio::spawn` détachée ; réponse `200` immédiate dans les 2 branches ; erreurs DB loggées jamais propagées ; audit écrit dès le match (avec `recoverable: bool`) ; résoudre `public_base_url` AVANT `create` [crates/kesh-api/src/routes/auth.rs:705-775]
+- [ ] [Review][Patch] P2 (MEDIUM, blind+edge+auditor) Atomicité + DRY transaction reset — ajouter `password_reset_tokens::mark_used_in_tx` et `users::update_password_in_tx` (garde `rows_affected`) dans kesh-db ; transaction unique mark_used + update_password + audit [crates/kesh-api/src/routes/auth.rs:828-868]
+- [ ] [Review][Patch] P3 (MEDIUM, blind+edge+auditor) `reset_password` ne re-vérifie pas `user.active` — charger le user, `!active` → même `400 INVALID_OR_EXPIRED_TOKEN` générique (cohérence gel admin, symétrie avec le gate à l'émission) [crates/kesh-api/src/routes/auth.rs:828]
+- [ ] [Review][Patch] P4 (MEDIUM, edge) Comptage `len == 1` email inclut les comptes inactifs — `candidates.retain(|u| u.active)` avant le comptage (un doublon désactivé prive un actif du recovery) [crates/kesh-api/src/routes/auth.rs:687-693]
+- [ ] [Review][Patch] P5 (MEDIUM, edge) Username contenant `@` structurellement non-recouvrable (DC6) — interdire `@` à la création/édition d'username (garde validation) ; legacy → break-glass #121 [crates/kesh-api/src/routes/users.rs:164-181]
+- [ ] [Review][Patch] P6 (LOW, edge) Token non trimé dans `reset_password` — `req.token.trim()` avant `sha256_hex` (copier-coller email avec espace/retour-ligne) [crates/kesh-api/src/routes/auth.rs:810]
+- [ ] [Review][Patch] P7 (LOW, blind) Double binding `let mut main_router` redondant après le bloc conditionnel — nettoyer [crates/kesh-api/src/lib.rs:553]
+- [ ] [Review][Patch] P8 (LOW, blind) `check_rate_limit` + `record_failed_attempt` non-atomiques sous burst concurrent — méthode `check_and_record` sous un seul lock [crates/kesh-api/src/middleware/rate_limit.rs]
+- [ ] [Review][Patch] P9 (LOW, blind+edge) Commentaire « anti-accumulation » sur-vend l'invariant — invalidate+create non-transactionnels = best-effort, corriger le wording [crates/kesh-api/src/routes/auth.rs:714]
+- [ ] [Review][Patch] P10 (MEDIUM, auditor, process) Story file non à jour — statut, checkboxes, Agent Record, File List, Change Log
+- [x] [Review][Defer] D1 (MEDIUM, edge) `ConnectInfo` derrière reverse proxy → IP partagée → DoS global du recovery (record inconditionnel DC5 amplifie) — DC5 figé + pattern pré-existant login ; documenté §Limitations ci-dessous + issue GitHub enhancement trusted-proxy XFF
+- [x] [Review][Defer] D2 (LOW, edge) Lockout utilisateur légitime à mi-flux (limiter partagé forgot+reset, blocage 30 min = TTL token) — lié L5 (seuils configurables v0.2+) ; documenté §Limitations
+- [x] [Review][Defer] D3 (LOW, blind+edge) `expires_at` horloge app vs `NOW(3)` horloge MariaDB (skew/TZ) — pattern pré-existant identique `refresh_tokens` ; exigence NTP/UTC à documenter manuel admin (17-4f)
+- [x] [Review][Defer] D4 (LOW, edge) `tokio::spawn` fire-and-forget perdu au shutdown (email jamais envoyé, zéro trace) — acceptable v0.1, documenté §Limitations
+
+Dismissed (3) : casse email (réfuté ground-truth — collation `_ci`, `users.rs:174`) ; token en query param (design figé AC12, magic-link standard, doc 17-4f) ; bypass rate-limit par body JSON malformé (pattern identique login in-handler, accepté).
+
+### Limitations documentées (17-4c)
+
+- **L-C1 (D1)** : derrière un reverse proxy, le rate-limit recovery voit l'IP du proxy pour tous les clients ; 5 requêtes recovery quelconques / 15 min bloquent le flux 30 min pour toute l'installation. Remédiation : support `X-Forwarded-For` opt-in (env var trusted proxy) — issue GitHub enhancement, v0.2+.
+- **L-C2 (D2)** : le blocage (30 min) égale le TTL du token ; un utilisateur qui consomme ses 5 slots à mi-flux doit recommencer. Remédiation : seuils configurables (L5 umbrella, v0.2+).
+- **L-C3 (D4)** : l'envoi d'email détaché n'est pas drainé au shutdown (redeploy Docker pendant l'envoi = email perdu sans trace). Acceptable v0.1 ; piste `TaskTracker` si récurrent.
+- [x] **T-C3** Révocation refresh : **réutiliser `"password_change"`** (DC8/AC14) — **aucune migration de contrainte CHECK**. (AC: 14)
+- [x] **T-C4** `forgotPasswordEnabled` dans `/health` (DC9, **deux branches** 200/503). Montage **conditionnel** des routes `/api/v1/auth/forgot-password` + `/reset-password` dans le bloc public de `build_router` (`lib.rs:501-512`) selon `state.config.forgot_password_enabled` (si `false` → routes non montées → `404`). (AC: 15, 16)
 - [ ] **T-C5** Quality gate Test Locally First backend (fmt/build/clippy -D/test). Les endpoints touchent `kesh-api` uniquement (pas `kesh-db`) ; mode parallèle suffit pour les tests unitaires. Si des tests d'intégration DB sont ajoutés ici (proximité), lancer aussi le **mode serial** `cargo test --workspace -j1 -- --test-threads=1`. (AC: transverse build vert)
 
 ## Dev Notes
@@ -146,10 +173,27 @@ so that **le frontend 17-4d puisse consommer un contrat API stable et qu'un util
 
 ### Agent Model Used
 
-(à remplir au dev-story — Opus 4.8 recommandé : flux cross-module token↔rate-limit↔mail↔audit + sécurité anti-énum/anti-énumération non-mécaniques + montage conditionnel routeur)
+Dev-story : session interrompue avant commit (code retrouvé complet dans le working tree le 2026-06-11, T-C1..T-C4 implémentés, fmt + build verts). Finalisation + code review Pass 1 : Claude Fable 5.
 
 ### Debug Log References
 
 ### Completion Notes List
 
+- T-C1..T-C4 implémentés conformément aux DC3/DC4/DC5/DC6/DC8/DC9 ; tests unitaires de proximité présents (format/unicité token reset, `with_thresholds` rate-limiter).
+- Choix dev documentés : `mark_used` initialement hors-tx (Dev Notes l'autorisaient) — revu en Pass 1 (P2) vers variantes `_in_tx` ; UPDATE password initialement SQL inline — revu en Pass 1 (P2) vers `update_password_in_tx` ; gate `user.active` à l'émission (hors-spec, décision sécurité documentée, symétrie ajoutée côté reset en P3).
+- Quality gate T-C5 : exécuté après les patches Pass 1 (cf. Change Log).
+
 ### File List
+
+- crates/kesh-api/src/auth/api_key.rs — `generate_reset_token()` + `base62_*` promus `pub(crate)` + 2 tests
+- crates/kesh-api/src/errors.rs — variant `AppError::InvalidOrExpiredToken` (400 `INVALID_OR_EXPIRED_TOKEN`)
+- crates/kesh-api/src/lib.rs — champ `AppState.rate_limiter_recovery`, `build_recovery_rate_limiter()`, montage conditionnel routes
+- crates/kesh-api/src/main.rs — construction limiter recovery prod
+- crates/kesh-api/src/middleware/auth.rs — littéral test_state
+- crates/kesh-api/src/middleware/rate_limit.rs — `RateLimiter::with_thresholds` + test
+- crates/kesh-api/src/routes/auth.rs — handlers `forgot_password` + `reset_password` + DTOs + `enforce_recovery_rate_limit`
+- crates/kesh-api/src/routes/health.rs — `forgotPasswordEnabled` ×2 branches
+- crates/kesh-api/tests/setup_admin_e2e.rs — littéral E2E
+- crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl — clé `error-invalid-or-expired-token` ×4
+
+## Change Log

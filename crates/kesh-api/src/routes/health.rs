@@ -23,6 +23,10 @@ use crate::AppState;
 
 pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let version = env!("CARGO_PKG_VERSION");
+    // Story 17-4c (DC9) — feature-flag recovery exposé dans les DEUX branches
+    // (200/503), indépendant de l'état DB : le frontend (17-4d) conditionne
+    // l'affichage du lien « mot de passe oublié ? » sur ce flag.
+    let forgot_password_enabled = state.config.forgot_password_enabled;
     match sqlx::query("SELECT 1").execute(&state.pool).await {
         Ok(_) => (
             StatusCode::OK,
@@ -30,6 +34,7 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
                 "status": "ok",
                 "db": true,
                 "version": version,
+                "forgotPasswordEnabled": forgot_password_enabled,
             })),
         ),
         Err(e) => {
@@ -40,6 +45,7 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
                     "status": "degraded",
                     "db": false,
                     "version": version,
+                    "forgotPasswordEnabled": forgot_password_enabled,
                 })),
             )
         }

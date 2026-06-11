@@ -221,6 +221,9 @@ async fn main() {
     let bind_addr = format!("{}:{}", config.host, config.port);
 
     let rate_limiter = RateLimiter::new(&config);
+    // Story 17-4c (DC5) — instance dédiée recovery (seuils hardcodés 5/15min/30min,
+    // partagés avec les tests via `build_recovery_rate_limiter`).
+    let rate_limiter_recovery = kesh_api::build_recovery_rate_limiter();
 
     // Story 17-4b — couche email recovery. Si le feature est activé, la config
     // SMTP a déjà été validée fail-fast au boot (`ConfigError::IncompleteSmtpConfig`)
@@ -272,6 +275,8 @@ async fn main() {
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        // Story 17-4c (DC5) — limiter recovery dédié.
+        rate_limiter_recovery: Arc::new(rate_limiter_recovery),
         i18n: i18n_bundle,
         // Story v011-5 — cache mémoire `users_exist` init avec la valeur réelle
         // DB post-bootstrap. Le middleware 423 Locked lit ce flag lock-free

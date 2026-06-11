@@ -56,6 +56,23 @@ impl RateLimiter {
         }
     }
 
+    /// Story 17-4c (DC5) — Crée un `RateLimiter` avec des seuils explicites,
+    /// indépendants de la `Config` login. Utilisé pour l'instance dédiée recovery
+    /// (`rate_limiter_recovery`, 5 req / 15 min / blocage 30 min hardcodés) afin
+    /// de ne pas muter un `Config` cloné juste pour surcharger 3 champs.
+    pub fn with_thresholds(
+        max_attempts: u32,
+        window: std::time::Duration,
+        block_duration: std::time::Duration,
+    ) -> Self {
+        Self {
+            inner: Mutex::new(HashMap::new()),
+            max_attempts,
+            window,
+            block_duration,
+        }
+    }
+
     /// Vérifie si l'IP est autorisée à tenter un login.
     ///
     /// Effectue d'abord un nettoyage lazy des entrées expirées,
@@ -242,6 +259,28 @@ mod tests {
         let rl = make_rate_limiter(5, 60, 60);
         let ip: IpAddr = "10.0.0.99".parse().unwrap();
         assert!(rl.check_rate_limit(ip).is_ok());
+    }
+
+    #[test]
+    fn with_thresholds_builds_independent_limiter() {
+        use std::time::Duration;
+        // Story 17-4c — instance recovery construite sans Config (seuils explicites).
+        let rl =
+            RateLimiter::with_thresholds(5, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.1.1".parse().unwrap();
+
+        // Sémantique always-200 du flux forgot-password : on `record` à chaque
+        // requête (jamais `reset`). Au 5e enregistrement, l'IP est bloquée.
+        for _ in 0..4 {
+            assert!(rl.check_rate_limit(ip).is_ok());
+            rl.record_failed_attempt(ip);
+        }
+        // 4 slots consommés sur 5 → toujours autorisé.
+        assert!(rl.check_rate_limit(ip).is_ok());
+        rl.record_failed_attempt(ip);
+        // 5e slot consommé → bloqué.
+        let reject = rl.check_rate_limit(ip).unwrap_err();
+        assert!(reject.retry_after_secs > 0);
     }
 
     #[test]
