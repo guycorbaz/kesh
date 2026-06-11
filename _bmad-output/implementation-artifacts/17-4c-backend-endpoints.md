@@ -1,6 +1,6 @@
 # Story 17.4c: Endpoints backend publics recovery (forgot-password / reset-password)
 
-Status: in-progress
+Status: review
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes (trend > LOW 12→1→3→2→1→0). Contenu déjà adversarialement revu (Partie C : AC12-16, T-C1..T-C4, DC3/DC4/DC5/DC6/DC8/DC9). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4a (DONE : table password_reset_tokens, colonne users.email, find_by_email, repo tokens) ET 17-4b (DONE : trait Mailer, AppState.mailer, PASSWORD_RESET_TTL_MINUTES, config public_base_url/forgot_password_enabled). BLOQUE 17-4d (contrat API) + 17-4e (tests). -->
@@ -94,7 +94,7 @@ Dismissed (3) : casse email (réfuté ground-truth — collation `_ci`, `users.r
 - **L-C3 (D4)** : l'envoi d'email détaché n'est pas drainé au shutdown (redeploy Docker pendant l'envoi = email perdu sans trace). Acceptable v0.1 ; piste `TaskTracker` si récurrent.
 - [x] **T-C3** Révocation refresh : **réutiliser `"password_change"`** (DC8/AC14) — **aucune migration de contrainte CHECK**. (AC: 14)
 - [x] **T-C4** `forgotPasswordEnabled` dans `/health` (DC9, **deux branches** 200/503). Montage **conditionnel** des routes `/api/v1/auth/forgot-password` + `/reset-password` dans le bloc public de `build_router` (`lib.rs:501-512`) selon `state.config.forgot_password_enabled` (si `false` → routes non montées → `404`). (AC: 15, 16)
-- [ ] **T-C5** Quality gate Test Locally First backend (fmt/build/clippy -D/test). Les endpoints touchent `kesh-api` uniquement (pas `kesh-db`) ; mode parallèle suffit pour les tests unitaires. Si des tests d'intégration DB sont ajoutés ici (proximité), lancer aussi le **mode serial** `cargo test --workspace -j1 -- --test-threads=1`. (AC: transverse build vert)
+- [x] **T-C5** Quality gate Test Locally First backend (fmt/build/clippy -D/test). Les endpoints touchent `kesh-api` uniquement (pas `kesh-db`) ; mode parallèle suffit pour les tests unitaires. Si des tests d'intégration DB sont ajoutés ici (proximité), lancer aussi le **mode serial** `cargo test --workspace -j1 -- --test-threads=1`. (AC: transverse build vert)
 
 ## Dev Notes
 
@@ -217,3 +217,16 @@ Dev-story : session interrompue avant commit (code retrouvé complet dans le wor
 - **Dismiss** (3) : casse email (réfuté ground-truth collation `_ci`), token en query param (design AC12), bypass rate-limit body malformé (pattern login identique).
 - **Décisions documentées** : gate `user.active` à l'émission = ajout hors-spec conservé (défendable sécurité) + symétrie ajoutée côté reset (P3) ; cas de test à couvrir en 17-4e (compte inactif, email dupliqué actif/inactif, username avec `@`, double-consume, trim token).
 - **Prochaine passe** : Pass 2 LLM différent (≥1 MEDIUM trouvé → Review Iteration Rule), diff aplati HEAD vs main.
+
+### Pass 2 code-review (Sonnet 4.6, 2026-06-11)
+
+- **Setup** : diff unique aplati `64c8050..HEAD` (1081 lignes, feat + fix Pass 1), 3 couches Sonnet contexte frais.
+- **Findings bruts** : BH 1 HIGH + 5 MEDIUM + 3 LOW ; ECH 1 MEDIUM + 3 LOW ; AA 2 LOW (24 points conformes vérifiés ground-truth).
+- **Réfutés grep ground-truth (4)** : BH2-HIGH `ConnectInfo` non câblé — faux positif, `main.rs:304` utilise `into_make_service_with_connect_info::<SocketAddr>` ; BH2-LOW test combo `with_thresholds`+`check_and_record` non couverte — faux, `rate_limit.rs:326` la couvre exactement ; BH2-LOW slash trailing `public_base_url` — strippé au boot (17-4b P4-4) ; BH2-MEDIUM timeout SMTP manquant — `lettre::AsyncSmtpTransport` applique un timeout défaut 60 s au niveau builder, et le rate-limit borne le débit de tasks.
+- **Patches appliqués** :
+  - **PP1** (MEDIUM, BH2-M6) Lookup DC6 déplacé dans la tâche détachée (`process_forgot_password_request`) : le handler `forgot_password` ne touche plus du tout la DB → timing strictement constant (Pass 1 avait détaché les écritures, la latence du lookup présent-vs-absent restait théoriquement observable). Inclut l'early-return identifiant vide (ECH2-L1, no-op sans spawn) et le commentaire d'asymétrie username/inactif (BH2-M3 downgradé doc).
+  - **PP2** (MEDIUM, ECH2-M1) `Instant::checked_sub` dans `check_locked`/`record_locked` — panique latente `now - window` si la machine a booté il y a moins de 15 min (autostart Docker post-reboot NAS) ; pré-existante côté login, étendue à `check_and_record` par la Pass 1, corrigée pour les deux.
+  - **PP3** (process, AA2-L1) T-C5 coché + statut `review`.
+- **Dismiss (hors grep-réfutés)** : DoS NAT/IP partagée (= D1, issue #173) ; couplage `sha256_hex` (nit) ; invalidation best-effort (documentée P9, fail-closed dégraderait l'UX) ; `@` seul (no-op anti-énum) ; garde `TimeDelta::minutes` (spéculatif, const 30).
+- **Defer** : AA2-L2 garde `@` non-i18n dans `setup.rs` — cohérent avec le pattern pré-existant du fichier (`"username must be non-empty"` hardcodé) ; rejoint le cleanup i18n setup.rs déjà tracé dans deferred-work.md (BH2-4 v011-5).
+- **Trend >LOW : Pass 1 = 8 MEDIUM → Pass 2 = 2 MEDIUM réels (+1 MEDIUM et 1 HIGH réfutés)** → Pass 3 requise (LLM différent : Haiku, garde-fous grep ground-truth obligatoires).

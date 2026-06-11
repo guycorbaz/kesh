@@ -662,15 +662,13 @@ fn enforce_recovery_rate_limit(state: &AppState, ip: std::net::IpAddr) -> Result
 /// Anti-énumération (DC4) : retourne **TOUJOURS `200`** corps générique, que le
 /// compte existe ou non. Flux :
 /// 0. Rate-limit recovery (DC5, check + record inconditionnel).
-/// 1. Lookup DC6 : `@` ⇒ `find_by_email` (exactement 1 match **actif** sinon
-///    no-op), sinon `find_by_username`.
-/// 2. Si match : **TOUT** le travail dépendant du match (audit, invalidation,
-///    création token, envoi email) part dans une tâche détachée `tokio::spawn`
-///    — cf. [`process_forgot_password_match`]. La réponse `200` ne dépend ni en
-///    timing ni en statut du résultat (code review 17-4c Pass 1, P1 : des
-///    écritures DB synchrones ou des `?` propagés uniquement côté match
-///    constitueraient des oracles d'énumération par timing / par code 500).
-/// 3. Toujours `200`.
+/// 1. **TOUT** le travail dépendant de l'identifiant — lookup DC6 compris —
+///    part dans une tâche détachée `tokio::spawn` (cf.
+///    [`process_forgot_password_request`]). Le handler ne touche JAMAIS la DB :
+///    la réponse `200` a un timing strictement constant (Pass 1 P1 avait
+///    détaché les écritures ; Pass 2 BH2-M6 détache aussi le lookup, dont la
+///    latence présent-vs-absent restait observable).
+/// 2. Toujours `200`.
 pub async fn forgot_password(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -679,43 +677,66 @@ pub async fn forgot_password(
     let ip = addr.ip();
     enforce_recovery_rate_limit(&state, ip)?;
 
-    let identifier = req.identifier.trim();
+    let identifier = req.identifier.trim().to_string();
 
-    // DC6 — un identifiant contenant `@` est traité comme un email (non-unique →
-    // exactement 1 match requis), sinon comme un username (UNIQUE, ≤ 1).
-    let (matched_user, identifier_kind) = if identifier.contains('@') {
-        let mut candidates = users::find_by_email(&state.pool, identifier).await?;
-        // P4 — seuls les comptes ACTIFS comptent pour « exactement 1 match » :
-        // un doublon désactivé portant le même email ne doit pas priver le
-        // compte actif du recovery.
-        candidates.retain(|u| u.active);
-        // Exactement 1 match actif → procéder ; 0 ou > 1 → pas de match (anti-énum).
-        let user = if candidates.len() == 1 {
-            Some(candidates.remove(0))
-        } else {
-            None
-        };
-        (user, "email")
-    } else {
-        (
-            users::find_by_username(&state.pool, identifier).await?,
-            "username",
-        )
-    };
-
-    // P1 — tout le travail post-match est détaché : la réponse part tout de
-    // suite, identique dans les deux branches (le coût d'un `tokio::spawn` est
-    // négligeable face au jitter réseau). Les erreurs DB/SMTP de la tâche sont
-    // loggées, jamais propagées.
-    if let Some(user) = matched_user {
+    // Pass 2 ECH2-L1 — identifiant vide après trim : no-op silencieux (200
+    // anti-énum), sans spawn ni DB. Évite `find_by_username("")` qui matcherait
+    // un éventuel username vide legacy pathologique.
+    if !identifier.is_empty() {
         let task_state = state.clone();
         tokio::spawn(async move {
-            process_forgot_password_match(task_state, user, identifier_kind).await;
+            process_forgot_password_request(task_state, identifier).await;
         });
     }
 
     // DC4 — toujours `200`, aucun signal existant/inexistant.
     Ok(StatusCode::OK)
+}
+
+/// Lookup DC6 + traitement du match de `forgot_password`, en **tâche détachée**.
+///
+/// Pass 2 BH2-M6 : le lookup lui-même est ici (et plus dans le handler) — le
+/// handler répond sans aucun accès DB, timing constant absolu. Les erreurs de
+/// lookup sont loggées, jamais propagées (le 200 est déjà parti).
+///
+/// DC6 — un identifiant contenant `@` est traité comme un email (non-unique →
+/// exactement 1 match actif requis), sinon comme un username (UNIQUE, ≤ 1).
+/// Note (Pass 2 BH2-M3) : `find_by_username` ne filtre PAS `active` — un match
+/// username inactif arrive jusqu'à [`process_forgot_password_match`], qui
+/// l'audite avec `recoverable: false` et n'envoie rien. Côté email, le filtre
+/// `retain(active)` s'applique AVANT le comptage « exactement 1 » (P4) pour
+/// qu'un doublon désactivé ne prive pas le compte actif du recovery.
+async fn process_forgot_password_request(state: AppState, identifier: String) {
+    let (matched_user, identifier_kind) = if identifier.contains('@') {
+        match users::find_by_email(&state.pool, &identifier).await {
+            Ok(mut candidates) => {
+                // P4 — seuls les comptes ACTIFS comptent pour « exactement 1 ».
+                candidates.retain(|u| u.active);
+                let user = if candidates.len() == 1 {
+                    Some(candidates.remove(0))
+                } else {
+                    None
+                };
+                (user, "email")
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "forgot-password: échec lookup email (non-fatal)");
+                return;
+            }
+        }
+    } else {
+        match users::find_by_username(&state.pool, &identifier).await {
+            Ok(user) => (user, "username"),
+            Err(e) => {
+                tracing::error!(error = %e, "forgot-password: échec lookup username (non-fatal)");
+                return;
+            }
+        }
+    };
+
+    if let Some(user) = matched_user {
+        process_forgot_password_match(state, user, identifier_kind).await;
+    }
 }
 
 /// Travail post-match de `forgot_password`, exécuté en **tâche détachée** (P1).

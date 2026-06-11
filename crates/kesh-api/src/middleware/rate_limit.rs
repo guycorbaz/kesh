@@ -119,12 +119,16 @@ impl RateLimiter {
             }
         }
 
-        // Compter les tentatives dans la fenêtre
-        let window_start = now - self.window;
+        // Compter les tentatives dans la fenêtre. Pass 2 17-4c ECH2-M1 :
+        // `Instant` est monotonic-depuis-boot — `now - window` paniquerait si la
+        // machine a démarré il y a moins de `window` (réaliste : autostart
+        // Docker post-reboot NAS). Fenêtre pas encore entamée → toutes les
+        // tentatives comptent.
+        let window_start = now.checked_sub(self.window);
         let recent_count = record
             .attempts
             .iter()
-            .filter(|t| **t >= window_start)
+            .filter(|t| window_start.is_none_or(|ws| **t >= ws))
             .count() as u32;
 
         if recent_count >= self.max_attempts {
@@ -146,9 +150,12 @@ impl RateLimiter {
             blocked_until: None,
         });
 
-        // Purger les tentatives hors fenêtre
-        let window_start = now - self.window;
-        record.attempts.retain(|t| *t >= window_start);
+        // Purger les tentatives hors fenêtre (cf. note `checked_sub` dans
+        // `check_locked` — pas de soustraction directe d'`Instant`).
+        let window_start = now.checked_sub(self.window);
+        record
+            .attempts
+            .retain(|t| window_start.is_none_or(|ws| *t >= ws));
 
         record.attempts.push(now);
 

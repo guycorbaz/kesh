@@ -56,3 +56,9 @@ Pass 1 Fable 5 × 3 reviewers (BH + ECH + AA), 30 findings bruts → 10 patches 
 - **D2 LOW — Lockout utilisateur légitime à mi-flux** (`routes/auth.rs` + `lib.rs::build_recovery_rate_limiter`) : limiter partagé forgot+reset, chaque requête consomme un slot (y compris un reset rejeté par la politique mdp) ; blocage 30 min = TTL token → token expiré pendant le blocage. Lié L5 (seuils configurables v0.2+).
 - **D3 LOW — `expires_at` horloge app vs `NOW(3)` horloge MariaDB** (`routes/auth.rs` + `password_reset_tokens.rs:67`) : skew NTP ou TZ MariaDB non-UTC fait dériver le TTL réel (30 min sensible à un offset d'1 h). Pattern pré-existant identique `refresh_tokens`. Documenter exigence NTP/UTC dans le manuel admin (17-4f).
 - **D4 LOW — `tokio::spawn` fire-and-forget non drainé au shutdown** (`routes/auth.rs`) : redeploy Docker pendant l'envoi SMTP = email jamais envoyé, zéro trace log. Acceptable v0.1 ; piste `tokio_util::task::TaskTracker` si récurrent.
+
+## Deferred from: code review of 17-4c-backend-endpoints Pass 2 (2026-06-11)
+
+Pass 2 Sonnet 4.6 × 3 reviewers, 13 findings bruts → 4 réfutés grep ground-truth (dont 1 HIGH ConnectInfo + 1 MEDIUM timeout SMTP) + 5 dismiss + 3 patches (PP1 lookup détaché, PP2 Instant::checked_sub, PP3 story file) + 1 defer ci-dessous.
+
+- **AA2-L2 LOW — garde `@` username non-i18n dans `setup.rs`** (`crates/kesh-api/src/routes/setup.rs:96-103`) : `AppError::Validation("username must not contain '@' (reserved for email recovery routing)")` anglais hardcodé, vs `users.rs` qui utilise la clé i18n `error-username-contains-at`. Cohérent avec le pattern pré-existant de setup.rs (`"username must be non-empty"` idem). À aligner lors du même cleanup v0.2 que BH2-4 v011-5 (`error-password-changeme-forbidden`) : ajouter les clés et basculer setup.rs sur `state.i18n.format`.
