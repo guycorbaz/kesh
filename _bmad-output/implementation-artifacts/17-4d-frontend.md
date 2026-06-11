@@ -1,6 +1,6 @@
 # Story 17.4d: Frontend recovery (pages publiques forgot/reset-password + email UI)
 
-Status: review
+Status: done
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (`17-4-recovery-mot-de-passe.md`), validate CONVERGÉ 6 passes. Contenu déjà adversarialement revu (Partie D : AC17-22 + transverses AC30/31, T-D1..T-D6). Re-validate optionnel. -->
 <!-- DÉPEND de 17-4c (DONE : contrat API forgot/reset-password + forgotPasswordEnabled dans /health) et de 17-4a (DONE : plumbing email backend setup/users). BLOQUE 17-4e (E2E Playwright des pages). -->
@@ -163,7 +163,10 @@ Claude Fable 5 (dev-story single-pass, 2026-06-11).
 - frontend/src/lib/features/auth-recovery/ResetPasswordForm.svelte — formulaire AC18 (états succès/lien-invalide/erreurs)
 - frontend/src/lib/shared/utils/feature-flags.svelte.ts — store DD-1 (défaut false)
 - frontend/src/routes/forgot-password/+page.svelte — wrapper public DD-2
-- frontend/src/routes/reset-password/+page.svelte — wrapper public, lit ?token=
+- frontend/src/routes/reset-password/+page.svelte — wrapper public, capture one-shot ?token= + replaceState (PD1)
+- frontend/src/lib/features/auth-recovery/ResetPasswordForm.test.ts — 6 tests composant (Pass 1 PD6)
+- frontend/src/lib/shared/utils/email.ts — isPlausibleEmail partagé (Pass 1 PD2)
+- frontend/src/lib/shared/utils/email.test.ts — 2 tests (Pass 1 PD2)
 
 **Modifiés :**
 - frontend/src/routes/+layout.svelte — parse forgotPasswordEnabled au boot /health
@@ -194,3 +197,18 @@ Claude Fable 5 (dev-story single-pass, 2026-06-11).
 - **Defers** : PD5 flag figé au boot (doc-comment, v0.2) ; AA-L1 labels users non-i18n (dérogation actée).
 - **Gate post-patches** : vitest suites touchées 21/21 ; gate complet relancé (cf. ci-dessous).
 - **Trend >LOW : Pass 1 = 2 réels (1 HIGH + 1 MEDIUM, patchés)** → Pass 2 requise (LLM différent : Haiku, garde-fous grep ground-truth).
+
+### Pass 2 code-review (Haiku 4.5, 2026-06-11) — CYCLE CONVERGÉ
+
+- **Setup** : diff unique aplati `1149621..bdc1a65` (1507 lignes), 3 couches Haiku, garde-fous anti-indexation (chaîne exacte exigée pour tout finding d'absence).
+- **Findings bruts** : BH 1 HIGH + 5 MEDIUM + 3 LOW ; ECH 2 LOW (15+ vérifications positives, dont replaceState/onMount sain et parité FTL re-confirmée) ; AA 1 LOW (« aucun finding bloquant », conformité 100 % vérifiée).
+- **Triage (inflation Haiku confirmée, 1 hallucination pure)** :
+  - BH « MEDIUM aria-invalid absent du champ email SetupForm » → **HALLUCINATION grep-réfutée** : `SetupForm.svelte:213` contient exactement `aria-invalid={email.trim().length > 0 && !emailValid}`.
+  - BH « HIGH timing race replaceState » → **réfuté** : le token est dans l'URL/historique depuis la navigation (avant tout JS) ; `onMount` = premier point sûr pour `replaceState` SvelteKit (router initialisé). ECH l'a vérifié sain indépendamment.
+  - BH « MEDIUM flag incohérent en dégradé » → **réfuté** : le boot parse aussi le corps du 503 (`res.json().catch` `+layout.svelte:60`) et le flag est dans les 2 branches (DC9) ; défaut `false` = DD-1 actée.
+  - BH « MEDIUM regex '..' divergente » + ECH L1 → **dismiss documenté** : doc-comment d'`email.ts` liste exactement ces cas, backend autoritatif avec 400 localisé (`error-email-invalid` ×4 — la « conséquence non-localisée » est fausse).
+  - BH « MEDIUM toast vs inline users » → **dismiss re-litigé** (idiome fichier acté Pass 1).
+  - BH « MEDIUM div alert vide dans le DOM » → **dismiss** : pattern intentionnel pré-existant (login) — la zone aria-live DOIT exister avant l'insertion du contenu pour être annoncée ; ECH le confirme « correct ».
+  - 3 LOW BH (URL manuelle, mock test, test complétude FTL) + ECH L2 (hints users FR = dérogation AC22 actée) → dismiss (edges acceptés / test-only / `load_all_locales` kesh-i18n existe).
+- **0 patch de code.** Gate Pass 1 reste l'état final (check 0 err, lint PASS, vitest 312/312, build OK).
+- **CONVERGENCE : trend >LOW Pass 1 (Sonnet) = 2 réels → Pass 2 (Haiku) = 0.** Critère d'arrêt atteint → `review` → `done`.
