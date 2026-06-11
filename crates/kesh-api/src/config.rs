@@ -938,8 +938,11 @@ impl Config {
 
         // KESH_SMTP_PORT : int borné [1, 65535] (= u16), défaut 587 (STARTTLS
         // submission). Pattern parse+borne+warn (cf. KESH_ADMIN_EXPORT_INMEM_MB).
+        // Review Pass 2 — trim avant parse (cohérence parse_strict_bool /
+        // opt_trimmed_env) : un espace dans `.env` ne doit pas silencieusement
+        // retomber sur le défaut 587.
         let smtp_port: u16 = match env::var("KESH_SMTP_PORT") {
-            Ok(val) => match val.parse::<u16>() {
+            Ok(val) => match val.trim().parse::<u16>() {
                 Ok(p) if p >= 1 => p,
                 Ok(_) => {
                     tracing::warn!("KESH_SMTP_PORT=0 invalide, utilisation du défaut 587");
@@ -2619,6 +2622,33 @@ mod smtp_config_tests {
             }
             other => panic!("attendu IncompleteSmtpConfig, obtenu {other:?}"),
         }
+    }
+
+    /// Review Pass 2 — port avec espaces parasites trimé avant parse (pas de
+    /// fallback silencieux au défaut 587).
+    #[test]
+    fn smtp_port_trims_whitespace() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_PORT", " 2525 ");
+        }
+        let config = Config::from_env().expect("port trimé valide");
+        assert_eq!(config.smtp_port, 2525);
+    }
+
+    /// Review Pass 2 — port 0 hors borne → warn + défaut 587 (pas de panic).
+    #[test]
+    fn smtp_port_zero_falls_back_to_default() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_PORT", "0");
+        }
+        let config = Config::from_env().expect("port 0 → défaut");
+        assert_eq!(config.smtp_port, 587);
     }
 
     /// Review Pass 1 — IPv6 literal accepté comme host (SMTP plaintext LAN) :

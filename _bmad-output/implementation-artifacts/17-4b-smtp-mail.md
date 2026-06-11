@@ -172,3 +172,13 @@ Opus 4.8 (run dev-story interrompu — session perdue avant finalisation du stor
 **Deferred :** BH-3 HIGH→reclassé design 17-4e (MockMailer capture-sur-échec : le test SMTP-down AC23-g vérifie le 200-toujours, pas la capture ; la story 17-4e adaptera si besoin — owner documenté ici).
 
 Quality gate post-patch : fmt + clippy -D (kesh-api, kesh-i18n) verts ; tests kesh-i18n 21/21, config 69/69 (dont 6 nouveaux), mail 5/5.
+
+### Pass 2 review (Haiku 4.5) — 2026-06-11
+
+Diff unique aplati `a65417b..HEAD` (mitigation indexing multi-commit CLAUDE.md). 3 reviewers : Blind Hunter 1C/1H/3M/2L, Edge Hunter 1H/3M/2L, Auditor **clean 0 >LOW** (tous les patches Pass 1 vérifiés présents, AC8-13 couverts 6/6).
+
+**Finding réel (1 >LOW) :** ECH-1 HIGH→**reclassé MEDIUM** — `KESH_SMTP_PORT` non trimé avant `parse::<u16>()` (`" 2525 "` → warn + fallback silencieux 587, incohérent avec `parse_strict_bool`/`opt_trimmed_env`). **Ground-truth `grep -nF 'val.parse::<u16>()' config.rs:942` : confirmé.** Patch : `val.trim().parse()` + 2 tests (port espaces, port 0 → défaut). Reclassement : warn loggé donc pas totalement silencieux.
+
+**Dismissed (tous vérifiés) :** BH CRITICAL async_trait + 2 MEDIUM auto-réfutés par Haiku lui-même dans sa propre sortie ; BH HIGH « zeroize panic backtrace » réfuté sur le fond (un backtrace Rust n'imprime pas les valeurs des variables locales — pas de chemin de fuite ; pattern identique à jwt_secret/DATABASE_URL projet-wide) ; BH MEDIUM couplage `is_valid_email_simple` config←routes (réutilisation mandatée par la spec, References ligne 96) ; ECH MEDIUM mutex poisoning MockMailer (test-only, fail-loud standard) ; ECH MEDIUM validation placeholders Fluent au boot (parité des clés déjà couverte par les tests kesh-i18n 21/21, rendu couvert 17-4e) ; ECH MEDIUM `build()` non vérifié (auto-réfuté : infaillible en lettre 0.11) ; 4 LOW (port=0 test → ajouté en bonus, IPv6 brackets + UTF-8 host → notes candidates doc 17-4f, Fluent e2e → 17-4e).
+
+Quality gate post-patch : fmt + clippy -D verts, config 71/71. Trend >LOW : **7 → 1** → Pass 3 (Opus) requise.
