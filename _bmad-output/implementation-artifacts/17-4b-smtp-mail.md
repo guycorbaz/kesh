@@ -182,3 +182,15 @@ Diff unique aplati `a65417b..HEAD` (mitigation indexing multi-commit CLAUDE.md).
 **Dismissed (tous vérifiés) :** BH CRITICAL async_trait + 2 MEDIUM auto-réfutés par Haiku lui-même dans sa propre sortie ; BH HIGH « zeroize panic backtrace » réfuté sur le fond (un backtrace Rust n'imprime pas les valeurs des variables locales — pas de chemin de fuite ; pattern identique à jwt_secret/DATABASE_URL projet-wide) ; BH MEDIUM couplage `is_valid_email_simple` config←routes (réutilisation mandatée par la spec, References ligne 96) ; ECH MEDIUM mutex poisoning MockMailer (test-only, fail-loud standard) ; ECH MEDIUM validation placeholders Fluent au boot (parité des clés déjà couverte par les tests kesh-i18n 21/21, rendu couvert 17-4e) ; ECH MEDIUM `build()` non vérifié (auto-réfuté : infaillible en lettre 0.11) ; 4 LOW (port=0 test → ajouté en bonus, IPv6 brackets + UTF-8 host → notes candidates doc 17-4f, Fluent e2e → 17-4e).
 
 Quality gate post-patch : fmt + clippy -D verts, config 71/71. Trend >LOW : **7 → 1** → Pass 3 (Opus) requise.
+
+### Pass 3 review (Opus 4.8) — 2026-06-11
+
+2 reviewers : Edge+Auditor combiné (accès projet) **clean 0 >LOW** — tous les patches Pass 1+2 grep-vérifiés présents sans régression, gardes host:port cas-dégénérés testées (`::`/`:587`/`:` final), DNS relay re-résolu à chaque send (lettre stocke le hostname, non-problème), AC8-13 + DC tous conformes. Blind Hunter : **3 MEDIUM réels ratés par Sonnet+Haiku** (pattern Opus catch-architectural confirmé) :
+
+- **P3-1 MEDIUM** — validation `from` incohérente : boot `is_valid_email_simple` vs envoi parser RFC lettre → un boot « vert » pouvait masquer un recovery cassé à chaque envoi (exactement le scénario que le fail-fast prétend prévenir). **Patch** : `from_config` parse le `from` en `lettre::message::Mailbox` au boot et le stocke (le fail-fast utilise désormais le parser réel ; supprime aussi le re-parse par envoi).
+- **P3-2 MEDIUM** — `smtp.rs` zéro test, et MockMailer court-circuite précisément ce module (17-4e ne l'aurait jamais couvert). **Patch** : extraction `build_message()` testable sans transport + 3 tests (rendu URL+TTL+subject+ContentType, parité rendu 4 locales, `to` invalide → SmtpSendFailed).
+- **P3-3 MEDIUM** — `tls=false` + credentials : l'AUTH SMTP (mot de passe réutilisable, pas seulement le token éphémère) transite en clair, sans avertissement. **Patch** : `tracing::warn!` boot explicite dans main.rs + commentaire smtp.rs.
+- P3 HIGH « MockMailer/tests tautologiques » → absorbé par P3-2 (la couverture smtp.rs est le vrai trou ; le defer BH-3 Pass 1 reste chez 17-4e).
+- 2 LOW Edge+Auditor (IPv6 bracketé `[fd00::25]` message trompeur, `ttlMinutes` séparateur de milliers latent si TTL ≥1000) → candidats note doc 17-4f, non actionnables.
+
+Quality gate post-patch : fmt + clippy -D verts, mail 8/8 (dont 3 nouveaux), config 71/71. Trend >LOW : **7 → 1 → 3** → Pass 4 (Sonnet) requise.

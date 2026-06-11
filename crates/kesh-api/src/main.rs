@@ -240,6 +240,15 @@ async fn main() {
                     config.smtp_port,
                     config.smtp_tls
                 );
+                // Review 17-4b Pass 3 — avec TLS désactivé, l'AUTH SMTP
+                // (mot de passe) ET le token de reset transitent EN CLAIR.
+                if !config.smtp_tls {
+                    tracing::warn!(
+                        "KESH_SMTP_TLS=false — l'authentification SMTP (mot de passe) et les \
+                         liens de reset transiteront EN CLAIR sur le réseau. Réservé à un LAN \
+                         strictement isolé ; ne JAMAIS utiliser vers un relay Internet."
+                    );
+                }
                 Arc::new(m)
             }
             Err(detail) => {
