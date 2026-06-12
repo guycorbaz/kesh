@@ -1,6 +1,6 @@
 # Story 17.4e: Tests recovery — intégration Rust + E2E Playwright
 
-Status: review
+Status: done
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (validate CONVERGÉ 6 passes), Partie E : AC23-24. Re-validate optionnel. -->
 <!-- DÉPEND de 17-4c (endpoints DONE) + 17-4d (pages frontend DONE). Avant-dernière sous-story (reste 17-4f doc). -->
@@ -168,3 +168,11 @@ Claude Fable 5 (dev-story single-pass, 2026-06-11).
 - 9 patches appliqués (PE1-PE9, cf. Review Findings) — thème dominant : robustesse des tests eux-mêmes (anti-faux-vert : polling vs settle, révocation totale prouvée, backend-down ≠ skip ; anti-faux-rouge : propriété 404/405 vs détail d'implémentation).
 - Re-run post-patches : suite recovery 14/14 verte serial, fmt + clippy -D verts.
 - Trend >LOW : Pass 1 = 3 MEDIUM réels (patchés) → Pass 2 requise (Haiku, garde-fous grep ground-truth).
+
+### Pass 2 code-review (Haiku 4.5, 2026-06-12) — CYCLE CONVERGÉ
+
+- 3 couches Haiku, diff aplati, garde-fous anti-indexation.
+- **AA : 0 finding** — les 9 patches PE1-PE9 vérifiés appliqués un par un, mapping AC23 a-m (14 tests) + AC24 (5 scénarios) re-confirmé, gating `test_mode` intact (`lib.rs:560`).
+- **ECH : 0 >LOW** — 4 nits cosmétiques de diagnostic (messages de panic, guards théoriques), conclusion explicite « aucun path ne cause un faux vert ». Contre-vérifie indépendamment que `recoveryFeatureEnabled` throw sur backend injoignable.
+- **BH : inflation Haiku, 3 >LOW réfutés ground-truth** : « CRITICAL skip silencieux » réfuté (ECONNREFUSED → `ctx.get` throw → catch PE3 → throw infra ; un 503 porte le flag DC9 dans son corps) ; « MEDIUM MockMailer non-synchronisé » réfuté (instance par test, Vec append-only) ; « MEDIUM timeout spawn 500 ms » réfuté (le `TcpListener::bind` est await-é AVANT la boucle — port déjà bound) ; LOW 404/405 = déviation actée Pass 1.
+- **CONVERGENCE : trend >LOW Pass 1 (Sonnet) = 3 MEDIUM → Pass 2 (Haiku) = 0 réel.** Critère d'arrêt atteint → `review` → `done`.
