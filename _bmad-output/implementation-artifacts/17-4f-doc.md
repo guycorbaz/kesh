@@ -1,6 +1,6 @@
 # Story 17.4f: Documentation recovery (manuels + .env.example + CHANGELOG/README)
 
-Status: review
+Status: done
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (validate CONVERGÉ 6 passes), Partie F : AC25-28. Re-validate optionnel. -->
 <!-- DERNIÈRE sous-story de l'épopée 17-4 (a-e DONE) — sa complétion FERME l'issue #122 et l'épopée. Doc-only : la règle Test Locally First ne s'applique pas (CI no-op), MAIS le build LaTeX doit passer. -->
@@ -149,3 +149,10 @@ Claude Fable 5 (dev-story single-pass, 2026-06-12).
 - BH 2 HIGH + 2 MEDIUM + 2 LOW (1 HIGH réfuté DC6) ; **vérificateur doc-vs-code : 0 finding, 27 affirmations factuelles confrontées au code toutes EXACTES** (défauts vars, fail-fast 5 vars, TTL 30 min, rate-limit 5/15/30, masquage smtp_password, sémantique PUT, `PUT /users/:id/reset-password` lib.rs:149, anonymat routes, 14 tests) ; AA 2 LOW cosmétiques, conformité AC25-28 + AC-F5/F6 complète, PDFs commités vérifiés au stat.
 - 5 patches doc (PF1-PF5), PDF admin régénéré (user inchangé).
 - Trend >LOW : Pass 1 = 1 HIGH + 2 MEDIUM réels (patchés) → Pass 2 requise (Haiku).
+
+### Pass 2 code-review (Haiku 4.5, 2026-06-12) — CYCLE CONVERGÉ
+
+- **AA : 0 finding** — PF1-PF5 vérifiés appliqués un par un, AC25-28 + AC-F5/F6 conformes, PDFs commités vérifiés.
+- **Doc-vs-code : 0 finding** — claims re-vérifiés exacts (dont la nuance PF2 : un échec SMTP ordinaire EST loggé `auth.rs:865` ; seul le kill-pendant-envoi ne laisse pas de log — parenthèse de précision ajoutée au manuel).
+- **BH : inflation Haiku** — MEDIUM « CHANGELOG ambigu sur les endpoints anonymes » **réfuté grep** (la phrase est dans `api-external.md:229`, pas le CHANGELOG, et contient déjà la clarification demandée) ; LOW « meme/completer sans accents » dismiss (convention pré-existante listings ASCII : « declenche », « terminee ») ; MEDIUM « dépendance verrou sentinelle non documentée » dismiss (hors-sens : 17-4a est dans la même branche) ; 2 autres auto-rejetés par le reviewer lui-même. **1 micro-patch réel appliqué** : exemple Synology complété (cohérence avec Postfix), PDF régénéré.
+- **CONVERGENCE : trend >LOW Pass 1 (Sonnet) = 3 réels → Pass 2 (Haiku) = 0.** `review` → `done`. **ÉPOPÉE 17-4 COMPLÈTE 6/6 — ferme #122 (au merge de la PR umbrella).**

@@ -888,10 +888,13 @@ KESH_SMTP_PASSWORD=<mot-de-passe-du-relais>
 KESH_SMTP_FROM=kesh@mondomaine.ch
 KESH_PUBLIC_BASE_URL=https://kesh.mondomaine.ch
 
-# Synology Mail Server (NAS) -- completer de meme USER/PASSWORD/FROM/
-# PUBLIC_BASE_URL avec un compte dedie du Mail Server.
+# Synology Mail Server (NAS) -- avec un compte dedie du Mail Server.
 KESH_SMTP_HOST=nas.local
 KESH_SMTP_PORT=587
+KESH_SMTP_USER=kesh@nas.local
+KESH_SMTP_PASSWORD=<mot-de-passe-du-compte-dedie>
+KESH_SMTP_FROM=kesh@nas.local
+KESH_PUBLIC_BASE_URL=https://kesh.mondomaine.ch
 \end{lstlisting}
 
 \subsubsection{Fonctionnement et garanties}
@@ -923,7 +926,7 @@ Si votre instance envoie vers plusieurs domaines de messagerie (Gmail, Infomania
     \item \textbf{Horloges synchronisées requises} : la validité du lien (30 min) compare l'horloge de l'application à celle de MariaDB. Un décalage (NTP absent, timezone MariaDB non-UTC) raccourcit ou allonge la fenêtre — un offset d'une heure rendrait les liens inutilisables. En pratique : activez NTP sur l'hôte ; avec le \keshpath{docker-compose} fourni, les deux conteneurs partagent l'horloge de l'hôte.
     \item \textbf{Reverse proxy et limitation de débit} : la limite « 5 requêtes/15 min » est comptée \textbf{par IP source TCP}. Derrière un reverse proxy, tous les clients partagent l'IP du proxy : 5 demandes (même légitimes, d'utilisateurs différents) bloquent le recovery 30 minutes pour toute l'installation. Suivi : \href{https://github.com/guycorbaz/kesh/issues/173}{issue \#173} (support \texttt{X-Forwarded-For} opt-in).
     \item \textbf{Blocage = durée du lien} : un utilisateur qui épuise ses 5 essais à mi-parcours doit attendre 30 minutes — et son lien aura expiré entre-temps.
-    \item \textbf{Arrêt du serveur pendant l'envoi} : l'email part en tâche de fond après la réponse ; un redémarrage du conteneur à cet instant précis peut perdre l'envoi. La demande reste tracée dans l'audit (\texttt{auth.password\_reset\_requested} sans \texttt{auth.password\_reset\_completed} correspondant), mais l'échec d'envoi lui-même n'apparaît pas dans les logs. Il suffit de refaire une demande.
+    \item \textbf{Arrêt du serveur pendant l'envoi} : l'email part en tâche de fond après la réponse ; un redémarrage du conteneur à cet instant précis peut perdre l'envoi. La demande reste tracée dans l'audit (\texttt{auth.password\_reset\_requested} sans \texttt{auth.password\_reset\_completed} correspondant), mais l'échec d'envoi lui-même n'apparaît pas dans les logs (le processus s'est arrêté avant de pouvoir l'écrire — un échec SMTP \emph{ordinaire}, lui, est toujours loggé). Il suffit de refaire une demande.
 \end{itemize}
 
 \begin{keshtip}
