@@ -840,6 +840,89 @@ Pour les déploiements automatisés (CI, Test, scripts de provisioning), il rest
 Le flow self-service \keshpath{/setup} est préférable pour les déploiements interactifs — il évite la mauvaise pratique consistant à laisser un mot de passe en clair dans \keshpath{.env}.
 \end{keshtip}
 
+\subsection{Récupération de mot de passe par email (SMTP)}\label{sec:recovery-smtp}
+
+Depuis la version \textbf{v0.2}, Kesh propose un \emph{recovery self-service} : un utilisateur qui a oublié son mot de passe demande un lien de réinitialisation envoyé par email (lien valable \textbf{30 minutes}, à usage unique). La fonctionnalité est \textbf{désactivée par défaut} (opt-in) : sans configuration SMTP, le seul recours reste le break-glass administrateur (section suivante).
+
+\subsubsection{Variables de configuration}
+
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_FEATURE\_FORGOT\_PASSWORD & Active le recovery par email. & \texttt{false} \\
+    KESH\_SMTP\_HOST & Hôte du serveur SMTP. & --- \\
+    KESH\_SMTP\_PORT & Port SMTP. & \texttt{587} \\
+    KESH\_SMTP\_USER & Identifiant SMTP. & --- \\
+    KESH\_SMTP\_PASSWORD & Mot de passe SMTP (\textbf{secret} — jamais loggé). & --- \\
+    KESH\_SMTP\_FROM & Adresse expéditrice des emails. & --- \\
+    KESH\_SMTP\_TLS & STARTTLS sur la connexion SMTP. & \texttt{true} \\
+    KESH\_PUBLIC\_BASE\_URL & URL publique de l'instance, utilisée pour construire le lien de réinitialisation (\textbf{sans} slash final). & --- \\
+    \bottomrule
+\end{tabularx}
+
+\textbf{Fail-fast au démarrage} : si \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} mais que l'une des variables \texttt{KESH\_SMTP\_HOST}, \texttt{KESH\_SMTP\_USER}, \texttt{KESH\_SMTP\_PASSWORD}, \texttt{KESH\_SMTP\_FROM} ou \texttt{KESH\_PUBLIC\_BASE\_URL} est absente ou vide, le serveur \textbf{refuse de démarrer} avec un message listant les variables manquantes — plutôt qu'un recovery silencieusement cassé.
+
+\begin{keshwarning}
+\textbf{Laisser \texttt{KESH\_SMTP\_TLS=true}} (défaut). Le lien de réinitialisation contient un jeton secret : sans TLS, il transite \textbf{en clair} entre Kesh et votre serveur SMTP. Ne désactiver qu'en toute connaissance de cause (relais local de confiance).
+\end{keshwarning}
+
+\subsubsection{Exemples de providers}
+
+\begin{lstlisting}[language=bash]
+# Gmail (mot de passe d'application requis, pas le mot de passe du compte)
+KESH_SMTP_HOST=smtp.gmail.com
+KESH_SMTP_PORT=587
+KESH_SMTP_USER=mon-compte@gmail.com
+KESH_SMTP_PASSWORD=<mot-de-passe-application-16-chars>
+KESH_SMTP_FROM=mon-compte@gmail.com
+
+# Postfix local (relais LAN)
+KESH_SMTP_HOST=192.168.1.10
+KESH_SMTP_PORT=25
+KESH_SMTP_TLS=false   # uniquement si le relais est de confiance
+
+# Synology Mail Server (NAS)
+KESH_SMTP_HOST=nas.local
+KESH_SMTP_PORT=587
+\end{lstlisting}
+
+\subsubsection{Fonctionnement et garanties}
+
+\begin{itemize}
+    \item \textbf{Anti-énumération} : la page « Mot de passe oublié ? » répond toujours par le même message générique, que le compte existe ou non. Un attaquant ne peut pas tester l'existence d'un compte.
+    \item \textbf{Usage unique + expiration} : le lien expire après 30 minutes et ne fonctionne qu'une fois. Seule une empreinte du jeton est stockée en base.
+    \item \textbf{Révocation des sessions} : après réinitialisation, toutes les sessions actives du compte sont déconnectées.
+    \item \textbf{Comptes sans email} : un utilisateur sans adresse email n'est pas récupérable par ce flux (le formulaire répond quand même par le message générique). Renseignez les emails via la page \emph{Utilisateurs} — ou utilisez le break-glass (section suivante).
+    \item \textbf{Limitation de débit} : 5 requêtes de recovery par IP et par fenêtre de 15 minutes (blocage 30 minutes au-delà). Chaque demande est tracée dans le journal d'audit (\texttt{auth.password\_reset\_requested} / \texttt{auth.password\_reset\_completed}).
+\end{itemize}
+
+\subsubsection{Test après configuration (recommandé)}
+
+La CI ne peut pas vérifier la délivrabilité réelle des emails. Après avoir activé la fonctionnalité, effectuez un test manuel de bout en bout :
+
+\begin{enumerate}
+    \item Renseignez votre adresse email sur votre compte (page \emph{Utilisateurs}).
+    \item Déconnectez-vous, cliquez \emph{Mot de passe oublié ?}, saisissez votre identifiant.
+    \item Vérifiez la réception de l'email (y compris le dossier indésirables) et suivez le lien pour valider le flux complet.
+    \item En cas d'échec : les erreurs d'envoi SMTP sont visibles dans les logs serveur (\keshcommand{docker logs kesh-api}, chercher \texttt{envoi email échoué}) — elles ne sont jamais exposées côté navigateur (anti-énumération).
+\end{enumerate}
+
+Si votre instance envoie vers plusieurs domaines de messagerie (Gmail, Infomaniak, serveur d'entreprise\ldots), testez au moins un destinataire par domaine : la délivrabilité (SPF/DKIM du domaine expéditeur) varie selon le provider.
+
+\subsubsection{Limitations connues}
+
+\begin{itemize}
+    \item \textbf{Horloges synchronisées requises} : la validité du lien (30 min) compare l'horloge de l'application à celle de MariaDB. Un décalage (NTP absent, timezone MariaDB non-UTC) raccourcit ou allonge la fenêtre — un offset d'une heure rendrait les liens inutilisables. En pratique : activez NTP sur l'hôte ; avec le \keshpath{docker-compose} fourni, les deux conteneurs partagent l'horloge de l'hôte.
+    \item \textbf{Reverse proxy et limitation de débit} : la limite « 5 requêtes/15 min » est comptée \textbf{par IP source TCP}. Derrière un reverse proxy, tous les clients partagent l'IP du proxy : 5 demandes (même légitimes, d'utilisateurs différents) bloquent le recovery 30 minutes pour toute l'installation. Suivi : \href{https://github.com/guycorbaz/kesh/issues/173}{issue \#173} (support \texttt{X-Forwarded-For} opt-in).
+    \item \textbf{Blocage = durée du lien} : un utilisateur qui épuise ses 5 essais à mi-parcours doit attendre 30 minutes — et son lien aura expiré entre-temps.
+    \item \textbf{Arrêt du serveur pendant l'envoi} : l'email part en tâche de fond après la réponse ; un redémarrage du conteneur à cet instant précis peut perdre l'envoi (sans trace). Il suffit de refaire une demande.
+\end{itemize}
+
+\begin{keshtip}
+Le recovery par email et le break-glass (section suivante) sont \textbf{complémentaires} : le premier couvre les utilisateurs au quotidien sans intervention de l'admin ; le second reste la solution de dernier recours (admin lui-même, SMTP en panne, compte sans email).
+\end{keshtip}
+
 \subsection{J'ai oublié mon mot de passe administrateur (recovery break-glass)}
 
 Depuis la version \textbf{v0.1.2}, Kesh permet de réinitialiser le mot de passe administrateur sans accès à la base de données. Le mécanisme \emph{recovery break-glass} réutilise les variables \keshpath{KESH\_ADMIN\_*} dans un double-usage : sur une instance déjà configurée (au moins un user existe), renseigner ces variables avec un mot de passe différent du hash actuel déclenche un \textbf{reset du password de l'administrateur correspondant au username configuré}.

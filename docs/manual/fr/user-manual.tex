@@ -80,11 +80,23 @@ La session reste active 15 minutes, prolongée automatiquement à chaque action 
 
 \subsection{Récupération de mot de passe}
 
-Si vous avez oublié votre mot de passe, cliquez sur \emph{Mot de passe oublié ?} sur l'écran de connexion. Vous recevrez un email contenant un lien de réinitialisation valide 1 heure.
+Si vous avez oublié votre mot de passe :
+
+\begin{enumerate}
+    \item Sur l'écran de connexion, cliquez sur \emph{Mot de passe oublié ?} (le lien n'apparaît que si votre administrateur a activé la récupération par email).
+    \item Saisissez votre nom d'utilisateur \textbf{ou} votre adresse email, puis validez. Un message de confirmation générique s'affiche dans tous les cas — par sécurité, Kesh ne révèle jamais si un compte existe ou non.
+    \item Ouvrez l'email reçu et cliquez sur le lien de réinitialisation. Le lien est valable \textbf{30 minutes} et ne fonctionne qu'\textbf{une seule fois}.
+    \item Choisissez votre nouveau mot de passe (12 caractères minimum) et confirmez-le.
+    \item Reconnectez-vous avec le nouveau mot de passe. Par sécurité, toutes vos sessions ouvertes (autres onglets, autres appareils) ont été déconnectées.
+\end{enumerate}
 
 \begin{keshwarning}
-Si vous ne recevez pas l'email dans les 5 minutes, vérifiez votre dossier spam. Si l'email n'arrive pas du tout, contactez votre administrateur système : l'envoi d'emails dépend de la configuration SMTP de l'instance.
+Si vous ne recevez pas l'email dans les 5 minutes, vérifiez votre dossier spam/indésirables. Si l'email n'arrive pas du tout : soit aucune adresse email n'est renseignée sur votre compte, soit l'envoi d'emails n'est pas configuré sur l'instance — dans les deux cas, contactez votre administrateur, qui peut réinitialiser votre mot de passe manuellement.
 \end{keshwarning}
+
+\begin{keshtip}
+Un lien expiré ou déjà utilisé affiche « lien invalide ou expiré » : cliquez sur \emph{Refaire une demande} pour recevoir un nouveau lien. Après 5 demandes en 15 minutes, patientez 30 minutes avant de réessayer. Pour changer votre mot de passe \textbf{sans} l'avoir oublié, passez par votre compte une fois connecté (cf. section \emph{Gestion de votre compte}).
+\end{keshtip}
 
 \subsection{Déconnexion}
 

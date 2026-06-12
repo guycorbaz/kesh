@@ -1,6 +1,6 @@
 # Story 17.4f: Documentation recovery (manuels + .env.example + CHANGELOG/README)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Extraite de la spec parente UMBRELLA 17-4 (validate CONVERGÉ 6 passes), Partie F : AC25-28. Re-validate optionnel. -->
 <!-- DERNIÈRE sous-story de l'épopée 17-4 (a-e DONE) — sa complétion FERME l'issue #122 et l'épopée. Doc-only : la règle Test Locally First ne s'applique pas (CI no-op), MAIS le build LaTeX doit passer. -->
@@ -54,12 +54,12 @@ so that **un déploiement puisse activer le recovery sans lire le code, que les 
 
 ## Tasks / Subtasks
 
-- [ ] **T-F1** Manuel admin : sous-section SMTP/recovery + limitations héritées + procédure test manuel + annexe vars sync. (AC: 25)
-- [ ] **T-F2** Manuel user : enrichir + **corriger TTL 1h→30min**. (AC: 26)
-- [ ] **T-F3** `.env.example` section recovery. (AC: 27)
-- [ ] **T-F4** CHANGELOG `[Non publié]` + README (Fonctionnalités + feuille de route). (AC: 28)
-- [ ] **T-F5** `docs/api-external.md` (ECH2-2 + note PAT) + `docs/testing.md` (recette feature-on). (AC: F5, F6)
-- [ ] **T-F6** Gate doc : build LaTeX des 2 manuels FR sans erreur (`make` ou xelatex direct, DF-5 pour le commit des PDFs) ; relecture des renvois croisés ; commit `closes #122`.
+- [x] **T-F1** Manuel admin : sous-section SMTP/recovery + limitations héritées + procédure test manuel + annexe vars sync. (AC: 25)
+- [x] **T-F2** Manuel user : enrichir + **corriger TTL 1h→30min**. (AC: 26)
+- [x] **T-F3** `.env.example` section recovery. (AC: 27)
+- [x] **T-F4** CHANGELOG `[Non publié]` + README (Fonctionnalités + feuille de route). (AC: 28)
+- [x] **T-F5** `docs/api-external.md` (ECH2-2 + note PAT) + `docs/testing.md` (recette feature-on). (AC: F5, F6)
+- [x] **T-F6** Gate doc : build LaTeX des 2 manuels FR sans erreur (`make` ou xelatex direct, DF-5 pour le commit des PDFs) ; relecture des renvois croisés ; commit `closes #122`.
 
 ## Dev Notes
 
@@ -95,10 +95,38 @@ so that **un déploiement puisse activer le recovery sans lire le code, que les 
 
 ### Agent Model Used
 
-(à remplir au dev-story)
+Claude Fable 5 (dev-story single-pass, 2026-06-12).
 
 ### Debug Log References
 
 ### Completion Notes List
 
+- **DF-5 tranché ground-truth** : `git ls-files 'docs/manual/**/*.pdf'` liste les 3 PDFs → versionnés (CLAUDE.md/PR #102 avait raison, l'exploration s'était trompée) → régénérés via `make admin user` (xelatex, 0 erreur) et commités.
+- **T-F1** : sous-section `\label{sec:recovery-smtp}` insérée dans §Configuration AVANT le break-glass — tableau 8 vars (format tabularx du fichier), fail-fast, warning TLS, 3 exemples providers, garanties (anti-énum/usage unique/révocation/audit), procédure de test manuel multi-providers (dette AC24), 4 limitations héritées (D3 NTP/UTC avec note docker-compose horloge partagée, L-C1 #173, L-C2, L-C3), keshtip complémentarité break-glass. Annexe §15 = simple renvoi `\ref{sec:env-vars}` → rien à synchroniser.
+- **T-F2** : §2.4 user réécrite — **TTL corrigé « 1 heure » → 30 minutes** (bug doc pré-existant), workflow 5 étapes, anti-énum vulgarisée, keshwarning enrichi (cas sans email), keshtip (lien expiré/rate-limit/renvoi changement de mdp).
+- **T-F4** : la feuille de route README listait déjà « recovery mot de passe » dans E17 🚧 — rien à changer (pas d'over-promise) ; bullet Fonctionnalités ajouté.
+- **T-F5** : `api-external.md` §8 bis (sémantique REMPLACEMENT du PUT, bonne pratique GET-puis-PUT-complet, note recovery ≠ PAT avec pointeur `PUT /users/:id/reset-password` admin) ; `testing.md` recette feature-on complète avec les pièges vérifiés 17-4e.
+- Doc-only : aucun code touché, CI no-op attendue ; gate = build xelatex 2 manuels OK.
+
 ### File List
+
+**Modifiés (aucun nouveau fichier) :**
+- docs/manual/fr/admin-manual.tex — sous-section « Récupération de mot de passe par email (SMTP) » (~95 lignes)
+- docs/manual/fr/admin-manual.pdf — régénéré
+- docs/manual/fr/user-manual.tex — §2.4 réécrite (TTL corrigé)
+- docs/manual/fr/user-manual.pdf — régénéré
+- .env.example — section recovery/SMTP (8 vars commentées)
+- CHANGELOG.md — entrée [Non publié]/Added #122
+- README.md — bullet Fonctionnalités
+- docs/api-external.md — §8 bis sémantique PUT (dette ECH2-2) + note recovery ≠ PAT
+- docs/testing.md — recette backend E2E feature-on (17-4e)
+- _bmad-output/implementation-artifacts/{17-4f-doc.md,sprint-status.yaml}
+
+## Change Log
+
+### Dev-story (Fable 5, 2026-06-12)
+
+- T-F1..T-F6 single-pass, doc-only (AC25-28 + AC-F5/F6). Dettes héritées soldées par documentation : ECH2-2 (PUT remplacement, api-external), D3 (NTP/UTC manuel admin), L-C1/#173, L-C2, L-C3, dette de validation AC24 (procédure test manuel).
+- Bug doc pré-existant corrigé : TTL « 1 heure » → 30 minutes (manuel user §2.4).
+- PDFs versionnés régénérés (DF-5 ground-truth). Build xelatex 0 erreur.
+- Cette story ferme #122 (le `closes` est dans le message du commit dev ; à reporter aussi dans la description de la PR umbrella pour le squash).
