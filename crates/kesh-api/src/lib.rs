@@ -14,6 +14,7 @@ pub mod errors;
 pub mod exports;
 pub mod helpers;
 pub mod logging;
+pub mod mail;
 pub mod middleware;
 pub mod routes;
 pub(crate) mod util;
@@ -43,8 +44,19 @@ pub struct AppState {
     pub pool: MySqlPool,
     pub config: Arc<Config>,
     pub rate_limiter: Arc<RateLimiter>,
+    /// Story 17-4c (DC5) — instance `RateLimiter` **dédiée** au recovery
+    /// (`forgot-password`/`reset-password`), distincte de `rate_limiter` (login).
+    /// Seuils hardcodés 5 req / 15 min / blocage 30 min (config par env var =
+    /// L5 v0.2+). Sémantique always-200 : chaque requête recovery consomme un
+    /// slot via `check_and_record` atomique (jamais `reset`), sinon un simple
+    /// check serait inerte (catch P3 Opus F1).
+    pub rate_limiter_recovery: Arc<RateLimiter>,
     pub i18n: Arc<kesh_i18n::I18nBundle>,
     pub users_exist: Arc<AtomicBool>,
+    /// Story 17-4b — couche d'envoi d'email (recovery). `NoopMailer` par défaut
+    /// (feature-off / tests), `SmtpMailer` en prod si `KESH_FEATURE_FORGOT_PASSWORD`.
+    /// Champ `pub` : les tests 17-4e le mutent (`Arc::new(MockMailer::new())`).
+    pub mailer: Arc<dyn mail::Mailer>,
 }
 
 impl AppState {
@@ -69,8 +81,27 @@ impl AppState {
             rate_limiter,
             i18n,
             users_exist: Arc::new(AtomicBool::new(true)),
+            // Story 17-4c (P4-1) — champ défauté DANS LE CORPS : signature
+            // `new_for_tests` inchangée → les ~33 call-sites de test restent
+            // intacts. Mêmes seuils recovery que la prod (`build_recovery_rate_limiter`).
+            rate_limiter_recovery: Arc::new(build_recovery_rate_limiter()),
+            // Story 17-4b (P4-1) — champ défauté DANS LE CORPS : signature
+            // `new_for_tests` inchangée → les call-sites de test restent intacts.
+            mailer: Arc::new(mail::NoopMailer),
         }
     }
+}
+
+/// Story 17-4c (DC5) — construit l'instance `RateLimiter` dédiée recovery avec
+/// les seuils hardcodés (5 req / fenêtre 15 min / blocage 30 min). Partagé entre
+/// `main.rs` (prod) et `AppState::new_for_tests` pour éviter toute divergence des
+/// constantes. Config par env var = limitation L5 (v0.2+).
+pub fn build_recovery_rate_limiter() -> RateLimiter {
+    RateLimiter::with_thresholds(
+        5,
+        std::time::Duration::from_secs(15 * 60),
+        std::time::Duration::from_secs(30 * 60),
+    )
 }
 
 /// Construit le routeur principal de l'application (routes publiques
@@ -500,8 +531,26 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Pas de `route_layer(require_auth)` — c'est précisément le but : créer
         // le 1er admin SANS auth préalable. Le handler intègre son propre
         // check rate-limit IP (cohérent /login).
-        .route("/api/v1/setup/admin", post(routes::setup::create_admin))
-        .merge(protected);
+        .route("/api/v1/setup/admin", post(routes::setup::create_admin));
+
+    // Story 17-4c (DC9/AC15-16) — recovery self-service. Les 2 endpoints publics
+    // (pré-login, hors `require_auth`) ne sont montés QUE si le feature est activé
+    // (`KESH_FEATURE_FORGOT_PASSWORD`). Désactivé → routes absentes → `404`
+    // (fallback break-glass `KESH_ADMIN_RESET`). Même pattern conditionnel que le
+    // bloc `test_mode` ci-dessous. Montés AVANT `.merge(protected)`.
+    if state.config.forgot_password_enabled {
+        main_router = main_router
+            .route(
+                "/api/v1/auth/forgot-password",
+                post(routes::auth::forgot_password),
+            )
+            .route(
+                "/api/v1/auth/reset-password",
+                post(routes::auth::reset_password),
+            );
+    }
+
+    main_router = main_router.merge(protected);
 
     // Story 6.4 : routes /api/v1/_test/* gated par test_mode (runtime branch,
     // pas Cargo feature — évite drift build CI vs prod). Le garde-fou

@@ -5,6 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { setupAdmin } from './setup.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { AlertTriangle, Clock, XCircle } from '@lucide/svelte';
 
@@ -15,6 +16,8 @@
 	let username = $state('');
 	let password = $state('');
 	let passwordConfirm = $state('');
+	// Story 17-4d (AC21/DD-5) — email de recovery, optionnel mais recommandé.
+	let email = $state('');
 	let loading = $state(false);
 	let errorMessage = $state('');
 	let errorIcon = $state<'validation' | 'rate' | 'gone' | 'server' | null>(null);
@@ -43,7 +46,11 @@
 	// 11 emojis = false-valide frontend (11×2=22 ≥ 12) puis 400 backend.
 	let passwordValid = $derived([...password].length >= MIN_PASSWORD);
 	let passwordMatch = $derived(password === passwordConfirm);
-	let formValid = $derived(usernameValid && passwordValid && passwordMatch);
+	// Story 17-4d (DD-5, durci Pass 1 PD2) : email optionnel — vide OK, sinon
+	// pré-validation client miroir du backend (`isPlausibleEmail`), qui reste
+	// autoritatif (AC5 17-4a).
+	let emailValid = $derived(email.trim() === '' || isPlausibleEmail(email.trim()));
+	let formValid = $derived(usernameValid && passwordValid && passwordMatch && emailValid);
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -54,7 +61,8 @@
 		errorIcon = null;
 
 		try {
-			await setupAdmin(username.trim(), password);
+			// Story 17-4d : email vide → `undefined` (omis du JSON, backend Option).
+			await setupAdmin(username.trim(), password, email.trim() || undefined);
 			// Sur succès : cookies HttpOnly set + authState.login broadcaste.
 			// Story v011-5 ECH2-3 : await explicite, login() est synchrone après
 			// la résolution de setupAdmin → goto sûr.
@@ -186,6 +194,33 @@
 			{#if passwordConfirm.length > 0 && !passwordMatch}
 				<span class="text-xs text-error" data-testid="setup-password-mismatch">
 					{i18nMsg('setup-password-mismatch', 'Les mots de passe ne correspondent pas.')}
+				</span>
+			{/if}
+		</div>
+
+		<!-- Story 17-4d (AC21/DD-5) — email de recovery, optionnel mais recommandé. -->
+		<div class="flex flex-col gap-1.5">
+			<label for="setup-email" class="text-sm font-medium text-text">
+				{i18nMsg('setup-email-label', 'Email (recommandé)')}
+			</label>
+			<Input
+				id="setup-email"
+				data-testid="setup-email"
+				type="email"
+				bind:value={email}
+				autocomplete="email"
+				aria-describedby="setup-email-hint"
+				aria-invalid={email.trim().length > 0 && !emailValid}
+			/>
+			<span id="setup-email-hint" class="text-xs text-muted-foreground">
+				{i18nMsg(
+					'setup-email-hint',
+					'Permet la réinitialisation du mot de passe par email en cas d’oubli.',
+				)}
+			</span>
+			{#if email.trim().length > 0 && !emailValid}
+				<span class="text-xs text-error" data-testid="setup-email-invalid">
+					{i18nMsg('setup-email-invalid', "Format d'email invalide.")}
 				</span>
 			{/if}
 		</div>

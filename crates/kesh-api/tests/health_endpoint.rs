@@ -63,13 +63,7 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
 
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
 
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n,
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
 
     // Pass 1 code review F4 : `static_dir` non-existant intentionnel — ce test n'exerce
     // que `GET /health` qui résout via le router Axum avant que le fallback `ServeDir`

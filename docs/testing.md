@@ -121,6 +121,22 @@ npm run test:e2e
 
 Le `globalSetup` Playwright (`tests/e2e/global-setup.ts`) appelle `seedTestState('with-company')` une seule fois avant tous les workers — si le backend est éteint ou `KESH_TEST_MODE=false`, il throw avec un message listant les 4 prérequis (backend up, `KESH_TEST_MODE`, `KESH_HOST` loopback, `KESH_BACKEND_URL`).
 
+**Variante recovery de mot de passe** (spec `password-recovery.spec.ts`, Story 17-4e) : la spec comporte **5 scénarios E2E Playwright** et exige un backend **feature-on** — sinon ils sont *skipped* (comportement voulu, message explicite) ; et elle **échoue** franchement si le backend est injoignable (pas de faux vert). Recette :
+
+```bash
+KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_PORT=8181 \
+  KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
+  KESH_FEATURE_FORGOT_PASSWORD=true KESH_PUBLIC_BASE_URL=http://127.0.0.1:8181 \
+  KESH_SMTP_HOST=127.0.0.1 KESH_SMTP_PORT=2525 KESH_SMTP_USER=e2e \
+  KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
+  DATABASE_URL="mysql://root:kesh_dev_root@127.0.0.1:3306/kesh" \
+  KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
+  cargo run -p kesh-api
+# puis : KESH_BACKEND_URL=http://127.0.0.1:8181 npm run test:e2e -- password-recovery
+```
+
+Pièges vérifiés sur pièces (17-4e) : la var est `KESH_SMTP_USER` (pas `USERNAME`) ; `KESH_ADMIN_PASSWORD` doit faire ≥ 12 caractères même en test-mode ; choisir un `KESH_PORT` libre (80 demande des privilèges, 8080 est souvent pris). Les valeurs SMTP sont **factices** : le fail-fast boot exige une config complète, mais les envois réels échouent en tâche de fond sans impact — le token de reset est **injecté** via l'endpoint test-mode `POST /api/v1/_test/password-reset-token` `{ "username": … }` → `{ "token": … }`, puis consommé en ouvrant `/reset-password?token=<valeur>` dans le navigateur (ou directement `POST /api/v1/auth/reset-password` `{ "token": …, "newPassword": … }`). Chaque `POST /_test/seed` purge aussi les rate-limiters (login + recovery) pour éviter le 429 inter-specs (budget 5 req/15 min). Côté backend Rust, les 14 tests d'intégration `password_recovery_e2e.rs` couvrent les flux complets avec `MockMailer` (aucun SMTP réel en CI).
+
 Pour surcharger l'URL backend (ex: tests contre un kesh-api distant) :
 
 ```bash

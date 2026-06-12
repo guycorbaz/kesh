@@ -165,7 +165,10 @@ impl From<Contact> for ContactResponse {
 /// Format minimal RFC 5322 simplifié : `{local}@{domain}.{tld}` sans whitespace.
 /// **Limite connue v0.1** : `user@@domain.ch` est faussement accepté (dette
 /// intentionnelle documentée dans la spec 4.1).
-fn is_valid_email_simple(s: &str) -> bool {
+///
+/// `pub(crate)` (Story 17-4a) : réutilisé par `routes/setup` et `routes/users`
+/// pour valider l'email optionnel du compte (recovery #122).
+pub(crate) fn is_valid_email_simple(s: &str) -> bool {
     let Some(at_pos) = s.find('@') else {
         return false;
     };
@@ -184,7 +187,10 @@ fn is_valid_email_simple(s: &str) -> bool {
 /// Récupère la company courante (v0.1 single-company).
 /// Normalise un `Option<String>` en retirant les whitespace et trim ;
 /// retourne `None` si vide après trim.
-fn normalize_optional(s: Option<String>) -> Option<String> {
+///
+/// `pub(crate)` (Story 17-4a) : réutilisé pour normaliser l'email optionnel
+/// du compte (vide → `None` = effaçage).
+pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
         if t.is_empty() {

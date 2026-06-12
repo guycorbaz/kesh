@@ -24,15 +24,26 @@ interface SetupAdminResponse {
  * Le backend émet les cookies HttpOnly automatiquement. Le caller doit
  * `await` cette fonction puis `goto('/onboarding')`.
  *
+ * `email` (Story 17-4d / AC21) : optionnel — utilisé par le recovery
+ * self-service 17-4c. `undefined` est omis du JSON (backend `Option<String>`
+ * `#[serde(default)]`) ; un compte sans email reste recouvrable uniquement
+ * via break-glass #121.
+ *
  * Erreurs propagées :
  * - 410 SETUP_ALREADY_COMPLETE → caller doit rediriger /login.
- * - 400 VALIDATION_ERROR → caller affiche message backend.
+ * - 400 VALIDATION_ERROR → caller affiche message backend (inclut format email).
  * - 429 RATE_LIMITED → caller affiche message setup-error-rate-limit.
  */
-export async function setupAdmin(username: string, password: string): Promise<void> {
+export async function setupAdmin(
+	username: string,
+	password: string,
+	email?: string,
+): Promise<void> {
 	const data = await apiClient.post<SetupAdminResponse>('/api/v1/setup/admin', {
 		username,
 		password,
+		// `undefined` → propriété omise par JSON.stringify (pas de `email: null`).
+		email,
 	});
 
 	const payload: LoginPayload = {

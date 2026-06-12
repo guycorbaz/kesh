@@ -268,8 +268,12 @@ mod tests {
             pool: stub_pool(),
             config: Arc::new(config),
             rate_limiter: std::sync::Arc::new(rate_limiter),
+            // Story 17-4c — littéral-exception (test_state) : limiter recovery.
+            rate_limiter_recovery: std::sync::Arc::new(crate::build_recovery_rate_limiter()),
             i18n: std::sync::Arc::new(i18n),
             users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            // Story 17-4b — littéral-exception (test_state) : mailer no-op.
+            mailer: std::sync::Arc::new(crate::mail::NoopMailer),
         }
     }
 

@@ -128,6 +128,9 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64,
                     role: Role::Admin,
                     active: true,
                     company_id,
+                    // Bootstrap par env vars : pas d'email (Story 17-4a).
+                    // L'admin pourra le renseigner via /users ou re-setup.
+                    email: None,
                 },
             )
             .await;

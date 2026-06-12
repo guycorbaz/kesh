@@ -23,8 +23,10 @@ error-illegal-state = Unzulässiger Statusübergang
 
 # Validierungsfehler
 error-validation = Validierungsfehler
+error-email-invalid = Ungültiges E-Mail-Format
 error-username-empty = Der Benutzername darf nicht leer sein
 error-username-too-long = Der Benutzername darf nicht länger als { $max } Zeichen sein
+error-username-contains-at = Der Benutzername darf das Zeichen „@“ nicht enthalten
 
 # Systemfehler
 error-internal = Interner Fehler
@@ -899,6 +901,9 @@ setup-password-label = Passwort
 setup-password-min = Mindestens 12 Zeichen.
 setup-password-confirm-label = Passwort bestätigen
 setup-password-mismatch = Die Passwörter stimmen nicht überein.
+setup-email-label = E-Mail (empfohlen)
+setup-email-hint = Ermöglicht das Zurücksetzen des Passworts per E-Mail, falls Sie es vergessen.
+setup-email-invalid = Ungültiges E-Mail-Format.
 setup-submit = Administratorkonto erstellen
 setup-error-already-complete = Das Administratorkonto wurde bereits erstellt. Sie werden zur Anmeldeseite weitergeleitet.
 setup-error-rate-limit = Zu viele Versuche. Bitte versuchen Sie es in einigen Minuten erneut.
@@ -949,3 +954,36 @@ api-keys-toast-create-success = API-Schlüssel erstellt.
 api-keys-toast-copied = Schlüssel in die Zwischenablage kopiert.
 api-keys-toast-copy-failed = Kopieren nicht möglich — bitte manuell markieren und kopieren.
 api-keys-toast-revoke-success = Schlüssel widerrufen.
+
+# Story 17-4b — Passwort-Wiederherstellung per E-Mail (Backend-Rendering, DC10)
+error-smtp-send-failed = Der E-Mail-Versand ist fehlgeschlagen. Bitte versuchen Sie es in Kürze erneut.
+error-invalid-or-expired-token = Ungültiger oder abgelaufener Link zum Zurücksetzen des Passworts.
+email-password-reset-subject = Zurücksetzen Ihres Kesh-Passworts
+email-password-reset-body =
+    Sie haben das Zurücksetzen Ihres Kesh-Passworts angefordert.
+    Öffnen Sie den folgenden Link, um ein neues Passwort festzulegen (gültig für { $ttlMinutes } Minuten):
+    { $resetUrl }
+    Falls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.
+
+# Story 17-4d — Passwort-Wiederherstellung (öffentliche Frontend-Seiten)
+auth-recovery-forgot-title = Passwort vergessen
+auth-recovery-forgot-intro = Geben Sie Ihren Benutzernamen oder Ihre E-Mail-Adresse ein. Falls ein Konto übereinstimmt, erhalten Sie einen Link zum Zurücksetzen.
+auth-recovery-identifier-label = Benutzername oder E-Mail
+auth-recovery-submit = Link zum Zurücksetzen senden
+auth-recovery-success-generic = Falls ein Konto mit dieser Angabe übereinstimmt, wurde soeben eine E-Mail mit einem Link zum Zurücksetzen gesendet. Der Link ist 30 Minuten gültig.
+auth-recovery-error-rate-limit = Zu viele Versuche. Versuchen Sie es in einigen Minuten erneut.
+auth-recovery-error-network = Server nicht erreichbar. Überprüfen Sie Ihre Verbindung.
+auth-recovery-error-unavailable = Das Zurücksetzen per E-Mail ist nicht verfügbar. Wenden Sie sich an Ihren Administrator.
+auth-recovery-error-server = Serverfehler. Versuchen Sie es später erneut.
+auth-recovery-back-to-login = Zurück zur Anmeldung
+auth-recovery-reset-title = Neues Passwort
+auth-recovery-reset-intro = Wählen Sie Ihr neues Passwort.
+auth-recovery-new-password-label = Neues Passwort
+auth-recovery-password-confirm-label = Passwort bestätigen
+auth-recovery-password-min = Mindestens 12 Zeichen.
+auth-recovery-password-mismatch = Die Passwörter stimmen nicht überein.
+auth-recovery-reset-submit = Passwort zurücksetzen
+auth-recovery-reset-success = Ihr Passwort wurde zurückgesetzt. Sie können sich jetzt anmelden.
+auth-recovery-invalid-link = Dieser Link zum Zurücksetzen ist ungültig oder abgelaufen. Stellen Sie eine neue Anfrage, um einen neuen Link zu erhalten.
+auth-recovery-request-new-link = Neue Anfrage stellen
+auth-recovery-login-cta = Anmelden

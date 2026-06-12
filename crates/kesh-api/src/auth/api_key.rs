@@ -45,7 +45,10 @@ const BASE62_ALPHABET: &[u8; 62] =
 ///
 /// Traite `bytes` comme un grand entier et le divise répétitivement par 62.
 /// Implémentation inline ~15 lignes — pas de dépendance externe.
-fn base62_encode(bytes: &[u8]) -> String {
+///
+/// `pub(crate)` (Story 17-4c) : partagé avec `generate_reset_token` pour éviter
+/// la duplication de l'encodage base62 (DC3).
+pub(crate) fn base62_encode(bytes: &[u8]) -> String {
     let mut num = bytes.to_vec();
     let mut out: Vec<u8> = Vec::new();
     while num.iter().any(|&b| b != 0) {
@@ -70,7 +73,10 @@ fn base62_encode(bytes: &[u8]) -> String {
 /// les octets de tête (un buffer big-endian commençant par des `0x00` produit
 /// moins de digits). Le padding est déterministe et injectif → l'entropie et
 /// l'unicité du secret sont préservées (code-review 17-2a Pass 1).
-fn base62_fixed_width(bytes: &[u8]) -> String {
+///
+/// `pub(crate)` (Story 17-4c) : réutilisé par `generate_reset_token` (token de
+/// réinitialisation de mot de passe, même format base62 largeur fixe, DC3).
+pub(crate) fn base62_fixed_width(bytes: &[u8]) -> String {
     // L'invariant de largeur fixe ne tient que pour un secret de `PAT_ENTROPY_BYTES`
     // octets (160 bits → ≤ 27 digits base62). Un buffer plus long encoderait sur
     // plus de 27 digits et le left-pad ne tronquerait pas → invariant cassé. Garde
@@ -110,6 +116,27 @@ pub fn generate_pat() -> (String, String) {
     let token = format!("{PAT_PREFIX}{}", base62_fixed_width(&buf));
     let key_hash = sha256_hex(&token);
     (token, key_hash)
+}
+
+/// Story 17-4c (DC3) — Génère un token de réinitialisation de mot de passe.
+///
+/// Retourne `(token_clair, token_hash)` :
+/// - `token_clair` = 27 chars base62 (`0-9A-Za-z`), **sans préfixe** : un token
+///   de reset n'est PAS une clé PAT. Le préfixe `kesh_pat_` route vers
+///   `validate_pat` côté middleware ; un token reset ne doit jamais matcher ce
+///   chemin. base62 est URL-safe → aucun escaping dans le query param de l'email.
+/// - `token_hash` = `SHA-256(token_clair)` hex — seul élément persisté
+///   (`password_reset_tokens.token_hash`). Le brut ne vit que dans l'URL envoyée
+///   par email.
+///
+/// Généralise le cœur entropique de [`generate_pat`] (mêmes 160 bits `OsRng` +
+/// `base62_fixed_width`) sans dupliquer l'encodage base62 (DC3).
+pub fn generate_reset_token() -> (String, String) {
+    let mut buf = [0u8; PAT_ENTROPY_BYTES];
+    OsRng.fill_bytes(&mut buf);
+    let token = base62_fixed_width(&buf);
+    let token_hash = sha256_hex(&token);
+    (token, token_hash)
 }
 
 /// Valide un PAT et construit le `CurrentUser` correspondant (DC2/AC5).
@@ -193,6 +220,38 @@ mod tests {
         let (t1, h1) = generate_pat();
         let (t2, h2) = generate_pat();
         assert_ne!(t1, t2, "deux clés générées doivent différer");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn generate_reset_token_format_alphabet_and_hash() {
+        let (token, hash) = generate_reset_token();
+        // 27 chars base62 largeur fixe (160 bits), SANS préfixe `kesh_pat_`.
+        assert_eq!(
+            token.len(),
+            PAT_BASE62_LEN,
+            "token reset doit faire exactement {PAT_BASE62_LEN} chars (largeur fixe), got {}",
+            token.len()
+        );
+        assert!(
+            !token.starts_with(PAT_PREFIX),
+            "token reset NE DOIT PAS porter le préfixe PAT (routerait vers validate_pat)"
+        );
+        assert!(
+            token.bytes().all(|b| b.is_ascii_alphanumeric()),
+            "base62 = alphanumérique uniquement (URL-safe sans escaping)"
+        );
+        // Le hash stocké est bien SHA-256(token_clair) hex (64 chars).
+        assert_eq!(hash.len(), 64);
+        assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(hash, sha256_hex(&token), "hash == sha256_hex(token brut)");
+    }
+
+    #[test]
+    fn generate_reset_token_is_unique() {
+        let (t1, h1) = generate_reset_token();
+        let (t2, h2) = generate_reset_token();
+        assert_ne!(t1, t2, "deux tokens reset générés doivent différer");
         assert_ne!(h1, h2);
     }
 

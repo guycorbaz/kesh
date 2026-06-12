@@ -50,6 +50,21 @@ pub enum ConfigError {
     /// `"true"` / `"1"` / `"false"` / `"0"`. Pattern strict identique à
     /// `KESH_TEST_MODE` pour éviter ambiguïté (`"True"`, `"yes"`, `"on"`...).
     InvalidCookieSecureValue { got: String },
+    /// Story 17-4b — var booléenne stricte (`KESH_SMTP_TLS`,
+    /// `KESH_FEATURE_FORGOT_PASSWORD`) présente mais pas
+    /// `"true"`/`"1"`/`"false"`/`"0"`/vide. Pattern strict identique à
+    /// `KESH_COOKIE_SECURE` — refus explicite pour éviter qu'un `"True"`/`"yes"`
+    /// soit silencieusement interprété comme `false`.
+    InvalidBoolValue { var: String, got: String },
+    /// Story 17-4b (DC7) — `KESH_FEATURE_FORGOT_PASSWORD=true` mais la config
+    /// SMTP/recovery est incomplète : une ou plusieurs vars requises
+    /// (`KESH_SMTP_HOST`, `KESH_SMTP_USER`, `KESH_SMTP_PASSWORD`,
+    /// `KESH_SMTP_FROM`, `KESH_PUBLIC_BASE_URL`) sont absentes/vides, **ou**
+    /// `KESH_SMTP_FROM` n'est pas un email valide. Fail-fast au boot : si le
+    /// recovery par email est activé, il DOIT être pleinement configuré (sinon
+    /// l'instance démarrerait avec un recovery silencieusement cassé). `detail`
+    /// liste ce qui manque — **ne loggue jamais le mot de passe SMTP**.
+    IncompleteSmtpConfig { detail: String },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -122,6 +137,26 @@ impl std::fmt::Display for ConfigError {
                      ou 'false'/'0' (cookies sans Secure, HTTP-only LAN strict — \
                      ⚠️ cookies sniffables, ne jamais activer en prod Internet sans HTTPS).",
                     got
+                )
+            }
+            ConfigError::InvalidBoolValue { var, got } => {
+                write!(
+                    f,
+                    "{}='{}' non reconnu — valeurs acceptées : 'true'/'1' (actif), \
+                     'false'/'0' (inactif), ou vide/absente (défaut). 'True', 'yes', \
+                     'on', etc. sont refusés pour éviter les ambiguïtés.",
+                    var, got
+                )
+            }
+            ConfigError::IncompleteSmtpConfig { detail } => {
+                write!(
+                    f,
+                    "KESH_FEATURE_FORGOT_PASSWORD=true mais la configuration SMTP/recovery \
+                     est incomplète : {}. Renseigner toutes les vars (KESH_SMTP_HOST, \
+                     KESH_SMTP_USER, KESH_SMTP_PASSWORD, KESH_SMTP_FROM, KESH_PUBLIC_BASE_URL) \
+                     ou désactiver le recovery par email (KESH_FEATURE_FORGOT_PASSWORD=false ; \
+                     le fallback break-glass KESH_ADMIN_RESET reste disponible).",
+                    detail
                 )
             }
         }
@@ -230,6 +265,37 @@ pub struct Config {
     /// L'alternative recommandée est de mettre HTTPS via reverse proxy
     /// (Traefik + Let's Encrypt, Caddy, nginx, Synology DSM intégré, ...).
     pub cookie_secure: bool,
+
+    // --- Story 17-4b : recovery de mot de passe par email (SMTP) ---
+    /// `KESH_SMTP_HOST` — hôte du serveur SMTP. Optionnel (None si recovery
+    /// désactivé). **Invariant `from_env`** : `Some(s) ⟹ !s.is_empty()` (trim).
+    pub smtp_host: Option<String>,
+    /// `KESH_SMTP_PORT` — port SMTP. Défaut **587** (STARTTLS submission).
+    /// Borne [1, 65535] (= `u16`, toute valeur non-nulle est valide).
+    pub smtp_port: u16,
+    /// `KESH_SMTP_USER` — utilisateur d'authentification SMTP. Optionnel.
+    /// **Invariant `from_env`** : `Some(s) ⟹ !s.is_empty()`.
+    pub smtp_user: Option<String>,
+    /// `KESH_SMTP_PASSWORD` — secret d'authentification SMTP. **Champ privé,
+    /// masqué dans `Debug`** (calque `jwt_secret`). Accès via
+    /// [`Config::smtp_password`]. **Invariant `from_env`** : `Some ⟹ non vide`.
+    smtp_password: Option<String>,
+    /// `KESH_SMTP_FROM` — adresse expéditrice des emails. Optionnel ; si
+    /// présent, validé comme email (`is_valid_email_simple`) au boot.
+    pub smtp_from: Option<String>,
+    /// `KESH_SMTP_TLS` — STARTTLS sur la connexion SMTP. **Défaut `true`**.
+    /// Le `reset_url` contient le token brut → l'email transite en clair si
+    /// SMTP non-TLS (la doc 17-4f recommande de garder `true`).
+    pub smtp_tls: bool,
+    /// `KESH_PUBLIC_BASE_URL` — base publique de l'URL du lien de reset
+    /// (`{base}/reset-password?token=...`), consommée par 17-4c. Optionnel.
+    /// **Invariant `from_env`** : `Some(s) ⟹ !s.is_empty()` (trim).
+    pub public_base_url: Option<String>,
+    /// `KESH_FEATURE_FORGOT_PASSWORD` — active le recovery self-service par
+    /// email (DC7). **Défaut `false`**. Si `true`, la config SMTP complète est
+    /// requise au boot (fail-fast [`ConfigError::IncompleteSmtpConfig`]). Si
+    /// `false`, recovery = break-glass `KESH_ADMIN_RESET` (#121).
+    pub forgot_password_enabled: bool,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -259,6 +325,14 @@ impl std::fmt::Debug for Config {
             .field("locale", &self.locale)
             .field("test_mode", &self.test_mode)
             .field("cookie_secure", &self.cookie_secure)
+            .field("smtp_host", &self.smtp_host)
+            .field("smtp_port", &self.smtp_port)
+            .field("smtp_user", &self.smtp_user)
+            .field("smtp_password", &self.smtp_password.as_ref().map(|_| "***"))
+            .field("smtp_from", &self.smtp_from)
+            .field("smtp_tls", &self.smtp_tls)
+            .field("public_base_url", &self.public_base_url)
+            .field("forgot_password_enabled", &self.forgot_password_enabled)
             .finish()
     }
 }
@@ -270,6 +344,13 @@ impl Config {
     /// exposer `jwt_secret` directement.
     pub fn jwt_secret_bytes(&self) -> &[u8] {
         self.jwt_secret.as_bytes()
+    }
+
+    /// Accès au secret SMTP (Story 17-4b), point d'exposition unique du champ
+    /// privé `smtp_password`. Utilisé par `SmtpMailer` ; ne jamais exposer ni
+    /// logger directement. `None` si `KESH_SMTP_PASSWORD` non configuré.
+    pub fn smtp_password(&self) -> Option<&str> {
+        self.smtp_password.as_deref()
     }
 
     /// Constructeur pour les **tests d'intégration uniquement**.
@@ -377,6 +458,18 @@ impl Config {
             admin_import_max_mib: 512,
             admin_backup_dir: "/tmp".to_string(),
             cookie_secure: true,
+            // Story 17-4b : recovery email désactivé par défaut en test (les
+            // tests qui l'exercent muteront le champ ou utiliseront un Config
+            // dédié). Défauts dans le corps → signature `from_fields_for_test`
+            // inchangée, call-sites de test intacts.
+            smtp_host: None,
+            smtp_port: 587,
+            smtp_user: None,
+            smtp_password: None,
+            smtp_from: None,
+            smtp_tls: true,
+            public_base_url: None,
+            forgot_password_enabled: false,
         }
     }
 
@@ -829,6 +922,103 @@ impl Config {
             );
         }
 
+        // Story 17-4b (DC7) — Recovery de mot de passe par email (SMTP).
+        // Vars optionnelles tant que le feature est désactivé. Pattern
+        // opt-string trim+filter (cf. KESH_ADMIN_USERNAME) pour les strings.
+        let smtp_host = opt_trimmed_env("KESH_SMTP_HOST");
+        let smtp_user = opt_trimmed_env("KESH_SMTP_USER");
+        let smtp_password = opt_trimmed_env("KESH_SMTP_PASSWORD");
+        let smtp_from = opt_trimmed_env("KESH_SMTP_FROM");
+        // Review 17-4b Pass 1 (P4-4 umbrella) — strip du slash final pour éviter
+        // le double-slash `{base}//reset-password` côté 17-4c. Un base-url réduit
+        // à "/" (ou "///") devient vide → None (re-filter après strip).
+        let public_base_url = opt_trimmed_env("KESH_PUBLIC_BASE_URL")
+            .map(|s| s.trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+
+        // KESH_SMTP_PORT : int borné [1, 65535] (= u16), défaut 587 (STARTTLS
+        // submission). Pattern parse+borne+warn (cf. KESH_ADMIN_EXPORT_INMEM_MB).
+        // Review Pass 2 — trim avant parse (cohérence parse_strict_bool /
+        // opt_trimmed_env) : un espace dans `.env` ne doit pas silencieusement
+        // retomber sur le défaut 587.
+        let smtp_port: u16 = match env::var("KESH_SMTP_PORT") {
+            Ok(val) => match val.trim().parse::<u16>() {
+                Ok(p) if p >= 1 => p,
+                Ok(_) => {
+                    tracing::warn!("KESH_SMTP_PORT=0 invalide, utilisation du défaut 587");
+                    587
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_SMTP_PORT='{}' invalide, utilisation du défaut 587",
+                        val
+                    );
+                    587
+                }
+            },
+            Err(_) => 587,
+        };
+
+        // KESH_SMTP_TLS : strict bool, défaut true (STARTTLS).
+        let smtp_tls = parse_strict_bool("KESH_SMTP_TLS", true)?;
+        // KESH_FEATURE_FORGOT_PASSWORD : strict bool, défaut false (DC7).
+        let forgot_password_enabled = parse_strict_bool("KESH_FEATURE_FORGOT_PASSWORD", false)?;
+
+        // Fail-fast boot (DC7) : si le recovery par email est activé, la config
+        // SMTP/recovery DOIT être complète. Sinon l'instance démarrerait avec un
+        // recovery silencieusement cassé (oracle d'énumération côté 17-4c). Le
+        // port a un défaut (toujours présent) ; on valide les 5 autres vars + le
+        // format de smtp_from. NE LOGGUE JAMAIS le mot de passe SMTP.
+        if forgot_password_enabled {
+            let mut missing: Vec<&str> = Vec::new();
+            if smtp_host.is_none() {
+                missing.push("KESH_SMTP_HOST");
+            }
+            if smtp_user.is_none() {
+                missing.push("KESH_SMTP_USER");
+            }
+            if smtp_password.is_none() {
+                missing.push("KESH_SMTP_PASSWORD");
+            }
+            if smtp_from.is_none() {
+                missing.push("KESH_SMTP_FROM");
+            }
+            if public_base_url.is_none() {
+                missing.push("KESH_PUBLIC_BASE_URL");
+            }
+            if !missing.is_empty() {
+                return Err(ConfigError::IncompleteSmtpConfig {
+                    detail: format!("vars absentes/vides : {}", missing.join(", ")),
+                });
+            }
+            // smtp_from présent ici (sinon déjà signalé manquant) → valider format.
+            if let Some(ref from) = smtp_from {
+                if !crate::routes::contacts::is_valid_email_simple(from) {
+                    return Err(ConfigError::IncompleteSmtpConfig {
+                        detail: "KESH_SMTP_FROM n'est pas un email valide (format attendu : \
+                                 email@domaine.tld, sans display-name « Nom <email> »)"
+                            .to_string(),
+                    });
+                }
+            }
+            // Review 17-4b Pass 1 — un `:` dans le host trahit un format
+            // `host:port` copié d'une doc SMTP : le SNI rustls le refuserait
+            // seulement au premier envoi (« domain isn't a valid DNS name »),
+            // erreur cryptique non détectée au boot. Exception : IPv6 literal
+            // (contient des `:` légitimes, utilisable en SMTP plaintext LAN).
+            if let Some(ref host) = smtp_host {
+                if host.contains(':') && host.parse::<std::net::Ipv6Addr>().is_err() {
+                    return Err(ConfigError::IncompleteSmtpConfig {
+                        detail: format!(
+                            "KESH_SMTP_HOST='{}' contient un port — renseigner uniquement \
+                             le nom d'hôte (le port va dans KESH_SMTP_PORT)",
+                            host
+                        ),
+                    });
+                }
+            }
+        }
+
         Ok(Config {
             database_url,
             port,
@@ -851,6 +1041,14 @@ impl Config {
             admin_import_max_mib,
             admin_backup_dir,
             cookie_secure,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_password,
+            smtp_from,
+            smtp_tls,
+            public_base_url,
+            forgot_password_enabled,
         })
     }
 }
@@ -1031,6 +1229,55 @@ impl LogConfig {
 /// DNS / `/etc/hosts` compromise pourrait résoudre `localhost` vers une
 /// IP non-loopback. Le risque est atténué par le fait que `KESH_TEST_MODE`
 /// est gated par env-var (opt-in explicite).
+/// Story 17-4b — lit une var d'env optionnelle, trim, et filtre la chaîne vide
+/// → `None`. Pattern partagé des vars optionnelles (cf. `KESH_ADMIN_USERNAME`).
+/// **Invariant garanti** : `Some(s) ⟹ !s.is_empty()`.
+fn opt_trimmed_env(var: &str) -> Option<String> {
+    match env::var(var) {
+        Ok(v) => {
+            let trimmed = v.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }
+        // Review 17-4b Pass 1 — distinguer NotUnicode de NotPresent : une var
+        // présente mais non-UTF-8 traitée silencieusement comme absente
+        // produirait un message fail-fast trompeur (« var absente/vide »).
+        Err(env::VarError::NotUnicode(_)) => {
+            tracing::warn!(
+                "{} contient des octets non-UTF-8 — ignorée (traitée comme absente)",
+                var
+            );
+            None
+        }
+        Err(env::VarError::NotPresent) => None,
+    }
+}
+
+/// Story 17-4b — parse une var booléenne **stricte** (pattern `KESH_COOKIE_SECURE`).
+/// `"true"`/`"1"` → `true` ; `"false"`/`"0"` → `false` ; vide/absente → `default` ;
+/// toute autre valeur → `ConfigError::InvalidBoolValue` (refus fail-fast, évite
+/// qu'un `"True"`/`"yes"` soit silencieusement interprété comme `false`).
+fn parse_strict_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
+    match env::var(var) {
+        // Review 17-4b Pass 1 — trim avant comparaison, cohérent avec
+        // `opt_trimmed_env` : un espace invisible dans un `.env` édité à la
+        // main (`KESH_SMTP_TLS=true `) ne doit pas échouer le boot.
+        Ok(raw) => match raw.trim() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            "" => Ok(default),
+            other => Err(ConfigError::InvalidBoolValue {
+                var: var.to_string(),
+                got: other.to_string(),
+            }),
+        },
+        Err(_) => Ok(default),
+    }
+}
+
 fn is_loopback_host(host: &str) -> bool {
     // RFC 1035 : hostname matching case-insensitive. Trailing dot FQDN accepté.
     let normalized = host.strip_suffix('.').unwrap_or(host);
@@ -1092,6 +1339,15 @@ pub(crate) mod test_helpers {
             admin_import_max_mib: 512,
             admin_backup_dir: "/tmp".to_string(),
             cookie_secure: true,
+            // Story 17-4b — recovery email off par défaut dans le helper test.
+            smtp_host: None,
+            smtp_port: 587,
+            smtp_user: None,
+            smtp_password: None,
+            smtp_from: None,
+            smtp_tls: true,
+            public_base_url: None,
+            forgot_password_enabled: false,
         }
     }
 }
@@ -1141,6 +1397,15 @@ mod tests {
             env::remove_var("KESH_LANG");
             // v0.1.3 hotfix Issue #136 — KESH_COOKIE_SECURE reset entre tests.
             env::remove_var("KESH_COOKIE_SECURE");
+            // Story 17-4b — vars recovery/SMTP reset entre tests.
+            env::remove_var("KESH_SMTP_HOST");
+            env::remove_var("KESH_SMTP_PORT");
+            env::remove_var("KESH_SMTP_USER");
+            env::remove_var("KESH_SMTP_PASSWORD");
+            env::remove_var("KESH_SMTP_FROM");
+            env::remove_var("KESH_SMTP_TLS");
+            env::remove_var("KESH_PUBLIC_BASE_URL");
+            env::remove_var("KESH_FEATURE_FORGOT_PASSWORD");
         }
     }
 
@@ -2132,5 +2397,273 @@ mod cookie_secure_tests {
         }
         let config = Config::from_env().expect("empty is treated as absent");
         assert!(config.cookie_secure);
+    }
+}
+
+// =============================================================================
+// Story 17-4b — KESH_SMTP_* / KESH_FEATURE_FORGOT_PASSWORD (recovery email)
+// =============================================================================
+
+#[cfg(test)]
+mod smtp_config_tests {
+    use super::tests::{env_lock, reset_env};
+    use super::*;
+    use std::env;
+
+    /// Pose les vars minimales requises pour un boot config valide (hors SMTP).
+    fn set_minimum() {
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "test-secret-32-bytes-minimum-test-secret-padding",
+            );
+            env::set_var("KESH_HOST", "127.0.0.1");
+        }
+    }
+
+    /// Pose une config SMTP complète et valide.
+    fn set_complete_smtp() {
+        unsafe {
+            env::set_var("KESH_SMTP_HOST", "smtp.example.com");
+            env::set_var("KESH_SMTP_USER", "kesh@example.com");
+            env::set_var("KESH_SMTP_PASSWORD", "s3cr3t-app-password");
+            env::set_var("KESH_SMTP_FROM", "noreply@example.com");
+            env::set_var("KESH_PUBLIC_BASE_URL", "https://kesh.example.com");
+        }
+    }
+
+    /// Feature off + SMTP absent → OK, recovery désactivé (défauts).
+    #[test]
+    fn feature_off_without_smtp_loads_ok() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        let config = Config::from_env().expect("feature off → SMTP optionnel");
+        assert!(!config.forgot_password_enabled);
+        assert!(config.smtp_host.is_none());
+        assert_eq!(config.smtp_port, 587, "défaut STARTTLS submission");
+        assert!(config.smtp_tls, "défaut true");
+    }
+
+    /// Feature on + SMTP complet → OK, champs renseignés.
+    #[test]
+    fn feature_on_with_complete_smtp_loads_ok() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::set_var("KESH_SMTP_PORT", "2525");
+        }
+        let config = Config::from_env().expect("feature on + complet → OK");
+        assert!(config.forgot_password_enabled);
+        assert_eq!(config.smtp_host.as_deref(), Some("smtp.example.com"));
+        assert_eq!(config.smtp_port, 2525);
+        assert_eq!(config.smtp_password(), Some("s3cr3t-app-password"));
+        assert_eq!(
+            config.public_base_url.as_deref(),
+            Some("https://kesh.example.com")
+        );
+    }
+
+    /// Feature on + une var manquante (PUBLIC_BASE_URL) → fail-fast.
+    #[test]
+    fn feature_on_missing_var_fails_fast() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::remove_var("KESH_PUBLIC_BASE_URL");
+        }
+        let err = Config::from_env().expect_err("var manquante → Err");
+        assert!(
+            matches!(err, ConfigError::IncompleteSmtpConfig { .. }),
+            "attendu IncompleteSmtpConfig, obtenu {err:?}"
+        );
+    }
+
+    /// Feature on + SMTP_FROM invalide → fail-fast.
+    #[test]
+    fn feature_on_invalid_from_fails_fast() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::set_var("KESH_SMTP_FROM", "pas-un-email");
+        }
+        let err = Config::from_env().expect_err("from invalide → Err");
+        assert!(
+            matches!(err, ConfigError::IncompleteSmtpConfig { .. }),
+            "attendu IncompleteSmtpConfig, obtenu {err:?}"
+        );
+    }
+
+    /// Feature flag avec valeur non-stricte → InvalidBoolValue.
+    #[test]
+    fn feature_flag_invalid_bool_fails_fast() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "yes");
+        }
+        let err = Config::from_env().expect_err("'yes' non strict → Err");
+        assert!(
+            matches!(err, ConfigError::InvalidBoolValue { .. }),
+            "attendu InvalidBoolValue, obtenu {err:?}"
+        );
+    }
+
+    /// `smtp_password` masqué dans `Debug` (jamais en clair dans les logs).
+    #[test]
+    fn smtp_password_masked_in_debug() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+        }
+        let config = Config::from_env().expect("complet → OK");
+        let dbg = format!("{config:?}");
+        assert!(
+            !dbg.contains("s3cr3t-app-password"),
+            "le mot de passe SMTP ne doit JAMAIS apparaître dans Debug"
+        );
+        // Review Pass 1 — vérifier la présence du masque lui-même, pas
+        // seulement l'absence du secret (détecte une régression du masquage).
+        assert!(dbg.contains("***"), "masque *** présent dans Debug");
+        assert!(dbg.contains("smtp_password"), "champ présent (masqué ***)");
+    }
+
+    /// SMTP_TLS strict bool : 'false' → false.
+    #[test]
+    fn smtp_tls_false_parses() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_TLS", "false");
+        }
+        let config = Config::from_env().expect("tls=false valide");
+        assert!(!config.smtp_tls);
+    }
+
+    /// Review Pass 1 — bool strict avec espaces parasites (`.env` édité à la
+    /// main) : trim avant comparaison, cohérent avec `opt_trimmed_env`.
+    #[test]
+    fn strict_bool_trims_whitespace() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_TLS", " false ");
+        }
+        let config = Config::from_env().expect("' false ' trimé → valide");
+        assert!(!config.smtp_tls);
+    }
+
+    /// Review Pass 1 (P4-4 umbrella) — trailing slash strippé de
+    /// PUBLIC_BASE_URL pour éviter `{base}//reset-password` côté 17-4c.
+    #[test]
+    fn public_base_url_trailing_slash_stripped() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_PUBLIC_BASE_URL", "https://kesh.example.com/");
+        }
+        let config = Config::from_env().expect("base url valide");
+        assert_eq!(
+            config.public_base_url.as_deref(),
+            Some("https://kesh.example.com")
+        );
+    }
+
+    /// Review Pass 1 — base url réduite à des slashes → None (pas une string
+    /// vide qui fabriquerait des reset_url relatifs).
+    #[test]
+    fn public_base_url_only_slashes_is_none() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_PUBLIC_BASE_URL", "///");
+        }
+        let config = Config::from_env().expect("hors feature, pas de fail-fast");
+        assert!(config.public_base_url.is_none());
+    }
+
+    /// Review Pass 1 — `KESH_SMTP_HOST=host:port` (copié d'une doc SMTP)
+    /// détecté au boot plutôt qu'au premier envoi (erreur SNI cryptique).
+    #[test]
+    fn feature_on_host_with_port_fails_fast() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::set_var("KESH_SMTP_HOST", "smtp.example.com:587");
+        }
+        let err = Config::from_env().expect_err("host:port → Err au boot");
+        match err {
+            ConfigError::IncompleteSmtpConfig { detail } => {
+                assert!(
+                    detail.contains("KESH_SMTP_PORT"),
+                    "message guide : {detail}"
+                );
+            }
+            other => panic!("attendu IncompleteSmtpConfig, obtenu {other:?}"),
+        }
+    }
+
+    /// Review Pass 2 — port avec espaces parasites trimé avant parse (pas de
+    /// fallback silencieux au défaut 587).
+    #[test]
+    fn smtp_port_trims_whitespace() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_PORT", " 2525 ");
+        }
+        let config = Config::from_env().expect("port trimé valide");
+        assert_eq!(config.smtp_port, 2525);
+    }
+
+    /// Review Pass 2 — port 0 hors borne → warn + défaut 587 (pas de panic).
+    #[test]
+    fn smtp_port_zero_falls_back_to_default() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_PORT", "0");
+        }
+        let config = Config::from_env().expect("port 0 → défaut");
+        assert_eq!(config.smtp_port, 587);
+    }
+
+    /// Review Pass 1 — IPv6 literal accepté comme host (SMTP plaintext LAN) :
+    /// les `:` d'une adresse IPv6 ne sont pas un port imbriqué.
+    #[test]
+    fn feature_on_ipv6_host_allowed() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        set_complete_smtp();
+        unsafe {
+            env::set_var("KESH_FEATURE_FORGOT_PASSWORD", "true");
+            env::set_var("KESH_SMTP_HOST", "fd00::25");
+        }
+        let config = Config::from_env().expect("IPv6 literal accepté");
+        assert_eq!(config.smtp_host.as_deref(), Some("fd00::25"));
     }
 }

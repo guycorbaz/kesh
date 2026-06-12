@@ -102,13 +102,8 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         )
         .expect("load test i18n"),
     );
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n: i18n.clone(),
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state =
+        AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n.clone());
 
     // Sous-routeur de test protégé : route AVANT layer (Axum 0.8 exige
     // qu'il y ait au moins une route quand on applique route_layer).
@@ -211,6 +206,7 @@ async fn create_user_in_company(
             role: Role::Comptable,
             active,
             company_id,
+            email: None,
         },
     )
     .await
@@ -954,13 +950,8 @@ async fn spawn_app_with_config(pool: MySqlPool, config: Config) -> TestApp {
         )
         .expect("load test i18n"),
     );
-    let state = AppState {
-        pool,
-        config: Arc::new(config),
-        rate_limiter: Arc::new(rate_limiter),
-        i18n: i18n.clone(),
-        users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-    };
+    let state =
+        AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n.clone());
 
     // build_router already includes login, logout, refresh (public) and
     // change_password (protected). We just add the test-only route.

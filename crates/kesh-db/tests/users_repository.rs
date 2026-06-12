@@ -30,6 +30,7 @@ fn sample_new_user(company_id: i64) -> NewUser {
         role: Role::Comptable,
         active: true,
         company_id,
+        email: None,
     }
 }
 
@@ -116,6 +117,7 @@ async fn update_role_and_active(pool: MySqlPool) {
     let changes = UserUpdate {
         role: Role::Admin,
         active: false,
+        email: None,
     };
     let updated = users::update_role_and_active(&pool, created.id, created.version, changes)
         .await
@@ -144,6 +146,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         UserUpdate {
             role: Role::Admin,
             active: true,
+            email: None,
         },
     )
     .await
@@ -157,6 +160,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         UserUpdate {
             role: Role::Consultation,
             active: true,
+            email: None,
         },
     )
     .await;
@@ -182,6 +186,7 @@ async fn update_role_no_op_returns_unchanged_entity(pool: MySqlPool) {
         UserUpdate {
             role: created.role,
             active: created.active,
+            email: None,
         },
     )
     .await
@@ -207,6 +212,7 @@ async fn update_role_partial_change_bumps_version(pool: MySqlPool) {
         UserUpdate {
             role: Role::Admin,
             active: created.active,
+            email: None,
         },
     )
     .await

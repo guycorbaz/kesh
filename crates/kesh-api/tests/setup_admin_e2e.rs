@@ -82,8 +82,12 @@ async fn spawn_app_with_config(
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        // Story 17-4c — littéral-exception (E2E setup) : limiter recovery.
+        rate_limiter_recovery: Arc::new(kesh_api::build_recovery_rate_limiter()),
         i18n,
         users_exist: users_exist.clone(),
+        // Story 17-4b — littéral-exception (users_exist variable) : mailer no-op.
+        mailer: Arc::new(kesh_api::mail::NoopMailer),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -266,6 +270,66 @@ async fn setup_admin_returns_400_on_weak_password(pool: MySqlPool) {
         .await
         .expect("count");
     assert_eq!(count, 0);
+}
+
+/// T-A5 (Story 17-4a) — Validation email : email invalide → 400.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn setup_admin_with_invalid_email_returns_400(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    seed_stub_company_only(&pool).await.expect("seed stub");
+
+    let app = spawn_app(pool.clone(), false).await;
+
+    let res = app
+        .client
+        .post(app.url("/api/v1/setup/admin"))
+        .json(&json!({
+            "username": "first-admin",
+            "password": "first-admin-password-secure-12",
+            "email": "bad",
+        }))
+        .send()
+        .await
+        .expect("POST");
+    assert_eq!(res.status(), 400);
+
+    // Aucun user créé.
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 0);
+}
+
+/// T-A5 (Story 17-4a) — Validation email : email valide → succès + email persisté.
+/// La réponse `/setup/admin` (`LoginResponse`) n'expose pas l'email, donc on
+/// l'assert directement en base.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn setup_admin_with_valid_email_succeeds(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    seed_stub_company_only(&pool).await.expect("seed stub");
+
+    let app = spawn_app(pool.clone(), false).await;
+
+    let res = app
+        .client
+        .post(app.url("/api/v1/setup/admin"))
+        .json(&json!({
+            "username": "first-admin",
+            "password": "first-admin-password-secure-12",
+            "email": "admin@example.com",
+        }))
+        .send()
+        .await
+        .expect("POST");
+    assert_eq!(res.status(), 200);
+
+    let email: Option<String> =
+        sqlx::query_scalar("SELECT email FROM users WHERE username = 'first-admin'")
+            .fetch_one(&pool)
+            .await
+            .expect("fetch email");
+    assert_eq!(email.as_deref(), Some("admin@example.com"));
 }
 
 /// AC #9 — Validation : username vide → 400 VALIDATION_ERROR.

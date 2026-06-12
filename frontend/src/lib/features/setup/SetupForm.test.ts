@@ -4,6 +4,8 @@
 // - Validation client : password < 12 chars, password mismatch, username vide.
 // - Submit désactivé tant que form invalide.
 // - Submit happy path → setupAdmin appelé avec args trimmés.
+// - Story 17-4d : champ email optionnel (vide → undefined, sans `@` → bloqué,
+//   renseigné → transmis trimé).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
@@ -95,8 +97,46 @@ describe('SetupForm validation', () => {
 		const form = container.querySelector('form') as HTMLFormElement;
 		await fireEvent.submit(form);
 
-		// setupAdmin appelé avec username trim().
+		// setupAdmin appelé avec username trim() ; email vide → undefined (omis
+		// du JSON, Story 17-4d DD-5).
 		expect(setupAdmin).toHaveBeenCalledTimes(1);
-		expect(setupAdmin).toHaveBeenCalledWith('admin', 'valid-12-chars-pw');
+		expect(setupAdmin).toHaveBeenCalledWith('admin', 'valid-12-chars-pw', undefined);
+	});
+
+	// Story 17-4d (AC21/DD-5) — champ email optionnel.
+
+	it('submit is disabled when email is non-empty without @', async () => {
+		const { getByTestId, queryByTestId } = render(SetupForm);
+		const username = getByTestId('setup-username') as HTMLInputElement;
+		const pw = getByTestId('setup-password') as HTMLInputElement;
+		const pwConfirm = getByTestId('setup-password-confirm') as HTMLInputElement;
+		const email = getByTestId('setup-email') as HTMLInputElement;
+		const submit = getByTestId('setup-submit') as HTMLButtonElement;
+
+		await fireEvent.input(username, { target: { value: 'admin' } });
+		await fireEvent.input(pw, { target: { value: 'valid-12-chars-pw' } });
+		await fireEvent.input(pwConfirm, { target: { value: 'valid-12-chars-pw' } });
+		await fireEvent.input(email, { target: { value: 'pas-un-email' } });
+
+		expect(queryByTestId('setup-email-invalid')).toBeTruthy();
+		expect(submit.disabled).toBe(true);
+	});
+
+	it('submit with email → setupAdmin receives trimmed email', async () => {
+		const { getByTestId, container } = render(SetupForm);
+		const username = getByTestId('setup-username') as HTMLInputElement;
+		const pw = getByTestId('setup-password') as HTMLInputElement;
+		const pwConfirm = getByTestId('setup-password-confirm') as HTMLInputElement;
+		const email = getByTestId('setup-email') as HTMLInputElement;
+
+		await fireEvent.input(username, { target: { value: 'admin' } });
+		await fireEvent.input(pw, { target: { value: 'valid-12-chars-pw' } });
+		await fireEvent.input(pwConfirm, { target: { value: 'valid-12-chars-pw' } });
+		await fireEvent.input(email, { target: { value: '  admin@example.ch  ' } });
+
+		const form = container.querySelector('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+
+		expect(setupAdmin).toHaveBeenCalledWith('admin', 'valid-12-chars-pw', 'admin@example.ch');
 	});
 });

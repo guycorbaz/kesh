@@ -29,6 +29,7 @@ use kesh_api::{
     build_router,
     config::{Config, LogConfig},
     logging,
+    mail::{self, Mailer},
     middleware::rate_limit::RateLimiter,
 };
 use sqlx::mysql::MySqlPoolOptions;
@@ -220,17 +221,70 @@ async fn main() {
     let bind_addr = format!("{}:{}", config.host, config.port);
 
     let rate_limiter = RateLimiter::new(&config);
+    // Story 17-4c (DC5) — instance dédiée recovery (seuils hardcodés 5/15min/30min,
+    // partagés avec les tests via `build_recovery_rate_limiter`).
+    let rate_limiter_recovery = kesh_api::build_recovery_rate_limiter();
+
+    // Story 17-4b — couche email recovery. Si le feature est activé, la config
+    // SMTP a déjà été validée fail-fast au boot (`ConfigError::IncompleteSmtpConfig`)
+    // → les vars sont présentes ; sinon `NoopMailer` (recovery = break-glass
+    // #121). Construit avant le move de `config`/`i18n`. Le transport lettre
+    // (relay STARTTLS + credentials) est construit ici une seule fois.
+    let mailer: Arc<dyn Mailer> = if config.forgot_password_enabled {
+        match mail::SmtpMailer::from_config(
+            &config,
+            i18n_bundle.clone(),
+            mail::PASSWORD_RESET_TTL_MINUTES,
+        ) {
+            Ok(m) => {
+                tracing::info!(
+                    "Recovery par email ACTIVÉ (SMTP {}:{}, TLS={})",
+                    config.smtp_host.as_deref().unwrap_or("?"),
+                    config.smtp_port,
+                    config.smtp_tls
+                );
+                // Review 17-4b Pass 3 — avec TLS désactivé, l'AUTH SMTP
+                // (mot de passe) ET le token de reset transitent EN CLAIR.
+                if !config.smtp_tls {
+                    tracing::warn!(
+                        "KESH_SMTP_TLS=false — l'authentification SMTP (mot de passe) et les \
+                         liens de reset transiteront EN CLAIR sur le réseau. Réservé à un LAN \
+                         strictement isolé ; ne JAMAIS utiliser vers un relay Internet."
+                    );
+                }
+                Arc::new(m)
+            }
+            Err(detail) => {
+                // Vars absentes = inatteignable si le fail-fast boot a fait son
+                // travail ; l'init du relay STARTTLS peut, elle, légitimement
+                // échouer ici. Même pattern exit(1) que les erreurs Config boot.
+                tracing::error!(
+                    "KESH_FEATURE_FORGOT_PASSWORD=true mais le build du mailer SMTP a échoué ({detail}) — abandon."
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        tracing::info!(
+            "Recovery par email désactivé (KESH_FEATURE_FORGOT_PASSWORD=false) — fallback break-glass KESH_ADMIN_RESET."
+        );
+        Arc::new(mail::NoopMailer)
+    };
 
     let state = AppState {
         pool,
         config: Arc::new(config),
         rate_limiter: Arc::new(rate_limiter),
+        // Story 17-4c (DC5) — limiter recovery dédié.
+        rate_limiter_recovery: Arc::new(rate_limiter_recovery),
         i18n: i18n_bundle,
         // Story v011-5 — cache mémoire `users_exist` init avec la valeur réelle
         // DB post-bootstrap. Le middleware 423 Locked lit ce flag lock-free
         // (`Ordering::Acquire`) ; setup-admin.create_admin le bascule à `true`
         // après INSERT réussi (`Ordering::Release`, paire happens-before).
         users_exist: Arc::new(std::sync::atomic::AtomicBool::new(user_count > 0)),
+        // Story 17-4b — mailer recovery (SmtpMailer ou NoopMailer selon feature).
+        mailer,
     };
 
     let app = build_router(state, static_dir);

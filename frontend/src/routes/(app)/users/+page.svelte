@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
+	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { toast } from 'svelte-sonner';
 	import { UserPlus, Pencil, KeyRound, UserX } from '@lucide/svelte';
@@ -26,6 +27,8 @@
 	let createPassword = $state('');
 	let createConfirm = $state('');
 	let createRole = $state<Role>('Comptable');
+	// Story 17-4d (AC21) — email de recovery, optionnel.
+	let createEmail = $state('');
 	let createSubmitting = $state(false);
 	let createError = $state('');
 
@@ -34,6 +37,9 @@
 	let editUser = $state<UserResponse | null>(null);
 	let editRole = $state<Role>('Comptable');
 	let editActive = $state(true);
+	// Story 17-4d (DD-4, ferme ECH2-2) — pré-rempli depuis user.email ; le PUT
+	// envoie TOUJOURS ce champ (sémantique remplacement backend : absent = effacé).
+	let editEmail = $state('');
 	let editSubmitting = $state(false);
 
 	// Disable dialog
@@ -89,6 +95,7 @@
 		createPassword = '';
 		createConfirm = '';
 		createRole = 'Comptable';
+		createEmail = '';
 		createError = '';
 		createOpen = true;
 	}
@@ -97,6 +104,9 @@
 		if (!createUsername.trim()) return 'Le nom d\'utilisateur est requis.';
 		if (createPassword.length < MIN_PASSWORD_LENGTH) return `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.`;
 		if (createPassword !== createConfirm) return 'Les mots de passe ne correspondent pas.';
+		// Story 17-4d (DD-5, durci Pass 1 PD2) : email optionnel — vide OK,
+		// sinon pré-validation miroir du backend (autoritatif).
+		if (createEmail.trim() && !isPlausibleEmail(createEmail.trim())) return 'Format d\'email invalide.';
 		return '';
 	});
 
@@ -112,6 +122,9 @@
 				username: createUsername.trim(),
 				password: createPassword,
 				role: createRole,
+				// Story 17-4d (AC21) : vide → null (backend Option<String>, un
+				// string vide serait rejeté 400 par la validation format).
+				email: createEmail.trim() || null,
 			});
 			toast.success(`Utilisateur « ${createUsername.trim()} » créé.`);
 			createOpen = false;
@@ -136,17 +149,29 @@
 		editUser = user;
 		editRole = user.role;
 		editActive = user.active;
+		// DD-4 (ECH2-2) : pré-remplir avec l'email courant pour que le PUT le
+		// renvoie — sans ça, la sémantique remplacement du backend l'effacerait.
+		editEmail = user.email ?? '';
 		editOpen = true;
 	}
 
 	async function submitEdit() {
 		if (!editUser) return;
+		// Story 17-4d (DD-5, durci Pass 1 PD2) : pré-validation si non-vide.
+		if (editEmail.trim() && !isPlausibleEmail(editEmail.trim())) {
+			toast.error('Format d\'email invalide.');
+			return;
+		}
 		editSubmitting = true;
 		try {
 			await apiClient.put(`/api/v1/users/${editUser.id}`, {
 				role: editRole,
 				active: editActive,
 				version: editUser.version,
+				// DD-4 (ferme ECH2-2) : TOUJOURS présent — la valeur éditée, ou
+				// l'email courant inchangé, ou null si l'admin a vidé le champ
+				// délibérément (sémantique remplacement du PUT backend).
+				email: editEmail.trim() || null,
 			});
 			toast.success(`Utilisateur « ${editUser.username} » modifié.`);
 			editOpen = false;
@@ -368,6 +393,12 @@
 				<Input id="create-confirm" type="password" bind:value={createConfirm} autocomplete="new-password" aria-describedby={createError ? 'create-error' : undefined} />
 			</div>
 			<div>
+				<!-- Story 17-4d (AC21) — email de recovery, optionnel. -->
+				<label for="create-email" class="text-sm font-medium text-text">Email (optionnel)</label>
+				<Input id="create-email" data-testid="user-create-email" type="email" bind:value={createEmail} autocomplete="off" aria-describedby={createError ? 'create-error' : undefined} />
+				<p class="mt-1 text-xs text-muted-foreground">Permet la réinitialisation du mot de passe par email.</p>
+			</div>
+			<div>
 				<label for="create-role" class="text-sm font-medium text-text">Rôle</label>
 				<Select.Root type="single" bind:value={createRole}>
 					<Select.Trigger id="create-role" class="w-full mt-1">
@@ -415,6 +446,12 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
+			</div>
+			<div>
+				<!-- Story 17-4d (DD-4, ferme ECH2-2) — pré-rempli, TOUJOURS renvoyé au PUT. -->
+				<label for="edit-email" class="text-sm font-medium text-text">Email (optionnel)</label>
+				<Input id="edit-email" data-testid="user-edit-email" type="email" bind:value={editEmail} autocomplete="off" />
+				<p class="mt-1 text-xs text-muted-foreground">Permet la réinitialisation du mot de passe par email. Vider le champ supprime l'email.</p>
 			</div>
 			<div class="flex items-center gap-2">
 				<input id="edit-active" type="checkbox" bind:checked={editActive} class="h-4 w-4 rounded border-border" />

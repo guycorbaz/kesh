@@ -220,6 +220,16 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 
 ---
 
+## 8 bis. Endpoints utilisateurs — sémantique du `PUT`
+
+⚠️ **`PUT /api/v1/users/:id` a une sémantique de REMPLACEMENT, pas de fusion partielle.** Tout champ optionnel absent du corps JSON est **réinitialisé** côté serveur. En particulier le champ `email` (utilisé par la récupération de mot de passe self-service) : un `PUT` qui envoie seulement `{ "role": …, "active": …, "version": … }` **efface l'adresse email** de l'utilisateur — qui ne pourra plus réinitialiser son mot de passe par email.
+
+Bonne pratique pour un client API : lire l'utilisateur (`GET /api/v1/users`), puis renvoyer **tous les champs** dans le `PUT`, y compris `email` (la valeur courante si inchangée, ou `null` pour effacer délibérément).
+
+> **Note recovery** : les endpoints publics de récupération de mot de passe (`POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password`) ne sont **pas** des endpoints PAT — ils sont anonymes (pré-connexion). Une clé API ne peut pas déclencher de réinitialisation pour un autre utilisateur ; pour changer un mot de passe via l'API, utilisez `PUT /api/v1/users/:id/reset-password` (réservé Admin).
+
+---
+
 ## 9. Limitations connues (v0.2)
 
 | Limitation | Détail | Suivi |
