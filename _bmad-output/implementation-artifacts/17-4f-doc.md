@@ -61,6 +61,19 @@ so that **un déploiement puisse activer le recovery sans lire le code, que les 
 - [x] **T-F5** `docs/api-external.md` (ECH2-2 + note PAT) + `docs/testing.md` (recette feature-on). (AC: F5, F6)
 - [x] **T-F6** Gate doc : build LaTeX des 2 manuels FR sans erreur (`make` ou xelatex direct, DF-5 pour le commit des PDFs) ; relecture des renvois croisés ; commit `closes #122`.
 
+### Review Findings
+
+> Code review Pass 1 (Sonnet 4.6, 2026-06-12) — 3 couches (BH 2H/2M/2L ; doc-vs-code 0 finding, 27 claims vérifiés exacts ; AA 2L). Triage : 5 patch, 3 dismiss.
+
+- [x] [Review][Patch] PF1 (HIGH, BH) Exemples Postfix/Synology incomplets → fail-fast garanti au copier-coller — complétés avec USER/PASSWORD/FROM/PUBLIC_BASE_URL + note « obligatoires même sans auth du relais »
+- [x] [Review][Patch] PF2 (MEDIUM, BH) « peut perdre l'envoi (sans trace) » inexact — la demande EST tracée (`requested` sans `completed`) ; seul l'échec d'envoi n'est pas loggé. Reformulé
+- [x] [Review][Patch] PF3 (MEDIUM, BH) `.env.example` « TOUTES les vars SMTP » vague — liste explicite des 5 requises + note PORT/TLS défauts
+- [x] [Review][Patch] PF4 (LOW, BH+AA) testing.md : usage du token injecté documenté (page OU POST direct) + « 5 scénarios E2E Playwright » explicité (skip voulu)
+- [x] [Review][Patch] PF5 (LOW, harmonisation) Procédure de test admin : « votre identifiant » → « votre nom d'utilisateur ou votre email » (aligné sur le label UI)
+- [x] [Review][Dismiss] BH HIGH « username OU email vs identifiant = comportements mutuellement exclusifs » — **réfuté** : DC6 accepte les deux (label UI réel `auth-recovery-identifier-label` = « Nom d'utilisateur ou email ») ; « identifiant » était générique, harmonisé par PF5 par courtoisie
+- [x] [Review][Dismiss] BH LOW « v0.2 anticipatoire » — le nommage v0.2 est figé (roadmap README)
+- [x] [Review][Dismiss] AA LOW « annexe §15 “liste complète” incomplète » — incohérence de titre PRÉ-EXISTANTE (même traitement que les vars logs-fichier), hors-scope
+
 ## Dev Notes
 
 ### Ground-truth doc (exploration 2026-06-12, 40 lectures)
@@ -130,3 +143,9 @@ Claude Fable 5 (dev-story single-pass, 2026-06-12).
 - Bug doc pré-existant corrigé : TTL « 1 heure » → 30 minutes (manuel user §2.4).
 - PDFs versionnés régénérés (DF-5 ground-truth). Build xelatex 0 erreur.
 - Cette story ferme #122 (le `closes` est dans le message du commit dev ; à reporter aussi dans la description de la PR umbrella pour le squash).
+
+### Pass 1 code-review (Sonnet 4.6, 2026-06-12)
+
+- BH 2 HIGH + 2 MEDIUM + 2 LOW (1 HIGH réfuté DC6) ; **vérificateur doc-vs-code : 0 finding, 27 affirmations factuelles confrontées au code toutes EXACTES** (défauts vars, fail-fast 5 vars, TTL 30 min, rate-limit 5/15/30, masquage smtp_password, sémantique PUT, `PUT /users/:id/reset-password` lib.rs:149, anonymat routes, 14 tests) ; AA 2 LOW cosmétiques, conformité AC25-28 + AC-F5/F6 complète, PDFs commités vérifiés au stat.
+- 5 patches doc (PF1-PF5), PDF admin régénéré (user inchangé).
+- Trend >LOW : Pass 1 = 1 HIGH + 2 MEDIUM réels (patchés) → Pass 2 requise (Haiku).
