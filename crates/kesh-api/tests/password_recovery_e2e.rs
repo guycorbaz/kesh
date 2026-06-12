@@ -160,13 +160,18 @@ async fn spawn_app(
         .build()
         .expect("client");
 
-    // Attente active de la connectivité (pattern auth_e2e.rs).
+    // Attente active de la connectivité (pattern auth_e2e.rs) + assertion
+    // finale (Pass 1 ECH) : un serveur jamais prêt doit échouer ICI avec un
+    // message clair, pas en ECONNREFUSED opaque dans le test.
+    let mut ready = false;
     for _ in 0..50 {
         if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            ready = true;
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+    assert!(ready, "serveur de test pas prêt après 500 ms ({addr})");
 
     TestApp {
         base_url: format!("http://{}", addr),
@@ -237,7 +242,11 @@ async fn wait_for_token_count(pool: &MySqlPool, expected: i64) {
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("wait_for_token_count timeout (expected {expected})");
+    let last: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM password_reset_tokens")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(-1);
+    panic!("wait_for_token_count timeout (expected {expected}, last seen {last})");
 }
 
 /// Fenêtre de settle pour les assertions NÉGATIVES (anti-énum) : laisse à la
@@ -262,6 +271,27 @@ async fn audit_actions(pool: &MySqlPool, user_id: i64) -> Vec<kesh_db::entities:
         .expect("find audit")
 }
 
+/// Polling borné (~2 s) jusqu'à l'entrée d'audit `auth.password_reset_requested`
+/// du user, retournée pour assertions. Pass 1 BH-F3/ECH-F1 : les assertions
+/// POSITIVES sur la task détachée ne doivent JAMAIS reposer sur un `settle()`
+/// fixe (faux rouge sous charge CI) — toujours ce polling.
+async fn wait_for_requested_audit(
+    pool: &MySqlPool,
+    user_id: i64,
+) -> kesh_db::entities::AuditLogEntry {
+    for _ in 0..100 {
+        if let Some(e) = audit_actions(pool, user_id)
+            .await
+            .into_iter()
+            .find(|e| e.action == "auth.password_reset_requested")
+        {
+            return e;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("wait_for_requested_audit timeout (user {user_id})");
+}
+
 // === AC23-a : happy path complet ===
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -271,9 +301,14 @@ async fn happy_path_forgot_then_reset_revokes_and_audits(pool: MySqlPool) {
     let mock = MockMailer::new();
     let app = spawn_app(pool.clone(), recovery_config(), mock.clone(), 1000).await;
 
-    // Login AVANT le reset → un refresh token actif qui devra être révoqué.
+    // 2 logins AVANT le reset → 2 refresh tokens actifs : la révocation doit
+    // toucher TOUS les tokens, pas juste un (Pass 1 BH-F2 — avec 1 seule
+    // session, `revoked >= 1` serait trivialement vrai même si un bug n'en
+    // révoquait qu'un sur N).
     let login = app.post_login("alice", OLD_PASSWORD).await;
     assert_eq!(login.status(), 200, "login initial");
+    let login2 = app.post_login("alice", OLD_PASSWORD).await;
+    assert_eq!(login2.status(), 200, "2e session");
 
     // 1. Forgot → 200 immédiat.
     let res = app.post_forgot("alice").await;
@@ -315,7 +350,9 @@ async fn happy_path_forgot_then_reset_revokes_and_audits(pool: MySqlPool) {
     let new_login = app.post_login("alice", NEW_PASSWORD).await;
     assert_eq!(new_login.status(), 200, "nouveau mdp doit fonctionner");
 
-    // 6. Les refresh tokens émis avant le reset sont révoqués "password_change".
+    // 6. TOUTES les sessions pré-reset sont révoquées "password_change"
+    // (Pass 1 BH-F2 : 2 sessions créées en tête de test — `revoked == 2`
+    // prouve la révocation totale, pas juste « au moins une »).
     let revoked: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM refresh_tokens \
          WHERE user_id = ? AND revoked_reason = 'password_change' AND revoked_at IS NOT NULL",
@@ -324,9 +361,9 @@ async fn happy_path_forgot_then_reset_revokes_and_audits(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .expect("count revoked");
-    assert!(
-        revoked >= 1,
-        "au moins 1 refresh token révoqué, got {revoked}"
+    assert_eq!(
+        revoked, 2,
+        "les 2 sessions pré-reset doivent être révoquées 'password_change'"
     );
 
     // 7. Audit de la complétion.
@@ -425,27 +462,17 @@ async fn user_without_email_gets_audit_recoverable_false(pool: MySqlPool) {
     let res = app.post_forgot("dave").await;
     assert_eq!(res.status(), 200);
 
-    // L'audit recoverable:false EST écrit (match) — polling positif.
-    let mut found = false;
-    for _ in 0..100 {
-        let entries = audit_actions(&pool, user.id).await;
-        if let Some(e) = entries
-            .iter()
-            .find(|e| e.action == "auth.password_reset_requested")
-        {
-            assert_eq!(
-                e.details_json
-                    .as_ref()
-                    .and_then(|d| d.get("recoverable"))
-                    .and_then(Value::as_bool),
-                Some(false)
-            );
-            found = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    assert!(found, "audit password_reset_requested attendu");
+    // L'audit recoverable:false EST écrit (match) — polling positif (helper
+    // partagé, Pass 1 refactor DRY).
+    let requested = wait_for_requested_audit(&pool, user.id).await;
+    assert_eq!(
+        requested
+            .details_json
+            .as_ref()
+            .and_then(|d| d.get("recoverable"))
+            .and_then(Value::as_bool),
+        Some(false)
+    );
 
     settle().await;
     let tokens: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM password_reset_tokens")
@@ -507,13 +534,10 @@ async fn inactive_account_is_not_recoverable(pool: MySqlPool) {
     // Émission : match username inactif → audit recoverable:false, pas de mail.
     let res = app.post_forgot("frank").await;
     assert_eq!(res.status(), 200);
-    settle().await;
-    assert!(mock.sent().is_empty(), "pas de mail pour un compte inactif");
-    let entries = audit_actions(&pool, user.id).await;
-    let requested = entries
-        .iter()
-        .find(|e| e.action == "auth.password_reset_requested")
-        .expect("audit attendu (match username, inactif)");
+    // Polling positif sur l'audit (Pass 1 BH-F3 — pas de settle()+expect),
+    // puis settle pour l'assertion NÉGATIVE no-mail (la task early-return
+    // juste après l'audit pour un compte inactif).
+    let requested = wait_for_requested_audit(&pool, user.id).await;
     assert_eq!(
         requested
             .details_json
@@ -522,6 +546,8 @@ async fn inactive_account_is_not_recoverable(pool: MySqlPool) {
             .and_then(Value::as_bool),
         Some(false)
     );
+    settle().await;
+    assert!(mock.sent().is_empty(), "pas de mail pour un compte inactif");
 
     // Consommation : un token valide émis AVANT désactivation → 400 (re-check P3).
     let (token_clear, token_hash) = kesh_api::auth::api_key::generate_reset_token();
@@ -657,11 +683,20 @@ async fn feature_off_routes_are_not_mounted(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), feature_off_config(), MockMailer::new(), 1000).await;
 
     // Routes non montées → le POST tombe sur le fallback statique SPA
-    // (`fallback_service`, GET-only) → `405 Method Not Allowed` (et non 404 :
-    // constat empirique, cf. Change Log). La propriété testée : AUCUNE
-    // sémantique recovery (ni 200 anti-énum, ni 400, ni 429).
+    // (`fallback_service`, GET-only) → 405 empiriquement (Pass 1 BH-F4 : la
+    // valeur exacte est un détail d'implémentation de tower_http::ServeDir —
+    // on asserte la PROPRIÉTÉ : 404/405, et AUCUNE sémantique recovery
+    // (ni 200 anti-énum, ni 400 token, ni 429 rate-limit).
     let res = app.post_forgot("kim").await;
-    assert_eq!(res.status(), 405, "forgot-password non monté (feature off)");
+    assert!(
+        [404u16, 405].contains(&res.status().as_u16()),
+        "forgot-password non monté (feature off), got {}",
+        res.status()
+    );
     let res = app.post_reset("token-quelconque", NEW_PASSWORD).await;
-    assert_eq!(res.status(), 405, "reset-password non monté (feature off)");
+    assert!(
+        [404u16, 405].contains(&res.status().as_u16()),
+        "reset-password non monté (feature off), got {}",
+        res.status()
+    );
 }

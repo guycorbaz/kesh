@@ -34,11 +34,25 @@ function backendUrl(): string {
 	return (process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1').trim();
 }
 
-/** Lit le flag DC9 exposé par /health (présent même en 503). */
+/**
+ * Lit le flag DC9 exposé par /health (présent même en 503).
+ *
+ * Pass 1 BH-F1 — distingue « feature off » (skip légitime) de « backend
+ * injoignable » (erreur d'infrastructure) : un backend down doit faire
+ * ÉCHOUER la suite avec un message clair, pas la skipper en faux vert.
+ */
 async function recoveryFeatureEnabled(): Promise<boolean> {
 	const ctx = await playwrightRequest.newContext({ baseURL: backendUrl() });
 	try {
-		const res = await ctx.get('/health');
+		let res;
+		try {
+			res = await ctx.get('/health');
+		} catch (err) {
+			throw new Error(
+				`Backend injoignable sur ${backendUrl()} (/health) — démarrer le backend test-mode ` +
+					`(recette DE-6 en tête de spec). Cause: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
 		const body = (await res.json().catch(() => ({}))) as { forgotPasswordEnabled?: unknown };
 		return body.forgotPasswordEnabled === true;
 	} finally {
@@ -116,6 +130,10 @@ test.describe('Recovery mot de passe (Story 17-4e)', () => {
 	test('reset-password happy path : token injecté → nouveau mdp → login OK', async ({ page }) => {
 		test.skip(!featureOn, 'KESH_FEATURE_FORGOT_PASSWORD désactivé — cf. recette DE-6 en tête de spec');
 
+		// Note (Pass 1 ECH) : le user `changeme` du preset n'a PAS d'email — le
+		// token est injecté HORS du flux forgot-password (DE-1). Ce scénario
+		// valide la mécanique reset+login UI ; le flux email complet (forgot →
+		// mail → reset) est couvert par les tests d'intégration AC23-a.
 		const token = await injectResetToken('changeme');
 		await page.goto(`/reset-password?token=${token}`);
 

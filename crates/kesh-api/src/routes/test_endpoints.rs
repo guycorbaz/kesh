@@ -312,6 +312,11 @@ async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedRespons
     state
         .users_exist
         .store(true, std::sync::atomic::Ordering::Release);
+    // Story 17-4e Pass 1 (ECH) — même purge des limiters que seed_handler :
+    // /_test/reset est un alias de seed{fresh}, il doit avoir la même
+    // sémantique anti-flaky (DE-2).
+    state.rate_limiter.clear_all();
+    state.rate_limiter_recovery.clear_all();
     Ok(Json(SeedResponse {
         preset: "fresh",
         ok: true,

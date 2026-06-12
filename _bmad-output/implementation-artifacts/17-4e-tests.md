@@ -64,6 +64,20 @@ so that **le cœur sécurité du recovery (anti-énum DC4, usage-unique DC8, rat
 - [x] **T-E3** Spec `frontend/tests/e2e/password-recovery.spec.ts` : 5 scénarios AC24, header de recette backend (env vars DE-6), helper local `injectResetToken(username)` (POST `/_test/password-reset-token` via playwright request, pattern `seedTestState`). (AC: 24)
 - [x] **T-E4** Quality gate : fmt + build + clippy -D + `cargo test --workspace -j1 -- --test-threads=1` (serial, DB up) verts ; run E2E live local de la spec (backend feature-on) vert ; baseline E2E existante non régressée (`npm run test:e2e` complet si le temps le permet, sinon spec nouvelle + setup/auth specs). (AC: transverse)
 
+### Review Findings
+
+> Code review Pass 1 (Sonnet 4.6, 2026-06-11) — 3 couches (BH 3M/2L, ECH 1M/4L, AA 1L), 0 CRITICAL/HIGH. Convergence BH-F3 = ECH-F1. Triage : 9 patch, 0 defer, 0 dismiss (aucun faux positif).
+
+- [x] [Review][Patch] PE1 (MEDIUM, BH-F3+ECH-F1) Assertion positive d'audit après `settle()` fixe dans le test inactif → helper partagé `wait_for_requested_audit` (polling borné), réutilisé aussi par le test sans-email (DRY)
+- [x] [Review][Patch] PE2 (MEDIUM, BH-F2) `revoked >= 1` avec 1 seule session = trivialement vrai → 2 logins pré-reset + `assert_eq!(revoked, 2)` (révocation TOTALE prouvée)
+- [x] [Review][Patch] PE3 (MEDIUM, BH-F1+ECH-L4) Skip silencieux si backend down = faux vert → `recoveryFeatureEnabled` throw « backend injoignable » (erreur infra) et ne skip que sur flag réellement off
+- [x] [Review][Patch] PE4 (LOW, BH-F4) 405 hardcodé (détail tower_http::ServeDir) → assertion de propriété `[404, 405]` + jamais 200/400/429
+- [x] [Review][Patch] PE5 (LOW, BH-F5) panic `wait_for_token_count` avec la valeur observée (`last seen`)
+- [x] [Review][Patch] PE6 (LOW, ECH) `/_test/reset` purge aussi les 2 limiters (parité seed_handler, DE-2)
+- [x] [Review][Patch] PE7 (LOW, ECH) Commentaire E2E happy : `changeme` sans email, token injecté hors-flux (le flux email complet = AC23-a intégration)
+- [x] [Review][Patch] PE8 (LOW, ECH) `spawn_app` : assertion finale « serveur prêt » après la boucle de connect (diagnostic clair vs ECONNREFUSED)
+- [x] [Review][Patch] PE9 (LOW, AA) File List complété (housekeeping .gitignore/test-results/sprint-status)
+
 ## Dev Notes
 
 ### Ground-truth infra de test (exploration 2026-06-11, 47 lectures)
@@ -132,8 +146,10 @@ Claude Fable 5 (dev-story single-pass, 2026-06-11).
 
 **Modifiés :**
 - crates/kesh-api/src/middleware/rate_limit.rs — `clear_all()` + 1 test (DE-2)
-- crates/kesh-api/src/routes/test_endpoints.rs — purge limiters au seed + route `/password-reset-token` (DE-1)
+- crates/kesh-api/src/routes/test_endpoints.rs — purge limiters au seed ET au reset (PE6) + route `/password-reset-token` (DE-1)
 - frontend/tests/e2e/auth.spec.ts — fix anti-flake hydratation du test axe login (T-E4)
+- frontend/.gitignore — `test-results/` ignoré (housekeeping PE9 : artefacts Playwright commités par erreur puis retirés)
+- _bmad-output/implementation-artifacts/sprint-status.yaml — statuts story
 
 ## Change Log
 
@@ -145,3 +161,10 @@ Claude Fable 5 (dev-story single-pass, 2026-06-11).
 - Recette DE-6 corrigée sur pièces : `KESH_SMTP_USER` (pas USERNAME) + `KESH_ADMIN_PASSWORD` ≥ 12 requis.
 
 - Quality gate T-E4 final : fmt + clippy -D verts ; `cargo test --workspace -j1 -- --test-threads=1` vert (exit 0, dont les 14 nouveaux) ; suite Playwright COMPLÈTE 105 verts / 11 skipped pré-existants / 0 échec (6,6 min, backend feature-on live).
+
+### Pass 1 code-review (Sonnet 4.6, 2026-06-11/12)
+
+- 3 couches Sonnet : BH 3 MEDIUM + 2 LOW ; ECH 1 MEDIUM + 4 LOW (avec auto-réfutation d'un faux positif rate-limit par lecture du handler) ; AA 1 LOW (mapping AC23 a-m ↔ 14 tests vérifié exhaustif, AC24 ↔ 5 scénarios, gating test_mode confirmé `lib.rs:560`).
+- 9 patches appliqués (PE1-PE9, cf. Review Findings) — thème dominant : robustesse des tests eux-mêmes (anti-faux-vert : polling vs settle, révocation totale prouvée, backend-down ≠ skip ; anti-faux-rouge : propriété 404/405 vs détail d'implémentation).
+- Re-run post-patches : suite recovery 14/14 verte serial, fmt + clippy -D verts.
+- Trend >LOW : Pass 1 = 3 MEDIUM réels (patchés) → Pass 2 requise (Haiku, garde-fous grep ground-truth).
