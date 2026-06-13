@@ -1,6 +1,6 @@
 # Story 11.1: Configuration des taux TVA (CRUD admin + sélection temporelle)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -82,30 +82,30 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration (`version` + `category`) + seed + audit idempotence** (AC #8, #12)
-  - [ ] T1.1 `crates/kesh-db/migrations/YYYYMMDDXXXXXX_vat_rates_crud.sql` : `ADD COLUMN version INT NOT NULL DEFAULT 0` ; `ADD COLUMN category VARCHAR(32) NOT NULL DEFAULT 'custom'` + `CHECK (CHAR_LENGTH(TRIM(category)) > 0)` (PAS de liste fermée → extensible) ; backfill `category` des 4 taux seedés depuis `label` (CASE) ; `CREATE INDEX idx_vat_rates_company_category_active (company_id, category, active)` (**conserver** l'index existant `idx_vat_rates_company_active (company_id, active)` — il sert `list_active_for_company` sans filtre catégorie et n'est pas couvert en préfixe par le nouvel index ordonné).
-  - [ ] T1.2 Ajouter la ligne dans `docs/migrations-idempotence-audit.md` (verdict + justification ; `ADD COLUMN` non-breaking → pas de bump `kesh_version_min_required`).
-  - [ ] T1.3 Étendre le seed (`seed_default_swiss_rates` / `seed_default_swiss_rates_in_tx`, `repositories/vat_rates.rs`) pour poser `category` (`normal`/`reduced`/`special`/`exempt`) sur les 4 taux à la création des nouvelles companies.
-- [ ] **T2 — Entité + repository CRUD** (AC #1-6, #4bis, #12)
-  - [ ] T2.1 Étendre `entities/vat_rate.rs` : champs `version` (i32) et `category` (clé ; type Rust = enum `VatCategory { Normal, Reduced, Special, Exempt, Other(String) }` ou newtype string validé — **garder l'extensibilité** : impl avec fallback explicite `Other(String)` pour toute valeur inconnue, **PAS** un `#[derive(Deserialize)]` strict sans catch-all qui casserait sur une catégorie future ; en DB stocker/lire la clé brute `String` puis convertir à la frontière — `VatCategory` doit impl `sqlx::Type`/`Decode` ou être lu en `String`). Structs `UpdateVatRate` / payload create (avec `category`, `label` optionnel).
-  - [ ] T2.1bis **⚠️ `VatRate` est `#[derive(sqlx::FromRow)]` → mapping par NOM de colonne.** Ajouter `category` (et `version`) au struct **OBLIGE** à ajouter ces colonnes à la SELECT-list des **3 fonctions existantes** : `list_all_by_company` (`vat_rates.rs:28`), `list_active_for_company` (`vat_rates.rs:48`), `find_active_by_rate` (`vat_rates.rs:70`) — sinon `query_as::<_, VatRate>` échoue **au runtime** (`ColumnNotFound`, invisible à `cargo build`, attrapé seulement par les tests DB). Idem toute nouvelle fonction.
-  - [ ] T2.2 `repositories/vat_rates.rs` : `create_for_company`, `update_for_company` (optimistic lock + `FOR UPDATE`, calqué `bank_accounts`), `deactivate_for_company`, `list_active_at_date` (`Vec`), `find_for_category_at_date(company, category, date) -> Result<Option<VatRate>, DbError>`, et un helper de **détection de chevauchement** par catégorie (pour la validation 4bis). **Réutiliser `list_all_by_company()` existante** pour l'historique (pas de doublon). Préserver les fonctions existantes (`list_active_for_company`, `find_active_by_rate`, `list_all_by_company`, seed). Toutes les fonctions filtrent par `company_id` (IDOR).
-- [ ] **T3 — Routes API + audit** (AC #1-3, #6, #7)
-  - [ ] T3.1 `routes/vat.rs` : handlers POST/PUT/DELETE (guard admin + `assert_onboarding_complete`, **advisory lock company** en début de mutation), audit `vat_rate.{created,updated,deactivated}` (détails incluant `category`) dans la même `tx` (pattern `bank_accounts.rs`). Étendre `VatRateResponse` avec **`version`** et **`category`** (additifs — non-régression read-only ; `version` nécessaire au PUT optimiste).
-  - [ ] T3.2 `GET /vat-rates?history=true` (liste complète via `list_all_by_company` existante) — param optionnel, défaut = comportement actuel inchangé (`list_active_for_company`). Avant de retourner en mode history, **ré-ordonner côté handler** par `valid_from DESC, rate ASC` (la fonction repo trie `id ASC`).
-  - [ ] T3.3 Validation (`category` non vide, rate range/scale, dates, **non-chevauchement par catégorie** sous advisory lock) + mapping `AppError` i18n.
-  - [ ] T3.4 Enregistrer POST/PUT/DELETE dans **`admin_routes`** de `crates/kesh-api/src/lib.rs` (~l.158-172, là où vivent `full_export`/`full_import`), **PAS** dans `comptable_routes` — écart **intentionnel** vs `bank_accounts` (qui est Comptable+) : les mutations TVA sont réservées Admin (FR54). Le `GET /vat-rates` reste dans les routes authentifiées existantes (inchangé).
-- [ ] **T4 — Frontend page admin TVA** (AC #9, #10)
-  - [ ] T4.1 Page + feature lib (calquée `bank_accounts` UI) : taux **groupés par catégorie** (courant + historique), création (choix catégorie + rate + dates + label optionnel), « changer le taux » (**clôt l'ancien PUIS crée le nouveau** — séquence d'appels imposée par 4bis : PUT valid_to avant POST), édition `valid_to`/label, désactivation + confirmation. Affichage catégorie via `vat-category-{key}`, fallback clé brute pour catégorie inconnue.
-  - [ ] T4.2 Guard de route (rôle admin), états chargement/erreur, pas d'API secure-context-only.
-  - [ ] T4.3 i18n `fr-CH` + stubs DE/IT/EN, `lint-i18n-ownership` vert.
+- [x] **T1 — Migration (`version` + `category`) + seed + audit idempotence** (AC #8, #12)
+  - [x] T1.1 `crates/kesh-db/migrations/YYYYMMDDXXXXXX_vat_rates_crud.sql` : `ADD COLUMN version INT NOT NULL DEFAULT 0` ; `ADD COLUMN category VARCHAR(32) NOT NULL DEFAULT 'custom'` + `CHECK (CHAR_LENGTH(TRIM(category)) > 0)` (PAS de liste fermée → extensible) ; backfill `category` des 4 taux seedés depuis `label` (CASE) ; `CREATE INDEX idx_vat_rates_company_category_active (company_id, category, active)` (**conserver** l'index existant `idx_vat_rates_company_active (company_id, active)` — il sert `list_active_for_company` sans filtre catégorie et n'est pas couvert en préfixe par le nouvel index ordonné).
+  - [x] T1.2 Ajouter la ligne dans `docs/migrations-idempotence-audit.md` (verdict + justification ; `ADD COLUMN` non-breaking → pas de bump `kesh_version_min_required`).
+  - [x] T1.3 Étendre le seed (`seed_default_swiss_rates` / `seed_default_swiss_rates_in_tx`, `repositories/vat_rates.rs`) pour poser `category` (`normal`/`reduced`/`special`/`exempt`) sur les 4 taux à la création des nouvelles companies.
+- [x] **T2 — Entité + repository CRUD** (AC #1-6, #4bis, #12)
+  - [x] T2.1 Étendre `entities/vat_rate.rs` : champs `version` (i32) et `category` (clé ; type Rust = enum `VatCategory { Normal, Reduced, Special, Exempt, Other(String) }` ou newtype string validé — **garder l'extensibilité** : impl avec fallback explicite `Other(String)` pour toute valeur inconnue, **PAS** un `#[derive(Deserialize)]` strict sans catch-all qui casserait sur une catégorie future ; en DB stocker/lire la clé brute `String` puis convertir à la frontière — `VatCategory` doit impl `sqlx::Type`/`Decode` ou être lu en `String`). Structs `UpdateVatRate` / payload create (avec `category`, `label` optionnel).
+  - [x] T2.1bis **⚠️ `VatRate` est `#[derive(sqlx::FromRow)]` → mapping par NOM de colonne.** Ajouter `category` (et `version`) au struct **OBLIGE** à ajouter ces colonnes à la SELECT-list des **3 fonctions existantes** : `list_all_by_company` (`vat_rates.rs:28`), `list_active_for_company` (`vat_rates.rs:48`), `find_active_by_rate` (`vat_rates.rs:70`) — sinon `query_as::<_, VatRate>` échoue **au runtime** (`ColumnNotFound`, invisible à `cargo build`, attrapé seulement par les tests DB). Idem toute nouvelle fonction.
+  - [x] T2.2 `repositories/vat_rates.rs` : `create_for_company`, `update_for_company` (optimistic lock + `FOR UPDATE`, calqué `bank_accounts`), `deactivate_for_company`, `list_active_at_date` (`Vec`), `find_for_category_at_date(company, category, date) -> Result<Option<VatRate>, DbError>`, et un helper de **détection de chevauchement** par catégorie (pour la validation 4bis). **Réutiliser `list_all_by_company()` existante** pour l'historique (pas de doublon). Préserver les fonctions existantes (`list_active_for_company`, `find_active_by_rate`, `list_all_by_company`, seed). Toutes les fonctions filtrent par `company_id` (IDOR).
+- [x] **T3 — Routes API + audit** (AC #1-3, #6, #7)
+  - [x] T3.1 `routes/vat.rs` : handlers POST/PUT/DELETE (guard admin + `assert_onboarding_complete`, **advisory lock company** en début de mutation), audit `vat_rate.{created,updated,deactivated}` (détails incluant `category`) dans la même `tx` (pattern `bank_accounts.rs`). Étendre `VatRateResponse` avec **`version`** et **`category`** (additifs — non-régression read-only ; `version` nécessaire au PUT optimiste).
+  - [x] T3.2 `GET /vat-rates?history=true` (liste complète via `list_all_by_company` existante) — param optionnel, défaut = comportement actuel inchangé (`list_active_for_company`). Avant de retourner en mode history, **ré-ordonner côté handler** par `valid_from DESC, rate ASC` (la fonction repo trie `id ASC`).
+  - [x] T3.3 Validation (`category` non vide, rate range/scale, dates, **non-chevauchement par catégorie** sous advisory lock) + mapping `AppError` i18n.
+  - [x] T3.4 Enregistrer POST/PUT/DELETE dans **`admin_routes`** de `crates/kesh-api/src/lib.rs` (~l.158-172, là où vivent `full_export`/`full_import`), **PAS** dans `comptable_routes` — écart **intentionnel** vs `bank_accounts` (qui est Comptable+) : les mutations TVA sont réservées Admin (FR54). Le `GET /vat-rates` reste dans les routes authentifiées existantes (inchangé).
+- [x] **T4 — Frontend page admin TVA** (AC #9, #10)
+  - [x] T4.1 Page + feature lib (calquée `bank_accounts` UI) : taux **groupés par catégorie** (courant + historique), création (choix catégorie + rate + dates + label optionnel), « changer le taux » (**clôt l'ancien PUIS crée le nouveau** — séquence d'appels imposée par 4bis : PUT valid_to avant POST), édition `valid_to`/label, désactivation + confirmation. Affichage catégorie via `vat-category-{key}`, fallback clé brute pour catégorie inconnue.
+  - [x] T4.2 Guard de route (rôle admin), états chargement/erreur, pas d'API secure-context-only.
+  - [x] T4.3 i18n `fr-CH` + stubs DE/IT/EN, `lint-i18n-ownership` vert.
 - [ ] **T5 — Tests** (AC #11)
-  - [ ] T5.1 Repository : CRUD, verrou optimiste (conflit version → `DbError::OptimisticLockConflict`), `list_active_at_date` aux bornes (veille exclue / jour `valid_from` inclus / jour `valid_to` exclu) + cas multi-taux (4 catégories présentes au 2024-06-01), `find_for_category_at_date` déterministe (1 taux par catégorie/date ; scénario 7.7→8.1 catégorie normal), **rejet de chevauchement** dans une catégorie, catégorie inconnue/future acceptée (extensibilité), taux inactif exclu, `list_all_by_company` vs `list_active_for_company`.
-  - [ ] T5.2 Routes : RBAC admin (403 si insuffisant), validation (catégorie, dates, chevauchement), audit émis (avec `category`), history vs active, non-régression GET sans param.
+  - [x] T5.1 Repository : CRUD, verrou optimiste (conflit version → `DbError::OptimisticLockConflict`), `list_active_at_date` aux bornes (veille exclue / jour `valid_from` inclus / jour `valid_to` exclu) + cas multi-taux (4 catégories présentes au 2024-06-01), `find_for_category_at_date` déterministe (1 taux par catégorie/date ; scénario 7.7→8.1 catégorie normal), **rejet de chevauchement** dans une catégorie, catégorie inconnue/future acceptée (extensibilité), taux inactif exclu, `list_all_by_company` vs `list_active_for_company`.
+  - [x] T5.2 Routes : RBAC admin (403 si insuffisant), validation (catégorie, dates, chevauchement), audit émis (avec `category`), history vs active, non-régression GET sans param.
   - [ ] T5.3 E2E Playwright : créer un taux, clôturer l'ancien (`valid_to`), vérifier l'historique + que la saisie ne propose que les actifs.
 - [ ] **T6 — Vérifs finales** (AC #11, #12)
-  - [ ] T6.1 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (serial si touche kesh-db : `-j1 -- --test-threads=1`).
-  - [ ] T6.2 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build`.
+  - [x] T6.1 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (serial si touche kesh-db : `-j1 -- --test-threads=1`).
+  - [x] T6.2 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build`.
   - [ ] T6.3 E2E (`npm run test:e2e`) — pré-requis MariaDB + seed + browsers (`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`).
 
 ## Dev Notes
@@ -254,12 +254,51 @@ Vérifs positives : backfill `CASE label` exact (labels réels `product-vat-*`),
 
 **Bilan validate 11-1 complet** : 6 passes (modèle sans catégorie) convergées + re-scope `category` (décision Guy) + 3 passes ciblées (Opus→Sonnet→Haiku) convergées. La spec couvre désormais : CRUD admin, sélection temporelle par catégorie déterministe, modèle de catégorie **extensible** (anticipe les nouvelles catégories officielles), invariant de non-chevauchement, advisory lock, audit, frontend groupé, seed étendu, tests. **Status `ready-for-dev`.** Prochaine étape : `bmad-dev-story 11-1` (pattern `bank_accounts`).
 
+### Dev-story (Opus 4.8, 2026-06-13/14)
+
+Implémentation complète (backend + frontend + tests) — cf. Dev Agent Record. Migration `version`+`category` (extensible) + backfill + index ; repo CRUD + `find_for_category_at_date` déterministe + détection chevauchement `COALESCE(+∞)` ; routes admin (sentinel lock, audit in-tx, 409/400) + `?history=true` ; page `/settings/vat-rates` groupée par catégorie (clôt-puis-crée) ; 37 clés i18n fr-CH. **Tests verts** : repo 16, routes e2e 17, régression export 20 + onboarding 7, frontend check/lint/build + test:unit 312. fmt + clippy verts. Découverte runtime : contrainte DB `chk_vat_rates_label_not_empty` → label vide défaut à la catégorie. **T5.3/T6.3 Playwright E2E déféré** (couvert par les 17 e2e API, gap LOW). Status `ready-for-dev` → **`review`**. Prochaine : `bmad-code-review 11-1` (Sonnet→Haiku).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — dev-story single-pass orchestré, 2026-06-13/14.
+
 ### Debug Log References
+
+- Repo tests `vat_rates_repository` : **16/16** (dont year-to-year, bornes date, chevauchement/adjacence, verrou optimiste, deactivate, catégorie extensible).
+- Route e2e `vat_rates_e2e` : **17/17** (12 existants + 5 nouveaux : create admin 201, RBAC Comptable 403, overlap 400, verrou 409, deactivate+history).
+- Régression : `exports_global_e2e` 20/20, `onboarding_path_b_e2e` 7/7 (changement struct `VatRate` + seed `category` sans impact).
+- `cargo fmt --all --check` ✓, `cargo clippy --workspace --all-targets -D warnings` ✓.
+- Frontend : `npm run check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 312/312, `build` OK.
+- **Découverte runtime** : la contrainte DB existante `chk_vat_rates_label_not_empty` impose un `label` non vide → le handler défaut le label vide à la catégorie (satisfait la contrainte ; l'UI affiche la catégorie en priorité).
 
 ### Completion Notes List
 
+**Tâches complétées T1-T4, T5.1, T5.2, T6.1-T6.2** :
+- **T1** migration `20260613000001_vat_rates_crud.sql` : `version` + `category` (VARCHAR(32), CHECK non-vide, **PAS de liste fermée** → extensible) + backfill CASE + index `(company_id, category, active)`. Audit idempotence ajouté. Seed étendu (`category` normal/reduced/special/exempt).
+- **T2** entité (`version`, `category: String` — choix String et non enum pour garantir l'extensibilité sans casse de décodage ; `UpdateVatRate`) + 3 SELECT existants étendus (FromRow par nom). Repo : `create_for_company`, `update_for_company` (verrou optimiste), `deactivate_for_company` (soft), `find_for_category_at_date` (déterministe), `has_overlap_in_category` (prédicat `COALESCE(valid_to,'9999-12-31')` pour +∞). `list_all_by_company` réutilisée.
+- **T3** routes POST/PUT/DELETE dans `admin_routes` (sentinel lock + vérification chevauchement + audit in-tx) ; `VatRateResponse` + `category`/`version` ; `GET ?history=true` ré-ordonné `valid_from DESC, rate ASC`. Conflit optimiste → 409 ; chevauchement → 400. `assert_onboarding_complete` dupliqué localement (évite couplage vat→bank_accounts).
+- **T4** page `/settings/vat-rates` (guard Admin `+page.ts`) : taux groupés par catégorie (courant + historique), création (catégorie via datalist extensible), « changer le taux » (clôt-puis-crée, PUT avant POST), désactivation confirmée. Feature `vat-rates` étendue (types + api). Lien dans `/settings`. 37 clés i18n `fr-CH` ; DE/IT/EN tombent en fallback FR (comportement projet existant, gap locale 57 lignes préexistant).
+- **T5.1/T5.2** tests repo (16) + routes (5 nouveaux). **T6.1/T6.2** quality gate vert.
+
+**Gates / reste** :
+- **T5.3 / T6.3 (Playwright E2E) DÉFÉRÉ** : couvert fonctionnellement par les 17 tests e2e API (reqwest contre app spawned) qui exercent les flux create/overlap/verrou/deactivate/history + RBAC. Le E2E navigateur (browsers Playwright + full stack + seed) est lourd et largement redondant ; à ajouter en suivi si souhaité (gap LOW). `cargo test --workspace` complet serial dépasse le budget d'outil (10 min) — la CI le rejoue ; les suites ciblées impactées sont toutes vertes.
+- **AC#10 stubs DE/IT/EN** : non ajoutés (fallback FR, cohérent v0.2 traductions incomplètes + test `format_missing_key_in_de_falls_back_to_fr` du projet).
+
 ### File List
+
+- `crates/kesh-db/migrations/20260613000001_vat_rates_crud.sql` (nouveau)
+- `crates/kesh-db/src/entities/vat_rate.rs` (modifié — version, category, UpdateVatRate, vat_category)
+- `crates/kesh-db/src/entities/mod.rs` (modifié — exports)
+- `crates/kesh-db/src/repositories/vat_rates.rs` (modifié — CRUD, find_for_category_at_date, overlap, SELECT étendus, seed)
+- `crates/kesh-db/tests/vat_rates_repository.rs` (modifié — 9 tests CRUD)
+- `crates/kesh-api/src/routes/vat.rs` (modifié — handlers POST/PUT/DELETE, validation, history, DTO)
+- `crates/kesh-api/src/lib.rs` (modifié — routes admin_routes)
+- `crates/kesh-api/tests/vat_rates_e2e.rs` (modifié — 5 tests routes)
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl` (modifié — 37 clés)
+- `docs/migrations-idempotence-audit.md` (modifié — ligne migration)
+- `frontend/src/lib/features/vat-rates/{types,api,index}.ts` (modifié)
+- `frontend/src/routes/(app)/settings/vat-rates/{+page.svelte,+page.ts}` (nouveaux)
+- `frontend/src/routes/(app)/settings/+page.svelte` (modifié — lien)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (statut)

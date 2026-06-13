@@ -197,7 +197,7 @@ development_status:
 
   # Epic 11: TVA Suisse (ex-Epic 9, renumbered 2026-04-20)
   epic-11: in-progress
-  11-1-configuration-taux-tva: ready-for-dev  # spec créée 2026-06-13 (Opus 4.8). ENRICHISSEMENT de l'infra vat_rates existante (Story 7.2/KF-003 : table+seed+read-only déjà là) → ajoute CRUD admin + sélection temporelle find_applicable_for_date + vue historique + version optimistic lock. Pattern bank_accounts. 12 ACs. Prochaine : validate.
+  11-1-configuration-taux-tva: review  # spec créée 2026-06-13 (Opus 4.8). ENRICHISSEMENT de l'infra vat_rates existante (Story 7.2/KF-003 : table+seed+read-only déjà là) → ajoute CRUD admin + sélection temporelle find_applicable_for_date + vue historique + version optimistic lock. Pattern bank_accounts. 12 ACs. Prochaine : validate.
   11-2-calcul-tva-rapport-par-periode: backlog
   epic-11-retrospective: optional
 
