@@ -119,31 +119,35 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 
 ### Glossaire (AC #5)
 
-- [ ] **AC #5** Glossaire comptable (§Annexes l. 977) complété à ~30 termes (ajout : actif, passif, charge, produit, grand-livre, journal, lettrage, amortissement, provision, capitaux propres, créance, dette, report à nouveau, audit-trail, etc.). Tri alphabétique conservé.
+- [ ] **AC #5** Glossaire comptable (§Annexes l. 977) complété à ~30 termes (ajout : actif, passif, charge, produit, grand-livre, journal, lettrage, amortissement, provision, capitaux propres, créance, dette, report à nouveau, audit-trail, etc.). Glossaire **(ré)ordonné** alphabétiquement sur l'ensemble — le glossaire actuel n'est PAS strictement trié (`Échéance`/`Exercice`/`Écriture` l.983-985 sont dans le désordre) : corriger l'ordre en passant. Convention : accents ignorés (É=E), insensible à la casse. Pas de doublon avec les ~12 termes déjà présents.
 
 ### Rafraîchissement v0.2.0 (AC #6-7)
 
 - [ ] **AC #6** Section « Limites actuelles » (l. 1010-1019) rafraîchie v0.2.0 : retirer ce qui est livré (recovery, export/import installation, PAT), conserver ce qui reste à venir (TVA Epic 11, avoirs/pain.001 Epic 12, QES Epic 14, multi-devises v0.2, PDF/A v0.2). Marqueurs de version cohérents.
 - [ ] **AC #7** Corps du manuel vérifié et **corrigé** contre le ground-truth v0.2.0 :
-  - (a) onboarding aligné sur 8 étapes réelles ;
+  - (a) onboarding : §Onboarding (l.133) ne contredit pas le flux réel v0.2.0 (8 écrans UI) ; ne pas réécrire les 7 étapes métier du Chemin B si exactes (cf. T1.1) ;
   - (b) **corriger** la ligne 511 (§Génération du PDF avec QR Bill) qui sur-promet « fonctionnalité d'envoi direct à venir v0.2 » — cette fonctionnalité n'existe pas en v0.2.0 (vérifié : aucune route d'envoi de facture dans `crates/kesh-api/src/routes/`, le mailer ne sert qu'au recovery). Reformuler en « Vous pouvez l'envoyer manuellement par email ou l'imprimer. » ;
   - (c) **corriger** la §Avoirs et notes de crédit (l.529-534) qui décrit une navigation `Factures → Nouvel avoir` inexistante en v0.2.0 (aucune route `credit_note`) — aligner le texte principal sur la `keshnote` l.534 (avoirs = contre-passation manuelle d'écritures), supprimer la description de menu spéculative ;
   - (d) **clés API / export-import `.keshbackup`** : ces fonctions sont déjà documentées dans `admin-manual.tex` (`.keshbackup` l.1298 réservé Admin anti-PAT ; clés PAT l.1458 accessibles Comptable+Admin). Décision : ne PAS dupliquer dans user-manual. Ajouter au plus une brève mention de renvoi dans §Gestion de votre compte (l.192) pour les clés API (« Pour l'accès programmatique par clé API, voir `docs/api-external.md` et le manuel administrateur »), et rien pour `.keshbackup` (purement admin).
 
-### Intégration projet (AC #8-9)
+### Intégration projet (AC #8-10)
 
-- [ ] **AC #8** Référence aux manuels ajoutée dans `README.md`. **`README.md` n'a pas de section « Documentation »** (sections actuelles : Fonctionnalités, Pile technique, Démarrage rapide, Structure du projet, Architecture, Développement, Tests, Feuille de route, Contribuer, Licence). → Créer une nouvelle section `## Documentation` (placée après `## Structure du projet`) listant : Manuel administrateur (`docs/manual/fr/admin-manual.pdf`), Manuel utilisateur (`docs/manual/fr/user-manual.pdf`), Guide de démarrage (`docs/user-guide/fr/getting-started.md`). Mettre à jour la « Table des matières » (l.11) en conséquence.
+- [ ] **AC #8** Référence aux manuels ajoutée dans `README.md`. **`README.md` n'a pas de section « Documentation »** (sections actuelles : Fonctionnalités, Pile technique, Démarrage rapide, Structure du projet, Architecture, Développement, Tests, Feuille de route, Contribuer, Licence). → Créer une nouvelle section `## Documentation` (placée après `## Structure du projet`) listant : Manuel administrateur (`docs/manual/fr/admin-manual.pdf`), Manuel utilisateur **complet** (`docs/manual/fr/user-manual.pdf`), Guide de **démarrage rapide** (`docs/user-guide/fr/getting-started.md`) — distinguer explicitement les deux pour éviter la confusion (quick-start vs manuel de référence). Mettre à jour la « Table des matières » (l.11) en conséquence.
 - [ ] **AC #9** Variables de version LaTeX mises à jour dans `docs/manual/shared/kesh-style.sty` (l.64-66) : `\keshVersion{0.2.0}`, `\keshReleaseDate{2026-06-12}`, `\keshTargetRelease{v0.2}` (actuellement `0.1.0-dev` / `2026-05-20` / `v0.1`, affichées en header/footer/couverture l.179/186/444/464). **Ce fichier est partagé par les 3 manuels** → régénérer **et committer les 3 PDFs** (`admin-manual.pdf`, `user-manual.pdf`, `marketing-brochure.pdf`).
 - [ ] **AC #10** PDF(s) régénéré(s) via la commande de build du projet (`make -C docs/manual user` ou les 3 cibles si AC#9 touche la version partagée) sans erreur de compilation LaTeX. Un placeholder neutre `docs/manual/fr/screenshots/_placeholder.png` est committé pour que la compilation passe tant que les vraies captures manquent.
 
-### Validation Guy (AC #11)
+### Effet de bord version partagée (AC #12)
 
-- [ ] **AC #11** Guy relit le manuel enrichi et confirme qu'il reflète son expérience réelle Kesh v0.2.0. Identifie sections manquantes/ambiguës/incorrectes. Itération 1-2 passes si nécessaire. Sign-off : « ce manuel reflète mon usage réel Kesh v0.2.0 ».
+- [ ] **AC #12** Le bump `keshVersion → 0.2.0` (AC#9) estampille « 0.2.0 » sur les 3 manuels via `kesh-style.sty`. **`marketing-brochure.tex` a une feuille de route périmée** (vérifié : l.373 « Déjà livré Epic 1 à 9.5 », l.390 « En préparation (Epic 10) » alors qu'Epic 10 clos, l.398 « Backlog v0.1 (Epic 11 à 15) », l.410-414 « Vision v0.2 : clés PAT » alors que PAT **livré** v0.2.0). Régénérer ce PDF estampillé 0.2.0 publierait un artefact mensonger. → Rafraîchir a minima la feuille de route marketing (l.~373-419) : déplacer recovery + clés PAT + export/import de « Vision v0.2 » vers « Déjà livré v0.2.0 » ; corriger « En préparation (Epic 10) » ; ré-étiqueter « Backlog v0.1 » → « Backlog v0.2 ». **Alternative (au choix de Guy)** : ne pas toucher la brochure dans cette story → alors NE PAS bumper la version dans le `kesh-style.sty` partagé (overrider `\keshVersion` localement dans le préambule de `user-manual.tex` seul via `\renewcommand`), créer une issue GitHub `documentation` pour la sync marketing, et documenter la dérogation. Décision tranchée en dev-story / par Guy.
+
+### Validation Guy (AC #13)
+
+- [ ] **AC #13** Guy relit le manuel enrichi et confirme qu'il reflète son expérience réelle Kesh v0.2.0. Identifie sections manquantes/ambiguës/incorrectes. Itération 1-2 passes si nécessaire. Sign-off : « ce manuel reflète mon usage réel Kesh v0.2.0 ».
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — Gap audit + corrections du corps existant** (AC #7)
-  - [ ] T1.1 Relire §Onboarding (l. 133) et aligner sur les 8 étapes réelles si écart.
+  - [ ] T1.1 Vérifier que §Onboarding (l. 133) **ne contredit pas** le flux réel v0.2.0 (8 écrans UI : langue UI → mode UI → path A/B → type org → langue comptable → coordonnées → compte bancaire → finalisation). **NE PAS réécrire** la description actuelle des 7 étapes métier du Chemin B si elle reste exacte (elle décrit les champs saisis, pas les écrans — découpage valide et pédagogique). Corriger uniquement si un champ documenté n'existe plus ou si une étape réelle manque. Les « 8 étapes » sont un repère de vérification, pas un format d'écriture imposé.
   - [ ] T1.2 **Corriger** §Génération du PDF (l. 511) : retirer « (fonctionnalité d'envoi direct à venir v0.2) », reformuler en envoi manuel.
   - [ ] T1.3 **Corriger** §Avoirs et notes de crédit (l. 529-534) : supprimer la navigation `Factures → Nouvel avoir` inexistante, aligner sur la `keshnote` (contre-passation manuelle).
   - [ ] T1.4 Clés API : ajouter une brève mention de renvoi dans §Gestion de votre compte (l. 192) vers `docs/api-external.md` + admin-manual. Pas de doc `.keshbackup` dans user-manual (admin-only, déjà admin-manual l.1298).
@@ -151,7 +155,7 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
   - [ ] T2.1 Plan comptable : exemples par secteur (commerce, services, artisan).
   - [ ] T2.2 Facturation : exemple concret de facture PME (avec QR Bill) par secteur.
 - [ ] **T3 — Glossaire** (AC #5)
-  - [ ] T3.1 Compléter à ~30 termes, tri alphabétique.
+  - [ ] T3.1 Compléter à ~30 termes, **réordonner** tout le glossaire alphabétiquement (corriger le désordre existant l.983-985), sans doublon.
 - [ ] **T4 — Screenshots (placeholders texte-d'abord)** (AC #1-3)
   - [ ] T4.1 Ajouter `\graphicspath{{./screenshots/}}` au préambule de `user-manual.tex` ; créer `docs/manual/fr/screenshots/` + committer un `_placeholder.png` neutre (garantit la compilation).
   - [ ] T4.2 Insérer ~20-25 `figure` (`\includegraphics{_placeholder}` par défaut) + captions descriptifs + `% TODO capture`.
@@ -162,7 +166,8 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 - [ ] **T6 — Intégration + build** (AC #8, #9, #10)
   - [ ] T6.1 Référence README section Documentation.
   - [ ] T6.2 Régénérer les PDFs impactés (`make -C docs/manual user` ; + `admin` et `marketing` car version partagée bumpée en T5.2), vérifier compilation, committer les .pdf.
-- [ ] **T7 — Validation Guy** (AC #11)
+  - [ ] T6.3 (AC#12) Traiter l'effet de bord du bump version sur la brochure marketing : soit rafraîchir sa feuille de route (l.~373-419), soit déroger (override version local `user-manual.tex` seul + issue GitHub + dérogation documentée). Décision Guy/dev-story.
+- [ ] **T7 — Validation Guy** (AC #13)
   - [ ] T7.1 Guy relit le manuel enrichi (PDF).
   - [ ] T7.2 Itération 1-2 passes correction.
   - [ ] T7.3 Sign-off Guy.
@@ -265,5 +270,16 @@ ACs 10 → 11 (ajout version bump + build séparés). Prochaine étape : Pass 2 
 - **M2 MEDIUM** — AC#8 supposait une section « Documentation » dans README qui n'existe pas (vérifié `grep '^##'`) → AC#8 précise de créer la section `## Documentation` après `## Structure du projet` + MAJ Table des matières.
 
 Findings résiduels LOW seulement (glossaire « etc. » = latitude dev acceptable). Prochaine étape : Pass 3 (Opus 4.8, contexte frais) pour confirmer convergence.
+
+### Validate Pass 3 (Opus 4.8, 2026-06-13)
+
+1 HIGH, 2 MEDIUM, 2 LOW — findings de **second ordre** dans les angles morts de Sonnet/Haiku, tous vérifiés ground-truth. Tous patchés :
+- **F-OPUS-1 HIGH** — le bump version partagé (AC#9) force la régén de `marketing-brochure.pdf`, dont la feuille de route est périmée (PAT/recovery listés « Vision v0.2 » alors que livrés v0.2.0 ; « En préparation Epic 10 » clos ; « Backlog v0.1 » mal étiqueté). Estampiller 0.2.0 dessus = artefact mensonger → nouvel **AC#12** (rafraîchir roadmap marketing OU déroger avec override version local + issue), T6.3.
+- **F-OPUS-2 MEDIUM** — AC#5 « tri alphabétique conservé » conservait un tri inexistant (`Échéance`/`Exercice`/`Écriture` l.983-985 désordonnés) → AC#5/T3.1 passent à « (ré)ordonner ».
+- **F-OPUS-3 MEDIUM** — T1.1 « aligner sur 8 étapes » = travail fantôme / risque de réécriture régressive (le manuel décrit 7 étapes métier Chemin B, valides ; « 8 étapes » = flux UI, découpage différent) → T1.1 + AC#7a clarifiés « vérifier ne contredit pas, ne pas réécrire si exact ».
+- **F-OPUS-4 LOW** — getting-started.md vs user-manual dans README → distinguer « démarrage rapide » vs « manuel complet ».
+- **F-OPUS-5 LOW** — heading « Intégration projet (AC #8-9) » → « (AC #8-10) ».
+
+ACs 11 → 13 (ajout AC#12 effet de bord version + décalage validation Guy en #13). Pass 3 = NON convergé (1 HIGH + 2 MEDIUM > LOW). Prochaine étape : Pass 4 (Sonnet 4.6, contexte frais) — cycle Sonnet→Haiku→Opus→Sonnet.
 
 Status : `backlog`.
