@@ -132,7 +132,7 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 
 ### Intégration projet (AC #8-9)
 
-- [ ] **AC #8** Référence ajoutée dans `README.md` section Documentation : « Manuel utilisateur FR : `docs/manual/fr/user-manual.pdf` ».
+- [ ] **AC #8** Référence aux manuels ajoutée dans `README.md`. **`README.md` n'a pas de section « Documentation »** (sections actuelles : Fonctionnalités, Pile technique, Démarrage rapide, Structure du projet, Architecture, Développement, Tests, Feuille de route, Contribuer, Licence). → Créer une nouvelle section `## Documentation` (placée après `## Structure du projet`) listant : Manuel administrateur (`docs/manual/fr/admin-manual.pdf`), Manuel utilisateur (`docs/manual/fr/user-manual.pdf`), Guide de démarrage (`docs/user-guide/fr/getting-started.md`). Mettre à jour la « Table des matières » (l.11) en conséquence.
 - [ ] **AC #9** Variables de version LaTeX mises à jour dans `docs/manual/shared/kesh-style.sty` (l.64-66) : `\keshVersion{0.2.0}`, `\keshReleaseDate{2026-06-12}`, `\keshTargetRelease{v0.2}` (actuellement `0.1.0-dev` / `2026-05-20` / `v0.1`, affichées en header/footer/couverture l.179/186/444/464). **Ce fichier est partagé par les 3 manuels** → régénérer **et committer les 3 PDFs** (`admin-manual.pdf`, `user-manual.pdf`, `marketing-brochure.pdf`).
 - [ ] **AC #10** PDF(s) régénéré(s) via la commande de build du projet (`make -C docs/manual user` ou les 3 cibles si AC#9 touche la version partagée) sans erreur de compilation LaTeX. Un placeholder neutre `docs/manual/fr/screenshots/_placeholder.png` est committé pour que la compilation passe tant que les vraies captures manquent.
 
@@ -162,7 +162,7 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 - [ ] **T6 — Intégration + build** (AC #8, #9, #10)
   - [ ] T6.1 Référence README section Documentation.
   - [ ] T6.2 Régénérer les PDFs impactés (`make -C docs/manual user` ; + `admin` et `marketing` car version partagée bumpée en T5.2), vérifier compilation, committer les .pdf.
-- [ ] **T7 — Validation Guy** (AC #10)
+- [ ] **T7 — Validation Guy** (AC #11)
   - [ ] T7.1 Guy relit le manuel enrichi (PDF).
   - [ ] T7.2 Itération 1-2 passes correction.
   - [ ] T7.3 Sign-off Guy.
@@ -257,5 +257,13 @@ ACs réduits de 18 → 10, recentrés sur les écarts. Branche : `story/11-0-use
 - **F6 LOW** — commande build `make -C docs/manual user` (canonique) vs `latexmk` → clarifié §Test Locally First + AC#10/T6.2.
 
 ACs 10 → 11 (ajout version bump + build séparés). Prochaine étape : Pass 2 (Haiku 4.5, contexte frais, diff unique).
+
+### Validate Pass 2 (Haiku 4.5, 2026-06-13)
+
+0 CRITICAL, 0 HIGH, 2 MEDIUM, reste LOW. **Aucune hallucination** (tous les paths/lignes/ACs vérifiés grep/Read confirmés). 2 MEDIUM patchés :
+- **M1 MEDIUM** — T7 référençait « AC #10 » alors que la validation Guy est AC #11 (décalage post-Pass1) → corrigé.
+- **M2 MEDIUM** — AC#8 supposait une section « Documentation » dans README qui n'existe pas (vérifié `grep '^##'`) → AC#8 précise de créer la section `## Documentation` après `## Structure du projet` + MAJ Table des matières.
+
+Findings résiduels LOW seulement (glossaire « etc. » = latitude dev acceptable). Prochaine étape : Pass 3 (Opus 4.8, contexte frais) pour confirmer convergence.
 
 Status : `backlog`.
