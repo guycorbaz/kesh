@@ -74,7 +74,7 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
 ## Tasks / Subtasks
 
 - [ ] **T1 — Migration `version` + audit idempotence** (AC #8)
-  - [ ] T1.1 `crates/kesh-db/migrations/YYYYMMDDXXXXXX_vat_rates_version.sql` : `ALTER TABLE vat_rates ADD COLUMN version INT NOT NULL DEFAULT 0;` (+ index si pertinent pour `list_all`/`find_applicable`).
+  - [ ] T1.1 `crates/kesh-db/migrations/YYYYMMDDXXXXXX_vat_rates_version.sql` : `ALTER TABLE vat_rates ADD COLUMN version INT NOT NULL DEFAULT 0;` (+ index si pertinent pour `list_all_by_company`/`list_active_at_date`).
   - [ ] T1.2 Ajouter la ligne correspondante dans `docs/migrations-idempotence-audit.md` (verdict + justification ; `ADD COLUMN` non-breaking → pas de bump `kesh_version_min_required`).
 - [ ] **T2 — Entité + repository CRUD** (AC #1-6, #12)
   - [ ] T2.1 Étendre `entities/vat_rate.rs` : champ `version`, structs `UpdateVatRate` / payload create.
@@ -186,6 +186,10 @@ NON convergé (1C+2H > LOW) → **Pass 4 requise** (Sonnet, contexte frais). *(M
 ### Validate Pass 4 (Sonnet 4.6, 2026-06-13) — NON convergé (renommage incomplet)
 
 **0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW** — tous patchés. P4-1 (MEDIUM) : le renommage `find_applicable_for_date → list_active_at_date` (Pass 3) était **incomplet** — 4 occurrences résiduelles dans des sections normatives (Scope item 4 & 8, AC#11, Dev Notes sémantique dates) contredisant T2.2/T5.1/AC#4-5. Corrigées + terminologie bornes alignée. P4-2 LOW : Scope item 4 annoté `(AC#3)` → `(AC#5)`. P4-3 LOW : chemin `i18n.svelte.ts` complété. Mapping 409 et règle `i18nMsg` re-vérifiés exacts. NON convergé (1 MEDIUM) → **Pass 5 requise** (Haiku, contexte frais).
+
+### Validate Pass 5 (Haiku 4.5, 2026-06-13) — NON convergé (1 dernier résidu)
+
+**0 CRITICAL/HIGH, 1 MEDIUM, 0 LOW, 0 hallucination.** Vérification de convergence en 9 points tous OK sauf P5-M1 : une dernière occurrence **abrégée** `find_applicable` (ligne 77, T1.1, dans une parenthèse sur l'indexation) ratée par le grep Pass 4 (qui cherchait la forme complète). Corrigée → `list_active_at_date`. Grep final : 0 résidu hors Change Log. → Pass 6 (Sonnet) de confirmation.
 
 ## Dev Agent Record
 
