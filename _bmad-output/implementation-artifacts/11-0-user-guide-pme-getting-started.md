@@ -315,4 +315,13 @@ ACs 11 → 12 (ajout AC effet de bord version marketing + validation Guy). Pass 
 
 Implémentation single-pass orchestrée. Tâches dev T1-T3, T4.1-T4.2, T5, T6 complétées (cf. Dev Agent Record). Cible : `docs/manual/fr/user-manual.tex` enrichi (33 → 44 pages), `kesh-style.sty` version bumpée 0.2.0, `marketing-brochure.tex` roadmap rafraîchie (AC#11 option refresh, décision Guy), README section Documentation, 3 PDFs régénérés (tous 0.2.0). 22 captures placeholder (macro DRY `\keshscreenshot` + fallback `\IfFileExists`). Compilation `make fr` verte, 0 erreur LaTeX.
 
-**Gates humains restants** : T4.3 (vraies captures NAS Guy) + T7/AC#12 (sign-off Guy). Status `ready-for-dev` → **`review`**. Prochaine étape : `bmad-code-review 11-0` (Sonnet→Haiku, focus accuracy/compilation/cohérence), puis fourniture captures + sign-off Guy.
+**Gates humains restants** : T4.3 (vraies captures NAS Guy) + T7/AC#12 (sign-off Guy). Status `ready-for-dev` → **`review`**.
+
+### Code-review (2026-06-13) — CONVERGÉ 2 passes Sonnet→Haiku
+
+- **Pass 1 (Sonnet 4.6)** : 0 CRITICAL, 0 HIGH, **1 MEDIUM, 3 LOW**. Tous patchés. R-M-01 (MEDIUM) : clôture d'exercice (livrée, `close_fiscal_year` vérifié) avait disparu du marketing sans être créditée → ajoutée à « Déjà livré v0.2.0 ». R-L-01/02 overfull hbox (Dette, keshbackup raccourcis), R-L-03 renvoi glossaire. **13 claims ground-truth vérifiés exacts** (routes recovery/api-keys, onboarding org-type/accounting-language, SMTP=recovery-only, comptes Sterchi cohérents, version 0.2.0, compilation verte).
+- **Pass 2 (Haiku 4.5)** : **CLEAN — 0 finding, 0 hallucination**. 12 vérifications ground-truth confirmées (compilation, 23 `\keshscreenshot`, renvois internes existants, 32 termes glossaire triés, ancre README, roadmap marketing cohérente).
+
+**Trend** : Pass 1 [0C/0H/1M/3L] → Pass 2 [0C/0H/0/0]. **Critère d'arrêt atteint** (0 > LOW). Cycle Sonnet→Haiku.
+
+**Status final dev+review** : `review` — implémentation et revue complètes. La transition vers `done` est conditionnée aux **gates humains** : fourniture des vraies captures (T4.3) + **sign-off Guy** (AC#12). PR ouverte pour matérialiser le travail ; merge = décision Guy.
