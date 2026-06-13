@@ -100,7 +100,7 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 
 - **Approche** : texte-d'abord. Insérer `figure` + placeholder + `% TODO capture`. Guy fournit les PNG depuis sa prod NAS v0.2.0 en passe séparée.
 - **Outil** : flameshot / screenshot natif. **Résolution** : crop sur contenu pertinent.
-- **Format** : PNG, stockage `docs/manual/shared/screenshots/` ou `docs/manual/fr/screenshots/` (à trancher validate — cohérence `\graphicspath`).
+- **Format** : PNG, stockage **`docs/manual/fr/screenshots/`** (langue-spécifique : les captures DE/IT/EN auront leur propre dossier ; `docs/manual/shared/` reste réservé aux assets cross-manuels comme le logo et le style). Ajouter `\graphicspath{{./screenshots/}}` dans le préambule de `user-manual.tex` (après le chargement de `../shared/kesh-style`). `graphicx` est déjà chargé par `kesh-style.sty` (l.28).
 - **Anonymisation** : données factices (Pierre Exemple, ABC Sàrl, IBAN CH00…) — PAS de données perso Guy.
 - **Quantité** : ~20-25 (3 onboarding, 3 plan compta, 5 facture, 5 banking, 3 rapports, 5 réconciliation).
 - **Alt-text LaTeX** : `\caption` descriptif + commentaire structurel ; pas d'alt-text HTML natif en LaTeX, le caption joue ce rôle.
@@ -110,7 +110,7 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 ### Screenshots (AC #1-3)
 
 - [ ] **AC #1** ~20-25 environnements `figure` ajoutés dans `user-manual.tex` aux emplacements pertinents, avec `\includegraphics` (placeholders initialement), `\caption` descriptif et commentaire `% TODO capture: <description>`.
-- [ ] **AC #2** `\graphicspath` configuré ; dossier screenshots créé avec convention de nommage `<feature-slug>-<N>.png`.
+- [ ] **AC #2** `\graphicspath{{./screenshots/}}` ajouté au préambule de `user-manual.tex` ; dossier `docs/manual/fr/screenshots/` créé avec convention de nommage `<feature-slug>-<N>.png`. Un placeholder neutre committé (cf. AC#9 / Risques) garantit la compilation tant que les vraies captures ne sont pas fournies.
 - [ ] **AC #3** Données factices anonymisées prévues dans les captions (Pierre Exemple, ABC Sàrl, etc.). PAS de données perso Guy.
 
 ### Exemples sectoriels PME (AC #4)
@@ -124,37 +124,44 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 ### Rafraîchissement v0.2.0 (AC #6-7)
 
 - [ ] **AC #6** Section « Limites actuelles » (l. 1010-1019) rafraîchie v0.2.0 : retirer ce qui est livré (recovery, export/import installation, PAT), conserver ce qui reste à venir (TVA Epic 11, avoirs/pain.001 Epic 12, QES Epic 14, multi-devises v0.2, PDF/A v0.2). Marqueurs de version cohérents.
-- [ ] **AC #7** Corps du manuel vérifié contre le ground-truth v0.2.0 : (a) onboarding aligné sur 8 étapes réelles, (b) aucune sur-promesse d'envoi de facture par email intégré (rester sur « PDF + client mail externe »), (c) décision validate sur où documenter export/import `.keshbackup` (user vs admin manual) et clés API.
+- [ ] **AC #7** Corps du manuel vérifié et **corrigé** contre le ground-truth v0.2.0 :
+  - (a) onboarding aligné sur 8 étapes réelles ;
+  - (b) **corriger** la ligne 511 (§Génération du PDF avec QR Bill) qui sur-promet « fonctionnalité d'envoi direct à venir v0.2 » — cette fonctionnalité n'existe pas en v0.2.0 (vérifié : aucune route d'envoi de facture dans `crates/kesh-api/src/routes/`, le mailer ne sert qu'au recovery). Reformuler en « Vous pouvez l'envoyer manuellement par email ou l'imprimer. » ;
+  - (c) **corriger** la §Avoirs et notes de crédit (l.529-534) qui décrit une navigation `Factures → Nouvel avoir` inexistante en v0.2.0 (aucune route `credit_note`) — aligner le texte principal sur la `keshnote` l.534 (avoirs = contre-passation manuelle d'écritures), supprimer la description de menu spéculative ;
+  - (d) **clés API / export-import `.keshbackup`** : ces fonctions sont déjà documentées dans `admin-manual.tex` (`.keshbackup` l.1298 réservé Admin anti-PAT ; clés PAT l.1458 accessibles Comptable+Admin). Décision : ne PAS dupliquer dans user-manual. Ajouter au plus une brève mention de renvoi dans §Gestion de votre compte (l.192) pour les clés API (« Pour l'accès programmatique par clé API, voir `docs/api-external.md` et le manuel administrateur »), et rien pour `.keshbackup` (purement admin).
 
 ### Intégration projet (AC #8-9)
 
 - [ ] **AC #8** Référence ajoutée dans `README.md` section Documentation : « Manuel utilisateur FR : `docs/manual/fr/user-manual.pdf` ».
-- [ ] **AC #9** PDF régénéré (`latexmk -xelatex` dans `docs/manual/fr/`) et committé. Pas d'erreur de compilation LaTeX.
+- [ ] **AC #9** Variables de version LaTeX mises à jour dans `docs/manual/shared/kesh-style.sty` (l.64-66) : `\keshVersion{0.2.0}`, `\keshReleaseDate{2026-06-12}`, `\keshTargetRelease{v0.2}` (actuellement `0.1.0-dev` / `2026-05-20` / `v0.1`, affichées en header/footer/couverture l.179/186/444/464). **Ce fichier est partagé par les 3 manuels** → régénérer **et committer les 3 PDFs** (`admin-manual.pdf`, `user-manual.pdf`, `marketing-brochure.pdf`).
+- [ ] **AC #10** PDF(s) régénéré(s) via la commande de build du projet (`make -C docs/manual user` ou les 3 cibles si AC#9 touche la version partagée) sans erreur de compilation LaTeX. Un placeholder neutre `docs/manual/fr/screenshots/_placeholder.png` est committé pour que la compilation passe tant que les vraies captures manquent.
 
-### Validation Guy (AC #10)
+### Validation Guy (AC #11)
 
-- [ ] **AC #10** Guy relit le manuel enrichi et confirme qu'il reflète son expérience réelle Kesh v0.2.0. Identifie sections manquantes/ambiguës/incorrectes. Itération 1-2 passes si nécessaire. Sign-off : « ce manuel reflète mon usage réel Kesh v0.2.0 ».
+- [ ] **AC #11** Guy relit le manuel enrichi et confirme qu'il reflète son expérience réelle Kesh v0.2.0. Identifie sections manquantes/ambiguës/incorrectes. Itération 1-2 passes si nécessaire. Sign-off : « ce manuel reflète mon usage réel Kesh v0.2.0 ».
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Gap audit fin du corps existant** (AC #7)
+- [ ] **T1 — Gap audit + corrections du corps existant** (AC #7)
   - [ ] T1.1 Relire §Onboarding (l. 133) et aligner sur les 8 étapes réelles si écart.
-  - [ ] T1.2 Vérifier §Facturation (l. 463) : pas de sur-promesse envoi email intégré.
-  - [ ] T1.3 Trancher (validate) où documenter export/import `.keshbackup` (user vs admin) et clés API.
+  - [ ] T1.2 **Corriger** §Génération du PDF (l. 511) : retirer « (fonctionnalité d'envoi direct à venir v0.2) », reformuler en envoi manuel.
+  - [ ] T1.3 **Corriger** §Avoirs et notes de crédit (l. 529-534) : supprimer la navigation `Factures → Nouvel avoir` inexistante, aligner sur la `keshnote` (contre-passation manuelle).
+  - [ ] T1.4 Clés API : ajouter une brève mention de renvoi dans §Gestion de votre compte (l. 192) vers `docs/api-external.md` + admin-manual. Pas de doc `.keshbackup` dans user-manual (admin-only, déjà admin-manual l.1298).
 - [ ] **T2 — Exemples sectoriels PME** (AC #4)
   - [ ] T2.1 Plan comptable : exemples par secteur (commerce, services, artisan).
   - [ ] T2.2 Facturation : exemple concret de facture PME (avec QR Bill) par secteur.
 - [ ] **T3 — Glossaire** (AC #5)
   - [ ] T3.1 Compléter à ~30 termes, tri alphabétique.
 - [ ] **T4 — Screenshots (placeholders texte-d'abord)** (AC #1-3)
-  - [ ] T4.1 Configurer `\graphicspath` + créer dossier screenshots + `.gitkeep`.
-  - [ ] T4.2 Insérer ~20-25 `figure` placeholders + captions + `% TODO capture`.
+  - [ ] T4.1 Ajouter `\graphicspath{{./screenshots/}}` au préambule de `user-manual.tex` ; créer `docs/manual/fr/screenshots/` + committer un `_placeholder.png` neutre (garantit la compilation).
+  - [ ] T4.2 Insérer ~20-25 `figure` (`\includegraphics{_placeholder}` par défaut) + captions descriptifs + `% TODO capture`.
   - [ ] T4.3 (passe ultérieure Guy) Remplacer placeholders par PNG réels prod NAS anonymisés.
-- [ ] **T5 — Rafraîchissement « Limites actuelles »** (AC #6)
-  - [ ] T5.1 Mettre à jour l. 1010-1019 selon ground-truth v0.2.0.
-- [ ] **T6 — Intégration + build** (AC #8-9)
+- [ ] **T5 — Rafraîchissement version + « Limites actuelles »** (AC #6, #9)
+  - [ ] T5.1 Mettre à jour §Limites actuelles l. 1010-1019 selon ground-truth v0.2.0.
+  - [ ] T5.2 Bumper `kesh-style.sty` l.64-66 : `keshVersion 0.2.0`, `keshReleaseDate 2026-06-12`, `keshTargetRelease v0.2`.
+- [ ] **T6 — Intégration + build** (AC #8, #9, #10)
   - [ ] T6.1 Référence README section Documentation.
-  - [ ] T6.2 Régénérer `user-manual.pdf` (`latexmk -xelatex`), vérifier compilation, committer.
+  - [ ] T6.2 Régénérer les PDFs impactés (`make -C docs/manual user` ; + `admin` et `marketing` car version partagée bumpée en T5.2), vérifier compilation, committer les .pdf.
 - [ ] **T7 — Validation Guy** (AC #10)
   - [ ] T7.1 Guy relit le manuel enrichi (PDF).
   - [ ] T7.2 Itération 1-2 passes correction.
@@ -179,12 +186,12 @@ Cohérent Epic 9.5 retro lesson C1 : « les stories doc-only ne sont PAS trivial
 ### Test Locally First (adapté doc LaTeX)
 
 - **N/A code** : pas de cargo/npm.
-- **Compilation LaTeX** : `cd docs/manual/fr && latexmk -xelatex user-manual.tex` doit compiler sans erreur (warnings de placeholder image acceptables jusqu'à ce que les PNG soient fournis — prévoir un placeholder neutre committé pour que le PDF compile entre-temps).
+- **Compilation LaTeX** : commande canonique projet **`make -C docs/manual user`** (le Makefile utilise `xelatex` 2 passes, cf. `docs/manual/Makefile` l.19/69). `latexmk -xelatex` est équivalent si préféré. Doit compiler sans erreur. Un placeholder neutre committé (`docs/manual/fr/screenshots/_placeholder.png`) évite l'échec `File not found` tant que les vraies captures manquent. Si T5.2 bumpe la version partagée : recompiler aussi `make -C docs/manual admin marketing`.
 - **Liens** : vérifier les `\href` (liens externes) et `\ref`/`\hyperref` internes.
 
 ### Risques
 
-- **Placeholders d'images cassant la compilation** : committer un PNG placeholder neutre (`docs/manual/shared/screenshots/_placeholder.png`) référencé par défaut, pour que `latexmk` compile tant que les vraies captures ne sont pas là. Sinon `\includegraphics` d'un fichier absent fait échouer la compilation.
+- **Placeholders d'images cassant la compilation** : committer un PNG placeholder neutre (`docs/manual/fr/screenshots/_placeholder.png`) référencé par défaut, pour que la compilation passe tant que les vraies captures ne sont pas là. Sinon `\includegraphics` d'un fichier absent fait échouer la compilation.
 - **Évolution Kesh pendant rédaction** : v0.2.0 stable, pas de hotfix prévu → risque faible. Freezer si Epic 11 démarre en parallèle.
 - **Périmètre dérivant** : ne PAS réécrire le contenu déjà correct. Enrichissement ciblé uniquement (5 écarts).
 
@@ -239,4 +246,16 @@ Story 11-0 créée comme prérequis Epic 11 prep (carry-forward action item #3 E
 
 ACs réduits de 18 → 10, recentrés sur les écarts. Branche : `story/11-0-user-guide-pme` (fraîche depuis `main` v0.2.0).
 
-Status : `backlog`. Prochaine étape : `bmad-create-story validate 11-0-user-guide-pme-getting-started` (2-3 passes attendues vu le scope réduit).
+### Validate Pass 1 (Sonnet 4.6, 2026-06-13)
+
+6 findings (1 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOW), tous vérifiés ground-truth (grep/Read sur `user-manual.tex`, `kesh-style.sty`, `admin-manual.tex`, `crates/kesh-api`). Tous patchés :
+- **F1 CRITICAL** — chemin screenshots non tranché (risque compilation cassée) → fixé `docs/manual/fr/screenshots/` + `\graphicspath` préambule (AC#2, §Screenshots, T4.1).
+- **F2 HIGH** — l.511 sur-promet « envoi direct à venir v0.2 » (fonction inexistante v0.2.0) → AC#7b passe de « vérifier » à « corriger » + T1.2.
+- **F3 HIGH** — `keshVersion=0.1.0-dev` affiché header/footer/couverture (partagé 3 manuels) → nouvel AC#9 bump version + régén 3 PDFs, T5.2.
+- **F4 MEDIUM** — décision PAT/`.keshbackup` (user vs admin) → tranchée AC#7d : déjà dans admin-manual (l.1298/1458), pas de duplication, simple renvoi clés API §Gestion compte. T1.4.
+- **F5 MEDIUM** — §Avoirs l.529-534 décrit UI `Factures → Nouvel avoir` inexistante → AC#7c corrige, T1.3.
+- **F6 LOW** — commande build `make -C docs/manual user` (canonique) vs `latexmk` → clarifié §Test Locally First + AC#10/T6.2.
+
+ACs 10 → 11 (ajout version bump + build séparés). Prochaine étape : Pass 2 (Haiku 4.5, contexte frais, diff unique).
+
+Status : `backlog`.
