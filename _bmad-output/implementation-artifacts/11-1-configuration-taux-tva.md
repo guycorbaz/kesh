@@ -191,6 +191,14 @@ NON convergé (1C+2H > LOW) → **Pass 4 requise** (Sonnet, contexte frais). *(M
 
 **0 CRITICAL/HIGH, 1 MEDIUM, 0 LOW, 0 hallucination.** Vérification de convergence en 9 points tous OK sauf P5-M1 : une dernière occurrence **abrégée** `find_applicable` (ligne 77, T1.1, dans une parenthèse sur l'indexation) ratée par le grep Pass 4 (qui cherchait la forme complète). Corrigée → `list_active_at_date`. Grep final : 0 résidu hors Change Log. → Pass 6 (Sonnet) de confirmation.
 
+### Validate Pass 6 (Sonnet 4.6, 2026-06-13) — ✅ CONVERGÉ
+
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW.** Confirmation finale : cohérence interne (12 ACs sans trou, mapping AC↔tâche complet), 0 résidu `find_applicable` hors Change Log, mapping 409 uniforme, `list_active_at_date` partout en `Vec`, et tous les claims ground-truth re-vérifiés exacts (`require_admin_role` rbac.rs:31, `list_all_by_company` vat_rates.rs:23, `VatRateResponse` sans `version`, `OptimisticLockConflict → 409` errors.rs:1645, `scale_within` limits.rs:31, `admin_routes` lib.rs:136-172, `i18nMsg`).
+
+**Trend du cycle** : Pass 1 (Sonnet) 6 [2H/3M/1L] → Pass 2 (Haiku) 3 [3L] → Pass 3 (**Opus**) 6 [**1C**/2H/3L] → Pass 4 (Sonnet) 3 [1M/2L] → Pass 5 (Haiku) 1 [1M] → Pass 6 (Sonnet) **0**. Cycle Sonnet→Haiku→Opus→Sonnet→Haiku→Sonnet (LLM différent par passe). **Opus P3 a capté le CRITICAL de domaine** (cardinalité `find_applicable_for_date` / absence de catégorie) raté par Sonnet+Haiku. 0 hallucination Haiku (grep ground-truth systématique). Décision de design « discriminant catégorie » déférée à 11-2 (touche le modèle de données).
+
+Status : **`ready-for-dev`**. Prochaine étape : `bmad-dev-story 11-1`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
