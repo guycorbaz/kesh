@@ -32,9 +32,10 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
 
 1. **Migration** `ALTER TABLE vat_rates ADD COLUMN version INT NOT NULL DEFAULT 0` (verrou optimiste pour les updates) + ligne dans `docs/migrations-idempotence-audit.md` (politique P5). Non-breaking (`ADD COLUMN` → pas de bump `kesh_version_min_required`).
 2. **Repository** (`vat_rates.rs`) — nouvelles fonctions calquées sur `repositories/bank_accounts.rs` :
-   - `create_for_company(&mut tx, company_id, NewVatRate) -> VatRate`
-   - `update_for_company(&mut tx, company_id, id, fields, version) -> VatRate` (verrou optimiste + `SELECT … FOR UPDATE`)
-   - `deactivate_for_company(&mut tx, company_id, id, version)` (soft : `active = FALSE` ; **jamais de hard-delete** d'un taux potentiellement référencé par des écritures/factures historiques — audit-trail).
+   - `pub async fn create_for_company(tx, company_id, new) -> Result<VatRate, DbError>`
+   - `pub async fn update_for_company(tx, company_id, id, fields, version) -> Result<VatRate, DbError>` (verrou optimiste + `SELECT … FOR UPDATE` ; en cas de conflit de version `rows_affected() == 0` → `return Err(DbError::OptimisticLockConflict)`, exactement comme `bank_accounts.rs:381`).
+   - `pub async fn deactivate_for_company(tx, company_id, id, version) -> Result<VatRate, DbError>` (soft : `active = FALSE` , même verrou optimiste ; **jamais de hard-delete** d'un taux potentiellement référencé par des écritures/factures historiques — audit-trail).
+   - (signatures calquées sur `repositories/bank_accounts.rs` ; ne retourner que l'état final `VatRate` suffit — pas besoin du tuple `(avant, après)` de bank_accounts.)
    - **Vue historique** : réutiliser **`list_all_by_company()` existante** (NE PAS créer `list_all_for_company` — doublon de la fonction déjà utilisée par `exports/global.rs`).
    - `find_applicable_for_date(pool, company_id, date) -> Option<VatRate>` — taux dont `valid_from <= date AND (valid_to IS NULL OR date < valid_to) AND active`. **Sémantique** : `valid_from` inclusif, `valid_to` exclusif (cohérent `chk_vat_rates_dates`). (nouvelle fonction — aucun équivalent n'existe.)
 3. **Routes API** (`vat.rs`) — handlers calqués sur `bank_accounts.rs` :
@@ -58,7 +59,7 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
 ## Acceptance Criteria
 
 1. **(FR54)** Un administrateur peut **créer** un taux TVA : `POST /api/v1/vat-rates` avec `label`, `rate`, `valid_from`, `valid_to` (optionnel). Validation : `rate` 0..100 scale ≤ 2, `valid_to > valid_from`, label non vide, unicité `(company_id, rate, valid_from)`. Événement audit `vat_rate.created` dans la même transaction.
-2. Un administrateur peut **modifier** un taux existant (`PUT /api/v1/vat-rates/{id}` : `label`, `valid_to`, `active`) avec **verrou optimiste** (`version`) — un conflit de version retourne une erreur exploitable. Le champ `rate` n'est **pas** modifiable (un taux a une valeur figée ; changer de taux = créer un nouveau). Audit `vat_rate.updated`.
+2. Un administrateur peut **modifier** un taux existant (`PUT /api/v1/vat-rates/{id}` : `label`, `valid_to`, `active`) avec **verrou optimiste** (`version`) — un conflit de version remonte `DbError::OptimisticLockConflict` (repo), mappé côté route en `AppError::Validation` avec message i18n `vat_rate.conflict_version` (pattern `bank_accounts`). Le champ `rate` n'est **pas** modifiable (un taux a une valeur figée ; changer de taux = créer un nouveau). Audit `vat_rate.updated`.
 3. **(AC historique)** Un administrateur peut **désactiver** un taux (`DELETE` soft → `active = FALSE`) sans suppression physique (préservation audit-trail). Audit `vat_rate.deactivated`. Un taux désactivé n'est plus proposé à la saisie mais reste visible dans l'historique et applicable aux opérations passées via les dates.
 4. **(AC sélection temporelle)** `find_applicable_for_date(company, date)` retourne le taux dont `valid_from <= date < valid_to` (ou `valid_to IS NULL`) et `active`. Testé aux bornes : la veille de `valid_from` → pas ce taux ; le jour de `valid_from` → ce taux ; le jour de `valid_to` → pas ce taux (exclusif).
 5. **(AC changement de taux 7.7→8.1)** Scénario : créer un taux 8.10 `valid_from = 2024-01-01`, puis clôturer l'ancien 7.70 avec `valid_to = 2024-01-01`. Une opération au 2023-12-31 sélectionne 7.70 ; au 2024-01-01 sélectionne 8.10. Les deux taux coexistent dans l'historique.
@@ -80,7 +81,7 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
   - [ ] T2.2 `repositories/vat_rates.rs` : `create_for_company`, `update_for_company` (optimistic lock + `FOR UPDATE`, calqué `bank_accounts`), `deactivate_for_company`, `find_applicable_for_date`. **Réutiliser `list_all_by_company()` existante** pour l'historique (ne PAS créer de doublon). Préserver les fonctions existantes (`list_active_for_company`, `find_active_by_rate`, `list_all_by_company`, seed).
 - [ ] **T3 — Routes API + audit** (AC #1-3, #6, #7)
   - [ ] T3.1 `routes/vat.rs` : handlers POST/PUT/DELETE (guard admin + `assert_onboarding_complete`), audit `vat_rate.{created,updated,deactivated}` dans la même `tx` (pattern `bank_accounts.rs`).
-  - [ ] T3.2 `GET /vat-rates?history=true` (liste complète via `list_all_by_company` existante) — param optionnel, défaut = comportement actuel inchangé (`list_active_for_company`).
+  - [ ] T3.2 `GET /vat-rates?history=true` (liste complète via `list_all_by_company` existante) — param optionnel, défaut = comportement actuel inchangé (`list_active_for_company`). Avant de retourner en mode history, **ré-ordonner côté handler** par `valid_from DESC, rate ASC` (la fonction repo trie `id ASC`).
   - [ ] T3.3 Validation (rate range/scale, dates, label) + mapping `AppError` i18n.
   - [ ] T3.4 Enregistrer POST/PUT/DELETE dans **`admin_routes`** de `crates/kesh-api/src/lib.rs` (~l.158-172, là où vivent `full_export`/`full_import`), **PAS** dans `comptable_routes` — écart **intentionnel** vs `bank_accounts` (qui est Comptable+) : les mutations TVA sont réservées Admin (FR54). Le `GET /vat-rates` reste dans les routes authentifiées existantes (inchangé).
 - [ ] **T4 — Frontend page admin TVA** (AC #9, #10)
@@ -162,6 +163,10 @@ Spec créée (Opus 4.8) comme enrichissement de l'infra `vat_rates` existante (S
 - **F6 LOW** — tri `?history=true` → précisé `valid_from DESC, rate ASC`.
 
 Validé exact ground-truth : table/contraintes `vat_rates`, fonctions repo existantes, routes read-only, `require_admin_role` (rbac.rs:31), `scale_within` (limits.rs:31), seed `finalize()`. Prochaine : Pass 2 (Haiku).
+
+### Validate Pass 2 (Haiku 4.5, 2026-06-13)
+
+**0 CRITICAL/HIGH/MEDIUM, 3 LOW, 0 hallucination.** Critère d'arrêt (0 > LOW) atteint. Ground-truth re-vérifié exhaustivement (admin_routes l.136-172, `list_all_by_company` trie id ASC, `require_admin_role`, `AuditActor`, contraintes unicité/dates, feature frontend `vat-rates/` 4 fichiers, sémantique dates cohérente, pas de violation unicité par PUT valid_to). 3 LOW patchés : signatures repo complètes + `DbError::OptimisticLockConflict` (T2.2), type erreur conflit nommé (AC#2), tri history côté handler (T3.2). Prochaine : Pass 3 (Opus) — sécurité code feature.
 
 ## Dev Agent Record
 
