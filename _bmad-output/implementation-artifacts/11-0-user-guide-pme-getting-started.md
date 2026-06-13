@@ -1,6 +1,6 @@
 # Story 11.0: Enrichissement du manuel utilisateur PME Kesh (Epic 11 prep)
 
-Status: backlog
+Status: ready-for-dev
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -110,7 +110,7 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 ### Screenshots (AC #1-3)
 
 - [ ] **AC #1** ~20-25 environnements `figure` ajoutés dans `user-manual.tex` aux emplacements pertinents, avec `\includegraphics` (placeholders initialement), `\caption` descriptif et commentaire `% TODO capture: <description>`.
-- [ ] **AC #2** `\graphicspath{{./screenshots/}}` ajouté au préambule de `user-manual.tex` ; dossier `docs/manual/fr/screenshots/` créé avec convention de nommage `<feature-slug>-<N>.png`. Un placeholder neutre committé (cf. AC#9 / Risques) garantit la compilation tant que les vraies captures ne sont pas fournies.
+- [ ] **AC #2** `\graphicspath{{./screenshots/}}` ajouté au préambule de `user-manual.tex` ; dossier `docs/manual/fr/screenshots/` créé avec convention de nommage `<feature-slug>-<N>.png`. Un placeholder neutre committé (cf. AC#10 / §Risques) garantit la compilation tant que les vraies captures ne sont pas fournies.
 - [ ] **AC #3** Données factices anonymisées prévues dans les captions (Pierre Exemple, ABC Sàrl, etc.). PAS de données perso Guy.
 
 ### Exemples sectoriels PME (AC #4)
@@ -136,13 +136,13 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 - [ ] **AC #9** Variables de version LaTeX mises à jour dans `docs/manual/shared/kesh-style.sty` (l.64-66) : `\keshVersion{0.2.0}`, `\keshReleaseDate{2026-06-12}`, `\keshTargetRelease{v0.2}` (actuellement `0.1.0-dev` / `2026-05-20` / `v0.1`, affichées en header/footer/couverture l.179/186/444/464). **Ce fichier est partagé par les 3 manuels** → régénérer **et committer les 3 PDFs** (`admin-manual.pdf`, `user-manual.pdf`, `marketing-brochure.pdf`).
 - [ ] **AC #10** PDF(s) régénéré(s) via la commande de build du projet (`make -C docs/manual user` ou les 3 cibles si AC#9 touche la version partagée) sans erreur de compilation LaTeX. Un placeholder neutre `docs/manual/fr/screenshots/_placeholder.png` est committé pour que la compilation passe tant que les vraies captures manquent.
 
-### Effet de bord version partagée (AC #12)
+### Effet de bord version partagée (AC #11)
 
-- [ ] **AC #12** Le bump `keshVersion → 0.2.0` (AC#9) estampille « 0.2.0 » sur les 3 manuels via `kesh-style.sty`. **`marketing-brochure.tex` a une feuille de route périmée** (vérifié : l.373 « Déjà livré Epic 1 à 9.5 », l.390 « En préparation (Epic 10) » alors qu'Epic 10 clos, l.398 « Backlog v0.1 (Epic 11 à 15) », l.410-414 « Vision v0.2 : clés PAT » alors que PAT **livré** v0.2.0). Régénérer ce PDF estampillé 0.2.0 publierait un artefact mensonger. → Rafraîchir a minima la feuille de route marketing (l.~373-419) : déplacer recovery + clés PAT + export/import de « Vision v0.2 » vers « Déjà livré v0.2.0 » ; corriger « En préparation (Epic 10) » ; ré-étiqueter « Backlog v0.1 » → « Backlog v0.2 ». **Alternative (au choix de Guy)** : ne pas toucher la brochure dans cette story → alors NE PAS bumper la version dans le `kesh-style.sty` partagé (overrider `\keshVersion` localement dans le préambule de `user-manual.tex` seul via `\renewcommand`), créer une issue GitHub `documentation` pour la sync marketing, et documenter la dérogation. Décision tranchée en dev-story / par Guy.
+- [ ] **AC #11** Le bump `keshVersion → 0.2.0` (AC#9) estampille « 0.2.0 » sur les 3 manuels via `kesh-style.sty`. **`marketing-brochure.tex` a une feuille de route périmée** (vérifié : l.373 « Déjà livré Epic 1 à 9.5 », l.390 « En préparation (Epic 10) » alors qu'Epic 10 clos, l.398 « Backlog v0.1 (Epic 11 à 15) », l.410-414 « Vision v0.2 : clés PAT » alors que PAT **livré** v0.2.0). Régénérer ce PDF estampillé 0.2.0 publierait un artefact mensonger. → Rafraîchir a minima la feuille de route marketing (l.~373-419) : déplacer recovery + clés PAT + export/import de « Vision v0.2 » vers « Déjà livré v0.2.0 » ; corriger « En préparation (Epic 10) » ; ré-étiqueter « Backlog v0.1 » → « Backlog v0.2 ». **Alternative (au choix de Guy)** : ne pas toucher la brochure dans cette story → alors NE PAS bumper la version dans le `kesh-style.sty` partagé (overrider `\keshVersion` localement dans le préambule de `user-manual.tex` seul via `\renewcommand`), créer une issue GitHub `documentation` pour la sync marketing, et documenter la dérogation. Décision tranchée en dev-story / par Guy.
 
-### Validation Guy (AC #13)
+### Validation Guy (AC #12)
 
-- [ ] **AC #13** Guy relit le manuel enrichi et confirme qu'il reflète son expérience réelle Kesh v0.2.0. Identifie sections manquantes/ambiguës/incorrectes. Itération 1-2 passes si nécessaire. Sign-off : « ce manuel reflète mon usage réel Kesh v0.2.0 ».
+- [ ] **AC #12** Guy relit le manuel enrichi et confirme qu'il reflète son expérience réelle Kesh v0.2.0. Identifie sections manquantes/ambiguës/incorrectes. Itération 1-2 passes si nécessaire. Sign-off : « ce manuel reflète mon usage réel Kesh v0.2.0 ».
 
 ## Tasks / Subtasks
 
@@ -163,11 +163,11 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 - [ ] **T5 — Rafraîchissement version + « Limites actuelles »** (AC #6, #9)
   - [ ] T5.1 Mettre à jour §Limites actuelles l. 1010-1019 selon ground-truth v0.2.0.
   - [ ] T5.2 Bumper `kesh-style.sty` l.64-66 : `keshVersion 0.2.0`, `keshReleaseDate 2026-06-12`, `keshTargetRelease v0.2`.
-- [ ] **T6 — Intégration + build** (AC #8, #9, #10)
+- [ ] **T6 — Intégration + build** (AC #8-11)
   - [ ] T6.1 Référence README section Documentation.
   - [ ] T6.2 Régénérer les PDFs impactés (`make -C docs/manual user` ; + `admin` et `marketing` car version partagée bumpée en T5.2), vérifier compilation, committer les .pdf.
-  - [ ] T6.3 (AC#12) Traiter l'effet de bord du bump version sur la brochure marketing : soit rafraîchir sa feuille de route (l.~373-419), soit déroger (override version local `user-manual.tex` seul + issue GitHub + dérogation documentée). Décision Guy/dev-story.
-- [ ] **T7 — Validation Guy** (AC #13)
+  - [ ] T6.3 (AC#11) Traiter l'effet de bord du bump version sur la brochure marketing : soit rafraîchir sa feuille de route (l.~373-419), soit déroger (override version local `user-manual.tex` seul + issue GitHub + dérogation documentée). Décision Guy/dev-story.
+- [ ] **T7 — Validation Guy** (AC #12)
   - [ ] T7.1 Guy relit le manuel enrichi (PDF).
   - [ ] T7.2 Itération 1-2 passes correction.
   - [ ] T7.3 Sign-off Guy.
@@ -280,6 +280,15 @@ Findings résiduels LOW seulement (glossaire « etc. » = latitude dev acceptabl
 - **F-OPUS-4 LOW** — getting-started.md vs user-manual dans README → distinguer « démarrage rapide » vs « manuel complet ».
 - **F-OPUS-5 LOW** — heading « Intégration projet (AC #8-9) » → « (AC #8-10) ».
 
-ACs 11 → 13 (ajout AC#12 effet de bord version + décalage validation Guy en #13). Pass 3 = NON convergé (1 HIGH + 2 MEDIUM > LOW). Prochaine étape : Pass 4 (Sonnet 4.6, contexte frais) — cycle Sonnet→Haiku→Opus→Sonnet.
+ACs 11 → 12 (ajout AC effet de bord version marketing + validation Guy). Pass 3 = NON convergé (1 HIGH + 2 MEDIUM > LOW). Prochaine étape : Pass 4 (Sonnet 4.6, contexte frais) — cycle Sonnet→Haiku→Opus→Sonnet.
 
-Status : `backlog`.
+### Validate Pass 4 (Sonnet 4.6, 2026-06-13) — CONVERGÉ
+
+0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW — tous patchés, **cycle convergé**. Pass 4 focalisée sur les régressions des patches précédents :
+- **P4-1 MEDIUM** — trou de numérotation introduit en Pass 3 (séquence #10→#12, AC#11 manquant) → renuméroté en continu : effet de bord marketing = AC#11, validation Guy = AC#12 (total 12 ACs #1-#12). Headings, T6.3, T7 réalignés.
+- **P4-2 LOW** — AC#2 cross-réf « AC#9 » fossile → corrigée « AC#10 ».
+- **P4-3 LOW** — heading T6 omettait l'AC marketing → « (AC #8-11) ».
+
+**Trend du cycle** : Pass 1 (Sonnet) 6 findings [1C/2H/2M/1L] → Pass 2 (Haiku) 2 [0C/0H/2M] → Pass 3 (Opus) 5 [0C/1H/2M/2L] → Pass 4 (Sonnet) 3 [0C/0H/1M/2L]. **Critère d'arrêt atteint** : après patches Pass 4, plus aucun finding > LOW. Modèles : Sonnet→Haiku→Opus→Sonnet (cycle complet, LLM différent par passe). 0 hallucination Haiku (grep ground-truth systématique). Opus P3 a capté l'effet de bord cross-manuel du bump version (angle mort Sonnet/Haiku).
+
+Status : **`ready-for-dev`**.
