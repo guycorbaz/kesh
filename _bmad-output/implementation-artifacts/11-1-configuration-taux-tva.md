@@ -44,11 +44,11 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
    - `DELETE /api/v1/vat-rates/{id}` (désactivation soft) → `vat_rate.deactivated`
    - `GET    /api/v1/vat-rates?history=true` → liste complète (actifs + expirés) ; sans le param = comportement actuel (`active` seulement) **préservé** (non-régression des consommateurs existants : facturation, produits).
    - Guards : **rôle Administrateur** (FR54 « l'administrateur peut configurer ») + `assert_onboarding_complete`. Audit dans la même `tx` que la mutation.
-4. **Changement de taux dans le temps** (AC#3) — modélisé sans mutation destructive : pour passer 7.7 % → 8.1 %, l'admin **crée un nouveau taux** (`valid_from` = date de bascule) et **clôt l'ancien** (`PUT` `valid_to` = date de bascule). Les opérations antérieures conservent l'ancien taux via `find_applicable_for_date`. Le formulaire UI guide ce flux (pas d'édition du champ `rate` d'un taux existant — un taux a une valeur figée ; on en crée un nouveau).
+4. **Changement de taux dans le temps** (AC#5) — modélisé sans mutation destructive : pour passer 7.7 % → 8.1 %, l'admin **crée un nouveau taux** (`valid_from` = date de bascule) et **clôt l'ancien** (`PUT` `valid_to` = date de bascule). Les opérations antérieures conservent l'ancien taux via `list_active_at_date`. Le formulaire UI guide ce flux (pas d'édition du champ `rate` d'un taux existant — un taux a une valeur figée ; on en crée un nouveau).
 5. **Frontend** — page admin de gestion des taux TVA (`Paramètres` → `TVA` ou `Administration`), calquée sur l'UI CRUD `bank_accounts` : liste avec colonne actif/expiré + historique, formulaire création, édition `valid_to`/label, désactivation avec confirmation. Réutiliser la feature `vat-rates/`.
 6. **i18n** — clés Fluent pour l'UI admin (titres, colonnes, messages d'erreur, libellés boutons) dans `fr-CH` (+ stubs DE/IT/EN selon convention `lint-i18n-ownership`).
 7. **Validation** (par taux, pattern `FailedProposal`/AppError selon convention) : `rate` 0..100 + `scale ≤ 2`, `valid_to > valid_from`, unicité `(company_id, rate, valid_from)` (déjà en DB), label non vide. Erreurs business per-requête (pas batch ici → `AppError` ciblé acceptable car requête single-resource).
-8. **Tests** : repository (CRUD, verrou optimiste, `find_applicable_for_date` aux bornes — veille/jour de bascule/lendemain, taux inactif exclu), routes (RBAC admin, validation, audit émis, history vs active), E2E Playwright (créer un taux, clore l'ancien, vérifier l'historique).
+8. **Tests** : repository (CRUD, verrou optimiste, `list_active_at_date` aux bornes — veille de `valid_from` / jour de `valid_from` / jour de `valid_to`, taux inactif exclu), routes (RBAC admin, validation, audit émis, history vs active), E2E Playwright (créer un taux, clore l'ancien, vérifier l'historique).
 
 ### Hors scope (→ Story 11-2)
 
@@ -68,7 +68,7 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
 8. **(Migration)** Colonne `version INT NOT NULL DEFAULT 0` ajoutée à `vat_rates` (non-breaking, pas de bump `kesh_version_min_required`). Ligne ajoutée à `docs/migrations-idempotence-audit.md` avec verdict + justification.
 9. **(Frontend)** Page admin de gestion des taux TVA : liste (actif/expiré/historique), création (label **texte libre**), édition `valid_to`/label, désactivation avec confirmation. Calquée sur l'UI CRUD `bank_accounts`. Les labels sont affichés via `i18nMsg(label, label)` (clés seedées traduites, texte libre admin affiché brut — cf. §Pièges). La réponse expose `version` (verrou optimiste). États de chargement/erreur gérés. Pas d'API secure-context-only (déploiement HTTP LAN — cf. `feedback_no_secure_context_apis_http_lan`).
 10. **(i18n)** Toutes les chaînes UI nouvelles ont des clés Fluent `fr-CH` + stubs DE/IT/EN ; `npm run lint-i18n-ownership` vert.
-11. **(Tests)** Repository (CRUD, verrou optimiste, `find_applicable_for_date` aux bornes, taux inactif exclu), routes (RBAC, validation, audit, history vs active), E2E (créer/clore/historique). `cargo test --workspace` + `npm run test:unit` + build verts.
+11. **(Tests)** Repository (CRUD, verrou optimiste, `list_active_at_date` aux bornes, taux inactif exclu), routes (RBAC, validation, audit, history vs active), E2E (créer/clore/historique). `cargo test --workspace` + `npm run test:unit` + build verts.
 12. **(Préservation)** Le seed onboarding existant (`seed_default_swiss_rates_in_tx`) et les consommateurs read-only existants (facturation, produits, `verify_vat_rates_against_db`) ne sont pas régressés. Le seed pose `version = 0` (défaut).
 
 ## Tasks / Subtasks
@@ -110,7 +110,7 @@ so that **les changements de taux suisses (ex. 7.7 % → 8.1 % en 2024) soient g
 
 ### Sémantique des dates (déjà figée en DB)
 
-`valid_from` **inclusif**, `valid_to` **exclusif** (`chk_vat_rates_dates: valid_to IS NULL OR valid_to > valid_from`). `find_applicable_for_date` : `valid_from <= date AND (valid_to IS NULL OR date < valid_to) AND active = TRUE`. Attention aux tests de bornes.
+`valid_from` **inclusif**, `valid_to` **exclusif** (`chk_vat_rates_dates: valid_to IS NULL OR valid_to > valid_from`). `list_active_at_date` : `valid_from <= date AND (valid_to IS NULL OR date < valid_to) AND active = TRUE`. Attention aux tests de bornes.
 
 ### Décision de design déférée à 11-2 — discriminant de catégorie TVA
 
@@ -127,7 +127,7 @@ FR54 dit « l'**administrateur** peut configurer ». Guard = rôle Administrateu
 - **Pas de hard-delete** : un taux a pu servir à des factures/écritures historiques → soft-delete (`active = FALSE`) uniquement, jamais `DELETE FROM`.
 - **Idempotence migration** : `ADD COLUMN` simple — ajouter au tableau `docs/migrations-idempotence-audit.md` (sinon finding MEDIUM en code review, politique P5).
 - **HTTP LAN** : pas d'API secure-context-only côté frontend (`crypto.randomUUID`/`subtle`/`clipboard`) — cf. `feedback_no_secure_context_apis_http_lan`, utiliser `$props.id()` pour les IDs DOM.
-- **Dualité `label` clé-i18n vs texte libre** : les 4 taux **seedés** ont un `label` = clé Fluent (`product-vat-normal`, …) résolue côté frontend par `i18nMsg(label, fallback)` (`i18n.svelte.ts:15` : `_messages[key] || fallback`). Un taux **créé par l'admin** (AC#1) porte un `label` **texte libre** (PAS une clé). Règle figée : le frontend résout via **`i18nMsg(label, label)`** (fallback = label brut) → les clés connues sont traduites, le texte libre s'affiche tel quel. **Documenter dans l'UI** qu'un label admin ne doit pas usurper une clé Fluent (`product-vat-*`). Tester les deux cas (clé seedée traduite + texte libre affiché brut).
+- **Dualité `label` clé-i18n vs texte libre** : les 4 taux **seedés** ont un `label` = clé Fluent (`product-vat-normal`, …) résolue côté frontend par `i18nMsg(label, fallback)` (`frontend/src/lib/shared/utils/i18n.svelte.ts:15` : `_messages[key] || fallback`). Un taux **créé par l'admin** (AC#1) porte un `label` **texte libre** (PAS une clé). Règle figée : le frontend résout via **`i18nMsg(label, label)`** (fallback = label brut) → les clés connues sont traduites, le texte libre s'affiche tel quel. **Documenter dans l'UI** qu'un label admin ne doit pas usurper une clé Fluent (`product-vat-*`). Tester les deux cas (clé seedée traduite + texte libre affiché brut).
 
 ### Règle de splitting
 
@@ -182,6 +182,10 @@ Validé exact ground-truth : table/contraintes `vat_rates`, fonctions repo exist
 - **F-OPUS-4/5/6 LOW** — `version` ajouté à `VatRateResponse` (T3.1), module partagé pour `assert_onboarding_complete` (Dev Notes), note étanchéité scope.
 
 NON convergé (1C+2H > LOW) → **Pass 4 requise** (Sonnet, contexte frais). *(Multi-tenant scoping + migration version/lignes existantes vérifiés sains par Opus — pas de finding.)*
+
+### Validate Pass 4 (Sonnet 4.6, 2026-06-13) — NON convergé (renommage incomplet)
+
+**0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW** — tous patchés. P4-1 (MEDIUM) : le renommage `find_applicable_for_date → list_active_at_date` (Pass 3) était **incomplet** — 4 occurrences résiduelles dans des sections normatives (Scope item 4 & 8, AC#11, Dev Notes sémantique dates) contredisant T2.2/T5.1/AC#4-5. Corrigées + terminologie bornes alignée. P4-2 LOW : Scope item 4 annoté `(AC#3)` → `(AC#5)`. P4-3 LOW : chemin `i18n.svelte.ts` complété. Mapping 409 et règle `i18nMsg` re-vérifiés exacts. NON convergé (1 MEDIUM) → **Pass 5 requise** (Haiku, contexte frais).
 
 ## Dev Agent Record
 
