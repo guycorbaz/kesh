@@ -433,7 +433,9 @@ async fn create_vat_rate_non_admin_forbidden(pool: MySqlPool) {
         .client
         .post(app.url("/api/v1/vat-rates"))
         .bearer_auth(&token)
-        .json(&serde_json::json!({ "category": "custom", "rate": "5.00", "validFrom": "2030-01-01" }))
+        .json(
+            &serde_json::json!({ "category": "custom", "rate": "5.00", "validFrom": "2030-01-01" }),
+        )
         .send()
         .await
         .unwrap();
@@ -453,11 +455,17 @@ async fn create_vat_rate_overlap_rejected(pool: MySqlPool) {
         .client
         .post(app.url("/api/v1/vat-rates"))
         .bearer_auth(&token)
-        .json(&serde_json::json!({ "category": "normal", "rate": "8.50", "validFrom": "2025-01-01" }))
+        .json(
+            &serde_json::json!({ "category": "normal", "rate": "8.50", "validFrom": "2025-01-01" }),
+        )
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400, "overlapping rate in same category must be rejected");
+    assert_eq!(
+        resp.status(),
+        400,
+        "overlapping rate in same category must be rejected"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -530,8 +538,125 @@ async fn deactivate_and_history(pool: MySqlPool) {
     assert!(!body["active"].as_bool().unwrap());
 
     // GET sans param (actifs) → ne contient plus ce taux ; ?history=true → encore là.
-    let active: Value = app.client.get(app.url("/api/v1/vat-rates")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
-    assert!(active.as_array().unwrap().iter().all(|r| r["id"].as_i64().unwrap() != id));
-    let hist: Value = app.client.get(app.url("/api/v1/vat-rates?history=true")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
-    assert!(hist.as_array().unwrap().iter().any(|r| r["id"].as_i64().unwrap() == id && !r["active"].as_bool().unwrap()));
+    let active: Value = app
+        .client
+        .get(app.url("/api/v1/vat-rates"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        active
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["id"].as_i64().unwrap() != id)
+    );
+    let hist: Value = app
+        .client
+        .get(app.url("/api/v1/vat-rates?history=true"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        hist.as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"].as_i64().unwrap() == id && !r["active"].as_bool().unwrap())
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_vat_rate_admin_happy(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "CompA").await;
+    let _ = create_user(&pool, company_id, "admin", Role::Admin).await;
+    let token = login(&app, "admin", "test-password-123").await;
+
+    let listed: Value = app
+        .client
+        .get(app.url("/api/v1/vat-rates?history=true"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let first = &listed.as_array().unwrap()[0];
+    let id = first["id"].as_i64().unwrap();
+    let version = first["version"].as_i64().unwrap();
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/vat-rates/{id}")))
+        .bearer_auth(&token)
+        .json(
+            &serde_json::json!({ "label": "Libellé modifié", "active": true, "version": version }),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["version"].as_i64().unwrap(),
+        version + 1,
+        "version incremented"
+    );
+    assert_eq!(body["label"].as_str().unwrap(), "Libellé modifié");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn mutate_vat_rate_idor_cross_tenant_returns_404(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let company_a = create_company(&pool, "CompA").await;
+    let company_b = create_company(&pool, "CompB").await;
+    let _ = create_user(&pool, company_a, "admin_a", Role::Admin).await;
+    let token = login(&app, "admin_a", "test-password-123").await;
+
+    // Un taux appartenant à CompB.
+    let b_rate = vat_rates::list_active_for_company(&pool, company_b)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    // PUT cross-tenant → 404 (jamais 200/403 : le taux n'existe pas pour CompA).
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/vat-rates/{}", b_rate.id)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "active": true, "version": b_rate.version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404, "PUT cross-tenant must be 404");
+
+    // DELETE cross-tenant → 404.
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/vat-rates/{}", b_rate.id)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "version": b_rate.version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404, "DELETE cross-tenant must be 404");
+
+    // CompB toujours intact (taux actif).
+    let still = vat_rates::list_active_for_company(&pool, company_b)
+        .await
+        .unwrap();
+    assert!(still.iter().any(|r| r.id == b_rate.id && r.active));
 }

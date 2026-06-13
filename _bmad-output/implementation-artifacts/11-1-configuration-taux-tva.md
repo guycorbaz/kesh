@@ -258,6 +258,16 @@ Vérifs positives : backfill `CASE label` exact (labels réels `product-vat-*`),
 
 Implémentation complète (backend + frontend + tests) — cf. Dev Agent Record. Migration `version`+`category` (extensible) + backfill + index ; repo CRUD + `find_for_category_at_date` déterministe + détection chevauchement `COALESCE(+∞)` ; routes admin (sentinel lock, audit in-tx, 409/400) + `?history=true` ; page `/settings/vat-rates` groupée par catégorie (clôt-puis-crée) ; 37 clés i18n fr-CH. **Tests verts** : repo 16, routes e2e 17, régression export 20 + onboarding 7, frontend check/lint/build + test:unit 312. fmt + clippy verts. Découverte runtime : contrainte DB `chk_vat_rates_label_not_empty` → label vide défaut à la catégorie. **T5.3/T6.3 Playwright E2E déféré** (couvert par les 17 e2e API, gap LOW). Status `ready-for-dev` → **`review`**. Prochaine : `bmad-code-review 11-1` (Sonnet→Haiku).
 
+### Code-review Pass 1 (Sonnet 4.6, 2026-06-14)
+
+**0 CRITICAL, 1 HIGH, 2 MEDIUM, 3 LOW** — sécurité (IDOR/RBAC/verrou optimiste/audit in-tx/prédicat chevauchement) tout vérifié **correct** ground-truth. Patchés :
+- **H1 HIGH** — `serialize_vat_rates_csv` (export souveraineté) omettait `category`+`version` → ajoutés (le `.keshbackup` dynamique était déjà OK ; seul le CSV hardcodé était affecté). Export 20/20 toujours vert.
+- **M1 MEDIUM** — pas de test e2e PUT 200 happy → ajouté `update_vat_rate_admin_happy` (version incrémentée).
+- **M2 MEDIUM** — pas de test IDOR mutation cross-tenant → ajouté `mutate_vat_rate_idor_cross_tenant_returns_404` (PUT+DELETE cross-tenant → 404, code déjà correct, test de non-régression).
+- **L1/L2/L3 LOW** — validation client-side (calque bank-accounts, acceptée), `assert_onboarding_complete` non scopé company (cohérent pattern existant, mono-tenant v0.1), état intermédiaire `submitChange` (2 endpoints non-atomiques — limitation documentée v0.2, la page recharge l'état en cas d'échec). Acceptés/documentés.
+
+vat e2e 19/19, export 20/20, fmt+clippy verts. Prochaine : Pass 2 (Haiku).
+
 ## Dev Agent Record
 
 ### Agent Model Used
