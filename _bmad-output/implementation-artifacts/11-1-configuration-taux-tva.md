@@ -248,6 +248,12 @@ Vérifs positives : backfill `CASE label` exact (labels réels `product-vat-*`),
 
 **0 CRITICAL/HIGH, 1 MEDIUM, 0 LOW.** Tous les patches Pass A (F-CAT-1 à 6) re-vérifiés cohérents et exacts ground-truth (FromRow l.21, SELECT l.28/48/70 sans category, `acquire_company_sentinel_lock` pub l.588, prédicat chevauchement mathématiquement correct, ACs 1-12 sans trou, mapping AC↔Task complet, extensibilité sans contradiction). **F-B1 MEDIUM** : le Scope item 5 (frontend) disait encore « crée le nouveau + clôt l'ancien » — incohérent avec l'ordre clôturer-puis-créer posé en item 4 / AC#5 (un dev frontend POST-puis-PUT déclencherait un rejet 4bis systématique). Corrigé (item 5 + T4.1 : clôt-puis-crée, PUT avant POST). NON convergé (1 MEDIUM) → **Pass C** (Haiku, contexte frais).
 
+### Validate delta-category Pass C (Haiku 4.5, 2026-06-13) — ✅ CONVERGÉ
+
+**0 CRITICAL/HIGH/MEDIUM/LOW, 0 hallucination.** Confirmation : ordre clôturer-puis-créer cohérent partout (items 4/5, AC#5, T4.1 ; 0 résidu hors Change Log), 12 ACs sans trou + mapping complet, T2.1bis FromRow OK, prédicat chevauchement figé, extensibilité sans contradiction. **Trend delta-category : Pass A (Opus) 6 [2H/2M/2L] → Pass B (Sonnet) 1 [1M] → Pass C (Haiku) 0.**
+
+**Bilan validate 11-1 complet** : 6 passes (modèle sans catégorie) convergées + re-scope `category` (décision Guy) + 3 passes ciblées (Opus→Sonnet→Haiku) convergées. La spec couvre désormais : CRUD admin, sélection temporelle par catégorie déterministe, modèle de catégorie **extensible** (anticipe les nouvelles catégories officielles), invariant de non-chevauchement, advisory lock, audit, frontend groupé, seed étendu, tests. **Status `ready-for-dev`.** Prochaine étape : `bmad-dev-story 11-1` (pattern `bank_accounts`).
+
 ## Dev Agent Record
 
 ### Agent Model Used
