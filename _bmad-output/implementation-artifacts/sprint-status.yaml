@@ -39,7 +39,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: "2026-06-13  (Story 11-0 RESCOPÉE + validate CONVERGÉ — découverte que la doc utilisateur PME existait déjà (user-manual.tex, PR #102, ~85% couvert) → 11-0 re-scopée de « créer guide PME » en « enrichir user-manual.tex existant » (5 écarts : screenshots, exemples sectoriels, glossaire, ref README, refresh Limites/version). Dette cat A « doc PME » essentiellement soldée par PR #102. Validate 4 passes Sonnet→Haiku→Opus→Sonnet (6→2→5→3 findings, 0>LOW, 0 halluc Haiku, Opus P3 catch effet de bord bump version sur roadmap marketing). 12 ACs. `backlog → ready-for-dev`. Branche story/11-0-user-guide-pme (commits 544cadf→62a2d42, non poussée). Prochaine : `bmad-dev-story 11-0`. // 2026-06-12 : RÉTRO EPIC 17 DONE — epic-17 + rétro → done. PR #174 mergée (squash 0d3375c, ferme #122). Milestone GitHub v0.2 créé. v0.2.0 publié. // Précédent : Story 17-4f doc convergée — ÉPOPÉE 17-4 COMPLÈTE 6/6, 4 stories bout-en-bout même session.)"
+last_updated: "2026-06-13  (Story 11-0 RESCOPÉE + validate CONVERGÉ + DEV-STORY DONE → review. Découverte : la doc utilisateur PME existait déjà (user-manual.tex, PR #102, ~85% couvert) → 11-0 re-scopée en enrichissement (5 écarts). Validate 4 passes Sonnet→Haiku→Opus→Sonnet (6→2→5→3, 0>LOW). Dev-story Opus 4.8 : user-manual.tex 33→44 p, glossaire 12→32 termes, exemples sectoriels PME, 22 captures placeholder (macro DRY), refresh limites v0.2.0, bump version kesh-style 0.2.0, marketing roadmap rafraîchie (AC#11 refresh), README §Documentation, 3 PDFs régénérés (make fr vert). Gates Guy restants : T4.3 vraies captures NAS + T7 sign-off. Branche story/11-0-user-guide-pme. Prochaine : push + PR puis `bmad-code-review 11-0`. // 2026-06-12 : RÉTRO EPIC 17 DONE — epic-17 + rétro → done. PR #174 mergée (squash 0d3375c, ferme #122). Milestone GitHub v0.2 créé. v0.2.0 publié. // Précédent : Story 17-4f doc convergée — ÉPOPÉE 17-4 COMPLÈTE 6/6, 4 stories bout-en-bout même session.)"
 # (Story 6-2 → done 2026-04-20 : PR #25 mergée sur main (squash commit fea684b). Multi-tenant IDOR isolation complète. Migration simplifiée sans DELIMITER (sqlx compatibility). Branch protection ajustée.)
 # (Story 6-4 → done 2026-04-17 : PR #18 mergée sur main (squash commit 520e8df). KF-007 e2e blocking waived via step-level continue-on-error, Story 6-5 à créer pour fix avant prod v0.1)
 # (Epic 5 Facturation QR Bill clôturé 2026-04-16 — 4 stories done, retro done)
@@ -197,7 +197,7 @@ development_status:
 
   # Epic 11: TVA Suisse (ex-Epic 9, renumbered 2026-04-20)
   epic-11: backlog
-  11-0-user-guide-pme-getting-started: ready-for-dev  # RESCOPÉE 2026-06-13 : enrichissement user-manual.tex existant (la doc PME existait déjà, PR #102). Validate convergé 4 passes Sonnet→Haiku→Opus→Sonnet (6→2→5→3 findings, 0 > LOW). 12 ACs. Dette cat A « doc PME » essentiellement soldée par PR #102. Branche story/11-0-user-guide-pme.
+  11-0-user-guide-pme-getting-started: review  # RESCOPÉE 2026-06-13 : enrichissement user-manual.tex existant (la doc PME existait déjà, PR #102). Validate convergé 4 passes Sonnet→Haiku→Opus→Sonnet (6→2→5→3 findings, 0 > LOW). 12 ACs. Dette cat A « doc PME » essentiellement soldée par PR #102. Branche story/11-0-user-guide-pme.
   11-1-configuration-taux-tva: backlog
   11-2-calcul-tva-rapport-par-periode: backlog
   epic-11-retrospective: optional

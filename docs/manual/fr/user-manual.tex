@@ -8,6 +8,20 @@
 \setdefaultlanguage{french}
 \usepackage{../shared/kesh-style}
 
+%% Captures d'écran : graphicx est chargé par kesh-style.sty.
+%% Les PNG sont dans ./screenshots/. Tant qu'une capture réelle n'est pas
+%% fournie, le macro retombe sur _placeholder.png (approche texte-d'abord).
+\graphicspath{{./screenshots/}}
+\newcommand{\keshscreenshot}[2]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{screenshots/#1}%
+      {\includegraphics[width=0.85\linewidth]{#1}}%
+      {\includegraphics[width=0.70\linewidth]{_placeholder}}%
+    \caption{#2}
+  \end{figure}%
+}
+
 \title{Manuel utilisateur Kesh}
 \author{\keshAuthor}
 \date{\keshReleaseDate}
@@ -55,6 +69,8 @@ Ce manuel décrit Kesh version \keshVersion. Les captures d'écran et libellés 
 \section{Premiers pas}
 
 \subsection{Création de votre compte}
+
+\keshscreenshot{setup-admin.png}{Écran de création du compte administrateur, au tout premier démarrage d'une installation vierge.}  % TODO capture: ecran /setup/admin (donnees factices : admin / Pierre Exemple)
 
 L'accès à Kesh nécessite un compte utilisateur. Deux scénarios sont possibles :
 
@@ -134,6 +150,8 @@ Votre choix est sauvegardé et appliqué automatiquement à votre prochaine conn
 
 À votre première connexion sur une nouvelle company, Kesh vous guide via un assistant d'onboarding. Deux parcours sont proposés :
 
+\keshscreenshot{onboarding-welcome.png}{Écran d'accueil de l'assistant d'onboarding : choix entre le mode exploration et le mode production.}  % TODO capture: 1er ecran onboarding
+
 \subsection{Chemin A — Mode exploration}
 
 Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mode exploration. Kesh crée :
@@ -150,19 +168,22 @@ Vous pouvez librement créer, modifier, supprimer des données dans ce mode. Pou
 
 \subsection{Chemin B — Mode production}
 
-Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode production. L'assistant vous demande :
+Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode production. L'assistant vous guide à travers une série d'écrans :
+
+\keshscreenshot{onboarding-production.png}{Saisie des coordonnées légales en mode production (raison sociale, adresse, IDE).}  % TODO capture: ecran coordonnees production (donnees factices : ABC Web Sarl, CHE-123.456.789)
 
 \begin{enumerate}
-    \item \textbf{Informations légales} : raison sociale, IDE, adresse, RCC (si soumis à TVA).
-    \item \textbf{Langue et timezone} : par défaut français Europe/Zurich.
-    \item \textbf{Devise} : CHF par défaut (multi-devises prévu v0.2).
-    \item \textbf{Plan comptable} : Sterchi PME, KMU, ou import personnalisé CSV.
-    \item \textbf{Exercice initial} : dates de début et de fin du premier exercice.
-    \item \textbf{Comptes bancaires} : pré-remplissage des comptes 1020 / 1030 selon votre banque.
-    \item \textbf{Comptes de facturation} : pré-remplissage des comptes débiteurs (1100), fournisseurs (2000), produits (3000+) et charges (4000+).
+    \item \textbf{Type d'organisation} : indépendant, association ou PME. Ce choix adapte les libellés et les valeurs par défaut (par exemple, une PME inscrite au registre du commerce renseigne obligatoirement son IDE).
+    \item \textbf{Langue comptable} : langue des comptes et des rapports, indépendante de la langue de l'interface (utile si vous travaillez en français mais produisez des rapports en allemand, par exemple).
+    \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse, et IDE (CHE-XXX.XXX.XXX) pour une entité inscrite au registre du commerce.
+    \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard).
 \end{enumerate}
 
-Une fois l'onboarding terminé, vous êtes prêt à saisir vos premières écritures.
+À la finalisation, Kesh met en place votre plan comptable (Sterchi PME par défaut) et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
+
+\begin{keshnote}
+Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Paramètres} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
+\end{keshnote}
 
 \begin{keshtip}
 Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Les utilisateurs expérimentés peuvent passer en \emph{Mode expert} dans \emph{Paramètres} → \emph{Préférences}, ce qui réduit les confirmations et accélère la saisie.
@@ -172,6 +193,8 @@ Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Les ut
 \section{Tableau de bord}
 
 Le tableau de bord est votre page d'accueil après connexion. Il affiche :
+
+\keshscreenshot{dashboard.png}{Tableau de bord : soldes bancaires, factures impayées, transactions non rapprochées et graphique du chiffre d'affaires.}  % TODO capture: dashboard avec donnees demo
 
 \begin{itemize}
     \item Le \textbf{solde} de vos comptes bancaires principaux.
@@ -218,6 +241,18 @@ Tous vos refresh tokens sont révoqués après changement de mot de passe : vous
 
 \emph{Paramètres} → \emph{Sécurité} → \emph{Sessions actives} affiche la liste des sessions ouvertes (navigateur, IP, date de connexion). Vous pouvez révoquer une session distante si vous suspectez une connexion non autorisée.
 
+\subsection{Récupération de mot de passe oublié}
+
+Si vous avez oublié votre mot de passe, utilisez le lien \emph{Mot de passe oublié ?} de l'écran de connexion (cf. section \emph{Premiers pas → Récupération de mot de passe}). Cette fonctionnalité nécessite qu'un serveur de messagerie (SMTP) ait été configuré par votre administrateur et qu'une adresse email soit associée à votre compte.
+
+\subsection{Clés API (accès programmatique)}
+
+Pour connecter Kesh à un logiciel tiers ou à une intégration (script, outil d'IA, etc.), vous pouvez créer une \textbf{clé API} (jeton d'accès personnel) depuis \emph{Paramètres} → \emph{Clés API} (\keshpath{/settings/api-keys}). Chaque clé porte un périmètre (\emph{lecture seule} ou \emph{lecture-écriture}) et une date d'expiration optionnelle ; le secret n'est affiché qu'une seule fois à la création. La gestion des clés est accessible aux rôles \emph{Comptable} et \emph{Administrateur}.
+
+\begin{keshnote}
+La documentation complète de l'API externe (authentification, points d'accès, exemples) se trouve dans \keshpath{docs/api-external.md}. Les aspects d'administration (rotation, durcissement) sont décrits dans le manuel administrateur.
+\end{keshnote}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Plan comptable}
 
@@ -226,6 +261,8 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 \subsection{Visualisation}
 
 \emph{Comptabilité} → \emph{Plan comptable}. La page affiche tous les comptes organisés selon leur structure hiérarchique :
+
+\keshscreenshot{plan-comptable.png}{Plan comptable Sterchi PME affiché par classes hiérarchiques.}  % TODO capture: page plan comptable
 
 \begin{itemize}
     \item Classe 1 : Actifs (1000 Caisse, 1020 CCP, 1030 Compte courant, 1100 Débiteurs, etc.).
@@ -273,12 +310,30 @@ numero,libelle,parent,type,devise
 L'import remplace intégralement le plan comptable existant. Cette opération n'est possible qu'au début d'un exercice, avant toute saisie. Au-delà, vous devez ajouter les comptes manquants un par un.
 \end{keshwarning}
 
+\subsection{Adapter le plan à votre secteur}
+
+Le plan Sterchi PME couvre la plupart des besoins, mais chaque PME l'adapte à son activité. Quelques exemples concrets :
+
+\begin{itemize}
+    \item \textbf{Commerce de détail} (ex. \emph{Boutique Pierre Exemple Sàrl}) : créez des sous-comptes de stock sous la classe 1 (ex. 1200.1 « Stock textile », 1200.2 « Stock accessoires ») et ventilez les ventes par rayon en sous-comptes de 3000 (ex. 3000.1 « Ventes textile », 3000.2 « Ventes accessoires ») pour suivre vos marges par catégorie.
+    \item \textbf{Cabinet médical ou prestataire de services} (ex. \emph{Dr Marie Exemple}) : peu de stock, l'essentiel est dans les produits de services (3200 « Honoraires ») et les charges de personnel (classe 5). Créez un sous-compte 3200.1 par type de prestation si vous voulez analyser votre activité.
+    \item \textbf{Agence web / indépendant} (ex. \emph{ABC Web Sàrl}) : facturation au forfait ou à l'heure via le catalogue produits ; suivez les sous-traitances en sous-compte de la classe 4 (ex. 4400 « Prestations de tiers »).
+    \item \textbf{Artisan} (ex. \emph{Menuiserie Exemple}) : distinguez achats de matières premières (classe 4) et outillage (classe 1, immobilisations) ; un sous-compte 4000.1 « Bois » / 4000.2 « Quincaillerie » facilite le suivi des coûts de matière.
+    \item \textbf{Association} (ex. \emph{Association Exemple}) : les cotisations des membres se comptabilisent en classe 3 (ex. 3600 « Cotisations »), les dons en 3601 « Dons et subventions ». Pas de TVA si l'association n'est pas assujettie.
+\end{itemize}
+
+\begin{keshtip}
+Archivez (plutôt que supprimer) les comptes Sterchi PME que vous n'utilisez pas : ils disparaissent de la saisie tout en restant disponibles pour l'historique. C'est particulièrement utile pour un indépendant ou une petite structure dont le plan complet est surdimensionné.
+\end{keshtip}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Écritures comptables}
 
 \subsection{Saisie d'une écriture en partie double}
 
 \emph{Comptabilité} → \emph{Nouvelle écriture}. Renseigner :
+
+\keshscreenshot{ecriture-saisie.png}{Formulaire de saisie d'une écriture en partie double avec ses lignes débit/crédit.}  % TODO capture: form nouvelle ecriture
 
 \begin{itemize}
     \item \textbf{Date} : date de la transaction (entre la date de début et la date de fin de l'exercice).
@@ -380,6 +435,8 @@ Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement repor
 
 \subsection{Clôture d'un exercice}
 
+\keshscreenshot{exercice-cloture.png}{Écran de clôture d'un exercice comptable.}  % TODO capture: ecran cloture exercice
+
 \emph{Comptabilité} → \emph{Exercices} → sélectionner l'exercice → \emph{Clôturer}.
 
 La clôture :
@@ -408,6 +465,8 @@ En cas d'erreur découverte après clôture, un administrateur peut rouvrir un e
 
 \subsubsection{Création d'un contact}
 
+\keshscreenshot{contact-nouveau.png}{Création d'un contact client (société) avec IDE et conditions de paiement.}  % TODO capture: form nouveau contact (donnees factices : Boutique Pierre Exemple Sarl)
+
 \emph{Nouveau contact}. Renseigner :
 
 \begin{itemize}
@@ -435,6 +494,8 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
 \emph{Produits}. Les produits sont les biens ou services que vous vendez régulièrement et que vous voulez réutiliser dans vos factures.
 
 \subsubsection{Création d'un produit}
+
+\keshscreenshot{produit-nouveau.png}{Création d'un produit/service du catalogue avec prix unitaire HT et compte produit par défaut.}  % TODO capture: form nouveau produit
 
 \emph{Nouveau produit}. Renseigner :
 
@@ -466,6 +527,8 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
 
 \emph{Factures} → \emph{Nouvelle facture}. Renseigner :
 
+\keshscreenshot{facture-nouvelle.png}{Création d'une facture multi-lignes avec sélection du client et du compte bancaire de réception.}  % TODO capture: form nouvelle facture
+
 \begin{itemize}
     \item \textbf{Client} : sélection dans le carnet d'adresses (ou création à la volée).
     \item \textbf{Date de facture} : par défaut aujourd'hui.
@@ -475,6 +538,20 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
     \item \textbf{Remarques} : texte libre apparaissant en bas de facture (mention de remerciement, conditions particulières, etc.).
     \item \textbf{Compte bancaire de réception} : le compte sur lequel vous attendez le paiement (utilisé pour générer la référence QR Bill).
 \end{itemize}
+
+\subsubsection{Exemple : facture d'une agence web}
+
+\emph{ABC Web Sàrl} facture une prestation à son client \emph{Boutique Pierre Exemple Sàrl} :
+
+\begin{itemize}
+    \item Client : Boutique Pierre Exemple Sàrl (sélectionné dans le carnet d'adresses, conditions « 30 jours net »).
+    \item Ligne 1 : « Refonte site web » — 1 × CHF 4'500.00.
+    \item Ligne 2 : « Maintenance mensuelle » — 3 × CHF 150.00 = CHF 450.00.
+    \item Total : CHF 4'950.00. Échéance calculée à 30 jours.
+    \item Compte de réception : le compte bancaire QR-IBAN de l'agence.
+\end{itemize}
+
+À la validation, Kesh attribue le numéro \texttt{F-2026-0042}, génère le PDF QR Bill, et crée l'écriture comptable automatique (Débit 1100 Débiteurs CHF 4'950.00 / Crédit 3200 Honoraires CHF 4'950.00 — la TVA s'ajoutera quand le module TVA sera disponible, Epic 11).
 
 \subsection{Validation d'une facture}
 
@@ -499,6 +576,8 @@ Le numéro de facture est généré automatiquement selon un pattern configurabl
 
 \subsection{Génération du PDF avec QR Bill}
 
+\keshscreenshot{facture-qrbill.png}{Exemple de PDF de facture avec section de paiement QR Bill 2.2 détachable en bas de page.}  % TODO capture: PDF facture QR Bill (donnees factices)
+
 À la validation, Kesh génère un PDF conforme au standard \href{https://www.six-group.com/en/products-services/banking-services/standardization/qr-bill.html}{QR Bill 2.2} (norme suisse 2020+) :
 
 \begin{itemize}
@@ -508,7 +587,7 @@ Le numéro de facture est généré automatiquement selon un pattern configurabl
     \item Compatible scan par les e-banking suisses et applications mobiles (Raiffeisen, PostFinance, UBS, Credit Suisse, Migros Bank, etc.).
 \end{itemize}
 
-Le PDF est téléchargeable depuis la facture validée. Vous pouvez l'envoyer par email (fonctionnalité d'envoi direct à venir v0.2) ou l'imprimer.
+Le PDF est téléchargeable depuis la facture validée. Vous pouvez ensuite l'envoyer manuellement par email (depuis votre messagerie habituelle) ou l'imprimer pour un envoi postal. Kesh ne dispose pas d'envoi de facture intégré : le service de messagerie interne (SMTP) n'est utilisé que pour la récupération de mot de passe.
 
 \begin{keshtip}
 La référence structurée du QR Bill est calculée selon la norme ISO 11649 (RF Reference) ou le format suisse QRR (Référence Kesh). Le choix du format dépend du compte bancaire de réception : les comptes IBAN suisses standard utilisent IS0 11649, les comptes QR-IBAN utilisent QRR.
@@ -517,6 +596,8 @@ La référence structurée du QR Bill est calculée selon la norme ISO 11649 (RF
 \subsection{Échéancier des factures}
 
 \emph{Factures} → \emph{Échéancier}. Vue d'ensemble des factures :
+
+\keshscreenshot{facture-echeancier.png}{Échéancier des factures : à échoir, échues impayées, et payées.}  % TODO capture: page echeancier
 
 \begin{itemize}
     \item Factures à échoir (dans les 30 prochains jours).
@@ -528,10 +609,10 @@ Cliquer sur une facture en retard permet de générer un rappel (template config
 
 \subsection{Avoirs et notes de crédit}
 
-\emph{Factures} → \emph{Nouvel avoir}. Un avoir est l'inverse d'une facture (Débit produit / Crédit débiteurs). Génère un PDF distinct sans QR Bill (le paiement va du fournisseur vers le client).
+Un avoir (note de crédit) est l'inverse d'une facture (Débit produit / Crédit débiteurs) : il annule tout ou partie d'une facture émise.
 
 \begin{keshnote}
-Les avoirs et notes de crédit complets, ainsi que les fichiers de paiement pain.001 (paiements sortants), sont prévus dans l'Epic 12 (v0.1 backlog). Pour la v0.1 initiale, les avoirs sont saisis manuellement comme contre-passations d'écritures.
+En version 0.2.0, Kesh ne dispose pas encore d'un assistant d'avoir dédié. Pour émettre un avoir, saisissez une \textbf{contre-passation manuelle} de l'écriture de la facture concernée (cf. section \emph{Écritures comptables → Modification d'un montant ou d'un compte}). Les avoirs et notes de crédit complets, ainsi que les fichiers de paiement pain.001 (paiements sortants), sont prévus dans une version ultérieure (Epic 12).
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -540,6 +621,8 @@ Les avoirs et notes de crédit complets, ainsi que les fichiers de paiement pain
 L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh supporte deux formats :
 
 \subsection{Import CAMT.053 (ISO 20022)}
+
+\keshscreenshot{import-camt.png}{Prévisualisation d'un import de relevé bancaire CAMT.053 avant validation.}  % TODO capture: ecran import CAMT preview
 
 Le format CAMT.053 est le standard suisse officiel pour les extraits de compte bancaire. Il est fourni par toutes les banques suisses en complément ou remplacement du format CSV propriétaire.
 
@@ -570,6 +653,8 @@ Kesh parse le fichier, extrait les transactions, détecte les doublons (si le fi
 
 \subsection{Import CSV multi-encodage}
 
+\keshscreenshot{import-csv.png}{Configuration d'un profil d'import CSV (mapping des colonnes, encodage, séparateur).}  % TODO capture: ecran profil CSV
+
 \subsubsection{Profils banque}
 
 Le format CSV n'étant pas standardisé, chaque banque propose son propre format de colonnes, séparateurs et encodage. Kesh permet de créer des \emph{profils banque} réutilisables :
@@ -595,6 +680,8 @@ Le format CSV n'étant pas standardisé, chaque banque propose son propre format
 \end{enumerate}
 
 \subsection{Détection des doublons}
+
+\keshscreenshot{import-doublons.png}{Avertissement de détection de doublons lors d'un ré-import de fichier bancaire.}  % TODO capture: ecran doublons
 
 Kesh détecte automatiquement les transactions déjà importées en utilisant une empreinte unique calculée à partir de :
 
@@ -622,6 +709,8 @@ Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faci
 La réconciliation consiste à rapprocher les transactions bancaires importées avec les écritures comptables ou les factures de votre comptabilité.
 
 \subsection{Réconciliation automatique}
+
+\keshscreenshot{reconciliation-auto.png}{Propositions de réconciliation automatique entre transactions bancaires et factures.}  % TODO capture: ecran reconciliation auto (propositions)
 
 \subsubsection{Algorithme de matching}
 
@@ -659,6 +748,8 @@ Si plusieurs propositions sont à valider d'un coup, cocher les transactions con
 
 \subsection{Réconciliation manuelle}
 
+\keshscreenshot{reconciliation-manuelle.png}{Rapprochement manuel : sélection explicite de la facture correspondant à une transaction.}  % TODO capture: ecran reconciliation manuelle
+
 Si aucune proposition automatique n'est pertinente :
 
 \begin{enumerate}
@@ -668,6 +759,8 @@ Si aucune proposition automatique n'est pertinente :
 \end{enumerate}
 
 \subsection{Éclatement d'une transaction (split)}
+
+\keshscreenshot{reconciliation-split.png}{Éclatement d'une transaction bancaire en plusieurs écritures (paiement partiel, ventilation).}  % TODO capture: ecran split
 
 Cas d'usage : votre banque crédite votre compte d'un virement groupé de CHF 5'000 correspondant en réalité à 3 factures (CHF 2'000 + CHF 1'500 + CHF 1'500).
 
@@ -681,6 +774,8 @@ Cas d'usage : votre banque crédite votre compte d'un virement groupé de CHF 5'
 L'écriture comptable globale est éclatée en N écritures (1 par sous-élément).
 
 \subsection{Règles d'affectation automatique}
+
+\keshscreenshot{reconciliation-regles.png}{Définition d'une règle d'affectation automatique des transactions récurrentes.}  % TODO capture: ecran regles d'affectation
 
 \emph{Banque} → \emph{Règles}. Définir des règles pour automatiser la création d'écritures pour les transactions récurrentes.
 
@@ -710,6 +805,8 @@ Si plusieurs écritures sont en brouillon issues des règles d'affectation, coch
 
 \subsection{Bilan}
 
+\keshscreenshot{rapport-bilan.png}{Bilan : actifs, passifs et capitaux propres à une date donnée.}  % TODO capture: rapport bilan
+
 \emph{Rapports} → \emph{Bilan}. Affiche les actifs et passifs au format légal Art. 959 et 959a CO :
 
 \begin{itemize}
@@ -723,6 +820,8 @@ Si plusieurs écritures sont en brouillon issues des règles d'affectation, coch
 Filtres : date de référence (par défaut fin d'exercice en cours), exercice à comparer (N-1).
 
 \subsection{Compte de résultat}
+
+\keshscreenshot{rapport-resultat.png}{Compte de résultat : produits, charges et résultat de la période.}  % TODO capture: rapport compte de resultat
 
 \emph{Rapports} → \emph{Compte de résultat}. Disponible en deux présentations (Art. 959b CO) :
 
@@ -773,6 +872,8 @@ L'\emph{export ZIP de souveraineté} (Story 9-2b) est l'export global de toutes 
 \end{itemize}
 
 \subsection{Génération}
+
+\keshscreenshot{export-souverainete.png}{Génération d'un export de souveraineté (archive ZIP annuelle pour la conservation OLICo).}  % TODO capture: ecran export souverainete
 
 \emph{Exports} → \emph{Export global ZIP}. Sélectionner :
 
@@ -977,17 +1078,37 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 \subsection{Glossaire comptable}
 
 \begin{description}
+    \item[Actif] Ce que possède l'entreprise (liquidités, créances, stocks, immobilisations). Classe 1 du plan comptable.
+    \item[Amortissement] Constatation comptable de la perte de valeur d'une immobilisation sur sa durée d'utilisation.
+    \item[Audit-trail (piste d'audit)] Journal infalsifiable de toutes les modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a.
+    \item[Avoir (note de crédit)] Document qui annule tout ou partie d'une facture émise (l'inverse d'une facture).
+    \item[Balance des comptes] Liste de tous les comptes avec leurs soldes débiteurs et créditeurs à une date donnée.
     \item[Bilan] État du patrimoine d'une entreprise à une date donnée (actifs = passifs + capitaux propres).
+    \item[Capitaux propres] Fonds appartenant aux propriétaires (capital, réserves, résultat reporté). Différence entre actifs et dettes.
+    \item[Charge] Coût supporté par l'entreprise (achats, salaires, loyer). Classes 4 à 6.
     \item[Compte de résultat] État des produits et charges d'une période (bénéfice ou perte).
+    \item[Créance] Somme due à l'entreprise par un tiers (typiquement un client). Compte « Débiteurs » (1100).
     \item[Débit / Crédit] Sens d'une opération comptable. Par convention, débit = entrée pour l'actif et sortie pour le passif.
+    \item[Dette] Somme due par l'entreprise à un tiers (typiquement un fournisseur). Compte « Créanciers » (2000).
     \item[Échéance] Date à laquelle une facture devient exigible.
-    \item[Exercice] Période sur laquelle s'établissent les comptes annuels.
     \item[Écriture en partie double] Saisie respectant le principe somme(débits) = somme(crédits).
-    \item[IDE] Identifiant Unique des Entreprises (Suisse).
+    \item[Exercice] Période sur laquelle s'établissent les comptes annuels.
+    \item[Grand-livre] Ensemble des comptes individuels reprenant toutes les écritures qui les concernent.
+    \item[IDE] Identifiant Unique des Entreprises (Suisse), format CHE-XXX.XXX.XXX.
+    \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
+    \item[Lettrage] Rapprochement d'une facture avec son paiement pour solder la créance ou la dette correspondante.
+    \item[Liquidités] Avoirs immédiatement disponibles (caisse, comptes bancaires et postaux).
+    \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.
+    \item[Passif] Origine des ressources de l'entreprise (dettes + capitaux propres). Classe 2.
     \item[Plan comptable] Liste structurée et hiérarchisée des comptes utilisés.
+    \item[Produit] Revenu généré par l'activité (ventes, honoraires, cotisations). Classe 3.
+    \item[Provision] Charge estimée et comptabilisée d'avance pour un risque ou une dépense future probable.
     \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX Group).
     \item[QR-IBAN] IBAN spécial pour les paiements QR Bill avec référence structurée.
+    \item[Réconciliation bancaire] Rapprochement des transactions du relevé bancaire avec les écritures comptables (factures, paiements).
     \item[Référence structurée] Référence numérique unique attachée à un paiement (ISO 11649 ou QRR).
+    \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant à la clôture.
+    \item[Sous-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un client important).
     \item[TVA] Taxe sur la valeur ajoutée (Loi LTVA, RS 641.20).
 \end{description}
 
@@ -1007,15 +1128,26 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
     \bottomrule
 \end{tabularx}
 
-\subsection{Limites actuelles (v0.1)}
+\subsection{Nouveautés et limites (v0.2.0)}
+
+Disponibles depuis la version 0.2.0 :
 
 \begin{itemize}
-    \item Mono-devise CHF (multi-devises prévu v0.2).
-    \item TVA non encore implémentée (Epic 11 v0.1).
-    \item Pas d'avoirs / notes de crédit dédiés (Epic 12 v0.1).
-    \item Pas de fichiers de paiement pain.001 (Epic 12 v0.1).
-    \item Pas de signature QES sur les exports (verdict (b) recherche réglementaire, prévu Epic 14 v0.2).
-    \item Format PDF standard non PDF/A (migration v0.2 selon ISO 19005).
+    \item Récupération de mot de passe oublié par email en libre-service (cf. \emph{Premiers pas}).
+    \item Export et import complets d'une installation (\keshcommand{.keshbackup}) depuis l'interface d'administration (cf. manuel administrateur).
+    \item Clés API (jetons d'accès personnels) pour les intégrations tierces (cf. \emph{Gestion de votre compte → Clés API}).
+\end{itemize}
+
+Fonctionnalités non encore disponibles en 0.2.0 :
+
+\begin{itemize}
+    \item Mono-devise CHF (multi-devises prévu pour une version ultérieure).
+    \item TVA non encore implémentée (prévue Epic 11).
+    \item Pas d'assistant d'avoirs / notes de crédit dédié — utiliser la contre-passation manuelle (prévu Epic 12).
+    \item Pas de fichiers de paiement pain.001 (prévus Epic 12).
+    \item Pas d'envoi de facture par email intégré (téléchargement PDF + envoi manuel).
+    \item Pas de signature électronique qualifiée (QES) sur les exports (verdict (b) de la recherche réglementaire, prévu Epic 14).
+    \item Format PDF standard, non PDF/A (migration prévue selon ISO 19005).
 \end{itemize}
 
 \subsection{Liens externes utiles}

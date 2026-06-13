@@ -1,6 +1,6 @@
 # Story 11.0: Enrichissement du manuel utilisateur PME Kesh (Epic 11 prep)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -146,27 +146,27 @@ Sections déjà présentes (l. = ligne dans `docs/manual/fr/user-manual.tex`) :
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Gap audit + corrections du corps existant** (AC #7)
-  - [ ] T1.1 Vérifier que §Onboarding (l. 133) **ne contredit pas** le flux réel v0.2.0 (8 écrans UI : langue UI → mode UI → path A/B → type org → langue comptable → coordonnées → compte bancaire → finalisation). **NE PAS réécrire** la description actuelle des 7 étapes métier du Chemin B si elle reste exacte (elle décrit les champs saisis, pas les écrans — découpage valide et pédagogique). Corriger uniquement si un champ documenté n'existe plus ou si une étape réelle manque. Les « 8 étapes » sont un repère de vérification, pas un format d'écriture imposé.
-  - [ ] T1.2 **Corriger** §Génération du PDF (l. 511) : retirer « (fonctionnalité d'envoi direct à venir v0.2) », reformuler en envoi manuel.
-  - [ ] T1.3 **Corriger** §Avoirs et notes de crédit (l. 529-534) : supprimer la navigation `Factures → Nouvel avoir` inexistante, aligner sur la `keshnote` (contre-passation manuelle).
-  - [ ] T1.4 Clés API : ajouter une brève mention de renvoi dans §Gestion de votre compte (l. 192) vers `docs/api-external.md` + admin-manual. Pas de doc `.keshbackup` dans user-manual (admin-only, déjà admin-manual l.1298).
-- [ ] **T2 — Exemples sectoriels PME** (AC #4)
-  - [ ] T2.1 Plan comptable : exemples par secteur (commerce, services, artisan).
-  - [ ] T2.2 Facturation : exemple concret de facture PME (avec QR Bill) par secteur.
-- [ ] **T3 — Glossaire** (AC #5)
-  - [ ] T3.1 Compléter à ~30 termes, **réordonner** tout le glossaire alphabétiquement (corriger le désordre existant l.983-985), sans doublon.
+- [x] **T1 — Gap audit + corrections du corps existant** (AC #7)
+  - [x] T1.1 Vérifier que §Onboarding (l. 133) **ne contredit pas** le flux réel v0.2.0 (8 écrans UI : langue UI → mode UI → path A/B → type org → langue comptable → coordonnées → compte bancaire → finalisation). **NE PAS réécrire** la description actuelle des 7 étapes métier du Chemin B si elle reste exacte (elle décrit les champs saisis, pas les écrans — découpage valide et pédagogique). Corriger uniquement si un champ documenté n'existe plus ou si une étape réelle manque. Les « 8 étapes » sont un repère de vérification, pas un format d'écriture imposé.
+  - [x] T1.2 **Corriger** §Génération du PDF (l. 511) : retirer « (fonctionnalité d'envoi direct à venir v0.2) », reformuler en envoi manuel.
+  - [x] T1.3 **Corriger** §Avoirs et notes de crédit (l. 529-534) : supprimer la navigation `Factures → Nouvel avoir` inexistante, aligner sur la `keshnote` (contre-passation manuelle).
+  - [x] T1.4 Clés API : ajouter une brève mention de renvoi dans §Gestion de votre compte (l. 192) vers `docs/api-external.md` + admin-manual. Pas de doc `.keshbackup` dans user-manual (admin-only, déjà admin-manual l.1298).
+- [x] **T2 — Exemples sectoriels PME** (AC #4)
+  - [x] T2.1 Plan comptable : exemples par secteur (commerce, services, artisan).
+  - [x] T2.2 Facturation : exemple concret de facture PME (avec QR Bill) par secteur.
+- [x] **T3 — Glossaire** (AC #5)
+  - [x] T3.1 Compléter à ~30 termes, **réordonner** tout le glossaire alphabétiquement (corriger le désordre existant l.983-985), sans doublon.
 - [ ] **T4 — Screenshots (placeholders texte-d'abord)** (AC #1-3)
-  - [ ] T4.1 Ajouter `\graphicspath{{./screenshots/}}` au préambule de `user-manual.tex` ; créer `docs/manual/fr/screenshots/` + committer un `_placeholder.png` neutre (garantit la compilation).
-  - [ ] T4.2 Insérer ~20-25 `figure` (`\includegraphics{_placeholder}` par défaut) + captions descriptifs + `% TODO capture`.
+  - [x] T4.1 Ajouter `\graphicspath{{./screenshots/}}` au préambule de `user-manual.tex` ; créer `docs/manual/fr/screenshots/` + committer un `_placeholder.png` neutre (garantit la compilation).
+  - [x] T4.2 Insérer ~20-25 `figure` (`\includegraphics{_placeholder}` par défaut) + captions descriptifs + `% TODO capture`.
   - [ ] T4.3 (passe ultérieure Guy) Remplacer placeholders par PNG réels prod NAS anonymisés.
-- [ ] **T5 — Rafraîchissement version + « Limites actuelles »** (AC #6, #9)
-  - [ ] T5.1 Mettre à jour §Limites actuelles l. 1010-1019 selon ground-truth v0.2.0.
-  - [ ] T5.2 Bumper `kesh-style.sty` l.64-66 : `keshVersion 0.2.0`, `keshReleaseDate 2026-06-12`, `keshTargetRelease v0.2`.
-- [ ] **T6 — Intégration + build** (AC #8-11)
-  - [ ] T6.1 Référence README section Documentation.
-  - [ ] T6.2 Régénérer les PDFs impactés (`make -C docs/manual user` ; + `admin` et `marketing` car version partagée bumpée en T5.2), vérifier compilation, committer les .pdf.
-  - [ ] T6.3 (AC#11) Traiter l'effet de bord du bump version sur la brochure marketing : soit rafraîchir sa feuille de route (l.~373-419), soit déroger (override version local `user-manual.tex` seul + issue GitHub + dérogation documentée). Décision Guy/dev-story.
+- [x] **T5 — Rafraîchissement version + « Limites actuelles »** (AC #6, #9)
+  - [x] T5.1 Mettre à jour §Limites actuelles l. 1010-1019 selon ground-truth v0.2.0.
+  - [x] T5.2 Bumper `kesh-style.sty` l.64-66 : `keshVersion 0.2.0`, `keshReleaseDate 2026-06-12`, `keshTargetRelease v0.2`.
+- [x] **T6 — Intégration + build** (AC #8-11)
+  - [x] T6.1 Référence README section Documentation.
+  - [x] T6.2 Régénérer les PDFs impactés (`make -C docs/manual user` ; + `admin` et `marketing` car version partagée bumpée en T5.2), vérifier compilation, committer les .pdf.
+  - [x] T6.3 (AC#11) Traiter l'effet de bord du bump version sur la brochure marketing : soit rafraîchir sa feuille de route (l.~373-419), soit déroger (override version local `user-manual.tex` seul + issue GitHub + dérogation documentée). Décision Guy/dev-story.
 - [ ] **T7 — Validation Guy** (AC #12)
   - [ ] T7.1 Guy relit le manuel enrichi (PDF).
   - [ ] T7.2 Itération 1-2 passes correction.
@@ -213,19 +213,39 @@ Cohérent Epic 9.5 retro lesson C1 : « les stories doc-only ne sont PAS trivial
 
 ### Agent Model Used
 
-_(à remplir au dev-story)_
+Opus 4.8 (1M context) — dev-story single-pass orchestré, 2026-06-13.
 
 ### Debug Log References
 
-_(à remplir au dev-story)_
+- Baseline compile `make -C docs/manual user` : 33 pages (avant enrichissement).
+- Compile final user-manual : **44 pages**, 0 erreur, 22 captures placeholder résolues via `\IfFileExists` → `_placeholder.png`.
+- `make fr` (3 manuels) : admin 57 p, user 44 p, marketing 13 p — tous estampillés **0.2.0** (vérifié `pdftotext | grep 0.2.0`).
 
 ### Completion Notes List
 
-_(à remplir au dev-story)_
+**Tâches dev complétées (T1-T3, T4.1-T4.2, T5, T6)** :
+- **T1** corrections corps : (T1.1) §Onboarding Chemin B aligné sur flux v0.2.0 réel — ajout étapes « Type d'organisation » (indépendant/association/PME, central pour le cadrage PME) et « Langue comptable » ; contenu existant préservé là où exact. (T1.2) §Génération PDF l.511 : sur-promesse « envoi direct à venir v0.2 » retirée → envoi manuel + note SMTP=recovery only. (T1.3) §Avoirs : navigation `Factures → Nouvel avoir` inexistante supprimée → contre-passation manuelle, keshnote re-formulée v0.2.0. (T1.4) §Gestion de votre compte : sous-sections « Récupération de mot de passe oublié » + « Clés API » (renvoi `docs/api-external.md`).
+- **T2** exemples sectoriels : §Plan comptable « Adapter le plan à votre secteur » (commerce détail, cabinet médical, agence web, artisan, association) ; §Facturation « Exemple : facture d'une agence web ».
+- **T3** glossaire : 12 → **32 termes**, réordonné alphabétiquement (accents ignorés), désordre Échéance/Écriture/Exercice corrigé, sans doublon.
+- **T4.1/T4.2** : macro DRY `\keshscreenshot{fichier}{caption}` (préambule) avec fallback `\IfFileExists` → `_placeholder.png` ; `\graphicspath{{./screenshots/}}` ; dossier `docs/manual/fr/screenshots/` + `_placeholder.png` (généré ImageMagick, neutre) committés ; **22 captures placeholder** insérées avec `% TODO capture` + données factices dans les captions.
+- **T5** : §« Limites actuelles » → « Nouveautés et limites (v0.2.0) » ; `kesh-style.sty` bumpé `keshVersion 0.2.0` / `2026-06-12` / `v0.2`.
+- **T6** : README nouvelle section `## Documentation` + entrée table des matières. **AC#11 (T6.3)** : option « refresh marketing » retenue (décision Guy) — feuille de route `marketing-brochure.tex` rafraîchie (recovery/PAT/export-import/Epic 10 → « Déjà livré v0.2.0 » ; « Backlog v0.1 » → « v0.2 » ; QES/multi-devises/PDF-A → « Vision ultérieure »). 3 PDFs régénérés.
+
+**Gates humains restants (hors capacité dev)** :
+- **T4.3** — vraies captures PNG depuis la prod NAS de Guy (données factices), à substituer aux placeholders. Le macro les prend automatiquement dès que `docs/manual/fr/screenshots/<nom>.png` existe.
+- **T7 / AC#12** — relecture + sign-off Guy.
 
 ### File List
 
-_(à remplir au dev-story)_
+- `docs/manual/fr/user-manual.tex` (modifié — corrections, exemples sectoriels, glossaire, 22 captures, refresh limites, macro screenshot)
+- `docs/manual/fr/user-manual.pdf` (régénéré, 44 p)
+- `docs/manual/shared/kesh-style.sty` (modifié — bump version 0.2.0)
+- `docs/manual/fr/admin-manual.pdf` (régénéré — version partagée)
+- `docs/manual/fr/marketing-brochure.tex` (modifié — refresh feuille de route v0.2.0)
+- `docs/manual/fr/marketing-brochure.pdf` (régénéré)
+- `docs/manual/fr/screenshots/_placeholder.png` (nouveau — placeholder neutre)
+- `README.md` (modifié — section Documentation + table des matières)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (statut 11-0)
 
 ## Change Log
 
@@ -291,4 +311,8 @@ ACs 11 → 12 (ajout AC effet de bord version marketing + validation Guy). Pass 
 
 **Trend du cycle** : Pass 1 (Sonnet) 6 findings [1C/2H/2M/1L] → Pass 2 (Haiku) 2 [0C/0H/2M] → Pass 3 (Opus) 5 [0C/1H/2M/2L] → Pass 4 (Sonnet) 3 [0C/0H/1M/2L]. **Critère d'arrêt atteint** : après patches Pass 4, plus aucun finding > LOW. Modèles : Sonnet→Haiku→Opus→Sonnet (cycle complet, LLM différent par passe). 0 hallucination Haiku (grep ground-truth systématique). Opus P3 a capté l'effet de bord cross-manuel du bump version (angle mort Sonnet/Haiku).
 
-Status : **`ready-for-dev`**.
+### Dev-story (Opus 4.8, 2026-06-13)
+
+Implémentation single-pass orchestrée. Tâches dev T1-T3, T4.1-T4.2, T5, T6 complétées (cf. Dev Agent Record). Cible : `docs/manual/fr/user-manual.tex` enrichi (33 → 44 pages), `kesh-style.sty` version bumpée 0.2.0, `marketing-brochure.tex` roadmap rafraîchie (AC#11 option refresh, décision Guy), README section Documentation, 3 PDFs régénérés (tous 0.2.0). 22 captures placeholder (macro DRY `\keshscreenshot` + fallback `\IfFileExists`). Compilation `make fr` verte, 0 erreur LaTeX.
+
+**Gates humains restants** : T4.3 (vraies captures NAS Guy) + T7/AC#12 (sign-off Guy). Status `ready-for-dev` → **`review`**. Prochaine étape : `bmad-code-review 11-0` (Sonnet→Haiku, focus accuracy/compilation/cohérence), puis fourniture captures + sign-off Guy.
