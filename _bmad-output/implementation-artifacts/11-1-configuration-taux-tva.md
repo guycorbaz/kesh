@@ -268,6 +268,12 @@ Implémentation complète (backend + frontend + tests) — cf. Dev Agent Record.
 
 vat e2e 19/19, export 20/20, fmt+clippy verts. Prochaine : Pass 2 (Haiku).
 
+### Code-review Pass 2 (Haiku 4.5, 2026-06-14) — ✅ CONVERGÉ
+
+**0 finding > LOW, 0 hallucination.** Vérifications ground-truth confirmées : migration SQL valide MariaDB + idempotente, prédicat chevauchement + ordre des `.bind()` corrects, RBAC admin_routes, CSV 11 colonnes header = 11 valeurs (cohérence header/row), Fluent valide, frontend narrowing TS correct, 19/19 tests e2e. **Cycle code-review convergé** (Pass 1 [1H/2M] → Pass 2 [0>LOW]). Sonnet→Haiku.
+
+**Status final** : `review` — implémentation + revue complètes, prêt pour merge. Reste hors-PR : T5.3 Playwright E2E (déféré, gap LOW) ; `cargo test --workspace` complet rejoué par la CI.
+
 ## Dev Agent Record
 
 ### Agent Model Used
