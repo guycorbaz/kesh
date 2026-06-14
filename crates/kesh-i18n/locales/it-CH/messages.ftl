@@ -810,6 +810,15 @@ reports-total-debit = Totale dare
 reports-total-credit = Totale avere
 reports-net-result = Risultato netto
 reports-grand-total = Totale generale
+# Rapporto IVA (Story 11-2)
+reports-vat = IVA
+reports-vat-column-rate = Aliquota
+reports-vat-column-base-ht = Cifra d'affari netta
+reports-vat-column-vat-due = IVA dovuta
+reports-vat-total-base-ht = Totale cifra d'affari netta
+reports-vat-recoverable = IVA recuperabile
+reports-vat-balance = Saldo
+reports-vat-recoverable-note = L'IVA recuperabile sugli acquisti sarà disponibile in una versione futura. Il rendiconto mostra per ora l'IVA dovuta sulle vendite.
 
 reports-filter-period = Periodo
 reports-filter-fiscal-year = Esercizio
@@ -842,6 +851,7 @@ reports-filename-balance-sheet = bilancio
 reports-filename-income-statement = conto-economico
 reports-filename-trial-balance = bilancio-verifica
 reports-filename-journals = giornali
+reports-filename-vat = rendiconto-iva
 reports-pdf-header-period = Periodo
 reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
 

@@ -27,12 +27,14 @@ use chrono::NaiveDate;
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
+use kesh_report::pdf::VatPdfLabels;
 use kesh_report::{
     BalanceSheet, IncomeStatement, JournalReport, PdfContext, ReportPeriod, TrialBalance,
-    generate_balance_sheet, generate_income_statement, generate_journal_report,
-    generate_trial_balance, render_balance_sheet_csv, render_balance_sheet_pdf,
-    render_income_statement_csv, render_income_statement_pdf, render_journal_report_csv,
-    render_journal_report_pdf, render_trial_balance_csv, render_trial_balance_pdf,
+    VatReport, generate_balance_sheet, generate_income_statement, generate_journal_report,
+    generate_trial_balance, generate_vat_report, render_balance_sheet_csv,
+    render_balance_sheet_pdf, render_income_statement_csv, render_income_statement_pdf,
+    render_journal_report_csv, render_journal_report_pdf, render_trial_balance_csv,
+    render_trial_balance_pdf, render_vat_report_csv, render_vat_report_pdf,
 };
 use serde::Deserialize;
 use sqlx::MySqlPool;
@@ -521,6 +523,111 @@ pub async fn export_journal_report(
     // Pass 1 code-review H10 : type_slug localisé via i18n.
     let type_slug = resolve_type_slug(&state, &ctx.locale, "journals");
     // Pass 1 code-review M14 : Content-Disposition `filename*=UTF-8'<lang>'…`
+    build_export_response_with_locale(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        &period,
+        &ctx.locale,
+    )
+}
+
+// ===========================================================================
+// Story 11-2 — Rapport TVA (JSON + export PDF/CSV)
+// ===========================================================================
+
+/// GET /api/v1/reports/vat
+///
+/// Rapport TVA due (vente) par taux pour la période. Lecture seule, tous rôles
+/// authentifiés (FR65). Anti-IDOR via `current_user.company_id`.
+pub async fn get_vat_report(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<ReportQuery>,
+) -> Result<Json<VatReport>, AppError> {
+    validate_fiscal_year_id(query.fiscal_year_id)?;
+
+    let period = ReportPeriod::resolve(
+        &state.pool,
+        current_user.company_id,
+        query.fiscal_year_id,
+        query.period_start,
+        query.period_end,
+    )
+    .await?;
+
+    let report = generate_vat_report(&state.pool, current_user.company_id, &period).await?;
+
+    emit_report_audit(
+        &state.pool,
+        current_user.user_id,
+        "vat",
+        query.fiscal_year_id,
+        period.start_date,
+        period.end_date,
+        None,
+    )
+    .await;
+
+    Ok(Json(report))
+}
+
+/// GET /api/v1/reports/vat/export?format=pdf|csv
+pub async fn export_vat_report(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<ExportQuery>,
+) -> Result<Response, AppError> {
+    let format = validate_format(&query.format)?;
+    validate_fiscal_year_id(query.fiscal_year_id)?;
+
+    let span = tracing::info_span!(
+        "report_export",
+        report_type = "vat",
+        format = format.as_str(),
+        byte_size = tracing::field::Empty,
+        duration_ms = tracing::field::Empty
+    );
+    let _enter = span.enter();
+    let start = std::time::Instant::now();
+
+    let period = ReportPeriod::resolve(
+        &state.pool,
+        current_user.company_id,
+        query.fiscal_year_id,
+        query.period_start,
+        query.period_end,
+    )
+    .await?;
+
+    let report = generate_vat_report(&state.pool, current_user.company_id, &period).await?;
+
+    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+
+    let body: Vec<u8> = match format {
+        // Libellés PDF = defaults FR-CH v0.1 (cohérent `load_pdf_context` /
+        // `PdfContext::fr_ch_default` ; i18n PDF complète déférée v0.2+).
+        ExportFormat::Pdf => render_vat_report_pdf(&report, &ctx, &VatPdfLabels::fr_ch_defaults())?,
+        ExportFormat::Csv => render_csv_to_vec(|w| render_vat_report_csv(&report, w))?,
+    };
+
+    span.record("byte_size", body.len());
+    span.record("duration_ms", start.elapsed().as_millis() as u64);
+
+    emit_report_export_audit(
+        &state.pool,
+        current_user.user_id,
+        "vat",
+        format.as_str(),
+        query.fiscal_year_id,
+        period.start_date,
+        period.end_date,
+        None,
+    )
+    .await;
+
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "vat");
     build_export_response_with_locale(
         format,
         body,

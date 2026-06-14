@@ -810,6 +810,15 @@ reports-total-debit = Total Soll
 reports-total-credit = Total Haben
 reports-net-result = Periodenergebnis
 reports-grand-total = Gesamttotal
+# MwSt-Bericht (Story 11-2)
+reports-vat = MwSt
+reports-vat-column-rate = Satz
+reports-vat-column-base-ht = Umsatz (netto)
+reports-vat-column-vat-due = Geschuldete MwSt
+reports-vat-total-base-ht = Total Umsatz netto
+reports-vat-recoverable = Vorsteuer
+reports-vat-balance = Saldo
+reports-vat-recoverable-note = Die Vorsteuer auf Einkäufe wird in einer späteren Version verfügbar sein. Die Abrechnung zeigt vorerst die geschuldete MwSt auf Verkäufen.
 
 reports-filter-period = Periode
 reports-filter-fiscal-year = Geschäftsjahr
@@ -842,6 +851,7 @@ reports-filename-balance-sheet = bilanz
 reports-filename-income-statement = erfolgsrechnung
 reports-filename-trial-balance = kontensaldenliste
 reports-filename-journals = journale
+reports-filename-vat = mwst-abrechnung
 reports-pdf-header-period = Zeitraum
 reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
 

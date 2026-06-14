@@ -810,6 +810,15 @@ reports-total-debit = Total Debit
 reports-total-credit = Total Credit
 reports-net-result = Net Result
 reports-grand-total = Grand Total
+# VAT report (Story 11-2)
+reports-vat = VAT
+reports-vat-column-rate = Rate
+reports-vat-column-base-ht = Net turnover
+reports-vat-column-vat-due = VAT due
+reports-vat-total-base-ht = Total net turnover
+reports-vat-recoverable = Recoverable VAT
+reports-vat-balance = Balance
+reports-vat-recoverable-note = Recoverable VAT on purchases will be available in a future version. The return currently shows VAT due on sales.
 
 reports-filter-period = Period
 reports-filter-fiscal-year = Fiscal Year
@@ -842,6 +851,7 @@ reports-filename-balance-sheet = balance-sheet
 reports-filename-income-statement = income-statement
 reports-filename-trial-balance = trial-balance
 reports-filename-journals = journals
+reports-filename-vat = vat-return
 reports-pdf-header-period = Period
 reports-pdf-empty-message = No entries in the selected period.
 

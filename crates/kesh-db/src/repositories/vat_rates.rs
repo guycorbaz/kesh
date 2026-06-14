@@ -82,8 +82,10 @@ pub async fn find_active_by_rate(
 ///
 /// Prédicat : `valid_from <= date AND (valid_to IS NULL OR date < valid_to)
 /// AND active`. **Déterministe** (au plus une ligne) grâce à l'invariant de
-/// non-chevauchement par catégorie (cf. [`has_overlap_in_category`]). C'est la
-/// fonction que Story 11-2 (calcul TVA) consommera pour une ligne de facture.
+/// non-chevauchement par catégorie (cf. [`has_overlap_in_category`]). Destinée à
+/// l'assistant de saisie de facture (résolution catégorie→taux à une date). Le
+/// rapport TVA (Story 11-2) groupe par `vat_rate` snapshoté sur la ligne et n'en
+/// a pas besoin.
 pub async fn find_for_category_at_date(
     pool: &MySqlPool,
     company_id: i64,

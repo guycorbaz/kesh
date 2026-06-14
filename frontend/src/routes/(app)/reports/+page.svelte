@@ -11,6 +11,7 @@
 	import IncomeStatementView from '$lib/features/reports/IncomeStatementView.svelte';
 	import TrialBalanceView from '$lib/features/reports/TrialBalanceView.svelte';
 	import JournalReportView from '$lib/features/reports/JournalReportView.svelte';
+	import VatReportView from '$lib/features/reports/VatReportView.svelte';
 	import {
 		buildExportFilename,
 		downloadReport,
@@ -19,6 +20,7 @@
 		getIncomeStatement,
 		getJournalReport,
 		getTrialBalance,
+		getVatReport,
 	} from '$lib/features/reports/reports.api';
 	import type {
 		BalanceSheetDto,
@@ -28,6 +30,7 @@
 		ReportQuery,
 		ReportType,
 		TrialBalanceDto,
+		VatReportDto,
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
@@ -52,6 +55,7 @@
 	let incomeStatement = $state<IncomeStatementDto | null>(null);
 	let trialBalance = $state<TrialBalanceDto | null>(null);
 	let journalReport = $state<JournalReportDto | null>(null);
+	let vatReport = $state<VatReportDto | null>(null);
 
 	// P20 — race guard : sequence counter pattern (cf. ReconciliationProposals).
 	let genSeq = 0;
@@ -66,6 +70,7 @@
 			incomeStatement = null;
 			trialBalance = null;
 			journalReport = null;
+			vatReport = null;
 			errorMsg = null;
 			lastFyId = selectedFiscalYearId;
 		}
@@ -126,6 +131,11 @@
 					if (mySeq === genSeq) journalReport = result;
 					break;
 				}
+				case 'vat': {
+					const result = await getVatReport(query);
+					if (mySeq === genSeq) vatReport = result;
+					break;
+				}
 			}
 		} catch (e) {
 			if (mySeq === genSeq) errorMsg = formatError(e);
@@ -150,6 +160,8 @@
 				return trialBalance?.period ?? null;
 			case 'journals':
 				return journalReport?.period ?? null;
+			case 'vat':
+				return vatReport?.period ?? null;
 		}
 	}
 
@@ -230,6 +242,7 @@
 		{ id: 'income-statement', labelKey: 'reports-income-statement', fallback: 'Compte de résultat' },
 		{ id: 'trial-balance', labelKey: 'reports-trial-balance', fallback: 'Balance' },
 		{ id: 'journals', labelKey: 'reports-journals', fallback: 'Journaux' },
+		{ id: 'vat', labelKey: 'reports-vat', fallback: 'TVA' },
 	];
 
 	// P6 — ARIA tabs : keyboard navigation (ArrowLeft/Right/Home/End).
@@ -321,6 +334,8 @@
 			<TrialBalanceView dto={trialBalance} />
 		{:else if activeTab === 'journals' && journalReport}
 			<JournalReportView dto={journalReport} />
+		{:else if activeTab === 'vat' && vatReport}
+			<VatReportView dto={vatReport} />
 		{:else}
 			<p class="text-sm italic text-gray-500">
 				{i18nMsg(

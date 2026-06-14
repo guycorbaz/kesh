@@ -12,6 +12,7 @@ import type {
 	ReportQuery,
 	ReportType,
 	TrialBalanceDto,
+	VatReportDto,
 } from './reports.types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -61,6 +62,15 @@ export async function getJournalReport(query: JournalReportQuery): Promise<Journ
 	return apiClient.get<JournalReportDto>(`/api/v1/reports/journals?${qs}`);
 }
 
+export async function getVatReport(query: ReportQuery): Promise<VatReportDto> {
+	const qs = buildQuery({
+		fiscalYearId: query.fiscalYearId,
+		periodStart: query.periodStart,
+		periodEnd: query.periodEnd,
+	});
+	return apiClient.get<VatReportDto>(`/api/v1/reports/vat?${qs}`);
+}
+
 /**
  * Helper Pass 1 AA-11 / BH-11 : détecte si un rapport est "vide" pour afficher
  * le message UX `reports-error-no-entries-in-period` (UX-DR38).
@@ -72,6 +82,7 @@ export function isReportEmpty(
 		| IncomeStatementDto
 		| TrialBalanceDto
 		| JournalReportDto
+		| VatReportDto
 		| null
 		| undefined,
 ): boolean {
@@ -92,6 +103,10 @@ export function isReportEmpty(
 		case 'journals': {
 			const jr = dto as JournalReportDto;
 			return jr.journals.every((s) => s.entries.length === 0);
+		}
+		case 'vat': {
+			const vr = dto as VatReportDto;
+			return vr.rows.length === 0;
 		}
 	}
 }
@@ -176,6 +191,7 @@ const TYPE_SLUGS_FALLBACK: Record<ReportType, string> = {
 	'income-statement': 'compte-resultat',
 	'trial-balance': 'balance-comptes',
 	journals: 'journaux',
+	vat: 'decompte-tva',
 };
 
 /**

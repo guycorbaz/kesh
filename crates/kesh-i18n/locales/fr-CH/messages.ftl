@@ -864,6 +864,15 @@ reports-total-debit = Total débit
 reports-total-credit = Total crédit
 reports-net-result = Résultat net
 reports-grand-total = Total général
+# Rapport TVA (Story 11-2)
+reports-vat = TVA
+reports-vat-column-rate = Taux
+reports-vat-column-base-ht = Chiffre d'affaires HT
+reports-vat-column-vat-due = TVA due
+reports-vat-total-base-ht = Total CA HT
+reports-vat-recoverable = TVA récupérable
+reports-vat-balance = Solde
+reports-vat-recoverable-note = La TVA récupérable sur les achats sera disponible dans une version ultérieure (nécessite la gestion des comptes TVA). Le décompte affiche pour l'instant la TVA due sur les ventes.
 
 # Filtres (4)
 reports-filter-period = Période
@@ -899,6 +908,7 @@ reports-filename-balance-sheet = bilan
 reports-filename-income-statement = compte-resultat
 reports-filename-trial-balance = balance-comptes
 reports-filename-journals = journaux
+reports-filename-vat = decompte-tva
 reports-pdf-header-period = Période
 reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
 

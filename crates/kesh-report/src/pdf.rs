@@ -26,6 +26,7 @@ use crate::errors::ReportError;
 use crate::income_statement::IncomeStatement;
 use crate::journal_report::JournalReport;
 use crate::trial_balance::TrialBalance;
+use crate::vat_report::VatReport;
 
 // ============================================================================
 // Constants centralisées — A4 portrait (T2.3a + Pass 3 ECH3-M3)
@@ -867,6 +868,124 @@ pub fn render_journal_report_pdf(
 }
 
 // ============================================================================
+// Rapport TVA — Story 11-2
+// ============================================================================
+
+/// Libellés localisés du rapport TVA, résolus côté handler `kesh-api`.
+///
+/// Struct **dédié** (séparé de [`SectionLabels`]) pour ne pas toucher au type
+/// partagé par les 4 rapports existants (non-régression).
+#[derive(Debug, Clone)]
+pub struct VatPdfLabels {
+    /// Titre du rapport (ex. « Décompte TVA »).
+    pub title: String,
+    /// Colonne taux.
+    pub col_rate: String,
+    /// Colonne chiffre d'affaires HT.
+    pub col_base_ht: String,
+    /// Colonne TVA due.
+    pub col_vat_due: String,
+    /// Libellé total CA HT.
+    pub total_base_ht: String,
+    /// Libellé total TVA due.
+    pub total_vat_due: String,
+    /// Libellé TVA récupérable.
+    pub vat_recoverable: String,
+    /// Libellé solde.
+    pub balance: String,
+}
+
+impl VatPdfLabels {
+    /// Libellés par défaut FR-CH (tests unit / fallback).
+    pub fn fr_ch_defaults() -> Self {
+        Self {
+            title: "Décompte TVA".into(),
+            col_rate: "Taux".into(),
+            col_base_ht: "Chiffre d'affaires HT".into(),
+            col_vat_due: "TVA due".into(),
+            total_base_ht: "Total chiffre d'affaires HT".into(),
+            total_vat_due: "Total TVA due".into(),
+            vat_recoverable: "TVA récupérable".into(),
+            balance: "Solde".into(),
+        }
+    }
+}
+
+// Colonnes du tableau TVA (mm depuis la gauche / le bord page).
+const VAT_COL_RATE_X: f32 = MARGIN_LEFT_MM;
+const VAT_COL_BASE_X: f32 = PAGE_WIDTH_MM - 90.0;
+const VAT_COL_VAT_X: f32 = PAGE_WIDTH_MM - 45.0;
+
+/// Formate un taux en pourcent pour l'affichage (ex. `8.10` → `"8.10 %"`).
+fn format_rate(rate: Decimal) -> String {
+    format!("{rate:.2} %")
+}
+
+/// Dessine une ligne du tableau TVA (3 colonnes).
+fn draw_vat_row(builder: &mut PdfBuilder, rate: &str, base_ht: &str, vat_due: &str, bold: bool) {
+    builder.ensure_space_for_row();
+    builder.write_inline(rate, FONT_SIZE_PT, bold, VAT_COL_RATE_X);
+    builder.write_inline(base_ht, FONT_SIZE_PT, bold, VAT_COL_BASE_X);
+    builder.write_inline(vat_due, FONT_SIZE_PT, bold, VAT_COL_VAT_X);
+    builder.cursor_y -= LINE_HEIGHT_MM;
+}
+
+/// Génère le PDF du rapport TVA (Story 11-2).
+pub fn render_vat_report_pdf(
+    report: &VatReport,
+    ctx: &PdfContext,
+    labels: &VatPdfLabels,
+) -> Result<Vec<u8>, ReportError> {
+    let mut builder = PdfBuilder::new(&labels.title)?;
+    draw_header(
+        &mut builder,
+        ctx,
+        &labels.title,
+        report.period.start_date,
+        report.period.end_date,
+    );
+
+    if report.rows.is_empty() {
+        draw_empty_message(&mut builder, ctx);
+        return builder.finalize();
+    }
+
+    // En-tête de colonnes.
+    draw_vat_row(
+        &mut builder,
+        &labels.col_rate,
+        &labels.col_base_ht,
+        &labels.col_vat_due,
+        true,
+    );
+
+    // Lignes par taux.
+    for row in &report.rows {
+        draw_vat_row(
+            &mut builder,
+            &format_rate(row.rate),
+            &format_swiss_amount(row.base_ht),
+            &format_swiss_amount(row.vat_due),
+            false,
+        );
+    }
+
+    builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
+
+    // Totaux + récupérable + solde.
+    draw_totals_footer(&mut builder, &labels.total_base_ht, report.total_base_ht);
+    draw_totals_footer(&mut builder, &labels.total_vat_due, report.total_vat_due);
+    draw_totals_footer(
+        &mut builder,
+        &labels.vat_recoverable,
+        report.total_vat_recoverable,
+    );
+    draw_totals_footer(&mut builder, &labels.balance, report.vat_balance);
+
+    builder.finalize()
+}
+
+// ============================================================================
 // Tests unit (T10.1)
 // ============================================================================
 
@@ -1101,6 +1220,44 @@ mod tests {
     fn journal_report_pdf_starts_with_pdf_signature() {
         let ctx = PdfContext::fr_ch_default("CI Test Company");
         let bytes = render_journal_report_pdf(&fixture_jr(false), &ctx).unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    fn fixture_vat(empty: bool) -> VatReport {
+        VatReport {
+            period: period(),
+            rows: if empty {
+                vec![]
+            } else {
+                vec![crate::vat_report::VatReportRow {
+                    rate: dec!(8.10),
+                    category: None,
+                    base_ht: dec!(1000),
+                    vat_due: dec!(81.00),
+                }]
+            },
+            total_base_ht: if empty { Decimal::ZERO } else { dec!(1000) },
+            total_vat_due: if empty { Decimal::ZERO } else { dec!(81.00) },
+            total_vat_recoverable: Decimal::ZERO,
+            vat_balance: if empty { Decimal::ZERO } else { dec!(81.00) },
+        }
+    }
+
+    #[test]
+    fn vat_report_pdf_starts_with_pdf_signature() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let bytes =
+            render_vat_report_pdf(&fixture_vat(false), &ctx, &VatPdfLabels::fr_ch_defaults())
+                .unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    #[test]
+    fn vat_report_pdf_empty_does_not_crash() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let bytes =
+            render_vat_report_pdf(&fixture_vat(true), &ctx, &VatPdfLabels::fr_ch_defaults())
+                .unwrap();
         assert!(bytes.starts_with(b"%PDF-1."));
     }
 
