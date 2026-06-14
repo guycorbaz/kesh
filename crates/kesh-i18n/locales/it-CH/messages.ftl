@@ -842,6 +842,7 @@ reports-filename-balance-sheet = bilancio
 reports-filename-income-statement = conto-economico
 reports-filename-trial-balance = bilancio-verifica
 reports-filename-journals = giornali
+reports-filename-vat = rendiconto-iva
 reports-pdf-header-period = Periodo
 reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
 

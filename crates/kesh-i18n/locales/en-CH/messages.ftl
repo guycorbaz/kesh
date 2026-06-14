@@ -842,6 +842,7 @@ reports-filename-balance-sheet = balance-sheet
 reports-filename-income-statement = income-statement
 reports-filename-trial-balance = trial-balance
 reports-filename-journals = journals
+reports-filename-vat = vat-return
 reports-pdf-header-period = Period
 reports-pdf-empty-message = No entries in the selected period.
 
