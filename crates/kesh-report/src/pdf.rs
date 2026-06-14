@@ -1223,6 +1223,44 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF-1."));
     }
 
+    fn fixture_vat(empty: bool) -> VatReport {
+        VatReport {
+            period: period(),
+            rows: if empty {
+                vec![]
+            } else {
+                vec![crate::vat_report::VatReportRow {
+                    rate: dec!(8.10),
+                    category: None,
+                    base_ht: dec!(1000),
+                    vat_due: dec!(81.00),
+                }]
+            },
+            total_base_ht: if empty { Decimal::ZERO } else { dec!(1000) },
+            total_vat_due: if empty { Decimal::ZERO } else { dec!(81.00) },
+            total_vat_recoverable: Decimal::ZERO,
+            vat_balance: if empty { Decimal::ZERO } else { dec!(81.00) },
+        }
+    }
+
+    #[test]
+    fn vat_report_pdf_starts_with_pdf_signature() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let bytes =
+            render_vat_report_pdf(&fixture_vat(false), &ctx, &VatPdfLabels::fr_ch_defaults())
+                .unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    #[test]
+    fn vat_report_pdf_empty_does_not_crash() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let bytes =
+            render_vat_report_pdf(&fixture_vat(true), &ctx, &VatPdfLabels::fr_ch_defaults())
+                .unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
     // --- AC #8 — empty report : génère un PDF valide avec empty_message ---
 
     #[test]

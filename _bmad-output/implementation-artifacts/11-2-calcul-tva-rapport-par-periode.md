@@ -311,6 +311,16 @@ Implémentation complète backend + frontend + tests (single-pass orchestré T1�
 
 Prochaine : `bmad-code-review 11-2` (Sonnet→Haiku, cycle CLAUDE.md).
 
+### Code-review Pass 1 (Sonnet 4.6, 2026-06-14) — NON convergé
+
+**0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW** — cœur vérifié **correct** ground-truth (FR55 arrondi par ligne fidèle, anti-IDOR via join `i.company_id`, routes dans `authenticated_routes` avant `;`, `SectionLabels`/`PdfContext` intacts, 4 locales OK, frontend Decimal-string sans `parseFloat`/secure-context). Tous patchés :
+- **M1 MEDIUM** — test d'exclusion `cancelled` (mandaté T4.3) absent → ajouté `vat_report_excludes_cancelled_invoices` (seed SQL direct `status='cancelled'` + taux distinctif 77.77 → absent du rapport). e2e 9→10.
+- **L1 LOW** — `export_vat_report` sans `tracing::info_span` (parité avec les 4 export pairs) → span `report_export` (`byte_size`/`duration_ms`) ajouté.
+- **L2 LOW** — test CSV n'assertait pas la ligne `Total chiffre d'affaires HT;1000.00;` → assertion ajoutée.
+- **L3 LOW** — pas de test unitaire PDF `render_vat_report_pdf` (parité avec les 4) → `vat_report_pdf_starts_with_pdf_signature` + `vat_report_pdf_empty_does_not_crash` (kesh-report 59→61).
+
+Tests verts : kesh-report 61, e2e 10/10, fmt+clippy verts. NON convergé (1 MEDIUM) → **Pass 2 (Haiku)**.
+
 ## Dev Agent Record
 
 ### Agent Model Used

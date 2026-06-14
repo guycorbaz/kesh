@@ -464,9 +464,66 @@ async fn vat_report_export_csv(pool: MySqlPool) {
     let text = String::from_utf8_lossy(&bytes);
     assert!(text.contains("Taux;ChiffreAffairesHT;TVADue"));
     assert!(text.contains("8.10;1000.00;81.00"));
+    assert!(text.contains("Total chiffre d'affaires HT;1000.00;"));
     assert!(text.contains("Total TVA due;;81.00"));
     assert!(text.contains("TVA récupérable;;0.00"));
     assert!(text.contains("Solde;;81.00"));
+}
+
+/// AC#5 — une facture `cancelled` (insérée en SQL direct, aucun endpoint ne la
+/// crée) est exclue du rapport.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn vat_report_excludes_cancelled_invoices(pool: MySqlPool) {
+    let (admin_id, company_id, fy_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
+    create_validated_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+        &[(dec!(8.10), dec!(1000))],
+    )
+    .await;
+    // Annulée (cancelled, pas de journal_entry_id requis) avec un taux distinctif.
+    let inv_c = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, version) \
+         VALUES (?, ?, 'cancelled', '2026-04-04', 5000.0000, 0)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'annulee', 1, 5000.0000, 77.77, 5000.0000)",
+    )
+    .bind(inv_c)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/vat?fiscalYearId={fy_id}&{FY_PERIOD}"
+        )))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let rows = body["rows"].as_array().unwrap();
+    assert!(
+        row_by_rate(rows, "77.77").is_none(),
+        "le taux de la facture annulée ne doit pas apparaître"
+    );
+    assert_eq!(dec_field(&body, "totalBaseHt"), dec!(1000));
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

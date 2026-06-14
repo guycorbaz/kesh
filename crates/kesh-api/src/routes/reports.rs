@@ -582,6 +582,16 @@ pub async fn export_vat_report(
     let format = validate_format(&query.format)?;
     validate_fiscal_year_id(query.fiscal_year_id)?;
 
+    let span = tracing::info_span!(
+        "report_export",
+        report_type = "vat",
+        format = format.as_str(),
+        byte_size = tracing::field::Empty,
+        duration_ms = tracing::field::Empty
+    );
+    let _enter = span.enter();
+    let start = std::time::Instant::now();
+
     let period = ReportPeriod::resolve(
         &state.pool,
         current_user.company_id,
@@ -601,6 +611,9 @@ pub async fn export_vat_report(
         ExportFormat::Pdf => render_vat_report_pdf(&report, &ctx, &VatPdfLabels::fr_ch_defaults())?,
         ExportFormat::Csv => render_csv_to_vec(|w| render_vat_report_csv(&report, w))?,
     };
+
+    span.record("byte_size", body.len());
+    span.record("duration_ms", start.elapsed().as_millis() as u64);
 
     emit_report_export_audit(
         &state.pool,
