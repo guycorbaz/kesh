@@ -280,6 +280,18 @@ NON convergé (1H/2M) → **Pass 4 requise** (Sonnet, contexte frais). Cycle Son
 
 NON convergé (1 MEDIUM) → **Pass 5 requise** (Haiku, contexte frais). Cycle Sonnet→Haiku→Opus→Sonnet→Haiku.
 
+### Validate Pass 5 (Haiku 4.5, 2026-06-14) — ✅ CONVERGÉ
+
+**0 finding de contenu > LOW.** Haiku a confirmé : patch CONV-M1 présent (`| VatReport` au type union `isReportEmpty`), cohérence interne (Scope↔AC↔Tasks↔Dev Notes, tous les Scope items couverts par une tâche, invariant arrondi par ligne bien spécifié avec vecteur, SQL sans GROUP BY, AC#7ter présent), ground-truth re-spot-checké exact. Haiku a soulevé 2 « HIGH » — **tous deux réfutés/dismissés** (faux-positifs Haiku) :
+- **« STALE-DOCCOMMENT » réfuté** — Haiku conclut lui-même « The spec text is correct; this is expected to be fixed during implementation (T2.4) ». Ce n'est pas un défaut de la spec : T2.4 planifie déjà la correction du doc-comment de `find_for_category_at_date`. Aucune action.
+- **« CONVERGENCE-STATUS-MISMATCH » réfuté** — Haiku signale que `Status: ready-for-dev` (l.3) coexiste avec un Change Log « Pass N requise ». **Faux-positif** : par convention projet (cf. cycle validate 11-1), le statut **reste `ready-for-dev` pendant tout le cycle validate** (validate est une porte qualité optionnelle qui enrichit une spec déjà ready-for-dev), le Change Log traçant les passes. Aucune incohérence de contenu, aucune action. *(SPLIT-THRESHOLD et CSV-FORMAT auto-conclus « compliant »/« sufficient » par Haiku — non-findings.)*
+
+**Trend du cycle** : Pass 1 (Sonnet) 8 [3H/5M] → Pass 2 (Haiku) 4 [4M] → Pass 3 (**Opus**) 3 [**1H**/2M] → Pass 4 (Sonnet) 1 [1M] → Pass 5 (Haiku) **0 > LOW**. Cycle Sonnet→Haiku→Opus→Sonnet→Haiku (LLM différent par passe). **Opus P3 a capté le HIGH de domaine comptable** (AC epic « correspond aux écritures » structurellement insatisfiable pour la TVA non-comptabilisée → décision déférée tracée AC#7ter) raté par Sonnet+Haiku. 0 hallucination Haiku confirmée (grep ground-truth). ~25 patches cumulés.
+
+**Bilan validate 11-2** : la spec couvre — helper de calcul TVA par ligne (FR55, arrondi commercial half-up, unité %), rapport TVA par période (TVA due/vente, calcul à la volée sans changement de schéma, arrondi par ligne), export PDF/CSV (réutilise `kesh-report`/`reports.rs` Epic 9, `VatPdfLabels` dédié), routes JSON+export (anti-IDOR, RBAC FR65 lecture seule), frontend onglet TVA (exhaustivité TS énumérée), i18n, tests (vecteur divergent, 0%/exempt, cross-FY 400, validated-only). Gaps assumés et **tracés** (dette cat. B + Issue T6.1) : TVA récupérable sur achats + comptes TVA + réconciliation écritures, déférés à la story de suivi (direction Guy).
+
+**Status : `ready-for-dev`** (confirmé). Prochaine étape : `bmad-dev-story 11-2`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
