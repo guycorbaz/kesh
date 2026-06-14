@@ -64,10 +64,20 @@ Les agents ont trouvé dans les 3 plans suisses :
 | `2201` | « Impôt anticipé dû » | Liability | ❌ = impôt anticipé dû, **PAS** le compte de décompte TVA. |
 
 **Conséquence** : il **manque** les comptes TVA standard du plan PME suisse :
-- **Impôt préalable** (TVA récupérable sur achats) — typiquement `1170`/`1171` dans le plan PME réel (matériel/marchandises/prestations + investissements/charges).
-- **Compte de décompte TVA** (`2201` ou `2206` selon plan) — le solde net dû à l'AFC.
+- **Impôt préalable** (TVA récupérable sur achats / Vorsteuer) — distinct de l'impôt anticipé `1170`.
+- **Compte de décompte TVA** — le solde net dû à l'AFC.
 
-→ **DC1** : faut-il corriger les libellés/numéros existants ET/OU ajouter les comptes manquants dans les 3 plans `.json` ? (impact migration des installations existantes — comptes seedés déjà en prod NAS).
+**Asymétrie ground-truthée des 3 plans** (grep `charts/*.json`, 2026-06-14 — Pass 1 validate) :
+| Compte | `pme.json` | `independant.json` | `association.json` |
+|--------|-----------|--------------------|--------------------|
+| `1170` Impôt anticipé (Asset) | ✅ l.10 | ✅ l.9 | ✅ l.9 |
+| `2200` TVA due (Liability) | ✅ l.27 | ✅ l.25 | ✅ l.23 |
+| `2201` Impôt anticipé dû (Liability) | ✅ l.28 | ❌ **absent** | ❌ **absent** |
+
+→ **DC1 (FIGÉ, voir §DC ci-dessous)** : **ajouter** de nouveaux comptes (impôt préalable + décompte TVA),
+**ne JAMAIS renommer** `1170`/`2201` (= impôt anticipé / Verrechnungssteuer, sémantique distincte, peut
+porter des écritures réelles de withholding 35 %). Migration **différenciée par `org_type`** (2201 n'existe
+que dans `pme`). Numéros choisis sans collision (cf. DC1).
 
 ---
 
@@ -116,12 +126,14 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
   casser un compte portant des écritures) + doc de la procédure.
 
 **Axe (b) — Comptabilisation ventes**
-- AC4 — la validation d'une facture de vente génère une écriture **équilibrée TTC** : débit créance
-  (TTC), crédit produit (HT), crédit TVA due (compte 2200) par taux ou agrégé (DC2).
+- AC4 — la validation d'une facture de vente génère une écriture **équilibrée** :
+  `débit créance = Σ(line_total) + Σ(line_vat_amount(line_total, vat_rate))` (TTC) ;
+  `crédit produit = Σ(line_total)` (HT) ; `crédit TVA due (2200) = Σ(line_vat_amount(...))` par taux ou
+  agrégé (DC2). `total_amount` reste HT (DC9). Débit = crédit garanti (3 niveaux existants).
 - AC5 — la TVA comptabilisée = `Σ line_vat_amount(line_total, vat_rate)` (cohérence avec le rapport
-  11-2, même arrondi par ligne).
-- AC6 — non-régression : factures sans TVA (taux 0 / exempt) → pas de ligne TVA ; écritures existantes
-  intactes.
+  11-2, même arrondi half-up par ligne).
+- AC6 — non-régression : factures **sans TVA (taux 0 / exempt)** → **aucune ligne compte 2200** générée
+  (seulement créance + produit) ; écritures existantes intactes.
 
 **Axe (c) — Achats**
 - AC7 — (DC3=B) un helper UI d'écriture manuelle assistée (journal `Achats`) permet de saisir un achat
@@ -133,26 +145,42 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
 - AC9 — le `VatReportView` retire la note « à venir » et affiche le solde net dû à l'AFC.
 
 **Axe (e) — Réconciliation**
-- AC10 — le rapport TVA réconcilie avec les soldes des comptes TVA du grand livre (cross-check ou
-  source unique), satisfaisant l'AC epic « les montants correspondent aux écritures » (lève AC#7ter de 11-2).
+- AC10 — le rapport TVA réconcilie avec les soldes des comptes TVA du grand livre et expose
+  `reconciliation_delta: Decimal` + `reconciliation_status: "ok" | "delta"` (DC5) ; un écart ≠ 0
+  (écriture validée modifiée à la main) déclenche un bandeau d'alerte frontend, sans bloquer le rapport.
+  Satisfait l'AC epic « les montants correspondent aux écritures » (lève AC#7ter de 11-2).
 
 **Axe (f) — Tests & doc**
-- AC11 — tests d'intégration (comptabilisation ventes + achats + réconciliation) + E2E.
+- AC11 — tests d'intégration (comptabilisation ventes + achats + réconciliation) + E2E, **dont un test
+  explicite** : facture `vat_rate=0`/exempt → `journal_entry_lines` ne contient AUCUNE ligne sur le
+  compte 2200 (F10) ; et un test de l'écart de réconciliation `delta ≠ 0`.
 - AC12 — manuels user/admin + CHANGELOG + README synchronisés (politique CLAUDE.md).
 
 ---
 
 ## Décisions de conception (DC) — figées vs à trancher au validate
 
-- **DC1 (FIGÉ — Guy 2026-06-14) — Corriger les plans + migrer les données existantes.** Corriger
-  libellés/numéros dans les 3 `.json` (impôt préalable distinct de l'impôt anticipé + compte de
-  décompte TVA) **ET** fournir une migration qui ajuste les comptes déjà seedés des installations
-  existantes (dont prod NAS). La migration suit DC8 (non-breaking si possible + audit idempotence). À
-  concevoir au détail dans 18-1a (story-zéro) : stratégie d'ajustement data prudente (ne pas casser des
-  comptes ayant déjà des écritures).
+- **DC1 (FIGÉ — Guy 2026-06-14 ; stratégie précisée Pass 1) — AJOUTER les comptes TVA, ne JAMAIS
+  renommer l'existant.**
+  - **Ajouter** dans les 3 `.json` : un compte **impôt préalable** (TVA récupérable, Asset) + un compte
+    **décompte TVA** (Liability). Numéros à finaliser en 18-1a **sans collision** (p.ex. `1171` pour
+    l'impôt préalable — `1170` pris ; `2206` pour le décompte — `2201` pris dans `pme`). Le dev 18-1a
+    vérifie la non-collision sur les 3 plans avant de figer les numéros.
+  - **Ne PAS renommer** `1170` ni `2201` (= impôt anticipé / Verrechnungssteuer — sémantique distincte,
+    peut porter des écritures réelles). F2/F7.
+  - **Libellés canoniques du nouveau compte impôt préalable** (F6) : FR « Impôt préalable », DE
+    « Vorsteuer », IT « Imposta precedente », EN « Input VAT ». (NE PAS copier les libellés de `1170`.)
+  - **Migration data existant** : `INSERT … SELECT` idempotent **par company**, différencié par
+    `org_type` si nécessaire, ne touchant aucun compte existant :
+    `INSERT INTO accounts (company_id, number, name, account_type, parent_id, active, version, …)
+     SELECT c.id, '<num>', '<libellé locale company>', '<type>', <parent>, … FROM companies c
+     WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id=c.id AND a.number='<num>')`.
+    Suit DC8 (non-breaking + ligne `docs/migrations-idempotence-audit.md`).
 - **DC2 (à trancher au validate)** — Ligne TVA vente : **une ligne 2200 agrégée par facture** vs **une
   ligne par taux**. (Le rapport 11-2 groupe par taux ; l'écriture peut rester agrégée tant que le total
-  réconcilie.) Décision mineure, tranchée au validate.
+  réconcilie.) **Couplage Epic 16 (F8)** : « par taux » structure naturellement l'écriture pour
+  accueillir le compte produit par ligne (#152) sans 2e refactor de `validate_invoice` ; « agrégée »
+  imposerait un refactor anticipé. À pondérer au validate.
 - **DC3 (FIGÉ — Guy 2026-06-14) — Option B : écriture manuelle assistée.** PAS de nouvelle entité
   `PurchaseInvoice`. Les achats avec TVA récupérable se saisissent via `POST /journal-entries` (existe
   déjà, journal `Achats`) + un **helper UI** qui pré-remplit la ligne d'impôt préalable depuis un taux
@@ -160,14 +188,26 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
   `D charge 6xxx 1000.00 / D impôt préalable 1170 81.00 / C fournisseur 1081.00`. Epic 18 reste léger.
   **Pas d'ajout à `TABLES_TO_TRUNCATE`** (aucune nouvelle table d'entité). Issue #180 « (ou lignes TVA
   mappées) » couverte.
-- **DC4 (FIGÉ par conséquence de DC3=B)** — `total_vat_recoverable` = **solde du compte impôt préalable
-  lu du grand livre** (agrégation `trial_balance`-like sur le compte récupérable, période du rapport).
-  Pas d'agrégation d'entité achats (n'existe pas en Option B).
-- **DC5 (à trancher au validate, fortement contraint par DC3=B)** — Réconciliation : TVA due conserve
-  sa dérivation `invoice_lines` (pour la ventilation par taux du décompte) **+ cross-check** contre le
-  solde du compte 2200 du grand livre (détection d'écart vente comptabilisée vs facturée) ; TVA
-  récupérable vient du grand livre (DC4). Le détail (cross-check affiché vs source unique) est tranché
-  au validate. Satisfait l'AC epic « montants correspondent aux écritures » (lève AC#7ter de 11-2).
+- **DC4 (FIGÉ par conséquence de DC3=B ; filtre précisé Pass 1 F9)** — `total_vat_recoverable` =
+  **solde du compte impôt préalable lu du grand livre**. **Le filtre doit être
+  `entry_date BETWEEN start_date AND end_date` (sans contrainte `fiscal_year_id`)** pour rester cohérent
+  avec le filtre de `VatReport` (`i.date BETWEEN ? AND ?`, `vat_report.rs:72-74`) — `trial_balance.generate()`
+  filtre par `fiscal_year_id` (`trial_balance.rs:83`), donc réutiliser sa logique d'agrégation mais PAS
+  son filtre période tel quel. Pas d'agrégation d'entité achats (n'existe pas en Option B).
+- **DC5 (à trancher au validate, fortement contraint par DC3=B ; écart précisé Pass 1 F5)** —
+  Réconciliation : TVA due conserve sa dérivation `invoice_lines` (ventilation par taux) **+ cross-check**
+  contre le solde du compte 2200 du grand livre ; TVA récupérable vient du grand livre (DC4).
+  **Comportement en cas d'écart (obligatoire)** : le rapport expose `reconciliation_delta: Decimal` +
+  `reconciliation_status: "ok" | "delta"` (delta ≠ 0 possible si une écriture validée a été modifiée
+  manuellement via `PUT /journal-entries`). Le frontend affiche un bandeau d'alerte si `delta ≠ 0`. Le
+  rapport n'est jamais bloqué. Satisfait l'AC epic « montants correspondent aux écritures » (lève AC#7ter
+  de 11-2). Le choix « cross-check affiché » vs « source unique grand livre » est tranché au validate.
+- **DC9 (FIGÉ Pass 1 F1/F4) — Sémantique de `invoices.total_amount`** : reste **HT** (inchangé, lu
+  partout comme HT). Le **TTC n'est PAS persisté** sur la facture ; il est calculé à la volée dans
+  `validate_invoice` pour la ligne créance :
+  `débit_créance_TTC = Σ(line_total) + Σ(line_vat_amount(line_total, vat_rate))`. **Pas de changement de
+  sémantique de colonne, pas de migration de `total_amount`** (évite un breaking sur toute la codebase
+  qui lit `total_amount` comme HT).
 - **DC6 (figé)** — Pas de nouveau variant `AccountType` (Asset/Liability suffisent).
 - **DC7 (figé)** — Arrondi TVA = `line_vat_amount` half-up par ligne (cohérence 11-2, FR55).
 - **DC8 (figé)** — Toute migration suit la politique CLAUDE.md (non-breaking par défaut + ligne audit
