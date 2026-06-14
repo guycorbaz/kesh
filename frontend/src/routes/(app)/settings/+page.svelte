@@ -148,6 +148,19 @@
 				{msg('settings-fiscal-years-link', "Créez, renommez ou clôturez les exercices comptables de votre entreprise.")}
 			</p>
 		</section>
+
+		<Separator />
+
+		<!-- Section Taux de TVA (Story 11-1, Administrateur) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{msg('vat-rates-title', 'Taux de TVA')}</h2>
+				<Button variant="outline" size="sm" href="/settings/vat-rates" data-testid="settings-vat-rates-manage-link">{msg('settings-manage', 'Gérer')}</Button>
+			</div>
+			<p class="mt-2 text-sm text-text-muted">
+				{msg('settings-vat-rates-link', "Configurez les taux de TVA et leurs dates de validité (changements de taux gérés dans le temps).")}
+			</p>
+		</section>
 	</div>
 {:else}
 	<p class="text-text-muted">{msg('settings-no-company', 'Aucune organisation configurée. Complétez l\'onboarding.')}</p>

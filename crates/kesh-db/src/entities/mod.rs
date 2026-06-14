@@ -52,4 +52,4 @@ pub use reconciliation_rule::{
 };
 pub use refresh_token::{NewRefreshToken, RefreshToken};
 pub use user::{NewUser, Role, User, UserUpdate};
-pub use vat_rate::{NewVatRate, VatRate};
+pub use vat_rate::{NewVatRate, UpdateVatRate, VatRate, vat_category};
