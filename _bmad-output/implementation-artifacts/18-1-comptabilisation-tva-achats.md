@@ -111,6 +111,10 @@ comptables » (AC epic, partiellement déféré en 11-2 via AC#7ter).
 - **18-1f — Tests E2E + doc** : manuel user/admin (décompte TVA), CHANGELOG, README.
 
 Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e (dépend d) → f**.
+**Conditionné par DC2 (BH2-1)** : DC2 est tranché au validate **avant le split définitif**. Si DC2 = ligne
+agrégée, 18-1a→18-1b sont en série étroite (structure simple) ; si DC2 = par taux, 18-1b s'étale mais
+18-1c démarre sans attendre. Le helper de génération de lignes (BH2-4) est posé en 18-1b quelle que soit
+l'option.
 
 ---
 
@@ -202,6 +206,12 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
   manuellement via `PUT /journal-entries`). Le frontend affiche un bandeau d'alerte si `delta ≠ 0`. Le
   rapport n'est jamais bloqué. Satisfait l'AC epic « montants correspondent aux écritures » (lève AC#7ter
   de 11-2). Le choix « cross-check affiché » vs « source unique grand livre » est tranché au validate.
+  **Définition du delta (BH2-2)** : `delta := total_vat_due_dérivé(invoice_lines) − solde_compte_2200(grand_livre)`
+  (positif = TVA facturée > comptabilisée). **Seuil d'alerte** : `|delta| >= 0.01` (1 centime — sous ce
+  seuil, arrondi numérique négligeable, `status = "ok"`). **Source affichée comme total de référence** :
+  la TVA due dérivée des factures (traçable par le client) ; le solde 2200 et le delta sont affichés en
+  note d'info. Bandeau frontend **INFO non bloquant** (pas de gate export), orientant vers « vérifier les
+  écritures validées modifiées manuellement ».
 - **DC9 (FIGÉ Pass 1 F1/F4) — Sémantique de `invoices.total_amount`** : reste **HT** (inchangé, lu
   partout comme HT). Le **TTC n'est PAS persisté** sur la facture ; il est calculé à la volée dans
   `validate_invoice` pour la ligne créance :
@@ -228,6 +238,10 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
 - **Epic 16 (Facturation avancée — compte produit par ligne, backlog)** : la comptabilisation par taux
   (DC2) et le compte produit par ligne (#152) touchent la même fonction `validate_invoice()`. Coordonner
   pour éviter deux refactors successifs du même code. **Risque de conflit** — à noter au split.
+  **Mitigation (BH2-4)** : 18-1b **centralise la génération des lignes** d'écriture dans un helper
+  `generate_invoice_journal_lines(invoice_lines, settings, …) -> Vec<NewJournalEntryLine>` (créance TTC +
+  produit HT + TVA due). Epic 16 (compte produit par ligne) s'y branche ensuite **sans 2e refactor** de
+  `validate_invoice`. Documenter l'ordre de merge prévu au kickoff Epic 16.
 - **Migration prod NAS** (DC1) : des comptes TVA mal libellés sont déjà seedés chez Guy → toute
   correction de plan doit gérer l'existant (pas seulement le seed des nouvelles installs).
 - **`TABLES_TO_TRUNCATE` (export/import 17-3)** : toute nouvelle table (PurchaseInvoice en Option A)
