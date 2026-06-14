@@ -310,7 +310,7 @@ Sonnet→Haiku→Opus→…, jusqu'à 0 finding > LOW ou 8 passes). Objectifs du
 
 ### `bmad-create-story validate 18-1` — cycle adversarial (CLAUDE.md Review Iteration Rule)
 
-Trend findings > LOW : **Pass 1 = 10 → Pass 2 = 3 → Pass 3 = 5 → Pass 4 = 1 → Pass 5 = ?**
+Trend findings > LOW : **Pass 1 = 10 → Pass 2 = 3 → Pass 3 = 5 → Pass 4 = 1 → Pass 5 = 0 ✅ CONVERGÉ**
 
 | Passe | Modèle | Findings > LOW | Points clés |
 |-------|--------|----------------|-------------|
@@ -319,4 +319,8 @@ Trend findings > LOW : **Pass 1 = 10 → Pass 2 = 3 → Pass 3 = 5 → Pass 4 = 
 | 3 | Opus 4.8 | 5 (2H+3M) | Catch-architectural CHECK SQL : F-OPUS-1 ligne 2200 à montant 0 interdite → AC6 règle positive ; F-OPUS-2 avoirs (Epic 12) contre-passation ; F-OPUS-3 parent_id sous-requête ; F-OPUS-4 isoler périmètre ventes ; F-OPUS-5 hypothèse fy. **Verdicts : DC2 = par taux, DC5 = cross-check + isolation ventes.** |
 | 4 | Sonnet 4.6 | 1 (1M) | F4-1 exemple DC3 `1170` → `1171` (contradiction DC1 corrigée) ; F4-2 seuil AC10 aligné `>= 0.01` ; Change Log ajouté. |
 
-DC tous figés (DC1-DC9). Split 18-1a..f acté. Prochaine passe : **Pass 5 Haiku** (contexte frais).
+| 5 | Haiku 4.5 | 0 ✅ | 0 hallucination. Correction Pass 4 vérifiée (`grep "1170 81.00"` = vide), seuil delta cohérent, formules AC4 équilibrées, AC6/AC11 complets, DC2-5 bien répercutés. **CONVERGÉ.** |
+
+DC tous figés (DC1-DC9). Split 18-1a..f acté. **Cycle validate CONVERGÉ Pass 5 (5 passes
+Sonnet→Haiku→Opus→Sonnet→Haiku, 0 > LOW).** Prochaine étape : `bmad-create-story 18-1a` (story-zéro
+comptes TVA) → la parente passe en statut `split`.
