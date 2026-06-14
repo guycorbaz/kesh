@@ -1,6 +1,6 @@
 # Story 11.2: Calcul TVA & rapport par période (TVA due / vente)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -119,35 +119,35 @@ so that **je puisse préparer mon décompte TVA (chiffre d'affaires et TVA due p
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Helper de calcul TVA par ligne** (AC #1, #3)
-  - [ ] T1.1 Nouveau module `crates/kesh-core/src/accounting/vat.rs` : `pub fn line_vat_amount(base_ht: Decimal, rate_percent: Decimal) -> Decimal` (`base × rate / 100` puis `Money::round_to_centimes`). Doc `///` (FR55, AFC, par ligne). Déclarer le sous-module dans `accounting/mod.rs` + re-export.
-  - [ ] T1.2 Tests unitaires : standard, half-up `123.455→123.46`, montant 0, taux 0 %, négatif (avoir).
-- [ ] **T2 — Module `vat_report` (génération)** (AC #2, #3, #5, #6, #7bis)
-  - [ ] T2.1 `crates/kesh-report/src/vat_report.rs` : structs `VatReport` / `VatReportRow` (`Serialize` camelCase) + `pub async fn generate(pool, company_id, &ReportPeriod)`. SQL : lignes des factures `validated`, `date` dans la période, scopé `company_id` (anti-IDOR). Agrégation **arrondi par ligne** via `accounting::vat::line_vat_amount`, accumulée par `vat_rate`. `total_vat_recoverable = ZERO`, `vat_balance = due - 0`. Tri `rate ASC`.
-  - [ ] T2.2 Re-exports `crates/kesh-report/src/lib.rs` (`VatReport`, `VatReportRow`, `generate_vat_report`).
-  - [ ] T2.3 Tests unitaires : invariant arrondi par ligne ≠ global (**vecteur AC#3** : 3×`0.10` @ `8.00 %` → `vat_due == 0.03`, pas `0.02`), tri par taux, totaux, `vat_balance == total_vat_due` (récupérable 0), `category == None` pour toutes les lignes (L1). Test source-level du tri stable (style `income_statement.rs:136`).
-  - [ ] T2.4 Mettre à jour le doc-comment de `find_for_category_at_date` (`crates/kesh-db/src/repositories/vat_rates.rs` ~l.84-86) qui affirme à tort « fonction que 11-2 consommera pour calculer la TVA d'une ligne » → préciser « consommée par l'assistant de saisie facture (catégorie→taux) ; le rapport TVA 11-2 groupe par `vat_rate` snapshoté et n'en a pas besoin » (OPUS-4, évite un finding de commentaire périmé en review future).
-- [ ] **T3 — Sérialiseurs PDF + CSV** (AC #4, #7bis)
-  - [ ] T3.1 `pdf.rs` (même fichier — `PdfBuilder` privé) : `render_vat_report_pdf(&VatReport, &PdfContext, &VatPdfLabels)` (tableau par taux + totaux + lignes récupérable/solde à 0.00), réutilise `PdfBuilder`/`format_swiss_amount`/en-tête. Libellés TVA via **struct dédié `VatPdfLabels`** (NE PAS toucher `SectionLabels` — non-régression AC#12).
-  - [ ] T3.2 `csv.rs` : `render_vat_report_csv` (BOM/`;`/CRLF, colonnes `Taux;ChiffreAffairesHT;TVADue` + totaux + récupérable + solde). Répliquer (pas appeler — pas de helper partagé) la garde `if rows.is_empty()` = en-têtes seuls, comme chaque renderer existant (`render_balance_sheet_csv` etc.).
-  - [ ] T3.3 Re-exports `lib.rs`.
-- [ ] **T4 — Routes API + audit** (AC #2, #4, #6, #7, #8)
-  - [ ] T4.1 `routes/reports.rs` (**même fichier** — `emit_report_*` privés) : `get_vat_report` (`Query<ReportQuery>`, **sans** `validate_format`, audit `report.generated`, calqué `get_income_statement` `reports.rs:166`) + `export_vat_report` (`Query<ExportQuery>` + `validate_format`, PDF/CSV, audit `report.exported`, calqué `export_income_statement` `reports.rs:337`). Réutiliser `validate_fiscal_year_id`, `ReportPeriod::resolve`, `load_pdf_context`, `render_csv_to_vec`, `resolve_type_slug(_, _, "vat")`, `build_export_response_with_locale`.
-  - [ ] T4.2 Enregistrer `GET /api/v1/reports/vat` + `/api/v1/reports/vat/export` dans **`authenticated_routes`** (`lib.rs`), **avant le `;`** (anti-IDOR).
-  - [ ] T4.3 Tests intégration : JSON, PDF, CSV, période hors exercice (400), **période chevauchant 2 exercices → 400** (OPUS-2), format invalide (400), IDOR cross-tenant, **validated-only** (seeder une facture `cancelled` **via SQL direct** — aucun endpoint ne crée de `cancelled`, cf. `repositories/invoices.rs:2520`), date hors période exclue, **ligne 0 %/exempt → ligne de rapport avec `base_ht > 0` et `vat_due = 0.00`** (OPUS-5).
-- [ ] **T5 — Frontend onglet/page TVA** (AC #9, #10)
-  - [ ] T5.1 ⚠️ **Ajouter `'vat'` à `ReportType` (`reports.types.ts:92`) casse l'exhaustivité TypeScript en plusieurs points — TOUS à mettre à jour sinon `npm run check`/`build` rouge** :
+- [x] **T1 — Helper de calcul TVA par ligne** (AC #1, #3)
+  - [x] T1.1 Nouveau module `crates/kesh-core/src/accounting/vat.rs` : `pub fn line_vat_amount(base_ht: Decimal, rate_percent: Decimal) -> Decimal` (`base × rate / 100` puis `Money::round_to_centimes`). Doc `///` (FR55, AFC, par ligne). Déclarer le sous-module dans `accounting/mod.rs` + re-export.
+  - [x] T1.2 Tests unitaires : standard, half-up `123.455→123.46`, montant 0, taux 0 %, négatif (avoir).
+- [x] **T2 — Module `vat_report` (génération)** (AC #2, #3, #5, #6, #7bis)
+  - [x] T2.1 `crates/kesh-report/src/vat_report.rs` : structs `VatReport` / `VatReportRow` (`Serialize` camelCase) + `pub async fn generate(pool, company_id, &ReportPeriod)`. SQL : lignes des factures `validated`, `date` dans la période, scopé `company_id` (anti-IDOR). Agrégation **arrondi par ligne** via `accounting::vat::line_vat_amount`, accumulée par `vat_rate`. `total_vat_recoverable = ZERO`, `vat_balance = due - 0`. Tri `rate ASC`.
+  - [x] T2.2 Re-exports `crates/kesh-report/src/lib.rs` (`VatReport`, `VatReportRow`, `generate_vat_report`).
+  - [x] T2.3 Tests unitaires : invariant arrondi par ligne ≠ global (**vecteur AC#3** : 3×`0.10` @ `8.00 %` → `vat_due == 0.03`, pas `0.02`), tri par taux, totaux, `vat_balance == total_vat_due` (récupérable 0), `category == None` pour toutes les lignes (L1). Test source-level du tri stable (style `income_statement.rs:136`).
+  - [x] T2.4 Mettre à jour le doc-comment de `find_for_category_at_date` (`crates/kesh-db/src/repositories/vat_rates.rs` ~l.84-86) qui affirme à tort « fonction que 11-2 consommera pour calculer la TVA d'une ligne » → préciser « consommée par l'assistant de saisie facture (catégorie→taux) ; le rapport TVA 11-2 groupe par `vat_rate` snapshoté et n'en a pas besoin » (OPUS-4, évite un finding de commentaire périmé en review future).
+- [x] **T3 — Sérialiseurs PDF + CSV** (AC #4, #7bis)
+  - [x] T3.1 `pdf.rs` (même fichier — `PdfBuilder` privé) : `render_vat_report_pdf(&VatReport, &PdfContext, &VatPdfLabels)` (tableau par taux + totaux + lignes récupérable/solde à 0.00), réutilise `PdfBuilder`/`format_swiss_amount`/en-tête. Libellés TVA via **struct dédié `VatPdfLabels`** (NE PAS toucher `SectionLabels` — non-régression AC#12).
+  - [x] T3.2 `csv.rs` : `render_vat_report_csv` (BOM/`;`/CRLF, colonnes `Taux;ChiffreAffairesHT;TVADue` + totaux + récupérable + solde). Répliquer (pas appeler — pas de helper partagé) la garde `if rows.is_empty()` = en-têtes seuls, comme chaque renderer existant (`render_balance_sheet_csv` etc.).
+  - [x] T3.3 Re-exports `lib.rs`.
+- [x] **T4 — Routes API + audit** (AC #2, #4, #6, #7, #8)
+  - [x] T4.1 `routes/reports.rs` (**même fichier** — `emit_report_*` privés) : `get_vat_report` (`Query<ReportQuery>`, **sans** `validate_format`, audit `report.generated`, calqué `get_income_statement` `reports.rs:166`) + `export_vat_report` (`Query<ExportQuery>` + `validate_format`, PDF/CSV, audit `report.exported`, calqué `export_income_statement` `reports.rs:337`). Réutiliser `validate_fiscal_year_id`, `ReportPeriod::resolve`, `load_pdf_context`, `render_csv_to_vec`, `resolve_type_slug(_, _, "vat")`, `build_export_response_with_locale`.
+  - [x] T4.2 Enregistrer `GET /api/v1/reports/vat` + `/api/v1/reports/vat/export` dans **`authenticated_routes`** (`lib.rs`), **avant le `;`** (anti-IDOR).
+  - [x] T4.3 Tests intégration : JSON, PDF, CSV, période hors exercice (400), **période chevauchant 2 exercices → 400** (OPUS-2), format invalide (400), IDOR cross-tenant, **validated-only** (seeder une facture `cancelled` **via SQL direct** — aucun endpoint ne crée de `cancelled`, cf. `repositories/invoices.rs:2520`), date hors période exclue, **ligne 0 %/exempt → ligne de rapport avec `base_ht > 0` et `vat_due = 0.00`** (OPUS-5).
+- [x] **T5 — Frontend onglet/page TVA** (AC #9, #10)
+  - [x] T5.1 ⚠️ **Ajouter `'vat'` à `ReportType` (`reports.types.ts:92`) casse l'exhaustivité TypeScript en plusieurs points — TOUS à mettre à jour sinon `npm run check`/`build` rouge** :
     - `reports.types.ts` : `ReportType` + `'vat'`, types `VatReport`/`VatReportRow`.
     - `reports.api.ts` : `TYPE_SLUGS_FALLBACK: Record<ReportType, string>` (`:174`) → ajouter `vat: 'decompte-tva'` ; `isReportEmpty` (`:68`) → **ajouter `| VatReport` au type union du paramètre `dto`** (`:70-75`, sinon l'appel `isReportEmpty('vat', vatReport)` est rejeté par TS → `npm run check` rouge) **ET** `case 'vat'` dans le switch (`:79`, `rows.length === 0`) ; endpoints `getReportUrl`/`getReportExportUrl` (et tout `switch`/`Record` indexé par `ReportType`).
     - `+page.svelte` : tableau `tabs` (`:228`) → 5e entrée ; `generate()` switch (`:108`) → `case 'vat'` ; `activeReportPeriod()` switch (`:143`) → `case 'vat': return vatReport?.period ?? null` (reproduire le `?? null` des cas existants — ne pas laisser tomber dans un retour implicite `undefined`) ; branche template d'affichage ; nouvelle variable d'état `vatReport`.
     - `VatReportView.svelte` (nouveau) : tableau par taux + totaux + récupérable/solde 0.
     - Réutilise les contrôles période + boutons export existants (flag `exporting`, garde anti-race `genSeq`).
-  - [ ] T5.2 Montants string (pas de parsing number), états chargement/erreur, pas d'API secure-context. Guard route = cohérent rapports existants.
-  - [ ] T5.3 i18n `fr-CH` (titre, colonnes, libellés PDF, `reports-filename-vat`, **note d'affichage réconciliation/récupérable — AC#7bis/#7ter**) + stubs DE/IT/EN, `lint-i18n-ownership` vert.
-- [ ] **T6 — Dette tracée + vérifs finales** (AC #7bis, #11, #12)
+  - [x] T5.2 Montants string (pas de parsing number), états chargement/erreur, pas d'API secure-context. Guard route = cohérent rapports existants.
+  - [x] T5.3 i18n `fr-CH` (titre, colonnes, libellés PDF, `reports-filename-vat`, **note d'affichage réconciliation/récupérable — AC#7bis/#7ter**) + stubs DE/IT/EN, `lint-i18n-ownership` vert.
+- [x] **T6 — Dette tracée + vérifs finales** (AC #7bis, #11, #12)
   - [ ] T6.1 **(AC#7bis/#7ter)** Créer l'Issue GitHub `enhancement` « Comptes TVA + comptabilisation TVA + TVA récupérable sur achats » (template `feature_request.yml`, label `v0.2-milestone` — épic en cours v0.2) — story de suivi (cf. Issue Tracking Rule). Scope listé = (a) comptes TVA dans le plan comptable (direction confirmée Guy), (b) lignes TVA à la comptabilisation des factures, (c) source d'achats avec TVA, (d) TVA récupérable dans le rapport (remplit `totalVatRecoverable`/`vatBalance`), (e) réconciliation rapport↔grand livre AFC. Lier la story 11-2 dans la description (« débloque le côté récupérable de `VatReport` »). Référencer le n° d'Issue dans le Change Log. ⚠️ Création = action sortante : confirmer avec Guy avant de la créer (ou laisser le n° en TODO si non confirmé au dev).
-  - [ ] T6.2 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (serial `-j1 -- --test-threads=1` si kesh-db/intégration).
-  - [ ] T6.3 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build`.
+  - [x] T6.2 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (serial `-j1 -- --test-threads=1` si kesh-db/intégration).
+  - [x] T6.3 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build`.
   - [ ] T6.4 E2E (`npm run test:e2e`) — déférable si redondant avec T4.3 (gap LOW à documenter, précédent 11-1).
 
 ## Dev Notes
@@ -292,12 +292,62 @@ NON convergé (1 MEDIUM) → **Pass 5 requise** (Haiku, contexte frais). Cycle S
 
 **Status : `ready-for-dev`** (confirmé). Prochaine étape : `bmad-dev-story 11-2`.
 
+### Dev-story (Opus 4.8, 2026-06-14)
+
+Implémentation complète backend + frontend + tests (single-pass orchestré T1→T6). Status `ready-for-dev` → **`review`**.
+
+- **T1** `kesh-core::accounting::vat::line_vat_amount` (FR55, `Money::round_to_centimes` half-up, unité %), 6 tests unitaires (standard, unité, half-up 123.46, 0, taux 0 %, négatif/avoir).
+- **T2** `kesh-report::vat_report` : `generate` (SELECT lignes brutes des factures `validated` dans la période, scopé `company_id` ; **arrondi par ligne** via `line_vat_amount` accumulé en `BTreeMap<Decimal,(base,vat)>` → tri par taux ASC ; `total_vat_recoverable = 0`, `vat_balance = due`). 6 tests unitaires (vecteur divergent AC#3 `0.03≠0.02`, tri+fusion taux, balance, category None, 0%/exempt, source-level no-GROUP-BY). T2.4 doc-comment `find_for_category_at_date` corrigé.
+- **T3** `render_vat_report_pdf(&VatReport,&PdfContext,&VatPdfLabels)` (struct dédié `VatPdfLabels`, `SectionLabels` **intact**) + `render_vat_report_csv` (BOM/`;`/CRLF, en-tête + lignes par taux + récap CA/TVA due/récupérable 0/solde). Re-exports `lib.rs`.
+- **T4** `get_vat_report` (`ReportQuery`) + `export_vat_report` (`ExportQuery`+`validate_format`) dans `reports.rs` (mêmes helpers privés) ; routes dans `authenticated_routes` **avant le `;`** ; audit `report.generated`/`report.exported` (`report_type="vat"`). `reports-filename-vat` ajouté aux 4 locales backend.
+- **T5** onglet « TVA » dans `/reports` (tabs + `generate()` + `activeReportPeriod()` + état `vatReport` + template) ; `reports.types.ts` (`VatReportRow`/`VatReportDto` + `'vat'` dans `ReportType`) ; `reports.api.ts` (`getVatReport`, `TYPE_SLUGS_FALLBACK.vat`, `isReportEmpty` union+case) ; `VatReportView.svelte` (tableau + note récupérable AC#7bis/7ter). 8 clés i18n `reports-vat-*` × 4 locales.
+
+**Tests verts** : kesh-core 6/6, kesh-report 59/59 (dont vat_report 6), intégration `vat_report_e2e` **9/9** (JSON agrégation validated-only, arrondi par ligne, 0%/exempt, PDF, CSV, format invalide 400, période hors FY 400, IDOR cross-tenant). Non-régression : `reports_export_e2e` + `reports_e2e` **20+** verts, frontend `test:unit` **312/312**. `cargo fmt --all --check` ✓, `cargo clippy --workspace --all-targets -D warnings` ✓, `npm run check` 0 erreur, `lint-i18n-ownership` PASS, `build` OK.
+
+**Gates / reste** :
+- **T6.1 (Issue GitHub) gated** : action sortante → à créer sur confirmation de Guy (comptes TVA + récupérable achats, `v0.2-milestone`). N° à reporter ici une fois créée.
+- **T6.4 (Playwright E2E) déféré** : couvert fonctionnellement par les 9 tests `vat_report_e2e` (reqwest contre app spawned) — gap LOW, précédent 11-1.
+- `cargo test --workspace` complet serial non rejoué intégralement (budget outil) — suites impactées toutes vertes ; la CI le rejoue.
+
+Prochaine : `bmad-code-review 11-2` (Sonnet→Haiku, cycle CLAUDE.md).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — dev-story single-pass orchestré, 2026-06-14.
+
 ### Debug Log References
+
+- `kesh-core` `accounting::vat` : 6/6.
+- `kesh-report` : 59/59 (vat_report 6 inclus).
+- `kesh-api` `vat_report_e2e` : 9/9 (serial).
+- Non-régression : `reports_export_e2e`+`reports_e2e` 20+/0, `onboarding`/`exports` non touchés (changement additif).
+- Frontend : `check` 0 err / `lint-i18n-ownership` PASS / `test:unit` 312/312 / `build` OK.
+- Découverte : la facture `validated` exige un `journal_entry_id` (CHECK `chk_invoices_validated_has_je`) → le test IDOR seede la facture cross-tenant via chaîne SQL (fiscal_year + journal_entry + invoice).
 
 ### Completion Notes List
 
+- TVA due (vente) calculée **à la volée** depuis `invoice_lines` (validées, période), **aucune migration**.
+- Arrondi **par ligne** (FR55) prouvé par vecteur divergent (unit + e2e).
+- `SectionLabels` non modifié (struct dédié `VatPdfLabels`) → non-régression 4 rapports Epic 9.
+- TVA récupérable / comptes TVA / réconciliation : **déférés** (0.00 + note UI), Issue T6.1 à créer (gate Guy).
+
 ### File List
+
+- `crates/kesh-core/src/accounting/vat.rs` (nouveau)
+- `crates/kesh-core/src/accounting/mod.rs` (modifié — mod vat + re-export)
+- `crates/kesh-report/src/vat_report.rs` (nouveau)
+- `crates/kesh-report/src/pdf.rs` (modifié — VatPdfLabels + render_vat_report_pdf)
+- `crates/kesh-report/src/csv.rs` (modifié — render_vat_report_csv)
+- `crates/kesh-report/src/lib.rs` (modifié — re-exports)
+- `crates/kesh-api/src/routes/reports.rs` (modifié — get_vat_report + export_vat_report)
+- `crates/kesh-api/src/lib.rs` (modifié — 2 routes /reports/vat)
+- `crates/kesh-api/tests/vat_report_e2e.rs` (nouveau — 9 tests)
+- `crates/kesh-db/src/repositories/vat_rates.rs` (modifié — doc-comment T2.4)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (modifiés — reports-filename-vat + reports-vat-*)
+- `frontend/src/lib/features/reports/reports.types.ts` (modifié — VatReportDto/Row, ReportType)
+- `frontend/src/lib/features/reports/reports.api.ts` (modifié — getVatReport, isReportEmpty, slug)
+- `frontend/src/lib/features/reports/VatReportView.svelte` (nouveau)
+- `frontend/src/routes/(app)/reports/+page.svelte` (modifié — onglet TVA)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (statut)
