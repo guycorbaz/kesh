@@ -344,6 +344,11 @@ product-archive-confirm = Archivieren
 
 # --- Story 5.1: Rechnungsentwürfe ---
 invoices-page-title = Rechnungen
+invoices-settings-vat-accounts-title = MWST-Konten
+invoices-settings-vat-accounts-hint = Konten für die MWST-Verbuchung (vorbereitet für die MWST-Abrechnung der ESTV).
+invoices-settings-vat-payable = Konto geschuldete MWST (Passiv)
+invoices-settings-vat-recoverable = Konto Vorsteuer (Aktiv)
+invoices-settings-vat-decompte = Konto MWST-Abrechnung (Passiv)
 invoice-new-title = Neue Rechnung
 invoice-edit-title = Rechnung bearbeiten
 invoice-view-title = Rechnung

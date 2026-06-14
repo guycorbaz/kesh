@@ -344,6 +344,11 @@ product-archive-confirm = Archiver
 
 # --- Story 5.1 : Factures brouillon ---
 invoices-page-title = Factures
+invoices-settings-vat-accounts-title = Comptes TVA
+invoices-settings-vat-accounts-hint = Comptes utilisés pour la comptabilisation de la TVA (préparé pour le décompte AFC).
+invoices-settings-vat-payable = Compte TVA due (Passif)
+invoices-settings-vat-recoverable = Compte TVA récupérable (Actif)
+invoices-settings-vat-decompte = Compte de décompte TVA (Passif)
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
 invoice-view-title = Facture

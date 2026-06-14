@@ -344,6 +344,11 @@ product-archive-confirm = Archive
 
 # --- Story 5.1: Draft invoices ---
 invoices-page-title = Invoices
+invoices-settings-vat-accounts-title = VAT accounts
+invoices-settings-vat-accounts-hint = Accounts used for VAT bookkeeping (prepared for the FTA VAT settlement).
+invoices-settings-vat-payable = VAT payable account (Liability)
+invoices-settings-vat-recoverable = Recoverable VAT account (Asset)
+invoices-settings-vat-decompte = VAT settlement account (Liability)
 invoice-new-title = New invoice
 invoice-edit-title = Edit invoice
 invoice-view-title = Invoice

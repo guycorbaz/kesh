@@ -344,6 +344,11 @@ product-archive-confirm = Archivia
 
 # --- Story 5.1: Bozze fatture ---
 invoices-page-title = Fatture
+invoices-settings-vat-accounts-title = Conti IVA
+invoices-settings-vat-accounts-hint = Conti usati per la contabilizzazione dell'IVA (predisposto per il rendiconto IVA dell'AFC).
+invoices-settings-vat-payable = Conto IVA dovuta (Passivo)
+invoices-settings-vat-recoverable = Conto IVA recuperabile (Attivo)
+invoices-settings-vat-decompte = Conto rendiconto IVA (Passivo)
 invoice-new-title = Nuova fattura
 invoice-edit-title = Modifica fattura
 invoice-view-title = Fattura

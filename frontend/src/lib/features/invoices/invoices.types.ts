@@ -51,6 +51,9 @@ export interface InvoiceSettingsResponse {
 	invoiceNumberFormat: string;
 	defaultReceivableAccountId: number | null;
 	defaultRevenueAccountId: number | null;
+	defaultVatPayableAccountId: number | null;
+	defaultVatRecoverableAccountId: number | null;
+	defaultVatDecompteAccountId: number | null;
 	defaultSalesJournal: JournalCode;
 	journalEntryDescriptionTemplate: string;
 	version: number;
@@ -60,6 +63,9 @@ export interface UpdateInvoiceSettingsRequest {
 	invoiceNumberFormat: string;
 	defaultReceivableAccountId: number | null;
 	defaultRevenueAccountId: number | null;
+	defaultVatPayableAccountId: number | null;
+	defaultVatRecoverableAccountId: number | null;
+	defaultVatDecompteAccountId: number | null;
 	defaultSalesJournal: JournalCode;
 	journalEntryDescriptionTemplate: string;
 	version: number;
