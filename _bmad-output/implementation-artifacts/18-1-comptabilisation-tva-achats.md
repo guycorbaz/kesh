@@ -91,10 +91,11 @@ comptables » (AC epic, partiellement déféré en 11-2 via AC#7ter).
   `company_invoice_settings` + migration + UI config. **Pose le socle pour b/c/d/e.** Axe (a).
 - **18-1b — Comptabilisation TVA aux ventes** : `validate_invoice()` génère la ligne TVA due (créance
   devient TTC). Réutilise `line_vat_amount` + `vat_rate` déjà stocké. Axe (b).
-- **18-1c — Achats avec TVA (impôt préalable)** : selon **DC3** — entité `PurchaseInvoice` OU
-  helper d'écriture manuelle pré-remplie avec lignes TVA récupérable. Axe (c).
-- **18-1d — TVA récupérable + solde net dans `VatReport`** : remplir `total_vat_recoverable` /
-  `vat_balance` depuis la source retenue (DC4). Axe (d).
+- **18-1c — Achats avec TVA (impôt préalable)** : **DC3=B** — helper UI d'écriture manuelle assistée
+  (journal `Achats`) pré-remplissant la ligne d'impôt préalable depuis un taux TVA. Réutilise
+  `POST /journal-entries` + `line_vat_amount` + `find_for_category_at_date`. Pas de nouvelle entité. Axe (c).
+- **18-1d — TVA récupérable + solde net dans `VatReport`** : **DC4** — remplir `total_vat_recoverable`
+  depuis le **solde du compte impôt préalable au grand livre** (`trial_balance`-like) + `vat_balance`. Axe (d).
 - **18-1e — Réconciliation rapport ↔ grand livre** : cross-check TVA dérivée vs solde comptes TVA via
   `trial_balance`-like ; satisfaire l'AC epic « montants correspondent aux écritures ». Axe (e).
 - **18-1f — Tests E2E + doc** : manuel user/admin (décompte TVA), CHANGELOG, README.
@@ -106,11 +107,13 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
 ## Acceptance Criteria (groupés — détaillés au split)
 
 **Axe (a) — Comptes TVA**
-- AC1 — DC1 tranché : les comptes TVA corrects (impôt préalable, TVA due, compte de décompte) existent
-  dans les 3 plans `.json`, libellés conformes à la terminologie TVA suisse (FR/DE/IT).
+- AC1 — (DC1=corriger+migrer) les comptes TVA corrects (impôt préalable distinct de l'impôt anticipé,
+  TVA due, compte de décompte) existent dans les 3 plans `.json`, libellés conformes à la terminologie
+  TVA suisse (FR/DE/IT).
 - AC2 — `company_invoice_settings` expose les comptes TVA par défaut (due + récupérable + décompte),
-  configurables via l'UI admin, avec migration non-breaking.
-- AC3 — stratégie de migration des installations existantes documentée (comptes déjà seedés en prod).
+  configurables via l'UI admin, avec migration non-breaking (DC8).
+- AC3 — migration des installations existantes : ajustement prudent des comptes déjà seedés (ne pas
+  casser un compte portant des écritures) + doc de la procédure.
 
 **Axe (b) — Comptabilisation ventes**
 - AC4 — la validation d'une facture de vente génère une écriture **équilibrée TTC** : débit créance
@@ -121,8 +124,9 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
   intactes.
 
 **Axe (c) — Achats**
-- AC7 — DC3 tranché : un mécanisme de saisie d'achat avec TVA récupérable existe (entité dédiée OU
-  écriture manuelle assistée), postant sur le compte impôt préalable.
+- AC7 — (DC3=B) un helper UI d'écriture manuelle assistée (journal `Achats`) permet de saisir un achat
+  avec TVA récupérable : la ligne d'impôt préalable est pré-remplie depuis un taux TVA, l'écriture reste
+  équilibrée et postée sur le compte impôt préalable.
 
 **Axe (d) — Rapport**
 - AC8 — `total_vat_recoverable` et `vat_balance` reflètent la TVA récupérable réelle (source DC4).
@@ -140,23 +144,30 @@ Ordre : **a (story-zéro) → b // c parallélisables → d (dépend b+c) → e 
 
 ## Décisions de conception (DC) — figées vs à trancher au validate
 
-- **DC1 (à trancher)** — Comptes TVA dans les plans : corriger libellés `1170`/`2201` (impôt anticipé →
-  impôt préalable / décompte) ET/OU ajouter comptes manquants. **Impact migration prod NAS** (comptes
-  déjà seedés). Option : seed uniquement nouvelles installations + migration data pour existantes.
-- **DC2 (à trancher)** — Ligne TVA vente : **une ligne 2200 agrégée par facture** vs **une ligne par
-  taux**. (Le rapport 11-2 groupe par taux ; l'écriture peut rester agrégée.)
-- **DC3 (MAJEUR, à trancher — détermine la taille de l'epic)** — Source des achats avec TVA :
-  - **Option A — entité `PurchaseInvoice`** (greenfield : entité + table + CRUD + validation → écriture
-    Achats avec impôt préalable). Lourd, symétrique des ventes.
-  - **Option B — écriture manuelle assistée** : réutiliser `POST /journal-entries` (existe déjà, journal
-    `Achats`) + helper UI qui pré-remplit la ligne TVA récupérable depuis un taux. Léger.
-  - L'issue #180 dit « factures d'achat **(ou lignes TVA mappées)** » → Option B est explicitement
-    ouverte. **Recommandation à valider par Guy.**
-- **DC4 (à trancher)** — Source `total_vat_recoverable` : (i) solde du compte impôt préalable lu du
-  grand livre (`trial_balance`-like) vs (ii) agrégation d'une entité achats. Couplé à DC3.
-- **DC5 (à trancher)** — Réconciliation : le rapport lit-il la TVA **du grand livre** (source unique de
-  vérité comptable) en remplaçant la dérivation `invoice_lines`, OU affiche-t-il un **cross-check** des
-  deux (dérivé vs comptabilisé) pour détecter les écarts ? Couplé à l'AC epic.
+- **DC1 (FIGÉ — Guy 2026-06-14) — Corriger les plans + migrer les données existantes.** Corriger
+  libellés/numéros dans les 3 `.json` (impôt préalable distinct de l'impôt anticipé + compte de
+  décompte TVA) **ET** fournir une migration qui ajuste les comptes déjà seedés des installations
+  existantes (dont prod NAS). La migration suit DC8 (non-breaking si possible + audit idempotence). À
+  concevoir au détail dans 18-1a (story-zéro) : stratégie d'ajustement data prudente (ne pas casser des
+  comptes ayant déjà des écritures).
+- **DC2 (à trancher au validate)** — Ligne TVA vente : **une ligne 2200 agrégée par facture** vs **une
+  ligne par taux**. (Le rapport 11-2 groupe par taux ; l'écriture peut rester agrégée tant que le total
+  réconcilie.) Décision mineure, tranchée au validate.
+- **DC3 (FIGÉ — Guy 2026-06-14) — Option B : écriture manuelle assistée.** PAS de nouvelle entité
+  `PurchaseInvoice`. Les achats avec TVA récupérable se saisissent via `POST /journal-entries` (existe
+  déjà, journal `Achats`) + un **helper UI** qui pré-remplit la ligne d'impôt préalable depuis un taux
+  TVA (`line_vat_amount` + `find_for_category_at_date`). Exemple cible :
+  `D charge 6xxx 1000.00 / D impôt préalable 1170 81.00 / C fournisseur 1081.00`. Epic 18 reste léger.
+  **Pas d'ajout à `TABLES_TO_TRUNCATE`** (aucune nouvelle table d'entité). Issue #180 « (ou lignes TVA
+  mappées) » couverte.
+- **DC4 (FIGÉ par conséquence de DC3=B)** — `total_vat_recoverable` = **solde du compte impôt préalable
+  lu du grand livre** (agrégation `trial_balance`-like sur le compte récupérable, période du rapport).
+  Pas d'agrégation d'entité achats (n'existe pas en Option B).
+- **DC5 (à trancher au validate, fortement contraint par DC3=B)** — Réconciliation : TVA due conserve
+  sa dérivation `invoice_lines` (pour la ventilation par taux du décompte) **+ cross-check** contre le
+  solde du compte 2200 du grand livre (détection d'écart vente comptabilisée vs facturée) ; TVA
+  récupérable vient du grand livre (DC4). Le détail (cross-check affiché vs source unique) est tranché
+  au validate. Satisfait l'AC epic « montants correspondent aux écritures » (lève AC#7ter de 11-2).
 - **DC6 (figé)** — Pas de nouveau variant `AccountType` (Asset/Liability suffisent).
 - **DC7 (figé)** — Arrondi TVA = `line_vat_amount` half-up par ligne (cohérence 11-2, FR55).
 - **DC8 (figé)** — Toute migration suit la politique CLAUDE.md (non-breaking par défaut + ligne audit
@@ -200,6 +211,9 @@ Voir le tableau « Ce qui EXISTE déjà » ci-dessus. Points d'ancrage prioritai
 
 `bmad-create-story validate 18-1` Pass 1 (Sonnet 4.6) — cycle adversarial CLAUDE.md (rotation
 Sonnet→Haiku→Opus→…, jusqu'à 0 finding > LOW ou 8 passes). Objectifs du validate :
-1. Trancher **DC1–DC5** (Guy arbitre DC3 — fork majeur entité vs manuel).
-2. Acter le **split** 18-1a..f définitif.
-3. Vérifier la non-régression du flux `validate_invoice` et la cohérence rapport↔comptabilisation.
+1. **DC1 + DC3 + DC4 déjà FIGÉS par Guy** (2026-06-14) : DC1 corriger plans + migration data ; DC3
+   Option B écriture manuelle assistée ; DC4 récupérable lu du grand livre. Ne PAS les re-litiger.
+2. Trancher **DC2** (ligne TVA agrégée vs par taux) + **DC5** (détail réconciliation cross-check vs
+   source unique).
+3. Acter le **split** 18-1a..f définitif.
+4. Vérifier la non-régression du flux `validate_invoice` et la cohérence rapport↔comptabilisation.
