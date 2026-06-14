@@ -1,0 +1,229 @@
+# Story 11.2: Calcul TVA & rapport par période (TVA due / vente)
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## ⚠️ Note de cadrage (ground-truth vérifié 2026-06-14)
+
+Cette story livre **le calcul de la TVA par ligne (arrondi commercial, FR55)** et **un rapport TVA par période exportable PDF/CSV (FR56)**. Elle **réutilise** massivement l'infrastructure existante : arrondi `Money`, crate `kesh-report` (Epic 9), pattern d'export `reports.rs`, sélection temporelle `vat_rates` (Story 11-1). **Aucun changement de schéma** (calcul à la volée, décision Guy 2026-06-14).
+
+### Ce qui existe déjà (à réutiliser, NE PAS réinventer)
+
+- **Arrondi commercial** : `kesh_core::types::Money::round_to_centimes()` (`crates/kesh-core/src/types/money.rs:61-71`) = `round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)` (half-up). **C'est exactement FR55** (123.455 → 123.46). Testé (`money.rs:220-235`). `rust_decimal = "1.41"` features `serde-str` + `maths` (`kesh-core/Cargo.toml:10`). **Jamais de f64.**
+- **Infra rapport + export PDF/CSV** (Epic 9, Stories 9-1/9-2a) — crate `crates/kesh-report/` :
+  - 4 rapports existants (`balance_sheet`, `income_statement`, `trial_balance`, `journal_report`) — chacun = `pub struct` `Serialize` camelCase + `pub async fn generate(pool, company_id, &ReportPeriod) -> Result<_, ReportError>` (modèle : `income_statement.rs:30-50`).
+  - `ReportPeriod::resolve(pool, company_id, fiscal_year_id, period_start, period_end)` (`period.rs:74`) — résout la fenêtre + valide les bornes dans l'exercice.
+  - PDF : `printpdf = "0.7"`, `PdfContext` + `SectionLabels` (`pdf.rs:44-146`), `PdfBuilder` (pagination A4, Helvetica builtin, footer page X/Y), helpers `format_swiss_amount` (`1'234.56`) / `format_swiss_date` (`15.01.2026`). Erreur `ReportError::PdfGeneration` → HTTP 500 `AppError::PdfGenerationFailed`.
+  - CSV : `csv = "1.3"`, BOM UTF-8, délimiteur `;`, terminator CRLF, montants ISO 2 décimales (`csv.rs:24-39`). Erreur `ReportError::CsvGeneration` → HTTP 500 `AppError::CsvGenerationFailed`.
+  - Re-exports : `crates/kesh-report/src/lib.rs:16-43`.
+- **Routes export** (`crates/kesh-api/src/routes/reports.rs`) — pattern par rapport : `get_*` (JSON on-screen) + `export_*` (binaire). Helpers réutilisables :
+  - `validate_format(&query.format)` + `validate_fiscal_year_id(...)` ;
+  - `ExportQuery { fiscal_year_id, period_start: Option<NaiveDate>, period_end: Option<NaiveDate>, journal: Option<Journal>, format: Option<String> }` (`reports.rs:76-84`) ;
+  - `load_pdf_context(pool, company_id) -> (PdfContext, company_name)` (locale BCP-47 depuis `companies.accounting_language`) ;
+  - `render_csv_to_vec(|w| ...)` ;
+  - `resolve_type_slug(state, locale, report_type)` (slug i18n `reports-filename-{type}`) ;
+  - `build_export_response_with_locale(format, body, type_slug, company_name, period, locale)` (Content-Type + Content-Disposition RFC 5987) ;
+  - `emit_report_audit(...)` (`report.generated`) / `emit_report_export_audit(...)` (`report.exported`) — best-effort, non bloquant, détails JSON snake_case. Modèle d'export complet : `export_income_statement` (`reports.rs:337-398`).
+- **Enregistrement routes** : les 8 routes rapports sont dans **`authenticated_routes`** (tous rôles authentifiés, lecture seule, FR65) — `lib.rs:478-513`. ⚠️ Les routes export DOIVENT rester **avant le `;`** de `authenticated_routes` (sinon orphelines hors guards → 401 bypass → IDOR cross-tenant, cf. commentaire BH-H1 `lib.rs:495-497`).
+- **Frontend rapports** (`frontend/src/routes/(app)/reports/+page.svelte`, 333 lignes ; `frontend/src/lib/features/reports/`) : 4 onglets + sélecteur d'exercice + plage de dates, flags `loading`/`exporting` séparés, garde anti-race `genSeq`. Helpers `reports.api.ts` : `downloadReport(type, query, format, filename)`, `buildExportFilename(...)`, `triggerDownload(blob, filename)` via `<a download>` éphémère (**HTTP-LAN-safe**, pas d'API secure-context). Lien nav : `+layout.svelte:75` (`{ label: 'Rapports', href: '/reports' }`).
+- **i18n rapports** : clés `reports-filename-*` (`crates/kesh-i18n/locales/fr-CH/messages.ftl:898-901`), mapping langue `map_language_to_bcp47` (`util.rs`).
+- **Sélection temporelle TVA** (Story 11-1) : `vat_rates::find_for_category_at_date(pool, company_id, category, date)` (`repositories/vat_rates.rs:87`) — déterministe. Voir §Données pour son rôle (limité) dans cette story.
+
+### Ce qui MANQUE (le périmètre de cette story)
+
+1. **Aucun calcul de TVA** n'existe : `compute_line_total` (`repositories/invoices.rs:277-279`) ne calcule que `quantity × unit_price` (HT, arrondi 4 déc.) ; aucune fonction `base × rate / 100`. Le helper de calcul TVA par ligne (FR55) est à créer.
+2. **Aucun rapport TVA** : la crate `kesh-report` n'a pas de module `vat_report`.
+3. **Aucune route ni page** de rapport TVA.
+
+### Gap structurel assumé (décision Guy 2026-06-14) — TVA récupérable déférée
+
+⚠️ **Les écritures comptables ne tracent PAS la TVA** : à la validation d'une facture, seules **2 lignes** sont créées (débit client / crédit produit, `invoices.rs` validate ~l.1024-1051) avec le montant **HT** (`total_amount` = somme des `line_total`, jamais de TTC). Il n'existe **pas de comptes TVA** dans le plan comptable (`AccountType` = Asset/Liability/Revenue/Expense uniquement), **pas de saisie d'achats avec TVA**, et les `journal_entry_lines` n'ont **aucun champ TVA**.
+
+**Conséquence** : la **TVA due (vente)** est calculable depuis les factures de vente validées ; la **TVA récupérable (achats / impôt préalable)** n'a **aucune source de données** dans le modèle actuel.
+
+**Décision (Guy 2026-06-14)** : cette story livre la **TVA due seule**. Le rapport est néanmoins **structuré au format décompte** dès maintenant — les lignes/totaux **TVA récupérable** et **solde** existent dans le modèle (`VatReport`), le PDF et le CSV, **à `0.00`** pour l'instant. La **TVA récupérable sur achats sera implémentée dans une story de suivi dédiée** (elle requiert le modèle de données manquant : saisie d'achats avec TVA OU comptes TVA + mapping). Ce gap est tracé comme **dette catégorie B** (limitation v0.2 avec story de remédiation planifiée — politique zero-tech-debt) + Issue GitHub `enhancement` à créer (cf. §Données / Issue Tracking Rule). **Pas de TVA récupérable inventée ni dérivée de façon fragile.**
+
+## Story
+
+As a **utilisateur d'une entreprise sur Kesh assujettie à la TVA**,
+I want **que la TVA de chaque ligne de facture soit calculée avec l'arrondi commercial suisse, et pouvoir générer un rapport TVA par période (trimestriel/semestriel) exportable en PDF et CSV**,
+so that **je puisse préparer mon décompte TVA (chiffre d'affaires et TVA due par taux) en cohérence avec mes factures de vente comptabilisées**.
+
+## Scope
+
+**Cible** : (1) un **helper de calcul TVA par ligne** réutilisable (FR55, arrondi commercial) ; (2) un **rapport TVA par période** (`kesh-report::vat_report`) agrégeant les factures de vente validées **par taux**, calculé **à la volée** (read-only, aucun changement de schéma) ; (3) **routes JSON + export PDF/CSV** calquées sur `reports.rs` ; (4) **page/onglet frontend** calqué sur la page Rapports.
+
+### Dans le scope
+
+1. **Helper de calcul TVA par ligne** (FR55) — nouveau module `crates/kesh-core/src/accounting/vat.rs` (le module `accounting` est de la logique métier pure sans I/O — `kesh-core/src/lib.rs`) :
+   - `pub fn line_vat_amount(base_ht: Decimal, rate_percent: Decimal) -> Decimal` = `Money::new(base_ht * rate_percent / dec!(100)).round_to_centimes().amount()` — **réutilise `Money::round_to_centimes`** (DRY, half-up `MidpointAwayFromZero`). **Jamais de f64.**
+   - Doc `///` : FR55, arrondi commercial AFC au centime, **par ligne** (cf. invariant ci-dessous).
+   - Exporter via `kesh_core::accounting`.
+2. **Rapport TVA** — nouveau module `crates/kesh-report/src/vat_report.rs` (calqué `income_statement.rs`) :
+   - `pub struct VatReport { period: ReportPeriod, rows: Vec<VatReportRow>, total_base_ht: Decimal, total_vat_due: Decimal, total_vat_recoverable: Decimal, vat_balance: Decimal }` (`Serialize` camelCase).
+   - `pub struct VatReportRow { rate: Decimal, category: Option<String>, base_ht: Decimal, vat_due: Decimal }` — **une ligne par taux** présent dans les ventes de la période.
+   - `pub async fn generate(pool, company_id, &ReportPeriod) -> Result<VatReport, ReportError>` :
+     - SQL : sélectionner les **lignes** des factures **`status = 'validated'`** dont `invoices.date BETWEEN period.start_date AND period.end_date` et `invoices.company_id = ?` (anti-IDOR), retournant `(il.vat_rate, il.line_total, i.date)`.
+     - **Invariant FR55 — arrondir PAR LIGNE puis sommer** : pour chaque ligne, `vat = accounting::vat::line_vat_amount(line_total, vat_rate)` ; accumuler `base_ht += line_total` et `vat_due += vat` **par `vat_rate`**. ⚠️ **NE PAS** sommer les bases puis arrondir une seule fois (résultat ≠, non conforme AFC). Test obligatoire (cf. AC#3).
+     - `total_base_ht` = Σ `base_ht` ; `total_vat_due` = Σ `vat_due` ; `total_vat_recoverable = Decimal::ZERO` (gap structurel, cf. note de cadrage) ; `vat_balance = total_vat_due - total_vat_recoverable`.
+     - Tri des `rows` par `rate ASC` (stable, testable au niveau source comme `income_statement.rs:136`).
+     - `category` (annotation d'affichage **best-effort**, optionnelle) : laisser `None` en 11-2 (le grouping primaire est **par taux**, standard du décompte ; l'inférence taux→catégorie est ambiguë et non requise). Documenter dans Dev Notes. *(Ne PAS consommer `find_for_category_at_date` ici : elle résout catégorie→taux, l'inverse n'est pas nécessaire au rapport.)*
+     - Re-exports dans `crates/kesh-report/src/lib.rs` (`VatReport`, `VatReportRow`, `generate as generate_vat_report`).
+3. **Sérialiseurs PDF/CSV** — `crates/kesh-report/src/pdf.rs` + `csv.rs` (calquer les renderers existants) :
+   - `render_vat_report_pdf(&VatReport, &PdfContext) -> Result<Vec<u8>, ReportError>` : tableau par taux (Taux, CA HT, TVA due) + totaux + lignes **TVA récupérable** et **Solde** (à 0.00). Réutiliser `PdfBuilder`, `format_swiss_amount`, l'en-tête période/société. Étendre `SectionLabels` (ou un struct de labels dédié) avec les libellés TVA i18n.
+   - `render_vat_report_csv<W: Write>(&VatReport, W) -> Result<(), ReportError>` : BOM UTF-8 + `;` + CRLF. Colonnes : `Taux;ChiffreAffairesHT;TVADue`. Lignes de total + `TVARecuperable` + `Solde`. Rapport vide = en-têtes seuls (cf. `csv.rs:68-70`).
+   - Re-exports `lib.rs`.
+4. **Routes API** (`crates/kesh-api/src/routes/reports.rs`) — calquées `get_income_statement` / `export_income_statement` :
+   - `GET /api/v1/reports/vat` → JSON `VatReport` (on-screen). Audit `report.generated` (`report_type = "vat"`).
+   - `GET /api/v1/reports/vat/export?format=pdf|csv` → binaire. Audit `report.exported` (`report_type = "vat"`).
+   - Réutiliser `ExportQuery`, `validate_format`, `validate_fiscal_year_id`, `ReportPeriod::resolve`, `load_pdf_context`, `render_csv_to_vec`, `resolve_type_slug(state, locale, "vat")`, `build_export_response_with_locale`.
+   - Enregistrer les 2 routes dans **`authenticated_routes`** (tous rôles, lecture seule FR65), **avant le `;`** (anti-IDOR, cf. `lib.rs:495-497`). Scoping `current_user.company_id`.
+5. **Frontend** — étendre la feature `reports/` + la page Rapports (réutilisation maximale) :
+   - Ajouter un **onglet « TVA »** (5e onglet) à `frontend/src/routes/(app)/reports/+page.svelte` OU une page dédiée `(app)/reports/vat/` — privilégier l'onglet (réutilise sélecteur d'exercice, plage de dates, flags `loading`/`exporting`, `genSeq`, boutons PDF/CSV). Vue `VatReportView.svelte` (tableau par taux + totaux + récupérable/solde à 0).
+   - `reports.api.ts` : ajouter `ReportType` `'vat'` (slug fallback `decompte-tva`), endpoint `/api/v1/reports/vat[/export]`, types dans `reports.types.ts` (`VatReport`, `VatReportRow`).
+   - Montants `rust_decimal` reçus en **string** (serde-str) — formater à l'affichage, ne pas parser en `number` (perte de précision). **Pas d'API secure-context** (HTTP LAN).
+6. **i18n** — clés Fluent `fr-CH` : titre rapport TVA, en-têtes colonnes (Taux, Chiffre d'affaires HT, TVA due, TVA récupérable, Solde), libellés PDF, `reports-filename-vat = decompte-tva`, message « TVA récupérable disponible dans une version ultérieure » (note d'affichage). Stubs DE/IT/EN selon `lint-i18n-ownership` (fallback FR accepté, cohérent projet).
+7. **Tests** :
+   - **Unitaire** `accounting::vat` : `line_vat_amount` (cas standard, midpoint half-up 123.455→123.46, montant nul, taux 0 %, négatif/avoir).
+   - **Unitaire** `vat_report` : invariant **arrondi par ligne ≠ arrondi global** (cas où la différence est observable), tri par taux, totaux, `vat_balance` = due − 0.
+   - **Intégration routes** (`crates/kesh-api/tests/`) : JSON + export PDF/CSV (statut 200, Content-Type, Content-Disposition), période hors exercice → 400, format invalide → 400, anti-IDOR cross-tenant (entreprise A ne voit pas les factures de B), seules les factures `validated` comptent (draft/cancelled exclues), date hors période exclue.
+   - **Frontend** : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`. E2E Playwright (générer + télécharger) — **déférable** si redondant avec les tests d'intégration API (gap LOW, cf. précédent 11-1).
+
+### Hors scope (story de suivi dédiée)
+
+- **Comptes TVA dans le plan comptable — direction confirmée (Guy 2026-06-14) : « le compte TVA sera à implémenter ».** C'est la pièce de modèle de données manquante qui débloque tout le reste : un type/des comptes TVA dédiés (TVA due/collectée, TVA récupérable/impôt préalable, compte de décompte) dans le plan comptable. Sa mise en place est le préalable de la TVA récupérable **et** de la comptabilisation correcte de la TVA. **Story de suivi dédiée** (Issue GitHub `enhancement` à créer en T6.1).
+- **TVA récupérable sur achats (impôt préalable)** — dépend des comptes TVA ci-dessus + d'une source d'achats avec TVA (saisie de factures d'achat OU lignes TVA mappées). **Story de suivi.** En 11-2, la TVA récupérable et le solde figurent dans le rapport **à 0.00** (structure prête à les recevoir).
+- **Comptabilisation de la TVA dans les écritures** (lignes TVA à la validation facture sur les comptes TVA, réconciliation rapport↔grand livre AFC) — refactor du moteur comptable, dépend des comptes TVA. Hors scope 11-2.
+- **Formulaire AFC officiel** (mise en page exacte du décompte officiel, e-TVA) — le rapport livré est un récapitulatif TVA par taux conforme FR56, pas le formulaire officiel.
+- **Persistance de `vat_amount`/`category` sur les lignes** — décision « calcul à la volée » (Guy 2026-06-14) ; pas de migration.
+- **Pré-remplissage du taux à la saisie facture via `find_for_category_at_date`** (assistant catégorie→taux) — hors scope.
+
+## Acceptance Criteria
+
+1. **(FR55 — calcul par ligne)** `kesh_core::accounting::vat::line_vat_amount(base_ht, rate_percent)` retourne `base_ht × rate_percent / 100` arrondi au centime en **arrondi commercial** (`MidpointAwayFromZero`, via `Money::round_to_centimes`). Cas prouvé par test : `123.455 → 123.46` (half-up). Calcul en `rust_decimal::Decimal`, **jamais de f64**.
+2. **(FR56 — rapport par période)** `GET /api/v1/reports/vat?fiscalYearId=…[&periodStart=…&periodEnd=…]` retourne un `VatReport` JSON : pour chaque **taux** présent dans les factures de vente **validées** de la période, une ligne `{ rate, baseHt, vatDue }` ; plus `totalBaseHt`, `totalVatDue`, `totalVatRecoverable` (= `0.00`), `vatBalance` (= `totalVatDue − totalVatRecoverable`). La période est résolue par `ReportPeriod::resolve` (bornes validées dans l'exercice).
+3. **(FR55 — arrondi par ligne, pas global)** Le `vat_due` par taux est la **somme des TVA arrondies ligne par ligne** (`Σ round_to_centimes(line_total × rate/100)`), **non** l'arrondi de la base agrégée. Un test exhibe un jeu de lignes où les deux méthodes divergent et vérifie que l'implémentation suit l'arrondi par ligne.
+4. **(Export PDF/CSV)** `GET /api/v1/reports/vat/export?format=pdf|csv&fiscalYearId=…` renvoie le rapport : PDF (`application/pdf`, en-tête société/période, tableau par taux + totaux + lignes TVA récupérable/Solde à 0.00) et CSV (`text/csv; charset=utf-8`, BOM UTF-8, `;`, CRLF, colonnes `Taux;ChiffreAffairesHT;TVADue` + totaux + récupérable + solde). `Content-Disposition` avec filename localisé (slug `decompte-tva`) RFC 5987. Format invalide → 400 ; échec génération → 500 (`AppError::PdfGenerationFailed` / `CsvGenerationFailed`).
+5. **(Source de données — vente validée uniquement)** Seules les factures `status = 'validated'` avec `date` dans la période sont agrégées (les `draft`/`cancelled` sont exclues). La base par taux est la somme des `line_total` (**HT**). Vérifié par test.
+6. **(Anti-IDOR / multi-tenant)** Toutes les requêtes filtrent par `current_user.company_id` ; une entreprise ne voit jamais les factures d'une autre. Test cross-tenant.
+7. **(RBAC / FR65)** Les routes TVA sont en **lecture seule, accessibles à tous les rôles authentifiés** (cohérent avec les 4 rapports Epic 9 — `lib.rs:478`), enregistrées dans `authenticated_routes` **avant le `;`** (anti-bypass guards). Onboarding non requis au-delà du contexte authentifié standard des rapports.
+7bis. **(TVA récupérable déférée — gap tracé)** Le rapport expose `totalVatRecoverable = 0.00` et `vatBalance = totalVatDue`. Le PDF/CSV affichent explicitement les lignes « TVA récupérable » et « Solde » (à 0). Le gap est documenté (dette cat. B + Issue GitHub `enhancement` créée pour la story de suivi achats). **Aucune valeur de récupérable inventée.**
+8. **(Audit)** Génération JSON → `report.generated` (`report_type = "vat"`) ; export → `report.exported` (`report_type = "vat"`, `format`). Via `emit_report_audit` / `emit_report_export_audit` (best-effort, non bloquant, snake_case).
+9. **(Frontend)** Un onglet/page « TVA » dans Rapports : sélection exercice + plage de dates (réutilisant les contrôles existants), tableau par taux (CA HT, TVA due) + totaux + récupérable/solde (0), boutons export PDF/CSV (flag `exporting` séparé, garde anti-race). Montants `Decimal` reçus en string, formatés sans parsing `number`. Pas d'API secure-context (HTTP LAN). États chargement/erreur gérés.
+10. **(i18n)** Toutes les chaînes UI/PDF nouvelles ont des clés Fluent `fr-CH` (+ slug `reports-filename-vat = decompte-tva`) ; `npm run lint-i18n-ownership` vert. Stubs DE/IT/EN (fallback FR accepté).
+11. **(Tests)** Unitaires (`accounting::vat`, `vat_report` invariant arrondi par ligne) + intégration routes (JSON, PDF, CSV, période hors exercice, format invalide, IDOR, validated-only) verts. `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (serial si touche kesh-db), `cd frontend && npm run check && lint-i18n-ownership && test:unit && build` verts.
+12. **(Non-régression)** Les 4 rapports Epic 9 (routes, export, frontend) restent intacts ; l'ajout du module `vat_report` et des labels n'altère pas `PdfContext`/`SectionLabels` pour les rapports existants (champs additifs uniquement). `total_amount` HT des factures et le calcul `compute_line_total` ne sont **pas** modifiés.
+
+## Tasks / Subtasks
+
+- [ ] **T1 — Helper de calcul TVA par ligne** (AC #1, #3)
+  - [ ] T1.1 Nouveau module `crates/kesh-core/src/accounting/vat.rs` : `pub fn line_vat_amount(base_ht: Decimal, rate_percent: Decimal) -> Decimal` (`base × rate / 100` puis `Money::round_to_centimes`). Doc `///` (FR55, AFC, par ligne). Déclarer le sous-module dans `accounting/mod.rs` + re-export.
+  - [ ] T1.2 Tests unitaires : standard, half-up `123.455→123.46`, montant 0, taux 0 %, négatif (avoir).
+- [ ] **T2 — Module `vat_report` (génération)** (AC #2, #3, #5, #6, #7bis)
+  - [ ] T2.1 `crates/kesh-report/src/vat_report.rs` : structs `VatReport` / `VatReportRow` (`Serialize` camelCase) + `pub async fn generate(pool, company_id, &ReportPeriod)`. SQL : lignes des factures `validated`, `date` dans la période, scopé `company_id` (anti-IDOR). Agrégation **arrondi par ligne** via `accounting::vat::line_vat_amount`, accumulée par `vat_rate`. `total_vat_recoverable = ZERO`, `vat_balance = due - 0`. Tri `rate ASC`.
+  - [ ] T2.2 Re-exports `crates/kesh-report/src/lib.rs` (`VatReport`, `VatReportRow`, `generate_vat_report`).
+  - [ ] T2.3 Tests unitaires : invariant arrondi par ligne ≠ global (cas divergent), tri, totaux, balance. Test source-level du `ORDER BY`/tri stable (style `income_statement.rs:136`).
+- [ ] **T3 — Sérialiseurs PDF + CSV** (AC #4, #7bis)
+  - [ ] T3.1 `pdf.rs` : `render_vat_report_pdf` (tableau par taux + totaux + lignes récupérable/solde à 0.00), réutilise `PdfBuilder`/`format_swiss_amount`/en-tête. Étendre labels i18n TVA (champs additifs — non-régression AC#12).
+  - [ ] T3.2 `csv.rs` : `render_vat_report_csv` (BOM/`;`/CRLF, colonnes `Taux;ChiffreAffairesHT;TVADue` + totaux + récupérable + solde, vide = en-têtes seuls).
+  - [ ] T3.3 Re-exports `lib.rs`.
+- [ ] **T4 — Routes API + audit** (AC #2, #4, #6, #7, #8)
+  - [ ] T4.1 `routes/reports.rs` : `get_vat_report` (JSON, audit `report.generated`) + `export_vat_report` (PDF/CSV, audit `report.exported`), calqués `*_income_statement`. Réutiliser tous les helpers (`validate_format`, `ReportPeriod::resolve`, `load_pdf_context`, `render_csv_to_vec`, `resolve_type_slug(_, _, "vat")`, `build_export_response_with_locale`).
+  - [ ] T4.2 Enregistrer `GET /api/v1/reports/vat` + `/api/v1/reports/vat/export` dans **`authenticated_routes`** (`lib.rs`), **avant le `;`** (anti-IDOR).
+  - [ ] T4.3 Tests intégration : JSON, PDF, CSV, période hors exercice (400), format invalide (400), IDOR cross-tenant, validated-only, date hors période.
+- [ ] **T5 — Frontend onglet/page TVA** (AC #9, #10)
+  - [ ] T5.1 `reports.types.ts` (`VatReport`, `VatReportRow`) + `reports.api.ts` (`ReportType` `'vat'`, slug `decompte-tva`, endpoints). `VatReportView.svelte` (tableau par taux + totaux + récupérable/solde 0). Onglet « TVA » dans `+page.svelte` (réutilise contrôles période + export).
+  - [ ] T5.2 Montants string (pas de parsing number), états chargement/erreur, pas d'API secure-context. Guard route = cohérent rapports existants.
+  - [ ] T5.3 i18n `fr-CH` (titre, colonnes, libellés PDF, `reports-filename-vat`, note récupérable) + stubs DE/IT/EN, `lint-i18n-ownership` vert.
+- [ ] **T6 — Dette tracée + vérifs finales** (AC #7bis, #11, #12)
+  - [ ] T6.1 Créer l'Issue GitHub `enhancement` « Comptes TVA + comptabilisation TVA + TVA récupérable sur achats » (template `feature_request.yml`) — story de suivi (cf. Issue Tracking Rule). Scope = comptes TVA dans le plan comptable (direction confirmée Guy), lignes TVA à la comptabilisation, source d'achats avec TVA, réconciliation rapport↔écritures. Référencer son numéro dans le Change Log.
+  - [ ] T6.2 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (serial `-j1 -- --test-threads=1` si kesh-db/intégration).
+  - [ ] T6.3 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build`.
+  - [ ] T6.4 E2E (`npm run test:e2e`) — déférable si redondant avec T4.3 (gap LOW à documenter, précédent 11-1).
+
+## Dev Notes
+
+### Patterns de référence (NE PAS réinventer)
+
+- **Rapport + export** : copier `income_statement.rs` (`generate`) + `export_income_statement` (`reports.rs:337-398`). Même squelette : `validate_format` → `validate_fiscal_year_id` → `ReportPeriod::resolve` → `generate_*` → `load_pdf_context` → `match format { Pdf => render_*_pdf, Csv => render_csv_to_vec(...) }` → `emit_report_export_audit` → `resolve_type_slug` → `build_export_response_with_locale`.
+- **Arrondi** : `Money::round_to_centimes()` (`money.rs:66`) est la **seule** source d'arrondi commercial — l'envelopper, ne pas réimplémenter `round_dp_with_strategy`.
+- **PDF/CSV** : réutiliser `PdfBuilder`, `format_swiss_amount`, `format_swiss_date`, `make_writer`/BOM (`csv.rs:24-39`).
+
+### Invariant FR55 — arrondir par ligne PUIS sommer (critique)
+
+L'AFC exige l'arrondi de la TVA **par ligne**. Donc :
+```
+vat_due[rate] = Σ_lignes  round_to_centimes(line_total × rate / 100)
+```
+et **NON** `round_to_centimes( (Σ line_total) × rate / 100 )`. Les deux divergent dès que ≥2 lignes ont une partie fractionnaire au-delà du centime. Le test T2.3 doit exhiber un cas divergent (ex. trois lignes à `33.335 × 8.1%`) et prouver que l'implémentation suit l'arrondi par ligne.
+
+### Données — d'où vient la TVA due, et le rôle (limité) de `find_for_category_at_date`
+
+- **Source** : `invoice_lines` (`vat_rate DECIMAL(5,2)`, `line_total DECIMAL(19,4)` = HT) jointes à `invoices` (`status`, `date`, `company_id`, `total_amount` HT). Les lignes **snapshotent** `vat_rate` à la création (la modif d'un produit catalogue n'altère pas une facture — `invoice.rs:1-8`). Le rapport groupe **par `vat_rate`** stocké : pas besoin de re-résoudre la catégorie.
+- **`find_for_category_at_date` (Story 11-1)** résout **catégorie → taux à une date** (assistant de saisie). Le rapport fait l'inverse (il a déjà le taux). **Ne pas l'utiliser ici.** L'annotation `category` du rapport reste `None` en 11-2 (inférence taux→catégorie ambiguë, non requise — le décompte standard est par taux).
+- **TVA récupérable** : aucune source (pas d'achats/TVA dans le modèle, cf. note de cadrage). → `0.00`, déférée à une story de suivi. **Issue GitHub `enhancement` à créer (T6.1)** + dette cat. B documentée. NE PAS dériver de récupérable depuis les comptes de charges (fragile : aucun taux TVA attaché aux écritures).
+
+### Période & exercice
+
+- `ReportPeriod::resolve(pool, company_id, fiscal_year_id, period_start, period_end)` valide les bornes (start ≤ end, dans l'exercice). Le SQL VAT filtre les **factures** par `i.date BETWEEN period.start_date AND period.end_date` (les factures n'ont pas de `fiscal_year_id` direct ; la fenêtre de dates suffit et reste cohérente avec l'exercice résolu). FR56 « trimestriel/semestriel » = l'utilisateur choisit la plage (presets trimestre/semestre côté UI = nice-to-have, non bloquant).
+
+### RBAC
+
+Lecture seule, **tous rôles authentifiés** (FR65), comme les 4 rapports Epic 9 (`lib.rs:478`). ⚠️ Écart **intentionnel** vs la story 11-1 (mutations TVA = Admin) : ici on **lit** un rapport, pas on configure des taux. Routes dans `authenticated_routes` avant le `;`.
+
+### Pièges connus
+
+- **Arrondi global vs par ligne** : cf. invariant ci-dessus — le piège #1 de cette story.
+- **f64 interdit** : tout en `Decimal`. Sérialisation JSON en **string** (serde-str) ; le frontend ne doit pas `parseFloat` (perte précision) — formater la string.
+- **IDOR** : `company_id` sur **toutes** les requêtes ; routes export avant le `;` de `authenticated_routes` (sinon bypass guards, cf. `lib.rs:495-497`).
+- **Factures non validées** : exclure `draft`/`cancelled` (seules `validated` sont comptabilisées). Test obligatoire.
+- **Non-régression PdfContext/SectionLabels** : n'ajouter que des champs (les 4 rapports existants consomment `SectionLabels` — ne pas modifier les champs existants ni leur sémantique).
+- **`total_amount` est HT** : ne pas confondre avec un TTC ; le rapport calcule la TVA en sus, ne la lit pas depuis `total_amount`.
+
+### Règle de splitting (décision : story unique d'abord)
+
+Cette story touche ~5 modules (`kesh-core`, `kesh-report`, `kesh-api`, `frontend`, `kesh-i18n`) — au seuil. Décision Guy 2026-06-14 : **tenter en une story**. **Fallback** si `validate` reboucle >4 passes ou si l'implémentation déborde : splitter **11-2a** (backend : `kesh-core` calc + `kesh-report` generate + tests unitaires/intégration) / **11-2b** (export PDF/CSV restants + frontend + i18n + E2E). Le contrat API se stabilise avant l'UI.
+
+### Project Structure Notes
+
+- `crates/kesh-core/src/accounting/vat.rs` (nouveau) + `accounting/mod.rs` (export).
+- `crates/kesh-report/src/vat_report.rs` (nouveau) + `pdf.rs`/`csv.rs`/`lib.rs` (modifiés, additifs).
+- `crates/kesh-api/src/routes/reports.rs` (modifié — 2 handlers) + `lib.rs` (modifié — 2 routes) + `crates/kesh-api/tests/` (nouveaux/étendus).
+- `crates/kesh-i18n/locales/*/messages.ftl` (modifiés).
+- `frontend/src/lib/features/reports/{reports.types.ts,reports.api.ts,VatReportView.svelte}` + `routes/(app)/reports/+page.svelte` (modifiés).
+
+### References
+
+- [Source: epics.md#Epic 10 (=11) Story 10.2 — Calcul TVA & rapport par période, FR55/FR56]
+- [Source: crates/kesh-core/src/types/money.rs:61-71 — round_to_centimes (arrondi commercial AFC)]
+- [Source: crates/kesh-report/src/income_statement.rs — modèle generate]
+- [Source: crates/kesh-report/src/{pdf.rs,csv.rs,period.rs,lib.rs} — infra export Epic 9]
+- [Source: crates/kesh-api/src/routes/reports.rs:272-398 — pattern export (income statement)]
+- [Source: crates/kesh-api/src/lib.rs:478-520 — enregistrement routes rapports (authenticated_routes, anti-IDOR)]
+- [Source: crates/kesh-db/src/entities/invoice.rs — Invoice/InvoiceLine (vat_rate, line_total HT, status, date)]
+- [Source: crates/kesh-db/src/repositories/invoices.rs:277-279 — compute_line_total (HT, non modifié)]
+- [Source: crates/kesh-db/src/repositories/vat_rates.rs:87 — find_for_category_at_date (non consommée ici)]
+- [Source: frontend/src/routes/(app)/reports/+page.svelte + lib/features/reports/ — UI rapports + downloadReport]
+- [Source: 11-1-configuration-taux-tva.md — infra vat_rates, catégorie extensible, gap structurel TVA écritures]
+- [Source: CLAUDE.md — zero tech debt carry-forward, Issue Tracking Rule, Test Locally First, no secure-context APIs HTTP LAN]
+
+## Change Log
+
+### Create-story (Opus 4.8, 2026-06-14)
+
+Spec créée. Périmètre tranché par Guy (3 décisions, AskUserQuestion) : **(1) TVA due seule** (vente) — la TVA récupérable sur achats n'a aucune source de données (pas de saisie achats/TVA, pas de comptes TVA, écritures sans TVA) → déférée à une **story de suivi** (Issue GitHub `enhancement` à créer en T6.1, dette cat. B), le rapport étant structuré au format décompte (récupérable/solde présents à 0) ; **(2) calcul à la volée** (read-only, aucun changement de schéma) ; **(3) story unique d'abord** (fallback split 11-2a/11-2b documenté).
+
+Réutilise : `Money::round_to_centimes` (FR55), crate `kesh-report` + pattern `reports.rs` (Epic 9), `ReportPeriod::resolve`, frontend `downloadReport`. Nouveau : helper `accounting::vat::line_vat_amount`, module `kesh-report::vat_report`, renderers PDF/CSV, routes JSON+export, onglet frontend TVA. Invariant critique souligné : **arrondi TVA par ligne puis somme** (≠ arrondi global, conformité AFC). 12 ACs (+ 7bis). Ground-truth vérifié : `Money` (money.rs:66), infra report (income_statement/pdf/csv/period/lib), routes (reports.rs:272-398, lib.rs:478-520), modèle facture HT (invoice.rs, invoices.rs:277-279), gap écritures sans TVA confirmé.
+
+Prochaine étape : `bmad-create-story validate 11-2` (Pass 1 Sonnet, cycle CLAUDE.md) — porter une attention au périmètre TVA récupérable et à l'invariant d'arrondi.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
