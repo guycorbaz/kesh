@@ -156,8 +156,8 @@ l'option.
 
 **Axe (e) — Réconciliation**
 - AC10 — le rapport TVA réconcilie avec les soldes des comptes TVA du grand livre et expose
-  `reconciliation_delta: Decimal` + `reconciliation_status: "ok" | "delta"` (DC5) ; un écart ≠ 0
-  (écriture validée modifiée à la main) déclenche un bandeau d'alerte frontend, sans bloquer le rapport.
+  `reconciliation_delta: Decimal` + `reconciliation_status: "ok" | "delta"` (DC5) ; un écart `|delta| >= 0.01`
+  (seuil DC5 ; écriture validée modifiée à la main) déclenche un bandeau d'alerte frontend, sans bloquer le rapport.
   Satisfait l'AC epic « les montants correspondent aux écritures » (lève AC#7ter de 11-2).
 
 **Axe (f) — Tests & doc**
@@ -203,7 +203,7 @@ l'option.
   `PurchaseInvoice`. Les achats avec TVA récupérable se saisissent via `POST /journal-entries` (existe
   déjà, journal `Achats`) + un **helper UI** qui pré-remplit la ligne d'impôt préalable depuis un taux
   TVA (`line_vat_amount` + `find_for_category_at_date`). Exemple cible :
-  `D charge 6xxx 1000.00 / D impôt préalable 1170 81.00 / C fournisseur 1081.00`. Epic 18 reste léger.
+  `D charge 6xxx 1000.00 / D impôt préalable <1171, num. finalisé 18-1a — PAS 1170 impôt anticipé> 81.00 / C fournisseur 1081.00`. Epic 18 reste léger.
   **Pas d'ajout à `TABLES_TO_TRUNCATE`** (aucune nouvelle table d'entité). Issue #180 « (ou lignes TVA
   mappées) » couverte.
 - **DC4 (FIGÉ par conséquence de DC3=B ; filtre précisé Pass 1 F9)** — `total_vat_recoverable` =
@@ -303,3 +303,20 @@ Sonnet→Haiku→Opus→…, jusqu'à 0 finding > LOW ou 8 passes). Objectifs du
 2. **Split** 18-1a..f acté (a story-zéro → b // c → d → e → f).
 3. Convergence validate à confirmer en Pass 4 (Sonnet, contexte frais), puis **`bmad-create-story 18-1a`**
    (extraire la story-zéro comptes TVA).
+
+---
+
+## Change Log
+
+### `bmad-create-story validate 18-1` — cycle adversarial (CLAUDE.md Review Iteration Rule)
+
+Trend findings > LOW : **Pass 1 = 10 → Pass 2 = 3 → Pass 3 = 5 → Pass 4 = 1 → Pass 5 = ?**
+
+| Passe | Modèle | Findings > LOW | Points clés |
+|-------|--------|----------------|-------------|
+| 1 | Sonnet 4.6 | 10 (4H+6M) | Ground-truth `charts/*.json` : 1170/2201 = impôt anticipé ≠ préalable ; 2201 absent independant/association → DC1 = ajouter (pas renommer) ; DC9 total_amount HT ; formules AC4 ; DC4 filtre date ; DC5 delta. |
+| 2 | Haiku 4.5 | 3 (3M) | 0 hallucination. DC5 delta défini (signe/seuil 0.01/source réf) ; ordre split ↔ DC2 ; couplage Epic 16 = helper. |
+| 3 | Opus 4.8 | 5 (2H+3M) | Catch-architectural CHECK SQL : F-OPUS-1 ligne 2200 à montant 0 interdite → AC6 règle positive ; F-OPUS-2 avoirs (Epic 12) contre-passation ; F-OPUS-3 parent_id sous-requête ; F-OPUS-4 isoler périmètre ventes ; F-OPUS-5 hypothèse fy. **Verdicts : DC2 = par taux, DC5 = cross-check + isolation ventes.** |
+| 4 | Sonnet 4.6 | 1 (1M) | F4-1 exemple DC3 `1170` → `1171` (contradiction DC1 corrigée) ; F4-2 seuil AC10 aligné `>= 0.01` ; Change Log ajouté. |
+
+DC tous figés (DC1-DC9). Split 18-1a..f acté. Prochaine passe : **Pass 5 Haiku** (contexte frais).
