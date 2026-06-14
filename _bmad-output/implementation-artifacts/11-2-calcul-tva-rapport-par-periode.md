@@ -321,6 +321,12 @@ Prochaine : `bmad-code-review 11-2` (Sonnet→Haiku, cycle CLAUDE.md).
 
 Tests verts : kesh-report 61, e2e 10/10, fmt+clippy verts. NON convergé (1 MEDIUM) → **Pass 2 (Haiku)**.
 
+### Code-review Pass 2 (Haiku 4.5, 2026-06-14) — ✅ CONVERGÉ
+
+**0 CRITICAL/HIGH/MEDIUM/LOW, 0 hallucination.** Diff final aplati (`6b63343 HEAD`) re-vérifié ground-truth en 10 points : arrondi par ligne `Money::round_to_centimes` half-up sans f64 ; SQL sans GROUP BY, `status='validated'`, `date BETWEEN`, `i.company_id=?` (anti-IDOR) ; routes dans `authenticated_routes` avant `;` ; `SectionLabels`/`PdfContext` intacts (`VatPdfLabels` struct séparé) ; `get`=ReportQuery / `export`=ExportQuery+validate_format+info_span ; exhaustivité TS frontend (union+case+slug+tabs+switches) ; Decimal-string non parsé / pas d'API secure-context ; i18n 4 locales ; 10 tests e2e assertant réellement (cancelled + cross-tenant exclus). **Cycle code-review convergé** : Pass 1 (Sonnet) [1M/3L] → Pass 2 (Haiku) [0]. Sonnet→Haiku, LLM différent de l'implémenteur (Opus).
+
+**Status final** : `review` — implémentation + revue complètes, prêt pour merge. Reste hors-PR : **T6.1 Issue GitHub** (gate Guy) ; T6.4 Playwright E2E (déféré, gap LOW) ; `cargo test --workspace` complet rejoué par la CI.
+
 ## Dev Agent Record
 
 ### Agent Model Used
