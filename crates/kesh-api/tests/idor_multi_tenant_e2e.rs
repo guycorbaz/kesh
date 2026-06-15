@@ -705,6 +705,13 @@ async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPoo
         400,
         "un compte TVA d'une autre company doit être rejeté (anti-IDOR), pas persisté"
     );
+    // Épingler la cause exacte : le 400 vient bien de `validate_account` (VALIDATION_ERROR),
+    // pas d'un 400 incident (payload malformé, conflit de version) qui masquerait le garde.
+    let err_body: serde_json::Value = put_foreign.json().await.expect("error json body");
+    assert_eq!(
+        err_body["error"]["code"], "VALIDATION_ERROR",
+        "le rejet doit être une erreur de validation de compte, pas un autre 400"
+    );
 
     // Contrôle positif : le compte Liability (2000) de A est accepté pour le même champ.
     // (Le PUT précédent ayant échoué, la version n'a pas bougé.)

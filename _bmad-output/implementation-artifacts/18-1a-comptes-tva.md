@@ -133,3 +133,8 @@ TVA due, compte de décompte) et pouvoir les désigner comme comptes TVA par dé
 - [x] [Review][Defer] `admin_backup_e2e` ne vérifie pas l'intégrité FK des 3 nouvelles colonnes VAT après restore — narrow (ne se déclenche qu'avec TVA configurée + round-trip). → 18-1f (tests).
 - [x] [Review][Defer] Pas de contrainte `vat_payable ≠ vat_decompte` (même compte Liability acceptable pour les deux) — concern design consommé en 18-1b. → 18-1b.
 - Dismiss (réfutés grep ground-truth) : `assetAccounts` non défini (FAUX — défini ligne 47 filtre `Asset`) ; DRY SELECT/COLUMNS + tests inline (hygiène LOW correctement gérée dans le diff).
+
+### Pass 2 (Haiku — diff aplati main vs HEAD, 0 hallucination)
+
+- [x] [Review][Patch] M1 : le test anti-IDOR assertait seulement le statut 400 sans épingler la cause (un 400 incident pourrait masquer le garde). Mitigé par le contrôle positif (même payload, seul l'id change), mais durci : assert `error.code == "VALIDATION_ERROR"` ajouté [`crates/kesh-api/tests/idor_multi_tenant_e2e.rs`]. Vert.
+- Blind Hunter : C1/H1 auto-dismiss par l'agent (colonnes bien SELECT, `null`→`Option::None` correct). Edge Case Hunter : 0 unhandled. Acceptance Auditor : AC1-AC8 tous MET, DC1/DC8 honorés, 0 finding.
