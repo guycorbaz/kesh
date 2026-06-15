@@ -8,12 +8,21 @@
 --      chacune nullable avec FK `ON DELETE RESTRICT` (pattern `fk_cis_*` de
 --      `20260417000001_invoice_validation.sql:45-47`).
 --
---   2. Pour chaque company existante, les deux nouveaux comptes du plan
---      comptable s'ils ne sont pas déjà présents :
+--   2. Pour chaque company existante DÉJÀ onboardée (`is_stub = FALSE`), les deux
+--      nouveaux comptes du plan comptable s'ils ne sont pas déjà présents :
 --        - `1171` Impôt préalable (TVA récupérable sur achats), Asset, parent `10`.
 --        - `2206` Décompte TVA (solde net dû à l'AFC), Liability, parent `20`.
 --      Distincts de `1170`/`2201` (= impôt anticipé / Verrechnungssteuer, qui
 --      restent INTACTS — sémantique de withholding 35 %).
+--
+--      EXCLUSION DES STUBS (`is_stub = TRUE`) : une company stub (créée par le
+--      bootstrap, cf. `auth/bootstrap.rs:insert_stub_company`) n'a encore AUCUN
+--      compte — son plan comptable est seedé plus tard par `bulk_create_from_chart`
+--      à l'onboarding (`routes/onboarding.rs`), qui inclut déjà `1171`/`2206`.
+--      Injecter ici 2 comptes orphelins dans un stub casserait le garde de seed
+--      onboarding `if existing == 0` (2 comptes ≠ 0 → seed du plan COMPLET sauté →
+--      company privée de 1000/2000/3000/…). On ne backfill donc que les companies
+--      onboardées (qui ont déjà un plan mais pas encore les comptes TVA).
 --
 -- Choix de la langue du libellé : la table `companies` porte la colonne
 -- `accounting_language` (CHAR(2) FR|DE|IT|EN), qui est EXACTEMENT la locale que
@@ -63,7 +72,8 @@ SELECT
     TRUE,
     1
 FROM companies c
-WHERE NOT EXISTS (
+WHERE c.is_stub = FALSE
+  AND NOT EXISTS (
     SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '1171'
 );
 
@@ -83,6 +93,7 @@ SELECT
     TRUE,
     1
 FROM companies c
-WHERE NOT EXISTS (
+WHERE c.is_stub = FALSE
+  AND NOT EXISTS (
     SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '2206'
 );
