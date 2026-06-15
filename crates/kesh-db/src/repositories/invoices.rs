@@ -896,6 +896,104 @@ pub struct ValidatedInvoice {
     pub journal_entry: crate::entities::JournalEntryWithLines,
 }
 
+/// Génère les lignes d'écriture comptable de la validation d'une facture de
+/// vente, **TVA due comprise** (Story 18-1b, axe b).
+///
+/// Produit, dans cet **ordre canonique** (le `line_order` est posé séquentiellement
+/// par [`journal_entries::create_in_tx`]) :
+/// - (0) **débit créance** (compte `receivable`) = `total_ht + total_vat` (TTC) ;
+/// - (1) **crédit produit** (compte `revenue`) = `total_ht` (HT, = `invoices.total_amount`, DC9) ;
+/// - (2..N) **crédit TVA due** (compte `vat_payable`), **une ligne par taux** dont le
+///   montant agrégé est strictement `> 0` (DC2 + F-OPUS-1), triées par taux croissant
+///   (itération `BTreeMap` ASC).
+///
+/// `total_vat = Σ_taux Σ_lignes line_vat_amount(line_total, vat_rate)`, où chaque montant
+/// est arrondi half-up **par ligne** (DC7, cf. [`kesh_core::accounting::vat::line_vat_amount`]).
+///
+/// # Équilibre par construction
+///
+/// `total_vat` est calculé sur **tous** les taux (avant le filtre `> 0`). Comme
+/// `line_total >= 0` (hypothèse F-OPUS-2), chaque montant agrégé par taux est `>= 0`, donc
+/// un taux filtré (montant `== 0`) contribue 0 au débit créance ET 0 aux crédits. Le débit
+/// créance somme exactement les **mêmes** montants arrondis par ligne que la somme des
+/// crédits (produit + lignes TVA) → `Σ debit == Σ credit` (vérifié par `create_in_tx`).
+///
+/// # Erreurs
+///
+/// - [`DbError::ConfigurationRequired`] (`"default_vat_payable_account_id"`) si au moins
+///   une ligne TVA due doit être émise (`total_vat > 0`) mais `vat_payable_account_id` est
+///   `None`. Une facture sans TVA > 0 (tout à taux 0/exempt) **n'exige pas** ce compte.
+///
+/// # Hypothèse (F-OPUS-2) — avoirs hors-scope
+///
+/// Suppose `line.line_total >= 0` (factures de vente). Les avoirs / notes de crédit
+/// (Epic 12) devront passer par une **contre-passation** (swap débit↔crédit), PAS par un
+/// montant négatif (les contraintes `chk_jel_*_nonneg` l'interdisent) — **ne pas réutiliser
+/// ce helper tel quel** pour les avoirs.
+fn generate_invoice_journal_lines(
+    lines: &[InvoiceLine],
+    receivable_account_id: i64,
+    revenue_account_id: i64,
+    vat_payable_account_id: Option<i64>,
+) -> Result<Vec<crate::entities::NewJournalEntryLine>, DbError> {
+    use crate::entities::NewJournalEntryLine;
+    use kesh_core::accounting::vat::line_vat_amount;
+    use std::collections::BTreeMap;
+
+    let mut total_ht = Decimal::ZERO;
+    // Montant TVA agrégé par taux. `BTreeMap` : itération ASC native (ordre AC6) +
+    // `Decimal` Eq/Hash insensible à l'échelle (`8.1` et `8.10` = même clé).
+    let mut vat_by_rate: BTreeMap<Decimal, Decimal> = BTreeMap::new();
+
+    for line in lines {
+        debug_assert!(
+            line.line_total >= Decimal::ZERO,
+            "F-OPUS-2 violé : line_total < 0 (ligne {}) — les avoirs passent par \
+             contre-passation, pas ce helper",
+            line.id
+        );
+        total_ht += line.line_total;
+        let vat = line_vat_amount(line.line_total, line.vat_rate);
+        *vat_by_rate.entry(line.vat_rate).or_insert(Decimal::ZERO) += vat;
+    }
+
+    // Somme des montants déjà arrondis par ligne (DC7) — NE PAS réarrondir.
+    let total_vat: Decimal = vat_by_rate.values().copied().sum();
+
+    let mut entry_lines = Vec::with_capacity(2 + vat_by_rate.len());
+    // (0) Débit créance TTC = HT + TVA.
+    entry_lines.push(NewJournalEntryLine {
+        account_id: receivable_account_id,
+        debit: total_ht + total_vat,
+        credit: Decimal::ZERO,
+    });
+    // (1) Crédit produit HT.
+    entry_lines.push(NewJournalEntryLine {
+        account_id: revenue_account_id,
+        debit: Decimal::ZERO,
+        credit: total_ht,
+    });
+
+    // (2..N) Crédit TVA due par taux > 0. La config du compte TVA due n'est requise
+    // QUE si une ligne doit réellement être émise (F-OPUS-1 + AC5).
+    if total_vat > Decimal::ZERO {
+        let vat_account = vat_payable_account_id.ok_or_else(|| {
+            DbError::ConfigurationRequired("default_vat_payable_account_id".into())
+        })?;
+        for amount in vat_by_rate.values() {
+            if *amount > Decimal::ZERO {
+                entry_lines.push(NewJournalEntryLine {
+                    account_id: vat_account,
+                    debit: Decimal::ZERO,
+                    credit: *amount,
+                });
+            }
+        }
+    }
+
+    Ok(entry_lines)
+}
+
 /// Valide une facture brouillon : lui attribue un numéro définitif,
 /// génère l'écriture comptable associée, et bascule son statut en
 /// `validated`. Le tout dans une transaction atomique.
@@ -924,7 +1022,7 @@ pub async fn validate_invoice(
     invoice_id: i64,
     user_id: i64,
 ) -> Result<ValidatedInvoice, DbError> {
-    use crate::entities::{Journal, NewJournalEntry, NewJournalEntryLine};
+    use crate::entities::{Journal, NewJournalEntry};
     use crate::repositories::{
         company_invoice_settings, fiscal_years, invoice_number_sequences, journal_entries,
     };
@@ -1021,9 +1119,18 @@ pub async fn validate_invoice(
             &contact_name,
         );
 
-        // (7) Créer l'écriture comptable dans la même tx.
-        let total = invoice_before.total_amount;
+        // (7) Créer l'écriture comptable dans la même tx — TVA due comprise
+        // (Story 18-1b). La génération des lignes (créance TTC + produit HT + N
+        // lignes TVA due par taux) est centralisée dans le helper, pour qu'Epic 16
+        // (compte produit par ligne) s'y branche sans 2e refactor de cette fonction.
         let journal: Journal = settings.default_sales_journal;
+
+        let entry_lines = generate_invoice_journal_lines(
+            &lines_before,
+            receivable_account_id,
+            revenue_account_id,
+            settings.default_vat_payable_account_id,
+        )?;
 
         let je = journal_entries::create_in_tx(
             &mut tx,
@@ -1034,18 +1141,7 @@ pub async fn validate_invoice(
                 entry_date: invoice_before.date,
                 journal,
                 description: entry_description,
-                lines: vec![
-                    NewJournalEntryLine {
-                        account_id: receivable_account_id,
-                        debit: total,
-                        credit: Decimal::ZERO,
-                    },
-                    NewJournalEntryLine {
-                        account_id: revenue_account_id,
-                        debit: Decimal::ZERO,
-                        credit: total,
-                    },
-                ],
+                lines: entry_lines,
             },
         )
         .await?;
@@ -1396,6 +1492,7 @@ pub async fn list_all_lines_by_company(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::NewJournalEntryLine;
     use crate::entities::contact::{ContactType, NewContact};
     use crate::repositories::contacts;
     use rust_decimal_macros::dec;
@@ -1430,6 +1527,181 @@ mod tests {
     #[test]
     fn test_escape_like_passthrough() {
         assert_eq!(escape_like("plain text"), "plain text");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests unitaires `generate_invoice_journal_lines` (Story 18-1b, T-B3) —
+    // sans DB : le helper est sans I/O, testable sur le `Vec` retourné.
+    // -----------------------------------------------------------------------
+
+    /// Construit une `InvoiceLine` minimale pour les tests du helper TVA
+    /// (seuls `line_total` et `vat_rate` importent).
+    fn make_line(line_total: Decimal, vat_rate: Decimal) -> InvoiceLine {
+        InvoiceLine {
+            id: 1,
+            invoice_id: 1,
+            position: 1,
+            description: "ligne test".into(),
+            quantity: dec!(1),
+            unit_price: line_total,
+            vat_rate,
+            line_total,
+            created_at: NaiveDate::from_ymd_opt(2026, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        }
+    }
+
+    const RECEIVABLE: i64 = 1100;
+    const REVENUE: i64 = 3000;
+    const VAT_DUE: i64 = 2200;
+
+    fn sum_debit(lines: &[NewJournalEntryLine]) -> Decimal {
+        lines.iter().map(|l| l.debit).sum()
+    }
+    fn sum_credit(lines: &[NewJournalEntryLine]) -> Decimal {
+        lines.iter().map(|l| l.credit).sum()
+    }
+
+    /// (a) Facture mono-taux 8.1 % → 3 lignes (créance TTC, produit HT, 1×2200) + équilibre.
+    #[test]
+    fn gen_lines_single_rate() {
+        let lines = [make_line(dec!(1000.00), dec!(8.10))];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 3, "créance + produit + 1 ligne TVA");
+        // (0) créance TTC = 1000 + 81 = 1081.
+        assert_eq!(je[0].account_id, RECEIVABLE);
+        assert_eq!(je[0].debit, dec!(1081.00));
+        assert_eq!(je[0].credit, Decimal::ZERO);
+        // (1) produit HT = 1000.
+        assert_eq!(je[1].account_id, REVENUE);
+        assert_eq!(je[1].credit, dec!(1000.00));
+        // (2) TVA due = 81.
+        assert_eq!(je[2].account_id, VAT_DUE);
+        assert_eq!(je[2].credit, dec!(81.00));
+        assert_eq!(sum_debit(&je), sum_credit(&je), "équilibre");
+    }
+
+    /// (b) Facture entièrement à taux 0 → 2 lignes, AUCUNE ligne 2200 (F-OPUS-1).
+    #[test]
+    fn gen_lines_zero_rate_no_vat_line() {
+        let lines = [
+            make_line(dec!(500.00), dec!(0)),
+            make_line(dec!(250.00), dec!(0)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 2, "créance + produit, aucune TVA");
+        assert!(
+            je.iter().all(|l| l.account_id != VAT_DUE),
+            "aucune ligne sur le compte TVA due"
+        );
+        assert_eq!(je[0].debit, dec!(750.00), "créance = HT (pas de TVA)");
+        assert_eq!(je[1].credit, dec!(750.00));
+        assert_eq!(sum_debit(&je), sum_credit(&je));
+    }
+
+    /// (c) Multi-taux 8.1 % + 2.6 % → 2 lignes 2200 distinctes, ordonnées par taux croissant.
+    #[test]
+    fn gen_lines_multi_rate_sorted_ascending() {
+        // Volontairement ordre d'entrée inversé (8.1 avant 2.6) pour vérifier le tri.
+        let lines = [
+            make_line(dec!(1000.00), dec!(8.10)),
+            make_line(dec!(500.00), dec!(2.60)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 4, "créance + produit + 2 lignes TVA");
+        // total TVA = 81.00 (8.1%) + 13.00 (2.6%) = 94 ; créance = 1500 + 94 = 1594.
+        assert_eq!(je[0].debit, dec!(1594.00));
+        assert_eq!(je[1].credit, dec!(1500.00));
+        // Lignes TVA triées par taux croissant : 2.60 (13.00) AVANT 8.10 (81.00).
+        assert_eq!(
+            je[2].credit,
+            dec!(13.00),
+            "2.6 % en premier (taux croissant)"
+        );
+        assert_eq!(je[3].credit, dec!(81.00), "8.1 % en second");
+        assert_eq!(sum_debit(&je), sum_credit(&je));
+    }
+
+    /// (d) Multi-taux 8.1 % + 0 % → 1 SEULE ligne 2200 (taux > 0 uniquement).
+    #[test]
+    fn gen_lines_mixed_positive_and_zero_rate() {
+        let lines = [
+            make_line(dec!(1000.00), dec!(8.10)),
+            make_line(dec!(400.00), dec!(0)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(
+            je.len(),
+            3,
+            "créance + produit + 1 ligne TVA (taux 0 exclu)"
+        );
+        // créance = 1400 HT + 81 TVA = 1481 ; produit = 1400.
+        assert_eq!(je[0].debit, dec!(1481.00));
+        assert_eq!(je[1].credit, dec!(1400.00));
+        assert_eq!(je[2].credit, dec!(81.00));
+        assert_eq!(sum_debit(&je), sum_credit(&je));
+    }
+
+    /// (e) Taux > 0 mais base infime → arrondi 0.00 → AUCUNE ligne 2200 (F-OPUS-1).
+    #[test]
+    fn gen_lines_rate_rounds_to_zero() {
+        // line_vat_amount(0.01, 8.1) = round(0.00081) = 0.00.
+        let lines = [make_line(dec!(0.01), dec!(8.10))];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 2, "TVA arrondie à 0 → pas de ligne 2200");
+        assert_eq!(je[0].debit, dec!(0.01), "créance = HT (TVA nulle)");
+        assert_eq!(sum_debit(&je), sum_credit(&je));
+    }
+
+    /// (e2) DC7 — somme des montants arrondis PAR LIGNE (pas arrondi de la base agrégée).
+    #[test]
+    fn gen_lines_dc7_sum_of_per_line_rounding() {
+        // 2 lignes 0.07 @ 8.1 % : round(0.00567) = 0.01 chacune → agrégat 0.02.
+        // (Un arrondi de la base agrégée 0.14 @ 8.1 % donnerait round(0.01134) = 0.01 — incorrect.)
+        let lines = [
+            make_line(dec!(0.07), dec!(8.10)),
+            make_line(dec!(0.07), dec!(8.10)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 3, "une seule ligne TVA (même taux)");
+        assert_eq!(
+            je[2].credit,
+            dec!(0.02),
+            "0.01 + 0.01 (somme par ligne, DC7)"
+        );
+        // créance = 0.14 + 0.02 = 0.16.
+        assert_eq!(je[0].debit, dec!(0.16));
+        assert_eq!(sum_debit(&je), sum_credit(&je));
+    }
+
+    /// (f) TVA > 0 mais compte TVA due NON configuré (None) → ConfigurationRequired.
+    #[test]
+    fn gen_lines_config_required_when_vat_account_missing() {
+        let lines = [make_line(dec!(1000.00), dec!(8.10))];
+        let err = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, None).unwrap_err();
+        match err {
+            DbError::ConfigurationRequired(field) => {
+                assert_eq!(field, "default_vat_payable_account_id");
+            }
+            other => panic!("attendu ConfigurationRequired, reçu {other:?}"),
+        }
+    }
+
+    /// (f-bis) Compte TVA due None mais facture SANS TVA → pas d'erreur (compte non requis).
+    #[test]
+    fn gen_lines_no_vat_account_ok_when_no_vat() {
+        let lines = [make_line(dec!(1000.00), dec!(0))];
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, None).unwrap();
+        assert_eq!(je.len(), 2, "pas de TVA → compte TVA due non requis");
+        assert_eq!(sum_debit(&je), sum_credit(&je));
     }
 
     async fn test_pool() -> MySqlPool {

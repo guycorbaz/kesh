@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 18
 story: 18-1b
 type: feature
@@ -295,8 +295,51 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
 
 ## Prochaine étape
 
-`bmad-create-story validate 18-1b` — cycle adversarial CLAUDE.md (rotation Sonnet→Haiku→Opus→…, jusqu'à
-0 finding > LOW ou 8 passes), puis `bmad-dev-story 18-1b` (Opus).
+`bmad-code-review 18-1b` (rotation Sonnet→Haiku→Opus→…, contexte frais) après la `dev-story`.
+
+## Dev Agent Record
+
+### Implémentation (`bmad-dev-story 18-1b`, Opus 4.8, 2026-06-15)
+
+Tasks **T-B1..T-B6 toutes complétées** :
+
+- **T-B1 ✅** — helper privé `generate_invoice_journal_lines` ajouté dans `invoices.rs` (avant
+  `validate_invoice`) : `&[InvoiceLine]` → `Vec<NewJournalEntryLine>` ; `BTreeMap<Decimal,Decimal>` pour
+  l'agrégation TVA par taux (itération ASC, AC6) ; créance TTC + produit HT + N lignes 2200 (>0, F-OPUS-1) ;
+  `ConfigurationRequired` si `total_vat > 0 && None` ; `debug_assert` F-OPUS-2 ; doc `///` complète.
+- **T-B2 ✅** — branché dans l'étape (7) de `validate_invoice` ; suppression de `let total = ...` (inutile) ;
+  passage de `settings.default_vat_payable_account_id` + `&lines_before` ; `NewJournalEntryLine` retiré du
+  `use` local devenu inutile.
+- **T-B3 ✅** — 8 tests unitaires (`#[test]`, sans DB) dans le module `tests` d'`invoices.rs` : (a) mono-taux,
+  (b) zéro-TVA, (c) multi-taux trié ASC, (d) 8.1 %+0 %, (e) arrondi→0, (e2) DC7 somme-par-ligne, (f)
+  `ConfigurationRequired`, (f-bis) pas d'erreur sans TVA. **8/8 verts.**
+- **T-B4 ✅** — 6 tests d'intégration (`#[sqlx::test]`) dans nouveau fichier
+  `crates/kesh-db/tests/invoices_validate_vat.rs` : (a) mono-taux, (b) zéro-TVA, (c) multi-taux 2 lignes, (d)
+  8.1 %+0 %, (f) `ConfigurationRequired` (compte NULL) + facture sans TVA OK, (f2) compte archivé →
+  `InactiveOrInvalidAccounts`. **6/6 verts.**
+- **T-B5 ✅** — fixture partagée `seed_accounting_company` + `seed_accounting_company_no_fy` : ajout
+  `default_vat_payable_account_id = compte 2000` (réutilisé, pas de 6e compte) → **compteur de comptes
+  inchangé, 0 assertion `("accounts", 5)` cassée**. Self-test fixture étendu (assertion `default_vat_payable`).
+  Aucune mise à jour nécessaire sur `vat_report_e2e`/`invoice_echeancier_e2e`/`invoice_pdf_e2e` (asserent le
+  rapport/échéancier/PDF basés sur `total_amount` HT inchangé, pas l'écriture). Gate grep exhaustif : 0
+  call-site manqué. `reconciliation_*` non touchés (bypassent `validate_invoice`).
+- **T-B6 ✅** — quality gate (cf. ci-dessous).
+
+### Résultats de tests (Test Locally First)
+
+- `cargo fmt --all --check` ✅ ; `cargo clippy --workspace --all-targets -D warnings` ✅ 0 warning.
+- Tests ciblés verts : helper unitaire **8/8**, intégration `invoices_validate_vat` **6/6**, fixture
+  self-tests **2/2**, `vat_report_e2e` **10/10**, `invoice_echeancier_e2e` **9/9**, `invoice_pdf_e2e`
+  **11/11**, `test_endpoints_e2e`+`exports_global_e2e` **10/10** (compteurs comptes intacts).
+- `cargo test --workspace -j1 -- --test-threads=1` : **exit 0, 76 suites OK, 0 échec, 0 régression**.
+
+### File List
+
+- `crates/kesh-db/src/repositories/invoices.rs` — helper `generate_invoice_journal_lines` + branchement
+  étape (7) + 8 tests unitaires.
+- `crates/kesh-db/src/test_fixtures.rs` — `default_vat_payable_account_id` (compte 2000) dans les 2 fixtures
+  + assertion self-test.
+- `crates/kesh-db/tests/invoices_validate_vat.rs` — **NOUVEAU** — 6 tests d'intégration `validate_invoice`.
 
 ## Change Log
 

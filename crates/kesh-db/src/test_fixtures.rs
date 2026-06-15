@@ -144,14 +144,21 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     // revenue = 3000 Ventes, default sales journal = Ventes (cf. AC #2 + #8).
     // Note : PK = company_id, pas d'AUTO_INCREMENT — on s'appuie sur la FK
     // pour retrouver la row.
+    // Story 18-1b : `default_vat_payable_account_id` = compte TVA due, requis dès
+    // qu'une facture porte de la TVA > 0 (sinon `validate_invoice` → CONFIGURATION_REQUIRED).
+    // On RÉUTILISE le compte Liability existant `2000` (PAS de 6e compte) pour ne pas
+    // casser les assertions de compteur absolu de comptes (`("accounts", 5)`, etc.).
+    // `create_in_tx` ne valide que `active=TRUE` + `company_id` (pas le type) → OK.
     sqlx::query(
         "INSERT INTO company_invoice_settings \
-         (company_id, default_receivable_account_id, default_revenue_account_id, default_sales_journal) \
-         VALUES (?, ?, ?, 'Ventes')",
+         (company_id, default_receivable_account_id, default_revenue_account_id, \
+          default_vat_payable_account_id, default_sales_journal) \
+         VALUES (?, ?, ?, ?, 'Ventes')",
     )
     .bind(company_id)
     .bind(accounts["1100"])
     .bind(accounts["3000"])
+    .bind(accounts["2000"])
     .execute(pool)
     .await?;
 
@@ -246,14 +253,18 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
         accounts.insert(*code, result.last_insert_id() as i64);
     }
 
+    // Story 18-1b : compte TVA due = compte Liability existant `2000` (réutilisé,
+    // pas de 6e compte → compteur de comptes inchangé). Cf. note dans seed_accounting_company.
     sqlx::query(
         "INSERT INTO company_invoice_settings \
-         (company_id, default_receivable_account_id, default_revenue_account_id, default_sales_journal) \
-         VALUES (?, ?, ?, 'Ventes')",
+         (company_id, default_receivable_account_id, default_revenue_account_id, \
+          default_vat_payable_account_id, default_sales_journal) \
+         VALUES (?, ?, ?, ?, 'Ventes')",
     )
     .bind(company_id)
     .bind(accounts["1100"])
     .bind(accounts["3000"])
+    .bind(accounts["2000"])
     .execute(pool)
     .await?;
 
@@ -530,6 +541,19 @@ mod tests {
         assert_eq!(
             cis_revenue, seeded.accounts["3000"],
             "default_revenue_account_id must point to account 3000"
+        );
+
+        // Story 18-1b : compte TVA due = compte Liability `2000` réutilisé.
+        let cis_vat: i64 = sqlx::query_scalar(
+            "SELECT default_vat_payable_account_id FROM company_invoice_settings WHERE company_id = ?",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            cis_vat, seeded.accounts["2000"],
+            "default_vat_payable_account_id must point to account 2000 (réutilisé)"
         );
     }
 
