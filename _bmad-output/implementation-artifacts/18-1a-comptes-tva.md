@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: done
 epic: 18
 story: 18-1a
 type: story-zero
@@ -149,3 +149,19 @@ TVA due, compte de décompte) et pouvoir les désigner comme comptes TVA par dé
 - [x] [Review][Patch] **MEDIUM** — le fix Pass 3 `is_stub = FALSE` **sur-excluait** : une company mid-onboarding (plan seedé à `set_accounting_language` étape 4 MAIS `is_stub` encore TRUE, flippé seulement à `set_coordinates` étape 5) serait sautée par le backfill ET non re-seedée (garde `existing == 0`) → privée définitivement des comptes TVA lors d'un upgrade pendant cette fenêtre. **Vérifié ground-truth** : `bulk_create_from_chart` ligne 382 (étape 4) vs `is_stub = FALSE` ligne 973 (étape 5). **Fix** : prédicat basé sur la **présence du plan** `EXISTS (SELECT 1 FROM accounts a2 WHERE a2.company_id = c.id)` (inverse exact du garde `existing == 0`) au lieu du flag `is_stub` — corrige le HIGH Pass 3 (stub 0 compte → exclu) ET le MEDIUM Pass 4 (mid-onboarding avec plan → backfillé). Test renommé `migration_backfill_keys_on_chart_presence_not_stub_flag` couvre les 3 états (onboardée→2, stub→0, mid-onboarding→2). Vert.
 - Dismiss : `liabilityAccounts`/`assetAccounts` UI « trop large » (design cohérent avec les sélecteurs receivable/revenue existants, type validé backend ; filtrer « comptes TVA-appropriés » serait arbitraire) ; `assetAccounts` non défini (re-réfuté — ligne 47). LOW symétrie tests parent_id 2206 / fixtures (nits).
 - Acceptance Auditor : AC1-AC8 tous MET, DC1/DC8 honorés, 0 finding > LOW. Fix Pass 3 jugé conforme à l'intent AC2/AC3.
+
+### Pass 5 (Haiku — diff aplati) — CONVERGÉ
+
+- Blind Hunter : 1 MEDIUM « coercion `<select>` → string » **DISMISS faux-positif** — réfuté grep ground-truth : pattern Svelte identique aux sélecteurs `receivableId`/`revenueId` PRÉ-EXISTANTS du même fichier (`bind:value` + `<option value={a.id}>` number). Svelte 5 préserve la valeur non-string ; la route désérialise `Option<i64>` (échouerait sur une string) et le flux receivable/revenue est livré et fonctionne. Haiku ne connaît pas la sémantique value-binding Svelte.
+- Edge Case Hunter : 0 unhandled. Acceptance Auditor : AC1-AC8 tous MET, 0 finding.
+- **0 finding > LOW réel → CONVERGÉ.**
+
+### Synthèse du cycle code-review (convergé Pass 5)
+
+- **Trend findings > LOW** : Pass 1 (Sonnet) 1 MEDIUM + 1 LOW → Pass 2 (Haiku) 1 MEDIUM → Pass 3 (Opus) **1 HIGH** → Pass 4 (Sonnet) 1 MEDIUM → Pass 5 (Haiku) **0 > LOW**.
+- **Rotation LLM** : Sonnet → Haiku → Opus → Sonnet → Haiku (5 passes, contexte frais à chaque, diff aplati main vs HEAD dès Pass 2 pour neutraliser l'indexation multi-commit Haiku).
+- **Catch décisif Pass 3 (Opus, architectural)** : backfill migration injectait des comptes TVA orphelins dans les companies sans plan, cassant le garde de seed onboarding `if existing == 0` → régression de données ciblant l'upgrade prod (#120). Affiné Pass 4 (le 1er fix `is_stub=FALSE` sur-excluait les companies mid-onboarding → prédicat final sur **présence du plan** `EXISTS(accounts)`).
+- **Faux-positifs réfutés grep ground-truth** : `assetAccounts` non défini (P1+P4, défini ligne 47) ; coercion `<select>` (P5, pattern Svelte établi). 0 hallucination Haiku d'indexation diff.
+- **Patches appliqués** : test anti-IDOR cross-company (AC8c) + assert code erreur, indentation section TVA, prédicat backfill `EXISTS(accounts)` + test 3 états, copies inline SQL alignées.
+- **Defer** : archive→FK CIS dangling (pré-existant receivable/revenue → Issue GitHub) ; `admin_backup_e2e` 3 FK VAT (18-1f) ; distinctness `payable≠decompte` (18-1b).
+- **Quality gate vert** : fmt/build/clippy 0w + test workspace serial + frontend check 0err/lint-i18n PASS/test:unit 312/build.
