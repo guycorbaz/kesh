@@ -552,19 +552,19 @@ async fn migration_backfill_creates_vat_accounts_idempotently(pool: MySqlPool) {
     .unwrap();
 
     // SQL de backfill identique à la migration (locale via CASE accounting_language,
-    // exclusion des stubs via `c.is_stub = FALSE`).
+    // garde « company sans plan » via `EXISTS (… accounts …)`).
     let backfill_1171 = "INSERT INTO accounts (company_id, number, name, account_type, parent_id, active, version) \
         SELECT c.id, '1171', \
             CASE c.accounting_language WHEN 'DE' THEN 'Vorsteuer' WHEN 'IT' THEN 'Imposta precedente' WHEN 'EN' THEN 'Input VAT' ELSE 'Impôt préalable' END, \
             'Asset', (SELECT p.id FROM accounts p WHERE p.company_id = c.id AND p.number = '10'), TRUE, 1 \
         FROM companies c \
-        WHERE c.is_stub = FALSE AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '1171')";
+        WHERE EXISTS (SELECT 1 FROM accounts a2 WHERE a2.company_id = c.id) AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '1171')";
     let backfill_2206 = "INSERT INTO accounts (company_id, number, name, account_type, parent_id, active, version) \
         SELECT c.id, '2206', \
             CASE c.accounting_language WHEN 'DE' THEN 'MWST-Abrechnung' WHEN 'IT' THEN 'Rendiconto IVA' WHEN 'EN' THEN 'VAT settlement' ELSE 'Décompte TVA' END, \
             'Liability', (SELECT p.id FROM accounts p WHERE p.company_id = c.id AND p.number = '20'), TRUE, 1 \
         FROM companies c \
-        WHERE c.is_stub = FALSE AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '2206')";
+        WHERE EXISTS (SELECT 1 FROM accounts a2 WHERE a2.company_id = c.id) AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '2206')";
 
     sqlx::query(backfill_1171).execute(&pool).await.unwrap();
     sqlx::query(backfill_2206).execute(&pool).await.unwrap();
@@ -622,92 +622,102 @@ async fn migration_backfill_creates_vat_accounts_idempotently(pool: MySqlPool) {
     assert!(parent_10 > 0 && parent_20 > 0);
 }
 
-/// Régression Pass 3 (Opus) — le backfill NE DOIT PAS injecter de comptes TVA dans
-/// une company stub (créée par le bootstrap, pas encore onboardée, 0 compte). Sinon
-/// le garde de seed onboarding `if existing == 0` verrait `existing == 2` et sauterait
-/// le seed du plan comptable COMPLET, laissant la company privée de ses comptes de base.
-/// La stub recevra `1171`/`2206` proprement via `bulk_create_from_chart` à l'onboarding.
+/// Régression Pass 3 (Opus) + Pass 4 (Sonnet) — le backfill se déclenche sur la
+/// PRÉSENCE D'UN PLAN COMPTABLE, pas sur le flag `is_stub`.
+///
+/// - Une company SANS plan (stub bootstrap, 0 compte) est EXCLUE : sinon le garde de
+///   seed onboarding `if existing == 0` verrait `existing == 2` et sauterait le seed
+///   du plan COMPLET, laissant la company privée de ses comptes de base (HIGH Pass 3).
+///   Elle recevra `1171`/`2206` via `bulk_create_from_chart` à l'onboarding.
+/// - Une company AVEC un plan mais `is_stub` ENCORE TRUE (état mid-onboarding : le plan
+///   est seedé à `set_accounting_language` AVANT que `set_coordinates` repasse is_stub
+///   à FALSE) DOIT être backfillée — sinon un upgrade pendant cette fenêtre la priverait
+///   définitivement des comptes TVA (MEDIUM Pass 4). Tester `is_stub = FALSE` l'aurait raté.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn migration_backfill_skips_stub_company(pool: MySqlPool) {
-    // Company onboardée (is_stub = FALSE par défaut) avec parents 10/20 → DOIT être backfillée.
-    let onboarded = companies::create(
-        &pool,
-        NewCompany {
-            name: "Onboardée".into(),
-            address: "1".into(),
-            ide_number: None,
-            org_type: OrgType::Pme,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO accounts (company_id, number, name, account_type) \
-         VALUES (?, '10', 'Actif circulant', 'Asset'), (?, '20', 'Capitaux étrangers CT', 'Liability')",
-    )
-    .bind(onboarded.id)
-    .bind(onboarded.id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    // Company stub : créée puis marquée is_stub = TRUE, AUCUN compte (état bootstrap).
-    let stub = companies::create(
-        &pool,
-        NewCompany {
-            name: "Stub bootstrap".into(),
-            address: "1".into(),
-            ide_number: None,
-            org_type: OrgType::Pme,
-            accounting_language: Language::Fr,
-            instance_language: Language::Fr,
-        },
-    )
-    .await
-    .unwrap();
-    sqlx::query("UPDATE companies SET is_stub = TRUE WHERE id = ?")
-        .bind(stub.id)
-        .execute(&pool)
+async fn migration_backfill_keys_on_chart_presence_not_stub_flag(pool: MySqlPool) {
+    // Helper : crée une company avec parents 10/20, puis force is_stub à la valeur voulue.
+    async fn seed_company(pool: &MySqlPool, name: &str, with_chart: bool, is_stub: bool) -> i64 {
+        let c = companies::create(
+            pool,
+            NewCompany {
+                name: name.into(),
+                address: "1".into(),
+                ide_number: None,
+                org_type: OrgType::Pme,
+                accounting_language: Language::Fr,
+                instance_language: Language::Fr,
+            },
+        )
         .await
         .unwrap();
+        if with_chart {
+            sqlx::query(
+                "INSERT INTO accounts (company_id, number, name, account_type) \
+                 VALUES (?, '10', 'Actif circulant', 'Asset'), (?, '20', 'Capitaux étrangers CT', 'Liability')",
+            )
+            .bind(c.id)
+            .bind(c.id)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        if is_stub {
+            sqlx::query("UPDATE companies SET is_stub = TRUE WHERE id = ?")
+                .bind(c.id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        c.id
+    }
 
-    // Backfill identique à la migration (avec l'exclusion `is_stub = FALSE`).
+    // a) onboardée : plan présent, is_stub = FALSE → DOIT être backfillée.
+    let onboarded = seed_company(&pool, "Onboardée", true, false).await;
+    // b) stub bootstrap : 0 compte, is_stub = TRUE → DOIT être exclue.
+    let stub = seed_company(&pool, "Stub bootstrap", false, true).await;
+    // c) mid-onboarding : plan présent MAIS is_stub encore TRUE → DOIT être backfillée.
+    let mid_onboarding = seed_company(&pool, "Mid-onboarding", true, true).await;
+
+    // Backfill identique à la migration (garde `EXISTS (… accounts …)`).
     let backfill_1171 = "INSERT INTO accounts (company_id, number, name, account_type, parent_id, active, version) \
         SELECT c.id, '1171', 'Impôt préalable', 'Asset', \
             (SELECT p.id FROM accounts p WHERE p.company_id = c.id AND p.number = '10'), TRUE, 1 \
         FROM companies c \
-        WHERE c.is_stub = FALSE AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '1171')";
+        WHERE EXISTS (SELECT 1 FROM accounts a2 WHERE a2.company_id = c.id) AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '1171')";
     let backfill_2206 = "INSERT INTO accounts (company_id, number, name, account_type, parent_id, active, version) \
         SELECT c.id, '2206', 'Décompte TVA', 'Liability', \
             (SELECT p.id FROM accounts p WHERE p.company_id = c.id AND p.number = '20'), TRUE, 1 \
         FROM companies c \
-        WHERE c.is_stub = FALSE AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '2206')";
+        WHERE EXISTS (SELECT 1 FROM accounts a2 WHERE a2.company_id = c.id) AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.company_id = c.id AND a.number = '2206')";
     sqlx::query(backfill_1171).execute(&pool).await.unwrap();
     sqlx::query(backfill_2206).execute(&pool).await.unwrap();
 
-    // La stub reste à 0 compte (exclue du backfill).
-    let stub_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE company_id = ?")
-        .bind(stub.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        stub_count, 0,
-        "une company stub ne doit recevoir AUCUN compte TVA au backfill (seed à l'onboarding)"
-    );
+    let vat_count = |company_id: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM accounts WHERE company_id = ? AND number IN ('1171', '2206')",
+            )
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
 
-    // La company onboardée reçoit bien ses 2 comptes TVA.
-    let onboarded_vat: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM accounts WHERE company_id = ? AND number IN ('1171', '2206')",
-    )
-    .bind(onboarded.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
     assert_eq!(
-        onboarded_vat, 2,
-        "une company onboardée doit recevoir 1171 + 2206 au backfill"
+        vat_count(onboarded).await,
+        2,
+        "company onboardée (plan présent) doit recevoir 1171 + 2206"
+    );
+    assert_eq!(
+        vat_count(stub).await,
+        0,
+        "stub sans plan ne doit recevoir AUCUN compte TVA (seed à l'onboarding)"
+    );
+    assert_eq!(
+        vat_count(mid_onboarding).await,
+        2,
+        "company mid-onboarding (plan présent, is_stub encore TRUE) doit être backfillée"
     );
 }
