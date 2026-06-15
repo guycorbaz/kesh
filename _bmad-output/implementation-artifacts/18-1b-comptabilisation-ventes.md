@@ -93,6 +93,11 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   L'équilibre est garanti **par construction** : le débit créance somme exactement les mêmes
   `line_vat_amount` (arrondis par ligne) que la somme des crédits 2200. La double-vérification
   `SUM(debit)=SUM(credit)` de `create_in_tx` (l.199-216) doit passer.
+  - **Exemple chiffré (2 taux)** : ligne A `1000.00` HT @ `8.10 %`, ligne B `500.00` HT @ `2.60 %` →
+    `line_vat_amount(1000, 8.1) = 81.00`, `line_vat_amount(500, 2.6) = 13.00` ; `total_ht = 1500.00`,
+    `total_vat = 94.00`. Écriture (ordre canonique) :
+    `D créance 1594.00` / `C produit 1500.00` / `C 2200@2.60 13.00` / `C 2200@8.10 81.00`.
+    `SUM(debit) = 1594.00 = SUM(credit) = 1500.00 + 13.00 + 81.00`. ✓
 - **AC2** — Helper centralisé **`generate_invoice_journal_lines`** (mitigation couplage Epic 16, BH2-4) :
   une fonction **sans I/O** (pas d'accès base, testable en `#[test]` standard sans `#[sqlx::test]`) prenant
   les lignes facture + les comptes de settings et retournant `Result<Vec<NewJournalEntryLine>, DbError>`
@@ -119,10 +124,11 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
     `PUT /company/invoice-settings` (type/actif) — il lit le row via `get_or_create_default_in_tx`. Si
     `default_vat_payable_account_id` pointe vers un compte **inactif/archivé**, le helper émet la ligne 2200
     et c'est `create_in_tx` (étape 2, `journal_entries.rs:129-142`, filtre `active = TRUE`) qui rejette avec
-    `DbError::InactiveOrInvalidAccounts` (HTTP **422**, code `INACTIVE_OR_INVALID_ACCOUNTS`), PAS
-    `CONFIGURATION_REQUIRED` (400). Comportement acceptable v0.1 (identique à receivable/revenue) —
-    **documenter** la distinction des deux codes d'erreur (non configuré 400 vs configuré-mais-archivé 422)
-    dans le doc-comment du helper et la section Risques.
+    `DbError::InactiveOrInvalidAccounts` (vérifié ground-truth `errors.rs:1693-1694` → HTTP **400**, code
+    `INACTIVE_OR_INVALID_ACCOUNTS`). Les **deux** erreurs sont HTTP **400** ; ce qui les distingue est le
+    **code** : `CONFIGURATION_REQUIRED` (compte NULL, non configuré) vs `INACTIVE_OR_INVALID_ACCOUNTS`
+    (compte configuré mais archivé). Comportement acceptable v0.1 (identique à receivable/revenue) —
+    **documenter** cette distinction de code dans le doc-comment du helper et la section Risques.
 - **AC6** — **Déterminisme** : les lignes 2200 sont émises dans un **ordre stable** — trier par `vat_rate`
   croissant (`Decimal::cmp`, ordre naturel). Les taux dont le montant agrégé == 0 sont **déjà exclus**
   (règle AC4) avant le tri → le tri ne porte que sur les taux émis (montant > 0). `line_order` reproductible
@@ -159,7 +165,7 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   bases 0.07 + 0.07 → `round(0.00567)=0.01` ×2 → agrégat `0.02` → **une** ligne 2200 à `credit 0.02`
   (vérifie qu'on somme les montants par ligne, PAS qu'on arrondit une fois la base agrégée) ; (f)
   `default_vat_payable_account_id` NULL + facture avec TVA > 0 → `ConfigurationRequired` ; (f2) compte TVA
-  configuré mais **archivé** + facture avec TVA → `InactiveOrInvalidAccounts` (422) ; (g) équilibre
+  configuré mais **archivé** + facture avec TVA → `InactiveOrInvalidAccounts` (400, code distinct) ; (g) équilibre
   `SUM(debit)=SUM(credit)` vérifié (la double-vérif de `create_in_tx` passe) ; (h) immunité au changement de
   taux (F-OPUS-6 : modifier `vat_rates` après validation ne change pas l'écriture — le snapshot
   `invoice_lines.vat_rate` est utilisé). **Taux historiques** (ex. `7.70 %` pré-2024) traités à l'identique
@@ -195,12 +201,19 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
     `chk_jel_credit_nonneg` reste le garde-fou ultime). NE PAS ajouter de `return Err` (chemin non exercé en 18-1b).
   Documenter (`///`) le contrat complet + l'hypothèse F-OPUS-2.
 - **T-B2** — Brancher le helper dans `validate_invoice` étape (7) (`invoices.rs:1024-1051`) : remplacer la
-  construction en dur des 2 lignes par l'appel au helper ; lire `settings.default_vat_payable_account_id` ;
-  passer `lines_before`. Conserver `journal`, `entry_date`, `description`, l'ordre canonique et la tx.
-- **T-B3** — Tests unitaires du helper (kesh-core/kesh-db, sans DB si pur) : AC9 (a)-(e) sur la composition
-  des lignes (montants, nombre de lignes, ordre par taux, règle > 0), + équilibre.
-- **T-B4** — Tests d'intégration `validate_invoice` (sqlx::test) : AC9 (a)-(h) bout-en-bout (écriture
-  réellement insérée, contrainte `chk_jel_*` respectée, `ConfigurationRequired` quand compte TVA NULL).
+  construction en dur des 2 lignes par l'appel au helper. Passer **directement** `settings.default_vat_payable_account_id`
+  (déjà un `Option<i64>`, lu l.959-960) en 4e argument — la décision `ConfigurationRequired` vit **dans** le
+  helper (pas de check NULL anticipé au call-site, contrairement à receivable/revenue qui restent requis
+  inconditionnellement l.962-967). Passer `&lines_before` (déjà fetché l.956, sûr : aucune modif de
+  `invoice_lines` dans la tx avant ce point). Conserver `journal`, `entry_date`, `description`, l'ordre
+  canonique et la tx (pas de nouveau lock, F-OPUS-7).
+- **T-B3** — Tests unitaires du helper (`#[test]` standard `kesh-db`, sans DB) : AC9 (a) mono-taux, (c)
+  ordre multi-taux, (e) arrondi→0, (e2) DC7 somme-par-ligne, (f) `ConfigurationRequired`, + équilibre
+  débit=crédit sur la composition retournée.
+- **T-B4** — Tests d'intégration `validate_invoice` (`#[sqlx::test]`) : AC9 bout-en-bout — notamment (b)
+  zéro-TVA → 2 lignes, (d) multi-taux dont 0 %, (f) `ConfigurationRequired` (compte NULL), (f2) compte
+  archivé → `InactiveOrInvalidAccounts`, (g) écriture réellement insérée (contraintes `chk_jel_*` OK), (h)
+  immunité au changement de taux.
 - **T-B5** — **Non-régression** (AC8) : (a) mettre à jour la **fixture partagée** `test_fixtures.rs`
   (`seed_accounting_company` + `seed_accounting_company_no_fy` : compte `2200` Liability +
   `default_vat_payable_account_id` dans CIS + tests d'auto-vérif de la fixture) ; (b) corriger les
@@ -236,8 +249,8 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   `total_amount`, ni la query de réconciliation) — l'éventuel écart HT↔TTC sur le matching est **pré-existant
   et orthogonal** (dépend de ce que la facture montre au client, hors scope 18-1b). Aucune action en 18-1b ;
   noté pour mémoire (une future story pourrait persister/exposer le TTC pour le matching).
-- **Compte TVA due archivé (vérifié ground-truth)** : remonte `InactiveOrInvalidAccounts` (422), pas
-  `CONFIGURATION_REQUIRED` (400) — cf. AC5. Distinction documentée pour le support.
+- **Compte TVA due archivé (vérifié ground-truth `errors.rs:1693`)** : remonte `InactiveOrInvalidAccounts`
+  — **HTTP 400** (comme `CONFIGURATION_REQUIRED`) ; seul le **code** diffère — cf. AC5. Documenté pour le support.
 
 ## Prochaine étape
 
@@ -250,4 +263,5 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
 
 | Passe | Modèle | Findings > LOW | Points clés |
 |-------|--------|----------------|-------------|
-| 1 | Sonnet 4.6 | 5 (1C↓+2H+2M restants après triage) | Ground-truth : **11/11 claims CONFIRMÉES** (file:line exacts). Patches : HIGH#2 fixture partagée `seed_accounting_company` à mettre à jour (compte 2200 + `default_vat_payable`) ; M2 faux positifs `reconciliation_e2e`/`_repository` (bypassent validate_invoice) retirés de la surface régression ; M1 helper en `kesh-db` pas `kesh-core` (dép circulaire) + signature `&[InvoiceLine]` ; HIGH#3 compte 2200 archivé → `InactiveOrInvalidAccounts` 422 documenté ; M3/M4 contrat helper (équilibre par construction, total_ht=0, garde F-OPUS-2) ; M5 test DC7 somme-par-ligne ajouté ; M6 audit `journalEntry.lines` ; L2 tri `Decimal::cmp` ; L7 taux legacy. **CRITICAL réconciliation HT↔TTC down-classé** : pré-existant/orthogonal (18-1b ne touche pas total_amount, DC9) → note Risques. |
+| 1 | Sonnet 4.6 | 5 (1C↓+2H+2M restants après triage) | Ground-truth : **11/11 claims CONFIRMÉES** (file:line exacts). Patches : HIGH#2 fixture partagée `seed_accounting_company` à mettre à jour (compte 2200 + `default_vat_payable`) ; M2 faux positifs `reconciliation_e2e`/`_repository` (bypassent validate_invoice) retirés de la surface régression ; M1 helper en `kesh-db` pas `kesh-core` (dép circulaire) + signature `&[InvoiceLine]` ; HIGH#3 compte 2200 archivé → `InactiveOrInvalidAccounts` documenté ; M3/M4 contrat helper (équilibre par construction, total_ht=0, garde F-OPUS-2) ; M5 test DC7 somme-par-ligne ajouté ; M6 audit `journalEntry.lines` ; L2 tri `Decimal::cmp` ; L7 taux legacy. **CRITICAL réconciliation HT↔TTC down-classé** : pré-existant/orthogonal (18-1b ne touche pas total_amount, DC9) → note Risques. |
+| 2 | Haiku 4.5 | 1 MEDIUM réel | **Correction factuelle ground-truth** : `InactiveOrInvalidAccounts` → HTTP **400** (`errors.rs:1693`), PAS 422 (erreur introduite Pass 1) — les 2 erreurs sont 400, seul le **code** diffère. Ground-truth Pass 1 re-confirmé 11/11 + fixture/bypass/call-sites OK. Clarifications : exemple chiffré 2-taux (équilibre 1594=1500+13+81) ajouté AC1 ; passage direct `Option` au helper (T-B2) ; T-B3/T-B4 sous-cas explicités. Reste Haiku (C1 « ambiguïté signature », H1/H2/M1-6) = formulations déjà couvertes, non bloquantes. |
