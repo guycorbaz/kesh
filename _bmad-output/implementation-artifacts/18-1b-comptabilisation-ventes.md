@@ -94,8 +94,12 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   `line_vat_amount` (arrondis par ligne) que la somme des crédits 2200. La double-vérification
   `SUM(debit)=SUM(credit)` de `create_in_tx` (l.199-216) doit passer.
 - **AC2** — Helper centralisé **`generate_invoice_journal_lines`** (mitigation couplage Epic 16, BH2-4) :
-  une fonction pure (kesh-db ou kesh-core, cf. T-B1) prenant les lignes facture + les comptes de settings
-  et retournant `Vec<NewJournalEntryLine>` (créance TTC + produit HT + lignes TVA par taux). `validate_invoice`
+  une fonction **sans I/O** (pas d'accès base, testable en `#[test]` standard sans `#[sqlx::test]`) prenant
+  les lignes facture + les comptes de settings et retournant `Result<Vec<NewJournalEntryLine>, DbError>`
+  (créance TTC + produit HT + lignes TVA par taux). **Emplacement = `kesh-db`** (PAS `kesh-core` : `InvoiceLine`,
+  `NewJournalEntryLine` et `DbError` sont des types `kesh-db`, et `kesh-db → kesh-core` est déjà établi → un
+  helper dans `kesh-core` créerait une dépendance circulaire impossible). Le placer dans
+  `crates/kesh-db/src/repositories/invoices.rs` (fonction privée) à côté de son appelant. `validate_invoice`
   étape (7) **appelle ce helper** au lieu de construire les 2 lignes en dur. Epic 16 (compte produit par
   ligne) s'y branchera sans 2e refactor de `validate_invoice`.
 - **AC3** — TVA comptabilisée `= Σ line_vat_amount(line_total, vat_rate)` (cohérence rapport 11-2,
@@ -111,42 +115,85 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   `default_vat_payable_account_id` est `NULL` → `DbError::ConfigurationRequired("default_vat_payable_account_id")`
   (HTTP 400 `CONFIGURATION_REQUIRED`), cohérent avec receivable/revenue (l.962-967). Si la facture n'a
   **aucune** TVA > 0, le compte TVA due **n'est pas requis** (validation passe sans lui).
-- **AC6** — **Déterminisme** : les lignes 2200 sont émises dans un **ordre stable** (trier par `vat_rate`
-  croissant) pour un `line_order` reproductible (tests, audit, comparaison d'écritures `entries_equal`).
-- **AC7** — **Audit** : le bloc audit `invoice.validated` (l.1088-1104) reflète les nouvelles lignes
-  (il sérialise déjà `je.lines` génériquement → vérifier que les lignes 2200 apparaissent ; pas de code
-  audit en dur à modifier a priori).
+  - **Note (compte archivé, vérifié ground-truth)** : `validate_invoice` n'utilise PAS la validation de
+    `PUT /company/invoice-settings` (type/actif) — il lit le row via `get_or_create_default_in_tx`. Si
+    `default_vat_payable_account_id` pointe vers un compte **inactif/archivé**, le helper émet la ligne 2200
+    et c'est `create_in_tx` (étape 2, `journal_entries.rs:129-142`, filtre `active = TRUE`) qui rejette avec
+    `DbError::InactiveOrInvalidAccounts` (HTTP **422**, code `INACTIVE_OR_INVALID_ACCOUNTS`), PAS
+    `CONFIGURATION_REQUIRED` (400). Comportement acceptable v0.1 (identique à receivable/revenue) —
+    **documenter** la distinction des deux codes d'erreur (non configuré 400 vs configuré-mais-archivé 422)
+    dans le doc-comment du helper et la section Risques.
+- **AC6** — **Déterminisme** : les lignes 2200 sont émises dans un **ordre stable** — trier par `vat_rate`
+  croissant (`Decimal::cmp`, ordre naturel). Les taux dont le montant agrégé == 0 sont **déjà exclus**
+  (règle AC4) avant le tri → le tri ne porte que sur les taux émis (montant > 0). `line_order` reproductible
+  pour tests/audit/comparaison `entries_equal`.
+- **AC7** — **Audit** : le bloc audit `invoice.validated` (l.1088-1104) sérialise les lignes de l'écriture
+  sous la clé **`journalEntry.lines`** (l.1096-1102, depuis `je.lines` re-fetché par `create_in_tx` après
+  INSERT). Vérifier que les lignes 2200 apparaissent bien dans `journalEntry.lines` (PAS dans `before/after.*`
+  qui sérialisent les lignes **facture** `lines_before`). **Aucun code audit en dur à modifier** : la
+  sérialisation de `je.lines` est déjà générique.
 - **AC8** — **Non-régression (surface critique)** : les écritures existantes (factures déjà validées) sont
-  intactes. Les **tests/fixtures existants qui valident des factures avec `vat_rate > 0`** doivent
-  configurer `default_vat_payable_account_id` (sinon `CONFIGURATION_REQUIRED`). Le dev **DOIT** :
-  - grep tous les call-sites de `validate_invoice` dans les tests (`crates/kesh-db/tests/`,
-    `crates/kesh-api/tests/`) — au minimum `vat_report_e2e.rs` (valide des factures à 8.10/2.60),
-    `reconciliation_e2e.rs`, `reconciliation_repository.rs`, `invoice_echeancier_e2e.rs`,
-    `invoice_pdf_e2e.rs` ;
-  - mettre à jour les fixtures pour configurer le compte TVA due **et** ajuster toute assertion sur le
-    nombre/montant des lignes d'écriture (la créance passe HT→TTC, + N lignes 2200).
-- **AC9** — **Tests** (T-B5) : (a) facture mono-taux 8.1 % → 3 lignes (créance TTC, produit HT, 1×2200) ;
-  (b) facture `vat_rate=0`/exempt → **2 lignes, AUCUNE ligne 2200** (F10) ; (c) facture multi-taux
-  (8.1 % + 2.6 %) → 2 lignes 2200 distinctes, montants par taux corrects ; (d) facture multi-taux
-  (8.1 % + 0 %) → **1 seule** ligne 2200 (taux > 0 only) ; (e) **arrondi d'un taux > 0 donnant `0.00`**
-  (base infime) → pas de ligne 2200 (F-OPUS-1) ; (f) `default_vat_payable_account_id` NULL + facture avec
-  TVA → `ConfigurationRequired` ; (g) équilibre `SUM(debit)=SUM(credit)` vérifié ; (h) immunité au
-  changement de taux (F-OPUS-6 : modifier `vat_rates` après validation ne change pas l'écriture).
+  intactes. Tout test qui appelle réellement `validate_invoice` sur une facture avec `vat_rate > 0` doit
+  désormais configurer `default_vat_payable_account_id` (sinon `CONFIGURATION_REQUIRED`). Le dev **DOIT** :
+  - **Mettre à jour la fixture partagée** `crates/kesh-db/src/test_fixtures.rs::seed_accounting_company`
+    **et** `seed_accounting_company_no_fy` (vérifié ground-truth : leur `INSERT INTO company_invoice_settings`
+    n'a que `default_receivable/revenue_account_id`, et le plan CI seedé n'a pas de compte `2200`) :
+    (a) ajouter un compte **Liability `2200`** au plan CI ; (b) ajouter `default_vat_payable_account_id` à
+    l'`INSERT` de `company_invoice_settings` ; (c) mettre à jour les tests d'auto-vérification de la fixture
+    (`seed_accounting_company_creates_complete_state` qui assert le contenu de CIS / le COUNT accounts).
+    Corriger la fixture règle la majorité des suites en un point.
+  - **Call-sites réels** de `validate_invoice` avec `vat_rate > 0` (vérifiés ground-truth) :
+    `crates/kesh-api/tests/vat_report_e2e.rs` (8.10/2.60/8.00), `invoice_echeancier_e2e.rs` (8.10),
+    `invoice_pdf_e2e.rs` (7.70). Mettre à jour toute assertion sur le **nombre/montant des lignes
+    d'écriture** (la créance passe HT→TTC, + N lignes 2200).
+  - **NE PAS** toucher `reconciliation_e2e.rs` ni `crates/kesh-db/tests/reconciliation_repository.rs` :
+    vérifié ground-truth, ils **bypassent** `validate_invoice` via INSERT SQL direct
+    (`reconciliation_e2e.rs:274` « bypass validate_invoice pipeline », `reconciliation_repository.rs:140`) —
+    aucune mise à jour nécessaire, ne pas douter du grep.
+- **AC9** — **Tests** (T-B3 unitaires helper + T-B4 intégration) : (a) facture mono-taux 8.1 % → 3 lignes
+  (créance TTC, produit HT, 1×2200) ; (b) facture `vat_rate=0`/exempt → **2 lignes, AUCUNE ligne 2200**
+  (F10) ; (c) facture multi-taux (8.1 % + 2.6 %) → 2 lignes 2200 distinctes, **ordonnées par taux croissant**
+  (2.60 avant 8.10), montants par taux corrects ; (d) facture multi-taux (8.1 % + 0 %) → **1 seule** ligne
+  2200 (taux > 0 only) ; (e) **arrondi d'un taux > 0 donnant `0.00`** (1 ligne base infime) → pas de ligne
+  2200 (F-OPUS-1) ; (e2) **DC7 — somme des montants arrondis par ligne** : 2 lignes au même taux 8.1 %,
+  bases 0.07 + 0.07 → `round(0.00567)=0.01` ×2 → agrégat `0.02` → **une** ligne 2200 à `credit 0.02`
+  (vérifie qu'on somme les montants par ligne, PAS qu'on arrondit une fois la base agrégée) ; (f)
+  `default_vat_payable_account_id` NULL + facture avec TVA > 0 → `ConfigurationRequired` ; (f2) compte TVA
+  configuré mais **archivé** + facture avec TVA → `InactiveOrInvalidAccounts` (422) ; (g) équilibre
+  `SUM(debit)=SUM(credit)` vérifié (la double-vérif de `create_in_tx` passe) ; (h) immunité au changement de
+  taux (F-OPUS-6 : modifier `vat_rates` après validation ne change pas l'écriture — le snapshot
+  `invoice_lines.vat_rate` est utilisé). **Taux historiques** (ex. `7.70 %` pré-2024) traités à l'identique
+  (groupement/arrondi par taux snapshoté, aucune validation contre `vat_rates`).
 - **AC10** — Quality gate « Test Locally First » vert (backend fmt/clippy/build/test serial + frontend
   inchangé sauf si une route/fixture le touche).
 
 ## Tasks (T-B1..T-B6)
 
-- **T-B1** — Écrire le helper pur **`generate_invoice_journal_lines`** :
-  signature pressentie (à finaliser selon emplacement) —
-  `fn generate_invoice_journal_lines(lines: &[InvoiceLine], receivable_account_id: i64,
+- **T-B1** — Écrire le helper sans I/O **`generate_invoice_journal_lines`** (privé `kesh-db`) :
+  signature — `fn generate_invoice_journal_lines(lines: &[InvoiceLine], receivable_account_id: i64,
   revenue_account_id: i64, vat_payable_account_id: Option<i64>) -> Result<Vec<NewJournalEntryLine>, DbError>`.
-  Logique : `total_ht = Σ line.line_total` ; `vat_by_rate` = map `vat_rate -> Σ line_vat_amount(line_total, vat_rate)` ;
-  `total_vat = Σ vat_by_rate` ; si `total_vat > 0 && vat_payable_account_id.is_none()` →
-  `ConfigurationRequired`. Émettre : créance `debit = total_ht + total_vat`, produit `credit = total_ht`,
-  puis pour chaque `(rate, amount)` **trié par rate** avec `amount > 0` : ligne `credit = amount` sur le
-  compte TVA due. (Préserver le comportement actuel si `total_ht > 0` ; les factures à total nul restent un
-  cas pré-existant non couvert ici.) Documenter (`///`) le contrat + l'hypothèse F-OPUS-2 (pas d'avoir).
+  **Prend `&[InvoiceLine]`** (type entité DB retourné par `fetch_lines`), PAS `&[NewInvoiceLine]` (ne pas
+  copier par analogie avec `compute_total` qui opère sur `NewInvoiceLine`).
+  Logique : `total_ht = Σ line.line_total` ; `vat_by_rate` = map `vat_rate -> Σ line_vat_amount(line_total, vat_rate)`
+  (somme des montants **déjà arrondis par ligne**, DC7) ; `total_vat = Σ vat_by_rate`. Si
+  `total_vat > 0 && vat_payable_account_id.is_none()` → `ConfigurationRequired("default_vat_payable_account_id")`.
+  Émettre dans cet **ordre canonique** : (0) créance `debit = total_ht + total_vat` (line_order 1) ; (1) produit
+  `credit = total_ht` (line_order 2) ; (2..N) pour chaque `(rate, amount)` **trié par `rate` croissant
+  (`Decimal::cmp`)** avec `amount > 0` : ligne `credit = amount` sur le compte TVA due (line_order 3..).
+  - **Équilibre par construction (clé)** : `total_vat = Σ vat_by_rate` (calculé AVANT le filtre `> 0`) est
+    **égal** à `Σ_lines line_vat_amount(line_total, vat_rate)` — les deux formulations sont équivalentes car
+    `vat_by_rate[r] >= 0` pour tout `r` (hypothèse F-OPUS-2 `line_total >= 0`), et un taux filtré (montant
+    agrégé == 0) contribue 0 au débit ET 0 aux crédits. Le débit créance somme donc exactement les **mêmes**
+    montants arrondis par ligne que la somme des crédits (produit + lignes 2200). NE PAS réarrondir
+    `total_vat` séparément.
+  - **Contrat `total_ht = 0`** : le helper retourne créance `debit=0` + produit `credit=0` (comportement
+    actuel inchangé) ; `create_in_tx` rejettera via `chk_jel_debit_credit_exclusive` (cas pré-existant des
+    factures à total nul, **non géré applicativement** — dette v0.1 cohérente avec l'existant). Le helper ne
+    lève PAS d'erreur propre pour ce cas.
+  - **Garde F-OPUS-2** : ajouter `debug_assert!(line.line_total >= Decimal::ZERO, ...)` en tête de boucle
+    (les avoirs Epic 12 passeront par contre-passation, hors-scope ; en release la contrainte DB
+    `chk_jel_credit_nonneg` reste le garde-fou ultime). NE PAS ajouter de `return Err` (chemin non exercé en 18-1b).
+  Documenter (`///`) le contrat complet + l'hypothèse F-OPUS-2.
 - **T-B2** — Brancher le helper dans `validate_invoice` étape (7) (`invoices.rs:1024-1051`) : remplacer la
   construction en dur des 2 lignes par l'appel au helper ; lire `settings.default_vat_payable_account_id` ;
   passer `lines_before`. Conserver `journal`, `entry_date`, `description`, l'ordre canonique et la tx.
@@ -154,8 +201,11 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   des lignes (montants, nombre de lignes, ordre par taux, règle > 0), + équilibre.
 - **T-B4** — Tests d'intégration `validate_invoice` (sqlx::test) : AC9 (a)-(h) bout-en-bout (écriture
   réellement insérée, contrainte `chk_jel_*` respectée, `ConfigurationRequired` quand compte TVA NULL).
-- **T-B5** — **Non-régression** (AC8) : grep + mise à jour de **tous** les call-sites de `validate_invoice`
-  en test qui utilisent `vat_rate > 0` (configurer le compte TVA due + corriger les assertions d'écriture).
+- **T-B5** — **Non-régression** (AC8) : (a) mettre à jour la **fixture partagée** `test_fixtures.rs`
+  (`seed_accounting_company` + `seed_accounting_company_no_fy` : compte `2200` Liability +
+  `default_vat_payable_account_id` dans CIS + tests d'auto-vérif de la fixture) ; (b) corriger les
+  assertions d'écriture des call-sites réels (`vat_report_e2e`, `invoice_echeancier_e2e`, `invoice_pdf_e2e`) ;
+  (c) NE PAS toucher `reconciliation_e2e`/`reconciliation_repository` (bypassent `validate_invoice`).
 - **T-B6** — Quality gate « Test Locally First » (AC10) + Change Log.
 
 ## Hors-scope (→ stories suivantes)
@@ -180,8 +230,24 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
 - **Équilibre par construction** : ne PAS réarrondir `Σ vat` séparément du débit créance — sommer les
   **mêmes** `line_vat_amount` arrondis par ligne des deux côtés (DC7), sinon écart d'1 centime → INSERT
   rejeté par le re-check `create_in_tx`.
+- **Réconciliation bancaire (pré-existant, HORS SCOPE — vérifié ground-truth)** : `find_unpaid_invoices_for_window`
+  (`reconciliation.rs:91`) matche `total_amount BETWEEN tx_amount ± tolérance`. `total_amount` reste **HT**
+  (DC9, inchangé par 18-1b). Le virement bancaire est TTC. **18-1b ne change RIEN à ce comportement** (ni
+  `total_amount`, ni la query de réconciliation) — l'éventuel écart HT↔TTC sur le matching est **pré-existant
+  et orthogonal** (dépend de ce que la facture montre au client, hors scope 18-1b). Aucune action en 18-1b ;
+  noté pour mémoire (une future story pourrait persister/exposer le TTC pour le matching).
+- **Compte TVA due archivé (vérifié ground-truth)** : remonte `InactiveOrInvalidAccounts` (422), pas
+  `CONFIGURATION_REQUIRED` (400) — cf. AC5. Distinction documentée pour le support.
 
 ## Prochaine étape
 
-`bmad-create-story validate 18-1b` (Pass 1 Sonnet 4.6) — cycle adversarial CLAUDE.md (rotation
-Sonnet→Haiku→Opus→…, jusqu'à 0 finding > LOW ou 8 passes), puis `bmad-dev-story 18-1b` (Opus).
+`bmad-create-story validate 18-1b` — cycle adversarial CLAUDE.md (rotation Sonnet→Haiku→Opus→…, jusqu'à
+0 finding > LOW ou 8 passes), puis `bmad-dev-story 18-1b` (Opus).
+
+## Change Log
+
+### `bmad-create-story validate 18-1b` — cycle adversarial (CLAUDE.md Review Iteration Rule)
+
+| Passe | Modèle | Findings > LOW | Points clés |
+|-------|--------|----------------|-------------|
+| 1 | Sonnet 4.6 | 5 (1C↓+2H+2M restants après triage) | Ground-truth : **11/11 claims CONFIRMÉES** (file:line exacts). Patches : HIGH#2 fixture partagée `seed_accounting_company` à mettre à jour (compte 2200 + `default_vat_payable`) ; M2 faux positifs `reconciliation_e2e`/`_repository` (bypassent validate_invoice) retirés de la surface régression ; M1 helper en `kesh-db` pas `kesh-core` (dép circulaire) + signature `&[InvoiceLine]` ; HIGH#3 compte 2200 archivé → `InactiveOrInvalidAccounts` 422 documenté ; M3/M4 contrat helper (équilibre par construction, total_ht=0, garde F-OPUS-2) ; M5 test DC7 somme-par-ligne ajouté ; M6 audit `journalEntry.lines` ; L2 tri `Decimal::cmp` ; L7 taux legacy. **CRITICAL réconciliation HT↔TTC down-classé** : pré-existant/orthogonal (18-1b ne touche pas total_amount, DC9) → note Risques. |
