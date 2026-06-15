@@ -143,19 +143,30 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   désormais configurer `default_vat_payable_account_id` (sinon `CONFIGURATION_REQUIRED`). Le dev **DOIT** :
   - **Mettre à jour la fixture partagée** `crates/kesh-db/src/test_fixtures.rs::seed_accounting_company`
     **et** `seed_accounting_company_no_fy` (vérifié ground-truth : leur `INSERT INTO company_invoice_settings`
-    n'a que `default_receivable/revenue_account_id`, et le plan CI seedé n'a pas de compte `2200`) :
-    (a) ajouter un compte **Liability `2200`** au plan CI ; (b) ajouter `default_vat_payable_account_id` à
-    l'`INSERT` de `company_invoice_settings` ; (c) mettre à jour les tests d'auto-vérification de la fixture
-    (`seed_accounting_company_creates_complete_state` qui assert le contenu de CIS / le COUNT accounts).
-    Corriger la fixture règle la majorité des suites en un point.
+    n'a que `default_receivable/revenue_account_id` ; le plan CI minimal seede 5 comptes 1000/1100/2000/3000/4000).
+    **APPROCHE RECOMMANDÉE (vérifiée Pass 3 Opus)** : **réutiliser le compte Liability existant `2000`** comme
+    `default_vat_payable_account_id` dans l'`INSERT` de `company_invoice_settings` — **PAS** d'ajout d'un 6e
+    compte. `create_in_tx` ne vérifie qu'`active=TRUE` + `company_id` (PAS le type — la validation de type vit
+    dans la route `PUT` que la fixture bypasse), donc `2000` (Liability, actif) est un compte TVA due valide
+    pour les écritures de test. **Pourquoi** : ajouter un compte `2200` ferait passer le compteur de comptes
+    de **5 → 6** et casserait **toutes** les assertions de compteur absolu (vérifié ground-truth, à NE PAS
+    rater) : `test_endpoints_e2e.rs:201,244,272,303,426` (`("accounts", 5)` ×5),
+    `exports_global_e2e.rs:765` (`("accounts.csv", 5)`) + commentaires l.9/l.727, et les auto-tests de la
+    fixture `test_fixtures.rs:505-506` (`account_count == 5` + `seeded.accounts.len() == 5`) et `:671`.
+    Réutiliser `2000` **évite tout ce périmètre** (compteur inchangé). Mettre à jour uniquement l'auto-test
+    qui vérifie le contenu de CIS si nécessaire (ajouter l'assertion `default_vat_payable_account_id`).
   - **Call-sites réels** de `validate_invoice` avec `vat_rate > 0` (vérifiés ground-truth) :
     `crates/kesh-api/tests/vat_report_e2e.rs` (8.10/2.60/8.00), `invoice_echeancier_e2e.rs` (8.10),
-    `invoice_pdf_e2e.rs` (7.70). Mettre à jour toute assertion sur le **nombre/montant des lignes
-    d'écriture** (la créance passe HT→TTC, + N lignes 2200).
+    `invoice_pdf_e2e.rs` (7.70). Avec la fixture corrigée, ces validations **réussissent** ; mettre à jour
+    toute assertion sur le **montant de la créance** (HT→TTC) ou le **nombre de lignes d'écriture** (+ N
+    lignes 2200) si elles en font.
   - **NE PAS** toucher `reconciliation_e2e.rs` ni `crates/kesh-db/tests/reconciliation_repository.rs` :
     vérifié ground-truth, ils **bypassent** `validate_invoice` via INSERT SQL direct
     (`reconciliation_e2e.rs:274` « bypass validate_invoice pipeline », `reconciliation_repository.rs:140`) —
     aucune mise à jour nécessaire, ne pas douter du grep.
+  - **Gate grep exhaustif (avant AC10 vert)** : exécuter `grep -rln "validate_invoice" crates/*/tests crates/kesh-db/src`
+    et croiser avec les fixtures à `vat_rate > 0` — pour qu'un test ajouté entre l'écriture de la spec et le
+    dev ne soit pas manqué. La liste ci-dessus est vérifiée @ `c74255a`.
 - **AC9** — **Tests** (T-B3 unitaires helper + T-B4 intégration) : (a) facture mono-taux 8.1 % → 3 lignes
   (créance TTC, produit HT, 1×2200) ; (b) facture `vat_rate=0`/exempt → **2 lignes, AUCUNE ligne 2200**
   (F10) ; (c) facture multi-taux (8.1 % + 2.6 %) → 2 lignes 2200 distinctes, **ordonnées par taux croissant**
@@ -199,6 +210,13 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   - **Garde F-OPUS-2** : ajouter `debug_assert!(line.line_total >= Decimal::ZERO, ...)` en tête de boucle
     (les avoirs Epic 12 passeront par contre-passation, hors-scope ; en release la contrainte DB
     `chk_jel_credit_nonneg` reste le garde-fou ultime). NE PAS ajouter de `return Err` (chemin non exercé en 18-1b).
+  - **Clé de groupement `Decimal` (vérifié Pass 3 Opus)** : grouper par `vat_rate` brut est sûr —
+    `rust_decimal::Decimal` a un `Eq`/`Hash` **insensibles à l'échelle** (`dec!(8.1) == dec!(8.10)`, même
+    clé `HashMap`/`BTreeMap`). NE PAS `.normalize()` la clé. Préférer un **`BTreeMap<Decimal, Decimal>`**
+    (comme `vat_report.rs:86`) : itération ASC native → satisfait l'ordre AC6 sans étape de tri explicite,
+    et structure parallèle au rapport 11-2 (facilite la réconciliation 18-1e). L'équilibre exact tient
+    même si débit (échelle 4) et crédits 2200 (échelle 2) diffèrent d'échelle car la comparaison
+    `SUM(debit) != SUM(credit)` de `create_in_tx` est **value-based** (échelle ignorée).
   Documenter (`///`) le contrat complet + l'hypothèse F-OPUS-2.
 - **T-B2** — Brancher le helper dans `validate_invoice` étape (7) (`invoices.rs:1024-1051`) : remplacer la
   construction en dur des 2 lignes par l'appel au helper. Passer **directement** `settings.default_vat_payable_account_id`
@@ -215,10 +233,12 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   archivé → `InactiveOrInvalidAccounts`, (g) écriture réellement insérée (contraintes `chk_jel_*` OK), (h)
   immunité au changement de taux.
 - **T-B5** — **Non-régression** (AC8) : (a) mettre à jour la **fixture partagée** `test_fixtures.rs`
-  (`seed_accounting_company` + `seed_accounting_company_no_fy` : compte `2200` Liability +
-  `default_vat_payable_account_id` dans CIS + tests d'auto-vérif de la fixture) ; (b) corriger les
-  assertions d'écriture des call-sites réels (`vat_report_e2e`, `invoice_echeancier_e2e`, `invoice_pdf_e2e`) ;
-  (c) NE PAS toucher `reconciliation_e2e`/`reconciliation_repository` (bypassent `validate_invoice`).
+  (`seed_accounting_company` + `seed_accounting_company_no_fy`) en **réutilisant le compte `2000`** comme
+  `default_vat_payable_account_id` dans l'`INSERT` CIS (PAS de 6e compte → compteur inchangé, aucune
+  assertion `("accounts", 5)` cassée) ; (b) corriger les assertions de **créance/lignes d'écriture** des
+  call-sites réels (`vat_report_e2e`, `invoice_echeancier_e2e`, `invoice_pdf_e2e`) ; (c) NE PAS toucher
+  `reconciliation_e2e`/`reconciliation_repository` (bypassent `validate_invoice`) ; (d) gate grep exhaustif
+  `validate_invoice` avant de déclarer le quality gate vert.
 - **T-B6** — Quality gate « Test Locally First » (AC10) + Change Log.
 
 ## Hors-scope (→ stories suivantes)
@@ -230,6 +250,15 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   compte produit** (`default_revenue_account_id`). Pas de produit par ligne ici.
 - Factures à `total_amount = 0` (cas pré-existant : la contrainte `chk_jel_debit_credit_exclusive`
   empêche déjà une créance à 0 — comportement inchangé).
+
+### Migration / doc / frontend (vérifié Pass 3 Opus)
+
+- **Aucune migration** — 18-1b ne change que la génération d'écriture au runtime, pas le schéma.
+- **Aucun impact frontend/i18n** — `validate_invoice_handler` (`routes/invoices.rs:575-578`) retourne
+  `InvoiceResponse::from_parts(invoice, lines)` (facture + lignes facture seulement) ; `journal_entry.lines`
+  n'est **pas** exposé en HTTP, aucun consommateur ne lit le nombre de lignes d'écriture côté client.
+- **Doc-sync (manuels / CHANGELOG) différée à 18-1f** (split umbrella) — mi-epic, aucun changement visible
+  utilisateur tant que le décompte AFC n'est pas livré.
 
 ## Risques
 
@@ -265,3 +294,4 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
 |-------|--------|----------------|-------------|
 | 1 | Sonnet 4.6 | 5 (1C↓+2H+2M restants après triage) | Ground-truth : **11/11 claims CONFIRMÉES** (file:line exacts). Patches : HIGH#2 fixture partagée `seed_accounting_company` à mettre à jour (compte 2200 + `default_vat_payable`) ; M2 faux positifs `reconciliation_e2e`/`_repository` (bypassent validate_invoice) retirés de la surface régression ; M1 helper en `kesh-db` pas `kesh-core` (dép circulaire) + signature `&[InvoiceLine]` ; HIGH#3 compte 2200 archivé → `InactiveOrInvalidAccounts` documenté ; M3/M4 contrat helper (équilibre par construction, total_ht=0, garde F-OPUS-2) ; M5 test DC7 somme-par-ligne ajouté ; M6 audit `journalEntry.lines` ; L2 tri `Decimal::cmp` ; L7 taux legacy. **CRITICAL réconciliation HT↔TTC down-classé** : pré-existant/orthogonal (18-1b ne touche pas total_amount, DC9) → note Risques. |
 | 2 | Haiku 4.5 | 1 MEDIUM réel | **Correction factuelle ground-truth** : `InactiveOrInvalidAccounts` → HTTP **400** (`errors.rs:1693`), PAS 422 (erreur introduite Pass 1) — les 2 erreurs sont 400, seul le **code** diffère. Ground-truth Pass 1 re-confirmé 11/11 + fixture/bypass/call-sites OK. Clarifications : exemple chiffré 2-taux (équilibre 1594=1500+13+81) ajouté AC1 ; passage direct `Option` au helper (T-B2) ; T-B3/T-B4 sous-cas explicités. Reste Haiku (C1 « ambiguïté signature », H1/H2/M1-6) = formulations déjà couvertes, non bloquantes. |
+| 3 | Opus 4.8 | 1 HIGH (catch-architectural) | Architectural + numeric reviewers : design **prouvé sound** (0>LOW) — cross-company défendu 2 couches (`validate_account` write + `create_in_tx` post filtre company/active), `Decimal` Eq/Hash **insensible à l'échelle** (`8.1`==`8.10` même clé, NE PAS `.normalize()`), équilibre exact prouvé sur exemples adversariaux, DC2↔`VatReport` 1:1, aucun consommateur 2-lignes. **HIGH completeness** : ajouter compte `2200` aux fixtures partagées casserait **~8 assertions de compteur absolu** (`test_endpoints_e2e.rs` ×5, `exports_global_e2e.rs:765`, auto-tests `test_fixtures.rs:505/506/671`) → **fix : réutiliser le compte `2000` existant** comme TVA due dans la fixture (compteur inchangé, `create_in_tx` ne vérifie pas le type). Patches : approche fixture réécrite + gate grep exhaustif ; note `Decimal`/`BTreeMap` (T-B1) ; note no-migration/no-frontend/doc-différée. |
