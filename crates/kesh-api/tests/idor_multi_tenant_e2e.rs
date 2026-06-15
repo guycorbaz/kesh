@@ -641,3 +641,96 @@ async fn idor_companies_current_returns_own_company_only(pool: MySqlPool) {
         "Users get their own companies"
     );
 }
+
+/// Story 18-1a (AC8c) — anti-IDOR sur les nouveaux comptes TVA.
+///
+/// Le garde `validate_account` de `PUT /company/invoice-settings` rejette un
+/// `account_id` **valide mais appartenant à une AUTRE company** (IDOR). C'est un
+/// garde-fou distinct de la contrainte FK DB (compte inexistant) couverte au
+/// niveau repo (`update_vat_account_foreign_id_rejected_by_fk`) : un compte d'une
+/// autre company existe bien dans `accounts` (la FK passe) mais doit être refusé
+/// par le check `account.company_id != company_id` du handler route.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+
+    let (company_a_id, accounts_a) = create_seeded_company(&pool).await;
+    let (_company_b_id, accounts_b) = create_seeded_company(&pool).await;
+
+    // `PUT /company/invoice-settings` est Admin-only (cf. lib.rs).
+    let _admin_a =
+        create_company_user_with_role(&pool, company_a_id, "alice", "password123", Role::Admin)
+            .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token_a = login(&app, "alice", "password123").await;
+
+    // Lire la config courante de A (version + valeurs valides à réémettre).
+    let get_resp = app
+        .client
+        .get(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .send()
+        .await
+        .expect("get settings should succeed");
+    assert_eq!(get_resp.status(), 200);
+    let settings: serde_json::Value = get_resp.json().await.expect("json body");
+    let version = settings["version"].as_i64().expect("version present");
+
+    // Compte Liability (2000) de la company B → cible IDOR pour `defaultVatPayableAccountId`
+    // (TVA due attend un Liability ; le compte existe mais hors company A).
+    let foreign_liability = accounts_b["2000"];
+
+    let put_foreign = app
+        .client
+        .put(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .json(&json!({
+            "invoiceNumberFormat": settings["invoiceNumberFormat"],
+            "defaultReceivableAccountId": settings["defaultReceivableAccountId"],
+            "defaultRevenueAccountId": settings["defaultRevenueAccountId"],
+            "defaultVatPayableAccountId": foreign_liability,
+            "defaultVatRecoverableAccountId": null,
+            "defaultVatDecompteAccountId": null,
+            "defaultSalesJournal": settings["defaultSalesJournal"],
+            "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+            "version": version,
+        }))
+        .send()
+        .await
+        .expect("put should succeed");
+
+    assert_eq!(
+        put_foreign.status(),
+        400,
+        "un compte TVA d'une autre company doit être rejeté (anti-IDOR), pas persisté"
+    );
+
+    // Contrôle positif : le compte Liability (2000) de A est accepté pour le même champ.
+    // (Le PUT précédent ayant échoué, la version n'a pas bougé.)
+    let own_liability = accounts_a["2000"];
+    let put_own = app
+        .client
+        .put(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .json(&json!({
+            "invoiceNumberFormat": settings["invoiceNumberFormat"],
+            "defaultReceivableAccountId": settings["defaultReceivableAccountId"],
+            "defaultRevenueAccountId": settings["defaultRevenueAccountId"],
+            "defaultVatPayableAccountId": own_liability,
+            "defaultVatRecoverableAccountId": null,
+            "defaultVatDecompteAccountId": null,
+            "defaultSalesJournal": settings["defaultSalesJournal"],
+            "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+            "version": version,
+        }))
+        .send()
+        .await
+        .expect("put should succeed");
+
+    assert_eq!(
+        put_own.status(),
+        200,
+        "le compte TVA propre à la company doit être accepté"
+    );
+}

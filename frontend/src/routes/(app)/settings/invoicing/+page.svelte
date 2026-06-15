@@ -239,61 +239,61 @@
 		</section>
 
 		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
-				<h2 class="text-lg font-semibold">
-					{i18nMsg('invoices-settings-vat-accounts-title', 'Comptes TVA')}
-				</h2>
-				<p class="text-xs text-text-muted">
-					{i18nMsg(
-						'invoices-settings-vat-accounts-hint',
-						'Comptes utilisés pour la comptabilisation de la TVA (préparé pour le décompte AFC).',
-					)}
-				</p>
-				<div>
-					<label class="mb-1 block text-sm font-medium" for="{uid}-vat-payable">
-						{i18nMsg('invoices-settings-vat-payable', 'Compte TVA due (Passif)')}
-					</label>
-					<select
-						id="{uid}-vat-payable"
-						class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
-						bind:value={vatPayableId}
-					>
-						<option value={null}>— Sélectionner —</option>
-						{#each liabilityAccounts as a (a.id)}
-							<option value={a.id}>{a.number} — {a.name}</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label class="mb-1 block text-sm font-medium" for="{uid}-vat-recoverable">
-						{i18nMsg('invoices-settings-vat-recoverable', 'Compte TVA récupérable (Actif)')}
-					</label>
-					<select
-						id="{uid}-vat-recoverable"
-						class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
-						bind:value={vatRecoverableId}
-					>
-						<option value={null}>— Sélectionner —</option>
-						{#each assetAccounts as a (a.id)}
-							<option value={a.id}>{a.number} — {a.name}</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label class="mb-1 block text-sm font-medium" for="{uid}-vat-decompte">
-						{i18nMsg('invoices-settings-vat-decompte', 'Compte de décompte TVA (Passif)')}
-					</label>
-					<select
-						id="{uid}-vat-decompte"
-						class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
-						bind:value={vatDecompteId}
-					>
-						<option value={null}>— Sélectionner —</option>
-						{#each liabilityAccounts as a (a.id)}
-							<option value={a.id}>{a.number} — {a.name}</option>
-						{/each}
-					</select>
-				</div>
-			</section>
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('invoices-settings-vat-accounts-title', 'Comptes TVA')}
+			</h2>
+			<p class="text-xs text-text-muted">
+				{i18nMsg(
+					'invoices-settings-vat-accounts-hint',
+					'Comptes utilisés pour la comptabilisation de la TVA (préparé pour le décompte AFC).',
+				)}
+			</p>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-vat-payable">
+					{i18nMsg('invoices-settings-vat-payable', 'Compte TVA due (Passif)')}
+				</label>
+				<select
+					id="{uid}-vat-payable"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={vatPayableId}
+				>
+					<option value={null}>— Sélectionner —</option>
+					{#each liabilityAccounts as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-vat-recoverable">
+					{i18nMsg('invoices-settings-vat-recoverable', 'Compte TVA récupérable (Actif)')}
+				</label>
+				<select
+					id="{uid}-vat-recoverable"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={vatRecoverableId}
+				>
+					<option value={null}>— Sélectionner —</option>
+					{#each assetAccounts as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-vat-decompte">
+					{i18nMsg('invoices-settings-vat-decompte', 'Compte de décompte TVA (Passif)')}
+				</label>
+				<select
+					id="{uid}-vat-decompte"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={vatDecompteId}
+				>
+					<option value={null}>— Sélectionner —</option>
+					{#each liabilityAccounts as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+		</section>
 
 		<div class="flex justify-end">
 			<Button type="submit" disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}>

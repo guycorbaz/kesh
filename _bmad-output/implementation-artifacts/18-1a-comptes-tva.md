@@ -122,3 +122,14 @@ TVA due, compte de décompte) et pouvoir les désigner comme comptes TVA par dé
 ## Prochaine étape
 
 `bmad-dev-story 18-1a` (Opus recommandé — migration data + cross-crate entité/repo/route/frontend).
+
+## Review Findings
+
+### Pass 1 (Sonnet — Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+- [x] [Review][Patch] AC8(c) anti-IDOR : test cross-company manquant — le test livré (`update_vat_account_foreign_id_rejected_by_fk`) couvre le garde FK DB (id inexistant) mais PAS l'IDOR (compte valide d'une autre company). Patch : `idor_invoice_settings_vat_account_cross_company_rejected` ajouté dans `crates/kesh-api/tests/idor_multi_tenant_e2e.rs` (PUT settings avec compte Liability de company B → 400 ; contrôle positif compte propre → 200). Vert.
+- [x] [Review][Patch] Indentation `<section>` TVA — `<h2>` + enfants à 4 tabs au lieu de 3 (bloc sur-indenté d'un niveau) [`frontend/.../settings/invoicing/+page.svelte:242`]. Dédenté d'un tab. `npm run check` 0 err.
+- [x] [Review][Defer] Archive d'un compte TVA configuré laisse FK CIS obsolète → bloque la sauvegarde settings [`crates/kesh-db/src/repositories/accounts.rs`] — **pré-existant** (`default_receivable`/`revenue` ont le même gap, pas une régression 18-1a) ; 18-1a multiplie l'exposition de 2 à 5 colonnes FK. → Issue GitHub recommandée.
+- [x] [Review][Defer] `admin_backup_e2e` ne vérifie pas l'intégrité FK des 3 nouvelles colonnes VAT après restore — narrow (ne se déclenche qu'avec TVA configurée + round-trip). → 18-1f (tests).
+- [x] [Review][Defer] Pas de contrainte `vat_payable ≠ vat_decompte` (même compte Liability acceptable pour les deux) — concern design consommé en 18-1b. → 18-1b.
+- Dismiss (réfutés grep ground-truth) : `assetAccounts` non défini (FAUX — défini ligne 47 filtre `Asset`) ; DRY SELECT/COLUMNS + tests inline (hygiène LOW correctement gérée dans le diff).
