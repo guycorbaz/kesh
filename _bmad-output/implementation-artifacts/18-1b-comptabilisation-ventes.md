@@ -76,6 +76,9 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   à la volée pour la ligne créance : `débit_créance_TTC = total_ht + Σ(line_vat_amount)`.
 - **DC6** — pas de nouveau variant `AccountType`.
 - **F-OPUS-1** — règle positive : ligne 2200 émise **seulement si montant agrégé du taux > 0** (AC6).
+- **F-OPUS-6** — la TVA est calculée sur le `vat_rate` **snapshoté dans `invoice_lines`** (taux au moment de
+  la validation), JAMAIS re-lookupé via `find_for_category_at_date` → immunité aux changements de taux
+  postérieurs (factures déjà validées inchangées).
 - **F-OPUS-2 (avoirs Epic 12, HORS SCOPE mais figé)** : `line_vat_amount` autorise un négatif, MAIS
   `chk_jel_*_nonneg` interdit debit/crédit négatif. Le helper part de l'hypothèse **`line_total >= 0`**.
   Les avoirs (Epic 12) passeront par **contre-passation** (swap débit↔crédit), PAS un montant négatif →
@@ -167,9 +170,15 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   - **Gate grep exhaustif (avant AC10 vert)** : exécuter `grep -rln "validate_invoice" crates/*/tests crates/kesh-db/src`
     et croiser avec les fixtures à `vat_rate > 0` — pour qu'un test ajouté entre l'écriture de la spec et le
     dev ne soit pas manqué. La liste ci-dessus est vérifiée @ `c74255a`.
+  - **Surface Playwright** : `frontend/tests/e2e/invoices.spec.ts:~240` valide une facture (`vatRate '7.70'`)
+    via l'endpoint HTTP en s'appuyant sur `seedTestState('with-company')` → `test_endpoints.rs` →
+    `seed_accounting_company` — **implicitement couvert** par le fix fixture (le seed config désormais
+    `default_vat_payable_account_id`). Vérifier qu'aucune assertion Playwright ne porte sur le montant de
+    créance/écriture (le total affiché reste `total_amount` HT, inchangé). Lancer `npm run test:e2e` si la
+    suite tourne en local (Test Locally First).
 - **AC9** — **Tests** (T-B3 unitaires helper + T-B4 intégration) : (a) facture mono-taux 8.1 % → 3 lignes
   (créance TTC, produit HT, 1×2200) ; (b) facture `vat_rate=0`/exempt → **2 lignes, AUCUNE ligne 2200**
-  (F10) ; (c) facture multi-taux (8.1 % + 2.6 %) → 2 lignes 2200 distinctes, **ordonnées par taux croissant**
+  (AC4) ; (c) facture multi-taux (8.1 % + 2.6 %) → 2 lignes 2200 distinctes, **ordonnées par taux croissant**
   (2.60 avant 8.10), montants par taux corrects ; (d) facture multi-taux (8.1 % + 0 %) → **1 seule** ligne
   2200 (taux > 0 only) ; (e) **arrondi d'un taux > 0 donnant `0.00`** (1 ligne base infime) → pas de ligne
   2200 (F-OPUS-1) ; (e2) **DC7 — somme des montants arrondis par ligne** : 2 lignes au même taux 8.1 %,
@@ -225,9 +234,12 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
   inconditionnellement l.962-967). Passer `&lines_before` (déjà fetché l.956, sûr : aucune modif de
   `invoice_lines` dans la tx avant ce point). Conserver `journal`, `entry_date`, `description`, l'ordre
   canonique et la tx (pas de nouveau lock, F-OPUS-7).
-- **T-B3** — Tests unitaires du helper (`#[test]` standard `kesh-db`, sans DB) : AC9 (a) mono-taux, (c)
-  ordre multi-taux, (e) arrondi→0, (e2) DC7 somme-par-ligne, (f) `ConfigurationRequired`, + équilibre
-  débit=crédit sur la composition retournée.
+- **T-B3** — Tests unitaires du helper (`#[test]` standard `kesh-db`, sans DB — le helper est sans I/O,
+  toutes ces branches sont testables sur le `Vec` retourné) : AC9 (a) mono-taux, **(b) zéro-TVA → 2 entrées,
+  aucun account_id == vat_payable**, (c) ordre multi-taux, **(d) 8.1 %+0 % → 3 entrées, 1 seule ligne 2200**,
+  (e) arrondi→0, (e2) DC7 somme-par-ligne, (f) `ConfigurationRequired`, + équilibre débit=crédit sur la
+  composition retournée. (Les cas (b)/(d) sont la branche de suppression zéro-taux F-OPUS-1 — couverture
+  unitaire en plus de T-B4.)
 - **T-B4** — Tests d'intégration `validate_invoice` (`#[sqlx::test]`) : AC9 bout-en-bout — notamment (b)
   zéro-TVA → 2 lignes, (d) multi-taux dont 0 %, (f) `ConfigurationRequired` (compte NULL), (f2) compte
   archivé → `InactiveOrInvalidAccounts`, (g) écriture réellement insérée (contraintes `chk_jel_*` OK), (h)
@@ -295,3 +307,4 @@ la ligne 2200 d'un taux que si son montant TVA **agrégé par taux est stricteme
 | 1 | Sonnet 4.6 | 5 (1C↓+2H+2M restants après triage) | Ground-truth : **11/11 claims CONFIRMÉES** (file:line exacts). Patches : HIGH#2 fixture partagée `seed_accounting_company` à mettre à jour (compte 2200 + `default_vat_payable`) ; M2 faux positifs `reconciliation_e2e`/`_repository` (bypassent validate_invoice) retirés de la surface régression ; M1 helper en `kesh-db` pas `kesh-core` (dép circulaire) + signature `&[InvoiceLine]` ; HIGH#3 compte 2200 archivé → `InactiveOrInvalidAccounts` documenté ; M3/M4 contrat helper (équilibre par construction, total_ht=0, garde F-OPUS-2) ; M5 test DC7 somme-par-ligne ajouté ; M6 audit `journalEntry.lines` ; L2 tri `Decimal::cmp` ; L7 taux legacy. **CRITICAL réconciliation HT↔TTC down-classé** : pré-existant/orthogonal (18-1b ne touche pas total_amount, DC9) → note Risques. |
 | 2 | Haiku 4.5 | 1 MEDIUM réel | **Correction factuelle ground-truth** : `InactiveOrInvalidAccounts` → HTTP **400** (`errors.rs:1693`), PAS 422 (erreur introduite Pass 1) — les 2 erreurs sont 400, seul le **code** diffère. Ground-truth Pass 1 re-confirmé 11/11 + fixture/bypass/call-sites OK. Clarifications : exemple chiffré 2-taux (équilibre 1594=1500+13+81) ajouté AC1 ; passage direct `Option` au helper (T-B2) ; T-B3/T-B4 sous-cas explicités. Reste Haiku (C1 « ambiguïté signature », H1/H2/M1-6) = formulations déjà couvertes, non bloquantes. |
 | 3 | Opus 4.8 | 1 HIGH (catch-architectural) | Architectural + numeric reviewers : design **prouvé sound** (0>LOW) — cross-company défendu 2 couches (`validate_account` write + `create_in_tx` post filtre company/active), `Decimal` Eq/Hash **insensible à l'échelle** (`8.1`==`8.10` même clé, NE PAS `.normalize()`), équilibre exact prouvé sur exemples adversariaux, DC2↔`VatReport` 1:1, aucun consommateur 2-lignes. **HIGH completeness** : ajouter compte `2200` aux fixtures partagées casserait **~8 assertions de compteur absolu** (`test_endpoints_e2e.rs` ×5, `exports_global_e2e.rs:765`, auto-tests `test_fixtures.rs:505/506/671`) → **fix : réutiliser le compte `2000` existant** comme TVA due dans la fixture (compteur inchangé, `create_in_tx` ne vérifie pas le type). Patches : approche fixture réécrite + gate grep exhaustif ; note `Decimal`/`BTreeMap` (T-B1) ; note no-migration/no-frontend/doc-différée. |
+| 4 | Sonnet 4.6 | 1 MEDIUM | **Tous les patches Pass 3 VÉRIFIÉS ground-truth** : compte `2000` = Liability dans les 2 fixtures (`test_fixtures.rs:127,233`), `create_in_tx` sans check de type (l.127-142), aucun test n'asserte le solde de 2000 après validate, 8 sites de compteur exacts, 3 call-sites OK, aucun manqué. MEDIUM : T-B3 omettait les cas unitaires (b) zéro-TVA + (d) 8.1 %+0 % (branche suppression F-OPUS-1 testable sans DB) → ajoutés. LOW patchés : F-OPUS-6 ajouté aux Décisions figées, surface Playwright `invoices.spec.ts:240` notée (implicitement couverte par fix fixture), réf orpheline `F10`→`AC4`. |
