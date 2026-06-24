@@ -185,10 +185,10 @@ Big.roundHalfUp).toFixed(2)`.
   attendue est figée contre `line_vat_amount` backend (même arrondi `MidpointAwayFromZero`).
 - **AC3 — Génération de l'écriture (DC-c6/DC-c7)** : « Insérer les lignes » génère, depuis (compte charge,
   HT, taux, compte contrepartie) :
-  - `D charge` = HT sur le compte de charge ;
+  - `D charge` = `round₂(HT)` sur le compte de charge (PAS le HT brut — verrou F-OPUS-C1, cf. DC-c7) ;
   - `D impôt préalable` = `lineVatAmount(HT, taux)` sur `defaultVatRecoverableAccountId` — **émise
     seulement si > 0** (DC-c7) ;
-  - `C contrepartie` = `HT + vat` (TTC) sur le compte de contrepartie ;
+  - `C contrepartie` = `round₂(HT) + vat` (TTC) sur le compte de contrepartie ;
   puis injecte ces lignes dans `lines` (strings via `Big...toFixed(2)`, L1), met `journal = 'Achats'`
   (DC-c5 — forcé car l'achat est sémantiquement un journal Achats, voir H3), et pré-remplit `description`.
   - **Format `description` (H2)** : clé i18n `vat-purchase-description` avec interpolation
@@ -238,9 +238,10 @@ Big.roundHalfUp).toFixed(2)`.
   titre du panneau, labels des 4 champs (charge, HT, taux, contrepartie), bouton « Insérer les lignes »,
   `vat-purchase-description` (avec interpolation `{$rate}`) + `vat-purchase-description-exempt`, message
   config-requise compte (AC5), message liste de taux vide (M3, distinct), message de confirmation de
-  remplacement (AC6), messages de validation inline (AC8 : charge = contrepartie, HT invalide). Fallbacks FR
-  fournis dans le code. `npm run lint-i18n-ownership` passe. (Le format d'affichage des options de taux
-  réutilise la clé existante `vat-category-*` si présente, cf. AC1/M2.)
+  remplacement (AC6), messages de validation inline (AC8 : charge = contrepartie / = recoverable, HT
+  invalide). **Clés ajoutées aux 4 locales `.ftl` `{fr,de,it,en}-CH`** (cf. T-C4 — sinon DE/IT/EN en FR).
+  Fallbacks FR fournis dans le code. `npm run lint-i18n-ownership` passe. (Le format d'affichage des options
+  de taux réutilise la clé existante `vat-category-*`, déjà traduite 4 langues, cf. AC1/M2.)
 - **AC10 — Tests** :
   - **Unitaires (vitest)** : helper `lineVatAmount` (parité AC2 : ≥6 cas dont virgule `("1000,50","8.10")`,
     tie-break half-up `("0.10","5")`, et 0) ; `buildPurchaseVatLines(...)` (3 lignes si vat>0 / 2 lignes si
@@ -380,4 +381,6 @@ Big.roundHalfUp).toFixed(2)`.
 
 | 3 | Opus 4.8 | 3 (1H+2M) | **Catch-architectural** — design prouvé fondamentalement sain (axes 3/5 prouvés : réutilisation compte `1000` sans collision de solde, couplage 18-1d cohérent). **F-OPUS-C1 (HIGH)** : condition d'équilibre latente non figée — DC-c7 « débit charge = HT » contredisait L1 « toFixed(2) » ; sur un HT à 3-4 décimales (autorisé par `isValidAmount`), émettre le HT brut → déséquilibre `ENTRY_UNBALANCED` (backend = égalité décimale EXACTE, sans epsilon). Brute-force Opus : `round₂(HT) + vat == round₂(HT+vat)` toujours (0 contre-exemple). **Fix** : verrou `débit charge = round₂(HT)` + test HT 3-4 déc. **F-OPUS-C2 (MEDIUM)** : AC8 ne gardait pas `charge/contrepartie ≠ recoverable` → 2 lignes sur `1171`, équilibré mais **polluant le solde lu par 18-1d**. **Fix** : étendre AC8. **F-OPUS-C3 (MEDIUM)** : `all_messages` charge FR-CH en base+overlay (`loader.rs:130`) → clés `vat-purchase-*` ajoutées seulement à FR-CH ⟹ DE/IT/EN affichent l'assistant **en FR** (fallback code inopérant) ; `lint-i18n-ownership` ne couvre pas les `.ftl`. **Fix** : T-C4 exige les **4** `.ftl` ; réutiliser `vat-category-*` (déjà 4 langues). |
 
-**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M) → Pass 2 (Haiku) 3 (1H+2M) → Pass 3 (Opus) 3 (1H+2M). Rotation Sonnet→Haiku→Opus, contexte frais. **Catch décisif Pass 3 Opus** : verrou numérique d'équilibre (F-OPUS-C1, bug prod latent sur HT 3-4 décimales) + garde anti-pollution solde 1171 (F-OPUS-C2) + parité i18n 4 locales (F-OPUS-C3). Prochaine : Pass 4 (Sonnet) contexte frais.
+| 4 | Sonnet 4.6 | 0 ✅ | **CONVERGÉ.** Les 3 patches Pass 3 vérifiés ground-truth correctement appliqués + cohérents (F-OPUS-C1 verrou `round₂(HT)` cohérent DC-c7/T-C1/L1/AC10 ; F-OPUS-C2 garde AC8 ; F-OPUS-C3 T-C4 4 `.ftl`, mécanisme `all_messages` base+overlay re-confirmé `loader.rs:130-141`). Balayage complétude : AC↔DC↔T-C↔Change Log cohérent, 3 helpers tous testés AC10 (tie-break, virgule, HT 3-4 déc, vat==0), 0 référence orpheline. 2 nits LOW (AC3 disait encore « HT » brut ; AC9 ne redondait pas l'exigence 4-`.ftl`) **patchés** par hygiène (comportement déjà verrouillé par T-C1 + test). 0 finding > LOW. |
+
+**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M) → Pass 2 (Haiku) 3 (1H+2M) → Pass 3 (Opus) 3 (1H+2M) → Pass 4 (Sonnet) **0 ✅**. Rotation Sonnet→Haiku→Opus→Sonnet, contexte frais à chaque, grep ground-truth. **Catch décisif Pass 3 Opus** : verrou numérique d'équilibre (F-OPUS-C1, bug prod latent sur HT 3-4 décimales) + garde anti-pollution solde 1171 (F-OPUS-C2) + parité i18n 4 locales (F-OPUS-C3). **Cycle validate CONVERGÉ Pass 4, 0 > LOW. Prochaine : `bmad-dev-story 18-1c` (Opus, mode frontend).**
