@@ -32,9 +32,23 @@ AFC (18-1d) où le solde de ce compte alimentera `total_vat_recoverable`.
 
 ### Décision de scope décisive (prouvée par exploration)
 
-**18-1c est une story FRONTEND PURE — aucun changement backend.** Un achat TVA récupérable est saisissable
-intégralement via l'endpoint **existant** `POST /journal-entries` en 3 lignes équilibrées
-(`D charge 6xxx / D impôt préalable 1171 / C fournisseur TTC`). Tout le backend nécessaire existe déjà :
+**18-1c est une story FRONTEND — aucun changement de code backend de PRODUCTION.** Un achat TVA récupérable
+est saisissable intégralement via l'endpoint **existant** `POST /journal-entries` en 3 lignes équilibrées
+(`D charge 6xxx / D impôt préalable 1171 / C fournisseur TTC`).
+
+> **⚠️ Exception test-fixture (corrigée Pass 1)** : la fixture de test partagée
+> `crates/kesh-db/src/test_fixtures.rs` (`seed_accounting_company` + `seed_accounting_company_no_fy`) **ne
+> configure PAS** `default_vat_recoverable_account_id` aujourd'hui (vérifié ground-truth : l'`INSERT
+> company_invoice_settings` ne pose que `default_receivable/revenue/vat_payable` — `test_fixtures.rs:152-165`
+> + `:259-271`). Sans ce champ, l'assistant tomberait en mode « config requise » (AC5) et l'E2E AC10
+> échouerait. **18-1c DOIT donc ajouter une ligne de test-fixture** : poser `default_vat_recoverable_account_id`
+> = **compte `1000` réutilisé** (Asset existant « Caisse CI », `test_fixtures.rs:124`) — **PAS** de 6e compte
+> (compteur `("accounts", 5)` inchangé, exactement le pattern 18-1b qui a réutilisé `2000` pour payable).
+> `create_in_tx` ne valide que `active=TRUE` + `company_id` (pas le type), donc `1000` (Asset, actif) est une
+> cible valide. C'est l'unique changement backend (test-only), couvert par T-C5. Le code de production
+> backend reste **strictement inchangé**.
+
+Tout le backend de production nécessaire existe déjà :
 
 - **`POST /api/v1/journal-entries`** (`crates/kesh-api/src/routes/journal_entries.rs:62-80` requête,
   `:388-495` handler) — accepte `{ entryDate, journal, description, lines: [{accountId, debit, credit}] }`
@@ -95,8 +109,10 @@ Big.roundHalfUp).toFixed(2)`.
 
 ## Décisions figées (héritées umbrella + tranchées par exploration — NE PAS re-litiger)
 
-- **DC-c1 (umbrella DC3=B)** — **frontend pur, zéro backend, zéro migration, zéro nouvel endpoint, zéro
-  nouvelle entité.** L'écriture d'achat est postée via `POST /journal-entries` existant.
+- **DC-c1 (umbrella DC3=B)** — **zéro code backend de PRODUCTION, zéro migration, zéro nouvel endpoint, zéro
+  nouvelle entité.** L'écriture d'achat est postée via `POST /journal-entries` existant. **Unique exception
+  (Pass 1)** : une ligne de **test-fixture** (`default_vat_recoverable_account_id` = compte `1000` réutilisé)
+  pour rendre l'E2E exécutable — réutilise un compte existant (compteur inchangé), pattern 18-1b. Voir T-C5.
 - **DC-c2 (parité calcul)** — la TVA récupérable est calculée côté front avec **parité exacte** de
   `line_vat_amount` : `round(ht × rate ÷ 100, 2, half-up)` via `big.js`. Test de parité obligatoire
   (valeurs de référence identiques au backend).
@@ -131,20 +147,45 @@ Big.roundHalfUp).toFixed(2)`.
   achat » (repliable, replié par défaut) au-dessus du tableau des lignes. Champs : compte de charge
   (`AccountAutocomplete`), montant HT (input décimal), taux TVA (`<Select>` des taux actifs), compte de
   contrepartie (`AccountAutocomplete`), bouton « Insérer les lignes ».
+  - **Affichage des options du `<Select>` taux (M2)** : chaque option affiche le **taux formaté**
+    (`VatRateResponse.rate`, ex. `8.10 %`) suivi du libellé de catégorie. Le libellé = `i18nMsg('vat-
+    category-' + r.category, r.label)` ; **fallback robuste** si `category` est vide/inconnu (cas possible
+    selon le seed) → afficher `r.label` brut, et si `label` vide → le seul taux formaté. La **valeur** de
+    l'option est `r.rate` (string, passée telle quelle à `lineVatAmount`). Ne PAS dépendre de `category`
+    pour le calcul (seul `rate` compte).
+  - **Liste de taux vide (M3)** : si `getVatRates()` retourne `[]`, le `<Select>` n'a aucune option ; le
+    bouton « Insérer les lignes » reste désactivé avec un message **dédié** (« Aucun taux TVA configuré —
+    voir Paramètres → Taux TVA »), **distinct** du message config-requise compte (AC5).
 - **AC2 — Calcul TVA avec parité backend (DC-c2)** : un helper TS `lineVatAmount(ht: string, ratePercent:
-  string): string` calcule `round(ht × rate ÷ 100, 2, half-up)` via `big.js`. Parité prouvée par test :
+  string): string` calcule `round(ht × rate ÷ 100, 2, half-up)` via `big.js`. **Normalisation virgule (H1)** :
+  `ht` et `ratePercent` sont normalisés `,→.` **avant** `new Big(...)` — réutiliser `parseAmount`
+  (`balance.ts:32`, `new Big(raw.replace(',','.'))`, DRY) plutôt que `new Big` brut (sinon `new
+  Big("1000,50")` throw alors que la saisie virgule passe `isValidAmount`). Parité prouvée par test :
   `lineVatAmount("1000", "8.10") === "81.00"`, `("1000","2.60") === "26.00"`, `("1000","3.80") === "38.00"`,
-  `("1000","0") === "0.00"`, et un cas d'arrondi half-up (`("100.05","8.10")` → valeur identique à
-  `line_vat_amount` backend = round(8.10405) = `"8.10"`).
+  `("1000","0") === "0.00"`, **cas virgule** `("1000,50","8.10") === "81.04"` (1000.50 × 8.10 / 100 =
+  81.0405 → 81.04), et un **vrai cas tie-break half-up** `("0.10","5") === "0.01"` (0.10 × 5 / 100 = 0.0050
+  exactement → half-up away-from-zero → `"0.01"`, alors qu'un half-even donnerait `"0.00"` — ce cas
+  discrimine réellement le mode `Big.roundHalfUp`, contrairement à un produit non-milieu). Chaque valeur
+  attendue est figée contre `line_vat_amount` backend (même arrondi `MidpointAwayFromZero`).
 - **AC3 — Génération de l'écriture (DC-c6/DC-c7)** : « Insérer les lignes » génère, depuis (compte charge,
   HT, taux, compte contrepartie) :
   - `D charge` = HT sur le compte de charge ;
   - `D impôt préalable` = `lineVatAmount(HT, taux)` sur `defaultVatRecoverableAccountId` — **émise
     seulement si > 0** (DC-c7) ;
   - `C contrepartie` = `HT + vat` (TTC) sur le compte de contrepartie ;
-  puis injecte ces lignes dans `lines`, met `journal = 'Achats'`, et pré-remplit `description` (ex.
-  « Achat — TVA <taux> % récupérable », éditable). L'écriture résultante est **équilibrée**
-  (`balance.isBalanced === true`).
+  puis injecte ces lignes dans `lines` (strings via `Big...toFixed(2)`, L1), met `journal = 'Achats'`
+  (DC-c5 — forcé car l'achat est sémantiquement un journal Achats, voir H3), et pré-remplit `description`.
+  - **Format `description` (H2)** : clé i18n `vat-purchase-description` avec interpolation
+    (`i18nMsg('vat-purchase-description', 'Achat — TVA {$rate} % récupérable', { rate })` — `i18nMsg`
+    supporte l'interpolation `{$var}`, `i18n.svelte.ts:17`). Le `rate` interpolé = `VatRateResponse.rate`
+    brut (ex. `"8.10"`). Si `vat == 0` (taux exempt), clé `vat-purchase-description-exempt`
+    (`'Achat — sans TVA'`, sans interpolation). Description **éditable** après insertion.
+  - **Écrasement journal/description (H3)** : `journal` est **toujours** écrasé à `'Achats'` (documenté,
+    pas de confirmation — c'est le sens de l'assistant). La `description` n'est écrasée **que si elle est
+    vide** (`description.trim() === ''`) ; si l'utilisateur a déjà saisi une description, elle est
+    **préservée** (l'écriture générée ne l'écrase pas). Une description manuelle non vide compte aussi dans
+    le déclencheur de confirmation AC6.
+  L'écriture résultante est **équilibrée** (`balance.isBalanced === true`).
 - **AC4 — Taux exempt/0 (DC-c7)** : si le taux choisi donne `vat == 0.00` → **2 lignes** générées (charge
   + contrepartie, montants égaux), **aucune ligne d'impôt préalable** (évite `debit = 0` rejeté par
   `chk_jel_debit_credit_exclusive`).
@@ -152,8 +193,13 @@ Big.roundHalfUp).toFixed(2)`.
   les lignes » est **désactivé** et un message indique de configurer le compte d'impôt préalable dans
   **Paramètres → Facturation** (lien). Aucune génération possible sans compte cible.
 - **AC6 — Confirmation avant remplacement (DC-c9)** : si le tableau des lignes contient déjà au moins une
-  ligne **non vide** saisie à la main, « Insérer les lignes » demande confirmation (modale/`confirm`) avant
-  de remplacer le brouillon. Sur un formulaire vierge (cas nominal), insertion directe sans confirmation.
+  ligne **non vide** saisie à la main, OU une `description` non vide, « Insérer les lignes » demande
+  confirmation (modale/`confirm`) avant de remplacer le brouillon. Sur un formulaire vierge (cas nominal),
+  insertion directe sans confirmation.
+  - **Prédicat « ligne non vide » figé (M1)** : une `LineDraft` est non vide ssi
+    `accountId !== null || debit.trim() !== '' || credit.trim() !== ''` (le `LineDraft` initial à la
+    création est `{accountId: null, debit: '', credit: ''}`, donc vierge). Implémenter en helper testable
+    `isDraftLineNonEmpty(line: LineDraft): boolean` (T-C1, couvert AC10) pour éviter toute divergence.
 - **AC7 — Soumission via flux existant (DC-c5)** : après insertion, l'utilisateur peut éditer les lignes,
   puis soumet via le bouton « Valider » existant → `POST /journal-entries`. **Aucune route ni payload
   nouveaux.** L'écriture postée respecte les contraintes backend (équilibre, comptes actifs, journal
@@ -162,29 +208,41 @@ Big.roundHalfUp).toFixed(2)`.
   charge sélectionné **ET** HT > 0 valide (≤ 4 décimales, format `balance.ts` `isValidAmount`) **ET** taux
   choisi **ET** compte contrepartie sélectionné **ET** compte charge ≠ compte contrepartie). Messages
   d'erreur inline cohérents avec le style du formulaire.
-- **AC9 — i18n** : tous les libellés de l'assistant via `i18nMsg('vat-purchase-*', '<fallback FR>')`
-  (titre, labels des 4 champs, bouton, message config-requise, message confirmation). Fallbacks FR fournis.
-  `npm run lint-i18n-ownership` passe.
+- **AC9 — i18n** : tous les libellés de l'assistant via `i18nMsg('vat-purchase-*', '<fallback FR>')` :
+  titre du panneau, labels des 4 champs (charge, HT, taux, contrepartie), bouton « Insérer les lignes »,
+  `vat-purchase-description` (avec interpolation `{$rate}`) + `vat-purchase-description-exempt`, message
+  config-requise compte (AC5), message liste de taux vide (M3, distinct), message de confirmation de
+  remplacement (AC6), messages de validation inline (AC8 : charge = contrepartie, HT invalide). Fallbacks FR
+  fournis dans le code. `npm run lint-i18n-ownership` passe. (Le format d'affichage des options de taux
+  réutilise la clé existante `vat-category-*` si présente, cf. AC1/M2.)
 - **AC10 — Tests** :
-  - **Unitaires (vitest)** : helper `lineVatAmount` (parité AC2, ≥5 cas dont arrondi half-up et 0) ; helper
-    de génération de lignes `buildPurchaseVatLines(...)` (3 lignes si vat>0 / 2 lignes si vat==0 ;
-    équilibre `Σdebit == Σcredit` ; compte impôt préalable correct ; ordre charge→impôt→contrepartie).
+  - **Unitaires (vitest)** : helper `lineVatAmount` (parité AC2 : ≥6 cas dont virgule `("1000,50","8.10")`,
+    tie-break half-up `("0.10","5")`, et 0) ; `buildPurchaseVatLines(...)` (3 lignes si vat>0 / 2 lignes si
+    vat==0 ; équilibre `Σdebit == Σcredit` ; compte impôt préalable correct ; ordre charge→impôt→
+    contrepartie) ; `isDraftLineNonEmpty` (ligne vierge initiale → false ; accountId/debit/credit → true).
   - **E2E (Playwright)** : `frontend/tests/e2e/` — saisir un achat via l'assistant (HT 1000 @ 8.10 %),
-    insérer, soumettre, vérifier que l'écriture créée a 3 lignes (D 1000 charge / D 81 impôt préalable /
-    C 1081 contrepartie) et apparaît dans la liste des écritures. Pré-requis seed : `defaultVatRecoverable
-    AccountId` configuré (le seed CI a le compte `1171` via 18-1a + settings).
+    insérer, soumettre, vérifier que l'écriture créée a 3 lignes (`débit charge = 1000.00` / `débit impôt
+    préalable = 81.00` / `crédit contrepartie = 1081.00`) et apparaît dans la liste des écritures.
+    **Pré-requis seed (corrigé Pass 1)** : `default_vat_recoverable_account_id` **doit être configuré dans la
+    fixture** — ce n'est PAS le cas aujourd'hui (cf. exception test-fixture + T-C5). Le test ne peut passer
+    qu'après le patch fixture de T-C5.
 - **AC11 — Quality gate** « Test Locally First » frontend : `npm run check` 0 err, `npm run
   lint-i18n-ownership` PASS, `npm run test:unit` vert, `npm run build` OK, `npm run test:e2e` vert (si suite
   lancée localement). Backend **non touché** → checks Rust inchangés (no-op).
 
 ## Tasks (T-C1..T-C6)
 
-- **T-C1 — Helper de calcul TVA (parité)** : créer `frontend/src/lib/features/journal-entries/vat-purchase.ts`
-  exportant `lineVatAmount(ht: string, ratePercent: string): string` (big.js, half-up 2 déc.) **et**
-  `buildPurchaseVatLines(params): LineDraft[]` où `params = { chargeAccountId, htAmount, ratePercent,
-  counterpartyAccountId, recoverableAccountId }` → `LineDraft[]` (DC-c6/DC-c7 : 3 lignes si vat>0, 2 si 0,
-  équilibre par construction, débit charge HT + débit impôt préalable vat + crédit contrepartie TTC). Doc
-  JSDoc + invariant de parité backend.
+- **T-C1 — Helpers (parité + génération)** : créer `frontend/src/lib/features/journal-entries/vat-purchase.ts`
+  exportant :
+  - `lineVatAmount(ht: string, ratePercent: string): string` (big.js, half-up 2 déc., **normalisation
+    virgule via `parseAmount`** — H1/DRY) ;
+  - `buildPurchaseVatLines(params): LineDraft[]` où `params = { chargeAccountId, htAmount, ratePercent,
+    counterpartyAccountId, recoverableAccountId }` → `LineDraft[]` (DC-c6/DC-c7 : 3 lignes si vat>0, 2 si 0,
+    équilibre par construction, débit charge HT + débit impôt préalable vat + crédit contrepartie TTC ;
+    montants en strings `toFixed(2)`, L1) ;
+  - `isDraftLineNonEmpty(line: LineDraft): boolean` (M1 : `accountId !== null || debit.trim() !== '' ||
+    credit.trim() !== ''`).
+  Doc JSDoc + invariant de parité backend (`line_vat_amount`).
 - **T-C2 — Composant assistant** : créer
   `frontend/src/lib/features/journal-entries/VatPurchaseAssistant.svelte` (panneau repliable). Props :
   `accounts: AccountResponse[]`, `recoverableAccountId: number | null`, `onApply: (lines: LineDraft[]) =>
@@ -198,10 +256,20 @@ Big.roundHalfUp).toFixed(2)`.
   set `journal='Achats'`, pré-remplir `description`. Ne PAS modifier le payload POST ni la validation.
 - **T-C4 — i18n** : ajouter les clés `vat-purchase-*` (FR + miroirs DE/IT/EN selon convention du projet —
   vérifier le mécanisme de messages i18n et `lint-i18n-ownership`). Fallbacks FR dans le code.
-- **T-C5 — Tests unitaires** : `vat-purchase.test.ts` (parité `lineVatAmount` + `buildPurchaseVatLines`,
-  AC2/AC10). + E2E Playwright `vat_purchase_assistant.spec.ts` (AC10) — round-trip insertion→soumission→
-  liste, avec `seedTestState('with-company')` (le seed a `1171` + settings via 18-1a). Vérifier qu'aucune
-  assertion E2E existante de `journal-entries` ne casse.
+- **T-C5 — Fixture + tests** :
+  - **(a) Patch fixture (test-only, C1)** : dans `crates/kesh-db/src/test_fixtures.rs`, ajouter
+    `default_vat_recoverable_account_id` à l'`INSERT company_invoice_settings` des **deux** fixtures
+    (`seed_accounting_company` `:152-165` **et** `seed_accounting_company_no_fy` `:259-271`), en
+    **réutilisant le compte `1000`** (`accounts["1000"]`, Asset existant) — **PAS** de 6e compte (compteur
+    `("accounts", 5)` inchangé, aucune assertion cassée — vérifier `test_endpoints_e2e.rs`,
+    `exports_global_e2e.rs`, self-tests fixture). Étendre le self-test fixture (`:548-556` zone
+    `default_vat_payable`) avec une assertion `default_vat_recoverable_account_id == accounts["1000"]`.
+    Lancer `cargo test --workspace -j1 -- --test-threads=1` pour confirmer 0 régression.
+  - **(b) Tests unitaires** : `vat-purchase.test.ts` (parité `lineVatAmount` + `buildPurchaseVatLines`,
+    AC2/AC10 ; inclure le cas virgule `("1000,50","8.10")` et le cas tie-break half-up).
+  - **(c) E2E Playwright** `vat_purchase_assistant.spec.ts` (AC10) — round-trip insertion→soumission→liste,
+    avec `seedTestState('with-company')` (désormais `default_vat_recoverable_account_id` configuré via (a)).
+    Vérifier qu'aucune assertion E2E existante de `journal-entries` ne casse.
 - **T-C6 — Quality gate** « Test Locally First » frontend (AC11) + Change Log. **Pré-requis E2E** :
   `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (cf. `reference_playwright_ubuntu26`), MariaDB up +
   seed CI.
@@ -238,7 +306,26 @@ Big.roundHalfUp).toFixed(2)`.
   mais techniquement équilibrée).
 - **Échec réseau `getInvoiceSettings`/`getVatRates`** : dégrader proprement (assistant en mode
   config-requise / liste de taux vide + message), ne pas casser le formulaire d'écriture manuelle existant.
+- **Double-clic « Insérer » (L2)** : bénin (l'injection remplace, donc idempotente) ; après une 1ʳᵉ
+  insertion les lignes générées deviennent « non vides » → un 2ᵉ clic re-déclencherait la confirmation AC6.
+  Acceptable ; optionnellement désactiver le bouton pendant l'injection.
+- **Borne du HT (L3)** : `isValidAmount` borne les décimales (≤4) mais pas la magnitude ; un HT démesuré
+  serait rejeté côté backend (`DECIMAL(19,4)`). Pas de garde front spécifique requis (cohérent avec le
+  formulaire manuel existant), noté pour complétude.
+- **Format string des 3 lignes (L1)** : `buildPurchaseVatLines` produit `debit`/`credit` via
+  `Big(...).toFixed(2)` (2 décimales, cohérent avec l'affichage Suisse et la tolérance d'équilibre
+  backend). L'équilibre `Σdebit == Σcredit` tient par construction (`crédit = HT + vat`, mêmes valeurs).
 
 ## Prochaine étape
 
 `bmad-create-story validate 18-1c` (rotation Sonnet→Haiku→Opus→…, contexte frais) avant la `dev-story`.
+
+## Change Log
+
+### `bmad-create-story validate 18-1c` — cycle adversarial (CLAUDE.md Review Iteration Rule)
+
+| Passe | Modèle | Findings > LOW | Points clés |
+|-------|--------|----------------|-------------|
+| 1 | Sonnet 4.6 | 7 (1C+3H+3M) | **Ground-truth : 24/25 claims confirmées** — décision « frontend pur » prouvée valide (POST /journal-entries + GET /vat-rates + GET /company/invoice-settings + line_vat_amount existent). **C1 CRITICAL (vérifié ground-truth orchestrateur)** : la fixture `seed_accounting_company`/`_no_fy` ne configure PAS `default_vat_recoverable_account_id` (`test_fixtures.rs:152-165`/`:259-271` ne pose que receivable/revenue/payable) → E2E AC10 casserait + « zéro backend » faux. **Fix** : patch test-fixture réutilisant le compte `1000` existant (pattern 18-1b 2000-pour-payable, compteur inchangé) → T-C5(a) ; DC-c1 reformulé « zéro code production, 1 ligne test-fixture ». H1 : normaliser virgule via `parseAmount` avant `new Big` (sinon throw sur `"1000,50"`). H2 : figer clé i18n `vat-purchase-description` + interpolation `{$rate}` (i18nMsg supporte `{$var}`). H3 : journal forcé `Achats` (documenté), description écrasée seulement si vide. M1 : prédicat `isDraftLineNonEmpty` figé. M2 : affichage `<Select>` taux (rate formaté + fallback category vide). M3 : message dédié liste de taux vide. F1+L1-L4 : vrai cas tie-break half-up `("0.10","5")`, format `toFixed(2)`, double-clic, borne HT, libellé « 1081 »→montant. |
+
+**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M). Prochaine : Pass 2 (Haiku) contexte frais sur spec patchée.
