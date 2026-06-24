@@ -148,11 +148,16 @@ Big.roundHalfUp).toFixed(2)`.
   (`AccountAutocomplete`), montant HT (input décimal), taux TVA (`<Select>` des taux actifs), compte de
   contrepartie (`AccountAutocomplete`), bouton « Insérer les lignes ».
   - **Affichage des options du `<Select>` taux (M2)** : chaque option affiche le **taux formaté**
-    (`VatRateResponse.rate`, ex. `8.10 %`) suivi du libellé de catégorie. Le libellé = `i18nMsg('vat-
-    category-' + r.category, r.label)` ; **fallback robuste** si `category` est vide/inconnu (cas possible
-    selon le seed) → afficher `r.label` brut, et si `label` vide → le seul taux formaté. La **valeur** de
-    l'option est `r.rate` (string, passée telle quelle à `lineVatAmount`). Ne PAS dépendre de `category`
-    pour le calcul (seul `rate` compte).
+    (`VatRateResponse.rate`, ex. `8.10 %`) suivi du libellé de catégorie. **Fallback robuste exact**
+    (`category` est `String` non-null mais peut être `""`) :
+    ```ts
+    const label = r.category && r.category.length > 0
+      ? i18nMsg(`vat-category-${r.category}`, r.label)
+      : (r.label || `${r.rate} %`);
+    ```
+    (évite d'interpoler la clé `vat-category-` vide → i18n key miss). La **valeur** de l'option est `r.rate`
+    (string, passée telle quelle à `lineVatAmount`). Ne PAS dépendre de `category` pour le calcul (seul
+    `rate` compte).
   - **Liste de taux vide (M3)** : si `getVatRates()` retourne `[]`, le `<Select>` n'a aucune option ; le
     bouton « Insérer les lignes » reste désactivé avec un message **dédié** (« Aucun taux TVA configuré —
     voir Paramètres → Taux TVA »), **distinct** du message config-requise compte (AC5).
@@ -194,8 +199,14 @@ Big.roundHalfUp).toFixed(2)`.
   **Paramètres → Facturation** (lien). Aucune génération possible sans compte cible.
 - **AC6 — Confirmation avant remplacement (DC-c9)** : si le tableau des lignes contient déjà au moins une
   ligne **non vide** saisie à la main, OU une `description` non vide, « Insérer les lignes » demande
-  confirmation (modale/`confirm`) avant de remplacer le brouillon. Sur un formulaire vierge (cas nominal),
-  insertion directe sans confirmation.
+  confirmation avant de remplacer le brouillon. Sur un formulaire vierge (cas nominal), insertion directe
+  sans confirmation.
+  - **Pattern de modale (Pass 2, figé)** : réutiliser le **pattern de modale inline existant** du
+    `JournalEntryForm` (la modale de conflit 409, `JournalEntryForm.svelte:395-422` : `<div role="dialog"
+    aria-modal="true">` + carte `bg-card border border-border rounded-lg p-6` + `h2`/`p`/boutons
+    `Annuler`/action). **NE PAS** introduire de composant `AlertDialog` (absent du projet — seul
+    `components/ui/dialog` shadcn existe). Cohérence visuelle + HTTP-LAN-safe. `window.confirm()` est un
+    fallback acceptable mais la modale inline est préférée (cohérence projet).
   - **Prédicat « ligne non vide » figé (M1)** : une `LineDraft` est non vide ssi
     `accountId !== null || debit.trim() !== '' || credit.trim() !== ''` (le `LineDraft` initial à la
     création est `{accountId: null, debit: '', credit: ''}`, donc vierge). Implémenter en helper testable
@@ -249,11 +260,18 @@ Big.roundHalfUp).toFixed(2)`.
   void`. État runes pour les 4 champs ; charge les taux via `getVatRates()` ; valide les entrées (AC8) ;
   bouton « Insérer les lignes » → `onApply(buildPurchaseVatLines(...))`. Config-requise si
   `recoverableAccountId == null` (AC5). IDs DOM via `$props.id()` (DC-c8). i18n `vat-purchase-*` (AC9).
-- **T-C3 — Branchement dans `JournalEntryForm`** : importer/instancier `VatPurchaseAssistant` (mode
-  création uniquement, pas en édition). Charger `defaultVatRecoverableAccountId` via `getInvoiceSettings()`
-  (au montage de la page parent ou du form ; gérer l'échec réseau en désactivant l'assistant comme
-  config-requise). `onApply` : si lignes non vides présentes → confirmation (AC6) ; sinon remplacer `lines`,
-  set `journal='Achats'`, pré-remplir `description`. Ne PAS modifier le payload POST ni la validation.
+- **T-C3 — Branchement dans `JournalEntryForm`** : importer/instancier `VatPurchaseAssistant` **en mode
+  création uniquement** — détecté via la rune **existante** `isEdit = $derived(initialEntry !== null)`
+  (`JournalEntryForm.svelte:43`) → rendre l'assistant sous `{#if !isEdit}`.
+  - **Chargement du compte récupérable (Pass 2 H, figé)** : `recoverableAccountId: number | null` est une
+    **nouvelle prop du `JournalEntryForm`**, chargée par la **page parent** `journal-entries/+page.svelte`
+    via `getInvoiceSettings()` au montage — **strictement parallèle au chargement existant de `accounts`**
+    (`+page.svelte:91 fetchAccounts()` passé en prop). En cas d'échec réseau de `getInvoiceSettings()`,
+    traiter comme `null` (assistant en mode config-requise, AC5). NE PAS charger dans le form lui-même
+    (cohérence avec le pattern props du form).
+  - `onApply` : si lignes non vides (`isDraftLineNonEmpty`) OU description non vide → confirmation (AC6) ;
+    sinon remplacer `lines`, set `journal='Achats'`, pré-remplir `description` si vide. Ne PAS modifier le
+    payload POST ni la validation existante.
 - **T-C4 — i18n** : ajouter les clés `vat-purchase-*` (FR + miroirs DE/IT/EN selon convention du projet —
   vérifier le mécanisme de messages i18n et `lint-i18n-ownership`). Fallbacks FR dans le code.
 - **T-C5 — Fixture + tests** :
@@ -328,4 +346,6 @@ Big.roundHalfUp).toFixed(2)`.
 |-------|--------|----------------|-------------|
 | 1 | Sonnet 4.6 | 7 (1C+3H+3M) | **Ground-truth : 24/25 claims confirmées** — décision « frontend pur » prouvée valide (POST /journal-entries + GET /vat-rates + GET /company/invoice-settings + line_vat_amount existent). **C1 CRITICAL (vérifié ground-truth orchestrateur)** : la fixture `seed_accounting_company`/`_no_fy` ne configure PAS `default_vat_recoverable_account_id` (`test_fixtures.rs:152-165`/`:259-271` ne pose que receivable/revenue/payable) → E2E AC10 casserait + « zéro backend » faux. **Fix** : patch test-fixture réutilisant le compte `1000` existant (pattern 18-1b 2000-pour-payable, compteur inchangé) → T-C5(a) ; DC-c1 reformulé « zéro code production, 1 ligne test-fixture ». H1 : normaliser virgule via `parseAmount` avant `new Big` (sinon throw sur `"1000,50"`). H2 : figer clé i18n `vat-purchase-description` + interpolation `{$rate}` (i18nMsg supporte `{$var}`). H3 : journal forcé `Achats` (documenté), description écrasée seulement si vide. M1 : prédicat `isDraftLineNonEmpty` figé. M2 : affichage `<Select>` taux (rate formaté + fallback category vide). M3 : message dédié liste de taux vide. F1+L1-L4 : vrai cas tie-break half-up `("0.10","5")`, format `toFixed(2)`, double-clic, borne HT, libellé « 1081 »→montant. |
 
-**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M). Prochaine : Pass 2 (Haiku) contexte frais sur spec patchée.
+| 2 | Haiku 4.5 | 3 (1H+2M) | **Ground-truth 11/11 confirmé, 0 hallucination** (reviewer GT) : fix C1 valide (fixture ne pose pas recoverable, compte `1000` réutilisable, compteur intact, `create_in_tx` sans type-check), `parseAmount`/`i18nMsg {$var}`/`MidpointAwayFromZero` confirmés, cas tie-break `("0.10","5")` discriminant validé. **3 findings de clarification (gap hunter)** : H (T-C3) chargement `getInvoiceSettings()` ambigu → **figé : prop `recoverableAccountId` chargée par page parent** (parallèle `accounts`), mode création via `isEdit = $derived(initialEntry !== null)` (`:43`). M (AC1/M2) fallback `category` vide → **code TS exact** figé. M (AC6) type de modale → **réutiliser la modale inline existante** du form (conflit 409 `:395-422`), PAS `AlertDialog` (absent du projet — corrigé suggestion Haiku erronée). |
+
+**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M) → Pass 2 (Haiku) 3 (1H+2M). Rotation Sonnet→Haiku, contexte frais. Prochaine : Pass 3 (Opus) catch-architectural sur spec patchée.
