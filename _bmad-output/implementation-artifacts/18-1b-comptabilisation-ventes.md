@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 epic: 18
 story: 18-1b
 type: feature
@@ -365,3 +365,14 @@ Rotation Sonnet→Haiku→Opus→Sonnet→Haiku (contexte frais à chaque, grep 
 - [x] **[Review][Patch]** Test AC9(h) immunité au changement de taux (F-OPUS-6) absent des tests d'intégration — `crates/kesh-db/tests/invoices_validate_vat.rs` — **APPLIQUÉ** : ajout du test `validate_uses_line_rate_snapshot_immune_to_vat_rates_change` (mute `vat_rates` 8.10→9.00 **entre create et validate**, vérifie l'écriture à 81.00 ≠ 90.00 → régression-guard réel du snapshot, pas une assertion triviale post-persistance). Ground-truth vérifié : aucun `find_for_category` ni `vat_rates` dans le chemin `validate_invoice`. 7/7 tests d'intégration verts.
 - [x] **[Review][Defer]** Facture à total nul (`unit_price=0`) → lignes `debit=0 ET credit=0` → INSERT rejeté `chk_jel_debit_credit_exclusive` (500 opaque) — `invoices.rs` helper — **deferred, pré-existant** : les 3 reviewers confirment unanimement que c'est pré-existant (l'ancien code poussait déjà `debit=total=0`) ET la spec le décide explicitement (« Contrat `total_ht = 0` » : dette v0.1 cohérente avec l'existant, helper ne lève pas d'erreur propre). Hors-scope 18-1b.
 - Dismissed (3× LOW) : (i) test « taux >0 arrondi à 0.00 coexistant avec taux émis » — branche couverte par les cas existants ; (ii) AC9(e) couvert en unitaire seulement — T-B4 ne l'impose pas en intégration ; (iii) `lines_before` vide → même chemin zéro-total (état corrompu, même classe que le defer).
+
+#### Review Findings — Pass 2 (Haiku 4.5) — CONVERGÉ
+
+3 reviewers parallèles sur diff aplati unique (`4b67bb4..HEAD`, inclut le patch Pass 1). **Acceptance Auditor : 0 > LOW** (AC1-AC10/DC/F-OPUS tous satisfaits ground-truth, AC9(h) confirmé significatif). Blind Hunter (Haiku) a remonté 1 HIGH + 2 MEDIUM, **tous réfutés par grep/spec ground-truth** (pattern faux-positif Haiku, cf. `feedback_haiku_review_diff_combined`) :
+
+- **HIGH `debug_assert` au lieu de `return Err`** → **dismiss** : la spec F-OPUS-2 (l.221) **prescrit** `debug_assert!` et **interdit explicitement** `return Err` (« NE PAS ajouter de `return Err` »). `line_total < 0` est structurellement impossible (handler `routes/invoices.rs:307` « prix unitaire doit être positif ou nul » + `:288` « quantité strictement positive » → `line_total = qty·prix >= 0`). En release la contrainte DB `chk_jel_*_nonneg` reste le garde-fou fail-loud (documenté) → l'affirmation « corruption silencieuse en release » est fausse.
+- **MEDIUM overflow `total_ht+total_vat`** → **dismiss** : l'affirmation « `Decimal` wrappe silencieusement sur overflow » est **factuellement fausse** (`rust_decimal::Add` panique via `checked_add().expect`). Valeur bornée par `MAX_LINE_TOTAL × MAX_LINES ≈ 2.16·10¹⁴ ≪ Decimal max ~7.9·10²⁸`.
+- **MEDIUM BTreeMap ordering scale-sensible (`8.10 < 8.100`)** → **dismiss** : `rust_decimal` Ord/Eq sont **value-based** (insensibles à l'échelle), donc `8.10` et `8.100` = **même clé** BTreeMap. Vérifié spec Pass 3 Opus (l.222-228). De plus `invoice_lines.vat_rate` = `DECIMAL(5,2)` à échelle fixe → le cas mixte ne survient pas.
+- **MEDIUM (Edge) `lines_before` vide → facture 0€** → **dismiss** : même classe que le defer total-nul Pass 1 (état DB corrompu, `create` rejette déjà `lines.is_empty()`) ; le reviewer s'est lui-même déclassé en LOW.
+
+**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) **1 patch** + 1 defer → Pass 2 (Haiku) **0** (3 faux-positifs réfutés ground-truth + 1 pré-existant). Rotation Sonnet→Haiku, contexte frais, diff aplati unique pour Haiku (garde-fou anti-indexation multi-commit). **Cycle code-review CONVERGÉ Pass 2, 0 > LOW. Status `done`.**
