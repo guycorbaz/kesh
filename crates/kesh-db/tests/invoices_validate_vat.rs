@@ -248,3 +248,66 @@ async fn validate_vat_with_archived_account_returns_inactive(pool: MySqlPool) {
         "attendu InactiveOrInvalidAccounts, reçu {err:?}"
     );
 }
+
+/// (h) Immunité au changement de taux (F-OPUS-6) : la validation comptabilise la TVA
+/// sur le `vat_rate` **snapshoté dans `invoice_lines`** (8.10 % figé à la création),
+/// JAMAIS sur un re-lookup de la config `vat_rates`. On mute la config `vat_rates`
+/// **entre la création et la validation** : si le code re-lookupait le taux courant,
+/// l'écriture porterait 90.00 (9 %) ; comme il lit le snapshot ligne, elle porte 81.00.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn validate_uses_line_rate_snapshot_immune_to_vat_rates_change(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+
+    // Facture brouillon : la ligne fige `vat_rate = 8.10` au moment de la création.
+    let new = NewInvoice {
+        company_id: seeded.company_id,
+        contact_id: contact,
+        date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+        due_date: None,
+        payment_terms: None,
+        lines: vec![NewInvoiceLine {
+            description: "Ligne".into(),
+            quantity: dec!(1),
+            unit_price: dec!(1000.00),
+            vat_rate: dec!(8.10),
+        }],
+    };
+    let (inv, _) = invoices::create(&pool, seeded.admin_user_id, new)
+        .await
+        .expect("create invoice");
+
+    // Changement de config APRÈS création, AVANT validation : taux normal 8.10 → 9.00.
+    sqlx::query(
+        "UPDATE vat_rates SET rate = 9.00 WHERE company_id = ? AND label = 'product-vat-normal'",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let v = invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+        .await
+        .expect("validate");
+    let je = &v.journal_entry;
+
+    let vat = seeded.accounts["2000"];
+    let tva = je.lines.iter().find(|l| l.account_id == vat).unwrap();
+    assert_eq!(
+        tva.credit,
+        dec!(81.00),
+        "TVA basée sur le snapshot 8.10 % (1000 × 8.1 %), immune au changement config 9.00 %"
+    );
+    let receivable = seeded.accounts["1100"];
+    let creance = je
+        .lines
+        .iter()
+        .find(|l| l.account_id == receivable)
+        .unwrap();
+    assert_eq!(
+        creance.debit,
+        dec!(1081.00),
+        "créance TTC = 1000 + 81 (snapshot, pas 1090)"
+    );
+    assert_eq!(sum_debit(je), sum_credit(je), "écriture équilibrée");
+}

@@ -355,3 +355,13 @@ Tasks **T-B1..T-B6 toutes complétées** :
 
 **Trend findings > LOW** : Pass 1 (Sonnet) 5 → Pass 2 (Haiku) 1 → Pass 3 (Opus) 1 HIGH → Pass 4 (Sonnet) 1 → Pass 5 (Haiku) **0 ✅**.
 Rotation Sonnet→Haiku→Opus→Sonnet→Haiku (contexte frais à chaque, grep ground-truth). **Catch décisif Pass 3 Opus** (architectural) : réutiliser le compte `2000` dans les fixtures au lieu d'ajouter `2200` (évite la casse de ~8 assertions de compteur absolu) + preuve d'équilibre exacte + `Decimal` Eq/Hash insensible à l'échelle. **Cycle validate CONVERGÉ Pass 5, 0 > LOW. Prochaine : `bmad-dev-story 18-1b` (Opus).**
+
+### `bmad-code-review 18-1b` — cycle adversarial post-implémentation
+
+#### Review Findings — Pass 1 (Sonnet 4.6)
+
+3 reviewers parallèles (Blind Hunter, Edge Case Hunter, Acceptance Auditor), diff aplati `5eede7c` (code seul).
+
+- [x] **[Review][Patch]** Test AC9(h) immunité au changement de taux (F-OPUS-6) absent des tests d'intégration — `crates/kesh-db/tests/invoices_validate_vat.rs` — **APPLIQUÉ** : ajout du test `validate_uses_line_rate_snapshot_immune_to_vat_rates_change` (mute `vat_rates` 8.10→9.00 **entre create et validate**, vérifie l'écriture à 81.00 ≠ 90.00 → régression-guard réel du snapshot, pas une assertion triviale post-persistance). Ground-truth vérifié : aucun `find_for_category` ni `vat_rates` dans le chemin `validate_invoice`. 7/7 tests d'intégration verts.
+- [x] **[Review][Defer]** Facture à total nul (`unit_price=0`) → lignes `debit=0 ET credit=0` → INSERT rejeté `chk_jel_debit_credit_exclusive` (500 opaque) — `invoices.rs` helper — **deferred, pré-existant** : les 3 reviewers confirment unanimement que c'est pré-existant (l'ancien code poussait déjà `debit=total=0`) ET la spec le décide explicitement (« Contrat `total_ht = 0` » : dette v0.1 cohérente avec l'existant, helper ne lève pas d'erreur propre). Hors-scope 18-1b.
+- Dismissed (3× LOW) : (i) test « taux >0 arrondi à 0.00 coexistant avec taux émis » — branche couverte par les cas existants ; (ii) AC9(e) couvert en unitaire seulement — T-B4 ne l'impose pas en intégration ; (iii) `lines_before` vide → même chemin zéro-total (état corrompu, même classe que le defer).
