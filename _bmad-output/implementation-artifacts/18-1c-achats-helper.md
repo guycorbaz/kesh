@@ -131,10 +131,21 @@ Big.roundHalfUp).toFixed(2)`.
 - **DC-c6 (comptes saisis vs auto)** — dans l'assistant : le **compte de charge** (Expense, 6xxx) et le
   **compte de contrepartie** (fournisseur/banque/caisse — le crédit TTC) sont **choisis par l'utilisateur**
   (réutiliser `AccountAutocomplete`). Le **compte d'impôt préalable** est **automatique** (DC-c3).
-- **DC-c7 (équilibre par construction)** — `débit charge = HT`, `débit impôt préalable = vat`,
-  `crédit contrepartie = HT + vat` (somme exacte, PAS de re-arrondi). `SUM(debit) = HT + vat = SUM(credit)`.
-  Si `vat == 0` (taux exempt/0) → **2 lignes seulement** (charge + contrepartie), pas de ligne impôt
-  préalable (cohérent F-OPUS-1 / contrainte `chk_jel_debit_credit_exclusive` qui interdit `debit = 0`).
+- **DC-c7 (équilibre par construction — VERROU NUMÉRIQUE Pass 3 Opus)** — **les 3 lignes sont toutes
+  arrondies à 2 décimales** : `débit charge = round₂(HT)`, `débit impôt préalable = vat` (déjà 2 déc. via
+  `lineVatAmount`), `crédit contrepartie = round₂(HT) + vat` (= `round₂(HT + vat)`, **identique** car `vat`
+  a exactement 2 décimales). `SUM(debit) = round₂(HT) + vat = SUM(credit)` **exactement**, prouvé par
+  brute-force Opus (0 contre-exemple sur 20 000 HT à 4 décimales + tie-breaks).
+  - **⚠️ Piège (F-OPUS-C1)** : `isValidAmount` autorise un HT à **3-4 décimales** (`AMOUNT_RE`,
+    `balance.ts:23`). Si le dev émet `débit charge = HT brut` (non arrondi, ex. `"100.005"`) alors que
+    `crédit = round₂(HT + vat)`, l'écriture est **déséquilibrée** (`100.005 + 8.10 = 108.105 ≠ 108.11`) →
+    `POST` rejeté `ENTRY_UNBALANCED` (le backend compare en **égalité décimale EXACTE**, sans epsilon —
+    `balance.rs`, `journal_entry_lines DECIMAL(19,4)`). **OBLIGATION** : `débit charge` DOIT être
+    `round₂(HT)` (pas le HT brut). « PAS de re-arrondi » ne concerne que `vat` (ne pas réarrondir la somme
+    des TVA), PAS le HT.
+  - Si `vat == 0` (taux exempt/0) → **2 lignes seulement** (charge `round₂(HT)` + contrepartie `round₂(HT)`,
+    montants égaux), pas de ligne impôt préalable (cohérent F-OPUS-1 / `chk_jel_debit_credit_exclusive` qui
+    interdit `debit = 0`).
 - **DC-c8 (HTTP-LAN-safe)** — IDs DOM via `$props.id()`, jamais `crypto.randomUUID`.
 - **DC-c9 (sémantique d'injection)** — l'assistant agit sur un formulaire de **création** ; il **remplace**
   les lignes du brouillon (les 2 lignes vides initiales) par les lignes générées. S'il existe déjà des
@@ -217,8 +228,12 @@ Big.roundHalfUp).toFixed(2)`.
   Achats) — vérifié par un test E2E round-trip (AC10).
 - **AC8 — Validation des entrées de l'assistant** : « Insérer les lignes » est désactivé tant que (compte
   charge sélectionné **ET** HT > 0 valide (≤ 4 décimales, format `balance.ts` `isValidAmount`) **ET** taux
-  choisi **ET** compte contrepartie sélectionné **ET** compte charge ≠ compte contrepartie). Messages
-  d'erreur inline cohérents avec le style du formulaire.
+  choisi **ET** compte contrepartie sélectionné **ET** compte charge ≠ compte contrepartie **ET** (Pass 3
+  F-OPUS-C2) **compte charge ≠ compte impôt préalable** (`recoverableAccountId`) **ET** **compte
+  contrepartie ≠ compte impôt préalable**). Rationale F-OPUS-C2 : si l'utilisateur choisissait le compte
+  d'impôt préalable comme charge/contrepartie, l'écriture aurait 2 lignes sur le même compte `1171` —
+  équilibrée mais **polluant le solde que 18-1d lira pour `total_vat_recoverable`** (un montant HT viendrait
+  gonfler la TVA récupérable). Messages d'erreur inline dédiés, cohérents avec le style du formulaire.
 - **AC9 — i18n** : tous les libellés de l'assistant via `i18nMsg('vat-purchase-*', '<fallback FR>')` :
   titre du panneau, labels des 4 champs (charge, HT, taux, contrepartie), bouton « Insérer les lignes »,
   `vat-purchase-description` (avec interpolation `{$rate}`) + `vat-purchase-description-exempt`, message
@@ -230,7 +245,9 @@ Big.roundHalfUp).toFixed(2)`.
   - **Unitaires (vitest)** : helper `lineVatAmount` (parité AC2 : ≥6 cas dont virgule `("1000,50","8.10")`,
     tie-break half-up `("0.10","5")`, et 0) ; `buildPurchaseVatLines(...)` (3 lignes si vat>0 / 2 lignes si
     vat==0 ; équilibre `Σdebit == Σcredit` ; compte impôt préalable correct ; ordre charge→impôt→
-    contrepartie) ; `isDraftLineNonEmpty` (ligne vierge initiale → false ; accountId/debit/credit → true).
+    contrepartie ; **cas HT à 3-4 décimales `htAmount="100.005"` (F-OPUS-C1)** asserting `Σdebit === Σcredit`
+    ET `charge` à 2 décimales exactement) ; `isDraftLineNonEmpty` (ligne vierge initiale → false ;
+    accountId/debit/credit → true).
   - **E2E (Playwright)** : `frontend/tests/e2e/` — saisir un achat via l'assistant (HT 1000 @ 8.10 %),
     insérer, soumettre, vérifier que l'écriture créée a 3 lignes (`débit charge = 1000.00` / `débit impôt
     préalable = 81.00` / `crédit contrepartie = 1081.00`) et apparaît dans la liste des écritures.
@@ -249,8 +266,11 @@ Big.roundHalfUp).toFixed(2)`.
     virgule via `parseAmount`** — H1/DRY) ;
   - `buildPurchaseVatLines(params): LineDraft[]` où `params = { chargeAccountId, htAmount, ratePercent,
     counterpartyAccountId, recoverableAccountId }` → `LineDraft[]` (DC-c6/DC-c7 : 3 lignes si vat>0, 2 si 0,
-    équilibre par construction, débit charge HT + débit impôt préalable vat + crédit contrepartie TTC ;
-    montants en strings `toFixed(2)`, L1) ;
+    équilibre par construction). **Verrou F-OPUS-C1** : les 3 montants émis en strings via
+    `Big(...).round(2, Big.roundHalfUp).toFixed(2)` — `débit charge = round₂(HT)` (PAS le HT brut),
+    `débit impôt préalable = vat`, `crédit contrepartie = round₂(HT).plus(vat).toFixed(2)`. Test unitaire
+    **obligatoire avec HT à 3-4 décimales** (ex. `htAmount = "100.005"`) asserting `Σdebit === Σcredit`
+    **et** que `charge` n'a que 2 décimales (sinon déséquilibre `ENTRY_UNBALANCED`) ;
   - `isDraftLineNonEmpty(line: LineDraft): boolean` (M1 : `accountId !== null || debit.trim() !== '' ||
     credit.trim() !== ''`).
   Doc JSDoc + invariant de parité backend (`line_vat_amount`).
@@ -272,8 +292,17 @@ Big.roundHalfUp).toFixed(2)`.
   - `onApply` : si lignes non vides (`isDraftLineNonEmpty`) OU description non vide → confirmation (AC6) ;
     sinon remplacer `lines`, set `journal='Achats'`, pré-remplir `description` si vide. Ne PAS modifier le
     payload POST ni la validation existante.
-- **T-C4 — i18n** : ajouter les clés `vat-purchase-*` (FR + miroirs DE/IT/EN selon convention du projet —
-  vérifier le mécanisme de messages i18n et `lint-i18n-ownership`). Fallbacks FR dans le code.
+- **T-C4 — i18n (précisé Pass 3 F-OPUS-C3)** : ajouter les clés `vat-purchase-*` aux **4 fichiers**
+  `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (FR canonique + traductions DE/IT/EN, syntaxe
+  Fluent `{ $rate }`). **Indispensable** : `all_messages()` (`loader.rs:130-133`) charge **FR-CH comme base**
+  puis overlaye la locale ; si les clés ne sont ajoutées qu'à FR-CH, une instance DE/IT/EN afficherait
+  l'assistant **en français** (la clé étant présente avec la valeur FR, le fallback inline du code
+  `i18nMsg` **ne se déclenche jamais**). ⚠️ `lint-i18n-ownership` (frontend) ne vérifie PAS la parité des
+  `.ftl` backend → un oubli DE/IT/EN passerait le quality gate **silencieusement**. **Réutiliser les clés
+  `vat-category-*` existantes** (`fr-CH/messages.ftl:1064-1068`, déjà traduites 4 langues) pour l'affichage
+  du Select (M2). Fallbacks FR inline dans le code (`i18nMsg(key, '<FR>')`) en filet de sécurité. (Note :
+  les `.ftl` sont des **ressources de traduction**, pas du code de production — la story reste « zéro
+  logique backend ».)
 - **T-C5 — Fixture + tests** :
   - **(a) Patch fixture (test-only, C1)** : dans `crates/kesh-db/src/test_fixtures.rs`, ajouter
     `default_vat_recoverable_account_id` à l'`INSERT company_invoice_settings` des **deux** fixtures
@@ -330,9 +359,10 @@ Big.roundHalfUp).toFixed(2)`.
 - **Borne du HT (L3)** : `isValidAmount` borne les décimales (≤4) mais pas la magnitude ; un HT démesuré
   serait rejeté côté backend (`DECIMAL(19,4)`). Pas de garde front spécifique requis (cohérent avec le
   formulaire manuel existant), noté pour complétude.
-- **Format string des 3 lignes (L1)** : `buildPurchaseVatLines` produit `debit`/`credit` via
-  `Big(...).toFixed(2)` (2 décimales, cohérent avec l'affichage Suisse et la tolérance d'équilibre
-  backend). L'équilibre `Σdebit == Σcredit` tient par construction (`crédit = HT + vat`, mêmes valeurs).
+- **Format string des 3 lignes (L1 + verrou F-OPUS-C1)** : `buildPurchaseVatLines` produit `debit`/`credit`
+  via `Big(...).round(2, Big.roundHalfUp).toFixed(2)` (2 décimales). `débit charge = round₂(HT)` (PAS le HT
+  brut — cf. DC-c7), `crédit = round₂(HT).plus(vat)`. L'équilibre `Σdebit == Σcredit` tient **exactement**
+  par construction (le backend compare en égalité décimale exacte, sans epsilon).
 
 ## Prochaine étape
 
@@ -348,4 +378,6 @@ Big.roundHalfUp).toFixed(2)`.
 
 | 2 | Haiku 4.5 | 3 (1H+2M) | **Ground-truth 11/11 confirmé, 0 hallucination** (reviewer GT) : fix C1 valide (fixture ne pose pas recoverable, compte `1000` réutilisable, compteur intact, `create_in_tx` sans type-check), `parseAmount`/`i18nMsg {$var}`/`MidpointAwayFromZero` confirmés, cas tie-break `("0.10","5")` discriminant validé. **3 findings de clarification (gap hunter)** : H (T-C3) chargement `getInvoiceSettings()` ambigu → **figé : prop `recoverableAccountId` chargée par page parent** (parallèle `accounts`), mode création via `isEdit = $derived(initialEntry !== null)` (`:43`). M (AC1/M2) fallback `category` vide → **code TS exact** figé. M (AC6) type de modale → **réutiliser la modale inline existante** du form (conflit 409 `:395-422`), PAS `AlertDialog` (absent du projet — corrigé suggestion Haiku erronée). |
 
-**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M) → Pass 2 (Haiku) 3 (1H+2M). Rotation Sonnet→Haiku, contexte frais. Prochaine : Pass 3 (Opus) catch-architectural sur spec patchée.
+| 3 | Opus 4.8 | 3 (1H+2M) | **Catch-architectural** — design prouvé fondamentalement sain (axes 3/5 prouvés : réutilisation compte `1000` sans collision de solde, couplage 18-1d cohérent). **F-OPUS-C1 (HIGH)** : condition d'équilibre latente non figée — DC-c7 « débit charge = HT » contredisait L1 « toFixed(2) » ; sur un HT à 3-4 décimales (autorisé par `isValidAmount`), émettre le HT brut → déséquilibre `ENTRY_UNBALANCED` (backend = égalité décimale EXACTE, sans epsilon). Brute-force Opus : `round₂(HT) + vat == round₂(HT+vat)` toujours (0 contre-exemple). **Fix** : verrou `débit charge = round₂(HT)` + test HT 3-4 déc. **F-OPUS-C2 (MEDIUM)** : AC8 ne gardait pas `charge/contrepartie ≠ recoverable` → 2 lignes sur `1171`, équilibré mais **polluant le solde lu par 18-1d**. **Fix** : étendre AC8. **F-OPUS-C3 (MEDIUM)** : `all_messages` charge FR-CH en base+overlay (`loader.rs:130`) → clés `vat-purchase-*` ajoutées seulement à FR-CH ⟹ DE/IT/EN affichent l'assistant **en FR** (fallback code inopérant) ; `lint-i18n-ownership` ne couvre pas les `.ftl`. **Fix** : T-C4 exige les **4** `.ftl` ; réutiliser `vat-category-*` (déjà 4 langues). |
+
+**Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M) → Pass 2 (Haiku) 3 (1H+2M) → Pass 3 (Opus) 3 (1H+2M). Rotation Sonnet→Haiku→Opus, contexte frais. **Catch décisif Pass 3 Opus** : verrou numérique d'équilibre (F-OPUS-C1, bug prod latent sur HT 3-4 décimales) + garde anti-pollution solde 1171 (F-OPUS-C2) + parité i18n 4 locales (F-OPUS-C3). Prochaine : Pass 4 (Sonnet) contexte frais.
