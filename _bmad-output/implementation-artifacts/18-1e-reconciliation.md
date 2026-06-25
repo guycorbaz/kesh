@@ -135,9 +135,12 @@ transmettre le décompte à l'AFC.
     supprimée à la main) ; négatif = comptabilisée **>** facturée (une ligne 2200 a été gonflée à la main).
   - **Solde 2200 ventes** = `SUM(credit) − SUM(debit)` des lignes ciblées (la TVA due est portée au
     **crédit** de `2200` ; signe Liability codé en dur — voir DC5-signe).
-  - **Seuil d'alerte** : `reconciliation_status = "delta"` si `|reconciliation_delta| >= dec!(0.01)` (1
-    centime), sinon `"ok"` (sous le centime = arrondi numérique négligeable). Le rapport **n'est jamais
-    bloqué**.
+  - **Seuil d'alerte** : `reconciliation_status = "delta"` si `|reconciliation_delta| >= Decimal::new(1, 2)`
+    (= `0.01`, 1 centime), sinon `"ok"` (sous le centime = arrondi numérique négligeable). Le rapport **n'est
+    jamais bloqué**. ⚠️ **NE PAS utiliser `dec!(0.01)`** : la macro `dec!` (`rust_decimal_macros`) est en
+    `[dev-dependencies]` uniquement (`kesh-report/Cargo.toml:24`) et n'est `use`-ée que dans `#[cfg(test)]`
+    (`vat_report.rs:183`) → indisponible dans le code de production `generate()`. Utiliser
+    `Decimal::new(1, 2)` (pattern existant `kesh-core/src/bank_imports.rs:260` pour le même seuil 1 centime).
 - **DC5-signe (FIGÉ — cohérent DC4-ter)** — le solde 2200 ventes est `SUM(credit) − SUM(debit)` **codé en
   dur** (PAS un `CASE` sur `account_type`), car `2200` est **toujours** un compte Liability par construction
   comptable (TVA collectée au crédit). Un compte non-Liability configuré dans
@@ -200,7 +203,11 @@ transmettre le décompte à l'AFC.
 - **AC10 — i18n** — clés `reports-vat-reconciliation-*` (au moins : libellé écart pour CSV/PDF/front +
   message du bandeau) présentes dans les **4** locales (fr/de/it/en), parité `lint-i18n-ownership`. Libellé
   écart FR ≈ « Écart de réconciliation » ; message bandeau FR ≈ « Le décompte ne correspond pas aux écritures
-  comptables (écart : {delta}). Vérifiez les écritures validées modifiées manuellement. ».
+  comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement. ». ⚠️ **F4 —
+  l'interpolation FTL exige `{ $delta }` (avec `$`)** : la regex de substitution (`i18n.svelte.ts:17`)
+  matche `\{\s*\$(\w+)\s*\}`. Écrire `{delta}` sans `$` → variable jamais substituée, `{delta}` littéral
+  affiché (défaut silencieux). Cf. clés existantes `error-entry-unbalanced` (`{ $debit }`/`{ $credit }`),
+  `vat-purchase-description` (`{ $rate }`).
 - **AC11 — Tests** (intégration `#[sqlx::test]` niveau `kesh-report`, + E2E si pertinent) :
   - (a) **nominal delta 0** : ≥1 facture validée avec TVA, écriture intacte → `delta == 0`, `status == "ok"` ;
   - (b) **édition manuelle (delta ≠ 0)** : facture validée puis UPDATE de la ligne `2200` de son écriture
@@ -242,14 +249,22 @@ transmettre le décompte à l'AFC.
   - Ajouter `pub reconciliation_delta: Decimal` + `pub reconciliation_status: String` à `VatReport`
     (l.56-67). Doc `///` sur chaque champ (delta = due dérivé − solde 2200 ventes ; status "ok"/"delta",
     seuil 0.01).
+  - ⚠️ **F1 (HIGH) — mettre à jour TOUS les sites de construction littérale `VatReport { … }`** (sinon
+    `cargo build --workspace --all-targets` rouge — Rust exige tous les champs présents). `grep -rn
+    "VatReport {" crates/` donne **4 sites** : (1) `vat_report.rs:140` (`generate`, le vrai) ; (2)
+    `vat_report.rs:211` (`fn aggregate()` sous `#[cfg(test)]`) ; (3) `pdf.rs:1230` (`fixture_vat(empty)`) ;
+    (4) `pdf.rs:1273` (test `vat_report_pdf_recoverable_only_renders`). Les sites 2-4 (tests) reçoivent
+    `reconciliation_delta: Decimal::ZERO, reconciliation_status: "ok".to_string()`. Re-grep avant de figer
+    (le code a pu bouger).
   - Dans `generate`, **avant** la construction du `VatReport { … }` (l.140) : lire
     `default_vat_payable_account_id` (`SELECT … FROM company_invoice_settings WHERE company_id = ?`,
     `Option<i64>` — réutiliser/factoriser le pattern de lecture déjà présent l.124-137 pour le récupérable ;
     on peut lire les **deux** comptes dans la même requête `SELECT default_vat_payable_account_id,
     default_vat_recoverable_account_id …` pour éviter 2 allers-retours). Si `Some(id)` → helper T-E1, sinon
-    `Decimal::ZERO`. Calculer `delta = total_vat_due − solde` ; `status = if delta.abs() >= dec!(0.01)
-    { "delta" } else { "ok" }`. Mapper l'erreur DB via `map_db_error`.
-  - `reconciliation_delta`/`reconciliation_status` ajoutés au `VatReport { … }` retourné.
+    `Decimal::ZERO`. Calculer `delta = total_vat_due − solde` ; `status = if delta.abs() >= Decimal::new(1, 2)
+    { "delta".to_string() } else { "ok".to_string() }` (⚠️ **PAS `dec!(0.01)`** — voir DC5-delta, macro
+    dev-only). Mapper l'erreur DB via `map_db_error`.
+  - `reconciliation_delta`/`reconciliation_status` ajoutés au `VatReport { … }` retourné (site 1).
 - **T-E3 — Renderers CSV/PDF** (AC8) :
   - **CSV** `render_vat_report_csv` (`csv.rs:345-364`) : après la ligne « Solde » (l.363-364), écrire une
     ligne `["Écart de réconciliation", "", report.reconciliation_delta…]` (libellé i18n FR par défaut,
@@ -262,14 +277,39 @@ transmettre le décompte à l'AFC.
     'delta';` après l.106.
   - `VatReportView.svelte` : bandeau inline rendu **inconditionnellement vs `empty`** mais conditionné à
     `dto.reconciliationStatus === 'delta'` — p.ex. en tête de section (après l'en-tête, avant le `{#if
-    empty}`) :
-    `{#if dto.reconciliationStatus === 'delta'}<p class="rounded bg-amber-50 p-3 text-sm text-amber-900"
-    role="alert">{i18nMsg('reports-vat-reconciliation-warning', { delta: formatReportAmount(...) })}</p>{/if}`
-    (adapter la signature `i18nMsg`/interpolation au pattern projet). **NE PAS** toucher `isReportEmpty`
-    (`reports.api.ts`) ni le `tfoot`.
+    empty}` qui est à **l.69**, `</table>` l.68, `</section>` l.70). ⚠️ **F3 — signature `i18nMsg` exacte**
+    (`i18n.svelte.ts:14` : `i18nMsg(key: string, fallback: string, args?: Record<string, string | number>)`)
+    — le 2e argument est le **fallback string** (PAS l'objet args), l'interpolation se fait au 3e arg avec la
+    syntaxe `{ $var }` (regex `i18n.svelte.ts:17`). Exemple correct :
+    ```svelte
+    {#if dto.reconciliationStatus === 'delta'}
+      <p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+        {i18nMsg('reports-vat-reconciliation-warning',
+          'Le décompte ne correspond pas aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement.',
+          { delta: formatReportAmount(dto.reconciliationDelta) })}
+      </p>
+    {/if}
+    ```
+    (cf. patterns `settings/api-keys/+page.svelte:92`, `VatPurchaseAssistant.svelte:113`.) **NE PAS** toucher
+    `isReportEmpty` (`reports.api.ts`) ni le `tfoot`.
 - **T-E5 — Tests** (AC11 a-h) : nouveau `crates/kesh-report/tests/vat_report_reconciliation.rs`
   (`#[sqlx::test]`). Réutiliser le pattern de fixtures de `vat_report_recoverable.rs` / `vat_report_e2e.rs`
-  (seed company + `company_invoice_settings` + comptes + facture validée). Points de vigilance :
+  (seed company + `company_invoice_settings` + comptes + facture validée). ⚠️ **F5 — créer un contact AVANT
+  toute facture** : `NewInvoice` exige un `contact_id: i64` obligatoire (`entities/invoice.rs:67-74`) et
+  `seed_accounting_company` n'en crée aucun. Après `seed_accounting_company`, appeler
+  `seed_contact_and_product(&pool, seeded.company_id).await.unwrap()` (`test_fixtures.rs:464-487`, publique)
+  pour obtenir un `contact_id`, puis `NewInvoice { contact_id, … }` → `invoices::create` → `validate_invoice`
+  (qui pose `journal_entry_id`). **Atteignabilité confirmée (ground-truth)** : `kesh-db` est une dépendance
+  **normale** de `kesh-report` (`kesh-report/Cargo.toml` `[dependencies] kesh-db = { path = "../kesh-db" }`)
+  et `invoices::create` (`invoices.rs:343`) + `invoices::validate_invoice` (`invoices.rs:1019`) sont **`pub`**
+  → directement appelables depuis un test `kesh-report`. **Helper de référence à répliquer** :
+  `create_validated_invoice` (`crates/kesh-api/tests/vat_report_e2e.rs:144-172`, appelle `invoices::create`
+  puis `invoices::validate_invoice` **directement, PAS via HTTP**) + `seed_contact` (`:120-141`). Copier ce
+  pattern dans le nouveau fichier de test. ⚠️ **Pré-requis config** : `validate_invoice` d'une facture à
+  `vat_rate > 0` exige `default_vat_payable_account_id` configuré (sinon `DbError::ConfigurationRequired`,
+  `invoices.rs:980-981`) → la fixture doit UPDATE `company_invoice_settings` (`default_receivable_account_id`
+  + `default_revenue_account_id` + `default_vat_payable_account_id`, compte `2000` réutilisé par convention
+  fixtures 18-1b/d) AVANT de valider. Points de vigilance :
   - pour (b)/(e), **valider** une facture (via le repo/route qui crée l'écriture + pose `journal_entry_id`),
     puis **UPDATE** directement la ligne `2200` de l'écriture pour simuler l'édition manuelle ;
   - pour (c), créer une écriture manuelle (`journal_entries::create…`) sur `2200` **sans** la lier à une
@@ -323,4 +363,8 @@ Sonnet→Haiku→Opus→…, contexte frais, grep ground-truth) jusqu'à 0 findi
 
 ## Change Log
 
-_(à compléter par les passes `bmad-create-story validate 18-1e`)_
+### `bmad-create-story validate 18-1e` — cycle adversarial (CLAUDE.md Review Iteration Rule)
+
+| Passe | Modèle | Findings > LOW | Points clés |
+|-------|--------|----------------|-------------|
+| 1 | Sonnet 4.6 | 5 (2H+3M) | **Ground-truth complet** (struct l.56-67, generate l.72-148, recoverable_balance l.156-178, SQL jointure `invoices i ON i.journal_entry_id = jel.entry_id` confirmée colonne `jel.entry_id`, signe credit−debit cohérent DC5-signe, anti-IDOR via `i.company_id`, cohérence delta=0 nominale prouvée par construction, garde CSV/PDF inchangée, isReportEmpty inchangé, 4 locales). **F1 HIGH** : 3 struct-literals `VatReport{}` orphelins (`vat_report.rs:211` test `aggregate`, `pdf.rs:1230` `fixture_vat`, `pdf.rs:1273` test recoverable) → ajout 2 champs casse compilation `--all-targets` → T-E2 liste les 4 sites. **F2 HIGH** : `dec!(0.01)` indispo en prod (`rust_decimal_macros` dev-dep only `Cargo.toml:24`, `use` sous `#[cfg(test)]` `vat_report.rs:183`) → `Decimal::new(1, 2)` (pattern `bank_imports.rs:260`). **F3 MED** : signature `i18nMsg(key, fallback, args)` (`i18n.svelte.ts:14`) — exemple corrigé (fallback en 2e arg). **F4 MED** : interpolation FTL `{ $delta }` (avec `$`, regex `i18n.svelte.ts:17`) pas `{delta}` → sinon défaut silencieux. **F5 MED** : `NewInvoice.contact_id` obligatoire + `seed_accounting_company` ne crée pas de contact → T-E5 + `seed_contact_and_product` ; **risque archi tranché par orchestrateur** : `kesh-db` dep normale de `kesh-report` + `invoices::create`/`validate_invoice` `pub` → test reste en `kesh-report`, répliquer helper `create_validated_invoice` (`vat_report_e2e.rs:144`). LOW : n° lignes front décalés de 1 (F6, corrigé). **Tous patchés.** |
