@@ -88,7 +88,7 @@ export function buildPurchaseVatLines(params: PurchaseVatParams): LineDraft[] {
 	];
 
 	// Ligne d'impôt préalable émise seulement si la TVA est strictement > 0
-	// (F-OPUS-1 / contrainte DB `debit > 0`).
+	// (F-OPUS-1 / contrainte DB `chk_jel_debit_credit_exclusive` : `debit > 0 XOR credit > 0`).
 	if (parseAmount(vat).gt(0)) {
 		lines.push({ accountId: recoverableAccountId, debit: vat, credit: '' });
 	}

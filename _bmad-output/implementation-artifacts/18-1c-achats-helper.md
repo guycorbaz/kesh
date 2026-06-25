@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 epic: 18
 story: 18-1c
 type: feature
@@ -454,4 +454,17 @@ Tâches **T-C1..T-C6 toutes complétées** :
 - [x] **[Review][Patch]** LOW — `recoverableAccountId = s.defaultVatRecoverableAccountId` durci en `?? null` (défense si un backend ancien omettait le champ ; le type est strict `number|null` mais hardening cheap).
 - Dismissed : (i) couplage format `rate` string-égalité → vérifié sûr par construction (`r.rate` = `"8.10"` DECIMAL canonique, valeur du `<Select>`) ; (ii) `getInvoiceSettings` undefined → type strict `number|null` (durci quand même) ; (iii) desc « sans TVA » si taux>0 arrondit à 0, wording modale, E2E selector exempt → LOW cosmétiques.
 
-**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 1H+1M. Prochaine : Pass 2 (Haiku) contexte frais, diff aplati.
+#### Review Findings — Pass 2 (Haiku 4.5) — CONVERGÉ
+
+3 reviewers parallèles sur diff aplati unique (dev + patches Pass 1). **Edge Case Hunter : 0 > LOW** (toutes les frontières gardées, sub-centime confirmé). **Acceptance Auditor : 0 écart, 100 % conforme** (vat-category 5 clés × 4 locales confirmé, fixture patché ×2). **Blind Hunter (Haiku) : 4 CRITICAL + 1 HIGH + 3 MEDIUM — TOUS réfutés par grep ground-truth** (cluster d'hallucinations Haiku, cf. `feedback_haiku_review_diff_combined`) :
+
+- **CRIT** E2E `[data-slot="select-trigger"]` inexistant → **dismiss** : `select-trigger.svelte:19` a `data-slot="select-trigger"` + E2E live 2/2 a cliqué dessus avec succès.
+- **CRIT/HIGH** (×3) `rate: number` vs `ratePercent: string` → **dismiss** : `VatRateResponse.rate` est `string` (`vat-rates.types.ts:22`, « Taux en string décimale '8.10' »). Toute la grappe number/string s'effondre.
+- **CRIT** `ratePercent` null → `lineVatAmount` crash → **dismiss** : `insert()` garde `ratePercent === null) return` (l.102, narrows le type) + `npm run check` 0 erreur TS.
+- **MEDIUM** équilibre cassé sur HT `1000.999` → **dismiss** : `ttc = round₂(HT).plus(vat) = Σdebit` par construction (verrou F-OPUS-C1, couvert par le test `100.005`).
+- **MEDIUM** tests sans assertion d'équilibre → **dismiss** : 4 assertions `sum(debit)==sum(credit)`.
+- **MEDIUM** lint échoue sur clé dynamique → **dismiss** : `lint-i18n-ownership` PASS (la regex capture le template literal, entrée `KNOWN_VIOLATIONS` matche).
+- **LOW** retirer le `$` de `{$rate}` → **dismiss** : la regex `i18nMsg` (`i18n.svelte.ts:17`) **exige** le `$` ; la suggestion casserait l'interpolation.
+- **LOW** réel (nit doc) : commentaire `debit > 0` → **patché** en `chk_jel_debit_credit_exclusive` (`vat-purchase.ts:91`).
+
+**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 1H+1M → Pass 2 (Haiku) **0** (7 hallucinations Haiku réfutées grep + Edge/Auditor convergent indépendamment). Rotation Sonnet→Haiku, diff aplati unique pour Haiku. **Cycle code-review CONVERGÉ Pass 2, 0 > LOW. Status `done`.**
