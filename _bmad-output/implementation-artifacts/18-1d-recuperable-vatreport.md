@@ -136,9 +136,11 @@ dû à l'AFC**,
   - CSV `render_vat_report_csv` → ne court-circuiter que si `rows.is_empty() && total_vat_recoverable.is_zero()`,
     sinon écrire quand même le récapitulatif (CA HT 0, TVA due 0, **TVA récupérable X**, **Solde -X**) ;
   - PDF `render_vat_report_pdf` → idem (rendre le bloc totaux si récupérable ≠ 0).
-  Le `VatReportView.svelte` rend déjà le `tfoot` inconditionnellement — il suffit que le parent ne bascule
-  pas sur le bandeau vide (corrigé par `isReportEmpty`). Test : « achats seuls, 0 vente → récupérable et
-  solde affichés à l'écran, au CSV et au PDF » (AC8 cas (h)).
+  Dans `VatReportView.svelte`, le `tfoot` (totaux + récupérable + solde) est rendu dans la branche `{:else}`
+  de `{#if empty}` (où `empty = isReportEmpty(dto)`) — il n'est PAS rendu quand `empty === true`. Donc
+  redéfinir `isReportEmpty('vat')` (→ `false` dès que récupérable ≠ 0) **suffit** à activer la branche
+  `{:else}` complète : le tableau des taux sera vide, mais le `tfoot` affichera récupérable + solde. Test :
+  « achats seuls, 0 vente → récupérable et solde affichés à l'écran, au CSV et au PDF » (AC8 cas (h)).
 - **AC8** — **Tests** (intégration `#[sqlx::test]`, niveau `vat_report`) :
   - (a) achat avec TVA récupérable (écriture `D 1171 81.00 / …`) dans la période → `total_vat_recoverable ==
     81.00`, `vat_balance == total_vat_due − 81.00` ;
@@ -239,4 +241,6 @@ dû à l'AFC**,
 
 | 2 | Haiku 4.5 | 3 (1H+2M) | **Ground-truth 6/6, 0 hallucination** (court-circuits confirmés `csv.rs:326`, `pdf.rs:948` ; F1/F2/F3/F4 réels). **Vrai trou trouvé (HIGH)** : AC10 dit « redéfinir vide aux 3 endroits (front/CSV/PDF) » mais **aucune tâche n'assignait la modif des renderers** (T-D2=backend, T-D3=front) → le récapitulatif CSV/PDF n'est PAS struct-driven pour le cas achats-seuls (les renderers court-circuitent avant) → **T-D2b ajouté** (garde `rows.is_empty() && total_vat_recoverable.is_zero()` sur csv.rs:326 + pdf.rs:948). MED : T-D1 pas self-contained (map_db_error) → ajouté. MED : distribution AC10 → résolu par T-D2b. |
 
-**Trend findings > LOW** : Pass 1 (Sonnet) 4 (2H+2M) → Pass 2 (Haiku) 3 (1H+2M). Prochaine : Pass 3 (Opus) catch-architectural.
+| 3 | Opus 4.8 | 0 ✅ | **Catch-architectural : CONVERGENCE.** Design prouvé sain sur 6 axes, ground-truth 14/14 : (1) **mouvement net de période correct** — `1171` est un compte neuf (18-1a) sans report-à-nouveau, aucun mécanisme opening-balance dans le codebase → `SUM(debit)−SUM(credit)` filtré `entry_date` = mouvement du trimestre (pas solde cumulé), symétrique à la TVA due ; (2) asymétrie source due(théorique)/récupérable(comptable) délibérée, cross-check déféré 18-1e ; (3) `is_zero()` dispo (`reconciliation.rs:1426`), cas récupérable<0/==0 corrects ; (3b) invariant `TrialBalanceUnbalanced` non concerné (lecture mono-compte) ; (4) frontière 18-1e nette (champs additifs orthogonaux à la garde AC10) ; (5) **F-OPUS-5 RENFORCÉ** — multi-exercice **structurellement inaccessible** : `ReportPeriod::resolve` clampe intra-exercice (`period.rs:41-60`, `PeriodOutOfFiscalYear`) + non-overlap = invariant dur (`find_overlapping FOR UPDATE`, `fiscal_years.rs:119`), pas une simple hypothèse. **1 LOW** : justification AC10 « tfoot inconditionnel » inexacte (tfoot dans branche `{:else}`) → reformulée, correctif prescrit inchangé (redéfinir `isReportEmpty` active la branche). |
+
+**Trend findings > LOW** : Pass 1 (Sonnet) 4 (2H+2M) → Pass 2 (Haiku) 3 (1H+2M) → Pass 3 (Opus) **0 ✅**. Rotation Sonnet→Haiku→Opus, contexte frais, grep ground-truth. **Catch décisif Pass 1 Sonnet** (F1 achats-seuls : récupérable invisible sans vente) + **Pass 2 Haiku** (T-D2b renderers orphelins) + **Pass 3 Opus** (preuve mouvement-net-de-période + F-OPUS-5 renforcé). **Cycle validate CONVERGÉ Pass 3, 0 > LOW. Prochaine : `bmad-dev-story 18-1d` (Opus).**
