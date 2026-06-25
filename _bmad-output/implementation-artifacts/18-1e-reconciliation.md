@@ -200,14 +200,19 @@ transmettre le décompte à l'AFC.
   `formatReportAmount`) et oriente vers « vérifier les écritures validées modifiées manuellement ». Le
   bandeau **ne bloque pas** le rapport (pas de gate export, le `tfoot` reste affiché). `VatReportDto` gagne
   `reconciliationDelta` + `reconciliationStatus`. **`isReportEmpty` inchangé** (DC5-empty).
-- **AC10 — i18n** — clés `reports-vat-reconciliation-*` (au moins : libellé écart pour CSV/PDF/front +
-  message du bandeau) présentes dans les **4** locales (fr/de/it/en), parité `lint-i18n-ownership`. Libellé
-  écart FR ≈ « Écart de réconciliation » ; message bandeau FR ≈ « Le décompte ne correspond pas aux écritures
-  comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement. ». ⚠️ **F4 —
-  l'interpolation FTL exige `{ $delta }` (avec `$`)** : la regex de substitution (`i18n.svelte.ts:17`)
-  matche `\{\s*\$(\w+)\s*\}`. Écrire `{delta}` sans `$` → variable jamais substituée, `{delta}` littéral
-  affiché (défaut silencieux). Cf. clés existantes `error-entry-unbalanced` (`{ $debit }`/`{ $credit }`),
-  `vat-purchase-description` (`{ $rate }`).
+- **AC10 — i18n (périmètre précisé F-HIGH-1 Pass 2 — UNE seule clé)** — **seul le bandeau front** est
+  internationalisé : créer **une** clé `reports-vat-reconciliation-warning` dans les **4** locales
+  (fr/de/it/en), parité `lint-i18n-ownership`. Les **libellés CSV/PDF restent en dur FR** (cohérent avec
+  l'existant : le CSV écrit « TVA récupérable »/« Solde » en clair FR, et le PDF utilise
+  `VatPdfLabels::fr_ch_defaults()` hard-codé — l'i18n des exports PDF/CSV est une limitation v0.2 déjà actée,
+  cf. `reports.rs:611`). **NE PAS** créer de clé i18n pour le libellé « Écart de réconciliation » des exports
+  (elle serait orpheline → `lint-i18n-ownership` rouge). Message bandeau FR ≈ « Le décompte ne correspond pas
+  aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement. ».
+  Libellé écart en dur (CSV/PDF) FR ≈ « Écart de réconciliation ». ⚠️ **F4 — l'interpolation FTL exige
+  `{ $delta }` (avec `$`)** : la regex de substitution (`i18n.svelte.ts:17`) matche `\{\s*\$(\w+)\s*\}`.
+  Écrire `{delta}` sans `$` → variable jamais substituée, `{delta}` littéral affiché (défaut silencieux). Cf.
+  clés existantes `error-entry-unbalanced` (`{ $debit }`/`{ $credit }`), `vat-purchase-description`
+  (`{ $rate }`).
 - **AC11 — Tests** (intégration `#[sqlx::test]` niveau `kesh-report`, + E2E si pertinent) :
   - (a) **nominal delta 0** : ≥1 facture validée avec TVA, écriture intacte → `delta == 0`, `status == "ok"` ;
   - (b) **édition manuelle (delta ≠ 0)** : facture validée puis UPDATE de la ligne `2200` de son écriture
@@ -244,7 +249,10 @@ transmettre le décompte à l'AFC.
   > **Note** : la jointure `invoices i ON i.journal_entry_id = jel.entry_id` est l'isolation « lien facture
   > validée ». Elle exclut nativement (i) les OD manuelles sur 2200 sans facture, (ii) les factures non
   > validées, (iii) les autres companies (via `i.company_id`). Pas de filtre `journal` textuel (F-OPUS-4 +
-  > robustesse `default_sales_journal` configurable).
+  > robustesse `default_sales_journal` configurable). **Anti-IDOR (F-LOW-2)** : `i.company_id = ?` suffit (une
+  > facture validée de la company X ne peut être liée qu'à une écriture de X par construction de
+  > `validate_invoice`, même transaction). Le doc-comment du helper le documente ; ajouter `AND je.company_id
+  > = ?` en défense-en-profondeur est optionnel (sans coût correctness).
 - **T-E2 — Champs struct + calcul dans `generate`** (`vat_report.rs`) :
   - Ajouter `pub reconciliation_delta: Decimal` + `pub reconciliation_status: String` à `VatReport`
     (l.56-67). Doc `///` sur chaque champ (delta = due dérivé − solde 2200 ventes ; status "ok"/"delta",
@@ -259,25 +267,32 @@ transmettre le décompte à l'AFC.
   - Dans `generate`, **avant** la construction du `VatReport { … }` (l.140) : lire
     `default_vat_payable_account_id` (`SELECT … FROM company_invoice_settings WHERE company_id = ?`,
     `Option<i64>` — réutiliser/factoriser le pattern de lecture déjà présent l.124-137 pour le récupérable ;
-    on peut lire les **deux** comptes dans la même requête `SELECT default_vat_payable_account_id,
-    default_vat_recoverable_account_id …` pour éviter 2 allers-retours). Si `Some(id)` → helper T-E1, sinon
-    `Decimal::ZERO`. Calculer `delta = total_vat_due − solde` ; `status = if delta.abs() >= Decimal::new(1, 2)
+    on peut lire les **deux** comptes dans la même requête, p.ex. `let (due_id, recoverable_id):
+    (Option<i64>, Option<i64>) = sqlx::query_as("SELECT default_vat_payable_account_id,
+    default_vat_recoverable_account_id FROM company_invoice_settings WHERE company_id = ?")
+    .bind(company_id).fetch_one(pool).await.map_err(map_db_error)?;` pour éviter 2 allers-retours). Si
+    `Some(id)` → helper T-E1, sinon `Decimal::ZERO`. Calculer `delta = total_vat_due − solde` ; `status = if delta.abs() >= Decimal::new(1, 2)
     { "delta".to_string() } else { "ok".to_string() }` (⚠️ **PAS `dec!(0.01)`** — voir DC5-delta, macro
     dev-only). Mapper l'erreur DB via `map_db_error`.
   - `reconciliation_delta`/`reconciliation_status` ajoutés au `VatReport { … }` retourné (site 1).
 - **T-E3 — Renderers CSV/PDF** (AC8) :
   - **CSV** `render_vat_report_csv` (`csv.rs:345-364`) : après la ligne « Solde » (l.363-364), écrire une
-    ligne `["Écart de réconciliation", "", report.reconciliation_delta…]` (libellé i18n FR par défaut,
-    cohérent avec les libellés en clair existants du CSV). Garde « achats seuls » 18-1d inchangée.
+    ligne `["Écart de réconciliation", "", report.reconciliation_delta…]`. **Libellé en dur FR** (« Écart de
+    réconciliation »), cohérent avec les libellés en clair existants du CSV (« TVA récupérable », « Solde » —
+    PAS d'i18n CSV, F-HIGH-1). Garde « achats seuls » 18-1d inchangée.
   - **PDF** `render_vat_report_pdf` (`pdf.rs:979-986`) : après « Solde » (l.986), un appel
     `draw_totals_footer(... reconciliation_delta ...)`. Enrichir `VatPdfLabels` (l.879-912) d'un champ
-    `reconciliation_delta_label: String` + valeur dans `fr_ch_defaults()`.
+    `reconciliation_delta_label: String` + valeur **en dur FR** dans `fr_ch_defaults()` (l'i18n PDF est
+    déférée v0.2, cohérent existant — F-HIGH-1). **Pas de clé i18n pour ces libellés exports.**
 - **T-E4 — Front** (`VatReportView.svelte`, `reports.types.ts`) :
   - `reports.types.ts:100-107` : ajouter `reconciliationDelta: string;` + `reconciliationStatus: 'ok' |
     'delta';` après l.106.
-  - `VatReportView.svelte` : bandeau inline rendu **inconditionnellement vs `empty`** mais conditionné à
-    `dto.reconciliationStatus === 'delta'` — p.ex. en tête de section (après l'en-tête, avant le `{#if
-    empty}` qui est à **l.69**, `</table>` l.68, `</section>` l.70). ⚠️ **F3 — signature `i18nMsg` exacte**
+  - `VatReportView.svelte` : bandeau inline **structurellement indépendant du flag `empty`** (placé HORS du
+    bloc `{#if empty}{:else}`, pas à l'intérieur), avec pour **seule** condition de visibilité
+    `dto.reconciliationStatus === 'delta'`. Conséquence (F-MED-1) : sur un rapport vide (0 vente → delta 0 →
+    status "ok") le bandeau est **naturellement invisible** — ce n'est PAS « toujours affiché ». Placement :
+    en tête de section (après l'en-tête, avant le `{#if empty}` qui est à **l.69**, `</table>` l.68,
+    `</section>` l.70). ⚠️ **F3 — signature `i18nMsg` exacte**
     (`i18n.svelte.ts:14` : `i18nMsg(key: string, fallback: string, args?: Record<string, string | number>)`)
     — le 2e argument est le **fallback string** (PAS l'objet args), l'interpolation se fait au 3e arg avec la
     syntaxe `{ $var }` (regex `i18n.svelte.ts:17`). Exemple correct :
@@ -310,12 +325,19 @@ transmettre le décompte à l'AFC.
   `invoices.rs:980-981`) → la fixture doit UPDATE `company_invoice_settings` (`default_receivable_account_id`
   + `default_revenue_account_id` + `default_vat_payable_account_id`, compte `2000` réutilisé par convention
   fixtures 18-1b/d) AVANT de valider. Points de vigilance :
-  - pour (b)/(e), **valider** une facture (via le repo/route qui crée l'écriture + pose `journal_entry_id`),
-    puis **UPDATE** directement la ligne `2200` de l'écriture pour simuler l'édition manuelle ;
-  - pour (c), créer une écriture manuelle (`journal_entries::create…`) sur `2200` **sans** la lier à une
-    facture (aucune facture ne pointe son `journal_entry_id`) → vérifier qu'elle n'entre pas dans le delta ;
+  > **F-MED-2 — « compte TVA due » = le compte CONFIGURÉ, pas le littéral `2200`** : en test, la fixture
+  > configure `default_vat_payable_account_id = seeded.accounts["2000"]` (convention 18-1b/d, `2000` est un
+  > Liability réutilisé). Donc « la ligne 2200 » / « écriture sur 2200 » ci-dessous désigne **le compte pointé
+  > par `default_vat_payable_account_id`** (= `2000` en test, `2200` en prod). Ne PAS créer de compte `2200`
+  > séparé dans la fixture.
+  - pour (b)/(e), **valider** une facture (crée l'écriture + pose `journal_entry_id`), puis **UPDATE**
+    directement la ligne du compte TVA due de cette écriture (réduire le `credit`) pour simuler l'édition
+    manuelle ;
+  - pour (c), créer une écriture manuelle (`journal_entries::create`, `pub`
+    `repositories/journal_entries.rs`) sur le compte TVA due **sans** la lier à une facture (aucune facture ne
+    pointe son `journal_entry_id`) → vérifier qu'elle n'entre **pas** dans le delta (isolation F-OPUS-4) ;
   - chaque `#[sqlx::test]` a sa DB éphémère → contrôler **toutes** les écritures, pas d'écriture parasite
-    sur `2200` hors de celles attendues ;
+    sur le compte TVA due hors de celles attendues ;
   - vérifier le **seuil** (f) avec un écart de `0.005` (→ "ok") et `0.01` (→ "delta").
   - 1 assertion renderer (h) : `render_vat_report_csv` contient « Écart de réconciliation » + la valeur.
 - **T-E6 — Quality gate + Change Log** (AC12). Doc-sync manuels/CHANGELOG **différée à 18-1f** (politique
@@ -368,3 +390,4 @@ Sonnet→Haiku→Opus→…, contexte frais, grep ground-truth) jusqu'à 0 findi
 | Passe | Modèle | Findings > LOW | Points clés |
 |-------|--------|----------------|-------------|
 | 1 | Sonnet 4.6 | 5 (2H+3M) | **Ground-truth complet** (struct l.56-67, generate l.72-148, recoverable_balance l.156-178, SQL jointure `invoices i ON i.journal_entry_id = jel.entry_id` confirmée colonne `jel.entry_id`, signe credit−debit cohérent DC5-signe, anti-IDOR via `i.company_id`, cohérence delta=0 nominale prouvée par construction, garde CSV/PDF inchangée, isReportEmpty inchangé, 4 locales). **F1 HIGH** : 3 struct-literals `VatReport{}` orphelins (`vat_report.rs:211` test `aggregate`, `pdf.rs:1230` `fixture_vat`, `pdf.rs:1273` test recoverable) → ajout 2 champs casse compilation `--all-targets` → T-E2 liste les 4 sites. **F2 HIGH** : `dec!(0.01)` indispo en prod (`rust_decimal_macros` dev-dep only `Cargo.toml:24`, `use` sous `#[cfg(test)]` `vat_report.rs:183`) → `Decimal::new(1, 2)` (pattern `bank_imports.rs:260`). **F3 MED** : signature `i18nMsg(key, fallback, args)` (`i18n.svelte.ts:14`) — exemple corrigé (fallback en 2e arg). **F4 MED** : interpolation FTL `{ $delta }` (avec `$`, regex `i18n.svelte.ts:17`) pas `{delta}` → sinon défaut silencieux. **F5 MED** : `NewInvoice.contact_id` obligatoire + `seed_accounting_company` ne crée pas de contact → T-E5 + `seed_contact_and_product` ; **risque archi tranché par orchestrateur** : `kesh-db` dep normale de `kesh-report` + `invoices::create`/`validate_invoice` `pub` → test reste en `kesh-report`, répliquer helper `create_validated_invoice` (`vat_report_e2e.rs:144`). LOW : n° lignes front décalés de 1 (F6, corrigé). **Tous patchés.** |
+| 2 | Haiku 4.5 | 3 (1H+2M) | **0 hallucination, ground-truth complet** (4 sites VatReport{} confirmés, `i.date` col `vat_report.rs:85`, `journal_entry_id` col `invoice.rs:29`, `journal_entries::create` pub, `seed_contact_and_product` pub, CSV libellés FR en dur). **F-HIGH-1** : i18n exports — PDF/CSV hard-codent FR (`VatPdfLabels::fr_ch_defaults`, CSV en clair), une clé i18n libellé écart serait orpheline → **UNE seule clé** `reports-vat-reconciliation-warning` (bandeau front), libellés exports en dur FR (i18n PDF/CSV déférée v0.2). **F-MED-1** : « inconditionnellement vs empty » ambigu → « structurellement indépendant du flag empty, visible ssi status==delta ». **F-MED-2** : « compte 2200 » des tests = compte CONFIGURÉ `default_vat_payable_account_id` (= `2000` fixture). LOW : exemple `query_as` 2 comptes (T-E2) ; anti-IDOR `je.company_id` defense-in-depth optionnelle (T-E1). **Tous patchés.** |
