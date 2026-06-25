@@ -323,7 +323,10 @@ pub fn render_vat_report_csv<W: Write>(
         .map_err(map_csv_err)?;
 
     // Cas rapport vide : header seul (Pass 1 ECH-M1, pattern par renderer).
-    if report.rows.is_empty() {
+    // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
+    // récupérable (achats seuls) n'est PAS vide — il faut écrire le récapitulatif.
+    // On ne court-circuite que si AUSSI récupérable == 0.
+    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
         wtr.flush().map_err(map_io_err)?;
         return Ok(());
     }

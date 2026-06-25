@@ -945,7 +945,10 @@ pub fn render_vat_report_pdf(
         report.period.end_date,
     );
 
-    if report.rows.is_empty() {
+    // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
+    // récupérable (achats seuls) n'est PAS vide — on rend le bloc totaux
+    // (récupérable + solde). On ne court-circuite que si AUSSI récupérable == 0.
+    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
     }

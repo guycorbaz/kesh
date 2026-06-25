@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 18
 story: 18-1d
 type: feature
@@ -230,6 +230,48 @@ dû à l'AFC**,
 ## Prochaine étape
 
 `bmad-create-story validate 18-1d` (rotation Sonnet→Haiku→Opus→…, contexte frais) avant la `dev-story`.
+
+## Dev Agent Record
+
+### Implémentation (`bmad-dev-story 18-1d`, Opus 4.8, 2026-06-25)
+
+Tâches **T-D1..T-D5 toutes complétées** :
+
+- **T-D1 ✅** — helper `recoverable_balance(pool, company_id, account_id, period)` dans `vat_report.rs` :
+  `SELECT COALESCE(SUM(jel.debit),0) - COALESCE(SUM(jel.credit),0) … WHERE je.company_id = ? AND
+  jel.account_id = ? AND je.entry_date BETWEEN ? AND ?` (signe Asset codé en dur DC4-ter, filtre entry_date
+  seul DC4, scopé company_id, `map_db_error`). Doc `///`.
+- **T-D2 ✅** — branché dans `generate` (remplace les 2 lignes `total_vat_recoverable = ZERO`) : lit
+  `default_vat_recoverable_account_id` (`fetch_optional().flatten()` → `Option<i64>`) ; `Some` → helper,
+  `None` → 0 ; `vat_balance` recalculé. Doc-comment module + struct mis à jour (récupérable = grand livre).
+- **T-D2b ✅** — gardes renderers : CSV `csv.rs:326` et PDF `pdf.rs:948` court-circuitent désormais
+  seulement si `rows.is_empty() && total_vat_recoverable == Decimal::ZERO` → le cas « achats seuls » rend
+  le récapitulatif.
+- **T-D3 ✅** — front : note « à venir » retirée de `VatReportView.svelte` (bloc `<p>` l.70-75) ;
+  `isReportEmpty('vat')` redéfini → `rows.length === 0 && Number(totalVatRecoverable) === 0`.
+- **T-D4 ✅** — 6 tests d'intégration `crates/kesh-report/tests/vat_report_recoverable.rs` (sqlx::test) :
+  (a)+(f) écriture unique → récupérable 81 + vat_balance −81 ; (b) multi-écritures net 71 ; (c) filtre
+  période + bornes inclusives (32, hors-période exclus) ; (d) compte NULL → 0 ; (e) scoping company
+  (anti-IDOR) ; (h) « achats seuls » rendu au CSV (récapitulatif présent malgré 0 vente). Garde F3
+  respectée (contrepartie ≠ 1000, aucune écriture parasite).
+- **T-D5 ✅** — quality gate (cf. ci-dessous).
+
+### Résultats de tests (Test Locally First)
+
+- **Backend** : `cargo fmt --all --check` ✅ ; `cargo clippy -p kesh-report --all-targets -D warnings` ✅
+  0 warning ; **6/6** `vat_report_recoverable` ; **kesh-report lib 61** ; non-régression **report e2e
+  58/58** (`vat_report_e2e` 28, `reports_e2e` 20, `reports_export_e2e` 10).
+- **Frontend** : `npm run check` **0 erreur** ; `lint-i18n-ownership` **PASS** ; `test:unit` reports **14** ;
+  `build` OK.
+
+### File List
+
+- `crates/kesh-report/src/vat_report.rs` — helper `recoverable_balance` + branchement `generate` + doc.
+- `crates/kesh-report/src/csv.rs` — garde court-circuit `render_vat_report_csv` (AC10).
+- `crates/kesh-report/src/pdf.rs` — garde court-circuit `render_vat_report_pdf` (AC10).
+- `crates/kesh-report/tests/vat_report_recoverable.rs` — **NOUVEAU** — 6 tests d'intégration.
+- `frontend/src/lib/features/reports/VatReportView.svelte` — note « à venir » retirée.
+- `frontend/src/lib/features/reports/reports.api.ts` — `isReportEmpty('vat')` redéfini.
 
 ## Change Log
 

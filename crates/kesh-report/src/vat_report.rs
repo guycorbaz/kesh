@@ -5,13 +5,22 @@
 //! ligne** (FR55, cf. [`kesh_core::accounting::vat::line_vat_amount`]) puis en
 //! sommant — jamais en arrondissant une base agrégée.
 //!
-//! ## Périmètre v0.2 (cf. story 11-2)
+//! ## Périmètre (cf. stories 11-2 et 18-1d)
 //!
-//! - **TVA due** (vente) : calculée depuis les factures de vente validées.
-//! - **TVA récupérable** (achats / impôt préalable) : `0.00` — aucune source de
-//!   données dans le modèle actuel (pas de saisie d'achats avec TVA, pas de
-//!   comptes TVA). Déférée à une story de suivi ; la structure est prête à la
-//!   recevoir (`total_vat_recoverable` / `vat_balance`).
+//! - **TVA due** (vente) : calculée depuis les factures de vente validées
+//!   (source théorique `invoice_lines`, ventilable par taux).
+//! - **TVA récupérable** (achats / impôt préalable, Story 18-1d) : **solde du
+//!   compte `default_vat_recoverable_account_id` (impôt préalable, Asset) lu du
+//!   grand livre** sur la période — `SUM(debit) − SUM(credit)`, filtré par
+//!   `entry_date` SEUL (pas `fiscal_year_id`, DC4). Sûr car `ReportPeriod::resolve`
+//!   clampe la période **intra-exercice** et les `fiscal_years` ne se chevauchent
+//!   pas (invariant dur) → jamais d'agrégation multi-exercice. Périmètre
+//!   **intégral** (DC4-bis) : toute écriture sur ce compte dédié compte. Signe
+//!   `debit − credit` codé en dur (DC4-ter, compte Asset par construction ; un
+//!   compte non-Asset configuré est une erreur de config hors scope). Si le compte
+//!   n'est pas configuré (`NULL`) → `0.00`.
+//! - La **réconciliation / cross-check** rapport ↔ grand livre (DC5) est déférée
+//!   à la story 18-1e.
 //!
 //! Le grouping est **par taux numérique** (`vat_rate` snapshoté sur la ligne),
 //! pas par catégorie : c'est la granularité du décompte AFC. `category` reste
@@ -49,7 +58,9 @@ pub struct VatReport {
     pub rows: Vec<VatReportRow>,
     pub total_base_ht: Decimal,
     pub total_vat_due: Decimal,
-    /// TVA récupérable (achats). `0.00` en v0.2 — déférée (cf. doc module).
+    /// TVA récupérable (achats / impôt préalable) = solde du compte
+    /// `default_vat_recoverable_account_id` au grand livre sur la période
+    /// (Story 18-1d). `0.00` si le compte n'est pas configuré.
     pub total_vat_recoverable: Decimal,
     /// Solde = `total_vat_due - total_vat_recoverable`.
     pub vat_balance: Decimal,
@@ -106,7 +117,24 @@ pub async fn generate(
 
     let total_base_ht: Decimal = rows.iter().map(|r| r.base_ht).sum();
     let total_vat_due: Decimal = rows.iter().map(|r| r.vat_due).sum();
-    let total_vat_recoverable = Decimal::ZERO;
+
+    // Story 18-1d : TVA récupérable = solde du compte impôt préalable lu du grand
+    // livre. La row `company_invoice_settings` existe dès l'onboarding ; le compte
+    // peut ne pas être configuré (NULL) → récupérable = 0 (comportement préservé).
+    let recoverable_account_id: Option<i64> = sqlx::query_scalar(
+        "SELECT default_vat_recoverable_account_id \
+         FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(kesh_db::errors::map_db_error)?
+    .flatten();
+
+    let total_vat_recoverable = match recoverable_account_id {
+        Some(account_id) => recoverable_balance(pool, company_id, account_id, period).await?,
+        None => Decimal::ZERO,
+    };
     let vat_balance = total_vat_due - total_vat_recoverable;
 
     Ok(VatReport {
@@ -117,6 +145,36 @@ pub async fn generate(
         total_vat_recoverable,
         vat_balance,
     })
+}
+
+/// Solde du compte d'impôt préalable (`account_id`) au grand livre sur la période
+/// (Story 18-1d, DC4). `SUM(debit) − SUM(credit)` — signe **codé en dur** car le
+/// compte est un Asset par construction (DC4-ter). Filtre `entry_date` **seul**
+/// (pas `fiscal_year_id`, DC4) : sûr car la période est clampée intra-exercice par
+/// `ReportPeriod::resolve` et les `fiscal_years` ne se chevauchent pas. `COALESCE`
+/// → `0` si aucune écriture sur la période. Scopé `company_id` (anti-IDOR).
+async fn recoverable_balance(
+    pool: &MySqlPool,
+    company_id: i64,
+    account_id: i64,
+    period: &ReportPeriod,
+) -> Result<Decimal, ReportError> {
+    let balance: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0) \
+         FROM journal_entry_lines jel \
+         INNER JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? \
+           AND jel.account_id = ? \
+           AND je.entry_date BETWEEN ? AND ?",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .fetch_one(pool)
+    .await
+    .map_err(kesh_db::errors::map_db_error)?;
+    Ok(balance)
 }
 
 #[cfg(test)]

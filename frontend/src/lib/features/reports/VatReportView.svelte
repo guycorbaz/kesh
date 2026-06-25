@@ -66,12 +66,5 @@
 				</tr>
 			</tfoot>
 		</table>
-
-		<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="note">
-			{i18nMsg(
-				'reports-vat-recoverable-note',
-				'La TVA récupérable sur les achats sera disponible dans une version ultérieure (nécessite la gestion des comptes TVA). Le décompte affiche pour l’instant la TVA due sur les ventes.',
-			)}
-		</p>
 	{/if}
 </section>
