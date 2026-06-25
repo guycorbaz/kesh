@@ -162,8 +162,9 @@ dû à l'AFC**,
 - **T-D1** — Helper de lecture du solde récupérable dans `vat_report.rs` (ou inline dans `generate`) :
   `SELECT COALESCE(SUM(jel.debit),0) - COALESCE(SUM(jel.credit),0) FROM journal_entry_lines jel INNER JOIN
   journal_entries je ON je.id = jel.entry_id WHERE je.company_id = ? AND jel.account_id = ? AND je.entry_date
-  BETWEEN ? AND ?`. Retourne `Decimal` (COALESCE → 0 si aucune ligne). Doc `///` : DC4 + F-OPUS-5
-  (entry_date seul, intra-exercice ; multi-exercice hors scope).
+  BETWEEN ? AND ?`. Retourne `Decimal` (COALESCE → 0 si aucune ligne). **Mapper l'erreur DB via
+  `kesh_db::errors::map_db_error`** (pattern existant `vat_report.rs:81`). Doc `///` : DC4 + F-OPUS-5
+  (entry_date seul, intra-exercice ; multi-exercice hors scope) + DC4-ter (signe `debit−credit` Asset).
 - **T-D2** — Brancher dans `generate` (remplacer l.109-110) : lire
   `default_vat_recoverable_account_id` (`SELECT … FROM company_invoice_settings WHERE company_id = ?`,
   `Option<i64>`) ; si `Some(id)` → appeler le helper T-D1 ; sinon `Decimal::ZERO`. Recalculer `vat_balance`.
@@ -171,6 +172,15 @@ dû à l'AFC**,
   `kesh_db::errors::map_db_error`** (pattern existant `vat_report.rs:81`). **Mettre à jour le doc-comment du
   module** (`vat_report.rs:8-14` « TVA récupérable : 0.00 — aucune source ») **et le commentaire de struct**
   (l.52 « 0.00 en v0.2 ») devenus faux (F7).
+- **T-D2b — Adapter les renderers CSV/PDF au cas « achats seuls » (AC10/F1, NE PAS oublier)** : le backend
+  corrigé en T-D2 ne suffit PAS — les renderers **court-circuitent avant** d'écrire le récapitulatif :
+  - **CSV** `render_vat_report_csv` (`csv.rs:326` `if report.rows.is_empty() { … return … }`) → remplacer la
+    condition par `if report.rows.is_empty() && report.total_vat_recoverable.is_zero()` ; sinon écrire le bloc
+    récapitulatif existant (CA HT, TVA due, **TVA récupérable**, **Solde**).
+  - **PDF** `render_vat_report_pdf` (`pdf.rs:948` `if report.rows.is_empty() { draw_empty_message(); return }`)
+    → même garde `&& report.total_vat_recoverable.is_zero()` ; sinon rendre le bloc totaux existant.
+  Sans T-D2b, le test (h) (achats seuls → CSV affiche le récupérable) **échoue**. C'est la part de AC10 qui
+  n'est PAS struct-driven.
 - **T-D3** — Front : (a) retirer la note « à venir » de `VatReportView.svelte` (bloc complet `<p>…</p>`,
   **l.70-75**, clé `reports-vat-recoverable-note`) ; (b) **redéfinir `isReportEmpty('vat')`**
   (`reports.api.ts:107-109`) → `vr.rows.length === 0 && Number(vr.totalVatRecoverable) === 0` (F1/AC10).
@@ -227,4 +237,6 @@ dû à l'AFC**,
 |-------|--------|----------------|-------------|
 | 1 | Sonnet 4.6 | 4 (2H+2M) | **Ground-truth 8/8 confirmé** (struct/generate l.109-110, ReportPeriod, formule Asset trial_balance, settings Option<i64>, front affiche déjà, renderers struct-driven, fixture compte 1000, invariant overlap fiscal_years réel). **F1 HIGH (vérifié orchestrateur)** : front `isReportEmpty('vat')` (`reports.api.ts:107`) + CSV (`csv.rs:12`) + PDF court-circuitent sur `rows.is_empty()` → période « achats seuls » (récupérable>0, 0 vente) = récupérable invisible → AC10 + cas test (h) : redéfinir vide = `rows vide ET recoverable==0`. **F2 HIGH** : périmètre solde non isolé → DC4-bis (prise intégrale délibérée, `1171` dédié, asymétrie volontaire avec DC5). **F4 MED** : signe `debit−credit` codé en dur → DC4-ter (Asset par construction). **F3 MED** : compte test `1000` Caisse → T-D4 garde-fou écritures parasites. LOW : bornes BETWEEN inclusives (test), doc-comment module à corriger, libellé i18n sans renommer clé, map_db_error, n° lignes csv:354/note l.70-75. |
 
-**Trend findings > LOW** : Pass 1 (Sonnet) 4 (2H+2M). Prochaine : Pass 2 (Haiku) contexte frais.
+| 2 | Haiku 4.5 | 3 (1H+2M) | **Ground-truth 6/6, 0 hallucination** (court-circuits confirmés `csv.rs:326`, `pdf.rs:948` ; F1/F2/F3/F4 réels). **Vrai trou trouvé (HIGH)** : AC10 dit « redéfinir vide aux 3 endroits (front/CSV/PDF) » mais **aucune tâche n'assignait la modif des renderers** (T-D2=backend, T-D3=front) → le récapitulatif CSV/PDF n'est PAS struct-driven pour le cas achats-seuls (les renderers court-circuitent avant) → **T-D2b ajouté** (garde `rows.is_empty() && total_vat_recoverable.is_zero()` sur csv.rs:326 + pdf.rs:948). MED : T-D1 pas self-contained (map_db_error) → ajouté. MED : distribution AC10 → résolu par T-D2b. |
+
+**Trend findings > LOW** : Pass 1 (Sonnet) 4 (2H+2M) → Pass 2 (Haiku) 3 (1H+2M). Prochaine : Pass 3 (Opus) catch-architectural.
