@@ -1264,6 +1264,33 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF-1."));
     }
 
+    /// Story 18-1d (AC10/T-D2b) : « achats seuls » — rows vide MAIS récupérable > 0
+    /// ne doit PAS court-circuiter sur le message vide ; le PDF rend le bloc totaux
+    /// (récupérable + solde) sans panic.
+    #[test]
+    fn vat_report_pdf_recoverable_only_renders() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let report = VatReport {
+            period: period(),
+            rows: vec![],
+            total_base_ht: Decimal::ZERO,
+            total_vat_due: Decimal::ZERO,
+            total_vat_recoverable: dec!(81.00),
+            vat_balance: dec!(-81.00),
+        };
+        let bytes = render_vat_report_pdf(&report, &ctx, &VatPdfLabels::fr_ch_defaults()).unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+        // Un PDF avec le tableau + bloc totaux est plus volumineux que le simple
+        // message « aucune écriture » (cas fixture_vat(true)).
+        let empty_bytes =
+            render_vat_report_pdf(&fixture_vat(true), &ctx, &VatPdfLabels::fr_ch_defaults())
+                .unwrap();
+        assert!(
+            bytes.len() > empty_bytes.len(),
+            "le PDF achats-seuls (totaux rendus) doit être plus gros que le message vide"
+        );
+    }
+
     // --- AC #8 — empty report : génère un PDF valide avec empty_message ---
 
     #[test]

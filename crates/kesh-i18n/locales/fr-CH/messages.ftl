@@ -895,7 +895,6 @@ reports-vat-column-vat-due = TVA due
 reports-vat-total-base-ht = Total CA HT
 reports-vat-recoverable = TVA récupérable
 reports-vat-balance = Solde
-reports-vat-recoverable-note = La TVA récupérable sur les achats sera disponible dans une version ultérieure (nécessite la gestion des comptes TVA). Le décompte affiche pour l'instant la TVA due sur les ventes.
 
 # Filtres (4)
 reports-filter-period = Période

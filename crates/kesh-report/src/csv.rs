@@ -310,8 +310,9 @@ pub fn render_journal_report_csv<W: Write>(
 ///
 /// Colonnes : `Taux;ChiffreAffairesHT;TVADue` (une ligne par taux), puis lignes
 /// récapitulatives (label en 1re colonne, montant dans la colonne naturelle) :
-/// total CA HT, total TVA due, TVA récupérable (0.00 en v0.2), solde. Rapport
-/// vide = en-tête seul (cf. `render_balance_sheet_csv`).
+/// total CA HT, total TVA due, TVA récupérable (solde du compte impôt préalable,
+/// Story 18-1d), solde. Rapport vide = en-tête seul, **sauf** si la TVA récupérable
+/// est non nulle (cas « achats seuls » : on rend le récapitulatif).
 pub fn render_vat_report_csv<W: Write>(
     report: &VatReport,
     mut writer: W,

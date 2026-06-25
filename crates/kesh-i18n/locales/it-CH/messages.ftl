@@ -847,7 +847,6 @@ reports-vat-column-vat-due = IVA dovuta
 reports-vat-total-base-ht = Totale cifra d'affari netta
 reports-vat-recoverable = IVA recuperabile
 reports-vat-balance = Saldo
-reports-vat-recoverable-note = L'IVA recuperabile sugli acquisti sarà disponibile in una versione futura. Il rendiconto mostra per ora l'IVA dovuta sulle vendite.
 
 reports-filter-period = Periodo
 reports-filter-fiscal-year = Esercizio

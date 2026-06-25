@@ -847,7 +847,6 @@ reports-vat-column-vat-due = VAT due
 reports-vat-total-base-ht = Total net turnover
 reports-vat-recoverable = Recoverable VAT
 reports-vat-balance = Balance
-reports-vat-recoverable-note = Recoverable VAT on purchases will be available in a future version. The return currently shows VAT due on sales.
 
 reports-filter-period = Period
 reports-filter-fiscal-year = Fiscal Year

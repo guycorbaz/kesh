@@ -847,7 +847,6 @@ reports-vat-column-vat-due = Geschuldete MwSt
 reports-vat-total-base-ht = Total Umsatz netto
 reports-vat-recoverable = Vorsteuer
 reports-vat-balance = Saldo
-reports-vat-recoverable-note = Die Vorsteuer auf Einkäufe wird in einer späteren Version verfügbar sein. Die Abrechnung zeigt vorerst die geschuldete MwSt auf Verkäufen.
 
 reports-filter-period = Periode
 reports-filter-fiscal-year = Geschäftsjahr
