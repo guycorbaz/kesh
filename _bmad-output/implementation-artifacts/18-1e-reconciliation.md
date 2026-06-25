@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 epic: 18
 story: 18-1e
 type: feature
@@ -477,3 +477,9 @@ Tâches **T-E1..T-E6 toutes complétées** :
 - LOW-3 — ligne CSV « Écart de réconciliation » toujours écrite même si delta 0 (par design AC8, non conditionnée au statut). **dismiss** (choix de design assumé — la valeur 0.00 dans le cas nominal est informative, cohérent avec « Solde »/« TVA récupérable » toujours écrits).
 
 **Verdict Pass 1 : 0 finding > LOW.** 1 LOW patché par hygiène (test delta négatif).
+
+#### Review Findings — Pass 2 (Haiku 4.5) — CONVERGÉ
+
+Diff aplati `7264994 → HEAD`. **18 vérifications grep ground-truth, 0 hallucination** : SQL signe `credit−debit` (l.219), jointure facture validée DC5-iso (l.221), anti-IDOR `i.company_id` (l.222), DC5-null `None → (ZERO, "ok")` (l.177), 4 sites `VatReport{}` à jour, clé i18n 4 locales `{ $delta }`, bandeau front hors `{#if empty}` + condition `=== 'delta'`, `isReportEmpty` inchangé (DC5-empty), 9 tests AC11(a-i), garde achats-seuls inchangée, pas de `dec!` en prod, seuil `Decimal::new(1,2)`. Tests : reconciliation 9/9 + recoverable 7/7 + e2e 58/58, fmt/clippy/check/lint-i18n verts. **0 finding > LOW.**
+
+**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 0 (1 LOW patché : test delta négatif) → Pass 2 (Haiku) **0**. Rotation Sonnet→Haiku, diff aplati unique, grep ground-truth. Implémenteur = Opus 4.8 (orthogonal aux reviewers). **Cycle code-review CONVERGÉ Pass 2, 0 > LOW. Status `done`. Épopée 18-1 : a/b/c/d/e done (5/6). Reste 18-1f (tests E2E + doc).**
