@@ -210,6 +210,24 @@ journal-entry-conflict-title = Versionskonflikt
 journal-entry-conflict-message = Diese Buchung wurde von einem anderen Benutzer geändert. Neu laden?
 journal-entry-conflict-reload = Neu laden
 journal-entry-conflict-reloaded = Liste aktualisiert — klicken Sie erneut auf Bearbeiten
+
+# Assistent Vorsteuer-Einkauf (Story 18-1c)
+vat-purchase-title = MWST-Einkaufsassistent
+vat-purchase-config-required = Konfigurieren Sie das Vorsteuerkonto unter Einstellungen → Fakturierung, um den Assistenten zu verwenden.
+vat-purchase-no-rates = Kein MWST-Satz konfiguriert — siehe Einstellungen → MWST-Sätze.
+vat-purchase-charge-account = Aufwandskonto
+vat-purchase-ht = Betrag exkl. MWST
+vat-purchase-rate = MWST-Satz
+vat-purchase-rate-placeholder = Satz wählen
+vat-purchase-counterparty = Gegenkonto
+vat-purchase-same-account = Aufwandskonto und Gegenkonto müssen unterschiedlich sein.
+vat-purchase-recoverable-conflict = Aufwandskonto und Gegenkonto dürfen nicht das Vorsteuerkonto sein.
+vat-purchase-insert = Zeilen einfügen
+vat-purchase-description = Einkauf — MWST { $rate } % abziehbar
+vat-purchase-description-exempt = Einkauf — ohne MWST
+vat-purchase-replace-title = Entwurf ersetzen?
+vat-purchase-replace-message = Es wurden bereits Zeilen oder ein Text erfasst. Beim Fortfahren wird der aktuelle Entwurf überschrieben.
+vat-purchase-replace-confirm = Ersetzen
 error-date-outside-fiscal-year = Das Datum { $date } liegt nicht im aktuellen Geschäftsjahr dieser Buchung
 error-date-outside-fiscal-year-generic = Das Datum liegt nicht im aktuellen Geschäftsjahr dieser Buchung
 

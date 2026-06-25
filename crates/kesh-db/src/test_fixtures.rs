@@ -152,13 +152,19 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     sqlx::query(
         "INSERT INTO company_invoice_settings \
          (company_id, default_receivable_account_id, default_revenue_account_id, \
-          default_vat_payable_account_id, default_sales_journal) \
-         VALUES (?, ?, ?, ?, 'Ventes')",
+          default_vat_payable_account_id, default_vat_recoverable_account_id, \
+          default_sales_journal) \
+         VALUES (?, ?, ?, ?, ?, 'Ventes')",
     )
     .bind(company_id)
     .bind(accounts["1100"])
     .bind(accounts["3000"])
     .bind(accounts["2000"])
+    // Story 18-1c : compte d'impôt préalable = compte Asset existant `1000`
+    // (réutilisé, pas de 6e compte → compteur inchangé). `create_in_tx` ne
+    // valide que active + company_id, pas le type. Permet à l'E2E de l'assistant
+    // TVA achat de poster sur un compte récupérable configuré.
+    .bind(accounts["1000"])
     .execute(pool)
     .await?;
 
@@ -258,13 +264,19 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
     sqlx::query(
         "INSERT INTO company_invoice_settings \
          (company_id, default_receivable_account_id, default_revenue_account_id, \
-          default_vat_payable_account_id, default_sales_journal) \
-         VALUES (?, ?, ?, ?, 'Ventes')",
+          default_vat_payable_account_id, default_vat_recoverable_account_id, \
+          default_sales_journal) \
+         VALUES (?, ?, ?, ?, ?, 'Ventes')",
     )
     .bind(company_id)
     .bind(accounts["1100"])
     .bind(accounts["3000"])
     .bind(accounts["2000"])
+    // Story 18-1c : compte d'impôt préalable = compte Asset existant `1000`
+    // (réutilisé, pas de 6e compte → compteur inchangé). `create_in_tx` ne
+    // valide que active + company_id, pas le type. Permet à l'E2E de l'assistant
+    // TVA achat de poster sur un compte récupérable configuré.
+    .bind(accounts["1000"])
     .execute(pool)
     .await?;
 
@@ -554,6 +566,19 @@ mod tests {
         assert_eq!(
             cis_vat, seeded.accounts["2000"],
             "default_vat_payable_account_id must point to account 2000 (réutilisé)"
+        );
+
+        // Story 18-1c : compte d'impôt préalable = compte Asset `1000` réutilisé.
+        let cis_recoverable: i64 = sqlx::query_scalar(
+            "SELECT default_vat_recoverable_account_id FROM company_invoice_settings WHERE company_id = ?",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            cis_recoverable, seeded.accounts["1000"],
+            "default_vat_recoverable_account_id must point to account 1000 (réutilisé)"
         );
     }
 

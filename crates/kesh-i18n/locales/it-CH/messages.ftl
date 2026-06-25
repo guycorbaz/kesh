@@ -210,6 +210,24 @@ journal-entry-conflict-title = Conflitto di versione
 journal-entry-conflict-message = Questa scrittura è stata modificata da un altro utente. Ricaricare?
 journal-entry-conflict-reload = Ricarica
 journal-entry-conflict-reloaded = Lista ricaricata — cliccare nuovamente su Modifica
+
+# Assistente IVA acquisto (Story 18-1c)
+vat-purchase-title = Assistente IVA acquisto
+vat-purchase-config-required = Configurare il conto dell'imposta precedente in Impostazioni → Fatturazione per usare l'assistente.
+vat-purchase-no-rates = Nessuna aliquota IVA configurata — vedere Impostazioni → Aliquote IVA.
+vat-purchase-charge-account = Conto di costo
+vat-purchase-ht = Importo IVA esclusa
+vat-purchase-rate = Aliquota IVA
+vat-purchase-rate-placeholder = Scegliere un'aliquota
+vat-purchase-counterparty = Conto di contropartita
+vat-purchase-same-account = Il conto di costo e la contropartita devono essere diversi.
+vat-purchase-recoverable-conflict = Il conto di costo e la contropartita non possono essere il conto dell'imposta precedente.
+vat-purchase-insert = Inserisci le righe
+vat-purchase-description = Acquisto — IVA { $rate } % recuperabile
+vat-purchase-description-exempt = Acquisto — senza IVA
+vat-purchase-replace-title = Sostituire la bozza?
+vat-purchase-replace-message = Sono già state inserite righe o una descrizione. Continuando si sovrascriverà la bozza attuale.
+vat-purchase-replace-confirm = Sostituisci
 error-date-outside-fiscal-year = La data { $date } non rientra nell'esercizio corrente di questa scrittura
 error-date-outside-fiscal-year-generic = La data non rientra nell'esercizio corrente di questa scrittura
 

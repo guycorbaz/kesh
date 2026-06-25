@@ -210,6 +210,24 @@ journal-entry-conflict-title = Version conflict
 journal-entry-conflict-message = This entry has been modified by another user. Reload?
 journal-entry-conflict-reload = Reload
 journal-entry-conflict-reloaded = List reloaded — click Edit again to resume
+
+# VAT purchase assistant (Story 18-1c)
+vat-purchase-title = VAT purchase assistant
+vat-purchase-config-required = Configure the input VAT account in Settings → Invoicing to use the assistant.
+vat-purchase-no-rates = No VAT rate configured — see Settings → VAT rates.
+vat-purchase-charge-account = Expense account
+vat-purchase-ht = Amount excl. VAT
+vat-purchase-rate = VAT rate
+vat-purchase-rate-placeholder = Choose a rate
+vat-purchase-counterparty = Counterparty account
+vat-purchase-same-account = The expense account and counterparty must be different.
+vat-purchase-recoverable-conflict = The expense account and counterparty cannot be the input VAT account.
+vat-purchase-insert = Insert lines
+vat-purchase-description = Purchase — VAT { $rate } % recoverable
+vat-purchase-description-exempt = Purchase — no VAT
+vat-purchase-replace-title = Replace draft?
+vat-purchase-replace-message = Lines or a description have already been entered. Continuing will overwrite the current draft.
+vat-purchase-replace-confirm = Replace
 error-date-outside-fiscal-year = The date { $date } is not within the current fiscal year of this entry
 error-date-outside-fiscal-year-generic = The date is not within the current fiscal year of this entry
 

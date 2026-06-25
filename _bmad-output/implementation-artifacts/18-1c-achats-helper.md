@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 18
 story: 18-1c
 type: feature
@@ -368,6 +368,64 @@ Big.roundHalfUp).toFixed(2)`.
 ## Prochaine étape
 
 `bmad-create-story validate 18-1c` (rotation Sonnet→Haiku→Opus→…, contexte frais) avant la `dev-story`.
+
+## Dev Agent Record
+
+### Implémentation (`bmad-dev-story 18-1c`, Opus 4.8, 2026-06-25)
+
+Tâches **T-C1..T-C6 toutes complétées** :
+
+- **T-C1 ✅** — `frontend/src/lib/features/journal-entries/vat-purchase.ts` : `lineVatAmount` (parité backend
+  via `parseAmount` + `Big.roundHalfUp`, 2 déc.), `buildPurchaseVatLines` (verrou F-OPUS-C1 :
+  `débit charge = round₂(HT)`, 3 lignes si vat>0 / 2 si 0, équilibre par construction), `isDraftLineNonEmpty`.
+- **T-C2 ✅** — `VatPurchaseAssistant.svelte` : panneau repliable, 4 champs (charge/HT/taux/contrepartie),
+  taux via `getVatRates()`, config-requise si `recoverableAccountId == null` (AC5), message dédié liste vide
+  (M3), affichage Select avec fallback `category` vide (M2), garde AC8 (charge≠contrepartie≠recoverable),
+  IDs DOM `$props.id()` (DC-c8), `data-testid="vat-purchase-assistant"` pour l'E2E.
+- **T-C3 ✅** — branché dans `JournalEntryForm` (mode création via `isEdit`), prop `recoverableAccountId`
+  chargée par la page parent via `getInvoiceSettings()` (parallèle à `accounts`) ; `onApply` confirme si
+  brouillon non vierge (modale inline réutilisée), sinon applique : `lines` + `journal='Achats'` +
+  `description` si vide (H2/H3).
+- **T-C4 ✅** — clés `vat-purchase-*` ajoutées aux **4** `.ftl` (fr/de/it/en-CH), interpolation `{ $rate }` ;
+  réutilise `vat-category-*` existant. 17 entrées ajoutées à `KNOWN_VIOLATIONS` de `lint-i18n-ownership.js`
+  (même pattern que les clés `journal-entry-*` / `journal-${j}` de cette feature, issue #30).
+- **T-C5 ✅** — (a) fixture `seed_accounting_company`+`_no_fy` : `default_vat_recoverable_account_id` = compte
+  `1000` réutilisé (compteur inchangé) + self-test étendu ; (b) 16 tests unitaires `vat-purchase.test.ts`
+  (parité, virgule, tie-break half-up, HT 3-4 déc, vat==0, isDraftLineNonEmpty) ; (c) 2 E2E
+  `vat-purchase-assistant.spec.ts` (round-trip insertion→soumission→liste + cas exempt).
+- **T-C6 ✅** — quality gate (cf. ci-dessous).
+
+### Résultats de tests (Test Locally First)
+
+- **Frontend** : `npm run check` **0 erreur** (25 warnings pré-existants hors scope) ; `npm run
+  lint-i18n-ownership` **PASS** ; `npm run test:unit` **328 verts** (dont 16 nouveaux) ; `npm run build` OK.
+- **Backend** : `kesh-i18n` **21 verts** (`load_all_locales` valide les 4 .ftl) ; fixture self-tests
+  **6/6** (dont nouvelle assertion `default_vat_recoverable_account_id == 1000`) ; compteurs comptes
+  intacts (`test_endpoints_e2e` **10/10**, `exports_global_e2e` **20/20**, `("accounts", 5)` non cassé).
+- **E2E (live, stack montée localement)** : `vat-purchase-assistant.spec.ts` **2/2 PASS** — round-trip
+  complet validé (assistant → 3 lignes équilibrées → POST /journal-entries → écriture en liste ; + cas
+  taux exempt → 2 lignes). Gotcha relevé : Fluent entoure la variable interpolée de marques d'isolation
+  directionnelle (U+2068/U+2069), comportement standard présent dans tous les messages interpolés.
+- **Caveat E2E non-régression** : 12 tests de `journal-entries.spec.ts` échouent **dans ma stack locale
+  HTTP** sur `authedApiContext` (`/accounts` 401) — cause : les cookies d'auth sont `Secure` (Story 10-5)
+  et l'`APIRequestContext` séparé de Playwright ne les replaye pas sur `http://`. **Prouvé pré-existant /
+  hors-scope** : un spec totalement non lié (`invoices_echeancier.spec.ts`) échoue identiquement
+  (`createContact 401`), et mes propres E2E (qui passent par l'UI, pas ce helper) passent 2/2. Aucune
+  régression introduite par 18-1c (la page navigateur envoie bien les cookies — le chargement des comptes
+  du formulaire fonctionne).
+
+### File List
+
+- `frontend/src/lib/features/journal-entries/vat-purchase.ts` — **NOUVEAU** — helpers calcul/génération.
+- `frontend/src/lib/features/journal-entries/vat-purchase.test.ts` — **NOUVEAU** — 16 tests unitaires.
+- `frontend/src/lib/features/journal-entries/VatPurchaseAssistant.svelte` — **NOUVEAU** — composant assistant.
+- `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte` — prop `recoverableAccountId` +
+  branchement assistant (création) + modale de confirmation de remplacement.
+- `frontend/src/routes/(app)/journal-entries/+page.svelte` — chargement `getInvoiceSettings()` + passage prop.
+- `frontend/tests/e2e/vat-purchase-assistant.spec.ts` — **NOUVEAU** — 2 tests E2E.
+- `frontend/scripts/lint-i18n-ownership.js` — 17 clés `vat-purchase-*`/`vat-category-*` ajoutées à `KNOWN_VIOLATIONS`.
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — bloc `vat-purchase-*` (4 locales).
+- `crates/kesh-db/src/test_fixtures.rs` — `default_vat_recoverable_account_id` = compte `1000` (2 fixtures) + self-test.
 
 ## Change Log
 
