@@ -387,3 +387,25 @@ async fn reconciliation_rendered_in_csv(pool: MySqlPool) {
     );
     assert!(text.contains("10.00"), "valeur écart présente : {text}");
 }
+
+/// (i, LOW-1 review) Écart NÉGATIF : la ligne TVA due est GONFLÉE à la main
+/// (91 > 81 facturé) → delta = -10, status "delta" (symétrie de `abs()`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reconciliation_negative_delta_detected(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = seed_contact(&pool, &seeded).await;
+    let inv = create_validated_invoice(
+        &pool,
+        &seeded,
+        contact,
+        ymd(2026, 6, 15),
+        &[(dec!(8.10), dec!(1000))],
+    )
+    .await;
+    // 81.00 → 91.00 : comptabilisé > facturé (delta négatif).
+    tamper_vat_line(&pool, inv, seeded.accounts["2000"], dec!(91.00)).await;
+
+    let report = gen_report(&pool, &seeded).await;
+    assert_eq!(report.reconciliation_delta, dec!(-10.00), "81 - 91 = -10");
+    assert_eq!(report.reconciliation_status, "delta", "abs() symétrique");
+}
