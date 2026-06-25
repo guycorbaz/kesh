@@ -895,6 +895,7 @@ reports-vat-column-vat-due = TVA due
 reports-vat-total-base-ht = Total CA HT
 reports-vat-recoverable = TVA récupérable
 reports-vat-balance = Solde
+reports-vat-reconciliation-warning = Le décompte ne correspond pas aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement.
 
 # Filtres (4)
 reports-filter-period = Période

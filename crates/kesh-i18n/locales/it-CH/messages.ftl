@@ -847,6 +847,7 @@ reports-vat-column-vat-due = IVA dovuta
 reports-vat-total-base-ht = Totale cifra d'affari netta
 reports-vat-recoverable = IVA recuperabile
 reports-vat-balance = Saldo
+reports-vat-reconciliation-warning = Il rendiconto non corrisponde alle registrazioni contabili (scarto: { $delta }). Verificare le registrazioni convalidate modificate manualmente.
 
 reports-filter-period = Periodo
 reports-filter-fiscal-year = Esercizio

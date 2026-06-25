@@ -362,6 +362,14 @@ pub fn render_vat_report_csv<W: Write>(
     .map_err(map_csv_err)?;
     wtr.write_record(["Solde", "", &format_amount_iso(report.vat_balance)])
         .map_err(map_csv_err)?;
+    // Story 18-1e : écart de réconciliation (TVA due dérivée − solde compte TVA due
+    // au grand livre, périmètre ventes). Libellé en dur FR (i18n exports déférée v0.2).
+    wtr.write_record([
+        "Écart de réconciliation",
+        "",
+        &format_amount_iso(report.reconciliation_delta),
+    ])
+    .map_err(map_csv_err)?;
 
     wtr.flush().map_err(map_io_err)?;
     Ok(())

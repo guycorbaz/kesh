@@ -847,6 +847,7 @@ reports-vat-column-vat-due = Geschuldete MwSt
 reports-vat-total-base-ht = Total Umsatz netto
 reports-vat-recoverable = Vorsteuer
 reports-vat-balance = Saldo
+reports-vat-reconciliation-warning = Die Abrechnung stimmt nicht mit den Buchungen überein (Differenz: { $delta }). Prüfen Sie manuell geänderte validierte Buchungen.
 
 reports-filter-period = Periode
 reports-filter-fiscal-year = Geschäftsjahr

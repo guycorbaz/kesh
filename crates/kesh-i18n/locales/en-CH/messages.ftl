@@ -847,6 +847,7 @@ reports-vat-column-vat-due = VAT due
 reports-vat-total-base-ht = Total net turnover
 reports-vat-recoverable = Recoverable VAT
 reports-vat-balance = Balance
+reports-vat-reconciliation-warning = The VAT return does not match the accounting entries (difference: { $delta }). Check validated entries modified manually.
 
 reports-filter-period = Period
 reports-filter-fiscal-year = Fiscal Year

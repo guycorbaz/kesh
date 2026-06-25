@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 18
 story: 18-1e
 type: feature
@@ -388,6 +388,70 @@ transmettre le décompte à l'AFC.
 `bmad-create-story validate 18-1e` Pass 1 (Sonnet 4.6) — cycle adversarial CLAUDE.md (rotation
 Sonnet→Haiku→Opus→…, contexte frais, grep ground-truth) jusqu'à 0 finding > LOW ou 8 passes. Puis
 `bmad-dev-story 18-1e` (Opus). Dernière sous-story restante ensuite : **18-1f** (tests E2E + doc).
+
+## Dev Agent Record
+
+### Implémentation (`bmad-dev-story 18-1e`, Opus 4.8, 2026-06-26)
+
+Tâches **T-E1..T-E6 toutes complétées** :
+
+- **T-E1 ✅** — helper `due_account_balance_sales_scope(pool, company_id, account_id, period)` dans
+  `vat_report.rs` : `SELECT COALESCE(SUM(jel.credit),0) - COALESCE(SUM(jel.debit),0) … INNER JOIN invoices i
+  ON i.journal_entry_id = jel.entry_id WHERE i.company_id = ? AND i.status='validated' AND i.date BETWEEN ? AND
+  ? AND jel.account_id = ?`. Signe `credit−debit` codé en dur (Liability, DC5-signe), isolation par lien
+  facture validée (DC5-iso, F-OPUS-4), `map_db_error`. Doc `///` (DC5-iso/signe/period + limitation L-1
+  reconfig compte + résiduel hors-ventes).
+- **T-E2 ✅** — 2 champs `reconciliation_delta: Decimal` + `reconciliation_status: String` ajoutés à
+  `VatReport`. Lecture des 2 comptes TVA en une requête `fetch_optional` + `unwrap_or((None, None))` (corrige
+  une régression détectée en dev : `fetch_one` aurait échoué pour une company sans row settings — cas
+  anti-IDOR/company inexistante). DC5-null implémenté par `match payable_account_id` (None → delta 0/ok, PAS
+  `due − 0`). Seuil `Decimal::new(1, 2)` (pas `dec!`). 4 sites de construction `VatReport{}` mis à jour
+  (`generate` + test `aggregate` + `pdf.rs` `fixture_vat` + test `recoverable_only`).
+- **T-E3 ✅** — CSV `render_vat_report_csv` : ligne « Écart de réconciliation » après « Solde » (libellé en
+  dur FR). PDF `render_vat_report_pdf` : `draw_totals_footer` après « Solde » + champ `reconciliation_delta`
+  dans `VatPdfLabels` + `fr_ch_defaults()` (en dur FR, i18n exports déférée v0.2).
+- **T-E4 ✅** — front : `VatReportDto` + `reconciliationDelta`/`reconciliationStatus` ; bandeau inline
+  `bg-amber-50 role="alert"` dans `VatReportView.svelte`, structurellement indépendant de `empty`, visible ssi
+  `reconciliationStatus === 'delta'`, message via `i18nMsg('reports-vat-reconciliation-warning', fallback,
+  { delta })`. `isReportEmpty` **non touché** (DC5-empty).
+- **AC10 ✅** — clé `reports-vat-reconciliation-warning` (interpolation `{ $delta }`) ajoutée aux **4** locales
+  (fr/de/it/en-CH). `lint-i18n-ownership` PASS.
+- **T-E5 ✅** — 8 tests d'intégration `crates/kesh-report/tests/vat_report_reconciliation.rs` (sqlx::test) :
+  (a) nominal delta 0 ; (b) édition manuelle → delta 10/"delta" ; (c) isolation OD non liée (F-OPUS-4) ;
+  (d) compte NULL → 0/"ok" ; (e) anti-IDOR (company inexistante, pattern 18-1d) ; (f) seuil 0.005→ok /
+  0.01→delta ; (g) non-régression totaux + multi-taux ; (h) CSV contient « Écart de réconciliation » + valeur.
+  Helpers `create_validated_invoice`/`seed_contact`/`tamper_vat_line` (UPDATE SQL direct de la ligne 2200).
+- **T-E6 ✅** — quality gate (cf. ci-dessous).
+
+### Résultats de tests (Test Locally First)
+
+- **Backend** : `cargo fmt --all --check` ✅ ; `cargo clippy -p kesh-report --all-targets -D warnings` ✅ 0
+  warning ; **8/8** `vat_report_reconciliation` ; **kesh-report lib 62** + **recoverable 7** ; non-régression
+  **report e2e 58/58** (`vat_report_e2e` 28, `reports_e2e` 20, `reports_export_e2e` 10).
+- **Frontend** : `npm run check` **0 erreur** (25 warnings pré-existants hors scope) ; `lint-i18n-ownership`
+  **PASS** ; `test:unit` **329** ; `build` OK.
+
+### Régression interceptée pendant le dev
+
+- **`fetch_one` → `fetch_optional`** : ma 1ère version lisait les 2 comptes TVA via `fetch_one`, qui panique
+  (`RowNotFound`) pour une company sans row `company_invoice_settings` (company inexistante / cas dégénéré) —
+  alors que le code 18-1d utilisait `fetch_optional` et renvoyait 0. Détecté en écrivant le test anti-IDOR (e)
+  (échec « Duplicate entry 'admin' » d'abord, puis refonte test → expose le besoin `fetch_optional`). Corrigé.
+- **DC5-null** : ma 1ère version calculait `delta = total_vat_due − 0` quand le compte TVA due est `None`, ce
+  qui aurait donné un faux écart si des factures validées pré-existantes portaient de la TVA. Corrigé par
+  `match payable_account_id` (None → delta 0/"ok"), conforme DC5-null. Test (d) verrouille.
+
+### File List
+
+- `crates/kesh-report/src/vat_report.rs` — 2 champs struct + helper `due_account_balance_sales_scope` +
+  branchement `generate` (lecture 2 comptes `fetch_optional`, delta/status) + doc.
+- `crates/kesh-report/src/csv.rs` — ligne « Écart de réconciliation » dans `render_vat_report_csv`.
+- `crates/kesh-report/src/pdf.rs` — champ `VatPdfLabels.reconciliation_delta` + `fr_ch_defaults()` +
+  `draw_totals_footer` dans `render_vat_report_pdf` + 2 fixtures de test mises à jour.
+- `crates/kesh-report/tests/vat_report_reconciliation.rs` — **NOUVEAU** — 8 tests d'intégration.
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — clé `reports-vat-reconciliation-warning` (4).
+- `frontend/src/lib/features/reports/reports.types.ts` — `reconciliationDelta` + `reconciliationStatus`.
+- `frontend/src/lib/features/reports/VatReportView.svelte` — bandeau d'alerte réconciliation.
 
 ## Change Log
 

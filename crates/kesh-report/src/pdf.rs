@@ -893,6 +893,9 @@ pub struct VatPdfLabels {
     pub vat_recoverable: String,
     /// Libellé solde.
     pub balance: String,
+    /// Libellé écart de réconciliation (Story 18-1e). En dur FR — l'i18n des
+    /// exports PDF est déférée v0.2 (cohérent avec les autres libellés).
+    pub reconciliation_delta: String,
 }
 
 impl VatPdfLabels {
@@ -907,6 +910,7 @@ impl VatPdfLabels {
             total_vat_due: "Total TVA due".into(),
             vat_recoverable: "TVA récupérable".into(),
             balance: "Solde".into(),
+            reconciliation_delta: "Écart de réconciliation".into(),
         }
     }
 }
@@ -984,6 +988,13 @@ pub fn render_vat_report_pdf(
         report.total_vat_recoverable,
     );
     draw_totals_footer(&mut builder, &labels.balance, report.vat_balance);
+    // Story 18-1e : écart de réconciliation (TVA due dérivée − solde compte TVA due
+    // au grand livre, périmètre ventes). 0.00 dans le cas nominal.
+    draw_totals_footer(
+        &mut builder,
+        &labels.reconciliation_delta,
+        report.reconciliation_delta,
+    );
 
     builder.finalize()
 }
@@ -1243,6 +1254,8 @@ mod tests {
             total_vat_due: if empty { Decimal::ZERO } else { dec!(81.00) },
             total_vat_recoverable: Decimal::ZERO,
             vat_balance: if empty { Decimal::ZERO } else { dec!(81.00) },
+            reconciliation_delta: Decimal::ZERO,
+            reconciliation_status: "ok".to_string(),
         }
     }
 
@@ -1277,6 +1290,8 @@ mod tests {
             total_vat_due: Decimal::ZERO,
             total_vat_recoverable: dec!(81.00),
             vat_balance: dec!(-81.00),
+            reconciliation_delta: Decimal::ZERO,
+            reconciliation_status: "ok".to_string(),
         };
         let bytes = render_vat_report_pdf(&report, &ctx, &VatPdfLabels::fr_ch_defaults()).unwrap();
         assert!(bytes.starts_with(b"%PDF-1."));

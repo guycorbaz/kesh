@@ -64,6 +64,17 @@ pub struct VatReport {
     pub total_vat_recoverable: Decimal,
     /// Solde = `total_vat_due - total_vat_recoverable`.
     pub vat_balance: Decimal,
+    /// Écart de réconciliation (Story 18-1e, DC5) =
+    /// `total_vat_due` (dérivé des `invoice_lines`, total de référence traçable)
+    /// − solde du compte TVA due (`2200`) au grand livre **isolé au périmètre
+    /// ventes** (lignes liées à une facture validée de la période). Positif = TVA
+    /// facturée > comptabilisée (une ligne 2200 a été réduite à la main) ; négatif
+    /// = inverse. `0.00` si le compte TVA due n'est pas configuré.
+    pub reconciliation_delta: Decimal,
+    /// `"delta"` si `|reconciliation_delta| >= 0.01` (1 centime, écriture validée
+    /// modifiée manuellement), sinon `"ok"` (Story 18-1e, DC5-delta). Informatif,
+    /// non bloquant.
+    pub reconciliation_status: String,
 }
 
 /// Génère le rapport TVA (TVA due/vente) pour la période donnée.
@@ -118,24 +129,53 @@ pub async fn generate(
     let total_base_ht: Decimal = rows.iter().map(|r| r.base_ht).sum();
     let total_vat_due: Decimal = rows.iter().map(|r| r.vat_due).sum();
 
-    // Story 18-1d : TVA récupérable = solde du compte impôt préalable lu du grand
-    // livre. La row `company_invoice_settings` existe dès l'onboarding ; le compte
-    // peut ne pas être configuré (NULL) → récupérable = 0 (comportement préservé).
-    let recoverable_account_id: Option<i64> = sqlx::query_scalar(
-        "SELECT default_vat_recoverable_account_id \
-         FROM company_invoice_settings WHERE company_id = ?",
+    // Stories 18-1d/18-1e : lecture des comptes TVA configurés en une seule requête.
+    // La row `company_invoice_settings` existe dès l'onboarding ; chaque compte peut
+    // ne pas être configuré (NULL) → récupérable/delta = 0 (comportement préservé).
+    // `fetch_optional` + `unwrap_or` : une company sans row `company_invoice_settings`
+    // (cas dégénéré / company inexistante) → comptes None → récupérable/delta = 0,
+    // jamais une erreur (cohérent avec le comportement 18-1d).
+    let (payable_account_id, recoverable_account_id): (Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT default_vat_payable_account_id, default_vat_recoverable_account_id \
+             FROM company_invoice_settings WHERE company_id = ?",
     )
     .bind(company_id)
     .fetch_optional(pool)
     .await
     .map_err(kesh_db::errors::map_db_error)?
-    .flatten();
+    .unwrap_or((None, None));
 
+    // Story 18-1d : TVA récupérable = solde du compte impôt préalable lu du grand livre.
     let total_vat_recoverable = match recoverable_account_id {
         Some(account_id) => recoverable_balance(pool, company_id, account_id, period).await?,
         None => Decimal::ZERO,
     };
     let vat_balance = total_vat_due - total_vat_recoverable;
+
+    // Story 18-1e (DC5) : réconciliation TVA due. Cross-check de la TVA due dérivée
+    // des `invoice_lines` (ci-dessus) contre le solde du compte TVA due au grand
+    // livre, isolé au périmètre ventes (lignes liées à une facture validée). En
+    // l'absence d'édition manuelle d'une écriture validée, delta == 0 par construction
+    // (mêmes factures, même `line_vat_amount` agrégé par taux).
+    //
+    // DC5-null : si le compte TVA due n'est pas configuré (`None`), rien à
+    // réconcilier — delta = 0, status "ok" (PAS `total_vat_due − 0`, qui donnerait
+    // un faux écart si des factures validées pré-existantes portent de la TVA).
+    let (reconciliation_delta, reconciliation_status) = match payable_account_id {
+        Some(account_id) => {
+            let balance =
+                due_account_balance_sales_scope(pool, company_id, account_id, period).await?;
+            let delta = total_vat_due - balance;
+            // Seuil 1 centime. NB : `Decimal::new(1, 2)` (pas `dec!` — macro dev-only).
+            let status = if delta.abs() >= Decimal::new(1, 2) {
+                "delta".to_string()
+            } else {
+                "ok".to_string()
+            };
+            (delta, status)
+        }
+        None => (Decimal::ZERO, "ok".to_string()),
+    };
 
     Ok(VatReport {
         period: period.clone(),
@@ -144,7 +184,54 @@ pub async fn generate(
         total_vat_due,
         total_vat_recoverable,
         vat_balance,
+        reconciliation_delta,
+        reconciliation_status,
     })
+}
+
+/// Solde du compte de TVA due (`account_id`, p.ex. `2200`) au grand livre **isolé au
+/// périmètre ventes** sur la période (Story 18-1e, DC5-iso). `SUM(credit) − SUM(debit)`
+/// — signe **codé en dur** car le compte est un Liability par construction (la TVA
+/// collectée est portée au crédit ; un compte non-Liability configuré est une erreur
+/// de config hors scope v0.2).
+///
+/// L'isolation « périmètre ventes » se fait par le **lien facture validée**
+/// (`INNER JOIN invoices i ON i.journal_entry_id = jel.entry_id`), **pas** par le
+/// libellé `journal` (qui est configurable via `default_sales_journal`, F-OPUS-4). La
+/// jointure exclut nativement : les OD manuelles sur le compte TVA due sans facture,
+/// les factures non validées, et les autres companies (via `i.company_id`). Le filtre
+/// `i.date BETWEEN` couvre le même ensemble de factures que la TVA due dérivée
+/// (`entry_date == invoice.date` pour les écritures de vente) → cohérence des deux
+/// côtés du delta. `COALESCE` → `0` si aucune ligne.
+///
+/// Limitation (DC5, L-1) : suppose le compte TVA due **stable sur la période**. Une
+/// reconfiguration de `default_vat_payable_account_id` en cours de période laisse les
+/// factures déjà validées sur l'ancien compte → delta à investiguer (signal légitime,
+/// pas un faux positif nuisible). Le résiduel manuel hors-ventes sur le compte
+/// (auto-liquidation, régularisation AFC) est hors scope du delta.
+async fn due_account_balance_sales_scope(
+    pool: &MySqlPool,
+    company_id: i64,
+    account_id: i64,
+    period: &ReportPeriod,
+) -> Result<Decimal, ReportError> {
+    let balance: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(jel.credit), 0) - COALESCE(SUM(jel.debit), 0) \
+         FROM journal_entry_lines jel \
+         INNER JOIN invoices i ON i.journal_entry_id = jel.entry_id \
+         WHERE i.company_id = ? \
+           AND i.status = 'validated' \
+           AND i.date BETWEEN ? AND ? \
+           AND jel.account_id = ?",
+    )
+    .bind(company_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(kesh_db::errors::map_db_error)?;
+    Ok(balance)
 }
 
 /// Solde du compte d'impôt préalable (`account_id`) au grand livre sur la période
@@ -219,6 +306,8 @@ mod tests {
             total_vat_due,
             total_vat_recoverable,
             vat_balance,
+            reconciliation_delta: Decimal::ZERO,
+            reconciliation_status: "ok".to_string(),
         }
     }
 
