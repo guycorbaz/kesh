@@ -251,6 +251,35 @@ async fn recoverable_account_null_returns_zero(pool: MySqlPool) {
     assert_eq!(report.vat_balance, dec!(0));
 }
 
+/// (i) Compte configuré mais AUCUNE écriture dans la période → 0 via le helper
+/// (chemin `COALESCE(SUM,0)` 100 %-NULL, distinct du cas (d) NULL qui court-circuite
+/// avant le helper). Une écriture hors-période garantit que le helper est bien
+/// appelé mais ne compte rien.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn recoverable_configured_no_entry_in_period_returns_zero(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    // Une seule écriture, HORS période (2025) → le compte est configuré (1000), le
+    // helper s'exécute, mais SUM des deux côtés est NULL sur 2026 → COALESCE → 0.
+    post_entry(
+        &pool,
+        &seeded,
+        ymd(2025, 6, 15),
+        seeded.accounts["1000"],
+        seeded.accounts["2000"],
+        dec!(81.00),
+    )
+    .await;
+
+    let report = vat_report::generate(
+        &pool,
+        seeded.company_id,
+        &period_2026(seeded.fiscal_year_id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(report.total_vat_recoverable, dec!(0));
+}
+
 /// (e) Anti-IDOR (scoping company) : un `company_id` autre que celui des écritures
 /// retourne 0 (le filtre `je.company_id = ?` isole la company).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

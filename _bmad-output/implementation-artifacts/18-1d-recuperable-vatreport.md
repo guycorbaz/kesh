@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 epic: 18
 story: 18-1d
 type: feature
@@ -298,4 +298,14 @@ Tâches **T-D1..T-D5 toutes complétées** :
 - [x] **[Review][Patch]** LOW — doc-comment `render_vat_report_csv` (`csv.rs`) disait encore « TVA récupérable (0.00 en v0.2) » → corrigé (solde compte impôt préalable + cas achats-seuls).
 - Dismissed : trou de couverture COALESCE 100%-NULL (sémantique SQL correcte, couvert par test (e)) ; récupérable<0 + rows vide (même prédicat `is_zero`/`!== 0`, pas de branche distincte) ; multi-exercice (prouvé inaccessible Pass 3 Opus) ; Dev Record « vat_report_e2e » (l'auditor a cherché dans kesh-report/tests ; le fichier est dans kesh-api/tests, 28 tests réels).
 
-**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 1M. Prochaine : Pass 2 (Haiku) contexte frais, diff aplati.
+#### Review Findings — Pass 2 (Haiku 4.5) — CONVERGÉ
+
+2 reviewers parallèles sur diff aplati unique (dev + patches Pass 1). **Acceptance Auditor : 0 écart** (AC1-AC10/DC tous satisfaits, patches Pass 1 vérifiés : test PDF présent, clé orpheline retirée des 4 locales avec parité, doc à jour). **Blind Hunter (Haiku) 1 HIGH + 3 MEDIUM — tous auto-réfutés par le reviewer lui-même** :
+
+- **HIGH** « double comptage / discontinuité config tardive » → le reviewer conclut **« Non un bug — comportement conforme à spec »** (DC4-bis périmètre intégral, transition documentée). **dismiss**.
+- **MEDIUM** NULL-safety dates `period.start_date/end_date` → ce sont des `NaiveDate` (non-Option), jamais NULL ; reviewer « Pas un bug dans le diff ». **dismiss**.
+- **MEDIUM** lisibilité `.flatten()` → reviewer « Correct… not a bug » (smell de maintenabilité). **dismiss**.
+- **MEDIUM** test périmètre solde 0 (chemin `COALESCE→0` du helper non exercé) → **seul point à valeur réelle** : le test (e) passe par la branche `None`, pas par le helper. **PATCHÉ** : test (i) `recoverable_configured_no_entry_in_period_returns_zero` (compte configuré + écriture hors-période seule → helper appelé, `COALESCE→0`). 7 tests intégration.
+- LOW (assertion PDF par taille, `Number()` défensif, scope `recoverable_balance`) : dismiss (adéquats).
+
+**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 1M → Pass 2 (Haiku) **0** (Blind Hunter auto-réfuté + Auditor convergent ; 1 LOW de couverture patché par hygiène). Rotation Sonnet→Haiku, diff aplati unique. **Cycle code-review CONVERGÉ Pass 2, 0 > LOW. Status `done`.**
