@@ -228,6 +228,12 @@ vat-purchase-description-exempt = Einkauf — ohne MWST
 vat-purchase-replace-title = Entwurf ersetzen?
 vat-purchase-replace-message = Es wurden bereits Zeilen oder ein Text erfasst. Beim Fortfahren wird der aktuelle Entwurf überschrieben.
 vat-purchase-replace-confirm = Ersetzen
+# Kategorien MWST-Sätze (réutilisées par l'assistant TVA achat, Story 18-1c)
+vat-category-normal = Normalsatz
+vat-category-reduced = Reduzierter Satz
+vat-category-special = Sondersatz (Beherbergung)
+vat-category-exempt = Befreit / 0 %
+vat-category-custom = Benutzerdefiniert
 error-date-outside-fiscal-year = Das Datum { $date } liegt nicht im aktuellen Geschäftsjahr dieser Buchung
 error-date-outside-fiscal-year-generic = Das Datum liegt nicht im aktuellen Geschäftsjahr dieser Buchung
 

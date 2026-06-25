@@ -228,6 +228,12 @@ vat-purchase-description-exempt = Purchase — no VAT
 vat-purchase-replace-title = Replace draft?
 vat-purchase-replace-message = Lines or a description have already been entered. Continuing will overwrite the current draft.
 vat-purchase-replace-confirm = Replace
+# VAT rate categories (reused by the VAT purchase assistant, Story 18-1c)
+vat-category-normal = Standard rate
+vat-category-reduced = Reduced rate
+vat-category-special = Special rate (accommodation)
+vat-category-exempt = Exempt / 0 %
+vat-category-custom = Custom
 error-date-outside-fiscal-year = The date { $date } is not within the current fiscal year of this entry
 error-date-outside-fiscal-year-generic = The date is not within the current fiscal year of this entry
 

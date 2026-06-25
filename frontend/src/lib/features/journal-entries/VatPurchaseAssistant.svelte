@@ -7,7 +7,8 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { getVatRates } from '$lib/features/vat-rates/vat-rates.store.svelte';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
-	import { isValidAmount } from './balance';
+	import Big from 'big.js';
+	import { isValidAmount, parseAmount } from './balance';
 	import type { LineDraft } from './form-helpers';
 	import { buildPurchaseVatLines, lineVatAmount } from './vat-purchase';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
@@ -65,7 +66,14 @@
 
 	const selectedRate = $derived(rates.find((r) => r.rate === ratePercent) ?? null);
 
-	const htValid = $derived(isValidAmount(htAmount) && htAmount.trim() !== '' && Number(htAmount.replace(',', '.')) > 0);
+	// HT valide ssi format OK ET arrondi au centime strictement > 0 : un HT
+	// sub-centime (ex. 0.001) arrondirait la ligne de charge à 0.00 → écriture
+	// rejetée (`debit > 0`). Big.js (jamais Number/parseFloat sur un montant).
+	const htValid = $derived(
+		isValidAmount(htAmount) &&
+			htAmount.trim() !== '' &&
+			parseAmount(htAmount).round(2, Big.roundHalfUp).gt(0)
+	);
 
 	// AC8 : garde de validation des entrées.
 	const sameChargeCounterparty = $derived(

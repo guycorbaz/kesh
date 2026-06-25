@@ -228,6 +228,12 @@ vat-purchase-description-exempt = Acquisto — senza IVA
 vat-purchase-replace-title = Sostituire la bozza?
 vat-purchase-replace-message = Sono già state inserite righe o una descrizione. Continuando si sovrascriverà la bozza attuale.
 vat-purchase-replace-confirm = Sostituisci
+# Categorie aliquote IVA (riutilizzate dall'assistente IVA acquisto, Story 18-1c)
+vat-category-normal = Aliquota normale
+vat-category-reduced = Aliquota ridotta
+vat-category-special = Aliquota speciale (alloggio)
+vat-category-exempt = Esente / 0 %
+vat-category-custom = Personalizzata
 error-date-outside-fiscal-year = La data { $date } non rientra nell'esercizio corrente di questa scrittura
 error-date-outside-fiscal-year-generic = La data non rientra nell'esercizio corrente di questa scrittura
 

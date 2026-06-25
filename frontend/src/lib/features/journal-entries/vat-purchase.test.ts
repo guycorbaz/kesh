@@ -90,6 +90,18 @@ describe('buildPurchaseVatLines', () => {
 		expect(sum(lines, 'debit')).toBe(sum(lines, 'credit'));
 	});
 
+	it('frontière sub-centime : HT 0.004 → charge 0.00 (cas bloqué par le guard htValid du composant)', () => {
+		// Documente pourquoi `VatPurchaseAssistant` exige `round₂(HT) > 0` avant
+		// d'appeler ce helper : un HT < 0.005 arrondit la charge à 0.00 (ligne
+		// non postable, `debit > 0` violé). À l'inverse 0.005 → 0.01 (valide).
+		expect(buildPurchaseVatLines(base({ htAmount: '0.004', ratePercent: '0' }))[0].debit).toBe(
+			'0.00'
+		);
+		expect(buildPurchaseVatLines(base({ htAmount: '0.005', ratePercent: '0' }))[0].debit).toBe(
+			'0.01'
+		);
+	});
+
 	it('virgule décimale dans le HT est normalisée', () => {
 		const lines = buildPurchaseVatLines(base({ htAmount: '1000,50' }));
 		expect(lines[0].debit).toBe('1000.50');

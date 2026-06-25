@@ -442,3 +442,16 @@ Tâches **T-C1..T-C6 toutes complétées** :
 | 4 | Sonnet 4.6 | 0 ✅ | **CONVERGÉ.** Les 3 patches Pass 3 vérifiés ground-truth correctement appliqués + cohérents (F-OPUS-C1 verrou `round₂(HT)` cohérent DC-c7/T-C1/L1/AC10 ; F-OPUS-C2 garde AC8 ; F-OPUS-C3 T-C4 4 `.ftl`, mécanisme `all_messages` base+overlay re-confirmé `loader.rs:130-141`). Balayage complétude : AC↔DC↔T-C↔Change Log cohérent, 3 helpers tous testés AC10 (tie-break, virgule, HT 3-4 déc, vat==0), 0 référence orpheline. 2 nits LOW (AC3 disait encore « HT » brut ; AC9 ne redondait pas l'exigence 4-`.ftl`) **patchés** par hygiène (comportement déjà verrouillé par T-C1 + test). 0 finding > LOW. |
 
 **Trend findings > LOW** : Pass 1 (Sonnet) 7 (1C+3H+3M) → Pass 2 (Haiku) 3 (1H+2M) → Pass 3 (Opus) 3 (1H+2M) → Pass 4 (Sonnet) **0 ✅**. Rotation Sonnet→Haiku→Opus→Sonnet, contexte frais à chaque, grep ground-truth. **Catch décisif Pass 3 Opus** : verrou numérique d'équilibre (F-OPUS-C1, bug prod latent sur HT 3-4 décimales) + garde anti-pollution solde 1171 (F-OPUS-C2) + parité i18n 4 locales (F-OPUS-C3). **Cycle validate CONVERGÉ Pass 4, 0 > LOW. Prochaine : `bmad-dev-story 18-1c` (Opus, mode frontend).**
+
+### `bmad-code-review 18-1c` — cycle adversarial post-implémentation
+
+#### Review Findings — Pass 1 (Sonnet 4.6)
+
+3 reviewers parallèles (Blind Hunter, Edge Case Hunter, Acceptance Auditor), diff aplati `07622a7`.
+
+- [x] **[Review][Patch]** HIGH — `canInsert` autorisait un HT positif **sub-centime** (`0.001`, valide car `isValidAmount` accepte 4 déc.) → `charge = round₂(HT) = 0.00` → écriture non postable (`debit > 0` violé) / brouillon mort. **APPLIQUÉ** : `htValid` exige désormais `parseAmount(htAmount).round(2, Big.roundHalfUp).gt(0)` (`VatPurchaseAssistant.svelte`). Corrige aussi le LOW « `Number()` viole la règle big.js ». Test unitaire frontière `0.004→0.00` / `0.005→0.01` ajouté.
+- [x] **[Review][Patch]** MEDIUM — clés `vat-category-*` (réutilisées par le `<Select>` des taux) **présentes uniquement en fr-CH** (ground-truth : 5 en fr-CH, 0 en de/it/en-CH) → DE/IT/EN afficheraient les libellés de catégorie **en français** (mode d'échec F-OPUS-C3). La spec affirmait à tort « déjà 4 langues ». **APPLIQUÉ** : 5 clés `vat-category-*` ajoutées à de/it/en-CH (parité 4 locales). NB : le bloc `vat-rates-*` complet reste fr-only (gap pré-existant de la feature vat-rates, hors-scope 18-1c).
+- [x] **[Review][Patch]** LOW — `recoverableAccountId = s.defaultVatRecoverableAccountId` durci en `?? null` (défense si un backend ancien omettait le champ ; le type est strict `number|null` mais hardening cheap).
+- Dismissed : (i) couplage format `rate` string-égalité → vérifié sûr par construction (`r.rate` = `"8.10"` DECIMAL canonique, valeur du `<Select>`) ; (ii) `getInvoiceSettings` undefined → type strict `number|null` (durci quand même) ; (iii) desc « sans TVA » si taux>0 arrondit à 0, wording modale, E2E selector exempt → LOW cosmétiques.
+
+**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 1H+1M. Prochaine : Pass 2 (Haiku) contexte frais, diff aplati.

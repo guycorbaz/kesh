@@ -150,7 +150,7 @@
 
 		// Charge le compte d'impôt préalable une fois (assistant TVA achat, 18-1c).
 		void getInvoiceSettings()
-			.then((s) => (recoverableAccountId = s.defaultVatRecoverableAccountId))
+			.then((s) => (recoverableAccountId = s.defaultVatRecoverableAccountId ?? null))
 			.catch(() => (recoverableAccountId = null));
 
 		return () => {
