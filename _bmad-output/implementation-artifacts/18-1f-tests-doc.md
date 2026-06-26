@@ -66,19 +66,37 @@ minuscule (p.ex. `0.01` à 8.1 % → `line_vat_amount = 0.00` après arrondi) ne
   Keep a Changelog FR (sections `### Ajouté` / `### Modifié` / `### Corrigé`), rédigé pour
   fiduciaires/PME.
 - **README** : `README.md` — l.30 `**TVA suisse** — calcul et rapports par période *(à venir)*` → **retirer
-  `*(à venir)*`** (livré). Vérifier la ligne roadmap l.182 (E11 TVA dans v0.2) — statut cohérent (l'épopée
-  18-1 livre la comptabilisation TVA, suite de E11).
+  `*(à venir)*`** (livré). Ligne roadmap l.182 (`| v0.2 (suite) | E11 TVA Suisse, … | 🚧 En cours |`) :
+  Epic 11 est clos (rétro 2026-06-14) et Epic 18 (Comptabilisation TVA) n'y figure pas (L2) → **refléter
+  l'état** : la TVA est calculée + comptabilisée + réconciliée (E11 + E18 livrés), seul le décompte AFC
+  officiel reste à venir. Action concrète : mentionner E18 / marquer la base TVA livrée sans sur-promettre le
+  format e-décompte ESTV.
+- **Site web (politique CLAUDE.md pré-push, M2)** : `website/roadmap.html` (l.234-235 « E11 — Swiss VAT :
+  Per-period VAT computation, official VAT report formats, … », **sans badge Done**) + `website/index.html`.
+  ⚠️ **E11 n'est que PARTIELLEMENT livré** : calcul + comptabilisation + décompte + réconciliation faits
+  (E18), mais « official VAT report formats » (e-décompte AFC/ESTV) = **hors scope v0.2**. Donc **NE PAS**
+  passer E11 « Done » automatiquement — c'est une **décision produit (gate Guy)** au moment de la PR umbrella.
+  Scope 18-1f : **vérifier** la cohérence, ne pas sur-claim, et **signaler** l'arbitrage E11 Done/in-progress
+  à Guy (pas de modification de badge sans son aval). Pas d'over-claim « official VAT report formats » livré.
 - **Manuel utilisateur** : `docs/manual/fr/user-manual.tex` — section `\section{Rapports comptables}`
   (l.709) avec sous-sections Bilan/Compte de résultat/Balance/Journal/Visualisation. **Ajouter une
   sous-section `\subsection{Décompte TVA}`** : TVA due (sur ventes), TVA récupérable (impôt préalable sur
   achats via l'assistant), solde net dû à l'AFC, et le **bandeau de réconciliation** (signale un décompte qui
-  ne correspond pas aux écritures — écriture validée modifiée à la main). Référencer l'assistant achat TVA
-  (déjà documenté ? sinon courte mention). PDF à régénérer (`latexmk -xelatex`, convention versionner le PDF
-  cf. PR #102).
+  ne correspond pas aux écritures — écriture validée modifiée à la main). PDF à régénérer (`latexmk -xelatex`,
+  convention versionner le PDF cf. PR #102).
+  - ⚠️ **M3 (Pass 1) — incohérences internes à corriger** : 3 mentions obsolètes « TVA à venir Epic 11 »
+    contredisent l.485 (qui dit déjà « écriture créée automatiquement … + 2200 TVA »). À mettre à jour :
+    `l.300` (retirer « (TVA à venir Epic 11) »), `l.445` (remplacer « TVA Epic 11 à venir » par les taux
+    actuels seuls), `l.1014` (« TVA non encore implémentée (Epic 11 v0.1) » → renvoi « voir §Décompte TVA »).
+    Re-grep `grep -nE "à venir|pas encore|non encore" docs/manual/fr/user-manual.tex` avant de figer (les
+    n° de ligne peuvent bouger).
 - **Manuel administrateur** : `docs/manual/fr/admin-manual.tex` — a déjà `\subsection{Loi sur la TVA (LTVA)}`
-  (l.1645). **Ajouter (ou compléter) la configuration des comptes TVA** : `Paramètres → Facturation` expose
-  les 3 comptes (TVA due `2200`, impôt préalable `1171`, décompte `2206`) posés par 18-1a, requis pour la
-  comptabilisation. Court paragraphe + renvoi au user-manual pour l'usage.
+  (l.1645). ⚠️ **M1 (Pass 1) — le corps existant (l.1647 « Kesh v0.1 ne couvre pas encore la TVA (prévue
+  Epic 11) … ») est OBSOLÈTE → le RÉÉCRIRE** (pas seulement ajouter), sinon le manuel devient contradictoire.
+  Nouveau contenu : la TVA est comptabilisée (Epic 18) ; documenter la **configuration des comptes TVA**
+  (`Paramètres → Facturation` expose les 3 comptes TVA due `2200`, impôt préalable `1171`, décompte `2206`
+  posés par 18-1a, requis pour la comptabilisation) + renvoi au user-manual pour l'usage. Conserver/adapter
+  la mention LTVA Art. 70 (e-décompte ESTV reste hors scope v0.2).
 
 ## Décisions figées (héritées umbrella — NE PAS re-litiger)
 
@@ -105,19 +123,25 @@ minuscule (p.ex. `0.01` à 8.1 % → `line_vat_amount = 0.00` après arrondi) ne
   comptabilisation automatique de la TVA due à la validation des factures de vente ; assistant de saisie des
   achats avec impôt préalable ; décompte TVA (TVA due − récupérable = solde net AFC) ; **réconciliation**
   rapport ↔ grand livre avec alerte d'écart. Format Keep a Changelog FR.
-- **AC4 — README** : marqueur `*(à venir)*` retiré de la ligne « TVA suisse — calcul et rapports par
-  période » ; section « Feuille de route » cohérente avec l'état livré (E11 TVA / Epic 18). Aucune autre
-  feature livrée ne reste marquée `(à venir)` à tort du fait de l'épopée.
+- **AC4 — README + site web** : marqueur `*(à venir)*` retiré de la ligne « TVA suisse — calcul et rapports
+  par période » ; ligne roadmap l.182 mise à jour (E11 + E18 base TVA livrée, décompte AFC officiel à venir).
+  `website/roadmap.html` + `index.html` vérifiés : pas d'over-claim « official VAT report formats » livré ; le
+  badge « Done » de E11 **n'est pas modifié sans aval Guy** (gate produit, M2) — l'arbitrage est signalé dans
+  le Change Log / la description de PR umbrella. Aucune autre feature livrée ne reste marquée `(à venir)` à
+  tort du fait de l'épopée.
 - **AC5 — Manuel utilisateur** : sous-section « Décompte TVA » ajoutée sous « Rapports comptables » (TVA due,
-  récupérable, solde net AFC, bandeau de réconciliation). Cohérente avec l'UI réelle (`VatReportView`).
-- **AC6 — Manuel administrateur** : configuration des comptes TVA (`Paramètres → Facturation`) documentée
-  (3 comptes, requis pour la comptabilisation). PDF régénérés si l'outillage est disponible, sinon édition
-  `.tex` + note de régénération dans le Change Log.
+  récupérable, solde net AFC, bandeau de réconciliation), cohérente avec l'UI réelle (`VatReportView`). **+ les
+  3 mentions obsolètes « TVA à venir Epic 11 » (l.300/445/1014) corrigées** (M3) — plus aucune contradiction
+  interne (`grep -nE "à venir|pas encore" user-manual.tex` ne doit plus rien retourner sur la TVA).
+- **AC6 — Manuel administrateur** : sous-section LTVA (l.1645) **réécrite** — la phrase obsolète « ne couvre
+  pas encore la TVA » (l.1647) supprimée (M1) ; configuration des comptes TVA (`Paramètres → Facturation`,
+  3 comptes) documentée. PDF régénérés si l'outillage est disponible, sinon édition `.tex` + note de
+  régénération dans le Change Log.
 - **AC7 — Quality gate** : `cargo fmt/clippy/build/test` (au moins les crates touchés + non-régression) ;
   frontend `check`/`lint-i18n-ownership`/`test:unit`/`build` ; E2E lancé localement (best-effort selon
   l'outillage Playwright). Aucune régression.
 
-## Tasks (T-F1..T-F6)
+## Tasks (T-F1..T-F7)
 
 - **T-F1 — Vérifier la couverture AC11** : confirmer par lecture que les cas vat_rate=0 / multi-taux / delta /
   récupérable sont couverts (cf. tableau ground-truth). Documenter le mapping dans le Change Log.
@@ -125,17 +149,26 @@ minuscule (p.ex. `0.01` à 8.1 % → `line_vat_amount = 0.00` après arrondi) ne
   « taux > 0 mais TVA arrondie = 0.00 → pas de ligne 2200 », ajouter `validate_rounds_to_zero_no_vat_line`
   (HT ≈ `0.01`, taux 8.1 % → `line_vat_amount = 0.00` → écriture = créance + produit, **0** ligne 2200).
   Réutiliser le helper `create_and_validate` (l.46) + fixture.
-- **T-F3 — E2E décompte TVA** (AC2) : nouveau `frontend/tests/e2e/vat-report.spec.ts`. Seed `with-company`,
-  login, créer/valider une facture avec TVA (ou réutiliser un seed qui en contient), aller à `/reports`,
-  onglet TVA, générer, asserter l'affichage de TVA due / récupérable / solde. S'inspirer de
+- **T-F3 — E2E décompte TVA** (AC2) : nouveau `frontend/tests/e2e/vat-report.spec.ts`. Seed `with-data`
+  (= `with-company` + contact + produit ; **aucun preset ne contient de facture validée** — L1, donc le test
+  crée et valide la facture lui-même), login, créer + valider une facture avec TVA via l'UI, aller à
+  `/reports`, onglet TVA, générer, asserter l'affichage de TVA due / récupérable / solde. S'inspirer de
   `vat-purchase-assistant.spec.ts` et `invoices.spec.ts`. Garder **un seul** spec (dette #172).
 - **T-F4 — CHANGELOG** (AC3) : insérer `## [Non publié]` sous l'en-tête, avant `## [0.2.0]`.
-- **T-F5 — Manuels LaTeX** (AC5/AC6) : éditer `user-manual.tex` (sous-section Décompte TVA) +
-  `admin-manual.tex` (config comptes TVA). Vérifier `which latexmk xelatex` ; si dispo → régénérer les PDF
-  (`cd docs/manual/fr && latexmk -xelatex user-manual.tex admin-manual.tex`) et committer les `.pdf` ; sinon
-  noter la régénération requise dans le Change Log.
-- **T-F6 — README + quality gate + Change Log** (AC4/AC7) : retirer `*(à venir)*` TVA + cohérence roadmap ;
-  lancer le quality gate ; rédiger le Change Log final.
+- **T-F5 — Manuels LaTeX** (AC5/AC6) : éditer `user-manual.tex` — **ajouter** sous-section Décompte TVA
+  **ET corriger** les 3 mentions obsolètes « TVA à venir » (M3, re-grep `grep -nE "à venir|pas encore"
+  user-manual.tex`) ; `admin-manual.tex` — **réécrire** la sous-section LTVA (l.1645, supprimer « ne couvre
+  pas encore la TVA » l.1647, M1) + config des 3 comptes TVA. Vérifier `which latexmk xelatex` ; si dispo →
+  régénérer les PDF (`cd docs/manual/fr && latexmk -xelatex user-manual.tex admin-manual.tex`) et committer
+  les `.pdf` ; sinon noter la régénération requise dans le Change Log. **Vérification finale** : `grep -nE
+  "à venir|pas encore|non encore" docs/manual/fr/*.tex` ne doit plus rien retourner concernant la TVA.
+- **T-F6 — README + site web** (AC4) : retirer `*(à venir)*` TVA (l.30) + mettre à jour la ligne roadmap
+  l.182 (E11+E18 base TVA livrée). Vérifier `website/roadmap.html` (l.234-235) + `index.html` : pas
+  d'over-claim ; **ne pas** toucher le badge « Done » de E11 sans aval Guy (M2) — signaler l'arbitrage dans le
+  Change Log + description PR umbrella.
+- **T-F7 — Quality gate + Change Log final** (AC7) : `cargo fmt/clippy/build/test` (crates touchés +
+  non-régression) ; frontend `check`/`lint-i18n-ownership`/`test:unit`/`build` ; E2E best-effort (rapporter
+  fidèlement s'il n'a pas pu tourner). Change Log final + bilan doc-sweep.
 
 ## Hors-scope
 
@@ -159,4 +192,8 @@ fois `done` → **PR umbrella de l'épopée 18-1** (toutes les sous-stories a..f
 
 ## Change Log
 
-_(à compléter par les passes `bmad-create-story validate 18-1f`)_
+### `bmad-create-story validate 18-1f` — cycle adversarial (CLAUDE.md Review Iteration Rule)
+
+| Passe | Modèle | Findings > LOW | Points clés |
+|-------|--------|----------------|-------------|
+| 1 | Sonnet 4.6 | 3 (3M) | **Ground-truth complet** (tests `invoices_validate_vat.rs` 113/132/167 + helper l.46, `vat_report_e2e.rs:353`, 9 reconciliation + 7 recoverable confirmés ; gap arrondi→0.00 RÉELLEMENT absent, math `0.01×8.1%=0.00` vérifiée ; README l.30 `(à venir)` présent ; CHANGELOG dernière `[0.2.0]` ; manuels sections confirmées ; harness E2E + onglet `vat` l.245). **M1** : `admin-manual.tex:1647` « Kesh v0.1 ne couvre pas encore la TVA » → à RÉÉCRIRE (pas ajouter). **M2** : `website/roadmap.html` (l.234-235 E11 sans badge Done) absent du scope alors que CLAUDE.md l'impose pré-push → ajouté T-F6, badge E11 Done = **gate Guy** (E11 partiel : décompte AFC officiel hors scope). **M3** : `user-manual.tex` 3 mentions obsolètes « TVA à venir Epic 11 » (l.300/445/1014) contredisent l.485 (TVA déjà postée) → à corriger. LOW : L1 `with-data` n'a pas de facture validée (seed précisé) ; L2 README l.182 action E11/E18 précisée. **Tous patchés.** |
