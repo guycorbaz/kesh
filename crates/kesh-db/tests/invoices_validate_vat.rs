@@ -127,6 +127,41 @@ async fn validate_zero_rate_no_vat_line(pool: MySqlPool) {
     assert_eq!(sum_debit(je), sum_credit(je));
 }
 
+/// (c-bis, Story 18-1f / AC11 umbrella F-OPUS-1) Taux > 0 mais TVA **arrondie à
+/// `0.00`** (HT minuscule) → AUCUNE ligne sur le compte TVA due (sinon l'INSERT
+/// violerait `chk_jel_debit_credit_exclusive`, `credit = 0` interdit).
+/// `line_vat_amount(0.01, 8.10) = round_half_up(0.00081) = 0.00`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn validate_rounds_to_zero_no_vat_line(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+
+    // HT = 0.01 à 8.1 % → TVA = 0.00 après arrondi → pas de ligne 2200.
+    let v = create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(0.01))])
+        .await
+        .expect("validate");
+    let je = &v.journal_entry;
+    assert_eq!(
+        je.lines.len(),
+        2,
+        "créance + produit, pas de ligne TVA (arrondi 0.00)"
+    );
+    let vat = seeded.accounts["2000"];
+    assert!(
+        je.lines.iter().all(|l| l.account_id != vat),
+        "aucune ligne sur le compte TVA due quand la TVA arrondie tombe à 0.00"
+    );
+    // Créance TTC = HT + TVA(0.00) = 0.01 = produit HT.
+    let receivable = seeded.accounts["1100"];
+    let creance = je
+        .lines
+        .iter()
+        .find(|l| l.account_id == receivable)
+        .unwrap();
+    assert_eq!(creance.debit, dec!(0.01), "créance = HT (TVA nulle)");
+    assert_eq!(sum_debit(je), sum_credit(je), "écriture équilibrée");
+}
+
 /// (d) Facture multi-taux 8.1 % + 0 % → 1 SEULE ligne TVA due (taux > 0 uniquement).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn validate_mixed_positive_and_zero_rate(pool: MySqlPool) {

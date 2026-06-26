@@ -8,6 +8,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Non publié]
+
+### Ajouté
+
+- **Comptabilisation de la TVA & achats avec impôt préalable** (#180) : Kesh comptabilise désormais réellement la TVA dans le plan comptable, au-delà du simple calcul du rapport. Concrètement :
+  - **Comptes TVA dans le plan comptable** : trois comptes TVA standard du plan suisse sont ajoutés et configurables depuis **Paramètres → Facturation** — *TVA due* (`2200`), *Impôt préalable* (`1171`, TVA récupérable sur les achats) et *Décompte TVA* (`2206`). Les installations existantes sont complétées automatiquement sans toucher aux comptes déjà utilisés.
+  - **TVA due comptabilisée à la validation des factures de vente** : valider une facture génère désormais une écriture comptable complète — créance TTC au débit, produit HT au crédit et **une ligne de TVA due par taux** — au lieu des seules lignes hors taxe. Le taux figé sur chaque ligne de facture est utilisé (une modification ultérieure des taux n'altère pas les factures déjà validées).
+  - **Saisie assistée des achats avec impôt préalable** : un assistant pré-remplit l'écriture d'un achat avec TVA récupérable (charge / impôt préalable / fournisseur TTC) à partir d'un taux, depuis le journal des écritures — sans nouvelle entité « facture d'achat ».
+  - **Décompte TVA complet** : le rapport TVA affiche désormais la **TVA récupérable réelle** (solde du compte d'impôt préalable au grand livre) et le **solde net dû à l'AFC** (TVA due − récupérable), y compris pour une période d'achats sans vente.
+  - **Réconciliation rapport ↔ grand livre** : le décompte est recoupé avec les écritures comptables. Si une écriture validée a été modifiée à la main et ne correspond plus à la TVA facturée, un **bandeau d'alerte** signale l'écart (non bloquant) pour inviter à vérifier — garantissant que « les montants du décompte correspondent aux écritures ». Le décompte et son écart figurent aussi dans les exports PDF et CSV.
+
+  > Limitation : le **format de décompte officiel AFC / e-décompte ESTV** et la méthode des taux de la dette fiscale nette (TDFN) restent hors périmètre pour l'instant.
+
+---
+
 ## [0.2.0] — 2026-06-12
 
 ### Added

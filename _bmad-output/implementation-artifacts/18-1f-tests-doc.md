@@ -1,5 +1,5 @@
 ---
-status: ready-for-dev
+status: review
 epic: 18
 story: 18-1f
 type: chore
@@ -189,6 +189,62 @@ minuscule (p.ex. `0.01` à 8.1 % → `line_vat_amount = 0.00` après arrondi) ne
 
 `bmad-create-story validate 18-1f` (rotation Sonnet→Haiku→Opus, contexte frais) avant `bmad-dev-story`. Une
 fois `done` → **PR umbrella de l'épopée 18-1** (toutes les sous-stories a..f), pattern 17-3 #171.
+
+## Dev Agent Record
+
+### Implémentation (`bmad-dev-story 18-1f`, Opus 4.8, 2026-06-26)
+
+Tâches **T-F1..T-F7 complétées** :
+
+- **T-F1 ✅** — couverture AC11 intégration confirmée (cf. tableau ground-truth) : aucun test à réécrire,
+  seul le gap arrondi manquait.
+- **T-F2 ✅** — test gap `validate_rounds_to_zero_no_vat_line` ajouté (`invoices_validate_vat.rs`) : HT 0.01 à
+  8.1 % → TVA arrondie 0.00 → écriture 2 lignes (créance + produit), **aucune** ligne sur le compte TVA due
+  (F-OPUS-1). 8/8 verts.
+- **T-F3 ✅** — E2E décompte TVA ajouté à `frontend/tests/e2e/reports.spec.ts` (pas de nouveau fichier, dette
+  #172) : crée une facture validée 8.1 % via API (pattern `invoices.spec.ts`), onglet TVA → Générer →
+  asserte TVA due 81.00 / récupérable / solde. **+ correction du test dérivé** `toHaveCount(4)` → `5` (onglet
+  TVA ajouté en 11-2, e2e jamais mis à jour car hors CI). Spec **parse + discoverable** (`playwright test
+  --list` exit 0) ; **run live NON exécuté cette session** (exige la stack backend `KESH_TEST_MODE` + build
+  frontend non montée ; E2E hors CI principale — cf. CLAUDE.md). Calqué sur des specs éprouvés.
+- **T-F4 ✅** — CHANGELOG : section `## [Non publié]` (pas de tag inventé) documentant l'épopée TVA Epic 18
+  (#180) en FR pour fiduciaires/PME (comptes + comptabilisation ventes + assistant achats + décompte +
+  réconciliation), limitation décompte AFC officiel notée.
+- **T-F5 ✅** — manuels LaTeX : `user-manual.tex` sous-section « Décompte TVA » + correction des 3 mentions
+  obsolètes (l.300/445/1014) ; `admin-manual.tex` sous-section LTVA **réécrite** (config 3 comptes TVA, phrase
+  « ne couvre pas encore » supprimée). `latexmk -xelatex` **disponible** → **PDF régénérés** (exit 0, 0
+  erreur, `user-manual.pdf` + `admin-manual.pdf` committés). Vérif finale : plus aucune mention TVA
+  « à venir/pas encore » obsolète (les 2 restantes = limitations légitimes décompte AFC officiel).
+- **T-F6 ✅** — README : `*(à venir)*` retiré de la ligne TVA (détaillée : calcul/comptabilisation/assistant/
+  décompte/réconciliation livrés, décompte AFC à venir) ; roadmap — ligne **E11/E18 TVA → ✅ Done** ajoutée,
+  E11 retiré de la ligne « 🚧 En cours ». `website/roadmap.html` : badge E11 « Done » **non modifié** (gate
+  Guy, M2 — E11 partiel) ; pas d'over-claim. Arbitrage signalé pour la PR umbrella.
+- **T-F7 ✅** — quality gate (cf. ci-dessous).
+
+### Résultats de tests (Test Locally First)
+
+- **Backend** : `cargo fmt --all --check` ✅ ; `cargo clippy -p kesh-db --tests -D warnings` ✅ 0 warning ;
+  `invoices_validate_vat` **8/8** (7 existants + nouveau gap).
+- **Frontend** : `npm run check` **0 erreur** (25 warnings pré-existants) ; `lint-i18n-ownership` **PASS** ;
+  `test:unit` **329** ; E2E `reports.spec.ts` parse + 6 tests discoverable (`playwright test --list`), run
+  live non monté (stack `KESH_TEST_MODE`).
+- **Manuels** : PDF régénérés (`latexmk -xelatex` exit 0).
+
+### Décision signalée à Guy (PR umbrella)
+
+- **Badge E11 « Done » sur `website/roadmap.html`** : E11 « Swiss VAT » liste « official VAT report formats »
+  (e-décompte AFC) = **hors scope v0.2**. La base TVA (calcul/comptabilisation/décompte/réconciliation) est
+  livrée (E18), mais le format officiel AFC ne l'est pas → décision produit : passer E11 « Done » ou le
+  laisser « in-progress ». **Non modifié sans aval Guy.**
+
+### File List
+
+- `crates/kesh-db/tests/invoices_validate_vat.rs` — test gap `validate_rounds_to_zero_no_vat_line`.
+- `frontend/tests/e2e/reports.spec.ts` — test E2E décompte TVA + fix `toHaveCount(4→5)` + imports API helpers.
+- `CHANGELOG.md` — section `[Non publié]` épopée TVA Epic 18.
+- `README.md` — ligne TVA (retrait `(à venir)`) + roadmap E11/E18 Done.
+- `docs/manual/fr/user-manual.tex` (+ `.pdf`) — sous-section Décompte TVA + 3 mentions obsolètes corrigées.
+- `docs/manual/fr/admin-manual.tex` (+ `.pdf`) — sous-section LTVA réécrite (config comptes TVA).
 
 ## Change Log
 
