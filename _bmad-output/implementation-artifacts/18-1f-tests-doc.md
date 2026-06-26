@@ -269,3 +269,11 @@ Tâches **T-F1..T-F7 complétées** :
 - L3 — `getByRole('alert').toHaveCount(0)` détecte tout alert : fonctionnellement correct (pas d'erreur backend rendue attendue). **dismiss**.
 
 **Verdict Pass 1 : 0 finding > LOW.** 1 LOW patché (clarté doc-comment).
+
+#### Review Findings — Pass 2 (Haiku 4.5)
+
+Diff aplati `6d5b52c → HEAD`, grep ground-truth. **0 hallucination** (HK2-1 confirmé par grep). Vérifs Pass 1 toutes reconfirmées (math gap, E2E sélecteurs/valeur 81.00/séquence, comptes 2200/1171/2206, mentions obsolètes corrigées). **1 MEDIUM + 1 LOW** :
+
+- [x] **[Review][Patch]** HK2-1 MEDIUM — `marketing-brochure.tex` listait « TVA Suisse » en **« Backlog v0.1 »** (l.401) alors qu'elle est livrée (E11+E18). **PATCHÉ (TVA-scoped)** : nouvelle section « ✅ TVA Suisse (Epic 11 & 18, livré) » (taux/calcul/rapport + comptabilisation ventes/achats + décompte/réconciliation, e-décompte ESTV à venir) ; TVA retirée du backlog, header backlog → « Epic 12 à 15 ». PDF régénéré (`latexmk` exit 0).
+  - **Dette non-TVA flaggée (hors scope 18-1f, gate Guy / release-time)** : la brochure a une dérive roadmap **plus large pré-existante** (l.390 « En préparation (Epic 10) » alors qu'Epic 10 Déploiement est livré v0.1 ; l.414 PAT API en « Vision v0.2 » alors que livré Epic 17). Ce refresh de positionnement spanne v0.1→v0.2 (non-TVA, antérieur à Epic 18) → relève de l'audit brochure **à la prochaine release** (politique CLAUDE.md « doc-sync à toute création de release »). Reclassé dette documentée tracée par cette politique (pas un report silencieux).
+- [x] **[Review][Patch]** HK2-2 LOW — header `reports.spec.ts:5` disait « 4 onglets » (test corrigé à 5). **PATCHÉ** : « 5 onglets visibles (… TVA) ».

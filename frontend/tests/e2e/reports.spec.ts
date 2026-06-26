@@ -2,7 +2,7 @@
  * Story 9-1 — Tests E2E Playwright pour la page `/reports`.
  *
  * Scénarios :
- *   1. AC #27 + #33 : page chargée + 4 onglets visibles
+ *   1. AC #27 + #33 : page chargée + 5 onglets visibles (Bilan, Compte de résultat, Balance, Journaux, TVA)
  *   2. AC #28 (T12.1) : génération bilan via UI sur preset `with-company` (sans
  *      écritures → empty-state message attendu, mais le flow Generate→Response
  *      est vérifié end-to-end avec MariaDB up + audit best-effort)
