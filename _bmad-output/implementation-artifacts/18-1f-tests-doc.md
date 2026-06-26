@@ -1,5 +1,5 @@
 ---
-status: review
+status: done
 epic: 18
 story: 18-1f
 type: chore
@@ -277,3 +277,9 @@ Diff aplati `6d5b52c → HEAD`, grep ground-truth. **0 hallucination** (HK2-1 co
 - [x] **[Review][Patch]** HK2-1 MEDIUM — `marketing-brochure.tex` listait « TVA Suisse » en **« Backlog v0.1 »** (l.401) alors qu'elle est livrée (E11+E18). **PATCHÉ (TVA-scoped)** : nouvelle section « ✅ TVA Suisse (Epic 11 & 18, livré) » (taux/calcul/rapport + comptabilisation ventes/achats + décompte/réconciliation, e-décompte ESTV à venir) ; TVA retirée du backlog, header backlog → « Epic 12 à 15 ». PDF régénéré (`latexmk` exit 0).
   - **Dette non-TVA flaggée (hors scope 18-1f, gate Guy / release-time)** : la brochure a une dérive roadmap **plus large pré-existante** (l.390 « En préparation (Epic 10) » alors qu'Epic 10 Déploiement est livré v0.1 ; l.414 PAT API en « Vision v0.2 » alors que livré Epic 17). Ce refresh de positionnement spanne v0.1→v0.2 (non-TVA, antérieur à Epic 18) → relève de l'audit brochure **à la prochaine release** (politique CLAUDE.md « doc-sync à toute création de release »). Reclassé dette documentée tracée par cette politique (pas un report silencieux).
 - [x] **[Review][Patch]** HK2-2 LOW — header `reports.spec.ts:5` disait « 4 onglets » (test corrigé à 5). **PATCHÉ** : « 5 onglets visibles (… TVA) ».
+
+#### Review Findings — Pass 3 (Opus 4.8) — CONVERGÉ
+
+Diff aplati `6d5b52c → HEAD`, ground-truth complet. **0 finding > LOW.** Confirmations : (1) patch brochure bien formé (`keshSuccess`/`faCheckCircle` définis, header backlog « Epic 12 à 15 » cohérent avec E12-15 restants, pas de doublon TVA, 3 PDF régénérés) ; (2) aucune incohérence TVA résiduelle illégitime (hits restants = limitation e-décompte AFC officiel ou section historique CHANGELOG immuable) ; (3) **aucun over-claim** — les 5 features annoncées sont réellement dans le code (config/rapport `vat_report.rs`, TVA due dérivée, récupérable solde GL, `vat_balance`, `reconciliation_delta`/`due_account_balance_sales_scope`, comptes migration `20260614000001`) ; (4) test gap math exacte + E2E `81.00` déterministe (1000×8.1%) + sélecteurs robustes ; (5) LaTeX valide, doc-sweep complet vs checklist CLAUDE.md ; (6) reclassement dette brochure (Epic 10/PAT, release-time) acceptable, pré-existant, tracé par process. 3 LOW pré-existants/environnementaux non bloquants.
+
+**Trend findings > LOW (code-review)** : Pass 1 (Sonnet) 0 → Pass 2 (Haiku) 1 MEDIUM (HK2-1 brochure, patché TVA-scoped) → Pass 3 (Opus) **0 ✅**. Rotation Sonnet→Haiku→Opus, diff aplati, grep ground-truth. **Catch décisif Pass 2 Haiku** (brochure marketing TVA en « Backlog v0.1 » — support doc oublié par Pass 1) + **Pass 3 Opus** (confirme patch cohérent + 0 over-claim + 0 régression). **Cycle code-review CONVERGÉ Pass 3, 0 > LOW. Status `done`. 🎉 ÉPOPÉE 18-1 COMPLÈTE 6/6 (a/b/c/d/e/f). Prochaine : PR umbrella épopée 18-1.**
