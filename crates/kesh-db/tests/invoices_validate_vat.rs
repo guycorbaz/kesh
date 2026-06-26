@@ -130,7 +130,7 @@ async fn validate_zero_rate_no_vat_line(pool: MySqlPool) {
 /// (c-bis, Story 18-1f / AC11 umbrella F-OPUS-1) Taux > 0 mais TVA **arrondie à
 /// `0.00`** (HT minuscule) → AUCUNE ligne sur le compte TVA due (sinon l'INSERT
 /// violerait `chk_jel_debit_credit_exclusive`, `credit = 0` interdit).
-/// `line_vat_amount(0.01, 8.10) = round_half_up(0.00081) = 0.00`.
+/// `line_vat_amount(0.01, 8.10) = round_half_up(0.01 × 8.10 / 100) = round_half_up(0.00081) = 0.00`.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn validate_rounds_to_zero_no_vat_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();

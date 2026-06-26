@@ -256,3 +256,16 @@ Tâches **T-F1..T-F7 complétées** :
 | 2 | Haiku 4.5 | 0 ✅ | **0 hallucination, ground-truth complet.** Patches Pass 1 confirmés par grep : M3 mentions user-manual l.300/445/1014 exactes (+ vérifié qu'il n'y en a pas d'autres TVA ; l.511 « envoi email à venir » hors-scope, correctement écarté) ; M1 admin-manual l.1647 exact ; gap arrondi→0.00 réellement absent ; README l.30 ; CHANGELOG format `### Added/Sécurité` ; preset E2E `with-data` existe (`test-state.ts:32`) ; onglet `vat` `+page.svelte:245`. **Numéros comptes TVA vérifiés corrects** : `2200` (3 charts), `1171`+`2206` (migration `20260614000001_vat_accounts_config.sql`). Sous-section « Décompte TVA » bien absente (à créer). Badge E11 = gate Guy respecté. **0 > LOW.** |
 
 **Trend findings > LOW** : Pass 1 (Sonnet) 3 (3M) → Pass 2 (Haiku) **0 ✅**. Rotation Sonnet→Haiku, contexte frais, grep ground-truth. Pass 1 = doc-sweep (3 incohérences manuels/website ratées initialement) ; Pass 2 confirme + vérifie les numéros de comptes. **Cycle validate CONVERGÉ Pass 2, 0 > LOW. Prochaine : `bmad-dev-story 18-1f` (Opus 4.8).**
+
+### `bmad-code-review 18-1f` — cycle adversarial post-implémentation
+
+#### Review Findings — Pass 1 (Sonnet 4.6)
+
+6 axes (test Rust, E2E, CHANGELOG, README, manuels, cohérence), diff `2c34af3`, grep ground-truth.
+**0 finding > LOW.** Vérifs : test gap math correcte (`0.01×8.10/100=0.00081→0.00`) + assertions conformes au pattern des 7 autres tests + compte `2000`=`default_vat_payable_account_id` (fixture 18-1b) ; E2E sélecteurs valides (tab `/^TVA$/`, libellés `reports-vat-column-vat-due`/`recoverable`/`balance`, `'81.00'`+`.first()` car 3 occurrences), séquence tab→Générer correcte (`generate()` dépend de `activeTab`), fix `toHaveCount(4→5)` justifié, placement avant test no-fy OK, helpers API exportés ; CHANGELOG factuel sans over-claim (AFC officiel hors scope noté) ; README `(à venir)` retiré + roadmap E11/E18 Done ; manuels — 3 mentions obsolètes user-manual corrigées, admin LTVA réécrit (`grep "ne couvre pas encore"`=∅), comptes 2200/1171/2206 corrects, occurrences `à venir` restantes = limitations légitimes (AFC officiel) ou hors-TVA ; badge website E11 intact (gate Guy). **3 LOW** :
+
+- [x] **[Review][Patch]** L1 — doc-comment math `0.01×8.10` ambigu (omet `/100`). **APPLIQUÉ** : `round_half_up(0.01 × 8.10 / 100)` explicite.
+- L2 — CHANGELOG `[0.2.0]` utilise `### Added` (EN) vs `[Non publié]` `### Ajouté` (FR) : incohérence **pré-existante** (les sections existantes mélangent déjà Added/Sécurité), non introduite par la story. **dismiss** (la section FR est conforme spec ; harmonisation hors scope).
+- L3 — `getByRole('alert').toHaveCount(0)` détecte tout alert : fonctionnellement correct (pas d'erreur backend rendue attendue). **dismiss**.
+
+**Verdict Pass 1 : 0 finding > LOW.** 1 LOW patché (clarté doc-comment).
