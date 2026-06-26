@@ -17,7 +17,9 @@
 	} from './journal-entries.types';
 	import { computeBalance, classifyLine, formatSwissAmount, isValidAmount } from './balance';
 	import { fromJournalEntryResponse, type LineDraft } from './form-helpers';
+	import { isDraftLineNonEmpty } from './vat-purchase';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
+	import VatPurchaseAssistant from './VatPurchaseAssistant.svelte';
 	import AccountingTooltip from '$lib/shared/components/AccountingTooltip.svelte';
 
 	interface Props {
@@ -25,6 +27,8 @@
 		accountsLoadError: boolean;
 		/** Si fourni → mode édition. Sinon mode création. */
 		initialEntry?: JournalEntryResponse | null;
+		/** Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c). Null si non configuré. */
+		recoverableAccountId?: number | null;
 		onSuccess: () => void;
 		onCancel: () => void;
 		/** Appelé quand un conflit de version (409) doit déclencher un reload. */
@@ -35,6 +39,7 @@
 		accounts,
 		accountsLoadError,
 		initialEntry = null,
+		recoverableAccountId = null,
 		onSuccess,
 		onCancel,
 		onConflictReload
@@ -80,6 +85,34 @@
 
 	// Modale de conflit 409.
 	let showConflictDialog = $state(false);
+
+	// Assistant TVA achat (Story 18-1c) : lignes en attente de confirmation
+	// de remplacement (si le brouillon n'est pas vierge).
+	let pendingAssistant = $state<{ lines: LineDraft[]; description: string } | null>(null);
+
+	/** Applique les lignes générées par l'assistant : remplace le brouillon. */
+	function applyAssistant(result: { lines: LineDraft[]; description: string }) {
+		lines = result.lines;
+		journal = 'Achats';
+		if (description.trim() === '') {
+			description = result.description;
+		}
+	}
+
+	/** Reçu de l'assistant : confirme si le brouillon n'est pas vierge, sinon applique. */
+	function handleAssistantApply(result: { lines: LineDraft[]; description: string }) {
+		const dirty = lines.some(isDraftLineNonEmpty) || description.trim() !== '';
+		if (dirty) {
+			pendingAssistant = result;
+		} else {
+			applyAssistant(result);
+		}
+	}
+
+	function confirmAssistantReplace() {
+		if (pendingAssistant) applyAssistant(pendingAssistant);
+		pendingAssistant = null;
+	}
 
 	const balance = $derived(computeBalance(lines));
 	const lineStatuses = $derived(lines.map(classifyLine));
@@ -241,6 +274,15 @@
 		</div>
 	</div>
 
+	{#if !isEdit}
+		<VatPurchaseAssistant
+			{accounts}
+			{accountsLoadError}
+			{recoverableAccountId}
+			onApply={handleAssistantApply}
+		/>
+	{/if}
+
 	<table class="w-full border-collapse">
 		<thead>
 			<tr class="border-b border-border">
@@ -387,6 +429,37 @@
 		</Button>
 	</div>
 </div>
+
+<!-- Modale de confirmation de remplacement par l'assistant TVA achat (Story 18-1c) -->
+{#if pendingAssistant}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="vat-replace-title"
+		aria-describedby="vat-replace-desc"
+	>
+		<div class="bg-card border border-border rounded-lg p-6 max-w-md mx-4 shadow-lg">
+			<h2 id="vat-replace-title" class="text-lg font-semibold mb-2">
+				{i18nMsg('vat-purchase-replace-title', 'Remplacer le brouillon ?')}
+			</h2>
+			<p id="vat-replace-desc" class="text-sm text-text-muted mb-4">
+				{i18nMsg(
+					'vat-purchase-replace-message',
+					'Des lignes ou un libellé ont déjà été saisis. Continuer écrasera le brouillon actuel.'
+				)}
+			</p>
+			<div class="flex justify-end gap-2">
+				<Button type="button" variant="outline" onclick={() => (pendingAssistant = null)}>
+					{i18nMsg('journal-entry-form-cancel', 'Annuler')}
+				</Button>
+				<Button type="button" onclick={confirmAssistantReplace}>
+					{i18nMsg('vat-purchase-replace-confirm', 'Remplacer')}
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <!-- Modale de conflit de version 409 (story 3.3) -->
 {#if showConflictDialog}

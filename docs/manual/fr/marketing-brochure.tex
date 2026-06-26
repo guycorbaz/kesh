@@ -387,18 +387,30 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshInfo}\faCog\ En préparation (Epic 10, prochaine étape)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Déploiement \& Souveraineté (Epic 10 \& 17, livré)}
 
 \begin{itemize}
     \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, guide d'installation PDF.
+    \item API externe à clés d'accès (PAT) pour intégrations IA et logiciels tiers.
+    \item Export / import complet d'installation (\texttt{.keshbackup}) pour migration ou restauration sans accès SSH.
+    \item Récupération de mot de passe par email (self-service).
 \end{itemize}
 
 \vspace{0.4cm}
 
-\textbf{\color{keshWarning}\faClock\ Backlog v0.1 (Epic 11 à 15)}
+\textbf{\color{keshSuccess}\faCheckCircle\ TVA Suisse (Epic 11 \& 18, livré)}
 
 \begin{itemize}
-    \item TVA Suisse : configuration des taux + calcul + rapport par période AFC.
+    \item Configuration des taux + calcul et rapport de TVA par période.
+    \item Comptabilisation de la TVA due aux ventes + impôt préalable sur les achats.
+    \item Décompte TVA (solde net dû à l'AFC) + réconciliation rapport \(\leftrightarrow\) grand livre. \emph{(Format de décompte officiel e-décompte ESTV à venir.)}
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{\color{keshWarning}\faClock\ Backlog (Epic 12 à 15)}
+
+\begin{itemize}
     \item Avoirs et notes de crédit dédiés + fichiers de paiement pain.001.001.03 (ISO 20022).
     \item Budgets annuels + suivi.
     \item Clôture d'exercice avec report de soldes automatique.
@@ -407,11 +419,11 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshPrimaryLight}\faRocket\ Vision v0.2}
+\textbf{\color{keshPrimaryLight}\faRocket\ Vision (v0.3+)}
 
 \begin{itemize}
     \item Signature électronique qualifiée (QES) sur les exports.
-    \item API externes avec clés PAT pour intégrations IA et logiciels tiers.
+    \item Décompte TVA officiel AFC (e-décompte ESTV).
     \item Multi-devises pour les PME à l'export.
     \item Format PDF/A (ISO 19005) pour l'archivage durable.
     \item Traductions DE/IT/EN des manuels.

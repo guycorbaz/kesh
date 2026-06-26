@@ -105,8 +105,11 @@ export function isReportEmpty(
 			return jr.journals.every((s) => s.entries.length === 0);
 		}
 		case 'vat': {
+			// Story 18-1d : un décompte sans vente (rows vide) mais avec de la TVA
+			// récupérable (achats seuls) n'est PAS vide — il doit afficher le pied
+			// de tableau (récupérable + solde). Vide = aucune vente ET récupérable 0.
 			const vr = dto as VatReportDto;
-			return vr.rows.length === 0;
+			return vr.rows.length === 0 && Number(vr.totalVatRecoverable) === 0;
 		}
 	}
 }

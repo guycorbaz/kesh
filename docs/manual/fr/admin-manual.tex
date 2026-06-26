@@ -1644,7 +1644,19 @@ La signature électronique qualifiée n'est \textbf{pas obligatoire} pour la con
 
 \subsection{Loi sur la TVA (LTVA)}
 
-Kesh v0.1 ne couvre pas encore la TVA (prévue Epic 11). La conformité LTVA Art. 70 (factures électroniques) sera couverte dans cette future implémentation.
+Kesh comptabilise la TVA suisse : TVA due sur les ventes (générée automatiquement à la validation des factures), impôt préalable sur les achats, décompte par période (solde net dû à l'AFC) et réconciliation du décompte avec le grand livre. La méthode effective (taux réels) est seule supportée.
+
+\paragraph{Configuration des comptes TVA.} Trois comptes TVA standard du plan comptable suisse sont nécessaires à la comptabilisation et se configurent depuis \emph{Paramètres} → \emph{Facturation} :
+
+\begin{itemize}
+    \item \textbf{TVA due} (p.~ex. \texttt{2200}, passif) — TVA collectée sur les ventes.
+    \item \textbf{Impôt préalable} (p.~ex. \texttt{1171}, actif) — TVA récupérable sur les achats. À ne pas confondre avec l'impôt anticipé (\texttt{1170}/Verrechnungssteuer), qui est un compte distinct.
+    \item \textbf{Décompte TVA} (p.~ex. \texttt{2206}, passif) — solde net vis-à-vis de l'AFC.
+\end{itemize}
+
+Ces comptes sont ajoutés automatiquement aux plans comptables (PME, indépendant, association) ; les installations existantes sont complétées sans modifier les comptes déjà utilisés. Tant que le compte \emph{TVA due} n'est pas configuré, la validation d'une facture portant de la TVA est refusée (message « configuration requise »). L'usage côté comptable (décompte, réconciliation) est décrit dans le \emph{manuel utilisateur}, section \emph{Décompte TVA}.
+
+Le format de décompte officiel AFC (e-décompte ESTV) et la conformité LTVA Art.~70 (factures électroniques signées) restent hors périmètre à ce stade.
 
 \subsection{Documentation à conserver}
 

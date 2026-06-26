@@ -297,7 +297,7 @@ Pour chaque ligne :
 
 \subsection{Exemple de saisie}
 
-Vente d'une marchandise à crédit pour CHF 1'000 + TVA 8.1\% (TVA à venir Epic 11) :
+Vente d'une marchandise à crédit pour CHF 1'000 + TVA 8.1\% :
 
 \begin{itemize}
     \item Débit 1100 (Débiteurs) : CHF 1'081.00
@@ -442,7 +442,7 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
     \item \textbf{Code interne} : identifiant unique (ex. PROD-001).
     \item \textbf{Désignation} : libellé qui apparaîtra sur les factures.
     \item \textbf{Prix unitaire HT}.
-    \item \textbf{Taux TVA} : 0\%, 2.5\%, 3.7\%, 8.1\% (taux suisses au moment de la rédaction — TVA Epic 11 à venir).
+    \item \textbf{Taux TVA} : 0\%, 2.5\%, 3.7\%, 8.1\% (taux suisses au moment de la rédaction).
     \item \textbf{Unité} : pièce, heure, mètre, kilo, etc.
     \item \textbf{Compte produit par défaut} : par exemple 3000.
 \end{itemize}
@@ -741,6 +741,22 @@ Le choix est défini par défaut au niveau de la company, modifiable par rapport
 
 \emph{Rapports} → \emph{Journal}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle.
 
+\subsection{Décompte TVA}
+
+\emph{Rapports} → \emph{TVA}. Produit le décompte de la TVA pour la période sélectionnée, à partir des écritures réellement comptabilisées.
+
+\begin{itemize}
+    \item \textbf{TVA due} : la TVA facturée sur les ventes, ventilée par taux (8.1\%, 3.7\%, 2.5\%, 0\%). Elle est comptabilisée automatiquement lors de la validation de chaque facture de vente (compte \emph{TVA due}, p.~ex. 2200).
+    \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue du solde du compte d'impôt préalable (p.~ex. 1171). Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
+    \item \textbf{Solde net dû à l'AFC} : TVA due − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
+\end{itemize}
+
+\paragraph{Réconciliation et alerte d'écart.} Kesh recoupe le montant de TVA due calculé depuis les factures avec le solde réellement comptabilisé au grand livre. Si une écriture validée a été modifiée à la main et ne correspond plus à la TVA facturée, un \textbf{bandeau d'alerte} affiche l'écart constaté. L'alerte est informative (elle ne bloque pas le rapport) et vous invite à vérifier les écritures validées modifiées manuellement, afin que « les montants du décompte correspondent aux écritures comptables ». Le décompte et l'écart figurent aussi dans les exports PDF et CSV.
+
+\begin{quote}
+\small \emph{Limitation v0.2} : le format de décompte officiel AFC (e-décompte ESTV) et la méthode des taux de la dette fiscale nette (TDFN) ne sont pas encore couverts. Le décompte de Kesh fournit les montants (due, récupérable, solde net) à reporter manuellement sur le formulaire AFC.
+\end{quote}
+
 \subsection{Visualisation et exports}
 
 Tous les rapports peuvent être :
@@ -1011,7 +1027,7 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 
 \begin{itemize}
     \item Mono-devise CHF (multi-devises prévu v0.2).
-    \item TVA non encore implémentée (Epic 11 v0.1).
+    \item TVA suisse comptabilisée (TVA due aux ventes, impôt préalable sur achats, décompte et réconciliation — cf. \emph{Décompte TVA}). Le décompte officiel AFC / e-décompte ESTV reste à venir.
     \item Pas d'avoirs / notes de crédit dédiés (Epic 12 v0.1).
     \item Pas de fichiers de paiement pain.001 (Epic 12 v0.1).
     \item Pas de signature QES sur les exports (verdict (b) recherche réglementaire, prévu Epic 14 v0.2).

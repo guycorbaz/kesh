@@ -27,7 +27,7 @@
 - **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse
 - **Import bancaire CAMT.053 + CSV multi-encodage** — parser + persistance + UI ✓, profils banque réutilisables ✓, réconciliation automatique avec score ✓, réconciliation manuelle ✓, éclatement de transaction agrégée ✓ et règles d'affectation automatique ✓
 - **Paiements pain.001.001.03** — fichiers de paiement ISO 20022 *(à venir)*
-- **TVA suisse** — calcul et rapports par période *(à venir)*
+- **TVA suisse** — calcul et rapport par période ✓, comptabilisation de la TVA due aux ventes ✓, assistant d'achat avec impôt préalable ✓, décompte TVA (solde net dû à l'AFC) et réconciliation rapport ↔ grand livre ✓ *(décompte officiel AFC / e-décompte ESTV à venir)*
 - **API externe à clé PAT** — clés d'accès *read* / *read-write* par entreprise pour intégrations IA & logiciels tiers (auth `Authorization: Bearer`, gestion via `/settings/api-keys`) ✓ — voir [`docs/api-external.md`](docs/api-external.md)
 - **Export/import d'installation** — sauvegarde complète `.keshbackup` (toutes les sociétés, utilisateurs et données système) via l'UI admin (`Administration → Sauvegarde complète` / `Restaurer / Importer`) pour migrer ou restaurer une installation sans accès SSH ✓ — réservé au rôle Admin
 - **Récupération de mot de passe par email** — lien de réinitialisation self-service (valable 30 min, usage unique, anti-énumération), opt-in via `KESH_FEATURE_FORGOT_PASSWORD` + config SMTP ✓ — fallback break-glass admin conservé
@@ -179,7 +179,8 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.1.7 (hotfix) | Aide + message d'erreur actionnable sur le champ QR-IBAN (compte bancaire) + fiabilisation de la suite de tests `fiscal_year` (dette technique) | ✅ Done |
 | v0.1.8 (hotfix) | Numéro de version affiché corrigé : provient désormais du backend au runtime (champ `version` de `/health`) au lieu d'être codé en dur dans le frontend | ✅ Done |
 | v0.2.0 | **E17 Infra & Souveraineté** — API externe PAT, export/import complet d'installation (`.keshbackup`), récupération de mot de passe par email, fix sécurité TOCTOU onboarding | ✅ Done |
-| v0.2 (suite) | E11 TVA Suisse, **E16 Facturation avancée** (compte produit par ligne, PDF complet), E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 🚧 En cours |
+| v0.3.0 | **E11/E18 TVA Suisse** — calcul + rapport par période, comptabilisation TVA due aux ventes, assistant d'achat (impôt préalable), décompte TVA (solde net AFC) et réconciliation rapport ↔ grand livre *(décompte officiel AFC / e-décompte ESTV hors périmètre)* | ✅ Done |
+| v0.2 (suite) | **E16 Facturation avancée** (compte produit par ligne, PDF complet), E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 🚧 En cours |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
 

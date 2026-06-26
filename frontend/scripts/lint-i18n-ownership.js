@@ -54,6 +54,29 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-title',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-message',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-reload',
+  // Story 18-1c — Assistant TVA achat (VatPurchaseAssistant). Les clés
+  // `vat-purchase-*` partagent le premier segment `vat` avec la feature
+  // vat-rates ; l'assistant réutilise aussi `vat-category-*` (dynamique) pour
+  // l'affichage des taux. Même situation que les clés `journal-entry-*` /
+  // `journal-${j}` ci-dessus (issue #30 — le dossier `journal-entries` pluriel
+  // ne matche pas le préfixe). Composant propre à la feature journal-entries.
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-title',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-config-required',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-no-rates',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-charge-account',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-ht',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-rate',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-rate-placeholder',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-category-${r.category}',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-counterparty',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-same-account',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-recoverable-conflict',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-insert',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-description',
+  'src/lib/features/journal-entries/VatPurchaseAssistant.svelte:vat-purchase-description-exempt',
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:vat-purchase-replace-title',
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:vat-purchase-replace-message',
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:vat-purchase-replace-confirm',
   'src/lib/features/contacts/ContactCard.svelte:contact-card-edit',
   'src/lib/features/contacts/ContactCard.svelte:contact-card-archive',
 ]);
