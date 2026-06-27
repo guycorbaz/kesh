@@ -8,6 +8,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.3.1] — 2026-06-27
+
+### Corrigé
+
+- **Message clair lorsqu'une écriture comptable ne peut pas être supprimée** (#184) : tenter de supprimer une écriture qui a été générée par une facture validée affichait un message générique et déroutant (« Référence invalide »). Kesh explique désormais la situation et la marche à suivre : *« Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Annulez d'abord la facture concernée. »* (traduit dans les 4 langues). L'intégrité des données était déjà garantie auparavant — seul le message gagne en clarté.
+
+### Sécurité
+
+- **Moins de données sensibles dans les journaux en mode debug** (#185) : en mode de journalisation détaillé (`RUST_LOG=debug`), la couche base de données pouvait écrire le texte complet de chaque requête SQL **avec ses valeurs** dans les logs (données métier en clair sur disque). Kesh limite désormais par défaut la journalisation de la couche SQL au niveau `warn` même en mode debug applicatif ; l'administrateur qui a réellement besoin du détail SQL doit l'activer explicitement (`RUST_LOG=debug,sqlx=debug`). Le fichier `.env.example` documente cet avertissement. Aucune fuite réseau n'était en cause (journaux locaux) ; cette amélioration réduit la quantité de données métier persistées en clair.
+
+---
+
 ## [0.3.0] — 2026-06-26
 
 ### Ajouté
