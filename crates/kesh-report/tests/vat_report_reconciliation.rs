@@ -447,7 +447,11 @@ async fn credit_note_excludes_vat_from_report(pool: MySqlPool) {
     // Après avoir : la facture (cancelled) sort des deux calculs → TVA due 0,
     // delta toujours cohérent (≈ 0).
     let after = gen_report(&pool, &seeded).await;
-    assert_eq!(after.total_vat_due, dec!(0.00), "facture annulée exclue du décompte");
+    assert_eq!(
+        after.total_vat_due,
+        dec!(0.00),
+        "facture annulée exclue du décompte"
+    );
     assert!(
         after.reconciliation_delta.abs() < dec!(0.01),
         "réconciliation reste cohérente après avoir (delta {})",

@@ -694,6 +694,7 @@ async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPoo
             "defaultVatDecompteAccountId": null,
             "defaultSalesJournal": settings["defaultSalesJournal"],
             "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+            "creditNoteNumberFormat": settings["creditNoteNumberFormat"],
             "version": version,
         }))
         .send()
@@ -729,6 +730,7 @@ async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPoo
             "defaultVatDecompteAccountId": null,
             "defaultSalesJournal": settings["defaultSalesJournal"],
             "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+            "creditNoteNumberFormat": settings["creditNoteNumberFormat"],
             "version": version,
         }))
         .send()
