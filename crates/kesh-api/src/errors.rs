@@ -1660,11 +1660,27 @@ impl IntoResponse for AppError {
                 }
                 DbError::ForeignKeyViolation(m) => {
                     tracing::warn!("fk violation: {m}");
-                    build_response(
-                        StatusCode::BAD_REQUEST,
-                        "FOREIGN_KEY_VIOLATION",
-                        &t("error-foreign-key", "Référence invalide"),
-                    )
+                    // Cas spécifique : suppression d'une écriture comptable encore
+                    // référencée par une facture validée (`invoices.journal_entry_id`,
+                    // contrainte `fk_invoices_journal_entry`, ON DELETE RESTRICT).
+                    // Le message MySQL porté par `m` contient le nom de la contrainte
+                    // → on renvoie un message actionable plutôt que le générique. (#184)
+                    if m.contains("fk_invoices_journal_entry") {
+                        build_response(
+                            StatusCode::CONFLICT,
+                            "JOURNAL_ENTRY_LINKED_TO_INVOICE",
+                            &t(
+                                "error-journal-entry-linked-to-invoice",
+                                "Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Annulez d'abord la facture concernée.",
+                            ),
+                        )
+                    } else {
+                        build_response(
+                            StatusCode::BAD_REQUEST,
+                            "FOREIGN_KEY_VIOLATION",
+                            &t("error-foreign-key", "Référence invalide"),
+                        )
+                    }
                 }
                 DbError::CheckConstraintViolation(m) => {
                     tracing::warn!("check violation: {m}");
@@ -1853,6 +1869,39 @@ mod tests {
         let (status, body) = response_body(resp).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
+    }
+
+    #[tokio::test]
+    async fn db_fk_violation_generic_maps_to_400() {
+        // FK quelconque (contrainte non reconnue) → message générique, 400.
+        let resp = AppError::Database(DbError::ForeignKeyViolation(
+            "a foreign key constraint fails (`kesh`.`contacts`, CONSTRAINT `fk_x`)".into(),
+        ))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "FOREIGN_KEY_VIOLATION");
+    }
+
+    #[tokio::test]
+    async fn db_fk_violation_journal_entry_linked_to_invoice_maps_to_409_actionable() {
+        // #184 : suppression d'une écriture liée à une facture validée → message
+        // actionable dédié, 409 (et pas le générique « Référence invalide »).
+        let resp = AppError::Database(DbError::ForeignKeyViolation(
+            "Cannot delete or update a parent row: a foreign key constraint fails \
+             (`kesh`.`invoices`, CONSTRAINT `fk_invoices_journal_entry` FOREIGN KEY \
+             (`journal_entry_id`) REFERENCES `journal_entries` (`id`))"
+                .into(),
+        ))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "JOURNAL_ENTRY_LINKED_TO_INVOICE");
+        let message = body["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains("facture"),
+            "message non actionable: {message}"
+        );
     }
 
     #[tokio::test]
