@@ -93,11 +93,6 @@ fn build_appender(cfg: &LogConfig, path: &str) -> Result<RollingFileAppender, St
     })
 }
 
-/// Initialise le subscriber `tracing` global (stdout + fichier conditionnel)
-/// et retourne le [`WorkerGuard`] du writer fichier (à conserver vivant).
-///
-/// Retourne `None` si aucun layer fichier n'est actif (path absent ou échec
-/// d'ouverture → dégradation stdout-only).
 /// Construit l'[`EnvFilter`] à partir de la chaîne brute de directives `RUST_LOG`.
 ///
 /// Garde-fou observabilité (#185) : sqlx journalise le texte SQL complet *avec
@@ -108,7 +103,13 @@ fn build_appender(cfg: &LogConfig, path: &str) -> Result<RollingFileAppender, St
 /// `RUST_LOG` (ex. `RUST_LOG=debug,sqlx=debug` pour diagnostiquer une requête).
 fn build_log_filter(raw: &str) -> EnvFilter {
     let mut filter = EnvFilter::new(raw);
-    if !raw.contains("sqlx") {
+    // Détection ciblée d'une directive `sqlx` (cible exacte, pas une sous-chaîne
+    // d'un autre crate du type `sqlx_xxx`) : on n'ajoute la baseline que si
+    // l'utilisateur n'a pas déjà posé de directive pour la cible `sqlx`.
+    let user_targets_sqlx = raw
+        .split(',')
+        .any(|d| d.trim().split(['=', '[']).next() == Some("sqlx"));
+    if !user_targets_sqlx {
         filter = filter.add_directive(
             "sqlx=warn"
                 .parse()
@@ -118,6 +119,11 @@ fn build_log_filter(raw: &str) -> EnvFilter {
     filter
 }
 
+/// Initialise le subscriber `tracing` global (stdout + fichier conditionnel)
+/// et retourne le [`WorkerGuard`] du writer fichier (à conserver vivant).
+///
+/// Retourne `None` si aucun layer fichier n'est actif (path absent ou échec
+/// d'ouverture → dégradation stdout-only).
 #[must_use = "le WorkerGuard doit rester vivant pour flush les logs fichier"]
 pub fn init_tracing(cfg: &LogConfig) -> Option<WorkerGuard> {
     // Niveau de log : `RUST_LOG` si défini, sinon `info`.
@@ -193,6 +199,17 @@ mod tests {
         assert!(
             !f.contains("sqlx=warn"),
             "baseline ne doit pas écraser l'override explicite: {f}"
+        );
+    }
+
+    #[test]
+    fn log_filter_substring_crate_does_not_count_as_sqlx_target() {
+        // Une cible qui *contient* "sqlx" sans être la crate `sqlx` (ex. un
+        // hypothétique `sqlx_pool_monitor`) ne doit pas désactiver la baseline.
+        let f = build_log_filter("debug,sqlx_pool_monitor=trace").to_string();
+        assert!(
+            f.contains("sqlx=warn"),
+            "la baseline doit rester active si l'utilisateur ne cible pas la crate sqlx: {f}"
         );
     }
 

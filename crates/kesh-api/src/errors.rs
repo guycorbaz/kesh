@@ -1665,7 +1665,10 @@ impl IntoResponse for AppError {
                     // contrainte `fk_invoices_journal_entry`, ON DELETE RESTRICT).
                     // Le message MySQL porté par `m` contient le nom de la contrainte
                     // → on renvoie un message actionable plutôt que le générique. (#184)
-                    if m.contains("fk_invoices_journal_entry") {
+                    // On exige le préfixe « Cannot delete » (erreur 1451) pour ne PAS
+                    // déclencher ce message sur une 1452 (insertion d'un enfant
+                    // invalide), qui partage le même variant mais un sens opposé.
+                    if m.contains("fk_invoices_journal_entry") && m.contains("Cannot delete") {
                         build_response(
                             StatusCode::CONFLICT,
                             "JOURNAL_ENTRY_LINKED_TO_INVOICE",
