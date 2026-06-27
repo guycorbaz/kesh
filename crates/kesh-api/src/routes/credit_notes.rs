@@ -24,7 +24,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::invoice_pdf::{
-    MAX_LINES_PER_PDF, build_i18n, fetch_country, map_qrbill_error, sanitize_filename, split_lines,
+    MAX_LINES_PER_PDF, build_i18n, map_qrbill_error, sanitize_filename, split_lines,
 };
 
 #[derive(Serialize)]
@@ -214,9 +214,6 @@ pub async fn get_credit_note_pdf(
             .await
             .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?
             .flatten();
-
-    let debtor_country = fetch_country(&state.pool, "contacts", contact.id).await?;
-    let _ = debtor_country; // adresses : split_lines suffit, pays non affiché sur l'avoir
 
     let pdf_lines: Vec<InvoiceLinePdf> = lines
         .iter()
