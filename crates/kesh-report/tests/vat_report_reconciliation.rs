@@ -18,7 +18,7 @@ use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
-use kesh_db::repositories::{contacts, invoices, journal_entries};
+use kesh_db::repositories::{contacts, credit_notes, invoices, journal_entries};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use kesh_report::period::ReportPeriod;
 use kesh_report::vat_report;
@@ -408,4 +408,49 @@ async fn reconciliation_negative_delta_detected(pool: MySqlPool) {
     let report = gen_report(&pool, &seeded).await;
     assert_eq!(report.reconciliation_delta, dec!(-10.00), "81 - 91 = -10");
     assert_eq!(report.reconciliation_status, "delta", "abs() symétrique");
+}
+
+/// (DC12) Avoir → la facture annulée sort du décompte : TVA due dérivée tombe à 0
+/// ET le solde 2200 ventes (filtré status='validated') tombe aussi → delta reste 0.
+/// Le décompte TVA de la période exclut la TVA de la facture créditée.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn credit_note_excludes_vat_from_report(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = seed_contact(&pool, &seeded).await;
+    let invoice_id = create_validated_invoice(
+        &pool,
+        &seeded,
+        contact,
+        ymd(2026, 6, 15),
+        &[(dec!(8.10), dec!(1000))],
+    )
+    .await;
+
+    // Avant avoir : TVA due 81, réconciliation cohérente.
+    let before = gen_report(&pool, &seeded).await;
+    assert_eq!(before.total_vat_due, dec!(81.00));
+    assert_eq!(before.reconciliation_status, "ok");
+
+    // Émission de l'avoir → facture cancelled + contre-passation.
+    credit_notes::create_credit_note(
+        &pool,
+        kesh_db::entities::NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: ymd(2026, 7, 1),
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("create credit note");
+
+    // Après avoir : la facture (cancelled) sort des deux calculs → TVA due 0,
+    // delta toujours cohérent (≈ 0).
+    let after = gen_report(&pool, &seeded).await;
+    assert_eq!(after.total_vat_due, dec!(0.00), "facture annulée exclue du décompte");
+    assert!(
+        after.reconciliation_delta.abs() < dec!(0.01),
+        "réconciliation reste cohérente après avoir (delta {})",
+        after.reconciliation_delta
+    );
 }
