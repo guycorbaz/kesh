@@ -27,6 +27,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_revenue_account_id, default_vat_payable_account_id, \
     default_vat_recoverable_account_id, default_vat_decompte_account_id, \
     default_sales_journal, journal_entry_description_template, \
+    credit_note_number_format, \
     version, created_at, updated_at";
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
@@ -40,6 +41,7 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultVatDecompteAccountId": s.default_vat_decompte_account_id,
         "defaultSalesJournal": s.default_sales_journal.as_str(),
         "journalEntryDescriptionTemplate": s.journal_entry_description_template,
+        "creditNoteNumberFormat": s.credit_note_number_format,
         "version": s.version,
     })
 }
@@ -117,6 +119,7 @@ fn is_no_op_change(
         && before.default_vat_decompte_account_id == changes.default_vat_decompte_account_id
         && before.default_sales_journal == changes.default_sales_journal
         && before.journal_entry_description_template == changes.journal_entry_description_template
+        && before.credit_note_number_format == changes.credit_note_number_format
 }
 
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
@@ -168,7 +171,8 @@ pub async fn update(
              default_revenue_account_id = ?, default_vat_payable_account_id = ?, \
              default_vat_recoverable_account_id = ?, default_vat_decompte_account_id = ?, \
              default_sales_journal = ?, \
-             journal_entry_description_template = ?, version = version + 1 \
+             journal_entry_description_template = ?, credit_note_number_format = ?, \
+             version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
@@ -179,6 +183,7 @@ pub async fn update(
     .bind(changes.default_vat_decompte_account_id)
     .bind(changes.default_sales_journal)
     .bind(&changes.journal_entry_description_template)
+    .bind(&changes.credit_note_number_format)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)
@@ -318,7 +323,8 @@ pub async fn insert_with_defaults(
                     cis.default_revenue_account_id, cis.default_vat_payable_account_id, \
                     cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
                     cis.default_sales_journal, \
-                    cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
+                    cis.journal_entry_description_template, cis.credit_note_number_format, \
+                    cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
              JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
@@ -417,7 +423,8 @@ pub async fn insert_with_defaults_in_tx(
                     cis.default_revenue_account_id, cis.default_vat_payable_account_id, \
                     cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
                     cis.default_sales_journal, \
-                    cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
+                    cis.journal_entry_description_template, cis.credit_note_number_format, \
+                    cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
              JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
