@@ -100,6 +100,56 @@ pub fn generate_qr_bill_pdf_with_date(
     finalize(doc)
 }
 
+/// Génère un PDF d'**avoir** (note de crédit) — Story 12.1.
+///
+/// Identique à la section haute d'une facture (en-tête société, destinataire,
+/// lignes, total) mais **SANS section QR Bill** (le paiement irait dans l'autre
+/// sens). Le titre/numéro sont fournis via les clés i18n surchargées
+/// (`invoice-pdf-title` = « Avoir »…) et la référence à la facture d'origine via
+/// `invoice.origin_reference`.
+pub fn generate_credit_note_pdf(
+    invoice: &InvoicePdfData,
+    i18n: &QrBillI18n,
+) -> Result<Vec<u8>, QrBillError> {
+    generate_credit_note_pdf_with_date(invoice, i18n, OffsetDateTime::now_utc())
+}
+
+/// Variante déterministe de [`generate_credit_note_pdf`] (date fixée, tests).
+pub fn generate_credit_note_pdf_with_date(
+    invoice: &InvoicePdfData,
+    i18n: &QrBillI18n,
+    creation_date: OffsetDateTime,
+) -> Result<Vec<u8>, QrBillError> {
+    let (doc, page_idx, layer_idx) = PdfDocument::new(
+        format!("Credit note {}", invoice.invoice_number),
+        Mm(PAGE_W),
+        Mm(PAGE_H),
+        "Layer 1",
+    );
+    let doc = doc
+        .with_creator("kesh-qrbill")
+        .with_producer("kesh-qrbill")
+        .with_creation_date(creation_date)
+        .with_mod_date(creation_date)
+        .with_metadata_date(creation_date)
+        .with_document_id(format!("kesh-cn-{}", invoice.invoice_number));
+
+    let helv = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| QrBillError::PdfGeneration(format!("font: {e}")))?;
+    let helv_bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| QrBillError::PdfGeneration(format!("font bold: {e}")))?;
+
+    let page = doc.get_page(page_idx);
+    let layer = page.get_layer(layer_idx);
+
+    // Pas de QR Bill : uniquement la section document (en-tête + lignes + total).
+    draw_invoice_section(&layer, invoice, i18n, &helv, &helv_bold)?;
+
+    finalize(doc)
+}
+
 fn finalize(doc: PdfDocumentReference) -> Result<Vec<u8>, QrBillError> {
     doc.save_to_bytes()
         .map_err(|e| QrBillError::PdfGeneration(format!("save: {e}")))
@@ -165,6 +215,17 @@ fn draw_invoice_section(
         Mm(my),
         helv,
     );
+    // Référence à la facture d'origine (avoirs uniquement, Story 12.1).
+    if let Some(origin) = &inv.origin_reference {
+        my -= 4.5;
+        layer.use_text(
+            format!("{}: {}", i18n.get("invoice-pdf-origin-reference"), origin),
+            9.0,
+            Mm(meta_x),
+            Mm(my),
+            helv,
+        );
+    }
     if let Some(due) = inv.due_date {
         my -= 4.5;
         layer.use_text(
@@ -776,6 +837,7 @@ mod tests {
             }],
             total: dec!(1234.50),
             currency: Currency::Chf,
+            origin_reference: None,
         };
         (data, invoice, QrBillI18n::default())
     }

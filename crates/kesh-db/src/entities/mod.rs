@@ -15,6 +15,7 @@ pub mod bank_transaction;
 pub mod company;
 pub mod company_invoice_settings;
 pub mod contact;
+pub mod credit_note;
 pub mod fiscal_year;
 pub mod invoice;
 pub mod invoice_number_sequence;
@@ -37,6 +38,7 @@ pub use bank_transaction::{BankTransaction, BankTransactionStatus, NewBankTransa
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
 pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
+pub use credit_note::{CreditNote, CreditNoteLine, NewCreditNote};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use invoice_number_sequence::InvoiceNumberSequence;

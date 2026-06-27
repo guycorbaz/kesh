@@ -26,6 +26,7 @@
 - **Comptabilité en partie double** — plan comptable suisse, écritures validées, audit log
 - **Carnet d'adresses & catalogue produits** — contacts, conditions de paiement, TVA
 - **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse
+- **Avoirs (notes de crédit)** — annulation d'une facture validée par création d'un avoir lié (séquence séparée `AV-…`), contre-passation comptable automatique (TVA comprise), PDF « Avoir » ✓
 - **Import bancaire CAMT.053 + CSV multi-encodage** — parser + persistance + UI ✓, profils banque réutilisables ✓, réconciliation automatique avec score ✓, réconciliation manuelle ✓, éclatement de transaction agrégée ✓ et règles d'affectation automatique ✓
 - **Paiements pain.001.001.03** — fichiers de paiement ISO 20022 *(à venir)*
 - **TVA suisse** — calcul et rapport par période ✓, comptabilisation de la TVA due aux ventes ✓, assistant d'achat avec impôt préalable ✓, décompte TVA (solde net dû à l'AFC) et réconciliation rapport ↔ grand livre ✓ *(décompte officiel AFC / e-décompte ESTV à venir)*

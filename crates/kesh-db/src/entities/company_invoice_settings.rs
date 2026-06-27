@@ -30,6 +30,8 @@ pub struct CompanyInvoiceSettings {
     pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: Journal,
     pub journal_entry_description_template: String,
+    /// Format du numéro d'avoir (note de crédit). Story 12.1. Défaut `AV-{YEAR}-{SEQ:04}`.
+    pub credit_note_number_format: String,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -49,4 +51,5 @@ pub struct CompanyInvoiceSettingsUpdate {
     pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: Journal,
     pub journal_entry_description_template: String,
+    pub credit_note_number_format: String,
 }

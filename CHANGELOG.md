@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Non publié]
+
+### Ajouté
+
+- **Avoirs (notes de crédit)** (#186, #184) : une facture validée peut désormais être **annulée** en créant un **avoir** qui lui est lié. L'avoir reprend toutes les lignes de la facture, reçoit un numéro de sa propre séquence (`AV-2026-0001`), et génère automatiquement l'**écriture de contre-passation** (TVA comprise, une ligne par taux) : le solde du client revient à zéro et la facture passe au statut « annulée ». Le tout en une seule étape, depuis le bouton **« Créer un avoir »** d'une facture validée (rôle Comptable ou Administrateur). Un PDF « Avoir » est téléchargeable (sans QR-facture, avec référence à la facture d'origine). Le décompte TVA de la période exclut correctement la facture annulée. La création d'avoir est refusée sur une facture déjà encaissée (le remboursement d'une facture payée viendra plus tard). Cette fonctionnalité remplace la contre-passation manuelle décrite jusqu'ici dans le manuel.
+
+---
+
 ## [0.3.1] — 2026-06-27
 
 ### Corrigé

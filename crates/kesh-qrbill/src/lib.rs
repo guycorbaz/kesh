@@ -14,7 +14,10 @@ pub mod types;
 pub mod validation;
 
 pub use generator::build_payload;
-pub use pdf::{generate_qr_bill_pdf, generate_qr_bill_pdf_with_date};
+pub use pdf::{
+    generate_credit_note_pdf, generate_credit_note_pdf_with_date, generate_qr_bill_pdf,
+    generate_qr_bill_pdf_with_date,
+};
 pub use types::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillError,
     QrBillI18n, Reference,

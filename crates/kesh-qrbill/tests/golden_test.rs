@@ -65,6 +65,7 @@ fn sample_invoice() -> InvoicePdfData {
         }],
         total: dec!(1234.56),
         currency: Currency::Chf,
+        origin_reference: None,
     }
 }
 

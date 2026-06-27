@@ -226,6 +226,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}",
             put(routes::invoices::update_invoice).delete(routes::invoices::delete_invoice),
         )
+        // Story 12.1 : création d'avoir (create+issue atomique, Comptable+)
+        .route(
+            "/api/v1/credit-notes",
+            post(routes::credit_notes::create_credit_note),
+        )
         // Story 5.2 : validation facture draft → validated
         .route(
             "/api/v1/invoices/{id}/validate",
@@ -376,6 +381,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/invoices/{id}/pdf",
             get(routes::invoice_pdf::get_invoice_pdf),
+        )
+        // Story 12.1 : lectures avoirs (tout rôle authentifié)
+        .route(
+            "/api/v1/credit-notes",
+            get(routes::credit_notes::list_credit_notes),
+        )
+        .route(
+            "/api/v1/credit-notes/{id}",
+            get(routes::credit_notes::get_credit_note),
+        )
+        .route(
+            "/api/v1/credit-notes/{id}/pdf",
+            get(routes::credit_notes::get_credit_note_pdf),
         )
         // Story 5.2 : lecture config facturation (tout rôle authentifié)
         .route(

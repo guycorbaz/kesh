@@ -609,10 +609,18 @@ Cliquer sur une facture en retard permet de générer un rappel (template config
 
 \subsection{Avoirs et notes de crédit}
 
-Un avoir (note de crédit) est l'inverse d'une facture (Débit produit / Crédit débiteurs) : il annule tout ou partie d'une facture émise.
+Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture déjà comptabilisée (on ne supprime jamais une écriture passée, principe d'intangibilité comptable). Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
+
+\begin{itemize}
+    \item crée un avoir reprenant toutes les lignes de la facture, avec son propre numéro issu d'une séquence dédiée (par défaut \keshcommand{AV-2026-0001}, configurable dans \emph{Paramètres → Facturation}) ;
+    \item génère automatiquement l'\textbf{écriture de contre-passation} : l'inverse exact de l'écriture de la facture (la créance client, le produit et la TVA due — une ligne par taux — sont contre-passés), de sorte que le \textbf{solde du client revient à zéro} ;
+    \item bascule la facture d'origine au statut \textbf{« annulée »} (sa propre écriture reste intacte).
+\end{itemize}
+
+L'avoir est consultable dans \emph{Avoirs} (menu \emph{Quotidien}), avec un \textbf{PDF « Avoir »} téléchargeable (mention « Avoir », référence à la facture d'origine, sans section QR de paiement). Le \emph{Décompte TVA} de la période tient compte de l'annulation (la TVA de la facture annulée est exclue).
 
 \begin{keshnote}
-À ce jour (version 0.3.0), Kesh ne dispose pas encore d'un assistant d'avoir dédié. Pour émettre un avoir, saisissez une \textbf{contre-passation manuelle} de l'écriture de la facture concernée (cf. section \emph{Écritures comptables → Modification d'un montant ou d'un compte}). Les avoirs et notes de crédit complets, ainsi que les fichiers de paiement pain.001 (paiements sortants), sont prévus dans une version ultérieure (Epic 12).
+En version actuelle, l'avoir est \textbf{total} (il annule la facture entière). L'avoir \emph{partiel} et le remboursement d'une facture \emph{déjà encaissée} (un avoir est refusé sur une facture marquée payée) sont prévus pour une version ultérieure, de même que les fichiers de paiement pain.001 (paiements sortants, Epic 12).
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────

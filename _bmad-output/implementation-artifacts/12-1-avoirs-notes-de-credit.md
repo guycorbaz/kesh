@@ -1,0 +1,169 @@
+# Story 12.1: Avoirs (notes de crédit)
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+<!-- Story UMBRELLA — candidate au split (touche 6 modules : kesh-db, kesh-core, kesh-api, kesh-qrbill, frontend, i18n). Proposition de split en §"Tasks / Subtasks". Décision de split à confirmer au `validate` (règle de splitting CLAUDE.md : >5 modules → split ; pattern Epic 17/18). -->
+
+## Story
+
+As a **utilisateur (indépendant / PME / fiduciaire)**,
+I want **annuler une facture validée en créant un avoir (note de crédit) qui lui est lié et génère automatiquement l'écriture de contre-passation**,
+so that **ma comptabilité reste intègre (aucune suppression de document, traçabilité complète) et le solde du client revienne à zéro**.
+
+## Contexte & motivation
+
+- Réalise **FR36** (annuler une facture validée *uniquement* par création d'un avoir) + **FR37** (séquence de numérotation séparée des avoirs) + **FR38** (PDF dans un nouvel onglet).
+- Referme la boucle ouverte par le dogfooding v0.3 : le bug **#184** (suppression d'une écriture liée à une facture validée bloquée par FK `fk_invoices_journal_entry`) et le CR **#186** (annuler une facture comptabilisée / extourne). L'avoir EST le mécanisme métier correct d'annulation — l'utilisateur ne supprime jamais l'écriture, il crée un avoir qui la contre-passe.
+- **Impact Epic 18 (TVA)** : depuis Epic 18, la validation d'une facture comptabilise la TVA due (ligne(s) `Crédit 2200 TVA due` par taux). L'avoir doit donc **contre-passer aussi les lignes de TVA**, sinon le décompte TVA serait faussé.
+
+## Acceptance Criteria
+
+1. **Given** une facture au statut `validated`, **When** l'utilisateur crée un avoir lié, **Then** l'avoir référence la facture d'origine (`credit_notes.invoice_id`) et reprend ses lignes (snapshot description / quantité / prix / `vat_rate`). Le **snapshot est réalisé côté backend** (le `POST /credit-notes` reçoit `invoice_id` et copie les lignes depuis la facture dans la transaction ; le frontend ne reconstruit pas les lignes). Le `vat_rate` copié reste **figé** (jamais relu depuis `vat_rates`). *(FR36)*
+2. **Given** une facture au statut `draft`, **When** l'utilisateur tente de créer un avoir, **Then** l'opération est refusée (un avoir ne peut viser qu'une facture validée). 
+2bis. **Given** une facture **déjà encaissée** (`paid_at IS NOT NULL`, payée / réconciliée en banque), **When** l'utilisateur tente de créer un avoir, **Then** l'opération est **refusée** avec un message métier clair (v0.2 : Kesh n'a pas de flux de remboursement ; créditer une facture encaissée laisserait un solde débiteur négatif = remboursement dû, ingérable). Le remboursement/avoir d'une facture payée est **déféré** (story future v0.3+). *(Décision Project Lead, MEDIUM-3.)*
+3. **Given** une facture déjà entièrement créditée (un avoir émis existe pour elle), **When** l'utilisateur tente de créer un second avoir, **Then** l'opération est refusée (modèle v0.2 : un avoir total par facture — cf. DC7).
+4. **Given** un avoir, **When** il est créé (émission immédiate — DC5 single-step, statut `issued`), **Then** un numéro séquentiel est attribué depuis une **séquence dédiée et indépendante** des factures, au format `AV-{YEAR}-{SEQ:04}` (ex. `AV-2026-0001`), sans trou. *(FR37)*. `{YEAR}` et le scope de séquence `(company_id, fiscal_year_id)` correspondent à **l'exercice ouvert couvrant la date de l'avoir** (DC4+DC10), pas celui de la facture d'origine. *(Ex. facture 2025-12-20, avoir 2026-02-15 → `AV-2026-0001`, séquence de l'exercice 2026.)*
+5. **Given** un avoir émis, **When** la comptabilisation s'exécute, **Then** une écriture de **contre-passation** est générée automatiquement, inversant exactement l'écriture de validation de la facture : `Crédit 1100 (Débiteurs, TTC)` / `Débit 3000 (Produits, HT)` / `Débit 2200 (TVA due, une ligne par taux > 0)`. *(swap débit↔crédit — PAS de montant négatif)*
+6. **Given** un avoir émis avec TVA multi-taux, **When** la contre-passation est générée, **Then** il y a une ligne de TVA contre-passée par taux distinct (cohérent avec la comptabilisation de la facture, BTreeMap taux ASC), chaque montant calculé via `line_vat_amount` sur le `vat_rate` figé de la ligne.
+7. **Given** la facture d'origine + son avoir émis, **When** on vérifie le solde du compte Débiteurs (1100) pour ce client, **Then** facture + avoir = 0 (le solde revient à zéro). *(scénario PRD Marc)*
+8. **Given** un avoir émis sur une facture, **When** l'opération réussit, **Then** la facture d'origine passe au statut `cancelled` (réalise FR36 « annuler une facture validée ») — sa propre écriture de validation reste intacte (intangibilité ; l'annulation est portée par la contre-passation). *(DC6)*
+9. **Given** un avoir émis, **When** l'utilisateur télécharge son PDF, **Then** un PDF « similaire à la facture » est généré avec la mention **« Avoir »**, le numéro d'avoir, et une **référence à la facture d'origine**, **sans section QR Bill** (le paiement irait dans l'autre sens). *(FR38 : ouverture nouvel onglet/téléchargement)*. Le PDF de l'avoir suit la **même contrainte `MAX_LINES_PER_PDF = 9`** que les factures (même layout A4, `invoice_pdf.rs:41`) : une facture d'origine > 9 lignes produit l'erreur PDF dédiée (cohérent avec le comportement facture).
+10. **Given** la contre-passation, **When** elle est comptabilisée, **Then** elle tombe dans un exercice comptable **ouvert** couvrant la date de l'avoir (sinon refus avec erreur métier claire), et l'écriture générée est équilibrée (`SUM(debit) == SUM(credit)`).
+11. **Given** toute l'opération (création+émission avoir + contre-passation + bascule statut facture), **When** elle s'exécute, **Then** elle est **atomique** (une seule transaction sqlx, `SELECT … FOR UPDATE` sur la facture et la config, rollback complet en cas d'échec) et **doublement journalisée** dans l'`audit_log` : `credit_note.created` (entité `credit_note`) **+ `invoice.cancelled`** (entité `invoice`, détails `{before:{status:'validated'}, after:{status:'cancelled'}, creditNoteId}`) — la piste d'audit de la facture doit tracer son annulation (intangibilité CO 958f).
+12. **Given** l'accès multi-tenant, **When** un avoir est lu/créé, **Then** toutes les requêtes sont scopées par `company_id` (anti-IDOR), pattern identique aux factures. **RBAC** : la route de mutation (`POST /credit-notes`, create+issue atomique — pas de route `/issue` séparée, DC5) exige le rôle **Comptable+** (`require_comptable_role`, comme les mutations de factures) ; les routes de lecture (`GET /credit-notes`, `GET /credit-notes/{id}`, `GET /credit-notes/{id}/pdf`) sont ouvertes à tout rôle authentifié (Admin/Comptable/Consultation).
+13. **Given** l'UI, **When** une facture est `validated`, **Then** un bouton « Créer un avoir » est proposé sur la page détail facture ; une section « Avoirs » est accessible (liste + détail) ; le bouton « Voir l'écriture comptable » de l'avoir pointe vers l'écriture de contre-passation.
+14. **Given** l'i18n, **When** des libellés sont ajoutés, **Then** ils sont traduits dans les **4 locales** (fr/de/it/en). **Ownership lint** (deux namespaces distincts) : (a) clés consommées dans `frontend/src/lib/features/credit-notes/` → préfixe **`credit-notes-`** (avec « s », le lint `keyBelongsToFeature` exige `key.startsWith('credit-notes-')` pour une feature multi-segment, cf. `bank-import-*`) ; (b) clés FTL backend du PDF (kesh-i18n, non scannées par le lint frontend) → préfixe **`credit-note-pdf-*`**. Ne pas mélanger les deux.
+15. **Given** la qualité, **When** la story est livrée, **Then** tests d'intégration repo (`#[sqlx::test]`) couvrant contre-passation mono/multi-taux + équilibre + solde→0 + refus (draft / facture payée `paid_at` / double avoir / exercice fermé), **+ un test « décompte TVA après avoir »** (DC12 : après émission de l'avoir, le rapport TVA de la période exclut la TVA de la facture annulée et `reconciliation_delta` reste cohérent ≈ 0), tests unitaires du helper de contre-passation et des helpers frontend, et au moins un E2E (création avoir depuis facture validée → PDF). `cargo fmt`/`clippy`/`test` + `npm run check`/`test:unit`/`lint-i18n-ownership` verts.
+
+## Décisions de conception (DC — figées, à valider au `validate`)
+
+- **DC1 — Tables dédiées** : créer `credit_notes` + `credit_note_lines` (miroir de `invoices`/`invoice_lines`), **pas** de réutilisation de `invoices` avec un flag de type. Rationale : séquence de numérotation séparée (FR37), sémantique de statut distincte, séparation propre. *(Source: agent schéma + invoices.sql)*. `credit_notes.total_amount = HT` (Σ `line_total`), **miroir strict de `invoices.total_amount`** qui stocke le HT (`invoices.rs:904`) — ne PAS y mettre le TTC.
+- **DC2 — Contre-passation via NOUVEAU helper** `generate_credit_note_journal_lines` : swap débit↔crédit, montants **positifs**. **NE PAS** réutiliser `generate_invoice_journal_lines` (documenté hors-scope avoirs, `invoices.rs:927-932`) et **NE PAS** utiliser de montants négatifs (interdits par `chk_jel_debit_nonneg` / `chk_jel_credit_nonneg` / `chk_jel_debit_credit_exclusive`). Réutiliser `kesh_core::accounting::vat::line_vat_amount` (fonctionne, montant positif) + agrégation par taux via `BTreeMap` (taux ASC, cohérent facture).
+- **DC3 — Avoir TOTAL uniquement (v0.2)** : l'avoir reprend **toutes** les lignes de la facture (snapshot), réversion intégrale → solde 0. L'avoir **partiel** (créditer une partie) est **hors scope** (déféré, story future). Rationale : correspond au scénario PRD (« solde revient à zéro ») et garde la story tenable.
+- **DC4 — Séquence séparée** : nouvelle table `credit_note_number_sequences` (DDL identique à `invoice_number_sequences`, scope `(company_id, fiscal_year_id)`, no-gap via `SELECT … FOR UPDATE` + `INSERT IGNORE` paresseux). Format configurable via nouvelle colonne `company_invoice_settings.credit_note_number_format VARCHAR(64) NOT NULL DEFAULT 'AV-{YEAR}-{SEQ:04}'`. Réutiliser `kesh_core::invoice_format::render` (placeholders `{YEAR}`/`{FY}`/`{SEQ:NN}`) tel quel.
+- **DC5 — Modèle SINGLE-STEP `create+issue` (figé Pass 3)** : créer un avoir l'**émet immédiatement** dans **une seule transaction** : snapshot des lignes + attribution du numéro + génération de la contre-passation + bascule de la facture en `cancelled` (DC6). Rationale (Opus Pass 3) : avec DC3 (avoir total, snapshot intégral, **rien à éditer**), un état `draft` intermédiaire n'apporte aucune valeur de revue et crée une impasse (DC7 `UNIQUE(invoice_id)` + absence de flux d'édition/suppression → facture verrouillée à vie sur un draft abandonné). Le single-step élimine l'impasse, le problème d'abandon, et tout besoin de route `DELETE`. **Statut de l'avoir** : créé directement en `issued`. La colonne `status` garde le CHECK `('draft','issued','cancelled')` pour compat-forward, mais **`draft` est inutilisé en v0.2** et `cancelled` est **réservé** (v0.3+, correction d'un avoir erroné — aucun chemin v0.2 ne l'atteint). **Conséquence routes** : pas de `POST /{id}/issue` ni `DELETE /{id}` ; le `POST /credit-notes` fait tout (cf. 12-1d).
+- **DC6 — La facture d'origine passe `cancelled` à l'émission de l'avoir** : réalise FR36. L'écriture de validation de la facture **reste intacte** (intangibilité CO 958f) ; l'annulation comptable est portée par l'écriture de contre-passation. Le statut `cancelled` existe déjà dans le CHECK de `invoices` (jamais utilisé jusqu'ici). Garde-fous DB vérifiés ground-truth : `chk_invoices_validated_has_je` (`status<>'validated' OR je_id IS NOT NULL`) ne bloque PAS un UPDATE vers `cancelled` ; `chk_invoices_paid_at_validated` (`paid_at IS NULL OR status IN ('validated','cancelled')`) autorise `paid_at` en `cancelled`. **Facture payée** : une facture `paid_at IS NOT NULL` ne peut **pas** être créditée en v0.2 (AC2bis, décision MEDIUM-3) — donc la bascule `cancelled` ne s'applique qu'à des factures non encaissées, le solde 1100 revient proprement à 0 (jamais négatif). Le remboursement d'une facture encaissée est déféré v0.3+.
+- **DC7 — Un avoir total par facture** : `credit_notes.invoice_id` FK → `invoices(id)` `ON DELETE RESTRICT` + **`UNIQUE(invoice_id)`** au niveau DB sur `credit_notes` (DC3 = un seul avoir total par facture). Conséquence : la contrainte `UNIQUE` évite tout double-avoir. En v0.2, le scénario d'abandon de draft est **impossible** (DC5 single-step — aucun INSERT en `draft`), donc pas de gestion d'abandon ni de route `DELETE`. Réalise AC3.
+- **DC8 — PDF sans QR Bill** : étendre `kesh-qrbill` pour rendre la section paiement conditionnelle (param `include_qr_bill: bool` sur `generate_qr_bill_pdf_with_date`, ou fonction dédiée `generate_credit_note_pdf`). Pour l'avoir : titre « Avoir » (clé i18n `credit-note-pdf-title`), `N° d'avoir`, ligne « Réf. facture d'origine : F-…», **omettre** `draw_separator`/`draw_receipt`/`draw_payment_part` (`pdf.rs:96-98`). **Champ référence** : ajouter `origin_reference: Option<String>` à `InvoicePdfData` (`types.rs:102-117` ; `None` pour les factures normales = pas de régression) et l'afficher dans `draw_invoice_section` si `Some`. **Helpers privés** : `build_i18n`/`split_address`/`sanitize_filename`/`map_qrbill_error`/`split_lines`/`fetch_country` sont actuellement **privés** dans `invoice_pdf.rs` → les rendre `pub(crate)` (ou les extraire dans `crates/kesh-api/src/routes/pdf_helpers.rs`) pour éviter la duplication (DRY). Nouvelle route `GET /api/v1/credit-notes/{id}/pdf` calquée sur `invoice_pdf.rs` (même limite `MAX_LINES_PER_PDF = 9`).
+- **DC9 — Snapshot contact** : `credit_notes.contact_id` copié depuis la facture (FK `contacts` RESTRICT). 
+- **DC10 — Exercice de la contre-passation** : posté à la **date de l'avoir** ; exiger un exercice ouvert via `fiscal_years::find_open_covering_date` (la date d'avoir peut différer de celle de la facture).
+- **DC12 — Interaction avec le décompte TVA (Epic 18) — comportement intentionnel** : le rapport TVA (`crates/kesh-report/src/vat_report.rs`) dérive la **TVA due** des `invoice_lines` de factures `i.status = 'validated'` (ligne 95) ET réconcilie contre le **solde du compte 2200 scopé ventes** via `i.journal_entry_id = jel.entry_id AND i.status = 'validated'` (ligne 223). Conséquence de DC6 (facture → `cancelled`) : la facture créditée **sort des deux** calculs → la TVA due dérivée baisse du montant TVA de la facture, le solde ledger sales-scope baisse d'autant → la **réconciliation reste cohérente** (`reconciliation_delta` inchangé). En parallèle, la contre-passation (Débit 2200) neutralise le solde 2200 **réel** au grand livre. **Simplification v0.2 assumée** : un avoir total réverse la TVA de la facture *quelle que soit la période du rapport* (la facture annulée est exclue partout, pas de réversion stricte par période) — cohérent avec la limitation déjà documentée « décompte officiel AFC / e-décompte ESTV hors scope ». La réversion TVA stricte par période est déférée (v0.3+).
+- **DC11 — Migration non-breaking** : `CREATE TABLE credit_notes` + `credit_note_lines` + `credit_note_number_sequences` + `ALTER TABLE company_invoice_settings ADD COLUMN credit_note_number_format … DEFAULT …` → **toutes non-breaking** (anciens binaires les ignorent) → **pas de bump** `kesh_version_min_required` (P1/P2). **Obligation P5** : ajouter les lignes correspondantes à `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx`).
+
+## Tasks / Subtasks (proposition de split umbrella → sous-stories)
+
+> Si split confirmé au `validate` : découper en **12-1a → 12-1f** (série a→f, pattern Epic 17/18). Sinon, exécuter dans cet ordre comme une story unique.
+
+- [ ] **12-1a — Fondation DB + entités** (AC: 1,4,12 / DC1,DC4,DC7,DC11)
+  - [ ] **Un seul fichier de migration** `2026MMDD000001_credit_notes.sql` (N=1, précédent Story 18-1a qui groupe plusieurs DDL en 1 fichier) regroupant les 4 opérations DDL ci-dessous → le test `migrations_upgrade_path` passe de `35` à `36` (cf. 12-1f).
+  - [ ] Migration `CREATE TABLE credit_notes` (miroir `invoices` : `id, company_id, contact_id, invoice_id FK RESTRICT, credit_note_number VARCHAR(64) NULL, status VARCHAR(16) NOT NULL CHECK IN ('draft','issued','cancelled') — INSERT pose toujours 'issued' (DC5 single-step) ; 'draft'/'cancelled' réservés compat-forward, pas de DEFAULT, date DATE, total_amount DECIMAL(19,4), journal_entry_id BIGINT NULL FK RESTRICT, version INT DEFAULT 1, timestamps`) + CHECK `status<>'issued' OR (credit_note_number IS NOT NULL AND journal_entry_id IS NOT NULL)` + UNIQUE `(company_id, credit_note_number)` + **`UNIQUE(invoice_id)`** (DC7, un seul avoir par facture) + index.
+  - [ ] Migration `CREATE TABLE credit_note_lines` (miroir `invoice_lines` : `vat_rate DECIMAL(5,2)` figé, mêmes CHECK).
+  - [ ] Migration `CREATE TABLE credit_note_number_sequences` (miroir `invoice_number_sequences`).
+  - [ ] Migration `ALTER TABLE company_invoice_settings ADD COLUMN credit_note_number_format VARCHAR(64) NOT NULL DEFAULT 'AV-{YEAR}-{SEQ:04}'` + CHECK non-vide.
+  - [ ] Entités Rust `CreditNote` / `CreditNoteLine` (miroir `entities/invoice.rs`). Étendre `CompanyInvoiceSettings` + `CompanyInvoiceSettingsUpdate` (champ `credit_note_number_format: String`) — **corrige les 5 sites de construction** : `routes/company_invoice_settings.rs:194` (handler PUT : lire+passer le champ) + `tests/company_invoice_settings_repository.rs:229,288,369,450`. Mettre à jour le body de la requête PUT `/company/invoice-settings` pour accepter/persister le champ.
+  - [ ] Ligne(s) dans `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx`) — **P5**.
+  - [ ] **Dans le MÊME commit que la migration** (MEDIUM-1, éviter test rouge pendant 12-1b..e) : mettre à jour `crates/kesh-db/tests/migrations_upgrade_path.rs` → `assert_eq!(total, 36, …)` (~l.67, 35→36) et `n_before_upgrade_window = total - 13` (~l.91, au lieu de `- 12`).
+- [ ] **12-1b — Repository (lecture/liste) + numérotation** (AC: 12 / DC4,DC9)
+  - [ ] `repositories/credit_notes.rs` : `FIND_CREDIT_NOTE_SCOPED_SQL` (scopé `company_id`), `get`/`list` paginé (miroir `invoices.rs`).
+  - [ ] `repositories/credit_note_number_sequences.rs` : `next_number_for` (pattern atomique no-gap, miroir `invoice_number_sequences`).
+- [ ] **12-1c — Create+issue atomique + contre-passation comptable** (AC: 1,2,2bis,3,5,6,7,8,10,11 / DC2,DC5,DC6,DC9,DC10) — **cœur métier**
+  - [ ] Helper `generate_credit_note_journal_lines` (swap débit↔crédit, positifs, `line_vat_amount`, BTreeMap taux, ligne TVA **omise si montant 0** — évite `debit=0 AND credit=0` interdit). Tests unitaires dédiés.
+  - [ ] `create_credit_note` (single-step, miroir `validate_invoice` `invoices.rs:1019-1232`) : tx unique → `FOR UPDATE` facture (vérifie `status='validated'` AC2 + **refuse si `paid_at IS NOT NULL`** AC2bis + pas d'avoir existant AC3) + settings (`get_or_create_default_in_tx` `FOR UPDATE`) ; snapshot contact + lignes de la facture (DC9) ; exercice ouvert sur la **date de l'avoir** (AC10) ; `next_number_for` + render numéro ; contre-passation via le helper ; `journal_entries::create_in_tx` (équilibre vérifié) ; INSERT `credit_notes` (`status='issued'`, number, `journal_entry_id`) + lignes ; `UPDATE invoices status='cancelled'` (DC6, conserve `paid_at`) ; **audit `credit_note.created` (entity credit_note) + `invoice.cancelled` (entity invoice, before/after status + creditNoteId)** (MEDIUM-2).
+- [ ] **12-1d — Routes API + PDF avoir** (AC: 9,12,13 / DC8)
+  - [ ] Routes `GET /api/v1/credit-notes` (liste), `POST /api/v1/credit-notes` (**create+issue atomique**, body = `{ invoice_id, date }`), `GET /api/v1/credit-notes/{id}`, `GET /api/v1/credit-notes/{id}/pdf` (câblées `lib.rs`). **Pas** de `POST /{id}/issue` ni `DELETE` (DC5 single-step). **RBAC** : mutation (`POST /credit-notes`) → `require_comptable_role` (Comptable+) ; lectures → tout rôle authentifié (AC12).
+  - [ ] **Refactor préalable helpers PDF** : rendre `build_i18n`/`split_address`/`sanitize_filename`/`map_qrbill_error`/`split_lines`/`fetch_country` `pub(crate)` dans `invoice_pdf.rs` (ou extraire dans `routes/pdf_helpers.rs`) — éviter duplication (DRY).
+  - [ ] PDF : param `include_qr_bill: bool` dans `kesh-qrbill` (`generate_qr_bill_pdf_with_date`, ou `generate_credit_note_pdf`) + champ `origin_reference: Option<String>` sur `InvoicePdfData` (affiché dans `draw_invoice_section` si `Some`) ; override i18n titre/numéro (`credit-note-pdf-*`), omettre QR Bill (`pdf.rs:96-98`).
+- [ ] **12-1e — Frontend** (AC: 9,13,14 / DC8)
+  - [ ] Feature `frontend/src/lib/features/credit-notes/` (`credit-notes.types.ts`, `credit-notes.api.ts`, `credit-note-helpers.ts` + `.test.ts`), miroir `invoices`.
+  - [ ] Pages `routes/(app)/credit-notes/` (liste, `new?invoiceId=`, `[id]` détail avec PDF + lien écriture).
+  - [ ] Bouton « Créer un avoir » sur `invoices/[id]/+page.svelte` (bloc `validated`) ; **encart « Annulée par l'avoir AV-… » avec lien** sur le bloc `cancelled` (LOW-3, découvrabilité) ; item nav « Avoirs » dans `+layout.svelte` (groupe `quotidien`).
+  - [ ] i18n 4 locales, clés **`credit-notes-*`** (avec « s », ownership lint — cf. AC14).
+- [ ] **12-1f — Tests d'intégration + E2E + doc** (AC: 15)
+  - [ ] `crates/kesh-db/tests/credit_notes_*.rs` (`#[sqlx::test]`, fixture `seed_accounting_company`) : contre-passation mono/multi-taux, équilibre, solde 1100 → 0, refus (facture draft / **facture payée `paid_at IS NOT NULL`** / 2ᵉ avoir / exercice fermé / comptes TVA non configurés).
+  - [ ] **Test DC12** : décompte TVA après avoir — le rapport TVA de la période exclut la TVA de la facture annulée et `reconciliation_delta` reste ≈ 0 (AC15).
+  - [ ] *(Maj `migrations_upgrade_path.rs` déjà faite en 12-1a — cf. MEDIUM-1.)*
+  - [ ] E2E Playwright `credit-notes.spec.ts` : créer avoir depuis facture validée → vérifier statut facture `cancelled` + PDF.
+  - [ ] Sync doc : `user-manual.tex` §Avoirs (remplacer la note « pas d'assistant d'avoir dédié »), `CHANGELOG` `[Non publié]`, README §Fonctionnalités (retirer *(à venir)* de pain.001 ? non — pain.001 reste 12-2 ; ajouter avoirs), website si claim.
+
+## Dev Notes
+
+### Architecture de comptabilisation — la contre-passation (cœur)
+
+La facture validée génère (helper `generate_invoice_journal_lines`, `crates/kesh-db/src/repositories/invoices.rs:933-995`) :
+
+```
+[0] Débit  receivable (1100) = total_ht + total_vat   (créance TTC)
+[1] Crédit revenue    (3000) = total_ht               (produit HT)
+[2..] Crédit vat_payable (2200) = vat_by_rate[r]      (TVA due, 1 ligne par taux > 0, BTreeMap ASC)
+```
+
+L'avoir DOIT produire l'**inverse exact** (swap débit↔crédit, montants positifs) :
+
+```
+[0] Crédit receivable (1100) = total_ht + total_vat   (annule la créance)
+[1] Débit  revenue    (3000) = total_ht               (annule le produit)
+[2..] Débit vat_payable (2200) = vat_by_rate[r]       (annule la TVA due, 1 ligne par taux)
+```
+
+- Calcul TVA par ligne : `kesh_core::accounting::vat::line_vat_amount(line.line_total, line.vat_rate)` (`crates/kesh-core/src/accounting/vat.rs:39-43`, arrondi `MidpointAwayFromZero` commercial AFC). Agréger `vat_by_rate: BTreeMap<Decimal, Decimal>` puis `total_vat = Σ valeurs` (somme des arrondis, **ne pas réarrondir**).
+- **Anti-pattern interdit** : montants négatifs (DB `chk_jel_debit_nonneg`/`chk_jel_credit_nonneg`/`chk_jel_debit_credit_exclusive` les bannissent) et réutilisation de `generate_invoice_journal_lines` (docstring `invoices.rs:927-932` l'interdit explicitement).
+- Équilibre vérifié par `journal_entries::create_in_tx` (`SUM(debit)==SUM(credit)`, rollback sinon) — l'inverse d'une écriture équilibrée l'est par construction.
+- Lien : `credit_notes.journal_entry_id` → l'écriture de contre-passation (NOUVELLE `JournalEntry`, propre `entry_number`).
+
+### Fichiers à créer / modifier (cités, fichier:ligne)
+
+**Backend — créer** : `crates/kesh-db/migrations/2026MMDD0000NN_credit_notes.sql` (+ lines + sequences + alter settings) ; `crates/kesh-db/src/entities/credit_note.rs` ; `crates/kesh-db/src/repositories/credit_notes.rs` + `credit_note_number_sequences.rs` ; `crates/kesh-api/src/routes/credit_notes.rs` + `credit_note_pdf.rs`.
+**Backend — modifier** : `crates/kesh-db/src/entities/mod.rs` + `repositories/mod.rs` (exports) ; `crates/kesh-db/src/entities/company_invoice_settings.rs` (+ champ `credit_note_number_format`) + son repo + ses tests ; `crates/kesh-api/src/lib.rs:375` (routes) ; `crates/kesh-qrbill/src/pdf.rs:70-101` (param `include_qr_bill`) + `src/types.rs` (clés i18n) ; `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` ; `docs/migrations-idempotence-audit.md`.
+
+**Frontend — créer** : `src/lib/features/credit-notes/{credit-notes.types.ts,credit-notes.api.ts,credit-note-helpers.ts,credit-note-helpers.test.ts,credit-notes.api.test.ts}` ; `src/routes/(app)/credit-notes/{+page.svelte,new/+page.svelte,[id]/+page.svelte}` ; `tests/e2e/credit-notes.spec.ts`.
+**Frontend — modifier** : `src/routes/(app)/+layout.svelte:57-65` (nav) ; `src/routes/(app)/invoices/[id]/+page.svelte:291-323` (bouton « Créer un avoir » dans bloc `validated`).
+
+### Patterns à respecter (réutilisation, anti-réinvention)
+
+- **Repository** (miroir `crates/kesh-db/src/repositories/invoices.rs`) : constante `FIND_*_SCOPED_SQL` avec `AND company_id = ?` (anti-IDOR) ; verrou optimiste `version` (`AND version = ?`, `version = version + 1`, re-query si `rows_affected==0` pour distinguer NotFound vs OptimisticLockConflict) ; transactions (`pool.begin()` + commit/rollback explicites OU async-block) ; `SELECT … FOR UPDATE` sur toute mutation ; audit log atomique en fin de tx (`audit_log::insert_in_tx`) ; snapshot JSON camelCase.
+- **Numérotation** (miroir `repositories/invoice_number_sequences.rs:30-97`) : `SELECT next_number … FOR UPDATE` → `INSERT IGNORE` si absent → re-SELECT FOR UPDATE → `UPDATE next_number+1` → retourne la valeur lue. No-gap garanti par rollback.
+- **Émission** (miroir `validate_invoice`, `invoices.rs:1019-1232`) : ordre des locks canonique = facture/avoir `FOR UPDATE` → settings `get_or_create_default_in_tx` (`FOR UPDATE`) → exercice ouvert → séquence → render → écriture → updates → audit.
+- **PDF** (miroir `crates/kesh-api/src/routes/invoice_pdf.rs` + `kesh-qrbill/src/pdf.rs`) : réutiliser `InvoicePdfData`/`InvoiceLinePdf`/`QrBillI18n`/`build_i18n`/`split_address`/`sanitize_filename` ; conditionner `draw_separator`/`draw_receipt`/`draw_payment_part` (`pdf.rs:96-98`) ; override map i18n `invoice-pdf-title`→« Avoir » avant `QrBillI18n::new` ; nouvelles clés FTL `credit-note-pdf-*`.
+- **Frontend** (miroir feature `invoices`) : `apiClient.get/post/getBlob` (`src/lib/shared/utils/api-client.ts`) ; montants en `string` décimale + `big.js` (jamais `number`) ; erreurs via `isApiError`/`notifyError` ; `i18nMsg(key, fallback, args?)` ; **ownership lint** : feature `credit-notes` → clés préfixées **`credit-notes-`** (avec « s ») — `frontend/scripts/lint-i18n-ownership.js` `keyBelongsToFeature` exige `key.startsWith('credit-notes-')` pour une feature multi-segment (vérifié sur `bank-import-*`). Les clés FTL backend du PDF sont `credit-note-pdf-*` (hors scan frontend, namespace distinct). Les routes `(app)/` ne sont pas scannées (peuvent utiliser des clés cross-feature). `data-testid` pour E2E ; PDF via `<a download>` invisible (anti popup-blocker, `invoices/[id]/+page.svelte:235-241`).
+
+> **Note `line_vat_amount` (DC2)** : `vat.rs:79-83` contient un test `negative_base_credit_note` qui exerce une base négative — c'est purement le comportement mathématique de l'arrondi. **NE PAS** en déduire d'utiliser `line_total < 0` pour les avoirs : interdit par `chk_jel_*_nonneg` / `chk_invoice_lines_line_total_non_negative`. La contre-passation se fait par swap débit↔crédit avec montants positifs.
+
+### Schéma DDL de référence (à mirrorer)
+
+`invoices`/`invoice_lines` : `crates/kesh-db/migrations/20260416000001_invoices.sql:15-61`. `journal_entry_id` + `invoice_number_sequences` + `company_invoice_settings` : `20260417000001_invoice_validation.sql:21-57`. CHECK `validated_has_je` : `20260417000002_*`. Comptes TVA settings (Epic 18) : `20260614000001_vat_accounts_config.sql:53-104`. Entités : `crates/kesh-db/src/entities/invoice.rs:17-89`, `company_invoice_settings.rs:19-36`, `journal_entry.rs:128-151`.
+
+### Tests
+
+- **Repo** (`#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`, fixture `kesh_db::test_fixtures::seed_accounting_company` → comptes 1000/1100/2000/3000/4000 + settings + FY 2020-2030 ; la fixture **configure déjà** `default_vat_payable_account_id` (sur le compte 2000 réutilisé, `test_fixtures.rs:147-155`) — réutiliser tel quel, pas d'extension nécessaire) : modèle `crates/kesh-db/tests/invoices_validate_vat.rs`. Cas : mono-taux (annule 1081 → solde 0), multi-taux (lignes TVA inversées par taux), équilibre, refus facture `draft`, refus 2ᵉ avoir, refus exercice fermé, refus comptes TVA non configurés (si TVA>0).
+- **Unitaire** helper contre-passation (`kesh-core` ou `kesh-db`) : exemples chiffrés inverses de `vat.rs`/`invoices_validate_vat.rs`.
+- **E2E** `tests/e2e/credit-notes.spec.ts` (modèle `invoices.spec.ts`, `seedTestState('with-data')`, login, `authedApiContext` pour setup) : créer facture → valider → créer avoir → vérifier facture `cancelled` + PDF `%PDF`.
+
+### Project Structure Notes
+
+- Numérotation epics : **sprint-status est autoritaire** (E12 = Avoirs & Paiements). `epics.md` porte encore l'ancienne numérotation (« Epic 11 : Avoirs & Paiements ») — dérive connue (action item rétro Epic 11 #2 non faite). Cette story suit la numérotation sprint-status (12-1).
+- Aucune dépendance bloquante : E12 s'appuie sur Epic 5 (factures) + Epic 18 (comptabilisation TVA), tous deux livrés.
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/epics.md#Epic 11 : Avoirs & Paiements (Story 11.1)] — AC d'origine.
+- [Source: _bmad-output/planning-artifacts/prd.md:114,424-426] — FR36/FR37/FR38 + scénario Marc.
+- [Source: crates/kesh-db/src/repositories/invoices.rs:933-995] — `generate_invoice_journal_lines` (à inverser, NE PAS réutiliser).
+- [Source: crates/kesh-db/src/repositories/invoices.rs:1019-1232] — `validate_invoice` (modèle d'émission).
+- [Source: crates/kesh-core/src/accounting/vat.rs:39-43] — `line_vat_amount` (réutiliser).
+- [Source: crates/kesh-db/src/repositories/invoice_number_sequences.rs:30-97] — séquence no-gap (à mirrorer).
+- [Source: crates/kesh-qrbill/src/pdf.rs:70-101] — conditionner QR Bill ; [crates/kesh-api/src/routes/invoice_pdf.rs:44-127] — handler PDF.
+- [Source: frontend/src/routes/(app)/invoices/[id]/+page.svelte:276-324] — boutons conditionnels au statut ; [frontend/scripts/lint-i18n-ownership.js] — ownership i18n.
+- [Source: CLAUDE.md#Migration breaking policy (P1-P5)] — non-breaking + audit idempotence ; [CLAUDE.md#Issue Tracking Rule] — #184/#186.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+(à compléter par dev-story)
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
