@@ -190,6 +190,7 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.1.8 (hotfix) | Numéro de version affiché corrigé : provient désormais du backend au runtime (champ `version` de `/health`) au lieu d'être codé en dur dans le frontend | ✅ Done |
 | v0.2.0 | **E17 Infra & Souveraineté** — API externe PAT, export/import complet d'installation (`.keshbackup`), récupération de mot de passe par email, fix sécurité TOCTOU onboarding | ✅ Done |
 | v0.3.0 | **E11/E18 TVA Suisse** — calcul + rapport par période, comptabilisation TVA due aux ventes, assistant d'achat (impôt préalable), décompte TVA (solde net AFC) et réconciliation rapport ↔ grand livre *(décompte officiel AFC / e-décompte ESTV hors périmètre)* | ✅ Done |
+| v0.3.1 (hotfix) | Message actionnable lors de la suppression d'une écriture liée à une facture validée + garde-fou journaux (pas de déversement SQL+données quand `RUST_LOG=debug`) | ✅ Done |
 | v0.2 (suite) | **E16 Facturation avancée** (compte produit par ligne, PDF complet), E12 Avoirs & Paiements (pain.001), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 🚧 En cours |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
