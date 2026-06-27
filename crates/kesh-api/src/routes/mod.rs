@@ -8,6 +8,7 @@ pub mod bank_profiles;
 pub mod companies;
 pub mod company_invoice_settings;
 pub mod contacts;
+pub mod credit_notes;
 pub mod exports;
 pub mod fiscal_years;
 pub mod health;

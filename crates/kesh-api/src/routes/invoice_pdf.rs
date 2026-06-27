@@ -229,6 +229,7 @@ fn build_qrbill_inputs(
         lines: invoice_lines_pdf,
         total: invoice.total_amount,
         currency: Currency::Chf,
+        origin_reference: None,
     };
 
     Ok((qr_data, pdf_data))
@@ -254,7 +255,7 @@ fn split_address(raw: &str) -> Result<(String, String), ()> {
 
 /// Returns every non-empty line of a multi-line address (for display in the
 /// invoice top section — unlike `split_address`, preserves lines beyond 2).
-fn split_lines(raw: &str) -> Vec<String> {
+pub(crate) fn split_lines(raw: &str) -> Vec<String> {
     raw.split('\n')
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
@@ -263,7 +264,7 @@ fn split_lines(raw: &str) -> Vec<String> {
 }
 
 /// Build a `QrBillI18n` by querying the shared Fluent bundle for every key.
-fn build_i18n(bundle: &kesh_i18n::I18nBundle, locale: Locale) -> QrBillI18n {
+pub(crate) fn build_i18n(bundle: &kesh_i18n::I18nBundle, locale: Locale) -> QrBillI18n {
     let mut entries: HashMap<&'static str, String> = HashMap::new();
     for key in kesh_qrbill::types::I18N_KEYS {
         let value = bundle.format(&locale, key, None);
@@ -275,7 +276,7 @@ fn build_i18n(bundle: &kesh_i18n::I18nBundle, locale: Locale) -> QrBillI18n {
 /// Maps `QrBillError` to `AppError`. Business errors (invalid IBAN, field too
 /// long, amount out of range) map to `InvoiceNotPdfReady` (400); PDF-rendering
 /// errors map to `PdfGenerationFailed` (500, detail logged only).
-fn map_qrbill_error(err: QrBillError) -> AppError {
+pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
     match err {
         QrBillError::InvalidIban(msg)
         | QrBillError::InvalidQrIban(msg)
@@ -299,7 +300,7 @@ fn map_qrbill_error(err: QrBillError) -> AppError {
     }
 }
 
-fn sanitize_filename(raw: &str) -> String {
+pub(crate) fn sanitize_filename(raw: &str) -> String {
     // B20 (review pass 2 G2 B) : cap à 64 caractères pour borner la taille
     // du header `Content-Disposition` (un `invoice_number` arbitrairement
     // long polluerait la réponse HTTP).
@@ -318,7 +319,7 @@ fn sanitize_filename(raw: &str) -> String {
 /// Lit la colonne `country` (CHAR(2)) de `companies` ou `contacts`.
 /// `table` doit être un littéral validé en call-site pour éviter toute
 /// injection SQL — seuls "companies" et "contacts" sont acceptés.
-async fn fetch_country(
+pub(crate) async fn fetch_country(
     pool: &sqlx::MySqlPool,
     table: &'static str,
     id: i64,

@@ -89,7 +89,8 @@ fn sum_credit(je: &kesh_db::entities::JournalEntryWithLines) -> Decimal {
 async fn credit_note_single_rate_reverses_invoice(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
-    let invoice_id = create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
 
     let issued = credit_notes::create_credit_note(
         &pool,
@@ -110,11 +111,23 @@ async fn credit_note_single_rate_reverses_invoice(pool: MySqlPool) {
     let revenue = seeded.accounts["3000"];
     let vat = seeded.accounts["2000"];
 
-    let creance = je.lines.iter().find(|l| l.account_id == receivable).unwrap();
-    assert_eq!(creance.credit, dec!(1081.00), "créance TTC contre-passée au crédit");
+    let creance = je
+        .lines
+        .iter()
+        .find(|l| l.account_id == receivable)
+        .unwrap();
+    assert_eq!(
+        creance.credit,
+        dec!(1081.00),
+        "créance TTC contre-passée au crédit"
+    );
     assert_eq!(creance.debit, dec!(0));
     let produit = je.lines.iter().find(|l| l.account_id == revenue).unwrap();
-    assert_eq!(produit.debit, dec!(1000.00), "produit HT contre-passé au débit");
+    assert_eq!(
+        produit.debit,
+        dec!(1000.00),
+        "produit HT contre-passé au débit"
+    );
     let tva = je.lines.iter().find(|l| l.account_id == vat).unwrap();
     assert_eq!(tva.debit, dec!(81.00), "TVA due contre-passée au débit");
 
@@ -122,16 +135,21 @@ async fn credit_note_single_rate_reverses_invoice(pool: MySqlPool) {
 
     // Statut avoir + numéro.
     assert_eq!(issued.credit_note.status, "issued");
-    assert!(issued.credit_note.credit_note_number.unwrap().starts_with("AV-"));
+    assert!(
+        issued
+            .credit_note
+            .credit_note_number
+            .unwrap()
+            .starts_with("AV-")
+    );
     assert_eq!(issued.credit_note.total_amount, dec!(1000.0000), "total HT");
 
     // Facture d'origine → cancelled.
-    let inv_status: String =
-        sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
-            .bind(invoice_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let inv_status: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(inv_status, "cancelled");
 
     // Solde du compte 1100 (créance) sur toutes les écritures de la company → 0.
@@ -153,13 +171,21 @@ async fn credit_note_single_rate_reverses_invoice(pool: MySqlPool) {
 async fn credit_note_multi_rate(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
-    let invoice_id =
-        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00)), (dec!(2.60), dec!(500.00))])
-            .await;
+    let invoice_id = create_and_validate(
+        &pool,
+        &seeded,
+        contact,
+        &[(dec!(8.10), dec!(1000.00)), (dec!(2.60), dec!(500.00))],
+    )
+    .await;
 
     let issued = credit_notes::create_credit_note(
         &pool,
-        NewCreditNote { company_id: seeded.company_id, invoice_id, date: d(2026, 7, 1) },
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: d(2026, 7, 1),
+        },
         seeded.admin_user_id,
     )
     .await
@@ -173,8 +199,15 @@ async fn credit_note_multi_rate(pool: MySqlPool) {
         .filter(|l| l.account_id == vat)
         .map(|l| l.debit)
         .collect();
-    assert_eq!(vat_lines, vec![dec!(13.00), dec!(81.00)], "TVA par taux ASC (2.6% puis 8.1%)");
-    assert_eq!(sum_debit(&issued.journal_entry), sum_credit(&issued.journal_entry));
+    assert_eq!(
+        vat_lines,
+        vec![dec!(13.00), dec!(81.00)],
+        "TVA par taux ASC (2.6% puis 8.1%)"
+    );
+    assert_eq!(
+        sum_debit(&issued.journal_entry),
+        sum_credit(&issued.journal_entry)
+    );
 }
 
 /// (c) Refus : facture brouillon (non validée).
@@ -204,7 +237,11 @@ async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
 
     let err = credit_notes::create_credit_note(
         &pool,
-        NewCreditNote { company_id: seeded.company_id, invoice_id: inv.id, date: d(2026, 7, 1) },
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id: inv.id,
+            date: d(2026, 7, 1),
+        },
         seeded.admin_user_id,
     )
     .await
@@ -217,7 +254,8 @@ async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
 async fn credit_note_refused_on_paid_invoice(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
-    let invoice_id = create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
 
     // Marque la facture payée (directement en SQL pour le test).
     sqlx::query("UPDATE invoices SET paid_at = CURRENT_TIMESTAMP(3) WHERE id = ?")
@@ -228,12 +266,19 @@ async fn credit_note_refused_on_paid_invoice(pool: MySqlPool) {
 
     let err = credit_notes::create_credit_note(
         &pool,
-        NewCreditNote { company_id: seeded.company_id, invoice_id, date: d(2026, 7, 1) },
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: d(2026, 7, 1),
+        },
         seeded.admin_user_id,
     )
     .await
     .unwrap_err();
-    assert!(matches!(err, DbError::IllegalStateTransition(_)), "refus facture payée");
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(_)),
+        "refus facture payée"
+    );
 }
 
 /// (e) Refus : un seul avoir par facture (AC3 / DC7).
@@ -241,11 +286,16 @@ async fn credit_note_refused_on_paid_invoice(pool: MySqlPool) {
 async fn credit_note_refused_when_already_credited(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
-    let invoice_id = create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
 
     let first = credit_notes::create_credit_note(
         &pool,
-        NewCreditNote { company_id: seeded.company_id, invoice_id, date: d(2026, 7, 1) },
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: d(2026, 7, 1),
+        },
         seeded.admin_user_id,
     )
     .await;
@@ -254,7 +304,11 @@ async fn credit_note_refused_when_already_credited(pool: MySqlPool) {
     // 2e tentative : la facture est désormais cancelled ET déjà créditée → refus.
     let err = credit_notes::create_credit_note(
         &pool,
-        NewCreditNote { company_id: seeded.company_id, invoice_id, date: d(2026, 7, 2) },
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: d(2026, 7, 2),
+        },
         seeded.admin_user_id,
     )
     .await

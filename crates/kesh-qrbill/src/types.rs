@@ -114,6 +114,9 @@ pub struct InvoicePdfData {
     /// TTC total, from DB (Decimal(19,4)). Rounded to 2 decimals for display.
     pub total: Decimal,
     pub currency: Currency,
+    /// Référence à la facture d'origine, affichée uniquement sur les avoirs
+    /// (Story 12.1). `None` pour une facture normale (pas de régression).
+    pub origin_reference: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +189,8 @@ pub const I18N_KEYS: &[&str] = &[
     "invoice-pdf-qr-amount",
     "invoice-pdf-qr-acceptance-point",
     "invoice-pdf-qr-separate-before-paying",
+    // Story 12.1 — référence à la facture d'origine (avoirs uniquement).
+    "invoice-pdf-origin-reference",
 ];
 
 /// English fallback for each key (same ordering as `I18N_KEYS`).
@@ -215,6 +220,7 @@ const DEFAULT_EN: &[&str] = &[
     "Amount",
     "Acceptance point",
     "Separate before paying in",
+    "Original invoice",
 ];
 
 #[derive(Debug, Error)]
