@@ -204,7 +204,7 @@ development_status:
 
   # Epic 12: Avoirs & Paiements (ex-Epic 10, renumbered 2026-04-20)
   epic-12: in-progress  # 2026-06-27 kickoff Epic 12 Avoirs & Paiements (1ère story créée).
-  12-1-avoirs-notes-de-credit: ready-for-dev  # 2026-06-27 spec UMBRELLA créée (Opus 4.8, 4 agents Explore : compta/contre-passation + PDF + frontend + schéma). 15 ACs + DC1-DC11. Couvre FR36/37/38 + CR #186 + fond #184. Contre-passation TVA-aware (swap débit↔crédit, helper dédié generate_credit_note_journal_lines, JAMAIS montants négatifs). Tables credit_notes/_lines/_number_sequences (non-breaking, P5 audit). Candidate split 12-1a..f (6 modules). Prochaine : bmad-create-story validate 12-1 (cycle Sonnet→Haiku→Opus→Sonnet).
+  12-1-avoirs-notes-de-credit: ready-for-dev  # 2026-06-27 spec UMBRELLA créée + VALIDATE CONVERGÉ 5 passes Sonnet→Haiku→Opus→Sonnet→Haiku (trend >LOW 8→3→4→3→0, ~32 patches). 16 ACs (dont 2bis refus facture payée) + DC1-DC12 figées. Décisions Guy : DC3 avoir total seul, DC6 facture→cancelled, AC2bis refus si payée. Pivot Opus P3 : DC5 SINGLE-STEP create+issue (état draft éliminé — impasse UNIQUE+pas de DELETE). Couvre FR36/37/38 + CR #186 + fond #184. Contre-passation TVA-aware (swap débit↔crédit, helper dédié, JAMAIS négatifs ; DC12 réconciliation TVA cohérente car due+sales-scope filtrent status='validated'). Tables non-breaking (P5 audit). CANDIDATE SPLIT 12-1a..f (6 modules). Prochaine : split + bmad-dev-story 12-1a.
   12-2-generation-fichiers-paiement-pain001: backlog
   12-3-flux-paiement-en-deux-temps: backlog
   epic-12-retrospective: optional
