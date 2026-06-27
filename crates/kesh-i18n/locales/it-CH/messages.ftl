@@ -18,6 +18,7 @@ error-not-found = Risorsa non trovata
 error-conflict = Risorsa già esistente
 error-optimistic-lock = Conflitto di versione — la risorsa è stata modificata
 error-foreign-key = Riferimento non valido
+error-journal-entry-linked-to-invoice = Questa scrittura contabile è stata generata da una fattura convalidata e non può essere eliminata direttamente. Annullare prima la fattura interessata.
 error-check-constraint = Valore non valido
 error-illegal-state = Transizione di stato non consentita
 

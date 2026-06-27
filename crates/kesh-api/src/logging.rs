@@ -93,6 +93,32 @@ fn build_appender(cfg: &LogConfig, path: &str) -> Result<RollingFileAppender, St
     })
 }
 
+/// Construit l'[`EnvFilter`] à partir de la chaîne brute de directives `RUST_LOG`.
+///
+/// Garde-fou observabilité (#185) : sqlx journalise le texte SQL complet *avec
+/// les valeurs* au niveau DEBUG. Un `RUST_LOG=debug` (debug applicatif légitime)
+/// déverserait alors toutes les requêtes + données métier dans les logs. On
+/// maintient donc une baseline `sqlx=warn` (qui conserve les warnings de requête
+/// lente et les erreurs) SAUF si l'utilisateur cible explicitement `sqlx` dans
+/// `RUST_LOG` (ex. `RUST_LOG=debug,sqlx=debug` pour diagnostiquer une requête).
+fn build_log_filter(raw: &str) -> EnvFilter {
+    let mut filter = EnvFilter::new(raw);
+    // Détection ciblée d'une directive `sqlx` (cible exacte, pas une sous-chaîne
+    // d'un autre crate du type `sqlx_xxx`) : on n'ajoute la baseline que si
+    // l'utilisateur n'a pas déjà posé de directive pour la cible `sqlx`.
+    let user_targets_sqlx = raw
+        .split(',')
+        .any(|d| d.trim().split(['=', '[']).next() == Some("sqlx"));
+    if !user_targets_sqlx {
+        filter = filter.add_directive(
+            "sqlx=warn"
+                .parse()
+                .expect("directive de log statique valide"),
+        );
+    }
+    filter
+}
+
 /// Initialise le subscriber `tracing` global (stdout + fichier conditionnel)
 /// et retourne le [`WorkerGuard`] du writer fichier (à conserver vivant).
 ///
@@ -100,7 +126,9 @@ fn build_appender(cfg: &LogConfig, path: &str) -> Result<RollingFileAppender, St
 /// d'ouverture → dégradation stdout-only).
 #[must_use = "le WorkerGuard doit rester vivant pour flush les logs fichier"]
 pub fn init_tracing(cfg: &LogConfig) -> Option<WorkerGuard> {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
+    // Niveau de log : `RUST_LOG` si défini, sinon `info`.
+    let raw = std::env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| "info".into());
+    let filter = build_log_filter(&raw);
 
     // Layer stdout — reproduit le comportement historique (`docker logs`).
     let stdout_layer = fmt::layer();
@@ -146,6 +174,43 @@ mod tests {
         assert_eq!(dir, PathBuf::from("/var/log/kesh"));
         assert_eq!(prefix, "kesh");
         assert_eq!(suffix, "log");
+    }
+
+    // #185 — baseline sqlx=warn : `EnvFilter` rend ses directives via `Display`.
+
+    #[test]
+    fn log_filter_default_info_adds_sqlx_baseline() {
+        let f = build_log_filter("info").to_string();
+        assert!(f.contains("sqlx=warn"), "baseline sqlx=warn absente: {f}");
+    }
+
+    #[test]
+    fn log_filter_debug_keeps_sqlx_baseline() {
+        // Le cas qui motive le fix : debug applicatif ne doit PAS déverser le SQL.
+        let f = build_log_filter("debug").to_string();
+        assert!(f.contains("sqlx=warn"), "baseline sqlx=warn absente: {f}");
+    }
+
+    #[test]
+    fn log_filter_explicit_sqlx_override_is_respected() {
+        // L'utilisateur qui demande explicitement le SQL le reçoit (pas de baseline).
+        let f = build_log_filter("debug,sqlx=debug").to_string();
+        assert!(f.contains("sqlx=debug"), "override sqlx=debug perdu: {f}");
+        assert!(
+            !f.contains("sqlx=warn"),
+            "baseline ne doit pas écraser l'override explicite: {f}"
+        );
+    }
+
+    #[test]
+    fn log_filter_substring_crate_does_not_count_as_sqlx_target() {
+        // Une cible qui *contient* "sqlx" sans être la crate `sqlx` (ex. un
+        // hypothétique `sqlx_pool_monitor`) ne doit pas désactiver la baseline.
+        let f = build_log_filter("debug,sqlx_pool_monitor=trace").to_string();
+        assert!(
+            f.contains("sqlx=warn"),
+            "la baseline doit rester active si l'utilisateur ne cible pas la crate sqlx: {f}"
+        );
     }
 
     #[test]
