@@ -14,6 +14,8 @@ pub mod bank_transactions;
 pub mod companies;
 pub mod company_invoice_settings;
 pub mod contacts;
+pub mod credit_note_number_sequences;
+pub mod credit_notes;
 pub mod fiscal_years;
 pub mod invoice_number_sequences;
 pub mod invoices;
