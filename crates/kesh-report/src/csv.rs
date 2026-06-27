@@ -310,8 +310,9 @@ pub fn render_journal_report_csv<W: Write>(
 ///
 /// Colonnes : `Taux;ChiffreAffairesHT;TVADue` (une ligne par taux), puis lignes
 /// récapitulatives (label en 1re colonne, montant dans la colonne naturelle) :
-/// total CA HT, total TVA due, TVA récupérable (0.00 en v0.2), solde. Rapport
-/// vide = en-tête seul (cf. `render_balance_sheet_csv`).
+/// total CA HT, total TVA due, TVA récupérable (solde du compte impôt préalable,
+/// Story 18-1d), solde. Rapport vide = en-tête seul, **sauf** si la TVA récupérable
+/// est non nulle (cas « achats seuls » : on rend le récapitulatif).
 pub fn render_vat_report_csv<W: Write>(
     report: &VatReport,
     mut writer: W,
@@ -323,7 +324,10 @@ pub fn render_vat_report_csv<W: Write>(
         .map_err(map_csv_err)?;
 
     // Cas rapport vide : header seul (Pass 1 ECH-M1, pattern par renderer).
-    if report.rows.is_empty() {
+    // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
+    // récupérable (achats seuls) n'est PAS vide — il faut écrire le récapitulatif.
+    // On ne court-circuite que si AUSSI récupérable == 0.
+    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
         wtr.flush().map_err(map_io_err)?;
         return Ok(());
     }
@@ -358,6 +362,14 @@ pub fn render_vat_report_csv<W: Write>(
     .map_err(map_csv_err)?;
     wtr.write_record(["Solde", "", &format_amount_iso(report.vat_balance)])
         .map_err(map_csv_err)?;
+    // Story 18-1e : écart de réconciliation (TVA due dérivée − solde compte TVA due
+    // au grand livre, périmètre ventes). Libellé en dur FR (i18n exports déférée v0.2).
+    wtr.write_record([
+        "Écart de réconciliation",
+        "",
+        &format_amount_iso(report.reconciliation_delta),
+    ])
+    .map_err(map_csv_err)?;
 
     wtr.flush().map_err(map_io_err)?;
     Ok(())

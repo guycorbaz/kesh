@@ -893,6 +893,9 @@ pub struct VatPdfLabels {
     pub vat_recoverable: String,
     /// Libellé solde.
     pub balance: String,
+    /// Libellé écart de réconciliation (Story 18-1e). En dur FR — l'i18n des
+    /// exports PDF est déférée v0.2 (cohérent avec les autres libellés).
+    pub reconciliation_delta: String,
 }
 
 impl VatPdfLabels {
@@ -907,6 +910,7 @@ impl VatPdfLabels {
             total_vat_due: "Total TVA due".into(),
             vat_recoverable: "TVA récupérable".into(),
             balance: "Solde".into(),
+            reconciliation_delta: "Écart de réconciliation".into(),
         }
     }
 }
@@ -945,7 +949,10 @@ pub fn render_vat_report_pdf(
         report.period.end_date,
     );
 
-    if report.rows.is_empty() {
+    // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
+    // récupérable (achats seuls) n'est PAS vide — on rend le bloc totaux
+    // (récupérable + solde). On ne court-circuite que si AUSSI récupérable == 0.
+    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
     }
@@ -981,6 +988,13 @@ pub fn render_vat_report_pdf(
         report.total_vat_recoverable,
     );
     draw_totals_footer(&mut builder, &labels.balance, report.vat_balance);
+    // Story 18-1e : écart de réconciliation (TVA due dérivée − solde compte TVA due
+    // au grand livre, périmètre ventes). 0.00 dans le cas nominal.
+    draw_totals_footer(
+        &mut builder,
+        &labels.reconciliation_delta,
+        report.reconciliation_delta,
+    );
 
     builder.finalize()
 }
@@ -1240,6 +1254,8 @@ mod tests {
             total_vat_due: if empty { Decimal::ZERO } else { dec!(81.00) },
             total_vat_recoverable: Decimal::ZERO,
             vat_balance: if empty { Decimal::ZERO } else { dec!(81.00) },
+            reconciliation_delta: Decimal::ZERO,
+            reconciliation_status: "ok".to_string(),
         }
     }
 
@@ -1259,6 +1275,35 @@ mod tests {
             render_vat_report_pdf(&fixture_vat(true), &ctx, &VatPdfLabels::fr_ch_defaults())
                 .unwrap();
         assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    /// Story 18-1d (AC10/T-D2b) : « achats seuls » — rows vide MAIS récupérable > 0
+    /// ne doit PAS court-circuiter sur le message vide ; le PDF rend le bloc totaux
+    /// (récupérable + solde) sans panic.
+    #[test]
+    fn vat_report_pdf_recoverable_only_renders() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let report = VatReport {
+            period: period(),
+            rows: vec![],
+            total_base_ht: Decimal::ZERO,
+            total_vat_due: Decimal::ZERO,
+            total_vat_recoverable: dec!(81.00),
+            vat_balance: dec!(-81.00),
+            reconciliation_delta: Decimal::ZERO,
+            reconciliation_status: "ok".to_string(),
+        };
+        let bytes = render_vat_report_pdf(&report, &ctx, &VatPdfLabels::fr_ch_defaults()).unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+        // Un PDF avec le tableau + bloc totaux est plus volumineux que le simple
+        // message « aucune écriture » (cas fixture_vat(true)).
+        let empty_bytes =
+            render_vat_report_pdf(&fixture_vat(true), &ctx, &VatPdfLabels::fr_ch_defaults())
+                .unwrap();
+        assert!(
+            bytes.len() > empty_bytes.len(),
+            "le PDF achats-seuls (totaux rendus) doit être plus gros que le message vide"
+        );
     }
 
     // --- AC #8 — empty report : génère un PDF valide avec empty_message ---

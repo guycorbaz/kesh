@@ -25,6 +25,7 @@
 		SortDirection
 	} from '$lib/features/journal-entries/journal-entries.types';
 	import JournalEntryForm from '$lib/features/journal-entries/JournalEntryForm.svelte';
+	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import {
 		parseQueryFromUrl,
@@ -38,6 +39,9 @@
 	let entries = $state<JournalEntryResponse[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
 	let accountsLoadError = $state(false);
+	// Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c).
+	// Échec réseau → reste null (assistant en mode config-requise).
+	let recoverableAccountId = $state<number | null>(null);
 	let loading = $state(false);
 
 	// Story 3.4 — pagination + filtres.
@@ -143,6 +147,11 @@
 		if (initial.limit !== undefined) limit = initial.limit;
 
 		void loadFiltered();
+
+		// Charge le compte d'impôt préalable une fois (assistant TVA achat, 18-1c).
+		void getInvoiceSettings()
+			.then((s) => (recoverableAccountId = s.defaultVatRecoverableAccountId ?? null))
+			.catch(() => (recoverableAccountId = null));
 
 		return () => {
 			debouncedLoad.cancel();
@@ -378,6 +387,7 @@
 		<JournalEntryForm
 			{accounts}
 			{accountsLoadError}
+			{recoverableAccountId}
 			onSuccess={handleSuccess}
 			onCancel={handleCancel}
 		/>

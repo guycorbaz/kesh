@@ -2,7 +2,7 @@
  * Story 9-1 — Tests E2E Playwright pour la page `/reports`.
  *
  * Scénarios :
- *   1. AC #27 + #33 : page chargée + 4 onglets visibles
+ *   1. AC #27 + #33 : page chargée + 5 onglets visibles (Bilan, Compte de résultat, Balance, Journaux, TVA)
  *   2. AC #28 (T12.1) : génération bilan via UI sur preset `with-company` (sans
  *      écritures → empty-state message attendu, mais le flow Generate→Response
  *      est vérifié end-to-end avec MariaDB up + audit best-effort)
@@ -21,7 +21,12 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import {
+	seedTestState,
+	clearAuthStorage,
+	authedApiContext,
+	disposeContextSafe,
+} from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -39,15 +44,16 @@ async function login(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
-test('reports page loads with 4 tabs (AC #27 + #33)', async ({ page }) => {
+test('reports page loads with 5 tabs (AC #27 + #33, + TVA Story 11-2/18-1f)', async ({ page }) => {
 	await login(page);
 	await page.goto('/reports');
 
 	await expect(page.getByRole('heading', { name: /rapports/i })).toBeVisible();
 
-	// AC #33 : exactement 4 onglets (Pass 1 AA-10)
+	// 5 onglets : Bilan, Compte de résultat, Balance, Journaux, TVA (l'onglet TVA
+	// ajouté en 11-2 ; le compte attendu passe de 4 à 5 — Story 18-1f).
 	const tabs = page.getByRole('tab');
-	await expect(tabs).toHaveCount(4);
+	await expect(tabs).toHaveCount(5);
 });
 
 test('reports page generates balance sheet end-to-end (AC #28, T12.1)', async ({ page }) => {
@@ -108,6 +114,65 @@ test('reports page has zero axe a11y violations (populated state)', async ({ pag
 		.withTags(['wcag2a', 'wcag2aa'])
 		.analyze();
 	expect(results.violations).toEqual([]);
+});
+
+// Story 18-1f (AC2) — décompte TVA de bout-en-bout. Crée une facture validée avec
+// TVA via API (pattern `invoices.spec.ts`), puis génère le rapport TVA dans l'UI et
+// vérifie l'affichage du décompte (TVA due, récupérable, solde). Doit s'exécuter
+// AVANT le test no-fy (qui reseed la DB).
+async function createValidatedInvoiceWithVatViaApi(page: Page): Promise<void> {
+	const ctx = await authedApiContext(page);
+	try {
+		const today = new Date().toISOString().slice(0, 10);
+		const contactRes = await ctx.post('/api/v1/contacts', {
+			data: { contactType: 'Entreprise', name: `Client TVA ${today}`, isClient: true, isSupplier: false },
+		});
+		expect(contactRes.ok(), `create contact: ${contactRes.status()}`).toBeTruthy();
+		const contactId = (await contactRes.json()).id as number;
+
+		const invRes = await ctx.post('/api/v1/invoices', {
+			data: {
+				contactId,
+				date: today,
+				dueDate: today,
+				lines: [{ description: 'Prestation TVA', quantity: '1', unitPrice: '1000.00', vatRate: '8.10' }],
+			},
+		});
+		expect(invRes.ok(), `create invoice: ${invRes.status()}`).toBeTruthy();
+		const invoiceId = (await invRes.json()).id as number;
+		const valRes = await ctx.post(`/api/v1/invoices/${invoiceId}/validate`);
+		expect(valRes.ok(), `validate invoice: ${valRes.status()}`).toBeTruthy();
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+test('reports page generates VAT décompte with TVA due end-to-end (Story 18-1f AC2)', async ({
+	page,
+}) => {
+	await login(page);
+	// Facture validée à 8.1 % → l'écriture comptable porte 81.00 de TVA due.
+	await createValidatedInvoiceWithVatViaApi(page);
+
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+
+	// Sélectionner l'onglet TVA AVANT de générer (generate() dépend de l'onglet actif).
+	await page.getByRole('tab', { name: /^TVA$/ }).click();
+	const generateButton = page.getByRole('button', { name: /générer/i });
+	await expect(generateButton).toBeEnabled();
+	await generateButton.click();
+	await page.waitForLoadState('networkidle');
+
+	// Le décompte affiche TVA due (81.00), TVA récupérable et solde.
+	const tabpanel = page.getByRole('tabpanel');
+	await expect(tabpanel).toBeVisible();
+	await expect(tabpanel.getByText(/TVA due/i)).toBeVisible();
+	await expect(tabpanel.getByText('81.00').first()).toBeVisible({ timeout: 5000 });
+	await expect(tabpanel.getByText(/TVA récupérable/i)).toBeVisible();
+	await expect(tabpanel.getByText(/Solde/i)).toBeVisible();
+	// Pas d'erreur backend rendue.
+	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 // Issue #90 — AC #34 / T12.4 : ce test reseed la DB avec `with-company-no-fy`

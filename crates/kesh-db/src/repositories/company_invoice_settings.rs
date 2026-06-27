@@ -24,7 +24,9 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_account_id, \
-    default_revenue_account_id, default_sales_journal, journal_entry_description_template, \
+    default_revenue_account_id, default_vat_payable_account_id, \
+    default_vat_recoverable_account_id, default_vat_decompte_account_id, \
+    default_sales_journal, journal_entry_description_template, \
     version, created_at, updated_at";
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
@@ -33,6 +35,9 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "invoiceNumberFormat": s.invoice_number_format,
         "defaultReceivableAccountId": s.default_receivable_account_id,
         "defaultRevenueAccountId": s.default_revenue_account_id,
+        "defaultVatPayableAccountId": s.default_vat_payable_account_id,
+        "defaultVatRecoverableAccountId": s.default_vat_recoverable_account_id,
+        "defaultVatDecompteAccountId": s.default_vat_decompte_account_id,
         "defaultSalesJournal": s.default_sales_journal.as_str(),
         "journalEntryDescriptionTemplate": s.journal_entry_description_template,
         "version": s.version,
@@ -107,6 +112,9 @@ fn is_no_op_change(
     before.invoice_number_format == changes.invoice_number_format
         && before.default_receivable_account_id == changes.default_receivable_account_id
         && before.default_revenue_account_id == changes.default_revenue_account_id
+        && before.default_vat_payable_account_id == changes.default_vat_payable_account_id
+        && before.default_vat_recoverable_account_id == changes.default_vat_recoverable_account_id
+        && before.default_vat_decompte_account_id == changes.default_vat_decompte_account_id
         && before.default_sales_journal == changes.default_sales_journal
         && before.journal_entry_description_template == changes.journal_entry_description_template
 }
@@ -157,13 +165,18 @@ pub async fn update(
     let rows = sqlx::query(
         "UPDATE company_invoice_settings \
          SET invoice_number_format = ?, default_receivable_account_id = ?, \
-             default_revenue_account_id = ?, default_sales_journal = ?, \
+             default_revenue_account_id = ?, default_vat_payable_account_id = ?, \
+             default_vat_recoverable_account_id = ?, default_vat_decompte_account_id = ?, \
+             default_sales_journal = ?, \
              journal_entry_description_template = ?, version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
     .bind(changes.default_receivable_account_id)
     .bind(changes.default_revenue_account_id)
+    .bind(changes.default_vat_payable_account_id)
+    .bind(changes.default_vat_recoverable_account_id)
+    .bind(changes.default_vat_decompte_account_id)
     .bind(changes.default_sales_journal)
     .bind(&changes.journal_entry_description_template)
     .bind(company_id)
@@ -302,7 +315,9 @@ pub async fn insert_with_defaults(
     if rows == 0 {
         let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
             "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
-                    cis.default_revenue_account_id, cis.default_sales_journal, \
+                    cis.default_revenue_account_id, cis.default_vat_payable_account_id, \
+                    cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
+                    cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
@@ -399,7 +414,9 @@ pub async fn insert_with_defaults_in_tx(
     if rows == 0 {
         let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
             "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
-                    cis.default_revenue_account_id, cis.default_sales_journal, \
+                    cis.default_revenue_account_id, cis.default_vat_payable_account_id, \
+                    cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
+                    cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \

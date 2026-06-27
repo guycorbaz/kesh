@@ -20,8 +20,13 @@
 	} from '$lib/features/invoices/invoice-number-format';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
 	const JOURNAL_CODES: JournalCode[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
+
+	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID,
+	// indisponible hors contexte sécurisé sur déploiement HTTP NAS, cf. #145).
+	const uid = $props.id();
 
 	let settings = $state<InvoiceSettingsResponse | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
@@ -33,6 +38,9 @@
 	let descriptionTemplate = $state('');
 	let receivableId = $state<number | null>(null);
 	let revenueId = $state<number | null>(null);
+	let vatPayableId = $state<number | null>(null);
+	let vatRecoverableId = $state<number | null>(null);
+	let vatDecompteId = $state<number | null>(null);
 	let salesJournal = $state<JournalCode>('Ventes');
 	let version = $state(0);
 
@@ -41,6 +49,9 @@
 	);
 	let revenueAccounts = $derived(
 		accounts.filter((a) => a.active && a.accountType === 'Revenue'),
+	);
+	let liabilityAccounts = $derived(
+		accounts.filter((a) => a.active && a.accountType === 'Liability'),
 	);
 
 	let formatValidation = $derived(validateFormatTemplate(format));
@@ -60,6 +71,9 @@
 			descriptionTemplate = s.journalEntryDescriptionTemplate;
 			receivableId = s.defaultReceivableAccountId;
 			revenueId = s.defaultRevenueAccountId;
+			vatPayableId = s.defaultVatPayableAccountId;
+			vatRecoverableId = s.defaultVatRecoverableAccountId;
+			vatDecompteId = s.defaultVatDecompteAccountId;
 			salesJournal = s.defaultSalesJournal;
 			version = s.version;
 		} catch (err) {
@@ -85,6 +99,9 @@
 				invoiceNumberFormat: format,
 				defaultReceivableAccountId: receivableId,
 				defaultRevenueAccountId: revenueId,
+				defaultVatPayableAccountId: vatPayableId,
+				defaultVatRecoverableAccountId: vatRecoverableId,
+				defaultVatDecompteAccountId: vatDecompteId,
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
@@ -104,6 +121,9 @@
 						descriptionTemplate = fresh.journalEntryDescriptionTemplate;
 						receivableId = fresh.defaultReceivableAccountId;
 						revenueId = fresh.defaultRevenueAccountId;
+						vatPayableId = fresh.defaultVatPayableAccountId;
+						vatRecoverableId = fresh.defaultVatRecoverableAccountId;
+						vatDecompteId = fresh.defaultVatDecompteAccountId;
 						salesJournal = fresh.defaultSalesJournal;
 						version = fresh.version;
 					} catch {
@@ -213,6 +233,63 @@
 				>
 					{#each JOURNAL_CODES as code (code)}
 						<option value={code}>{code}</option>
+					{/each}
+				</select>
+			</div>
+		</section>
+
+		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('invoices-settings-vat-accounts-title', 'Comptes TVA')}
+			</h2>
+			<p class="text-xs text-text-muted">
+				{i18nMsg(
+					'invoices-settings-vat-accounts-hint',
+					'Comptes utilisés pour la comptabilisation de la TVA (préparé pour le décompte AFC).',
+				)}
+			</p>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-vat-payable">
+					{i18nMsg('invoices-settings-vat-payable', 'Compte TVA due (Passif)')}
+				</label>
+				<select
+					id="{uid}-vat-payable"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={vatPayableId}
+				>
+					<option value={null}>— Sélectionner —</option>
+					{#each liabilityAccounts as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-vat-recoverable">
+					{i18nMsg('invoices-settings-vat-recoverable', 'Compte TVA récupérable (Actif)')}
+				</label>
+				<select
+					id="{uid}-vat-recoverable"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={vatRecoverableId}
+				>
+					<option value={null}>— Sélectionner —</option>
+					{#each assetAccounts as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-vat-decompte">
+					{i18nMsg('invoices-settings-vat-decompte', 'Compte de décompte TVA (Passif)')}
+				</label>
+				<select
+					id="{uid}-vat-decompte"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={vatDecompteId}
+				>
+					<option value={null}>— Sélectionner —</option>
+					{#each liabilityAccounts as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
 			</div>

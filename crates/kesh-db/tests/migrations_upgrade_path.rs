@@ -62,36 +62,36 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + companies_is_stub (Story v011-2) + bank_accounts_archived (Story v014-1)
     // + api_keys & audit_log_actor (Story 17-2a)
     // + users_email & password_reset_tokens (Story 17-4a)
-    // + vat_rates_crud (Story 11-1) = 34.
+    // + vat_rates_crud (Story 11-1) + vat_accounts_config (Story 18-1a) = 35.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 34,
-        "34 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a + users_email & password_reset_tokens Story 17-4a + vat_rates_crud Story 11-1)"
+        total, 35,
+        "35 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a + users_email & password_reset_tokens Story 17-4a + vat_rates_crud Story 11-1 + vat_accounts_config Story 18-1a)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
-    // migrations sauf les 11 dernières (reconciliation_8_4,
+    // migrations sauf les 12 dernières (reconciliation_8_4,
     // bank_account_journal_link, reconciliation_rules, _kesh_version,
     // companies_is_stub ajoutée Story v011-2, bank_accounts_archived
     // ajoutée Story v014-1, api_keys + audit_log_actor ajoutées Story 17-2a,
     // users_email + password_reset_tokens ajoutées Story 17-4a,
-    // et vat_rates_crud ajoutée Story 11-1).
+    // vat_rates_crud ajoutée Story 11-1, et vat_accounts_config ajoutée Story 18-1a).
     //
-    // Note `total - 11` : expression relative à la longueur totale, mais
-    // l'assertion `total == 34` ci-dessus est INTENTIONNELLEMENT hardcode
+    // Note `total - 12` : expression relative à la longueur totale, mais
+    // l'assertion `total == 35` ci-dessus est INTENTIONNELLEMENT hardcode
     // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
     // migration future, le mainteneur doit (1) bumper le compte à la nouvelle
     // longueur (2) revoir si `total - N` cible toujours la bonne fenêtre.
     // La frontière reste à 23 (état pré-10-2) : les migrations ajoutées APRÈS
     // la fenêtre Story 10-2 (companies_is_stub v011-2, bank_accounts_archived
     // v014-1, api_keys + audit_log_actor 17-2a, users_email + password_reset_tokens
-    // 17-4a, vat_rates_crud 11-1) élargissent la fenêtre d'upgrade et
-    // incrémentent donc le `N` soustrait (de 4 à 6 à 8 à 10 à 11), sans
-    // déplacer la frontière des 23 migrations historiques.
-    let n_before_upgrade_window = total - 11;
+    // 17-4a, vat_rates_crud 11-1, vat_accounts_config 18-1a) élargissent la fenêtre
+    // d'upgrade et incrémentent donc le `N` soustrait (de 4 à 6 à 8 à 10 à 11 à 12),
+    // sans déplacer la frontière des 23 migrations historiques.
+    let n_before_upgrade_window = total - 12;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 11) failed");
+        .expect("apply_migrations_up_to(total - 12) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -207,7 +207,11 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     let expected = [
         ("companies", 1),
         ("users", 1),
-        ("accounts", 2),
+        // Story 18-1a : la migration vat_accounts_config ajoute 2 comptes TVA
+        // (1171 Impôt préalable + 2206 Décompte TVA) par company existante.
+        // Le seed de 2 comptes (1000 Caisse + 3000 Ventes) reste préservé → 2 + 2 = 4.
+        // (parent 10/20 absent de ce fixture minimal → comptes créés orphelins, toléré.)
+        ("accounts", 4),
         ("contacts", 1),
         ("invoices", 1),
     ];

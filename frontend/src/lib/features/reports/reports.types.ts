@@ -102,8 +102,12 @@ export interface VatReportDto {
 	rows: VatReportRow[];
 	totalBaseHt: string;
 	totalVatDue: string;
-	totalVatRecoverable: string; // "0" en v0.2 (déféré)
+	totalVatRecoverable: string; // solde compte impôt préalable (Story 18-1d)
 	vatBalance: string;
+	/** Écart de réconciliation TVA due (dérivée − solde grand livre périmètre ventes), Story 18-1e. */
+	reconciliationDelta: string;
+	/** "delta" si |écart| >= 0.01 (écriture validée modifiée à la main), sinon "ok". */
+	reconciliationStatus: 'ok' | 'delta';
 }
 
 export type ReportType = 'balance-sheet' | 'income-statement' | 'trial-balance' | 'journals' | 'vat';

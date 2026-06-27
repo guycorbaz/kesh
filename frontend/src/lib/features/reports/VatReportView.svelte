@@ -24,6 +24,19 @@
 		{formatSwissDate(dto.period.startDate)} — {formatSwissDate(dto.period.endDate)}
 	</header>
 
+	<!-- Story 18-1e : bandeau de réconciliation (INFO non bloquant). Indépendant du
+	     flag `empty` ; visible uniquement si la TVA due dérivée ne correspond pas au
+	     solde du compte TVA due au grand livre (écriture validée modifiée à la main). -->
+	{#if dto.reconciliationStatus === 'delta'}
+		<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+			{i18nMsg(
+				'reports-vat-reconciliation-warning',
+				'Le décompte ne correspond pas aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement.',
+				{ delta: fmt(dto.reconciliationDelta) }
+			)}
+		</p>
+	{/if}
+
 	{#if empty}
 		<p class="rounded bg-blue-50 p-4 text-blue-900" role="status">
 			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
@@ -66,12 +79,5 @@
 				</tr>
 			</tfoot>
 		</table>
-
-		<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="note">
-			{i18nMsg(
-				'reports-vat-recoverable-note',
-				'La TVA récupérable sur les achats sera disponible dans une version ultérieure (nécessite la gestion des comptes TVA). Le décompte affiche pour l’instant la TVA due sur les ventes.',
-			)}
-		</p>
 	{/if}
 </section>

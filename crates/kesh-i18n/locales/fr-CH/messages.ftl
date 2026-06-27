@@ -210,6 +210,24 @@ journal-entry-conflict-title = Conflit de version
 journal-entry-conflict-message = Cette écriture a été modifiée par un autre utilisateur. Voulez-vous recharger ?
 journal-entry-conflict-reload = Recharger
 journal-entry-conflict-reloaded = Liste rechargée — cliquez à nouveau sur modifier pour reprendre
+
+# Assistant TVA achat (Story 18-1c)
+vat-purchase-title = Assistant TVA achat
+vat-purchase-config-required = Configurez le compte d'impôt préalable dans Paramètres → Facturation pour utiliser l'assistant.
+vat-purchase-no-rates = Aucun taux TVA configuré — voir Paramètres → Taux TVA.
+vat-purchase-charge-account = Compte de charge
+vat-purchase-ht = Montant HT
+vat-purchase-rate = Taux TVA
+vat-purchase-rate-placeholder = Choisir un taux
+vat-purchase-counterparty = Compte de contrepartie
+vat-purchase-same-account = Le compte de charge et la contrepartie doivent être différents.
+vat-purchase-recoverable-conflict = Le compte de charge et la contrepartie ne peuvent pas être le compte d'impôt préalable.
+vat-purchase-insert = Insérer les lignes
+vat-purchase-description = Achat — TVA { $rate } % récupérable
+vat-purchase-description-exempt = Achat — sans TVA
+vat-purchase-replace-title = Remplacer le brouillon ?
+vat-purchase-replace-message = Des lignes ou un libellé ont déjà été saisis. Continuer écrasera le brouillon actuel.
+vat-purchase-replace-confirm = Remplacer
 error-date-outside-fiscal-year = La date { $date } n'est pas dans l'exercice courant de cette écriture
 error-date-outside-fiscal-year-generic = La date n'est pas dans l'exercice courant de cette écriture
 
@@ -344,6 +362,11 @@ product-archive-confirm = Archiver
 
 # --- Story 5.1 : Factures brouillon ---
 invoices-page-title = Factures
+invoices-settings-vat-accounts-title = Comptes TVA
+invoices-settings-vat-accounts-hint = Comptes utilisés pour la comptabilisation de la TVA (préparé pour le décompte AFC).
+invoices-settings-vat-payable = Compte TVA due (Passif)
+invoices-settings-vat-recoverable = Compte TVA récupérable (Actif)
+invoices-settings-vat-decompte = Compte de décompte TVA (Passif)
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
 invoice-view-title = Facture
@@ -872,7 +895,7 @@ reports-vat-column-vat-due = TVA due
 reports-vat-total-base-ht = Total CA HT
 reports-vat-recoverable = TVA récupérable
 reports-vat-balance = Solde
-reports-vat-recoverable-note = La TVA récupérable sur les achats sera disponible dans une version ultérieure (nécessite la gestion des comptes TVA). Le décompte affiche pour l'instant la TVA due sur les ventes.
+reports-vat-reconciliation-warning = Le décompte ne correspond pas aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement.
 
 # Filtres (4)
 reports-filter-period = Période
