@@ -21,6 +21,7 @@ pub mod journal_report;
 pub mod pdf;
 pub mod period;
 pub mod trial_balance;
+pub mod vat_report;
 
 pub use balance_sheet::{AccountBalance, BalanceSheet, generate as generate_balance_sheet};
 pub use errors::ReportError;
@@ -31,6 +32,7 @@ pub use journal_report::{
 };
 pub use period::ReportPeriod;
 pub use trial_balance::{TrialBalance, TrialBalanceRow, generate as generate_trial_balance};
+pub use vat_report::{VatReport, VatReportRow, generate as generate_vat_report};
 
 // Story 9-2a — re-exports PDF & CSV
 pub use csv::{
@@ -41,3 +43,7 @@ pub use pdf::{
     PdfContext, SectionLabels, render_balance_sheet_pdf, render_income_statement_pdf,
     render_journal_report_pdf, render_trial_balance_pdf,
 };
+
+// Story 11-2 — re-exports rapport TVA
+pub use csv::render_vat_report_csv;
+pub use pdf::{VatPdfLabels, render_vat_report_pdf};

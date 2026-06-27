@@ -22,6 +22,12 @@ pub struct CompanyInvoiceSettings {
     pub invoice_number_format: String,
     pub default_receivable_account_id: Option<i64>,
     pub default_revenue_account_id: Option<i64>,
+    /// Compte TVA due (collectée sur ventes), type Liability. Story 18-1a.
+    pub default_vat_payable_account_id: Option<i64>,
+    /// Compte impôt préalable (TVA récupérable sur achats), type Asset. Story 18-1a.
+    pub default_vat_recoverable_account_id: Option<i64>,
+    /// Compte de décompte TVA (solde net dû à l'AFC), type Liability. Story 18-1a.
+    pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: Journal,
     pub journal_entry_description_template: String,
     pub version: i32,
@@ -38,6 +44,9 @@ pub struct CompanyInvoiceSettingsUpdate {
     pub invoice_number_format: String,
     pub default_receivable_account_id: Option<i64>,
     pub default_revenue_account_id: Option<i64>,
+    pub default_vat_payable_account_id: Option<i64>,
+    pub default_vat_recoverable_account_id: Option<i64>,
+    pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: Journal,
     pub journal_entry_description_template: String,
 }

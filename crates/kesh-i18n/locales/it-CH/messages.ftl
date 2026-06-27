@@ -210,6 +210,30 @@ journal-entry-conflict-title = Conflitto di versione
 journal-entry-conflict-message = Questa scrittura è stata modificata da un altro utente. Ricaricare?
 journal-entry-conflict-reload = Ricarica
 journal-entry-conflict-reloaded = Lista ricaricata — cliccare nuovamente su Modifica
+
+# Assistente IVA acquisto (Story 18-1c)
+vat-purchase-title = Assistente IVA acquisto
+vat-purchase-config-required = Configurare il conto dell'imposta precedente in Impostazioni → Fatturazione per usare l'assistente.
+vat-purchase-no-rates = Nessuna aliquota IVA configurata — vedere Impostazioni → Aliquote IVA.
+vat-purchase-charge-account = Conto di costo
+vat-purchase-ht = Importo IVA esclusa
+vat-purchase-rate = Aliquota IVA
+vat-purchase-rate-placeholder = Scegliere un'aliquota
+vat-purchase-counterparty = Conto di contropartita
+vat-purchase-same-account = Il conto di costo e la contropartita devono essere diversi.
+vat-purchase-recoverable-conflict = Il conto di costo e la contropartita non possono essere il conto dell'imposta precedente.
+vat-purchase-insert = Inserisci le righe
+vat-purchase-description = Acquisto — IVA { $rate } % recuperabile
+vat-purchase-description-exempt = Acquisto — senza IVA
+vat-purchase-replace-title = Sostituire la bozza?
+vat-purchase-replace-message = Sono già state inserite righe o una descrizione. Continuando si sovrascriverà la bozza attuale.
+vat-purchase-replace-confirm = Sostituisci
+# Categorie aliquote IVA (riutilizzate dall'assistente IVA acquisto, Story 18-1c)
+vat-category-normal = Aliquota normale
+vat-category-reduced = Aliquota ridotta
+vat-category-special = Aliquota speciale (alloggio)
+vat-category-exempt = Esente / 0 %
+vat-category-custom = Personalizzata
 error-date-outside-fiscal-year = La data { $date } non rientra nell'esercizio corrente di questa scrittura
 error-date-outside-fiscal-year-generic = La data non rientra nell'esercizio corrente di questa scrittura
 
@@ -344,6 +368,11 @@ product-archive-confirm = Archivia
 
 # --- Story 5.1: Bozze fatture ---
 invoices-page-title = Fatture
+invoices-settings-vat-accounts-title = Conti IVA
+invoices-settings-vat-accounts-hint = Conti usati per la contabilizzazione dell'IVA (predisposto per il rendiconto IVA dell'AFC).
+invoices-settings-vat-payable = Conto IVA dovuta (Passivo)
+invoices-settings-vat-recoverable = Conto IVA recuperabile (Attivo)
+invoices-settings-vat-decompte = Conto rendiconto IVA (Passivo)
 invoice-new-title = Nuova fattura
 invoice-edit-title = Modifica fattura
 invoice-view-title = Fattura
@@ -810,6 +839,15 @@ reports-total-debit = Totale dare
 reports-total-credit = Totale avere
 reports-net-result = Risultato netto
 reports-grand-total = Totale generale
+# Rapporto IVA (Story 11-2)
+reports-vat = IVA
+reports-vat-column-rate = Aliquota
+reports-vat-column-base-ht = Cifra d'affari netta
+reports-vat-column-vat-due = IVA dovuta
+reports-vat-total-base-ht = Totale cifra d'affari netta
+reports-vat-recoverable = IVA recuperabile
+reports-vat-balance = Saldo
+reports-vat-reconciliation-warning = Il rendiconto non corrisponde alle registrazioni contabili (scarto: { $delta }). Verificare le registrazioni convalidate modificate manualmente.
 
 reports-filter-period = Periodo
 reports-filter-fiscal-year = Esercizio
@@ -842,6 +880,7 @@ reports-filename-balance-sheet = bilancio
 reports-filename-income-statement = conto-economico
 reports-filename-trial-balance = bilancio-verifica
 reports-filename-journals = giornali
+reports-filename-vat = rendiconto-iva
 reports-pdf-header-period = Periodo
 reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
 

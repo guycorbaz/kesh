@@ -155,6 +155,14 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/company/invoice-settings",
             put(routes::company_invoice_settings::update_invoice_settings),
         )
+        // Story 11-1 : CRUD des taux TVA (Admin, FR54). Le GET /vat-rates reste
+        // dans les routes authentifiées (tous rôles) — seules les mutations sont
+        // ici (écart intentionnel vs bank_accounts qui est Comptable+).
+        .route("/api/v1/vat-rates", post(routes::vat::create_vat_rate))
+        .route(
+            "/api/v1/vat-rates/{id}",
+            put(routes::vat::update_vat_rate).delete(routes::vat::deactivate_vat_rate),
+        )
         // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
         .route("/api/v1/admin/full-export", get(routes::admin::full_export))
         // Story 17-3c : import complet d'installation (multipart, Admin + anti-PAT).
@@ -502,6 +510,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reports/journals/export",
             get(routes::reports::export_journal_report),
+        )
+        // Story 11-2 : rapport TVA (JSON + export PDF/CSV). DOIT rester dans
+        // `authenticated_routes` AVANT le `;` (anti-IDOR cross-tenant, cf. BH-H1).
+        .route("/api/v1/reports/vat", get(routes::reports::get_vat_report))
+        .route(
+            "/api/v1/reports/vat/export",
+            get(routes::reports::export_vat_report),
         )
         // Story 9-2b : export global ZIP de souveraineté. Route DOIT rester
         // dans `authenticated_routes` AVANT le `;` (Pass 1 BH-H1 anti-IDOR) ;

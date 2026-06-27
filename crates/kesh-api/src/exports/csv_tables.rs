@@ -617,11 +617,16 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
     csv.write_record([
         "id",
         "company_id",
+        // Story 11-1 : `category` (discriminant métier) + `version` ajoutés à
+        // l'export de souveraineté — sans `category`, un CSV historique serait
+        // inexploitable pour reconstituer les calculs TVA par catégorie (11-2).
+        "category",
         "label",
         "rate",
         "valid_from",
         "valid_to",
         "active",
+        "version",
         "created_at",
         "updated_at",
     ])
@@ -630,11 +635,13 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
         csv.write_record([
             v.id.to_string(),
             v.company_id.to_string(),
+            v.category.clone(),
             v.label.clone(),
             fmt_decimal(v.rate),
             fmt_date(v.valid_from),
             fmt_opt_date(v.valid_to),
             fmt_bool(v.active),
+            v.version.to_string(),
             fmt_dt(v.created_at),
             fmt_dt(v.updated_at),
         ])
@@ -657,6 +664,9 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
         "invoice_number_format",
         "default_receivable_account_id",
         "default_revenue_account_id",
+        "default_vat_payable_account_id",
+        "default_vat_recoverable_account_id",
+        "default_vat_decompte_account_id",
         "default_sales_journal",
         "journal_entry_description_template",
         "version",
@@ -670,6 +680,9 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             cis.invoice_number_format.clone(),
             fmt_opt_i64(cis.default_receivable_account_id),
             fmt_opt_i64(cis.default_revenue_account_id),
+            fmt_opt_i64(cis.default_vat_payable_account_id),
+            fmt_opt_i64(cis.default_vat_recoverable_account_id),
+            fmt_opt_i64(cis.default_vat_decompte_account_id),
             cis.default_sales_journal.as_str().to_string(),
             cis.journal_entry_description_template.clone(),
             cis.version.to_string(),

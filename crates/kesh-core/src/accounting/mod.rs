@@ -16,5 +16,7 @@
 //! métier passent.
 
 pub mod balance;
+pub mod vat;
 
 pub use balance::{BalancedEntry, Journal, JournalEntryDraft, JournalEntryLineDraft, validate};
+pub use vat::line_vat_amount;

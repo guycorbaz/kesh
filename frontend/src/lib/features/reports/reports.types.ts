@@ -89,7 +89,28 @@ export interface JournalReportDto {
 	grandTotalCredit: string;
 }
 
-export type ReportType = 'balance-sheet' | 'income-statement' | 'trial-balance' | 'journals';
+// Story 11-2 — Rapport TVA (TVA due / vente).
+export interface VatReportRow {
+	rate: string; // Decimal string, % (ex. "8.10")
+	category: string | null; // null en v0.2 (grouping par taux)
+	baseHt: string; // Decimal string
+	vatDue: string; // Decimal string
+}
+
+export interface VatReportDto {
+	period: ReportPeriod;
+	rows: VatReportRow[];
+	totalBaseHt: string;
+	totalVatDue: string;
+	totalVatRecoverable: string; // solde compte impôt préalable (Story 18-1d)
+	vatBalance: string;
+	/** Écart de réconciliation TVA due (dérivée − solde grand livre périmètre ventes), Story 18-1e. */
+	reconciliationDelta: string;
+	/** "delta" si |écart| >= 0.01 (écriture validée modifiée à la main), sinon "ok". */
+	reconciliationStatus: 'ok' | 'delta';
+}
+
+export type ReportType = 'balance-sheet' | 'income-statement' | 'trial-balance' | 'journals' | 'vat';
 
 /** Query params communs (camelCase API). */
 export interface ReportQuery {

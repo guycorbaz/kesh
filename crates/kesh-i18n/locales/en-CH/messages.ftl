@@ -210,6 +210,30 @@ journal-entry-conflict-title = Version conflict
 journal-entry-conflict-message = This entry has been modified by another user. Reload?
 journal-entry-conflict-reload = Reload
 journal-entry-conflict-reloaded = List reloaded — click Edit again to resume
+
+# VAT purchase assistant (Story 18-1c)
+vat-purchase-title = VAT purchase assistant
+vat-purchase-config-required = Configure the input VAT account in Settings → Invoicing to use the assistant.
+vat-purchase-no-rates = No VAT rate configured — see Settings → VAT rates.
+vat-purchase-charge-account = Expense account
+vat-purchase-ht = Amount excl. VAT
+vat-purchase-rate = VAT rate
+vat-purchase-rate-placeholder = Choose a rate
+vat-purchase-counterparty = Counterparty account
+vat-purchase-same-account = The expense account and counterparty must be different.
+vat-purchase-recoverable-conflict = The expense account and counterparty cannot be the input VAT account.
+vat-purchase-insert = Insert lines
+vat-purchase-description = Purchase — VAT { $rate } % recoverable
+vat-purchase-description-exempt = Purchase — no VAT
+vat-purchase-replace-title = Replace draft?
+vat-purchase-replace-message = Lines or a description have already been entered. Continuing will overwrite the current draft.
+vat-purchase-replace-confirm = Replace
+# VAT rate categories (reused by the VAT purchase assistant, Story 18-1c)
+vat-category-normal = Standard rate
+vat-category-reduced = Reduced rate
+vat-category-special = Special rate (accommodation)
+vat-category-exempt = Exempt / 0 %
+vat-category-custom = Custom
 error-date-outside-fiscal-year = The date { $date } is not within the current fiscal year of this entry
 error-date-outside-fiscal-year-generic = The date is not within the current fiscal year of this entry
 
@@ -344,6 +368,11 @@ product-archive-confirm = Archive
 
 # --- Story 5.1: Draft invoices ---
 invoices-page-title = Invoices
+invoices-settings-vat-accounts-title = VAT accounts
+invoices-settings-vat-accounts-hint = Accounts used for VAT bookkeeping (prepared for the FTA VAT settlement).
+invoices-settings-vat-payable = VAT payable account (Liability)
+invoices-settings-vat-recoverable = Recoverable VAT account (Asset)
+invoices-settings-vat-decompte = VAT settlement account (Liability)
 invoice-new-title = New invoice
 invoice-edit-title = Edit invoice
 invoice-view-title = Invoice
@@ -810,6 +839,15 @@ reports-total-debit = Total Debit
 reports-total-credit = Total Credit
 reports-net-result = Net Result
 reports-grand-total = Grand Total
+# VAT report (Story 11-2)
+reports-vat = VAT
+reports-vat-column-rate = Rate
+reports-vat-column-base-ht = Net turnover
+reports-vat-column-vat-due = VAT due
+reports-vat-total-base-ht = Total net turnover
+reports-vat-recoverable = Recoverable VAT
+reports-vat-balance = Balance
+reports-vat-reconciliation-warning = The VAT return does not match the accounting entries (difference: { $delta }). Check validated entries modified manually.
 
 reports-filter-period = Period
 reports-filter-fiscal-year = Fiscal Year
@@ -842,6 +880,7 @@ reports-filename-balance-sheet = balance-sheet
 reports-filename-income-statement = income-statement
 reports-filename-trial-balance = trial-balance
 reports-filename-journals = journals
+reports-filename-vat = vat-return
 reports-pdf-header-period = Period
 reports-pdf-empty-message = No entries in the selected period.
 

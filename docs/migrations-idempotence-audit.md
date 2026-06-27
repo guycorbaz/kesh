@@ -51,12 +51,14 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 | `20260605000002_audit_log_actor.sql` | tracked-by-sqlx | `ALTER TABLE audit_log ADD COLUMN actor_type ENUM(...) NOT NULL DEFAULT 'user'` + `ADD COLUMN actor_api_key_id BIGINT NULL` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060 (colonne déjà présente). Non-breaking (ADD COLUMN avec DEFAULT / nullable) → pas de bump `kesh_version_min_required` (Story 17-2a, DC5). Pas de FK sur `actor_api_key_id` (pointeur logique — l'audit doit survivre 10 ans à une clé révoquée/supprimée, cohérent `entity_id` sans FK). |
 | `20260610000001_users_email.sql` | yes | `ALTER TABLE users ADD COLUMN IF NOT EXISTS email` + `CREATE INDEX IF NOT EXISTS idx_users_email` utilisent les guards (MariaDB ≥ 10.3) — migration ré-entrante. Non-breaking (ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 17-4a, #122). |
 | `20260610000002_password_reset_tokens.sql` | tracked-by-sqlx | `CREATE TABLE password_reset_tokens` sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1050. Non-breaking (nouvelle table) → pas de bump `kesh_version_min_required` (Story 17-4a, #122). FK `ON DELETE CASCADE` (DC11, tokens éphémères). |
+| `20260613000001_vat_rates_crud.sql` | tracked-by-sqlx | `ALTER TABLE vat_rates ADD COLUMN version` + `ADD COLUMN category` (+ CHECK non-vide) sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060. Le `UPDATE … CASE` de backfill est intrinsèquement idempotent (re-jeu sans effet : ELSE conserve). Non-breaking (ADD COLUMN avec DEFAULT) → pas de bump `kesh_version_min_required` (Story 11-1). Pas de `CHECK IN (liste fermée)` sur `category` (modèle extensible — nouvelles catégories officielles sans migration). |
+| `20260614000001_vat_accounts_config.sql` | tracked-by-sqlx | `ALTER TABLE company_invoice_settings ADD COLUMN default_vat_payable_account_id / default_vat_recoverable_account_id / default_vat_decompte_account_id` (+ 3 FK `fk_cis_vat_*`) sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1060 (colonne déjà présente). Les deux `INSERT … SELECT … WHERE NOT EXISTS` (comptes `1171`/`2206` par company) sont intrinsèquement idempotents (re-jeu sans doublon, garanti par `NOT EXISTS` + `uq_accounts_company_number`) et ne touchent aucun compte existant. Non-breaking (ADD COLUMN nullable + INSERT idempotent) → pas de bump `kesh_version_min_required` (Story 18-1a, #180). |
 
 ## Statistiques
 
-- **Total** : 33 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a).
+- **Total** : 35 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a).
 - **Idempotence `yes`** : 4 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`, `users_email`).
-- **Idempotence `tracked-by-sqlx`** : 29 (toutes les autres).
+- **Idempotence `tracked-by-sqlx`** : 31 (toutes les autres).
 - **Idempotence `no`** : 0.
 
 ## Maintenance future

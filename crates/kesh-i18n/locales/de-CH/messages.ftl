@@ -210,6 +210,30 @@ journal-entry-conflict-title = Versionskonflikt
 journal-entry-conflict-message = Diese Buchung wurde von einem anderen Benutzer geändert. Neu laden?
 journal-entry-conflict-reload = Neu laden
 journal-entry-conflict-reloaded = Liste aktualisiert — klicken Sie erneut auf Bearbeiten
+
+# Assistent Vorsteuer-Einkauf (Story 18-1c)
+vat-purchase-title = MWST-Einkaufsassistent
+vat-purchase-config-required = Konfigurieren Sie das Vorsteuerkonto unter Einstellungen → Fakturierung, um den Assistenten zu verwenden.
+vat-purchase-no-rates = Kein MWST-Satz konfiguriert — siehe Einstellungen → MWST-Sätze.
+vat-purchase-charge-account = Aufwandskonto
+vat-purchase-ht = Betrag exkl. MWST
+vat-purchase-rate = MWST-Satz
+vat-purchase-rate-placeholder = Satz wählen
+vat-purchase-counterparty = Gegenkonto
+vat-purchase-same-account = Aufwandskonto und Gegenkonto müssen unterschiedlich sein.
+vat-purchase-recoverable-conflict = Aufwandskonto und Gegenkonto dürfen nicht das Vorsteuerkonto sein.
+vat-purchase-insert = Zeilen einfügen
+vat-purchase-description = Einkauf — MWST { $rate } % abziehbar
+vat-purchase-description-exempt = Einkauf — ohne MWST
+vat-purchase-replace-title = Entwurf ersetzen?
+vat-purchase-replace-message = Es wurden bereits Zeilen oder ein Text erfasst. Beim Fortfahren wird der aktuelle Entwurf überschrieben.
+vat-purchase-replace-confirm = Ersetzen
+# Kategorien MWST-Sätze (réutilisées par l'assistant TVA achat, Story 18-1c)
+vat-category-normal = Normalsatz
+vat-category-reduced = Reduzierter Satz
+vat-category-special = Sondersatz (Beherbergung)
+vat-category-exempt = Befreit / 0 %
+vat-category-custom = Benutzerdefiniert
 error-date-outside-fiscal-year = Das Datum { $date } liegt nicht im aktuellen Geschäftsjahr dieser Buchung
 error-date-outside-fiscal-year-generic = Das Datum liegt nicht im aktuellen Geschäftsjahr dieser Buchung
 
@@ -344,6 +368,11 @@ product-archive-confirm = Archivieren
 
 # --- Story 5.1: Rechnungsentwürfe ---
 invoices-page-title = Rechnungen
+invoices-settings-vat-accounts-title = MWST-Konten
+invoices-settings-vat-accounts-hint = Konten für die MWST-Verbuchung (vorbereitet für die MWST-Abrechnung der ESTV).
+invoices-settings-vat-payable = Konto geschuldete MWST (Passiv)
+invoices-settings-vat-recoverable = Konto Vorsteuer (Aktiv)
+invoices-settings-vat-decompte = Konto MWST-Abrechnung (Passiv)
 invoice-new-title = Neue Rechnung
 invoice-edit-title = Rechnung bearbeiten
 invoice-view-title = Rechnung
@@ -810,6 +839,15 @@ reports-total-debit = Total Soll
 reports-total-credit = Total Haben
 reports-net-result = Periodenergebnis
 reports-grand-total = Gesamttotal
+# MwSt-Bericht (Story 11-2)
+reports-vat = MwSt
+reports-vat-column-rate = Satz
+reports-vat-column-base-ht = Umsatz (netto)
+reports-vat-column-vat-due = Geschuldete MwSt
+reports-vat-total-base-ht = Total Umsatz netto
+reports-vat-recoverable = Vorsteuer
+reports-vat-balance = Saldo
+reports-vat-reconciliation-warning = Die Abrechnung stimmt nicht mit den Buchungen überein (Differenz: { $delta }). Prüfen Sie manuell geänderte validierte Buchungen.
 
 reports-filter-period = Periode
 reports-filter-fiscal-year = Geschäftsjahr
@@ -842,6 +880,7 @@ reports-filename-balance-sheet = bilanz
 reports-filename-income-statement = erfolgsrechnung
 reports-filename-trial-balance = kontensaldenliste
 reports-filename-journals = journale
+reports-filename-vat = mwst-abrechnung
 reports-pdf-header-period = Zeitraum
 reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
 

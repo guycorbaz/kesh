@@ -34,6 +34,9 @@ pub struct InvoiceSettingsResponse {
     pub invoice_number_format: String,
     pub default_receivable_account_id: Option<i64>,
     pub default_revenue_account_id: Option<i64>,
+    pub default_vat_payable_account_id: Option<i64>,
+    pub default_vat_recoverable_account_id: Option<i64>,
+    pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
     pub version: i32,
@@ -46,6 +49,9 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             invoice_number_format: s.invoice_number_format,
             default_receivable_account_id: s.default_receivable_account_id,
             default_revenue_account_id: s.default_revenue_account_id,
+            default_vat_payable_account_id: s.default_vat_payable_account_id,
+            default_vat_recoverable_account_id: s.default_vat_recoverable_account_id,
+            default_vat_decompte_account_id: s.default_vat_decompte_account_id,
             default_sales_journal: s.default_sales_journal.as_str().to_string(),
             journal_entry_description_template: s.journal_entry_description_template,
             version: s.version,
@@ -59,6 +65,9 @@ pub struct UpdateInvoiceSettingsRequest {
     pub invoice_number_format: String,
     pub default_receivable_account_id: Option<i64>,
     pub default_revenue_account_id: Option<i64>,
+    pub default_vat_payable_account_id: Option<i64>,
+    pub default_vat_recoverable_account_id: Option<i64>,
+    pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
     pub version: i32,
@@ -155,12 +164,40 @@ pub async fn update_invoice_settings(
         "Compte produit",
     )
     .await?;
+    // Comptes TVA (Story 18-1a) : TVA due + décompte = Liability, récupérable = Asset.
+    validate_account(
+        &state,
+        company.id,
+        req.default_vat_payable_account_id,
+        AccountType::Liability,
+        "Compte TVA due",
+    )
+    .await?;
+    validate_account(
+        &state,
+        company.id,
+        req.default_vat_recoverable_account_id,
+        AccountType::Asset,
+        "Compte TVA récupérable",
+    )
+    .await?;
+    validate_account(
+        &state,
+        company.id,
+        req.default_vat_decompte_account_id,
+        AccountType::Liability,
+        "Compte décompte TVA",
+    )
+    .await?;
 
     // 5. Persister.
     let update = CompanyInvoiceSettingsUpdate {
         invoice_number_format: req.invoice_number_format,
         default_receivable_account_id: req.default_receivable_account_id,
         default_revenue_account_id: req.default_revenue_account_id,
+        default_vat_payable_account_id: req.default_vat_payable_account_id,
+        default_vat_recoverable_account_id: req.default_vat_recoverable_account_id,
+        default_vat_decompte_account_id: req.default_vat_decompte_account_id,
         default_sales_journal: journal,
         journal_entry_description_template: req.journal_entry_description_template,
     };

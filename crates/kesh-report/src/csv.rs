@@ -20,6 +20,7 @@ use crate::errors::ReportError;
 use crate::income_statement::IncomeStatement;
 use crate::journal_report::JournalReport;
 use crate::trial_balance::TrialBalance;
+use crate::vat_report::VatReport;
 
 /// Octets UTF-8 du BOM (`\u{FEFF}`).
 const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
@@ -304,6 +305,75 @@ pub fn render_journal_report_csv<W: Write>(
 // ---------------------------------------------------------------------------
 // Mappers d'erreur internes
 // ---------------------------------------------------------------------------
+
+/// Génère le CSV du rapport TVA (Story 11-2).
+///
+/// Colonnes : `Taux;ChiffreAffairesHT;TVADue` (une ligne par taux), puis lignes
+/// récapitulatives (label en 1re colonne, montant dans la colonne naturelle) :
+/// total CA HT, total TVA due, TVA récupérable (solde du compte impôt préalable,
+/// Story 18-1d), solde. Rapport vide = en-tête seul, **sauf** si la TVA récupérable
+/// est non nulle (cas « achats seuls » : on rend le récapitulatif).
+pub fn render_vat_report_csv<W: Write>(
+    report: &VatReport,
+    mut writer: W,
+) -> Result<(), ReportError> {
+    write_bom(&mut writer)?;
+    let mut wtr = make_writer(writer);
+
+    wtr.write_record(["Taux", "ChiffreAffairesHT", "TVADue"])
+        .map_err(map_csv_err)?;
+
+    // Cas rapport vide : header seul (Pass 1 ECH-M1, pattern par renderer).
+    // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
+    // récupérable (achats seuls) n'est PAS vide — il faut écrire le récapitulatif.
+    // On ne court-circuite que si AUSSI récupérable == 0.
+    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
+        wtr.flush().map_err(map_io_err)?;
+        return Ok(());
+    }
+
+    for row in &report.rows {
+        wtr.write_record([
+            &format_amount_iso(row.rate),
+            &format_amount_iso(row.base_ht),
+            &format_amount_iso(row.vat_due),
+        ])
+        .map_err(map_csv_err)?;
+    }
+
+    // Récapitulatif (montant dans sa colonne naturelle).
+    wtr.write_record([
+        "Total chiffre d'affaires HT",
+        &format_amount_iso(report.total_base_ht),
+        "",
+    ])
+    .map_err(map_csv_err)?;
+    wtr.write_record([
+        "Total TVA due",
+        "",
+        &format_amount_iso(report.total_vat_due),
+    ])
+    .map_err(map_csv_err)?;
+    wtr.write_record([
+        "TVA récupérable",
+        "",
+        &format_amount_iso(report.total_vat_recoverable),
+    ])
+    .map_err(map_csv_err)?;
+    wtr.write_record(["Solde", "", &format_amount_iso(report.vat_balance)])
+        .map_err(map_csv_err)?;
+    // Story 18-1e : écart de réconciliation (TVA due dérivée − solde compte TVA due
+    // au grand livre, périmètre ventes). Libellé en dur FR (i18n exports déférée v0.2).
+    wtr.write_record([
+        "Écart de réconciliation",
+        "",
+        &format_amount_iso(report.reconciliation_delta),
+    ])
+    .map_err(map_csv_err)?;
+
+    wtr.flush().map_err(map_io_err)?;
+    Ok(())
+}
 
 /// Pass 1 code-review H1 : mappent vers `CsvGeneration` (pas `PdfGeneration`).
 /// Cf. commentaire `write_bom` ci-dessus pour le contexte.

@@ -210,6 +210,24 @@ journal-entry-conflict-title = Conflit de version
 journal-entry-conflict-message = Cette écriture a été modifiée par un autre utilisateur. Voulez-vous recharger ?
 journal-entry-conflict-reload = Recharger
 journal-entry-conflict-reloaded = Liste rechargée — cliquez à nouveau sur modifier pour reprendre
+
+# Assistant TVA achat (Story 18-1c)
+vat-purchase-title = Assistant TVA achat
+vat-purchase-config-required = Configurez le compte d'impôt préalable dans Paramètres → Facturation pour utiliser l'assistant.
+vat-purchase-no-rates = Aucun taux TVA configuré — voir Paramètres → Taux TVA.
+vat-purchase-charge-account = Compte de charge
+vat-purchase-ht = Montant HT
+vat-purchase-rate = Taux TVA
+vat-purchase-rate-placeholder = Choisir un taux
+vat-purchase-counterparty = Compte de contrepartie
+vat-purchase-same-account = Le compte de charge et la contrepartie doivent être différents.
+vat-purchase-recoverable-conflict = Le compte de charge et la contrepartie ne peuvent pas être le compte d'impôt préalable.
+vat-purchase-insert = Insérer les lignes
+vat-purchase-description = Achat — TVA { $rate } % récupérable
+vat-purchase-description-exempt = Achat — sans TVA
+vat-purchase-replace-title = Remplacer le brouillon ?
+vat-purchase-replace-message = Des lignes ou un libellé ont déjà été saisis. Continuer écrasera le brouillon actuel.
+vat-purchase-replace-confirm = Remplacer
 error-date-outside-fiscal-year = La date { $date } n'est pas dans l'exercice courant de cette écriture
 error-date-outside-fiscal-year-generic = La date n'est pas dans l'exercice courant de cette écriture
 
@@ -344,6 +362,11 @@ product-archive-confirm = Archiver
 
 # --- Story 5.1 : Factures brouillon ---
 invoices-page-title = Factures
+invoices-settings-vat-accounts-title = Comptes TVA
+invoices-settings-vat-accounts-hint = Comptes utilisés pour la comptabilisation de la TVA (préparé pour le décompte AFC).
+invoices-settings-vat-payable = Compte TVA due (Passif)
+invoices-settings-vat-recoverable = Compte TVA récupérable (Actif)
+invoices-settings-vat-decompte = Compte de décompte TVA (Passif)
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
 invoice-view-title = Facture
@@ -864,6 +887,15 @@ reports-total-debit = Total débit
 reports-total-credit = Total crédit
 reports-net-result = Résultat net
 reports-grand-total = Total général
+# Rapport TVA (Story 11-2)
+reports-vat = TVA
+reports-vat-column-rate = Taux
+reports-vat-column-base-ht = Chiffre d'affaires HT
+reports-vat-column-vat-due = TVA due
+reports-vat-total-base-ht = Total CA HT
+reports-vat-recoverable = TVA récupérable
+reports-vat-balance = Solde
+reports-vat-reconciliation-warning = Le décompte ne correspond pas aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement.
 
 # Filtres (4)
 reports-filter-period = Période
@@ -899,6 +931,7 @@ reports-filename-balance-sheet = bilan
 reports-filename-income-statement = compte-resultat
 reports-filename-trial-balance = balance-comptes
 reports-filename-journals = journaux
+reports-filename-vat = decompte-tva
 reports-pdf-header-period = Période
 reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
 
@@ -1044,3 +1077,40 @@ auth-recovery-reset-success = Votre mot de passe a été réinitialisé. Vous po
 auth-recovery-invalid-link = Ce lien de réinitialisation est invalide ou expiré. Refaites une demande pour recevoir un nouveau lien.
 auth-recovery-request-new-link = Refaire une demande
 auth-recovery-login-cta = Se connecter
+
+# Story 11-1 — Gestion des taux TVA (catégories + CRUD admin)
+vat-category-normal = Taux normal
+vat-category-reduced = Taux réduit
+vat-category-special = Taux spécial (hébergement)
+vat-category-exempt = Exonéré / 0 %
+vat-category-custom = Personnalisé
+vat-rates-title = Taux de TVA
+vat-rates-subtitle = Configurez les taux de TVA et leurs dates de validité. Les anciens taux restent appliqués aux opérations antérieures.
+vat-rates-new = Nouveau taux
+vat-rates-change = Changer le taux
+vat-rates-deactivate = Désactiver
+vat-rates-active = Actif
+vat-rates-inactive = Inactif
+vat-rates-empty = Aucun taux configuré.
+vat-rates-load-error = Impossible de charger les taux TVA.
+vat-rates-created = Taux TVA créé.
+vat-rates-create-error = La création a échoué.
+vat-rates-changed = Taux mis à jour.
+vat-rates-change-error = Le changement de taux a échoué.
+vat-rates-deactivated = Taux désactivé.
+vat-rates-deactivate-error = La désactivation a échoué.
+vat-rates-deactivate-confirm = Désactiver ce taux ? Il ne sera plus proposé à la saisie mais restera dans l'historique.
+vat-rates-change-hint = L'ancien taux sera clôturé à la date de bascule, et le nouveau taux prendra effet à cette date.
+vat-rates-col-rate = Taux
+vat-rates-col-from = Valide dès
+vat-rates-col-to = Jusqu'au
+vat-rates-col-status = Statut
+vat-rates-col-actions = Actions
+vat-rates-field-category = Catégorie
+vat-rates-field-rate = Taux (%)
+vat-rates-field-from = Valide dès
+vat-rates-field-to = Jusqu'au (optionnel)
+vat-rates-field-label = Libellé (optionnel)
+vat-rates-field-new-rate = Nouveau taux (%)
+vat-rates-field-switch-date = Date de bascule
+settings-vat-rates-link = Configurez les taux de TVA et leurs dates de validité (changements de taux gérés dans le temps).
