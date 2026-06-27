@@ -14,6 +14,7 @@
 - [Pile technique](#pile-technique)
 - [Démarrage rapide](#démarrage-rapide)
 - [Structure du projet](#structure-du-projet)
+- [Documentation](#documentation)
 - [Développement](#développement)
 - [Tests](#tests)
 - [Feuille de route](#feuille-de-route)
@@ -100,6 +101,15 @@ kesh/
 ├── docs/                    # Documentation technique
 └── .github/workflows/       # Pipelines CI/CD
 ```
+
+## Documentation
+
+- **Manuel utilisateur complet** (FR) : [`docs/manual/fr/user-manual.pdf`](docs/manual/fr/user-manual.pdf) — référence d'utilisation au quotidien (onboarding, comptabilité, facturation QR Bill, import bancaire, réconciliation, rapports, conformité).
+- **Guide de démarrage rapide** (FR) : [`docs/user-guide/fr/getting-started.md`](docs/user-guide/fr/getting-started.md) — prise en main express pour un premier usage.
+- **Manuel administrateur** (FR) : [`docs/manual/fr/admin-manual.pdf`](docs/manual/fr/admin-manual.pdf) — installation, configuration, sécurité, déploiement Docker, sauvegardes.
+- **API externe** : [`docs/api-external.md`](docs/api-external.md) — authentification par clé API (PAT), points d'accès, exemples.
+
+> Les manuels DE / IT / EN sont prévus pour une version ultérieure (le français reste la langue canonique de la documentation).
 
 ## Architecture
 

@@ -370,11 +370,11 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.5cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Déjà livré (Epic 1 à 9.5, v0.1 partielle)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Déjà livré (v0.2.0)}
 
 \begin{itemize}
-    \item Fondations et authentification multi-tenant.
-    \item Onboarding guidé et expert.
+    \item Fondations et authentification multi-tenant, cookies sécurisés httpOnly.
+    \item Onboarding guidé et expert ; récupération de mot de passe oublié par email.
     \item Plan comptable suisse PME (Sterchi, KMU) avec saisie d'écritures partie double.
     \item Carnet d'adresses, catalogue produits, conditions de paiement.
     \item Facturation QR Bill 2.2 avec numérotation séquentielle automatique.
@@ -382,7 +382,11 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
     \item Réconciliation automatique avec scoring + manuelle + règles d'affectation.
     \item Éclatement de transactions agrégées.
     \item Rapports comptables (Bilan, Compte de résultat, Balance, Journal).
+    \item Clôture d'exercice comptable avec report automatique des soldes de bilan.
     \item Exports PDF et CSV par rapport + ZIP global de souveraineté avec SHA-256.
+    \item Export/import complet d'installation (\texttt{.keshbackup}) depuis l'interface d'administration.
+    \item API externe avec clés d'accès personnelles (PAT) pour les intégrations tierces.
+    \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, manuels PDF.
 \end{itemize}
 
 \vspace{0.4cm}
@@ -413,7 +417,6 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \begin{itemize}
     \item Avoirs et notes de crédit dédiés + fichiers de paiement pain.001.001.03 (ISO 20022).
     \item Budgets annuels + suivi.
-    \item Clôture d'exercice avec report de soldes automatique.
     \item Justificatifs, lettrage, journaux personnalisables.
 \end{itemize}
 
