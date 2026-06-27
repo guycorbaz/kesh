@@ -60,6 +60,7 @@
 				{ i18nKey: 'nav-products', fallback: 'Catalogue', href: '/products' },
 				{ i18nKey: 'nav-invoices', fallback: 'Facturer', href: '/invoices' },
 				{ i18nKey: 'nav-invoicing-due-dates', fallback: 'Échéancier', href: '/invoices/due-dates' },
+				{ i18nKey: 'nav-credit-notes', fallback: 'Avoirs', href: '/credit-notes' },
 				{ label: 'Importer', href: '/bank-import' },
 			],
 		},

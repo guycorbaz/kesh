@@ -25,6 +25,33 @@
 	} from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
+	import { createCreditNote } from '$lib/features/credit-notes/credit-notes.api';
+
+	let creditNoteOpen = $state(false);
+	let creditNoteSubmitting = $state(false);
+	let creditNoteError = $state('');
+
+	let canManage = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
+	);
+
+	async function confirmCreateCreditNote() {
+		if (!invoice) return;
+		creditNoteSubmitting = true;
+		creditNoteError = '';
+		try {
+			const today = new Date().toISOString().slice(0, 10);
+			const cn = await createCreditNote({ invoiceId: invoice.id, date: today });
+			creditNoteOpen = false;
+			notifySuccess(i18nMsg('credit-notes-created', 'Avoir créé'));
+			await goto(`/credit-notes/${cn.id}`);
+		} catch (err) {
+			if (isApiError(err)) creditNoteError = err.message;
+			else creditNoteError = i18nMsg('credit-notes-create-error', "Échec de la création de l'avoir");
+		} finally {
+			creditNoteSubmitting = false;
+		}
+	}
 
 	let invoice = $state<InvoiceResponse | null>(null);
 	let loading = $state(true);
@@ -320,7 +347,16 @@
 					Voir l'écriture comptable
 				</Button>
 			{/if}
+			{#if canManage && !invoice.paidAt}
+				<Button variant="outline" onclick={() => (creditNoteOpen = true)}>
+					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
+				</Button>
+			{/if}
 		</div>
+	{:else if invoice?.status === 'cancelled'}
+		<Button variant="outline" onclick={() => goto('/credit-notes')}>
+			{i18nMsg('credit-notes-view-list', 'Voir les avoirs')}
+		</Button>
 	{/if}
 </div>
 
@@ -492,6 +528,39 @@
 				</Button>
 				<Button variant="destructive" onclick={confirmUnmark} disabled={unmarkSubmitting}>
 					{i18nMsg('invoice-unmark-paid-confirm', 'Dé-marquer')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<Dialog.Root
+		open={creditNoteOpen}
+		onOpenChange={(o) => {
+			creditNoteOpen = o;
+			if (!o) creditNoteError = '';
+		}}
+	>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>{i18nMsg('credit-notes-create-button', 'Créer un avoir')}</Dialog.Title>
+			</Dialog.Header>
+			<p class="text-sm">
+				{i18nMsg(
+					'credit-notes-confirm-body',
+					'Un avoir total sera créé et comptabilisé immédiatement : il contre-passe l’écriture de cette facture (le solde du client revient à zéro) et la facture passe au statut « annulée ». Cette action est définitive. Continuer ?',
+				)}
+			</p>
+			{#if creditNoteError}
+				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					{creditNoteError}
+				</div>
+			{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (creditNoteOpen = false)}>
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
+				<Button onclick={confirmCreateCreditNote} disabled={creditNoteSubmitting}>
+					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
