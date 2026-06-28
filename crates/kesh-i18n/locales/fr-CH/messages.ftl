@@ -63,6 +63,7 @@ nav-contacts = Carnet d'adresses
 nav-products = Catalogue
 nav-invoices = Factures
 nav-supplier-invoices = Factures fournisseurs
+nav-payment-batches = Paiements fournisseurs
 nav-invoicing-due-dates = Échéancier
 nav-settings = Paramètres
 # Story v014-1 — restructuration sidebar (groupes Quotidien/Mensuel/Administration)
@@ -1122,3 +1123,6 @@ settings-vat-rates-link = Configurez les taux de TVA et leurs dates de validité
 
 # Story 12.2 — factures fournisseurs (#191)
 supplier-invoices-title = Factures fournisseurs
+
+# Story 12.3 — paiements pain.001 (#191)
+payment-batches-title = Paiements fournisseurs

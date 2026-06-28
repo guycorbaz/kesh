@@ -7,6 +7,11 @@ license.workspace = true
 [dependencies]
 kesh-core = { path = "../kesh-core" }
 kesh-import = { path = "../kesh-import" }
+# Story 12.3 : génération pain.001 (kesh-payment) + validation IBAN/QR-IBAN/QRR
+# (kesh-qrbill) côté repo `payment_batches`. Crates feuilles (aucune dépendance
+# vers kesh-db) → pas de cycle.
+kesh-payment = { path = "../kesh-payment" }
+kesh-qrbill = { path = "../kesh-qrbill" }
 regex = "1.10"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql", "migrate", "chrono", "macros", "rust_decimal", "json"] }
 chrono = { version = "0.4", features = ["serde"] }

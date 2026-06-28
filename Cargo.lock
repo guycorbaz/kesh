@@ -2012,6 +2012,8 @@ dependencies = [
  "dotenvy",
  "kesh-core",
  "kesh-import",
+ "kesh-payment",
+ "kesh-qrbill",
  "kesh-report",
  "regex",
  "rust_decimal",
@@ -2060,6 +2062,13 @@ dependencies = [
 [[package]]
 name = "kesh-payment"
 version = "0.3.2"
+dependencies = [
+ "chrono",
+ "quick-xml",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "kesh-qrbill"

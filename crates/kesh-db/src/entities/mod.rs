@@ -22,6 +22,7 @@ pub mod invoice_number_sequence;
 pub mod journal_entry;
 pub mod onboarding;
 pub mod password_reset_token;
+pub mod payment_batch;
 pub mod product;
 pub mod reconciliation_rule;
 pub mod refresh_token;
@@ -49,6 +50,7 @@ pub use journal_entry::{
 };
 pub use onboarding::{OnboardingState, UiMode};
 pub use password_reset_token::PasswordResetToken;
+pub use payment_batch::{NewPaymentBatch, PaymentBatch, PaymentBatchItem};
 pub use product::{NewProduct, Product, ProductUpdate};
 pub use reconciliation_rule::{
     NewReconciliationRule, ReconciliationMatchType, ReconciliationRule, UpdateReconciliationRule,
