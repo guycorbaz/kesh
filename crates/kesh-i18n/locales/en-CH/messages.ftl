@@ -63,6 +63,7 @@ nav-contacts = Contacts
 nav-products = Catalog
 nav-invoices = Invoices
 nav-supplier-invoices = Supplier invoices
+nav-payment-batches = Supplier payments
 nav-invoicing-due-dates = Due Dates
 nav-settings = Settings
 # Story v014-1 — restructuration sidebar
@@ -1034,3 +1035,6 @@ auth-recovery-login-cta = Sign in
 
 # Story 12.2 — factures fournisseurs (#191)
 supplier-invoices-title = Supplier invoices
+
+# Story 12.3 — paiements pain.001 (#191)
+payment-batches-title = Supplier payments

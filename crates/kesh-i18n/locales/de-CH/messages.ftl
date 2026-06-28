@@ -63,6 +63,7 @@ nav-contacts = Kontakte
 nav-products = Katalog
 nav-invoices = Rechnungen
 nav-supplier-invoices = Lieferantenrechnungen
+nav-payment-batches = Lieferantenzahlungen
 nav-invoicing-due-dates = Fälligkeiten
 nav-settings = Einstellungen
 # Story v014-1 — restructuration sidebar
@@ -1034,3 +1035,6 @@ auth-recovery-login-cta = Anmelden
 
 # Story 12.2 — factures fournisseurs (#191)
 supplier-invoices-title = Lieferantenrechnungen
+
+# Story 12.3 — paiements pain.001 (#191)
+payment-batches-title = Lieferantenzahlungen

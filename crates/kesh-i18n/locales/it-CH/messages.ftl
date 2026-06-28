@@ -63,6 +63,7 @@ nav-contacts = Contatti
 nav-products = Catalogo
 nav-invoices = Fatture
 nav-supplier-invoices = Fatture fornitori
+nav-payment-batches = Pagamenti fornitori
 nav-invoicing-due-dates = Scadenze
 nav-settings = Impostazioni
 # Story v014-1 — restructuration sidebar
@@ -1034,3 +1035,6 @@ auth-recovery-login-cta = Accedi
 
 # Story 12.2 — factures fournisseurs (#191)
 supplier-invoices-title = Fatture fornitori
+
+# Story 12.3 — paiements pain.001 (#191)
+payment-batches-title = Pagamenti fornitori
