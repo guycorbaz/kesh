@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Non publié]
+
+### Ajouté
+
+- **Factures fournisseurs & règlement** (#191) : Kesh modélise désormais les **factures reçues de vos fournisseurs**. Enregistrer une facture fournisseur (fournisseur, date, échéance, lignes avec compte de charge et taux de TVA) poste automatiquement l'**écriture d'achat** (charge + impôt préalable récupérable + dette envers le créancier) et la met au statut « ouverte ». Vous pouvez ensuite la **payer en un clic** via un choix simple : soit un **virement bancaire** (en choisissant le compte bancaire à débiter — préparant l'export pain.001 à venir), soit un **compte interne** librement choisi dans votre plan comptable (caisse, carte de crédit, Twint…). Le paiement génère l'écriture de règlement et solde la dette du fournisseur. Une facture ouverte peut aussi être **annulée** (contre-passation automatique de l'écriture d'achat). Les coordonnées de paiement (IBAN/QR-IBAN, référence) peuvent être saisies sur la facture, indépendamment du mode de règlement choisi. Accessible depuis l'entrée **« Factures fournisseurs »** du menu (rôle Comptable ou Administrateur). *(L'export pain.001 du mode virement et le scan du QR-facture suivront.)*
+
+---
+
 ## [0.3.2] — 2026-06-27
 
 ### Ajouté
