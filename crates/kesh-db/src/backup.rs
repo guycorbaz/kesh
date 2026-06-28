@@ -34,10 +34,12 @@ use crate::errors::{DbError, map_db_error};
 pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "credit_note_lines",      // Story 12.1 — enfant de credit_notes (CASCADE).
     "supplier_invoice_lines", // Story 12.2 — enfant de supplier_invoices (CASCADE).
+    "payment_batch_items", // Story 12.3 — enfant de payment_batches (CASCADE) + supplier_invoices (RESTRICT) → avant eux.
     "invoice_lines",
     "journal_entry_lines",
     "credit_notes", // Story 12.1 — enfant de invoices/journal_entries/contacts (RESTRICT) → avant eux.
     "supplier_invoices", // Story 12.2 — enfant de journal_entries/contacts/bank_accounts/accounts (RESTRICT) → avant eux.
+    "payment_batches",   // Story 12.3 — enfant de companies + bank_accounts (RESTRICT) → avant eux.
     "invoices",
     "invoice_number_sequences",
     "credit_note_number_sequences", // Story 12.1 — enfant de companies + fiscal_years (RESTRICT).
