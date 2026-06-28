@@ -25,6 +25,7 @@ pub mod password_reset_token;
 pub mod product;
 pub mod reconciliation_rule;
 pub mod refresh_token;
+pub mod supplier_invoice;
 pub mod user;
 pub mod vat_rate;
 
@@ -53,5 +54,9 @@ pub use reconciliation_rule::{
     NewReconciliationRule, ReconciliationMatchType, ReconciliationRule, UpdateReconciliationRule,
 };
 pub use refresh_token::{NewRefreshToken, RefreshToken};
+pub use supplier_invoice::{
+    NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice, SupplierInvoice,
+    SupplierInvoiceLine,
+};
 pub use user::{NewUser, Role, User, UserUpdate};
 pub use vat_rate::{NewVatRate, UpdateVatRate, VatRate, vat_category};

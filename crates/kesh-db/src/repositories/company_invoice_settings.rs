@@ -27,7 +27,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_revenue_account_id, default_vat_payable_account_id, \
     default_vat_recoverable_account_id, default_vat_decompte_account_id, \
     default_sales_journal, journal_entry_description_template, \
-    credit_note_number_format, \
+    credit_note_number_format, default_payable_account_id, \
     version, created_at, updated_at";
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
@@ -42,6 +42,7 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultSalesJournal": s.default_sales_journal.as_str(),
         "journalEntryDescriptionTemplate": s.journal_entry_description_template,
         "creditNoteNumberFormat": s.credit_note_number_format,
+        "defaultPayableAccountId": s.default_payable_account_id,
         "version": s.version,
     })
 }
@@ -120,6 +121,7 @@ fn is_no_op_change(
         && before.default_sales_journal == changes.default_sales_journal
         && before.journal_entry_description_template == changes.journal_entry_description_template
         && before.credit_note_number_format == changes.credit_note_number_format
+        && before.default_payable_account_id == changes.default_payable_account_id
 }
 
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
@@ -172,6 +174,7 @@ pub async fn update(
              default_vat_recoverable_account_id = ?, default_vat_decompte_account_id = ?, \
              default_sales_journal = ?, \
              journal_entry_description_template = ?, credit_note_number_format = ?, \
+             default_payable_account_id = ?, \
              version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
@@ -184,6 +187,7 @@ pub async fn update(
     .bind(changes.default_sales_journal)
     .bind(&changes.journal_entry_description_template)
     .bind(&changes.credit_note_number_format)
+    .bind(changes.default_payable_account_id)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)
@@ -285,6 +289,18 @@ pub async fn insert_with_defaults(
     .map_err(map_db_error)?
     .flatten();
 
+    // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
+    // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
+    // l'absence ne doit pas bloquer la finalisation d'onboarding.
+    let payable = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '2000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
     // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern).
     // P6-M2: rollback is best-effort. The previous `.map_err(map_db_error)?` would
     // hide InactiveOrInvalidAccounts behind a transient rollback error and break
@@ -299,12 +315,14 @@ pub async fn insert_with_defaults(
     let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
-          default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+          default_revenue_account_id, default_payable_account_id, \
+          default_sales_journal, journal_entry_description_template) \
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
+    .bind(payable)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?
@@ -324,6 +342,7 @@ pub async fn insert_with_defaults(
                     cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
+                    cis.default_payable_account_id, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
@@ -391,6 +410,17 @@ pub async fn insert_with_defaults_in_tx(
     .map_err(map_db_error)?
     .flatten();
 
+    // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
+    // OPTIONNEL (non fail-fast) — cf. variante pool.
+    let payable = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = '2000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+    )
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+
     // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern)
     // If accounts 1100 or 3000 don't exist, reject immediately instead of creating NULL rows.
     // This prevents data corruption and provides clear error messages to callers.
@@ -403,12 +433,14 @@ pub async fn insert_with_defaults_in_tx(
     let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
-          default_revenue_account_id, default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+          default_revenue_account_id, default_payable_account_id, \
+          default_sales_journal, journal_entry_description_template) \
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
+    .bind(payable)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
@@ -424,6 +456,7 @@ pub async fn insert_with_defaults_in_tx(
                     cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
+                    cis.default_payable_account_id, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \

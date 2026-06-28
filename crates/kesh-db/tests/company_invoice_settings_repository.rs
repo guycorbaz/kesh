@@ -236,6 +236,7 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
             default_sales_journal: settings.default_sales_journal,
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
+            default_payable_account_id: settings.default_payable_account_id,
         },
     )
     .await
@@ -296,6 +297,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
             default_sales_journal: Journal::Ventes,
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
+            default_payable_account_id: settings.default_payable_account_id,
         },
     )
     .await
@@ -378,6 +380,7 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
             default_sales_journal: settings.default_sales_journal,
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
+            default_payable_account_id: settings.default_payable_account_id,
         },
     )
     .await
@@ -462,6 +465,7 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
                 .journal_entry_description_template
                 .clone(),
             credit_note_number_format: settings_a.credit_note_number_format.clone(),
+            default_payable_account_id: settings_a.default_payable_account_id,
         },
     )
     .await;

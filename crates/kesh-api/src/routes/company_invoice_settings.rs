@@ -40,6 +40,7 @@ pub struct InvoiceSettingsResponse {
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
     pub credit_note_number_format: String,
+    pub default_payable_account_id: Option<i64>,
     pub version: i32,
 }
 
@@ -56,6 +57,7 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             default_sales_journal: s.default_sales_journal.as_str().to_string(),
             journal_entry_description_template: s.journal_entry_description_template,
             credit_note_number_format: s.credit_note_number_format,
+            default_payable_account_id: s.default_payable_account_id,
             version: s.version,
         }
     }
@@ -73,6 +75,7 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
     pub credit_note_number_format: String,
+    pub default_payable_account_id: Option<i64>,
     pub version: i32,
 }
 
@@ -194,6 +197,15 @@ pub async fn update_invoice_settings(
         "Compte décompte TVA",
     )
     .await?;
+    // Compte créanciers (Story 12.2) : contrepartie achat fournisseur = Liability.
+    validate_account(
+        &state,
+        company.id,
+        req.default_payable_account_id,
+        AccountType::Liability,
+        "Compte créanciers",
+    )
+    .await?;
 
     // 5. Persister.
     let update = CompanyInvoiceSettingsUpdate {
@@ -206,6 +218,7 @@ pub async fn update_invoice_settings(
         default_sales_journal: journal,
         journal_entry_description_template: req.journal_entry_description_template,
         credit_note_number_format: req.credit_note_number_format,
+        default_payable_account_id: req.default_payable_account_id,
     };
     let settings = company_invoice_settings::update(
         &state.pool,

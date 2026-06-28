@@ -32,6 +32,9 @@ pub struct CompanyInvoiceSettings {
     pub journal_entry_description_template: String,
     /// Format du numéro d'avoir (note de crédit). Story 12.1. Défaut `AV-{YEAR}-{SEQ:04}`.
     pub credit_note_number_format: String,
+    /// Compte créanciers (2000) par défaut, contrepartie de l'écriture d'achat
+    /// des factures fournisseurs, type Liability. Story 12.2.
+    pub default_payable_account_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -52,4 +55,5 @@ pub struct CompanyInvoiceSettingsUpdate {
     pub default_sales_journal: Journal,
     pub journal_entry_description_template: String,
     pub credit_note_number_format: String,
+    pub default_payable_account_id: Option<i64>,
 }
