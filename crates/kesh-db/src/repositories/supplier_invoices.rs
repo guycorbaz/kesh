@@ -433,7 +433,7 @@ pub async fn pay(
         //     d'achat → solde 2000 garanti à 0 quelle que soit l'évolution des settings.
         let (payable_account_id, ttc): (i64, Decimal) = sqlx::query_as(
             "SELECT account_id, credit FROM journal_entry_lines \
-             WHERE journal_entry_id = ? AND credit > 0 ORDER BY id LIMIT 1",
+             WHERE entry_id = ? AND credit > 0 ORDER BY id LIMIT 1",
         )
         .bind(inv.purchase_journal_entry_id)
         .fetch_optional(&mut *tx)
@@ -626,7 +626,7 @@ pub async fn cancel(
         // (2) Relire les lignes de l'écriture d'achat et les inverser (swap D↔C).
         let purchase_lines: Vec<(i64, Decimal, Decimal)> = sqlx::query_as(
             "SELECT account_id, debit, credit FROM journal_entry_lines \
-             WHERE journal_entry_id = ? ORDER BY id",
+             WHERE entry_id = ? ORDER BY id",
         )
         .bind(inv.purchase_journal_entry_id)
         .fetch_all(&mut *tx)
@@ -734,9 +734,18 @@ mod tests {
         let lines = vec![(dec!(1000), dec!(8.1), 6000)];
         let (je, ttc) = generate_purchase_journal_lines(&lines, 2000, Some(1171)).unwrap();
         assert_eq!(je.len(), 3);
-        assert_eq!((je[0].account_id, je[0].debit, je[0].credit), (6000, dec!(1000), dec!(0)));
-        assert_eq!((je[1].account_id, je[1].debit, je[1].credit), (1171, dec!(81.00), dec!(0)));
-        assert_eq!((je[2].account_id, je[2].debit, je[2].credit), (2000, dec!(0), dec!(1081.00)));
+        assert_eq!(
+            (je[0].account_id, je[0].debit, je[0].credit),
+            (6000, dec!(1000), dec!(0))
+        );
+        assert_eq!(
+            (je[1].account_id, je[1].debit, je[1].credit),
+            (1171, dec!(81.00), dec!(0))
+        );
+        assert_eq!(
+            (je[2].account_id, je[2].debit, je[2].credit),
+            (2000, dec!(0), dec!(1081.00))
+        );
         assert_eq!(ttc, dec!(1081.00));
         let debit: Decimal = je.iter().map(|l| l.debit).sum();
         let credit: Decimal = je.iter().map(|l| l.credit).sum();

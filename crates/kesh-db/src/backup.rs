@@ -32,7 +32,7 @@ use crate::errors::{DbError, map_db_error};
 /// [`tests::backup_inventory_matches_schema`] garantit la synchro avec le schéma
 /// réel à chaque migration.
 pub const TABLES_TO_TRUNCATE: &[&str] = &[
-    "credit_note_lines", // Story 12.1 — enfant de credit_notes (CASCADE).
+    "credit_note_lines",      // Story 12.1 — enfant de credit_notes (CASCADE).
     "supplier_invoice_lines", // Story 12.2 — enfant de supplier_invoices (CASCADE).
     "invoice_lines",
     "journal_entry_lines",
