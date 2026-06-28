@@ -2012,6 +2012,8 @@ dependencies = [
  "dotenvy",
  "kesh-core",
  "kesh-import",
+ "kesh-payment",
+ "kesh-qrbill",
  "kesh-report",
  "regex",
  "rust_decimal",

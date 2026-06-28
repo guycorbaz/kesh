@@ -116,7 +116,8 @@ fn open(w: &mut W, name: &str) -> Result<(), PaymentError> {
 }
 
 fn close(w: &mut W, name: &str) -> Result<(), PaymentError> {
-    w.write_event(Event::End(BytesEnd::new(name))).map_err(xml_err)
+    w.write_event(Event::End(BytesEnd::new(name)))
+        .map_err(xml_err)
 }
 
 /// Formate un montant en 2 décimales, point décimal, sans séparateur de milliers.
@@ -182,7 +183,10 @@ pub fn generate_pain001(batch: &Pain001Batch) -> Result<String, PaymentError> {
     leaf(
         &mut w,
         "Dt",
-        &batch.requested_execution_date.format("%Y-%m-%d").to_string(),
+        &batch
+            .requested_execution_date
+            .format("%Y-%m-%d")
+            .to_string(),
     )?;
     close(&mut w, "ReqdExctnDt")?;
     // Dbtr
@@ -371,7 +375,10 @@ mod tests {
         b.debtor_name = "X".repeat(71);
         assert!(matches!(
             generate_pain001(&b).unwrap_err(),
-            PaymentError::TooLong { field: "Dbtr/Nm", .. }
+            PaymentError::TooLong {
+                field: "Dbtr/Nm",
+                ..
+            }
         ));
     }
 

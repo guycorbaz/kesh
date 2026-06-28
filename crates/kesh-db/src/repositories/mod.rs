@@ -22,6 +22,7 @@ pub mod invoices;
 pub mod journal_entries;
 pub mod onboarding;
 pub mod password_reset_tokens;
+pub mod payment_batches;
 pub mod products;
 pub mod reconciliation;
 pub mod reconciliation_rules;

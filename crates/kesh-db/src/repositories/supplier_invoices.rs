@@ -413,8 +413,47 @@ pub async fn create(
     }
 }
 
+/// Garde [Story 12.3] : refuse une mutation directe (`pay`/`cancel`) si la
+/// facture est engagée dans un lot de paiement `generated` (pain.001 en cours).
+///
+/// Le `SELECT … FOR UPDATE` sur la **ligne `supplier_invoices`** sérialise vis-à-vis
+/// de `payment_batches::create_batch` (qui verrouille la même ligne). NE PAS appeler
+/// depuis `confirm_batch` (qui règle des factures en lot `generated`).
+async fn guard_not_in_generated_batch(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<(), DbError> {
+    let exists: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM supplier_invoices WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if exists.is_none() {
+        return Err(DbError::NotFound);
+    }
+    let in_batch: Option<i64> = sqlx::query_scalar(
+        "SELECT pbi.id FROM payment_batch_items pbi \
+         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+         WHERE pbi.supplier_invoice_id = ? AND pb.status = 'generated' LIMIT 1",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if in_batch.is_some() {
+        return Err(DbError::IllegalStateTransition(
+            "facture engagée dans un lot de paiement en cours (annuler le lot d'abord)".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Règle une facture fournisseur `open` (choix binaire). Poste l'écriture de
-/// règlement et passe en `paid`.
+/// règlement et passe en `paid`. Refuse si la facture est dans un lot `generated`.
 pub async fn pay(
     pool: &MySqlPool,
     company_id: i64,
@@ -423,183 +462,11 @@ pub async fn pay(
     payment_date: chrono::NaiveDate,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
-    use crate::entities::{Journal, NewJournalEntry};
-    use crate::repositories::{fiscal_years, journal_entries};
-
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-
     let result = async {
-        // (1) Verrou facture + garde statut.
-        let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
-            .bind(id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?
-            .ok_or(DbError::NotFound)?;
-        if inv.status != "open" {
-            return Err(DbError::IllegalStateTransition(format!(
-                "seule une facture ouverte peut être réglée (statut actuel : '{}')",
-                inv.status
-            )));
-        }
-
-        // (2) Compte débité (créanciers) ET montant = ligne de crédit de l'écriture
-        //     d'achat → solde 2000 garanti à 0 quelle que soit l'évolution des settings.
-        let (payable_account_id, ttc): (i64, Decimal) = sqlx::query_as(
-            "SELECT jel.account_id, jel.credit FROM journal_entry_lines jel \
-             JOIN journal_entries je ON je.id = jel.entry_id \
-             WHERE jel.entry_id = ? AND je.company_id = ? AND jel.credit > 0 \
-             ORDER BY jel.id LIMIT 1",
-        )
-        .bind(inv.purchase_journal_entry_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?
-        .ok_or_else(|| {
-            DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into())
-        })?;
-
-        // (3) Contrepartie selon le choix binaire (company-scoped).
-        let (counterparty_account_id, settlement_type, bank_account_id, internal_account_id, journal) =
-            match choice {
-                SettlementChoice::BankTransfer { bank_account_id } => {
-                    let journal_account_id: Option<Option<i64>> = sqlx::query_scalar(
-                        "SELECT journal_account_id FROM bank_accounts \
-                         WHERE id = ? AND company_id = ? FOR UPDATE",
-                    )
-                    .bind(bank_account_id)
-                    .bind(company_id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(map_db_error)?;
-                    let counterparty = journal_account_id
-                        .ok_or(DbError::NotFound)?
-                        .ok_or_else(|| {
-                            DbError::ConfigurationRequired(
-                                "bank_account.journal_account_id".into(),
-                            )
-                        })?;
-                    (
-                        counterparty,
-                        "bank_transfer",
-                        Some(bank_account_id),
-                        None,
-                        Journal::Banque,
-                    )
-                }
-                SettlementChoice::InternalAccount { account_id } => {
-                    let active: Option<bool> = sqlx::query_scalar(
-                        "SELECT active FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
-                    )
-                    .bind(account_id)
-                    .bind(company_id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(map_db_error)?;
-                    match active {
-                        None | Some(false) => return Err(DbError::InactiveOrInvalidAccounts),
-                        Some(true) => {}
-                    }
-                    (account_id, "internal_account", None, Some(account_id), Journal::OD)
-                }
-            };
-
-        // (4) Exercice ouvert couvrant la date de règlement.
-        let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, payment_date)
-            .await?
-            .ok_or(DbError::FiscalYearInvalid)?;
-
-        // (5) Écriture de règlement : D 2000 / C contrepartie (TTC).
-        let number_label = inv
-            .supplier_invoice_number
-            .clone()
-            .unwrap_or_else(|| inv.id.to_string());
-        let contact_name: String =
-            sqlx::query_scalar("SELECT name FROM contacts WHERE id = ? AND company_id = ?")
-                .bind(inv.contact_id)
-                .bind(company_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(map_db_error)?
-                .unwrap_or_default();
-        let entry_lines = vec![
-            NewJournalEntryLine {
-                account_id: payable_account_id,
-                debit: ttc,
-                credit: Decimal::ZERO,
-            },
-            NewJournalEntryLine {
-                account_id: counterparty_account_id,
-                debit: Decimal::ZERO,
-                credit: ttc,
-            },
-        ];
-        let je = journal_entries::create_in_tx(
-            &mut tx,
-            fy.id,
-            user_id,
-            NewJournalEntry {
-                company_id,
-                entry_date: payment_date,
-                journal,
-                description: format!("Règlement fournisseur {number_label} - {contact_name}"),
-                lines: entry_lines,
-            },
-        )
-        .await?;
-
-        // (6) UPDATE facture → paid.
-        let rows = sqlx::query(
-            "UPDATE supplier_invoices SET status = 'paid', settlement_type = ?, \
-             settlement_bank_account_id = ?, settlement_account_id = ?, \
-             settlement_journal_entry_id = ?, paid_at = CURRENT_TIMESTAMP(3), version = version + 1 \
-             WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
-        )
-        .bind(settlement_type)
-        .bind(bank_account_id)
-        .bind(internal_account_id)
-        .bind(je.entry.id)
-        .bind(id)
-        .bind(company_id)
-        .bind(inv.version)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?
-        .rows_affected();
-        if rows == 0 {
-            return Err(DbError::OptimisticLockConflict);
-        }
-
-        // (7) Relire + audit.
-        let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
-            .bind(id)
-            .bind(company_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-        let inv_lines = fetch_lines(&mut tx, id).await?;
-        audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "supplier_invoice.paid".to_string(),
-                "supplier_invoice".to_string(),
-                id,
-                Some(serde_json::json!({
-                    "settlementType": settlement_type,
-                    "settlementJournalEntryId": je.entry.id,
-                    "amount": ttc.to_string(),
-                })),
-            ),
-        )
-        .await?;
-
-        Ok(SupplierInvoiceWithLines {
-            invoice: updated,
-            lines: inv_lines,
-        })
+        // Guard lot-membership dans le wrapper (JAMAIS dans pay_in_tx — H-FRESH-1).
+        guard_not_in_generated_batch(&mut tx, company_id, id).await?;
+        pay_in_tx(&mut tx, company_id, id, choice, payment_date, user_id).await
     }
     .await;
 
@@ -613,6 +480,198 @@ pub async fn pay(
             Err(e)
         }
     }
+}
+
+/// Cœur du règlement d'une facture, **tx-aware et GUARD-FREE** pour la
+/// lot-membership [H-FRESH-1]. Réutilisé par `pay()` (wrapper) ET par
+/// `payment_batches::confirm_batch` (qui appelle N fois dans UNE transaction
+/// atomique, pendant que le lot est encore `generated` — d'où l'absence de
+/// guard lot ici, sinon la confirmation se self-bloquerait).
+pub async fn pay_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    choice: SettlementChoice,
+    payment_date: chrono::NaiveDate,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    use crate::entities::{Journal, NewJournalEntry};
+    use crate::repositories::{fiscal_years, journal_entries};
+
+    // (1) Verrou facture + garde statut.
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    if inv.status != "open" {
+        return Err(DbError::IllegalStateTransition(format!(
+            "seule une facture ouverte peut être réglée (statut actuel : '{}')",
+            inv.status
+        )));
+    }
+
+    // (2) Compte débité (créanciers) ET montant = ligne de crédit de l'écriture
+    //     d'achat → solde 2000 garanti à 0 quelle que soit l'évolution des settings.
+    let (payable_account_id, ttc): (i64, Decimal) = sqlx::query_as(
+        "SELECT jel.account_id, jel.credit FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.credit > 0 \
+         ORDER BY jel.id LIMIT 1",
+    )
+    .bind(inv.purchase_journal_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or_else(|| DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into()))?;
+
+    // (3) Contrepartie selon le choix binaire (company-scoped).
+    let (counterparty_account_id, settlement_type, bank_account_id, internal_account_id, journal) =
+        match choice {
+            SettlementChoice::BankTransfer { bank_account_id } => {
+                let journal_account_id: Option<Option<i64>> = sqlx::query_scalar(
+                    "SELECT journal_account_id FROM bank_accounts \
+                     WHERE id = ? AND company_id = ? FOR UPDATE",
+                )
+                .bind(bank_account_id)
+                .bind(company_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(map_db_error)?;
+                let counterparty =
+                    journal_account_id
+                        .ok_or(DbError::NotFound)?
+                        .ok_or_else(|| {
+                            DbError::ConfigurationRequired("bank_account.journal_account_id".into())
+                        })?;
+                (
+                    counterparty,
+                    "bank_transfer",
+                    Some(bank_account_id),
+                    None,
+                    Journal::Banque,
+                )
+            }
+            SettlementChoice::InternalAccount { account_id } => {
+                let active: Option<bool> = sqlx::query_scalar(
+                    "SELECT active FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+                )
+                .bind(account_id)
+                .bind(company_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(map_db_error)?;
+                match active {
+                    None | Some(false) => return Err(DbError::InactiveOrInvalidAccounts),
+                    Some(true) => {}
+                }
+                (
+                    account_id,
+                    "internal_account",
+                    None,
+                    Some(account_id),
+                    Journal::OD,
+                )
+            }
+        };
+
+    // (4) Exercice ouvert couvrant la date de règlement.
+    let fy = fiscal_years::find_open_covering_date(tx, company_id, payment_date)
+        .await?
+        .ok_or(DbError::FiscalYearInvalid)?;
+
+    // (5) Écriture de règlement : D 2000 / C contrepartie (TTC).
+    let number_label = inv
+        .supplier_invoice_number
+        .clone()
+        .unwrap_or_else(|| inv.id.to_string());
+    let contact_name: String =
+        sqlx::query_scalar("SELECT name FROM contacts WHERE id = ? AND company_id = ?")
+            .bind(inv.contact_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+            .unwrap_or_default();
+    let entry_lines = vec![
+        NewJournalEntryLine {
+            account_id: payable_account_id,
+            debit: ttc,
+            credit: Decimal::ZERO,
+        },
+        NewJournalEntryLine {
+            account_id: counterparty_account_id,
+            debit: Decimal::ZERO,
+            credit: ttc,
+        },
+    ];
+    let je = journal_entries::create_in_tx(
+        tx,
+        fy.id,
+        user_id,
+        NewJournalEntry {
+            company_id,
+            entry_date: payment_date,
+            journal,
+            description: format!("Règlement fournisseur {number_label} - {contact_name}"),
+            lines: entry_lines,
+        },
+    )
+    .await?;
+
+    // (6) UPDATE facture → paid.
+    let rows = sqlx::query(
+        "UPDATE supplier_invoices SET status = 'paid', settlement_type = ?, \
+         settlement_bank_account_id = ?, settlement_account_id = ?, \
+         settlement_journal_entry_id = ?, paid_at = CURRENT_TIMESTAMP(3), version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
+    )
+    .bind(settlement_type)
+    .bind(bank_account_id)
+    .bind(internal_account_id)
+    .bind(je.entry.id)
+    .bind(id)
+    .bind(company_id)
+    .bind(inv.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows == 0 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    // (7) Relire + audit.
+    let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let inv_lines = fetch_lines(tx, id).await?;
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.paid".to_string(),
+            "supplier_invoice".to_string(),
+            id,
+            Some(serde_json::json!({
+                "settlementType": settlement_type,
+                "settlementJournalEntryId": je.entry.id,
+                "amount": ttc.to_string(),
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(SupplierInvoiceWithLines {
+        invoice: updated,
+        lines: inv_lines,
+    })
 }
 
 /// Annule une facture fournisseur `open` : contre-passe l'écriture d'achat
@@ -643,6 +702,9 @@ pub async fn cancel(
                 inv.status
             )));
         }
+        // Guard lot-membership [Story 12.3] : refus si engagée dans un lot generated
+        // (la facture est déjà verrouillée par le FOR UPDATE ci-dessus).
+        guard_not_in_generated_batch(&mut tx, company_id, id).await?;
 
         // (2) Relire les lignes de l'écriture d'achat et les inverser (swap D↔C).
         let purchase_lines: Vec<(i64, Decimal, Decimal)> = sqlx::query_as(
