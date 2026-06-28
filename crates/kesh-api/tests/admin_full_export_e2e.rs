@@ -242,9 +242,10 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
 
-    // manifest.json au root + dossier files/ + 26 data/<table>.ndjson
+    // manifest.json au root + dossier files/ + 28 data/<table>.ndjson
     // (23 + 3 tables avoirs Story 12.1 : credit_notes, credit_note_lines,
-    // credit_note_number_sequences).
+    // credit_note_number_sequences + 2 tables factures fournisseurs Story 12.2 :
+    // supplier_invoices, supplier_invoice_lines).
     assert!(
         names.contains(&"manifest.json".to_string()),
         "manifest.json présent"
@@ -258,8 +259,8 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
         .filter(|n| n.starts_with("data/") && n.ends_with(".ndjson"))
         .count();
     assert_eq!(
-        data_count, 26,
-        "26 fichiers data/<table>.ndjson : {names:?}"
+        data_count, 28,
+        "28 fichiers data/<table>.ndjson : {names:?}"
     );
 
     // Lire manifest.json.
