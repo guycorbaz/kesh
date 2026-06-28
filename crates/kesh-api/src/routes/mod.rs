@@ -10,6 +10,7 @@ pub mod company_invoice_settings;
 pub mod contacts;
 pub mod credit_notes;
 pub mod exports;
+pub mod supplier_invoices;
 pub mod fiscal_years;
 pub mod health;
 pub mod i18n;
