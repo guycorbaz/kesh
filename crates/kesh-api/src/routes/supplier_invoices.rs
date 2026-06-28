@@ -113,6 +113,7 @@ impl SupplierInvoiceResponse {
 pub struct SupplierInvoiceListItemResponse {
     pub id: i64,
     pub contact_id: i64,
+    pub contact_name: String,
     pub supplier_invoice_number: Option<String>,
     pub status: String,
     pub invoice_date: NaiveDate,
@@ -120,16 +121,19 @@ pub struct SupplierInvoiceListItemResponse {
     pub total_amount: Decimal,
 }
 
-impl From<SupplierInvoice> for SupplierInvoiceListItemResponse {
-    fn from(inv: SupplierInvoice) -> Self {
+impl From<kesh_db::repositories::supplier_invoices::SupplierInvoiceListItem>
+    for SupplierInvoiceListItemResponse
+{
+    fn from(it: kesh_db::repositories::supplier_invoices::SupplierInvoiceListItem) -> Self {
         Self {
-            id: inv.id,
-            contact_id: inv.contact_id,
-            supplier_invoice_number: inv.supplier_invoice_number,
-            status: inv.status,
-            invoice_date: inv.invoice_date,
-            due_date: inv.due_date,
-            total_amount: inv.total_amount,
+            id: it.id,
+            contact_id: it.contact_id,
+            contact_name: it.contact_name,
+            supplier_invoice_number: it.supplier_invoice_number,
+            status: it.status,
+            invoice_date: it.invoice_date,
+            due_date: it.due_date,
+            total_amount: it.total_amount,
         }
     }
 }

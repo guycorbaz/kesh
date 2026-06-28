@@ -97,7 +97,17 @@
 			formError = i18nMsg('supplier-invoices-err-supplier', 'Sélectionnez un fournisseur.');
 			return;
 		}
-		if (fLines.some((l) => !l.description.trim() || !l.unitPrice || !l.expenseAccountId)) {
+		if (
+			fLines.some(
+				(l) =>
+					!l.description.trim() ||
+					!l.unitPrice ||
+					Number(l.unitPrice) <= 0 ||
+					!l.quantity ||
+					Number(l.quantity) <= 0 ||
+					!l.expenseAccountId,
+			)
+		) {
 			formError = i18nMsg(
 				'supplier-invoices-err-lines',
 				'Chaque ligne requiert une description, un montant et un compte de charge.',
@@ -267,6 +277,7 @@
 		<thead>
 			<tr class="border-b text-left text-text-muted">
 				<th class="py-2">{i18nMsg('supplier-invoices-col-number', 'N°')}</th>
+				<th class="py-2">{i18nMsg('supplier-invoices-col-supplier', 'Fournisseur')}</th>
 				<th class="py-2">{i18nMsg('supplier-invoices-col-date', 'Date')}</th>
 				<th class="py-2">{i18nMsg('supplier-invoices-col-due', 'Échéance')}</th>
 				<th class="py-2">{i18nMsg('supplier-invoices-col-status', 'Statut')}</th>
@@ -281,6 +292,7 @@
 					onclick={() => goto(`/supplier-invoices/${inv.id}`)}
 				>
 					<td class="py-2 font-mono">{inv.supplierInvoiceNumber ?? `#${inv.id}`}</td>
+					<td class="py-2">{inv.contactName}</td>
 					<td class="py-2">{inv.invoiceDate}</td>
 					<td class="py-2">{inv.dueDate ?? '—'}</td>
 					<td class="py-2">{supplierInvoiceStatusLabel(inv.status)}</td>

@@ -42,6 +42,19 @@ pub struct SupplierInvoiceWithLines {
     pub lines: Vec<SupplierInvoiceLine>,
 }
 
+/// Ligne de liste (entête + nom du fournisseur, AC11).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SupplierInvoiceListItem {
+    pub id: i64,
+    pub contact_id: i64,
+    pub contact_name: String,
+    pub supplier_invoice_number: Option<String>,
+    pub status: String,
+    pub invoice_date: chrono::NaiveDate,
+    pub due_date: Option<chrono::NaiveDate>,
+    pub total_amount: Decimal,
+}
+
 fn snapshot_json(inv: &SupplierInvoice, lines: &[SupplierInvoiceLine]) -> serde_json::Value {
     serde_json::json!({
         "id": inv.id,
@@ -169,7 +182,7 @@ pub async fn list(
     company_id: i64,
     limit: i64,
     offset: i64,
-) -> Result<(Vec<SupplierInvoice>, i64), DbError> {
+) -> Result<(Vec<SupplierInvoiceListItem>, i64), DbError> {
     let total: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM supplier_invoices WHERE company_id = ?")
             .bind(company_id)
@@ -177,12 +190,13 @@ pub async fn list(
             .await
             .map_err(map_db_error)?;
 
-    let items = sqlx::query_as::<_, SupplierInvoice>(
-        "SELECT id, company_id, contact_id, supplier_invoice_number, status, \
-         invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
-         expected_payment_amount, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
-         settlement_account_id, settlement_journal_entry_id, paid_at, version, created_at, updated_at \
-         FROM supplier_invoices WHERE company_id = ? ORDER BY invoice_date DESC, id DESC LIMIT ? OFFSET ?",
+    // JOIN contacts pour le nom du fournisseur (AC11). INNER JOIN sûr : contact_id
+    // est une FK RESTRICT non-nullable.
+    let items = sqlx::query_as::<_, SupplierInvoiceListItem>(
+        "SELECT si.id, si.contact_id, c.name AS contact_name, si.supplier_invoice_number, \
+         si.status, si.invoice_date, si.due_date, si.total_amount \
+         FROM supplier_invoices si JOIN contacts c ON c.id = si.contact_id \
+         WHERE si.company_id = ? ORDER BY si.invoice_date DESC, si.id DESC LIMIT ? OFFSET ?",
     )
     .bind(company_id)
     .bind(limit)
@@ -260,8 +274,10 @@ pub async fn create(
                     "taux de TVA hors bornes (0-100)".into(),
                 ));
             }
-            let acct: Option<bool> = sqlx::query_scalar(
-                "SELECT active FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+            // Compte de charge : doit exister, être actif, company-scoped, et de
+            // type Expense (AC6 — sinon l'écriture débiterait un Passif/Actif).
+            let acct: Option<(bool, String)> = sqlx::query_as(
+                "SELECT active, account_type FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
             )
             .bind(line.expense_account_id)
             .bind(company_id)
@@ -269,9 +285,8 @@ pub async fn create(
             .await
             .map_err(map_db_error)?;
             match acct {
-                None => return Err(DbError::InactiveOrInvalidAccounts),
-                Some(false) => return Err(DbError::InactiveOrInvalidAccounts),
-                Some(true) => {}
+                Some((true, ref t)) if t == "Expense" => {}
+                _ => return Err(DbError::InactiveOrInvalidAccounts),
             }
             pairs.push((line_total, line.vat_rate, line.expense_account_id));
             computed_lines.push((line_total, line));
@@ -432,10 +447,13 @@ pub async fn pay(
         // (2) Compte débité (créanciers) ET montant = ligne de crédit de l'écriture
         //     d'achat → solde 2000 garanti à 0 quelle que soit l'évolution des settings.
         let (payable_account_id, ttc): (i64, Decimal) = sqlx::query_as(
-            "SELECT account_id, credit FROM journal_entry_lines \
-             WHERE entry_id = ? AND credit > 0 ORDER BY id LIMIT 1",
+            "SELECT jel.account_id, jel.credit FROM journal_entry_lines jel \
+             JOIN journal_entries je ON je.id = jel.entry_id \
+             WHERE jel.entry_id = ? AND je.company_id = ? AND jel.credit > 0 \
+             ORDER BY jel.id LIMIT 1",
         )
         .bind(inv.purchase_journal_entry_id)
+        .bind(company_id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(map_db_error)?
@@ -494,7 +512,10 @@ pub async fn pay(
             .ok_or(DbError::FiscalYearInvalid)?;
 
         // (5) Écriture de règlement : D 2000 / C contrepartie (TTC).
-        let number_label = inv.supplier_invoice_number.clone().unwrap_or_default();
+        let number_label = inv
+            .supplier_invoice_number
+            .clone()
+            .unwrap_or_else(|| inv.id.to_string());
         let contact_name: String =
             sqlx::query_scalar("SELECT name FROM contacts WHERE id = ? AND company_id = ?")
                 .bind(inv.contact_id)
@@ -625,10 +646,12 @@ pub async fn cancel(
 
         // (2) Relire les lignes de l'écriture d'achat et les inverser (swap D↔C).
         let purchase_lines: Vec<(i64, Decimal, Decimal)> = sqlx::query_as(
-            "SELECT account_id, debit, credit FROM journal_entry_lines \
-             WHERE entry_id = ? ORDER BY id",
+            "SELECT jel.account_id, jel.debit, jel.credit FROM journal_entry_lines jel \
+             JOIN journal_entries je ON je.id = jel.entry_id \
+             WHERE jel.entry_id = ? AND je.company_id = ? ORDER BY jel.id",
         )
         .bind(inv.purchase_journal_entry_id)
+        .bind(company_id)
         .fetch_all(&mut *tx)
         .await
         .map_err(map_db_error)?;
@@ -652,7 +675,10 @@ pub async fn cancel(
             .await?
             .ok_or(DbError::FiscalYearInvalid)?;
 
-        let number_label = inv.supplier_invoice_number.clone().unwrap_or_default();
+        let number_label = inv
+            .supplier_invoice_number
+            .clone()
+            .unwrap_or_else(|| inv.id.to_string());
         let je = journal_entries::create_in_tx(
             &mut tx,
             fy.id,

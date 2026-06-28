@@ -42,6 +42,7 @@ export interface SupplierInvoiceResponse {
 export interface SupplierInvoiceListItemResponse {
 	id: number;
 	contactId: number;
+	contactName: string;
 	supplierInvoiceNumber: string | null;
 	status: SupplierInvoiceStatus;
 	invoiceDate: string;

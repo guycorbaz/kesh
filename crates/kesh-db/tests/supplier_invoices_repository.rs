@@ -435,3 +435,76 @@ async fn pay_foreign_internal_account_rejected(pool: MySqlPool) {
     .unwrap_err();
     assert!(matches!(err, DbError::InactiveOrInvalidAccounts));
 }
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn pay_already_paid_invoice_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let internal = SettlementChoice::InternalAccount {
+        account_id: ctx.seeded.accounts["1000"],
+    };
+    supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        internal,
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    // Double paiement refusé.
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        internal,
+        d(2026, 6, 21),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, DbError::IllegalStateTransition(_)));
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    new.invoice_date = d(2099, 1, 1); // hors de tout exercice ouvert.
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DbError::FiscalYearInvalid));
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn pay_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2099, 1, 1),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, DbError::FiscalYearInvalid));
+}
