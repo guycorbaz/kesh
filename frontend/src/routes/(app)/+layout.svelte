@@ -61,6 +61,11 @@
 				{ i18nKey: 'nav-invoices', fallback: 'Facturer', href: '/invoices' },
 				{ i18nKey: 'nav-invoicing-due-dates', fallback: 'Échéancier', href: '/invoices/due-dates' },
 				{ i18nKey: 'nav-credit-notes', fallback: 'Avoirs', href: '/credit-notes' },
+				{
+					i18nKey: 'nav-supplier-invoices',
+					fallback: 'Factures fournisseurs',
+					href: '/supplier-invoices',
+				},
 				{ label: 'Importer', href: '/bank-import' },
 			],
 		},

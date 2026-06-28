@@ -62,6 +62,7 @@ nav-home = Home
 nav-contacts = Contatti
 nav-products = Catalogo
 nav-invoices = Fatture
+nav-supplier-invoices = Fatture fornitori
 nav-invoicing-due-dates = Scadenze
 nav-settings = Impostazioni
 # Story v014-1 — restructuration sidebar
@@ -1030,3 +1031,6 @@ auth-recovery-reset-success = La tua password è stata reimpostata. Ora puoi acc
 auth-recovery-invalid-link = Questo link di reimpostazione non è valido o è scaduto. Fai una nuova richiesta per ricevere un nuovo link.
 auth-recovery-request-new-link = Nuova richiesta
 auth-recovery-login-cta = Accedi
+
+# Story 12.2 — factures fournisseurs (#191)
+supplier-invoices-title = Fatture fornitori

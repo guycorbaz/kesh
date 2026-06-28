@@ -62,6 +62,7 @@ nav-home = Accueil
 nav-contacts = Carnet d'adresses
 nav-products = Catalogue
 nav-invoices = Factures
+nav-supplier-invoices = Factures fournisseurs
 nav-invoicing-due-dates = Échéancier
 nav-settings = Paramètres
 # Story v014-1 — restructuration sidebar (groupes Quotidien/Mensuel/Administration)
@@ -1118,3 +1119,6 @@ vat-rates-field-label = Libellé (optionnel)
 vat-rates-field-new-rate = Nouveau taux (%)
 vat-rates-field-switch-date = Date de bascule
 settings-vat-rates-link = Configurez les taux de TVA et leurs dates de validité (changements de taux gérés dans le temps).
+
+# Story 12.2 — factures fournisseurs (#191)
+supplier-invoices-title = Factures fournisseurs
