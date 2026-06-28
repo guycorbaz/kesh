@@ -231,6 +231,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/credit-notes",
             post(routes::credit_notes::create_credit_note),
         )
+        // Story 12.2 : factures fournisseurs — mutations (Comptable+)
+        .route(
+            "/api/v1/supplier-invoices",
+            post(routes::supplier_invoices::create_supplier_invoice),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/pay",
+            post(routes::supplier_invoices::pay_supplier_invoice),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/cancel",
+            post(routes::supplier_invoices::cancel_supplier_invoice),
+        )
         // Story 5.2 : validation facture draft → validated
         .route(
             "/api/v1/invoices/{id}/validate",
@@ -394,6 +407,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/credit-notes/{id}/pdf",
             get(routes::credit_notes::get_credit_note_pdf),
+        )
+        // Story 12.2 : lectures factures fournisseurs (tout rôle authentifié)
+        .route(
+            "/api/v1/supplier-invoices",
+            get(routes::supplier_invoices::list_supplier_invoices),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}",
+            get(routes::supplier_invoices::get_supplier_invoice),
         )
         // Story 5.2 : lecture config facturation (tout rôle authentifié)
         .route(

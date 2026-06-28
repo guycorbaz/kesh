@@ -62,6 +62,7 @@ nav-home = Home
 nav-contacts = Contacts
 nav-products = Catalog
 nav-invoices = Invoices
+nav-supplier-invoices = Supplier invoices
 nav-invoicing-due-dates = Due Dates
 nav-settings = Settings
 # Story v014-1 — restructuration sidebar
@@ -1030,3 +1031,6 @@ auth-recovery-reset-success = Your password has been reset. You can now sign in.
 auth-recovery-invalid-link = This reset link is invalid or has expired. Make a new request to receive a new link.
 auth-recovery-request-new-link = Make a new request
 auth-recovery-login-cta = Sign in
+
+# Story 12.2 — factures fournisseurs (#191)
+supplier-invoices-title = Supplier invoices

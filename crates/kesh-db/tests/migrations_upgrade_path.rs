@@ -63,11 +63,11 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + api_keys & audit_log_actor (Story 17-2a)
     // + users_email & password_reset_tokens (Story 17-4a)
     // + vat_rates_crud (Story 11-1) + vat_accounts_config (Story 18-1a)
-    // + credit_notes (Story 12-1) = 36.
+    // + credit_notes (Story 12-1) + supplier_invoices (Story 12-2) = 37.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 36,
-        "36 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a + users_email & password_reset_tokens Story 17-4a + vat_rates_crud Story 11-1 + vat_accounts_config Story 18-1a + credit_notes Story 12-1)"
+        total, 37,
+        "37 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a + users_email & password_reset_tokens Story 17-4a + vat_rates_crud Story 11-1 + vat_accounts_config Story 18-1a + credit_notes Story 12-1 + supplier_invoices Story 12-2)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
@@ -87,13 +87,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // La frontière reste à 23 (état pré-10-2) : les migrations ajoutées APRÈS
     // la fenêtre Story 10-2 (companies_is_stub v011-2, bank_accounts_archived
     // v014-1, api_keys + audit_log_actor 17-2a, users_email + password_reset_tokens
-    // 17-4a, vat_rates_crud 11-1, vat_accounts_config 18-1a) élargissent la fenêtre
-    // d'upgrade et incrémentent donc le `N` soustrait (de 4 à 6 à 8 à 10 à 11 à 12 à 13),
+    // 17-4a, vat_rates_crud 11-1, vat_accounts_config 18-1a, credit_notes 12-1,
+    // supplier_invoices 12-2) élargissent la fenêtre
+    // d'upgrade et incrémentent donc le `N` soustrait (de 4 à 6 à 8 à 10 à 11 à 12 à 13 à 14),
     // sans déplacer la frontière des 23 migrations historiques.
-    let n_before_upgrade_window = total - 13;
+    let n_before_upgrade_window = total - 14;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 13) failed");
+        .expect("apply_migrations_up_to(total - 14) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

@@ -24,6 +24,7 @@ pub mod reconciliation;
 pub mod reconciliation_rules;
 pub mod reports;
 pub mod setup;
+pub mod supplier_invoices;
 pub mod test_endpoints;
 pub mod users;
 pub mod vat;
