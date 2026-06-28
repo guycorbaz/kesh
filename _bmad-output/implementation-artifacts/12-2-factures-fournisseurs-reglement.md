@@ -221,3 +221,14 @@ Boucle de validation adversariale (Review Iteration Rule, CLAUDE.md) — rotatio
 ### Verdict de convergence
 
 **✅ CONVERGÉ — 0 finding > LOW réel** (passe 5). Cycle complet 5 passes **Sonnet→Haiku→Opus→Sonnet→Haiku**. Trend réel > LOW : **p1=11 → p2=1 → p3=3 → p4=1 → p5=0**. ~26 patches appliqués au total. 8 DC figés. **O-C1 (CRITICAL Opus, compile-blocker kesh-core/kesh-db)** = catch architectural majeur raté par Sonnet+Haiku. 2 faux-positifs Haiku réfutés grep (passe 2 H1, passe 5 P5-1). **Split 12-2a..f validé et ordonné** (12-2a fondation DB+settings débloque le reste, pas de cycle Cargo). Spec **ready-for-dev**.
+
+## Change Log (code-review)
+
+Boucle code-review adversariale post-dev (Review Iteration Rule) — LLM ≠ auteur (dev = Opus).
+
+- **Passe 1 — Sonnet 4.6** : 1 HIGH + 3 MEDIUM + 3 LOW (tous ground-truthés). H1 nom fournisseur absent de la liste (AC11) → `list()` JOIN contacts + struct `SupplierInvoiceListItem` + DTO `contactName` + colonne frontend. M1 test « payer une `paid` » + M2 tests « exercice clos » (create/pay) ajoutés. M3 validation `account_type='Expense'` du compte de charge (anti-bypass frontend). L1 fallback id dans descriptions pay/cancel. L2 scope `company_id` sur lectures `journal_entry_lines` (defense-in-depth). L3 validation quantité>0 frontend. Points sains confirmés (compta équilibrée, O-C1 kesh-db, O-M2 solde 2000=0, DC7, RBAC, IDOR). → 7 patches.
+- **Passe 2 — Haiku 4.5** : **CONVERGÉ — 0 finding > LOW**. 10 vérifications ground-truth confirment les patches passe 1 sains (JOIN list, account_type Expense, scope company_id, helper kesh-db, expected_payment_amount, is_no_op, TVA omise, TABLES_TO_TRUNCATE, RBAC, camelCase). 0 hallucination.
+
+### Verdict code-review
+
+**✅ CONVERGÉ — 0 finding > LOW** (passe 2). Cycle Opus(dev)→Sonnet→Haiku, trend réel >LOW **4 → 0**. 12 tests intégration + 4 unit helper backend + 3 unit frontend + E2E spec. Quality gate Test Locally First VERT (fmt + clippy workspace + test workspace serial exit-0 0 régression + frontend check 0 err/lint-i18n PASS/336 unit/build + i18n parité). **Mergeable.**
