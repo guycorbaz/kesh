@@ -18,6 +18,7 @@ pub mod invoices;
 pub mod journal_entries;
 pub mod limits;
 pub mod onboarding;
+pub mod payment_batches;
 pub mod products;
 pub mod profile;
 pub mod reconciliation;

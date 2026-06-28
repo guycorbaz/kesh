@@ -244,6 +244,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/supplier-invoices/{id}/cancel",
             post(routes::supplier_invoices::cancel_supplier_invoice),
         )
+        // Story 12.3 : lots de paiement pain.001 — mutations (Comptable+)
+        .route(
+            "/api/v1/payment-batches",
+            post(routes::payment_batches::create_payment_batch),
+        )
+        .route(
+            "/api/v1/payment-batches/{id}/confirm",
+            post(routes::payment_batches::confirm_payment_batch),
+        )
+        .route(
+            "/api/v1/payment-batches/{id}/cancel",
+            post(routes::payment_batches::cancel_payment_batch),
+        )
         // Story 5.2 : validation facture draft → validated
         .route(
             "/api/v1/invoices/{id}/validate",
@@ -416,6 +429,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/supplier-invoices/{id}",
             get(routes::supplier_invoices::get_supplier_invoice),
+        )
+        // Story 12.3 : lectures lots de paiement + download pain.001 (tout rôle authentifié)
+        .route(
+            "/api/v1/payment-batches",
+            get(routes::payment_batches::list_payment_batches),
+        )
+        .route(
+            "/api/v1/payment-batches/{id}",
+            get(routes::payment_batches::get_payment_batch),
+        )
+        .route(
+            "/api/v1/payment-batches/{id}/pain001",
+            get(routes::payment_batches::get_payment_batch_pain001),
         )
         // Story 5.2 : lecture config facturation (tout rôle authentifié)
         .route(
