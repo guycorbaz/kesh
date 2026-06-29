@@ -194,7 +194,8 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.3.0 | **E11/E18 TVA Suisse** — calcul + rapport par période, comptabilisation TVA due aux ventes, assistant d'achat (impôt préalable), décompte TVA (solde net AFC) et réconciliation rapport ↔ grand livre *(décompte officiel AFC / e-décompte ESTV hors périmètre)* | ✅ Done |
 | v0.3.1 (hotfix) | Message actionnable lors de la suppression d'une écriture liée à une facture validée + garde-fou journaux (pas de déversement SQL+données quand `RUST_LOG=debug`) | ✅ Done |
 | v0.3.2 | **E12 Avoirs (notes de crédit)** — annulation d'une facture validée par avoir lié, contre-passation comptable automatique (TVA comprise), PDF « Avoir », décompte TVA cohérent | ✅ Done |
-| v0.2 (suite) | **E12 Paiements** (pain.001, paiement en deux temps), **E16 Facturation avancée** (compte produit par ligne, PDF complet), E13 Budgets, E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 🚧 En cours |
+| v0.2 (suite) | **E12 Paiements** (pain.001, paiement en deux temps), **E16 Facturation avancée** (compte produit par ligne, PDF complet), E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 🚧 En cours |
+| v0.4 (prévu) | **Tableau de bord & Comptabilité personnelle** — widgets configurables sur la page d'accueil (évolution du patrimoine fortune & dettes mois par mois [#164], donut de répartition des dépenses par compte/sous-compte [#165], comparatif recettes/dépenses mensuel [#166]) ; **Budgets** (E13 [#196]) + comparatif budget validé vs réalité [#197] ; **Comptabilité analytique par projet** [#195] (axe analytique sur les écritures + compte de résultat par projet) | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).
 
