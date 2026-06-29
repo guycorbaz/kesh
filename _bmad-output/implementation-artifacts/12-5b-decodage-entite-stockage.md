@@ -33,7 +33,7 @@ so that la couche service 12-5c dispose d'un socle décodage+entité+stockage te
 
 ### Décodage serveur (T2)
 
-1. **Dépendances** : `rxing` passe de `[dev-dependencies]` (kesh-qrbill) à **runtime** là où nécessaire, et `rxing` + `image` + `pdfium-render` sont déclarés explicitement dans `crates/kesh-api/Cargo.toml [dependencies]` (`image` est aujourd'hui transitive non déclarée — cf. Dev Notes). Versions épinglées cohérentes avec `Cargo.lock` (`rxing 0.7`, `image ~0.25`). `lopdf` n'est PAS utilisé pour le rendu (ne rastérise pas — écarté DC1).
+1. **Dépendances** : **ajouter** `rxing` (runtime) + `image` + `pdfium-render` à `crates/kesh-api/Cargo.toml [dependencies]` (`image` est aujourd'hui transitive non déclarée — cf. Dev Notes). **`rxing` RESTE en `[dev-dependencies]` de kesh-qrbill** (utilisé par `generator.rs:203` `qr_roundtrip_via_rxing` sous `#[cfg(test)]` — NE PAS le retirer, sinon le build de test kesh-qrbill casse). Versions épinglées cohérentes avec `Cargo.lock` (`rxing 0.7`, `image ~0.25`). `lopdf` n'est PAS utilisé pour le rendu (ne rastérise pas — écarté DC1).
 
 2. **Module de décodage** (nouveau module `kesh-api`, ex. `src/qr_decode.rs` ou `src/import/decode.rs`) exposant au minimum :
    - `decode_qr_from_image(img: &image::DynamicImage) -> Vec<String>` — retourne **tous** les payloads QR décodés par `rxing` sur l'image (ordre rxing).
@@ -41,7 +41,7 @@ so that la couche service 12-5c dispose d'un socle décodage+entité+stockage te
    - `decode_spc_from_pdf_bytes(bytes: &[u8], cfg) -> Result<Option<ScannedQrBill>, DecodeError>` — **pdfium-render** : rendre chaque page (jusqu'au cap) → `image::DynamicImage` → `decode_qr_from_image` → 1er payload `SPC\n0200` → `parse_spc_payload`. **Multi-page** : tenter chaque page jusqu'au 1er QR SPC valide. **Plusieurs QR par page** : tenter chaque QR dans l'ordre. `None` si aucune page ne porte de QR SPC.
    - Un type d'erreur de décodage (`DecodeError` ou réutilisation d'un enum existant) couvrant au moins : `PdfRender` (pdfium échoue), `InvalidSpcPayload` (QR décodé mais `parse_spc_payload` échoue — porte `QrBillError`), `InvalidIban` (propagé du parseur). Le mapping vers les `error_code` HTTP (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `NO_QR_CODE_FOUND`) est **consommé en 12-5c** ; 12-5b expose une erreur typée exploitable.
 
-3. **Robustesse rendu pdfium (caps — F4/L6)** : le rendu PDF borne (a) le **nombre de pages rendues** via `KESH_INBOX_MAX_PDF_PAGES` (défaut ex. 20 ; au-delà sans QR trouvé → erreur `PdfRender`/`PDF_RENDER_ERROR`) et (b) les **dimensions de rendu** (DPI / pixels max bornés) pour éviter un MediaBox gigapixel. **L6 documentée** : pdfium est natif in-process, un segfault sur PDF malformé tue le process (non rattrapable `catch_unwind`) — risque accepté v0.4.
+3. **Robustesse rendu pdfium (caps — F4/L6)** : le rendu PDF borne (a) le **nombre de pages rendues** (défaut ex. 20 ; au-delà sans QR trouvé → erreur `PdfRender`/`PDF_RENDER_ERROR`) et (b) les **dimensions de rendu** (DPI / pixels max bornés) pour éviter un MediaBox gigapixel. **Ownership config** : 12-5b expose un `DecodeConfig { max_pages, max_dimension }` passé à `decode_spc_from_pdf_bytes` avec **défauts en dur** (testable en isolation) ; le **wiring `KESH_INBOX_MAX_PDF_PAGES` env→`DecodeConfig`** est fait par l'appelant en **12-5c** (cohérent : l'env var vit sous AC4 sécurité 12-5c). **L6 documentée** : pdfium est natif in-process, un segfault sur PDF malformé tue le process (non rattrapable `catch_unwind`) — risque accepté v0.4.
 
 4. **Packaging Docker pdfium (DC1-bis — amd64)** : le stage `runtime` du `Dockerfile` (`debian:bookworm-slim`) embarque `libpdfium.so` :
    - Téléchargé depuis une **release épinglée** de `bblanchon/pdfium-binaries` (tag `chromium/NNNN` figé, **pas `latest`**) — `pdfium-linux-x64.tgz`.
@@ -68,9 +68,12 @@ so that la couche service 12-5c dispose d'un socle décodage+entité+stockage te
    - SHA-256 via une crate déjà au workspace si disponible (`sha2`) — vérifier `Cargo.lock` avant d'ajouter.
 
 9. **Intégration backup/export & compteurs** (la nouvelle table entre dans le périmètre `.keshbackup` — DC5 métadonnées seules) :
-   - Ajouter `"imported_supplier_invoices"` à **`TABLES_TO_TRUNCATE`** (`crates/kesh-db/src/backup.rs:34`) **avant `supplier_invoices`** (l.41) et **avant `companies`** (l.64) — zone enfants. Restore insère en ordre inverse (`.rev()` l.432) → la table est insérée **après** ses parents (FK `company_id` RESTRICT satisfaite ; `supplier_invoice_id` SET NULL nullable moins contraignant). Le test `backup_inventory_matches_schema` (`backup.rs:570`) attrape l'oubli de table mais **PAS** un mauvais ordre FK → vérifier l'ordre à la main.
-   - Ajouter la table au **manifeste d'export** (`crates/kesh-api/src/admin_backup/export.rs`) si la liste est explicite.
-   - Bumper les **compteurs en dur** des tests : `admin_full_export_e2e` (`data_count`) + `migrations_upgrade_path` (`crates/kesh-api/tests/admin_backup_e2e.rs` + `admin_full_export_e2e.rs`).
+   - Ajouter `"imported_supplier_invoices"` à **`TABLES_TO_TRUNCATE`** (`crates/kesh-db/src/backup.rs:34`) **avant `supplier_invoices`** (l.41) et **avant `companies`** (l.64) — zone enfants. **Rationale (P1-L4)** : c'est la **phase TRUNCATE** (enfants→parents sous FK actives) qui impose l'ordre — un enfant doit être tronqué avant ses parents. La phase restore-insert tourne **FK=0** (`backup.rs:428-429`), indifférente à l'ordre ; le placement reste pour cohérence. Le test `backup_inventory_matches_schema` (`backup.rs:575`) attrape l'oubli de table mais **PAS** un mauvais ordre FK → vérifier l'ordre à la main.
+   - **Manifeste d'export** : **aucun edit `export.rs` requis** — le manifeste dérive de `TABLES_TO_TRUNCATE` (`export.rs:55` itère `for &table in TABLES_TO_TRUNCATE`), donc ajouter la table à la liste émet automatiquement `data/imported_supplier_invoices.ndjson` (c'est pourquoi `data_count` passe 30→31).
+   - Bumper les **compteurs en dur** des tests (ground-truth P1-M1) :
+     - `crates/kesh-db/tests/migrations_upgrade_path.rs` — `assert_eq!(total, 38…)` → **39** (l.~69) **ET** ajuster `total - 15` → **`total - 16`** (l.~96) pour garder la frontière pré-10-2 = 23 (cf. commentaire in-file l.82-93 qui impose de réviser `total - N` à chaque ajout de migration).
+     - `crates/kesh-api/tests/admin_full_export_e2e.rs` — `data_count, 30` → **31** (l.~263).
+     - `crates/kesh-api/tests/admin_backup_e2e.rs` = compteur **dynamique** (`table_counts()` sur `TABLES_TO_TRUNCATE`, l.126-136) → **aucun** compteur en dur à bumper.
    - Ajouter la ligne d'**audit idempotence** dans `docs/migrations-idempotence-audit.md` (verdict pour la nouvelle migration — `tracked-by-sqlx` ou justification).
    - **L1 (DC5)** : seules les **métadonnées** (`storage_path`/`sha256`/…) entrent au backup ; le **binaire** de `KESH_DOCUMENTS_DIR` reste hors `.keshbackup` (limitation documentée, remédiation Epic 14).
 
@@ -116,7 +119,7 @@ Migration `CREATE TABLE` **non-breaking**.
 
 ## Tasks / Subtasks
 
-- [ ] **T2.1** — Déplacer `rxing` dev→runtime + déclarer `rxing`/`image`/`pdfium-render` dans `kesh-api/Cargo.toml` (versions cohérentes Cargo.lock).
+- [ ] **T2.1** — Ajouter `rxing`/`image`/`pdfium-render` dans `kesh-api/Cargo.toml [dependencies]` (versions cohérentes Cargo.lock). `rxing` **reste** dev-dep de kesh-qrbill (NE PAS retirer — `generator.rs:203`).
 - [ ] **T2.2** — Module `qr_decode` : `decode_qr_from_image`, `decode_spc_from_image_bytes`, `decode_spc_from_pdf_bytes` (multi-page, multi-QR, 1er `SPC\n0200`) + type `DecodeError`. Caps pdfium (pages `KESH_INBOX_MAX_PDF_PAGES`, dimensions).
 - [ ] **T2.3** — `Dockerfile` : bundle `libpdfium.so` (tag épinglé + checksum SHA-256 + `/usr/local/lib` + `ldconfig`, amd64). Commentaire licence.
 - [ ] **T2.4** — Tests décodage (fixtures PNG/PDF 1p/PDF multipage/sans-QR/corrompu) + gestion `libpdfium.so` absent en CI host (`#[ignore]` documenté si besoin).
@@ -133,8 +136,9 @@ Migration `CREATE TABLE` **non-breaking**.
 - `crates/kesh-qrbill/Cargo.toml:17` : `rxing = "0.7"` en **`[dev-dependencies]`** → passer runtime côté kesh-api. `image` transitive (~0.25.9) non déclarée → déclarer explicitement.
 - `Dockerfile` : builder `rust:1.85-bookworm` (l.2), runtime `debian:bookworm-slim` (l.18), `apt-get install ca-certificates curl` (l.20), `COPY target/release/kesh-api` (l.23). **Aucune lib native** → ajouter pdfium dans le stage runtime.
 - `crates/kesh-api/src/config.rs` : pattern `env::var("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|_| "/tmp")` (l.896), champ `admin_backup_dir` (l.249/1042), `from_env` (l.517). Reproduire pour `KESH_DOCUMENTS_DIR` **avec défaut `/data/documents`** (PAS `/tmp`).
-- `crates/kesh-db/src/backup.rs:34` `TABLES_TO_TRUNCATE` : ordre enfants→parents — `credit_notes` (l.40), `supplier_invoices` (l.41), `payment_batches` (l.42), … `companies` (l.64). Restore `.rev()` (l.432). Test `backup_inventory_matches_schema` (l.570) = filet table-présente (pas l'ordre FK).
-- Compteurs : `crates/kesh-api/tests/admin_backup_e2e.rs` (`migrations_upgrade_path` + `data_count`), `crates/kesh-api/tests/admin_full_export_e2e.rs`.
+- `crates/kesh-db/src/backup.rs:34` `TABLES_TO_TRUNCATE` : ordre enfants→parents — `credit_notes` (l.40), `supplier_invoices` (l.41), `payment_batches` (l.42), … `companies` (l.64). Restore `.rev()` (l.432), insert **FK=0** (l.428-429). Test `backup_inventory_matches_schema` (l.575) = filet table-présente (pas l'ordre FK).
+- Compteurs en dur (P1-M1) : `crates/kesh-db/tests/migrations_upgrade_path.rs` (`assert_eq!(total, 38)` l.~69 **+** dérivé `total - 15` l.~96) ; `crates/kesh-api/tests/admin_full_export_e2e.rs` (`data_count` 30, l.~263). `admin_backup_e2e.rs` = **dynamique** (`table_counts()` sur `TABLES_TO_TRUNCATE`), pas de compteur en dur.
+- `sha2 = "0.10"` déjà déclaré (`kesh-api/Cargo.toml:47`, Cargo.lock 0.10.9) → utiliser pour le SHA-256, ne pas ré-ajouter.
 - `crates/kesh-db/src/entities/supplier_invoice.rs` + `repositories/supplier_invoices.rs` : conventions entité/repo + `20260628000001_supplier_invoices.sql` (multi-tenant `company_id`, CHECK texte, `version`, `DATETIME(3)`) — **modèle pour la nouvelle migration/entité**.
 - `crates/kesh-qrbill` (12-5a, `85a235b`) : `parse_spc_payload`, `ScannedQrBill`/`ScannedAddress`/`ScannedReference` exportés `lib.rs`. **Réutiliser** (le décodage 12-5b appelle `parse_spc_payload`).
 - `pdfium-binaries` : https://github.com/bblanchon/pdfium-binaries — binaire natif `libpdfium.so`, licence Apache-2.0/BSD-3.
