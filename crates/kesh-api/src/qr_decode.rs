@@ -136,11 +136,14 @@ pub fn decode_spc_from_pdf_bytes(
     let mut last_render_err: Option<String> = None;
     for (i, page) in document.pages().iter().enumerate() {
         if i >= cfg.max_pages {
-            // Cap atteint sans QR SPC trouvé → erreur de rendu (anti-DoS).
-            return Err(DecodeError::PdfRender(format!(
-                "plus de {} pages sans QR SPC",
-                cfg.max_pages
-            )));
+            // Cap atteint (anti-DoS). Si une page antérieure a échoué au rendu, on
+            // remonte CETTE erreur plutôt que le message de cap générique — sinon
+            // le vrai diagnostic ("page 5 illisible") serait masqué par "trop de
+            // pages sans QR" (code-review Pass 2 H1).
+            let msg = last_render_err
+                .take()
+                .unwrap_or_else(|| format!("cap de {} pages atteint sans QR SPC", cfg.max_pages));
+            return Err(DecodeError::PdfRender(msg));
         }
         let bitmap = match page.render_with_config(&render_config) {
             Ok(b) => b,

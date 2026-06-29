@@ -208,6 +208,13 @@ DC1-DC6 + L1/L3/L6 hérités umbrella. 0 patch de code (validate spec). Prêt po
 - [x] [Review][Defer] PDF 0-page → `Ok(None)` — edge marginal
 - [x] [Review][Defer] erreurs internes rxing avalées en « pas de QR » — diagnosticabilité
 
+#### Pass 2 — Haiku 4.5 (Blind / Edge / Auditor), trend >LOW : 1 patché, 1 reclassé dette, 8 defer. **0 hallucination** (findings ancrés grep)
+
+- [x] [Review][Patch] H1 (Blind) — masquage `last_render_err` si cap pages atteint : propager l'erreur de rendu réelle avant le message de cap générique [`qr_decode.rs`]. Raffine P5. (+ L5 formulation cap « cap de N pages atteint ».)
+- [x] [Review][Defer→dette] M1 (Edge) — `list_by_status` n'a pas de validation de statut. **Reclassé dette documentée** : propriétaire **12-5c** (validation du query param à la frontière HTTP). Contrat appelant clarifié en doc de la fonction. Per exception Review Iteration Rule.
+- Auditor : **0 violation** — 11 ACs conformes + 5 patches Pass 1 vérifiés grep-en-place.
+- [x] [Review][Defer] 8 LOW : erreurs rxing avalées, perms `documents_dir` (déploiement Docker), pin pdfium maintenance, naming tmpfile (mitigé par rename atomique), whitespace `non_empty` (barré parseur 12-5a), ordre bind INSERT (maintenabilité), tests PDF multi-page CI.
+
 ## Dev Agent Record
 
 ### Agent Model Used

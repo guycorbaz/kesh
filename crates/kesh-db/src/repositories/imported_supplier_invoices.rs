@@ -95,6 +95,12 @@ pub async fn find_by_company_hash(
 
 /// Liste les factures importées d'une company filtrées par statut
 /// (use-case principal `to_complete`).
+///
+/// **Contrat appelant** : `status` DOIT être l'une des valeurs du domaine
+/// (`to_complete` | `completed` | `discarded`). Un statut hors-domaine n'est pas
+/// rejeté ici (paramètre bindé, pas d'injection) mais retourne une liste vide —
+/// la validation du query param HTTP est à la charge de l'endpoint 12-5c
+/// (frontière d'entrée), cf. dette déférée code-review.
 pub async fn list_by_status(
     pool: &MySqlPool,
     company_id: i64,
