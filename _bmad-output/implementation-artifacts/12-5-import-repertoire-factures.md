@@ -77,37 +77,82 @@ Un **dossier d'import** (inbox, sur le serveur/NAS) que l'admin configure. L'uti
    - **Anti-traversal** au déplacement (`processed`/`failed`) ET au nommage du fichier archivé : ne jamais réutiliser le nom d'origine pour construire un chemin ; nom archivé = `{sha256hex}.{ext}` (cf. AC5/F19). Vérifier que le chemin canonicalisé reste sous `KESH_INBOX_DIR` / `KESH_DOCUMENTS_DIR`.
    - **Liste blanche d'extensions** (`pdf`, `png`, `jpg`, `jpeg`) **+** sanity sur magic bytes (PDF `%PDF`, PNG/JPEG signatures) ; extension seule insuffisante.
    - **Taille max** `KESH_INBOX_MAX_FILE_BYTES` (défaut documenté, ex. 25 Mo) → `FILE_TOO_LARGE`.
+   - **Nombre max de fichiers par déclenchement** `KESH_INBOX_MAX_FILES_PER_RUN` (défaut, ex. 200) : au-delà, les fichiers excédentaires sont **ignorés** ce tour (ni `accepted` ni `failed`, retraités au prochain déclenchement) et un avertissement est ajouté au rapport. Évite un body de réponse `failed[]` non borné (F-NEW-7) et un run trop long.
    - **Fichier en cours d'écriture** : avant traitement, vérifier la **stabilité** (taille + mtime identiques sur 2 lectures espacées d'un court délai) ; si instable → ignorer ce tour (ni `accepted` ni `failed`, retenté au prochain déclenchement) OU `FILE_READ_ERROR` si lecture impossible. Documenter le choix retenu au dev.
    - Lecture seule du reste du FS (jamais d'écriture hors `KESH_DOCUMENTS_DIR` / `processed` / `failed`).
 
 **Stockage & association du fichier (justificatif) — 12-5b (schéma) + 12-5c (I/O)**
 
-5. La **copie du fichier source** est stockée dans `KESH_DOCUMENTS_DIR` (filesystem, hors DB) sous le nom **`{sha256hex}.{ext}`** (pas de collision, pas de traversal ; nom d'origine conservé **en DB uniquement**). Le lien persistant porte : `storage_path` (relatif à `KESH_DOCUMENTS_DIR`), `original_filename`, `sha256` (hex), `mime_type`, `byte_size`. **DC4 figé (lien côté import)** : ces colonnes vivent sur `imported_supplier_invoices` (PAS d'ALTER de `supplier_invoices` 12-2). Récupérable via `GET /api/v1/supplier-invoices/{id}/source-document` qui résout `imported_supplier_invoices WHERE supplier_invoice_id = {id}` (download/consultation) depuis le détail de la facture fournisseur (12-2) **après complétion**, et `GET /api/v1/imported-supplier-invoices/{id}/source-document` avant complétion.
-6. À l'import **réussi**, le fichier original est **SUPPRIMÉ de l'inbox** (décision Guy : la copie archivée AC5 est la source de vérité). Les fichiers en **échec** sont déplacés vers `failed/` (conservés, jamais supprimés). **Idempotence** : un fichier dont le hash SHA-256 est **déjà archivé** → `failed[] DUPLICATE`, NON ré-importé, déplacé en `failed/` (le fichier original n'est PAS supprimé puisqu'il finit dans `failed/`). Le hash est calculé **avant** décodage QR (court-circuit doublon).
+5. La **copie du fichier source** est stockée dans `KESH_DOCUMENTS_DIR` (filesystem, hors DB) sous le nom **`{sha256hex}.{ext}`** (pas de collision, pas de traversal ; nom d'origine conservé **en DB uniquement**). Le lien persistant porte : `storage_path` (relatif à `KESH_DOCUMENTS_DIR`), `original_filename`, `sha256` (hex), `mime_type`, `byte_size`. **DC4 figé (lien côté import)** : ces colonnes vivent sur `imported_supplier_invoices` (PAS d'ALTER de `supplier_invoices` 12-2). Récupérable via `GET /api/v1/supplier-invoices/{id}/source-document` qui résout `imported_supplier_invoices WHERE supplier_invoice_id = {id}` (download/consultation) depuis le détail de la facture fournisseur (12-2) **après complétion**, et `GET /api/v1/imported-supplier-invoices/{id}/source-document` avant complétion. **RBAC + anti-IDOR** : endpoints réservés Comptable+ et **scopés `company_id` du user courant** (un user ne peut pas télécharger le justificatif d'une autre company — `WHERE company_id = {current}`). 404 si absent (cf. L5).
+6. À l'import **réussi**, le fichier original est **SUPPRIMÉ de l'inbox** (décision Guy : la copie archivée AC5 est la source de vérité). Les fichiers en **échec** sont déplacés vers `failed/` (conservés, jamais supprimés). **Idempotence scopée par company (F-NEW-3)** : un fichier dont le hash SHA-256 est **déjà archivé dans la même company** (clé composite `UNIQUE (company_id, file_hash)`) → `failed[] DUPLICATE`, NON ré-importé, déplacé en `failed/`. Deux companies distinctes PEUVENT importer le même fichier (byte-identique) indépendamment. Le hash est calculé **avant** décodage QR (court-circuit doublon).
 
 **Création des factures importées (staging) & complétion — 12-5b (entité) + 12-5d (UI)**
 
 7. Pour chaque fichier valide, une **facture importée « à compléter »** (`imported_supplier_invoices`, statut `to_complete`) est créée à partir des coordonnées QR (créancier nom/IBAN/QR-IBAN, référence, montant TTC, devise) + lien fichier archivé. **DC3 figé.** L'utilisateur la **complète** dans l'UI :
    - **Fournisseur** : **sélection d'un contact existant** avec `is_supplier = true` (la création inline d'un fournisseur est **hors scope 12-5** ; si absent, l'utilisateur le crée via le flux Contacts existant puis revient — documenté UX).
+   - **Adresse créancier (type S)** : l'adresse parsée du QR (colonnes `creditor_*` du staging) est affichée **à titre informatif** pour aider à identifier/choisir le contact. Après sélection, **l'adresse du contact existant prime** (source de vérité comptable) ; la facture créée utilise IBAN/référence/montant du QR + les lignes saisies, indépendamment de l'adresse affichée (F-NEW-6).
    - **`invoice_date`** : **saisie obligatoire à la complétion** (date-picker). Le payload SPC **ne contient aucune date** → non pré-remplissable (cf. F6). `supplier_invoices::create` exige une `invoice_date` non-optionnelle couverte par un exercice ouvert.
    - **Lignes** : compte de charge (`expense_account_id`) + HT + TVA — **saisis à la complétion** (le QR ne fournit ni compte ni TVA). Le pré-remplissage couvre IBAN/référence/montant TTC/devise (partie error-prone).
    - À la validation → appel `repositories::supplier_invoices::create` (12-2, single-step posté, **avec le fichier source associé** via `supplier_invoice_id` renseigné sur le staging) → staging passe `completed`, facture `open` → entre dans la liste des paiements (12-3).
-   - **Échec de `create` à la complétion** (ex. `DbError::FiscalYearInvalid` si `invoice_date` hors exercice ouvert) : le staging **reste `to_complete`**, message d'erreur UX explicite (« Aucun exercice fiscal ouvert couvrant cette date »). Aucune écriture comptable partielle.
+   - **Échec de `create` à la complétion** : le staging **reste `to_complete`**, message d'erreur UX explicite, **aucune écriture comptable partielle**. Messages (non-exhaustif, F-NEW-9) : `DbError::FiscalYearInvalid` (`invoice_date` hors exercice ouvert) → « Aucun exercice fiscal ouvert couvrant cette date » ; devise ≠ CHF/EUR → « Devise non supportée (CHF ou EUR) » ; montant ≤ 0 → « Le montant doit être positif ».
    - Possibilité d'**écarter** (`discarded`) une facture importée non pertinente (le fichier archivé est conservé ; pas de suppression du justificatif en v0.4).
 
 **Frontend & doc — 12-5d**
 
 8. Un écran **« Importer le dossier »** (Comptable+) déclenche l'import et affiche le **rapport** (créées / échecs avec `file_name` + `error_code` traduit). Une vue liste des **factures importées** (`to_complete`) avec action **Compléter** (formulaire fournisseur+date+lignes) et **Écarter**. Le détail d'une facture fournisseur (12-2) affiche un lien **« Voir la facture d'origine »** (download du justificatif) **si** un staging `completed` la référence. i18n FR + clés (DE/IT/EN = clés ajoutées, valeurs FR provisoires si pas de traduction — cohérent politique i18n projet).
-9. **Tests** : unitaires parseur SPC (round-trip `build_payload`↔`parse_spc_payload` pour type K ; cas type S ; 31/32/34 lignes ; montant vide ; QRR/NON) + décodage image (fixture QR PNG) + rendu PDF (fixture PDF 1 page avec QR ; multi-page) ; intégration import (dossier temp avec fixtures → staging + fichiers associés + rapport `failed`) ; sécurité (path traversal, symlink, type refusé, magic-bytes, doublon hash, taille max) ; complétion (`to_complete`→`completed`, échec exercice fermé, `discarded`) ; E2E selon DC. **Doc** : `.env.example` (`KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR`/`KESH_INBOX_MAX_FILE_BYTES` + défauts + mapping docker-compose volumes), `docker-compose.yml` (volumes `/data/inbox` + `/data/documents`), manuel admin (config dossiers + pdfium), CHANGELOG, README. **Compteurs en dur** : nouvelle table `imported_supplier_invoices` → bumper `admin_full_export_e2e` (`data_count`) + `migrations_upgrade_path` + `TABLES_TO_TRUNCATE` (backup) + manifeste export (17-3) + audit idempotence `docs/migrations-idempotence-audit.md`. Test Locally First **exit code vérifié** (PAS `cargo test | grep`).
+9. **Tests** : unitaires parseur SPC — **round-trip `build_payload`↔`parse_spc_payload` pour type K uniquement** (Kesh n'émet que K) ; **type S testé via fixture SPC construite à la main** (string SPC type S valide → parser → vérifier `address_type='S'`, `postal_code`/`town` remplis ; pas de round-trip possible sans generator type S, F-NEW-4) ; 31/32/34 lignes ; montant vide ; QRR/NON + décodage image (fixture QR PNG) + rendu PDF (fixture PDF 1 page avec QR ; multi-page) ; intégration import (dossier temp avec fixtures → staging + fichiers associés + rapport `failed`) ; sécurité (path traversal, symlink, type refusé, magic-bytes, doublon hash, taille max) ; complétion (`to_complete`→`completed`, échec exercice fermé, `discarded`) ; E2E selon DC. **Doc** : `.env.example` (`KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR`/`KESH_INBOX_MAX_FILE_BYTES` + défauts + mapping docker-compose volumes), `docker-compose.yml` (volumes `/data/inbox` + `/data/documents`), manuel admin (config dossiers + pdfium), CHANGELOG, README. **Compteurs en dur** : nouvelle table `imported_supplier_invoices` → bumper `admin_full_export_e2e` (`data_count`) + `migrations_upgrade_path` + `TABLES_TO_TRUNCATE` (backup) + manifeste export (17-3) + audit idempotence `docs/migrations-idempotence-audit.md`. Test Locally First **exit code vérifié** (PAS `cargo test | grep`).
 
 ## Points de décision (DC) — TOUS FIGÉS
 
 - **DC1 — Décodage des PDF : rendu pdfium** [✅ FIGÉ Guy 2026-06-28] : factures = **PDF** (e-mail ou scans papier). Décodage côté serveur **par rendu de la page PDF → image** via **`pdfium-render`** (binaire natif `pdfium`), puis QR via `rxing`. Couvre tous les cas (vectoriel/raster + scans CCITTFax). Pipeline : PDF → `pdfium-render` (page→`image::DynamicImage`) → `rxing` (QR→texte) → `parse_spc_payload`. Images PNG/JPG directes aussi (rxing sans pdfium). `rxing` passe **dev-dep → runtime** ; `image` à **déclarer explicitement** (cf. F4).
-- **DC1-bis — Packaging Docker pdfium** [✅ FIGÉ Guy 2026-06-29] : **`linux/amd64` uniquement** (cohérent `release.yml` actuel ; le NAS de Guy exécute les images amd64). Télécharger le binaire `pdfium` **amd64** (depuis `bblanchon/pdfium-binaries`, version épinglée) dans le stage `runtime` du `Dockerfile` (placement du `.so` + chemin de lib). **Pas de multi-arch arm64** en v0.4 (follow-up si cible ARM un jour). Vérifier la **licence pdfium** (Apache-2.0 / BSD-3, OK) et la mentionner dans la doc.
+- **DC1-bis — Packaging Docker pdfium** [✅ FIGÉ Guy 2026-06-29] : **`linux/amd64` uniquement** (cohérent `release.yml` actuel ; le NAS de Guy exécute les images amd64). **Pas de multi-arch arm64** en v0.4 (follow-up, L3). Vérifier la **licence pdfium** (Apache-2.0 / BSD-3, OK) et la mentionner dans la doc. **Détails packaging (F-NEW-5)** dans le stage `runtime` (`debian:bookworm-slim`, Dockerfile:18) :
+  - Télécharger le `.so` depuis une **release épinglée** de `bblanchon/pdfium-binaries` (tag `chromium/NNNN` figé, pas `latest`) — fichier `pdfium-linux-x64.tgz` → `libpdfium.so`.
+  - **Vérifier le checksum** (SHA-256 du tgz épinglé) avant extraction.
+  - Placer dans `/usr/local/lib/libpdfium.so` et `ldconfig` (chemin standard, pas besoin de `LD_LIBRARY_PATH`) — OU `/app/lib/libpdfium.so` + `ENV LD_LIBRARY_PATH=/app/lib:$LD_LIBRARY_PATH`. `pdfium-render` résout via le loader système ; le dev confirmera le nom attendu (`libpdfium.so`).
+  - Impact taille image (~plusieurs Mo) acceptable. Documenter dans le manuel admin.
 - **DC2 — Déclenchement : bouton manuel** [✅ FIGÉ Guy 2026-06-29] : bouton « Importer le dossier » (manuel). **PAS de watch auto** (inotify/polling) en v0.4 — follow-up.
 - **DC3 — Modèle d'entité : staging « à compléter »** [✅ FIGÉ Guy 2026-06-28] : table `imported_supplier_invoices` (coordonnées QR parsées + lien fichier archivé + `supplier_invoice_id` nullable + statut `to_complete`/`completed`/`discarded`). Découple ingestion et comptabilisation, **préserve l'intégrité comptable** de 12-2.
 - **DC4 — Stockage justificatif : lien côté import** [✅ FIGÉ Guy 2026-06-29] : `KESH_DOCUMENTS_DIR` (filesystem, hors DB) + **colonnes document sur `imported_supplier_invoices`** (`storage_path`, `original_filename`, `sha256`, `mime_type`, `byte_size`) + **FK nullable `supplier_invoice_id` → `supplier_invoices.id`** (renseignée à la complétion). **AUCUN ALTER de `supplier_invoices`** (12-2) → migration `CREATE TABLE` **non-breaking** (pas de bump `kesh_version_min_required`). Le détail facture (12-2) résout le justificatif via `imported_supplier_invoices WHERE supplier_invoice_id = {id}`. Base minimale ; Epic 14 « Justificatifs » généralisera.
 - **DC5 — Inclusion backup/export : métadonnées seules** [✅ FIGÉ Guy 2026-06-29] : la **métadonnée** (table `imported_supplier_invoices`, incl. `storage_path`/`sha256`) entre dans le `.keshbackup` (17-3, via manifeste export). Le **binaire des fichiers** (`KESH_DOCUMENTS_DIR`) reste **HORS backup v0.4** → limitation **L1** documentée. Le restore ne restaure pas les fichiers physiques.
+
+## Schéma `imported_supplier_invoices` (T3 — 12-5b)
+
+Migration `CREATE TABLE` **non-breaking** (pas de bump `kesh_version_min_required`). Conventions calquées sur `20260628000001_supplier_invoices.sql` : multi-tenant `company_id`, statut via **`CHECK` texte** (PAS d'enum SQLx — cf. `feedback_sqlx_mysql_gotchas`), `version INT`, `DATETIME(3)`.
+
+| Colonne | Type | Null | Notes |
+|---|---|---|---|
+| `id` | BIGINT PK AUTO_INCREMENT | non | |
+| `company_id` | BIGINT | non | **FK `companies(id)` ON DELETE RESTRICT — multi-tenant (F-NEW-1)** |
+| `status` | VARCHAR(16) DEFAULT `'to_complete'` | non | CHECK IN (`to_complete`,`completed`,`discarded`) |
+| `supplier_invoice_id` | BIGINT | **oui** | FK `supplier_invoices(id)` ON DELETE SET NULL — renseigné à la complétion (DC4) |
+| `file_hash` | CHAR(64) | non | SHA-256 hex (idempotence) |
+| `storage_path` | VARCHAR(512) | non | relatif à `KESH_DOCUMENTS_DIR`, = `{sha256hex}.{ext}` |
+| `original_filename` | VARCHAR(255) | non | nom d'origine (affichage seul) |
+| `mime_type` | VARCHAR(100) | non | |
+| `byte_size` | BIGINT | non | |
+| `creditor_iban` | VARCHAR(34) | non | IBAN ou QR-IBAN |
+| `is_qr_iban` | BOOLEAN | non | IID 30000–31999 |
+| `creditor_address_type` | CHAR(1) | non | `K` ou `S` |
+| `creditor_name` | VARCHAR(70) | non | |
+| `creditor_line1` | VARCHAR(70) | oui | line1 (K) / street (S) |
+| `creditor_line2` | VARCHAR(70) | oui | line2 (K) / building_no (S) |
+| `creditor_postal_code` | VARCHAR(16) | oui | type S |
+| `creditor_town` | VARCHAR(35) | oui | type S |
+| `creditor_country` | CHAR(2) | non | |
+| `reference_type` | VARCHAR(8) | non | CHECK IN (`QRR`,`SCOR`,`NON`) |
+| `reference_value` | VARCHAR(40) | oui | vide si `NON` |
+| `amount` | DECIMAL(19,4) | **oui** | SPC autorise montant vide (F2/AC1) |
+| `currency` | VARCHAR(3) | non | validée CHF/EUR à la complétion |
+| `unstructured_message` | VARCHAR(140) | oui | |
+| `billing_information` | VARCHAR(140) | oui | |
+| `version` | INT DEFAULT 1 | non | |
+| `created_at` | DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) | non | |
+| `updated_at` | DATETIME(3) … ON UPDATE | non | |
+
+**Index / contraintes** :
+- `UNIQUE uq_imported_company_hash (company_id, file_hash)` — **idempotence scopée par company (F-NEW-3)**.
+- `INDEX idx_imported_company_status (company_id, status)` — liste des factures à compléter.
+- `INDEX idx_imported_supplier_invoice (supplier_invoice_id)` — lookup justificatif (AC5).
 
 ## Limitations documentées
 
@@ -115,6 +160,7 @@ Un **dossier d'import** (inbox, sur le serveur/NAS) que l'admin configure. L'uti
 - **L2** — Pas de **watch automatique** de l'inbox en v0.4 (déclenchement manuel par bouton). Follow-up. (DC2)
 - **L3** — `linux/amd64` uniquement (pas d'image arm64). Follow-up si déploiement sur cible ARM. (DC1-bis)
 - **L4** — Création **inline d'un fournisseur** hors scope de la complétion 12-5 (sélection d'un contact `is_supplier` existant ; sinon créer via Contacts puis revenir). (AC7)
+- **L5** — En v0.4, **seules les factures importées via 12-5** ont un justificatif stocké/téléchargeable (lien porté par `imported_supplier_invoices`). Une facture créée **directement** via 12-2 (`supplier_invoices::create` hors import) n'a pas de lien justificatif → `GET .../source-document` renvoie **404**. **Remédiation** : Epic 14 « Justificatifs » généralisera le stockage à toutes les factures. (DC4, F-NEW-8)
 
 ## Tasks / Subtasks
 
@@ -186,6 +232,19 @@ Reviewer adversarial contexte frais. **19 findings** : 3 CRITICAL, 4 HIGH, 10 ME
 - **F17** (MEDIUM) résolu : L1 identifiée (DC5).
 - **F18** (LOW) résolu : `generator.rs:14-90` (était 18-90).
 - **F19** (LOW) résolu : nommage archivé `{sha256hex}.{ext}` (AC5).
+
+### Pass 2 — validate (Haiku 4.5, 2026-06-29)
+Reviewer adversarial contexte frais, discipline grep ground-truth. **9 findings** : 2 CRITICAL, 2 HIGH, 3 MEDIUM, 2 LOW. Trend > LOW : **7**. Aucune hallucination (F-NEW-1/F-NEW-3 multi-tenant vérifiés grep `company_id` sur `supplier_invoices.sql:29` + entity).
+- **F-NEW-1** (CRITICAL) résolu : `company_id BIGINT NOT NULL` FK `companies` ajouté → section Schéma explicite.
+- **F-NEW-2** (CRITICAL) résolu : tableau complet des colonnes `imported_supplier_invoices` (QR + document + statut + timestamps + version).
+- **F-NEW-3** (HIGH) résolu : idempotence scopée `UNIQUE (company_id, file_hash)` (AC6 + schéma) ; 2 companies peuvent importer le même fichier.
+- **F-NEW-4** (HIGH) résolu : round-trip type K seul ; type S via fixture manuelle (AC9, generator n'émet que K).
+- **F-NEW-5** (MEDIUM) résolu : packaging pdfium détaillé (tag épinglé + checksum + `/usr/local/lib/libpdfium.so` + ldconfig, DC1-bis).
+- **F-NEW-6** (MEDIUM) résolu : adresse QR informative, adresse contact prime à la complétion (AC7).
+- **F-NEW-7** (MEDIUM) résolu : cap `KESH_INBOX_MAX_FILES_PER_RUN` (AC4) borne le rapport `failed[]`.
+- **F-NEW-8** (LOW) résolu : L5 (factures directes 12-2 sans justificatif, 404).
+- **F-NEW-9** (LOW) résolu : messages d'erreur complétion (devise/montant/exercice, AC7).
+- **Hardening complémentaire** : RBAC Comptable+ + anti-IDOR company-scope sur endpoints download (AC5).
 
 ## Dev Agent Record
 
