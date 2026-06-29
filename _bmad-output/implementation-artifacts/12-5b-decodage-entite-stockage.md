@@ -163,6 +163,18 @@ Migration `CREATE TABLE` **non-breaking**.
 - [Source: backup.rs:34/432/570] — TABLES_TO_TRUNCATE + restore + test inventaire.
 - [Source: supplier_invoices.sql + entity/repo 12-2] — modèle migration/entité.
 
+## Change Log
+
+### Cycle validate — CONVERGÉ Pass 3 (trend >LOW 2→1→0)
+
+Extraction de l'umbrella 12-5 (validé 6 passes) → validate dédié sous-story, axes extraction/frontières/ground-truth. Cycle **Opus → Sonnet → Haiku**, contextes frais.
+
+- **Pass 1 (Opus 4.8)** — 0 CRIT/HIGH, **2 MEDIUM + 4 LOW**. M1 : compteur `migrations_upgrade_path` mal localisé (kesh-db/tests/, double edit `38→39` + `total-15→16`) ; M2 : `rxing` doit RESTER dev-dep kesh-qrbill (`generator.rs:203`). LOW : `DecodeConfig` ownership 12-5b/env-wiring 12-5c, ordre TABLES_TO_TRUNCATE, ligne `:575`, manifeste export implicite. Schéma/mapping/scope confirmés fidèles.
+- **Pass 2 (Sonnet 4.6)** — 7 claims Pass 1 confirmés grep, **1 MEDIUM + 4 LOW**. M1 : le patch P1-L4 (ordre FK) était lui-même faux — `SET FOREIGN_KEY_CHECKS=0` à `backup.rs:388` couvre DELETE **et** INSERT → ordre conventionnel, pas imposé FK. LOW : commentaires périmés `migrations_upgrade_path.rs` (l.41/83/92) + section Statistiques `migrations-idempotence-audit.md`.
+- **Pass 3 (Haiku 4.5)** — discipline grep ground-truth, **0 CRIT/HIGH/MEDIUM**. 27 colonnes schéma = umbrella, compteurs vérifiés (l.68/94/41/83/92/263), deps OK, mapping sans orphelin, migration non-breaking. **CONVERGÉ.**
+
+DC1-DC6 + L1/L3/L6 hérités umbrella. 0 patch de code (validate spec). Prêt pour `bmad-dev-story 12-5b`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
