@@ -62,7 +62,7 @@ Un **dossier d'import** (inbox, sur le serveur/NAS) que l'admin configure. L'uti
 
 2. Un **dossier inbox configurable** (`KESH_INBOX_DIR`, pattern env var comme `KESH_ADMIN_BACKUP_DIR` cf. `config.rs`) est lu **sur déclenchement manuel** (DC2 : bouton « Importer le dossier », PAS de watch auto en v0.4). Chaque fichier est décodé **côté serveur** : **PDF → rendu page via `pdfium-render` → `image::DynamicImage` → `rxing` (QR→texte)** ; image PNG/JPG → `rxing` directement → texte → `parse_spc_payload`. **Multi-page** : tenter chaque page jusqu'à trouver un QR SPC valide. **Plusieurs QR sur une page** : tenter chaque QR retourné par `rxing` dans l'ordre jusqu'au premier payload commençant par `SPC\n0200` ; si aucun n'est SPC, la page ne compte pas comme QR trouvé.
 3. **Pattern batch / rapport per-fichier** (contrat `FailedProposal` CLAUDE.md) : réponse `{ accepted: [...], failed: [...], warnings: [...] }`, **HTTP 200** même en succès partiel. `warnings: Vec<String>` porte les avertissements non liés à un fichier précis (ex. troncature `KESH_INBOX_MAX_FILES_PER_RUN` cf. AC4, run déjà en cours). `accepted`/`failed` restent par-fichier. Chaque fichier réussi → staging créé + fichier associé. Chaque fichier en échec → entrée `failed[]` avec **identifiant business** = `file_name: String` (PAS d'index positionnel), `error_code: String` (constante canonique, jamais `format!`), `details: Option<serde_json::Value>`. Aucun fichier ne fait planter l'import global. **Catalogue `error_code`** (constantes) :
-   - `UNSUPPORTED_FILE_TYPE` — extension hors liste blanche.
+   - `UNSUPPORTED_FILE_TYPE` — extension hors liste blanche **ou magic bytes incohérents avec l'extension** (ex. fichier non-PDF nommé `.pdf`, cf. AC4).
    - `FILE_TOO_LARGE` — dépasse `KESH_INBOX_MAX_FILE_BYTES`.
    - `SYMLINK_REJECTED` — entrée d'inbox qui est un symlink (cf. AC4).
    - `DUPLICATE` — hash SHA-256 déjà archivé (cf. AC6).
@@ -98,6 +98,7 @@ Un **dossier d'import** (inbox, sur le serveur/NAS) que l'admin configure. L'uti
    - **Champs optionnels** : `supplier_invoice_number` (n° chez le fournisseur, saisie libre) et `due_date` (échéance, date-picker) — optionnels (`Option` dans `NewSupplierInvoice`), passés `None` si non renseignés.
    - **Réconciliation montant (F2)** : pain.001 (12-3) paie le `total_amount` **calculé** des lignes (`payment_batches.rs:298`), PAS le montant du QR. Pour éviter de payer le créancier à un montant ≠ du justificatif/QRR : si `staging.amount` (montant QR) est **présent**, la complétion **exige** que `Σ(lignes TTC)` corresponde à `staging.amount`. **Méthode de comparaison (P4-M3)** : arrondir **les deux** membres à **2 décimales (HALF_UP)** puis exiger l'égalité exacte (`round2(Σ TTC) == round2(staging.amount)`) — sinon **bloquer** « Le total des lignes (X) ne correspond pas au montant du QR (Y) ». Renseigner aussi `NewSupplierInvoice.expected_payment_amount = staging.amount` (piste d'audit). Si `staging.amount` absent (montant ouvert), pas de contrôle.
    - **Routage IBAN (F9)** : `is_qr_iban=true` → renseigner `creditor_qr_iban` (et **exiger `reference_type='QRR'`** — un QR-IBAN sans QRR est rejeté à la complétion, cohérent `payment_batches.rs:613`) ; `is_qr_iban=false` → `creditor_iban`. (`NewSupplierInvoice` a deux champs distincts `creditor_iban`/`creditor_qr_iban`, `supplier_invoice.rs:77-78`.)
+   - **Mapping `payment_reference` (C5-1)** : `NewSupplierInvoice.payment_reference` (`Option<String>`, `supplier_invoice.rs:79`) := `staging.reference_value` si `reference_type ∈ {QRR, SCOR}`, sinon `None` (pas de référence quand `reference_type='NON'`).
    - À la validation → **complétion atomique** (DC6 : `create_in_tx` + transition staging dans **une seule transaction** sous `FOR UPDATE`) → staging passe `completed`, facture `open` avec **fichier source associé** (`supplier_invoice_id`) → entre dans la liste des paiements (12-3).
    - **Échec de `create` à la complétion** : le staging **reste `to_complete`**, message d'erreur UX explicite, **aucune écriture comptable partielle**. Messages (non-exhaustif, F-NEW-9) : `DbError::FiscalYearInvalid` (`invoice_date` hors exercice ouvert) → « Aucun exercice fiscal ouvert couvrant cette date » ; devise ≠ CHF/EUR → « Devise non supportée (CHF ou EUR) » ; montant ≤ 0 → « Le montant doit être positif ».
    - **Validation devise (P4-M4)** : la devise est validée **au niveau du service 12-5c** (`staging.currency ∈ {CHF, EUR}`) **avant** `create_in_tx`. **NE PAS** ajouter de champ `currency` à `NewSupplierInvoice` ni à la migration `supplier_invoices` (la colonne **n'existe pas** en 12-2 — `supplier_invoice.rs` n'a aucun champ `currency` ; modifier 12-2 = scope creep hors story). La devise reste tracée dans `imported_supplier_invoices.currency` uniquement (L7).
@@ -111,8 +112,15 @@ Un **dossier d'import** (inbox, sur le serveur/NAS) que l'admin configure. L'uti
 **Endpoints backend complétion (12-5c — F3)**
 
 10. La logique de complétion est **backend (12-5c), pas frontend**. Endpoints (Comptable+, company-scopés) — `routes/supplier_invoices.rs` n'a aujourd'hui que `list`/`create`/`pay`/`cancel`, **aucun handler de complétion** :
-    - `GET /api/v1/imported-supplier-invoices?status=to_complete` — liste des factures importées à compléter (AC8).
-    - `POST /api/v1/imported-supplier-invoices/{id}/complete` — corps = `contact_id` + `invoice_date` + `lines[]` (chaque ligne : `description`, `quantity`, `unit_price`, `vat_rate`, `expense_account_id`) + optionnels `supplier_invoice_number`/`due_date`. Siège de **DC6 (transaction atomique)** + **réconciliation montant (AC7/F2)** + **routage IBAN (AC7/F9)** + **validation devise service-level (P4-M4)**. Retourne **`SupplierInvoiceResponse`** (identique à `POST /api/v1/supplier-invoices`).
+    - `GET /api/v1/imported-supplier-invoices?status={to_complete|completed|discarded}` — liste des factures importées filtrées par statut (use-case principal `to_complete`, AC8).
+    - `POST /api/v1/imported-supplier-invoices/{id}/complete` — corps JSON (camelCase, cohérent 12-2) :
+      ```json
+      { "contactId": i64, "invoiceDate": "YYYY-MM-DD",
+        "supplierInvoiceNumber": "string|null", "dueDate": "YYYY-MM-DD|null",
+        "lines": [{ "description": "string", "quantity": "Decimal",
+                    "unitPrice": "Decimal (HT)", "vatRate": "Decimal", "expenseAccountId": i64 }] }
+      ```
+      Siège de **DC6 (transaction atomique)** + **réconciliation montant (AC7/F2)** + **routage IBAN (AC7/F9)** + **validation devise service-level (P4-M4)**. Retourne **`SupplierInvoiceResponse`** (identique à `POST /api/v1/supplier-invoices`).
     - `POST /api/v1/imported-supplier-invoices/{id}/discard` — transition `discarded` (AC7).
     Le frontend 12-5d **consomme** ces endpoints (ne réimplémente PAS la logique transactionnelle). 12-5c = « Service d'import + endpoints import **et complétion** + sécurité ».
 
@@ -147,7 +155,7 @@ Migration `CREATE TABLE` **non-breaking** (pas de bump `kesh_version_min_require
 | `byte_size` | BIGINT | non | |
 | `creditor_iban` | VARCHAR(34) | non | IBAN ou QR-IBAN |
 | `is_qr_iban` | BOOLEAN | non | IID 30000–31999 |
-| `creditor_address_type` | CHAR(1) | non | `K` ou `S` |
+| `creditor_address_type` | CHAR(1) | non | CHECK IN (`'K'`,`'S'`) |
 | `creditor_name` | VARCHAR(70) | non | |
 | `creditor_line1` | VARCHAR(70) | oui | line1 (K) / street (S) |
 | `creditor_line2` | VARCHAR(70) | oui | line2 (K) / building_no (S) |
@@ -284,6 +292,18 @@ Passe de convergence, axe cohérence des patches Pass 3 (DC6/AC10/réconciliatio
 - **P4-M4** (MEDIUM) résolu : devise validée service-level 12-5c, **pas** de champ `currency` ajouté à 12-2 (anti-scope-creep) → L7.
 - **P4-L1** (LOW) résolu : `supplier_invoice_number`/`due_date` optionnels mentionnés (AC7/AC10).
 - **P4-L2** (LOW) résolu : type retour `SupplierInvoiceResponse` (AC10).
+
+### Pass 5 — validate (Haiku 4.5, 2026-06-29)
+Convergence finale, discipline grep ground-truth. Haiku a rapporté 2 CRITICAL/2 HIGH/3 MEDIUM/2 LOW ; **garde anti-inflation Haiku appliquée** (reclassements ci-dessous). Trend > LOW réel après reclassement : **~3 MEDIUM**.
+- **C5-1** (Haiku CRITICAL → réel MEDIUM) résolu : mapping `payment_reference := staging.reference_value` si QRR/SCOR sinon None (AC7) — vrai trou.
+- **C5-2** (Haiku CRITICAL → LOW/polish) résolu : exemple JSON du corps `/complete` ajouté (AC10) ; les champs étaient déjà listés, ce n'était pas CRITICAL.
+- **C5-3** (Haiku HIGH → **DISMISS non-finding**) : Haiku écrit lui-même « ✓ C'est codifié … texte présent », ne reproche qu'un label de renvoi cosmétique. Pas un défaut.
+- **C5-4** (Haiku HIGH → réel MEDIUM) résolu : `CHECK IN ('K','S')` sur `creditor_address_type` (cohérence avec status/reference_type).
+- **C5-5** (MEDIUM) résolu : magic bytes incohérents → `UNSUPPORTED_FILE_TYPE` explicite (AC3).
+- **C5-6** (MEDIUM → LOW cosmétique) : L5 référence déjà DC4 ; non bloquant.
+- **C5-7** (Haiku MEDIUM → **DISMISS YAGNI**) : Haiku dit lui-même « Possible YAGNI » — n° de migration = détail mécanique dev-time, convention établie (`AAAAMMJJ` + séquence).
+- **C5-8** (LOW) résolu : filtre `status` généralisé (AC10).
+- **C5-9** (LOW) : guidance process split, non bloquant.
 
 ## Dev Agent Record
 
