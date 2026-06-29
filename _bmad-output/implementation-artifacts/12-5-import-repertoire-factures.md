@@ -2,7 +2,7 @@
 
 Status: ready-for-dev
 
-<!-- SPEC UMBRELLA — split figé 12-5a..d (cf. §Découpage). TOUS les DC figés (DC1 pdfium, DC2 bouton manuel, DC3 staging, DC4 lien côté import, DC5 métadonnées seules) — Guy 2026-06-28/29. -->
+<!-- SPEC UMBRELLA — VALIDATE CONVERGÉ 6 passes (17→7→7→4→~3→0, 0>LOW), 2026-06-29. Split figé 12-5a..d (cf. §Découpage). TOUS les DC figés (DC1 pdfium amd64, DC2 bouton manuel, DC3 staging, DC4 lien côté import, DC5 métadonnées seules, DC6 complétion atomique) — Guy 2026-06-28/29. Prochaine étape : créer sous-stories 12-5a..d (série a→b→c→d). -->
 
 ## Story
 
@@ -184,8 +184,8 @@ Migration `CREATE TABLE` **non-breaking** (pas de bump `kesh_version_min_require
 - **L3** — `linux/amd64` uniquement (pas d'image arm64). Follow-up si déploiement sur cible ARM. (DC1-bis)
 - **L4** — Création **inline d'un fournisseur** hors scope de la complétion 12-5 (sélection d'un contact `is_supplier` existant ; sinon créer via Contacts puis revenir). (AC7)
 - **L5** — En v0.4, **seules les factures importées via 12-5** ont un justificatif stocké/téléchargeable (lien porté par `imported_supplier_invoices`). Une facture créée **directement** via 12-2 (`supplier_invoices::create` hors import) n'a pas de lien justificatif → `GET .../source-document` renvoie **404**. **Remédiation** : Epic 14 « Justificatifs » généralisera le stockage à toutes les factures. (DC4, F-NEW-8)
-- **L7** — La **devise** d'une facture importée est tracée dans `imported_supplier_invoices.currency` mais **pas persistée** sur `supplier_invoices` (12-2 n'a pas de colonne `currency` ; v0.4 implicite CHF). Validée à la complétion (`∈ {CHF, EUR}`) sans modifier 12-2. **Remédiation** : multi-devise sur `supplier_invoices` = évolution 12-2 future si besoin. (P4-M4)
 - **L6** — `pdfium` est une lib **native in-process** (non sandboxée en v0.4). Un PDF malformé provoquant un segfault natif **tue le process API** (non rattrapable par `catch_unwind`). Risque **accepté v0.4** (inbox semi-contrôlée par l'admin, caps pages/dimensions en place). **Remédiation** : follow-up rendu en sous-process/sandbox isolé. (DC1, F4)
+- **L7** — La **devise** d'une facture importée est tracée dans `imported_supplier_invoices.currency` mais **pas persistée** sur `supplier_invoices` (12-2 n'a pas de colonne `currency` ; v0.4 implicite CHF). Validée à la complétion (`∈ {CHF, EUR}`) sans modifier 12-2. **Remédiation** : multi-devise sur `supplier_invoices` = évolution 12-2 future si besoin. (P4-M4)
 
 ## Tasks / Subtasks
 
@@ -304,6 +304,12 @@ Convergence finale, discipline grep ground-truth. Haiku a rapporté 2 CRITICAL/2
 - **C5-7** (Haiku MEDIUM → **DISMISS YAGNI**) : Haiku dit lui-même « Possible YAGNI » — n° de migration = détail mécanique dev-time, convention établie (`AAAAMMJJ` + séquence).
 - **C5-8** (LOW) résolu : filtre `status` généralisé (AC10).
 - **C5-9** (LOW) : guidance process split, non bloquant.
+
+### Pass 6 — validate (Opus 4.8, 2026-06-29) — CONVERGÉ
+Check de convergence final, posture anti-fabrication. **Verdict : PRÊT POUR DEV — 0 finding > LOW.** Ground-truth re-vérifié sur les 5 axes : mapping staging→`NewSupplierInvoice` complet champ-par-champ (aucun orphelin), DC6 atomicité (`create` owns-tx `:212/239/406`, `pay_in_tx :490` patron, `create_in_tx` absent → refactor justifié), réconciliation (pain.001 paie `total_amount :298`), split a..d cohérent, conventions CLAUDE.md respectées (FailedProposal, migration non-breaking, compteurs, `TABLES_TO_TRUNCATE` ordre FK). 3 LOW cosmétiques (ordre L6/L7 corrigé ; 404/410 et ignorer/`FILE_READ_ERROR` délégués au dev). **La Review Iteration Rule est satisfaite.**
+
+### Synthèse du cycle validate
+Trend > LOW : **Pass 1 (Sonnet) 17 → Pass 2 (Haiku) 7 → Pass 3 (Opus) 7 → Pass 4 (Sonnet) 4 → Pass 5 (Haiku) ~3 → Pass 6 (Opus) 0**. 6 passes, cycle Sonnet→Haiku→Opus→Sonnet→Haiku→Opus. Catches majeurs : Pass 1 (DC2/4/5 → Guy), Pass 2 (schéma multi-tenant), **Pass 3 Opus (axe complétion — DC6 atomicité CRITICAL + réconciliation montant HIGH, ratés par les passes légères)**. 2 hallucinations Haiku Pass 5 reclassées par grep ground-truth. DC1-DC6 + L1-L7 figés. Prêt pour split 12-5a..d.
 
 ## Dev Agent Record
 
