@@ -7,8 +7,8 @@
 //! On retient le **premier** payload commençant par `SPC\n0200` (multi-QR par
 //! page, multi-page tentés dans l'ordre) puis on le parse via `parse_spc_payload`
 //! (12-5a). Le mapping des erreurs vers les `error_code` HTTP
-//! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `NO_QR_CODE_FOUND`) est consommé
-//! en 12-5c ; ce module expose une erreur typée.
+//! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `NO_QR_CODE_FOUND`)
+//! est consommé en 12-5c ; ce module expose une erreur typée.
 
 use image::DynamicImage;
 use kesh_qrbill::{QrBillError, ScannedQrBill, parse_spc_payload};
@@ -42,8 +42,12 @@ pub enum DecodeError {
     ImageDecode(String),
     /// pdfium a échoué (binding absent, PDF illisible, rendu impossible).
     PdfRender(String),
-    /// Un QR SPC a été décodé mais `parse_spc_payload` l'a rejeté.
+    /// Un QR SPC a été décodé mais `parse_spc_payload` l'a rejeté (hors IBAN —
+    /// l'IBAN invalide a son variant dédié `InvalidIban` pour le mapping HTTP).
     InvalidSpcPayload(QrBillError),
+    /// L'IBAN créancier du QR est invalide (propagé du parseur 12-5a). Variant
+    /// distinct pour que 12-5c mappe vers `INVALID_IBAN` (AC2).
+    InvalidIban(String),
 }
 
 impl std::fmt::Display for DecodeError {
@@ -52,6 +56,7 @@ impl std::fmt::Display for DecodeError {
             Self::ImageDecode(m) => write!(f, "décodage image impossible: {m}"),
             Self::PdfRender(m) => write!(f, "rendu PDF impossible: {m}"),
             Self::InvalidSpcPayload(e) => write!(f, "payload SPC invalide: {e}"),
+            Self::InvalidIban(m) => write!(f, "IBAN créancier invalide: {m}"),
         }
     }
 }
@@ -76,9 +81,15 @@ pub fn decode_qr_from_image(img: &DynamicImage) -> Vec<String> {
 fn first_spc(payloads: &[String]) -> Result<Option<ScannedQrBill>, DecodeError> {
     for p in payloads {
         if p.starts_with(SPC_HEADER) {
-            return parse_spc_payload(p)
-                .map(Some)
-                .map_err(DecodeError::InvalidSpcPayload);
+            return match parse_spc_payload(p) {
+                Ok(bill) => Ok(Some(bill)),
+                // IBAN / QR-IBAN invalide → variant dédié (AC2, mapping HTTP
+                // `INVALID_IBAN` en 12-5c), distinct des autres rejets SPC.
+                Err(QrBillError::InvalidIban(m)) | Err(QrBillError::InvalidQrIban(m)) => {
+                    Err(DecodeError::InvalidIban(m))
+                }
+                Err(e) => Err(DecodeError::InvalidSpcPayload(e)),
+            };
         }
     }
     Ok(None)
@@ -93,6 +104,12 @@ pub fn decode_spc_from_image_bytes(bytes: &[u8]) -> Result<Option<ScannedQrBill>
 
 /// Décode un **PDF** en `ScannedQrBill` : rend chaque page (jusqu'au cap), tente
 /// chaque QR. `None` si aucune page ne porte de QR SPC.
+///
+/// # Thread safety
+/// pdfium (bibliothèque C) n'est **pas** thread-safe. L'appelant DOIT garantir
+/// qu'au plus un thread exécute cette fonction à la fois (en 12-5c, le verrou de
+/// run DC6 le garantit). Deux appels concurrents partageraient l'état global C de
+/// pdfium → comportement indéfini.
 pub fn decode_spc_from_pdf_bytes(
     bytes: &[u8],
     cfg: DecodeConfig,
@@ -112,6 +129,11 @@ pub fn decode_spc_from_pdf_bytes(
         .set_maximum_width(cfg.max_dimension as i32)
         .set_maximum_height(cfg.max_dimension as i32);
 
+    // Une page illisible (ressource embarquée corrompue) ne doit pas abandonner
+    // le décodage : le QR SPC peut être sur une page suivante. On retient la
+    // dernière erreur de rendu pour la remonter SEULEMENT si aucune page ne porte
+    // de QR (sinon on renverrait à tort `Ok(None)` alors qu'une page était illisible).
+    let mut last_render_err: Option<String> = None;
     for (i, page) in document.pages().iter().enumerate() {
         if i >= cfg.max_pages {
             // Cap atteint sans QR SPC trouvé → erreur de rendu (anti-DoS).
@@ -120,15 +142,22 @@ pub fn decode_spc_from_pdf_bytes(
                 cfg.max_pages
             )));
         }
-        let bitmap = page
-            .render_with_config(&render_config)
-            .map_err(|e| DecodeError::PdfRender(format!("rendu page {i}: {e}")))?;
+        let bitmap = match page.render_with_config(&render_config) {
+            Ok(b) => b,
+            Err(e) => {
+                last_render_err = Some(format!("rendu page {i}: {e}"));
+                continue;
+            }
+        };
         let img = bitmap.as_image();
         if let Some(scanned) = first_spc(&decode_qr_from_image(&img))? {
             return Ok(Some(scanned));
         }
     }
-    Ok(None)
+    match last_render_err {
+        Some(msg) => Err(DecodeError::PdfRender(msg)),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

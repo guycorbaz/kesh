@@ -9,10 +9,17 @@
 //! mapping HTTP des erreurs (404/410 sur fichier absent) vivent en 12-5c ; ce
 //! module n'expose que les primitives `store_document` / `read_document`.
 
+use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use kesh_db::entities::DocumentMeta;
 use sha2::{Digest, Sha256};
+
+/// Compteur process-unique pour nommer les fichiers temporaires d'écriture
+/// atomique (pas de `Math.random`/horloge disponibles côté config — cf. helper
+/// de test). Combiné au PID, garantit l'unicité même sous appels concurrents.
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Erreur de lecture d'un justificatif, distinguant le fichier **absent**
 /// (`NotFound` — mappé 404/410 en 12-5c, jamais 500) d'une autre erreur I/O.
@@ -96,7 +103,26 @@ pub fn store_document(
 
     std::fs::create_dir_all(documents_dir)?;
     let full_path = documents_dir.join(&storage_path);
-    std::fs::write(&full_path, bytes)?;
+
+    // Écriture atomique : fichier temporaire unique → `fsync` → `rename(2)`
+    // (atomique sur le même filesystem POSIX). Un crash entre la troncature et la
+    // fin d'écriture ne peut donc PAS laisser un justificatif partiel sous le nom
+    // SHA-256 « valide » (que `read_document` servirait ensuite sans le détecter).
+    let tmp_path = documents_dir.join(format!(
+        ".{sha256}.{}.{}.tmp",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write_result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp_path)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        std::fs::rename(&tmp_path, &full_path)
+    })();
+    if write_result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path); // nettoyage best-effort du tmp
+    }
+    write_result?;
 
     Ok(DocumentMeta {
         storage_path,

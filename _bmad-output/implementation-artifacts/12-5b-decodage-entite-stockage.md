@@ -184,6 +184,30 @@ DC1-DC6 + L1/L3/L6 hérités umbrella. 0 patch de code (validate spec). Prêt po
 3. **Complétion** : fix clippy (`fec89ea`), T3.5 tests (`ceab606`), T2.3 Dockerfile (`56c9ffb`), `cargo fmt`.
 4. **Mesure mémoire (hors story)** : ajout `.cargo/config.toml` `[build] jobs = 8` + mold linker + install mold CI (`7ae707f`) pour éviter la récidive OOM (32 jobs parallèles saturaient 30 GiB).
 
+### Review Findings (code-review)
+
+#### Pass 1 — Sonnet 4.6 (Blind / Edge / Auditor), trend >LOW : 5 patchés, 1 dismiss, 8 defer
+
+**Patchés (5)** :
+- [x] [Review][Patch] P1 HIGH — `store_document` écriture atomique (tempfile+fsync+rename) [`document_storage.rs`]
+- [x] [Review][Patch] P2 MED — `DecodeError::InvalidIban` variant dédié + routing `first_spc` (AC2) [`qr_decode.rs`]
+- [x] [Review][Patch] P3 MED — `from_scanned` normalise `address_type` → {'K','S'} (anti CHECK violation) [`imported_supplier_invoice.rs`]
+- [x] [Review][Patch] P4 MED — doc thread-safety pdfium sur `decode_spc_from_pdf_bytes` [`qr_decode.rs`]
+- [x] [Review][Patch] P5 MED — erreur de rendu d'une page n'abandonne plus le PDF (skip+continue, remonte PdfRender si aucune page lisible) [`qr_decode.rs`]
+
+**Dismiss (1, ground-truth)** :
+- BH-M1 « variant PdfRender faux pour le cap pages » → **réfuté par AC3** qui mandate explicitement `PdfRender`/`PDF_RENDER_ERROR` au dépassement de cap. Implémentation conforme à l'intention spec.
+
+**Deferred (8 LOW)** :
+- [x] [Review][Defer] validation `list_by_status` (statut arbitraire → liste vide) — frontière HTTP 12-5c
+- [x] [Review][Defer] `Pdfium::bind_to_system_library()` rechargé par appel — optimisation (cache/pool) ultérieure
+- [x] [Review][Defer] fixture PDF `#[ignore]` non commitée — test only `--ignored`+pdfium
+- [x] [Review][Defer] temp dirs déterministes dans tests `document_storage` — hygiène test
+- [x] [Review][Defer] tests PDF cas (c) multi-page / (e) corrompu absents — dépend pdfium
+- [x] [Review][Defer] `first_spc` early-return sans try-next QR — pathologique (1 QR SPC/doc en SIX 2.2)
+- [x] [Review][Defer] PDF 0-page → `Ok(None)` — edge marginal
+- [x] [Review][Defer] erreurs internes rxing avalées en « pas de QR » — diagnosticabilité
+
 ## Dev Agent Record
 
 ### Agent Model Used

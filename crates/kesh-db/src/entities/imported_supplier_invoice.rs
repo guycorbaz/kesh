@@ -114,7 +114,15 @@ impl NewImportedSupplierInvoice {
             byte_size: doc.byte_size,
             creditor_iban: scanned.creditor_iban.clone(),
             is_qr_iban: scanned.is_qr_iban,
-            creditor_address_type: scanned.creditor.address_type.to_string(),
+            // Normalisation sur {'K','S'} : le parseur (12-5a) traite tout type
+            // ≠ 'S' comme 'K' (adresse combinée). On s'aligne pour respecter le
+            // CHECK SQL `IN ('K','S')` — un QR tiers émettant un autre caractère
+            // ne doit pas provoquer une CHECK violation DB opaque.
+            creditor_address_type: if scanned.creditor.address_type == 'S' {
+                "S".to_string()
+            } else {
+                "K".to_string()
+            },
             creditor_name: scanned.creditor.name.clone(),
             creditor_line1: non_empty(&scanned.creditor.street_or_line1),
             creditor_line2: non_empty(&scanned.creditor.building_or_line2),
@@ -240,5 +248,31 @@ mod tests {
         assert_eq!(new.reference_value, None);
         assert_eq!(new.amount, None);
         assert!(!new.is_qr_iban);
+    }
+
+    /// Un `address_type` hors {'K','S'} (QR tiers non conforme) est normalisé en
+    /// 'K' — pas de CHECK violation DB opaque en aval (code-review 12-5b P3).
+    #[test]
+    fn from_scanned_normalizes_unexpected_address_type_to_k() {
+        let scanned = ScannedQrBill {
+            creditor_iban: "CH4431999123000889012".into(),
+            is_qr_iban: true,
+            creditor: ScannedAddress {
+                address_type: 'C', // ni 'K' ni 'S'
+                name: "Fournisseur".into(),
+                street_or_line1: "Ligne 1".into(),
+                building_or_line2: "Ligne 2".into(),
+                postal_code: None,
+                town: None,
+                country: "CH".into(),
+            },
+            amount: Some(dec!(10.00)),
+            currency: "CHF".into(),
+            reference: ScannedReference::None,
+            unstructured_message: None,
+            billing_information: None,
+        };
+        let new = NewImportedSupplierInvoice::from_scanned(1, &scanned, doc());
+        assert_eq!(new.creditor_address_type, "K");
     }
 }
