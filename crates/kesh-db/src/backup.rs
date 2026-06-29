@@ -38,6 +38,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "invoice_lines",
     "journal_entry_lines",
     "credit_notes", // Story 12.1 — enfant de invoices/journal_entries/contacts (RESTRICT) → avant eux.
+    "imported_supplier_invoices", // Story 12.5b — enfant de companies (RESTRICT) + supplier_invoices (SET NULL) → avant eux.
     "supplier_invoices", // Story 12.2 — enfant de journal_entries/contacts/bank_accounts/accounts (RESTRICT) → avant eux.
     "payment_batches",   // Story 12.3 — enfant de companies + bank_accounts (RESTRICT) → avant eux.
     "invoices",

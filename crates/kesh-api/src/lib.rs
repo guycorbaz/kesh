@@ -10,12 +10,14 @@ pub(crate) mod admin_backup;
 pub mod audit;
 pub mod auth;
 pub mod config;
+pub mod document_storage;
 pub mod errors;
 pub mod exports;
 pub mod helpers;
 pub mod logging;
 pub mod mail;
 pub mod middleware;
+pub mod qr_decode;
 pub mod routes;
 pub(crate) mod util;
 

@@ -46,6 +46,14 @@ csv = "1"
 # Story 8-1b — hash SHA-256 du fichier importé (dédup company-scope).
 sha2 = "0.10"
 
+# Story 12-5b (#194) — décodage QR côté serveur des factures importées.
+# rxing : décodage QR (image → texte SPC). image : manipulation bitmap (rendu
+# pdfium → DynamicImage → rxing). pdfium-render : rendu des pages PDF en image
+# (binaire natif libpdfium.so, bundlé dans l'image Docker amd64, DC1-bis).
+rxing = "0.7"
+image = "0.25"
+pdfium-render = "0.8"
+
 # Story 9-2b — export global ZIP (souveraineté des données).
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

@@ -248,6 +248,12 @@ pub struct Config {
     /// `/tmp`. Créé s'il n'existe pas. La purge est à la charge de l'opérateur.
     pub admin_backup_dir: String,
 
+    /// Story 12-5b (#194) — répertoire de stockage des **justificatifs**
+    /// (copies des fichiers de factures importées, `{sha256hex}.{ext}`). Hors DB.
+    /// Lu depuis `KESH_DOCUMENTS_DIR` ; défaut `/data/documents` (PAS `/tmp` :
+    /// perte au redémarrage conteneur). À monter en volume persistant Docker.
+    pub documents_dir: String,
+
     // --- v0.1.3 hotfix (Issue #136) — cookies Secure flag override ---
     /// Émettre les cookies session (`kesh_access_token`, `kesh_refresh_token`)
     /// avec le flag `Secure` (requiert HTTPS côté client). **Défaut `true`**
@@ -457,6 +463,7 @@ impl Config {
             admin_export_inmem_mib: 50,
             admin_import_max_mib: 512,
             admin_backup_dir: "/tmp".to_string(),
+            documents_dir: "/tmp/kesh-documents-test".to_string(),
             cookie_secure: true,
             // Story 17-4b : recovery email désactivé par défaut en test (les
             // tests qui l'exercent muteront le champ ou utiliseront un Config
@@ -896,6 +903,11 @@ impl Config {
         let admin_backup_dir =
             env::var("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|_| "/tmp".to_string());
 
+        // Story 12-5b (#194) — KESH_DOCUMENTS_DIR : stockage des justificatifs
+        // importés. Défaut `/data/documents` (volume persistant Docker, PAS /tmp).
+        let documents_dir =
+            env::var("KESH_DOCUMENTS_DIR").unwrap_or_else(|_| "/data/documents".to_string());
+
         // v0.1.3 hotfix (Issue #136) — KESH_COOKIE_SECURE override.
         // Parsing strict (cohérent KESH_TEST_MODE P7) : seules `"true"`/`"1"`/
         // `"false"`/`"0"` acceptées. Toute autre valeur (`"True"`, `"yes"`,
@@ -1040,6 +1052,7 @@ impl Config {
             admin_export_inmem_mib,
             admin_import_max_mib,
             admin_backup_dir,
+            documents_dir,
             cookie_secure,
             smtp_host,
             smtp_port,
@@ -1338,6 +1351,7 @@ pub(crate) mod test_helpers {
             admin_export_inmem_mib: 50,
             admin_import_max_mib: 512,
             admin_backup_dir: "/tmp".to_string(),
+            documents_dir: "/tmp/kesh-documents-test".to_string(),
             cookie_secure: true,
             // Story 17-4b — recovery email off par défaut dans le helper test.
             smtp_host: None,

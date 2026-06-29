@@ -56,12 +56,13 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 | `20260627000001_credit_notes.sql` | tracked-by-sqlx | `CREATE TABLE credit_notes / credit_note_lines / credit_note_number_sequences` (miroir factures) + `ALTER TABLE company_invoice_settings ADD COLUMN credit_note_number_format … DEFAULT 'AV-{YEAR}-{SEQ:04}'` (+ CHECK non-vide), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1050 sur les CREATE, 1060 sur l'ADD COLUMN). Non-breaking (nouvelles tables + ADD COLUMN avec DEFAULT) → pas de bump `kesh_version_min_required` (Story 12-1, #186/#184). |
 | `20260628000001_supplier_invoices.sql` | tracked-by-sqlx | `CREATE TABLE supplier_invoices / supplier_invoice_lines` (entité factures fournisseurs dédiée) + `ALTER TABLE company_invoice_settings ADD COLUMN default_payable_account_id` (+ FK `fk_cis_payable_account`), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1050 sur les CREATE, 1060 sur l'ADD COLUMN). Le `UPDATE … INNER JOIN accounts … SET default_payable_account_id = a.id WHERE … IS NULL` (backfill compte `2000` par company) est intrinsèquement idempotent (garde `IS NULL`, re-jeu sans effet) et ne touche aucun compte existant. Non-breaking (nouvelles tables + ADD COLUMN nullable + UPDATE idempotent) → pas de bump `kesh_version_min_required` (Story 12-2, #191). |
 | `20260628000002_payment_batches.sql` | tracked-by-sqlx | `CREATE TABLE payment_batches / payment_batch_items` (lots de paiement pain.001, flux deux temps), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1050 sur les CREATE). Aucun ALTER/UPDATE. Non-breaking (nouvelles tables seules) → pas de bump `kesh_version_min_required` (Story 12-3, #191). |
+| `20260629000001_imported_supplier_invoices.sql` | tracked-by-sqlx | `CREATE TABLE imported_supplier_invoices` (staging des factures fournisseurs importées depuis un dossier inbox), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1050. Aucun ALTER/UPDATE. Non-breaking (nouvelle table seule) → pas de bump `kesh_version_min_required` (Story 12-5b, #194). |
 
 ## Statistiques
 
-- **Total** : 38 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a + 1 Story 12-1 + 1 Story 12-2 + 1 Story 12-3).
+- **Total** : 39 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a + 1 Story 12-1 + 1 Story 12-2 + 1 Story 12-3 + 1 Story 12-5b).
 - **Idempotence `yes`** : 4 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`, `users_email`).
-- **Idempotence `tracked-by-sqlx`** : 34 (toutes les autres).
+- **Idempotence `tracked-by-sqlx`** : 35 (toutes les autres).
 - **Idempotence `no`** : 0.
 
 ## Maintenance future
