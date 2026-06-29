@@ -215,6 +215,15 @@ DC1-DC6 + L1/L3/L6 hérités umbrella. 0 patch de code (validate spec). Prêt po
 - Auditor : **0 violation** — 11 ACs conformes + 5 patches Pass 1 vérifiés grep-en-place.
 - [x] [Review][Defer] 8 LOW : erreurs rxing avalées, perms `documents_dir` (déploiement Docker), pin pdfium maintenance, naming tmpfile (mitigé par rename atomique), whitespace `non_empty` (barré parseur 12-5a), ordre bind INSERT (maintenabilité), tests PDF multi-page CI.
 
+#### Pass 3 — Opus 4.8 (Blind / Edge / Auditor), trend >LOW : 3 patchés, 1 reclassé dette, reste defer. **Opus catch architectural raté par Sonnet+Haiku**
+
+- [x] [Review][Patch] H1/M1 HIGH/MED (Blind+Edge) — **bombe de décompression image** : `decode_spc_from_image_bytes` utilisait `image::load_from_memory` SANS limite (le chemin PDF, lui, cape `max_dimension`). Patch : `image::ImageReader` + `Limits` (MAX_IMAGE_DIMENSION 10000px + MAX_IMAGE_ALLOC 256 MiB), symétrique au cap PDF [`qr_decode.rs`].
+- [x] [Review][Patch] L3 LOW (Blind) — `store_document` refuse le contenu 0-octet (cohérence invariant `CHECK byte_size>0`) + test [`document_storage.rs`].
+- [x] [Review][Patch] L4 LOW (Blind) — `static PDFIUM_LOCK: Mutex<()>` : sérialisation pdfium process-wide (défense en profondeur, ne dépend plus de la seule discipline appelant) [`qr_decode.rs`].
+- [x] [Review][Defer→dette] M1/M2 MED (Blind+Edge, grep-confirmé) — **champs QR sur-longs → DbError opaque** : `parse_spc_payload` (12-5a) ne borne pas les longueurs et `map_db_error` ne gère ni 1406 (Data too long) ni 1264 (Out of range). **Reclassé dette 12-5c** (couche d'ingestion → échec par-fichier vs 500) + contrat `create()` documenté.
+- **Auditor** : 0 > LOW. LOW-1 = `CHECK byte_size>0` est un **ajout volontaire** hors-schéma-figé (renforcement intégrité, ne peut rejeter une donnée légitime) → acté ici, conservé.
+- [x] [Review][Defer] LOW : dir non re-`fsync` après rename (durabilité), tmp orphelins (purge opérateur), montant >4 décimales arrondi MariaDB (SIX=2 déc.), devise/pays vide (→12-5c).
+
 ## Dev Agent Record
 
 ### Agent Model Used

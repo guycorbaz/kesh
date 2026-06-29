@@ -10,11 +10,26 @@
 //! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `NO_QR_CODE_FOUND`)
 //! est consommé en 12-5c ; ce module expose une erreur typée.
 
+use std::sync::Mutex;
+
 use image::DynamicImage;
 use kesh_qrbill::{QrBillError, ScannedQrBill, parse_spc_payload};
 
+/// Sérialise tous les appels pdfium au niveau du **process** : pdfium est une
+/// bibliothèque C non thread-safe. Défense en profondeur en plus du verrou de run
+/// DC6 (12-5c) — garantit la sûreté même si un futur appelant oublie de sérialiser.
+static PDFIUM_LOCK: Mutex<()> = Mutex::new(());
+
 /// En-tête d'un payload Swiss QR (SPC v0200).
 const SPC_HEADER: &str = "SPC\n0200";
+
+/// Borne de dimension (largeur/hauteur en px) du décodage image directe — garde
+/// anti-DoS (bombe de décompression) symétrique au cap de rendu PDF. Une image
+/// déclarant des dimensions supérieures est rejetée **avant** allocation.
+const MAX_IMAGE_DIMENSION: u32 = 10_000;
+/// Borne d'allocation mémoire totale du décodage image (~256 MiB) — filet
+/// complémentaire à [`MAX_IMAGE_DIMENSION`] contre les images sur-dimensionnées.
+const MAX_IMAGE_ALLOC: u64 = 256 * 1024 * 1024;
 
 /// Bornes du rendu PDF (anti-DoS, F4/L6). Le wiring `KESH_INBOX_MAX_PDF_PAGES`
 /// env→`DecodeConfig` est fait par l'appelant (12-5c) ; ici, défauts en dur.
@@ -97,8 +112,21 @@ fn first_spc(payloads: &[String]) -> Result<Option<ScannedQrBill>, DecodeError> 
 
 /// Décode un fichier **image** (PNG/JPG) en `ScannedQrBill`. `None` si aucun QR SPC.
 pub fn decode_spc_from_image_bytes(bytes: &[u8]) -> Result<Option<ScannedQrBill>, DecodeError> {
-    let img =
-        image::load_from_memory(bytes).map_err(|e| DecodeError::ImageDecode(e.to_string()))?;
+    // Décodage borné (anti-bombe de décompression) : `image::load_from_memory`
+    // n'applique AUCUNE limite ; on passe par `ImageReader` avec des `Limits`
+    // explicites, symétriques au cap de rendu PDF. Une image déclarant des
+    // dimensions/allocations excessives est rejetée avant d'épuiser la mémoire.
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| DecodeError::ImageDecode(e.to_string()))?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_IMAGE_ALLOC);
+    reader.limits(limits);
+    let img = reader
+        .decode()
+        .map_err(|e| DecodeError::ImageDecode(e.to_string()))?;
     first_spc(&decode_qr_from_image(&img))
 }
 
@@ -115,6 +143,11 @@ pub fn decode_spc_from_pdf_bytes(
     cfg: DecodeConfig,
 ) -> Result<Option<ScannedQrBill>, DecodeError> {
     use pdfium_render::prelude::*;
+
+    // Sérialisation process-wide (pdfium non thread-safe) — cf. PDFIUM_LOCK.
+    // `into_inner` récupère le garde même si un thread a paniqué en le tenant
+    // (le poison n'affecte pas l'état C de pdfium, réinitialisé à chaque appel).
+    let _pdfium_guard = PDFIUM_LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
     // Binding au binaire natif (libpdfium.so installé dans l'image Docker, DC1-bis).
     let bindings = Pdfium::bind_to_system_library()

@@ -94,6 +94,15 @@ pub fn store_document(
             format!("extension non sûre: {ext:?}"),
         ));
     }
+    // Un contenu vide ne porte aucun QR (le décodage échoue en amont) et
+    // violerait le CHECK `byte_size > 0` côté DB → refus explicite à la primitive
+    // pour un invariant cohérent (code-review Pass 3).
+    if bytes.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "contenu vide (0 octet)",
+        ));
+    }
 
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -225,6 +234,13 @@ mod tests {
         let dir = temp_dir("badext");
         assert!(store_document(&dir, b"x", "../p", "x", "x").is_err());
         assert!(store_document(&dir, b"x", "", "x", "x").is_err());
+    }
+
+    #[test]
+    fn store_rejects_empty_content() {
+        let dir = temp_dir("empty");
+        let err = store_document(&dir, b"", "pdf", "vide.pdf", "application/pdf").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
     #[test]
