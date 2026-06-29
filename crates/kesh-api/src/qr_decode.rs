@@ -178,10 +178,10 @@ mod tests {
                 &EncodeHints::default(),
             )
             .expect("encode QR");
-        let w = matrix.getWidth() as u32;
-        let h = matrix.getHeight() as u32;
+        let w = matrix.getWidth();
+        let h = matrix.getHeight();
         image::GrayImage::from_fn(w, h, |x, y| {
-            if matrix.get(x as u32, y as u32) {
+            if matrix.get(x, y) {
                 image::Luma([0u8])
             } else {
                 image::Luma([255u8])
