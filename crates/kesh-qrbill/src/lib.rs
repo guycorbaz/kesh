@@ -7,13 +7,16 @@
 //! - [`generate_qr_bill_pdf`] — produce the PDF bytes for an invoice + QR bill.
 //! - [`validate`] — static validation of `QrBillData` against SIX 2.2 rules.
 //! - [`build_payload`] — the raw SIX payload string (for tests / external usage).
+//! - [`parse_spc_payload`] — decode a scanned SPC payload back into typed data.
 
 pub mod generator;
+pub mod parser;
 pub mod pdf;
 pub mod types;
 pub mod validation;
 
 pub use generator::build_payload;
+pub use parser::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 pub use pdf::{
     generate_credit_note_pdf, generate_credit_note_pdf_with_date, generate_qr_bill_pdf,
     generate_qr_bill_pdf_with_date,
