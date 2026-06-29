@@ -57,6 +57,13 @@ jobs:
       - name: Add rustfmt and clippy
         run: rustup component add rustfmt clippy
 
+      # `.cargo/config.toml` configure mold comme linker
+      # (rustflags `-fuse-ld=mold`) pour tout le workspace. mold doit donc être
+      # présent sur le runner, sinon `cargo build`/`clippy`/`test` échouent avec
+      # « cannot find mold ». gcc d'ubuntu-latest (≥ 13) supporte `-fuse-ld=mold`.
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
       - uses: Swatinem/rust-cache@v2
 
       - name: Wait for MariaDB
