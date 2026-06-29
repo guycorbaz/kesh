@@ -1,6 +1,6 @@
 # Story 12.5b: Décodage serveur + entité + stockage (socle import)
 
-Status: review
+Status: done
 
 <!-- Sous-story 2/4 de l'umbrella 12-5 (validate convergé 6 passes). Périmètre T2 (décodage pdfium/rxing/image + Docker) + T3 (migration imported_supplier_invoices + stockage KESH_DOCUMENTS_DIR + intégration backup). Dépend de 12-5a (parse_spc_payload livré, commit 85a235b). NE COUVRE PAS : lecture inbox / rapport batch / sécurité / endpoints / complétion (12-5c), ni frontend (12-5d). -->
 
@@ -183,6 +183,17 @@ DC1-DC6 + L1/L3/L6 hérités umbrella. 0 patch de code (validate spec). Prêt po
 2. **Audit de complétude** vs spec → 3 manques : T2.3 (Dockerfile pdfium), T3.5 (tests entité+repo), quality gate ROUGE (clippy + fmt).
 3. **Complétion** : fix clippy (`fec89ea`), T3.5 tests (`ceab606`), T2.3 Dockerfile (`56c9ffb`), `cargo fmt`.
 4. **Mesure mémoire (hors story)** : ajout `.cargo/config.toml` `[build] jobs = 8` + mold linker + install mold CI (`7ae707f`) pour éviter la récidive OOM (32 jobs parallèles saturaient 30 GiB).
+
+### Cycle code-review — CONVERGÉ Pass 4 (trend >LOW 5→2→2→0)
+
+Cycle adversarial 4 passes, rotation **Sonnet → Haiku → Opus → Sonnet**, contexte frais + diff unique aplati à chaque passe (garde-fou Haiku anti-indexation). 3 couches/passe (Blind Hunter / Edge Case Hunter / Acceptance Auditor).
+
+- **Pass 1 (Sonnet)** — 1 HIGH + 4 MEDIUM patchés (écriture atomique, `InvalidIban`, normalisation `address_type`, doc thread-safety, page render skip), 1 dismiss ground-truth (BH-M1 « PdfRender au cap » réfuté par AC3), 8 LOW deferred.
+- **Pass 2 (Haiku)** — 1 HIGH patché (propagation `last_render_err` au cap), 1 MEDIUM reclassé dette 12-5c (`list_by_status`). **0 hallucination** (findings ancrés grep). Auditor 0 violation.
+- **Pass 3 (Opus)** — **catch architectural raté par Sonnet+Haiku** : HIGH bombe de décompression image (`ImageReader`+`Limits` vs chemin PDF capé) + 2 LOW patchés (refus 0-octet, `PDFIUM_LOCK` statique), 1 MEDIUM reclassé dette 12-5c (champs sur-longs → DbError opaque). Auditor 0 > LOW.
+- **Pass 4 (Sonnet)** — **CONVERGÉ** : les 3 couches 0 > LOW. Patches Pass 1-3 vérifiés grep-en-place, 0 régression, API `image::Limits` validée sur source réel 0.25.9.
+
+**Dettes déférées 12-5c** (documentées, propriétaire = sous-story 12-5c) : validation `status` à la frontière HTTP ; normalisation/échec-par-fichier des champs QR sur-longs (`map_db_error` 1406/1264). **Limitations durabilité** (acceptées v0.4) : répertoire non re-`fsync` après rename, GC des tmpfiles à la charge opérateur.
 
 ### Review Findings (code-review)
 
