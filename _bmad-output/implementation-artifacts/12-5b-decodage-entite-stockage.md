@@ -1,6 +1,6 @@
 # Story 12.5b: Décodage serveur + entité + stockage (socle import)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story 2/4 de l'umbrella 12-5 (validate convergé 6 passes). Périmètre T2 (décodage pdfium/rxing/image + Docker) + T3 (migration imported_supplier_invoices + stockage KESH_DOCUMENTS_DIR + intégration backup). Dépend de 12-5a (parse_spc_payload livré, commit 85a235b). NE COUVRE PAS : lecture inbox / rapport batch / sécurité / endpoints / complétion (12-5c), ni frontend (12-5d). -->
 
@@ -119,15 +119,15 @@ Migration `CREATE TABLE` **non-breaking**.
 
 ## Tasks / Subtasks
 
-- [ ] **T2.1** — Ajouter `rxing`/`image`/`pdfium-render` dans `kesh-api/Cargo.toml [dependencies]` (versions cohérentes Cargo.lock). `rxing` **reste** dev-dep de kesh-qrbill (NE PAS retirer — `generator.rs:203`).
-- [ ] **T2.2** — Module `qr_decode` : `decode_qr_from_image`, `decode_spc_from_image_bytes`, `decode_spc_from_pdf_bytes` (multi-page, multi-QR, 1er `SPC\n0200`) + type `DecodeError`. Caps pdfium (pages `KESH_INBOX_MAX_PDF_PAGES`, dimensions).
-- [ ] **T2.3** — `Dockerfile` : bundle `libpdfium.so` (tag épinglé + checksum SHA-256 + `/usr/local/lib` + `ldconfig`, amd64). Commentaire licence.
-- [ ] **T2.4** — Tests décodage (fixtures PNG/PDF 1p/PDF multipage/sans-QR/corrompu) + gestion `libpdfium.so` absent en CI host (`#[ignore]` documenté si besoin).
-- [ ] **T3.1** — Migration `CREATE TABLE imported_supplier_invoices` (schéma figé, non-breaking, CHECK texte) + ligne audit idempotence.
-- [ ] **T3.2** — Entité `ImportedSupplierInvoice`/`NewImportedSupplierInvoice` + repository (`create`, `find_by_id_scoped`, `find_by_company_hash`, `list_by_status`) + mapping `ScannedQrBill`→`New…`.
-- [ ] **T3.3** — Config `KESH_DOCUMENTS_DIR` (défaut `/data/documents`) + helper stockage `store_document`/`read_document` (SHA-256, `{sha256hex}.{ext}`, distinction ENOENT).
-- [ ] **T3.4** — Backup/export : `TABLES_TO_TRUNCATE` (ordre FK), manifeste export, compteurs `admin_full_export_e2e`/`migrations_upgrade_path`, audit idempotence.
-- [ ] **T3.5** — Tests T3 (migration, repo scopé, UNIQUE company/hash, mapping, stockage, `backup_inventory_matches_schema`).
+- [x] **T2.1** — Ajouter `rxing`/`image`/`pdfium-render` dans `kesh-api/Cargo.toml [dependencies]` (versions cohérentes Cargo.lock). `rxing` **reste** dev-dep de kesh-qrbill (NE PAS retirer — `generator.rs:203`).
+- [x] **T2.2** — Module `qr_decode` : `decode_qr_from_image`, `decode_spc_from_image_bytes`, `decode_spc_from_pdf_bytes` (multi-page, multi-QR, 1er `SPC\n0200`) + type `DecodeError`. Caps pdfium (pages `KESH_INBOX_MAX_PDF_PAGES`, dimensions).
+- [x] **T2.3** — `Dockerfile` : bundle `libpdfium.so` (tag épinglé `chromium/7920` + checksum SHA-256 + `/usr/local/lib` + `ldconfig`, amd64). Commentaire licence.
+- [x] **T2.4** — Tests décodage (PNG roundtrip / sans-QR / image corrompue verts ; PDF `#[ignore]` car `libpdfium.so` absent hôte CI) + fixtures générées à la volée via rxing writer.
+- [x] **T3.1** — Migration `CREATE TABLE imported_supplier_invoices` (schéma figé, non-breaking, CHECK texte) + ligne audit idempotence.
+- [x] **T3.2** — Entité `ImportedSupplierInvoice`/`NewImportedSupplierInvoice` + repository (`create`, `find_by_id_scoped`, `find_by_company_hash`, `list_by_status`) + mapping `ScannedQrBill`→`New…` (`from_scanned`).
+- [x] **T3.3** — Config `KESH_DOCUMENTS_DIR` (défaut `/data/documents`) + helper stockage `store_document`/`read_document` (SHA-256, `{sha256hex}.{ext}`, distinction ENOENT).
+- [x] **T3.4** — Backup/export : `TABLES_TO_TRUNCATE` (ordre FK), manifeste export, compteurs `admin_full_export_e2e`/`migrations_upgrade_path`, audit idempotence.
+- [x] **T3.5** — Tests T3 (migration, repo scopé, UNIQUE company/hash, mapping, stockage, `backup_inventory_matches_schema`).
 
 ## Dev Notes
 
@@ -175,12 +175,46 @@ Extraction de l'umbrella 12-5 (validé 6 passes) → validate dédié sous-story
 
 DC1-DC6 + L1/L3/L6 hérités umbrella. 0 patch de code (validate spec). Prêt pour `bmad-dev-story 12-5b`.
 
+### Cycle dev-story — reprise après crash OOM
+
+`dev-story 12-5b` initial (Opus 4.8) interrompu par un **crash mémoire (OOM) de Claude Code** : code T2.1/T2.2/T3.1-T3.4 écrit mais **non commité**, quality gate jamais exécuté (status resté `ready-for-dev`, Dev Agent Record vide, Tasks décochées). Reprise (Opus 4.8) :
+
+1. **Audit d'intégrité** post-crash : `git fsck` (aucune corruption, objets fantômes normaux), `cargo check --workspace` vert, aucun marqueur de conflit, fichiers non tronqués. Travail intact mais à risque (non commité, pas de stash) → **checkpoint WIP `989c7cc`** pour sécuriser avant complétion.
+2. **Audit de complétude** vs spec → 3 manques : T2.3 (Dockerfile pdfium), T3.5 (tests entité+repo), quality gate ROUGE (clippy + fmt).
+3. **Complétion** : fix clippy (`fec89ea`), T3.5 tests (`ceab606`), T2.3 Dockerfile (`56c9ffb`), `cargo fmt`.
+4. **Mesure mémoire (hors story)** : ajout `.cargo/config.toml` `[build] jobs = 8` + mold linker + install mold CI (`7ae707f`) pour éviter la récidive OOM (32 jobs parallèles saturaient 30 GiB).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — dev-story initial (interrompu OOM) + reprise/complétion.
+
 ### Debug Log References
+
+- Quality gate final (Test Locally First, exit codes vérifiés) : `cargo fmt --all --check` exit 0 ; `cargo clippy --workspace --all-targets -- -D warnings` exit 0 ; `cargo build --workspace --all-targets` exit 0 ; `cargo test --workspace -j1 -- --test-threads=1` exit 0 → **82 suites, 1616 passed, 0 failed, 8 ignored** (dont `decode_spc_from_pdf_single_page` `#[ignore]` — `libpdfium.so` absent hôte CI, exécuté en Docker).
+- T2.3 validé par build Docker ciblé du stage runtime sur `debian:bookworm-slim` : `ldconfig -p` enregistre `libpdfium.so` (`/usr/local/lib`), checksum SHA-256 `chromium/7920` vérifié.
 
 ### Completion Notes List
 
+- **T2.4 décodage** : tests `decode_spc_from_png_roundtrip` / `image_without_qr_yields_none` / `corrupt_image_yields_error` verts (fixtures générées à la volée via rxing writer, pas de binaire commité). Test PDF `#[ignore]` (contrainte native pdfium, documenté AC5).
+- **T3.5** : mapping `from_scanned` (2 tests unitaires DB-free) + repo (6 tests `#[sqlx::test]`) — round-trip, isolement multi-tenant anti-IDOR, `UNIQUE(company,hash)` rejet doublon + hash partagé inter-company OK, finders scopés. `backup_inventory_matches_schema` + `admin_full_export_e2e` (data_count 31) verts dans le run complet.
+- **Hors-périmètre confirmé non traité** (→ 12-5c/d) : lecture inbox, endpoints HTTP, `create_in_tx` (DC6), sécurité d'ingestion, réactivation `discarded`, frontend, doc utilisateur.
+- **Prochaine étape** : `bmad-code-review 12-5b` (cycle adversarial) avant merge.
+
 ### File List
+
+**Nouveaux** :
+- `crates/kesh-api/src/qr_decode.rs` — module de décodage QR (image + PDF pdfium).
+- `crates/kesh-api/src/document_storage.rs` — helper stockage `KESH_DOCUMENTS_DIR`.
+- `crates/kesh-db/migrations/20260629000001_imported_supplier_invoices.sql` — migration table staging.
+- `crates/kesh-db/src/entities/imported_supplier_invoice.rs` — entité + `from_scanned` + tests mapping.
+- `crates/kesh-db/src/repositories/imported_supplier_invoices.rs` — repository socle scopé.
+- `crates/kesh-db/tests/imported_supplier_invoices_repository.rs` — 6 tests intégration.
+
+**Modifiés** :
+- `crates/kesh-api/Cargo.toml` (deps rxing/image/pdfium-render), `Cargo.lock`.
+- `crates/kesh-api/src/config.rs` (`documents_dir`), `src/lib.rs` (modules).
+- `crates/kesh-db/src/entities/mod.rs`, `repositories/mod.rs` (exports), `backup.rs` (TABLES_TO_TRUNCATE).
+- `Dockerfile` (bundle libpdfium.so).
+- `crates/kesh-api/tests/admin_full_export_e2e.rs` (data_count 31), `crates/kesh-db/tests/migrations_upgrade_path.rs` (total 39), `docs/migrations-idempotence-audit.md`.

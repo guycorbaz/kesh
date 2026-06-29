@@ -63,7 +63,10 @@ pub fn decode_qr_from_image(img: &DynamicImage) -> Vec<String> {
     let luma = img.to_luma8();
     let (w, h) = luma.dimensions();
     match rxing::helpers::detect_multiple_in_luma(luma.into_raw(), w, h) {
-        Ok(results) => results.into_iter().map(|r| r.getText().to_string()).collect(),
+        Ok(results) => results
+            .into_iter()
+            .map(|r| r.getText().to_string())
+            .collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -83,7 +86,8 @@ fn first_spc(payloads: &[String]) -> Result<Option<ScannedQrBill>, DecodeError> 
 
 /// Décode un fichier **image** (PNG/JPG) en `ScannedQrBill`. `None` si aucun QR SPC.
 pub fn decode_spc_from_image_bytes(bytes: &[u8]) -> Result<Option<ScannedQrBill>, DecodeError> {
-    let img = image::load_from_memory(bytes).map_err(|e| DecodeError::ImageDecode(e.to_string()))?;
+    let img =
+        image::load_from_memory(bytes).map_err(|e| DecodeError::ImageDecode(e.to_string()))?;
     first_spc(&decode_qr_from_image(&img))
 }
 
