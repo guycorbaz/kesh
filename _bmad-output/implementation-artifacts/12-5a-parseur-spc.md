@@ -1,6 +1,6 @@
 # Story 12.5a: Parseur SPC (socle kesh-qrbill)
 
-Status: review
+Status: done
 
 <!-- Sous-story 1/4 de l'umbrella 12-5 (validate convergé 6 passes). Story-zéro : pose le socle parseur, aucune dép native ni DB. Réutilisable par 12-4 (scan manuel) différé. -->
 
@@ -116,3 +116,20 @@ Opus 4.8 (claude-opus-4-8[1m]). Implémentation interrompue par un crash systèm
 - `crates/kesh-qrbill/src/lib.rs` (exports parser)
 - `crates/kesh-qrbill/src/types.rs` (variant `InvalidPayload`)
 - `crates/kesh-api/src/routes/invoice_pdf.rs` (bras `map_qrbill_error`)
+
+## Change Log
+
+### Code review (2026-06-29) — CONVERGÉ Pass 1 (0 > LOW)
+
+Cycle adversarial 3 couches parallèles **Opus 4.8** (Blind Hunter / Edge Case Hunter / Acceptance Auditor) sur le diff `97abfef..85a235b`. **Trend > LOW : Pass 1 = 0** → critère d'arrêt Review Iteration Rule atteint dès la 1ʳᵉ passe (pas de 2ᵉ passe nécessaire).
+
+**Verdicts** :
+- **Blind Hunter** (diff seul) : 0 > LOW. Confirme parser panic-safe, mapping `InvalidPayload → InvoiceNotPdfReady` exhaustif, aucun `?` avalé.
+- **Edge Case Hunter** (diff + ground-truth) : 0 > LOW. **Vérifie le miroir d'index `L_*` contre `generator.rs` champ par champ — exact** (vecteur de corruption silencieuse le plus à risque : propre). Slice `creditor_iban[4..9]` prouvablement sûr (`validation.rs:47` garantit `len==21` + ASCII avant retour).
+- **Acceptance Auditor** (diff + spec) : 0 > LOW. AC1-AC5 satisfaites. Confirme que `validate_iban` + détection IID **n'est pas une déviation** (le `(cf. validate_qr_iban)` de l'AC3 est une référence croisée, pas une instruction d'appel).
+
+**Décisions de reclassement (toutes les remontées étaient LOW)** :
+- *dismiss* — Blind F1 (slice IBAN) : réfuté par ground-truth Edge (`len==21` garanti). Blind F2 (fallback K silencieux) : SIX impose majuscule, lenience intentionnelle. Auditor LOW-1 (S postal/town vide→None) : code plus robuste que le texte de spec, champ `Option`, inerte. Auditor LOW-2 (`InvalidQrIban` inatteignable) : conséquence du choix `validate_iban` prescrit. Edge L4 (BOM) : rejet sûr sans corruption.
+- *defer → 12-5b/c* — Edge L1 (montant signe/échelle), L2 (cross-check QR-IBAN↔référence SIX §3.3), L3 (currency/SCOR/ustrd verbatim) : validations métier **déléguées en aval par design** (AC umbrella « validées en aval »). À enforcer dans la couche import 12-5b/c — déjà tracé dans la spec umbrella 12-5.
+
+Aucun patch de code appliqué (convergence propre). Statut → `done`.
