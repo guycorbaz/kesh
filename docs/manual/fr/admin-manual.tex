@@ -676,8 +676,57 @@ Toute la configuration Kesh passe par des variables d'environnement, conforméme
     KESH\_DEFAULT\_CURRENCY & Devise par défaut. & \texttt{CHF} \\
     KESH\_MAX\_UPLOAD\_BYTES & Taille max upload (pièces, CAMT.053). & \texttt{52428800} (50 Mo) \\
     KESH\_FEATURE\_FLAGS & Liste de feature flags activés. & vide \\
+    KESH\_DOCUMENTS\_DIR & Dossier d'archivage des justificatifs importés (hors DB). & \texttt{/data/documents} \\
+    KESH\_INBOX\_DIR & Dossier inbox scruté à l'import de factures. & \texttt{/data/inbox} \\
+    KESH\_INBOX\_MAX\_FILE\_BYTES & Taille max d'un fichier inbox (octets). & \texttt{26214400} (25 Mo) \\
+    KESH\_INBOX\_MAX\_FILES\_PER\_RUN & Nombre max de fichiers traités par import. & \texttt{200} \\
+    KESH\_INBOX\_MAX\_PDF\_PAGES & Pages PDF max rendues par fichier (anti-DoS). & \texttt{20} \\
     \bottomrule
 \end{tabularx}
+
+\subsubsection{Import de factures depuis un dossier}
+\label{sec:inbox-import}
+
+Kesh peut importer des factures fournisseurs (PDF ou images porteurs d'un Swiss
+QR Code) déposées dans un dossier, décoder le QR côté serveur et créer des
+factures « à compléter ». Deux dossiers sont à configurer, montés en volumes
+persistants (cf. \texttt{docker-compose}) :
+
+\begin{itemize}
+    \item \texttt{KESH\_INBOX\_DIR} (défaut \texttt{/data/inbox}) — le dossier où
+    déposer les fichiers de factures. Sur un NAS Synology, montez-y un
+    \textbf{dossier partagé} accessible via File Station (par ex. un bind mount
+    \texttt{./inbox:/data/inbox}) pour pouvoir y glisser vos factures. À l'import
+    réussi, le fichier d'origine est \textbf{supprimé} de l'inbox (la copie
+    archivée fait foi) ; les fichiers en échec sont déplacés dans le
+    sous-dossier \texttt{failed/}.
+    \item \texttt{KESH\_DOCUMENTS\_DIR} (défaut \texttt{/data/documents}) — le
+    dossier d'archivage des justificatifs (copies des fichiers importés, nommées
+    \texttt{\{sha256\}.\{ext\}}). \textbf{Ne jamais} pointer ces deux dossiers
+    vers \texttt{/tmp} : leur contenu serait perdu au redémarrage du conteneur.
+\end{itemize}
+
+\paragraph{Note Synology (chemins symboliques).} Sur DSM, un dossier partagé
+comme \texttt{/data/inbox} est souvent un lien symbolique vers
+\texttt{/volume1/.../inbox}. Kesh canonicalise automatiquement les chemins au
+démarrage pour que le contrôle anti-traversal fonctionne — aucune action requise.
+
+\paragraph{Réglage \texttt{KESH\_INBOX\_MAX\_PDF\_PAGES}.} Le décodage des PDF
+rend chaque page en image (via la bibliothèque native pdfium) jusqu'à trouver le
+QR. Augmentez cette borne si vos factures dépassent 20 pages ; diminuez-la pour
+limiter la charge sur des PDF volumineux.
+
+\paragraph{Limitations connues.}
+\begin{itemize}
+    \item La bibliothèque pdfium n'est pas isolée : un PDF gravement malformé
+    peut faire planter le processus serveur (le conteneur redémarre alors
+    automatiquement). Limitez l'inbox aux fichiers de confiance.
+    \item L'inbox est un dossier \textbf{unique} par instance, non séparé par
+    société. Sur une instance hébergeant plusieurs sociétés, le premier
+    comptable qui déclenche l'import récupère tous les fichiers présents pour
+    \emph{sa} société. Sans effet pour le déploiement standard « une PME par
+    instance » (cf. issue GitHub \#199).
+\end{itemize}
 
 \subsubsection{Variables liées au monitoring (optionnelles)}
 

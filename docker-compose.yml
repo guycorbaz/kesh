@@ -61,11 +61,22 @@ services:
 
       # Logging
       RUST_LOG: ${RUST_LOG:-info}
+
+      # Import de factures depuis un dossier (Story 12-5, #194)
+      KESH_DOCUMENTS_DIR: ${KESH_DOCUMENTS_DIR:-/data/documents}
+      KESH_INBOX_DIR: ${KESH_INBOX_DIR:-/data/inbox}
+      KESH_INBOX_MAX_FILE_BYTES: ${KESH_INBOX_MAX_FILE_BYTES:-26214400}
+      KESH_INBOX_MAX_FILES_PER_RUN: ${KESH_INBOX_MAX_FILES_PER_RUN:-200}
+      KESH_INBOX_MAX_PDF_PAGES: ${KESH_INBOX_MAX_PDF_PAGES:-20}
     ports:
       - "80:80"
     volumes:
       # Mappage optionnel pour développement (rebuild nécessaire sinon)
       - ./crates:/app/crates:ro
+      # Import de factures (Story 12-5) : justificatifs archivés + dossier inbox.
+      # Persistants — déposez vos fichiers de factures dans le volume inbox.
+      - kesh-documents:/data/documents
+      - kesh-inbox:/data/inbox
     networks:
       - kesh-network
     healthcheck:
@@ -76,6 +87,11 @@ services:
 
 volumes:
   kesh-mariadb-data:
+    driver: local
+  # Story 12-5 (#194) : justificatifs archivés + dossier inbox des factures.
+  kesh-documents:
+    driver: local
+  kesh-inbox:
     driver: local
 
 networks:

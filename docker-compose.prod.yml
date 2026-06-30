@@ -103,6 +103,14 @@ services:
       KESH_LOG_FILE_ROTATION: ${KESH_LOG_FILE_ROTATION:-daily}
       KESH_LOG_FILE_MAX_FILES: ${KESH_LOG_FILE_MAX_FILES:-7}
       KESH_LOG_FILE_FORMAT: ${KESH_LOG_FILE_FORMAT:-pretty}
+
+      # Import de factures depuis un dossier (Story 12-5, #194) — montés en bind
+      # mounts host ci-dessous (déposez vos factures dans ./inbox via File Station).
+      KESH_DOCUMENTS_DIR: ${KESH_DOCUMENTS_DIR:-/data/documents}
+      KESH_INBOX_DIR: ${KESH_INBOX_DIR:-/data/inbox}
+      KESH_INBOX_MAX_FILE_BYTES: ${KESH_INBOX_MAX_FILE_BYTES:-26214400}
+      KESH_INBOX_MAX_FILES_PER_RUN: ${KESH_INBOX_MAX_FILES_PER_RUN:-200}
+      KESH_INBOX_MAX_PDF_PAGES: ${KESH_INBOX_MAX_PDF_PAGES:-20}
     ports:
       # Restriction host-side au loopback NAS (LAN privé v0.1.0, D5).
       # Accès via SSH tunnel ou reverse proxy DSM (futur v0.2+).
@@ -112,6 +120,11 @@ services:
       # du compose. Créé au 1er boot, owned root:root (le container tourne en
       # root) — cf. warning permissions dans .env.example.
       - ./log:/var/log/kesh
+      # Import de factures (Story 12-5, #194) — bind mounts host co-localisés
+      # (scope Hyper Backup unique). Déposez vos factures dans ./inbox ; les
+      # justificatifs archivés vivent dans ./documents.
+      - ./inbox:/data/inbox
+      - ./documents:/data/documents
     networks:
       - frontend
     healthcheck:
