@@ -126,8 +126,15 @@ pub async fn run_inbox_import(
         .fetch_one(&mut *lock_conn)
         .await
         .map_err(|e| AppError::Internal(format!("inbox import: GET_LOCK: {e}")))?;
-    if acquired != Some(1) {
-        return Err(AppError::InboxImportAlreadyRunning);
+    match acquired {
+        Some(1) => {}                                               // verrou acquis
+        Some(_) => return Err(AppError::InboxImportAlreadyRunning), // 0 = déjà tenu
+        None => {
+            // NULL = erreur interne MariaDB sur le verrou (jamais « déjà en cours »).
+            return Err(AppError::Internal(
+                "inbox import: GET_LOCK a retourné NULL (erreur verrou MariaDB)".into(),
+            ));
+        }
     }
 
     // (2) Traitement : on capture le résultat puis on relâche TOUJOURS le verrou

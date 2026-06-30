@@ -1,6 +1,6 @@
 # Story 12.5c: Service d'import + endpoints + complétion atomique
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story 3/4 de l'umbrella 12-5 (validate convergé 6 passes). Périmètre T4 : service de lecture inbox + sécurité + verrou de run + rapport batch FailedProposal + refactor DC6 `create_in_tx` + endpoints liste/complétion/écarter/download. Dépend de 12-5a (parse_spc_payload) ET 12-5b (qr_decode, document_storage, entité/repo imported_supplier_invoices, KESH_DOCUMENTS_DIR). NE COUVRE PAS le frontend ni la doc (12-5d). Absorbe les 2 dettes déférées en code-review 12-5b (validation status HTTP, map_db_error 1406/1264). -->
 
@@ -124,7 +124,7 @@ so that les factures fournisseurs entrent dans la comptabilité sans ressaisie d
 - [x] **T4.3 — Dette D2** : `DbError` variant pour MariaDB 1406/1264 + mapping `map_db_error` ; vérifier non-régression.
 - [x] **T4.4 — Service d'import** : module `inbox_import` (kesh-api) — lecture inbox, verrou run, sécurité (symlink/taille/stabilité/type+magic), hash+doublon (réactive `discarded`), décodage 12-5b, archivage 12-5b, staging, suppression/`failed/`, rapport `{accepted, failed, warnings}`. Constantes `error_code`.
 - [x] **T4.5 — Endpoints** : `routes/imported_supplier_invoices.rs` (nouveau) — `POST /inbox-import`, `GET /imported-supplier-invoices?status=` (valide status, dette D1), `POST /{id}/complete` (DC6 + F2 + F9 + devise), `POST /{id}/discard`, `GET /{id}/source-document` ; + `GET /supplier-invoices/{id}/source-document` (placé dans `routes/imported_supplier_invoices.rs` pour partager le helper `serve_document` — DRY, déviation cosmétique vs spec qui suggérait `supplier_invoices.rs`). Module déclaré dans `routes/mod.rs` ET câblé dans `lib.rs::build_router::comptable_routes`. RBAC Comptable+ + company-scope partout.
-- [ ] **T4.6 — Tests** : intégration import + sécurité + verrou + complétion atomique + réconciliation + download (404/IDOR) + non-régression `create_in_tx`. Quality gate exit-code vérifié.
+- [x] **T4.6 — Tests** : intégration import + sécurité + verrou + complétion atomique + réconciliation + download (404/IDOR) + non-régression `create_in_tx`. Quality gate exit-code vérifié.
 
 ## Dev Notes
 
@@ -213,6 +213,9 @@ Layer A + Layer B **CONVERGÉ 0>LOW** (ground-truth tous exacts : `pain001/mod.r
 ### Pass 5 — validate (Haiku 4.5, check de convergence unique), 2026-06-30 — CONVERGÉ
 **Verdict : PRÊT POUR DEV — 0 finding > LOW.** Ground-truth tous verts (CCY="CHF" pain001:25, line_vat_amount vat.rs:39, from_parts:85 privée, AppError::Validation:66). F-OPUS-1 (CHF-only) + F-OPUS-2 (égalité exacte) cohérents partout (AC7/L7/AC11), aucune mention résiduelle `round2`/EUR-accepté. Testabilité AC11 complète (D1/D2/F-OPUS/verrou/atomicité/IDOR/404-410). FailedProposal conforme. Éléments « à créer » (variants `DbError::DataLengthOrRange`/`AppError::InboxImportAlreadyRunning`, fns repo UPDATE, `from_parts` pub) correctement identifiés comme travail prescrit (pas des trous).
 
+### Dev-story — implémentation (Opus 4.8, 2026-06-30)
+Run unique orchestré T4.2/T4.3 → T4.1 → T4.4 → T4.5 → T4.6. **Quality gate Test Locally First exit-code vérifié** : `cargo fmt --all --check` ✓ | `cargo clippy --workspace --all-targets -- -D warnings` ✓ | `cargo build --workspace --all-targets` ✓ | `cargo test --workspace -j1 -- --test-threads=1` **exit 0, 83 suites, 1634 tests, 0 régression**. 16 nouveaux tests d'intégration `inbox_import_e2e`. Détails dans Dev Agent Record. Status `review`. Prochaine : `bmad-code-review 12-5c` (LLM ≠ Opus, cf. règle remédiation — Sonnet 4.6 recommandé).
+
 ### Synthèse du cycle validate
 Trend > LOW : **Pass 1 (Sonnet) ~13 → Pass 2 (Haiku) 6 → Pass 3 (Opus) 2 → Pass 4 (Sonnet) 1 → Pass 5 (Haiku) 0**. 5 passes, rotation Sonnet→Haiku→Opus→Sonnet→Haiku. Catches majeurs : **Pass 1 (cross-crate : `create_in_tx`→SupplierInvoiceWithLines cycle Cargo, verrou run RAII/connexion dédiée, canonicalisation NAS Synology, Σ TTC line_vat_amount)** ; **Pass 3 Opus (intégrité comptable : F-OPUS-1 EUR→pain.001 CHF mislabel → décision Guy CHF-only ; F-OPUS-2 réconciliation round2 vs total_amount DECIMAL(19,4) → égalité exacte)**. 1 décision Guy (AskUserQuestion : devise CHF-only v0.4). 2 faux-positifs Haiku réfutés grep (AppError::Validation existe, DataLengthOrRange = travail prescrit). Pas de re-split (convergence < seuil, cohésion DC6). **Prêt pour `bmad-dev-story 12-5c`** (Opus recommandé, T4.2/T4.3 refactor+D2 en tête).
 
@@ -220,8 +223,38 @@ Trend > LOW : **Pass 1 (Sonnet) ~13 → Pass 2 (Haiku) 6 → Pass 3 (Opus) 2 →
 
 ### Agent Model Used
 
+Opus 4.8 (1M) — dev-story orchestré, run unique, ordre T4.2/T4.3 (socle kesh-db) →
+T4.1 (config) → T4.4 (service) → T4.5 (endpoints) → T4.6 (tests).
+
 ### Debug Log References
+
+- T4.2 non-régression : 12 tests `supplier_invoices_repository` + 6 `imported_supplier_invoices_repository` verts après extraction `create_in_tx` (transformation `&mut *tx`→`&mut **tx` / `&mut tx`→`&mut *tx`).
+- T4.6 : 2 échecs corrigés en cours de dev — (1) complétion 400 `CONFIGURATION_REQUIRED` : le seed `seed_accounting_company` ne pose pas `default_payable_account_id` (ventes seulement) → ajout d'un UPDATE settings dans `setup()` (cohérent test repo 12-2) ; (2) test IDOR : `seed_accounting_company` hardcode le username `admin` (UNIQUE global) → 2e appel duplique → helper `other_company_jwt` créant company+user manuel à username unique.
 
 ### Completion Notes List
 
+- **T4.2 (DC6)** — `supplier_invoices::create_in_tx(&mut tx, new, user_id)` extrait (miroir `pay_in_tx`), `create` = wrapper pool-owning qui délègue + commit. `company_id` destructuré de `new` (source unique). 0 régression.
+- **T4.3 (D2)** — `DbError::DataLengthOrRange(String)` depuis MariaDB 1406/1264 dans `map_db_error` ; mapping HTTP 400 `DATA_LENGTH_OR_RANGE` (fallback hors import) ; le service intercepte ce variant → `FailedProposal` `FIELD_TOO_LONG` (HTTP 200). Grep ground-truth : 0 test asserte 1406/1264 comme `Sqlx` → ajout sûr.
+- **T4.1 (config)** — `KESH_INBOX_DIR` (`/data/inbox`) + `KESH_INBOX_MAX_FILE_BYTES`/`MAX_FILES_PER_RUN`/`MAX_PDF_PAGES` (parse+borne+warn) ; `MAX_PDF_PAGES` câblé à `DecodeConfig.max_pages`. Ajouté aux 3 sites de construction (`from_env` + `from_fields_for_test` + `make_test_config`).
+- **T4.4 (service `inbox_import`)** — verrou de run **Option A** `GET_LOCK` sur connexion dédiée `pool.acquire()`, clé `kesh_inbox_import:{DATABASE()}` (namespacée DB → isolation tests parallèles, sérialisation totale en prod mono-base), RELEASE inconditionnel (résultat capturé puis relâche). Pipeline per-fichier : filtrage type d'entrée → symlink (`symlink_metadata`) → taille (stat avant lecture) → stabilité (2 lectures espacées 25 ms) → re-check symlink TOCTOU (fallback sans dép `libc`, O_NOFOLLOW non requis) + anti-traversal canonicalisé → lecture → type+magic bytes → hash SHA-256 → doublon scopé company (réactive `discarded` via `reactivate_to_complete` qui reset `supplier_invoice_id=NULL`) → décodage 12-5b → archivage 12-5b → staging `create` → suppression inbox (succès) / `failed/{stem}_{hash8|uuid8}.{ext}` (échec). Rapport `{accepted, failed, warnings}` HTTP 200, catalogue `error_code` constantes ; `DecodeError::ImageDecode`→`UNSUPPORTED_FILE_TYPE` ; `DataLengthOrRange`→`FIELD_TOO_LONG` (nettoyage orphelin archivé best-effort, content-addressed idempotent) ; `UniqueConstraintViolation` race→`DUPLICATE` (pas de suppression de l'archive partagée) ; autre `DbError`→catastrophe 500.
+- **T4.5 (endpoints)** — `routes/imported_supplier_invoices.rs` : `POST /inbox-import` ; `GET /imported-supplier-invoices?status=` (validation D1 → 400) ; `POST /{id}/complete` (DC6 : tx unique `find_by_id_scoped_for_update` FOR UPDATE + garde statut 409 + devise CHF-only F-OPUS-1 + routage IBAN/QRR F9 + `payment_reference` C5-1 + réconciliation **exacte** F-OPUS-2 via `line_vat_amount` + `create_in_tx` + `mark_completed` + commit ; rollback total sur échec) ; `POST /{id}/discard` (204) ; 2 downloads `source-document` (404 row absente/L5, 410 fichier disque absent/F7, anti-IDOR scopé company, Content-Disposition assaini). Câblage `comptable_routes` (lib.rs) + `routes/mod.rs`. **Déviation cosmétique assumée** : `GET /supplier-invoices/{id}/source-document` placé dans `imported_supplier_invoices.rs` (partage `serve_document`, DRY) plutôt que `supplier_invoices.rs`.
+- **AppError ajoutés** : `InboxImportAlreadyRunning` (409), `ImportNotPendingCompletion{current_status}` (409 + `details.currentStatus`), `ImportCompletionRejected{error_code,message,details}` (400, codes `CURRENCY_NOT_SUPPORTED`/`IBAN_REFERENCE_MISMATCH`/`AMOUNT_MISMATCH`), `SourceDocumentNotFound` (404), `SourceDocumentGone` (410). Note : `ImportCompletionRejected` est le mécanisme retenu pour les `errorCode` canoniques distincts d'AC7 (AppError::Validation rend toujours `VALIDATION_ERROR`, insuffisant).
+- **Tests** : 16 tests d'intégration `inbox_import_e2e` verts (import/sécurité/verrou 409/complétion atomique/réconciliation exacte+sous-centime/devise EUR/IBAN-QRR/non-pending 409/discard/liste D1/download 404-410-IDOR/FIELD_TOO_LONG D2 HTTP 200) + non-régression 12-2 (18 tests repo). i18n FTL : les nouveaux codes utilisent le fallback FR de `t()` (clés FTL = 12-5d/doc, hors scope T4).
+- **Quality gate** : `cargo fmt --check` ✓, `cargo clippy --workspace --all-targets -D warnings` ✓, `cargo build --workspace --all-targets` ✓, `cargo test --workspace -j1 --test-threads=1` (cf. Change Log).
+
 ### File List
+
+**Modifiés** :
+- `crates/kesh-db/src/repositories/supplier_invoices.rs` (refactor `create`/`create_in_tx`)
+- `crates/kesh-db/src/errors.rs` (`DbError::DataLengthOrRange` + map 1406/1264)
+- `crates/kesh-db/src/repositories/imported_supplier_invoices.rs` (`find_by_id_scoped_for_update`, `find_by_supplier_invoice_id_scoped`, `mark_completed`, `mark_discarded`, `reactivate_to_complete`)
+- `crates/kesh-api/src/config.rs` (champs inbox + parsing + 2 ctors test)
+- `crates/kesh-api/src/errors.rs` (5 variants AppError + mapping HTTP + `DbError::DataLengthOrRange`→400)
+- `crates/kesh-api/src/routes/supplier_invoices.rs` (`from_parts` → `pub`)
+- `crates/kesh-api/src/routes/mod.rs` (`pub mod imported_supplier_invoices`)
+- `crates/kesh-api/src/lib.rs` (`pub mod inbox_import` + câblage 6 routes `comptable_routes`)
+
+**Créés** :
+- `crates/kesh-api/src/inbox_import.rs` (service d'import)
+- `crates/kesh-api/src/routes/imported_supplier_invoices.rs` (6 handlers)
+- `crates/kesh-api/tests/inbox_import_e2e.rs` (16 tests d'intégration)
