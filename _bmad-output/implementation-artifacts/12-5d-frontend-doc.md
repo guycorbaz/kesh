@@ -17,7 +17,7 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
   - `POST /api/v1/inbox-import` → `{ accepted:[{importedSupplierInvoiceId, fileName}], failed:[{fileName, errorCode, details?}], warnings:[String] }` (HTTP 200) ; **409** `INBOX_IMPORT_ALREADY_RUNNING` si un import est déjà en cours.
   - `GET /api/v1/imported-supplier-invoices?status={to_complete|completed|discarded}` → `ImportedSupplierInvoice[]` (status **obligatoire**, sinon 400).
   - `POST /api/v1/imported-supplier-invoices/{id}/complete` (body camelCase : `contactId, invoiceDate, supplierInvoiceNumber?, dueDate?, lines:[{description, quantity, unitPrice, vatRate, expenseAccountId}]`) → `SupplierInvoiceResponse` (200). Rejets : **409** `IMPORT_NOT_PENDING_COMPLETION` (`details.currentStatus`), **404** `IMPORTED_INVOICE_NOT_FOUND`, **400** `CURRENCY_NOT_SUPPORTED` / `IBAN_REFERENCE_MISMATCH` / `AMOUNT_MISMATCH` (`details.expected`/`actual` pour AMOUNT_MISMATCH), + erreurs `create` (FISCAL_YEAR_INVALID, etc.).
-  - `POST /api/v1/imported-supplier-invoices/{id}/discard` → **204**.
+  - `POST /api/v1/imported-supplier-invoices/{id}/discard` → **204**. Rejets : **404** `IMPORTED_INVOICE_NOT_FOUND` (row absente/hors-company), **409** `IMPORT_NOT_PENDING_COMPLETION` (`details.currentStatus` — déjà complétée/écartée, race deux onglets).
   - `GET /api/v1/imported-supplier-invoices/{id}/source-document` → binaire (avant complétion). 404 `SOURCE_DOCUMENT_NOT_FOUND` / 410 `SOURCE_DOCUMENT_GONE`.
   - `GET /api/v1/supplier-invoices/{id}/source-document` → binaire (après complétion). 404 si pas de justificatif importé (L5).
 - **Clôt l'épopée 12-5** : après merge de cette sous-story, l'umbrella PR (12-5a..d) peut être ouverte (gate Guy).
@@ -54,32 +54,35 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
    - `failed[]` listées avec `fileName` + `errorCode` **traduit** (map dédiée, cf. AC8) + `details` éventuels ;
    - `warnings[]` affichés (bandeau info) ;
    - **409 `INBOX_IMPORT_ALREADY_RUNNING`** → message « Un import est déjà en cours, réessayez » (distinct d'un rapport partiel — le `catch` discrimine via `isApiError(e) && e.code === 'INBOX_IMPORT_ALREADY_RUNNING'`).
-   - Bouton désactivé + spinner pendant l'import (le run est synchrone, peut durer plusieurs secondes — pdfium).
+   - **Toute autre erreur (M1)** : 500 (catastrophe DB/IO, ex. segfault pdfium L6), 401 (cookie expiré pendant un import long), réseau → `notifyError(err.message || 'Erreur inattendue lors de l\'import')`. Le `catch` n'avale jamais une erreur silencieusement : `if (isApiError(e) && e.code === 'INBOX_IMPORT_ALREADY_RUNNING') { ... } else { notifyError(...) }`.
+   - Bouton désactivé + spinner pendant l'import (le run est synchrone, peut durer plusieurs secondes — pdfium) ; **réactivé dans un `finally`** (succès comme échec) pour permettre une nouvelle tentative.
    - Après import, la **liste `to_complete` est rechargée** (les nouvelles importées apparaissent).
-   - **Map `errorCode → libellé FR**** (i18n) couvrant les 10 codes : `UNSUPPORTED_FILE_TYPE`, `FILE_TOO_LARGE`, `SYMLINK_REJECTED`, `DUPLICATE`, `NO_QR_CODE_FOUND`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `PDF_RENDER_ERROR`, `FILE_READ_ERROR`, `FIELD_TOO_LONG`. Code inconnu → fallback générique « Échec de l'import (code) ».
+   - **Map `errorCode → libellé FR**** (clés `imported-supplier-invoices-error-<code-kebab>`, dans le fichier de route — cf. AC8) couvrant les 10 codes : `UNSUPPORTED_FILE_TYPE`, `FILE_TOO_LARGE`, `SYMLINK_REJECTED`, `DUPLICATE`, `NO_QR_CODE_FOUND`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `PDF_RENDER_ERROR`, `FILE_READ_ERROR`, `FIELD_TOO_LONG`. Code inconnu → fallback générique « Échec de l'import (code) ».
 
 ### Liste & complétion
 
-3. **Liste `to_complete`** (sur la même page ou onglet) : pour chaque importée, afficher les coordonnées QR (créancier, IBAN, montant, référence, devise) + 3 actions : **Compléter**, **Écarter**, **Voir le justificatif** (download via `imported source-document`).
+3. **Liste `to_complete`** (sur la même page ou onglet) : **chargée au montage** (`onMount` → `listImported('to_complete')`, état de chargement spinner/skeleton ; liste vide → message explicite « Aucune facture à compléter »). Pour chaque importée, afficher les coordonnées QR (créancier, IBAN, montant, référence, devise) + 3 actions : **Compléter**, **Écarter**, **Voir le justificatif**.
+   - **Voir le justificatif** : download via `GET /imported-supplier-invoices/{id}/source-document` en **Pattern A** (`apiClient.getBlob` → blob → `triggerDownload`, gère 401-refresh — Pattern B `<a download>` ne gère PAS le refresh sur cookie httpOnly). **Erreurs (M4/L3)** : 404 `IMPORTED_INVOICE_NOT_FOUND` (race : row disparue depuis le chargement) → `notifyWarning` ; 410 `SOURCE_DOCUMENT_GONE` (fichier disque absent, L1/F7) → `notifyWarning` « fichier non restauré » ; réseau → `notifyError`.
 
-4. **Formulaire de complétion** (inline ou Dialog, pattern `supplier-invoices/+page.svelte`) :
-   - **Pré-affichage lecture seule** des coordonnées QR (guide l'utilisateur) : nom créancier, IBAN, **montant cible** (`staging.amount` — la somme TTC des lignes devra l'égaler exactement), référence.
-   - **Champs éditables** : sélection fournisseur (contacts `is_supplier=true`, `listContacts({ isSupplier: true })`), `invoiceDate` (requis), `supplierInvoiceNumber?`, `dueDate?`, **lignes** (description, quantité, PU HT, taux TVA via `listVatRates`, compte de charge `Expense` actif). Décimaux saisis en `type="text" inputmode="decimal"`, calculs via **`big.js`** (`computeLineTotal`), affichage via `formatSwissAmount`.
-   - **Total TTC live** affiché ; si `staging.amount` présent, indicateur visuel quand `Σ TTC ≠ montant cible` (le backend rejette `AMOUNT_MISMATCH` — l'UI guide AVANT soumission mais ne duplique pas la règle d'autorité).
-   - Soumission → `completeImport(id, body)` → succès `notifySuccess` + retrait de la liste + (option) redirection vers `/supplier-invoices/{newId}`.
-   - **Mapping rejets → messages UX traduits** (via `isApiError` + `err.code`) : `CURRENCY_NOT_SUPPORTED` (« Devise non supportée (CHF uniquement) »), `IBAN_REFERENCE_MISMATCH` (« Incohérence IBAN/référence QRR »), `AMOUNT_MISMATCH` (« Le total des lignes (`details.actual`) ≠ montant QR (`details.expected`) »), `IMPORT_NOT_PENDING_COMPLETION` (« Déjà complétée/écartée »), `FISCAL_YEAR_INVALID` (« Aucun exercice ouvert pour cette date »), fallback `err.message`.
+4. **Formulaire de complétion** (**Dialog**, pattern création de `supplier-invoices/+page.svelte` — DC L6) :
+   - **Pré-affichage lecture seule** des coordonnées QR (guide l'utilisateur) : nom créancier, IBAN, **montant cible** (`staging.amount` — la somme TTC des lignes devra l'égaler exactement), référence. **Avertissement sous-centime (DC-d3)** : si `staging.amount` a plus de 2 décimales significatives → bandeau « montant QR à sous-centimes, impossible à atteindre — recommandation : Écarter ».
+   - **Champs éditables** : sélection fournisseur via **`<select>` simple** chargé `listContacts({ isSupplier: true, limit: 200 })` (PAS `ContactPicker` — qui n'expose pas de filtre `isSupplier` et vit dans `$lib/components/invoices/` ; le `<select>` est le pattern ground-truth de `supplier-invoices/+page.svelte`, plus bas risque — C5/A2), `invoiceDate` (requis), `supplierInvoiceNumber?`, `dueDate?`, **lignes** (description, quantité, PU HT, taux TVA via `listVatRates`, compte de charge `Expense` actif via `fetchAccounts()` filtré). Décimaux saisis en `type="text" inputmode="decimal"`, calculs via **`big.js`** (`computeLineTotal`), affichage via `formatSwissAmount`.
+   - **Total TTC live** affiché ; si `staging.amount` présent, indicateur visuel quand `Σ TTC ≠ montant cible`. **Le bouton Valider reste TOUJOURS actif** (autorité = backend `AMOUNT_MISMATCH`, jamais dupliquée/bloquée côté UI — DC-d3).
+   - **Validation client avant soumission (M3)** : bouton Valider **désactivé** si (a) aucun fournisseur sélectionné, (b) 0 ligne, ou (c) une ligne a `description` vide (NOT NULL + CHECK DB) — indication visuelle sur le champ fautif. La réconciliation montant n'est PAS une condition de désactivation (DC-d3).
+   - Soumission → `completeImport(id, body)` → succès `notifySuccess` + retrait de la liste + **redirection recommandée** vers `/supplier-invoices/{newId}` (`SupplierInvoiceResponse.id` disponible — L2, à implémenter).
+   - **Mapping rejets → messages UX traduits** (via `isApiError` + `err.code`) : `CURRENCY_NOT_SUPPORTED` (« Devise non supportée (CHF uniquement) »), `IBAN_REFERENCE_MISMATCH` (« Incohérence IBAN/référence QRR »), `AMOUNT_MISMATCH` (« Le total des lignes (`details.actual`) ≠ montant QR (`details.expected`) »), `IMPORT_NOT_PENDING_COMPLETION` (« Déjà complétée/écartée »), `IMPORTED_INVOICE_NOT_FOUND` (« Facture importée introuvable »), `FISCAL_YEAR_INVALID` (« Aucun exercice ouvert pour cette date »), fallback `err.message`.
 
-5. **Écarter** : confirmation (Dialog ou `confirm`) → `discardImport(id)` (204) → retrait de la liste + `notifySuccess`. Texte : « Le fichier justificatif reste conservé. »
+5. **Écarter** : confirmation (Dialog) → `discardImport(id)` (204) → retrait de la liste + `notifySuccess`. Texte : « Le fichier justificatif reste conservé. » **Erreurs (M5/A1)** : `catch` mappant 409 `IMPORT_NOT_PENDING_COMPLETION` (« Déjà complétée/écartée par une autre session ») + 404 `IMPORTED_INVOICE_NOT_FOUND` (« Facture importée introuvable ») + fallback `notifyError(err.message || 'Impossible d\'écarter')` ; rechargement de la liste sur conflit pour resynchroniser.
 
 ### Justificatif sur le détail facture
 
-6. **Détail facture fournisseur** (`/(app)/supplier-invoices/[id]/+page.svelte`) : lien **« Voir la facture d'origine »** → download via `GET /supplier-invoices/{id}/source-document` (Pattern A `getBlob` + ancre éphémère, gère 401-refresh). **DC-d1 (à ratifier validate)** : le lien est **toujours rendu** ; au clic, un 404 `SOURCE_DOCUMENT_NOT_FOUND` (facture créée directement 12-2, L5) ou 410 `SOURCE_DOCUMENT_GONE` (fichier non restauré, L1/F7) → `notifyInfo`/`notifyWarning` traduit, **PAS** d'erreur bloquante. Évite un champ backend `hasSourceDocument` (modif de 12-5c `done`). *(Alternative envisageable en validate : ajouter `hasSourceDocument: bool` à `SupplierInvoiceResponse` pour un rendu conditionnel — déviation backend, à trancher.)*
+6. **Détail facture fournisseur** (`/(app)/supplier-invoices/[id]/+page.svelte`) : lien **« Voir la facture d'origine »** → download via `GET /supplier-invoices/{id}/source-document` (**Pattern A** `getBlob` + ancre éphémère, gère 401-refresh). **DC-d1 FIGÉ** : le lien est **toujours rendu** (pas de champ backend `hasSourceDocument` — 12-5c `done`, cf. DC-d1). Au clic : **404 `SOURCE_DOCUMENT_NOT_FOUND`** (facture directe 12-2, L5) → **`notifyInfo`** « Cette facture n'a pas de justificatif importé » ; **410 `SOURCE_DOCUMENT_GONE`** (fichier non restauré, L1/F7) → **`notifyWarning`** « Justificatif non restauré » ; réseau → `notifyError`. Jamais d'erreur bloquante.
 
 ### Navigation & i18n
 
 7. **Sidebar** (`(app)/+layout.svelte`) : entrée vers `/supplier-invoices/import` (groupe « Quotidien », pattern existant — visible tous rôles côté sidebar, accès réel gardé Comptable+ backend + `+page.ts`). `data-testid` auto `nav-link-supplier-invoices-import`.
 
-8. **i18n** : 100% des chaînes via `i18nMsg('clé', 'fallback FR')` (système runtime custom, `i18nMsg` de `i18n.svelte.ts` — PAS de `.ftl`/paraglide). Clés préfixées `import-` / `imported-supplier-invoices-`. Les valeurs FR sont le fallback inline (les locales DE/IT/EN sont gérées côté backend `/api/v1/i18n/messages`, valeurs FR provisoires acceptées — cohérent politique projet). Map `errorCode → libellé` = clés `import-error-<code-kebab>`.
+8. **i18n** : 100% des chaînes via `i18nMsg('clé', 'fallback FR')` (système runtime custom, `i18nMsg` de `i18n.svelte.ts` — PAS de `.ftl`/paraglide). **Préfixe unique `imported-supplier-invoices-`** pour TOUTES les clés (y compris la map errorCode → `imported-supplier-invoices-error-<code-kebab>`). **Garde-fou `lint-i18n-ownership` (C3)** : le linter (`frontend/scripts/lint-i18n-ownership.js`) exige que les fichiers d'un feature folder `src/lib/features/X/` n'utilisent QUE des clés préfixées `X-`. Donc : (a) le **feature module** `imported-supplier-invoices/` ne contient QUE types + API (AUCUN `i18nMsg`) ; (b) tous les appels `i18nMsg(...)` ET la map errorCode vivent dans les **fichiers de route** `src/routes/(app)/supplier-invoices/import/+page.svelte` (les routes ne sont pas soumises au check d'ownership feature, mais le préfixe unique évite toute ambiguïté). Les valeurs FR sont le fallback inline (DE/IT/EN gérées backend `/api/v1/i18n/messages`, valeurs FR provisoires acceptées — cohérent politique projet).
 
 ### Documentation
 
@@ -91,16 +94,20 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
 
 12. **`README.md`** : section « Fonctionnalités » — retirer/mettre à jour les mentions « *(scan QR-facture à venir)* » (lignes ~31-32) ; ajouter l'import-répertoire. « Feuille de route » — refléter l'import dans la ligne v0.x correspondante (✓ / 🚧).
 
+12-bis. **`website/` GitHub Pages (C2)** — la checklist pré-push CLAUDE.md impose de vérifier `website/index.html` + `website/roadmap.html` à chaque push de PR. **`website/roadmap.html`** (~l.241) décrit encore E12 de façon périmée (« Credits & Payments (pain.001)... » antérieur à 12-1/12-2/12-5) : **mettre à jour** la description E12 pour refléter avoirs + factures fournisseurs + **import répertoire**. Vérifier `website/index.html` : pas d'over-claim/under-claim sur l'import. (Le déploiement Pages est auto sur push `main` touchant `website/**`.)
+
 13. **`docs/manual/fr/admin-manual.tex`** : (a) entrées des 5 vars dans la table « Variables optionnelles » (~l.659) ; (b) nouvelle sous-section `\subsection{Import de factures depuis un dossier}` : configuration `KESH_INBOX_DIR` sur NAS Synology (dossier partagé), caveat canonicalisation symlink `/data`→`/volume1`, persistance `KESH_DOCUMENTS_DIR`, réglage `KESH_INBOX_MAX_PDF_PAGES`, limitation **L6** (pdfium segfault PDF malformé tue le process) + **L8** (inbox non partitionné par tenant, Issue #199). **Régénérer le PDF** (`make fr` dans `docs/manual/` ; **NE PAS** bumper `\keshVersion` — gate release).
 
 ### Qualité
 
-14. **E2E Playwright** `frontend/tests/e2e/inbox-import.spec.ts` (pattern `supplier-invoices.spec.ts`) — flux **UI** :
-    - login → navigation vers `/supplier-invoices/import` → clic « Importer le dossier » → rapport rendu (au minimum le bandeau résultat, inbox vide → 0 créées sans crash).
-    - liste `to_complete` + ouverture formulaire complétion + soumission (sur une importée **seedée**) → statut passe `completed` / disparaît de la liste.
-    - écarter une importée → disparaît.
-    - **DC-d4 (mécanisme de seed E2E, à ratifier validate)** : seeder une row `imported_supplier_invoices` (preset `seedTestState` étendu OU dépôt d'un fichier fixture QR PNG dans `KESH_INBOX_DIR` du serveur de test avant déclenchement). Le pipeline d'import lui-même est **déjà couvert** par les 16 tests d'intégration 12-5c — l'E2E 12-5d couvre les **flux UI**, pas le décodage.
-    - Pré-requis E2E : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (Ubuntu 26.04+, cf. memory) + MariaDB + seed CI.
+14. **E2E Playwright** `frontend/tests/e2e/inbox-import.spec.ts` (pattern `supplier-invoices.spec.ts`) — flux **UI**, **seed via DC-d4** (fixture PNG déposée dans `KESH_INBOX_DIR` du serveur de test puis import réel ; PNG→rxing, pas de pdfium) :
+    - login → navigation vers `/supplier-invoices/import` → clic « Importer le dossier » → **rapport rendu** (inbox vide → 0 créées sans crash ; avec fixture → ≥1 créée).
+    - après import de la fixture, la **liste `to_complete`** affiche l'importée → ouverture du formulaire de complétion → remplissage (fournisseur seedé, date, 1 ligne au montant cible) → soumission → statut passe `completed` / disparaît de la liste.
+    - **écarter** une importée → disparaît + `notifySuccess`.
+    - **« Voir le justificatif »** (L4) sur une importée → assert download déclenché (le fichier vient d'être archivé par l'import réel — pas de 410).
+    - **Validation client** : bouton Valider désactivé si pas de fournisseur / 0 ligne (assert).
+    - **Fallback (DC-d4)** : si le harness CI ne peut pas partager `KESH_INBOX_DIR` (chemin non inscriptible par le runner), marquer les scénarios dépendant de l'import réel `test.skip(reason explicite)` ; le flux complétion reste couvert par Vitest composant + 12-5c intégration. NE PAS étendre le preset Rust `seedTestState` (modif backend).
+    - Pré-requis E2E : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (Ubuntu 26.04+, cf. memory) + MariaDB + seed CI + fixture `frontend/tests/fixtures/spc_*.png` pré-commitée (générable via le writer rxing, cf. `inbox_import_e2e.rs` 12-5c `qr_png_from_payload`).
 
 15. **Quality gate Test Locally First — exit code vérifié** :
     - Frontend : `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build`.
@@ -108,13 +115,13 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
     - Backend : si aucun fichier Rust touché (12-5d = frontend+doc), la suite backend reste verte par construction ; lancer `cargo build --workspace` par sécurité si un type partagé bouge. **PAS** `cargo test | grep` (exit code masqué, cf. `feedback_cargo_test_pipe_masks_exit`).
     - 0 régression `npm run test:unit` (333 vitest baseline) + `svelte-check` 0 erreur.
 
-## Décisions de conception (DC) — à figer en validate
+## Décisions de conception (DC) — FIGÉES (validate Pass 1)
 
-- **DC-d1** — visibilité « Voir la facture d'origine » : **toujours rendu + 404/410 gracieux** (défaut, pas de modif backend 12-5c). Alternative : champ `hasSourceDocument` backend (déviation). → trancher validate/Guy.
-- **DC-d2** — route de l'écran : **`/supplier-invoices/import`** (sous-route proche du domaine). Alternative `/imported-supplier-invoices`. → figer validate.
-- **DC-d3** — le formulaire **pré-affiche le montant QR cible** et indique visuellement l'écart, mais **ne duplique pas** la règle de réconciliation exacte (autorité = backend `AMOUNT_MISMATCH`). L'égalité est centime-exacte côté backend (F-OPUS-2) ; l'UI guide sans bloquer la soumission (le backend tranche).
-- **DC-d4** — mécanisme de seed E2E (fixture inbox vs preset DB). → figer validate.
-- **DC-d5** — la liste des importées est rechargée après import/complétion/écart (pas de store global réactif inter-pages nécessaire pour v0.4).
+- **DC-d1 [✅ FIGÉ — always-render + 404/410 gracieux, AUCUNE modif backend]** : le lien « Voir la facture d'origine » est **toujours rendu** sur le détail facture fournisseur ; au clic, un 404 `SOURCE_DOCUMENT_NOT_FOUND` (facture directe 12-2 sans justificatif, L5) → `notifyInfo` « Cette facture n'a pas de justificatif importé » ; un 410 `SOURCE_DOCUMENT_GONE` → `notifyWarning` « Justificatif non restauré ». **L'alternative `hasSourceDocument: bool` est REJETÉE** : elle rouvrirait 12-5c (status `done`, review convergé, 1634 tests verts) → violation de la frontière frontend-only + contrat STOP-modif-architecturale. UX accepté v0.4 : sur les factures manuelles (majorité en début de vie PME), le lien clique « à vide » avec un `notifyInfo` non bloquant. *(⚠️ Gate Guy : si tu préfères le rendu conditionnel via champ backend, ce serait une story de suivi sur 12-2/12-5c, pas 12-5d.)*
+- **DC-d2 [✅ FIGÉ — `/supplier-invoices/import`]** : route de l'écran import+liste, sous le domaine existant `supplier-invoices/`.
+- **DC-d3 [✅ FIGÉ — bouton Valider toujours actif, autorité backend]** : le formulaire **pré-affiche le montant QR cible** et indique visuellement l'écart `Σ TTC ≠ cible`, mais **le bouton Valider reste actif** (la règle d'égalité centime-exacte F-OPUS-2 est tranchée par le backend `AMOUNT_MISMATCH`, jamais dupliquée/bloquée côté UI). **Cas sous-centime** (QR tiers non conforme SIX 2.2, `amount` à >2 décimales non nulles) : si `staging.amount` a plus de 2 décimales significatives, afficher un **avertissement distinct** « Le montant QR contient des sous-centimes (X) — impossible à atteindre par des lignes centime-exactes ; recommandation : Écarter cette facture ».
+- **DC-d4 [✅ FIGÉ — E2E round-trip via fixture PNG dans l'inbox, AUCUNE modif backend]** : le test E2E crée la row staging en **exécutant le vrai import** — le setup E2E dépose un **fichier fixture QR PNG pré-commité** (`frontend/tests/fixtures/spc_*.png`, image → `rxing`, **pas de pdfium**) dans le `KESH_INBOX_DIR` du serveur de test (écriture Node `fs`, même hôte que le serveur en CI), puis clique « Importer ». La config Playwright (`webServer` / env de test) pointe `KESH_INBOX_DIR` vers un dossier **inscriptible par le test runner**. Le pipeline d'import lui-même reste couvert par les 16 tests d'intégration 12-5c — l'E2E valide les **flux UI**. **Fallback documenté** : si le harness ne peut pas partager le chemin inbox (CI isolé), le scénario « compléter une importée seedée » est `test.skip(reason)` explicite et la complétion reste couverte par Vitest (composant) + 12-5c. **PAS** d'extension du preset Rust `seedTestState` (= modif backend, rejetée).
+- **DC-d5 [✅ FIGÉ]** : la liste des importées est **chargée au montage** (`onMount` → `listImported('to_complete')`) et **rechargée** après import/complétion/écart (pas de store global réactif inter-pages pour v0.4).
 
 ## Dev Notes
 
@@ -133,11 +140,11 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
 
 **i18n** (`$lib/shared/utils/i18n.svelte.ts`) : `i18nMsg(key, fallbackFR, args?)`, substitution `{ $var }`. Messages servis par `/api/v1/i18n/messages` selon locale. FR = fallback inline. DE/IT/EN désactivés (dropdown disabled, Story 2.1).
 
-**Download authentifié** : Pattern A (recommandé, gère 401) `apiClient.getBlob(url)` → `blob()` → ancre éphémère `triggerDownload` (cf. `reports.api.ts` / `exports.api.ts`, filename via `parseContentDispositionFilename`). Pattern B (simple) ancre `<a href={url} download={name}>` (cf. `payment-batches/[id]/+page.svelte` pain.001).
+**Download authentifié** : Pattern A (recommandé, gère 401) `apiClient.getBlob(url)` → `blob()` → ancre éphémère `triggerDownload` (cf. `exports.api.ts` / `reports.api.ts`). `parseContentDispositionFilename` existe dans **`exports.api.ts:52`** (et `admin-backup.api.ts`), **PAS** dans `reports.api.ts` (qui code le filename en dur) — importer/recopier depuis `exports.api.ts` pour extraire le nom du header `Content-Disposition`. Pattern B (simple) ancre `<a href={url} download={name}>` (cf. `payment-batches/[id]/+page.svelte` pain.001) — ne gère PAS le 401-refresh.
 
 **Sidebar** (`(app)/+layout.svelte`) : `navGroups` (quotidien/mensuel/administration). `supplier-invoices` + `payment-batches` déjà dans « quotidien » (non restreints sidebar). `isAdmin = $derived(role==='Admin')`. Ajouter l'entrée import dans `quotidien.items`. `navTestid(href)` → `nav-link-...`.
 
-**Composants UI** (`$lib/components/ui/`) : shadcn/bits-ui — `Button` (variant default/outline/ghost/destructive, size sm), `Input`, `Dialog.{Root,Content,Header,Title,Description,Footer,Trigger}`, `Select` (mais pages utilisent `<select>` brut). `notify.ts` : `notifySuccess/Error/Warning/Info`. Icônes `@lucide/svelte`. `ContactPicker` (combobox ARIA, props `selected/onSelect/placeholder`, n'expose PAS de filtre `isSupplier` → soit étendre, soit garder le `<select>` simple chargé `isSupplier:true`). `BankImportUpload.svelte` = analogue le plus proche pour « déclencher + afficher rapport batch ».
+**Composants UI** (`$lib/components/ui/`) : shadcn/bits-ui — `Button` (variant default/outline/ghost/destructive, size sm), `Input`, `Dialog.{Root,Content,Header,Title,Description,Footer,Trigger}`, `Select` (mais pages utilisent `<select>` brut). `notify.ts` : `notifySuccess/Error/Warning/Info`. Icônes `@lucide/svelte`. `ContactPicker` (à **`$lib/components/invoices/ContactPicker.svelte`** — PAS `ui/` ; combobox ARIA, props `selected/onSelect/placeholder`, n'expose PAS de filtre `isSupplier`) → **NE PAS l'utiliser** ; garder le `<select>` simple chargé `listContacts({ isSupplier:true })` (pattern ground-truth `supplier-invoices/+page.svelte`, plus bas risque — DC C5). `BankImportUpload.svelte` = analogue le plus proche pour « déclencher + afficher rapport batch ».
 
 **Tokens CSS** : `bg-primary/text-primary`, `text-text-muted`, `text-destructive/text-error`, `border-border`, `bg-surface/-alt/-hover`, `bg-warning-soft/border-warning`, `bg-error-soft/border-error`.
 
@@ -168,6 +175,21 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
 - [Source: frontend ground-truth] — `supplier-invoices/+page.svelte`, `api-client.ts`, `i18n.svelte.ts`, `(app)/+layout.svelte`, `users/+page.ts`, `reports.api.ts`.
 
 ## Change Log
+
+### Validate Pass 1 (Sonnet 4.6, 3 couches : fidélité ground-truth / complétude AC / conventions-faisabilité), 2026-06-30
+Trend > LOW : **~9** (2 HIGH + 7 MEDIUM). Layer fidélité : spec **fidèle** sur TOUS les contrats critiques (6 endpoints, paths, HTTP status, error codes, `CompleteImportRequest` shape camelCase, status strings, `AMOUNT_MISMATCH details.expected/actual`, champs entité camelCase, compteurs doc déjà faits 12-5b → scope « hors 12-5d » légitime). Patches :
+- **H1** — DC-d1 figé : « always-render + 404/410 gracieux », alternative backend `hasSourceDocument` **rejetée** (rouvrirait 12-5c `done` → viole frontière frontend-only). Flag gate Guy.
+- **H2/C1** — DC-d4 figé : E2E round-trip via fixture PNG déposée dans `KESH_INBOX_DIR` du serveur de test (PNG→rxing, pas pdfium, pas de modif backend) ; fallback `test.skip` documenté si harness ne partage pas le chemin.
+- **DC-d2/d3/d5 figés** : route `/supplier-invoices/import` ; bouton Valider toujours actif (autorité backend) + avertissement sous-centime → recommandation Écarter ; liste chargée `onMount` + rechargée.
+- **M1** — fallback `notifyError` pour toute erreur non-409 de `/inbox-import` (500/401/réseau) + bouton réactivé en `finally`.
+- **M3** — validation client formulaire complétion (fournisseur requis, ≥1 ligne, `description` non vide) → bouton désactivé.
+- **M4/L3** — error-handling download pré-complétion (404/410/réseau) + Pattern A obligatoire.
+- **M5/A1** — error-handling discard (404 `IMPORTED_INVOICE_NOT_FOUND` / 409 `IMPORT_NOT_PENDING_COMPLETION` + fallback).
+- **C2** — ajout AC12-bis : `website/roadmap.html` (description E12 périmée) + `website/index.html` (checklist pré-push CLAUDE.md).
+- **C3** — i18n : préfixe unique `imported-supplier-invoices-*`, `i18nMsg` dans les fichiers de route (PAS le feature module) → `lint-i18n-ownership` vert.
+- **LOW** — chemin `ContactPicker` (`invoices/` pas `ui/`, + pin `<select>`), `parseContentDispositionFilename` dans `exports.api.ts` (pas `reports.api.ts`), notifyInfo/Warning mapping, Dialog (pas inline), redirect post-complétion recommandée, E2E « Voir le justificatif ».
+
+Pass 2 : Haiku 4.5 (contexte frais).
 
 ## Dev Agent Record
 
