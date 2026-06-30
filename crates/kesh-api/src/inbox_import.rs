@@ -265,19 +265,28 @@ async fn process_one_file(
 ) -> Result<FileOutcome, AppError> {
     // (1) Symlink rejeté (jamais suivi/ouvert).
     if sym_meta.file_type().is_symlink() {
-        move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-        return Ok(failed(ERR_SYMLINK_REJECTED, None));
+        return dispose_failed(
+            path,
+            failed_dir,
+            file_name,
+            &random_suffix(),
+            ERR_SYMLINK_REJECTED,
+            None,
+        );
     }
 
     // (2) Taille via stat (PAS de lecture du contenu) — anti-DoS mémoire.
     if sym_meta.len() > config.inbox_max_file_bytes {
-        move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-        return Ok(failed(
+        return dispose_failed(
+            path,
+            failed_dir,
+            file_name,
+            &random_suffix(),
             ERR_FILE_TOO_LARGE,
             Some(
                 serde_json::json!({ "byteSize": sym_meta.len(), "maxBytes": config.inbox_max_file_bytes }),
             ),
-        ));
+        );
     }
 
     // (3) Stabilité : taille + mtime identiques sur 2 lectures espacées.
@@ -286,9 +295,17 @@ async fn process_one_file(
     tokio::time::sleep(STABILITY_DELAY).await;
     let meta2 = match std::fs::metadata(path) {
         Ok(m) => m,
+        // `dispose_failed` distingue ENOENT (disparu → skip) d'une autre erreur IO
+        // (présent mais illisible → failed FILE_READ_ERROR).
         Err(_) => {
-            move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-            return Ok(failed(ERR_FILE_READ_ERROR, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &random_suffix(),
+                ERR_FILE_READ_ERROR,
+                None,
+            );
         }
     };
     if meta2.len() != len1 || meta2.modified().ok() != mtime1 {
@@ -303,13 +320,25 @@ async fn process_one_file(
     //         (O_NOFOLLOW) — risque modéré documenté (inbox semi-contrôlée admin, L6).
     match std::fs::symlink_metadata(path) {
         Ok(m) if m.file_type().is_symlink() => {
-            move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-            return Ok(failed(ERR_SYMLINK_REJECTED, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &random_suffix(),
+                ERR_SYMLINK_REJECTED,
+                None,
+            );
         }
         Ok(_) => {}
         Err(_) => {
-            move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-            return Ok(failed(ERR_FILE_READ_ERROR, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &random_suffix(),
+                ERR_FILE_READ_ERROR,
+                None,
+            );
         }
     }
 
@@ -318,13 +347,25 @@ async fn process_one_file(
     // du traitement — il a déjà échoué. Refus défensif si hors racine.
     match std::fs::canonicalize(path) {
         Ok(canon) if !canon.starts_with(inbox_root) || canon.starts_with(failed_dir) => {
-            move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-            return Ok(failed(ERR_FILE_READ_ERROR, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &random_suffix(),
+                ERR_FILE_READ_ERROR,
+                None,
+            );
         }
         Ok(_) => {}
         Err(_) => {
-            move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-            return Ok(failed(ERR_FILE_READ_ERROR, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &random_suffix(),
+                ERR_FILE_READ_ERROR,
+                None,
+            );
         }
     }
 
@@ -332,8 +373,14 @@ async fn process_one_file(
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(_) => {
-            move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-            return Ok(failed(ERR_FILE_READ_ERROR, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &random_suffix(),
+                ERR_FILE_READ_ERROR,
+                None,
+            );
         }
     };
 
@@ -345,8 +392,14 @@ async fn process_one_file(
         .unwrap_or(false);
     let ext = ext.unwrap_or_default();
     if !ext_ok || !magic_matches(&ext, &bytes) {
-        move_to_failed(path, failed_dir, file_name, &random_suffix())?;
-        return Ok(failed(ERR_UNSUPPORTED_FILE_TYPE, None));
+        return dispose_failed(
+            path,
+            failed_dir,
+            file_name,
+            &random_suffix(),
+            ERR_UNSUPPORTED_FILE_TYPE,
+            None,
+        );
     }
 
     // (5) Hash SHA-256 (avant décodage) → court-circuit doublon (AC6).
@@ -366,13 +419,11 @@ async fn process_one_file(
                 return Ok(FileOutcome::Accepted(existing.id));
             }
             // Race : la row n'est plus `discarded` → traité comme doublon.
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            return Ok(failed(ERR_DUPLICATE, None));
+            return dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None);
         }
         Some(_) => {
             // Row `to_complete` / `completed` existante → doublon.
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            return Ok(failed(ERR_DUPLICATE, None));
+            return dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None);
         }
         None => {}
     }
@@ -392,13 +443,18 @@ async fn process_one_file(
     let scanned = match decode_result {
         Ok(Some(s)) => s,
         Ok(None) => {
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            return Ok(failed(ERR_NO_QR_CODE_FOUND, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &disambig,
+                ERR_NO_QR_CODE_FOUND,
+                None,
+            );
         }
         Err(e) => {
             let code = map_decode_error(&e);
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            return Ok(failed(code, None));
+            return dispose_failed(path, failed_dir, file_name, &disambig, code, None);
         }
     };
 
@@ -408,8 +464,14 @@ async fn process_one_file(
     {
         Ok(d) => d,
         Err(_) => {
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            return Ok(failed(ERR_FILE_READ_ERROR, None));
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &disambig,
+                ERR_FILE_READ_ERROR,
+                None,
+            );
         }
     };
     let storage_path = doc.storage_path.clone();
@@ -424,16 +486,21 @@ async fn process_one_file(
         Err(DbError::UniqueConstraintViolation(_)) => {
             // Race sur UNIQUE (company_id, file_hash) : le justificatif archivé est
             // partagé (content-addressed) avec la row gagnante → NE PAS le supprimer.
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            Ok(failed(ERR_DUPLICATE, None))
+            dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None)
         }
         Err(DbError::DataLengthOrRange(_)) => {
             // Champ QR tiers sur-long (hors SIX 2.2) → échec par-fichier propre (D2).
             // Nettoyage best-effort de l'orphelin archivé (content-addressed →
             // idempotent : un ré-import réécrirait le même chemin).
             let _ = std::fs::remove_file(documents_root.join(&storage_path));
-            move_to_failed(path, failed_dir, file_name, &disambig)?;
-            Ok(failed(ERR_FIELD_TOO_LONG, None))
+            dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &disambig,
+                ERR_FIELD_TOO_LONG,
+                None,
+            )
         }
         // Toute autre DbError = catastrophe (pool mort, etc.) → 500 global.
         Err(e) => Err(AppError::Database(e)),
@@ -441,13 +508,6 @@ async fn process_one_file(
 }
 
 // --- Helpers -----------------------------------------------------------------
-
-fn failed(error_code: &'static str, details: Option<serde_json::Value>) -> FileOutcome {
-    FileOutcome::Failed {
-        error_code,
-        details,
-    }
-}
 
 fn ext_of(name: &str) -> Option<String> {
     Path::new(name)
@@ -491,18 +551,49 @@ fn random_suffix() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..8].to_string()
 }
 
+/// Dispose d'un fichier en échec : tente le déplacement vers `failed/` puis
+/// renvoie l'issue de rapport correspondante.
+///
+/// **Race fichier disparu (BH1)** : si le fichier s'est volatilisé entre sa
+/// détection (`read_dir`) et ici (un outil d'upload qui supprime la source après
+/// copie), `move_to_failed` renvoie `Ok(false)` (ENOENT) → l'issue est
+/// `Skipped` (comme la race `read_dir`), PAS un `failed[]` ni un 500 qui
+/// abattrait tout le run. Une autre erreur IO du `rename` reste une catastrophe → 500.
+fn dispose_failed(
+    path: &Path,
+    failed_dir: &Path,
+    file_name: &str,
+    disambig: &str,
+    error_code: &'static str,
+    details: Option<serde_json::Value>,
+) -> Result<FileOutcome, AppError> {
+    if move_to_failed(path, failed_dir, file_name, disambig)? {
+        Ok(FileOutcome::Failed {
+            error_code,
+            details,
+        })
+    } else {
+        Ok(FileOutcome::Skipped(format!(
+            "Fichier « {file_name} » disparu pendant le traitement (race) — ignoré ce tour."
+        )))
+    }
+}
+
 /// Déplace un fichier vers `failed/` sous `{stem}_{disambig}.{ext}`.
 ///
 /// `{stem}` est extrait via `Path::file_stem()` (filename seul, jamais de
 /// composant de chemin — un nom malveillant `../../x.pdf` ne s'échappe pas).
 /// Le suffixe `{disambig}` (hash8 du contenu ou UUID8) évite qu'un 2ᵉ fichier
 /// homonyme écrase le 1ᵉʳ (`rename` POSIX écrase atomiquement une cible homonyme).
+///
+/// Retour : `Ok(true)` = déplacé ; `Ok(false)` = source disparue (ENOENT, race) ;
+/// `Err` = autre erreur IO (catastrophe → 500).
 fn move_to_failed(
     path: &Path,
     failed_dir: &Path,
     file_name: &str,
     disambig: &str,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let p = Path::new(file_name);
     let stem = p
         .file_stem()
@@ -514,11 +605,16 @@ fn move_to_failed(
         None => format!("{stem}_{disambig}"),
     };
     let target = failed_dir.join(target_name);
-    std::fs::rename(path, &target).map_err(|e| {
-        // Échec de disposal = IO catastrophe (le fichier resterait dans l'inbox et
-        // serait re-traité en boucle) → 500.
-        AppError::Internal(format!("inbox import: déplacement vers failed/: {e}"))
-    })
+    match std::fs::rename(path, &target) {
+        Ok(()) => Ok(true),
+        // Source disparue entre détection et déplacement → race bénigne (skip).
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        // Autre échec de disposal = IO catastrophe (le fichier resterait dans
+        // l'inbox et serait re-traité en boucle) → 500.
+        Err(e) => Err(AppError::Internal(format!(
+            "inbox import: déplacement vers failed/: {e}"
+        ))),
+    }
 }
 
 /// Supprime un fichier inbox traité avec succès (tolère `ENOENT`, idempotent).

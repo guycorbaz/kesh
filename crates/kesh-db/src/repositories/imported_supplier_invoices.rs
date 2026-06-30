@@ -147,7 +147,7 @@ pub async fn mark_completed(
     id: i64,
     supplier_invoice_id: i64,
 ) -> Result<(), DbError> {
-    sqlx::query(
+    let affected = sqlx::query(
         "UPDATE imported_supplier_invoices \
          SET status = 'completed', supplier_invoice_id = ? \
          WHERE id = ? AND company_id = ? AND status = 'to_complete'",
@@ -157,7 +157,17 @@ pub async fn mark_completed(
     .bind(company_id)
     .execute(&mut **tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)?
+    .rows_affected();
+    // 0 ligne = la garde `status='to_complete'` n'a pas matché alors que le caller
+    // a déjà créé la facture réelle dans la même tx → invariant cassé (refactor
+    // futur, mauvais id). Remonter une erreur fait rollback la tx (pas de facture
+    // orpheline sans lien staging). Code-review 12-5c BH3/EC3.
+    if affected == 0 {
+        return Err(DbError::Invariant(
+            "mark_completed: aucune row staging 'to_complete' mise à jour".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -169,7 +179,7 @@ pub async fn mark_discarded(
     company_id: i64,
     id: i64,
 ) -> Result<(), DbError> {
-    sqlx::query(
+    let affected = sqlx::query(
         "UPDATE imported_supplier_invoices \
          SET status = 'discarded' \
          WHERE id = ? AND company_id = ? AND status = 'to_complete'",
@@ -178,7 +188,15 @@ pub async fn mark_discarded(
     .bind(company_id)
     .execute(&mut **tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(map_db_error)?
+    .rows_affected();
+    // 0 ligne = garde statut non matchée (le caller a déjà vérifié `to_complete`
+    // sous FOR UPDATE → invariant cassé). Erreur → rollback. Code-review 12-5c BH3/EC3.
+    if affected == 0 {
+        return Err(DbError::Invariant(
+            "mark_discarded: aucune row staging 'to_complete' mise à jour".into(),
+        ));
+    }
     Ok(())
 }
 

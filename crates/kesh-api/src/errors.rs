@@ -641,6 +641,15 @@ pub enum AppError {
     #[error("Justificatif introuvable")]
     SourceDocumentNotFound,
 
+    /// `POST .../complete` ou `.../discard` : la facture **importée** (staging)
+    /// n'existe pas pour la company courante (id inconnu ou cross-company IDOR) →
+    /// `404 IMPORTED_INVOICE_NOT_FOUND`. Distinct de `SourceDocumentNotFound`
+    /// (download d'un justificatif) — un même code sur deux endpoints sémantiques
+    /// différents tromperait le `catch` du frontend 12-5d (code-review 12-5c
+    /// EC1/BH2/AA4, consensus 3 reviewers).
+    #[error("Facture importée introuvable")]
+    ImportedInvoiceNotFound,
+
     /// `GET .../source-document` : la **métadonnée** existe mais le fichier sur
     /// disque est absent (restore métadonnée-seule L1/F7) → `410 SOURCE_DOCUMENT_GONE`.
     #[error("Justificatif non restauré")]
@@ -1723,6 +1732,15 @@ impl IntoResponse for AppError {
                 &t(
                     "error-source-document-not-found",
                     "Cette facture n'a pas de justificatif stocké.",
+                ),
+            ),
+
+            AppError::ImportedInvoiceNotFound => build_response(
+                StatusCode::NOT_FOUND,
+                "IMPORTED_INVOICE_NOT_FOUND",
+                &t(
+                    "error-imported-invoice-not-found",
+                    "Cette facture importée est introuvable.",
                 ),
             ),
 

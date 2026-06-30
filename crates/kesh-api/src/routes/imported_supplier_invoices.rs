@@ -131,7 +131,7 @@ pub async fn complete_import(
         let staging =
             imported_supplier_invoices::find_by_id_scoped_for_update(&mut tx, company.id, id)
                 .await?
-                .ok_or(AppError::SourceDocumentNotFound)?;
+                .ok_or(AppError::ImportedInvoiceNotFound)?;
 
         // (2) Statut : seule une importée `to_complete` peut être complétée.
         if staging.status != "to_complete" {
@@ -293,7 +293,7 @@ pub async fn discard_import(
         let staging =
             imported_supplier_invoices::find_by_id_scoped_for_update(&mut tx, company.id, id)
                 .await?
-                .ok_or(AppError::SourceDocumentNotFound)?;
+                .ok_or(AppError::ImportedInvoiceNotFound)?;
         if staging.status != "to_complete" {
             return Err(AppError::ImportNotPendingCompletion {
                 current_status: staging.status.clone(),
@@ -380,16 +380,54 @@ fn serve_document(state: &AppState, row: &ImportedSupplierInvoice) -> Result<Res
     if let Ok(ct) = HeaderValue::from_str(&row.mime_type) {
         resp.headers_mut().insert(header::CONTENT_TYPE, ct);
     }
-    // Content-Disposition : nom d'origine assaini (anti header-injection — strip
-    // guillemets et caractères de contrôle ; `HeaderValue::from_str` rejette le
-    // reste → header omis dans ce cas extrême plutôt qu'une réponse cassée).
-    let safe_name: String = row
-        .original_filename
-        .chars()
-        .filter(|c| *c != '"' && *c != '\\' && !c.is_control())
-        .collect();
-    if let Ok(cd) = HeaderValue::from_str(&format!("attachment; filename=\"{safe_name}\"")) {
+    if let Ok(cd) = HeaderValue::from_str(&content_disposition(&row.original_filename)) {
         resp.headers_mut().insert(header::CONTENT_DISPOSITION, cd);
     }
     Ok(resp)
+}
+
+/// Construit un en-tête `Content-Disposition` robuste aux noms **accentués**
+/// (courant en Suisse romande : `Reçu_Müller_été.pdf`), code-review 12-5c EC2/BH4.
+///
+/// - `filename=` : repli ASCII assaini (strip non-ASCII + guillemets/backslash/
+///   contrôles) — les vieux clients le lisent.
+/// - `filename*=UTF-8''<pct>` (RFC 5987) : nom complet UTF-8 percent-encodé — les
+///   clients modernes le préfèrent. Sans lui, un nom accentué faisait échouer
+///   `HeaderValue::from_str` (valeurs d'en-tête HTTP = ASCII only) → header omis,
+///   le navigateur retombait sur le nom dérivé de l'URL.
+fn content_disposition(original_filename: &str) -> String {
+    let ascii_fallback: String = original_filename
+        .chars()
+        .filter(|c| c.is_ascii() && *c != '"' && *c != '\\' && !c.is_control())
+        .collect();
+    let ascii_fallback = if ascii_fallback.is_empty() {
+        "source-document".to_string()
+    } else {
+        ascii_fallback
+    };
+    format!(
+        "attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{}",
+        rfc5987_encode(original_filename)
+    )
+}
+
+/// Percent-encode RFC 5987 : seuls les `attr-char` (alphanum + `!#$&+-.^_`|~`)
+/// restent littéraux ; tout le reste (espace, accents UTF-8, ...) est `%HH` sur
+/// chaque octet UTF-8.
+fn rfc5987_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        let keep = b.is_ascii_alphanumeric()
+            || matches!(
+                b,
+                b'!' | b'#' | b'$' | b'&' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~'
+            );
+        if keep {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push_str(&format!("{b:02X}"));
+        }
+    }
+    out
 }

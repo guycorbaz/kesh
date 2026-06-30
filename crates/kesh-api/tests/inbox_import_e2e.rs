@@ -397,8 +397,13 @@ async fn import_creates_staging_and_archives(pool: MySqlPool) {
 async fn import_rejects_unsupported_type_and_no_qr(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    // (a) Extension hors liste blanche → UNSUPPORTED_FILE_TYPE (check extension).
     std::fs::write(app.inbox.join("notes.txt"), b"pas une image").unwrap();
+    // (b) Image PNG valide mais sans QR → NO_QR_CODE_FOUND.
     std::fs::write(app.inbox.join("blank.png"), blank_png()).unwrap();
+    // (c) Extension permise (.pdf) MAIS magic bytes incohérents (contenu PNG) →
+    //     UNSUPPORTED_FILE_TYPE via `magic_matches` (AA1 — chemin magic-bytes testé).
+    std::fs::write(app.inbox.join("fake.pdf"), blank_png()).unwrap();
 
     let body: Value = app
         .client
@@ -412,17 +417,31 @@ async fn import_rejects_unsupported_type_and_no_qr(pool: MySqlPool) {
         .unwrap();
 
     let failed = body["failed"].as_array().unwrap();
-    assert_eq!(failed.len(), 2);
+    assert_eq!(failed.len(), 3);
     let codes: Vec<&str> = failed
         .iter()
         .map(|f| f["errorCode"].as_str().unwrap())
         .collect();
-    assert!(codes.contains(&"UNSUPPORTED_FILE_TYPE"));
+    // Deux UNSUPPORTED_FILE_TYPE : un par extension (notes.txt), un par magic bytes
+    // (fake.pdf — extension valide, contenu PNG).
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|c| **c == "UNSUPPORTED_FILE_TYPE")
+            .count(),
+        2
+    );
     assert!(codes.contains(&"NO_QR_CODE_FOUND"));
-    // Les deux déplacés dans failed/.
+    // Le magic-mismatch est bien rattaché au bon fichier (identifiant business).
+    let fake = failed
+        .iter()
+        .find(|f| f["fileName"] == "fake.pdf")
+        .expect("fake.pdf dans failed[]");
+    assert_eq!(fake["errorCode"], "UNSUPPORTED_FILE_TYPE");
+    // Les trois déplacés dans failed/.
     assert_eq!(
         std::fs::read_dir(app.inbox.join("failed")).unwrap().count(),
-        2
+        3
     );
 }
 
@@ -950,6 +969,28 @@ async fn complete_not_pending_returns_409(pool: MySqlPool) {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "IMPORT_NOT_PENDING_COMPLETION");
     assert_eq!(body["error"]["details"]["currentStatus"], "discarded");
+
+    // Id inexistant → 404 IMPORTED_INVOICE_NOT_FOUND (code distinct du download,
+    // code-review 12-5c EC1/BH2/AA4).
+    let r404 = app
+        .client
+        .post(app.url("/api/v1/imported-supplier-invoices/999999/complete"))
+        .bearer_auth(&ctx.jwt)
+        .json(&complete_body(
+            ctx.supplier_id,
+            ctx.seeded.accounts["4000"],
+            dec!(1),
+            dec!(100.00),
+            dec!(0),
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r404.status(), 404);
+    assert_eq!(
+        r404.json::<Value>().await.unwrap()["error"]["code"],
+        "IMPORTED_INVOICE_NOT_FOUND"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
