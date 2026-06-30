@@ -67,6 +67,11 @@
 					href: '/supplier-invoices',
 				},
 				{
+					i18nKey: 'nav-supplier-invoices-import',
+					fallback: 'Importer des factures',
+					href: '/supplier-invoices/import',
+				},
+				{
 					i18nKey: 'nav-payment-batches',
 					fallback: 'Paiements fournisseurs',
 					href: '/payment-batches',
