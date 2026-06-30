@@ -4,6 +4,11 @@ Status: ready-for-dev
 
 <!-- SPEC UMBRELLA — VALIDATE CONVERGÉ 6 passes (17→7→7→4→~3→0, 0>LOW), 2026-06-29. Split figé 12-5a..d (cf. §Découpage). TOUS les DC figés (DC1 pdfium amd64, DC2 bouton manuel, DC3 staging, DC4 lien côté import, DC5 métadonnées seules, DC6 complétion atomique) — Guy 2026-06-28/29. Prochaine étape : créer sous-stories 12-5a..d (série a→b→c→d). -->
 
+<!-- ⚠️ DÉROGATIONS v0.4 décidées pendant le validate 12-5c (2026-06-30), priment sur le corps ci-dessous (AC7/L7/P4-M3/P4-M4) :
+  (1) DEVISE — **CHF UNIQUEMENT** en v0.4 (EUR rejeté à la complétion), décision Guy F-OPUS-1 : la devise n'est pas persistée (L7) et pain.001 hardcode Ccy="CHF" (`pain001/mod.rs:25`) → EUR ferait payer en CHF. Le corps dit encore `∈{CHF,EUR}` (AC7 l.103-104, schéma l.168, L7 l.188) — LIRE « CHF uniquement ». Support EUR = follow-up (pain.001 multi-devise + colonne currency sur supplier_invoices).
+  (2) RÉCONCILIATION — **égalité EXACTE** `Σ TTC == staging.amount` (F-OPUS-2), PAS la tolérance `round2` du corps (AC7 l.99/P4-M3) : `total_amount` est stocké DECIMAL(19,4) pleine précision, round2 laisserait 3 valeurs en désaccord.
+  Le dev 12-5d doit suivre la spec 12-5c (`12-5c-service-import-completion.md`) pour ces deux points. -->
+
 ## Story
 
 As a comptable PME utilisant Kesh sur mon NAS,
