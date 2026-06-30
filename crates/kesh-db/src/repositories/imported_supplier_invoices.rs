@@ -98,6 +98,117 @@ pub async fn find_by_company_hash(
     .map_err(map_db_error)
 }
 
+/// Verrouille (`FOR UPDATE`) et lit une facture importée scopée company, pour la
+/// **complétion atomique** (DC6 12-5c) et le **discard** (AC8). Le verrou ligne
+/// sérialise deux complétions concurrentes de la même row → pas de double
+/// facture. À appeler **dans** la transaction qui fera l'`UPDATE` suivant.
+pub async fn find_by_id_scoped_for_update(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<ImportedSupplierInvoice>, DbError> {
+    sqlx::query_as::<_, ImportedSupplierInvoice>(
+        "SELECT * FROM imported_supplier_invoices WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Résout le justificatif d'une facture **déjà complétée** via son
+/// `supplier_invoice_id` (download `GET /supplier-invoices/{id}/source-document`,
+/// AC10). Scopé company (anti-IDOR). `None` si la facture n'a pas été importée
+/// via 12-5 (créée directement 12-2 — L5 → 404 côté handler).
+pub async fn find_by_supplier_invoice_id_scoped(
+    pool: &MySqlPool,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Option<ImportedSupplierInvoice>, DbError> {
+    sqlx::query_as::<_, ImportedSupplierInvoice>(
+        "SELECT * FROM imported_supplier_invoices \
+         WHERE supplier_invoice_id = ? AND company_id = ?",
+    )
+    .bind(supplier_invoice_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Marque une facture importée `completed` et lie la facture fournisseur réelle
+/// (AC7 step 7). À appeler **dans la transaction de complétion**, après
+/// `supplier_invoices::create_in_tx`. Le `WHERE status='to_complete'` est une
+/// défense en profondeur (la garde principale est le `FOR UPDATE` + check amont).
+pub async fn mark_completed(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    supplier_invoice_id: i64,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE imported_supplier_invoices \
+         SET status = 'completed', supplier_invoice_id = ? \
+         WHERE id = ? AND company_id = ? AND status = 'to_complete'",
+    )
+    .bind(supplier_invoice_id)
+    .bind(id)
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(())
+}
+
+/// Marque une facture importée `discarded` (AC8). À appeler dans une transaction
+/// après `find_by_id_scoped_for_update` + check `status == 'to_complete'`.
+/// Le fichier archivé est **conservé** (pas de suppression du justificatif v0.4).
+pub async fn mark_discarded(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE imported_supplier_invoices \
+         SET status = 'discarded' \
+         WHERE id = ? AND company_id = ? AND status = 'to_complete'",
+    )
+    .bind(id)
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(())
+}
+
+/// Réactive une facture importée `discarded` → `to_complete` (AC3 step 5,
+/// court-circuit doublon hash à l'import). **Remet aussi `supplier_invoice_id`
+/// à NULL** : une row `discarded` peut porter un pointeur résiduel d'une
+/// complétion antérieure ; sans le reset, la réactivation laisserait une
+/// référence vers une ancienne facture, écrasée à la prochaine complétion
+/// (donnée incohérente). Le `WHERE status='discarded'` rend l'opération
+/// idempotente et sans effet sur une row déjà active. Retourne `true` si une
+/// row a effectivement été réactivée.
+pub async fn reactivate_to_complete(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+) -> Result<bool, DbError> {
+    let affected = sqlx::query(
+        "UPDATE imported_supplier_invoices \
+         SET status = 'to_complete', supplier_invoice_id = NULL \
+         WHERE id = ? AND company_id = ? AND status = 'discarded'",
+    )
+    .bind(id)
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    Ok(affected > 0)
+}
+
 /// Liste les factures importées d'une company filtrées par statut
 /// (use-case principal `to_complete`).
 ///

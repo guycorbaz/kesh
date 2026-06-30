@@ -1791,6 +1791,23 @@ impl IntoResponse for AppError {
                         &t("error-internal", "Erreur interne"),
                     )
                 }
+                // Story 12-5c (D2) — donnée trop longue / hors plage (MariaDB
+                // 1406/1264). Le service d'import 12-5c intercepte ce variant
+                // AVANT qu'il devienne une `AppError` (→ `failed[]` per-fichier,
+                // HTTP 200). Si malgré tout il atteint le mapping HTTP global
+                // (autre chemin), c'est une donnée d'entrée invalide → 400 (PAS
+                // un 500 : la requête est en faute, pas le serveur).
+                DbError::DataLengthOrRange(m) => {
+                    tracing::warn!("data too long / out of range: {m}");
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "DATA_LENGTH_OR_RANGE",
+                        &t(
+                            "error-data-length-or-range",
+                            "Une valeur fournie est trop longue ou hors plage.",
+                        ),
+                    )
+                }
                 DbError::Sqlx(e) => {
                     tracing::error!("sqlx: {e}");
                     build_response(

@@ -82,7 +82,10 @@ pub struct SupplierInvoiceResponse {
 }
 
 impl SupplierInvoiceResponse {
-    fn from_parts(inv: SupplierInvoice, lines: Vec<SupplierInvoiceLine>) -> Self {
+    /// `pub` (Story 12-5c) : appelé par le module `imported_supplier_invoices`
+    /// pour construire la réponse de complétion à partir du `SupplierInvoiceWithLines`
+    /// retourné par `create_in_tx` (DRY — pas de redéfinition cross-module).
+    pub fn from_parts(inv: SupplierInvoice, lines: Vec<SupplierInvoiceLine>) -> Self {
         Self {
             id: inv.id,
             contact_id: inv.contact_id,
