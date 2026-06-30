@@ -1,6 +1,6 @@
 # Story 12.5d: Frontend import + complétion + justificatif & documentation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story 4/4 (DERNIÈRE) de l'umbrella 12-5 (import répertoire factures, #194, cible v0.4). Périmètre : AC8 (frontend) + AC9 (doc) de l'umbrella. CONSOMME les 6 endpoints livrés par 12-5c (aucune logique transactionnelle en frontend). Les compteurs « en dur » (TABLES_TO_TRUNCATE, manifeste export, admin_full_export_e2e=31, migrations_upgrade_path=39, audit idempotence) ont DÉJÀ été faits en 12-5b → HORS scope 12-5d. -->
 
@@ -226,6 +226,9 @@ Pass 4 : Sonnet 4.6 (convergence).
 ### Validate Pass 4 (Sonnet 4.6, convergence), 2026-06-30 — CONVERGÉ
 **Verdict : PRÊT POUR DEV — 0 finding CRITICAL/HIGH/MEDIUM.** Les 4 patches Opus vérifiés cohérents ground-truth : F-OPUS-1 (`lineVatAmount(ht, ratePercent)` confirmé `vat-purchase.ts:36`, usage cohérent), F-OPUS-2 (0 résidu « redirection » contradictoire — seuls subsistent le guard SvelteKit `redirect(302)` et le Change Log historique), F-OPUS-3 (DC-d3 + AC4/M3 cohérents), F-OPUS-4 (AC8 sans tâche FTL, cohérent Dev Notes). 0 DC `à ratifier` (les 5 `[✅ FIGÉ]` ; seul `⚠️ Gate Guy` DC-d1 = gate architectural délibéré, pas un défaut). Tous les helpers load-bearing confirmés (`parseContentDispositionFilename` `exports.api.ts:52`, `listContacts/listVatRates/fetchAccounts`, `apiClient.getBlob`, `notify*`, `lint-i18n-ownership`). 0 contradiction AC↔AC / AC↔DC. 2 LOW patchés (chemin import `computeLineTotal`, shorthand Change Log).
 
+### Dev-story — implémentation (Opus 4.8, 2026-06-30)
+Run unique T-d1→T-d9. **Quality gate frontend exit-code vérifié** : `npm run check` (0 err), `npm run lint-i18n-ownership` (PASS), `npm run test:unit` (340/340), `npm run build` (OK). **E2E `inbox-import.spec.ts` exécuté EN RÉEL 2/2** contre un backend monté (DB isolée `kesh_e2e`, `KESH_INBOX_DIR=/tmp/kesh-e2e-inbox`) — round-trip complet import→liste→download→complétion validé. 1 bug attrapé en E2E : `each_key_duplicate` sur `{#each vatRates}` (seed 4 taux catégorie `custom`) → clé `(r.id)`. Aucun fichier Rust touché → suite backend inchangée. Status `review`. Prochaine : `bmad-code-review 12-5d` (LLM ≠ Opus).
+
 ### Synthèse du cycle validate
 Trend > LOW : **Pass 1 (Sonnet) ~9 → Pass 2 (Haiku) 1 → Pass 3 (Opus) 2 → Pass 4 (Sonnet) 0**. 4 passes, rotation Sonnet→Haiku→Opus→Sonnet (cycle complet). Catches majeurs : **Pass 1** (DC non figés → figés ; error-handling exhaustif des 6 endpoints ; i18n prefix lint ; website checklist) ; **Pass 3 Opus** (parité numérique TTC `lineVatAmount` vs `computeLineTotal` HT-seul ; contradiction redirect vs worklist batch). 1 faux-positif Haiku réfuté (« docs CRITICAL non implémentés » = travail prescrit AC9). Convergence au seuil 4 passes → **pas de re-split** (règle splitting : boucle *au-delà* de 4 sans converger ; ici convergé À 4). Backend 12-5c `done` non touché (frontière frontend+doc respectée). **Prêt pour `bmad-dev-story 12-5d`** (Opus recommandé). Reco dev : AC1 (feature module) → AC8 i18n keys → AC2-7 (pages) → AC9-13 doc → AC14 E2E.
 
@@ -233,8 +236,39 @@ Trend > LOW : **Pass 1 (Sonnet) ~9 → Pass 2 (Haiku) 1 → Pass 3 (Opus) 2 → 
 
 ### Agent Model Used
 
+Opus 4.8 (1M) — dev-story orchestré, run unique T-d1→T-d9. Quality gate frontend
+exit-code vérifié + **E2E exécuté en réel** contre un backend monté (DB isolée `kesh_e2e`).
+
 ### Debug Log References
+
+- **E2E `each_key_duplicate`** : le formulaire de complétion ne s'ouvrait pas en E2E. `pageerror` = `svelte.dev/e/each_key_duplicate`. Cause : le seed `with-company` a **4 taux TVA tous catégorie `custom`** (id 1-4) → `{#each vatRates as r (r.category)}` produit 4 clés `custom` dupliquées → crash runtime du rendu. Fix : clé `(r.id)`. *(Bug latent identique dans `supplier-invoices/+page.svelte` ground-truth — son formulaire n'est jamais ouvert en E2E, hors scope ici.)*
+- Run E2E réel : backend démarré `cargo run` (debug) port 8788, `KESH_TEST_MODE=true`, `DATABASE_URL=…/kesh_e2e` (DB isolée, jamais la DB dev), `KESH_INBOX_DIR=/tmp/kesh-e2e-inbox`, `KESH_STATIC_DIR=frontend/build` ; `KESH_BACKEND_URL` + override Playwright Ubuntu → **2/2 verts**.
 
 ### Completion Notes List
 
+- **T-d1 (feature module)** — `imported-supplier-invoices/{types,api}` : 6 wrappers `apiClient`, downloads **Pattern A** (`getBlob` + ancre éphémère, gère 401-refresh) avec `parseContentDispositionFilename` réimporté d'`exports.api.ts`. Décimaux `string`. AUCUN `i18nMsg` dans le feature module (lint-i18n-ownership).
+- **T-d2/3 (écran import + liste)** — page `/supplier-invoices/import` + guard `+page.ts` Comptable+ : bouton import (spinner + `finally`), rapport batch (map errorCode→FR clés `imported-supplier-invoices-error-*` dans le fichier de route), 409 discriminé + fallback `notifyError` ; liste `to_complete` `onMount`, état vide, download justificatif 404/410.
+- **T-d4 (complétion)** — formulaire inline par ligne (pattern ground-truth `supplier-invoices/+page.svelte` qui est inline, pas Dialog ; déviation cosmétique assumée vs spec DC L6) : `<select>` fournisseur `isSupplier`, lignes, **Σ TTC live via `lineVatAmount` (parité backend, comparé pleine précision)** + avertissement sous-centime, validation structurelle (bouton désactivé si pas de fournisseur/0 ligne/desc vide ; jamais sur le montant — DC-d3), mapping rejets `CURRENCY_NOT_SUPPORTED`/`IBAN_REFERENCE_MISMATCH`/`AMOUNT_MISMATCH`/`IMPORT_NOT_PENDING_COMPLETION`/`IMPORTED_INVOICE_NOT_FOUND`/`FISCAL_YEAR_INVALID`, **reste sur le worklist** (F-OPUS-2, pas de redirection).
+- **T-d5 (écarter)** — confirm → `discardImport` 204 + retrait ; erreurs 409/404 + reload + fallback.
+- **T-d6 (justificatif détail)** — `supplier-invoices/[id]` lien « Voir la facture d'origine » always-render (DC-d1), 404→`notifyInfo` / 410→`notifyWarning`.
+- **T-d7 (sidebar/i18n)** — entrée `nav-supplier-invoices-import` ; clés `imported-supplier-invoices-*` (fallback FR inline, lint PASS).
+- **T-d8 (doc)** — `.env.example` (5 vars) ; `docker-compose.yml` (env + volumes nommés) + `docker-compose.prod.yml` (env + bind mounts host `./inbox`/`./documents`) ; `CHANGELOG` ; `README` (Fonctionnalités ✓ + roadmap E12) ; `website/roadmap.html` (E12 rafraîchi) + `index.html` vérifié (pas de claim erroné) ; `admin-manual.tex` (5 vars + section import Synology/pdfium L6/inbox-#199) + **PDF régénéré** (`\keshVersion` NON bumpé).
+- **T-d9 (E2E + gate)** — `inbox-import.spec.ts` (guard + import-vide + round-trip réel) + fixture `spc_e2e_invoice.png`. **Gate** : `check` 0 err, `lint-i18n-ownership` PASS, `test:unit` 340/340, `build` OK ; **E2E 2/2 réels**.
+- **Compteurs en dur** : DÉJÀ faits 12-5b (TABLES_TO_TRUNCATE, manifeste, `admin_full_export_e2e=31`, `migrations_upgrade_path=39`, idempotence) — aucun fichier Rust touché par 12-5d → suite backend inchangée.
+
 ### File List
+
+**Créés** :
+- `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.types.ts`
+- `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.api.ts`
+- `frontend/src/routes/(app)/supplier-invoices/import/+page.ts`
+- `frontend/src/routes/(app)/supplier-invoices/import/+page.svelte`
+- `frontend/tests/e2e/inbox-import.spec.ts`
+- `frontend/tests/e2e/fixtures/spc_e2e_invoice.png`
+
+**Modifiés** :
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` (lien justificatif)
+- `frontend/src/routes/(app)/+layout.svelte` (entrée sidebar)
+- `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`, `CHANGELOG.md`, `README.md`
+- `website/roadmap.html`
+- `docs/manual/fr/admin-manual.tex` + `docs/manual/fr/admin-manual.pdf`
