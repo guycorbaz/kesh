@@ -607,6 +607,44 @@ pub enum AppError {
         requested_start: chrono::NaiveDate,
         requested_end: chrono::NaiveDate,
     },
+
+    // --- Story 12-5c — import répertoire de factures (#194) ---
+    /// Un import du répertoire inbox est **déjà en cours** (verrou de run F6 non
+    /// acquis) → `409 INBOX_IMPORT_ALREADY_RUNNING`. Exception globale du pattern
+    /// batch (un refus en amont du traitement per-fichier) — distinct d'un rapport
+    /// `{accepted, failed}` partiel, pour que 12-5d le discrimine dans son `catch`.
+    #[error("Un import du répertoire est déjà en cours")]
+    InboxImportAlreadyRunning,
+
+    /// `POST /imported-supplier-invoices/{id}/complete` (ou `/discard`) sur une
+    /// row dont le `status != 'to_complete'` → `409 IMPORT_NOT_PENDING_COMPLETION`,
+    /// `details: { currentStatus }`. Permet à 12-5d de distinguer « déjà
+    /// complétée/écartée » d'une erreur serveur 500.
+    #[error("Facture importée non en attente de complétion (statut : {current_status})")]
+    ImportNotPendingCompletion { current_status: String },
+
+    /// Rejet métier d'une complétion (steps 3/4/6 pré-`create_in_tx`) → `400`
+    /// avec un `error_code` **canonique distinct** (`CURRENCY_NOT_SUPPORTED`,
+    /// `IBAN_REFERENCE_MISMATCH`, `AMOUNT_MISMATCH`) pour que 12-5d guide
+    /// l'utilisateur sans parser le message. Mono-item (pas un `FailedProposal`).
+    /// `details` optionnel (ex. montants de la réconciliation).
+    #[error("Complétion refusée [{error_code}] : {message}")]
+    ImportCompletionRejected {
+        error_code: &'static str,
+        message: String,
+        details: Option<serde_json::Value>,
+    },
+
+    /// `GET .../source-document` : la facture n'a **pas** de justificatif stocké
+    /// (row absente, ou facture créée directement 12-2 sans import — L5) →
+    /// `404 SOURCE_DOCUMENT_NOT_FOUND`. JAMAIS 500.
+    #[error("Justificatif introuvable")]
+    SourceDocumentNotFound,
+
+    /// `GET .../source-document` : la **métadonnée** existe mais le fichier sur
+    /// disque est absent (restore métadonnée-seule L1/F7) → `410 SOURCE_DOCUMENT_GONE`.
+    #[error("Justificatif non restauré")]
+    SourceDocumentGone,
 }
 
 // --- Story 9-1 : From<ReportError> for AppError ---
@@ -1636,6 +1674,67 @@ impl IntoResponse for AppError {
             // Sous-match exhaustif sur DbError : pas de `_ =>` catch-all,
             // l'ajout futur d'une variante kesh-db casse la compilation
             // ici (propriété désirée).
+            // --- Story 12-5c — import répertoire de factures (#194) ---
+            AppError::InboxImportAlreadyRunning => build_response(
+                StatusCode::CONFLICT,
+                "INBOX_IMPORT_ALREADY_RUNNING",
+                &t(
+                    "error-inbox-import-already-running",
+                    "Un import du répertoire est déjà en cours. Réessayez dans quelques instants.",
+                ),
+            ),
+
+            AppError::ImportNotPendingCompletion { current_status } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "IMPORT_NOT_PENDING_COMPLETION",
+                        "message": t(
+                            "error-import-not-pending-completion",
+                            "Cette facture importée n'est plus en attente de complétion.",
+                        ),
+                        "details": { "currentStatus": current_status }
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
+            AppError::ImportCompletionRejected {
+                error_code,
+                message,
+                details,
+            } => {
+                let mut error = serde_json::json!({
+                    "code": error_code,
+                    "message": message,
+                });
+                if let Some(d) = details {
+                    error["details"] = d;
+                }
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": error })),
+                )
+                    .into_response()
+            }
+
+            AppError::SourceDocumentNotFound => build_response(
+                StatusCode::NOT_FOUND,
+                "SOURCE_DOCUMENT_NOT_FOUND",
+                &t(
+                    "error-source-document-not-found",
+                    "Cette facture n'a pas de justificatif stocké.",
+                ),
+            ),
+
+            AppError::SourceDocumentGone => build_response(
+                StatusCode::GONE,
+                "SOURCE_DOCUMENT_GONE",
+                &t(
+                    "error-source-document-gone",
+                    "Le justificatif n'a pas été restauré (métadonnées seules).",
+                ),
+            ),
+
             AppError::Database(db_err) => match db_err {
                 DbError::NotFound => build_response(
                     StatusCode::NOT_FOUND,

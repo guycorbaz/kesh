@@ -254,6 +254,22 @@ pub struct Config {
     /// perte au redémarrage conteneur). À monter en volume persistant Docker.
     pub documents_dir: String,
 
+    /// Story 12-5c (#194) — répertoire **inbox** scruté à l'import du répertoire
+    /// de factures (`POST /api/v1/inbox-import`). Lu depuis `KESH_INBOX_DIR` ;
+    /// défaut `/data/inbox` (volume persistant Docker). Les fichiers traités avec
+    /// succès sont supprimés ; ceux en échec déplacés dans `<inbox>/failed/`.
+    pub inbox_dir: String,
+    /// Story 12-5c — taille max d'un fichier inbox (octets, stat avant lecture →
+    /// anti-DoS mémoire). Lu depuis `KESH_INBOX_MAX_FILE_BYTES` ; défaut 25 Mo.
+    pub inbox_max_file_bytes: u64,
+    /// Story 12-5c — nombre max de fichiers traités par déclenchement d'import.
+    /// Lu depuis `KESH_INBOX_MAX_FILES_PER_RUN` ; défaut 200.
+    pub inbox_max_files_per_run: usize,
+    /// Story 12-5c — nombre max de pages PDF rendues par fichier (câblé à
+    /// `DecodeConfig.max_pages` 12-5b, anti-DoS pdfium). Lu depuis
+    /// `KESH_INBOX_MAX_PDF_PAGES` ; défaut 20.
+    pub inbox_max_pdf_pages: usize,
+
     // --- v0.1.3 hotfix (Issue #136) — cookies Secure flag override ---
     /// Émettre les cookies session (`kesh_access_token`, `kesh_refresh_token`)
     /// avec le flag `Secure` (requiert HTTPS côté client). **Défaut `true`**
@@ -464,6 +480,10 @@ impl Config {
             admin_import_max_mib: 512,
             admin_backup_dir: "/tmp".to_string(),
             documents_dir: "/tmp/kesh-documents-test".to_string(),
+            inbox_dir: "/tmp/kesh-inbox-test".to_string(),
+            inbox_max_file_bytes: 25 * 1024 * 1024,
+            inbox_max_files_per_run: 200,
+            inbox_max_pdf_pages: 20,
             cookie_secure: true,
             // Story 17-4b : recovery email désactivé par défaut en test (les
             // tests qui l'exercent muteront le champ ou utiliseront un Config
@@ -908,6 +928,80 @@ impl Config {
         let documents_dir =
             env::var("KESH_DOCUMENTS_DIR").unwrap_or_else(|_| "/data/documents".to_string());
 
+        // Story 12-5c (#194) — KESH_INBOX_DIR : répertoire scruté à l'import.
+        // Défaut `/data/inbox` (volume persistant Docker, PAS /tmp).
+        let inbox_dir = env::var("KESH_INBOX_DIR").unwrap_or_else(|_| "/data/inbox".to_string());
+
+        // KESH_INBOX_MAX_FILE_BYTES : optionnel, défaut 25 Mo, borne [1, 500] Mo.
+        // Pattern parse+borne+warn (cf. KESH_BANK_IMPORT_MAX_MB). La borne haute
+        // évite qu'un fichier multi-Go soit accepté (le check stat précède toute
+        // lecture, mais le décodage image/pdfium charge ensuite en RAM).
+        const INBOX_DEFAULT_MAX_FILE_BYTES: u64 = 25 * 1024 * 1024;
+        let inbox_max_file_bytes = match env::var("KESH_INBOX_MAX_FILE_BYTES") {
+            Ok(val) => match val.trim().parse::<u64>() {
+                Ok(n) if (1..=500 * 1024 * 1024).contains(&n) => n,
+                Ok(n) => {
+                    tracing::warn!(
+                        "KESH_INBOX_MAX_FILE_BYTES={} hors borne [1, 524288000], défaut {}",
+                        n,
+                        INBOX_DEFAULT_MAX_FILE_BYTES
+                    );
+                    INBOX_DEFAULT_MAX_FILE_BYTES
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_INBOX_MAX_FILE_BYTES='{}' invalide, défaut {}",
+                        val,
+                        INBOX_DEFAULT_MAX_FILE_BYTES
+                    );
+                    INBOX_DEFAULT_MAX_FILE_BYTES
+                }
+            },
+            Err(_) => INBOX_DEFAULT_MAX_FILE_BYTES,
+        };
+
+        // KESH_INBOX_MAX_FILES_PER_RUN : optionnel, défaut 200, borne [1, 10000].
+        let inbox_max_files_per_run = match env::var("KESH_INBOX_MAX_FILES_PER_RUN") {
+            Ok(val) => match val.trim().parse::<usize>() {
+                Ok(n) if (1..=10_000).contains(&n) => n,
+                Ok(n) => {
+                    tracing::warn!(
+                        "KESH_INBOX_MAX_FILES_PER_RUN={} hors borne [1, 10000], défaut 200",
+                        n
+                    );
+                    200
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "KESH_INBOX_MAX_FILES_PER_RUN='{}' invalide, défaut 200",
+                        val
+                    );
+                    200
+                }
+            },
+            Err(_) => 200,
+        };
+
+        // KESH_INBOX_MAX_PDF_PAGES : optionnel, défaut 20, borne [1, 500].
+        // Câblé à DecodeConfig.max_pages (12-5b) côté service d'import.
+        let inbox_max_pdf_pages = match env::var("KESH_INBOX_MAX_PDF_PAGES") {
+            Ok(val) => match val.trim().parse::<usize>() {
+                Ok(n) if (1..=500).contains(&n) => n,
+                Ok(n) => {
+                    tracing::warn!(
+                        "KESH_INBOX_MAX_PDF_PAGES={} hors borne [1, 500], défaut 20",
+                        n
+                    );
+                    20
+                }
+                Err(_) => {
+                    tracing::warn!("KESH_INBOX_MAX_PDF_PAGES='{}' invalide, défaut 20", val);
+                    20
+                }
+            },
+            Err(_) => 20,
+        };
+
         // v0.1.3 hotfix (Issue #136) — KESH_COOKIE_SECURE override.
         // Parsing strict (cohérent KESH_TEST_MODE P7) : seules `"true"`/`"1"`/
         // `"false"`/`"0"` acceptées. Toute autre valeur (`"True"`, `"yes"`,
@@ -1053,6 +1147,10 @@ impl Config {
             admin_import_max_mib,
             admin_backup_dir,
             documents_dir,
+            inbox_dir,
+            inbox_max_file_bytes,
+            inbox_max_files_per_run,
+            inbox_max_pdf_pages,
             cookie_secure,
             smtp_host,
             smtp_port,
@@ -1352,6 +1450,10 @@ pub(crate) mod test_helpers {
             admin_import_max_mib: 512,
             admin_backup_dir: "/tmp".to_string(),
             documents_dir: "/tmp/kesh-documents-test".to_string(),
+            inbox_dir: "/tmp/kesh-inbox-test".to_string(),
+            inbox_max_file_bytes: 25 * 1024 * 1024,
+            inbox_max_files_per_run: 200,
+            inbox_max_pdf_pages: 20,
             cookie_secure: true,
             // Story 17-4b — recovery email off par défaut dans le helper test.
             smtp_host: None,
