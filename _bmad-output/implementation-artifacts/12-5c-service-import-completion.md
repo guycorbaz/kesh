@@ -210,6 +210,12 @@ Layer A + Layer B **CONVERGÉ 0>LOW** (ground-truth tous exacts : `pain001/mod.r
 - **F4-1** (MEDIUM) — test D1 (validation `status` → 400) absent d'AC11 → ajouté.
 - **LOW** (3 couches convergentes) : `errorCode` canoniques des rejets `/complete` steps 3/4/6 (`CURRENCY_NOT_SUPPORTED`/`IBAN_REFERENCE_MISMATCH`/`AMOUNT_MISMATCH`, HTTP 400) ; note faux-négatif parser >2 décimales (hors-SPC) ; **sync umbrella** (note de dérogation v0.4 CHF-only + égalité exacte en tête de `12-5-import-repertoire-factures.md` pour le dev 12-5d).
 
+### Pass 5 — validate (Haiku 4.5, check de convergence unique), 2026-06-30 — CONVERGÉ
+**Verdict : PRÊT POUR DEV — 0 finding > LOW.** Ground-truth tous verts (CCY="CHF" pain001:25, line_vat_amount vat.rs:39, from_parts:85 privée, AppError::Validation:66). F-OPUS-1 (CHF-only) + F-OPUS-2 (égalité exacte) cohérents partout (AC7/L7/AC11), aucune mention résiduelle `round2`/EUR-accepté. Testabilité AC11 complète (D1/D2/F-OPUS/verrou/atomicité/IDOR/404-410). FailedProposal conforme. Éléments « à créer » (variants `DbError::DataLengthOrRange`/`AppError::InboxImportAlreadyRunning`, fns repo UPDATE, `from_parts` pub) correctement identifiés comme travail prescrit (pas des trous).
+
+### Synthèse du cycle validate
+Trend > LOW : **Pass 1 (Sonnet) ~13 → Pass 2 (Haiku) 6 → Pass 3 (Opus) 2 → Pass 4 (Sonnet) 1 → Pass 5 (Haiku) 0**. 5 passes, rotation Sonnet→Haiku→Opus→Sonnet→Haiku. Catches majeurs : **Pass 1 (cross-crate : `create_in_tx`→SupplierInvoiceWithLines cycle Cargo, verrou run RAII/connexion dédiée, canonicalisation NAS Synology, Σ TTC line_vat_amount)** ; **Pass 3 Opus (intégrité comptable : F-OPUS-1 EUR→pain.001 CHF mislabel → décision Guy CHF-only ; F-OPUS-2 réconciliation round2 vs total_amount DECIMAL(19,4) → égalité exacte)**. 1 décision Guy (AskUserQuestion : devise CHF-only v0.4). 2 faux-positifs Haiku réfutés grep (AppError::Validation existe, DataLengthOrRange = travail prescrit). Pas de re-split (convergence < seuil, cohésion DC6). **Prêt pour `bmad-dev-story 12-5c`** (Opus recommandé, T4.2/T4.3 refactor+D2 en tête).
+
 ## Dev Agent Record
 
 ### Agent Model Used
