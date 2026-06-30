@@ -133,7 +133,7 @@ so that je n'ai plus à ressaisir les coordonnées de paiement ni à classer les
 - [x] **T-d6 — Lien justificatif détail** (AC6, DC-d1) : `supplier-invoices/[id]/+page.svelte` lien « Voir la facture d'origine » always-render Pattern A, 404→notifyInfo / 410→notifyWarning.
 - [x] **T-d7 — Sidebar + i18n** (AC7/AC8) : entrée nav `quotidien` vers `/supplier-invoices/import` ; toutes clés `imported-supplier-invoices-*` (fallback FR inline, dans les fichiers de route), 0 tâche FTL.
 - [x] **T-d8 — Doc** (AC9-13 + AC12-bis) : `.env.example` (5 vars), `docker-compose.yml` + `docker-compose.prod.yml` (volumes+env), `CHANGELOG.md`, `README.md`, `website/roadmap.html`+`index.html`, `docs/manual/fr/admin-manual.tex` (+ régénérer PDF `make fr`, NE PAS bumper `\keshVersion`).
-- [ ] **T-d9 — E2E + quality gate** (AC14/AC15) : `frontend/tests/e2e/inbox-import.spec.ts` + fixture `frontend/tests/e2e/fixtures/spc_*.png` + câblage `KESH_INBOX_DIR` (DC-d4). Gate exit-code : `npm run check && lint-i18n-ownership && test:unit && build` + `test:e2e`.
+- [x] **T-d9 — E2E + quality gate** (AC14/AC15) : `frontend/tests/e2e/inbox-import.spec.ts` + fixture `frontend/tests/e2e/fixtures/spc_*.png` + câblage `KESH_INBOX_DIR` (DC-d4). Gate exit-code : `npm run check && lint-i18n-ownership && test:unit && build` + `test:e2e`.
 
 ## Dev Notes
 

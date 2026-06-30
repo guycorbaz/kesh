@@ -522,7 +522,7 @@
 									/>
 									<select class="col-span-2 rounded border px-2 py-1 text-sm" bind:value={line.vatRate}>
 										<option value="0">0%</option>
-										{#each vatRates as r (r.category)}
+										{#each vatRates as r (r.id)}
 											<option value={r.rate}>{r.rate}%</option>
 										{/each}
 									</select>
