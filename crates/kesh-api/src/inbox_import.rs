@@ -20,6 +20,15 @@
 //! (`kesh_inbox_import:{db}`) : en prod (une seule base = un seul inbox physique)
 //! la sérialisation est totale ; en test (`#[sqlx::test]` → base isolée) deux
 //! tests parallèles n'interfèrent pas.
+//!
+//! ## Limitation L8 — inbox non partitionné par tenant (Issue #199)
+//! `KESH_INBOX_DIR` est un répertoire **global unique** par instance. Chaque
+//! fichier est stagé sous le `company_id` du Comptable qui déclenche l'import
+//! (puis supprimé de l'inbox au succès). Sur une instance **multi-tenant**, le
+//! premier Comptable à importer réclamerait tous les fichiers présents pour sa
+//! company. **Sans impact** pour le déploiement cible mono-PME-par-NAS (choix
+//! design assumé, umbrella F-NEW-3). Partitionnement par company = follow-up
+//! v0.4-milestone (Issue #199) si un déploiement multi-tenant réel apparaît.
 
 use std::path::{Path, PathBuf};
 
