@@ -83,8 +83,6 @@ services:
     ports:
       - "80:80"
     volumes:
-      # Mappage optionnel pour développement (rebuild nécessaire sinon)
-      - ./crates:/app/crates:ro
       # Logs fichier (Story v011-1) — répertoire host accessible (par défaut ./log).
       # Sur NAS, pointe KESH_LOG_HOST_DIR vers un dossier partagé pour consulter
       # les logs depuis le PC (ex. /volume1/kesh/log).
