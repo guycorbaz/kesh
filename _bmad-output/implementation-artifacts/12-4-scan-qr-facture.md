@@ -74,7 +74,7 @@ Status: ready-for-dev → in-progress
 
 - [x] **T1 — Parseur SPC (kesh-qrbill)** (AC: 1,2 ; DC3) : **LIVRÉ par 12-5a** — `parse_spc_payload` + `ScannedQrBill` présents. 12-4 vérifie/réutilise (aucun nouveau code parseur).
 - [x] **T2 — Endpoint scan-qr (kesh-api)** (AC: 3,4) : `POST /api/v1/supplier-invoices/scan-qr` dans `routes/supplier_invoices.rs` (Comptable+), DTO `ScanQrRequest { spc_text }` → `ScanQrResponse { creditorIban/creditorQrIban, paymentReference, expectedPaymentAmount, currency, creditorName, … }`. Lecture seule. Montage `lib.rs`. Tests intégration.
-- [ ] **T3 — Frontend (pré-remplissage)** (AC: 5,6 ; DC2) : dép `jsqr` ; sur le formulaire `/supplier-invoices`, bouton « Scanner un QR-facture » + `<input type=file accept=image/*>` → décodage `jsQR` (canvas) → `scanQr(spcText)` api → pré-remplit les champs coordonnées + affiche nom créancier. Helper de mapping + test unit. Gestion d'erreur (pas de QR / SPC invalide). i18n FR + clés.
+- [x] **T3 — Frontend (pré-remplissage)** (AC: 5,6 ; DC2) : dép `jsqr` ; sur le formulaire `/supplier-invoices`, bouton « Scanner un QR-facture » + `<input type=file accept=image/*>` → décodage `jsQR` (canvas) → `scanQr(spcText)` api → pré-remplit les champs coordonnées + affiche nom créancier. Helper de mapping + test unit. Gestion d'erreur (pas de QR / SPC invalide). i18n FR + clés.
 - [ ] **T4 — Doc** : CHANGELOG `[Non publié]` (conclut la feature factures fournisseurs & paiements) + README (retirer « scan QR à venir »). Quality gate Test Locally First exit-code vérifié.
 
 ## Découpage

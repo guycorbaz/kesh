@@ -4,7 +4,13 @@
 	import {
 		createSupplierInvoice,
 		listSupplierInvoices,
+		scanQrSupplierInvoice,
 	} from '$lib/features/supplier-invoices/supplier-invoices.api';
+	import {
+		decodeQrFromImageFile,
+		scanToPrefill,
+	} from '$lib/features/supplier-invoices/supplier-invoice-scan';
+	import { notifySuccess, notifyError, notifyWarning } from '$lib/shared/utils/notify';
 	import {
 		formatSupplierInvoiceTotal,
 		supplierInvoiceStatusLabel,
@@ -41,10 +47,52 @@
 	let fInvoiceDate = $state(today);
 	let fDueDate = $state('');
 	let fCreditorIban = $state('');
+	/** `true` si l'IBAN saisi/scanné est un QR-IBAN → routé vers `creditorQrIban`. */
+	let fIsQrIban = $state(false);
 	let fPaymentReference = $state('');
+	let fExpectedAmount = $state('');
+	/** Nom du créancier détecté par le scan (indice pour choisir le fournisseur). */
+	let fScannedCreditorName = $state('');
+	let scanning = $state(false);
+	let scanFileInput = $state<HTMLInputElement | null>(null);
 	let fLines = $state<CreateSupplierInvoiceLineRequest[]>([
 		{ description: '', quantity: '1', unitPrice: '', vatRate: '0', expenseAccountId: 0 },
 	]);
+
+	/** Décodage jsQR (navigateur) → parse backend → pré-remplissage (Story 12.4). */
+	async function onScanFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = ''; // autoriser le re-scan du même fichier
+		if (!file) return;
+		scanning = true;
+		formError = '';
+		try {
+			const spc = await decodeQrFromImageFile(file);
+			if (!spc) {
+				notifyWarning(
+					i18nMsg('supplier-invoices-scan-no-qr', 'Aucun QR-code détecté sur cette image.'),
+				);
+				return;
+			}
+			const p = scanToPrefill(await scanQrSupplierInvoice(spc));
+			fIsQrIban = p.creditorQrIban !== '';
+			fCreditorIban = p.creditorQrIban || p.creditorIban;
+			fPaymentReference = p.paymentReference;
+			fExpectedAmount = p.expectedAmount;
+			fScannedCreditorName = p.creditorName;
+			notifySuccess(
+				i18nMsg('supplier-invoices-scan-ok', 'QR-facture lu — coordonnées pré-remplies.'),
+			);
+		} catch (err) {
+			notifyError(
+				(isApiError(err) && err.message) ||
+					i18nMsg('supplier-invoices-scan-failed', 'Impossible de lire cette image.'),
+			);
+		} finally {
+			scanning = false;
+		}
+	}
 
 	async function reload() {
 		const res = await listSupplierInvoices({ limit: 100 });
@@ -86,7 +134,10 @@
 		fInvoiceDate = today;
 		fDueDate = '';
 		fCreditorIban = '';
+		fIsQrIban = false;
 		fPaymentReference = '';
+		fExpectedAmount = '';
+		fScannedCreditorName = '';
 		fLines = [{ description: '', quantity: '1', unitPrice: '', vatRate: '0', expenseAccountId: 0 }];
 		formError = '';
 	}
@@ -121,8 +172,10 @@
 				supplierInvoiceNumber: fNumber.trim() || null,
 				invoiceDate: fInvoiceDate,
 				dueDate: fDueDate || null,
-				creditorIban: fCreditorIban.trim() || null,
+				creditorIban: !fIsQrIban && fCreditorIban.trim() ? fCreditorIban.trim() : null,
+				creditorQrIban: fIsQrIban && fCreditorIban.trim() ? fCreditorIban.trim() : null,
 				paymentReference: fPaymentReference.trim() || null,
+				expectedPaymentAmount: fExpectedAmount.trim() || null,
 				lines: fLines.map((l) => ({
 					description: l.description.trim(),
 					quantity: l.quantity || '1',
@@ -170,6 +223,41 @@
 			submit();
 		}}
 	>
+		<!-- Story 12.4 : scan QR-facture → pré-remplissage des coordonnées. -->
+		<div class="flex flex-wrap items-center gap-3 rounded bg-muted/40 p-3">
+			<input
+				type="file"
+				accept="image/*"
+				class="hidden"
+				bind:this={scanFileInput}
+				data-testid="supplier-invoice-scan-file"
+				onchange={onScanFile}
+			/>
+			<button
+				type="button"
+				class="rounded border px-3 py-1 text-sm disabled:opacity-60"
+				data-testid="supplier-invoice-scan-btn"
+				disabled={scanning}
+				onclick={() => scanFileInput?.click()}
+			>
+				{scanning
+					? i18nMsg('supplier-invoices-scan-running', 'Lecture…')
+					: i18nMsg('supplier-invoices-scan', 'Scanner un QR-facture')}
+			</button>
+			<span class="text-xs text-text-muted">
+				{i18nMsg(
+					'supplier-invoices-scan-hint',
+					'Chargez une image du QR-facture pour pré-remplir IBAN, référence et montant.',
+				)}
+			</span>
+			{#if fScannedCreditorName}
+				<span class="text-xs" data-testid="supplier-invoice-scan-creditor">
+					{i18nMsg('supplier-invoices-scan-detected', 'Créancier détecté')} :
+					<strong>{fScannedCreditorName}</strong>
+				</span>
+			{/if}
+		</div>
+
 		<div class="grid grid-cols-2 gap-4">
 			<label class="block text-sm">
 				{i18nMsg('supplier-invoices-field-supplier', 'Fournisseur')}
@@ -193,12 +281,26 @@
 				<input type="date" class="mt-1 w-full rounded border px-2 py-1" bind:value={fDueDate} />
 			</label>
 			<label class="block text-sm">
-				{i18nMsg('supplier-invoices-field-iban', 'IBAN / QR-IBAN (optionnel)')}
-				<input class="mt-1 w-full rounded border px-2 py-1" bind:value={fCreditorIban} />
+				{fIsQrIban
+					? i18nMsg('supplier-invoices-field-qr-iban', 'QR-IBAN (optionnel)')
+					: i18nMsg('supplier-invoices-field-iban', 'IBAN / QR-IBAN (optionnel)')}
+				<input
+					class="mt-1 w-full rounded border px-2 py-1"
+					bind:value={fCreditorIban}
+					oninput={() => (fIsQrIban = false)}
+				/>
 			</label>
 			<label class="block text-sm">
 				{i18nMsg('supplier-invoices-field-reference', 'Référence (optionnel)')}
 				<input class="mt-1 w-full rounded border px-2 py-1" bind:value={fPaymentReference} />
+			</label>
+			<label class="block text-sm">
+				{i18nMsg('supplier-invoices-field-expected-amount', 'Montant attendu TTC (optionnel)')}
+				<input
+					class="mt-1 w-full rounded border px-2 py-1"
+					inputmode="decimal"
+					bind:value={fExpectedAmount}
+				/>
 			</label>
 		</div>
 

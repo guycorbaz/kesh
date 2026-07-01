@@ -8,6 +8,7 @@ import type {
 	ListResponse,
 	ListSupplierInvoicesQuery,
 	PaySupplierInvoiceRequest,
+	ScanQrResponse,
 	SupplierInvoiceListItemResponse,
 	SupplierInvoiceResponse,
 } from './supplier-invoices.types';
@@ -48,4 +49,12 @@ export async function paySupplierInvoice(
 /** Annule une facture fournisseur « ouverte » (contre-passe l'écriture d'achat). */
 export async function cancelSupplierInvoice(id: number): Promise<SupplierInvoiceResponse> {
 	return apiClient.post(`/api/v1/supplier-invoices/${id}/cancel`, {});
+}
+
+/**
+ * Pré-remplissage par scan QR (Story 12.4) : envoie le texte SPC décodé côté
+ * navigateur (jsQR) et récupère les coordonnées de paiement. Lecture seule.
+ */
+export async function scanQrSupplierInvoice(spcText: string): Promise<ScanQrResponse> {
+	return apiClient.post('/api/v1/supplier-invoices/scan-qr', { spcText });
 }
