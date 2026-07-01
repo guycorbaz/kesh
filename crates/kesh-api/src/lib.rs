@@ -247,6 +247,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/supplier-invoices/{id}/cancel",
             post(routes::supplier_invoices::cancel_supplier_invoice),
         )
+        // Story 12.4 : scan QR-facture → pré-remplissage (Comptable+, lecture seule).
+        .route(
+            "/api/v1/supplier-invoices/scan-qr",
+            post(routes::supplier_invoices::scan_qr_supplier_invoice),
+        )
         // Story 12.5c : import répertoire de factures (#194) — Comptable+.
         .route(
             "/api/v1/inbox-import",

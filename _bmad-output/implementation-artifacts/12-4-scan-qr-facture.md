@@ -52,10 +52,28 @@ Le **Swiss QR Code** (SPC — Swiss Payments Code) imprimé sur les factures sui
 - **DC4 — Création du fournisseur** [proposition] : v0.4 ne crée PAS automatiquement le contact fournisseur depuis le nom du QR (risque de doublons). On **affiche** le nom détecté + on laisse l'utilisateur sélectionner un fournisseur existant ou en créer un. *Auto-match/auto-create = story de suivi.* À confirmer.
 - **DC5 — Pré-remplissage des lignes comptables** [proposition] : le QR donne un montant TTC sans ventilation TVA ni compte de charge → on **ne crée PAS de ligne** automatiquement (HT≠TTC, compte inconnu). On pré-remplit `expected_payment_amount` (informatif) + coordonnées. *Une ligne pré-remplie au montant TTC induirait une écriture fausse.* À confirmer.
 
-## Tasks / Subtasks (provisoire — affiner au validate)
+## Alignement post-12-5 (2026-07-01)
 
-- [ ] **T1 — Parseur SPC (kesh-qrbill)** (AC: 1,2 ; DC3) : `src/parser.rs` `parse_spc_payload(&str) -> Result<ScannedQrBill, QrBillError>` (split `\n`, index lignes = miroir `generator.rs`, validation en-tête + IBAN/QR-IBAN + QRR via `validation.rs`), struct `ScannedQrBill`, export dans `lib.rs`. Tests unitaires (round-trip generator↔parser, QRR/SCOR/NON, erreurs). `QrBillError` variant `InvalidPayload` si besoin.
-- [ ] **T2 — Endpoint scan-qr (kesh-api)** (AC: 3,4) : `POST /api/v1/supplier-invoices/scan-qr` dans `routes/supplier_invoices.rs` (Comptable+), DTO `ScanQrRequest { spc_text }` → `ScanQrResponse { creditorIban/creditorQrIban, paymentReference, expectedPaymentAmount, currency, creditorName, … }`. Lecture seule. Montage `lib.rs`. Tests intégration.
+⚠️ **T1 déjà livré par la story 12-5a** (branche `story/12-5-...`, commit `85a235b`) :
+`kesh-qrbill::parser::parse_spc_payload(&str) -> Result<ScannedQrBill, QrBillError>`
+existe, avec `ScannedQrBill { creditor_iban, is_qr_iban, creditor: ScannedAddress,
+amount: Option<Decimal>, currency, reference: ScannedReference (Qrr/Scor/None),
+unstructured_message, billing_information }`. C'est exactement la « struct dédiée »
+proposée en **DC3 → RÉSOLU (réutilisation, pas de nouveau code parseur)**. 12-4 se
+réduit donc à **T2 (endpoint wrapper) + T3 (frontend jsQR) + T4 (doc)**.
+
+**DC3** ✅ réutiliser `ScannedQrBill` (12-5a). **DC4** ✅ pas d'auto-création du
+fournisseur (affiche le nom détecté). **DC5** ✅ pas de ligne comptable
+pré-remplie (montant TTC informatif seul). Tous confirmés — pas de nouvelle
+table/migration. Développé sur la branche `story/12-5-...` (chevauchement de
+fichiers avec 12-5 → même PR #200, cf. `feedback_pr_grouping`).
+
+Status: ready-for-dev → in-progress
+
+## Tasks / Subtasks
+
+- [x] **T1 — Parseur SPC (kesh-qrbill)** (AC: 1,2 ; DC3) : **LIVRÉ par 12-5a** — `parse_spc_payload` + `ScannedQrBill` présents. 12-4 vérifie/réutilise (aucun nouveau code parseur).
+- [x] **T2 — Endpoint scan-qr (kesh-api)** (AC: 3,4) : `POST /api/v1/supplier-invoices/scan-qr` dans `routes/supplier_invoices.rs` (Comptable+), DTO `ScanQrRequest { spc_text }` → `ScanQrResponse { creditorIban/creditorQrIban, paymentReference, expectedPaymentAmount, currency, creditorName, … }`. Lecture seule. Montage `lib.rs`. Tests intégration.
 - [ ] **T3 — Frontend (pré-remplissage)** (AC: 5,6 ; DC2) : dép `jsqr` ; sur le formulaire `/supplier-invoices`, bouton « Scanner un QR-facture » + `<input type=file accept=image/*>` → décodage `jsQR` (canvas) → `scanQr(spcText)` api → pré-remplit les champs coordonnées + affiche nom créancier. Helper de mapping + test unit. Gestion d'erreur (pas de QR / SPC invalide). i18n FR + clés.
 - [ ] **T4 — Doc** : CHANGELOG `[Non publié]` (conclut la feature factures fournisseurs & paiements) + README (retirer « scan QR à venir »). Quality gate Test Locally First exit-code vérifié.
 
