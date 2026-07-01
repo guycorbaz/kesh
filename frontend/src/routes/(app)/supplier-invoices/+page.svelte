@@ -286,6 +286,7 @@
 					: i18nMsg('supplier-invoices-field-iban', 'IBAN / QR-IBAN (optionnel)')}
 				<input
 					class="mt-1 w-full rounded border px-2 py-1"
+					data-testid="supplier-invoice-iban"
 					bind:value={fCreditorIban}
 					oninput={() => (fIsQrIban = false)}
 				/>
@@ -298,6 +299,7 @@
 				{i18nMsg('supplier-invoices-field-expected-amount', 'Montant attendu TTC (optionnel)')}
 				<input
 					class="mt-1 w-full rounded border px-2 py-1"
+					data-testid="supplier-invoice-expected-amount"
 					inputmode="decimal"
 					bind:value={fExpectedAmount}
 				/>
@@ -325,7 +327,7 @@
 					/>
 					<select class="col-span-2 rounded border px-2 py-1 text-sm" bind:value={line.vatRate}>
 						<option value="0">0%</option>
-						{#each vatRates as r (r.category)}
+						{#each vatRates as r (r.id)}
 							<option value={r.rate}>{r.rate}%</option>
 						{/each}
 					</select>
