@@ -1,6 +1,6 @@
 # Story 12.5d: Frontend import + complétion + justificatif & documentation
 
-Status: review
+Status: done
 
 <!-- Sous-story 4/4 (DERNIÈRE) de l'umbrella 12-5 (import répertoire factures, #194, cible v0.4). Périmètre : AC8 (frontend) + AC9 (doc) de l'umbrella. CONSOMME les 6 endpoints livrés par 12-5c (aucune logique transactionnelle en frontend). Les compteurs « en dur » (TABLES_TO_TRUNCATE, manifeste export, admin_full_export_e2e=31, migrations_upgrade_path=39, audit idempotence) ont DÉJÀ été faits en 12-5b → HORS scope 12-5d. -->
 
@@ -244,6 +244,12 @@ Trend > LOW : **1 HIGH + 8 MEDIUM**. Acceptance Auditor : implémentation **fid�
 
 Gate frontend : check 0 err + lint-i18n PASS + 340 test:unit + build ; **E2E 3/3 réels** (round-trip + discard + disabled-assert). Pass 2 : Haiku 4.5.
 
+### Code-review Pass 2 (Haiku 4.5, 2 couches : correctness+spec / edge+accept), 2026-06-30 — CONVERGÉ
+**0 CRITICAL/HIGH/MEDIUM sur les 2 couches.** Tous les patches Pass 1 (EC1-EC6, BH1/BH2/BH7, M1/M2/M3) vérifiés présents ground-truth. Tous AC1-AC15 + DC-d1..d5 conformes ; parité TTC `lineVatAmount` pleine précision, validation structurelle complète, `safeReloadList`, boutons `disabled`, docker prod bind-mounts justifié, E2E 3 tests. **Aucune hallucination CRITICAL/HIGH Haiku** (rien à grep-réfuter). LOW : (a) clés index `report.failed`/`warnings` — acceptable (arrays immuables, décidé Pass 1) ; (b) `|| fContactId === null` « redondant » — en réalité **nécessaire au narrowing TS** (`structurallyInvalid()` n'informe pas le compilateur), pas d'action ; (c) `spc_e2e_discard.png` manquant en File List → **ajouté**.
+
+### Synthèse du cycle code-review
+Trend > LOW : **Pass 1 (Sonnet) 9 (1 HIGH + 8 MEDIUM) → Pass 2 (Haiku) 0**. 2 passes, rotation Sonnet→Haiku (2 modèles). Catch majeur Pass 1 : cluster **validation client incomplète** (`expenseAccountId===0`, montants/date non validés → erreurs backend brutes) + robustesse (report effacé, form partagé, rejection non gérée). Convergence en 2 passes (story UI frontend sans surface d'intégrité transactionnelle type 12-5c → pas de 3ᵉ passe Opus nécessaire ; **E2E 3/3 réels** = filet de sécurité fort). 1 déviation assumée justifiée (docker prod bind-mounts pour usabilité NAS File Station). **Épopée 12-5 COMPLÈTE 4/4** (a/b/c/d). Prochaine : PR umbrella 12-5.
+
 ### Synthèse du cycle validate
 Trend > LOW : **Pass 1 (Sonnet) ~9 → Pass 2 (Haiku) 1 → Pass 3 (Opus) 2 → Pass 4 (Sonnet) 0**. 4 passes, rotation Sonnet→Haiku→Opus→Sonnet (cycle complet). Catches majeurs : **Pass 1** (DC non figés → figés ; error-handling exhaustif des 6 endpoints ; i18n prefix lint ; website checklist) ; **Pass 3 Opus** (parité numérique TTC `lineVatAmount` vs `computeLineTotal` HT-seul ; contradiction redirect vs worklist batch). 1 faux-positif Haiku réfuté (« docs CRITICAL non implémentés » = travail prescrit AC9). Convergence au seuil 4 passes → **pas de re-split** (règle splitting : boucle *au-delà* de 4 sans converger ; ici convergé À 4). Backend 12-5c `done` non touché (frontière frontend+doc respectée). **Prêt pour `bmad-dev-story 12-5d`** (Opus recommandé). Reco dev : AC1 (feature module) → AC8 i18n keys → AC2-7 (pages) → AC9-13 doc → AC14 E2E.
 
@@ -280,6 +286,7 @@ exit-code vérifié + **E2E exécuté en réel** contre un backend monté (DB is
 - `frontend/src/routes/(app)/supplier-invoices/import/+page.svelte`
 - `frontend/tests/e2e/inbox-import.spec.ts`
 - `frontend/tests/e2e/fixtures/spc_e2e_invoice.png`
+- `frontend/tests/e2e/fixtures/spc_e2e_discard.png` (code-review Pass 1 M1)
 
 **Modifiés** :
 - `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` (lien justificatif)
