@@ -51,6 +51,8 @@
 	let fIsQrIban = $state(false);
 	let fPaymentReference = $state('');
 	let fExpectedAmount = $state('');
+	/** Devise détectée au scan (affichée avec le montant ; EUR ≠ CHF, DC5 informatif). */
+	let fScannedCurrency = $state('');
 	/** Nom du créancier détecté par le scan (indice pour choisir le fournisseur). */
 	let fScannedCreditorName = $state('');
 	let scanning = $state(false);
@@ -65,6 +67,14 @@
 		const file = input.files?.[0];
 		input.value = ''; // autoriser le re-scan du même fichier
 		if (!file) return;
+		// Garde-fou taille (LOW-3) : une photo brute d'appareil peut geler le décodage
+		// canvas sur une machine peu dotée. 15 Mo couvre largement un QR imprimé scanné.
+		if (file.size > 15 * 1024 * 1024) {
+			notifyError(
+				i18nMsg('supplier-invoices-scan-too-large', 'Image trop volumineuse (max 15 Mo).'),
+			);
+			return;
+		}
 		scanning = true;
 		formError = '';
 		try {
@@ -80,6 +90,7 @@
 			fCreditorIban = p.creditorQrIban || p.creditorIban;
 			fPaymentReference = p.paymentReference;
 			fExpectedAmount = p.expectedAmount;
+			fScannedCurrency = p.currency;
 			fScannedCreditorName = p.creditorName;
 			notifySuccess(
 				i18nMsg('supplier-invoices-scan-ok', 'QR-facture lu — coordonnées pré-remplies.'),
@@ -137,6 +148,7 @@
 		fIsQrIban = false;
 		fPaymentReference = '';
 		fExpectedAmount = '';
+		fScannedCurrency = '';
 		fScannedCreditorName = '';
 		fLines = [{ description: '', quantity: '1', unitPrice: '', vatRate: '0', expenseAccountId: 0 }];
 		formError = '';
@@ -288,7 +300,19 @@
 					class="mt-1 w-full rounded border px-2 py-1"
 					data-testid="supplier-invoice-iban"
 					bind:value={fCreditorIban}
-					oninput={() => (fIsQrIban = false)}
+					oninput={() => {
+						// Édition manuelle de l'IBAN après un scan QR-IBAN : la référence QRR
+						// scannée n'est plus valide (elle est liée au QR-IBAN). On ne la vide
+						// QUE dans ce cas — une référence saisie à la main (mode IBAN classique)
+						// n'est jamais effacée. Le nom du créancier scanné ne correspond plus
+						// non plus (LOW-2).
+						if (fIsQrIban) {
+							fPaymentReference = '';
+							fScannedCurrency = '';
+							fScannedCreditorName = '';
+						}
+						fIsQrIban = false;
+					}}
 				/>
 			</label>
 			<label class="block text-sm">
@@ -297,6 +321,11 @@
 			</label>
 			<label class="block text-sm">
 				{i18nMsg('supplier-invoices-field-expected-amount', 'Montant attendu TTC (optionnel)')}
+				{#if fScannedCurrency}
+					<span class="text-xs text-text-muted" data-testid="supplier-invoice-scan-currency"
+						>({fScannedCurrency})</span
+					>
+				{/if}
 				<input
 					class="mt-1 w-full rounded border px-2 py-1"
 					data-testid="supplier-invoice-expected-amount"

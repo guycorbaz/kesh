@@ -38,6 +38,8 @@ export interface ScanPrefill {
 	creditorQrIban: string;
 	paymentReference: string;
 	expectedAmount: string;
+	/** Devise du QR (`CHF`/`EUR`) — affichée avec le montant pour lever l'ambiguïté. */
+	currency: string;
 	creditorName: string;
 }
 
@@ -52,6 +54,7 @@ export function scanToPrefill(scan: ScanQrResponse): ScanPrefill {
 		creditorQrIban: scan.creditorQrIban ?? '',
 		paymentReference: scan.paymentReference ?? '',
 		expectedAmount: scan.expectedPaymentAmount ?? '',
+		currency: scan.currency ?? '',
 		creditorName: scan.creditorName ?? '',
 	};
 }

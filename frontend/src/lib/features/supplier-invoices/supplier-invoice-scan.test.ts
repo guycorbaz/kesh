@@ -47,4 +47,9 @@ describe('scanToPrefill', () => {
 		expect(p.expectedAmount).toBe('');
 		expect(p.paymentReference).toBe('');
 	});
+
+	it('expose la devise (EUR ≠ CHF) pour lever l’ambiguïté du montant', () => {
+		const p = scanToPrefill(resp({ creditorIban: 'CH93...', currency: 'EUR' }));
+		expect(p.currency).toBe('EUR');
+	});
 });
