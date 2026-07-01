@@ -3,7 +3,7 @@
 	import Big from 'big.js';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { notifySuccess, notifyError, notifyWarning, notifyInfo } from '$lib/shared/utils/notify';
+	import { notifySuccess, notifyError, notifyWarning } from '$lib/shared/utils/notify';
 	import {
 		triggerInboxImport,
 		listImported,
@@ -23,7 +23,7 @@
 	import { listVatRates } from '$lib/features/vat-rates/vat-rates.api';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
 	import { lineVatAmount } from '$lib/features/journal-entries/vat-purchase';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	import { formatSwissAmount, isValidAmount } from '$lib/features/journal-entries/balance';
 
 	let toComplete = $state<ImportedSupplierInvoice[]>([]);
 	let loading = $state(true);
@@ -75,6 +75,21 @@
 		toComplete = await listImported('to_complete');
 	}
 
+	/** Rechargement « best-effort » : ne propage jamais (évite une rejection non
+	 * gérée quand appelé depuis un `catch`, BH7/EC6). Notifie sur échec. */
+	async function safeReloadList() {
+		try {
+			await reloadList();
+		} catch {
+			notifyWarning(
+				i18nMsg(
+					'imported-supplier-invoices-reload-failed',
+					'La liste n’a pas pu être rechargée — actualisez la page.',
+				),
+			);
+		}
+	}
+
 	onMount(async () => {
 		try {
 			const [, contactsRes, accountsRes, ratesRes] = await Promise.all([
@@ -98,7 +113,6 @@
 		importing = true;
 		try {
 			report = await triggerInboxImport();
-			await reloadList();
 		} catch (err) {
 			report = null;
 			if (isApiError(err) && err.code === 'INBOX_IMPORT_ALREADY_RUNNING') {
@@ -114,6 +128,20 @@
 						i18nMsg('imported-supplier-invoices-import-failed', 'Erreur inattendue lors de l’import.'),
 				);
 			}
+			importing = false;
+			return;
+		}
+		// Rechargement de la liste séparé du déclenchement (BH1/EC2) : un échec de
+		// `reloadList` ne doit PAS effacer le rapport d'import qui vient de réussir.
+		try {
+			await reloadList();
+		} catch {
+			notifyWarning(
+				i18nMsg(
+					'imported-supplier-invoices-reload-failed',
+					'Import effectué, mais la liste n’a pas pu être rechargée — actualisez la page.',
+				),
+			);
 		} finally {
 			importing = false;
 		}
@@ -192,30 +220,40 @@
 		}
 	}
 
-	/** Invalidité structurelle → bouton Valider désactivé (M3). Le montant n'en fait PAS partie (DC-d3). */
+	/**
+	 * Invalidité **structurelle** → bouton Valider désactivé (M3). Couvre :
+	 * fournisseur manquant, date vide, ≥1 ligne, et par ligne : description non
+	 * vide, compte de charge sélectionné (≠ 0), quantité et PU des montants
+	 * valides. Le **montant total** (réconciliation QR) n'en fait JAMAIS partie
+	 * (DC-d3 : autorité backend `AMOUNT_MISMATCH`).
+	 */
 	function structurallyInvalid(): boolean {
 		if (!fContactId) return true;
+		if (!fInvoiceDate.trim()) return true;
 		if (fLines.length === 0) return true;
-		return fLines.some((l) => !l.description.trim());
+		return fLines.some(
+			(l) =>
+				!l.description.trim() ||
+				l.expenseAccountId === 0 ||
+				!isValidAmount(l.quantity) ||
+				!isValidAmount(l.unitPrice),
+		);
 	}
 
 	async function submitComplete(id: number) {
 		formError = '';
-		if (!fContactId) {
-			formError = i18nMsg('imported-supplier-invoices-err-supplier', 'Sélectionnez un fournisseur.');
-			return;
-		}
-		if (fLines.length === 0 || fLines.some((l) => !l.description.trim())) {
+		if (structurallyInvalid() || fContactId === null) {
 			formError = i18nMsg(
-				'imported-supplier-invoices-err-lines',
-				'Chaque ligne requiert une description.',
+				'imported-supplier-invoices-err-form',
+				'Vérifiez le fournisseur, la date et chaque ligne (description, montants, compte de charge).',
 			);
 			return;
 		}
+		const contactId = fContactId;
 		saving = true;
 		try {
 			const created = await completeImport(id, {
-				contactId: fContactId,
+				contactId,
 				invoiceDate: fInvoiceDate,
 				supplierInvoiceNumber: fNumber.trim() || null,
 				dueDate: fDueDate || null,
@@ -228,7 +266,9 @@
 				})),
 			});
 			toComplete = toComplete.filter((r) => r.id !== id);
-			completingId = null;
+			// Ne fermer le formulaire que s'il s'agit toujours de la ligne soumise
+			// (EC3 : éviter de fermer/polluer un autre formulaire ouvert entre-temps).
+			if (completingId === id) completingId = null;
 			notifySuccess(
 				i18nMsg('imported-supplier-invoices-completed', 'Facture créée.'),
 				i18nMsg('imported-supplier-invoices-completed-hint', 'Facture #{$id} enregistrée.', {
@@ -304,10 +344,10 @@
 						'Cette facture a déjà été complétée ou écartée par une autre session.',
 					),
 				);
-				await reloadList();
+				await safeReloadList();
 			} else if (isApiError(err) && err.code === 'IMPORTED_INVOICE_NOT_FOUND') {
 				notifyWarning(i18nMsg('imported-supplier-invoices-err-not-found', 'Facture importée introuvable.'));
-				await reloadList();
+				await safeReloadList();
 			} else {
 				notifyError(
 					(isApiError(err) && err.message) ||
@@ -381,7 +421,7 @@
 					})}
 				</p>
 				<ul class="mt-1 space-y-1 text-sm">
-					{#each report.failed as f (f.fileName + f.errorCode)}
+					{#each report.failed as f, fi (fi)}
 						<li data-testid="inbox-import-failed-row">
 							<span class="font-mono">{f.fileName}</span> — {importErrorLabel(f.errorCode)}
 						</li>
@@ -391,7 +431,7 @@
 		{/if}
 		{#if report.warnings.length > 0}
 			<ul class="mt-3 space-y-1 text-sm text-text-muted">
-				{#each report.warnings as w (w)}
+				{#each report.warnings as w, wi (wi)}
 					<li>⚠️ {w}</li>
 				{/each}
 			</ul>
@@ -431,13 +471,15 @@
 					</div>
 					<div class="flex gap-2">
 						<button
-							class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground"
+							class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-60"
 							data-testid="imported-complete-open"
+							disabled={saving}
 							onclick={() => openComplete(row)}>{i18nMsg('imported-supplier-invoices-complete', 'Compléter')}</button
 						>
 						<button
-							class="rounded border px-3 py-1 text-sm"
+							class="rounded border px-3 py-1 text-sm disabled:opacity-60"
 							data-testid="imported-discard"
+							disabled={saving}
 							onclick={() => discard(row)}>{i18nMsg('imported-supplier-invoices-discard', 'Écarter')}</button
 						>
 						<button

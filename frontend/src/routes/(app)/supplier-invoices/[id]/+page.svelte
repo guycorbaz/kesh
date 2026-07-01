@@ -102,14 +102,14 @@
 		} catch (err) {
 			if (isApiError(err) && err.code === 'SOURCE_DOCUMENT_NOT_FOUND') {
 				notifyInfo(
-					i18nMsg('supplier-invoices-no-source-doc', 'Cette facture n’a pas de justificatif importé.'),
+					i18nMsg('imported-supplier-invoices-no-source-doc', 'Cette facture n’a pas de justificatif importé.'),
 				);
 			} else if (isApiError(err) && err.code === 'SOURCE_DOCUMENT_GONE') {
-				notifyWarning(i18nMsg('supplier-invoices-source-doc-gone', 'Le justificatif n’a pas été restauré.'));
+				notifyWarning(i18nMsg('imported-supplier-invoices-source-doc-gone', 'Le justificatif n’a pas été restauré.'));
 			} else {
 				notifyError(
 					(isApiError(err) && err.message) ||
-						i18nMsg('supplier-invoices-source-doc-failed', 'Téléchargement impossible.'),
+						i18nMsg('imported-supplier-invoices-source-doc-failed', 'Téléchargement impossible.'),
 				);
 			}
 		}
@@ -158,7 +158,7 @@
 		data-testid="supplier-invoice-source-document"
 		onclick={viewSourceDocument}
 	>
-		{i18nMsg('supplier-invoices-view-source', 'Voir la facture d’origine')}
+		{i18nMsg('imported-supplier-invoices-view-source', 'Voir la facture d’origine')}
 	</button>
 
 	<table class="mb-6 w-full border-collapse text-sm">

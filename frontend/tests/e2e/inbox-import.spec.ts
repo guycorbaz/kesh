@@ -148,6 +148,8 @@ test.describe('Import de factures depuis un dossier', () => {
 
 		// Compléter : fournisseur + 1 ligne au montant cible (100.00, TVA 0).
 		await row.getByTestId('imported-complete-open').click();
+		// Validation client (M2) : sans fournisseur, le bouton Valider est désactivé.
+		await expect(row.getByTestId('imported-complete-submit')).toBeDisabled();
 		await row.getByTestId('imported-supplier-select').selectOption(String(supplierId));
 		const lineInputs = row.locator('input[inputmode="decimal"]');
 		await lineInputs.nth(0).fill('1'); // quantité
@@ -159,5 +161,38 @@ test.describe('Import de factures depuis un dossier', () => {
 		// La ligne disparaît du worklist (complétée), on reste sur l'écran d'import.
 		await expect(page).toHaveURL(/\/supplier-invoices\/import$/);
 		await expect(page.getByTestId('imported-row')).toHaveCount(0);
+	});
+
+	test('écarter une importée → disparaît de la liste', async ({ page }) => {
+		test.skip(
+			!INBOX_DIR,
+			'KESH_INBOX_DIR non défini — round-trip import réel ignoré (DC-d4 fallback).',
+		);
+		await login(page);
+
+		// Fixture au contenu distinct (hash différent → pas de DUPLICATE avec le
+		// round-trip qui a complété la première fixture).
+		await fs.mkdir(INBOX_DIR!, { recursive: true });
+		await fs.copyFile(
+			path.join(path.dirname(FIXTURE), 'spc_e2e_discard.png'),
+			path.join(INBOX_DIR!, `e2e-discard-${Date.now()}.png`),
+		);
+
+		await page.goto('/supplier-invoices/import');
+		await page.getByTestId('inbox-import-trigger').click();
+		await expect(page.getByTestId('inbox-import-report')).toBeVisible();
+
+		const row = page
+			.getByTestId('imported-row')
+			.filter({ hasText: 'Fournisseur Discard SA' });
+		await expect(row).toBeVisible();
+
+		// La confirmation `confirm()` du navigateur est acceptée automatiquement.
+		page.once('dialog', (d) => d.accept());
+		await row.getByTestId('imported-discard').click();
+
+		await expect(
+			page.getByTestId('imported-row').filter({ hasText: 'Fournisseur Discard SA' }),
+		).toHaveCount(0);
 	});
 });
