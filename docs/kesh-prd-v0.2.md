@@ -73,7 +73,7 @@
 - Interface de validation / correction avant intégration
 
 ### 4.4 Fichiers de paiement
-- Génération **pain.001.001.03** (virements SEPA/SIX)
+- Génération **pain.001.001.09** (virements SEPA/SIX)
 - Support QR-IBAN et IBAN classique
 - Batch de paiements depuis les écritures ouvertes
 - Export XML prêt pour import e-banking
@@ -214,7 +214,7 @@ CREATE TABLE import_rules (id, company_id, pattern, account_id, priority);
 | Standard | Organisme | Usage |
 |---|---|---|
 | Swiss QR Bill 2.2 | SIX | Facturation |
-| pain.001.001.03 | SIX / ISO 20022 | Paiements |
+| pain.001.001.09 | SIX / ISO 20022 | Paiements |
 | CAMT.053.001.04 | SIX / ISO 20022 | Relevés bancaires |
 | QR-IBAN | SIX | Identification compte |
 | Plan comptable PME | FIDAG / EXPERTsuisse | Comptabilité |
