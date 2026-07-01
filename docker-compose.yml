@@ -52,6 +52,11 @@ services:
       KESH_JWT_SECRET: ${KESH_JWT_SECRET:-change-me-32-bytes-minimum-secret-generate-with-openssl-rand-hex-32}
       KESH_JWT_EXPIRY_MINUTES: ${KESH_JWT_EXPIRY_MINUTES:-15}
       KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS: ${KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS:-30}
+      # Flag Secure des cookies de session. true (défaut) = sécurisé, EXIGE HTTPS.
+      # ⚠️ Accès en HTTP simple (LAN/NAS sans reverse proxy TLS) : le navigateur
+      # refuse un cookie Secure → login impossible. Mettre KESH_COOKIE_SECURE=false
+      # dans .env pour ce cas (ou, mieux, servir en HTTPS via reverse proxy).
+      KESH_COOKIE_SECURE: ${KESH_COOKIE_SECURE:-true}
 
       # Session & Rate Limiting
       KESH_REFRESH_INACTIVITY_MINUTES: ${KESH_REFRESH_INACTIVITY_MINUTES:-15}
