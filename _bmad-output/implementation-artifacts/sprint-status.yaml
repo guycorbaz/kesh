@@ -274,3 +274,17 @@ development_status:
   18-1e-reconciliation: done  # 2026-06-25 `bmad-create-story 18-1e` — spec créée (ground-truth 3 agents Explore @ 7264994). DC5 cross-check total_vat_due dérivé(invoice_lines) vs solde 2200 grand livre ISOLÉ périmètre ventes par lien `invoices.journal_entry_id` (PAS libellé journal `default_sales_journal` configurable — F-OPUS-4). DC5-iso/delta/signe/null/period/empty figés. reconciliation_delta:Decimal + reconciliation_status:String("ok"/"delta") seuil |delta|>=0.01, champs additifs serde auto (route inchangée). Bandeau front INFO non bloquant si status==delta. Renderers CSV/PDF +ligne écart. AC1-12, T-E1..T-E6. Tests existants (vat_report_e2e ~8 + recoverable 7) non cassés (assertions par-champ/contains). Prochaine : `bmad-create-story validate 18-1e` Pass 1 Sonnet. # cross-check rapport↔grand livre, reconciliation_delta + isolation périmètre ventes. Dépend 18-1d.
   18-1f-tests-doc: done  # 2026-06-26 `bmad-create-story 18-1f` — spec créée (clôture épopée 18-1). Couverture AC11 intégration déjà complète (zero_rate/mixed/multi_rate/exempt + 9 reconciliation + 7 recoverable). Reste : gap test arrondi→0.00, 1 E2E décompte TVA, CHANGELOG [Non publié], README retrait (à venir) TVA, manuels user (Décompte TVA) + admin (config comptes TVA). AC1-7, T-F1..T-F6. Doc-heavy, pas de logique métier. Prochaine : validate 18-1f. # E2E + manuels + CHANGELOG + README. Dépend toutes.
   epic-18-retrospective: done
+
+  # --- Epic 19 : Comptabilité analytique par projet (design 2026-07-01, décisions Guy D1-D4) ---
+  # Design : _bmad-output/planning-artifacts/epic-19-analytique-projet-design.md. Hybride doc+ligne,
+  # 2 niveaux projet→sous-projets, tous comptes (charges+produits+bilan pour rendement), exercice+cumulé.
+  # project_id (source de vérité) sur journal_entry_lines + propagation document. Story-zéro 19-1 + rollout.
+  epic-19: in-progress  # 2026-07-01 kickoff Epic 19 (compta analytique projet) sous contrat autonomie — story-zéro 19-1.
+  19-1-projets-socle: in-progress  # socle : table projects (2 niveaux, archivage) + colonne project_id journal_entry_lines (non-breaking) + entité/repo CRUD + API /projects (Comptable+) + page admin Projets + intégration export/backup. Bloque 19-2..7.
+  19-2-tagging-ecritures-manuelles: backlog  # sélecteur projet par ligne dans le formulaire d'écriture. Dépend 19-1.
+  19-3-tagging-factures-fournisseurs: backlog  # project_id document sur facture fournisseur → propagation lignes (rénovations). Dépend 19-1 (+ 12-2 mergée).
+  19-4-tagging-factures-vente: backlog  # project_id document sur facture client → propagation lignes (revenus investissement). Dépend 19-1.
+  19-5-tagging-banque-reconciliation: backlog  # affectation projet depuis transaction bancaire + projet défaut sur règle. Dépend 19-1.
+  19-6-rapports-analytiques: backlog  # rapports Dépenses par projet + Rendement par projet (rollup sous-projets, exercice+cumulé, PDF/CSV). Dépend 19-1..5.
+  19-7-doc-cloture: backlog  # CHANGELOG/README/manuels/site + rétro. Dépend 19-1..6.
+  epic-19-retrospective: optional
