@@ -168,6 +168,11 @@ pub struct NewJournalEntry {
     pub entry_date: NaiveDate,
     pub journal: Journal,
     pub description: String,
+    /// Projet analytique (Epic 19, Story 19-3) : stampé sur **toutes** les lignes de
+    /// l'écriture à l'insertion (propagation document-level depuis facture fournisseur /
+    /// vente / banque). `None` = pas de projet. Le tag par-ligne (écritures manuelles,
+    /// 19-2) sera porté séparément par `NewJournalEntryLine`.
+    pub project_id: Option<i64>,
     pub lines: Vec<NewJournalEntryLine>,
 }
 

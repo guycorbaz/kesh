@@ -96,6 +96,7 @@ fn one_line(ctx: &Ctx, unit_price: Decimal, vat_rate: Decimal) -> NewSupplierInv
         creditor_qr_iban: None,
         payment_reference: None,
         expected_payment_amount: None,
+        project_id: None,
         lines: vec![NewSupplierInvoiceLine {
             description: "Prestation".into(),
             quantity: dec!(1),
@@ -507,4 +508,64 @@ async fn pay_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     .await
     .unwrap_err();
     assert!(matches!(err, DbError::FiscalYearInvalid));
+}
+
+/// Helper Story 19-3 : insère un projet analytique et retourne son id.
+async fn make_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+    sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived, version) VALUES (?, ?, ?, ?, 0)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(code)
+    .bind(archived)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Story 19-3 — le projet document-level est propagé sur TOUTES les lignes de
+/// l'écriture d'achat.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_project_tags_all_purchase_lines(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
+
+    let mut new = one_line(&ctx, dec!(100), dec!(8.1));
+    new.project_id = Some(project_id);
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+    assert_eq!(created.invoice.project_id, Some(project_id));
+
+    // Toutes les lignes de l'écriture d'achat portent le projet.
+    let tags: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT project_id FROM journal_entry_lines WHERE entry_id = ?")
+            .bind(created.invoice.purchase_journal_entry_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(!tags.is_empty());
+    assert!(
+        tags.iter().all(|t| *t == Some(project_id)),
+        "toutes les lignes d'achat doivent porter project_id={project_id}, got {tags:?}"
+    );
+}
+
+/// Story 19-3 — un projet archivé est refusé (dépense sur projet clos interdite).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "OLD", true).await;
+
+    let mut new = one_line(&ctx, dec!(100), dec!(8.1));
+    new.project_id = Some(project_id);
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, kesh_db::errors::DbError::IllegalStateTransition(_)),
+        "projet archivé → IllegalStateTransition, got {err:?}"
+    );
 }

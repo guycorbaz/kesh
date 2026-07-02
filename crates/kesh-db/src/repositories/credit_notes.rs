@@ -335,6 +335,9 @@ pub async fn create_credit_note(
                 entry_date: date,
                 journal,
                 description: entry_description,
+                // Pas de projet analytique sur les avoirs pour l'instant (19-4 tag les
+                // factures de vente ; l'avoir héritera alors du projet de sa facture).
+                project_id: None,
                 lines: entry_lines,
             },
         )

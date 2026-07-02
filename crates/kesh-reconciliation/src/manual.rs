@@ -101,6 +101,8 @@ pub fn build_journal_entry_for_counterparty(
         entry_date,
         journal: Journal::Banque,
         description,
+        // Tag projet depuis la banque = Story 19-5 (à venir) → None ici.
+        project_id: None,
         lines: vec![
             NewJournalEntryLine {
                 account_id: bank_account_journal_id,

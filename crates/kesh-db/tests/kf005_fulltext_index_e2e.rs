@@ -130,6 +130,7 @@ async fn seed_journal_entries(
             entry_date: day,
             journal: Journal::Achats,
             description: format!("Marie facture fournisseur {i:04}"),
+            project_id: None,
             lines: vec![
                 NewJournalEntryLine {
                     account_id: expense,

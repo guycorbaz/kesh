@@ -1141,6 +1141,8 @@ pub async fn validate_invoice(
                 entry_date: invoice_before.date,
                 journal,
                 description: entry_description,
+                // Tag projet des factures de vente = Story 19-4 (à venir) → None ici.
+                project_id: None,
                 lines: entry_lines,
             },
         )

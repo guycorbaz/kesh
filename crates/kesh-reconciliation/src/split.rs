@@ -139,6 +139,8 @@ pub fn build_split_journal_entry(
         entry_date,
         journal: Journal::Banque,
         description,
+        // Tag projet depuis la banque = Story 19-5 (à venir) → None ici.
+        project_id: None,
         lines,
     }
 }

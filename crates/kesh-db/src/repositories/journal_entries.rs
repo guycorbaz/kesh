@@ -183,14 +183,15 @@ pub async fn create_in_tx(
         let line_order = (idx as i32) + 1;
         sqlx::query(
             "INSERT INTO journal_entry_lines \
-             (entry_id, account_id, line_order, debit, credit) \
-             VALUES (?, ?, ?, ?, ?)",
+             (entry_id, account_id, line_order, debit, credit, project_id) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(entry_id)
         .bind(line.account_id)
         .bind(line_order)
         .bind(line.debit)
         .bind(line.credit)
+        .bind(new.project_id)
         .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
@@ -1058,6 +1059,7 @@ mod tests {
             entry_date: date,
             journal: CoreJournal::Banque.into(),
             description: "Test entry".to_string(),
+            project_id: None,
             lines,
         }
     }
@@ -2000,6 +2002,7 @@ mod tests {
             entry_date: created.entry.entry_date,
             journal: created.entry.journal,
             description: created.entry.description.clone(),
+            project_id: None,
             lines: created
                 .lines
                 .iter()
@@ -2082,6 +2085,7 @@ mod tests {
             entry_date: created.entry.entry_date,
             journal: created.entry.journal,
             description: created.entry.description.clone(),
+            project_id: None,
             lines: created
                 .lines
                 .iter()
@@ -2177,6 +2181,7 @@ mod tests {
             entry_date: created.entry.entry_date,
             journal: created.entry.journal,
             description: created.entry.description.clone(),
+            project_id: None,
             lines: created
                 .lines
                 .iter()
@@ -2250,6 +2255,7 @@ mod tests {
             entry_date: created.entry.entry_date,
             journal: created.entry.journal,
             description: created.entry.description.clone(),
+            project_id: None,
             lines: created
                 .lines
                 .iter()
