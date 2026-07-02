@@ -1,6 +1,6 @@
 # Story 19.1 : Socle — entité Projet & dimension analytique
 
-Status: in-progress
+Status: done
 
 <!-- Story-zéro de l'Epic 19 (compta analytique par projet). Pose le PATTERN
      (table projects + dimension project_id sur journal_entry_lines + propagation) ;
@@ -72,3 +72,14 @@ so that je pourrai ensuite rattacher mes dépenses et revenus à un projet (rén
 
 ### Conventions projet
 - Multi-tenant : toute requête scopée `company_id` (IDOR). DTOs camelCase (serde rename_all). `AppError` 4xx typée jamais 500. i18n route-file fallback FR inline. Test Locally First exit-code (pas de pipe grep, `feedback_cargo_test_pipe_masks_exit`). Ajout table → TABLES_TO_TRUNCATE + manifeste + compteur (`project_12_1_avoirs_pr` leçon).
+
+## Change Log — code-review
+
+**Dev** : T1 migration (projects 2 niveaux + project_id sur journal_entry_lines, non-breaking) + T2 entité/repo (CRUD company-scoped, verrou optimiste, has_children) + T3 routes (garde hiérarchie 2 niveaux, sentinel lock + audit) + T4 frontend (page arbre /settings/projects) + T5 backup (TABLES_TO_TRUNCATE + compteur 30→31) + T6 gate. Cartographie pattern par agent Explore (vat_rates/bank_accounts).
+
+**Code-review — CONVERGÉ 3 passes (Sonnet → Haiku → Opus)** :
+- **Pass 1 (Sonnet, 2 couches)** : 4 MEDIUM + LOW. (a) **500 latent** : longueur code/name non validée → MariaDB 1406 non mappée → 500 ; fix `validate_fields` bornes 32/150 + maxlength. (b) **anti-orphelin** : archiver une racine avec sous-projets actifs / parent archivé au create → enfants orphelins ; fix `has_active_children` + gardes create/archive/unarchive + frontend (exclusion racines archivées, empty-state sur `projects.length`). (c) spec `archived BOOLEAN` (calque bank_accounts). (d) tests AC8 : +403 Comptable, +IDOR cross-company, +longueur, +gardes archive.
+- **Pass 2 (Haiku, 2 couches)** : 1 MEDIUM-UX (toggleArchive `load()` sur erreur → rafraîchit version après 409 concurrent) + 1 LOW (test désarchivage sous racine archivée). Correctness 0>LOW ground-truthé.
+- **Pass 3 (Opus, architectural)** : **0 > LOW**. 6 axes tracés OK : FK `project_id` RESTRICT inerte (pas de hard-delete) ; backup FK_CHECKS=0 transactionnel (ordre `projects` non-critique) ; **sentinel-lock sérialise le TOCTOU hiérarchie** (pas de 3e niveau ni cycle sous concurrence) ; verrou+garde cohérents (même tx) ; scoping complet ; forward-compat epic (19-3/4/6 = ADD COLUMN additifs). LOW : +garde `start_date ≤ end_date` (ajouté, utile 19-6).
+
+**Trend > LOW : 4 (Sonnet) → 1 (Haiku) → 0 (Opus).** Gate final : fmt + clippy 0w + **12 tests intégration** + migration/backup schéma-sync + export round-trip 7/7 (30→31) + front check 0/lint/340 unit/build + **E2E projets 1/1 réel**. Story-zéro Epic 19 : pose le pattern dimension+propagation pour 19-2..6.

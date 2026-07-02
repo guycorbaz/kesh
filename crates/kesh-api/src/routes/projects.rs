@@ -118,6 +118,19 @@ fn validate_fields(code: &str, name: &str) -> Result<(String, String), AppError>
     Ok((code, name))
 }
 
+/// Rejette une plage de dates incohérente (`start_date > end_date`) — évite qu'un
+/// intervalle absurde ne fausse les filtres de période des rapports analytiques (19-6).
+fn validate_dates(start: Option<NaiveDate>, end: Option<NaiveDate>) -> Result<(), AppError> {
+    if let (Some(s), Some(e)) = (start, end) {
+        if s > e {
+            return Err(AppError::Validation(
+                "La date de début est postérieure à la date de fin.".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Garde de hiérarchie **2 niveaux** (DC2). `self_id` = id du projet en cours de
 /// modification (`None` à la création). Si `parent_id` est renseigné : le parent doit
 /// exister (même company), être une **racine** (`parent_id IS NULL`), et différer de
@@ -194,6 +207,7 @@ pub async fn create_project(
     Json(body): Json<CreateProjectBody>,
 ) -> Result<(StatusCode, Json<ProjectResponse>), AppError> {
     let (code, name) = validate_fields(&body.code, &body.name)?;
+    validate_dates(body.start_date, body.end_date)?;
 
     let mut tx = state
         .pool
@@ -246,6 +260,7 @@ pub async fn update_project(
     Json(body): Json<UpdateProjectBody>,
 ) -> Result<Json<ProjectResponse>, AppError> {
     let (code, name) = validate_fields(&body.code, &body.name)?;
+    validate_dates(body.start_date, body.end_date)?;
 
     let mut tx = state
         .pool

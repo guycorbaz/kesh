@@ -479,6 +479,21 @@ async fn cannot_parent_under_archived_root(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn rejects_start_date_after_end_date(pool: MySqlPool) {
+    seed_accounting_company(&pool).await.expect("seed");
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+
+    let resp = create_project(
+        &app,
+        &token,
+        json!({ "code": "D", "name": "D", "startDate": "2026-12-31", "endDate": "2026-01-01" }),
+    )
+    .await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn cannot_unarchive_sub_under_archived_parent(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
