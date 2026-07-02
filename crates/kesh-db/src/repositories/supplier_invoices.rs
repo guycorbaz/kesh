@@ -275,10 +275,15 @@ pub async fn create_in_tx(
     // exister, appartenir à la même company et ne pas être archivé (sinon la dépense
     // serait taguée sur un projet clos).
     if let Some(pid) = project_id {
-        // `FOR UPDATE` : verrouille la ligne projet pour sérialiser vis-à-vis d'un
-        // archivage concurrent (l'archivage fait `UPDATE projects SET archived`). Sans
-        // ce lock, une course entre la validation et l'INSERT pourrait taguer la facture
-        // sur un projet qui vient d'être archivé (code-review Pass 2, HIGH).
+        // Ordre de verrouillage global (MULTI-TENANT-SCOPING-PATTERNS.md, Pattern 5) :
+        // `companies` (sentinel) AVANT `projects`, IDENTIQUE au chemin d'archivage
+        // (`projects::set_archived` prend le sentinel puis met à jour le projet). Prendre
+        // le sentinel d'abord évite l'inversion ABBA (deadlock) que créerait un simple
+        // `FOR UPDATE` sur la ligne projet alors que l'INSERT prendra un lock sur
+        // `companies` via la FK (code-review Pass 3 Opus). Bonus : l'exclusion mutuelle
+        // sur `companies` ferme aussi la race d'archivage concurrent (le `FOR UPDATE`
+        // projet ci-dessous devient ceinture-et-bretelles).
+        crate::repositories::bank_accounts::acquire_company_sentinel_lock(tx, company_id).await?;
         let row: Option<(bool,)> = sqlx::query_as(
             "SELECT archived FROM projects WHERE id = ? AND company_id = ? FOR UPDATE",
         )
