@@ -4,7 +4,7 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Roadmap — Kesh</title>
-	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 Swiss VAT and payments, planned epics and current status." />
+	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 sovereignty, v0.3 Swiss VAT, planned epics and current status." />
 	<meta name="theme-color" content="#0f172a" />
 	<link rel="icon" type="image/svg+xml" href="img/logo.svg" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -40,7 +40,7 @@
 		<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
 			<p class="text-emerald-400 text-sm font-mono mb-3">// Roadmap</p>
 			<h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">From foundations to Swiss VAT.</h1>
-			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) to the first feature-complete production release (v0.2).</p>
+			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2) and Swiss VAT (v0.3, current) toward a feature-complete production release.</p>
 			<div class="flex gap-4 mt-8 text-sm">
 				<div class="flex items-center gap-2">
 					<span class="w-3 h-3 rounded-full bg-emerald-400"></span>
@@ -217,10 +217,10 @@
 	<section class="border-b border-slate-800 bg-slate-900/30">
 		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
 			<div class="flex items-baseline gap-4 mb-2">
-				<h2 class="text-3xl font-bold tracking-tight">v0.2 — Production-ready</h2>
-				<span class="text-sm text-slate-500 font-mono">Swiss VAT &amp; payments</span>
+				<h2 class="text-3xl font-bold tracking-tight">v0.2 – v0.3 — Sovereignty & Swiss VAT</h2>
+				<span class="text-sm text-slate-500 font-mono">and beyond</span>
 			</div>
-			<p class="text-slate-400 mb-10">Everything an SME needs to run a full fiscal year on Kesh: VAT computation, outgoing payments, budgets, year-end closing.</p>
+			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), then supplier invoices & payments, budgets and year-end closing.</p>
 
 			<div class="grid sm:grid-cols-2 gap-4">
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
@@ -237,9 +237,12 @@
 					</div>
 					<p class="text-sm text-slate-400">Per-period VAT computation and report, multiple rates (standard, reduced, accommodation); output VAT posted automatically when sales invoices are validated; assisted entry of purchases with input VAT; VAT return (net amount due to the FTA) and reconciliation of the report against the general ledger. Official FTA e-decompte (ESTV) format planned for a later release.</p>
 				</div>
-				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
-					<h3 class="font-semibold mb-1">E12 — Credits &amp; Payments (pain.001)</h3>
-					<p class="text-sm text-slate-400">Generate ISO 20022 pain.001 outgoing payment files for upload to Swiss e-banking.</p>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E12 — Credit notes, supplier invoices &amp; payments <span class="text-slate-500 font-mono text-xs">v0.3.2+</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">In progress</span>
+					</div>
+					<p class="text-sm text-slate-400">Credit notes (linked reversal of a validated invoice) — <strong class="text-slate-200">shipped in v0.3.2</strong>. Supplier invoices with binary settlement, ISO 20022 <code>pain.001.001.09</code> outgoing payment file for Swiss e-banking, and folder-based supplier-invoice import with server-side Swiss QR-Bill decoding — implemented, shipping next release.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
 					<h3 class="font-semibold mb-1">E13 — Budgets</h3>

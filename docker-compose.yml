@@ -52,6 +52,11 @@ services:
       KESH_JWT_SECRET: ${KESH_JWT_SECRET:-change-me-32-bytes-minimum-secret-generate-with-openssl-rand-hex-32}
       KESH_JWT_EXPIRY_MINUTES: ${KESH_JWT_EXPIRY_MINUTES:-15}
       KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS: ${KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS:-30}
+      # Flag Secure des cookies de session. true (défaut) = sécurisé, EXIGE HTTPS.
+      # ⚠️ Accès en HTTP simple (LAN/NAS sans reverse proxy TLS) : le navigateur
+      # refuse un cookie Secure → login impossible. Mettre KESH_COOKIE_SECURE=false
+      # dans .env pour ce cas (ou, mieux, servir en HTTPS via reverse proxy).
+      KESH_COOKIE_SECURE: ${KESH_COOKIE_SECURE:-true}
 
       # Session & Rate Limiting
       KESH_REFRESH_INACTIVITY_MINUTES: ${KESH_REFRESH_INACTIVITY_MINUTES:-15}
@@ -59,13 +64,42 @@ services:
       KESH_RATE_LIMIT_MAX_ATTEMPTS: ${KESH_RATE_LIMIT_MAX_ATTEMPTS:-5}
       KESH_RATE_LIMIT_BLOCK_MINUTES: ${KESH_RATE_LIMIT_BLOCK_MINUTES:-30}
 
-      # Logging
+      # Logging — stdout (docker logs) + fichier avec rotation (Story v011-1).
       RUST_LOG: ${RUST_LOG:-info}
+      # Écrit AUSSI les logs dans un fichier /var/log/kesh/kesh.log (bind-monté
+      # sur l'hôte, cf. volumes) avec rotation. Opt-out : KESH_LOG_FILE_PATH=""
+      # dans .env → stdout uniquement (le mount ./log devient inutilisé).
+      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH:-/var/log/kesh/kesh.log}
+      KESH_LOG_FILE_ROTATION: ${KESH_LOG_FILE_ROTATION:-daily}
+      KESH_LOG_FILE_MAX_FILES: ${KESH_LOG_FILE_MAX_FILES:-7}
+      KESH_LOG_FILE_FORMAT: ${KESH_LOG_FILE_FORMAT:-pretty}
+
+      # Import de factures depuis un dossier (Story 12-5, #194)
+      KESH_DOCUMENTS_DIR: ${KESH_DOCUMENTS_DIR:-/data/documents}
+      KESH_INBOX_DIR: ${KESH_INBOX_DIR:-/data/inbox}
+      KESH_INBOX_MAX_FILE_BYTES: ${KESH_INBOX_MAX_FILE_BYTES:-26214400}
+      KESH_INBOX_MAX_FILES_PER_RUN: ${KESH_INBOX_MAX_FILES_PER_RUN:-200}
+      KESH_INBOX_MAX_PDF_PAGES: ${KESH_INBOX_MAX_PDF_PAGES:-20}
     ports:
       - "80:80"
     volumes:
-      # Mappage optionnel pour développement (rebuild nécessaire sinon)
-      - ./crates:/app/crates:ro
+      # Logs fichier (Story v011-1) — répertoire host accessible (par défaut ./log).
+      # Sur NAS, pointe KESH_LOG_HOST_DIR vers un dossier partagé pour consulter
+      # les logs depuis le PC (ex. /volume1/kesh/log).
+      - ${KESH_LOG_HOST_DIR:-./log}:/var/log/kesh
+      # Import de factures (Story 12-5) — dossiers montés en BIND MOUNTS host pour
+      # être ACCESSIBLES DEPUIS TON PC (SMB direct ou Synology Drive).
+      #
+      # Synology : crée un dossier partagé DSM (ex. « kesh ») avec les sous-dossiers
+      # `inbox` et `documents`, puis renseigne dans .env les chemins ABSOLUS :
+      #     KESH_INBOX_HOST_DIR=/volume1/kesh/inbox
+      #     KESH_DOCUMENTS_HOST_DIR=/volume1/kesh/documents
+      # Enfin, active SMB (Panneau config → Services de fichiers) OU Synology Drive
+      # sur le dossier partagé → mappe/synchronise `inbox` sur le PC et dépose tes
+      # factures dedans. Kesh les lit dans /data/inbox (= le dossier bind-monté).
+      # Défauts (dev, sans .env) : sous-dossiers ./inbox et ./documents du projet.
+      - ${KESH_INBOX_HOST_DIR:-./inbox}:/data/inbox
+      - ${KESH_DOCUMENTS_HOST_DIR:-./documents}:/data/documents
     networks:
       - kesh-network
     healthcheck:
@@ -77,6 +111,10 @@ services:
 volumes:
   kesh-mariadb-data:
     driver: local
+  # Story 12-5 (#194) : inbox + documents sont désormais des BIND MOUNTS host
+  # (cf. service kesh-api) pour être accessibles depuis le PC — plus de volumes
+  # nommés (un volume nommé vit dans le stockage interne Docker, non exposable
+  # via File Station / Synology Drive).
 
 networks:
   kesh-network:

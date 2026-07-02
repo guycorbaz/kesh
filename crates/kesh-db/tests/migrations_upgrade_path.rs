@@ -38,7 +38,7 @@ async fn apply_migrations_up_to(
          `total - 8` (fenêtre d'upgrade Story 10-2 + companies_is_stub v011-2 \
          + bank_accounts_archived v014-1 + api_keys/audit_log_actor 17-2a) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 31` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 39` du test upgrade_path_preserves_data \
          devrait également fail pour signaler le besoin de mise à jour.",
         n,
         all.len()
@@ -63,11 +63,12 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + api_keys & audit_log_actor (Story 17-2a)
     // + users_email & password_reset_tokens (Story 17-4a)
     // + vat_rates_crud (Story 11-1) + vat_accounts_config (Story 18-1a)
-    // + credit_notes (Story 12-1) + supplier_invoices (Story 12-2) + payment_batches (Story 12-3) = 38.
+    // + credit_notes (Story 12-1) + supplier_invoices (Story 12-2) + payment_batches (Story 12-3)
+    // + imported_supplier_invoices (Story 12-5b) = 39.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 38,
-        "38 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a + users_email & password_reset_tokens Story 17-4a + vat_rates_crud Story 11-1 + vat_accounts_config Story 18-1a + credit_notes Story 12-1 + supplier_invoices Story 12-2 + payment_batches Story 12-3)"
+        total, 39,
+        "39 migrations attendues (26 historiques + _kesh_version Story 10-2 + companies_is_stub Story v011-2 + bank_accounts_archived Story v014-1 + api_keys & audit_log_actor Story 17-2a + users_email & password_reset_tokens Story 17-4a + vat_rates_crud Story 11-1 + vat_accounts_config Story 18-1a + credit_notes Story 12-1 + supplier_invoices Story 12-2 + payment_batches Story 12-3 + imported_supplier_invoices Story 12-5b)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
@@ -79,8 +80,8 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // vat_rates_crud ajoutée Story 11-1, vat_accounts_config ajoutée Story 18-1a,
     // et credit_notes ajoutée Story 12-1).
     //
-    // Note `total - 12` : expression relative à la longueur totale, mais
-    // l'assertion `total == 35` ci-dessus est INTENTIONNELLEMENT hardcode
+    // Note `total - N` : expression relative à la longueur totale, mais
+    // l'assertion `total == 39` ci-dessus est INTENTIONNELLEMENT hardcode
     // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
     // migration future, le mainteneur doit (1) bumper le compte à la nouvelle
     // longueur (2) revoir si `total - N` cible toujours la bonne fenêtre.
@@ -88,13 +89,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // la fenêtre Story 10-2 (companies_is_stub v011-2, bank_accounts_archived
     // v014-1, api_keys + audit_log_actor 17-2a, users_email + password_reset_tokens
     // 17-4a, vat_rates_crud 11-1, vat_accounts_config 18-1a, credit_notes 12-1,
-    // supplier_invoices 12-2, payment_batches 12-3) élargissent la fenêtre
-    // d'upgrade et incrémentent donc le `N` soustrait (de 4 à 6 à 8 à 10 à 11 à 12 à 13 à 14 à 15),
+    // supplier_invoices 12-2, payment_batches 12-3, imported_supplier_invoices 12-5b)
+    // élargissent la fenêtre d'upgrade et incrémentent donc le `N` soustrait
+    // (de 4 à 6 à 8 à 10 à 11 à 12 à 13 à 14 à 15 à 16),
     // sans déplacer la frontière des 23 migrations historiques.
-    let n_before_upgrade_window = total - 15;
+    let n_before_upgrade_window = total - 16;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 15) failed");
+        .expect("apply_migrations_up_to(total - 16) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

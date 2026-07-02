@@ -202,9 +202,13 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, … |
 | Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, … |
-| Taux de TVA | `GET /vat-rates` | — |
+| Taux de TVA | `GET /vat-rates` | `POST /vat-rates`, `PUT /vat-rates/{id}`, `DELETE /vat-rates/{id}` ¹ |
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
+
+¹ Réservé au rôle **Administrateur**. Comme la permission effective est
+l'intersection du rôle du créateur de la clé et de sa portée (§4), une clé
+`read-write` créée par un Comptable ne peut pas modifier les taux de TVA.
 
 ---
 

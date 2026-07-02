@@ -1,8 +1,15 @@
 # Frontend Tenant Isolation Audit (KF-002)
 
-**Audit Date:** 2026-04-24  
+> ⚠️ **DOCUMENT HISTORIQUE (avril 2026).** Cet audit décrit un état antérieur à
+> v0.1.0 où les jetons transitaient (en fallback) par `localStorage`. Depuis la
+> **Story 10-5 (v0.1.0)**, les jetons sont **inconditionnellement** en cookies
+> `HttpOnly` — il n'y a plus de branche `localStorage` en production. La
+> recommandation « medium » sur le stockage des jetons est donc **résolue**. Les
+> extraits de code montrant un fallback `localStorage` ne reflètent plus le code.
+
+**Audit Date:** 2026-04-24 (historique)  
 **Scope:** Svelte frontend data handling and tenant isolation  
-**Status:** Audit Complete - No Issues Found
+**Status:** ✅ Finding « token storage » résolu en v0.1.0 (Story 10-5) — voir note
 
 ---
 

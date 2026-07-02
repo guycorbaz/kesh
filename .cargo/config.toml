@@ -9,3 +9,15 @@
 
 [env]
 RUST_TEST_THREADS = "2"
+
+# Limit parallel compilation jobs to cap peak memory usage during builds.
+# Default is the number of logical CPUs (32 here), which can spike RAM beyond
+# available memory on heavy crates (sqlx-macros, image, pdfium...) and trigger
+# OOM kills. 8 keeps builds fast while bounding the peak.
+[build]
+jobs = 8
+
+# Use mold as the linker instead of GNU ld for faster link times.
+# Requires mold installed (`/usr/bin/mold`) and gcc >= 12.1 (-fuse-ld=mold).
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

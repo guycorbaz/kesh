@@ -105,7 +105,7 @@ Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 
 \begin{itemize}
     \item \textbf{Backend} : Rust 1.85+ (édition 2024) avec le framework HTTP Axum et le client SQL SQLx.
     \item \textbf{Frontend} : SvelteKit 2 avec Svelte 5 et TypeScript, bundler Vite, CSS via Tailwind 4.
-    \item \textbf{Base de données} : MariaDB 11.4 (compatibilité MySQL 8 maintenue, mais MariaDB recommandée pour les optimisations spécifiques utilisées).
+    \item \textbf{Base de données} : MariaDB 10.11+ (compatibilité MySQL 8 maintenue, mais MariaDB recommandée pour les optimisations spécifiques utilisées).
     \item \textbf{Déploiement} : Docker Compose, image officielle \keshpath{gcorbaz/kesh:latest} sur Docker Hub.
     \item \textbf{Authentification} : JWT (HS256) avec refresh tokens et rotation, durée d'expiration courte (15 min) compensée par rafraîchissement automatique côté frontend.
     \item \textbf{Multi-tenant} : claim \texttt{company\_id} dans le JWT et scoping strict sur toutes les requêtes API et toutes les requêtes SQL (cf. Story Epic 7-1 « audit multi-tenant scoping refactor »).
@@ -236,21 +236,28 @@ curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example \
 Éditer \keshpath{.env} et renseigner au minimum les variables suivantes (cf. section \ref{sec:env-vars} pour la liste complète) :
 
 \begin{lstlisting}[language=bash]
-# Secret JWT — générer avec : openssl rand -hex 64
-JWT_SECRET=<long secret aleatoire 128+ caracteres>
+# Secret JWT — générer avec : openssl rand -hex 32 (minimum 32 octets)
+KESH_JWT_SECRET=<secret aleatoire, min. 32 octets, sans "change-me">
 
-# Mot de passe DB
+# Compte administrateur initial (bootstrap si la base est vide)
+KESH_ADMIN_USERNAME=admin
+KESH_ADMIN_PASSWORD=<mot de passe fort, min. 12 caracteres>
+
+# Mot de passe DB (conteneur MariaDB)
 MARIADB_ROOT_PASSWORD=<mot de passe fort>
 MARIADB_PASSWORD=<mot de passe utilisateur applicatif>
 MARIADB_DATABASE=kesh
 MARIADB_USER=kesh
 
-# URL de connexion DB (composée à partir des variables ci-dessus)
-DATABASE_URL=mysql://kesh:<MARIADB_PASSWORD>@db:3306/kesh
-
-# URL publique (pour les liens dans emails, QR Bills, etc.)
-KESH_PUBLIC_URL=https://compta.exemple.ch
+# URL de connexion DB (service MariaDB nommé "mariadb" dans docker-compose)
+DATABASE_URL=mysql://kesh:<MARIADB_PASSWORD>@mariadb:3306/kesh
 \end{lstlisting}
+
+\begin{keshnote}
+\texttt{KESH\_PUBLIC\_BASE\_URL} (base des liens de réinitialisation par email)
+n'est requise que si vous activez le recovery par email
+(\texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true}, cf. \S\ref{sec:env-vars}).
+\end{keshnote}
 
 \begin{keshdanger}
 \textbf{Ne jamais committer le fichier \keshpath{.env} dans un dépôt Git}. Il contient les secrets de production. Ajoutez-le à \keshpath{.gitignore}.
@@ -266,7 +273,7 @@ Vérifier que les services sont démarrés :
 
 \begin{lstlisting}[language=bash]
 docker compose ps
-docker compose logs -f kesh
+docker compose logs -f kesh-api
 \end{lstlisting}
 
 Au premier démarrage, Kesh exécute automatiquement les migrations de schéma DB. Cela peut prendre 10--30 secondes selon la machine.
@@ -277,7 +284,7 @@ Tester l'accès à l'API :
 
 \begin{lstlisting}[language=bash]
 curl http://localhost/health
-# Attendu : {"status":"ok","version":"<keshVersion>"}
+# Attendu : {"status":"ok","db":true,"version":"<version>","forgotPasswordEnabled":false}
 \end{lstlisting}
 
 \subsection{Configuration du reverse proxy HTTPS}
@@ -619,7 +626,7 @@ Tester l'instance via le hostname configuré :
 curl -k https://kesh.local/health
 
 # Réponse attendue (Story 10-3) :
-# {"status":"ok","db":true,"version":"0.1.0"}
+# {"status":"ok","db":true,"version":"<version dynamique>","forgotPasswordEnabled":false}
 \end{lstlisting}
 
 Ouvrir un navigateur sur \keshcommand{https://kesh.local} et se connecter avec le compte admin renseigné dans \keshpath{.env}. Le wizard d'onboarding démarre automatiquement (création de la première company, choix du plan comptable, configuration des exercices).
@@ -640,56 +647,195 @@ Ouvrir un navigateur sur \keshcommand{https://kesh.local} et se connecter avec l
 
 Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}. Le fichier \keshpath{.env} est chargé automatiquement par Docker Compose.
 
-\subsubsection{Variables obligatoires}
+Les tableaux ci-dessous listent \textbf{toutes} les variables lues par
+\texttt{kesh-api} (référence : \texttt{crates/kesh-api/src/config.rs} et
+\texttt{main.rs}), par thème. Une valeur hors borne ou invalide déclenche un
+warning au démarrage et retombe sur le défaut ; les variables « obligatoires »
+font échouer le démarrage si absentes.
 
+\paragraph{Obligatoires (démarrage refusé si absentes).}
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} \\
     \midrule
-    JWT\_SECRET & Secret de signature des JWT. Doit faire \textbf{au moins 64 caractères}. Générer avec \keshcommand{openssl rand -hex 64}. \\
-    MARIADB\_ROOT\_PASSWORD & Mot de passe root MariaDB. Utilisé uniquement à l'initialisation. \\
-    MARIADB\_PASSWORD & Mot de passe utilisateur applicatif (kesh). \\
-    MARIADB\_DATABASE & Nom de la base de données (par défaut : \texttt{kesh}). \\
-    MARIADB\_USER & Nom de l'utilisateur applicatif (par défaut : \texttt{kesh}). \\
-    DATABASE\_URL & URL complète de connexion DB. Format : \texttt{mysql://USER:PASS@HOST:PORT/DB}. \\
-    KESH\_PUBLIC\_URL & URL publique de l'instance (HTTPS). Utilisée dans les emails, QR Bills, liens partagés. \\
+    DATABASE\_URL & URL de connexion MariaDB : \texttt{mysql://USER:PASS@HÔTE:PORT/BASE}. \\
+    KESH\_JWT\_SECRET & Secret HS256 des JWT. \textbf{$\geq$ 32 octets}. Générer : \keshcommand{openssl rand -hex 32}. Rejeté s'il contient \texttt{change-me}. \\
     \bottomrule
 \end{tabularx}
 
-\subsubsection{Variables optionnelles avec valeurs par défaut}
+\emph{Note} — \texttt{MARIADB\_ROOT\_PASSWORD}, \texttt{MARIADB\_USER},
+\texttt{MARIADB\_PASSWORD}, \texttt{MARIADB\_DATABASE} ne sont pas lues par
+\texttt{kesh-api} : elles configurent le \textbf{conteneur MariaDB} dans
+\texttt{docker-compose}. \texttt{DATABASE\_URL} doit rester cohérente avec elles.
 
+\paragraph{Serveur \& réseau.}
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
-    KESH\_HOST & Adresse d'écoute de l'API. & \texttt{0.0.0.0} \\
-    KESH\_PORT & Port d'écoute de l'API. & \texttt{80} \\
-    KESH\_LOG\_LEVEL & Niveau de log (trace, debug, info, warn, error). & \texttt{info} \\
-    KESH\_LOG\_FORMAT & Format des logs (json, pretty). & \texttt{json} \\
-    JWT\_EXPIRY\_SECONDS & Durée de vie d'un access token. & \texttt{900} (15 min) \\
-    JWT\_REFRESH\_EXPIRY\_DAYS & Durée de vie d'un refresh token. & \texttt{30} \\
-    KESH\_CORS\_ORIGINS & Origines CORS autorisées (séparées par virgule). & \texttt{KESH\_PUBLIC\_URL} \\
-    KESH\_RATE\_LIMIT\_PER\_MINUTE & Nombre de requêtes max par IP par minute. & \texttt{300} \\
-    KESH\_SESSION\_COOKIE\_SECURE & Force le flag \texttt{Secure} sur les cookies. & \texttt{true} \\
-    KESH\_DEFAULT\_LOCALE & Langue par défaut de l'instance (fr, de, it, en). & \texttt{fr} \\
-    KESH\_DEFAULT\_TIMEZONE & Timezone par défaut. & \texttt{Europe/Zurich} \\
-    KESH\_DEFAULT\_CURRENCY & Devise par défaut. & \texttt{CHF} \\
-    KESH\_MAX\_UPLOAD\_BYTES & Taille max upload (pièces, CAMT.053). & \texttt{52428800} (50 Mo) \\
-    KESH\_FEATURE\_FLAGS & Liste de feature flags activés. & vide \\
+    KESH\_HOST & Adresse d'écoute (\texttt{0.0.0.0} en Docker, reverse proxy en frontal). & \texttt{127.0.0.1} \\
+    KESH\_PORT & Port d'écoute (0/invalide $\to$ 80). & \texttt{80} \\
+    KESH\_STATIC\_DIR & Répertoire du SPA compilé servi en fallback. & \texttt{frontend/build} \\
+    KESH\_LOCALES\_DIR & Répertoire des traductions (FTL). & \emph{embarqué} \\
+    KESH\_LANG & Locale de l'instance (\texttt{fr}/\texttt{de}/\texttt{it}/\texttt{en}). & \texttt{fr} \\
     \bottomrule
 \end{tabularx}
 
-\subsubsection{Variables liées au monitoring (optionnelles)}
-
-\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
+\paragraph{Compte administrateur \& onboarding.}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
-    \keshtableheader{Variable} & \keshtableheader{Description} \\
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
-    KESH\_METRICS\_ENABLED & Active l'endpoint Prometheus \texttt{/metrics}. \\
-    KESH\_METRICS\_PORT & Port d'écoute pour les métriques (séparé). \\
-    KESH\_SENTRY\_DSN & DSN Sentry pour le tracking d'erreurs (optionnel, externe). \\
+    KESH\_ADMIN\_USERNAME & Admin bootstrap (base vide) \emph{ou} recovery break-glass. Vide $\to$ onboarding \texttt{/setup}. & \emph{vide} \\
+    KESH\_ADMIN\_PASSWORD & Mot de passe admin. Si renseigné : $\geq$ 12 caractères, refusé si \texttt{changeme}. & \emph{vide} \\
+    KESH\_PRODUCTION\_RESET & Autorise le reset d'onboarding au-delà de l'étape 2 (\texttt{true}/\texttt{1}). & \texttt{false} \\
     \bottomrule
 \end{tabularx}
+
+\paragraph{Authentification, session \& sécurité.}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_JWT\_EXPIRY\_MINUTES & Durée access token. Borne [1, 1440]. & \texttt{15} \\
+    KESH\_REFRESH\_TOKEN\_MAX\_LIFETIME\_DAYS & Durée absolue refresh token. Borne [1, 365]. & \texttt{30} \\
+    KESH\_REFRESH\_INACTIVITY\_MINUTES & Inactivité avant expiration refresh (sliding). Borne [1, 1440]. & \texttt{15} \\
+    KESH\_RATE\_LIMIT\_WINDOW\_MINUTES & Fenêtre de comptage des échecs login. Borne [1, 1440]. & \texttt{15} \\
+    KESH\_RATE\_LIMIT\_MAX\_ATTEMPTS & Échecs login par IP avant blocage. Borne [1, 100]. & \texttt{5} \\
+    KESH\_RATE\_LIMIT\_BLOCK\_MINUTES & Durée de blocage d'une IP. Borne [1, 1440]. & \texttt{30} \\
+    KESH\_PASSWORD\_MIN\_LENGTH & Longueur min. des mots de passe. Borne [8, 128]. & \texttt{12} \\
+    KESH\_COOKIE\_SECURE & Flag \texttt{Secure} des cookies (\texttt{true}/\texttt{false}). \textbf{\texttt{false} uniquement en LAN HTTP strict}. & \texttt{true} \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Journalisation.}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    RUST\_LOG & Niveau/directives (\texttt{trace}..\texttt{error}). Baseline \texttt{sqlx=warn} maintenue en \texttt{debug} (anti-fuite SQL). & \texttt{info} \\
+    KESH\_LOG\_FILE\_PATH & Fichier de log (rotation). Vide $\to$ stdout seul. & \emph{\S\ref{sec:logs-fichier}} \\
+    KESH\_LOG\_FILE\_ROTATION & \texttt{daily}/\texttt{hourly}/\texttt{never}. & \texttt{daily} \\
+    KESH\_LOG\_FILE\_MAX\_FILES & Fichiers de log conservés. & \texttt{7} \\
+    KESH\_LOG\_FILE\_FORMAT & \texttt{pretty}/\texttt{json}. & \texttt{pretty} \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Import bancaire, export \& sauvegarde.}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_BANK\_IMPORT\_MAX\_MB & Taille max fichier bank-import (CAMT.053/CSV), MiB. Borne [1, 100]. & \texttt{10} \\
+    KESH\_ADMIN\_EXPORT\_INMEM\_MB & Plafond in-memory de l'export \texttt{.keshbackup} (au-delà : streaming). Borne [1, 2048]. & \texttt{50} \\
+    KESH\_ADMIN\_IMPORT\_MAX\_MB & Taille max upload \texttt{.keshbackup} à l'import. Borne [1, 10240]. & \texttt{512} \\
+    KESH\_ADMIN\_BACKUP\_DIR & Répertoire du backup automatique pré-import. & \texttt{/tmp} \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Import de factures depuis un dossier (\S\ref{sec:inbox-import}).}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_DOCUMENTS\_DIR & Archivage des justificatifs (\texttt{\{sha256\}.\{ext\}}, hors DB). & \texttt{/data/documents} \\
+    KESH\_INBOX\_DIR & Dossier inbox scruté à l'import. & \texttt{/data/inbox} \\
+    KESH\_INBOX\_MAX\_FILE\_BYTES & Taille max d'un fichier inbox (octets). Borne [1, 524288000]. & \texttt{26214400} \\
+    KESH\_INBOX\_MAX\_FILES\_PER\_RUN & Fichiers par déclenchement d'import. Borne [1, 10000]. & \texttt{200} \\
+    KESH\_INBOX\_MAX\_PDF\_PAGES & Pages PDF rendues par fichier (anti-DoS). Borne [1, 500]. & \texttt{20} \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Recovery de mot de passe par email (SMTP).}
+Optionnelles tant que \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=false}. Si activé,
+la config SMTP complète est \textbf{obligatoire} (démarrage refusé sinon).
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_FEATURE\_FORGOT\_PASSWORD & Active le recovery par email (sinon : break-glass via \texttt{KESH\_ADMIN\_*}). & \texttt{false} \\
+    KESH\_SMTP\_HOST & Hôte SMTP (sans port). & \emph{vide} \\
+    KESH\_SMTP\_PORT & Port SMTP (587 = STARTTLS). Borne [1, 65535]. & \texttt{587} \\
+    KESH\_SMTP\_USER & Utilisateur SMTP. & \emph{vide} \\
+    KESH\_SMTP\_PASSWORD & Secret SMTP (masqué dans les logs). & \emph{vide} \\
+    KESH\_SMTP\_FROM & Adresse expéditrice (email valide). & \emph{vide} \\
+    KESH\_SMTP\_TLS & STARTTLS sur la connexion. & \texttt{true} \\
+    KESH\_PUBLIC\_BASE\_URL & Base publique du lien de reset. & \emph{vide} \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Développement / test (jamais en production).}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_TEST\_MODE & Expose \texttt{/api/v1/\_test/*} (reset+seed). \texttt{true}/\texttt{1} + bind loopback obligatoire. & \texttt{false} \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Chemins host des bind mounts (\texttt{docker-compose}, pas lus par l'app).}
+Où les dossiers du conteneur sont montés sur l'hôte, pour un accès depuis le PC
+(SMB / Synology Drive). Pointez vers un dossier partagé DSM (\texttt{/volume1/...}).
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Monte sur} & \keshtableheader{Défaut host} \\
+    \midrule
+    KESH\_INBOX\_HOST\_DIR & \texttt{/data/inbox} & \texttt{./inbox} \\
+    KESH\_DOCUMENTS\_HOST\_DIR & \texttt{/data/documents} & \texttt{./documents} \\
+    KESH\_LOG\_HOST\_DIR & \texttt{/var/log/kesh} & \texttt{./log} \\
+    \bottomrule
+\end{tabularx}
+
+\subsubsection{Import de factures depuis un dossier}
+\label{sec:inbox-import}
+
+Kesh peut importer des factures fournisseurs (PDF ou images porteurs d'un Swiss
+QR Code) déposées dans un dossier, décoder le QR côté serveur et créer des
+factures « à compléter ». Deux dossiers sont à configurer, montés en volumes
+persistants (cf. \texttt{docker-compose}) :
+
+\begin{itemize}
+    \item \texttt{KESH\_INBOX\_DIR} (défaut \texttt{/data/inbox}) — le dossier où
+    déposer les fichiers de factures. Sur un NAS Synology, montez-y un
+    \textbf{dossier partagé} accessible via File Station (par ex. un bind mount
+    \texttt{./inbox:/data/inbox}) pour pouvoir y glisser vos factures. À l'import
+    réussi, le fichier d'origine est \textbf{supprimé} de l'inbox (la copie
+    archivée fait foi) ; les fichiers en échec sont déplacés dans le
+    sous-dossier \texttt{failed/}.
+    \item \texttt{KESH\_DOCUMENTS\_DIR} (défaut \texttt{/data/documents}) — le
+    dossier d'archivage des justificatifs (copies des fichiers importés, nommées
+    \texttt{\{sha256\}.\{ext\}}). \textbf{Ne jamais} pointer ces deux dossiers
+    vers \texttt{/tmp} : leur contenu serait perdu au redémarrage du conteneur.
+\end{itemize}
+
+\paragraph{Note Synology (chemins symboliques).} Sur DSM, un dossier partagé
+comme \texttt{/data/inbox} est souvent un lien symbolique vers
+\texttt{/volume1/.../inbox}. Kesh canonicalise automatiquement les chemins au
+démarrage pour que le contrôle anti-traversal fonctionne — aucune action requise.
+
+\paragraph{Réglage \texttt{KESH\_INBOX\_MAX\_PDF\_PAGES}.} Le décodage des PDF
+rend chaque page en image (via la bibliothèque native pdfium) jusqu'à trouver le
+QR. Augmentez cette borne si vos factures dépassent 20 pages ; diminuez-la pour
+limiter la charge sur des PDF volumineux.
+
+\paragraph{Limitations connues.}
+\begin{itemize}
+    \item La bibliothèque pdfium n'est pas isolée : un PDF gravement malformé
+    peut faire planter le processus serveur (le conteneur redémarre alors
+    automatiquement). Limitez l'inbox aux fichiers de confiance.
+    \item L'inbox est un dossier \textbf{unique} par instance, non séparé par
+    société. Sur une instance hébergeant plusieurs sociétés, le premier
+    comptable qui déclenche l'import récupère tous les fichiers présents pour
+    \emph{sa} société. Sans effet pour le déploiement standard « une PME par
+    instance » (cf. issue GitHub \#199).
+\end{itemize}
+
+\subsubsection{Monitoring}
+
+Kesh n'expose pas encore d'endpoint de métriques Prometheus ni d'intégration
+Sentry en v0.x. Le monitoring se fait via le \textbf{healthcheck} \texttt{/health}
+(état DB + version, utilisé par le \texttt{healthcheck} Docker) et les
+\textbf{logs} (\S\ref{sec:logs-fichier}).
 
 \subsection{Configuration des logs fichier}\label{sec:logs-fichier}
 
@@ -769,7 +915,7 @@ FLUSH PRIVILEGES;
 SQL
 \end{lstlisting}
 
-Au premier démarrage, l'application exécute les migrations Diesel.
+Au premier démarrage, l'application exécute les migrations SQLx.
 
 \subsection{Configuration multi-tenant}
 
@@ -1066,15 +1212,18 @@ Kesh utilise un système de contrôle d'accès basé sur les rôles (RBAC) :
     \toprule
     \keshtableheader{Rôle} & \keshtableheader{Permissions} \\
     \midrule
-    super\_admin & Accès total à toutes les companies, gestion des sociétés, gestion des utilisateurs cross-company. Réservé au fiduciaire ou à l'administrateur système. \\
-    admin & Gestion complète d'une company (utilisateurs, paramètres, plan comptable, exercices). \\
-    accountant & Saisie d'écritures, validation, modification, import bancaire, réconciliation, génération de factures et rapports. \\
-    operator & Saisie d'écritures en brouillon, génération de factures, consultation des rapports. Pas de validation finale ni de modification d'écritures validées. \\
-    viewer & Lecture seule. Consultation des rapports, factures, écritures, sans modification possible. \\
+    Admin & Toutes les opérations d'une société : gestion des utilisateurs, paramètres de facturation, taux de TVA, plan comptable, exercices, sauvegarde/restauration complète, en plus de toutes les opérations Comptable. \\
+    Comptable & Saisie et validation d'écritures, factures (clients et fournisseurs), avoirs, règlements et paiements pain.001, import bancaire, réconciliation, import de factures, rapports et exports. \\
+    Consultation & Lecture seule : consultation des écritures, factures, contacts, produits, rapports — aucune mutation. \\
     \bottomrule
 \end{tabularx}
 
-Création d'un utilisateur via l'UI : \emph{Paramètres} → \emph{Utilisateurs} → \emph{Inviter}.
+Kesh définit exactement ces \textbf{trois} rôles (\texttt{Role::Admin},
+\texttt{Role::Comptable}, \texttt{Role::Consultation}). Chaque utilisateur
+appartient à \textbf{une seule} société (\texttt{company\_id} porté par le JWT) ;
+il n'existe pas de rôle « super-admin » cross-société ni de sélecteur de société.
+
+Création d'un utilisateur via l'UI (rôle Administrateur) : \emph{menu} → \emph{Utilisateurs} → \emph{Nouvel utilisateur}.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Sauvegarde et restauration}
@@ -1164,14 +1313,14 @@ cd /var/backups/kesh
 sha256sum -c kesh_20260520_020000.sql.gz.sha256
 
 # 2. Arreter Kesh (pas la DB)
-docker compose stop kesh
+docker compose stop kesh-api
 
 # 3. Restaurer la base
 zcat kesh_20260520_020000.sql.gz | docker compose exec -T db \
     mariadb -u root -p"${MARIADB_ROOT_PASSWORD}"
 
 # 4. Redemarrer Kesh
-docker compose start kesh
+docker compose start kesh-api
 
 # 5. Verifier le fonctionnement
 curl http://localhost/health
@@ -1377,9 +1526,9 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
     \item \textbf{Sauvegarder} la base de données et le volume \texttt{kesh\_db\_data} (cf. section précédente).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour} \keshpath{docker-compose.yml} si nécessaire (nouvelles env vars, changement d'image).
-    \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh}.
-    \item \textbf{Redémarrer} : \keshcommand{docker compose up -d kesh}.
-    \item \textbf{Vérifier} les logs : \keshcommand{docker compose logs -f kesh} pour s'assurer que les migrations DB se sont bien déroulées.
+    \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
+    \item \textbf{Redémarrer} : \keshcommand{docker compose up -d kesh-api}.
+    \item \textbf{Vérifier} les logs : \keshcommand{docker compose logs -f kesh-api} pour s'assurer que les migrations DB se sont bien déroulées.
     \item \textbf{Tester} l'accès UI et les fonctionnalités critiques (login, saisie d'une écriture, génération d'une facture).
 \end{enumerate}
 
@@ -1407,7 +1556,7 @@ Si une mise à jour échoue ou révèle un bug bloquant :
 
 \begin{lstlisting}[language=bash]
 # 1. Arreter le service
-docker compose stop kesh
+docker compose stop kesh-api
 
 # 2. Restaurer la version precedente de l'image
 docker compose down
@@ -1441,7 +1590,7 @@ Configurations recommandées du reverse proxy :
     \item \textbf{Jamais committer \keshpath{.env}} dans Git. Ajouter à \keshpath{.gitignore}.
     \item Utiliser un secrets manager (HashiCorp Vault, AWS Secrets Manager, Doppler, ou simplement \texttt{systemd-creds} sous Linux) pour les déploiements multi-instances.
     \item Permissions strictes sur \keshpath{.env} : \keshcommand{chmod 600 .env} (lecture/écriture propriétaire uniquement).
-    \item Rotation périodique du \texttt{JWT\_SECRET} : tous les 6--12 mois en production. Une rotation invalide tous les tokens existants, forçant les utilisateurs à se reconnecter.
+    \item Rotation périodique du \texttt{KESH\_JWT\_SECRET} : tous les 6--12 mois en production. Une rotation invalide tous les tokens existants, forçant les utilisateurs à se reconnecter.
 \end{itemize}
 
 \subsection{Authentification JWT + refresh tokens}
@@ -1530,10 +1679,10 @@ sudo ufw enable
 
 \subsection{Logs applicatifs}
 
-Par défaut, Kesh écrit ses logs sur \texttt{stdout} en format JSON (variable \texttt{KESH\_LOG\_FORMAT=json}). Docker les capture et les rend accessibles via :
+Par défaut, Kesh écrit ses logs sur \texttt{stdout} (capturés par Docker) et, en Docker, \textbf{aussi} dans un fichier avec rotation (\S\ref{sec:logs-fichier}). Le format du fichier est contrôlé par \texttt{KESH\_LOG\_FILE\_FORMAT} (défaut \texttt{pretty} ; \texttt{json} disponible pour l'ingestion Loki/ELK). Consulter le flux stdout :
 
 \begin{lstlisting}[language=bash]
-docker compose logs -f kesh
+docker compose logs -f kesh-api
 docker compose logs --tail=100 kesh
 docker compose logs --since=1h kesh
 \end{lstlisting}
@@ -1562,34 +1711,18 @@ services:
         loki-batch-size: "400"
 \end{lstlisting}
 
-\subsection{Métriques Prometheus}
+\subsection{Supervision (état de santé)}
 
-Activer l'endpoint metrics :
-
-\begin{lstlisting}[language=bash]
-KESH_METRICS_ENABLED=true
-KESH_METRICS_PORT=9090
-\end{lstlisting}
-
-Scraper avec Prometheus :
-
-\begin{lstlisting}[]
-# prometheus.yml
-scrape_configs:
-  - job_name: 'kesh'
-    static_configs:
-      - targets: ['localhost:9090']
-\end{lstlisting}
-
-Métriques exposées :
+Kesh n'expose pas d'endpoint de métriques Prometheus ni d'intégration Sentry en
+v0.x. La supervision repose sur deux mécanismes :
 
 \begin{itemize}
-    \item \texttt{kesh\_http\_requests\_total} : compteur requêtes HTTP par route + status.
-    \item \texttt{kesh\_http\_request\_duration\_seconds} : histogramme durée des requêtes.
-    \item \texttt{kesh\_db\_queries\_total} : compteur requêtes DB.
-    \item \texttt{kesh\_active\_users} : jauge utilisateurs actifs (sessions valides).
-    \item \texttt{kesh\_invoices\_generated\_total} : compteur factures générées.
-    \item \texttt{kesh\_imports\_processed\_total} : compteur imports CAMT.053 traités.
+    \item \textbf{Healthcheck} \texttt{GET /health} — retourne
+    \texttt{\{"status":"ok","db":true,"version":...,"forgotPasswordEnabled":...\}}.
+    Utilisé par le \texttt{healthcheck} Docker (redémarrage automatique si la DB
+    est injoignable). Interrogeable par une sonde externe (Uptime Kuma, cron curl…).
+    \item \textbf{Logs} avec rotation (\S\ref{sec:logs-fichier}) — pour l'analyse
+    a posteriori et l'ingestion éventuelle dans un collecteur (Loki, ELK…).
 \end{itemize}
 
 \subsection{Alerting recommandé}
@@ -1692,7 +1825,7 @@ Causes courantes :
 \begin{itemize}
     \item \textbf{DATABASE\_URL invalide} : vérifier le format \texttt{mysql://user:pass@host:port/db}.
     \item \textbf{DB pas encore prête} : ajouter un \texttt{depends\_on} avec \texttt{condition: service\_healthy} dans \keshpath{docker-compose.yml}.
-    \item \textbf{JWT\_SECRET trop court} : doit faire au moins 64 caractères.
+    \item \textbf{KESH\_JWT\_SECRET trop court} : doit faire au moins 32 octets (ex. \texttt{openssl rand -hex 32} = 64 caractères hexadécimaux).
     \item \textbf{Migrations DB échouées} : voir log détaillé. Solution : restaurer depuis sauvegarde et investiguer.
 \end{itemize}
 
@@ -1724,24 +1857,32 @@ docker compose exec db mariadb -u root -p"${MARIADB_ROOT_PASSWORD}" -e \
     \item Considérer une migration vers MariaDB 11.5+ qui inclut des optimisations supplémentaires.
 \end{itemize}
 
-\subsection{Reset du mot de passe administrateur}
+\subsection{Reset du mot de passe administrateur (break-glass)}
+\label{sec:admin-reset}
 
-Si l'administrateur a perdu son mot de passe et qu'il n'y a pas d'autre administrateur :
+Si l'administrateur a perdu son mot de passe et qu'il n'y a pas d'autre
+administrateur, utilisez le mécanisme \textbf{break-glass} par variables
+d'environnement (il n'existe pas d'outil en ligne de commande dédié). Dans le
+fichier \keshpath{.env}, renseignez \texttt{KESH\_ADMIN\_USERNAME} avec le nom de
+l'admin existant et \texttt{KESH\_ADMIN\_PASSWORD} avec le nouveau mot de passe
+(min. 12 caractères), puis redémarrez :
 
 \begin{lstlisting}[language=bash]
-docker compose exec kesh kesh-cli admin reset-password \
-    --email admin@exemple.ch \
-    --new-password '<nouveau_mot_de_passe>'
+docker compose up -d kesh-api   # relit .env au démarrage
 \end{lstlisting}
 
-L'opération est tracée dans l'\texttt{audit\_log}.
+Au démarrage, si un admin portant ce nom d'utilisateur existe déjà, son mot de
+passe est réinitialisé sur la nouvelle valeur. Retirez ensuite
+\texttt{KESH\_ADMIN\_PASSWORD} du \keshpath{.env}. Si le recovery par email est
+activé (\texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true}), l'utilisateur peut aussi
+passer par le lien « Mot de passe oublié ».
 
 \subsection{Données corrompues détectées}
 
 Si une vérification d'intégrité (SHA-256 d'un export ZIP ne correspond plus, audit\_log incohérent, etc.) révèle une corruption :
 
 \begin{enumerate}
-    \item \textbf{Arrêter immédiatement} l'instance : \keshcommand{docker compose stop kesh}.
+    \item \textbf{Arrêter immédiatement} l'instance : \keshcommand{docker compose stop kesh-api}.
     \item Conserver une copie de l'état actuel : \keshcommand{tar czf kesh-corrupted-\$(date +\%F).tar.gz /opt/kesh}.
     \item Restaurer depuis la dernière sauvegarde saine (vérifier le SHA-256 de la sauvegarde elle-même avant restauration).
     \item Analyser la cause racine : intrusion sécurité ? corruption disque ? bug applicatif ?
@@ -1819,27 +1960,24 @@ done
 
 Voir section \ref{sec:env-vars}.
 
-\subsection{Commandes CLI utiles}
+\subsection{Opérations en ligne de commande}
 
-\begin{lstlisting}[language=bash]
-# Statistiques globales d'une instance
-docker compose exec kesh kesh-cli stats
+Kesh ne fournit pas d'outil CLI d'administration dédié : le binaire
+\texttt{kesh-api} est le seul exécutable, et il applique automatiquement les
+migrations DB au démarrage. Les opérations d'administration passent par
+l'\textbf{interface web} (gestion des utilisateurs, sauvegarde/restauration,
+export global) ou par les mécanismes documentés ailleurs dans ce manuel :
 
-# Liste des companies
-docker compose exec kesh kesh-cli company list
-
-# Forcer la regeneration des QR Bills d'une company
-docker compose exec kesh kesh-cli invoice regenerate-qr --company-id <ID>
-
-# Forcer la re-execution des migrations DB
-docker compose exec kesh kesh-cli migrate
-
-# Export complet de la base au format SQL (alternative a mariadb-dump)
-docker compose exec kesh kesh-cli export --company-id <ID> --format sql
-
-# Verification de l'integrite d'un export ZIP (verification SHA-256)
-docker compose exec kesh kesh-cli verify --export-id <UUID>
-\end{lstlisting}
+\begin{itemize}
+    \item \textbf{Reset admin} : mécanisme break-glass par \texttt{.env}
+    (\S\ref{sec:admin-reset}).
+    \item \textbf{Migrations} : appliquées automatiquement au boot ; vérifiables
+    via les logs de démarrage.
+    \item \textbf{Export / import complet} : écran \emph{Administration →
+    Sauvegarde complète / Restaurer} (format \texttt{.keshbackup}).
+    \item \textbf{Sauvegarde DB brute} : \texttt{mariadb-dump} sur le conteneur
+    MariaDB, ou Hyper Backup au niveau NAS.
+\end{itemize}
 
 \subsection{Référence des ports}
 
@@ -1850,7 +1988,6 @@ docker compose exec kesh kesh-cli verify --export-id <UUID>
     Frontend HTTPS (utilisateur) & 443 & Via reverse proxy \\
     API Axum (interne) & 80 & Localhost uniquement \\
     MariaDB & 3306 & Localhost ou réseau privé \\
-    Prometheus metrics (optionnel) & 9090 & Réseau interne monitoring \\
     \bottomrule
 \end{tabularx}
 

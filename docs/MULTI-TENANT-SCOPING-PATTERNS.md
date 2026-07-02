@@ -175,7 +175,7 @@ let company_id = claims.company_id;  // ← Extracted and used
 ```rust
 // CORRECT: Always include company_id in WHERE clause
 pub async fn find_invoice_by_id(
-    pool: &PgPool,
+    pool: &MySqlPool,
     company_id: i64,  // ← Explicit parameter
     invoice_id: i64,
 ) -> Result<Option<Invoice>, DbError> {
@@ -190,7 +190,7 @@ pub async fn find_invoice_by_id(
 
 // WRONG: Missing company_id filter
 pub async fn find_invoice_by_id_broken(
-    pool: &PgPool,
+    pool: &MySqlPool,
     invoice_id: i64,
 ) -> Result<Option<Invoice>, DbError> {
     sqlx::query_as::<_, Invoice>(
@@ -243,7 +243,7 @@ pub async fn get_invoice_handler(
 ```rust
 pub async fn get_company_for(
     current_user: &CurrentUser,
-    pool: &PgPool,
+    pool: &MySqlPool,
 ) -> Result<Company, AppError> {
     // Defensive check: verify company exists
     // This catch cases where:

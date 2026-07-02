@@ -1,7 +1,16 @@
 # Token Storage Security Guide
 
-**Document Type:** Security Best Practices  
-**Status:** Recommended for v0.1+ implementation  
+> ⚠️ **DOCUMENT HISTORIQUE — MIGRATION RÉALISÉE.** Ce guide décrit une migration
+> planifiée de `localStorage` vers des cookies `HttpOnly`. Cette migration a été
+> **livrée en v0.1.0 (Story 10-5, KF-002 / #41)** : les jetons `kesh_access_token`
+> et `kesh_refresh_token` sont émis en cookies `HttpOnly; Secure; SameSite=Strict`
+> (flag `Secure` piloté par `KESH_COOKIE_SECURE`). Il n'y a plus de stockage
+> `localStorage` des jetons en production. Les sections ci-dessous décrivant
+> `localStorage` comme « état courant » sont **obsolètes** — conservées à titre
+> d'historique de décision.
+
+**Document Type:** Security Best Practices (historique)  
+**Status:** ✅ Migration cookies HttpOnly livrée en v0.1.0 — voir note ci-dessus  
 **Last Updated:** 2026-04-25
 
 ---

@@ -18,6 +18,8 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { notifyInfo, notifyWarning, notifyError } from '$lib/shared/utils/notify';
+	import { downloadSupplierInvoiceSourceDocument } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
 
 	const id = Number(page.params.id);
 
@@ -88,6 +90,30 @@
 			if (isApiError(err)) errorMsg = err.message;
 		}
 	}
+
+	/**
+	 * Télécharge le justificatif d'origine (Story 12.5d, DC-d1). Le lien est
+	 * toujours rendu ; une facture créée directement (sans import) n'a pas de
+	 * justificatif → 404 géré gracieusement (notifyInfo), jamais bloquant.
+	 */
+	async function viewSourceDocument() {
+		try {
+			await downloadSupplierInvoiceSourceDocument(id);
+		} catch (err) {
+			if (isApiError(err) && err.code === 'SOURCE_DOCUMENT_NOT_FOUND') {
+				notifyInfo(
+					i18nMsg('imported-supplier-invoices-no-source-doc', 'Cette facture n’a pas de justificatif importé.'),
+				);
+			} else if (isApiError(err) && err.code === 'SOURCE_DOCUMENT_GONE') {
+				notifyWarning(i18nMsg('imported-supplier-invoices-source-doc-gone', 'Le justificatif n’a pas été restauré.'));
+			} else {
+				notifyError(
+					(isApiError(err) && err.message) ||
+						i18nMsg('imported-supplier-invoices-source-doc-failed', 'Téléchargement impossible.'),
+				);
+			}
+		}
+	}
 </script>
 
 <svelte:head>
@@ -126,6 +152,14 @@
 			<dd class="font-mono">{invoice.paymentReference}</dd>
 		{/if}
 	</dl>
+
+	<button
+		class="mb-6 inline-block rounded border px-4 py-2 text-sm text-primary"
+		data-testid="supplier-invoice-source-document"
+		onclick={viewSourceDocument}
+	>
+		{i18nMsg('imported-supplier-invoices-view-source', 'Voir la facture d’origine')}
+	</button>
 
 	<table class="mb-6 w-full border-collapse text-sm">
 		<thead>

@@ -17,6 +17,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use kesh_db::entities::{SettlementChoice, SupplierInvoice, SupplierInvoiceLine};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::supplier_invoices;
+use kesh_qrbill::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -82,7 +83,10 @@ pub struct SupplierInvoiceResponse {
 }
 
 impl SupplierInvoiceResponse {
-    fn from_parts(inv: SupplierInvoice, lines: Vec<SupplierInvoiceLine>) -> Self {
+    /// `pub` (Story 12-5c) : appelé par le module `imported_supplier_invoices`
+    /// pour construire la réponse de complétion à partir du `SupplierInvoiceWithLines`
+    /// retourné par `create_in_tx` (DRY — pas de redéfinition cross-module).
+    pub fn from_parts(inv: SupplierInvoice, lines: Vec<SupplierInvoiceLine>) -> Self {
         Self {
             id: inv.id,
             contact_id: inv.contact_id,
@@ -319,4 +323,193 @@ pub async fn cancel_supplier_invoice(
         cancelled.invoice,
         cancelled.lines,
     )))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 12.4 — scan / import du QR-facture (pré-remplissage)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Corps de `POST /api/v1/supplier-invoices/scan-qr` : le texte SPC brut décodé
+/// **côté navigateur** (jsQR, DC1 — pas de caméra ni de décodage image serveur).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanQrRequest {
+    pub spc_text: String,
+}
+
+/// Coordonnées extraites d'un QR-facture, destinées à pré-remplir le formulaire
+/// de facture fournisseur (12-2). **Lecture seule** — rien n'est persisté.
+///
+/// Exactement l'un de `creditor_iban` / `creditor_qr_iban` est renseigné, selon
+/// que l'IBAN est un QR-IBAN (plage IID 30000–31999) ou un IBAN classique
+/// (AC4 / mapping `supplier_invoices`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanQrResponse {
+    pub creditor_iban: Option<String>,
+    pub creditor_qr_iban: Option<String>,
+    pub payment_reference: Option<String>,
+    pub expected_payment_amount: Option<Decimal>,
+    pub currency: String,
+    pub creditor_name: String,
+    pub creditor_address: Option<String>,
+    pub unstructured_message: Option<String>,
+}
+
+/// Recompose une adresse lisible (indice pour retrouver/créer le fournisseur) à
+/// partir du bloc `ScannedAddress` — combiné (`K`, deux lignes libres) ou
+/// structuré (`S`, rue/NPA/localité). `None` si aucun élément d'adresse.
+fn format_scanned_address(a: &ScannedAddress) -> Option<String> {
+    let parts: Vec<&str> = [
+        a.street_or_line1.as_str(),
+        a.building_or_line2.as_str(),
+        a.postal_code.as_deref().unwrap_or(""),
+        a.town.as_deref().unwrap_or(""),
+        a.country.as_str(),
+    ]
+    .into_iter()
+    .map(str::trim)
+    .filter(|s| !s.is_empty())
+    .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
+    }
+}
+
+impl ScanQrResponse {
+    fn from_scanned(s: ScannedQrBill) -> Self {
+        // QR-IBAN → creditor_qr_iban ; IBAN classique → creditor_iban (AC4).
+        let (creditor_iban, creditor_qr_iban) = if s.is_qr_iban {
+            (None, Some(s.creditor_iban))
+        } else {
+            (Some(s.creditor_iban), None)
+        };
+        // QRR comme SCOR fournissent une référence de paiement ; NON → aucune.
+        let payment_reference = match s.reference {
+            ScannedReference::Qrr(r) | ScannedReference::Scor(r) => Some(r),
+            ScannedReference::None => None,
+        };
+        Self {
+            creditor_iban,
+            creditor_qr_iban,
+            payment_reference,
+            expected_payment_amount: s.amount,
+            currency: s.currency,
+            creditor_address: format_scanned_address(&s.creditor),
+            creditor_name: s.creditor.name,
+            unstructured_message: s.unstructured_message,
+        }
+    }
+}
+
+/// `POST /api/v1/supplier-invoices/scan-qr` — pré-remplissage par scan QR (Comptable+).
+///
+/// Prend le texte SPC décodé côté navigateur et retourne les coordonnées de
+/// paiement (IBAN/QR-IBAN, référence, montant attendu, créancier). **Ne crée
+/// rien** : pure transformation en lecture seule. Un payload SPC invalide (en-tête,
+/// IBAN, référence…) → `400 VALIDATION_ERROR`, **jamais 500** (AC3).
+pub async fn scan_qr_supplier_invoice(
+    Json(req): Json<ScanQrRequest>,
+) -> Result<Json<ScanQrResponse>, AppError> {
+    let scanned = parse_spc_payload(&req.spc_text)
+        .map_err(|e| AppError::Validation(format!("QR-facture illisible : {e}")))?;
+    Ok(Json(ScanQrResponse::from_scanned(scanned)))
+}
+
+#[cfg(test)]
+mod scan_qr_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn addr(name: &str) -> ScannedAddress {
+        ScannedAddress {
+            address_type: 'K',
+            name: name.to_string(),
+            street_or_line1: "Rue du Test 1".to_string(),
+            building_or_line2: "1000 Lausanne".to_string(),
+            postal_code: None,
+            town: None,
+            country: "CH".to_string(),
+        }
+    }
+
+    #[test]
+    fn qr_iban_maps_to_creditor_qr_iban_with_qrr() {
+        let scanned = ScannedQrBill {
+            creditor_iban: "CH4431999123000889012".to_string(),
+            is_qr_iban: true,
+            creditor: addr("Fournisseur QR SA"),
+            amount: Some(dec!(199.95)),
+            currency: "CHF".to_string(),
+            reference: ScannedReference::Qrr("210000000003139471430009017".to_string()),
+            unstructured_message: Some("Facture 42".to_string()),
+            billing_information: None,
+        };
+        let r = ScanQrResponse::from_scanned(scanned);
+        assert_eq!(r.creditor_qr_iban.as_deref(), Some("CH4431999123000889012"));
+        assert!(r.creditor_iban.is_none());
+        assert_eq!(
+            r.payment_reference.as_deref(),
+            Some("210000000003139471430009017")
+        );
+        assert_eq!(r.expected_payment_amount, Some(dec!(199.95)));
+        assert_eq!(r.currency, "CHF");
+        assert_eq!(r.creditor_name, "Fournisseur QR SA");
+        assert_eq!(r.unstructured_message.as_deref(), Some("Facture 42"));
+        assert_eq!(
+            r.creditor_address.as_deref(),
+            Some("Rue du Test 1, 1000 Lausanne, CH")
+        );
+    }
+
+    #[test]
+    fn classic_iban_maps_to_creditor_iban_and_open_amount() {
+        let scanned = ScannedQrBill {
+            creditor_iban: "CH9300762011623852957".to_string(),
+            is_qr_iban: false,
+            creditor: addr("Fournisseur IBAN SA"),
+            amount: None, // montant ouvert
+            currency: "CHF".to_string(),
+            reference: ScannedReference::None,
+            unstructured_message: None,
+            billing_information: None,
+        };
+        let r = ScanQrResponse::from_scanned(scanned);
+        assert_eq!(r.creditor_iban.as_deref(), Some("CH9300762011623852957"));
+        assert!(r.creditor_qr_iban.is_none());
+        assert!(r.payment_reference.is_none());
+        assert!(r.expected_payment_amount.is_none());
+    }
+
+    #[test]
+    fn scor_reference_is_exposed_as_payment_reference() {
+        let scanned = ScannedQrBill {
+            creditor_iban: "CH9300762011623852957".to_string(),
+            is_qr_iban: false,
+            creditor: addr("Fournisseur SCOR"),
+            amount: Some(dec!(50.00)),
+            currency: "CHF".to_string(),
+            reference: ScannedReference::Scor("RF18539007547034".to_string()),
+            unstructured_message: None,
+            billing_information: None,
+        };
+        let r = ScanQrResponse::from_scanned(scanned);
+        assert_eq!(r.payment_reference.as_deref(), Some("RF18539007547034"));
+    }
+
+    #[test]
+    fn empty_address_lines_yield_none() {
+        let a = ScannedAddress {
+            address_type: 'S',
+            name: "X".to_string(),
+            street_or_line1: "  ".to_string(),
+            building_or_line2: String::new(),
+            postal_code: None,
+            town: None,
+            country: String::new(),
+        };
+        assert!(format_scanned_address(&a).is_none());
+    }
 }
