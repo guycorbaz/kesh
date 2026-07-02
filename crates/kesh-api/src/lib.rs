@@ -400,6 +400,20 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/settings/api-keys/{id}",
             delete(routes::api_keys::revoke),
         )
+        // Story 19-1 (Epic 19) : CRUD projets analytiques (Comptable+ mutations).
+        .route("/api/v1/projects", post(routes::projects::create_project))
+        .route(
+            "/api/v1/projects/{id}",
+            put(routes::projects::update_project),
+        )
+        .route(
+            "/api/v1/projects/{id}/archive",
+            post(routes::projects::archive_project),
+        )
+        .route(
+            "/api/v1/projects/{id}/unarchive",
+            post(routes::projects::unarchive_project),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
@@ -565,6 +579,9 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/bank-accounts",
             get(routes::bank_accounts::list_bank_accounts),
         )
+        // Story 19-1 : lecture projets analytiques (tous rôles authentifiés).
+        .route("/api/v1/projects", get(routes::projects::list_projects))
+        .route("/api/v1/projects/{id}", get(routes::projects::get_project))
         // Story 8-5b : lecture règles d'affectation (tous rôles authentifiés).
         .route(
             "/api/v1/reconciliation/rules",
