@@ -55,12 +55,12 @@ so that je pourrai ensuite rattacher mes dépenses et revenus à un projet (rén
 
 ## Tasks / Subtasks (à affiner au dev)
 
-- [ ] **T1 — Migrations** (AC: 1,2) : `CREATE TABLE projects` + `ALTER journal_entry_lines ADD project_id` (2 fichiers ou 1) ; 2 lignes idempotence-audit ; **pas** de bump min_required.
-- [ ] **T2 — Entité + repo** (AC: 3,4) : `entities/project.rs` (+ mod/lib) ; `repositories/projects.rs` (CRUD + garde 2 niveaux + scoping company + unicité code) ; `DbError` variants si besoin ; tests repo.
-- [ ] **T3 — API** (AC: 5) : `routes/projects.rs` (handlers + DTOs) ; montage dans `comptable_routes` (lib.rs) ; mapping erreurs 4xx ; tests intégration.
-- [ ] **T4 — Frontend admin** (AC: 6) : feature `projects` (api/types) + page `/settings/projects` (arbre + form + archivage) + entrée menu Administration + i18n ; unit test helper.
-- [ ] **T5 — Export/backup** (AC: 7) : ajouter `projects` au sérialiseur/manifeste + `TABLES_TO_TRUNCATE` + bump compteur `admin_full_export_e2e` ; round-trip vert.
-- [ ] **T6 — Gate** (AC: 8) : Test Locally First complet (fmt/clippy/build/test workspace serial + front check/lint/unit/build + E2E), exit-codes vérifiés.
+- [x] **T1 — Migrations** (AC: 1,2) : `CREATE TABLE projects` + `ALTER journal_entry_lines ADD project_id` (2 fichiers ou 1) ; 2 lignes idempotence-audit ; **pas** de bump min_required.
+- [x] **T2 — Entité + repo** (AC: 3,4) : `entities/project.rs` (+ mod/lib) ; `repositories/projects.rs` (CRUD + garde 2 niveaux + scoping company + unicité code) ; `DbError` variants si besoin ; tests repo.
+- [x] **T3 — API** (AC: 5) : `routes/projects.rs` (handlers + DTOs) ; montage dans `comptable_routes` (lib.rs) ; mapping erreurs 4xx ; tests intégration.
+- [x] **T4 — Frontend admin** (AC: 6) : feature `projects` (api/types) + page `/settings/projects` (arbre + form + archivage) + entrée menu Administration + i18n ; unit test helper.
+- [x] **T5 — Export/backup** (AC: 7) : ajouter `projects` au sérialiseur/manifeste + `TABLES_TO_TRUNCATE` + bump compteur `admin_full_export_e2e` ; round-trip vert.
+- [x] **T6 — Gate** (AC: 8) : Test Locally First complet (fmt/clippy/build/test workspace serial + front check/lint/unit/build + E2E), exit-codes vérifiés.
 
 ## Dev Notes
 

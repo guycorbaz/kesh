@@ -96,6 +96,7 @@
 				{ i18nKey: 'nav-bank-accounts', fallback: 'Comptes bancaires', href: '/bank-accounts' },
 				{ i18nKey: 'nav-bank-profiles', fallback: 'Profils bancaires', href: '/bank-import/profiles' },
 				{ i18nKey: 'nav-reconciliation-rules', fallback: "Règles d'affectation", href: '/reconciliation/rules' },
+				{ i18nKey: 'nav-projects', fallback: 'Projets analytiques', href: '/settings/projects' },
 				{ i18nKey: 'nav-export-global', fallback: 'Export global', href: '/export' },
 				{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' },
 			],
