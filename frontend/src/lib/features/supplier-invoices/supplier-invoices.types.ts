@@ -67,6 +67,8 @@ export interface CreateSupplierInvoiceRequest {
 	creditorQrIban?: string | null;
 	paymentReference?: string | null;
 	expectedPaymentAmount?: string | null;
+	/** Projet analytique (Epic 19, Story 19-3) — document-level, optionnel. */
+	projectId?: number | null;
 	lines: CreateSupplierInvoiceLineRequest[];
 }
 
