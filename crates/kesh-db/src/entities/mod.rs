@@ -24,6 +24,7 @@ pub mod onboarding;
 pub mod password_reset_token;
 pub mod payment_batch;
 pub mod product;
+pub mod project;
 pub mod reconciliation_rule;
 pub mod refresh_token;
 pub mod supplier_invoice;
@@ -52,6 +53,7 @@ pub use onboarding::{OnboardingState, UiMode};
 pub use password_reset_token::PasswordResetToken;
 pub use payment_batch::{NewPaymentBatch, PaymentBatch, PaymentBatchItem};
 pub use product::{NewProduct, Product, ProductUpdate};
+pub use project::{NewProject, Project, UpdateProject};
 pub use reconciliation_rule::{
     NewReconciliationRule, ReconciliationMatchType, ReconciliationRule, UpdateReconciliationRule,
 };

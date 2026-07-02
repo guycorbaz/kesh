@@ -21,6 +21,7 @@ pub mod onboarding;
 pub mod payment_batches;
 pub mod products;
 pub mod profile;
+pub mod projects;
 pub mod reconciliation;
 pub mod reconciliation_rules;
 pub mod reports;
