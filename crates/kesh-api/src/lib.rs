@@ -10,12 +10,15 @@ pub(crate) mod admin_backup;
 pub mod audit;
 pub mod auth;
 pub mod config;
+pub mod document_storage;
 pub mod errors;
 pub mod exports;
 pub mod helpers;
+pub mod inbox_import;
 pub mod logging;
 pub mod mail;
 pub mod middleware;
+pub mod qr_decode;
 pub mod routes;
 pub(crate) mod util;
 
@@ -243,6 +246,36 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/supplier-invoices/{id}/cancel",
             post(routes::supplier_invoices::cancel_supplier_invoice),
+        )
+        // Story 12.4 : scan QR-facture → pré-remplissage (Comptable+, lecture seule).
+        .route(
+            "/api/v1/supplier-invoices/scan-qr",
+            post(routes::supplier_invoices::scan_qr_supplier_invoice),
+        )
+        // Story 12.5c : import répertoire de factures (#194) — Comptable+.
+        .route(
+            "/api/v1/inbox-import",
+            post(routes::imported_supplier_invoices::post_inbox_import),
+        )
+        .route(
+            "/api/v1/imported-supplier-invoices",
+            get(routes::imported_supplier_invoices::list_imported),
+        )
+        .route(
+            "/api/v1/imported-supplier-invoices/{id}/complete",
+            post(routes::imported_supplier_invoices::complete_import),
+        )
+        .route(
+            "/api/v1/imported-supplier-invoices/{id}/discard",
+            post(routes::imported_supplier_invoices::discard_import),
+        )
+        .route(
+            "/api/v1/imported-supplier-invoices/{id}/source-document",
+            get(routes::imported_supplier_invoices::get_imported_source_document),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/source-document",
+            get(routes::imported_supplier_invoices::get_supplier_invoice_source_document),
         )
         // Story 12.3 : lots de paiement pain.001 — mutations (Comptable+)
         .route(

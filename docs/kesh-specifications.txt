@@ -2183,7 +2183,7 @@ Ce document fournit le découpage complet en epics et stories pour Kesh, en déc
 #### Paiements (v0.2)
 
 - FR39 : L'utilisateur peut sélectionner des factures fournisseurs ouvertes pour générer un lot de paiements
-- FR40 : Le système génère un fichier pain.001.001.03 conforme au schéma XSD SIX
+- FR40 : Le système génère un fichier pain.001.001.09 conforme au schéma XSD SIX
 - FR41 : Le système valide le format IBAN avant la génération du fichier de paiement
 
 #### Import Bancaire & Réconciliation

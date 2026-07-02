@@ -7,7 +7,7 @@ Ce guide accompagne le premier usage de Kesh pour un indépendant suisse, une PM
 Kesh est un logiciel de comptabilité en partie double pour la Suisse, conforme :
 
 - **QR Bill 2.2** — génération de factures avec QR code SIX.
-- **pain.001.001.03** — fichiers de paiement ISO 20022 *(à venir v0.2)*.
+- **pain.001.001.09** — fichiers de paiement ISO 20022 (Swiss Payment Standards / SIX).
 - **CAMT.053.001.04** + CSV multi-encodage — import des relevés bancaires.
 - **CO Art. 957–958f** — audit-trail comptable Suisse (conservation 10 ans).
 

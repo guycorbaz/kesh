@@ -23,7 +23,7 @@ Current implementation requires developers to manually add `WHERE company_id = ?
 // crates/kesh-db/src/repositories/invoices.rs
 
 pub async fn list_by_company(
-    pool: &PgPool,
+    pool: &MySqlPool,
     company_id: i64,
     limit: i64,
 ) -> Result<Vec<Invoice>> {
@@ -37,7 +37,7 @@ pub async fn list_by_company(
 }
 
 pub async fn find_by_id(
-    pool: &PgPool,
+    pool: &MySqlPool,
     company_id: i64,
     invoice_id: i64,
 ) -> Result<Option<Invoice>> {
@@ -65,7 +65,7 @@ pub async fn find_by_id(
 // Define a scoped query macro that requires company_id
 #[tenant_query]
 pub async fn list_by_company(
-    pool: &PgPool,
+    pool: &MySqlPool,
     company_id: i64,
     limit: i64,
 ) -> Result<Vec<Invoice>> {
@@ -123,7 +123,7 @@ impl<T: sqlx::FromRow<'static, sqlx::mysql::MySqlRow>> TenantQuery<T> {
         self
     }
 
-    pub async fn fetch_one(self, pool: &PgPool) -> Result<T> {
+    pub async fn fetch_one(self, pool: &MySqlPool) -> Result<T> {
         // WHERE company_id = ? is guaranteed here
         sqlx::query_as(&format!("SELECT * FROM {} WHERE company_id = ? {}", 
             self.table, self.sql))
@@ -134,7 +134,7 @@ impl<T: sqlx::FromRow<'static, sqlx::mysql::MySqlRow>> TenantQuery<T> {
 }
 
 // Usage:
-pub async fn find_by_id(pool: &PgPool, company_id: i64, id: i64) -> Result<Invoice> {
+pub async fn find_by_id(pool: &MySqlPool, company_id: i64, id: i64) -> Result<Invoice> {
     TenantQuery::<Invoice>::new("invoices", company_id)
         .and_where("id = ?")
         .bind(id)

@@ -39,6 +39,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "journal_entry_lines",
     "projects", // Story 19-1 (Epic 19) — enfant de companies + self-ref parent_id (RESTRICT) ; référencé par journal_entry_lines.project_id → APRÈS journal_entry_lines, AVANT companies.
     "credit_notes", // Story 12.1 — enfant de invoices/journal_entries/contacts (RESTRICT) → avant eux.
+    "imported_supplier_invoices", // Story 12.5b — enfant de companies (RESTRICT) + supplier_invoices (SET NULL) → avant eux.
     "supplier_invoices", // Story 12.2 — enfant de journal_entries/contacts/bank_accounts/accounts (RESTRICT) → avant eux.
     "payment_batches",   // Story 12.3 — enfant de companies + bank_accounts (RESTRICT) → avant eux.
     "invoices",

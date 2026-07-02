@@ -208,9 +208,43 @@ pub async fn list(
     Ok((items, total))
 }
 
-/// Enregistre une facture fournisseur et poste son écriture d'achat (single-step).
+/// Enregistre une facture fournisseur et poste son écriture d'achat (single-step,
+/// pool-owning). Délègue le cœur à [`create_in_tx`] dans une transaction qu'elle
+/// possède puis commit — patron identique à [`pay`]/[`pay_in_tx`].
 pub async fn create(
     pool: &MySqlPool,
+    new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let result = create_in_tx(&mut tx, new, user_id).await;
+
+    match result {
+        Ok(v) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Cœur de l'enregistrement d'une facture fournisseur, **tx-aware** (DC6 12-5c).
+///
+/// Aucun `begin`/`commit` interne — l'appelant gère la transaction. Réutilisé par
+/// [`create`] (wrapper pool-owning) **ET** par la complétion atomique 12-5c
+/// (`POST /imported-supplier-invoices/{id}/complete`), qui exécute la création de
+/// la facture dans **la même transaction** que le `SELECT … FOR UPDATE` du staging
+/// et l'`UPDATE status='completed'` → impossible d'aboutir à une double facture
+/// (pas de fenêtre non-atomique entre un COMMIT et l'UPDATE du staging).
+///
+/// `company_id` est destructuré depuis `new.company_id` (jamais un paramètre
+/// séparé — source unique). Retourne [`SupplierInvoiceWithLines`] (kesh-db) ; le
+/// handler HTTP construit `SupplierInvoiceResponse` (kesh-api) via `from_parts`.
+pub async fn create_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     new: NewSupplierInvoice,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
@@ -236,181 +270,164 @@ pub async fn create(
         ));
     }
 
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    // (1) Fournisseur valide (existe, company-scoped, is_supplier).
+    let supplier: Option<(String, bool)> =
+        sqlx::query_as("SELECT name, is_supplier FROM contacts WHERE id = ? AND company_id = ?")
+            .bind(contact_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    let (contact_name, is_supplier) = supplier.ok_or(DbError::NotFound)?;
+    if !is_supplier {
+        return Err(DbError::IllegalStateTransition(
+            "le contact n'est pas un fournisseur".into(),
+        ));
+    }
 
-    let result = async {
-        // (1) Fournisseur valide (existe, company-scoped, is_supplier).
-        let supplier: Option<(String, bool)> = sqlx::query_as(
-            "SELECT name, is_supplier FROM contacts WHERE id = ? AND company_id = ?",
-        )
-        .bind(contact_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-        let (contact_name, is_supplier) = supplier.ok_or(DbError::NotFound)?;
-        if !is_supplier {
+    // (2) Valider lignes : montant HT > 0, compte de charge company-scoped + actif.
+    let mut pairs: Vec<(Decimal, Decimal, i64)> = Vec::with_capacity(lines.len());
+    let mut computed_lines: Vec<(Decimal, &crate::entities::NewSupplierInvoiceLine)> =
+        Vec::with_capacity(lines.len());
+    for line in &lines {
+        let line_total = line.quantity * line.unit_price;
+        if line.quantity <= Decimal::ZERO
+            || line.unit_price <= Decimal::ZERO
+            || line_total <= Decimal::ZERO
+        {
             return Err(DbError::IllegalStateTransition(
-                "le contact n'est pas un fournisseur".into(),
+                "chaque ligne doit avoir une quantité et un prix strictement positifs".into(),
             ));
         }
-
-        // (2) Valider lignes : montant HT > 0, compte de charge company-scoped + actif.
-        let mut pairs: Vec<(Decimal, Decimal, i64)> = Vec::with_capacity(lines.len());
-        let mut computed_lines: Vec<(Decimal, &crate::entities::NewSupplierInvoiceLine)> =
-            Vec::with_capacity(lines.len());
-        for line in &lines {
-            let line_total = line.quantity * line.unit_price;
-            if line.quantity <= Decimal::ZERO
-                || line.unit_price <= Decimal::ZERO
-                || line_total <= Decimal::ZERO
-            {
-                return Err(DbError::IllegalStateTransition(
-                    "chaque ligne doit avoir une quantité et un prix strictement positifs".into(),
-                ));
-            }
-            if line.vat_rate < Decimal::ZERO || line.vat_rate > Decimal::from(100) {
-                return Err(DbError::IllegalStateTransition(
-                    "taux de TVA hors bornes (0-100)".into(),
-                ));
-            }
-            // Compte de charge : doit exister, être actif, company-scoped, et de
-            // type Expense (AC6 — sinon l'écriture débiterait un Passif/Actif).
-            let acct: Option<(bool, String)> = sqlx::query_as(
-                "SELECT active, account_type FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
-            )
-            .bind(line.expense_account_id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-            match acct {
-                Some((true, ref t)) if t == "Expense" => {}
-                _ => return Err(DbError::InactiveOrInvalidAccounts),
-            }
-            pairs.push((line_total, line.vat_rate, line.expense_account_id));
-            computed_lines.push((line_total, line));
+        if line.vat_rate < Decimal::ZERO || line.vat_rate > Decimal::from(100) {
+            return Err(DbError::IllegalStateTransition(
+                "taux de TVA hors bornes (0-100)".into(),
+            ));
         }
-
-        // (3) Exercice ouvert couvrant la date de facture.
-        let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, invoice_date)
-            .await?
-            .ok_or(DbError::FiscalYearInvalid)?;
-
-        // (4) Config company : comptes créanciers 2000 (requis) + 1171 récupérable (optionnel).
-        let settings =
-            company_invoice_settings::get_or_create_default_in_tx(&mut tx, company_id).await?;
-        let payable_account_id = settings
-            .default_payable_account_id
-            .ok_or_else(|| DbError::ConfigurationRequired("default_payable_account_id".into()))?;
-
-        // (5) Écriture d'achat.
-        let (entry_lines, total_ttc) = generate_purchase_journal_lines(
-            &pairs,
-            payable_account_id,
-            settings.default_vat_recoverable_account_id,
-        )?;
-        let number_label = supplier_invoice_number.clone().unwrap_or_default();
-        let description = format!("Facture fournisseur {number_label} - {contact_name}");
-        let je = journal_entries::create_in_tx(
-            &mut tx,
-            fy.id,
-            user_id,
-            NewJournalEntry {
-                company_id,
-                entry_date: invoice_date,
-                journal: Journal::Achats,
-                description,
-                lines: entry_lines,
-            },
+        // Compte de charge : doit exister, être actif, company-scoped, et de
+        // type Expense (AC6 — sinon l'écriture débiterait un Passif/Actif).
+        let acct: Option<(bool, String)> = sqlx::query_as(
+            "SELECT active, account_type FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
         )
-        .await?;
-
-        // (6) INSERT supplier_invoices (status='open').
-        let inv_id: i64 = sqlx::query(
-            "INSERT INTO supplier_invoices \
-             (company_id, contact_id, supplier_invoice_number, status, invoice_date, due_date, \
-              total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
-              expected_payment_amount, purchase_journal_entry_id) \
-             VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
+        .bind(line.expense_account_id)
         .bind(company_id)
-        .bind(contact_id)
-        .bind(&supplier_invoice_number)
-        .bind(invoice_date)
-        .bind(due_date)
-        .bind(total_ttc)
-        .bind(&creditor_iban)
-        .bind(&creditor_qr_iban)
-        .bind(&payment_reference)
-        .bind(expected_payment_amount)
-        .bind(je.entry.id)
-        .execute(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
-        .map_err(map_db_error)?
-        .last_insert_id() as i64;
-
-        // (7) INSERT supplier_invoice_lines.
-        for (position, (line_total, line)) in computed_lines.iter().enumerate() {
-            sqlx::query(
-                "INSERT INTO supplier_invoice_lines \
-                 (supplier_invoice_id, position, description, quantity, unit_price, vat_rate, \
-                  line_total, expense_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(inv_id)
-            .bind(position as i32)
-            .bind(&line.description)
-            .bind(line.quantity)
-            .bind(line.unit_price)
-            .bind(line.vat_rate)
-            .bind(*line_total)
-            .bind(line.expense_account_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
+        .map_err(map_db_error)?;
+        match acct {
+            Some((true, ref t)) if t == "Expense" => {}
+            _ => return Err(DbError::InactiveOrInvalidAccounts),
         }
+        pairs.push((line_total, line.vat_rate, line.expense_account_id));
+        computed_lines.push((line_total, line));
+    }
 
-        // (8) Relire + audit.
-        let inv = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
-            .bind(inv_id)
-            .bind(company_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-        let inv_lines = fetch_lines(&mut tx, inv_id).await?;
+    // (3) Exercice ouvert couvrant la date de facture.
+    let fy = fiscal_years::find_open_covering_date(&mut *tx, company_id, invoice_date)
+        .await?
+        .ok_or(DbError::FiscalYearInvalid)?;
 
-        audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "supplier_invoice.created".to_string(),
-                "supplier_invoice".to_string(),
-                inv_id,
-                Some(serde_json::json!({
-                    "supplierInvoice": snapshot_json(&inv, &inv_lines),
-                    "journalEntryId": je.entry.id,
-                })),
-            ),
+    // (4) Config company : comptes créanciers 2000 (requis) + 1171 récupérable (optionnel).
+    let settings =
+        company_invoice_settings::get_or_create_default_in_tx(&mut *tx, company_id).await?;
+    let payable_account_id = settings
+        .default_payable_account_id
+        .ok_or_else(|| DbError::ConfigurationRequired("default_payable_account_id".into()))?;
+
+    // (5) Écriture d'achat.
+    let (entry_lines, total_ttc) = generate_purchase_journal_lines(
+        &pairs,
+        payable_account_id,
+        settings.default_vat_recoverable_account_id,
+    )?;
+    let number_label = supplier_invoice_number.clone().unwrap_or_default();
+    let description = format!("Facture fournisseur {number_label} - {contact_name}");
+    let je = journal_entries::create_in_tx(
+        &mut *tx,
+        fy.id,
+        user_id,
+        NewJournalEntry {
+            company_id,
+            entry_date: invoice_date,
+            journal: Journal::Achats,
+            description,
+            lines: entry_lines,
+        },
+    )
+    .await?;
+
+    // (6) INSERT supplier_invoices (status='open').
+    let inv_id: i64 = sqlx::query(
+        "INSERT INTO supplier_invoices \
+         (company_id, contact_id, supplier_invoice_number, status, invoice_date, due_date, \
+          total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
+          expected_payment_amount, purchase_journal_entry_id) \
+         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(&supplier_invoice_number)
+    .bind(invoice_date)
+    .bind(due_date)
+    .bind(total_ttc)
+    .bind(&creditor_iban)
+    .bind(&creditor_qr_iban)
+    .bind(&payment_reference)
+    .bind(expected_payment_amount)
+    .bind(je.entry.id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .last_insert_id() as i64;
+
+    // (7) INSERT supplier_invoice_lines.
+    for (position, (line_total, line)) in computed_lines.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO supplier_invoice_lines \
+             (supplier_invoice_id, position, description, quantity, unit_price, vat_rate, \
+              line_total, expense_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .await?;
-
-        Ok(SupplierInvoiceWithLines {
-            invoice: inv,
-            lines: inv_lines,
-        })
+        .bind(inv_id)
+        .bind(position as i32)
+        .bind(&line.description)
+        .bind(line.quantity)
+        .bind(line.unit_price)
+        .bind(line.vat_rate)
+        .bind(*line_total)
+        .bind(line.expense_account_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
     }
-    .await;
 
-    match result {
-        Ok(v) => {
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(v)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    // (8) Relire + audit.
+    let inv = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(inv_id)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let inv_lines = fetch_lines(&mut *tx, inv_id).await?;
+
+    audit_log::insert_in_tx(
+        &mut *tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.created".to_string(),
+            "supplier_invoice".to_string(),
+            inv_id,
+            Some(serde_json::json!({
+                "supplierInvoice": snapshot_json(&inv, &inv_lines),
+                "journalEntryId": je.entry.id,
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(SupplierInvoiceWithLines {
+        invoice: inv,
+        lines: inv_lines,
+    })
 }
 
 /// Garde [Story 12.3] : refuse une mutation directe (`pay`/`cancel`) si la

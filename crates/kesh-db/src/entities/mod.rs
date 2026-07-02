@@ -17,6 +17,7 @@ pub mod company_invoice_settings;
 pub mod contact;
 pub mod credit_note;
 pub mod fiscal_year;
+pub mod imported_supplier_invoice;
 pub mod invoice;
 pub mod invoice_number_sequence;
 pub mod journal_entry;
@@ -43,6 +44,9 @@ pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSetting
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use credit_note::{CreditNote, CreditNoteLine, NewCreditNote};
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+pub use imported_supplier_invoice::{
+    DocumentMeta, ImportedSupplierInvoice, NewImportedSupplierInvoice,
+};
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use invoice_number_sequence::InvoiceNumberSequence;
 pub use journal_entry::{

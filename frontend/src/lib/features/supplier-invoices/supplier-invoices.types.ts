@@ -70,6 +70,22 @@ export interface CreateSupplierInvoiceRequest {
 	lines: CreateSupplierInvoiceLineRequest[];
 }
 
+/**
+ * Coordonnées extraites d'un QR-facture (Story 12.4) — pré-remplissage seul.
+ * Exactement l'un de `creditorIban` / `creditorQrIban` est renseigné.
+ * Montant en `string` (parité `serde-str` backend / big.js frontend).
+ */
+export interface ScanQrResponse {
+	creditorIban: string | null;
+	creditorQrIban: string | null;
+	paymentReference: string | null;
+	expectedPaymentAmount: string | null;
+	currency: string;
+	creditorName: string;
+	creditorAddress: string | null;
+	unstructuredMessage: string | null;
+}
+
 /** Règlement binaire : virement (bankAccountId) ou compte interne (accountId). */
 export interface PaySupplierInvoiceRequest {
 	settlementType: SettlementType;

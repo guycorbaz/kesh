@@ -297,6 +297,9 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
             "Champ {field} contient un caractère non autorisé par SIX 2.2 (U+{codepoint:04X})"
         )),
         QrBillError::PdfGeneration(msg) => AppError::PdfGenerationFailed(msg),
+        // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
+        // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
+        QrBillError::InvalidPayload(msg) => AppError::InvoiceNotPdfReady(msg),
     }
 }
 

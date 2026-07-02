@@ -13,6 +13,7 @@ pub mod exports;
 pub mod fiscal_years;
 pub mod health;
 pub mod i18n;
+pub mod imported_supplier_invoices;
 pub mod invoice_pdf;
 pub mod invoices;
 pub mod journal_entries;

@@ -261,7 +261,7 @@ Vous dirigez une PME avec 1--50 salariés et un chiffre d'affaires allant jusqu'
     \item Facturation client en lot avec QR Bill et suivi des échéances.
     \item Import bancaire et réconciliation en un clic.
     \item Production des comptes annuels (bilan, P\&L) conformes Art. 959/959a/959b CO.
-    \item Multi-utilisateurs avec RBAC : comptable, opérateur de saisie, dirigeant en lecture seule.
+    \item Multi-utilisateurs avec RBAC : Administrateur (toutes opérations), Comptable (saisie et consultation), Consultation (lecture seule).
 \end{itemize}
 
 \end{tcolorbox}
@@ -306,9 +306,8 @@ Trésorier d'une association sportive, culturelle, syndicale ou caritative ? Kes
 Cabinet fiduciaire ou expert-comptable indépendant ? Kesh vous offre une plateforme moderne pour vos dossiers clients :
 
 \begin{itemize}
-    \item Mode multi-tenant : N companies sur une seule instance.
-    \item Bascule rapide entre dossiers clients via le sélecteur de company.
-    \item Isolation stricte des données (conformité protection des données et secret professionnel).
+    \item Architecture multi-tenant : plusieurs sociétés isolées sur une seule instance (chaque utilisateur est rattaché à une société, \texttt{company\_id} porté par le jeton).
+    \item Isolation stricte des données par société (conformité protection des données et secret professionnel). \emph{(Un sélecteur permettant de basculer entre dossiers depuis un même compte est prévu pour une version ultérieure.)}
     \item Audit-trail centralisé pour la responsabilité fiduciaire.
     \item Tarification self-hosted : pas de coût par utilisateur ni par dossier.
 \end{itemize}
@@ -335,7 +334,7 @@ Kesh repose sur des technologies éprouvées et modernes, choisies pour leur per
     \midrule
     Backend & Rust 1.85+ (édition 2024) avec le framework Axum \\
     Frontend & SvelteKit 2 + Svelte 5, TypeScript, Tailwind CSS 4 \\
-    Base de données & MariaDB 11.4 (compatibilité MySQL 8) \\
+    Base de données & MariaDB 10.11+ (compatible $\geq$ 10.6) \\
     Authentification & JWT + refresh tokens avec rotation \\
     Déploiement & Docker Compose, image officielle Docker Hub \\
     Internationalisation & Fluent (Mozilla) pour les traductions \\
@@ -370,7 +369,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.5cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Déjà livré (v0.2.0)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Déjà livré (v0.1 à v0.3.2)}
 
 \begin{itemize}
     \item Fondations et authentification multi-tenant, cookies sécurisés httpOnly.
@@ -382,22 +381,15 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
     \item Réconciliation automatique avec scoring + manuelle + règles d'affectation.
     \item Éclatement de transactions agrégées.
     \item Rapports comptables (Bilan, Compte de résultat, Balance, Journal).
-    \item Clôture d'exercice comptable avec report automatique des soldes de bilan.
+    \item Clôture d'exercice comptable (blocage des écritures sur période clôturée).
+    \item Avoirs (notes de crédit) : contre-passation liée d'une facture validée, avec PDF. \emph{(v0.3.2)}
+    \item Factures fournisseurs avec règlement binaire (virement bancaire ou compte interne). \emph{(v0.3.x)}
+    \item Paiements sortants : fichier ISO 20022 \texttt{pain.001.001.09} (Swiss Payment Standards / SIX). \emph{(v0.3.x)}
+    \item Import de factures fournisseurs depuis un dossier surveillé, avec décodage du QR-facture côté serveur. \emph{(v0.3.x)}
     \item Exports PDF et CSV par rapport + ZIP global de souveraineté avec SHA-256.
-    \item Export/import complet d'installation (\texttt{.keshbackup}) depuis l'interface d'administration.
-    \item API externe avec clés d'accès personnelles (PAT) pour les intégrations tierces.
-    \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, manuels PDF.
-\end{itemize}
-
-\vspace{0.4cm}
-
-\textbf{\color{keshSuccess}\faCheckCircle\ Déploiement \& Souveraineté (Epic 10 \& 17, livré)}
-
-\begin{itemize}
-    \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, guide d'installation PDF.
-    \item API externe à clés d'accès (PAT) pour intégrations IA et logiciels tiers.
     \item Export / import complet d'installation (\texttt{.keshbackup}) pour migration ou restauration sans accès SSH.
-    \item Récupération de mot de passe par email (self-service).
+    \item API externe à clés d'accès personnelles (PAT) pour intégrations IA et logiciels tiers.
+    \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, manuels PDF.
 \end{itemize}
 
 \vspace{0.4cm}
@@ -412,17 +404,17 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshWarning}\faClock\ Backlog (Epic 12 à 15)}
+\textbf{\color{keshWarning}\faClock\ Backlog (Epic 13 à 15)}
 
 \begin{itemize}
-    \item Avoirs et notes de crédit dédiés + fichiers de paiement pain.001.001.03 (ISO 20022).
+    \item Report automatique des soldes de bilan à la clôture d'exercice.
     \item Budgets annuels + suivi.
     \item Justificatifs, lettrage, journaux personnalisables.
 \end{itemize}
 
 \vspace{0.4cm}
 
-\textbf{\color{keshPrimaryLight}\faRocket\ Vision (v0.3+)}
+\textbf{\color{keshPrimaryLight}\faRocket\ Vision (v0.4+)}
 
 \begin{itemize}
     \item Signature électronique qualifiée (QES) sur les exports.

@@ -249,4 +249,8 @@ pub enum QrBillError {
     InvalidCharset { field: &'static str, codepoint: u32 },
     #[error("Erreur génération PDF: {0}")]
     PdfGeneration(String),
+    /// Payload SPC malformé (en-tête absent, type de référence inconnu, structure invalide).
+    /// Mappé `INVALID_SPC_PAYLOAD` par la couche d'import (Story 12-5).
+    #[error("Payload SPC invalide: {0}")]
+    InvalidPayload(String),
 }

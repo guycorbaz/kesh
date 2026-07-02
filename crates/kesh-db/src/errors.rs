@@ -87,6 +87,16 @@ pub enum DbError {
     #[error("Invariant kesh-db violé : {0}")]
     Invariant(String),
 
+    /// Donnée trop longue pour sa colonne (MariaDB **1406** `ER_DATA_TOO_LONG`)
+    /// ou hors de la plage du type (**1264** `ER_WARN_DATA_OUT_OF_RANGE`).
+    /// Story 12-5c (dette D2) : un champ d'un QR tiers **non conforme SIX 2.2**
+    /// (nom créancier > 70 chars, message > 140, etc.) dépasse la largeur de sa
+    /// colonne à l'INSERT staging. Variante typée (séparée du repli `Sqlx`) pour
+    /// que la couche d'ingestion 12-5c mappe cet échec **par-fichier** (`failed[]`
+    /// avec `error_code = "FIELD_TOO_LONG"`, HTTP 200) au lieu d'un 500 global.
+    #[error("Donnée trop longue ou hors plage : {0}")]
+    DataLengthOrRange(String),
+
     /// Erreur SQLx non classifiée (syntaxe, type mismatch, etc.).
     ///
     /// `#[source]` préserve la chaîne d'erreur pour anyhow/tracing —
@@ -114,6 +124,7 @@ impl DbError {
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::Invariant(_) => "INVARIANT_VIOLATION",
+            Self::DataLengthOrRange(_) => "DATA_LENGTH_OR_RANGE",
             Self::Sqlx(_) => "DATABASE_ERROR",
         }
     }
@@ -128,6 +139,8 @@ impl DbError {
 /// - **1451/1452** : violations de clé étrangère
 /// - **4025** : `ER_CONSTRAINT_FAILED` (MariaDB 10.2+)
 /// - **3819** : `ER_CHECK_CONSTRAINT_VIOLATED` (MySQL 8.0.16+, fallback)
+/// - **1406** : `ER_DATA_TOO_LONG` — donnée trop longue pour la colonne (D2 12-5c)
+/// - **1264** : `ER_WARN_DATA_OUT_OF_RANGE` — valeur hors plage du type (D2 12-5c)
 ///
 /// Les erreurs de connexion (pool timeout, pool closed, IO) sont mappées
 /// vers `DbError::ConnectionUnavailable` pour permettre un retry côté API.
@@ -155,6 +168,12 @@ pub fn map_db_error(err: sqlx::Error) -> DbError {
                 }
                 4025 | 3819 => {
                     return DbError::CheckConstraintViolation(my_err.message().to_string());
+                }
+                // Story 12-5c (D2) : donnée trop longue / hors plage à l'INSERT
+                // staging d'un QR tiers non conforme → variante typée pour un
+                // échec par-fichier propre (vs 500 global) côté ingestion 12-5c.
+                1406 | 1264 => {
+                    return DbError::DataLengthOrRange(my_err.message().to_string());
                 }
                 _ => {}
             }
