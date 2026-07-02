@@ -28,7 +28,7 @@ use crate::repositories::audit_log;
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
 const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, status, \
     invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
-    expected_payment_amount, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
+    expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
     settlement_account_id, settlement_journal_entry_id, paid_at, version, created_at, updated_at \
     FROM supplier_invoices WHERE id = ? AND company_id = ?";
 
@@ -261,6 +261,7 @@ pub async fn create_in_tx(
         creditor_qr_iban,
         payment_reference,
         expected_payment_amount,
+        project_id,
         lines,
     } = new;
 
@@ -268,6 +269,38 @@ pub async fn create_in_tx(
         return Err(DbError::IllegalStateTransition(
             "une facture fournisseur doit avoir au moins une ligne".into(),
         ));
+    }
+
+    // (0) Projet analytique optionnel (Story 19-3) : s'il est renseigné, il doit
+    // exister, appartenir à la même company et ne pas être archivé (sinon la dépense
+    // serait taguée sur un projet clos).
+    if let Some(pid) = project_id {
+        // Ordre de verrouillage global (MULTI-TENANT-SCOPING-PATTERNS.md, Pattern 5) :
+        // `companies` (sentinel) AVANT `projects`, IDENTIQUE au chemin d'archivage
+        // (`projects::set_archived` prend le sentinel puis met à jour le projet). Prendre
+        // le sentinel d'abord évite l'inversion ABBA (deadlock) que créerait un simple
+        // `FOR UPDATE` sur la ligne projet alors que l'INSERT prendra un lock sur
+        // `companies` via la FK (code-review Pass 3 Opus). Bonus : l'exclusion mutuelle
+        // sur `companies` ferme aussi la race d'archivage concurrent (le `FOR UPDATE`
+        // projet ci-dessous devient ceinture-et-bretelles).
+        crate::repositories::bank_accounts::acquire_company_sentinel_lock(tx, company_id).await?;
+        let row: Option<(bool,)> = sqlx::query_as(
+            "SELECT archived FROM projects WHERE id = ? AND company_id = ? FOR UPDATE",
+        )
+        .bind(pid)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        match row {
+            None => return Err(DbError::NotFound),
+            Some((archived,)) if archived => {
+                return Err(DbError::IllegalStateTransition(
+                    "le projet analytique est archivé".into(),
+                ));
+            }
+            Some(_) => {}
+        }
     }
 
     // (1) Fournisseur valide (existe, company-scoped, is_supplier).
@@ -351,6 +384,9 @@ pub async fn create_in_tx(
             entry_date: invoice_date,
             journal: Journal::Achats,
             description,
+            // Propagation document-level : le projet de la facture est stampé sur
+            // toutes les lignes de l'écriture d'achat (Story 19-3).
+            project_id,
             lines: entry_lines,
         },
     )
@@ -361,8 +397,8 @@ pub async fn create_in_tx(
         "INSERT INTO supplier_invoices \
          (company_id, contact_id, supplier_invoice_number, status, invoice_date, due_date, \
           total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
-          expected_payment_amount, purchase_journal_entry_id) \
-         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)",
+          expected_payment_amount, project_id, purchase_journal_entry_id) \
+         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(company_id)
     .bind(contact_id)
@@ -374,6 +410,7 @@ pub async fn create_in_tx(
     .bind(&creditor_qr_iban)
     .bind(&payment_reference)
     .bind(expected_payment_amount)
+    .bind(project_id)
     .bind(je.entry.id)
     .execute(&mut **tx)
     .await
@@ -634,6 +671,8 @@ pub async fn pay_in_tx(
             entry_date: payment_date,
             journal,
             description: format!("Règlement fournisseur {number_label} - {contact_name}"),
+            // Le règlement hérite du projet de la facture (cohérence analytique).
+            project_id: inv.project_id,
             lines: entry_lines,
         },
     )
@@ -767,6 +806,8 @@ pub async fn cancel(
                 entry_date: today,
                 journal: Journal::OD,
                 description: format!("Annulation facture fournisseur {number_label}"),
+                // La contre-passation reprend le projet → net par projet = 0 après annulation.
+                project_id: inv.project_id,
                 lines: reversal_lines,
             },
         )

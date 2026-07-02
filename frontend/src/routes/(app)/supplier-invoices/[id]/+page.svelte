@@ -16,6 +16,8 @@
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifyInfo, notifyWarning, notifyError } from '$lib/shared/utils/notify';
@@ -29,6 +31,15 @@
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
+	let projects = $state<ProjectResponse[]>([]);
+
+	/** Libellé du projet analytique affecté (Story 19-3), ou `null`. */
+	const projectLabel = $derived.by(() => {
+		const pid = invoice?.projectId;
+		if (pid == null) return null;
+		const p = projects.find((x) => x.id === pid);
+		return p ? `${p.code} — ${p.name}` : `#${pid}`;
+	});
 
 	// Formulaire de règlement binaire.
 	let settlementType = $state<'bank_transfer' | 'internal_account'>('bank_transfer');
@@ -45,9 +56,15 @@
 
 	onMount(async () => {
 		try {
-			const [, banks, accts] = await Promise.all([load(), listBankAccounts(), fetchAccounts()]);
+			const [, banks, accts, projs] = await Promise.all([
+				load(),
+				listBankAccounts(),
+				fetchAccounts(),
+				listProjects(true), // inclut les archivés pour résoudre le nom d'un projet tagué puis archivé
+			]);
 			bankAccounts = banks.filter((b) => b.journalAccountId !== null);
 			accounts = accts.filter((a) => a.active);
+			projects = projs;
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;
 		} finally {
@@ -143,6 +160,10 @@
 		<dd>{invoice.dueDate ?? '—'}</dd>
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-total', 'TTC')}</dt>
 		<dd>{formatSupplierInvoiceTotal(invoice.totalAmount)}</dd>
+		{#if projectLabel}
+			<dt class="text-text-muted">{i18nMsg('supplier-invoices-field-project', 'Projet analytique')}</dt>
+			<dd data-testid="supplier-invoice-project">{projectLabel}</dd>
+		{/if}
 		{#if invoice.creditorIban}
 			<dt class="text-text-muted">IBAN</dt>
 			<dd class="font-mono">{invoice.creditorIban}</dd>

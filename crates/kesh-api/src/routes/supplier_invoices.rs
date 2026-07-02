@@ -71,6 +71,7 @@ pub struct SupplierInvoiceResponse {
     pub creditor_qr_iban: Option<String>,
     pub payment_reference: Option<String>,
     pub expected_payment_amount: Option<Decimal>,
+    pub project_id: Option<i64>,
     pub purchase_journal_entry_id: i64,
     pub settlement_type: Option<String>,
     pub settlement_bank_account_id: Option<i64>,
@@ -99,6 +100,7 @@ impl SupplierInvoiceResponse {
             creditor_qr_iban: inv.creditor_qr_iban,
             payment_reference: inv.payment_reference,
             expected_payment_amount: inv.expected_payment_amount,
+            project_id: inv.project_id,
             purchase_journal_entry_id: inv.purchase_journal_entry_id,
             settlement_type: inv.settlement_type,
             settlement_bank_account_id: inv.settlement_bank_account_id,
@@ -167,6 +169,8 @@ pub struct CreateSupplierInvoiceRequest {
     pub creditor_qr_iban: Option<String>,
     pub payment_reference: Option<String>,
     pub expected_payment_amount: Option<Decimal>,
+    /// Projet analytique (Epic 19, Story 19-3) — document-level, optionnel.
+    pub project_id: Option<i64>,
     pub lines: Vec<CreateSupplierInvoiceLineRequest>,
 }
 
@@ -264,6 +268,7 @@ pub async fn create_supplier_invoice(
         creditor_qr_iban: req.creditor_qr_iban,
         payment_reference: req.payment_reference,
         expected_payment_amount: req.expected_payment_amount,
+        project_id: req.project_id,
         lines: req
             .lines
             .into_iter()

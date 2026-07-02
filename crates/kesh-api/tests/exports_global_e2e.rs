@@ -270,6 +270,7 @@ async fn post_entry(
             entry_date: date,
             journal,
             description: description.into(),
+            project_id: None,
             lines: vec![
                 NewJournalEntryLine {
                     account_id: debit_account,

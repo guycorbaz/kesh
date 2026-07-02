@@ -227,6 +227,8 @@ pub async fn complete_import(
             creditor_qr_iban,
             payment_reference,
             expected_payment_amount: staging.amount,
+            // Tag projet à la complétion d'un import = extension future → None ici.
+            project_id: None,
             lines,
         };
         let created = supplier_invoices::create_in_tx(&mut tx, new, user_id).await?;

@@ -25,6 +25,8 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listVatRates } from '$lib/features/vat-rates/vat-rates.api';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -36,6 +38,7 @@
 	let suppliers = $state<ContactResponse[]>([]);
 	let expenseAccounts = $state<AccountResponse[]>([]);
 	let vatRates = $state<VatRateResponse[]>([]);
+	let projects = $state<ProjectResponse[]>([]);
 
 	let showForm = $state(false);
 	let saving = $state(false);
@@ -51,6 +54,8 @@
 	let fIsQrIban = $state(false);
 	let fPaymentReference = $state('');
 	let fExpectedAmount = $state('');
+	/** Projet analytique (Epic 19, Story 19-3) — document-level, optionnel. */
+	let fProjectId = $state<number | null>(null);
 	/** Devise détectée au scan (affichée avec le montant ; EUR ≠ CHF, DC5 informatif). */
 	let fScannedCurrency = $state('');
 	/** Nom du créancier détecté par le scan (indice pour choisir le fournisseur). */
@@ -112,15 +117,17 @@
 
 	onMount(async () => {
 		try {
-			const [, contactsRes, accountsRes, ratesRes] = await Promise.all([
+			const [, contactsRes, accountsRes, ratesRes, projectsRes] = await Promise.all([
 				reload(),
 				listContacts({ isSupplier: true, limit: 200 }),
 				fetchAccounts(),
 				listVatRates(),
+				listProjects(), // actifs uniquement (includeArchived=false)
 			]);
 			suppliers = contactsRes.items;
 			expenseAccounts = accountsRes.filter((a) => a.accountType === 'Expense' && a.active);
 			vatRates = ratesRes;
+			projects = projectsRes;
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;
 		} finally {
@@ -150,6 +157,7 @@
 		fExpectedAmount = '';
 		fScannedCurrency = '';
 		fScannedCreditorName = '';
+		fProjectId = null;
 		fLines = [{ description: '', quantity: '1', unitPrice: '', vatRate: '0', expenseAccountId: 0 }];
 		formError = '';
 	}
@@ -188,6 +196,7 @@
 				creditorQrIban: fIsQrIban && fCreditorIban.trim() ? fCreditorIban.trim() : null,
 				paymentReference: fPaymentReference.trim() || null,
 				expectedPaymentAmount: fExpectedAmount.trim() || null,
+				projectId: fProjectId,
 				lines: fLines.map((l) => ({
 					description: l.description.trim(),
 					quantity: l.quantity || '1',
@@ -333,6 +342,24 @@
 					bind:value={fExpectedAmount}
 				/>
 			</label>
+			{#if projects.length > 0}
+				<label class="block text-sm">
+					{i18nMsg('supplier-invoices-field-project', 'Projet analytique (optionnel)')}
+					<select
+						class="mt-1 w-full rounded border px-2 py-1"
+						data-testid="supplier-invoice-project"
+						bind:value={fProjectId}
+					>
+						<option value={null}>{i18nMsg('supplier-invoices-project-none', '— Aucun')}</option>
+						{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+							<option value={root.id}>{root.code} — {root.name}</option>
+							{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+								<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+							{/each}
+						{/each}
+					</select>
+				</label>
+			{/if}
 		</div>
 
 		<div>

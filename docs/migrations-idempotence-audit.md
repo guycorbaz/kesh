@@ -58,12 +58,13 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 | `20260628000002_payment_batches.sql` | tracked-by-sqlx | `CREATE TABLE payment_batches / payment_batch_items` (lots de paiement pain.001, flux deux temps), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1050 sur les CREATE). Aucun ALTER/UPDATE. Non-breaking (nouvelles tables seules) → pas de bump `kesh_version_min_required` (Story 12-3, #191). |
 | `20260629000001_imported_supplier_invoices.sql` | tracked-by-sqlx | `CREATE TABLE imported_supplier_invoices` (staging des factures fournisseurs importées depuis un dossier inbox), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait erreur 1050. Aucun ALTER/UPDATE. Non-breaking (nouvelle table seule) → pas de bump `kesh_version_min_required` (Story 12-5b, #194). |
 | `20260702000001_projects_analytics.sql` | tracked-by-sqlx | `CREATE TABLE projects` (projets analytiques, hiérarchie 2 niveaux `parent_id` auto-ref) + `ALTER TABLE journal_entry_lines ADD COLUMN project_id BIGINT NULL` (+ FK `fk_jel_project`) + `CREATE INDEX idx_jel_project`, sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1050 sur le CREATE TABLE, 1060 sur l'ADD COLUMN, 1061 sur le CREATE INDEX). Aucun UPDATE de données. Non-breaking (nouvelle table + ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 19-1, Epic 19). Invariant `projects.company_id == journal_entries.company_id` non imposable par FK MariaDB → vérifié côté handler au tag (19-2..5). |
+| `20260702000002_supplier_invoices_project.sql` | tracked-by-sqlx | `ALTER TABLE supplier_invoices ADD COLUMN project_id BIGINT NULL` (+ FK `fk_supplier_invoices_project`) + `CREATE INDEX idx_supplier_invoices_project`, sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1060 sur l'ADD COLUMN, 1061 sur le CREATE INDEX). Aucun UPDATE. Non-breaking (ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 19-3, Epic 19). Dimension analytique document-level propagée aux lignes d'écriture d'achat. |
 
 ## Statistiques
 
-- **Total** : 40 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a + 1 Story 12-1 + 1 Story 12-2 + 1 Story 12-3 + 1 Story 12-5b + 1 Story 19-1).
+- **Total** : 41 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a + 1 Story 12-1 + 1 Story 12-2 + 1 Story 12-3 + 1 Story 12-5b + 1 Story 19-1 + 1 Story 19-3).
 - **Idempotence `yes`** : 4 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`, `users_email`).
-- **Idempotence `tracked-by-sqlx`** : 36 (toutes les autres).
+- **Idempotence `tracked-by-sqlx`** : 37 (toutes les autres).
 - **Idempotence `no`** : 0.
 
 ## Maintenance future

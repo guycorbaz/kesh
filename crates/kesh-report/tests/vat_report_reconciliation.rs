@@ -204,6 +204,7 @@ async fn reconciliation_isolates_non_invoice_entries(pool: MySqlPool) {
             entry_date: ymd(2026, 7, 1),
             journal: Journal::OD,
             description: "Régularisation AFC manuelle".into(),
+            project_id: None,
             lines: vec![
                 NewJournalEntryLine {
                     account_id: seeded.accounts["4000"],

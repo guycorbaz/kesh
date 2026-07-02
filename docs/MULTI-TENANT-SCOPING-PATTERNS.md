@@ -296,9 +296,10 @@ When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), Mar
 
 ```
 1. onboarding_state  (singleton row, taken first)
-2. companies         (target company row)
-3. accounts          (account rows for the target company)
-4. company_invoice_settings  (settings row for the target company)
+2. companies         (target company row — sentinel `SELECT id FROM companies WHERE id=? FOR UPDATE`)
+3. projects          (analytical project rows for the target company — Epic 19, Story 19-3)
+4. accounts          (account rows for the target company)
+5. company_invoice_settings  (settings row for the target company)
 ```
 
 Rationale: this matches the natural dependency direction (state machine → tenant → tenant data → tenant settings). Reverse-order acquisition creates a deadlock cycle.
@@ -311,6 +312,8 @@ Rationale: this matches the natural dependency direction (state machine → tena
 | `POST /onboarding/coordinates`, `/org-type`, `/accounting-language` | company only (single lock, safe) | same |
 | `POST /onboarding/reset` | onboarding_state (gate-check only — released before reset_demo) | `routes/onboarding.rs` reset |
 | `kesh_seed::seed_demo` | companies (count-validation only — released before destructive ops) | `kesh-seed/src/lib.rs` |
+| `POST /supplier-invoices` (create, si `projectId`) | companies (sentinel) → projects (`FOR UPDATE`) → accounts → company_invoice_settings | `repositories/supplier_invoices.rs::create_in_tx` (Story 19-3) |
+| `POST /projects/*` (create/update/archive/unarchive) | companies (sentinel) → projects | `routes/projects.rs` (Story 19-1) |
 | `fiscal_years::create / update_name / close / find_*_locked` | fiscal_years only (single table, internal tx) — `FOR UPDATE` locks pour pré-check unicité/overlap et figer le before-snapshot d'audit log. Pas de chaîne cross-table. | `kesh-db/src/repositories/fiscal_years.rs` |
 | `invoices::validate_invoice` | invoices → fiscal_years (via `find_open_covering_date`) → invoice_number_sequences → journal_entries | `kesh-db/src/repositories/invoices.rs` |
 

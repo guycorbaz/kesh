@@ -96,6 +96,7 @@ fn one_line(ctx: &Ctx, unit_price: Decimal, vat_rate: Decimal) -> NewSupplierInv
         creditor_qr_iban: None,
         payment_reference: None,
         expected_payment_amount: None,
+        project_id: None,
         lines: vec![NewSupplierInvoiceLine {
             description: "Prestation".into(),
             quantity: dec!(1),
@@ -507,4 +508,200 @@ async fn pay_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     .await
     .unwrap_err();
     assert!(matches!(err, DbError::FiscalYearInvalid));
+}
+
+/// Helper Story 19-3 : insère un projet analytique et retourne son id.
+async fn make_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+    sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived, version) VALUES (?, ?, ?, ?, 0)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(code)
+    .bind(archived)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Story 19-3 — le projet document-level est propagé sur TOUTES les lignes de
+/// l'écriture d'achat.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_project_tags_all_purchase_lines(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
+
+    let mut new = one_line(&ctx, dec!(100), dec!(8.1));
+    new.project_id = Some(project_id);
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+    assert_eq!(created.invoice.project_id, Some(project_id));
+
+    // Toutes les lignes de l'écriture d'achat portent le projet.
+    let tags: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT project_id FROM journal_entry_lines WHERE entry_id = ?")
+            .bind(created.invoice.purchase_journal_entry_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(!tags.is_empty());
+    assert!(
+        tags.iter().all(|t| *t == Some(project_id)),
+        "toutes les lignes d'achat doivent porter project_id={project_id}, got {tags:?}"
+    );
+}
+
+/// Story 19-3 — un projet archivé est refusé (dépense sur projet clos interdite).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "OLD", true).await;
+
+    let mut new = one_line(&ctx, dec!(100), dec!(8.1));
+    new.project_id = Some(project_id);
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, kesh_db::errors::DbError::IllegalStateTransition(_)),
+        "projet archivé → IllegalStateTransition, got {err:?}"
+    );
+}
+
+/// Story 19-3 — le règlement hérite du projet de la facture (toutes les lignes de
+/// l'écriture de règlement portent project_id).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn pay_with_project_tags_settlement_entry(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
+    let mut new = one_line(&ctx, dec!(1000.00), dec!(8.10));
+    new.project_id = Some(project_id);
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+
+    let paid = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("pay");
+    let settlement_je = paid
+        .invoice
+        .settlement_journal_entry_id
+        .expect("settlement je");
+
+    let tags: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT project_id FROM journal_entry_lines WHERE entry_id = ?")
+            .bind(settlement_je)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(!tags.is_empty());
+    assert!(
+        tags.iter().all(|t| *t == Some(project_id)),
+        "settlement: {tags:?}"
+    );
+}
+
+/// Story 19-3 — après annulation, le net (Σ débit − Σ crédit) des lignes taguées du
+/// projet est **nul** (la contre-passation reprend le projet).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn cancel_nets_project_to_zero(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
+    let mut new = one_line(&ctx, dec!(1000.00), dec!(8.10));
+    new.project_id = Some(project_id);
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+
+    supplier_invoices::cancel(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("cancel");
+
+    // Net par projet = 0 (achat + contre-passation s'annulent).
+    let net: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(debit) - SUM(credit), 0) FROM journal_entry_lines WHERE project_id = ?",
+    )
+    .bind(project_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        net,
+        dec!(0.00),
+        "net par projet doit être nul après annulation"
+    );
+}
+
+/// Story 19-3 — un projet inexistant (ou d'une autre company) est rejeté (scoping
+/// `find_by_id_in_tx(tx, company_id, pid)` → None → NotFound).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let mut new = one_line(&ctx, dec!(100), dec!(8.1));
+    new.project_id = Some(999_999); // n'existe pas / hors company
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, kesh_db::errors::DbError::NotFound),
+        "got {err:?}"
+    );
+}
+
+/// Story 19-3 — payer une facture dont le projet a été archivé APRÈS le tag reste
+/// possible (la garde d'archivage n'est qu'à la création ; le règlement propage le tag).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn pay_succeeds_when_project_archived_after_tagging(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
+    let mut new = one_line(&ctx, dec!(500.00), dec!(8.10));
+    new.project_id = Some(project_id);
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+
+    // Archiver le projet après coup.
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(project_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Le paiement doit réussir et propager le projet au règlement.
+    let paid = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("pay doit réussir même si le projet est archivé");
+    let settlement_je = paid.invoice.settlement_journal_entry_id.unwrap();
+    let tags: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT project_id FROM journal_entry_lines WHERE entry_id = ?")
+            .bind(settlement_je)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(tags.iter().all(|t| *t == Some(project_id)));
 }

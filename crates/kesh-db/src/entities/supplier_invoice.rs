@@ -33,6 +33,8 @@ pub struct SupplierInvoice {
     pub creditor_qr_iban: Option<String>,
     pub payment_reference: Option<String>,
     pub expected_payment_amount: Option<Decimal>,
+    /// Projet analytique (Epic 19, Story 19-3) — document-level.
+    pub project_id: Option<i64>,
     /// Écriture d'achat (toujours présente, posée à l'enregistrement).
     pub purchase_journal_entry_id: i64,
     // Règlement (renseigné au paiement uniquement).
@@ -78,6 +80,9 @@ pub struct NewSupplierInvoice {
     pub creditor_qr_iban: Option<String>,
     pub payment_reference: Option<String>,
     pub expected_payment_amount: Option<Decimal>,
+    /// Projet analytique (Epic 19, Story 19-3) — document-level, propagé sur les lignes
+    /// de l'écriture d'achat. `None` = pas de projet.
+    pub project_id: Option<i64>,
     pub lines: Vec<NewSupplierInvoiceLine>,
 }
 

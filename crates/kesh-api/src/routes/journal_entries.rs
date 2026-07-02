@@ -464,6 +464,7 @@ pub async fn create_journal_entry(
         entry_date: validated.date,
         journal: DbJournal::from(validated.journal),
         description: validated.description,
+        project_id: None,
         lines: validated
             .lines
             .into_iter()
@@ -568,6 +569,7 @@ pub async fn update_journal_entry(
         entry_date: validated.date,
         journal: DbJournal::from(validated.journal),
         description: validated.description,
+        project_id: None,
         lines: validated
             .lines
             .into_iter()

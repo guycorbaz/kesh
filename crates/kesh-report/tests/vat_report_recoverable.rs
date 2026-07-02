@@ -55,6 +55,7 @@ async fn post_entry(
             entry_date: date,
             journal: Journal::Achats,
             description: "Achat TVA récupérable".into(),
+            project_id: None,
             lines: vec![
                 NewJournalEntryLine {
                     account_id: debit_account,

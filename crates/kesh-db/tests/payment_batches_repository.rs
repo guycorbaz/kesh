@@ -121,6 +121,7 @@ async fn make_invoice(
             creditor_qr_iban: qr_iban.map(String::from),
             payment_reference: reference.map(String::from),
             expected_payment_amount: None,
+            project_id: None,
             lines: vec![NewSupplierInvoiceLine {
                 description: "Achat".into(),
                 quantity: dec!(1),
