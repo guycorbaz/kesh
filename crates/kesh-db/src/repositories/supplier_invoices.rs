@@ -275,10 +275,21 @@ pub async fn create_in_tx(
     // exister, appartenir à la même company et ne pas être archivé (sinon la dépense
     // serait taguée sur un projet clos).
     if let Some(pid) = project_id {
-        let project = crate::repositories::projects::find_by_id_in_tx(tx, company_id, pid).await?;
-        match project {
+        // `FOR UPDATE` : verrouille la ligne projet pour sérialiser vis-à-vis d'un
+        // archivage concurrent (l'archivage fait `UPDATE projects SET archived`). Sans
+        // ce lock, une course entre la validation et l'INSERT pourrait taguer la facture
+        // sur un projet qui vient d'être archivé (code-review Pass 2, HIGH).
+        let row: Option<(bool,)> = sqlx::query_as(
+            "SELECT archived FROM projects WHERE id = ? AND company_id = ? FOR UPDATE",
+        )
+        .bind(pid)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        match row {
             None => return Err(DbError::NotFound),
-            Some(p) if p.archived => {
+            Some((archived,)) if archived => {
                 return Err(DbError::IllegalStateTransition(
                     "le projet analytique est archivé".into(),
                 ));

@@ -28,6 +28,8 @@ export interface SupplierInvoiceResponse {
 	creditorQrIban: string | null;
 	paymentReference: string | null;
 	expectedPaymentAmount: string | null;
+	/** Projet analytique affecté (Epic 19, Story 19-3), ou `null`. */
+	projectId: number | null;
 	purchaseJournalEntryId: number;
 	settlementType: SettlementType | null;
 	settlementBankAccountId: number | null;

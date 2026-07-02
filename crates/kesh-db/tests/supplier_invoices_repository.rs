@@ -663,3 +663,45 @@ async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
         "got {err:?}"
     );
 }
+
+/// Story 19-3 — payer une facture dont le projet a été archivé APRÈS le tag reste
+/// possible (la garde d'archivage n'est qu'à la création ; le règlement propage le tag).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn pay_succeeds_when_project_archived_after_tagging(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
+    let mut new = one_line(&ctx, dec!(500.00), dec!(8.10));
+    new.project_id = Some(project_id);
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+
+    // Archiver le projet après coup.
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(project_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Le paiement doit réussir et propager le projet au règlement.
+    let paid = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("pay doit réussir même si le projet est archivé");
+    let settlement_je = paid.invoice.settlement_journal_entry_id.unwrap();
+    let tags: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT project_id FROM journal_entry_lines WHERE entry_id = ?")
+            .bind(settlement_je)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(tags.iter().all(|t| *t == Some(project_id)));
+}
