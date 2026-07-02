@@ -1,6 +1,6 @@
 # Story 12.4: Scan / import du QR-facture (pré-remplissage)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- SPEC UMBRELLA — candidate split 12-4a..c (cf. §"Découpage"). Patron : épopées 12-1 / 12-2 / 12-3. DERNIER volet de #191. -->
@@ -68,7 +68,7 @@ pré-remplie (montant TTC informatif seul). Tous confirmés — pas de nouvelle
 table/migration. Développé sur la branche `story/12-5-...` (chevauchement de
 fichiers avec 12-5 → même PR #200, cf. `feedback_pr_grouping`).
 
-Status: ready-for-dev → in-progress
+Status: in-progress → review → done
 
 ## Tasks / Subtasks
 
@@ -116,3 +116,15 @@ Status: ready-for-dev → in-progress
 ### Completion Notes List
 
 ### File List
+
+## Change Log — code-review
+
+**Dev** : T1 réutilisé (parseur `ScannedQrBill` livré par 12-5a), T2 endpoint `scan-qr` (4 unit + 4 intégration), T3 frontend jsQR + pré-remplissage (helper testé + wiring), T4 doc, E2E réel 1/1 (décodage jsQR navigateur → parse → prefill ; a exposé un bug préexistant `each_key_duplicate` vatRates corrigé `(r.id)`).
+
+**Code-review — CONVERGÉ 2 passes (Sonnet → Haiku)** :
+- **Pass 1 (Sonnet, 2 couches)** : 1 MEDIUM + 3 LOW.
+  - MEDIUM (correctness) : édition manuelle de l'IBAN après un scan QR-IBAN laissait `fPaymentReference` (QRR) périmé → record incohérent (IBAN classique + réf QRR, pain.001 aval faux). Fix : `oninput` vide QRR + devise + créancier **uniquement** si on quitte le mode QR-IBAN (une réf saisie à la main n'est jamais effacée).
+  - LOW-1 devise (EUR/CHF) exposée + affichée ; LOW-2 nom créancier périmé vidé ; LOW-3 garde-fou taille image 15 Mo.
+- **Pass 2 (Haiku, 2 couches)** : **0 > LOW**. Tous AC1-7 + DC1-5 vérifiés ground-truth, edge cases couverts (no-QR, non-image, oversize, SPC invalide, édition manuelle, EUR, re-scan, reset), fixes Pass 1 confirmés présents. Aucune hallucination.
+
+**Trend > LOW : 1 (Sonnet) → 0 (Haiku).** Gate : fmt + clippy workspace + suite kesh-api exit-0 (0 régression) + front check 0/lint PASS/343 unit/build + E2E scan 1/1 réel. Développé sur branche `story/12-5` (chevauchement fichiers → PR #200, `feedback_pr_grouping`). **Épopée 12-4 conclut #191 (factures fournisseurs & paiements).**
