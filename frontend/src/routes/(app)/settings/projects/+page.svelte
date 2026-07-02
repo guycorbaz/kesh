@@ -143,6 +143,9 @@
 			toast.error(
 				isApiError(err) ? err.message : i18nMsg('projects-archive-error', 'Opération impossible.'),
 			);
+			// Recharge pour rafraîchir les versions (ex. conflit optimiste 409 concurrent) :
+			// évite qu'un retour d'erreur laisse une version périmée et fasse échouer le retry.
+			await load();
 		}
 	}
 

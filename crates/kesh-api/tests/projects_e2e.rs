@@ -477,3 +477,62 @@ async fn cannot_parent_under_archived_root(pool: MySqlPool) {
     .await;
     assert_eq!(sub.status(), 400);
 }
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn cannot_unarchive_sub_under_archived_parent(pool: MySqlPool) {
+    seed_accounting_company(&pool).await.expect("seed");
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+
+    // Racine + sous-projet actifs.
+    let root: serde_json::Value = create_project(&app, &token, json!({ "code": "U", "name": "U" }))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let root_id = root["id"].as_i64().unwrap();
+    let sub: serde_json::Value = create_project(
+        &app,
+        &token,
+        json!({ "code": "U-SUB", "name": "Sub", "parentId": root_id }),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    let sub_id = sub["id"].as_i64().unwrap();
+
+    // Archiver le sous-projet d'abord (autorisé), puis la racine (plus d'enfant actif).
+    let arch_sub: serde_json::Value = app
+        .client
+        .post(app.url(&format!("/api/v1/projects/{sub_id}/archive")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": sub["version"] }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let sub_v = arch_sub["version"].as_i64().unwrap();
+    let arch_root = app
+        .client
+        .post(app.url(&format!("/api/v1/projects/{root_id}/archive")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": root["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(arch_root.status(), 200);
+
+    // Désarchiver le sous-projet alors que sa racine est archivée → 400.
+    let unarch = app
+        .client
+        .post(app.url(&format!("/api/v1/projects/{sub_id}/unarchive")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": sub_v }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unarch.status(), 400);
+}
