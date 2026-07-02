@@ -91,3 +91,5 @@ Ordre de dépendance strict. Chaque story est livrable et testable en isolation 
 1. **Nommage** : « Projet » convient-il (vs « Affaire », « Chantier », « Centre de coût ») ? Le terme apparaîtra dans l'UI et les rapports.
 2. **TVA récupérable dans les dépenses** : pour les rénovations déductibles, on compte le **HT** (TVA récupérable exclue) ou le **TTC** ? *(Proposition : afficher le HT comme coût, la TVA récupérable étant neutre — mais pour du privé non assujetti, le TTC est la vraie dépense. À trancher selon ton cas.)*
 3. **Chemin de livraison** : tout l'epic d'un coup, ou le chemin minimal **19-1 → 19-3 → 19-6** (rénovations) d'abord ?
+
+- **Extension 19-3 (backlog)** : tagger un projet à la **complétion d'un import** (`/supplier-invoices/import`) et au **scan QR** — actuellement `project_id: None` à ces points d'entrée (code-review 19-3 L1). Le formulaire de complétion (`AcceptImportedInvoiceRequest`) n'a pas encore de sélecteur projet. À ajouter quand utile (v0.4).
