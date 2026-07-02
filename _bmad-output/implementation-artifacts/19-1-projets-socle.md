@@ -22,7 +22,7 @@ so that je pourrai ensuite rattacher mes dépenses et revenus à un projet (rén
 
 **Modèle de données (kesh-db)**
 
-1. Migration `CREATE TABLE projects` : `id`, `company_id` (FK companies, scoping multi-tenant), `parent_id` (FK projects NULL = racine), `code` (VARCHAR, UNIQUE `(company_id, code)`), `name`, `description` (NULL), `status` (`active`/`archived`, défaut `active`), `start_date`/`end_date` (NULL), `created_at`/`updated_at`. Index `(company_id, parent_id)`. InnoDB utf8mb4. **Non-breaking** (CREATE TABLE) → **pas** de bump `kesh_version_min_required`. Ligne ajoutée à `docs/migrations-idempotence-audit.md`.
+1. Migration `CREATE TABLE projects` : `id`, `company_id` (FK companies, scoping multi-tenant), `parent_id` (FK projects NULL = racine), `code` (VARCHAR(32), UNIQUE `(company_id, code)`), `name` (VARCHAR(150)), `description` (TEXT NULL), **`archived BOOLEAN NOT NULL DEFAULT FALSE`** (choix retenu au dev : calque le flag `archived` de `bank_accounts` plutôt qu'un `status` ENUM — plus simple, cohérent avec le codebase ; les stories 19-2..5 référencent `archived`/`project.archived`), `start_date`/`end_date` (DATE NULL), `version`, `created_at`/`updated_at`. Index `(company_id, parent_id)` + `(company_id, archived)`. InnoDB utf8mb4. **Non-breaking** (CREATE TABLE) → **pas** de bump `kesh_version_min_required`. Ligne ajoutée à `docs/migrations-idempotence-audit.md`.
 2. Migration `ALTER TABLE journal_entry_lines ADD COLUMN project_id BIGINT NULL` + FK vers `projects(id)` + index. **Non-breaking** (ADD COLUMN nullable) → pas de bump. Ligne idempotence-audit.
 3. **Contrainte 2 niveaux (D2)** appliquée en repo : un projet dont `parent_id` est renseigné doit avoir un parent **racine** (`parent.parent_id IS NULL`) ; un projet ayant des sous-projets ne peut pas recevoir de `parent_id`. Violations → `DbError` métier clair (pas de panic).
 
@@ -50,7 +50,7 @@ so that je pourrai ensuite rattacher mes dépenses et revenus à un projet (rén
 
 - **DC1 — Nom de l'entité** [défaut « Projet », à confirmer Guy] : l'UI/les rapports diront « Projet ». Alternatives évoquées : Affaire, Chantier. *Choix par défaut retenu pour ne pas bloquer le socle ; renommable (libellés i18n) sans impact schéma.*
 - **DC2 — Hiérarchie 2 niveaux** [FIGÉ D2] : `parent_id` auto-référent, contrainte 1 seul niveau appliquée en repo (pas de contrainte SQL récursive — MariaDB ne le permet pas simplement).
-- **DC3 — Archivage vs suppression** [FIGÉ] : pas de DELETE dur (préserve l'historique analytique). `status='archived'` masque des sélecteurs. Suppression d'un projet racine ayant des sous-projets interdite (archiver d'abord).
+- **DC3 — Archivage vs suppression** [FIGÉ] : pas de DELETE dur (préserve l'historique analytique). `archived = TRUE` masque des sélecteurs. **Gardes anti-orphelin (code-review Pass 1)** : (a) on refuse d'archiver une racine ayant des sous-projets **actifs** (archiver les enfants d'abord) ; (b) on refuse de désarchiver un sous-projet dont la racine est archivée ; (c) on refuse un parent archivé à la création/édition. Ces trois règles interdisent l'état « sous-projet actif sous racine archivée ».
 - **DC4 — `code` obligatoire + unique/company** [proposition] : identifiant court lisible (ex. `RENOV-CHALET`) en plus du nom. Unicité `(company_id, code)`. *À confirmer : `code` obligatoire ou optionnel ?* Défaut : obligatoire (facilite le référencement dans les rapports).
 
 ## Tasks / Subtasks (à affiner au dev)

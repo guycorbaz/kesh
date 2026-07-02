@@ -93,15 +93,27 @@ pub struct ArchiveProjectBody {
     pub version: i32,
 }
 
-/// Valide les champs textuels (code/nom non vides) et normalise (trim).
+/// Valide les champs textuels (non vides + longueurs `VARCHAR`) et normalise (trim).
+/// Les bornes correspondent au schéma (`code VARCHAR(32)`, `name VARCHAR(150)`) : sans
+/// ces gardes, une saisie trop longue déclencherait une erreur DB 1406 non mappée → 500.
 fn validate_fields(code: &str, name: &str) -> Result<(String, String), AppError> {
     let code = code.trim().to_string();
     let name = name.trim().to_string();
     if code.is_empty() {
         return Err(AppError::Validation("Le code du projet est requis.".into()));
     }
+    if code.chars().count() > 32 {
+        return Err(AppError::Validation(
+            "Le code du projet dépasse 32 caractères.".into(),
+        ));
+    }
     if name.is_empty() {
         return Err(AppError::Validation("Le nom du projet est requis.".into()));
+    }
+    if name.chars().count() > 150 {
+        return Err(AppError::Validation(
+            "Le nom du projet dépasse 150 caractères.".into(),
+        ));
     }
     Ok((code, name))
 }
@@ -131,6 +143,13 @@ async fn validate_hierarchy(
     if parent.parent_id.is_some() {
         return Err(AppError::Validation(
             "Un sous-projet ne peut pas être parent (hiérarchie limitée à 2 niveaux).".into(),
+        ));
+    }
+    // Un parent archivé rendrait le nouveau sous-projet actif « orphelin » dans la
+    // vue par défaut (sa racine n'y figure plus). On l'interdit (M2).
+    if parent.archived {
+        return Err(AppError::Validation(
+            "Le projet parent est archivé — désarchivez-le d'abord.".into(),
         ));
     }
     if let Some(id) = self_id {
@@ -285,6 +304,29 @@ async fn set_archived(
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
     bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
+
+    // Gardes anti-orphelin (M2) : une racine ne peut être archivée tant qu'elle a des
+    // sous-projets actifs ; un sous-projet ne peut être désarchivé si sa racine est
+    // archivée. Ces deux règles interdisent l'état « sous-projet actif sous racine archivée ».
+    let current = projects::find_by_id_in_tx(&mut tx, current_user.company_id, id)
+        .await?
+        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+    if archived {
+        if projects::has_active_children(&mut tx, current_user.company_id, id).await? {
+            return Err(AppError::Validation(
+                "Ce projet a des sous-projets actifs — archivez-les d'abord.".into(),
+            ));
+        }
+    } else if let Some(parent_id) = current.parent_id {
+        let parent = projects::find_by_id_in_tx(&mut tx, current_user.company_id, parent_id)
+            .await?
+            .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
+        if parent.archived {
+            return Err(AppError::Validation(
+                "Le projet parent est archivé — désarchivez-le d'abord.".into(),
+            ));
+        }
+    }
 
     let project =
         projects::set_archived_for_company(&mut tx, current_user.company_id, id, archived, version)

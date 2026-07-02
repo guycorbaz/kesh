@@ -7,8 +7,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::TimeDelta;
+use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{NewUser, Role};
+use kesh_db::repositories::users;
 use kesh_db::test_fixtures::seed_accounting_company;
 use serde_json::json;
 use sqlx::MySqlPool;
@@ -99,6 +102,48 @@ async fn create_project(app: &TestApp, token: &str, body: serde_json::Value) -> 
         .unwrap()
 }
 
+async fn login_as(app: &TestApp, username: &str, password: &str) -> String {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": username, "password": password }))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["accessToken"].as_str().unwrap().to_string()
+}
+
+/// Crée un user d'un rôle donné dans une company (pour tester le gate RBAC).
+async fn create_user(pool: &MySqlPool, company_id: i64, username: &str, role: Role) {
+    users::create(
+        pool,
+        NewUser {
+            username: username.to_string(),
+            password_hash: hash_password("password123").unwrap(),
+            role,
+            active: true,
+            company_id,
+            email: None,
+        },
+    )
+    .await
+    .expect("create user");
+}
+
+/// Crée une 2e company minimale (pour tester l'isolation cross-company). Retourne son id.
+async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
+    let res = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES (?, 'Adresse\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+    )
+    .bind(name)
+    .execute(pool)
+    .await
+    .expect("company insert");
+    res.last_insert_id() as i64
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn crud_tree_2_levels_and_hierarchy_guard(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
@@ -165,12 +210,8 @@ async fn duplicate_code_is_rejected(pool: MySqlPool) {
     let r1 = create_project(&app, &token, json!({ "code": "DUP", "name": "A" })).await;
     assert_eq!(r1.status(), 201);
     let r2 = create_project(&app, &token, json!({ "code": "DUP", "name": "B" })).await;
-    // UniqueConstraintViolation → 4xx (jamais 500).
-    assert!(
-        r2.status().is_client_error(),
-        "attendu 4xx, eu {}",
-        r2.status()
-    );
+    // UniqueConstraintViolation → 409 Conflict (jamais 500).
+    assert_eq!(r2.status(), 409);
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -282,4 +323,157 @@ async fn requires_authentication(pool: MySqlPool) {
 
     let resp = create_project(&app, "", json!({ "code": "X", "name": "X" })).await;
     assert_eq!(resp.status(), 401);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn mutation_requires_comptable_role(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    // Un user Consultation dans la même company.
+    create_user(&pool, seeded.company_id, "lecteur", Role::Consultation).await;
+    let app = spawn_app(pool).await;
+    let token = login_as(&app, "lecteur", "password123").await;
+
+    // Lecture autorisée (tout rôle authentifié).
+    let read = app
+        .client
+        .get(app.url("/api/v1/projects"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read.status(), 200);
+
+    // Mutation refusée (Comptable+ requis) → 403.
+    let create = create_project(&app, &token, json!({ "code": "X", "name": "X" })).await;
+    assert_eq!(create.status(), 403);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn cross_company_project_is_not_found(pool: MySqlPool) {
+    // Company A (seed) crée un projet ; company B ne doit pas y accéder (IDOR).
+    seed_accounting_company(&pool).await.expect("seed");
+    let company_b = create_company(&pool, "Company B").await;
+    create_user(&pool, company_b, "userb", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let token_a = login(&app).await;
+    let created: serde_json::Value = create_project(
+        &app,
+        &token_a,
+        json!({ "code": "SECRET", "name": "Projet A" }),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    let id_a = created["id"].as_i64().unwrap();
+
+    let token_b = login_as(&app, "userb", "password123").await;
+    // GET cross-company → 404 (pas de fuite d'existence).
+    let get_b = app
+        .client
+        .get(app.url(&format!("/api/v1/projects/{id_a}")))
+        .bearer_auth(&token_b)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get_b.status(), 404);
+    // PUT cross-company → 404.
+    let put_b = app
+        .client
+        .put(app.url(&format!("/api/v1/projects/{id_a}")))
+        .bearer_auth(&token_b)
+        .json(&json!({ "code": "SECRET", "name": "Hack", "version": 0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(put_b.status(), 404);
+    // La company B ne voit pas le projet de A dans sa liste.
+    let list_b: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/projects"))
+        .bearer_auth(&token_b)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list_b.as_array().unwrap().len(), 0);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn too_long_code_returns_400_not_500(pool: MySqlPool) {
+    seed_accounting_company(&pool).await.expect("seed");
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+
+    let long_code = "A".repeat(33); // > VARCHAR(32)
+    let resp = create_project(&app, &token, json!({ "code": long_code, "name": "X" })).await;
+    assert_eq!(resp.status(), 400, "attendu 400, eu {}", resp.status());
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn cannot_archive_root_with_active_children(pool: MySqlPool) {
+    seed_accounting_company(&pool).await.expect("seed");
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+
+    let root: serde_json::Value = create_project(&app, &token, json!({ "code": "R", "name": "R" }))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let root_id = root["id"].as_i64().unwrap();
+    create_project(
+        &app,
+        &token,
+        json!({ "code": "R-SUB", "name": "Sub", "parentId": root_id }),
+    )
+    .await;
+
+    // Archiver la racine alors qu'un sous-projet actif existe → 400.
+    let arch = app
+        .client
+        .post(app.url(&format!("/api/v1/projects/{root_id}/archive")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": root["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(arch.status(), 400);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn cannot_parent_under_archived_root(pool: MySqlPool) {
+    seed_accounting_company(&pool).await.expect("seed");
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+
+    // Racine sans enfant → archivable.
+    let root: serde_json::Value =
+        create_project(&app, &token, json!({ "code": "AR", "name": "AR" }))
+            .await
+            .json()
+            .await
+            .unwrap();
+    let root_id = root["id"].as_i64().unwrap();
+    let arch = app
+        .client
+        .post(app.url(&format!("/api/v1/projects/{root_id}/archive")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": root["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(arch.status(), 200);
+
+    // Créer un sous-projet sous une racine archivée → 400.
+    let sub = create_project(
+        &app,
+        &token,
+        json!({ "code": "AR-SUB", "name": "Sub", "parentId": root_id }),
+    )
+    .await;
+    assert_eq!(sub.status(), 400);
 }

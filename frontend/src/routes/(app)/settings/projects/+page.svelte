@@ -88,7 +88,7 @@
 
 	function cancel() {
 		mode = { kind: 'none' };
-		formError = null;
+		resetForm();
 	}
 
 	async function submit() {
@@ -193,11 +193,11 @@
 		<div class="grid grid-cols-2 gap-3">
 			<label class="block text-sm">
 				{i18nMsg('projects-field-code', 'Code')}
-				<Input data-testid="project-code" bind:value={fCode} />
+				<Input data-testid="project-code" maxlength={32} bind:value={fCode} />
 			</label>
 			<label class="block text-sm">
 				{i18nMsg('projects-field-name', 'Nom')}
-				<Input data-testid="project-name" bind:value={fName} />
+				<Input data-testid="project-name" maxlength={150} bind:value={fName} />
 			</label>
 			<label class="col-span-2 block text-sm">
 				{i18nMsg('projects-field-description', 'Description (optionnel)')}
@@ -208,7 +208,8 @@
 				<select class="mt-1 w-full rounded border px-2 py-1" bind:value={fParentId}>
 					<option value={null}>{i18nMsg('projects-parent-none', '— Aucun (projet racine)')}</option>
 					{#each roots as r (r.id)}
-						{#if !(mode.kind === 'edit' && mode.project.id === r.id)}
+						<!-- Une racine archivée ne peut pas être parent (le backend rejette) → exclue. -->
+						{#if !r.archived && !(mode.kind === 'edit' && mode.project.id === r.id)}
 							<option value={r.id}>{r.code} — {r.name}</option>
 						{/if}
 					{/each}
@@ -243,7 +244,7 @@
 	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if loadError}
 	<p class="text-sm text-destructive">{loadError}</p>
-{:else if roots.length === 0}
+{:else if projects.length === 0}
 	<p class="text-sm text-text-muted" data-testid="projects-empty">
 		{i18nMsg('projects-empty', 'Aucun projet. Créez votre premier projet pour commencer.')}
 	</p>

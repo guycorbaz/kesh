@@ -88,6 +88,25 @@ pub async fn has_children(
     Ok(exists.is_some())
 }
 
+/// `true` si le projet a au moins un sous-projet **actif** (non archivé). Garde
+/// d'archivage : on refuse d'archiver une racine tant que des sous-projets actifs
+/// y sont rattachés (sinon ils deviendraient orphelins dans la vue par défaut).
+pub async fn has_active_children(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<bool, DbError> {
+    let exists: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM projects WHERE company_id = ? AND parent_id = ? AND archived = FALSE LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(exists.is_some())
+}
+
 /// Crée un projet. À appeler **sous sentinel lock**, après validation de la
 /// hiérarchie (2 niveaux) par le handler. Unicité `(company_id, code)` → l'INSERT
 /// remonte `UniqueConstraintViolation` (mappée 409 côté API).
