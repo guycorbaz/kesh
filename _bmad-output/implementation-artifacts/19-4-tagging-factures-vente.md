@@ -1,6 +1,6 @@
 # Story 19.4 : Tagging analytique des factures de vente
 
-Status: review
+Status: done
 
 <!-- Rollout du pattern 19-3 (tag document-level + propagation) sur le flux
      factures CLIENT. Divergence structurelle vs 19-3 : la facture de vente est
@@ -116,7 +116,7 @@ Claude Fable 5 (claude-fable-5) — dev-story orchestré inline.
 ### Completion Notes List
 
 - **T1** : migration `20260703000001_invoices_project.sql` (calque 19-3), idempotence-audit +1 ligne + stats 42, compteur upgrade_path 41→42 et fenêtre `total-18`→`total-19` (frontière historique 23 préservée).
-- **T2** : `Invoice`/`NewInvoice`/`InvoiceUpdate.project_id` ; **5 SELECTs à colonnes explicites étendus** (FIND_INVOICE_SCOPED_SQL, delete, mark_as_paid-list, credit_notes lock, reconciliation INVOICE_COLUMNS — piège n°1 de la spec ×5 sites réels) ; create → validation helper 19-2 ; update → **pré-lecture non verrouillée + validation seulement si changement** (grandfathering, ordre companies→projects→invoice_row anti-ABBA) ; `is_no_op_change` compare project_id ; validate_invoice → **re-validation par SELECT simple SANS verrou** (on détient la ligne facture : prendre le sentinel créerait l'inversion ABBA avec create/update ; race archivage résiduelle = dette LOW-1 19-3) + stamping ; credit_note → héritage `invoice.project_id` sans re-check (DC3).
+- **T2** : `Invoice`/`NewInvoice`/`InvoiceUpdate.project_id` ; **5 SELECTs à colonnes explicites étendus** (FIND_INVOICE_SCOPED_SQL, delete, list_all_by_company, credit_notes lock, reconciliation INVOICE_COLUMNS — piège n°1 de la spec ×5 sites réels) ; create → validation helper 19-2 ; update → **pré-lecture non verrouillée + validation seulement si changement** (grandfathering, ordre companies→projects→invoice_row anti-ABBA) ; `is_no_op_change` compare project_id ; validate_invoice → **re-validation par SELECT simple SANS verrou** (on détient la ligne facture : prendre le sentinel créerait l'inversion ABBA avec create/update ; race archivage résiduelle = dette LOW-1 19-3) + stamping ; credit_note → héritage `invoice.project_id` sans re-check (DC3).
 - **T3** : DTOs create/update/response + mapping handlers ; ~40 littéraux `NewInvoice`/`InvoiceUpdate` défautés `None` par script ; export CSV souveraineté invoices + colonne `project_id`.
 - **T4** : sélecteur document-level arbre 2 niveaux dans `InvoiceForm` ($effect pattern VAT rates, échec toléré, option ad-hoc « Projet archivé », visible si tag existant — leçon 19-2 BH-L2), payloads create/update + reload conflit, page détail `projectLabel` (`listProjects(true)`, fallback `#id`).
 - **T5** : E2E « crée une facture avec projet analytique » (POST intercepté ground-truth + libellé détail) ; CHANGELOG [Non publié].
@@ -132,7 +132,10 @@ Claude Fable 5 (claude-fable-5) — dev-story orchestré inline.
 - crates/kesh-db/src/repositories/reconciliation.rs (INVOICE_COLUMNS)
 - crates/kesh-api/src/routes/invoices.rs (DTOs + handlers)
 - crates/kesh-api/src/exports/csv_tables.rs (CSV invoices + project_id)
-- crates/kesh-reconciliation/src/matching.rs + tests divers (littéraux défautés None)
+- crates/kesh-reconciliation/src/matching.rs (littéral défauté None)
+- crates/kesh-api/tests/{invoice_pdf_e2e,vat_report_e2e,invoice_echeancier_e2e}.rs + crates/kesh-db/tests/kf005_fulltext_index_e2e.rs + crates/kesh-report/tests/vat_report_reconciliation.rs (littéraux NewInvoice défautés None)
+- docs/api-external.md (sémantique PUT invoices/projectId, §8 bis)
+- .gitignore (test-results/ racine — housekeeping Playwright)
 - crates/kesh-db/tests/invoices_validate_vat.rs (+5 tests 19-4 + helpers)
 - crates/kesh-db/tests/credit_notes_repository.rs (+1 test héritage net-zéro)
 - frontend/src/lib/features/invoices/invoices.types.ts (projectId)
@@ -143,4 +146,5 @@ Claude Fable 5 (claude-fable-5) — dev-story orchestré inline.
 
 ## Change Log
 
+- **Code-review Pass 1 (2026-07-03, Sonnet ×3 — Blind Hunter / Edge Case Hunter / Acceptance Auditor, diff aplati base 19-2) — CONVERGÉ D'EMBLÉE 0 > LOW** : AA verdict GO 16/16 ACs + 4/4 DC + 5/5 pièges (39 tool uses, écarts Change Log tous vérifiés justifiés) ; BH 3 LOW (2 trade-offs déjà documentés flaggés « for completeness » + sémantique PUT full-replace API externe) ; ECH 1 LOW (libellé « Projet archivé » trompeur sur échec réseau). **Trend > LOW : Pass 1 = 0. Critère d'arrêt CLAUDE.md atteint en une passe** (première du projet pour une story feature). Patches LOW appliqués : (1) BH-L3 doc api-external.md §8 bis — PUT invoices omettant projectId efface le tag ; (2) ECH-L1 flag `projectsLoaded` → libellé neutre « Projet actuel » si la liste n'a pas chargé ; (3) AA-L1/L3 précisions Dev Record + File List (5 fichiers tests énumérés, .gitignore documenté). No-action : BH-L1/L2 (races documentées, le reviewer les qualifie lui-même de non-issues) ; AA-L4 (couverture clic-liste réduite — l'assertion d'origine ne pouvait objectivement jamais passer, dixit AA). Modèles : dev Fable 5 → review Sonnet.
 - **Dev (2026-07-03)** : T1→T5 complets. Décisions au-delà de la spec, documentées : (a) re-validation au posting par SELECT simple sans verrou (éviter l'inversion ABBA sentinel↔ligne facture — la spec proposait le helper, incompatible avec le lock déjà détenu) ; (b) update = pré-lecture non verrouillée avant le FOR UPDATE facture (même pattern que 19-2 update) ; (c) 5 SELECTs explicites réels au lieu des 2 listés par la spec (reconciliation.rs INVOICE_COLUMNS + mark_as_paid list découverts au build/sweep).
