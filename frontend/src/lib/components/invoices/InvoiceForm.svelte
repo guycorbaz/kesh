@@ -133,12 +133,19 @@
 	// Projets actifs pour le sélecteur — échec de chargement toléré (sélecteur
 	// masqué, création identique à avant). Pattern identique au fetch VAT rates.
 	let projects = $state<ProjectResponse[]>([]);
+	// Distingue « liste chargée » d'un échec réseau : sans ce flag, un simple
+	// échec de fetch ferait étiqueter « Projet archivé » un tag parfaitement
+	// actif (review 19-4 ECH-L1).
+	let projectsLoaded = $state(false);
 	$effect(() => {
 		let cancelled = false;
 		(async () => {
 			try {
 				const list = await listProjects();
-				if (!cancelled) projects = list;
+				if (!cancelled) {
+					projects = list;
+					projectsLoaded = true;
+				}
 			} catch {
 				// Échec toléré : sélecteur masqué (sauf tag existant, option ad-hoc).
 			}
@@ -493,10 +500,13 @@
 				>
 					<option value={null}>{i18nMsg('invoice-project-none', '— Aucun')}</option>
 					{#if projectId !== null && !projects.some((p) => p.id === projectId)}
-						<!-- Tag historique sur projet archivé : option ad-hoc pour préserver
-						     la valeur au round-trip (grandfathering côté backend). -->
+						<!-- Tag hors liste : projet archivé (liste chargée) ou liste
+						     indisponible (échec réseau) — libellé neutre dans ce cas.
+						     Valeur préservée au round-trip (grandfathering backend). -->
 						<option value={projectId}>
-							{i18nMsg('invoice-project-archived', 'Projet archivé')}
+							{projectsLoaded
+								? i18nMsg('invoice-project-archived', 'Projet archivé')
+								: i18nMsg('invoice-project-current', 'Projet actuel')}
 						</option>
 					{/if}
 					{#each projects.filter((p) => p.parentId === null) as root (root.id)}
