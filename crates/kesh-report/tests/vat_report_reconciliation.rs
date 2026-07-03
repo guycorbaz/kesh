@@ -210,11 +210,13 @@ async fn reconciliation_isolates_non_invoice_entries(pool: MySqlPool) {
                     account_id: seeded.accounts["4000"],
                     debit: dec!(500.00),
                     credit: Decimal::ZERO,
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: seeded.accounts["2000"],
                     debit: Decimal::ZERO,
                     credit: dec!(500.00),
+                    project_id: None,
                 },
             ],
         },

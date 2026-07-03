@@ -136,11 +136,13 @@ async fn seed_journal_entries(
                     account_id: expense,
                     debit: dec!(10),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: asset,
                     debit: dec!(0),
                     credit: dec!(10),
+                    project_id: None,
                 },
             ],
         };

@@ -10,6 +10,8 @@ export interface LineDraft {
 	accountId: number | null;
 	debit: string;
 	credit: string;
+	/** Projet analytique de la ligne (Epic 19). `null` = non taguée. */
+	projectId: number | null;
 }
 
 /**
@@ -34,7 +36,8 @@ export function lineResponseToDraft(line: JournalEntryLineResponse): LineDraft {
 	return {
 		accountId: line.accountId,
 		debit: amountToFieldValue(line.debit),
-		credit: amountToFieldValue(line.credit)
+		credit: amountToFieldValue(line.credit),
+		projectId: line.projectId ?? null
 	};
 }
 

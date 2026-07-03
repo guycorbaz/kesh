@@ -122,6 +122,7 @@ fn generate_purchase_journal_lines(
             account_id: *expense_account_id,
             debit: *line_total,
             credit: Decimal::ZERO,
+            project_id: None,
         });
     }
 
@@ -134,6 +135,7 @@ fn generate_purchase_journal_lines(
             account_id: vat_account,
             debit: total_vat,
             credit: Decimal::ZERO,
+            project_id: None,
         });
     }
 
@@ -143,6 +145,7 @@ fn generate_purchase_journal_lines(
         account_id: payable_account_id,
         debit: Decimal::ZERO,
         credit: total_ttc,
+        project_id: None,
     });
 
     Ok((entry_lines, total_ttc))
@@ -273,34 +276,12 @@ pub async fn create_in_tx(
 
     // (0) Projet analytique optionnel (Story 19-3) : s'il est renseigné, il doit
     // exister, appartenir à la même company et ne pas être archivé (sinon la dépense
-    // serait taguée sur un projet clos).
+    // serait taguée sur un projet clos). Le helper prend le sentinel `companies`
+    // AVANT le `FOR UPDATE` projets (Pattern 5, anti-deadlock ABBA — code-review
+    // Pass 3 Opus 19-3) et ferme la race d'archivage concurrent. Extrait en helper
+    // partagé en Story 19-2 (réutilisé par le tag par-ligne des écritures manuelles).
     if let Some(pid) = project_id {
-        // Ordre de verrouillage global (MULTI-TENANT-SCOPING-PATTERNS.md, Pattern 5) :
-        // `companies` (sentinel) AVANT `projects`, IDENTIQUE au chemin d'archivage
-        // (`projects::set_archived` prend le sentinel puis met à jour le projet). Prendre
-        // le sentinel d'abord évite l'inversion ABBA (deadlock) que créerait un simple
-        // `FOR UPDATE` sur la ligne projet alors que l'INSERT prendra un lock sur
-        // `companies` via la FK (code-review Pass 3 Opus). Bonus : l'exclusion mutuelle
-        // sur `companies` ferme aussi la race d'archivage concurrent (le `FOR UPDATE`
-        // projet ci-dessous devient ceinture-et-bretelles).
-        crate::repositories::bank_accounts::acquire_company_sentinel_lock(tx, company_id).await?;
-        let row: Option<(bool,)> = sqlx::query_as(
-            "SELECT archived FROM projects WHERE id = ? AND company_id = ? FOR UPDATE",
-        )
-        .bind(pid)
-        .bind(company_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
-        match row {
-            None => return Err(DbError::NotFound),
-            Some((archived,)) if archived => {
-                return Err(DbError::IllegalStateTransition(
-                    "le projet analytique est archivé".into(),
-                ));
-            }
-            Some(_) => {}
-        }
+        super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }
 
     // (1) Fournisseur valide (existe, company-scoped, is_supplier).
@@ -655,11 +636,13 @@ pub async fn pay_in_tx(
             account_id: payable_account_id,
             debit: ttc,
             credit: Decimal::ZERO,
+            project_id: None,
         },
         NewJournalEntryLine {
             account_id: counterparty_account_id,
             debit: Decimal::ZERO,
             credit: ttc,
+            project_id: None,
         },
     ];
     let je = journal_entries::create_in_tx(
@@ -784,6 +767,7 @@ pub async fn cancel(
                 account_id: *account_id,
                 debit: *credit,
                 credit: *debit,
+                project_id: None,
             })
             .collect();
 

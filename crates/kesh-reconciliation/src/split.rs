@@ -118,6 +118,7 @@ pub fn build_split_journal_entry(
         account_id: bank_account_journal_id,
         debit: bank_debit,
         credit: bank_credit,
+        project_id: None,
     });
 
     // Lignes 2..N+1 — N contreparties, sign opposé à la banque.
@@ -131,6 +132,7 @@ pub fn build_split_journal_entry(
             account_id: split.account_id,
             debit: cp_debit,
             credit: cp_credit,
+            project_id: None,
         });
     }
 

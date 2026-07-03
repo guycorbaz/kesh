@@ -41,7 +41,7 @@ use crate::util::search::escape_boolean_ft;
 const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
      version, created_at, updated_at";
 
-const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit";
+const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id";
 
 /// Crée une écriture comptable (en-tête + lignes) dans une transaction
 /// atomique. Wrapper pool-level : ouvre sa propre transaction et la
@@ -93,6 +93,19 @@ pub async fn create_in_tx(
     user_id: i64,
     new: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
+    // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
+    // AVANT le lock fiscal_years pour respecter l'ordre de verrouillage global
+    // companies → projects → fiscal_years (Pattern 5) : le flux fournisseur 19-3
+    // prend déjà sentinel + projects en amont de cet appel — valider ici après
+    // le lock fiscal_years créerait une inversion ABBA inter-flux.
+    //
+    // Périmètre : UNIQUEMENT les tags par-ligne explicites. `new.project_id`
+    // (document-level 19-3) n'est PAS re-validé ici — les flux pay/cancel
+    // stampent volontairement un projet potentiellement archivé après coup
+    // (cf. test supplier `pay_succeeds_when_project_archived_after_tagging`).
+    let line_project_ids: Vec<i64> = new.lines.iter().filter_map(|l| l.project_id).collect();
+    super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
+
     // Étape 1 : re-lock de l'exercice contre une clôture concurrente.
     let fy_row: Option<(i64, String)> = sqlx::query_as(
         "SELECT id, status FROM fiscal_years \
@@ -178,7 +191,10 @@ pub async fn create_in_tx(
     let entry_id = i64::try_from(last_id)
         .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
-    // Étape 5 : INSERT des lignes avec line_order séquentiel.
+    // Étape 5 : INSERT des lignes avec line_order séquentiel. Le tag
+    // analytique par-ligne (19-2, écritures manuelles) prime sur le tag
+    // document-level (19-3, propagation facture) — aucun flux ne fournit
+    // les deux à la fois.
     for (idx, line) in new.lines.iter().enumerate() {
         let line_order = (idx as i32) + 1;
         sqlx::query(
@@ -191,7 +207,7 @@ pub async fn create_in_tx(
         .bind(line_order)
         .bind(line.debit)
         .bind(line.credit)
-        .bind(new.project_id)
+        .bind(line.project_id.or(new.project_id))
         .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
@@ -504,6 +520,7 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
             "accountId": l.account_id,
             "debit": l.debit.to_string(),
             "credit": l.credit.to_string(),
+            "projectId": l.project_id,
         })).collect::<Vec<_>>()
     })
 }
@@ -543,10 +560,12 @@ fn is_no_op_change(
     if before_lines.len() != updated.lines.len() {
         return false;
     }
-    before_lines
-        .iter()
-        .zip(updated.lines.iter())
-        .all(|(b, c)| b.account_id == c.account_id && b.debit == c.debit && b.credit == c.credit)
+    before_lines.iter().zip(updated.lines.iter()).all(|(b, c)| {
+        b.account_id == c.account_id
+            && b.debit == c.debit
+            && b.credit == c.credit
+            && b.project_id == c.project_id
+    })
 }
 
 /// Règle stricte : `tx.rollback()` explicite avant chaque `return Err`.
@@ -559,6 +578,40 @@ pub async fn update(
     updated: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Étape 0 : validation des projets analytiques par-ligne (Story 19-2),
+    // AVANT le FOR UPDATE sur l'entry+fiscal_year — même ordre de verrouillage
+    // global que create_in_tx (companies → projects → fiscal_years, Pattern 5).
+    //
+    // Grandfathering : les projets DÉJÀ tagués sur cette écriture sont exemptés
+    // de la validation — sinon archiver un projet rendrait toute écriture
+    // historique non-éditable (409 « projet archivé » sur un simple fix de
+    // libellé). Leur existence/company est garantie (FK + scoping à la pose du
+    // tag). Le SELECT est scopé company (JOIN journal_entries) pour ne pas
+    // offrir de bypass IDOR via l'entry d'une autre company.
+    let prior_project_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT DISTINCT jel.project_id FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.project_id IS NOT NULL",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let line_project_ids: Vec<i64> = updated
+        .lines
+        .iter()
+        .filter_map(|l| l.project_id)
+        .filter(|pid| !prior_project_ids.contains(pid))
+        .collect();
+    if let Err(e) =
+        super::projects::validate_taggable_in_tx(&mut tx, company_id, &line_project_ids).await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
+    }
 
     // Étape 1 : SELECT FOR UPDATE join fiscal_year.
     #[derive(sqlx::FromRow)]
@@ -709,14 +762,15 @@ pub async fn update(
         let line_order = (idx as i32) + 1;
         let insert = sqlx::query(
             "INSERT INTO journal_entry_lines \
-             (entry_id, account_id, line_order, debit, credit) \
-             VALUES (?, ?, ?, ?, ?)",
+             (entry_id, account_id, line_order, debit, credit, project_id) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(line.account_id)
         .bind(line_order)
         .bind(line.debit)
         .bind(line.credit)
+        .bind(line.project_id.or(updated.project_id))
         .execute(&mut *tx)
         .await;
 
@@ -919,7 +973,8 @@ pub async fn list_all_lines_by_company(
     company_id: i64,
 ) -> Result<Vec<JournalEntryLine>, DbError> {
     sqlx::query_as::<_, JournalEntryLine>(
-        "SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit \
+        "SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit, \
+                jel.project_id \
          FROM journal_entry_lines jel \
          JOIN journal_entries je ON jel.entry_id = je.id \
          WHERE je.company_id = ? \
@@ -1082,11 +1137,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(42),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(42),
+                    project_id: None,
                 },
             ],
         );
@@ -1147,11 +1204,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(100),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(100),
+                    project_id: None,
                 },
             ],
         );
@@ -1181,11 +1240,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(50),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(50),
+                        project_id: None,
                     },
                 ],
             );
@@ -1215,11 +1276,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(100),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(100),
+                    project_id: None,
                 },
             ],
         );
@@ -1299,16 +1362,19 @@ mod tests {
                     account_id: a1,
                     debit: dec!(30),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a1,
                     debit: dec!(20),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(50),
+                    project_id: None,
                 },
             ],
         );
@@ -1345,11 +1411,13 @@ mod tests {
                             account_id: a1,
                             debit: dec!(10),
                             credit: dec!(0),
+                            project_id: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: dec!(10),
+                            project_id: None,
                         },
                     ],
                 ),
@@ -1386,11 +1454,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(100),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(100),
+                    project_id: None,
                 },
             ],
         );
@@ -1405,11 +1475,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(50),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(50),
+                    project_id: None,
                 },
             ],
         );
@@ -1467,11 +1539,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(10),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(10),
+                    project_id: None,
                 },
             ],
         );
@@ -1489,11 +1563,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(20),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(20),
+                    project_id: None,
                 },
             ],
         );
@@ -1541,11 +1617,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(1),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(1),
+                        project_id: None,
                     },
                 ],
             );
@@ -1594,11 +1672,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(10),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(10),
+                    project_id: None,
                 },
             ],
         );
@@ -1662,11 +1742,13 @@ mod tests {
                             account_id: a1,
                             debit: amount,
                             credit: dec!(0),
+                            project_id: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: amount,
+                            project_id: None,
                         },
                     ],
                 ),
@@ -1704,11 +1786,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(10),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(10),
+                        project_id: None,
                     },
                 ],
             );
@@ -1723,11 +1807,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(20),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(20),
+                    project_id: None,
                 },
             ],
         );
@@ -1766,11 +1852,13 @@ mod tests {
                             account_id: a1,
                             debit: dec!(10),
                             credit: dec!(0),
+                            project_id: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: dec!(10),
+                            project_id: None,
                         },
                     ],
                 ),
@@ -1839,11 +1927,13 @@ mod tests {
                             account_id: a1,
                             debit: dec!(10),
                             credit: dec!(0),
+                            project_id: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: dec!(10),
+                            project_id: None,
                         },
                     ],
                 ),
@@ -1887,11 +1977,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(10),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(10),
+                        project_id: None,
                     },
                 ],
             );
@@ -1929,11 +2021,13 @@ mod tests {
                     account_id: a1,
                     debit: dec!(10),
                     credit: dec!(0),
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: a1,
                     debit: dec!(0),
                     credit: dec!(10),
+                    project_id: None,
                 },
             ],
         );
@@ -1981,11 +2075,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(100),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(100),
+                        project_id: None,
                     },
                 ],
             ),
@@ -2010,6 +2106,7 @@ mod tests {
                     account_id: l.account_id,
                     debit: l.debit,
                     credit: l.credit,
+                    project_id: None,
                 })
                 .collect(),
         };
@@ -2064,11 +2161,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(50),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(50),
+                        project_id: None,
                     },
                 ],
             ),
@@ -2093,6 +2192,7 @@ mod tests {
                     account_id: l.account_id,
                     debit: l.debit,
                     credit: l.credit,
+                    project_id: None,
                 })
                 .collect(),
         };
@@ -2155,11 +2255,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(75),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(75),
+                        project_id: None,
                     },
                 ],
             ),
@@ -2189,6 +2291,7 @@ mod tests {
                     account_id: l.account_id,
                     debit: l.debit,
                     credit: l.credit,
+                    project_id: None,
                 })
                 .collect(),
         };
@@ -2237,11 +2340,13 @@ mod tests {
                         account_id: a1,
                         debit: dec!(33),
                         credit: dec!(0),
+                        project_id: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(33),
+                        project_id: None,
                     },
                 ],
             ),
@@ -2263,6 +2368,7 @@ mod tests {
                     account_id: l.account_id,
                     debit: l.debit,
                     credit: l.credit,
+                    project_id: None,
                 })
                 .collect(),
         };
@@ -2280,5 +2386,351 @@ mod tests {
         .unwrap();
         assert_eq!(result.entry.version, version_initial + 1);
         assert_eq!(result.entry.description, "Description modifiée");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 19-2 — tag analytique par-ligne (écritures manuelles)
+    // -----------------------------------------------------------------------
+
+    /// Insère un projet analytique et retourne son id (calque le helper 19-3
+    /// de `tests/supplier_invoices_repository.rs`).
+    ///
+    /// Idempotent inter-runs : la DB de test est partagée et `setup()` ne purge
+    /// que les écritures — un projet laissé par un run précédent violerait
+    /// l'unicité `(company_id, code)`. On supprime d'abord le reliquat (sans
+    /// FK restante : les lignes d'écriture ont été purgées par `setup()`).
+    async fn mk_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+        sqlx::query("DELETE FROM projects WHERE company_id = ? AND code = ?")
+            .bind(company_id)
+            .bind(code)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO projects (company_id, code, name, archived, version) \
+             VALUES (?, ?, ?, ?, 0)",
+        )
+        .bind(company_id)
+        .bind(code)
+        .bind(code)
+        .bind(archived)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    }
+
+    fn line(account_id: i64, debit: Decimal, credit: Decimal) -> NewJournalEntryLine {
+        NewJournalEntryLine {
+            account_id,
+            debit,
+            credit,
+            project_id: None,
+        }
+    }
+
+    fn tagged_line(
+        account_id: i64,
+        debit: Decimal,
+        credit: Decimal,
+        project_id: i64,
+    ) -> NewJournalEntryLine {
+        NewJournalEntryLine {
+            account_id,
+            debit,
+            credit,
+            project_id: Some(project_id),
+        }
+    }
+
+    /// AC15 — tags par-ligne mixtes (2 projets distincts + 1 ligne sans tag)
+    /// persistés et relus tels quels par `find_by_id` (LINE_COLUMNS).
+    #[tokio::test]
+    async fn test_create_line_projects_mixed() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+        let p1 = mk_project(&pool, company_id, "P19-2-MIX-A", false).await;
+        let p2 = mk_project(&pool, company_id, "P19-2-MIX-B", false).await;
+
+        let new = mk_entry(
+            company_id,
+            today,
+            vec![
+                tagged_line(a1, dec!(30), dec!(0), p1),
+                tagged_line(a1, dec!(20), dec!(0), p2),
+                line(a2, dec!(0), dec!(50)),
+            ],
+        );
+        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+
+        let read = find_by_id(&pool, company_id, created.entry.id)
+            .await
+            .unwrap()
+            .expect("entry must exist");
+        let tags: Vec<Option<i64>> = read.lines.iter().map(|l| l.project_id).collect();
+        assert_eq!(tags, vec![Some(p1), Some(p2), None]);
+    }
+
+    /// AC15 — un projet archivé sur une ligne est rejeté (`IllegalStateTransition`).
+    #[tokio::test]
+    async fn test_create_line_project_archived_rejected() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+        let archived = mk_project(&pool, company_id, "P19-2-ARCH", true).await;
+
+        let new = mk_entry(
+            company_id,
+            today,
+            vec![
+                tagged_line(a1, dec!(10), dec!(0), archived),
+                line(a2, dec!(0), dec!(10)),
+            ],
+        );
+        let err = create(&pool, fy_id, admin_user_id, new).await.unwrap_err();
+        assert!(
+            matches!(err, DbError::IllegalStateTransition(_)),
+            "expected IllegalStateTransition, got {err:?}"
+        );
+    }
+
+    /// AC15 — projet inexistant → `NotFound` (aucune écriture créée).
+    #[tokio::test]
+    async fn test_create_line_project_unknown_rejected() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let new = mk_entry(
+            company_id,
+            today,
+            vec![
+                tagged_line(a1, dec!(10), dec!(0), 999_999_999),
+                line(a2, dec!(0), dec!(10)),
+            ],
+        );
+        let err = create(&pool, fy_id, admin_user_id, new).await.unwrap_err();
+        assert!(matches!(err, DbError::NotFound), "got {err:?}");
+    }
+
+    /// AC15 — projet d'une AUTRE company → `NotFound` (IDOR-safe, scoping
+    /// `company_id` dans `validate_taggable_in_tx`).
+    #[tokio::test]
+    async fn test_create_line_project_cross_company_rejected() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        // Company étrangère éphémère + projet actif chez elle.
+        let other_company: i64 = sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES ('Cross 19-2', 'Rue Test 1', 'Independant', 'FR', 'FR')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let foreign_project = mk_project(&pool, other_company, "P19-2-FOREIGN", false).await;
+
+        let new = mk_entry(
+            company_id,
+            today,
+            vec![
+                tagged_line(a1, dec!(10), dec!(0), foreign_project),
+                line(a2, dec!(0), dec!(10)),
+            ],
+        );
+        let err = create(&pool, fy_id, admin_user_id, new).await.unwrap_err();
+        assert!(matches!(err, DbError::NotFound), "got {err:?}");
+
+        // Cleanup de la company éphémère (le projet suit par FK... non : pas de
+        // CASCADE — suppression explicite du projet d'abord).
+        sqlx::query("DELETE FROM projects WHERE id = ?")
+            .bind(foreign_project)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM companies WHERE id = ?")
+            .bind(other_company)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// AC15 — fallback document-level 19-3 préservé : lignes sans tag +
+    /// `new.project_id` Some → toutes les lignes stampées (`or()`).
+    #[tokio::test]
+    async fn test_create_entry_level_fallback_stamps_lines() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+        let p = mk_project(&pool, company_id, "P19-2-DOC", false).await;
+
+        let mut new = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(42), dec!(0)), line(a2, dec!(0), dec!(42))],
+        );
+        new.project_id = Some(p);
+        let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
+
+        assert!(
+            created.lines.iter().all(|l| l.project_id == Some(p)),
+            "toutes les lignes doivent porter le tag document-level, got {:?}",
+            created
+                .lines
+                .iter()
+                .map(|l| l.project_id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// AC15 — un update qui ne change QUE le projet d'une ligne n'est PAS un
+    /// no-op : version bumpée et tag persisté (garde `is_no_op_change`).
+    #[tokio::test]
+    async fn test_update_project_only_change_is_not_noop() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+        let p = mk_project(&pool, company_id, "P19-2-NOOP", false).await;
+
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
+            ),
+        )
+        .await
+        .unwrap();
+        let v0 = created.entry.version;
+
+        // Même payload, seul le project_id de la 1re ligne change.
+        let payload = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: created.entry.description.clone(),
+            project_id: None,
+            lines: vec![
+                tagged_line(a1, dec!(10), dec!(0), p),
+                line(a2, dec!(0), dec!(10)),
+            ],
+        };
+        let updated = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            v0,
+            admin_user_id,
+            payload,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            updated.entry.version,
+            v0 + 1,
+            "changement de projet ≠ no-op"
+        );
+        assert_eq!(updated.lines[0].project_id, Some(p));
+        assert_eq!(updated.lines[1].project_id, None);
+    }
+
+    /// AC15/DC2 — grandfathering : un tag DÉJÀ présent sur l'écriture reste
+    /// éditable après archivage du projet (fix de libellé possible), mais un
+    /// NOUVEAU projet archivé est refusé.
+    #[tokio::test]
+    async fn test_update_grandfathers_preexisting_archived_project() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+        let p = mk_project(&pool, company_id, "P19-2-GRAND", false).await;
+        let q = mk_project(&pool, company_id, "P19-2-GRAND-Q", true).await;
+
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    tagged_line(a1, dec!(10), dec!(0), p),
+                    line(a2, dec!(0), dec!(10)),
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+
+        // Archiver P après la pose du tag.
+        sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+            .bind(p)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // (a) Édition du libellé en conservant le tag P archivé → OK.
+        let payload = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: "Libellé corrigé (grandfathering)".to_string(),
+            project_id: None,
+            lines: vec![
+                tagged_line(a1, dec!(10), dec!(0), p),
+                line(a2, dec!(0), dec!(10)),
+            ],
+        };
+        let updated = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            created.entry.version,
+            admin_user_id,
+            payload,
+        )
+        .await
+        .expect("le tag pré-existant archivé doit être toléré à l'édition");
+        assert_eq!(updated.lines[0].project_id, Some(p));
+
+        // (b) Ajouter un AUTRE projet archivé (Q, jamais tagué ici) → refus.
+        let payload = NewJournalEntry {
+            company_id,
+            entry_date: updated.entry.entry_date,
+            journal: updated.entry.journal,
+            description: updated.entry.description.clone(),
+            project_id: None,
+            lines: vec![
+                tagged_line(a1, dec!(10), dec!(0), p),
+                tagged_line(a2, dec!(0), dec!(10), q),
+            ],
+        };
+        let err = update(
+            &pool,
+            company_id,
+            updated.entry.id,
+            updated.entry.version,
+            admin_user_id,
+            payload,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, DbError::IllegalStateTransition(_)),
+            "nouveau projet archivé doit être refusé, got {err:?}"
+        );
     }
 }

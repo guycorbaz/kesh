@@ -60,9 +60,9 @@ describe('buildPurchaseVatLines', () => {
 	it('vat > 0 → 3 lignes (charge, impôt préalable, contrepartie) équilibrées', () => {
 		const lines = buildPurchaseVatLines(base());
 		expect(lines).toHaveLength(3);
-		expect(lines[0]).toEqual({ accountId: CHARGE, debit: '1000.00', credit: '' });
-		expect(lines[1]).toEqual({ accountId: RECOVERABLE, debit: '81.00', credit: '' });
-		expect(lines[2]).toEqual({ accountId: COUNTERPARTY, debit: '', credit: '1081.00' });
+		expect(lines[0]).toEqual({ accountId: CHARGE, debit: '1000.00', credit: '', projectId: null });
+		expect(lines[1]).toEqual({ accountId: RECOVERABLE, debit: '81.00', credit: '', projectId: null });
+		expect(lines[2]).toEqual({ accountId: COUNTERPARTY, debit: '', credit: '1081.00', projectId: null });
 		expect(sum(lines, 'debit')).toBe(sum(lines, 'credit'));
 	});
 
@@ -70,8 +70,8 @@ describe('buildPurchaseVatLines', () => {
 		const lines = buildPurchaseVatLines(base({ ratePercent: '0' }));
 		expect(lines).toHaveLength(2);
 		expect(lines.some((l) => l.accountId === RECOVERABLE)).toBe(false);
-		expect(lines[0]).toEqual({ accountId: CHARGE, debit: '1000.00', credit: '' });
-		expect(lines[1]).toEqual({ accountId: COUNTERPARTY, debit: '', credit: '1000.00' });
+		expect(lines[0]).toEqual({ accountId: CHARGE, debit: '1000.00', credit: '', projectId: null });
+		expect(lines[1]).toEqual({ accountId: COUNTERPARTY, debit: '', credit: '1000.00', projectId: null });
 		expect(sum(lines, 'debit')).toBe(sum(lines, 'credit'));
 	});
 
@@ -113,22 +113,22 @@ describe('buildPurchaseVatLines', () => {
 
 describe('isDraftLineNonEmpty', () => {
 	it('ligne vierge initiale → false', () => {
-		expect(isDraftLineNonEmpty({ accountId: null, debit: '', credit: '' })).toBe(false);
+		expect(isDraftLineNonEmpty({ accountId: null, debit: '', credit: '', projectId: null })).toBe(false);
 	});
 
 	it('compte choisi → true', () => {
-		expect(isDraftLineNonEmpty({ accountId: 5, debit: '', credit: '' })).toBe(true);
+		expect(isDraftLineNonEmpty({ accountId: 5, debit: '', credit: '', projectId: null })).toBe(true);
 	});
 
 	it('débit saisi → true', () => {
-		expect(isDraftLineNonEmpty({ accountId: null, debit: '100', credit: '' })).toBe(true);
+		expect(isDraftLineNonEmpty({ accountId: null, debit: '100', credit: '', projectId: null })).toBe(true);
 	});
 
 	it('crédit saisi → true', () => {
-		expect(isDraftLineNonEmpty({ accountId: null, debit: '', credit: '50' })).toBe(true);
+		expect(isDraftLineNonEmpty({ accountId: null, debit: '', credit: '50', projectId: null })).toBe(true);
 	});
 
 	it('espaces seuls → false', () => {
-		expect(isDraftLineNonEmpty({ accountId: null, debit: '  ', credit: ' ' })).toBe(false);
+		expect(isDraftLineNonEmpty({ accountId: null, debit: '  ', credit: ' ', projectId: null })).toBe(false);
 	});
 });

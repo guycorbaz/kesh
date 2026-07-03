@@ -1,6 +1,6 @@
 # Story 19.2 : Tagging analytique des écritures manuelles
 
-Status: ready-for-dev
+Status: review
 
 <!-- Rollout du pattern posé par 19-1 (dimension project_id sur journal_entry_lines)
      et 19-3 (validation projet + propagation). Ici : tag PAR LIGNE dans le
@@ -65,12 +65,12 @@ so that mes régularisations, amortissements et écritures diverses alimentent l
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — kesh-core** (AC: 1) : `JournalEntryLineDraft.project_id` + doc + sites de construction (2 handlers + helper test).
-- [ ] **T2 — Entités + repo** (AC: 2-6) : entités ; `LINE_COLUMNS` + `list_all_lines_by_company` ; INSERT create/update avec `or()` ; `is_no_op_change` ; `entry_snapshot_json` ; helper de validation par-ligne (extraction possible en fn partagée du pattern `supplier_invoices.rs:274-304` — sentinel unique + `IN (...) FOR UPDATE`) ; tests repo.
-- [ ] **T3 — API** (AC: 7-8) : DTOs request/response + mapping handlers create/update ; tests mapping erreurs.
-- [ ] **T4 — Frontend** (AC: 9-12) : types TS + `LineDraft` + hydratation ; sélecteur par ligne dans `JournalEntryForm` ; chargement projects page hôte ; colonne Projet page détail ; i18n fallback FR ; unit test form-helpers.
-- [ ] **T5 — Non-régression** (AC: 13-14) : suite supplier_invoices verte (surtout `pay_succeeds_when_project_archived_after_tagging`) ; round-trip backup vert sans modif.
-- [ ] **T6 — Gate** (AC: 17) : Test Locally First complet backend (serial) + frontend (check/lint/unit/build) + E2E si formulaire touché, exit-codes vérifiés.
+- [x] **T1 — kesh-core** (AC: 1) : `JournalEntryLineDraft.project_id` + doc + sites de construction (2 handlers + helper test).
+- [x] **T2 — Entités + repo** (AC: 2-6) : entités ; `LINE_COLUMNS` + `list_all_lines_by_company` ; INSERT create/update avec `or()` ; `is_no_op_change` ; `entry_snapshot_json` ; helper de validation par-ligne (extraction possible en fn partagée du pattern `supplier_invoices.rs:274-304` — sentinel unique + `IN (...) FOR UPDATE`) ; tests repo.
+- [x] **T3 — API** (AC: 7-8) : DTOs request/response + mapping handlers create/update ; tests mapping erreurs.
+- [x] **T4 — Frontend** (AC: 9-12) : types TS + `LineDraft` + hydratation ; sélecteur par ligne dans `JournalEntryForm` ; chargement projects page hôte ; colonne Projet page détail ; i18n fallback FR ; unit test form-helpers.
+- [x] **T5 — Non-régression** (AC: 13-14) : suite supplier_invoices verte (surtout `pay_succeeds_when_project_archived_after_tagging`) ; round-trip backup vert sans modif.
+- [x] **T6 — Gate** (AC: 17) : Test Locally First complet backend (serial) + frontend (check/lint/unit/build) + E2E si formulaire touché, exit-codes vérifiés.
 
 ## Dev Notes
 
@@ -107,10 +107,55 @@ so that mes régularisations, amortissements et écritures diverses alimentent l
 
 ### Agent Model Used
 
+Claude Fable 5 (claude-fable-5) — dev-story orchestré inline.
+
 ### Debug Log References
+
+- Gate intermédiaire backend : `cargo build --workspace --all-targets` exit 0, clippy 0 warning.
+- Tests repo : `cargo test -p kesh-db --lib repositories::journal_entries::tests -- --test-threads=1` → 29/29 verts (7 nouveaux 19-2).
+- Tests route : 6/6 verts (3 nouveaux 19-2).
+- Frontend : svelte-check 0 erreur, lint-i18n-ownership PASS (3 clés whitelistées, quirk #30), 346 tests unit verts (2 nouveaux), build OK.
+- Gate complet : fmt exit 0, clippy 0 warning, `cargo test --workspace -j1 -- --test-threads=1` → 41 suites. 5 échecs initiaux = mes tests 19-2 non-idempotents inter-runs (codes projets résiduels, DB partagée) → `mk_project` rendu idempotent (DELETE avant INSERT), re-run kesh-db+kesh-api serial exit 0, 1236 tests.
+- E2E Playwright RÉELS : 21/21 verts (journal-entries + projects + vat-purchase-assistant), 6 skipped pré-existants. Le test 19-2 vérifie le tag par-ligne ground-truth via l'API.
 
 ### Completion Notes List
 
+- **T1** : `JournalEntryLineDraft.project_id` opaque (validate() intact, lignes verbatim) ; 83 sites `NewJournalEntryLine`/draft défautés `None` par script (comme 19-3 pour `NewJournalEntry`).
+- **T2** : `LINE_COLUMNS` + `list_all_lines_by_company` (colonnes en dur) + INSERT create/update `line.project_id.or(new.project_id)` + `is_no_op_change` compare project_id + snapshot audit `projectId`. **Helper partagé `projects::validate_taggable_in_tx`** (sentinel unique + `IN (...) FOR UPDATE`, Pattern 5) — le bloc inline 19-3 de `supplier_invoices.rs` refactoré dessus (DRY).
+- **Ordre de verrouillage** : validation en étape 0 AVANT le lock fiscal_years/entry (create_in_tx ET update) — le flux fournisseur 19-3 prend companies→projects→fiscal_years ; valider après aurait créé une inversion ABBA inter-flux.
+- **Grandfathering (update)** : les projets déjà tagués sur l'écriture sont exemptés de la validation (SELECT prior scopé company anti-IDOR) — sinon archiver un projet rendrait toute écriture historique non-éditable. Nouveau projet archivé → refusé. Testé (a)+(b).
+- **DC2 respecté** : `new.project_id` (document-level) jamais re-validé dans le repo → `pay_succeeds_when_project_archived_after_tagging` (19-3) reste vert.
+- **T4** : sélecteur arbre 2 niveaux par ligne (pattern 19-3, `data-testid journal-entry-line-project-{i}`), colonne conditionnelle `projects.length > 0`, option ad-hoc « Projet archivé » pour le round-trip édition d'un tag historique, colspan dynamiques ; page hôte charge `listProjects()` (échec toléré) ; détail : colonne Projet conditionnelle (`listProjects(true)` pour lire les archivés) + colspan tfoot.
+- **CHANGELOG** [Non publié] : entrée écritures manuelles.
+- E2E : +1 test tagging nominal (création projet API + select ligne 1 + ground-truth API lines[0].projectId). 3 fixes de spec induits : (a) tous les `getByRole('option')` nus scopés au `listbox` de l'autocomplete (les `<option>` natifs du select projet matchent role=option dès qu'un projet existe) ; (b) test « liste vide » one-shot `isVisible()` → `locator.or()` auto-wait ; (c) test « suppression » matching exact (l'entrée « MODIFIÉ » du test d'édition matchait la regex substring — séquence cassée pré-existante révélée par le run complet).
+- Env E2E local : `KESH_COOKIE_SECURE=false` OBLIGATOIRE (cookies Secure de 10-5 non envoyés par le request context Playwright sur http://127.0.0.1 → 401 systématiques) — documenté dans docs/testing.md.
+
 ### File List
 
+- crates/kesh-core/src/accounting/balance.rs (JournalEntryLineDraft.project_id + helper test)
+- crates/kesh-db/src/entities/journal_entry.rs (JournalEntryLine + NewJournalEntryLine.project_id)
+- crates/kesh-db/src/repositories/projects.rs (helper validate_taggable_in_tx)
+- crates/kesh-db/src/repositories/journal_entries.rs (LINE_COLUMNS, validation étape 0, INSERT or(), is_no_op_change, snapshot, grandfathering update, +7 tests)
+- crates/kesh-db/src/repositories/supplier_invoices.rs (refactor DRY → helper)
+- crates/kesh-db/src/repositories/credit_notes.rs / invoices.rs (sites défautés None)
+- crates/kesh-reconciliation/src/manual.rs / split.rs (sites défautés None)
+- crates/kesh-api/src/routes/journal_entries.rs (DTOs projectId, mapping handlers, +3 tests)
+- crates/kesh-api/src/exports/csv_tables.rs (helper test)
+- crates/kesh-api/tests/{exports_global,reports,reports_export}_e2e.rs (sites défautés None)
+- crates/kesh-db/tests/{kf005_fulltext_index_e2e,report_aggregates}.rs (sites défautés None)
+- crates/kesh-report/tests/{vat_report_reconciliation,vat_report_recoverable}.rs (sites défautés None)
+- frontend/src/lib/features/journal-entries/journal-entries.types.ts (projectId types)
+- frontend/src/lib/features/journal-entries/form-helpers.ts (LineDraft.projectId + hydratation)
+- frontend/src/lib/features/journal-entries/form-helpers.test.ts (+2 tests projectId)
+- frontend/src/lib/features/journal-entries/vat-purchase.ts / vat-purchase.test.ts (littéraux défautés)
+- frontend/src/lib/features/journal-entries/JournalEntryForm.svelte (colonne + sélecteur par ligne)
+- frontend/src/routes/(app)/journal-entries/+page.svelte (chargement projects + props)
+- frontend/src/routes/(app)/journal-entries/[id]/+page.svelte (colonne Projet détail)
+- frontend/tests/e2e/journal-entries.spec.ts (+1 test tagging, sélecteurs listbox-scoped, 2 tests robustifiés)
+- docs/testing.md (prérequis KESH_COOKIE_SECURE=false)
+- frontend/scripts/lint-i18n-ownership.js (3 clés whitelistées #30)
+- CHANGELOG.md ([Non publié] entrée 19-2)
+
 ## Change Log
+
+- **Dev (2026-07-03)** : T1→T6 complets (kesh-core draft opaque + repo validation Pattern 5 étape 0 + grandfathering update + API DTOs + frontend sélecteur par ligne/détail). Décisions au-delà de la spec, documentées : grandfathering des tags archivés pré-existants à l'update (sinon écritures historiques non-éditables) + validation AVANT le lock fiscal_years (ordre global companies→projects→fiscal_years, anti-ABBA inter-flux avec 19-3).

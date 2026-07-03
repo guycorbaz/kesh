@@ -3,7 +3,13 @@ import { fromJournalEntryResponse, lineResponseToDraft } from './form-helpers';
 import type { JournalEntryResponse } from './journal-entries.types';
 
 function mockEntry(
-	lines: Array<{ lineOrder: number; accountId: number; debit: string; credit: string }>
+	lines: Array<{
+		lineOrder: number;
+		accountId: number;
+		debit: string;
+		credit: string;
+		projectId?: number | null;
+	}>
 ): JournalEntryResponse {
 	return {
 		id: 1,
@@ -14,7 +20,7 @@ function mockEntry(
 		journal: 'Banque',
 		description: 'Test',
 		version: 1,
-		lines: lines.map((l) => ({ id: l.lineOrder, ...l })),
+		lines: lines.map((l) => ({ id: l.lineOrder, projectId: null, ...l })),
 		createdAt: '2026-04-10T10:00:00',
 		updatedAt: '2026-04-10T10:00:00'
 	};
@@ -27,9 +33,10 @@ describe('lineResponseToDraft', () => {
 			accountId: 42,
 			lineOrder: 1,
 			debit: '100.00',
-			credit: '0.0000'
+			credit: '0.0000',
+			projectId: null
 		});
-		expect(draft).toEqual({ accountId: 42, debit: '100.00', credit: '' });
+		expect(draft).toEqual({ accountId: 42, debit: '100.00', credit: '', projectId: null });
 	});
 
 	it('convertit une ligne crédit en draft avec débit vide', () => {
@@ -38,9 +45,10 @@ describe('lineResponseToDraft', () => {
 			accountId: 43,
 			lineOrder: 2,
 			debit: '0.0000',
-			credit: '100.00'
+			credit: '100.00',
+			projectId: null
 		});
-		expect(draft).toEqual({ accountId: 43, debit: '', credit: '100.00' });
+		expect(draft).toEqual({ accountId: 43, debit: '', credit: '100.00', projectId: null });
 	});
 
 	it('préserve les montants avec 4 décimales', () => {
@@ -49,10 +57,23 @@ describe('lineResponseToDraft', () => {
 			accountId: 99,
 			lineOrder: 1,
 			debit: '10.1234',
-			credit: '0'
+			credit: '0',
+			projectId: null
 		});
 		expect(draft.debit).toBe('10.1234');
 		expect(draft.credit).toBe('');
+	});
+
+	it('hydrate le projet analytique de la ligne (Epic 19, Story 19-2)', () => {
+		const draft = lineResponseToDraft({
+			id: 4,
+			accountId: 42,
+			lineOrder: 1,
+			debit: '100.00',
+			credit: '0',
+			projectId: 7
+		});
+		expect(draft.projectId).toBe(7);
 	});
 });
 
@@ -81,5 +102,15 @@ describe('fromJournalEntryResponse', () => {
 		expect(drafts[0].debit).toBe('30');
 		expect(drafts[1].debit).toBe('20');
 		expect(drafts[2].credit).toBe('50');
+	});
+
+	it('préserve les projectId par ligne au round-trip édition', () => {
+		const entry = mockEntry([
+			{ lineOrder: 1, accountId: 1, debit: '100', credit: '0', projectId: 3 },
+			{ lineOrder: 2, accountId: 2, debit: '0', credit: '100' }
+		]);
+		const drafts = fromJournalEntryResponse(entry);
+		expect(drafts[0].projectId).toBe(3);
+		expect(drafts[1].projectId).toBeNull();
 	});
 });

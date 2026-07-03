@@ -112,12 +112,19 @@ cd /path/to/kesh
 KESH_TEST_MODE=true KESH_HOST=127.0.0.1 \
   DATABASE_URL="mysql://root:kesh_dev_root@127.0.0.1:3306/kesh" \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
+  KESH_COOKIE_SECURE=false \
   cargo run -p kesh-api
 
 # Terminal 2 : Playwright
 cd frontend
 npm run test:e2e
 ```
+
+> **`KESH_COOKIE_SECURE=false` est obligatoire en local HTTP** : depuis les
+> tokens httpOnly (Story 10-5), les cookies d'auth sont `Secure` par défaut.
+> Le navigateur Chromium tolère les cookies Secure sur `127.0.0.1` (loopback),
+> mais le **request context** Playwright (`authedApiContext`) ne les envoie
+> PAS sur `http://` → tous les tests utilisant l'API échouent en 401.
 
 Le `globalSetup` Playwright (`tests/e2e/global-setup.ts`) appelle `seedTestState('with-company')` une seule fois avant tous les workers — si le backend est éteint ou `KESH_TEST_MODE=false`, il throw avec un message listant les 4 prérequis (backend up, `KESH_TEST_MODE`, `KESH_HOST` loopback, `KESH_BACKEND_URL`).
 

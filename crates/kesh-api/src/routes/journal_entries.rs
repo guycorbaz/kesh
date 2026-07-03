@@ -68,6 +68,11 @@ pub struct CreateJournalEntryLineRequest {
     pub debit: String,
     /// Montant au crédit, format string décimal.
     pub credit: String,
+    /// Projet analytique de la ligne (Epic 19, Story 19-2). Optionnel —
+    /// absent ou `null` = ligne non taguée. Validé côté repo (projet de
+    /// la company, non archivé) : inconnu/cross-company → 404, archivé → 409.
+    #[serde(default)]
+    pub project_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,6 +106,8 @@ pub struct JournalEntryLineResponse {
     /// ne supporte que les f64).
     pub debit: String,
     pub credit: String,
+    /// Projet analytique de la ligne (Epic 19). `null` = non taguée.
+    pub project_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -127,6 +134,7 @@ impl From<JournalEntryLine> for JournalEntryLineResponse {
             line_order: l.line_order,
             debit: l.debit.to_string(),
             credit: l.credit.to_string(),
+            project_id: l.project_id,
         }
     }
 }
@@ -423,6 +431,7 @@ pub async fn create_journal_entry(
             account_id: line.account_id,
             debit: Money::new(debit),
             credit: Money::new(credit),
+            project_id: line.project_id,
         });
     }
 
@@ -472,6 +481,9 @@ pub async fn create_journal_entry(
                 account_id: l.account_id,
                 debit: l.debit.amount(),
                 credit: l.credit.amount(),
+                // Tag analytique par-ligne (19-2) — a traversé validate()
+                // verbatim depuis la request.
+                project_id: l.project_id,
             })
             .collect(),
     };
@@ -532,6 +544,7 @@ pub async fn update_journal_entry(
             account_id: line.account_id,
             debit: Money::new(debit),
             credit: Money::new(credit),
+            project_id: line.project_id,
         });
     }
 
@@ -577,6 +590,9 @@ pub async fn update_journal_entry(
                 account_id: l.account_id,
                 debit: l.debit.amount(),
                 credit: l.credit.amount(),
+                // Tag analytique par-ligne (19-2) — a traversé validate()
+                // verbatim depuis la request.
+                project_id: l.project_id,
             })
             .collect(),
     };
@@ -677,5 +693,59 @@ mod tests {
         let msg = body["error"]["message"].as_str().unwrap();
         assert!(msg.contains("2025-06-30"));
         assert!(msg.contains("CO art. 957-964"));
+    }
+
+    // -- Story 19-2 : tag analytique par-ligne ------------------------------
+
+    /// Le `projectId` d'une ligne est optionnel : absent → `None`,
+    /// `null` → `None`, entier → `Some` (compat clients pré-19-2).
+    #[test]
+    fn line_request_project_id_is_optional() {
+        let absent: CreateJournalEntryLineRequest =
+            serde_json::from_str(r#"{"accountId":1,"debit":"10","credit":"0"}"#).unwrap();
+        assert_eq!(absent.project_id, None);
+
+        let null: CreateJournalEntryLineRequest =
+            serde_json::from_str(r#"{"accountId":1,"debit":"10","credit":"0","projectId":null}"#)
+                .unwrap();
+        assert_eq!(null.project_id, None);
+
+        let tagged: CreateJournalEntryLineRequest =
+            serde_json::from_str(r#"{"accountId":1,"debit":"10","credit":"0","projectId":7}"#)
+                .unwrap();
+        assert_eq!(tagged.project_id, Some(7));
+    }
+
+    /// La réponse ligne expose `projectId` en camelCase (null si non taguée).
+    #[test]
+    fn line_response_serializes_project_id() {
+        let resp = JournalEntryLineResponse::from(JournalEntryLine {
+            id: 1,
+            entry_id: 2,
+            account_id: 3,
+            line_order: 1,
+            debit: rust_decimal_macros::dec!(10),
+            credit: rust_decimal_macros::dec!(0),
+            project_id: Some(7),
+        });
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["projectId"], 7);
+    }
+
+    /// Projet inconnu/cross-company → 404 ; projet archivé → 409 (mapping
+    /// DbError générique réutilisé par la validation par-ligne 19-2).
+    #[tokio::test]
+    async fn project_validation_errors_map_to_4xx() {
+        let resp = AppError::from(kesh_db::errors::DbError::NotFound).into_response();
+        let (status, _) = body_json(resp).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let resp = AppError::from(kesh_db::errors::DbError::IllegalStateTransition(
+            "le projet analytique est archivé".into(),
+        ))
+        .into_response();
+        let (status, body) = body_json(resp).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
     }
 }

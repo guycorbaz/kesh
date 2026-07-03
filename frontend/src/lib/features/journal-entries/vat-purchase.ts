@@ -84,16 +84,16 @@ export function buildPurchaseVatLines(params: PurchaseVatParams): LineDraft[] {
 	const ttc = parseAmount(charge).plus(vat).toFixed(2);
 
 	const lines: LineDraft[] = [
-		{ accountId: chargeAccountId, debit: charge, credit: '' }
+		{ accountId: chargeAccountId, debit: charge, credit: '', projectId: null }
 	];
 
 	// Ligne d'impôt préalable émise seulement si la TVA est strictement > 0
 	// (F-OPUS-1 / contrainte DB `chk_jel_debit_credit_exclusive` : `debit > 0 XOR credit > 0`).
 	if (parseAmount(vat).gt(0)) {
-		lines.push({ accountId: recoverableAccountId, debit: vat, credit: '' });
+		lines.push({ accountId: recoverableAccountId, debit: vat, credit: '', projectId: null });
 	}
 
-	lines.push({ accountId: counterpartyAccountId, debit: '', credit: ttc });
+	lines.push({ accountId: counterpartyAccountId, debit: '', credit: ttc, projectId: null });
 
 	return lines;
 }
