@@ -589,6 +589,15 @@ pub async fn update(
     // libellé). Leur existence/company est garantie (FK + scoping à la pose du
     // tag). Le SELECT est scopé company (JOIN journal_entries) pour ne pas
     // offrir de bypass IDOR via l'entry d'une autre company.
+    //
+    // Portée VOLONTAIREMENT au niveau écriture (pas ligne par ligne) : un
+    // projet archivé déjà présent sur l'écriture peut être re-tagué sur une
+    // autre ligne de la MÊME écriture. Nécessaire pour corriger une
+    // affectation (déplacer le tag de la ligne A vers la ligne B) après
+    // archivage — un grandfathering par-ligne strict rendrait ce déplacement
+    // impossible. Le périmètre analytique de l'écriture n'en est pas élargi :
+    // le projet y figurait déjà. (Code-review 19-2 Pass 1 BH-M1, décision
+    // documentée + testée par test_update_moves_archived_tag_between_lines.)
     let prior_project_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT DISTINCT jel.project_id FROM journal_entry_lines jel \
          JOIN journal_entries je ON je.id = jel.entry_id \
@@ -2732,5 +2741,67 @@ mod tests {
             matches!(err, DbError::IllegalStateTransition(_)),
             "nouveau projet archivé doit être refusé, got {err:?}"
         );
+    }
+
+    /// Review Pass 1 BH-M1 — la portée écriture du grandfathering permet de
+    /// DÉPLACER un tag archivé d'une ligne à l'autre de la même écriture
+    /// (correction d'affectation post-archivage). Un grandfathering par-ligne
+    /// strict rendrait ce déplacement impossible.
+    #[tokio::test]
+    async fn test_update_moves_archived_tag_between_lines() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+        let p = mk_project(&pool, company_id, "P19-2-MOVE", false).await;
+
+        // Ligne 1 taguée P, ligne 2 vierge.
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    tagged_line(a1, dec!(10), dec!(0), p),
+                    line(a2, dec!(0), dec!(10)),
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+
+        sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+            .bind(p)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Déplacer le tag : ligne 1 détaguée, ligne 2 taguée P (archivé mais
+        // déjà présent sur l'écriture → exempté).
+        let payload = NewJournalEntry {
+            company_id,
+            entry_date: created.entry.entry_date,
+            journal: created.entry.journal,
+            description: created.entry.description.clone(),
+            project_id: None,
+            lines: vec![
+                line(a1, dec!(10), dec!(0)),
+                tagged_line(a2, dec!(0), dec!(10), p),
+            ],
+        };
+        let updated = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            created.entry.version,
+            admin_user_id,
+            payload,
+        )
+        .await
+        .expect("déplacer un tag archivé au sein de la même écriture doit passer");
+        assert_eq!(updated.lines[0].project_id, None);
+        assert_eq!(updated.lines[1].project_id, Some(p));
     }
 }

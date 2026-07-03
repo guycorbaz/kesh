@@ -34,16 +34,27 @@
 			// historique peut référencer un compte depuis archivé. Idem
 			// `listProjects(true)` pour les tags analytiques (Epic 19) : un
 			// projet archivé doit rester lisible dans l'historique.
-			const [e, accounts, projects] = await Promise.all([
+			//
+			// Seule l'écriture elle-même est requise : un échec des référentiels
+			// (comptes, projets) dégrade l'affichage (`#id` en fallback) sans
+			// casser la page — même tolérance que la page liste (allSettled).
+			const [entryResult, accountsResult, projectsResult] = await Promise.allSettled([
 				getJournalEntry(id),
 				fetchAccounts(true),
 				listProjects(true)
 			]);
-			entry = e;
-			accountsById = new Map(accounts.map((a) => [a.id, a]));
-			projectsById = new Map(projects.map((p) => [p.id, p]));
-		} catch (err) {
-			errorMsg = isApiError(err) ? err.message : "Erreur de chargement de l'écriture";
+			if (entryResult.status === 'rejected') {
+				const err = entryResult.reason;
+				errorMsg = isApiError(err) ? err.message : "Erreur de chargement de l'écriture";
+				return;
+			}
+			entry = entryResult.value;
+			if (accountsResult.status === 'fulfilled') {
+				accountsById = new Map(accountsResult.value.map((a) => [a.id, a]));
+			}
+			if (projectsResult.status === 'fulfilled') {
+				projectsById = new Map(projectsResult.value.map((p) => [p.id, p]));
+			}
 		} finally {
 			loading = false;
 		}

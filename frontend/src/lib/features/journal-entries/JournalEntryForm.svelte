@@ -51,11 +51,6 @@
 
 	const isEdit = $derived(initialEntry !== null);
 
-	// Colonne projet affichée seulement si des projets actifs existent —
-	// sans projet défini, le formulaire reste identique à avant (zéro friction).
-	const showProjectColumn = $derived(projects.length > 0);
-	const tableColCount = $derived(showProjectColumn ? 5 : 4);
-
 	const JOURNALS: Journal[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 
 	function todayISO(): string {
@@ -90,6 +85,16 @@
 	);
 	/* svelte-ignore state_referenced_locally */
 	let version = $state(initialEntry?.version ?? 0);
+	// Colonne projet affichée si des projets actifs existent — sans projet
+	// défini, le formulaire reste identique à avant (zéro friction). En
+	// édition, une ligne peut porter un tag historique alors que tous les
+	// projets sont archivés (liste active vide) : on affiche quand même la
+	// colonne pour que le tag reste visible et détaguable (review Pass 1 BH-L2).
+	const showProjectColumn = $derived(
+		projects.length > 0 || lines.some((l) => l.projectId !== null)
+	);
+	const tableColCount = $derived(showProjectColumn ? 5 : 4);
+
 	let submitting = $state(false);
 
 	// Modale de conflit 409.
