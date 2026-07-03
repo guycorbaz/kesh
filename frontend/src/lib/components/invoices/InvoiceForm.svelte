@@ -32,6 +32,8 @@
 	import ContactPicker from './ContactPicker.svelte';
 	import ProductPicker from './ProductPicker.svelte';
 	import { getVatRates } from '$lib/features/vat-rates';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 
 	type Props = { invoice?: InvoiceResponse | null };
 	let { invoice = null }: Props = $props();
@@ -126,6 +128,28 @@
 	let date = $state<string>(initialInvoice?.date ?? todayIso());
 	let dueDate = $state<string>(initialInvoice?.dueDate ?? '');
 	let paymentTerms = $state<string>(initialInvoice?.paymentTerms ?? '');
+	// Projet analytique document-level (Epic 19, Story 19-4).
+	let projectId = $state<number | null>(initialInvoice?.projectId ?? null);
+	// Projets actifs pour le sélecteur — échec de chargement toléré (sélecteur
+	// masqué, création identique à avant). Pattern identique au fetch VAT rates.
+	let projects = $state<ProjectResponse[]>([]);
+	$effect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const list = await listProjects();
+				if (!cancelled) projects = list;
+			} catch {
+				// Échec toléré : sélecteur masqué (sauf tag existant, option ad-hoc).
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+	// Sélecteur affiché si des projets actifs existent OU si un tag historique
+	// est présent (projet archivé depuis — leçon 19-2 BH-L2 : visible/détaguable).
+	const showProjectField = $derived(projects.length > 0 || projectId !== null);
 	let lines = $state<LineState[]>(initLines());
 	let submitting = $state(false);
 	let errorMsg = $state<string>('');
@@ -320,6 +344,7 @@
 				date,
 				dueDate: dueDate || null,
 				paymentTerms: paymentTerms.trim() || null,
+				projectId,
 				lines: lines.map(stripUiKey),
 			};
 			if (invoice) {
@@ -372,6 +397,7 @@
 			date = fresh.date;
 			dueDate = fresh.dueDate ?? '';
 			paymentTerms = fresh.paymentTerms ?? '';
+			projectId = fresh.projectId ?? null;
 			lines = fresh.lines.map((l) => ({
 				description: l.description,
 				quantity: l.quantity,
@@ -453,6 +479,35 @@
 				placeholder="ex: 30 jours net"
 			/>
 		</div>
+		{#if showProjectField}
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="invoice-project">
+					{i18nMsg('invoice-field-project', 'Projet analytique (optionnel)')}
+				</label>
+				<!-- Arbre 2 niveaux (racines + sous-projets indentés), pattern 19-3. -->
+				<select
+					id="invoice-project"
+					bind:value={projectId}
+					data-testid="invoice-project"
+					class="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+				>
+					<option value={null}>{i18nMsg('invoice-project-none', '— Aucun')}</option>
+					{#if projectId !== null && !projects.some((p) => p.id === projectId)}
+						<!-- Tag historique sur projet archivé : option ad-hoc pour préserver
+						     la valeur au round-trip (grandfathering côté backend). -->
+						<option value={projectId}>
+							{i18nMsg('invoice-project-archived', 'Projet archivé')}
+						</option>
+					{/if}
+					{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+						<option value={root.id}>{root.code} — {root.name}</option>
+						{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+							<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+						{/each}
+					{/each}
+				</select>
+			</div>
+		{/if}
 	</div>
 
 	<div>

@@ -87,6 +87,7 @@ async fn create_validated_invoice(
                 vat_rate: *rate,
             })
             .collect(),
+        project_id: None,
     };
     let (inv, _) = invoices::create(pool, seeded.admin_user_id, new)
         .await

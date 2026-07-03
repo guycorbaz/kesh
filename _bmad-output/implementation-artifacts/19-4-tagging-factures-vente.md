@@ -1,6 +1,6 @@
 # Story 19.4 : Tagging analytique des factures de vente
 
-Status: ready-for-dev
+Status: review
 
 <!-- Rollout du pattern 19-3 (tag document-level + propagation) sur le flux
      factures CLIENT. Divergence structurelle vs 19-3 : la facture de vente est
@@ -63,12 +63,12 @@ so that les revenus du projet alimentent le rapport de rendement (revenus / coû
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration + compteurs** (AC: 1-2) : fichier SQL calqué 19-3, idempotence-audit, `migrations_upgrade_path` 41→42 + fenêtre.
-- [ ] **T2 — Entité + repo** (AC: 3-9) : structs, SELECTs (invoices ×2 + credit_notes), create/update validation + grandfathering, validate_invoice re-validation + stamping, credit_note héritage ; tests repo (14a-f).
-- [ ] **T3 — API** (AC: 10) : DTOs + handler create.
-- [ ] **T4 — Frontend** (AC: 11-13) : types TS, InvoiceForm sélecteur + payloads, page détail, i18n fallback FR.
-- [ ] **T5 — Tests E2E + doc** (AC: 15-16) : spec invoices + CHANGELOG.
-- [ ] **T6 — Gate** (AC: 16) : Test Locally First complet backend serial + frontend + E2E, exit-codes vérifiés.
+- [x] **T1 — Migration + compteurs** (AC: 1-2) : fichier SQL calqué 19-3, idempotence-audit, `migrations_upgrade_path` 41→42 + fenêtre.
+- [x] **T2 — Entité + repo** (AC: 3-9) : structs, SELECTs (invoices ×2 + credit_notes), create/update validation + grandfathering, validate_invoice re-validation + stamping, credit_note héritage ; tests repo (14a-f).
+- [x] **T3 — API** (AC: 10) : DTOs + handler create.
+- [x] **T4 — Frontend** (AC: 11-13) : types TS, InvoiceForm sélecteur + payloads, page détail, i18n fallback FR.
+- [x] **T5 — Tests E2E + doc** (AC: 15-16) : spec invoices + CHANGELOG.
+- [x] **T6 — Gate** (AC: 16) : Test Locally First complet backend serial + frontend + E2E, exit-codes vérifiés.
 
 ## Dev Notes
 
@@ -104,10 +104,43 @@ Multi-tenant scopé company (IDOR), DTOs camelCase, AppError 4xx jamais 500, i18
 
 ### Agent Model Used
 
+Claude Fable 5 (claude-fable-5) — dev-story orchestré inline.
+
 ### Debug Log References
+
+- Tests ciblés : invoices_validate_vat 13/13 (5 nouveaux 19-4 a-e), credit_notes_repository 6/6 (+1 héritage net-zéro), migrations_upgrade_path 8/8 (compteur 42, fenêtre total-19).
+- Frontend : svelte-check 0 erreur, lint-i18n PASS, unit verts, build OK. Clippy 0 warning.
+- Gate complet : workspace serial 41 suites — 1 fausse alerte (34 fails = migration 42 non appliquée à la DB dev partagée, hors code ; `cargo sqlx migrate run` puis kesh-db lib 214/214). **E2E 11/11 RÉELS** (invoices + credit-notes + supplier-invoices), dont le test 19-4.
+- **Réhabilitation spec invoices.spec.ts** (8 réparations de tests legacy cassés depuis ~mai, pré-existants — vérifiés sur main) : 3× `toHaveURL('/invoices')` (la création redirige vers le détail depuis 5.x P5), taux TVA `7.70` abrogé (Epic 11 vérifie en DB), prix catalogue 4 décimales, regex bouton PDF (aria-label a changé le nom accessible), flux « ouvrir depuis la liste » (on atterrit déjà sur le détail), assertions `toContainText` sur des `<input>` → `toHaveValue`, prérequis compte bancaire principal (helper `ensurePrimaryBankAccountViaApi` — le seed n'en a plus depuis v014-1), regex toast (clé FTL traduit le code, pas le message backend).
 
 ### Completion Notes List
 
+- **T1** : migration `20260703000001_invoices_project.sql` (calque 19-3), idempotence-audit +1 ligne + stats 42, compteur upgrade_path 41→42 et fenêtre `total-18`→`total-19` (frontière historique 23 préservée).
+- **T2** : `Invoice`/`NewInvoice`/`InvoiceUpdate.project_id` ; **5 SELECTs à colonnes explicites étendus** (FIND_INVOICE_SCOPED_SQL, delete, mark_as_paid-list, credit_notes lock, reconciliation INVOICE_COLUMNS — piège n°1 de la spec ×5 sites réels) ; create → validation helper 19-2 ; update → **pré-lecture non verrouillée + validation seulement si changement** (grandfathering, ordre companies→projects→invoice_row anti-ABBA) ; `is_no_op_change` compare project_id ; validate_invoice → **re-validation par SELECT simple SANS verrou** (on détient la ligne facture : prendre le sentinel créerait l'inversion ABBA avec create/update ; race archivage résiduelle = dette LOW-1 19-3) + stamping ; credit_note → héritage `invoice.project_id` sans re-check (DC3).
+- **T3** : DTOs create/update/response + mapping handlers ; ~40 littéraux `NewInvoice`/`InvoiceUpdate` défautés `None` par script ; export CSV souveraineté invoices + colonne `project_id`.
+- **T4** : sélecteur document-level arbre 2 niveaux dans `InvoiceForm` ($effect pattern VAT rates, échec toléré, option ad-hoc « Projet archivé », visible si tag existant — leçon 19-2 BH-L2), payloads create/update + reload conflit, page détail `projectLabel` (`listProjects(true)`, fallback `#id`).
+- **T5** : E2E « crée une facture avec projet analytique » (POST intercepté ground-truth + libellé détail) ; CHANGELOG [Non publié].
+
 ### File List
 
+- crates/kesh-db/migrations/20260703000001_invoices_project.sql (nouvelle)
+- docs/migrations-idempotence-audit.md (+1 ligne, stats 42)
+- crates/kesh-db/tests/migrations_upgrade_path.rs (42, total-19)
+- crates/kesh-db/src/entities/invoice.rs (3 structs)
+- crates/kesh-db/src/repositories/invoices.rs (SELECTs, create/update/validate_invoice, no-op, tests inline défautés)
+- crates/kesh-db/src/repositories/credit_notes.rs (SELECT + héritage projet)
+- crates/kesh-db/src/repositories/reconciliation.rs (INVOICE_COLUMNS)
+- crates/kesh-api/src/routes/invoices.rs (DTOs + handlers)
+- crates/kesh-api/src/exports/csv_tables.rs (CSV invoices + project_id)
+- crates/kesh-reconciliation/src/matching.rs + tests divers (littéraux défautés None)
+- crates/kesh-db/tests/invoices_validate_vat.rs (+5 tests 19-4 + helpers)
+- crates/kesh-db/tests/credit_notes_repository.rs (+1 test héritage net-zéro)
+- frontend/src/lib/features/invoices/invoices.types.ts (projectId)
+- frontend/src/lib/components/invoices/InvoiceForm.svelte (sélecteur + payloads + reload)
+- frontend/src/routes/(app)/invoices/[id]/+page.svelte (affichage projet)
+- frontend/tests/e2e/invoices.spec.ts (+1 test)
+- CHANGELOG.md ([Non publié] factures de vente)
+
 ## Change Log
+
+- **Dev (2026-07-03)** : T1→T5 complets. Décisions au-delà de la spec, documentées : (a) re-validation au posting par SELECT simple sans verrou (éviter l'inversion ABBA sentinel↔ligne facture — la spec proposait le helper, incompatible avec le lock déjà détenu) ; (b) update = pré-lecture non verrouillée avant le FOR UPDATE facture (même pattern que 19-2 update) ; (c) 5 SELECTs explicites réels au lieu des 2 listés par la spec (reconciliation.rs INVOICE_COLUMNS + mark_as_paid list découverts au build/sweep).

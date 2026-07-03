@@ -39,7 +39,8 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
 
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
 const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
-    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
+    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, project_id, \
+    version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
 
 /// Snapshot JSON d'une facture (entête + lignes) pour l'audit log.
@@ -356,9 +357,20 @@ pub async fn create(
     let total = compute_total(&new.lines);
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
+    // Projet analytique optionnel (Story 19-4) : existe, même company, non
+    // archivé. Sentinel `companies` puis FOR UPDATE projets (Pattern 5).
+    if let Some(pid) = new.project_id {
+        if let Err(e) =
+            super::projects::validate_taggable_in_tx(&mut tx, new.company_id, &[pid]).await
+        {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(e);
+        }
+    }
+
     let result = sqlx::query(
         "INSERT INTO invoices (company_id, contact_id, date, due_date, payment_terms, \
-         total_amount) VALUES (?, ?, ?, ?, ?, ?)",
+         total_amount, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_id)
@@ -366,6 +378,7 @@ pub async fn create(
     .bind(new.due_date)
     .bind(&new.payment_terms)
     .bind(total)
+    .bind(new.project_id)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?;
@@ -616,6 +629,7 @@ fn is_no_op_change(
         || before_inv.date != changes.date
         || before_inv.due_date != changes.due_date
         || before_inv.payment_terms != changes.payment_terms
+        || before_inv.project_id != changes.project_id
     {
         return false;
     }
@@ -663,6 +677,33 @@ pub async fn update(
     }
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Projet analytique (Story 19-4) : validé UNIQUEMENT si la valeur change
+    // (grandfathering du tag inchangé — un projet archivé après la pose du tag
+    // ne bloque pas l'édition des autres champs du brouillon, leçon 19-2).
+    // Pré-lecture NON verrouillée scopée company, AVANT le FOR UPDATE facture,
+    // pour respecter l'ordre de verrous global companies → projects → invoices
+    // (le sentinel du helper ne doit jamais être pris en détenant la ligne
+    // facture — inversion ABBA avec create). Race bénigne : la valeur re-lue
+    // sous lock plus bas fait foi pour le no-op check.
+    let prior_project_id: Option<i64> =
+        sqlx::query_scalar("SELECT project_id FROM invoices WHERE id = ? AND company_id = ?")
+            .bind(id)
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?
+            .flatten();
+    if let Some(pid) = changes.project_id {
+        if changes.project_id != prior_project_id {
+            if let Err(e) =
+                super::projects::validate_taggable_in_tx(&mut tx, company_id, &[pid]).await
+            {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(e);
+            }
+        }
+    }
 
     // KF-020 (closes #49) : SELECT … FOR UPDATE pour fermer la race no-op
     // résiduelle KF-004. Sous REPEATABLE READ + plain SELECT, une tx parallèle
@@ -739,7 +780,7 @@ pub async fn update(
 
     let rows = sqlx::query(
         "UPDATE invoices SET contact_id = ?, date = ?, due_date = ?, payment_terms = ?, \
-         total_amount = ?, version = version + 1 \
+         total_amount = ?, project_id = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ? AND status = 'draft'",
     )
     .bind(changes.contact_id)
@@ -747,6 +788,7 @@ pub async fn update(
     .bind(changes.due_date)
     .bind(&changes.payment_terms)
     .bind(total)
+    .bind(changes.project_id)
     .bind(id)
     .bind(company_id)
     .bind(expected_version)
@@ -815,7 +857,8 @@ pub async fn delete(
 
     let current_opt = sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
+         payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
+         created_at, updated_at \
          FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(id)
@@ -1056,6 +1099,35 @@ pub async fn validate_invoice(
 
         let lines_before = fetch_lines(&mut tx, invoice_id).await?;
 
+        // (1 bis) Story 19-4 — re-validation du projet analytique AU POSTING :
+        // le projet peut avoir été archivé entre le brouillon et la validation,
+        // et toute nouvelle entrée au grand livre doit être sur projet actif
+        // (équivalence avec 19-3 où création fournisseur = posting immédiat).
+        // SELECT simple SANS verrou, volontairement : on détient déjà la ligne
+        // facture (FOR UPDATE ci-dessus) — prendre le sentinel companies ici
+        // créerait une inversion ABBA avec create/update (qui prennent
+        // sentinel AVANT la ligne facture). La race d'archivage résiduelle
+        // (fenêtre ms) est la même dette LOW acceptée qu'en 19-3 (LOW-1).
+        // Existence/company déjà garanties (FK + validation à la pose du tag).
+        if let Some(pid) = invoice_before.project_id {
+            let archived: Option<bool> =
+                sqlx::query_scalar("SELECT archived FROM projects WHERE id = ? AND company_id = ?")
+                    .bind(pid)
+                    .bind(company_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(map_db_error)?;
+            match archived {
+                None => return Err(DbError::NotFound),
+                Some(true) => {
+                    return Err(DbError::IllegalStateTransition(
+                        "le projet analytique est archivé".into(),
+                    ));
+                }
+                Some(false) => {}
+            }
+        }
+
         // (2) Config company (lazy create si absente).
         let settings =
             company_invoice_settings::get_or_create_default_in_tx(&mut tx, company_id).await?;
@@ -1144,8 +1216,10 @@ pub async fn validate_invoice(
                 entry_date: invoice_before.date,
                 journal,
                 description: entry_description,
-                // Tag projet des factures de vente = Story 19-4 (à venir) → None ici.
-                project_id: None,
+                // Story 19-4 : le tag document-level de la facture est propagé
+                // sur toutes les lignes de l'écriture de vente (via le bind
+                // `line.project_id.or(new.project_id)` de create_in_tx).
+                project_id: invoice_before.project_id,
                 lines: entry_lines,
             },
         )
@@ -1452,7 +1526,8 @@ pub async fn list_all_by_company(
 ) -> Result<Vec<Invoice>, DbError> {
     sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
+         payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
+         created_at, updated_at \
          FROM invoices \
          WHERE company_id = ? \
          ORDER BY id",
@@ -1816,6 +1891,7 @@ mod tests {
                 sample_line("Conseil", dec!(4.5), dec!(200.00)),
                 sample_line("Logo", dec!(1), dec!(500.00)),
             ],
+            project_id: None,
         };
         let (inv, lines) = create(&pool, admin_user_id, new).await.unwrap();
         assert_eq!(inv.status, "draft");
@@ -1847,6 +1923,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("Item A", dec!(2), dec!(100.00))],
+                project_id: None,
             },
         )
         .await
@@ -1890,6 +1967,7 @@ mod tests {
                     sample_line("Old A", dec!(1), dec!(100.00)),
                     sample_line("Old B", dec!(1), dec!(100.00)),
                 ],
+                project_id: None,
             },
         )
         .await
@@ -1911,6 +1989,7 @@ mod tests {
                     sample_line("New 2", dec!(1), dec!(50.00)),
                     sample_line("New 3", dec!(1), dec!(50.00)),
                 ],
+                project_id: None,
             },
         )
         .await
@@ -1942,6 +2021,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -1959,6 +2039,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X2", dec!(1), dec!(20.00))],
+                project_id: None,
             },
         )
         .await
@@ -1986,6 +2067,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2007,6 +2089,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("Y", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2035,6 +2118,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("Before", dec!(1), dec!(100.00))],
+                project_id: None,
             },
         )
         .await
@@ -2052,6 +2136,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("After", dec!(2), dec!(50.00))],
+                project_id: None,
             },
         )
         .await
@@ -2092,6 +2177,7 @@ mod tests {
                     sample_line("L1", dec!(1), dec!(10.00)),
                     sample_line("L2", dec!(1), dec!(20.00)),
                 ],
+                project_id: None,
             },
         )
         .await
@@ -2129,6 +2215,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2162,6 +2249,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2195,6 +2283,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("L", dec!(1), dec!(50.00))],
+                project_id: None,
             },
         )
         .await
@@ -2242,6 +2331,7 @@ mod tests {
                     sample_line("B", dec!(1), dec!(20.00)),
                     sample_line("C", dec!(1), dec!(30.00)),
                 ],
+                project_id: None,
             },
         )
         .await
@@ -2277,6 +2367,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2322,6 +2413,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2363,6 +2455,7 @@ mod tests {
                     due_date: None,
                     payment_terms: None,
                     lines: vec![sample_line("L", dec!(1), dec!(10.00))],
+                    project_id: None,
                 },
             )
             .await
@@ -2411,6 +2504,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("L", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2425,6 +2519,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("L", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2567,6 +2662,7 @@ mod tests {
                 due_date,
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), amount)],
+                project_id: None,
             },
         )
         .await
@@ -2630,6 +2726,7 @@ mod tests {
                 due_date: Some(today()),
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -2787,6 +2884,7 @@ mod tests {
                 due_date: Some(today()),
                 payment_terms: None,
                 lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
             },
         )
         .await
@@ -3321,6 +3419,7 @@ mod tests {
                     due_date: None,
                     payment_terms: Some("30 jours net".into()),
                     lines: vec![sample_line("Item original", dec!(1), dec!(100.00))],
+                    project_id: None,
                 },
             )
             .await
@@ -3350,6 +3449,7 @@ mod tests {
                         due_date: None,
                         payment_terms: Some("30 jours net".into()),
                         lines: vec![sample_line("Item modifié par A", dec!(1), dec!(100.00))],
+                        project_id: None,
                     },
                 )
                 .await
@@ -3369,6 +3469,7 @@ mod tests {
                         due_date: None,
                         payment_terms: Some("30 jours net".into()),
                         lines: vec![sample_line("Item original", dec!(1), dec!(100.00))],
+                        project_id: None,
                     },
                 )
                 .await
@@ -3499,6 +3600,7 @@ mod tests {
                     sample_line("Conseil", dec!(2), dec!(150.00)),
                     sample_line("Hébergement", dec!(1), dec!(50.00)),
                 ],
+                project_id: None,
             },
         )
         .await
@@ -3520,6 +3622,7 @@ mod tests {
                 due_date: inv.due_date,
                 payment_terms: inv.payment_terms.clone(),
                 lines: lines.iter().map(line_to_new).collect(),
+                project_id: None,
             },
         )
         .await
@@ -3569,6 +3672,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("Item A", dec!(1), dec!(100.00))],
+                project_id: None,
             },
         )
         .await
@@ -3590,6 +3694,7 @@ mod tests {
                 due_date: inv.due_date,
                 payment_terms: inv.payment_terms.clone(),
                 lines: new_lines,
+                project_id: None,
             },
         )
         .await
@@ -3631,6 +3736,7 @@ mod tests {
                     sample_line("Ligne A", dec!(1), dec!(100.00)),
                     sample_line("Ligne B", dec!(1), dec!(200.00)),
                 ],
+                project_id: None,
             },
         )
         .await
@@ -3651,6 +3757,7 @@ mod tests {
                 due_date: inv.due_date,
                 payment_terms: inv.payment_terms.clone(),
                 lines: reordered,
+                project_id: None,
             },
         )
         .await
@@ -3737,6 +3844,7 @@ mod tests {
                 due_date: Some(due),
                 payment_terms: None,
                 lines: vec![sample_line("Conseil", dec!(1), dec!(100.00))],
+                project_id: None,
             },
         )
         .await
@@ -3751,6 +3859,7 @@ mod tests {
                 due_date: Some(due),
                 payment_terms: None,
                 lines: vec![sample_line("Conseil", dec!(1), dec!(200.00))],
+                project_id: None,
             },
         )
         .await
@@ -3843,6 +3952,7 @@ mod tests {
                 due_date: None,
                 payment_terms: None,
                 lines: vec![sample_line("L", dec!(1), dec!(50.00))],
+                project_id: None,
             },
         )
         .await

@@ -35,6 +35,8 @@ export interface InvoiceResponse {
 	totalAmount: string;
 	journalEntryId: number | null;
 	paidAt: string | null;
+	/** Projet analytique document-level (Epic 19). `null` = non taguée. */
+	projectId: number | null;
 	/** Calculé backend (P6 review pass 2). Source unique de vérité pour le badge « en retard ». */
 	isOverdue: boolean;
 	version: number;
@@ -144,6 +146,8 @@ export interface CreateInvoiceRequest {
 	date: string;
 	dueDate?: string | null;
 	paymentTerms?: string | null;
+	/** Projet analytique optionnel (Epic 19, Story 19-4). */
+	projectId?: number | null;
 	lines: CreateInvoiceLineRequest[];
 }
 

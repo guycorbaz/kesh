@@ -164,6 +164,7 @@ async fn create_validated_invoice(
                 vat_rate: *rate,
             })
             .collect(),
+        project_id: None,
     };
     let (inv, _) = invoices::create(pool, admin_id, new).await.unwrap();
     let validated = invoices::validate_invoice(pool, company_id, inv.id, admin_id)
@@ -194,6 +195,7 @@ async fn create_draft_invoice(
             unit_price: price,
             vat_rate: rate,
         }],
+        project_id: None,
     };
     let (inv, _) = invoices::create(pool, admin_id, new).await.unwrap();
     inv.id

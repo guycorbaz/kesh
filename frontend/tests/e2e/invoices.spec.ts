@@ -118,8 +118,65 @@ test.describe('Factures — création brouillon', () => {
 		await numericInputs.nth(1).fill('200.00');
 
 		await page.getByRole('button', { name: 'Créer la facture' }).click();
-		await expect(page).toHaveURL('/invoices');
+		// Depuis Story 5.x (review P5), la création redirige vers la vue DÉTAIL.
+		await expect(page).toHaveURL(/\/invoices\/\d+$/);
+		await expect(page.getByRole('heading', { name: 'Facture' })).toBeVisible();
+		// Persistance : la facture apparaît dans la liste (nom du contact).
+		await page.goto('/invoices');
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
+	});
+
+	test('crée une facture avec projet analytique (Story 19-4)', async ({ page }) => {
+		await login(page);
+		const contactName = uniq('Client Projet');
+		await createContactViaApi(page, contactName);
+
+		// Projet actif via l'API (code unique par run).
+		const code = `E2E194-${Date.now() % 1000000}`;
+		const setupCtx = await authedApiContext(page);
+		let projectId: number;
+		try {
+			const resp = await setupCtx.post('/api/v1/projects', {
+				data: { parentId: null, code, name: 'Projet E2E 19-4', description: null, startDate: null, endDate: null }
+			});
+			expect(resp.ok()).toBeTruthy();
+			projectId = (await resp.json()).id;
+		} finally {
+			await disposeContextSafe(setupCtx);
+		}
+
+		await page.goto('/invoices/new');
+		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
+
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+
+		const firstRow = page.locator('tbody tr').first();
+		await firstRow.locator('input[type="text"]').first().fill('Prestation projet');
+		const numericInputs = firstRow.locator('input[inputmode="decimal"]');
+		await numericInputs.nth(0).fill('1');
+		await numericInputs.nth(1).fill('500.00');
+
+		// Sélecteur projet document-level (arbre 2 niveaux).
+		await page.getByTestId('invoice-project').selectOption({
+			label: `${code} — Projet E2E 19-4`
+		});
+
+		// Capturer la réponse du POST pour vérifier la persistance ground-truth.
+		const [resp] = await Promise.all([
+			page.waitForResponse(
+				(r) => r.url().includes('/api/v1/invoices') && r.request().method() === 'POST'
+			),
+			page.getByRole('button', { name: 'Créer la facture' }).click()
+		]);
+		expect(resp.ok()).toBeTruthy();
+		const created: { id: number; projectId: number | null } = await resp.json();
+		expect(created.projectId).toBe(projectId);
+
+		// La vue détail affiche le libellé du projet.
+		await page.goto(`/invoices/${created.id}`);
+		await expect(page.getByTestId('invoice-project')).toHaveText(`${code} — Projet E2E 19-4`);
 	});
 
 	test('crée une facture avec 1 ligne libre + 1 ligne catalogue et persiste après reload (AC #1, #2)', async ({
@@ -164,24 +221,31 @@ test.describe('Factures — création brouillon', () => {
 		const secondRow = page.locator('tbody tr').nth(1);
 		await expect(secondRow.locator('input[type="text"]').first()).toHaveValue(productName);
 		const secondRowNumerics = secondRow.locator('input[inputmode="decimal"]');
-		await expect(secondRowNumerics.nth(1)).toHaveValue('150.00');
+		await expect(secondRowNumerics.nth(1)).toHaveValue('150.0000'); // prix catalogue à 4 décimales
 
 		// Soumettre
 		await page.getByRole('button', { name: 'Créer la facture' }).click();
-		await expect(page).toHaveURL('/invoices');
+		// Depuis Story 5.x (review P5), la création redirige vers la vue DÉTAIL.
+		await expect(page).toHaveURL(/\/invoices\/\d+$/);
 
-		// Ouvrir la facture créée pour vérifier la persistance après reload
-		const row = page.locator('tbody tr', { hasText: contactName }).first();
-		await row.getByRole('button').first().click();
-		await expect(page.getByRole('heading', { name: 'Facture' })).toBeVisible();
+		// La persistance des lignes se vérifie sur la page d'ÉDITION (le
+		// testid invoice-lines-table appartient au formulaire InvoiceForm).
+		const detailUrl = page.url();
+		await page.goto(`${detailUrl}/edit`);
 
 		// Reload dur — l'état doit être identique. Scope à la table de lignes via testid
 		// (un autre <tbody> peut exister sur la page : tableau récap, picker produits, etc.).
 		await page.reload();
 		const linesTable = page.locator('[data-testid="invoice-lines-table"]');
 		await expect(linesTable).toBeVisible();
-		await expect(linesTable).toContainText('Prestation libre');
-		await expect(linesTable).toContainText(productName);
+		// Les descriptions du formulaire vivent dans des <input> — asserter la
+		// VALUE (toContainText ne voit pas les valeurs d'inputs).
+		const rows = linesTable.locator('tbody tr');
+		await expect(rows).toHaveCount(2);
+		await expect(rows.nth(0).locator('input[type="text"]').first()).toHaveValue(
+			'Prestation libre'
+		);
+		await expect(rows.nth(1).locator('input[type="text"]').first()).toHaveValue(productName);
 	});
 });
 
@@ -212,6 +276,26 @@ async function createContactWithAddressViaApi(
 	}
 }
 
+/** Story 5.3 prérequis PDF : le QR-bill exige un compte bancaire principal
+ * (le seed `with-company` n'en configure pas depuis v014-1). Idempotent au
+ * niveau du spec : IBAN unique par appel. */
+async function ensurePrimaryBankAccountViaApi(page: import('@playwright/test').Page): Promise<void> {
+	const ctx = await authedApiContext(page);
+	try {
+		const resp = await ctx.post('/api/v1/bank-accounts', {
+			data: {
+				bankName: 'Banque E2E PDF',
+				iban: 'CH9300762011623852957',
+				isPrimary: true,
+			},
+		});
+		// 409 possible si un run précédent l'a déjà créé — acceptable.
+		expect([200, 201, 409]).toContain(resp.status());
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
 async function createAndValidateInvoiceViaApi(
 	page: import('@playwright/test').Page,
 	contactId: number,
@@ -230,7 +314,7 @@ async function createAndValidateInvoiceViaApi(
 						description: 'Conseil stratégique',
 						quantity: '4.5',
 						unitPrice: '200.00',
-						vatRate: '7.70',
+						vatRate: '8.10',
 					},
 				],
 			},
@@ -248,6 +332,7 @@ async function createAndValidateInvoiceViaApi(
 test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 	test('télécharge le PDF d\'une facture validée (golden path)', async ({ page, context }) => {
 		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
 		const contactId = await createContactWithAddressViaApi(page, uniq('PDF Client'));
 		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
 
@@ -286,12 +371,12 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 		await inputs.nth(0).fill('1');
 		await inputs.nth(1).fill('50');
 		await page.getByRole('button', { name: 'Créer la facture' }).click();
-		await expect(page).toHaveURL('/invoices');
+		await expect(page).toHaveURL(/\/invoices\/\d+$/); // redirection détail (Story 5.x P5)
 
-		// Ouvre la facture brouillon → pas de bouton PDF
-		const row = page.locator('tbody tr', { hasText: contactName }).first();
-		await row.getByRole('button').first().click();
-		await expect(page.getByRole('button', { name: /Télécharger PDF/i })).toHaveCount(0);
+		// On est déjà sur le détail du brouillon → pas de bouton PDF.
+		// NB : l'accessible name du bouton vient de son aria-label
+		// (« Télécharger la facture N au format PDF »).
+		await expect(page.getByRole('button', { name: /Télécharger.*PDF/i })).toHaveCount(0);
 	});
 
 	test('erreur 400 INVOICE_NOT_PDF_READY affichée comme toast', async ({ page }) => {
@@ -318,11 +403,13 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 		});
 
 		await page.goto(`/invoices/${invoiceId}`);
-		await page.getByRole('button', { name: /Télécharger PDF/i }).click();
+		await page.getByRole('button', { name: /Télécharger.*PDF/i }).click();
 
 		// Toast d'erreur affichant le message INVOICE_NOT_PDF_READY.
 		await expect(
-			page.getByText(/compte bancaire principal|primary bank|INVOICE_NOT_PDF_READY/i),
+			// La clé FTL invoice-pdf-error-invoice-not-pdf-ready traduit le code —
+			// le message backend intercepté n'est pas affiché tel quel.
+			page.getByText(/pas prête pour la génération PDF|compte bancaire principal|INVOICE_NOT_PDF_READY/i),
 		).toBeVisible({ timeout: 5000 });
 	});
 });
