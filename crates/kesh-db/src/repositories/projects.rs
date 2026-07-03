@@ -79,6 +79,8 @@ pub async fn find_by_id_in_tx(
 /// lignes projets — évite l'inversion ABBA (deadlock) avec le chemin d'archivage
 /// (`set_archived` prend le sentinel puis met à jour le projet) et ferme la race
 /// d'archivage concurrent. No-op si `project_ids` est vide (aucun verrou pris).
+/// Les ids dupliqués sont dédupliqués en interne — les callers peuvent passer
+/// les tags par-ligne bruts (plusieurs lignes sur le même projet).
 ///
 /// Erreurs : id manquant ou cross-company → [`DbError::NotFound`] ; projet
 /// archivé → [`DbError::IllegalStateTransition`].

@@ -1,6 +1,6 @@
 # Story 19.2 : Tagging analytique des écritures manuelles
 
-Status: review
+Status: done
 
 <!-- Rollout du pattern posé par 19-1 (dimension project_id sur journal_entry_lines)
      et 19-3 (validation projet + propagation). Ici : tag PAR LIGNE dans le
@@ -158,5 +158,6 @@ Claude Fable 5 (claude-fable-5) — dev-story orchestré inline.
 
 ## Change Log
 
+- **Code-review Pass 2 (2026-07-03, Haiku ×3, contexte frais, diff aplati) — CONVERGÉ 0 > LOW** : Blind Hunter 1 MEDIUM + 1 LOW, Edge Case Hunter 0 (21 greps), Acceptance Auditor GO 17/17 ACs + 4 patches Pass 1 vérifiés grep (58 tool uses). **BH2-M1 réfuté ground-truth** (grep lignes 46-50 `[id]/+page.svelte` : le comportement exigé — erreur si l'écriture échoue, fallback `#id` seulement pour les référentiels — est exactement celui implémenté ; faux-positif de lecture Haiku). **BH2-L1** (doc dédup helper) : patché — doc `validate_taggable_in_tx` précise la déduplication interne. **Trend > LOW : Pass 1 = 2 → Pass 2 = 0. Critère d'arrêt CLAUDE.md atteint.** Modèles : dev Fable 5 → Pass 1 Sonnet → Pass 2 Haiku.
 - **Code-review Pass 1 (2026-07-03, Sonnet ×3 — Blind Hunter / Edge Case Hunter / Acceptance Auditor, diff aplati main...HEAD)** : 7 findings dédupliqués (2 MEDIUM + 5 LOW), verdict Acceptance Auditor GO 17/17 ACs + 4/4 DC + 5/5 pièges. Patches : (1) **ECH-M1** page détail `Promise.all` → `allSettled` (échec listProjects/fetchAccounts dégrade en fallback `#id` au lieu de casser la page — aligné pattern page liste) ; (2) **BH-M1** portée écriture du grandfathering = décision documentée (commentaire rationale « déplacement de tag archivé entre lignes » + nouveau test `test_update_moves_archived_tag_between_lines`, 30/30 repo verts) ; (3) **BH-L2** `showProjectColumn` inclut les lignes taguées (tag historique visible/détaguable même si tous projets archivés) ; (4) **AA-L1** Change Log complété : l'ajout de la colonne `project_id` à l'export CSV souveraineté (`csv_tables.rs` + 2 tests) est un écart hors-AC assumé — les lignes taguées existent depuis 19-3, l'export souveraineté doit les porter (leçon 12-1 export). Dette LOW acceptée : **AA-L2** grandfathering sans E2E UI (couverture repo suffisante). No-action : **AA-L3** test concurrence ABBA (aucun équivalent projet, dixit reviewer) ; **ECH-L1** sentinel pris avant l'existence check de l'entry (imposé par l'ordre anti-ABBA companies→projects→fiscal_years ; un pré-check ajouterait un SELECT au chemin nominal). Gate post-patch : repo 30/30 + front check 0/346 unit/build.
 - **Dev (2026-07-03)** : T1→T6 complets (kesh-core draft opaque + repo validation Pattern 5 étape 0 + grandfathering update + API DTOs + frontend sélecteur par ligne/détail). Décisions au-delà de la spec, documentées : grandfathering des tags archivés pré-existants à l'update (sinon écritures historiques non-éditables) + validation AVANT le lock fiscal_years (ordre global companies→projects→fiscal_years, anti-ABBA inter-flux avec 19-3).
