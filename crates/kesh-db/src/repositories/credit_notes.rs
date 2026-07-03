@@ -165,12 +165,14 @@ fn generate_credit_note_journal_lines(
         account_id: receivable_account_id,
         debit: Decimal::ZERO,
         credit: total_ht + total_vat,
+        project_id: None,
     });
     // (1) Débit produit HT (annule le produit).
     entry_lines.push(NewJournalEntryLine {
         account_id: revenue_account_id,
         debit: total_ht,
         credit: Decimal::ZERO,
+        project_id: None,
     });
 
     // (2..N) Débit TVA due par taux > 0 (annule la TVA due). Compte requis
@@ -185,6 +187,7 @@ fn generate_credit_note_journal_lines(
                     account_id: vat_account,
                     debit: *amount,
                     credit: Decimal::ZERO,
+                    project_id: None,
                 });
             }
         }

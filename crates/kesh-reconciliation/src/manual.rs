@@ -108,11 +108,13 @@ pub fn build_journal_entry_for_counterparty(
                 account_id: bank_account_journal_id,
                 debit: bank_debit,
                 credit: bank_credit,
+                project_id: None,
             },
             NewJournalEntryLine {
                 account_id: counterparty_account_id,
                 debit: counterparty_debit,
                 credit: counterparty_credit,
+                project_id: None,
             },
         ],
     }

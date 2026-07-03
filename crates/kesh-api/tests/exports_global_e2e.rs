@@ -276,11 +276,13 @@ async fn post_entry(
                     account_id: debit_account,
                     debit: amount,
                     credit: Decimal::ZERO,
+                    project_id: None,
                 },
                 NewJournalEntryLine {
                     account_id: credit_account,
                     debit: Decimal::ZERO,
                     credit: amount,
+                    project_id: None,
                 },
             ],
         },

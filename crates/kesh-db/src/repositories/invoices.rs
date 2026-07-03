@@ -966,12 +966,14 @@ fn generate_invoice_journal_lines(
         account_id: receivable_account_id,
         debit: total_ht + total_vat,
         credit: Decimal::ZERO,
+        project_id: None,
     });
     // (1) Crédit produit HT.
     entry_lines.push(NewJournalEntryLine {
         account_id: revenue_account_id,
         debit: Decimal::ZERO,
         credit: total_ht,
+        project_id: None,
     });
 
     // (2..N) Crédit TVA due par taux > 0. La config du compte TVA due n'est requise
@@ -986,6 +988,7 @@ fn generate_invoice_journal_lines(
                     account_id: vat_account,
                     debit: Decimal::ZERO,
                     credit: *amount,
+                    project_id: None,
                 });
             }
         }

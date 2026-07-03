@@ -54,6 +54,11 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-title',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-message',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-reload',
+  // Story 19-2 — tag analytique par-ligne (Epic 19). Même situation #30
+  // (dossier `journal-entries` pluriel ne matche pas le préfixe `journal-entry`).
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-col-project',
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-project-none',
+  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-project-archived',
   // Story 18-1c — Assistant TVA achat (VatPurchaseAssistant). Les clés
   // `vat-purchase-*` partagent le premier segment `vat` avec la feature
   // vat-rates ; l'assistant réutilise aussi `vat-category-*` (dynamique) pour

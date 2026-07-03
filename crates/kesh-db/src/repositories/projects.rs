@@ -71,6 +71,55 @@ pub async fn find_by_id_in_tx(
     .map_err(map_db_error)
 }
 
+/// Valide un ensemble de projets analytiques pour un tagging (Epic 19) : chaque
+/// id doit exister, appartenir à `company_id` et ne pas être archivé.
+///
+/// Ordre de verrouillage global (docs/MULTI-TENANT-SCOPING-PATTERNS.md, Pattern 5) :
+/// verrou sentinelle `companies` **une seule fois**, PUIS `FOR UPDATE` sur les
+/// lignes projets — évite l'inversion ABBA (deadlock) avec le chemin d'archivage
+/// (`set_archived` prend le sentinel puis met à jour le projet) et ferme la race
+/// d'archivage concurrent. No-op si `project_ids` est vide (aucun verrou pris).
+/// Les ids dupliqués sont dédupliqués en interne — les callers peuvent passer
+/// les tags par-ligne bruts (plusieurs lignes sur le même projet).
+///
+/// Erreurs : id manquant ou cross-company → [`DbError::NotFound`] ; projet
+/// archivé → [`DbError::IllegalStateTransition`].
+pub async fn validate_taggable_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    project_ids: &[i64],
+) -> Result<(), DbError> {
+    if project_ids.is_empty() {
+        return Ok(());
+    }
+    let mut ids: Vec<i64> = project_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+
+    crate::repositories::bank_accounts::acquire_company_sentinel_lock(tx, company_id).await?;
+
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT id, archived FROM projects \
+         WHERE company_id = ? AND id IN ({placeholders}) FOR UPDATE"
+    );
+    let mut q = sqlx::query_as::<_, (i64, bool)>(&sql).bind(company_id);
+    for pid in &ids {
+        q = q.bind(pid);
+    }
+    let rows: Vec<(i64, bool)> = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
+
+    if rows.len() != ids.len() {
+        return Err(DbError::NotFound);
+    }
+    if rows.iter().any(|(_, archived)| *archived) {
+        return Err(DbError::IllegalStateTransition(
+            "le projet analytique est archivé".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// `true` si le projet a au moins un sous-projet (garde 2 niveaux : un projet
 /// parent ne peut pas devenir lui-même sous-projet).
 pub async fn has_children(

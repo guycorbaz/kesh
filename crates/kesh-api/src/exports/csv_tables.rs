@@ -283,6 +283,7 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
         "line_order",
         "debit",
         "credit",
+        "project_id",
     ])
     .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     for jl in rows {
@@ -293,6 +294,8 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
             jl.line_order.to_string(),
             fmt_decimal(jl.debit),
             fmt_decimal(jl.credit),
+            // Tag analytique (Epic 19) — vide si ligne non taguée.
+            jl.project_id.map(|p| p.to_string()).unwrap_or_default(),
         ])
         .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     }
@@ -839,6 +842,7 @@ mod tests {
             line_order: 1,
             debit: dec!(150.25),
             credit: dec!(0.00),
+            project_id: None,
         }
     }
 
@@ -901,10 +905,21 @@ mod tests {
         let mut buf = Vec::new();
         serialize_journal_entry_lines_csv(&[sample_line()], &mut buf).expect("serialize ok");
         let text = std::str::from_utf8(&buf[3..]).unwrap();
-        // Decimal formaté 2 décimales — debit 150.25 + credit 0.00
-        assert!(text.contains(";150.25;0.00\r\n"), "got: {text}");
+        // Decimal formaté 2 décimales — debit 150.25 + credit 0.00,
+        // project_id vide (ligne non taguée, Story 19-2).
+        assert!(text.contains(";150.25;0.00;\r\n"), "got: {text}");
         // Header
-        assert!(text.starts_with("id;entry_id;account_id;line_order;debit;credit"));
+        assert!(text.starts_with("id;entry_id;account_id;line_order;debit;credit;project_id"));
+    }
+
+    #[test]
+    fn serialize_journal_entry_lines_csv_tagged_line_exports_project_id() {
+        let mut line = sample_line();
+        line.project_id = Some(7);
+        let mut buf = Vec::new();
+        serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        assert!(text.contains(";150.25;0.00;7\r\n"), "got: {text}");
     }
 
     #[test]

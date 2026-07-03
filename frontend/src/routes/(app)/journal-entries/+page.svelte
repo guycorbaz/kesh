@@ -12,6 +12,8 @@
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
 		deleteJournalEntry,
@@ -39,6 +41,9 @@
 	let entries = $state<JournalEntryResponse[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
 	let accountsLoadError = $state(false);
+	// Projets analytiques actifs pour le tag par-ligne (Epic 19, Story 19-2).
+	// Échec de chargement toléré : colonne masquée, saisie identique à avant.
+	let projects = $state<ProjectResponse[]>([]);
 	// Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c).
 	// Échec réseau → reste null (assistant en mode config-requise).
 	let recoverableAccountId = $state<number | null>(null);
@@ -90,9 +95,10 @@
 		loading = true;
 		try {
 			const query = buildQuery();
-			const [entriesResult, accountsResult] = await Promise.allSettled([
+			const [entriesResult, accountsResult, projectsResult] = await Promise.allSettled([
 				fetchJournalEntries(query),
-				fetchAccounts(false)
+				fetchAccounts(false),
+				listProjects()
 			]);
 
 			if (entriesResult.status === 'fulfilled') {
@@ -115,6 +121,8 @@
 				accounts = [];
 				accountsLoadError = true;
 			}
+
+			projects = projectsResult.status === 'fulfilled' ? projectsResult.value : [];
 		} finally {
 			loading = false;
 		}
@@ -387,6 +395,7 @@
 		<JournalEntryForm
 			{accounts}
 			{accountsLoadError}
+			{projects}
 			{recoverableAccountId}
 			onSuccess={handleSuccess}
 			onCancel={handleCancel}
@@ -395,6 +404,7 @@
 		<JournalEntryForm
 			{accounts}
 			{accountsLoadError}
+			{projects}
 			initialEntry={editingEntry}
 			onSuccess={handleSuccess}
 			onCancel={handleCancel}

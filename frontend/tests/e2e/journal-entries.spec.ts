@@ -72,15 +72,11 @@ test.describe('Page écritures — affichage', () => {
 		// Après seed_demo, aucune écriture n'est créée — l'état initial
 		// peut montrer le message vide OU des écritures de tests précédents.
 		// On vérifie simplement que la page charge.
-		const hasEmpty = await page
-			.getByText(/Aucune écriture/)
-			.isVisible()
-			.catch(() => false);
-		const hasTable = await page
-			.getByRole('table')
-			.isVisible()
-			.catch(() => false);
-		expect(hasEmpty || hasTable).toBeTruthy();
+		// Auto-wait : l'un des deux états doit apparaître une fois le
+		// chargement terminé (isVisible one-shot était race-prone).
+		await expect(
+			page.getByText(/Aucune écriture/).or(page.getByRole('table')).first()
+		).toBeVisible();
 	});
 });
 
@@ -99,12 +95,12 @@ test.describe('Page écritures — saisie', () => {
 		const accountInputs = page.locator('input[aria-autocomplete="list"]');
 		await accountInputs.nth(0).fill(debitNumber);
 		// Attendre que l'option apparaisse et la sélectionner.
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(0).fill('100.00');
 
 		// Ligne 2 : crédit
 		await accountInputs.nth(1).fill(creditNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(3).fill('100.00');
 
 		// L'indicateur doit être équilibré.
@@ -117,6 +113,71 @@ test.describe('Page écritures — saisie', () => {
 		await expect(page.getByText(/Test E2E saisie nominale/)).toBeVisible({ timeout: 5000 });
 	});
 
+	test('saisie avec tag projet analytique par ligne (Story 19-2)', async ({ page }) => {
+		await goToJournalEntries(page);
+		const { debitNumber, creditNumber } = await getSeedAccountNumbers(page);
+
+		// Projet actif créé via l'API (code unique par run pour éviter le 409).
+		const code = `E2E192-${Date.now() % 1000000}`;
+		const setupCtx = await authedApiContext(page);
+		let projectId: number;
+		try {
+			const resp = await setupCtx.post('/api/v1/projects', {
+				data: { parentId: null, code, name: 'Projet E2E 19-2', description: null, startDate: null, endDate: null }
+			});
+			expect(resp.ok()).toBeTruthy();
+			projectId = (await resp.json()).id;
+		} finally {
+			await disposeContextSafe(setupCtx);
+		}
+
+		// Recharger la page pour que le formulaire reçoive la liste des projets.
+		await page.goto('/journal-entries');
+		await page.getByRole('button', { name: /Nouvelle écriture/ }).click();
+		await expect(page.getByText(/Saisie d'écriture/)).toBeVisible();
+
+		const description = `Test E2E tag projet ${code}`;
+		await page.fill('#entry-description', description);
+
+		// NB : scoper la sélection au listbox de l'autocomplete — les <option>
+		// natifs du <select> projet (Story 19-2) matchent aussi role=option.
+		const accountInputs = page.locator('input[aria-autocomplete="list"]');
+		await accountInputs.nth(0).fill(debitNumber);
+		await page.getByRole('listbox').getByRole('option').first().click();
+		await page.locator('input[inputmode="decimal"]').nth(0).fill('80.00');
+
+		await accountInputs.nth(1).fill(creditNumber);
+		await page.getByRole('listbox').getByRole('option').first().click();
+		await page.locator('input[inputmode="decimal"]').nth(3).fill('80.00');
+
+		// La colonne Projet est visible (des projets actifs existent) —
+		// taguer uniquement la ligne 1.
+		await page.getByTestId('journal-entry-line-project-0').selectOption({
+			label: `${code} — Projet E2E 19-2`
+		});
+
+		await expect(page.getByText(/✓ Équilibré/)).toBeVisible();
+		await page.getByRole('button', { name: 'Valider' }).click();
+		await expect(page.getByText(description)).toBeVisible({ timeout: 5000 });
+
+		// Ground-truth API : ligne 1 taguée, ligne 2 non taguée.
+		const verifyCtx = await authedApiContext(page);
+		try {
+			const resp = await verifyCtx.get(
+				`/api/v1/journal-entries?description=${encodeURIComponent(description)}`
+			);
+			expect(resp.ok()).toBeTruthy();
+			const list: { items: Array<{ lines: Array<{ projectId: number | null }> }> } =
+				await resp.json();
+			expect(list.items.length).toBeGreaterThanOrEqual(1);
+			const lines = list.items[0].lines;
+			expect(lines[0].projectId).toBe(projectId);
+			expect(lines[1].projectId).toBeNull();
+		} finally {
+			await disposeContextSafe(verifyCtx);
+		}
+	});
+
 	test('indicateur de déséquilibre et bouton Valider désactivé', async ({ page }) => {
 		await goToJournalEntries(page);
 		const { debitNumber, creditNumber } = await getSeedAccountNumbers(page);
@@ -126,11 +187,11 @@ test.describe('Page écritures — saisie', () => {
 
 		const accountInputs = page.locator('input[aria-autocomplete="list"]');
 		await accountInputs.nth(0).fill(debitNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(0).fill('100');
 
 		await accountInputs.nth(1).fill(creditNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(3).fill('50');
 
 		// L'indicateur doit être rouge (déséquilibré).
@@ -150,11 +211,11 @@ test.describe('Page écritures — saisie', () => {
 
 		const accountInputs = page.locator('input[aria-autocomplete="list"]');
 		await accountInputs.nth(0).fill(debitNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(0).fill('10.99999');
 
 		await accountInputs.nth(1).fill(creditNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(3).fill('10.99999');
 
 		// Message "Maximum 4 décimales" doit apparaître
@@ -186,10 +247,10 @@ test.describe('Page écritures — modification (Story 3.3)', () => {
 		await page.fill('#entry-description', 'Test 3.3 edit target');
 		const accountInputs = page.locator('input[aria-autocomplete="list"]');
 		await accountInputs.nth(0).fill(debitNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(0).fill('200.00');
 		await accountInputs.nth(1).fill(creditNumber);
-		await page.getByRole('option').first().click();
+		await page.getByRole('listbox').getByRole('option').first().click();
 		await page.locator('input[inputmode="decimal"]').nth(3).fill('200.00');
 		await page.getByRole('button', { name: 'Valider' }).click();
 		await expect(page.getByText(/Test 3.3 edit target/).first()).toBeVisible({ timeout: 5000 });
@@ -221,8 +282,12 @@ test.describe('Page écritures — modification (Story 3.3)', () => {
 		await goToJournalEntries(page);
 		await createSeedEntry(page);
 
+		// Matching EXACT : le test « édition nominale » précédent laisse une
+		// écriture « Test 3.3 edit target MODIFIÉ » que la regex substring
+		// matcherait aussi — on cible et on vérifie l'entrée exacte seulement.
 		const row = page
-			.locator('tr', { hasText: 'Test 3.3 edit target' })
+			.getByRole('row')
+			.filter({ has: page.getByText('Test 3.3 edit target', { exact: true }) })
 			.first();
 		await row.getByRole('button', { name: /Supprimer/ }).click();
 
@@ -233,7 +298,9 @@ test.describe('Page écritures — modification (Story 3.3)', () => {
 		await page.getByRole('dialog').getByRole('button', { name: 'Supprimer' }).click();
 
 		// L'écriture disparaît de la liste.
-		await expect(page.getByText(/Test 3.3 edit target/)).toHaveCount(0, { timeout: 5000 });
+		await expect(page.getByText('Test 3.3 edit target', { exact: true })).toHaveCount(0, {
+			timeout: 5000
+		});
 	});
 
 	test('annulation suppression', async ({ page }) => {
@@ -306,10 +373,10 @@ test.describe('Page écritures — recherche & pagination (Story 3.4)', () => {
 			await page.fill('#entry-description', `${descriptionPrefix} ${i + 1}`);
 			const accountInputs = page.locator('input[aria-autocomplete="list"]');
 			await accountInputs.nth(0).fill(debitNumber);
-			await page.getByRole('option').first().click();
+			await page.getByRole('listbox').getByRole('option').first().click();
 			await page.locator('input[inputmode="decimal"]').nth(0).fill(String(100 * (i + 1)));
 			await accountInputs.nth(1).fill(creditNumber);
-			await page.getByRole('option').first().click();
+			await page.getByRole('listbox').getByRole('option').first().click();
 			await page.locator('input[inputmode="decimal"]').nth(3).fill(String(100 * (i + 1)));
 			await page.getByRole('button', { name: 'Valider' }).click();
 			await expect(page.getByText(new RegExp(`${descriptionPrefix} ${i + 1}`))).toBeVisible({

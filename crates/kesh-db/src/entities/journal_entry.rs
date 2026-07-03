@@ -148,6 +148,8 @@ pub struct JournalEntryLine {
     pub line_order: i32,
     pub debit: Decimal,
     pub credit: Decimal,
+    /// Projet analytique de la ligne (Epic 19). `None` = ligne non taguée.
+    pub project_id: Option<i64>,
 }
 
 /// En-tête + lignes, retourné par le repository pour les lectures.
@@ -182,6 +184,10 @@ pub struct NewJournalEntryLine {
     pub account_id: i64,
     pub debit: Decimal,
     pub credit: Decimal,
+    /// Projet analytique par-ligne (Epic 19, Story 19-2 — écritures manuelles).
+    /// Prime sur `NewJournalEntry::project_id` (fallback document-level 19-3)
+    /// à l'insertion : `line.project_id.or(new.project_id)`.
+    pub project_id: Option<i64>,
 }
 
 #[cfg(test)]

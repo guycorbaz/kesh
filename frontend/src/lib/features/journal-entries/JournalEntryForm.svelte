@@ -8,6 +8,7 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifyMissingFiscalYearOrFallback } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { createJournalEntry, updateJournalEntry } from './journal-entries.api';
 	import type {
 		CreateJournalEntryRequest,
@@ -25,6 +26,8 @@
 	interface Props {
 		accounts: AccountResponse[];
 		accountsLoadError: boolean;
+		/** Projets analytiques actifs (Epic 19, Story 19-2). Vide = colonne masquée. */
+		projects?: ProjectResponse[];
 		/** Si fourni → mode édition. Sinon mode création. */
 		initialEntry?: JournalEntryResponse | null;
 		/** Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c). Null si non configuré. */
@@ -38,6 +41,7 @@
 	let {
 		accounts,
 		accountsLoadError,
+		projects = [],
 		initialEntry = null,
 		recoverableAccountId = null,
 		onSuccess,
@@ -75,12 +79,22 @@
 		initialEntry
 			? fromJournalEntryResponse(initialEntry)
 			: [
-					{ accountId: null, debit: '', credit: '' },
-					{ accountId: null, debit: '', credit: '' }
+					{ accountId: null, debit: '', credit: '', projectId: null },
+					{ accountId: null, debit: '', credit: '', projectId: null }
 				]
 	);
 	/* svelte-ignore state_referenced_locally */
 	let version = $state(initialEntry?.version ?? 0);
+	// Colonne projet affichée si des projets actifs existent — sans projet
+	// défini, le formulaire reste identique à avant (zéro friction). En
+	// édition, une ligne peut porter un tag historique alors que tous les
+	// projets sont archivés (liste active vide) : on affiche quand même la
+	// colonne pour que le tag reste visible et détaguable (review Pass 1 BH-L2).
+	const showProjectColumn = $derived(
+		projects.length > 0 || lines.some((l) => l.projectId !== null)
+	);
+	const tableColCount = $derived(showProjectColumn ? 5 : 4);
+
 	let submitting = $state(false);
 
 	// Modale de conflit 409.
@@ -133,7 +147,7 @@
 	});
 
 	function addLine() {
-		lines = [...lines, { accountId: null, debit: '', credit: '' }];
+		lines = [...lines, { accountId: null, debit: '', credit: '', projectId: null }];
 	}
 
 	function removeLine(index: number) {
@@ -155,7 +169,8 @@
 			lines: nonEmptyLines.map(({ line }) => ({
 				accountId: line.accountId!,
 				debit: (line.debit === '' ? '0' : line.debit.replace(',', '.')),
-				credit: (line.credit === '' ? '0' : line.credit.replace(',', '.'))
+				credit: (line.credit === '' ? '0' : line.credit.replace(',', '.')),
+				projectId: line.projectId
 			}))
 		};
 
@@ -305,6 +320,11 @@
 						</span>
 					</AccountingTooltip>
 				</th>
+				{#if showProjectColumn}
+					<th class="text-left py-2 text-sm font-medium w-44">
+						{i18nMsg('journal-entry-form-col-project', 'Projet')}
+					</th>
+				{/if}
 				<th class="w-10"></th>
 			</tr>
 		</thead>
@@ -339,6 +359,34 @@
 							placeholder="0.00"
 						/>
 					</td>
+					{#if showProjectColumn}
+						<td class="py-2 pr-2">
+							<!-- Sélecteur arbre 2 niveaux (racines + sous-projets indentés),
+							     même pattern que la facture fournisseur (Story 19-3). -->
+							<select
+								bind:value={lines[i].projectId}
+								data-testid="journal-entry-line-project-{i}"
+								aria-label={i18nMsg('journal-entry-form-col-project', 'Projet')}
+								class="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+							>
+								<option value={null}>{i18nMsg('journal-entry-project-none', '— Aucun')}</option>
+								{#if line.projectId !== null && !projects.some((p) => p.id === line.projectId)}
+									<!-- Tag historique sur un projet archivé (absent de la liste des
+									     actifs) : option ad-hoc pour préserver la valeur au round-trip
+									     (le backend exempte les tags pré-existants de la validation). -->
+									<option value={line.projectId}>
+										{i18nMsg('journal-entry-project-archived', 'Projet archivé')}
+									</option>
+								{/if}
+								{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+									<option value={root.id}>{root.code} — {root.name}</option>
+									{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+										<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+									{/each}
+								{/each}
+							</select>
+						</td>
+					{/if}
 					<td class="py-2">
 						{#if lines.length > 2}
 							<button
@@ -354,14 +402,14 @@
 				</tr>
 				{#if status === 'partial'}
 					<tr>
-						<td colspan="4" class="text-xs text-destructive pb-2">
+						<td colspan={tableColCount} class="text-xs text-destructive pb-2">
 							{i18nMsg('journal-entry-form-incomplete-line', 'Ligne incomplète')}
 						</td>
 					</tr>
 				{/if}
 				{#if !isValidAmount(line.debit) || !isValidAmount(line.credit)}
 					<tr>
-						<td colspan="4" class="text-xs text-destructive pb-2">
+						<td colspan={tableColCount} class="text-xs text-destructive pb-2">
 							{i18nMsg('journal-entry-form-max-decimals', 'Maximum 4 décimales')}
 						</td>
 					</tr>

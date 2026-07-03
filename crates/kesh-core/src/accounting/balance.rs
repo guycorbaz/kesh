@@ -78,6 +78,12 @@ pub struct JournalEntryLineDraft {
     /// Montant au crédit. `Money::zero()` si cette ligne est une ligne
     /// au débit.
     pub credit: Money,
+    /// Projet analytique de la ligne (Epic 19, Story 19-2). Dimension
+    /// **opaque** pour la validation comptable : [`validate`] ne la lit
+    /// ni ne la modifie — elle traverse la validation verbatim. La
+    /// validation métier (projet existant, même company, non archivé)
+    /// est faite côté persistance (kesh-db), pas ici (ARCH-1 : pas d'I/O).
+    pub project_id: Option<i64>,
 }
 
 /// Brouillon d'écriture avant validation.
@@ -210,6 +216,7 @@ mod tests {
             account_id,
             debit,
             credit,
+            project_id: None,
         }
     }
 

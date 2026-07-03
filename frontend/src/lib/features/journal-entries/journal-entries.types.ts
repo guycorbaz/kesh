@@ -15,6 +15,8 @@ export interface JournalEntryLineResponse {
 	/** Montant décimal stringifié (ex: "100.00"). Parser avec big.js. */
 	debit: string;
 	credit: string;
+	/** Projet analytique de la ligne (Epic 19). `null` = non taguée. */
+	projectId: number | null;
 }
 
 export interface JournalEntryResponse {
@@ -37,6 +39,8 @@ export interface CreateJournalEntryLineRequest {
 	/** Montant décimal stringifié, point décimal (ex: "100.00"). */
 	debit: string;
 	credit: string;
+	/** Projet analytique optionnel de la ligne (Epic 19, Story 19-2). */
+	projectId?: number | null;
 }
 
 export interface CreateJournalEntryRequest {
