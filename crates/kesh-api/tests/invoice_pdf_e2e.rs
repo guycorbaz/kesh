@@ -187,6 +187,7 @@ async fn seed_validated_invoice(
         due_date: Some(NaiveDate::from_ymd_opt(2026, 5, 14).unwrap()),
         payment_terms: Some("30 jours net".into()),
         lines,
+        project_id: None,
     };
     let (invoice, _lines) = invoices::create(pool, user_id, new).await.unwrap();
 
@@ -260,6 +261,7 @@ async fn pdf_draft_invoice_returns_400_not_validated(pool: MySqlPool) {
                 unit_price: dec!(100.0),
                 vat_rate: dec!(7.70),
             }],
+            project_id: None,
         },
     )
     .await

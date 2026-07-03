@@ -221,7 +221,8 @@ pub async fn create_credit_note(
         // (1) Lock facture d'origine + checks métier.
         let invoice = sqlx::query_as::<_, crate::entities::Invoice>(
             "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-             payment_terms, total_amount, journal_entry_id, paid_at, version, created_at, updated_at \
+             payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
+             created_at, updated_at \
              FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(invoice_id)
@@ -338,9 +339,12 @@ pub async fn create_credit_note(
                 entry_date: date,
                 journal,
                 description: entry_description,
-                // Pas de projet analytique sur les avoirs pour l'instant (19-4 tag les
-                // factures de vente ; l'avoir héritera alors du projet de sa facture).
-                project_id: None,
+                // Story 19-4 : l'avoir HÉRITE le projet de sa facture d'origine —
+                // la contre-passation reprend le même tag, donc net par projet = 0
+                // après annulation. Volontairement SANS re-check archivé (annuler
+                // une facture d'un projet archivé doit rester possible — miroir
+                // pay/cancel-after-archive 19-3, DC3).
+                project_id: invoice.project_id,
                 lines: entry_lines,
             },
         )

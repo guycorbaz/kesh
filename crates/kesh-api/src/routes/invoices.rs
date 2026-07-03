@@ -78,6 +78,11 @@ pub struct CreateInvoiceRequest {
     pub due_date: Option<NaiveDate>,
     #[serde(default)]
     pub payment_terms: Option<String>,
+    /// Projet analytique document-level (Epic 19, Story 19-4). Optionnel —
+    /// validé côté repo (projet de la company, non archivé) : inconnu → 404,
+    /// archivé → 409.
+    #[serde(default)]
+    pub project_id: Option<i64>,
     pub lines: Vec<CreateInvoiceLineRequest>,
 }
 
@@ -90,6 +95,10 @@ pub struct UpdateInvoiceRequest {
     pub due_date: Option<NaiveDate>,
     #[serde(default)]
     pub payment_terms: Option<String>,
+    /// Projet analytique (Story 19-4) — validé seulement si la valeur change
+    /// (grandfathering du tag inchangé côté repo).
+    #[serde(default)]
+    pub project_id: Option<i64>,
     pub lines: Vec<CreateInvoiceLineRequest>,
     pub version: i32,
 }
@@ -161,6 +170,8 @@ pub struct InvoiceResponse {
     pub total_amount: Decimal,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
+    /// Projet analytique document-level (Epic 19). `null` = non taguée.
+    pub project_id: Option<i64>,
     /// P6 (review pass 2) : `is_overdue` calculé backend (source unique de
     /// vérité pour « aujourd'hui » — évite la désync TZ client/serveur).
     /// `true` ssi `status == 'validated' && paid_at IS NULL && due_date < today_utc`.
@@ -201,6 +212,7 @@ impl InvoiceResponse {
             total_amount: invoice.total_amount,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
+            project_id: invoice.project_id,
             is_overdue,
             version: invoice.version,
             created_at: invoice.created_at,
@@ -501,6 +513,7 @@ pub async fn create_invoice(
         // de paiement. Pas de calcul auto depuis payment_terms (décision Guy).
         due_date: Some(req.due_date.unwrap_or(req.date)),
         payment_terms,
+        project_id: req.project_id,
         lines,
     };
 
@@ -532,6 +545,7 @@ pub async fn update_invoice(
         // Review P6 : défaut due_date = invoice.date si non fournie (Scope §12).
         due_date: Some(req.due_date.unwrap_or(req.date)),
         payment_terms,
+        project_id: req.project_id,
         lines,
     };
 

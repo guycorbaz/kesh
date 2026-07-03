@@ -402,6 +402,7 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
         "total_amount",
         "journal_entry_id",
         "paid_at",
+        "project_id",
         "version",
         "created_at",
         "updated_at",
@@ -420,6 +421,8 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             fmt_decimal(i.total_amount),
             fmt_opt_i64(i.journal_entry_id),
             fmt_opt_dt(i.paid_at),
+            // Tag analytique document-level (Epic 19, Story 19-4).
+            fmt_opt_i64(i.project_id),
             i.version.to_string(),
             fmt_dt(i.created_at),
             fmt_dt(i.updated_at),

@@ -42,3 +42,4 @@ docs/manual/**/*.out
 docs/manual/**/*.toc
 docs/manual/**/*.xdv
 # (*.log déjà couvert par la règle globale *.log ci-dessus)
+test-results/
