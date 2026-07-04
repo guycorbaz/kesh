@@ -1,6 +1,12 @@
 # Story 19.6 : Rapports analytiques par projet (Dépenses + Rendement)
 
-Status: ready-for-dev
+Status: split
+
+<!-- SPLIT 2026-07-04 (escape-hatch) : mega-story 2 rapports → 19-6a (fondation
+     project_report + Dépenses par projet, chemin minimal rénovations) + 19-6b
+     (Rendement par projet, réutilise la fondation). Cette umbrella reste la
+     RÉFÉRENCE ground-truth (cartographie Explore + DC5/DC8 figées Guy). -->
+
 
 <!-- Le PAYOFF d'Epic 19 : deux rapports lisant la dimension project_id posée
      par 19-1 et alimentée par 19-2..19-5. Fondation d'agrégation partagée
