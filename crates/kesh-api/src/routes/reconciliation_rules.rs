@@ -107,6 +107,20 @@ fn default_priority() -> i32 {
     DEFAULT_PRIORITY
 }
 
+/// Deserializer « double option » (Story 19-5) : distingue un champ **absent**
+/// (→ `None`, inchangé) d'un champ **présent à `null`** (→ `Some(None)`,
+/// effacement). Sans ce helper, serde replie `null` sur le `None` externe et
+/// l'effacement du projet par défaut via PATCH serait un no-op silencieux
+/// (bug HIGH Pass 1 Blind Hunter). À combiner avec `#[serde(default)]` pour
+/// gérer le cas absent.
+fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(deserializer).map(Some)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateRuleRequest {
@@ -121,7 +135,9 @@ pub struct UpdateRuleRequest {
     /// Projet analytique par défaut (Story 19-5) — sémantique deux niveaux :
     /// absent = inchangé ; `null` = effacer ; `<id>` = affecter. Mappé sur
     /// `UpdateReconciliationRule.default_project_id: Option<Option<i64>>`.
-    #[serde(default)]
+    /// `deserialize_with = "double_option"` est **obligatoire** pour que
+    /// `null` produise `Some(None)` (effacement) plutôt que `None` (inchangé).
+    #[serde(default, deserialize_with = "double_option")]
     pub default_project_id: Option<Option<i64>>,
 }
 

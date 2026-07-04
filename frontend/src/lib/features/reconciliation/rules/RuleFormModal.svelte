@@ -103,11 +103,13 @@
 	class="space-y-3 rounded border border-border bg-surface p-4"
 	data-testid="rule-form-modal"
 >
-	<h3 class="font-semibold">
+	<!-- h2 : le titre suit le h1 « Règles » de la page (heading-order a11y,
+	     Story 19-5 — corrige une violation axe préexistante surfacée par le run E2E). -->
+	<h2 class="font-semibold">
 		{isEdit
 			? i18nMsg('reconciliation-rules-form-title-edit', 'Modifier la règle')
 			: i18nMsg('reconciliation-rules-form-title-create', 'Nouvelle règle')}
-	</h3>
+	</h2>
 
 	<div>
 		<label for="rule-label" class="block text-sm font-medium">

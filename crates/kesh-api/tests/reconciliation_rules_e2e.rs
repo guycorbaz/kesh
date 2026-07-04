@@ -1842,6 +1842,12 @@ async fn accept_with_rule_fails_proposal_when_default_project_archived(pool: MyS
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0]["errorCode"].as_str(), Some("PROJECT_ARCHIVED"));
     assert_eq!(failed[0]["bankTransactionId"].as_i64(), Some(tx_id));
+    // AC11 — le projet fautif est joint dans details.
+    assert_eq!(
+        failed[0]["details"]["projectId"].as_i64(),
+        Some(project_id),
+        "details doit porter projectId (AC11)"
+    );
 
     // La transaction reste pending (rollback du savepoint).
     let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
@@ -1852,5 +1858,94 @@ async fn accept_with_rule_fails_proposal_when_default_project_archived(pool: MyS
     assert_eq!(
         status, "pending",
         "la tx doit rester pending après échec projet"
+    );
+}
+
+/// Story 19-5 (Pass 1 HIGH BH) — PATCH `defaultProjectId: null` **efface**
+/// réellement le projet par défaut (colonne → NULL), et non un no-op silencieux.
+/// Verrouille le fix `double_option` (sans lui, serde replierait `null` sur
+/// `None` = inchangé).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn patch_default_project_null_clears_the_column(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let project_id = create_project(&pool, ctx.company_id, "TO-CLEAR", false).await;
+
+    // Règle avec projet par défaut.
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Règle à nettoyer",
+            "matchType": "counterparty_contains",
+            "matchValue": "Truc",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "defaultProjectId": project_id,
+        }),
+    )
+    .await;
+    let rule_id = r["id"].as_i64().unwrap();
+    let version = r["version"].as_i64().unwrap();
+    assert_eq!(r["defaultProjectId"].as_i64(), Some(project_id));
+
+    // PATCH avec defaultProjectId: null → doit effacer.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/api/v1/reconciliation/rules/{rule_id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "expectedVersion": version, "defaultProjectId": null }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(
+        body["defaultProjectId"].is_null(),
+        "la réponse doit refléter defaultProjectId = null après effacement"
+    );
+
+    // Ground-truth DB : la colonne est bien NULL.
+    let db_val: Option<i64> =
+        sqlx::query_scalar("SELECT default_project_id FROM reconciliation_rules WHERE id = ?")
+            .bind(rule_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(db_val, None, "default_project_id doit être NULL en base");
+
+    // Sanity : omettre le champ laisse la valeur inchangée (on ré-affecte puis
+    // on patche un autre champ sans toucher au projet).
+    let version2 = body["version"].as_i64().unwrap();
+    let resp2 = app
+        .client
+        .patch(app.url(&format!("/api/v1/reconciliation/rules/{rule_id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "expectedVersion": version2,
+            "defaultProjectId": project_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp2.status(), 200);
+    let body2: Value = resp2.json().await.unwrap();
+    assert_eq!(body2["defaultProjectId"].as_i64(), Some(project_id));
+
+    // PATCH d'un autre champ (label) SANS defaultProjectId → projet inchangé.
+    let version3 = body2["version"].as_i64().unwrap();
+    let resp3 = app
+        .client
+        .patch(app.url(&format!("/api/v1/reconciliation/rules/{rule_id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "expectedVersion": version3, "label": "Renommée" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp3.status(), 200);
+    let body3: Value = resp3.json().await.unwrap();
+    assert_eq!(
+        body3["defaultProjectId"].as_i64(),
+        Some(project_id),
+        "omettre defaultProjectId doit laisser la valeur inchangée"
     );
 }

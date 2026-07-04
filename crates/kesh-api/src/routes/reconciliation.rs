@@ -155,22 +155,50 @@ pub struct FailedProposal {
     pub details: Option<serde_json::Value>,
 }
 
-/// Story 19-5 — mappe une [`DbError`] issue de la validation du projet
-/// analytique (à `create_in_tx` per-ligne, ou à `validate_taggable_in_tx`) en
-/// [`FailedProposal`] avec un `error_code` canonique, plutôt qu'un
+/// Story 19-5 — mappe une [`DbError`] issue de la **validation du projet
+/// analytique** (`validate_taggable_in_tx`, ou `create_in_tx` per-ligne pour le
+/// split) en [`FailedProposal`] avec un `error_code` canonique, plutôt qu'un
 /// `DATABASE_ERROR` opaque. Respecte le pattern batch (erreur per-proposition,
 /// jamais d'`AppError` globale).
-fn project_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) -> FailedProposal {
+///
+/// `project_id` (si connu du caller) est joint dans `details` (`{ "projectId":
+/// <id> }`, AC11). Pour le split, le projet fautif exact n'est pas isolable →
+/// `None`.
+///
+/// **Attention** : n'appeler ce mapper QUE sur un chemin où un `DbError::NotFound`
+/// / `IllegalStateTransition("...projet...")` provient réellement de la
+/// validation projet — sinon un `NotFound` non-projet (ex. fiscal_year absent)
+/// serait mal étiqueté. Le chemin `create_in_tx` d'`accept_one_rule` (projet
+/// déjà validé en amont) utilise donc le mapping générique, pas ce mapper.
+fn project_error_to_failed_proposal(
+    bank_transaction_id: i64,
+    project_id: Option<i64>,
+    err: DbError,
+) -> FailedProposal {
+    let details = |extra: Option<&str>| {
+        let mut obj = serde_json::Map::new();
+        if let Some(pid) = project_id {
+            obj.insert("projectId".to_string(), serde_json::json!(pid));
+        }
+        if let Some(msg) = extra {
+            obj.insert("message".to_string(), serde_json::json!(msg));
+        }
+        if obj.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(obj))
+        }
+    };
     match &err {
         DbError::IllegalStateTransition(msg) if msg.contains("projet") => FailedProposal {
             bank_transaction_id,
             error_code: "PROJECT_ARCHIVED".to_string(),
-            details: Some(serde_json::json!({ "message": msg })),
+            details: details(Some(msg)),
         },
         DbError::NotFound => FailedProposal {
             bank_transaction_id,
             error_code: "PROJECT_NOT_FOUND".to_string(),
-            details: None,
+            details: details(None),
         },
         _ => FailedProposal {
             bank_transaction_id,
@@ -1522,7 +1550,14 @@ async fn accept_one_split(
     let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
         Ok(j) => j,
         Err(e) => {
-            return Err(project_error_to_failed_proposal(bank_transaction_id, e));
+            // Split : la validation projet per-ligne se fait DANS create_in_tx,
+            // donc un NotFound/IllegalStateTransition("...projet...") est bien un
+            // projet fautif (id exact non isolable → None).
+            return Err(project_error_to_failed_proposal(
+                bank_transaction_id,
+                None,
+                e,
+            ));
         }
     };
     let journal_entry_id = je.entry.id;
@@ -1841,7 +1876,13 @@ async fn accept_one_rule(
     let default_project_id = rule.default_project_id;
     if let Some(pid) = default_project_id {
         if let Err(e) = projects::validate_taggable_in_tx(tx, company_id, &[pid]).await {
-            return Err(project_error_to_failed_proposal(bank_transaction_id, e));
+            // Erreur issue exclusivement de la validation projet → mapping
+            // canonique avec projectId dans details (AC11).
+            return Err(project_error_to_failed_proposal(
+                bank_transaction_id,
+                Some(pid),
+                e,
+            ));
         }
     }
 
@@ -1857,7 +1898,15 @@ async fn accept_one_rule(
     let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
         Ok(j) => j,
         Err(e) => {
-            return Err(project_error_to_failed_proposal(bank_transaction_id, e));
+            // Le projet par défaut (document-level) a déjà été validé au step
+            // 11bis ; un NotFound ici provient d'une autre cause (jamais projet,
+            // les lignes portent project_id=None) → mapping générique pour ne
+            // pas mal étiqueter en PROJECT_NOT_FOUND (Pass 1 LOW BH/ECH).
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
         }
     };
     let journal_entry_id = je.entry.id;
