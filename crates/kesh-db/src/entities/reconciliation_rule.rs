@@ -115,6 +115,12 @@ pub struct ReconciliationRule {
     pub counterparty_account_id: i64,
     pub priority: i32,
     pub active: bool,
+    /// Projet analytique par défaut (Story 19-5, Epic 19) : recopié sur
+    /// l'écriture générée quand la règle est appliquée à l'accept
+    /// (`accept_one_rule`). `None` = pas de tag analytique. Validé à la
+    /// création/édition de la règle **et** re-validé à l'accept (le projet a
+    /// pu être archivé entre-temps).
+    pub default_project_id: Option<i64>,
     pub applied_count: i64,
     pub last_applied_at: Option<NaiveDateTime>,
     pub version: i32,
@@ -134,6 +140,9 @@ pub struct NewReconciliationRule {
     pub match_value: String,
     pub counterparty_account_id: i64,
     pub priority: i32,
+    /// Projet analytique par défaut (Story 19-5). Validé par le repository
+    /// (`create_in_tx`) via `projects::validate_taggable_in_tx` si `Some`.
+    pub default_project_id: Option<i64>,
 }
 
 /// Patch partiel d'une `ReconciliationRule` (PATCH /rules/{id}).
@@ -151,4 +160,10 @@ pub struct UpdateReconciliationRule {
     pub counterparty_account_id: Option<i64>,
     pub priority: Option<i32>,
     pub active: Option<bool>,
+    /// Projet analytique par défaut (Story 19-5) — sémantique à **deux
+    /// niveaux** distincte des autres champs pour permettre l'effacement
+    /// (DC4) : `None` = inchangé ; `Some(None)` = effacer le projet ;
+    /// `Some(Some(id))` = affecter le projet `id` (validé si différent de
+    /// la valeur stockée, grandfathering du tag inchangé).
+    pub default_project_id: Option<Option<i64>>,
 }

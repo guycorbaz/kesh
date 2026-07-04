@@ -60,6 +60,8 @@ pub struct ReconciliationRuleResponse {
     pub counterparty_account_id: i64,
     pub priority: i32,
     pub active: bool,
+    /// Projet analytique par défaut (Story 19-5) — `null` si aucun.
+    pub default_project_id: Option<i64>,
     pub applied_count: i64,
     pub last_applied_at: Option<chrono::NaiveDateTime>,
     pub version: i32,
@@ -77,6 +79,7 @@ impl From<ReconciliationRule> for ReconciliationRuleResponse {
             counterparty_account_id: r.counterparty_account_id,
             priority: r.priority,
             active: r.active,
+            default_project_id: r.default_project_id,
             applied_count: r.applied_count,
             last_applied_at: r.last_applied_at,
             version: r.version,
@@ -95,10 +98,27 @@ pub struct CreateRuleRequest {
     pub counterparty_account_id: i64,
     #[serde(default = "default_priority")]
     pub priority: i32,
+    /// Projet analytique par défaut (Story 19-5) — optionnel.
+    #[serde(default)]
+    pub default_project_id: Option<i64>,
 }
 
 fn default_priority() -> i32 {
     DEFAULT_PRIORITY
+}
+
+/// Deserializer « double option » (Story 19-5) : distingue un champ **absent**
+/// (→ `None`, inchangé) d'un champ **présent à `null`** (→ `Some(None)`,
+/// effacement). Sans ce helper, serde replie `null` sur le `None` externe et
+/// l'effacement du projet par défaut via PATCH serait un no-op silencieux
+/// (bug HIGH Pass 1 Blind Hunter). À combiner avec `#[serde(default)]` pour
+/// gérer le cas absent.
+fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize)]
@@ -112,6 +132,13 @@ pub struct UpdateRuleRequest {
     pub counterparty_account_id: Option<i64>,
     pub priority: Option<i32>,
     pub active: Option<bool>,
+    /// Projet analytique par défaut (Story 19-5) — sémantique deux niveaux :
+    /// absent = inchangé ; `null` = effacer ; `<id>` = affecter. Mappé sur
+    /// `UpdateReconciliationRule.default_project_id: Option<Option<i64>>`.
+    /// `deserialize_with = "double_option"` est **obligatoire** pour que
+    /// `null` produise `Some(None)` (effacement) plutôt que `None` (inchangé).
+    #[serde(default, deserialize_with = "double_option")]
+    pub default_project_id: Option<Option<i64>>,
 }
 
 #[derive(Deserialize)]
@@ -259,6 +286,7 @@ pub async fn post_create(
         match_value: normalized_match_value,
         counterparty_account_id: req.counterparty_account_id,
         priority: req.priority,
+        default_project_id: req.default_project_id,
     };
     let match_type_for_err = req.match_type;
     let match_value_for_err = new_rule.match_value.clone();
@@ -372,6 +400,7 @@ pub async fn patch(
         counterparty_account_id: req.counterparty_account_id,
         priority: req.priority,
         active: req.active,
+        default_project_id: req.default_project_id,
     };
 
     let match_type_for_err = current.match_type;

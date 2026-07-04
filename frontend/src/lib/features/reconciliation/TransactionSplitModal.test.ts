@@ -18,6 +18,12 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string) => fallback,
 }));
 
+// Story 19-5 — mock listProjects (chargé via $effect dans le composant).
+const listProjectsMock = vi.fn(async () => [] as unknown[]);
+vi.mock('$lib/features/projects/projects.api', () => ({
+	listProjects: () => listProjectsMock(),
+}));
+
 import * as api from './reconciliation.api';
 import TransactionSplitModal from './TransactionSplitModal.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -94,6 +100,38 @@ describe('TransactionSplitModal', () => {
 		await findByTestId('split-submit');
 		await findByTestId('split-cancel');
 		await findByTestId('split-add-line');
+	});
+
+	// Story 19-5 — colonne projet par ligne visible seulement si projets présents.
+	it('shows a per-line project selector when projects exist', async () => {
+		listProjectsMock.mockResolvedValueOnce([
+			{ id: 5, parentId: null, code: 'CHALET', name: 'Chalet', archived: false },
+		]);
+		const { findByTestId } = render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		// Chaque ligne a son sélecteur projet.
+		await findByTestId('split-line-project-0');
+		await findByTestId('split-line-project-1');
+	});
+
+	it('hides the per-line project selector when no project exists', async () => {
+		listProjectsMock.mockResolvedValueOnce([]);
+		const { findByTestId, queryByTestId } = render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		await findByTestId('split-row-0');
+		expect(queryByTestId('split-line-project-0')).toBeNull();
 	});
 
 	it('disables submit until balance is exact', async () => {

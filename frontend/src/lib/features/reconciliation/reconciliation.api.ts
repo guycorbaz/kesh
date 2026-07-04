@@ -58,6 +58,7 @@ export async function manualMatchTransaction(
 	counterpartyAccountId: number,
 	description?: string,
 	valueDate?: string,
+	projectId?: number | null,
 ): Promise<ManualMatchResponse> {
 	const body: Record<string, unknown> = {
 		bankAccountId,
@@ -69,6 +70,8 @@ export async function manualMatchTransaction(
 	// datepicker HTML retourne `''` quand vidé, et le backend ne sait
 	// pas désérialiser `""` en `Option<NaiveDate>` → 422 ValidationError).
 	if (valueDate !== undefined && valueDate !== '') body.valueDate = valueDate;
+	// Story 19-5 — projet analytique document-level (recopié sur les 2 lignes).
+	if (projectId !== undefined && projectId !== null) body.projectId = projectId;
 	return apiClient.post<ManualMatchResponse>(
 		'/api/v1/reconciliation/manual',
 		body,

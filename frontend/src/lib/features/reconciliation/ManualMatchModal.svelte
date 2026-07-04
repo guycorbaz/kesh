@@ -24,6 +24,8 @@
 	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal } from './reconciliation.types';
 	import { manualMatchTransaction } from './reconciliation.api';
 
@@ -45,9 +47,18 @@
 	let counterpartyId = $state<number | null>(null);
 	let description = $state('');
 	let valueDate = $state<string>('');
+	let projectId = $state<number | null>(null);
 	let submitting = $state(false);
 	let errorMsg = $state<string>('');
 	let bankNotConfigured = $state(false);
+
+	// Story 19-5 — projets analytiques pour le tag document-level.
+	let projects = $state<ProjectResponse[]>([]);
+	$effect(() => {
+		listProjects()
+			.then((p) => (projects = p))
+			.catch(() => (projects = []));
+	});
 
 	// Pré-filtrage client-side classes 5/6/7 (Pass 5 patch — pattern
 	// compatible AccountAutocomplete sans wrapper).
@@ -62,6 +73,7 @@
 		if (open && proposal) {
 			counterpartyId = null;
 			description = '';
+			projectId = null;
 			errorMsg = '';
 			bankNotConfigured = false;
 			// P-M7 Pass 1 code review : `valueDate` est désormais exposé
@@ -101,6 +113,7 @@
 				counterpartyId,
 				description || undefined,
 				valueDate || undefined,
+				projectId,
 			);
 			onSuccess();
 			onOpenChange(false);
@@ -181,6 +194,29 @@
 					disabled={submitting}
 				/>
 			</div>
+
+			{#if projects.length > 0}
+				<div class="mt-2">
+					<label class="mb-1 block text-xs text-text-muted" for="manual-match-project">
+						{i18nMsg('reconciliation-manual-project-label', 'Projet analytique (optionnel)')}
+					</label>
+					<select
+						id="manual-match-project"
+						class="w-full rounded border border-border px-2 py-1 text-sm"
+						data-testid="manual-match-project"
+						bind:value={projectId}
+						disabled={submitting}
+					>
+						<option value={null}>{i18nMsg('reconciliation-manual-project-none', '— Aucun')}</option>
+						{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+							<option value={root.id}>{root.code} — {root.name}</option>
+							{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+								<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+							{/each}
+						{/each}
+					</select>
+				</div>
+			{/if}
 
 			{#if bankNotConfigured}
 				<div
