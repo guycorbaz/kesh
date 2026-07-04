@@ -1,6 +1,6 @@
 # Story 19.5 : Tagging analytique depuis la banque / réconciliation
 
-Status: review
+Status: done
 
 <!-- Rollout du pattern Epic 19 (dimension project_id sur journal_entry_lines +
      helper projects::validate_taggable_in_tx) sur le DERNIER flux de saisie non
@@ -205,6 +205,14 @@ Claude Opus 4.8 (claude-opus-4-8[1m]) — dev-story orchestré inline, run auton
 
 ## Change Log
 
+- **Code-review Pass 2 (2026-07-04, Haiku ×3, contexte frais, diff aplati HEAD vs main) — CONVERGÉ 0 > LOW** : Blind Hunter **0 > LOW** ; Acceptance Auditor **GO 23/23 ACs** (tous les patches Pass 1 vérifiés présents, DC1-DC5 honorés) ; Edge Case Hunter 1 HIGH + 3 MEDIUM + 3 LOW — **tous reclassés LOW/dismiss après grep ground-truth** (over-scoring Haiku documenté CLAUDE.md) :
+  - **HIGH « mapper `msg.contains("projet")` fragile »** → **LOW** : grep confirme que `"le projet analytique est archivé"` n'a **aucune collision** (seul `IllegalStateTransition` porteur de "projet" dans kesh-db ; check collision vide) et que le matching sur message est une **convention projet établie** (`is_duplicate_rule_constraint` matche `uq_reconciliation_rules_match_active` dans le même fichier). Code correct aujourd'hui. No-action.
+  - **MEDIUM « accept_one_rule suppose create_in_tx ne valide pas le doc-level »** → **LOW** : c'est le design DC2 délibéré (documenté inline). Concern spéculatif sur refactor futur. No-action.
+  - **MEDIUM « split ne pinpointe pas la ligne fautive »** → **LOW** : comportement correct (rejet per-proposition), granularité diagnostique seulement ; `validate_taggable_in_tx` valide un ensemble sans isoler l'id. No-action.
+  - **MEDIUM « frontend envoie toujours defaultProjectId »** → **LOW** : comportement standard d'un form bindé ; le grandfathering backend est testé (repo). No-action.
+  - **MEDIUM « double_option panic »** → **DISMISS** : le corps du finding admet que l'erreur serde « se propage » (400 correct), pas de panic. Faux positif.
+  - **LOW ×3** (docstring, couverture E2E cross-company split, style frontend) : nits, no-action.
+  - **Trend > LOW : Pass 1 = 1 HIGH + 2 MEDIUM → Pass 2 = 0. Critère d'arrêt CLAUDE.md atteint.** Modèles : dev Opus 4.8 → Pass 1 Sonnet → Pass 2 Haiku (cycle respecté).
 - **Code-review Pass 1 (2026-07-04, Sonnet ×3 — Blind Hunter / Edge Case Hunter / Acceptance Auditor, diff aplati main...HEAD)** : 1 HIGH + 2 MEDIUM + 3 LOW, verdict Acceptance Auditor GO 22/23 ACs. Patches :
   - **HIGH (BH)** — `UpdateRuleRequest.default_project_id: Option<Option<i64>>` avec seulement `#[serde(default)]` repliait `null` sur `None` (inchangé) → l'effacement du projet par défaut via PATCH était un **no-op silencieux** (DC4 inatteignable en HTTP). Fix : `#[serde(default, deserialize_with = "double_option")]` (helper ajouté). Nouveau test e2e `patch_default_project_null_clears_the_column` (ground-truth DB : colonne → NULL ; + sanity omission=inchangé). Le test repo existant construisait `Some(None)` directement en Rust, contournant serde → n'attrapait pas le bug.
   - **MEDIUM (AA1) — AC22 E2E Playwright manquant** : ajouté `reconciliation-rules.spec.ts` « create rule with default analytic project » (crée un projet via API, sélectionne le projet dans le form, vérifie ground-truth API `defaultProjectId`). **Run RÉEL vert 9/9** (stack live port 3000, KESH_TEST_MODE). A surfacé une **violation axe préexistante** `heading-order` (h3 sous h1) dans RuleFormModal → corrigée h3→h2.
