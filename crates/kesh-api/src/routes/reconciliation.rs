@@ -26,7 +26,7 @@ use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
-    journal_entries, reconciliation as reconciliation_repo, reconciliation_rules,
+    journal_entries, projects, reconciliation as reconciliation_repo, reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
@@ -155,6 +155,59 @@ pub struct FailedProposal {
     pub details: Option<serde_json::Value>,
 }
 
+/// Story 19-5 — mappe une [`DbError`] issue de la **validation du projet
+/// analytique** (`validate_taggable_in_tx`, ou `create_in_tx` per-ligne pour le
+/// split) en [`FailedProposal`] avec un `error_code` canonique, plutôt qu'un
+/// `DATABASE_ERROR` opaque. Respecte le pattern batch (erreur per-proposition,
+/// jamais d'`AppError` globale).
+///
+/// `project_id` (si connu du caller) est joint dans `details` (`{ "projectId":
+/// <id> }`, AC11). Pour le split, le projet fautif exact n'est pas isolable →
+/// `None`.
+///
+/// **Attention** : n'appeler ce mapper QUE sur un chemin où un `DbError::NotFound`
+/// / `IllegalStateTransition("...projet...")` provient réellement de la
+/// validation projet — sinon un `NotFound` non-projet (ex. fiscal_year absent)
+/// serait mal étiqueté. Le chemin `create_in_tx` d'`accept_one_rule` (projet
+/// déjà validé en amont) utilise donc le mapping générique, pas ce mapper.
+fn project_error_to_failed_proposal(
+    bank_transaction_id: i64,
+    project_id: Option<i64>,
+    err: DbError,
+) -> FailedProposal {
+    let details = |extra: Option<&str>| {
+        let mut obj = serde_json::Map::new();
+        if let Some(pid) = project_id {
+            obj.insert("projectId".to_string(), serde_json::json!(pid));
+        }
+        if let Some(msg) = extra {
+            obj.insert("message".to_string(), serde_json::json!(msg));
+        }
+        if obj.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(obj))
+        }
+    };
+    match &err {
+        DbError::IllegalStateTransition(msg) if msg.contains("projet") => FailedProposal {
+            bank_transaction_id,
+            error_code: "PROJECT_ARCHIVED".to_string(),
+            details: details(Some(msg)),
+        },
+        DbError::NotFound => FailedProposal {
+            bank_transaction_id,
+            error_code: "PROJECT_NOT_FOUND".to_string(),
+            details: details(None),
+        },
+        _ => FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": err.to_string() })),
+        },
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RejectResponse {
@@ -265,6 +318,10 @@ pub struct SplitProposalLine {
     pub counterparty_account_id: i64,
     pub amount: Decimal,
     pub description: String,
+    /// Projet analytique de cette ligne de ventilation (Story 19-5) —
+    /// optionnel. Validé per-ligne par `create_in_tx`.
+    #[serde(default)]
+    pub project_id: Option<i64>,
 }
 
 /// Extracteur custom pour `AcceptBody` — convertit les rejets serde en
@@ -1469,12 +1526,17 @@ async fn accept_one_split(
     };
 
     // Step j — build_split_journal_entry + create_in_tx.
+    // Story 19-5 : chaque ligne de ventilation porte son projet analytique
+    // (multi-usage). La validation projet (existant/company/non archivé) est
+    // faite per-ligne par create_in_tx (étape 0) — mappée en FailedProposal
+    // ci-dessous plutôt qu'en DATABASE_ERROR opaque.
     let split_details: Vec<SplitDetail> = splits
         .iter()
         .map(|s| SplitDetail {
             account_id: s.counterparty_account_id,
             amount: s.amount,
             description: s.description.clone(),
+            project_id: s.project_id,
         })
         .collect();
     let je_description = format!("Éclatement transaction agrégée ({} lignes)", splits.len());
@@ -1488,11 +1550,14 @@ async fn accept_one_split(
     let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
         Ok(j) => j,
         Err(e) => {
-            return Err(FailedProposal {
+            // Split : la validation projet per-ligne se fait DANS create_in_tx,
+            // donc un NotFound/IllegalStateTransition("...projet...") est bien un
+            // projet fautif (id exact non isolable → None).
+            return Err(project_error_to_failed_proposal(
                 bank_transaction_id,
-                error_code: "DATABASE_ERROR".to_string(),
-                details: Some(serde_json::json!({ "message": e.to_string() })),
-            });
+                None,
+                e,
+            ));
         }
     };
     let journal_entry_id = je.entry.id;
@@ -1801,6 +1866,26 @@ async fn accept_one_rule(
     let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_name);
     let description: String = raw_description.chars().take(200).collect();
 
+    // Step 11bis (Story 19-5) — résout le projet analytique par défaut de la
+    // règle et le RE-VALIDE ici (le projet a pu être archivé depuis la
+    // création de la règle ; toute nouvelle écriture au grand livre doit être
+    // sur projet actif, DC3). Le repo ne valide pas `new.project_id`
+    // document-level (19-2 DC2) → validation explicite avant create_in_tx.
+    // Projet archivé/absent → FailedProposal per-proposition (PROJECT_ARCHIVED
+    // / PROJECT_NOT_FOUND), jamais d'AppError globale.
+    let default_project_id = rule.default_project_id;
+    if let Some(pid) = default_project_id {
+        if let Err(e) = projects::validate_taggable_in_tx(tx, company_id, &[pid]).await {
+            // Erreur issue exclusivement de la validation projet → mapping
+            // canonique avec projectId dans details (AC11).
+            return Err(project_error_to_failed_proposal(
+                bank_transaction_id,
+                Some(pid),
+                e,
+            ));
+        }
+    }
+
     // Step 12 — build_journal_entry_for_counterparty + create_in_tx.
     let new_je = build_journal_entry_for_counterparty(
         &bt,
@@ -1808,10 +1893,15 @@ async fn accept_one_rule(
         counterparty_account_id,
         description,
         entry_date,
+        default_project_id,
     );
     let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
         Ok(j) => j,
         Err(e) => {
+            // Le projet par défaut (document-level) a déjà été validé au step
+            // 11bis ; un NotFound ici provient d'une autre cause (jamais projet,
+            // les lignes portent project_id=None) → mapping générique pour ne
+            // pas mal étiqueter en PROJECT_NOT_FOUND (Pass 1 LOW BH/ECH).
             return Err(FailedProposal {
                 bank_transaction_id,
                 error_code: "DATABASE_ERROR".to_string(),
@@ -2261,6 +2351,10 @@ pub struct ManualMatchBody {
     pub counterparty_account_id: i64,
     pub description: Option<String>,
     pub value_date: Option<NaiveDate>,
+    /// Projet analytique document-level (Story 19-5) — optionnel. Recopié sur
+    /// les 2 lignes de l'écriture. Validé handler-side avant `create_in_tx`.
+    #[serde(default)]
+    pub project_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2479,6 +2573,18 @@ pub async fn post_manual(
                     .map_err(ReconciliationError::Db)?
                     .ok_or(ReconciliationError::FiscalYearClosed { entry_date })?;
 
+            // Step 6bis (Story 19-5) — valide le projet analytique document-level
+            // AVANT create_in_tx (le repo ne valide pas `new.project_id`, 19-2
+            // DC2). Projet inconnu → 404, archivé → 409 (mapping DbError). Ordre
+            // de lock : validate_taggable_in_tx prend le sentinel companies puis
+            // FOR UPDATE projets, cohérent Pattern 5 (avant le lock fiscal_years
+            // pris par create_in_tx).
+            if let Some(pid) = body.project_id {
+                projects::validate_taggable_in_tx(tx_inner, company_id, &[pid])
+                    .await
+                    .map_err(ReconciliationError::Db)?;
+            }
+
             // Step 7 — build_journal_entry_for_counterparty (helper
             // 8-5a-base T2) puis create_in_tx atomique.
             let new_je = build_journal_entry_for_counterparty(
@@ -2487,6 +2593,7 @@ pub async fn post_manual(
                 counterparty_account_id,
                 description.clone(),
                 entry_date,
+                body.project_id,
             );
             let je =
                 journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je).await?;
@@ -2650,6 +2757,10 @@ pub struct SplitLineInput {
     pub counterparty_account_id: i64,
     pub amount: Decimal,
     pub description: String,
+    /// Projet analytique de cette ligne de ventilation (Story 19-5) —
+    /// optionnel. Validé per-ligne par `create_in_tx`.
+    #[serde(default)]
+    pub project_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2867,6 +2978,9 @@ pub async fn post_split(
             account_id: s.counterparty_account_id,
             amount: s.amount,
             description: s.description.clone(),
+            // Story 19-5 — projet par ligne de ventilation (validé per-ligne
+            // par create_in_tx).
+            project_id: s.project_id,
         })
         .collect();
     // P5 (Pass 1 LOW merged BH-M4/ECH-07/AA-F3) — normaliser scale 2 décimales

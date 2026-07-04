@@ -25,7 +25,7 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "id, company_id, label, match_type, match_value, counterparty_account_id, \
-     priority, active, applied_count, last_applied_at, version, created_at, updated_at";
+     priority, active, default_project_id, applied_count, last_applied_at, version, created_at, updated_at";
 
 /// Détecte si un [`DbError::UniqueConstraintViolation`] provient de la
 /// contrainte `uq_reconciliation_rules_match_active`. Le message MariaDB
@@ -180,10 +180,17 @@ pub async fn create_in_tx(
     user_id: i64,
     new_rule: &NewReconciliationRule,
 ) -> Result<ReconciliationRule, DbError> {
+    // Story 19-5 — valide le projet analytique par défaut (s'il est fourni)
+    // AVANT l'INSERT : projet existant, de la company, non archivé. Prend le
+    // sentinel companies puis `FOR UPDATE` sur le projet (Pattern 5, anti-ABBA).
+    if let Some(pid) = new_rule.default_project_id {
+        super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
+    }
+
     let result = sqlx::query(
         "INSERT INTO reconciliation_rules \
-         (company_id, label, match_type, match_value, counterparty_account_id, priority) \
-         VALUES (?, ?, ?, ?, ?, ?)",
+         (company_id, label, match_type, match_value, counterparty_account_id, priority, default_project_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(company_id)
     .bind(&new_rule.label)
@@ -191,6 +198,7 @@ pub async fn create_in_tx(
     .bind(&new_rule.match_value)
     .bind(new_rule.counterparty_account_id)
     .bind(new_rule.priority)
+    .bind(new_rule.default_project_id)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -218,6 +226,7 @@ pub async fn create_in_tx(
                 "match_value": new_rule.match_value,
                 "counterparty_account_id": new_rule.counterparty_account_id,
                 "priority": new_rule.priority,
+                "default_project_id": new_rule.default_project_id,
                 "active": true,
             })),
         ),
@@ -254,6 +263,17 @@ pub async fn update_in_tx(
         .await?
         .ok_or(DbError::NotFound)?;
 
+    // Story 19-5 — valide le nouveau projet par défaut UNIQUEMENT s'il change
+    // vers un `Some(id)` différent de la valeur stockée (grandfathering du tag
+    // inchangé : éditer le libellé d'une règle dont le projet a été archivé
+    // depuis ne doit pas échouer, leçon 19-2/19-4). Effacement (`Some(None)`)
+    // et valeur inchangée n'exigent aucune validation.
+    if let Some(Some(pid)) = patch.default_project_id {
+        if before.default_project_id != Some(pid) {
+            super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
+        }
+    }
+
     let mut set_clauses: Vec<&'static str> = Vec::new();
     if patch.label.is_some() {
         set_clauses.push("label = ?");
@@ -269,6 +289,9 @@ pub async fn update_in_tx(
     }
     if patch.active.is_some() {
         set_clauses.push("active = ?");
+    }
+    if patch.default_project_id.is_some() {
+        set_clauses.push("default_project_id = ?");
     }
     // version est toujours incrémentée (sauf si patch totalement vide,
     // auquel cas on évite un UPDATE inutile). On n'incrémente pas non
@@ -301,6 +324,10 @@ pub async fn update_in_tx(
     if let Some(v) = patch.active {
         q = q.bind(v);
     }
+    if let Some(v) = patch.default_project_id {
+        // `Some(None)` efface (bind NULL), `Some(Some(id))` affecte.
+        q = q.bind(v);
+    }
     q = q.bind(id).bind(company_id).bind(expected_version);
 
     let result = q.execute(&mut **tx).await.map_err(map_db_error)?;
@@ -328,12 +355,14 @@ pub async fn update_in_tx(
                     "match_value": before.match_value,
                     "priority": before.priority,
                     "active": before.active,
+                    "default_project_id": before.default_project_id,
                 },
                 "after": {
                     "label": after.label,
                     "match_value": after.match_value,
                     "priority": after.priority,
                     "active": after.active,
+                    "default_project_id": after.default_project_id,
                 },
             })),
         ),

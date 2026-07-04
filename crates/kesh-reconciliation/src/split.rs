@@ -31,6 +31,12 @@ pub struct SplitDetail {
     pub account_id: i64,
     pub amount: Decimal,
     pub description: String,
+    /// Projet analytique de cette ligne de ventilation (Story 19-5). Un
+    /// split éclate une transaction en plusieurs finalités → chaque ligne
+    /// peut porter son propre projet. `None` = ligne non taguée. Validé
+    /// automatiquement par `journal_entries::create_in_tx` (validation
+    /// per-ligne étape 0).
+    pub project_id: Option<i64>,
 }
 
 /// Résultat de [`validate_split_balance`] en cas de mismatch.
@@ -132,7 +138,8 @@ pub fn build_split_journal_entry(
             account_id: split.account_id,
             debit: cp_debit,
             credit: cp_credit,
-            project_id: None,
+            // Story 19-5 — projet par ligne de ventilation (multi-usage).
+            project_id: split.project_id,
         });
     }
 
@@ -141,7 +148,8 @@ pub fn build_split_journal_entry(
         entry_date,
         journal: Journal::Banque,
         description,
-        // Tag projet depuis la banque = Story 19-5 (à venir) → None ici.
+        // Story 19-5 — le tag est porté par ligne (SplitDetail.project_id),
+        // pas au niveau document : la ligne banque reste non taguée.
         project_id: None,
         lines,
     }
@@ -218,6 +226,22 @@ mod tests {
             account_id,
             amount,
             description: description.to_string(),
+            project_id: None,
+        }
+    }
+
+    /// Comme [`split`] mais avec un projet analytique (Story 19-5).
+    fn split_with_project(
+        account_id: i64,
+        amount: Decimal,
+        description: &str,
+        project_id: Option<i64>,
+    ) -> SplitDetail {
+        SplitDetail {
+            account_id,
+            amount,
+            description: description.to_string(),
+            project_id,
         }
     }
 
@@ -319,6 +343,37 @@ mod tests {
         let total_credit: Decimal = je.lines.iter().map(|l| l.credit).sum();
         assert_eq!(total_debit, total_credit);
         assert_eq!(total_debit, dec!(5000.00));
+    }
+
+    /// Story 19-5 — chaque ligne de ventilation porte son propre projet
+    /// (multi-usage), la ligne banque reste non taguée et le tag
+    /// document-level de l'écriture reste `None`.
+    #[test]
+    fn split_build_je_tags_project_per_line() {
+        let tx = make_test_tx(dec!(-10700.00));
+        let entry_date = NaiveDate::from_ymd_opt(2026, 5, 31).unwrap();
+        let splits = vec![
+            split_with_project(5000, dec!(5000.00), "Rénovation chalet", Some(11)),
+            split_with_project(5000, dec!(4500.00), "Rénovation appart", Some(22)),
+            split_with_project(5700, dec!(1200.00), "Divers non affecté", None),
+        ];
+
+        let je = build_split_journal_entry(
+            &tx,
+            1020,
+            &splits,
+            "Éclatement transaction agrégée (3 lignes)".to_string(),
+            entry_date,
+        );
+
+        // Tag document-level None : le split porte le tag par-ligne.
+        assert_eq!(je.project_id, None);
+        // Ligne banque (index 0) non taguée.
+        assert_eq!(je.lines[0].project_id, None);
+        // Lignes de ventilation : projet par ligne.
+        assert_eq!(je.lines[1].project_id, Some(11));
+        assert_eq!(je.lines[2].project_id, Some(22));
+        assert_eq!(je.lines[3].project_id, None);
     }
 
     /// AC #93 — `validate_split_balance` retourne `Ok(())` quand

@@ -197,6 +197,7 @@ mod tests {
             counterparty_account_id,
             priority,
             active,
+            default_project_id: None,
             applied_count: 0,
             last_applied_at: None,
             version: 1,

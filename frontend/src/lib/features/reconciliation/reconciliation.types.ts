@@ -74,6 +74,8 @@ export interface SplitProposalLine {
 	counterpartyAccountId: number;
 	amount: string;
 	description: string;
+	/** Projet analytique de cette ligne de ventilation (Story 19-5). */
+	projectId?: number | null;
 }
 
 export interface AcceptedProposal {

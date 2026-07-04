@@ -16,6 +16,12 @@ vi.mock('./reconciliation.api', () => ({
 	manualMatchTransaction: vi.fn(),
 }));
 
+// Story 19-5 — mock listProjects (le composant charge les projets via $effect).
+const listProjectsMock = vi.fn(async () => [] as unknown[]);
+vi.mock('$lib/features/projects/projects.api', () => ({
+	listProjects: () => listProjectsMock(),
+}));
+
 // Mock i18n util pour rendre déterministe.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string) => fallback,
@@ -135,6 +141,38 @@ describe('ManualMatchModal', () => {
 			'manual-match-value-date-input',
 		)) as HTMLInputElement;
 		expect(input2.value).toBe('2026-05-15');
+	});
+
+	// Story 19-5 — le sélecteur projet apparaît quand des projets existent, et
+	// pas sinon (zéro friction si aucun projet défini).
+	it('shows project selector only when projects exist', async () => {
+		listProjectsMock.mockResolvedValueOnce([
+			{ id: 3, parentId: null, code: 'RENOV', name: 'Rénovation', archived: false },
+		]);
+		const { findByTestId } = render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		await findByTestId('manual-match-project');
+	});
+
+	it('hides project selector when no project exists', async () => {
+		listProjectsMock.mockResolvedValueOnce([]);
+		const { queryByTestId, findByTestId } = render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		// Attendre que le modal soit monté (un champ toujours présent).
+		await findByTestId('manual-match-submit');
+		expect(queryByTestId('manual-match-project')).toBeNull();
 	});
 
 	it('disables submit button when counterpartyId is null (clientError obligatoire)', async () => {

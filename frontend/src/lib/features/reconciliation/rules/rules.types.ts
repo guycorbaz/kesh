@@ -15,6 +15,8 @@ export interface ReconciliationRule {
 	counterpartyAccountId: number;
 	priority: number;
 	active: boolean;
+	/** Projet analytique par défaut (Story 19-5) — `null` si aucun. */
+	defaultProjectId: number | null;
 	appliedCount: number;
 	lastAppliedAt: string | null;
 	version: number;
@@ -28,6 +30,8 @@ export interface CreateRuleRequest {
 	matchValue: string;
 	counterpartyAccountId: number;
 	priority?: number;
+	/** Projet analytique par défaut (Story 19-5). */
+	defaultProjectId?: number | null;
 }
 
 export interface UpdateRuleRequest {
@@ -37,6 +41,11 @@ export interface UpdateRuleRequest {
 	counterpartyAccountId?: number;
 	priority?: number;
 	active?: boolean;
+	/**
+	 * Projet analytique par défaut (Story 19-5) — sémantique deux niveaux :
+	 * champ absent = inchangé ; `null` = effacer ; `<id>` = affecter.
+	 */
+	defaultProjectId?: number | null;
 }
 
 export interface RulesListResponse {

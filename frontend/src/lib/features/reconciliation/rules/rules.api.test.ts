@@ -57,4 +57,27 @@ describe('rules.api', () => {
 		await deleteRule(123);
 		expect(apiClient.delete).toHaveBeenCalledWith('/api/v1/reconciliation/rules/123');
 	});
+
+	// Story 19-5 — projet par défaut transmis à la création et à l'édition.
+	it('createRule et updateRule transmettent defaultProjectId', async () => {
+		(apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({});
+		await createRule({
+			label: 'R1',
+			matchType: 'counterparty_contains',
+			matchValue: 'Loyer',
+			counterpartyAccountId: 42,
+			defaultProjectId: 9,
+		});
+		expect(apiClient.post).toHaveBeenCalledWith(
+			'/api/v1/reconciliation/rules',
+			expect.objectContaining({ defaultProjectId: 9 }),
+		);
+
+		(apiClient.patch as ReturnType<typeof vi.fn>).mockResolvedValue({});
+		await updateRule(7, { expectedVersion: 2, defaultProjectId: null });
+		expect(apiClient.patch).toHaveBeenCalledWith(
+			'/api/v1/reconciliation/rules/7',
+			expect.objectContaining({ defaultProjectId: null }),
+		);
+	});
 });
