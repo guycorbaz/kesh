@@ -15,24 +15,35 @@
 	import {
 		buildExportFilename,
 		downloadReport,
+		downloadProjectReport,
 		formatSwissDate,
 		getBalanceSheet,
 		getIncomeStatement,
 		getJournalReport,
+		getProjectExpenses,
 		getTrialBalance,
 		getVatReport,
 	} from '$lib/features/reports/reports.api';
+	import ProjectExpensesView from '$lib/features/reports/ProjectExpensesView.svelte';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type {
 		BalanceSheetDto,
 		IncomeStatementDto,
 		JournalReportDto,
 		JournalReportQuery,
+		ProjectExpensesDto,
+		ProjectReportMode,
+		ProjectReportQuery,
 		ReportQuery,
 		ReportType,
 		TrialBalanceDto,
 		VatReportDto,
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
+
+	/** Onglets = rapports comptables classiques + rapports par projet (Story 19-6a). */
+	type TabId = ReportType | 'project-expenses';
 
 	interface PageData {
 		fiscalYears: FiscalYearResponse[];
@@ -44,9 +55,20 @@
 	let selectedFiscalYearId = $state<number | null>(data.fiscalYears[0]?.id ?? null);
 	let periodStart = $state('');
 	let periodEnd = $state('');
-	let activeTab = $state<ReportType>('balance-sheet');
+	let activeTab = $state<TabId>('balance-sheet');
 	let loading = $state(false);
 	let errorMsg = $state<string | null>(null);
+
+	// Story 19-6a — état du rapport « Dépenses par projet ».
+	let projects = $state<ProjectResponse[]>([]);
+	let selectedProjectId = $state<number | null>(null);
+	let projectMode = $state<ProjectReportMode>('fiscal_year');
+	let projectExpenses = $state<ProjectExpensesDto | null>(null);
+	$effect(() => {
+		listProjects()
+			.then((p) => (projects = p))
+			.catch(() => (projects = []));
+	});
 	// Story 9-2a — flag dédié pour l'export (PAS partagé avec `loading` qui contrôle
 	// uniquement `generate()`). Pass 1 ECH-H2 + AC #36 + Pass 2 AA2-C1.
 	let exporting = $state(false);
@@ -71,6 +93,7 @@
 			trialBalance = null;
 			journalReport = null;
 			vatReport = null;
+			projectExpenses = null;
 			errorMsg = null;
 			lastFyId = selectedFiscalYearId;
 		}
@@ -99,7 +122,37 @@
 		return err instanceof Error ? err.message : String(err);
 	}
 
+	/** Construit la query du rapport projet actif (null si incomplet). */
+	function projectQuery(): ProjectReportQuery | null {
+		if (selectedProjectId === null) return null;
+		if (projectMode === 'fiscal_year' && selectedFiscalYearId === null) return null;
+		return {
+			projectId: selectedProjectId,
+			mode: projectMode,
+			fiscalYearId: projectMode === 'fiscal_year' ? (selectedFiscalYearId ?? undefined) : undefined,
+			periodStart: projectMode === 'fiscal_year' ? periodStart || undefined : undefined,
+			periodEnd: projectMode === 'fiscal_year' ? periodEnd || undefined : undefined,
+		};
+	}
+
 	async function generate(): Promise<void> {
+		// Story 19-6a — branche projet (query différente des rapports classiques).
+		if (activeTab === 'project-expenses') {
+			const q = projectQuery();
+			if (!q) return;
+			const mySeq = ++genSeq;
+			loading = true;
+			errorMsg = null;
+			try {
+				const result = await getProjectExpenses(q);
+				if (mySeq === genSeq) projectExpenses = result;
+			} catch (e) {
+				if (mySeq === genSeq) errorMsg = formatError(e);
+			} finally {
+				if (mySeq === genSeq) loading = false;
+			}
+			return;
+		}
 		if (selectedFiscalYearId === null) return;
 		const mySeq = ++genSeq;
 		loading = true;
@@ -162,6 +215,9 @@
 				return journalReport?.period ?? null;
 			case 'vat':
 				return vatReport?.period ?? null;
+			default:
+				// 'project-expenses' — géré via son propre chemin (projectExpenses).
+				return null;
 		}
 	}
 
@@ -189,9 +245,30 @@
 	 * `reports-export-error-generic` (AC #23) plutôt qu'un message brut.
 	 */
 	async function exportReport(format: 'pdf' | 'csv'): Promise<void> {
-		// Pass 1 code-review M12 : guard re-entrancy avant TOUT await (incluant
-		// canExport derived qui peut être évalué simultanément par deux clics).
+		// Pass 1 code-review M12 : guard re-entrancy avant TOUT await.
 		if (exporting) return;
+		// Story 19-6a — branche projet.
+		if (activeTab === 'project-expenses') {
+			const q = projectQuery();
+			if (!q || projectExpenses === null) return;
+			exporting = true;
+			errorMsg = null;
+			try {
+				const companySlug = data.companyName.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 20);
+				const filename = `kesh-depenses-par-projet-${companySlug}.${format}`;
+				await downloadProjectReport('project-expenses', q, format, filename);
+			} catch (e) {
+				if (isApiError(e) && e.code) errorMsg = formatError(e);
+				else
+					errorMsg = i18nMsg(
+						'reports-export-error-generic',
+						"Impossible d'exporter le rapport. Vérifiez votre connexion et réessayez.",
+					);
+			} finally {
+				exporting = false;
+			}
+			return;
+		}
 		if (!canExport || selectedFiscalYearId === null) return;
 		const period = activeReportPeriod();
 		if (!period) return;
@@ -237,12 +314,17 @@
 		await exportReport('csv');
 	}
 
-	const tabs: { id: ReportType; labelKey: string; fallback: string }[] = [
+	const tabs: { id: TabId; labelKey: string; fallback: string }[] = [
 		{ id: 'balance-sheet', labelKey: 'reports-balance-sheet', fallback: 'Bilan' },
 		{ id: 'income-statement', labelKey: 'reports-income-statement', fallback: 'Compte de résultat' },
 		{ id: 'trial-balance', labelKey: 'reports-trial-balance', fallback: 'Balance' },
 		{ id: 'journals', labelKey: 'reports-journals', fallback: 'Journaux' },
 		{ id: 'vat', labelKey: 'reports-vat', fallback: 'TVA' },
+		{
+			id: 'project-expenses',
+			labelKey: 'reports-project-expenses',
+			fallback: 'Dépenses par projet',
+		},
 	];
 
 	// P6 — ARIA tabs : keyboard navigation (ArrowLeft/Right/Home/End).
@@ -265,7 +347,7 @@
 	 * ECH4-M2 : avant ce patch, une erreur d'export sur l'onglet Bilan restait
 	 * affichée après bascule vers l'onglet Compte de résultat, faux-positif UX).
 	 */
-	function selectTab(next: ReportType): void {
+	function selectTab(next: TabId): void {
 		if (activeTab !== next) {
 			activeTab = next;
 			errorMsg = null;
@@ -280,18 +362,95 @@
 <div class="space-y-4 p-4">
 	<h1 class="text-2xl font-bold">{i18nMsg('reports-page-title', 'Rapports comptables')}</h1>
 
-	<ReportSelector
-		fiscalYears={data.fiscalYears}
-		bind:selectedFiscalYearId
-		bind:periodStart
-		bind:periodEnd
-		{loading}
-		onGenerate={generate}
-		onExportPdf={exportPdf}
-		onExportCsv={exportCsv}
-		{canExport}
-		{exporting}
-	/>
+	{#if activeTab !== 'project-expenses'}
+		<ReportSelector
+			fiscalYears={data.fiscalYears}
+			bind:selectedFiscalYearId
+			bind:periodStart
+			bind:periodEnd
+			{loading}
+			onGenerate={generate}
+			onExportPdf={exportPdf}
+			onExportCsv={exportCsv}
+			{canExport}
+			{exporting}
+		/>
+	{:else}
+		<!-- Story 19-6a — contrôles dédiés du rapport « Dépenses par projet ». -->
+		<div class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3" data-testid="project-report-controls">
+			<label class="text-sm">
+				{i18nMsg('reports-project-selector-label', 'Projet')}
+				<select
+					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+					bind:value={selectedProjectId}
+					data-testid="project-report-project"
+				>
+					<option value={null}>{i18nMsg('reports-project-selector-placeholder', '— Choisir un projet')}</option>
+					{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+						<option value={root.id}>{root.code} — {root.name}</option>
+						{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+							<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+						{/each}
+					{/each}
+				</select>
+			</label>
+
+			<label class="text-sm">
+				{i18nMsg('reports-project-mode-label', 'Période')}
+				<select
+					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+					bind:value={projectMode}
+					data-testid="project-report-mode"
+				>
+					<option value="fiscal_year">{i18nMsg('reports-project-mode-fiscal-year', 'Exercice')}</option>
+					<option value="cumulative">{i18nMsg('reports-project-mode-cumulative', 'Cumulé depuis l’origine')}</option>
+				</select>
+			</label>
+
+			{#if projectMode === 'fiscal_year'}
+				<label class="text-sm">
+					{i18nMsg('reports-fiscal-year-label', 'Exercice')}
+					<select
+						class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+						bind:value={selectedFiscalYearId}
+						data-testid="project-report-fiscal-year"
+					>
+						{#each data.fiscalYears as fy (fy.id)}
+							<option value={fy.id}>{fy.name}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
+
+			<button
+				type="button"
+				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
+				onclick={generate}
+				disabled={loading || selectedProjectId === null}
+				data-testid="project-report-generate"
+			>
+				{i18nMsg('reports-generate', 'Générer')}
+			</button>
+			<button
+				type="button"
+				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+				onclick={exportPdf}
+				disabled={exporting || projectExpenses === null}
+				data-testid="project-report-export-pdf"
+			>
+				PDF
+			</button>
+			<button
+				type="button"
+				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+				onclick={exportCsv}
+				disabled={exporting || projectExpenses === null}
+				data-testid="project-report-export-csv"
+			>
+				CSV
+			</button>
+		</div>
+	{/if}
 
 	<div role="tablist" class="flex border-b" aria-label={i18nMsg('reports-page-title', 'Rapports comptables')}>
 		{#each tabs as tab, idx (tab.id)}
@@ -336,6 +495,8 @@
 			<JournalReportView dto={journalReport} />
 		{:else if activeTab === 'vat' && vatReport}
 			<VatReportView dto={vatReport} />
+		{:else if activeTab === 'project-expenses' && projectExpenses}
+			<ProjectExpensesView report={projectExpenses} />
 		{:else}
 			<p class="text-sm italic text-gray-500">
 				{i18nMsg(

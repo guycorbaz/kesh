@@ -73,7 +73,7 @@ so that je capte toutes les dépenses déductibles d'un projet de rénovation sa
 - [x] **T2 — Agrégation Dépenses + drill-down** (AC: 3-4) : `generate_project_expenses` + DTOs + requête détail drill-down + tests agrégation (13 a-f).
 - [x] **T3 — Export PDF + CSV** (AC: 5-6) : `render_project_expenses_pdf` (labels dédiés) + `render_project_expenses_csv` + re-exports.
 - [x] **T4 — API** (AC: 7-9) : `ProjectReportQuery`, 2 endpoints, mapping `ProjectNotFound`→404, i18n slug 5 locales, audit, enregistrement lib.rs avant `;`.
-- [ ] **T5 — Frontend** (AC: 10-12) : types + api + onglet + `ProjectExpensesView` (drill-down expandable) + sélecteurs projet/mode + i18n.
+- [x] **T5 — Frontend** (AC: 10-12) : types + api + onglet + `ProjectExpensesView` (drill-down expandable) + sélecteurs projet/mode + i18n.
 - [ ] **T6 — Tests + gate** (AC: 13-16) : API tests + non-régression + frontend unit/E2E + CHANGELOG + Test Locally First.
 
 ## Dev Notes
