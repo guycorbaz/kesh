@@ -4,6 +4,8 @@
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { createRule, updateRule } from './rules.api';
 	import type { MatchType, ReconciliationRule } from './rules.types';
 
@@ -23,6 +25,16 @@
 	let matchValue = $state(rule?.matchValue ?? '');
 	let counterpartyAccountId = $state<number | null>(rule?.counterpartyAccountId ?? null);
 	let priority = $state(rule?.priority ?? 100);
+	let defaultProjectId = $state<number | null>(rule?.defaultProjectId ?? null);
+
+	// Story 19-5 — projets analytiques pour le sélecteur « projet par défaut ».
+	// Chargement best-effort : un échec ne bloque pas l'édition de la règle.
+	let projects = $state<ProjectResponse[]>([]);
+	$effect(() => {
+		listProjects()
+			.then((p) => (projects = p))
+			.catch(() => (projects = []));
+	});
 
 	let submitting = $state(false);
 	let errorMsg = $state<string | null>(null);
@@ -65,6 +77,7 @@
 					matchValue,
 					counterpartyAccountId,
 					priority,
+					defaultProjectId,
 				});
 			} else {
 				await createRule({
@@ -73,6 +86,7 @@
 					matchValue,
 					counterpartyAccountId,
 					priority,
+					defaultProjectId,
 				});
 			}
 			onSuccess();
@@ -199,6 +213,34 @@
 			)}
 		</span>
 	</div>
+
+	{#if projects.length > 0 || defaultProjectId !== null}
+		<div>
+			<label for="rule-default-project" class="block text-sm font-medium">
+				{i18nMsg('reconciliation-rules-labels-default-project', 'Projet analytique par défaut')}
+			</label>
+			<select
+				id="rule-default-project"
+				bind:value={defaultProjectId}
+				class="mt-1 w-full rounded border border-border px-2 py-1 text-sm"
+				data-testid="rule-form-default-project"
+			>
+				<option value={null}>{i18nMsg('reconciliation-rules-default-project-none', '— Aucun')}</option>
+				{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+					<option value={root.id}>{root.code} — {root.name}</option>
+					{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+						<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+					{/each}
+				{/each}
+				{#if defaultProjectId !== null && !projects.some((p) => p.id === defaultProjectId)}
+					<!-- Tag historique dont le projet est archivé/absent de la liste (leçon 19-2 BH-L2). -->
+					<option value={defaultProjectId}>
+						{i18nMsg('reconciliation-rules-default-project-archived', 'Projet archivé')}
+					</option>
+				{/if}
+			</select>
+		</div>
+	{/if}
 
 	{#if errorMsg}
 		<p class="text-sm text-error" data-testid="rule-form-error">{errorMsg}</p>

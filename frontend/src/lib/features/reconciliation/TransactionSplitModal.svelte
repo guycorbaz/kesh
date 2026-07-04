@@ -22,6 +22,8 @@
 	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal, SplitProposalLine } from './reconciliation.types';
 	import { splitTransaction } from './reconciliation.api';
 
@@ -45,10 +47,11 @@
 		counterpartyAccountId: number | null;
 		amount: string;
 		description: string;
+		projectId: number | null;
 	};
 
 	function blankLine(): SplitLine {
-		return { counterpartyAccountId: null, amount: '', description: '' };
+		return { counterpartyAccountId: null, amount: '', description: '', projectId: null };
 	}
 
 	let splits = $state<SplitLine[]>([blankLine(), blankLine()]);
@@ -56,6 +59,14 @@
 	let submitting = $state(false);
 	let errorMsg = $state<string>('');
 	let bankNotConfigured = $state(false);
+
+	// Story 19-5 — projets analytiques pour le tag par ligne de ventilation.
+	let projects = $state<ProjectResponse[]>([]);
+	$effect(() => {
+		listProjects()
+			.then((p) => (projects = p))
+			.catch(() => (projects = []));
+	});
 
 	const filteredAccounts = $derived(
 		accounts.filter((a) => ['5', '6', '7'].some((c) => a.number.startsWith(c))),
@@ -179,6 +190,8 @@
 				counterpartyAccountId: s.counterpartyAccountId as number,
 				amount: s.amount,
 				description: s.description,
+				// Story 19-5 — projet par ligne (omis si null).
+				...(s.projectId !== null ? { projectId: s.projectId } : {}),
 			}));
 			await splitTransaction(
 				bankAccountId,
@@ -232,6 +245,11 @@
 							<th class="py-1">
 								{i18nMsg('reconciliation-split-th-description', 'Description')}
 							</th>
+							{#if projects.length > 0}
+								<th class="py-1">
+									{i18nMsg('reconciliation-split-th-project', 'Projet')}
+								</th>
+							{/if}
 							<th class="py-1"></th>
 						</tr>
 					</thead>
@@ -263,6 +281,26 @@
 										disabled={submitting}
 									/>
 								</td>
+								{#if projects.length > 0}
+									<td class="py-1 pr-1">
+										<select
+											class="w-full rounded border border-border px-2 py-1 text-sm"
+											data-testid={`split-line-project-${i}`}
+											bind:value={splits[i].projectId}
+											disabled={submitting}
+										>
+											<option value={null}>
+												{i18nMsg('reconciliation-split-project-none', '— Aucun')}
+											</option>
+											{#each projects.filter((p) => p.parentId === null) as root (root.id)}
+												<option value={root.id}>{root.code} — {root.name}</option>
+												{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
+													<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+												{/each}
+											{/each}
+										</select>
+									</td>
+								{/if}
 								<td class="py-1">
 									<Button
 										variant="ghost"

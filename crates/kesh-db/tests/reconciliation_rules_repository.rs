@@ -85,7 +85,45 @@ fn make_rule(
         match_value: match_value.into(),
         counterparty_account_id,
         priority,
+        default_project_id: None,
     }
+}
+
+/// Comme [`make_rule`] mais avec un projet analytique par défaut (Story 19-5).
+fn make_rule_with_project(
+    label: &str,
+    match_type: ReconciliationMatchType,
+    match_value: &str,
+    counterparty_account_id: i64,
+    priority: i32,
+    default_project_id: Option<i64>,
+) -> NewReconciliationRule {
+    NewReconciliationRule {
+        label: label.into(),
+        match_type,
+        match_value: match_value.into(),
+        counterparty_account_id,
+        priority,
+        default_project_id,
+    }
+}
+
+/// Crée un projet analytique (Story 19-5) et retourne son id. `archived`
+/// contrôle l'état pour tester les rejets. Calqué sur
+/// `supplier_invoices_repository.rs::make_project`.
+async fn make_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) \
+         VALUES (?, NULL, ?, ?, ?) RETURNING id",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(format!("Projet {code}"))
+    .bind(archived)
+    .fetch_one(pool)
+    .await
+    .expect("project insert");
+    id
 }
 
 // ---------------------------------------------------------------------------
@@ -654,4 +692,241 @@ async fn increment_applied_count_atomic(pool: MySqlPool) {
         "version DOIT être bumpée à chaque increment (Pass 1 HIGH AA1 fix — \
          requis par spec step 14 + scope-locked §5 + T2.2)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 19-5 — projet analytique par défaut sur une règle (AC #3-#5, #20).
+// ---------------------------------------------------------------------------
+
+/// Create avec `default_project_id` valide → relu correctement.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_default_project_persists(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Alpha SA").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let account = create_test_account(&pool, company_id, user_id, "6510", "Telecom").await;
+    let project_id = make_project(&pool, company_id, "RENOV", false).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let created = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        &make_rule_with_project(
+            "Swisscom projet",
+            ReconciliationMatchType::CounterpartyContains,
+            "Swisscom",
+            account,
+            100,
+            Some(project_id),
+        ),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(created.default_project_id, Some(project_id));
+
+    let reloaded = reconciliation_rules::find_by_id_for_company(&pool, company_id, created.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reloaded.default_project_id, Some(project_id));
+}
+
+/// Create avec projet archivé → `IllegalStateTransition` (mappé 409).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_archived_project_rejected(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Alpha SA").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let account = create_test_account(&pool, company_id, user_id, "6510", "Telecom").await;
+    let project_id = make_project(&pool, company_id, "OLD", true).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let res = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        &make_rule_with_project(
+            "Règle projet clos",
+            ReconciliationMatchType::CounterpartyContains,
+            "X",
+            account,
+            100,
+            Some(project_id),
+        ),
+    )
+    .await;
+    drop(tx);
+
+    assert!(
+        matches!(res, Err(DbError::IllegalStateTransition(_))),
+        "projet archivé doit être rejeté, got {res:?}"
+    );
+}
+
+/// Create avec projet inexistant OU cross-company → `NotFound` (mappé 404).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_unknown_or_cross_company_project_rejected(pool: MySqlPool) {
+    let company_a = create_test_company(&pool, "Alpha SA").await;
+    let company_b = create_test_company(&pool, "Beta SA").await;
+    let user_a = create_test_user(&pool, "alice", company_a).await;
+    let user_b = create_test_user(&pool, "bob", company_b).await;
+    let account_a = create_test_account(&pool, company_a, user_a, "6510", "Telecom").await;
+    // Projet appartenant à B, utilisé (à tort) par une règle de A.
+    let project_b = make_project(&pool, company_b, "BPROJ", false).await;
+    let _ = user_b;
+
+    // Inexistant.
+    let mut tx = pool.begin().await.unwrap();
+    let res = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_a,
+        user_a,
+        &make_rule_with_project(
+            "Règle projet fantôme",
+            ReconciliationMatchType::CounterpartyContains,
+            "X",
+            account_a,
+            100,
+            Some(999_999),
+        ),
+    )
+    .await;
+    drop(tx);
+    assert!(
+        matches!(res, Err(DbError::NotFound)),
+        "projet inexistant doit être rejeté NotFound, got {res:?}"
+    );
+
+    // Cross-company.
+    let mut tx = pool.begin().await.unwrap();
+    let res = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_a,
+        user_a,
+        &make_rule_with_project(
+            "Règle projet d'autrui",
+            ReconciliationMatchType::CounterpartyExact,
+            "Y",
+            account_a,
+            100,
+            Some(project_b),
+        ),
+    )
+    .await;
+    drop(tx);
+    assert!(
+        matches!(res, Err(DbError::NotFound)),
+        "projet cross-company doit être rejeté NotFound, got {res:?}"
+    );
+}
+
+/// Update qui change le projet vers un projet actif → validé et persisté ;
+/// update qui touche un autre champ sans changer le projet dont le projet
+/// stocké a été archivé entre-temps → passe (grandfathering, DC4).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_validates_new_project_but_grandfathers_unchanged(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Alpha SA").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let account = create_test_account(&pool, company_id, user_id, "6510", "Telecom").await;
+    let project_a = make_project(&pool, company_id, "PA", false).await;
+    let project_b = make_project(&pool, company_id, "PB", false).await;
+
+    // Règle sans projet.
+    let mut tx = pool.begin().await.unwrap();
+    let r = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        &make_rule(
+            "Base",
+            ReconciliationMatchType::CounterpartyContains,
+            "Z",
+            account,
+            100,
+        ),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    // (a) Update affecte project_a → validé.
+    let mut tx = pool.begin().await.unwrap();
+    let updated = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        r.version,
+        &UpdateReconciliationRule {
+            default_project_id: Some(Some(project_a)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(updated.default_project_id, Some(project_a));
+
+    // (b) Archive project_a « après coup » puis update le libellé seul :
+    // grandfathering — le projet inchangé n'est pas re-validé → pas d'erreur.
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(project_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    let relabeled = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        updated.version,
+        &UpdateReconciliationRule {
+            label: Some("Base renommée".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("update label seul ne re-valide pas le projet inchangé (grandfathering)");
+    tx.commit().await.unwrap();
+    assert_eq!(relabeled.label, "Base renommée");
+    assert_eq!(relabeled.default_project_id, Some(project_a));
+
+    // (c) Changer vers project_b (actif) reste possible.
+    let mut tx = pool.begin().await.unwrap();
+    let moved = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        relabeled.version,
+        &UpdateReconciliationRule {
+            default_project_id: Some(Some(project_b)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(moved.default_project_id, Some(project_b));
+
+    // (d) Effacer le projet (Some(None)) → NULL, pas de validation.
+    let mut tx = pool.begin().await.unwrap();
+    let cleared = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        moved.version,
+        &UpdateReconciliationRule {
+            default_project_id: Some(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(cleared.default_project_id, None);
 }

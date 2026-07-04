@@ -7,6 +7,7 @@ import {
 	getProposals,
 	manualMatchTransaction,
 	rejectProposals,
+	splitTransaction,
 } from './reconciliation.api';
 
 function fakeJwt(): string {
@@ -111,5 +112,30 @@ describe('reconciliation.api', () => {
 		// Verbe HTTP doit rester POST (cf. Pass 4 Sonnet F1 + Pass 5 Haiku
 		// M1 — naming clarification).
 		expect(init.method).toBe('POST');
+	});
+
+	// Story 19-5 — tag analytique document-level dans le body manual.
+	it('manualMatchTransaction inclut projectId quand fourni, l’omet si null', async () => {
+		await manualMatchTransaction(17, 42, 6810, undefined, undefined, 7);
+		let body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+		expect(body.projectId).toBe(7);
+
+		mockFetch.mockClear();
+		await manualMatchTransaction(17, 42, 6810, undefined, undefined, null);
+		body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+		expect(body.projectId).toBeUndefined();
+	});
+
+	// Story 19-5 — tag analytique par ligne de ventilation dans le body split.
+	it('splitTransaction propage projectId par ligne', async () => {
+		await splitTransaction(17, 42, [
+			{ counterpartyAccountId: 5000, amount: '100', description: 'A', projectId: 3 },
+			{ counterpartyAccountId: 6900, amount: '50', description: 'B' },
+		]);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toContain('/api/v1/reconciliation/split');
+		const body = JSON.parse(init.body as string);
+		expect(body.splits[0].projectId).toBe(3);
+		expect(body.splits[1].projectId).toBeUndefined();
 	});
 });

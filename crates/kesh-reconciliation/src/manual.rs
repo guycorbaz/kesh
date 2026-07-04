@@ -70,6 +70,7 @@ pub fn build_journal_entry_for_counterparty(
     counterparty_account_id: i64,
     description: String,
     entry_date: NaiveDate,
+    project_id: Option<i64>,
 ) -> NewJournalEntry {
     assert!(
         !tx.amount.is_zero(),
@@ -101,8 +102,11 @@ pub fn build_journal_entry_for_counterparty(
         entry_date,
         journal: Journal::Banque,
         description,
-        // Tag projet depuis la banque = Story 19-5 (à venir) → None ici.
-        project_id: None,
+        // Story 19-5 — tag document-level (mono-usage) : recopié sur les 2
+        // lignes (banque + contrepartie) via `line.project_id.or(new.project_id)`
+        // dans `journal_entries::create_in_tx`. Validé par le caller AVANT
+        // create_in_tx (le repo ne valide pas `new.project_id`, cf. 19-2 DC2).
+        project_id,
         lines: vec![
             NewJournalEntryLine {
                 account_id: bank_account_journal_id,
@@ -165,12 +169,14 @@ mod tests {
             7510, // counterparty_account_id (Intérêts bancaires)
             "Intérêts mai".to_string(),
             entry_date,
+            None, // project_id (Story 19-5)
         );
 
         assert_eq!(je.company_id, tx.company_id);
         assert_eq!(je.entry_date, entry_date);
         assert!(matches!(je.journal, Journal::Banque));
         assert_eq!(je.description, "Intérêts mai");
+        assert_eq!(je.project_id, None);
         assert_eq!(je.lines.len(), 2);
 
         // Ligne 1 : banque (débit pour entrée cash).
@@ -204,6 +210,7 @@ mod tests {
             6810, // counterparty_account_id (Frais bancaires)
             "Frais TWINT mai".to_string(),
             entry_date,
+            None, // project_id (Story 19-5)
         );
 
         assert_eq!(je.company_id, tx.company_id);
@@ -226,5 +233,32 @@ mod tests {
         let total_debit: Decimal = je.lines.iter().map(|l| l.debit).sum();
         let total_credit: Decimal = je.lines.iter().map(|l| l.credit).sum();
         assert_eq!(total_debit, total_credit, "lignes équilibrées");
+    }
+
+    /// Story 19-5 — le `project_id` document-level est porté par l'écriture ;
+    /// la propagation aux 2 lignes se fait dans `create_in_tx` via
+    /// `line.project_id.or(new.project_id)`, donc au niveau builder les lignes
+    /// restent `None` et seule l'entête porte le tag.
+    #[test]
+    fn build_journal_entry_for_counterparty_tags_project_document_level() {
+        let tx = make_test_tx(dec!(200.00));
+        let entry_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+        let je = build_journal_entry_for_counterparty(
+            &tx,
+            1020,
+            7510,
+            "Loyer projet rénovation".to_string(),
+            entry_date,
+            Some(42), // project_id
+        );
+
+        assert_eq!(
+            je.project_id,
+            Some(42),
+            "tag document-level porté par l'entête"
+        );
+        // Les lignes restent None au niveau builder — la propagation est faite
+        // par le repo (create_in_tx). Documenté par 19-2/19-3.
+        assert!(je.lines.iter().all(|l| l.project_id.is_none()));
     }
 }

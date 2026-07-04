@@ -223,6 +223,21 @@ async fn link_bank_account_to_journal(
     tx.commit().await.unwrap();
 }
 
+/// Crée un projet analytique (Story 19-5) et retourne son id.
+async fn create_project(pool: &MySqlPool, company_id: i64, code: &str) -> i64 {
+    let result = sqlx::query(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) \
+         VALUES (?, NULL, ?, ?, FALSE)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(format!("Projet {code}"))
+    .execute(pool)
+    .await
+    .expect("project insert");
+    result.last_insert_id() as i64
+}
+
 async fn insert_fake_fiscal_year(pool: &MySqlPool, company_id: i64) -> i64 {
     let name = format!("FY 2026 c{company_id}");
     let existing: Option<i64> =
@@ -442,6 +457,70 @@ async fn setup_split_ctx(pool: &MySqlPool, label: &str, iban: &str) -> SplitCtx 
 // ============================================================
 // Tests
 // ============================================================
+
+/// Story 19-5 — split avec un `projectId` **par ligne de ventilation** :
+/// chaque ligne de contrepartie porte son propre projet, la ligne banque
+/// reste non taguée. Validation projet automatique (create_in_tx per-ligne).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn split_tags_project_per_line(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_split_ctx(&pool, "split_project", "CH1000000000000000009").await;
+    let project_a = create_project(&pool, ctx.company_id, "CHALET").await;
+    let project_b = create_project(&pool, ctx.company_id, "APPART").await;
+
+    let body = serde_json::json!({
+        "bankAccountId": ctx.bank_account_id,
+        "bankTransactionId": ctx.tx_id,
+        "splits": [
+            { "counterpartyAccountId": ctx.cp_a_account_id, "amount": "5000", "description": "Rénovation chalet", "projectId": project_a },
+            { "counterpartyAccountId": ctx.cp_a_account_id, "amount": "4500", "description": "Rénovation appart", "projectId": project_b },
+            { "counterpartyAccountId": ctx.cp_b_account_id, "amount": "1200", "description": "Divers non affecté" },
+        ],
+        "valueDate": "2026-05-31"
+    });
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/split"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    let je_id = body["journalEntryId"].as_i64().unwrap();
+
+    // Ligne banque : non taguée.
+    let bank_project: Option<i64> = sqlx::query_scalar(
+        "SELECT project_id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(je_id)
+    .bind(ctx.bank_ledger_account_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        bank_project, None,
+        "la ligne banque ne doit pas être taguée"
+    );
+
+    // Les 2 premières lignes de ventilation portent leur projet respectif.
+    let tagged: Vec<(Decimal, Option<i64>)> = sqlx::query_as(
+        "SELECT debit, project_id FROM journal_entry_lines \
+         WHERE entry_id = ? AND account_id != ? ORDER BY debit DESC",
+    )
+    .bind(je_id)
+    .bind(ctx.bank_ledger_account_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    // débit 5000 → project_a, débit 4500 → project_b, débit 1200 → None.
+    assert_eq!(tagged.len(), 3);
+    assert_eq!(tagged[0], (dec!(5000.00), Some(project_a)));
+    assert_eq!(tagged[1], (dec!(4500.00), Some(project_b)));
+    assert_eq!(tagged[2], (dec!(1200.00), None));
+}
 
 /// AC #93 — happy path split débit. Tx -10700 → 3 lignes contreparties
 /// (5000+4500+1200) en N+1 lignes JE (1 banque crédit 10700 + 3 splits débit).

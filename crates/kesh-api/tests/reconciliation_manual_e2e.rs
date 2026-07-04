@@ -214,6 +214,22 @@ async fn archive_account(pool: &MySqlPool, account_id: i64, user_id: i64) {
         .expect("archive account");
 }
 
+/// Crée un projet analytique (Story 19-5) et retourne son id.
+async fn create_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+    let result = sqlx::query(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) \
+         VALUES (?, NULL, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(format!("Projet {code}"))
+    .bind(archived)
+    .execute(pool)
+    .await
+    .expect("project insert");
+    result.last_insert_id() as i64
+}
+
 /// Crée un fiscal_year `Open` couvrant 2026-01-01 → 2026-12-31.
 async fn insert_open_fiscal_year(pool: &MySqlPool, company_id: i64) -> i64 {
     let result = sqlx::query(
@@ -480,6 +496,113 @@ async fn post_manual_creates_journal_entry_and_marks_transaction_reconciled(pool
     assert_eq!(status, "reconciled");
     assert_eq!(matched_entry_id, Some(je_id));
     assert!(rej_at.is_none(), "auto_match_rejected_at doit être NULL");
+}
+
+/// Story 19-5 — manual match avec `projectId` document-level : les **2
+/// lignes** de l'écriture (banque + contrepartie) portent le projet, via la
+/// propagation `line.project_id.or(new.project_id)`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_manual_tags_project_on_all_lines(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "AcmeProj", "CH4431999123000889013", Role::Comptable).await;
+    let project_id = create_project(&pool, ctx.company_id, "RENOV-19-5", false).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("manual_project"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-150.00),
+            "TWINT-PROJ",
+        )],
+    )
+    .await;
+    let tx_id = tx_ids[0];
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "description": "Frais projet rénovation",
+            "projectId": project_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let je_id = body["journalEntryId"].as_i64().expect("journalEntryId");
+
+    let project_ids: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT project_id FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(je_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(project_ids.len(), 2);
+    assert!(
+        project_ids.iter().all(|p| *p == Some(project_id)),
+        "les 2 lignes doivent porter le projet (propagation document-level), got {project_ids:?}"
+    );
+}
+
+/// Story 19-5 — manual match avec un `projectId` archivé → 409 (mapping
+/// DbError::IllegalStateTransition), pas de 500.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_manual_rejects_archived_project(pool: MySqlPool) {
+    let ctx = setup_full(
+        &pool,
+        "AcmeProjArch",
+        "CH4431999123000889014",
+        Role::Comptable,
+    )
+    .await;
+    let project_id = create_project(&pool, ctx.company_id, "OLD-19-5", true).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("manual_project_archived"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-150.00),
+            "TWINT-ARCH",
+        )],
+    )
+    .await;
+    let tx_id = tx_ids[0];
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "projectId": project_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409, "projet archivé doit retourner 409");
 }
 
 /// AC #84 — happy path **crédit positif** (encaissement) : tx pending

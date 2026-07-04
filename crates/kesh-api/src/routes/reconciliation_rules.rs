@@ -60,6 +60,8 @@ pub struct ReconciliationRuleResponse {
     pub counterparty_account_id: i64,
     pub priority: i32,
     pub active: bool,
+    /// Projet analytique par défaut (Story 19-5) — `null` si aucun.
+    pub default_project_id: Option<i64>,
     pub applied_count: i64,
     pub last_applied_at: Option<chrono::NaiveDateTime>,
     pub version: i32,
@@ -77,6 +79,7 @@ impl From<ReconciliationRule> for ReconciliationRuleResponse {
             counterparty_account_id: r.counterparty_account_id,
             priority: r.priority,
             active: r.active,
+            default_project_id: r.default_project_id,
             applied_count: r.applied_count,
             last_applied_at: r.last_applied_at,
             version: r.version,
@@ -95,6 +98,9 @@ pub struct CreateRuleRequest {
     pub counterparty_account_id: i64,
     #[serde(default = "default_priority")]
     pub priority: i32,
+    /// Projet analytique par défaut (Story 19-5) — optionnel.
+    #[serde(default)]
+    pub default_project_id: Option<i64>,
 }
 
 fn default_priority() -> i32 {
@@ -112,6 +118,11 @@ pub struct UpdateRuleRequest {
     pub counterparty_account_id: Option<i64>,
     pub priority: Option<i32>,
     pub active: Option<bool>,
+    /// Projet analytique par défaut (Story 19-5) — sémantique deux niveaux :
+    /// absent = inchangé ; `null` = effacer ; `<id>` = affecter. Mappé sur
+    /// `UpdateReconciliationRule.default_project_id: Option<Option<i64>>`.
+    #[serde(default)]
+    pub default_project_id: Option<Option<i64>>,
 }
 
 #[derive(Deserialize)]
@@ -259,6 +270,7 @@ pub async fn post_create(
         match_value: normalized_match_value,
         counterparty_account_id: req.counterparty_account_id,
         priority: req.priority,
+        default_project_id: req.default_project_id,
     };
     let match_type_for_err = req.match_type;
     let match_value_for_err = new_rule.match_value.clone();
@@ -372,6 +384,7 @@ pub async fn patch(
         counterparty_account_id: req.counterparty_account_id,
         priority: req.priority,
         active: req.active,
+        default_project_id: req.default_project_id,
     };
 
     let match_type_for_err = current.match_type;

@@ -1187,6 +1187,22 @@ async fn get_proposals_skips_inactive_rule(pool: MySqlPool) {
 // Helpers pour tests accept-with-rule
 // ============================================================
 
+/// Crée un projet analytique (Story 19-5) et retourne son id.
+async fn create_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+    let result = sqlx::query(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) \
+         VALUES (?, NULL, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(format!("Projet {code}"))
+    .bind(archived)
+    .execute(pool)
+    .await
+    .expect("project insert");
+    result.last_insert_id() as i64
+}
+
 async fn create_rule_and_tx(
     pool: &MySqlPool,
     app: &TestApp,
@@ -1687,4 +1703,154 @@ async fn accept_with_rule_emits_audit_with_null_value_date_when_tx_value_date_is
     );
     assert!(!details["entry_date"].is_null());
     let _ = ctx.bank_ledger_account_id;
+}
+
+// ============================================================
+// Story 19-5 — projet analytique par défaut sur une règle
+// ============================================================
+
+/// AC #21a — accept `type=rule` d'une règle portant `defaultProjectId` :
+/// les **2 lignes** de l'écriture générée portent le projet (propagation
+/// document-level via `line.project_id.or(new.project_id)`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn accept_with_rule_stamps_default_project_on_all_lines(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let project_id = create_project(&pool, ctx.company_id, "RENOV-RULE", false).await;
+
+    // Règle avec projet par défaut.
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Loyer projet",
+            "matchType": "counterparty_contains",
+            "matchValue": "Loyer",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "defaultProjectId": project_id,
+        }),
+    )
+    .await;
+    assert_eq!(r["defaultProjectId"].as_i64(), Some(project_id));
+    let rule_id = r["id"].as_i64().unwrap();
+
+    let tx_id = create_pending_bank_tx(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        ctx.bank_account_id,
+        dec!(-1200.00),
+        "Loyer SA",
+        None,
+        None,
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+
+    let resp = post_accept_rule(
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        rule_id,
+        ctx.counterparty_account_id,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1);
+    let je_id = accepted[0]["journalEntryId"].as_i64().unwrap();
+
+    let project_ids: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT project_id FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(je_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(project_ids.len(), 2);
+    assert!(
+        project_ids.iter().all(|p| *p == Some(project_id)),
+        "les 2 lignes doivent porter le projet par défaut de la règle, got {project_ids:?}"
+    );
+}
+
+/// AC #21d — le `defaultProjectId` d'une règle a été archivé après la
+/// création de la règle : l'accept re-valide et retourne un `FailedProposal`
+/// `PROJECT_ARCHIVED` (HTTP 200, `accepted` vide), sans casser le batch ni
+/// escalader en AppError globale.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn accept_with_rule_fails_proposal_when_default_project_archived(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let project_id = create_project(&pool, ctx.company_id, "SOON-ARCHIVED", false).await;
+
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Loyer projet clos",
+            "matchType": "counterparty_contains",
+            "matchValue": "Loyer",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "defaultProjectId": project_id,
+        }),
+    )
+    .await;
+    let rule_id = r["id"].as_i64().unwrap();
+
+    // Archiver le projet APRÈS création de la règle.
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(project_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let tx_id = create_pending_bank_tx(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        ctx.bank_account_id,
+        dec!(-1200.00),
+        "Loyer SA",
+        None,
+        None,
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+
+    let resp = post_accept_rule(
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        rule_id,
+        ctx.counterparty_account_id,
+    )
+    .await;
+    // Succès partiel = succès HTTP (pattern batch FailedProposal).
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(
+        body["accepted"].as_array().unwrap().is_empty(),
+        "aucune proposition ne doit être acceptée"
+    );
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0]["errorCode"].as_str(), Some("PROJECT_ARCHIVED"));
+    assert_eq!(failed[0]["bankTransactionId"].as_i64(), Some(tx_id));
+
+    // La transaction reste pending (rollback du savepoint).
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        status, "pending",
+        "la tx doit rester pending après échec projet"
+    );
 }
