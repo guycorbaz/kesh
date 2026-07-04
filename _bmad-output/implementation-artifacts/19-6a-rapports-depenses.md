@@ -99,3 +99,40 @@ so that je capte toutes les dépenses déductibles d'un projet de rénovation sa
 ## Questions
 
 Aucune — DC5 (HT), DC8 (hors 10xx, s'applique à 19-6b), drill-down inline : tous figés Guy 2026-07-04 (cf. umbrella).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 4.8 — dev-story orchestré inline (run autonome, session longue).
+
+### État au 2026-07-04 (BACKEND DONE, frontend + review à finir en contexte frais)
+
+**FAIT (committé `c59aeb1`)** — backend bout-en-bout, testé :
+- **T1** fondation `crates/kesh-report/src/project_report.rs` : `ProjectInfo`, `ProjectReportScope` + `resolve_scope` (racine→enfants, sous-projet→lui seul), `ProjectPeriodMode {FiscalYear, Cumulative}` + `period_label`/`as_str`/`je_filter` (fragment SQL + binds), `in_placeholders`. `ReportError::ProjectNotFound` (errors.rs) → mappé 404 (`kesh-api/errors.rs` : `AppError::Database(DbError::NotFound)`). Re-exports `lib.rs`.
+- **T2** `generate_project_expenses` : 2 requêtes (agrégat par (project_id, compte) signe debit−credit + détail drill-down par écriture), assemblage sections en Rust (racine puis enfants par code, sections vides omises), `IN(...)` dynamique + `bind_period`. DTOs camelCase (`ProjectExpensesReport/ProjectExpenseSection/ExpenseAccountRow/ProjectEntryRef`).
+- **T3** `render_project_expenses_pdf` + `ProjectExpensesPdfLabels` (pdf.rs, `draw_expense_row`) + `render_project_expenses_csv` (csv.rs, BOM/;/CRLF). Re-exports lib.rs.
+- **T4** API `routes/reports.rs` : `ProjectReportQuery` + `ProjectModeParam` (fiscal_year|cumulative), `resolve_project_report` (valide project_id>0 + fiscalYearId requis si fiscal_year, résout mode ; cumulé `today = Utc::now().date_naive()`), handlers `get_project_expenses` + `export_project_expenses` (+ `build_project_export_response` dates-based, `project_mode_dates`), audit `emit_project_report_audit`/`_export_audit`. Routes enregistrées `lib.rs` AVANT le `;`. i18n slug `reports-filename-project-expenses` (4 locales fr/de/it/en).
+- **Tests** `crates/kesh-report/tests/project_expenses.rs` : 4/4 verts (rollup+drill-down+exclusion contrepartie, cumulé cross-FY, 404, scope vide). fmt + clippy 0 (kesh-report + kesh-api).
+
+**RESTE (contexte frais)** :
+- **T5 frontend** : `reports.types.ts` DTO `ProjectExpensesReport` + `reports.api.ts` `getProjectExpenses`/export + onglet dans `reports/+page.svelte` (⚠️ query différente : sélecteur projet `listProjects()` + sélecteur mode exercice/cumulé, pas seulement `fiscalYearId` — le machinery `ReportType`/`ReportQuery` existant est typé pour fiscalYearId, prévoir une intégration soignée ou un état dédié) + `ProjectExpensesView.svelte` (sections + drill-down expandable) + `TYPE_SLUGS_FALLBACK` `project-expenses: 'depenses-par-projet'`.
+- **T6 tests** : API HTTP e2e (`crates/kesh-api/tests/` : JSON + export PDF %PDF + CSV BOM + validation mode/fiscalYearId 400 + multi-tenant 404) ; frontend unit (`reports.api` query 2 modes) + View ; E2E Playwright ; CHANGELOG [Non publié] ; gate Test Locally First workspace serial.
+- **Code-review** 2 passes (dev Opus → Sonnet → Haiku) jusqu'à 0>LOW.
+
+### File List (à jour, backend)
+
+- crates/kesh-report/src/project_report.rs (nouveau)
+- crates/kesh-report/src/lib.rs (module + re-exports)
+- crates/kesh-report/src/errors.rs (ProjectNotFound)
+- crates/kesh-report/src/pdf.rs (ProjectExpensesPdfLabels + render_project_expenses_pdf + draw_expense_row)
+- crates/kesh-report/src/csv.rs (render_project_expenses_csv)
+- crates/kesh-report/tests/project_expenses.rs (nouveau, 4 tests)
+- crates/kesh-api/src/routes/reports.rs (ProjectReportQuery + 2 handlers + helpers + audit)
+- crates/kesh-api/src/errors.rs (ReportError::ProjectNotFound → 404)
+- crates/kesh-api/src/lib.rs (2 routes)
+- crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl (slug)
+
+## Change Log
+
+- **Dev backend (2026-07-04, Opus 4.8)** : T1-T4 + tests intégration agrégation (4/4). Backend Dépenses par projet complet (fondation partagée réutilisable par 19-6b, agrégation + drill-down + PDF/CSV + API 2 endpoints + i18n). Frontend (T5) + tests HTTP/E2E (T6) + code-review à compléter en contexte frais (session longue — split qualité). Commit `c59aeb1`.
