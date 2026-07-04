@@ -20,6 +20,7 @@ pub mod income_statement;
 pub mod journal_report;
 pub mod pdf;
 pub mod period;
+pub mod project_report;
 pub mod trial_balance;
 pub mod vat_report;
 
@@ -47,3 +48,11 @@ pub use pdf::{
 // Story 11-2 — re-exports rapport TVA
 pub use csv::render_vat_report_csv;
 pub use pdf::{VatPdfLabels, render_vat_report_pdf};
+
+// Story 19-6a — rapports analytiques par projet
+pub use csv::render_project_expenses_csv;
+pub use pdf::{ProjectExpensesPdfLabels, render_project_expenses_pdf};
+pub use project_report::{
+    ExpenseAccountRow, ProjectEntryRef, ProjectExpenseSection, ProjectExpensesReport, ProjectInfo,
+    ProjectPeriodMode, ProjectReportScope, generate_project_expenses, resolve_scope,
+};

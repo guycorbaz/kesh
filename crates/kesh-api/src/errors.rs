@@ -666,6 +666,11 @@ impl From<kesh_report::errors::ReportError> for AppError {
             ReportError::FiscalYearNotFound { fiscal_year_id } => {
                 AppError::ReportFiscalYearNotFound { fiscal_year_id }
             }
+            // Story 19-6a — projet inconnu/cross-company → 404 (cohérent
+            // routes/projects.rs qui mappe get_for_company None → DbError::NotFound).
+            ReportError::ProjectNotFound { .. } => {
+                AppError::Database(kesh_db::errors::DbError::NotFound)
+            }
             ReportError::PeriodInvalid { reason } => AppError::Validation(reason),
             ReportError::PeriodOutOfFiscalYear {
                 fy_start,
