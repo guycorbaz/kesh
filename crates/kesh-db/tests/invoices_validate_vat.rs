@@ -64,6 +64,7 @@ async fn create_and_validate(
                 vat_rate: *rate,
             })
             .collect(),
+        project_id: None,
     };
     let (inv, _) = invoices::create(pool, seeded.admin_user_id, new)
         .await
@@ -307,6 +308,7 @@ async fn validate_uses_line_rate_snapshot_immune_to_vat_rates_change(pool: MySql
             unit_price: dec!(1000.00),
             vat_rate: dec!(8.10),
         }],
+        project_id: None,
     };
     let (inv, _) = invoices::create(&pool, seeded.admin_user_id, new)
         .await
@@ -345,4 +347,219 @@ async fn validate_uses_line_rate_snapshot_immune_to_vat_rates_change(pool: MySql
         "créance TTC = 1000 + 81 (snapshot, pas 1090)"
     );
     assert_eq!(sum_debit(je), sum_credit(je), "écriture équilibrée");
+}
+
+// ---------------------------------------------------------------------------
+// Story 19-4 — tag analytique document-level (Epic 19)
+// ---------------------------------------------------------------------------
+
+/// Helper Story 19-4 : insère un projet analytique et retourne son id (calque
+/// le helper 19-3 de `supplier_invoices_repository.rs`).
+async fn make_project(pool: &MySqlPool, company_id: i64, code: &str, archived: bool) -> i64 {
+    sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived, version) VALUES (?, ?, ?, ?, 0)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(code)
+    .bind(archived)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+fn draft_with_project(
+    seeded: &SeededCompany,
+    contact_id: i64,
+    project_id: Option<i64>,
+) -> NewInvoice {
+    NewInvoice {
+        company_id: seeded.company_id,
+        contact_id,
+        date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+        due_date: None,
+        payment_terms: None,
+        project_id,
+        lines: vec![NewInvoiceLine {
+            description: "Ligne".into(),
+            quantity: dec!(1),
+            unit_price: dec!(1000.00),
+            vat_rate: dec!(8.10),
+        }],
+    }
+}
+
+/// (19-4 a) Le projet de la facture est propagé sur TOUTES les lignes de
+/// l'écriture de vente à la validation (créance, produit, TVA comprises).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn validate_with_project_tags_all_sale_lines(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let project = make_project(&pool, seeded.company_id, "RENDEMENT", false).await;
+
+    let (inv, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        draft_with_project(&seeded, contact, Some(project)),
+    )
+    .await
+    .expect("create");
+    assert_eq!(inv.project_id, Some(project));
+
+    let v = invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+        .await
+        .expect("validate");
+    assert!(!v.journal_entry.lines.is_empty());
+    assert!(
+        v.journal_entry
+            .lines
+            .iter()
+            .all(|l| l.project_id == Some(project)),
+        "toutes les lignes de vente doivent porter project_id={project}, got {:?}",
+        v.journal_entry
+            .lines
+            .iter()
+            .map(|l| l.project_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// (19-4 b) Un projet archivé est refusé à la CRÉATION du brouillon.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let archived = make_project(&pool, seeded.company_id, "OLD", true).await;
+
+    let err = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        draft_with_project(&seeded, contact, Some(archived)),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(_)),
+        "got {err:?}"
+    );
+}
+
+/// (19-4 c) Projet inexistant → NotFound (idem cross-company : scoping company
+/// dans validate_taggable_in_tx, couvert par les tests 19-2 du helper).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+
+    let err = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        draft_with_project(&seeded, contact, Some(999_999_999)),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, DbError::NotFound), "got {err:?}");
+}
+
+/// (19-4 d) Grandfathering à l'édition du brouillon : un tag INCHANGÉ sur un
+/// projet archivé après coup ne bloque pas l'édition ; un CHANGEMENT de projet
+/// est validé (archivé refusé).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_grandfathers_unchanged_project(pool: MySqlPool) {
+    use kesh_db::entities::InvoiceUpdate;
+
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let p = make_project(&pool, seeded.company_id, "GRAND", false).await;
+    let q = make_project(&pool, seeded.company_id, "GRAND-Q", true).await;
+
+    let (inv, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        draft_with_project(&seeded, contact, Some(p)),
+    )
+    .await
+    .expect("create");
+
+    // Archiver P après la pose du tag.
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(p)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mk_changes = |project_id: Option<i64>| InvoiceUpdate {
+        contact_id: contact,
+        date: inv.date,
+        due_date: inv.due_date,
+        payment_terms: Some("60".into()),
+        project_id,
+        lines: vec![NewInvoiceLine {
+            description: "Ligne".into(),
+            quantity: dec!(1),
+            unit_price: dec!(1000.00),
+            vat_rate: dec!(8.10),
+        }],
+    };
+
+    // (i) Tag inchangé (P archivé) + édition d'un autre champ → OK.
+    let (after, _) = invoices::update(
+        &pool,
+        seeded.company_id,
+        inv.id,
+        inv.version,
+        seeded.admin_user_id,
+        mk_changes(Some(p)),
+    )
+    .await
+    .expect("le tag inchangé archivé doit être toléré à l'édition");
+    assert_eq!(after.project_id, Some(p));
+
+    // (ii) Changement vers un AUTRE projet archivé (Q) → refus.
+    let err = invoices::update(
+        &pool,
+        seeded.company_id,
+        inv.id,
+        after.version,
+        seeded.admin_user_id,
+        mk_changes(Some(q)),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(_)),
+        "changement vers projet archivé doit être refusé, got {err:?}"
+    );
+}
+
+/// (19-4 e) Re-validation AU POSTING : un projet archivé entre le brouillon et
+/// la validation est refusé (toute nouvelle entrée au grand livre = projet actif).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn validate_rejects_project_archived_after_draft(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let p = make_project(&pool, seeded.company_id, "LATE-ARCH", false).await;
+
+    let (inv, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        draft_with_project(&seeded, contact, Some(p)),
+    )
+    .await
+    .expect("create");
+
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(p)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(_)),
+        "posting sur projet archivé doit être refusé, got {err:?}"
+    );
 }

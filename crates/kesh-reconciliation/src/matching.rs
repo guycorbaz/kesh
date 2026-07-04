@@ -220,6 +220,7 @@ mod tests {
             total_amount: total,
             journal_entry_id: Some(999),
             paid_at: None,
+            project_id: None,
             version: 1,
             created_at: NaiveDateTime::default(),
             updated_at: NaiveDateTime::default(),

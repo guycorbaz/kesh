@@ -66,6 +66,7 @@ async fn create_and_validate(
                 vat_rate: *rate,
             })
             .collect(),
+        project_id: None,
     };
     let (inv, _) = invoices::create(pool, seeded.admin_user_id, new)
         .await
@@ -230,6 +231,7 @@ async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
                 unit_price: dec!(100.00),
                 vat_rate: dec!(8.10),
             }],
+            project_id: None,
         },
     )
     .await
@@ -314,4 +316,96 @@ async fn credit_note_refused_when_already_credited(pool: MySqlPool) {
     .await
     .unwrap_err();
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
+}
+
+// ---------------------------------------------------------------------------
+// Story 19-4 — l'avoir hérite le projet de la facture (net par projet = 0)
+// ---------------------------------------------------------------------------
+
+/// L'avoir reprend le tag analytique de la facture d'origine : après la
+/// contre-passation, la somme (débit − crédit) des lignes taguées sur le
+/// projet vaut 0. Fonctionne aussi si le projet a été ARCHIVÉ entre la
+/// validation et l'avoir (DC3 : pas de re-check archivé sur l'annulation,
+/// miroir pay/cancel-after-archive 19-3).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn credit_note_inherits_project_and_nets_to_zero(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+
+    // Projet actif + facture taguée validée.
+    let project: i64 = sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived, version) VALUES (?, 'AVOIR-P', 'AVOIR-P', FALSE, 0)",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    let new = NewInvoice {
+        company_id: seeded.company_id,
+        contact_id: contact,
+        date: d(2026, 6, 15),
+        due_date: None,
+        payment_terms: None,
+        project_id: Some(project),
+        lines: vec![NewInvoiceLine {
+            description: "Ligne".into(),
+            quantity: dec!(1),
+            unit_price: dec!(1000.00),
+            vat_rate: dec!(8.10),
+        }],
+    };
+    let (inv, _) = invoices::create(&pool, seeded.admin_user_id, new)
+        .await
+        .expect("create");
+    invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+        .await
+        .expect("validate");
+
+    // Archiver le projet APRÈS la validation : l'avoir doit rester possible.
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let issued = credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id: inv.id,
+            date: d(2026, 7, 1),
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("l'avoir doit passer même si le projet est archivé (DC3)");
+
+    // Toutes les lignes de la contre-passation portent le projet hérité.
+    assert!(
+        issued
+            .journal_entry
+            .lines
+            .iter()
+            .all(|l| l.project_id == Some(project)),
+        "lignes avoir: {:?}",
+        issued
+            .journal_entry
+            .lines
+            .iter()
+            .map(|l| l.project_id)
+            .collect::<Vec<_>>()
+    );
+
+    // Net par projet = 0 sur l'ensemble du grand livre.
+    let (debit, credit): (Decimal, Decimal) = sqlx::query_as(
+        "SELECT COALESCE(SUM(debit), 0), COALESCE(SUM(credit), 0) \
+         FROM journal_entry_lines WHERE project_id = ?",
+    )
+    .bind(project)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(debit, credit, "net par projet doit être 0 après l'avoir");
 }

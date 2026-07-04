@@ -44,7 +44,7 @@ use crate::errors::{DbError, map_db_error};
 
 /// Colonnes Invoice pour SELECT (cohérent FIND_INVOICE_SCOPED_SQL).
 const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, status, date, \
-     due_date, payment_terms, total_amount, journal_entry_id, paid_at, version, \
+     due_date, payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
      created_at, updated_at";
 
 /// Colonnes BankTransaction pour SELECT (cohérent bank_transactions::COLUMNS).

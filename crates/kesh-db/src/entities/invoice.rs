@@ -30,6 +30,10 @@ pub struct Invoice {
     /// Horodate de paiement manuel (Story 5.4). NULL = impayée.
     /// Ne peut être posée que sur `status = 'validated'` (CHECK DB).
     pub paid_at: Option<NaiveDateTime>,
+    /// Projet analytique document-level (Epic 19, Story 19-4). Propagé sur
+    /// toutes les lignes de l'écriture de vente à la validation, hérité par
+    /// la contre-passation d'avoir. `None` = pas de projet.
+    pub project_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -70,6 +74,10 @@ pub struct NewInvoice {
     pub date: NaiveDate,
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
+    /// Projet analytique document-level (Epic 19, Story 19-4). Validé à la
+    /// création (projet de la company, non archivé).
+    #[serde(default)]
+    pub project_id: Option<i64>,
     pub lines: Vec<NewInvoiceLine>,
 }
 
@@ -85,5 +93,10 @@ pub struct InvoiceUpdate {
     pub date: NaiveDate,
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
+    /// Projet analytique (Story 19-4). Validé seulement si la valeur change
+    /// (grandfathering du tag inchangé — un projet archivé après la pose du
+    /// tag ne bloque pas l'édition des autres champs du brouillon).
+    #[serde(default)]
+    pub project_id: Option<i64>,
     pub lines: Vec<NewInvoiceLine>,
 }

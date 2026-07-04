@@ -166,6 +166,7 @@ async fn create_validated_invoice(
             unit_price: amount,
             vat_rate: dec!(8.10),
         }],
+        project_id: None,
     };
     let (inv, _) = invoices::create(pool, admin_id, new).await.unwrap();
 
@@ -222,6 +223,7 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
                 unit_price: dec!(50.00),
                 vat_rate: dec!(8.10),
             }],
+            project_id: None,
         },
     )
     .await
@@ -303,6 +305,7 @@ async fn mark_paid_on_draft_invoice_returns_409(pool: MySqlPool) {
                 unit_price: dec!(10.00),
                 vat_rate: dec!(8.10),
             }],
+            project_id: None,
         },
     )
     .await

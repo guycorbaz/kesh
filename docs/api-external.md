@@ -230,6 +230,8 @@ l'intersection du rôle du créateur de la clé et de sa portée (§4), une clé
 
 Bonne pratique pour un client API : lire l'utilisateur (`GET /api/v1/users`), puis renvoyer **tous les champs** dans le `PUT`, y compris `email` (la valeur courante si inchangée, ou `null` pour effacer délibérément).
 
+La même sémantique de remplacement s'applique à **`PUT /api/v1/invoices/:id`** (facture brouillon) : un corps qui omet `projectId` **efface le tag analytique** de la facture (Epic 19). Relisez la facture (`GET /api/v1/invoices/:id`) et renvoyez `projectId` (valeur courante ou `null` pour détaguer délibérément).
+
 > **Note recovery** : les endpoints publics de récupération de mot de passe (`POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password`) ne sont **pas** des endpoints PAT — ils sont anonymes (pré-connexion). Une clé API ne peut pas déclencher de réinitialisation pour un autre utilisateur ; pour changer un mot de passe via l'API, utilisez `PUT /api/v1/users/:id/reset-password` (réservé Admin).
 
 ---

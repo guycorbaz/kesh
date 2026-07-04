@@ -506,6 +506,7 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             due_date: Some(day),
             payment_terms: None,
             lines: vec![line.clone()],
+            project_id: None,
         },
     )
     .await
@@ -520,6 +521,7 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             due_date: Some(day),
             payment_terms: None,
             lines: vec![line],
+            project_id: None,
         },
     )
     .await

@@ -26,6 +26,8 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { createCreditNote } from '$lib/features/credit-notes/credit-notes.api';
+	import { listProjects } from '$lib/features/projects/projects.api';
+	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 
 	let creditNoteOpen = $state(false);
 	let creditNoteSubmitting = $state(false);
@@ -78,6 +80,21 @@
 		} finally {
 			loading = false;
 		}
+		// Story 19-4 : référentiel projets (archivés inclus — un tag historique
+		// doit rester lisible). Échec toléré : libellé fallback `#id`.
+		try {
+			projects = await listProjects(true);
+		} catch {
+			// Fallback #id via projectLabel.
+		}
+	});
+
+	let projects = $state<ProjectResponse[]>([]);
+	const projectLabel = $derived.by(() => {
+		const pid = invoice?.projectId;
+		if (!pid) return null;
+		const p = projects.find((x) => x.id === pid);
+		return p ? `${p.code} — ${p.name}` : `#${pid}`;
 	});
 
 	async function confirmDelete() {
@@ -391,6 +408,14 @@
 				<div class="text-text-muted">Conditions de paiement</div>
 				<div>{invoice.paymentTerms ?? '—'}</div>
 			</div>
+			{#if projectLabel}
+				<div>
+					<div class="text-text-muted">
+						{i18nMsg('invoice-detail-project-label', 'Projet analytique')}
+					</div>
+					<div data-testid="invoice-project">{projectLabel}</div>
+				</div>
+			{/if}
 			{#if invoice.paidAt}
 				<div>
 					<div class="text-text-muted">{i18nMsg('invoice-detail-paid-at-label', 'Payée le')}</div>
