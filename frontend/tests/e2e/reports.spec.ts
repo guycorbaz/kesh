@@ -79,10 +79,9 @@ test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({
 	await page.getByTestId('project-report-generate').click();
 
 	// La vue rend (empty-state attendu — le preset with-company n'a pas d'écritures
-	// taguées) sans erreur backend.
-	const view = page.getByTestId('project-expenses-view');
-	const empty = page.getByTestId('project-expenses-empty');
-	await expect(view.or(empty)).toBeVisible({ timeout: 5000 });
+	// taguées) sans erreur backend. La vue englobe l'état vide.
+	await expect(page.getByTestId('project-expenses-view')).toBeVisible({ timeout: 5000 });
+	await expect(page.getByTestId('project-expenses-empty')).toBeVisible();
 	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
 
 	await disposeContextSafe(api);
