@@ -114,7 +114,12 @@ mod tests {
         Company {
             id: 42,
             name: "CI Test Company".into(),
-            address: "Bahnhofstrasse 1, 8001 Zürich".into(),
+            address: "Rue Test 1\n1000 Lausanne".into(),
+            address_street: "Rue Test".into(),
+            address_building: "1".into(),
+            address_postal_code: "1000".into(),
+            address_city: "Lausanne".into(),
+            address_country: "CH".into(),
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,

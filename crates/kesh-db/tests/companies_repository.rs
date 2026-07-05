@@ -4,6 +4,7 @@
 //! (cloné depuis `DATABASE_URL`) et applique le migrator fourni. Nécessite
 //! que l'utilisateur DB ait les droits `CREATE DATABASE` et `DROP DATABASE`.
 
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{CompanyUpdate, Language, NewCompany, OrgType};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::companies;
@@ -12,7 +13,13 @@ use sqlx::MySqlPool;
 fn sample_new_company() -> NewCompany {
     NewCompany {
         name: "Test SA".into(),
-        address: "Rue Test 1, 1000 Lausanne".into(),
+        address_structured: StructuredAddress {
+            street: "Rue Test".into(),
+            building: "1".into(),
+            postal_code: "1000".into(),
+            city: "Lausanne".into(),
+            country: "CH".into(),
+        },
         ide_number: Some("CHE109322551".into()),
         org_type: OrgType::Pme,
         accounting_language: Language::Fr,
@@ -53,7 +60,7 @@ async fn update_succeeds_with_current_version(pool: MySqlPool) {
 
     let changes = CompanyUpdate {
         name: "Test SA (renamed)".into(),
-        address: created.address.clone(),
+        address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
         accounting_language: Language::De,
@@ -78,7 +85,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
     // Premier update : version 1 → 2
     let changes = CompanyUpdate {
         name: "First update".into(),
-        address: created.address.clone(),
+        address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
         accounting_language: created.accounting_language,
@@ -91,7 +98,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
     // Deuxième update avec version 1 stale → conflict
     let stale_changes = CompanyUpdate {
         name: "Stale update".into(),
-        address: created.address.clone(),
+        address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
         accounting_language: created.accounting_language,
@@ -105,7 +112,13 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
 async fn update_fails_on_missing_entity(pool: MySqlPool) {
     let changes = CompanyUpdate {
         name: "Ghost".into(),
-        address: "Nowhere".into(),
+        address_structured: StructuredAddress {
+            street: "Nowhere".into(),
+            building: String::new(),
+            postal_code: "1000".into(),
+            city: "Lausanne".into(),
+            country: "CH".into(),
+        },
         ide_number: None,
         org_type: OrgType::Pme,
         accounting_language: Language::Fr,
@@ -165,7 +178,13 @@ async fn empty_name_rejected(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn empty_address_rejected(pool: MySqlPool) {
     let mut new = sample_new_company();
-    new.address = "   ".into();
+    new.address_structured = StructuredAddress {
+        street: "   ".into(),
+        building: String::new(),
+        postal_code: String::new(),
+        city: String::new(),
+        country: "CH".into(),
+    };
     let result = companies::create(&pool, new).await;
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
 }
@@ -220,7 +239,7 @@ async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
 
     let identical = CompanyUpdate {
         name: created.name.clone(),
-        address: created.address.clone(),
+        address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
         accounting_language: created.accounting_language,
@@ -251,7 +270,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
 
     let changes = CompanyUpdate {
         name: "Test SA Renommée".into(),
-        address: created.address.clone(),
+        address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
         accounting_language: created.accounting_language,

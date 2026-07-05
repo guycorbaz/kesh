@@ -5,6 +5,7 @@
 //! avec migrations auto-appliquées. Pattern hérité 8-1b/8-4/8-5a-zero.
 
 use kesh_db::entities::account::AccountType;
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{
     Language, NewAccount, NewCompany, NewReconciliationRule, NewUser, OrgType,
     ReconciliationMatchType, Role, UpdateReconciliationRule,
@@ -18,7 +19,13 @@ async fn create_test_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
-            address: "Rue Test 1".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,

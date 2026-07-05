@@ -1,6 +1,7 @@
 //! Tests d'intégration pour `repositories::bank_accounts`.
 
 use kesh_db::entities::account::AccountType;
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewAccount, NewBankAccount, NewCompany, OrgType};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{accounts, bank_accounts, companies};
@@ -11,7 +12,13 @@ async fn create_test_company(pool: &MySqlPool) -> i64 {
         pool,
         NewCompany {
             name: "Test SA".into(),
-            address: "Rue Test 1".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -391,7 +398,13 @@ async fn set_journal_account_id_does_not_leak_cross_tenant(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
-            address: "Rue Other 1".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,

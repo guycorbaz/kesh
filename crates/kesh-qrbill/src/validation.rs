@@ -8,6 +8,11 @@ use rust_decimal::Decimal;
 
 pub const NAME_MAX: usize = 70;
 pub const ADDR_LINE_MAX: usize = 70;
+/// SIX 2.2 §3.3 type S field limits.
+pub const STREET_MAX: usize = 70;
+pub const BUILDING_MAX: usize = 16;
+pub const POSTAL_CODE_MAX: usize = 16;
+pub const TOWN_MAX: usize = 35;
 pub const USTRD_MAX: usize = 140;
 pub const BILLING_MAX: usize = 140;
 pub const COUNTRY_LEN: usize = 2;
@@ -298,23 +303,52 @@ fn is_iso_3166_alpha2(code: &str) -> bool {
 }
 
 fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), QrBillError> {
+    use crate::types::AddressType;
+
     if addr.name.trim().is_empty() {
         return Err(QrBillError::FieldEmpty(field_prefix_name(field_prefix)));
     }
-    // Pass 2 : SIX §3.3 — pour le type K (Combined), `line2` doit contenir
-    // a minima le code postal + localité. Une chaîne vide produirait un
-    // payload techniquement parseable mais non conforme SIX.
-    if matches!(addr.address_type, crate::types::AddressType::Combined)
-        && addr.line2.trim().is_empty()
-    {
-        return Err(QrBillError::FieldEmpty(field_prefix_line2(field_prefix)));
-    }
     check_len(field_prefix_name(field_prefix), &addr.name, NAME_MAX)?;
-    check_len(field_prefix_line1(field_prefix), &addr.line1, ADDR_LINE_MAX)?;
-    check_len(field_prefix_line2(field_prefix), &addr.line2, ADDR_LINE_MAX)?;
     check_charset(field_prefix_name(field_prefix), &addr.name)?;
-    check_charset(field_prefix_line1(field_prefix), &addr.line1)?;
-    check_charset(field_prefix_line2(field_prefix), &addr.line2)?;
+
+    match addr.address_type {
+        AddressType::Structured => {
+            // SIX §3.3 type S : postal code (NPA) et localité obligatoires ;
+            // rue (element 3) ≤70, n° bâtiment (element 4) ≤16, NPA ≤16,
+            // localité ≤35. La rue peut être vide (adresse sans rue nommée),
+            // mais NPA + localité sont requis.
+            if addr.postal_code.trim().is_empty() {
+                return Err(QrBillError::FieldEmpty(field_prefix_postal(field_prefix)));
+            }
+            if addr.town.trim().is_empty() {
+                return Err(QrBillError::FieldEmpty(field_prefix_town(field_prefix)));
+            }
+            check_len(field_prefix_line1(field_prefix), &addr.line1, STREET_MAX)?;
+            check_len(field_prefix_line2(field_prefix), &addr.line2, BUILDING_MAX)?;
+            check_len(
+                field_prefix_postal(field_prefix),
+                &addr.postal_code,
+                POSTAL_CODE_MAX,
+            )?;
+            check_len(field_prefix_town(field_prefix), &addr.town, TOWN_MAX)?;
+            check_charset(field_prefix_line1(field_prefix), &addr.line1)?;
+            check_charset(field_prefix_line2(field_prefix), &addr.line2)?;
+            check_charset(field_prefix_postal(field_prefix), &addr.postal_code)?;
+            check_charset(field_prefix_town(field_prefix), &addr.town)?;
+        }
+        AddressType::Combined => {
+            // SIX §3.3 type K : `line2` doit contenir a minima NPA + localité.
+            // Une chaîne vide produirait un payload parseable mais non conforme.
+            // PstCd/TwnNm (element 5/6) doivent rester vides en type K.
+            if addr.line2.trim().is_empty() {
+                return Err(QrBillError::FieldEmpty(field_prefix_line2(field_prefix)));
+            }
+            check_len(field_prefix_line1(field_prefix), &addr.line1, ADDR_LINE_MAX)?;
+            check_len(field_prefix_line2(field_prefix), &addr.line2, ADDR_LINE_MAX)?;
+            check_charset(field_prefix_line1(field_prefix), &addr.line1)?;
+            check_charset(field_prefix_line2(field_prefix), &addr.line2)?;
+        }
+    }
     validate_country(&addr.country)?;
     Ok(())
 }
@@ -338,6 +372,20 @@ fn field_prefix_line2(prefix: &'static str) -> &'static str {
         "creditor" => "creditor.line2",
         "debtor" => "debtor.line2",
         _ => "address.line2",
+    }
+}
+fn field_prefix_postal(prefix: &'static str) -> &'static str {
+    match prefix {
+        "creditor" => "creditor.postal_code",
+        "debtor" => "debtor.postal_code",
+        _ => "address.postal_code",
+    }
+}
+fn field_prefix_town(prefix: &'static str) -> &'static str {
+    match prefix {
+        "creditor" => "creditor.town",
+        "debtor" => "debtor.town",
+        _ => "address.town",
     }
 }
 
@@ -538,6 +586,8 @@ mod tests {
             name: "Rue de l\u{2019}H\u{f4}pital".into(),
             line1: "rue".into(),
             line2: "1003 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         };
         assert!(validate_address("creditor", &addr).is_ok());
@@ -552,6 +602,8 @@ mod tests {
                 name: s.into(),
                 line1: "rue".into(),
                 line2: "1003 Lausanne".into(),
+                postal_code: String::new(),
+                town: String::new(),
                 country: "CH".into(),
             };
             assert!(
@@ -625,6 +677,8 @@ mod tests {
             name: "x".repeat(71),
             line1: "rue".into(),
             line2: "1000 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         };
         assert!(matches!(
@@ -640,6 +694,8 @@ mod tests {
             name: "Acme".into(),
             line1: "rue".into(),
             line2: "1000 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "che".into(),
         };
         assert!(matches!(
@@ -664,6 +720,8 @@ mod tests {
             name: "张伟".into(),
             line1: "rue".into(),
             line2: "1000 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         };
         assert!(matches!(
@@ -681,6 +739,8 @@ mod tests {
             name: "Müller Cie SA".into(),
             line1: "Rue de l'Hôpital 1".into(),
             line2: "1003 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         };
         assert!(validate_address("creditor", &addr).is_ok());
@@ -703,6 +763,8 @@ mod tests {
                 name: "Robert Schneider SA".into(),
                 line1: "Rue du Lac 1268".into(),
                 line2: "2501 Biel".into(),
+                postal_code: String::new(),
+                town: String::new(),
                 country: "CH".into(),
             },
             ultimate_debtor: Some(Address {
@@ -710,6 +772,8 @@ mod tests {
                 name: "Pia Rutschmann".into(),
                 line1: "Marktgasse 28".into(),
                 line2: "9400 Rorschach".into(),
+                postal_code: String::new(),
+                town: String::new(),
                 country: "CH".into(),
             }),
             amount: Some(amount),

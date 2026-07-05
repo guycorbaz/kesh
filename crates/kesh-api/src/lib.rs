@@ -6,6 +6,7 @@
 
 // `pub(crate)` : module manipulant des secrets (dump complet incl. hash de mots
 // de passe), pas d'API publique nécessaire hors crate (review 17-3a Pass 1).
+pub mod address_input;
 pub(crate) mod admin_backup;
 pub mod audit;
 pub mod auth;

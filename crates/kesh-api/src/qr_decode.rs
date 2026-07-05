@@ -212,6 +212,8 @@ mod tests {
                 name: "Robert Schneider SA".into(),
                 line1: "Rue du Lac 1268".into(),
                 line2: "2501 Biel".into(),
+                postal_code: String::new(),
+                town: String::new(),
                 country: "CH".into(),
             },
             ultimate_debtor: None,

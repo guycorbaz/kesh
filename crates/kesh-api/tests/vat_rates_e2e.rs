@@ -15,6 +15,7 @@ use chrono::TimeDelta;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 use kesh_db::repositories::{companies, users, vat_rates};
 use serde_json::Value;
@@ -118,7 +119,13 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
-            address: format!("Rue {name} 1, 1000 Lausanne"),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,

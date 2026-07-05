@@ -3,9 +3,47 @@
 //! Story 4.1 : FR25 (carnet unifié), FR26 (flags client/fournisseur),
 //! FR27 (validation IDE CHE côté API), schéma pour FR28 (default_payment_terms).
 
+use crate::entities::address::StructuredAddress;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
+
+impl Contact {
+    /// Reconstruit l'adresse structurée (#213) depuis les colonnes plates.
+    /// `None` si aucun composant significatif n'est renseigné.
+    pub fn structured_address(&self) -> Option<StructuredAddress> {
+        let sa = StructuredAddress {
+            street: self.address_street.clone().unwrap_or_default(),
+            building: self.address_building.clone().unwrap_or_default(),
+            postal_code: self.address_postal_code.clone().unwrap_or_default(),
+            city: self.address_city.clone().unwrap_or_default(),
+            country: self.address_country.clone().unwrap_or_else(|| "CH".into()),
+        };
+        if sa.is_empty() { None } else { Some(sa) }
+    }
+}
+
+/// Recompose la chaîne d'affichage `address` (colonne dérivée #213) depuis les
+/// composants structurés optionnels d'un contact. `None` si tous vides.
+pub fn derive_contact_address_display(
+    street: Option<&str>,
+    building: Option<&str>,
+    postal: Option<&str>,
+    city: Option<&str>,
+) -> Option<String> {
+    let sa = StructuredAddress {
+        street: street.unwrap_or_default().to_string(),
+        building: building.unwrap_or_default().to_string(),
+        postal_code: postal.unwrap_or_default().to_string(),
+        city: city.unwrap_or_default().to_string(),
+        country: String::new(),
+    };
+    if sa.is_empty() {
+        None
+    } else {
+        Some(sa.combined())
+    }
+}
 
 /// Type de contact : personne physique ou entreprise (raison sociale).
 ///
@@ -76,7 +114,14 @@ pub struct Contact {
     pub name: String,
     pub is_client: bool,
     pub is_supplier: bool,
+    /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
     pub address: Option<String>,
+    /// Adresse structurée (débiteur QR-bill type S / pain.001, #213). Optionnelle.
+    pub address_street: Option<String>,
+    pub address_building: Option<String>,
+    pub address_postal_code: Option<String>,
+    pub address_city: Option<String>,
+    pub address_country: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
     pub ide_number: Option<String>,
@@ -96,7 +141,14 @@ pub struct NewContact {
     pub name: String,
     pub is_client: bool,
     pub is_supplier: bool,
+    /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
     pub address: Option<String>,
+    /// Adresse structurée (débiteur QR-bill type S / pain.001, #213). Optionnelle.
+    pub address_street: Option<String>,
+    pub address_building: Option<String>,
+    pub address_postal_code: Option<String>,
+    pub address_city: Option<String>,
+    pub address_country: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
     pub ide_number: Option<String>,
@@ -115,7 +167,14 @@ pub struct ContactUpdate {
     pub name: String,
     pub is_client: bool,
     pub is_supplier: bool,
+    /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
     pub address: Option<String>,
+    /// Adresse structurée (débiteur QR-bill type S / pain.001, #213). Optionnelle.
+    pub address_street: Option<String>,
+    pub address_building: Option<String>,
+    pub address_postal_code: Option<String>,
+    pub address_city: Option<String>,
+    pub address_country: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
     pub ide_number: Option<String>,

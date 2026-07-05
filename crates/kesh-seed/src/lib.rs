@@ -43,13 +43,21 @@ fn demo_company_name(locale: &Locale) -> &'static str {
     }
 }
 
-/// Adresse fictive suisse selon la locale.
-fn demo_address(locale: &Locale) -> &'static str {
-    match locale {
-        Locale::FrCh => "Rue de la Démo 1, 1000 Lausanne",
-        Locale::DeCh => "Demostrasse 1, 3000 Bern",
-        Locale::ItCh => "Via Demo 1, 6500 Bellinzona",
-        Locale::EnCh => "Demo Street 1, 8000 Zürich",
+/// Adresse fictive suisse structurée (#213) selon la locale.
+fn demo_address(locale: &Locale) -> kesh_db::entities::address::StructuredAddress {
+    use kesh_db::entities::address::StructuredAddress;
+    let (street, npa, city) = match locale {
+        Locale::FrCh => ("Rue de la Démo", "1000", "Lausanne"),
+        Locale::DeCh => ("Demostrasse", "3000", "Bern"),
+        Locale::ItCh => ("Via Demo", "6500", "Bellinzona"),
+        Locale::EnCh => ("Demo Street", "8000", "Zürich"),
+    };
+    StructuredAddress {
+        street: street.to_string(),
+        building: "1".to_string(),
+        postal_code: npa.to_string(),
+        city: city.to_string(),
+        country: "CH".to_string(),
     }
 }
 
@@ -86,7 +94,8 @@ pub async fn seed_demo(
     let company = {
         let mut tx = pool.begin().await?;
         let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
-            "SELECT id, name, address, ide_number, org_type, accounting_language, \
+            "SELECT id, name, address, address_street, address_building, address_postal_code, \
+                    address_city, address_country, ide_number, org_type, accounting_language, \
                     instance_language, is_stub, version, created_at, updated_at \
              FROM companies ORDER BY id FOR UPDATE",
         )
@@ -116,7 +125,7 @@ pub async fn seed_demo(
             company.version,
             CompanyUpdate {
                 name: demo_company_name(locale).to_string(),
-                address: demo_address(locale).to_string(),
+                address_structured: demo_address(locale),
                 ide_number: Some("CHE109322551".to_string()),
                 org_type: OrgType::Pme,
                 accounting_language: lang,

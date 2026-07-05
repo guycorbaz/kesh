@@ -19,6 +19,7 @@
 //!   dans `possible_keys`).
 
 use chrono::NaiveDate;
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{
     AccountType, ContactType, Journal, Language, NewAccount, NewCompany, NewContact, NewFiscalYear,
     NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine, NewProduct, NewUser, OrgType,
@@ -44,7 +45,13 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
-            address: "Test Address 1".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -85,6 +92,11 @@ async fn seed_contacts(pool: &MySqlPool, user_id: i64, company_id: i64, count: u
                 is_client: true,
                 is_supplier: false,
                 address: None,
+                address_street: None,
+                address_building: None,
+                address_postal_code: None,
+                address_city: None,
+                address_country: None,
                 email: Some(format!("client-{i}@example.com")),
                 phone: None,
                 ide_number: None,
@@ -459,6 +471,11 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             is_client: true,
             is_supplier: false,
             address: None,
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
             email: None,
             phone: None,
             ide_number: None,
@@ -478,6 +495,11 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             is_client: true,
             is_supplier: false,
             address: None,
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
             email: None,
             phone: None,
             ide_number: None,

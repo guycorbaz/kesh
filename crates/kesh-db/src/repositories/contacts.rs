@@ -24,11 +24,13 @@ use crate::repositories::audit_log;
 use crate::util::search::{escape_boolean_ft, escape_like};
 
 const COLUMNS: &str = "id, company_id, contact_type, name, is_client, is_supplier, \
-    address, email, phone, ide_number, default_payment_terms, active, version, \
+    address, address_street, address_building, address_postal_code, address_city, \
+    address_country, email, phone, ide_number, default_payment_terms, active, version, \
     created_at, updated_at";
 
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
-    address, email, phone, ide_number, default_payment_terms, active, version, \
+    address, address_street, address_building, address_postal_code, address_city, \
+    address_country, email, phone, ide_number, default_payment_terms, active, version, \
     created_at, updated_at FROM contacts WHERE id = ?";
 
 /// Snapshot JSON d'un contact pour l'audit log (Story 3.5 pattern + P8 `companyId`).
@@ -183,17 +185,30 @@ fn push_where_clauses<'a>(
 pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<Contact, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
+    // Colonne `address` dérivée (#213) des composants structurés.
+    let display = crate::entities::contact::derive_contact_address_display(
+        new.address_street.as_deref(),
+        new.address_building.as_deref(),
+        new.address_postal_code.as_deref(),
+        new.address_city.as_deref(),
+    );
     let result = sqlx::query(
         "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier, \
-         address, email, phone, ide_number, default_payment_terms) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         address, address_street, address_building, address_postal_code, address_city, \
+         address_country, email, phone, ide_number, default_payment_terms) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_type)
     .bind(&new.name)
     .bind(new.is_client)
     .bind(new.is_supplier)
-    .bind(&new.address)
+    .bind(&display)
+    .bind(&new.address_street)
+    .bind(&new.address_building)
+    .bind(&new.address_postal_code)
+    .bind(&new.address_city)
+    .bind(&new.address_country)
     .bind(&new.email)
     .bind(&new.phone)
     .bind(&new.ide_number)
@@ -355,7 +370,11 @@ fn is_no_op_change(before: &Contact, changes: &ContactUpdate) -> bool {
         && before.name == changes.name
         && before.is_client == changes.is_client
         && before.is_supplier == changes.is_supplier
-        && before.address == changes.address
+        && before.address_street == changes.address_street
+        && before.address_building == changes.address_building
+        && before.address_postal_code == changes.address_postal_code
+        && before.address_city == changes.address_city
+        && before.address_country == changes.address_country
         && before.email == changes.email
         && before.phone == changes.phone
         && before.ide_number == changes.ide_number
@@ -408,9 +427,17 @@ pub async fn update(
         return Ok(before);
     }
 
+    let display = crate::entities::contact::derive_contact_address_display(
+        changes.address_street.as_deref(),
+        changes.address_building.as_deref(),
+        changes.address_postal_code.as_deref(),
+        changes.address_city.as_deref(),
+    );
     let rows = sqlx::query(
         "UPDATE contacts SET contact_type = ?, name = ?, is_client = ?, is_supplier = ?, \
-         address = ?, email = ?, phone = ?, ide_number = ?, default_payment_terms = ?, \
+         address = ?, address_street = ?, address_building = ?, address_postal_code = ?, \
+         address_city = ?, address_country = ?, \
+         email = ?, phone = ?, ide_number = ?, default_payment_terms = ?, \
          version = version + 1 \
          WHERE id = ? AND version = ? AND active = TRUE",
     )
@@ -418,7 +445,12 @@ pub async fn update(
     .bind(&changes.name)
     .bind(changes.is_client)
     .bind(changes.is_supplier)
-    .bind(&changes.address)
+    .bind(&display)
+    .bind(&changes.address_street)
+    .bind(&changes.address_building)
+    .bind(&changes.address_postal_code)
+    .bind(&changes.address_city)
+    .bind(&changes.address_country)
     .bind(&changes.email)
     .bind(&changes.phone)
     .bind(&changes.ide_number)
@@ -597,6 +629,11 @@ mod tests {
             is_client: true,
             is_supplier: false,
             address: None,
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
             email: None,
             phone: None,
             ide_number: None,
@@ -761,6 +798,11 @@ mod tests {
                 is_client: true,
                 is_supplier: true,
                 address: None,
+                address_street: None,
+                address_building: None,
+                address_postal_code: None,
+                address_city: None,
+                address_country: None,
                 email: None,
                 phone: None,
                 ide_number: None,
@@ -784,6 +826,11 @@ mod tests {
                 is_client: true,
                 is_supplier: false,
                 address: None,
+                address_street: None,
+                address_building: None,
+                address_postal_code: None,
+                address_city: None,
+                address_country: None,
                 email: None,
                 phone: None,
                 ide_number: None,
@@ -823,6 +870,11 @@ mod tests {
                 is_client: true,
                 is_supplier: false,
                 address: None,
+                address_street: None,
+                address_building: None,
+                address_postal_code: None,
+                address_city: None,
+                address_country: None,
                 email: None,
                 phone: None,
                 ide_number: None,
@@ -892,6 +944,11 @@ mod tests {
                 is_client: true,
                 is_supplier: false,
                 address: None,
+                address_street: None,
+                address_building: None,
+                address_postal_code: None,
+                address_city: None,
+                address_country: None,
                 email: None,
                 phone: None,
                 ide_number: None,
@@ -1378,6 +1435,11 @@ mod tests {
             is_client: c.is_client,
             is_supplier: c.is_supplier,
             address: c.address.clone(),
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
             email: c.email.clone(),
             phone: c.phone.clone(),
             ide_number: c.ide_number.clone(),

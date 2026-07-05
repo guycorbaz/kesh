@@ -3,7 +3,7 @@
 //! The payload is a newline-separated string whose fields follow the strict
 //! order defined by SIX 2.2 §3. ECC level M, UTF-8.
 
-use crate::types::{AddressType, QrBillData, QrBillError};
+use crate::types::{Address, QrBillData, QrBillError};
 use crate::validation::{normalize_iban, validate};
 use qrcodegen::{QrCode, QrCodeEcc};
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -25,14 +25,8 @@ pub fn build_payload(data: &QrBillData) -> Result<String, QrBillError> {
     // Creditor Information — IBAN.
     lines.push(iban);
 
-    // Creditor block (type K).
-    lines.push(AddressType::Combined.code().into());
-    lines.push(data.creditor.name.clone());
-    lines.push(data.creditor.line1.clone());
-    lines.push(data.creditor.line2.clone());
-    lines.push(String::new()); // PstCd (empty in type K)
-    lines.push(String::new()); // TmNm (empty in type K)
-    lines.push(data.creditor.country.clone());
+    // Creditor block (type S structured or K combined, per address_type).
+    push_address_block(&mut lines, &data.creditor);
 
     // Ultimate Creditor (7 empty lines in v0.1).
     for _ in 0..7 {
@@ -45,17 +39,9 @@ pub fn build_payload(data: &QrBillData) -> Result<String, QrBillError> {
     lines.push(format_amount_payload(rounded));
     lines.push(data.currency.code().into());
 
-    // Ultimate Debtor block (type K if present; otherwise 7 empty lines).
+    // Ultimate Debtor block (structured/combined if present; else 7 empty lines).
     match &data.ultimate_debtor {
-        Some(debtor) => {
-            lines.push(AddressType::Combined.code().into());
-            lines.push(debtor.name.clone());
-            lines.push(debtor.line1.clone());
-            lines.push(debtor.line2.clone());
-            lines.push(String::new());
-            lines.push(String::new());
-            lines.push(debtor.country.clone());
-        }
+        Some(debtor) => push_address_block(&mut lines, debtor),
         None => {
             for _ in 0..7 {
                 lines.push(String::new());
@@ -90,6 +76,21 @@ pub fn build_payload(data: &QrBillData) -> Result<String, QrBillError> {
 }
 
 /// Render the payload into a QR matrix at ECC level M.
+/// Push the 7 SIX payload data elements of an address block (creditor or debtor):
+/// AdrTp, Name, StrtNmOrAddrLine1, BldgNbOrAddrLine2, PstCd, TwnNm, Ctry.
+///
+/// For type **S** (Structured) `postal_code`/`town` carry the NPA/locality; for
+/// type **K** (Combined) they are empty strings (SIX §3.3).
+fn push_address_block(lines: &mut Vec<String>, addr: &Address) {
+    lines.push(addr.address_type.code().into());
+    lines.push(addr.name.clone());
+    lines.push(addr.line1.clone());
+    lines.push(addr.line2.clone());
+    lines.push(addr.postal_code.clone());
+    lines.push(addr.town.clone());
+    lines.push(addr.country.clone());
+}
+
 pub fn render_qr_image(payload: &str) -> Result<QrCode, QrBillError> {
     QrCode::encode_text(payload, QrCodeEcc::Medium)
         .map_err(|e| QrBillError::PdfGeneration(format!("qrcode: {e}")))
@@ -123,6 +124,8 @@ mod tests {
                 name: "Robert Schneider SA".into(),
                 line1: "Rue du Lac 1268".into(),
                 line2: "2501 Biel".into(),
+                postal_code: String::new(),
+                town: String::new(),
                 country: "CH".into(),
             },
             ultimate_debtor: Some(Address {
@@ -130,6 +133,8 @@ mod tests {
                 name: "Pia Rutschmann".into(),
                 line1: "Marktgasse 28".into(),
                 line2: "9400 Rorschach".into(),
+                postal_code: String::new(),
+                town: String::new(),
                 country: "CH".into(),
             }),
             amount: Some(dec!(1234.50)),
@@ -138,6 +143,35 @@ mod tests {
             unstructured_message: Some("Facture F-2026-0042".into()),
             billing_information: None,
         }
+    }
+
+    #[test]
+    fn structured_creditor_emits_type_s_block() {
+        // Conformité SIX 21.11.2025 : la génération doit produire une adresse
+        // STRUCTURÉE (type S) — AdrTp=S, rue/n°/NPA/localité en éléments séparés.
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        data.creditor = Address {
+            address_type: AddressType::Structured,
+            name: "Robert Schneider SA".into(),
+            line1: "Rue du Lac".into(),
+            line2: "1268".into(),
+            postal_code: "2501".into(),
+            town: "Biel".into(),
+            country: "CH".into(),
+        };
+        let payload = build_payload(&data).unwrap();
+        let lines: Vec<&str> = payload.split('\n').collect();
+        // Creditor block = indices 4..=10 (3 header + 1 iban).
+        assert_eq!(lines[4], "S", "AdrTp créancier doit être S (structuré)");
+        assert_eq!(lines[5], "Robert Schneider SA");
+        assert_eq!(lines[6], "Rue du Lac", "element 3 = rue");
+        assert_eq!(lines[7], "1268", "element 4 = n° bâtiment");
+        assert_eq!(lines[8], "2501", "element 5 = NPA (non vide en type S)");
+        assert_eq!(
+            lines[9], "Biel",
+            "element 6 = localité (non vide en type S)"
+        );
+        assert_eq!(lines[10], "CH");
     }
 
     #[test]

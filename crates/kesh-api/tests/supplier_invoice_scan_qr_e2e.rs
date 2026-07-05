@@ -110,6 +110,8 @@ fn spc_payload(iban: &str, reference: Reference) -> String {
             name: "Robert Schneider SA".into(),
             line1: "Rue du Lac 1268".into(),
             line2: "2501 Biel".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         },
         ultimate_debtor: Some(Address {
@@ -117,6 +119,8 @@ fn spc_payload(iban: &str, reference: Reference) -> String {
             name: "Pia Rutschmann".into(),
             line1: "Marktgasse 28".into(),
             line2: "9400 Rorschach".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         }),
         amount: Some(dec!(1234.50)),

@@ -27,6 +27,7 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 use kesh_db::repositories::{companies, users};
 use reqwest::multipart;
@@ -140,7 +141,13 @@ async fn seed_role(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
         pool,
         NewCompany {
             name: format!("CI {label}"),
-            address: "Rue Test 1".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,
@@ -280,7 +287,13 @@ async fn full_import_round_trip_replaces_state_and_audits_source_admin(pool: MyS
         &pool,
         NewCompany {
             name: "Ghost SA".into(),
-            address: "À supprimer".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,

@@ -1,6 +1,7 @@
 //! Tests d'intégration pour `repositories::fiscal_years`.
 
 use chrono::NaiveDate;
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{
     FiscalYearStatus, Language, NewCompany, NewFiscalYear, NewUser, OrgType, Role,
 };
@@ -14,7 +15,13 @@ use sqlx::MySqlPool;
 fn sample_new_company() -> NewCompany {
     NewCompany {
         name: "Test SA".into(),
-        address: "Rue Test 1".into(),
+        address_structured: StructuredAddress {
+            street: "Rue Test".into(),
+            building: "1".into(),
+            postal_code: "1000".into(),
+            city: "Lausanne".into(),
+            country: "CH".into(),
+        },
         ide_number: None,
         org_type: OrgType::Pme,
         accounting_language: Language::Fr,
@@ -503,7 +510,13 @@ async fn test_find_by_id_in_company_returns_none_for_other_company(pool: MySqlPo
         &pool,
         NewCompany {
             name: "Other SA".into(),
-            address: "Rue Other 2".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -540,7 +553,13 @@ async fn create_other_company(pool: &MySqlPool) -> i64 {
         pool,
         NewCompany {
             name: "Other SA".into(),
-            address: "Other Street 1".into(),
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,

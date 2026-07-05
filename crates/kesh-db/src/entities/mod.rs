@@ -6,6 +6,7 @@
 //! gérés par la base.
 
 pub mod account;
+pub mod address;
 pub mod api_key;
 pub mod audit_log;
 pub mod bank_account;
