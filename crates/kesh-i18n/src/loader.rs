@@ -114,10 +114,10 @@ impl I18nBundle {
         }
 
         // Fallback vers FR-CH
-        if *locale != Locale::FrCh {
-            if let Some(result) = self.try_format(&Locale::FrCh, key, args) {
-                return result;
-            }
+        if *locale != Locale::FrCh
+            && let Some(result) = self.try_format(&Locale::FrCh, key, args)
+        {
+            return result;
         }
 
         // Clé introuvable → retourner la clé brute
@@ -151,24 +151,24 @@ impl I18nBundle {
         };
 
         for key in locale_keys {
-            if let Some(msg) = bundle.get_message(key) {
-                if let Some(pattern) = msg.value() {
-                    let mut errs = vec![];
-                    let value = bundle.format_pattern(pattern, None, &mut errs);
-                    // Le handler `GET /api/v1/i18n/messages` pré-résout toutes
-                    // les clés sans args — les variables `{ $var }` sont donc
-                    // rendues littéralement pour interpolation côté frontend.
-                    // Les `ResolverError(Reference(Variable))` sont attendues
-                    // et ne doivent pas polluer les logs.
-                    let real_errs: Vec<_> = errs
-                        .into_iter()
-                        .filter(|e| !is_missing_variable_error(e))
-                        .collect();
-                    if !real_errs.is_empty() {
-                        tracing::warn!(key = %key, locale = %locale, "Fluent resolution errors: {:?}", real_errs);
-                    }
-                    out.insert(key.clone(), value.to_string());
+            if let Some(msg) = bundle.get_message(key)
+                && let Some(pattern) = msg.value()
+            {
+                let mut errs = vec![];
+                let value = bundle.format_pattern(pattern, None, &mut errs);
+                // Le handler `GET /api/v1/i18n/messages` pré-résout toutes
+                // les clés sans args — les variables `{ $var }` sont donc
+                // rendues littéralement pour interpolation côté frontend.
+                // Les `ResolverError(Reference(Variable))` sont attendues
+                // et ne doivent pas polluer les logs.
+                let real_errs: Vec<_> = errs
+                    .into_iter()
+                    .filter(|e| !is_missing_variable_error(e))
+                    .collect();
+                if !real_errs.is_empty() {
+                    tracing::warn!(key = %key, locale = %locale, "Fluent resolution errors: {:?}", real_errs);
                 }
+                out.insert(key.clone(), value.to_string());
             }
         }
     }

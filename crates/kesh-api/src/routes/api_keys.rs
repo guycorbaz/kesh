@@ -137,12 +137,12 @@ pub async fn create(
     // Refuse une expiration déjà passée : sinon la clé est créée « mort-née »
     // (201 + secret retourné, mais `find_active_by_key_hash` l'exclut aussitôt via
     // `expires_at > NOW(3)`), sans feedback au client (code-review 17-2a Pass 1).
-    if let Some(exp) = req.expires_at {
-        if exp <= Utc::now() {
-            return Err(AppError::Validation(
-                "la date d'expiration doit être dans le futur".into(),
-            ));
-        }
+    if let Some(exp) = req.expires_at
+        && exp <= Utc::now()
+    {
+        return Err(AppError::Validation(
+            "la date d'expiration doit être dans le futur".into(),
+        ));
     }
     let expires_at: Option<NaiveDateTime> = req.expires_at.map(|dt| dt.naive_utc());
 

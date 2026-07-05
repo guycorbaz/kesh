@@ -110,13 +110,13 @@ impl RateLimiter {
         };
 
         // Vérifier le blocage actif
-        if let Some(blocked_until) = record.blocked_until {
-            if now < blocked_until {
-                let remaining = blocked_until.duration_since(now);
-                return Err(RateLimitReject {
-                    retry_after_secs: remaining.as_secs().max(1),
-                });
-            }
+        if let Some(blocked_until) = record.blocked_until
+            && now < blocked_until
+        {
+            let remaining = blocked_until.duration_since(now);
+            return Err(RateLimitReject {
+                retry_after_secs: remaining.as_secs().max(1),
+            });
         }
 
         // Compter les tentatives dans la fenêtre. Pass 2 17-4c ECH2-M1 :

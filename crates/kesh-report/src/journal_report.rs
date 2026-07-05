@@ -150,10 +150,8 @@ pub async fn generate(
         .bind(period.start_date)
         .bind(period.end_date);
 
-    if has_filter {
-        if let Some(j) = &journal_filter {
-            query = query.bind(j.as_str());
-        }
+    if has_filter && let Some(j) = &journal_filter {
+        query = query.bind(j.as_str());
     }
 
     let rows = query

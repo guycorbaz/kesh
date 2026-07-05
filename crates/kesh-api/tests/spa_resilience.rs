@@ -6,13 +6,13 @@
 //! canonique sqlx 0.8). Les deux tests vérifient que :
 //!
 //! - (a) Le fallback `ServeDir` (`lib.rs:54+`) continue de servir `index.html`
-//!       sur `GET /` même pool fermé — pure I/O fichier, aucun accès DB.
+//!   sur `GET /` même pool fermé — pure I/O fichier, aucun accès DB.
 //! - (b) `/api/v1/i18n/messages` reste joignable après `pool.close()`, le
-//!       handler ne touchant que `state.config.locale` + bundle Fluent in-memory.
-//!       Route JWT-protégée → setup obligatoire avant `pool.close()` :
-//!       `ensure_admin_user` + login → JWT, puis fermeture pool, puis GET avec
-//!       header `Authorization: Bearer <token>`. Le middleware JWT vérifie la
-//!       signature en mémoire, donc le token reste valide DB down.
+//!   handler ne touchant que `state.config.locale` + bundle Fluent in-memory.
+//!   Route JWT-protégée → setup obligatoire avant `pool.close()` :
+//!   `ensure_admin_user` + login → JWT, puis fermeture pool, puis GET avec
+//!   header `Authorization: Bearer <token>`. Le middleware JWT vérifie la
+//!   signature en mémoire, donc le token reste valide DB down.
 
 mod common;
 

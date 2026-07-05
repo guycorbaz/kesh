@@ -353,12 +353,12 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
 
 fn validate_payment_terms(pt: Option<String>) -> Result<Option<String>, AppError> {
     let norm = normalize_optional(pt);
-    if let Some(ref s) = norm {
-        if s.chars().count() > MAX_PAYMENT_TERMS_LEN {
-            return Err(AppError::Validation(format!(
-                "Les conditions de paiement doivent faire au plus {MAX_PAYMENT_TERMS_LEN} caractères"
-            )));
-        }
+    if let Some(ref s) = norm
+        && s.chars().count() > MAX_PAYMENT_TERMS_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "Les conditions de paiement doivent faire au plus {MAX_PAYMENT_TERMS_LEN} caractères"
+        )));
     }
     Ok(norm)
 }
@@ -437,18 +437,18 @@ pub async fn list_invoices(
         None => None,
     };
 
-    if let Some(ref st) = params.status {
-        if !matches!(st.as_str(), "draft" | "validated" | "cancelled") {
-            return Err(AppError::Validation("status invalide".into()));
-        }
+    if let Some(ref st) = params.status
+        && !matches!(st.as_str(), "draft" | "validated" | "cancelled")
+    {
+        return Err(AppError::Validation("status invalide".into()));
     }
 
-    if let (Some(df), Some(dt)) = (params.date_from, params.date_to) {
-        if df > dt {
-            return Err(AppError::Validation(
-                "dateFrom doit être antérieur ou égal à dateTo".into(),
-            ));
-        }
+    if let (Some(df), Some(dt)) = (params.date_from, params.date_to)
+        && df > dt
+    {
+        return Err(AppError::Validation(
+            "dateFrom doit être antérieur ou égal à dateTo".into(),
+        ));
     }
 
     let query = InvoiceListQuery {
@@ -723,30 +723,30 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
         None => None,
     };
 
-    if let (Some(df), Some(dt)) = (params.date_from, params.date_to) {
-        if df > dt {
-            return Err(AppError::Validation(
-                "dateFrom doit être antérieur ou égal à dateTo".into(),
-            ));
-        }
+    if let (Some(df), Some(dt)) = (params.date_from, params.date_to)
+        && df > dt
+    {
+        return Err(AppError::Validation(
+            "dateFrom doit être antérieur ou égal à dateTo".into(),
+        ));
     }
     // B11 (review pass 1 G2 B) : `dueBefore` doit être ≥ `dateFrom` (sinon
     // intersection vide silencieuse — l'utilisateur s'attend à un message
     // explicite).
-    if let (Some(df), Some(db)) = (params.date_from, params.due_before) {
-        if db < df {
-            return Err(AppError::Validation(
-                "dueBefore doit être ≥ dateFrom".into(),
-            ));
-        }
+    if let (Some(df), Some(db)) = (params.date_from, params.due_before)
+        && db < df
+    {
+        return Err(AppError::Validation(
+            "dueBefore doit être ≥ dateFrom".into(),
+        ));
     }
     // B21 (review pass 2 G2 B) : pareil pour `dateTo` — une intersection
     // vide due_before < date_to mérite un 400 explicite (uniquement quand
     // les deux sont posés ; le cas indépendant reste autorisé).
-    if let (Some(dt), Some(db)) = (params.date_to, params.due_before) {
-        if db < dt {
-            return Err(AppError::Validation("dueBefore doit être ≥ dateTo".into()));
-        }
+    if let (Some(dt), Some(db)) = (params.date_to, params.due_before)
+        && db < dt
+    {
+        return Err(AppError::Validation("dueBefore doit être ≥ dateTo".into()));
     }
 
     Ok(InvoiceListQuery {
@@ -905,13 +905,13 @@ fn csv_sanitize(raw: String) -> String {
             }
         })
         .collect();
-    if let Some(first) = raw.trim_start().chars().next() {
-        if matches!(first, '=' | '+' | '-' | '@') {
-            let mut out = String::with_capacity(raw.len() + 1);
-            out.push('\'');
-            out.push_str(&raw);
-            return out;
-        }
+    if let Some(first) = raw.trim_start().chars().next()
+        && matches!(first, '=' | '+' | '-' | '@')
+    {
+        let mut out = String::with_capacity(raw.len() + 1);
+        out.push('\'');
+        out.push_str(&raw);
+        return out;
     }
     raw
 }

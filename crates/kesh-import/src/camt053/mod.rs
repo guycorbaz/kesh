@@ -79,27 +79,25 @@ pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
                     "élément racine <Document> introuvable".into(),
                 ));
             }
-            Ok((ns, Event::Start(start))) => {
-                if start.local_name().as_ref() == b"Document" {
-                    let uri = match ns {
-                        ResolveResult::Bound(Namespace(b)) => std::str::from_utf8(b)
-                            .map_err(|e| CamtError::MalformedXml(e.to_string()))?
-                            .to_owned(),
-                        ResolveResult::Unbound => String::new(),
-                        ResolveResult::Unknown(prefix) => {
-                            return Err(CamtError::MalformedXml(format!(
-                                "préfixe namespace non lié : {}",
-                                String::from_utf8_lossy(&prefix)
-                            )));
-                        }
-                    };
-                    buf.clear();
-                    return match uri.as_str() {
-                        NS_V04 => v04::parse(&mut reader),
-                        NS_V08 => v08::parse(&mut reader),
-                        other => Err(CamtError::UnsupportedVersion(other.to_string())),
-                    };
-                }
+            Ok((ns, Event::Start(start))) if start.local_name().as_ref() == b"Document" => {
+                let uri = match ns {
+                    ResolveResult::Bound(Namespace(b)) => std::str::from_utf8(b)
+                        .map_err(|e| CamtError::MalformedXml(e.to_string()))?
+                        .to_owned(),
+                    ResolveResult::Unbound => String::new(),
+                    ResolveResult::Unknown(prefix) => {
+                        return Err(CamtError::MalformedXml(format!(
+                            "préfixe namespace non lié : {}",
+                            String::from_utf8_lossy(&prefix)
+                        )));
+                    }
+                };
+                buf.clear();
+                return match uri.as_str() {
+                    NS_V04 => v04::parse(&mut reader),
+                    NS_V08 => v08::parse(&mut reader),
+                    other => Err(CamtError::UnsupportedVersion(other.to_string())),
+                };
             }
             _ => {}
         }
@@ -168,15 +166,14 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                         }
                     }
                     "Amt" => {
-                        if let Some(ccy) = attr_string(&start, b"Ccy")? {
-                            if let Some(s) = sb.as_mut() {
-                                if let Some(n) = s.ntry.as_mut() {
-                                    if let Some(t) = n.current_txdtls.as_mut() {
-                                        t.currency = Some(ccy);
-                                    } else {
-                                        n.currency = Some(ccy);
-                                    }
-                                }
+                        if let Some(ccy) = attr_string(&start, b"Ccy")?
+                            && let Some(s) = sb.as_mut()
+                            && let Some(n) = s.ntry.as_mut()
+                        {
+                            if let Some(t) = n.current_txdtls.as_mut() {
+                                t.currency = Some(ccy);
+                            } else {
+                                n.currency = Some(ccy);
                             }
                         }
                     }
@@ -190,26 +187,26 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
 
                 match local.as_str() {
                     "Bal" => {
-                        if let Some(s) = sb.as_mut() {
-                            if let Some(b) = s.bal.take() {
-                                apply_balance(s, b, stmt_index)?;
-                            }
+                        if let Some(s) = sb.as_mut()
+                            && let Some(b) = s.bal.take()
+                        {
+                            apply_balance(s, b, stmt_index)?;
                         }
                     }
                     "TxDtls" => {
-                        if let Some(n) = sb.as_mut().and_then(|s| s.ntry.as_mut()) {
-                            if let Some(t) = n.current_txdtls.take() {
-                                n.txdtls.push(t);
-                            }
+                        if let Some(n) = sb.as_mut().and_then(|s| s.ntry.as_mut())
+                            && let Some(t) = n.current_txdtls.take()
+                        {
+                            n.txdtls.push(t);
                         }
                     }
                     "Ntry" => {
-                        if let Some(s) = sb.as_mut() {
-                            if let Some(n) = s.ntry.take() {
-                                let txs = emit_transactions(n, stmt_index, ntry_index)?;
-                                s.transactions.extend(txs);
-                                ntry_index += 1;
-                            }
+                        if let Some(s) = sb.as_mut()
+                            && let Some(n) = s.ntry.take()
+                        {
+                            let txs = emit_transactions(n, stmt_index, ntry_index)?;
+                            s.transactions.extend(txs);
+                            ntry_index += 1;
                         }
                     }
                     "Stmt" => {
@@ -230,10 +227,10 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 let unescaped = quick_xml::escape::unescape(&decoded)
                     .map_err(|e| CamtError::MalformedXml(e.to_string()))?;
                 let txt = unescaped.trim();
-                if !txt.is_empty() {
-                    if let Some(s) = sb.as_mut() {
-                        handle_text(s, &path, txt)?;
-                    }
+                if !txt.is_empty()
+                    && let Some(s) = sb.as_mut()
+                {
+                    handle_text(s, &path, txt)?;
                 }
             }
             _ => {}
@@ -335,10 +332,8 @@ fn handle_stmt_text(stmt: &mut StmtBuilder, path: &[String], txt: &str) -> Resul
                 stmt.period_from = Some(parse_date(txt)?);
             }
         }
-        "ToDtTm" => {
-            if ends_with(path, &["FrToDt", "ToDtTm"]) {
-                stmt.period_to = Some(parse_date(txt)?);
-            }
+        "ToDtTm" if ends_with(path, &["FrToDt", "ToDtTm"]) => {
+            stmt.period_to = Some(parse_date(txt)?);
         }
         _ => {}
     }
@@ -362,10 +357,8 @@ fn handle_bal_text(bal: &mut BalBuilder, path: &[String], txt: &str) -> Result<(
                 );
             }
         }
-        "CdtDbtInd" => {
-            if ends_with(path, &["Bal", "CdtDbtInd"]) {
-                bal.sign = Some(txt.to_string());
-            }
+        "CdtDbtInd" if ends_with(path, &["Bal", "CdtDbtInd"]) => {
+            bal.sign = Some(txt.to_string());
         }
         _ => {}
     }
@@ -409,10 +402,8 @@ fn handle_ntry_text(ntry: &mut NtryBuilder, path: &[String], txt: &str) -> Resul
                 ntry.transaction_id = Some(txt.to_string());
             }
         }
-        "AddtlNtryInf" => {
-            if ends_with(path, &["Ntry", "AddtlNtryInf"]) {
-                ntry.addtl_ntry_inf = Some(txt.to_string());
-            }
+        "AddtlNtryInf" if ends_with(path, &["Ntry", "AddtlNtryInf"]) => {
+            ntry.addtl_ntry_inf = Some(txt.to_string());
         }
         _ => {}
     }
@@ -472,12 +463,11 @@ fn handle_txdtls_text(t: &mut TxDtlsBuilder, path: &[String], txt: &str) -> Resu
                 t.counterparty_name = Some(txt.to_string());
             }
         }
-        "IBAN" => {
-            if ends_with(path, &["CdtrAcct", "Id", "IBAN"])
-                || ends_with(path, &["DbtrAcct", "Id", "IBAN"])
-            {
-                t.counterparty_iban = Some(txt.to_string());
-            }
+        "IBAN"
+            if (ends_with(path, &["CdtrAcct", "Id", "IBAN"])
+                || ends_with(path, &["DbtrAcct", "Id", "IBAN"])) =>
+        {
+            t.counterparty_iban = Some(txt.to_string());
         }
         _ => {}
     }
@@ -722,10 +712,10 @@ fn parse_date(s: &str) -> Result<NaiveDate, CamtError> {
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Ok(d);
     }
-    if let Some((date_part, _)) = s.split_once('T') {
-        if let Ok(d) = NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
-            return Ok(d);
-        }
+    if let Some((date_part, _)) = s.split_once('T')
+        && let Ok(d) = NaiveDate::parse_from_str(date_part, "%Y-%m-%d")
+    {
+        return Ok(d);
     }
     Err(CamtError::InvalidDate(s.to_string()))
 }

@@ -159,24 +159,24 @@ pub fn map_db_error(err: sqlx::Error) -> DbError {
         _ => {}
     }
 
-    if let Some(db_err) = err.as_database_error() {
-        if let Some(my_err) = db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>() {
-            match my_err.number() {
-                1062 => return DbError::UniqueConstraintViolation(my_err.message().to_string()),
-                1451 | 1452 => {
-                    return DbError::ForeignKeyViolation(my_err.message().to_string());
-                }
-                4025 | 3819 => {
-                    return DbError::CheckConstraintViolation(my_err.message().to_string());
-                }
-                // Story 12-5c (D2) : donnée trop longue / hors plage à l'INSERT
-                // staging d'un QR tiers non conforme → variante typée pour un
-                // échec par-fichier propre (vs 500 global) côté ingestion 12-5c.
-                1406 | 1264 => {
-                    return DbError::DataLengthOrRange(my_err.message().to_string());
-                }
-                _ => {}
+    if let Some(db_err) = err.as_database_error()
+        && let Some(my_err) = db_err.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+    {
+        match my_err.number() {
+            1062 => return DbError::UniqueConstraintViolation(my_err.message().to_string()),
+            1451 | 1452 => {
+                return DbError::ForeignKeyViolation(my_err.message().to_string());
             }
+            4025 | 3819 => {
+                return DbError::CheckConstraintViolation(my_err.message().to_string());
+            }
+            // Story 12-5c (D2) : donnée trop longue / hors plage à l'INSERT
+            // staging d'un QR tiers non conforme → variante typée pour un
+            // échec par-fichier propre (vs 500 global) côté ingestion 12-5c.
+            1406 | 1264 => {
+                return DbError::DataLengthOrRange(my_err.message().to_string());
+            }
+            _ => {}
         }
     }
     DbError::Sqlx(err)

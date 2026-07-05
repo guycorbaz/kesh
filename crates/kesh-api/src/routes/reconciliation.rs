@@ -536,35 +536,36 @@ pub async fn get_proposals(
             // currency filter cohérent L38) — déjà filtré au Pass 2 via
             // `candidate_invoices.is_empty()` quand tx.currency != "CHF",
             // mais rules NE PAS hériter du sign filter 8-4 invoice (P-H7).
-            if !has_strong_invoice_match && tx.currency == "CHF" {
-                if let Some(rule) = kesh_reconciliation::first_matching_rule(
+            if !has_strong_invoice_match
+                && tx.currency == "CHF"
+                && let Some(rule) = kesh_reconciliation::first_matching_rule(
                     &active_rules,
                     &tx,
                     &active_account_ids,
-                ) {
-                    let counterparty_display = accounts_info
-                        .get(&rule.counterparty_account_id)
-                        .map(|(num, name)| format!("{num} {name}"))
-                        .unwrap_or_else(|| format!("compte #{}", rule.counterparty_account_id));
-                    candidates.push(ReconciliationCandidate {
-                        candidate_type: CandidateType::Rule,
-                        invoice_id: None,
-                        invoice_number: None,
-                        invoice_amount: None,
-                        invoice_date: None,
-                        rule_id: Some(rule.id),
-                        rule_label: Some(rule.label.clone()),
-                        rule_match_type: Some(rule.match_type.as_str().to_string()),
-                        counterparty_account_id: Some(rule.counterparty_account_id),
-                        counterparty_account_name: Some(counterparty_display),
-                        score: MatchScore {
-                            total: 1.0,
-                            amount_score: 0.0,
-                            reference_score: 0.0,
-                            contact_score: 0.0,
-                        },
-                    });
-                }
+                )
+            {
+                let counterparty_display = accounts_info
+                    .get(&rule.counterparty_account_id)
+                    .map(|(num, name)| format!("{num} {name}"))
+                    .unwrap_or_else(|| format!("compte #{}", rule.counterparty_account_id));
+                candidates.push(ReconciliationCandidate {
+                    candidate_type: CandidateType::Rule,
+                    invoice_id: None,
+                    invoice_number: None,
+                    invoice_amount: None,
+                    invoice_date: None,
+                    rule_id: Some(rule.id),
+                    rule_label: Some(rule.label.clone()),
+                    rule_match_type: Some(rule.match_type.as_str().to_string()),
+                    counterparty_account_id: Some(rule.counterparty_account_id),
+                    counterparty_account_name: Some(counterparty_display),
+                    score: MatchScore {
+                        total: 1.0,
+                        amount_score: 0.0,
+                        reference_score: 0.0,
+                        contact_score: 0.0,
+                    },
+                });
             }
 
             ReconciliationProposal {
@@ -1874,16 +1875,16 @@ async fn accept_one_rule(
     // Projet archivé/absent → FailedProposal per-proposition (PROJECT_ARCHIVED
     // / PROJECT_NOT_FOUND), jamais d'AppError globale.
     let default_project_id = rule.default_project_id;
-    if let Some(pid) = default_project_id {
-        if let Err(e) = projects::validate_taggable_in_tx(tx, company_id, &[pid]).await {
-            // Erreur issue exclusivement de la validation projet → mapping
-            // canonique avec projectId dans details (AC11).
-            return Err(project_error_to_failed_proposal(
-                bank_transaction_id,
-                Some(pid),
-                e,
-            ));
-        }
+    if let Some(pid) = default_project_id
+        && let Err(e) = projects::validate_taggable_in_tx(tx, company_id, &[pid]).await
+    {
+        // Erreur issue exclusivement de la validation projet → mapping
+        // canonique avec projectId dans details (AC11).
+        return Err(project_error_to_failed_proposal(
+            bank_transaction_id,
+            Some(pid),
+            e,
+        ));
     }
 
     // Step 12 — build_journal_entry_for_counterparty + create_in_tx.
@@ -2407,12 +2408,12 @@ pub async fn post_manual(
             "counterpartyAccountId doit être strictement positif".into(),
         ));
     }
-    if let Some(d) = &body.description {
-        if d.chars().count() > MAX_MANUAL_DESCRIPTION_LEN {
-            return Err(AppError::Validation(format!(
-                "description trop longue (max {MAX_MANUAL_DESCRIPTION_LEN} caractères)"
-            )));
-        }
+    if let Some(d) = &body.description
+        && d.chars().count() > MAX_MANUAL_DESCRIPTION_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "description trop longue (max {MAX_MANUAL_DESCRIPTION_LEN} caractères)"
+        )));
     }
 
     // Step 1 — bank_account ownership pré-flight (KF-002 multi-tenant)

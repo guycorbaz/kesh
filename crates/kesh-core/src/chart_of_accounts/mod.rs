@@ -100,13 +100,13 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
 
     // Vérifier que chaque parent_number référence un numéro existant
     for entry in entries {
-        if let Some(ref parent) = entry.parent_number {
-            if !numbers.contains(parent) {
-                return Err(CoreError::InvalidChart(format!(
-                    "compte {} référence un parent inexistant : {}",
-                    entry.number, parent
-                )));
-            }
+        if let Some(ref parent) = entry.parent_number
+            && !numbers.contains(parent)
+        {
+            return Err(CoreError::InvalidChart(format!(
+                "compte {} référence un parent inexistant : {}",
+                entry.number, parent
+            )));
         }
     }
 

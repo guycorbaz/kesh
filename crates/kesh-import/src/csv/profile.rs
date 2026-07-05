@@ -223,13 +223,13 @@ impl CsvProfile {
         }
 
         // encoding (si Some) ∈ {"UTF-8", "ISO-8859-1"}
-        if let Some(ref enc) = self.encoding {
-            if !matches!(enc.as_str(), "UTF-8" | "ISO-8859-1") {
-                return Err(CsvError::ProfileMisconfigured(format!(
-                    "encoding \"{}\" non supporté v0.1 (attendu \"UTF-8\" ou \"ISO-8859-1\")",
-                    enc
-                )));
-            }
+        if let Some(ref enc) = self.encoding
+            && !matches!(enc.as_str(), "UTF-8" | "ISO-8859-1")
+        {
+            return Err(CsvError::ProfileMisconfigured(format!(
+                "encoding \"{}\" non supporté v0.1 (attendu \"UTF-8\" ou \"ISO-8859-1\")",
+                enc
+            )));
         }
 
         Ok(())

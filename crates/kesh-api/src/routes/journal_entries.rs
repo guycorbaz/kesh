@@ -294,37 +294,37 @@ pub async fn list_journal_entries(
 
     // P6 : rejeter les montants négatifs (évite BETWEEN -100 AND max
     // qui ne filtre rien, ou BETWEEN 0 AND -100 qui renvoie toujours vide).
-    if let Some(min) = amount_min {
-        if min < Decimal::ZERO {
-            return Err(AppError::Validation(
-                "amountMin ne peut pas être négatif".into(),
-            ));
-        }
+    if let Some(min) = amount_min
+        && min < Decimal::ZERO
+    {
+        return Err(AppError::Validation(
+            "amountMin ne peut pas être négatif".into(),
+        ));
     }
-    if let Some(max) = amount_max {
-        if max < Decimal::ZERO {
-            return Err(AppError::Validation(
-                "amountMax ne peut pas être négatif".into(),
-            ));
-        }
+    if let Some(max) = amount_max
+        && max < Decimal::ZERO
+    {
+        return Err(AppError::Validation(
+            "amountMax ne peut pas être négatif".into(),
+        ));
     }
 
     // P2 : cross-validation des bornes. Un filtre min > max retournerait
     // 0 résultats silencieusement — l'utilisateur croirait à une absence
     // de données au lieu d'un filtre incohérent. Mieux vaut rejeter.
-    if let (Some(min), Some(max)) = (amount_min, amount_max) {
-        if min > max {
-            return Err(AppError::Validation(
-                "amountMin doit être inférieur ou égal à amountMax".into(),
-            ));
-        }
+    if let (Some(min), Some(max)) = (amount_min, amount_max)
+        && min > max
+    {
+        return Err(AppError::Validation(
+            "amountMin doit être inférieur ou égal à amountMax".into(),
+        ));
     }
-    if let (Some(from), Some(to)) = (date_from, date_to) {
-        if from > to {
-            return Err(AppError::Validation(
-                "dateFrom doit être inférieur ou égal à dateTo".into(),
-            ));
-        }
+    if let (Some(from), Some(to)) = (date_from, date_to)
+        && from > to
+    {
+        return Err(AppError::Validation(
+            "dateFrom doit être inférieur ou égal à dateTo".into(),
+        ));
     }
 
     // Trim description (garde-fou cohérent avec create/update).
