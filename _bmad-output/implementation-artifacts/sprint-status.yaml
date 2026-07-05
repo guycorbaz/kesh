@@ -288,6 +288,6 @@ development_status:
   19-5-tagging-banque-reconciliation: done  # 2026-07-04 MERGÉ PR #206 (squash 2d241cd). code-review CONVERGÉ 2 passes Sonnet→Haiku (1 HIGH + 2 MEDIUM → 0). HIGH double_option serde + AC22 E2E réel 9/9. Feature A tag accept + Feature B projet défaut règle (migration 43).
   19-6-rapports-analytiques: split  # 2026-07-04 SPLIT (escape-hatch spec, 2 rapports mega-story) → 19-6a fondation+Dépenses + 19-6b Rendement. Umbrella spec = référence ground-truth + DC5/DC8 figées Guy.
   19-6a-rapports-depenses: done  # 2026-07-05 code-review CONVERGÉ 3 passes Sonnet→Haiku→Opus (trend >LOW 1M→1C+2M→0). Pass 3 Opus GO exactitude comptable+SQL+multi-tenant+fix race vérifiés. Fondation project_report + Dépenses par projet bout-en-bout (agrégation+drill-down+PDF/CSV+API+onglet+View). 4 intégration+5 API HTTP+19 unit front+E2E 7/7. Gate GATE_EXIT=0. PR à ouvrir.  # Chemin minimal rénovations. Dépend 19-1..5.
-  19-6b-rapports-rendement: backlog  # rapport Rendement par projet (coût investi Expense+Asset hors 10xx DC8 + revenus + résultat net + rendement %) — réutilise la fondation 19-6a. PDF/CSV + onglet frontend. Dépend 19-6a.
+  19-6b-rapports-rendement: ready-for-dev  # 2026-07-05 spec créée (miroir 19-6a, réutilise fondation project_report). Coût investi Expense+Asset hors 10xx DC8, revenus, résultat net, rendement %. Branche from main post-#207. Prochaine : dev-story 19-6b.
   19-7-doc-cloture: backlog  # CHANGELOG/README/manuels/site + rétro. Dépend 19-1..6.
   epic-19-retrospective: optional
