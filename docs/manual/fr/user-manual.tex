@@ -940,6 +940,56 @@ Tous les rapports peuvent être :
 \end{itemize}
 
 %%─────────────────────────────────────────────────────────────────────────────
+\section{Comptabilité analytique par projet}
+
+Kesh permet de rattacher chaque opération comptable à un \textbf{projet} pour l'analyser
+isolément — typiquement pour capter \emph{toutes} les dépenses d'une rénovation
+déductible, ou pour suivre le \emph{rendement} d'un investissement.
+
+\subsection{Créer et organiser des projets}
+
+Dans \emph{Administration} → \emph{Projets analytiques}, créez vos projets (code court + nom).
+Un projet peut avoir des \textbf{sous-projets} (deux niveaux au maximum : projet →
+sous-projet). Un projet dont des écritures dépendent ne se supprime pas mais
+s'\textbf{archive} (il disparaît des sélecteurs mais reste dans l'historique et les rapports).
+
+\subsection{Affecter un projet aux écritures}
+
+L'affectation est \textbf{optionnelle} et disponible sur \textbf{tous les flux de saisie} :
+\begin{itemize}
+    \item \textbf{Écritures manuelles} — un sélecteur de projet \emph{par ligne} (une écriture
+          de régularisation peut ainsi ventiler ses charges sur plusieurs projets).
+    \item \textbf{Factures de vente et fournisseurs} — un projet au niveau du document,
+          propagé à toutes les lignes de l'écriture générée.
+    \item \textbf{Réconciliation bancaire} — projet lors d'un rapprochement manuel,
+          projet \emph{par ligne} lors d'une ventilation, et \textbf{projet par défaut}
+          sur une règle d'affectation (chaque transaction réconciliée via la règle est
+          alors taguée automatiquement).
+\end{itemize}
+
+\subsection{Les deux rapports par projet}
+
+Dans \emph{Rapports}, deux onglets exploitent la dimension projet (exportables PDF/CSV,
+en vue par \textbf{exercice} ou \textbf{cumulée depuis l'origine} du projet, avec
+\textbf{agrégation des sous-projets}) :
+\begin{itemize}
+    \item \textbf{Dépenses par projet} — toutes les charges taguées, groupées par
+          sous-projet puis par compte, avec sous-totaux et total. Chaque compte se
+          \textbf{déplie} pour afficher les écritures qui le composent (drill-down).
+          Idéal pour préparer une déclaration fiscale sans rien oublier.
+    \item \textbf{Rendement par projet} — \textbf{coût investi} (charges + actifs immobilisés
+          ; la trésorerie banque/caisse en est exclue pour ne pas gonfler le coût),
+          \textbf{revenus}, \textbf{résultat net} et \textbf{rendement \%}
+          (revenus / coût investi).
+\end{itemize}
+
+\begin{keshtip}
+Les montants « Dépenses » sont hors TVA (la TVA récupérable étant portée sur un compte
+d'actif séparé). Pour un usage privé non assujetti, il n'y a pas de TVA récupérable
+distincte : le montant affiché correspond alors au décaissement réel.
+\end{keshtip}
+
+%%─────────────────────────────────────────────────────────────────────────────
 \section{Exports de souveraineté}
 
 \subsection{Concept}
