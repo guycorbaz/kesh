@@ -1,6 +1,6 @@
 # Story 19.6a : Fondation rapports projet + Dépenses par projet
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story 1/2 de l'umbrella 19-6 (SPLIT). Pose la fondation partagée
      (module project_report : scope racine+enfants, période 2 modes) + le 1er

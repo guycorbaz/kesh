@@ -99,6 +99,21 @@
 		}
 	});
 
+	// Story 19-6a code-review Pass 1 (MEDIUM) — invalide le rapport projet affiché
+	// dès que le projet ou le mode change (sinon la vue montre le projet A tandis
+	// que l'export rebâtit la requête sur la sélection courante B → mismatch).
+	let lastProjectSel: string | null = null;
+	$effect(() => {
+		const key = `${selectedProjectId}:${projectMode}`;
+		if (key !== lastProjectSel) {
+			if (lastProjectSel !== null) {
+				projectExpenses = null;
+				errorMsg = null;
+			}
+			lastProjectSel = key;
+		}
+	});
+
 	// P5 — error handler : ApiError structured fields + Fluent interpolation.
 	function formatError(err: unknown): string {
 		if (isApiError(err)) {
@@ -254,8 +269,12 @@
 			exporting = true;
 			errorMsg = null;
 			try {
+				// i18n slug (cohérent buildExportFilename des rapports classiques) —
+				// le backend pose déjà le Content-Disposition localisé ; ce filename
+				// est le fallback suggéré au navigateur.
+				const typeSlug = i18nMsg('reports-filename-project-expenses', 'depenses-par-projet');
 				const companySlug = data.companyName.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 20);
-				const filename = `kesh-depenses-par-projet-${companySlug}.${format}`;
+				const filename = `kesh-${typeSlug}-${companySlug}.${format}`;
 				await downloadProjectReport('project-expenses', q, format, filename);
 			} catch (e) {
 				if (isApiError(e) && e.code) errorMsg = formatError(e);
