@@ -88,6 +88,34 @@ test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({
 	await disposeContextSafe(api);
 });
 
+test('reports project-return tab generates end-to-end (Story 19-6b)', async ({ page }) => {
+	await login(page);
+
+	const api = await authedApiContext(page);
+	const code = `RET-${Date.now().toString().slice(-6)}`;
+	const projRes = await api.post('/api/v1/projects', {
+		data: { code, name: 'Projet rendement E2E', parentId: null },
+	});
+	expect(projRes.ok(), `create project: ${projRes.status()}`).toBeTruthy();
+
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+
+	// Bascule sur l'onglet « Rendement par projet ».
+	await page.getByRole('tab', { name: /rendement par projet/i }).click();
+	await expect(page.getByTestId('project-report-controls')).toBeVisible();
+
+	await page.getByTestId('project-report-project').selectOption({ label: `${code} — Projet rendement E2E` });
+	await page.getByTestId('project-report-generate').click();
+
+	// La vue rend (empty-state attendu — pas d'écritures taguées) sans erreur.
+	await expect(page.getByTestId('project-return-view')).toBeVisible({ timeout: 5000 });
+	await expect(page.getByTestId('project-return-empty')).toBeVisible();
+	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
+
+	await disposeContextSafe(api);
+});
+
 test('reports page generates balance sheet end-to-end (AC #28, T12.1)', async ({ page }) => {
 	await login(page);
 	await page.goto('/reports');

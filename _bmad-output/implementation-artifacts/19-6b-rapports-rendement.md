@@ -1,6 +1,11 @@
 # Story 19.6b : Rapport « Rendement par projet »
 
-Status: ready-for-dev
+Status: done
+
+## Change Log
+
+- **Code-review Pass 1 (2026-07-05, Sonnet ×3 — Blind Hunter / Edge Case Hunter / Acceptance Auditor) — CONVERGÉ D'EMBLÉE 0 > LOW** : Acceptance Auditor **GO 9/9 ACs**, DC1/DC3/DC4/DC7/DC8 tous vérifiés ; Blind Hunter 0 > LOW (SQL SUM/CASE + signes + `NOT LIKE '10%'` DC8 + bind order + `rendement_pct` garde `> 0` + frontend 2-onglets sans fuite d'état tous corrects) ; Edge Case Hunter 0 > LOW (rendement null si coût ≤ 0, exclusion trésorerie, totaux repondérés globalement, cohérence cross-onglet). **Trend > LOW : Pass 1 = 0. Critère d'arrêt atteint en une passe** (2ᵉ fois du projet, après 19-4). Nits LOW no-action : `format_rendement` dupliqué csv/pdf (4 lignes, cohérent per-module VAT), CSV `%` texte (choix design), wording « aucun mouvement » sur projet trésorerie-only (cosmétique), selectTab transient loading (self-heal). **Nit AA (couverture) traité** : ajout test E2E génération onglet Rendement (mirror 19-6a). Gate final : 5 tests intégration + 7 API HTTP + 23 unit front + **E2E Playwright 8/8 réels** ; workspace serial **GATE_EXIT=0** (88 suites) ; fmt+clippy 0 ; check0/lint/build. Cycle dev Opus 4.8 → review Sonnet.
+- **Dev (2026-07-05, Opus 4.8, run autonome)** : T1-T5 complets. Réutilise la fondation `project_report` (19-6a) : `generate_project_return` (SUM CASE par account_type, coût investi Expense+Asset hors 10xx DC8, revenus, résultat net, rendement %) + PDF 4-colonnes + CSV + endpoint API + i18n slug 4 locales + onglet frontend + `ProjectReturnView` + généralisation contrôles projet (`isProjectTab`/`hasProjectReport`).
 
 <!-- Sous-story 2/2 de l'umbrella 19-6 (SPLIT). Réutilise la fondation
      project_report (resolve_scope, ProjectPeriodMode) posée par 19-6a. Ajoute
