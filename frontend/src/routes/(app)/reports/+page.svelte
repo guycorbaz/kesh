@@ -21,10 +21,12 @@
 		getIncomeStatement,
 		getJournalReport,
 		getProjectExpenses,
+		getProjectReturn,
 		getTrialBalance,
 		getVatReport,
 	} from '$lib/features/reports/reports.api';
 	import ProjectExpensesView from '$lib/features/reports/ProjectExpensesView.svelte';
+	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type {
@@ -35,6 +37,8 @@
 		ProjectExpensesDto,
 		ProjectReportMode,
 		ProjectReportQuery,
+		ProjectReportType,
+		ProjectReturnDto,
 		ReportQuery,
 		ReportType,
 		TrialBalanceDto,
@@ -42,8 +46,8 @@
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
-	/** Onglets = rapports comptables classiques + rapports par projet (Story 19-6a). */
-	type TabId = ReportType | 'project-expenses';
+	/** Onglets = rapports comptables classiques + rapports par projet (19-6a/b). */
+	type TabId = ReportType | 'project-expenses' | 'project-return';
 
 	interface PageData {
 		fiscalYears: FiscalYearResponse[];
@@ -64,6 +68,15 @@
 	let selectedProjectId = $state<number | null>(null);
 	let projectMode = $state<ProjectReportMode>('fiscal_year');
 	let projectExpenses = $state<ProjectExpensesDto | null>(null);
+	let projectReturn = $state<ProjectReturnDto | null>(null);
+	// True quand l'onglet actif est un rapport par projet (contrôles dédiés).
+	const isProjectTab = $derived(
+		activeTab === 'project-expenses' || activeTab === 'project-return',
+	);
+	// Un rapport projet a-t-il été généré pour l'onglet actif (gouverne l'export).
+	const hasProjectReport = $derived(
+		activeTab === 'project-return' ? projectReturn !== null : projectExpenses !== null,
+	);
 	$effect(() => {
 		listProjects()
 			.then((p) => (projects = p))
@@ -94,6 +107,7 @@
 			journalReport = null;
 			vatReport = null;
 			projectExpenses = null;
+			projectReturn = null;
 			errorMsg = null;
 			// Story 19-6a Pass 3 (Opus, LOW) — invalide aussi les générations en vol
 			// sur l'axe exercice (sinon un résultat FY-2026 en vol pourrait repeupler
@@ -118,6 +132,7 @@
 		if (key !== lastProjectSel) {
 			if (lastProjectSel !== null) {
 				projectExpenses = null;
+				projectReturn = null;
 				errorMsg = null;
 				genSeq++;
 				loading = false;
@@ -163,16 +178,21 @@
 	}
 
 	async function generate(): Promise<void> {
-		// Story 19-6a — branche projet (query différente des rapports classiques).
-		if (activeTab === 'project-expenses') {
+		// Story 19-6a/b — branche projet (query différente des rapports classiques).
+		if (isProjectTab) {
 			const q = projectQuery();
 			if (!q) return;
 			const mySeq = ++genSeq;
 			loading = true;
 			errorMsg = null;
 			try {
-				const result = await getProjectExpenses(q);
-				if (mySeq === genSeq) projectExpenses = result;
+				if (activeTab === 'project-expenses') {
+					const result = await getProjectExpenses(q);
+					if (mySeq === genSeq) projectExpenses = result;
+				} else {
+					const result = await getProjectReturn(q);
+					if (mySeq === genSeq) projectReturn = result;
+				}
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
@@ -274,20 +294,28 @@
 	async function exportReport(format: 'pdf' | 'csv'): Promise<void> {
 		// Pass 1 code-review M12 : guard re-entrancy avant TOUT await.
 		if (exporting) return;
-		// Story 19-6a — branche projet.
-		if (activeTab === 'project-expenses') {
+		// Story 19-6a/b — branche projet.
+		if (isProjectTab) {
 			const q = projectQuery();
-			if (!q || projectExpenses === null) return;
+			const hasReport =
+				activeTab === 'project-expenses' ? projectExpenses !== null : projectReturn !== null;
+			if (!q || !hasReport) return;
 			exporting = true;
 			errorMsg = null;
 			try {
 				// i18n slug (cohérent buildExportFilename des rapports classiques) —
 				// le backend pose déjà le Content-Disposition localisé ; ce filename
 				// est le fallback suggéré au navigateur.
-				const typeSlug = i18nMsg('reports-filename-project-expenses', 'depenses-par-projet');
+				const slugKey =
+					activeTab === 'project-expenses'
+						? 'reports-filename-project-expenses'
+						: 'reports-filename-project-return';
+				const slugFallback =
+					activeTab === 'project-expenses' ? 'depenses-par-projet' : 'rendement-par-projet';
+				const typeSlug = i18nMsg(slugKey, slugFallback);
 				const companySlug = data.companyName.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 20);
 				const filename = `kesh-${typeSlug}-${companySlug}.${format}`;
-				await downloadProjectReport('project-expenses', q, format, filename);
+				await downloadProjectReport(activeTab as ProjectReportType, q, format, filename);
 			} catch (e) {
 				if (isApiError(e) && e.code) errorMsg = formatError(e);
 				else
@@ -315,12 +343,12 @@
 				// Aucun filtre journal exposé v0.1 — laisse undefined.
 			}
 			const filename = buildExportFilename(
-				activeTab,
+				activeTab as ReportType,
 				data.companyName,
 				{ start: period.startDate, end: period.endDate },
 				format,
 			);
-			await downloadReport(activeTab, query, format, filename);
+			await downloadReport(activeTab as ReportType, query, format, filename);
 		} catch (e) {
 			// Pass 1 code-review M13 (AA4-F2) : code structuré → message i18n
 			// du backend (formatError) ; sinon fallback générique AC #23.
@@ -355,6 +383,11 @@
 			id: 'project-expenses',
 			labelKey: 'reports-project-expenses',
 			fallback: 'Dépenses par projet',
+		},
+		{
+			id: 'project-return',
+			labelKey: 'reports-project-return',
+			fallback: 'Rendement par projet',
 		},
 	];
 
@@ -393,7 +426,7 @@
 <div class="space-y-4 p-4">
 	<h1 class="text-2xl font-bold">{i18nMsg('reports-page-title', 'Rapports comptables')}</h1>
 
-	{#if activeTab !== 'project-expenses'}
+	{#if !isProjectTab}
 		<ReportSelector
 			fiscalYears={data.fiscalYears}
 			bind:selectedFiscalYearId
@@ -466,7 +499,7 @@
 				type="button"
 				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
 				onclick={exportPdf}
-				disabled={exporting || projectExpenses === null}
+				disabled={exporting || !hasProjectReport}
 				data-testid="project-report-export-pdf"
 			>
 				PDF
@@ -475,7 +508,7 @@
 				type="button"
 				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
 				onclick={exportCsv}
-				disabled={exporting || projectExpenses === null}
+				disabled={exporting || !hasProjectReport}
 				data-testid="project-report-export-csv"
 			>
 				CSV
@@ -528,6 +561,8 @@
 			<VatReportView dto={vatReport} />
 		{:else if activeTab === 'project-expenses' && projectExpenses}
 			<ProjectExpensesView report={projectExpenses} />
+		{:else if activeTab === 'project-return' && projectReturn}
+			<ProjectReturnView report={projectReturn} />
 		{:else}
 			<p class="text-sm italic text-gray-500">
 				{i18nMsg(

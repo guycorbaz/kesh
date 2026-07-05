@@ -158,6 +158,17 @@ describe('reports.api — Story 9-2a', () => {
 			expect(url).toContain('format=pdf');
 		});
 
+		it('project-return : URL export construite', () => {
+			const url = getProjectReportExportUrl(
+				'project-return',
+				{ projectId: 9, mode: 'fiscal_year', fiscalYearId: 3 },
+				'csv',
+			);
+			expect(url).toContain('/api/v1/reports/project-return/export');
+			expect(url).toContain('projectId=9');
+			expect(url).toContain('format=csv');
+		});
+
 		it('mode cumulative omet fiscalYearId', () => {
 			const url = getProjectReportExportUrl(
 				'project-expenses',

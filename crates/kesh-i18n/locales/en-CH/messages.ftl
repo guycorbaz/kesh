@@ -888,6 +888,7 @@ reports-filename-trial-balance = trial-balance
 reports-filename-journals = journals
 reports-filename-vat = vat-return
 reports-filename-project-expenses = expenses-by-project
+reports-filename-project-return = return-by-project
 reports-pdf-header-period = Period
 reports-pdf-empty-message = No entries in the selected period.
 

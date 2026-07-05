@@ -56,3 +56,10 @@ pub use project_report::{
     ExpenseAccountRow, ProjectEntryRef, ProjectExpenseSection, ProjectExpensesReport, ProjectInfo,
     ProjectPeriodMode, ProjectReportScope, generate_project_expenses, resolve_scope,
 };
+
+// Story 19-6b — rapport Rendement par projet
+pub use csv::render_project_return_csv;
+pub use pdf::{ProjectReturnPdfLabels, render_project_return_pdf};
+pub use project_report::{
+    ProjectReturnReport, ProjectReturnSection, ProjectReturnTotals, generate_project_return,
+};

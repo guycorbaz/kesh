@@ -11,6 +11,8 @@ import type {
 	JournalReportQuery,
 	ProjectExpensesDto,
 	ProjectReportQuery,
+	ProjectReportType,
+	ProjectReturnDto,
 	ReportQuery,
 	ReportType,
 	TrialBalanceDto,
@@ -97,9 +99,14 @@ export async function getProjectExpenses(query: ProjectReportQuery): Promise<Pro
 	return apiClient.get<ProjectExpensesDto>(`/api/v1/reports/project-expenses?${qs}`);
 }
 
-/** URL d'export d'un rapport projet (`project-expenses`). */
+export async function getProjectReturn(query: ProjectReportQuery): Promise<ProjectReturnDto> {
+	const qs = buildProjectQuery(query);
+	return apiClient.get<ProjectReturnDto>(`/api/v1/reports/project-return?${qs}`);
+}
+
+/** URL d'export d'un rapport projet. */
 export function getProjectReportExportUrl(
-	type: 'project-expenses',
+	type: ProjectReportType,
 	query: ProjectReportQuery,
 	format: 'pdf' | 'csv',
 ): string {
@@ -109,7 +116,7 @@ export function getProjectReportExportUrl(
 
 /** Télécharge un export de rapport projet (même mécanique que downloadReport). */
 export async function downloadProjectReport(
-	type: 'project-expenses',
+	type: ProjectReportType,
 	query: ProjectReportQuery,
 	format: 'pdf' | 'csv',
 	filename: string,

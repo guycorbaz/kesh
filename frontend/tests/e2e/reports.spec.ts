@@ -50,10 +50,11 @@ test('reports page loads with 5 tabs (AC #27 + #33, + TVA Story 11-2/18-1f)', as
 
 	await expect(page.getByRole('heading', { name: /rapports/i })).toBeVisible();
 
-	// 6 onglets : Bilan, Compte de résultat, Balance, Journaux, TVA, Dépenses par
+	// 7 onglets : + Rendement par projet (19-6b).
+	// (Bilan, Résultat, Balance, Journaux, TVA, Dépenses par projet, Rendement)...
 	// projet (l'onglet projet ajouté en 19-6a ; le compte passe de 5 à 6).
 	const tabs = page.getByRole('tab');
-	await expect(tabs).toHaveCount(6);
+	await expect(tabs).toHaveCount(7);
 });
 
 test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({ page }) => {
@@ -82,6 +83,34 @@ test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({
 	// taguées) sans erreur backend. La vue englobe l'état vide.
 	await expect(page.getByTestId('project-expenses-view')).toBeVisible({ timeout: 5000 });
 	await expect(page.getByTestId('project-expenses-empty')).toBeVisible();
+	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
+
+	await disposeContextSafe(api);
+});
+
+test('reports project-return tab generates end-to-end (Story 19-6b)', async ({ page }) => {
+	await login(page);
+
+	const api = await authedApiContext(page);
+	const code = `RET-${Date.now().toString().slice(-6)}`;
+	const projRes = await api.post('/api/v1/projects', {
+		data: { code, name: 'Projet rendement E2E', parentId: null },
+	});
+	expect(projRes.ok(), `create project: ${projRes.status()}`).toBeTruthy();
+
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+
+	// Bascule sur l'onglet « Rendement par projet ».
+	await page.getByRole('tab', { name: /rendement par projet/i }).click();
+	await expect(page.getByTestId('project-report-controls')).toBeVisible();
+
+	await page.getByTestId('project-report-project').selectOption({ label: `${code} — Projet rendement E2E` });
+	await page.getByTestId('project-report-generate').click();
+
+	// La vue rend (empty-state attendu — pas d'écritures taguées) sans erreur.
+	await expect(page.getByTestId('project-return-view')).toBeVisible({ timeout: 5000 });
+	await expect(page.getByTestId('project-return-empty')).toBeVisible();
 	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
 
 	await disposeContextSafe(api);

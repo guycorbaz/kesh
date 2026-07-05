@@ -939,6 +939,7 @@ reports-filename-trial-balance = balance-comptes
 reports-filename-journals = journaux
 reports-filename-vat = decompte-tva
 reports-filename-project-expenses = depenses-par-projet
+reports-filename-project-return = rendement-par-projet
 reports-pdf-header-period = Période
 reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
 

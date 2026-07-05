@@ -27,15 +27,16 @@ use chrono::NaiveDate;
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
-use kesh_report::pdf::{ProjectExpensesPdfLabels, VatPdfLabels};
+use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfLabels};
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
-    BalanceSheet, IncomeStatement, JournalReport, PdfContext, ProjectExpensesReport, ReportPeriod,
-    TrialBalance, VatReport, generate_balance_sheet, generate_income_statement,
-    generate_journal_report, generate_project_expenses, generate_trial_balance,
-    generate_vat_report, render_balance_sheet_csv, render_balance_sheet_pdf,
-    render_income_statement_csv, render_income_statement_pdf, render_journal_report_csv,
-    render_journal_report_pdf, render_project_expenses_csv, render_project_expenses_pdf,
+    BalanceSheet, IncomeStatement, JournalReport, PdfContext, ProjectExpensesReport,
+    ProjectReturnReport, ReportPeriod, TrialBalance, VatReport, generate_balance_sheet,
+    generate_income_statement, generate_journal_report, generate_project_expenses,
+    generate_project_return, generate_trial_balance, generate_vat_report, render_balance_sheet_csv,
+    render_balance_sheet_pdf, render_income_statement_csv, render_income_statement_pdf,
+    render_journal_report_csv, render_journal_report_pdf, render_project_expenses_csv,
+    render_project_expenses_pdf, render_project_return_csv, render_project_return_pdf,
     render_trial_balance_csv, render_trial_balance_pdf, render_vat_report_csv,
     render_vat_report_pdf,
 };
@@ -580,6 +581,72 @@ fn build_project_export_response(
         .header(header::CONTENT_DISPOSITION, content_disposition)
         .body(Body::from(body))
         .map_err(|e| AppError::Internal(format!("response build: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// Story 19-6b — Rapport « Rendement par projet »
+// ---------------------------------------------------------------------------
+
+/// GET /api/v1/reports/project-return
+pub async fn get_project_return(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<ProjectReportQuery>,
+) -> Result<Json<ProjectReturnReport>, AppError> {
+    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
+    let report =
+        generate_project_return(&state.pool, current_user.company_id, &scope, &mode).await?;
+    emit_project_report_audit(
+        &state.pool,
+        current_user.user_id,
+        "project-return",
+        query.project_id,
+        mode.as_str(),
+    )
+    .await;
+    Ok(Json(report))
+}
+
+/// GET /api/v1/reports/project-return/export?format=pdf|csv
+pub async fn export_project_return(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<ProjectReportQuery>,
+) -> Result<Response, AppError> {
+    let format = validate_format(&query.format)?;
+    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
+    let report =
+        generate_project_return(&state.pool, current_user.company_id, &scope, &mode).await?;
+    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+
+    let body: Vec<u8> = match format {
+        ExportFormat::Pdf => {
+            render_project_return_pdf(&report, &ctx, &ProjectReturnPdfLabels::fr_ch_defaults())?
+        }
+        ExportFormat::Csv => render_csv_to_vec(|w| render_project_return_csv(&report, w))?,
+    };
+
+    emit_project_report_export_audit(
+        &state.pool,
+        current_user.user_id,
+        "project-return",
+        format.as_str(),
+        query.project_id,
+        mode.as_str(),
+    )
+    .await;
+
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "project-return");
+    let (start, end) = project_mode_dates(&mode);
+    build_project_export_response(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        start,
+        end,
+        &ctx.locale,
+    )
 }
 
 /// GET /api/v1/reports/trial-balance/export?format=pdf|csv

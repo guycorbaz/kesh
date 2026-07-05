@@ -379,6 +379,151 @@ fn bind_period<'q, O>(
     q
 }
 
+// ===========================================================================
+// Rapport « Rendement par projet » (Story 19-6b)
+// ===========================================================================
+
+/// Section « rendement » d'un projet du scope (racine ou sous-projet).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectReturnSection {
+    pub project: ProjectInfo,
+    pub is_root: bool,
+    /// Coût investi = Σ `Expense` + Σ `Asset` hors trésorerie 10xx (DC8).
+    pub cout_investi: Decimal,
+    /// Revenus = Σ `Revenue`.
+    pub revenus: Decimal,
+    /// Résultat net = revenus − charges (`Expense`).
+    pub resultat_net: Decimal,
+    /// Rendement % = revenus / coût investi × 100 (si coût investi > 0, sinon `null`).
+    pub rendement_pct: Option<Decimal>,
+}
+
+/// Totaux rollup (racine + sous-projets).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectReturnTotals {
+    pub cout_investi: Decimal,
+    pub revenus: Decimal,
+    pub resultat_net: Decimal,
+    pub rendement_pct: Option<Decimal>,
+}
+
+/// Rapport « Rendement par projet ».
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectReturnReport {
+    pub report_type: String,
+    pub project: ProjectInfo,
+    pub mode: String,
+    pub period_label: String,
+    pub sections: Vec<ProjectReturnSection>,
+    pub totals: ProjectReturnTotals,
+}
+
+/// Ligne brute d'agrégation « rendement » (par project_id).
+#[derive(sqlx::FromRow)]
+struct ReturnAggRow {
+    project_id: i64,
+    cout_investi: Decimal,
+    revenus: Decimal,
+    charges: Decimal,
+}
+
+/// Calcule le rendement % (`revenus / cout_investi × 100`, arrondi 2 décimales)
+/// si `cout_investi > 0`, sinon `None` (DC8).
+fn rendement_pct(revenus: Decimal, cout_investi: Decimal) -> Option<Decimal> {
+    if cout_investi > Decimal::ZERO {
+        Some((revenus / cout_investi * Decimal::from(100)).round_dp(2))
+    } else {
+        None
+    }
+}
+
+/// Génère le rapport « Rendement par projet » : par sous-projet, coût investi
+/// (Expense + Asset hors 10xx), revenus (Revenue), résultat net et rendement %.
+pub async fn generate_project_return(
+    pool: &MySqlPool,
+    company_id: i64,
+    scope: &ProjectReportScope,
+    mode: &ProjectPeriodMode,
+) -> Result<ProjectReturnReport, ReportError> {
+    let (je_filter, period_binds) = mode.je_filter();
+    let ids_ph = in_placeholders(scope.project_ids.len());
+
+    // Une requête, agrégats conditionnels par account_type (DC1 + DC8).
+    let sql = format!(
+        "SELECT jel.project_id AS project_id, \
+                COALESCE(SUM(CASE WHEN a.account_type = 'Expense' \
+                                   OR (a.account_type = 'Asset' AND a.number NOT LIKE '10%') \
+                                 THEN jel.debit - jel.credit ELSE 0 END), 0) AS cout_investi, \
+                COALESCE(SUM(CASE WHEN a.account_type = 'Revenue' \
+                                 THEN jel.credit - jel.debit ELSE 0 END), 0) AS revenus, \
+                COALESCE(SUM(CASE WHEN a.account_type = 'Expense' \
+                                 THEN jel.debit - jel.credit ELSE 0 END), 0) AS charges \
+         FROM accounts a \
+         INNER JOIN journal_entry_lines jel ON jel.account_id = a.id \
+         INNER JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE a.company_id = ? \
+           AND je.company_id = ? \
+           AND jel.project_id IN ({ids_ph}) \
+           {je_filter} \
+         GROUP BY jel.project_id"
+    );
+    let mut q = sqlx::query_as::<_, ReturnAggRow>(&sql)
+        .bind(company_id)
+        .bind(company_id);
+    for pid in &scope.project_ids {
+        q = q.bind(pid);
+    }
+    q = bind_period(q, &period_binds);
+    let rows = q
+        .fetch_all(pool)
+        .await
+        .map_err(kesh_db::errors::map_db_error)?;
+
+    let mut sections: Vec<ProjectReturnSection> = Vec::new();
+    let mut tot_cout = Decimal::ZERO;
+    let mut tot_rev = Decimal::ZERO;
+    let mut tot_charges = Decimal::ZERO;
+
+    for proj in scope.ordered_projects() {
+        let (cout, rev, charges) = rows
+            .iter()
+            .find(|r| r.project_id == proj.id)
+            .map(|r| (r.cout_investi, r.revenus, r.charges))
+            .unwrap_or((Decimal::ZERO, Decimal::ZERO, Decimal::ZERO));
+        if cout.is_zero() && rev.is_zero() && charges.is_zero() {
+            continue; // section sans mouvement → omise
+        }
+        tot_cout += cout;
+        tot_rev += rev;
+        tot_charges += charges;
+        sections.push(ProjectReturnSection {
+            project: ProjectInfo::from(proj),
+            is_root: proj.id == scope.root.id,
+            cout_investi: cout,
+            revenus: rev,
+            resultat_net: rev - charges,
+            rendement_pct: rendement_pct(rev, cout),
+        });
+    }
+
+    Ok(ProjectReturnReport {
+        report_type: "project-return".to_string(),
+        project: ProjectInfo::from(&scope.root),
+        mode: mode.as_str().to_string(),
+        period_label: mode.period_label(),
+        sections,
+        totals: ProjectReturnTotals {
+            cout_investi: tot_cout,
+            revenus: tot_rev,
+            resultat_net: tot_rev - tot_charges,
+            rendement_pct: rendement_pct(tot_rev, tot_cout),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
