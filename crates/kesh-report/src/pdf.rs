@@ -1121,6 +1121,205 @@ pub fn render_project_expenses_pdf(
 }
 
 // ============================================================================
+// Story 19-6b — Rapport « Rendement par projet »
+// ============================================================================
+
+/// Libellés du PDF « Rendement par projet » (FR-CH par défaut, i18n déférée v0.2).
+#[derive(Debug, Clone)]
+pub struct ProjectReturnPdfLabels {
+    pub title: String,
+    pub col_cout: String,
+    pub col_revenus: String,
+    pub col_resultat: String,
+    pub col_rendement: String,
+    pub total: String,
+    pub empty_message: String,
+}
+
+impl ProjectReturnPdfLabels {
+    pub fn fr_ch_defaults() -> Self {
+        Self {
+            title: "Rendement par projet".into(),
+            col_cout: "Coût investi".into(),
+            col_revenus: "Revenus".into(),
+            col_resultat: "Résultat net".into(),
+            col_rendement: "Rendement".into(),
+            total: "Total".into(),
+            empty_message: "Aucun mouvement tagué sur ce projet pour la période.".into(),
+        }
+    }
+}
+
+impl Default for ProjectReturnPdfLabels {
+    fn default() -> Self {
+        Self::fr_ch_defaults()
+    }
+}
+
+// Colonnes du tableau rendement (mm depuis le bord gauche / droit).
+const RET_COL_LABEL_X: f32 = MARGIN_LEFT_MM;
+const RET_COL_COUT_X: f32 = PAGE_WIDTH_MM - 135.0;
+const RET_COL_REV_X: f32 = PAGE_WIDTH_MM - 100.0;
+const RET_COL_RES_X: f32 = PAGE_WIDTH_MM - 65.0;
+const RET_COL_RENDEMENT_X: f32 = PAGE_WIDTH_MM - 28.0;
+
+fn format_rendement(pct: Option<Decimal>) -> String {
+    match pct {
+        Some(p) => format!("{p:.2}%"),
+        None => "—".to_string(),
+    }
+}
+
+/// Dessine une ligne du tableau rendement (label + 4 colonnes numériques).
+fn draw_return_row(
+    builder: &mut PdfBuilder,
+    label: &str,
+    cout: Decimal,
+    revenus: Decimal,
+    resultat: Decimal,
+    rendement: Option<Decimal>,
+    bold: bool,
+) {
+    builder.ensure_space_for_row();
+    let y = builder.cursor_y;
+    let font = if bold {
+        &builder.font_bold
+    } else {
+        &builder.font
+    };
+    let layer = builder.current_layer();
+    layer.use_text(label, FONT_SIZE_PT, Mm(RET_COL_LABEL_X), Mm(y), font);
+    layer.use_text(
+        format_swiss_amount(cout),
+        FONT_SIZE_PT,
+        Mm(RET_COL_COUT_X),
+        Mm(y),
+        font,
+    );
+    layer.use_text(
+        format_swiss_amount(revenus),
+        FONT_SIZE_PT,
+        Mm(RET_COL_REV_X),
+        Mm(y),
+        font,
+    );
+    layer.use_text(
+        format_swiss_amount(resultat),
+        FONT_SIZE_PT,
+        Mm(RET_COL_RES_X),
+        Mm(y),
+        font,
+    );
+    layer.use_text(
+        format_rendement(rendement),
+        FONT_SIZE_PT,
+        Mm(RET_COL_RENDEMENT_X),
+        Mm(y),
+        font,
+    );
+    builder.cursor_y -= LINE_HEIGHT_MM;
+}
+
+/// Génère le PDF du rapport « Rendement par projet » (Story 19-6b).
+pub fn render_project_return_pdf(
+    report: &crate::project_report::ProjectReturnReport,
+    ctx: &PdfContext,
+    labels: &ProjectReturnPdfLabels,
+) -> Result<Vec<u8>, ReportError> {
+    let mut builder = PdfBuilder::new(&labels.title)?;
+
+    builder.write_line(&ctx.company_name, FONT_SIZE_HEADER_PT, true, 0.0);
+    builder.write_line(
+        &format!(
+            "{} — {} {}",
+            labels.title, report.project.code, report.project.name
+        ),
+        12.0,
+        true,
+        0.0,
+    );
+    builder.write_line(&report.period_label, FONT_SIZE_PT, false, 0.0);
+    builder.cursor_y -= LINE_HEIGHT_MM;
+
+    if report.sections.is_empty() {
+        let layer = builder.current_layer();
+        layer.use_text(
+            &labels.empty_message,
+            FONT_SIZE_PT,
+            Mm(MARGIN_LEFT_MM),
+            Mm(builder.cursor_y),
+            &builder.font,
+        );
+        return builder.finalize();
+    }
+
+    // En-tête de colonnes (gras).
+    {
+        let y = builder.cursor_y;
+        let layer = builder.current_layer();
+        layer.use_text(
+            &labels.col_cout,
+            FONT_SIZE_PT,
+            Mm(RET_COL_COUT_X),
+            Mm(y),
+            &builder.font_bold,
+        );
+        layer.use_text(
+            &labels.col_revenus,
+            FONT_SIZE_PT,
+            Mm(RET_COL_REV_X),
+            Mm(y),
+            &builder.font_bold,
+        );
+        layer.use_text(
+            &labels.col_resultat,
+            FONT_SIZE_PT,
+            Mm(RET_COL_RES_X),
+            Mm(y),
+            &builder.font_bold,
+        );
+        layer.use_text(
+            &labels.col_rendement,
+            FONT_SIZE_PT,
+            Mm(RET_COL_RENDEMENT_X),
+            Mm(y),
+            &builder.font_bold,
+        );
+        builder.cursor_y -= LINE_HEIGHT_MM;
+    }
+
+    for section in &report.sections {
+        let label = if section.is_root {
+            format!("{} {}", section.project.code, section.project.name)
+        } else {
+            format!("  ↳ {} {}", section.project.code, section.project.name)
+        };
+        draw_return_row(
+            &mut builder,
+            &label,
+            section.cout_investi,
+            section.revenus,
+            section.resultat_net,
+            section.rendement_pct,
+            false,
+        );
+    }
+
+    builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
+    draw_return_row(
+        &mut builder,
+        &labels.total,
+        report.totals.cout_investi,
+        report.totals.revenus,
+        report.totals.resultat_net,
+        report.totals.rendement_pct,
+        true,
+    );
+
+    builder.finalize()
+}
+
+// ============================================================================
 // Tests unit (T10.1)
 // ============================================================================
 

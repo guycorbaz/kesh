@@ -888,6 +888,7 @@ reports-filename-trial-balance = kontensaldenliste
 reports-filename-journals = journale
 reports-filename-vat = mwst-abrechnung
 reports-filename-project-expenses = ausgaben-pro-projekt
+reports-filename-project-return = rendite-pro-projekt
 reports-pdf-header-period = Zeitraum
 reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
 

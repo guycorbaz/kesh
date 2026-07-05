@@ -437,6 +437,66 @@ pub fn render_project_expenses_csv<W: Write>(
     Ok(())
 }
 
+/// Formate un rendement `Option<Decimal>` en `"xx.xx%"` ou `"—"` (Story 19-6b).
+fn format_rendement(pct: Option<Decimal>) -> String {
+    match pct {
+        Some(p) => format!("{p:.2}%"),
+        None => "—".to_string(),
+    }
+}
+
+/// Génère le CSV du rapport « Rendement par projet » (Story 19-6b).
+///
+/// Colonnes : `Projet;SousProjet;CoutInvesti;Revenus;ResultatNet;RendementPct`.
+/// Une ligne par section + une ligne total.
+pub fn render_project_return_csv<W: Write>(
+    report: &crate::project_report::ProjectReturnReport,
+    mut writer: W,
+) -> Result<(), ReportError> {
+    write_bom(&mut writer)?;
+    let mut wtr = make_writer(writer);
+
+    wtr.write_record([
+        "Projet",
+        "SousProjet",
+        "CoutInvesti",
+        "Revenus",
+        "ResultatNet",
+        "RendementPct",
+    ])
+    .map_err(map_csv_err)?;
+
+    let root_label = format!("{} — {}", report.project.code, report.project.name);
+    for section in &report.sections {
+        let sub_label = if section.is_root {
+            String::new()
+        } else {
+            format!("{} — {}", section.project.code, section.project.name)
+        };
+        wtr.write_record([
+            &root_label,
+            &sub_label,
+            &format_amount_iso(section.cout_investi),
+            &format_amount_iso(section.revenus),
+            &format_amount_iso(section.resultat_net),
+            &format_rendement(section.rendement_pct),
+        ])
+        .map_err(map_csv_err)?;
+    }
+    wtr.write_record([
+        &root_label,
+        "Total",
+        &format_amount_iso(report.totals.cout_investi),
+        &format_amount_iso(report.totals.revenus),
+        &format_amount_iso(report.totals.resultat_net),
+        &format_rendement(report.totals.rendement_pct),
+    ])
+    .map_err(map_csv_err)?;
+
+    wtr.flush().map_err(map_io_err)?;
+    Ok(())
+}
+
 /// Pass 1 code-review H1 : mappent vers `CsvGeneration` (pas `PdfGeneration`).
 /// Cf. commentaire `write_bom` ci-dessus pour le contexte.
 fn map_csv_err(e: csv::Error) -> ReportError {

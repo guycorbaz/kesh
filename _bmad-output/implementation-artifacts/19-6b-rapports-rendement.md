@@ -43,11 +43,11 @@ so that j'analyse la performance de mes projets d'investissement à partir des �
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Agrégation Rendement** (AC: 1-2) : `generate_project_return` + DTOs (SUM CASE par account_type, DC8 exclusion 10xx) + tests intégration (7 a-e).
-- [ ] **T2 — Export PDF + CSV** (AC: 3-4) : `render_project_return_pdf` (labels dédiés) + `render_project_return_csv` + re-exports.
-- [ ] **T3 — API** (AC: 5) : endpoint JSON + export, i18n slug 4 locales, audit.
-- [ ] **T4 — Frontend** (AC: 6) : types + api + onglet + `ProjectReturnView` + i18n.
-- [ ] **T5 — Tests + gate** (AC: 7-9) : API HTTP + frontend unit/E2E + CHANGELOG + Test Locally First.
+- [x] **T1 — Agrégation Rendement** (AC: 1-2) : `generate_project_return` + DTOs (SUM CASE par account_type, DC8 exclusion 10xx) + tests intégration (7 a-e).
+- [x] **T2 — Export PDF + CSV** (AC: 3-4) : `render_project_return_pdf` (labels dédiés) + `render_project_return_csv` + re-exports.
+- [x] **T3 — API** (AC: 5) : endpoint JSON + export, i18n slug 4 locales, audit.
+- [x] **T4 — Frontend** (AC: 6) : types + api + onglet + `ProjectReturnView` + i18n.
+- [x] **T5 — Tests + gate** (AC: 7-9) : API HTTP + frontend unit/E2E + CHANGELOG + Test Locally First.
 
 ## Dev Notes
 

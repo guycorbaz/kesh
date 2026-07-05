@@ -50,10 +50,11 @@ test('reports page loads with 5 tabs (AC #27 + #33, + TVA Story 11-2/18-1f)', as
 
 	await expect(page.getByRole('heading', { name: /rapports/i })).toBeVisible();
 
-	// 6 onglets : Bilan, Compte de résultat, Balance, Journaux, TVA, Dépenses par
+	// 7 onglets : + Rendement par projet (19-6b).
+	// (Bilan, Résultat, Balance, Journaux, TVA, Dépenses par projet, Rendement)...
 	// projet (l'onglet projet ajouté en 19-6a ; le compte passe de 5 à 6).
 	const tabs = page.getByRole('tab');
-	await expect(tabs).toHaveCount(6);
+	await expect(tabs).toHaveCount(7);
 });
 
 test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({ page }) => {

@@ -182,3 +182,35 @@ export interface ProjectReportQuery {
 	periodStart?: string;
 	periodEnd?: string;
 }
+
+/** Type de rapport par projet (path URL). */
+export type ProjectReportType = 'project-expenses' | 'project-return';
+
+// ---- Story 19-6b : Rendement par projet ----
+
+/** Section « rendement » d'un projet du scope. */
+export interface ProjectReturnSectionDto {
+	project: ProjectInfoDto;
+	isRoot: boolean;
+	coutInvesti: string;
+	revenus: string;
+	resultatNet: string;
+	/** `null` si coût investi = 0. */
+	rendementPct: string | null;
+}
+
+export interface ProjectReturnTotalsDto {
+	coutInvesti: string;
+	revenus: string;
+	resultatNet: string;
+	rendementPct: string | null;
+}
+
+export interface ProjectReturnDto {
+	reportType: string;
+	project: ProjectInfoDto;
+	mode: string;
+	periodLabel: string;
+	sections: ProjectReturnSectionDto[];
+	totals: ProjectReturnTotalsDto;
+}

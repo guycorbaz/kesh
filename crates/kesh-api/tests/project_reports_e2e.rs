@@ -293,3 +293,74 @@ async fn project_expenses_multi_tenant_isolation(pool: MySqlPool) {
     // resolve_scope scope par company_id du JWT → projet introuvable → 404.
     assert_eq!(resp.status(), 404);
 }
+
+// ---- Story 19-6b : Rendement par projet ----
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn project_return_json_and_export(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let project = mk_project(&pool, seeded.company_id, "INVEST").await;
+    post_expense(&pool, &seeded, project).await; // 120 de charge (Expense 4000)
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(seeded.admin_user_id, seeded.company_id);
+
+    // JSON.
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/project-return?projectId={project}&mode=fiscal_year&fiscalYearId={}",
+            seeded.fiscal_year_id
+        )))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["reportType"], "project-return");
+    // Coût investi = charge 120 (Expense) ; 0 revenu → rendement 0.00 (coût > 0).
+    assert_eq!(body["totals"]["coutInvesti"], "120.0000");
+    assert_eq!(body["totals"]["rendementPct"], "0"); // 0 revenu → rendement 0 (frontend formate 0.00%)
+
+    // Export PDF + CSV.
+    let base = format!(
+        "/api/v1/reports/project-return/export?projectId={project}&mode=fiscal_year&fiscalYearId={}",
+        seeded.fiscal_year_id
+    );
+    let pdf = app
+        .client
+        .get(app.url(&format!("{base}&format=pdf")))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pdf.status(), 200);
+    assert!(pdf.bytes().await.unwrap().starts_with(b"%PDF"));
+
+    let csv = app
+        .client
+        .get(app.url(&format!("{base}&format=csv")))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(csv.status(), 200);
+    let csv_bytes = csv.bytes().await.unwrap();
+    assert_eq!(&csv_bytes[0..3], &[0xEF, 0xBB, 0xBF]);
+    assert!(String::from_utf8_lossy(&csv_bytes[3..]).contains("Projet;SousProjet;CoutInvesti"));
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn project_return_unknown_project_404(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(seeded.admin_user_id, seeded.company_id);
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/project-return?projectId=999999&mode=cumulative"))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
