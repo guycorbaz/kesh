@@ -10,6 +10,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+## [0.4.0] — 2026-07-05
+
+Cette version apporte la **gestion complète des factures fournisseurs et des paiements** (Epic 12) ainsi que la **comptabilité analytique par projet** (Epic 19), et modernise la base technique (Rust 1.96, dépendances à jour).
+
 ### Ajouté
 
 - **Rapport « Rendement par projet »** (Epic 19) : nouvel onglet **Rapports → Rendement par projet** pour analyser la performance d'un projet d'investissement. Pour un projet (et ses sous-projets), il calcule le **coût investi** (charges + actifs immobilisés tagués — la trésorerie banque/caisse en est exclue pour ne pas gonfler le coût), les **revenus**, le **résultat net** (revenus − charges) et le **rendement %** (revenus / coût investi). Vue par sous-projet avec total, en mode **exercice** ou **cumulé**. Exportable en **PDF** et **CSV**. Complète le rapport de dépenses : ensemble, ils couvrent le double besoin « dépenses déductibles » et « rendement d'investissement » d'Epic 19.
@@ -23,6 +27,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Paiement par fichier pain.001** (#191) : pour régler vos fournisseurs par **virement** sans ressaisir les coordonnées dans l'e-banking, Kesh génère désormais un **fichier de paiement ISO 20022 `pain.001.001.09`** (Swiss Payment Standards / SIX). Le flux se fait en **deux temps** : (1) vous sélectionnez les factures fournisseurs ouvertes à payer par virement et le compte bancaire à débiter → Kesh crée un **lot** et produit le fichier XML téléchargeable (rien n'est encore comptabilisé) ; vous importez ce fichier dans l'e-banking de votre banque ; (2) une fois le virement exécuté, vous **confirmez le lot** dans Kesh → les écritures de règlement sont comptabilisées et les factures passent « payées ». Un lot peut être **annulé** avant confirmation. Les factures avec QR-IBAN utilisent la référence QRR, les autres une référence libre. Accessible depuis l'entrée **« Paiements fournisseurs »** du menu (rôle Comptable ou Administrateur).
 - **Import de factures fournisseurs depuis un dossier** (#194) : déposez vos factures reçues (PDF ou images **porteurs d'un Swiss QR-facture**) dans un **dossier surveillé** sur le serveur/NAS, puis cliquez **« Importer le dossier »** — Kesh lit le dossier, **décode le QR côté serveur** (créancier, IBAN/QR-IBAN, montant, référence), **archive une copie du fichier** comme justificatif récupérable, et crée pour chaque facture une entrée **« à compléter »**. Vous n'avez plus qu'à choisir le fournisseur et saisir les lignes (compte de charge, TVA) : les coordonnées de paiement sont déjà remplies, et Kesh vérifie que le total des lignes correspond au montant du QR. La facture complétée entre dans la comptabilité comme une facture fournisseur normale (payable ensuite par virement pain.001 ou compte interne), avec un lien **« Voir la facture d'origine »** sur son détail. Un rapport d'import liste les factures créées et les fichiers rejetés (type non supporté, QR absent, doublon…). Accessible depuis l'entrée **« Importer des factures »** du menu (rôle Comptable ou Administrateur). *(Configuration des dossiers : voir le manuel administrateur.)*
 - **Scan du QR-facture à la saisie** (#191) : lors de l'enregistrement **manuel** d'une facture fournisseur, un bouton **« Scanner un QR-facture »** permet de charger une **image** du QR-facture (photo ou capture d'écran) — le QR est **décodé dans le navigateur** (sans caméra, compatible accès HTTP LAN) et Kesh **pré-remplit** automatiquement l'IBAN/QR-IBAN, la référence et le montant attendu, et affiche le nom du créancier détecté. Vous complétez ensuite les lignes comptables (compte de charge, TVA) comme d'habitude. Conclut la fonctionnalité **Factures fournisseurs & paiements** (#191).
+
+### Modifié
+
+- **Base technique modernisée** : passage à **Rust 1.96** (édition 2024) et rafraîchissement complet des dépendances backend. Sans impact fonctionnel — inclut les dernières corrections de sécurité des bibliothèques réseau/chiffrement (TLS, HTTP, runtime asynchrone). La mise à jour depuis une version précédente est transparente (aucune migration de données requise ; les nouvelles tables et colonnes analytiques sont créées automatiquement au démarrage).
 
 ---
 
