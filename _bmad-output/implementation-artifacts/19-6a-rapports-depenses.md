@@ -1,6 +1,14 @@
 # Story 19.6a : Fondation rapports projet + Dépenses par projet
 
-Status: review
+Status: done
+
+## Change Log
+
+- **Code-review CONVERGÉ 3 passes (2026-07-04/05, Sonnet→Haiku→Opus, trend >LOW 1 MEDIUM → 1 CRITICAL/2 MEDIUM → 0)** :
+  - **Pass 1 (Sonnet ×3)** — Acceptance Auditor GO 16/16, 0 CRITICAL/HIGH. **MEDIUM** (BH+ECH) : changer projet/mode après génération laissait la vue sur le projet A alors que l'export rebâtissait la requête sur la sélection courante B → fix `$effect` nulle `projectExpenses` au changement projet/mode. LOW : filename export i18n-slug (au lieu de FR hardcodé) ; `ProjectExpensesView.test.ts` (drill-down, comble AC15).
+  - **Pass 2 (Haiku ×3)** — Blind Hunter 0>LOW + Acceptance Auditor GO 12/12 ; Edge Case Hunter 1 CRITICAL + 2 MEDIUM (même racine, over-scored) : **race génération en vol** — générer projet A (requête en vol) puis changer le sélecteur laissait le résultat A repeupler (guard mySeq===genSeq ne couvrait pas un changement de sélecteur sans re-générer) → fix `genSeq++` + `loading=false` dans le `$effect` projet/mode. Spec corrigée « 5 locales » → 4.
+  - **Pass 3 (Opus ×1 exhaustif)** — **GO, 0 > LOW**. Vérifie : exactitude comptable SOUND (Dépenses = Σ Expense debit−credit, rollup sans double-compte, drill-down réconcilie exactement, contreparties non-Expense exclues), ordre des binds SQL CORRECT, scoping multi-tenant CORRECT, **fix Pass 2 genSeq++ correct (pas de boucle réactive — genSeq est un `let` nu ; ne coupe pas un rapport classique en vol — sélecteurs projet rendus seulement sous l'onglet projet)**. 3 LOW : (1) race axe-exercice non invalidée (préexistante aux 5 rapports classiques, pas une régression) → **durcie** (`genSeq++`/`loading=false` ajoutés au `$effect` FY — ferme aussi la race classique) ; (2) assemblage drill-down O(n²) (perf, tailles réalistes OK, no-action) ; (3) bornes cumulé = dates du projet racine → **note doc** ajoutée (DC4 voulu).
+  - **Critère d'arrêt CLAUDE.md atteint Pass 3 (0 > LOW).** Cycle dev Opus 4.8 → review Sonnet → Haiku → Opus. Gate final : 4 tests intégration + 5 API HTTP + 19 unit front (dont View drill-down) + E2E Playwright 7/7 réels ; workspace serial GATE_EXIT=0 ; fmt+clippy 0 ; check0/lint/build.
 
 <!-- Sous-story 1/2 de l'umbrella 19-6 (SPLIT). Pose la fondation partagée
      (module project_report : scope racine+enfants, période 2 modes) + le 1er

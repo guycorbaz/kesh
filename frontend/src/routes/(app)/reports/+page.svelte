@@ -95,6 +95,12 @@
 			vatReport = null;
 			projectExpenses = null;
 			errorMsg = null;
+			// Story 19-6a Pass 3 (Opus, LOW) — invalide aussi les générations en vol
+			// sur l'axe exercice (sinon un résultat FY-2026 en vol pourrait repeupler
+			// la vue après un switch vers FY-2027 → mismatch affichage/export). Durcit
+			// du même coup la même race préexistante sur les 5 rapports classiques.
+			genSeq++;
+			loading = false;
 			lastFyId = selectedFiscalYearId;
 		}
 	});

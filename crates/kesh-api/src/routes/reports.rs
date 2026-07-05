@@ -462,6 +462,13 @@ async fn resolve_project_report(
         ProjectModeParam::Cumulative => {
             // Borne haute = date de fin du projet si définie, sinon aujourd'hui
             // (résolu handler-side — pas de Date::now() en lib).
+            //
+            // Note (Pass 3 Opus, DC4) : les bornes proviennent du projet **ciblé**
+            // (racine du scope). Pour un rapport racine agrégeant des sous-projets,
+            // les écritures d'un sous-projet hors de la fenêtre de dates de la racine
+            // sont donc exclues — comportement voulu (« borné par les dates du
+            // projet »). Une racine sans start_date (cas courant) ⇒ pas de borne
+            // basse (`entry_date <= end`), donc tous les enfants sont inclus.
             let today = chrono::Utc::now().date_naive();
             let end = scope.root.end_date.unwrap_or(today);
             ProjectPeriodMode::Cumulative {
