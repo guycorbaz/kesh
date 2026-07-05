@@ -52,7 +52,7 @@ so that je capte toutes les dépenses déductibles d'un projet de rénovation sa
 
 7. `ProjectReportQuery { project_id: i64, mode: ProjectModeParam (fiscal_year|cumulative, serde), fiscal_year_id: Option<i64>, period_start: Option<NaiveDate>, period_end: Option<NaiveDate> }` (camelCase) dans `routes/reports.rs`. Validation : `mode=fiscal_year` sans `fiscalYearId` → 400 `AppError::Validation` ; `project_id <= 0` → 400. Résolution mode : fiscal_year → `ReportPeriod::resolve` puis `ProjectPeriodMode::FiscalYear` ; cumulative → `ProjectPeriodMode::Cumulative { start: project.start_date, end: project.end_date.unwrap_or(today) }` avec `today = chrono::Utc::now().date_naive()` (résolu handler-side).
 8. `GET /api/v1/reports/project-expenses` (JSON) + `GET /api/v1/reports/project-expenses/export?format=pdf|csv`. Handlers calqués `get_income_statement`/`export_income_statement` : `resolve_scope` → mode → `generate_project_expenses` → audit best-effort (`emit_report_audit`/`emit_report_export_audit`, type `"project-expenses"`) → export via `build_export_response_with_locale`. Enregistrés `lib.rs` **avant le `;`** d'`authenticated_routes` (anti-IDOR warning `lib.rs:611`). Projet inconnu → 404, cross-company → 404.
-9. i18n slug `reports-filename-project-expenses` = `depenses-par-projet` dans les **5 locales** (`crates/kesh-i18n/locales/*/messages.ftl`, section `reports-filename-*`) + `resolve_type_slug` gère le nouveau type. Frontend `TYPE_SLUGS_FALLBACK` idem.
+9. i18n slug `reports-filename-project-expenses` = `depenses-par-projet` dans les **4 locales** (fr-CH, de-CH, it-CH, en-CH) (`crates/kesh-i18n/locales/*/messages.ftl`, section `reports-filename-*`) + `resolve_type_slug` gère le nouveau type. Frontend `TYPE_SLUGS_FALLBACK` idem.
 
 ### Frontend
 

@@ -99,9 +99,13 @@
 		}
 	});
 
-	// Story 19-6a code-review Pass 1 (MEDIUM) — invalide le rapport projet affiché
-	// dès que le projet ou le mode change (sinon la vue montre le projet A tandis
-	// que l'export rebâtit la requête sur la sélection courante B → mismatch).
+	// Story 19-6a code-review Pass 1 (MEDIUM) + Pass 2 (race) — invalide le rapport
+	// projet affiché dès que le projet ou le mode change (sinon la vue montre le
+	// projet A tandis que l'export rebâtit la requête sur la sélection courante B →
+	// mismatch). `genSeq++` invalide AUSSI toute génération en vol : si l'utilisateur
+	// change de projet pendant qu'une requête est en cours, son résultat (mySeq ≠
+	// genSeq) ne re-peuplera pas `projectExpenses` (Pass 2 Haiku race — un résultat
+	// du projet A ne doit pas s'afficher alors que B est sélectionné).
 	let lastProjectSel: string | null = null;
 	$effect(() => {
 		const key = `${selectedProjectId}:${projectMode}`;
@@ -109,6 +113,8 @@
 			if (lastProjectSel !== null) {
 				projectExpenses = null;
 				errorMsg = null;
+				genSeq++;
+				loading = false;
 			}
 			lastProjectSel = key;
 		}
