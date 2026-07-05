@@ -287,10 +287,10 @@ async fn validate_invoice_for_batch(
         if kesh_qrbill::validation::validate_qr_iban(qr).is_err() {
             return Ok(fail(sid, "INVALID_QR_IBAN"));
         }
-    } else if let Some(ib) = &iban {
-        if kesh_qrbill::validation::validate_iban(ib).is_err() {
-            return Ok(fail(sid, "INVALID_IBAN"));
-        }
+    } else if let Some(ib) = &iban
+        && kesh_qrbill::validation::validate_iban(ib).is_err()
+    {
+        return Ok(fail(sid, "INVALID_IBAN"));
     }
 
     Ok(Ok(Accepted {

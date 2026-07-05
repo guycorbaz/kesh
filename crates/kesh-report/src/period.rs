@@ -38,25 +38,25 @@ pub(crate) fn resolve_dates(
     period_start: Option<NaiveDate>,
     period_end: Option<NaiveDate>,
 ) -> Result<(NaiveDate, NaiveDate), ReportError> {
-    if let Some(s) = period_start {
-        if s < fy_start || s > fy_end {
-            return Err(ReportError::PeriodOutOfFiscalYear {
-                fy_start,
-                fy_end,
-                requested_start: s,
-                requested_end: period_end.unwrap_or(fy_end),
-            });
-        }
+    if let Some(s) = period_start
+        && (s < fy_start || s > fy_end)
+    {
+        return Err(ReportError::PeriodOutOfFiscalYear {
+            fy_start,
+            fy_end,
+            requested_start: s,
+            requested_end: period_end.unwrap_or(fy_end),
+        });
     }
-    if let Some(e) = period_end {
-        if e < fy_start || e > fy_end {
-            return Err(ReportError::PeriodOutOfFiscalYear {
-                fy_start,
-                fy_end,
-                requested_start: period_start.unwrap_or(fy_start),
-                requested_end: e,
-            });
-        }
+    if let Some(e) = period_end
+        && (e < fy_start || e > fy_end)
+    {
+        return Err(ReportError::PeriodOutOfFiscalYear {
+            fy_start,
+            fy_end,
+            requested_start: period_start.unwrap_or(fy_start),
+            requested_end: e,
+        });
     }
 
     let start = period_start.unwrap_or(fy_start);

@@ -121,12 +121,12 @@ fn validate_fields(code: &str, name: &str) -> Result<(String, String), AppError>
 /// Rejette une plage de dates incohérente (`start_date > end_date`) — évite qu'un
 /// intervalle absurde ne fausse les filtres de période des rapports analytiques (19-6).
 fn validate_dates(start: Option<NaiveDate>, end: Option<NaiveDate>) -> Result<(), AppError> {
-    if let (Some(s), Some(e)) = (start, end) {
-        if s > e {
-            return Err(AppError::Validation(
-                "La date de début est postérieure à la date de fin.".into(),
-            ));
-        }
+    if let (Some(s), Some(e)) = (start, end)
+        && s > e
+    {
+        return Err(AppError::Validation(
+            "La date de début est postérieure à la date de fin.".into(),
+        ));
     }
     Ok(())
 }
@@ -165,13 +165,12 @@ async fn validate_hierarchy(
             "Le projet parent est archivé — désarchivez-le d'abord.".into(),
         ));
     }
-    if let Some(id) = self_id {
-        if projects::has_children(tx, company_id, id).await? {
-            return Err(AppError::Validation(
-                "Ce projet a des sous-projets : il ne peut pas devenir lui-même sous-projet."
-                    .into(),
-            ));
-        }
+    if let Some(id) = self_id
+        && projects::has_children(tx, company_id, id).await?
+    {
+        return Err(AppError::Validation(
+            "Ce projet a des sous-projets : il ne peut pas devenir lui-même sous-projet.".into(),
+        ));
     }
     Ok(())
 }

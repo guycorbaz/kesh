@@ -162,12 +162,12 @@ fn validate_common(
     // Normalisation NFC aussi sur `description` pour rester cohérent avec `name`
     // (recherche LIKE comparant des représentations Unicode homogènes).
     let description = normalize_optional(description).map(|d| d.nfc().collect::<String>());
-    if let Some(ref d) = description {
-        if d.chars().count() > MAX_DESCRIPTION_LEN {
-            return Err(AppError::Validation(format!(
-                "La description doit faire au plus {MAX_DESCRIPTION_LEN} caractères"
-            )));
-        }
+    if let Some(ref d) = description
+        && d.chars().count() > MAX_DESCRIPTION_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "La description doit faire au plus {MAX_DESCRIPTION_LEN} caractères"
+        )));
     }
 
     if unit_price < Decimal::ZERO {
@@ -224,12 +224,12 @@ pub async fn list_products(
 
     // Anti-DoS : plafonner la longueur du filtre LIKE (après trim, cohérent
     // avec le comportement du repository qui trim avant d'exécuter le LIKE).
-    if let Some(ref s) = params.search {
-        if s.trim().chars().count() > MAX_SEARCH_LEN {
-            return Err(AppError::Validation(format!(
-                "search doit faire au plus {MAX_SEARCH_LEN} caractères"
-            )));
-        }
+    if let Some(ref s) = params.search
+        && s.trim().chars().count() > MAX_SEARCH_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "search doit faire au plus {MAX_SEARCH_LEN} caractères"
+        )));
     }
 
     let query = ProductListQuery {

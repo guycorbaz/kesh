@@ -1,5 +1,5 @@
 # --- Stage 1 : Build Rust ---
-FROM rust:1.85-bookworm AS rust-builder
+FROM rust:1.96-bookworm AS rust-builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/

@@ -183,14 +183,14 @@ fn push_where_clauses<'a>(
         query.payment_status.unwrap_or_default(),
         PaymentStatusFilter::Paid | PaymentStatusFilter::Unpaid | PaymentStatusFilter::Overdue,
     );
-    if let Some(ref status) = query.status {
-        if !payment_status_active || status == "validated" {
-            qb.push(" AND i.status = ");
-            qb.push_bind(status.clone());
-        }
-        // sinon : ignoré silencieusement — la garde `status='validated'`
-        // sera émise par le bloc `payment_status` ci-dessous.
+    if let Some(ref status) = query.status
+        && (!payment_status_active || status == "validated")
+    {
+        qb.push(" AND i.status = ");
+        qb.push_bind(status.clone());
     }
+    // sinon : ignoré silencieusement — la garde `status='validated'`
+    // sera émise par le bloc `payment_status` ci-dessous.
 
     if let Some(cid) = query.contact_id {
         qb.push(" AND i.contact_id = ");
@@ -359,13 +359,12 @@ pub async fn create(
 
     // Projet analytique optionnel (Story 19-4) : existe, même company, non
     // archivé. Sentinel `companies` puis FOR UPDATE projets (Pattern 5).
-    if let Some(pid) = new.project_id {
-        if let Err(e) =
+    if let Some(pid) = new.project_id
+        && let Err(e) =
             super::projects::validate_taggable_in_tx(&mut tx, new.company_id, &[pid]).await
-        {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(e);
-        }
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
     }
 
     let result = sqlx::query(
@@ -694,15 +693,12 @@ pub async fn update(
             .await
             .map_err(map_db_error)?
             .flatten();
-    if let Some(pid) = changes.project_id {
-        if changes.project_id != prior_project_id {
-            if let Err(e) =
-                super::projects::validate_taggable_in_tx(&mut tx, company_id, &[pid]).await
-            {
-                tx.rollback().await.map_err(map_db_error)?;
-                return Err(e);
-            }
-        }
+    if let Some(pid) = changes.project_id
+        && changes.project_id != prior_project_id
+        && let Err(e) = super::projects::validate_taggable_in_tx(&mut tx, company_id, &[pid]).await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
     }
 
     // KF-020 (closes #49) : SELECT … FOR UPDATE pour fermer la race no-op
@@ -1382,15 +1378,15 @@ pub async fn mark_as_paid(
         // `paid_at` stocké en UTC naïf et `invoice.date` en date métier locale
         // (jusqu'à +/- 2h en CET/CEST). Sans cette tolérance, un paiement
         // saisi à 00:30 CET le jour même de la facture serait rejeté.
-        if let Some(pa) = paid_at {
-            if pa.date() < before.date - Duration::days(1) {
-                return Err(DbError::InvalidInput("paidAtBeforeInvoiceDate".to_string()));
-            }
-            // Pas de borne supérieure : `paid_at` représente la date d'exécution
-            // bancaire, qui peut être dans le futur (ordre de virement programmé,
-            // décalage week-end/jour férié réécrit par la banque). Voir N2 review
-            // pass 3 B + AC#8 à amender dans la spec story 5.4.
+        if let Some(pa) = paid_at
+            && pa.date() < before.date - Duration::days(1)
+        {
+            return Err(DbError::InvalidInput("paidAtBeforeInvoiceDate".to_string()));
         }
+        // Pas de borne supérieure : `paid_at` représente la date d'exécution
+        // bancaire, qui peut être dans le futur (ordre de virement programmé,
+        // décalage week-end/jour férié réécrit par la banque). Voir N2 review
+        // pass 3 B + AC#8 à amender dans la spec story 5.4.
 
         let lines_before = fetch_lines(&mut tx, id).await?;
 

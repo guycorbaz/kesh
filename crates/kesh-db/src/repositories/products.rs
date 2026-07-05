@@ -43,8 +43,9 @@ fn product_snapshot_json(p: &Product) -> serde_json::Value {
 }
 
 /// Colonne de tri pour la liste des produits (whitelist anti-injection).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ProductSortBy {
+    #[default]
     Name,
     UnitPrice,
     VatRate,
@@ -59,12 +60,6 @@ impl ProductSortBy {
             Self::VatRate => "vat_rate",
             Self::CreatedAt => "created_at",
         }
-    }
-}
-
-impl Default for ProductSortBy {
-    fn default() -> Self {
-        Self::Name
     }
 }
 

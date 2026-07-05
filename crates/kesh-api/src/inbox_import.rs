@@ -628,9 +628,9 @@ fn move_to_failed(
 
 /// Supprime un fichier inbox traité avec succès (tolère `ENOENT`, idempotent).
 fn remove_inbox_file(path: &Path) {
-    if let Err(e) = std::fs::remove_file(path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!("inbox import: suppression du fichier traité échouée: {e}");
-        }
+    if let Err(e) = std::fs::remove_file(path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!("inbox import: suppression du fichier traité échouée: {e}");
     }
 }

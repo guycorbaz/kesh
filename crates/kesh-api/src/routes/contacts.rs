@@ -251,12 +251,12 @@ fn validate_common(
     }
 
     let address = normalize_optional(address);
-    if let Some(ref a) = address {
-        if a.chars().count() > MAX_ADDRESS_LEN {
-            return Err(AppError::Validation(format!(
-                "L'adresse doit faire au plus {MAX_ADDRESS_LEN} caractères"
-            )));
-        }
+    if let Some(ref a) = address
+        && a.chars().count() > MAX_ADDRESS_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "L'adresse doit faire au plus {MAX_ADDRESS_LEN} caractères"
+        )));
     }
 
     let email = normalize_optional(email);
@@ -272,21 +272,21 @@ fn validate_common(
     }
 
     let phone = normalize_optional(phone);
-    if let Some(ref p) = phone {
-        if p.chars().count() > MAX_PHONE_LEN {
-            return Err(AppError::Validation(format!(
-                "Le téléphone doit faire au plus {MAX_PHONE_LEN} caractères"
-            )));
-        }
+    if let Some(ref p) = phone
+        && p.chars().count() > MAX_PHONE_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "Le téléphone doit faire au plus {MAX_PHONE_LEN} caractères"
+        )));
     }
 
     let default_payment_terms = normalize_optional(default_payment_terms);
-    if let Some(ref t) = default_payment_terms {
-        if t.chars().count() > MAX_PAYMENT_TERMS_LEN {
-            return Err(AppError::Validation(format!(
-                "Les conditions de paiement doivent faire au plus {MAX_PAYMENT_TERMS_LEN} caractères"
-            )));
-        }
+    if let Some(ref t) = default_payment_terms
+        && t.chars().count() > MAX_PAYMENT_TERMS_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "Les conditions de paiement doivent faire au plus {MAX_PAYMENT_TERMS_LEN} caractères"
+        )));
     }
 
     let ide_number = validate_optional_ide(ide_number)?;
@@ -312,10 +312,10 @@ fn validate_common(
 /// pas le nom de colonne (`ide_number`) — le format du message d'erreur
 /// MariaDB peut varier entre versions (10.x vs 11.x, schéma préfixé ou non).
 fn map_contact_error(err: DbError) -> AppError {
-    if let DbError::UniqueConstraintViolation(ref m) = err {
-        if m.contains("uq_contacts_company_ide") {
-            return AppError::IdeAlreadyExists("Un contact avec ce numéro IDE existe déjà".into());
-        }
+    if let DbError::UniqueConstraintViolation(ref m) = err
+        && m.contains("uq_contacts_company_ide")
+    {
+        return AppError::IdeAlreadyExists("Un contact avec ce numéro IDE existe déjà".into());
     }
     AppError::from(err)
 }

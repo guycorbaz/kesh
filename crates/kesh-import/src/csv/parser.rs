@@ -147,13 +147,13 @@ fn parse_csv_collect_inner(
 
     // 2. Si profil spécifie un encoding non-null différent de la détection :
     //    EncodingMismatch (handler API gère le branching preview/final).
-    if let Some(ref profile_encoding) = profile.encoding {
-        if profile_encoding != detected_encoding.as_str() {
-            return Err(CsvError::EncodingMismatch {
-                profile: profile_encoding.clone(),
-                detected: detected_encoding.as_str().to_string(),
-            });
-        }
+    if let Some(ref profile_encoding) = profile.encoding
+        && profile_encoding != detected_encoding.as_str()
+    {
+        return Err(CsvError::EncodingMismatch {
+            profile: profile_encoding.clone(),
+            detected: detected_encoding.as_str().to_string(),
+        });
     }
 
     // 3. Decode (post BOM)

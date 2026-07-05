@@ -1098,30 +1098,31 @@ impl Config {
                 });
             }
             // smtp_from présent ici (sinon déjà signalé manquant) → valider format.
-            if let Some(ref from) = smtp_from {
-                if !crate::routes::contacts::is_valid_email_simple(from) {
-                    return Err(ConfigError::IncompleteSmtpConfig {
-                        detail: "KESH_SMTP_FROM n'est pas un email valide (format attendu : \
+            if let Some(ref from) = smtp_from
+                && !crate::routes::contacts::is_valid_email_simple(from)
+            {
+                return Err(ConfigError::IncompleteSmtpConfig {
+                    detail: "KESH_SMTP_FROM n'est pas un email valide (format attendu : \
                                  email@domaine.tld, sans display-name « Nom <email> »)"
-                            .to_string(),
-                    });
-                }
+                        .to_string(),
+                });
             }
             // Review 17-4b Pass 1 — un `:` dans le host trahit un format
             // `host:port` copié d'une doc SMTP : le SNI rustls le refuserait
             // seulement au premier envoi (« domain isn't a valid DNS name »),
             // erreur cryptique non détectée au boot. Exception : IPv6 literal
             // (contient des `:` légitimes, utilisable en SMTP plaintext LAN).
-            if let Some(ref host) = smtp_host {
-                if host.contains(':') && host.parse::<std::net::Ipv6Addr>().is_err() {
-                    return Err(ConfigError::IncompleteSmtpConfig {
-                        detail: format!(
-                            "KESH_SMTP_HOST='{}' contient un port — renseigner uniquement \
+            if let Some(ref host) = smtp_host
+                && host.contains(':')
+                && host.parse::<std::net::Ipv6Addr>().is_err()
+            {
+                return Err(ConfigError::IncompleteSmtpConfig {
+                    detail: format!(
+                        "KESH_SMTP_HOST='{}' contient un port — renseigner uniquement \
                              le nom d'hôte (le port va dans KESH_SMTP_PORT)",
-                            host
-                        ),
-                    });
-                }
+                        host
+                    ),
+                });
             }
         }
 

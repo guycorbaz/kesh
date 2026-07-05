@@ -268,10 +268,10 @@ pub async fn update_in_tx(
     // inchangé : éditer le libellé d'une règle dont le projet a été archivé
     // depuis ne doit pas échouer, leçon 19-2/19-4). Effacement (`Some(None)`)
     // et valeur inchangée n'exigent aucune validation.
-    if let Some(Some(pid)) = patch.default_project_id {
-        if before.default_project_id != Some(pid) {
-            super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
-        }
+    if let Some(Some(pid)) = patch.default_project_id
+        && before.default_project_id != Some(pid)
+    {
+        super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }
 
     let mut set_clauses: Vec<&'static str> = Vec::new();

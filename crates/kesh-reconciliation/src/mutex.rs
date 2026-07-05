@@ -149,16 +149,16 @@ where
                     lock_name = %lock_name,
                     "RELEASE_LOCK also failed during error path (business error preserved)"
                 );
-            } else if let Ok(release_status) = release {
-                if release_status != Some(1) {
-                    tracing::warn!(
-                        ?release_status,
-                        ?bank_account_id,
-                        lock_name = %lock_name,
-                        "RELEASE_LOCK returned non-1 during error path \
-                         (business error preserved)"
-                    );
-                }
+            } else if let Ok(release_status) = release
+                && release_status != Some(1)
+            {
+                tracing::warn!(
+                    ?release_status,
+                    ?bank_account_id,
+                    lock_name = %lock_name,
+                    "RELEASE_LOCK returned non-1 during error path \
+                     (business error preserved)"
+                );
             }
             Err(business_err)
         }

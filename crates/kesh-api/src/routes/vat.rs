@@ -88,8 +88,7 @@ pub async fn verify_vat_rates_against_db(
     // SELECT COUNT(DISTINCT rate) WHERE rate IN (?, ?, ...) — un seul
     // round-trip DB quel que soit le nombre de rates distincts. Les
     // placeholders `?` sont liés via `.bind()` (pas d'interpolation).
-    let placeholders = std::iter::repeat("?")
-        .take(unique.len())
+    let placeholders = std::iter::repeat_n("?", unique.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
@@ -279,12 +278,12 @@ fn validate_rate(rate: &Decimal) -> Result<(), AppError> {
 }
 
 fn validate_dates(valid_from: NaiveDate, valid_to: Option<NaiveDate>) -> Result<(), AppError> {
-    if let Some(to) = valid_to {
-        if to <= valid_from {
-            return Err(AppError::Validation(
-                "La date de fin de validité doit être postérieure à la date de début.".into(),
-            ));
-        }
+    if let Some(to) = valid_to
+        && to <= valid_from
+    {
+        return Err(AppError::Validation(
+            "La date de fin de validité doit être postérieure à la date de début.".into(),
+        ));
     }
     Ok(())
 }
