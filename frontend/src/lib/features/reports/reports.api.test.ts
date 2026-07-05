@@ -5,6 +5,7 @@ import { authState } from '$lib/app/stores/auth.svelte';
 import {
 	buildExportFilename,
 	downloadReport,
+	getProjectReportExportUrl,
 	getReportExportUrl,
 	slugify,
 } from './reports.api';
@@ -139,6 +140,33 @@ describe('reports.api — Story 9-2a', () => {
 				'pdf',
 			);
 			expect(url).toContain('journal=Ventes');
+		});
+	});
+
+	// Story 19-6a — URL export rapport projet, 2 modes.
+	describe('getProjectReportExportUrl', () => {
+		it('mode fiscal_year inclut projectId + mode + fiscalYearId', () => {
+			const url = getProjectReportExportUrl(
+				'project-expenses',
+				{ projectId: 3, mode: 'fiscal_year', fiscalYearId: 7 },
+				'pdf',
+			);
+			expect(url).toContain('/api/v1/reports/project-expenses/export');
+			expect(url).toContain('projectId=3');
+			expect(url).toContain('mode=fiscal_year');
+			expect(url).toContain('fiscalYearId=7');
+			expect(url).toContain('format=pdf');
+		});
+
+		it('mode cumulative omet fiscalYearId', () => {
+			const url = getProjectReportExportUrl(
+				'project-expenses',
+				{ projectId: 3, mode: 'cumulative', fiscalYearId: 7 },
+				'csv',
+			);
+			expect(url).toContain('mode=cumulative');
+			expect(url).not.toContain('fiscalYearId');
+			expect(url).toContain('format=csv');
 		});
 	});
 

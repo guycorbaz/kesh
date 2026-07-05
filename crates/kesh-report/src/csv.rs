@@ -375,6 +375,68 @@ pub fn render_vat_report_csv<W: Write>(
     Ok(())
 }
 
+/// Génère le CSV du rapport « Dépenses par projet » (Story 19-6a).
+///
+/// Colonnes : `Projet;SousProjet;NumeroCompte;NomCompte;Montant`. Une ligne par
+/// (section, compte), un sous-total par section, un total général. Le drill-down
+/// (écritures) n'est PAS exporté en CSV (réservé à l'affichage/JSON).
+pub fn render_project_expenses_csv<W: Write>(
+    report: &crate::project_report::ProjectExpensesReport,
+    mut writer: W,
+) -> Result<(), ReportError> {
+    write_bom(&mut writer)?;
+    let mut wtr = make_writer(writer);
+
+    wtr.write_record([
+        "Projet",
+        "SousProjet",
+        "NumeroCompte",
+        "NomCompte",
+        "Montant",
+    ])
+    .map_err(map_csv_err)?;
+
+    let root_label = format!("{} — {}", report.project.code, report.project.name);
+
+    for section in &report.sections {
+        let sub_label = if section.is_root {
+            String::new()
+        } else {
+            format!("{} — {}", section.project.code, section.project.name)
+        };
+        for row in &section.rows {
+            wtr.write_record([
+                &root_label,
+                &sub_label,
+                &row.account_number,
+                &row.account_name,
+                &format_amount_iso(row.amount),
+            ])
+            .map_err(map_csv_err)?;
+        }
+        wtr.write_record([
+            &root_label,
+            &sub_label,
+            "",
+            "Sous-total",
+            &format_amount_iso(section.subtotal),
+        ])
+        .map_err(map_csv_err)?;
+    }
+
+    wtr.write_record([
+        &root_label,
+        "",
+        "",
+        "Total dépenses",
+        &format_amount_iso(report.grand_total),
+    ])
+    .map_err(map_csv_err)?;
+
+    wtr.flush().map_err(map_io_err)?;
+    Ok(())
+}
+
 /// Pass 1 code-review H1 : mappent vers `CsvGeneration` (pas `PdfGeneration`).
 /// Cf. commentaire `write_bom` ci-dessus pour le contexte.
 fn map_csv_err(e: csv::Error) -> ReportError {

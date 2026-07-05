@@ -50,10 +50,41 @@ test('reports page loads with 5 tabs (AC #27 + #33, + TVA Story 11-2/18-1f)', as
 
 	await expect(page.getByRole('heading', { name: /rapports/i })).toBeVisible();
 
-	// 5 onglets : Bilan, Compte de résultat, Balance, Journaux, TVA (l'onglet TVA
-	// ajouté en 11-2 ; le compte attendu passe de 4 à 5 — Story 18-1f).
+	// 6 onglets : Bilan, Compte de résultat, Balance, Journaux, TVA, Dépenses par
+	// projet (l'onglet projet ajouté en 19-6a ; le compte passe de 5 à 6).
 	const tabs = page.getByRole('tab');
-	await expect(tabs).toHaveCount(5);
+	await expect(tabs).toHaveCount(6);
+});
+
+test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({ page }) => {
+	await login(page);
+
+	// Crée un projet via API (le sélecteur n'apparaît que si un projet existe).
+	const api = await authedApiContext(page);
+	const code = `E2E-${Date.now().toString().slice(-6)}`;
+	const projRes = await api.post('/api/v1/projects', {
+		data: { code, name: 'Projet E2E rapport', parentId: null },
+	});
+	expect(projRes.ok(), `create project: ${projRes.status()}`).toBeTruthy();
+
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+
+	// Bascule sur l'onglet « Dépenses par projet ».
+	await page.getByRole('tab', { name: /dépenses par projet/i }).click();
+	await expect(page.getByTestId('project-report-controls')).toBeVisible();
+
+	// Sélectionne le projet créé + mode Exercice (défaut) puis génère.
+	await page.getByTestId('project-report-project').selectOption({ label: `${code} — Projet E2E rapport` });
+	await page.getByTestId('project-report-generate').click();
+
+	// La vue rend (empty-state attendu — le preset with-company n'a pas d'écritures
+	// taguées) sans erreur backend. La vue englobe l'état vide.
+	await expect(page.getByTestId('project-expenses-view')).toBeVisible({ timeout: 5000 });
+	await expect(page.getByTestId('project-expenses-empty')).toBeVisible();
+	await expect(page.getByRole('alert')).not.toBeVisible({ timeout: 1500 }).catch(() => {});
+
+	await disposeContextSafe(api);
 });
 
 test('reports page generates balance sheet end-to-end (AC #28, T12.1)', async ({ page }) => {

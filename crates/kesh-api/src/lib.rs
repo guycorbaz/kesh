@@ -634,6 +634,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reports/vat/export",
             get(routes::reports::export_vat_report),
         )
+        // Story 19-6a : rapport « Dépenses par projet » (JSON + export PDF/CSV).
+        // DOIT rester dans `authenticated_routes` AVANT le `;` (anti-IDOR, BH-H1).
+        .route(
+            "/api/v1/reports/project-expenses",
+            get(routes::reports::get_project_expenses),
+        )
+        .route(
+            "/api/v1/reports/project-expenses/export",
+            get(routes::reports::export_project_expenses),
+        )
         // Story 9-2b : export global ZIP de souveraineté. Route DOIT rester
         // dans `authenticated_routes` AVANT le `;` (Pass 1 BH-H1 anti-IDOR) ;
         // sinon middleware auth bypass silencieux → IDOR cross-tenant.

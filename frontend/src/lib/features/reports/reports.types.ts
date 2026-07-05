@@ -122,3 +122,63 @@ export interface ReportQuery {
 export interface JournalReportQuery extends ReportQuery {
 	journal?: Journal;
 }
+
+// ============================================================================
+// Story 19-6a — Rapport « Dépenses par projet »
+// ============================================================================
+
+/** Identité minimale d'un projet (miroir kesh-report ProjectInfo). */
+export interface ProjectInfoDto {
+	id: number;
+	code: string;
+	name: string;
+}
+
+/** Écriture contributrice (drill-down). */
+export interface ProjectEntryRefDto {
+	entryId: number;
+	entryNumber: number;
+	entryDate: string; // YYYY-MM-DD
+	description: string;
+	amount: string; // Decimal string
+}
+
+/** Ligne compte d'une section (montant + écritures drill-down). */
+export interface ExpenseAccountRowDto {
+	accountId: number;
+	accountNumber: string;
+	accountName: string;
+	amount: string;
+	entries: ProjectEntryRefDto[];
+}
+
+/** Section = un projet du scope (racine ou sous-projet). */
+export interface ProjectExpenseSectionDto {
+	project: ProjectInfoDto;
+	isRoot: boolean;
+	rows: ExpenseAccountRowDto[];
+	subtotal: string;
+}
+
+/** Rapport « Dépenses par projet » (miroir camelCase). */
+export interface ProjectExpensesDto {
+	reportType: string;
+	project: ProjectInfoDto;
+	mode: string;
+	periodLabel: string;
+	sections: ProjectExpenseSectionDto[];
+	grandTotal: string;
+}
+
+/** Mode de période d'un rapport projet. */
+export type ProjectReportMode = 'fiscal_year' | 'cumulative';
+
+/** Query params des rapports par projet (JSON + export). */
+export interface ProjectReportQuery {
+	projectId: number;
+	mode: ProjectReportMode;
+	/** Requis si mode === 'fiscal_year'. */
+	fiscalYearId?: number;
+	periodStart?: string;
+	periodEnd?: string;
+}

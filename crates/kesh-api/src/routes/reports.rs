@@ -27,14 +27,17 @@ use chrono::NaiveDate;
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
-use kesh_report::pdf::VatPdfLabels;
+use kesh_report::pdf::{ProjectExpensesPdfLabels, VatPdfLabels};
+use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
-    BalanceSheet, IncomeStatement, JournalReport, PdfContext, ReportPeriod, TrialBalance,
-    VatReport, generate_balance_sheet, generate_income_statement, generate_journal_report,
-    generate_trial_balance, generate_vat_report, render_balance_sheet_csv,
-    render_balance_sheet_pdf, render_income_statement_csv, render_income_statement_pdf,
-    render_journal_report_csv, render_journal_report_pdf, render_trial_balance_csv,
-    render_trial_balance_pdf, render_vat_report_csv, render_vat_report_pdf,
+    BalanceSheet, IncomeStatement, JournalReport, PdfContext, ProjectExpensesReport, ReportPeriod,
+    TrialBalance, VatReport, generate_balance_sheet, generate_income_statement,
+    generate_journal_report, generate_project_expenses, generate_trial_balance,
+    generate_vat_report, render_balance_sheet_csv, render_balance_sheet_pdf,
+    render_income_statement_csv, render_income_statement_pdf, render_journal_report_csv,
+    render_journal_report_pdf, render_project_expenses_csv, render_project_expenses_pdf,
+    render_trial_balance_csv, render_trial_balance_pdf, render_vat_report_csv,
+    render_vat_report_pdf,
 };
 use serde::Deserialize;
 use sqlx::MySqlPool;
@@ -397,6 +400,186 @@ pub async fn export_income_statement(
         &period,
         &ctx.locale,
     )
+}
+
+// ===========================================================================
+// Story 19-6a — Rapports analytiques par projet (Dépenses par projet)
+// ===========================================================================
+
+/// Query params des rapports par projet (JSON + export).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectReportQuery {
+    pub project_id: i64,
+    /// `fiscal_year` (exercice unique) ou `cumulative` (depuis l'origine).
+    pub mode: ProjectModeParam,
+    /// Requis si `mode == fiscal_year`.
+    pub fiscal_year_id: Option<i64>,
+    pub period_start: Option<NaiveDate>,
+    pub period_end: Option<NaiveDate>,
+    /// Export uniquement — ignoré par les endpoints JSON.
+    pub format: Option<String>,
+}
+
+/// Mode de période (paramètre URL).
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectModeParam {
+    FiscalYear,
+    Cumulative,
+}
+
+/// Résout `(scope, ProjectPeriodMode)` depuis la query. Valide `project_id > 0`
+/// et, en mode exercice, la présence de `fiscalYearId`.
+async fn resolve_project_report(
+    state: &AppState,
+    company_id: i64,
+    query: &ProjectReportQuery,
+) -> Result<(kesh_report::ProjectReportScope, ProjectPeriodMode), AppError> {
+    if query.project_id <= 0 {
+        return Err(AppError::Validation(
+            "projectId doit être strictement positif".into(),
+        ));
+    }
+    let scope = resolve_scope(&state.pool, company_id, query.project_id).await?;
+
+    let mode = match query.mode {
+        ProjectModeParam::FiscalYear => {
+            let fy_id = query.fiscal_year_id.ok_or_else(|| {
+                AppError::Validation("fiscalYearId requis en mode fiscal_year".into())
+            })?;
+            validate_fiscal_year_id(fy_id)?;
+            let period = ReportPeriod::resolve(
+                &state.pool,
+                company_id,
+                fy_id,
+                query.period_start,
+                query.period_end,
+            )
+            .await?;
+            ProjectPeriodMode::FiscalYear { period }
+        }
+        ProjectModeParam::Cumulative => {
+            // Borne haute = date de fin du projet si définie, sinon aujourd'hui
+            // (résolu handler-side — pas de Date::now() en lib).
+            //
+            // Note (Pass 3 Opus, DC4) : les bornes proviennent du projet **ciblé**
+            // (racine du scope). Pour un rapport racine agrégeant des sous-projets,
+            // les écritures d'un sous-projet hors de la fenêtre de dates de la racine
+            // sont donc exclues — comportement voulu (« borné par les dates du
+            // projet »). Une racine sans start_date (cas courant) ⇒ pas de borne
+            // basse (`entry_date <= end`), donc tous les enfants sont inclus.
+            let today = chrono::Utc::now().date_naive();
+            let end = scope.root.end_date.unwrap_or(today);
+            ProjectPeriodMode::Cumulative {
+                start: scope.root.start_date,
+                end,
+            }
+        }
+    };
+    Ok((scope, mode))
+}
+
+/// GET /api/v1/reports/project-expenses
+pub async fn get_project_expenses(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<ProjectReportQuery>,
+) -> Result<Json<ProjectExpensesReport>, AppError> {
+    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
+    let report =
+        generate_project_expenses(&state.pool, current_user.company_id, &scope, &mode).await?;
+    emit_project_report_audit(
+        &state.pool,
+        current_user.user_id,
+        "project-expenses",
+        query.project_id,
+        mode.as_str(),
+    )
+    .await;
+    Ok(Json(report))
+}
+
+/// GET /api/v1/reports/project-expenses/export?format=pdf|csv
+pub async fn export_project_expenses(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<ProjectReportQuery>,
+) -> Result<Response, AppError> {
+    let format = validate_format(&query.format)?;
+    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
+    let report =
+        generate_project_expenses(&state.pool, current_user.company_id, &scope, &mode).await?;
+    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+
+    let body: Vec<u8> = match format {
+        ExportFormat::Pdf => {
+            render_project_expenses_pdf(&report, &ctx, &ProjectExpensesPdfLabels::fr_ch_defaults())?
+        }
+        ExportFormat::Csv => render_csv_to_vec(|w| render_project_expenses_csv(&report, w))?,
+    };
+
+    emit_project_report_export_audit(
+        &state.pool,
+        current_user.user_id,
+        "project-expenses",
+        format.as_str(),
+        query.project_id,
+        mode.as_str(),
+    )
+    .await;
+
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "project-expenses");
+    let (start, end) = project_mode_dates(&mode);
+    build_project_export_response(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        start,
+        end,
+        &ctx.locale,
+    )
+}
+
+/// Bornes de date effectives d'un mode (pour le filename).
+fn project_mode_dates(mode: &ProjectPeriodMode) -> (NaiveDate, NaiveDate) {
+    match mode {
+        ProjectPeriodMode::FiscalYear { period } => (period.start_date, period.end_date),
+        ProjectPeriodMode::Cumulative { start, end } => {
+            // start None → borne basse = epoch projet inconnue ; on met la date de fin
+            // en début aussi n'a pas de sens ; utilise une date minimale lisible.
+            (start.unwrap_or(*end), *end)
+        }
+    }
+}
+
+/// Variante de [`build_export_response_with_locale`] avec dates explicites (les
+/// rapports projet n'ont pas de `ReportPeriod` en mode cumulé).
+fn build_project_export_response(
+    format: ExportFormat,
+    body: Vec<u8>,
+    type_slug: &str,
+    company_name: &str,
+    start: NaiveDate,
+    end: NaiveDate,
+    locale_bcp47: &str,
+) -> Result<Response, AppError> {
+    let slug_type = crate::util::slugify(type_slug, "report");
+    let slug_company = crate::util::slugify(company_name, "company");
+    let filename = format!(
+        "kesh-{slug_type}-{slug_company}-{}_{}.{}",
+        start.format("%Y-%m-%d"),
+        end.format("%Y-%m-%d"),
+        format.extension()
+    );
+    let content_disposition = crate::util::build_content_disposition(&filename, locale_bcp47)?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, format.content_type())
+        .header(header::CONTENT_DISPOSITION, content_disposition)
+        .body(Body::from(body))
+        .map_err(|e| AppError::Internal(format!("response build: {e}")))
 }
 
 /// GET /api/v1/reports/trial-balance/export?format=pdf|csv
@@ -907,6 +1090,76 @@ async fn emit_report_export_audit(
             fiscal_year_id,
             "audit insert failed (report.exported) — non-blocking"
         );
+    }
+}
+
+/// Story 19-6a — audit best-effort génération d'un rapport projet.
+async fn emit_project_report_audit(
+    pool: &MySqlPool,
+    user_id: i64,
+    report_type: &str,
+    project_id: i64,
+    mode: &str,
+) {
+    let result = async {
+        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "report.generated",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
+                    "report_type": report_type,
+                    "project_id": project_id,
+                    "mode": mode,
+                })),
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), kesh_db::errors::DbError>(())
+    }
+    .await;
+    if let Err(e) = result {
+        tracing::warn!(error = ?e, user_id, report_type, project_id, "audit insert failed (report.generated project) — non-blocking");
+    }
+}
+
+/// Story 19-6a — audit best-effort export d'un rapport projet.
+async fn emit_project_report_export_audit(
+    pool: &MySqlPool,
+    user_id: i64,
+    report_type: &str,
+    format: &str,
+    project_id: i64,
+    mode: &str,
+) {
+    let result = async {
+        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "report.exported",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
+                    "report_type": report_type,
+                    "format": format,
+                    "project_id": project_id,
+                    "mode": mode,
+                })),
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), kesh_db::errors::DbError>(())
+    }
+    .await;
+    if let Err(e) = result {
+        tracing::warn!(error = ?e, user_id, report_type, format, project_id, "audit insert failed (report.exported project) — non-blocking");
     }
 }
 

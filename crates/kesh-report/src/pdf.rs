@@ -1000,6 +1000,127 @@ pub fn render_vat_report_pdf(
 }
 
 // ============================================================================
+// Story 19-6a — Rapport « Dépenses par projet »
+// ============================================================================
+
+/// Libellés du PDF « Dépenses par projet » (précédent `VatPdfLabels` — labels
+/// dédiés en dur FR-CH, i18n PDF déférée v0.2).
+#[derive(Debug, Clone)]
+pub struct ProjectExpensesPdfLabels {
+    pub title: String,
+    pub col_account: String,
+    pub subtotal: String,
+    pub grand_total: String,
+    pub empty_message: String,
+}
+
+impl ProjectExpensesPdfLabels {
+    /// Libellés par défaut FR-CH.
+    pub fn fr_ch_defaults() -> Self {
+        Self {
+            title: "Dépenses par projet".into(),
+            col_account: "Compte".into(),
+            subtotal: "Sous-total".into(),
+            grand_total: "Total dépenses".into(),
+            empty_message: "Aucune dépense taguée sur ce projet pour la période.".into(),
+        }
+    }
+}
+
+impl Default for ProjectExpensesPdfLabels {
+    fn default() -> Self {
+        Self::fr_ch_defaults()
+    }
+}
+
+/// Dessine une ligne compte de dépense (N° | Nom | Montant), pattern
+/// `draw_account_row` adapté à [`crate::project_report::ExpenseAccountRow`].
+fn draw_expense_row(builder: &mut PdfBuilder, row: &crate::project_report::ExpenseAccountRow) {
+    builder.ensure_space_for_row();
+    let y = builder.cursor_y;
+    let layer = builder.current_layer();
+    layer.use_text(
+        &row.account_number,
+        FONT_SIZE_PT,
+        Mm(MARGIN_LEFT_MM),
+        Mm(y),
+        &builder.font,
+    );
+    layer.use_text(
+        &row.account_name,
+        FONT_SIZE_PT,
+        Mm(MARGIN_LEFT_MM + 25.0),
+        Mm(y),
+        &builder.font,
+    );
+    layer.use_text(
+        format_swiss_amount(row.amount),
+        FONT_SIZE_PT,
+        Mm(PAGE_WIDTH_MM - 45.0),
+        Mm(y),
+        &builder.font,
+    );
+    builder.cursor_y -= LINE_HEIGHT_MM;
+}
+
+/// Génère le PDF du rapport « Dépenses par projet » (Story 19-6a).
+///
+/// En-tête = nom company + titre + libellé projet + période. Une sous-section par
+/// projet du scope (racine puis sous-projets), lignes de compte + sous-total,
+/// puis total général. Le drill-down (écritures) n'est PAS rendu en PDF (réservé
+/// à l'affichage interactif).
+pub fn render_project_expenses_pdf(
+    report: &crate::project_report::ProjectExpensesReport,
+    ctx: &PdfContext,
+    labels: &ProjectExpensesPdfLabels,
+) -> Result<Vec<u8>, ReportError> {
+    let mut builder = PdfBuilder::new(&labels.title)?;
+
+    // En-tête : company + titre + projet + période (une ligne libre chacun).
+    builder.write_line(&ctx.company_name, FONT_SIZE_HEADER_PT, true, 0.0);
+    builder.write_line(
+        &format!(
+            "{} — {} {}",
+            labels.title, report.project.code, report.project.name
+        ),
+        12.0,
+        true,
+        0.0,
+    );
+    builder.write_line(&report.period_label, FONT_SIZE_PT, false, 0.0);
+    builder.cursor_y -= LINE_HEIGHT_MM;
+
+    if report.sections.is_empty() {
+        // Message vide (position courante post-header).
+        let layer = builder.current_layer();
+        layer.use_text(
+            &labels.empty_message,
+            FONT_SIZE_PT,
+            Mm(MARGIN_LEFT_MM),
+            Mm(builder.cursor_y),
+            &builder.font,
+        );
+        return builder.finalize();
+    }
+
+    for section in &report.sections {
+        let section_title = if section.is_root {
+            format!("{} {}", section.project.code, section.project.name)
+        } else {
+            format!("  ↳ {} {}", section.project.code, section.project.name)
+        };
+        builder.write_line(&section_title, FONT_SIZE_PT, true, 0.0);
+        for row in &section.rows {
+            draw_expense_row(&mut builder, row);
+        }
+        draw_totals_footer(&mut builder, &labels.subtotal, section.subtotal);
+    }
+
+    draw_totals_footer(&mut builder, &labels.grand_total, report.grand_total);
+    builder.finalize()
+}
+
+// ============================================================================
 // Tests unit (T10.1)
 // ============================================================================
 

@@ -18,6 +18,11 @@ pub enum ReportError {
     #[error("fiscal_year introuvable (fiscal_year_id={fiscal_year_id})")]
     FiscalYearNotFound { fiscal_year_id: i64 },
 
+    /// Le projet analytique demandé n'existe pas pour cette company (Story 19-6a).
+    /// Mappé 404 côté handler (`AppError`).
+    #[error("projet analytique introuvable (project_id={project_id})")]
+    ProjectNotFound { project_id: i64 },
+
     /// La période fournie est invalide (start > end, etc.).
     #[error("période invalide : {reason}")]
     PeriodInvalid { reason: String },

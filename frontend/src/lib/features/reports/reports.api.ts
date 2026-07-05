@@ -9,6 +9,8 @@ import type {
 	IncomeStatementDto,
 	JournalReportDto,
 	JournalReportQuery,
+	ProjectExpensesDto,
+	ProjectReportQuery,
 	ReportQuery,
 	ReportType,
 	TrialBalanceDto,
@@ -69,6 +71,53 @@ export async function getVatReport(query: ReportQuery): Promise<VatReportDto> {
 		periodEnd: query.periodEnd,
 	});
 	return apiClient.get<VatReportDto>(`/api/v1/reports/vat?${qs}`);
+}
+
+// ============================================================================
+// Story 19-6a — Rapport « Dépenses par projet »
+// ============================================================================
+
+/** Construit la query string commune aux rapports projet (JSON + export). */
+function buildProjectQuery(
+	query: ProjectReportQuery,
+	extra?: Record<string, string | number | undefined>,
+): string {
+	return buildQuery({
+		projectId: query.projectId,
+		mode: query.mode,
+		fiscalYearId: query.mode === 'fiscal_year' ? query.fiscalYearId : undefined,
+		periodStart: query.periodStart,
+		periodEnd: query.periodEnd,
+		...extra,
+	});
+}
+
+export async function getProjectExpenses(query: ProjectReportQuery): Promise<ProjectExpensesDto> {
+	const qs = buildProjectQuery(query);
+	return apiClient.get<ProjectExpensesDto>(`/api/v1/reports/project-expenses?${qs}`);
+}
+
+/** URL d'export d'un rapport projet (`project-expenses`). */
+export function getProjectReportExportUrl(
+	type: 'project-expenses',
+	query: ProjectReportQuery,
+	format: 'pdf' | 'csv',
+): string {
+	const qs = buildProjectQuery(query, { format });
+	return `/api/v1/reports/${type}/export?${qs}`;
+}
+
+/** Télécharge un export de rapport projet (même mécanique que downloadReport). */
+export async function downloadProjectReport(
+	type: 'project-expenses',
+	query: ProjectReportQuery,
+	format: 'pdf' | 'csv',
+	filename: string,
+): Promise<void> {
+	const url = getProjectReportExportUrl(type, query, format);
+	const response = await apiClient.getBlob(url);
+	const blob = await response.blob();
+	triggerDownload(blob, filename);
 }
 
 /**
