@@ -214,6 +214,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/contacts/{id}/archive",
             put(routes::contacts::archive_contact),
         )
+        // #213 : personnes de contact d'une entreprise (CRM, informatif).
+        .route(
+            "/api/v1/contacts/{id}/persons",
+            post(routes::contact_persons::create_person),
+        )
+        .route(
+            "/api/v1/contact-persons/{id}",
+            put(routes::contact_persons::update_person)
+                .delete(routes::contact_persons::delete_person),
+        )
         // Story 4.2 : mutations catalogue produits
         .route("/api/v1/products", post(routes::products::create_product))
         .route(
@@ -435,6 +445,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Story 4.1 : lecture carnet d'adresses (tout rôle authentifié)
         .route("/api/v1/contacts", get(routes::contacts::list_contacts))
         .route("/api/v1/contacts/{id}", get(routes::contacts::get_contact))
+        .route(
+            "/api/v1/contacts/{id}/persons",
+            get(routes::contact_persons::list_persons),
+        )
         // Story 4.2 : lecture catalogue produits (tout rôle authentifié)
         .route("/api/v1/products", get(routes::products::list_products))
         .route("/api/v1/products/{id}", get(routes::products::get_product))

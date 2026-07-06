@@ -7,6 +7,7 @@ pub mod bank_imports;
 pub mod bank_profiles;
 pub mod companies;
 pub mod company_invoice_settings;
+pub mod contact_persons;
 pub mod contacts;
 pub mod credit_notes;
 pub mod exports;

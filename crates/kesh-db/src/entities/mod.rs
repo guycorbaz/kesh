@@ -16,6 +16,7 @@ pub mod bank_transaction;
 pub mod company;
 pub mod company_invoice_settings;
 pub mod contact;
+pub mod contact_person;
 pub mod credit_note;
 pub mod fiscal_year;
 pub mod imported_supplier_invoice;

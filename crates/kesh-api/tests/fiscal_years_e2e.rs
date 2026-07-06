@@ -991,7 +991,13 @@ async fn run_path_b_until_finalize(app: &TestApp, token: &str) {
         .header("Authorization", auth(token))
         .json(&json!({
             "name": "Ma SARL",
-            "address": "Rue Test 1, 1000 Lausanne",
+            "address": {
+                "street": "Rue Test",
+                "building": "1",
+                "postalCode": "1000",
+                "city": "Lausanne",
+                "country": "CH"
+            },
             "ideNumber": "CHE-109.322.551"
         }))
         .send()

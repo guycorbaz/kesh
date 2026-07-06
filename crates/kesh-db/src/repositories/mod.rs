@@ -13,6 +13,7 @@ pub mod bank_profiles;
 pub mod bank_transactions;
 pub mod companies;
 pub mod company_invoice_settings;
+pub mod contact_persons;
 pub mod contacts;
 pub mod credit_note_number_sequences;
 pub mod credit_notes;

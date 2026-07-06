@@ -94,7 +94,7 @@ pub async fn seed_demo(
     let company = {
         let mut tx = pool.begin().await?;
         let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
-            "SELECT id, name, address, address_street, address_building, address_postal_code, \
+            "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
                     address_city, address_country, ide_number, org_type, accounting_language, \
                     instance_language, is_stub, version, created_at, updated_at \
              FROM companies ORDER BY id FOR UPDATE",
