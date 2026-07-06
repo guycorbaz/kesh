@@ -174,8 +174,9 @@ where
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
-                address, email, phone, ide_number, default_payment_terms, \
+        "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
+                address, address_street, address_building, address_postal_code, address_city, \
+                address_country, email, phone, ide_number, default_payment_terms, \
                 active, version, created_at, updated_at \
          FROM contacts \
          WHERE company_id = ? AND id IN ({placeholders})"
