@@ -116,10 +116,16 @@ export const onboardingState = {
 		}
 	},
 
-	async setCoordinates(name: string, address: string, ideNumber: string | null) {
+	async setCoordinates(
+		name: string,
+		firstName: string | null,
+		lastName: string | null,
+		address: api.StructuredAddressPayload,
+		ideNumber: string | null
+	) {
 		_loading = true;
 		try {
-			_state = await api.setCoordinates(name, address, ideNumber);
+			_state = await api.setCoordinates(name, firstName, lastName, address, ideNumber);
 		} finally {
 			_loading = false;
 		}

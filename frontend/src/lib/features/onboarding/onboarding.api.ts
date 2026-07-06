@@ -35,13 +35,26 @@ export async function setAccountingLanguage(language: string): Promise<Onboardin
 	return apiClient.post<OnboardingState>('/api/v1/onboarding/accounting-language', { language });
 }
 
+/** Adresse structurée (#213) — miroir de `StructuredAddressInput` backend. */
+export interface StructuredAddressPayload {
+	street: string;
+	building: string;
+	postalCode: string;
+	city: string;
+	country: string;
+}
+
 export async function setCoordinates(
 	name: string,
-	address: string,
+	firstName: string | null,
+	lastName: string | null,
+	address: StructuredAddressPayload,
 	ideNumber: string | null
 ): Promise<OnboardingState> {
 	return apiClient.post<OnboardingState>('/api/v1/onboarding/coordinates', {
 		name,
+		firstName,
+		lastName,
 		address,
 		ideNumber,
 	});
