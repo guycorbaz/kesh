@@ -15,6 +15,7 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 use kesh_db::repositories::{companies, users};
 use serde_json::{Value, json};
@@ -117,7 +118,15 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
-            address: "Rue Test 1".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,

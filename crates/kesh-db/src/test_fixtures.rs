@@ -80,9 +80,13 @@ pub enum FixtureError {
 pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, FixtureError> {
     // Company — adresse sur 2 lignes (line1 = rue, line2 = zip + ville) car
     // la génération QR Bill exige les deux lignes (cf. test `invoice_pdf_e2e`).
+    // #213 — adresse structurée (type S) requise pour le créancier QR Bill.
     let company_result = sqlx::query(
-        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
-         VALUES ('CI Test Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+        "INSERT INTO companies (name, address, address_street, address_building, \
+             address_postal_code, address_city, address_country, org_type, \
+             accounting_language, instance_language) \
+         VALUES ('CI Test Company', 'Test Address 1\n1000 Lausanne', 'Test Address', '1', \
+             '1000', 'Lausanne', 'CH', 'Independant', 'FR', 'FR')",
     )
     .execute(pool)
     .await?;

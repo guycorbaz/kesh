@@ -29,30 +29,48 @@ pub struct QrBillData {
     pub billing_information: Option<String>,
 }
 
-/// SIX QR Bill address block. Only type K (Combined) supported in v0.1.
+/// SIX QR Bill address block. Supports both type **K** (Combined, deprecated by
+/// SIX 21.11.2025) and type **S** (Structured, now mandatory for generation).
+///
+/// The 4 free-text data elements map to SIX payload positions per `address_type`:
+///
+/// | field         | type S (Structured)   | type K (Combined)       |
+/// |---------------|-----------------------|-------------------------|
+/// | `line1`       | street name (≤70)     | address line 1 (≤70)    |
+/// | `line2`       | building number (≤16) | address line 2 (≤70)    |
+/// | `postal_code` | postal code / NPA(≤16)| *empty*                 |
+/// | `town`        | town / locality (≤35) | *empty*                 |
 #[derive(Debug, Clone)]
 pub struct Address {
     pub address_type: AddressType,
     /// Name, ≤70 chars.
     pub name: String,
-    /// Line 1 (street or free-form line), ≤70 chars.
+    /// SIX element 3 — street name (type S) or free-form line 1 (type K).
     pub line1: String,
-    /// Line 2 (postal code + city or free-form line), ≤70 chars.
+    /// SIX element 4 — building number (type S, ≤16) or free-form line 2 (type K).
     pub line2: String,
-    /// ISO-3166-1 alpha-2 country code (e.g. "CH", "LI").
+    /// SIX element 5 — postal code (type S only; empty for type K).
+    pub postal_code: String,
+    /// SIX element 6 — town / locality (type S only; empty for type K).
+    pub town: String,
+    /// SIX element 7 — ISO-3166-1 alpha-2 country code (e.g. "CH", "LI").
     pub country: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressType {
-    /// Combined — 2 free-form address lines (v0.1 default).
+    /// Combined — 2 free-form address lines (deprecated by SIX 21.11.2025).
     Combined,
+    /// Structured — separate street / building / postal / town fields.
+    /// Mandatory format for QR-bill generation since SIX 21.11.2025.
+    Structured,
 }
 
 impl AddressType {
     pub fn code(self) -> &'static str {
         match self {
             AddressType::Combined => "K",
+            AddressType::Structured => "S",
         }
     }
 }

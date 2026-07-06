@@ -1,5 +1,6 @@
 //! Shared test utilities and fixtures for E2E tests
 
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, OrgType};
 use kesh_db::repositories::companies;
 use sqlx::MySqlPool;
@@ -11,7 +12,15 @@ pub async fn create_test_company(pool: &MySqlPool) {
         pool,
         NewCompany {
             name: "Test Company".into(),
-            address: "Test Address".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,

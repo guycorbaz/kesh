@@ -404,7 +404,14 @@ pub async fn set_accounting_language(
 #[serde(rename_all = "camelCase")]
 pub struct CoordinatesRequest {
     pub name: String,
-    pub address: String,
+    /// Prénom / nom (#213) — fournis si la société est une personne physique
+    /// (raison individuelle) ; `name` est alors recomposé « Prénom Nom ».
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
+    /// Adresse structurée de la société (créancier QR-bill type S, #213).
+    pub address: crate::address_input::StructuredAddressInput,
     pub ide_number: Option<String>,
 }
 
@@ -413,17 +420,25 @@ pub async fn set_coordinates(
     State(state): State<AppState>,
     Json(body): Json<CoordinatesRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
-    let name = body.name.trim().to_string();
-    let address = body.address.trim().to_string();
-
+    // #213 — personne physique (prénom + nom) → `name` recomposé ; sinon raison
+    // sociale telle quelle. Le frontend décide selon l'OrgType choisi en amont.
+    let clean = |o: &Option<String>| {
+        o.as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    let (first_name, last_name) = (clean(&body.first_name), clean(&body.last_name));
+    let name = match (&first_name, &last_name) {
+        (Some(f), Some(l)) => format!("{f} {l}"),
+        _ => body.name.trim().to_string(),
+    };
     if name.is_empty() {
-        return Err(AppError::Validation("Le nom ne peut pas être vide".into()));
-    }
-    if address.is_empty() {
         return Err(AppError::Validation(
-            "L'adresse ne peut pas être vide".into(),
+            "Le nom (ou prénom + nom) ne peut pas être vide".into(),
         ));
     }
+    // Adresse structurée requise (créancier QR-bill type S, #213).
+    let address = body.address.validate_required()?;
 
     // Validate IDE via kesh-core if provided
     let normalized_ide = match &body.ide_number {
@@ -440,7 +455,15 @@ pub async fn set_coordinates(
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    update_company_coordinates(&state, &name, &address, normalized_ide.as_deref()).await?;
+    update_company_coordinates(
+        &state,
+        &name,
+        first_name.as_deref(),
+        last_name.as_deref(),
+        &address,
+        normalized_ide.as_deref(),
+    )
+    .await?;
 
     let updated = onboarding::update_step(
         &state.pool,
@@ -662,7 +685,8 @@ async fn finalize_inner(
     // result is unambiguous, but explicit ordering matches Pattern 5 lock-discipline
     // and protects against multi-tenant drift in dev/test DBs.
     let company = match sqlx::query_as::<_, kesh_db::entities::Company>(
-        "SELECT id, name, address, ide_number, org_type, accounting_language, \
+        "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
+                address_city, address_country, ide_number, org_type, accounting_language, \
                 instance_language, is_stub, version, created_at, updated_at \
          FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
@@ -826,7 +850,8 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
     // SELECT FOR UPDATE verrouille la row (ou rien si table vide).
     // P5: ORDER BY id pour déterminisme (cf. Pattern 5 lock-discipline).
     let existing = sqlx::query_as::<_, kesh_db::entities::Company>(
-        "SELECT id, name, address, ide_number, org_type, accounting_language, \
+        "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
+                address_city, address_country, ide_number, org_type, accounting_language, \
                 instance_language, is_stub, version, created_at, updated_at \
          FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
@@ -880,7 +905,8 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
 }
 
 // P5: ORDER BY id for deterministic row selection (Pattern 5 lock-discipline).
-const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, address, ide_number, org_type, accounting_language, \
+const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
+            address_postal_code, address_city, address_country, ide_number, org_type, accounting_language, \
             instance_language, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT 1 FOR UPDATE";
 
@@ -953,10 +979,13 @@ async fn update_company_accounting_language(
 }
 
 /// Met à jour les coordonnées de la company (name, address, ide_number).
+#[allow(clippy::too_many_arguments)]
 async fn update_company_coordinates(
     state: &AppState,
     name: &str,
-    address: &str,
+    first_name: Option<&str>,
+    last_name: Option<&str>,
+    address: &kesh_db::entities::address::StructuredAddress,
     ide_number: Option<&str>,
 ) -> Result<(), AppError> {
     use kesh_db::errors::map_db_error;
@@ -969,12 +998,22 @@ async fn update_company_coordinates(
     // coordonnées → la company n'est plus un placeholder. Sûr car
     // `update_company_coordinates` n'a qu'un seul appelant (`set_coordinates`,
     // step 5→6). Si un 2e appelant émerge, extraire un paramètre `reset_stub`.
+    // Colonne `address` dérivée (#213) + 5 champs structurés (source de vérité QR/pain.001).
     let rows = sqlx::query(
-        "UPDATE companies SET name = ?, address = ?, ide_number = ?, is_stub = FALSE, version = version + 1 \
+        "UPDATE companies SET name = ?, first_name = ?, last_name = ?, address = ?, address_street = ?, address_building = ?, \
+             address_postal_code = ?, address_city = ?, address_country = ?, \
+             ide_number = ?, is_stub = FALSE, version = version + 1 \
          WHERE id = ? AND version = ?",
     )
     .bind(name)
-    .bind(address)
+    .bind(first_name)
+    .bind(last_name)
+    .bind(address.combined())
+    .bind(&address.street)
+    .bind(&address.building)
+    .bind(&address.postal_code)
+    .bind(&address.city)
+    .bind(&address.country)
     .bind(ide_number)
     .bind(company.id)
     .bind(company.version)

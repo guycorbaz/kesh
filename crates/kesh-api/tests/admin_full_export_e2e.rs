@@ -23,6 +23,7 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 use kesh_db::repositories::{companies, users};
 use serde_json::{Value, json};
@@ -133,7 +134,15 @@ async fn seed(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
         pool,
         NewCompany {
             name: format!("CI {label}"),
-            address: "Rue Test 1".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,
@@ -261,8 +270,8 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
         .filter(|n| n.starts_with("data/") && n.ends_with(".ndjson"))
         .count();
     assert_eq!(
-        data_count, 32,
-        "32 fichiers data/<table>.ndjson : {names:?}"
+        data_count, 33,
+        "33 fichiers data/<table>.ndjson (#213 : +contact_persons) : {names:?}"
     );
 
     // Lire manifest.json.

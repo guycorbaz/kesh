@@ -12,6 +12,7 @@
 
 use chrono::NaiveDate;
 use kesh_db::entities::account::AccountType;
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
     Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry, NewJournalEntryLine, NewUser,
@@ -32,7 +33,15 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
-            address: "X".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "X".into(),
+                building: String::new(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,

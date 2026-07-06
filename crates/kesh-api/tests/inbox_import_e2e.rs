@@ -23,6 +23,7 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
 use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
@@ -166,9 +167,16 @@ async fn setup(pool: &MySqlPool) -> Ctx {
             company_id: seeded.company_id,
             contact_type: ContactType::Entreprise,
             name: "Fournisseur SA".into(),
+            first_name: None,
+            last_name: None,
             is_client: false,
             is_supplier: true,
             address: Some("Rue 2\n1000 Lausanne".into()),
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
             email: None,
             phone: None,
             ide_number: None,
@@ -194,7 +202,15 @@ async fn other_company_jwt(pool: &MySqlPool) -> String {
         pool,
         NewCompany {
             name: "Autre SA".into(),
-            address: "Rue 9\n1200 Genève".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,
@@ -265,6 +281,8 @@ fn qr_invoice_png(amount: Decimal, name: &str) -> Vec<u8> {
             name: "NAMEPLACEHOLDER".into(),
             line1: "Rue du Lac 1268".into(),
             line2: "2501 Biel".into(),
+            postal_code: String::new(),
+            town: String::new(),
             country: "CH".into(),
         },
         ultimate_debtor: None,

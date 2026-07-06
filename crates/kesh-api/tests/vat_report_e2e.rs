@@ -19,6 +19,7 @@ use std::sync::Arc;
 use chrono::{NaiveDate, TimeDelta};
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::company::NewCompany;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
@@ -125,9 +126,16 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64, name: &s
             company_id,
             contact_type: ContactType::Personne,
             name: name.into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: Some("Rue 1\n1000 Lausanne".into()),
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
             email: None,
             phone: None,
             ide_number: None,
@@ -587,7 +595,15 @@ async fn vat_report_excludes_cross_tenant_invoices(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Company B".into(),
-            address: "Rue B\n1200 Genève".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,

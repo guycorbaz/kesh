@@ -27,6 +27,7 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::backup::TABLES_TO_TRUNCATE;
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, OrgType};
 use kesh_db::repositories::companies;
 use kesh_db::test_fixtures::seed_accounting_company;
@@ -210,7 +211,15 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Ghost SA".into(),
-            address: "À supprimer par le restore".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Independant,
             accounting_language: Language::Fr,

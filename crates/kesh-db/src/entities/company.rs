@@ -1,5 +1,6 @@
 //! Entité `Company` : données de l'entreprise/organisation utilisant Kesh.
 
+use crate::entities::address::StructuredAddress;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
@@ -136,7 +137,19 @@ impl<'r> Decode<'r, MySql> for Language {
 pub struct Company {
     pub id: i64,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour une personne physique
+    /// (`OrgType::Independant`). `name` reste l'affichage canonique recomposé.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
+    /// Conservée pour l'UI et l'historique ; ne pas utiliser pour le QR/pain.001.
     pub address: String,
+    /// Adresse structurée (source de vérité QR-bill type S / pain.001, #213).
+    pub address_street: String,
+    pub address_building: String,
+    pub address_postal_code: String,
+    pub address_city: String,
+    pub address_country: String,
     /// Numéro IDE suisse (CHExxxxxxxxx, normalisé sans séparateurs).
     /// Optionnel — certaines organisations n'ont pas d'IDE.
     ///
@@ -163,12 +176,30 @@ pub struct Company {
     pub updated_at: NaiveDateTime,
 }
 
+impl Company {
+    /// Reconstruit l'adresse structurée depuis les colonnes plates (#213).
+    pub fn structured_address(&self) -> StructuredAddress {
+        StructuredAddress {
+            street: self.address_street.clone(),
+            building: self.address_building.clone(),
+            postal_code: self.address_postal_code.clone(),
+            city: self.address_city.clone(),
+            country: self.address_country.clone(),
+        }
+    }
+}
+
 /// Données de création d'une company. Pas d'id, version ni timestamps :
-/// gérés par la base.
+/// gérés par la base. Le champ `address` (colonne dérivée) est recomposé par le
+/// repository depuis `address_structured` (#213).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewCompany {
     pub name: String,
-    pub address: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour une personne physique
+    /// (`OrgType::Independant`). `name` reste l'affichage canonique recomposé.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub address_structured: StructuredAddress,
     pub ide_number: Option<String>,
     pub org_type: OrgType,
     pub accounting_language: Language,
@@ -183,7 +214,11 @@ pub struct NewCompany {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanyUpdate {
     pub name: String,
-    pub address: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour une personne physique
+    /// (`OrgType::Independant`). `name` reste l'affichage canonique recomposé.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub address_structured: StructuredAddress,
     pub ide_number: Option<String>,
     pub org_type: OrgType,
     pub accounting_language: Language,

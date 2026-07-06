@@ -26,7 +26,13 @@ pub struct CompanyCurrentResponse {
 pub struct CompanyJson {
     pub id: i64,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés si la société est une personne physique.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    /// Chaîne d'affichage dérivée (#213).
     pub address: String,
+    /// Adresse structurée (source de vérité éditable, #213).
+    pub address_structured: crate::address_input::StructuredAddressInput,
     pub ide_number: Option<String>,
     pub org_type: String,
     pub accounting_language: String,
@@ -35,9 +41,14 @@ pub struct CompanyJson {
 
 impl From<Company> for CompanyJson {
     fn from(c: Company) -> Self {
+        let address_structured =
+            crate::address_input::StructuredAddressInput::from(&c.structured_address());
         Self {
             id: c.id,
             name: c.name,
+            first_name: c.first_name,
+            last_name: c.last_name,
+            address_structured,
             address: c.address,
             ide_number: c.ide_number,
             org_type: c.org_type.as_str().to_string(),

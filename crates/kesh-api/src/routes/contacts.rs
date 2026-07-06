@@ -30,7 +30,6 @@ use crate::routes::ListResponse;
 const MAX_NAME_LEN: usize = 255;
 const MAX_EMAIL_LEN: usize = 320;
 const MAX_PHONE_LEN: usize = 50;
-const MAX_ADDRESS_LEN: usize = 500;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
 const MAX_LIST_LIMIT: i64 = 100;
 const DEFAULT_LIST_LIMIT: i64 = 20;
@@ -67,12 +66,18 @@ pub struct ListContactsQuery {
 pub struct CreateContactRequest {
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — requis si `contact_type == Personne`, sinon ignorés.
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
     #[serde(default)]
     pub is_client: bool,
     #[serde(default)]
     pub is_supplier: bool,
+    /// Adresse structurée (#213). Bloc vide = pas d'adresse.
     #[serde(default)]
-    pub address: Option<String>,
+    pub address_structured: crate::address_input::StructuredAddressInput,
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default)]
@@ -88,12 +93,18 @@ pub struct CreateContactRequest {
 pub struct UpdateContactRequest {
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — requis si `contact_type == Personne`, sinon ignorés.
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
     #[serde(default)]
     pub is_client: bool,
     #[serde(default)]
     pub is_supplier: bool,
+    /// Adresse structurée (#213). Bloc vide = pas d'adresse.
     #[serde(default)]
-    pub address: Option<String>,
+    pub address_structured: crate::address_input::StructuredAddressInput,
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default)]
@@ -118,9 +129,15 @@ pub struct ContactResponse {
     pub company_id: i64,
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés pour les Personne.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub is_client: bool,
     pub is_supplier: bool,
+    /// Chaîne d'affichage dérivée (#213).
     pub address: Option<String>,
+    /// Adresse structurée (source de vérité éditable côté frontend, #213).
+    pub address_structured: crate::address_input::StructuredAddressInput,
     pub email: Option<String>,
     pub phone: Option<String>,
     /// Forme normalisée `"CHE109322551"`. Le frontend la formate pour l'affichage.
@@ -139,8 +156,17 @@ impl From<Contact> for ContactResponse {
             company_id: c.company_id,
             contact_type: c.contact_type,
             name: c.name,
+            first_name: c.first_name,
+            last_name: c.last_name,
             is_client: c.is_client,
             is_supplier: c.is_supplier,
+            address_structured: crate::address_input::StructuredAddressInput {
+                street: c.address_street.unwrap_or_default(),
+                building: c.address_building.unwrap_or_default(),
+                postal_code: c.address_postal_code.unwrap_or_default(),
+                city: c.address_city.unwrap_or_default(),
+                country: c.address_country,
+            },
             address: c.address,
             email: c.email,
             phone: c.phone,
@@ -218,10 +244,14 @@ fn validate_optional_ide(raw: Option<String>) -> Result<Option<String>, AppError
 /// Validation commune des champs métier (create + update).
 struct ValidatedFields {
     contact_type: ContactType,
+    /// Nom canonique d'affichage/QR (#213) : raison sociale (Entreprise) ou
+    /// « Prénom Nom » recomposé (Personne).
     name: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
     is_client: bool,
     is_supplier: bool,
-    address: Option<String>,
+    address_structured: Option<kesh_db::entities::address::StructuredAddress>,
     email: Option<String>,
     phone: Option<String>,
     ide_number: Option<String>,
@@ -232,32 +262,46 @@ struct ValidatedFields {
 fn validate_common(
     contact_type: ContactType,
     name: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
     is_client: bool,
     is_supplier: bool,
-    address: Option<String>,
+    address_structured: crate::address_input::StructuredAddressInput,
     email: Option<String>,
     phone: Option<String>,
     ide_number: Option<String>,
     default_payment_terms: Option<String>,
 ) -> Result<ValidatedFields, AppError> {
-    let trimmed_name = name.trim().to_string();
-    if trimmed_name.is_empty() {
-        return Err(AppError::Validation("Le nom est obligatoire".into()));
-    }
+    // #213 — Personne : prénom + nom séparés, `name` recomposé « Prénom Nom ».
+    // Entreprise : raison sociale unique (prénom/nom laissés vides).
+    let clean = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let (trimmed_name, first_name, last_name) = match contact_type {
+        ContactType::Personne => match (clean(first_name), clean(last_name)) {
+            (Some(f), Some(l)) => (format!("{f} {l}"), Some(f), Some(l)),
+            _ => {
+                return Err(AppError::Validation(
+                    "Le prénom et le nom sont obligatoires pour une personne".into(),
+                ));
+            }
+        },
+        ContactType::Entreprise => {
+            let n = name.trim().to_string();
+            if n.is_empty() {
+                return Err(AppError::Validation(
+                    "La raison sociale est obligatoire pour une entreprise".into(),
+                ));
+            }
+            (n, None, None)
+        }
+    };
     if trimmed_name.chars().count() > MAX_NAME_LEN {
         return Err(AppError::Validation(format!(
             "Le nom doit faire au plus {MAX_NAME_LEN} caractères"
         )));
     }
 
-    let address = normalize_optional(address);
-    if let Some(ref a) = address
-        && a.chars().count() > MAX_ADDRESS_LEN
-    {
-        return Err(AppError::Validation(format!(
-            "L'adresse doit faire au plus {MAX_ADDRESS_LEN} caractères"
-        )));
-    }
+    // Adresse structurée (#213) : longueurs SIX type S, bloc vide → None.
+    let address_structured = address_structured.validate_optional()?;
 
     let email = normalize_optional(email);
     if let Some(ref e) = email {
@@ -294,9 +338,11 @@ fn validate_common(
     Ok(ValidatedFields {
         contact_type,
         name: trimmed_name,
+        first_name,
+        last_name,
         is_client,
         is_supplier,
-        address,
+        address_structured,
         email,
         phone,
         ide_number,
@@ -394,22 +440,33 @@ pub async fn create_contact(
     let v = validate_common(
         req.contact_type,
         req.name,
+        req.first_name,
+        req.last_name,
         req.is_client,
         req.is_supplier,
-        req.address,
+        req.address_structured,
         req.email,
         req.phone,
         req.ide_number,
         req.default_payment_terms,
     )?;
 
+    let a = v.address_structured.as_ref();
     let new = NewContact {
         company_id: company.id,
         contact_type: v.contact_type,
         name: v.name,
+        first_name: v.first_name,
+        last_name: v.last_name,
         is_client: v.is_client,
         is_supplier: v.is_supplier,
-        address: v.address,
+        // `address` (chaîne dérivée) recomposée par le repo depuis les champs structurés.
+        address: None,
+        address_street: a.map(|s| s.street.clone()),
+        address_building: a.map(|s| s.building.clone()),
+        address_postal_code: a.map(|s| s.postal_code.clone()),
+        address_city: a.map(|s| s.city.clone()),
+        address_country: a.map(|s| s.country.clone()),
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
@@ -439,21 +496,31 @@ pub async fn update_contact(
     let v = validate_common(
         req.contact_type,
         req.name,
+        req.first_name,
+        req.last_name,
         req.is_client,
         req.is_supplier,
-        req.address,
+        req.address_structured,
         req.email,
         req.phone,
         req.ide_number,
         req.default_payment_terms,
     )?;
 
+    let a = v.address_structured.as_ref();
     let changes = ContactUpdate {
         contact_type: v.contact_type,
         name: v.name,
+        first_name: v.first_name,
+        last_name: v.last_name,
         is_client: v.is_client,
         is_supplier: v.is_supplier,
-        address: v.address,
+        address: None,
+        address_street: a.map(|s| s.street.clone()),
+        address_building: a.map(|s| s.building.clone()),
+        address_postal_code: a.map(|s| s.postal_code.clone()),
+        address_city: a.map(|s| s.city.clone()),
+        address_country: a.map(|s| s.country.clone()),
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,

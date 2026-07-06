@@ -1,5 +1,6 @@
 //! Tests pour le repository company_invoice_settings (Story 2.6).
 
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{CompanyInvoiceSettingsUpdate, Journal, Language, NewCompany, OrgType};
 use kesh_db::repositories::{accounts, companies, company_invoice_settings};
 use sqlx::MySqlPool;
@@ -11,7 +12,15 @@ async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Test Co".to_string(),
-            address: "123 Main St".to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -56,7 +65,15 @@ async fn test_insert_with_defaults_is_idempotent_on_existing_row(pool: MySqlPool
         &pool,
         NewCompany {
             name: "Idem Co".to_string(),
-            address: "789 Reentrant Way".to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -103,7 +120,15 @@ async fn test_insert_with_defaults_rejects_when_referenced_accounts_inactive(poo
         &pool,
         NewCompany {
             name: "Stale FK Co".to_string(),
-            address: "1 Deactivated St".to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -150,7 +175,15 @@ async fn test_insert_with_defaults_rejects_missing_accounts(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Empty Co".to_string(),
-            address: "456 Side St".to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -200,7 +233,15 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "NoOp Co".into(),
-            address: "1 rue Test".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -262,7 +303,15 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Partial Co".into(),
-            address: "2 rue Test".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -336,7 +385,15 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "VAT RT Co".into(),
-            address: "3 rue TVA".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -427,7 +484,15 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "IDOR A".into(),
-            address: "1".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -485,7 +550,15 @@ async fn chart_seed_includes_new_vat_accounts(pool: MySqlPool) {
             &pool,
             NewCompany {
                 name: format!("Seed {org}"),
-                address: "1".into(),
+                first_name: None,
+                last_name: None,
+                address_structured: StructuredAddress {
+                    street: "Rue Test".into(),
+                    building: "1".into(),
+                    postal_code: "1000".into(),
+                    city: "Lausanne".into(),
+                    country: "CH".into(),
+                },
                 ide_number: None,
                 org_type: OrgType::Pme,
                 accounting_language: Language::Fr,
@@ -538,7 +611,15 @@ async fn migration_backfill_creates_vat_accounts_idempotently(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Legacy DE".into(),
-            address: "1".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::De,
@@ -649,7 +730,15 @@ async fn migration_backfill_keys_on_chart_presence_not_stub_flag(pool: MySqlPool
             pool,
             NewCompany {
                 name: name.into(),
-                address: "1".into(),
+                first_name: None,
+                last_name: None,
+                address_structured: StructuredAddress {
+                    street: "Rue Test".into(),
+                    building: "1".into(),
+                    postal_code: "1000".into(),
+                    city: "Lausanne".into(),
+                    country: "CH".into(),
+                },
                 ide_number: None,
                 org_type: OrgType::Pme,
                 accounting_language: Language::Fr,

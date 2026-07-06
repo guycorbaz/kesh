@@ -202,7 +202,7 @@ async fn coordinates_validates_ide(pool: MySqlPool) {
         .client
         .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "name": "Test SA", "address": "Rue 1", "ideNumber": "INVALID" }))
+        .json(&json!({ "name": "Test SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}, "ideNumber": "INVALID" }))
         .send()
         .await
         .unwrap();
@@ -256,7 +256,7 @@ async fn full_path_b_flow(pool: MySqlPool) {
     let resp = app.client
         .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "name": "Ma Société SA", "address": "Rue du Test 1, 1000 Lausanne", "ideNumber": "CHE-109.322.551" }))
+        .json(&json!({ "name": "Ma Société SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}, "ideNumber": "CHE-109.322.551" }))
         .send().await.unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -309,7 +309,7 @@ async fn skip_bank_advances_to_step_7(pool: MySqlPool) {
     app.client
         .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "name": "Mon Asso", "address": "Rue 1", "ideNumber": null }))
+        .json(&json!({ "name": "Mon Asso", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}, "ideNumber": null }))
         .send()
         .await
         .unwrap();
@@ -359,7 +359,7 @@ async fn bank_account_validates_iban(pool: MySqlPool) {
     app.client
         .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "name": "Test", "address": "Addr", "ideNumber": null }))
+        .json(&json!({ "name": "Test", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}, "ideNumber": null }))
         .send()
         .await
         .unwrap();
@@ -430,7 +430,7 @@ async fn fresh_install_stub_exposed_then_cleared_by_coordinates(pool: MySqlPool)
         .client
         .post(app.url("/api/v1/onboarding/coordinates"))
         .header("Authorization", auth(&token))
-        .json(&json!({ "name": "Vraie Société SA", "address": "Rue 1, 1000 Lausanne", "ideNumber": null }))
+        .json(&json!({ "name": "Vraie Société SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}, "ideNumber": null }))
         .send()
         .await
         .unwrap();

@@ -125,13 +125,16 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, user_id: i64, with_addr
             company_id,
             contact_type: ContactType::Personne,
             name: "Pia Rutschmann".into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
-            address: if with_address {
-                Some("Marktgasse 28\n9400 Rorschach".into())
-            } else {
-                None
-            },
+            address: None,
+            address_street: with_address.then(|| "Marktgasse".into()),
+            address_building: with_address.then(|| "28".into()),
+            address_postal_code: with_address.then(|| "9400".into()),
+            address_city: with_address.then(|| "Rorschach".into()),
+            address_country: with_address.then(|| "CH".into()),
             email: None,
             phone: None,
             ide_number: None,

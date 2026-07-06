@@ -12,6 +12,7 @@
 //! après la création de la company — qui est exactement ce que `seed_demo`
 //! et `finalize_onboarding` (Path A/B) font en prod.
 
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, OrgType};
 use kesh_db::repositories::{companies, vat_rates};
 use rust_decimal_macros::dec;
@@ -20,7 +21,15 @@ use sqlx::MySqlPool;
 fn sample_company(name: &str) -> NewCompany {
     NewCompany {
         name: name.into(),
-        address: format!("Rue {name} 1, 1000 Lausanne"),
+        first_name: None,
+        last_name: None,
+        address_structured: StructuredAddress {
+            street: "Rue Test".into(),
+            building: "1".into(),
+            postal_code: "1000".into(),
+            city: "Lausanne".into(),
+            country: "CH".into(),
+        },
         ide_number: None,
         org_type: OrgType::Pme,
         accounting_language: Language::Fr,

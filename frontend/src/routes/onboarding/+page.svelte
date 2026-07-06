@@ -72,20 +72,44 @@
 		}
 	}
 
-	// Form state for coordinates
+	// Form state for coordinates (#213 — adresse structurée + prénom/nom optionnels).
 	let coordName = $state('');
-	let coordAddress = $state('');
+	let coordFirstName = $state('');
+	let coordLastName = $state('');
+	let coordStreet = $state('');
+	let coordBuilding = $state('');
+	let coordPostalCode = $state('');
+	let coordCity = $state('');
+	let coordCountry = $state('CH');
 	let coordIde = $state('');
 
 	async function submitCoordinates() {
-		if (!coordName.trim() || !coordAddress.trim()) {
-			toast.error(msg('error-validation', 'Nom et adresse sont obligatoires'));
+		const isPerson = coordFirstName.trim() !== '' || coordLastName.trim() !== '';
+		const hasName = isPerson
+			? coordFirstName.trim() !== '' && coordLastName.trim() !== ''
+			: coordName.trim() !== '';
+		if (!hasName) {
+			toast.error(msg('error-validation', 'Nom (ou prénom + nom) obligatoire'));
+			return;
+		}
+		if (!coordPostalCode.trim() || !coordCity.trim()) {
+			toast.error(
+				msg('onboarding-address-npa-city-required', 'NPA et localité sont obligatoires')
+			);
 			return;
 		}
 		try {
 			await onboardingState.setCoordinates(
 				coordName.trim(),
-				coordAddress.trim(),
+				coordFirstName.trim() || null,
+				coordLastName.trim() || null,
+				{
+					street: coordStreet.trim(),
+					building: coordBuilding.trim(),
+					postalCode: coordPostalCode.trim(),
+					city: coordCity.trim(),
+					country: coordCountry.trim() || 'CH'
+				},
 				coordIde.trim() || null
 			);
 		} catch {
@@ -280,22 +304,50 @@
 	<form class="flex flex-col gap-4" onsubmit={(e) => { e.preventDefault(); submitCoordinates(); }}>
 		<div>
 			<label for="coord-name" class="mb-1 block text-sm font-medium">
-				{msg('onboarding-field-name', 'Nom / Raison sociale')} *
+				{msg('onboarding-field-name', 'Raison sociale')}
+				<span class="font-normal text-text-muted"> ({msg('onboarding-field-name-hint', 'entreprise — sinon remplir prénom + nom')})</span>
 			</label>
-			<Input id="coord-name" bind:value={coordName} required />
+			<Input id="coord-name" bind:value={coordName} />
 		</div>
-		<div>
-			<label for="coord-address" class="mb-1 block text-sm font-medium">
-				{msg('onboarding-field-address', 'Adresse')} *
-			</label>
-			<textarea
-				id="coord-address"
-				bind:value={coordAddress}
-				required
-				rows="3"
-				class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
-			></textarea>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="coord-firstname" class="mb-1 block text-sm font-medium">
+					{msg('field-first-name', 'Prénom')}
+				</label>
+				<Input id="coord-firstname" bind:value={coordFirstName} />
+			</div>
+			<div>
+				<label for="coord-lastname" class="mb-1 block text-sm font-medium">
+					{msg('field-last-name', 'Nom')}
+				</label>
+				<Input id="coord-lastname" bind:value={coordLastName} />
+			</div>
 		</div>
+		<fieldset class="rounded-md border border-border p-3">
+			<legend class="px-1 text-sm font-medium">{msg('field-address', 'Adresse')} *</legend>
+			<div class="grid grid-cols-3 gap-3">
+				<div class="col-span-2">
+					<label for="coord-street" class="mb-1 block text-xs text-text-muted">{msg('field-street', 'Rue')}</label>
+					<Input id="coord-street" bind:value={coordStreet} />
+				</div>
+				<div>
+					<label for="coord-building" class="mb-1 block text-xs text-text-muted">{msg('field-building', 'N°')}</label>
+					<Input id="coord-building" bind:value={coordBuilding} />
+				</div>
+				<div>
+					<label for="coord-npa" class="mb-1 block text-xs text-text-muted">{msg('field-postal-code', 'NPA')} *</label>
+					<Input id="coord-npa" bind:value={coordPostalCode} required />
+				</div>
+				<div class="col-span-2">
+					<label for="coord-city" class="mb-1 block text-xs text-text-muted">{msg('field-city', 'Localité')} *</label>
+					<Input id="coord-city" bind:value={coordCity} required />
+				</div>
+				<div>
+					<label for="coord-country" class="mb-1 block text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
+					<Input id="coord-country" bind:value={coordCountry} placeholder="CH" />
+				</div>
+			</div>
+		</fieldset>
 		<div>
 			<label for="coord-ide" class="mb-1 block text-sm font-medium">
 				{msg('onboarding-field-ide', 'Numéro IDE')}

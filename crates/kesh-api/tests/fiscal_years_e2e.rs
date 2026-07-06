@@ -9,6 +9,7 @@ use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::address::StructuredAddress;
 use kesh_db::repositories::audit_log;
 use serde_json::json;
 use sqlx::MySqlPool;
@@ -437,7 +438,15 @@ async fn get_by_id_other_company_returns_404(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
-            address: "Other Address".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -562,7 +571,15 @@ async fn update_name_other_company_returns_404(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
-            address: "Other Address".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -715,7 +732,15 @@ async fn close_other_company_returns_404(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
-            address: "Other Address".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,
@@ -966,7 +991,13 @@ async fn run_path_b_until_finalize(app: &TestApp, token: &str) {
         .header("Authorization", auth(token))
         .json(&json!({
             "name": "Ma SARL",
-            "address": "Rue Test 1, 1000 Lausanne",
+            "address": {
+                "street": "Rue Test",
+                "building": "1",
+                "postalCode": "1000",
+                "city": "Lausanne",
+                "country": "CH"
+            },
             "ideNumber": "CHE-109.322.551"
         }))
         .send()
@@ -1279,7 +1310,15 @@ async fn create_other_company(pool: &MySqlPool) -> i64 {
         pool,
         NewCompany {
             name: "Other Co".into(),
-            address: "Other Street 2".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
             ide_number: None,
             org_type: OrgType::Pme,
             accounting_language: Language::Fr,

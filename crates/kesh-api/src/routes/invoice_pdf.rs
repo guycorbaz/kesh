@@ -136,41 +136,50 @@ fn build_qrbill_inputs(
     creditor_country: &str,
     debtor_country: &str,
 ) -> Result<(QrBillData, InvoicePdfData), AppError> {
-    // Adresse créancier (depuis `companies.address` TEXT libre).
-    let creditor_addr = split_address(&company.address).map_err(|_| {
-        AppError::InvoiceNotPdfReady(crate::errors::t(
-            "invoice-pdf-error-company-address-empty",
-            "Adresse entreprise vide.",
-        ))
-    })?;
-    let creditor = Address {
-        address_type: AddressType::Combined,
-        name: company.name.clone(),
-        line1: creditor_addr.0,
-        line2: creditor_addr.1,
-        country: creditor_country.to_string(),
-    };
-
-    // Adresse débiteur.
-    let debtor_raw = contact.address.as_deref().unwrap_or("").trim();
-    if debtor_raw.is_empty() {
+    // Adresse créancier — STRUCTURÉE type S (#213, conformité SIX 21.11.2025).
+    let ca = company.structured_address();
+    if ca.postal_code.trim().is_empty() || ca.city.trim().is_empty() {
         return Err(AppError::InvoiceNotPdfReady(crate::errors::t(
-            "invoice-pdf-error-client-address-required",
-            "Adresse du client obligatoire pour la génération PDF.",
+            "invoice-pdf-error-company-address-empty",
+            "Adresse entreprise incomplète (NPA et localité requis).",
         )));
     }
-    let debtor_addr = split_address(debtor_raw).map_err(|_| {
-        AppError::InvoiceNotPdfReady(crate::errors::t(
-            "invoice-pdf-error-client-address-empty",
-            "Adresse du client vide.",
-        ))
-    })?;
-    let debtor = Address {
-        address_type: AddressType::Combined,
-        name: contact.name.clone(),
-        line1: debtor_addr.0,
-        line2: debtor_addr.1,
-        country: debtor_country.to_string(),
+    let creditor = Address {
+        address_type: AddressType::Structured,
+        name: company.name.clone(),
+        line1: ca.street.clone(),
+        line2: ca.building.clone(),
+        postal_code: ca.postal_code.clone(),
+        town: ca.city.clone(),
+        country: if ca.country.trim().is_empty() {
+            creditor_country.to_string()
+        } else {
+            ca.country.clone()
+        },
+    };
+
+    // Adresse débiteur — STRUCTURÉE type S (#213). Requise et complète (NPA + localité).
+    let da = contact.structured_address();
+    let debtor = match da {
+        Some(a) if !a.postal_code.trim().is_empty() && !a.city.trim().is_empty() => Address {
+            address_type: AddressType::Structured,
+            name: contact.name.clone(),
+            line1: a.street.clone(),
+            line2: a.building.clone(),
+            postal_code: a.postal_code.clone(),
+            town: a.city.clone(),
+            country: if a.country.trim().is_empty() {
+                debtor_country.to_string()
+            } else {
+                a.country.clone()
+            },
+        },
+        _ => {
+            return Err(AppError::InvoiceNotPdfReady(crate::errors::t(
+                "invoice-pdf-error-client-address-required",
+                "Adresse du client obligatoire et complète (NPA et localité) pour la génération PDF.",
+            )));
+        }
     };
 
     // IBAN / QR-IBAN + référence.
@@ -225,7 +234,7 @@ fn build_qrbill_inputs(
         creditor_address_lines: split_lines(&company.address),
         creditor_ide: company.ide_number.clone(),
         debtor_name: contact.name.clone(),
-        debtor_address_lines: split_lines(debtor_raw),
+        debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or_default()),
         lines: invoice_lines_pdf,
         total: invoice.total_amount,
         currency: Currency::Chf,
@@ -235,26 +244,8 @@ fn build_qrbill_inputs(
     Ok((qr_data, pdf_data))
 }
 
-/// Splits a free-form address (multi-line TEXT) into two non-empty lines.
-/// Returns an error if no non-empty line is found. Si l'adresse contient 3+
-/// lignes non vides, les lignes 2..N sont fusionnées dans `line2` (séparées
-/// par ", ") pour préserver l'information (NPA / ville / pays). La longueur
-/// résultante est validée par `kesh-qrbill::validation` (ADDR_LINE_MAX = 70).
-fn split_address(raw: &str) -> Result<(String, String), ()> {
-    let lines: Vec<&str> = raw
-        .split('\n')
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty())
-        .collect();
-    match lines.len() {
-        0 => Err(()),
-        1 => Ok((lines[0].into(), String::new())),
-        _ => Ok((lines[0].into(), lines[1..].join(", "))),
-    }
-}
-
 /// Returns every non-empty line of a multi-line address (for display in the
-/// invoice top section — unlike `split_address`, preserves lines beyond 2).
+/// invoice top section, derived `address` column).
 pub(crate) fn split_lines(raw: &str) -> Vec<String> {
     raw.split('\n')
         .map(|l| l.trim())
@@ -348,47 +339,6 @@ pub(crate) async fn fetch_country(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn split_address_empty_rejected() {
-        assert!(split_address("").is_err());
-        assert!(split_address("   \n   \n").is_err());
-    }
-
-    #[test]
-    fn split_address_single_line() {
-        assert_eq!(
-            split_address("Rue du Lac 1268, 2501 Biel").unwrap(),
-            ("Rue du Lac 1268, 2501 Biel".into(), String::new())
-        );
-    }
-
-    #[test]
-    fn split_address_two_lines() {
-        assert_eq!(
-            split_address("Rue du Lac 1268\n2501 Biel").unwrap(),
-            ("Rue du Lac 1268".into(), "2501 Biel".into())
-        );
-    }
-
-    #[test]
-    fn split_address_three_plus_lines_merges() {
-        assert_eq!(
-            split_address("Rue du Lac 1268\nCase postale 45\n2501 Biel").unwrap(),
-            (
-                "Rue du Lac 1268".into(),
-                "Case postale 45, 2501 Biel".into()
-            )
-        );
-    }
-
-    #[test]
-    fn split_address_trims_and_skips_blank_lines() {
-        let raw = "\n  Rue du Lac 1268  \n\n  2501 Biel  \n";
-        let (l1, l2) = split_address(raw).unwrap();
-        assert_eq!(l1, "Rue du Lac 1268");
-        assert_eq!(l2, "2501 Biel");
-    }
 
     #[test]
     fn sanitize_filename_replaces_non_alphanumeric() {
