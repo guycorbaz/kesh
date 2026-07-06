@@ -84,6 +84,24 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:vat-purchase-replace-confirm',
   'src/lib/features/contacts/ContactCard.svelte:contact-card-edit',
   'src/lib/features/contacts/ContactCard.svelte:contact-card-archive',
+  // #213 — ContactPersonsManager (CRM personnes de contact). Même situation
+  // issue #30 : dossier `contacts` pluriel ne matche pas le préfixe `contact-`,
+  // + réutilise des clés génériques (`field-*`, `delete`, `loading`).
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-load-error',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-name-required',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-add-error',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-delete-error',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-title',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-hint',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:loading',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-empty',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:delete',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:field-first-name',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:field-last-name',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-role',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-form-email',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-form-phone',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-add',
 ]);
 
 function extractFeatureFromPath(filePath) {
