@@ -10,6 +10,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+## [0.5.0] — 2026-07-06
+
+Cette version met les **adresses en conformité avec le standard bancaire suisse** et enrichit le carnet de contacts.
+
+### Ajouté
+
+- **Adresses structurées (conformité QR-facture SIX)** : les adresses de votre société et de vos contacts se saisissent désormais en **champs séparés** — rue, numéro, NPA, localité, pays. C'est le format **structuré (type S)** exigé par les banques suisses depuis fin 2025 (l'ancienne adresse « combinée » sur une seule ligne n'est plus acceptée sur les QR-factures et les paiements pain.001). Vos **QR-factures sont désormais générées au bon format** et acceptées par les banques. Le NPA reste libre (adresses étrangères possibles).
+- **Contacts : distinction personne / entreprise** : un contact de type **Personne** se saisit avec un **prénom et un nom séparés** ; un contact **Entreprise** garde sa raison sociale. Le nom d'affichage (et le nom porté sur la QR-facture) est recomposé automatiquement. Idem pour votre propre société si vous êtes en **raison individuelle** (indépendant).
+- **Personnes de contact d'une entreprise** : un contact **Entreprise** peut désormais avoir une ou plusieurs **personnes de contact** (interlocuteurs : prénom, nom, fonction, email, téléphone), gérées depuis sa fiche. Ces personnes sont **purement informatives** (carnet d'adresses / relation client) — elles n'apparaissent jamais sur les factures ni les paiements.
+
+### Note de mise à jour
+
+La mise à jour depuis la v0.4.x est **transparente** : les nouvelles colonnes et la table des personnes de contact sont créées automatiquement au démarrage, aucune donnée n'est perdue. Pour bénéficier des QR-factures conformes, **complétez l'adresse structurée** de votre société (Paramètres) et de vos clients avant d'émettre de nouvelles factures.
+
 ## [0.4.0] — 2026-07-05
 
 Cette version apporte la **gestion complète des factures fournisseurs et des paiements** (Epic 12) ainsi que la **comptabilité analytique par projet** (Epic 19), et modernise la base technique (Rust 1.96, dépendances à jour).

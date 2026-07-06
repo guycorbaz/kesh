@@ -25,7 +25,8 @@
 
 - **Comptabilité en partie double** — plan comptable suisse, écritures validées, audit log
 - **Carnet d'adresses & catalogue produits** — contacts, conditions de paiement, TVA
-- **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse
+- **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse, **adresses structurées (type S)** conformes à l'exigence SIX en vigueur (rue / n° / NPA / localité séparés) ✓
+- **Carnet de contacts structuré** — contacts **Personne** (prénom + nom) ou **Entreprise** (raison sociale), **adresse structurée** (QR-facture), et **personnes de contact** rattachées à une entreprise (interlocuteurs, à titre informatif) ✓
 - **Avoirs (notes de crédit)** — annulation d'une facture validée par création d'un avoir lié (séquence séparée `AV-…`), contre-passation comptable automatique (TVA comprise), PDF « Avoir » ✓
 - **Import bancaire CAMT.053 + CSV multi-encodage** — parser + persistance + UI ✓, profils banque réutilisables ✓, réconciliation automatique avec score ✓, réconciliation manuelle ✓, éclatement de transaction agrégée ✓ et règles d'affectation automatique ✓
 - **Factures fournisseurs & règlement** — enregistrement d'une facture reçue (écriture d'achat automatique : charge + impôt préalable + dette créancier), règlement binaire en un clic (virement bancaire → compte source, ou compte interne libre), annulation par contre-passation ✓
@@ -197,6 +198,7 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.3.1 (hotfix) | Message actionnable lors de la suppression d'une écriture liée à une facture validée + garde-fou journaux (pas de déversement SQL+données quand `RUST_LOG=debug`) | ✅ Done |
 | v0.3.2 | **E12 Avoirs (notes de crédit)** — annulation d'une facture validée par avoir lié, contre-passation comptable automatique (TVA comprise), PDF « Avoir », décompte TVA cohérent | ✅ Done |
 | v0.4.0 | **E12 Factures fournisseurs & paiements** (#191/#194) — enregistrement de factures reçues + règlement binaire (virement bancaire / compte interne), génération **pain.001** (virement en deux temps), **import de factures depuis un dossier surveillé** avec décodage QR-facture, scan QR à la saisie ; **E19 Comptabilité analytique par projet** (#195) — dimension projet sur **tous les flux** (écritures manuelles, factures ventes & fournisseurs, réconciliation bancaire) + rapports **Dépenses** et **Rendement par projet** (rollup sous-projets, exercice/cumulé, PDF/CSV) ; base technique modernisée (**Rust 1.96**, dépendances à jour) | ✅ Done |
+| v0.5.0 | **Adresses structurées (QR-facture type S)** (#213) — conformité SIX : adresses société & contacts en champs séparés (rue/n°/NPA/localité/pays), génération QR type S ; **contacts Personne/Entreprise** (prénom/nom séparés) + **personnes de contact** d'une entreprise (CRM informatif) | ✅ Done |
 | v0.5 (suite) | **E16 Facturation avancée** (compte produit par ligne, PDF complet), E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 🚧 En cours |
 | v0.5+ (prévu) | **Tableau de bord & Comptabilité personnelle** — widgets configurables sur la page d'accueil (évolution du patrimoine fortune & dettes mois par mois [#164], donut de répartition des dépenses par compte/sous-compte [#165], comparatif recettes/dépenses mensuel [#166]) ; **Budgets** (E13 [#196]) + comparatif budget validé vs réalité [#197] | 📋 Backlog |
 

@@ -461,16 +461,21 @@ En cas d'erreur découverte après clôture, un administrateur peut rouvrir un e
 \emph{Nouveau contact}. Renseigner :
 
 \begin{itemize}
-    \item \textbf{Type} : Société ou Particulier.
-    \item \textbf{Nom / Raison sociale}.
+    \item \textbf{Type} : \textbf{Entreprise} (raison sociale) ou \textbf{Personne} (prénom + nom séparés).
+    \item \textbf{Nom} : raison sociale pour une entreprise ; \textbf{prénom et nom} pour une personne.
     \item \textbf{IDE} (si société suisse soumise à inscription au RC).
-    \item \textbf{Adresse} (rue, code postal, ville, pays).
+    \item \textbf{Adresse structurée} : rue, numéro, NPA, localité, pays en \emph{champs séparés}. Ce format « structuré » (type S) est celui exigé par les banques suisses sur les QR-factures — le NPA et la localité sont requis pour générer une facture. Le NPA reste libre (adresses étrangères possibles).
     \item \textbf{Email}, \textbf{Téléphone} (optionnels).
-    \item \textbf{Numéro TVA} (si applicable).
     \item \textbf{Compte comptable par défaut} : par exemple 1100 (Débiteurs) pour un client.
     \item \textbf{Conditions de paiement} : par exemple « 30 jours net ».
-    \item \textbf{Langue de communication} : pour les factures et emails.
 \end{itemize}
+
+\begin{keshnote}
+Pour un contact de type \textbf{Entreprise}, vous pouvez ajouter une ou plusieurs
+\textbf{personnes de contact} (interlocuteurs : prénom, nom, fonction, email,
+téléphone) depuis sa fiche. Ces personnes sont \emph{purement informatives} —
+elles n'apparaissent jamais sur les factures ni les paiements.
+\end{keshnote}
 
 \subsubsection{Recherche de contacts}
 
