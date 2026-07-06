@@ -23,12 +23,12 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 use crate::util::search::{escape_boolean_ft, escape_like};
 
-const COLUMNS: &str = "id, company_id, contact_type, name, is_client, is_supplier, \
+const COLUMNS: &str = "id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
     address_country, email, phone, ide_number, default_payment_terms, active, version, \
     created_at, updated_at";
 
-const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
+const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
     address_country, email, phone, ide_number, default_payment_terms, active, version, \
     created_at, updated_at FROM contacts WHERE id = ?";
@@ -193,14 +193,16 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
         new.address_city.as_deref(),
     );
     let result = sqlx::query(
-        "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier, \
+        "INSERT INTO contacts (company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
          address, address_street, address_building, address_postal_code, address_city, \
          address_country, email, phone, ide_number, default_payment_terms) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_type)
     .bind(&new.name)
+    .bind(&new.first_name)
+    .bind(&new.last_name)
     .bind(new.is_client)
     .bind(new.is_supplier)
     .bind(&display)
@@ -279,7 +281,7 @@ where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
     sqlx::query_as::<_, Contact>(
-        "SELECT id, company_id, contact_type, name, is_client, is_supplier, \
+        "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
          address, email, phone, ide_number, default_payment_terms, active, version, \
          created_at, updated_at FROM contacts WHERE id = ? AND company_id = ?",
     )
@@ -368,6 +370,8 @@ pub async fn list_by_company_paginated(
 fn is_no_op_change(before: &Contact, changes: &ContactUpdate) -> bool {
     before.contact_type == changes.contact_type
         && before.name == changes.name
+        && before.first_name == changes.first_name
+        && before.last_name == changes.last_name
         && before.is_client == changes.is_client
         && before.is_supplier == changes.is_supplier
         && before.address_street == changes.address_street
@@ -434,7 +438,7 @@ pub async fn update(
         changes.address_city.as_deref(),
     );
     let rows = sqlx::query(
-        "UPDATE contacts SET contact_type = ?, name = ?, is_client = ?, is_supplier = ?, \
+        "UPDATE contacts SET contact_type = ?, name = ?, first_name = ?, last_name = ?, is_client = ?, is_supplier = ?, \
          address = ?, address_street = ?, address_building = ?, address_postal_code = ?, \
          address_city = ?, address_country = ?, \
          email = ?, phone = ?, ide_number = ?, default_payment_terms = ?, \
@@ -443,6 +447,8 @@ pub async fn update(
     )
     .bind(changes.contact_type)
     .bind(&changes.name)
+    .bind(&changes.first_name)
+    .bind(&changes.last_name)
     .bind(changes.is_client)
     .bind(changes.is_supplier)
     .bind(&display)
@@ -626,6 +632,8 @@ mod tests {
             company_id,
             contact_type: ContactType::Entreprise,
             name: name.to_string(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: None,
@@ -795,6 +803,8 @@ mod tests {
             ContactUpdate {
                 contact_type: ContactType::Personne,
                 name: "TestContact Lock Updated".into(),
+                first_name: None,
+                last_name: None,
                 is_client: true,
                 is_supplier: true,
                 address: None,
@@ -823,6 +833,8 @@ mod tests {
             ContactUpdate {
                 contact_type: ContactType::Personne,
                 name: "Should Fail".into(),
+                first_name: None,
+                last_name: None,
                 is_client: true,
                 is_supplier: false,
                 address: None,
@@ -867,6 +879,8 @@ mod tests {
             ContactUpdate {
                 contact_type: ContactType::Personne,
                 name: "TestContact After".into(),
+                first_name: None,
+                last_name: None,
                 is_client: true,
                 is_supplier: false,
                 address: None,
@@ -941,6 +955,8 @@ mod tests {
             ContactUpdate {
                 contact_type: ContactType::Entreprise,
                 name: "Should Fail".into(),
+                first_name: None,
+                last_name: None,
                 is_client: true,
                 is_supplier: false,
                 address: None,
@@ -1432,6 +1448,8 @@ mod tests {
         ContactUpdate {
             contact_type: c.contact_type,
             name: c.name.clone(),
+            first_name: None,
+            last_name: None,
             is_client: c.is_client,
             is_supplier: c.is_supplier,
             address: c.address.clone(),

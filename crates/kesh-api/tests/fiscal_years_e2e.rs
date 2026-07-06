@@ -438,6 +438,8 @@ async fn get_by_id_other_company_returns_404(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -569,6 +571,8 @@ async fn update_name_other_company_returns_404(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -728,6 +732,8 @@ async fn close_other_company_returns_404(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -1298,6 +1304,8 @@ async fn create_other_company(pool: &MySqlPool) -> i64 {
         pool,
         NewCompany {
             name: "Other Co".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

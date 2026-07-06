@@ -137,6 +137,10 @@ impl<'r> Decode<'r, MySql> for Language {
 pub struct Company {
     pub id: i64,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour une personne physique
+    /// (`OrgType::Independant`). `name` reste l'affichage canonique recomposé.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
     /// Conservée pour l'UI et l'historique ; ne pas utiliser pour le QR/pain.001.
     pub address: String,
@@ -191,6 +195,10 @@ impl Company {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewCompany {
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour une personne physique
+    /// (`OrgType::Independant`). `name` reste l'affichage canonique recomposé.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub address_structured: StructuredAddress,
     pub ide_number: Option<String>,
     pub org_type: OrgType,
@@ -206,6 +214,10 @@ pub struct NewCompany {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanyUpdate {
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour une personne physique
+    /// (`OrgType::Independant`). `name` reste l'affichage canonique recomposé.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub address_structured: StructuredAddress,
     pub ide_number: Option<String>,
     pub org_type: OrgType,

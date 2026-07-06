@@ -146,6 +146,8 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -205,6 +207,8 @@ async fn create_contact(pool: &MySqlPool, company_id: i64, user_id: i64, name: &
             company_id,
             contact_type: ContactType::Entreprise,
             name: name.into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: None,

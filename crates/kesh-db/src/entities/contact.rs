@@ -112,6 +112,10 @@ pub struct Contact {
     pub company_id: i64,
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour un contact `Personne`.
+    /// `name` reste l'affichage canonique recomposé (« Prénom Nom »).
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub is_client: bool,
     pub is_supplier: bool,
     /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
@@ -139,6 +143,10 @@ pub struct NewContact {
     pub company_id: i64,
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour un contact `Personne`.
+    /// `name` reste l'affichage canonique recomposé (« Prénom Nom »).
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub is_client: bool,
     pub is_supplier: bool,
     /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).
@@ -165,6 +173,10 @@ pub struct NewContact {
 pub struct ContactUpdate {
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés uniquement pour un contact `Personne`.
+    /// `name` reste l'affichage canonique recomposé (« Prénom Nom »).
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub is_client: bool,
     pub is_supplier: bool,
     /// Chaîne d'affichage libre **dérivée** des champs structurés (#213).

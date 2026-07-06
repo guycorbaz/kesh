@@ -126,6 +126,8 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64, name: &s
             company_id,
             contact_type: ContactType::Personne,
             name: name.into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: Some("Rue 1\n1000 Lausanne".into()),
@@ -593,6 +595,8 @@ async fn vat_report_excludes_cross_tenant_invoices(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Company B".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

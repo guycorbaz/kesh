@@ -125,6 +125,8 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, user_id: i64, with_addr
             company_id,
             contact_type: ContactType::Personne,
             name: "Pia Rutschmann".into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: None,

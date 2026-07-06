@@ -125,6 +125,8 @@ pub async fn seed_demo(
             company.version,
             CompanyUpdate {
                 name: demo_company_name(locale).to_string(),
+                first_name: None,
+                last_name: None,
                 address_structured: demo_address(locale),
                 ide_number: Some("CHE109322551".to_string()),
                 org_type: OrgType::Pme,

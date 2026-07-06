@@ -47,6 +47,8 @@ async fn seed_contact(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
             company_id: seeded.company_id,
             contact_type: ContactType::Personne,
             name: "Client CI".into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: Some("Rue 1\n1000 Lausanne".into()),

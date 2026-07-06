@@ -61,6 +61,8 @@ async fn setup(pool: &MySqlPool) -> Ctx {
             company_id: seeded.company_id,
             contact_type: ContactType::Entreprise,
             name: "Fournisseur SA".into(),
+            first_name: None,
+            last_name: None,
             is_client: false,
             is_supplier: true,
             address: Some("Rue 2\n1000 Lausanne".into()),

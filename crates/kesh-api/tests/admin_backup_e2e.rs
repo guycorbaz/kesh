@@ -211,6 +211,8 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Ghost SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

@@ -167,6 +167,8 @@ async fn setup(pool: &MySqlPool) -> Ctx {
             company_id: seeded.company_id,
             contact_type: ContactType::Entreprise,
             name: "Fournisseur SA".into(),
+            first_name: None,
+            last_name: None,
             is_client: false,
             is_supplier: true,
             address: Some("Rue 2\n1000 Lausanne".into()),
@@ -200,6 +202,8 @@ async fn other_company_jwt(pool: &MySqlPool) -> String {
         pool,
         NewCompany {
             name: "Autre SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

@@ -233,6 +233,8 @@ mod tests {
             company_id: 100,
             contact_type: kesh_db::entities::contact::ContactType::Entreprise,
             name: name.to_string(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: None,

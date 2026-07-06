@@ -175,6 +175,8 @@ async fn seed_company_with_name(pool: &MySqlPool, label: &str, role: Role, name:
         pool,
         NewCompany {
             name: name.into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

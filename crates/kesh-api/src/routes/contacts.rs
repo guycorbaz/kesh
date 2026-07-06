@@ -66,6 +66,11 @@ pub struct ListContactsQuery {
 pub struct CreateContactRequest {
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — requis si `contact_type == Personne`, sinon ignorés.
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
     #[serde(default)]
     pub is_client: bool,
     #[serde(default)]
@@ -88,6 +93,11 @@ pub struct CreateContactRequest {
 pub struct UpdateContactRequest {
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — requis si `contact_type == Personne`, sinon ignorés.
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
     #[serde(default)]
     pub is_client: bool,
     #[serde(default)]
@@ -119,6 +129,9 @@ pub struct ContactResponse {
     pub company_id: i64,
     pub contact_type: ContactType,
     pub name: String,
+    /// Prénom / nom (#213) — renseignés pour les Personne.
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
     pub is_client: bool,
     pub is_supplier: bool,
     /// Chaîne d'affichage dérivée (#213).
@@ -143,6 +156,8 @@ impl From<Contact> for ContactResponse {
             company_id: c.company_id,
             contact_type: c.contact_type,
             name: c.name,
+            first_name: c.first_name,
+            last_name: c.last_name,
             is_client: c.is_client,
             is_supplier: c.is_supplier,
             address_structured: crate::address_input::StructuredAddressInput {
@@ -229,7 +244,11 @@ fn validate_optional_ide(raw: Option<String>) -> Result<Option<String>, AppError
 /// Validation commune des champs métier (create + update).
 struct ValidatedFields {
     contact_type: ContactType,
+    /// Nom canonique d'affichage/QR (#213) : raison sociale (Entreprise) ou
+    /// « Prénom Nom » recomposé (Personne).
     name: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
     is_client: bool,
     is_supplier: bool,
     address_structured: Option<kesh_db::entities::address::StructuredAddress>,
@@ -243,6 +262,8 @@ struct ValidatedFields {
 fn validate_common(
     contact_type: ContactType,
     name: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
     is_client: bool,
     is_supplier: bool,
     address_structured: crate::address_input::StructuredAddressInput,
@@ -251,10 +272,28 @@ fn validate_common(
     ide_number: Option<String>,
     default_payment_terms: Option<String>,
 ) -> Result<ValidatedFields, AppError> {
-    let trimmed_name = name.trim().to_string();
-    if trimmed_name.is_empty() {
-        return Err(AppError::Validation("Le nom est obligatoire".into()));
-    }
+    // #213 — Personne : prénom + nom séparés, `name` recomposé « Prénom Nom ».
+    // Entreprise : raison sociale unique (prénom/nom laissés vides).
+    let clean = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let (trimmed_name, first_name, last_name) = match contact_type {
+        ContactType::Personne => match (clean(first_name), clean(last_name)) {
+            (Some(f), Some(l)) => (format!("{f} {l}"), Some(f), Some(l)),
+            _ => {
+                return Err(AppError::Validation(
+                    "Le prénom et le nom sont obligatoires pour une personne".into(),
+                ));
+            }
+        },
+        ContactType::Entreprise => {
+            let n = name.trim().to_string();
+            if n.is_empty() {
+                return Err(AppError::Validation(
+                    "La raison sociale est obligatoire pour une entreprise".into(),
+                ));
+            }
+            (n, None, None)
+        }
+    };
     if trimmed_name.chars().count() > MAX_NAME_LEN {
         return Err(AppError::Validation(format!(
             "Le nom doit faire au plus {MAX_NAME_LEN} caractères"
@@ -299,6 +338,8 @@ fn validate_common(
     Ok(ValidatedFields {
         contact_type,
         name: trimmed_name,
+        first_name,
+        last_name,
         is_client,
         is_supplier,
         address_structured,
@@ -399,6 +440,8 @@ pub async fn create_contact(
     let v = validate_common(
         req.contact_type,
         req.name,
+        req.first_name,
+        req.last_name,
         req.is_client,
         req.is_supplier,
         req.address_structured,
@@ -413,6 +456,8 @@ pub async fn create_contact(
         company_id: company.id,
         contact_type: v.contact_type,
         name: v.name,
+        first_name: v.first_name,
+        last_name: v.last_name,
         is_client: v.is_client,
         is_supplier: v.is_supplier,
         // `address` (chaîne dérivée) recomposée par le repo depuis les champs structurés.
@@ -451,6 +496,8 @@ pub async fn update_contact(
     let v = validate_common(
         req.contact_type,
         req.name,
+        req.first_name,
+        req.last_name,
         req.is_client,
         req.is_supplier,
         req.address_structured,
@@ -464,6 +511,8 @@ pub async fn update_contact(
     let changes = ContactUpdate {
         contact_type: v.contact_type,
         name: v.name,
+        first_name: v.first_name,
+        last_name: v.last_name,
         is_client: v.is_client,
         is_supplier: v.is_supplier,
         address: None,

@@ -14,12 +14,12 @@ use crate::entities::{Company, CompanyUpdate, NewCompany};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 
-const FIND_BY_ID_SQL: &str = "SELECT id, name, address, address_street, address_building, \
+const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
             accounting_language, instance_language, is_stub, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
-const LIST_SQL: &str = "SELECT id, name, address, address_street, address_building, \
+const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
             accounting_language, instance_language, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
@@ -34,12 +34,14 @@ pub async fn create(pool: &MySqlPool, new: NewCompany) -> Result<Company, DbErro
     // Colonne `address` dérivée (#213) : recomposée depuis les champs structurés.
     let addr = &new.address_structured;
     let result = sqlx::query(
-        "INSERT INTO companies (name, address, address_street, address_building, \
+        "INSERT INTO companies (name, first_name, last_name, address, address_street, address_building, \
              address_postal_code, address_city, address_country, ide_number, org_type, \
              accounting_language, instance_language) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&new.name)
+    .bind(&new.first_name)
+    .bind(&new.last_name)
     .bind(addr.combined())
     .bind(&addr.street)
     .bind(&addr.building)
@@ -120,6 +122,8 @@ pub async fn list(pool: &MySqlPool, limit: i64, offset: i64) -> Result<Vec<Compa
 /// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
 fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
     before.name == changes.name
+        && before.first_name == changes.first_name
+        && before.last_name == changes.last_name
         && before.structured_address() == changes.address_structured
         && before.ide_number == changes.ide_number
         && before.org_type == changes.org_type
@@ -173,7 +177,7 @@ pub async fn update(
     let addr = &changes.address_structured;
     let rows_affected = sqlx::query(
         "UPDATE companies
-         SET name = ?, address = ?, address_street = ?, address_building = ?,
+         SET name = ?, first_name = ?, last_name = ?, address = ?, address_street = ?, address_building = ?,
              address_postal_code = ?, address_city = ?, address_country = ?,
              ide_number = ?, org_type = ?,
              accounting_language = ?, instance_language = ?,
@@ -181,6 +185,8 @@ pub async fn update(
          WHERE id = ? AND version = ?",
     )
     .bind(&changes.name)
+    .bind(&changes.first_name)
+    .bind(&changes.last_name)
     .bind(addr.combined())
     .bind(&addr.street)
     .bind(&addr.building)

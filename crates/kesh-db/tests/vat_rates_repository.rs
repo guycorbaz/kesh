@@ -21,6 +21,8 @@ use sqlx::MySqlPool;
 fn sample_company(name: &str) -> NewCompany {
     NewCompany {
         name: name.into(),
+        first_name: None,
+        last_name: None,
         address_structured: StructuredAddress {
             street: "Rue Test".into(),
             building: "1".into(),

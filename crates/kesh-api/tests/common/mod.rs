@@ -12,6 +12,8 @@ pub async fn create_test_company(pool: &MySqlPool) {
         pool,
         NewCompany {
             name: "Test Company".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

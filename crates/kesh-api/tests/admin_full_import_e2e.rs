@@ -141,6 +141,8 @@ async fn seed_role(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
         pool,
         NewCompany {
             name: format!("CI {label}"),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -287,6 +289,8 @@ async fn full_import_round_trip_replaces_state_and_audits_source_admin(pool: MyS
         &pool,
         NewCompany {
             name: "Ghost SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

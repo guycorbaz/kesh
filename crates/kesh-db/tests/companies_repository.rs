@@ -13,6 +13,8 @@ use sqlx::MySqlPool;
 fn sample_new_company() -> NewCompany {
     NewCompany {
         name: "Test SA".into(),
+        first_name: None,
+        last_name: None,
         address_structured: StructuredAddress {
             street: "Rue Test".into(),
             building: "1".into(),
@@ -60,6 +62,8 @@ async fn update_succeeds_with_current_version(pool: MySqlPool) {
 
     let changes = CompanyUpdate {
         name: "Test SA (renamed)".into(),
+        first_name: None,
+        last_name: None,
         address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
@@ -85,6 +89,8 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
     // Premier update : version 1 → 2
     let changes = CompanyUpdate {
         name: "First update".into(),
+        first_name: None,
+        last_name: None,
         address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
@@ -98,6 +104,8 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
     // Deuxième update avec version 1 stale → conflict
     let stale_changes = CompanyUpdate {
         name: "Stale update".into(),
+        first_name: None,
+        last_name: None,
         address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
@@ -112,6 +120,8 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
 async fn update_fails_on_missing_entity(pool: MySqlPool) {
     let changes = CompanyUpdate {
         name: "Ghost".into(),
+        first_name: None,
+        last_name: None,
         address_structured: StructuredAddress {
             street: "Nowhere".into(),
             building: String::new(),
@@ -239,6 +249,8 @@ async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
 
     let identical = CompanyUpdate {
         name: created.name.clone(),
+        first_name: None,
+        last_name: None,
         address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,
@@ -270,6 +282,8 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
 
     let changes = CompanyUpdate {
         name: "Test SA Renommée".into(),
+        first_name: None,
+        last_name: None,
         address_structured: created.structured_address(),
         ide_number: created.ide_number.clone(),
         org_type: created.org_type,

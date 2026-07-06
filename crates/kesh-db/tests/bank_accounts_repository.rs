@@ -12,6 +12,8 @@ async fn create_test_company(pool: &MySqlPool) -> i64 {
         pool,
         NewCompany {
             name: "Test SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -398,6 +400,8 @@ async fn set_journal_account_id_does_not_leak_cross_tenant(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

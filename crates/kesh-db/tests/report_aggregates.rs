@@ -33,6 +33,8 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
         pool,
         NewCompany {
             name: name.into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "X".into(),
                 building: String::new(),

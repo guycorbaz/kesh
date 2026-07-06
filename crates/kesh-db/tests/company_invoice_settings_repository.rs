@@ -12,6 +12,8 @@ async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Test Co".to_string(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -63,6 +65,8 @@ async fn test_insert_with_defaults_is_idempotent_on_existing_row(pool: MySqlPool
         &pool,
         NewCompany {
             name: "Idem Co".to_string(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -116,6 +120,8 @@ async fn test_insert_with_defaults_rejects_when_referenced_accounts_inactive(poo
         &pool,
         NewCompany {
             name: "Stale FK Co".to_string(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -169,6 +175,8 @@ async fn test_insert_with_defaults_rejects_missing_accounts(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Empty Co".to_string(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -225,6 +233,8 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "NoOp Co".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -293,6 +303,8 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Partial Co".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -373,6 +385,8 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "VAT RT Co".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -470,6 +484,8 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "IDOR A".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -534,6 +550,8 @@ async fn chart_seed_includes_new_vat_accounts(pool: MySqlPool) {
             &pool,
             NewCompany {
                 name: format!("Seed {org}"),
+                first_name: None,
+                last_name: None,
                 address_structured: StructuredAddress {
                     street: "Rue Test".into(),
                     building: "1".into(),
@@ -593,6 +611,8 @@ async fn migration_backfill_creates_vat_accounts_idempotently(pool: MySqlPool) {
         &pool,
         NewCompany {
             name: "Legacy DE".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -710,6 +730,8 @@ async fn migration_backfill_keys_on_chart_presence_not_stub_flag(pool: MySqlPool
             pool,
             NewCompany {
                 name: name.into(),
+                first_name: None,
+                last_name: None,
                 address_structured: StructuredAddress {
                     street: "Rue Test".into(),
                     building: "1".into(),

@@ -134,6 +134,8 @@ async fn seed(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
         pool,
         NewCompany {
             name: format!("CI {label}"),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

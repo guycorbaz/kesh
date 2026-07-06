@@ -15,6 +15,8 @@ use sqlx::MySqlPool;
 fn sample_new_company() -> NewCompany {
     NewCompany {
         name: "Test SA".into(),
+        first_name: None,
+        last_name: None,
         address_structured: StructuredAddress {
             street: "Rue Test".into(),
             building: "1".into(),
@@ -510,6 +512,8 @@ async fn test_find_by_id_in_company_returns_none_for_other_company(pool: MySqlPo
         &pool,
         NewCompany {
             name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),
@@ -553,6 +557,8 @@ async fn create_other_company(pool: &MySqlPool) -> i64 {
         pool,
         NewCompany {
             name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
             address_structured: StructuredAddress {
                 street: "Rue Test".into(),
                 building: "1".into(),

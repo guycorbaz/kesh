@@ -114,6 +114,8 @@ mod tests {
         Company {
             id: 42,
             name: "CI Test Company".into(),
+            first_name: None,
+            last_name: None,
             address: "Rue Test 1\n1000 Lausanne".into(),
             address_street: "Rue Test".into(),
             address_building: "1".into(),

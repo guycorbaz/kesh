@@ -90,6 +90,8 @@ async fn create_test_contact(pool: &MySqlPool, company_id: i64, user_id: i64, na
             company_id,
             contact_type: ContactType::Entreprise,
             name: name.into(),
+            first_name: None,
+            last_name: None,
             is_client: true,
             is_supplier: false,
             address: None,
