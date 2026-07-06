@@ -56,6 +56,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "bank_accounts",
     "accounts", // FK self-ref via parent_id
     "products",
+    "contact_persons", // #213 — enfant de contacts + companies (CASCADE) ; avant `contacts`.
     "contacts",
     "fiscal_years",
     "vat_rates", // Story 7.2 (KF-003) — table enfant de companies (FK fk_vat_rates_company), aucune table ne référence vat_rates.
