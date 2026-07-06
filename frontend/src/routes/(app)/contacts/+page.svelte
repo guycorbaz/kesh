@@ -57,11 +57,18 @@
 	let editing = $state<ContactResponse | null>(null);
 	let formContactType = $state<ContactType>('Entreprise');
 	let formName = $state('');
+	// #213 — prénom/nom (Personne) + adresse structurée.
+	let formFirstName = $state('');
+	let formLastName = $state('');
 	let formIsClient = $state(true);
 	let formIsSupplier = $state(false);
 	let formEmail = $state('');
 	let formPhone = $state('');
-	let formAddress = $state('');
+	let formStreet = $state('');
+	let formBuilding = $state('');
+	let formPostalCode = $state('');
+	let formCity = $state('');
+	let formCountry = $state('CH');
 	let formIde = $state('');
 	let formPaymentTerms = $state('');
 	let formSubmitting = $state(false);
@@ -199,11 +206,17 @@
 		editing = null;
 		formContactType = 'Entreprise';
 		formName = '';
+		formFirstName = '';
+		formLastName = '';
 		formIsClient = true;
 		formIsSupplier = false;
 		formEmail = '';
 		formPhone = '';
-		formAddress = '';
+		formStreet = '';
+		formBuilding = '';
+		formPostalCode = '';
+		formCity = '';
+		formCountry = 'CH';
 		formIde = '';
 		formPaymentTerms = '';
 		formError = '';
@@ -214,21 +227,40 @@
 		editing = c;
 		formContactType = c.contactType;
 		formName = c.name;
+		formFirstName = c.firstName ?? '';
+		formLastName = c.lastName ?? '';
 		formIsClient = c.isClient;
 		formIsSupplier = c.isSupplier;
 		formEmail = c.email ?? '';
 		formPhone = c.phone ?? '';
-		formAddress = c.address ?? '';
+		formStreet = c.addressStructured?.street ?? '';
+		formBuilding = c.addressStructured?.building ?? '';
+		formPostalCode = c.addressStructured?.postalCode ?? '';
+		formCity = c.addressStructured?.city ?? '';
+		formCountry = c.addressStructured?.country || 'CH';
 		formIde = formatIdeNumber(c.ideNumber);
 		formPaymentTerms = c.defaultPaymentTerms ?? '';
 		formError = '';
 		formOpen = true;
 	}
 
+	// Une adresse partielle (au moins un champmais NPA/localité manquants) est refusée.
+	let addressPartial = $derived(
+		(formStreet.trim() || formBuilding.trim() || formPostalCode.trim() || formCity.trim()) !== '' &&
+			(!formPostalCode.trim() || !formCity.trim())
+	);
+
 	let formValidation = $derived.by(() => {
-		if (!formName.trim()) return i18nMsg('contact-error-name-required', 'Le nom est obligatoire');
+		if (formContactType === 'Personne') {
+			if (!formFirstName.trim() || !formLastName.trim())
+				return i18nMsg('contact-error-person-name', 'Prénom et nom obligatoires pour une personne');
+		} else if (!formName.trim()) {
+			return i18nMsg('contact-error-name-required', 'La raison sociale est obligatoire');
+		}
 		if (formName.trim().length > 255)
 			return i18nMsg('contact-error-name-too-long', 'Le nom doit faire au plus 255 caractères');
+		if (addressPartial)
+			return i18nMsg('contact-error-address-npa-city', 'NPA et localité obligatoires si une adresse est saisie');
 		if (formIde.trim() && !validateIdeFormat(formIde.trim())) {
 			return i18nMsg('contact-error-ide-invalid', 'Numéro IDE suisse invalide');
 		}
@@ -244,11 +276,19 @@
 			const payload = {
 				contactType: formContactType,
 				name: formName.trim(),
+				firstName: formContactType === 'Personne' ? formFirstName.trim() || null : null,
+				lastName: formContactType === 'Personne' ? formLastName.trim() || null : null,
 				isClient: formIsClient,
 				isSupplier: formIsSupplier,
 				email: formEmail.trim() || null,
 				phone: formPhone.trim() || null,
-				address: formAddress.trim() || null,
+				addressStructured: {
+					street: formStreet.trim(),
+					building: formBuilding.trim(),
+					postalCode: formPostalCode.trim(),
+					city: formCity.trim(),
+					country: formCountry.trim() || 'CH'
+				},
 				ideNumber: normalizeIdeForApi(formIde),
 				defaultPaymentTerms: formPaymentTerms.trim() || null
 			};
@@ -554,11 +594,6 @@
 			}}
 		>
 			<div>
-				<label for="form-name">{i18nMsg('contact-form-name', 'Nom / Raison sociale')} *</label>
-				<Input id="form-name" type="text" bind:value={formName} required maxlength={255} />
-			</div>
-
-			<div>
 				<label for="form-type">{i18nMsg('contact-form-type', 'Type')}</label>
 				<select
 					id="form-type"
@@ -575,6 +610,24 @@
 					{/each}
 				</select>
 			</div>
+
+			{#if formContactType === 'Personne'}
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="form-firstname">{i18nMsg('field-first-name', 'Prénom')} *</label>
+						<Input id="form-firstname" type="text" bind:value={formFirstName} maxlength={70} />
+					</div>
+					<div>
+						<label for="form-lastname">{i18nMsg('field-last-name', 'Nom')} *</label>
+						<Input id="form-lastname" type="text" bind:value={formLastName} maxlength={70} />
+					</div>
+				</div>
+			{:else}
+				<div>
+					<label for="form-name">{i18nMsg('contact-form-name', 'Raison sociale')} *</label>
+					<Input id="form-name" type="text" bind:value={formName} maxlength={255} />
+				</div>
+			{/if}
 
 			<div class="flex gap-4">
 				<label class="flex items-center gap-2">
@@ -597,16 +650,31 @@
 				<Input id="form-phone" type="tel" bind:value={formPhone} maxlength={50} />
 			</div>
 
-			<div>
-				<label for="form-address">{i18nMsg('contact-form-address', 'Adresse')}</label>
-				<textarea
-					id="form-address"
-					bind:value={formAddress}
-					maxlength={500}
-					rows="2"
-					class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-				></textarea>
-			</div>
+			<fieldset class="rounded-md border border-input p-3">
+				<legend class="px-1 text-sm font-medium">{i18nMsg('field-address', 'Adresse')}</legend>
+				<div class="grid grid-cols-3 gap-3">
+					<div class="col-span-2">
+						<label for="form-street" class="text-xs text-muted-foreground">{i18nMsg('field-street', 'Rue')}</label>
+						<Input id="form-street" type="text" bind:value={formStreet} maxlength={70} />
+					</div>
+					<div>
+						<label for="form-building" class="text-xs text-muted-foreground">{i18nMsg('field-building', 'N°')}</label>
+						<Input id="form-building" type="text" bind:value={formBuilding} maxlength={16} />
+					</div>
+					<div>
+						<label for="form-npa" class="text-xs text-muted-foreground">{i18nMsg('field-postal-code', 'NPA')}</label>
+						<Input id="form-npa" type="text" bind:value={formPostalCode} maxlength={16} />
+					</div>
+					<div class="col-span-2">
+						<label for="form-city" class="text-xs text-muted-foreground">{i18nMsg('field-city', 'Localité')}</label>
+						<Input id="form-city" type="text" bind:value={formCity} maxlength={35} />
+					</div>
+					<div>
+						<label for="form-country" class="text-xs text-muted-foreground">{i18nMsg('field-country', 'Pays')}</label>
+						<Input id="form-country" type="text" bind:value={formCountry} maxlength={2} placeholder="CH" />
+					</div>
+				</div>
+			</fieldset>
 
 			<div>
 				<label for="form-ide">{i18nMsg('contact-form-ide', 'Numéro IDE (CHE)')}</label>

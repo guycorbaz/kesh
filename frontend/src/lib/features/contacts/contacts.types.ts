@@ -11,14 +11,33 @@ export type ContactSortBy = 'Name' | 'CreatedAt' | 'UpdatedAt';
 
 export type SortDirection = 'Asc' | 'Desc';
 
+/** Adresse structurée (#213, QR-bill type S). */
+export interface StructuredAddress {
+	street: string;
+	building: string;
+	postalCode: string;
+	city: string;
+	country: string;
+}
+
+export function emptyAddress(): StructuredAddress {
+	return { street: '', building: '', postalCode: '', city: '', country: 'CH' };
+}
+
 export interface ContactResponse {
 	id: number;
 	companyId: number;
 	contactType: ContactType;
 	name: string;
+	/** Prénom / nom (#213) — renseignés pour les Personne. */
+	firstName: string | null;
+	lastName: string | null;
 	isClient: boolean;
 	isSupplier: boolean;
+	/** Chaîne d'affichage dérivée (#213). */
 	address: string | null;
+	/** Adresse structurée (source de vérité éditable, #213). */
+	addressStructured: StructuredAddress;
 	email: string | null;
 	phone: string | null;
 	/** Forme normalisée `CHE109322551` (12 chars) ou null. Formatée à l'affichage. */
@@ -33,9 +52,11 @@ export interface ContactResponse {
 export interface CreateContactRequest {
 	contactType: ContactType;
 	name: string;
+	firstName?: string | null;
+	lastName?: string | null;
 	isClient: boolean;
 	isSupplier: boolean;
-	address?: string | null;
+	addressStructured: StructuredAddress;
 	email?: string | null;
 	phone?: string | null;
 	ideNumber?: string | null;
@@ -45,9 +66,11 @@ export interface CreateContactRequest {
 export interface UpdateContactRequest {
 	contactType: ContactType;
 	name: string;
+	firstName?: string | null;
+	lastName?: string | null;
 	isClient: boolean;
 	isSupplier: boolean;
-	address?: string | null;
+	addressStructured: StructuredAddress;
 	email?: string | null;
 	phone?: string | null;
 	ideNumber?: string | null;
