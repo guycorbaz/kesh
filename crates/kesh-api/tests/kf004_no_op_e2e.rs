@@ -498,7 +498,7 @@ async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
         .post(app.url("/api/v1/contacts"))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&json!({
-            "contactType": "Personne",
+            "contactType": "Entreprise",
             "name": "Jean Dupont",
             "isClient": true,
             "isSupplier": false,
@@ -517,7 +517,7 @@ async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
     let updated_at_initial = contact["updatedAt"].as_str().unwrap().to_string();
 
     let identical_body = json!({
-        "contactType": "Personne",
+        "contactType": "Entreprise",
         "name": "Jean Dupont",
         "isClient": true,
         "isSupplier": false,
@@ -589,7 +589,7 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
         .post(app.url("/api/v1/contacts"))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&json!({
-            "contactType": "Personne",
+            "contactType": "Entreprise",
             "name": "Marie Curie",
             "isClient": true,
             "isSupplier": false,
@@ -612,7 +612,7 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
         .put(app.url(&format!("/api/v1/contacts/{id}")))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&json!({
-            "contactType": "Personne",
+            "contactType": "Entreprise",
             "name": "Marie Curie",
             "isClient": true,
             "isSupplier": false,
@@ -634,7 +634,7 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
         .put(app.url(&format!("/api/v1/contacts/{id}")))
         .header("Authorization", format!("Bearer {token_b}"))
         .json(&json!({
-            "contactType": "Personne",
+            "contactType": "Entreprise",
             "name": "Marie Sklodowska-Curie",
             "isClient": true,
             "isSupplier": false,
@@ -658,7 +658,7 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
         .put(app.url(&format!("/api/v1/contacts/{id}")))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&json!({
-            "contactType": "Personne",
+            "contactType": "Entreprise",
             "name": "Renamed by Alice",
             "isClient": true,
             "isSupplier": false,
