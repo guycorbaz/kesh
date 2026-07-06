@@ -282,7 +282,8 @@ where
 {
     sqlx::query_as::<_, Contact>(
         "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
-         address, email, phone, ide_number, default_payment_terms, active, version, \
+         address, address_street, address_building, address_postal_code, address_city, \
+         address_country, email, phone, ide_number, default_payment_terms, active, version, \
          created_at, updated_at FROM contacts WHERE id = ? AND company_id = ?",
     )
     .bind(id)
