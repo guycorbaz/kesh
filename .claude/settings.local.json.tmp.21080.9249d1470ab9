@@ -819,7 +819,9 @@
       "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" cargo test -p kesh-api --test idor_multi_tenant_e2e idor_contacts_cross_company_returns_404 -- --test-threads=1 --nocapture)",
       "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" RUST_LOG=kesh_api=debug,sqlx=debug cargo test -p kesh-api --test idor_multi_tenant_e2e idor_contacts_cross_company_returns_404 -- --test-threads=1 --nocapture)",
       "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" cargo test -p kesh-api --test idor_multi_tenant_e2e -- --test-threads=1)",
-      "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" bash -c 'cargo test --workspace -j1 -- --test-threads=1 > /tmp/claude-1000/-home-gcorbaz-Synology-devel-kesh/e011fdf6-b195-4da9-af37-19e5982d0d27/scratchpad/gate_213c.log 2>&1; echo \"GATE_EXIT=$?\" >> /tmp/claude-1000/-home-gcorbaz-Synology-devel-kesh/e011fdf6-b195-4da9-af37-19e5982d0d27/scratchpad/gate_213c.log')"
+      "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" bash -c 'cargo test --workspace -j1 -- --test-threads=1 > /tmp/claude-1000/-home-gcorbaz-Synology-devel-kesh/e011fdf6-b195-4da9-af37-19e5982d0d27/scratchpad/gate_213c.log 2>&1; echo \"GATE_EXIT=$?\" >> /tmp/claude-1000/-home-gcorbaz-Synology-devel-kesh/e011fdf6-b195-4da9-af37-19e5982d0d27/scratchpad/gate_213c.log')",
+      "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" cargo test -p kesh-api --test invoice_pdf_e2e -- --test-threads=1)",
+      "Bash(DATABASE_URL=\"mysql://kesh:kesh_dev@127.0.0.1:3306/kesh\" bash -c 'cargo test --workspace -j1 -- --test-threads=1 > /tmp/claude-1000/-home-gcorbaz-Synology-devel-kesh/e011fdf6-b195-4da9-af37-19e5982d0d27/scratchpad/gate_213d.log 2>&1; echo \"GATE_EXIT=$?\" >> /tmp/claude-1000/-home-gcorbaz-Synology-devel-kesh/e011fdf6-b195-4da9-af37-19e5982d0d27/scratchpad/gate_213d.log')"
     ],
     "deny": [
       "Bash(rm -rf /)",
