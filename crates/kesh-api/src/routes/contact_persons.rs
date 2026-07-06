@@ -71,15 +71,24 @@ fn norm(o: Option<String>) -> Option<String> {
     o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-fn validate(body: &ContactPersonBody) -> Result<(String, String, Option<String>, Option<String>, Option<String>), AppError> {
-    let first = body.first_name.trim().to_string();
-    let last = body.last_name.trim().to_string();
-    if first.is_empty() || last.is_empty() {
+/// Champs validés/normalisés d'une personne de contact.
+struct ValidatedPerson {
+    first_name: String,
+    last_name: String,
+    role: Option<String>,
+    email: Option<String>,
+    phone: Option<String>,
+}
+
+fn validate(body: &ContactPersonBody) -> Result<ValidatedPerson, AppError> {
+    let first_name = body.first_name.trim().to_string();
+    let last_name = body.last_name.trim().to_string();
+    if first_name.is_empty() || last_name.is_empty() {
         return Err(AppError::Validation(
             "Le prénom et le nom sont obligatoires".into(),
         ));
     }
-    if first.chars().count() > MAX_NAME || last.chars().count() > MAX_NAME {
+    if first_name.chars().count() > MAX_NAME || last_name.chars().count() > MAX_NAME {
         return Err(AppError::Validation(format!(
             "Prénom / nom : maximum {MAX_NAME} caractères"
         )));
@@ -91,18 +100,27 @@ fn validate(body: &ContactPersonBody) -> Result<(String, String, Option<String>,
         )));
     }
     let email = norm(body.email.clone());
-    if let Some(ref e) = email {
-        if e.chars().count() > MAX_EMAIL || !crate::routes::contacts::is_valid_email_simple(e) {
-            return Err(AppError::Validation("Format d'email invalide".into()));
-        }
+    if let Some(ref e) = email
+        && (e.chars().count() > MAX_EMAIL || !crate::routes::contacts::is_valid_email_simple(e))
+    {
+        return Err(AppError::Validation("Format d'email invalide".into()));
     }
     let phone = norm(body.phone.clone());
-    if phone.as_ref().is_some_and(|p| p.chars().count() > MAX_PHONE) {
+    if phone
+        .as_ref()
+        .is_some_and(|p| p.chars().count() > MAX_PHONE)
+    {
         return Err(AppError::Validation(format!(
             "Téléphone : maximum {MAX_PHONE} caractères"
         )));
     }
-    Ok((first, last, role, email, phone))
+    Ok(ValidatedPerson {
+        first_name,
+        last_name,
+        role,
+        email,
+        phone,
+    })
 }
 
 /// Vérifie que le contact parent existe, appartient à la company et est une Entreprise.
@@ -142,17 +160,17 @@ pub async fn create_person(
     Json(body): Json<ContactPersonBody>,
 ) -> Result<(StatusCode, Json<ContactPersonResponse>), AppError> {
     ensure_entreprise_contact(&state, contact_id, current_user.company_id).await?;
-    let (first_name, last_name, role, email, phone) = validate(&body)?;
+    let v = validate(&body)?;
     let person = contact_persons::create(
         &state.pool,
         NewContactPerson {
             company_id: current_user.company_id,
             contact_id,
-            first_name,
-            last_name,
-            role,
-            email,
-            phone,
+            first_name: v.first_name,
+            last_name: v.last_name,
+            role: v.role,
+            email: v.email,
+            phone: v.phone,
         },
     )
     .await?;
@@ -169,18 +187,18 @@ pub async fn update_person(
     let version = body
         .version
         .ok_or_else(|| AppError::Validation("Le champ version est requis".into()))?;
-    let (first_name, last_name, role, email, phone) = validate(&body)?;
+    let v = validate(&body)?;
     let person = contact_persons::update(
         &state.pool,
         id,
         current_user.company_id,
         version,
         ContactPersonUpdate {
-            first_name,
-            last_name,
-            role,
-            email,
-            phone,
+            first_name: v.first_name,
+            last_name: v.last_name,
+            role: v.role,
+            email: v.email,
+            phone: v.phone,
         },
     )
     .await?;
