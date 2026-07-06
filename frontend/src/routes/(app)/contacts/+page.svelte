@@ -3,6 +3,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import ContactPersonsManager from '$lib/features/contacts/ContactPersonsManager.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -696,6 +697,11 @@
 					placeholder={i18nMsg('contact-form-payment-terms-placeholder', 'ex: 30 jours net')}
 				/>
 			</div>
+
+			{#if editing && formContactType === 'Entreprise'}
+				<!-- #213 : personnes de contact (CRM) — uniquement sur une entreprise existante. -->
+				<ContactPersonsManager contactId={editing.id} />
+			{/if}
 
 			{#if formError}
 				<p class="text-sm text-destructive">{formError}</p>
