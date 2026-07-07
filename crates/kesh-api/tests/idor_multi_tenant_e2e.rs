@@ -743,3 +743,64 @@ async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPoo
         "le compte TVA propre à la company doit être accepté"
     );
 }
+
+/// #216 — régression : `PUT /company/invoice-settings` SANS `creditNoteNumberFormat`
+/// (cas du formulaire frontend actuel) doit renvoyer **200** (pas 422) et **préserver**
+/// le format d'avoir existant. Avant le fix, `credit_note_number_format` était requis
+/// côté DTO → serde échouait → 422 → aucun réglage sauvable depuis l'UI.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn settings_update_without_credit_note_format_preserves_and_returns_200(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, accounts) = create_seeded_company(&pool).await;
+    create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    // Config courante (version + format d'avoir existant à préserver).
+    let get_resp = app
+        .client
+        .get(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .expect("get");
+    let settings: serde_json::Value = get_resp.json().await.expect("json");
+    let version = settings["version"].as_i64().expect("version");
+    let existing_cn_format = settings["creditNoteNumberFormat"]
+        .as_str()
+        .expect("creditNoteNumberFormat présent au GET")
+        .to_string();
+
+    // PUT SANS `creditNoteNumberFormat` (comme le fait le formulaire frontend).
+    let put = app
+        .client
+        .put(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "invoiceNumberFormat": settings["invoiceNumberFormat"],
+            "defaultReceivableAccountId": accounts["1100"],
+            "defaultRevenueAccountId": accounts["3000"],
+            "defaultVatPayableAccountId": accounts["2000"],
+            "defaultVatRecoverableAccountId": null,
+            "defaultVatDecompteAccountId": null,
+            "defaultSalesJournal": settings["defaultSalesJournal"],
+            "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+            // PAS de creditNoteNumberFormat
+            "version": version,
+        }))
+        .send()
+        .await
+        .expect("put");
+    assert_eq!(
+        put.status(),
+        200,
+        "PUT sans creditNoteNumberFormat doit passer (200), pas 422"
+    );
+
+    // Le format d'avoir existant doit être préservé.
+    let after: serde_json::Value = put.json().await.expect("json");
+    assert_eq!(
+        after["creditNoteNumberFormat"], existing_cn_format,
+        "le format d'avoir doit être préservé quand le champ est absent"
+    );
+}
