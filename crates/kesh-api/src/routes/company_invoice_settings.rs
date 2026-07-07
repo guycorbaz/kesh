@@ -74,7 +74,10 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_vat_decompte_account_id: Option<i64>,
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
-    pub credit_note_number_format: String,
+    /// #216 — optionnel + **préservé** si absent : le formulaire frontend ne le
+    /// gère pas encore ; sans ça, tout enregistrement des réglages échouait en 422.
+    #[serde(default)]
+    pub credit_note_number_format: Option<String>,
     pub default_payable_account_id: Option<i64>,
     pub version: i32,
 }
@@ -142,10 +145,19 @@ pub async fn update_invoice_settings(
 ) -> Result<Json<InvoiceSettingsResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
+    // #216 — `credit_note_number_format` optionnel : si le client ne l'envoie pas
+    // (cas du formulaire frontend actuel), on **préserve** la valeur existante au
+    // lieu de rejeter la requête en 422.
+    let current = company_invoice_settings::get_or_create_default(&state.pool, company.id).await?;
+    let credit_note_number_format = req
+        .credit_note_number_format
+        .clone()
+        .unwrap_or(current.credit_note_number_format);
+
     // 1. Valider le format (facture + avoir — même grammaire {YEAR}/{FY}/{SEQ:NN}).
     invoice_format::validate_template(&req.invoice_number_format)
         .map_err(|e| AppError::Validation(e.to_string()))?;
-    invoice_format::validate_template(&req.credit_note_number_format)
+    invoice_format::validate_template(&credit_note_number_format)
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     // 2. Valider le template de description.
@@ -217,7 +229,7 @@ pub async fn update_invoice_settings(
         default_vat_decompte_account_id: req.default_vat_decompte_account_id,
         default_sales_journal: journal,
         journal_entry_description_template: req.journal_entry_description_template,
-        credit_note_number_format: req.credit_note_number_format,
+        credit_note_number_format,
         default_payable_account_id: req.default_payable_account_id,
     };
     let settings = company_invoice_settings::update(
