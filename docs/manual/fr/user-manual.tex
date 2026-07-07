@@ -606,7 +606,7 @@ Cliquer sur une facture en retard permet de générer un rappel (template config
 \subsection{Avoirs et notes de crédit}
 \label{sec:avoirs}
 
-Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture déjà comptabilisée (on ne supprime jamais une écriture passée, principe d'intangibilité comptable). Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
+Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture \emph{réellement émise} et déjà comptabilisée — l'écriture d'origine reste intacte (principe d'intangibilité comptable). Pour une facture validée \emph{par erreur} (jamais envoyée, ou créée pour un essai), une suppression définitive encadrée est également possible : voir \S\ref{sec:suppression-facture}. Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
 
 \begin{itemize}
     \item crée un avoir reprenant toutes les lignes de la facture, avec son propre numéro issu d'une séquence dédiée (par défaut \keshcommand{AV-2026-0001}, configurable dans \emph{Paramètres → Facturation}) ;
@@ -619,6 +619,31 @@ L'avoir est consultable dans \emph{Avoirs} (menu \emph{Quotidien}), avec un \tex
 \begin{keshnote}
 En version actuelle, l'avoir est \textbf{total} (il annule la facture entière). L'avoir \emph{partiel} et le remboursement d'une facture \emph{déjà encaissée} (un avoir est refusé sur une facture marquée payée) sont prévus pour une version ultérieure. Les paiements sortants par fichier \texttt{pain.001.001.09} sont, eux, \textbf{disponibles} (cf. \S\ref{sec:paiements-fournisseurs}).
 \end{keshnote}
+
+\subsection{Supprimer une facture}
+\label{sec:suppression-facture}
+
+Une facture \textbf{brouillon} peut être supprimée librement (aucune écriture, aucun numéro définitif n'a encore été émis) : bouton \textbf{« Supprimer »} sur la fiche de la facture.
+
+Depuis la version 0.5.2, un \emph{Administrateur} peut aussi supprimer \textbf{définitivement} une facture \textbf{validée}. Cette opération efface la facture \emph{et} son écriture comptable liée, en une seule transaction atomique (les livres restent équilibrés, sans écriture orpheline). Elle est destinée à \textbf{corriger une validation par erreur} ou à \textbf{purger des factures d'essai} — et non à annuler une facture réellement émise à un client, pour laquelle l'\textbf{avoir} reste la voie correcte (cf. \S\ref{sec:avoirs}).
+
+Parce qu'elle est irréversible, la suppression d'une facture validée exige une \textbf{confirmation forte} : vous devez \emph{retaper le numéro de facture} pour armer le bouton de suppression.
+
+Kesh \textbf{refuse} la suppression dans les cas suivants, pour préserver la cohérence comptable :
+
+\begin{itemize}
+    \item facture \textbf{marquée payée} : annulez d'abord le règlement (un paiement rapproché ne doit pas pointer dans le vide) ;
+    \item facture déjà \textbf{créditée par un avoir} : l'avoir référence la facture, qui ne peut donc plus disparaître ;
+    \item facture dont l'écriture appartient à un \textbf{exercice clos} : l'intangibilité des périodes clôturées (CO art.~958f) est préservée — une facture d'un exercice clos ne peut jamais être supprimée.
+\end{itemize}
+
+\begin{keshnote}
+Toute suppression (brouillon ou validée) est \textbf{journalisée dans l'audit-trail} : Kesh conserve qui a supprimé quoi et quand, ainsi qu'un instantané du contenu effacé — la trace subsiste même après la disparition de la facture.
+\end{keshnote}
+
+\begin{keshtip}
+\textbf{Avoir ou suppression ?} Si la facture a été \emph{envoyée au client} ou concerne un exercice déjà déclaré, utilisez un \textbf{avoir} (\S\ref{sec:avoirs}) : l'historique reste complet. Réservez la \textbf{suppression} aux erreurs de saisie et aux essais qui n'auraient jamais dû être validés, tant que l'exercice est encore ouvert et la facture ni payée ni créditée.
+\end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Factures fournisseurs et paiements}
