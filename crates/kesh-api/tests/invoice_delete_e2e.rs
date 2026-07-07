@@ -180,7 +180,8 @@ async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (invoice_id, je_id) = create_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let (invoice_id, je_id) =
+        create_validated_invoice(&pool, company_id, contact_id, admin_id).await;
 
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
     let resp = app
@@ -204,7 +205,10 @@ async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
         .fetch_optional(&pool)
         .await
         .unwrap();
-    assert!(je.is_none(), "l'écriture comptable liée doit être supprimée");
+    assert!(
+        je.is_none(),
+        "l'écriture comptable liée doit être supprimée"
+    );
 }
 
 /// Sans token → 401 (couche auth avant RBAC).

@@ -2285,7 +2285,10 @@ mod tests {
             .fetch_optional(&pool)
             .await
             .unwrap();
-        assert!(je.is_none(), "l'écriture comptable liée doit être supprimée");
+        assert!(
+            je.is_none(),
+            "l'écriture comptable liée doit être supprimée"
+        );
 
         // Les deux suppressions sont tracées.
         let inv_audit = audit_log::find_by_entity(&pool, "invoice", id, 10)
