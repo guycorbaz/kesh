@@ -10,6 +10,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+## [0.5.2] — 2026-07-07
+
+### Ajouté
+
+- **Suppression d'une facture validée** (réservée à l'**administrateur**) : il est désormais possible de **supprimer définitivement** une facture validée émise par erreur ou créée pour un essai — la facture **et son écriture comptable** sont effacées ensemble, les livres restant équilibrés. Une **confirmation forte** est exigée (retaper le numéro de facture). La suppression est **refusée** si la facture est payée, si elle a déjà été créditée par un avoir, ou si elle appartient à un **exercice clos** (l'intangibilité comptable est préservée). Pour annuler une facture réellement envoyée à un client, l'**avoir** reste la voie recommandée. Toute suppression est tracée dans le **journal d'audit**. (#219)
+
+### Modifié
+
+- **Suppression de factures réservée à l'administrateur** : supprimer une facture (brouillon comme validée) requiert désormais le rôle **Administrateur** (la suppression d'un brouillon était auparavant accessible aux comptables). (#219)
+
 ## [0.5.1] — 2026-07-07
 
 ### Corrigé
