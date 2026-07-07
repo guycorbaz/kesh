@@ -32,6 +32,7 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
+use crate::repositories::journal_entries;
 use crate::util::search::{escape_boolean_ft, escape_like};
 
 const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, unit_price, \
@@ -868,14 +869,47 @@ pub async fn delete(
             tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::NotFound);
         }
-        Some(inv) if inv.status != "draft" => {
+        // Brouillon : suppression inchangée (aucune écriture comptable).
+        Some(inv) if inv.status == "draft" => inv,
+        // Facture validée (#219) : suppression définitive AVEC garde-fous.
+        // L'écriture comptable liée est supprimée plus bas (après la facture,
+        // car FK `journal_entry_id ON DELETE RESTRICT`), et la garde
+        // exercice-clos est assurée par `journal_entries::delete_in_tx`.
+        Some(inv) if inv.status == "validated" => {
+            // Garde 1 : facture payée → refus (un règlement/rapprochement
+            // pointerait dans le vide).
+            if inv.paid_at.is_some() {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::IllegalStateTransition(
+                    "impossible de supprimer une facture payée — annuler le règlement d'abord"
+                        .into(),
+                ));
+            }
+            // Garde 2 : facture créditée par un avoir → refus. La FK
+            // `credit_notes.invoice_id ON DELETE RESTRICT` est le backstop en
+            // base ; ce pré-check donne un message métier propre.
+            let credited: Option<(i64,)> =
+                sqlx::query_as("SELECT id FROM credit_notes WHERE invoice_id = ? LIMIT 1")
+                    .bind(id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(map_db_error)?;
+            if credited.is_some() {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::IllegalStateTransition(
+                    "impossible de supprimer une facture créditée par un avoir".into(),
+                ));
+            }
+            inv
+        }
+        // Tout autre statut (ex. `cancelled`) reste non supprimable.
+        Some(inv) => {
             tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::IllegalStateTransition(format!(
                 "impossible de supprimer une facture de statut '{}'",
                 inv.status
             )));
         }
-        Some(inv) => inv,
     };
 
     let lines = match fetch_lines(&mut tx, id).await {
@@ -911,6 +945,19 @@ pub async fn delete(
         ),
     )
     .await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
+    }
+
+    // #219 — facture validée : supprimer l'écriture comptable liée DANS la même
+    // transaction (après la facture, car FK `journal_entry_id ON DELETE
+    // RESTRICT`). `delete_in_tx` applique la garde exercice-clos (→
+    // `FiscalYearClosed`, rollback atomique de tout) et journalise
+    // `journal_entry.deleted`. Sur Err, le drop de `tx` rollback la suppression
+    // de la facture aussi.
+    if let Some(je_id) = current.journal_entry_id
+        && let Err(e) = journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id).await
     {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(e);
@@ -2201,8 +2248,115 @@ mod tests {
         cleanup_contacts(&pool, &[contact_id]).await;
     }
 
+    /// #219 — happy path : une facture validée, impayée, en exercice ouvert
+    /// est supprimée définitivement AVEC son écriture comptable liée, et les
+    /// deux suppressions sont audit-loggées.
     #[tokio::test]
-    async fn test_delete_rejects_non_draft() {
+    async fn test_delete_validated_unpaid_open_fy_removes_invoice_and_je() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, _v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            None,
+            dec!(10.00),
+        )
+        .await;
+
+        delete(&pool, company_id, id, admin_user_id).await.unwrap();
+
+        // La facture a disparu.
+        let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert!(inv.is_none(), "la facture validée doit être supprimée");
+
+        // L'écriture comptable liée a disparu (livres équilibrés, pas d'orphelin).
+        let je: Option<(i64,)> = sqlx::query_as("SELECT id FROM journal_entries WHERE id = ?")
+            .bind(je_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert!(
+            je.is_none(),
+            "l'écriture comptable liée doit être supprimée"
+        );
+
+        // Les deux suppressions sont tracées.
+        let inv_audit = audit_log::find_by_entity(&pool, "invoice", id, 10)
+            .await
+            .unwrap();
+        assert!(
+            inv_audit.iter().any(|e| e.action == "invoice.deleted"),
+            "audit invoice.deleted attendu"
+        );
+        let je_audit = audit_log::find_by_entity(&pool, "journal_entry", je_id, 10)
+            .await
+            .unwrap();
+        assert!(
+            je_audit.iter().any(|e| e.action == "journal_entry.deleted"),
+            "audit journal_entry.deleted attendu"
+        );
+
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// #219 garde 1 — une facture validée **payée** refuse la suppression
+    /// (un règlement pointerait dans le vide). Rien n'est supprimé.
+    #[tokio::test]
+    async fn test_delete_validated_paid_is_rejected() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, _v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            None,
+            dec!(10.00),
+        )
+        .await;
+        sqlx::query("UPDATE invoices SET paid_at = ? WHERE id = ?")
+            .bind(chrono::Utc::now().naive_utc())
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = delete(&pool, company_id, id, admin_user_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::IllegalStateTransition(_)));
+
+        // Rollback atomique : facture + écriture toujours présentes.
+        let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert!(inv.is_some(), "facture payée non supprimée");
+
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// #219 garde CO 958f — une facture validée dont l'écriture est dans un
+    /// exercice **clos** refuse la suppression. Rien n'est supprimé.
+    #[tokio::test]
+    async fn test_delete_validated_in_closed_fy_is_rejected() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
         let admin_user_id = get_admin_user_id(&pool).await;
@@ -2223,7 +2377,127 @@ mod tests {
         )
         .await
         .unwrap();
-        let (_v, je_id) = force_validate(&pool, company_id, inv.id).await;
+
+        // Exercice clos dédié + écriture stub liée.
+        let res = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, 'Closed219', '2019-01-01', '2019-12-31', 'Closed')",
+        )
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let closed_fy = res.last_insert_id() as i64;
+        let je_id = insert_stub_journal_entry(&pool, company_id, closed_fy).await;
+        sqlx::query(
+            "UPDATE invoices SET status = 'validated', journal_entry_id = ?, \
+             version = version + 1 WHERE id = ?",
+        )
+        .bind(je_id)
+        .bind(inv.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let err = delete(&pool, company_id, inv.id, admin_user_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::FiscalYearClosed));
+
+        // Rollback atomique : facture toujours présente.
+        let still: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
+            .bind(inv.id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert!(still.is_some(), "facture en exercice clos non supprimée");
+
+        cleanup_invoices(&pool, &[inv.id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
+            .bind(closed_fy)
+            .execute(&pool)
+            .await
+            .ok();
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// #219 garde avoir — une facture validée **créditée par un avoir** refuse
+    /// la suppression (pré-check métier avant le backstop FK RESTRICT).
+    #[tokio::test]
+    async fn test_delete_validated_credited_by_avoir_is_rejected() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, _v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            None,
+            dec!(10.00),
+        )
+        .await;
+        let cn = sqlx::query(
+            "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date) \
+             VALUES (?, ?, ?, 'draft', CURDATE())",
+        )
+        .bind(company_id)
+        .bind(contact_id)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let cn_id = cn.last_insert_id() as i64;
+
+        let err = delete(&pool, company_id, id, admin_user_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::IllegalStateTransition(_)));
+
+        // Cleanup : l'avoir référence la facture (RESTRICT) → le supprimer d'abord.
+        sqlx::query("DELETE FROM credit_notes WHERE id = ?")
+            .bind(cn_id)
+            .execute(&pool)
+            .await
+            .ok();
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// #219 — un statut ni `draft` ni `validated` (ex. `cancelled`) reste
+    /// non supprimable.
+    #[tokio::test]
+    async fn test_delete_rejects_cancelled() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (inv, _) = create(
+            &pool,
+            admin_user_id,
+            NewInvoice {
+                company_id,
+                contact_id,
+                date: today(),
+                due_date: None,
+                payment_terms: None,
+                lines: vec![sample_line("X", dec!(1), dec!(10.00))],
+                project_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?")
+            .bind(inv.id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let err = delete(&pool, company_id, inv.id, admin_user_id)
             .await
@@ -2231,7 +2505,6 @@ mod tests {
         assert!(matches!(err, DbError::IllegalStateTransition(_)));
 
         cleanup_invoices(&pool, &[inv.id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
     }
 

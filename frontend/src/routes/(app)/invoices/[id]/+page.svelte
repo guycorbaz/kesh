@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -36,6 +37,8 @@
 	let canManage = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
 	);
+	// #219 : la suppression définitive d'une facture validée est réservée Admin.
+	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 
 	async function confirmCreateCreditNote() {
 		if (!invoice) return;
@@ -61,6 +64,9 @@
 	let deleteOpen = $state(false);
 	let deleteSubmitting = $state(false);
 	let deleteError = $state('');
+	// #219 : saisie de confirmation forte (retaper le n° de facture) pour la
+	// suppression d'une facture validée.
+	let deleteConfirmText = $state('');
 	let validateOpen = $state(false);
 	let validateSubmitting = $state(false);
 	let validateError = $state('');
@@ -369,6 +375,12 @@
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			{/if}
+			{#if isAdmin && !invoice.paidAt}
+				<Button variant="destructive" onclick={() => (deleteOpen = true)}>
+					<Trash2 class="h-4 w-4" aria-hidden="true" />
+					Supprimer
+				</Button>
+			{/if}
 		</div>
 	{:else if invoice?.status === 'cancelled'}
 		<Button variant="outline" onclick={() => goto('/credit-notes')}>
@@ -462,14 +474,43 @@
 		open={deleteOpen}
 		onOpenChange={(o) => {
 			deleteOpen = o;
-			if (!o) deleteError = '';
+			if (!o) {
+				deleteError = '';
+				deleteConfirmText = '';
+			}
 		}}
 	>
 		<Dialog.Content>
 			<Dialog.Header>
 				<Dialog.Title>Supprimer la facture</Dialog.Title>
 			</Dialog.Header>
-			<p class="text-sm">Confirmer la suppression définitive de cette facture brouillon ?</p>
+			{#if invoice?.status === 'validated'}
+				<!-- #219 : confirmation forte pour une facture validée (efface la
+				     facture ET son écriture comptable). -->
+				<div class="space-y-3 text-sm">
+					<div
+						class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-destructive"
+					>
+						<strong>Action irréversible.</strong> La facture
+						<strong>{invoice.invoiceNumber}</strong> et son écriture comptable
+						associée seront <strong>définitivement supprimées</strong>. À réserver
+						à la correction d'une validation erronée ou à la purge d'essais.
+					</div>
+					<label class="block space-y-1">
+						<span class="text-text-muted">
+							Pour confirmer, retapez le numéro de facture
+							<strong>{invoice.invoiceNumber}</strong>
+						</span>
+						<Input
+							bind:value={deleteConfirmText}
+							autocomplete="off"
+							aria-label="Confirmer en retapant le numéro de facture"
+						/>
+					</label>
+				</div>
+			{:else}
+				<p class="text-sm">Confirmer la suppression définitive de cette facture brouillon ?</p>
+			{/if}
 			{#if deleteError}
 				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
 					{deleteError}
@@ -477,7 +518,13 @@
 			{/if}
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (deleteOpen = false)}>Annuler</Button>
-				<Button variant="destructive" onclick={confirmDelete} disabled={deleteSubmitting}>
+				<Button
+					variant="destructive"
+					onclick={confirmDelete}
+					disabled={deleteSubmitting ||
+						(invoice?.status === 'validated' &&
+							deleteConfirmText.trim() !== invoice?.invoiceNumber)}
+				>
 					Supprimer
 				</Button>
 			</Dialog.Footer>

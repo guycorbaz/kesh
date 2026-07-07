@@ -871,7 +871,28 @@ pub async fn delete_by_id(
     user_id: i64,
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    // En cas d'Err, `delete_in_tx` ne rollback pas (n'a qu'un &mut) : `tx` est
+    // droppé ici, ce qui déclenche le rollback automatique sqlx.
+    delete_in_tx(&mut tx, company_id, id, user_id).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(())
+}
 
+/// Variante `_in_tx` de [`delete_by_id`] : exécute les étapes 2-6 (lock FY,
+/// garde `Closed`, snapshot, audit, DELETE CASCADE) dans une transaction
+/// fournie par l'appelant, **sans** BEGIN/COMMIT. Permet à un autre repo de
+/// supprimer l'écriture liée dans la MÊME transaction atomique (ex.
+/// `invoices::delete` d'une facture validée — #219).
+///
+/// N'exécute **pas** de rollback en cas d'erreur (n'a qu'un `&mut` sur la tx) :
+/// l'appelant, propriétaire de la transaction, est responsable du rollback
+/// (le drop de `Transaction` déclenche le rollback automatique sqlx).
+pub(crate) async fn delete_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<(), DbError> {
     // Étape 2 : lock entry + fiscal_year.
     let locked: Option<(i64, String)> = sqlx::query_as(
         "SELECT je.fiscal_year_id, fy.status \
@@ -882,21 +903,17 @@ pub async fn delete_by_id(
     )
     .bind(id)
     .bind(company_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     let (_fy_id, fy_status) = match locked {
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
+        None => return Err(DbError::NotFound),
         Some(row) => row,
     };
 
     // Étape 3 : statut FY.
     if fy_status == "Closed" {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::FiscalYearClosed);
     }
 
@@ -905,7 +922,7 @@ pub async fn delete_by_id(
         "SELECT {ENTRY_COLUMNS} FROM journal_entries WHERE id = ?"
     ))
     .bind(id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
@@ -913,7 +930,7 @@ pub async fn delete_by_id(
         "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
     ))
     .bind(id)
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
@@ -922,7 +939,7 @@ pub async fn delete_by_id(
     // Étape 5 : INSERT audit_log AVANT le DELETE (ordre critique — la
     // trace doit exister avant que la source disparaisse).
     audit_log::insert_in_tx(
-        &mut tx,
+        tx,
         NewAuditLogEntry::user(
             user_id,
             "journal_entry.deleted".to_string(),
@@ -936,11 +953,10 @@ pub async fn delete_by_id(
     // Étape 6 : DELETE (les lignes suivent par CASCADE).
     sqlx::query("DELETE FROM journal_entries WHERE id = ?")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
-    tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }
 
