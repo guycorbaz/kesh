@@ -10,6 +10,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+## [0.5.1] — 2026-07-07
+
+### Corrigé
+
+- **Enregistrement des réglages de facturation** : sauvegarder la configuration (Paramètres → Facturation — comptes par défaut, comptes TVA, formats, journal) échouait avec une **erreur serveur 422** et aucune modification n'était enregistrée. Corrigé : le format de numérotation des avoirs, non transmis par le formulaire, est désormais optionnel et **conservé** s'il n'est pas fourni. (#216)
+
 ## [0.5.0] — 2026-07-06
 
 Cette version met les **adresses en conformité avec le standard bancaire suisse** et enrichit le carnet de contacts.
