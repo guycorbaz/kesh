@@ -167,6 +167,14 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/vat-rates/{id}",
             put(routes::vat::update_vat_rate).delete(routes::vat::deactivate_vat_rate),
         )
+        // #219 : suppression définitive d'une facture (brouillon ou validée
+        // avec garde-fous) — Admin uniquement. Même path que le PUT
+        // (comptable_routes) mais méthode disjointe : les deux MethodRouter
+        // fusionnent au merge sans conflit.
+        .route(
+            "/api/v1/invoices/{id}",
+            delete(routes::invoices::delete_invoice),
+        )
         // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
         .route("/api/v1/admin/full-export", get(routes::admin::full_export))
         // Story 17-3c : import complet d'installation (multipart, Admin + anti-PAT).
@@ -234,11 +242,14 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/products/{id}/archive",
             put(routes::products::archive_product),
         )
-        // Story 5.1 : mutations factures brouillon
+        // Story 5.1 : mutations factures brouillon (PUT Comptable+).
+        // #219 : le DELETE d'une facture (brouillon ou validée) est réservé
+        // Admin — enregistré dans `admin_routes` (même path, méthode disjointe,
+        // mergé sans conflit, cf. pattern vat-rates GET/POST).
         .route("/api/v1/invoices", post(routes::invoices::create_invoice))
         .route(
             "/api/v1/invoices/{id}",
-            put(routes::invoices::update_invoice).delete(routes::invoices::delete_invoice),
+            put(routes::invoices::update_invoice),
         )
         // Story 12.1 : création d'avoir (create+issue atomique, Comptable+)
         .route(
