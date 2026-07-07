@@ -12,13 +12,14 @@ Permettre d'**envoyer une facture validée par e-mail** directement depuis Kesh 
 
 1. **Réutiliser intégralement le SMTP de la story 17-4b** — variables d'environnement `KESH_SMTP_HOST/PORT/USER/PASSWORD/FROM/TLS`, module `crates/kesh-api/src/mail/`, fail-fast au boot. **Ne PAS créer de config SMTP parallèle** (« on ne réinvente pas la roue »).
 2. **Config SMTP au niveau instance**, partagée entre tous les tenants (forward-compatible multi-tenant). Le *transport* reste instance-level ; seule l'*identité expéditeur* deviendra per-société au moment du multi-tenant.
-3. **Expéditeur = `KESH_SMTP_FROM` global (v1)**. En mono-instance (réalité actuelle), l'opérateur y met sa propre adresse société → l'expéditeur *est* la société. L'expéditeur **par-société** est une **limitation documentée** (arrivera avec le multi-tenant, territoire Issue #199) — la table `companies` n'a pas de champ e-mail aujourd'hui.
+3. **Expéditeur = `KESH_SMTP_FROM` global (v1)**. En mono-instance (réalité actuelle), l'opérateur y met sa propre adresse société → l'expéditeur *est* la société, envoyé via son propre relais → SPF/DKIM naturellement alignés, aucun souci de délivrabilité. **Forward-compat obligatoire** : l'identité expéditrice doit être **résolue au moment de l'envoi** (paramètre du pipeline), **pas codée en dur** → passer au multi-tenant devient un ajout de config, pas une réécriture. L'expéditeur **par-société** est une **limitation documentée** (cf. L20-1, territoire Issue #199).
 4. **Destinataire = e-mail du contact** de la facture (champ `contacts.email`, déjà existant). Si le contact n'a pas d'e-mail → refus propre (message clair, pas de crash).
 5. **Pièce jointe = le PDF QR-facture** déjà généré à la validation (réutiliser le générateur existant `invoice_pdf`).
 6. **Message (objet + corps) configurable sous forme de template** : un **template par défaut multilingue** (FR/DE/IT/EN) est fourni et **configurable** dans les réglages de facturation (cohérent avec le « template de rappel » déjà mentionné). Support de **variables de personnalisation** (civilité/nom du contact, n° de facture, montant, date d'échéance…) permettant un texte type « Cher Monsieur xyz, veuillez trouver ci-joint la facture … ».
    - **Envoi manuel** : le template (variables résolues) est **pré-rempli dans la fenêtre d'envoi et éditable** avant expédition.
    - **Envoi automatique** (futur — factures récurrentes #223 / story 20-2) : le template est **appliqué tel quel, sans édition** (pas d'humain dans la boucle).
-7. **Bouton « Envoyer par e-mail »** sur la fiche d'une **facture validée** (rôle : Comptable+ — à confirmer en spec).
+   - **Stockage** : le template par défaut (objet + corps, par langue) vit dans **`company_invoice_settings`** (mêmes réglages que le reste de la facturation, éditable Admin/Comptable+).
+7. **Bouton « Envoyer par e-mail »** sur la fiche d'une **facture validée**, rôle **Comptable+** (Comptable et Administrateur ; cohérent avec « Créer un avoir »).
 8. **Traçabilité** : marquer la facture **« envoyée »** (date/heure + destinataire) + entrée d'**audit** (`invoice.emailed` ou équivalent). Gestion des erreurs SMTP (serveur injoignable, adresse invalide) avec retour clair à l'utilisateur, sans laisser la facture dans un état incohérent.
 9. **Documentation** : la config SMTP (`KESH_SMTP_*`) est **déjà documentée** dans le manuel admin (§ recovery 17-4b) — **étendre** la doc pour indiquer que ce même SMTP alimente désormais l'envoi des factures, et documenter côté user-manual le bouton « Envoyer par e-mail » + la configuration du gabarit de message. (Rappel Guy 2026-07-07.)
 
@@ -57,4 +58,7 @@ Consommera 20-1 quand #223 (factures récurrentes) sera implémenté. Hors scope
 
 ## Limitations documentées
 
-- **L20-1** — Expéditeur unique global (`KESH_SMTP_FROM`) : pas d'identité expéditrice par-société. Acceptable en mono-instance ; à lever au multi-tenant (Issue #199). Alignement SPF/DKIM du domaine expéditeur à la charge de l'opérateur.
+- **L20-1** — Expéditeur unique global (`KESH_SMTP_FROM`) : pas d'identité expéditrice par-société. Acceptable en mono-instance (le `From` = l'opérateur, envoyé via son propre relais → SPF/DKIM alignés). À lever au **multi-tenant** (Issue #199), où l'enjeu principal est la **délivrabilité / le risque « spammeur »** — qui relève de l'**authentification de domaine (SPF/DKIM/DMARC)**, pas seulement du champ `From`. Deux patterns robustes à arbitrer le moment venu :
+  - **(A) Expéditeur = domaine de la plateforme + `Reply-To` = tenant** — un seul domaine authentifié, nom du tenant en display-name. Modèle SaaS standard, meilleure délivrabilité, aucune config DNS par tenant. Le destinataire voit un domaine plateforme.
+  - **(B) SMTP + `From` par tenant** — chaque tenant apporte son relais/ses identifiants et authentifie son propre domaine. Branding complet, mais config par tenant.
+  Prérequis technique déjà posé en v1 (décision 3) : l'identité expéditrice est **résolue à l'envoi**, pas codée en dur → le passage à (A) ou (B) est un ajout de config, pas une réécriture du pipeline.
