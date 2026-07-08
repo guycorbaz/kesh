@@ -161,6 +161,19 @@
 				{msg('settings-vat-rates-link', "Configurez les taux de TVA et leurs dates de validité (changements de taux gérés dans le temps).")}
 			</p>
 		</section>
+
+		<Separator />
+
+		<!-- Section Modèles d'e-mail (Story 20-2, Administrateur) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{msg('email-templates-title', "Modèles d'e-mail")}</h2>
+				<Button variant="outline" size="sm" href="/settings/email-templates" data-testid="settings-email-templates-manage-link">{msg('settings-manage', 'Gérer')}</Button>
+			</div>
+			<p class="mt-2 text-sm text-text-muted">
+				{msg('settings-email-templates-link', "Personnalisez le contenu des e-mails envoyés à vos clients (objet et corps, par langue).")}
+			</p>
+		</section>
 	</div>
 {:else}
 	<p class="text-text-muted">{msg('settings-no-company', 'Aucune organisation configurée. Complétez l\'onboarding.')}</p>
