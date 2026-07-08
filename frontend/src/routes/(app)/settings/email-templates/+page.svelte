@@ -27,12 +27,23 @@
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 
+	type Draft = { subject: string; body: string };
+
 	// Toutes les entrées effectives (v1 : 1 type × 4 langues). Indexées par langue.
 	let templates = $state<Record<EmailTemplateLanguage, EmailTemplateResponse | null>>({
 		FR: null,
 		DE: null,
 		IT: null,
 		EN: null,
+	});
+	// Brouillons éditables par langue (code-review Pass 1 #1) : chaque langue a
+	// son propre état de saisie, préservé au changement d'onglet — pas de perte
+	// silencieuse si on édite FR puis passe à DE sans enregistrer.
+	let drafts = $state<Record<EmailTemplateLanguage, Draft>>({
+		FR: { subject: '', body: '' },
+		DE: { subject: '', body: '' },
+		IT: { subject: '', body: '' },
+		EN: { subject: '', body: '' },
 	});
 	let templateType = $state('invoice_send');
 	let allowedVariables = $state<string[]>([]);
@@ -41,10 +52,8 @@
 	let loadError = $state('');
 	let submitting = $state(false);
 
-	// Onglet langue actif + champs éditables de l'onglet courant.
+	// Onglet langue actif + variables inconnues remontées à la dernière validation.
 	let activeLang = $state<EmailTemplateLanguage>('FR');
-	let subject = $state('');
-	let body = $state('');
 	let unknownVars = $state<string[]>([]);
 
 	// Modale « restaurer le défaut ».
@@ -54,20 +63,22 @@
 
 	let current = $derived(templates[activeLang]);
 	let isDefault = $derived(current?.isDefault ?? true);
-	let canSave = $derived(subject.trim().length > 0 && body.trim().length > 0);
+	let activeDraft = $derived(drafts[activeLang]);
+	let canSave = $derived(
+		activeDraft.subject.trim().length > 0 && activeDraft.body.trim().length > 0,
+	);
 
-	/** Charge les champs éditables depuis l'entrée de la langue donnée. */
-	function hydrateFields(lang: EmailTemplateLanguage): void {
+	/** Recopie la valeur serveur d'une langue dans son brouillon (post-load/save/restore). */
+	function syncDraftFromTemplate(lang: EmailTemplateLanguage): void {
 		const t = templates[lang];
-		subject = t?.subject ?? '';
-		body = t?.body ?? '';
-		unknownVars = [];
-		restoreError = '';
+		drafts[lang] = { subject: t?.subject ?? '', body: t?.body ?? '' };
 	}
 
 	function selectLang(lang: EmailTemplateLanguage): void {
 		activeLang = lang;
-		hydrateFields(lang);
+		// Les brouillons sont préservés par langue → aucune ré-hydratation ici.
+		unknownVars = [];
+		restoreError = '';
 	}
 
 	onMount(async () => {
@@ -81,7 +92,9 @@
 				templateType = all[0].templateType;
 				allowedVariables = all[0].allowedVariables;
 			}
-			hydrateFields(activeLang);
+			for (const lang of EMAIL_TEMPLATE_LANGUAGES) {
+				syncDraftFromTemplate(lang);
+			}
 		} catch (err) {
 			loadError = isApiError(err) ? err.message : msg('error-unexpected', 'Erreur de chargement');
 		} finally {
@@ -89,26 +102,29 @@
 		}
 	});
 
-	/** Recharge une seule langue depuis le backend et ré-hydrate si c'est l'active. */
+	/** Recharge une seule langue depuis le backend et resynchronise son brouillon. */
 	async function reloadLang(lang: EmailTemplateLanguage): Promise<void> {
 		const fresh = await getEmailTemplate(templateType, lang);
 		templates[lang] = fresh;
 		allowedVariables = fresh.allowedVariables;
-		if (lang === activeLang) hydrateFields(lang);
+		syncDraftFromTemplate(lang);
 	}
 
 	async function save(): Promise<void> {
-		if (!canSave) return;
+		if (submitting || !canSave) return;
 		submitting = true;
 		unknownVars = [];
+		const lang = activeLang;
 		try {
-			const updated = await updateEmailTemplate(templateType, activeLang, {
-				subject: subject.trim(),
-				body: body.trim(),
-				expectedVersion: current?.version ?? null,
+			const updated = await updateEmailTemplate(templateType, lang, {
+				subject: drafts[lang].subject.trim(),
+				body: drafts[lang].body.trim(),
+				expectedVersion: templates[lang]?.version ?? null,
 			});
-			templates[activeLang] = updated;
+			templates[lang] = updated;
 			allowedVariables = updated.allowedVariables;
+			// Re-synchronise le brouillon avec la valeur serveur trimée (#4).
+			syncDraftFromTemplate(lang);
 			notifySuccess(msg('email-templates-saved', 'Modèle enregistré'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -123,7 +139,7 @@
 						msg('email-templates-conflict', 'Conflit de version — le modèle a été rechargé'),
 					);
 					try {
-						await reloadLang(activeLang);
+						await reloadLang(lang);
 					} catch {
 						// on garde le toast d'erreur
 					}
@@ -139,19 +155,29 @@
 	}
 
 	async function submitRestore(): Promise<void> {
+		if (restoreSubmitting) return;
 		restoreSubmitting = true;
 		restoreError = '';
+		const lang = activeLang;
 		try {
-			await restoreEmailTemplateDefault(templateType, activeLang);
-			await reloadLang(activeLang);
-			restoreOpen = false;
-			notifySuccess(msg('email-templates-restored', 'Modèle par défaut restauré'));
+			await restoreEmailTemplateDefault(templateType, lang);
 		} catch (err) {
 			restoreError = isApiError(err)
 				? err.message
 				: msg('error-unexpected', 'Erreur lors de la restauration');
-		} finally {
 			restoreSubmitting = false;
+			return;
+		}
+		// DELETE acquis : fermer la modale même si le reload échoue ensuite (#3),
+		// sinon l'UI resterait bloquée sur un état déjà restauré côté serveur.
+		restoreSubmitting = false;
+		restoreOpen = false;
+		notifySuccess(msg('email-templates-restored', 'Modèle par défaut restauré'));
+		try {
+			await reloadLang(lang);
+		} catch {
+			// best-effort : le serveur est déjà revenu au défaut ; l'UI se
+			// resynchronisera au prochain chargement/changement d'onglet.
 		}
 	}
 </script>
@@ -202,7 +228,10 @@
 				<button
 					role="tab"
 					type="button"
+					id="{uid}-tab-{lang}"
 					aria-selected={activeLang === lang}
+					aria-controls="{uid}-tabpanel"
+					tabindex={activeLang === lang ? 0 : -1}
 					data-testid="email-template-lang-tab-{lang}"
 					class="rounded-md border px-3 py-1 text-sm"
 					class:border-primary={activeLang === lang}
@@ -214,7 +243,12 @@
 			{/each}
 		</div>
 
-		<div class="grid gap-6 md:grid-cols-[2fr_1fr]">
+		<div
+			class="grid gap-6 md:grid-cols-[2fr_1fr]"
+			role="tabpanel"
+			id="{uid}-tabpanel"
+			aria-labelledby="{uid}-tab-{activeLang}"
+		>
 			<form
 				class="space-y-4"
 				onsubmit={(e) => {
@@ -226,7 +260,11 @@
 					<label class="mb-1 block text-sm font-medium" for="{uid}-subject">
 						{msg('email-templates-subject-label', 'Objet')}
 					</label>
-					<Input id="{uid}-subject" bind:value={subject} data-testid="email-template-subject" />
+					<Input
+						id="{uid}-subject"
+						bind:value={drafts[activeLang].subject}
+						data-testid="email-template-subject"
+					/>
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="{uid}-body">
@@ -234,7 +272,7 @@
 					</label>
 					<textarea
 						id="{uid}-body"
-						bind:value={body}
+						bind:value={drafts[activeLang].body}
 						rows="10"
 						data-testid="email-template-body"
 						class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
@@ -311,7 +349,9 @@
 		{/if}
 		<Dialog.Footer>
 			<Dialog.Close>
-				<Button variant="outline" type="button">{msg('cancel', 'Annuler')}</Button>
+				<Button variant="outline" type="button" disabled={restoreSubmitting}
+					>{msg('cancel', 'Annuler')}</Button
+				>
 			</Dialog.Close>
 			<Button
 				type="button"

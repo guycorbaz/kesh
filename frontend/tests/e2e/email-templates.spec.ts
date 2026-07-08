@@ -84,6 +84,26 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await expect(subject).toHaveValue('Sujet E2E {invoiceNumber}');
 	});
 
+	test('changement d\'onglet préserve les brouillons non enregistrés par langue (code-review #1)', async ({
+		page,
+	}) => {
+		await goToEmailTemplates(page);
+
+		const subject = page.getByTestId('email-template-subject');
+		const body = page.getByTestId('email-template-body');
+
+		// Saisir dans FR sans enregistrer.
+		await subject.fill('Brouillon FR {invoiceNumber}');
+		await body.fill('Corps FR {amount}');
+
+		// Passer à DE puis revenir à FR : la saisie FR NE doit PAS être perdue.
+		await page.getByTestId('email-template-lang-tab-DE').click();
+		await expect(subject).not.toHaveValue('Brouillon FR {invoiceNumber}');
+		await page.getByTestId('email-template-lang-tab-FR').click();
+		await expect(subject).toHaveValue('Brouillon FR {invoiceNumber}');
+		await expect(body).toHaveValue('Corps FR {amount}');
+	});
+
 	test('restaure le défaut via la modale → badge repasse à Défaut', async ({ page }) => {
 		await goToEmailTemplates(page);
 
@@ -93,9 +113,11 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await page.getByTestId('email-template-save-button').click();
 		await expect(page.getByTestId('email-template-badge')).toHaveText('Personnalisé');
 
-		// Ouvrir la modale + confirmer.
+		// Ouvrir la modale + attendre sa visibilité avant de confirmer.
 		await page.getByTestId('email-template-restore-button').click();
-		await page.getByTestId('email-template-restore-confirm').click();
+		const confirm = page.getByTestId('email-template-restore-confirm');
+		await expect(confirm).toBeVisible();
+		await confirm.click();
 
 		await expect(page.getByTestId('email-template-badge')).toHaveText('Défaut');
 	});

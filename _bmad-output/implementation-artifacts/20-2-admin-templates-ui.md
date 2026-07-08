@@ -1,6 +1,6 @@
 # Story 20.2: Section Admin « Modèles d'e-mail » (frontend)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -92,6 +92,30 @@ Cette story consomme l'API livrée par la **Story 20-1** (socle backend `email_t
 - [x] **T7 — Test Locally First & commit**
   - [x] T7.1 Depuis `frontend/` : `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, `npm run test:e2e` (story frontend → checks Frontend + E2E, cf. CLAUDE.md)
   - [x] T7.2 Commit(s) sur `story/20-1-envoi-factures-email` (branche epic-20 en cours)
+
+### Review Findings
+
+**Pass 1 — Sonnet 5 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, parallèle), 2026-07-08.** 24 findings bruts (BH 14 + ECH 10 + AA 4, avec recouvrements) → après dédup + ground-truth : 6 patch, 1 defer, ~11 dismiss. Acceptance Auditor : 17/17 AC conformes, contrat API identique à 20-1. Aucun CRITICAL. Les HIGH/MEDIUM portent sur la robustesse UX, pas sur les AC.
+
+- [x] [Review][Patch] Perte silencieuse des éditions au changement d'onglet — taper dans FR puis cliquer DE sans enregistrer jette la saisie FR (`hydrateFields` ré-hydrate depuis le serveur) [`settings/email-templates/+page.svelte:60-72`]
+- [x] [Review][Patch] Double soumission via touche Entrée — `save()` n'a pas de garde `if (submitting) return` ; un Enter dans l'input relance un PUT concurrent avec `expectedVersion` périmé → 409 parasite [`+page.svelte:100-102`]
+- [x] [Review][Patch] Restauration réussie + reload échoué = modale bloquée + état divergent — `restoreOpen = false` sauté si `reloadLang` throw après le DELETE acquis [`+page.svelte:145-147`]
+- [x] [Review][Patch] Champs non re-hydratés après save (divergence trim) — `templates[activeLang]` mis à jour mais pas les runes `subject`/`body` visibles [`+page.svelte:110-113`]
+- [x] [Review][Patch] Pattern ARIA tabs incomplet — `role="tablist"`/`role="tab"` sans `role="tabpanel"` ni `aria-controls`/`aria-labelledby` reliant onglet↔panneau [`+page.svelte` onglets + form]
+- [x] [Review][Patch] Bouton Annuler de la modale actif pendant la restauration + `submitRestore` sans garde `restoreSubmitting` [`+page.svelte` modale]
+- [x] [Review][Patch] Test E2E manquant sur la fuite d'état inter-langues (couvre le patch #1) [`tests/e2e/email-templates.spec.ts`]
+- [x] [Review][Defer] `onMount` lance `listEmailTemplates()` (Admin-only) inconditionnellement → 403 inutile pour un non-Admin [`+page.svelte:86`] — deferred : comportement **identique au pattern établi `settings/invoicing`** (fetch inconditionnel, 403 backend autoritaire, garde de rendu `{#if !isAdmin}`) ; guarder le fetch sur `isAdmin` risque la régression de course d'hydratation auth signalée par ECH#7 (`currentUser` momentanément `null` au mount → admin verrait une page vide). Fix propre = refactor cross-pages hors scope 20-2.
+- [x] [Review][Dismiss] 409 recharge et écrase la saisie — **comportement spécifié** par l'AC #10 (« recharger l'entrée et ré-hydrater les champs »)
+- [x] [Review][Dismiss] Réponse API partielle/vide → onglet vide, badge « Défaut » mensonger — le backend 20-1 garantit **toujours** 4 entrées non-vides (`list_effective_for_company` itère ALL×LANGUAGES, testé AC #16 20-1) ; défense contre un contrat violé, non atteignable
+- [x] [Review][Dismiss] Langue hors union FR/DE/IT/EN stockée sous clé inconnue — idem, contrat backend `CHECK language IN (...)` garanti
+- [x] [Review][Dismiss] Re-export de types dans `api.ts` redondant avec `index.ts` — **cohérent avec le gabarit `vat-rates.api.ts`** (même double ré-export)
+- [x] [Review][Dismiss] Tokens couleur `text-red-600`/`bg-red-600` bruts vs `text-destructive` — **cohérent avec le gabarit `fiscal-years`** (mêmes classes crues pour la modale destructive)
+- [x] [Review][Dismiss] `msg()` passe-plat sur `i18nMsg` — **cohérent avec `fiscal-years`** (même helper local)
+- [x] [Review][Dismiss] Clés i18n génériques (`save`/`cancel`/`loading`) et `email-templates-title` réutilisée dans settings/+page (AA-F1/F2) — lint-ownership PASS ; réutilisation des clés génériques cohérente avec tout le projet
+- [x] [Review][Dismiss] Tests API « faibles » (`init.method ?? 'GET'`, `expect.unreachable`) — `expect.unreachable` **est** une API Vitest valide ; assertions adéquates pour un wrapper `apiClient` déjà éprouvé
+- [x] [Review][Dismiss] Onglet changé pendant modale ouverte → mauvaise langue restaurée (ECH#8) — l'overlay modal `Dialog` bloque l'interaction avec les onglets en arrière-plan, non atteignable
+- [x] [Review][Dismiss] Flash « Accès réservé » si `currentUser` non hydraté au mount (ECH#7) — pré-existant, pattern `invoicing` ; lié au defer ci-dessus
+- [x] [Review][Dismiss] Panneau variables vide si `allowedVariables` vide — contrat backend garantit la liste non-vide du type
 
 ## Dev Notes
 
@@ -191,6 +215,21 @@ Implémentation frontend complète T1→T7, toutes ACs #1-#17 satisfaites. 0 fic
 **Limite assumée T6.2** : le garde non-Admin est **implémenté** (guard client `isAdmin = $derived(...)` affichant « Accès réservé aux administrateurs » + le lien sidebar sous `adminOnly` + 403 backend autoritaire), identique au pattern éprouvé de `settings/invoicing`. **Aucun test E2E dédié non-Admin n'a été ajouté** : le seed `with-company` ne fournit qu'un utilisateur `admin`, et créer un utilisateur Comptable/Consultation E2E dépasse le scope de cette story (le RBAC serveur est déjà couvert par les tests e2e backend de 20-1). Le comportement du guard est structurellement identique aux autres pages settings Admin-only déjà en prod.
 
 **Test Locally First** : checks Frontend (`check` + `lint-i18n-ownership` + `test:unit` + `build`) + E2E, tous verts. Pas de check backend (aucun `.rs` touché).
+
+**Remédiation Pass 1 code-review — appliquée 2026-07-08 (6 patchs, LLM Sonnet 5).** 24 findings bruts (BH 14 + ECH 10 + AA 4, recouvrements) → 6 patch + 1 defer + ~11 dismiss. Acceptance Auditor : 17/17 AC conformes, 0 CRITICAL. Les HIGH/MEDIUM portaient sur la robustesse UX, pas les AC.
+
+Les 6 patchs :
+1. **Perte de saisie inter-onglets (HIGH)** — refactor : brouillons par langue (`drafts: Record<lang, {subject, body}>`, deep-reactive Svelte 5) au lieu d'un couple `subject`/`body` ré-hydraté depuis le serveur à chaque `selectLang`. Basculer FR→DE→FR préserve désormais la saisie FR. `selectLang` ne fait plus que changer `activeLang` (+ reset unknownVars/restoreError). `save`/`reloadLang` re-synchronisent le brouillon de la langue depuis la valeur serveur (couvre aussi le patch #4 trim).
+2. **Double-submit (HIGH)** — `if (submitting || !canSave) return` en tête de `save()` (un Enter dans l'input ne relance plus un PUT concurrent).
+3. **Modale bloquée si reload échoue (MEDIUM)** — `submitRestore` restructuré : le DELETE acquis → `restoreOpen = false` + toast AVANT le `reloadLang` best-effort (early-return propre si le DELETE lui-même échoue).
+4. **Champs re-synchronisés après save (MEDIUM)** — `syncDraftFromTemplate(lang)` après succès (plus de divergence trim).
+5. **ARIA tabs (MEDIUM)** — ajout `id`/`aria-controls`/`tabindex` roving sur les onglets + `role="tabpanel"`/`aria-labelledby` sur le panneau.
+6. **Modale (LOW)** — bouton Annuler `disabled={restoreSubmitting}` + garde `if (restoreSubmitting) return`.
++ **Test E2E** (couvre #1) : `changement d'onglet préserve les brouillons` (FR→DE→FR) ; test « restaure » durci (attente visibilité modale avant confirm).
+
+**1 defer** : `onMount` fetche l'API Admin même pour un non-Admin (403 inutile) — pattern établi `invoicing`, fix risque une régression de course d'hydratation auth. Tracé `deferred-work.md`.
+
+**Test Locally First post-patchs** : `check` 0 err + `lint-i18n` PASS + unit email-templates 6/6 + `build` OK + **E2E 6/6** (dont le nouveau test inter-langues, backend contre `kesh_e2e`). 0 régression.
 
 ### File List
 
