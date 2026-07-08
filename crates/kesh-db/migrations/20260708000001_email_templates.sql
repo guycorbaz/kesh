@@ -16,6 +16,15 @@
 -- `version` : verrou optimiste (cf. docs/optimistic-locking-patterns.md).
 --
 -- Non-breaking (ADD TABLE) → pas de bump kesh_version_min_required (P3).
+--
+-- Pas d'INDEX dédié sur company_id seul (code-review Pass 1) :
+-- UNIQUE(company_id, template_type, language) fournit déjà un index dont
+-- company_id est la colonne de tête (leftmost prefix), réutilisable par le
+-- planner pour toute requête filtrant sur company_id seul.
+--
+-- CHECK anti-vide sur subject/body (code-review Pass 1, cohérent
+-- `chk_contact_persons_names`) : défense en profondeur, la validation API
+-- (`update_email_template`) reste la première ligne de défense.
 
 CREATE TABLE email_templates (
     id              BIGINT      NOT NULL AUTO_INCREMENT,
@@ -34,7 +43,8 @@ CREATE TABLE email_templates (
         CHECK (template_type IN ('invoice_send')),
     CONSTRAINT chk_email_templates_language
         CHECK (BINARY language IN (BINARY 'FR', BINARY 'DE', BINARY 'IT', BINARY 'EN')),
+    CONSTRAINT chk_email_templates_subject_body_nonempty
+        CHECK (CHAR_LENGTH(TRIM(subject)) > 0 AND CHAR_LENGTH(TRIM(body)) > 0),
     CONSTRAINT uq_email_templates_company_type_language
-        UNIQUE (company_id, template_type, language),
-    INDEX idx_email_templates_company (company_id)
+        UNIQUE (company_id, template_type, language)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

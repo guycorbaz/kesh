@@ -2,9 +2,10 @@
 //! Story 20-1).
 
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::audit_log::ActorType;
 use kesh_db::entities::{EmailTemplateType, Language, NewCompany, OrgType};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{companies, email_templates};
+use kesh_db::repositories::{audit_log, companies, email_templates};
 use sqlx::MySqlPool;
 
 async fn create_test_company(pool: &MySqlPool, name: &str) -> i64 {
@@ -108,6 +109,7 @@ async fn upsert_override_creates_row_with_version_one(pool: MySqlPool) {
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet perso {invoiceNumber}".to_string(),
         "Corps perso {amount}".to_string(),
     )
@@ -149,6 +151,7 @@ async fn upsert_override_create_conflicts_when_row_already_exists(pool: MySqlPoo
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet 1".to_string(),
         "Corps 1".to_string(),
     )
@@ -162,6 +165,7 @@ async fn upsert_override_create_conflicts_when_row_already_exists(pool: MySqlPoo
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet 2".to_string(),
         "Corps 2".to_string(),
     )
@@ -183,6 +187,7 @@ async fn upsert_override_updates_at_correct_version(pool: MySqlPool) {
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet initial".to_string(),
         "Corps initial".to_string(),
     )
@@ -196,6 +201,7 @@ async fn upsert_override_updates_at_correct_version(pool: MySqlPool) {
         Language::Fr,
         Some(created.version),
         admin_user_id,
+        None,
         "Sujet modifié".to_string(),
         "Corps modifié".to_string(),
     )
@@ -223,6 +229,7 @@ async fn upsert_override_stale_version_conflicts(pool: MySqlPool) {
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet".to_string(),
         "Corps".to_string(),
     )
@@ -237,6 +244,7 @@ async fn upsert_override_stale_version_conflicts(pool: MySqlPool) {
         Language::Fr,
         Some(created.version),
         admin_user_id,
+        None,
         "Sujet v2".to_string(),
         "Corps v2".to_string(),
     )
@@ -251,6 +259,7 @@ async fn upsert_override_stale_version_conflicts(pool: MySqlPool) {
         Language::Fr,
         Some(created.version),
         admin_user_id,
+        None,
         "Sujet v1-stale".to_string(),
         "Corps v1-stale".to_string(),
     )
@@ -273,6 +282,7 @@ async fn upsert_override_no_op_does_not_bump_version_or_audit(pool: MySqlPool) {
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet stable".to_string(),
         "Corps stable".to_string(),
     )
@@ -290,6 +300,7 @@ async fn upsert_override_no_op_does_not_bump_version_or_audit(pool: MySqlPool) {
         Language::Fr,
         Some(created.version),
         admin_user_id,
+        None,
         "Sujet stable".to_string(),
         "Corps stable".to_string(),
     )
@@ -318,6 +329,7 @@ async fn restore_default_deletes_override_and_falls_back(pool: MySqlPool) {
         Language::Fr,
         None,
         admin_user_id,
+        None,
         "Sujet override".to_string(),
         "Corps override".to_string(),
     )
@@ -330,6 +342,7 @@ async fn restore_default_deletes_override_and_falls_back(pool: MySqlPool) {
         EmailTemplateType::InvoiceSend,
         Language::Fr,
         admin_user_id,
+        None,
     )
     .await
     .unwrap();
@@ -363,6 +376,7 @@ async fn restore_default_is_idempotent_when_no_override(pool: MySqlPool) {
         EmailTemplateType::InvoiceSend,
         Language::Fr,
         admin_user_id,
+        None,
     )
     .await;
     assert!(result.is_ok());
@@ -418,6 +432,7 @@ async fn cross_tenant_overrides_are_independent(pool: MySqlPool) {
         Language::Fr,
         None,
         user_a,
+        None,
         "Sujet A".to_string(),
         "Corps A".to_string(),
     )
@@ -444,4 +459,100 @@ async fn cross_tenant_overrides_are_independent(pool: MySqlPool) {
     assert!(!effective_a.is_default);
     assert_eq!(effective_a.subject, "Sujet A");
     assert!(effective_b.is_default); // company B jamais touchée
+}
+
+/// Code-review Pass 1 (AC #11) : `upsert_override` doit threader le PAT
+/// (`for_actor`) pour que l'audit distingue une action via clé API d'une
+/// action UI web — pas `NewAuditLogEntry::user` seul.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn upsert_override_threads_actor_api_key_id_into_audit(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "PAT Actor Co").await;
+    let admin_user_id = create_admin_user(&pool, company_id).await;
+    let fake_api_key_id = 4242i64;
+
+    let created = email_templates::upsert_override(
+        &pool,
+        company_id,
+        EmailTemplateType::InvoiceSend,
+        Language::Fr,
+        None,
+        admin_user_id,
+        Some(fake_api_key_id),
+        "Sujet PAT".to_string(),
+        "Corps PAT".to_string(),
+    )
+    .await
+    .unwrap();
+
+    let entries = audit_log::find_by_entity(&pool, "email_template", created.id, 1)
+        .await
+        .unwrap();
+    let entry = entries.first().expect("audit entry attendue");
+    assert_eq!(entry.actor_type, ActorType::ApiKey);
+    assert_eq!(entry.actor_api_key_id, Some(fake_api_key_id));
+}
+
+/// Code-review Pass 1 (Blind Hunter #3/#4) : concurrence RÉELLE (pas
+/// seulement séquentielle) sur deux créations simultanées de la même
+/// combinaison type×langue → exactement une réussit, l'autre reçoit
+/// `OptimisticLockConflict` — jamais un `UniqueConstraintViolation` brut
+/// remonté par la contrainte `UNIQUE` (remap explicite ajouté en review).
+///
+/// `#[sqlx::test]` (pas une connexion directe `DATABASE_URL` façon
+/// `invoices::tests::test_mark_as_paid_concurrent_one_succeeds_other_409`) :
+/// le pool éphémère fourni par la macro garantit un schéma à jour (chaîne de
+/// migrations complète rejouée), et son clone partage le même pool de
+/// connexions sous-jacent — suffisant pour deux opérations concurrentes.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn upsert_override_true_concurrent_create_yields_exactly_one_conflict(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "True Concurrency Co").await;
+    let admin_user_id = create_admin_user(&pool, company_id).await;
+
+    let pool_a = pool.clone();
+    let pool_b = pool.clone();
+
+    let (res_a, res_b) = tokio::join!(
+        async move {
+            email_templates::upsert_override(
+                &pool_a,
+                company_id,
+                EmailTemplateType::InvoiceSend,
+                Language::Fr,
+                None,
+                admin_user_id,
+                None,
+                "Sujet concurrent A".to_string(),
+                "Corps concurrent A".to_string(),
+            )
+            .await
+        },
+        async move {
+            email_templates::upsert_override(
+                &pool_b,
+                company_id,
+                EmailTemplateType::InvoiceSend,
+                Language::Fr,
+                None,
+                admin_user_id,
+                None,
+                "Sujet concurrent B".to_string(),
+                "Corps concurrent B".to_string(),
+            )
+            .await
+        },
+    );
+
+    let successes = [&res_a, &res_b].iter().filter(|r| r.is_ok()).count();
+    assert_eq!(
+        successes, 1,
+        "exactement une création concurrente doit réussir"
+    );
+    let conflicts = [&res_a, &res_b]
+        .iter()
+        .filter(|r| matches!(r, Err(DbError::OptimisticLockConflict)))
+        .count();
+    assert_eq!(
+        conflicts, 1,
+        "l'autre doit recevoir OptimisticLockConflict (jamais un UniqueConstraintViolation brut)"
+    );
 }

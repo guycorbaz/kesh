@@ -51,6 +51,16 @@ impl EmailTemplateType {
             ],
         }
     }
+
+    /// `allowed_variables()` converti en `Vec<String>` — évite de dupliquer
+    /// `iter().map(|s| s.to_string()).collect()` à chaque site d'appel
+    /// (repository + DTOs API).
+    pub fn allowed_variables_owned(&self) -> Vec<String> {
+        self.allowed_variables()
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
 }
 
 impl std::str::FromStr for EmailTemplateType {

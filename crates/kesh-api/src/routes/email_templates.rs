@@ -58,12 +58,7 @@ impl From<EffectiveEmailTemplate> for EmailTemplateResponse {
 impl From<EmailTemplate> for EmailTemplateResponse {
     fn from(t: EmailTemplate) -> Self {
         Self {
-            allowed_variables: t
-                .template_type
-                .allowed_variables()
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            allowed_variables: t.template_type.allowed_variables_owned(),
             template_type: t.template_type,
             language: t.language,
             subject: t.subject,
@@ -162,6 +157,7 @@ pub async fn update_email_template(
         language,
         req.expected_version,
         current_user.user_id,
+        current_user.api_key_id,
         subject.to_string(),
         body.to_string(),
     )
@@ -187,6 +183,7 @@ pub async fn restore_email_template_default(
         template_type,
         language,
         current_user.user_id,
+        current_user.api_key_id,
     )
     .await?;
 

@@ -28,6 +28,7 @@ error-email-invalid = Format d'email invalide
 error-username-empty = Le nom d'utilisateur ne peut pas être vide
 error-username-too-long = Le nom d'utilisateur ne doit pas dépasser { $max } caractères
 error-username-contains-at = Le nom d'utilisateur ne peut pas contenir le caractère « @ »
+error-email-template-unknown-variables = Le template contient des variables inconnues
 
 # Erreurs système
 error-internal = Erreur interne

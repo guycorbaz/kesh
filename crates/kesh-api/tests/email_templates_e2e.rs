@@ -200,6 +200,76 @@ async fn rbac_only_admin_can_list(pool: MySqlPool) {
     assert_eq!(consultation_res.status(), 403);
 }
 
+/// Code-review Pass 1 (Blind Hunter #10 + Acceptance Auditor) : le RBAC
+/// Admin-only doit couvrir les 4 endpoints, pas seulement `GET` liste.
+#[sqlx::test(migrations = "../kesh-db/migrations")]
+async fn rbac_covers_get_single_put_and_delete(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "RBAC Full Co").await;
+
+    let admin_id = create_user(&pool, "admin2", Role::Admin, company_id).await;
+    let comptable_id = create_user(&pool, "comptable2", Role::Comptable, company_id).await;
+    let consultation_id = create_user(&pool, "consult2", Role::Consultation, company_id).await;
+
+    let admin_token = forge_jwt(admin_id, "Admin", company_id);
+    let comptable_token = forge_jwt(comptable_id, "Comptable", company_id);
+    let consultation_token = forge_jwt(consultation_id, "Consultation", company_id);
+
+    let path = "/api/v1/admin/email-templates/invoice_send/FR";
+    let update_body = serde_json::json!({ "subject": "S", "body": "B" });
+
+    for (role_label, token, expected_status) in [
+        ("Admin", &admin_token, 200u16),
+        ("Comptable", &comptable_token, 403),
+        ("Consultation", &consultation_token, 403),
+    ] {
+        let res = app
+            .client
+            .get(app.url(path))
+            .bearer_auth(token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            expected_status,
+            "GET unique — rôle {role_label}"
+        );
+    }
+
+    for (role_label, token, expected_status) in [
+        ("Admin", &admin_token, 200u16),
+        ("Comptable", &comptable_token, 403),
+        ("Consultation", &consultation_token, 403),
+    ] {
+        let res = app
+            .client
+            .put(app.url(path))
+            .bearer_auth(token)
+            .json(&update_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), expected_status, "PUT — rôle {role_label}");
+    }
+
+    // DELETE testé en dernier (Admin restaure le défaut après son propre PUT).
+    for (role_label, token, expected_status) in [
+        ("Comptable", &comptable_token, 403u16),
+        ("Consultation", &consultation_token, 403),
+        ("Admin", &admin_token, 204),
+    ] {
+        let res = app
+            .client
+            .delete(app.url(path))
+            .bearer_auth(token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), expected_status, "DELETE — rôle {role_label}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Zéro-config (AC #16)
 // ---------------------------------------------------------------------------
@@ -252,6 +322,24 @@ async fn crud_round_trip_create_update_restore(pool: MySqlPool) {
     let created: Value = create_res.json().await.unwrap();
     assert_eq!(created["version"].as_i64().unwrap(), 1);
     assert!(!created["isDefault"].as_bool().unwrap());
+    // Code-review Pass 1 (Blind Hunter #11) : allowedVariables jamais vérifié.
+    let allowed_variables: Vec<String> = created["allowedVariables"]
+        .as_array()
+        .expect("allowedVariables doit être un tableau")
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        allowed_variables,
+        vec![
+            "salutation",
+            "contactName",
+            "invoiceNumber",
+            "amount",
+            "dueDate",
+            "companyName",
+        ]
+    );
 
     // GET unique reflète l'override.
     let get_res = app

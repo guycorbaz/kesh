@@ -1,6 +1,6 @@
 # Story 20.1: Socle templates d'e-mail (backend) — table, moteur `{var}`, CRUD Admin
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -102,6 +102,46 @@ Cette story est le **story-zéro** de l'Epic 20 (#224). Elle ne touche NI le mai
 - [x] **T8 — Test Locally First & commit**
   - [x] T8.1 `cargo fmt --all -- --check` OK, `cargo build --workspace --all-targets` OK, `cargo clippy --workspace --all-targets -- -D warnings` 0 warning, `cargo test --workspace` — voir Completion Notes pour le détail (3 régressions trouvées+corrigées, 1 flake pré-existant sans rapport documenté KF-038 #228)
   - [x] T8.2 Commit(s) sur `story/20-1-envoi-factures-email`
+
+### Review Findings
+
+**Pass 1 — Sonnet 5 (Blind Hunter + Edge Case Hunter + Acceptance Auditor, parallèle), 2026-07-08**
+
+- [x] [Review][Patch] AC #11 : audit n'utilise pas `for_actor`/ne thread pas `api_key_id` alors que c'est un AC explicite (pas une simple Dev Note comme mal classé dans les Completion Notes initiales) [`crates/kesh-db/src/repositories/email_templates.rs`]
+- [x] [Review][Patch] Clé i18n `error-email-template-unknown-variables` absente des 4 fichiers `messages.ftl` — sans elle la clé brute s'affiche à l'utilisateur [`crates/kesh-i18n/locales/*/messages.ftl`]
+- [x] [Review][Patch] Race sur double-création concurrente `(None,None)` peut surfacer en `UniqueConstraintViolation`/409 `RESOURCE_CONFLICT` au lieu de `OptimisticLockConflict`/409 `OPTIMISTIC_LOCK_CONFLICT` (confirmé via sémantique gap-lock InnoDB) [`crates/kesh-db/src/repositories/email_templates.rs`]
+- [x] [Review][Patch] Aucun test de concurrence réelle (`tokio::join!`) sur la race de création — les tests actuels enchaînent les `.await` séquentiellement [`crates/kesh-db/tests/email_templates_repository.rs`]
+- [x] [Review][Patch] Pas de `CHECK` DB anti-vide sur `subject`/`body` (contrairement à `contact_persons`) — validation uniquement côté API [`crates/kesh-db/migrations/20260708000001_email_templates.sql`]
+- [x] [Review][Patch] Index `idx_email_templates_company` redondant avec `UNIQUE (company_id, template_type, language)` qui couvre déjà `company_id` en tête [`crates/kesh-db/migrations/20260708000001_email_templates.sql`]
+- [x] [Review][Patch] Duplication 3x du mapping `allowed_variables().iter().map(...).collect()` (DRY) [`repositories/email_templates.rs`, `routes/email_templates.rs`]
+- [x] [Review][Patch] Couverture RBAC de test incomplète — seul `GET` liste testé sur les 3 rôles, pas `GET` unique/`PUT`/`DELETE` [`crates/kesh-api/tests/email_templates_e2e.rs`]
+- [x] [Review][Patch] Champ `allowedVariables` jamais vérifié par assertion dans les tests e2e [`crates/kesh-api/tests/email_templates_e2e.rs`]
+- [x] [Review][Defer] 4× `tx.rollback().await.map_err(map_db_error)?` masque l'erreur d'origine si le rollback lui-même échoue — deferred, pattern identique pré-existant dans TOUS les repositories du projet (ex. `company_invoice_settings.rs`, 5 occurrences), pas une régression introduite par cette story [`crates/kesh-db/src/repositories/email_templates.rs`]
+- [x] [Review][Dismiss] Pas de validation de longueur max sur subject/body → **réfuté** : `map_db_error` mappe déjà MariaDB 1406 (`ER_DATA_TOO_LONG`) vers `DbError::DataLengthOrRange` → `AppError` le mappe déjà proprement en `400 DATA_LENGTH_OR_RANGE` (`errors.rs:1945-1953`), infrastructure déjà en place
+- [x] [Review][Dismiss] `subject` en `TEXT` plutôt que `VARCHAR` borné → décision figée du planning epic-20 (§Décisions #4), pas un oubli
+- [x] [Review][Dismiss] `trim()` modifie silencieusement le payload avant persistance → hygiène raisonnable, aucun AC ne le contredit
+- [x] [Review][Dismiss] Commentaire migration « Non-breaking (ADD TABLE) » vs formulation antérieure « nouvelle table » → nitpick cosmétique, même intention
+- [x] [Review][Dismiss] Ambiguïté de portée du no-op sur le cas `(None, contenu identique au défaut)` → auto-classé non-defect par l'Acceptance Auditor lui-même (lecture stricte des AC #9/#10 cohérente)
+- [x] [Review][Dismiss] Overflow `version` à `i32::MAX` → impraticable (~2.1 milliards d'éditions), aucun autre repository du projet ne s'en prémunit non plus (10 repositories `version INT` recensés dans `optimistic-locking-patterns.md`)
+
+**Remédiation Pass 1 — appliquée 2026-07-08 (9 patches, LLM Sonnet 5 pour la revue et l'application)**
+
+Trend : Pass 1 = 21 findings bruts (BH 12 + ECH 6 + AA 3) → après triage ground-truth : 9 patch + 1 defer (4 findings mergées, rollback-masque pré-existant) + 6 dismiss (dont 2 réfutés empiriquement : validation longueur déjà gérée par `map_db_error` 1406→`DataLengthOrRange`→400, et no-op scope auto-classé non-defect par l'AA). **0 CRITICAL/HIGH** dès Pass 1 → critère d'arrêt CLAUDE.md atteint après cette remédiation (1 seule passe suffit).
+
+Les 9 patches appliqués :
+1. **`for_actor`/`api_key_id` (AC #11)** — `upsert_override`/`restore_default` prennent un paramètre `actor_api_key_id: Option<i64>` threadé depuis `current_user.api_key_id` ; audit via `NewAuditLogEntry::for_actor(...)`. Une mutation via PAT est désormais tracée `actor_type=ApiKey`. (Correction de mon erreur de classement initiale : c'était un AC explicite, pas une simple Dev Note.)
+2. **i18n** — clé `error-email-template-unknown-variables` ajoutée aux 4 `messages.ftl` (FR/DE/IT/EN) ; sans elle, `format()` retournait la clé brute à l'utilisateur (loader retombe sur la clé, pas sur le fallback FR du `t()` Rust — vérifié `loader.rs:110-124`).
+3. **Race création concurrente** — remap explicite `UniqueConstraintViolation` (MariaDB 1062) → `OptimisticLockConflict` sur le chemin `INSERT`. **Refactor structurel majeur** : la version initiale faisait `SELECT ... FOR UPDATE` (gap lock) AVANT l'`INSERT` sur les deux chemins ; deux créations concurrentes **deadlockaient** (0 succès observé — découvert par le nouveau test de concurrence #4). `upsert_override` scindé en 2 chemins tx distincts : création = `INSERT` direct sans lecture verrouillante préalable (l'INSERT gère seul son verrou) ; modification = `SELECT FOR UPDATE` classique (verrou de ligne existante, pas de gap lock). Helper `audit_update_and_commit` factorisé.
+4. **Test concurrence réelle** — `upsert_override_true_concurrent_create_yields_exactly_one_conflict` (`tokio::join!` sur pool `#[sqlx::test]` éphémère) : exactement 1 succès + 1 `OptimisticLockConflict`. C'est ce test qui a révélé le deadlock du patch #3.
+5. **CHECK anti-vide** — `chk_email_templates_subject_body_nonempty` (défense en profondeur, calqué `chk_contact_persons_names`).
+6. **Index redondant supprimé** — `idx_email_templates_company` retiré (le `UNIQUE (company_id, template_type, language)` fournit déjà un index leftmost-prefix sur `company_id`).
+7. **DRY** — helper `EmailTemplateType::allowed_variables_owned() -> Vec<String>`, remplace les 3 copies de `iter().map().collect()` (repo ×2 + DTO API).
+8. **Test RBAC 4 endpoints** — `rbac_covers_get_single_put_and_delete` (Admin 200 / Comptable 403 / Consultation 403 sur GET unique + PUT + DELETE).
+9. **Assertion `allowedVariables`** — ajoutée au round-trip e2e (contrat public jusque-là non vérifié).
+
+**1 defer** : rollback qui masque l'erreur d'origine si le `ROLLBACK` échoue (4 sites) — pré-existant identique dans tous les repos du projet, tracé dans `deferred-work.md`.
+
+**Test Locally First post-patches** : `cargo fmt` + `build --all-targets` + `clippy -D warnings` (0 warning) tous verts ; `cargo test -p kesh-db -- --test-threads=1` = 25 suites, 0 échec (dont 13 tests email_templates) ; `cargo test --workspace --exclude kesh-db --no-fail-fast` = 66 suites, 0 échec (flake KF-038 non réapparu). 0 régression introduite par les patches.
 
 ## Dev Notes
 
@@ -251,3 +291,5 @@ Implémentation complète T1→T8 en un seul passage, toutes les ACs #1-#17 sati
 - `crates/kesh-api/tests/admin_full_export_e2e.rs` (compteur fichiers export 33→34)
 - `docs/migrations-idempotence-audit.md` (ligne migration 20260708000001)
 - `docs/optimistic-locking-patterns.md` (ligne repository `email_templates.rs`)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (**Pass 1 review** — clé `error-email-template-unknown-variables`, 4 langues)
+- `_bmad-output/implementation-artifacts/deferred-work.md` (**Pass 1 review** — defer D1 rollback-masque)

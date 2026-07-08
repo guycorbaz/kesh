@@ -10,16 +10,27 @@
 //! - `None` : le caller croit qu'aucun override n'existe → `INSERT`.
 //! - `Some(v)` : le caller modifie l'override existant à la version `v` → `UPDATE`.
 //!
-//! Le `SELECT ... FOR UPDATE` dans [`upsert_override`]/[`restore_default`]
-//! verrouille la ligne (ou le gap InnoDB si absente) dans la transaction,
-//! éliminant la race entre deux `PUT`/`DELETE` concurrents sans avoir à
-//! attraper une violation `UNIQUE` après coup.
+//! **Deux chemins transactionnels distincts dans `upsert_override`**
+//! (code-review Pass 1) : le chemin création (`expected_version = None`)
+//! tente l'`INSERT` **sans lecture verrouillante préalable**. Un
+//! `SELECT ... FOR UPDATE` sur une ligne absente prend un gap lock InnoDB ;
+//! or un gap lock n'empêche PAS une autre transaction de tenir aussi son
+//! propre gap lock compatible sur la même lacune — seul l'`INSERT` lui-même
+//! est bloquant. Deux transactions faisant chacune `SELECT FOR UPDATE` puis
+//! `INSERT` sur la même lacune risquent donc de deadlocker (pattern InnoDB
+//! documenté : deux gap locks partagés + deux tentatives d'écriture
+//! symétriques dans la même lacune). Sans lecture préalable, l'`INSERT`
+//! gère seul son verrouillage : la seconde transaction attend puis échoue
+//! proprement sur `UNIQUE` (MariaDB 1062, `DbError::UniqueConstraintViolation`),
+//! remappé en `OptimisticLockConflict` — comportement vérifié par un test de
+//! concurrence réelle (`tokio::join!`, pas seulement séquentiel), cf.
+//! `upsert_override_true_concurrent_create_yields_exactly_one_conflict`.
+//! Le chemin modification (`Some(v)`) garde le `SELECT ... FOR UPDATE`
+//! classique (verrou de ligne existante, pas de gap lock — pas le même
+//! risque de deadlock) + `restore_default`.
 //!
-//! **Audit** : `NewAuditLogEntry::user(user_id, ...)` — pas `for_actor`
-//! (le threading du PAT `api_key_id` est un pattern de route handler
-//! `kesh-api`, cf. `exports.rs`/`bank_accounts.rs`, jamais utilisé dans un
-//! repository `kesh-db` ; `company_invoice_settings.rs`, le modèle
-//! structurel le plus proche de ce repository, utilise `::user` seul).
+//! **Audit** : `NewAuditLogEntry::for_actor(user_id, actor_api_key_id, ...)`
+//! — thread le PAT (Story 17-2a DC5) conformément à l'AC #11 de la spec.
 
 use sqlx::mysql::MySqlPool;
 
@@ -53,12 +64,7 @@ fn to_effective_override(row: &EmailTemplate) -> EffectiveEmailTemplate {
         body: row.body.clone(),
         version: Some(row.version),
         is_default: false,
-        allowed_variables: row
-            .template_type
-            .allowed_variables()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+        allowed_variables: row.template_type.allowed_variables_owned(),
     }
 }
 
@@ -74,11 +80,7 @@ fn to_effective_default(
         body: body.to_string(),
         version: None,
         is_default: true,
-        allowed_variables: template_type
-            .allowed_variables()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+        allowed_variables: template_type.allowed_variables_owned(),
     }
 }
 
@@ -145,17 +147,59 @@ fn is_no_op_change(before: &EmailTemplate, subject: &str, body: &str) -> bool {
     before.subject == subject && before.body == body
 }
 
+/// Écrit l'entrée d'audit `email_template.updated` dans la transaction ;
+/// rollback + propagation si l'insertion audit échoue. Partagé par les deux
+/// chemins création/modification de [`upsert_override`].
+async fn audit_update_and_commit(
+    mut tx: sqlx::Transaction<'_, sqlx::MySql>,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+    before_json: serde_json::Value,
+    row_after: EmailTemplate,
+) -> Result<EmailTemplate, DbError> {
+    let audit_details = serde_json::json!({
+        "before": before_json,
+        "after": template_snapshot_json(&row_after),
+    });
+    if let Err(e) = audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::for_actor(
+            user_id,
+            actor_api_key_id,
+            "email_template.updated".to_string(),
+            "email_template".to_string(),
+            row_after.id,
+            Some(audit_details),
+        ),
+    )
+    .await
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(e);
+    }
+
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(row_after)
+}
+
 /// Crée ou modifie l'override de `(company_id, template_type, language)`.
 ///
 /// `expected_version = None` : le caller croit qu'aucun override n'existe
-/// → `INSERT`. Si une ligne existe déjà (race) → `OptimisticLockConflict`.
-/// `expected_version = Some(v)` : modifie l'override existant à la version
-/// `v` → `UPDATE`. Ligne absente (race avec un `restore_default` concurrent)
-/// ou version stale → `OptimisticLockConflict` dans les deux cas.
+/// → `INSERT`. `expected_version = Some(v)` : modifie l'override existant à
+/// la version `v` → `UPDATE`.
 ///
-/// `SELECT ... FOR UPDATE` verrouille la ligne (ou le gap InnoDB si absente)
-/// pour la durée de la transaction — élimine la race sans dépendre d'une
-/// violation `UNIQUE` après coup.
+/// **Deux chemins transactionnels distincts, volontairement** (code-review
+/// Pass 1) : le chemin création n'effectue AUCUNE lecture verrouillante
+/// préalable — il tente l'`INSERT` directement. Un `SELECT ... FOR UPDATE`
+/// sur une ligne absente avant l'`INSERT` (comme le faisait la version
+/// initiale) prend un gap lock InnoDB ; deux transactions concurrentes
+/// peuvent chacune obtenir ce gap lock (compatible entre elles), puis
+/// risquer un deadlock en tentant chacune l'`INSERT` ensuite (pattern InnoDB
+/// documenté). Sans lecture préalable, l'`INSERT` gère son propre
+/// verrouillage : la seconde transaction attend simplement la première puis
+/// échoue proprement sur `UNIQUE` (1062), remappé en `OptimisticLockConflict`
+/// — vérifié par un test de concurrence réelle (`tokio::join!`), cf.
+/// `upsert_override_true_concurrent_create_yields_exactly_one_conflict`.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_override(
     pool: &MySqlPool,
@@ -164,30 +208,15 @@ pub async fn upsert_override(
     language: Language,
     expected_version: Option<i32>,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
     subject: String,
     body: String,
 ) -> Result<EmailTemplate, DbError> {
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    match expected_version {
+        None => {
+            let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let existing = sqlx::query_as::<_, EmailTemplate>(&format!(
-        "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ? FOR UPDATE"
-    ))
-    .bind(company_id)
-    .bind(template_type)
-    .bind(language)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let (before_json, row_after) = match (expected_version, existing) {
-        (None, Some(_)) | (Some(_), None) => {
-            // Race : le caller a une vue périmée de l'existence de l'override.
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::OptimisticLockConflict);
-        }
-        (None, None) => {
-            // Création : pas de ligne, pas de version attendue.
-            let insert_id = sqlx::query(
+            let insert_result = sqlx::query(
                 "INSERT INTO email_templates (company_id, template_type, language, subject, body) \
                  VALUES (?, ?, ?, ?, ?)",
             )
@@ -198,8 +227,22 @@ pub async fn upsert_override(
             .bind(&body)
             .execute(&mut *tx)
             .await
-            .map_err(map_db_error)?
-            .last_insert_id() as i64;
+            .map_err(map_db_error);
+
+            let insert_id = match insert_result {
+                Ok(result) => result.last_insert_id() as i64,
+                // Quelqu'un d'autre a créé la ligne entre-temps (race sur
+                // (company_id, template_type, language)) → conflit optimiste,
+                // pas une violation UNIQUE brute.
+                Err(DbError::UniqueConstraintViolation(_)) => {
+                    tx.rollback().await.map_err(map_db_error)?;
+                    return Err(DbError::OptimisticLockConflict);
+                }
+                Err(e) => {
+                    tx.rollback().await.map_err(map_db_error)?;
+                    return Err(e);
+                }
+            };
 
             let created = sqlx::query_as::<_, EmailTemplate>(&format!(
                 "SELECT {COLUMNS} FROM email_templates WHERE id = ?"
@@ -209,9 +252,34 @@ pub async fn upsert_override(
             .await
             .map_err(map_db_error)?;
 
-            (serde_json::Value::Null, created)
+            audit_update_and_commit(
+                tx,
+                user_id,
+                actor_api_key_id,
+                serde_json::Value::Null,
+                created,
+            )
+            .await
         }
-        (Some(v), Some(row)) => {
+        Some(v) => {
+            let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+            let existing = sqlx::query_as::<_, EmailTemplate>(&format!(
+                "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ? FOR UPDATE"
+            ))
+            .bind(company_id)
+            .bind(template_type)
+            .bind(language)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+            let Some(row) = existing else {
+                // Ligne disparue (race avec un `restore_default` concurrent).
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::OptimisticLockConflict);
+            };
+
             if row.version != v {
                 tx.rollback().await.map_err(map_db_error)?;
                 return Err(DbError::OptimisticLockConflict);
@@ -251,32 +319,9 @@ pub async fn upsert_override(
             .await
             .map_err(map_db_error)?;
 
-            (before_json, updated)
+            audit_update_and_commit(tx, user_id, actor_api_key_id, before_json, updated).await
         }
-    };
-
-    let audit_details = serde_json::json!({
-        "before": before_json,
-        "after": template_snapshot_json(&row_after),
-    });
-    if let Err(e) = audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::user(
-            user_id,
-            "email_template.updated".to_string(),
-            "email_template".to_string(),
-            row_after.id,
-            Some(audit_details),
-        ),
-    )
-    .await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
     }
-
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(row_after)
 }
 
 /// Restaure le défaut pour `(company_id, template_type, language)` en
@@ -288,6 +333,7 @@ pub async fn restore_default(
     template_type: EmailTemplateType,
     language: Language,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
@@ -316,8 +362,9 @@ pub async fn restore_default(
     let audit_details = serde_json::json!({ "before": template_snapshot_json(&row) });
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry::user(
+        NewAuditLogEntry::for_actor(
             user_id,
+            actor_api_key_id,
             "email_template.restored_default".to_string(),
             "email_template".to_string(),
             row.id,
