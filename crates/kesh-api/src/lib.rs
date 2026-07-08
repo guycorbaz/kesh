@@ -187,6 +187,18 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
                 (state.config.admin_import_max_mib as usize).saturating_mul(1024 * 1024),
             )),
         )
+        // Story 20-1 : socle templates d'e-mail (Admin-only — pas de lecture
+        // Comptable+ v1, seul consommateur = section Admin dédiée 20-2).
+        .route(
+            "/api/v1/admin/email-templates",
+            get(routes::email_templates::list_email_templates),
+        )
+        .route(
+            "/api/v1/admin/email-templates/{template_type}/{language}",
+            get(routes::email_templates::get_email_template)
+                .put(routes::email_templates::update_email_template)
+                .delete(routes::email_templates::restore_email_template_default),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
         ));

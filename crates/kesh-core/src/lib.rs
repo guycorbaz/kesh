@@ -7,6 +7,7 @@
 pub mod accounting;
 pub mod bank_imports;
 pub mod chart_of_accounts;
+pub mod email_template_engine;
 pub mod errors;
 pub mod invoice_format;
 pub mod listing;

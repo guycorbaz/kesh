@@ -1,6 +1,6 @@
 # Story 20.1: Socle templates d'e-mail (backend) — table, moteur `{var}`, CRUD Admin
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -62,46 +62,46 @@ Cette story est le **story-zéro** de l'Epic 20 (#224). Elle ne touche NI le mai
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration + schéma** (AC: #1, #2)
-  - [ ] T1.1 Créer `crates/kesh-db/migrations/20260708000001_email_templates.sql` (schéma complet AC #1)
-  - [ ] T1.2 Ajouter la ligne correspondante dans `docs/migrations-idempotence-audit.md`
-  - [ ] T1.3 Vérifier `cargo sqlx migrate run` / build applique la migration proprement (offline mode si `SQLX_OFFLINE=true` — régénérer `.sqlx/` si nécessaire, cf. Dev Notes)
+- [x] **T1 — Migration + schéma** (AC: #1, #2)
+  - [x] T1.1 Créer `crates/kesh-db/migrations/20260708000001_email_templates.sql` (schéma complet AC #1)
+  - [x] T1.2 Ajouter la ligne correspondante dans `docs/migrations-idempotence-audit.md`
+  - [x] T1.3 Pas de `.sqlx/` cache dans le repo, zéro usage de `query!`/`query_as!` macro-typées dans `crates/` → `cargo build` ne nécessite pas de connexion DB live. Application réelle de la migration vérifiée via `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` (DB éphémère fraîche par test, T5.5) plutôt que contre la DB dev partagée (`kesh-mariadb` trouvée dans un état `_sqlx_migrations` dirty pré-existant sur `20260705000001`, `success=0` — état antérieur à cette story, hors scope, non modifié).
 
-- [ ] **T2 — Entités & enum** (AC: #3, #4)
-  - [ ] T2.1 `EmailTemplateType` dans `kesh-db/src/entities/email_template.rs` (`as_str`/`FromStr`/`Type<MySql>`/`Encode`/`Decode`, calqué `Language`)
-  - [ ] T2.2 `EmailTemplateType::ALL` (const, mirroring `Locale::ALL`) + `allowed_variables()`
-  - [ ] T2.3 Struct `EmailTemplate` (`sqlx::FromRow`) : `id, company_id, template_type, language, subject, body, version, created_at, updated_at`
-  - [ ] T2.4 Struct `EffectiveEmailTemplate` (résultat résolu override|défaut)
+- [x] **T2 — Entités & enum** (AC: #3, #4)
+  - [x] T2.1 `EmailTemplateType` dans `kesh-db/src/entities/email_template.rs` (`as_str`/`FromStr`/`Type<MySql>`/`Encode`/`Decode`, calqué `Language`)
+  - [x] T2.2 `EmailTemplateType::ALL` (const, mirroring `Locale::ALL`) + `allowed_variables()`
+  - [x] T2.3 Struct `EmailTemplate` (`sqlx::FromRow`) : `id, company_id, template_type, language, subject, body, version, created_at, updated_at`
+  - [x] T2.4 Struct `EffectiveEmailTemplate` (résultat résolu override|défaut)
 
-- [ ] **T3 — Moteur `{var}` (kesh-core)** (AC: #5, #6)
-  - [ ] T3.1 `crates/kesh-core/src/email_template_engine.rs` : `extract_tokens`, `validate_tokens`, `render`
-  - [ ] T3.2 Tests unitaires (substitution simple, token inconnu littéral, dédup, non-double-substitution, casse)
-  - [ ] T3.3 Exporter le module depuis `kesh-core/src/lib.rs`
+- [x] **T3 — Moteur `{var}` (kesh-core)** (AC: #5, #6)
+  - [x] T3.1 `crates/kesh-core/src/email_template_engine.rs` : `extract_tokens`, `validate_tokens`, `render`
+  - [x] T3.2 Tests unitaires (substitution simple, token inconnu littéral, dédup, non-double-substitution, casse) — 8/8 PASS
+  - [x] T3.3 Exporter le module depuis `kesh-core/src/lib.rs`
 
-- [ ] **T4 — Defaults** (AC: #7, #8)
-  - [ ] T4.1 Textes par défaut FR/DE/IT/EN pour `invoice_send` (`email_template_defaults.rs`), tokens ∈ `{salutation, contactName, invoiceNumber, amount, dueDate, companyName}`
-  - [ ] T4.2 Test : chaque défaut ne contient que des tokens déclarés (boucle sur `EmailTemplateType::ALL × Language::ALL`, appel `validate_tokens`)
+- [x] **T4 — Defaults** (AC: #7, #8)
+  - [x] T4.1 Textes par défaut FR/DE/IT/EN pour `invoice_send` (`email_template_defaults.rs`), tokens ∈ `{salutation, contactName, invoiceNumber, amount, dueDate, companyName}`
+  - [x] T4.2 Test : chaque défaut ne contient que des tokens déclarés (boucle sur `EmailTemplateType::ALL × Language::ALL`) — PASS
 
-- [ ] **T5 — Repository** (AC: #9, #10, #11, #12)
-  - [ ] T5.1 `get_effective` + `list_effective_for_company`
-  - [ ] T5.2 `upsert_override` (INSERT si `expected_version = None`, UPDATE sinon, `is_no_op_change` co-localisé, audit `email_template.updated`)
-  - [ ] T5.3 `restore_default` (DELETE idempotent, audit `email_template.restored_default` seulement si une ligne existait)
-  - [ ] T5.4 Mettre à jour `docs/optimistic-locking-patterns.md` (tableau « Repositories couverts »)
-  - [ ] T5.5 Tests d'intégration `crates/kesh-db/tests/email_templates_repository.rs` (`#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`) : défaut sans ligne, création (version=1), update (version+1), conflit version stale (409-equivalent `DbError::OptimisticLockConflict`), no-op (version inchangée + pas d'audit — vérifier `audit_log` count), restore puis re-GET retombe sur défaut, `UNIQUE(company_id, template_type, language)` respectée, cross-tenant (2 companies, lignes indépendantes)
+- [x] **T5 — Repository** (AC: #9, #10, #11, #12)
+  - [x] T5.1 `get_effective` + `list_effective_for_company`
+  - [x] T5.2 `upsert_override` (INSERT si `expected_version = None`, UPDATE sinon, `is_no_op_change` co-localisé, audit `email_template.updated`) — écrit via `NewAuditLogEntry::user` (pas `for_actor` : ce threading du PAT est un pattern route-handler `kesh-api`, jamais utilisé dans un repository `kesh-db` — écart assumé vs Dev Notes initiales, cf. Completion Notes)
+  - [x] T5.3 `restore_default` (DELETE idempotent, audit `email_template.restored_default` seulement si une ligne existait)
+  - [x] T5.4 Mettre à jour `docs/optimistic-locking-patterns.md` (tableau « Repositories couverts »)
+  - [x] T5.5 Tests d'intégration `crates/kesh-db/tests/email_templates_repository.rs` — 11/11 PASS (défaut sans ligne, liste 4 défauts, création v1, conflit création concurrente, update v+1, conflit version stale, no-op sans bump/audit, restore+fallback, restore idempotent, UNIQUE constraint, cross-tenant)
 
-- [ ] **T6 — Validation & AppError** (AC: #13)
-  - [ ] T6.1 Nouveau variant `AppError::EmailTemplateUnknownVariables { unknown_vars: Vec<String> }` (`errors.rs`) + mapping 422 `EMAIL_TEMPLATE_UNKNOWN_VARIABLES` avec `details.unknownVariables`
-  - [ ] T6.2 Validation subject/body non vides + appel `validate_tokens` dans le handler `PUT`
+- [x] **T6 — Validation & AppError** (AC: #13)
+  - [x] T6.1 Nouveau variant `AppError::EmailTemplateUnknownVariables { unknown_vars: Vec<String> }` (`errors.rs`) + mapping 422 `EMAIL_TEMPLATE_UNKNOWN_VARIABLES` avec `details.unknownVariables`
+  - [x] T6.2 Validation subject/body non vides + appel `validate_tokens` dans le handler `PUT`
 
-- [ ] **T7 — Endpoints Admin** (AC: #14, #15, #16, #17)
-  - [ ] T7.1 `crates/kesh-api/src/routes/email_templates.rs` : `list_email_templates` (GET collection), `get_email_template` (GET unique), `update_email_template` (PUT), `restore_email_template_default` (DELETE)
-  - [ ] T7.2 DTOs `EmailTemplateResponse` + `UpdateEmailTemplateRequest { subject, body, expected_version: Option<i32> }` (camelCase)
-  - [ ] T7.3 Enregistrement des 4 routes dans `admin_routes` (`lib.rs`, `route_layer(require_admin_role)` déjà présent sur ce sous-routeur)
-  - [ ] T7.4 Tests e2e `crates/kesh-api/tests/email_templates_e2e.rs` : RBAC (Admin 200 / Comptable 403 / Consultation 403), round-trip CRUD complet, zéro-config (AC #16), validation 422 tokens inconnus, conflit 409 version stale, restore 204 puis re-GET défaut
+- [x] **T7 — Endpoints Admin** (AC: #14, #15, #16, #17)
+  - [x] T7.1 `crates/kesh-api/src/routes/email_templates.rs` : `list_email_templates` (GET collection), `get_email_template` (GET unique), `update_email_template` (PUT), `restore_email_template_default` (DELETE)
+  - [x] T7.2 DTOs `EmailTemplateResponse` + `UpdateEmailTemplateRequest { subject, body, expected_version: Option<i32> }` (camelCase)
+  - [x] T7.3 Enregistrement des 4 routes dans `admin_routes` (`lib.rs`, `route_layer(require_admin_role)` déjà présent sur ce sous-routeur)
+  - [x] T7.4 Tests e2e `crates/kesh-api/tests/email_templates_e2e.rs` — 7/7 PASS (RBAC Admin/Comptable/Consultation, round-trip CRUD+restore+idempotence, zéro-config 4 défauts, 422 tokens inconnus, 400 subject/body vides, 409 création-race + version stale, 400 path params invalides)
 
-- [ ] **T8 — Test Locally First & commit**
-  - [ ] T8.1 `cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (backend uniquement, story 100% Rust)
-  - [ ] T8.2 Commit(s) sur `story/20-1-envoi-factures-email` (branche déjà créée, cf. Dev Notes)
+- [x] **T8 — Test Locally First & commit**
+  - [x] T8.1 `cargo fmt --all -- --check` OK, `cargo build --workspace --all-targets` OK, `cargo clippy --workspace --all-targets -- -D warnings` 0 warning, `cargo test --workspace` — voir Completion Notes pour le détail (3 régressions trouvées+corrigées, 1 flake pré-existant sans rapport documenté KF-038 #228)
+  - [x] T8.2 Commit(s) sur `story/20-1-envoi-factures-email`
 
 ## Dev Notes
 
@@ -198,8 +198,56 @@ Si le workspace utilise `SQLX_OFFLINE=true` en CI/local (vérifier `.sqlx/` à l
 
 ### Agent Model Used
 
+Claude Sonnet 5 (bmad-dev-story, exécution single-pass complète T1→T8).
+
 ### Debug Log References
+
+- `cargo test -p kesh-core email_template_engine` — 8/8 PASS (moteur `{var}`).
+- `cargo test -p kesh-db email_template` (unit, `--lib`) — 1/1 PASS (auto-cohérence defaults).
+- `cargo test -p kesh-db --test email_templates_repository` — 11/11 PASS.
+- `cargo test -p kesh-api --lib email_templates` — 4/4 PASS (parsing path params).
+- `cargo test -p kesh-api --test email_templates_e2e` — 7/7 PASS.
+- `cargo test -p kesh-db -- --test-threads=1` (suite complète, lib+intégration) — 0 échec après corrections (voir Completion Notes).
+- `cargo test --workspace --exclude kesh-db --no-fail-fast` — 0 échec (run final, log `EXIT:0`, aucun `FAILED`).
 
 ### Completion Notes List
 
+Implémentation complète T1→T8 en un seul passage, toutes les ACs #1-#17 satisfaites.
+
+**Écart assumé vs Dev Notes initiales** : l'AC #11 (Dev Notes) suggérait `NewAuditLogEntry::for_actor(user_id, current_user.api_key_id, ...)` pour le threading du PAT. Vérification empirique en implémentant T5 : `for_actor` n'est utilisé **nulle part** dans les repositories `kesh-db` (seulement dans des route handlers `kesh-api` qui ont accès à `CurrentUser`) — `company_invoice_settings.rs`, le modèle structurel le plus proche, utilise `NewAuditLogEntry::user(user_id, ...)` seul. Le repository `email_templates.rs` suit donc `::user` pour rester cohérent avec son modèle direct, sans thread `api_key_id` (qui aurait ajouté un paramètre non justifié par aucun précédent repository).
+
+**Test Locally First — 3 régressions réelles détectées et corrigées** (aucune liée à la logique métier email_templates elle-même, toutes de la catégorie "nouvelle table → compteurs figés ailleurs dans le codebase à mettre à jour") :
+1. `crates/kesh-db/src/backup.rs` — `TABLES_TO_TRUNCATE` ne listait pas `email_templates` → test `backup::tests::backup_inventory_matches_schema` FAILED. Ajouté à la liste (position : après `vat_rates`, avant `refresh_tokens` — enfant de `companies` sans dépendant).
+2. `crates/kesh-db/tests/migrations_upgrade_path.rs` — assertion figée `total == 46` migrations → FAILED (nouvelle migration = 47e). Mis à jour 46→47 + commentaire.
+3. `crates/kesh-api/tests/admin_full_export_e2e.rs` — assertion figée `data_count == 33` fichiers `data/*.ndjson` dans l'export complet → FAILED (email_templates.ndjson = 34e fichier). Mis à jour 33→34 + message.
+
+**1 flake pré-existant sans rapport découvert incidemment** : `reconciliation_e2e::post_accept_skips_non_chf_transaction` a échoué une fois sous `cargo test --workspace` (parallèle, forte contention — 784 tests kesh-api), mais passe systématiquement en isolation et n'a pas réapparu au run complet suivant. Aucun rapport avec Story 20-1 (fichier jamais touché). Documenté en GitHub Issue **[KF-038 (#228)](https://github.com/guycorbaz/kesh/issues/228)** conformément à l'Issue Tracking Rule (CLAUDE.md) plutôt que fixé dans cette story (hors scope).
+
+**Mode d'exécution des tests kesh-db** : suivant CLAUDE.md §Test Locally First, `kesh-db` (touché par cette story) a été testé en série (`-- --test-threads=1`) après avoir observé 15 échecs additionnels en mode parallèle par défaut (tous dans `journal_entries`/`products`, non liés à email_templates) qui disparaissent intégralement en série — confirme la note projet documentée sur la nécessité de sérialiser les tests d'intégration `kesh-db`.
+
+**Aucun fichier frontend touché** (story 100% backend Rust, conforme au scope).
+
 ### File List
+
+**Nouveaux fichiers**
+- `crates/kesh-db/migrations/20260708000001_email_templates.sql`
+- `crates/kesh-db/src/entities/email_template.rs`
+- `crates/kesh-db/src/entities/email_template_defaults.rs`
+- `crates/kesh-db/src/repositories/email_templates.rs`
+- `crates/kesh-db/tests/email_templates_repository.rs`
+- `crates/kesh-core/src/email_template_engine.rs`
+- `crates/kesh-api/src/routes/email_templates.rs`
+- `crates/kesh-api/tests/email_templates_e2e.rs`
+
+**Fichiers modifiés**
+- `crates/kesh-db/src/entities/mod.rs` (export `email_template`/`email_template_defaults`)
+- `crates/kesh-db/src/repositories/mod.rs` (export `email_templates`)
+- `crates/kesh-db/src/backup.rs` (`TABLES_TO_TRUNCATE` +`email_templates`)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` (compteur migrations 46→47)
+- `crates/kesh-core/src/lib.rs` (export `email_template_engine`)
+- `crates/kesh-api/src/errors.rs` (variant `EmailTemplateUnknownVariables` + mapping 422)
+- `crates/kesh-api/src/routes/mod.rs` (export `email_templates`)
+- `crates/kesh-api/src/lib.rs` (4 routes `admin_routes`)
+- `crates/kesh-api/tests/admin_full_export_e2e.rs` (compteur fichiers export 33→34)
+- `docs/migrations-idempotence-audit.md` (ligne migration 20260708000001)
+- `docs/optimistic-locking-patterns.md` (ligne repository `email_templates.rs`)

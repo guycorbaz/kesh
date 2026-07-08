@@ -48,6 +48,7 @@ Story 7-3 a appliqué le pattern aux 9 fonctions `update()` user-form du crate `
 | 7 | `company_invoice_settings.rs` | `update` | `invoice_number_format, default_receivable_account_id, default_revenue_account_id, default_sales_journal, journal_entry_description_template` |
 | 8 | `journal_entries.rs` | `update` | `entry_date, journal, description` + lignes (en ordre `line_order`) |
 | 9 | `users.rs` | `update_role_and_active` | `role, active` |
+| 10 | `email_templates.rs` | `upsert_override` | `subject, body` |
 
 ## Hors scope (pattern non applicable)
 

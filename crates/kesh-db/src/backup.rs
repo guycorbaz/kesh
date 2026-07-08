@@ -60,6 +60,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "contacts",
     "fiscal_years",
     "vat_rates", // Story 7.2 (KF-003) — table enfant de companies (FK fk_vat_rates_company), aucune table ne référence vat_rates.
+    "email_templates", // Story 20-1 (#224) — enfant de companies (CASCADE), aucune table ne référence email_templates.
     "refresh_tokens",
     "password_reset_tokens", // Story 17-4a (#122) — enfant de users (CASCADE), tokens recovery éphémères.
     "onboarding_state",

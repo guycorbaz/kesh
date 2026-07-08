@@ -654,6 +654,15 @@ pub enum AppError {
     /// disque est absent (restore métadonnée-seule L1/F7) → `410 SOURCE_DOCUMENT_GONE`.
     #[error("Justificatif non restauré")]
     SourceDocumentGone,
+
+    // --- Story 20-1 — socle templates d'e-mail (#224) ---
+    /// `PUT /admin/email-templates/{type}/{language}` : `subject`/`body`
+    /// référencent un ou plusieurs tokens `{var}` hors de
+    /// `EmailTemplateType::allowed_variables()` → `422`. Les tokens
+    /// inconnus sont exposés en `details.unknownVariables` pour que le
+    /// futur éditeur Admin (Story 20-2) les surligne sans parser le message.
+    #[error("Template invalide : variables inconnues {unknown_vars:?}")]
+    EmailTemplateUnknownVariables { unknown_vars: Vec<String> },
 }
 
 // --- Story 9-1 : From<ReportError> for AppError ---
@@ -1757,6 +1766,20 @@ impl IntoResponse for AppError {
                     "Le justificatif n'a pas été restauré (métadonnées seules).",
                 ),
             ),
+
+            AppError::EmailTemplateUnknownVariables { unknown_vars } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "EMAIL_TEMPLATE_UNKNOWN_VARIABLES",
+                        "message": t(
+                            "error-email-template-unknown-variables",
+                            "Le template contient des variables inconnues.",
+                        ),
+                        "details": { "unknownVariables": unknown_vars }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
 
             AppError::Database(db_err) => match db_err {
                 DbError::NotFound => build_response(
