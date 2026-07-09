@@ -33,14 +33,9 @@ pub async fn get_invoice_pdf(
         "PDF download requested"
     );
 
-    let rendered = invoice_pdf_service::render(
-        &state.pool,
-        &state.i18n,
-        state.config.locale,
-        company.id,
-        id,
-    )
-    .await?;
+    let rendered =
+        invoice_pdf_service::render(&state.pool, &state.i18n, state.config.locale, &company, id)
+            .await?;
 
     // Content-Disposition : filename sanitizé (par le service).
     let disposition = format!(

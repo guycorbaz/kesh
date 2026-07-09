@@ -15,7 +15,7 @@
 
 use kesh_db::entities::{BankAccount, Company, Invoice, InvoiceLine, contact::Contact};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{bank_accounts, companies, contacts, invoices};
+use kesh_db::repositories::{bank_accounts, contacts, invoices};
 use kesh_i18n::Locale;
 use kesh_qrbill::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillError,
@@ -45,7 +45,7 @@ pub const MAX_LINES_PER_PDF: usize = 9;
 pub struct RenderedInvoicePdf {
     /// Contenu binaire du PDF.
     pub bytes: Vec<u8>,
-    /// Nom de fichier déjà sanitizé, sans extension host — ex. "F-2026-0042"
+    /// Nom de fichier déjà sanitizé, sans extension ni chemin — ex. "F-2026-0042"
     /// (le caller ajoute le préfixe/extension de son Content-Disposition ou
     /// de son attachment). Dérivé de `invoice.invoice_number` via
     /// `sanitize_filename`.
@@ -53,7 +53,12 @@ pub struct RenderedInvoicePdf {
 }
 
 /// Génère le PDF QR-facture d'une facture **validée**, scopée à
-/// `company_id` (anti-IDOR).
+/// `company` (anti-IDOR).
+///
+/// Contrat d'autorisation : `company` DOIT provenir d'une source déjà
+/// autorisée pour l'utilisateur courant (typiquement `get_company_for`) —
+/// le service ne re-vérifie pas ce droit. Le scoping de la facture est
+/// garanti par `find_by_id_with_lines(pool, company.id, …)`.
 ///
 /// Reproduit exactement la séquence historique de `get_invoice_pdf`
 /// (Story 5.3) : chargement facture + lignes, validations (statut,
@@ -64,11 +69,11 @@ pub async fn render(
     pool: &sqlx::MySqlPool,
     i18n: &kesh_i18n::I18nBundle,
     locale: Locale,
-    company_id: i64,
+    company: &Company,
     invoice_id: i64,
 ) -> Result<RenderedInvoicePdf, AppError> {
     // Chargement facture + lignes (scopé company).
-    let (invoice, lines) = invoices::find_by_id_with_lines(pool, company_id, invoice_id)
+    let (invoice, lines) = invoices::find_by_id_with_lines(pool, company.id, invoice_id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
@@ -93,7 +98,7 @@ pub async fn render(
         })?;
 
     // Primary bank account.
-    let primary_bank = bank_accounts::find_primary(pool, company_id)
+    let primary_bank = bank_accounts::find_primary(pool, company.id)
         .await?
         .ok_or_else(|| {
             AppError::InvoiceNotPdfReady(crate::errors::t(
@@ -105,21 +110,14 @@ pub async fn render(
     // Construction des structures kesh-qrbill.
     // Pays ISO-3166-1 alpha-2 depuis companies.country / contacts.country
     // (ajoutés en v0.1 via migration 20260418000001, DEFAULT 'CH').
-    let creditor_country = fetch_country(pool, "companies", company_id).await?;
+    let creditor_country = fetch_country(pool, "companies", company.id).await?;
     let debtor_country = fetch_country(pool, "contacts", contact.id).await?;
-
-    // Company (créancier) — chargée ici pour que le service reste autonome
-    // (signature `company_id` seul, cf. spec 20-3a). Le scoping anti-IDOR de
-    // la facture est déjà garanti par `find_by_id_with_lines` ci-dessus.
-    let company = companies::find_by_id(pool, company_id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
 
     let (qr_data, pdf_data) = build_qrbill_inputs(
         &invoice,
         &lines,
         &contact,
-        &company,
+        company,
         &primary_bank,
         &creditor_country,
         &debtor_country,

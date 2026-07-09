@@ -85,6 +85,15 @@ afin que la Story 20-3b (envoi de facture par e-mail) puisse produire exactement
   - [x] T4.1 `cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (kesh-api en série `--test-threads=1` recommandé si les tests d'intégration DB touchés) — le test `invoice_pdf_e2e` DOIT passer inchangé (iso-comportement)
   - [x] T4.2 Commit sur `story/20-1-envoi-factures-email`
 
+### Review Findings
+
+**Pass 1 (2026-07-09, Sonnet 5 × 3 reviewers : Blind Hunter + Edge Case Hunter + Acceptance Auditor)** — 8 findings bruts → dédup en 2 patch + 1 dismiss.
+
+- [x] [Review][Patch] P1 (MEDIUM, blind+edge+auditor — fusion BH-1/BH-2/BH-3/ECH-1/ECH-2/AA-1) : reload `Company` dans `render` — requête SQL redondante + branche `NotFound` inatteignable (code mort) + fenêtre TOCTOU (snapshot company pris ~5 requêtes DB plus tard que dans le handler historique) + doc-comment « reproduit exactement » inexact + déviation AC #2. Fix racine : signature `render(pool, i18n, locale, company: &Company, invoice_id)` — supprime le reload, rend la séquence exactement identique à l'historique, explicite le contrat d'autorisation (le caller DOIT fournir une `Company` résolue via `get_company_for`). Refinement AC #1 documenté au Change Log (AC #1 et AC #2 étaient mutuellement incompatibles — constat AA-1). [crates/kesh-api/src/routes/invoice_pdf_service.rs:63-116]
+- [x] [Review][Patch] P2 (LOW, blind BH-4) : doc `filename_base` « sans extension host » ambigu → « sans extension ni chemin ». [crates/kesh-api/src/routes/invoice_pdf_service.rs:48]
+
+Dismiss (1) : BH-5 (duplication doc de module entre `invoice_pdf.rs` et `invoice_pdf_service.rs` sans lien Rustdoc) — intention « thin wrapper » assumée, renvoi en prose déjà présent dans les deux en-têtes.
+
 ## Dev Notes
 
 ### Nature de la story — refactor mécanique, zéro changement fonctionnel
@@ -181,4 +190,5 @@ Claude Fable 5 (claude-fable-5) — run unique 2026-07-09.
 
 ## Change Log
 
+- 2026-07-09 — `bmad-code-review` **Pass 1** (reviewers Sonnet 5 × 3 : Blind Hunter + Edge Case Hunter + Acceptance Auditor, orchestration Fable 5) : 8 findings bruts → **2 patch + 1 dismiss** (0 CRITICAL/HIGH ; 5 MEDIUM dédupliqués en 1 cause racine). **P1 appliqué (refinement AC #1)** : signature `render(..., company: &Company, invoice_id)` au lieu de `company_id: i64` — l'Acceptance Auditor a démontré qu'AC #1 (signature id) et AC #2 (séquence exacte, qui suppose l'entité déjà chargée) étaient mutuellement incompatibles ; le fix racine supprime le reload `companies::find_by_id` (requête redondante, branche NotFound morte, fenêtre TOCTOU) et rend le doc-comment « séquence exacte » vrai ; contrat d'autorisation explicité (le caller DOIT fournir une `Company` issue de `get_company_for`). AC #4 : le handler passe `&company` (déjà chargée). P2 appliqué : doc `filename_base` clarifiée. La déviation « reload Company » notée en dev-story est ainsi résolue à la racine plutôt que reclassée en dette.
 - 2026-07-09 — `bmad-dev-story` (Claude Fable 5) : implémentation complète T1→T4 en run unique. Refactor mécanique : extraction du service `invoice_pdf_service::render` depuis `get_invoice_pdf` (thin wrapper), déplacement des 7 helpers partagés, re-routage de 3 call-sites (+1 doc-comment hors spec `errors.rs:710`). Déviation documentée : rechargement de la `Company` dans `render` (signature spec `company_id: i64` vs besoin entité complète de `build_qrbill_inputs`). Gate Test Locally First vert : fmt/build/clippy 0 warning, tests workspace série 91 suites 0 échec, `invoice_pdf_e2e` 11/11 **inchangé** (iso-comportement prouvé), KF-038 non réapparu. Status → review.
