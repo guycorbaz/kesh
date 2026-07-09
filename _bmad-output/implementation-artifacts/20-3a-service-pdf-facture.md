@@ -1,6 +1,6 @@
 # Story 20.3a: Service PDF de facture factorisé
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -93,6 +93,8 @@ afin que la Story 20-3b (envoi de facture par e-mail) puisse produire exactement
 - [x] [Review][Patch] P2 (LOW, blind BH-4) : doc `filename_base` « sans extension host » ambigu → « sans extension ni chemin ». [crates/kesh-api/src/routes/invoice_pdf_service.rs:48]
 
 Dismiss (1) : BH-5 (duplication doc de module entre `invoice_pdf.rs` et `invoice_pdf_service.rs` sans lien Rustdoc) — intention « thin wrapper » assumée, renvoi en prose déjà présent dans les deux en-têtes.
+
+**Pass 2 (2026-07-09, Haiku 4.5 × 3 reviewers, contexte frais, diff aplati unique `370a9b08..HEAD`)** — **0 > LOW, convergence.** AA2 : 9/9 AC conformes (refinement AC #1 Pass 1 vérifié tracé), 0 finding. ECH2 : 0 finding (24 vérifications outillées : call-sites résiduels, séquence, visibilités, chemins d'erreur, edge cases filename/locale/TOCTOU). BH2 : 3 LOW informatifs, tous dismiss — BH2-1 (commentaire laconique errors.rs : non-issue), BH2-2 (« get_company_for non visible » : **réfuté**, le handler l'appelle bien — artefact de la vue diff-only du Blind Hunter, pas d'hallucination d'indexation), BH2-3 (locale paramétrable : design intentionnel documenté). 0 hallucination Haiku sur ce cycle.
 
 ## Dev Notes
 
@@ -190,5 +192,6 @@ Claude Fable 5 (claude-fable-5) — run unique 2026-07-09.
 
 ## Change Log
 
+- 2026-07-09 — **Code-review CONVERGÉ en 2 passes** — trend findings > LOW : Pass 1 (Sonnet 5 × 3 reviewers) **5 MEDIUM** (dédupliqués en 1 cause racine reload `Company`) + 3 LOW → patches P1+P2 (`3180e903`) → Pass 2 (Haiku 4.5 × 3, contexte frais, diff aplati) **0** (3 LOW dismiss, 0 hallucination). Modèles : implémentation Fable 5, Pass 1 Sonnet 5, Pass 2 Haiku 4.5 (rotation conforme). Reclassement : refinement AC #1 (signature `&Company`) décidé et documenté en Pass 1, validé conforme par l'AA Pass 2. Status → done.
 - 2026-07-09 — `bmad-code-review` **Pass 1** (reviewers Sonnet 5 × 3 : Blind Hunter + Edge Case Hunter + Acceptance Auditor, orchestration Fable 5) : 8 findings bruts → **2 patch + 1 dismiss** (0 CRITICAL/HIGH ; 5 MEDIUM dédupliqués en 1 cause racine). **P1 appliqué (refinement AC #1)** : signature `render(..., company: &Company, invoice_id)` au lieu de `company_id: i64` — l'Acceptance Auditor a démontré qu'AC #1 (signature id) et AC #2 (séquence exacte, qui suppose l'entité déjà chargée) étaient mutuellement incompatibles ; le fix racine supprime le reload `companies::find_by_id` (requête redondante, branche NotFound morte, fenêtre TOCTOU) et rend le doc-comment « séquence exacte » vrai ; contrat d'autorisation explicité (le caller DOIT fournir une `Company` issue de `get_company_for`). AC #4 : le handler passe `&company` (déjà chargée). P2 appliqué : doc `filename_base` clarifiée. La déviation « reload Company » notée en dev-story est ainsi résolue à la racine plutôt que reclassée en dette.
 - 2026-07-09 — `bmad-dev-story` (Claude Fable 5) : implémentation complète T1→T4 en run unique. Refactor mécanique : extraction du service `invoice_pdf_service::render` depuis `get_invoice_pdf` (thin wrapper), déplacement des 7 helpers partagés, re-routage de 3 call-sites (+1 doc-comment hors spec `errors.rs:710`). Déviation documentée : rechargement de la `Company` dans `render` (signature spec `company_id: i64` vs besoin entité complète de `build_qrbill_inputs`). Gate Test Locally First vert : fmt/build/clippy 0 warning, tests workspace série 91 suites 0 échec, `invoice_pdf_e2e` 11/11 **inchangé** (iso-comportement prouvé), KF-038 non réapparu. Status → review.
