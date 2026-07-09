@@ -207,7 +207,7 @@ pub enum AppError {
     InvoiceNotPdfReady(String),
 
     /// Trop de lignes pour tenir sur un PDF A4 (v0.1 : limite réelle dans
-    /// `routes::invoice_pdf::MAX_LINES_PER_PDF` = 9). Le `usize` est la
+    /// `routes::invoice_pdf_service::MAX_LINES_PER_PDF` = 9). Le `usize` est la
     /// taille effective, affichée dans le message.
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
@@ -707,7 +707,7 @@ impl From<kesh_report::errors::ReportError> for AppError {
             }
             // Story 9-2a T2.0 + Pass 3 ECH3-H2 : variant dédié pour i18n message
             // client utile (cohérent kesh-qrbill::QrBillError::PdfGeneration mapping
-            // dans invoice_pdf.rs).
+            // dans invoice_pdf_service.rs).
             ReportError::PdfGeneration(detail) => AppError::PdfGenerationFailed(detail),
             // Story 9-2a + Pass 1 code-review H1 : variant dédié — sinon un
             // échec CSV se présentait à tort comme un échec PDF côté UI.
@@ -952,7 +952,7 @@ impl IntoResponse for AppError {
                 build_response(StatusCode::BAD_REQUEST, "INVOICE_NOT_PDF_READY", &msg)
             }
             AppError::InvoiceTooManyLinesForPdf(n) => {
-                let max = crate::routes::invoice_pdf::MAX_LINES_PER_PDF;
+                let max = crate::routes::invoice_pdf_service::MAX_LINES_PER_PDF;
                 let fallback = format!(
                     "La facture contient {n} lignes — le PDF A4 est limité à {max} lignes en v0.1."
                 );

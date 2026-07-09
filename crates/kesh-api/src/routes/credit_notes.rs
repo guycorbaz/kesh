@@ -23,7 +23,7 @@ use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
-use crate::routes::invoice_pdf::{
+use crate::routes::invoice_pdf_service::{
     MAX_LINES_PER_PDF, build_i18n, map_qrbill_error, sanitize_filename, split_lines,
 };
 

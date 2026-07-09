@@ -1,6 +1,6 @@
 # Story 20.3a: Service PDF de facture factorisé
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -67,23 +67,23 @@ afin que la Story 20-3b (envoi de facture par e-mail) puisse produire exactement
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Créer le module service** (AC: #1, #2, #3, #6, #7)
-  - [ ] T1.1 `crates/kesh-api/src/routes/invoice_pdf_service.rs` + `pub mod invoice_pdf_service;` dans `routes/mod.rs`
-  - [ ] T1.2 Déplacer dans le service : `MAX_LINES_PER_PDF`, `build_qrbill_inputs`, `build_i18n`, `map_qrbill_error`, `sanitize_filename`, `split_lines`, `fetch_country` (+ le test unitaire `sanitize_filename_replaces_non_alphanumeric`)
-  - [ ] T1.3 Écrire `render(pool, i18n, locale, company_id, invoice_id) -> Result<RenderedInvoicePdf, AppError>` reproduisant la séquence exacte (AC #2), `locale` en paramètre (AC #3)
-  - [ ] T1.4 Définir `pub struct RenderedInvoicePdf { bytes, filename_base }`
+- [x] **T1 — Créer le module service** (AC: #1, #2, #3, #6, #7)
+  - [x] T1.1 `crates/kesh-api/src/routes/invoice_pdf_service.rs` + `pub mod invoice_pdf_service;` dans `routes/mod.rs`
+  - [x] T1.2 Déplacer dans le service : `MAX_LINES_PER_PDF`, `build_qrbill_inputs`, `build_i18n`, `map_qrbill_error`, `sanitize_filename`, `split_lines`, `fetch_country` (+ le test unitaire `sanitize_filename_replaces_non_alphanumeric`)
+  - [x] T1.3 Écrire `render(pool, i18n, locale, company_id, invoice_id) -> Result<RenderedInvoicePdf, AppError>` reproduisant la séquence exacte (AC #2), `locale` en paramètre (AC #3)
+  - [x] T1.4 Définir `pub struct RenderedInvoicePdf { bytes, filename_base }`
 
-- [ ] **T2 — Réduire le handler à un wrapper** (AC: #4, #5)
-  - [ ] T2.1 `get_invoice_pdf` : `get_company_for` + `tracing::info!` + `render(...)` + Response (headers identiques)
-  - [ ] T2.2 Retirer de `invoice_pdf.rs` tout ce qui a déménagé ; importer depuis `invoice_pdf_service` ce que le handler référence encore (aucun si tout est dans render, sinon `RenderedInvoicePdf`)
+- [x] **T2 — Réduire le handler à un wrapper** (AC: #4, #5)
+  - [x] T2.1 `get_invoice_pdf` : `get_company_for` + `tracing::info!` + `render(...)` + Response (headers identiques)
+  - [x] T2.2 Retirer de `invoice_pdf.rs` tout ce qui a déménagé ; importer depuis `invoice_pdf_service` ce que le handler référence encore (aucun si tout est dans render, sinon `RenderedInvoicePdf`)
 
-- [ ] **T3 — Mettre à jour les call-sites externes** (AC: #6, #9)
-  - [ ] T3.1 `credit_notes.rs` imports → `invoice_pdf_service`
-  - [ ] T3.2 `errors.rs:955` chemin `MAX_LINES_PER_PDF` + doc-comment `:210`
+- [x] **T3 — Mettre à jour les call-sites externes** (AC: #6, #9)
+  - [x] T3.1 `credit_notes.rs` imports → `invoice_pdf_service`
+  - [x] T3.2 `errors.rs:955` chemin `MAX_LINES_PER_PDF` + doc-comment `:210`
 
-- [ ] **T4 — Test Locally First & commit** (AC: #8)
-  - [ ] T4.1 `cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (kesh-api en série `--test-threads=1` recommandé si les tests d'intégration DB touchés) — le test `invoice_pdf_e2e` DOIT passer inchangé (iso-comportement)
-  - [ ] T4.2 Commit sur `story/20-1-envoi-factures-email`
+- [x] **T4 — Test Locally First & commit** (AC: #8)
+  - [x] T4.1 `cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (kesh-api en série `--test-threads=1` recommandé si les tests d'intégration DB touchés) — le test `invoice_pdf_e2e` DOIT passer inchangé (iso-comportement)
+  - [x] T4.2 Commit sur `story/20-1-envoi-factures-email`
 
 ## Dev Notes
 
@@ -152,8 +152,33 @@ Le planning nomme explicitement `invoice_pdf_service::render`. Au-delà du nom :
 
 ### Agent Model Used
 
+Claude Fable 5 (claude-fable-5) — run unique 2026-07-09.
+
 ### Debug Log References
+
+- Gate Test Locally First : `cargo fmt` ✅, `cargo build --workspace --all-targets` ✅ (1m17s), `cargo clippy --workspace --all-targets -- -D warnings` ✅ (0 warning), `cargo test --workspace -j1 -- --test-threads=1` ✅ exit 0 — **91 suites, 0 échec** (log : scratchpad `test-workspace.log`). Flake KF-038 (#228) non réapparu (mode série).
+- `invoice_pdf_e2e.rs` : **11/11 verts, fichier non modifié** — preuve d'iso-comportement (AC #8).
+- `sanitize_filename_replaces_non_alphanumeric` passe à son nouvel emplacement (`routes::invoice_pdf_service::tests`).
 
 ### Completion Notes List
 
+- **T1** : `invoice_pdf_service.rs` créé — `render()` reproduit la séquence exacte du handler historique (AC #2), `locale` en paramètre (AC #3), `RenderedInvoicePdf { bytes, filename_base }` (AC #1). Les 7 helpers déplacés à visibilité identique (`pub const` / `pub(crate)` / privé pour `build_qrbill_inputs`), doc-comments conservés verbatim (dont le calcul géométrique de `MAX_LINES_PER_PDF` et la note anti-injection de `fetch_country`).
+- **Décision d'implémentation (déviation mineure vs AC #2, comportement inchangé)** : la spec fixe la signature `render(pool, i18n, locale, company_id, invoice_id)` mais `build_qrbill_inputs` a besoin de l'entité `Company` complète (adresse/nom/IDE), que le handler tenait de `get_company_for`. Le service recharge donc la company via `companies::find_by_id(pool, company_id)` (même requête que `get_company_for`) — coût : 1 SELECT PK supplémentaire par rendu ; bénéfice : le service reste autonome pour 20-3b, signature spec respectée. Company absente → `AppError::Database(DbError::NotFound)` (cas inatteignable via le handler qui a déjà validé la company).
+- **T2** : `get_invoice_pdf` réduit au thin wrapper (auth + `tracing::info!` conservé + `render` + Response). Content-Disposition strictement identique : `inline; filename="facture-{base}.pdf"` avec fallback `HeaderValue::from_static("inline")`.
+- **T3** : 3 call-sites re-routés (`credit_notes.rs:26`, `errors.rs:955` + doc `:210`) + 1 doc-comment supplémentaire hors spec (`errors.rs:710`, citait le mapping `QrBillError::PdfGeneration` « dans invoice_pdf.rs » — chemin mis à jour pour exactitude).
+- **T4** : gate complet vert (cf. Debug Log). Aucun nouveau test requis (story mécanique, E2E existant = filet), conformément aux Testing standards de la spec.
+- Frontières respectées : 0 migration, 0 frontend, 0 changement `kesh-qrbill`, aucune logique modifiée dans `build_qrbill_inputs`.
+
 ### File List
+
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs` — **nouveau** : service `render` + `RenderedInvoicePdf` + helpers déplacés (`MAX_LINES_PER_PDF`, `build_qrbill_inputs`, `split_lines`, `build_i18n`, `map_qrbill_error`, `sanitize_filename`, `fetch_country`) + test unitaire déplacé.
+- `crates/kesh-api/src/routes/invoice_pdf.rs` — **modifié** : réduit au thin wrapper HTTP (handler `get_invoice_pdf` seul).
+- `crates/kesh-api/src/routes/mod.rs` — **modifié** : `pub mod invoice_pdf_service;`.
+- `crates/kesh-api/src/routes/credit_notes.rs` — **modifié** : import des 5 helpers depuis `invoice_pdf_service`.
+- `crates/kesh-api/src/errors.rs` — **modifié** : chemin `MAX_LINES_PER_PDF` (`:955`) + 2 doc-comments (`:210`, `:710`).
+- `_bmad-output/implementation-artifacts/20-3a-service-pdf-facture.md` — **modifié** : story file (tasks, Dev Agent Record, status).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — **modifié** : 20-3a in-progress → review.
+
+## Change Log
+
+- 2026-07-09 — `bmad-dev-story` (Claude Fable 5) : implémentation complète T1→T4 en run unique. Refactor mécanique : extraction du service `invoice_pdf_service::render` depuis `get_invoice_pdf` (thin wrapper), déplacement des 7 helpers partagés, re-routage de 3 call-sites (+1 doc-comment hors spec `errors.rs:710`). Déviation documentée : rechargement de la `Company` dans `render` (signature spec `company_id: i64` vs besoin entité complète de `build_qrbill_inputs`). Gate Test Locally First vert : fmt/build/clippy 0 warning, tests workspace série 91 suites 0 échec, `invoice_pdf_e2e` 11/11 **inchangé** (iso-comportement prouvé), KF-038 non réapparu. Status → review.
