@@ -1,12 +1,14 @@
-//! Routes company — lecture de la configuration de l'organisation.
+//! Routes company — lecture de la configuration de l'organisation,
+//! et mise à jour de l'e-mail de contact (Story 20-3b1, Reply-To des
+//! e-mails métier).
 
 use axum::Extension;
 use axum::Json;
 use axum::extract::State;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use kesh_db::entities::{BankAccount, Company};
-use kesh_db::repositories::bank_accounts;
+use kesh_db::entities::{BankAccount, Company, CompanyUpdate};
+use kesh_db::repositories::{bank_accounts, companies};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -37,6 +39,11 @@ pub struct CompanyJson {
     pub org_type: String,
     pub accounting_language: String,
     pub instance_language: String,
+    /// E-mail de contact de la société (Story 20-3b1) — Reply-To des e-mails
+    /// métier. `null` = non renseigné (Reply-To omis à l'envoi).
+    pub email: Option<String>,
+    /// Verrou optimiste — requis par `PUT /companies/current/email`.
+    pub version: i32,
 }
 
 impl From<Company> for CompanyJson {
@@ -54,8 +61,62 @@ impl From<Company> for CompanyJson {
             org_type: c.org_type.as_str().to_string(),
             accounting_language: c.accounting_language.as_str().to_string(),
             instance_language: c.instance_language.as_str().to_string(),
+            email: c.email,
+            version: c.version,
         }
     }
+}
+
+/// Payload de `PUT /api/v1/companies/current/email` (Story 20-3b1).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCompanyEmailRequest {
+    /// Nouvel e-mail de contact. `null`/vide = effacer (Reply-To omis).
+    #[serde(default)]
+    pub email: Option<String>,
+    pub version: i32,
+}
+
+/// PUT /api/v1/companies/current/email — met à jour l'e-mail de contact de
+/// la société (Admin-only, Story 20-3b1). Endpoint dédié minimal : il
+/// n'existe aucune route générique d'update company (seul l'onboarding
+/// `set_coordinates` touche les coordonnées) ; les autres champs restent
+/// donc hors scope ici. Réutilise `companies::update` (verrou optimiste +
+/// no-op KF-004) avec un `CompanyUpdate` reconstruit depuis l'état courant.
+pub async fn update_company_email(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<UpdateCompanyEmailRequest>,
+) -> Result<Json<CompanyJson>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    let email = match req.email.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(e) => {
+            if !crate::routes::contacts::is_valid_email_simple(e) {
+                return Err(AppError::Validation(crate::errors::t(
+                    "error-company-email-invalid",
+                    "L'adresse e-mail de la société n'est pas valide.",
+                )));
+            }
+            Some(e.to_string())
+        }
+    };
+
+    let changes = CompanyUpdate {
+        name: company.name.clone(),
+        first_name: company.first_name.clone(),
+        last_name: company.last_name.clone(),
+        address_structured: company.structured_address(),
+        ide_number: company.ide_number.clone(),
+        org_type: company.org_type,
+        accounting_language: company.accounting_language,
+        instance_language: company.instance_language,
+        email,
+    };
+
+    let updated = companies::update(&state.pool, company.id, req.version, changes).await?;
+    Ok(Json(CompanyJson::from(updated)))
 }
 
 #[derive(Debug, Serialize)]

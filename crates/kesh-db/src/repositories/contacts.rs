@@ -23,15 +23,17 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 use crate::util::search::{escape_boolean_ft, escape_like};
 
-const COLUMNS: &str = "id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
+// pub(crate) : réutilisé par `repositories::reconciliation` (résolution des
+// contacts des propositions) — une seule liste de colonnes à maintenir.
+pub(crate) const COLUMNS: &str = "id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
-    address_country, email, phone, ide_number, default_payment_terms, active, version, \
-    created_at, updated_at";
+    address_country, email, phone, ide_number, default_payment_terms, language, salutation, \
+    active, version, created_at, updated_at";
 
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
-    address_country, email, phone, ide_number, default_payment_terms, active, version, \
-    created_at, updated_at FROM contacts WHERE id = ?";
+    address_country, email, phone, ide_number, default_payment_terms, language, salutation, \
+    active, version, created_at, updated_at FROM contacts WHERE id = ?";
 
 /// Snapshot JSON d'un contact pour l'audit log (Story 3.5 pattern + P8 `companyId`).
 fn contact_snapshot_json(c: &Contact) -> serde_json::Value {
@@ -47,6 +49,8 @@ fn contact_snapshot_json(c: &Contact) -> serde_json::Value {
         "phone": c.phone,
         "ideNumber": c.ide_number,
         "defaultPaymentTerms": c.default_payment_terms,
+        "language": c.language.map(|l| l.as_str()),
+        "salutation": c.salutation.as_str(),
         "active": c.active,
         "version": c.version,
     })
@@ -195,8 +199,8 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     let result = sqlx::query(
         "INSERT INTO contacts (company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
          address, address_street, address_building, address_postal_code, address_city, \
-         address_country, email, phone, ide_number, default_payment_terms) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         address_country, email, phone, ide_number, default_payment_terms, language, salutation) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_type)
@@ -215,6 +219,8 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     .bind(&new.phone)
     .bind(&new.ide_number)
     .bind(&new.default_payment_terms)
+    .bind(new.language)
+    .bind(new.salutation)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?;
@@ -280,12 +286,9 @@ pub async fn find_by_id_in_company<'e, E>(
 where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
-    sqlx::query_as::<_, Contact>(
-        "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
-         address, address_street, address_building, address_postal_code, address_city, \
-         address_country, email, phone, ide_number, default_payment_terms, active, version, \
-         created_at, updated_at FROM contacts WHERE id = ? AND company_id = ?",
-    )
+    sqlx::query_as::<_, Contact>(&format!(
+        "SELECT {COLUMNS} FROM contacts WHERE id = ? AND company_id = ?"
+    ))
     .bind(id)
     .bind(company_id)
     .fetch_optional(executor)
@@ -384,6 +387,8 @@ fn is_no_op_change(before: &Contact, changes: &ContactUpdate) -> bool {
         && before.phone == changes.phone
         && before.ide_number == changes.ide_number
         && before.default_payment_terms == changes.default_payment_terms
+        && before.language == changes.language
+        && before.salutation == changes.salutation
 }
 
 /// Met à jour un contact actif. Verrouillage optimiste + audit log (wrapper before/after).
@@ -443,6 +448,7 @@ pub async fn update(
          address = ?, address_street = ?, address_building = ?, address_postal_code = ?, \
          address_city = ?, address_country = ?, \
          email = ?, phone = ?, ide_number = ?, default_payment_terms = ?, \
+         language = ?, salutation = ?, \
          version = version + 1 \
          WHERE id = ? AND version = ? AND active = TRUE",
     )
@@ -462,6 +468,8 @@ pub async fn update(
     .bind(&changes.phone)
     .bind(&changes.ide_number)
     .bind(&changes.default_payment_terms)
+    .bind(changes.language)
+    .bind(changes.salutation)
     .bind(id)
     .bind(version)
     .execute(&mut *tx)
@@ -647,6 +655,8 @@ mod tests {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            language: None,
+            salutation: crate::entities::contact::Salutation::Neutre,
         }
     }
 
@@ -818,6 +828,8 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                language: None,
+                salutation: crate::entities::contact::Salutation::Neutre,
             },
         )
         .await
@@ -848,6 +860,8 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                language: None,
+                salutation: crate::entities::contact::Salutation::Neutre,
             },
         )
         .await
@@ -894,6 +908,8 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                language: None,
+                salutation: crate::entities::contact::Salutation::Neutre,
             },
         )
         .await
@@ -970,6 +986,8 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                language: None,
+                salutation: crate::entities::contact::Salutation::Neutre,
             },
         )
         .await
@@ -1463,6 +1481,8 @@ mod tests {
             phone: c.phone.clone(),
             ide_number: c.ide_number.clone(),
             default_payment_terms: c.default_payment_terms.clone(),
+            language: c.language,
+            salutation: c.salutation,
         }
     }
 

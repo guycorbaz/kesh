@@ -88,6 +88,9 @@ async fn spawn_app_with_config(
         users_exist: users_exist.clone(),
         // Story 17-4b — littéral-exception (users_exist variable) : mailer no-op.
         mailer: Arc::new(kesh_api::mail::NoopMailer),
+        // Story 20-3b1 — champs hors scope setup (défauts).
+        rate_limiter_send_email: Arc::new(kesh_api::build_send_email_rate_limiter()),
+        smtp_ready: false,
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

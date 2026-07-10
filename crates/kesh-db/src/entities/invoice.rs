@@ -30,6 +30,12 @@ pub struct Invoice {
     /// Horodate de paiement manuel (Story 5.4). NULL = impayée.
     /// Ne peut être posée que sur `status = 'validated'` (CHECK DB).
     pub paid_at: Option<NaiveDateTime>,
+    /// Horodate du dernier envoi par e-mail (Story 20-3b1). NULL = jamais
+    /// envoyée. Le renvoi écrase la valeur (chaque envoi est audité).
+    pub emailed_at: Option<NaiveDateTime>,
+    /// Destinataire du dernier envoi (snapshot de `contacts.email` au moment
+    /// de l'envoi, Story 20-3b1).
+    pub emailed_to: Option<String>,
     /// Projet analytique document-level (Epic 19, Story 19-4). Propagé sur
     /// toutes les lignes de l'écriture de vente à la validation, hérité par
     /// la contre-passation d'avoir. `None` = pas de projet.

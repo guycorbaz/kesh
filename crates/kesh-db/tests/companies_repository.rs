@@ -69,6 +69,7 @@ async fn update_succeeds_with_current_version(pool: MySqlPool) {
         org_type: created.org_type,
         accounting_language: Language::De,
         instance_language: created.instance_language,
+        email: None,
     };
 
     let updated = companies::update(&pool, created.id, created.version, changes)
@@ -96,6 +97,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         org_type: created.org_type,
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
+        email: None,
     };
     companies::update(&pool, created.id, 1, changes)
         .await
@@ -111,6 +113,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         org_type: created.org_type,
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
+        email: None,
     };
     let result = companies::update(&pool, created.id, 1, stale_changes).await;
     assert!(matches!(result, Err(DbError::OptimisticLockConflict)));
@@ -133,6 +136,7 @@ async fn update_fails_on_missing_entity(pool: MySqlPool) {
         org_type: OrgType::Pme,
         accounting_language: Language::Fr,
         instance_language: Language::Fr,
+        email: None,
     };
     let result = companies::update(&pool, 999_999, 1, changes).await;
     assert!(matches!(result, Err(DbError::NotFound)));
@@ -256,6 +260,7 @@ async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
         org_type: created.org_type,
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
+        email: None,
     };
 
     let result = companies::update(&pool, created.id, version_initial, identical)
@@ -289,6 +294,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
         org_type: created.org_type,
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
+        email: None,
     };
     let result = companies::update(&pool, created.id, version_initial, changes)
         .await

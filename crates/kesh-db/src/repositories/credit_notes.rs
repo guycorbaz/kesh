@@ -219,12 +219,10 @@ pub async fn create_credit_note(
 
     let result = async {
         // (1) Lock facture d'origine + checks métier.
-        let invoice = sqlx::query_as::<_, crate::entities::Invoice>(
-            "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-             payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
-             created_at, updated_at \
-             FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
-        )
+        let invoice = sqlx::query_as::<_, crate::entities::Invoice>(&format!(
+            "{} FOR UPDATE",
+            super::invoices::FIND_INVOICE_SCOPED_SQL
+        ))
         .bind(invoice_id)
         .bind(company_id)
         .fetch_optional(&mut *tx)

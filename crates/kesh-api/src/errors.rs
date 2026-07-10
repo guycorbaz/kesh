@@ -260,6 +260,27 @@ pub enum AppError {
     #[error("Échec envoi email SMTP : {0}")]
     SmtpSendFailed(String),
 
+    /// Story 20-3b1 — le transport SMTP n'est pas configuré/prêt
+    /// (`AppState.smtp_ready == false`) : l'envoi d'e-mails métier est
+    /// indisponible. HTTP 412 `SMTP_NOT_CONFIGURED`, i18n key
+    /// `error-smtp-not-configured`. Garde impérative : sans elle, le
+    /// `NoopMailer` retournerait Ok et la facture serait marquée « envoyée »
+    /// à tort.
+    #[error("SMTP non configuré — envoi d'e-mails indisponible")]
+    SmtpNotConfigured,
+
+    /// Story 20-3b1 — le contact de la facture n'a pas d'adresse e-mail
+    /// (destinataire verrouillé = `contacts.email`, décision #13 epic-20).
+    /// HTTP 400 `CONTACT_EMAIL_MISSING`, i18n key `error-contact-email-missing`.
+    #[error("Le contact n'a pas d'adresse e-mail")]
+    ContactEmailMissing,
+
+    /// Story 20-3b1 — objet ou corps vide (après trim) au moment de l'envoi
+    /// manuel. HTTP 422 `INVOICE_EMAIL_EMPTY_CONTENT`, i18n key
+    /// `error-invoice-email-empty-content`.
+    #[error("Objet ou corps de l'e-mail vide")]
+    InvoiceEmailEmptyContent,
+
     /// Story 17-4c — lien de réinitialisation de mot de passe invalide ou expiré.
     /// HTTP 400 `INVALID_OR_EXPIRED_TOKEN`, i18n key `error-invalid-or-expired-token`.
     /// **Anti-fuite (DC4)** : couvre de manière indistincte les trois cas
@@ -938,6 +959,32 @@ impl IntoResponse for AppError {
             AppError::IdeAlreadyExists(msg) => {
                 build_response(StatusCode::CONFLICT, "IDE_ALREADY_EXISTS", &msg)
             }
+
+            // Story 20-3b1 — envoi de facture par e-mail.
+            AppError::SmtpNotConfigured => build_response(
+                StatusCode::PRECONDITION_FAILED,
+                "SMTP_NOT_CONFIGURED",
+                &t(
+                    "error-smtp-not-configured",
+                    "L'envoi d'e-mails n'est pas configuré sur cette instance (variables KESH_SMTP_*).",
+                ),
+            ),
+            AppError::ContactEmailMissing => build_response(
+                StatusCode::BAD_REQUEST,
+                "CONTACT_EMAIL_MISSING",
+                &t(
+                    "error-contact-email-missing",
+                    "Le contact de la facture n'a pas d'adresse e-mail. Renseignez-la sur la fiche contact.",
+                ),
+            ),
+            AppError::InvoiceEmailEmptyContent => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVOICE_EMAIL_EMPTY_CONTENT",
+                &t(
+                    "error-invoice-email-empty-content",
+                    "L'objet et le corps de l'e-mail ne peuvent pas être vides.",
+                ),
+            ),
 
             // Story 5.3 — erreurs PDF QR Bill.
             AppError::InvoiceNotValidated => build_response(

@@ -1005,6 +1005,12 @@ api-keys-toast-revoke-success = Chiave revocata.
 
 # Story 17-4b — Recupero della password via email (rendering backend, DC10)
 error-smtp-send-failed = Invio dell'email non riuscito. Riprova tra qualche istante.
+
+# Story 20-3b1 — invio fattura via e-mail
+error-smtp-not-configured = L'invio di e-mail non è configurato su questa istanza (variabili KESH_SMTP_*).
+error-contact-email-missing = Il contatto della fattura non ha un indirizzo e-mail. Inserirlo nella scheda contatto.
+error-invoice-email-empty-content = L'oggetto e il corpo dell'e-mail non possono essere vuoti.
+error-company-email-invalid = L'indirizzo e-mail dell'azienda non è valido.
 error-invalid-or-expired-token = Link di reimpostazione non valido o scaduto.
 email-password-reset-subject = Reimpostazione della password Kesh
 email-password-reset-body =

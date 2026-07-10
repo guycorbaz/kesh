@@ -16,12 +16,12 @@ use crate::repositories::MAX_LIST_LIMIT;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, is_stub, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.
@@ -129,6 +129,7 @@ fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
         && before.org_type == changes.org_type
         && before.accounting_language == changes.accounting_language
         && before.instance_language == changes.instance_language
+        && before.email == changes.email
 }
 
 /// Met à jour une company avec verrouillage optimiste.
@@ -181,6 +182,7 @@ pub async fn update(
              address_postal_code = ?, address_city = ?, address_country = ?,
              ide_number = ?, org_type = ?,
              accounting_language = ?, instance_language = ?,
+             email = ?,
              version = version + 1
          WHERE id = ? AND version = ?",
     )
@@ -197,6 +199,7 @@ pub async fn update(
     .bind(changes.org_type)
     .bind(changes.accounting_language)
     .bind(changes.instance_language)
+    .bind(&changes.email)
     .bind(id)
     .bind(version)
     .execute(&mut *tx)

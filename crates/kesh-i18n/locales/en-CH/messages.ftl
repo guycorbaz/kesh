@@ -1005,6 +1005,12 @@ api-keys-toast-revoke-success = Key revoked.
 
 # Story 17-4b — Password recovery by email (backend rendering, DC10)
 error-smtp-send-failed = Email delivery failed. Please try again shortly.
+
+# Story 20-3b1 — invoice sending by email
+error-smtp-not-configured = Email sending is not configured on this instance (KESH_SMTP_* variables).
+error-contact-email-missing = The invoice contact has no email address. Add it on the contact card.
+error-invoice-email-empty-content = The email subject and body cannot be empty.
+error-company-email-invalid = The company email address is not valid.
 error-invalid-or-expired-token = Invalid or expired password reset link.
 email-password-reset-subject = Reset your Kesh password
 email-password-reset-body =

@@ -1005,6 +1005,12 @@ api-keys-toast-revoke-success = Schlüssel widerrufen.
 
 # Story 17-4b — Passwort-Wiederherstellung per E-Mail (Backend-Rendering, DC10)
 error-smtp-send-failed = Der E-Mail-Versand ist fehlgeschlagen. Bitte versuchen Sie es in Kürze erneut.
+
+# Story 20-3b1 — Rechnungsversand per E-Mail
+error-smtp-not-configured = Der E-Mail-Versand ist auf dieser Instanz nicht konfiguriert (Variablen KESH_SMTP_*).
+error-contact-email-missing = Der Kontakt der Rechnung hat keine E-Mail-Adresse. Bitte auf der Kontaktkarte erfassen.
+error-invoice-email-empty-content = Betreff und Text der E-Mail dürfen nicht leer sein.
+error-company-email-invalid = Die E-Mail-Adresse des Unternehmens ist ungültig.
 error-invalid-or-expired-token = Ungültiger oder abgelaufener Link zum Zurücksetzen des Passworts.
 email-password-reset-subject = Zurücksetzen Ihres Kesh-Passworts
 email-password-reset-body =

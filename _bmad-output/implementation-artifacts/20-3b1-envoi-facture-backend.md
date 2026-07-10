@@ -1,6 +1,6 @@
 # Story 20.3b1: Envoi de facture par e-mail — backend
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -106,31 +106,31 @@ La 20-3b du planning epic-20 touche kesh-db + kesh-api (mail, config, routes inv
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migrations + entités + repositories** (AC: #1-#6)
-  - [ ] T1.1 3 migrations (contacts / invoices / companies), en-têtes « non-breaking, pas de bump » + 3 entrées `docs/migrations-idempotence-audit.md`
-  - [ ] T1.2 Compteur `migrations_upgrade_path.rs` 47 → 50
-  - [ ] T1.3 Enum `Salutation` + extension `Contact`/`NewContact`/`ContactUpdate` + repo contacts (COLUMNS, INSERT/UPDATE, binds, `is_no_op_change`, `contact_snapshot_json`)
-  - [ ] T1.4 Extension `Invoice` (+ constantes SQL) + `invoices::mark_emailed` (+ audit `invoice.emailed` in-tx)
-  - [ ] T1.5 Extension `Company.email` + repo + DTO route update company ; DTOs + `ContactResponse` routes contacts
-- [ ] **T2 — Mailer** (AC: #7, #8)
-  - [ ] T2.1 `OutgoingEmail`/`EmailAttachment` + méthode trait `send_email` + `NoopMailer`
-  - [ ] T2.2 `SmtpMailer::send_email` + `build_outgoing_message` (MultiPart, display-name, Reply-To tolérant)
-  - [ ] T2.3 `MockMailer.sent_emails()` (buffer dédié, `failing()` couvert, `CapturedMail` intact)
-- [ ] **T3 — Config / gate / health** (AC: #9-#11)
-  - [ ] T3.1 `Config::smtp_configured()` + tests unit
-  - [ ] T3.2 `main.rs` construction mailer découplée + dégradation gracieuse
-  - [ ] T3.3 `/health` → `smtpConfigured` (2 branches)
-- [ ] **T4 — Rate-limiter générique + instance send-email** (AC: #12)
-- [ ] **T5 — Module `invoice_email.rs`** (AC: #13-#17)
-  - [ ] T5.1 `salutation_line` + construction des variables
-  - [ ] T5.2 Handler preview + handler send (séquence de gardes AC#15) + enregistrement `comptable_routes`
-  - [ ] T5.3 3 variants `AppError` + clés FTL ×4 + `InvoiceResponse.emailed_*`
-- [ ] **T6 — Tests** (AC: #18-#20)
-  - [ ] T6.1 Unit (matrice, vars, message, config)
-  - [ ] T6.2 `invoice_send_email_e2e.rs` (liste AC#19)
-- [ ] **T7 — Test Locally First & commit** (AC: #20)
-  - [ ] T7.1 `cargo fmt --check` + `build --workspace --all-targets` + `clippy -D warnings` + `cargo test --workspace` (kesh-db et kesh-api **en série** `--test-threads=1`)
-  - [ ] T7.2 Commit sur `story/20-1-envoi-factures-email`
+- [x] **T1 — Migrations + entités + repositories** (AC: #1-#6)
+  - [x] T1.1 3 migrations (contacts / invoices / companies), en-têtes « non-breaking, pas de bump » + 3 entrées `docs/migrations-idempotence-audit.md`
+  - [x] T1.2 Compteur `migrations_upgrade_path.rs` 47 → 50
+  - [x] T1.3 Enum `Salutation` + extension `Contact`/`NewContact`/`ContactUpdate` + repo contacts (COLUMNS, INSERT/UPDATE, binds, `is_no_op_change`, `contact_snapshot_json`)
+  - [x] T1.4 Extension `Invoice` (+ constantes SQL) + `invoices::mark_emailed` (+ audit `invoice.emailed` in-tx)
+  - [x] T1.5 Extension `Company.email` + repo + DTO route update company ; DTOs + `ContactResponse` routes contacts
+- [x] **T2 — Mailer** (AC: #7, #8)
+  - [x] T2.1 `OutgoingEmail`/`EmailAttachment` + méthode trait `send_email` + `NoopMailer`
+  - [x] T2.2 `SmtpMailer::send_email` + `build_outgoing_message` (MultiPart, display-name, Reply-To tolérant)
+  - [x] T2.3 `MockMailer.sent_emails()` (buffer dédié, `failing()` couvert, `CapturedMail` intact)
+- [x] **T3 — Config / gate / health** (AC: #9-#11)
+  - [x] T3.1 `Config::smtp_configured()` + tests unit
+  - [x] T3.2 `main.rs` construction mailer découplée + dégradation gracieuse
+  - [x] T3.3 `/health` → `smtpConfigured` (2 branches)
+- [x] **T4 — Rate-limiter générique + instance send-email** (AC: #12)
+- [x] **T5 — Module `invoice_email.rs`** (AC: #13-#17)
+  - [x] T5.1 `salutation_line` + construction des variables
+  - [x] T5.2 Handler preview + handler send (séquence de gardes AC#15) + enregistrement `comptable_routes`
+  - [x] T5.3 3 variants `AppError` + clés FTL ×4 + `InvoiceResponse.emailed_*`
+- [x] **T6 — Tests** (AC: #18-#20)
+  - [x] T6.1 Unit (matrice, vars, message, config)
+  - [x] T6.2 `invoice_send_email_e2e.rs` (liste AC#19)
+- [x] **T7 — Test Locally First & commit** (AC: #20)
+  - [x] T7.1 `cargo fmt --check` + `build --workspace --all-targets` + `clippy -D warnings` + `cargo test --workspace` (kesh-db et kesh-api **en série** `--test-threads=1`) — 92 suites, 1778 tests, 0 échec
+  - [x] T7.2 Commit sur `story/20-1-envoi-factures-email`
 
 ## Dev Notes
 
@@ -206,8 +206,66 @@ Nota IT : « Egregio Signor » (tronqué) devant un nom, « Egregio Signore » s
 
 ### Agent Model Used
 
+Claude Fable 5 (claude-fable-5) — run 2026-07-09 interrompu par un crash de session (implémentation T1-T6 quasi complète dans le working tree, non commitée), repris et complété le 2026-07-09 par un second run Fable 5.
+
 ### Debug Log References
+
+- **Crash & reprise** : le premier run a été interrompu après avoir écrit l'essentiel de T1-T6 (48 fichiers modifiés + 5 nouveaux, tout compilait, clippy 0 warning). Reprise avec inventaire ground-truth (grep par AC) avant de cocher quoi que ce soit — aucun fichier tronqué détecté.
+- **Réparation DB dev `kesh`** (pré-requis tests `--lib` kesh-db, cassée AVANT le crash, depuis le 2026-07-05) : migration `20260705000001_structured_addresses` marquée `success=0` alors que son DDL était entièrement appliqué (DDL MariaDB non transactionnel — crash antérieur entre DDL et bookkeeping) ; idem `20260705000002` (row absente puis `success=0` après une tentative `sqlx migrate run`) et `20260706000001` (DDL appliqué, row absente). Fix : `UPDATE _sqlx_migrations SET success=1` (checksums vérifiés SHA-384 contre les fichiers) + INSERT de la row manquante, puis `sqlx migrate run` a appliqué proprement `20260708000001` + les 3 migrations de la story. kesh-db `--lib` : 57 échecs (`Unknown column 'language'`) → 219/219 verts après réparation.
+- Test e2e `company_email_endpoint_sets_reply_to` : premier rouge — `GET /companies/current` renvoie `{ company: {...}, bankAccounts: [...] }` (enveloppe), pas `CompanyJson` nu ; fix de l'assertion (`current["company"]["version"]`).
+- **Régression attrapée par le gate workspace complet** : `idor_multi_tenant_e2e::idor_contacts_cross_company_returns_404` → 500 sur `GET /contacts/{id}` (contact de sa propre company). Cause : 3 requêtes `query_as` à liste de colonnes **inline** (pas les constantes) non étendues par le premier run → `ColumnNotFound` au décodage : `contacts::find_by_id_in_company` (contacts.rs:287, manquait `language, salutation`), `reconciliation.rs:177` SELECT contacts (idem), `credit_notes.rs:223` lock facture d'origine (manquait `emailed_at, emailed_to` — aurait cassé la création d'avoir). Fix DRY : `contacts::COLUMNS` et `invoices::FIND_INVOICE_SCOPED_SQL` passés `pub(crate)` et réutilisés aux 3 sites (une seule liste à maintenir, la classe de bug ne peut plus se reproduire sur ces chemins). Vérifié par balayage exhaustif de tous les `query_as::<_, Contact|Invoice|Company>` du workspace — aucun autre site à liste stale.
 
 ### Completion Notes List
 
+- **T1-T6 conformes à la spec** ; gate T7 vert (fmt / build / clippy -D warnings / workspace série). Détail tests : kesh-api `--lib` 284 (dont matrice salutation ×4 langues, vars + fallbacks, `build_outgoing_message` ×4, `smtp_configured` ×2), kesh-db `--lib` 219, e2e `invoice_send_email_e2e` 16/16, sentinelles `password_recovery_e2e` 11/11 et `invoice_pdf_e2e` 14/14 inchangées vertes.
+- **Déviation (garde 412)** : la garde utilise `state.smtp_ready` (bool AppState) et non `config.smtp_configured()` directement. `smtp_ready` = config complète **ET** mailer réellement construit (posé dans `main.rs` après le `match` de build). Plus fidèle que la spec : si `SmtpMailer::from_config` échoue (relay STARTTLS), le fallback est NoopMailer et `smtp_ready=false` → 412 au lieu d'un envoi fantôme marqué « envoyée ». `/health.smtpConfigured` expose le même bool (cohérence garde/flag). Défaut `false` dans `new_for_tests` ; les e2e l'injectent via AppState littéral.
+- **Déviation (AC#5 « DTO route update company »)** : aucune route générique d'update company n'existe (seul l'onboarding `set_coordinates` touche les coordonnées). Créé un endpoint dédié minimal `PUT /api/v1/companies/current/email` (Admin-only, groupe admin_routes à côté de la config templates), validation `is_valid_email_simple` (clé FTL `error-company-email-invalid` ×4), verrou optimiste via `companies::update` réutilisé (`CompanyUpdate` étendu de `email`, `is_no_op_change` inclus — piège KF-004 évité), `CompanyJson` expose `email` + `version`. Nécessaire pour que la 20-3b2 puisse saisir l'e-mail société (Reply-To).
+- **Complément e2e à la reprise** : + `send_uses_contact_language_for_pdf` (envoi contact DE → 200 + PDF joint non vide via `Locale::from("DE")` ; le texte du PDF n'est pas extractible — streams compressés, même limite qu'`invoice_pdf_e2e`) ; + 3 tests endpoint company email (Reply-To happy path + effacement, e-mail invalide 400, RBAC Comptable 403).
+- **Rate-limiter** : généralisé `RateLimiter<K: Eq+Hash+Clone = IpAddr>` — zéro diff sur les call-sites login/recovery ; instance `(company_id, user_id)` 20/15min/15min ; seuils injectables en test via `RateLimiter::with_thresholds`.
+- Périmètre respecté : 0 fichier frontend, recovery (`CapturedMail`/`send_password_reset`) intact, `invoice_pdf_service` consommé tel quel (signature `&Company` 20-3a).
+
 ### File List
+
+**Nouveaux**
+
+- `crates/kesh-db/migrations/20260709000001_contacts_language_salutation.sql`
+- `crates/kesh-db/migrations/20260709000002_invoices_emailed.sql`
+- `crates/kesh-db/migrations/20260709000003_companies_email.sql`
+- `crates/kesh-api/src/routes/invoice_email.rs`
+- `crates/kesh-api/tests/invoice_send_email_e2e.rs`
+
+**Modifiés — kesh-db**
+
+- `crates/kesh-db/src/entities/contact.rs` (enum `Salutation`, `Contact`/`NewContact`/`ContactUpdate` + `language`/`salutation`)
+- `crates/kesh-db/src/entities/invoice.rs` (`emailed_at`/`emailed_to`)
+- `crates/kesh-db/src/entities/company.rs` (`Company.email`, `CompanyUpdate.email`)
+- `crates/kesh-db/src/repositories/contacts.rs` (COLUMNS/INSERT/UPDATE/binds, `is_no_op_change`, `contact_snapshot_json`)
+- `crates/kesh-db/src/repositories/invoices.rs` (constantes SQL + `mark_emailed` + audit `invoice.emailed` in-tx)
+- `crates/kesh-db/src/repositories/companies.rs` (colonnes/UPDATE + `is_no_op_change` email)
+- `crates/kesh-db/src/repositories/reconciliation.rs` (liste de colonnes invoices ; SELECT contacts re-basé sur `contacts::COLUMNS`)
+- `crates/kesh-db/src/repositories/credit_notes.rs` (lock facture re-basé sur `invoices::FIND_INVOICE_SCOPED_SQL`)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` (compteur 47 → 50)
+- `crates/kesh-db/tests/{companies_repository,credit_notes_repository,invoices_validate_vat,kf005_fulltext_index_e2e,payment_batches_repository,reconciliation_repository,supplier_invoices_repository}.rs` (littéraux étendus, mécanique)
+
+**Modifiés — kesh-api**
+
+- `crates/kesh-api/src/mail/mod.rs` (`OutgoingEmail`/`EmailAttachment`, trait `send_email`, `NoopMailer`, `MockMailer.sent_emails()`/`CapturedEmail`)
+- `crates/kesh-api/src/mail/smtp.rs` (`build_outgoing_message` + `send_email` MultiPart/display-name/Reply-To tolérant + tests)
+- `crates/kesh-api/src/config.rs` (`smtp_configured()` + tests)
+- `crates/kesh-api/src/main.rs` (construction mailer découplée, `smtp_ready`, dégradation gracieuse)
+- `crates/kesh-api/src/lib.rs` (AppState `rate_limiter_send_email`/`smtp_ready`, fabrique, routes email-preview/send-email/companies-email)
+- `crates/kesh-api/src/errors.rs` (3 variants 412/400/422)
+- `crates/kesh-api/src/middleware/rate_limit.rs` (`RateLimiter<K = IpAddr>` générique + `with_thresholds`)
+- `crates/kesh-api/src/middleware/auth.rs` (test_state littéral étendu)
+- `crates/kesh-api/src/routes/{mod,health,invoices,contacts,companies,onboarding}.rs` + `src/exports/metadata.rs`
+- `crates/kesh-api/tests/{inbox_import,invoice_delete,invoice_echeancier,invoice_pdf,password_recovery,reconciliation,setup_admin,vat_report}_e2e.rs` (AppState littéraux étendus, mécanique)
+
+**Modifiés — autres**
+
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (4 clés d'erreur ×4 langues)
+- `crates/kesh-reconciliation/src/matching.rs`, `crates/kesh-seed/src/lib.rs` (littéraux/colonnes, mécanique)
+- `docs/migrations-idempotence-audit.md` (3 entrées + total 50)
+
+## Change Log
+
+- 2026-07-09/10 — `bmad-dev-story` : implémentation complète T1-T7. Run initial interrompu par un crash de session après l'écriture de T1-T6 (non commitée) ; reprise le jour même avec inventaire ground-truth, réparation de l'état `_sqlx_migrations` de la DB dev (cassé pré-existant, sans lien avec le crash), complément de tests e2e (langue DE à l'envoi + endpoint company email ×3). Le gate workspace complet a attrapé 1 régression du run crashé (3 `query_as` à listes de colonnes inline non étendues → 500 ; fix DRY par constantes `pub(crate)` réutilisées). Déviations documentées : garde 412 via `smtp_ready` (config + build mailer réussis), endpoint dédié `PUT /companies/current/email` (aucune route update company générique n'existait).

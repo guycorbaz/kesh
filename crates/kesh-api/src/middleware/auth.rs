@@ -274,6 +274,9 @@ mod tests {
             users_exist: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             // Story 17-4b — littéral-exception (test_state) : mailer no-op.
             mailer: std::sync::Arc::new(crate::mail::NoopMailer),
+            // Story 20-3b1 — littéral-exception (test_state).
+            rate_limiter_send_email: std::sync::Arc::new(crate::build_send_email_rate_limiter()),
+            smtp_ready: false,
         }
     }
 

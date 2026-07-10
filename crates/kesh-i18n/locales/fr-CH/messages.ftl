@@ -1056,6 +1056,12 @@ api-keys-toast-revoke-success = Clé révoquée.
 
 # Story 17-4b — Recovery de mot de passe par email (rendu backend, DC10)
 error-smtp-send-failed = L'envoi de l'email a échoué. Réessayez dans quelques instants.
+
+# Story 20-3b1 — envoi de facture par e-mail
+error-smtp-not-configured = L'envoi d'e-mails n'est pas configuré sur cette instance (variables KESH_SMTP_*).
+error-contact-email-missing = Le contact de la facture n'a pas d'adresse e-mail. Renseignez-la sur la fiche contact.
+error-invoice-email-empty-content = L'objet et le corps de l'e-mail ne peuvent pas être vides.
+error-company-email-invalid = L'adresse e-mail de la société n'est pas valide.
 error-invalid-or-expired-token = Lien de réinitialisation invalide ou expiré.
 email-password-reset-subject = Réinitialisation de votre mot de passe Kesh
 email-password-reset-body =
