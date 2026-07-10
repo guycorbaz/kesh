@@ -1528,9 +1528,14 @@ pub async fn mark_emailed(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = async {
+        // Pas de condition `status = 'validated'` ici (review 20-3b1 Pass 1
+        // ECH-1) : le handler d'envoi l'a déjà exigée avant le rendu PDF, et
+        // si le statut a basculé (avoir → 'cancelled') entre l'envoi SMTP et
+        // ce marquage, l'e-mail est PARTI — le fait doit être tracé
+        // (emailed_at + audit) plutôt que perdu sur un rows==0.
         let rows = sqlx::query(
             "UPDATE invoices SET emailed_at = NOW(6), emailed_to = ? \
-             WHERE id = ? AND company_id = ? AND status = 'validated'",
+             WHERE id = ? AND company_id = ?",
         )
         .bind(to)
         .bind(id)
@@ -1541,8 +1546,9 @@ pub async fn mark_emailed(
         .rows_affected();
 
         if rows == 0 {
-            // Facture absente / autre company / non-validée — le chemin
-            // d'envoi a déjà validé tout ça ; refactor incomplet sinon.
+            // Facture absente (supprimée #219 pendant l'envoi) ou autre
+            // company. Le handler mappe ce cas en 409 EMAIL_SENT_INVOICE_GONE
+            // (l'e-mail est déjà parti) + trace d'audit best-effort.
             return Err(DbError::NotFound);
         }
 

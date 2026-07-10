@@ -64,6 +64,36 @@ fn resolve_language(contact: &Contact, company: &Company) -> Language {
     contact.language.unwrap_or(company.instance_language)
 }
 
+/// Destinataire verrouillé = `contacts.email` (décision #13 epic-20) —
+/// vide/whitespace = absent. Partagé preview/send (review Pass 1 BH-5).
+fn locked_recipient(contact: &Contact) -> Option<String> {
+    contact
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(String::from)
+}
+
+/// Charge le contact de la facture, scopé company (défense en profondeur,
+/// review Pass 1 BH-2 — même si `invoice.contact_id` provient déjà d'une
+/// facture scopée) et refuse les contacts archivés (`active = false`,
+/// review Pass 1 ECH-2 : le carnet d'adresses les considère « à ne plus
+/// utiliser », on ne leur envoie pas de facture).
+async fn load_active_contact(
+    pool: &sqlx::MySqlPool,
+    contact_id: i64,
+    company_id: i64,
+) -> Result<Contact, AppError> {
+    let contact = contacts::find_by_id_in_company(pool, contact_id, company_id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    if !contact.active {
+        return Err(AppError::ContactArchived);
+    }
+    Ok(contact)
+}
+
 /// Formule d'appel `{salutation}` — matrice genre × langue × type de contact
 /// (décision #12 epic-20, matrice figée dans la spec 20-3b1).
 ///
@@ -163,13 +193,11 @@ pub async fn preview_invoice_email(
 ) -> Result<Json<EmailPreviewResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    // Facture scopée company (anti-IDOR) + contact.
+    // Facture scopée company (anti-IDOR) + contact actif scopé company.
     let (invoice, _lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    let contact = contacts::find_by_id(&state.pool, invoice.contact_id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
+    let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
 
     let language = resolve_language(&contact, &company);
     let template = email_templates::get_effective(
@@ -185,12 +213,7 @@ pub async fn preview_invoice_email(
     let body = kesh_core::email_template_engine::render(&template.body, &vars);
 
     Ok(Json(EmailPreviewResponse {
-        to: contact
-            .email
-            .as_deref()
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-            .map(String::from),
+        to: locked_recipient(&contact),
         language,
         subject,
         body,
@@ -235,22 +258,14 @@ pub async fn send_invoice_email(
         return Err(AppError::SmtpNotConfigured);
     }
 
-    // Facture scopée company (anti-IDOR) + contact.
+    // Facture scopée company (anti-IDOR) + contact actif scopé company.
     let (invoice, _lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    let contact = contacts::find_by_id(&state.pool, invoice.contact_id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
+    let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
 
     // Destinataire VERROUILLÉ = contacts.email (décision #13 epic-20).
-    let to = contact
-        .email
-        .as_deref()
-        .map(str::trim)
-        .filter(|e| !e.is_empty())
-        .map(String::from)
-        .ok_or(AppError::ContactEmailMissing)?;
+    let to = locked_recipient(&contact).ok_or(AppError::ContactEmailMissing)?;
 
     let subject = req.subject.trim().to_string();
     let body = req.body.trim().to_string();
@@ -284,8 +299,11 @@ pub async fn send_invoice_email(
     // Échec SMTP → 500 SMTP_SEND_FAILED, facture NON marquée (décision #16).
     state.mailer.send_email(&email).await?;
 
-    // Marquage + audit invoice.emailed (même tx, repository).
-    let updated = invoices::mark_emailed(
+    // Marquage + audit invoice.emailed (même tx, repository). À partir d'ici
+    // l'e-mail est PARTI : un échec de marquage ne doit plus se présenter
+    // comme un échec d'envoi (review Pass 1 ECH-1/BH-3 — facture supprimée
+    // #219 pendant l'envoi → 404 trompeur → renvoi en double par l'appelant).
+    let updated = match invoices::mark_emailed(
         &state.pool,
         company.id,
         id,
@@ -294,7 +312,39 @@ pub async fn send_invoice_email(
         current_user.user_id,
         current_user.api_key_id,
     )
-    .await?;
+    .await
+    {
+        Ok(updated) => updated,
+        Err(DbError::NotFound) => {
+            tracing::error!(
+                company_id = company.id,
+                invoice_id = id,
+                to = %to,
+                "e-mail de facture envoyé mais facture disparue avant le marquage — trace audit best-effort"
+            );
+            // Trace comptable best-effort : l'e-mail avec le PDF est parti,
+            // il DOIT en rester une trace même sans row invoices (audit_log
+            // n'a pas de FK sur entity_id). Échec ignoré (déjà loggué).
+            if let Ok(mut tx) = state.pool.begin().await {
+                let entry = kesh_db::entities::NewAuditLogEntry::for_actor(
+                    current_user.user_id,
+                    current_user.api_key_id,
+                    "invoice.emailed".to_string(),
+                    "invoice".to_string(),
+                    id,
+                    Some(serde_json::json!({
+                        "to": to,
+                        "subject": subject,
+                        "invoiceGone": true,
+                    })),
+                );
+                let _ = kesh_db::repositories::audit_log::insert_in_tx(&mut tx, entry).await;
+                let _ = tx.commit().await;
+            }
+            return Err(AppError::EmailSentInvoiceGone);
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     let (_, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?

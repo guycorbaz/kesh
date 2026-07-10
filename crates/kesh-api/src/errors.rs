@@ -281,6 +281,21 @@ pub enum AppError {
     #[error("Objet ou corps de l'e-mail vide")]
     InvoiceEmailEmptyContent,
 
+    /// Story 20-3b1 (code review Pass 1 ECH-1) — le contact de la facture est
+    /// archivé (`active = false`) : le carnet d'adresses le considère « à ne
+    /// plus utiliser », on n'envoie pas de facture à son adresse. HTTP 400
+    /// `CONTACT_ARCHIVED`, i18n key `error-contact-archived`.
+    #[error("Le contact de la facture est archivé")]
+    ContactArchived,
+
+    /// Story 20-3b1 (code review Pass 1 ECH-1/BH-3) — l'e-mail a été REMIS au
+    /// relay SMTP, mais la facture a disparu (supprimée #219) entre l'envoi et
+    /// le marquage `emailed_at`. Le message dit explicitement que l'e-mail est
+    /// parti pour dissuader un renvoi en double. HTTP 409
+    /// `EMAIL_SENT_INVOICE_GONE`, i18n key `error-email-sent-invoice-gone`.
+    #[error("E-mail envoyé mais facture disparue avant le marquage")]
+    EmailSentInvoiceGone,
+
     /// Story 17-4c — lien de réinitialisation de mot de passe invalide ou expiré.
     /// HTTP 400 `INVALID_OR_EXPIRED_TOKEN`, i18n key `error-invalid-or-expired-token`.
     /// **Anti-fuite (DC4)** : couvre de manière indistincte les trois cas
@@ -983,6 +998,22 @@ impl IntoResponse for AppError {
                 &t(
                     "error-invoice-email-empty-content",
                     "L'objet et le corps de l'e-mail ne peuvent pas être vides.",
+                ),
+            ),
+            AppError::ContactArchived => build_response(
+                StatusCode::BAD_REQUEST,
+                "CONTACT_ARCHIVED",
+                &t(
+                    "error-contact-archived",
+                    "Le contact de la facture est archivé. Réactivez-le avant d'envoyer la facture par e-mail.",
+                ),
+            ),
+            AppError::EmailSentInvoiceGone => build_response(
+                StatusCode::CONFLICT,
+                "EMAIL_SENT_INVOICE_GONE",
+                &t(
+                    "error-email-sent-invoice-gone",
+                    "L'e-mail a bien été envoyé au contact, mais la facture a été supprimée entre-temps — elle n'a pas pu être marquée « envoyée ». Ne renvoyez pas l'e-mail.",
                 ),
             ),
 

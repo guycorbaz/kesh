@@ -266,6 +266,24 @@ Claude Fable 5 (claude-fable-5) — run 2026-07-09 interrompu par un crash de se
 - `crates/kesh-reconciliation/src/matching.rs`, `crates/kesh-seed/src/lib.rs` (littéraux/colonnes, mécanique)
 - `docs/migrations-idempotence-audit.md` (3 entrées + total 50)
 
+## Senior Developer Review (AI)
+
+### Pass 1 — 2026-07-10, Sonnet 5 × 3 reviewers (Blind Hunter + Edge Case Hunter + Acceptance Auditor), contexte frais, diff aplati `695475b7..e308e7e1`
+
+**9 findings bruts → 1 HIGH + 4 MEDIUM + 4 LOW. Triage : 4 patchs + 1 réfuté ground-truth + 3 LOW traités (1 fix DRY, 1 dismiss documenté, 1 documenté) + AA 20/20 ACs conformes/déviations justifiées.**
+
+- **[HIGH → patché] ECH-1 (+BH-3 même racine) — envoi SMTP et marquage non atomiques** : facture supprimée (#219) ou annulée par avoir entre l'envoi et `mark_emailed` → l'UPDATE (`AND status='validated'`) fait 0 row → 404 trompeur alors que l'e-mail est PARTI, aucune trace d'audit, retry client = doublon. Patch : (1) `mark_emailed` ne conditionne plus sur `status` (un flip `cancelled` mid-flight doit tracer l'envoi) ; (2) le handler mappe le NotFound post-envoi en **409 `EMAIL_SENT_INVOICE_GONE`** (nouveau variant + FTL ×4, message explicite « ne renvoyez pas ») + **trace d'audit best-effort** `invoice.emailed` avec `invoiceGone: true` (audit_log n'a pas de FK sur entity_id — vérifié). Tests : `mark_emailed_survives_cancelled_status` + `mark_emailed_deleted_invoice_returns_not_found` (la fenêtre exacte n'est pas simulable en E2E ; sémantique repo prouvée + mapping vérifié par lecture).
+- **[MEDIUM → patché] ECH-2 — contact archivé non exclu** : `find_by_id` ne filtre pas `active` → un contact archivé recevait encore des factures. Patch : helper `load_active_contact` (preview + send) → **400 `CONTACT_ARCHIVED`** (nouveau variant + FTL ×4) + test e2e `archived_contact_returns_400` (preview + send + non-marquage).
+- **[MEDIUM → patché] BH-2 — lookup contact non scopé company** : `contacts::find_by_id` (WHERE id seul) au lieu du variant scopé — non exploitable aujourd'hui (`invoice.contact_id` vient d'une facture scopée) mais défense en profondeur, même classe que les 3 sites corrigés au gate. Patch : `find_by_id_in_company` via `load_active_contact`.
+- **[MEDIUM → réfuté ground-truth] BH-1 — injection CRLF via `subject`** : test empirique ajouté (`build_outgoing_message_subject_crlf_never_injects_header`) — lettre neutralise le CRLF (aucun en-tête `Bcc:` injecté dans le message formaté). Finding réfuté, test conservé en garde de régression permanente.
+- **[MEDIUM → patché] AA-1 — AC#19 audit testé par comptage seulement** : ajout `last_audit_emailed_details` + assertions `details.to`/`details.subject` dans le happy path.
+- **[LOW → fix DRY] BH-5** : résolution du destinataire dupliquée preview/send → helper `locked_recipient`.
+- **[LOW → dismiss documenté] BH-4 — CHECK `salutation` sans `BINARY`** : vrai écart cosmétique avec `chk_contacts_language`, mais (1) tout write API passe par l'enum sqlx `Salutation` (casse exacte garantie), (2) la migration est déjà appliquée aux DB dev/e2e — la modifier casserait les checksums `_sqlx_migrations` (VersionChecksumMismatch au boot). Risque résiduel = INSERT SQL direct hors API, hors modèle de menace v0.1. Non corrigé.
+- **[LOW → documenté] AA-2 — `ContactResponse.salutation: Salutation` non-Option** : la lettre de l'AC#5 (`Option<Salutation>`) visait les DTOs de requête (qui sont bien `Option` + `#[serde(default)]`) ; la colonne étant `NOT NULL DEFAULT 'Neutre'`, la réponse expose le type plein. Déviation assumée, documentée ici.
+
+Gate post-patchs : voir Change Log.
+
 ## Change Log
 
+- 2026-07-10 — `bmad-code-review` Pass 1 (Sonnet 5 × 3) : 9 findings bruts → 1 HIGH + 4 MEDIUM patchés/réfutés (détail section Senior Developer Review). 2 nouveaux variants `AppError` (409 `EMAIL_SENT_INVOICE_GONE`, 400 `CONTACT_ARCHIVED`) + FTL ×4, `mark_emailed` sans condition status, helpers `locked_recipient`/`load_active_contact`, 4 nouveaux tests (e2e 19/19). Pass 2 (LLM différent — Haiku) à suivre, conformément à la Review Iteration Rule.
 - 2026-07-09/10 — `bmad-dev-story` : implémentation complète T1-T7. Run initial interrompu par un crash de session après l'écriture de T1-T6 (non commitée) ; reprise le jour même avec inventaire ground-truth, réparation de l'état `_sqlx_migrations` de la DB dev (cassé pré-existant, sans lien avec le crash), complément de tests e2e (langue DE à l'envoi + endpoint company email ×3). Le gate workspace complet a attrapé 1 régression du run crashé (3 `query_as` à listes de colonnes inline non étendues → 500 ; fix DRY par constantes `pub(crate)` réutilisées). Déviations documentées : garde 412 via `smtp_ready` (config + build mailer réussis), endpoint dédié `PUT /companies/current/email` (aucune route update company générique n'existait).

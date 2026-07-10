@@ -370,4 +370,31 @@ mod tests {
         let r = mailer.build_outgoing_message(&email);
         assert!(matches!(r, Err(AppError::SmtpSendFailed(_))));
     }
+
+    /// Anti-injection d'en-têtes : un `subject` contenant des CRLF (tentative
+    /// d'injection `Bcc:`) ne doit JAMAIS produire un en-tête supplémentaire
+    /// dans le message formaté (code review 20-3b1 Pass 1 BH-1). Le subject
+    /// vient du body de la requête (utilisateur authentifié) — lettre doit
+    /// soit encoder (RFC 2047), soit échouer, mais jamais émettre le CRLF brut.
+    #[test]
+    fn build_outgoing_message_subject_crlf_never_injects_header() {
+        let mailer = test_mailer();
+        let mut email = sample_outgoing(false, None);
+        email.subject = "Facture\r\nBcc: attacker@evil.com".to_string();
+        match mailer.build_outgoing_message(&email) {
+            Ok(msg) => {
+                let raw = String::from_utf8(msg.formatted()).expect("UTF-8");
+                // Le header injecté ne doit pas exister : "Bcc:" en début de
+                // ligne = injection réussie (un encodage RFC 2047 du subject
+                // le rendrait inoffensif, encodé dans la valeur du Subject).
+                assert!(
+                    !raw.lines().any(|l| l.starts_with("Bcc:")),
+                    "CRLF du subject a injecté un en-tête Bcc :\n{raw}"
+                );
+            }
+            // Refuser le message est aussi une issue sûre.
+            Err(AppError::SmtpSendFailed(_)) => {}
+            Err(e) => panic!("erreur inattendue : {e:?}"),
+        }
+    }
 }

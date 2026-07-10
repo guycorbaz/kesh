@@ -8,8 +8,10 @@
 //! langue contact DE (preview + PDF à l'envoi), renvoi, contact sans e-mail
 //! (400), facture draft (400), IDOR (404), Consultation (403), objet vide
 //! (422), SMTP down (500 + non marquée), SMTP non configuré (412), rate-limit
-//! (429), preview, et `PUT /companies/current/email` (Reply-To : happy path +
-//! effacement, e-mail invalide 400, RBAC Admin-only 403).
+//! (429), preview, `PUT /companies/current/email` (Reply-To : happy path +
+//! effacement, e-mail invalide 400, RBAC Admin-only 403), contact archivé
+//! (400 preview+send), et sémantique `mark_emailed` mid-flight (cancelled →
+//! marque quand même, supprimée → NotFound ; review Pass 1 ECH-1/ECH-2).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -264,6 +266,21 @@ async fn count_audit_emailed(pool: &MySqlPool, invoice_id: i64) -> i64 {
     n
 }
 
+/// Dernière entrée d'audit `invoice.emailed` → `details_json` parsé
+/// (review Pass 1 AA-1 : l'AC #19 exige to+subject DANS l'audit, pas
+/// seulement le comptage).
+async fn last_audit_emailed_details(pool: &MySqlPool, invoice_id: i64) -> serde_json::Value {
+    let (details,): (Option<serde_json::Value>,) = sqlx::query_as(
+        "SELECT details_json FROM audit_log WHERE action = 'invoice.emailed' \
+         AND entity_type = 'invoice' AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(invoice_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    details.expect("details_json présent")
+}
+
 // --- Tests --------------------------------------------------------------
 
 /// Happy path : preview pré-remplie (défaut FR rendu) puis envoi → 200,
@@ -337,11 +354,14 @@ async fn send_email_happy_path(pool: MySqlPool) {
     // companies.email non renseigné dans le seed → Reply-To omis.
     assert_eq!(sent[0].reply_to, None);
 
-    // DB : marquée + audit.
+    // DB : marquée + audit (avec to+subject dans details — AC #19).
     let (emailed_at, emailed_to) = fetch_emailed(&pool, invoice_id).await;
     assert!(emailed_at.is_some());
     assert_eq!(emailed_to.as_deref(), Some("pia@example.ch"));
     assert_eq!(count_audit_emailed(&pool, invoice_id).await, 1);
+    let details = last_audit_emailed_details(&pool, invoice_id).await;
+    assert_eq!(details["to"], "pia@example.ch", "audit details.to");
+    assert_eq!(details["subject"], subject, "audit details.subject");
 }
 
 /// Langue contact DE → preview rendue avec le template défaut DE
@@ -867,4 +887,106 @@ async fn company_email_requires_admin(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 403);
+}
+
+/// Contact archivé (`active = false`) → 400 CONTACT_ARCHIVED sur preview ET
+/// send (review Pass 1 ECH-2 : le carnet d'adresses le considère « à ne plus
+/// utiliser » ; son e-mail ne doit plus recevoir de factures).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn archived_contact_returns_400(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, company_id, invoice_id) = seed_sendable(&pool).await;
+    sqlx::query("UPDATE contacts SET active = FALSE WHERE company_id = ?")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{invoice_id}/email-preview")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "preview refusée");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "CONTACT_ARCHIVED");
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/send-email")))
+        .bearer_auth(&token)
+        .json(&json!({ "subject": "Facture", "body": "Bonjour" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "envoi refusé");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "CONTACT_ARCHIVED");
+    assert!(mock.sent_emails().is_empty(), "aucun e-mail parti");
+    let (emailed_at, _) = fetch_emailed(&pool, invoice_id).await;
+    assert!(emailed_at.is_none(), "facture non marquée");
+}
+
+/// `mark_emailed` marque même une facture passée `cancelled` mid-flight
+/// (review Pass 1 ECH-1 : l'e-mail est PARTI — un avoir émis entre l'envoi
+/// SMTP et le marquage ne doit pas faire perdre la trace emailed_at/audit).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn mark_emailed_survives_cancelled_status(pool: MySqlPool) {
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    sqlx::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let updated = invoices::mark_emailed(
+        &pool,
+        company_id,
+        invoice_id,
+        "pia@example.ch",
+        "Facture",
+        admin_id,
+        None,
+    )
+    .await
+    .expect("marquage malgré status cancelled");
+    assert!(updated.emailed_at.is_some());
+    assert_eq!(count_audit_emailed(&pool, invoice_id).await, 1);
+}
+
+/// `mark_emailed` sur facture supprimée → `DbError::NotFound` (le handler
+/// mappe en 409 EMAIL_SENT_INVOICE_GONE + audit best-effort — la fenêtre
+/// exacte n'est pas simulable en E2E, le mapping est vérifié au niveau repo).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn mark_emailed_deleted_invoice_returns_not_found(pool: MySqlPool) {
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    sqlx::query("DELETE FROM invoice_lines WHERE invoice_id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let r = invoices::mark_emailed(
+        &pool,
+        company_id,
+        invoice_id,
+        "pia@example.ch",
+        "Facture",
+        admin_id,
+        None,
+    )
+    .await;
+    assert!(
+        matches!(r, Err(kesh_db::errors::DbError::NotFound)),
+        "facture disparue → NotFound : {r:?}"
+    );
 }
