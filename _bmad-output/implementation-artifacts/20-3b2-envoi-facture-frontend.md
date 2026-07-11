@@ -1,6 +1,6 @@
 # Story 20.3b2: Envoi de facture par e-mail — frontend
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -189,8 +189,15 @@ Gate post-patchs : check 0 err, lint-i18n PASS, unit 377/377, build OK, **E2E 21
 
 Gate post-P3 : check 0 err, unit 377/377, lint PASS, build OK, **E2E 21/21 + 2 skips EXIT=0**. **Pass 4 de scellage requise** (P3 a remonté 2 MEDIUM réels).
 
+### Pass 4 (scellage) — 2026-07-11, Sonnet 5 agent unique, contexte frais, diff aplati `737b74cd..bd302fb0`
+
+**0 finding. CONVERGENCE.** Checklist grep 5/5 (NOT_FOUND preview, clé conflict-reload-failed consommée + définie ×4, message succès dans le try, optional chaining conservé, 3 gardes P1/P2 en place) + contre-vérifications indépendantes : `npm run check` ré-exécuté (0 err, 26 warnings = baseline), lint-i18n PASS (7 KNOWN_VIOLATIONS = 7 clés consommées), 6/6 nouveaux tests, 27 clés ×4 sans doublon ni orpheline, les 8 codes d'erreur du switch cross-checkés contre errors.rs/invoice_email.rs, boucle 409 impossible (version rafraîchie dans le try).
+
+**Trend cycle complet : P1 Sonnet 14 bruts (1 HIGH code + 1 HIGH process) → P2 Haiku 21 bruts (1 CRITICAL réel : patchs P1 non écrits) → P3 Opus 15 bruts (2 MEDIUM réels) → P4 Sonnet 0. Critère d'arrêt atteint.**
+
 ## Change Log
 
+- 2026-07-11 — `bmad-code-review` **CONVERGÉ 4 passes** (Sonnet→Haiku→Opus→Sonnet, trend 14→21→15→0 bruts). P4 scellage : 0 finding, 5/5 checklist grep, contre-vérifications indépendantes vertes. Leçons process du cycle : (1) jamais de pipe+tail sur un runner de tests (exit code masqué — 6 échecs E2E invisibles, attrapés par comptage AA) ; (2) scripts multi-patchs = un write par patch + grep post-write (P1-1/P1-2 perdus par un script mort avant write, attrapés par la discipline grep Haiku — qui a fonctionné dans les DEUX sens sur ce cycle). Story → done.
 - 2026-07-11 — `bmad-code-review` Pass 3 (Opus × 2, diff aplati) : 15 bruts → 2 MEDIUM patchés (404 preview symétrique, message reload-échoué post-409 + clé FTL ×4) + 4 réfutés ground-truth (dont 1 « fix » LOW annulé : l'optional chaining du snippet child est nécessaire au narrowing TS). AA/ECH Opus : 10/10 patchs P1+P2 vérifiés grep, 19/19 ACs. Gate + E2E 21/21 verts. Pass 4 scellage à suivre.
 - 2026-07-11 — `bmad-code-review` Pass 2 (Haiku 4.5 × 3, diff aplati) : 21 bruts → 1 CRITICAL RÉEL (patchs P1-1/P1-2 parent jamais écrits — script mort avant write ; grep ground-truth CONFIRMANT l'absence, ré-appliqués + gate complet re-vérifié E2E 21/21) + 0 autre > LOW (3 hallucinations BH réfutées grep). Pass 3 Opus requise (critère d'arrêt non atteint).
 - 2026-07-11 — `bmad-code-review` Pass 1 (Sonnet 5 × 3) : 14 findings bruts → 8 patchs (garde anti-fermeture mid-submit, ré-entrance, case NOT_FOUND, resync 412 preview, label disabled, reset cancel, common-error, scroll modale contact) + 2 réfutés ground-truth + correction du faux rapport E2E (6 échecs masqués par pipe+tail : 1 régression story + 2 casses helper pré-existantes #213, tout corrigé, re-run 21/21 EXIT=0). File List : + tests/e2e/invoices.spec.ts (helper réparé). Pass 2 (Haiku) à suivre.
