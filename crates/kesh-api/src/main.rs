@@ -234,7 +234,23 @@ async fn main() {
     // le move de `config`/`i18n`. Le transport lettre (relay STARTTLS +
     // credentials) est construit ici une seule fois.
     let mut smtp_ready = false;
-    let mailer: Arc<dyn Mailer> = if config.smtp_configured() || config.forgot_password_enabled {
+    // Story 20-4 — poignée de capture E2E (Some uniquement en test-mode+SMTP).
+    let mut test_mock_mailer: Option<mail::MockMailer> = None;
+    let mailer: Arc<dyn Mailer> = if config.test_mode && config.smtp_configured() {
+        // Story 20-4 — KESH_TEST_MODE avec config SMTP (factice) complète :
+        // substituer un MockMailer capturant au SmtpMailer réel. Un host
+        // factice passerait le build (lettre ne connecte qu'à l'envoi) mais
+        // échouerait au send() — la capture rend le round-trip Playwright
+        // possible via GET /api/v1/_test/sent-emails. Le gate loopback-only
+        // de KESH_TEST_MODE borne l'exposition.
+        let mock = mail::MockMailer::new();
+        test_mock_mailer = Some(mock.clone());
+        smtp_ready = true;
+        tracing::warn!(
+            "KESH_TEST_MODE + SMTP configuré — MockMailer actif : AUCUN e-mail réel ne part, capture via /api/v1/_test/sent-emails."
+        );
+        Arc::new(mock)
+    } else if config.smtp_configured() || config.forgot_password_enabled {
         match mail::SmtpMailer::from_config(
             &config,
             i18n_bundle.clone(),
@@ -311,6 +327,8 @@ async fn main() {
         mailer,
         // Story 20-3b1 — envoi de factures disponible (cf. construction mailer).
         smtp_ready,
+        // Story 20-4 — capture d'e-mails E2E (test-mode uniquement).
+        test_mock_mailer,
     };
 
     let app = build_router(state, static_dir);

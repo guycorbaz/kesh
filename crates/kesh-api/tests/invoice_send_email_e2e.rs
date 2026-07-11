@@ -101,6 +101,7 @@ async fn spawn_app(
         users_exist: Arc::new(AtomicBool::new(true)),
         mailer: Arc::new(mailer),
         smtp_ready,
+        test_mock_mailer: None,
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -988,5 +989,176 @@ async fn mark_emailed_deleted_invoice_returns_not_found(pool: MySqlPool) {
     assert!(
         matches!(r, Err(kesh_db::errors::DbError::NotFound)),
         "facture disparue → NotFound : {r:?}"
+    );
+}
+
+/// Story 20-4 — `GET /_test/sent-emails` : capture disponible quand le boot
+/// est en mode capture (test-mode + MockMailer partagé), 409 sinon.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, _, invoice_id) = seed_sendable(&pool).await;
+
+    // Spawn dédié : config test-mode (routes /_test montées) + poignée Some.
+    let config = test_config().with_test_mode(true);
+    let rate_limiter = RateLimiter::new(&config);
+    let i18n = Arc::new(
+        kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
+    kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
+    let state = AppState {
+        pool: pool.clone(),
+        config: Arc::new(config),
+        rate_limiter: Arc::new(rate_limiter),
+        rate_limiter_recovery: Arc::new(kesh_api::build_recovery_rate_limiter()),
+        rate_limiter_send_email: Arc::new(kesh_api::build_send_email_rate_limiter()),
+        i18n,
+        users_exist: Arc::new(AtomicBool::new(true)),
+        mailer: Arc::new(mock.clone()),
+        smtp_ready: true,
+        test_mock_mailer: Some(mock.clone()),
+    };
+    let app = build_router(state, "nonexistent-static-dir".to_string());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr: SocketAddr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    let app = TestApp {
+        base_url: format!("http://{addr}"),
+        client: reqwest::Client::new(),
+    };
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    // Vide au départ (endpoint non authentifié — monté hors require_auth).
+    let resp = app
+        .client
+        .get(app.url("/api/v1/_test/sent-emails"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["emails"].as_array().unwrap().len(), 0);
+
+    // Un envoi → capturé avec le mapping camelCase complet.
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/send-email")))
+        .bearer_auth(&token)
+        .json(&json!({ "subject": "Facture capture", "body": "Bonjour" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/_test/sent-emails"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let emails = body["emails"].as_array().unwrap();
+    assert_eq!(emails.len(), 1);
+    assert_eq!(emails[0]["to"], "pia@example.ch");
+    assert_eq!(emails[0]["subject"], "Facture capture");
+    assert_eq!(emails[0]["attachmentContentType"], "application/pdf");
+    assert!(
+        emails[0]["attachmentFilename"]
+            .as_str()
+            .unwrap()
+            .starts_with("facture-"),
+        "filename: {}",
+        emails[0]["attachmentFilename"]
+    );
+    assert!(emails[0]["attachmentSize"].as_u64().unwrap() > 1000);
+
+    // Purge au seed : POST /_test/seed vide le buffer.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/_test/seed"))
+        .json(&json!({ "preset": "with-company" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "seed");
+    let body: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/_test/sent-emails"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["emails"].as_array().unwrap().len(), 0, "buffer purgé");
+}
+
+/// Story 20-4 — test-mode SANS poignée de capture (boot sans SMTP factice)
+/// → 409 explicite, pas un 200 vide ambigu.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn test_sent_emails_endpoint_409_without_capture(pool: MySqlPool) {
+    let config = test_config().with_test_mode(true);
+    let rate_limiter = RateLimiter::new(&config);
+    let i18n = Arc::new(
+        kesh_i18n::I18nBundle::load(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
+    kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
+    let state = AppState {
+        pool,
+        config: Arc::new(config),
+        rate_limiter: Arc::new(rate_limiter),
+        rate_limiter_recovery: Arc::new(kesh_api::build_recovery_rate_limiter()),
+        rate_limiter_send_email: Arc::new(kesh_api::build_send_email_rate_limiter()),
+        i18n,
+        users_exist: Arc::new(AtomicBool::new(true)),
+        mailer: Arc::new(kesh_api::mail::NoopMailer),
+        smtp_ready: false,
+        test_mock_mailer: None,
+    };
+    let app = build_router(state, "nonexistent-static-dir".to_string());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr: SocketAddr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    let resp = reqwest::Client::new()
+        .get(format!("http://{addr}/api/v1/_test/sent-emails"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "AppError::Validation → 400 explicite");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("capture d'e-mails indisponible")
     );
 }

@@ -277,6 +277,7 @@ mod tests {
             // Story 20-3b1 — littéral-exception (test_state).
             rate_limiter_send_email: std::sync::Arc::new(crate::build_send_email_rate_limiter()),
             smtp_ready: false,
+            test_mock_mailer: None,
         }
     }
 

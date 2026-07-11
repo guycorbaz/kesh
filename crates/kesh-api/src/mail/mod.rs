@@ -176,6 +176,16 @@ impl MockMailer {
             .expect("MockMailer lock poisoned")
             .clone()
     }
+
+    /// Vide les deux buffers (Story 20-4 — purge au `POST /_test/seed`,
+    /// isolation inter-specs Playwright comme les rate-limiters).
+    pub fn clear(&self) {
+        self.sent.lock().expect("MockMailer lock poisoned").clear();
+        self.sent_emails
+            .lock()
+            .expect("MockMailer lock poisoned")
+            .clear();
+    }
 }
 
 impl Mailer for MockMailer {

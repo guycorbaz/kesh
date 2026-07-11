@@ -141,6 +141,7 @@ async fn spawn_app(
         // Story 20-3b1 — champs hors scope recovery (défauts).
         rate_limiter_send_email: Arc::new(kesh_api::build_send_email_rate_limiter()),
         smtp_ready: false,
+        test_mock_mailer: None,
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

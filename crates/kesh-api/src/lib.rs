@@ -73,6 +73,13 @@ pub struct AppState {
     /// `smtpConfigured` de `/health` et de la garde 412 des endpoints d'envoi
     /// (un `NoopMailer` retournerait Ok et marquerait un envoi fantôme).
     pub smtp_ready: bool,
+    /// Story 20-4 — poignée de capture d'e-mails pour les E2E Playwright.
+    /// `Some(mock)` UNIQUEMENT quand le boot est en `KESH_TEST_MODE` avec une
+    /// config SMTP (factice) complète : `main.rs` substitue alors un
+    /// `MockMailer` au `SmtpMailer` réel et garde ce clone (buffer partagé
+    /// `Arc<Mutex<…>>`) pour `GET /api/v1/_test/sent-emails`. `None` partout
+    /// ailleurs — le endpoint répond 409 dans ce cas.
+    pub test_mock_mailer: Option<mail::MockMailer>,
 }
 
 impl AppState {
@@ -109,6 +116,8 @@ impl AppState {
             // Story 20-3b1 — défaut test : SMTP non prêt (les tests d'envoi
             // construisent AppState littéral avec `smtp_ready: true` + MockMailer).
             smtp_ready: false,
+            // Story 20-4 — capture d'e-mails réservée au boot test-mode réel.
+            test_mock_mailer: None,
         }
     }
 }
