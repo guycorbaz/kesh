@@ -78,7 +78,9 @@ pub struct AppState {
     /// config SMTP (factice) complète : `main.rs` substitue alors un
     /// `MockMailer` au `SmtpMailer` réel et garde ce clone (buffer partagé
     /// `Arc<Mutex<…>>`) pour `GET /api/v1/_test/sent-emails`. `None` partout
-    /// ailleurs — le endpoint répond 409 dans ce cas.
+    /// ailleurs — le endpoint répond 400 `VALIDATION_ERROR` dans ce cas
+    /// (déviation documentée 20-4 : pas de variant dédié pour un endpoint
+    /// de test, le message diagnostique explicite suffit).
     pub test_mock_mailer: Option<mail::MockMailer>,
 }
 

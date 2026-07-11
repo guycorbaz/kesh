@@ -157,7 +157,10 @@ test.describe('Envoi de facture par e-mail — round-trip (Story 20-4)', () => {
 
 		await login(page, username, 'MotDePasse12345');
 		await page.goto(`/invoices/${invoiceId}`);
-		// La fiche charge (statut visible) mais le bouton d'envoi est absent.
+		// Anti-vacuous (review P1 AA) : confirmer que la fiche a réellement
+		// chargé (URL + métadonnée visible) AVANT d'asserter l'absence du
+		// bouton — sinon une redirection/erreur ferait passer le test à tort.
+		await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}$`));
 		await expect(page.getByTestId('send-email-button')).toHaveCount(0);
 	});
 });

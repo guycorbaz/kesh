@@ -116,7 +116,23 @@ afin que la fonctionnalité livrée par 20-1→20-3b2 soit exploitable, supporta
 - [Source: cartographie 2 agents Explore 2026-07-11 — manuels LaTeX, test-mode/E2E] (références précises ci-dessus).
 - [Source: CLAUDE.md §Test Locally First, §Règle de commit (PDF versionnés), gate 4-bis (\keshVersion au tag seulement)]
 
+## Senior Developer Review (AI)
+
+### Pass 1 — 2026-07-11, Sonnet 5 × 2 (Blind Hunter diff-only + AA/ECH combiné), contexte frais, diff `b4280ae5..fa7d0f44`
+
+**10 findings bruts (1 CRITICAL + 2 MEDIUM + 7 LOW) → 1 MEDIUM patché + 5 LOW patchés/factorisés + 1 CRITICAL reclassé LOW/INFO ground-truth + 1 MEDIUM réfuté + 2 LOW dismissés. AA : 18/18 ACs conformes, déviation 400-vs-409 validée.**
+
+- **[CRITICAL → reclassé LOW/INFO, ground-truth double] BH — « fuite du mode capture en prod avale les factures »** : le scénario exige `KESH_TEST_MODE=true` en prod avec de vraies creds SMTP. Réfutation structurelle : (1) le boot **refuse** test_mode avec bind non-loopback (`ConfigError::TestModeWithPublicBind`, config.rs:850-852, `0.0.0.0` explicitement rejeté) et le docker-compose standard met `KESH_HOST=0.0.0.0` → la fuite du flag casse le démarrage bruyamment ; (2) le vecteur résiduel (bare-metal loopback + reverse proxy local) relève du modèle de menace pré-existant de KESH_TEST_MODE, où `/seed` non authentifié TRUNCATE déjà toute la base — la capture n'ajoute pas de classe de risque. L'AA/ECH arrive indépendamment à la même conclusion (LOW/INFO « aucune action requise »). Action prise quand même : le commentaire de main.rs cite désormais précisément le garde-fou (au lieu d'une affirmation vague que le BH ne pouvait pas vérifier).
+- **[MEDIUM → patché] BH — rustdoc disant encore « 409 »** : les 2 doc-comments (lib.rs champ AppState, test_endpoints.rs handler) contredisaient le code réel (400 VALIDATION_ERROR, déviation documentée) — corrigés + test renommé `_400_without_capture` (AA l'avait aussi flaggé).
+- **[MEDIUM → réfuté ground-truth] BH — flakiness buffer avec workers parallèles** : `playwright.config.ts` impose `workers: 1` (sérialisation documentée pour le seed partagé) — pas de course possible ; le `clear()` non-atomique est sans conséquence sous exécution sérielle.
+- **[LOW → patchés] AA** : test rôle anti-vacuous (assertion `toHaveURL` avant le `toHaveCount(0)`) ; **BH** : purge seed/reset factorisée (`clear_transient_test_state`, la duplication venait d'un replace-all qui avait — correctement — étendu les 2 handlers).
+- **[LOW → dismissés documentés] BH** : bootstrap dupliqué des 2 tests Rust (ils exigent une `Config::with_test_mode` différente — étendre la signature de `spawn_app` toucherait 19 call-sites pour 2 usages) ; exposition PII du endpoint (subsumée par le triage du CRITICAL — même garde, même périmètre que `/seed`).
+
+Gate post-patchs : fmt/clippy 0 warning, suite Rust 21/21, Playwright send-email 4/4 EXIT=0 (assertion anti-vacuous incluse).
+
 ## Change Log
+
+- 2026-07-11 — `bmad-code-review` Pass 1 (Sonnet 5 × 2) : 10 bruts → 1 MEDIUM doc patché, CRITICAL reclassé LOW/INFO (double ground-truth : boot gate + périmètre test-mode pré-existant), 1 MEDIUM réfuté (workers:1), LOW patchés (anti-vacuous, purge factorisée, rename test). Pass 2 (Haiku) à suivre.
 
 - 2026-07-11 — `validate-create-story` **CONVERGÉ 2 passes** (Sonnet 5 → Haiku 4.5, contextes frais, trend 5 [1 HIGH] → 0). Pass 2 Haiku : **0 finding, 0 faux-positif** (les garde-fous anti-catégorie et anti-hallucination du prompt ont tenu — toutes les références re-vérifiées contre le code : data-testid ×7, helpers, gates config, points d'insertion LaTeX, rate-limiter 20/15min). Statut ready-for-dev confirmé.
 - 2026-07-11 — `validate-create-story` Pass 1 (Sonnet 5, contexte frais) : 5 findings (1 HIGH + 3 MEDIUM + 1 LOW), tous patchés. HIGH : le helper étendu doit aussi porter `salutation?` (l'AC#6 exige un contact Madame ; le payload actuel ne pose ni email ni salutation). MEDIUM : modèle `beforeAll` réattribué à `invoices.spec.ts` (email-templates utilise `beforeEach` — règle testing.md:85-90) ; refs `config.rs` corrigées (:836-846/:850-852, pas :1026/:94) ; « Envoyée le … à … » clarifié (le « à » = adresse destinataire, pas une heure — ne pas documenter un élément UI inexistant). LOW : `attachmentContentType` ajouté au contrat `/_test/sent-emails`. Le validateur a confirmé exactes toutes les autres références (data-testid ×7, ancres manuels, _test hors require_auth, 19 tests Rust, from `kesh@example.invalid` valide). Pass 2 (Haiku) à suivre.

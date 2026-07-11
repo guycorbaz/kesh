@@ -1109,9 +1109,10 @@ async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
 }
 
 /// Story 20-4 — test-mode SANS poignée de capture (boot sans SMTP factice)
-/// → 409 explicite, pas un 200 vide ambigu.
+/// → 400 VALIDATION_ERROR explicite (déviation documentée vs spec [409]),
+/// pas un 200 vide ambigu.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn test_sent_emails_endpoint_409_without_capture(pool: MySqlPool) {
+async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
     let config = test_config().with_test_mode(true);
     let rate_limiter = RateLimiter::new(&config);
     let i18n = Arc::new(

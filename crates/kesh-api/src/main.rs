@@ -241,8 +241,11 @@ async fn main() {
         // substituer un MockMailer capturant au SmtpMailer réel. Un host
         // factice passerait le build (lettre ne connecte qu'à l'envoi) mais
         // échouerait au send() — la capture rend le round-trip Playwright
-        // possible via GET /api/v1/_test/sent-emails. Le gate loopback-only
-        // de KESH_TEST_MODE borne l'exposition.
+        // possible via GET /api/v1/_test/sent-emails. Garde-fou : un
+        // KESH_TEST_MODE=true avec bind non-loopback REFUSE de démarrer
+        // (ConfigError::TestModeWithPublicBind, config.rs — 0.0.0.0 rejeté,
+        // qui est le défaut docker-compose) : une fuite du flag en prod
+        // standard casse le boot bruyamment au lieu d'avaler les e-mails.
         let mock = mail::MockMailer::new();
         test_mock_mailer = Some(mock.clone());
         smtp_ready = true;

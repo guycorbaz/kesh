@@ -241,14 +241,7 @@ async fn seed_handler(
     // Story 17-4e (DE-2) — repartir avec des rate-limiters vierges à chaque
     // seed : le budget recovery (5 req / 15 min / IP, partagé forgot+reset)
     // rendrait sinon les re-runs E2E locaux flaky (état mémoire, pas DB).
-    state.rate_limiter.clear_all();
-    state.rate_limiter_recovery.clear_all();
-    // Story 20-4 — même isolation pour le budget send-email (20 / 15 min)
-    // et le buffer de capture d'e-mails (si le boot est en mode capture).
-    state.rate_limiter_send_email.clear_all();
-    if let Some(mock) = &state.test_mock_mailer {
-        mock.clear();
-    }
+    clear_transient_test_state(&state);
 
     Ok(Json(SeedResponse {
         preset: preset_label,
@@ -323,18 +316,23 @@ async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedRespons
     // Story 17-4e Pass 1 (ECH) — même purge des limiters que seed_handler :
     // /_test/reset est un alias de seed{fresh}, il doit avoir la même
     // sémantique anti-flaky (DE-2).
-    state.rate_limiter.clear_all();
-    state.rate_limiter_recovery.clear_all();
-    // Story 20-4 — même isolation pour le budget send-email (20 / 15 min)
-    // et le buffer de capture d'e-mails (si le boot est en mode capture).
-    state.rate_limiter_send_email.clear_all();
-    if let Some(mock) = &state.test_mock_mailer {
-        mock.clear();
-    }
+    clear_transient_test_state(&state);
     Ok(Json(SeedResponse {
         preset: "fresh",
         ok: true,
     }))
+}
+
+/// Purge l'état transitoire en mémoire entre deux seeds E2E (Story 17-4e
+/// rate-limiters, étendu Story 20-4) : budgets login/recovery/send-email et
+/// buffer de capture d'e-mails. Partagé `seed_handler`/`reset_handler`.
+fn clear_transient_test_state(state: &AppState) {
+    state.rate_limiter.clear_all();
+    state.rate_limiter_recovery.clear_all();
+    state.rate_limiter_send_email.clear_all();
+    if let Some(mock) = &state.test_mock_mailer {
+        mock.clear();
+    }
 }
 
 /// Un e-mail métier capturé, shape camelCase pour les specs Playwright
@@ -362,9 +360,11 @@ pub struct SentEmailsResponse {
 ///
 /// Renvoie les e-mails métier capturés par le `MockMailer` substitué au boot
 /// (`KESH_TEST_MODE` + config SMTP factice, cf. `main.rs`). Si le boot n'est
-/// PAS en mode capture (test-mode sans vars SMTP → NoopMailer), répond 409
-/// avec un message explicite plutôt qu'un 200 vide ambigu — la spec
-/// Playwright diagnostique immédiatement une recette de lancement incomplète.
+/// PAS en mode capture (test-mode sans vars SMTP → NoopMailer), répond
+/// 400 `VALIDATION_ERROR` avec un message explicite plutôt qu'un 200 vide
+/// ambigu — la spec Playwright diagnostique immédiatement une recette de
+/// lancement incomplète. (Déviation documentée vs spec [409] : réutilise
+/// `AppError::Validation`, pas de variant dédié pour un endpoint de test.)
 async fn sent_emails_handler(
     State(state): State<AppState>,
 ) -> Result<Json<SentEmailsResponse>, AppError> {
