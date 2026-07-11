@@ -10,6 +10,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+## [0.6.0] — 2026-07-11
+
 ### Ajouté
 
 - **Modèles d'e-mail multilingues** (réservé à l'**administrateur**) : nouvelle page **Réglages → Modèles d'e-mail** pour personnaliser l'objet et le corps de l'e-mail d'envoi de facture, dans les **quatre langues** (FR/DE/IT/EN). Des variables de substitution (`{salutation}`, `{contactName}`, `{invoiceNumber}`, `{amount}`, `{dueDate}`, `{companyName}`) sont remplacées automatiquement à l'envoi ; un modèle par défaut soigné est fourni pour chaque langue et peut être restauré à tout moment. (#224)
