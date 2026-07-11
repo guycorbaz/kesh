@@ -280,8 +280,13 @@
 			sendEmailOpen = true;
 		} catch (err) {
 			// CONTACT_ARCHIVED (400) et toute autre erreur : toast, pas de modale.
-			if (isApiError(err)) notifyError(err.message);
-			else notifyError(i18nMsg('common-error', 'Erreur inattendue'));
+			if (isApiError(err)) {
+				notifyError(err.message);
+				// Flag client périmé (review P1 BH) : même resync que le send.
+				if (err.code === 'SMTP_NOT_CONFIGURED') featureFlags.setSmtpConfigured(false);
+			} else {
+				notifyError(i18nMsg('common-error', 'Erreur inattendue'));
+			}
 		} finally {
 			previewLoading = false;
 		}
@@ -327,6 +332,14 @@
 				// backend, la fiche n'existe plus → retour liste.
 				case 'EMAIL_SENT_INVOICE_GONE':
 					notifyWarning(err.message);
+					sendEmailOpen = false;
+					await goto('/invoices');
+					break;
+				// Facture supprimée AVANT l'envoi (entre preview et confirm) :
+				// re-cliquer rejouerait le même 404 — fermer + retour liste
+				// (review P1 ECH, symétrique du 409 ci-dessus).
+				case 'NOT_FOUND':
+					notifyError(err.message);
 					sendEmailOpen = false;
 					await goto('/invoices');
 					break;
@@ -469,7 +482,9 @@
 								<span {...props} data-testid="send-email-disabled-wrapper">
 									<Button variant="outline" disabled data-testid="send-email-button">
 										<Mail class="h-4 w-4" aria-hidden="true" />
-										{i18nMsg('invoice-send-email-button', 'Envoyer par e-mail')}
+										{invoice?.emailedAt
+											? i18nMsg('invoice-resend-email-button', 'Renvoyer par e-mail')
+											: i18nMsg('invoice-send-email-button', 'Envoyer par e-mail')}
 									</Button>
 								</span>
 							{/snippet}

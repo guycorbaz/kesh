@@ -592,7 +592,10 @@
 
 <!-- Create/Edit dialog -->
 <Dialog.Root bind:open={formOpen}>
-	<Dialog.Content class="max-w-lg">
+	<!-- Story 20-3b2 : le formulaire a grandi (langue + civilité) — scroll
+	     interne pour que le footer reste atteignable (E2E « Créer » hors
+	     viewport sinon). -->
+	<Dialog.Content class="max-h-[90vh] max-w-lg overflow-y-auto">
 		<Dialog.Header>
 			<Dialog.Title>
 				{editing

@@ -150,8 +150,27 @@ Split 20-3b → 20-3b1 (backend) + 20-3b2 (frontend) acté à la spec 20-3b1 (r�
 - [Source: `_bmad-output/implementation-artifacts/20-2-admin-templates-ui.md`] — patterns frontend 20-2 (verrou optimiste 409, `$props.id()`, lint-i18n).
 - [Source: CLAUDE.md §Test Locally First, §Review Iteration Rule]
 
+## Senior Developer Review (AI)
+
+### Pass 1 — 2026-07-11, Sonnet 5 × 3 reviewers (Blind Hunter + Edge Case Hunter + Acceptance Auditor), contexte frais, diff `737b74cd..f82b2529`
+
+**14 findings bruts (2 HIGH même racine + 1 HIGH process + 5 MEDIUM + 6 LOW) → 8 patchs + 2 réfutés ground-truth + corrections E2E + 2 LOW documentés.**
+
+- **[HIGH → patché] BH/ECH — modale fermable pendant l'envoi en vol** : ESC/X/clic-extérieur (défauts bits-ui) fermaient la modale pendant le POST — erreur inline 422/500 perdue (jamais de toast sur ces branches) + re-clic possible = second envoi SMTP réel. Patch : garde `if (!o && sendEmailSubmitting) return;` dans `onOpenChange` (couvre les 3 chemins de fermeture, bits-ui route tout par onOpenChange).
+- **[HIGH process → corrigé] AA — rapport de gate E2E FAUX** : « 15 passed / 0 failed » alors que les 3 specs comptent 21 tests actifs — 6 échecs masqués (pipe + tail). Détail et remédiation dans les Completion Notes (1 régression story fixée [scroll modale contact], 2 casses pré-existantes helper #213 fixées, re-run complet 21/21 EXIT=0 vérifié).
+- **[MEDIUM → patché] ECH — ré-entrance double-clic** : `handleConfirm`/`handleSendEmailConfirm` sans garde — deux POST = deux e-mails réels (non idempotent, contrairement à mark-paid). Patch : `submitting` dans les deux gardes.
+- **[MEDIUM → patché] ECH — 404 mid-modale sans issue** : facture supprimée entre preview et confirm → `NOT_FOUND` tombait dans `default` (inline, modale ouverte, re-clic = même 404 en boucle). Patch : `case 'NOT_FOUND'` → toast + fermer + `goto('/invoices')` (symétrique du 409).
+- **[MEDIUM → patché] BH — flag 412 non resynchronisé sur le fetch preview** : seul le send resynchronisait. Patch : même `setSmtpConfigured(false)` dans le catch de `openSendEmail`.
+- **[MEDIUM → réfuté ground-truth] BH — collision FTL `common-save`/`common-edit`/`error-unexpected`** : `grep -c` sur les 4 locales = exactement 1 occurrence par clé (aucun doublon Fluent). Bonus involontaire : `error-unexpected` était consommée par la page contacts SANS définition FTL — l'ajout corrige une traduction manquante pré-existante.
+- **[MEDIUM → patché] AA — doublon sémantique `error-unexpected`/`common-error` dans le périmètre story** : le nouveau code de settings utilise désormais `common-error` (clé générique existante) ; les définitions FTL `error-unexpected` restent (elles servent la page contacts pré-existante). Décompte AC#16 corrigé : 26 clés ×4 (pas 27), dont 5 hors énumération AC (documentées).
+- **[LOW → patchés]** : label « Renvoyer » aussi dans la branche disabled (ternaire miroir) ; reset `emailError` au cancel de l'édition e-mail société.
+- **[LOW → documentés, non corrigés]** : `EmailLanguage`/`ContactLanguage` dupliqués (2 lignes, isolation inter-features voulue — pas d'import cross-feature, cohérent avec la philosophie du lint ownership) ; helper E2E réparé plutôt que KF GitHub (découvert pendant la story → corrigé dans la story, règle CLAUDE.md).
+
+Gate post-patchs : check 0 err, lint-i18n PASS, unit 377/377, build OK, **E2E 21 passed / 2 skipped / 0 failed (EXIT=0 vérifié)**.
+
 ## Change Log
 
+- 2026-07-11 — `bmad-code-review` Pass 1 (Sonnet 5 × 3) : 14 findings bruts → 8 patchs (garde anti-fermeture mid-submit, ré-entrance, case NOT_FOUND, resync 412 preview, label disabled, reset cancel, common-error, scroll modale contact) + 2 réfutés ground-truth + correction du faux rapport E2E (6 échecs masqués par pipe+tail : 1 régression story + 2 casses helper pré-existantes #213, tout corrigé, re-run 21/21 EXIT=0). File List : + tests/e2e/invoices.spec.ts (helper réparé). Pass 2 (Haiku) à suivre.
 - 2026-07-11 — `bmad-dev-story` COMPLETED run unique (Fable 5) : T1-T7, 0 déviation spec. Gate frontend vert (check 0 err, lint-i18n PASS, unit 377/377, build OK, E2E non-régression 15/15+2 skip pré-existants contre `kesh_e2e`). Story → review.
 - 2026-07-11 — `validate-create-story` **CONVERGÉ 2 passes** (Sonnet 5 → Haiku 4.5, contextes frais). Pass 2 Haiku : 7 findings bruts → **0 réel**. 6 CRITICAL/HIGH/MEDIUM dismissés en bloc = **erreur de catégorie** (le validateur a traité la spec comme une implémentation à auditer : « les types/le flag/les wrappers n'existent pas » — c'est le travail à faire décrit par la spec, qui annonce elle-même ces absences « vérifié ») ; 1 LOW réfuté ground-truth (« ContactPersonsManager.svelte n'existe pas » — `ls` : le fichier existe, 4 258 octets, 16 références dans lint-i18n-ownership.js — hallucination Haiku, discipline grep CLAUDE.md appliquée) ; 1 « finding » était un constat de non-contradiction. Trend : 8 (2 HIGH) → 0. Statut ready-for-dev confirmé.
 - 2026-07-11 — `validate-create-story` Pass 1 (Sonnet 5, contexte frais) : 8 findings (2 HIGH + 3 MEDIUM + 3 LOW), tous patchés. HIGH = références de lignes fausses héritées de la cartographie Explore (`invoices/[id]/+page.svelte` fait 640 l. — bloc validated :341-384, Payée le :431-436 ; MarkPaidDialog fait 106 l. — Footer :97-104), vérifiées ground-truth avant patch. MEDIUM = attribution `$props.id()` corrigée (MarkPaidDialog utilise un id en dur ; précédent réel = email-templates/+page.svelte:26), `AccountingTooltip` requalifié (pattern glossaire 2 clés, inutilisable pour un message libre → primitives bits-ui directement), promesse « le message 429 contient le délai » retirée (FTL `error-rate-limited` sans délai, header Retry-After non exposé par ApiError — story frontend-only). Le contrat backend et toutes les autres références (contacts, settings, feature-flags, lint i18n, E2E) vérifiés exacts par le validateur. Pass 2 (Haiku) à suivre.
@@ -169,7 +188,7 @@ Claude Fable 5 (claude-fable-5) — run unique 2026-07-11.
 
 ### Completion Notes List
 
-- **T1-T7 conformes à la spec, 0 déviation.** Gate : `check` 0 erreur (26 warnings pré-existants), `lint-i18n-ownership` PASS (7 entrées SendEmailDialog ajoutées à KNOWN_VIOLATIONS, précédent MarkPaidDialog), `test:unit` **377/377** (+6 nouveaux : 2 wrappers invoices, 2 settings, 2 feature-flags), `build` OK, **E2E non-régression 15 passed / 2 skipped (pré-existants) / 0 failed** (contacts + invoices + email-templates, backend `kesh_e2e` migré forward au boot — `/health` y expose `smtpConfigured:false`, prouvant le contrat 20-3b1 en conditions réelles).
+- **T1-T7 conformes à la spec.** Gate : `check` 0 erreur (26 warnings pré-existants), `lint-i18n-ownership` PASS (7 entrées SendEmailDialog ajoutées à KNOWN_VIOLATIONS, précédent MarkPaidDialog), `test:unit` **377/377** (+6 nouveaux : 2 wrappers invoices, 2 settings, 2 feature-flags), `build` OK. **E2E : le premier rapport (« 15 passed / 0 failed ») était FAUX** — exit code masqué par un pipe + `tail` tronquant la liste des échecs (même famille que [[feedback_cargo_test_pipe_masks_exit]], version Playwright) ; l'AA de la review Pass 1 l'a détecté par comptage des tests. Réalité : 6 échecs — 1 régression de la story (formulaire contact allongé → bouton « Créer » hors viewport, fix scroll interne `max-h-[90vh] overflow-y-auto` + rebuild `frontend/build` obligatoire avant E2E, Playwright sert le build statique) + 2 casses PRÉ-EXISTANTES du helper `createContactWithAddressViaApi` depuis #213 (Personne sans firstName/lastName → 400 ; adresse non structurée → PDF 400), corrigées dans le helper et documentées ici. **État final vérifié : E2E 21 passed / 2 skipped (pré-existants) / 0 failed, EXIT=0** (contacts 7 + invoices 8 + email-templates 6, backend `kesh_e2e`, `/health` y expose `smtpConfigured:false` — contrat 20-3b1 prouvé en conditions réelles).
 - Matrice d'erreurs du send implémentée par `switch (err.code)` : inline (422/500), toast+fermer (400 contact), toast+`setSmtpConfigured(false)` (412), toast (429), toast warning+`goto('/invoices')` (409 EMAIL_SENT_INVOICE_GONE).
 - Civilité affichée uniquement pour `Personne` (payload force `Neutre` pour Entreprise) ; langue `''` → `null` (héritée). IDs en dur `form-language`/`form-salutation` (cohérence formulaire contacts) ; `$props.id()` dans SendEmailDialog (#145).
 - E-mail société : édition inline Admin-only section Organisation, `isPlausibleEmail` client, 409 → reload + message, effacement → `null`.
@@ -196,6 +215,7 @@ Claude Fable 5 (claude-fable-5) — run unique 2026-07-11.
 - `frontend/src/routes/(app)/contacts/+page.svelte` (selects langue + civilité, states/reset/hydrate/payload)
 - `frontend/src/routes/(app)/settings/+page.svelte` (e-mail société inline Admin)
 - `frontend/scripts/lint-i18n-ownership.js` (KNOWN_VIOLATIONS ×7)
+- `frontend/tests/e2e/invoices.spec.ts` (helper `createContactWithAddressViaApi` réparé — cassé depuis #213)
 
 **Modifiés — i18n**
 

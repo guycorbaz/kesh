@@ -259,13 +259,23 @@ async function createContactWithAddressViaApi(
 ): Promise<number> {
 	const ctx = await authedApiContext(page);
 	try {
+		// #213 (v0.5.0) : une Personne exige firstName/lastName — helper mis à
+		// jour en Story 20-3b2 (cassé silencieusement depuis, specs PDF rouges).
 		const res = await ctx.post('/api/v1/contacts', {
 			data: {
 				contactType: 'Personne',
 				name,
+				firstName: 'Pia',
+				lastName: name,
 				isClient: true,
 				isSupplier: false,
-				address: 'Marktgasse 28\n9400 Rorschach',
+				addressStructured: {
+					street: 'Marktgasse',
+					building: '28',
+					postalCode: '9400',
+					city: 'Rorschach',
+					country: 'CH',
+				},
 				defaultPaymentTerms: '30 jours net',
 			},
 		});

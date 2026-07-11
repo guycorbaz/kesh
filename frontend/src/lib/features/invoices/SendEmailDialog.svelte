@@ -56,7 +56,8 @@
 	});
 
 	function handleConfirm() {
-		if (recipientMissing || clientError) return;
+		// `submitting` inclus (review P1 ECH) : double-clic = double envoi réel.
+		if (submitting || recipientMissing || clientError) return;
 		onConfirm(subject.trim(), body.trim());
 	}
 </script>

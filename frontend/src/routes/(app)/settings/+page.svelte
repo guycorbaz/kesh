@@ -66,7 +66,10 @@
 					emailError = err.message;
 				}
 			} else {
-				emailError = msg('error-unexpected', 'Erreur inattendue.');
+				// `common-error` = clé générique existante (review P1 : éviter le
+				// doublon avec `error-unexpected`, gardée en FTL pour la page
+				// contacts qui la consommait sans définition).
+				emailError = msg('common-error', 'Erreur inattendue');
 			}
 		} finally {
 			emailSubmitting = false;
@@ -146,7 +149,15 @@
 							<Button size="sm" onclick={saveEmail} disabled={emailSubmitting} data-testid="settings-company-email-save">
 								{msg('common-save', 'Enregistrer')}
 							</Button>
-							<Button size="sm" variant="outline" onclick={() => (emailEditing = false)} disabled={emailSubmitting}>
+							<Button
+							size="sm"
+							variant="outline"
+							onclick={() => {
+								emailEditing = false;
+								emailError = '';
+							}}
+							disabled={emailSubmitting}
+						>
 								{msg('common-cancel', 'Annuler')}
 							</Button>
 						</dd>
