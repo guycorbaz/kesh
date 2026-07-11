@@ -168,8 +168,19 @@ Split 20-3b → 20-3b1 (backend) + 20-3b2 (frontend) acté à la spec 20-3b1 (r�
 
 Gate post-patchs : check 0 err, lint-i18n PASS, unit 377/377, build OK, **E2E 21 passed / 2 skipped / 0 failed (EXIT=0 vérifié)**.
 
+### Pass 2 — 2026-07-11, Haiku 4.5 × 3 reviewers, contexte frais, diff aplati `737b74cd..8c96dfd5`
+
+**21 findings bruts → 1 CRITICAL RÉEL (confirmé grep) + 0 autre > LOW.**
+
+- **[CRITICAL → patché] AA — patchs P1-1 et P1-2 (parent) JAMAIS ÉCRITS** : le script d'application de la Pass 1 était mort à une assertion AVANT le `write()` — les modifications en mémoire (garde `onOpenChange` anti-fermeture mid-submit + garde ré-entrance parent) n'avaient jamais atteint le disque, alors que le Change Log les annonçait appliquées. **Détecté par l'AA Haiku via la discipline grep ground-truth obligatoire (CLAUDE.md)** — cette fois le grep a CONFIRMÉ l'absence au lieu de réfuter une hallucination : la règle a fonctionné dans les deux sens. Patchs ré-appliqués, présence vérifiée par `grep -cF` (1+1), gate complet re-vérifié (check/unit 377/lint/build + **E2E 21/21 EXIT=0**).
+- **BH : 9 bruts, 0 réel > LOW** — 3 réfutés ground-truth (« previewLoading jamais reset » : il est dans un `finally` ; « test flags faux » : le no-op du setter CONSERVE la valeur précédente, comportement testé à dessein ; « réponse PUT incomplète » : le backend renvoie `CompanyJson::from(updated)` complet, le reviewer a lu le mock du test) ; 6 LOW acceptés/dismissés (maxlength borné par la limite axum 2 Mo, timeout = comportement uniforme apiClient, couverture wrappers 1-ligne portée par api-client.test.ts, E2E salutation Entreprise → 20-4, hygiène lint/poll).
+- **ECH : 5 bruts, 0 réel** — le premier cite le patch P1 lui-même comme problème ; les autres recoupent les LOW du BH ou le pattern standard de pré-validation client.
+
+**Pass 3 (Opus, contexte frais) requise** : la Pass 2 a remonté 1 CRITICAL réel → le critère d'arrêt (0 > LOW) n'est pas atteint sur cette passe.
+
 ## Change Log
 
+- 2026-07-11 — `bmad-code-review` Pass 2 (Haiku 4.5 × 3, diff aplati) : 21 bruts → 1 CRITICAL RÉEL (patchs P1-1/P1-2 parent jamais écrits — script mort avant write ; grep ground-truth CONFIRMANT l'absence, ré-appliqués + gate complet re-vérifié E2E 21/21) + 0 autre > LOW (3 hallucinations BH réfutées grep). Pass 3 Opus requise (critère d'arrêt non atteint).
 - 2026-07-11 — `bmad-code-review` Pass 1 (Sonnet 5 × 3) : 14 findings bruts → 8 patchs (garde anti-fermeture mid-submit, ré-entrance, case NOT_FOUND, resync 412 preview, label disabled, reset cancel, common-error, scroll modale contact) + 2 réfutés ground-truth + correction du faux rapport E2E (6 échecs masqués par pipe+tail : 1 régression story + 2 casses helper pré-existantes #213, tout corrigé, re-run 21/21 EXIT=0). File List : + tests/e2e/invoices.spec.ts (helper réparé). Pass 2 (Haiku) à suivre.
 - 2026-07-11 — `bmad-dev-story` COMPLETED run unique (Fable 5) : T1-T7, 0 déviation spec. Gate frontend vert (check 0 err, lint-i18n PASS, unit 377/377, build OK, E2E non-régression 15/15+2 skip pré-existants contre `kesh_e2e`). Story → review.
 - 2026-07-11 — `validate-create-story` **CONVERGÉ 2 passes** (Sonnet 5 → Haiku 4.5, contextes frais). Pass 2 Haiku : 7 findings bruts → **0 réel**. 6 CRITICAL/HIGH/MEDIUM dismissés en bloc = **erreur de catégorie** (le validateur a traité la spec comme une implémentation à auditer : « les types/le flag/les wrappers n'existent pas » — c'est le travail à faire décrit par la spec, qui annonce elle-même ces absences « vérifié ») ; 1 LOW réfuté ground-truth (« ContactPersonsManager.svelte n'existe pas » — `ls` : le fichier existe, 4 258 octets, 16 références dans lint-i18n-ownership.js — hallucination Haiku, discipline grep CLAUDE.md appliquée) ; 1 « finding » était un constat de non-contradiction. Trend : 8 (2 HIGH) → 0. Statut ready-for-dev confirmé.

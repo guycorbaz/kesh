@@ -293,7 +293,9 @@
 	}
 
 	async function handleSendEmailConfirm(subject: string, body: string) {
-		if (!invoice) return;
+		// Ré-entrance (review P1 ECH) : le POST déclenche un envoi SMTP réel,
+		// non idempotent — ne pas compter que sur le disabled du bouton.
+		if (!invoice || sendEmailSubmitting) return;
 		sendEmailSubmitting = true;
 		sendEmailError = '';
 		try {
@@ -719,6 +721,11 @@
 	<SendEmailDialog
 		open={sendEmailOpen}
 		onOpenChange={(o) => {
+			// Review 20-3b2 P1 (BH/ECH HIGH) : l'e-mail part côté serveur — la
+			// modale ne doit PAS être fermable (ESC/X/clic-extérieur) pendant
+			// l'envoi en vol, sinon l'erreur inline 422/500 serait perdue et
+			// un re-clic déclencherait un vrai second envoi.
+			if (!o && sendEmailSubmitting) return;
 			sendEmailOpen = o;
 			if (!o) sendEmailError = '';
 		}}
