@@ -178,8 +178,20 @@ Gate post-patchs : check 0 err, lint-i18n PASS, unit 377/377, build OK, **E2E 21
 
 **Pass 3 (Opus, contexte frais) requise** : la Pass 2 a remonté 1 CRITICAL réel → le critère d'arrêt (0 > LOW) n'est pas atteint sur cette passe.
 
+### Pass 3 — 2026-07-11, Opus × 2 agents (BH diff-only + AA/ECH combiné avec checklist grep des 10 patchs), contexte frais, diff aplati `737b74cd..56c4d988`
+
+**15 findings bruts (BH 13 : 4 MEDIUM + 9 LOW ; AA/ECH 2 LOW) → 2 MEDIUM patchés + 4 réfutés ground-truth + LOW traités/documentés. AA/ECH : 10/10 patchs P1+P2 physiquement vérifiés grep, 19/19 ACs conformes.**
+
+- **[MEDIUM → patché] BH — 404 preview asymétrique** : facture supprimée pendant la consultation → toast sans redirection (fiche fantôme). Patch : `if (err.code === 'NOT_FOUND') await goto('/invoices');` dans le catch de `openSendEmail` (symétrique du send).
+- **[MEDIUM → patché] BH — message trompeur si le reload post-409 échoue** : le message « données rechargées » s'affichait même quand `fetchCompanyCurrent()` échouait (version locale toujours périmée → 409 en boucle). Patch : message dédié « rechargement impossible — rechargez la page » (+ clé FTL `settings-company-email-conflict-reload-failed` ×4).
+- **[MEDIUM ×2 → réfutés ground-truth]** : « bouton non gaté sur validated » (le bouton est DANS le bloc `{:else if status === 'validated'}` — l'ouverture du bloc est hors hunk, cécité diff-only, le BH l'avait lui-même flaggé comme à vérifier) ; « constante OPTIMISTIC_LOCK_CONFLICT non vérifiable » (errors.rs:1870, constante standard du projet).
+- **[LOW → traités]** : File List « 27 clés » corrigée (26 + 1 ajoutée en P3) ; indentation bouton Annuler settings. **[LOW → réfutés]** : `common-error` présente 1× dans les 4 locales (grep) ; « incohérence `invoice?.` » — l'optional chaining est NÉCESSAIRE dans le snippet child (closure : le narrowing TS ne s'y propage pas — la tentative de « fix » a produit l'erreur `'invoice' is possibly 'null'` au check, revert immédiat). **[LOW → dismissés/documentés]** : clientError masque transitoirement errorMsg (le message client est le plus actionnable à cet instant) ; pas de spinner preview (pattern app uniforme, cf. pdfDownloading) ; divergence possible preview.to/envoi réel (contrat backend documenté L20 — le serveur re-verrouille et audite le destinataire réel) ; emailedTo sans garde nulle (posés atomiquement par le même UPDATE backend) ; exemple décoratif AC#12 (l'AC prescrit explicitement le format implémenté).
+
+Gate post-P3 : check 0 err, unit 377/377, lint PASS, build OK, **E2E 21/21 + 2 skips EXIT=0**. **Pass 4 de scellage requise** (P3 a remonté 2 MEDIUM réels).
+
 ## Change Log
 
+- 2026-07-11 — `bmad-code-review` Pass 3 (Opus × 2, diff aplati) : 15 bruts → 2 MEDIUM patchés (404 preview symétrique, message reload-échoué post-409 + clé FTL ×4) + 4 réfutés ground-truth (dont 1 « fix » LOW annulé : l'optional chaining du snippet child est nécessaire au narrowing TS). AA/ECH Opus : 10/10 patchs P1+P2 vérifiés grep, 19/19 ACs. Gate + E2E 21/21 verts. Pass 4 scellage à suivre.
 - 2026-07-11 — `bmad-code-review` Pass 2 (Haiku 4.5 × 3, diff aplati) : 21 bruts → 1 CRITICAL RÉEL (patchs P1-1/P1-2 parent jamais écrits — script mort avant write ; grep ground-truth CONFIRMANT l'absence, ré-appliqués + gate complet re-vérifié E2E 21/21) + 0 autre > LOW (3 hallucinations BH réfutées grep). Pass 3 Opus requise (critère d'arrêt non atteint).
 - 2026-07-11 — `bmad-code-review` Pass 1 (Sonnet 5 × 3) : 14 findings bruts → 8 patchs (garde anti-fermeture mid-submit, ré-entrance, case NOT_FOUND, resync 412 preview, label disabled, reset cancel, common-error, scroll modale contact) + 2 réfutés ground-truth + correction du faux rapport E2E (6 échecs masqués par pipe+tail : 1 régression story + 2 casses helper pré-existantes #213, tout corrigé, re-run 21/21 EXIT=0). File List : + tests/e2e/invoices.spec.ts (helper réparé). Pass 2 (Haiku) à suivre.
 - 2026-07-11 — `bmad-dev-story` COMPLETED run unique (Fable 5) : T1-T7, 0 déviation spec. Gate frontend vert (check 0 err, lint-i18n PASS, unit 377/377, build OK, E2E non-régression 15/15+2 skip pré-existants contre `kesh_e2e`). Story → review.
@@ -230,4 +242,4 @@ Claude Fable 5 (claude-fable-5) — run unique 2026-07-11.
 
 **Modifiés — i18n**
 
-- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (27 clés ×4 — section Story 20-3b2)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (26 clés ×4 — décompte corrigé review P1/P3 — +1 clé `conflict-reload-failed` ajoutée en review P3)

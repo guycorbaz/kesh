@@ -1077,3 +1077,4 @@ settings-company-email-help = Indirizzo di risposta (Reply-To) delle fatture inv
 settings-company-email-invalid = Indirizzo e-mail non valido.
 settings-company-email-saved = E-mail della società salvata
 settings-company-email-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
+settings-company-email-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.

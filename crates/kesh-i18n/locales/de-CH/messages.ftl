@@ -1077,3 +1077,4 @@ settings-company-email-help = Antwortadresse (Reply-To) der per E-Mail gesendete
 settings-company-email-invalid = Ungültige E-Mail-Adresse.
 settings-company-email-saved = Firmen-E-Mail gespeichert
 settings-company-email-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
+settings-company-email-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.

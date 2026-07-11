@@ -284,6 +284,9 @@
 				notifyError(err.message);
 				// Flag client périmé (review P1 BH) : même resync que le send.
 				if (err.code === 'SMTP_NOT_CONFIGURED') featureFlags.setSmtpConfigured(false);
+				// Facture supprimée pendant la consultation (review P3 BH) :
+				// symétrique du send — fiche fantôme, retour liste.
+				if (err.code === 'NOT_FOUND') await goto('/invoices');
 			} else {
 				notifyError(i18nMsg('common-error', 'Erreur inattendue'));
 			}

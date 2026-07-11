@@ -53,15 +53,21 @@
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 					// Conflit de version : recharger et laisser l'admin recommencer.
+					// Si le reload échoue aussi (review P3 BH), ne pas prétendre
+					// « rechargées » — la version locale reste périmée, re-cliquer
+					// redonnerait le même 409 : inviter à recharger la page.
 					try {
 						data = await fetchCompanyCurrent();
+						emailError = msg(
+							'settings-company-email-conflict',
+							'Conflit de version — les données ont été rechargées, réessayez.',
+						);
 					} catch {
-						// noop — data existante conservée
+						emailError = msg(
+							'settings-company-email-conflict-reload-failed',
+							'Conflit de version et rechargement impossible — rechargez la page.',
+						);
 					}
-					emailError = msg(
-						'settings-company-email-conflict',
-						'Conflit de version — les données ont été rechargées, réessayez.',
-					);
 				} else {
 					emailError = err.message;
 				}
@@ -150,14 +156,14 @@
 								{msg('common-save', 'Enregistrer')}
 							</Button>
 							<Button
-							size="sm"
-							variant="outline"
-							onclick={() => {
-								emailEditing = false;
-								emailError = '';
-							}}
-							disabled={emailSubmitting}
-						>
+								size="sm"
+								variant="outline"
+								onclick={() => {
+									emailEditing = false;
+									emailError = '';
+								}}
+								disabled={emailSubmitting}
+							>
 								{msg('common-cancel', 'Annuler')}
 							</Button>
 						</dd>

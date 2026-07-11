@@ -1077,3 +1077,4 @@ settings-company-email-help = Reply-To address of invoices sent by email. Empty 
 settings-company-email-invalid = Invalid email address.
 settings-company-email-saved = Company email saved
 settings-company-email-conflict = Version conflict — data reloaded, please try again.
+settings-company-email-conflict-reload-failed = Version conflict and reload failed — reload the page.

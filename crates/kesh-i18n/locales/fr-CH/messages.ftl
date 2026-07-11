@@ -1165,3 +1165,4 @@ settings-company-email-help = Adresse de réponse (Reply-To) des factures envoy�
 settings-company-email-invalid = Adresse e-mail invalide.
 settings-company-email-saved = E-mail de la société enregistré
 settings-company-email-conflict = Conflit de version — les données ont été rechargées, réessayez.
+settings-company-email-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
