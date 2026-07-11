@@ -259,7 +259,10 @@ pub async fn send_invoice_email(
     }
 
     // Facture scopée company (anti-IDOR) + contact actif scopé company.
-    let (invoice, _lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+    // `lines` réutilisées pour la réponse finale : une facture validée est
+    // immuable côté lignes (seul un brouillon s'édite) — pas de re-fetch
+    // post-marquage (review Pass 2 BH2-1).
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
@@ -324,8 +327,15 @@ pub async fn send_invoice_email(
             );
             // Trace comptable best-effort : l'e-mail avec le PDF est parti,
             // il DOIT en rester une trace même sans row invoices (audit_log
-            // n'a pas de FK sur entity_id). Échec ignoré (déjà loggué).
-            if let Ok(mut tx) = state.pool.begin().await {
+            // n'a pas de FK sur entity_id). Un échec de CETTE écriture est
+            // loggué explicitement (review Pass 2 BH2-2) — sans faire
+            // échouer davantage la requête (le 409 part quoi qu'il arrive).
+            let audit_result = async {
+                let mut tx = state
+                    .pool
+                    .begin()
+                    .await
+                    .map_err(kesh_db::errors::DbError::Sqlx)?;
                 let entry = kesh_db::entities::NewAuditLogEntry::for_actor(
                     current_user.user_id,
                     current_user.api_key_id,
@@ -338,17 +348,23 @@ pub async fn send_invoice_email(
                         "invoiceGone": true,
                     })),
                 );
-                let _ = kesh_db::repositories::audit_log::insert_in_tx(&mut tx, entry).await;
-                let _ = tx.commit().await;
+                kesh_db::repositories::audit_log::insert_in_tx(&mut tx, entry).await?;
+                tx.commit().await.map_err(kesh_db::errors::DbError::Sqlx)?;
+                Ok::<(), kesh_db::errors::DbError>(())
+            }
+            .await;
+            if let Err(audit_err) = audit_result {
+                tracing::error!(
+                    company_id = company.id,
+                    invoice_id = id,
+                    error = %audit_err,
+                    "écriture de la trace d'audit best-effort échouée — envoi non tracé"
+                );
             }
             return Err(AppError::EmailSentInvoiceGone);
         }
         Err(e) => return Err(e.into()),
     };
-
-    let (_, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
 
     Ok((
         StatusCode::OK,

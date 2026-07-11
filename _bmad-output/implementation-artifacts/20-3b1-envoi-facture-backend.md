@@ -1,6 +1,6 @@
 # Story 20.3b1: Envoi de facture par e-mail — backend
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -283,7 +283,16 @@ Claude Fable 5 (claude-fable-5) — run 2026-07-09 interrompu par un crash de se
 
 Gate post-patchs : voir Change Log.
 
+### Pass 2 — 2026-07-11, Haiku 4.5 × 3 reviewers, contexte frais, diff aplati `695475b7..ef474b4b` (mitigation CLAUDE.md)
+
+**13 findings bruts → 0 > LOW. CONVERGENCE (critère d'arrêt Review Iteration Rule atteint en 2 passes, trend 1 HIGH + 4 MEDIUM → 0).**
+
+- **AA : 0 finding** — 20/20 ACs conformes, **6/6 remédiations Pass 1 vérifiées présentes avec preuves grep** (0 hallucination Haiku sur ce cycle).
+- **BH : 7 findings** — 2 « MEDIUM » reclassés LOW et **fixés par excès de zèle** : BH2-1 double-fetch post-marquage (les `lines` du premier fetch sont réutilisées — une facture validée est immuable côté lignes) ; BH2-2 échec d'écriture de l'audit best-effort non loggué spécifiquement (désormais `tracing::error!` dédié, le 409 part quoi qu'il arrive). 1 MEDIUM dismissé (unwrap en test = signal d'échec idiomatique) ; 2 LOW auto-avoués invérifiables réfutés par construction (`with_thresholds` et `is_valid_email_simple` existent — le workspace compile) ; 2 LOW acceptés (contenu PDF non validé — limite assumée partagée `invoice_pdf_e2e` ; rate-limit par `(company,user)` — décision #15 epic).
+- **ECH : 4 findings, tous réfutés ground-truth ou LOW acceptés** — `Locale::from` permissif fallback FrCh (lib.rs:49-60, pas de panic) ; timeout SMTP = défaut lettre 60 s (et transport pré-existant 17-4b, hors diff) ; subject/body bornés par la limite axum 2 Mo (échec relay = 500 propre sans marquage) ; taille PDF bornée par notre propre générateur (pas attacker-controlled).
+
 ## Change Log
 
+- 2026-07-11 — `bmad-code-review` **CONVERGÉ 2 passes** (Sonnet 5 → Haiku 4.5, contexte frais, diff aplati). Trend : Pass 1 = 9 bruts (1 HIGH + 4 MEDIUM) → Pass 2 = 13 bruts, 0 > LOW. Pass 2 : 2 micro-fixes LOW appliqués (réutilisation `lines`, log échec audit best-effort), 0 hallucination Haiku (6/6 patchs Pass 1 confirmés grep). Gate final : fmt/clippy 0 warning, e2e 19/19, workspace série vert. Story → done.
 - 2026-07-10 — `bmad-code-review` Pass 1 (Sonnet 5 × 3) : 9 findings bruts → 1 HIGH + 4 MEDIUM patchés/réfutés (détail section Senior Developer Review). 2 nouveaux variants `AppError` (409 `EMAIL_SENT_INVOICE_GONE`, 400 `CONTACT_ARCHIVED`) + FTL ×4, `mark_emailed` sans condition status, helpers `locked_recipient`/`load_active_contact`, 4 nouveaux tests (e2e 19/19). Pass 2 (LLM différent — Haiku) à suivre, conformément à la Review Iteration Rule.
 - 2026-07-09/10 — `bmad-dev-story` : implémentation complète T1-T7. Run initial interrompu par un crash de session après l'écriture de T1-T6 (non commitée) ; reprise le jour même avec inventaire ground-truth, réparation de l'état `_sqlx_migrations` de la DB dev (cassé pré-existant, sans lien avec le crash), complément de tests e2e (langue DE à l'envoi + endpoint company email ×3). Le gate workspace complet a attrapé 1 régression du run crashé (3 `query_as` à listes de colonnes inline non étendues → 500 ; fix DRY par constantes `pub(crate)` réutilisées). Déviations documentées : garde 412 via `smtp_ready` (config + build mailer réussis), endpoint dédié `PUT /companies/current/email` (aucune route update company générique n'existait).
