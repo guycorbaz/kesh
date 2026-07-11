@@ -1,6 +1,6 @@
 # Story 20.4: Envoi de factures par e-mail — documentation & E2E round-trip
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -130,8 +130,13 @@ afin que la fonctionnalité livrée par 20-1→20-3b2 soit exploitable, supporta
 
 Gate post-patchs : fmt/clippy 0 warning, suite Rust 21/21, Playwright send-email 4/4 EXIT=0 (assertion anti-vacuous incluse).
 
+### Pass 2 (scellage) — 2026-07-11, Haiku 4.5 agent unique, contexte frais, diff aplati `b4280ae5..b6f899af`
+
+**0 finding. CONVERGENCE en 2 passes (trend 10 bruts → 0).** Checklist grep 5/5 (helper factorisé défini 1×/appelé 2×, rustdoc 400 ×2, test renommé, toHaveURL, commentaire main.rs citant le garde-fou) + cohérence globale (imports, route, littéraux ×6, specs, build OK). 0 hallucination.
+
 ## Change Log
 
+- 2026-07-11 — `bmad-code-review` **CONVERGÉ 2 passes** (Sonnet → Haiku, 10 bruts → 0). P2 scellage : 0 finding, 5/5 checklist grep, 0 hallucination. Story → done. **EPIC 20 : 6/6 stories done.**
 - 2026-07-11 — `bmad-code-review` Pass 1 (Sonnet 5 × 2) : 10 bruts → 1 MEDIUM doc patché, CRITICAL reclassé LOW/INFO (double ground-truth : boot gate + périmètre test-mode pré-existant), 1 MEDIUM réfuté (workers:1), LOW patchés (anti-vacuous, purge factorisée, rename test). Pass 2 (Haiku) à suivre.
 
 - 2026-07-11 — `validate-create-story` **CONVERGÉ 2 passes** (Sonnet 5 → Haiku 4.5, contextes frais, trend 5 [1 HIGH] → 0). Pass 2 Haiku : **0 finding, 0 faux-positif** (les garde-fous anti-catégorie et anti-hallucination du prompt ont tenu — toutes les références re-vérifiées contre le code : data-testid ×7, helpers, gates config, points d'insertion LaTeX, rate-limiter 20/15min). Statut ready-for-dev confirmé.
