@@ -1,6 +1,6 @@
 # Story 20.3b2: Envoi de facture par e-mail — frontend
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -71,25 +71,25 @@ Split 20-3b → 20-3b1 (backend) + 20-3b2 (frontend) acté à la spec 20-3b1 (r�
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Feature flag `smtpConfigured`** (AC: #1, #2)
-  - [ ] T1.1 Store `feature-flags.svelte.ts` (getter/setter, défaut false)
-  - [ ] T1.2 2 call-sites `/health` (`+layout.svelte` + `api-health.svelte.ts` pollHealth)
-- [ ] **T2 — Types & wrappers API** (AC: #3-#6)
-  - [ ] T2.1 `invoices.types.ts` (`emailedAt`/`emailedTo`, `EmailPreviewResponse`, `SendInvoiceEmailRequest`) + `invoices.api.ts` (preview + send)
-  - [ ] T2.2 `contacts.types.ts` (`language`/`salutation` sur Response + requests)
-  - [ ] T2.3 `settings.types.ts` (`CompanyJson.email`/`.version`) + `settings.api.ts` (`updateCompanyEmail`)
-- [ ] **T3 — Fiche facture** (AC: #7-#12)
-  - [ ] T3.1 Bouton Envoyer/Renvoyer + gate flag + tooltip (wrapper span, piège hover-disabled)
-  - [ ] T3.2 `SendEmailDialog.svelte` (modèle MarkPaidDialog, to read-only, `$props.id()`)
-  - [ ] T3.3 Parent : fetch preview + matrice d'erreurs send (AC#11) + toast/goto 409
-  - [ ] T3.4 Bloc « Envoyée le … à … » (grille métadonnées)
-- [ ] **T4 — Fiche contact : langue + civilité** (AC: #13)
-- [ ] **T5 — Réglages : e-mail société inline Admin** (AC: #14, #15)
-- [ ] **T6 — i18n ×4 + lint** (AC: #16, #17)
-- [ ] **T7 — Tests & gate** (AC: #18, #19)
-  - [ ] T7.1 Tests unitaires api/wrappers
-  - [ ] T7.2 `check` + `lint-i18n-ownership` + `test:unit` + `build` + E2E non-régression (contacts/invoices/email-templates, DB `kesh_e2e`)
-  - [ ] T7.3 Commit sur `story/20-1-envoi-factures-email`
+- [x] **T1 — Feature flag `smtpConfigured`** (AC: #1, #2)
+  - [x] T1.1 Store `feature-flags.svelte.ts` (getter/setter, défaut false)
+  - [x] T1.2 2 call-sites `/health` (`+layout.svelte` + `api-health.svelte.ts` pollHealth)
+- [x] **T2 — Types & wrappers API** (AC: #3-#6)
+  - [x] T2.1 `invoices.types.ts` (`emailedAt`/`emailedTo`, `EmailPreviewResponse`, `SendInvoiceEmailRequest`) + `invoices.api.ts` (preview + send)
+  - [x] T2.2 `contacts.types.ts` (`language`/`salutation` sur Response + requests)
+  - [x] T2.3 `settings.types.ts` (`CompanyJson.email`/`.version`) + `settings.api.ts` (`updateCompanyEmail`)
+- [x] **T3 — Fiche facture** (AC: #7-#12)
+  - [x] T3.1 Bouton Envoyer/Renvoyer + gate flag + tooltip (wrapper span, piège hover-disabled)
+  - [x] T3.2 `SendEmailDialog.svelte` (modèle MarkPaidDialog, to read-only, `$props.id()`)
+  - [x] T3.3 Parent : fetch preview + matrice d'erreurs send (AC#11) + toast/goto 409
+  - [x] T3.4 Bloc « Envoyée le … à … » (grille métadonnées)
+- [x] **T4 — Fiche contact : langue + civilité** (AC: #13)
+- [x] **T5 — Réglages : e-mail société inline Admin** (AC: #14, #15)
+- [x] **T6 — i18n ×4 + lint** (AC: #16, #17)
+- [x] **T7 — Tests & gate** (AC: #18, #19)
+  - [x] T7.1 Tests unitaires api/wrappers
+  - [x] T7.2 `check` + `lint-i18n-ownership` + `test:unit` + `build` + E2E non-régression (contacts/invoices/email-templates, DB `kesh_e2e`)
+  - [x] T7.3 Commit sur `story/20-1-envoi-factures-email`
 
 ## Dev Notes
 
@@ -152,6 +152,7 @@ Split 20-3b → 20-3b1 (backend) + 20-3b2 (frontend) acté à la spec 20-3b1 (r�
 
 ## Change Log
 
+- 2026-07-11 — `bmad-dev-story` COMPLETED run unique (Fable 5) : T1-T7, 0 déviation spec. Gate frontend vert (check 0 err, lint-i18n PASS, unit 377/377, build OK, E2E non-régression 15/15+2 skip pré-existants contre `kesh_e2e`). Story → review.
 - 2026-07-11 — `validate-create-story` **CONVERGÉ 2 passes** (Sonnet 5 → Haiku 4.5, contextes frais). Pass 2 Haiku : 7 findings bruts → **0 réel**. 6 CRITICAL/HIGH/MEDIUM dismissés en bloc = **erreur de catégorie** (le validateur a traité la spec comme une implémentation à auditer : « les types/le flag/les wrappers n'existent pas » — c'est le travail à faire décrit par la spec, qui annonce elle-même ces absences « vérifié ») ; 1 LOW réfuté ground-truth (« ContactPersonsManager.svelte n'existe pas » — `ls` : le fichier existe, 4 258 octets, 16 références dans lint-i18n-ownership.js — hallucination Haiku, discipline grep CLAUDE.md appliquée) ; 1 « finding » était un constat de non-contradiction. Trend : 8 (2 HIGH) → 0. Statut ready-for-dev confirmé.
 - 2026-07-11 — `validate-create-story` Pass 1 (Sonnet 5, contexte frais) : 8 findings (2 HIGH + 3 MEDIUM + 3 LOW), tous patchés. HIGH = références de lignes fausses héritées de la cartographie Explore (`invoices/[id]/+page.svelte` fait 640 l. — bloc validated :341-384, Payée le :431-436 ; MarkPaidDialog fait 106 l. — Footer :97-104), vérifiées ground-truth avant patch. MEDIUM = attribution `$props.id()` corrigée (MarkPaidDialog utilise un id en dur ; précédent réel = email-templates/+page.svelte:26), `AccountingTooltip` requalifié (pattern glossaire 2 clés, inutilisable pour un message libre → primitives bits-ui directement), promesse « le message 429 contient le délai » retirée (FTL `error-rate-limited` sans délai, header Retry-After non exposé par ApiError — story frontend-only). Le contrat backend et toutes les autres références (contacts, settings, feature-flags, lint i18n, E2E) vérifiés exacts par le validateur. Pass 2 (Haiku) à suivre.
 
@@ -159,8 +160,43 @@ Split 20-3b → 20-3b1 (backend) + 20-3b2 (frontend) acté à la spec 20-3b1 (r�
 
 ### Agent Model Used
 
+Claude Fable 5 (claude-fable-5) — run unique 2026-07-11.
+
 ### Debug Log References
+
+- Import types invoices.api.ts : virgule dupliquée lors de l'extension du bloc `import type` (erreur `Identifier expected` au check) — corrigé + tri alphabétique.
+- Tooltip : premier jet avec `Tooltip.Provider` explicite → retiré (le wrapper shadcn `Tooltip.Root` embarque déjà son Provider, vérifié `tooltip.svelte`). Trigger via `{#snippet child({ props })}` sur un `<span>` (anti button-in-button + hover sur bouton disabled).
 
 ### Completion Notes List
 
+- **T1-T7 conformes à la spec, 0 déviation.** Gate : `check` 0 erreur (26 warnings pré-existants), `lint-i18n-ownership` PASS (7 entrées SendEmailDialog ajoutées à KNOWN_VIOLATIONS, précédent MarkPaidDialog), `test:unit` **377/377** (+6 nouveaux : 2 wrappers invoices, 2 settings, 2 feature-flags), `build` OK, **E2E non-régression 15 passed / 2 skipped (pré-existants) / 0 failed** (contacts + invoices + email-templates, backend `kesh_e2e` migré forward au boot — `/health` y expose `smtpConfigured:false`, prouvant le contrat 20-3b1 en conditions réelles).
+- Matrice d'erreurs du send implémentée par `switch (err.code)` : inline (422/500), toast+fermer (400 contact), toast+`setSmtpConfigured(false)` (412), toast (429), toast warning+`goto('/invoices')` (409 EMAIL_SENT_INVOICE_GONE).
+- Civilité affichée uniquement pour `Personne` (payload force `Neutre` pour Entreprise) ; langue `''` → `null` (héritée). IDs en dur `form-language`/`form-salutation` (cohérence formulaire contacts) ; `$props.id()` dans SendEmailDialog (#145).
+- E-mail société : édition inline Admin-only section Organisation, `isPlausibleEmail` client, 409 → reload + message, effacement → `null`.
+- Périmètre : 0 fichier Rust hors FTL ×4 ; aucun nouveau spec Playwright (20-4) ; recovery/MarkPaidDialog/email-templates intouchés.
+
 ### File List
+
+**Nouveaux**
+
+- `frontend/src/lib/features/invoices/SendEmailDialog.svelte`
+- `frontend/src/lib/features/invoices/invoices.api.test.ts`
+- `frontend/src/lib/features/settings/settings.api.test.ts`
+- `frontend/src/lib/shared/utils/feature-flags.svelte.test.ts`
+
+**Modifiés — frontend**
+
+- `frontend/src/lib/shared/utils/feature-flags.svelte.ts` (flag `smtpConfigured`)
+- `frontend/src/routes/+layout.svelte` + `frontend/src/lib/shared/utils/api-health.svelte.ts` (2 call-sites /health)
+- `frontend/src/lib/features/invoices/invoices.types.ts` (`emailedAt`/`emailedTo`, `EmailLanguage`, `EmailPreviewResponse`, `SendInvoiceEmailRequest`)
+- `frontend/src/lib/features/invoices/invoices.api.ts` (`getInvoiceEmailPreview`, `sendInvoiceEmail`)
+- `frontend/src/lib/features/contacts/contacts.types.ts` (`ContactLanguage`, `Salutation`, champs Response/requests)
+- `frontend/src/lib/features/settings/settings.types.ts` (`CompanyJson.email`/`.version`, `UpdateCompanyEmailRequest`) + `settings.api.ts` (`updateCompanyEmail`)
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte` (bouton + tooltip disabled, handlers preview/send, « Envoyée le », montage SendEmailDialog)
+- `frontend/src/routes/(app)/contacts/+page.svelte` (selects langue + civilité, states/reset/hydrate/payload)
+- `frontend/src/routes/(app)/settings/+page.svelte` (e-mail société inline Admin)
+- `frontend/scripts/lint-i18n-ownership.js` (KNOWN_VIOLATIONS ×7)
+
+**Modifiés — i18n**
+
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (27 clés ×4 — section Story 20-3b2)

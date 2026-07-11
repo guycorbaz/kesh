@@ -61,11 +61,14 @@
 				db?: unknown;
 				version?: unknown;
 				forgotPasswordEnabled?: unknown;
+				smtpConfigured?: unknown;
 			};
 			appVersion.set(body.version);
 			// Story 17-4d (DD-1/DC9) : flag recovery présent dans les 2 branches
 			// 200/503 — conditionne le lien « Mot de passe oublié ? » du login.
 			featureFlags.setForgotPasswordEnabled(body.forgotPasswordEnabled);
+			// Story 20-3b2 : flag SMTP (envoi de factures) — même DRY /health.
+			featureFlags.setSmtpConfigured(body.smtpConfigured);
 			if (!res.ok || body.db !== true) {
 				apiHealth.setDegraded();
 			}

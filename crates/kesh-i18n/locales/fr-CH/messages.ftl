@@ -1137,3 +1137,31 @@ supplier-invoices-title = Factures fournisseurs
 
 # Story 12.3 — paiements pain.001 (#191)
 payment-batches-title = Paiements fournisseurs
+
+# Story 20-3b2 — envoi de facture par e-mail (UI)
+common-save = Enregistrer
+common-edit = Modifier
+error-unexpected = Erreur inattendue.
+invoice-send-email-button = Envoyer par e-mail
+invoice-resend-email-button = Renvoyer par e-mail
+invoice-send-email-smtp-tooltip = L'envoi d'e-mails n'est pas configuré (variables KESH_SMTP_*) — voir le manuel administrateur.
+invoice-send-email-title = Envoyer la facture par e-mail
+invoice-send-email-to-label = Destinataire
+invoice-send-email-to-missing = Le contact n'a pas d'adresse e-mail — renseignez-la sur la fiche contact.
+invoice-send-email-subject-label = Objet
+invoice-send-email-body-label = Message
+invoice-send-email-confirm = Envoyer l'e-mail
+invoice-send-email-success = Facture envoyée par e-mail
+invoice-send-email-error-empty = L'objet et le corps de l'e-mail ne peuvent pas être vides.
+invoice-detail-emailed-at-label = Envoyée le
+contact-form-language = Langue de correspondance
+contact-form-language-inherited = Héritée (langue de l'instance)
+contact-form-salutation = Civilité
+contact-salutation-neutre = Neutre
+contact-salutation-monsieur = Monsieur
+contact-salutation-madame = Madame
+settings-field-company-email = E-mail (adresse de réponse)
+settings-company-email-help = Adresse de réponse (Reply-To) des factures envoyées par e-mail. Vide = pas d'adresse de réponse.
+settings-company-email-invalid = Adresse e-mail invalide.
+settings-company-email-saved = E-mail de la société enregistré
+settings-company-email-conflict = Conflit de version — les données ont été rechargées, réessayez.

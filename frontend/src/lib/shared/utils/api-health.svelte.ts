@@ -61,6 +61,7 @@ async function pollHealth(capturedEpoch: number): Promise<void> {
 			db?: unknown;
 			version?: unknown;
 			forgotPasswordEnabled?: unknown;
+			smtpConfigured?: unknown;
 		};
 		// #159 : capter la version du binaire backend depuis le même ping
 		// `/health` (DRY — pas d'endpoint ni de fetch dédié).
@@ -70,6 +71,8 @@ async function pollHealth(capturedEpoch: number): Promise<void> {
 		// change KESH_FEATURE_FORGOT_PASSWORD (et passe par un épisode dégradé),
 		// le lien login se met à jour sans reload.
 		featureFlags.setForgotPasswordEnabled(body.forgotPasswordEnabled);
+		// Story 20-3b2 : même refresh intentionnel pour le flag SMTP.
+		featureFlags.setSmtpConfigured(body.smtpConfigured);
 		if (body.db !== true) return;
 		// Stale check Pass 3 H2 : si l'epoch courant diffère de celui capturé
 		// au scheduling, c'est qu'un cycle clearDegraded→setDegraded s'est

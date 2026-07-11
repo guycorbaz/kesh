@@ -1049,3 +1049,31 @@ supplier-invoices-title = Lieferantenrechnungen
 
 # Story 12.3 — paiements pain.001 (#191)
 payment-batches-title = Lieferantenzahlungen
+
+# Story 20-3b2 — Rechnungsversand per E-Mail (UI)
+common-save = Speichern
+common-edit = Bearbeiten
+error-unexpected = Unerwarteter Fehler.
+invoice-send-email-button = Per E-Mail senden
+invoice-resend-email-button = Erneut per E-Mail senden
+invoice-send-email-smtp-tooltip = Der E-Mail-Versand ist nicht konfiguriert (KESH_SMTP_*-Variablen) — siehe Administratorhandbuch.
+invoice-send-email-title = Rechnung per E-Mail senden
+invoice-send-email-to-label = Empfänger
+invoice-send-email-to-missing = Der Kontakt hat keine E-Mail-Adresse — erfassen Sie sie auf der Kontaktseite.
+invoice-send-email-subject-label = Betreff
+invoice-send-email-body-label = Nachricht
+invoice-send-email-confirm = E-Mail senden
+invoice-send-email-success = Rechnung per E-Mail gesendet
+invoice-send-email-error-empty = Betreff und Text der E-Mail dürfen nicht leer sein.
+invoice-detail-emailed-at-label = Gesendet am
+contact-form-language = Korrespondenzsprache
+contact-form-language-inherited = Geerbt (Sprache der Instanz)
+contact-form-salutation = Anrede
+contact-salutation-neutre = Neutral
+contact-salutation-monsieur = Herr
+contact-salutation-madame = Frau
+settings-field-company-email = E-Mail (Antwortadresse)
+settings-company-email-help = Antwortadresse (Reply-To) der per E-Mail gesendeten Rechnungen. Leer = keine Antwortadresse.
+settings-company-email-invalid = Ungültige E-Mail-Adresse.
+settings-company-email-saved = Firmen-E-Mail gespeichert
+settings-company-email-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.

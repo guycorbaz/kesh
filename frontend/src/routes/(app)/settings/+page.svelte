@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { Separator } from '$lib/components/ui/separator';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import { fetchCompanyCurrent, updateCompanyEmail } from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import { authState } from '$lib/app/stores/auth.svelte';
+	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isPlausibleEmail } from '$lib/shared/utils/email';
+	import { notifySuccess } from '$lib/shared/utils/notify';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
@@ -12,6 +17,61 @@
 
 	let data = $state<CompanyCurrentResponse | null>(null);
 	let loading = $state(true);
+
+	// Story 20-3b2 — édition inline de l'e-mail société (Reply-To), Admin-only.
+	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
+	let emailEditing = $state(false);
+	let emailValue = $state('');
+	let emailSubmitting = $state(false);
+	let emailError = $state('');
+
+	function startEmailEdit() {
+		emailValue = data?.company.email ?? '';
+		emailError = '';
+		emailEditing = true;
+	}
+
+	async function saveEmail() {
+		if (!data) return;
+		const trimmed = emailValue.trim();
+		if (trimmed && !isPlausibleEmail(trimmed)) {
+			emailError = msg('settings-company-email-invalid', 'Adresse e-mail invalide.');
+			return;
+		}
+		emailSubmitting = true;
+		emailError = '';
+		try {
+			// Champ vidé = effacement (Reply-To omis à l'envoi).
+			const updated = await updateCompanyEmail({
+				email: trimmed || null,
+				version: data.company.version,
+			});
+			data = { ...data, company: updated };
+			emailEditing = false;
+			notifySuccess(msg('settings-company-email-saved', 'E-mail de la société enregistré'));
+		} catch (err) {
+			if (isApiError(err)) {
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					// Conflit de version : recharger et laisser l'admin recommencer.
+					try {
+						data = await fetchCompanyCurrent();
+					} catch {
+						// noop — data existante conservée
+					}
+					emailError = msg(
+						'settings-company-email-conflict',
+						'Conflit de version — les données ont été rechargées, réessayez.',
+					);
+				} else {
+					emailError = err.message;
+				}
+			} else {
+				emailError = msg('error-unexpected', 'Erreur inattendue.');
+			}
+		} finally {
+			emailSubmitting = false;
+		}
+	}
 
 	onMount(async () => {
 		try {
@@ -62,6 +122,50 @@
 				<div>
 					<dt class="font-medium text-text-muted">{msg('settings-field-instance-language', 'Langue interface')}</dt>
 					<dd>{data.company.instanceLanguage}</dd>
+				</div>
+				<!-- Story 20-3b2 : e-mail de contact (Reply-To des factures envoyées). -->
+				<div class="col-span-2">
+					<dt class="font-medium text-text-muted">
+						{msg('settings-field-company-email', 'E-mail (adresse de réponse)')}
+					</dt>
+					{#if emailEditing}
+						<dd class="mt-1 flex max-w-md items-start gap-2">
+							<div class="flex-1">
+								<Input
+									type="email"
+									bind:value={emailValue}
+									maxlength={320}
+									data-testid="settings-company-email-input"
+								/>
+								{#if emailError}
+									<p class="mt-1 text-xs text-destructive" data-testid="settings-company-email-error">
+										{emailError}
+									</p>
+								{/if}
+							</div>
+							<Button size="sm" onclick={saveEmail} disabled={emailSubmitting} data-testid="settings-company-email-save">
+								{msg('common-save', 'Enregistrer')}
+							</Button>
+							<Button size="sm" variant="outline" onclick={() => (emailEditing = false)} disabled={emailSubmitting}>
+								{msg('common-cancel', 'Annuler')}
+							</Button>
+						</dd>
+					{:else}
+						<dd class="flex items-center gap-3">
+							<span data-testid="settings-company-email">{data.company.email ?? '—'}</span>
+							{#if isAdmin}
+								<Button size="sm" variant="outline" onclick={startEmailEdit} data-testid="settings-company-email-edit">
+									{msg('common-edit', 'Modifier')}
+								</Button>
+							{/if}
+						</dd>
+					{/if}
+					<p class="mt-1 text-xs text-text-muted">
+						{msg(
+							'settings-company-email-help',
+							"Adresse de réponse (Reply-To) des factures envoyées par e-mail. Vide = pas d'adresse de réponse.",
+						)}
+					</p>
 				</div>
 			</dl>
 		</section>

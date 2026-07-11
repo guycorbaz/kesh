@@ -19,10 +19,12 @@
 		updateContact
 	} from '$lib/features/contacts/contacts.api';
 	import type {
+		ContactLanguage,
 		ContactResponse,
 		ContactSortBy,
 		ContactType,
 		ListContactsQuery,
+		Salutation,
 		SortDirection
 	} from '$lib/features/contacts/contacts.types';
 	import {
@@ -72,6 +74,9 @@
 	let formCountry = $state('CH');
 	let formIde = $state('');
 	let formPaymentTerms = $state('');
+	// Story 20-3b2 — langue de correspondance ('' = héritée instance) + civilité.
+	let formLanguage = $state<ContactLanguage | ''>('');
+	let formSalutation = $state<Salutation>('Neutre');
 	let formSubmitting = $state(false);
 	let formError = $state('');
 
@@ -220,6 +225,8 @@
 		formCountry = 'CH';
 		formIde = '';
 		formPaymentTerms = '';
+		formLanguage = '';
+		formSalutation = 'Neutre';
 		formError = '';
 		formOpen = true;
 	}
@@ -241,6 +248,8 @@
 		formCountry = c.addressStructured?.country || 'CH';
 		formIde = formatIdeNumber(c.ideNumber);
 		formPaymentTerms = c.defaultPaymentTerms ?? '';
+		formLanguage = c.language ?? '';
+		formSalutation = c.salutation;
 		formError = '';
 		formOpen = true;
 	}
@@ -291,7 +300,12 @@
 					country: formCountry.trim() || 'CH'
 				},
 				ideNumber: normalizeIdeForApi(formIde),
-				defaultPaymentTerms: formPaymentTerms.trim() || null
+				defaultPaymentTerms: formPaymentTerms.trim() || null,
+				// Story 20-3b2 : '' = héritée instance → null ; la civilité ne
+				// s'applique qu'aux Personnes (l'Entreprise reçoit la formule
+				// neutre côté backend quoi qu'il arrive).
+				language: formLanguage === '' ? null : formLanguage,
+				salutation: formContactType === 'Personne' ? formSalutation : ('Neutre' as Salutation)
 			};
 
 			if (editing) {
@@ -623,6 +637,18 @@
 						<Input id="form-lastname" type="text" bind:value={formLastName} maxlength={70} />
 					</div>
 				</div>
+				<div>
+					<label for="form-salutation">{i18nMsg('contact-form-salutation', 'Civilité')}</label>
+					<select
+						id="form-salutation"
+						bind:value={formSalutation}
+						class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+					>
+						<option value="Neutre">{i18nMsg('contact-salutation-neutre', 'Neutre')}</option>
+						<option value="Monsieur">{i18nMsg('contact-salutation-monsieur', 'Monsieur')}</option>
+						<option value="Madame">{i18nMsg('contact-salutation-madame', 'Madame')}</option>
+					</select>
+				</div>
 			{:else}
 				<div>
 					<label for="form-name">{i18nMsg('contact-form-name', 'Raison sociale')} *</label>
@@ -649,6 +675,25 @@
 			<div>
 				<label for="form-phone">{i18nMsg('contact-form-phone', 'Téléphone')}</label>
 				<Input id="form-phone" type="tel" bind:value={formPhone} maxlength={50} />
+			</div>
+
+			<div>
+				<label for="form-language">
+					{i18nMsg('contact-form-language', 'Langue de correspondance')}
+				</label>
+				<select
+					id="form-language"
+					bind:value={formLanguage}
+					class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+				>
+					<option value="">
+						{i18nMsg('contact-form-language-inherited', "Héritée (langue de l'instance)")}
+					</option>
+					<option value="FR">FR</option>
+					<option value="DE">DE</option>
+					<option value="IT">IT</option>
+					<option value="EN">EN</option>
+				</select>
 			</div>
 
 			<fieldset class="rounded-md border border-input p-3">

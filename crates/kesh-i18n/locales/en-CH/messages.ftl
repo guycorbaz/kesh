@@ -1049,3 +1049,31 @@ supplier-invoices-title = Supplier invoices
 
 # Story 12.3 — paiements pain.001 (#191)
 payment-batches-title = Supplier payments
+
+# Story 20-3b2 — invoice sending by email (UI)
+common-save = Save
+common-edit = Edit
+error-unexpected = Unexpected error.
+invoice-send-email-button = Send by email
+invoice-resend-email-button = Resend by email
+invoice-send-email-smtp-tooltip = Email sending is not configured (KESH_SMTP_* variables) — see the administrator manual.
+invoice-send-email-title = Send the invoice by email
+invoice-send-email-to-label = Recipient
+invoice-send-email-to-missing = The contact has no email address — add it on the contact page.
+invoice-send-email-subject-label = Subject
+invoice-send-email-body-label = Message
+invoice-send-email-confirm = Send the email
+invoice-send-email-success = Invoice sent by email
+invoice-send-email-error-empty = The email subject and body cannot be empty.
+invoice-detail-emailed-at-label = Sent on
+contact-form-language = Correspondence language
+contact-form-language-inherited = Inherited (instance language)
+contact-form-salutation = Salutation
+contact-salutation-neutre = Neutral
+contact-salutation-monsieur = Mr
+contact-salutation-madame = Ms
+settings-field-company-email = Email (reply address)
+settings-company-email-help = Reply-To address of invoices sent by email. Empty = no reply address.
+settings-company-email-invalid = Invalid email address.
+settings-company-email-saved = Company email saved
+settings-company-email-conflict = Version conflict — data reloaded, please try again.

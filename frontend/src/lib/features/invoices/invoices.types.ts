@@ -35,6 +35,10 @@ export interface InvoiceResponse {
 	totalAmount: string;
 	journalEntryId: number | null;
 	paidAt: string | null;
+	/** Dernier envoi par e-mail (Story 20-3b2). `null` = jamais envoyée. */
+	emailedAt: string | null;
+	/** Destinataire du dernier envoi (snapshot `contacts.email` à l'envoi). */
+	emailedTo: string | null;
 	/** Projet analytique document-level (Epic 19). `null` = non taguée. */
 	projectId: number | null;
 	/** Calculé backend (P6 review pass 2). Source unique de vérité pour le badge « en retard ». */
@@ -172,4 +176,24 @@ export interface ListResponse<T> {
 	total: number;
 	limit: number;
 	offset: number;
+}
+
+// Story 20-3b2 — Envoi de facture par e-mail (#224)
+
+/** Langue de correspondance résolue par le backend (contact sinon instance). */
+export type EmailLanguage = 'FR' | 'DE' | 'IT' | 'EN';
+
+/** Réponse de `GET /api/v1/invoices/{id}/email-preview`. */
+export interface EmailPreviewResponse {
+	/** Destinataire verrouillé (`contacts.email`). `null` = contact sans e-mail → envoi désactivé. */
+	to: string | null;
+	language: EmailLanguage;
+	subject: string;
+	body: string;
+}
+
+/** Payload de `POST /api/v1/invoices/{id}/send-email`. Pas de champ `to` (destinataire verrouillé serveur). */
+export interface SendInvoiceEmailRequest {
+	subject: string;
+	body: string;
 }
