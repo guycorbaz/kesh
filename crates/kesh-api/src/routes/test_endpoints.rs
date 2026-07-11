@@ -30,7 +30,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{Router, post};
+use axum::routing::{Router, get, post};
 use kesh_db::test_fixtures::{
     mark_onboarding_complete, seed_accounting_company, seed_accounting_company_no_fy,
     seed_changeme_user_only, seed_contact_and_product, seed_stub_company_only, truncate_all,
@@ -51,6 +51,8 @@ pub fn router() -> Router<AppState> {
         // Story 17-4e (DE-1) — injection d'un token de reset pour les E2E
         // recovery (l'email réel n'est pas vérifiable sans SMTP).
         .route("/password-reset-token", post(password_reset_token_handler))
+        // Story 20-4 — capture des e-mails métier (round-trip Playwright).
+        .route("/sent-emails", get(sent_emails_handler))
 }
 
 /// Mutex global sérialisant tous les appels seed/reset (code review P2).
@@ -239,8 +241,7 @@ async fn seed_handler(
     // Story 17-4e (DE-2) — repartir avec des rate-limiters vierges à chaque
     // seed : le budget recovery (5 req / 15 min / IP, partagé forgot+reset)
     // rendrait sinon les re-runs E2E locaux flaky (état mémoire, pas DB).
-    state.rate_limiter.clear_all();
-    state.rate_limiter_recovery.clear_all();
+    clear_transient_test_state(&state);
 
     Ok(Json(SeedResponse {
         preset: preset_label,
@@ -315,10 +316,76 @@ async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedRespons
     // Story 17-4e Pass 1 (ECH) — même purge des limiters que seed_handler :
     // /_test/reset est un alias de seed{fresh}, il doit avoir la même
     // sémantique anti-flaky (DE-2).
-    state.rate_limiter.clear_all();
-    state.rate_limiter_recovery.clear_all();
+    clear_transient_test_state(&state);
     Ok(Json(SeedResponse {
         preset: "fresh",
         ok: true,
     }))
+}
+
+/// Purge l'état transitoire en mémoire entre deux seeds E2E (Story 17-4e
+/// rate-limiters, étendu Story 20-4) : budgets login/recovery/send-email et
+/// buffer de capture d'e-mails. Partagé `seed_handler`/`reset_handler`.
+fn clear_transient_test_state(state: &AppState) {
+    state.rate_limiter.clear_all();
+    state.rate_limiter_recovery.clear_all();
+    state.rate_limiter_send_email.clear_all();
+    if let Some(mock) = &state.test_mock_mailer {
+        mock.clear();
+    }
+}
+
+/// Un e-mail métier capturé, shape camelCase pour les specs Playwright
+/// (Story 20-4 — mapping complet de `CapturedEmail`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentEmailJson {
+    pub to: String,
+    pub subject: String,
+    pub body: String,
+    pub from_display_name: Option<String>,
+    pub reply_to: Option<String>,
+    pub attachment_filename: Option<String>,
+    pub attachment_content_type: Option<String>,
+    pub attachment_size: usize,
+}
+
+/// Réponse de `GET /api/v1/_test/sent-emails`.
+#[derive(Debug, Serialize)]
+pub struct SentEmailsResponse {
+    pub emails: Vec<SentEmailJson>,
+}
+
+/// `GET /api/v1/_test/sent-emails` — Story 20-4.
+///
+/// Renvoie les e-mails métier capturés par le `MockMailer` substitué au boot
+/// (`KESH_TEST_MODE` + config SMTP factice, cf. `main.rs`). Si le boot n'est
+/// PAS en mode capture (test-mode sans vars SMTP → NoopMailer), répond
+/// 400 `VALIDATION_ERROR` avec un message explicite plutôt qu'un 200 vide
+/// ambigu — la spec Playwright diagnostique immédiatement une recette de
+/// lancement incomplète. (Déviation documentée vs spec [409] : réutilise
+/// `AppError::Validation`, pas de variant dédié pour un endpoint de test.)
+async fn sent_emails_handler(
+    State(state): State<AppState>,
+) -> Result<Json<SentEmailsResponse>, AppError> {
+    let Some(mock) = &state.test_mock_mailer else {
+        return Err(AppError::Validation(
+            "test-mode sans SMTP factice — capture d'e-mails indisponible (démarrer le backend avec KESH_SMTP_* factices, cf. docs/testing.md)".to_string(),
+        ));
+    };
+    let emails = mock
+        .sent_emails()
+        .into_iter()
+        .map(|e| SentEmailJson {
+            to: e.to,
+            subject: e.subject,
+            body: e.body,
+            from_display_name: e.from_display_name,
+            reply_to: e.reply_to,
+            attachment_filename: e.attachment_filename,
+            attachment_content_type: e.attachment_content_type,
+            attachment_size: e.attachment_size,
+        })
+        .collect();
+    Ok(Json(SentEmailsResponse { emails }))
 }

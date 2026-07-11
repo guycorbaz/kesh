@@ -28,6 +28,7 @@ error-email-invalid = Ungültiges E-Mail-Format
 error-username-empty = Der Benutzername darf nicht leer sein
 error-username-too-long = Der Benutzername darf nicht länger als { $max } Zeichen sein
 error-username-contains-at = Der Benutzername darf das Zeichen „@“ nicht enthalten
+error-email-template-unknown-variables = Die Vorlage enthält unbekannte Variablen
 
 # Systemfehler
 error-internal = Interner Fehler
@@ -1004,6 +1005,14 @@ api-keys-toast-revoke-success = Schlüssel widerrufen.
 
 # Story 17-4b — Passwort-Wiederherstellung per E-Mail (Backend-Rendering, DC10)
 error-smtp-send-failed = Der E-Mail-Versand ist fehlgeschlagen. Bitte versuchen Sie es in Kürze erneut.
+
+# Story 20-3b1 — Rechnungsversand per E-Mail
+error-smtp-not-configured = Der E-Mail-Versand ist auf dieser Instanz nicht konfiguriert (Variablen KESH_SMTP_*).
+error-contact-email-missing = Der Kontakt der Rechnung hat keine E-Mail-Adresse. Bitte auf der Kontaktkarte erfassen.
+error-invoice-email-empty-content = Betreff und Text der E-Mail dürfen nicht leer sein.
+error-contact-archived = Der Kontakt der Rechnung ist archiviert. Reaktivieren Sie ihn, bevor Sie die Rechnung per E-Mail senden.
+error-email-sent-invoice-gone = Die E-Mail wurde dem Kontakt zugestellt, aber die Rechnung wurde zwischenzeitlich gelöscht — sie konnte nicht als « gesendet » markiert werden. Senden Sie die E-Mail nicht erneut.
+error-company-email-invalid = Die E-Mail-Adresse des Unternehmens ist ungültig.
 error-invalid-or-expired-token = Ungültiger oder abgelaufener Link zum Zurücksetzen des Passworts.
 email-password-reset-subject = Zurücksetzen Ihres Kesh-Passworts
 email-password-reset-body =
@@ -1040,3 +1049,32 @@ supplier-invoices-title = Lieferantenrechnungen
 
 # Story 12.3 — paiements pain.001 (#191)
 payment-batches-title = Lieferantenzahlungen
+
+# Story 20-3b2 — Rechnungsversand per E-Mail (UI)
+common-save = Speichern
+common-edit = Bearbeiten
+error-unexpected = Unerwarteter Fehler.
+invoice-send-email-button = Per E-Mail senden
+invoice-resend-email-button = Erneut per E-Mail senden
+invoice-send-email-smtp-tooltip = Der E-Mail-Versand ist nicht konfiguriert (KESH_SMTP_*-Variablen) — siehe Administratorhandbuch.
+invoice-send-email-title = Rechnung per E-Mail senden
+invoice-send-email-to-label = Empfänger
+invoice-send-email-to-missing = Der Kontakt hat keine E-Mail-Adresse — erfassen Sie sie auf der Kontaktseite.
+invoice-send-email-subject-label = Betreff
+invoice-send-email-body-label = Nachricht
+invoice-send-email-confirm = E-Mail senden
+invoice-send-email-success = Rechnung per E-Mail gesendet
+invoice-send-email-error-empty = Betreff und Text der E-Mail dürfen nicht leer sein.
+invoice-detail-emailed-at-label = Gesendet am
+contact-form-language = Korrespondenzsprache
+contact-form-language-inherited = Geerbt (Sprache der Instanz)
+contact-form-salutation = Anrede
+contact-salutation-neutre = Neutral
+contact-salutation-monsieur = Herr
+contact-salutation-madame = Frau
+settings-field-company-email = E-Mail (Antwortadresse)
+settings-company-email-help = Antwortadresse (Reply-To) der per E-Mail gesendeten Rechnungen. Leer = keine Antwortadresse.
+settings-company-email-invalid = Ungültige E-Mail-Adresse.
+settings-company-email-saved = Firmen-E-Mail gespeichert
+settings-company-email-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
+settings-company-email-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.

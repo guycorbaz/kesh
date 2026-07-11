@@ -135,6 +135,8 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64) -> i64 {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            language: None,
+            salutation: kesh_db::entities::contact::Salutation::Neutre,
         },
     )
     .await

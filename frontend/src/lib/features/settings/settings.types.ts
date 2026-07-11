@@ -6,6 +6,17 @@ export interface CompanyJson {
 	orgType: string;
 	accountingLanguage: string;
 	instanceLanguage: string;
+	/** E-mail de contact (Story 20-3b2) — Reply-To des factures envoyées. `null` = non renseigné. */
+	email: string | null;
+	/** Verrou optimiste — requis par `PUT /companies/current/email`. */
+	version: number;
+}
+
+/** Payload de `PUT /api/v1/companies/current/email` (Admin-only, Story 20-3b2). */
+export interface UpdateCompanyEmailRequest {
+	/** `null` = effacer (Reply-To omis à l'envoi). */
+	email: string | null;
+	version: number;
 }
 
 export interface BankAccountJson {

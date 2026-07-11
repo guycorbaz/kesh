@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
+import {
+	createContactWithAddressViaApi,
+	ensurePrimaryBankAccountViaApi,
+	createAndValidateInvoiceViaApi,
+} from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -253,82 +258,8 @@ test.describe('Factures — création brouillon', () => {
 // Story 5.3 — Téléchargement PDF QR Bill
 // ---------------------------------------------------------------------------
 
-async function createContactWithAddressViaApi(
-	page: import('@playwright/test').Page,
-	name: string,
-): Promise<number> {
-	const ctx = await authedApiContext(page);
-	try {
-		const res = await ctx.post('/api/v1/contacts', {
-			data: {
-				contactType: 'Personne',
-				name,
-				isClient: true,
-				isSupplier: false,
-				address: 'Marktgasse 28\n9400 Rorschach',
-				defaultPaymentTerms: '30 jours net',
-			},
-		});
-		expect(res.ok(), `createContactWithAddress failed: ${res.status()}`).toBeTruthy();
-		return (await res.json()).id as number;
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
-/** Story 5.3 prérequis PDF : le QR-bill exige un compte bancaire principal
- * (le seed `with-company` n'en configure pas depuis v014-1). Idempotent au
- * niveau du spec : IBAN unique par appel. */
-async function ensurePrimaryBankAccountViaApi(page: import('@playwright/test').Page): Promise<void> {
-	const ctx = await authedApiContext(page);
-	try {
-		const resp = await ctx.post('/api/v1/bank-accounts', {
-			data: {
-				bankName: 'Banque E2E PDF',
-				iban: 'CH9300762011623852957',
-				isPrimary: true,
-			},
-		});
-		// 409 possible si un run précédent l'a déjà créé — acceptable.
-		expect([200, 201, 409]).toContain(resp.status());
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
-async function createAndValidateInvoiceViaApi(
-	page: import('@playwright/test').Page,
-	contactId: number,
-): Promise<number> {
-	const today = new Date().toISOString().slice(0, 10);
-	const ctx = await authedApiContext(page);
-	try {
-		const createRes = await ctx.post('/api/v1/invoices', {
-			data: {
-				contactId,
-				date: today,
-				dueDate: today,
-				paymentTerms: '30 jours net',
-				lines: [
-					{
-						description: 'Conseil stratégique',
-						quantity: '4.5',
-						unitPrice: '200.00',
-						vatRate: '8.10',
-					},
-				],
-			},
-		});
-		expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
-		const invoice = await createRes.json();
-		const validateRes = await ctx.post(`/api/v1/invoices/${invoice.id}/validate`);
-		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
-		return invoice.id as number;
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
+// Story 20-4 : helpers API extraits vers helpers/api-fixtures.ts (DRY —
+// partagés avec invoice-send-email.spec.ts).
 test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 	test('télécharge le PDF d\'une facture validée (golden path)', async ({ page, context }) => {
 		await login(page);

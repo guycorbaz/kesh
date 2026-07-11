@@ -163,6 +163,9 @@ pub struct Company {
     pub accounting_language: Language,
     /// Langue de l'interface utilisateur.
     pub instance_language: Language,
+    /// E-mail de contact de la société (Story 20-3b1). Sert de `Reply-To`
+    /// aux e-mails métier (envoi de factures). `None` = Reply-To omis.
+    pub email: Option<String>,
     /// `true` si la company est un placeholder créé automatiquement par le
     /// bootstrap (DB vide) pour permettre la création de l'admin du `.env`
     /// (cf. fix catch-22 onboarding, Story v011-2). Repassé à `false` quand
@@ -223,4 +226,8 @@ pub struct CompanyUpdate {
     pub org_type: OrgType,
     pub accounting_language: Language,
     pub instance_language: Language,
+    /// E-mail de contact de la société (Story 20-3b1, Reply-To des e-mails
+    /// métier). Remplacement complet comme les autres champs.
+    #[serde(default)]
+    pub email: Option<String>,
 }

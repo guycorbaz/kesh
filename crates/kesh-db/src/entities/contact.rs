@@ -3,6 +3,7 @@
 //! Story 4.1 : FR25 (carnet unifié), FR26 (flags client/fournisseur),
 //! FR27 (validation IDE CHE côté API), schéma pour FR28 (default_payment_terms).
 
+use crate::entities::Language;
 use crate::entities::address::StructuredAddress;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
@@ -100,6 +101,67 @@ impl<'r> Decode<'r, MySql> for ContactType {
     }
 }
 
+/// Civilité du contact (Story 20-3b1, décision #12 epic-20).
+///
+/// Sert à résoudre la variable `{salutation}` des templates d'e-mail
+/// (genre × langue × type de contact). Stockée en DB en PascalCase :
+/// `"Monsieur"`, `"Madame"`, `"Neutre"` (CHECK en DB). `Neutre` est le
+/// défaut — formule neutre (« Madame, Monsieur ») à l'envoi.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Salutation {
+    Monsieur,
+    Madame,
+    #[default]
+    Neutre,
+}
+
+impl Salutation {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Monsieur => "Monsieur",
+            Self::Madame => "Madame",
+            Self::Neutre => "Neutre",
+        }
+    }
+}
+
+impl std::str::FromStr for Salutation {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Monsieur" => Ok(Self::Monsieur),
+            "Madame" => Ok(Self::Madame),
+            "Neutre" => Ok(Self::Neutre),
+            other => Err(format!("Salutation inconnue : {other}")),
+        }
+    }
+}
+
+impl Type<MySql> for Salutation {
+    fn type_info() -> MySqlTypeInfo {
+        <String as Type<MySql>>::type_info()
+    }
+    fn compatible(ty: &MySqlTypeInfo) -> bool {
+        <String as Type<MySql>>::compatible(ty) || <str as Type<MySql>>::compatible(ty)
+    }
+}
+
+impl<'q> Encode<'q, MySql> for Salutation {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <MySql as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<IsNull, BoxDynError> {
+        <&str as Encode<MySql>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl<'r> Decode<'r, MySql> for Salutation {
+    fn decode(value: <MySql as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        let s = <String as Decode<MySql>>::decode(value)?;
+        s.parse().map_err(Into::into)
+    }
+}
+
 /// Contact persisté en base.
 ///
 /// Le champ `ide_number` stocke la forme **normalisée** sans séparateurs
@@ -130,6 +192,11 @@ pub struct Contact {
     pub phone: Option<String>,
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Langue de correspondance (Story 20-3b1). `None` = hérite de
+    /// `companies.instance_language` (résolution à l'envoi).
+    pub language: Option<Language>,
+    /// Civilité pour `{salutation}` (Story 20-3b1). Défaut `Neutre`.
+    pub salutation: Salutation,
     pub active: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -161,6 +228,10 @@ pub struct NewContact {
     pub phone: Option<String>,
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Langue de correspondance (Story 20-3b1). `None` = hérite instance.
+    pub language: Option<Language>,
+    /// Civilité pour `{salutation}` (Story 20-3b1).
+    pub salutation: Salutation,
 }
 
 /// Données de modification d'un contact (tous les champs métier).
@@ -191,4 +262,8 @@ pub struct ContactUpdate {
     pub phone: Option<String>,
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Langue de correspondance (Story 20-3b1). `None` = hérite instance.
+    pub language: Option<Language>,
+    /// Civilité pour `{salutation}` (Story 20-3b1).
+    pub salutation: Salutation,
 }

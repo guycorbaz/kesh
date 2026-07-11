@@ -75,6 +75,8 @@ async fn setup(pool: &MySqlPool) -> Ctx {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            language: None,
+            salutation: kesh_db::entities::contact::Salutation::Neutre,
         },
     )
     .await

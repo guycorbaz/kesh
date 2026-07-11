@@ -1,45 +1,51 @@
 //! Rate limiter en mémoire pour `/api/v1/auth/login`.
 //!
-//! Compteur par IP avec fenêtre glissante et blocage temporaire.
+//! Compteur par clé avec fenêtre glissante et blocage temporaire.
+//! Historiquement keyé par IP (login, recovery) ; **générique depuis la
+//! Story 20-3b1** (`RateLimiter<K = IpAddr>`) pour supporter un rate-limit
+//! par `(company_id, user_id)` (envoi de factures par e-mail). Le paramètre
+//! de type a un défaut → les call-sites existants (`RateLimiter` nu)
+//! restent inchangés.
 //! Utilise `std::sync::Mutex` (pas `tokio::sync::Mutex`) — le lock
 //! est toujours relâché avant tout `.await`.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::net::IpAddr;
 use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::config::Config;
 
-/// Enregistrement des tentatives pour une IP donnée.
+/// Enregistrement des tentatives pour une clé donnée.
 #[derive(Debug)]
 struct AttemptRecord {
     /// Timestamps des tentatives échouées dans la fenêtre glissante.
     attempts: Vec<Instant>,
-    /// Si présent, l'IP est bloquée jusqu'à cet instant.
+    /// Si présent, la clé est bloquée jusqu'à cet instant.
     blocked_until: Option<Instant>,
 }
 
-/// Erreur retournée quand une IP est bloquée.
+/// Erreur retournée quand une clé est bloquée.
 #[derive(Debug)]
 pub struct RateLimitReject {
     /// Nombre de secondes avant déblocage.
     pub retry_after_secs: u64,
 }
 
-/// Rate limiter par IP, protégé par un `std::sync::Mutex`.
+/// Rate limiter par clé (`IpAddr` par défaut), protégé par un `std::sync::Mutex`.
 ///
 /// Injecté dans `AppState` et partagé entre tous les handlers.
 /// Le nettoyage des entrées expirées est paresseux (lazy) : exécuté
 /// avant chaque `check_rate_limit` pour éviter les faux blocages.
-pub struct RateLimiter {
-    inner: Mutex<HashMap<IpAddr, AttemptRecord>>,
+pub struct RateLimiter<K = IpAddr> {
+    inner: Mutex<HashMap<K, AttemptRecord>>,
     max_attempts: u32,
     window: std::time::Duration,
     block_duration: std::time::Duration,
 }
 
-impl RateLimiter {
+impl<K: Eq + Hash + Copy> RateLimiter<K> {
     /// Crée un `RateLimiter` à partir de la configuration.
     pub fn new(config: &Config) -> Self {
         Self {
@@ -75,7 +81,7 @@ impl RateLimiter {
 
     /// Nettoyage lazy (sous lock) : supprime les entrées dont le blocage ET la
     /// fenêtre sont tous deux expirés.
-    fn purge_expired(&self, map: &mut HashMap<IpAddr, AttemptRecord>, now: Instant) {
+    fn purge_expired(&self, map: &mut HashMap<K, AttemptRecord>, now: Instant) {
         let cutoff = self.block_duration + self.window;
         map.retain(|_, record| {
             if let Some(blocked_until) = record.blocked_until {
@@ -100,11 +106,11 @@ impl RateLimiter {
     /// [`Self::check_rate_limit`] et [`Self::check_and_record`].
     fn check_locked(
         &self,
-        map: &HashMap<IpAddr, AttemptRecord>,
-        ip: IpAddr,
+        map: &HashMap<K, AttemptRecord>,
+        key: K,
         now: Instant,
     ) -> Result<(), RateLimitReject> {
-        let record = match map.get(&ip) {
+        let record = match map.get(&key) {
             Some(r) => r,
             None => return Ok(()),
         };
@@ -144,8 +150,8 @@ impl RateLimiter {
 
     /// Enregistrement d'une tentative (sous lock) — logique partagée entre
     /// [`Self::record_failed_attempt`] et [`Self::check_and_record`].
-    fn record_locked(&self, map: &mut HashMap<IpAddr, AttemptRecord>, ip: IpAddr, now: Instant) {
-        let record = map.entry(ip).or_insert_with(|| AttemptRecord {
+    fn record_locked(&self, map: &mut HashMap<K, AttemptRecord>, key: K, now: Instant) {
+        let record = map.entry(key).or_insert_with(|| AttemptRecord {
             attempts: Vec::new(),
             blocked_until: None,
         });
@@ -170,20 +176,20 @@ impl RateLimiter {
     /// puis vérifie le blocage et le seuil de tentatives.
     ///
     /// Retourne `Ok(())` si autorisé, `Err(RateLimitReject)` si bloqué.
-    pub fn check_rate_limit(&self, ip: IpAddr) -> Result<(), RateLimitReject> {
+    pub fn check_rate_limit(&self, key: K) -> Result<(), RateLimitReject> {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let now = Instant::now();
         self.purge_expired(&mut map, now);
-        self.check_locked(&map, ip, now)
+        self.check_locked(&map, key, now)
     }
 
     /// Enregistre une tentative de login échouée pour une IP.
     ///
     /// Si le seuil est atteint, l'IP est bloquée pour `block_duration`.
-    pub fn record_failed_attempt(&self, ip: IpAddr) {
+    pub fn record_failed_attempt(&self, key: K) {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let now = Instant::now();
-        self.record_locked(&mut map, ip, now);
+        self.record_locked(&mut map, key, now);
     }
 
     /// Story 17-4c Pass 1 (P8) — « check puis record » **atomique** sous un seul
@@ -192,19 +198,19 @@ impl RateLimiter {
     /// `check_rate_limit` et `record_failed_attempt` où un burst concurrent de
     /// la même IP pouvait dépasser le seuil. Une requête rejetée (IP bloquée)
     /// ne consomme PAS de slot — identique à la séquence deux-appels remplacée.
-    pub fn check_and_record(&self, ip: IpAddr) -> Result<(), RateLimitReject> {
+    pub fn check_and_record(&self, key: K) -> Result<(), RateLimitReject> {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let now = Instant::now();
         self.purge_expired(&mut map, now);
-        self.check_locked(&map, ip, now)?;
-        self.record_locked(&mut map, ip, now);
+        self.check_locked(&map, key, now)?;
+        self.record_locked(&mut map, key, now);
         Ok(())
     }
 
     /// Réinitialise le compteur pour une IP après un login réussi.
-    pub fn reset(&self, ip: IpAddr) {
+    pub fn reset(&self, key: K) {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        map.remove(&ip);
+        map.remove(&key);
     }
 
     /// Story 17-4e (DE-2) — vide TOUTES les entrées (toutes IPs, blocages compris).
@@ -222,7 +228,7 @@ impl RateLimiter {
 
 // Clone is needed because AppState derives Clone.
 // The inner Mutex is wrapped in an Arc at the AppState level.
-impl std::fmt::Debug for RateLimiter {
+impl<K> std::fmt::Debug for RateLimiter<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RateLimiter")
             .field("max_attempts", &self.max_attempts)

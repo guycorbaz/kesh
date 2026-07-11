@@ -39,8 +39,11 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
     vat_rate, line_total, created_at";
 
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
-const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
-    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, project_id, \
+// pub(crate) : réutilisé par `repositories::credit_notes` (lock de la
+// facture d'origine) — une seule liste de colonnes à maintenir.
+pub(crate) const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
+    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, \
+    emailed_at, emailed_to, project_id, \
     version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
 
@@ -854,8 +857,8 @@ pub async fn delete(
 
     let current_opt = sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
-         created_at, updated_at \
+         payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
+         project_id, version, created_at, updated_at \
          FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(id)
@@ -1503,6 +1506,88 @@ pub async fn mark_as_paid(
     }
 }
 
+/// Marque une facture « envoyée par e-mail » (Story 20-3b1, décision #16
+/// epic-20) : pose `emailed_at = NOW(6)` + `emailed_to` (snapshot du
+/// destinataire réellement utilisé) et écrit l'audit `invoice.emailed`
+/// (avec `to` + `subject`) dans la même transaction.
+///
+/// **Pas de verrou optimiste** : l'envoi ne modifie pas l'état comptable ;
+/// une course entre deux envois = deux renvois légitimes, tous deux audités
+/// (le renvoi écrase `emailed_at`/`emailed_to`). Défense en profondeur : ne
+/// s'applique qu'à une facture `validated` (le chemin d'envoi l'a déjà
+/// garanti via le rendu PDF).
+pub async fn mark_emailed(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    to: &str,
+    subject: &str,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+) -> Result<Invoice, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        // Pas de condition `status = 'validated'` ici (review 20-3b1 Pass 1
+        // ECH-1) : le handler d'envoi l'a déjà exigée avant le rendu PDF, et
+        // si le statut a basculé (avoir → 'cancelled') entre l'envoi SMTP et
+        // ce marquage, l'e-mail est PARTI — le fait doit être tracé
+        // (emailed_at + audit) plutôt que perdu sur un rows==0.
+        let rows = sqlx::query(
+            "UPDATE invoices SET emailed_at = NOW(6), emailed_to = ? \
+             WHERE id = ? AND company_id = ?",
+        )
+        .bind(to)
+        .bind(id)
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+
+        if rows == 0 {
+            // Facture absente (supprimée #219 pendant l'envoi) ou autre
+            // company. Le handler mappe ce cas en 409 EMAIL_SENT_INVOICE_GONE
+            // (l'e-mail est déjà parti) + trace d'audit best-effort.
+            return Err(DbError::NotFound);
+        }
+
+        let after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+            .bind(id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::for_actor(
+                user_id,
+                actor_api_key_id,
+                "invoice.emailed".to_string(),
+                "invoice".to_string(),
+                id,
+                Some(serde_json::json!({ "to": to, "subject": subject })),
+            ),
+        )
+        .await?;
+
+        Ok(after)
+    }
+    .await;
+
+    match result {
+        Ok(v) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
 /// Charge jusqu'à `max_rows` factures validées filtrées (pour l'export CSV).
 ///
 /// Contrairement à [`list_by_company_paginated`], pas de LIMIT/OFFSET exposé :
@@ -1569,8 +1654,8 @@ pub async fn list_all_by_company(
 ) -> Result<Vec<Invoice>, DbError> {
     sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
-         created_at, updated_at \
+         payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
+         project_id, version, created_at, updated_at \
          FROM invoices \
          WHERE company_id = ? \
          ORDER BY id",
@@ -1876,6 +1961,8 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: Some("30 jours net".into()),
+                language: None,
+                salutation: crate::entities::contact::Salutation::Neutre,
             },
         )
         .await
@@ -4075,6 +4162,8 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: Some("30 jours net".into()),
+                language: None,
+                salutation: crate::entities::contact::Salutation::Neutre,
             },
         )
         .await

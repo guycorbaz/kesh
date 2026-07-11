@@ -171,6 +171,10 @@ pub struct InvoiceResponse {
     pub total_amount: Decimal,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
+    /// Story 20-3b1 — dernier envoi par e-mail (`null` = jamais envoyée) et
+    /// destinataire snapshoté. Le renvoi écrase ces valeurs.
+    pub emailed_at: Option<NaiveDateTime>,
+    pub emailed_to: Option<String>,
     /// Projet analytique document-level (Epic 19). `null` = non taguée.
     pub project_id: Option<i64>,
     /// P6 (review pass 2) : `is_overdue` calculé backend (source unique de
@@ -197,7 +201,8 @@ pub fn is_invoice_overdue(
 }
 
 impl InvoiceResponse {
-    fn from_parts(invoice: Invoice, lines: Vec<InvoiceLine>) -> Self {
+    /// `pub(crate)` : consommé aussi par `routes::invoice_email` (Story 20-3b1).
+    pub(crate) fn from_parts(invoice: Invoice, lines: Vec<InvoiceLine>) -> Self {
         let today = chrono::Utc::now().naive_utc().date();
         let is_overdue =
             is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
@@ -213,6 +218,8 @@ impl InvoiceResponse {
             total_amount: invoice.total_amount,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
+            emailed_at: invoice.emailed_at,
+            emailed_to: invoice.emailed_to,
             project_id: invoice.project_id,
             is_overdue,
             version: invoice.version,

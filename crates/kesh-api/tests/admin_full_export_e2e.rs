@@ -257,6 +257,7 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
     // supplier_invoices, supplier_invoice_lines + 2 tables lots paiement Story 12.3 :
     // payment_batches, payment_batch_items + 1 table import Story 12.5b :
     // imported_supplier_invoices + 1 table projets Story 19-1 : projects).
+    // + email_templates (Story 20-1, #224) → 34.
     assert!(
         names.contains(&"manifest.json".to_string()),
         "manifest.json présent"
@@ -270,8 +271,8 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
         .filter(|n| n.starts_with("data/") && n.ends_with(".ndjson"))
         .count();
     assert_eq!(
-        data_count, 33,
-        "33 fichiers data/<table>.ndjson (#213 : +contact_persons) : {names:?}"
+        data_count, 34,
+        "34 fichiers data/<table>.ndjson (#213 : +contact_persons, Story 20-1 : +email_templates) : {names:?}"
     );
 
     // Lire manifest.json.

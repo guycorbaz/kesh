@@ -28,6 +28,7 @@ error-email-invalid = Invalid email format
 error-username-empty = Username cannot be empty
 error-username-too-long = Username must not exceed { $max } characters
 error-username-contains-at = Username must not contain the “@” character
+error-email-template-unknown-variables = The template contains unknown variables
 
 # System errors
 error-internal = Internal error
@@ -1004,6 +1005,14 @@ api-keys-toast-revoke-success = Key revoked.
 
 # Story 17-4b — Password recovery by email (backend rendering, DC10)
 error-smtp-send-failed = Email delivery failed. Please try again shortly.
+
+# Story 20-3b1 — invoice sending by email
+error-smtp-not-configured = Email sending is not configured on this instance (KESH_SMTP_* variables).
+error-contact-email-missing = The invoice contact has no email address. Add it on the contact card.
+error-invoice-email-empty-content = The email subject and body cannot be empty.
+error-contact-archived = The invoice's contact is archived. Reactivate it before sending the invoice by email.
+error-email-sent-invoice-gone = The email was delivered to the contact, but the invoice was deleted in the meantime — it could not be marked as sent. Do not resend the email.
+error-company-email-invalid = The company email address is not valid.
 error-invalid-or-expired-token = Invalid or expired password reset link.
 email-password-reset-subject = Reset your Kesh password
 email-password-reset-body =
@@ -1040,3 +1049,32 @@ supplier-invoices-title = Supplier invoices
 
 # Story 12.3 — paiements pain.001 (#191)
 payment-batches-title = Supplier payments
+
+# Story 20-3b2 — invoice sending by email (UI)
+common-save = Save
+common-edit = Edit
+error-unexpected = Unexpected error.
+invoice-send-email-button = Send by email
+invoice-resend-email-button = Resend by email
+invoice-send-email-smtp-tooltip = Email sending is not configured (KESH_SMTP_* variables) — see the administrator manual.
+invoice-send-email-title = Send the invoice by email
+invoice-send-email-to-label = Recipient
+invoice-send-email-to-missing = The contact has no email address — add it on the contact page.
+invoice-send-email-subject-label = Subject
+invoice-send-email-body-label = Message
+invoice-send-email-confirm = Send the email
+invoice-send-email-success = Invoice sent by email
+invoice-send-email-error-empty = The email subject and body cannot be empty.
+invoice-detail-emailed-at-label = Sent on
+contact-form-language = Correspondence language
+contact-form-language-inherited = Inherited (instance language)
+contact-form-salutation = Salutation
+contact-salutation-neutre = Neutral
+contact-salutation-monsieur = Mr
+contact-salutation-madame = Ms
+settings-field-company-email = Email (reply address)
+settings-company-email-help = Reply-To address of invoices sent by email. Empty = no reply address.
+settings-company-email-invalid = Invalid email address.
+settings-company-email-saved = Company email saved
+settings-company-email-conflict = Version conflict — data reloaded, please try again.
+settings-company-email-conflict-reload-failed = Version conflict and reload failed — reload the page.

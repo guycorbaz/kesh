@@ -96,7 +96,7 @@ pub async fn seed_demo(
         let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
             "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
                     address_city, address_country, ide_number, org_type, accounting_language, \
-                    instance_language, is_stub, version, created_at, updated_at \
+                    instance_language, email, is_stub, version, created_at, updated_at \
              FROM companies ORDER BY id FOR UPDATE",
         )
         .fetch_all(&mut *tx)
@@ -132,6 +132,7 @@ pub async fn seed_demo(
                 org_type: OrgType::Pme,
                 accounting_language: lang,
                 instance_language: lang,
+                email: None,
             },
         )
         .await?

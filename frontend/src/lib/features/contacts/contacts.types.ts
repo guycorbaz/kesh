@@ -7,6 +7,12 @@
 
 export type ContactType = 'Personne' | 'Entreprise';
 
+/** Langue de correspondance (Story 20-3b2). `null` = héritée de la langue d'instance. */
+export type ContactLanguage = 'FR' | 'DE' | 'IT' | 'EN';
+
+/** Civilité pour la formule d'appel des e-mails (Story 20-3b2). */
+export type Salutation = 'Monsieur' | 'Madame' | 'Neutre';
+
 export type ContactSortBy = 'Name' | 'CreatedAt' | 'UpdatedAt';
 
 export type SortDirection = 'Asc' | 'Desc';
@@ -43,6 +49,10 @@ export interface ContactResponse {
 	/** Forme normalisée `CHE109322551` (12 chars) ou null. Formatée à l'affichage. */
 	ideNumber: string | null;
 	defaultPaymentTerms: string | null;
+	/** Langue de correspondance (Story 20-3b2). `null` = héritée instance. */
+	language: ContactLanguage | null;
+	/** Civilité (Story 20-3b2). Toujours renseignée (défaut `Neutre`). */
+	salutation: Salutation;
 	active: boolean;
 	version: number;
 	createdAt: string;
@@ -61,6 +71,10 @@ export interface CreateContactRequest {
 	phone?: string | null;
 	ideNumber?: string | null;
 	defaultPaymentTerms?: string | null;
+	/** Absent/`null` = héritée instance (Story 20-3b2). */
+	language?: ContactLanguage | null;
+	/** Absent = `Neutre` (Story 20-3b2). */
+	salutation?: Salutation;
 }
 
 export interface UpdateContactRequest {
@@ -75,6 +89,10 @@ export interface UpdateContactRequest {
 	phone?: string | null;
 	ideNumber?: string | null;
 	defaultPaymentTerms?: string | null;
+	/** Absent/`null` = héritée instance (Story 20-3b2). */
+	language?: ContactLanguage | null;
+	/** Absent = `Neutre` (Story 20-3b2). */
+	salutation?: Salutation;
 	version: number;
 }
 

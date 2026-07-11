@@ -375,6 +375,26 @@ impl Config {
         self.smtp_password.as_deref()
     }
 
+    /// `true` si le transport SMTP est utilisable pour les e-mails métier
+    /// (Story 20-3b1, décision #3 epic-20 — gate découplé du flag recovery
+    /// `KESH_FEATURE_FORGOT_PASSWORD`) : les 4 vars `KESH_SMTP_HOST/USER/
+    /// PASSWORD/FROM` sont présentes ET `KESH_SMTP_FROM` est une adresse
+    /// valide (même validation `is_valid_email_simple` que le fail-fast
+    /// recovery — le display-name reste injecté à l'envoi, jamais dans la
+    /// var). `KESH_PUBLIC_BASE_URL` n'est PAS requis ici (spécifique au lien
+    /// de reset). Exposé par `/health` (`smtpConfigured`) et vérifié par les
+    /// endpoints d'envoi (412 sinon — un `NoopMailer` retournerait Ok et
+    /// marquerait un envoi fantôme).
+    pub fn smtp_configured(&self) -> bool {
+        self.smtp_host.is_some()
+            && self.smtp_user.is_some()
+            && self.smtp_password.is_some()
+            && self
+                .smtp_from
+                .as_deref()
+                .is_some_and(crate::routes::contacts::is_valid_email_simple)
+    }
+
     /// Constructeur pour les **tests d'intégration uniquement**.
     ///
     /// Permet de construire un `Config` directement sans passer par
@@ -2561,6 +2581,48 @@ mod smtp_config_tests {
         assert!(config.smtp_host.is_none());
         assert_eq!(config.smtp_port, 587, "défaut STARTTLS submission");
         assert!(config.smtp_tls, "défaut true");
+        assert!(!config.smtp_configured(), "SMTP absent → non configuré");
+    }
+
+    /// Story 20-3b1 — `smtp_configured()` : complet (sans PUBLIC_BASE_URL ni
+    /// feature recovery) → true ; partiel → false ; from invalide → false.
+    #[test]
+    fn smtp_configured_cases() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum();
+        unsafe {
+            env::set_var("KESH_SMTP_HOST", "smtp.example.com");
+            env::set_var("KESH_SMTP_USER", "kesh@example.com");
+            env::set_var("KESH_SMTP_PASSWORD", "s3cr3t");
+            env::set_var("KESH_SMTP_FROM", "noreply@example.com");
+            // Volontairement PAS de KESH_PUBLIC_BASE_URL ni de feature
+            // recovery : le gate 20-3b1 est découplé (décision #3 epic-20).
+        }
+        let config = Config::from_env().expect("SMTP seul, feature off → OK");
+        assert!(config.smtp_configured(), "4 vars + from valide → configuré");
+        assert!(!config.forgot_password_enabled);
+
+        // Partiel : password manquant → non configuré.
+        unsafe {
+            env::remove_var("KESH_SMTP_PASSWORD");
+        }
+        let config = Config::from_env().expect("partiel, feature off → boot OK");
+        assert!(
+            !config.smtp_configured(),
+            "password manquant → non configuré (et pas de fail-fast feature off)"
+        );
+
+        // From invalide (display-name dans la var) → non configuré.
+        unsafe {
+            env::set_var("KESH_SMTP_PASSWORD", "s3cr3t");
+            env::set_var("KESH_SMTP_FROM", "Kesh <noreply@example.com>");
+        }
+        let config = Config::from_env().expect("from invalide, feature off → boot OK");
+        assert!(
+            !config.smtp_configured(),
+            "display-name dans KESH_SMTP_FROM → non configuré (il s'injecte à l'envoi)"
+        );
     }
 
     /// Feature on + SMTP complet → OK, champs renseignés.

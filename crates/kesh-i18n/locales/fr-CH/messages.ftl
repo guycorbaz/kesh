@@ -28,6 +28,7 @@ error-email-invalid = Format d'email invalide
 error-username-empty = Le nom d'utilisateur ne peut pas être vide
 error-username-too-long = Le nom d'utilisateur ne doit pas dépasser { $max } caractères
 error-username-contains-at = Le nom d'utilisateur ne peut pas contenir le caractère « @ »
+error-email-template-unknown-variables = Le template contient des variables inconnues
 
 # Erreurs système
 error-internal = Erreur interne
@@ -1055,6 +1056,14 @@ api-keys-toast-revoke-success = Clé révoquée.
 
 # Story 17-4b — Recovery de mot de passe par email (rendu backend, DC10)
 error-smtp-send-failed = L'envoi de l'email a échoué. Réessayez dans quelques instants.
+
+# Story 20-3b1 — envoi de facture par e-mail
+error-smtp-not-configured = L'envoi d'e-mails n'est pas configuré sur cette instance (variables KESH_SMTP_*).
+error-contact-email-missing = Le contact de la facture n'a pas d'adresse e-mail. Renseignez-la sur la fiche contact.
+error-invoice-email-empty-content = L'objet et le corps de l'e-mail ne peuvent pas être vides.
+error-contact-archived = Le contact de la facture est archivé. Réactivez-le avant d'envoyer la facture par e-mail.
+error-email-sent-invoice-gone = L'e-mail a bien été envoyé au contact, mais la facture a été supprimée entre-temps — elle n'a pas pu être marquée « envoyée ». Ne renvoyez pas l'e-mail.
+error-company-email-invalid = L'adresse e-mail de la société n'est pas valide.
 error-invalid-or-expired-token = Lien de réinitialisation invalide ou expiré.
 email-password-reset-subject = Réinitialisation de votre mot de passe Kesh
 email-password-reset-body =
@@ -1128,3 +1137,32 @@ supplier-invoices-title = Factures fournisseurs
 
 # Story 12.3 — paiements pain.001 (#191)
 payment-batches-title = Paiements fournisseurs
+
+# Story 20-3b2 — envoi de facture par e-mail (UI)
+common-save = Enregistrer
+common-edit = Modifier
+error-unexpected = Erreur inattendue.
+invoice-send-email-button = Envoyer par e-mail
+invoice-resend-email-button = Renvoyer par e-mail
+invoice-send-email-smtp-tooltip = L'envoi d'e-mails n'est pas configuré (variables KESH_SMTP_*) — voir le manuel administrateur.
+invoice-send-email-title = Envoyer la facture par e-mail
+invoice-send-email-to-label = Destinataire
+invoice-send-email-to-missing = Le contact n'a pas d'adresse e-mail — renseignez-la sur la fiche contact.
+invoice-send-email-subject-label = Objet
+invoice-send-email-body-label = Message
+invoice-send-email-confirm = Envoyer l'e-mail
+invoice-send-email-success = Facture envoyée par e-mail
+invoice-send-email-error-empty = L'objet et le corps de l'e-mail ne peuvent pas être vides.
+invoice-detail-emailed-at-label = Envoyée le
+contact-form-language = Langue de correspondance
+contact-form-language-inherited = Héritée (langue de l'instance)
+contact-form-salutation = Civilité
+contact-salutation-neutre = Neutre
+contact-salutation-monsieur = Monsieur
+contact-salutation-madame = Madame
+settings-field-company-email = E-mail (adresse de réponse)
+settings-company-email-help = Adresse de réponse (Reply-To) des factures envoyées par e-mail. Vide = pas d'adresse de réponse.
+settings-company-email-invalid = Adresse e-mail invalide.
+settings-company-email-saved = E-mail de la société enregistré
+settings-company-email-conflict = Conflit de version — les données ont été rechargées, réessayez.
+settings-company-email-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.

@@ -6,13 +6,13 @@
 use std::sync::Arc;
 
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
-use lettre::message::Mailbox;
 use lettre::message::header::ContentType;
+use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::AsyncSmtpTransport;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncTransport, Message, Tokio1Executor};
 
-use super::{MailFuture, Mailer};
+use super::{MailFuture, Mailer, OutgoingEmail};
 use crate::config::Config;
 use crate::errors::AppError;
 
@@ -120,6 +120,67 @@ impl SmtpMailer {
             .body(body)
             .map_err(|e| AppError::SmtpSendFailed(format!("build message: {e}")))
     }
+
+    /// Construit le `Message` lettre d'un e-mail métier (Story 20-3b1) :
+    /// `From` = adresse `KESH_SMTP_FROM` avec display-name dynamique (nom de
+    /// la société — décision #2 epic-20, l'adresse elle-même n'est jamais
+    /// fournie par l'appelant), `Reply-To` tolérant (invalide → omis +
+    /// warning), corps `text/plain`, pièce jointe optionnelle en
+    /// `MultiPart::mixed`. Factorisé hors de `send_email` pour être testable
+    /// sans transport ni I/O réseau (pattern `build_message`).
+    fn build_outgoing_message(&self, email: &OutgoingEmail) -> Result<Message, AppError> {
+        // Display-name dynamique : même adresse que KESH_SMTP_FROM, seul le
+        // nom d'affichage change. Le builder lettre encode le display-name
+        // (RFC 2047) — anti-injection CRLF préservée.
+        let from = match &email.from_display_name {
+            Some(name) => Mailbox::new(Some(name.clone()), self.from.email.clone()),
+            None => self.from.clone(),
+        };
+
+        let mut builder = Message::builder()
+            .from(from)
+            .to(email
+                .to
+                .parse()
+                .map_err(|e| AppError::SmtpSendFailed(format!("to invalide: {e}")))?)
+            .subject(email.subject.clone());
+
+        if let Some(reply_to) = &email.reply_to {
+            match reply_to.parse::<Mailbox>() {
+                Ok(mb) => builder = builder.reply_to(mb),
+                Err(e) => {
+                    // Jamais d'échec d'envoi pour un Reply-To malformé
+                    // (AC #8 Story 20-3b1) — l'e-mail part sans Reply-To.
+                    tracing::warn!(reply_to = %reply_to, "Reply-To invalide, omis: {e}");
+                }
+            }
+        }
+
+        match &email.attachment {
+            Some(att) => {
+                let content_type = ContentType::parse(&att.content_type).map_err(|e| {
+                    AppError::SmtpSendFailed(format!(
+                        "content-type attachment invalide ({}): {e}",
+                        att.content_type
+                    ))
+                })?;
+                builder
+                    .multipart(
+                        MultiPart::mixed()
+                            .singlepart(SinglePart::plain(email.body.clone()))
+                            .singlepart(
+                                Attachment::new(att.filename.clone())
+                                    .body(att.bytes.clone(), content_type),
+                            ),
+                    )
+                    .map_err(|e| AppError::SmtpSendFailed(format!("build message: {e}")))
+            }
+            None => builder
+                .header(ContentType::TEXT_PLAIN)
+                .body(email.body.clone())
+                .map_err(|e| AppError::SmtpSendFailed(format!("build message: {e}"))),
+        }
+    }
 }
 
 impl Mailer for SmtpMailer {
@@ -133,6 +194,17 @@ impl Mailer for SmtpMailer {
             let email = self.build_message(to, reset_url, locale)?;
             self.transport
                 .send(email)
+                .await
+                .map_err(|e| AppError::SmtpSendFailed(format!("send: {e}")))?;
+            Ok(())
+        })
+    }
+
+    fn send_email<'a>(&'a self, email: &'a OutgoingEmail) -> MailFuture<'a> {
+        Box::pin(async move {
+            let message = self.build_outgoing_message(email)?;
+            self.transport
+                .send(message)
                 .await
                 .map_err(|e| AppError::SmtpSendFailed(format!("send: {e}")))?;
             Ok(())
@@ -219,5 +291,110 @@ mod tests {
         let mailer = test_mailer();
         let r = mailer.build_message("pas un email", "https://x/r?token=t", Locale::FrCh);
         assert!(matches!(r, Err(AppError::SmtpSendFailed(_))));
+    }
+
+    // --- Story 20-3b1 : build_outgoing_message (e-mail métier) --------------
+
+    fn sample_outgoing(attachment: bool, reply_to: Option<&str>) -> super::super::OutgoingEmail {
+        super::super::OutgoingEmail {
+            to: "client@example.ch".to_string(),
+            subject: "Facture F-2026-0042".to_string(),
+            body: "Bonjour,\nvoici la facture.".to_string(),
+            from_display_name: Some("Ma PME SA".to_string()),
+            reply_to: reply_to.map(String::from),
+            attachment: attachment.then(|| super::super::EmailAttachment {
+                filename: "facture-F-2026-0042.pdf".to_string(),
+                content_type: "application/pdf".to_string(),
+                bytes: b"%PDF-1.4 stub".to_vec(),
+            }),
+        }
+    }
+
+    /// Multipart : corps + attachment présents, display-name dans le From,
+    /// Reply-To présent.
+    #[test]
+    fn build_outgoing_message_multipart_with_attachment() {
+        let mailer = test_mailer();
+        let msg = mailer
+            .build_outgoing_message(&sample_outgoing(true, Some("info@mapme.ch")))
+            .expect("message construit");
+        let raw = String::from_utf8(msg.formatted()).expect("UTF-8");
+        assert!(raw.contains("multipart/mixed"), "MultiPart::mixed attendu");
+        assert!(
+            raw.contains("facture-F-2026-0042.pdf"),
+            "filename attachment présent"
+        );
+        assert!(raw.contains("application/pdf"), "content-type attachment");
+        assert!(
+            raw.contains("Ma PME SA"),
+            "display-name société dans le From"
+        );
+        assert!(
+            raw.contains("noreply@example.com"),
+            "adresse From = KESH_SMTP_FROM (jamais fournie par l'appelant)"
+        );
+        assert!(raw.contains("Reply-To"), "Reply-To présent");
+        assert!(raw.contains("info@mapme.ch"), "adresse Reply-To");
+    }
+
+    /// Sans attachment : text/plain simple. Sans Reply-To : header absent.
+    #[test]
+    fn build_outgoing_message_plain_without_attachment() {
+        let mailer = test_mailer();
+        let msg = mailer
+            .build_outgoing_message(&sample_outgoing(false, None))
+            .expect("message construit");
+        let raw = String::from_utf8(msg.formatted()).expect("UTF-8");
+        assert!(!raw.contains("multipart/mixed"), "pas de multipart");
+        assert!(raw.contains("text/plain"), "corps text/plain");
+        assert!(!raw.contains("Reply-To"), "pas de Reply-To");
+    }
+
+    /// Reply-To invalide → omis (warning), l'envoi n'échoue PAS (AC #8).
+    #[test]
+    fn build_outgoing_message_invalid_reply_to_is_omitted() {
+        let mailer = test_mailer();
+        let msg = mailer
+            .build_outgoing_message(&sample_outgoing(false, Some("pas une adresse")))
+            .expect("message construit malgré Reply-To invalide");
+        let raw = String::from_utf8(msg.formatted()).expect("UTF-8");
+        assert!(!raw.contains("Reply-To"), "Reply-To invalide omis");
+    }
+
+    /// `to` invalide → SmtpSendFailed (parité build_message).
+    #[test]
+    fn build_outgoing_message_invalid_to_errors() {
+        let mailer = test_mailer();
+        let mut email = sample_outgoing(false, None);
+        email.to = "pas un email".to_string();
+        let r = mailer.build_outgoing_message(&email);
+        assert!(matches!(r, Err(AppError::SmtpSendFailed(_))));
+    }
+
+    /// Anti-injection d'en-têtes : un `subject` contenant des CRLF (tentative
+    /// d'injection `Bcc:`) ne doit JAMAIS produire un en-tête supplémentaire
+    /// dans le message formaté (code review 20-3b1 Pass 1 BH-1). Le subject
+    /// vient du body de la requête (utilisateur authentifié) — lettre doit
+    /// soit encoder (RFC 2047), soit échouer, mais jamais émettre le CRLF brut.
+    #[test]
+    fn build_outgoing_message_subject_crlf_never_injects_header() {
+        let mailer = test_mailer();
+        let mut email = sample_outgoing(false, None);
+        email.subject = "Facture\r\nBcc: attacker@evil.com".to_string();
+        match mailer.build_outgoing_message(&email) {
+            Ok(msg) => {
+                let raw = String::from_utf8(msg.formatted()).expect("UTF-8");
+                // Le header injecté ne doit pas exister : "Bcc:" en début de
+                // ligne = injection réussie (un encodage RFC 2047 du subject
+                // le rendrait inoffensif, encodé dans la valeur du Subject).
+                assert!(
+                    !raw.lines().any(|l| l.starts_with("Bcc:")),
+                    "CRLF du subject a injecté un en-tête Bcc :\n{raw}"
+                );
+            }
+            // Refuser le message est aussi une issue sûre.
+            Err(AppError::SmtpSendFailed(_)) => {}
+            Err(e) => panic!("erreur inattendue : {e:?}"),
+        }
     }
 }

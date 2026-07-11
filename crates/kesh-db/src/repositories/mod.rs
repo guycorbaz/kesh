@@ -17,6 +17,7 @@ pub mod contact_persons;
 pub mod contacts;
 pub mod credit_note_number_sequences;
 pub mod credit_notes;
+pub mod email_templates;
 pub mod fiscal_years;
 pub mod imported_supplier_invoices;
 pub mod invoice_number_sequences;

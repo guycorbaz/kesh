@@ -61,6 +61,8 @@ async fn seed_contact(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            language: None,
+            salutation: kesh_db::entities::contact::Salutation::Neutre,
         },
     )
     .await

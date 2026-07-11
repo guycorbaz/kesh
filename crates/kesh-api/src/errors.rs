@@ -207,7 +207,7 @@ pub enum AppError {
     InvoiceNotPdfReady(String),
 
     /// Trop de lignes pour tenir sur un PDF A4 (v0.1 : limite réelle dans
-    /// `routes::invoice_pdf::MAX_LINES_PER_PDF` = 9). Le `usize` est la
+    /// `routes::invoice_pdf_service::MAX_LINES_PER_PDF` = 9). Le `usize` est la
     /// taille effective, affichée dans le message.
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
@@ -259,6 +259,42 @@ pub enum AppError {
     /// est seulement loggé côté serveur, jamais propagé au client (anti-énum).
     #[error("Échec envoi email SMTP : {0}")]
     SmtpSendFailed(String),
+
+    /// Story 20-3b1 — le transport SMTP n'est pas configuré/prêt
+    /// (`AppState.smtp_ready == false`) : l'envoi d'e-mails métier est
+    /// indisponible. HTTP 412 `SMTP_NOT_CONFIGURED`, i18n key
+    /// `error-smtp-not-configured`. Garde impérative : sans elle, le
+    /// `NoopMailer` retournerait Ok et la facture serait marquée « envoyée »
+    /// à tort.
+    #[error("SMTP non configuré — envoi d'e-mails indisponible")]
+    SmtpNotConfigured,
+
+    /// Story 20-3b1 — le contact de la facture n'a pas d'adresse e-mail
+    /// (destinataire verrouillé = `contacts.email`, décision #13 epic-20).
+    /// HTTP 400 `CONTACT_EMAIL_MISSING`, i18n key `error-contact-email-missing`.
+    #[error("Le contact n'a pas d'adresse e-mail")]
+    ContactEmailMissing,
+
+    /// Story 20-3b1 — objet ou corps vide (après trim) au moment de l'envoi
+    /// manuel. HTTP 422 `INVOICE_EMAIL_EMPTY_CONTENT`, i18n key
+    /// `error-invoice-email-empty-content`.
+    #[error("Objet ou corps de l'e-mail vide")]
+    InvoiceEmailEmptyContent,
+
+    /// Story 20-3b1 (code review Pass 1 ECH-1) — le contact de la facture est
+    /// archivé (`active = false`) : le carnet d'adresses le considère « à ne
+    /// plus utiliser », on n'envoie pas de facture à son adresse. HTTP 400
+    /// `CONTACT_ARCHIVED`, i18n key `error-contact-archived`.
+    #[error("Le contact de la facture est archivé")]
+    ContactArchived,
+
+    /// Story 20-3b1 (code review Pass 1 ECH-1/BH-3) — l'e-mail a été REMIS au
+    /// relay SMTP, mais la facture a disparu (supprimée #219) entre l'envoi et
+    /// le marquage `emailed_at`. Le message dit explicitement que l'e-mail est
+    /// parti pour dissuader un renvoi en double. HTTP 409
+    /// `EMAIL_SENT_INVOICE_GONE`, i18n key `error-email-sent-invoice-gone`.
+    #[error("E-mail envoyé mais facture disparue avant le marquage")]
+    EmailSentInvoiceGone,
 
     /// Story 17-4c — lien de réinitialisation de mot de passe invalide ou expiré.
     /// HTTP 400 `INVALID_OR_EXPIRED_TOKEN`, i18n key `error-invalid-or-expired-token`.
@@ -654,6 +690,15 @@ pub enum AppError {
     /// disque est absent (restore métadonnée-seule L1/F7) → `410 SOURCE_DOCUMENT_GONE`.
     #[error("Justificatif non restauré")]
     SourceDocumentGone,
+
+    // --- Story 20-1 — socle templates d'e-mail (#224) ---
+    /// `PUT /admin/email-templates/{type}/{language}` : `subject`/`body`
+    /// référencent un ou plusieurs tokens `{var}` hors de
+    /// `EmailTemplateType::allowed_variables()` → `422`. Les tokens
+    /// inconnus sont exposés en `details.unknownVariables` pour que le
+    /// futur éditeur Admin (Story 20-2) les surligne sans parser le message.
+    #[error("Template invalide : variables inconnues {unknown_vars:?}")]
+    EmailTemplateUnknownVariables { unknown_vars: Vec<String> },
 }
 
 // --- Story 9-1 : From<ReportError> for AppError ---
@@ -698,7 +743,7 @@ impl From<kesh_report::errors::ReportError> for AppError {
             }
             // Story 9-2a T2.0 + Pass 3 ECH3-H2 : variant dédié pour i18n message
             // client utile (cohérent kesh-qrbill::QrBillError::PdfGeneration mapping
-            // dans invoice_pdf.rs).
+            // dans invoice_pdf_service.rs).
             ReportError::PdfGeneration(detail) => AppError::PdfGenerationFailed(detail),
             // Story 9-2a + Pass 1 code-review H1 : variant dédié — sinon un
             // échec CSV se présentait à tort comme un échec PDF côté UI.
@@ -930,6 +975,48 @@ impl IntoResponse for AppError {
                 build_response(StatusCode::CONFLICT, "IDE_ALREADY_EXISTS", &msg)
             }
 
+            // Story 20-3b1 — envoi de facture par e-mail.
+            AppError::SmtpNotConfigured => build_response(
+                StatusCode::PRECONDITION_FAILED,
+                "SMTP_NOT_CONFIGURED",
+                &t(
+                    "error-smtp-not-configured",
+                    "L'envoi d'e-mails n'est pas configuré sur cette instance (variables KESH_SMTP_*).",
+                ),
+            ),
+            AppError::ContactEmailMissing => build_response(
+                StatusCode::BAD_REQUEST,
+                "CONTACT_EMAIL_MISSING",
+                &t(
+                    "error-contact-email-missing",
+                    "Le contact de la facture n'a pas d'adresse e-mail. Renseignez-la sur la fiche contact.",
+                ),
+            ),
+            AppError::InvoiceEmailEmptyContent => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVOICE_EMAIL_EMPTY_CONTENT",
+                &t(
+                    "error-invoice-email-empty-content",
+                    "L'objet et le corps de l'e-mail ne peuvent pas être vides.",
+                ),
+            ),
+            AppError::ContactArchived => build_response(
+                StatusCode::BAD_REQUEST,
+                "CONTACT_ARCHIVED",
+                &t(
+                    "error-contact-archived",
+                    "Le contact de la facture est archivé. Réactivez-le avant d'envoyer la facture par e-mail.",
+                ),
+            ),
+            AppError::EmailSentInvoiceGone => build_response(
+                StatusCode::CONFLICT,
+                "EMAIL_SENT_INVOICE_GONE",
+                &t(
+                    "error-email-sent-invoice-gone",
+                    "L'e-mail a bien été envoyé au contact, mais la facture a été supprimée entre-temps — elle n'a pas pu être marquée « envoyée ». Ne renvoyez pas l'e-mail.",
+                ),
+            ),
+
             // Story 5.3 — erreurs PDF QR Bill.
             AppError::InvoiceNotValidated => build_response(
                 StatusCode::BAD_REQUEST,
@@ -943,7 +1030,7 @@ impl IntoResponse for AppError {
                 build_response(StatusCode::BAD_REQUEST, "INVOICE_NOT_PDF_READY", &msg)
             }
             AppError::InvoiceTooManyLinesForPdf(n) => {
-                let max = crate::routes::invoice_pdf::MAX_LINES_PER_PDF;
+                let max = crate::routes::invoice_pdf_service::MAX_LINES_PER_PDF;
                 let fallback = format!(
                     "La facture contient {n} lignes — le PDF A4 est limité à {max} lignes en v0.1."
                 );
@@ -1757,6 +1844,20 @@ impl IntoResponse for AppError {
                     "Le justificatif n'a pas été restauré (métadonnées seules).",
                 ),
             ),
+
+            AppError::EmailTemplateUnknownVariables { unknown_vars } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "EMAIL_TEMPLATE_UNKNOWN_VARIABLES",
+                        "message": t(
+                            "error-email-template-unknown-variables",
+                            "Le template contient des variables inconnues.",
+                        ),
+                        "details": { "unknownVariables": unknown_vars }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
 
             AppError::Database(db_err) => match db_err {
                 DbError::NotFound => build_response(

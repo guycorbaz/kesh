@@ -55,12 +55,33 @@ pub struct AppState {
     /// slot via `check_and_record` atomique (jamais `reset`), sinon un simple
     /// check serait inerte (catch P3 Opus F1).
     pub rate_limiter_recovery: Arc<RateLimiter>,
+    /// Story 20-3b1 — instance dédiée à l'envoi de factures par e-mail,
+    /// keyée `(company_id, user_id)` (pas IP : l'abus visé est un utilisateur
+    /// authentifié qui spamme, décision #15 epic-20). Seuils hardcodés
+    /// 20 envois / 15 min / blocage 15 min (config par env var = L5 v0.2+).
+    pub rate_limiter_send_email: Arc<RateLimiter<(i64, i64)>>,
     pub i18n: Arc<kesh_i18n::I18nBundle>,
     pub users_exist: Arc<AtomicBool>,
-    /// Story 17-4b — couche d'envoi d'email (recovery). `NoopMailer` par défaut
-    /// (feature-off / tests), `SmtpMailer` en prod si `KESH_FEATURE_FORGOT_PASSWORD`.
-    /// Champ `pub` : les tests 17-4e le mutent (`Arc::new(MockMailer::new())`).
+    /// Story 17-4b — couche d'envoi d'email (recovery + e-mails métier).
+    /// `NoopMailer` par défaut (SMTP non configuré / tests), `SmtpMailer` en
+    /// prod dès que `config.smtp_configured()` (Story 20-3b1 — plus couplé au
+    /// seul flag recovery). Champ `pub` : les tests le mutent
+    /// (`Arc::new(MockMailer::new())`).
     pub mailer: Arc<dyn mail::Mailer>,
+    /// Story 20-3b1 — `true` ssi la config SMTP est complète ET le mailer réel
+    /// a été construit avec succès au boot. Source de vérité du flag
+    /// `smtpConfigured` de `/health` et de la garde 412 des endpoints d'envoi
+    /// (un `NoopMailer` retournerait Ok et marquerait un envoi fantôme).
+    pub smtp_ready: bool,
+    /// Story 20-4 — poignée de capture d'e-mails pour les E2E Playwright.
+    /// `Some(mock)` UNIQUEMENT quand le boot est en `KESH_TEST_MODE` avec une
+    /// config SMTP (factice) complète : `main.rs` substitue alors un
+    /// `MockMailer` au `SmtpMailer` réel et garde ce clone (buffer partagé
+    /// `Arc<Mutex<…>>`) pour `GET /api/v1/_test/sent-emails`. `None` partout
+    /// ailleurs — le endpoint répond 400 `VALIDATION_ERROR` dans ce cas
+    /// (déviation documentée 20-4 : pas de variant dédié pour un endpoint
+    /// de test, le message diagnostique explicite suffit).
+    pub test_mock_mailer: Option<mail::MockMailer>,
 }
 
 impl AppState {
@@ -89,9 +110,16 @@ impl AppState {
             // `new_for_tests` inchangée → les ~33 call-sites de test restent
             // intacts. Mêmes seuils recovery que la prod (`build_recovery_rate_limiter`).
             rate_limiter_recovery: Arc::new(build_recovery_rate_limiter()),
+            // Story 20-3b1 — mêmes seuils send-email que la prod.
+            rate_limiter_send_email: Arc::new(build_send_email_rate_limiter()),
             // Story 17-4b (P4-1) — champ défauté DANS LE CORPS : signature
             // `new_for_tests` inchangée → les call-sites de test restent intacts.
             mailer: Arc::new(mail::NoopMailer),
+            // Story 20-3b1 — défaut test : SMTP non prêt (les tests d'envoi
+            // construisent AppState littéral avec `smtp_ready: true` + MockMailer).
+            smtp_ready: false,
+            // Story 20-4 — capture d'e-mails réservée au boot test-mode réel.
+            test_mock_mailer: None,
         }
     }
 }
@@ -105,6 +133,20 @@ pub fn build_recovery_rate_limiter() -> RateLimiter {
         5,
         std::time::Duration::from_secs(15 * 60),
         std::time::Duration::from_secs(30 * 60),
+    )
+}
+
+/// Story 20-3b1 — construit l'instance `RateLimiter` dédiée à l'envoi de
+/// factures par e-mail, keyée `(company_id, user_id)`. Seuils hardcodés
+/// 20 envois / fenêtre 15 min / blocage 15 min (assez large pour une PME qui
+/// envoie sa facturation mensuelle à la main, assez serré pour stopper un
+/// spam authentifié — un lot > 20 attend le déblocage). Partagé prod /
+/// `new_for_tests` (config par env var = L5 v0.2+).
+pub fn build_send_email_rate_limiter() -> RateLimiter<(i64, i64)> {
+    RateLimiter::with_thresholds(
+        20,
+        std::time::Duration::from_secs(15 * 60),
+        std::time::Duration::from_secs(15 * 60),
     )
 }
 
@@ -186,6 +228,24 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
                 // (10240 MiB * 1024² > u32::MAX) — review Pass 3.
                 (state.config.admin_import_max_mib as usize).saturating_mul(1024 * 1024),
             )),
+        )
+        // Story 20-1 : socle templates d'e-mail (Admin-only — pas de lecture
+        // Comptable+ v1, seul consommateur = section Admin dédiée 20-2).
+        .route(
+            "/api/v1/admin/email-templates",
+            get(routes::email_templates::list_email_templates),
+        )
+        .route(
+            "/api/v1/admin/email-templates/{template_type}/{language}",
+            get(routes::email_templates::get_email_template)
+                .put(routes::email_templates::update_email_template)
+                .delete(routes::email_templates::restore_email_template_default),
+        )
+        // Story 20-3b1 : e-mail de contact de la société (Reply-To des
+        // e-mails métier). Admin-only, cohérent avec la config templates.
+        .route(
+            "/api/v1/companies/current/email",
+            put(routes::companies::update_company_email),
         )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
@@ -326,6 +386,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/invoices/{id}/mark-paid",
             post(routes::invoices::mark_invoice_paid_handler),
+        )
+        // Story 20-3b1 — envoi de facture par e-mail (preview + send,
+        // destinataire verrouillé contacts.email, rate-limité, gate SMTP 412).
+        .route(
+            "/api/v1/invoices/{id}/email-preview",
+            get(routes::invoice_email::preview_invoice_email),
+        )
+        .route(
+            "/api/v1/invoices/{id}/send-email",
+            post(routes::invoice_email::send_invoice_email),
         )
         .route(
             "/api/v1/invoices/{id}/unmark-paid",

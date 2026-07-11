@@ -25,6 +25,10 @@
 
 let _forgotPasswordEnabled = $state<boolean>(false);
 
+// Story 20-3b2 : même défaut `false` anti-faux-affordance — le bouton
+// « Envoyer par e-mail » reste grisé tant que /health n'a pas confirmé le SMTP.
+let _smtpConfigured = $state<boolean>(false);
+
 export const featureFlags = {
 	/** `true` si le backend expose le recovery self-service (KESH_FEATURE_FORGOT_PASSWORD). */
 	get forgotPasswordEnabled(): boolean {
@@ -35,6 +39,18 @@ export const featureFlags = {
 	setForgotPasswordEnabled(value: unknown): void {
 		if (typeof value === 'boolean') {
 			_forgotPasswordEnabled = value;
+		}
+	},
+
+	/** `true` si le transport SMTP est prêt (config complète ET mailer construit — envoi de factures disponible). */
+	get smtpConfigured(): boolean {
+		return _smtpConfigured;
+	},
+
+	/** Mémorise le flag renvoyé par `/health`. No-op si la valeur n'est pas un booléen. */
+	setSmtpConfigured(value: unknown): void {
+		if (typeof value === 'boolean') {
+			_smtpConfigured = value;
 		}
 	},
 };

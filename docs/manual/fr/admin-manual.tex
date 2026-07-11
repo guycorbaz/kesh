@@ -746,9 +746,15 @@ font échouer le démarrage si absentes.
     \bottomrule
 \end{tabularx}
 
-\paragraph{Recovery de mot de passe par email (SMTP).}
-Optionnelles tant que \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=false}. Si activé,
-la config SMTP complète est \textbf{obligatoire} (démarrage refusé sinon).
+\paragraph{E-mails sortants (SMTP) : envoi de factures et recovery de mot de passe.}
+La configuration SMTP sert \textbf{deux fonctions indépendantes} (v0.6) :
+l'\textbf{envoi de factures par e-mail} s'active dès que les quatre variables
+\texttt{KESH\_SMTP\_HOST/USER/PASSWORD/FROM} sont renseignées (sans elles, le
+bouton d'envoi est simplement grisé — jamais de refus de démarrage) ; le
+\textbf{recovery de mot de passe} exige \emph{en plus}
+\texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} et \texttt{KESH\_PUBLIC\_BASE\_URL}
+— et là, si le flag est actif, la config complète est \textbf{obligatoire}
+(démarrage refusé sinon).
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -990,6 +996,13 @@ Le flow self-service \keshpath{/setup} est préférable pour les déploiements i
 
 Depuis la version \textbf{v0.2}, Kesh propose un \emph{recovery self-service} : un utilisateur qui a oublié son mot de passe demande un lien de réinitialisation envoyé par email (lien valable \textbf{30 minutes}, à usage unique). La fonctionnalité est \textbf{désactivée par défaut} (opt-in) : sans configuration SMTP, le seul recours reste le break-glass administrateur (section suivante).
 
+\begin{keshnote}
+Depuis la v0.6, la configuration SMTP décrite ici sert \textbf{aussi} à
+l'envoi de factures par e-mail (\S\ref{sec:invoice-email}) — les deux
+fonctions sont indépendantes : configurer le SMTP \emph{sans} activer
+\texttt{KESH\_FEATURE\_FORGOT\_PASSWORD} active l'envoi de factures seul.
+\end{keshnote}
+
 \subsubsection{Variables de configuration}
 
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
@@ -1078,6 +1091,88 @@ Si votre instance envoie vers plusieurs domaines de messagerie (Gmail, Infomania
 \begin{keshtip}
 Le recovery par email et le break-glass (section suivante) sont \textbf{complémentaires} : le premier couvre les utilisateurs au quotidien sans intervention de l'admin ; le second reste la solution de dernier recours (admin lui-même, SMTP en panne, compte sans email).
 \end{keshtip}
+
+\subsection{Envoi de factures par e-mail}\label{sec:invoice-email}
+
+Depuis la version \textbf{v0.6}, Kesh envoie les QR-factures PDF directement
+par e-mail depuis la fiche facture (bouton \emph{Envoyer par e-mail},
+r\'eserv\'e aux r\^oles Comptable et Administrateur). Le message est
+pr\'e-rempli dans la \textbf{langue du contact} avec une civilit\'e
+personnalis\'ee, et le destinataire est \textbf{verrouill\'e} sur l'adresse
+e-mail de la fiche contact (s\'ecurit\'e anti-exfiltration).
+
+\subsubsection{Activation}
+
+L'envoi s'active d\`es que les quatre variables \texttt{KESH\_SMTP\_HOST},
+\texttt{KESH\_SMTP\_USER}, \texttt{KESH\_SMTP\_PASSWORD} et
+\texttt{KESH\_SMTP\_FROM} sont renseign\'ees (\S\ref{sec:recovery-smtp}
+pour les exemples de providers). \textbf{D\'egradation gracieuse} : sans
+configuration SMTP, le serveur d\'emarre normalement et le bouton d'envoi
+est simplement gris\'e avec une explication — jamais de refus de d\'emarrage
+pour cette fonction. L'\'etat est expos\'e par le healthcheck :
+\keshcommand{GET /health} renvoie \texttt{smtpConfigured: true|false}.
+
+\subsubsection{Identit\'e d'exp\'edition}
+
+\begin{itemize}
+    \item \textbf{From} : toujours l'adresse \texttt{KESH\_SMTP\_FROM},
+          compl\'et\'ee du \textbf{nom de votre soci\'et\'e} en nom
+          d'affichage (jamais une adresse fournie par l'utilisateur).
+    \item \textbf{Reply-To} : l'e-mail de contact de la soci\'et\'e s'il est
+          renseign\'e (\emph{Param\`etres → Organisation → E-mail (adresse de
+          r\'eponse)}, r\'eserv\'e \`a l'administrateur) — les r\'eponses de
+          vos clients arrivent alors dans votre bo\^ite habituelle.
+\end{itemize}
+
+\begin{keshwarning}
+\textbf{D\'elivrabilit\'e (SPF/DKIM)} : utilisez le SMTP de votre
+fournisseur de messagerie, dont le domaine exp\'editeur est d\'ej\`a
+authentifi\'e (SPF/DKIM) ; n'usurpez pas un domaine tiers. Une adresse
+\texttt{KESH\_SMTP\_FROM} incoh\'erente avec le domaine du relais finit en
+spam — ou est rejet\'ee — chez vos clients.
+\end{keshwarning}
+
+\subsubsection{Garanties et limites}
+
+\begin{itemize}
+    \item \textbf{Anti-abus} : 20 envois par fen\^etre de 15 minutes et par
+          utilisateur (puis blocage temporaire 15 minutes).
+    \item \textbf{Tra\c{c}abilit\'e} : chaque envoi est journalis\'e dans
+          l'audit-trail (\texttt{invoice.emailed}, avec destinataire et objet).
+    \item \textbf{Renvoi} : autoris\'e (chaque renvoi \'ecrase la date
+          d'envoi affich\'ee et laisse sa propre trace d'audit).
+\end{itemize}
+
+\begin{keshnote}
+« Envoyée » signifie \textbf{remise au serveur SMTP}, pas accus\'e
+de r\'eception : un rebond ult\'erieur (adresse invalide, bo\^ite pleine)
+n'est pas remont\'e dans Kesh. En cas d'\'echec de remise imm\'ediat
+(serveur SMTP injoignable), la facture n'est \textbf{pas} marqu\'ee
+envoy\'ee et un message d'erreur clair est affich\'e.
+\end{keshnote}
+
+\subsection{Mod\`eles d'e-mail}\label{sec:email-templates-admin}
+
+Le contenu des e-mails d'envoi de facture se personnalise dans
+\emph{Param\`etres → Mod\`eles d'e-mail} (r\'eserv\'e \`a
+l'administrateur) : objet et corps, s\'epar\'ement pour chacune des quatre
+langues (FR/DE/IT/EN — la langue utilis\'ee \`a l'envoi est celle du
+contact, sinon celle de l'instance).
+
+\begin{itemize}
+    \item \textbf{Variables} : \texttt{\{salutation\}},
+          \texttt{\{contactName\}}, \texttt{\{invoiceNumber\}},
+          \texttt{\{amount\}}, \texttt{\{dueDate\}},
+          \texttt{\{companyName\}} — remplac\'ees automatiquement \`a
+          l'envoi (montants et dates au format suisse). Une variable inconnue
+          est refus\'ee \`a l'enregistrement avec un message explicite.
+    \item \textbf{Z\'ero configuration requise} : un mod\`ele par d\'efaut
+          soign\'e est fourni pour chaque langue — une PME peut envoyer une
+          facture correcte sans jamais ouvrir cette section.
+    \item \textbf{Restaurer le d\'efaut} : supprime la personnalisation
+          d'une langue et revient au mod\`ele fourni (action confirm\'ee par
+          une modale).
+\end{itemize}
 
 \subsection{J'ai oublié mon mot de passe administrateur (recovery break-glass)}
 

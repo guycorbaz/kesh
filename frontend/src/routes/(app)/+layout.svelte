@@ -110,6 +110,12 @@
 			adminOnly: [
 				{ label: 'Utilisateurs', href: '/users' },
 				{ label: 'Facturation', href: '/settings/invoicing' },
+				// Story 20-2 (Epic 20) — section Admin « Modèles d'e-mail ».
+				{
+					i18nKey: 'nav-email-templates',
+					fallback: "Modèles d'e-mail",
+					href: '/settings/email-templates',
+				},
 				// Story 17-3b — sauvegarde complète de l'installation (.keshbackup).
 				// i18nKey (rendu via getItemLabel, AC10/AC27). Distinct de
 				// l'« Export global » per-company (/export, Story 9-2b).

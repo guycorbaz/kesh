@@ -583,11 +583,77 @@ Le numéro de facture est généré automatiquement selon un pattern configurabl
     \item Compatible scan par les e-banking suisses et applications mobiles (Raiffeisen, PostFinance, UBS, Credit Suisse, Migros Bank, etc.).
 \end{itemize}
 
-Le PDF est téléchargeable depuis la facture validée. Vous pouvez ensuite l'envoyer manuellement par email (depuis votre messagerie habituelle) ou l'imprimer pour un envoi postal. Kesh ne dispose pas d'envoi de facture intégré : le service de messagerie interne (SMTP) n'est utilisé que pour la récupération de mot de passe.
+Le PDF est téléchargeable depuis la facture validée — pour l'imprimer (envoi postal) ou l'archiver. Depuis la version v0.6, Kesh peut aussi l'\textbf{envoyer directement par e-mail} à votre client, sans passer par votre messagerie : voir la sous-section suivante.
 
 \begin{keshtip}
 La référence structurée du QR Bill est calculée selon la norme ISO 11649 (RF Reference) ou le format suisse QRR (Référence Kesh). Le choix du format dépend du compte bancaire de réception : les comptes IBAN suisses standard utilisent IS0 11649, les comptes QR-IBAN utilisent QRR.
 \end{keshtip}
+
+\subsection{Envoyer une facture par e-mail}\label{sec:envoi-email}
+
+\keshscreenshot{facture-envoi-email.png}{Modale d'envoi : destinataire verrouillé, objet et message pré-remplis dans la langue du client, modifiables avant l'envoi.}  % TODO capture: modale envoi e-mail (facture validee, contact avec e-mail)
+
+Sur une facture \textbf{validée}, le bouton \emph{Envoyer par e-mail} ouvre
+une fenêtre pré-remplie :
+
+\begin{itemize}
+    \item \textbf{Destinataire} : l'adresse e-mail de la fiche contact,
+          affichée mais \textbf{non modifiable} (sécurité). Pour envoyer à
+          une autre adresse, modifiez d'abord la fiche contact
+          (\emph{Contacts}).
+    \item \textbf{Objet et message} : pré-remplis dans la \textbf{langue de
+          correspondance du client} (fiche contact — sinon la langue de
+          l'instance), avec une formule d'appel adaptée à sa civilité
+          (« Chère Madame Muster », « Sehr geehrter Herr… »).
+          Les deux restent modifiables avant l'envoi : ce que vous voyez est
+          ce qui part.
+    \item \textbf{Pièce jointe} : la QR-facture PDF, attachée
+          automatiquement.
+\end{itemize}
+
+Après l'envoi, la fiche facture affiche \emph{Envoyée le} suivi de la date
+et de l'adresse du destinataire. Le bouton devient \emph{Renvoyer par
+e-mail} — le renvoi est autorisé (nouvelle date, nouvelle trace d'audit).
+
+\begin{keshnote}
+« Envoyée » signifie que le message a été \textbf{remis au serveur
+d'envoi} — ce n'est pas un accusé de réception. Si l'adresse est invalide ou
+la boîte pleine, le rebond n'apparaît pas dans Kesh. En cas d'échec
+\emph{immédiat} (serveur d'envoi injoignable), la facture n'est pas marquée
+envoyée et un message d'erreur s'affiche : vous pouvez réessayer.
+\end{keshnote}
+
+\begin{keshtip}
+Bouton grisé avec une infobulle ? L'envoi d'e-mails n'est pas configuré sur
+votre instance (variables \texttt{KESH\_SMTP\_*}) — voyez avec votre
+administrateur (manuel administrateur, section « Envoi de factures par
+e-mail »).
+\end{keshtip}
+
+\subsubsection{Personnaliser les modèles d'e-mail}
+
+\emph{Paramètres → Modèles d'e-mail} (réservé à l'administrateur) : l'objet
+et le corps du message se personnalisent par langue (onglets FR/DE/IT/EN),
+avec des variables remplacées automatiquement à l'envoi
+(\texttt{\{salutation\}}, \texttt{\{contactName\}},
+\texttt{\{invoiceNumber\}}, \texttt{\{amount\}}, \texttt{\{dueDate\}},
+\texttt{\{companyName\}} — la liste est affichée à côté de l'éditeur). Un
+modèle par défaut est fourni pour chaque langue ; \emph{Restaurer le défaut}
+y revient à tout moment. Sans aucune personnalisation, les envois utilisent
+les modèles par défaut — rien à configurer.
+
+\subsubsection{Langue et civilité du contact, adresse de réponse}
+
+\begin{itemize}
+    \item \textbf{Fiche contact} : le champ \emph{Langue de correspondance}
+          (héritée de l'instance, ou FR/DE/IT/EN) détermine la langue de
+          l'e-mail \textbf{et} du PDF joint ; le champ \emph{Civilité}
+          (Neutre/Monsieur/Madame, contacts de type Personne) personnalise la
+          formule d'appel. Une entreprise reçoit toujours la formule neutre.
+    \item \textbf{Adresse de réponse} : \emph{Paramètres → Organisation →
+          E-mail (adresse de réponse)} (administrateur) — les réponses de vos
+          clients arrivent alors dans votre boîte habituelle.
+\end{itemize}
 
 \subsection{Échéancier des factures}
 
@@ -1304,7 +1370,6 @@ Fonctionnalités non encore disponibles :
     \item Décompte TVA au format officiel AFC / e-décompte ESTV (les montants du décompte Kesh sont à reporter manuellement sur le formulaire AFC).
     \item Avoir \emph{partiel} et avoir sur facture \emph{déjà encaissée} (l'avoir total sur facture non payée est, lui, disponible — cf. \S\ref{sec:avoirs}).
     \item Sélecteur de langue dans l'interface (la langue est fixée à l'onboarding ; le changement en cours de session est prévu pour une version ultérieure).
-    \item Pas d'envoi de facture par email intégré (téléchargement PDF + envoi manuel).
     \item Pas de signature électronique qualifiée (QES) sur les exports (verdict (b) de la recherche réglementaire, prévu Epic 14).
     \item Format PDF standard, non PDF/A (migration prévue selon ISO 19005).
 \end{itemize}

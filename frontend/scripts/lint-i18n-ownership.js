@@ -26,6 +26,15 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-dialog-body',
   'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-date-label',
   'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-confirm',
+  // Story 20-3b2 — même architecture #30 (dossier pluriel `invoices/` vs
+  // préfixe singulier `invoice-`) que MarkPaidDialog ci-dessus.
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-error-empty',
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-title',
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-to-label',
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-to-missing',
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-subject-label',
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-body-label',
+  'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-confirm',
   'src/lib/features/journal-entries/AccountAutocomplete.svelte:account-autocomplete-unavailable',
   'src/lib/features/journal-entries/AccountAutocomplete.svelte:journal-entry-form-col-account',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-saved',

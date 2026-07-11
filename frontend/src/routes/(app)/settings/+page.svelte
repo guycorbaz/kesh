@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { Separator } from '$lib/components/ui/separator';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import { fetchCompanyCurrent, updateCompanyEmail } from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import { authState } from '$lib/app/stores/auth.svelte';
+	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isPlausibleEmail } from '$lib/shared/utils/email';
+	import { notifySuccess } from '$lib/shared/utils/notify';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
@@ -12,6 +17,70 @@
 
 	let data = $state<CompanyCurrentResponse | null>(null);
 	let loading = $state(true);
+
+	// Story 20-3b2 — édition inline de l'e-mail société (Reply-To), Admin-only.
+	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
+	let emailEditing = $state(false);
+	let emailValue = $state('');
+	let emailSubmitting = $state(false);
+	let emailError = $state('');
+
+	function startEmailEdit() {
+		emailValue = data?.company.email ?? '';
+		emailError = '';
+		emailEditing = true;
+	}
+
+	async function saveEmail() {
+		if (!data) return;
+		const trimmed = emailValue.trim();
+		if (trimmed && !isPlausibleEmail(trimmed)) {
+			emailError = msg('settings-company-email-invalid', 'Adresse e-mail invalide.');
+			return;
+		}
+		emailSubmitting = true;
+		emailError = '';
+		try {
+			// Champ vidé = effacement (Reply-To omis à l'envoi).
+			const updated = await updateCompanyEmail({
+				email: trimmed || null,
+				version: data.company.version,
+			});
+			data = { ...data, company: updated };
+			emailEditing = false;
+			notifySuccess(msg('settings-company-email-saved', 'E-mail de la société enregistré'));
+		} catch (err) {
+			if (isApiError(err)) {
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					// Conflit de version : recharger et laisser l'admin recommencer.
+					// Si le reload échoue aussi (review P3 BH), ne pas prétendre
+					// « rechargées » — la version locale reste périmée, re-cliquer
+					// redonnerait le même 409 : inviter à recharger la page.
+					try {
+						data = await fetchCompanyCurrent();
+						emailError = msg(
+							'settings-company-email-conflict',
+							'Conflit de version — les données ont été rechargées, réessayez.',
+						);
+					} catch {
+						emailError = msg(
+							'settings-company-email-conflict-reload-failed',
+							'Conflit de version et rechargement impossible — rechargez la page.',
+						);
+					}
+				} else {
+					emailError = err.message;
+				}
+			} else {
+				// `common-error` = clé générique existante (review P1 : éviter le
+				// doublon avec `error-unexpected`, gardée en FTL pour la page
+				// contacts qui la consommait sans définition).
+				emailError = msg('common-error', 'Erreur inattendue');
+			}
+		} finally {
+			emailSubmitting = false;
+		}
+	}
 
 	onMount(async () => {
 		try {
@@ -62,6 +131,58 @@
 				<div>
 					<dt class="font-medium text-text-muted">{msg('settings-field-instance-language', 'Langue interface')}</dt>
 					<dd>{data.company.instanceLanguage}</dd>
+				</div>
+				<!-- Story 20-3b2 : e-mail de contact (Reply-To des factures envoyées). -->
+				<div class="col-span-2">
+					<dt class="font-medium text-text-muted">
+						{msg('settings-field-company-email', 'E-mail (adresse de réponse)')}
+					</dt>
+					{#if emailEditing}
+						<dd class="mt-1 flex max-w-md items-start gap-2">
+							<div class="flex-1">
+								<Input
+									type="email"
+									bind:value={emailValue}
+									maxlength={320}
+									data-testid="settings-company-email-input"
+								/>
+								{#if emailError}
+									<p class="mt-1 text-xs text-destructive" data-testid="settings-company-email-error">
+										{emailError}
+									</p>
+								{/if}
+							</div>
+							<Button size="sm" onclick={saveEmail} disabled={emailSubmitting} data-testid="settings-company-email-save">
+								{msg('common-save', 'Enregistrer')}
+							</Button>
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={() => {
+									emailEditing = false;
+									emailError = '';
+								}}
+								disabled={emailSubmitting}
+							>
+								{msg('common-cancel', 'Annuler')}
+							</Button>
+						</dd>
+					{:else}
+						<dd class="flex items-center gap-3">
+							<span data-testid="settings-company-email">{data.company.email ?? '—'}</span>
+							{#if isAdmin}
+								<Button size="sm" variant="outline" onclick={startEmailEdit} data-testid="settings-company-email-edit">
+									{msg('common-edit', 'Modifier')}
+								</Button>
+							{/if}
+						</dd>
+					{/if}
+					<p class="mt-1 text-xs text-text-muted">
+						{msg(
+							'settings-company-email-help',
+							"Adresse de réponse (Reply-To) des factures envoyées par e-mail. Vide = pas d'adresse de réponse.",
+						)}
+					</p>
 				</div>
 			</dl>
 		</section>
@@ -159,6 +280,19 @@
 			</div>
 			<p class="mt-2 text-sm text-text-muted">
 				{msg('settings-vat-rates-link', "Configurez les taux de TVA et leurs dates de validité (changements de taux gérés dans le temps).")}
+			</p>
+		</section>
+
+		<Separator />
+
+		<!-- Section Modèles d'e-mail (Story 20-2, Administrateur) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{msg('email-templates-title', "Modèles d'e-mail")}</h2>
+				<Button variant="outline" size="sm" href="/settings/email-templates" data-testid="settings-email-templates-manage-link">{msg('settings-manage', 'Gérer')}</Button>
+			</div>
+			<p class="mt-2 text-sm text-text-muted">
+				{msg('settings-email-templates-link', "Personnalisez le contenu des e-mails envoyés à vos clients (objet et corps, par langue).")}
 			</p>
 		</section>
 	</div>

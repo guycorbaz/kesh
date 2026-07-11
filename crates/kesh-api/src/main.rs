@@ -225,12 +225,35 @@ async fn main() {
     // partagés avec les tests via `build_recovery_rate_limiter`).
     let rate_limiter_recovery = kesh_api::build_recovery_rate_limiter();
 
-    // Story 17-4b — couche email recovery. Si le feature est activé, la config
-    // SMTP a déjà été validée fail-fast au boot (`ConfigError::IncompleteSmtpConfig`)
-    // → les vars sont présentes ; sinon `NoopMailer` (recovery = break-glass
-    // #121). Construit avant le move de `config`/`i18n`. Le transport lettre
-    // (relay STARTTLS + credentials) est construit ici une seule fois.
-    let mailer: Arc<dyn Mailer> = if config.forgot_password_enabled {
+    // Story 17-4b — couche email recovery. Story 20-3b1 (décision #3 epic-20) :
+    // le mailer SMTP est construit dès que le SMTP est configuré
+    // (`config.smtp_configured()`), plus seulement quand le recovery est
+    // activé — l'envoi de factures par e-mail ne dépend pas du flag recovery.
+    // Si le feature recovery est activé, la config SMTP a déjà été validée
+    // fail-fast au boot (`ConfigError::IncompleteSmtpConfig`). Construit avant
+    // le move de `config`/`i18n`. Le transport lettre (relay STARTTLS +
+    // credentials) est construit ici une seule fois.
+    let mut smtp_ready = false;
+    // Story 20-4 — poignée de capture E2E (Some uniquement en test-mode+SMTP).
+    let mut test_mock_mailer: Option<mail::MockMailer> = None;
+    let mailer: Arc<dyn Mailer> = if config.test_mode && config.smtp_configured() {
+        // Story 20-4 — KESH_TEST_MODE avec config SMTP (factice) complète :
+        // substituer un MockMailer capturant au SmtpMailer réel. Un host
+        // factice passerait le build (lettre ne connecte qu'à l'envoi) mais
+        // échouerait au send() — la capture rend le round-trip Playwright
+        // possible via GET /api/v1/_test/sent-emails. Garde-fou : un
+        // KESH_TEST_MODE=true avec bind non-loopback REFUSE de démarrer
+        // (ConfigError::TestModeWithPublicBind, config.rs — 0.0.0.0 rejeté,
+        // qui est le défaut docker-compose) : une fuite du flag en prod
+        // standard casse le boot bruyamment au lieu d'avaler les e-mails.
+        let mock = mail::MockMailer::new();
+        test_mock_mailer = Some(mock.clone());
+        smtp_ready = true;
+        tracing::warn!(
+            "KESH_TEST_MODE + SMTP configuré — MockMailer actif : AUCUN e-mail réel ne part, capture via /api/v1/_test/sent-emails."
+        );
+        Arc::new(mock)
+    } else if config.smtp_configured() || config.forgot_password_enabled {
         match mail::SmtpMailer::from_config(
             &config,
             i18n_bundle.clone(),
@@ -238,10 +261,15 @@ async fn main() {
         ) {
             Ok(m) => {
                 tracing::info!(
-                    "Recovery par email ACTIVÉ (SMTP {}:{}, TLS={})",
+                    "SMTP configuré (relay {}:{}, TLS={}) — recovery email {}, envoi de factures par e-mail disponible",
                     config.smtp_host.as_deref().unwrap_or("?"),
                     config.smtp_port,
-                    config.smtp_tls
+                    config.smtp_tls,
+                    if config.forgot_password_enabled {
+                        "ACTIVÉ"
+                    } else {
+                        "désactivé (KESH_FEATURE_FORGOT_PASSWORD=false)"
+                    }
                 );
                 // Review 17-4b Pass 3 — avec TLS désactivé, l'AUTH SMTP
                 // (mot de passe) ET le token de reset transitent EN CLAIR.
@@ -252,9 +280,12 @@ async fn main() {
                          strictement isolé ; ne JAMAIS utiliser vers un relay Internet."
                     );
                 }
+                // Story 20-3b1 — mailer réel construit ET config complète →
+                // envoi de factures disponible (flag /health + garde 412).
+                smtp_ready = config.smtp_configured();
                 Arc::new(m)
             }
-            Err(detail) => {
+            Err(detail) if config.forgot_password_enabled => {
                 // Vars absentes = inatteignable si le fail-fast boot a fait son
                 // travail ; l'init du relay STARTTLS peut, elle, légitimement
                 // échouer ici. Même pattern exit(1) que les erreurs Config boot.
@@ -263,10 +294,20 @@ async fn main() {
                 );
                 std::process::exit(1);
             }
+            Err(detail) => {
+                // Story 20-3b1 — dégradation gracieuse : SMTP configuré pour
+                // l'envoi de factures seulement (recovery off) → pas de
+                // fail-fast boot ; l'envoi restera indisponible (NoopMailer,
+                // les endpoints le signalent via la garde 412).
+                tracing::error!(
+                    "Config SMTP présente mais build du mailer échoué ({detail}) — envoi d'e-mails indisponible (fallback NoopMailer)."
+                );
+                Arc::new(mail::NoopMailer)
+            }
         }
     } else {
         tracing::info!(
-            "Recovery par email désactivé (KESH_FEATURE_FORGOT_PASSWORD=false) — fallback break-glass KESH_ADMIN_RESET."
+            "SMTP non configuré — recovery break-glass KESH_ADMIN_RESET, envoi de factures par e-mail indisponible."
         );
         Arc::new(mail::NoopMailer)
     };
@@ -277,14 +318,20 @@ async fn main() {
         rate_limiter: Arc::new(rate_limiter),
         // Story 17-4c (DC5) — limiter recovery dédié.
         rate_limiter_recovery: Arc::new(rate_limiter_recovery),
+        // Story 20-3b1 — limiter envoi de factures par e-mail (company, user).
+        rate_limiter_send_email: Arc::new(kesh_api::build_send_email_rate_limiter()),
         i18n: i18n_bundle,
         // Story v011-5 — cache mémoire `users_exist` init avec la valeur réelle
         // DB post-bootstrap. Le middleware 423 Locked lit ce flag lock-free
         // (`Ordering::Acquire`) ; setup-admin.create_admin le bascule à `true`
         // après INSERT réussi (`Ordering::Release`, paire happens-before).
         users_exist: Arc::new(std::sync::atomic::AtomicBool::new(user_count > 0)),
-        // Story 17-4b — mailer recovery (SmtpMailer ou NoopMailer selon feature).
+        // Story 17-4b — mailer recovery + métier (SmtpMailer ou NoopMailer).
         mailer,
+        // Story 20-3b1 — envoi de factures disponible (cf. construction mailer).
+        smtp_ready,
+        // Story 20-4 — capture d'e-mails E2E (test-mode uniquement).
+        test_mock_mailer,
     };
 
     let app = build_router(state, static_dir);

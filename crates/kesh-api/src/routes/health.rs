@@ -27,6 +27,11 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     // (200/503), indépendant de l'état DB : le frontend (17-4d) conditionne
     // l'affichage du lien « mot de passe oublié ? » sur ce flag.
     let forgot_password_enabled = state.config.forgot_password_enabled;
+    // Story 20-3b1 — flag « envoi d'e-mails métier disponible » (config SMTP
+    // complète ET mailer réel construit au boot). Même contrat que
+    // forgotPasswordEnabled : présent dans les DEUX branches ; le frontend
+    // (20-3b2) grise le bouton « Envoyer par e-mail » quand false.
+    let smtp_configured = state.smtp_ready;
     match sqlx::query("SELECT 1").execute(&state.pool).await {
         Ok(_) => (
             StatusCode::OK,
@@ -35,6 +40,7 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
                 "db": true,
                 "version": version,
                 "forgotPasswordEnabled": forgot_password_enabled,
+                "smtpConfigured": smtp_configured,
             })),
         ),
         Err(e) => {
@@ -46,6 +52,7 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
                     "db": false,
                     "version": version,
                     "forgotPasswordEnabled": forgot_password_enabled,
+                    "smtpConfigured": smtp_configured,
                 })),
             )
         }

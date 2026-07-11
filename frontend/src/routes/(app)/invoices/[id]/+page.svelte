@@ -5,7 +5,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen, Printer } from '@lucide/svelte';
+	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen, Printer, Mail } from '@lucide/svelte';
 
 	import {
 		getInvoice,
@@ -13,16 +13,25 @@
 		validateInvoice,
 		markInvoicePaid,
 		unmarkInvoicePaid,
+		getInvoiceEmailPreview,
+		sendInvoiceEmail,
 	} from '$lib/features/invoices/invoices.api';
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
 	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
-	import type { InvoiceResponse } from '$lib/features/invoices/invoices.types';
+	import SendEmailDialog from '$lib/features/invoices/SendEmailDialog.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { featureFlags } from '$lib/shared/utils/feature-flags.svelte';
+	import type {
+		EmailPreviewResponse,
+		InvoiceResponse,
+	} from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import {
 		notifyError,
 		notifyMissingFiscalYearOrFallback,
-		notifySuccess
+		notifySuccess,
+		notifyWarning
 	} from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
@@ -254,6 +263,100 @@
 		}
 	}
 
+	// Story 20-3b2 — envoi de la facture par e-mail (#224).
+	let sendEmailOpen = $state(false);
+	let sendEmailSubmitting = $state(false);
+	let sendEmailError = $state('');
+	let sendEmailPreview = $state<EmailPreviewResponse | null>(null);
+	let previewLoading = $state(false);
+
+	/** Clic bouton : fetch la preview PUIS ouvre la modale pré-remplie. */
+	async function openSendEmail() {
+		if (!invoice || previewLoading) return;
+		previewLoading = true;
+		try {
+			sendEmailPreview = await getInvoiceEmailPreview(invoice.id);
+			sendEmailError = '';
+			sendEmailOpen = true;
+		} catch (err) {
+			// CONTACT_ARCHIVED (400) et toute autre erreur : toast, pas de modale.
+			if (isApiError(err)) {
+				notifyError(err.message);
+				// Flag client périmé (review P1 BH) : même resync que le send.
+				if (err.code === 'SMTP_NOT_CONFIGURED') featureFlags.setSmtpConfigured(false);
+				// Facture supprimée pendant la consultation (review P3 BH) :
+				// symétrique du send — fiche fantôme, retour liste.
+				if (err.code === 'NOT_FOUND') await goto('/invoices');
+			} else {
+				notifyError(i18nMsg('common-error', 'Erreur inattendue'));
+			}
+		} finally {
+			previewLoading = false;
+		}
+	}
+
+	async function handleSendEmailConfirm(subject: string, body: string) {
+		// Ré-entrance (review P1 ECH) : le POST déclenche un envoi SMTP réel,
+		// non idempotent — ne pas compter que sur le disabled du bouton.
+		if (!invoice || sendEmailSubmitting) return;
+		sendEmailSubmitting = true;
+		sendEmailError = '';
+		try {
+			invoice = await sendInvoiceEmail(invoice.id, { subject, body });
+			notifySuccess(i18nMsg('invoice-send-email-success', 'Facture envoyée par e-mail'));
+			sendEmailOpen = false;
+		} catch (err) {
+			if (!isApiError(err)) {
+				sendEmailError = i18nMsg('common-error', 'Erreur inattendue');
+				return;
+			}
+			switch (err.code) {
+				// Contenu vide / échec SMTP (facture NON marquée) : inline, la
+				// modale reste ouverte pour corriger ou réessayer.
+				case 'INVOICE_EMAIL_EMPTY_CONTENT':
+				case 'SMTP_SEND_FAILED':
+					sendEmailError = err.message;
+					break;
+				// L'état du contact a changé sous nos pieds : toast + fermer.
+				case 'CONTACT_EMAIL_MISSING':
+				case 'CONTACT_ARCHIVED':
+					notifyError(err.message);
+					sendEmailOpen = false;
+					break;
+				// Flag client périmé : resynchroniser (le bouton se grise).
+				case 'SMTP_NOT_CONFIGURED':
+					notifyError(err.message);
+					featureFlags.setSmtpConfigured(false);
+					sendEmailOpen = false;
+					break;
+				case 'RATE_LIMITED':
+					notifyError(err.message);
+					break;
+				// L'e-mail est PARTI mais la facture a été supprimée pendant
+				// l'envoi (20-3b1 review ECH-1) : message anti-renvoi du
+				// backend, la fiche n'existe plus → retour liste.
+				case 'EMAIL_SENT_INVOICE_GONE':
+					notifyWarning(err.message);
+					sendEmailOpen = false;
+					await goto('/invoices');
+					break;
+				// Facture supprimée AVANT l'envoi (entre preview et confirm) :
+				// re-cliquer rejouerait le même 404 — fermer + retour liste
+				// (review P1 ECH, symétrique du 409 ci-dessus).
+				case 'NOT_FOUND':
+					notifyError(err.message);
+					sendEmailOpen = false;
+					await goto('/invoices');
+					break;
+				// Erreurs PDF héritées (INVOICE_NOT_VALIDATED, etc.) : inline.
+				default:
+					sendEmailError = err.message;
+			}
+		} finally {
+			sendEmailSubmitting = false;
+		}
+	}
+
 	let pdfDownloading = $state(false);
 
 	// D2 (review pass 1 G2 D) : whitelist explicite des codes d'erreur PDF
@@ -361,6 +464,45 @@
 				<Printer class="h-4 w-4" aria-hidden="true" />
 				{i18nMsg('invoices-download-pdf', 'Imprimer / Télécharger PDF')}
 			</Button>
+			{#if canManage}
+				{#if featureFlags.smtpConfigured}
+					<Button
+						variant="outline"
+						onclick={openSendEmail}
+						disabled={previewLoading}
+						data-testid="send-email-button"
+					>
+						<Mail class="h-4 w-4" aria-hidden="true" />
+						{invoice.emailedAt
+							? i18nMsg('invoice-resend-email-button', 'Renvoyer par e-mail')
+							: i18nMsg('invoice-send-email-button', 'Envoyer par e-mail')}
+					</Button>
+				{:else}
+					<!-- Un <button disabled> ne fire pas le hover : le Trigger délègue
+					     à un <span> englobant (snippet child, anti button-in-button).
+					     Tooltip.Root embarque déjà son Provider (tooltip.svelte). -->
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<span {...props} data-testid="send-email-disabled-wrapper">
+									<Button variant="outline" disabled data-testid="send-email-button">
+										<Mail class="h-4 w-4" aria-hidden="true" />
+										{invoice?.emailedAt
+											? i18nMsg('invoice-resend-email-button', 'Renvoyer par e-mail')
+											: i18nMsg('invoice-send-email-button', 'Envoyer par e-mail')}
+									</Button>
+								</span>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content class="max-w-xs">
+							{i18nMsg(
+								'invoice-send-email-smtp-tooltip',
+								"L'envoi d'e-mails n'est pas configuré (variables KESH_SMTP_*) — voir le manuel administrateur.",
+							)}
+						</Tooltip.Content>
+					</Tooltip.Root>
+				{/if}
+			{/if}
 			{#if invoice.journalEntryId}
 				<Button
 					variant="outline"
@@ -432,6 +574,15 @@
 				<div>
 					<div class="text-text-muted">{i18nMsg('invoice-detail-paid-at-label', 'Payée le')}</div>
 					<div>{invoice.paidAt.slice(0, 10)}</div>
+				</div>
+			{/if}
+			{#if invoice.emailedAt}
+				<div>
+					<div class="text-text-muted">
+						{i18nMsg('invoice-detail-emailed-at-label', 'Envoyée le')}
+					</div>
+					<div data-testid="invoice-emailed-at">{invoice.emailedAt.slice(0, 10)}</div>
+					<div class="text-text-muted" data-testid="invoice-emailed-to">{invoice.emailedTo}</div>
 				</div>
 			{/if}
 		</div>
@@ -568,6 +719,23 @@
 		submitting={markSubmitting}
 		errorMsg={markError}
 		onConfirm={handleMarkConfirm}
+	/>
+
+	<SendEmailDialog
+		open={sendEmailOpen}
+		onOpenChange={(o) => {
+			// Review 20-3b2 P1 (BH/ECH HIGH) : l'e-mail part côté serveur — la
+			// modale ne doit PAS être fermable (ESC/X/clic-extérieur) pendant
+			// l'envoi en vol, sinon l'erreur inline 422/500 serait perdue et
+			// un re-clic déclencherait un vrai second envoi.
+			if (!o && sendEmailSubmitting) return;
+			sendEmailOpen = o;
+			if (!o) sendEmailError = '';
+		}}
+		preview={sendEmailPreview}
+		submitting={sendEmailSubmitting}
+		errorMsg={sendEmailError}
+		onConfirm={handleSendEmailConfirm}
 	/>
 
 	<Dialog.Root

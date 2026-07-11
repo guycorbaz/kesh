@@ -7,12 +7,14 @@ import type {
 	CreateInvoiceRequest,
 	DueDatesQuery,
 	DueDatesResponse,
+	EmailPreviewResponse,
 	InvoiceListItemResponse,
 	InvoiceResponse,
 	InvoiceSettingsResponse,
 	ListInvoicesQuery,
 	ListResponse,
 	MarkPaidRequest,
+	SendInvoiceEmailRequest,
 	UnmarkPaidRequest,
 	UpdateInvoiceRequest,
 	UpdateInvoiceSettingsRequest,
@@ -105,6 +107,21 @@ export async function unmarkInvoicePaid(
 	req: UnmarkPaidRequest,
 ): Promise<InvoiceResponse> {
 	return apiClient.post(`/api/v1/invoices/${id}/unmark-paid`, req);
+}
+
+// Story 20-3b2 — Envoi de facture par e-mail (#224)
+
+/** Preview pré-remplie (template rendu dans la langue du contact, destinataire verrouillé). */
+export async function getInvoiceEmailPreview(id: number): Promise<EmailPreviewResponse> {
+	return apiClient.get(`/api/v1/invoices/${id}/email-preview`);
+}
+
+/** Envoie la facture (PDF QR joint) au contact. Retourne la facture marquée (`emailedAt`/`emailedTo`). */
+export async function sendInvoiceEmail(
+	id: number,
+	req: SendInvoiceEmailRequest,
+): Promise<InvoiceResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/send-email`, req);
 }
 
 /**

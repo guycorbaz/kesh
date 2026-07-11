@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use kesh_core::listing::SortDirection;
 use kesh_core::types::CheNumber;
-use kesh_db::entities::contact::{Contact, ContactType, ContactUpdate, NewContact};
+use kesh_db::entities::Language;
+use kesh_db::entities::contact::{Contact, ContactType, ContactUpdate, NewContact, Salutation};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::contacts::{self, ContactListQuery, ContactSortBy};
 
@@ -86,6 +87,13 @@ pub struct CreateContactRequest {
     pub ide_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
+    /// Langue de correspondance (Story 20-3b1). Absent/null = hérite de la
+    /// langue d'instance de la société.
+    #[serde(default)]
+    pub language: Option<Language>,
+    /// Civilité (Story 20-3b1). Absent = `Neutre`.
+    #[serde(default)]
+    pub salutation: Option<Salutation>,
 }
 
 #[derive(Deserialize)]
@@ -113,6 +121,12 @@ pub struct UpdateContactRequest {
     pub ide_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
+    /// Langue de correspondance (Story 20-3b1). Absent/null = héritage instance.
+    #[serde(default)]
+    pub language: Option<Language>,
+    /// Civilité (Story 20-3b1). Absent = `Neutre`.
+    #[serde(default)]
+    pub salutation: Option<Salutation>,
     pub version: i32,
 }
 
@@ -143,6 +157,10 @@ pub struct ContactResponse {
     /// Forme normalisée `"CHE109322551"`. Le frontend la formate pour l'affichage.
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Langue de correspondance (Story 20-3b1). `null` = héritage instance.
+    pub language: Option<Language>,
+    /// Civilité (Story 20-3b1).
+    pub salutation: Salutation,
     pub active: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -174,6 +192,8 @@ impl From<Contact> for ContactResponse {
             // au moment de l'INSERT. Pas de re-parse CheNumber ici.
             ide_number: c.ide_number,
             default_payment_terms: c.default_payment_terms,
+            language: c.language,
+            salutation: c.salutation,
             active: c.active,
             version: c.version,
             created_at: c.created_at,
@@ -471,6 +491,10 @@ pub async fn create_contact(
         phone: v.phone,
         ide_number: v.ide_number,
         default_payment_terms: v.default_payment_terms,
+        // Story 20-3b1 : enums typés — serde a déjà rejeté toute valeur
+        // invalide (400 body parse). Civilité absente = Neutre.
+        language: req.language,
+        salutation: req.salutation.unwrap_or_default(),
     };
 
     let contact = contacts::create(&state.pool, current_user.user_id, new)
@@ -525,6 +549,9 @@ pub async fn update_contact(
         phone: v.phone,
         ide_number: v.ide_number,
         default_payment_terms: v.default_payment_terms,
+        // Story 20-3b1 : cf. create_contact — enums typés validés par serde.
+        language: req.language,
+        salutation: req.salutation.unwrap_or_default(),
     };
 
     let contact = contacts::update(&state.pool, id, req.version, current_user.user_id, changes)

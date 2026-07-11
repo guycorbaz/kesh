@@ -105,6 +105,8 @@ async fn seed_contacts(pool: &MySqlPool, user_id: i64, company_id: i64, count: u
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                language: None,
+                salutation: kesh_db::entities::contact::Salutation::Neutre,
             },
         )
         .await
@@ -486,6 +488,8 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            language: None,
+            salutation: kesh_db::entities::contact::Salutation::Neutre,
         },
     )
     .await
@@ -512,6 +516,8 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            language: None,
+            salutation: kesh_db::entities::contact::Salutation::Neutre,
         },
     )
     .await

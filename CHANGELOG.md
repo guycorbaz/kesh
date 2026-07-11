@@ -10,6 +10,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+### Ajouté
+
+- **Modèles d'e-mail multilingues** (réservé à l'**administrateur**) : nouvelle page **Réglages → Modèles d'e-mail** pour personnaliser l'objet et le corps de l'e-mail d'envoi de facture, dans les **quatre langues** (FR/DE/IT/EN). Des variables de substitution (`{salutation}`, `{contactName}`, `{invoiceNumber}`, `{amount}`, `{dueDate}`, `{companyName}`) sont remplacées automatiquement à l'envoi ; un modèle par défaut soigné est fourni pour chaque langue et peut être restauré à tout moment. (#224)
+- **Envoi de factures par e-mail** : un bouton **« Envoyer par e-mail »** sur la fiche d'une facture validée envoie la **QR-facture PDF** directement au client — objet et message **pré-remplis dans la langue du client** (avec **civilité personnalisée** : « Chère Madame Muster », « Sehr geehrter Herr… »), modifiables avant l'envoi ; le **destinataire est verrouillé** sur l'e-mail de la fiche contact (sécurité). La fiche facture affiche ensuite « **Envoyée le … à …** », et le renvoi est possible. Se configure via les variables `KESH_SMTP_*` (indépendant de la récupération de mot de passe) — sans configuration SMTP, le bouton est simplement grisé avec explication. Les **fiches contact** gagnent une **langue de correspondance** (FR/DE/IT/EN ou héritée) et une **civilité**, et la société un **e-mail de contact** servant d'**adresse de réponse**. Attention : « envoyée » signifie remise au serveur d'envoi, pas accusé de réception. (#224)
+
 ## [0.5.2] — 2026-07-07
 
 ### Ajouté

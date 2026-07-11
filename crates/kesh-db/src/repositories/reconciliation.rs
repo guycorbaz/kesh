@@ -44,8 +44,8 @@ use crate::errors::{DbError, map_db_error};
 
 /// Colonnes Invoice pour SELECT (cohérent FIND_INVOICE_SCOPED_SQL).
 const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, status, date, \
-     due_date, payment_terms, total_amount, journal_entry_id, paid_at, project_id, version, \
-     created_at, updated_at";
+     due_date, payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
+     project_id, version, created_at, updated_at";
 
 /// Colonnes BankTransaction pour SELECT (cohérent bank_transactions::COLUMNS).
 const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date, value_date, \
@@ -174,12 +174,9 @@ where
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
-                address, address_street, address_building, address_postal_code, address_city, \
-                address_country, email, phone, ide_number, default_payment_terms, \
-                active, version, created_at, updated_at \
-         FROM contacts \
-         WHERE company_id = ? AND id IN ({placeholders})"
+        "SELECT {cols} FROM contacts \
+         WHERE company_id = ? AND id IN ({placeholders})",
+        cols = super::contacts::COLUMNS,
     );
     let mut q = sqlx::query_as::<_, Contact>(&sql).bind(company_id);
     for id in ids {

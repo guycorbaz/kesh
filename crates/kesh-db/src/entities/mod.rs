@@ -18,6 +18,8 @@ pub mod company_invoice_settings;
 pub mod contact;
 pub mod contact_person;
 pub mod credit_note;
+pub mod email_template;
+pub mod email_template_defaults;
 pub mod fiscal_year;
 pub mod imported_supplier_invoice;
 pub mod invoice;
@@ -45,6 +47,8 @@ pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
 pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use credit_note::{CreditNote, CreditNoteLine, NewCreditNote};
+pub use email_template::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType};
+pub use email_template_defaults::default_template;
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
 pub use imported_supplier_invoice::{
     DocumentMeta, ImportedSupplierInvoice, NewImportedSupplierInvoice,

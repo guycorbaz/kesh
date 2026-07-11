@@ -142,7 +142,32 @@ KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_PORT=8181 \
 # puis : KESH_BACKEND_URL=http://127.0.0.1:8181 npm run test:e2e -- password-recovery
 ```
 
-Pièges vérifiés sur pièces (17-4e) : la var est `KESH_SMTP_USER` (pas `USERNAME`) ; `KESH_ADMIN_PASSWORD` doit faire ≥ 12 caractères même en test-mode ; choisir un `KESH_PORT` libre (80 demande des privilèges, 8080 est souvent pris). Les valeurs SMTP sont **factices** : le fail-fast boot exige une config complète, mais les envois réels échouent en tâche de fond sans impact — le token de reset est **injecté** via l'endpoint test-mode `POST /api/v1/_test/password-reset-token` `{ "username": … }` → `{ "token": … }`, puis consommé en ouvrant `/reset-password?token=<valeur>` dans le navigateur (ou directement `POST /api/v1/auth/reset-password` `{ "token": …, "newPassword": … }`). Chaque `POST /_test/seed` purge aussi les rate-limiters (login + recovery) pour éviter le 429 inter-specs (budget 5 req/15 min). Côté backend Rust, les 14 tests d'intégration `password_recovery_e2e.rs` couvrent les flux complets avec `MockMailer` (aucun SMTP réel en CI).
+Pièges vérifiés sur pièces (17-4e) : la var est `KESH_SMTP_USER` (pas `USERNAME`) ; `KESH_ADMIN_PASSWORD` doit faire ≥ 12 caractères même en test-mode ; choisir un `KESH_PORT` libre (80 demande des privilèges, 8080 est souvent pris). Les valeurs SMTP sont **factices** : le fail-fast boot exige une config complète ; depuis la Story 20-4, en `KESH_TEST_MODE` + SMTP configuré le boot substitue un **MockMailer capturant** (aucun envoi réel, aucune erreur en tâche de fond) — le token de reset est **injecté** via l'endpoint test-mode `POST /api/v1/_test/password-reset-token` `{ "username": … }` → `{ "token": … }`, puis consommé en ouvrant `/reset-password?token=<valeur>` dans le navigateur (ou directement `POST /api/v1/auth/reset-password` `{ "token": …, "newPassword": … }`). Chaque `POST /_test/seed` purge aussi les rate-limiters (login + recovery + **send-email**, Story 20-4) et le **buffer de capture d'e-mails** pour éviter le 429 et les fuites d'état inter-specs. Côté backend Rust, les 14 tests d'intégration `password_recovery_e2e.rs` couvrent les flux complets avec `MockMailer` (aucun SMTP réel en CI).
+
+**E2E envoi de factures par e-mail** (specs `invoice-send-email.spec.ts` + `invoice-send-email-nosmtp.spec.ts`, Story 20-4) : **deux runs séquentiels** avec deux configurations backend opposées.
+
+*Run 1 — round-trip avec capture* (spec principal, 4 tests) : backend `KESH_TEST_MODE=true` **avec vars SMTP factices** → le boot substitue un `MockMailer` au transport réel (log `MockMailer actif`) et expose `GET /api/v1/_test/sent-emails` (non authentifié, comme les autres endpoints `_test`) qui renvoie `{ emails: [{ to, subject, body, fromDisplayName, replyTo, attachmentFilename, attachmentContentType, attachmentSize }] }` :
+
+```bash
+KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_PORT=8181 \
+  KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
+  KESH_SMTP_HOST=smtp.invalid KESH_SMTP_USER=e2e \
+  KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
+  KESH_STATIC_DIR=../frontend/build KESH_COOKIE_SECURE=false \
+  DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e" \
+  KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
+  cargo run -p kesh-api
+# puis : KESH_BACKEND_URL=http://127.0.0.1:8181 npm run test:e2e -- invoice-send-email.spec
+```
+
+*Run 2 — fallback zéro-config* (1 test, gaté `KESH_E2E_NO_SMTP=1` sinon *skipped*) : **même commande sans les 4 vars `KESH_SMTP_*`** (→ `/health.smtpConfigured=false`, bouton grisé + tooltip), puis :
+
+```bash
+KESH_BACKEND_URL=http://127.0.0.1:8181 KESH_E2E_NO_SMTP=1 \
+  npm run test:e2e -- invoice-send-email-nosmtp.spec
+```
+
+Le test de fallback vérifie lui-même `/health` et échoue avec un diagnostic si le backend a été lancé avec SMTP (recette inversée) ; symétriquement, le spec principal échoue franchement sur `GET /_test/sent-emails` si le backend n'est pas en mode capture. Rappels : `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (Ubuntu 26.04+), DB `kesh_e2e`, et **jamais de pipe sur le runner** (`> log 2>&1; echo EXIT=$?` — un pipe masque l'exit code et tronque la liste des échecs).
 
 Pour surcharger l'URL backend (ex: tests contre un kesh-api distant) :
 
