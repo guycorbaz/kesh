@@ -1,6 +1,6 @@
 # Story 21.1: Conditions de paiement structurées (jours) sur le contact → échéance de facture calculée
 
-Status: ready-for-dev
+Status: review
 
 <!-- Spec créée le 2026-07-12 (bmad-create-story, Fable 5). Source : planning epic-21-echeances-relances.md §A (décisions D1-D4) + issue #245 + cartographie 2 agents Explore (backend + frontend). Ferme #245. -->
 
@@ -68,21 +68,21 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration + entité + repo** (AC 1-6-bis)
-  - [ ] Migration `20260712000001_contacts_default_payment_terms_days.sql` (+ audit idempotence P5 avec ligne Total 50→51, compteur test 50→51)
-  - [ ] `Contact`/`NewContact`/`ContactUpdate` + `COLUMNS` + `FIND_BY_ID_SQL` + INSERT/UPDATE bindings + `contact_snapshot_json` + `is_no_op_change` + helpers de test
-  - [ ] Balayage `query_as::<_, Contact>` workspace (lecture) + **balayage `NewContact {` — 20 sites de tests dans 13 fichiers, 3 crates (AC 6-bis)** (construction)
-- [ ] **T2 — API contacts + libellé localisé** (AC 7-12)
-  - [ ] Requests + validation 0..365 (message FR en dur, pattern validate_common) ; `ContactResponse` days + label sur les **5** handlers (AC 9-bis : ajouter `get_company_for` à get/update/archive, conserver celui de list dans une variable, closure au lieu de `.map(ContactResponse::from)`)
-  - [ ] Helper `contact_response_with_label` + `payment_terms_label` (bundle.format direct + FluentArgs) ; `resolve_language` promue pub(crate) ; clés FTL ×4 (`contact-payment-terms-days-label`, `contact-payment-terms-immediate-label`)
-- [ ] **T3 — Défauts facture + validation échéance** (AC 13-17)
-  - [ ] `ensure_contact_belongs_to_company` → retourne `Contact` ; défauts due_date + payment_terms dans `create_invoice` ; update inchangé
-  - [ ] Validation `due_date >= date` create (400 + FTL ×4) + règle « paire modifiée » à l'update
-- [ ] **T4 — Frontend contact** (AC 18-20)
-- [ ] **T5 — Frontend facture** (AC 21-23) : `addDaysIso` + prefill + validateClient
-- [ ] **T6 — Tests backend** (AC 24-25)
-- [ ] **T7 — Tests frontend + E2E Playwright** (AC 26-27) : étendre `api-fixtures.ts` (`paymentTermsDays?`)
-- [ ] **T8 — Doc-sync + gate final** (AC 28-29)
+- [x] **T1 — Migration + entité + repo** (AC 1-6-bis)
+  - [x] Migration `20260712000001_contacts_default_payment_terms_days.sql` (+ audit idempotence P5 avec ligne Total 50→51, compteur test 50→51)
+  - [x] `Contact`/`NewContact`/`ContactUpdate` + `COLUMNS` + `FIND_BY_ID_SQL` + INSERT/UPDATE bindings + `contact_snapshot_json` + `is_no_op_change` + helpers de test
+  - [x] Balayage `query_as::<_, Contact>` workspace (lecture) + **balayage `NewContact {` — 20 sites de tests dans 13 fichiers, 3 crates (AC 6-bis)** (construction)
+- [x] **T2 — API contacts + libellé localisé** (AC 7-12)
+  - [x] Requests + validation 0..365 (message FR en dur, pattern validate_common) ; `ContactResponse` days + label sur les **5** handlers (AC 9-bis : ajouter `get_company_for` à get/update/archive, conserver celui de list dans une variable, closure au lieu de `.map(ContactResponse::from)`)
+  - [x] Helper `contact_response_with_label` + `payment_terms_label` (bundle.format direct + FluentArgs) ; `resolve_language` promue pub(crate) ; clés FTL ×4 (`contact-payment-terms-days-label`, `contact-payment-terms-immediate-label`)
+- [x] **T3 — Défauts facture + validation échéance** (AC 13-17)
+  - [x] `ensure_contact_belongs_to_company` → retourne `Contact` ; défauts due_date + payment_terms dans `create_invoice` ; update inchangé
+  - [x] Validation `due_date >= date` create (400 + FTL ×4) + règle « paire modifiée » à l'update
+- [x] **T4 — Frontend contact** (AC 18-20)
+- [x] **T5 — Frontend facture** (AC 21-23) : `addDaysIso` + prefill + validateClient
+- [x] **T6 — Tests backend** (AC 24-25)
+- [x] **T7 — Tests frontend + E2E Playwright** (AC 26-27) : étendre `api-fixtures.ts` (`paymentTermsDays?`)
+- [x] **T8 — Doc-sync + gate final** (AC 28-29)
 
 ## Dev Notes
 
@@ -136,11 +136,45 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 
 ### Agent Model Used
 
+Fable 5 (claude-fable-5) — run unique 2026-07-12.
+
 ### Debug Log References
+
+- Gate intermédiaire : `cargo check` E0063 sur 4 littéraux `ContactUpdate` des tests inline de contacts.rs (sites non listés par la spec, qui ne couvrait que les `NewContact {`) — corrigés par le même script d'insertion.
+- **Découverte hors-spec (T1)** : `exports/csv_tables.rs` énumère les colonnes contacts **explicitement** (header + row) → colonne `default_payment_terms_days` ajoutée à l'export souveraineté (`serialize_contacts_csv`). La spec affirmait « aucune nouvelle table → export inchangé », vrai au niveau fichier mais pas au niveau colonne. + 1 littéral `Contact` dans `kesh-reconciliation/src/matching.rs` (helper de test) non listé.
+- **Bug attrapé par les e2e (T6)** : Fluent entoure les variables interpolées de marques d'isolation BiDi U+2068/U+2069 (`Payable à \u{2068}30\u{2069} jours net`). Inacceptable : le libellé est copié dans `invoices.payment_terms` et imprimé sur le PDF (Helvetica WinAnsi, pas de glyphe). Fix : strip ciblé dans `payment_terms_label` (pas de `set_use_isolating(false)` global qui toucherait tous les messages).
 
 ### Completion Notes List
 
+- T1-T3 backend : migration 51, entité+repo (COLUMNS/FIND_BY_ID_SQL/INSERT/UPDATE/snapshot/is_no_op_change), 19 sites `NewContact{}` + 4 `ContactUpdate{}` + 1 `Contact{}` (matching.rs) + 1 `Contact{}` (invoice_email.rs tests) étendus, export CSV contacts + colonne, API contacts (validation 0..365, days+label sur les 5 handlers via `contact_response_with_label`, `resolve_language` promue pub(crate)), clés FTL ×4 (labels + erreur due-date), `create_invoice` défauts due_date/payment_terms + validation, `update_invoice` règle « paire modifiée ».
+- T4-T5 frontend : form contact (champ jours inputmode numeric, validation client 0..365, texte libre disabled si jours, hints i18n), types ×3, `addDaysIso` (UTC-safe) + prefill `onContactSelect` (gardes « si vide ») + `validateClient` due date.
+- T6-T7 tests : repo kesh-db (roundtrip + no-op extension prouvée), 8 e2e HTTP `contact_payment_terms_e2e.rs` (labels FR/DE/comptant, bornes, défauts facture, langue contact, historique, validation, legacy), 5 unit vitest `addDaysIso`, 2 scénarios Playwright (contacts + invoices) + fixture `paymentTermsDays?`.
+- T8 : CHANGELOG [Non publié] + README roadmap v0.7 🚧 (E21).
+
 ### File List
+
+- crates/kesh-db/migrations/20260712000001_contacts_default_payment_terms_days.sql (nouveau)
+- crates/kesh-db/src/entities/contact.rs
+- crates/kesh-db/src/repositories/contacts.rs
+- crates/kesh-db/tests/migrations_upgrade_path.rs
+- crates/kesh-db/tests/{credit_notes,reconciliation,supplier_invoices,payment_batches}_repository.rs, invoices_validate_vat.rs, kf005_fulltext_index_e2e.rs
+- crates/kesh-db/src/repositories/invoices.rs (2 littéraux tests)
+- crates/kesh-api/src/routes/contacts.rs
+- crates/kesh-api/src/routes/invoices.rs
+- crates/kesh-api/src/routes/invoice_email.rs (resolve_language pub(crate) + littéral test)
+- crates/kesh-api/src/exports/csv_tables.rs
+- crates/kesh-api/tests/contact_payment_terms_e2e.rs (nouveau)
+- crates/kesh-api/tests/{invoice_delete,vat_report,invoice_pdf,invoice_send_email,inbox_import,invoice_echeancier,reconciliation}_e2e.rs (littéraux)
+- crates/kesh-report/tests/vat_report_reconciliation.rs (littéral)
+- crates/kesh-reconciliation/src/matching.rs (littéral test)
+- crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl
+- docs/migrations-idempotence-audit.md
+- frontend/src/routes/(app)/contacts/+page.svelte
+- frontend/src/lib/features/contacts/contacts.types.ts
+- frontend/src/lib/components/invoices/InvoiceForm.svelte
+- frontend/src/lib/features/invoices/invoice-helpers.ts + invoice-helpers.test.ts
+- frontend/tests/e2e/helpers/api-fixtures.ts, contacts.spec.ts, invoices.spec.ts
+- CHANGELOG.md, README.md
 
 ## Change Log
 
@@ -151,3 +185,8 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 ### Validate Pass 2 (2026-07-12, Haiku 4.5, contexte frais) — CONVERGÉ
 
 **0 finding > LOW, 0 hallucination.** Re-vérification ground-truth des patches Pass 1 (22 sites `NewContact {` confirmés au compte exact, 5 handlers contacts aux lignes citées, idiome `Locale::from` confirmé `invoice_email.rs:283`), matrice de cohérence ACs↔Tasks↔planning D1-D4 complète, 8 pièges Dev Notes tous validés fondés. **Trend > LOW : 3 → 0 — critère d'arrêt CLAUDE.md atteint (budget 2/8 passes). Spec prête pour `bmad-dev-story 21-1`.** Modèles : Pass 1 Sonnet 4.6, Pass 2 Haiku 4.5 (auteur spec : Fable 5).
+
+### Dev (2026-07-12, Fable 5, run unique) — COMPLETED, status review
+
+Implémentation intégrale T1→T8, 2 déviations additives documentées (export CSV contacts + littéraux hors liste — cf. Debug Log), 1 bug attrapé par les e2e (marques BiDi Fluent U+2068/U+2069 strippées dans `payment_terms_label` — le libellé part sur le PDF Helvetica).
+**Quality gate Test Locally First tout vert** : `cargo fmt --check` OK · `cargo build --workspace --all-targets` OK · `clippy -D warnings` 0 · **workspace série 93 suites / 1793 tests / 0 échec** (dont 8 nouveaux e2e `contact_payment_terms_e2e` + test repo no-op) · frontend `check` 0 erreur · `lint-i18n-ownership` PASS · **unit 382/382** (+5 `addDaysIso`) · `build` OK · **Playwright 18 passed / 2 skips pré-existants EXIT=0** (backend `kesh_e2e`, dont les 2 nouveaux scénarios #245). Prochaine : `bmad-code-review 21-1` (LLM ≠ Fable).

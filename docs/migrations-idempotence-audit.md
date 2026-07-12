@@ -64,9 +64,9 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 
 ## Statistiques
 
-- **Total** : 50 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a + 1 Story 12-1 + 1 Story 12-2 + 1 Story 12-3 + 1 Story 12-5b + 1 Story 19-1 + 1 Story 19-3 + 1 Story 19-4 + 1 Story 19-5 + 3 #213 + 1 Story 20-1 + 3 Story 20-3b1).
+- **Total** : 51 migrations (26 historiques + 1 Story 10-2 + 1 Story v011-2 + 1 Story v014-1 + 2 Story 17-2a + 2 Story 17-4a + 1 Story 11-1 + 1 Story 18-1a + 1 Story 12-1 + 1 Story 12-2 + 1 Story 12-3 + 1 Story 12-5b + 1 Story 19-1 + 1 Story 19-3 + 1 Story 19-4 + 1 Story 19-5 + 3 #213 + 1 Story 20-1 + 3 Story 20-3b1 + 1 Story 21-1).
 - **Idempotence `yes`** : 4 (`country_code`, `invoice_paid_at`, `bank_imports_relax_hash_unique`, `users_email`).
-- **Idempotence `tracked-by-sqlx`** : 39 (toutes les autres).
+- **Idempotence `tracked-by-sqlx`** : 40 (toutes les autres).
 - **Idempotence `no`** : 0.
 
 ## Maintenance future
@@ -79,3 +79,4 @@ Conformément à la **politique P5** de `CLAUDE.md` `## Migration breaking polic
 | `20260709000001_contacts_language_salutation.sql` | tracked-by-sqlx | `ALTER TABLE contacts ADD COLUMN language CHAR(2) NULL + salutation VARCHAR(10) NOT NULL DEFAULT 'Neutre'` puis `ADD CONSTRAINT` CHECK (langue NULL-ou-FR/DE/IT/EN BINARY, calqué chk_companies_instance_language ; salutation Monsieur/Madame/Neutre), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1060 sur le 1er ADD COLUMN). Aucun UPDATE. Non-breaking (ADD COLUMN nullable / DEFAULT) → pas de bump `kesh_version_min_required` (Story 20-3b1, décisions #11/#12 epic-20). `language NULL` = hérite de `companies.instance_language` à l'envoi. |
 | `20260709000002_invoices_emailed.sql` | tracked-by-sqlx | `ALTER TABLE invoices ADD COLUMN emailed_at DATETIME(6) NULL + emailed_to VARCHAR(320) NULL` (pattern `paid_at`), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1060). Aucun UPDATE. Non-breaking (ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 20-3b1, décision #16 epic-20 — marquage envoi + destinataire snapshoté). |
 | `20260709000003_companies_email.sql` | tracked-by-sqlx | `ALTER TABLE companies ADD COLUMN email VARCHAR(320) NULL`, sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1060). Aucun UPDATE. Non-breaking (ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 20-3b1, refinement Reply-To — aucune colonne e-mail société n'existait). |
+| `20260712000001_contacts_default_payment_terms_days.sql` | tracked-by-sqlx | `ALTER TABLE contacts ADD COLUMN default_payment_terms_days INT NULL` puis `ADD CONSTRAINT chk_contacts_payment_terms_days` CHECK (NULL ou 0..365), sans `IF NOT EXISTS` ; re-exécution hors sqlx échouerait (1060 sur l'ADD COLUMN). Aucun UPDATE (pas de backfill — le texte libre `default_payment_terms` reste la source pour les contacts non migrés). Non-breaking (ADD COLUMN nullable) → pas de bump `kesh_version_min_required` (Story 21-1, #245 — délai de paiement structuré, échéance de facture pré-calculée). |

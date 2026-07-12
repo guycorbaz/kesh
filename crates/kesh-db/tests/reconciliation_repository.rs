@@ -104,6 +104,7 @@ async fn create_test_contact(pool: &MySqlPool, company_id: i64, user_id: i64, na
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            default_payment_terms_days: None,
             language: None,
             salutation: kesh_db::entities::contact::Salutation::Neutre,
         },

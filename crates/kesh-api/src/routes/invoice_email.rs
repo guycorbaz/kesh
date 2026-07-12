@@ -60,7 +60,11 @@ pub struct SendInvoiceEmailRequest {
 
 /// Résout la langue de correspondance : celle du contact si renseignée,
 /// sinon la langue d'instance de la société (décision #11 epic-20).
-fn resolve_language(contact: &Contact, company: &Company) -> Language {
+///
+/// `pub(crate)` (Story 21-1) : réutilisé par `routes/contacts` (libellé des
+/// conditions de paiement dans la langue du contact) et `routes/invoices`
+/// (libellé auto à la création de facture).
+pub(crate) fn resolve_language(contact: &Contact, company: &Company) -> Language {
     contact.language.unwrap_or(company.instance_language)
 }
 
@@ -534,6 +538,7 @@ mod tests {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            default_payment_terms_days: None,
             language: Some(Language::De),
             salutation: Salutation::Monsieur,
             active: true,

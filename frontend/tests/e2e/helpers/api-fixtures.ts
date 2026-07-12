@@ -21,6 +21,7 @@ export async function createContactWithAddressViaApi(
 	name: string,
 	email?: string,
 	salutation?: 'Monsieur' | 'Madame' | 'Neutre',
+	paymentTermsDays?: number,
 ): Promise<number> {
 	const ctx = await authedApiContext(page);
 	try {
@@ -40,6 +41,10 @@ export async function createContactWithAddressViaApi(
 					country: 'CH',
 				},
 				defaultPaymentTerms: '30 jours net',
+				// #245 : délai structuré optionnel (prime sur le texte libre).
+				...(paymentTermsDays !== undefined
+					? { defaultPaymentTermsDays: paymentTermsDays }
+					: {}),
 				...(email !== undefined ? { email } : {}),
 				...(salutation !== undefined ? { salutation } : {}),
 			},

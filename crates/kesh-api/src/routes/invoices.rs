@@ -371,11 +371,14 @@ fn validate_payment_terms(pt: Option<String>) -> Result<Option<String>, AppError
     Ok(norm)
 }
 
+/// Vérifie le scoping du contact et **retourne l'entité** (Story 21-1) —
+/// le contact y est déjà chargé, `create_invoice` lit ses conditions de
+/// paiement (#245) sans second fetch.
 async fn ensure_contact_belongs_to_company(
     state: &AppState,
     contact_id: i64,
     company_id: i64,
-) -> Result<(), AppError> {
+) -> Result<kesh_db::entities::contact::Contact, AppError> {
     let contact = contacts::find_by_id(&state.pool, contact_id).await?;
     match contact {
         None => Err(AppError::Validation("Contact introuvable".into())),
@@ -383,8 +386,16 @@ async fn ensure_contact_belongs_to_company(
             Err(AppError::Validation("Contact introuvable".into()))
         }
         Some(c) if !c.active => Err(AppError::Validation("Contact archivé".into())),
-        Some(_) => Ok(()),
+        Some(c) => Ok(c),
     }
+}
+
+/// Message d'erreur `due_date < date` (#245) — clé FTL ×4 langues.
+fn due_date_before_date_error() -> AppError {
+    AppError::Validation(crate::errors::t(
+        "error-invoice-due-date-before-date",
+        "L'échéance ne peut pas être antérieure à la date de la facture",
+    ))
 }
 
 fn validate_lines(reqs: Vec<CreateInvoiceLineRequest>) -> Result<Vec<NewInvoiceLine>, AppError> {
@@ -506,20 +517,46 @@ pub async fn create_invoice(
 ) -> Result<(StatusCode, Json<InvoiceResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
+    let contact = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
     let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
+    // #245 : défauts depuis les conditions de paiement du contact — les
+    // valeurs explicites du client ne sont JAMAIS écrasées.
+    // due_date absente : date + délai (jours) du contact, sinon date (défaut
+    // historique Review P6). payment_terms absent : libellé auto-généré dans
+    // la langue du contact (fallback langue d'instance).
+    let due_date = match req.due_date {
+        Some(d) => d,
+        None => match contact.default_payment_terms_days {
+            Some(days) => req.date + chrono::Duration::days(i64::from(days)),
+            None => req.date,
+        },
+    };
+    let payment_terms = payment_terms.or_else(|| {
+        contact.default_payment_terms_days.map(|days| {
+            let language = crate::routes::invoice_email::resolve_language(&contact, &company);
+            crate::routes::contacts::payment_terms_label(
+                days,
+                Locale::from(language.as_str()),
+                &state.i18n,
+            )
+        })
+    });
+
+    // #245 : validation sur la valeur FINALE (une échéance calculée est
+    // toujours ≥ date car days ≥ 0 — seule une valeur explicite peut échouer).
+    if due_date < req.date {
+        return Err(due_date_before_date_error());
+    }
+
     let new = NewInvoice {
         company_id: company.id,
         contact_id: req.contact_id,
         date: req.date,
-        // Review P6 : défaut due_date = invoice.date (Scope §12).
-        // L'utilisateur peut override avec `date + N jours` selon conditions
-        // de paiement. Pas de calcul auto depuis payment_terms (décision Guy).
-        due_date: Some(req.due_date.unwrap_or(req.date)),
+        due_date: Some(due_date),
         payment_terms,
         project_id: req.project_id,
         lines,
@@ -541,17 +578,36 @@ pub async fn update_invoice(
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
+    // #245 : à l'update, AUCUN pré-remplissage depuis le contact (on édite
+    // une facture existante) — le retour de l'entité est ignoré.
+    let _ = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
     let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
+    // Review P6 : défaut due_date = invoice.date si non fournie (Scope §12).
+    let due_date = req.due_date.unwrap_or(req.date);
+
+    // #245 : validation `due_date >= date`, mais SEULEMENT si la paire
+    // (date, due_date) change par rapport à la facture stockée — une facture
+    // legacy avec échéance antérieure à sa date reste éditable sur ses
+    // autres champs (fetch scopé uniquement sur le chemin d'échec, rare).
+    if due_date < req.date {
+        let stored = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+            .await?
+            .ok_or(AppError::Database(DbError::NotFound))?
+            .0;
+        let pair_unchanged = stored.date == req.date && stored.due_date == Some(due_date);
+        if !pair_unchanged {
+            return Err(due_date_before_date_error());
+        }
+    }
+
     let changes = InvoiceUpdate {
         contact_id: req.contact_id,
         date: req.date,
-        // Review P6 : défaut due_date = invoice.date si non fournie (Scope §12).
-        due_date: Some(req.due_date.unwrap_or(req.date)),
+        due_date: Some(due_date),
         payment_terms,
         project_id: req.project_id,
         lines,

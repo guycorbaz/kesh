@@ -175,6 +175,7 @@ async fn seed_contact(
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            default_payment_terms_days: None,
             language,
             salutation,
         },

@@ -131,6 +131,45 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
 	});
 
+	// Story 21-1 (#245) — pré-remplissage échéance + libellé depuis le délai
+	// de paiement structuré du contact, à la sélection dans le formulaire.
+	test('pré-remplit échéance et conditions depuis le délai du contact (#245)', async ({
+		page
+	}) => {
+		await login(page);
+		const contactName = uniq('Client PTD');
+		// Contact avec délai structuré 30 jours (helper étendu Story 21-1).
+		await createContactWithAddressViaApi(page, contactName, undefined, undefined, 30);
+
+		await page.goto('/invoices/new');
+		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
+
+		// Avant sélection : échéance et conditions vides.
+		await expect(page.locator('#invoice-due-date')).toHaveValue('');
+		await expect(page.locator('#invoice-payment-terms')).toHaveValue('');
+
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+
+		// Échéance = date du jour + 30 (calcul UTC identique à addDaysIso).
+		const today = new Date().toISOString().slice(0, 10);
+		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today)!;
+		const expectedDue = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 30))
+			.toISOString()
+			.slice(0, 10);
+		await expect(page.locator('#invoice-due-date')).toHaveValue(expectedDue);
+		// Libellé serveur (langue contact héritée = FR sur le seed E2E).
+		await expect(page.locator('#invoice-payment-terms')).toHaveValue('Payable à 30 jours net');
+
+		// Une valeur déjà saisie n'est PAS écrasée par une re-sélection.
+		await page.locator('#invoice-due-date').fill('2030-01-15');
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+		await expect(page.locator('#invoice-due-date')).toHaveValue('2030-01-15');
+	});
+
 	test('crée une facture avec projet analytique (Story 19-4)', async ({ page }) => {
 		await login(page);
 		const contactName = uniq('Client Projet');

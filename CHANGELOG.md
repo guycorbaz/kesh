@@ -10,6 +10,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+### Ajouté
+
+- **Conditions de paiement structurées sur le contact** : la fiche contact gagne un **délai de paiement en jours** (0 à 365). À la création d'une facture pour ce contact, l'**échéance est pré-remplie automatiquement** (date de la facture + délai) et le **libellé des conditions** (« Payable à 30 jours net », « Zahlbar innert 30 Tagen »…) est généré **dans la langue du client** — les deux restent modifiables avant enregistrement. Le texte libre existant est conservé pour les contacts qui n'utilisent pas le délai structuré. Une facture ne peut plus recevoir une **échéance antérieure à sa date** (les factures existantes ne sont pas modifiées). (#245)
+
 ## [0.6.0] — 2026-07-11
 
 ### Ajouté

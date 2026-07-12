@@ -32,6 +32,9 @@ const MAX_NAME_LEN: usize = 255;
 const MAX_EMAIL_LEN: usize = 320;
 const MAX_PHONE_LEN: usize = 50;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
+/// Borne haute du délai de paiement en jours (#245) — miroir du CHECK SQL
+/// `chk_contacts_payment_terms_days` (le CHECK n'est que le filet).
+const MAX_PAYMENT_TERMS_DAYS: i32 = 365;
 const MAX_LIST_LIMIT: i64 = 100;
 const DEFAULT_LIST_LIMIT: i64 = 20;
 
@@ -87,6 +90,10 @@ pub struct CreateContactRequest {
     pub ide_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
+    /// Délai de paiement en jours (#245). Absent/null = non renseigné.
+    /// Renseigné → prime sur le texte libre (libellé auto-généré).
+    #[serde(default)]
+    pub default_payment_terms_days: Option<i32>,
     /// Langue de correspondance (Story 20-3b1). Absent/null = hérite de la
     /// langue d'instance de la société.
     #[serde(default)]
@@ -121,6 +128,9 @@ pub struct UpdateContactRequest {
     pub ide_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
+    /// Délai de paiement en jours (#245). Absent/null = effacé (PUT full-payload).
+    #[serde(default)]
+    pub default_payment_terms_days: Option<i32>,
     /// Langue de correspondance (Story 20-3b1). Absent/null = héritage instance.
     #[serde(default)]
     pub language: Option<Language>,
@@ -157,6 +167,12 @@ pub struct ContactResponse {
     /// Forme normalisée `"CHE109322551"`. Le frontend la formate pour l'affichage.
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Délai de paiement en jours (#245). `null` = non renseigné.
+    pub default_payment_terms_days: Option<i32>,
+    /// Libellé localisé des conditions de paiement (#245), généré côté
+    /// serveur dans la **langue du contact** (fallback langue d'instance) —
+    /// le i18n frontend ne connaît que la locale UI. `null` si `days` absent.
+    pub default_payment_terms_label: Option<String>,
     /// Langue de correspondance (Story 20-3b1). `null` = héritage instance.
     pub language: Option<Language>,
     /// Civilité (Story 20-3b1).
@@ -192,6 +208,10 @@ impl From<Contact> for ContactResponse {
             // au moment de l'INSERT. Pas de re-parse CheNumber ici.
             ide_number: c.ide_number,
             default_payment_terms: c.default_payment_terms,
+            default_payment_terms_days: c.default_payment_terms_days,
+            // Le libellé exige la Company (langue d'instance) + I18nBundle —
+            // posé par `contact_response_with_label`, jamais par ce From.
+            default_payment_terms_label: None,
             language: c.language,
             salutation: c.salutation,
             active: c.active,
@@ -276,6 +296,7 @@ struct ValidatedFields {
     phone: Option<String>,
     ide_number: Option<String>,
     default_payment_terms: Option<String>,
+    default_payment_terms_days: Option<i32>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -291,6 +312,7 @@ fn validate_common(
     phone: Option<String>,
     ide_number: Option<String>,
     default_payment_terms: Option<String>,
+    default_payment_terms_days: Option<i32>,
 ) -> Result<ValidatedFields, AppError> {
     // #213 — Personne : prénom + nom séparés, `name` recomposé « Prénom Nom ».
     // Entreprise : raison sociale unique (prénom/nom laissés vides).
@@ -353,6 +375,16 @@ fn validate_common(
         )));
     }
 
+    // #245 : borne 0..=MAX_PAYMENT_TERMS_DAYS — chaîne FR en dur, cohérent
+    // avec les autres messages de validate_common (aucun i18n dans ce fichier).
+    if let Some(d) = default_payment_terms_days
+        && !(0..=MAX_PAYMENT_TERMS_DAYS).contains(&d)
+    {
+        return Err(AppError::Validation(format!(
+            "Le délai de paiement doit être compris entre 0 et {MAX_PAYMENT_TERMS_DAYS} jours"
+        )));
+    }
+
     let ide_number = validate_optional_ide(ide_number)?;
 
     Ok(ValidatedFields {
@@ -367,7 +399,56 @@ fn validate_common(
         phone,
         ide_number,
         default_payment_terms,
+        default_payment_terms_days,
     })
+}
+
+/// Libellé localisé des conditions de paiement depuis le délai en jours (#245).
+///
+/// Appelle `bundle.format(&locale, …)` **directement** (PAS `t`/`t_args` de
+/// `errors.rs`, qui lisent la locale globale de la *requête*) : le libellé
+/// doit être dans la langue du **contact**, indépendante de la locale UI.
+///
+/// `pub(crate)` : réutilisé par `routes/invoices` (libellé auto copié dans
+/// `invoices.payment_terms` à la création).
+pub(crate) fn payment_terms_label(
+    days: i32,
+    locale: kesh_i18n::Locale,
+    i18n: &kesh_i18n::I18nBundle,
+) -> String {
+    let label = if days == 0 {
+        // « Payable au comptant » / « Zahlbar sofort » / « Pagabile a vista »
+        // / « Due upon receipt »
+        i18n.format(&locale, "contact-payment-terms-immediate-label", None)
+    } else {
+        let mut args = kesh_i18n::FluentArgs::new();
+        args.set("days", i64::from(days));
+        i18n.format(&locale, "contact-payment-terms-days-label", Some(&args))
+    };
+    // Fluent entoure les variables interpolées de marques d'isolation BiDi
+    // (U+2068 FSI / U+2069 PDI). Ce libellé est copié dans
+    // `invoices.payment_terms` et imprimé sur le PDF (Helvetica WinAnsi,
+    // aucun glyphe pour ces codepoints) → on les retire, texte 100 % LTR.
+    label.replace(['\u{2068}', '\u{2069}'], "")
+}
+
+/// Construit la `ContactResponse` en posant le libellé localisé (#245).
+///
+/// **Tous les handlers qui renvoient un contact passent par ici** (list, get,
+/// create, update, archive) — `ContactPicker` du formulaire facture consomme
+/// l'endpoint list, un label absent y casserait le pré-remplissage.
+fn contact_response_with_label(
+    contact: Contact,
+    company: &kesh_db::entities::company::Company,
+    i18n: &kesh_i18n::I18nBundle,
+) -> ContactResponse {
+    let language = crate::routes::invoice_email::resolve_language(&contact, company);
+    let label = contact
+        .default_payment_terms_days
+        .map(|d| payment_terms_label(d, kesh_i18n::Locale::from(language.as_str()), i18n));
+    let mut resp = ContactResponse::from(contact);
+    resp.default_payment_terms_label = label;
+    resp
 }
 
 /// Intercepte les `UniqueConstraintViolation` portant sur la contrainte
@@ -397,8 +478,9 @@ pub async fn list_contacts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListContactsQuery>,
 ) -> Result<Json<ListResponse<ContactResponse>>, AppError> {
-    // Validate company exists (defensive: company_id staleness window)
-    let _ = get_company_for(&current_user, &state.pool).await?;
+    // Company : contrôle défensif (staleness window) ET langue d'instance
+    // pour le libellé des conditions de paiement (#245).
+    let company = get_company_for(&current_user, &state.pool).await?;
 
     let limit = params
         .limit
@@ -425,7 +507,7 @@ pub async fn list_contacts(
         items: result
             .items
             .into_iter()
-            .map(ContactResponse::from)
+            .map(|c| contact_response_with_label(c, &company, &state.i18n))
             .collect(),
         total: result.total,
         limit: result.limit,
@@ -445,7 +527,13 @@ pub async fn get_contact(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    Ok(Json(ContactResponse::from(contact)))
+    // #245 : Company requise pour la langue d'instance (fallback du libellé).
+    let company = get_company_for(&current_user, &state.pool).await?;
+    Ok(Json(contact_response_with_label(
+        contact,
+        &company,
+        &state.i18n,
+    )))
 }
 
 /// POST /api/v1/contacts — crée un contact.
@@ -469,6 +557,7 @@ pub async fn create_contact(
         req.phone,
         req.ide_number,
         req.default_payment_terms,
+        req.default_payment_terms_days,
     )?;
 
     let a = v.address_structured.as_ref();
@@ -491,6 +580,7 @@ pub async fn create_contact(
         phone: v.phone,
         ide_number: v.ide_number,
         default_payment_terms: v.default_payment_terms,
+        default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : enums typés — serde a déjà rejeté toute valeur
         // invalide (400 body parse). Civilité absente = Neutre.
         language: req.language,
@@ -501,7 +591,10 @@ pub async fn create_contact(
         .await
         .map_err(map_contact_error)?;
 
-    Ok((StatusCode::CREATED, Json(ContactResponse::from(contact))))
+    Ok((
+        StatusCode::CREATED,
+        Json(contact_response_with_label(contact, &company, &state.i18n)),
+    ))
 }
 
 /// PUT /api/v1/contacts/{id} — met à jour un contact.
@@ -529,6 +622,7 @@ pub async fn update_contact(
         req.phone,
         req.ide_number,
         req.default_payment_terms,
+        req.default_payment_terms_days,
     )?;
 
     let a = v.address_structured.as_ref();
@@ -549,6 +643,7 @@ pub async fn update_contact(
         phone: v.phone,
         ide_number: v.ide_number,
         default_payment_terms: v.default_payment_terms,
+        default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : cf. create_contact — enums typés validés par serde.
         language: req.language,
         salutation: req.salutation.unwrap_or_default(),
@@ -558,7 +653,13 @@ pub async fn update_contact(
         .await
         .map_err(map_contact_error)?;
 
-    Ok(Json(ContactResponse::from(contact)))
+    // #245 : Company requise pour la langue d'instance (fallback du libellé).
+    let company = get_company_for(&current_user, &state.pool).await?;
+    Ok(Json(contact_response_with_label(
+        contact,
+        &company,
+        &state.i18n,
+    )))
 }
 
 /// PUT /api/v1/contacts/{id}/archive — archive un contact.
@@ -575,7 +676,14 @@ pub async fn archive_contact(
         .ok_or(AppError::Database(DbError::NotFound))?;
 
     let contact = contacts::archive(&state.pool, id, req.version, current_user.user_id).await?;
-    Ok(Json(ContactResponse::from(contact)))
+
+    // #245 : uniformité API — le libellé est posé sur les 5 endpoints contacts.
+    let company = get_company_for(&current_user, &state.pool).await?;
+    Ok(Json(contact_response_with_label(
+        contact,
+        &company,
+        &state.i18n,
+    )))
 }
 
 // ---------------------------------------------------------------------------

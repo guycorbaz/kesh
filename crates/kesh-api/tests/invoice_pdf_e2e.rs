@@ -139,6 +139,7 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, user_id: i64, with_addr
             phone: None,
             ide_number: None,
             default_payment_terms: Some("30 jours net".into()),
+            default_payment_terms_days: None,
             language: None,
             salutation: kesh_db::entities::contact::Salutation::Neutre,
         },

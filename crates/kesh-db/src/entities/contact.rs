@@ -192,6 +192,10 @@ pub struct Contact {
     pub phone: Option<String>,
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Délai de paiement en jours (#245). `None` = non renseigné (le texte
+    /// libre `default_payment_terms` reste la seule source, lecture seule).
+    /// Renseigné → prime sur le texte libre (libellé auto-généré).
+    pub default_payment_terms_days: Option<i32>,
     /// Langue de correspondance (Story 20-3b1). `None` = hérite de
     /// `companies.instance_language` (résolution à l'envoi).
     pub language: Option<Language>,
@@ -228,6 +232,8 @@ pub struct NewContact {
     pub phone: Option<String>,
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Délai de paiement en jours (#245). Prime sur le texte libre.
+    pub default_payment_terms_days: Option<i32>,
     /// Langue de correspondance (Story 20-3b1). `None` = hérite instance.
     pub language: Option<Language>,
     /// Civilité pour `{salutation}` (Story 20-3b1).
@@ -262,6 +268,8 @@ pub struct ContactUpdate {
     pub phone: Option<String>,
     pub ide_number: Option<String>,
     pub default_payment_terms: Option<String>,
+    /// Délai de paiement en jours (#245). Prime sur le texte libre.
+    pub default_payment_terms_days: Option<i32>,
     /// Langue de correspondance (Story 20-3b1). `None` = hérite instance.
     pub language: Option<Language>,
     /// Civilité pour `{salutation}` (Story 20-3b1).

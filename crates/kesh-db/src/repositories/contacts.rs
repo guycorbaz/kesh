@@ -27,13 +27,13 @@ use crate::util::search::{escape_boolean_ft, escape_like};
 // contacts des propositions) — une seule liste de colonnes à maintenir.
 pub(crate) const COLUMNS: &str = "id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
-    address_country, email, phone, ide_number, default_payment_terms, language, salutation, \
-    active, version, created_at, updated_at";
+    address_country, email, phone, ide_number, default_payment_terms, default_payment_terms_days, \
+    language, salutation, active, version, created_at, updated_at";
 
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
-    address_country, email, phone, ide_number, default_payment_terms, language, salutation, \
-    active, version, created_at, updated_at FROM contacts WHERE id = ?";
+    address_country, email, phone, ide_number, default_payment_terms, default_payment_terms_days, \
+    language, salutation, active, version, created_at, updated_at FROM contacts WHERE id = ?";
 
 /// Snapshot JSON d'un contact pour l'audit log (Story 3.5 pattern + P8 `companyId`).
 fn contact_snapshot_json(c: &Contact) -> serde_json::Value {
@@ -49,6 +49,7 @@ fn contact_snapshot_json(c: &Contact) -> serde_json::Value {
         "phone": c.phone,
         "ideNumber": c.ide_number,
         "defaultPaymentTerms": c.default_payment_terms,
+        "defaultPaymentTermsDays": c.default_payment_terms_days,
         "language": c.language.map(|l| l.as_str()),
         "salutation": c.salutation.as_str(),
         "active": c.active,
@@ -199,8 +200,9 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     let result = sqlx::query(
         "INSERT INTO contacts (company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
          address, address_street, address_building, address_postal_code, address_city, \
-         address_country, email, phone, ide_number, default_payment_terms, language, salutation) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         address_country, email, phone, ide_number, default_payment_terms, \
+         default_payment_terms_days, language, salutation) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_type)
@@ -219,6 +221,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     .bind(&new.phone)
     .bind(&new.ide_number)
     .bind(&new.default_payment_terms)
+    .bind(new.default_payment_terms_days)
     .bind(new.language)
     .bind(new.salutation)
     .execute(&mut *tx)
@@ -387,6 +390,7 @@ fn is_no_op_change(before: &Contact, changes: &ContactUpdate) -> bool {
         && before.phone == changes.phone
         && before.ide_number == changes.ide_number
         && before.default_payment_terms == changes.default_payment_terms
+        && before.default_payment_terms_days == changes.default_payment_terms_days
         && before.language == changes.language
         && before.salutation == changes.salutation
 }
@@ -448,7 +452,7 @@ pub async fn update(
          address = ?, address_street = ?, address_building = ?, address_postal_code = ?, \
          address_city = ?, address_country = ?, \
          email = ?, phone = ?, ide_number = ?, default_payment_terms = ?, \
-         language = ?, salutation = ?, \
+         default_payment_terms_days = ?, language = ?, salutation = ?, \
          version = version + 1 \
          WHERE id = ? AND version = ? AND active = TRUE",
     )
@@ -468,6 +472,7 @@ pub async fn update(
     .bind(&changes.phone)
     .bind(&changes.ide_number)
     .bind(&changes.default_payment_terms)
+    .bind(changes.default_payment_terms_days)
     .bind(changes.language)
     .bind(changes.salutation)
     .bind(id)
@@ -655,6 +660,7 @@ mod tests {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            default_payment_terms_days: None,
             language: None,
             salutation: crate::entities::contact::Salutation::Neutre,
         }
@@ -828,6 +834,7 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                default_payment_terms_days: None,
                 language: None,
                 salutation: crate::entities::contact::Salutation::Neutre,
             },
@@ -860,6 +867,7 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                default_payment_terms_days: None,
                 language: None,
                 salutation: crate::entities::contact::Salutation::Neutre,
             },
@@ -908,6 +916,7 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                default_payment_terms_days: None,
                 language: None,
                 salutation: crate::entities::contact::Salutation::Neutre,
             },
@@ -986,6 +995,7 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: None,
+                default_payment_terms_days: None,
                 language: None,
                 salutation: crate::entities::contact::Salutation::Neutre,
             },
@@ -1481,9 +1491,49 @@ mod tests {
             phone: c.phone.clone(),
             ide_number: c.ide_number.clone(),
             default_payment_terms: c.default_payment_terms.clone(),
+            default_payment_terms_days: c.default_payment_terms_days,
             language: c.language,
             salutation: c.salutation,
         }
+    }
+
+    /// Story 21-1 (#245) : aller-retour du délai de paiement en jours +
+    /// modification ISOLÉE du champ → version bumpée (preuve de l'extension
+    /// `is_no_op_change`, sinon le changement serait silencieusement ignoré),
+    /// puis re-soumission identique → no-op KF-004 (version inchangée).
+    #[tokio::test]
+    async fn payment_terms_days_roundtrip_and_isolated_update_bumps_version() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+
+        let mut new = new_contact(company_id, "TestContact PTD 21-1");
+        new.default_payment_terms_days = Some(30);
+        let created = create(&pool, user_id, new).await.unwrap();
+        assert_eq!(created.default_payment_terms_days, Some(30));
+
+        let found = find_by_id(&pool, created.id).await.unwrap().unwrap();
+        assert_eq!(found.default_payment_terms_days, Some(30));
+
+        // Modification isolée du seul champ jours → PAS un no-op.
+        let mut changes = contact_to_update(&found);
+        changes.default_payment_terms_days = Some(60);
+        let updated = update(&pool, found.id, found.version, user_id, changes)
+            .await
+            .unwrap();
+        assert_eq!(updated.default_payment_terms_days, Some(60));
+        assert_eq!(
+            updated.version,
+            found.version + 1,
+            "un changement isolé de default_payment_terms_days doit bumper la version"
+        );
+
+        // Payload identique re-soumis → no-op KF-004.
+        let noop = contact_to_update(&updated);
+        let after = update(&pool, updated.id, updated.version, user_id, noop)
+            .await
+            .unwrap();
+        assert_eq!(after.version, updated.version, "no-op : version inchangée");
     }
 
     /// KF-004 : payload identique à l'état persisté → pas de bump version,

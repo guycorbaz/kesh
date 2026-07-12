@@ -49,6 +49,14 @@ export interface ContactResponse {
 	/** Forme normalisée `CHE109322551` (12 chars) ou null. Formatée à l'affichage. */
 	ideNumber: string | null;
 	defaultPaymentTerms: string | null;
+	/** Délai de paiement en jours (#245). `null` = non renseigné. */
+	defaultPaymentTermsDays: number | null;
+	/**
+	 * Libellé localisé des conditions (#245), généré côté serveur dans la
+	 * langue du CONTACT (le i18n frontend ne connaît que la locale UI).
+	 * `null` si `defaultPaymentTermsDays` absent.
+	 */
+	defaultPaymentTermsLabel: string | null;
 	/** Langue de correspondance (Story 20-3b2). `null` = héritée instance. */
 	language: ContactLanguage | null;
 	/** Civilité (Story 20-3b2). Toujours renseignée (défaut `Neutre`). */
@@ -71,6 +79,8 @@ export interface CreateContactRequest {
 	phone?: string | null;
 	ideNumber?: string | null;
 	defaultPaymentTerms?: string | null;
+	/** Délai de paiement en jours 0..365 (#245). Absent/`null` = non renseigné. */
+	defaultPaymentTermsDays?: number | null;
 	/** Absent/`null` = héritée instance (Story 20-3b2). */
 	language?: ContactLanguage | null;
 	/** Absent = `Neutre` (Story 20-3b2). */
@@ -89,6 +99,8 @@ export interface UpdateContactRequest {
 	phone?: string | null;
 	ideNumber?: string | null;
 	defaultPaymentTerms?: string | null;
+	/** Délai de paiement en jours 0..365 (#245). Absent/`null` = effacé (PUT full-payload). */
+	defaultPaymentTermsDays?: number | null;
 	/** Absent/`null` = héritée instance (Story 20-3b2). */
 	language?: ContactLanguage | null;
 	/** Absent = `Neutre` (Story 20-3b2). */

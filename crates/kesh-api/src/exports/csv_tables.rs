@@ -320,6 +320,7 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
         "phone",
         "ide_number",
         "default_payment_terms",
+        "default_payment_terms_days",
         "active",
         "version",
         "created_at",
@@ -339,6 +340,9 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
             fmt_opt_str(&c.phone),
             fmt_opt_str(&c.ide_number),
             fmt_opt_str(&c.default_payment_terms),
+            c.default_payment_terms_days
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
             fmt_bool(c.active),
             c.version.to_string(),
             fmt_dt(c.created_at),

@@ -63,3 +63,19 @@ export function formatInvoiceTotal(d: string | null | undefined): string {
 		return String(d);
 	}
 }
+
+/**
+ * Ajoute `days` jours à une date ISO `YYYY-MM-DD` (#245 — pré-calcul de
+ * l'échéance depuis le délai de paiement du contact).
+ *
+ * Timezone-safe : arithmétique en UTC sur les composantes (jamais
+ * `new Date(iso)` local qui décale d'un jour selon le fuseau).
+ * Retourne `iso` inchangé si l'entrée est invalide (défensif — l'input
+ * `type="date"` garantit le format en pratique).
+ */
+export function addDaysIso(iso: string, days: number): string {
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+	if (!m || !Number.isInteger(days)) return iso;
+	const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days));
+	return d.toISOString().slice(0, 10);
+}
