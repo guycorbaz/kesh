@@ -15,22 +15,24 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 ### Base de données & entité
 
 1. **Migration** `crates/kesh-db/migrations/20260712000001_contacts_default_payment_terms_days.sql` : `ALTER TABLE contacts ADD COLUMN default_payment_terms_days INT NULL;` + `ADD CONSTRAINT chk_contacts_payment_terms_days CHECK (default_payment_terms_days IS NULL OR (default_payment_terms_days >= 0 AND default_payment_terms_days <= 365));` — calque exact de `20260709000001_contacts_language_salutation.sql` (ADD COLUMN puis ADD CONSTRAINT séparé, en-tête de commentaire « Non-breaking → pas de bump kesh_version_min_required, politique Story 10-2 P1 »).
-2. **Ligne ajoutée à `docs/migrations-idempotence-audit.md`** (garde-fou P5 — sinon finding MEDIUM en code review).
+2. **Ligne ajoutée à `docs/migrations-idempotence-audit.md`** (garde-fou P5 — sinon finding MEDIUM en code review) **et** mise à jour de la ligne de synthèse `**Total** : 50 migrations (…)` (ligne 67) → 51.
 3. **Compteur de migrations** : `migrations_upgrade_path.rs` passe 50 → 51 (famille « nouvelle migration → compteur figé » — 3 régressions de cette famille à l'Epic 20). Aucune nouvelle table → `TABLES_TO_TRUNCATE` (backup.rs) et compteur export inchangés.
 4. **Entité** (`crates/kesh-db/src/entities/contact.rs`) : `default_payment_terms_days: Option<i32>` ajouté à `Contact` (:172-204), `NewContact` (:209-235), `ContactUpdate` (:244-269).
 5. **Repo** (`crates/kesh-db/src/repositories/contacts.rs`) — TOUS les sites à liste de champs étendus : `COLUMNS` (:28-31) **et** `FIND_BY_ID_SQL` (:33-36, liste dupliquée), INSERT + bindings de `create` (:189-264), SET + bindings de `update` (:396-515), `contact_snapshot_json` (:39-57, audit), **`is_no_op_change` (:374-392)** — sans quoi une modification isolée du champ serait silencieusement ignorée (pas de bump version, pas d'audit). Helpers de test `new_contact` (:639-661) et `contact_to_update` (:1466-1487) étendus.
-6. **Balayage workspace `query_as::<_, Contact>`** : vérifier que TOUTE requête qui hydrate un `Contact` utilise `contacts::COLUMNS` ou est étendue (leçon 20-3b1 : 3 listes SQL inline stale → 500 `ColumnNotFound` ; `grep -rn "query_as::<_, Contact>" crates/` et inspection de chaque site).
+6. **Balayage workspace `query_as::<_, Contact>`** : vérifier que TOUTE requête qui hydrate un `Contact` utilise `contacts::COLUMNS` ou est étendue (leçon 20-3b1 : 3 listes SQL inline stale → 500 `ColumnNotFound` ; `grep -rn "query_as::<_, Contact>" crates/` et inspection de chaque site — 10 sites recensés, tous via `COLUMNS`/`FIND_BY_ID_SQL` au 2026-07-12, re-vérifier au dev).
+6-bis. **Balayage symétrique côté construction `NewContact {`** (struct literal sans `Default` ni spread — E0063 sinon) : `grep -rn "NewContact {" crates/ | grep -v "pub struct"` remonte 22 sites. Outre `routes/contacts.rs:475` (AC 7) et le helper `new_contact` de `repositories/contacts.rs` (AC 5), **20 sites dans 13 fichiers de tests sur 3 crates** doivent recevoir `default_payment_terms_days: None,` : `kesh-api/tests/{invoice_delete_e2e.rs:116, vat_report_e2e.rs:125, invoice_pdf_e2e.rs:124, invoice_send_email_e2e.rs:160, inbox_import_e2e.rs:166, invoice_echeancier_e2e.rs:120, reconciliation_e2e.rs:206}`, `kesh-report/tests/vat_report_reconciliation.rs:46`, `kesh-db/tests/{supplier_invoices_repository.rs:64+380, reconciliation_repository.rs:89, credit_notes_repository.rs:29, invoices_validate_vat.rs:27, payment_batches_repository.rs:60, kf005_fulltext_index_e2e.rs:90+473+501}`, `kesh-db/src/repositories/invoices.rs:1946+4147` (module de test). Le gate `cargo build --workspace --all-targets` est le filet.
 
 ### API contacts
 
 7. `CreateContactRequest` (:65-97) et `UpdateContactRequest` (:99-131) acceptent `default_payment_terms_days: Option<i32>` (`#[serde(default)]`, camelCase `defaultPaymentTermsDays`). Sémantique PUT full-payload existante : omis ou `null` → efface (aucun tri-state, conforme au reste du form contact).
-8. **Validation** dans `validate_common` (:347-354) : si `Some(d)` avec `d < 0 || d > 365` → `AppError::Validation` (400, message i18n avec la borne). Le CHECK SQL n'est que le filet.
-9. `ContactResponse` (:139-168) expose `defaultPaymentTermsDays: Option<i32>` **et** `defaultPaymentTermsLabel: Option<String>` — libellé **généré côté serveur** dans la **langue du contact** (fallback `company.instance_language`), présent sur **tous** les endpoints qui renvoient un contact : list, get, create, update. ⚠️ `ContactPicker` du formulaire facture consomme l'endpoint **list** — si le label manque sur list, le pré-remplissage frontend est mort. (Le i18n frontend ne connaît que la locale UI — confirmé `i18n.svelte.ts` — le libellé par langue de contact DOIT venir de l'API.)
+8. **Validation** dans `validate_common` (:347-354) : si `Some(d)` avec `d < 0 || d > 365` → `AppError::Validation(format!("Le délai de paiement doit être compris entre 0 et 365 jours"))` — **chaîne française codée en dur**, cohérent avec le pattern existant de `validate_common` (:302-352, aucun message de ce fichier n'est i18n — vérifié, zéro usage de `t`/`t_args` dans contacts.rs). Le CHECK SQL n'est que le filet.
+9. `ContactResponse` (:139-168) expose `defaultPaymentTermsDays: Option<i32>` **et** `defaultPaymentTermsLabel: Option<String>` — libellé **généré côté serveur** dans la **langue du contact** (fallback `company.instance_language`), présent sur **tous** les endpoints qui renvoient un contact : list, get, create, update, **archive** (uniformité API). ⚠️ `ContactPicker` du formulaire facture consomme l'endpoint **list** — si le label manque sur list, le pré-remplissage frontend est mort. (Le i18n frontend ne connaît que la locale UI — confirmé `i18n.svelte.ts` — le libellé par langue de contact DOIT venir de l'API.)
+9-bis. **État réel des 5 handlers** (vérifié — le `From<Contact>` actuel n'a pas accès à `Company`) : `create_contact` (:453-505) a déjà `get_company_for` (:458) ; `list_contacts` (:395-434) l'appelle mais **jette le résultat** (`let _ =`, :401) → le conserver dans une variable et remplacer `.map(ContactResponse::from)` (:428) par une closure ; `get_contact` (:438-449), `update_contact` (:509-562) et `archive_contact` (:566-579) n'appellent **pas** `get_company_for` → l'ajouter. Implémentation : helper `contact_response_with_label(contact, &company, &i18n) -> ContactResponse` appliqué aux 5 sites ; le `impl From<Contact>` peut rester pour les usages internes mais AUCUN handler ne doit renvoyer un contact sans label.
 10. Le label est calculé par un helper `payment_terms_label(days: i32, locale: Locale, i18n: &I18nBundle) -> String` appelant **directement `bundle.format(&locale, key, Some(&args))`** (PAS `t_args`, qui lit la locale globale de la requête — piège identifié). Précédent d'args Fluent : `AppError::InvoiceTooManyLinesForPdf` (`errors.rs:1032-1046`, `FluentArgs` + `{ $count }`).
 11. **Libellés figés** (clés `kesh-i18n/locales/*/messages.ftl` ×4) :
     - `contact-payment-terms-days-label` : FR `Payable à { $days } jours net` · DE `Zahlbar innert { $days } Tagen` (usage CH — PAS « innerhalb von ») · IT `Pagabile entro { $days } giorni` · EN `Payable within { $days } days`
     - `contact-payment-terms-immediate-label` (cas `days == 0`) : FR `Payable au comptant` · DE `Zahlbar sofort` · IT `Pagabile a vista` · EN `Due upon receipt`
-12. La résolution de langue réutilise `resolve_language(contact, company)` (`invoice_email.rs:63-65`) promue `pub(crate)` (DRY — pas de duplication), ainsi que le mapping `Language → Locale` existant du même module.
+12. La résolution de langue réutilise `resolve_language(contact, company)` (`invoice_email.rs:63-65`) promue `pub(crate)` (DRY — pas de duplication), ainsi que l'idiome `kesh_i18n::Locale::from(language.as_str())` utilisé en `invoice_email.rs:283` (c'est un idiome inline, PAS une fonction nommée réutilisable — le reproduire tel quel).
 
 ### Création / édition de facture (backend)
 
@@ -66,13 +68,13 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration + entité + repo** (AC 1-6)
-  - [ ] Migration `20260712000001_contacts_default_payment_terms_days.sql` (+ audit idempotence P5, compteur 50→51)
+- [ ] **T1 — Migration + entité + repo** (AC 1-6-bis)
+  - [ ] Migration `20260712000001_contacts_default_payment_terms_days.sql` (+ audit idempotence P5 avec ligne Total 50→51, compteur test 50→51)
   - [ ] `Contact`/`NewContact`/`ContactUpdate` + `COLUMNS` + `FIND_BY_ID_SQL` + INSERT/UPDATE bindings + `contact_snapshot_json` + `is_no_op_change` + helpers de test
-  - [ ] Balayage `query_as::<_, Contact>` workspace
+  - [ ] Balayage `query_as::<_, Contact>` workspace (lecture) + **balayage `NewContact {` — 20 sites de tests dans 13 fichiers, 3 crates (AC 6-bis)** (construction)
 - [ ] **T2 — API contacts + libellé localisé** (AC 7-12)
-  - [ ] Requests + validation 0..365 ; `ContactResponse` days + label sur list/get/create/update
-  - [ ] Helper `payment_terms_label` (bundle.format direct + FluentArgs) ; `resolve_language` promue pub(crate) ; clés FTL ×4 (`contact-payment-terms-days-label`, `contact-payment-terms-immediate-label`)
+  - [ ] Requests + validation 0..365 (message FR en dur, pattern validate_common) ; `ContactResponse` days + label sur les **5** handlers (AC 9-bis : ajouter `get_company_for` à get/update/archive, conserver celui de list dans une variable, closure au lieu de `.map(ContactResponse::from)`)
+  - [ ] Helper `contact_response_with_label` + `payment_terms_label` (bundle.format direct + FluentArgs) ; `resolve_language` promue pub(crate) ; clés FTL ×4 (`contact-payment-terms-days-label`, `contact-payment-terms-immediate-label`)
 - [ ] **T3 — Défauts facture + validation échéance** (AC 13-17)
   - [ ] `ensure_contact_belongs_to_company` → retourne `Contact` ; défauts due_date + payment_terms dans `create_invoice` ; update inchangé
   - [ ] Validation `due_date >= date` create (400 + FTL ×4) + règle « paire modifiée » à l'update
@@ -141,3 +143,7 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 ### File List
 
 ## Change Log
+
+### Validate Pass 1 (2026-07-12, Sonnet 4.6, contexte frais)
+
+5 findings, tous patchés : **V1-1 CRITICAL** balayage `NewContact {` manquant (20 sites de construction en littéral dans 13 fichiers de tests, 3 crates → E0063 au build workspace) → AC 6-bis + T1 ; **V1-2 HIGH** AC9 : 3 des 5 handlers contacts n'ont pas `get_company_for` (get/update/archive), list jette le résultat, `archive_contact` était un angle mort → AC 9-bis (helper `contact_response_with_label` sur les 5 sites) ; **V1-3 MEDIUM** message de borne : chaîne FR en dur (pattern validate_common, zéro i18n dans contacts.rs) au lieu du « message i18n » ambigu ; **V1-4 LOW** ligne Total 50→51 de l'audit idempotence ; **V1-5 LOW** `Locale::from(as_str())` = idiome inline, pas une fonction. 30+ refs chemin:ligne vérifiées OK par la passe (listées dans le rapport). Trend > LOW : 3 → à confirmer Pass 2.
