@@ -1,6 +1,6 @@
 # Story 21.1: Conditions de paiement structurées (jours) sur le contact → échéance de facture calculée
 
-Status: review
+Status: done
 
 <!-- Spec créée le 2026-07-12 (bmad-create-story, Fable 5). Source : planning epic-21-echeances-relances.md §A (décisions D1-D4) + issue #245 + cartographie 2 agents Explore (backend + frontend). Ferme #245. -->
 
@@ -210,3 +210,9 @@ Dismiss/documentés (LOW) : ECH-3 (prefill non réactif au changement de `date` 
 ### Code review Pass 2 (2026-07-12, Haiku 4.5, contexte frais, diff aplati main...HEAD)
 
 **6/6 patchs Pass 1 CONFIRMÉS par grep (0 hallucination), 1 finding réel : H2-1 MEDIUM** — la clé `contact-error-payment-terms-days-range` utilisée par la validation client (`contacts/+page.svelte:287`) était absente des 4 FTL (DE/IT/EN auraient vu le fallback français). **Patché** : clé ajoutée ×4 langues (à côté de `contact-error-ide-invalid`), `kesh-i18n --lib` 21/21 (parse FTL OK), fmt OK. Trend > LOW : 5 → 1 → à confirmer Pass 3 (rotation Opus).
+
+### Code review Pass 3 (2026-07-12, Opus 4.8, contexte frais, diff aplati) — CONVERGÉ
+
+**0 finding > LOW.** H2-1 confirmé grep ×4 + audit étendu à TOUS les nouveaux triplets de clés i18n (aucun trou — y compris `error-invoice-due-date-before-date` non citée au Change Log). 2 LOW documentés sans patch : P3-1 (libellé↔échéance divergents possibles après édition manuelle des deux champs explicites — tradeoff de design déjà raisonné ECH-2/ECH-3, snapshot par nature) ; P3-2 (micro-divergence de formulation FR entre message backend et clé client — cosmétique). Vérifiés sans finding : interaction e-mail Epic 20 (`{dueDate}` reflète l'échéance calculée), échéancier/réconciliation, invariant VARCHAR (libellé ≤ ~24 chars), alignement CHECK SQL ↔ validation ↔ client (0..365 sur les 3 couches, create ET update), couplage `due_from_contact_days` sain, mapping Locale, repository complet, export CSV, migration/docs/README.
+
+**Cycle review CONVERGÉ en 3 passes** (critère d'arrêt CLAUDE.md) : **trend > LOW 5 → 1 → 0**, modèles Sonnet 4.6 ×3 → Haiku 4.5 → Opus 4.8 (auteur : Fable 5). ~24 findings bruts cumulés → 7 patchs réels, 0 hallucination Haiku, 7 dismiss/documentés LOW. Story **done**.
