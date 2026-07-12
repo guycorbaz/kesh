@@ -1,0 +1,121 @@
+# Story 21.2: Montant TTC canonique — QR, PDF, e-mail, échéancier, réconciliation
+
+Status: ready-for-dev
+
+<!-- Spec créée le 2026-07-12 (bmad-create-story, Fable 5). Source : planning epic-21-echeances-relances.md §« Décision préalable #246 » + issue #246 + cartographie 2 agents Explore (backend + frontend). Ferme #246. -->
+
+## Story
+
+En tant que **PME assujettie à la TVA**,
+je veux **que chaque montant présenté comme « total dû » (QR-facture, PDF, e-mail, échéancier, rapprochement bancaire) soit le TTC réellement dû**,
+afin de **ne plus facturer le HT à mes clients par le QR et de pouvoir construire les rappels (#231) et la balance âgée sur des montants justes**.
+
+## Contexte du bug (#246 — vérifié ground-truth)
+
+`invoices.total_amount` = **HT** (`compute_total` = Σ `line_total`, `repositories/invoices.rs:283-292`) et DOIT le rester (source comptable : crédit produit = HT, DC9). Le débit créance comptable est TTC (`generate_invoice_journal_lines` :1044-1056 : `total_ht + Σ line_vat_amount par ligne`, DC7 « somme d'arrondis par ligne, jamais réarrondir une base agrégée »). Or 7 surfaces présentent le HT comme montant dû. Invisible en dogfooding (TVA 0 → HT = TTC). **L'avoir fait DÉJÀ juste** (`credit_notes.rs:230-235` : `Σ (line_total + line_vat_amount(...))`) — c'est le patron canonique à extraire.
+
+## Acceptance Criteria
+
+### A. Helper canonique (kesh-core)
+
+1. **`invoice_total_ttc`** dans `crates/kesh-core/src/accounting/vat.rs` (à côté de `line_vat_amount` :39-43) : Σ par ligne de `line_total + line_vat_amount(line_total, vat_rate)`. Signature générique sur `(Decimal, Decimal)` (line_total, vat_rate) — itérateur ou slice, au choix du dev (les entités `InvoiceLine`/`CreditNoteLine` exposent les deux champs). Doc `///` : équivalence prouvée avec le débit créance (l'agrégation par taux du journal est associative — Σ_taux Σ_lignes = Σ_lignes), et l'interdit DC7 (jamais `round` sur une base agrégée).
+2. **Tests unitaires kesh-core** : parité avec le calcul du journal (multi-lignes multi-taux, cas d'arrondi half-away 123.455, taux 0, base négative avoir, ligne unique 100.00 @ 8.1 → 108.10, deux lignes 0.05 @ 8.1 chacune → les arrondis PAR LIGNE s'additionnent — pas d'arrondi du total).
+3. **DRY — l'avoir consomme le helper** : `credit_notes.rs:230-235` (calcul inline `ttc`) refactoré vers `invoice_total_ttc` (iso-comportement — les tests avoirs existants sont le filet). `supplier_invoices.rs:143` NE change PAS (modèle différent : `total_amount` fournisseur est déjà TTC persisté).
+
+### B. Équivalent SQL + test de parité
+
+4. **Expression SQL canonique** (constante partagée `pub(crate)` dans `kesh-db`, pas de duplication inline) :
+   `(SELECT COALESCE(SUM(l.line_total + ROUND(l.line_total * l.vat_rate / 100, 2)), 0) FROM invoice_lines l WHERE l.invoice_id = i.id)`
+   — `ROUND(x, 2)` MariaDB sur DECIMAL = half-away-from-zero = `MidpointAwayFromZero` de `line_vat_amount` ; `line_total` DECIMAL(19,4) × `vat_rate` DECIMAL(5,2) = exact avant ROUND (pas de f64). ⚠️ **Premier usage de `ROUND` SQL du projet** (grep vide) — d'où l'AC 5.
+5. **Test d'intégration de parité SQL ≡ Rust** (kesh-db, série) : seed facture multi-lignes à taux mixtes incluant des cas d'arrondi limites (ex. 0.05 @ 8.1 ×2, 123.455 @ 7.7, ligne @ 0) → l'agrégat SQL (via `due_dates_summary` ou requête directe de l'expression) == `invoice_total_ttc(lines)` == débit créance de l'écriture générée. Trois voies, une valeur.
+
+### C. Surfaces corrigées (backend)
+
+6. **QR-facture** : `invoice_pdf_service.rs:213` `amount: Some(<TTC>)` — les lignes sont déjà chargées par le service (`find_by_id_with_lines`), appliquer le helper. Le débiteur qui scanne paie le TTC.
+7. **PDF facture** : `invoice_pdf_service.rs:249` `total: <TTC>` — le libellé `invoice-pdf-total-ttc` (« Total TTC », `kesh-qrbill/pdf.rs:352-372`) dit enfin vrai. AUCUN changement dans kesh-qrbill (le renderer reçoit `total`, l'avoir le prouve). Le récap TVA détaillé reste #151 (hors scope).
+8. **Variable `{amount}` e-mail** : `invoice_email.rs:180` → `format_money(&<TTC>)` (les lignes sont chargées dans le flux send ET preview — vérifier les deux chemins `build_invoice_vars`). Pré-formatage suisse inchangé (pas de Fluent ici → pas de piège BiDi).
+9. **`due_dates_summary`** (`repositories/invoices.rs:552,554`) : `SUM(i.total_amount)` et le `CASE WHEN` overdue → expression SQL TTC (AC 4). Les KPI de l'échéancier (impayées / en retard) deviennent TTC.
+10. **Export CSV échéancier** (`invoices.rs:1115` + header :964) : colonne total → TTC (cohérent avec les KPI). Le header i18n `echeancier-csv-header-total` reste (« Total » — pas de mention HT/TTC à changer, vérifier les 4 FTL au cas où).
+11. **Items de liste échéancier + API** : `InvoiceListItem` (requête `list_by_company_paginated`) gagne une colonne calculée `total_ttc` (expression AC 4 dans le SELECT) ; `InvoiceListItemResponse` (`invoices.rs:235-254`) expose `totalTtc: Decimal` ; `InvoiceResponse` (`:162-188`, `from_parts` a les lignes) expose aussi `totalTtc` (helper Rust). `total_amount` reste exposé inchangé (HT, compat). `DueDateItemResponse` = alias → hérite.
+12. **Réconciliation — matching TTC** (le cas critique pour l'epic : les relances dépendent du `paid_at` posé par la réconciliation ; avec TVA > 0, plus AUCUN match automatique aujourd'hui) :
+    - `find_unpaid_invoices_for_window` (`repositories/reconciliation.rs:84-93`) : le filtre `total_amount BETWEEN tx ± tolérance` passe sur l'expression SQL TTC, et la requête SELECT expose `total_ttc` (struct wrapper `#[sqlx(flatten)]` ou champ additionnel — au choix du dev, PAS de changement de l'entité `Invoice`).
+    - `amount_score` (`kesh-reconciliation/src/matching.rs:59`) : compare `tx.amount` au **TTC** (nouveau paramètre ou champ du candidat — le crate est pur, le caller passe la valeur).
+    - ⚠️ **Seeds sans lignes** : `reconciliation_e2e.rs` (`insert_invoice`/`seed_validated_invoice` :306-327) et les tests kesh-db réconciliation insèrent `total_amount` en dur SANS `invoice_lines` → la sous-requête rendrait 0 et tuerait tous les matchs. **Corriger les seeds** : ajouter à chaque facture seedée une ligne `(line_total = total_amount, vat_rate = 0)` → TTC = total_amount → **toutes les assertions existantes restent vertes** (aucun montant de test ne change). Balayer TOUS les helpers de seed réconciliation (e2e + repository + manual/split/rules s'ils seedent leurs propres factures).
+13. **Sites NON modifiés (décisions explicites)** : `invoices.total_amount` persisté (HT, source comptable) ; crédit produit HT (:1061-1064) ; `credit_note.total_amount` persisté (miroir HT) ; export souveraineté `csv_tables.rs:406,425` (dump brut de la colonne) ; `supplier_invoices` (déjà TTC) ; affichages d'audit `reconciliation.rs:523,1614,3090` (contexte de log, cohérence d'affichage seulement — documenter en Dev Notes, pas de patch) ; fixture `golden_test.rs` (assertions de déterminisme intra-run, indépendantes de la valeur).
+
+### D. Frontend
+
+14. **Types** (`invoices.types.ts`) : `totalTtc: string` ajouté à `InvoiceResponse` (:26) et `InvoiceListItemResponse` (:80) (`DueDateItem` hérite). Commentaire : montants string décimale, jamais Number (convention :6).
+15. **Échéancier** (`due-dates/+page.svelte`) : la colonne par-ligne (:420) passe à `inv.totalTtc` — sinon Σ colonne ≠ KPI TTC du résumé (:307/:313, qui suivent automatiquement le backend). Libellé de colonne `due-dates-column-total` inchangé (« Total »).
+16. **Surfaces qui RESTENT HT (décision documentée)** : liste factures (:362), détail facture tfoot (:617) et total temps réel du formulaire (`InvoiceForm.svelte:594`) — sommes des lignes affichées, internement cohérentes ; le total client-side du form est structurellement HT (Σ lignes sans TVA). Le récap TVA d'affichage = #151. Aucun libellé frontend ne prétend « TTC » sur ces surfaces (vérifié).
+
+### E. Tests
+
+17. **e2e kesh-api nouveau fichier** (`invoice_ttc_e2e.rs`, harnais 21-1/kf004) : facture 1 ligne 100.00 @ 8.1 → (a) `InvoiceResponse.totalTtc == 108.10` et `totalAmount == 100.00` ; (b) `due_dates_summary` `unpaidTotal == 108.10` ; (c) export CSV échéancier contient `108.10` ; (d) e-mail : via capture test-mode ou assertion du preview (`GET email-preview` renvoie le corps rendu — asserter que `{amount}` → `108.10`) ; (e) facture multi-lignes taux mixtes → parité avec le débit créance de l'écriture.
+18. **PDF/QR** : dans `invoice_pdf_e2e.rs` (seeds déjà @ 7.70), pas d'assertion de montant possible sur les bytes — à la place, test d'intégration au niveau service si praticable OU assertion indirecte : le `qr_data.amount` passe par `generate_qr_bill_pdf` qui refuse un mismatch de devise, pas de montant — couvrir via le test de parité AC 5 + revue. Documenter le choix dans le story file.
+19. **Réconciliation** : suites existantes vertes SANS modification d'assertions (preuve d'iso-comportement à TVA 0 via seeds AC 12) + 1 nouveau test : facture avec lignes @ 8.1 (HT 100, TTC 108.10) + transaction bancaire 108.10 → match proposé (aujourd'hui : aucun match) ; transaction 100.00 → PAS de match exact.
+20. **Commentaire faux pré-existant corrigé** : `invoice_echeancier_e2e.rs:425-427` prétend que `total_amount` inclut la TVA — le corriger en passant (l'assertion elle-même est robuste).
+21. **Frontend** : `npm run check` + unit (types) ; pas d'assertion de montants rendus dans les specs existants (vérifié — rien ne casse) ; étendre `invoices_echeancier.spec.ts` d'une assertion : facture 100.00 @ 8.1 seedée → la ligne de l'échéancier affiche `108.10`.
+
+### F. Doc & gate
+
+22. `CHANGELOG.md` `[Non publié]` : entrée `Corrigé` (montants TTC — QR, PDF, e-mail, échéancier, rapprochement ; refs #246, lien #151 pour le récap TVA). Manuels : différés à 21-8 (le changement est un fix de justesse, pas une feature à documenter — mention CHANGELOG suffit).
+23. **Aucune migration** (TTC dérivé, jamais persisté) → compteurs 51/audit P5/export/backup inchangés (vérifier qu'aucun test compteur n'est touché).
+24. **Quality gate Test Locally First** complet (backend 4 checks + frontend 4 + E2E ciblés), runner jamais pipé.
+
+## Tasks / Subtasks
+
+- [ ] **T1 — Helper kesh-core + DRY avoir** (AC 1-3)
+- [ ] **T2 — Expression SQL + parité** (AC 4-5) : constante partagée kesh-db + test d'intégration 3-voies
+- [ ] **T3 — Surfaces API** (AC 6-11) : QR + PDF total + {amount} (send ET preview) + summary + CSV + `totalTtc` sur les 2 responses + colonne SQL liste
+- [ ] **T4 — Réconciliation TTC** (AC 12) : filtre SQL + amount_score + **balayage des seeds sans lignes** (ligne vat 0 = iso-comportement)
+- [ ] **T5 — Frontend** (AC 14-16) : types + colonne échéancier
+- [ ] **T6 — Tests** (AC 17-21) : `invoice_ttc_e2e.rs` + test match TVA + commentaire echeancier + spec Playwright échéancier
+- [ ] **T7 — Doc-sync + gate** (AC 22-24)
+
+## Dev Notes
+
+### Pièges identifiés (ground-truth 2026-07-12)
+
+- **DC7 inviolable** : additionner des `line_vat_amount` déjà arrondis par ligne ; ne JAMAIS `round(Σ base × taux)`. L'équivalence avec le journal (agrégation par taux) tient par associativité — la documenter dans le helper.
+- **Seeds réconciliation sans `invoice_lines`** : le piège central de T4. Une sous-requête TTC sur des factures sans lignes = 0 → tous les matchs morts. La ligne `vat_rate 0, line_total = total_amount` rend le changement invisible aux tests existants. Balayer par grep `INSERT INTO invoices` dans les tests réconciliation (e2e + kesh-db).
+- **`{amount}` : deux chemins** — `build_invoice_vars` sert le preview (`GET email-preview`) ET le corps par défaut ; les lignes sont disponibles dans les deux handlers (`find_by_id_with_lines`). Pas de Fluent ici (`format_money` de kesh-i18n formatting) → pas de marques BiDi (leçon 21-1 non applicable).
+- **`InvoiceListItem` ne charge pas les lignes** → le TTC des items passe par la colonne SQL calculée (AC 11), PAS par le helper Rust (qui exige les lignes). Les deux voies sont réconciliées par le test de parité AC 5.
+- **Premier `ROUND` SQL du projet** — aucune convention interne à copier ; le test de parité est le garde-fou, pas la revue visuelle.
+- **kesh-reconciliation est un crate PUR** (pas de sqlx) : le TTC lui est passé par le caller — ne pas y introduire de dépendance DB.
+- **Ne PAS toucher `compute_total`** ni la sémantique de `invoices.total_amount` : tout le plan comptable (crédit produit HT, avoirs miroir) en dépend.
+- Leçons 21-1 reconduites : workspace série obligatoire (`--test-threads=1` kesh-db), `npm run build` avant re-run Playwright, jamais `runner | grep`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, backend E2E contre `kesh_e2e`.
+
+### Patterns à réutiliser (ne PAS réinventer)
+
+- **Patron TTC** : `credit_notes.rs:230-235` (exactement `Σ (line_total + line_vat_amount)`) — devient un simple appel au helper.
+- Harnais e2e : `contact_payment_terms_e2e.rs` (21-1) / `kf004_no_op_e2e.rs` (spawn_app + login + `create_seeded_company` avec vat_rates seedés).
+- Capture e-mail test-mode : `GET /_test/sent-emails` (20-4) si l'assertion corps est faite au send ; sinon `GET /api/v1/invoices/{id}/email-preview` renvoie le rendu (plus simple, pas de MockMailer).
+- `format_money` (apostrophe U+2019) : `invoice_email.rs` l'utilise déjà — `108.10` s'assertera sans séparateur de milliers.
+
+### Hors scope (anti-creep)
+
+- Récap TVA sur le PDF et champs émetteur (#151) ; balance âgée (21-7, consommera l'expression SQL) ; `{totalDue}` des rappels (21-5b, consommera le helper) ; toute persistance du TTC ; renommage/relabel des « Total » HT du frontend (liste/détail/form).
+
+### Project Structure Notes
+
+- `crates/kesh-core/src/accounting/vat.rs` ; `crates/kesh-db/src/repositories/{invoices.rs, reconciliation.rs}` (+ constante SQL partagée) ; `crates/kesh-api/src/routes/{invoice_pdf_service.rs, invoice_email.rs, invoices.rs, credit_notes.rs}` ; `crates/kesh-reconciliation/src/matching.rs` ; `frontend/src/lib/features/invoices/invoices.types.ts` + `routes/(app)/invoices/due-dates/+page.svelte` ; tests : `crates/kesh-api/tests/invoice_ttc_e2e.rs` (nouveau) + seeds réconciliation + `invoices_echeancier.spec.ts`.
+- 5 modules (kesh-core, kesh-db, kesh-api, kesh-reconciliation, frontend) — à la limite de la règle de splitting : périmètre volontairement borné (pas de rapport, pas de migration, frontend minimal). Si `validate` dépasse 4 passes → split T4 (réconciliation) en sous-story.
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/epic-21-echeances-relances.md#Décision préalable — bug HT/TTC (#246)]
+- [Source: GitHub #246] — inventaire initial ; étendu par la cartographie 2026-07-12 (réconciliation + CSV + items liste).
+- [Source: story 21-1 Dev Agent Record] — leçons process reconduites.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Change Log
