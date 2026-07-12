@@ -147,3 +147,7 @@ afin de **ne plus saisir manuellement ces informations à chaque facture et d'ob
 ### Validate Pass 1 (2026-07-12, Sonnet 4.6, contexte frais)
 
 5 findings, tous patchés : **V1-1 CRITICAL** balayage `NewContact {` manquant (20 sites de construction en littéral dans 13 fichiers de tests, 3 crates → E0063 au build workspace) → AC 6-bis + T1 ; **V1-2 HIGH** AC9 : 3 des 5 handlers contacts n'ont pas `get_company_for` (get/update/archive), list jette le résultat, `archive_contact` était un angle mort → AC 9-bis (helper `contact_response_with_label` sur les 5 sites) ; **V1-3 MEDIUM** message de borne : chaîne FR en dur (pattern validate_common, zéro i18n dans contacts.rs) au lieu du « message i18n » ambigu ; **V1-4 LOW** ligne Total 50→51 de l'audit idempotence ; **V1-5 LOW** `Locale::from(as_str())` = idiome inline, pas une fonction. 30+ refs chemin:ligne vérifiées OK par la passe (listées dans le rapport). Trend > LOW : 3 → à confirmer Pass 2.
+
+### Validate Pass 2 (2026-07-12, Haiku 4.5, contexte frais) — CONVERGÉ
+
+**0 finding > LOW, 0 hallucination.** Re-vérification ground-truth des patches Pass 1 (22 sites `NewContact {` confirmés au compte exact, 5 handlers contacts aux lignes citées, idiome `Locale::from` confirmé `invoice_email.rs:283`), matrice de cohérence ACs↔Tasks↔planning D1-D4 complète, 8 pièges Dev Notes tous validés fondés. **Trend > LOW : 3 → 0 — critère d'arrêt CLAUDE.md atteint (budget 2/8 passes). Spec prête pour `bmad-dev-story 21-1`.** Modèles : Pass 1 Sonnet 4.6, Pass 2 Haiku 4.5 (auteur spec : Fable 5).
