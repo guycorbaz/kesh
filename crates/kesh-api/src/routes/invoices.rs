@@ -528,14 +528,33 @@ pub async fn create_invoice(
     // due_date absente : date + délai (jours) du contact, sinon date (défaut
     // historique Review P6). payment_terms absent : libellé auto-généré dans
     // la langue du contact (fallback langue d'instance).
+    //
+    // Review Pass 1 ECH-2 : le libellé n'est généré que si l'échéance vient
+    // AUSSI du délai du contact (due_date absente de la requête) — sinon un
+    // client API envoyant une dueDate explicite à 9 jours recevrait un
+    // « Payable à 30 jours net » incohérent, imprimé sur le PDF.
+    let due_from_contact_days =
+        req.due_date.is_none() && contact.default_payment_terms_days.is_some();
     let due_date = match req.due_date {
         Some(d) => d,
         None => match contact.default_payment_terms_days {
-            Some(days) => req.date + chrono::Duration::days(i64::from(days)),
+            // Review Pass 1 BH-1 : `+ Duration` panique sur overflow chrono
+            // (date proche de NaiveDate::MAX acceptée par serde) → checked.
+            Some(days) => req
+                .date
+                .checked_add_signed(chrono::Duration::days(i64::from(days)))
+                .ok_or_else(|| {
+                    AppError::Validation(
+                        "Date de facture trop éloignée pour calculer l'échéance".into(),
+                    )
+                })?,
             None => req.date,
         },
     };
     let payment_terms = payment_terms.or_else(|| {
+        if !due_from_contact_days {
+            return None;
+        }
         contact.default_payment_terms_days.map(|days| {
             let language = crate::routes::invoice_email::resolve_language(&contact, &company);
             crate::routes::contacts::payment_terms_label(

@@ -320,7 +320,10 @@ error-ide-already-exists = A contact with this UID number already exists
 # Story 4.2 — Payment terms & product catalog
 contact-form-payment-terms = Payment terms
 contact-form-payment-terms-placeholder = e.g. 30 days net
-contact-payment-terms-days-label = Payable within { $days } days
+contact-payment-terms-days-label = { $days ->
+    [one] Payable within { $days } day
+   *[other] Payable within { $days } days
+}
 contact-payment-terms-immediate-label = Due upon receipt
 contact-form-payment-terms-days = Payment terms (days)
 contact-form-payment-terms-days-hint = Invoice due dates will be pre-calculated and the payment terms text generated automatically.

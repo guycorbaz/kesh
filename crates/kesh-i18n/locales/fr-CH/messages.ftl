@@ -314,7 +314,10 @@ error-ide-already-exists = Un contact avec ce numéro IDE existe déjà
 # Story 4.2 — Conditions de paiement & catalogue produits
 contact-form-payment-terms = Conditions de paiement
 contact-form-payment-terms-placeholder = ex: 30 jours net
-contact-payment-terms-days-label = Payable à { $days } jours net
+contact-payment-terms-days-label = { $days ->
+    [one] Payable à { $days } jour net
+   *[other] Payable à { $days } jours net
+}
 contact-payment-terms-immediate-label = Payable au comptant
 contact-form-payment-terms-days = Délai de paiement (jours)
 contact-form-payment-terms-days-hint = L'échéance des factures sera pré-calculée et le libellé des conditions généré automatiquement.

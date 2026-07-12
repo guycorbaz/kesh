@@ -320,7 +320,10 @@ error-ide-already-exists = Esiste già un contatto con questo numero IDI
 # Story 4.2 — Condizioni di pagamento e catalogo prodotti
 contact-form-payment-terms = Condizioni di pagamento
 contact-form-payment-terms-placeholder = es. 30 giorni netti
-contact-payment-terms-days-label = Pagabile entro { $days } giorni
+contact-payment-terms-days-label = { $days ->
+    [one] Pagabile entro { $days } giorno
+   *[other] Pagabile entro { $days } giorni
+}
 contact-payment-terms-immediate-label = Pagabile a vista
 contact-form-payment-terms-days = Termine di pagamento (giorni)
 contact-form-payment-terms-days-hint = La scadenza delle fatture sarà precalcolata e il testo delle condizioni generato automaticamente.

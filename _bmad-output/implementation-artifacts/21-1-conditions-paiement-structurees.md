@@ -190,3 +190,19 @@ Fable 5 (claude-fable-5) — run unique 2026-07-12.
 
 Implémentation intégrale T1→T8, 2 déviations additives documentées (export CSV contacts + littéraux hors liste — cf. Debug Log), 1 bug attrapé par les e2e (marques BiDi Fluent U+2068/U+2069 strippées dans `payment_terms_label` — le libellé part sur le PDF Helvetica).
 **Quality gate Test Locally First tout vert** : `cargo fmt --check` OK · `cargo build --workspace --all-targets` OK · `clippy -D warnings` 0 · **workspace série 93 suites / 1793 tests / 0 échec** (dont 8 nouveaux e2e `contact_payment_terms_e2e` + test repo no-op) · frontend `check` 0 erreur · `lint-i18n-ownership` PASS · **unit 382/382** (+5 `addDaysIso`) · `build` OK · **Playwright 18 passed / 2 skips pré-existants EXIT=0** (backend `kesh_e2e`, dont les 2 nouveaux scénarios #245). Prochaine : `bmad-code-review 21-1` (LLM ≠ Fable).
+
+### Code review Pass 1 (2026-07-12, Sonnet 4.6 × 3 reviewers parallèles — Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+**21 findings bruts → 5 MEDIUM patchés + 1 LOW patché + 5 LOW documentés/dismiss. 0 CRITICAL/HIGH. AA : 29/29 ACs SATISFAITS** (2 déviations dev confirmées légitimes, Dev Record vérifié — 8 e2e comptés, strip BiDi grep-confirmé complet contre le source fluent-bundle).
+
+Patchs appliqués :
+- **BH-1 MEDIUM** — `req.date + Duration::days(n)` panique sur overflow chrono (date proche `NaiveDate::MAX` acceptée par serde, chemin de panic introduit par la story) → `checked_add_signed` + 400 Validation + test e2e `invoice_date_overflow_returns_400_not_panic` (+262142-10-01 + 365j).
+- **ECH-1 MEDIUM** — `days=1` → « Payable à 1 jours net » ×4 langues (imprimé sur le PDF client) → **sélecteurs pluriel Fluent** `[one]/*[other]` sur les 4 clés + assertions e2e FR « 1 jour net » / DE « 1 Tag ».
+- **BH-2/ECH-4 MEDIUM** — texte libre désactivé mais toujours soumis → résurrection d'un texte legacy à l'effacement du délai. Fix : payload envoie `defaultPaymentTerms: null` quand le délai est renseigné (le délai REMPLACE le texte) + assertion Playwright (texte legacy saisi → délai → save → reopen : champ vide).
+- **ECH-2 MEDIUM** — libellé auto généré même quand `dueDate` explicite diverge (« Payable à 30 jours net » sur une échéance à 9 j) → le libellé n'est généré **que si l'échéance vient aussi du délai** (`due_from_contact_days`) + 2 tests e2e combinaisons mixtes.
+- **AA-1 MEDIUM** — trou de couverture : le fix HIGH du validate (label sur update/archive) non protégé par CI → assertions e2e PUT update (45 j → « Payable à 45 jours net ») + archive.
+- **AA-2 LOW** — assertion `audit_log` directe ajoutée au test repo (1 entrée `contact.updated` pour l'update isolé).
+
+Dismiss/documentés (LOW) : ECH-3 (prefill non réactif au changement de `date` post-sélection — comportement assumé, `date` jamais vide dans le flux normal) ; ECH-5 (TOCTOU théorique entre le fetch « paire modifiée » et le verrou optimiste — aucune corruption possible, message 400 vs 409 dans une fenêtre négligeable) ; AA-3 (compte « 20 sites » de la prose AC 6-bis = 19 réels — erreur de texte de spec pré-dev, le code couvre les 22 sites réels) ; AA-4 (le libellé auto contourne le plafond 255 — invariant sûr < 60 chars documenté). +1 fix de flake test : ré-ouverture du ContactPicker avec valeur identique ne re-déclenche pas la recherche → `fill('')` d'abord.
+
+**Gate re-vert intégral post-patchs** : fmt/clippy 0 · workspace série **93 suites / 1794 tests / 0 échec** · e2e story 9/9 · frontend check 0 / unit 382 / build OK · **Playwright 18 passed EXIT=0**. Trend > LOW : 5 → à confirmer Pass 2 (Haiku, diff aplati).

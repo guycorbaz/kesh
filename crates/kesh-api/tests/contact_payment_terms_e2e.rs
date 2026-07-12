@@ -290,6 +290,48 @@ async fn contact_with_days_returns_label_fr_and_days(pool: MySqlPool) {
         .await
         .expect("get json");
     assert_eq!(detail["defaultPaymentTermsLabel"], "Payable à 30 jours net");
+
+    // Review Pass 1 AA-1 : le label est posé aussi sur UPDATE et ARCHIVE
+    // (les 2 handlers corrigés par validate Pass 1 V1-2 — verrou anti-régression).
+    let updated: serde_json::Value = app
+        .client
+        .put(app.url(&format!("/api/v1/contacts/{id}")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "contactType": "Entreprise",
+            "name": "PTD Client FR",
+            "isClient": true,
+            "isSupplier": false,
+            "defaultPaymentTermsDays": 45,
+            "version": detail["version"],
+        }))
+        .send()
+        .await
+        .expect("update request")
+        .json()
+        .await
+        .expect("update json");
+    assert_eq!(updated["defaultPaymentTermsDays"], 45);
+    assert_eq!(
+        updated["defaultPaymentTermsLabel"],
+        "Payable à 45 jours net"
+    );
+
+    let archived: serde_json::Value = app
+        .client
+        .put(app.url(&format!("/api/v1/contacts/{id}/archive")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "version": updated["version"] }))
+        .send()
+        .await
+        .expect("archive request")
+        .json()
+        .await
+        .expect("archive json");
+    assert_eq!(
+        archived["defaultPaymentTermsLabel"],
+        "Payable à 45 jours net"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -307,6 +349,12 @@ async fn contact_language_de_gets_de_label_and_zero_days_immediate(pool: MySqlPo
 
     let comptant = create_contact(&app, &token, "PTD Comptant", Some(0), None).await;
     assert_eq!(comptant["defaultPaymentTermsLabel"], "Payable au comptant");
+
+    // Review Pass 1 ECH-1 : singulier (le libellé part sur le PDF client).
+    let un_jour = create_contact(&app, &token, "PTD Un Jour", Some(1), None).await;
+    assert_eq!(un_jour["defaultPaymentTermsLabel"], "Payable à 1 jour net");
+    let un_tag = create_contact(&app, &token, "PTD Ein Tag", Some(1), Some("DE")).await;
+    assert_eq!(un_tag["defaultPaymentTermsLabel"], "Zahlbar innert 1 Tag");
 
     let sans = create_contact(&app, &token, "PTD Sans Délai", None, None).await;
     assert!(sans["defaultPaymentTermsDays"].is_null());
@@ -383,6 +431,72 @@ async fn invoice_defaults_from_contact_days(pool: MySqlPool) {
     let invoice: serde_json::Value = resp.json().await.expect("invoice json");
     assert_eq!(invoice["dueDate"], "2026-07-10");
     assert_eq!(invoice["paymentTerms"], "10 jours (négocié)");
+
+    // Review Pass 1 ECH-2 — combinaisons mixtes :
+    // (a) dueDate explicite + paymentTerms absent → PAS de libellé auto
+    // (sinon « Payable à 30 jours net » incohérent avec une échéance à 9 j).
+    let mut mixed_a = invoice_payload(contact_id, "2026-07-01");
+    mixed_a["dueDate"] = json!("2026-07-10");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/invoices"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&mixed_a)
+        .send()
+        .await
+        .expect("invoice mixed a");
+    assert_eq!(resp.status(), 201);
+    let invoice: serde_json::Value = resp.json().await.expect("json");
+    assert_eq!(invoice["dueDate"], "2026-07-10");
+    assert!(
+        invoice["paymentTerms"].is_null(),
+        "dueDate explicite ⇒ pas de libellé auto (cohérence PDF)"
+    );
+
+    // (b) paymentTerms explicite + dueDate absente → échéance calculée,
+    // libellé de l'utilisateur conservé.
+    let mut mixed_b = invoice_payload(contact_id, "2026-07-01");
+    mixed_b["paymentTerms"] = json!("selon contrat");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/invoices"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&mixed_b)
+        .send()
+        .await
+        .expect("invoice mixed b");
+    assert_eq!(resp.status(), 201);
+    let invoice: serde_json::Value = resp.json().await.expect("json");
+    assert_eq!(invoice["dueDate"], "2026-07-31");
+    assert_eq!(invoice["paymentTerms"], "selon contrat");
+}
+
+/// Review Pass 1 BH-1 : `date + délai` proche de `NaiveDate::MAX` ne doit PAS
+/// paniquer (chrono `Add` panique sur overflow) → 400 propre.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn invoice_date_overflow_returns_400_not_panic(pool: MySqlPool) {
+    let company_id = create_seeded_company(&pool).await;
+    create_company_user(&pool, company_id, "ptd_ovf", "password-12345").await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "ptd_ovf", "password-12345").await;
+
+    let contact = create_contact(&app, &token, "PTD Overflow", Some(365), None).await;
+    let contact_id = contact["id"].as_i64().unwrap();
+
+    // NaiveDate::MAX = +262142-12-31 ; MAX - 100 jours + 365 jours → overflow.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/invoices"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&invoice_payload(contact_id, "+262142-10-01"))
+        .send()
+        .await
+        .expect("invoice overflow");
+    assert_eq!(
+        resp.status(),
+        400,
+        "overflow chrono → 400 Validation, jamais de panic/500"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

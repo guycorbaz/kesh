@@ -157,6 +157,7 @@ test.describe('Page contacts — CRUD', () => {
 
 		// Le champ texte libre est actif tant que le délai est vide.
 		await expect(page.locator('#form-payment-terms')).toBeEnabled();
+		await page.fill('#form-payment-terms', 'texte libre legacy');
 
 		// Renseigner le délai → le texte libre se désactive (préséance jours).
 		await page.fill('#form-payment-terms-days', '30');
@@ -171,11 +172,14 @@ test.describe('Page contacts — CRUD', () => {
 		await page.getByRole('button', { name: 'Créer' }).click();
 		await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
 
-		// Rouvrir en édition : le délai est persisté et le texte libre désactivé.
+		// Rouvrir en édition : le délai est persisté, le texte libre désactivé
+		// ET remplacé (review BH-2 : pas de résurrection du texte legacy —
+		// le payload envoie null quand le délai est renseigné).
 		const row = page.locator('tr', { hasText: uniqueName }).first();
 		await row.getByRole('button', { name: /Modifier/ }).click();
 		await expect(page.locator('#form-payment-terms-days')).toHaveValue('30');
 		await expect(page.locator('#form-payment-terms')).toBeDisabled();
+		await expect(page.locator('#form-payment-terms')).toHaveValue('');
 		await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
 
 		// Cleanup.

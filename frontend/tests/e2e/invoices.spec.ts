@@ -163,9 +163,16 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.locator('#invoice-payment-terms')).toHaveValue('Payable à 30 jours net');
 
 		// Une valeur déjà saisie n'est PAS écrasée par une re-sélection.
+		// Robustesse : vider le combobox avant de re-saisir (une valeur
+		// identique ne déclenche pas de recherche → dropdown jamais rouvert).
 		await page.locator('#invoice-due-date').fill('2030-01-15');
-		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
-		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
+		const combo = page.getByRole('combobox', { name: /Rechercher un contact/ });
+		await combo.click();
+		await combo.fill('');
+		await combo.fill(contactName);
+		await expect(
+			page.getByRole('option', { name: new RegExp(contactName) }).first()
+		).toBeVisible();
 		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
 		await expect(page.locator('#invoice-due-date')).toHaveValue('2030-01-15');
 	});

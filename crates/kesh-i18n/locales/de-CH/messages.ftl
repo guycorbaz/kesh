@@ -320,7 +320,10 @@ error-ide-already-exists = Ein Kontakt mit dieser UID-Nummer existiert bereits
 # Story 4.2 — Zahlungsbedingungen & Produktkatalog
 contact-form-payment-terms = Zahlungsbedingungen
 contact-form-payment-terms-placeholder = z. B. 30 Tage netto
-contact-payment-terms-days-label = Zahlbar innert { $days } Tagen
+contact-payment-terms-days-label = { $days ->
+    [one] Zahlbar innert { $days } Tag
+   *[other] Zahlbar innert { $days } Tagen
+}
 contact-payment-terms-immediate-label = Zahlbar sofort
 contact-form-payment-terms-days = Zahlungsfrist (Tage)
 contact-form-payment-terms-days-hint = Das Fälligkeitsdatum der Rechnungen wird vorausberechnet und der Text der Zahlungsbedingungen automatisch erzeugt.

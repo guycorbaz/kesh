@@ -319,7 +319,10 @@
 					country: formCountry.trim() || 'CH'
 				},
 				ideNumber: normalizeIdeForApi(formIde),
-				defaultPaymentTerms: formPaymentTerms.trim() || null,
+				// #245 (review BH-2) : quand le délai est renseigné, le texte libre
+				// est REMPLACÉ (null) — sinon un texte legacy invisible (champ
+				// désactivé) ressusciterait à l'effacement ultérieur du délai.
+				defaultPaymentTerms: paymentTermsDaysSet ? null : formPaymentTerms.trim() || null,
 				// #245 : null explicite (convention du form), jamais omis.
 				defaultPaymentTermsDays:
 					formPaymentTermsDays.trim() === '' ? null : Number(formPaymentTermsDays.trim()),

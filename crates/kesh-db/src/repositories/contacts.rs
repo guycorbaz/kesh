@@ -1528,6 +1528,17 @@ mod tests {
             "un changement isolé de default_payment_terms_days doit bumper la version"
         );
 
+        // Review Pass 1 AA-2 : l'audit `contact.updated` est bien écrit pour
+        // ce changement isolé (pas seulement déduit du bump de version).
+        let audit_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'contact' AND entity_id = ? AND action = 'contact.updated'",
+        )
+        .bind(found.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit_count, 1, "1 entrée audit pour l'update isolé");
+
         // Payload identique re-soumis → no-op KF-004.
         let noop = contact_to_update(&updated);
         let after = update(&pool, updated.id, updated.version, user_id, noop)
