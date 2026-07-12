@@ -310,6 +310,7 @@ contact-error-name-required = Name is required
 contact-error-name-too-long = Name must be at most 255 characters
 contact-error-email-invalid = Invalid email format
 contact-error-ide-invalid = Invalid Swiss UID number (format or checksum)
+contact-error-payment-terms-days-range = The payment terms must be a whole number between 0 and 365 days
 contact-error-ide-duplicate = A contact with this UID number already exists
 contact-error-not-found = Contact not found
 contact-error-archived-no-modify = Contact archived — no further modification or archiving allowed

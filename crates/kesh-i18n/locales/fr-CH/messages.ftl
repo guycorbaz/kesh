@@ -304,6 +304,7 @@ contact-error-name-required = Le nom est obligatoire
 contact-error-name-too-long = Le nom doit faire au plus 255 caractères
 contact-error-email-invalid = Format d'email invalide
 contact-error-ide-invalid = Numéro IDE suisse invalide (format ou checksum)
+contact-error-payment-terms-days-range = Le délai de paiement doit être un nombre entier entre 0 et 365 jours
 contact-error-ide-duplicate = Un contact avec ce numéro IDE existe déjà
 contact-error-not-found = Contact introuvable
 contact-error-archived-no-modify = Contact archivé — modification ou archivage supplémentaire interdit

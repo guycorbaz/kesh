@@ -206,3 +206,7 @@ Patchs appliqués :
 Dismiss/documentés (LOW) : ECH-3 (prefill non réactif au changement de `date` post-sélection — comportement assumé, `date` jamais vide dans le flux normal) ; ECH-5 (TOCTOU théorique entre le fetch « paire modifiée » et le verrou optimiste — aucune corruption possible, message 400 vs 409 dans une fenêtre négligeable) ; AA-3 (compte « 20 sites » de la prose AC 6-bis = 19 réels — erreur de texte de spec pré-dev, le code couvre les 22 sites réels) ; AA-4 (le libellé auto contourne le plafond 255 — invariant sûr < 60 chars documenté). +1 fix de flake test : ré-ouverture du ContactPicker avec valeur identique ne re-déclenche pas la recherche → `fill('')` d'abord.
 
 **Gate re-vert intégral post-patchs** : fmt/clippy 0 · workspace série **93 suites / 1794 tests / 0 échec** · e2e story 9/9 · frontend check 0 / unit 382 / build OK · **Playwright 18 passed EXIT=0**. Trend > LOW : 5 → à confirmer Pass 2 (Haiku, diff aplati).
+
+### Code review Pass 2 (2026-07-12, Haiku 4.5, contexte frais, diff aplati main...HEAD)
+
+**6/6 patchs Pass 1 CONFIRMÉS par grep (0 hallucination), 1 finding réel : H2-1 MEDIUM** — la clé `contact-error-payment-terms-days-range` utilisée par la validation client (`contacts/+page.svelte:287`) était absente des 4 FTL (DE/IT/EN auraient vu le fallback français). **Patché** : clé ajoutée ×4 langues (à côté de `contact-error-ide-invalid`), `kesh-i18n --lib` 21/21 (parse FTL OK), fmt OK. Trend > LOW : 5 → 1 → à confirmer Pass 3 (rotation Opus).

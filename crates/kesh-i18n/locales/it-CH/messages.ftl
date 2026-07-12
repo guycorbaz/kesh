@@ -310,6 +310,7 @@ contact-error-name-required = Il nome è obbligatorio
 contact-error-name-too-long = Il nome deve contenere al massimo 255 caratteri
 contact-error-email-invalid = Formato e-mail non valido
 contact-error-ide-invalid = Numero IDI svizzero non valido (formato o checksum)
+contact-error-payment-terms-days-range = Il termine di pagamento deve essere un numero intero tra 0 e 365 giorni
 contact-error-ide-duplicate = Esiste già un contatto con questo numero IDI
 contact-error-not-found = Contatto non trovato
 contact-error-archived-no-modify = Contatto archiviato — modifica o ulteriore archiviazione vietata
