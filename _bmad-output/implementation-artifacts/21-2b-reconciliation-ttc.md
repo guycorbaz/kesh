@@ -83,3 +83,16 @@ Fable 5 (claude-fable-5) — run 2026-07-13.
 - CHANGELOG.md
 
 ## Change Log
+
+### Pass 1 code-review (2026-07-13) — CONVERGÉ en 1 passe
+
+Panel adversarial de 3 reviewers en parallèle, lentilles distinctes, sur le diff aplati `eee73682` :
+
+- **Sonnet — correctness SQL/TTC** : 0 finding > LOW. Parité `INVOICE_TTC_SUBQUERY_SQL` (MariaDB `ROUND` half-away-from-zero) ≡ helper Rust `invoice_total_ttc` (`MidpointAwayFromZero`) confirmée, ties `.005`/`.455` couverts par le test 4 voies. `HAVING total_ttc BETWEEN` : 9 `?` = 9 `.bind()`, index `WHERE` préservé. `COALESCE(...,0)` → 0 pour facture sans lignes. Pas de collision `#[sqlx(flatten)]` (`Invoice` n'a pas de champ `total_ttc`). `amount_score` symétrique.
+- **Haiku — régression/fanout** (grep ground-truth) : 0 finding > LOW. 2 call sites prod (`:522`, `:1155`) + 13 fixtures migrés au tuple 3-champs, accesseurs `.invoice.*`, seeds vat 0 = iso-comportement, sites audit `bt.amount` (`:1645`/`:3121`) intacts.
+- **Opus — archi/edge/patterns** : 0 finding > LOW. Parité re-score `accept_one` « airtight » (même constante SQL des deux côtés → impossible qu'une proposition affichée soit rejetée par écart arithmétique). Pattern `FailedProposal` respecté (nouveau chemin d'erreur TTC encapsulé, pas d'`AppError` global). Guard devise CHF (`:445`) avant la requête TTC. `normalize()` cohérent entre `invoiceAmount` et `TransactionSummary.amount`. **3 nits LOW** :
+  - **LOW-1** — facture legacy `total_amount≠0` mais **sans `invoice_lines`** → TTC=0 → ne matche plus (avant : matchait sur `total_amount`). Impact quasi-nul (toute facture UF a des lignes ; nouveau comportement *plus* conservateur). **Non corrigé** (accepté v0.1, hors flux de création).
+  - **LOW-2** — `error_code` divergent : le site re-score TTC utilisait `"RECONCILIATION_INTERNAL"` + `details.reason` alors que les 11 erreurs DB sœurs de la même fonction utilisent `"DATABASE_ERROR"` + `details.message`. **CORRIGÉ** (`reconciliation.rs:1147` aligné) — cohérence du contrat `FailedProposal` (constantes canoniques, CLAUDE.md).
+  - **LOW-3** — sous-requête TTC évaluée par ligne de la fenêtre avant filtre montant + `LIMIT 50` sans `ORDER BY` (non-déterminisme **pré-existant**, l'ancienne requête n'avait déjà pas d'`ORDER BY`). Volume PME négligeable. **Non corrigé** (perf marginale, pré-existant).
+
+**Trend** : passe 1 → 3 reviewers à 0 CRITICAL/HIGH/MEDIUM. Critère d'arrêt de la Review Iteration Rule atteint (uniquement LOW). 1 LOW corrigé (LOW-2), 2 LOW documentés comme acceptés. Pas de passe 2.

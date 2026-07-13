@@ -1144,8 +1144,8 @@ async fn accept_one_invoice(
         .await
         .map_err(|e| FailedProposal {
             bank_transaction_id,
-            error_code: "RECONCILIATION_INTERNAL".to_string(),
-            details: Some(serde_json::json!({ "reason": format!("ttc_query_failed: {e}") })),
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
         })?;
     let candidates_for_score: Vec<(
         Invoice,
