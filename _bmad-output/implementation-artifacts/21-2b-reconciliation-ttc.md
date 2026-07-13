@@ -1,6 +1,6 @@
 # Story 21.2b: Réconciliation bancaire en TTC — matching, câblage, UI candidats
 
-Status: review
+Status: done
 
 <!-- Spec créée le 2026-07-12 par SPLIT de la story 21-2 (règle de splitting préventif CLAUDE.md — validate 4 passes sans convergence, friction concentrée sur la réconciliation). Contenu = AC 12/19 de l'ex-21-2, raffiné par les 4 passes de validate (V1-1, V2-3, V2-4, V3-4) + patches Pass 4 (V4-1, V4-3) intégrés. CONSOMME les primitives de 21-2a (helper `invoice_total_ttc` + constantes SQL `pub`) — dev APRÈS 21-2a done. **Closes #246** (dernier morceau). -->
 
