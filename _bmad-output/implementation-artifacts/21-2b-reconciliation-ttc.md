@@ -1,6 +1,6 @@
 # Story 21.2b: Réconciliation bancaire en TTC — matching, câblage, UI candidats
 
-Status: ready-for-dev
+Status: review
 
 <!-- Spec créée le 2026-07-12 par SPLIT de la story 21-2 (règle de splitting préventif CLAUDE.md — validate 4 passes sans convergence, friction concentrée sur la réconciliation). Contenu = AC 12/19 de l'ex-21-2, raffiné par les 4 passes de validate (V1-1, V2-3, V2-4, V3-4) + patches Pass 4 (V4-1, V4-3) intégrés. CONSOMME les primitives de 21-2a (helper `invoice_total_ttc` + constantes SQL `pub`) — dev APRÈS 21-2a done. **Closes #246** (dernier morceau). -->
 
@@ -32,11 +32,11 @@ afin de **retrouver le matching automatique (aujourd'hui : plus AUCUN match dès
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Repo + wrapper** (AC 1-2) : alias FROM + forme scalaire + `UnpaidInvoiceCandidate` pub + flatten
-- [ ] **T2 — Crate matching** (AC 3, 6) : tuple 3-champs + amount_score TTC + ~13 fixtures
-- [ ] **T3 — Câblage production + UI candidats** (AC 4-5) : 2 sites + `invoiceAmount` TTC (`:523`)
-- [ ] **T4 — Seeds + tests** (AC 7-8) : 2 helpers de seed (ligne vat 0) + tests match TVA + assertion invoiceAmount
-- [ ] **T5 — Doc + gate** (AC 9-10)
+- [x] **T1 — Repo + wrapper** (AC 1-2) : alias FROM + forme scalaire + `UnpaidInvoiceCandidate` pub + flatten
+- [x] **T2 — Crate matching** (AC 3, 6) : tuple 3-champs + amount_score TTC + ~13 fixtures
+- [x] **T3 — Câblage production + UI candidats** (AC 4-5) : 2 sites + `invoiceAmount` TTC (`:523`)
+- [x] **T4 — Seeds + tests** (AC 7-8) : 2 helpers de seed (ligne vat 0) + tests match TVA + assertion invoiceAmount
+- [x] **T5 — Doc + gate** (AC 9-10)
 
 ## Dev Notes
 
@@ -55,10 +55,31 @@ afin de **retrouver le matching automatique (aujourd'hui : plus AUCUN match dès
 
 ### Agent Model Used
 
+Fable 5 (claude-fable-5) — run 2026-07-13.
+
 ### Debug Log References
+
+- Divergence spec vs code sur le câblage `accept_one` : `invoice` y est chargé **sans lignes** (`find_invoice_by_id_for_company`) → helper Rust sur lignes impraticable sans re-fetch. Choix : nouveau helper `invoices::total_ttc(executor, id)` (forme scalaire SQL, générique executor → utilisable en tx), garantissant la parité avec le filtre `find_unpaid_invoices_for_window` (même expression SQL).
+- `find_unpaid_invoices_for_window` : filtre TTC posé en **HAVING** (pas WHERE) pour référencer l'alias `total_ttc` sans dupliquer la sous-requête ; l'index `WHERE` (company/status/date) reste utilisé.
+- Sérialisation : `TransactionSummary.amount` et `invoiceAmount` sont **normalisés** (`Decimal::normalize()`) → assertions e2e sur `"108.1"` / `"100"` (pas `"108.1000"`).
 
 ### Completion Notes List
 
+- **T1** wrapper `pub struct UnpaidInvoiceCandidate { invoice #[sqlx(flatten)], total_ttc }` (1er usage flatten) + `find_unpaid_invoices_for_window` → alias `i` + `INVOICE_TTC_SUBQUERY_SQL AS total_ttc` + filtre HAVING TTC. Retourne `Vec<UnpaidInvoiceCandidate>`.
+- **T2** tuple candidat `propose_matches` → `(Invoice, Option<Contact>, Decimal)`, `amount_score(tx.amount, total_ttc)` ; 13 sites de tests migrés via helper `cand()` (TTC = total_amount pour ces fixtures sans TVA → iso-comportement, 30 tests lib verts).
+- **T3** câblage : `list_bank_transactions_proposals` (`.invoice.*` + tuple 3-champs + **`invoiceAmount = cand.total_ttc`** V4-1) + `accept_one` re-score via `invoices::total_ttc` en tx + `tx_candidates: Vec<(_, Vec<UnpaidInvoiceCandidate>)>`. Sites audit `:1614`/`:3090` NON touchés.
+- **T4** 2 seeds (`insert_test_invoice` kesh-db + `insert_invoice` kesh-api) → ligne unique vat 0 = TTC=total_amount → **iso-comportement prouvé** (repo 8/8, e2e 24/24 sans modif d'assertion) + 2 nouveaux tests TVA : `find_unpaid_matches_on_ttc_not_ht` (repo : matche 108.10, PAS 100.00) + `get_proposals_matches_and_shows_ttc` (e2e : proposition invoiceAmount=108.1 + amountScore 1 ; HT 100 ne propose plus).
+- **T5** CHANGELOG entrée #246 étendue au rapprochement bancaire (**closes #246**). Aucune migration. Frontend : 0 fichier touché.
+- **Gate** : fmt/clippy 0 · workspace série (en cours au moment de la rédaction) · réconciliation repo 8/8 + 1 nouveau, e2e 24/24 + 1 nouveau. **Ferme #246** (dernier morceau du bug HT/TTC).
+
 ### File List
+
+- crates/kesh-reconciliation/src/matching.rs (tuple 3-champs + helper cand tests)
+- crates/kesh-db/src/repositories/reconciliation.rs (wrapper UnpaidInvoiceCandidate + find_unpaid TTC)
+- crates/kesh-db/src/repositories/invoices.rs (helper total_ttc)
+- crates/kesh-db/tests/reconciliation_repository.rs (seed ligne vat 0 + test match TTC)
+- crates/kesh-api/src/routes/reconciliation.rs (câblage 2 sites + invoiceAmount TTC + accept_one)
+- crates/kesh-api/tests/reconciliation_e2e.rs (seed ligne vat 0 + test proposition TTC)
+- CHANGELOG.md
 
 ## Change Log

@@ -24,9 +24,11 @@ use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::DbError;
+use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
-    journal_entries, projects, reconciliation as reconciliation_repo, reconciliation_rules,
+    invoices, journal_entries, projects, reconciliation as reconciliation_repo,
+    reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
@@ -432,7 +434,7 @@ pub async fn get_proposals(
     }
 
     // Pass 2 : per tx, load candidates + accumulate distinct contact_ids.
-    let mut tx_candidates: Vec<(BankTransaction, Vec<Invoice>)> =
+    let mut tx_candidates: Vec<(BankTransaction, Vec<UnpaidInvoiceCandidate>)> =
         Vec::with_capacity(transactions.len());
     let mut distinct_contact_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
     let amount_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
@@ -458,13 +460,13 @@ pub async fn get_proposals(
             amount_tolerance,
         )
         .await?;
-        for inv in &candidates {
+        for cand in &candidates {
             // M1 Pass 1 — guard `contact_id > 0` : l'entité Invoice
             // expose `contact_id: i64` (pas `Option<i64>`) avec sentinel
             // 0 = pas de contact lié. Insérer 0 dans le set provoquerait
             // un SELECT inutile sur contact_id=0 (jamais existant).
-            if inv.contact_id > 0 {
-                distinct_contact_ids.insert(inv.contact_id);
+            if cand.invoice.contact_id > 0 {
+                distinct_contact_ids.insert(cand.invoice.contact_id);
             }
         }
         tx_candidates.push((tx, candidates));
@@ -502,11 +504,21 @@ pub async fn get_proposals(
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
         .map(|(tx, candidate_invoices)| {
-            let candidates_with_contacts: Vec<(Invoice, Option<kesh_db::entities::Contact>)> =
-                candidate_invoices
-                    .iter()
-                    .map(|inv| (inv.clone(), contacts_map.get(&inv.contact_id).cloned()))
-                    .collect();
+            // #246 (21-2b) : le triplet candidat porte le TTC (matching sur TTC).
+            let candidates_with_contacts: Vec<(
+                Invoice,
+                Option<kesh_db::entities::Contact>,
+                rust_decimal::Decimal,
+            )> = candidate_invoices
+                .iter()
+                .map(|c| {
+                    (
+                        c.invoice.clone(),
+                        contacts_map.get(&c.invoice.contact_id).cloned(),
+                        c.total_ttc,
+                    )
+                })
+                .collect();
             let match_proposals = propose_matches(&tx, &candidates_with_contacts);
             let has_strong_invoice_match = match_proposals
                 .iter()
@@ -515,12 +527,18 @@ pub async fn get_proposals(
             let mut candidates: Vec<ReconciliationCandidate> = match_proposals
                 .into_iter()
                 .filter_map(|mp| {
-                    let inv = candidate_invoices.iter().find(|i| i.id == mp.invoice_id)?;
+                    let cand = candidate_invoices
+                        .iter()
+                        .find(|c| c.invoice.id == mp.invoice_id)?;
+                    let inv = &cand.invoice;
                     Some(ReconciliationCandidate {
                         candidate_type: CandidateType::Invoice,
                         invoice_id: Some(inv.id),
                         invoice_number: inv.invoice_number.clone(),
-                        invoice_amount: Some(inv.total_amount.normalize().to_string()),
+                        // #246 (21-2b, V4-1) : montant affiché dans l'UI candidats
+                        // = TTC (à côté du montant de la tx, TTC lui aussi) —
+                        // `total_amount` (HT) affichait un montant ≠ tx.
+                        invoice_amount: Some(cand.total_ttc.normalize().to_string()),
                         invoice_date: Some(inv.date),
                         rule_id: None,
                         rule_label: None,
@@ -1119,8 +1137,21 @@ async fn accept_one_invoice(
     let journal_entry_id = invoice.journal_entry_id.unwrap();
 
     // Step 7 — re-calculer score serveur-side (M7 Pass 1).
-    let candidates_for_score: Vec<(Invoice, Option<kesh_db::entities::Contact>)> =
-        vec![(invoice.clone(), contact.clone())];
+    // #246 (21-2b) : re-score sur le TTC — `invoice` est chargé sans lignes,
+    // on récupère le TTC via l'expression SQL canonique (identique au filtre
+    // de `find_unpaid_invoices_for_window`, parité garantie 21-2a).
+    let invoice_ttc = invoices::total_ttc(&mut **tx, invoice.id)
+        .await
+        .map_err(|e| FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_INTERNAL".to_string(),
+            details: Some(serde_json::json!({ "reason": format!("ttc_query_failed: {e}") })),
+        })?;
+    let candidates_for_score: Vec<(
+        Invoice,
+        Option<kesh_db::entities::Contact>,
+        rust_decimal::Decimal,
+    )> = vec![(invoice.clone(), contact.clone(), invoice_ttc)];
     let proposals_score = propose_matches(&bank_transaction, &candidates_for_score);
     let score = proposals_score
         .first()

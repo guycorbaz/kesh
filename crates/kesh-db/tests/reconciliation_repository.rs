@@ -180,7 +180,22 @@ async fn insert_test_invoice(
     .execute(pool)
     .await
     .expect("invoice insert");
-    result.last_insert_id() as i64
+    let invoice_id = result.last_insert_id() as i64;
+    // #246 (21-2b) : le matching filtre désormais sur le TTC (dérivé des
+    // lignes). Une facture sans ligne aurait un TTC = 0 et ne matcherait
+    // jamais. On pose une ligne unique à vat_rate 0 → TTC = total_amount,
+    // les assertions de montant existantes restent inchangées.
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'Ligne test', 1, ?, 0, ?)",
+    )
+    .bind(invoice_id)
+    .bind(total_amount)
+    .bind(total_amount)
+    .execute(pool)
+    .await
+    .expect("invoice_line insert");
+    invoice_id
 }
 
 fn make_new_import(
@@ -297,7 +312,7 @@ async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     .await
     .expect("find_unpaid_invoices_for_window");
 
-    let ids: Vec<i64> = candidates.iter().map(|i| i.id).collect();
+    let ids: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
     assert!(
         ids.contains(&inv_in),
         "inv_in (within window) doit être candidat"
@@ -360,7 +375,7 @@ async fn find_unpaid_invoices_filters_by_company_id(pool: MySqlPool) {
     )
     .await
     .expect("find for A");
-    let ids_a: Vec<i64> = candidates_a.iter().map(|i| i.id).collect();
+    let ids_a: Vec<i64> = candidates_a.iter().map(|c| c.invoice.id).collect();
     assert!(ids_a.contains(&inv_a));
     assert!(!ids_a.contains(&inv_b), "leak cross-tenant détecté");
 
@@ -375,7 +390,7 @@ async fn find_unpaid_invoices_filters_by_company_id(pool: MySqlPool) {
     )
     .await
     .expect("find for B");
-    let ids_b: Vec<i64> = candidates_b.iter().map(|i| i.id).collect();
+    let ids_b: Vec<i64> = candidates_b.iter().map(|c| c.invoice.id).collect();
     assert!(ids_b.contains(&inv_b));
     assert!(!ids_b.contains(&inv_a), "leak cross-tenant détecté");
 }
@@ -453,7 +468,7 @@ async fn find_unpaid_invoices_filters_status_validated_and_unpaid(pool: MySqlPoo
     .await
     .expect("find_unpaid_invoices_for_window");
 
-    let ids: Vec<i64> = candidates.iter().map(|i| i.id).collect();
+    let ids: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
     assert_eq!(
         ids,
         vec![inv_ok],
@@ -507,7 +522,7 @@ async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     .await
     .expect("find_unpaid_invoices_for_window");
 
-    let ids: Vec<i64> = candidates.iter().map(|i| i.id).collect();
+    let ids: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
     assert_eq!(
         ids,
         vec![inv_in],
@@ -731,5 +746,78 @@ async fn find_strictly_pending_returns_none_for_reconciled_status(pool: MySqlPoo
     assert!(
         still_findable_by_legacy.is_some(),
         "find_pending_by_id_for_account 8-4 ne filtre PAS status, retourne la tx reconciled — démarcation explicite vs strictly_pending"
+    );
+}
+
+/// #246 (Story 21-2b) — le matching filtre sur le **TTC**, pas le HT.
+/// Régression corrigée : une facture avec TVA (HT 100 @ 8.1 % → TTC 108.10)
+/// doit matcher un encaissement de 108.10 (TTC réel) et NON de 100.00 (HT).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_unpaid_matches_on_ttc_not_ht(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "TTC Co").await;
+    let user_id = create_test_user(&pool, "bob", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client TTC").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+
+    let tx_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 30).unwrap();
+
+    // Facture validée HT 100.00 @ 8.1 % → TTC 108.10.
+    let result = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, \
+         total_amount, journal_entry_id, version, created_at, updated_at) \
+         VALUES (?, ?, 'INV-VAT-1', 'validated', ?, ?, ?, 1, NOW(3), NOW(3))",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(inv_date)
+    .bind(dec!(100.00))
+    .bind(je_id)
+    .execute(&pool)
+    .await
+    .expect("invoice insert");
+    let inv_id = result.last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'Prestation', 1, 100.00, 8.10, 100.00)",
+    )
+    .bind(inv_id)
+    .execute(&pool)
+    .await
+    .expect("line insert");
+
+    // tx = 108.10 (TTC) → candidate trouvée, total_ttc exposé = 108.10.
+    let found_ttc = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        tx_date,
+        dec!(108.10),
+        30,
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid TTC");
+    let cand = found_ttc.iter().find(|c| c.invoice.id == inv_id);
+    assert!(
+        cand.is_some(),
+        "la facture doit matcher l'encaissement TTC 108.10"
+    );
+    assert_eq!(cand.unwrap().total_ttc, dec!(108.10));
+
+    // tx = 100.00 (HT) → PAS de match (le bug d'avant matchait le HT).
+    let found_ht = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        tx_date,
+        dec!(100.00),
+        30,
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid HT");
+    assert!(
+        !found_ht.iter().any(|c| c.invoice.id == inv_id),
+        "le HT 100.00 ne doit plus matcher (régression #246 corrigée)"
     );
 }

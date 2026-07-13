@@ -319,7 +319,21 @@ async fn insert_invoice(
     .execute(pool)
     .await
     .expect("invoice insert");
-    result.last_insert_id() as i64
+    let invoice_id = result.last_insert_id() as i64;
+    // #246 (21-2b) : le matching filtre sur le TTC (dérivé des lignes). Sans
+    // ligne, TTC = 0 → jamais candidate. Ligne unique vat_rate 0 → TTC =
+    // total_amount, les assertions de montant existantes restent valides.
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'Ligne test', 1, ?, 0, ?)",
+    )
+    .bind(invoice_id)
+    .bind(total_amount)
+    .bind(total_amount)
+    .execute(pool)
+    .await
+    .expect("invoice_line insert");
+    invoice_id
 }
 
 /// Setup complet : fiscal_year + journal_entry + validated invoice, prête
@@ -599,6 +613,118 @@ async fn get_proposals_returns_candidates_with_scores(pool: MySqlPool) {
     assert_eq!(total_with_candidates, 2, "2 tx avec candidate");
     assert_eq!(total_empty, 1, "1 tx orpheline");
     assert_eq!(body["hasMore"], serde_json::Value::Bool(false));
+}
+
+/// #246 (Story 21-2b) — la proposition matche sur le **TTC** et l'expose
+/// dans `invoiceAmount`. Facture HT 100 @ 8.1 % (TTC 108.10) : un encaissement
+/// de 108.10 la propose comme candidate, avec `invoiceAmount = 108.1` (TTC,
+/// pas le HT 100). Un encaissement de 100.00 (HT) ne la propose pas.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn get_proposals_matches_and_shows_ttc(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "TTC Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+
+    // Facture validée HT 100 @ 8.1 % → TTC 108.10 (avec fiscal_year + je).
+    let fy_id = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, ctx.company_id, fy_id).await;
+    let inv = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, \
+         total_amount, journal_entry_id, version, created_at, updated_at) \
+         VALUES (?, ?, 'INV-VAT', 'validated', ?, 100.00, ?, 1, NOW(3), NOW(3))",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.contact_id)
+    .bind(day)
+    .bind(je_id)
+    .execute(&pool)
+    .await
+    .expect("invoice insert");
+    let inv_id = inv.last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'Prestation', 1, 100.00, 8.10, 100.00)",
+    )
+    .bind(inv_id)
+    .execute(&pool)
+    .await
+    .expect("line insert");
+
+    // Deux tx : 108.10 (TTC → matche) et 100.00 (HT → ne matche pas).
+    seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("get_proposals_ttc"),
+        day,
+        day,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(108.10),
+                "CHF",
+                "INV-VAT",
+                Some("Acme Client"),
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(100.00),
+                "CHF",
+                "HT-ONLY",
+                None,
+            ),
+        ],
+    )
+    .await;
+
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let proposals = body["proposals"].as_array().expect("proposals array");
+
+    // tx 108.10 → candidate avec invoiceAmount TTC = 108.1 et amountScore 1.
+    // (le montant tx est sérialisé normalisé : 108.10 → "108.1").
+    let ttc_prop = proposals
+        .iter()
+        .find(|p| p["transaction"]["amount"] == "108.1")
+        .expect("proposition tx 108.10");
+    let cands = ttc_prop["candidates"].as_array().unwrap();
+    let inv_cand = cands
+        .iter()
+        .find(|c| c["invoiceId"] == inv_id)
+        .expect("facture candidate pour la tx TTC");
+    assert_eq!(
+        inv_cand["invoiceAmount"], "108.1",
+        "invoiceAmount doit être le TTC (normalisé), pas le HT 100"
+    );
+    assert_eq!(inv_cand["score"]["amountScore"], 1.0);
+
+    // tx 100.00 (HT) → pas de candidate facture (le HT ne matche plus).
+    let ht_prop = proposals
+        .iter()
+        .find(|p| p["transaction"]["amount"] == "100")
+        .expect("proposition tx 100.00");
+    let ht_cands = ht_prop["candidates"].as_array().unwrap();
+    assert!(
+        !ht_cands.iter().any(|c| c["invoiceId"] == inv_id),
+        "le HT 100.00 ne doit plus proposer la facture (régression #246 corrigée)"
+    );
 }
 
 /// AC #45 — multi-tenant : tx du company_B sur le même IBAN qu'un compte

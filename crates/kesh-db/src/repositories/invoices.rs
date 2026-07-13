@@ -146,6 +146,23 @@ pub const INVOICE_TTC_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id, \
      SUM(line_total + ROUND(line_total * vat_rate / 100, 2)) AS ttc \
      FROM invoice_lines GROUP BY invoice_id) lt ON lt.invoice_id = i.id";
 
+/// TTC canonique d'UNE facture (#246) via la forme scalaire — pour les
+/// call-sites qui n'ont pas les lignes chargées (ex. re-score de la
+/// réconciliation, 21-2b). Générique sur l'executor (utilisable en tx).
+/// Renvoie 0 pour une facture sans lignes ; `NotFound` si l'id n'existe pas.
+pub async fn total_ttc<'e, E>(executor: E, invoice_id: i64) -> Result<Decimal, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_scalar::<_, Decimal>(&format!(
+        "SELECT {INVOICE_TTC_SUBQUERY_SQL} FROM invoices i WHERE i.id = ?"
+    ))
+    .bind(invoice_id)
+    .fetch_one(executor)
+    .await
+    .map_err(map_db_error)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct InvoiceListQuery {
     pub search: Option<String>,
@@ -3622,10 +3639,11 @@ mod tests {
         .unwrap();
 
         // Summary = unpaid only. Les 2 impayées (overdue + not-overdue), pas la payée.
+        // #246 (21-2a) : totaux en TTC (lignes @ 8.1 %). 100 → 108.10, 50 → 54.05.
         assert_eq!(summary.unpaid_count, 2);
-        assert_eq!(summary.unpaid_total, dec!(150.0000));
+        assert_eq!(summary.unpaid_total, dec!(162.1500));
         assert_eq!(summary.overdue_count, 1);
-        assert_eq!(summary.overdue_total, dec!(100.0000));
+        assert_eq!(summary.overdue_total, dec!(108.1000));
 
         cleanup_invoices(&pool, &[id_overdue, id_unpaid_not_overdue, id_paid]).await;
         cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
@@ -3693,8 +3711,9 @@ mod tests {
         .await
         .unwrap();
 
+        // #246 (21-2a) : TTC (lignes @ 8.1 %). 10 → 10.81, 20 → 21.62.
         assert_eq!(summary.unpaid_count, 2);
-        assert_eq!(summary.unpaid_total, dec!(30.0000));
+        assert_eq!(summary.unpaid_total, dec!(32.4300));
 
         cleanup_invoices(&pool, &[id_unpaid_a, id_unpaid_b, id_paid]).await;
         cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
@@ -4316,8 +4335,9 @@ mod tests {
         );
         assert_eq!(
             summary.unpaid_total,
-            dec!(100.0000),
-            "due_dates_summary : unpaid_total = total facture Marie uniquement"
+            // #246 (21-2a) : TTC (100 @ 8.1 % → 108.10).
+            dec!(108.1000),
+            "due_dates_summary : unpaid_total (TTC) = total facture Marie uniquement"
         );
 
         cleanup_invoices(&pool, &[inv_marie.id, inv_pierre.id]).await;

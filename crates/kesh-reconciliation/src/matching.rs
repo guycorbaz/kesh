@@ -4,7 +4,11 @@
 //! avec un score de confiance pondéré :
 //!
 //! - **Montant** (0.50) : `1.0` si exact ([`Decimal::normalize`]),
-//!   sinon `0.0` (pas de gradient — décision conservatrice v0.1).
+//!   sinon `0.0` (pas de gradient — décision conservatrice v0.1). Le montant
+//!   comparé est le **TTC** de la facture (#246, Story 21-2b) — un encaissement
+//!   bancaire est TTC ; le HT `invoice.total_amount` ne matcherait jamais une
+//!   facture avec TVA. Le crate restant pur (pas d'accès DB), le caller fournit
+//!   le TTC dans le tuple candidat.
 //! - **Référence** (0.40) : `1.0` si containment bidirectionnel post
 //!   normalisation `coalesce(reference, end_to_end_id, transaction_id)`
 //!   vs `invoice.invoice_number`, `0.5` si common prefix ≥ 4 chars
@@ -22,6 +26,7 @@
 use kesh_db::entities::bank_transaction::BankTransaction;
 use kesh_db::entities::contact::Contact;
 use kesh_db::entities::invoice::Invoice;
+use rust_decimal::Decimal;
 
 /// Sub-scores et score total pour une proposition de matching.
 ///
@@ -49,14 +54,18 @@ pub struct MatchProposal {
 /// Calcule les propositions pour UNE transaction bancaire contre N
 /// candidates. Retourne uniquement les paires `score.total > 0.0`,
 /// triées par `score.total DESC`. Pure (zéro I/O).
+///
+/// Chaque candidat est un triplet `(facture, contact, total_ttc)` — le
+/// **TTC** (#246, Story 21-2b) fourni par le caller (le crate reste pur) et
+/// comparé au montant de la transaction bancaire.
 pub fn propose_matches(
     tx: &BankTransaction,
-    candidates: &[(Invoice, Option<Contact>)],
+    candidates: &[(Invoice, Option<Contact>, Decimal)],
 ) -> Vec<MatchProposal> {
     let mut out: Vec<MatchProposal> = candidates
         .iter()
-        .filter_map(|(invoice, contact)| {
-            let amount_score = amount_score(tx.amount, invoice.total_amount);
+        .filter_map(|(invoice, contact, total_ttc)| {
+            let amount_score = amount_score(tx.amount, *total_ttc);
             let reference_score = reference_score(
                 tx.reference.as_deref(),
                 tx.end_to_end_id.as_deref(),
@@ -259,13 +268,22 @@ mod tests {
         }
     }
 
+    /// Construit un triplet candidat `(facture, contact, ttc)` pour les tests
+    /// (#246, 21-2b). Ces fixtures n'ont pas de lignes TVA → le TTC vaut le
+    /// `total_amount` posé directement, ce qui préserve exactement les
+    /// assertions de montant existantes.
+    fn cand(invoice: Invoice, contact: Option<Contact>) -> (Invoice, Option<Contact>, Decimal) {
+        let ttc = invoice.total_amount;
+        (invoice, contact, ttc)
+    }
+
     /// AC #30 — full match → score 1.0 (0.50 + 0.40 + 0.10).
     #[test]
     fn score_full_match_returns_1_0() {
         let tx = make_tx(dec!(1234.56), Some("INV-2026-001"), Some("ACME GMBH"));
         let invoice = make_invoice(101, dec!(1234.56), Some("INV-2026-001"), 50);
         let contact = make_contact(50, "ACME GMBH");
-        let proposals = propose_matches(&tx, &[(invoice, Some(contact))]);
+        let proposals = propose_matches(&tx, &[cand(invoice, Some(contact))]);
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.total - 1.0).abs() < 1e-10);
         assert!((proposals[0].score.amount_score - 1.0).abs() < 1e-10);
@@ -279,7 +297,7 @@ mod tests {
         let tx = make_tx(dec!(200.00), Some("RANDOM-REF"), Some("UNKNOWN COMPANY"));
         let invoice = make_invoice(101, dec!(200.00), Some("OTHER-NUM"), 50);
         let contact = make_contact(50, "Different Co");
-        let proposals = propose_matches(&tx, &[(invoice, Some(contact))]);
+        let proposals = propose_matches(&tx, &[cand(invoice, Some(contact))]);
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.total - 0.50).abs() < 1e-10);
     }
@@ -289,7 +307,7 @@ mod tests {
     fn score_reference_prefix_match_returns_0_5() {
         let tx = make_tx(dec!(99.00), Some("INV-2026-XYZ"), None);
         let invoice = make_invoice(101, dec!(100.00), Some("INV-2026-001"), 50);
-        let proposals = propose_matches(&tx, &[(invoice, None)]);
+        let proposals = propose_matches(&tx, &[cand(invoice, None)]);
         assert_eq!(proposals.len(), 1);
         // amount mismatch (0.0) + reference 0.5 (preffix 8 chars "inv-2026") + contact 0 = 0.20.
         assert!((proposals[0].score.reference_score - 0.5).abs() < 1e-10);
@@ -302,7 +320,7 @@ mod tests {
         let mut tx = make_tx(dec!(150.00), None, None);
         tx.end_to_end_id = Some("INV-2026-042".to_string());
         let invoice = make_invoice(101, dec!(150.00), Some("INV-2026-042"), 50);
-        let proposals = propose_matches(&tx, &[(invoice, None)]);
+        let proposals = propose_matches(&tx, &[cand(invoice, None)]);
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.reference_score - 1.0).abs() < 1e-10);
     }
@@ -314,7 +332,7 @@ mod tests {
         let tx = make_tx(dec!(100.00), None, Some("ACME GMBH BERLIN"));
         let invoice = make_invoice(101, dec!(100.00), None, 50);
         let contact = make_contact(50, "ACME GMBH");
-        let proposals = propose_matches(&tx, &[(invoice, Some(contact))]);
+        let proposals = propose_matches(&tx, &[cand(invoice, Some(contact))]);
         // amount 0.50 + ref 0.0 + contact 1.0 (bidirectional: "acme gmbh" ⊂ "acme gmbh berlin").
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.contact_score - 1.0).abs() < 1e-10);
@@ -327,7 +345,7 @@ mod tests {
         let tx = make_tx(dec!(100.00), Some("ABC"), Some("Random"));
         let invoice = make_invoice(101, dec!(200.00), Some("XYZ"), 50);
         let contact = make_contact(50, "Different");
-        let proposals = propose_matches(&tx, &[(invoice, Some(contact))]);
+        let proposals = propose_matches(&tx, &[cand(invoice, Some(contact))]);
         assert!(proposals.is_empty());
     }
 
@@ -337,7 +355,7 @@ mod tests {
     fn score_amount_mismatch_within_repo_window_returns_partial() {
         let tx = make_tx(dec!(100.00), Some("INV-A"), None);
         let invoice = make_invoice(101, dec!(100.03), Some("INV-A"), 50);
-        let proposals = propose_matches(&tx, &[(invoice, None)]);
+        let proposals = propose_matches(&tx, &[cand(invoice, None)]);
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.amount_score - 0.0).abs() < 1e-10);
         assert!((proposals[0].score.reference_score - 1.0).abs() < 1e-10);
@@ -352,7 +370,8 @@ mod tests {
         let inv1 = make_invoice(101, dec!(100.00), Some("OTHER"), 50);
         let inv2 = make_invoice(102, dec!(100.00), Some("INV-2026-001"), 51);
         let inv3 = make_invoice(103, dec!(100.00), None, 52);
-        let proposals = propose_matches(&tx, &[(inv1, None), (inv2, None), (inv3, None)]);
+        let proposals =
+            propose_matches(&tx, &[cand(inv1, None), cand(inv2, None), cand(inv3, None)]);
         assert_eq!(proposals.len(), 3);
         // inv2 amount + ref = 0.90, inv1 amount only = 0.50, inv3 amount only = 0.50.
         // Tri: 102 (0.90), 101 (0.50, tie-break id ASC), 103 (0.50).
@@ -374,7 +393,7 @@ mod tests {
     fn score_handles_zero_amount_scale_invariant() {
         let tx = make_tx(Decimal::new(0, 0), Some("REF"), None);
         let invoice = make_invoice(101, Decimal::new(0, 4), Some("REF"), 50);
-        let proposals = propose_matches(&tx, &[(invoice, None)]);
+        let proposals = propose_matches(&tx, &[cand(invoice, None)]);
         assert_eq!(proposals.len(), 1);
         // amount 0.0 vs 0.0 (post-normalize) → 1.0 ; ref 1.0 → total 0.90.
         assert!((proposals[0].score.amount_score - 1.0).abs() < 1e-10);
@@ -386,9 +405,9 @@ mod tests {
     #[test]
     fn propose_matches_handles_1000_x_500_under_200ms() {
         let tx = make_tx(dec!(100.00), Some("REF-X"), Some("ACME"));
-        let candidates: Vec<(Invoice, Option<Contact>)> = (0..500)
+        let candidates: Vec<(Invoice, Option<Contact>, Decimal)> = (0..500)
             .map(|i| {
-                (
+                cand(
                     make_invoice(i, dec!(100.00), Some(&format!("INV-{i}")), i),
                     None,
                 )
@@ -423,7 +442,7 @@ mod tests {
         let mut tx = make_tx(dec!(150.00), None, None);
         tx.transaction_id = Some("TID-2026-99".to_string());
         let invoice = make_invoice(101, dec!(150.00), Some("TID-2026-99"), 50);
-        let proposals = propose_matches(&tx, &[(invoice, None)]);
+        let proposals = propose_matches(&tx, &[cand(invoice, None)]);
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.reference_score - 1.0).abs() < 1e-10);
     }
@@ -433,7 +452,7 @@ mod tests {
     fn score_contact_none_returns_zero() {
         let tx = make_tx(dec!(100.00), Some("INV-A"), Some("ACME"));
         let invoice = make_invoice(101, dec!(100.00), Some("INV-A"), 50);
-        let proposals = propose_matches(&tx, &[(invoice, None)]);
+        let proposals = propose_matches(&tx, &[cand(invoice, None)]);
         assert_eq!(proposals.len(), 1);
         assert!((proposals[0].score.contact_score - 0.0).abs() < 1e-10);
         // amount 0.50 + ref 0.40 = 0.90.

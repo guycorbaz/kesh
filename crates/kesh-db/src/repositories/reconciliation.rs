@@ -47,6 +47,22 @@ const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, statu
      due_date, payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
      project_id, version, created_at, updated_at";
 
+/// Facture candidate à la réconciliation, accompagnée de son **TTC** (#246,
+/// Story 21-2b) — le montant réellement comparé à l'encaissement bancaire
+/// (`invoice.total_amount` est le HT et ne matcherait jamais une facture
+/// avec TVA).
+///
+/// `#[sqlx(flatten)]` : **premier usage du workspace** — `Invoice` dérive
+/// `FromRow` et le SELECT liste ses colonnes via `INVOICE_COLUMNS`, donc le
+/// flatten hydrate proprement. `pub` (pas `pub(crate)`) : consommé et
+/// destructuré par `kesh-api` (crate séparé).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct UnpaidInvoiceCandidate {
+    #[sqlx(flatten)]
+    pub invoice: Invoice,
+    pub total_ttc: Decimal,
+}
+
 /// Colonnes BankTransaction pour SELECT (cohérent bank_transactions::COLUMNS).
 const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date, value_date, \
      amount, currency, reference, details, end_to_end_id, transaction_id, \
@@ -61,7 +77,10 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 /// 2. `status = 'validated' AND paid_at IS NULL AND journal_entry_id IS NOT NULL`
 ///    (factures éligibles à la réconciliation v0.1).
 /// 3. `date BETWEEN tx_date - window_days AND tx_date + window_days`.
-/// 4. `total_amount BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`.
+/// 4. **TTC** `BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`
+///    (#246, Story 21-2b) — le filtre porte sur le TTC (dérivé des lignes via
+///    l'expression SQL canonique `INVOICE_TTC_SUBQUERY_SQL`), plus sur le HT
+///    `total_amount` : une facture avec TVA ne matchait jamais un encaissement.
 ///
 /// **Pas de filtre currency v0.1** — colonne inexistante (cf. L38 + S4-1 Pass 4).
 ///
@@ -69,7 +88,8 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 /// par `company_id`.
 ///
 /// **Index** : `idx_invoices_company_validated_unpaid_date` créé en
-/// migration `20260507100001_reconciliation_8_4.sql`.
+/// migration `20260507100001_reconciliation_8_4.sql` (couvre le `WHERE` ;
+/// le filtre TTC est appliqué en `HAVING` après retrait des non-éligibles).
 pub async fn find_unpaid_invoices_for_window<'e, E>(
     executor: E,
     company_id: i64,
@@ -77,18 +97,22 @@ pub async fn find_unpaid_invoices_for_window<'e, E>(
     tx_amount: Decimal,
     window_days: i64,
     amount_tolerance: Decimal,
-) -> Result<Vec<Invoice>, DbError>
+) -> Result<Vec<UnpaidInvoiceCandidate>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    sqlx::query_as::<_, Invoice>(&format!(
-        "SELECT {INVOICE_COLUMNS} FROM invoices \
+    // Alias `i` requis par la sous-requête corrélée TTC (`WHERE l.invoice_id = i.id`).
+    // Filtre TTC en HAVING pour référencer l'alias `total_ttc` sans dupliquer
+    // l'expression (SQL n'autorise pas un alias de SELECT dans le WHERE).
+    let ttc_sql = crate::repositories::invoices::INVOICE_TTC_SUBQUERY_SQL;
+    sqlx::query_as::<_, UnpaidInvoiceCandidate>(&format!(
+        "SELECT {INVOICE_COLUMNS}, {ttc_sql} AS total_ttc FROM invoices i \
          WHERE company_id = ? \
            AND status = 'validated' \
            AND paid_at IS NULL \
            AND journal_entry_id IS NOT NULL \
            AND date BETWEEN DATE_SUB(?, INTERVAL ? DAY) AND DATE_ADD(?, INTERVAL ? DAY) \
-           AND total_amount BETWEEN ? - ? AND ? + ? \
+         HAVING total_ttc BETWEEN ? - ? AND ? + ? \
          LIMIT 50",
     ))
     .bind(company_id)
