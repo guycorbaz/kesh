@@ -1,6 +1,6 @@
 # Story 21.2a: Montant TTC canonique — helper, SQL, QR, PDF, e-mail, échéancier
 
-Status: review
+Status: done
 
 <!-- Spec créée le 2026-07-12 (bmad-create-story, Fable 5). Source : planning epic-21-echeances-relances.md §« Décision préalable #246 » + issue #246 + cartographie 2 agents Explore (backend + frontend).
 SPLIT 2026-07-12 (règle de splitting préventif CLAUDE.md — validate 4 passes sans convergence, friction concentrée sur la réconciliation) : cette story 21-2a = primitives (helper + SQL) + surfaces de présentation ; la RÉCONCILIATION (matching TTC, câblage, seeds, UI candidats) = story 21-2b-reconciliation-ttc.md, qui consomme 21-2a. #246 fermé par 21-2b (dernier morceau). -->
@@ -125,7 +125,7 @@ Fable 5 (claude-fable-5) — run 2026-07-12/13.
 
 ### Completion Notes List
 
-- **T1** helper `invoice_total_ttc` (kesh-core, 7 tests dont arrondi par ligne DC7) + avoir refactoré DRY dessus.
+- **T1** helper `invoice_total_ttc` (kesh-core, 6 tests dont arrondi par ligne DC7) + avoir refactoré DRY dessus.
 - **T2** constantes SQL `pub` (forme scalaire corrélée + forme agrégat table dérivée, rationale perf) + **test de parité 4-voies** `invoice_ttc_parity.rs` (helper Rust ≡ SQL scalaire ≡ SQL agrégat ≡ débit créance) — vert.
 - **T3** QR + `total` PDF (« Total TTC » dit enfin vrai) + `{amount}` e-mail (signature `build_invoice_vars` + lignes, preview inclus, 2 tests unit adaptés) + `due_dates_summary` (table dérivée) + CSV échéancier + `totalTtc` sur `InvoiceResponse`/`InvoiceListItemResponse` + colonne SQL `list_by_company_paginated`. `total_amount` reste HT (compat). CSV export souveraineté/`csv_tables.rs` NON touché (dump brut).
 - **T4** frontend : `totalTtc` sur les 2 types + colonne échéancier (`inv.totalTtc`).
@@ -151,6 +151,12 @@ Fable 5 (claude-fable-5) — run 2026-07-12/13.
 - *(commit séparé #249 : frontend/src/lib/features/invoices/MarkPaidDialog.svelte, frontend/tests/e2e/invoices.spec.ts)*
 
 ## Change Log
+
+### Code review Pass 1 (2026-07-13, Sonnet 4.6 × 3 reviewers parallèles — Blind Hunter + Edge Case Hunter + Acceptance Auditor) — CONVERGÉ 1 passe
+
+**0 finding CRITICAL/HIGH/MEDIUM. Convergence immédiate** (critère CLAUDE.md : aucun finding > LOW). Acceptance Auditor : **24/24 ACs SATISFAITS**, périmètre réconciliation intact (AC 12/13 — aucune fuite vers 21-2b, vérifié `git show --stat` sans matching.rs/reconciliation.rs), `#246` NON fermé (confirmé), 3 tests `invoice_ttc_e2e` comptés. Points sensibles blanchis ground-truth : table dérivée `lt` déjà `GROUP BY invoice_id` → `COUNT(*)` non faussé (Blind + Acceptance) ; **parité SQL≡Rust re-vérifiée EN LIVE sur MariaDB 11.3.2** par l'Edge Case Hunter (`line_total*vat_rate/100` type `DECIMAL(28,10)` jamais DOUBLE, `ROUND` half-away confirmé sur cas limites) ; `build_invoice_vars` seul call-site = preview (send réutilise le texte édité, 0 régression envoi) ; overflow DECIMAL borné par `MAX_UNIT_PRICE`/`MAX_LINE_TOTAL`.
+
+3 LOW, 2 patchés + 1 documenté : **AA-1** Dev Record « 7 tests » → **6** (corrigé) ; **BH-2/ECH-1** commentaire du test `ttc_negative_*` laissait croire que les avoirs manipulent des montants négatifs (CHECK `>= 0` en DB l'interdit) → renommé `ttc_negative_base_symmetric` + commentaire clarifié « robustesse générique, pas un scénario avoir réel » ; **ECH-2** libellé « Total » nu affiche HT (liste/détail) vs TTC (échéancier) sur des pages différentes — décision documentée (AC 16), résorption au récap TVA **#151** (déjà tracé), pas d'action. Modèles : impl Fable 5, review Sonnet 4.6 ×3. **Story done.**
 
 ### Validate Pass 4 (2026-07-12, Sonnet 4.6, contexte frais) → SPLIT
 

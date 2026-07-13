@@ -155,8 +155,12 @@ mod tests {
     }
 
     #[test]
-    fn ttc_negative_lines_credit_note() {
-        // Avoir : lignes négatives, symétrique.
+    fn ttc_negative_base_symmetric() {
+        // Propriété générique du helper : robustesse sur base négative
+        // (arrondi symétrique). NB : les avoirs ne passent PAS par ce chemin
+        // avec des montants négatifs — `credit_note_lines.line_total` porte un
+        // CHECK `>= 0` et la contre-passation gère le signe séparément. Test
+        // de robustesse de la fonction, pas un scénario avoir réel.
         assert_eq!(
             invoice_total_ttc([(dec!(-100.00), dec!(8.1))]),
             dec!(-108.10)
