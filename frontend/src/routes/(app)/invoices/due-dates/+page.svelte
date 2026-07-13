@@ -417,7 +417,8 @@
 						<a class="underline" href={`/invoices/${inv.id}`}>{inv.invoiceNumber ?? '—'}</a>
 					</td>
 					<td class="py-2 pr-2">{inv.contactName}</td>
-					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalAmount)}</td>
+					<!-- #246 : TTC (montant dû) — cohérent avec les KPI du résumé. -->
+					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalTtc)}</td>
 					<td class="py-2 pr-2">
 						<PaymentStatusBadge status={statusOf(inv)} />
 					</td>

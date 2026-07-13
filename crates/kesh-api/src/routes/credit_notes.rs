@@ -226,13 +226,11 @@ pub async fn get_credit_note_pdf(
         })
         .collect();
 
-    // TTC = HT + TVA (cohérent avec la contre-passation).
-    let ttc: Decimal = lines
-        .iter()
-        .map(|l| {
-            l.line_total + kesh_core::accounting::vat::line_vat_amount(l.line_total, l.vat_rate)
-        })
-        .sum();
+    // TTC = HT + TVA (cohérent avec la contre-passation) — helper canonique
+    // #246 (Story 21-2a), même arithmétique que le débit créance.
+    let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc(
+        lines.iter().map(|l| (l.line_total, l.vat_rate)),
+    );
 
     let pdf_data = InvoicePdfData {
         invoice_number: cn

@@ -33,6 +33,12 @@ export interface InvoiceResponse {
 	dueDate: string | null;
 	paymentTerms: string | null;
 	totalAmount: string;
+	/**
+	 * TTC canonique (#246, Story 21-2a) — le montant réellement dû (QR, PDF,
+	 * e-mail). `totalAmount` reste le HT comptable. String décimale, jamais
+	 * Number (convention en tête de fichier).
+	 */
+	totalTtc: string;
 	journalEntryId: number | null;
 	paidAt: string | null;
 	/** Dernier envoi par e-mail (Story 20-3b2). `null` = jamais envoyée. */
@@ -88,6 +94,8 @@ export interface InvoiceListItemResponse {
 	dueDate: string | null;
 	paymentTerms: string | null;
 	totalAmount: string;
+	/** TTC canonique (#246). String décimale, jamais Number. */
+	totalTtc: string;
 	paidAt: string | null;
 	version: number;
 	createdAt: string;

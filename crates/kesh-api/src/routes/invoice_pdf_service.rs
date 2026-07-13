@@ -206,11 +206,19 @@ fn build_qrbill_inputs(
         _ => (normalize_iban(&primary_bank.iban), Reference::None),
     };
 
+    // #246 (Story 21-2a) : le montant réclamé par le QR et affiché sous
+    // « Total TTC » est le TTC canonique (helper kesh-core, même arithmétique
+    // que le débit créance) — `total_amount` est le HT comptable et ne doit
+    // JAMAIS être présenté comme montant dû.
+    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+        lines.iter().map(|l| (l.line_total, l.vat_rate)),
+    );
+
     let qr_data = QrBillData {
         creditor_iban: iban,
         creditor: creditor.clone(),
         ultimate_debtor: Some(debtor.clone()),
-        amount: Some(invoice.total_amount),
+        amount: Some(total_ttc),
         currency: Currency::Chf,
         reference,
         unstructured_message: invoice.invoice_number.as_ref().map(|n| {
@@ -246,7 +254,7 @@ fn build_qrbill_inputs(
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or_default()),
         lines: invoice_lines_pdf,
-        total: invoice.total_amount,
+        total: total_ttc,
         currency: Currency::Chf,
         origin_reference: None,
     };

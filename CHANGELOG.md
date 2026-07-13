@@ -10,6 +10,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+### Corrigé
+
+- **« Marquer payée » ne fonctionnait pas** : cliquer sur *Marquer payée* (page Facturer / Échéancier) restait sans effet — la facture n'était pas enregistrée comme payée (erreur technique 422 côté serveur). Corrigé : le marquage manuel du paiement fonctionne de nouveau. (#249)
+- **Montants TTC corrects sur la QR-facture, le PDF, l'e-mail et l'échéancier** : le montant demandé par la **QR-facture**, la ligne **« Total TTC »** du PDF, la variable **`{amount}`** des e-mails et les **totaux de l'échéancier** (KPI « impayées / en retard », colonne Total, export CSV) présentent désormais le **montant réellement dû, TVA comprise**. Auparavant, pour une entreprise assujettie à la TVA, ces montants affichaient le total **hors taxe** — un client scannant la QR-facture aurait sous-payé. Le montant hors taxe reste utilisé là où c'est correct (comptabilisation du produit). Le détail de TVA par taux sur le PDF (récapitulatif) reste à venir (#151). (#246)
+
 ### Ajouté
 
 - **Conditions de paiement structurées sur le contact** : la fiche contact gagne un **délai de paiement en jours** (0 à 365). À la création d'une facture pour ce contact, l'**échéance est pré-remplie automatiquement** (date de la facture + délai) et le **libellé des conditions** (« Payable à 30 jours net », « Zahlbar innert 30 Tagen »…) est généré **dans la langue du client** — les deux restent modifiables avant enregistrement. Le texte libre existant est conservé pour les contacts qui n'utilisent pas le délai structuré. Une facture ne peut plus recevoir une **échéance antérieure à sa date** (les factures existantes ne sont pas modifiées). (#245)

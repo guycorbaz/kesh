@@ -42,6 +42,34 @@ pub fn line_vat_amount(base_ht: Decimal, rate_percent: Decimal) -> Decimal {
         .amount()
 }
 
+/// Total TTC canonique d'une facture (#246, Story 21-2a) : Σ par ligne de
+/// `line_total + line_vat_amount(line_total, vat_rate)`.
+///
+/// # Équivalence avec le débit créance comptable
+///
+/// L'écriture de validation (`generate_invoice_journal_lines`) calcule
+/// `total_ht + Σ_taux (Σ_lignes vat_arrondie)` — l'agrégation intermédiaire
+/// par taux est **associative**, donc `Σ_lignes (ht + vat_arrondie)` donne
+/// exactement le même TTC. Ce helper est LA définition du montant dû ; le
+/// QR-bill, le PDF, `{amount}` des e-mails et l'échéancier le consomment,
+/// et l'expression SQL miroir de `kesh-db` lui est asservie par un test de
+/// parité.
+///
+/// # Interdit DC7
+///
+/// Ne JAMAIS arrondir une base agrégée (`round(Σ base × taux)`) : la TVA est
+/// arrondie **par ligne** puis sommée (règle AFC, cf. module).
+pub fn invoice_total_ttc<I>(lines: I) -> Decimal
+where
+    I: IntoIterator<Item = (Decimal, Decimal)>,
+{
+    lines
+        .into_iter()
+        .fold(Decimal::ZERO, |acc, (line_total, vat_rate)| {
+            acc + line_total + line_vat_amount(line_total, vat_rate)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +108,63 @@ mod tests {
         // Avoir / contre-passation : base négative, arrondi symétrique.
         assert_eq!(line_vat_amount(dec!(-100), dec!(8.1)), dec!(-8.10));
         assert_eq!(line_vat_amount(dec!(-12345.5), dec!(1.0)), dec!(-123.46));
+    }
+
+    // --- invoice_total_ttc (Story 21-2a, #246) ---
+
+    #[test]
+    fn ttc_single_line() {
+        // 100.00 @ 8.1 % → 108.10.
+        assert_eq!(invoice_total_ttc([(dec!(100.00), dec!(8.1))]), dec!(108.10));
+    }
+
+    #[test]
+    fn ttc_rounds_per_line_not_on_aggregate() {
+        // Deux lignes 0.05 @ 8.1 % : TVA par ligne = round(0.00405) = 0.00,
+        // TTC = 0.10. Un arrondi sur la base agrégée (0.10 × 8.1 % = 0.01)
+        // donnerait 0.11 — l'interdit DC7 est précisément là.
+        assert_eq!(
+            invoice_total_ttc([(dec!(0.05), dec!(8.1)), (dec!(0.05), dec!(8.1))]),
+            dec!(0.10)
+        );
+    }
+
+    #[test]
+    fn ttc_multi_lines_mixed_rates_matches_journal_computation() {
+        // Parité avec le calcul du journal (agrégation par taux) : même
+        // résultat par associativité.
+        let lines = [
+            (dec!(100.00), dec!(8.1)),
+            (dec!(12345.5), dec!(1.0)), // arrondi half-away 123.455 → 123.46
+            (dec!(50.00), dec!(2.6)),
+            (dec!(10.00), dec!(0)),
+        ];
+        // Voie journal : total_ht + Σ_taux (Σ_lignes vat arrondie par ligne).
+        let total_ht: Decimal = lines.iter().map(|(ht, _)| *ht).sum();
+        let mut vat_by_rate = std::collections::BTreeMap::new();
+        for (ht, rate) in lines {
+            *vat_by_rate.entry(rate).or_insert(Decimal::ZERO) += line_vat_amount(ht, rate);
+        }
+        let total_vat: Decimal = vat_by_rate.values().copied().sum();
+        assert_eq!(invoice_total_ttc(lines), total_ht + total_vat);
+    }
+
+    #[test]
+    fn ttc_zero_rate_equals_ht() {
+        assert_eq!(invoice_total_ttc([(dec!(1234.56), dec!(0))]), dec!(1234.56));
+    }
+
+    #[test]
+    fn ttc_negative_lines_credit_note() {
+        // Avoir : lignes négatives, symétrique.
+        assert_eq!(
+            invoice_total_ttc([(dec!(-100.00), dec!(8.1))]),
+            dec!(-108.10)
+        );
+    }
+
+    #[test]
+    fn ttc_empty_is_zero() {
+        assert_eq!(invoice_total_ttc([]), Decimal::ZERO);
     }
 }

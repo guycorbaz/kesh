@@ -122,6 +122,30 @@ pub enum PaymentStatusFilter {
 }
 
 /// Paramètres de recherche, tri et pagination.
+/// Forme **scalaire par facture** du TTC canonique (#246, Story 21-2a) —
+/// sous-requête corrélée. **Prérequis : alias `i` sur `invoices`.**
+///
+/// Miroir SQL exact de `kesh_core::accounting::vat::invoice_total_ttc` :
+/// `ROUND(x, 2)` MariaDB sur DECIMAL = half-away-from-zero =
+/// `MidpointAwayFromZero` de `line_vat_amount` (arrondi PAR LIGNE, jamais sur
+/// une base agrégée — DC7). Asservie au helper Rust par le test de parité.
+///
+/// `pub` (PAS `pub(crate)`) : consommée par `repositories::reconciliation`
+/// (21-2b) et par `kesh-report` (balance âgée 21-7) — source de vérité unique.
+pub const INVOICE_TTC_SUBQUERY_SQL: &str = "(SELECT COALESCE(SUM(l.line_total + ROUND(l.line_total * l.vat_rate / 100, 2)), 0) \
+     FROM invoice_lines l WHERE l.invoice_id = i.id)";
+
+/// Forme **agrégat multi-factures** du TTC canonique (#246) — table dérivée à
+/// joindre (alias `lt`), puis `SUM(COALESCE(lt.ttc, 0))` côté requête externe.
+/// **Prérequis : alias `i` sur `invoices`.**
+///
+/// Choix de la table dérivée plutôt que la corrélée dans le `SUM()` externe :
+/// raison de **performance** (la corrélée serait ré-évaluée par ligne et par
+/// `CASE`), pas un interdit SQL (MariaDB accepte les deux — vérifié).
+pub const INVOICE_TTC_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id, \
+     SUM(line_total + ROUND(line_total * vat_rate / 100, 2)) AS ttc \
+     FROM invoice_lines GROUP BY invoice_id) lt ON lt.invoice_id = i.id";
+
 #[derive(Debug, Clone, Default)]
 pub struct InvoiceListQuery {
     pub search: Option<String>,
@@ -154,6 +178,9 @@ pub struct InvoiceListItem {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// TTC canonique (#246) — colonne SQL calculée (`INVOICE_TTC_SUBQUERY_SQL`),
+    /// la projection ne charge pas les lignes.
+    pub total_ttc: Decimal,
     pub paid_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -475,12 +502,13 @@ pub async fn list_by_company_paginated(
         .await
         .map_err(map_db_error)?;
 
-    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, i.paid_at, i.version, i.created_at, i.updated_at \
+         i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
+         i.paid_at, i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
-    );
+    ));
     push_where_clauses(&mut items_qb, company_id, &query);
     items_qb.push(" ORDER BY ");
     // P7 (review pass 3 A) : NULLs en fin de liste quel que soit le sort.
@@ -544,16 +572,20 @@ pub async fn due_dates_summary(
     company_id: i64,
     query: &InvoiceListQuery,
 ) -> Result<DueDatesSummary, DbError> {
-    let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+    let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
         // DECIMAL par défaut, incompatible avec Rust i64.
+        // #246 (Story 21-2a) : totaux en TTC via la table dérivée `lt`
+        // (INVOICE_TTC_DERIVED_JOIN_SQL) — les KPI de l'échéancier sont des
+        // montants dus, pas des HT comptables.
         "SELECT \
             COUNT(*) AS unpaid_count, \
-            COALESCE(SUM(i.total_amount), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
+            COALESCE(SUM(COALESCE(lt.ttc, 0)), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
             CAST(COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
-            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN i.total_amount ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
-         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
-    );
+            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
+         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id \
+         {INVOICE_TTC_DERIVED_JOIN_SQL}",
+    ));
     qb.push(" WHERE i.company_id = ");
     qb.push_bind(company_id);
     qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL");
@@ -1620,12 +1652,13 @@ pub async fn list_for_export(
     let truncated = max_rows > HARD_CAP;
     let effective = max_rows.clamp(1, HARD_CAP);
 
-    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, i.paid_at, i.version, i.created_at, i.updated_at \
+         i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
+         i.paid_at, i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
-    );
+    ));
     push_where_clauses(&mut items_qb, company_id, query);
     // P13 (review pass 3 A) : défense en profondeur — l'export ne doit
     // jamais fuiter de drafts même si le handler oublie le filtre `status`.

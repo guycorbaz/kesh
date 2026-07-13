@@ -169,6 +169,9 @@ pub struct InvoiceResponse {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// TTC canonique (#246, Story 21-2a) — le montant réellement dû (QR, PDF,
+    /// e-mail l'utilisent). `total_amount` reste le HT comptable (compat).
+    pub total_ttc: Decimal,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
     /// Story 20-3b1 — dernier envoi par e-mail (`null` = jamais envoyée) et
@@ -206,6 +209,10 @@ impl InvoiceResponse {
         let today = chrono::Utc::now().naive_utc().date();
         let is_overdue =
             is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
+        // #246 : TTC dérivé des lignes (helper canonique kesh-core).
+        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+            lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        );
         Self {
             id: invoice.id,
             company_id: invoice.company_id,
@@ -216,6 +223,7 @@ impl InvoiceResponse {
             due_date: invoice.due_date,
             payment_terms: invoice.payment_terms,
             total_amount: invoice.total_amount,
+            total_ttc,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
             emailed_at: invoice.emailed_at,
@@ -243,6 +251,8 @@ pub struct InvoiceListItemResponse {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// TTC canonique (#246, Story 21-2a) — colonne SQL calculée de la liste.
+    pub total_ttc: Decimal,
     pub paid_at: Option<NaiveDateTime>,
     /// B22 (review pass 2 G2 B) : exposé sur la liste standard pour cohérence
     /// avec `InvoiceResponse` et `DueDateItemResponse` — le frontend ne doit
@@ -268,6 +278,7 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
             due_date: i.due_date,
             payment_terms: i.payment_terms,
             total_amount: i.total_amount,
+            total_ttc: i.total_ttc,
             paid_at: i.paid_at,
             is_overdue,
             version: i.version,
@@ -1112,7 +1123,9 @@ pub async fn export_due_dates_csv_handler(
                 format_date(&inv.date),
                 inv.due_date.as_ref().map(format_date).unwrap_or_default(),
                 csv_sanitize(inv.contact_name.clone()),
-                format_money(&inv.total_amount),
+                // #246 (Story 21-2a) : colonne Total = TTC (montant dû),
+                // cohérente avec les KPI du summary — pas le HT comptable.
+                format_money(&inv.total_ttc),
                 // B19 (review pass 2 G2 B) : défense en profondeur — la valeur
                 // vient d'un fichier FTL contrôlé, mais une compromission
                 // (clé locale altérée) ne doit pas ouvrir un vecteur d'injection.

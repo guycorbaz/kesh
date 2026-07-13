@@ -1,6 +1,6 @@
 # Story 21.2a: Montant TTC canonique — helper, SQL, QR, PDF, e-mail, échéancier
 
-Status: ready-for-dev
+Status: review
 
 <!-- Spec créée le 2026-07-12 (bmad-create-story, Fable 5). Source : planning epic-21-echeances-relances.md §« Décision préalable #246 » + issue #246 + cartographie 2 agents Explore (backend + frontend).
 SPLIT 2026-07-12 (règle de splitting préventif CLAUDE.md — validate 4 passes sans convergence, friction concentrée sur la réconciliation) : cette story 21-2a = primitives (helper + SQL) + surfaces de présentation ; la RÉCONCILIATION (matching TTC, câblage, seeds, UI candidats) = story 21-2b-reconciliation-ttc.md, qui consomme 21-2a. #246 fermé par 21-2b (dernier morceau). -->
@@ -69,12 +69,12 @@ afin de **ne plus facturer le HT à mes clients par le QR et de pouvoir construi
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Helper kesh-core + DRY avoir** (AC 1-3)
-- [ ] **T2 — Expression SQL + parité** (AC 4-5) : constantes `pub` kesh-db (2 formes) + **test d'intégration 4-voies** (forme scalaire + forme dérivée assertées indépendamment ≡ helper Rust ≡ débit créance)
-- [ ] **T3 — Surfaces API** (AC 6-11) : QR + PDF total + {amount} (signature `build_invoice_vars` + lignes, send ET preview, 2 tests unitaires adaptés) + summary + CSV + `totalTtc` sur les 2 responses + colonne SQL liste
-- [ ] **T4 — Frontend** (AC 14-16) : types + colonne échéancier
-- [ ] **T5 — Tests** (AC 17-21) : `invoice_ttc_e2e.rs` + commentaire echeancier + spec Playwright échéancier (réconciliation → 21-2b)
-- [ ] **T6 — Doc-sync + gate** (AC 22-24)
+- [x] **T1 — Helper kesh-core + DRY avoir** (AC 1-3)
+- [x] **T2 — Expression SQL + parité** (AC 4-5) : constantes `pub` kesh-db (2 formes) + **test d'intégration 4-voies** (forme scalaire + forme dérivée assertées indépendamment ≡ helper Rust ≡ débit créance)
+- [x] **T3 — Surfaces API** (AC 6-11) : QR + PDF total + {amount} (signature `build_invoice_vars` + lignes, send ET preview, 2 tests unitaires adaptés) + summary + CSV + `totalTtc` sur les 2 responses + colonne SQL liste
+- [x] **T4 — Frontend** (AC 14-16) : types + colonne échéancier
+- [x] **T5 — Tests** (AC 17-21) : `invoice_ttc_e2e.rs` + commentaire echeancier + spec Playwright échéancier (réconciliation → 21-2b)
+- [x] **T6 — Doc-sync + gate** (AC 22-24)
 
 ## Dev Notes
 
@@ -115,11 +115,40 @@ afin de **ne plus facturer le HT à mes clients par le QR et de pouvoir construi
 
 ### Agent Model Used
 
+Fable 5 (claude-fable-5) — run 2026-07-12/13.
+
 ### Debug Log References
+
+- **Bug de fond découvert et corrigé hors story (#249)** : le golden-path E2E échéancier échouait au mark-paid. Analyse ground-truth : `MarkPaidDialog.svelte` envoyait `paidAt` suffixé `Z`, le backend `MarkPaidRequest.paid_at: Option<NaiveDateTime>` le refusait → 422. Prouvé pré-existant (échoue sur baseline pur, tous changements 21-2a stashés). Corrigé dans un commit dédié `fix(#249)` (frontend, sans `Z`) + de-flake du sélecteur d'onglet « Payées » (regex ancrée, matchait « Im-payées ») et retrait de la re-sélection ContactPicker fragile du test #245.
+- Piège tooling récurrent : **backend zombie sur 8181** (anciens `nohup`) répondait avec l'ancien binaire (sans `totalTtc`) → faux négatifs Playwright. Toujours `pkill -9 -f target/debug/kesh-api` + vérifier le port avant un run E2E.
+- Sérialisation `Decimal` : les montants JSON portent leur scale (`"100.0000"`, `"108.1000"`) — assertions e2e adaptées (le frontend `formatInvoiceTotal` réduit à 2 décimales à l'affichage).
 
 ### Completion Notes List
 
+- **T1** helper `invoice_total_ttc` (kesh-core, 7 tests dont arrondi par ligne DC7) + avoir refactoré DRY dessus.
+- **T2** constantes SQL `pub` (forme scalaire corrélée + forme agrégat table dérivée, rationale perf) + **test de parité 4-voies** `invoice_ttc_parity.rs` (helper Rust ≡ SQL scalaire ≡ SQL agrégat ≡ débit créance) — vert.
+- **T3** QR + `total` PDF (« Total TTC » dit enfin vrai) + `{amount}` e-mail (signature `build_invoice_vars` + lignes, preview inclus, 2 tests unit adaptés) + `due_dates_summary` (table dérivée) + CSV échéancier + `totalTtc` sur `InvoiceResponse`/`InvoiceListItemResponse` + colonne SQL `list_by_company_paginated`. `total_amount` reste HT (compat). CSV export souveraineté/`csv_tables.rs` NON touché (dump brut).
+- **T4** frontend : `totalTtc` sur les 2 types + colonne échéancier (`inv.totalTtc`).
+- **T5** `invoice_ttc_e2e.rs` (3 tests : totalTtc détail/liste/summary/CSV + preview {amount} TTC + parité multi-taux avec débit créance) + commentaire faux `invoice_echeancier_e2e.rs` corrigé + spec Playwright échéancier (colonne TTC).
+- **T6** CHANGELOG [Non publié] (entrée TTC + entrée #249). Réconciliation NON touchée (→ 21-2b).
+- **Gate** : fmt/clippy 0 · workspace série **94 suites / 1772 tests / 0 échec** (dont parity 4-voies + invoice_ttc_e2e) · frontend check 0 / unit **382** / build · **E2E Playwright invoices + échéancier 13/13** (golden-path vert après #249). Attention : reste des surfaces HT (liste/détail/form) = décision documentée (récap TVA = #151). **#246 NON fermé** (dernier morceau = réconciliation 21-2b).
+
 ### File List
+
+- crates/kesh-core/src/accounting/vat.rs (helper + tests)
+- crates/kesh-db/src/repositories/invoices.rs (constantes SQL, InvoiceListItem.total_ttc, due_dates_summary, list_by_company_paginated, list_for_export)
+- crates/kesh-db/tests/invoice_ttc_parity.rs (nouveau)
+- crates/kesh-api/src/routes/invoice_pdf_service.rs (QR + total TTC)
+- crates/kesh-api/src/routes/invoice_email.rs (build_invoice_vars + lignes + tests)
+- crates/kesh-api/src/routes/invoices.rs (InvoiceResponse/ListItem total_ttc, CSV)
+- crates/kesh-api/src/routes/credit_notes.rs (DRY helper)
+- crates/kesh-api/tests/invoice_ttc_e2e.rs (nouveau)
+- crates/kesh-api/tests/invoice_echeancier_e2e.rs (commentaire corrigé)
+- frontend/src/lib/features/invoices/invoices.types.ts (totalTtc ×2)
+- frontend/src/routes/(app)/invoices/due-dates/+page.svelte (colonne TTC)
+- frontend/tests/e2e/invoices_echeancier.spec.ts (test colonne TTC + de-flake onglet)
+- CHANGELOG.md
+- *(commit séparé #249 : frontend/src/lib/features/invoices/MarkPaidDialog.svelte, frontend/tests/e2e/invoices.spec.ts)*
 
 ## Change Log
 

@@ -152,8 +152,13 @@ fn salutation_line(
 /// `EmailTemplateType::InvoiceSend.allowed_variables()`, valeurs
 /// **pré-formatées suisses** (`format_money` apostrophe U+2019,
 /// `format_date` dd.mm.yyyy). `dueDate` absente → « — ».
+///
+/// `lines` (Story 21-2a, #246) : `{amount}` est le **TTC canonique** calculé
+/// depuis les lignes — `invoice.total_amount` est le HT comptable et ne doit
+/// jamais être annoncé comme montant dû au client.
 fn build_invoice_vars(
     invoice: &kesh_db::entities::Invoice,
+    lines: &[kesh_db::entities::InvoiceLine],
     contact: &Contact,
     company: &Company,
     language: Language,
@@ -177,7 +182,10 @@ fn build_invoice_vars(
             .clone()
             .unwrap_or_else(|| format!("#{}", invoice.id)),
     );
-    vars.insert("amount".to_string(), format_money(&invoice.total_amount));
+    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+        lines.iter().map(|l| (l.line_total, l.vat_rate)),
+    );
+    vars.insert("amount".to_string(), format_money(&total_ttc));
     vars.insert(
         "dueDate".to_string(),
         invoice
@@ -198,7 +206,8 @@ pub async fn preview_invoice_email(
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // Facture scopée company (anti-IDOR) + contact actif scopé company.
-    let (invoice, _lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+    // #246 : les lignes servent au TTC de {amount} — ne plus les jeter.
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
@@ -212,7 +221,7 @@ pub async fn preview_invoice_email(
     )
     .await?;
 
-    let vars = build_invoice_vars(&invoice, &contact, &company, language);
+    let vars = build_invoice_vars(&invoice, &lines, &contact, &company, language);
     let subject = kesh_core::email_template_engine::render(&template.subject, &vars);
     let body = kesh_core::email_template_engine::render(&template.body, &vars);
 
@@ -572,12 +581,29 @@ mod tests {
         }
     }
 
+    /// Lignes de la facture d'exemple (#246 : `{amount}` = TTC dérivé des
+    /// lignes) : 1 ligne HT 1234.56 @ 8.1 % — TVA = 99.99936 → 100.00
+    /// (arrondi centime), TTC = 1334.56.
+    fn sample_lines() -> Vec<kesh_db::entities::InvoiceLine> {
+        vec![kesh_db::entities::InvoiceLine {
+            id: 1,
+            invoice_id: 7,
+            position: 1,
+            description: "Ligne".to_string(),
+            quantity: Decimal::ONE,
+            unit_price: Decimal::new(123_456, 2),
+            vat_rate: Decimal::new(810, 2),       // 8.10 %
+            line_total: Decimal::new(123_456, 2), // 1234.56
+            created_at: chrono::NaiveDateTime::default(),
+        }]
+    }
+
     #[test]
     fn vars_complete_et_formatage_suisse() {
         let invoice = sample_invoice(Some("F-2026-0042"), NaiveDate::from_ymd_opt(2026, 7, 31));
         let contact = sample_contact();
         let company = sample_company();
-        let vars = build_invoice_vars(&invoice, &contact, &company, Language::De);
+        let vars = build_invoice_vars(&invoice, &sample_lines(), &contact, &company, Language::De);
 
         // Les 6 variables déclarées par InvoiceSend, exactement.
         let mut keys: Vec<&str> = vars.keys().map(String::as_str).collect();
@@ -587,7 +613,9 @@ mod tests {
         assert_eq!(keys, expected);
 
         assert_eq!(vars["invoiceNumber"], "F-2026-0042");
-        assert_eq!(vars["amount"], "1\u{2019}234.56", "apostrophe U+2019");
+        // #246 : {amount} = TTC (1234.56 + TVA 8.1 % = 1234.56 + 100.00 = 1334.56),
+        // plus le HT — line_vat_amount(1234.56, 8.1) = 99.99936 → 100.00.
+        assert_eq!(vars["amount"], "1\u{2019}334.56", "TTC, apostrophe U+2019");
         assert_eq!(vars["dueDate"], "31.07.2026", "format dd.mm.yyyy");
         assert_eq!(vars["companyName"], "Ma PME SA");
         assert_eq!(vars["contactName"], "Jean Dupont");
@@ -597,7 +625,13 @@ mod tests {
     #[test]
     fn vars_fallbacks_number_et_due_date() {
         let invoice = sample_invoice(None, None);
-        let vars = build_invoice_vars(&invoice, &sample_contact(), &sample_company(), Language::Fr);
+        let vars = build_invoice_vars(
+            &invoice,
+            &sample_lines(),
+            &sample_contact(),
+            &sample_company(),
+            Language::Fr,
+        );
         assert_eq!(vars["invoiceNumber"], "#7", "fallback #id comme le PDF");
         assert_eq!(vars["dueDate"], "—", "échéance absente → tiret");
     }
