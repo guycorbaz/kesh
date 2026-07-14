@@ -315,3 +315,11 @@ Implémentation T1→T9 en 4 commits (`b87b01a2` migrations, `1c2e6676` T2-T7 sr
 - **Gate final workspace** : voir résultat post-implémentation.
 
 Prochaine : `bmad-code-review 21-3` (LLM ≠ Opus).
+
+### Fix post-dev (2026-07-14) — bump workspace 0.6.0 → 0.7.0 (régression runtime rattrapée au gate)
+
+Le gate workspace complet a révélé une régression que les 4 passes de validate (statiques) n'ont pas pu attraper : le bump `kesh_version_min_required = '0.7.0'` (migration B) rend le **binaire courant (Cargo 0.6.0) plus ancien que sa propre DB** → `check_downgrade_protection(CARGO_PKG_VERSION)` refuse le **boot** (`main.rs:103`) ET l'**import backup** (manifeste `min_required=0.7.0` vs binaire 0.6.0 → 409). 8 tests admin_backup/admin_full_import échouaient.
+
+**Décision (Guy)** : passer la **version workspace de tous les crates à 0.7.0** (on développe désormais 0.7.0). Binaire 0.7.0 == min_required 0.7.0 → aligné : boot OK, import OK, protection anti-downgrade active dès le dev. Cohérent avec la politique migration breaking (min_required = version de la PR ⇒ le binaire doit être ≥ cette version). Le test `health_endpoint` utilise `env!("CARGO_PKG_VERSION")` dynamiquement → suit automatiquement.
+
+Après bump : admin_full_import 3/3, admin_backup 10/10. **Leçon** : un bump `min_required` DOIT s'accompagner du bump Cargo correspondant (les deux moitiés de la même action de version) — à vérifier au runtime, pas seulement en validate statique.
