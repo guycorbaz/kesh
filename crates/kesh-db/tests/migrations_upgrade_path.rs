@@ -70,10 +70,11 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + email_templates (Story 20-1, #224) = 47
     // + contacts_language_salutation + invoices_emailed + companies_email (Story 20-3b1) = 50
     // + contacts_default_payment_terms_days (Story 21-1, #245) = 51.
+    // + dunning_config + email_templates_reminder (Story 21-3, #231) = 53.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 51,
-        "51 migrations attendues (50 précédentes + Story 21-1 : contacts_default_payment_terms_days)"
+        total, 53,
+        "53 migrations attendues (51 précédentes + Story 21-3 : dunning_config + email_templates_reminder)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
@@ -396,12 +397,13 @@ async fn downgrade_protection_rejects_old_binary(pool: MySqlPool) {
 /// quand binary == db_min (cas nominal upgrade-then-boot).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
-    // Default migration : min_required = '0.1.0'.
-    let result = check_downgrade_protection(&pool, "0.1.0").await;
+    // min_required = '0.7.0' depuis le 1er bump breaking (Story 21-3,
+    // email_templates_reminder.sql). Binary == db_min → Aligned.
+    let result = check_downgrade_protection(&pool, "0.7.0").await;
     assert_eq!(
         result.unwrap(),
         DowngradeCheckOutcome::Aligned,
-        "binary 0.1.0 == db_min 0.1.0 → Aligned"
+        "binary 0.7.0 == db_min 0.7.0 → Aligned"
     );
 }
 
@@ -409,12 +411,13 @@ async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
 /// quand binary > db_min (upgrade legitime).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_binary_ahead_when_binary_greater(pool: MySqlPool) {
-    // Default migration : min_required = '0.1.0', binary 0.2.0 > 0.1.0.
-    let result = check_downgrade_protection(&pool, "0.2.0").await;
+    // min_required = '0.7.0' depuis le 1er bump breaking (Story 21-3),
+    // binary 0.8.0 > 0.7.0 → BinaryAhead (upgrade legitime).
+    let result = check_downgrade_protection(&pool, "0.8.0").await;
     match result.unwrap() {
         DowngradeCheckOutcome::BinaryAhead { db_min, binary } => {
-            assert_eq!(db_min.to_string(), "0.1.0");
-            assert_eq!(binary.to_string(), "0.2.0");
+            assert_eq!(db_min.to_string(), "0.7.0");
+            assert_eq!(binary.to_string(), "0.8.0");
         }
         other => panic!("Expected BinaryAhead, got {:?}", other),
     }

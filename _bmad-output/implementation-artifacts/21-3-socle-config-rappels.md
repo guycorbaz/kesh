@@ -135,7 +135,7 @@ Le tout **zéro-config** : un **seed idempotent sous sentinel lock** pose 3 nive
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migrations** (AC 1-3) : `20260713000001_dunning_config.sql` (2 tables) + `20260713000002_email_templates_reminder.sql` (ALTER + bump `min_required='0.7.0'`) + compteur `migrations_upgrade_path` + idempotence audit (2 lignes + stats) + `migrations_fresh_install`.
+- [x] **T1 — Migrations** (AC 1-3) : `20260714000001_dunning_config.sql` (2 tables) + `20260714000002_email_templates_reminder.sql` (ALTER + bump `min_required='0.7.0'`) + compteur `migrations_upgrade_path` 51→53 + idempotence audit (2 lignes + stats 51→53, tracked-by-sqlx 40→42) + `migrations_fresh_install` (2 tables + sweep min_required). **Piège résolu** : erreur 1553 (FK a besoin de l'index UNIQUE `company_id`) → créer le nouvel UNIQUE AVANT de dropper l'ancien. Gate : `migrations_fresh_install` 3/3 + `migrations_upgrade_path` 8/8.
 - [ ] **T2 — Entités** (AC 4-6) : `dunning_level.rs`, `company_dunning_settings.rs`, `EmailTemplateType::InvoiceReminder` (6 sites) + `level_number` sur `EmailTemplate` + mod.rs ré-exports.
 - [ ] **T3 — Repos dunning** (AC 7-8) : `dunning_levels.rs` (list/create-append/update/delete-renumber/count, sentinel lock) + `company_dunning_settings.rs` (get-or-create miroir + update no-op/optimistic/audit).
 - [ ] **T4 — Seed idempotent** (AC 9) : `ensure_seeded_in_tx` sous sentinel lock, 3 niveaux + grâce 5 + `seeded_at`, sémantique « vide = désactivé ».
@@ -217,7 +217,11 @@ Cette story touche ~6 modules (`kesh-db/{entities,repositories,migrations,backup
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — run 2026-07-14.
+
 ### Debug Log References
+
+- **T1** : `sqlx::migrate!()` n'a pas détecté les nouveaux `.sql` au 1er run (macro embarquée à la compilation) → `touch crates/kesh-db/src/lib.rs` force le rebuild du MIGRATOR. Puis erreur MariaDB 1553 « Cannot drop index uq_email_templates_company_type_language: needed in a foreign key constraint » → réordonné migration B pour créer le nouvel UNIQUE (préfixe `company_id`) AVANT de dropper l'ancien.
 
 ### Completion Notes List
 
