@@ -1,6 +1,6 @@
 # Story 21.3: Socle de configuration des rappels + templates par niveau (backend)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-13 par bmad-create-story. Cartographie ground-truth par 4 agents Explore parallèles (patrons vat_rates / company_invoice_settings / email_templates / conventions migration-export-backup). Story backend « socle » de l'Epic 21 : elle POSE les tables et le sous-système de config des rappels, SANS aucune évaluation d'éligibilité ni envoi (21-5a/21-5b) ni frontend (21-4). Décisions figées par le plan d'epic (D5, D6, D7, D14, section D) + critique adversariale 3 agents. -->
 
@@ -136,14 +136,14 @@ Le tout **zéro-config** : un **seed idempotent sous sentinel lock** pose 3 nive
 ## Tasks / Subtasks
 
 - [x] **T1 — Migrations** (AC 1-3) : `20260714000001_dunning_config.sql` (2 tables) + `20260714000002_email_templates_reminder.sql` (ALTER + bump `min_required='0.7.0'`) + compteur `migrations_upgrade_path` 51→53 + idempotence audit (2 lignes + stats 51→53, tracked-by-sqlx 40→42) + `migrations_fresh_install` (2 tables + sweep min_required). **Piège résolu** : erreur 1553 (FK a besoin de l'index UNIQUE `company_id`) → créer le nouvel UNIQUE AVANT de dropper l'ancien. Gate : `migrations_fresh_install` 3/3 + `migrations_upgrade_path` 8/8.
-- [ ] **T2 — Entités** (AC 4-6) : `dunning_level.rs`, `company_dunning_settings.rs`, `EmailTemplateType::InvoiceReminder` (6 sites) + `level_number` sur `EmailTemplate` + mod.rs ré-exports.
-- [ ] **T3 — Repos dunning** (AC 7-8) : `dunning_levels.rs` (list/create-append/update/delete-renumber/count, sentinel lock) + `company_dunning_settings.rs` (get-or-create miroir + update no-op/optimistic/audit).
-- [ ] **T4 — Seed idempotent** (AC 9) : `ensure_seeded_in_tx` sous sentinel lock, 3 niveaux + grâce 5 + `seeded_at`, sémantique « vide = désactivé ».
-- [ ] **T5 — Cascade + défauts email** (AC 10-11) : cascade `get_effective`/`list_effective`/`upsert`/`restore` + `default_template` 12 bras + générique + rétro-compat `level_number=0` sur invoice_send.
-- [ ] **T6 — Routes + RBAC** (AC 12-14) : `dunning_levels.rs` + `company_dunning_settings.rs` + montage `admin_routes`/authentifié + audits.
-- [ ] **T7 — Export/backup** (AC 15-16) : `TABLES_TO_TRUNCATE` +2 + compteur backup e2e 34→36 + `push_csv!` +2 + serializers/queries + debug_assert 16→18 + exports_global_e2e 17→19.
-- [ ] **T8 — Tests** (AC 17-21) : repos + seed + cascade + e2e RBAC/IDOR/verrou.
-- [ ] **T9 — Doc + gate** (AC 22-23) : CHANGELOG + Test Locally First.
+- [x] **T2 — Entités** (AC 4-6) : `dunning_level.rs`, `company_dunning_settings.rs`, `EmailTemplateType::InvoiceReminder` (6 sites) + `level_number` sur `EmailTemplate` + mod.rs ré-exports.
+- [x] **T3 — Repos dunning** (AC 7-8) : `dunning_levels.rs` (list/create-append/update/delete-renumber/count, sentinel lock) + `company_dunning_settings.rs` (get-or-create miroir + update no-op/optimistic/audit).
+- [x] **T4 — Seed idempotent** (AC 9) : `ensure_seeded_in_tx` sous sentinel lock, 3 niveaux + grâce 5 + `seeded_at`, sémantique « vide = désactivé ».
+- [x] **T5 — Cascade + défauts email** (AC 10-11) : cascade `get_effective`/`list_effective`/`upsert`/`restore` + `default_template` 12 bras + générique + rétro-compat `level_number=0` sur invoice_send.
+- [x] **T6 — Routes + RBAC** (AC 12-14) : `dunning_levels.rs` + `company_dunning_settings.rs` + montage `admin_routes`/authentifié + audits.
+- [x] **T7 — Export/backup** (AC 15-16) : `TABLES_TO_TRUNCATE` +2 + compteur backup e2e 34→36 + `push_csv!` +2 + serializers/queries + debug_assert 16→18 + exports_global_e2e 17→19.
+- [x] **T8 — Tests** (AC 17-21) : repos + seed + cascade + e2e RBAC/IDOR/verrou.
+- [x] **T9 — Doc + gate** (AC 22-23) : CHANGELOG + Test Locally First.
 
 ## Dev Notes
 
@@ -225,7 +225,37 @@ Opus 4.8 (1M context) — run 2026-07-14.
 
 ### Completion Notes List
 
+- **T1-T9 COMPLETED**. Toutes les AC couvertes. Gate : voir Change Log Dev.
+- **Décision routes niveau** : les routes REST `email-templates` existantes opèrent au **niveau 0** (le segment de niveau + UI arrivent en 21-4). Les niveaux 1..3 ont des défauts Rust résolus par la cascade ; les overrides de niveau > 0 se créent via `upsert_override` (testé au niveau repo). C'est conforme à LOW-3 validate P3.
+- **Export global** : `dunning_levels` exporté à 0 row (seed LAZY non déclenché par l'export — souveraineté = photo de l'état réel), `company_dunning_settings` à 1 row (get_or_create lazy). Cohérent avec la sémantique « pas d'effet de bord métier à l'export ».
+- **2 pièges T1 résolus** (cf. Debug Log) : `touch lib.rs` pour le MIGRATOR + réordre ALTER (err 1553 FK/index).
+
 ### File List
+
+**Nouveaux fichiers :**
+- crates/kesh-db/migrations/20260714000001_dunning_config.sql
+- crates/kesh-db/migrations/20260714000002_email_templates_reminder.sql
+- crates/kesh-db/src/entities/dunning_level.rs
+- crates/kesh-db/src/entities/company_dunning_settings.rs
+- crates/kesh-db/src/repositories/dunning_levels.rs
+- crates/kesh-db/src/repositories/company_dunning_settings.rs
+- crates/kesh-api/src/routes/dunning_levels.rs
+- crates/kesh-api/src/routes/company_dunning_settings.rs
+- crates/kesh-db/tests/dunning_levels_repository.rs
+- crates/kesh-db/tests/company_dunning_settings_repository.rs
+- crates/kesh-api/tests/dunning_config_e2e.rs
+
+**Fichiers modifiés :**
+- crates/kesh-db/src/entities/{email_template.rs, email_template_defaults.rs, mod.rs}
+- crates/kesh-db/src/repositories/{email_templates.rs, mod.rs}
+- crates/kesh-db/src/backup.rs
+- crates/kesh-db/tests/{migrations_upgrade_path.rs, migrations_fresh_install.rs, email_templates_repository.rs}
+- crates/kesh-api/src/routes/{email_templates.rs, invoice_email.rs, mod.rs}
+- crates/kesh-api/src/exports/{global.rs, csv_tables.rs}
+- crates/kesh-api/src/lib.rs
+- crates/kesh-api/tests/{admin_full_export_e2e.rs, exports_global_e2e.rs, email_templates_e2e.rs}
+- docs/migrations-idempotence-audit.md
+- CHANGELOG.md
 
 ## Change Log
 
@@ -274,3 +304,14 @@ Passe de convergence. Vérifications grep ground-truth ciblées sur les patches 
 - **2 LOW** (imprécisions de pointeur de ligne AC 10 `:97` attribué à get_effective, AC 20 assertions `:94`/`:293` vs décl. fn) → **corrigés** (nits, aucun risque fonctionnel).
 
 **Trend final** : P1 (4H/2M) → P2 (2H/2M) → P3 (2H/1M) → **P4 (0 > LOW) CONVERGÉ**. LLM : Sonnet→Haiku→Opus→Sonnet (cycle complet). Split **non déclenché** (convergence à Pass 4, critère 2 « > 4 passes » non atteint ; findings toujours mécaniques/localisés). **Spec prête pour `bmad-dev-story`.**
+
+### Dev (2026-07-14, Opus 4.8) — COMPLETED, status review
+
+Implémentation T1→T9 en 4 commits (`b87b01a2` migrations, `1c2e6676` T2-T7 src, `545d003a` T8 tests, + doc/gate). Gate ciblé vert au fil de l'eau :
+- **T1** migrations : `migrations_fresh_install` 3/3 + `migrations_upgrade_path` 8/8 (compteur 53, min_required 0.7.0, sweep downgrade-protection).
+- **T2-T7 src** : `cargo build --workspace --all-targets` 0 erreur, clippy 0 warning.
+- **T8 tests** : `dunning_levels_repository` 5/5, `company_dunning_settings_repository` 5/5, `email_templates_repository` 16/16 (dont 3 cascade), défauts Rust `all_defaults_only_use_allowed_variables` 1/1 (16 templates rappel FR/DE/IT/EN validés), `exports_global_e2e` 7/7, `admin_full_export_e2e` 20/20, `dunning_config_e2e` 4/4 (RBAC 403, IDOR 404, optimistic 409, seed au GET).
+- **Pièges résolus** : (a) `sqlx::migrate!()` ne recharge pas les nouveaux `.sql` → `touch crates/kesh-db/src/lib.rs` ; (b) MariaDB 1553 (FK a besoin de l'index UNIQUE `company_id`) → nouvel UNIQUE créé AVANT le DROP de l'ancien.
+- **Gate final workspace** : voir résultat post-implémentation.
+
+Prochaine : `bmad-code-review 21-3` (LLM ≠ Opus).

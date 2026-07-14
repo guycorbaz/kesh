@@ -18,6 +18,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 ### Ajouté
 
 - **Conditions de paiement structurées sur le contact** : la fiche contact gagne un **délai de paiement en jours** (0 à 365). À la création d'une facture pour ce contact, l'**échéance est pré-remplie automatiquement** (date de la facture + délai) et le **libellé des conditions** (« Payable à 30 jours net », « Zahlbar innert 30 Tagen »…) est généré **dans la langue du client** — les deux restent modifiables avant enregistrement. Le texte libre existant est conservé pour les contacts qui n'utilisent pas le délai structuré. Une facture ne peut plus recevoir une **échéance antérieure à sa date** (les factures existantes ne sont pas modifiées). (#245)
+- **Socle des rappels débiteurs** (fondation, écrans à venir) : mise en place de la configuration des **niveaux de rappel** (délai + frais par niveau, bornés à 10'000.–) et d'une **période de grâce** par entreprise, avec un jeu de **trois niveaux par défaut** prêts à l'emploi (1er rappel, 2e rappel, dernier rappel avant poursuite) et des **modèles d'e-mail de rappel par niveau** dans les quatre langues (ton en escalade). Ces réglages seront pilotables depuis l'interface dans une prochaine étape. (#231)
+
+### Modifié (technique)
+
+- **Version minimale requise portée à 0.7.0** : cette version introduit une évolution de base de données qui empêche de revenir en arrière vers un binaire antérieur à 0.7.0 (protection anti-downgrade — un ancien binaire ne saurait pas lire les nouveaux modèles de rappel). Sans conséquence pour une mise à jour normale. (#231)
 
 ## [0.6.0] — 2026-07-11
 
