@@ -17,7 +17,7 @@ use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType, Language};
-use kesh_db::repositories::email_templates;
+use kesh_db::repositories::{dunning_levels, email_templates};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -33,6 +33,8 @@ use crate::middleware::auth::CurrentUser;
 pub struct EmailTemplateResponse {
     pub template_type: EmailTemplateType,
     pub language: Language,
+    /// Niveau de rappel (0 = générique / `invoice_send`). Epic 21.
+    pub level_number: i16,
     pub subject: String,
     pub body: String,
     /// `None` quand `is_default = true` (rien à verrouiller).
@@ -46,6 +48,7 @@ impl From<EffectiveEmailTemplate> for EmailTemplateResponse {
         Self {
             template_type: t.template_type,
             language: t.language,
+            level_number: t.level_number,
             subject: t.subject,
             body: t.body,
             version: t.version,
@@ -61,6 +64,7 @@ impl From<EmailTemplate> for EmailTemplateResponse {
             allowed_variables: t.template_type.allowed_variables_owned(),
             template_type: t.template_type,
             language: t.language,
+            level_number: t.level_number,
             subject: t.subject,
             body: t.body,
             version: Some(t.version),
@@ -102,7 +106,13 @@ pub async fn list_email_templates(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<Vec<EmailTemplateResponse>>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let list = email_templates::list_effective_for_company(&state.pool, company.id).await?;
+    // Borne dynamique des niveaux de rappel exposés = MAX(niveaux configurés, 3).
+    // Calculée par l'appelant pour garder le repo email_templates découplé de dunning_levels.
+    let max_reminder_level =
+        dunning_levels::count_for_company(&state.pool, company.id).await? as i16;
+    let list =
+        email_templates::list_effective_for_company(&state.pool, company.id, max_reminder_level)
+            .await?;
     Ok(Json(list.into_iter().map(Into::into).collect()))
 }
 
@@ -117,8 +127,9 @@ pub async fn get_email_template(
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
 
+    // Niveau 0 (générique) : le segment de niveau des routes arrive avec l'UI 21-4.
     let effective =
-        email_templates::get_effective(&state.pool, company.id, template_type, language).await?;
+        email_templates::get_effective(&state.pool, company.id, template_type, language, 0).await?;
     Ok(Json(effective.into()))
 }
 
@@ -155,6 +166,7 @@ pub async fn update_email_template(
         company.id,
         template_type,
         language,
+        0,
         req.expected_version,
         current_user.user_id,
         current_user.api_key_id,
@@ -182,6 +194,7 @@ pub async fn restore_email_template_default(
         company.id,
         template_type,
         language,
+        0,
         current_user.user_id,
         current_user.api_key_id,
     )

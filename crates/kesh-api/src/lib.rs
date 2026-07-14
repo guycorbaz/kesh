@@ -209,6 +209,20 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/vat-rates/{id}",
             put(routes::vat::update_vat_rate).delete(routes::vat::deactivate_vat_rate),
         )
+        // Story 21-3 : socle rappels (Admin). GET dans les routes authentifiées.
+        .route(
+            "/api/v1/company/dunning-settings",
+            put(routes::company_dunning_settings::update_dunning_settings),
+        )
+        .route(
+            "/api/v1/dunning-levels",
+            post(routes::dunning_levels::create_dunning_level),
+        )
+        .route(
+            "/api/v1/dunning-levels/{id}",
+            put(routes::dunning_levels::update_dunning_level)
+                .delete(routes::dunning_levels::delete_dunning_level),
+        )
         // #219 : suppression définitive d'une facture (brouillon ou validée
         // avec garde-fous) — Admin uniquement. Même path que le PUT
         // (comptable_routes) mais méthode disjointe : les deux MethodRouter
@@ -535,6 +549,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route("/api/v1/products/{id}", get(routes::products::get_product))
         // Story 7.2 (KF-003) : lecture taux TVA configurés pour la company.
         .route("/api/v1/vat-rates", get(routes::vat::list_vat_rates))
+        // Story 21-3 : lecture des niveaux de rappel + réglages (tout rôle auth).
+        // Le GET settings déclenche le seed lazy des défauts.
+        .route(
+            "/api/v1/dunning-levels",
+            get(routes::dunning_levels::list_dunning_levels),
+        )
+        .route(
+            "/api/v1/company/dunning-settings",
+            get(routes::company_dunning_settings::get_dunning_settings),
+        )
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
         // Story 5.4 : échéancier en lecture (segment statique, prioritaire sur {id}).

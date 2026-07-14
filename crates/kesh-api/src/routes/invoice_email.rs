@@ -218,6 +218,7 @@ pub async fn preview_invoice_email(
         company.id,
         EmailTemplateType::InvoiceSend,
         language,
+        0,
     )
     .await?;
 

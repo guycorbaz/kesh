@@ -25,14 +25,21 @@ use crate::entities::Language;
 pub enum EmailTemplateType {
     /// Envoi d'une facture validée par e-mail (PDF QR-facture joint).
     InvoiceSend,
+    /// Rappel de paiement (dunning) — Epic 21, templates par niveau via
+    /// `email_templates.level_number` (option A+). PDF de la facture d'origine joint.
+    InvoiceReminder,
 }
 
 impl EmailTemplateType {
-    pub const ALL: [EmailTemplateType; 1] = [EmailTemplateType::InvoiceSend];
+    pub const ALL: [EmailTemplateType; 2] = [
+        EmailTemplateType::InvoiceSend,
+        EmailTemplateType::InvoiceReminder,
+    ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::InvoiceSend => "invoice_send",
+            Self::InvoiceReminder => "invoice_reminder",
         }
     }
 
@@ -48,6 +55,22 @@ impl EmailTemplateType {
                 "amount",
                 "dueDate",
                 "companyName",
+            ],
+            // Les 6 de base + les 4 spécifiques rappel (D15). `reminderLevel`,
+            // `reminderFee`, `totalDue`, `daysOverdue` sont ALIMENTÉES par
+            // `build_reminder_vars` en 21-5b, mais DÉCLARÉES ici pour que
+            // `validate_tokens` accepte les corps par défaut de rappel.
+            Self::InvoiceReminder => &[
+                "salutation",
+                "contactName",
+                "invoiceNumber",
+                "amount",
+                "dueDate",
+                "companyName",
+                "reminderLevel",
+                "reminderFee",
+                "totalDue",
+                "daysOverdue",
             ],
         }
     }
@@ -68,6 +91,7 @@ impl std::str::FromStr for EmailTemplateType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "invoice_send" => Ok(Self::InvoiceSend),
+            "invoice_reminder" => Ok(Self::InvoiceReminder),
             other => Err(format!("Type de template d'e-mail inconnu : '{other}'")),
         }
     }
@@ -105,6 +129,8 @@ pub struct EmailTemplate {
     pub company_id: i64,
     pub template_type: EmailTemplateType,
     pub language: Language,
+    /// Niveau de rappel (0 = générique / `invoice_send`). Epic 21.
+    pub level_number: i16,
     pub subject: String,
     pub body: String,
     pub version: i32,
@@ -118,6 +144,11 @@ pub struct EmailTemplate {
 pub struct EffectiveEmailTemplate {
     pub template_type: EmailTemplateType,
     pub language: Language,
+    /// Niveau de rappel demandé (le SLOT résolu, 0 pour `invoice_send`/générique).
+    /// Reflète le niveau POUR LEQUEL on résout, PAS la source de la cascade :
+    /// `get_effective(reminder, FR, 2)` renvoie toujours `level_number = 2`,
+    /// que le texte vienne de l'override niv. 2/0, du défaut Rust niv. 2 ou générique.
+    pub level_number: i16,
     pub subject: String,
     pub body: String,
     /// `None` quand `is_default = true` (rien à verrouiller : pas de ligne).
