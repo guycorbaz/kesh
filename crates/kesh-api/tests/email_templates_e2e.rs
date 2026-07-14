@@ -290,7 +290,8 @@ async fn list_returns_four_defaults_for_fresh_company(pool: MySqlPool) {
         .unwrap();
     assert_eq!(res.status(), 200);
     let body: Vec<Value> = res.json().await.unwrap();
-    assert_eq!(body.len(), 4);
+    // Zéro-config Epic 21 : 20 = 4 langues × (1 invoice_send niv0 + 4 invoice_reminder niv0-3).
+    assert_eq!(body.len(), 20);
     assert!(body.iter().all(|t| t["isDefault"].as_bool().unwrap()));
     assert!(body.iter().all(|t| t["version"].is_null()));
 }

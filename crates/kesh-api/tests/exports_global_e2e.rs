@@ -616,7 +616,7 @@ async fn export_global_zip_structure_17_entries_exact_set(pool: MySqlPool) {
         .unwrap();
     let body = resp.bytes().await.unwrap();
     let entries = assert_zip_response(&body);
-    assert_eq!(entries.len(), 17, "ZIP must contain exactly 17 entries");
+    assert_eq!(entries.len(), 19, "ZIP must contain exactly 19 entries");
 
     let names: std::collections::HashSet<String> = entries.iter().map(|(n, _)| n.clone()).collect();
     let expected: std::collections::HashSet<String> = [
@@ -634,6 +634,8 @@ async fn export_global_zip_structure_17_entries_exact_set(pool: MySqlPool) {
         "bank_transactions.csv",
         "vat_rates.csv",
         "company_invoice_settings.csv",
+        "dunning_levels.csv",
+        "company_dunning_settings.csv",
         "reconciliation_rules.csv",
         "bank_profiles.csv",
         "metadata.json",
@@ -688,9 +690,9 @@ async fn export_global_zip_metadata_shape_and_exact_values(pool: MySqlPool) {
             "exportDate format invalid at pos {i} (char {c:?}): {date}"
         );
     }
-    // tables.len() == 16
+    // tables.len() == 18 (Story 21-3 : +dunning_levels +company_dunning_settings)
     let tables = meta["tables"].as_object().unwrap();
-    assert_eq!(tables.len(), 16, "expected 16 tables in metadata");
+    assert_eq!(tables.len(), 18, "expected 18 tables in metadata");
     // companyId match
     assert_eq!(meta["companyId"].as_i64().unwrap(), ctx.company_id);
 }
@@ -771,13 +773,15 @@ async fn export_global_zip_empty_company_explicit_row_count_map(pool: MySqlPool)
     let meta = extract_meta(&entries);
     let tables = meta["tables"].as_object().unwrap();
 
-    // HashMap ground-truth `test_fixtures.rs:202-275` — 4 exceptions non-zéro :
+    // HashMap ground-truth `test_fixtures.rs:202-275` — 5 exceptions non-zéro :
     let expected: BTreeMap<&str, u64> = BTreeMap::from([
         ("company.csv", 1),                  // la company elle-même
         ("accounts.csv", 5),                 // 5 accounts seedés (1000-4000)
         ("company_invoice_settings.csv", 1), // direct INSERT defaults par le preset
         ("vat_rates.csv", 4),                // 4 vat_rates Swiss seedés
-        // 12 autres tables : 0 rows (pas de FY, écritures, contacts, invoices, bank)
+        ("company_dunning_settings.csv", 1), // Story 21-3 : get_or_create lazy à l'export
+        // 13 autres tables : 0 rows. dunning_levels = 0 (seed LAZY, pas déclenché par l'export).
+        ("dunning_levels.csv", 0),
         ("fiscal_years.csv", 0),
         ("journal_entries.csv", 0),
         ("journal_entry_lines.csv", 0),
@@ -1052,7 +1056,7 @@ async fn export_global_zip_audit_log_inserted(pool: MySqlPool) {
     // Pass 1 code-review H2 (C1 AA-MEDIUM-03) — clés snake_case cohérent spec AC #23.
     assert_eq!(details["company_id"].as_i64().unwrap(), ctx.company_id);
     assert!(details["byte_size"].as_u64().unwrap() > 0);
-    assert_eq!(details["csv_count"].as_u64().unwrap(), 16);
+    assert_eq!(details["csv_count"].as_u64().unwrap(), 18);
     assert_eq!(details["fiscal_year_scope"], "all");
     assert!(details["duration_ms"].is_number());
 }
