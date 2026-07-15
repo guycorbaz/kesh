@@ -1128,3 +1128,5 @@ email-templates-type-invoice_send = Invoice sending
 email-templates-type-invoice_reminder = Payment reminder
 email-templates-level-generic = Generic
 email-templates-level-n = Reminder { $n }
+email-templates-type-label = Type
+email-templates-level-label = Level

@@ -16,9 +16,11 @@ export const EMAIL_TEMPLATE_LANGUAGES: EmailTemplateLanguage[] = ['FR', 'DE', 'I
 
 /** Un template effectif (override ou défaut) renvoyé par l'API. */
 export type EmailTemplateResponse = {
-	/** Type de template (v1 : `'invoice_send'` uniquement). */
+	/** Type de template : `'invoice_send'` ou `'invoice_reminder'` (Story 21-4). */
 	templateType: string;
 	language: EmailTemplateLanguage;
+	/** Niveau de rappel (0 = générique / `invoice_send`). Story 21-4. */
+	levelNumber: number;
 	subject: string;
 	body: string;
 	/** Verrou optimiste — `null` quand `isDefault: true` (aucune ligne en base). */

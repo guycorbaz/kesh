@@ -1216,3 +1216,5 @@ email-templates-type-invoice_send = Envoi de facture
 email-templates-type-invoice_reminder = Rappel de facture
 email-templates-level-generic = Générique
 email-templates-level-n = Rappel { $n }
+email-templates-type-label = Type
+email-templates-level-label = Niveau

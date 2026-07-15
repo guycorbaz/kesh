@@ -81,22 +81,30 @@ describe('email-templates.api', () => {
 		expect(init.method ?? 'GET').toBe('GET');
 	});
 
-	it('getEmailTemplate construit une URL langue en MAJUSCULES', async () => {
+	it('getEmailTemplate construit une URL langue en MAJUSCULES + ?level=0 par défaut', async () => {
 		mockFetch.mockResolvedValue(okJson(200, SAMPLE) as Response);
 		await getEmailTemplate('invoice_send', 'FR');
 		const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
-		expect(url).toBe('/api/v1/admin/email-templates/invoice_send/FR');
+		expect(url).toBe('/api/v1/admin/email-templates/invoice_send/FR?level=0');
 	});
 
-	it('updateEmailTemplate PUT avec payload subject/body/expectedVersion', async () => {
+	it('getEmailTemplate propage le niveau demandé dans ?level= (Story 21-4)', async () => {
 		mockFetch.mockResolvedValue(okJson(200, SAMPLE) as Response);
-		await updateEmailTemplate('invoice_send', 'DE', {
-			subject: 'S',
-			body: 'B',
-			expectedVersion: 3,
-		});
+		await getEmailTemplate('invoice_reminder', 'FR', 2);
+		const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('/api/v1/admin/email-templates/invoice_reminder/FR?level=2');
+	});
+
+	it('updateEmailTemplate PUT avec payload subject/body/expectedVersion + ?level=', async () => {
+		mockFetch.mockResolvedValue(okJson(200, SAMPLE) as Response);
+		await updateEmailTemplate(
+			'invoice_reminder',
+			'DE',
+			{ subject: 'S', body: 'B', expectedVersion: 3 },
+			3,
+		);
 		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-		expect(url).toBe('/api/v1/admin/email-templates/invoice_send/DE');
+		expect(url).toBe('/api/v1/admin/email-templates/invoice_reminder/DE?level=3');
 		expect(init.method).toBe('PUT');
 		expect(JSON.parse(init.body as string)).toEqual({
 			subject: 'S',
@@ -105,11 +113,11 @@ describe('email-templates.api', () => {
 		});
 	});
 
-	it('restoreEmailTemplateDefault DELETE et résout sur 204 sans corps', async () => {
+	it('restoreEmailTemplateDefault DELETE ?level= et résout sur 204 sans corps', async () => {
 		mockFetch.mockResolvedValue(noContentResponse() as Response);
-		await expect(restoreEmailTemplateDefault('invoice_send', 'IT')).resolves.toBeUndefined();
+		await expect(restoreEmailTemplateDefault('invoice_reminder', 'IT', 1)).resolves.toBeUndefined();
 		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-		expect(url).toBe('/api/v1/admin/email-templates/invoice_send/IT');
+		expect(url).toBe('/api/v1/admin/email-templates/invoice_reminder/IT?level=1');
 		expect(init.method).toBe('DELETE');
 	});
 

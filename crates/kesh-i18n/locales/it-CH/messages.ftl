@@ -1128,3 +1128,5 @@ email-templates-type-invoice_send = Invio fattura
 email-templates-type-invoice_reminder = Sollecito di pagamento
 email-templates-level-generic = Generico
 email-templates-level-n = Sollecito { $n }
+email-templates-type-label = Tipo
+email-templates-level-label = Livello
