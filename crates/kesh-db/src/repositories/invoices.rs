@@ -475,6 +475,23 @@ pub async fn create(
     Ok((invoice, lines))
 }
 
+/// Verrouille et retourne une facture scopée company, sous tx (`SELECT … FOR UPDATE`).
+/// Utilisé pour re-vérifier l'état (status/paid_at) sous verrou avant une écriture
+/// dépendante (ex. enregistrement d'un rappel manuel — évite un TOCTOU avec un
+/// `mark_as_paid` concurrent). `None` si absente / cross-tenant.
+pub async fn find_scoped_for_update_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<Invoice>, DbError> {
+    sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
 /// Retourne une facture par ID avec ses lignes, scopée par `company_id`.
 pub async fn find_by_id_with_lines(
     pool: &MySqlPool,

@@ -62,7 +62,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "fiscal_years",
     "vat_rates", // Story 7.2 (KF-003) — table enfant de companies (FK fk_vat_rates_company), aucune table ne référence vat_rates.
     "email_templates", // Story 20-1 (#224) — enfant de companies (CASCADE), aucune table ne référence email_templates.
-    "dunning_levels", // Story 21-3 (#231) — enfant de companies (RESTRICT) ; aucune table ne le référence en 21-3 (invoice_reminders → 21-5a).
+    "dunning_levels", // Story 21-3 (#231) — enfant de companies (RESTRICT) ; aucune FK ne le référence (invoice_reminders 21-5a snapshote level_number/fee_amount sans FK — hard-delete + renumérotation sûrs).
     "company_dunning_settings", // Story 21-3 (#231) — singleton enfant de companies (RESTRICT).
     "refresh_tokens",
     "password_reset_tokens", // Story 17-4a (#122) — enfant de users (CASCADE), tokens recovery éphémères.

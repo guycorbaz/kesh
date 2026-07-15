@@ -217,6 +217,37 @@ async fn terminal_when_last_level_reached(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn missing_due_date_is_absent(pool: MySqlPool) {
+    let (company_id, contact_id, fy_id) = setup_company(&pool, "NoDue Co").await;
+    // Facture validée SANS échéance (due_date NULL) → jamais candidate (AC 8/19).
+    let n = SEQ.fetch_add(1, Ordering::SeqCst);
+    let je_id: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+         VALUES (?, ?, ?, '2026-06-01', 'Ventes', 'test') RETURNING id",
+    )
+    .bind(company_id)
+    .bind(fy_id)
+    .bind(n)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, status, date, due_date, total_amount, journal_entry_id) \
+         VALUES (?, ?, 'validated', '2026-01-01', NULL, 1000.00, ?)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(je_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(list.is_empty(), "facture sans due_date absente de la liste");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn dunning_disabled_empty_levels_returns_empty(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Disabled Co").await;
     validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(60)).await;

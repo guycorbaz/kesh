@@ -243,6 +243,43 @@ async fn list_grouped_by_contact_with_has_email(pool: MySqlPool) {
     assert_eq!(no_email["hasEmail"], false);
 }
 
+/// MEDIUM-1 (code-review) : deux contacts HOMONYMES ne doivent pas fusionner ni
+/// éclater — le groupement est par `contact_id`, pas par nom.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn list_groups_homonym_contacts_separately(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let cid = create_company(&pool, "Homonym Co").await;
+    let accountant = create_user(&pool, "compta", Role::Comptable, cid).await;
+    let token = forge_jwt(accountant, "Comptable", cid);
+    let fy = create_fiscal_year(&pool, cid).await;
+
+    // Deux contacts de même nom ; le premier a 2 factures échues (échéances qui
+    // s'entrelacent avec celle du second), le second en a 1.
+    let a = create_contact(&pool, cid, "Jean Dupont", Some("a@example.com")).await;
+    let b = create_contact(&pool, cid, "Jean Dupont", Some("b@example.com")).await;
+    validated_invoice(&pool, cid, a, fy, 40).await;
+    validated_invoice(&pool, cid, b, fy, 35).await;
+    validated_invoice(&pool, cid, a, fy, 30).await;
+
+    let body: Value = app
+        .client
+        .get(app.url("/api/v1/dunning/reminders"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let groups = body["groups"].as_array().unwrap();
+    // Exactement 2 groupes (un par contact_id), contact A non éclaté (2 factures).
+    assert_eq!(groups.len(), 2, "un groupe par contact malgré l'homonymie");
+    let ga = groups.iter().find(|g| g["contactId"] == a).unwrap();
+    assert_eq!(ga["invoices"].as_array().unwrap().len(), 2);
+    let gb = groups.iter().find(|g| g["contactId"] == b).unwrap();
+    assert_eq!(gb["invoices"].as_array().unwrap().len(), 1);
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn pause_resume_toggle_and_note_reset(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -391,6 +428,27 @@ async fn manual_reminder_level_jump_and_guards(pool: MySqlPool) {
     assert_eq!(
         res.json::<Value>().await.unwrap()["error"]["code"],
         "DUNNING_LEVEL_NOT_FOUND"
+    );
+
+    // Garde : facture payée → 422 INVOICE_ALREADY_PAID (AC 20).
+    let paid = validated_invoice(&pool, cid, contact, fy, 40).await;
+    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(paid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let res = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{paid}/reminders/manual")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "sentAt": sent_at }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 422);
+    assert_eq!(
+        res.json::<Value>().await.unwrap()["error"]["code"],
+        "INVOICE_ALREADY_PAID"
     );
 }
 

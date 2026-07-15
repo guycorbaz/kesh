@@ -129,6 +129,25 @@ fn validate_version(version: i32) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Longueur max d'une note de suspension (`invoices.dunning_paused_note VARCHAR(500)`).
+const PAUSE_NOTE_MAX: usize = 500;
+/// Longueur max d'une note de rappel manuel (`invoice_reminders.note TEXT`, borné par
+/// hygiène applicative).
+const REMINDER_NOTE_MAX: usize = 5000;
+
+/// Rejette (400) une note dépassant `max` caractères — un 400 explicite plutôt qu'une
+/// erreur MariaDB brute (1406) au-delà de la borne DB.
+fn validate_note_len(note: &Option<String>, max: usize) -> Result<(), AppError> {
+    if let Some(n) = note
+        && n.chars().count() > max
+    {
+        return Err(AppError::Validation(format!(
+            "note trop longue (max {max} caractères)"
+        )));
+    }
+    Ok(())
+}
+
 /// Convertit une `DbError` de `set_dunning_pause` en `AppError` (la reprise sur une
 /// facture non suspendue remonte `InvalidInput("notPaused")`).
 fn map_pause_error(e: DbError) -> AppError {
@@ -182,6 +201,7 @@ pub async fn pause_dunning(
     Json(body): Json<PauseBody>,
 ) -> Result<Json<DunningPauseResponse>, AppError> {
     validate_version(body.version)?;
+    validate_note_len(&body.note, PAUSE_NOTE_MAX)?;
     let invoice = invoices::set_dunning_pause(
         &state.pool,
         current_user.user_id,
@@ -244,18 +264,7 @@ pub async fn record_manual_reminder(
     if body.sent_at > Utc::now().naive_utc() {
         return Err(AppError::ReminderDateInFuture);
     }
-
-    // Gardes d'éligibilité sur la facture (scopée company).
-    let (invoice, _lines) =
-        invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
-            .await?
-            .ok_or(DbError::NotFound)?;
-    if invoice.status != "validated" {
-        return Err(AppError::InvoiceNotValidated);
-    }
-    if invoice.paid_at.is_some() {
-        return Err(AppError::InvoiceAlreadyPaid);
-    }
+    validate_note_len(&body.note, REMINDER_NOTE_MAX)?;
 
     // Snapshot du frais du niveau visé (config courante).
     let level = dunning_levels::find_by_level_number(
@@ -274,6 +283,18 @@ pub async fn record_manual_reminder(
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+
+    // Re-vérifie les gardes d'éligibilité SOUS VERROU (`FOR UPDATE`) dans la même tx
+    // que l'insertion — évite un TOCTOU avec un `mark_as_paid` concurrent (AC 15).
+    let invoice = invoices::find_scoped_for_update_in_tx(&mut tx, current_user.company_id, id)
+        .await?
+        .ok_or(DbError::NotFound)?;
+    if invoice.status != "validated" {
+        return Err(AppError::InvoiceNotValidated);
+    }
+    if invoice.paid_at.is_some() {
+        return Err(AppError::InvoiceAlreadyPaid);
+    }
 
     let created = invoice_reminders::insert_in_tx(
         &mut tx,
@@ -373,6 +394,11 @@ pub async fn list_reminder_history(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<ReminderResponse>>, AppError> {
+    // Vérification explicite d'appartenance de la facture au tenant (cohérent avec
+    // record_manual_reminder) — 404 si absente/cross-tenant, en plus du scoping DB des rappels.
+    invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
+        .await?
+        .ok_or(DbError::NotFound)?;
     let reminders =
         invoice_reminders::list_for_invoice(&state.pool, current_user.company_id, id).await?;
     Ok(Json(reminders.into_iter().map(Into::into).collect()))

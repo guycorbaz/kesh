@@ -87,7 +87,7 @@ pub async fn list_reminder_candidates(
            AND i.paid_at IS NULL \
            AND i.dunning_paused_at IS NULL \
            AND i.due_date IS NOT NULL \
-         ORDER BY c.name, i.due_date, i.id",
+         ORDER BY c.name, c.id, i.due_date, i.id",
     )
     .bind(company_id)
     .bind(company_id)
