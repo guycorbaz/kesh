@@ -148,4 +148,38 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 			page.getByRole('heading', { name: /Modèles d'e-mail/ }),
 		).toBeVisible();
 	});
+
+	test('multi-type/multi-niveau : changer type/niveau/langue préserve les brouillons (Story 21-4, anti-régression bug 20-2)', async ({
+		page,
+	}) => {
+		await goToEmailTemplates(page);
+
+		const subject = page.getByTestId('email-template-subject');
+
+		// Sélectionner type rappel, niveau 2, langue FR ; saisir un brouillon (sans enregistrer).
+		await page.getByTestId('email-template-type-invoice_reminder').click();
+		await page.getByTestId('email-template-level-2').click();
+		await subject.fill('brouillon-niv2-fr');
+
+		// Niveau 1 (même type/langue) : le brouillon niveau 2 ne s'affiche pas.
+		await page.getByTestId('email-template-level-1').click();
+		await expect(subject).not.toHaveValue('brouillon-niv2-fr');
+
+		// Retour niveau 2 : brouillon préservé (pas de re-fetch).
+		await page.getByTestId('email-template-level-2').click();
+		await expect(subject).toHaveValue('brouillon-niv2-fr');
+
+		// Langue DE puis retour FR : brouillon FR:2 toujours là.
+		await page.getByTestId('email-template-lang-tab-DE').click();
+		await expect(subject).not.toHaveValue('brouillon-niv2-fr');
+		await page.getByTestId('email-template-lang-tab-FR').click();
+		await expect(subject).toHaveValue('brouillon-niv2-fr');
+
+		// Type invoice_send (reset niveau, pas de crash) puis retour rappel/niveau 2 : préservé.
+		await page.getByTestId('email-template-type-invoice_send').click();
+		await expect(page.getByTestId('email-template-level-2')).toHaveCount(0);
+		await page.getByTestId('email-template-type-invoice_reminder').click();
+		await page.getByTestId('email-template-level-2').click();
+		await expect(subject).toHaveValue('brouillon-niv2-fr');
+	});
 });

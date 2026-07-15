@@ -59,7 +59,10 @@
 		loading = true;
 		loadError = '';
 		try {
-			const [lv, settings] = await Promise.all([listDunningLevels(), getDunningSettings()]);
+			// Séquentiel (PAS Promise.all) : le GET des réglages déclenche le seed lazy
+			// des 3 niveaux par défaut côté backend ; on liste APRÈS pour les voir.
+			const settings = await getDunningSettings();
+			const lv = await listDunningLevels();
 			levels = lv;
 			gracePeriodDays = settings.gracePeriodDays;
 			graceVersion = settings.version;
@@ -224,7 +227,7 @@
 							<th class="py-2">{i18nMsg('dunning-col-level', 'Niveau')}</th>
 							<th class="py-2">{i18nMsg('dunning-col-delay', 'Délai (jours)')}</th>
 							<th class="py-2">{i18nMsg('dunning-col-fee', 'Frais (CHF)')}</th>
-							<th class="py-2"></th>
+							<th class="py-2"><span class="sr-only">{i18nMsg('dunning-col-actions', 'Actions')}</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -275,7 +278,10 @@
 					</div>
 					<div>
 						<label class="text-sm font-medium" for="{uid}-fee">{i18nMsg('dunning-fee-label', 'Frais (CHF)')}</label>
-						<Input id="{uid}-fee" type="number" min="0" max="10000" step="0.01" bind:value={fFee} data-testid="dunning-form-fee" class="w-32" />
+						<!-- type="text" (pas number) : le montant décimal doit rester une STRING
+						     ($lib/components/ui/input coerce type=number en nombre, cassant le Decimal
+						     backend qui attend une string via serde-str). Bornes validées serveur. -->
+						<Input id="{uid}-fee" type="text" inputmode="decimal" bind:value={fFee} data-testid="dunning-form-fee" class="w-32" />
 					</div>
 					<div class="flex gap-2">
 						<Button onclick={submitForm} disabled={submitting} data-testid="dunning-form-submit">{i18nMsg('dunning-form-submit', 'Enregistrer')}</Button>

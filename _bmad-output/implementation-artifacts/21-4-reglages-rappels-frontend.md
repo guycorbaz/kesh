@@ -1,6 +1,6 @@
 # Story 21.4: Réglages des rappels + templates multi-type/multi-niveau (frontend)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-14 par bmad-create-story. Cartographie ground-truth par 3 agents Explore parallèles (vat-rates gabarit / email-templates refactor / index settings + conventions test-i18n). Story FRONTEND (Svelte 5) de l'Epic 21, consomme le socle backend 21-3 (routes dunning-levels + dunning-settings + email-templates avec level_number). Décisions figées : plan epic-21 D7 (exemple délais cumulés), D13 (hint CGV), D20 (refactor multi-type), section D (sélecteur niveau). Un petit ajout backend est inclus (paramètre `?level=` sur les routes email-templates — LOW-3 de 21-3). -->
 
@@ -92,12 +92,12 @@ Le **socle backend est livré** (21-3) : tables `dunning_levels` + `company_dunn
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Backend `?level=`** (AC 1-2) : query param niveau sur get/put/restore email-templates + validation + tests e2e.
-- [ ] **T2 — Feature `dunning` (types + api)** (AC 3-4) : `dunning.types.ts` + `dunning.api.ts` + `index.ts`.
-- [ ] **T3 — Page `settings/dunning`** (AC 5-6) : `+page.ts` guard + `+page.svelte` (CRUD niveaux + grâce + exemple cumulés D7 + hint CGV D13).
-- [ ] **T4 — Refactor email-templates** (AC 7-9) : types `levelNumber` + api `?level=` + page clé composite + sélecteurs type/niveau + invariant brouillons.
-- [ ] **T5 — Index + i18n** (AC 10-11) : carte settings + clés `dunning-*`/level dans les 4 FTL.
-- [ ] **T6 — Tests + gate** (AC 12-15) : vitest + Playwright + gate frontend + backend + CHANGELOG.
+- [x] **T1 — Backend `?level=`** (AC 1-2) : query param niveau sur get/put/restore email-templates + validation + tests e2e.
+- [x] **T2 — Feature `dunning` (types + api)** (AC 3-4) : `dunning.types.ts` + `dunning.api.ts` + `index.ts`.
+- [x] **T3 — Page `settings/dunning`** (AC 5-6) : `+page.ts` guard + `+page.svelte` (CRUD niveaux + grâce + exemple cumulés D7 + hint CGV D13).
+- [x] **T4 — Refactor email-templates** (AC 7-9) : types `levelNumber` + api `?level=` + page clé composite + sélecteurs type/niveau + invariant brouillons.
+- [x] **T5 — Index + i18n** (AC 10-11) : carte settings + clés `dunning-*`/level dans les 4 FTL.
+- [x] **T6 — Tests + gate** (AC 12-15) : vitest + Playwright + gate frontend + backend + CHANGELOG.
 
 ## Dev Notes
 
@@ -154,11 +154,37 @@ Cette story touche ~6 modules frontend/backend (`lib/features/dunning` neuf, `li
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — run 2026-07-15.
+
 ### Debug Log References
+
+- **3 bugs attrapés par l'E2E dunning** (invisibles en check/unit) :
+  1. **Race au chargement** : `Promise.all([listDunningLevels(), getDunningSettings()])` — `listDunningLevels` s'exécutait avant que `getDunningSettings` ne déclenche le seed lazy backend → 0 niveau. **Fix** : séquentiel (settings d'abord = seed, puis levels).
+  2. **Champ frais `type="number"` → nombre** : le composant `$lib/components/ui/input` fait `<input {type} bind:value>` ; en `type="number"`, Svelte 5 coerce en **nombre** → `feeAmount: 60` (nombre) → 422 backend (`Decimal` via serde-str attend une **string**). **Fix** : champ frais en `type="text" inputmode="decimal"` (reste une string). Déviation vs AC 6 (qui prescrivait `type="number"`) — la spec n'avait pas anticipé le mismatch coercion Svelte / Decimal-serde-str. Le délai reste `type="number"` (backend `i32` ← nombre).
+  3. **a11y** : `<th>` vide (colonne actions) → violation axe `empty-table-header` → ajouté `<span class="sr-only">Actions</span>`.
 
 ### Completion Notes List
 
+- **T1-T6 COMPLETED**. Backend `?level=` (query, validé, extracteurs ordonnés) + feature dunning + page settings/dunning + refactor email-templates multi-type/niveau + carte index + i18n 4 langues + tests.
+- **Déviation AC 6** (champ frais `type="text"` au lieu de `type="number"`) documentée ci-dessus — imposée par la contrainte Decimal-string du backend.
+
 ### File List
+
+**Nouveaux :**
+- crates/kesh-api tests étendus (email_templates_e2e level_query_param_crud_and_validation)
+- frontend/src/lib/features/dunning/{dunning.types.ts, dunning.api.ts, index.ts, dunning.api.test.ts}
+- frontend/src/routes/(app)/settings/dunning/{+page.svelte, +page.ts}
+- frontend/tests/e2e/dunning.spec.ts
+
+**Modifiés :**
+- crates/kesh-api/src/routes/email_templates.rs (LevelQuery + ?level= + validate_level)
+- crates/kesh-api/tests/email_templates_e2e.rs
+- frontend/src/lib/features/email-templates/{email-templates.types.ts, email-templates.api.ts, email-templates.api.test.ts}
+- frontend/src/routes/(app)/settings/email-templates/+page.svelte (refactor clé composite + sélecteurs)
+- frontend/src/routes/(app)/settings/+page.svelte (carte Rappels)
+- frontend/tests/e2e/email-templates.spec.ts (test multi-type/niveau)
+- crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl (clés dunning-* + email-templates type/level)
+- CHANGELOG.md
 
 ## Change Log
 
@@ -194,3 +220,13 @@ Passe adversariale. **Les 6 patches Pass 1 confirmés sans régression** (H1 res
 Passe de scellage. ~15 refs ground-truth confirmées (signature `get_effective` 5 params, `EmailTemplateResponse.levelNumber`, DTOs dunning camelCase, `feeAmount` string via serde-str, routes REST, insertion carte index `:289-298`, patron singleton invoicing 409+`$props.id()`). **Modèle d'état email-templates complet et sans chemin `undefined`** (post-load `invoice_send:0:FR` toujours présent ; `{:else if loading}` empêche le rendu avant les maps ; H1+maxLevel couvrent le seul trou). **Aucun effet de bord sur les tests 21-3** (appels sans `?level=` → level 0, `assert body.len()==20` inchangé). Formule D7 confirmée juste. Décisions epic D7/D13/D20/section D/L21-7 toutes couvertes. **4 nits LOW** : ordre extracteurs axum (LOW-1 → patché AC 1), `msg()` helper legacy (cohérent), garde défensive `activeDraft` (non requise), wording exemple (illustratif).
 
 **Trend final** : P1 (1H/6M) → P2 (0H/4M) → **P3 (0 > LOW) CONVERGÉ**. LLM : Sonnet→Haiku→Opus (rotation complète). Split **non déclenché** (convergence en 3 passes, critère « > 4 passes » non atteint). **Spec prête pour `bmad-dev-story`.**
+
+### Dev (2026-07-15, Opus 4.8) — COMPLETED, status review
+
+Implémentation T1→T6 en 6 commits. Gate ciblé vert :
+- **T1 backend** : `email_templates_e2e` 9/9 (dont `level_query_param_crud_and_validation`), clippy 0.
+- **Frontend** : `npm run check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 389/389, `build` OK.
+- **E2E Playwright** (backend contre `kesh_e2e`, 0.7.0 boot OK) : `dunning.spec.ts` 4/4 (3 niveaux seedés + grâce + exemple + CGV ; CRUD ; grâce ; a11y axe 0 violation), `email-templates.spec.ts` 8/8 (dont le nouveau test multi-type/niveau anti-régression brouillons).
+- **3 bugs runtime attrapés par l'E2E** (cf. Debug Log) : race seed, coercion Decimal, a11y th vide.
+
+Prochaine : `bmad-code-review 21-4` (LLM ≠ Opus).
