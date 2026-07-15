@@ -11,7 +11,7 @@
 //! (`company_invoice_settings.rs`) — pas d'extraction `Path<(Enum, Enum)>`
 //! (chemin non éprouvé dans ce codebase).
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
@@ -95,6 +95,31 @@ fn parse_language(raw: &str) -> Result<Language, AppError> {
     raw.parse::<Language>().map_err(AppError::Validation)
 }
 
+/// Query param de niveau de rappel (`?level=<i16>`), défaut 0 (générique /
+/// `invoice_send`). Ajouté Story 21-4 (le sélecteur de niveau côté UI édite les
+/// templates de rappel niveau 1..N).
+#[derive(Debug, Deserialize)]
+pub struct LevelQuery {
+    #[serde(default)]
+    pub level: i16,
+}
+
+/// Valide le niveau demandé pour un type de template. `invoice_send` n'existe qu'au
+/// niveau 0 ; un niveau négatif est toujours invalide.
+fn validate_level(template_type: EmailTemplateType, level: i16) -> Result<i16, AppError> {
+    if level < 0 {
+        return Err(AppError::Validation(
+            "Le niveau de rappel ne peut être négatif.".to_string(),
+        ));
+    }
+    if template_type == EmailTemplateType::InvoiceSend && level != 0 {
+        return Err(AppError::Validation(
+            "Le type « envoi de facture » n'a qu'un niveau 0.".to_string(),
+        ));
+    }
+    Ok(level)
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -122,14 +147,16 @@ pub async fn get_email_template(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((template_type_raw, language_raw)): Path<(String, String)>,
+    Query(level_q): Query<LevelQuery>,
 ) -> Result<Json<EmailTemplateResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
+    let level = validate_level(template_type, level_q.level)?;
 
-    // Niveau 0 (générique) : le segment de niveau des routes arrive avec l'UI 21-4.
     let effective =
-        email_templates::get_effective(&state.pool, company.id, template_type, language, 0).await?;
+        email_templates::get_effective(&state.pool, company.id, template_type, language, level)
+            .await?;
     Ok(Json(effective.into()))
 }
 
@@ -140,11 +167,13 @@ pub async fn update_email_template(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((template_type_raw, language_raw)): Path<(String, String)>,
+    Query(level_q): Query<LevelQuery>,
     Json(req): Json<UpdateEmailTemplateRequest>,
 ) -> Result<Json<EmailTemplateResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
+    let level = validate_level(template_type, level_q.level)?;
 
     let subject = req.subject.trim();
     let body = req.body.trim();
@@ -166,7 +195,7 @@ pub async fn update_email_template(
         company.id,
         template_type,
         language,
-        0,
+        level,
         req.expected_version,
         current_user.user_id,
         current_user.api_key_id,
@@ -184,17 +213,19 @@ pub async fn restore_email_template_default(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((template_type_raw, language_raw)): Path<(String, String)>,
+    Query(level_q): Query<LevelQuery>,
 ) -> Result<StatusCode, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
+    let level = validate_level(template_type, level_q.level)?;
 
     email_templates::restore_default(
         &state.pool,
         company.id,
         template_type,
         language,
-        0,
+        level,
         current_user.user_id,
         current_user.api_key_id,
     )

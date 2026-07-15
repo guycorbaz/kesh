@@ -537,3 +537,108 @@ async fn invalid_template_type_or_language_returns_400(pool: MySqlPool) {
         .unwrap();
     assert_eq!(bad_language.status(), 400);
 }
+
+// ---------------------------------------------------------------------------
+// Story 21-4 — paramètre de niveau ?level= sur les routes email-templates
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/migrations")]
+async fn level_query_param_crud_and_validation(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "Level Co").await;
+    let admin_id = create_user(&pool, "admin1", Role::Admin, company_id).await;
+    let token = forge_jwt(admin_id, "Admin", company_id);
+
+    // PUT ?level=2 sur invoice_reminder crée un override niveau 2.
+    let put = app
+        .client
+        .put(app.url("/api/v1/admin/email-templates/invoice_reminder/FR?level=2"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "subject": "2e rappel spécial {invoiceNumber}",
+            "body": "{salutation}, montant dû {totalDue} (facture {invoiceNumber}). {companyName}",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(put.status(), 200);
+    let created: Value = put.json().await.unwrap();
+    assert_eq!(created["levelNumber"].as_i64().unwrap(), 2);
+    assert!(!created["isDefault"].as_bool().unwrap());
+
+    // GET ?level=2 reflète l'override.
+    let get2: Value = app
+        .client
+        .get(app.url("/api/v1/admin/email-templates/invoice_reminder/FR?level=2"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        get2["subject"].as_str().unwrap(),
+        "2e rappel spécial {invoiceNumber}"
+    );
+    assert_eq!(get2["levelNumber"].as_i64().unwrap(), 2);
+
+    // GET ?level=3 (sans override) retombe sur le défaut Rust niveau 3.
+    let get3: Value = app
+        .client
+        .get(app.url("/api/v1/admin/email-templates/invoice_reminder/FR?level=3"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(get3["isDefault"].as_bool().unwrap());
+    assert_eq!(get3["levelNumber"].as_i64().unwrap(), 3);
+    assert!(
+        get3["subject"].as_str().unwrap().contains("Dernier rappel"),
+        "niveau 3 = défaut Rust « Dernier rappel avant poursuite »"
+    );
+
+    // DELETE ?level=2 → 204, puis GET ?level=2 retombe sur le défaut Rust niveau 2
+    // (« 2e rappel »), PAS sur le générique niveau 0.
+    let del = app
+        .client
+        .delete(app.url("/api/v1/admin/email-templates/invoice_reminder/FR?level=2"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(del.status(), 204);
+    let get2_after: Value = app
+        .client
+        .get(app.url("/api/v1/admin/email-templates/invoice_reminder/FR?level=2"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(get2_after["isDefault"].as_bool().unwrap());
+    assert_eq!(get2_after["levelNumber"].as_i64().unwrap(), 2);
+    assert!(
+        get2_after["subject"]
+            .as_str()
+            .unwrap()
+            .contains("2e rappel"),
+        "restore niveau 2 → défaut Rust niveau 2, pas le générique niveau 0"
+    );
+
+    // PUT ?level=1 sur invoice_send → 400 (invoice_send n'a qu'un niveau 0).
+    let bad = app
+        .client
+        .put(app.url("/api/v1/admin/email-templates/invoice_send/FR?level=1"))
+        .bearer_auth(&token)
+        .json(&json!({ "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
+}
