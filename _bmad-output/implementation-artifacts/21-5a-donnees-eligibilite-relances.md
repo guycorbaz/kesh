@@ -73,7 +73,7 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
 12. **Rappel manuel** `POST /api/v1/invoices/{id}/reminders/manual` — **RBAC Comptable+** : enregistre une ligne `invoice_reminders` `channel='manual'`, `sent_to = NULL`, niveau + date + note fournis, `fee_amount` = snapshot du frais du niveau visé (lookup `dunning_levels` config courante). Le cycle avance sans e-mail Kesh. **Gardes d'éligibilité** : facture `status='validated'` et `paid_at IS NULL` → sinon 4xx explicites. **Niveau accepté (H2 / D18)** : `level_number >= 1` **ET** existant dans `dunning_levels` de la company (nécessaire au lookup `fee_amount`) — **AUCUNE borne supérieure liée au niveau courant**. Le rappel manuel est explicitement le mécanisme produit du **saut de niveau vers le haut** (ex. mise en demeure niveau 3 directement, sans repasser par 1-2) ; contrairement à l'envoi e-mail unitaire (21-5b) borné à `≤ prochain`. Audit `invoice.reminder_sent` (channel manual). **`subject`/`body`** (M3) : `subject` = libellé auto `« Rappel manuel — niveau {N} »`, `body` = copie de `note` (ou chaîne vide si absente) — préserve la valeur probatoire du snapshot.
    - **Request DTO** (figé) : `{ levelNumber: i16, sentAt: DateTime, note?: String }` (camelCase).
    - **Garde `sent_at` non-futur (M2-p2)** : `sent_at <= UTC_TIMESTAMP(6)` sinon **422 `REMINDER_DATE_IN_FUTURE`** (`UTC_TIMESTAMP` et non `NOW()` pour rester cohérent avec la discipline UTC de l'éligibilité, H1/L2-p3). Rationale : un `sent_at` futur ferait monter le `current_level` mais reporterait le calcul du prochain niveau (`UTC_DATE() >= DATE(sent_at) + delay`) → **gèle silencieusement le cycle** jusqu'à cette date future.
-   - **Codes d'erreur explicites (M1-p2)** : facture absente/cross-tenant → **404 `NOT_FOUND`** ; `status != 'validated'` → **422 `INVOICE_NOT_VALIDATED`** ; `paid_at` non-NULL → **422 `INVOICE_ALREADY_PAID`** ; `level_number` absent de `dunning_levels` → **422 `DUNNING_LEVEL_NOT_FOUND`** ; `level_number < 1` ou `sent_at` futur → **422** (`VALIDATION_ERROR`/`REMINDER_DATE_IN_FUTURE`). *(Note : une facture **suspendue** n'empêche PAS l'enregistrement d'un rappel manuel — le rappel manuel est une trace historique ; la suspension ne retire que de la liste auto « à rappeler ».)*
+   - **Codes d'erreur explicites (M1-p2)** : facture absente/cross-tenant → **404 `NOT_FOUND`** ; `status != 'validated'` → **422 `INVOICE_NOT_VALIDATED`** ; `paid_at` non-NULL → **422 `INVOICE_ALREADY_PAID`** ; `level_number` absent de `dunning_levels` → **422 `DUNNING_LEVEL_NOT_FOUND`** ; `level_number < 1` → **400 `VALIDATION_ERROR`** (code canonique projet, cohérent AC 11 `version < 0`) ; `sent_at` futur → **422 `REMINDER_DATE_IN_FUTURE`**. *(Note : une facture **suspendue** n'empêche PAS l'enregistrement d'un rappel manuel — le rappel manuel est une trace historique ; la suspension ne retire que de la liste auto « à rappeler ».)*
 13. **Annulation d'un rappel** `POST /api/v1/invoices/{id}/reminders/{reminder_id}/cancel` (ou DELETE soft) — **RBAC Admin** (envoi accidentel = correction sensible) : pose `cancelled_at` soft, exclut du MAX niveau, audité `invoice.reminder_cancelled`. Scopé company.
 14. **Historique** `GET /api/v1/invoices/{id}/reminders` — **RBAC tous rôles authentifiés (lecture)** : liste des rappels d'une facture (annulés distinguables). Alimente la fiche facture (21-6). **Response DTO** (figé, camelCase, sans `company_id`) : `Vec<ReminderResponse { id, levelNumber, feeAmount (string), sentAt, channel, sentTo (nullable), subject, body, note (nullable), cancelledAt (nullable) }>`, trié `sent_at DESC`. Scopé company (cross-tenant → liste vide / 404).
 15. **Montage RBAC anti-footgun** (item 22, AC de test) : les mutations Comptable+ dans le bloc `require_comptable_role` (`lib.rs`), l'annulation Admin dans `admin_routes` (`require_admin_role`), la lecture historique dans le routeur authentifié simple. **Test explicite** qu'une route n'est pas déclarée **après** le `;` de fermeture du `route_layer` (bypass auth silencieux — piège Axum 0.8). Verrou optimiste/`FOR UPDATE` sur la row `invoices` là où un update concurrent est possible (toggle suspension, insert rappel).
@@ -130,8 +130,8 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
   - [x] `invoice_reminders` → `TABLES_TO_TRUNCATE` (backup.rs, rang FK avant `invoices`) + `serialize_invoice_reminders_csv` (csv_tables.rs) + wiring global.rs (query `list_all_by_company` + push_csv + imports). Repo `invoice_reminders::list_all_by_company`.
   - [x] Compteurs : global.rs 18→19 (files/tables_meta/csv_count/capacity) ; admin_full_export 36→37 ; exports_global 19→20 (entries) + 18→19 (tables) + set expected + rowCounts + audit csv_count.
   - [x] Tests : exports_global 20/20, admin_full_export 7, admin_backup 10, admin_full_import round-trip verts (`backup_inventory_matches_schema` OK).
-- [ ] **T6 — Doc + gate** (AC 22,23)
-  - [ ] CHANGELOG `Added`. Gate local complet vert.
+- [x] **T6 — Doc + gate** (AC 22,23)
+  - [x] CHANGELOG `Ajouté` (« Gestion des rappels débiteurs — moteur »). Gate workspace complet exit 0 (fmt/clippy 0).
 
 ## Dev Notes
 
@@ -268,3 +268,28 @@ Passe de scellage. **Tous les patches Pass 1/2 confirmés corrects** (grep groun
 Passe de scellage final. **M1-p3 confirmé correct par grep** (`emailed_to` aux 3 sites 46/909/1707 ; `list_by_company_paginated`/`list_for_export` → `InvoiceListItem` sans champs emailed/dunning). Balayage exhaustif des refs factuelles (compteurs export `global.rs:278/279/294`, `admin_full_export:274` 36, `exports_global:619/695`, migrations 53/42, `invoice.rs` emailed:35/38, FK CASCADE `invoice_lines`, `backup.rs:64`, `mark_as_paid:1430`, `locked_recipient`, `due_dates_summary` `UTC_DATE():601`, `FailedProposal:154-158`, codes `errors.rs`) — **toutes exactes**. Précédent `PUT` pour toggle d'état confirmé (`disable_user`/`archive_*`). Aucune incohérence AC↔AC / AC↔Dev Notes / AC↔tests. Aucun défaut structurel résiduel.
 
 **Trend final** : P1 (1C/3H/5M) → P2 (0C/0H/2M) → P3 (0C/0H/1M) → **P4 (0 > LOW) CONVERGÉ**. LLM : Sonnet→Haiku→Opus→Sonnet (rotation complète). **Split NON déclenché** : convergence atteinte AU seuil de 4 passes (critère « > 4 passes » non franchi), story ~5 modules tenable. **Spec scellée, prête pour `bmad-dev-story`.**
+
+### Dev (2026-07-15, Opus 4.8) — COMPLETED
+
+Implémentation T1→T6 en 7 commits. Gate ciblé vert par tâche :
+- **T1** migration `invoice_reminders` + colonnes suspension (FK CASCADE invoice) : migrations 3/3 + upgrade 8/8. Piège `touch lib.rs` (macro MIGRATOR) rattrapé.
+- **T2** entité `InvoiceReminder`/`ReminderChannel` + repo (insert/current_level MAX non-annulés/cancel soft/list) : repo 3/3. Colonnes `dunning_paused_*` propagées au struct `Invoice` + 3 SELECT (const + delete inline + list_all_by_company) + littéraux tests (invoice_email, matching).
+- **T3** `dunning_eligibility` (SQL candidates + Rust déclenchement UTC + seed lazy + garde C1 + terminal) : 6/6 → 7/7.
+- **T4** 5 endpoints + RBAC (`set_dunning_pause` FOR UPDATE+optimistic ; rappel manuel gardes+lock ; annulation Admin soft ; historique) + 4 variantes AppError 422 : e2e 5/5 → 6/6.
+- **T5** export souveraineté + backup `invoice_reminders` + compteurs (18→19, 36→37) : exports 20 + backup/import round-trip.
+- **T6** CHANGELOG + gate workspace complet exit 0, fmt/clippy 0.
+
+### Code review (2026-07-15) — CONVERGÉ 2 passes (0 > LOW)
+
+Panel orthogonal à l'auteur (Opus), diff dev `69fb0668..HEAD`.
+
+**Pass 1** (Sonnet correction / Haiku sécu-IDOR grep / Sonnet conventions-export) — **0 CRITICAL/HIGH**, 2 MEDIUM + LOW :
+- **MEDIUM-1** — groupement par contact fragile aux **homonymes** (SQL `ORDER BY c.name` seul → un contact éclaté en 2 groupes si un homonyme s'intercale). **Patch** : `ORDER BY c.name, c.id, …` (contiguïté) + test e2e `list_groups_homonym_contacts_separately`.
+- **MEDIUM-2** — **TOCTOU** : le rappel manuel lisait la facture hors verrou puis insérait dans une tx séparée (race `mark_as_paid` concurrent → rappel sur facture payée). **Patch** : `invoices::find_scoped_for_update_in_tx` (SELECT … FOR UPDATE) + recheck `status`/`paid_at` sous verrou DANS la tx d'insertion (AC 15).
+- **M1** (conventions) test garde `INVOICE_ALREADY_PAID` ; **L2** test éligibilité sans `due_date` ; **L1** comment `backup.rs` ; **LOW** (Haiku) check explicite facture dans `list_reminder_history` ; **LOW** (Sonnet) `validate_note_len` (400 avant DB).
+
+**Pass 2** (Opus, contexte frais) — **0 CRITICAL/HIGH/MEDIUM**, 1 LOW. Remédiation MEDIUM-1/MEDIUM-2/LOW **confirmée correcte** (rollback des gardes avant écriture, verrou sur la bonne row, `chars().count()` cohérent VARCHAR utf8mb4, ORDER BY garantit la contiguïté). Balayage résiduel RAS (RBAC anti-footgun, anti-IDOR 404, Decimal serde-str, éligibilité SQL, migration non-breaking). Le seul LOW = incohérence **rédactionnelle de la spec** AC 12 (`level<1` : 422 écrit vs 400 canonique implémenté) → **spec corrigée** (400 `VALIDATION_ERROR`, cohérent AC 11).
+
+**Trend** : Pass 1 (0C/0H/2M) → **Pass 2 (0 > LOW) CONVERGÉ**. LLM : Sonnet/Haiku/Sonnet → Opus. Split non déclenché.
+
+**Gate final** : `cargo fmt`/`clippy` 0, `cargo test --workspace --test-threads=1` **exit 0** (pré-patch) + suites touchées post-patch (e2e 6, éligibilité 7, repo 3) vertes + gate workspace complet post-patch. Aucun bump `min_required` (non-breaking). Ferme la couche données/éligibilité de **#231** (envoi e-mail 21-5b / relances UI 21-6 / balance âgée 21-7 restants). **review → done.**
