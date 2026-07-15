@@ -1104,6 +1104,7 @@ dunning-empty = Keine Stufe konfiguriert — Mahnungen sind deaktiviert.
 dunning-col-level = Stufe
 dunning-col-delay = Frist (Tage)
 dunning-col-fee = Gebühr (CHF)
+dunning-col-actions = Aktionen
 dunning-edit = Bearbeiten
 dunning-delete = Löschen
 dunning-example-heading = Voraussichtlicher Zeitplan

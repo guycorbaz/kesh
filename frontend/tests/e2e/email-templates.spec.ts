@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
@@ -181,5 +182,16 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await page.getByTestId('email-template-type-invoice_reminder').click();
 		await page.getByTestId('email-template-level-2').click();
 		await expect(subject).toHaveValue('brouillon-niv2-fr');
+	});
+
+	test('a11y : sélecteurs type/niveau sans violation axe (Story 21-4)', async ({ page }) => {
+		await goToEmailTemplates(page);
+
+		// Afficher le sélecteur de niveau (rappels) pour couvrir les deux toggle-groups.
+		await page.getByTestId('email-template-type-invoice_reminder').click();
+		await expect(page.getByTestId('email-template-level-1')).toBeVisible();
+
+		const results = await new AxeBuilder({ page }).analyze();
+		expect(results.violations).toEqual([]);
 	});
 });

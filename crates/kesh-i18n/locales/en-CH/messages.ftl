@@ -1104,6 +1104,7 @@ dunning-empty = No level configured — reminders are disabled.
 dunning-col-level = Level
 dunning-col-delay = Delay (days)
 dunning-col-fee = Fee (CHF)
+dunning-col-actions = Actions
 dunning-edit = Edit
 dunning-delete = Delete
 dunning-example-heading = Projected schedule

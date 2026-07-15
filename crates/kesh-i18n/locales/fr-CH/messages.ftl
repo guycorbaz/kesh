@@ -1192,6 +1192,7 @@ dunning-empty = Aucun niveau configuré — les rappels sont désactivés.
 dunning-col-level = Niveau
 dunning-col-delay = Délai (jours)
 dunning-col-fee = Frais (CHF)
+dunning-col-actions = Actions
 dunning-edit = Modifier
 dunning-delete = Supprimer
 dunning-example-heading = Échéancier prévisionnel

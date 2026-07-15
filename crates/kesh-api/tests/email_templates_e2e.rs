@@ -641,4 +641,14 @@ async fn level_query_param_crud_and_validation(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(bad.status(), 400);
+
+    // GET ?level=-1 sur invoice_reminder → 400 (niveau négatif rejeté).
+    let negative = app
+        .client
+        .get(app.url("/api/v1/admin/email-templates/invoice_reminder/FR?level=-1"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(negative.status(), 400);
 }

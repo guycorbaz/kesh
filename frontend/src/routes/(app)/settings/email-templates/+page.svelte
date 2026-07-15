@@ -236,12 +236,17 @@
 {:else}
 	<section class="space-y-4 rounded-lg border border-border bg-white p-6 shadow-sm">
 		<!-- Sélecteur de type -->
-		<div class="flex flex-wrap items-center gap-2">
+		<div
+			class="flex flex-wrap items-center gap-2"
+			role="group"
+			aria-label={msg('email-templates-type-label', 'Type')}
+		>
 			<span class="text-sm font-medium">{msg('email-templates-type-label', 'Type')} :</span>
 			{#each TEMPLATE_TYPES as type (type)}
 				<button
 					type="button"
 					data-testid="email-template-type-{type}"
+					aria-pressed={activeType === type}
 					class="rounded-md border px-3 py-1 text-sm"
 					class:border-primary={activeType === type}
 					class:bg-primary-light={activeType === type}
@@ -254,12 +259,17 @@
 
 		<!-- Sélecteur de niveau (rappels uniquement) -->
 		{#if activeType === 'invoice_reminder'}
-			<div class="flex flex-wrap items-center gap-2">
+			<div
+				class="flex flex-wrap items-center gap-2"
+				role="group"
+				aria-label={msg('email-templates-level-label', 'Niveau')}
+			>
 				<span class="text-sm font-medium">{msg('email-templates-level-label', 'Niveau')} :</span>
 				{#each reminderLevels as level (level)}
 					<button
 						type="button"
 						data-testid="email-template-level-{level}"
+						aria-pressed={activeLevel === level}
 						class="rounded-md border px-3 py-1 text-sm"
 						class:border-primary={activeLevel === level}
 						class:bg-primary-light={activeLevel === level}

@@ -1104,6 +1104,7 @@ dunning-empty = Nessun livello configurato — i solleciti sono disattivati.
 dunning-col-level = Livello
 dunning-col-delay = Scadenza (giorni)
 dunning-col-fee = Spese (CHF)
+dunning-col-actions = Azioni
 dunning-edit = Modifica
 dunning-delete = Elimina
 dunning-example-heading = Scadenzario previsionale
