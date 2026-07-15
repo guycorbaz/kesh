@@ -235,6 +235,7 @@
 	<p class="text-sm text-destructive">{loadError}</p>
 {:else}
 	<section class="space-y-4 rounded-lg border border-border bg-white p-6 shadow-sm">
+		<div class="space-y-4" data-testid="email-template-selectors">
 		<!-- Sélecteur de type -->
 		<div
 			class="flex flex-wrap items-center gap-2"
@@ -280,6 +281,7 @@
 				{/each}
 			</div>
 		{/if}
+		</div>
 
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-semibold">
