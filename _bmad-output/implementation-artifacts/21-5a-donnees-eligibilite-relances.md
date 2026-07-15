@@ -262,3 +262,9 @@ Passe de scellage. **Tous les patches Pass 1/2 confirmés corrects** (grep groun
 - **L2-p3** — garde `sent_at` en `NOW(6)` (heure locale) incohérente avec la discipline UTC (H1) → `UTC_TIMESTAMP(6)` (AC 12) + pause `dunning_paused_at = UTC_TIMESTAMP(6)` (AC 11).
 
 **Trend** : Pass 1 (1C/3H/5M) → Pass 2 (0C/0H/2M) → Pass 3 (0C/0H/1M) → patchés. Relance Pass 4 (Sonnet, contexte frais) pour sceller. Split non recommandé (finding unique localisé).
+
+### Validate Pass 4 (2026-07-15, Sonnet 4.6, contexte frais) — CONVERGÉ (0 > LOW)
+
+Passe de scellage final. **M1-p3 confirmé correct par grep** (`emailed_to` aux 3 sites 46/909/1707 ; `list_by_company_paginated`/`list_for_export` → `InvoiceListItem` sans champs emailed/dunning). Balayage exhaustif des refs factuelles (compteurs export `global.rs:278/279/294`, `admin_full_export:274` 36, `exports_global:619/695`, migrations 53/42, `invoice.rs` emailed:35/38, FK CASCADE `invoice_lines`, `backup.rs:64`, `mark_as_paid:1430`, `locked_recipient`, `due_dates_summary` `UTC_DATE():601`, `FailedProposal:154-158`, codes `errors.rs`) — **toutes exactes**. Précédent `PUT` pour toggle d'état confirmé (`disable_user`/`archive_*`). Aucune incohérence AC↔AC / AC↔Dev Notes / AC↔tests. Aucun défaut structurel résiduel.
+
+**Trend final** : P1 (1C/3H/5M) → P2 (0C/0H/2M) → P3 (0C/0H/1M) → **P4 (0 > LOW) CONVERGÉ**. LLM : Sonnet→Haiku→Opus→Sonnet (rotation complète). **Split NON déclenché** : convergence atteinte AU seuil de 4 passes (critère « > 4 passes » non franchi), story ~5 modules tenable. **Spec scellée, prête pour `bmad-dev-story`.**
