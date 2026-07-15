@@ -323,3 +323,12 @@ Le gate workspace complet a révélé une régression que les 4 passes de valida
 **Décision (Guy)** : passer la **version workspace de tous les crates à 0.7.0** (on développe désormais 0.7.0). Binaire 0.7.0 == min_required 0.7.0 → aligné : boot OK, import OK, protection anti-downgrade active dès le dev. Cohérent avec la politique migration breaking (min_required = version de la PR ⇒ le binaire doit être ≥ cette version). Le test `health_endpoint` utilise `env!("CARGO_PKG_VERSION")` dynamiquement → suit automatiquement.
 
 Après bump : admin_full_import 3/3, admin_backup 10/10. **Leçon** : un bump `min_required` DOIT s'accompagner du bump Cargo correspondant (les deux moitiés de la même action de version) — à vérifier au runtime, pas seulement en validate statique.
+
+### Code review Pass 1 (2026-07-14, panel parallèle Sonnet/Haiku/Sonnet) — 1 HIGH patché
+
+Panel adversarial 3 reviewers (correctness / régression-fanout grep / archi-sécu-policy) sur le diff `cab19107..HEAD`. **2 reviewers à 0 > LOW** (régression : 5 signatures + call-sites + compteurs tous migrés, prouvé grep ; archi/sécu : RBAC/IDOR/P1-P5/audit/découplage conformes). **1 HIGH (correctness)** :
+- **H1 CORRIGÉ** — `ensure_seeded_in_tx` réécrivait inconditionnellement `grace_period_days = 5` quand `seeded_at IS NULL`, **écrasant silencieusement** une grâce déjà personnalisée par un `update()` antérieur (scénario `PUT` avant le 1er `GET`, sans audit). **Fix** : le seed ne touche plus `grace_period_days` (le DEFAULT DB 5 suffit à la création de row) ; il pose seulement `seeded_at` + version. Constante `DEFAULT_GRACE_DAYS` retirée. **Test de régression ajouté** `seed_preserves_grace_customized_before_seeding` (PUT grace=15 → GET/seed → grâce toujours 15).
+- **LOW corrigé** : doc-comments dupliqués `get_effective`/`list_effective_for_company` fusionnés.
+- **LOW acceptés** : `count_for_company() as i16` (troncature théorique à 32767 niveaux) + pas de plafond `max_reminder_level` (borne dynamique voulue, H4) — documentés, sans risque réaliste.
+
+Gate remédiation : clippy 0, `company_dunning_settings_repository` 6/6 (dont H1). **Trend** : Pass 1 → 1 HIGH → patché. Relance Pass 2 (LLM différent).

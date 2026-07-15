@@ -191,3 +191,39 @@ async fn seed_does_not_resurrect_after_manual_empty(pool: MySqlPool) {
         "vide = désactivé, pas de résurrection"
     );
 }
+
+/// H1 (code-review) : si un Admin personnalise la grâce (`update`) AVANT le 1er
+/// seed (PUT avant GET), le seed lazy NE DOIT PAS écraser cette valeur.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn seed_preserves_grace_customized_before_seeding(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "PutFirst Co").await;
+    let admin = create_admin(&pool, company_id).await;
+
+    // L'Admin personnalise la grâce à 15 AVANT tout GET/seed (seeded_at reste NULL).
+    let s = company_dunning_settings::get_or_create_default(&pool, company_id)
+        .await
+        .unwrap();
+    let updated = company_dunning_settings::update(
+        &pool,
+        company_id,
+        s.version,
+        admin,
+        CompanyDunningSettingsUpdate { grace_period_days: 15 },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.grace_period_days, 15);
+    assert!(updated.seeded_at.is_none(), "pas encore seedé");
+
+    // Puis le 1er GET déclenche le seed.
+    let mut tx = pool.begin().await.unwrap();
+    let seeded = company_dunning_settings::ensure_seeded_in_tx(&mut tx, company_id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    // La grâce personnalisée (15) est PRÉSERVÉE, pas écrasée par le défaut 5.
+    assert_eq!(seeded.grace_period_days, 15, "le seed ne doit pas écraser la grâce personnalisée");
+    assert!(seeded.seeded_at.is_some());
+    assert_eq!(dunning_levels::count_for_company(&pool, company_id).await.unwrap(), 3);
+}

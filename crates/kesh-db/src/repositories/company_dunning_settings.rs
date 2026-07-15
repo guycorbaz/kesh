@@ -13,8 +13,8 @@ use sqlx::{MySql, MySqlPool, Transaction};
 
 const COLUMNS: &str = "company_id, grace_period_days, seeded_at, version, created_at, updated_at";
 
-/// Grâce par défaut (jours) posée au seed.
-const DEFAULT_GRACE_DAYS: i32 = 5;
+// La grâce par défaut (5 jours) est le DEFAULT DB de `company_dunning_settings.grace_period_days`
+// (migration 20260714000001) — le seed ne la réécrit jamais (H1 code-review).
 
 fn settings_snapshot_json(s: &CompanyDunningSettings) -> serde_json::Value {
     serde_json::json!({
@@ -154,9 +154,14 @@ const DEFAULT_LEVELS: [(i32, &str); 3] = [(10, "0.00"), (10, "20.00"), (10, "40.
 ///
 /// - Prend le sentinel lock company (sérialise avec les mutations CRUD dunning).
 /// - Crée la row settings si absente (`get_or_create_default_in_tx`).
-/// - **Si `seeded_at IS NULL`** : insère les 3 niveaux + pose `grace = 5`, `seeded_at = NOW()`.
+/// - **Si `seeded_at IS NULL`** : insère les 3 niveaux + pose `seeded_at = NOW()`.
 /// - **Si `seeded_at IS NOT NULL`** : no-op (déjà seedé une fois → une table `dunning_levels`
 ///   vide = désactivation VOLONTAIRE, pas de résurrection).
+///
+/// ⚠️ Le seed **NE touche PAS `grace_period_days`** (H1 code-review) : la grâce par défaut
+/// (5) vient du DEFAULT DB posé à la création de la row (`INSERT IGNORE`). Réécrire la grâce
+/// ici écraserait silencieusement une valeur déjà personnalisée par un `update()` antérieur
+/// (cas `PUT` avant le 1er `GET`) — perte de donnée sans piste d'audit.
 ///
 /// Idempotent et race-safe : deux appels concurrents se sérialisent sur le sentinel lock ;
 /// le second voit `seeded_at` posé et ne re-seede pas.
@@ -187,12 +192,12 @@ pub async fn ensure_seeded_in_tx(
         .map_err(map_db_error)?;
     }
 
+    // NE PAS toucher grace_period_days (H1) — voir doc de la fonction.
     sqlx::query(
         "UPDATE company_dunning_settings \
-         SET grace_period_days = ?, seeded_at = NOW(3), version = version + 1 \
+         SET seeded_at = NOW(3), version = version + 1 \
          WHERE company_id = ?",
     )
-    .bind(DEFAULT_GRACE_DAYS)
     .bind(company_id)
     .execute(&mut **tx)
     .await

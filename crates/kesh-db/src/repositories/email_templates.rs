@@ -95,15 +95,14 @@ fn to_effective_default(
     }
 }
 
-/// Résout le template effectif pour `(company_id, template_type, language)` :
-/// l'override en base si présent, sinon le défaut. Jamais d'erreur pour une
-/// combinaison valide.
-/// Cascade de résolution (Epic 21) : override DB `(type, langue, N)` →
-/// override DB `(type, langue, 0)` générique → défaut Rust niveau N → défaut Rust
-/// générique. Une seule requête (`level_number IN (N, 0) ORDER BY level_number DESC
-/// LIMIT 1`) préfère l'override de niveau N à l'override générique. Le `level_number`
-/// retourné = le SLOT demandé (`level_number` du paramètre). Pour `invoice_send`,
-/// passer `level_number = 0`.
+/// Résout le template effectif pour `(company_id, template_type, language, level_number)` —
+/// jamais d'erreur pour une combinaison valide (l'absence d'override retombe sur le défaut).
+///
+/// Cascade de résolution (Epic 21) : override DB `(type, langue, N)` → override DB
+/// `(type, langue, 0)` générique → défaut Rust niveau N → défaut Rust générique. Une seule
+/// requête (`level_number IN (N, 0) ORDER BY level_number DESC LIMIT 1`) préfère l'override
+/// de niveau N à l'override générique. Le `level_number` retourné = le SLOT demandé (le
+/// paramètre), pas la source de la cascade. Pour `invoice_send`, passer `level_number = 0`.
 pub async fn get_effective(
     pool: &MySqlPool,
     company_id: i64,
@@ -130,10 +129,6 @@ pub async fn get_effective(
     })
 }
 
-/// Résout les templates effectifs pour toutes les combinaisons
-/// `EmailTemplateType::ALL × [FR, DE, IT, EN]` (4 en v1). Une seule requête
-/// pour charger les overrides existants de la company, puis complète avec
-/// les défauts pour les combinaisons sans ligne.
 /// Résout les templates effectifs pour toutes les combinaisons
 /// `type × langue × niveau`. `invoice_send` reste au seul niveau 0 ;
 /// `invoice_reminder` expose les niveaux `0..=max(max_reminder_level, 3)`
