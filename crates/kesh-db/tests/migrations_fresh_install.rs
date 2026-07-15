@@ -44,6 +44,7 @@ async fn migrations_apply_all_tables_present(pool: MySqlPool) {
         "fiscal_years",
         "invoice_lines",
         "invoice_number_sequences",
+        "invoice_reminders",
         "invoices",
         "journal_entries",
         "journal_entry_lines",

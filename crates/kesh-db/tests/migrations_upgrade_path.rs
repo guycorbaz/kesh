@@ -71,10 +71,11 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + contacts_language_salutation + invoices_emailed + companies_email (Story 20-3b1) = 50
     // + contacts_default_payment_terms_days (Story 21-1, #245) = 51.
     // + dunning_config + email_templates_reminder (Story 21-3, #231) = 53.
+    // + invoice_reminders (Story 21-5a, #231) = 54.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 53,
-        "53 migrations attendues (51 précédentes + Story 21-3 : dunning_config + email_templates_reminder)"
+        total, 54,
+        "54 migrations attendues (53 précédentes + Story 21-5a : invoice_reminders)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les

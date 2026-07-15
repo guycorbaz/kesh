@@ -103,11 +103,11 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migrations** (AC 1,2,3)
-  - [ ] `invoice_reminders.sql` (table append-only, FK CASCADE invoice, CHECK channel, index).
-  - [ ] Colonnes `invoices.dunning_paused_at` + `dunning_paused_note` (ADD COLUMN nullable).
-  - [ ] Ligne `docs/migrations-idempotence-audit.md` (P5).
-  - [ ] Confirmer aucun bump `min_required` (CREATE TABLE + ADD COLUMN nullable = non-breaking).
+- [x] **T1 — Migrations** (AC 1,2,3)
+  - [x] `invoice_reminders.sql` (table append-only, FK CASCADE invoice, CHECK channel, index) + colonnes suspension dans le même fichier.
+  - [x] Colonnes `invoices.dunning_paused_at` + `dunning_paused_note` (ADD COLUMN nullable).
+  - [x] Ligne `docs/migrations-idempotence-audit.md` (P5) + stats 53→54, tracked-by-sqlx 42→43.
+  - [x] Aucun bump `min_required` (CREATE TABLE + ADD COLUMN nullable = non-breaking). Compteurs migrations tests 53→54 + `invoice_reminders` dans fresh_install. `touch lib.rs` (MIGRATOR macro cache). Tests migrations 3/3 + 8/8 verts.
 - [ ] **T2 — Entité + repository `invoice_reminders`** (AC 4,5,6)
   - [ ] Entité `invoice_reminder.rs` (Decimal serde-str, enum channel), `mod.rs`.
   - [ ] Repo : `insert_in_tx`, `list_for_invoice`, `current_level` (MAX non-annulés), `cancel_in_tx` (soft + audit).
