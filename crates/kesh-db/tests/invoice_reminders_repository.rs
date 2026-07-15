@@ -63,7 +63,13 @@ fn ts(s: &str) -> NaiveDateTime {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").expect("ts")
 }
 
-fn manual_reminder(company_id: i64, invoice_id: i64, level: i16, fee: &str, sent: &str) -> NewInvoiceReminder {
+fn manual_reminder(
+    company_id: i64,
+    invoice_id: i64,
+    level: i16,
+    fee: &str,
+    sent: &str,
+) -> NewInvoiceReminder {
     NewInvoiceReminder {
         company_id,
         invoice_id,
@@ -85,15 +91,35 @@ async fn insert_and_current_level_uses_max_non_cancelled(pool: MySqlPool) {
     let invoice_id = create_test_invoice(&pool, company_id).await;
 
     // Aucun rappel → niveau courant 0.
-    assert_eq!(invoice_reminders::current_level(&pool, company_id, invoice_id).await.unwrap(), 0);
+    assert_eq!(
+        invoice_reminders::current_level(&pool, company_id, invoice_id)
+            .await
+            .unwrap(),
+        0
+    );
 
     // Insère niveau 1 puis 2.
     let mut tx = pool.begin().await.unwrap();
-    let r1 = invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 1, "0.00", "2026-07-10 09:00:00")).await.unwrap();
-    invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 2, "20.00", "2026-07-20 09:00:00")).await.unwrap();
+    let r1 = invoice_reminders::insert_in_tx(
+        &mut tx,
+        &manual_reminder(company_id, invoice_id, 1, "0.00", "2026-07-10 09:00:00"),
+    )
+    .await
+    .unwrap();
+    invoice_reminders::insert_in_tx(
+        &mut tx,
+        &manual_reminder(company_id, invoice_id, 2, "20.00", "2026-07-20 09:00:00"),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
-    assert_eq!(invoice_reminders::current_level(&pool, company_id, invoice_id).await.unwrap(), 2);
+    assert_eq!(
+        invoice_reminders::current_level(&pool, company_id, invoice_id)
+            .await
+            .unwrap(),
+        2
+    );
     assert_eq!(r1.channel, "manual");
     assert_eq!(r1.fee_amount, Decimal::new(0, 2));
     assert!(r1.cancelled_at.is_none());
@@ -105,28 +131,58 @@ async fn cancel_soft_excludes_from_max_level(pool: MySqlPool) {
     let invoice_id = create_test_invoice(&pool, company_id).await;
 
     let mut tx = pool.begin().await.unwrap();
-    invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 1, "0.00", "2026-07-10 09:00:00")).await.unwrap();
-    let r2 = invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 2, "20.00", "2026-07-20 09:00:00")).await.unwrap();
+    invoice_reminders::insert_in_tx(
+        &mut tx,
+        &manual_reminder(company_id, invoice_id, 1, "0.00", "2026-07-10 09:00:00"),
+    )
+    .await
+    .unwrap();
+    let r2 = invoice_reminders::insert_in_tx(
+        &mut tx,
+        &manual_reminder(company_id, invoice_id, 2, "20.00", "2026-07-20 09:00:00"),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
-    assert_eq!(invoice_reminders::current_level(&pool, company_id, invoice_id).await.unwrap(), 2);
+    assert_eq!(
+        invoice_reminders::current_level(&pool, company_id, invoice_id)
+            .await
+            .unwrap(),
+        2
+    );
 
     // Annule le niveau 2 → le niveau courant retombe à 1.
     let mut tx = pool.begin().await.unwrap();
-    let cancelled = invoice_reminders::cancel_in_tx(&mut tx, company_id, r2.id).await.unwrap();
+    let cancelled = invoice_reminders::cancel_in_tx(&mut tx, company_id, r2.id)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
     assert!(cancelled);
-    assert_eq!(invoice_reminders::current_level(&pool, company_id, invoice_id).await.unwrap(), 1);
+    assert_eq!(
+        invoice_reminders::current_level(&pool, company_id, invoice_id)
+            .await
+            .unwrap(),
+        1
+    );
 
     // Ré-annulation idempotente → false (déjà annulé).
     let mut tx = pool.begin().await.unwrap();
-    let again = invoice_reminders::cancel_in_tx(&mut tx, company_id, r2.id).await.unwrap();
+    let again = invoice_reminders::cancel_in_tx(&mut tx, company_id, r2.id)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
     assert!(!again);
 
     // La ligne annulée reste dans l'historique (append-only).
-    let history = invoice_reminders::list_for_invoice(&pool, company_id, invoice_id).await.unwrap();
+    let history = invoice_reminders::list_for_invoice(&pool, company_id, invoice_id)
+        .await
+        .unwrap();
     assert_eq!(history.len(), 2);
-    assert!(history.iter().any(|r| r.id == r2.id && r.cancelled_at.is_some()));
+    assert!(
+        history
+            .iter()
+            .any(|r| r.id == r2.id && r.cancelled_at.is_some())
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -136,18 +192,40 @@ async fn scoping_is_company_isolated(pool: MySqlPool) {
     let invoice_a = create_test_invoice(&pool, company_a).await;
 
     let mut tx = pool.begin().await.unwrap();
-    let r = invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_a, invoice_a, 1, "0.00", "2026-07-10 09:00:00")).await.unwrap();
+    let r = invoice_reminders::insert_in_tx(
+        &mut tx,
+        &manual_reminder(company_a, invoice_a, 1, "0.00", "2026-07-10 09:00:00"),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
     // Company B ne voit rien de l'invoice de A.
-    assert_eq!(invoice_reminders::current_level(&pool, company_b, invoice_a).await.unwrap(), 0);
-    assert!(invoice_reminders::list_for_invoice(&pool, company_b, invoice_a).await.unwrap().is_empty());
+    assert_eq!(
+        invoice_reminders::current_level(&pool, company_b, invoice_a)
+            .await
+            .unwrap(),
+        0
+    );
+    assert!(
+        invoice_reminders::list_for_invoice(&pool, company_b, invoice_a)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     // Annulation cross-tenant refusée (find scoped → pas d'update).
     let mut tx = pool.begin().await.unwrap();
-    let cancelled = invoice_reminders::cancel_in_tx(&mut tx, company_b, r.id).await.unwrap();
+    let cancelled = invoice_reminders::cancel_in_tx(&mut tx, company_b, r.id)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
     assert!(!cancelled);
     // Toujours actif côté A.
-    assert_eq!(invoice_reminders::current_level(&pool, company_a, invoice_a).await.unwrap(), 1);
+    assert_eq!(
+        invoice_reminders::current_level(&pool, company_a, invoice_a)
+            .await
+            .unwrap(),
+        1
+    );
 }

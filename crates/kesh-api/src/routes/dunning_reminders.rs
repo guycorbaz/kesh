@@ -236,7 +236,9 @@ pub async fn record_manual_reminder(
     Json(body): Json<ManualReminderBody>,
 ) -> Result<(StatusCode, Json<ReminderResponse>), AppError> {
     if body.level_number < 1 {
-        return Err(AppError::Validation("niveau de rappel invalide".to_string()));
+        return Err(AppError::Validation(
+            "niveau de rappel invalide".to_string(),
+        ));
     }
     // Garde : une date d'envoi ne peut pas être dans le futur (gèlerait le cycle).
     if body.sent_at > Utc::now().naive_utc() {
@@ -244,9 +246,10 @@ pub async fn record_manual_reminder(
     }
 
     // Gardes d'éligibilité sur la facture (scopée company).
-    let (invoice, _lines) = invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
-        .await?
-        .ok_or(DbError::NotFound)?;
+    let (invoice, _lines) =
+        invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
+            .await?
+            .ok_or(DbError::NotFound)?;
     if invoice.status != "validated" {
         return Err(AppError::InvoiceNotValidated);
     }
@@ -255,9 +258,13 @@ pub async fn record_manual_reminder(
     }
 
     // Snapshot du frais du niveau visé (config courante).
-    let level = dunning_levels::find_by_level_number(&state.pool, current_user.company_id, body.level_number)
-        .await?
-        .ok_or(AppError::DunningLevelNotFound)?;
+    let level = dunning_levels::find_by_level_number(
+        &state.pool,
+        current_user.company_id,
+        body.level_number,
+    )
+    .await?
+    .ok_or(AppError::DunningLevelNotFound)?;
 
     let subject = format!("Rappel manuel — niveau {}", body.level_number);
     let reminder_body = body.note.clone().unwrap_or_default();
@@ -321,10 +328,11 @@ pub async fn cancel_reminder(
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
 
-    let reminder = invoice_reminders::find_by_id_for_company(&mut tx, current_user.company_id, reminder_id)
-        .await?
-        .filter(|r| r.invoice_id == id)
-        .ok_or(DbError::NotFound)?;
+    let reminder =
+        invoice_reminders::find_by_id_for_company(&mut tx, current_user.company_id, reminder_id)
+            .await?
+            .filter(|r| r.invoice_id == id)
+            .ok_or(DbError::NotFound)?;
 
     let newly_cancelled =
         invoice_reminders::cancel_in_tx(&mut tx, current_user.company_id, reminder_id).await?;
@@ -347,9 +355,10 @@ pub async fn cancel_reminder(
     }
 
     // Re-lecture pour refléter `cancelled_at` (posé cette tx ou déjà présent).
-    let updated = invoice_reminders::find_by_id_for_company(&mut tx, current_user.company_id, reminder_id)
-        .await?
-        .ok_or(DbError::NotFound)?;
+    let updated =
+        invoice_reminders::find_by_id_for_company(&mut tx, current_user.company_id, reminder_id)
+            .await?
+            .ok_or(DbError::NotFound)?;
 
     tx.commit()
         .await

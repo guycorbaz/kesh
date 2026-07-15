@@ -269,7 +269,16 @@ async fn pause_resume_toggle_and_note_reset(pool: MySqlPool) {
     assert_eq!(body["dunningPausedNote"], "litige en cours");
 
     // La facture suspendue disparaît de la liste à rappeler.
-    let list: Value = app.client.get(app.url("/api/v1/dunning/reminders")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    let list: Value = app
+        .client
+        .get(app.url("/api/v1/dunning/reminders"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(list["groups"].as_array().unwrap().len(), 0);
 
     // Reprise → paused_at ET note remis à NULL.
@@ -311,11 +320,19 @@ async fn manual_reminder_level_jump_and_guards(pool: MySqlPool) {
     let fy = create_fiscal_year(&pool, cid).await;
     let contact = create_contact(&pool, cid, "Débiteur", Some("d@example.com")).await;
     // Déclenche le seed lazy (3 niveaux).
-    let _ = app.client.get(app.url("/api/v1/dunning/reminders")).bearer_auth(&token).send().await.unwrap();
+    let _ = app
+        .client
+        .get(app.url("/api/v1/dunning/reminders"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
     let inv = validated_invoice(&pool, cid, contact, fy, 40).await;
 
     // Rappel manuel niveau 3 (saut direct, D18) → 201, current_level avance à 3.
-    let sent_at = (Utc::now().naive_utc() - Duration::days(1)).format("%Y-%m-%dT%H:%M:%S").to_string();
+    let sent_at = (Utc::now().naive_utc() - Duration::days(1))
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
     let res = app
         .client
         .post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual")))
@@ -331,19 +348,50 @@ async fn manual_reminder_level_jump_and_guards(pool: MySqlPool) {
     assert_eq!(body["feeAmount"], "40.00"); // snapshot niveau 3
 
     // Historique visible (tous rôles).
-    let hist: Value = app.client.get(app.url(&format!("/api/v1/invoices/{inv}/reminders"))).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    let hist: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{inv}/reminders")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(hist.as_array().unwrap().len(), 1);
 
     // Garde : date future → 422.
-    let future = (Utc::now().naive_utc() + Duration::days(5)).format("%Y-%m-%dT%H:%M:%S").to_string();
-    let res = app.client.post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual"))).bearer_auth(&token).json(&json!({ "levelNumber": 1, "sentAt": future })).send().await.unwrap();
+    let future = (Utc::now().naive_utc() + Duration::days(5))
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+    let res = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "sentAt": future }))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 422);
-    assert_eq!(res.json::<Value>().await.unwrap()["error"]["code"], "REMINDER_DATE_IN_FUTURE");
+    assert_eq!(
+        res.json::<Value>().await.unwrap()["error"]["code"],
+        "REMINDER_DATE_IN_FUTURE"
+    );
 
     // Garde : niveau inexistant → 422.
-    let res = app.client.post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual"))).bearer_auth(&token).json(&json!({ "levelNumber": 99, "sentAt": sent_at })).send().await.unwrap();
+    let res = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 99, "sentAt": sent_at }))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 422);
-    assert_eq!(res.json::<Value>().await.unwrap()["error"]["code"], "DUNNING_LEVEL_NOT_FOUND");
+    assert_eq!(
+        res.json::<Value>().await.unwrap()["error"]["code"],
+        "DUNNING_LEVEL_NOT_FOUND"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -356,20 +404,54 @@ async fn cancel_reminder_admin_only_and_soft(pool: MySqlPool) {
     let acc_token = forge_jwt(accountant, "Comptable", cid);
     let fy = create_fiscal_year(&pool, cid).await;
     let contact = create_contact(&pool, cid, "Débiteur", Some("d@example.com")).await;
-    let _ = app.client.get(app.url("/api/v1/dunning/reminders")).bearer_auth(&acc_token).send().await.unwrap();
+    let _ = app
+        .client
+        .get(app.url("/api/v1/dunning/reminders"))
+        .bearer_auth(&acc_token)
+        .send()
+        .await
+        .unwrap();
     let inv = validated_invoice(&pool, cid, contact, fy, 40).await;
 
     // Enregistre un rappel niveau 1.
-    let sent_at = (Utc::now().naive_utc() - Duration::days(1)).format("%Y-%m-%dT%H:%M:%S").to_string();
-    let created: Value = app.client.post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual"))).bearer_auth(&acc_token).json(&json!({ "levelNumber": 1, "sentAt": sent_at })).send().await.unwrap().json().await.unwrap();
+    let sent_at = (Utc::now().naive_utc() - Duration::days(1))
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+    let created: Value = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{inv}/reminders/manual")))
+        .bearer_auth(&acc_token)
+        .json(&json!({ "levelNumber": 1, "sentAt": sent_at }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     let reminder_id = created["id"].as_i64().unwrap();
 
     // Comptable ne peut PAS annuler (Admin requis) → 403.
-    let res = app.client.post(app.url(&format!("/api/v1/invoices/{inv}/reminders/{reminder_id}/cancel"))).bearer_auth(&acc_token).send().await.unwrap();
+    let res = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/invoices/{inv}/reminders/{reminder_id}/cancel"
+        )))
+        .bearer_auth(&acc_token)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 403);
 
     // Admin annule → 200, cancelled_at posé.
-    let res = app.client.post(app.url(&format!("/api/v1/invoices/{inv}/reminders/{reminder_id}/cancel"))).bearer_auth(&admin_token).send().await.unwrap();
+    let res = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/invoices/{inv}/reminders/{reminder_id}/cancel"
+        )))
+        .bearer_auth(&admin_token)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 200);
     assert!(!res.json::<Value>().await.unwrap()["cancelledAt"].is_null());
 }
@@ -391,14 +473,35 @@ async fn rbac_and_idor(pool: MySqlPool) {
     let v = invoice_version(&pool, inv).await;
 
     // Consultation ne peut PAS suspendre (Comptable+ requis) → 403.
-    let res = app.client.put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause"))).bearer_auth(&consult_token).json(&json!({ "version": v })).send().await.unwrap();
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause")))
+        .bearer_auth(&consult_token)
+        .json(&json!({ "version": v }))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 403);
 
     // Intrus d'un autre tenant → 404 (anti-IDOR, jamais 403).
-    let res = app.client.put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause"))).bearer_auth(&intruder_token).json(&json!({ "version": v })).send().await.unwrap();
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause")))
+        .bearer_auth(&intruder_token)
+        .json(&json!({ "version": v }))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 404);
 
     // Comptable du bon tenant → OK.
-    let res = app.client.put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause"))).bearer_auth(&acc_token).json(&json!({ "version": v })).send().await.unwrap();
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause")))
+        .bearer_auth(&acc_token)
+        .json(&json!({ "version": v }))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 200);
 }

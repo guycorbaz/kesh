@@ -98,7 +98,13 @@ fn ts_days_ago(n: i64) -> NaiveDateTime {
     (Utc::now().naive_utc()) - Duration::days(n)
 }
 
-async fn insert_reminder(pool: &MySqlPool, company_id: i64, invoice_id: i64, level: i16, sent_days_ago: i64) {
+async fn insert_reminder(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    level: i16,
+    sent_days_ago: i64,
+) {
     let mut tx = pool.begin().await.unwrap();
     invoice_reminders::insert_in_tx(
         &mut tx,
@@ -128,15 +134,22 @@ async fn not_yet_overdue_is_absent(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "NotDue Co").await;
     // Échéance il y a 5 jours → grâce+délai(1)=15j non atteints.
     validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(5)).await;
-    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap();
-    assert!(list.is_empty(), "facture dans la grâce ne doit pas être candidate");
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(
+        list.is_empty(),
+        "facture dans la grâce ne doit pas être candidate"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn level_one_due_present(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Level1 Co").await;
     let inv = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(20)).await;
-    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap();
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 1);
     let c = &list[0];
     assert_eq!(c.invoice_id, inv);
@@ -152,7 +165,9 @@ async fn level_two_due_after_first_reminder(pool: MySqlPool) {
     let inv = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(40)).await;
     // Rappel niveau 1 envoyé il y a 12 jours → niveau 2 dû (délai 10).
     insert_reminder(&pool, company_id, inv, 1, 12).await;
-    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap();
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].current_level, 1);
     assert_eq!(list[0].next_level, Some(2));
@@ -164,10 +179,23 @@ async fn paused_and_paid_are_absent(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "PausePaid Co").await;
     let paused = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(30)).await;
     let paid = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(30)).await;
-    sqlx::query("UPDATE invoices SET dunning_paused_at = UTC_TIMESTAMP(6) WHERE id = ?").bind(paused).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?").bind(paid).execute(&pool).await.unwrap();
-    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap();
-    assert!(list.is_empty(), "suspendue et payée absentes de la liste à rappeler");
+    sqlx::query("UPDATE invoices SET dunning_paused_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(paused)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(paid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(
+        list.is_empty(),
+        "suspendue et payée absentes de la liste à rappeler"
+    );
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
@@ -178,7 +206,9 @@ async fn terminal_when_last_level_reached(pool: MySqlPool) {
     insert_reminder(&pool, company_id, inv, 1, 40).await;
     insert_reminder(&pool, company_id, inv, 2, 30).await;
     insert_reminder(&pool, company_id, inv, 3, 1).await;
-    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap();
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].current_level, 3);
     assert_eq!(list[0].next_level, None);
@@ -191,10 +221,25 @@ async fn dunning_disabled_empty_levels_returns_empty(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Disabled Co").await;
     validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(60)).await;
     // 1er appel → seed lazy (3 niveaux), la facture est candidate.
-    assert_eq!(dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap().len(), 1);
+    assert_eq!(
+        dunning_eligibility::list_reminder_candidates(&pool, company_id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
     // La company vide volontairement ses niveaux (dunning désactivé, D7).
-    sqlx::query("DELETE FROM dunning_levels WHERE company_id = ?").bind(company_id).execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM dunning_levels WHERE company_id = ?")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     // seeded_at reste posé → seed lazy no-op → liste vide (pas de résurrection, C1).
-    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id).await.unwrap();
-    assert!(list.is_empty(), "0 niveau = dunning désactivé → liste vide, ni candidate ni terminale");
+    let list = dunning_eligibility::list_reminder_candidates(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(
+        list.is_empty(),
+        "0 niveau = dunning désactivé → liste vide, ni candidate ni terminale"
+    );
 }

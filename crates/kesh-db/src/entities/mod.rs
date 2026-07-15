@@ -52,7 +52,6 @@ pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSetting
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use credit_note::{CreditNote, CreditNoteLine, NewCreditNote};
 pub use dunning_level::{DunningLevel, NewDunningLevel, UpdateDunningLevel};
-pub use invoice_reminder::{InvoiceReminder, NewInvoiceReminder, ReminderChannel};
 pub use email_template::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType};
 pub use email_template_defaults::default_template;
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
@@ -61,6 +60,7 @@ pub use imported_supplier_invoice::{
 };
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use invoice_number_sequence::InvoiceNumberSequence;
+pub use invoice_reminder::{InvoiceReminder, NewInvoiceReminder, ReminderChannel};
 pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,

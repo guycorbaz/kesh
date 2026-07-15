@@ -1645,7 +1645,13 @@ pub async fn set_dunning_pause(
         });
         audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry::user(user_id, action.to_string(), "invoice".to_string(), id, Some(details)),
+            NewAuditLogEntry::user(
+                user_id,
+                action.to_string(),
+                "invoice".to_string(),
+                id,
+                Some(details),
+            ),
         )
         .await?;
 

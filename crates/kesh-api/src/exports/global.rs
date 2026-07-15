@@ -28,9 +28,8 @@ use crate::exports::csv_tables::{
     serialize_company_dunning_settings_csv, serialize_company_invoice_settings_csv,
     serialize_contacts_csv, serialize_dunning_levels_csv, serialize_fiscal_years_csv,
     serialize_invoice_lines_csv, serialize_invoice_reminders_csv, serialize_invoices_csv,
-    serialize_journal_entries_csv,
-    serialize_journal_entry_lines_csv, serialize_products_csv, serialize_reconciliation_rules_csv,
-    serialize_vat_rates_csv,
+    serialize_journal_entries_csv, serialize_journal_entry_lines_csv, serialize_products_csv,
+    serialize_reconciliation_rules_csv, serialize_vat_rates_csv,
 };
 use crate::exports::metadata::{TableMeta, build_metadata_json, sha256_hex};
 
