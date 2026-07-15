@@ -1,6 +1,6 @@
 # Story 21.3: Socle de configuration des rappels + templates par niveau (backend)
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-13 par bmad-create-story. Cartographie ground-truth par 4 agents Explore parallèles (patrons vat_rates / company_invoice_settings / email_templates / conventions migration-export-backup). Story backend « socle » de l'Epic 21 : elle POSE les tables et le sous-système de config des rappels, SANS aucune évaluation d'éligibilité ni envoi (21-5a/21-5b) ni frontend (21-4). Décisions figées par le plan d'epic (D5, D6, D7, D14, section D) + critique adversariale 3 agents. -->
 
@@ -332,3 +332,11 @@ Panel adversarial 3 reviewers (correctness / régression-fanout grep / archi-sé
 - **LOW acceptés** : `count_for_company() as i16` (troncature théorique à 32767 niveaux) + pas de plafond `max_reminder_level` (borne dynamique voulue, H4) — documentés, sans risque réaliste.
 
 Gate remédiation : clippy 0, `company_dunning_settings_repository` 6/6 (dont H1). **Trend** : Pass 1 → 1 HIGH → patché. Relance Pass 2 (LLM différent).
+
+### Code review Pass 2 (2026-07-14, Sonnet 4.6, contexte frais) — CONVERGÉ (0 > LOW)
+
+Passe de convergence sur le diff patché. Fix H1 vérifié complet/correct : `grep -nF grace_period_days` → **une seule écriture SQL** (`update()`, chemin légitime), le seed ne la touche plus ; `DEFAULT_GRACE_DAYS` retirée (0 résultat grep — pas de dead code) ; pas de régression NULL (DEFAULT DB 5 via `INSERT IGNORE`) ; test de régression `seed_preserves_grace_customized_before_seeding` reproduit fidèlement le scénario ; `seed_creates_three_levels` (grâce=5 via DB default) toujours cohérent. Balayage final (migration bump, compteurs export, RBAC, absence unwrap/unreachable) : 0 nouveau finding > LOW.
+
+**Trend code review** : Pass 1 (1 HIGH H1) → Pass 2 (0 > LOW) CONVERGÉ. LLM : panel Sonnet/Haiku/Sonnet (P1) → Sonnet (P2), orthogonaux à l'auteur Opus. review → **done**. Ferme partiellement #231 (socle backend ; UI 21-4, envoi 21-5, balance âgée 21-7 restants).
+
+### Statut final : DONE

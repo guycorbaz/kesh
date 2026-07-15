@@ -208,7 +208,9 @@ async fn seed_preserves_grace_customized_before_seeding(pool: MySqlPool) {
         company_id,
         s.version,
         admin,
-        CompanyDunningSettingsUpdate { grace_period_days: 15 },
+        CompanyDunningSettingsUpdate {
+            grace_period_days: 15,
+        },
     )
     .await
     .unwrap();
@@ -223,7 +225,15 @@ async fn seed_preserves_grace_customized_before_seeding(pool: MySqlPool) {
     tx.commit().await.unwrap();
 
     // La grâce personnalisée (15) est PRÉSERVÉE, pas écrasée par le défaut 5.
-    assert_eq!(seeded.grace_period_days, 15, "le seed ne doit pas écraser la grâce personnalisée");
+    assert_eq!(
+        seeded.grace_period_days, 15,
+        "le seed ne doit pas écraser la grâce personnalisée"
+    );
     assert!(seeded.seeded_at.is_some());
-    assert_eq!(dunning_levels::count_for_company(&pool, company_id).await.unwrap(), 3);
+    assert_eq!(
+        dunning_levels::count_for_company(&pool, company_id)
+            .await
+            .unwrap(),
+        3
+    );
 }
