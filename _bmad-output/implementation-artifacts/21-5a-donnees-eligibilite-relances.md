@@ -108,11 +108,11 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
   - [x] Colonnes `invoices.dunning_paused_at` + `dunning_paused_note` (ADD COLUMN nullable).
   - [x] Ligne `docs/migrations-idempotence-audit.md` (P5) + stats 53→54, tracked-by-sqlx 42→43.
   - [x] Aucun bump `min_required` (CREATE TABLE + ADD COLUMN nullable = non-breaking). Compteurs migrations tests 53→54 + `invoice_reminders` dans fresh_install. `touch lib.rs` (MIGRATOR macro cache). Tests migrations 3/3 + 8/8 verts.
-- [ ] **T2 — Entité + repository `invoice_reminders`** (AC 4,5,6)
-  - [ ] Entité `invoice_reminder.rs` (Decimal serde-str, enum channel), `mod.rs`.
-  - [ ] Repo : `insert_in_tx`, `list_for_invoice`, `current_level` (MAX non-annulés), `cancel_in_tx` (soft + audit).
-  - [ ] Réutiliser bornes frais de `dunning_levels` (pas de duplication).
-  - [ ] Tests repo `#[sqlx::test]` (AC 18).
+- [x] **T2 — Entité + repository `invoice_reminders`** (AC 4,5,6)
+  - [x] Entité `invoice_reminder.rs` (enum `ReminderChannel` serde lowercase + FromStr, Decimal), `mod.rs`. Piège AC 3 : `dunning_paused_at`/`note` propagés dans `Invoice` + 3 SELECT (`FIND_INVOICE_SCOPED_SQL` + delete inline + list_all_by_company) + littéral test `invoice_email.rs:510`.
+  - [x] Repo : `insert_in_tx`, `list_for_invoice`, `current_level(_in_tx)` (MAX non-annulés), `cancel_in_tx` (soft, idempotent, scopé). Audit délégué au caller (route) dans la même tx.
+  - [x] Bornes frais via CHECK DB (aligné `dunning_levels`, pas de duplication).
+  - [x] Tests repo `#[sqlx::test]` 3/3 (insert/current_level MAX, cancel soft exclut du MAX + idempotent, scoping company).
 - [ ] **T3 — Éligibilité SQL** (AC 7,8,9)
   - [ ] Requête liste éligible (prédicats status/paid/paused, COALESCE due_date, MAX niveau, prochain niveau, échéance grâce+délai).
   - [ ] Seed lazy `company_dunning_settings` déclenché à la 1re évaluation (réutiliser 21-3).

@@ -40,6 +40,13 @@ pub struct Invoice {
     /// toutes les lignes de l'écriture de vente à la validation, hérité par
     /// la contre-passation d'avoir. `None` = pas de projet.
     pub project_id: Option<i64>,
+    /// Suspension des rappels débiteurs (Story 21-5a). NULL = non suspendue.
+    /// Une facture suspendue sort de la liste « à rappeler » mais reste dans la
+    /// balance âgée et l'échéancier (invariant anti-dissimulation, item 10 epic-21).
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    /// Note optionnelle accompagnant la suspension (posée à la pause, remise à
+    /// NULL à la reprise).
+    pub dunning_paused_note: Option<String>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

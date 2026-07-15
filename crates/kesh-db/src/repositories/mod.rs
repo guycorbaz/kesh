@@ -23,6 +23,7 @@ pub mod email_templates;
 pub mod fiscal_years;
 pub mod imported_supplier_invoices;
 pub mod invoice_number_sequences;
+pub mod invoice_reminders;
 pub mod invoices;
 pub mod journal_entries;
 pub mod onboarding;

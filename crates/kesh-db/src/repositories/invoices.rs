@@ -43,7 +43,7 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
 // facture d'origine) — une seule liste de colonnes à maintenir.
 pub(crate) const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
     status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, \
-    emailed_at, emailed_to, project_id, \
+    emailed_at, emailed_to, project_id, dunning_paused_at, dunning_paused_note, \
     version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
 
@@ -907,7 +907,7 @@ pub async fn delete(
     let current_opt = sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
          payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-         project_id, version, created_at, updated_at \
+         project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
          FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(id)
@@ -1705,7 +1705,7 @@ pub async fn list_all_by_company(
     sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
          payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-         project_id, version, created_at, updated_at \
+         project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
          FROM invoices \
          WHERE company_id = ? \
          ORDER BY id",

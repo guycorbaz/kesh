@@ -522,6 +522,8 @@ mod tests {
             emailed_at: None,
             emailed_to: None,
             project_id: None,
+            dunning_paused_at: None,
+            dunning_paused_note: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),
