@@ -18,6 +18,7 @@ pub mod contact_persons;
 pub mod contacts;
 pub mod credit_note_number_sequences;
 pub mod credit_notes;
+pub mod dunning_eligibility;
 pub mod dunning_levels;
 pub mod email_templates;
 pub mod fiscal_years;

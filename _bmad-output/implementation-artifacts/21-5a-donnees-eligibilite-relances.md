@@ -113,11 +113,11 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
   - [x] Repo : `insert_in_tx`, `list_for_invoice`, `current_level(_in_tx)` (MAX non-annulés), `cancel_in_tx` (soft, idempotent, scopé). Audit délégué au caller (route) dans la même tx.
   - [x] Bornes frais via CHECK DB (aligné `dunning_levels`, pas de duplication).
   - [x] Tests repo `#[sqlx::test]` 3/3 (insert/current_level MAX, cancel soft exclut du MAX + idempotent, scoping company).
-- [ ] **T3 — Éligibilité SQL** (AC 7,8,9)
-  - [ ] Requête liste éligible (prédicats status/paid/paused, COALESCE due_date, MAX niveau, prochain niveau, échéance grâce+délai).
-  - [ ] Seed lazy `company_dunning_settings` déclenché à la 1re évaluation (réutiliser 21-3).
-  - [ ] État terminal (`terminal`/`last_reminder_at`).
-  - [ ] Tests éligibilité (AC 19).
+- [x] **T3 — Éligibilité** (AC 7,8,9) — module `repositories/dunning_eligibility.rs`
+  - [x] `list_reminder_candidates(pool, company_id)` : SQL récupère les candidates (validated/impayée/non-suspendue/due_date non-NULL + niveau courant MAX non-annulé + dernier rappel + contact), Rust calcule niveau suivant + terminal + déclenchement (today UTC via chrono, cohérent UTC_DATE).
+  - [x] Seed lazy `ensure_seeded_in_tx` déclenché à la 1re évaluation (tx courte).
+  - [x] Garde C1 : `list_all_by_company.is_empty()` → liste vide. État terminal (`terminal`/`next_level=None`/`last_reminder_at`).
+  - [x] Tests éligibilité 6/6 (niveau 1/2 dû, non-échue/suspendue/payée absentes, terminal, dunning désactivé C1 + seed lazy).
 - [ ] **T4 — Endpoints + RBAC** (AC 10-15)
   - [ ] `GET` liste à rappeler groupée par contact + badge has_email (Comptable+).
   - [ ] `PUT` toggle suspension + note + audits pause/reprise (Comptable+).
