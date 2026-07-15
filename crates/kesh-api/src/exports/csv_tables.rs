@@ -27,7 +27,8 @@ use crate::errors::AppError;
 use kesh_db::entities::{
     Account, BankAccount, BankImport, BankProfile, BankTransaction, Company,
     CompanyDunningSettings, CompanyInvoiceSettings, Contact, DunningLevel, FiscalYear, Invoice,
-    InvoiceLine, JournalEntry, JournalEntryLine, Product, ReconciliationRule, VatRate,
+    InvoiceLine, InvoiceReminder, JournalEntry, JournalEntryLine, Product, ReconciliationRule,
+    VatRate,
 };
 
 // ===========================================================================
@@ -725,6 +726,54 @@ pub fn serialize_company_dunning_settings_csv<W: Write>(
     }
     csv.flush()
         .map_err(|e| map_flush_err("company_dunning_settings", e))
+}
+
+/// Sérialise l'historique `invoice_reminders` (Story 21-5a) — append-only, snapshots.
+pub fn serialize_invoice_reminders_csv<W: Write>(
+    rows: &[InvoiceReminder],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "invoice_id",
+        "level_number",
+        "fee_amount",
+        "sent_at",
+        "channel",
+        "sent_to",
+        "subject",
+        "body",
+        "note",
+        "actor_user_id",
+        "cancelled_at",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("invoice_reminders", e))?;
+    for r in rows {
+        csv.write_record([
+            r.id.to_string(),
+            r.company_id.to_string(),
+            r.invoice_id.to_string(),
+            r.level_number.to_string(),
+            fmt_decimal(r.fee_amount),
+            fmt_dt(r.sent_at),
+            r.channel.clone(),
+            r.sent_to.clone().unwrap_or_default(),
+            r.subject.clone(),
+            r.body.clone(),
+            r.note.clone().unwrap_or_default(),
+            r.actor_user_id.map(|v| v.to_string()).unwrap_or_default(),
+            fmt_opt_dt(r.cancelled_at),
+            fmt_dt(r.created_at),
+        ])
+        .map_err(|e| map_csv_err("invoice_reminders", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("invoice_reminders", e))
 }
 
 /// Sérialise un `CompanyInvoiceSettings` (1 row, lazy-create acceptée côté

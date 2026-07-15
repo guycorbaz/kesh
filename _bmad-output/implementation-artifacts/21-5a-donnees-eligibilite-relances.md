@@ -126,10 +126,10 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
   - [x] `GET .../reminders` historique (tous rôles).
   - [x] Montage RBAC lib.rs (Admin/Comptable/authenticated, méthodes disjointes). Nouvelles variantes AppError 422 (InvoiceAlreadyPaid/DunningLevelNotFound/ReminderDateInFuture/InvoiceNotPaused) ; `INVOICE_NOT_VALIDATED` réutilise la variante canonique existante (**400**, Story 5.3) — écart mineur vs spec 422, documenté.
   - [x] Tests E2E 5/5 (liste groupée + has_email, pause/resume + reset note + 422, rappel manuel saut niveau + gardes, annulation Admin-only + soft, RBAC Consultation 403 + IDOR 404).
-- [ ] **T5 — Export souveraineté + backup** (AC 16,17,21)
-  - [ ] Ajouter `invoice_reminders` à export global + `TABLES_TO_TRUNCATE` backup.
-  - [ ] Bumper TOUS les compteurs figés (valeurs vérifiées au dev).
-  - [ ] Tests export/backup round-trip (AC 21).
+- [x] **T5 — Export souveraineté + backup** (AC 16,17,21)
+  - [x] `invoice_reminders` → `TABLES_TO_TRUNCATE` (backup.rs, rang FK avant `invoices`) + `serialize_invoice_reminders_csv` (csv_tables.rs) + wiring global.rs (query `list_all_by_company` + push_csv + imports). Repo `invoice_reminders::list_all_by_company`.
+  - [x] Compteurs : global.rs 18→19 (files/tables_meta/csv_count/capacity) ; admin_full_export 36→37 ; exports_global 19→20 (entries) + 18→19 (tables) + set expected + rowCounts + audit csv_count.
+  - [x] Tests : exports_global 20/20, admin_full_export 7, admin_backup 10, admin_full_import round-trip verts (`backup_inventory_matches_schema` OK).
 - [ ] **T6 — Doc + gate** (AC 22,23)
   - [ ] CHANGELOG `Added`. Gate local complet vert.
 

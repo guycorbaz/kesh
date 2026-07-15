@@ -36,6 +36,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "supplier_invoice_lines", // Story 12.2 — enfant de supplier_invoices (CASCADE).
     "payment_batch_items", // Story 12.3 — enfant de payment_batches (CASCADE) + supplier_invoices (RESTRICT) → avant eux.
     "invoice_lines",
+    "invoice_reminders", // Story 21-5a (#231) — enfant de invoices (CASCADE) + companies (RESTRICT) → avant `invoices`.
     "journal_entry_lines",
     "projects", // Story 19-1 (Epic 19) — enfant de companies + self-ref parent_id (RESTRICT) ; référencé par journal_entry_lines.project_id → APRÈS journal_entry_lines, AVANT companies.
     "credit_notes", // Story 12.1 — enfant de invoices/journal_entries/contacts (RESTRICT) → avant eux.

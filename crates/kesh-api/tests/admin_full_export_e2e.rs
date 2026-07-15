@@ -271,8 +271,8 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
         .filter(|n| n.starts_with("data/") && n.ends_with(".ndjson"))
         .count();
     assert_eq!(
-        data_count, 36,
-        "36 fichiers data/<table>.ndjson (Story 21-3 : +dunning_levels +company_dunning_settings) : {names:?}"
+        data_count, 37,
+        "37 fichiers data/<table>.ndjson (Story 21-5a : +invoice_reminders) : {names:?}"
     );
 
     // Lire manifest.json.

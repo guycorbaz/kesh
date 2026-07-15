@@ -48,6 +48,20 @@ pub async fn list_for_invoice(
     .map_err(map_db_error)
 }
 
+/// Tous les rappels d'une company (export souveraineté / backup), ordonnés stable.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<InvoiceReminder>, DbError> {
+    sqlx::query_as::<_, InvoiceReminder>(&format!(
+        "SELECT {COLUMNS} FROM invoice_reminders WHERE company_id = ? ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Niveau courant d'une facture = `MAX(level_number)` des rappels **non-annulés**
 /// (0 si aucun), sous tx (calcul à faire sous le même verrou que l'insertion).
 pub async fn current_level_in_tx(

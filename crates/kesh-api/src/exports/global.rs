@@ -12,7 +12,7 @@
 //!    + BTreeMap tables alphabétique).
 //! 6. `build_zip(&files)` — 18 CSV puis `metadata.json` (en dernier,
 //!    Pass 1 ECH-LOW-02).
-//! 7. `GlobalExportMeta { byte_size, csv_count: 18, duration_ms }`.
+//! 7. `GlobalExportMeta { byte_size, csv_count: 19, duration_ms }`.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -27,7 +27,8 @@ use crate::exports::csv_tables::{
     serialize_bank_profiles_csv, serialize_bank_transactions_csv, serialize_company_csv,
     serialize_company_dunning_settings_csv, serialize_company_invoice_settings_csv,
     serialize_contacts_csv, serialize_dunning_levels_csv, serialize_fiscal_years_csv,
-    serialize_invoice_lines_csv, serialize_invoices_csv, serialize_journal_entries_csv,
+    serialize_invoice_lines_csv, serialize_invoice_reminders_csv, serialize_invoices_csv,
+    serialize_journal_entries_csv,
     serialize_journal_entry_lines_csv, serialize_products_csv, serialize_reconciliation_rules_csv,
     serialize_vat_rates_csv,
 };
@@ -37,7 +38,7 @@ use kesh_db::entities::Company;
 use kesh_db::repositories::{
     accounts, bank_accounts, bank_imports, bank_profiles, bank_transactions,
     company_dunning_settings, company_invoice_settings, contacts, dunning_levels, fiscal_years,
-    invoices, journal_entries, reconciliation_rules, vat_rates,
+    invoice_reminders, invoices, journal_entries, reconciliation_rules, vat_rates,
 };
 
 // ===========================================================================
@@ -178,6 +179,9 @@ pub async fn build_global_export(
         .await
         .map_err(map_db)?;
     let cds_rows = vec![cds_row];
+    let invoice_reminders_rows = invoice_reminders::list_all_by_company(pool, company_id)
+        .await
+        .map_err(map_db)?;
     let reconciliation_rules_rows = reconciliation_rules::list_all_by_company(pool, company_id)
         .await
         .map_err(map_db)?;
@@ -190,7 +194,7 @@ pub async fn build_global_export(
     // Ordre du Vec = ordre §scope-tables d'écriture dans le ZIP (les 18 CSV).
     // metadata.json est ajouté en dernier (18e index, après les 18 CSV).
     let mut tables_meta: BTreeMap<String, TableMeta> = BTreeMap::new();
-    let mut files: Vec<(String, Vec<u8>)> = Vec::with_capacity(19);
+    let mut files: Vec<(String, Vec<u8>)> = Vec::with_capacity(20);
 
     macro_rules! push_csv {
         ($name:literal, $rows:expr, $serializer:ident) => {{
@@ -265,6 +269,11 @@ pub async fn build_global_export(
         serialize_company_dunning_settings_csv
     );
     push_csv!(
+        "invoice_reminders.csv",
+        invoice_reminders_rows,
+        serialize_invoice_reminders_csv
+    );
+    push_csv!(
         "reconciliation_rules.csv",
         reconciliation_rules_rows,
         serialize_reconciliation_rules_csv
@@ -275,8 +284,8 @@ pub async fn build_global_export(
         serialize_bank_profiles_csv
     );
 
-    debug_assert_eq!(files.len(), 18, "18 CSV expected before manifest");
-    debug_assert_eq!(tables_meta.len(), 18, "18 TableMeta expected");
+    debug_assert_eq!(files.len(), 19, "19 CSV expected before manifest");
+    debug_assert_eq!(tables_meta.len(), 19, "19 TableMeta expected");
 
     // -------- 5. Manifest --------
     let manifest_bytes = build_metadata_json(company, locale_bcp47, tables_meta)?;
@@ -291,7 +300,7 @@ pub async fn build_global_export(
         zip_bytes,
         GlobalExportMeta {
             byte_size,
-            csv_count: 18,
+            csv_count: 19,
             duration_ms,
         },
     ))
