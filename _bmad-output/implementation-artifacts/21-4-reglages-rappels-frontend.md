@@ -1,6 +1,6 @@
 # Story 21.4: Réglages des rappels + templates multi-type/multi-niveau (frontend)
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-14 par bmad-create-story. Cartographie ground-truth par 3 agents Explore parallèles (vat-rates gabarit / email-templates refactor / index settings + conventions test-i18n). Story FRONTEND (Svelte 5) de l'Epic 21, consomme le socle backend 21-3 (routes dunning-levels + dunning-settings + email-templates avec level_number). Décisions figées : plan epic-21 D7 (exemple délais cumulés), D13 (hint CGV), D20 (refactor multi-type), section D (sélecteur niveau). Un petit ajout backend est inclus (paramètre `?level=` sur les routes email-templates — LOW-3 de 21-3). -->
 
@@ -230,3 +230,21 @@ Implémentation T1→T6 en 6 commits. Gate ciblé vert :
 - **3 bugs runtime attrapés par l'E2E** (cf. Debug Log) : race seed, coercion Decimal, a11y th vide.
 
 Prochaine : `bmad-code-review 21-4` (LLM ≠ Opus).
+
+### Code-review (2026-07-15) — CONVERGÉ 2 passes (0 > LOW)
+
+Boucle adversariale post-dev, panel orthogonal à l'auteur (Opus).
+
+**Pass 1** (3 reviewers parallèles sur diff `8e4d07d7..HEAD` : Sonnet correctness-frontend / Haiku backend-i18n-régression grep-ground-truth / Sonnet sécu-a11y-conventions) — **0 CRITICAL/HIGH**, 2 MEDIUM + 3 LOW :
+- **M1 (a11y)** — sélecteurs type/niveau (`email-templates/+page.svelte`) sans état ARIA, incohérents avec le tablist langue voisin. **Patch** : `role="group"` + `aria-pressed` sur les deux toggle-groups + test axe E2E ajouté (`email-templates.spec.ts`, aucun `AxeBuilder` auparavant). Le test full-page révélait 2 dettes a11y **pré-existantes Epic 20 hors scope** (contraste chip actif `bg-primary-light` #3b82f6 + texte foncé = 3.97:1 AA, token systémique app-wide 7 fichiers ; `<aside>` variables imbriqué dans `<main>`) → **issue #253** créée (contraste), test **scopé** au conteneur `email-template-selectors` via `.include()` + `color-contrast` désactivé (précédent identique `users.spec.ts:134`).
+- **M2 (i18n)** — clé `dunning-col-actions` utilisée mais absente des 4 FTL (AC 11). **Patch** : ajout FR « Actions » / DE « Aktionen » / IT « Azioni » / EN « Actions ».
+- **L2** — branche `level < 0` non exercée. **Patch** : test `?level=-1` → 400.
+- L1 (import `i18nMsg` legacy, pré-existant hors diff) + L3 (`email-templates/+page.ts` absent, pré-existant) : signalés pour mémoire, hors scope.
+
+**Pass 2** (Opus, contexte frais, diff 21-4 aplati) — **0 CRITICAL/HIGH/MEDIUM**, 2 LOW. Remédiation Pass 1 (M1/M2/L2 + scope axe) **confirmée correcte et sans régression** (wrapper `email-template-selectors` équilibré, parité i18n 41 clés × 4 langues, `disableRules` justifié). Vérifications négatives RAS : secure-context (aucun `crypto.*`/`clipboard`, `$props.id()`), Decimal serde-str (`feeAmount` string + `type="text"`), verrou optimiste 409+reload, RBAC/multi-tenant (`company_id` du user), machine à états Mode. 2 LOW cosmétiques (bind défensif safe-en-pratique + indentation wrapper, aucun gate ne les flague) → non remédiés.
+
+**Trend** : Pass 1 (0C/0H/2M/3L) → **Pass 2 (0 > LOW) CONVERGÉ**. LLM : Sonnet/Haiku/Sonnet → Opus. Split non déclenché.
+
+**Gates finaux verts** : `cargo fmt`/`clippy` 0, `cargo test --workspace` exit 0, `email_templates_e2e` 9/9, frontend `check` 0 err + `lint-i18n-ownership` PASS + `test:unit` 389 + `build`, **E2E 12/12** (dunning 4 + email-templates 8). Backend 0.7.0 boot OK contre `kesh_e2e`.
+
+Ferme la partie UI réglages de **#231** (envoi 21-5 / relances UI 21-6 / balance âgée 21-7 restants). **review → done.**
