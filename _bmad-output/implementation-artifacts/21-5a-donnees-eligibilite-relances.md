@@ -118,14 +118,14 @@ Périmètre exact (plan d'epic, items 8-13, 16 partiel, 19 pattern, 22, 26) :
   - [x] Seed lazy `ensure_seeded_in_tx` déclenché à la 1re évaluation (tx courte).
   - [x] Garde C1 : `list_all_by_company.is_empty()` → liste vide. État terminal (`terminal`/`next_level=None`/`last_reminder_at`).
   - [x] Tests éligibilité 6/6 (niveau 1/2 dû, non-échue/suspendue/payée absentes, terminal, dunning désactivé C1 + seed lazy).
-- [ ] **T4 — Endpoints + RBAC** (AC 10-15)
-  - [ ] `GET` liste à rappeler groupée par contact + badge has_email (Comptable+).
-  - [ ] `PUT` toggle suspension + note + audits pause/reprise (Comptable+).
-  - [ ] `POST` rappel manuel + gardes éligibilité + audit (Comptable+).
-  - [ ] `POST` annulation rappel (Admin) + soft cancel + audit.
-  - [ ] `GET` historique facture (lecture tous rôles).
-  - [ ] Montage RBAC lib.rs (bon bloc par rôle) + verrou FOR UPDATE toggle/insert.
-  - [ ] Tests E2E routes + RBAC + anti-IDOR (AC 20).
+- [x] **T4 — Endpoints + RBAC** (AC 10-15) — module `routes/dunning_reminders.rs`
+  - [x] `GET /api/v1/dunning/reminders` liste groupée par contact + `hasEmail` (Comptable+).
+  - [x] `PUT .../dunning-pause` + `.../dunning-resume` (repo `set_dunning_pause` : FOR UPDATE + verrou optimiste + audit `invoice.dunning_paused/resumed`, resume nulle la note ; garde `notPaused`) (Comptable+).
+  - [x] `POST .../reminders/manual` + gardes (validée/payée/niveau/sent_at futur) + audit `invoice.reminder_sent` (Comptable+).
+  - [x] `POST .../reminders/{reminderId}/cancel` soft + audit `invoice.reminder_cancelled` (Admin).
+  - [x] `GET .../reminders` historique (tous rôles).
+  - [x] Montage RBAC lib.rs (Admin/Comptable/authenticated, méthodes disjointes). Nouvelles variantes AppError 422 (InvoiceAlreadyPaid/DunningLevelNotFound/ReminderDateInFuture/InvoiceNotPaused) ; `INVOICE_NOT_VALIDATED` réutilise la variante canonique existante (**400**, Story 5.3) — écart mineur vs spec 422, documenté.
+  - [x] Tests E2E 5/5 (liste groupée + has_email, pause/resume + reset note + 422, rappel manuel saut niveau + gardes, annulation Admin-only + soft, RBAC Consultation 403 + IDOR 404).
 - [ ] **T5 — Export souveraineté + backup** (AC 16,17,21)
   - [ ] Ajouter `invoice_reminders` à export global + `TABLES_TO_TRUNCATE` backup.
   - [ ] Bumper TOUS les compteurs figés (valeurs vérifiées au dev).

@@ -1555,6 +1555,116 @@ pub async fn mark_as_paid(
     }
 }
 
+/// Suspend (`paused = true`) ou reprend (`paused = false`) les rappels débiteurs d'une
+/// facture (Story 21-5a, item 10). Calqué sur [`mark_as_paid`] : `SELECT … FOR UPDATE`
+/// scopé company, verrou optimiste `version`, audit dans la même tx. La reprise remet
+/// `dunning_paused_at` ET `dunning_paused_note` à NULL (M4). Une facture suspendue
+/// reste dans la balance âgée / l'échéancier — elle ne sort que de la liste « à rappeler ».
+pub async fn set_dunning_pause(
+    pool: &MySqlPool,
+    user_id: i64,
+    id: i64,
+    company_id: i64,
+    expected_version: i32,
+    paused: bool,
+    note: Option<String>,
+) -> Result<Invoice, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        let before_opt =
+            sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+                .bind(id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+
+        let before = match before_opt {
+            None => return Err(DbError::NotFound),
+            Some(inv) if inv.version != expected_version => {
+                return Err(DbError::OptimisticLockConflict);
+            }
+            Some(inv) => inv,
+        };
+
+        // Garde anti-transition (transpose `alreadyUnpaid`) : reprise d'une facture
+        // non suspendue → InvalidInput (évite un faux 409 + audit spurious).
+        if !paused && before.dunning_paused_at.is_none() {
+            return Err(DbError::InvalidInput("notPaused".to_string()));
+        }
+
+        let rows = if paused {
+            sqlx::query(
+                "UPDATE invoices SET dunning_paused_at = UTC_TIMESTAMP(6), \
+                 dunning_paused_note = ?, version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND version = ?",
+            )
+            .bind(note.as_deref())
+            .bind(id)
+            .bind(company_id)
+            .bind(expected_version)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected()
+        } else {
+            sqlx::query(
+                "UPDATE invoices SET dunning_paused_at = NULL, dunning_paused_note = NULL, \
+                 version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND version = ?",
+            )
+            .bind(id)
+            .bind(company_id)
+            .bind(expected_version)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected()
+        };
+
+        if rows == 0 {
+            return Err(DbError::OptimisticLockConflict);
+        }
+
+        let after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+            .bind(id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        let action = if paused {
+            "invoice.dunning_paused"
+        } else {
+            "invoice.dunning_resumed"
+        };
+        let details = serde_json::json!({
+            "paused": paused,
+            "note": note,
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(user_id, action.to_string(), "invoice".to_string(), id, Some(details)),
+        )
+        .await?;
+
+        Ok(after)
+    }
+    .await;
+
+    match result {
+        Ok(v) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
 /// Marque une facture « envoyée par e-mail » (Story 20-3b1, décision #16
 /// epic-20) : pose `emailed_at = NOW(6)` + `emailed_to` (snapshot du
 /// destinataire réellement utilisé) et écrit l'audit `invoice.emailed`

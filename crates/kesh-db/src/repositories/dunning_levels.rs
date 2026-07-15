@@ -38,6 +38,23 @@ pub async fn count_for_company(pool: &MySqlPool, company_id: i64) -> Result<i64,
         .map_err(map_db_error)
 }
 
+/// Un niveau par son `level_number`, scopé company (lookup du frais snapshot d'un
+/// rappel manuel, 21-5a). `None` si le niveau n'existe pas.
+pub async fn find_by_level_number(
+    pool: &MySqlPool,
+    company_id: i64,
+    level_number: i16,
+) -> Result<Option<DunningLevel>, DbError> {
+    sqlx::query_as::<_, DunningLevel>(&format!(
+        "SELECT {COLUMNS} FROM dunning_levels WHERE company_id = ? AND level_number = ?"
+    ))
+    .bind(company_id)
+    .bind(level_number)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Le plus haut `level_number` d'une company (0 si aucun) — sous tx.
 async fn max_level_in_tx(tx: &mut Transaction<'_, MySql>, company_id: i64) -> Result<i16, DbError> {
     let max: Option<i16> =

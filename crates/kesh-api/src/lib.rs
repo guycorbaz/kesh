@@ -231,6 +231,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}",
             delete(routes::invoices::delete_invoice),
         )
+        // Story 21-5a : annulation (soft) d'un rappel envoyé par erreur — Admin.
+        .route(
+            "/api/v1/invoices/{id}/reminders/{reminderId}/cancel",
+            post(routes::dunning_reminders::cancel_reminder),
+        )
         // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
         .route("/api/v1/admin/full-export", get(routes::admin::full_export))
         // Story 17-3c : import complet d'installation (multipart, Admin + anti-PAT).
@@ -401,6 +406,24 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/mark-paid",
             post(routes::invoices::mark_invoice_paid_handler),
         )
+        // Story 21-5a — rappels débiteurs (Comptable+) : liste à rappeler groupée
+        // par contact, suspension/reprise par facture, enregistrement d'un rappel manuel.
+        .route(
+            "/api/v1/dunning/reminders",
+            get(routes::dunning_reminders::list_reminders),
+        )
+        .route(
+            "/api/v1/invoices/{id}/dunning-pause",
+            put(routes::dunning_reminders::pause_dunning),
+        )
+        .route(
+            "/api/v1/invoices/{id}/dunning-resume",
+            put(routes::dunning_reminders::resume_dunning),
+        )
+        .route(
+            "/api/v1/invoices/{id}/reminders/manual",
+            post(routes::dunning_reminders::record_manual_reminder),
+        )
         // Story 20-3b1 — envoi de facture par e-mail (preview + send,
         // destinataire verrouillé contacts.email, rate-limité, gate SMTP 412).
         .route(
@@ -570,6 +593,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             get(routes::invoices::list_due_dates_handler),
         )
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_invoice))
+        // Story 21-5a : historique des rappels d'une facture (tout rôle authentifié).
+        .route(
+            "/api/v1/invoices/{id}/reminders",
+            get(routes::dunning_reminders::list_reminder_history),
+        )
         // Story 5.3 : téléchargement PDF QR Bill (tout rôle authentifié)
         .route(
             "/api/v1/invoices/{id}/pdf",

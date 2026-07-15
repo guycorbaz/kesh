@@ -281,6 +281,19 @@ pub enum AppError {
     #[error("Objet ou corps de l'e-mail vide")]
     InvoiceEmailEmptyContent,
 
+    /// Story 21-5a — enregistrement d'un rappel sur une facture déjà payée. 422.
+    #[error("Facture déjà payée")]
+    InvoiceAlreadyPaid,
+    /// Story 21-5a — niveau de rappel demandé absent de la configuration. 422.
+    #[error("Niveau de rappel inexistant")]
+    DunningLevelNotFound,
+    /// Story 21-5a — date d'envoi d'un rappel manuel dans le futur. 422.
+    #[error("Date de rappel dans le futur")]
+    ReminderDateInFuture,
+    /// Story 21-5a — reprise d'une facture non suspendue. 422.
+    #[error("Facture non suspendue")]
+    InvoiceNotPaused,
+
     /// Story 20-3b1 (code review Pass 1 ECH-1) — le contact de la facture est
     /// archivé (`active = false`) : le carnet d'adresses le considère « à ne
     /// plus utiliser », on n'envoie pas de facture à son adresse. HTTP 400
@@ -990,6 +1003,38 @@ impl IntoResponse for AppError {
                 &t(
                     "error-contact-email-missing",
                     "Le contact de la facture n'a pas d'adresse e-mail. Renseignez-la sur la fiche contact.",
+                ),
+            ),
+            AppError::InvoiceAlreadyPaid => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVOICE_ALREADY_PAID",
+                &t(
+                    "error-invoice-already-paid",
+                    "La facture est déjà payée — aucun rappel ne peut être enregistré.",
+                ),
+            ),
+            AppError::DunningLevelNotFound => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "DUNNING_LEVEL_NOT_FOUND",
+                &t(
+                    "error-dunning-level-not-found",
+                    "Le niveau de rappel demandé n'existe pas dans la configuration.",
+                ),
+            ),
+            AppError::ReminderDateInFuture => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "REMINDER_DATE_IN_FUTURE",
+                &t(
+                    "error-reminder-date-in-future",
+                    "La date d'un rappel ne peut pas être dans le futur.",
+                ),
+            ),
+            AppError::InvoiceNotPaused => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVOICE_NOT_PAUSED",
+                &t(
+                    "error-invoice-not-paused",
+                    "Cette facture n'est pas suspendue.",
                 ),
             ),
             AppError::InvoiceEmailEmptyContent => build_response(
