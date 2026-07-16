@@ -525,9 +525,11 @@ pub async fn send_reminder(
     {
         Ok(created) => {
             tracing::info!(
+                company_id = company.id,
                 invoice_id = id,
                 level_number = req.level_number,
                 channel = "email",
+                to = %to,
                 "rappel envoyé par e-mail"
             );
             Ok((StatusCode::CREATED, Json(created)))
@@ -783,6 +785,16 @@ pub async fn send_invoice_email(
         Err(e) => return Err(e.into()),
     };
 
+    // AC 9 (21-5b) — rétrofit : l'envoi de facture d'Epic 20 ne laissait aucune trace
+    // dans le log fichier sur le chemin de succès (seulement warn/error).
+    tracing::info!(
+        company_id = company.id,
+        invoice_id = id,
+        channel = "email",
+        to = %to,
+        "facture envoyée par e-mail"
+    );
+
     Ok((
         StatusCode::OK,
         Json(InvoiceResponse::from_parts(updated, lines)),
@@ -811,11 +823,55 @@ pub struct AcceptedReminder {
 }
 
 /// Échec per-facture (pattern `FailedProposal` — id business = `invoice_id`).
+///
+/// Signature canonique Epic 8 (cf. `reconciliation::FailedProposal`) : identifiant
+/// business + `error_code` constant + `details` optionnel pour le contexte dynamique
+/// (jamais d'interpolation dans `error_code`).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FailedReminder {
     pub invoice_id: i64,
     pub error_code: String,
+    pub details: Option<serde_json::Value>,
+}
+
+/// Issue d'échec d'une facture d'un lot.
+///
+/// Distingue les deux classes séparées par CLAUDE.md §"Pattern batch" :
+/// l'échec métier isolé (→ `failed[]` + HTTP 200) et l'erreur d'infrastructure
+/// qui invalide la requête entière (→ `AppError` global 500). Sans cette
+/// distinction, un pool DB fermé se déguisait en échec per-facture dans un 200.
+enum BatchItemError {
+    /// Échec propre à cette facture → `FailedProposal`.
+    Failed {
+        error_code: String,
+        details: Option<serde_json::Value>,
+    },
+    /// Erreur d'infrastructure (pool fermé, IO catastrophique) → escalade globale.
+    Fatal(AppError),
+}
+
+impl BatchItemError {
+    /// Échec per-facture sans contexte additionnel.
+    fn failed(error_code: &str) -> Self {
+        Self::Failed {
+            error_code: error_code.to_string(),
+            details: None,
+        }
+    }
+
+    /// Échec per-facture avec contexte JSON (`details`).
+    fn failed_with(error_code: &str, details: serde_json::Value) -> Self {
+        Self::Failed {
+            error_code: error_code.to_string(),
+            details: Some(details),
+        }
+    }
+
+    /// Erreur d'infrastructure → `AppError::Internal` (500 global).
+    fn fatal(context: &str, e: impl std::fmt::Display) -> Self {
+        Self::Fatal(AppError::Internal(format!("{context}: {e}")))
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -853,7 +909,11 @@ pub async fn send_reminder_batch(
     // Pré-check de capacité rate-limit — 429 global AVANT le 1er SMTP (pas de blocage mi-course).
     let key = (company.id, current_user.user_id);
     if (ids.len() as u32) > state.rate_limiter_send_email.remaining_slots(key) {
-        return Err(AppError::RateLimited { retry_after: 1 });
+        // Délai réel (blocage restant, ou sortie de fenêtre glissante) — un `1` en dur
+        // ferait marteler l'endpoint chaque seconde pendant tout le blocage.
+        return Err(AppError::RateLimited {
+            retry_after: state.rate_limiter_send_email.retry_after_secs(key).max(1),
+        });
     }
 
     let levels = dunning_levels::list_all_by_company(&state.pool, company.id).await?;
@@ -863,10 +923,16 @@ pub async fn send_reminder_batch(
     for invoice_id in ids {
         match send_one_batch_reminder(&state, &current_user, &company, invoice_id, &levels).await {
             Ok(acc) => accepted.push(acc),
-            Err(error_code) => failed.push(FailedReminder {
+            Err(BatchItemError::Failed {
+                error_code,
+                details,
+            }) => failed.push(FailedReminder {
                 invoice_id,
                 error_code,
+                details,
             }),
+            // Infrastructure HS : le lot entier est invalide, pas cette seule facture.
+            Err(BatchItemError::Fatal(e)) => return Err(e),
         }
     }
 
@@ -876,48 +942,58 @@ pub async fn send_reminder_batch(
     ))
 }
 
-/// Envoie le prochain niveau à UNE facture d'un lot. `Err(error_code)` = `FailedProposal`
-/// (jamais d'`AppError` global). Gardes pré-SMTP sous verrou → SMTP → enregistrement.
+/// Envoie le prochain niveau à UNE facture d'un lot.
+///
+/// `Err(BatchItemError::Failed)` = `FailedProposal` (→ `failed[]`, HTTP 200) ;
+/// `Err(BatchItemError::Fatal)` = infrastructure HS → escalade en `AppError` global.
+/// Gardes pré-SMTP sous verrou → SMTP → enregistrement.
 async fn send_one_batch_reminder(
     state: &AppState,
     current_user: &CurrentUser,
     company: &Company,
     invoice_id: i64,
     levels: &[kesh_db::entities::DunningLevel],
-) -> Result<AcceptedReminder, String> {
+) -> Result<AcceptedReminder, BatchItemError> {
     // (a) Gardes pré-SMTP sous verrou bref.
     let next_level = {
         let mut tx = state
             .pool
             .begin()
             .await
-            .map_err(|_| "DATABASE_ERROR".to_string())?;
+            .map_err(|e| BatchItemError::fatal("begin tx", e))?;
         let invoice = match invoices::find_scoped_for_update_in_tx(&mut tx, company.id, invoice_id)
             .await
-            .map_err(|_| "DATABASE_ERROR".to_string())?
+            .map_err(|e| BatchItemError::fatal("find invoice for update", e))?
         {
             Some(inv) => inv,
-            None => return Err("INVOICE_NOT_FOUND".to_string()), // absente ou cross-tenant
+            // Absente ou cross-tenant — même code, pas de fuite d'existence.
+            None => return Err(BatchItemError::failed("INVOICE_NOT_FOUND")),
         };
         if invoice.status != "validated" {
-            return Err("INVOICE_NOT_VALIDATED".to_string());
+            return Err(BatchItemError::failed("INVOICE_NOT_VALIDATED"));
         }
         if invoice.paid_at.is_some() {
-            return Err("INVOICE_ALREADY_PAID".to_string());
+            return Err(BatchItemError::failed("INVOICE_ALREADY_PAID"));
         }
         if invoice.dunning_paused_at.is_some() {
-            return Err("DUNNING_PAUSED".to_string());
+            return Err(BatchItemError::failed("DUNNING_PAUSED"));
         }
         let current = invoice_reminders::current_level_in_tx(&mut tx, company.id, invoice_id)
             .await
-            .map_err(|_| "DATABASE_ERROR".to_string())?;
+            .map_err(|e| BatchItemError::fatal("current level", e))?;
         let next = match next_reminder_level(levels, current) {
             Some(n) => n,
-            None => return Err("NO_NEXT_LEVEL".to_string()), // dernier niveau / dunning désactivé
+            // Dernier niveau atteint / dunning désactivé.
+            None => {
+                return Err(BatchItemError::failed_with(
+                    "NO_NEXT_LEVEL",
+                    serde_json::json!({ "currentLevel": current }),
+                ));
+            }
         };
         tx.commit()
             .await
-            .map_err(|_| "DATABASE_ERROR".to_string())?;
+            .map_err(|e| BatchItemError::fatal("commit tx", e))?;
         next
     };
 
@@ -925,42 +1001,58 @@ async fn send_one_batch_reminder(
         .iter()
         .find(|l| l.level_number == next_level)
         .map(|l| l.fee_amount)
-        .ok_or_else(|| "NO_NEXT_LEVEL".to_string())?;
+        .ok_or_else(|| {
+            BatchItemError::failed_with(
+                "NO_NEXT_LEVEL",
+                serde_json::json!({ "levelNumber": next_level }),
+            )
+        })?;
 
     // Contact + destinataire + rendu serveur + PDF.
     let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, invoice_id)
         .await
-        .map_err(|_| "DATABASE_ERROR".to_string())?
-        .ok_or_else(|| "INVOICE_NOT_FOUND".to_string())?;
+        .map_err(|e| BatchItemError::fatal("find invoice with lines", e))?
+        .ok_or_else(|| BatchItemError::failed("INVOICE_NOT_FOUND"))?;
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id)
         .await
-        .map_err(|_| "CONTACT_EMAIL_MISSING".to_string())?;
-    let to = locked_recipient(&contact).ok_or_else(|| "CONTACT_EMAIL_MISSING".to_string())?;
+        .map_err(|_| BatchItemError::failed("CONTACT_EMAIL_MISSING"))?;
+    let to = locked_recipient(&contact)
+        .ok_or_else(|| BatchItemError::failed("CONTACT_EMAIL_MISSING"))?;
     let language = resolve_language(&contact, company);
 
     let (subject, body) = render_reminder(
         state, company, &invoice, &lines, &contact, language, next_level, &level_fee,
     )
     .await
-    .map_err(|_| "DATABASE_ERROR".to_string())?;
+    .map_err(|e| BatchItemError::fatal("render reminder", e))?;
     if subject.trim().is_empty() || body.trim().is_empty() {
-        return Err("REMINDER_CONTENT_EMPTY".to_string());
+        return Err(BatchItemError::failed("REMINDER_CONTENT_EMPTY"));
     }
 
     let locale = kesh_i18n::Locale::from(language.as_str());
+    // Le rendu PDF échoue pour des causes distinctes — les préserver plutôt que de
+    // toutes les écraser sur `INVOICE_NOT_PDF_READY` (AC 12 énumère les deux codes).
     let rendered =
         invoice_pdf_service::render(&state.pool, &state.i18n, locale, company, invoice_id)
             .await
-            .map_err(|_| "INVOICE_NOT_PDF_READY".to_string())?;
+            .map_err(|e| match e {
+                AppError::InvoiceNotValidated => BatchItemError::failed("INVOICE_NOT_VALIDATED"),
+                AppError::Database(DbError::NotFound) => {
+                    BatchItemError::failed("INVOICE_NOT_FOUND")
+                }
+                _ => BatchItemError::failed("INVOICE_NOT_PDF_READY"),
+            })?;
 
     // Rate-limit : consomme 1 slot par e-mail (le pré-check a garanti la capacité, mais un
     // envoi concurrent peut avoir consommé entre-temps → RATE_LIMITED per-facture).
-    if state
+    if let Err(reject) = state
         .rate_limiter_send_email
         .check_and_record((company.id, current_user.user_id))
-        .is_err()
     {
-        return Err("RATE_LIMITED".to_string());
+        return Err(BatchItemError::failed_with(
+            "RATE_LIMITED",
+            serde_json::json!({ "retryAfterSecs": reject.retry_after_secs }),
+        ));
     }
 
     let email = OutgoingEmail {
@@ -978,7 +1070,7 @@ async fn send_one_batch_reminder(
 
     // (b) SMTP.
     if state.mailer.send_email(&email).await.is_err() {
-        return Err("SMTP_SEND_FAILED".to_string());
+        return Err(BatchItemError::failed("SMTP_SEND_FAILED"));
     }
 
     // (c) Enregistrement best-effort post-SMTP.
@@ -997,9 +1089,11 @@ async fn send_one_batch_reminder(
     {
         Ok(created) => {
             tracing::info!(
+                company_id = company.id,
                 invoice_id,
                 level_number = next_level,
                 channel = "email",
+                to = %to,
                 "rappel (lot) envoyé"
             );
             Ok(AcceptedReminder {
@@ -1009,9 +1103,11 @@ async fn send_one_batch_reminder(
             })
         }
         Err(e) => {
+            // L'e-mail EST parti : jamais d'escalade globale ici, sinon on perdrait
+            // les factures déjà acceptées du lot. Reste un échec per-facture.
             tracing::error!(invoice_id, error = %e, "rappel lot parti mais enregistrement échoué");
             let _ = best_effort_reminder_audit(state, current_user, invoice_id, next_level).await;
-            Err("RECORD_FAILED_EMAIL_SENT".to_string())
+            Err(BatchItemError::failed("RECORD_FAILED_EMAIL_SENT"))
         }
     }
 }

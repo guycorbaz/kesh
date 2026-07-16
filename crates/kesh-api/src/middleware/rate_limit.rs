@@ -233,6 +233,51 @@ impl<K: Eq + Hash + Copy> RateLimiter<K> {
         self.max_attempts.saturating_sub(recent_count)
     }
 
+    /// Story 21-5b (code review Pass 1) — délai réaliste avant qu'un slot ne se
+    /// libère pour `key`, **sans consommer**. Complète [`Self::remaining_slots`] :
+    /// celui-ci dit *combien* de slots restent, celui-là *quand* attendre si le
+    /// compte est insuffisant.
+    ///
+    /// Répond à « quand la capacité de `key` augmente-t-elle ? » :
+    ///
+    /// - Clé bloquée → durée de blocage restante (jusqu'à `block_duration`).
+    /// - Sinon, tentatives présentes dans la fenêtre → secondes avant que la plus
+    ///   ancienne n'en sorte (c'est à cet instant qu'un slot se libère). Vaut aussi
+    ///   quand des slots restent libres : l'appelant qui en demande davantage doit
+    ///   attendre jusque-là.
+    /// - `0` uniquement si la clé n'a aucune tentative dans la fenêtre (capacité pleine).
+    ///
+    /// Existe parce qu'un `Retry-After: 1` codé en dur faisait marteler un client
+    /// obéissant chaque seconde pendant toute la durée du blocage.
+    pub fn retry_after_secs(&self, key: K) -> u64 {
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let now = Instant::now();
+        self.purge_expired(&mut map, now);
+        let record = match map.get(&key) {
+            Some(r) => r,
+            None => return 0,
+        };
+        if let Some(blocked_until) = record.blocked_until
+            && now < blocked_until
+        {
+            return blocked_until.duration_since(now).as_secs().max(1);
+        }
+        // Cf. note `checked_sub` dans `check_locked` : `Instant` est monotonic-depuis-boot.
+        // Fenêtre pas encore entamée → aucune tentative n'en sort avant `window`.
+        let window_start = match now.checked_sub(self.window) {
+            Some(ws) => ws,
+            None => return self.window.as_secs().max(1),
+        };
+        match record.attempts.iter().filter(|t| **t >= window_start).min() {
+            // La plus ancienne tentative quitte la fenêtre à `t + window`.
+            Some(t) => (*t + self.window)
+                .saturating_duration_since(now)
+                .as_secs()
+                .max(1),
+            None => 0,
+        }
+    }
+
     /// Réinitialise le compteur pour une IP après un login réussi.
     pub fn reset(&self, key: K) {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -405,6 +450,50 @@ mod tests {
         assert_eq!(rl.remaining_slots(ip), 0, "seuil atteint → 0");
         assert!(rl.check_and_record(ip).is_err(), "bloqué");
         assert_eq!(rl.remaining_slots(ip), 0, "bloqué → 0 slot");
+    }
+
+    #[test]
+    fn retry_after_secs_reflects_block_then_window() {
+        use std::time::Duration;
+        // Story 21-5b (review Pass 1) — le hint doit refléter la réalité, pas un `1` en dur.
+        let rl =
+            RateLimiter::with_thresholds(2, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.5.2".parse().unwrap();
+
+        assert_eq!(
+            rl.retry_after_secs(ip),
+            0,
+            "clé inconnue → aucune tentative en fenêtre → capacité pleine"
+        );
+
+        // Seuil atteint → blocage : le hint suit block_duration, pas 1 s.
+        assert!(rl.check_and_record(ip).is_ok());
+        assert!(rl.check_and_record(ip).is_ok());
+        assert_eq!(rl.remaining_slots(ip), 0, "seuil atteint");
+        let hint = rl.retry_after_secs(ip);
+        assert!(
+            (1790..=1800).contains(&hint),
+            "bloqué → délai de blocage restant (~1800 s), obtenu {hint}"
+        );
+    }
+
+    #[test]
+    fn retry_after_secs_uses_window_when_not_blocked() {
+        use std::time::Duration;
+        // Slots insuffisants SANS blocage : le hint = sortie de la plus ancienne
+        // tentative de la fenêtre glissante (cas du pré-check de lot).
+        let rl =
+            RateLimiter::with_thresholds(5, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.5.3".parse().unwrap();
+        assert!(rl.check_and_record(ip).is_ok());
+
+        // 1 slot consommé sur 5 → pas bloqué, mais un lot de 5 dépasse la capacité.
+        assert_eq!(rl.remaining_slots(ip), 4);
+        let hint = rl.retry_after_secs(ip);
+        assert!(
+            (890..=900).contains(&hint),
+            "non bloqué → attente jusqu'à la sortie de fenêtre (~900 s), obtenu {hint}"
+        );
     }
 
     #[test]

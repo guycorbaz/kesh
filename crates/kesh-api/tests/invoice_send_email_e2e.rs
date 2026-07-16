@@ -12,6 +12,16 @@
 //! effacement, e-mail invalide 400, RBAC Admin-only 403), contact archivé
 //! (400 preview+send), et sémantique `mark_emailed` mid-flight (cancelled →
 //! marque quand même, supprimée → NotFound ; review Pass 1 ECH-1/ECH-2).
+//!
+//! Story 21-5b — envoi de **rappels** (preview / unitaire / lot). Couvre AC 15-16 :
+//! preview par niveau (level requis 400, inexistant 422), happy path unitaire
+//! (PDF joint + `invoice_reminders` + audit), gardes pré-SMTP (payée 422,
+//! suspendue 422, contact sans e-mail 400, contenu vide 422 — chacune vérifiant
+//! qu'AUCUN e-mail n'est parti, garantie C1), D18 (saut de niveau 409 / ré-émission
+//! autorisée), SMTP down (500 + rien enregistré), SMTP non configuré (412),
+//! anti-IDOR cross-tenant (404 unitaire / `INVOICE_NOT_FOUND` en lot), RBAC
+//! Consultation (403 sur les 3 routes), pré-check de capacité du lot (429 +
+//! `Retry-After` réel) et succès partiel (1 accepted / 2 failed + cap dur 20).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -1318,9 +1328,355 @@ async fn send_reminder_paused_rejected_before_smtp(pool: MySqlPool) {
     assert_eq!(reminder_count(&pool, invoice_id).await, 0);
 }
 
-/// Envoi par lot : succès partiel { accepted, failed } + cap dur.
+/// Garde unitaire : facture payée → 422 INVOICE_ALREADY_PAID, rien n'est parti (C1).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn send_reminder_batch_partial_success(pool: MySqlPool) {
+async fn send_reminder_paid_invoice_rejected_before_smtp(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "INVOICE_ALREADY_PAID"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+/// Garde unitaire : contact sans e-mail → CONTACT_EMAIL_MISSING, rien n'est parti.
+///
+/// **400** et non 422 : la variante `AppError::ContactEmailMissing` est partagée
+/// avec l'envoi de facture Epic 20 (`errors.rs`, cf. `contact_without_email_returns_400`).
+/// AC 15 annonce « 422 » — imprécision de la spec, le code fait foi (cf. Change Log).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_contact_without_email_rejected(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        None, // pas d'e-mail
+        None,
+        Salutation::Madame,
+        Some("Rutschmann"),
+    )
+    .await;
+    seed_primary_bank(&pool, company_id).await;
+    seed_dunning(&pool, company_id).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "CONTACT_EMAIL_MISSING"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+/// Garde unitaire : subject/body vides (après trim) → 422, rien n'est parti.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_empty_content_returns_422(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "   ", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "INVOICE_EMAIL_EMPTY_CONTENT"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+/// D18 : saut de niveau (> prochain) → 409 LEVEL_ALREADY_SENT avant SMTP ;
+/// ré-envoi d'un niveau ≤ prochain autorisé (ré-émission volontaire).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_level_skip_rejected_but_resend_allowed(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    // Aucun rappel encore envoyé → prochain = 1. Viser 3 est un saut.
+    let skip = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 3, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(skip.status(), 409, "saut de niveau refusé");
+    assert_eq!(
+        skip.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "LEVEL_ALREADY_SENT"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "saut → rien n'est parti");
+
+    // Niveau 1 → OK, puis re-niveau 1 (≤ prochain) → autorisé (D18).
+    for attempt in 1..=2 {
+        let resp = app
+            .client
+            .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+            .bearer_auth(&token)
+            .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "Corps." }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 201, "envoi niveau 1, tentative {attempt}");
+    }
+    assert_eq!(
+        mock.sent_emails().len(),
+        2,
+        "ré-émission niveau 1 autorisée"
+    );
+    assert_eq!(reminder_count(&pool, invoice_id).await, 2);
+}
+
+/// SMTP down → 500 et **rien n'est enregistré** : c'est la garantie que le patch
+/// CRITICAL C1 devait apporter (ordre « SMTP puis enregistrer »).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_smtp_down_returns_500_and_records_nothing(pool: MySqlPool) {
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), MockMailer::failing(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 500);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "SMTP_SEND_FAILED"
+    );
+    assert_eq!(
+        reminder_count(&pool, invoice_id).await,
+        0,
+        "e-mail pas parti → aucune trace de rappel"
+    );
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'invoice.reminder_sent' AND entity_id = ?",
+    )
+    .bind(invoice_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 0, "aucun audit d'envoi");
+}
+
+/// SMTP non configuré → 412, garde avant tout envoi.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_smtp_not_configured_returns_412(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), false, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 412);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "SMTP_NOT_CONFIGURED"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+
+    // Le lot applique la même garde globale.
+    let batch = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(batch.status(), 412, "lot : SMTP non configuré → 412 global");
+    assert_eq!(mock.sent_emails().len(), 0);
+}
+
+/// Anti-IDOR : facture d'une autre company → 404 (unitaire), `INVOICE_NOT_FOUND`
+/// per-facture (lot) — même code que « absente », pas de fuite d'existence.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_cross_tenant_is_invisible(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+
+    // 2e company + son admin (pattern IDOR des e2e existants).
+    let other_company = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Other Co', 'X 1\n1000 L', 'Pme', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    seed_dunning(&pool, other_company).await;
+    let phc = hash_password("password-admin2-e2e").expect("hash");
+    users::create(
+        &pool,
+        NewUser {
+            username: "admin2".into(),
+            password_hash: phc,
+            role: Role::Admin,
+            active: true,
+            company_id: other_company,
+            email: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin2", "password-admin2-e2e").await;
+
+    // Unitaire → 404.
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404, "facture d'une autre company invisible");
+
+    // Lot → failed[] INVOICE_NOT_FOUND, HTTP 200 (succès partiel = succès HTTP).
+    let batch = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(batch.status(), 200);
+    let body: serde_json::Value = batch.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0);
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0]["invoiceId"], invoice_id);
+    assert_eq!(
+        failed[0]["errorCode"], "INVOICE_NOT_FOUND",
+        "cross-tenant indiscernable d'une facture absente"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail cross-tenant");
+}
+
+/// RBAC : Consultation → 403 sur les 3 routes rappels (comptable_routes).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_consultation_role_returns_403(pool: MySqlPool) {
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let phc = hash_password("password-consult-e2e").expect("hash");
+    users::create(
+        &pool,
+        NewUser {
+            username: "consult".into(),
+            password_hash: phc,
+            role: Role::Consultation,
+            active: true,
+            company_id,
+            email: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool.clone(), MockMailer::new(), true, 20).await;
+    let token = login(&app, "consult", "password-consult-e2e").await;
+
+    let preview = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/invoices/{invoice_id}/reminder-preview?level=1"
+        )))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), 403, "preview Comptable+");
+
+    let unit = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unit.status(), 403, "envoi unitaire Comptable+");
+
+    let batch = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(batch.status(), 403, "envoi lot Comptable+");
+}
+
+/// Pré-check de capacité du lot : lot > slots restants → 429 global AVANT le
+/// 1er SMTP (aucun e-mail parti — pas de blocage à mi-course). Vérifie aussi que
+/// `Retry-After` reflète la fenêtre réelle et non un `1` codé en dur (review Pass 1).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_batch_capacity_precheck_returns_429(pool: MySqlPool) {
     let mock = MockMailer::new();
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(
@@ -1335,8 +1691,85 @@ async fn send_reminder_batch_partial_success(pool: MySqlPool) {
     .await;
     seed_primary_bank(&pool, company_id).await;
     seed_dunning(&pool, company_id).await;
+    let inv_a = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let inv_b = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+
+    // Seuil 2 : un envoi unitaire consomme 1 slot → il en reste 1, insuffisant pour un lot de 2.
+    let app = spawn_app(pool.clone(), mock.clone(), true, 2).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let warmup = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{inv_a}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "Corps." }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(warmup.status(), 201, "1er envoi consomme un slot");
+    assert_eq!(mock.sent_emails().len(), 1);
+
+    let batch = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [inv_a, inv_b] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(batch.status(), 429, "lot de 2 > 1 slot restant");
+    let retry_after: u64 = batch
+        .headers()
+        .get("retry-after")
+        .expect("header Retry-After présent")
+        .to_str()
+        .unwrap()
+        .parse()
+        .expect("Retry-After entier");
+    assert!(
+        retry_after > 1,
+        "Retry-After doit refléter la fenêtre réelle (~900 s), pas un 1 codé en dur — obtenu {retry_after}"
+    );
+    assert_eq!(
+        mock.sent_emails().len(),
+        1,
+        "pré-check global → aucun e-mail supplémentaire (pas de blocage mi-course)"
+    );
+}
+
+/// Envoi par lot : succès partiel { accepted, failed } + cap dur.
+///
+/// AC 16 : 1 OK + 1 payée + 1 sans e-mail → 1 accepted, 2 failed avec les bons codes.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_batch_partial_success(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        Some("pia@example.ch"),
+        None,
+        Salutation::Madame,
+        Some("Rutschmann"),
+    )
+    .await;
+    // 2e contact sans e-mail → CONTACT_EMAIL_MISSING per-facture.
+    let mute_contact = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        None,
+        None,
+        Salutation::Madame,
+        Some("Muet"),
+    )
+    .await;
+    seed_primary_bank(&pool, company_id).await;
+    seed_dunning(&pool, company_id).await;
     let ok_invoice = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
     let paid_invoice = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let mute_invoice = seed_validated_invoice(&pool, company_id, mute_contact, admin_id).await;
     sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
         .bind(paid_invoice)
         .execute(&pool)
@@ -1349,26 +1782,43 @@ async fn send_reminder_batch_partial_success(pool: MySqlPool) {
         .client
         .post(app.url("/api/v1/dunning/reminders/send-batch"))
         .bearer_auth(&token)
-        .json(&json!({ "invoiceIds": [ok_invoice, paid_invoice] }))
+        .json(&json!({ "invoiceIds": [ok_invoice, paid_invoice, mute_invoice] }))
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 200, "succès partiel = succès HTTP");
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["accepted"].as_array().unwrap().len(), 1);
     assert_eq!(body["accepted"][0]["invoiceId"], ok_invoice);
     assert_eq!(body["accepted"][0]["levelNumber"], 1);
+
     let failed = body["failed"].as_array().unwrap();
-    assert_eq!(failed.len(), 1);
-    assert_eq!(failed[0]["invoiceId"], paid_invoice);
-    assert_eq!(failed[0]["errorCode"], "INVOICE_ALREADY_PAID");
+    assert_eq!(failed.len(), 2, "2 échecs per-facture");
+    let code_for = |id: i64| -> String {
+        failed
+            .iter()
+            .find(|f| f["invoiceId"] == id)
+            .unwrap_or_else(|| panic!("facture {id} absente de failed[]"))["errorCode"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(code_for(paid_invoice), "INVOICE_ALREADY_PAID");
+    assert_eq!(code_for(mute_invoice), "CONTACT_EMAIL_MISSING");
+    // `details` fait partie de la signature canonique FailedProposal (Epic 8).
+    for f in failed {
+        assert!(
+            f.get("details").is_some(),
+            "champ details présent (null admis) : {f}"
+        );
+    }
     assert_eq!(
         mock.sent_emails().len(),
         1,
         "un seul e-mail effectivement parti"
     );
 
-    // Cap dur : 21 ids → 422.
+    // Cap dur 20 : un lot de 21 → 422.
     let too_many: Vec<i64> = (1..=21).collect();
     let cap = app
         .client
