@@ -1,6 +1,6 @@
 # Story 21.5b: Envoi de rappels par e-mail (backend)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -171,13 +171,60 @@ Modules : `kesh-api/{routes/invoice_email ou dunning_reminders, middleware/rate_
 
 ### Agent Model Used
 
+Claude Opus 4.8 (1M context) — session `01FL3zWi6FC6ZPvEjZnFfPmR` (source : trailers `Co-Authored-By` des 3 commits d'implémentation).
+
 ### Debug Log References
+
+Aucun incident de debug notable pendant l'implémentation.
+
+**Note de traçabilité** : la session de dev a **crashé après le dernier commit de code** (`bc32f6e1`, 2026-07-16 12:41) mais **avant** la clôture de la story. Le Dev Agent Record, le File List, cette entrée de Change Log et le passage du statut en `review` ont été reconstitués le 2026-07-16 dans une session ultérieure (Opus 4.8), à partir de faits vérifiés — diff des 3 commits, trailers Git, et exécution effective du gate — et non de la mémoire de la session crashée. Vérification d'intégrité post-crash : arbre de travail propre, `git fsck --connectivity-only` sans erreur, aucun fichier orphelin ni opération Git interrompue, aucun fichier modifié après le dernier commit. **Aucun code perdu.**
 
 ### Completion Notes List
 
+- **T1** — `build_reminder_vars` construit les 10 variables (6 de base réutilisées d'Epic 20 via `build_invoice_vars` + `reminderLevel`/`reminderFee`/`totalDue`/`daysOverdue`), builder pur : les 4 vars rappel sont pré-calculées par l'appelant. `sum_fees_deduped_excluding` implémente la dédup H2 (`SUM(MAX(fee) GROUP BY level_number)`, exclut annulés + niveau courant). `days_overdue` clampé UTC.
+- **T2** — `RateLimiter::remaining_slots` expose les slots restants (purge + `max_attempts.saturating_sub(recent_count)`, 0 si bloqué) pour le pré-check du lot.
+- **T3** — `GET .../reminder-preview?level=N` : `ReminderLevelQuery` sans `serde(default)` → 400 si `level` absent (patch M1 de la Pass 1 validate).
+- **T4** — `send_reminder` suit le flux scellé par le CRITICAL C1 : gardes globales → verrou bref pré-SMTP (re-check statut/paid/paused/niveau) → **relâche du verrou** → contact/contenu/PDF → SMTP → enregistrement **best-effort**. Jamais de rejet post-SMTP : facture disparue après envoi → `ReminderSentButInvoiceGone` 409 **avec trace d'audit**.
+- **T5** — `send_reminder_batch` respecte le pattern batch CLAUDE.md : `{ accepted, failed }` en **HTTP 200**, erreurs per-facture encapsulées en `FailedProposal` (identifiant business `invoiceId`, jamais d'index positionnel). Les 4 `AppError` globales (cap 20 dépassé, rate-limit, SMTP indisponible, body invalide) restent conformes aux exceptions documentées.
+- **T6** — 3 routes montées dans `comptable_routes` **avant** le `route_layer` (RBAC). 4 variantes `AppError` ajoutées. CHANGELOG mis à jour dans le commit `bc32f6e1`.
+- **Risque résiduel documenté** (hérité, non introduit par 21-5b) : crash-process entre SMTP-OK et commit → e-mail parti sans trace. Exposition dual-write d'Epic 20, hors scope (remédiation = outbox). Cf. Pass 3 validate.
+- **Aucune migration** dans cette story → pas de bump `kesh_version_min_required` ni d'entrée d'audit d'idempotence requis.
+
 ### File List
 
+Hors artefacts BMAD — 8 fichiers, +1079/-2 lignes sur les 3 commits (`40edf89d`, `32a4233e`, `bc32f6e1`) :
+
+- `crates/kesh-api/src/routes/invoice_email.rs` (+676) — `build_reminder_vars`, `days_overdue`, `render_reminder`, `send_reminder`, `send_reminder_batch`, `send_one_batch_reminder` + tests unitaires.
+- `crates/kesh-api/src/errors.rs` (+46) — variantes `DunningPaused` 422 / `LevelAlreadySent` 409 / `ReminderSentButInvoiceGone` 409 / `BatchTooLarge` 422.
+- `crates/kesh-api/src/middleware/rate_limit.rs` (+43) — `remaining_slots` + test.
+- `crates/kesh-api/src/lib.rs` (+13) — montage des 3 routes dans `comptable_routes`.
+- `crates/kesh-db/src/repositories/invoice_reminders.rs` (+26) — `sum_fees_deduped_excluding`.
+- `crates/kesh-api/tests/invoice_send_email_e2e.rs` (+222) — 4 tests E2E (AC 15/16).
+- `crates/kesh-db/tests/invoice_reminders_repository.rs` (+54) — test repo dédup.
+- `CHANGELOG.md` (+1).
+
 ## Change Log
+
+### Dev-story (2026-07-16, Opus 4.8) — T1-T6 implémentées, gate backend complet vert
+
+Implémentation des 6 tâches en 3 commits (`40edf89d` T1, `32a4233e` T2, `bc32f6e1` T3-T6), conforme à la spec scellée en Pass 3 validate. 8 fichiers hors artefacts BMAD, +1079/-2.
+
+**Gate backend complet** (exécuté 2026-07-16 via `scripts/test-fast.sh --no-lint`, MariaDB dev up) :
+
+| Check | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | ✅ exit 0 |
+| `cargo check --workspace --all-targets` | ✅ exit 0 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | ✅ exit 0, 0 warning |
+| `cargo nextest run` | ✅ **1845 passés / 1845**, 0 échec, 4 skipped, 2817 s |
+
+Les 4 tests skipped sont des `#[ignore]` préexistants et sans lien avec 21-5b (pdfium absent de l'hôte, perf export, placeholder multi-devises Story 11, perf PDF).
+
+**8 tests ajoutés, tous verts au gate** : 3 unitaires (`reminder_vars_ajoute_les_4_variables_rappel`, `days_overdue_clampe_et_gere_none`, `remaining_slots_decrements_and_zeroes_when_blocked`), 1 repo (`sum_fees_deduped_excludes_level_and_cancelled` — dédup H2), 4 E2E (`reminder_preview_renders_level`, `send_reminder_happy_path`, `send_reminder_paused_rejected_before_smtp`, `send_reminder_batch_partial_success`). AC 16 (cap dur 20 → 422 `BATCH_TOO_LARGE`) est couvert **dans** `send_reminder_batch_partial_success` (`invoice_send_email_e2e.rs:1371-1385`), pas dans une fonction séparée.
+
+**Incident de session** : la session de dev a crashé après `bc32f6e1` et avant la clôture. Le gate annoncé par T6 (« Gate complet (ci-dessous) ») n'avait en réalité **jamais été tracé** — il a été (ré)exécuté intégralement lors de la reconstitution plutôt que présumé passé. Détail de la vérification d'intégrité post-crash en § Debug Log References.
+
+**Statut** : `ready-for-dev` → `review`. Prochaine étape : `bmad-code-review` (Pass 1, LLM ≠ Opus pour contourner le biais d'auteur — cf. Review Iteration Rule).
 
 ### Validate Pass 1 (2026-07-16, Sonnet 4.6) — 1 CRITICAL + 2 HIGH + 3 MEDIUM + 2 LOW, patchés
 
