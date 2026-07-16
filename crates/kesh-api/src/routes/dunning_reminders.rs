@@ -135,17 +135,14 @@ const PAUSE_NOTE_MAX: usize = 500;
 /// hygiène applicative).
 const REMINDER_NOTE_MAX: usize = 5000;
 
-/// Rejette (400) une note dépassant `max` caractères — un 400 explicite plutôt qu'une
-/// erreur MariaDB brute (1406) au-delà de la borne DB.
+/// Rejette (400) une note dépassant `max` caractères. Délègue à
+/// [`crate::helpers::validate_text_len`] (21-5b Pass 3 — la même garde est requise
+/// sur `subject`/`body` du rappel e-mail ; une seule implémentation).
 fn validate_note_len(note: &Option<String>, max: usize) -> Result<(), AppError> {
-    if let Some(n) = note
-        && n.chars().count() > max
-    {
-        return Err(AppError::Validation(format!(
-            "note trop longue (max {max} caractères)"
-        )));
+    match note {
+        Some(n) => crate::helpers::validate_text_len(n, max, "note"),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Convertit une `DbError` de `set_dunning_pause` en `AppError` (la reprise sur une

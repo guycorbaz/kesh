@@ -32,7 +32,7 @@ use kesh_i18n::{format_date, format_money};
 
 use crate::AppState;
 use crate::errors::AppError;
-use crate::helpers::get_company_for;
+use crate::helpers::{get_company_for, validate_text_len};
 use crate::mail::{EmailAttachment, OutgoingEmail};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::invoice_pdf_service;
@@ -488,6 +488,12 @@ pub async fn send_reminder(
     if subject.is_empty() || body.is_empty() {
         return Err(AppError::InvoiceEmailEmptyContent);
     }
+    // Borne AVANT le SMTP (C1) : `invoice_reminders.subject`/`body` sont des colonnes
+    // TEXT. Sans cette garde, un contenu trop long partait chez le débiteur puis
+    // échouait à l'INSERT (MariaDB 1406) — envoi réel, aucune trace, et un re-essai
+    // rejouait l'e-mail à l'identique indéfiniment (review Pass 3).
+    validate_text_len(&subject, REMINDER_SUBJECT_MAX, "objet")?;
+    validate_text_len(&body, REMINDER_BODY_MAX, "corps")?;
     let language = resolve_language(&contact, &company);
     let locale = kesh_i18n::Locale::from(language.as_str());
     let rendered =
@@ -538,7 +544,12 @@ pub async fn send_reminder(
             // L'e-mail EST parti : ne jamais le présenter comme un échec d'envoi.
             tracing::error!(invoice_id = id, error = %e, "rappel e-mail parti mais enregistrement échoué");
             let _ = best_effort_reminder_audit(&state, &current_user, id, req.level_number).await;
-            Err(AppError::ReminderSentButInvoiceGone)
+            // Ne pas diagnostiquer une facture disparue sur un hoquet DB : l'annoncer
+            // enverrait chercher une suppression qui n'a pas eu lieu (review Pass 3).
+            match e {
+                AppError::Database(DbError::NotFound) => Err(AppError::ReminderSentButInvoiceGone),
+                _ => Err(AppError::ReminderSentButNotRecorded),
+            }
         }
     }
 }
@@ -808,6 +819,14 @@ pub async fn send_invoice_email(
 /// Cap dur du nombre de factures par lot (item 19 — borne la durée HTTP).
 const REMINDER_BATCH_MAX: usize = 20;
 
+/// Bornes de `invoice_reminders.subject`/`body`, colonnes `TEXT` (65 535 **octets**).
+///
+/// Exprimées en caractères : le pire cas UTF-8 (4 octets/caractère) reste sous la
+/// borne DB (500×4 = 2 000 ; 10 000×4 = 40 000), donc l'INSERT est garanti quel que
+/// soit le contenu. Largement au-dessus d'un rappel réaliste.
+const REMINDER_SUBJECT_MAX: usize = 500;
+const REMINDER_BODY_MAX: usize = 10_000;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendReminderBatchRequest {
@@ -835,42 +854,55 @@ pub struct FailedReminder {
     pub details: Option<serde_json::Value>,
 }
 
-/// Issue d'échec d'une facture d'un lot.
+/// Échec d'UNE facture d'un lot → `FailedProposal`.
 ///
-/// Distingue les deux classes séparées par CLAUDE.md §"Pattern batch" :
-/// l'échec métier isolé (→ `failed[]` + HTTP 200) et l'erreur d'infrastructure
-/// qui invalide la requête entière (→ `AppError` global 500). Sans cette
-/// distinction, un pool DB fermé se déguisait en échec per-facture dans un 200.
-enum BatchItemError {
-    /// Échec propre à cette facture → `FailedProposal`.
-    Failed {
-        error_code: String,
-        details: Option<serde_json::Value>,
-    },
-    /// Erreur d'infrastructure (pool fermé, IO catastrophique) → escalade globale.
-    Fatal(AppError),
+/// **Aucune erreur rencontrée dans la boucle per-facture n'escalade en `AppError`
+/// global** (décision review Pass 2). Les exceptions 500 de CLAUDE.md §"Pattern
+/// batch" visent les erreurs qui invalident la requête « en amont du traitement
+/// per-proposal » — et elles sont bien attrapées en amont, par les `?` qui
+/// précèdent la boucle (`get_company_for`, `list_all_by_company`) : un pool déjà
+/// mort y échoue avant qu'aucun e-mail ne parte.
+///
+/// Escalader depuis l'intérieur de la boucle jetterait `accepted` alors que ces
+/// e-mails sont **réellement partis** — le client ne saurait plus qui a été
+/// relancé. Une panne survenant en cours de lot reste donc per-facture, mais est
+/// journalisée en `error!` (cf. [`BatchItemError::infra`]) pour rester visible à
+/// l'exploitant.
+struct BatchItemError {
+    error_code: String,
+    details: Option<serde_json::Value>,
 }
 
 impl BatchItemError {
-    /// Échec per-facture sans contexte additionnel.
+    /// Échec métier per-facture sans contexte additionnel.
     fn failed(error_code: &str) -> Self {
-        Self::Failed {
+        Self {
             error_code: error_code.to_string(),
             details: None,
         }
     }
 
-    /// Échec per-facture avec contexte JSON (`details`).
+    /// Échec métier per-facture avec contexte JSON (`details`).
     fn failed_with(error_code: &str, details: serde_json::Value) -> Self {
-        Self::Failed {
+        Self {
             error_code: error_code.to_string(),
             details: Some(details),
         }
     }
 
-    /// Erreur d'infrastructure → `AppError::Internal` (500 global).
-    fn fatal(context: &str, e: impl std::fmt::Display) -> Self {
-        Self::Fatal(AppError::Internal(format!("{context}: {e}")))
+    /// Erreur d'**infrastructure** survenue en cours de lot (pool mort, IO).
+    ///
+    /// Reste per-facture pour préserver `accepted` (cf. doc du type), mais loggée
+    /// en `error!` : sans ça, une panne se déguiserait en simple échec métier dans
+    /// un HTTP 200 et resterait invisible.
+    fn infra(context: &str, invoice_id: i64, e: impl std::fmt::Display) -> Self {
+        tracing::error!(
+            invoice_id,
+            context,
+            error = %e,
+            "erreur d'infrastructure en cours de lot — facture écartée, lot poursuivi"
+        );
+        Self::failed("DATABASE_ERROR")
     }
 }
 
@@ -906,6 +938,14 @@ pub async fn send_reminder_batch(
     if !state.smtp_ready {
         return Err(AppError::SmtpNotConfigured);
     }
+    // Un lot plus grand que le quota d'envoi ne pourra JAMAIS passer : la fenêtre ne
+    // libère au mieux que `max_attempts` slots. Renvoyer 429 ici ferait réessayer un
+    // client obéissant indéfiniment pour rien — c'est 422 (review Pass 3).
+    let quota = state.rate_limiter_send_email.max_attempts();
+    if ids.len() as u32 > quota {
+        return Err(AppError::BatchExceedsSendQuota { max: quota });
+    }
+
     // Pré-check de capacité rate-limit — 429 global AVANT le 1er SMTP (pas de blocage mi-course).
     let key = (company.id, current_user.user_id);
     if (ids.len() as u32) > state.rate_limiter_send_email.remaining_slots(key) {
@@ -923,16 +963,11 @@ pub async fn send_reminder_batch(
     for invoice_id in ids {
         match send_one_batch_reminder(&state, &current_user, &company, invoice_id, &levels).await {
             Ok(acc) => accepted.push(acc),
-            Err(BatchItemError::Failed {
-                error_code,
-                details,
-            }) => failed.push(FailedReminder {
+            Err(item) => failed.push(FailedReminder {
                 invoice_id,
-                error_code,
-                details,
+                error_code: item.error_code,
+                details: item.details,
             }),
-            // Infrastructure HS : le lot entier est invalide, pas cette seule facture.
-            Err(BatchItemError::Fatal(e)) => return Err(e),
         }
     }
 
@@ -944,9 +979,8 @@ pub async fn send_reminder_batch(
 
 /// Envoie le prochain niveau à UNE facture d'un lot.
 ///
-/// `Err(BatchItemError::Failed)` = `FailedProposal` (→ `failed[]`, HTTP 200) ;
-/// `Err(BatchItemError::Fatal)` = infrastructure HS → escalade en `AppError` global.
-/// Gardes pré-SMTP sous verrou → SMTP → enregistrement.
+/// `Err(_)` = `FailedProposal` → `failed[]` + HTTP 200, jamais d'escalade globale
+/// (cf. doc de [`BatchItemError`]). Gardes pré-SMTP sous verrou → SMTP → enregistrement.
 async fn send_one_batch_reminder(
     state: &AppState,
     current_user: &CurrentUser,
@@ -960,10 +994,10 @@ async fn send_one_batch_reminder(
             .pool
             .begin()
             .await
-            .map_err(|e| BatchItemError::fatal("begin tx", e))?;
+            .map_err(|e| BatchItemError::infra("begin tx", invoice_id, e))?;
         let invoice = match invoices::find_scoped_for_update_in_tx(&mut tx, company.id, invoice_id)
             .await
-            .map_err(|e| BatchItemError::fatal("find invoice for update", e))?
+            .map_err(|e| BatchItemError::infra("find invoice for update", invoice_id, e))?
         {
             Some(inv) => inv,
             // Absente ou cross-tenant — même code, pas de fuite d'existence.
@@ -980,7 +1014,7 @@ async fn send_one_batch_reminder(
         }
         let current = invoice_reminders::current_level_in_tx(&mut tx, company.id, invoice_id)
             .await
-            .map_err(|e| BatchItemError::fatal("current level", e))?;
+            .map_err(|e| BatchItemError::infra("current level", invoice_id, e))?;
         let next = match next_reminder_level(levels, current) {
             Some(n) => n,
             // Dernier niveau atteint / dunning désactivé.
@@ -993,29 +1027,41 @@ async fn send_one_batch_reminder(
         };
         tx.commit()
             .await
-            .map_err(|e| BatchItemError::fatal("commit tx", e))?;
+            .map_err(|e| BatchItemError::infra("commit tx", invoice_id, e))?;
         next
     };
 
+    // `next_reminder_level` sélectionne `next_level` DANS `levels` — ce `find` ne peut
+    // donc pas échouer. Le bras d'erreur ne sert qu'à couvrir un refactor qui romprait
+    // cet invariant : bug structurel, donc loggué (review Pass 3 — l'ancien bras
+    // renvoyait un `NO_NEXT_LEVEL` mort, au `details` incompatible avec le vrai).
     let level_fee = levels
         .iter()
         .find(|l| l.level_number == next_level)
         .map(|l| l.fee_amount)
         .ok_or_else(|| {
-            BatchItemError::failed_with(
-                "NO_NEXT_LEVEL",
-                serde_json::json!({ "levelNumber": next_level }),
+            BatchItemError::infra(
+                "niveau calculé absent de la config (invariant rompu)",
+                invoice_id,
+                format!("level {next_level}"),
             )
         })?;
 
     // Contact + destinataire + rendu serveur + PDF.
     let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, invoice_id)
         .await
-        .map_err(|e| BatchItemError::fatal("find invoice with lines", e))?
+        .map_err(|e| BatchItemError::infra("find invoice with lines", invoice_id, e))?
         .ok_or_else(|| BatchItemError::failed("INVOICE_NOT_FOUND"))?;
+    // `|_| CONTACT_EMAIL_MISSING` mentirait : un contact archivé a le plus souvent
+    // un e-mail — le problème est ailleurs (review Pass 2). Le contact ne peut pas
+    // avoir été supprimé (FK `invoices.contact_id` ON DELETE RESTRICT), donc un
+    // `NotFound` ici signale une incohérence de données, pas un cas métier.
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id)
         .await
-        .map_err(|_| BatchItemError::failed("CONTACT_EMAIL_MISSING"))?;
+        .map_err(|e| match e {
+            AppError::ContactArchived => BatchItemError::failed("CONTACT_ARCHIVED"),
+            other => BatchItemError::infra("load contact", invoice_id, other),
+        })?;
     let to = locked_recipient(&contact)
         .ok_or_else(|| BatchItemError::failed("CONTACT_EMAIL_MISSING"))?;
     let language = resolve_language(&contact, company);
@@ -1024,14 +1070,28 @@ async fn send_one_batch_reminder(
         state, company, &invoice, &lines, &contact, language, next_level, &level_fee,
     )
     .await
-    .map_err(|e| BatchItemError::fatal("render reminder", e))?;
+    .map_err(|e| BatchItemError::infra("render reminder", invoice_id, e))?;
     if subject.trim().is_empty() || body.trim().is_empty() {
         return Err(BatchItemError::failed("REMINDER_CONTENT_EMPTY"));
+    }
+    // Même garde pré-SMTP que l'unitaire : un template surdimensionné ferait partir
+    // l'e-mail puis échouer l'INSERT (colonnes TEXT). Moins atteignable ici (contenu
+    // rendu serveur, pas fourni par le client) mais le chemin existe (review Pass 3).
+    if subject.chars().count() > REMINDER_SUBJECT_MAX || body.chars().count() > REMINDER_BODY_MAX {
+        return Err(BatchItemError::failed_with(
+            "REMINDER_CONTENT_TOO_LONG",
+            serde_json::json!({
+                "subjectMax": REMINDER_SUBJECT_MAX,
+                "bodyMax": REMINDER_BODY_MAX,
+            }),
+        ));
     }
 
     let locale = kesh_i18n::Locale::from(language.as_str());
     // Le rendu PDF échoue pour des causes distinctes — les préserver plutôt que de
-    // toutes les écraser sur `INVOICE_NOT_PDF_READY` (AC 12 énumère les deux codes).
+    // toutes les écraser sur `INVOICE_NOT_PDF_READY` (AC 12 énumère les codes
+    // séparément). Le bras final ne fourre PAS les pannes d'infra dans un code
+    // métier (review Pass 2) : les causes métier sont énumérées explicitement.
     let rendered =
         invoice_pdf_service::render(&state.pool, &state.i18n, locale, company, invoice_id)
             .await
@@ -1040,7 +1100,12 @@ async fn send_one_batch_reminder(
                 AppError::Database(DbError::NotFound) => {
                     BatchItemError::failed("INVOICE_NOT_FOUND")
                 }
-                _ => BatchItemError::failed("INVOICE_NOT_PDF_READY"),
+                // Données de facturation incomplètes (pas de compte bancaire, adresse
+                // QR invalide, trop de lignes) — le PDF ne peut pas être produit.
+                AppError::InvoiceNotPdfReady(_) | AppError::InvoiceTooManyLinesForPdf(_) => {
+                    BatchItemError::failed("INVOICE_NOT_PDF_READY")
+                }
+                other => BatchItemError::infra("render pdf", invoice_id, other),
             })?;
 
     // Rate-limit : consomme 1 slot par e-mail (le pré-check a garanti la capacité, mais un
@@ -1068,8 +1133,12 @@ async fn send_one_batch_reminder(
         }),
     };
 
-    // (b) SMTP.
-    if state.mailer.send_email(&email).await.is_err() {
+    // (b) SMTP. L'erreur est journalisée ici : contrairement à l'unitaire, elle ne
+    // remonte pas jusqu'à `IntoResponse` (qui loggue `SmtpSendFailed`), donc sans ça
+    // une panne SMTP produisait 20 échecs dans un HTTP 200 et zéro ligne de log
+    // (review Pass 3). Le code reste per-facture — AC 12 l'impose.
+    if let Err(e) = state.mailer.send_email(&email).await {
+        tracing::error!(invoice_id, error = %e, "échec SMTP en cours de lot");
         return Err(BatchItemError::failed("SMTP_SEND_FAILED"));
     }
 

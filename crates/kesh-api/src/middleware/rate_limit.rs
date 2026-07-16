@@ -278,6 +278,15 @@ impl<K: Eq + Hash + Copy> RateLimiter<K> {
         }
     }
 
+    /// Story 21-5b (code review Pass 3) — plafond de tentatives par fenêtre.
+    ///
+    /// Exposé pour que l'envoi par lot distingue « attends que des slots se
+    /// libèrent » (429) de « ce lot dépasse le quota, aucune attente n'y changera
+    /// rien » (422) : la fenêtre ne libère jamais plus de `max_attempts` slots.
+    pub fn max_attempts(&self) -> u32 {
+        self.max_attempts
+    }
+
     /// Réinitialise le compteur pour une IP après un login réussi.
     pub fn reset(&self, key: K) {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());

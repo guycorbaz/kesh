@@ -1672,6 +1672,167 @@ async fn send_reminder_consultation_role_returns_403(pool: MySqlPool) {
     assert_eq!(batch.status(), 403, "envoi lot Comptable+");
 }
 
+/// Contenu trop long → 400 AVANT le SMTP, rien n'est parti (review Pass 3).
+///
+/// Sans cette garde, `invoice_reminders.subject`/`body` (colonnes TEXT) rejetaient
+/// l'INSERT en MariaDB 1406 **après** l'envoi : l'e-mail partait chez le débiteur,
+/// aucune trace n'était écrite, et chaque re-essai le renvoyait à l'identique.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_oversized_content_rejected_before_smtp(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    // Corps > 10 000 caractères.
+    let huge_body = "a".repeat(10_001);
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": huge_body }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "corps trop long refusé");
+
+    // Objet > 500 caractères.
+    let huge_subject = "s".repeat(501);
+    let subj = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": huge_subject, "body": "Corps." }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(subj.status(), 400, "objet trop long refusé");
+
+    assert_eq!(
+        mock.sent_emails().len(),
+        0,
+        "garde AVANT le SMTP — aucun e-mail parti"
+    );
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+
+    // La borne haute reste acceptée (pas de régression sur un contenu légitime).
+    let ok = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "b".repeat(10_000) }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), 201, "10 000 caractères pile → accepté");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 1);
+}
+
+/// Lot plus grand que le quota d'envoi → 422 (et non un 429 perpétuel) : aucune
+/// attente ne peut le rendre acceptable (review Pass 3).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_batch_over_send_quota_returns_422(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        Some("pia@example.ch"),
+        None,
+        Salutation::Madame,
+        Some("Rutschmann"),
+    )
+    .await;
+    seed_primary_bank(&pool, company_id).await;
+    seed_dunning(&pool, company_id).await;
+    let a = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let b = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let c = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+
+    // Quota d'envoi = 2, lot de 3 → impossible par construction, fenêtre vierge.
+    let app = spawn_app(pool.clone(), mock.clone(), true, 2).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [a, b, c] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        422,
+        "lot > quota → 422, pas un 429 perpétuel"
+    );
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "BATCH_EXCEEDS_SEND_QUOTA"
+    );
+    assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail parti");
+}
+
+/// Contact archivé APRÈS création de la facture (la création, elle, refuse un
+/// contact archivé — cf. `invoices.rs`) : le rappel est refusé sur les 2 surfaces.
+///
+/// Le lot renvoie `CONTACT_ARCHIVED` et **non** `CONTACT_EMAIL_MISSING` (review
+/// Pass 2) : le contact a bien un e-mail, il est seulement archivé — annoncer
+/// « e-mail manquant » enverrait l'utilisateur corriger le mauvais problème.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_archived_contact_reports_archived_not_missing_email(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    // Le contact a un e-mail (seed_sendable) — on l'archive seulement.
+    sqlx::query("UPDATE contacts SET active = FALSE WHERE company_id = ?")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    // Unitaire → 400 CONTACT_ARCHIVED (variante partagée Epic 20).
+    let unit = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unit.status(), 400);
+    assert_eq!(
+        unit.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "CONTACT_ARCHIVED"
+    );
+
+    // Lot → failed[] CONTACT_ARCHIVED, HTTP 200.
+    let batch = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(batch.status(), 200);
+    let body: serde_json::Value = batch.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0);
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(
+        failed[0]["errorCode"], "CONTACT_ARCHIVED",
+        "le contact a un e-mail — le code doit dire ARCHIVED, pas EMAIL_MISSING"
+    );
+
+    assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
 /// Pré-check de capacité du lot : lot > slots restants → 429 global AVANT le
 /// 1er SMTP (aucun e-mail parti — pas de blocage à mi-course). Vérifie aussi que
 /// `Retry-After` reflète la fenêtre réelle et non un `1` codé en dur (review Pass 1).

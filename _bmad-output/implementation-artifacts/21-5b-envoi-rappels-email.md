@@ -220,6 +220,62 @@ Hors artefacts BMAD — 8 fichiers, +1079/-2 lignes sur les 3 commits (`40edf89d
 
 ## Change Log
 
+### Code review Pass 3 (2026-07-16, Opus 4.8, contexte frais) — 3 MEDIUM + 2 LOW réels, patchés ; 4 écartés
+
+Passe de scellage 3 couches en **Opus** (rotation complète Sonnet → Haiku → Opus), justifiée par le revirement de conception de la Pass 2. Diff unique aplati (1945 lignes, patches Pass 2 inclus). **La passe n'est pas revenue propre** — elle a trouvé un défaut de classe C1 que les deux passes précédentes avaient manqué.
+
+**MEDIUM — contenu non borné → e-mail parti sans trace, rejouable à l'infini** (Edge Case Hunter). `send_reminder` n'imposait **aucune borne de longueur** sur `subject`/`body`, écrits dans les colonnes `TEXT` (65 535 octets) d'`invoice_reminders` **après** le SMTP. Un corps de 70 000 caractères (extrait de CGV collé) : toutes les gardes passent → e-mail réellement délivré au débiteur → INSERT rejeté par MariaDB **1406** → 409 `REMINDER_SENT_BUT_INVOICE_GONE` (mensonger, la facture est intacte) → **aucune ligne `invoice_reminders`** → le niveau n'avance pas → l'opérateur réessaie → **le débiteur reçoit un e-mail de plus à chaque tentative, sans qu'aucune trace ne soit jamais écrite**. C'est exactement la classe de bug que le patch CRITICAL C1 devait éliminer (« toute vérification pouvant rejeter la requête doit être AVANT le SMTP ») : la condition est connaissable pré-SMTP mais n'était découverte que post-SMTP. Déterministe, donc hors du risque TOCTOU accepté. Aggravant : **21-5a a déjà la garde sur la même table** (`validate_note_len` + `REMINDER_NOTE_MAX = 5000`, `dunning_reminders.rs:136`) — 21-5b écrivait deux colonnes TEXT de plus sans l'équivalent. L'ECH a vérifié le mode strict sur la MariaDB du projet (`STRICT_TRANS_TABLES` → erreur 1406, pas de troncature). **Patch** : helper partagé `helpers::validate_text_len` (DRY — `validate_note_len` y délègue désormais), bornes `REMINDER_SUBJECT_MAX = 500` / `REMINDER_BODY_MAX = 10_000` appliquées **pré-SMTP** ; bornes en caractères choisies pour que le pire cas UTF-8 (4 o/car) reste sous 65 535. Équivalent per-facture côté lot (`REMINDER_CONTENT_TOO_LONG`).
+
+**MEDIUM — lot > quota d'envoi → 429 perpétuel** (Blind Hunter). Le pré-check compare `ids.len()` à `remaining_slots`, mais si le lot dépasse `max_attempts`, **aucune attente ne peut le faire passer** : la fenêtre ne libère jamais plus de `max_attempts` slots. Avec une fenêtre vierge, `retry_after_secs` renvoie 0 → `.max(1)` → `Retry-After: 1` — précisément la pathologie que le patch Pass 1 n°3 prétendait avoir supprimée. **Patch** : `RateLimiter::max_attempts()` exposé ; lot > quota → **422 `BATCH_EXCEEDS_SEND_QUOTA`** (erreur client définitive) au lieu d'un 429 (« réessaie ») trompeur.
+
+**MEDIUM — panne SMTP en cours de lot invisible** (Acceptance Auditor). `send_email(...).is_err()` **jetait l'erreur**. L'unitaire est loggué parce que l'`AppError` traverse `IntoResponse` (`errors.rs:1212`), mais le lot ne construit jamais cette `AppError` et `crates/kesh-api/src/mail/` ne loggue rien. Une panne SMTP produisait donc 20 `SMTP_SEND_FAILED` dans un HTTP 200 et **zéro ligne de log** — ce qui vidait de sa substance la compensation `infra()` de la Pass 2. **Patch** : erreur liée et journalisée en `error!` ; le code reste per-facture (AC 12 l'impose).
+
+**LOW — `ReminderSentButInvoiceGone` diagnostiquait une disparition inexistante**. Le bras `Err(e)` couvrait **toute** panne d'enregistrement (deadlock, timeout, commit) en annonçant « la facture a disparu » — le commentaire du code l'admettait (« ou hoquet DB »). L'opérateur partait chercher une suppression qui n'avait pas eu lieu. Le lot, lui, est honnête (`RECORD_FAILED_EMAIL_SENT`). **Patch** : `NotFound` → `ReminderSentButInvoiceGone` (exact) ; toute autre cause → nouvelle variante **`ReminderSentButNotRecorded`** (409), pendant unitaire du code du lot.
+
+**LOW — bras mort sur le lookup `level_fee`**. `next_reminder_level` sélectionne `next_level` **dans** `levels`, donc le `find` suivant ne peut pas échouer : le `ok_or_else` était inatteignable, et émettait un `NO_NEXT_LEVEL` au `details` incompatible avec le vrai (`levelNumber` vs `currentLevel`). **Patch** : routé vers `infra()` — un invariant rompu par un futur refactor serait un bug structurel, donc loggué (CLAUDE.md).
+
+**Écartés (4)** :
+- **`render_reminder` → `infra()` serait un abus** (Blind Hunter, LOW) — **faux positif réfuté par lecture du code** : `email_templates::get_effective` ne renvoie **jamais** `NotFound`, il retombe toujours sur `to_effective_default` (`email_templates.rs:126-129`), qui n'est même pas un `Result`. Les seuls `?` de `render_reminder` sont deux appels DB → `infra()` y est correct. Le BH, aveugle au codebase, a supposé un échec de résolution de template impossible.
+- **Course TOCTOU** et **absence de garde « facture échue »** (Blind Hunter, MEDIUM ×2) — décisions déjà tranchées (Pass 1/2). La couche aveugle les re-trouve par construction.
+- **Slot rate-limit consommé avant les validations** (Blind Hunter, LOW) — **3e remontée consécutive** (Sonnet P1, Haiku P2, Opus P3). Même réfutation : AC 5 prescrit cet ordre. Trois couches aveugles indépendantes convergent sur le même faux positif : c'est structurel à un reviewer sans spec, pas un signal. *À noter pour les futures passes : ce finding est attendu et n'a pas besoin d'être re-vérifié.*
+
+**Écarts spec/code documentés (Acceptance Auditor, LOW — doc uniquement, aucun changement de code)** :
+- **AC 8 dit 200, le code renvoie 201** sur `send_reminder`. Le code est défendable et cohérent : le sibling 21-5a qui crée la même ressource renvoie aussi 201 (`dunning_reminders.rs:337`). Même classe que les 3 écarts déjà documentés — la spec est imprécise.
+- **AC 5 ordonne « facture 404 » avant « niveau inexistant 422 »** ; le code fait l'inverse. Sans impact ni oracle : le lookup de niveau est scopé à la config company et indépendant de la facture, donc un id cross-tenant donne le même 422 qu'un id possédé. Placer le check de config, moins coûteux, en premier est raisonnable.
+- **`RECORD_FAILED_EMAIL_SENT`** n'était énuméré nulle part. Comportement correct, liste de la spec en dérive.
+
+**Extension d'AC 12 (cumulée)** : `CONTACT_ARCHIVED`, `DATABASE_ERROR` (Pass 2) + `REMINDER_CONTENT_TOO_LONG`, `RECORD_FAILED_EMAIL_SENT` (Pass 3). Toutes additives — la facture est écartée du lot dans tous les cas, seul le code est plus précis.
+
+**Tests ajoutés (2)** : `send_reminder_oversized_content_rejected_before_smtp` (corps > 10 000 et objet > 500 → 400 **sans qu'aucun e-mail parte**, + la borne haute pile-poil reste acceptée, donc pas de régression sur un contenu légitime) et `send_reminder_batch_over_send_quota_returns_422`.
+
+**Trend** : P1 (3H/4M/1L) → P2 (1H) → **P3 (3M/2L)** → patchés. La Pass 3 a trouvé **plus** que la Pass 2 : le scellage était justifié, et Opus a vu ce que Sonnet et Haiku avaient tous deux manqué. Findings > LOW subsistants : aucun. **Une Pass 4 est requise** par la Review Iteration Rule (P3 a remonté des MEDIUM) — LLM : Sonnet (reprise du cycle), contexte frais.
+
+### Code review Pass 2 (2026-07-16, Haiku 4.5, contexte frais) — 1 HIGH convergent (patch Pass 1 incomplet) + 1 décision de conception révisée
+
+Passe adversariale 3 couches en **Haiku** (rotation Sonnet → Haiku ; l'auteur reste Opus). **Diff unique aplati** `5bdce277..HEAD` (1866 lignes) — mitigation CLAUDE.md contre le bug d'indexation multi-commit de Haiku, d'autant plus nécessaire ici que les patches Pass 1 re-touchent des hunks écrits par les commits d'implémentation. **Aucune hallucination de type « REGRESSION-P1 » n'a été observée** : la mitigation a tenu.
+
+- **Acceptance Auditor : 0 finding.** 19/19 AC implémentés, les 7 patches Pass 1 vérifiés par grep, les 3 déviations documentées correctement non re-litigées.
+- **Blind Hunter + Edge Case Hunter : convergence sur 1 HIGH réel** — et il visait le **patch Pass 1 lui-même**.
+
+**Le finding (confirmé par grep)** : le patch Pass 1 n°5 avait corrigé 6 sites `DATABASE_ERROR` mais en laissait **2 identiques** : `load_active_contact` (`|_| CONTACT_EMAIL_MISSING`) et le bras `_` du rendu PDF (`INVOICE_NOT_PDF_READY`) avalaient toujours les erreurs d'infrastructure. Incohérence interne : 6 sites escaladaient, 2 non.
+
+**Ce que la correction a révélé de plus profond** : la boucle faisait `Err(Fatal(e)) => return Err(e)`, ce qui **jetait `accepted`** — si la facture n°1 part réellement et que la n°2 tombe sur un pool mort, le client reçoit un 500 et n'apprend jamais que la n°1 a été relancée, alors que l'e-mail est parti. Or CLAUDE.md réserve les exceptions 500 aux erreurs qui invalident la requête **« en amont du traitement per-proposal »** — et un pool déjà mort est bien attrapé en amont, par les `?` qui précèdent la boucle (`get_company_for`, `list_all_by_company`). Le patch Pass 1 n°5 avait donc **sur-appliqué** la règle sur un cas qu'elle ne visait pas.
+
+**Décisions (Guy)** :
+- **Escalade en cours de lot → abandonnée** (revirement assumé sur le patch Pass 1 n°5). Les erreurs d'infra survenant dans la boucle restent per-facture (`DATABASE_ERROR`), ce qui préserve `accepted`. La variante `BatchItemError::Fatal` disparaît ; le type redevient une struct `{ error_code, details }`. **Compensation** : `BatchItemError::infra()` journalise en `tracing::error!` (facture, contexte, erreur) — la panne reste visible à l'exploitant, ce qui était la vraie inquiétude de l'Edge Case Hunter, sans sacrifier le rapport de lot.
+- **Codes contact honnêtes** : `CONTACT_ARCHIVED` ajouté. `|_| CONTACT_EMAIL_MISSING` mentait — un contact archivé a le plus souvent un e-mail, et le message envoyait l'utilisateur corriger le mauvais problème.
+
+**Correction apportée par Guy en cours de patch** (« on ne devrait pas pouvoir créer une facture pour un contact archivé ou inexistant ») — vérifiée, et juste à moitié :
+- **`CONTACT_NOT_FOUND` abandonné** : le FK `invoices.contact_id … ON DELETE RESTRICT` (`20260416000001_invoices.sql:32`) interdit de supprimer un contact ayant des factures. Un `NotFound` ici signalerait une **incohérence de données**, pas un cas métier → routé vers `infra()` (loggué). C'était bien du code mort.
+- **`CONTACT_ARCHIVED` conservé, car réellement atteignable** : la création de facture rejette bien un contact archivé (`invoices.rs:399`), **mais `contacts::archive` (`contacts.rs:524`) ne vérifie pas l'existence de factures ouvertes** — seulement existence, double-archivage et version. Le chemin « facture créée avec contact actif → contact archivé plus tard → rappel » est donc ouvert, et Epic 20 le teste déjà (`archived_contact_returns_400`).
+- **Écarté (1)** — *slot rate-limit consommé avant les validations* : re-remonté par le Blind Hunter Haiku, comme en Pass 1 par le Blind Hunter Sonnet. Même réfutation : AC 5 prescrit cet ordre. Deux couches aveugles indépendantes convergent sur le même faux positif — c'est le comportement attendu d'un reviewer sans spec, pas un signal.
+
+**Extension d'AC 12 assumée** : la liste des codes per-facture gagne `CONTACT_ARCHIVED` et `DATABASE_ERROR` (ce dernier redevenant légitime puisque l'infra ne s'escalade plus). Additif — aucun changement de comportement (la facture est écartée du lot dans tous les cas), seul le code est plus précis.
+
+**Test ajouté** : `send_reminder_archived_contact_reports_archived_not_missing_email` — contact archivé après création, sur les 2 surfaces (unitaire 400 / lot `failed[]` 200), avec assertion explicite que le code n'est **pas** `CONTACT_EMAIL_MISSING`.
+
+**Trend** : Pass 1 (3H/4M/1L) → Pass 2 (1H convergent, 0 CRITICAL, Acceptance Auditor 0 finding) → patché. Findings > LOW subsistants : aucun. LLM : Sonnet → Haiku. Une Pass 3 (Opus, contexte frais) est justifiée par le **revirement de conception** sur l'escalade du lot — un changement structurel mérite une passe de scellage, comme en validate Pass 3.
+
 ### Code review Pass 1 (2026-07-16, Sonnet 4.6) — 3 HIGH + 4 MEDIUM + 1 LOW → 2 décisions + 6 patches appliqués
 
 Passe adversariale 3 couches (Blind Hunter / Edge Case Hunter / Acceptance Auditor), toutes en **Sonnet** — l'implémentation étant d'**Opus 4.8**, la Review Iteration Rule impose un modèle orthogonal. Diff unique aplati `5bdce277..bc32f6e1` (1213 lignes, artefacts BMAD exclus) plutôt que la séquence de 3 commits.

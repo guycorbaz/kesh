@@ -11,6 +11,27 @@ use sqlx::MySqlPool;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
+/// Rejette (400) un texte dépassant `max` **caractères** — un 400 explicite plutôt
+/// qu'une erreur MariaDB brute (1406) au-delà de la borne de la colonne.
+///
+/// **Choisir `max`** : les colonnes `TEXT` bornent en **octets** (65 535), pas en
+/// caractères. Tout `max` passé ici doit donc rester sous `65535 / 4` (pire cas
+/// UTF-8, 4 octets/caractère) pour garantir l'insertion quel que soit le contenu.
+///
+/// Introduit en 21-5b (code review Pass 3) : `send_reminder` écrivait un `subject`
+/// et un `body` non bornés dans `invoice_reminders` **après** l'envoi SMTP — un
+/// corps trop long partait chez le débiteur puis échouait à l'INSERT, laissant
+/// l'envoi sans trace et rejouable à l'identique. `field` nomme le champ dans le
+/// message d'erreur (« objet », « corps », « note »).
+pub fn validate_text_len(value: &str, max: usize, field: &str) -> Result<(), AppError> {
+    if value.chars().count() > max {
+        return Err(AppError::Validation(format!(
+            "{field} trop long (max {max} caractères)"
+        )));
+    }
+    Ok(())
+}
+
 /// Récupère la company de l'utilisateur courant.
 ///
 /// Utilisé par les handlers pour charger la Company complète depuis le
