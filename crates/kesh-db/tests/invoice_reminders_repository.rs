@@ -186,6 +186,30 @@ async fn cancel_soft_excludes_from_max_level(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn sum_fees_deduped_excludes_level_and_cancelled(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Fees Co").await;
+    let invoice_id = create_test_invoice(&pool, company_id).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    // Niveau 1 (0), niveau 2 (20), niveau 2 ré-émis (25 — D18), niveau 3 (40 puis annulé).
+    invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 1, "0.00", "2026-07-01 09:00:00")).await.unwrap();
+    invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 2, "20.00", "2026-07-10 09:00:00")).await.unwrap();
+    invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 2, "25.00", "2026-07-12 09:00:00")).await.unwrap();
+    let r3 = invoice_reminders::insert_in_tx(&mut tx, &manual_reminder(company_id, invoice_id, 3, "40.00", "2026-07-20 09:00:00")).await.unwrap();
+    invoice_reminders::cancel_in_tx(&mut tx, company_id, r3.id).await.unwrap();
+    tx.commit().await.unwrap();
+
+    // En excluant le niveau 3 (celui en cours d'envoi) : dédup par niveau → niv1(0) + niv2(MAX(20,25)=25) = 25.
+    // Le niveau 3 est annulé donc absent de toute façon.
+    let sum = invoice_reminders::sum_fees_deduped_excluding(&pool, company_id, invoice_id, 3).await.unwrap();
+    assert_eq!(sum, Decimal::new(2500, 2), "dédup par niveau (MAX) + exclut annulés");
+
+    // En excluant le niveau 2 : seul niv1(0) reste = 0.
+    let sum2 = invoice_reminders::sum_fees_deduped_excluding(&pool, company_id, invoice_id, 2).await.unwrap();
+    assert_eq!(sum2, Decimal::new(0, 2), "niveau 2 exclu");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn scoping_is_company_isolated(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Tenant A").await;
     let company_b = create_test_company(&pool, "Tenant B").await;

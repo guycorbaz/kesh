@@ -197,6 +197,36 @@ fn build_invoice_vars(
     vars
 }
 
+/// Jours de retard d'une facture (clampé ≥ 0), `0` si `due_date` absente. `today` en
+/// UTC (`chrono::Utc::now().naive_utc().date()`), cohérent avec `is_invoice_overdue`.
+pub(crate) fn days_overdue(due_date: Option<chrono::NaiveDate>, today: chrono::NaiveDate) -> i64 {
+    due_date.map(|d| (today - d).num_days().max(0)).unwrap_or(0)
+}
+
+/// Variables de substitution pour un rappel débiteur (Story 21-5b) : les 6 variables
+/// de base de [`build_invoice_vars`] (`amount` = TTC facture) + les 4 spécifiques rappel.
+/// `total_due`/`reminder_fee`/`days_overdue`/`level_number` sont **pré-calculés** par
+/// l'appelant (le builder reste pur, sans accès DB).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_reminder_vars(
+    invoice: &kesh_db::entities::Invoice,
+    lines: &[kesh_db::entities::InvoiceLine],
+    contact: &Contact,
+    company: &Company,
+    language: Language,
+    level_number: i16,
+    reminder_fee: &rust_decimal::Decimal,
+    total_due: &rust_decimal::Decimal,
+    days_overdue: i64,
+) -> HashMap<String, String> {
+    let mut vars = build_invoice_vars(invoice, lines, contact, company, language);
+    vars.insert("reminderLevel".to_string(), level_number.to_string());
+    vars.insert("reminderFee".to_string(), format_money(reminder_fee));
+    vars.insert("totalDue".to_string(), format_money(total_due));
+    vars.insert("daysOverdue".to_string(), days_overdue.to_string());
+    vars
+}
+
 /// `GET /api/v1/invoices/{id}/email-preview` — Comptable+.
 pub async fn preview_invoice_email(
     State(state): State<AppState>,
@@ -646,5 +676,44 @@ mod tests {
         assert_eq!(resolve_language(&contact, &company), Language::De);
         contact.language = None;
         assert_eq!(resolve_language(&contact, &company), Language::Fr);
+    }
+
+    #[test]
+    fn reminder_vars_ajoute_les_4_variables_rappel() {
+        let invoice = sample_invoice(Some("F-2026-0042"), NaiveDate::from_ymd_opt(2026, 6, 30));
+        let vars = build_reminder_vars(
+            &invoice,
+            &sample_lines(),
+            &sample_contact(),
+            &sample_company(),
+            Language::Fr,
+            2,
+            &Decimal::new(2000, 2),   // 20.00 (frais niveau 2)
+            &Decimal::new(135456, 2), // 1354.56 (total dû)
+            45,
+        );
+        // 10 variables = les 6 base + 4 rappel (allowed_variables InvoiceReminder).
+        let mut keys: Vec<&str> = vars.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let mut expected = EmailTemplateType::InvoiceReminder.allowed_variables().to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected);
+        assert_eq!(vars["reminderLevel"], "2");
+        assert_eq!(vars["reminderFee"], "20.00");
+        assert_eq!(vars["totalDue"], "1\u{2019}354.56", "apostrophe U+2019");
+        assert_eq!(vars["daysOverdue"], "45", "entier brut, pas format_money");
+        assert_eq!(vars["amount"], "1\u{2019}334.56", "TTC facture inchangé");
+    }
+
+    #[test]
+    fn days_overdue_clampe_et_gere_none() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
+        assert_eq!(days_overdue(NaiveDate::from_ymd_opt(2026, 6, 16), today), 30);
+        assert_eq!(
+            days_overdue(NaiveDate::from_ymd_opt(2026, 8, 1), today),
+            0,
+            "échéance future → 0 (clampé)"
+        );
+        assert_eq!(days_overdue(None, today), 0, "pas d'échéance → 0");
     }
 }

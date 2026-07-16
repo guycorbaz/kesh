@@ -80,10 +80,10 @@ Cette story **21-5b** assemble ces briques pour **envoyer les rappels** :
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — `build_reminder_vars` + calcul `totalDue`/`daysOverdue`** (AC 1,2,3,14)
-  - [ ] Builder calqué `build_invoice_vars` + 4 vars rappel.
-  - [ ] Somme des frais non-annulés (`list_for_invoice` filtré, ou `SUM` SQL) + frais niveau courant, calculée avant insertion.
-  - [ ] `daysOverdue` clampé UTC. Tests unitaires.
+- [x] **T1 — `build_reminder_vars` + calcul `totalDue`/`daysOverdue`** (AC 1,2,3,14)
+  - [x] `build_reminder_vars` (invoice_email.rs) réutilise `build_invoice_vars` + 4 vars rappel (pré-calculées par l'appelant, builder pur).
+  - [x] `invoice_reminders::sum_fees_deduped_excluding(company, invoice, exclude_level)` : `SUM(MAX(fee) GROUP BY level_number) WHERE cancelled_at IS NULL AND level_number <> ?` (dédup H2 + exclut niveau courant). `daysOverdue` helper UTC clampé.
+  - [x] Tests : unit `build_reminder_vars` (10 vars, formatage suisse) + `days_overdue` (clamp/None) 2/2 ; repo `sum_fees_deduped_excluding` (dédup MAX par niveau + exclut annulés/niveau) 4/4.
 - [ ] **T2 — Rate-limiter `remaining_slots`** (AC 11,17)
   - [ ] Méthode `RateLimiter::remaining_slots(key) -> u32` (`middleware/rate_limit.rs`) + test.
 - [ ] **T3 — Preview rappel** (AC 4)
