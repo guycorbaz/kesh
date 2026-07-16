@@ -1,6 +1,6 @@
 # Story 21.5b: Envoi de rappels par e-mail (backend)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
