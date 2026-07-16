@@ -91,11 +91,21 @@ Verdicts divergents — produit : C renforcée (le marché suisse [Bexio, Abacus
 - **21-4 — Réglages rappels + templates multi-type/multi-niveau (frontend)** : page `settings/dunning` (gabarit vat-rates ; exemple calculé des délais cumulés ; hint CGV) + refactor `settings/email-templates` multi-type + sélecteur de niveau pour `invoice_reminder` + carte index settings.
 - **21-5a — Données & éligibilité relances (backend)** : table `invoice_reminders` (channel, snapshots subject+body+fee, cancelled_at) + `invoices.dunning_paused_at`+note + requête d'éligibilité SQL (MAX level_number, état terminal, COALESCE due_date) + endpoints : liste à rappeler (groupée par contact, badge sans-email), toggle suspension, rappel manuel, annulation Admin. Audits.
 - **21-5b — Envoi de rappels par e-mail (backend)** : `build_reminder_vars` + preview + envoi unitaire (choix du niveau ≤ prochain, gardes éligibilité) + **lot `{accepted, failed}`** (cap 20, pré-check capacité rate-limit, 1 slot/e-mail, tx per-facture post-SMTP, re-check niveau sous verrou) + log INFO envoi réussi (facture + rappel). Consomme 21-2, 21-3, 21-5a.
-- **21-6 — Relances débiteurs (frontend)** : page « Rappels » (liste groupée par contact, état terminal visible, badges sans-email/suspendu, sélection lot, modale unitaire éditable avec choix niveau, rappel manuel) + compteur dashboard + historique rappels sur fiche facture + toggle suspension + liens croisés.
+- **21-6 — Relances débiteurs (frontend)** : ~~monolithe~~ → **splittée en 21-6a/b/c le 2026-07-16** (règle de splitting préventif, cf. encadré ci-dessous).
+  - **21-6a — Exposition de la suspension (backend + liste factures)** : `dunningPausedAt`/`dunningPausedNote` sur `InvoiceResponse` + filtre `paused` sur `ListInvoicesQuery` + requête repo + badge « suspendu » et filtre dans la liste factures. **Ferme le trou D10.** Indépendante de 21-6b.
+  - **21-6b — Page Rappels (frontend)** : nouvelle page + entrée nav + liste groupée par contact + badges « sans e-mail »/état terminal + sélection lot (cap 20) + modale unitaire éditable avec choix de niveau + envoi lot `{accepted, failed}` + rappel manuel. **Anti-double-submit = AC de premier plan** (seule protection contre le double-envoi, cf. D17/H1). Indépendante de 21-6a.
+  - **21-6c — Intégrations & découvrabilité** : historique des rappels sur la fiche facture + toggle suspension (UI) + compteur dashboard (D25) + liens croisés échéancier ↔ Rappels. **Consomme 21-6a** (exposition de la suspension) **et 21-6b** (la page à lier).
+
+> **Splitting de 21-6 (2026-07-16)** — déclenché par la règle CLAUDE.md (> 5 modules) au moment du `bmad-create-story`, après cartographie ground-truth de 4 agents Explore. Deux constats :
+>
+> 1. **21-6 n'est pas une story frontend.** La décision D10 exige « badge « suspendu » + **filtre en liste factures** » — or aucun des deux n'existe et les deux exigent du backend. Vérifié : `dunning_eligibility.rs:88` exclut les factures suspendues (`AND i.dunning_paused_at IS NULL`), `InvoiceResponse` (`routes/invoices.rs`) n'expose pas `dunning_paused_at`, et `ListInvoicesQuery` n'a aucun filtre `paused`. **Une facture suspendue devient donc introuvable** : elle sort de la liste à rappeler, rien ne la signale ailleurs, et on ne peut plus la réactiver. Défaut fonctionnel réel, explicitement différé à 21-6 par 21-5a.
+> 2. **Périmètre réel ~10 modules** : `routes/invoices.rs`, `repositories/invoices.rs`, les 4 FTL, `features/dunning/`, page Rappels, fiche facture, dashboard, nav, échéancier, liste factures, E2E.
+>
+> Le split suit la discipline déjà appliquée à 21-5a/21-5b (« chaque story ≤ 5 modules »). Ordre : **(21-6a ∥ 21-6b) → 21-6c**.
 - **21-7 — Balance âgée (rapport)** : `kesh-report::aged_receivables` (Non échu + 4 buckets, TTC via 21-2, réconciliation totaux) + route + export CSV (Comptable+) + vue frontend reports + drill-down liens. Consomme 21-2 ; indépendante de 21-3..6.
 - **21-8 — Doc + E2E** : manuels admin/user (réglages rappels, cycle, CGV/frais, « frais hors QR », recommandé pour mise en demeure, balance âgée, LPD rétention) + E2E Playwright round-trip (config niveaux → facture échue → liste → envoi unitaire + lot MockMailer → historique → suspension ; balance âgée) + **A4 : `credit-notes.spec.ts` → `api-fixtures.ts`**.
 
-**Ordre** : (21-1 ∥ 21-2) → 21-3 → (21-4 ∥ 21-5a → 21-5b) → 21-6 → 21-8 ; 21-7 après 21-2, flottante.
+**Ordre** : (21-1 ∥ 21-2) → 21-3 → (21-4 ∥ 21-5a → 21-5b) → **(21-6a ∥ 21-6b) → 21-6c** → 21-8 ; 21-7 après 21-2, flottante.
 
 > **Règle de splitting préventif** (CLAUDE.md) : le split 21-5a/21-5b est appliqué **d'emblée** (recommandation critique architecture — 3 findings HIGH tombaient dans l'ex-21-4 monolithique). Chaque story ≤ 5 modules.
 
@@ -108,6 +118,7 @@ Verdicts divergents — produit : C renforcée (le marché suisse [Bexio, Abacus
 - **L21-5** — « Envoyée » = remise SMTP (hérite L20-3).
 - **L21-6** — Un lot peut envoyer N e-mails le même jour au même contact (modèle par facture, comme Bexio) : la liste groupe par contact pour le rendre visible ; rappel-relevé = v2.
 - **L21-7** — Pas de label custom par niveau (libellés i18n génériques « Rappel N ») ; le ton custom passe par les overrides de templates par niveau.
+- **L21-8** (2026-07-16, arbitrage Guy au splitting de 21-6) — **Cumuls par contact non affichés dans la liste à rappeler.** `ReminderCandidateResponse` (`dunning_reminders.rs:34-59`) ne porte ni TTC, ni frais cumulés, ni `daysOverdue` — seulement `dueDate`. L'intention de L21-6 (« la liste groupe par contact pour que l'utilisateur voie **les cumuls** avant d'envoyer ») n'est donc tenue qu'à moitié en v1 : le groupage rend les factures d'un même débiteur visibles ensemble, mais sans total. Un calcul côté client est **écarté** : le vrai `{totalDue}` (TTC + Σ frais dédoublonnés par niveau) est calculé serveur et un calcul client divergerait de ce que l'e-mail annonce au débiteur. Remédiation = extension de `ReminderCandidateResponse` dans une story future. **Le compteur dashboard (D25) est dérivé côté client** de la réponse complète de `GET /api/v1/dunning/reminders` (pas de pagination → réponse exhaustive) ; aucun endpoint de comptage n'est créé.
 
 ## Synthèse critique adversariale (3 agents, 2026-07-12)
 
