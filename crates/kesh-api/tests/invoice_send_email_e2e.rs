@@ -37,9 +37,12 @@ use kesh_api::{AppState, build_router};
 use kesh_db::entities::Language;
 use kesh_db::entities::bank_account::NewBankAccount;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
+use kesh_db::entities::email_template::EmailTemplateType;
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::user::{NewUser, Role};
-use kesh_db::repositories::{bank_accounts, company_dunning_settings, contacts, invoices, users};
+use kesh_db::repositories::{
+    bank_accounts, company_dunning_settings, contacts, email_templates, invoices, users,
+};
 use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -1727,6 +1730,109 @@ async fn send_reminder_oversized_content_rejected_before_smtp(pool: MySqlPool) {
         .unwrap();
     assert_eq!(ok.status(), 201, "10 000 caractères pile → accepté");
     assert_eq!(reminder_count(&pool, invoice_id).await, 1);
+}
+
+/// Lot : panne SMTP → `SMTP_SEND_FAILED` per-facture dans un HTTP 200, sans tuer
+/// le lot ni escalader (review Pass 4 — ce chemin, ajouté en Pass 3 avec son log
+/// `error!`, n'avait aucun test).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_batch_smtp_failure_is_per_invoice(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        Some("pia@example.ch"),
+        None,
+        Salutation::Madame,
+        Some("Rutschmann"),
+    )
+    .await;
+    seed_primary_bank(&pool, company_id).await;
+    seed_dunning(&pool, company_id).await;
+    let a = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let b = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+
+    let app = spawn_app(pool.clone(), MockMailer::failing(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [a, b] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "panne SMTP → per-facture, pas d'escalade"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0);
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "les 2 factures échouent individuellement");
+    for f in failed {
+        assert_eq!(f["errorCode"], "SMTP_SEND_FAILED");
+    }
+    // Aucun e-mail parti → aucune trace, cohérent avec l'unitaire.
+    assert_eq!(reminder_count(&pool, a).await, 0);
+    assert_eq!(reminder_count(&pool, b).await, 0);
+}
+
+/// Lot : template surdimensionné → `REMINDER_CONTENT_TOO_LONG` per-facture AVANT le
+/// SMTP (review Pass 4 — chemin ajouté en Pass 3 sans test). Atteignable car
+/// `email_templates` ne borne pas la longueur à l'enregistrement.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_batch_oversized_template_rejected_before_smtp(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+
+    // Override de template niveau 1 avec un corps > REMINDER_BODY_MAX (10 000).
+    email_templates::upsert_override(
+        &pool,
+        company_id,
+        EmailTemplateType::InvoiceReminder,
+        Language::Fr,
+        1,
+        None,
+        admin_id,
+        None,
+        "Rappel".to_string(),
+        "x".repeat(10_001),
+    )
+    .await
+    .expect("upsert override");
+
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0);
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0]["errorCode"], "REMINDER_CONTENT_TOO_LONG");
+    assert_eq!(
+        failed[0]["details"]["bodyMax"], 10_000,
+        "details porte la borne dépassée"
+    );
+    assert_eq!(
+        mock.sent_emails().len(),
+        0,
+        "garde AVANT le SMTP — rien n'est parti"
+    );
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
 }
 
 /// Lot plus grand que le quota d'envoi → 422 (et non un 429 perpétuel) : aucune

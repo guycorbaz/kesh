@@ -24,12 +24,25 @@ use crate::middleware::auth::CurrentUser;
 /// l'envoi sans trace et rejouable à l'identique. `field` nomme le champ dans le
 /// message d'erreur (« objet », « corps », « note »).
 pub fn validate_text_len(value: &str, max: usize, field: &str) -> Result<(), AppError> {
-    if value.chars().count() > max {
+    if exceeds_len(value, max) {
+        // Formulation sans adjectif : « {field} trop long » forcerait un accord que le
+        // helper ne peut pas connaître (« note trop longue », « objet trop long »).
         return Err(AppError::Validation(format!(
-            "{field} trop long (max {max} caractères)"
+            "{field} : {max} caractères maximum"
         )));
     }
     Ok(())
+}
+
+/// Prédicat de dépassement de longueur, en **caractères** (cf. [`validate_text_len`]
+/// pour le choix de `max` face aux colonnes `TEXT`).
+///
+/// Existe pour que l'envoi par lot — dont l'échec est per-facture (`FailedProposal`)
+/// et non une `AppError` — partage la **même** comparaison que la validation 400 de
+/// l'envoi unitaire, plutôt que de la ré-implémenter et de dériver au prochain
+/// changement de borne (review Pass 4).
+pub fn exceeds_len(value: &str, max: usize) -> bool {
+    value.chars().count() > max
 }
 
 /// Récupère la company de l'utilisateur courant.

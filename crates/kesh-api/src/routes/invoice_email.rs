@@ -32,7 +32,7 @@ use kesh_i18n::{format_date, format_money};
 
 use crate::AppState;
 use crate::errors::AppError;
-use crate::helpers::{get_company_for, validate_text_len};
+use crate::helpers::{exceeds_len, get_company_for, validate_text_len};
 use crate::mail::{EmailAttachment, OutgoingEmail};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::invoice_pdf_service;
@@ -544,10 +544,17 @@ pub async fn send_reminder(
             // L'e-mail EST parti : ne jamais le présenter comme un échec d'envoi.
             tracing::error!(invoice_id = id, error = %e, "rappel e-mail parti mais enregistrement échoué");
             let _ = best_effort_reminder_audit(&state, &current_user, id, req.level_number).await;
-            // Ne pas diagnostiquer une facture disparue sur un hoquet DB : l'annoncer
-            // enverrait chercher une suppression qui n'a pas eu lieu (review Pass 3).
+            // Ne pas diagnostiquer une facture disparue sur un hoquet DB, ni l'inverse.
+            //
+            // `insert_in_tx` fait un INSERT nu : si la facture a disparu entre le verrou
+            // et l'enregistrement (#219), c'est la **FK** `invoice_reminders.invoice_id`
+            // qui saute → MySQL 1452 → `ForeignKeyViolation`, jamais `NotFound` (review
+            // Pass 4 — tester `NotFound` seul rendait `ReminderSentButInvoiceGone`
+            // inatteignable et annonçait un hoquet sur une vraie suppression).
             match e {
-                AppError::Database(DbError::NotFound) => Err(AppError::ReminderSentButInvoiceGone),
+                AppError::Database(DbError::NotFound | DbError::ForeignKeyViolation(_)) => {
+                    Err(AppError::ReminderSentButInvoiceGone)
+                }
                 _ => Err(AppError::ReminderSentButNotRecorded),
             }
         }
@@ -952,7 +959,10 @@ pub async fn send_reminder_batch(
         // Délai réel (blocage restant, ou sortie de fenêtre glissante) — un `1` en dur
         // ferait marteler l'endpoint chaque seconde pendant tout le blocage.
         return Err(AppError::RateLimited {
-            retry_after: state.rate_limiter_send_email.retry_after_secs(key).max(1),
+            retry_after: state
+                .rate_limiter_send_email
+                .retry_after_secs(key, ids.len() as u32)
+                .max(1),
         });
     }
 
@@ -1077,7 +1087,7 @@ async fn send_one_batch_reminder(
     // Même garde pré-SMTP que l'unitaire : un template surdimensionné ferait partir
     // l'e-mail puis échouer l'INSERT (colonnes TEXT). Moins atteignable ici (contenu
     // rendu serveur, pas fourni par le client) mais le chemin existe (review Pass 3).
-    if subject.chars().count() > REMINDER_SUBJECT_MAX || body.chars().count() > REMINDER_BODY_MAX {
+    if exceeds_len(&subject, REMINDER_SUBJECT_MAX) || exceeds_len(&body, REMINDER_BODY_MAX) {
         return Err(BatchItemError::failed_with(
             "REMINDER_CONTENT_TOO_LONG",
             serde_json::json!({
@@ -1176,7 +1186,15 @@ async fn send_one_batch_reminder(
             // les factures déjà acceptées du lot. Reste un échec per-facture.
             tracing::error!(invoice_id, error = %e, "rappel lot parti mais enregistrement échoué");
             let _ = best_effort_reminder_audit(state, current_user, invoice_id, next_level).await;
-            Err(BatchItemError::failed("RECORD_FAILED_EMAIL_SENT"))
+            // Même distinction que l'unitaire (review Pass 5) : « facture disparue »
+            // et « hoquet DB » n'appellent pas la même action au dossier de
+            // recouvrement. La FK saute quand la facture a réellement disparu.
+            match e {
+                AppError::Database(DbError::NotFound | DbError::ForeignKeyViolation(_)) => {
+                    Err(BatchItemError::failed("REMINDER_SENT_BUT_INVOICE_GONE"))
+                }
+                _ => Err(BatchItemError::failed("RECORD_FAILED_EMAIL_SENT")),
+            }
         }
     }
 }

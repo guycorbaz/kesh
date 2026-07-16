@@ -85,6 +85,42 @@ fn manual_reminder(
     }
 }
 
+/// Story 21-5b (code review Pass 4) — verrouille le mapping d'erreur d'un INSERT sur
+/// une facture disparue.
+///
+/// `insert_in_tx` fait un INSERT nu : c'est la **FK** `invoice_reminders.invoice_id`
+/// qui saute (MySQL 1452 → [`DbError::ForeignKeyViolation`]), **pas** un `NotFound`.
+/// La distinction n'est pas cosmétique : `send_reminder` s'en sert pour choisir entre
+/// « rappel envoyé mais facture disparue » (#219) et « envoyé mais non enregistré ».
+/// Tester `NotFound` seul rendait le premier inatteignable et annonçait un simple
+/// hoquet DB sur une vraie suppression.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn insert_on_deleted_invoice_is_foreign_key_violation(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "FK Test SA").await;
+    let invoice_id = create_test_invoice(&pool, company_id).await;
+
+    // La facture disparaît (course #219 : entre le verrou pré-SMTP et l'enregistrement).
+    sqlx::query("DELETE FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .expect("delete invoice");
+
+    let mut tx = pool.begin().await.unwrap();
+    let err = invoice_reminders::insert_in_tx(
+        &mut tx,
+        &manual_reminder(company_id, invoice_id, 1, "20.00", "2026-07-16 10:00:00"),
+    )
+    .await
+    .expect_err("INSERT sur facture supprimée doit échouer");
+
+    assert!(
+        matches!(err, kesh_db::errors::DbError::ForeignKeyViolation(_)),
+        "facture disparue → ForeignKeyViolation (MySQL 1452), et NON NotFound — \
+         obtenu {err:?}"
+    );
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn insert_and_current_level_uses_max_non_cancelled(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Reminder Co").await;

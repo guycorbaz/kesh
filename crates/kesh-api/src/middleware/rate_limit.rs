@@ -238,18 +238,22 @@ impl<K: Eq + Hash + Copy> RateLimiter<K> {
     /// celui-ci dit *combien* de slots restent, celui-là *quand* attendre si le
     /// compte est insuffisant.
     ///
-    /// Répond à « quand la capacité de `key` augmente-t-elle ? » :
+    /// Délai avant que **`needed` slots** soient simultanément disponibles pour `key`.
     ///
     /// - Clé bloquée → durée de blocage restante (jusqu'à `block_duration`).
-    /// - Sinon, tentatives présentes dans la fenêtre → secondes avant que la plus
-    ///   ancienne n'en sorte (c'est à cet instant qu'un slot se libère). Vaut aussi
-    ///   quand des slots restent libres : l'appelant qui en demande davantage doit
-    ///   attendre jusque-là.
-    /// - `0` uniquement si la clé n'a aucune tentative dans la fenêtre (capacité pleine).
+    /// - Assez de slots déjà libres → `0`.
+    /// - Sinon → secondes avant que la `deficit`-ième plus ancienne tentative ne sorte
+    ///   de la fenêtre, `deficit` = `needed - remaining`. C'est à cet instant, et pas
+    ///   avant, que la capacité atteint `needed`.
     ///
-    /// Existe parce qu'un `Retry-After: 1` codé en dur faisait marteler un client
-    /// obéissant chaque seconde pendant toute la durée du blocage.
-    pub fn retry_after_secs(&self, key: K) -> u64 {
+    /// **`needed` est requis** : ne renvoyer que « quand UN slot se libère » sous-estime
+    /// dès qu'il en manque plusieurs, et un client obéissant réessaie alors trop tôt,
+    /// se reprend un 429, et recommence autant de fois qu'il manque de slots (review
+    /// Pass 4). Un `needed` supérieur à `max_attempts` est insatisfiable par nature :
+    /// l'appelant doit l'écarter en amont (cf. [`Self::max_attempts`]) plutôt que de
+    /// demander un délai qui n'existe pas — ce cas renvoie ici la sortie de la
+    /// tentative la plus ancienne, faute de mieux.
+    pub fn retry_after_secs(&self, key: K, needed: u32) -> u64 {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let now = Instant::now();
         self.purge_expired(&mut map, now);
@@ -268,13 +272,36 @@ impl<K: Eq + Hash + Copy> RateLimiter<K> {
             Some(ws) => ws,
             None => return self.window.as_secs().max(1),
         };
-        match record.attempts.iter().filter(|t| **t >= window_start).min() {
-            // La plus ancienne tentative quitte la fenêtre à `t + window`.
+        let mut in_window: Vec<Instant> = record
+            .attempts
+            .iter()
+            .filter(|t| **t >= window_start)
+            .copied()
+            .collect();
+        let remaining = self.max_attempts.saturating_sub(in_window.len() as u32);
+        if remaining >= needed {
+            return 0;
+        }
+        in_window.sort_unstable();
+        // Libérer `deficit` slots = attendre la sortie de fenêtre de la `deficit`-ième
+        // plus ancienne tentative. `deficit >= 1` ici (remaining < needed).
+        let deficit = (needed - remaining) as usize;
+        match in_window.get(deficit - 1) {
             Some(t) => (*t + self.window)
                 .saturating_duration_since(now)
                 .as_secs()
                 .max(1),
-            None => 0,
+            // `needed` dépasse `max_attempts` : insatisfiable (cf. doc). Faute de délai
+            // correct, annoncer la sortie de la plus ancienne.
+            None => in_window
+                .last()
+                .map(|t| {
+                    (*t + self.window)
+                        .saturating_duration_since(now)
+                        .as_secs()
+                        .max(1)
+                })
+                .unwrap_or(0),
         }
     }
 
@@ -470,7 +497,7 @@ mod tests {
         let ip: IpAddr = "10.0.5.2".parse().unwrap();
 
         assert_eq!(
-            rl.retry_after_secs(ip),
+            rl.retry_after_secs(ip, 1),
             0,
             "clé inconnue → aucune tentative en fenêtre → capacité pleine"
         );
@@ -479,7 +506,7 @@ mod tests {
         assert!(rl.check_and_record(ip).is_ok());
         assert!(rl.check_and_record(ip).is_ok());
         assert_eq!(rl.remaining_slots(ip), 0, "seuil atteint");
-        let hint = rl.retry_after_secs(ip);
+        let hint = rl.retry_after_secs(ip, 1);
         assert!(
             (1790..=1800).contains(&hint),
             "bloqué → délai de blocage restant (~1800 s), obtenu {hint}"
@@ -489,19 +516,64 @@ mod tests {
     #[test]
     fn retry_after_secs_uses_window_when_not_blocked() {
         use std::time::Duration;
-        // Slots insuffisants SANS blocage : le hint = sortie de la plus ancienne
-        // tentative de la fenêtre glissante (cas du pré-check de lot).
+        // Slots insuffisants SANS blocage : le hint = sortie de fenêtre (cas du lot).
         let rl =
             RateLimiter::with_thresholds(5, Duration::from_secs(900), Duration::from_secs(1800));
         let ip: IpAddr = "10.0.5.3".parse().unwrap();
         assert!(rl.check_and_record(ip).is_ok());
 
-        // 1 slot consommé sur 5 → pas bloqué, mais un lot de 5 dépasse la capacité.
+        // 1 slot consommé sur 5 → 4 restants : un lot de 4 passe sans attendre.
         assert_eq!(rl.remaining_slots(ip), 4);
-        let hint = rl.retry_after_secs(ip);
+        assert_eq!(
+            rl.retry_after_secs(ip, 4),
+            0,
+            "capacité suffisante → pas d'attente"
+        );
+
+        // Un lot de 5 demande 1 slot de plus → attendre la sortie de la tentative.
+        let hint = rl.retry_after_secs(ip, 5);
         assert!(
             (890..=900).contains(&hint),
-            "non bloqué → attente jusqu'à la sortie de fenêtre (~900 s), obtenu {hint}"
+            "déficit 1 → sortie de la plus ancienne (~900 s), obtenu {hint}"
+        );
+    }
+
+    #[test]
+    fn retry_after_secs_accounts_for_multi_slot_deficit() {
+        use std::time::Duration;
+        // Review Pass 4 — le hint doit couvrir TOUS les slots manquants, pas seulement
+        // le premier : sinon un client obéissant réessaie trop tôt et se reprend un 429
+        // autant de fois qu'il manque de slots.
+        let rl =
+            RateLimiter::with_thresholds(5, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.5.4".parse().unwrap();
+
+        // 4 tentatives espacées : la n-ième sort de la fenêtre à t_n + 900.
+        for _ in 0..4 {
+            assert!(rl.check_and_record(ip).is_ok());
+        }
+        assert_eq!(rl.remaining_slots(ip), 1);
+
+        // Lot de 4 → il manque 3 slots → attendre la sortie de la 3e plus ancienne.
+        // Les 4 tentatives étant quasi simultanées ici, les 3 hints sont ~900 s ; le
+        // point testé est que le calcul indexe bien `deficit - 1` sans paniquer et
+        // reste cohérent (jamais inférieur au hint d'un déficit plus petit).
+        let hint_deficit_1 = rl.retry_after_secs(ip, 2);
+        let hint_deficit_3 = rl.retry_after_secs(ip, 4);
+        assert!(
+            hint_deficit_3 >= hint_deficit_1,
+            "un déficit plus grand ne peut pas se résoudre plus tôt : {hint_deficit_3} < {hint_deficit_1}"
+        );
+        assert!(
+            (890..=900).contains(&hint_deficit_3),
+            "déficit 3 → sortie de la 3e tentative (~900 s), obtenu {hint_deficit_3}"
+        );
+
+        // `needed` insatisfiable (> max_attempts) : pas de panique, hint borné.
+        let hint_impossible = rl.retry_after_secs(ip, 99);
+        assert!(
+            (890..=900).contains(&hint_impossible),
+            "needed > max_attempts → pas d'index out of bounds, obtenu {hint_impossible}"
         );
     }
 

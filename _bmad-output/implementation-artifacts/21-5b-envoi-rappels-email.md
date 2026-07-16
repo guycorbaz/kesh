@@ -220,6 +220,46 @@ Hors artefacts BMAD — 8 fichiers, +1079/-2 lignes sur les 3 commits (`40edf89d
 
 ## Change Log
 
+### Code review Pass 5 (2026-07-16, Haiku 4.5, contexte frais) — **CONVERGÉ (0 > LOW)**
+
+Diff aplati (2449 lignes), rotation Haiku (Sonnet → Haiku → Opus → Sonnet → **Haiku**).
+
+- **Blind Hunter : 0 finding.** A re-vérifié l'arithmétique de `retry_after_secs(key, needed)` (index `deficit - 1` garanti ≥ 0 car `needed > remaining` ; `in_window` vide inatteignable car `remaining < needed` implique la fenêtre peuplée ; `needed > max_attempts` retombe sur la branche `last()`), les bornes de longueur (500/10 000 caractères → marge ×4 sous 65 535 octets), le routage d'erreur post-SMTP et les constructeurs de `BatchItemError`. Verdict : « Clean diff ».
+- **Acceptance Auditor : 0 finding.** Les **6 correctifs de la Pass 4 vérifiés un par un par grep**, 19/19 AC implémentés, conformité complète au pattern batch de CLAUDE.md.
+- **Edge Case Hunter : 1 finding**, patché.
+
+**LOW (reclassé depuis MEDIUM) — le lot ne distinguait pas la facture disparue.** L'ECH signale que l'unitaire route `ForeignKeyViolation` → « facture disparue » alors que le lot renvoyait un `RECORD_FAILED_EMAIL_SENT` générique. **Reclassement justifié** : l'ECH invoque une « guideline CLAUDE.md » qui est en réalité **un commentaire du code source**, pas une règle projet — l'attribution est fausse. Sur le fond, le lot ne ment pas (l'e-mail *est* parti, l'enregistrement *a* échoué) ; il est seulement moins précis. C'est un écart de précision, pas de correction → LOW. **Patché malgré tout** (3 lignes, symétrie unitaire/lot demandée par l'AA en Pass 4) : `NotFound | ForeignKeyViolation(_)` → nouveau code per-facture `REMINDER_SENT_BUT_INVOICE_GONE`.
+
+**Limite de test assumée** : ce chemin exige de supprimer la facture **entre** le SMTP et l'enregistrement — irréalisable en E2E sans mailer piégé (limite déjà reconnue en Pass 4, AA-5). La **prémisse** est verrouillée par le test repo `insert_on_deleted_invoice_is_foreign_key_violation` (FK → 1452, pas `NotFound`), et le routage est le miroir exact de l'unitaire. Documenté ici plutôt que masqué par un test en trompe-l'œil.
+
+**Extension d'AC 12 (finale)** : `CONTACT_ARCHIVED`, `DATABASE_ERROR` (P2) + `REMINDER_CONTENT_TOO_LONG`, `RECORD_FAILED_EMAIL_SENT` (P3) + `REMINDER_SENT_BUT_INVOICE_GONE` (P5). Toutes additives.
+
+**Le faux positif récurrent n'est pas revenu** : « slot rate-limit consommé avant les validations », remonté par les Blind Hunters des Pass 1/2/3, n'apparaît pas en Pass 5. La note du Change Log Pass 3 (« attendu, ne pas re-vérifier ») a rempli son office.
+
+**Trend final** : P1 (3H/4M/1L) → P2 (1H) → P3 (3M/2L) → P4 (1H/3M/2L) → **P5 (0 > LOW) CONVERGÉ**. LLM : Sonnet → Haiku → Opus → Sonnet → Haiku (rotation complète ×1,67, 5 passes < 8). **Critère d'arrêt de la Review Iteration Rule atteint** : uniquement du LOW, patché.
+
+**Enseignement pour les prochaines stories** — la convergence n'est venue qu'après avoir changé de discipline, pas de modèle. Les Pass 2 à 4 ont chacune trouvé des défauts introduits par la remédiation de la passe précédente ; le compte ne baissait pas. La boucle s'est refermée en Pass 4-5 quand **chaque patch de review a été livré avec son test** — les 4 tests ajoutés en Pass 4 ferment précisément les chemins que P4 avait trouvés nus, et P5 n'a plus rien trouvé dessus. À retenir : *un patch de review sans test est une dette qui se paie à la passe suivante*. Candidat pour la rétrospective Epic 21.
+
+### Code review Pass 4 (2026-07-16, Sonnet 4.6, contexte frais) — 1 HIGH + 3 MEDIUM + 2 LOW, patchés. **Tous sur les patches de review, aucun sur l'implémentation d'origine.**
+
+Reprise du cycle en **Sonnet**. Diff aplati (2203 lignes). **Edge Case Hunter : 0 finding** — il a vérifié que la borne de longueur de la Pass 3 est étanche sur tous les writers, pire cas UTF-8 compris.
+
+**HIGH — `ReminderSentButInvoiceGone` rendu inatteignable par le patch Pass 3** (Acceptance Auditor). Le patch Pass 3 routait `Database(NotFound)` → « facture disparue », tout le reste → « non enregistré ». Or `insert_in_tx` fait un **INSERT nu** : une facture disparue fait sauter la **FK** `invoice_reminders.invoice_id` (`20260715000001_invoice_reminders.sql:50`) → MySQL **1452** → `DbError::ForeignKeyViolation` (`errors.rs:167-168`), **jamais** `NotFound`. Le bras `NotFound` ne se déclenchait donc jamais, et une vraie suppression (#219) était annoncée comme un simple hoquet DB — **exactement le mensonge inverse de celui que la Pass 3 corrigeait**. Contraste noté par l'auditeur : Epic 20 détecte correctement la même course parce que `mark_emailed` fait un `UPDATE` sur `invoices` et teste `rows_affected() == 0` — technique mécaniquement différente, non reproduite ici. **Patch** : `NotFound | ForeignKeyViolation(_)` → `ReminderSentButInvoiceGone`. **Test repo ajouté** `insert_on_deleted_invoice_is_foreign_key_violation` — il verrouille le mapping et **aurait attrapé l'erreur en Pass 3**.
+
+**MEDIUM — `retry_after_secs` sous-estimait dès qu'il manquait plus d'un slot** (Blind Hunter). La fonction ne répondait qu'à « quand UN slot se libère », sans paramètre pour le nombre demandé. Avec `max_attempts=5`, 4 consommés et un lot de 4, le client attendait la sortie de la 1re tentative, réessayait, se reprenait un 429, et recommençait autant de fois qu'il manquait de slots. Le test Pass 1 ne couvrait qu'un déficit de 1 — où le bug est invisible. **Patch** : `retry_after_secs(key, needed)` calcule la sortie de la `deficit`-ième plus ancienne tentative. **Test ajouté** `retry_after_secs_accounts_for_multi_slot_deficit` (dont le cas `needed > max_attempts`, pour l'absence d'index out of bounds).
+
+**MEDIUM ×2 — chemins ajoutés en Pass 3 sans test** (Acceptance Auditor) : `REMINDER_CONTENT_TOO_LONG` (lot) et la panne SMTP en lot avec son log `error!` — précisément le chemin dont la Pass 3 déplorait l'invisibilité. Vérifié grep : 0 occurrence en test, et `MockMailer::failing` n'était utilisé que par Epic 20 et l'unitaire. **Tests ajoutés** : `send_reminder_batch_smtp_failure_is_per_invoice` et `send_reminder_batch_oversized_template_rejected_before_smtp` (atteignable : `email_templates` ne borne pas la longueur à l'enregistrement).
+
+**LOW — DRY : le lot ré-implémentait la comparaison de longueur** au lieu de réutiliser le helper extrait en Pass 3 (le lot a besoin d'un échec per-facture, pas d'une `AppError`). **Patch** : prédicat partagé `helpers::exceeds_len`, dont `validate_text_len` dépend aussi — une borne changée d'un seul côté ne peut plus désynchroniser unitaire et lot.
+
+**LOW — régression de grammaire française introduite par mon helper** : `validate_text_len` codait « {field} trop **long** » en dur, produisant « note trop long » là où 21-5a disait correctement « note trop longue ». Le codebase accorde bien ailleurs (« libellé trop long », « description trop longue »). **Patch** : formulation sans adjectif — « {field} : {max} caractères maximum » — qui supprime le problème d'accord au lieu de le déplacer.
+
+**Signal de tendance — à lire avant de lancer une Pass 5.** Les 6 findings de cette passe portent **tous** sur du code écrit pendant la remédiation (Pass 1 à 3), **aucun** sur l'implémentation d'origine. La nature des findings décroît nettement : P1 architectural (pattern batch, matrice de tests absente) → P2 complétude de patch → P3 un vrai bug d'origine (borne de longueur) + effets de patch → **P4 uniquement des effets de patch, des trous de test et une faute d'accord**. L'implémentation d'origine a convergé ; ce qui churn, c'est la remédiation — chaque tour de patch introduit ~1 défaut. C'est le motif classique de *remediation churn*, et c'est ce que la rotation des modèles est faite pour attraper : Sonnet a vu ce qu'Opus venait d'écrire.
+
+**Règle de splitting (CLAUDE.md) — non déclenchée, analyse.** Le critère « > 4 passes sans converger » vise `bmad-create-story validate` (spec) et sert à détecter une story trop large pour un mental-model adversarial. Il ne s'applique pas ici : le scope est de 4 modules, la story est implémentée, et l'implémentation d'origine ne produit plus de findings depuis la Pass 3. Splitter a posteriori n'adresserait pas la cause — qui est la qualité des patches, pas la taille de la story. La réponse appropriée est la discipline appliquée en Pass 4 : **tout patch de review s'accompagne de son test**, ce qui rompt la boucle.
+
+**Trend** : P1 (3H/4M/1L) → P2 (1H) → P3 (3M/2L) → **P4 (1H/3M/2L, 0 sur l'implémentation d'origine)** → patchés. LLM : Sonnet → Haiku → Opus → Sonnet (2 rotations complètes). **Pass 5 requise** par la Review Iteration Rule (P4 > LOW). Attendu : convergence, les 4 tests ajoutés fermant les chemins que P4 a trouvés nus.
+
 ### Code review Pass 3 (2026-07-16, Opus 4.8, contexte frais) — 3 MEDIUM + 2 LOW réels, patchés ; 4 écartés
 
 Passe de scellage 3 couches en **Opus** (rotation complète Sonnet → Haiku → Opus), justifiée par le revirement de conception de la Pass 2. Diff unique aplati (1945 lignes, patches Pass 2 inclus). **La passe n'est pas revenue propre** — elle a trouvé un défaut de classe C1 que les deux passes précédentes avaient manqué.
