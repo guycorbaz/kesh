@@ -1,6 +1,6 @@
 # Story 21.5a: Données & éligibilité relances (backend)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -299,3 +299,9 @@ Panel orthogonal à l'auteur (Opus), diff dev `69fb0668..HEAD`.
 Le **gate workspace complet a attrapé une régression** que les 4 reviewers (grep limité à `repositories/invoices.rs`) ET les tests par-tâche (aucun n'exerçait la reconciliation) avaient manquée : un **4e** `query_as::<_, Invoice>` hors `invoices.rs`, dans `repositories/reconciliation.rs` (const `INVOICE_COLUMNS`, l.46, utilisée par `find` l.226 **et** `find_unpaid_matches` l.109 via `UnpaidInvoiceCandidate { #[sqlx(flatten)] invoice: Invoice }`). Le struct `Invoice` ayant gagné `dunning_paused_at`/`dunning_paused_note` (piège AC 3), ce SELECT sans les 2 colonnes → `ColumnNotFound`/`1054 Unknown column` → **500 sur les propositions de réconciliation** (56 tests rouges : reconciliation_e2e 13, reconciliation_repository 5, kesh-db lib 38 dont le partage du MIGRATOR). **Fix** : ajout des 2 colonnes à `INVOICE_COLUMNS`. reconciliation_e2e 25/25 + reconciliation_repository 9/9 verts.
 
 **Leçon** (à coder en process) : la checklist AC 3 « 3 sites SELECT » ne couvrait que `repositories/invoices.rs`. Pour un ajout de colonne à une entité **flattenée ailleurs** (`#[sqlx(flatten)]`), le grep de propagation DOIT couvrir **tout le workspace** : `grep -rn "query_as::<_, Invoice>"` + `grep -rn "sqlx(flatten)"` + les const de colonnes dupliquées (`INVOICE_COLUMNS` reconciliation ≠ `FIND_INVOICE_SCOPED_SQL` invoices). Le gate complet (Step 9) reste le filet ultime — ne jamais marquer `done` sans lui.
+
+### Gate final de certification (2026-07-16) — 0 régression
+
+`cargo test --workspace --test-threads=1` : **101 suites OK, 0 FAILED, 1842 tests passés, 0 erreur/panic**. fmt + clippy 0.
+
+Note environnement (hors repo) : les tests d'intégration `#[tokio::test]` du repo `invoices` se connectent à la DB dev persistante (`DATABASE_URL`), qui était **3 migrations en retard** (jamais migrée depuis avant 21-3) → faux échecs `1054 Unknown column dunning_paused_at`. Résolu par `sqlx migrate run` sur la DB dev (applique 21-3 + 21-5a). Pas un défaut de code ; en CI la DB est fraîchement migrée. **review → done.**
