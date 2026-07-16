@@ -84,8 +84,8 @@ Cette story **21-5b** assemble ces briques pour **envoyer les rappels** :
   - [x] `build_reminder_vars` (invoice_email.rs) réutilise `build_invoice_vars` + 4 vars rappel (pré-calculées par l'appelant, builder pur).
   - [x] `invoice_reminders::sum_fees_deduped_excluding(company, invoice, exclude_level)` : `SUM(MAX(fee) GROUP BY level_number) WHERE cancelled_at IS NULL AND level_number <> ?` (dédup H2 + exclut niveau courant). `daysOverdue` helper UTC clampé.
   - [x] Tests : unit `build_reminder_vars` (10 vars, formatage suisse) + `days_overdue` (clamp/None) 2/2 ; repo `sum_fees_deduped_excluding` (dédup MAX par niveau + exclut annulés/niveau) 4/4.
-- [ ] **T2 — Rate-limiter `remaining_slots`** (AC 11,17)
-  - [ ] Méthode `RateLimiter::remaining_slots(key) -> u32` (`middleware/rate_limit.rs`) + test.
+- [x] **T2 — Rate-limiter `remaining_slots`** (AC 11,17)
+  - [x] `RateLimiter::remaining_slots(key) -> u32` (purge + `max_attempts.saturating_sub(recent_count)`, 0 si bloqué) + test (décrément + 0 bloqué) 1/1.
 - [ ] **T3 — Preview rappel** (AC 4)
   - [ ] `GET .../reminder-preview?level=N` + DTO `ReminderPreviewResponse` + validation niveau.
 - [ ] **T4 — Envoi unitaire** (AC 5,6,7,8,9)

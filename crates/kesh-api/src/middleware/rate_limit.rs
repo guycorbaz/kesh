@@ -207,6 +207,32 @@ impl<K: Eq + Hash + Copy> RateLimiter<K> {
         Ok(())
     }
 
+    /// Story 21-5b — nombre de slots restants dans la fenêtre pour une clé, **sans
+    /// consommer** (pré-check de capacité avant un envoi par lot, pour éviter un blocage
+    /// à mi-course). Retourne `0` si la clé est actuellement bloquée. Calcul
+    /// `max_attempts - recent_count` (borné ≥ 0 via `saturating_sub`).
+    pub fn remaining_slots(&self, key: K) -> u32 {
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let now = Instant::now();
+        self.purge_expired(&mut map, now);
+        let record = match map.get(&key) {
+            Some(r) => r,
+            None => return self.max_attempts,
+        };
+        if let Some(blocked_until) = record.blocked_until
+            && now < blocked_until
+        {
+            return 0;
+        }
+        let window_start = now.checked_sub(self.window);
+        let recent_count = record
+            .attempts
+            .iter()
+            .filter(|t| window_start.is_none_or(|ws| **t >= ws))
+            .count() as u32;
+        self.max_attempts.saturating_sub(recent_count)
+    }
+
     /// Réinitialise le compteur pour une IP après un login réussi.
     pub fn reset(&self, key: K) {
         let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -362,6 +388,23 @@ mod tests {
         // Une IP distincte n'est pas affectée.
         let other: IpAddr = "10.0.2.2".parse().unwrap();
         assert!(rl.check_and_record(other).is_ok());
+    }
+
+    #[test]
+    fn remaining_slots_decrements_and_zeroes_when_blocked() {
+        use std::time::Duration;
+        // Story 21-5b — pré-check de capacité pour le lot.
+        let rl =
+            RateLimiter::with_thresholds(3, Duration::from_secs(900), Duration::from_secs(1800));
+        let ip: IpAddr = "10.0.5.1".parse().unwrap();
+        assert_eq!(rl.remaining_slots(ip), 3, "clé inconnue → max_attempts");
+        assert!(rl.check_and_record(ip).is_ok());
+        assert_eq!(rl.remaining_slots(ip), 2, "1 consommé");
+        assert!(rl.check_and_record(ip).is_ok());
+        assert!(rl.check_and_record(ip).is_ok());
+        assert_eq!(rl.remaining_slots(ip), 0, "seuil atteint → 0");
+        assert!(rl.check_and_record(ip).is_err(), "bloqué");
+        assert_eq!(rl.remaining_slots(ip), 0, "bloqué → 0 slot");
     }
 
     #[test]
