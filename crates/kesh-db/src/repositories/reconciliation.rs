@@ -45,7 +45,7 @@ use crate::errors::{DbError, map_db_error};
 /// Colonnes Invoice pour SELECT (cohérent FIND_INVOICE_SCOPED_SQL).
 const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, status, date, \
      due_date, payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-     project_id, version, created_at, updated_at";
+     project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at";
 
 /// Facture candidate à la réconciliation, accompagnée de son **TTC** (#246,
 /// Story 21-2b) — le montant réellement comparé à l'encaissement bancaire
