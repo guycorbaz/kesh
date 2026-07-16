@@ -424,6 +424,19 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/reminders/manual",
             post(routes::dunning_reminders::record_manual_reminder),
         )
+        // Story 21-5b — envoi de rappels par e-mail (Comptable+) : preview, unitaire, lot.
+        .route(
+            "/api/v1/invoices/{id}/reminder-preview",
+            get(routes::invoice_email::preview_reminder_email),
+        )
+        .route(
+            "/api/v1/invoices/{id}/reminders/send",
+            post(routes::invoice_email::send_reminder),
+        )
+        .route(
+            "/api/v1/dunning/reminders/send-batch",
+            post(routes::invoice_email::send_reminder_batch),
+        )
         // Story 20-3b1 — envoi de facture par e-mail (preview + send,
         // destinataire verrouillé contacts.email, rate-limité, gate SMTP 412).
         .route(

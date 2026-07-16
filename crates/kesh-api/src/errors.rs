@@ -293,6 +293,20 @@ pub enum AppError {
     /// Story 21-5a — reprise d'une facture non suspendue. 422.
     #[error("Facture non suspendue")]
     InvoiceNotPaused,
+    /// Story 21-5b — rappel sur une facture aux rappels suspendus. 422.
+    #[error("Rappels suspendus pour cette facture")]
+    DunningPaused,
+    /// Story 21-5b — envoi d'un niveau de rappel > prochain attendu (saut interdit,
+    /// ou niveau déjà couvert par un envoi concurrent). 409.
+    #[error("Niveau de rappel déjà couvert")]
+    LevelAlreadySent,
+    /// Story 21-5b — l'e-mail de rappel est PARTI mais la facture a disparu avant
+    /// l'enregistrement (#219). 409 — le fait est tracé best-effort (audit).
+    #[error("Rappel envoyé mais facture disparue")]
+    ReminderSentButInvoiceGone,
+    /// Story 21-5b — envoi par lot dépassant le cap dur (20). 422.
+    #[error("Lot de rappels trop volumineux")]
+    BatchTooLarge,
 
     /// Story 20-3b1 (code review Pass 1 ECH-1) — le contact de la facture est
     /// archivé (`active = false`) : le carnet d'adresses le considère « à ne
@@ -1035,6 +1049,38 @@ impl IntoResponse for AppError {
                 &t(
                     "error-invoice-not-paused",
                     "Cette facture n'est pas suspendue.",
+                ),
+            ),
+            AppError::DunningPaused => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "DUNNING_PAUSED",
+                &t(
+                    "error-dunning-paused",
+                    "Les rappels sont suspendus pour cette facture.",
+                ),
+            ),
+            AppError::LevelAlreadySent => build_response(
+                StatusCode::CONFLICT,
+                "LEVEL_ALREADY_SENT",
+                &t(
+                    "error-level-already-sent",
+                    "Ce niveau de rappel a déjà été traité (envoi concurrent ou saut de niveau interdit).",
+                ),
+            ),
+            AppError::ReminderSentButInvoiceGone => build_response(
+                StatusCode::CONFLICT,
+                "REMINDER_SENT_BUT_INVOICE_GONE",
+                &t(
+                    "error-reminder-sent-but-invoice-gone",
+                    "Le rappel a été envoyé mais la facture a disparu avant l'enregistrement.",
+                ),
+            ),
+            AppError::BatchTooLarge => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "BATCH_TOO_LARGE",
+                &t(
+                    "error-batch-too-large",
+                    "Trop de factures dans le lot (maximum 20).",
                 ),
             ),
             AppError::InvoiceEmailEmptyContent => build_response(

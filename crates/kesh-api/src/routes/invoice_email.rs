@@ -25,7 +25,9 @@ use kesh_db::entities::contact::{Contact, ContactType, Salutation};
 use kesh_db::entities::email_template::EmailTemplateType;
 use kesh_db::entities::{Company, Language};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{contacts, email_templates, invoices};
+use kesh_db::repositories::{
+    contacts, dunning_levels, email_templates, invoice_reminders, invoices,
+};
 use kesh_i18n::{format_date, format_money};
 
 use crate::AppState;
@@ -264,6 +266,377 @@ pub async fn preview_invoice_email(
     }))
 }
 
+/// Paramètre de niveau requis pour la preview/envoi de rappel (Story 21-5b).
+/// `#[serde(default)]` volontairement ABSENT (M1) : absence → 400.
+#[derive(Debug, serde::Deserialize)]
+pub struct ReminderLevelQuery {
+    pub level: i16,
+}
+
+/// Réponse de preview d'un rappel (Story 21-5b) — calquée `EmailPreviewResponse` + `level`.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderPreviewResponse {
+    pub to: Option<String>,
+    pub language: Language,
+    pub level: i16,
+    pub subject: String,
+    pub body: String,
+}
+
+/// Corps de l'envoi unitaire d'un rappel (Story 21-5b). **PAS de champ `to`**
+/// (destinataire verrouillé = `contacts.email`). subject/body édités depuis la preview.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendReminderRequest {
+    pub level_number: i16,
+    pub subject: String,
+    pub body: String,
+}
+
+/// Prochain niveau de rappel à envoyer = plus petit `level_number > current_level`
+/// dans la config, `None` si le dernier niveau est atteint (état terminal).
+fn next_reminder_level(
+    levels: &[kesh_db::entities::DunningLevel],
+    current_level: i16,
+) -> Option<i16> {
+    levels
+        .iter()
+        .map(|l| l.level_number)
+        .filter(|ln| *ln > current_level)
+        .min()
+}
+
+/// Calcule `{totalDue}`, `{reminderFee}`, `{daysOverdue}` puis rend subject+body d'un
+/// rappel de niveau `level` pour la facture (helper partagé preview/preview-lot).
+/// `total_due` = TTC + Σ frais non-annulés dédupliqués (hors niveau courant) + frais du niveau.
+#[allow(clippy::too_many_arguments)]
+async fn render_reminder(
+    state: &AppState,
+    company: &Company,
+    invoice: &kesh_db::entities::Invoice,
+    lines: &[kesh_db::entities::InvoiceLine],
+    contact: &Contact,
+    language: Language,
+    level_number: i16,
+    level_fee: &rust_decimal::Decimal,
+) -> Result<(String, String), AppError> {
+    let ttc = kesh_core::accounting::vat::invoice_total_ttc(
+        lines.iter().map(|l| (l.line_total, l.vat_rate)),
+    );
+    let other_fees = invoice_reminders::sum_fees_deduped_excluding(
+        &state.pool,
+        company.id,
+        invoice.id,
+        level_number,
+    )
+    .await?;
+    let total_due = ttc + other_fees + *level_fee;
+    let today = chrono::Utc::now().naive_utc().date();
+    let days = days_overdue(invoice.due_date, today);
+
+    let template = email_templates::get_effective(
+        &state.pool,
+        company.id,
+        EmailTemplateType::InvoiceReminder,
+        language,
+        level_number,
+    )
+    .await?;
+    let vars = build_reminder_vars(
+        invoice,
+        lines,
+        contact,
+        company,
+        language,
+        level_number,
+        level_fee,
+        &total_due,
+        days,
+    );
+    let subject = kesh_core::email_template_engine::render(&template.subject, &vars);
+    let body = kesh_core::email_template_engine::render(&template.body, &vars);
+    Ok((subject, body))
+}
+
+/// `GET /api/v1/invoices/{id}/reminder-preview?level=N` — Comptable+ (Story 21-5b).
+pub async fn preview_reminder_email(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    axum::extract::Query(q): axum::extract::Query<ReminderLevelQuery>,
+) -> Result<Json<ReminderPreviewResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    if q.level < 1 {
+        return Err(AppError::Validation(
+            "niveau de rappel invalide".to_string(),
+        ));
+    }
+    let level = dunning_levels::find_by_level_number(&state.pool, company.id, q.level)
+        .await?
+        .ok_or(AppError::DunningLevelNotFound)?;
+
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
+    let language = resolve_language(&contact, &company);
+
+    let (subject, body) = render_reminder(
+        &state,
+        &company,
+        &invoice,
+        &lines,
+        &contact,
+        language,
+        q.level,
+        &level.fee_amount,
+    )
+    .await?;
+
+    Ok(Json(ReminderPreviewResponse {
+        to: locked_recipient(&contact),
+        language,
+        level: q.level,
+        subject,
+        body,
+    }))
+}
+
+/// `POST /api/v1/invoices/{id}/reminders/send` — Comptable+ (Story 21-5b).
+///
+/// **Ordre corrigé C1** : toutes les vérifications qui peuvent rejeter la requête
+/// (rate-limit, SMTP, éligibilité + niveau sous verrou bref) sont AVANT le SMTP ;
+/// après le SMTP l'e-mail est parti → enregistrement best-effort (jamais de rejet
+/// métier post-envoi ; échec d'enregistrement → trace best-effort + 409).
+pub async fn send_reminder(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<SendReminderRequest>,
+) -> Result<
+    (
+        StatusCode,
+        Json<crate::routes::dunning_reminders::ReminderResponse>,
+    ),
+    AppError,
+> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    // Rate-limit (consomme un slot).
+    if let Err(reject) = state
+        .rate_limiter_send_email
+        .check_and_record((company.id, current_user.user_id))
+    {
+        return Err(AppError::RateLimited {
+            retry_after: reject.retry_after_secs,
+        });
+    }
+    if !state.smtp_ready {
+        return Err(AppError::SmtpNotConfigured);
+    }
+    if req.level_number < 1 {
+        return Err(AppError::Validation(
+            "niveau de rappel invalide".to_string(),
+        ));
+    }
+
+    // Frais du niveau visé (lecture hors verrou).
+    let level = dunning_levels::find_by_level_number(&state.pool, company.id, req.level_number)
+        .await?
+        .ok_or(AppError::DunningLevelNotFound)?;
+    let levels = dunning_levels::list_all_by_company(&state.pool, company.id).await?;
+
+    // (a) VERROU BREF pré-SMTP : re-check éligibilité + niveau, puis relâche.
+    {
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+        let invoice = invoices::find_scoped_for_update_in_tx(&mut tx, company.id, id)
+            .await?
+            .ok_or(AppError::Database(DbError::NotFound))?;
+        if invoice.status != "validated" {
+            return Err(AppError::InvoiceNotValidated);
+        }
+        if invoice.paid_at.is_some() {
+            return Err(AppError::InvoiceAlreadyPaid);
+        }
+        if invoice.dunning_paused_at.is_some() {
+            return Err(AppError::DunningPaused);
+        }
+        let current = invoice_reminders::current_level_in_tx(&mut tx, company.id, id).await?;
+        let next = next_reminder_level(&levels, current).unwrap_or(current + 1);
+        // Unitaire : niveau ≤ prochain (ré-émission autorisée D18). Saut > prochain interdit.
+        if req.level_number > next {
+            return Err(AppError::LevelAlreadySent);
+        }
+        tx.commit()
+            .await
+            .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+    }
+
+    // Contact + destinataire verrouillé + contenu + PDF (hors verrou).
+    let (invoice, _lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
+    let to = locked_recipient(&contact).ok_or(AppError::ContactEmailMissing)?;
+    let subject = req.subject.trim().to_string();
+    let body = req.body.trim().to_string();
+    if subject.is_empty() || body.is_empty() {
+        return Err(AppError::InvoiceEmailEmptyContent);
+    }
+    let language = resolve_language(&contact, &company);
+    let locale = kesh_i18n::Locale::from(language.as_str());
+    let rendered =
+        invoice_pdf_service::render(&state.pool, &state.i18n, locale, &company, id).await?;
+
+    let email = OutgoingEmail {
+        to: to.clone(),
+        subject: subject.clone(),
+        body: body.clone(),
+        from_display_name: Some(company.name.clone()),
+        reply_to: company.email.clone(),
+        attachment: Some(EmailAttachment {
+            filename: format!("facture-{}.pdf", rendered.filename_base),
+            content_type: "application/pdf".to_string(),
+            bytes: rendered.bytes,
+        }),
+    };
+
+    // (b) SMTP — échec → 500, rien enregistré (e-mail pas parti).
+    state.mailer.send_email(&email).await?;
+
+    // (c) Enregistrement BEST-EFFORT post-SMTP (l'e-mail est parti).
+    match record_reminder_email(
+        &state,
+        &current_user,
+        company.id,
+        id,
+        req.level_number,
+        &level.fee_amount,
+        &to,
+        &subject,
+        &body,
+    )
+    .await
+    {
+        Ok(created) => {
+            tracing::info!(
+                invoice_id = id,
+                level_number = req.level_number,
+                channel = "email",
+                "rappel envoyé par e-mail"
+            );
+            Ok((StatusCode::CREATED, Json(created)))
+        }
+        Err(e) => {
+            // L'e-mail EST parti : ne jamais le présenter comme un échec d'envoi.
+            tracing::error!(invoice_id = id, error = %e, "rappel e-mail parti mais enregistrement échoué");
+            let _ = best_effort_reminder_audit(&state, &current_user, id, req.level_number).await;
+            Err(AppError::ReminderSentButInvoiceGone)
+        }
+    }
+}
+
+/// Enregistre un rappel `channel='email'` + audit `invoice.reminder_sent` dans une tx.
+#[allow(clippy::too_many_arguments)]
+async fn record_reminder_email(
+    state: &AppState,
+    current_user: &CurrentUser,
+    company_id: i64,
+    invoice_id: i64,
+    level_number: i16,
+    fee_amount: &rust_decimal::Decimal,
+    to: &str,
+    subject: &str,
+    body: &str,
+) -> Result<crate::routes::dunning_reminders::ReminderResponse, AppError> {
+    use crate::audit::AuditActor;
+    use kesh_db::entities::audit_log::NewAuditLogEntry;
+    use kesh_db::entities::{NewInvoiceReminder, ReminderChannel};
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("tx: {e}")))?;
+    let created = invoice_reminders::insert_in_tx(
+        &mut tx,
+        &NewInvoiceReminder {
+            company_id,
+            invoice_id,
+            level_number,
+            fee_amount: *fee_amount,
+            sent_at: chrono::Utc::now().naive_utc(),
+            channel: ReminderChannel::Email,
+            sent_to: Some(to.to_string()),
+            subject: subject.to_string(),
+            body: body.to_string(),
+            note: None,
+            actor_user_id: Some(current_user.user_id),
+        },
+    )
+    .await?;
+    kesh_db::repositories::audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            current_user,
+            "invoice.reminder_sent",
+            "invoice",
+            invoice_id,
+            Some(serde_json::json!({
+                "reminderId": created.id,
+                "levelNumber": created.level_number,
+                "channel": "email",
+            })),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("tx: {e}")))?;
+    Ok(created.into())
+}
+
+/// Trace best-effort qu'un e-mail de rappel est parti (utilisé quand l'enregistrement
+/// principal échoue — la facture a disparu #219 ou hoquet DB). Calqué `EmailSentInvoiceGone`.
+async fn best_effort_reminder_audit(
+    state: &AppState,
+    current_user: &CurrentUser,
+    invoice_id: i64,
+    level_number: i16,
+) -> Result<(), AppError> {
+    use crate::audit::AuditActor;
+    use kesh_db::entities::audit_log::NewAuditLogEntry;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("tx: {e}")))?;
+    kesh_db::repositories::audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            current_user,
+            "invoice.reminder_sent",
+            "invoice",
+            invoice_id,
+            Some(serde_json::json!({
+                "levelNumber": level_number,
+                "channel": "email",
+                "recordFailed": true,
+            })),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("tx: {e}")))?;
+    Ok(())
+}
+
 /// `POST /api/v1/invoices/{id}/send-email` — Comptable+.
 ///
 /// Séquence de gardes (AC #15 Story 20-3b1, dans cet ordre) :
@@ -414,6 +787,233 @@ pub async fn send_invoice_email(
         StatusCode::OK,
         Json(InvoiceResponse::from_parts(updated, lines)),
     ))
+}
+
+// ===========================================================================
+// Envoi par lot (Story 21-5b) — pattern batch { accepted, failed }
+// ===========================================================================
+
+/// Cap dur du nombre de factures par lot (item 19 — borne la durée HTTP).
+const REMINDER_BATCH_MAX: usize = 20;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendReminderBatchRequest {
+    pub invoice_ids: Vec<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptedReminder {
+    pub invoice_id: i64,
+    pub reminder_id: i64,
+    pub level_number: i16,
+}
+
+/// Échec per-facture (pattern `FailedProposal` — id business = `invoice_id`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedReminder {
+    pub invoice_id: i64,
+    pub error_code: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendReminderBatchResponse {
+    pub accepted: Vec<AcceptedReminder>,
+    pub failed: Vec<FailedReminder>,
+}
+
+/// `POST /api/v1/dunning/reminders/send-batch` — Comptable+ (Story 21-5b).
+/// Envoie le **prochain niveau** à une liste de factures. Succès partiel = HTTP 200.
+pub async fn send_reminder_batch(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<SendReminderBatchRequest>,
+) -> Result<(StatusCode, Json<SendReminderBatchResponse>), AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    // Dédup des ids en préservant l'ordre.
+    let mut seen = std::collections::HashSet::new();
+    let ids: Vec<i64> = req
+        .invoice_ids
+        .iter()
+        .copied()
+        .filter(|id| seen.insert(*id))
+        .collect();
+
+    // Cap dur (après dédup) — 422 global AVANT tout SMTP.
+    if ids.len() > REMINDER_BATCH_MAX {
+        return Err(AppError::BatchTooLarge);
+    }
+    if !state.smtp_ready {
+        return Err(AppError::SmtpNotConfigured);
+    }
+    // Pré-check de capacité rate-limit — 429 global AVANT le 1er SMTP (pas de blocage mi-course).
+    let key = (company.id, current_user.user_id);
+    if (ids.len() as u32) > state.rate_limiter_send_email.remaining_slots(key) {
+        return Err(AppError::RateLimited { retry_after: 1 });
+    }
+
+    let levels = dunning_levels::list_all_by_company(&state.pool, company.id).await?;
+
+    let mut accepted = Vec::new();
+    let mut failed = Vec::new();
+    for invoice_id in ids {
+        match send_one_batch_reminder(&state, &current_user, &company, invoice_id, &levels).await {
+            Ok(acc) => accepted.push(acc),
+            Err(error_code) => failed.push(FailedReminder {
+                invoice_id,
+                error_code,
+            }),
+        }
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(SendReminderBatchResponse { accepted, failed }),
+    ))
+}
+
+/// Envoie le prochain niveau à UNE facture d'un lot. `Err(error_code)` = `FailedProposal`
+/// (jamais d'`AppError` global). Gardes pré-SMTP sous verrou → SMTP → enregistrement.
+async fn send_one_batch_reminder(
+    state: &AppState,
+    current_user: &CurrentUser,
+    company: &Company,
+    invoice_id: i64,
+    levels: &[kesh_db::entities::DunningLevel],
+) -> Result<AcceptedReminder, String> {
+    // (a) Gardes pré-SMTP sous verrou bref.
+    let next_level = {
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(|_| "DATABASE_ERROR".to_string())?;
+        let invoice = match invoices::find_scoped_for_update_in_tx(&mut tx, company.id, invoice_id)
+            .await
+            .map_err(|_| "DATABASE_ERROR".to_string())?
+        {
+            Some(inv) => inv,
+            None => return Err("INVOICE_NOT_FOUND".to_string()), // absente ou cross-tenant
+        };
+        if invoice.status != "validated" {
+            return Err("INVOICE_NOT_VALIDATED".to_string());
+        }
+        if invoice.paid_at.is_some() {
+            return Err("INVOICE_ALREADY_PAID".to_string());
+        }
+        if invoice.dunning_paused_at.is_some() {
+            return Err("DUNNING_PAUSED".to_string());
+        }
+        let current = invoice_reminders::current_level_in_tx(&mut tx, company.id, invoice_id)
+            .await
+            .map_err(|_| "DATABASE_ERROR".to_string())?;
+        let next = match next_reminder_level(levels, current) {
+            Some(n) => n,
+            None => return Err("NO_NEXT_LEVEL".to_string()), // dernier niveau / dunning désactivé
+        };
+        tx.commit()
+            .await
+            .map_err(|_| "DATABASE_ERROR".to_string())?;
+        next
+    };
+
+    let level_fee = levels
+        .iter()
+        .find(|l| l.level_number == next_level)
+        .map(|l| l.fee_amount)
+        .ok_or_else(|| "NO_NEXT_LEVEL".to_string())?;
+
+    // Contact + destinataire + rendu serveur + PDF.
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, invoice_id)
+        .await
+        .map_err(|_| "DATABASE_ERROR".to_string())?
+        .ok_or_else(|| "INVOICE_NOT_FOUND".to_string())?;
+    let contact = load_active_contact(&state.pool, invoice.contact_id, company.id)
+        .await
+        .map_err(|_| "CONTACT_EMAIL_MISSING".to_string())?;
+    let to = locked_recipient(&contact).ok_or_else(|| "CONTACT_EMAIL_MISSING".to_string())?;
+    let language = resolve_language(&contact, company);
+
+    let (subject, body) = render_reminder(
+        state, company, &invoice, &lines, &contact, language, next_level, &level_fee,
+    )
+    .await
+    .map_err(|_| "DATABASE_ERROR".to_string())?;
+    if subject.trim().is_empty() || body.trim().is_empty() {
+        return Err("REMINDER_CONTENT_EMPTY".to_string());
+    }
+
+    let locale = kesh_i18n::Locale::from(language.as_str());
+    let rendered =
+        invoice_pdf_service::render(&state.pool, &state.i18n, locale, company, invoice_id)
+            .await
+            .map_err(|_| "INVOICE_NOT_PDF_READY".to_string())?;
+
+    // Rate-limit : consomme 1 slot par e-mail (le pré-check a garanti la capacité, mais un
+    // envoi concurrent peut avoir consommé entre-temps → RATE_LIMITED per-facture).
+    if state
+        .rate_limiter_send_email
+        .check_and_record((company.id, current_user.user_id))
+        .is_err()
+    {
+        return Err("RATE_LIMITED".to_string());
+    }
+
+    let email = OutgoingEmail {
+        to: to.clone(),
+        subject: subject.clone(),
+        body: body.clone(),
+        from_display_name: Some(company.name.clone()),
+        reply_to: company.email.clone(),
+        attachment: Some(EmailAttachment {
+            filename: format!("facture-{}.pdf", rendered.filename_base),
+            content_type: "application/pdf".to_string(),
+            bytes: rendered.bytes,
+        }),
+    };
+
+    // (b) SMTP.
+    if state.mailer.send_email(&email).await.is_err() {
+        return Err("SMTP_SEND_FAILED".to_string());
+    }
+
+    // (c) Enregistrement best-effort post-SMTP.
+    match record_reminder_email(
+        state,
+        current_user,
+        company.id,
+        invoice_id,
+        next_level,
+        &level_fee,
+        &to,
+        &subject,
+        &body,
+    )
+    .await
+    {
+        Ok(created) => {
+            tracing::info!(
+                invoice_id,
+                level_number = next_level,
+                channel = "email",
+                "rappel (lot) envoyé"
+            );
+            Ok(AcceptedReminder {
+                invoice_id,
+                reminder_id: created.id,
+                level_number: next_level,
+            })
+        }
+        Err(e) => {
+            tracing::error!(invoice_id, error = %e, "rappel lot parti mais enregistrement échoué");
+            let _ = best_effort_reminder_audit(state, current_user, invoice_id, next_level).await;
+            Err("RECORD_FAILED_EMAIL_SENT".to_string())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -695,7 +1295,9 @@ mod tests {
         // 10 variables = les 6 base + 4 rappel (allowed_variables InvoiceReminder).
         let mut keys: Vec<&str> = vars.keys().map(String::as_str).collect();
         keys.sort_unstable();
-        let mut expected = EmailTemplateType::InvoiceReminder.allowed_variables().to_vec();
+        let mut expected = EmailTemplateType::InvoiceReminder
+            .allowed_variables()
+            .to_vec();
         expected.sort_unstable();
         assert_eq!(keys, expected);
         assert_eq!(vars["reminderLevel"], "2");
@@ -708,7 +1310,10 @@ mod tests {
     #[test]
     fn days_overdue_clampe_et_gere_none() {
         let today = NaiveDate::from_ymd_opt(2026, 7, 16).unwrap();
-        assert_eq!(days_overdue(NaiveDate::from_ymd_opt(2026, 6, 16), today), 30);
+        assert_eq!(
+            days_overdue(NaiveDate::from_ymd_opt(2026, 6, 16), today),
+            30
+        );
         assert_eq!(
             days_overdue(NaiveDate::from_ymd_opt(2026, 8, 1), today),
             0,

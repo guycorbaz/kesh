@@ -86,17 +86,16 @@ Cette story **21-5b** assemble ces briques pour **envoyer les rappels** :
   - [x] Tests : unit `build_reminder_vars` (10 vars, formatage suisse) + `days_overdue` (clamp/None) 2/2 ; repo `sum_fees_deduped_excluding` (dédup MAX par niveau + exclut annulés/niveau) 4/4.
 - [x] **T2 — Rate-limiter `remaining_slots`** (AC 11,17)
   - [x] `RateLimiter::remaining_slots(key) -> u32` (purge + `max_attempts.saturating_sub(recent_count)`, 0 si bloqué) + test (décrément + 0 bloqué) 1/1.
-- [ ] **T3 — Preview rappel** (AC 4)
-  - [ ] `GET .../reminder-preview?level=N` + DTO `ReminderPreviewResponse` + validation niveau.
-- [ ] **T4 — Envoi unitaire** (AC 5,6,7,8,9)
-  - [ ] `POST .../reminders/send` : 8 gardes + éligibilité + choix niveau ≤ prochain + FOR UPDATE re-check (LEVEL_ALREADY_SENT) + SMTP-puis-enregistrer (insert_in_tx channel=Email + audit) + log INFO.
-  - [ ] Log INFO ajouté aussi à l'envoi facture Epic 20 (item 21).
-  - [ ] Tests E2E unitaire (AC 15).
-- [ ] **T5 — Envoi lot** (AC 10,11,12,13)
-  - [ ] `POST /api/v1/dunning/reminders/send-batch` : cap 20 (422) + pré-check capacité (429) + per-facture tx post-SMTP + FailedProposal + niveau prochain + audit + log.
-  - [ ] Tests E2E lot (AC 16).
-- [ ] **T6 — Montage RBAC + doc + gate** (AC 18,19)
-  - [ ] 3 routes dans `comptable_routes` (avant le `route_layer` — anti-footgun). CHANGELOG. Gate complet vert.
+- [x] **T3 — Preview rappel** (AC 4)
+  - [x] `GET .../reminder-preview?level=N` (`ReminderLevelQuery` sans serde default → 400 si absent) + `ReminderPreviewResponse` + `render_reminder` helper (get_effective + build_reminder_vars + render).
+- [x] **T4 — Envoi unitaire** (AC 5,6,7,8,9) — `send_reminder` (invoice_email.rs)
+  - [x] Gardes globales (rate-limit/SMTP) → verrou bref pré-SMTP (find_scoped_for_update_in_tx + status/paid/paused + niveau ≤ prochain → LEVEL_ALREADY_SENT) → relâche → contact/contenu/PDF → SMTP → enregistrement best-effort (`record_reminder_email` channel=Email + audit ; échec → `best_effort_reminder_audit` + `ReminderSentButInvoiceGone` 409). Log INFO.
+  - [x] Tests E2E (AC 15) : preview niveau 2 (frais), unitaire happy (e-mail capturé PDF + reminder + audit), suspendue → 422 sans e-mail.
+- [x] **T5 — Envoi lot** (AC 10,11,12,13) — `send_reminder_batch`
+  - [x] Dédup ids + cap 20 (422 `BATCH_TOO_LARGE`) + pré-check `remaining_slots` (429) + SMTP 412 ; per-facture `send_one_batch_reminder` (gardes pré-SMTP verrou → niveau prochain (NO_NEXT_LEVEL) → contact/render/PDF → check_and_record (RATE_LIMITED) → SMTP → record best-effort). `{ accepted, failed }` HTTP 200.
+  - [x] Tests E2E (AC 16) : succès partiel (1 accepted + 1 payée failed INVOICE_ALREADY_PAID, 1 seul e-mail) + cap 21 → 422.
+- [x] **T6 — Montage RBAC + doc + gate** (AC 18,19)
+  - [x] 3 routes dans `comptable_routes` (avant le `route_layer`). 4 variantes AppError (DunningPaused 422 / LevelAlreadySent 409 / ReminderSentButInvoiceGone 409 / BatchTooLarge 422). CHANGELOG. Gate complet (ci-dessous).
 
 ## Dev Notes
 

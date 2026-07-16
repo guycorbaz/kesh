@@ -29,7 +29,7 @@ use kesh_db::entities::bank_account::NewBankAccount;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::user::{NewUser, Role};
-use kesh_db::repositories::{bank_accounts, contacts, invoices, users};
+use kesh_db::repositories::{bank_accounts, company_dunning_settings, contacts, invoices, users};
 use kesh_db::test_fixtures::seed_accounting_company;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -1162,5 +1162,225 @@ async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
             .as_str()
             .unwrap()
             .contains("capture d'e-mails indisponible")
+    );
+}
+
+// --- Story 21-5b : envoi de rappels par e-mail -------------------------------
+
+/// Seed la config dunning (3 niveaux 0/20/40, grâce 5) via le seed lazy repo.
+async fn seed_dunning(pool: &MySqlPool, company_id: i64) {
+    let mut tx = pool.begin().await.unwrap();
+    company_dunning_settings::ensure_seeded_in_tx(&mut tx, company_id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+}
+
+async fn reminder_count(pool: &MySqlPool, invoice_id: i64) -> i64 {
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM invoice_reminders WHERE invoice_id = ?")
+            .bind(invoice_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    n
+}
+
+/// Preview d'un rappel niveau 2 : rendu serveur, destinataire verrouillé, frais mentionnés.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reminder_preview_renders_level(pool: MySqlPool) {
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), MockMailer::new(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/invoices/{invoice_id}/reminder-preview?level=2"
+        )))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["level"], 2);
+    assert_eq!(body["to"], "pia@example.ch");
+    assert!(!body["subject"].as_str().unwrap().is_empty());
+    // Le corps du niveau 2 mentionne les frais de rappel (20.00).
+    assert!(
+        body["body"].as_str().unwrap().contains("20.00"),
+        "corps niveau 2 mentionne reminderFee : {}",
+        body["body"]
+    );
+
+    // level absent → 400 ; level inexistant → 422.
+    let no_level = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{invoice_id}/reminder-preview")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(no_level.status(), 400, "level requis");
+    let bad_level = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/invoices/{invoice_id}/reminder-preview?level=99"
+        )))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad_level.status(), 422);
+}
+
+/// Envoi unitaire happy path : e-mail capturé (PDF joint, destinataire verrouillé),
+/// ligne invoice_reminders channel='email', audit invoice.reminder_sent.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_happy_path(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel de paiement", "body": "Corps du rappel." }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["levelNumber"], 1);
+    assert_eq!(body["channel"], "email");
+
+    // E-mail capturé : destinataire verrouillé + PDF joint.
+    let sent = mock.sent_emails();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].to, "pia@example.ch");
+    assert!(
+        sent[0]
+            .attachment_filename
+            .as_deref()
+            .unwrap()
+            .ends_with(".pdf")
+    );
+
+    // Ligne invoice_reminders + audit.
+    assert_eq!(reminder_count(&pool, invoice_id).await, 1);
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'invoice.reminder_sent' AND entity_id = ?",
+    )
+    .bind(invoice_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 1);
+}
+
+/// Gardes unitaire : facture suspendue → 422 DUNNING_PAUSED, AUCUN e-mail parti (C1).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_paused_rejected_before_smtp(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    sqlx::query("UPDATE invoices SET dunning_paused_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "x", "body": "y" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422);
+    assert_eq!(
+        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "DUNNING_PAUSED"
+    );
+    assert_eq!(
+        mock.sent_emails().len(),
+        0,
+        "aucun e-mail parti (garde avant SMTP)"
+    );
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+/// Envoi par lot : succès partiel { accepted, failed } + cap dur.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn send_reminder_batch_partial_success(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(
+        &pool,
+        company_id,
+        admin_id,
+        Some("pia@example.ch"),
+        None,
+        Salutation::Madame,
+        Some("Rutschmann"),
+    )
+    .await;
+    seed_primary_bank(&pool, company_id).await;
+    seed_dunning(&pool, company_id).await;
+    let ok_invoice = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    let paid_invoice = seed_validated_invoice(&pool, company_id, contact_id, admin_id).await;
+    sqlx::query("UPDATE invoices SET paid_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(paid_invoice)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [ok_invoice, paid_invoice] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1);
+    assert_eq!(body["accepted"][0]["invoiceId"], ok_invoice);
+    assert_eq!(body["accepted"][0]["levelNumber"], 1);
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0]["invoiceId"], paid_invoice);
+    assert_eq!(failed[0]["errorCode"], "INVOICE_ALREADY_PAID");
+    assert_eq!(
+        mock.sent_emails().len(),
+        1,
+        "un seul e-mail effectivement parti"
+    );
+
+    // Cap dur : 21 ids → 422.
+    let too_many: Vec<i64> = (1..=21).collect();
+    let cap = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": too_many }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cap.status(), 422);
+    assert_eq!(
+        cap.json::<serde_json::Value>().await.unwrap()["error"]["code"],
+        "BATCH_TOO_LARGE"
     );
 }
