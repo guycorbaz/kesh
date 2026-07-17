@@ -78,12 +78,22 @@
 		const seq = ++loadSeq;
 		loading = true;
 		try {
-			// La liste des candidats + le nombre de niveaux configurés (pour le
-			// saut du rappel manuel) sont chargés ensemble.
-			const [res, levels] = await Promise.all([listReminders(), listDunningLevels()]);
+			// La LISTE des candidats est le fetch primaire (fonction cœur de la
+			// page). Le nombre de niveaux configurés n'est utile qu'au saut du
+			// rappel manuel (feature secondaire) : on le charge séparément, en
+			// dégradation gracieuse — un échec de la config ne doit PAS vider la
+			// page ni empêcher d'envoyer des rappels (le manuel retombe alors sur
+			// le prochain niveau).
+			const res = await listReminders();
 			if (seq !== loadSeq) return;
 			groups = res.groups;
-			maxConfiguredLevel = levels.reduce((mx, l) => Math.max(mx, l.levelNumber), 0);
+			try {
+				const levels = await listDunningLevels();
+				if (seq !== loadSeq) return;
+				maxConfiguredLevel = levels.reduce((mx, l) => Math.max(mx, l.levelNumber), 0);
+			} catch {
+				maxConfiguredLevel = 0; // le dialog manuel retombe sur nextLevel
+			}
 			const m = new Map<number, boolean>();
 			for (const g of res.groups) for (const inv of g.invoices) m.set(inv.invoiceId, g.hasEmail);
 			emailByInvoice = m;

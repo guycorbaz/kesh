@@ -270,6 +270,18 @@ Diff unique aplati. **Trend brut : BH 1C/1H/1M/1L | ECH 0/0/1M/4L | AA 0C/2H/2M/
 
 Chaque patch livré **avec son test** (leçon 21-5b). Gate post-patch : check 0 erreur, lint-i18n PASS, vitest reminders 8/8, **E2E 8/8** (+2 : cap-20, saut manuel).
 
+### Pass 2 (Opus, 2026-07-17) — NON CONVERGÉ : 1 MEDIUM (régression P1) + 2 LOW → patchés
+
+Contexte frais, mission explicite « chercher les défauts introduits par la remédiation P1 » (mode d'échec 21-5b). **0 CRITICAL / 0 HIGH / 1 MEDIUM / 2 LOW.** La passe a trouvé exactement ce qu'elle cherchait — une régression de mes propres patches P1.
+
+- **P2-1 (MEDIUM) — régression d'availability introduite par le patch P1 du saut manuel.** Mon `Promise.all([listReminders(), listDunningLevels()])` **couplait** un fetch secondaire (la config, utile seulement au saut du dialog manuel) au fetch primaire : un échec de `listDunningLevels()` seul (blip réseau, 500 transitoire) faisait rejeter tout le `Promise.all` → **page vide + toast**, alors que `listReminders()` avait réussi et que la fonction cœur était disponible. **Patch** : fetch primaire `await listReminders()` d'abord (affiche la liste), puis config en `try/catch` séparé avec fallback `maxConfiguredLevel = 0` (le manuel retombe sur le prochain niveau). Dégradation gracieuse.
+- **P2-2 (LOW) — `defaultLevel > maxLevel` possible sur une facture terminale** si la config est raccourcie ou `maxConfiguredLevel=0` (conséquence de P2-1) → le `<select bind:value>` porterait une valeur sans `<option>`. **Patch** : `$effect` de clamp du niveau dans `ManualReminderDialog` (`1 <= level <= levelOptions.length`) — défense au niveau du dialog, couvre tout état de config incohérent.
+- **P2-3 (LOW) — test « saut manuel » couplé en dur au seed (3 niveaux).** **Patch** : `toBeGreaterThanOrEqual(3)` au lieu de `toHaveCount(3)` — détecte toujours la régression D18 (1 option < 3) sans casser si le seed ajoute des niveaux.
+
+**Remédiations P1 confirmées SAINES par Opus** (contre-vérification indépendante) : `confirmSend` toast/inline (les 2 codes post-SMTP unitaires sont exhaustifs et corrects ; `SMTP_SEND_FAILED` sur l'unitaire = e-mail PAS parti → branche inline correcte, aucun double-envoi) ; suppression du code mort propre (0 référence résiduelle) ; purge de sélection = exactement `selectable()` ; labels de lot alignés backend ; `$props.id()` ; test cap-20. **Le mode d'échec 21-5b s'est manifesté une fois (P2-1) et a été corrigé.**
+
+Gate post-patch : check 0 erreur, lint-i18n PASS, vitest reminders 8/8, **E2E 8/8**.
+
 ## Dev Agent Record
 
 ### Agent Model Used

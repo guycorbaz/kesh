@@ -62,6 +62,14 @@
 		Array.from({ length: Math.max(1, maxLevel) }, (_, i) => i + 1),
 	);
 
+	// Garde-fou : si `defaultLevel` dépasse `maxLevel` (config raccourcie, ou
+	// `maxConfiguredLevel` indisponible), le `<select bind:value>` porterait une
+	// valeur sans <option>. On clampe le niveau dans la plage offerte.
+	$effect(() => {
+		if (level > levelOptions.length) level = levelOptions.length;
+		if (level < 1) level = 1;
+	});
+
 	let clientError = $derived.by(() => {
 		if (!sentAt) return i18nMsg('reminders-manual-date-required', "Date d'envoi obligatoire");
 		// Le backend rejette une date d'envoi future (422 REMINDER_DATE_IN_FUTURE).

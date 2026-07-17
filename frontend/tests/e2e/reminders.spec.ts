@@ -238,8 +238,12 @@ test.describe('Page Rappels (Story 21-6b)', () => {
 		await page.goto('/invoices/reminders');
 		const group = page.locator('div.rounded', { hasText: name });
 		await group.getByTestId('reminder-row').first().getByTestId('reminder-manual-open').click();
-		// Config seedée par défaut = 3 niveaux → 3 options malgré nextLevel=1.
-		await expect(page.getByTestId('manual-reminder-level').locator('option')).toHaveCount(3);
+		// Config seedée par défaut = 3 niveaux. Le sélecteur doit offrir TOUS les
+		// niveaux configurés (≥ 3) malgré nextLevel=1 : avec la régression D18
+		// (borné à nextLevel), il n'y aurait qu'une seule option → échec. `≥`
+		// plutôt que `===` pour ne pas se coupler en dur au nombre exact du seed.
+		const optionCount = await page.getByTestId('manual-reminder-level').locator('option').count();
+		expect(optionCount).toBeGreaterThanOrEqual(3);
 	});
 
 	test('a11y : page peuplée sans violation axe dans le sous-arbre de la story', async ({ page }) => {
