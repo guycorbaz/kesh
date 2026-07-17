@@ -1,6 +1,6 @@
 # Story 21.6b: Page Rappels — liste, envoi unitaire, lot, rappel manuel (frontend)
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 5 agents Explore parallèles (contrats backend dunning / anti-double-submit / routing-nav-i18n / conventions test-E2E / + recoupement). Issue du split 21-6a/b/c (2026-07-16). Consomme les endpoints backend livrés par 21-5a (liste groupée, manuel) et 21-5b (preview, envoi unitaire, lot). Indépendante de 21-6a. Décisions Guy 2026-07-17 : page complète (lot+unitaire+manuel) / nouvelle feature `reminders/` (namespace i18n libre) / cases par ligne sans select-all (garde 20 UI) / contact sans e-mail visible+badgé+non-cochable. -->
 
@@ -292,6 +292,16 @@ Contexte frais, mission « vérifier les patches P2 ». **1 HIGH.** À nouveau l
 **Patches P2 confirmés SAINS par Sonnet** : P2-2 (`$effect` de clamp — pas de boucle ni de ping-pong : l'effect de reset ne lit pas `level`, le clamp converge en ≤ 2 itérations, no-op sur toute interaction utilisateur valide) ; P2-3 (`toBeGreaterThanOrEqual(3)` détecte toujours la régression D18 : 1 option < 3).
 
 Gate post-patch : check 0 erreur, build OK, **E2E 8/8**.
+
+### Pass 4 (Haiku, 2026-07-17) — CONVERGÉ (0 finding)
+
+Contexte frais, mission étroite « vérifier le patch P3 ». **0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW.** Vérification ligne à ligne des 4 critères : (1) aucune écriture d'état avant le garde `seq` unique ; (2) dégradation gracieuse préservée (`listDunningLevels` en `try/catch` interne sans rethrow ; `listReminders` en échec → `catch` externe) ; (3) `finally` `if (seq === loadSeq)` correct ; (4) `maxConfiguredLevel` écrit via le local `maxLevel`, fallback 0 en cas d'échec config. **0 erreur de catégorie.** Contre-vérification orchestrateur (`awk`+`grep`) : les 2 `await` précèdent le garde unique, les 4 écritures d'état le suivent — course éliminée par construction.
+
+### Trend & décision — code review
+
+**P1 (Sonnet/Haiku/Sonnet) : 2 HIGH + 3 findings → P2 (Opus) : 1 MEDIUM [régression P1] → P3 (Sonnet) : 1 HIGH [régression P2] → P4 (Haiku) : 0.** Critère d'arrêt atteint, budget 4/8. Rotation complète orthogonale à l'auteur (Opus).
+
+**Enseignement (candidat rétro Epic 21).** Ce cycle est le cas d'école du mode d'échec 21-5b : **l'implémentation d'origine était saine ; ce qui a churné, c'est la remédiation.** Deux fois de suite (P2-1 puis P3-1), un patch de review a introduit un défaut plus subtil que celui qu'il corrigeait — d'abord un couplage `Promise.all` (availability), puis une course de staleness dans le split qui devait le corriger. Aucune de ces régressions n'existait quand les reviewers précédents ont regardé ; seule une passe fraîche braquée sur *les patches* pouvait les voir. La convergence est venue quand le fix P3 est devenu **structurel** (rendre la course impossible par construction, pas la colmater) plutôt qu'incrémental. **Changer de modèle attrape les défauts ; la discipline de continuer tant qu'un finding > LOW subsiste empêche une régression de remédiation d'atteindre `main`.**
 
 ## Dev Agent Record
 
