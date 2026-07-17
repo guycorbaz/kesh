@@ -15,7 +15,7 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
 **Cette story ferme un défaut fonctionnel réel, pas un confort d'affichage.** La story 21-5a a livré la suspension (colonnes `invoices.dunning_paused_at` / `dunning_paused_note`, endpoints `PUT /dunning-pause` et `/dunning-resume`, exclusion SQL de la liste à rappeler) — mais **aucune surface de lecture n'expose l'état de suspension** :
 
 - `dunning_eligibility.rs:88` exclut la facture suspendue de la liste à rappeler (`AND i.dunning_paused_at IS NULL`) ;
-- aucun `GET` ne renvoie `dunning_paused_at` — vérifié par grep exhaustif sur `crates/kesh-api/src/` : les 8 occurrences sont soit le DTO de **réponse d'écriture** `DunningPauseResponse` (`dunning_reminders.rs:97-98`), soit des **gardes d'envoi** (`invoice_email.rs:466`, `:1022`), soit une fixture de test ;
+- aucun `GET` ne renvoie `dunning_paused_at` — vérifié par grep exhaustif sur `crates/kesh-api/src/` (11 occurrences, toutes classées) : le DTO de **réponse d'écriture** `DunningPauseResponse` (`dunning_reminders.rs:97-98`) et ses 4 sites de construction (`:215-216`, `:242-243`), des **gardes d'envoi** (`invoice_email.rs:466`, `:1022`), une fixture de test (`invoice_email.rs:1338-1339`), un commentaire (`dunning_reminders.rs:132`). **Aucune surface de lecture** ;
 - `ListInvoicesQuery` (`routes/invoices.rs:107-128`) n'a aucun filtre `paused` (9 champs : search / status / contactId / dateFrom / dateTo / sortBy / sortDirection / limit / offset).
 
 **Conséquence** : on suspend une facture, elle sort de la liste à rappeler, et **la seule façon de savoir qu'elle est suspendue est de la re-suspendre** (muter et lire la réponse). La décision **D10** du plan d'epic exige pourtant « badge « suspendu » + filtre en liste factures » et pose un **invariant anti-dissimulation** : une facture suspendue reste dans la balance âgée et l'échéancier, elle ne sort **que** de la liste « à rappeler ».
@@ -45,7 +45,7 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
 
 1. **`InvoiceResponse`** (`crates/kesh-api/src/routes/invoices.rs:160-191`) gagne deux champs, insérés **après `emailed_to` (`:180`)** pour refléter l'ordre de l'entité : `dunning_paused_at: Option<NaiveDateTime>` et `dunning_paused_note: Option<String>`. Le `#[serde(rename_all = "camelCase")]` du struct (`:161`) suffit — **aucun attribut serde par champ** (le struct n'en a aucun). Wire : `dunningPausedAt` / `dunningPausedNote`.
 
-2. **`InvoiceResponse::from_parts`** (`:206-239`, littéral `Self { … }` `:216-237`) pose les deux champs depuis l'`Invoice`. **Point de passage unique** : il n'existe **aucun `From<Invoice>`**, et les 6 handlers qui renvoient un `InvoiceResponse` passent tous par ce helper (`get_invoice:521`, `create_invoice:599`, `update_invoice:655`, `validate_invoice_handler:683`, `mark_invoice_paid_handler:944`, `unmark_invoice_paid_handler:966`) → **une seule modification de construction, aucun call-site à toucher**.
+2. **`InvoiceResponse::from_parts`** (`:206-239`, littéral `Self { … }` `:216-237`) pose les deux champs depuis l'`Invoice`. **Point de passage unique** : il n'existe **aucun `From<Invoice>`**, et les **7** handlers qui renvoient un `InvoiceResponse` passent tous par ce helper — `get_invoice:521`, `create_invoice:599`, `update_invoice:655`, `validate_invoice_handler:683`, `mark_invoice_paid_handler:944`, `unmark_invoice_paid_handler:966`, **plus `routes/invoice_email.rs:818`** (envoi de facture, hors `invoices.rs` — grep `-rn "InvoiceResponse::from_parts" crates/`) → **une seule modification de construction, aucun call-site à toucher**. *(Les `from_parts` de `supplier_invoices.rs` / `imported_supplier_invoices.rs` portent sur `SupplierInvoiceResponse` — type distinct, hors scope.)*
 
 3. **Aucune requête supplémentaire** : `FIND_INVOICE_SCOPED_SQL` (`crates/kesh-db/src/repositories/invoices.rs:44-48`) projette **déjà** `dunning_paused_at, dunning_paused_note` (`:46`), et l'entité `Invoice` les porte déjà (`entities/invoice.rs:46` et `:49`). `from_parts` a les valeurs en main.
 
@@ -99,7 +99,13 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
     ```
     **Le filtre s'applique automatiquement au `COUNT` et au `SELECT`** : `push_where_clauses` est appelé deux fois dans `list_by_company_paginated` (COUNT `:532`, SELECT `:545`) → `total` et `items` partagent le même prédicat, par construction.
 
-11. **INVARIANT D10 — le défaut ne doit rien filtrer.** `push_where_clauses` est partagé par `list_by_company_paginated`, `due_dates_summary` **et** `list_for_export`. La variante `All` (défaut) étant un **no-op**, l'échéancier et l'export CSV continuent de voir les factures suspendues. `build_due_dates_query` (`:846-865`) passe **explicitement `paused: None`**. **Un défaut mal choisi ferait disparaître les factures suspendues de l'échéancier — soit exactement le bug que cette story ferme.** Verrouillé par le test de l'AC 19(f).
+11. **INVARIANT D10 — le défaut ne doit rien filtrer.** Périmètre réel de `push_where_clauses`, vérifié par grep — **3 call-sites, et eux seuls** : `list_by_company_paginated` (COUNT `:532` + SELECT `:546`) et `list_for_export` (`:1812`).
+
+    ⚠️ **`due_dates_summary` (`:604-676`) ne l'appelle PAS** : il construit sa propre clause `WHERE` inline (`:623`) et ne lit **ni `payment_status` ni `paused`**. Le **résumé** de l'échéancier est donc structurellement insensible au filtre, quelle que soit son implémentation. **Ne PAS y ajouter de `match paused`** — hors scope, et sans objet (D-a3).
+
+    **Mais l'échéancier reste concerné par ses items** : `list_due_dates_handler` (`:872-895`) appelle **`list_by_company_paginated`** — en parallèle de `due_dates_summary` via `tokio::join!` — pour produire la liste elle-même. Le filtre `paused` s'y applique donc bel et bien. **`build_due_dates_query` (`:846-865`) DOIT poser explicitement `paused: None`** (→ `All` → no-op) : à défaut, les factures suspendues disparaîtraient de l'échéancier, **soit exactement le bug que cette story ferme, réintroduit par sa correction**. Verrouillé par le test de l'**AC 24(f)**.
+
+    *(Précédent à imiter — le handler strippe déjà explicitement `payment_status: None` pour la query du résumé (`:878-882`), avec un commentaire de review : « rend l'invariant visible côté handler au lieu de dépendre uniquement du contrat repo ». Même esprit ici.)*
 
 12. **DTO route `ListInvoicesQuery`** (`routes/invoices.rs:107-128`) gagne `#[serde(default)] pub paused: Option<PausedParam>` (tous les champs existants sont `Option<_>` + `#[serde(default)]`).
 
@@ -210,7 +216,7 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
 ### Les 4 pièges, par ordre de coût
 
 1. **Fanout SELECT `InvoiceListItem` (runtime, pas compile-time)** — ajouter un champ au struct `FromRow` sans l'ajouter aux **2** SELECT littéraux → `ColumnNotFound` à l'exécution. Les deux SELECT sont des **copies dupliquées**, non factorisées en constante. 21-5a a payé cette exacte erreur : 56 tests rouges, 500 sur la réconciliation, invisible pour 4 reviewers, attrapé par le seul gate workspace complet. **Le compilateur ne vous aidera pas ici.**
-2. **Défaut du filtre qui casse l'invariant D10** — `push_where_clauses` est partagé par la liste, le COUNT, l'export CSV et l'échéancier. Si le défaut n'était pas un no-op, les factures suspendues disparaîtraient de l'échéancier : le bug même que la story ferme, réintroduit par sa correction. Test (f) obligatoire.
+2. **Défaut du filtre qui casse l'invariant D10** — `push_where_clauses` est partagé par la liste, son COUNT et l'export CSV (**3 call-sites — pas `due_dates_summary`, qui a son `WHERE` propre**). L'échéancier reste néanmoins concerné : **ses items passent par `list_by_company_paginated`**. Si le défaut n'était pas un no-op, ou si `build_due_dates_query` omettait `paused: None`, les factures suspendues disparaîtraient de l'échéancier — le bug même que la story ferme, réintroduit par sa correction. Test **AC 24(f)** obligatoire.
 3. **`syncUrl` a deux branches** (`+page.svelte:98-113` et nominale) qui dupliquent la construction des params. Oublier `paused` dans la branche `dateRangeError` = perte de filtre silencieuse.
 4. **`lint-i18n-ownership` bloque le gate** sur `invoice-*` dans `features/invoices/` (piège #30). L'entrée `KNOWN_VIOLATIONS` n'est pas optionnelle.
 
@@ -256,6 +262,20 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
 - [Source: `_bmad-output/implementation-artifacts/21-5b-envoi-rappels-email.md` — leçon « un patch de review vient avec son test » (5 passes)]
 - [Source: `CLAUDE.md#Test Locally First`, `#Review Iteration Rule`, `#Migration breaking policy` (P5 sans objet — pas de migration), `#Issue Tracking Rule`]
 - [Source: GitHub #231 (rappels débiteurs — cette story en ferme la surface « suspension visible »), #255 (dette i18n page liste, ouverte par cette cartographie), #253 (dette a11y contraste, Epic 20), #30 (piège ownership i18n `invoice-*` / `invoices/`)]
+
+## Change Log — validate
+
+### Pass 1 (Sonnet, 2026-07-17) — 0 CRITICAL / 1 HIGH / 1 MEDIUM / 1 LOW → patchés
+
+Auteur de la spec : Opus. Reviewer orthogonal : Sonnet. Verdict **GO-ajusté**. Les 2 findings > LOW ont été **re-vérifiés ground-truth par l'orchestrateur** (`grep -n`) avant patch, conformément à la discipline projet — tous deux **confirmés réels**.
+
+- **H1 — l'invariant D10 était juste, sa justification était fausse.** L'AC 11 affirmait que `push_where_clauses` est partagé par `list_by_company_paginated`, `due_dates_summary` **et** `list_for_export`. Grep : **3 call-sites seulement** (`:532`, `:546`, `:1812`) — `due_dates_summary` (`:604-676`) construit sa **propre** clause `WHERE` inline (`:623`) et ne lit ni `payment_status` ni `paused`. L'invariant tenait donc, mais par un mécanisme différent de celui décrit — une fausse prémisse d'architecture partagée sur laquelle un mainteneur aurait pu s'appuyer.
+  **Vérification complémentaire de l'orchestrateur** (au-delà du finding) : `list_due_dates_handler` (`:872-895`) appelle `list_by_company_paginated` **et** `due_dates_summary` en `tokio::join!` → **les items de l'échéancier passent bien par `push_where_clauses`**. L'exigence « `build_due_dates_query` pose `paused: None` » reste donc **load-bearing**, et le test AC 24(f) garde tout son sens. **Patch** : AC 11 et Dev Notes piège n°2 réécrits avec le périmètre exact, la distinction résumé/items, la garde « ne pas ajouter de `match paused` dans `due_dates_summary` », et le précédent du strip explicite de `payment_status` (`:878-882`).
+- **M1 — checklist « fermée » incomplète** : l'AC 2 annonçait « les 6 handlers » passant par `from_parts` ; il y en a **7** — le site `routes/invoice_email.rs:818` (envoi de facture, hors `invoices.rs`) manquait. Sans impact d'implémentation (`from_parts` reste le point de passage unique, aucun call-site à toucher), mais une checklist présentée comme exhaustive et fausse sape la confiance dans le reste du document. **Patch** : AC 2 corrigée à 7 sites + note distinguant les `from_parts` de `SupplierInvoiceResponse` (type distinct).
+- **L1 — comptage inexact** : « les 8 occurrences » de `dunning_paused` dans `kesh-api/src` → **11** en réalité. **Patch** : les 11 classées nommément dans le Contexte.
+- **Défaut interne trouvé à l'application des patches** (non remonté par le reviewer) : l'AC 11 renvoyait au « test de l'AC 19(f) » — numérotation périmée d'une version antérieure de la spec, la matrice de tests est l'**AC 24**. Corrigé.
+
+Vérifications positives (grep/Read, Sonnet) : checklist des **2** SELECT `InvoiceListItem` **fermée et exacte** ; les 4 sites `Invoice` déjà alignés (dont `reconciliation.rs` post-régression 21-5a) ; littéraux `InvoiceListQuery` hors `kesh-api` tous protégés par `..Default::default()` ; namespace `invoice-paused-*` libre dans les 4 FTL ; comportement de `lint-i18n-ownership.js` et piège #30 confirmés ; compteurs figés migrations/export inchangés ; absence de snapshot / `deny_unknown_fields` confirmée.
 
 ## Dev Agent Record
 
