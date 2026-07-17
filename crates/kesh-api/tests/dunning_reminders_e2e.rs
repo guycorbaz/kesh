@@ -563,3 +563,224 @@ async fn rbac_and_idor(pool: MySqlPool) {
         .unwrap();
     assert_eq!(res.status(), 200);
 }
+
+// ---------------------------------------------------------------------------
+// Story 21-6a (#231, D10) — exposition de la suspension en lecture + filtre
+// `?paused=`. Avant cette story, une facture suspendue sortait de la liste à
+// rappeler sans qu'aucune surface de lecture ne la signale : elle devenait
+// introuvable, donc impossible à réactiver.
+// ---------------------------------------------------------------------------
+
+/// Suspend `inv` (avec note optionnelle) via l'endpoint 21-5a et renvoie le body.
+async fn pause_invoice(app: &TestApp, pool: &MySqlPool, token: &str, inv: i64, note: Option<&str>) {
+    let v = invoice_version(pool, inv).await;
+    let payload = match note {
+        Some(n) => json!({ "version": v, "note": n }),
+        None => json!({ "version": v }),
+    };
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/invoices/{inv}/dunning-pause")))
+        .bearer_auth(token)
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200, "la suspension doit réussir");
+}
+
+/// Récupère les `id` des items d'une réponse paginée `GET /api/v1/invoices`.
+fn item_ids(body: &Value) -> Vec<i64> {
+    body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_i64().unwrap())
+        .collect()
+}
+
+/// AC 24(a) — le détail facture expose l'état de suspension (et la note).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn get_invoice_exposes_dunning_pause_state(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let cid = create_company(&pool, "Detail Co").await;
+    let accountant = create_user(&pool, "compta", Role::Comptable, cid).await;
+    let token = forge_jwt(accountant, "Comptable", cid);
+    let fy = create_fiscal_year(&pool, cid).await;
+    let contact = create_contact(&pool, cid, "Débiteur", Some("d@example.com")).await;
+    let paused_inv = validated_invoice(&pool, cid, contact, fy, 30).await;
+    let active_inv = validated_invoice(&pool, cid, contact, fy, 30).await;
+
+    pause_invoice(&app, &pool, &token, paused_inv, Some("litige en cours")).await;
+
+    // Facture suspendue → les 2 champs sont renseignés.
+    let body: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{paused_inv}")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        !body["dunningPausedAt"].is_null(),
+        "dunningPausedAt doit être exposé sur le détail"
+    );
+    assert_eq!(body["dunningPausedNote"], "litige en cours");
+
+    // Facture non suspendue → les 2 champs sont null (et présents).
+    let body: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{active_inv}")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(body["dunningPausedAt"].is_null());
+    assert!(body["dunningPausedNote"].is_null());
+}
+
+/// AC 24(b)(c)(d)(e)(g) — la liste expose l'état et le filtre `?paused=` trie
+/// correctement, `total` restant cohérent avec `items` (le COUNT partage le
+/// prédicat de `push_where_clauses`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn list_invoices_exposes_and_filters_paused(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let cid = create_company(&pool, "List Co").await;
+    let accountant = create_user(&pool, "compta", Role::Comptable, cid).await;
+    let token = forge_jwt(accountant, "Comptable", cid);
+    let fy = create_fiscal_year(&pool, cid).await;
+    let contact = create_contact(&pool, cid, "Débiteur", Some("d@example.com")).await;
+    let paused_inv = validated_invoice(&pool, cid, contact, fy, 30).await;
+    let active_inv = validated_invoice(&pool, cid, contact, fy, 30).await;
+
+    pause_invoice(&app, &pool, &token, paused_inv, Some("litige")).await;
+
+    let fetch = async |q: &str| -> Value {
+        app.client
+            .get(app.url(&format!("/api/v1/invoices{q}")))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap()
+    };
+
+    // (b) + (e) — sans param : les 2 factures, et l'état est exposé sur les items.
+    let body = fetch("").await;
+    let ids = item_ids(&body);
+    assert_eq!(ids.len(), 2, "défaut = no-op, aucune facture filtrée");
+    assert!(ids.contains(&paused_inv) && ids.contains(&active_inv));
+    let paused_item = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"].as_i64() == Some(paused_inv))
+        .unwrap();
+    assert!(
+        !paused_item["dunningPausedAt"].is_null(),
+        "dunningPausedAt doit être exposé sur les items de la liste"
+    );
+    assert_eq!(paused_item["dunningPausedNote"], "litige");
+
+    // (c) — ?paused=paused → seule la suspendue.
+    let body = fetch("?paused=paused").await;
+    assert_eq!(item_ids(&body), vec![paused_inv]);
+    // (g) — total cohérent avec items sous filtre.
+    assert_eq!(
+        body["total"].as_i64().unwrap(),
+        1,
+        "le COUNT doit partager le prédicat du SELECT"
+    );
+
+    // (d) — ?paused=not-paused → la suspendue est absente.
+    let body = fetch("?paused=not-paused").await;
+    assert_eq!(item_ids(&body), vec![active_inv]);
+    assert_eq!(body["total"].as_i64().unwrap(), 1);
+
+    // ?paused=all → explicite mais no-op.
+    let body = fetch("?paused=all").await;
+    assert_eq!(item_ids(&body).len(), 2);
+}
+
+/// AC 24(f) — INVARIANT ANTI-DISSIMULATION D10 (test anti-régression clé).
+///
+/// Une facture suspendue sort de la liste « à rappeler » et de **nulle part
+/// ailleurs**. `push_where_clauses` étant partagé, un défaut de filtre non
+/// no-op — ou un `build_due_dates_query` qui cesserait de poser `paused: None`
+/// — la ferait disparaître de l'échéancier : le défaut même que 21-6a ferme,
+/// réintroduit par sa correction.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn paused_invoice_stays_visible_in_due_dates(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let cid = create_company(&pool, "Echeancier Co").await;
+    let accountant = create_user(&pool, "compta", Role::Comptable, cid).await;
+    let token = forge_jwt(accountant, "Comptable", cid);
+    let fy = create_fiscal_year(&pool, cid).await;
+    let contact = create_contact(&pool, cid, "Débiteur", Some("d@example.com")).await;
+    let paused_inv = validated_invoice(&pool, cid, contact, fy, 30).await;
+
+    pause_invoice(&app, &pool, &token, paused_inv, Some("litige")).await;
+
+    // Elle a bien disparu de la liste à rappeler (comportement 21-5a).
+    let reminders: Value = app
+        .client
+        .get(app.url("/api/v1/dunning/reminders"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(reminders["groups"].as_array().unwrap().len(), 0);
+
+    // …mais elle RESTE dans l'échéancier, avec son état de suspension exposé.
+    let body: Value = app
+        .client
+        .get(app.url("/api/v1/invoices/due-dates"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let ids = item_ids(&body);
+    assert!(
+        ids.contains(&paused_inv),
+        "INVARIANT D10 VIOLÉ : une facture suspendue a disparu de l'échéancier"
+    );
+    let item = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"].as_i64() == Some(paused_inv))
+        .unwrap();
+    assert!(!item["dunningPausedAt"].is_null());
+}
+
+/// AC 24(h) — valeur inconnue rejetée par serde, aucune validation handler.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn list_invoices_rejects_unknown_paused_value(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let cid = create_company(&pool, "Bogus Co").await;
+    let accountant = create_user(&pool, "compta", Role::Comptable, cid).await;
+    let token = forge_jwt(accountant, "Comptable", cid);
+
+    let res = app
+        .client
+        .get(app.url("/api/v1/invoices?paused=bogus"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400, "?paused=bogus doit être rejeté");
+}

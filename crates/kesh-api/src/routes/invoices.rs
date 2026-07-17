@@ -27,7 +27,7 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     contacts,
     invoices::{
-        self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy,
+        self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy, PausedFilter,
         PaymentStatusFilter,
     },
 };
@@ -117,6 +117,9 @@ pub struct ListInvoicesQuery {
     pub date_from: Option<NaiveDate>,
     #[serde(default)]
     pub date_to: Option<NaiveDate>,
+    /// Story 21-6a (D10) — `all` (défaut, no-op) | `paused` | `not-paused`.
+    #[serde(default)]
+    pub paused: Option<PausedParam>,
     #[serde(default)]
     pub sort_by: Option<InvoiceSortBy>,
     #[serde(default)]
@@ -180,6 +183,12 @@ pub struct InvoiceResponse {
     pub emailed_to: Option<String>,
     /// Projet analytique document-level (Epic 19). `null` = non taguée.
     pub project_id: Option<i64>,
+    /// Story 21-6a (D10) — suspension des rappels. `null` = rappels actifs.
+    /// Posé/levé par `PUT /invoices/{id}/dunning-pause|dunning-resume` (21-5a) ;
+    /// exposé ici car une facture suspendue sort de la liste à rappeler et
+    /// n'était jusqu'alors signalée par aucune surface de lecture.
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
     /// P6 (review pass 2) : `is_overdue` calculé backend (source unique de
     /// vérité pour « aujourd'hui » — évite la désync TZ client/serveur).
     /// `true` ssi `status == 'validated' && paid_at IS NULL && due_date < today_utc`.
@@ -229,6 +238,8 @@ impl InvoiceResponse {
             emailed_at: invoice.emailed_at,
             emailed_to: invoice.emailed_to,
             project_id: invoice.project_id,
+            dunning_paused_at: invoice.dunning_paused_at,
+            dunning_paused_note: invoice.dunning_paused_note,
             is_overdue,
             version: invoice.version,
             created_at: invoice.created_at,
@@ -254,6 +265,16 @@ pub struct InvoiceListItemResponse {
     /// TTC canonique (#246, Story 21-2a) — colonne SQL calculée de la liste.
     pub total_ttc: Decimal,
     pub paid_at: Option<NaiveDateTime>,
+    /// Story 21-6a (D10) — suspension des rappels, alimente le badge
+    /// « suspendu » de la liste des factures et le filtre `paused`.
+    ///
+    /// Note : ce type est aussi celui de l'échéancier via l'alias
+    /// `DueDateItemResponse` — les champs y sont donc présents sur le wire.
+    /// C'est **voulu** (invariant anti-dissimulation D10 : une facture
+    /// suspendue reste visible dans l'échéancier) ; seul l'affichage n'est
+    /// pas ajouté à cette page en 21-6a.
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
     /// B22 (review pass 2 G2 B) : exposé sur la liste standard pour cohérence
     /// avec `InvoiceResponse` et `DueDateItemResponse` — le frontend ne doit
     /// jamais recalculer le statut overdue côté client (désync TZ possible).
@@ -280,6 +301,8 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
             total_amount: i.total_amount,
             total_ttc: i.total_ttc,
             paid_at: i.paid_at,
+            dunning_paused_at: i.dunning_paused_at,
+            dunning_paused_note: i.dunning_paused_note,
             is_overdue,
             version: i.version,
             created_at: i.created_at,
@@ -489,6 +512,9 @@ pub async fn list_invoices(
         date_to: params.date_to,
         payment_status: None,
         due_before: None,
+        // Story 21-6a (D10) — seule surface qui expose ce filtre. `None` quand
+        // le client ne fournit rien → `All` → no-op.
+        paused: params.paused.map(PausedFilter::from),
         sort_by: params.sort_by.unwrap_or_default(),
         sort_direction: params.sort_direction.unwrap_or(SortDirection::Desc),
         limit,
@@ -712,6 +738,29 @@ impl From<PaymentStatusParam> for PaymentStatusFilter {
     }
 }
 
+/// Story 21-6a (D10) — valeur du query param `?paused=` de `GET /invoices`.
+///
+/// Kebab-case sur le wire (`all` | `paused` | `not-paused`), calqué sur
+/// `PaymentStatusParam` : c'est le précédent d'un enum de **filtre**. Une
+/// valeur inconnue est rejetée par serde → 400, aucune validation handler.
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PausedParam {
+    All,
+    Paused,
+    NotPaused,
+}
+
+impl From<PausedParam> for PausedFilter {
+    fn from(p: PausedParam) -> Self {
+        match p {
+            PausedParam::All => PausedFilter::All,
+            PausedParam::Paused => PausedFilter::Paused,
+            PausedParam::NotPaused => PausedFilter::NotPaused,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListDueDatesQuery {
@@ -861,6 +910,15 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
                 .unwrap_or(PaymentStatusFilter::Unpaid),
         ),
         due_before: params.due_before,
+        // Story 21-6a (D10) — INVARIANT ANTI-DISSIMULATION : l'échéancier ne
+        // filtre JAMAIS sur la suspension. Une facture suspendue sort de la
+        // liste « à rappeler » (`dunning_eligibility`) et de nulle part
+        // ailleurs. `None` → `PausedFilter::All` → no-op dans
+        // `push_where_clauses`, que les items de cette page traversent via
+        // `list_by_company_paginated`. L'échéancier n'expose aucun `?paused=`.
+        // Ne PAS remplacer par `params.paused` : `ListDueDatesQuery` n'a
+        // volontairement pas ce champ.
+        paused: None,
         sort_by: params.sort_by.unwrap_or(InvoiceSortBy::DueDate),
         sort_direction: params.sort_direction.unwrap_or(SortDirection::Asc),
         limit,

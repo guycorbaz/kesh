@@ -187,21 +187,20 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Exposition détail facture** (AC: 1, 2, 3)
-  - [ ] Ajouter les 2 champs à `InvoiceResponse` (`routes/invoices.rs:160-191`, après `emailed_to:180`).
-  - [ ] Les poser dans le littéral de `from_parts` (`:216-237`). Vérifier qu'aucun call-site ne bouge (6 sites).
-- [ ] **T2 — Exposition liste + fanout SELECT** (AC: 4, 5, 6, 7) — **piège n°1**
-  - [ ] Ajouter les 2 champs à `InvoiceListItem` (`repositories/invoices.rs:187-205`).
-  - [ ] Ajouter les 2 colonnes au SELECT de `list_by_company_paginated` (`:539-545`).
-  - [ ] Ajouter les 2 colonnes au SELECT de `list_for_export` (`:1806-1810`).
-  - [ ] Ajouter les 2 champs à `InvoiceListItemResponse` (`routes/invoices.rs:243-264`) + son `From` (`:266-289`).
-  - [ ] **Re-grep de contrôle** : `grep -nF "InvoiceListItem" crates/kesh-db/src/repositories/invoices.rs` → confirmer qu'il n'existe pas de 3e site de désérialisation.
-- [ ] **T3 — Filtre `paused` backend** (AC: 8-15)
-  - [ ] `PausedFilter` (`repositories/invoices.rs`, près de `:115-122`).
-  - [ ] Champ `paused` sur `InvoiceListQuery` (`:167-181`) + mise à jour des 2 constructions littérales compile-forcées (`routes/invoices.rs:484-496`, `:846-865` → `None`).
-  - [ ] `match` dans `push_where_clauses` (après `:295`).
-  - [ ] `PausedParam` + `From` (`routes/invoices.rs`, près de `:695-713`) + champ sur `ListInvoicesQuery` (`:107-128`).
-- [ ] **T4 — Tests backend** (AC: 24) — scénarios (a)…(h), dont **(f) l'invariant D10**.
+- [x] **T1 — Exposition détail facture** (AC: 1, 2, 3)
+  - [x] Ajouter les 2 champs à `InvoiceResponse`. **Micro-déviation assumée** : placés après `project_id` (et non « après `emailed_to` » comme le disait l'AC 1) — l'ordre de l'entité `Invoice` est `emailed_to, project_id, dunning_paused_at, dunning_paused_note`, donc c'est ce placement qui sert réellement l'intention déclarée de l'AC (« refléter l'ordre de l'entité »). Sans effet fonctionnel (ordre des clés JSON seulement).
+  - [x] Les poser dans le littéral de `from_parts`. Confirmé : **aucun** des 7 call-sites ne bouge.
+- [x] **T2 — Exposition liste + fanout SELECT** (AC: 4, 5, 6, 7) — **piège n°1**
+  - [x] Ajouter les 2 champs à `InvoiceListItem` + doc-comment d'avertissement sur le fanout (le prochain qui ajoute un champ doit voir le piège depuis le struct).
+  - [x] Ajouter les 2 colonnes aux **2** SELECT. **Les deux listes de colonnes étant des littéraux strictement identiques, le remplacement a été fait en une seule opération globale** (`replace_all`) après vérification qu'exactement 2 occurrences existent dans le workspace (`grep -cF` → 2, lignes 554 et 1820) → l'oubli d'un site est structurellement impossible.
+  - [x] Ajouter les 2 champs à `InvoiceListItemResponse` + son `From`.
+  - [x] **Re-grep de contrôle** : `grep -rn "InvoiceListItem" crates/ --include=*.rs` → 2 sites de désérialisation (`:564`, `:1820`), aucun 3e. `SupplierInvoiceListItem` = type distinct.
+- [x] **T3 — Filtre `paused` backend** (AC: 8-15)
+  - [x] `PausedFilter` posé à côté de `PaymentStatusFilter`, doc-comment expliquant *pourquoi* `All` est un no-op délibéré.
+  - [x] Champ `paused` sur `InvoiceListQuery` + les 2 constructions littérales. **`cargo build --workspace --all-targets` exit 0** → aucune 3e construction littérale manquée (la `:928` est bien immunisée par `..query.clone()`).
+  - [x] `match` dans `push_where_clauses` (SQL littéral, aucun `push_bind`).
+  - [x] `PausedParam` + `From` (kebab-case) + champ sur `ListInvoicesQuery`.
+- [x] **T4 — Tests backend** (AC: 24) — 4 tests, scénarios (a)…(h), dont **(f) l'invariant D10**. `dunning_reminders_e2e` **10/10 vert** (6 pré-existants + 4 nouveaux).
 - [ ] **T5 — Frontend types, API, badge, filtre** (AC: 16-23)
   - [ ] Types + `buildQueryString`.
   - [ ] `DunningPausedBadge.svelte` + entrée dans `KNOWN_VIOLATIONS` (**piège n°4**).

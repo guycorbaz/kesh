@@ -121,6 +121,22 @@ pub enum PaymentStatusFilter {
     Overdue,
 }
 
+/// Filtre « rappels suspendus » (Story 21-6a, D10) — dérivé de
+/// `invoices.dunning_paused_at`, non stocké.
+///
+/// `All` est le défaut et un **no-op délibéré** : `push_where_clauses` est
+/// partagé par la liste, son COUNT et l'export CSV, et les items de
+/// l'échéancier passent par `list_by_company_paginated`. Un défaut filtrant
+/// ferait disparaître les factures suspendues de l'échéancier — soit
+/// exactement le défaut D10 que cette story ferme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PausedFilter {
+    #[default]
+    All,
+    Paused,
+    NotPaused,
+}
+
 /// Paramètres de recherche, tri et pagination.
 /// Forme **scalaire par facture** du TTC canonique (#246, Story 21-2a) —
 /// sous-requête corrélée. **Prérequis : alias `i` sur `invoices`.**
@@ -174,6 +190,8 @@ pub struct InvoiceListQuery {
     pub payment_status: Option<PaymentStatusFilter>,
     /// Plafond `due_date <= ?` (Story 5.4).
     pub due_before: Option<NaiveDate>,
+    /// Filtre « rappels suspendus » (Story 21-6a). `None`/`All` = no-op.
+    pub paused: Option<PausedFilter>,
     pub sort_by: InvoiceSortBy,
     pub sort_direction: SortDirection,
     pub limit: i64,
@@ -199,6 +217,17 @@ pub struct InvoiceListItem {
     /// la projection ne charge pas les lignes.
     pub total_ttc: Decimal,
     pub paid_at: Option<NaiveDateTime>,
+    /// Story 21-6a (D10) — suspension des rappels, exposée en liste (badge).
+    ///
+    /// ⚠️ **Tout ajout de champ ici doit être projeté par les DEUX SELECT qui
+    /// désérialisent vers `InvoiceListItem`** — `list_by_company_paginated` et
+    /// `list_for_export` — dont les listes de colonnes sont des littéraux
+    /// **dupliqués** (pas une constante partagée, contrairement à
+    /// `FIND_INVOICE_SCOPED_SQL`). Un oubli échoue au **runtime**
+    /// (`ColumnNotFound`), pas à la compilation : c'est la régression qu'a
+    /// payée la Story 21-5a sur le struct `Invoice`.
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -291,6 +320,24 @@ fn push_where_clauses<'a>(
             qb.push(
                 " AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()",
             );
+        }
+    }
+
+    // Story 21-6a (D10) — filtre « rappels suspendus ». SQL littéral (aucune
+    // valeur utilisateur → pas de `push_bind`), calqué sur `payment_status`.
+    //
+    // `All` (défaut) est un no-op : ce helper sert AUSSI l'export CSV et les
+    // items de l'échéancier (`list_due_dates_handler` appelle
+    // `list_by_company_paginated`). Une facture suspendue doit y rester
+    // visible — elle ne sort QUE de la liste « à rappeler »
+    // (`dunning_eligibility`). Verrouillé par un test e2e dédié.
+    match query.paused.unwrap_or_default() {
+        PausedFilter::All => {}
+        PausedFilter::Paused => {
+            qb.push(" AND i.dunning_paused_at IS NOT NULL");
+        }
+        PausedFilter::NotPaused => {
+            qb.push(" AND i.dunning_paused_at IS NULL");
         }
     }
 
@@ -540,7 +587,8 @@ pub async fn list_by_company_paginated(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
          i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
-         i.paid_at, i.version, i.created_at, i.updated_at \
+         i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
+         i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
     ));
     push_where_clauses(&mut items_qb, company_id, &query);
@@ -1806,7 +1854,8 @@ pub async fn list_for_export(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
          i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
-         i.paid_at, i.version, i.created_at, i.updated_at \
+         i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
+         i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
     ));
     push_where_clauses(&mut items_qb, company_id, query);
