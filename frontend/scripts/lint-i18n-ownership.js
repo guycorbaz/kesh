@@ -35,6 +35,11 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-subject-label',
   'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-body-label',
   'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-confirm',
+  // Story 21-6a — même architecture #30 (dossier pluriel `invoices/` vs
+  // préfixe singulier `invoice-`). Le namespace `invoice-paused-*` a été
+  // choisi cohérent avec les clés de liste factures déjà présentes dans les
+  // FTL (`invoice-col-*`, `invoice-filter-*`) plutôt qu'avec le nom du dossier.
+  'src/lib/features/invoices/DunningPausedBadge.svelte:invoice-paused-badge',
   'src/lib/features/journal-entries/AccountAutocomplete.svelte:account-autocomplete-unavailable',
   'src/lib/features/journal-entries/AccountAutocomplete.svelte:journal-entry-form-col-account',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-saved',

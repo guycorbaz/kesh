@@ -98,6 +98,121 @@ test.describe('Factures — liste', () => {
 	});
 });
 
+/**
+ * Story 21-6a (#231, D10) — badge « suspendu » + filtre en liste factures.
+ *
+ * Avant cette story, suspendre une facture la faisait disparaître de la liste
+ * à rappeler sans qu'aucune surface de lecture ne la signale : elle devenait
+ * introuvable, donc impossible à réactiver.
+ */
+test.describe('Factures — suspension des rappels (21-6a)', () => {
+	/** Suspend une facture via l'API 21-5a (le toggle UI arrive en 21-6c). */
+	async function pauseInvoiceViaApi(
+		page: import('@playwright/test').Page,
+		invoiceId: number,
+		note: string,
+	): Promise<void> {
+		const ctx = await authedApiContext(page);
+		try {
+			const get = await ctx.get(`/api/v1/invoices/${invoiceId}`);
+			expect(get.ok(), `get invoice failed: ${get.status()}`).toBeTruthy();
+			const { version } = await get.json();
+			const res = await ctx.put(`/api/v1/invoices/${invoiceId}/dunning-pause`, {
+				data: { version, note },
+			});
+			expect(res.ok(), `dunning-pause failed: ${res.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	}
+
+	test('badge « suspendu » visible et filtre tri-état fonctionnel', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const pausedName = uniq('Suspendu SA');
+		const activeName = uniq('Actif SA');
+		const pausedContact = await createContactWithAddressViaApi(page, pausedName);
+		const activeContact = await createContactWithAddressViaApi(page, activeName);
+		const pausedInvoice = await createAndValidateInvoiceViaApi(page, pausedContact);
+		await createAndValidateInvoiceViaApi(page, activeContact);
+
+		await pauseInvoiceViaApi(page, pausedInvoice, 'litige en cours');
+
+		// Sans filtre : les deux factures, et le badge signale la suspendue.
+		await page.goto('/invoices');
+		const pausedRow = page.locator('tbody tr', { hasText: pausedName });
+		const activeRow = page.locator('tbody tr', { hasText: activeName });
+		await expect(pausedRow).toBeVisible();
+		await expect(activeRow).toBeVisible();
+		await expect(pausedRow.getByTestId('invoice-paused-badge')).toBeVisible();
+		await expect(activeRow.getByTestId('invoice-paused-badge')).toHaveCount(0);
+
+		// La note de suspension est lisible en infobulle (seule surface en v1).
+		await expect(pausedRow.getByTestId('invoice-paused-badge')).toHaveAttribute(
+			'title',
+			/litige en cours/,
+		);
+
+		// Filtre « Suspendus » → la facture active disparaît.
+		await page.getByTestId('invoice-paused-filter').selectOption('paused');
+		await expect(pausedRow).toBeVisible();
+		await expect(activeRow).toHaveCount(0);
+		await expect(page).toHaveURL(/paused=paused/);
+
+		// Filtre « Actifs » → la suspendue disparaît.
+		await page.getByTestId('invoice-paused-filter').selectOption('not-paused');
+		await expect(activeRow).toBeVisible();
+		await expect(pausedRow).toHaveCount(0);
+		await expect(page).toHaveURL(/paused=not-paused/);
+
+		// Retour à « Tous » → défaut, param absent de l'URL.
+		await page.getByTestId('invoice-paused-filter').selectOption('all');
+		await expect(pausedRow).toBeVisible();
+		await expect(activeRow).toBeVisible();
+		await expect(page).not.toHaveURL(/paused=/);
+	});
+
+	test('le filtre survit à un rechargement (synchro URL bidirectionnelle)', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices?paused=paused');
+		await expect(page.getByTestId('invoice-paused-filter')).toHaveValue('paused');
+	});
+
+	test('une valeur de filtre invalide dans l’URL retombe sur le défaut', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices?paused=bogus');
+		// La whitelist client neutralise la valeur : aucun 400, retour à « all ».
+		await expect(page.getByTestId('invoice-paused-filter')).toHaveValue('all');
+	});
+
+	// Étend le test axe historique de ce fichier, qui n'exerçait que l'empty
+	// state (son commentaire demandait explicitement d'aller jusqu'à l'état
+	// peuplé). Ce test a effectivement attrapé un défaut réel du badge 21-6a :
+	// le patron `PaymentStatusBadge` colore le texte avec la MÊME variable que
+	// la teinte de fond → 3.69:1, sous le minimum AA. Corrigé (11.4:1).
+	//
+	// `button-name` est désactivé : dette a11y PRÉ-EXISTANTE (#256) — les
+	// boutons d'action des lignes sont icône seule, `aria-hidden`, sans
+	// `aria-label`. Vérifié hors du diff 21-6a ; la règle de la story interdit
+	// de corriger une dette pré-existante ici. RETIRER ce disableRules à la
+	// fermeture de #256.
+	test('axe-core sans violations sur la liste peuplée (badge suspendu)', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+		const name = uniq('A11y SA');
+		const contact = await createContactWithAddressViaApi(page, name);
+		const invoice = await createAndValidateInvoiceViaApi(page, contact);
+		await pauseInvoiceViaApi(page, invoice, 'contrôle a11y');
+
+		await page.goto('/invoices');
+		await expect(page.getByTestId('invoice-paused-badge').first()).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		const results = await new AxeBuilder({ page }).disableRules(['button-name']).analyze();
+		expect(results.violations).toEqual([]);
+	});
+});
+
 test.describe('Factures — création brouillon', () => {
 	test('crée une facture avec une ligne libre et la persiste', async ({ page }) => {
 		await login(page);

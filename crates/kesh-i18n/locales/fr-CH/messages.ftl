@@ -411,6 +411,12 @@ invoice-filter-status-all = Tous les statuts
 invoice-filter-contact-all = Tous les contacts
 invoice-filter-date-from = Depuis
 invoice-filter-date-to = Jusqu'à
+# Story 21-6a (D10) — suspension des rappels : badge + filtre en liste factures.
+invoice-paused-badge = Suspendu
+invoice-paused-filter-label = Rappels
+invoice-paused-filter-all = Tous
+invoice-paused-filter-paused = Suspendus
+invoice-paused-filter-not-paused = Actifs
 invoice-new-button = Nouvelle facture
 invoice-edit-button = Modifier
 invoice-delete-button = Supprimer

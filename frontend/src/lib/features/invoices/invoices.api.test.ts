@@ -12,7 +12,7 @@ vi.mock('$lib/shared/utils/api-client', () => ({
 }));
 
 import { apiClient } from '$lib/shared/utils/api-client';
-import { getInvoiceEmailPreview, sendInvoiceEmail } from './invoices.api';
+import { getInvoiceEmailPreview, listInvoices, sendInvoiceEmail } from './invoices.api';
 
 describe('invoices.api — envoi par e-mail (20-3b2)', () => {
 	it('getInvoiceEmailPreview GET le bon path', async () => {
@@ -39,5 +39,42 @@ describe('invoices.api — envoi par e-mail (20-3b2)', () => {
 			unknown
 		>;
 		expect('to' in payload).toBe(false);
+	});
+});
+
+// Story 21-6a (D10) — filtre « rappels suspendus » de la liste des factures.
+describe('invoices.api — filtre paused (21-6a)', () => {
+	const emptyList = { items: [], total: 0, offset: 0, limit: 20 };
+
+	it('sérialise ?paused=paused', async () => {
+		(apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(emptyList);
+		await listInvoices({ paused: 'paused' });
+		expect(apiClient.get).toHaveBeenCalledWith('/api/v1/invoices?paused=paused');
+	});
+
+	it('sérialise ?paused=not-paused', async () => {
+		(apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(emptyList);
+		await listInvoices({ paused: 'not-paused' });
+		expect(apiClient.get).toHaveBeenCalledWith('/api/v1/invoices?paused=not-paused');
+	});
+
+	it("omet le param quand la valeur vaut 'all' (défaut backend, no-op)", async () => {
+		(apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(emptyList);
+		await listInvoices({ paused: 'all' });
+		expect(apiClient.get).toHaveBeenCalledWith('/api/v1/invoices');
+	});
+
+	it('omet le param quand il est absent', async () => {
+		(apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(emptyList);
+		await listInvoices({});
+		expect(apiClient.get).toHaveBeenCalledWith('/api/v1/invoices');
+	});
+
+	it('cohabite avec les autres filtres sans les écraser', async () => {
+		(apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(emptyList);
+		await listInvoices({ status: 'validated', paused: 'paused', limit: 20 });
+		expect(apiClient.get).toHaveBeenCalledWith(
+			'/api/v1/invoices?status=validated&paused=paused&limit=20',
+		);
 	});
 });

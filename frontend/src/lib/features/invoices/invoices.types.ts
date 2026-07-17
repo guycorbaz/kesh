@@ -47,6 +47,9 @@ export interface InvoiceResponse {
 	emailedTo: string | null;
 	/** Projet analytique document-level (Epic 19). `null` = non taguée. */
 	projectId: number | null;
+	/** Story 21-6a (D10) — rappels suspendus. `null` = rappels actifs. */
+	dunningPausedAt: string | null;
+	dunningPausedNote: string | null;
 	/** Calculé backend (P6 review pass 2). Source unique de vérité pour le badge « en retard ». */
 	isOverdue: boolean;
 	version: number;
@@ -97,6 +100,9 @@ export interface InvoiceListItemResponse {
 	/** TTC canonique (#246). String décimale, jamais Number. */
 	totalTtc: string;
 	paidAt: string | null;
+	/** Story 21-6a (D10) — rappels suspendus. `null` = rappels actifs. */
+	dunningPausedAt: string | null;
+	dunningPausedNote: string | null;
 	version: number;
 	createdAt: string;
 	updatedAt: string;
@@ -104,6 +110,12 @@ export interface InvoiceListItemResponse {
 
 // Story 5.4 — Échéancier
 export type PaymentStatusFilter = 'all' | 'paid' | 'unpaid' | 'overdue';
+
+/**
+ * Story 21-6a (D10) — filtre « rappels suspendus » de la liste des factures.
+ * `all` est le défaut et ne filtre rien.
+ */
+export type PausedFilter = 'all' | 'paused' | 'not-paused';
 
 export interface DueDateItem extends InvoiceListItemResponse {
 	isOverdue: boolean;
@@ -173,6 +185,8 @@ export interface ListInvoicesQuery {
 	contactId?: number;
 	dateFrom?: string;
 	dateTo?: string;
+	/** Story 21-6a (D10). `all` (défaut) n'est pas sérialisé. */
+	paused?: PausedFilter;
 	sortBy?: InvoiceSortBy;
 	sortDirection?: SortDirection;
 	limit?: number;

@@ -1,6 +1,6 @@
 # Story 21.6a: Exposition de la suspension (backend + liste factures)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 4 agents Explore parallèles (routes/invoices.rs / repositories+entities / frontend liste factures / tests+conventions). Issue de la règle de splitting préventif appliquée à 21-6 le 2026-07-16 (> 5 modules + trou backend D10). Consomme le socle 21-5a (colonnes + endpoints pause/resume). Indépendante de 21-6b. Décisions Guy 2026-07-17 : filtre tri-état, i18n des nouvelles chaînes seulement (issue #255 pour le reste), badge sur la liste factures seulement. -->
 
@@ -201,14 +201,14 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
   - [x] `match` dans `push_where_clauses` (SQL littéral, aucun `push_bind`).
   - [x] `PausedParam` + `From` (kebab-case) + champ sur `ListInvoicesQuery`.
 - [x] **T4 — Tests backend** (AC: 24) — 4 tests, scénarios (a)…(h), dont **(f) l'invariant D10**. `dunning_reminders_e2e` **10/10 vert** (6 pré-existants + 4 nouveaux).
-- [ ] **T5 — Frontend types, API, badge, filtre** (AC: 16-23)
-  - [ ] Types + `buildQueryString`.
-  - [ ] `DunningPausedBadge.svelte` + entrée dans `KNOWN_VIOLATIONS` (**piège n°4**).
-  - [ ] Clés i18n `invoice-paused-*` dans les **4 FTL**.
-  - [ ] Rendu colonne Statut + `<select>` filtre.
-  - [ ] `VALID_PAUSED` + `initFromUrl` + `syncUrl` **dans les 2 branches** (**piège n°3**).
-- [ ] **T6 — Tests frontend + E2E + axe + doc** (AC: 25, 26, 27, 30)
-- [ ] **T7 — Gate complet** (AC: 29) — workspace serial + frontend + E2E.
+- [x] **T5 — Frontend types, API, badge, filtre** (AC: 16-23)
+  - [x] Types (`InvoiceResponse`, `InvoiceListItemResponse`, `ListInvoicesQuery`, nouveau `PausedFilter`) + `buildQueryString` (omet `all` et l'absence).
+  - [x] `DunningPausedBadge.svelte` + entrée `KNOWN_VIOLATIONS` (**piège n°4**) → `npm run lint-i18n-ownership` **PASS**.
+  - [x] Clés i18n `invoice-paused-*` (5 clés × **4 FTL**) : badge, libellé du filtre, 3 options.
+  - [x] Rendu colonne Statut (conditionné à `dunningPausedAt !== null`) + `<select>` filtre en `bind:value`.
+  - [x] `VALID_PAUSED` + `initFromUrl` + `syncUrl` **dans les 2 branches** (**piège n°3**) + `pausedFilter` ajouté aux dépendances de l'`$effect`.
+- [x] **T6 — Tests frontend + E2E + axe + doc** (AC: 25, 26, 27, 30) — vitest **394** (+5), E2E **14/14**, CHANGELOG. **L'axe sur liste peuplée a attrapé un défaut réel de cette story** (badge à 3.69:1, cf. Dev Agent Record) + une dette a11y pré-existante → **issue #256**, test scopé.
+- [x] **T7 — Gate complet** (AC: 29) — `fmt` OK, `clippy` **0**, `cargo test --workspace -- --test-threads=1` **exit 0 : 101 suites / 1872 tests / 0 échec**. Frontend `check` 0 erreur / `lint-i18n` PASS / `test:unit` 394 / `build` OK. E2E **14/14**.
 
 ## Dev Notes
 
@@ -292,8 +292,56 @@ Absorption des patches P1 confirmée par le reviewer (AC 11 réécrite, AC 2 à 
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — run unique, T1 → T7, aucune HALT.
+
 ### Debug Log References
+
+- Gate workspace complet (serial) : **exit 0**, 101 suites / 1872 tests / 0 échec / 8 ignorés (`#[ignore]` pré-existants).
+- Suites de la classe de risque (fanout `InvoiceListItem` / `push_where_clauses`) toutes vertes : `reconciliation_e2e` 25, `reconciliation_repository` 9, `exports_global_e2e` 20, `admin_full_export_e2e` 7, `invoice_echeancier_e2e` 9, `dunning_reminders_e2e` 10, `invoice_send_email_e2e` 39, `migrations_upgrade_path` 8 (54 migrations, compteur inchangé comme prévu).
+- E2E Playwright `invoices.spec.ts` : 14/14 (backend 0.7.0 contre `kesh_e2e`, build statique).
 
 ### Completion Notes List
 
+**Les 4 pièges de la spec ont tous été rencontrés ; aucun n'a mordu.**
+
+1. **Fanout SELECT `InvoiceListItem` (piège n°1) — neutralisé par construction.** Les 2 SELECT étant des littéraux **strictement identiques**, j'ai vérifié par `grep -cF` qu'il existe exactement 2 occurrences dans le workspace, puis fait un **remplacement global unique**. L'oubli d'un site devenait alors impossible, au lieu de dépendre de ma vigilance sur une checklist. `exports_global_e2e` 20/20 prouve à l'exécution que le SELECT de `list_for_export` (le site le plus facile à oublier) est correct. Un doc-comment d'avertissement est posé **sur le struct** : le prochain qui y ajoute un champ verra le piège sans avoir lu cette story.
+2. **Invariant D10 (piège n°2) — tenu et verrouillé.** `build_due_dates_query` pose `paused: None` avec un commentaire qui nomme l'invariant. Le test `paused_invoice_stays_visible_in_due_dates` mord réellement : il asserte que la facture suspendue sort de la liste à rappeler **et reste** dans l'échéancier.
+3. **`syncUrl` à 2 branches (piège n°3)** — `paused` ajouté aux deux, avec commentaire dans la branche `dateRangeError` (la plus facile à oublier).
+4. **`lint-i18n-ownership` (piège n°4)** — entrée `KNOWN_VIOLATIONS` ajoutée, gate PASS.
+
+**Défaut réel trouvé par le test axe — dans le code de cette story (a11y).** Le badge affichait un contraste de **3.69:1** (mesuré par axe-core), sous le minimum AA de 4.5:1. **Cause racine : le gabarit copié.** `PaymentStatusBadge` colore le texte avec **la même variable** que la teinte de fond (`--color-text-muted` sur une teinte à 15-20 % du même token) ; sur une variante neutre cela donne du gris moyen sur du gris clair. Corrigé en passant le texte à `--color-text` → **11.4:1**, avec un avertissement dans le composant pour empêcher une future « harmonisation » avec le gabarit sans re-mesure. **Le gabarit garde le défaut** (variante `.unpaid`) — pré-existant, non corrigé ici (règle de la story), documenté dans #256.
+
+**Dette a11y pré-existante révélée → issue #256.** Le test axe sur liste **peuplée** (le test historique n'exerçait que l'empty state, et son commentaire demandait justement de l'étendre) remonte `button-name` **critical** : les 3 boutons d'action de chaque ligne sont icône seule, `aria-hidden`, sans nom accessible → un lecteur d'écran annonce trois boutons anonymes. Vérifié **hors du diff 21-6a** (`git diff` + `git show HEAD`). Non corrigé (règle de la story) ; test scopé par `disableRules(['button-name'])` avec commentaire « retirer à la fermeture de #256 ».
+
+**Micro-déviation AC 1 (assumée, sans effet fonctionnel).** L'AC demandait d'insérer les champs « après `emailed_to` **pour refléter l'ordre de l'entité** » — mais l'entité place `project_id` entre les deux. Les champs sont donc placés **après `project_id`**, ce qui sert réellement l'intention déclarée. Impacte seulement l'ordre des clés JSON.
+
+**Constat hors scope confirmé** (déjà signalé par la spec, à trancher en rétro) : `serialize_invoices_csv` omet `dunning_paused_*` **et** `emailed_at`/`emailed_to` de l'export de souveraineté. Pré-existant, non touché.
+
+**Aucune migration** → aucun bump `min_required`, `migrations-idempotence-audit.md` inchangé, compteurs migrations/export inchangés (vérifié : `migrations_upgrade_path` 8/8, `exports_global_e2e` 20/20).
+
 ### File List
+
+**Backend**
+- `crates/kesh-api/src/routes/invoices.rs` (M) — `InvoiceResponse` + `from_parts`, `InvoiceListItemResponse` + `From`, `ListInvoicesQuery`, `PausedParam` + `From`, 2 constructions de `InvoiceListQuery`.
+- `crates/kesh-db/src/repositories/invoices.rs` (M) — `InvoiceListItem` (+ doc fanout), 2 SELECT, `PausedFilter`, `InvoiceListQuery`, `push_where_clauses`.
+- `crates/kesh-api/tests/dunning_reminders_e2e.rs` (M) — 4 tests + 2 helpers (`pause_invoice`, `item_ids`).
+
+**i18n**
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl` (M)
+- `crates/kesh-i18n/locales/de-CH/messages.ftl` (M)
+- `crates/kesh-i18n/locales/it-CH/messages.ftl` (M)
+- `crates/kesh-i18n/locales/en-CH/messages.ftl` (M)
+
+**Frontend**
+- `frontend/src/lib/features/invoices/DunningPausedBadge.svelte` (**NEW**)
+- `frontend/src/lib/features/invoices/invoices.types.ts` (M)
+- `frontend/src/lib/features/invoices/invoices.api.ts` (M)
+- `frontend/src/lib/features/invoices/invoices.api.test.ts` (M) — 5 tests
+- `frontend/src/routes/(app)/invoices/+page.svelte` (M)
+- `frontend/scripts/lint-i18n-ownership.js` (M) — `KNOWN_VIOLATIONS`
+- `frontend/tests/e2e/invoices.spec.ts` (M) — 4 tests + helper `pauseInvoiceViaApi`
+
+**Doc / suivi**
+- `CHANGELOG.md` (M) — `[Non publié]` → `Ajouté`
+- `_bmad-output/implementation-artifacts/21-6a-exposition-suspension.md` (M)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (M)
