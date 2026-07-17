@@ -277,6 +277,18 @@ Auteur de la spec : Opus. Reviewer orthogonal : Sonnet. Verdict **GO-ajusté**. 
 
 Vérifications positives (grep/Read, Sonnet) : checklist des **2** SELECT `InvoiceListItem` **fermée et exacte** ; les 4 sites `Invoice` déjà alignés (dont `reconciliation.rs` post-régression 21-5a) ; littéraux `InvoiceListQuery` hors `kesh-api` tous protégés par `..Default::default()` ; namespace `invoice-paused-*` libre dans les 4 FTL ; comportement de `lint-i18n-ownership.js` et piège #30 confirmés ; compteurs figés migrations/export inchangés ; absence de snapshot / `deny_unknown_fields` confirmée.
 
+### Pass 2 (Haiku, 2026-07-17) — 0 finding → **CONVERGÉ**
+
+Contexte frais, prémunie explicitement contre le mode d'échec documenté (« auditer la spec comme une implémentation » — 6 erreurs de catégorie sur 7 findings lors d'un précédent validate). **Le garde-fou a tenu : 0 erreur de catégorie, 0 hallucination.** 73 outils, sampling agressif des chemins:lignes. Verdict **GO**.
+
+Absorption des patches P1 confirmée par le reviewer (AC 11 réécrite, AC 2 à 7 sites, renvoi AC 24(f) corrigé). Vérifications indépendantes concordantes : `due_dates_summary:604-676` a bien sa clause `WHERE` propre ; `list_due_dates_handler:872-895` appelle `list_by_company_paginated` via `tokio::join!` ; les 2 branches de `syncUrl` ; namespace `invoice-paused-*` libre dans les 4 FTL ; piège #30 confirmé.
+
+**Contre-vérification de l'orchestrateur sur le piège n°1** (le point où la story se joue, re-vérifié malgré le GO) — `grep -rn "InvoiceListItem" crates/ --include=*.rs` : **exactement 2 sites de désérialisation** (`repositories/invoices.rs:564` `list_by_company_paginated`, `:1820` `list_for_export`), plus la définition (`:187`), le champ `InvoiceListResult.items` (`:209`) et le `From` API (`routes/invoices.rs:267`). `SupplierInvoiceListItem` est un **type distinct** (`repositories/supplier_invoices.rs:47`), hors scope. **Checklist fermée de l'AC 5 confirmée exacte.**
+
+### Trend & décision
+
+**Passe 1 (Sonnet) : 1 HIGH + 1 MEDIUM + 1 LOW → Passe 2 (Haiku) : 0.** Critère d'arrêt de la règle de remédiation atteint (0 finding > LOW), budget 2/8. Rotation orthogonale à l'auteur (Opus) sur les deux passes. Les 2 findings > LOW de P1 ont été re-vérifiés ground-truth par l'orchestrateur avant patch — aucun n'était un faux-positif. **Spec scellée, prête pour `bmad-dev-story 21-6a`.**
+
 ## Dev Agent Record
 
 ### Agent Model Used
