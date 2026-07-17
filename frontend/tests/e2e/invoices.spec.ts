@@ -148,9 +148,18 @@ test.describe('Factures — suspension des rappels (21-6a)', () => {
 		await expect(pausedRow.getByTestId('invoice-paused-badge')).toBeVisible();
 		await expect(activeRow.getByTestId('invoice-paused-badge')).toHaveCount(0);
 
-		// La note de suspension est lisible en infobulle (seule surface en v1).
+		// La note de suspension est lisible en infobulle (seule surface visuelle en v1)…
 		await expect(pausedRow.getByTestId('invoice-paused-badge')).toHaveAttribute(
 			'title',
+			/litige en cours/,
+		);
+		// …ET annoncée aux lecteurs d'écran. `title` seul ne suffit pas : son
+		// annonce est notoirement peu fiable, et un `aria-label` réduit à
+		// « Suspendu » priverait définitivement l'utilisateur non-voyant du
+		// motif de la suspension. Choix délibéré, verrouillé ici (cf. Dev
+		// Agent Record, déviation AC 18).
+		await expect(pausedRow.getByTestId('invoice-paused-badge')).toHaveAttribute(
+			'aria-label',
 			/litige en cours/,
 		);
 
@@ -177,6 +186,17 @@ test.describe('Factures — suspension des rappels (21-6a)', () => {
 		await login(page);
 		await page.goto('/invoices?paused=paused');
 		await expect(page.getByTestId('invoice-paused-filter')).toHaveValue('paused');
+	});
+
+	// Changer de filtre depuis une page > 1 doit ramener à la première page :
+	// sinon l'offset survit à un jeu de résultats rétréci et l'utilisateur voit
+	// une liste vide en croyant que le filtre est cassé.
+	test('changer le filtre remet la pagination à zéro', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices?offset=20');
+		await expect(page).toHaveURL(/offset=20/);
+		await page.getByTestId('invoice-paused-filter').selectOption('paused');
+		await expect(page).not.toHaveURL(/offset=/);
 	});
 
 	test('une valeur de filtre invalide dans l’URL retombe sur le défaut', async ({ page }) => {

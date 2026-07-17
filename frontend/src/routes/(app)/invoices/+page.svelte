@@ -304,6 +304,7 @@
 			id="invoice-paused-filter"
 			data-testid="invoice-paused-filter"
 			bind:value={pausedFilter}
+			onchange={() => (offset = 0)}
 			class="h-9 rounded-md border border-border bg-background px-2 text-sm"
 		>
 			<option value="all">{i18nMsg('invoice-paused-filter-all', 'Tous')}</option>
