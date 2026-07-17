@@ -112,6 +112,8 @@ afin de **piloter mes relances depuis l'interface sans passer par l'API — et s
 
 21. **`ManualReminderDialog.svelte`** (présentationnel, patron `MarkPaidDialog`) : `open`, `onOpenChange`, `submitting?`, `errorMsg?`, `onConfirm(levelNumber, sentAt, note)`. Champs : niveau (`<select>` 1..N, défaut `nextLevel` ou 1 si terminal — le manuel **autorise le saut**, D18), date d'envoi (`<input type="date">`, défaut aujourd'hui), note optionnelle (`<textarea>`). Disponible **sur toutes les factures de la liste**, y compris `hasEmail=false` et `terminal`.
 
+    ⚠️ **PIÈGE `sentAt` — format `NaiveDateTime`, PAS date-seule (bug #249).** `ManualReminderBody.sent_at` est un `NaiveDateTime` côté backend (`dunning_reminders.rs:121`), dont le `FromStr` **rejette** une chaîne `"YYYY-MM-DD"` (il exige le composant `T` : `"2026-07-17"` → `ParseError(TooShort)`). La valeur brute d'un `<input type="date">` est justement `"YYYY-MM-DD"` → si on l'envoie telle quelle, Axum **échoue à désérialiser le body en amont du handler** → erreur JSON générique (PAS un `err.code` structuré de l'AC 22), et **T6/T8 cassent silencieusement**. **Émettre `` `${sentAt}T12:00:00` `` **, jamais la valeur brute — exactement le fix de `MarkPaidDialog.svelte:64` (`onConfirm(\`${paidAt}T12:00:00\`)`, commentaire #249 lignes 59-63). C'est le bug qui a atteint la prod sur « Marquer payée » faute d'E2E en CI ; ne pas le rejouer. **Verrouillé par test** : une assertion vitest OU E2E vérifie que le payload `sentAt` envoyé matche `/T\d{2}:\d{2}:\d{2}$/` (pas une date nue). Idem partout où un `<input type="date">` alimente un champ `NaiveDateTime` — vérifier qu'aucun autre champ de cette story n'est concerné (seul `sentAt` l'est ici ; les autres dates sont en lecture).
+
 22. **Envoi manuel** : `recordManualReminder(invoiceId, { levelNumber, sentAt, note })` → 201. Anti-double-submit (mêmes 4 couches). Au retour : recharger la liste + toast succès. Erreurs `err.code` : `VALIDATION_ERROR` (400 : niveau < 1, note > 5000), `REMINDER_DATE_IN_FUTURE` (422), `DUNNING_LEVEL_NOT_FOUND` (422), `NOT_FOUND` (404), `INVOICE_NOT_VALIDATED` (400), `INVOICE_ALREADY_PAID` (422). **Garde UI** : `sentAt` non postérieur à aujourd'hui (le backend rejette le futur — 422).
 
 ### H. i18n
@@ -156,7 +158,7 @@ afin de **piloter mes relances depuis l'interface sans passer par l'API — et s
 - [ ] **T3 — Sélection & envoi lot** (AC: 10, 11, 12, 13) + rapport + mapping erreurs
 - [ ] **T4 — Envoi unitaire (modale éditable, preview, choix niveau)** (AC: 14, 15, 16, 17, 18)
 - [ ] **T5 — Anti-double-submit (4 couches, unitaire + lot + manuel)** (AC: 19, 20) — **AC de premier plan**
-- [ ] **T6 — Rappel manuel** (AC: 21, 22)
+- [ ] **T6 — Rappel manuel** (AC: 21, 22) — **piège `sentAt` : suffixer `T12:00:00` (bug #249), verrouillé par test**
 - [ ] **T7 — i18n 4 FTL** (AC: 23)
 - [ ] **T8 — Fixture E2E `dueDate` + E2E round-trip + anti-double-submit + axe** (AC: 24, 25, 26, 27)
 - [ ] **T9 — Gate complet + CHANGELOG** (AC: 29, 30)
@@ -171,6 +173,7 @@ afin de **piloter mes relances depuis l'interface sans passer par l'API — et s
 4. **Contraste du badge (leçon 21-6a).** Le gabarit `PaymentStatusBadge` colore le texte avec la variable du fond → sous AA. Copier `DunningPausedBadge` (21-6a, corrigé) : texte en `--color-text`. Re-vérifier à l'axe.
 5. **Fixture E2E `dueDate`.** Sans échéance passée, aucune facture n'est éligible → la page est vide et les tests ne prouvent rien. Étendre `createAndValidateInvoiceViaApi` (DRY), seuil niveau 1 = `today - 15j`.
 6. **Cap 20 = miroir UI.** Le backend renvoie 422 au-delà de 20 (après dédup). L'UI garde à 20 pour ne jamais laisser partir une requête vouée à l'échec, mais le backend reste la source de vérité.
+7. **`sentAt` du rappel manuel : `T12:00:00` obligatoire (bug #249).** Un `<input type="date">` produit `"YYYY-MM-DD"` ; le champ backend `NaiveDateTime` exige un composant horaire → suffixer `` `${sentAt}T12:00:00` `` comme `MarkPaidDialog:64`. Ce bug a atteint la prod (« Marquer payée » cassé) faute d'E2E. Test de format obligatoire (AC 21).
 
 ### Contrats backend (ground-truth, à ne pas re-deviner)
 
@@ -222,6 +225,16 @@ Détail des codes d'erreur : AC 12/13/18/22. Aucun DTO d'envoi n'a de champ `to`
 - [Source: `21-6a-exposition-suspension.md` — gabarit badge contraste-AA, disclosure non sélective, vérifier les justifications]
 - [Source: `CLAUDE.md#Test Locally First`, `#Review Iteration Rule`, `#Issue Tracking Rule` ; `feedback_no_secure_context_apis_http_lan` (`$props.id()`)]
 - [Source: GitHub #231 (rappels débiteurs — 21-6b livre l'écran de relance), #255/#256/#253 (dettes pré-existantes à ne pas corriger ici)]
+
+## Change Log — validate
+
+### Pass 1 (Sonnet, 2026-07-17) — 1 CRITICAL → patché
+
+Auteur de la spec : Opus. Reviewer orthogonal : Sonnet. Verdict **GO-ajusté**. Le finding CRITICAL a été **re-vérifié ground-truth par l'orchestrateur** (`grep -nF`) avant patch — **confirmé réel**.
+
+- **SENTAT-1 (CRITICAL) — `sentAt` date-seule rejeté par le backend `NaiveDateTime`.** L'AC 21/22 spécifiait un `<input type="date">` alimentant `recordManualReminder(..., { sentAt })` **sans** mentionner le suffixe horaire obligatoire. Grep confirme : `dunning_reminders.rs:121` `sent_at: NaiveDateTime` (dont le `FromStr` rejette `"YYYY-MM-DD"`), et `MarkPaidDialog.svelte:64` porte exactement le fix (`` `${paidAt}T12:00:00` ``, commentaire #249). Un dev suivant l'AC à la lettre aurait rejoué le **bug de prod #249** (« Marquer payée » cassé, 422, non détecté faute d'E2E en CI). **Patch** : AC 21 réécrite avec le format `T12:00:00` explicite + assertion de test (`/T\d{2}:\d{2}:\d{2}$/`), répercuté en T6 et piège n°7 des Dev Notes.
+
+Vérifications positives (grep/Read/compilation, Sonnet) : « niveau de ground-truth exceptionnellement élevé » — toutes les routes (`lib.rs:433/437`), handlers (`invoice_email.rs:363/412/925`), DTO, codes d'erreur, lignes de gabarit (`SendEmailDialog:60/119/124`, `invoices/[id]:301/302/731`, `payment-batches:38/61-66/153-164`, `due-dates:51-53`, `layout.svelte:62`), namespace `reminders-*` libre, feature `dunning/` existante, fixture `dueDate=today` en dur, seuil éligibilité `today-15j`, cap 20 après dédup — **tous confirmés exacts**. Un seul défaut substantiel (SENTAT-1).
 
 ## Dev Agent Record
 
