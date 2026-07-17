@@ -207,6 +207,14 @@ Auteur de la spec : Opus. Reviewer orthogonal : Sonnet. Verdict **GO-ajusté**. 
 
 **Vérifications positives (grep/Read, Sonnet) — profondeur inhabituelle** : le **piège n°1** confirmé exact (pause/resume renvoient `DunningPauseResponse` pas `InvoiceResponse` ; `set_dunning_pause` fait `version = version + 1` sur les 2 branches ; mark/unmark envoient `version: invoice.version`) ; les 5 contrats backend (chemins/méthodes/DTO/RBAC **structurel** pas juste commentaire) ; `INVOICE_NOT_PAUSED` = **422** confirmé ; wrappers/types absents confirmés, `ReminderResponse` présent `:62-77` ; point d'insertion `:621-622` (nesting vérifié div par div) ; widget dashboard statique + `authState` absent ; liens croisés + `canManage` ; lint #30 (`features/reminders/` sans entrée `KNOWN_VIOLATIONS` → `reminders-*` seule contrainte ; `homepage-*`/`due-dates-*` hors périmètre) ; aucune clé i18n proposée n'existe déjà. **Aucun défaut de contrat ou d'architecture.**
 
+### Pass 2 (Haiku, 2026-07-17) — 0 finding → **CONVERGÉ**
+
+Contexte frais, prémunie contre le mode d'échec « auditer la spec comme une implémentation ». **0 erreur de catégorie, 0 hallucination.** Verdict **GO**. Absorption du patch P1 confirmée (promotion `overdueDate`). Vérifications indépendantes concordantes : routes pause/resume/historique existent, DTO alignés, `INVOICE_NOT_PAUSED` = 422, la reprise nulle bien **les deux** colonnes (`SET dunning_paused_at = NULL, dunning_paused_note = NULL` — SQL vérifié), points d'insertion `:621-622`/dashboard `:76-93`/échéancier `:299-301` exacts, piège n°1 (AC 9 + Dev Notes alignés, exemple de code correct), RBAC `canManage`, compteur = somme de factures (pas montant).
+
+### Trend & décision — validate
+
+**Passe 1 (Sonnet) : 1 MEDIUM → Passe 2 (Haiku) : 0.** Critère d'arrêt atteint (0 > LOW), budget 2/8. Rotation orthogonale à l'auteur (Opus). Le MEDIUM de P1 re-vérifié ground-truth par grep avant patch. **Spec scellée, prête pour `bmad-dev-story 21-6c`.**
+
 ## Dev Agent Record
 
 ### Agent Model Used
