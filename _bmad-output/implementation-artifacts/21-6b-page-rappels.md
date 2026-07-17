@@ -236,6 +236,16 @@ Auteur de la spec : Opus. Reviewer orthogonal : Sonnet. Verdict **GO-ajusté**. 
 
 Vérifications positives (grep/Read/compilation, Sonnet) : « niveau de ground-truth exceptionnellement élevé » — toutes les routes (`lib.rs:433/437`), handlers (`invoice_email.rs:363/412/925`), DTO, codes d'erreur, lignes de gabarit (`SendEmailDialog:60/119/124`, `invoices/[id]:301/302/731`, `payment-batches:38/61-66/153-164`, `due-dates:51-53`, `layout.svelte:62`), namespace `reminders-*` libre, feature `dunning/` existante, fixture `dueDate=today` en dur, seuil éligibilité `today-15j`, cap 20 après dédup — **tous confirmés exacts**. Un seul défaut substantiel (SENTAT-1).
 
+### Pass 2 (Haiku, 2026-07-17) — 0 finding → **CONVERGÉ**
+
+Contexte frais, prémunie contre le mode d'échec documenté (auditer la spec comme une implémentation). **0 erreur de catégorie, 0 hallucination.** 60 outils. Verdict **GO**.
+
+Absorption du patch P1 confirmée : le format `` `${sentAt}T12:00:00` `` est copié exactement de `MarkPaidDialog.svelte:64` (commentaire #249 lignes 59-63), cohérent avec `ManualReminderBody.sent_at: NaiveDateTime` — **aucune régression introduite par le patch**. Vérifications indépendantes concordantes : les 5 routes montées (`lib.rs:424/429/433/437`), les handlers, les codes d'erreur (`RateLimited`/`SmtpNotConfigured`/`LEVEL_ALREADY_SENT`/`DunningPaused`/`InvoiceAlreadyPaid`…) tous implémentés, l'anti-double-submit à 4 couches applicable, le périmètre items 16-22 couvert sans fuite de 21-6c/21-7.
+
+### Trend & décision
+
+**Passe 1 (Sonnet) : 1 CRITICAL → Passe 2 (Haiku) : 0.** Critère d'arrêt de la règle de remédiation atteint (0 finding > LOW), budget 2/8. Rotation orthogonale à l'auteur (Opus) sur les deux passes. Le CRITICAL de P1 re-vérifié ground-truth par l'orchestrateur avant patch — réel (bug #249). **Spec scellée, prête pour `bmad-dev-story 21-6b`.**
+
 ## Dev Agent Record
 
 ### Agent Model Used
