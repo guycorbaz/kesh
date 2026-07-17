@@ -110,7 +110,8 @@ afin de **piloter le suivi des débiteurs sans chercher — chaque information e
     - **Toggle suspension bout-en-bout** : créer facture validée → `goto('/invoices/{id}')` → cliquer « Suspendre les rappels » → note dans la modale → confirmer → badge « Suspendu » visible → cliquer « Reprendre » → badge disparaît. **Vérifie l'absence de 409 sur une action suivante** : après pause, tenter « Marquer payée » (ou re-suspendre) → doit réussir (prouve que la version a été ré-appliquée — piège n°1).
     - **Historique** : pré-peupler via `recordManualReminder` (l'API — le manuel n'exige PAS une facture échue, seulement validée+non-payée) → `goto('/invoices/{id}')` → la section historique affiche la/les ligne(s), triées, canal « Manuel ».
     - **`data-testid`** nouveaux : `dunning-pause-button`, `dunning-resume-button`, `dunning-pause-confirm`, `reminder-history`, `reminder-history-row`.
-16. **E2E dashboard** — étendre/créer un test : seed une facture échue+éligible (via `createAndValidateInvoiceViaApi(page, contact, overdueDate(25))` + le seed dunning) → `goto('/')` → `getByTestId('homepage-reminders-count')` affiche ≥ 1. **Rôle Consultation** : le compteur n'est pas fetché (pas de 403 en console) — asserter que le widget garde son empty-state.
+16. **E2E dashboard** — un test dans son propre spec `frontend/tests/e2e/homepage-reminders.spec.ts` (le compteur est sur le dashboard, pas la fiche facture — ne pas l'entasser dans `invoices.spec.ts`). Seed une facture échue+éligible → `goto('/')` → `getByTestId('homepage-reminders-count')` affiche ≥ 1. **Rôle Consultation** : le compteur n'est pas fetché (pas de 403 en console) — asserter que le widget garde son empty-state.
+    ⚠️ **Piège helper `overdueDate` (M1 validate)** : `overdueDate(days)` (`today − days`, seuil éligibilité niveau 1 = `today − 15j`) est aujourd'hui une fonction **locale non exportée** de `reminders.spec.ts:44`. Un nouveau spec ne peut pas l'importer. **Avant** ce test : **promouvoir `overdueDate` dans `frontend/tests/e2e/helpers/api-fixtures.ts`** (l'ajouter avec `export`, puis remplacer la déclaration locale de `reminders.spec.ts` par un import — DRY, patron `createAndValidateInvoiceViaApi`). Ne PAS dupliquer la fonction.
 17. **vitest** : les 3 nouveaux wrappers (AC 3).
 18. **axe** (patron scopé) : sur la fiche facture avec section historique + badge, `AxeBuilder().include(...).disableRules(['color-contrast','button-name']).analyze()` → 0 violation dans le sous-arbre de la story (dettes #253/#256 pré-existantes neutralisées). Le badge et les nouveaux boutons **de cette story** doivent être conformes AA (badge en `--color-text`, boutons avec libellé texte — pas icône seule).
 
@@ -134,7 +135,7 @@ afin de **piloter le suivi des débiteurs sans chercher — chaque information e
 - [ ] **T4 — Compteur dashboard** (AC: 10, 11) — widget « Factures ouvertes » + 1er fetch (patron bancaire, catch silencieux), garde `canManage` (pas de 403 Consultation), compteur = somme `invoices.length`.
 - [ ] **T5 — Liens croisés** (AC: 12, 13) — échéancier → Rappels et retour.
 - [ ] **T6 — i18n 4 FTL** (AC: 14).
-- [ ] **T7 — E2E + axe** (AC: 15, 16, 18) — toggle bout-en-bout (dont **anti-régression 409**), historique, compteur dashboard (+ rôle Consultation), axe scopé.
+- [ ] **T7 — E2E + axe** (AC: 15, 16, 18) — toggle bout-en-bout (dont **anti-régression 409**), historique, compteur dashboard (+ rôle Consultation), axe scopé. **Prérequis : promouvoir `overdueDate` dans `api-fixtures.ts` (M1).**
 - [ ] **T8 — Gate complet + CHANGELOG** (AC: 19, 20).
 
 ## Dev Notes
@@ -195,6 +196,16 @@ Codes d'erreur toggle : 409 `OPTIMISTIC_LOCK_CONFLICT`, 422 `INVOICE_NOT_PAUSED`
 - [Source: `21-6b-…md` — feature `reminders/`, patron dialog présentationnel + anti-double-submit, LEÇON fix structurel > incrémental sur bug d'état, disclosure non sélective]
 - [Source: `CLAUDE.md#Test Locally First`, `#Review Iteration Rule`, `#Issue Tracking Rule` ; `feedback_no_secure_context_apis_http_lan` (`$props.id()`)]
 - [Source: GitHub #231 ; #255/#256/#257 (dettes pré-existantes à ne pas corriger)]
+
+## Change Log — validate
+
+### Pass 1 (Sonnet, 2026-07-17) — 1 MEDIUM → patché
+
+Auteur de la spec : Opus. Reviewer orthogonal : Sonnet. Verdict **GO-ajusté**. Vérification ground-truth **exhaustive** (81 outils) — le finding a été re-vérifié par l'orchestrateur (`grep`) avant patch.
+
+- **M1 (MEDIUM) — `overdueDate` ambigu pour l'AC 16.** L'AC disait « étendre/créer » un test dashboard réutilisant `overdueDate(25)` — or c'est une fonction **locale non exportée** de `reminders.spec.ts:44` (grep confirmé). Un nouveau spec l'important échouerait à la compilation, ou le dev dupliquerait la fonction sans le savoir. **Patch** : AC 16 tranchée — test dans son propre spec `homepage-reminders.spec.ts`, avec **promotion préalable** de `overdueDate` dans `api-fixtures.ts` (export + remplacement de la déclaration locale par un import, DRY). Répercuté en T7 + Dev Notes.
+
+**Vérifications positives (grep/Read, Sonnet) — profondeur inhabituelle** : le **piège n°1** confirmé exact (pause/resume renvoient `DunningPauseResponse` pas `InvoiceResponse` ; `set_dunning_pause` fait `version = version + 1` sur les 2 branches ; mark/unmark envoient `version: invoice.version`) ; les 5 contrats backend (chemins/méthodes/DTO/RBAC **structurel** pas juste commentaire) ; `INVOICE_NOT_PAUSED` = **422** confirmé ; wrappers/types absents confirmés, `ReminderResponse` présent `:62-77` ; point d'insertion `:621-622` (nesting vérifié div par div) ; widget dashboard statique + `authState` absent ; liens croisés + `canManage` ; lint #30 (`features/reminders/` sans entrée `KNOWN_VIOLATIONS` → `reminders-*` seule contrainte ; `homepage-*`/`due-dates-*` hors périmètre) ; aucune clé i18n proposée n'existe déjà. **Aucun défaut de contrat ou d'architecture.**
 
 ## Dev Agent Record
 
