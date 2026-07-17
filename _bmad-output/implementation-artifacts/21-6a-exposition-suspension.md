@@ -1,6 +1,6 @@
 # Story 21.6a: Exposition de la suspension (backend + liste factures)
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 4 agents Explore parallèles (routes/invoices.rs / repositories+entities / frontend liste factures / tests+conventions). Issue de la règle de splitting préventif appliquée à 21-6 le 2026-07-16 (> 5 modules + trou backend D10). Consomme le socle 21-5a (colonnes + endpoints pause/resume). Indépendante de 21-6b. Décisions Guy 2026-07-17 : filtre tri-état, i18n des nouvelles chaînes seulement (issue #255 pour le reste), badge sur la liste factures seulement. -->
 
@@ -140,7 +140,7 @@ afin de **retrouver une facture que j'ai suspendue — aujourd'hui elle dispara�
 
 21. **Contrôle de filtre** : `<select id="invoice-paused-filter">` ajouté à côté du filtre statut (`+page.svelte:265-277`), en **`bind:value`** (le filtre statut est le seul contrôle de la page en `bind:value` — on suit ce patron, pas celui des `oninput` manuels). Trois options, libellés via `i18nMsg` : `invoice-paused-filter-all` / `-paused` / `-not-paused`. Toute sélection remet **`offset = 0`** via un `onchange` dédié.
 
-    ⚠️ **Rectificatif (code review P1, AA-2)** : la parenthèse « convention de tous les filtres de la page » était **fausse**. Vérifié (`grep -n "offset = 0"` → 6 sites) : seuls les filtres **texte / date / contact** remettent l'offset à zéro ; le `<select>` du **statut ne le fait pas**. La remise à zéro reste **exigée ici** — elle est correcte (sans elle, changer de filtre depuis la page 3 laisse un offset survivant à un jeu de résultats rétréci → liste vide trompeuse) — mais elle est un **écart volontaire au précédent `statusFilter`**, pas un alignement sur lui. Le défaut symétrique de `statusFilter` est **pré-existant, hors scope** → issue **#257**.
+    ⚠️ **Rectificatif (code review P1, AA-2 ; précisé P2)** : la parenthèse « convention de tous les filtres de la page » était **fausse**. Vérifié (`grep -nF "offset = 0"` → 6 sites pré-patch : recherche, **tri** `toggleSort`, contact, dateFrom, dateTo, **bouton Réinitialiser**) : il n'y a **pas** de convention uniforme, et surtout le `<select>` du **statut ne remet pas l'offset**. La remise à zéro reste **exigée ici** — elle est correcte (sans elle, changer de filtre depuis la page 3 laisse un offset survivant à un jeu de résultats rétréci → liste vide trompeuse) — mais elle est un **écart volontaire au précédent `statusFilter`**, pas un alignement sur lui. Le défaut symétrique de `statusFilter` est **pré-existant, hors scope** → issue **#257**.
 
 22. **Synchro URL — piège n°3.** La page a une synchro URL **bidirectionnelle** :
     - **`initFromUrl()`** (`:52-84`) lit `paused` et le **valide contre une whitelist** `VALID_PAUSED` à ajouter à côté de `VALID_STATUS` / `VALID_SORT_BY` / `VALID_SORT_DIR` (`:48-50`). Valeur invalide → défaut `all` (patron existant). `mounted = true` doit rester **en dernier** (`:83`).
@@ -290,6 +290,33 @@ Absorption des patches P1 confirmée par le reviewer (AC 11 réécrite, AC 2 à 
 
 **Passe 1 (Sonnet) : 1 HIGH + 1 MEDIUM + 1 LOW → Passe 2 (Haiku) : 0.** Critère d'arrêt de la règle de remédiation atteint (0 finding > LOW), budget 2/8. Rotation orthogonale à l'auteur (Opus) sur les deux passes. Les 2 findings > LOW de P1 ont été re-vérifiés ground-truth par l'orchestrateur avant patch — aucun n'était un faux-positif. **Spec scellée, prête pour `bmad-dev-story 21-6a`.**
 
+## Change Log — code review
+
+Auteur de l'implémentation : Opus. Panel orthogonal.
+
+### Pass 1 (2026-07-17) — panel Blind Hunter Sonnet + Edge Case Hunter Haiku + Acceptance Auditor Sonnet
+
+Diff unique aplati (2 commits) → pas de confusion d'indexation multi-commit. **Trend > LOW : BH 0 | ECH 0C/0H/0M (+2 LOW) | AA 0C/0H/1M/1L, 30/30 ACs → 1 MEDIUM + 1 LOW patchés.**
+
+- **AA-0 (fait marquant)** : l'Acceptance Auditor a exécuté un **test de mutation** sur l'invariant D10 — en remplaçant `paused: None` par `Some(NotPaused)` dans `build_due_dates_query`, le test `paused_invoice_stays_visible_in_due_dates` **échoue** avec le message attendu. Le test mord réellement (fichier restauré ensuite). Preuve indépendante que le verrou D10 n'est pas décoratif.
+- **AA-1 (MEDIUM) — déviations AC 18 non déclarées.** Le badge dévie de l'AC 18 sur deux points que le Dev Agent Record initial passait sous silence alors qu'il documentait deux autres déviations : *disclosure sélective*. Les deux déviations sont **maintenues et défendues**, désormais **verrouillées par tests** : (a) pas de prop `pausedAt` — l'AC 20 fait déjà conditionner le rendu par l'appelant, la prop serait du code mort ; (b) `aria-label` porte libellé + note contre la lettre de l'AC — délibérément meilleur (l'annonce de `title` par les lecteurs d'écran est peu fiable ; sans ça un utilisateur non-voyant n'aurait jamais le motif de la suspension). Test E2E `aria-label` ajouté.
+- **AA-2 (LOW → traité comme un vrai manquement) — AC 21 non implémentée.** `offset = 0` à chaque sélection du filtre n'avait **pas** été codé → changer de filtre depuis une page > 1 affiche une liste vide trompeuse. Corrigé (`onchange`) + test E2E. Justification de l'AC en outre fausse (« convention de tous les filtres ») → AC rectifiée ; défaut symétrique **pré-existant** de `statusFilter` → issue **#257**.
+- **Questions ouvertes du Blind Hunter (diff seul), vérifiées et écartées par l'orchestrateur** : la note de suspension ne va **pas** au CSV (7 colonnes fixes) + garde anti-injection de formule OWASP déjà en place ; **pas de thème sombre** dans `app.css` → le calcul de contraste du badge tient.
+- Chaque patch livré **avec son test** (leçon 21-5b). Gate post-patch : `check` 0 erreur, `lint-i18n` PASS, `build` OK, **E2E 15/15**.
+
+### Pass 2 (Opus, 2026-07-17) — CONVERGÉ
+
+Contexte frais, mission explicite « chercher les défauts introduits par la remédiation P1 » (mode d'échec 21-5b). **0 CRITICAL / 0 HIGH / 0 MEDIUM, 1 LOW.** Les 3 patches P1 challengés un par un et jugés solides :
+
+- **`onchange` + `bind:value`** : pas de double `load()` (Svelte 5 batche les `$effect`), garde `loadSeq` contre toute race résiduelle, pas de boucle. Le test « mord » (test de mutation mental : sans le patch, `offset=20` survivrait → l'assertion `not.toHaveURL(/offset=/)` échouerait ; aucun reset automatique d'offset ne le ferait faux-passer).
+- **`aria-label` élargi** : défendable, note vide → pas de tiret orphelin, dégradation jamais pire que l'état pré-patch, patron `<span>` pré-existant.
+- **Dev Agent Record réécrit** : véridique sur ses affirmations vérifiables (statut `statusFilter`, cause-racine contraste `--color-text-muted` fond+texte du gabarit, colonne CSV omise) — tous confirmés par grep.
+- **P2-1 (LOW)** : imprécision documentaire du rectificatif AA-2 — « 6 sites, tous sur texte/date/contact » : deux des six sont en réalité le **tri** (`toggleSort`) et le bouton **Réinitialiser**. La conclusion load-bearing (« le `<select>` statut ne remet pas l'offset » → #257) reste exacte. **Corrigé** (formulation rectifiée aux 2 endroits). Aucune ligne de code touchée → pas de re-gate.
+
+### Trend & décision — code review
+
+**P1 : 1 MEDIUM + 1 LOW → P2 : 0 > LOW (1 LOW documentaire corrigé).** Critère d'arrêt atteint, budget 2/8. Panel P1 Sonnet/Haiku/Sonnet + P2 Opus, tous orthogonaux à l'auteur (Opus). **Le mode d'échec 21-5b (la remédiation crée le défaut suivant) ne s'est pas reproduit** — P2 confirme les patches P1 sains. Chaque patch est venu avec son test. **Story convergée → done.**
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -322,7 +349,7 @@ Opus 4.8 (1M context) — run unique, T1 → T7, aucune HALT.
 - **Pas de prop `pausedAt`.** L'AC 18 la prescrivait (`pausedAt: string | null`), mais l'AC 20 fait conditionner le rendu **par l'appelant** (`{#if inv.dunningPausedAt !== null}`). Les deux ensemble donneraient une prop **jamais lue** : soit du code mort, soit une double condition divergente. Le composant ne prend donc que `note`. Les deux ACs étaient mutuellement redondantes ; c'est l'AC 20 (comportement observable) qui prime sur l'AC 18 (liste de props).
 - **`aria-label` porte le libellé ET la note**, là où l'AC 18 disait `aria-label={label}` et « le `title` est la seule surface » qui expose la note. **Écart délibéré, meilleur pour l'utilisateur** : l'annonce de `title` par les lecteurs d'écran est notoirement peu fiable, et `aria-label` gagne sur `title` pour le nom accessible. Avec la lettre de l'AC, un utilisateur non-voyant n'aurait **jamais** accès au motif de la suspension — l'infobulle est une surface *visuelle*. La rédaction « seule surface » visait à ne pas multiplier les affichages, pas à priver les lecteurs d'écran. Test E2E ajouté sur `aria-label` (P1).
 
-**AC 21 non tenue → corrigée en P1 (AA-2).** L'AC exigeait `offset = 0` à chaque sélection ; **je ne l'avais pas implémenté**. Effet réel : changer de filtre depuis la page 3 laisse un offset survivant à un jeu de résultats rétréci → **liste vide trompeuse**. Corrigé (`onchange`) + test E2E. La justification de l'AC (« convention de tous les filtres ») était en outre **factuellement fausse** — le `<select>` du statut ne remet pas l'offset (6 sites `offset = 0`, tous sur texte/date/contact) → AC rectifiée, et le défaut symétrique **pré-existant** de `statusFilter` part en issue **#257** plutôt que d'être corrigé ici (même discipline que #255/#256).
+**AC 21 non tenue → corrigée en P1 (AA-2).** L'AC exigeait `offset = 0` à chaque sélection ; **je ne l'avais pas implémenté**. Effet réel : changer de filtre depuis la page 3 laisse un offset survivant à un jeu de résultats rétréci → **liste vide trompeuse**. Corrigé (`onchange`) + test E2E. La justification de l'AC (« convention de tous les filtres ») était en outre **factuellement fausse** — le `<select>` du statut ne remet pas l'offset (6 sites `offset = 0` pré-patch : recherche, tri, contact, dateFrom, dateTo, bouton Réinitialiser — pas le `<select>` statut) → AC rectifiée, et le défaut symétrique **pré-existant** de `statusFilter` part en issue **#257** plutôt que d'être corrigé ici (même discipline que #255/#256).
 
 **Constat hors scope confirmé** (déjà signalé par la spec, à trancher en rétro) : `serialize_invoices_csv` omet `dunning_paused_*` **et** `emailed_at`/`emailed_to` de l'export de souveraineté. Pré-existant, non touché.
 
