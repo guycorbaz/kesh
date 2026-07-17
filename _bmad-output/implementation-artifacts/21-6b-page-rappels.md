@@ -282,6 +282,17 @@ Contexte frais, mission explicite « chercher les défauts introduits par la rem
 
 Gate post-patch : check 0 erreur, lint-i18n PASS, vitest reminders 8/8, **E2E 8/8**.
 
+### Pass 3 (Sonnet, 2026-07-17) — NON CONVERGÉ : 1 HIGH (régression P2) → patché
+
+Contexte frais, mission « vérifier les patches P2 ». **1 HIGH.** À nouveau le mode d'échec 21-5b : mon patch **P2-1** a introduit une course.
+
+- **P3-1 (HIGH) — course de staleness réintroduite par le split `Promise.all` (P2-1).** En passant de `Promise.all` (un seul garde `seq` post-résolution) à deux `await` séquentiels, le garde `seq` n'était re-testé **que sur le chemin de succès** du 2e await : le `catch` de la config **et** le code partagé qui suit (reconstruction `emailByInvoice`/`selected` depuis `res.groups` capturé avant le 2e await) s'exécutaient **sans garde**. Deux `load()` concurrents (envoi lot → `load()`, puis rappel manuel → `load()` — le bouton manuel n'est pas gardé par `batchSending`) : l'invocation périmée, si sa config échoue, écrasait `maxConfiguredLevel`/`emailByInvoice`/`selected` d'une invocation plus fraîche avec des données périmées (silencieux, `groups` restant correct). **Patch** : restructuration selon le patron sûr d'origine — **TOUS les awaits d'abord (config en `try/catch` interne, dégradation gracieuse préservée), UN SEUL garde `seq`, PUIS toutes les écritures d'état**. La course devient impossible par construction.
+  *Exception « patch avec test » assumée* : une course de staleness ne se teste pas de façon déterministe (timing d'interleaving). Le fix est **structurel** — il élimine la fenêtre par construction (mirroir du `Promise.all` d'origine, prouvé sûr par la passe 3 elle-même), vérifié par lecture, pas par un test flaky. Les 8 E2E existants restent verts (non-régression fonctionnelle).
+
+**Patches P2 confirmés SAINS par Sonnet** : P2-2 (`$effect` de clamp — pas de boucle ni de ping-pong : l'effect de reset ne lit pas `level`, le clamp converge en ≤ 2 itérations, no-op sur toute interaction utilisateur valide) ; P2-3 (`toBeGreaterThanOrEqual(3)` détecte toujours la régression D18 : 1 option < 3).
+
+Gate post-patch : check 0 erreur, build OK, **E2E 8/8**.
+
 ## Dev Agent Record
 
 ### Agent Model Used

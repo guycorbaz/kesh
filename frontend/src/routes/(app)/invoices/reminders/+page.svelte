@@ -84,16 +84,23 @@
 			// dégradation gracieuse — un échec de la config ne doit PAS vider la
 			// page ni empêcher d'envoyer des rappels (le manuel retombe alors sur
 			// le prochain niveau).
+			//
+			// ⚠️ Anti-race : TOUS les awaits d'abord, puis UN SEUL garde `seq`,
+			// puis TOUTES les écritures d'état. Un garde par-await laisserait le
+			// chemin `catch` de la config (ou le code partagé) écraser l'état d'un
+			// `load()` plus récent avec des données périmées (deux load()
+			// concurrents : envoi lot puis rappel manuel).
 			const res = await listReminders();
-			if (seq !== loadSeq) return;
-			groups = res.groups;
+			let maxLevel = 0;
 			try {
 				const levels = await listDunningLevels();
-				if (seq !== loadSeq) return;
-				maxConfiguredLevel = levels.reduce((mx, l) => Math.max(mx, l.levelNumber), 0);
+				maxLevel = levels.reduce((mx, l) => Math.max(mx, l.levelNumber), 0);
 			} catch {
-				maxConfiguredLevel = 0; // le dialog manuel retombe sur nextLevel
+				maxLevel = 0; // le dialog manuel retombe sur nextLevel
 			}
+			if (seq !== loadSeq) return; // unique garde, après TOUS les awaits
+			groups = res.groups;
+			maxConfiguredLevel = maxLevel;
 			const m = new Map<number, boolean>();
 			for (const g of res.groups) for (const inv of g.invoices) m.set(inv.invoiceId, g.hasEmail);
 			emailByInvoice = m;
