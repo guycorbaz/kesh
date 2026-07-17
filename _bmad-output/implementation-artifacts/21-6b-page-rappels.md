@@ -1,0 +1,234 @@
+# Story 21.6b: Page Rappels — liste, envoi unitaire, lot, rappel manuel (frontend)
+
+Status: ready-for-dev
+
+<!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 5 agents Explore parallèles (contrats backend dunning / anti-double-submit / routing-nav-i18n / conventions test-E2E / + recoupement). Issue du split 21-6a/b/c (2026-07-16). Consomme les endpoints backend livrés par 21-5a (liste groupée, manuel) et 21-5b (preview, envoi unitaire, lot). Indépendante de 21-6a. Décisions Guy 2026-07-17 : page complète (lot+unitaire+manuel) / nouvelle feature `reminders/` (namespace i18n libre) / cases par ligne sans select-all (garde 20 UI) / contact sans e-mail visible+badgé+non-cochable. -->
+
+## Story
+
+En tant que **comptable d'une PME suisse**,
+je veux **une page « Rappels » qui liste les factures à relancer groupées par débiteur, et me laisse envoyer un rappel par e-mail (à l'unité avec aperçu éditable, ou en lot), ou enregistrer un rappel papier déjà envoyé**,
+afin de **piloter mes relances depuis l'interface sans passer par l'API — et sans jamais envoyer deux fois le même rappel par mégarde**.
+
+## Contexte
+
+**Tout le backend est livré.** Les stories 21-5a et 21-5b ont posé les endpoints ; cette story les rend pilotables depuis une page dédiée. **21-6b est purement frontend** (une seule extension de fixture de test côté backend, cf. AC 26).
+
+> ⚠️ **Piège de cartographie confirmé — les endpoints d'envoi EXISTENT.** Un agent Explore a conclu à tort « aucun endpoint d'envoi de rappel n'existe » parce qu'il a cherché dans `dunning_reminders.rs` seulement — or l'envoi e-mail vit dans **`invoice_email.rs`** (livré par 21-5b). Vérifié par grep : `POST /api/v1/invoices/{id}/reminders/send` monté `lib.rs:433`, `POST /api/v1/dunning/reminders/send-batch` monté `lib.rs:437`, handlers `invoice_email.rs:412`/`:925`/`:363`. **NE PAS recréer de backend d'envoi.**
+
+**Anti-double-submit = AC de premier plan.** Le backend n'a **aucune** protection contre le double-envoi : la course TOCTOU a été explicitement acceptée en review 21-5b (`UNIQUE(invoice_id, level_number)` écarté car il contredirait D18 qui autorise la ré-émission volontaire). L'e-mail part réellement chez le débiteur à chaque appel — **l'UI est la seule barrière**. Le gabarit à 4 couches de `SendEmailDialog` (Epic 20, durci en review) est à répliquer intégralement.
+
+**Prérequis** : 21-5a + 21-5b (done). Indépendante de 21-6a. **Consommée par 21-6c** (qui ajoutera l'historique sur la fiche facture, le toggle suspension UI, le compteur dashboard, les liens croisés).
+
+### Décisions figées (Guy, 2026-07-17)
+
+- **D-b1 — Page complète** : liste + **envoi lot** + **envoi unitaire éditable** + **rappel manuel**, comme le plan d'epic range ces trois actions dans 21-6b. (Historique fiche / toggle UI / dashboard → 21-6c.)
+- **D-b2 — Nouvelle feature `reminders/`** : `frontend/src/lib/features/reminders/` (types + api + composants), namespace i18n **`reminders-*`** (vérifié libre — 0 occurrence dans les 4 FTL). Sépare l'**envoi** des rappels de leur **config** (`dunning/`, 21-4, namespace `dunning-*` saturé). Évite le piège #30 : dossier `reminders/` + clés `reminders-*` = cohérents.
+- **D-b3 — Sélection lot par cases à cocher, sans « tout sélectionner »** : réplique `payment-batches` (`Set<number>` + toggle immuable). Garde du **cap 20 côté UI** (bouton lot désactivé + message si > 20 sélectionnées) en miroir du `BATCH_TOO_LARGE` backend. Pas de select-all (aucun précédent + sémantique ambiguë au-delà de 20).
+- **D-b4 — Contact sans e-mail (`hasEmail=false`) : visible, badgé, non-cochable** : la facture reste affichée (transparence), avec un badge « sans e-mail » ; sa case lot **et** son bouton « Envoyer » sont désactivés. Le **rappel manuel reste possible** dessus (papier/recommandé — le backend l'autorise).
+
+### Hors scope (garde-fous)
+
+- **Historique des rappels sur la fiche facture**, **toggle suspension UI**, **compteur dashboard**, **liens croisés** échéancier ↔ Rappels → **21-6c**.
+- **Cumuls par contact (TTC/frais/joursDeRetard)** : `ReminderCandidateResponse` ne les porte pas (L21-8) — la liste groupe par contact mais **n'affiche pas de total** ; un calcul client divergerait du `{totalDue}` serveur. Ne PAS l'ajouter.
+- **Balance âgée** → 21-7. **Manuels utilisateur/admin** → 21-8.
+- **Aucun changement backend d'envoi** (endpoints livrés 21-5b) ; seule exception : étendre une fixture de test E2E (AC 26).
+- **Câblage i18n de la page liste `/invoices`** → issue #255 (indépendant).
+
+## Acceptance Criteria
+
+### A. Feature `reminders/` — types & API
+
+1. **`frontend/src/lib/features/reminders/reminders.types.ts`** (camelCase, miroir EXACT des DTO backend cartographiés) :
+   - Liste : `ReminderCandidate { invoiceId: number; invoiceNumber: string | null; dueDate: string; currentLevel: number; nextLevel: number | null; terminal: boolean; lastReminderAt: string | null }` ; `ContactGroup { contactId: number; contactName: string; hasEmail: boolean; invoices: ReminderCandidate[] }` ; `ReminderListResponse { groups: ContactGroup[] }`.
+   - Preview : `ReminderPreviewResponse { to: string | null; language: string; level: number; subject: string; body: string }`.
+   - Envoi unitaire (requête) : `SendReminderRequest { levelNumber: number; subject: string; body: string }` (**PAS de champ `to`**). Réponse : `ReminderResponse` (`id, levelNumber, feeAmount: string, sentAt, channel, sentTo: string | null, subject, body, note: string | null, cancelledAt: string | null`).
+   - Lot : `SendReminderBatchRequest { invoiceIds: number[] }` ; `AcceptedReminder { invoiceId: number; reminderId: number; levelNumber: number }` ; `FailedReminder { invoiceId: number; errorCode: string; details: Record<string, unknown> | null }` ; `SendReminderBatchResponse { accepted: AcceptedReminder[]; failed: FailedReminder[] }`.
+   - Manuel : `ManualReminderRequest { levelNumber: number; sentAt: string; note: string | null }`.
+
+2. **`frontend/src/lib/features/reminders/reminders.api.ts`** (via `apiClient`, calque `dunning.api.ts`) :
+   - `listReminders(): Promise<ReminderListResponse>` → `get('/api/v1/dunning/reminders')`.
+   - `getReminderPreview(invoiceId, level): Promise<ReminderPreviewResponse>` → `get('/api/v1/invoices/${invoiceId}/reminder-preview?level=${level}')`. **`level` toujours fourni** (backend : absent → 400).
+   - `sendReminder(invoiceId, payload: SendReminderRequest): Promise<ReminderResponse>` → `post('/api/v1/invoices/${invoiceId}/reminders/send', payload)`.
+   - `sendReminderBatch(invoiceIds): Promise<SendReminderBatchResponse>` → `post('/api/v1/dunning/reminders/send-batch', { invoiceIds })`.
+   - `recordManualReminder(invoiceId, payload: ManualReminderRequest): Promise<ReminderResponse>` → `post('/api/v1/invoices/${invoiceId}/reminders/manual', payload)`.
+   - `index.ts` re-exporte types + api (patron `dunning/index.ts`).
+
+3. **Tests vitest** `reminders.api.test.ts` (patron `dunning.api.test.ts` : `vi.mock('$lib/shared/utils/api-client')`) : chaque wrapper appelle le bon chemin/méthode/body ; `getReminderPreview(42, 2)` → `get('/api/v1/invoices/42/reminder-preview?level=2')` ; `sendReminderBatch([1,2])` → `post('/api/v1/dunning/reminders/send-batch', { invoiceIds: [1,2] })`.
+
+### B. Page & navigation
+
+4. **Route `frontend/src/routes/(app)/invoices/reminders/+page.svelte`** (segment statique — SvelteKit le prioritise sur `[id]`, précédent `due-dates/`). Squelette calqué sur `invoices/due-dates/+page.svelte` : `onMount` → chargement, états `loading`/vide/liste, `isApiError` + `notifyError`. **Pas de filtres/URL-sync** en v1 (la liste est courte et déjà groupée ; pas de précédent à répliquer ici — ne pas sur-concevoir).
+
+5. **Entrée de nav** dans `(app)/+layout.svelte`, groupe `quotidien`, **juste après** `nav-invoicing-due-dates` (`:62`) : `{ i18nKey: 'nav-invoicing-reminders', fallback: 'Rappels', href: '/invoices/reminders' }`. Clé `nav-invoicing-reminders` dans les 4 FTL (namespace `nav-*` déjà global). `data-testid` auto = `nav-link-invoices-reminders`.
+
+6. **Gating RBAC Comptable+ DANS la page** (la nav n'a pas de gating granulaire — patron `canExportCsv` de `due-dates:51-53`) : `canManage = $derived(role === 'Admin' || role === 'Comptable')`. Si `!canManage` : la page affiche un message « accès réservé » et **ne déclenche aucun fetch** (un rôle Consultation prend un 403 backend sinon). Le lien de nav reste visible pour tous (limite connue, cohérente avec l'app).
+
+### C. Liste groupée
+
+7. **Chargement** : `listReminders()` au `onMount` (si `canManage`). Rendu **groupé par contact** : pour chaque `ContactGroup`, un en-tête (nom du contact + badge « sans e-mail » si `!hasEmail`), puis ses factures. Liste **vide** (aucun groupe) → message « aucune facture à rappeler » (état légitime : dunning désactivé ou rien d'éligible).
+
+8. **Par facture** : numéro (`invoiceNumber ?? '—'`), date d'échéance (`dueDate`), **libellé de niveau** i18n dérivé : si `terminal` → « Dernier niveau atteint — poursuite à envisager » (`reminders-level-terminal`) ; sinon « Prochain : rappel N » où N = `nextLevel` (`reminders-level-next` avec `{ $level }`). `lastReminderAt` affiché s'il est non-null (« dernier rappel le … »). **AUCUN montant** (L21-8).
+
+9. **Badges** (composants sous `features/reminders/`, namespace `reminders-*`) :
+   - `ReminderNoEmailBadge.svelte` — au niveau **contact** (`hasEmail=false`), libellé `reminders-badge-no-email` (« sans e-mail »), teinte neutre, `aria-label`. Gabarit `DunningPausedBadge.svelte` (21-6a) : **texte en `--color-text`, PAS la variable de la teinte de fond** (leçon 21-6a — le gabarit `PaymentStatusBadge` est sous AA ; ne pas le copier tel quel, re-vérifier le contraste).
+   - `ReminderTerminalBadge.svelte` — sur une facture `terminal`, libellé `reminders-badge-terminal`, teinte d'alerte (`--color-warning`).
+
+### D. Sélection & envoi par lot
+
+10. **Case à cocher par facture** (patron `payment-batches:153-164`) : `Set<number>` d'`invoiceId` + `toggle(id)` immuable (réassignation du Set pour la réactivité runes). **Désactivée** si le contact du groupe a `hasEmail=false` **ou** si la facture est `terminal` (le lot n'envoie que le prochain niveau — une facture terminale n'en a pas → serait `NO_NEXT_LEVEL`). `data-testid="reminder-batch-checkbox"`.
+
+11. **Garde du cap 20 côté UI (D-b3)** : compteur « N sélectionnée(s) ». Le bouton « Envoyer le lot » est **désactivé** si `selected.size === 0` **ou** `selected.size > 20`, avec un message `reminders-batch-cap` (« maximum 20 factures par lot ») au-delà. Miroir du `BATCH_TOO_LARGE` (422) backend — l'UI ne doit jamais laisser partir une requête vouée au 422.
+
+12. **Envoi lot** : `sendReminderBatch([...selected])` → réponse `{ accepted, failed }` **HTTP 200** (succès partiel = succès). Anti-double-submit (voir F). Au retour : **recharger la liste** (`listReminders()`) + afficher un **rapport** (voir 13) + vider la sélection. Erreurs globales (jamais dans `{accepted,failed}`) via `err.code` : `BATCH_TOO_LARGE` (422), `SMTP_NOT_CONFIGURED` (412), `BATCH_EXCEEDS_SEND_QUOTA` (422), `RATE_LIMITED` (429) → toast traduit.
+
+13. **Rapport de lot** (`ReminderBatchReport.svelte`, patron `supplier-invoices/import` : compte des réussis + `<ul>` des échoués) : « N rappel(s) envoyé(s) » + si `failed.length` : liste `<li>` par item avec `invoiceNumber`/`#invoiceId` + **libellé traduit de `errorCode`** via une fonction locale `reminderErrorLabel(code)` (`switch` + fallback `reminders-error-unknown` avec le code injecté), teinte `text-destructive`. `data-testid="reminder-batch-report"` + `reminder-batch-failed-row`.
+    ⚠️ **Codes « l'e-mail EST parti »** (`REMINDER_SENT_BUT_INVOICE_GONE`, `RECORD_FAILED_EMAIL_SENT`, `SMTP_SEND_FAILED`) : le libellé doit indiquer que **l'e-mail a été envoyé mais non enregistré / a échoué** — **JAMAIS de bouton ou d'incitation « Réessayer »** (un ré-essai renverrait un vrai e-mail). Leçon 21-5b explicite.
+
+### E. Envoi unitaire (modale éditable avec aperçu)
+
+14. **`ReminderSendDialog.svelte`** (composant **présentationnel**, calqué EXACTEMENT sur `SendEmailDialog.svelte` — le dialog **n'appelle jamais l'API**, il reçoit `submitting` en prop et émet `onConfirm`). Props : `open`, `onOpenChange`, `preview: ReminderPreviewResponse | null`, `submitting?`, `errorMsg?`, `onConfirm(subject, body)`. Plus le **choix de niveau** : `level: number`, `maxLevel: number` (= `nextLevel` de la facture), `onLevelChange(level)`.
+
+15. **Choix du niveau ≤ prochain (D18)** : un `<select>` des niveaux `1..nextLevel` (le défaut = `nextLevel`). Changer de niveau **re-fetch la preview** (`getReminderPreview(invoiceId, level)`) → re-hydrate subject/body. **Interdiction du saut** : `maxLevel = nextLevel` (jamais au-delà — le backend renverrait `LEVEL_ALREADY_SENT` 409 ; l'UI ne propose pas l'option). Facture `terminal` → pas d'envoi unitaire e-mail proposé (pas de `nextLevel`).
+
+16. **Flux preview→édition→envoi** (patron `openSendEmail` de `invoices/[id]:273-296`) : ouvrir la modale = `getReminderPreview(invoiceId, defaultLevel)` **AVANT** d'ouvrir (erreur → toast, pas de modale) → `subject`/`body` bindés éditables → `to` **read-only** (`preview.to`, jamais un input) → `sendReminder(invoiceId, { levelNumber: level, subject, body })`. Destinataire jamais dans le payload.
+
+17. **Destinataire absent** (`preview.to === null`) : bouton « Envoyer » désactivé + message `reminders-send-no-recipient`. Cohérent D-b4 (mais en pratique on n'ouvre pas la modale unitaire e-mail sur un contact sans e-mail — bouton déjà masqué/désactivé sur la ligne).
+
+18. **Codes d'erreur unitaires** (via `err.code`, toast traduit) : `RATE_LIMITED` (429), `SMTP_NOT_CONFIGURED` (412), `VALIDATION_ERROR` (400), `DUNNING_LEVEL_NOT_FOUND` (422), `NOT_FOUND` (404), `INVOICE_NOT_VALIDATED` (400), `INVOICE_ALREADY_PAID` (422), `DUNNING_PAUSED` (422), `LEVEL_ALREADY_SENT` (409), `CONTACT_ARCHIVED` (400), `CONTACT_EMAIL_MISSING` (400), `INVOICE_EMAIL_EMPTY_CONTENT` (422), `INVOICE_NOT_PDF_READY` (400), `INVOICE_TOO_MANY_LINES_FOR_PDF` (400). **Post-SMTP** (l'e-mail EST parti) : `REMINDER_SENT_BUT_INVOICE_GONE` (409), `REMINDER_SENT_BUT_NOT_RECORDED` (409) → message « e-mail envoyé mais non enregistré », **pas de re-proposition d'envoi** ; **recharger la liste** (l'état a pu changer).
+
+### F. Anti-double-submit (AC DE PREMIER PLAN)
+
+19. **Gabarit à 4 couches, répliqué du couple `SendEmailDialog` + `invoices/[id]`** — pour l'unitaire **ET** le lot :
+    - **(A)** garde dans le handler `onConfirm` : `if (submitting || recipientMissing || clientError) return;`.
+    - **(B)** bouton d'envoi **et** bouton Annuler `disabled={submitting}` ; texte « Envoi… » pendant le vol (pas de spinner — patron `payment-batches:179`).
+    - **(C)** le **parent possède le flag `$state`** : garde de ré-entrance en tête de handler (`if (sending) return;`), `sending = true` **avant** l'appel, `finally { sending = false }`. Un flag distinct pour l'unitaire et pour le lot.
+    - **(D)** modale **non fermable en vol** : `onOpenChange={(o) => { if (!o && sending) return; ... }}` (patron `invoices/[id]:731`). ESC/X/clic-extérieur/Annuler tous bloqués pendant l'envoi.
+    Le lot n'a pas de modale : (D) devient « le bouton lot reste `disabled` et la sélection n'est pas mutable pendant le vol ».
+
+20. **IDs DOM** : `$props.id()` pour les identifiants stables (jamais `crypto.randomUUID` — leçon `feedback_no_secure_context_apis_http_lan`, indisponible en HTTP LAN).
+
+### G. Rappel manuel (papier/recommandé)
+
+21. **`ManualReminderDialog.svelte`** (présentationnel, patron `MarkPaidDialog`) : `open`, `onOpenChange`, `submitting?`, `errorMsg?`, `onConfirm(levelNumber, sentAt, note)`. Champs : niveau (`<select>` 1..N, défaut `nextLevel` ou 1 si terminal — le manuel **autorise le saut**, D18), date d'envoi (`<input type="date">`, défaut aujourd'hui), note optionnelle (`<textarea>`). Disponible **sur toutes les factures de la liste**, y compris `hasEmail=false` et `terminal`.
+
+22. **Envoi manuel** : `recordManualReminder(invoiceId, { levelNumber, sentAt, note })` → 201. Anti-double-submit (mêmes 4 couches). Au retour : recharger la liste + toast succès. Erreurs `err.code` : `VALIDATION_ERROR` (400 : niveau < 1, note > 5000), `REMINDER_DATE_IN_FUTURE` (422), `DUNNING_LEVEL_NOT_FOUND` (422), `NOT_FOUND` (404), `INVOICE_NOT_VALIDATED` (400), `INVOICE_ALREADY_PAID` (422). **Garde UI** : `sentAt` non postérieur à aujourd'hui (le backend rejette le futur — 422).
+
+### H. i18n
+
+23. **Clés `reminders-*` dans les 4 FTL** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`) + `nav-invoicing-reminders` : titre de page, en-têtes, libellés de niveau (`reminders-level-next` `{ $level }` / `reminders-level-terminal`), badges (`reminders-badge-no-email` / `-terminal`), boutons (envoyer / lot / manuel / annuler), compteur sélection, cap 20, libellés d'erreur batch (un par `errorCode` de l'AC 13, + `reminders-error-unknown`), messages toast des codes d'erreur unitaires/manuels. **Traductions FR/DE/IT/EN réelles** (pas de placeholder — le fallback programmatique retombe sur FR mais l'app est multilingue). **Placement** : la page (route) échappe au lint i18n ; les **composants sous `features/reminders/`** ne peuvent utiliser QUE `reminders-*` (ou global) — cohérent par construction (dossier = namespace). Pas d'entrée `KNOWN_VIOLATIONS` nécessaire (contrairement à 21-6a) tant que toutes les clés sont `reminders-*`.
+
+### I. Tests
+
+24. **E2E round-trip `frontend/tests/e2e/reminders.spec.ts`** (MockMailer, patron `invoice-send-email.spec.ts`). Prérequis : backend `KESH_TEST_MODE=true` + SMTP factice + DB `kesh_e2e`. Scénarios :
+    - **Liste** : créer contact (avec e-mail) + facture **échue niveau 1** (voir AC 26) → la page `/invoices/reminders` affiche le groupe contact + la facture au niveau attendu.
+    - **Envoi unitaire** : ouvrir la modale → preview chargée (subject non vide, `to` = e-mail read-only) → envoyer → e-mail capturé dans `/_test/sent-emails` (+1) avec PDF joint → toast succès → la facture reflète le nouveau niveau au rechargement.
+    - **Envoi lot** succès partiel : 3 factures (1 OK + 1 sans e-mail non-cochable donc exclue + 1 payée entre-temps) → `{ accepted, failed }`, rapport affiché, e-mails capturés = nb d'`accepted`.
+    - **Cap 20 UI** : sélectionner 21 (si faisable dans le seed) OU asserter le message/disabled au-delà de 20.
+    - **Rappel manuel** : enregistrer un rappel papier niveau 2 → 201 → la facture avance.
+    - **Contact sans e-mail** : badge « sans e-mail » visible, case lot désactivée, bouton envoyer désactivé, **rappel manuel possible**.
+
+25. **E2E anti-double-submit** (patron À CRÉER — aucun n'existe) : ouvrir la modale d'envoi unitaire, cliquer « Envoyer », et vérifier que le bouton est **`disabled` immédiatement** après le clic (avant résolution) → l'e-mail n'est capturé **qu'une fois**. Technique : intercepter/ralentir la route (`page.route('**/reminders/send', …)` avec délai) pour observer l'état `disabled` en vol, ou `expect(button).toBeDisabled()` juste après le click puis `expect.poll` sur `fetchSentEmails().length === before + 1`. Idem pour le lot (bouton lot `disabled` en vol). **C'est l'AC de premier plan — le test doit exister et passer.**
+
+26. **Extension de fixture (seul backend touché)** : `frontend/tests/e2e/helpers/api-fixtures.ts` — `createAndValidateInvoiceViaApi` fixe `dueDate: today` en dur → **impossible de créer une facture échue**. Ajouter un **paramètre optionnel `dueDate?: string`** (défaut = comportement actuel, `today`) et le propager au POST. **DRY** : étendre la fixture existante, ne pas la dupliquer (leçon mémoire). Une facture éligible niveau 1 = `dueDate <= today - 15j` (grâce 5 + délai niveau 1 = 10, config seedée par défaut). Le seed lazy des niveaux se déclenche au 1er `GET /api/v1/company/dunning-settings` **ou** à la 1re évaluation d'éligibilité (`GET /dunning/reminders`).
+
+27. **axe a11y** (patron scopé `email-templates.spec.ts:187-206`) : sur la page **peuplée**, `new AxeBuilder({ page }).include('[data-testid="reminders-list"]').disableRules(['color-contrast', 'button-name']).analyze()` → 0 violation dans le sous-arbre de la story. Justifier en commentaire : `color-contrast` = dette systémique #253, `button-name` = dette #256 (boutons d'action icône-seule) — **ne corriger aucune dette pré-existante ici**. Le badge et les nouveaux boutons de CETTE story doivent être conformes (nom accessible, contraste AA — re-vérifier comme en 21-6a).
+
+28. **vitest** : `reminders.api.test.ts` (AC 3) + tout helper pur (ex. `reminderErrorLabel`) testé unitairement.
+
+### J. Gate & documentation
+
+29. **Gate local complet** (Test Locally First) :
+    ```sh
+    cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build
+    cd frontend && npm run test:e2e        # PAS dans la CI → critique ici (page + envoi + MockMailer)
+    # backend : la fixture E2E touche crates/kesh-api/tests/ indirectement (helper TS) — pas de code Rust
+    cargo fmt --all -- --check && cargo build --workspace --all-targets && cargo clippy --workspace --all-targets -- -D warnings
+    ```
+    ⚠️ **E2E obligatoires** : cette story est presque entièrement E2E-testable (page + 3 flux d'envoi + anti-double-submit + MockMailer). Rappel : backend contre `kesh_e2e` migré, `npm run build` avant chaque run (Playwright sert le build statique), `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, ne jamais piper le runner.
+
+30. **CHANGELOG** `[Non publié]` → `Ajouté` : écran « Rappels » (liste des factures à relancer par débiteur, envoi par e-mail à l'unité avec aperçu ou en lot, enregistrement d'un rappel papier). **Manuels → 21-8.** **README** : Epic 21 déjà 🚧, aucun changement de statut d'epic.
+
+## Tasks / Subtasks
+
+- [ ] **T1 — Feature `reminders/` (types + api + tests unitaires)** (AC: 1, 2, 3, 28)
+- [ ] **T2 — Route page + nav + gating RBAC + liste groupée** (AC: 4, 5, 6, 7, 8) + badges (AC: 9)
+- [ ] **T3 — Sélection & envoi lot** (AC: 10, 11, 12, 13) + rapport + mapping erreurs
+- [ ] **T4 — Envoi unitaire (modale éditable, preview, choix niveau)** (AC: 14, 15, 16, 17, 18)
+- [ ] **T5 — Anti-double-submit (4 couches, unitaire + lot + manuel)** (AC: 19, 20) — **AC de premier plan**
+- [ ] **T6 — Rappel manuel** (AC: 21, 22)
+- [ ] **T7 — i18n 4 FTL** (AC: 23)
+- [ ] **T8 — Fixture E2E `dueDate` + E2E round-trip + anti-double-submit + axe** (AC: 24, 25, 26, 27)
+- [ ] **T9 — Gate complet + CHANGELOG** (AC: 29, 30)
+
+## Dev Notes
+
+### Pièges, par ordre de coût
+
+1. **Ne PAS recréer de backend d'envoi.** Les endpoints existent (`invoice_email.rs`, montés `lib.rs:433/437`). Un agent Explore a conclu à tort qu'ils manquaient (il cherchait dans `dunning_reminders.rs`). Vérifié par grep. Cette story est frontend + 1 param de fixture.
+2. **Anti-double-submit = le cœur.** Le backend n'a AUCUNE garde (TOCTOU accepté 21-5b). L'e-mail part réellement à chaque appel. Les 4 couches ne sont pas optionnelles, et l'AC 25 (test) doit passer. Un double-clic non protégé = un débiteur qui reçoit deux mises en demeure.
+3. **Codes « e-mail parti » ≠ erreur ré-essayable.** `REMINDER_SENT_BUT_INVOICE_GONE` / `RECORD_FAILED_EMAIL_SENT` / `SMTP_SEND_FAILED` signifient que l'e-mail est (peut-être) parti. Jamais de « Réessayer ». Recharger la liste, informer, stop.
+4. **Contraste du badge (leçon 21-6a).** Le gabarit `PaymentStatusBadge` colore le texte avec la variable du fond → sous AA. Copier `DunningPausedBadge` (21-6a, corrigé) : texte en `--color-text`. Re-vérifier à l'axe.
+5. **Fixture E2E `dueDate`.** Sans échéance passée, aucune facture n'est éligible → la page est vide et les tests ne prouvent rien. Étendre `createAndValidateInvoiceViaApi` (DRY), seuil niveau 1 = `today - 15j`.
+6. **Cap 20 = miroir UI.** Le backend renvoie 422 au-delà de 20 (après dédup). L'UI garde à 20 pour ne jamais laisser partir une requête vouée à l'échec, mais le backend reste la source de vérité.
+
+### Contrats backend (ground-truth, à ne pas re-deviner)
+
+| Action | Méthode + chemin | Requête | Réponse | RBAC |
+|---|---|---|---|---|
+| Liste | `GET /api/v1/dunning/reminders` | — | `{ groups: ContactGroup[] }` | Comptable+ |
+| Preview | `GET /api/v1/invoices/{id}/reminder-preview?level=N` | `level` requis (400 si absent) | `ReminderPreviewResponse` | Comptable+ |
+| Unitaire | `POST /api/v1/invoices/{id}/reminders/send` | `{ levelNumber, subject, body }` | 201 `ReminderResponse` | Comptable+ |
+| Lot | `POST /api/v1/dunning/reminders/send-batch` | `{ invoiceIds }` | 200 `{ accepted, failed }` | Comptable+ |
+| Manuel | `POST /api/v1/invoices/{id}/reminders/manual` | `{ levelNumber, sentAt, note? }` | 201 `ReminderResponse` | Comptable+ |
+
+Détail des codes d'erreur : AC 12/13/18/22. Aucun DTO d'envoi n'a de champ `to` (destinataire = `contacts.email` verrouillé serveur).
+
+### Gabarits à répliquer (chemins vérifiés)
+
+- **Anti-double-submit** : `SendEmailDialog.svelte` (présentationnel, `submitting` en prop, garde handler `:58-62`, boutons `disabled` `:118-129`) + `invoices/[id]/+page.svelte` (parent : garde ré-entrance `:301`, `sending=true` `:302`, `finally` `:356`, `onOpenChange` non-fermable `:731`).
+- **Sélection lot** : `payment-batches/+page.svelte` (`Set<number>` `:38`, `toggle` immuable `:61-66`, checkbox `:153-164`). **Pas de select-all** (aucun précédent).
+- **Rapport `{accepted,failed}`** : `supplier-invoices/import/+page.svelte:409-440` (compte + `<ul>` + `errorLabel` local `switch`+fallback) ; alt `payment-batches:184-205`.
+- **Page liste** : `invoices/due-dates/+page.svelte` (squelette onMount/loading/vide/tableau, gating `canExportCsv:51-53`).
+- **Preview→édition** : `openSendEmail` `invoices/[id]:273-296` + re-hydratation `$effect` `SendEmailDialog:38-43`.
+- **Badge** : `DunningPausedBadge.svelte` (21-6a, contraste corrigé).
+- **Nav** : `(app)/+layout.svelte:62` (item i18n `quotidien`).
+
+### Project Structure Notes
+
+**Nouveaux fichiers** (`frontend/`) :
+- `src/lib/features/reminders/reminders.types.ts`, `reminders.api.ts`, `reminders.api.test.ts`, `index.ts`
+- `src/lib/features/reminders/ReminderNoEmailBadge.svelte`, `ReminderTerminalBadge.svelte`, `ReminderSendDialog.svelte`, `ManualReminderDialog.svelte`, `ReminderBatchReport.svelte`
+- `src/routes/(app)/invoices/reminders/+page.svelte`
+- `tests/e2e/reminders.spec.ts`
+
+**Modifiés** :
+- `src/routes/(app)/+layout.svelte` (entrée nav)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (clés `reminders-*` + `nav-invoicing-reminders`)
+- `frontend/tests/e2e/helpers/api-fixtures.ts` (param `dueDate`)
+- `CHANGELOG.md`
+
+**Décompte modules** : 1 feature `reminders/` (types+api+5 composants) + 1 route + 1 nav + i18n + 1 fixture = frontend cohérent, sous le seuil de la règle de splitting (déjà une sous-story d'un split 21-6a/b/c ; Guy a tranché « page complète »). Aucun backend d'envoi nouveau, aucune migration.
+
+### Leçon de review héritée (à appliquer dès le dev)
+
+**Un patch de review vient AVEC son test** (21-5b, 5 passes). **Disclosure non sélective** (21-6a, AA-1) : documenter TOUTES les déviations, pas seulement certaines. **Vérifier les justifications par grep, pas seulement les conclusions** (21-6a : deux fois une bonne conclusion sur une prémisse fabriquée).
+
+### References
+
+- [Source: `epic-21-echeances-relances.md` — 21-6b (D17 anti-double-submit, L21-8 pas de cumuls, D18 ré-émission/saut), items 16-22]
+- [Source: `21-5a-donnees-eligibilite-relances.md` — liste groupée, manuel, endpoints]
+- [Source: `21-5b-envoi-rappels-email.md` — preview/unitaire/lot, codes d'erreur, TOCTOU accepté → UI seule barrière, codes « e-mail parti » ≠ réessayable]
+- [Source: `21-6a-exposition-suspension.md` — gabarit badge contraste-AA, disclosure non sélective, vérifier les justifications]
+- [Source: `CLAUDE.md#Test Locally First`, `#Review Iteration Rule`, `#Issue Tracking Rule` ; `feedback_no_secure_context_apis_http_lan` (`$props.id()`)]
+- [Source: GitHub #231 (rappels débiteurs — 21-6b livre l'écran de relance), #255/#256/#253 (dettes pré-existantes à ne pas corriger ici)]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
