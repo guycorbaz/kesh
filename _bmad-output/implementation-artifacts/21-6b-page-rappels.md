@@ -1,6 +1,6 @@
 # Story 21.6b: Page Rappels — liste, envoi unitaire, lot, rappel manuel (frontend)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 5 agents Explore parallèles (contrats backend dunning / anti-double-submit / routing-nav-i18n / conventions test-E2E / + recoupement). Issue du split 21-6a/b/c (2026-07-16). Consomme les endpoints backend livrés par 21-5a (liste groupée, manuel) et 21-5b (preview, envoi unitaire, lot). Indépendante de 21-6a. Décisions Guy 2026-07-17 : page complète (lot+unitaire+manuel) / nouvelle feature `reminders/` (namespace i18n libre) / cases par ligne sans select-all (garde 20 UI) / contact sans e-mail visible+badgé+non-cochable. -->
 
@@ -160,8 +160,8 @@ afin de **piloter mes relances depuis l'interface sans passer par l'API — et s
 - [x] **T5 — Anti-double-submit (4 couches, unitaire + lot + manuel)** (AC: 19, 20) — flags parent (`sendingUnit`/`batchSending`/`savingManual`), garde ré-entrance + `true` avant appel + `finally`, boutons `disabled`, `onOpenChange` non-fermable en vol, `$props.id()`.
 - [x] **T6 — Rappel manuel** (AC: 21, 22) — `ManualReminderDialog`, `sentAt` suffixé `T12:00:00` (bug #249) + garde date-future, saut de niveau autorisé (D18).
 - [x] **T7 — i18n 4 FTL** (AC: 23) — 52 clés `reminders-*` × 4 langues + `nav-invoicing-reminders`. lint-i18n PASS (namespace = dossier, pas de KNOWN_VIOLATIONS).
-- [ ] **T8 — Fixture E2E `dueDate` + E2E round-trip + anti-double-submit + axe** (AC: 24, 25, 26, 27)
-- [ ] **T9 — Gate complet + CHANGELOG** (AC: 29, 30)
+- [x] **T8 — Fixture E2E `dueDate` + E2E round-trip + anti-double-submit + axe** (AC: 24, 25, 26, 27) — `createAndValidateInvoiceViaApi(page, contact, dueDate?)` (DRY, date facture alignée sur dueDate pour respecter la validation #245) ; `reminders.spec.ts` **6/6** (liste+unitaire e-mail capturé PDF, sans-email badge/non-cochable, manuel, lot, **anti-double-submit disabled-en-vol → 1 seul e-mail**, axe scopé). Régression fixture : 22/22 sur invoice-send-email/invoices/échéancier/supplier.
+- [x] **T9 — Gate complet + CHANGELOG** (AC: 29, 30) — Frontend : check 0 erreur, lint-i18n PASS, **test:unit 404** (+10), build OK, **E2E reminders 6/6 + régression 22/22**. Backend : fmt/clippy 0, kesh-i18n 21/21 (FTL parse). Aucun code Rust touché (fixture TS + FTL). CHANGELOG `[Non publié]` → `Ajouté`.
 
 ## Dev Notes
 
@@ -250,8 +250,56 @@ Absorption du patch P1 confirmée : le format `` `${sentAt}T12:00:00` `` est cop
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — run unique, T1 → T9, aucune HALT.
+
 ### Debug Log References
+
+- vitest feature `reminders` : 10/10 (api 5 + error-label 5). Suite complète : **404/404**.
+- E2E `reminders.spec.ts` : **6/6** (backend 0.7.0 MockMailer contre `kesh_e2e`).
+- Régression fixture (`createAndValidateInvoiceViaApi` étendue) : invoice-send-email + invoices + échéancier + supplier **22/22**.
+- Backend : `fmt` 0, `clippy -D warnings` 0, `kesh-i18n` 21/21 (les 4 FTL avec +52 clés parsent). Aucun code Rust modifié.
 
 ### Completion Notes List
 
+**Anti-double-submit (AC de premier plan) — livré et prouvé.** Les 4 couches sur les 3 flux (unitaire, lot, manuel) : flag `$state` possédé par la page (`sendingUnit`/`batchSending`/`savingManual`), garde de ré-entrance + `true` avant l'appel + `finally`, boutons `disabled`, `onOpenChange` refusant la fermeture en vol. Le test E2E `anti-double-submit` ralentit la route d'envoi, vérifie le `disabled` immédiat et qu'**un seul e-mail** est capturé malgré un second clic forcé. C'est la seule barrière (le backend n'en a aucune, TOCTOU accepté 21-5b).
+
+**Le piège `sentAt` (#249) est neutralisé et testé.** `ManualReminderDialog` émet `` `${sentAt}T12:00:00` `` (jamais la date nue), et `reminders.api.test.ts` asserte le format `/T\d{2}:\d{2}:\d{2}$/`. Sans ce suffixe, le body serait rejeté par Axum avant le handler.
+
+**Deux bugs de test rencontrés et corrigés en cours de dev** (aucun n'était un défaut de la page) :
+1. **Fixture `dueDate` + validation #245** : la fixture posait `date: today` mais `dueDate` passé → 400 (`due_date >= date`). Corrigé en **alignant la date de facture sur `dueDate`** quand il est fourni (une facture échue est émise ET échue dans le passé). DRY préservé, défaut inchangé → 0 régression (22/22).
+2. **Locators E2E par nom de contact** : le nom vit dans l'en-tête de groupe (`<div>`), pas dans la ligne (`<tr>`). Filtrer les `reminder-row` par nom ne trouvait rien → re-scopé via le groupe. Le cache de transform Playwright de la version cassée (import dynamique d'axe) causait aussi un faux « two versions of @playwright/test » → purge du cache + import statique.
+
+**Placement / i18n** : nouvelle feature `reminders/` (types + api + 5 composants + 2 helpers testés), namespace `reminders-*` cohérent avec le dossier → **lint-i18n PASS sans `KNOWN_VIOLATIONS`** (contrairement à 21-6a). Badges en `--color-text` (leçon contraste 21-6a), axe scopé neutralisant les dettes #253/#256.
+
+**Périmètre** : aucun backend d'envoi recréé (piège de cartographie du 5e agent, tranché par grep en validate) ; historique fiche / toggle UI / dashboard restent en 21-6c ; cumuls par contact non affichés (L21-8).
+
 ### File List
+
+**Frontend — feature `reminders/` (nouveaux)**
+- `frontend/src/lib/features/reminders/reminders.types.ts`
+- `frontend/src/lib/features/reminders/reminders.api.ts`
+- `frontend/src/lib/features/reminders/reminders.api.test.ts`
+- `frontend/src/lib/features/reminders/reminder-error-label.ts`
+- `frontend/src/lib/features/reminders/reminder-error-label.test.ts`
+- `frontend/src/lib/features/reminders/index.ts`
+- `frontend/src/lib/features/reminders/ReminderNoEmailBadge.svelte`
+- `frontend/src/lib/features/reminders/ReminderTerminalBadge.svelte`
+- `frontend/src/lib/features/reminders/ReminderSendDialog.svelte`
+- `frontend/src/lib/features/reminders/ManualReminderDialog.svelte`
+- `frontend/src/lib/features/reminders/ReminderBatchReport.svelte`
+
+**Frontend — page & nav (modifiés/nouveaux)**
+- `frontend/src/routes/(app)/invoices/reminders/+page.svelte` (**NEW**)
+- `frontend/src/routes/(app)/+layout.svelte` (M — entrée nav)
+
+**i18n**
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (M — 52 clés `reminders-*` + `nav-invoicing-reminders`)
+
+**Tests**
+- `frontend/tests/e2e/reminders.spec.ts` (**NEW** — 6 tests)
+- `frontend/tests/e2e/helpers/api-fixtures.ts` (M — param `dueDate`)
+
+**Doc / suivi**
+- `CHANGELOG.md` (M)
+- `_bmad-output/implementation-artifacts/21-6b-page-rappels.md` (M)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (M)
