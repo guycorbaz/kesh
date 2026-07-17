@@ -38,6 +38,9 @@
 		onConfirm,
 	}: Props = $props();
 
+	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID).
+	const uid = $props.id();
+
 	function todayIso(): string {
 		return new Date().toISOString().slice(0, 10);
 	}
@@ -92,11 +95,11 @@
 		</p>
 
 		<div class="mt-3">
-			<label class="mb-1 block text-xs text-text-muted" for="manual-reminder-level">
+			<label class="mb-1 block text-xs text-text-muted" for="{uid}-level">
 				{i18nMsg('reminders-manual-level-label', 'Niveau de rappel')}
 			</label>
 			<select
-				id="manual-reminder-level"
+				id="{uid}-level"
 				data-testid="manual-reminder-level"
 				bind:value={level}
 				class="h-9 rounded-md border border-border bg-background px-2 text-sm"
@@ -108,18 +111,18 @@
 		</div>
 
 		<div class="mt-3">
-			<label class="mb-1 block text-xs text-text-muted" for="manual-reminder-date">
+			<label class="mb-1 block text-xs text-text-muted" for="{uid}-date">
 				{i18nMsg('reminders-manual-date-label', "Date d'envoi")}
 			</label>
-			<Input id="manual-reminder-date" type="date" bind:value={sentAt} max={todayIso()} />
+			<Input id="{uid}-date" type="date" bind:value={sentAt} max={todayIso()} />
 		</div>
 
 		<div class="mt-3">
-			<label class="mb-1 block text-xs text-text-muted" for="manual-reminder-note">
+			<label class="mb-1 block text-xs text-text-muted" for="{uid}-note">
 				{i18nMsg('reminders-manual-note-label', 'Note (facultatif)')}
 			</label>
 			<textarea
-				id="manual-reminder-note"
+				id="{uid}-note"
 				bind:value={note}
 				rows="2"
 				class="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"

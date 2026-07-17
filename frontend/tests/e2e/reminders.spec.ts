@@ -150,8 +150,15 @@ test.describe('Page Rappels (Story 21-6b)', () => {
 	/**
 	 * AC 25 — anti-double-submit (AC de premier plan). Le backend n'a AUCUNE
 	 * garde ; un double-clic non protégé enverrait deux e-mails réels au débiteur.
-	 * On ralentit la route d'envoi pour observer le `disabled` en vol, puis on
-	 * vérifie qu'un seul e-mail est capturé malgré deux clics.
+	 *
+	 * Portée du test (honnêteté de couverture) : il verrouille l'INVARIANT MÉTIER
+	 * (« un seul e-mail part ») ET la **couche B** (le bouton passe `disabled`
+	 * pendant le vol — c'est la protection porteuse : un `<button disabled>` natif
+	 * ne redispatche aucun `click`). Les couches A (garde `handleConfirm`), C
+	 * (garde de ré-entrance `if (sendingUnit) return`) et D (modale non-fermable)
+	 * sont de la défense en profondeur : elles couvrent la course où B ne serait
+	 * pas encore rendu, non reproductible en E2E séquentiel — vérifiées par revue
+	 * de code, pas par ce test.
 	 */
 	test('anti-double-submit : le bouton se désactive en vol, un seul e-mail', async ({ page }) => {
 		await login(page);
@@ -184,6 +191,55 @@ test.describe('Page Rappels (Story 21-6b)', () => {
 			.toBe(before + 1);
 		// Toujours exactement un seul e-mail (pas de double-envoi).
 		expect((await fetchSentEmails(page)).length).toBe(before + 1);
+	});
+
+	/**
+	 * AC 24 — garde du cap 20 côté UI (miroir du 422 BATCH_TOO_LARGE backend) :
+	 * au-delà de 20 factures sélectionnées, le message de cap s'affiche et le
+	 * bouton d'envoi lot est désactivé (aucune requête vouée au 422 ne part).
+	 */
+	test('cap 20 : au-delà de 20 sélectionnées, message + bouton lot désactivé', async ({ page }) => {
+		test.slow(); // 21 factures créées via API → run plus long
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+		const name = uniq('Cap SA');
+		const contact = await createContactWithAddressViaApi(page, name, 'cap@example.ch');
+		for (let i = 0; i < 21; i++) {
+			await createAndValidateInvoiceViaApi(page, contact, overdueDate());
+		}
+
+		await page.goto('/invoices/reminders');
+		const group = page.locator('div.rounded', { hasText: name });
+		const checkboxes = group.getByTestId('reminder-batch-checkbox');
+		await expect(checkboxes).toHaveCount(21);
+		const count = await checkboxes.count();
+		for (let i = 0; i < count; i++) await checkboxes.nth(i).check();
+
+		await expect(page.getByTestId('reminder-selected-count')).toContainText('21');
+		await expect(page.getByTestId('reminder-cap-warning')).toBeVisible();
+		await expect(page.getByTestId('reminder-batch-send')).toBeDisabled();
+	});
+
+	/**
+	 * AC 21 / D18 — le rappel manuel autorise le SAUT de niveau (contrairement à
+	 * l'envoi unitaire, borné au prochain). Sur une facture au niveau 1, le
+	 * `<select>` manuel doit proposer TOUS les niveaux configurés (3 par défaut),
+	 * pas seulement le niveau 1.
+	 */
+	test('rappel manuel : le sélecteur propose le saut vers tous les niveaux configurés', async ({
+		page,
+	}) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+		const name = uniq('Saut SA');
+		const contact = await createContactWithAddressViaApi(page, name, 'saut@example.ch');
+		await createAndValidateInvoiceViaApi(page, contact, overdueDate());
+
+		await page.goto('/invoices/reminders');
+		const group = page.locator('div.rounded', { hasText: name });
+		await group.getByTestId('reminder-row').first().getByTestId('reminder-manual-open').click();
+		// Config seedée par défaut = 3 niveaux → 3 options malgré nextLevel=1.
+		await expect(page.getByTestId('manual-reminder-level').locator('option')).toHaveCount(3);
 	});
 
 	test('a11y : page peuplée sans violation axe dans le sous-arbre de la story', async ({ page }) => {

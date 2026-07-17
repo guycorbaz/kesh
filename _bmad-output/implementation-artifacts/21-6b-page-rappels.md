@@ -246,6 +246,30 @@ Absorption du patch P1 confirmée : le format `` `${sentAt}T12:00:00` `` est cop
 
 **Passe 1 (Sonnet) : 1 CRITICAL → Passe 2 (Haiku) : 0.** Critère d'arrêt de la règle de remédiation atteint (0 finding > LOW), budget 2/8. Rotation orthogonale à l'auteur (Opus) sur les deux passes. Le CRITICAL de P1 re-vérifié ground-truth par l'orchestrateur avant patch — réel (bug #249). **Spec scellée, prête pour `bmad-dev-story 21-6b`.**
 
+## Change Log — code review
+
+Auteur de l'implémentation : Opus. Panel orthogonal.
+
+### Pass 1 (2026-07-17) — Blind Hunter Sonnet + Edge Case Hunter Haiku + Acceptance Auditor Sonnet
+
+Diff unique aplati. **Trend brut : BH 1C/1H/1M/1L | ECH 0/0/1M/4L | AA 0C/2H/2M/3L.** Après ground-truth (grep), **2 HIGH + 3 findings réels de moindre rang patchés, chacun avec son test** ; 1 CRITICAL et 4 LOW écartés comme faux positifs.
+
+- **AA-1 (HIGH) + BH-4 — le rappel manuel n'autorisait PAS le saut de niveau (violation D18).** Le `<select>` manuel était borné à `nextLevel`, identique à l'unitaire — or D18 fait du manuel *le* chemin pour sauter (ex. directement à la mise en demeure). Backend confirmé par grep : `record_manual_reminder` ne vérifie que `level_number >= 1` + existence en config, **aucune borne `≤ nextLevel`**. **Patch** : la page charge `listDunningLevels()` (accessible Comptable, `lib.rs:591`) → `maxConfiguredLevel`, passé au dialog manuel. **Test E2E** : le sélecteur propose les 3 niveaux configurés malgré `nextLevel=1`.
+- **BH-2 (HIGH) + AA-3 (MEDIUM) — `confirmSend` effaçait le message « e-mail parti » sans toast.** Sur `REMINDER_SENT_BUT_INVOICE_GONE`/`REMINDER_SENT_BUT_NOT_RECORDED`, on posait `sendError` (affiché *dans* la modale) puis on fermait la modale → message perdu, aucun toast : l'e-mail partait chez le débiteur **sans trace et sans que l'utilisateur le sache**. **Patch** : `notifyError` (toast persistant) sur ces codes avant fermeture ; les autres erreurs restent inline dans la modale (l'e-mail n'est PAS parti → ré-essai légitime). Distinction des deux vocabulaires clarifiée.
+- **AA-2 (HIGH) — scénario E2E « cap 20 » absent, annoncé 6/6 sans divulgation.** Exactement la leçon de disclosure sélective (21-6a AA-1). **Patch** : test E2E dédié (21 factures créées, sélection totale → message de cap + bouton lot `disabled`).
+- **AA-4 (MEDIUM) + BH-3 — le test anti-double-submit ne verrouille que la couche B.** Un `<button disabled>` natif ne redispatche pas de `click`, donc le 2e clic est un no-op structurel : le test prouve la couche B (porteuse) + l'invariant « un seul e-mail », pas les couches A/C/D (défense en profondeur, course non reproductible en E2E séquentiel). **Patch** : commentaire de portée honnête sur ce que le test couvre réellement — pas de sur-promesse.
+- **ECH-1 / code mort (LOW) — `isEmailSent`/`EMAIL_SENT_CODES` exportés+testés mais jamais consommés** (le rapport de lot porte l'info « e-mail parti » dans le texte du libellé, pas dans un drapeau). **Patch** : supprimés + test ajusté.
+- **ECH-2 (LOW)** — la purge de sélection au rechargement ne retirait pas les factures devenues non-sélectionnables (contact ayant perdu son e-mail, facture terminale). **Patch** : filtre étendu (`selectable` + présence).
+- **AA-7 (LOW)** — `ManualReminderDialog` utilise désormais `$props.id()` (convention AC 20), comme `ReminderSendDialog`.
+
+**Écartés après ground-truth (faux positifs)** :
+- **BH-1 (CRITICAL) — « code `REMINDER_SENT_BUT_NOT_RECORDED` inexistant ».** RÉFUTÉ par grep : c'est le code réel de l'endpoint **unitaire** (`errors.rs:1095`, `invoice_email.rs:558`). Le Blind Hunter, aveugle au backend, a confondu le vocabulaire du **lot** (`RECORD_FAILED_EMAIL_SENT`/`SMTP_SEND_FAILED`) avec celui de l'unitaire. `confirmSend` teste les 2 bons codes unitaires.
+- **ECH-4 (LOW) — `BACKEND_URL` sans port** : patron **pré-existant** copié verbatim de `invoice-send-email.spec.ts` (convention projet, `KESH_BACKEND_URL` toujours défini en E2E).
+- **ECH-5 (LOW) — niveaux non-séquentiels** : **impossible par construction** — 21-3 garantit des `level_number` contigus.
+- **ECH-3 (LOW) — erreurs non-API non notifiées** : les erreurs réseau/timeout **sont** des `ApiError` (`api-client` leur pose `code: NETWORK_ERROR`, status 0) → `isApiError` les capture déjà.
+
+Chaque patch livré **avec son test** (leçon 21-5b). Gate post-patch : check 0 erreur, lint-i18n PASS, vitest reminders 8/8, **E2E 8/8** (+2 : cap-20, saut manuel).
+
 ## Dev Agent Record
 
 ### Agent Model Used

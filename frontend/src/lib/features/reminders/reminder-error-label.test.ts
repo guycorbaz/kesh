@@ -7,7 +7,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 		args ? `${fallback} ${JSON.stringify(args)}` : fallback,
 }));
 
-import { reminderErrorLabel, isEmailSent, EMAIL_SENT_CODES } from './reminder-error-label';
+import { reminderErrorLabel } from './reminder-error-label';
 
 describe('reminderErrorLabel', () => {
 	it('traduit un code connu', () => {
@@ -18,24 +18,11 @@ describe('reminderErrorLabel', () => {
 		expect(reminderErrorLabel('SOMETHING_NEW')).toContain('SOMETHING_NEW');
 	});
 
-	it('couvre tous les codes « e-mail parti »', () => {
-		for (const code of EMAIL_SENT_CODES) {
-			// Un libellé dédié existe (pas le fallback générique).
+	it('donne un libellé dédié aux codes « e-mail parti » du lot (pas le fallback)', () => {
+		// Ces libellés indiquent explicitement que l'e-mail est parti (jamais
+		// « Réessayer ») — c'est le texte, pas un drapeau, qui porte l'info.
+		for (const code of ['REMINDER_SENT_BUT_INVOICE_GONE', 'RECORD_FAILED_EMAIL_SENT', 'SMTP_SEND_FAILED']) {
 			expect(reminderErrorLabel(code)).not.toContain('Échec (');
 		}
-	});
-});
-
-describe('isEmailSent', () => {
-	it('identifie les codes où l’e-mail est parti', () => {
-		expect(isEmailSent('REMINDER_SENT_BUT_INVOICE_GONE')).toBe(true);
-		expect(isEmailSent('RECORD_FAILED_EMAIL_SENT')).toBe(true);
-		expect(isEmailSent('SMTP_SEND_FAILED')).toBe(true);
-	});
-
-	it('classe les autres codes comme non-envoyés (ré-essayables)', () => {
-		expect(isEmailSent('INVOICE_ALREADY_PAID')).toBe(false);
-		expect(isEmailSent('CONTACT_EMAIL_MISSING')).toBe(false);
-		expect(isEmailSent('RATE_LIMITED')).toBe(false);
 	});
 });

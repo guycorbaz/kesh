@@ -20,6 +20,7 @@
 		sendReminderBatch,
 		recordManualReminder,
 	} from '$lib/features/reminders/reminders.api';
+	import { listDunningLevels } from '$lib/features/dunning/dunning.api';
 	import type {
 		ContactGroup,
 		ReminderCandidate,
@@ -47,6 +48,11 @@
 	let selected = $state<Set<number>>(new Set());
 	// hasEmail par invoiceId, pour interdire la sélection d'un contact sans e-mail.
 	let emailByInvoice = $state<Map<number, boolean>>(new Map());
+	// Niveau max configuré (dunning_levels). Le rappel MANUEL autorise le saut
+	// vers n'importe quel niveau existant (D18) — contrairement à l'unitaire,
+	// borné au prochain. Récupéré au chargement (la liste des candidats ne le
+	// porte pas). `0` avant chargement → le manuel retombe sur son défaut sûr.
+	let maxConfiguredLevel = $state(0);
 
 	// --- Flags anti-double-submit (couche C : le PARENT possède l'état) ---
 	let batchSending = $state(false);
@@ -72,15 +78,24 @@
 		const seq = ++loadSeq;
 		loading = true;
 		try {
-			const res = await listReminders();
+			// La liste des candidats + le nombre de niveaux configurés (pour le
+			// saut du rappel manuel) sont chargés ensemble.
+			const [res, levels] = await Promise.all([listReminders(), listDunningLevels()]);
 			if (seq !== loadSeq) return;
 			groups = res.groups;
+			maxConfiguredLevel = levels.reduce((mx, l) => Math.max(mx, l.levelNumber), 0);
 			const m = new Map<number, boolean>();
 			for (const g of res.groups) for (const inv of g.invoices) m.set(inv.invoiceId, g.hasEmail);
 			emailByInvoice = m;
-			// Purge la sélection des factures qui ne sont plus dans la liste.
-			const stillHere = new Set([...m.keys()]);
-			selected = new Set([...selected].filter((id) => stillHere.has(id)));
+			// Purge la sélection des factures qui ne sont plus dans la liste OU
+			// qui ne sont plus sélectionnables (contact ayant perdu son e-mail,
+			// facture devenue terminale) — évite un lot voué à un échec par item.
+			selected = new Set(
+				[...selected].filter((id) => {
+					const inv = res.groups.flatMap((g) => g.invoices).find((i) => i.invoiceId === id);
+					return inv !== undefined && (m.get(id) ?? false) && !inv.terminal;
+				}),
+			);
 		} catch (err) {
 			if (seq !== loadSeq) return;
 			if (isApiError(err)) notifyError(err.message);
@@ -169,11 +184,25 @@
 			sendOpen = false;
 			await load();
 		} catch (err) {
-			if (isApiError(err)) sendError = err.message;
-			// Codes « e-mail parti » : ne jamais reproposer l'envoi ; recharger.
-			if (isApiError(err) && (err.code === 'REMINDER_SENT_BUT_INVOICE_GONE' || err.code === 'REMINDER_SENT_BUT_NOT_RECORDED')) {
-				sendOpen = false;
-				await load();
+			if (isApiError(err)) {
+				// Codes post-SMTP « e-mail parti » (unitaire) : l'e-mail est
+				// irréversiblement parti chez le débiteur, mais l'enregistrement a
+				// échoué → NE JAMAIS reproposer l'envoi (un ré-essai renverrait un
+				// vrai second e-mail — leçon 21-5b). On ferme la modale ET on émet
+				// un TOAST : sinon le message inline disparaîtrait avec la modale et
+				// l'utilisateur ignorerait qu'un e-mail est parti sans trace.
+				if (
+					err.code === 'REMINDER_SENT_BUT_INVOICE_GONE' ||
+					err.code === 'REMINDER_SENT_BUT_NOT_RECORDED'
+				) {
+					notifyError(err.message);
+					sendOpen = false;
+					await load();
+				} else {
+					// Erreur avant/pendant l'envoi (l'e-mail n'est PAS parti) : rester
+					// dans la modale, l'utilisateur peut corriger et réessayer.
+					sendError = err.message;
+				}
 			}
 		} finally {
 			sendingUnit = false; // (C)
@@ -354,7 +383,7 @@
 			if (!o) manualError = '';
 		}}
 		invoiceLabel={invoiceLabel(manualTarget)}
-		maxLevel={Math.max(1, manualTarget.nextLevel ?? manualTarget.currentLevel + 1)}
+		maxLevel={Math.max(1, maxConfiguredLevel, manualTarget.nextLevel ?? 1)}
 		defaultLevel={manualTarget.nextLevel ?? Math.max(1, manualTarget.currentLevel)}
 		submitting={savingManual}
 		errorMsg={manualError}

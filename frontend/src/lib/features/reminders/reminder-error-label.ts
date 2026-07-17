@@ -7,22 +7,6 @@
 
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
-/**
- * Codes signifiant que l'e-mail EST (peut-être) parti chez le débiteur.
- * L'UI ne doit JAMAIS proposer « Réessayer » sur ces codes (leçon 21-5b) : un
- * ré-essai renverrait un vrai second e-mail.
- */
-export const EMAIL_SENT_CODES = new Set<string>([
-	'REMINDER_SENT_BUT_INVOICE_GONE',
-	'RECORD_FAILED_EMAIL_SENT',
-	'SMTP_SEND_FAILED',
-]);
-
-/** `true` si le code signifie que l'e-mail est parti (pas de ré-essai). */
-export function isEmailSent(code: string): boolean {
-	return EMAIL_SENT_CODES.has(code);
-}
-
 const LABELS: Record<string, [string, string]> = {
 	INVOICE_NOT_FOUND: ['invoice-not-found', 'Facture introuvable'],
 	INVOICE_NOT_VALIDATED: ['invoice-not-validated', 'Facture non validée'],
