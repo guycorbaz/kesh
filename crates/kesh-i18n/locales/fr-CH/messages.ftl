@@ -66,6 +66,7 @@ nav-invoices = Factures
 nav-supplier-invoices = Factures fournisseurs
 nav-payment-batches = Paiements fournisseurs
 nav-invoicing-due-dates = Échéancier
+nav-invoicing-reminders = Rappels
 nav-settings = Paramètres
 # Story v014-1 — restructuration sidebar (groupes Quotidien/Mensuel/Administration)
 nav-quotidien = Quotidien
@@ -1225,3 +1226,61 @@ email-templates-level-generic = Générique
 email-templates-level-n = Rappel { $n }
 email-templates-type-label = Type
 email-templates-level-label = Niveau
+
+# Story 21-6b — Page Rappels (envoi des rappels débiteurs)
+reminders-page-title = Rappels
+reminders-forbidden = Accès réservé aux comptables et administrateurs.
+reminders-empty = Aucune facture à rappeler.
+reminders-level-name = Rappel { $level }
+reminders-level-next = Prochain : rappel { $level }
+reminders-last-sent = dernier le { $date }
+reminders-select-invoice = Sélectionner { $inv }
+reminders-selected-count = { $n } sélectionnée(s)
+reminders-batch-cap = Maximum { $cap } factures par lot.
+reminders-batch-send = Envoyer les rappels sélectionnés
+reminders-sending = Envoi…
+reminders-saving = Enregistrement…
+reminders-badge-no-email = sans e-mail
+reminders-badge-terminal = Dernier niveau atteint
+# Rapport de lot
+reminders-batch-accepted = { $n } rappel(s) envoyé(s).
+reminders-batch-failed = { $n } échec(s) :
+# Modale envoi unitaire
+reminders-send-title = Envoyer un rappel
+reminders-send-open = Envoyer un rappel
+reminders-send-level-label = Niveau de rappel
+reminders-send-to-label = Destinataire
+reminders-send-no-recipient = Le contact n'a pas d'adresse e-mail.
+reminders-send-subject-label = Objet
+reminders-send-body-label = Message
+reminders-send-empty = L'objet et le corps ne peuvent pas être vides.
+reminders-send-confirm = Envoyer le rappel
+reminders-send-success = Rappel envoyé
+# Modale rappel manuel
+reminders-manual-title = Enregistrer un rappel manuel
+reminders-manual-open = Rappel manuel
+reminders-manual-body = Enregistrez un rappel déjà envoyé hors Kesh (courrier, recommandé). Aucun e-mail ne sera envoyé.
+reminders-manual-level-label = Niveau de rappel
+reminders-manual-date-label = Date d'envoi
+reminders-manual-date-required = Date d'envoi obligatoire
+reminders-manual-date-future = La date d'envoi ne peut être dans le futur
+reminders-manual-note-label = Note (facultatif)
+reminders-manual-confirm = Enregistrer
+reminders-manual-success = Rappel manuel enregistré
+# Libellés d'erreur de rappel (codes FailedReminder + envoi unitaire)
+reminders-error-invoice-not-found = Facture introuvable
+reminders-error-invoice-not-validated = Facture non validée
+reminders-error-invoice-already-paid = Facture déjà payée
+reminders-error-dunning-paused = Rappels suspendus
+reminders-error-no-next-level = Dernier niveau atteint
+reminders-error-contact-archived = Contact archivé
+reminders-error-contact-email-missing = Contact sans adresse e-mail
+reminders-error-content-empty = Modèle de rappel vide
+reminders-error-content-too-long = Contenu du rappel trop long
+reminders-error-not-pdf-ready = Facture non imprimable en PDF
+reminders-error-rate-limited = Limite d'envoi atteinte
+reminders-error-database-error = Erreur technique
+reminders-error-smtp-failed = Échec de l'envoi e-mail
+reminders-error-sent-but-gone = E-mail envoyé, mais la facture a disparu entre-temps (non enregistré)
+reminders-error-sent-not-recorded = E-mail envoyé, mais non enregistré (erreur technique)
+reminders-error-unknown = Échec ({ $code })

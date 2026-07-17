@@ -153,13 +153,13 @@ afin de **piloter mes relances depuis l'interface sans passer par l'API — et s
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Feature `reminders/` (types + api + tests unitaires)** (AC: 1, 2, 3, 28)
-- [ ] **T2 — Route page + nav + gating RBAC + liste groupée** (AC: 4, 5, 6, 7, 8) + badges (AC: 9)
-- [ ] **T3 — Sélection & envoi lot** (AC: 10, 11, 12, 13) + rapport + mapping erreurs
-- [ ] **T4 — Envoi unitaire (modale éditable, preview, choix niveau)** (AC: 14, 15, 16, 17, 18)
-- [ ] **T5 — Anti-double-submit (4 couches, unitaire + lot + manuel)** (AC: 19, 20) — **AC de premier plan**
-- [ ] **T6 — Rappel manuel** (AC: 21, 22) — **piège `sentAt` : suffixer `T12:00:00` (bug #249), verrouillé par test**
-- [ ] **T7 — i18n 4 FTL** (AC: 23)
+- [x] **T1 — Feature `reminders/` (types + api + tests unitaires)** (AC: 1, 2, 3, 28) — types + api + index + `reminders.api.test.ts` (5) + helper `reminder-error-label.ts` + `.test.ts` (5). vitest 10/10.
+- [x] **T2 — Route page + nav + gating RBAC + liste groupée** (AC: 4, 5, 6, 7, 8) + badges (AC: 9) — `/invoices/reminders/+page.svelte`, entrée nav `nav-invoicing-reminders` (4 langues), gating `canManage` (Comptable+), liste groupée par contact, `ReminderNoEmailBadge` + `ReminderTerminalBadge` (contraste `--color-text`, leçon 21-6a).
+- [x] **T3 — Sélection & envoi lot** (AC: 10, 11, 12, 13) — `Set<number>` + toggle, case désactivée si contact sans e-mail OU terminale, garde cap 20 UI, `ReminderBatchReport` + mapping `reminderErrorLabel` (helper testé) + classe `isEmailSent` (jamais « Réessayer »).
+- [x] **T4 — Envoi unitaire (modale éditable, preview, choix niveau)** (AC: 14, 15, 16, 17, 18) — `ReminderSendDialog` présentationnel, `<select>` niveau 1..nextLevel → `onLevelChange` re-fetch preview, `to` read-only, codes post-SMTP rechargent la liste.
+- [x] **T5 — Anti-double-submit (4 couches, unitaire + lot + manuel)** (AC: 19, 20) — flags parent (`sendingUnit`/`batchSending`/`savingManual`), garde ré-entrance + `true` avant appel + `finally`, boutons `disabled`, `onOpenChange` non-fermable en vol, `$props.id()`.
+- [x] **T6 — Rappel manuel** (AC: 21, 22) — `ManualReminderDialog`, `sentAt` suffixé `T12:00:00` (bug #249) + garde date-future, saut de niveau autorisé (D18).
+- [x] **T7 — i18n 4 FTL** (AC: 23) — 52 clés `reminders-*` × 4 langues + `nav-invoicing-reminders`. lint-i18n PASS (namespace = dossier, pas de KNOWN_VIOLATIONS).
 - [ ] **T8 — Fixture E2E `dueDate` + E2E round-trip + anti-double-submit + axe** (AC: 24, 25, 26, 27)
 - [ ] **T9 — Gate complet + CHANGELOG** (AC: 29, 30)
 
