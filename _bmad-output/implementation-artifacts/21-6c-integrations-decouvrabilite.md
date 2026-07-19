@@ -215,6 +215,21 @@ Contexte frais, prémunie contre le mode d'échec « auditer la spec comme une i
 
 **Passe 1 (Sonnet) : 1 MEDIUM → Passe 2 (Haiku) : 0.** Critère d'arrêt atteint (0 > LOW), budget 2/8. Rotation orthogonale à l'auteur (Opus). Le MEDIUM de P1 re-vérifié ground-truth par grep avant patch. **Spec scellée, prête pour `bmad-dev-story 21-6c`.**
 
+## Change Log — code review
+
+### Pass 1 (Sonnet, panel Blind Hunter + Edge Case Hunter + Acceptance Auditor, 2026-07-19) — 3 MEDIUM + 2 LOW patchés
+
+Auteur du code : Opus. Panel orthogonal Sonnet (3 couches // ). Tous les MEDIUM re-vérifiés ground-truth (`grep`/`Read` sur le fichier réel) avant patch.
+
+- **BH-1 (MEDIUM) — boutons Suspendre/Reprendre affichés même sur facture payée.** `{#if canManage}` sans `!invoice.paidAt`, incohérent avec les boutons voisins (« Créer un avoir » / « Supprimer »). Une facture payée est hors périmètre dunning. **Patch** : garde `{#if canManage && !invoice.paidAt}`. Test : le toggle E2E restructuré asserte les boutons masqués après « Marquer payée ».
+- **ECH-1 (MEDIUM) — `handleToggleError` ne gérait pas `NOT_FOUND`** (facture supprimée entre-temps → fiche fantôme, re-clic rejoue le 404). Précédent direct : `openSendEmail` (`:396`) fait `goto('/invoices')`. **Patch** : `NOT_FOUND` → `goto('/invoices')` + `handleToggleError` retourne désormais `shouldClose`. Test : nouveau E2E « reprise d'une facture supprimée → retour liste » (delete réel via API).
+- **ECH-2 (MEDIUM) — `confirmPause` fermait la modale sur TOUTE erreur** (perte du motif saisi, réinitialisé à la ré-ouverture). Incohérent avec `handleMarkConfirm`/`confirmUnmark` (ferment seulement sur 409). **Patch** : fermeture conditionnée à `shouldClose` ; sur erreur transitoire la modale reste ouverte + erreur inline (nouvelle prop `errorMsg` sur `DunningPauseDialog`, patron `ManualReminderDialog`). Test : nouveau E2E « erreur transitoire (500 intercepté) garde la modale + préserve le motif ».
+- **BH-2 (LOW)** — anglais peu idiomatique `homepage-reminders-count` : « to remind » → « to follow up ».
+- **AA-2 (LOW)** — narration Change Log « 22 clés » → **23** (compte réel).
+- **Dismiss** : BH-3 (maxlength HTML vs VARCHAR multi-octets — pré-existant, le backend valide en dernier ressort via 400 `VALIDATION_ERROR`) ; AA-1 (historique gaté `status === 'validated'` — intentionnel et documenté, cohérent domaine : pas d'état « paid » distinct dans `InvoiceStatus`).
+
+Gate post-patch : `check` 0 err, `lint-i18n` PASS, vitest reminders 12/12, `build` ✓, `kesh-i18n` OK. **E2E 21-6c 7/7** (dont ghost-invoice + transient-error) + **régression `invoices`+`reminders`+`échéancier` 33/33**.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -232,7 +247,7 @@ Backend E2E lancé en `KESH_TEST_MODE` (port 8181, MockMailer, DB `kesh_e2e` mig
 - **T3** — `DunningPauseDialog.svelte` (présentationnel, `$props.id()`, textarea `maxlength=500`, reset à l'ouverture, `submitting` en prop). Badge `DunningPausedBadge` (21-6a) affiché si `dunningPausedAt`. Boutons Suspendre (modale) / Reprendre (direct, D-c1) dans la barre `validated`, RBAC `canManage`. Handlers `confirmPause`/`confirmResume` : **ré-application immédiate de `{ version, dunningPausedAt, dunningPausedNote }`** (piège n°1, fix structurel — dans le même handler juste après le retour API). Garde de ré-entrance + modale non-fermable en vol (patron `SendEmailDialog`). Codes d'erreur `OPTIMISTIC_LOCK_CONFLICT` (409 → refetch) et `INVOICE_NOT_PAUSED` (422 → toast + refetch) via `handleToggleError`.
 - **T4** — Dashboard : `canManage` dérivé, `reminderCount`/`reminderLoaded`. `onMount` **ne fetch pas** `/dunning/reminders` si `!canManage` (pas de 403 Consultation), `catch` silencieux. Affichage « N facture(s) à rappeler » + lien `/invoices/reminders` uniquement si `canManage && reminderLoaded && reminderCount > 0`. Compteur = Σ `groups[].invoices.length` (nombre de factures, jamais un montant — L21-8). Wrapper `msg()` étendu pour transmettre les args i18n.
 - **T5** — Lien échéancier → Rappels (`due-dates-link-reminders`) et lien retour Rappels → échéancier (`reminders-link-due-dates`), en-têtes en flex.
-- **T6** — 22 nouvelles clés × 4 locales (FR/DE/IT/EN), traductions réelles : `reminders-history-*`, `reminders-pause-*`, `reminders-resume-*`, `reminders-error-not-paused`, `reminders-link-due-dates`, `homepage-reminders-count`, `due-dates-link-reminders`. Parité FTL validée par `cargo test -p kesh-i18n`. Lint i18n-ownership PASS (composants `features/reminders/` → `reminders-*` uniquement).
+- **T6** — 23 nouvelles clés × 4 locales (FR/DE/IT/EN), traductions réelles : `reminders-history-*`, `reminders-pause-*`, `reminders-resume-*`, `reminders-error-not-paused`, `reminders-link-due-dates`, `homepage-reminders-count`, `due-dates-link-reminders`. Parité FTL validée par `cargo test -p kesh-i18n`. Lint i18n-ownership PASS (composants `features/reminders/` → `reminders-*` uniquement).
 - **T7** — Prérequis M1 : `overdueDate` promue dans `api-fixtures.ts` (export), déclaration locale de `reminders.spec.ts` remplacée par un import (DRY). Describe 21-6c dans `invoices.spec.ts` (toggle bout-en-bout **avec anti-régression 409** : « Marquer payée » après pause réussit ; historique canal manuel ; axe scopé `[data-testid=invoice-detail]` avec `color-contrast`/`button-name` neutralisés pour dettes pré-existantes #253/#256). Nouveau spec `homepage-reminders.spec.ts` (compteur Comptable+ ; Consultation ne fetch pas → `reminderCalls === 0`). **E2E verts** : dashboard 2/2, 21-6c 3/3, régression `invoices.spec.ts`+`reminders.spec.ts` 28/28, échéancier 3/3.
 - **T8** — Gate local complet vert (voir Change Log). CHANGELOG `[Non publié] → Ajouté` : historique + suspension sur la fiche, compteur dashboard, navigation croisée. README inchangé (Epic 21 déjà 🚧). Manuels → 21-8.
 

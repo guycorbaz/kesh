@@ -25,10 +25,19 @@
 		/** Numéro de facture pour le titre. */
 		invoiceLabel: string;
 		submitting?: boolean;
+		/** Erreur remontée par le parent (affichée inline, le dialog reste ouvert). */
+		errorMsg?: string;
 		onConfirm: (note: string | null) => void;
 	};
 
-	let { open, onOpenChange, invoiceLabel, submitting = false, onConfirm }: Props = $props();
+	let {
+		open,
+		onOpenChange,
+		invoiceLabel,
+		submitting = false,
+		errorMsg = '',
+		onConfirm,
+	}: Props = $props();
 
 	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID).
 	const uid = $props.id();
@@ -73,6 +82,12 @@
 				class="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
 			></textarea>
 		</div>
+
+		{#if errorMsg}
+			<div class="mt-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+				{errorMsg}
+			</div>
+		{/if}
 
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => onOpenChange(false)} disabled={submitting}>

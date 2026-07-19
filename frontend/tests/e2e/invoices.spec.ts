@@ -288,19 +288,100 @@ test.describe('Factures — suspension & historique sur la fiche (21-6c)', () =>
 		);
 		await expect(page.getByTestId('dunning-resume-button')).toBeVisible();
 
-		// Anti-régression piège n°1 : après pause (version incrémentée serveur),
-		// une action version-portante DOIT réussir sans 409 → « Marquer payée ».
+		// Reprise directe (pas de modale, D-c1) → le badge disparaît. Prouve la
+		// ré-application de version À TRAVERS pause→resume (chaque toggle rejoue
+		// une version incrémentée : sans ré-application, le 2e appel prendrait 409).
+		await page.getByTestId('dunning-resume-button').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveCount(0);
+		await expect(page.getByTestId('dunning-pause-button')).toBeVisible();
+
+		// Re-suspendre, puis anti-régression piège n°1 : après pause (version
+		// incrémentée serveur), une action version-portante D'UN AUTRE type DOIT
+		// réussir sans 409 → « Marquer payée ».
+		await page.getByTestId('dunning-pause-button').click();
+		await page.getByTestId('dunning-pause-confirm').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
 		await page.getByRole('button', { name: 'Marquer payée' }).click();
 		await page.getByRole('button', { name: 'Confirmer le paiement' }).click();
 		// Succès prouvé : le bouton bascule en « Dé-marquer payée » (paidAt posé).
 		await expect(page.getByRole('button', { name: 'Dé-marquer payée' })).toBeVisible();
 		// Le badge de suspension persiste (la pause n'a pas été perdue).
 		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		// BH1 (review P1) : facture payée = hors dunning → boutons Suspendre/Reprendre masqués.
+		await expect(page.getByTestId('dunning-pause-button')).toHaveCount(0);
+		await expect(page.getByTestId('dunning-resume-button')).toHaveCount(0);
+	});
 
-		// Reprise directe (pas de modale, D-c1) → le badge disparaît.
+	test('reprise d’une facture supprimée entre-temps → retour liste (fiche fantôme)', async ({
+		page,
+	}) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Fantôme SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+		// Suspendre via l'API pour que le bouton « Reprendre » soit rendu.
+		const ctxPause = await authedApiContext(page);
+		try {
+			const get = await ctxPause.get(`/api/v1/invoices/${invoiceId}`);
+			const { version } = await get.json();
+			const res = await ctxPause.put(`/api/v1/invoices/${invoiceId}/dunning-pause`, {
+				data: { version, note: 'à supprimer' },
+			});
+			expect(res.ok()).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctxPause);
+		}
+
+		await page.goto(`/invoices/${invoiceId}`);
+		await expect(page.getByTestId('dunning-resume-button')).toBeVisible();
+
+		// La facture est supprimée par un autre acteur (autre onglet/utilisateur).
+		const ctxDel = await authedApiContext(page);
+		try {
+			const del = await ctxDel.delete(`/api/v1/invoices/${invoiceId}`);
+			expect(del.ok(), `delete failed: ${del.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctxDel);
+		}
+
+		// Reprendre → 404 → retour liste (patron fiche fantôme, review P1 ECH1) :
+		// pas de blocage sur une fiche introuvable.
 		await page.getByTestId('dunning-resume-button').click();
-		await expect(page.getByTestId('invoice-paused-badge')).toHaveCount(0);
-		await expect(page.getByTestId('dunning-pause-button')).toBeVisible();
+		await expect(page).toHaveURL(/\/invoices$/);
+	});
+
+	test('suspension : une erreur transitoire garde la modale ouverte + préserve le motif', async ({
+		page,
+	}) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Transient SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+
+		await page.goto(`/invoices/${invoiceId}`);
+
+		// Forcer un 500 transitoire sur le PUT dunning-pause (une seule fois).
+		let intercepted = 0;
+		await page.route('**/api/v1/invoices/*/dunning-pause', async (route) => {
+			intercepted += 1;
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({ code: 'INTERNAL', message: 'boom' }),
+			});
+		});
+
+		await page.getByTestId('dunning-pause-button').click();
+		await page.getByTestId('dunning-pause-note').fill('motif précieux');
+		await page.getByTestId('dunning-pause-confirm').click();
+
+		// Review P1 ECH2 : la modale reste ouverte, l'erreur inline s'affiche, et le
+		// motif tapé n'est PAS perdu (pas de fermeture + reset).
+		expect(intercepted).toBeGreaterThan(0);
+		await expect(page.getByTestId('dunning-pause-confirm')).toBeVisible();
+		await expect(page.getByTestId('dunning-pause-note')).toHaveValue('motif précieux');
 	});
 
 	test('historique des rappels affiché (canal manuel, ligne visible)', async ({ page }) => {

@@ -95,6 +95,7 @@
 	let reminders = $state<ReminderResponse[]>([]);
 	let pauseOpen = $state(false);
 	let pauseSubmitting = $state(false);
+	let pauseError = $state('');
 
 	/**
 	 * Recharge l'historique des rappels. Échec toléré (historique secondaire) :
@@ -300,18 +301,31 @@
 	// version périmée → 409. Fix structurel : la ré-application se fait dans le
 	// même handler, juste après le retour de l'API, jamais ailleurs.
 
-	/** Traduit un code d'erreur toggle en toast + refetch si conflit d'état. */
-	async function handleToggleError(err: unknown) {
-		if (!invoice) return;
+	/**
+	 * Traite un code d'erreur toggle (toast + refetch/navigation selon le cas).
+	 * Retourne `true` si le dialog appelant doit se fermer (état changé ou
+	 * navigation), `false` si l'erreur est transitoire — le dialog reste alors
+	 * ouvert pour réessayer sans retaper le motif (patron `handleMarkConfirm`).
+	 */
+	async function handleToggleError(err: unknown): Promise<boolean> {
+		if (!invoice) return true;
 		if (!isApiError(err)) {
 			notifyError(i18nMsg('common-error', 'Erreur inattendue'));
-			return;
+			// Erreur inattendue = transitoire du point de vue de l'état : garder ouvert.
+			return false;
 		}
 		notifyError(
 			err.code === 'INVOICE_NOT_PAUSED'
 				? i18nMsg('reminders-error-not-paused', "Cette facture n'est plus suspendue.")
 				: err.message,
 		);
+		// Facture supprimée entre-temps (autre onglet/utilisateur) : fiche fantôme,
+		// tout re-clic rejouerait le 404 → retour liste (patron `openSendEmail` :396,
+		// review P1 ECH1).
+		if (err.code === 'NOT_FOUND') {
+			await goto('/invoices');
+			return true;
+		}
 		// 409 (verrou optimiste) ou 422 (reprise d'une non-suspendue, race UI) :
 		// l'état local est périmé → refetch (filet du piège n°1).
 		if (err.code === 'OPTIMISTIC_LOCK_CONFLICT' || err.code === 'INVOICE_NOT_PAUSED') {
@@ -321,13 +335,18 @@
 				// laisser l'erreur affichée
 			}
 			await loadReminderHistory();
+			return true;
 		}
+		// Erreur métier non-conflictuelle (VALIDATION_ERROR, transitoire réseau) :
+		// l'état n'a pas changé → garder le dialog ouvert pour corriger/réessayer.
+		return false;
 	}
 
 	async function confirmPause(note: string | null) {
 		// Anti-double-submit : garde de ré-entrance en plus du bouton `disabled`.
 		if (!invoice || pauseSubmitting) return;
 		pauseSubmitting = true;
+		pauseError = '';
 		try {
 			const res = await pauseDunning(invoice.id, { version: invoice.version, note });
 			// Piège n°1 — ré-appliquer version + état de suspension.
@@ -341,8 +360,16 @@
 			notifySuccess(i18nMsg('reminders-pause-success', 'Rappels suspendus'));
 			await loadReminderHistory();
 		} catch (err) {
-			await handleToggleError(err);
-			pauseOpen = false;
+			// Review P1 ECH2 : ne fermer QUE si l'état a changé/navigué. Sur une
+			// erreur transitoire, garder la modale ouverte (le motif tapé est
+			// préservé — le dialog ne le réinitialise qu'à la ré-ouverture) et
+			// afficher l'erreur inline (patron `handleMarkConfirm`).
+			const shouldClose = await handleToggleError(err);
+			if (shouldClose) {
+				pauseOpen = false;
+			} else {
+				pauseError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			}
 		} finally {
 			pauseSubmitting = false;
 		}
@@ -624,7 +651,10 @@
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			{/if}
-			{#if canManage}
+			{#if canManage && !invoice.paidAt}
+				<!-- Une facture payée est hors du périmètre dunning (jamais candidate
+				     à un rappel) : les boutons Suspendre/Reprendre sont masqués, comme
+				     les boutons voisins « Créer un avoir » / « Supprimer » (review P1 BH1). -->
 				{#if invoice.dunningPausedAt === null}
 					<Button
 						variant="outline"
@@ -882,9 +912,11 @@
 			// fermable (ESC/X/clic-extérieur) pendant la suspension en vol.
 			if (!o && pauseSubmitting) return;
 			pauseOpen = o;
+			if (!o) pauseError = '';
 		}}
 		invoiceLabel={invoice.invoiceNumber ?? String(invoice.id)}
 		submitting={pauseSubmitting}
+		errorMsg={pauseError}
 		onConfirm={confirmPause}
 	/>
 
