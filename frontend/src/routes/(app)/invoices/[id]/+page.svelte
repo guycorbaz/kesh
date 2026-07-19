@@ -19,6 +19,15 @@
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
 	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
 	import SendEmailDialog from '$lib/features/invoices/SendEmailDialog.svelte';
+	import DunningPausedBadge from '$lib/features/invoices/DunningPausedBadge.svelte';
+	import ReminderHistory from '$lib/features/reminders/ReminderHistory.svelte';
+	import DunningPauseDialog from '$lib/features/reminders/DunningPauseDialog.svelte';
+	import {
+		listReminderHistory,
+		pauseDunning,
+		resumeDunning,
+	} from '$lib/features/reminders/reminders.api';
+	import type { ReminderResponse } from '$lib/features/reminders/reminders.types';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { featureFlags } from '$lib/shared/utils/feature-flags.svelte';
 	import type {
@@ -82,6 +91,23 @@
 
 	let id = $derived(parseInt(page.params.id ?? '', 10));
 
+	// Story 21-6c — historique des rappels + suspension.
+	let reminders = $state<ReminderResponse[]>([]);
+	let pauseOpen = $state(false);
+	let pauseSubmitting = $state(false);
+
+	/**
+	 * Recharge l'historique des rappels. Échec toléré (historique secondaire) :
+	 * pas de toast bloquant, la section reste vide.
+	 */
+	async function loadReminderHistory() {
+		try {
+			reminders = await listReminderHistory(id);
+		} catch {
+			// Historique secondaire — dégradation silencieuse.
+		}
+	}
+
 	onMount(async () => {
 		if (!Number.isFinite(id) || id <= 0) {
 			errorMsg = 'Identifiant de facture invalide';
@@ -95,6 +121,8 @@
 		} finally {
 			loading = false;
 		}
+		// Story 21-6c : historique des rappels (après getInvoice, échec toléré).
+		if (invoice) await loadReminderHistory();
 		// Story 19-4 : référentiel projets (archivés inclus — un tag historique
 		// doit rester lisible). Échec toléré : libellé fallback `#id`.
 		try {
@@ -260,6 +288,85 @@
 			}
 		} finally {
 			unmarkSubmitting = false;
+		}
+	}
+
+	// Story 21-6c — suspension / reprise des rappels (#231, D-c1).
+	//
+	// ⚠️ Piège n°1 : pause/resume renvoient un `DunningPauseResponse` (PAS la
+	// facture entière) et incrémentent `version`. On ré-applique immédiatement
+	// `{ version, dunningPausedAt, dunningPausedNote }` à l'état `invoice` local,
+	// sinon la prochaine action (mark-paid, unmark, validate, delete) enverra une
+	// version périmée → 409. Fix structurel : la ré-application se fait dans le
+	// même handler, juste après le retour de l'API, jamais ailleurs.
+
+	/** Traduit un code d'erreur toggle en toast + refetch si conflit d'état. */
+	async function handleToggleError(err: unknown) {
+		if (!invoice) return;
+		if (!isApiError(err)) {
+			notifyError(i18nMsg('common-error', 'Erreur inattendue'));
+			return;
+		}
+		notifyError(
+			err.code === 'INVOICE_NOT_PAUSED'
+				? i18nMsg('reminders-error-not-paused', "Cette facture n'est plus suspendue.")
+				: err.message,
+		);
+		// 409 (verrou optimiste) ou 422 (reprise d'une non-suspendue, race UI) :
+		// l'état local est périmé → refetch (filet du piège n°1).
+		if (err.code === 'OPTIMISTIC_LOCK_CONFLICT' || err.code === 'INVOICE_NOT_PAUSED') {
+			try {
+				invoice = await getInvoice(invoice.id);
+			} catch {
+				// laisser l'erreur affichée
+			}
+			await loadReminderHistory();
+		}
+	}
+
+	async function confirmPause(note: string | null) {
+		// Anti-double-submit : garde de ré-entrance en plus du bouton `disabled`.
+		if (!invoice || pauseSubmitting) return;
+		pauseSubmitting = true;
+		try {
+			const res = await pauseDunning(invoice.id, { version: invoice.version, note });
+			// Piège n°1 — ré-appliquer version + état de suspension.
+			invoice = {
+				...invoice,
+				version: res.version,
+				dunningPausedAt: res.dunningPausedAt,
+				dunningPausedNote: res.dunningPausedNote,
+			};
+			pauseOpen = false;
+			notifySuccess(i18nMsg('reminders-pause-success', 'Rappels suspendus'));
+			await loadReminderHistory();
+		} catch (err) {
+			await handleToggleError(err);
+			pauseOpen = false;
+		} finally {
+			pauseSubmitting = false;
+		}
+	}
+
+	async function confirmResume() {
+		// La reprise agit directement (pas de modale, D-c1). Garde de ré-entrance.
+		if (!invoice || pauseSubmitting) return;
+		pauseSubmitting = true;
+		try {
+			const res = await resumeDunning(invoice.id, { version: invoice.version });
+			// Piège n°1 — la reprise nulle `dunningPausedAt` ET `dunningPausedNote`.
+			invoice = {
+				...invoice,
+				version: res.version,
+				dunningPausedAt: res.dunningPausedAt,
+				dunningPausedNote: res.dunningPausedNote,
+			};
+			notifySuccess(i18nMsg('reminders-resume-success', 'Rappels repris'));
+			await loadReminderHistory();
+		} catch (err) {
+			await handleToggleError(err);
+		} finally {
+			pauseSubmitting = false;
 		}
 	}
 
@@ -517,6 +624,26 @@
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			{/if}
+			{#if canManage}
+				{#if invoice.dunningPausedAt === null}
+					<Button
+						variant="outline"
+						onclick={() => (pauseOpen = true)}
+						data-testid="dunning-pause-button"
+					>
+						{i18nMsg('reminders-pause-button', 'Suspendre les rappels')}
+					</Button>
+				{:else}
+					<Button
+						variant="outline"
+						onclick={confirmResume}
+						disabled={pauseSubmitting}
+						data-testid="dunning-resume-button"
+					>
+						{i18nMsg('reminders-resume-button', 'Reprendre les rappels')}
+					</Button>
+				{/if}
+			{/if}
 			{#if isAdmin && !invoice.paidAt}
 				<Button variant="destructive" onclick={() => (deleteOpen = true)}>
 					<Trash2 class="h-4 w-4" aria-hidden="true" />
@@ -536,7 +663,7 @@
 {:else if errorMsg}
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if invoice}
-	<div class="space-y-6">
+	<div class="space-y-6" data-testid="invoice-detail">
 		<div>
 			<h1 class="text-2xl font-semibold">Facture</h1>
 			<p class="text-sm text-text-muted">
@@ -545,6 +672,11 @@
 					<span class="ml-2">
 						<PaymentStatusBadge status={paymentStatus(invoice)} />
 					</span>
+					{#if invoice.dunningPausedAt}
+						<span class="ml-2">
+							<DunningPausedBadge note={invoice.dunningPausedNote} />
+						</span>
+					{/if}
 				{/if}
 			</p>
 		</div>
@@ -619,6 +751,11 @@
 				</tr>
 			</tfoot>
 		</table>
+
+		{#if invoice.status === 'validated'}
+			<!-- Story 21-6c : historique des rappels (rappels uniquement sur factures validées). -->
+			<ReminderHistory {reminders} />
+		{/if}
 	</div>
 
 	<Dialog.Root
@@ -736,6 +873,19 @@
 		submitting={sendEmailSubmitting}
 		errorMsg={sendEmailError}
 		onConfirm={handleSendEmailConfirm}
+	/>
+
+	<DunningPauseDialog
+		open={pauseOpen}
+		onOpenChange={(o) => {
+			// Anti-double-submit (patron SendEmailDialog) : la modale n'est pas
+			// fermable (ESC/X/clic-extérieur) pendant la suspension en vol.
+			if (!o && pauseSubmitting) return;
+			pauseOpen = o;
+		}}
+		invoiceLabel={invoice.invoiceNumber ?? String(invoice.id)}
+		submitting={pauseSubmitting}
+		onConfirm={confirmPause}
 	/>
 
 	<Dialog.Root

@@ -18,6 +18,9 @@ import {
 	sendReminder,
 	sendReminderBatch,
 	recordManualReminder,
+	listReminderHistory,
+	pauseDunning,
+	resumeDunning,
 } from './reminders.api';
 
 type Mock = ReturnType<typeof vi.fn>;
@@ -80,5 +83,54 @@ describe('reminders.api', () => {
 		const payload = (apiClient.post as Mock).mock.calls[0][1] as { sentAt: string };
 		// Garde-fou : le contrat backend NaiveDateTime exige le composant horaire.
 		expect(payload.sentAt).toMatch(/T\d{2}:\d{2}:\d{2}$/);
+	});
+
+	// --- Story 21-6c : historique + suspension/reprise ---
+
+	it('listReminderHistory GET sur le bon path', async () => {
+		(apiClient.get as Mock).mockResolvedValue([]);
+		await listReminderHistory(42);
+		expect(apiClient.get).toHaveBeenCalledWith('/api/v1/invoices/42/reminders');
+	});
+
+	it('pauseDunning PUT { version, note } sur le bon path', async () => {
+		(apiClient.put as Mock).mockResolvedValue({
+			invoiceId: 42,
+			dunningPausedAt: '2026-07-19T12:00:00',
+			dunningPausedNote: 'litige',
+			version: 4,
+		});
+		await pauseDunning(42, { version: 3, note: 'litige' });
+		expect(apiClient.put).toHaveBeenCalledWith('/api/v1/invoices/42/dunning-pause', {
+			version: 3,
+			note: 'litige',
+		});
+	});
+
+	it('pauseDunning transmet une note nulle sans la transformer', async () => {
+		(apiClient.put as Mock).mockResolvedValue({
+			invoiceId: 42,
+			dunningPausedAt: '2026-07-19T12:00:00',
+			dunningPausedNote: null,
+			version: 4,
+		});
+		await pauseDunning(42, { version: 3, note: null });
+		expect(apiClient.put).toHaveBeenCalledWith('/api/v1/invoices/42/dunning-pause', {
+			version: 3,
+			note: null,
+		});
+	});
+
+	it('resumeDunning PUT { version } sur le bon path', async () => {
+		(apiClient.put as Mock).mockResolvedValue({
+			invoiceId: 42,
+			dunningPausedAt: null,
+			dunningPausedNote: null,
+			version: 5,
+		});
+		await resumeDunning(42, { version: 4 });
+		expect(apiClient.put).toHaveBeenCalledWith('/api/v1/invoices/42/dunning-resume', {
+			version: 4,
+		});
 	});
 });

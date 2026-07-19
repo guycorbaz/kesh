@@ -255,7 +255,13 @@
 </svelte:head>
 
 <div class="p-4">
-	<h1 class="mb-4 text-xl font-semibold">{i18nMsg('reminders-page-title', 'Rappels')}</h1>
+	<div class="mb-4 flex items-center justify-between">
+		<h1 class="text-xl font-semibold">{i18nMsg('reminders-page-title', 'Rappels')}</h1>
+		<!-- Story 21-6c (D-c3) : lien croisé retour vers l'échéancier. -->
+		<Button variant="outline" href="/invoices/due-dates" data-testid="reminders-link-due-dates">
+			{i18nMsg('reminders-link-due-dates', "Voir l'échéancier")}
+		</Button>
+	</div>
 
 	{#if !canManage}
 		<p class="text-sm text-text-muted" data-testid="reminders-forbidden">

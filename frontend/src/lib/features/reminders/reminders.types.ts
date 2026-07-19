@@ -104,6 +104,35 @@ export interface SendReminderBatchResponse {
 	failed: FailedReminder[];
 }
 
+// --- Suspension des rappels (PUT /api/v1/invoices/{id}/dunning-pause|dunning-resume) ---
+
+/**
+ * Réponse de suspension/reprise (Story 21-6c).
+ *
+ * ⚠️ N'est PAS un `InvoiceResponse` complet — contrairement à `mark_as_paid`.
+ * La suspension **incrémente `version`** (verrou optimiste). Après un appel,
+ * l'UI DOIT ré-appliquer `{ version, dunningPausedAt, dunningPausedNote }` à son
+ * état `invoice` local, sinon la prochaine action (mark-paid, unmark, validate,
+ * delete) enverra une `version` périmée → 409 `OPTIMISTIC_LOCK_CONFLICT`.
+ */
+export interface DunningPauseResponse {
+	invoiceId: number;
+	dunningPausedAt: string | null;
+	dunningPausedNote: string | null;
+	version: number;
+}
+
+/** Payload de suspension : `note` optionnel (borne backend `PAUSE_NOTE_MAX` = 500). */
+export interface PauseDunningRequest {
+	version: number;
+	note: string | null;
+}
+
+/** Payload de reprise : la reprise nulle serveur `dunningPausedAt` ET `dunningPausedNote`. */
+export interface ResumeDunningRequest {
+	version: number;
+}
+
 // --- Rappel manuel (POST /api/v1/invoices/{id}/reminders/manual) ---
 
 /**

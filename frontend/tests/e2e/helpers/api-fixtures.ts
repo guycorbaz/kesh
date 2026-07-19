@@ -11,6 +11,17 @@ import type { Page } from '@playwright/test';
 import { authedApiContext, disposeContextSafe } from './test-state';
 
 /**
+ * Échéance suffisamment passée pour être éligible au niveau 1 (seuil `today - 15j` :
+ * grâce 5 + délai niveau 1 = 10). Story 21-6c — promue depuis `reminders.spec.ts`
+ * (M1) pour être réutilisée par `homepage-reminders.spec.ts` sans duplication.
+ */
+export function overdueDate(days = 25): string {
+	const d = new Date();
+	d.setDate(d.getDate() - days);
+	return d.toISOString().slice(0, 10);
+}
+
+/**
  * Contact `Personne` PDF-ready (adresse structurée #213, firstName/lastName
  * obligatoires). `email`/`salutation` optionnels (Story 20-4 : le round-trip
  * d'envoi exige un contact AVEC e-mail et civilité genrée — le backend

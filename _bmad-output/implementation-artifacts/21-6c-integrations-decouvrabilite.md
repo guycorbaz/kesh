@@ -1,6 +1,6 @@
 # Story 21.6c: Intégrations & découvrabilité des rappels (frontend)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 3 agents Explore (fiche facture / dashboard / backend+tests). Dernière sous-story du split 21-6 (2026-07-16). CONSOMME 21-6a (dunningPausedAt exposé sur InvoiceResponse) ET 21-6b (page /invoices/reminders + feature reminders/). FRONTEND PUR : endpoints history/pause/resume livrés par 21-5a, aucun code Rust, aucune migration. Décisions Guy 2026-07-17 : pause via modale (note) + reprise directe ; compteur dans le widget « Factures ouvertes » existant ; liens croisés bidirectionnels échéancier ↔ Rappels. -->
 
@@ -129,14 +129,14 @@ afin de **piloter le suivi des débiteurs sans chercher — chaque information e
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Wrappers & types `reminders/`** (AC: 1, 2, 3, 17) — `DunningPauseResponse`+requests, `listReminderHistory`/`pauseDunning`/`resumeDunning`, re-exports explicites, vitest.
-- [ ] **T2 — Historique sur la fiche facture** (AC: 4, 5) — `ReminderHistory.svelte`, insertion `:621-622`, chargement toléré, `cancelledAt` distingué.
-- [ ] **T3 — Toggle suspension** (AC: 6, 7, 8, 9) — badge `dunningPausedAt`, boutons Suspendre/Reprendre, `DunningPauseDialog` (note, anti-double-submit), handlers avec **ré-application de version (piège n°1)** + codes d'erreur.
-- [ ] **T4 — Compteur dashboard** (AC: 10, 11) — widget « Factures ouvertes » + 1er fetch (patron bancaire, catch silencieux), garde `canManage` (pas de 403 Consultation), compteur = somme `invoices.length`.
-- [ ] **T5 — Liens croisés** (AC: 12, 13) — échéancier → Rappels et retour.
-- [ ] **T6 — i18n 4 FTL** (AC: 14).
-- [ ] **T7 — E2E + axe** (AC: 15, 16, 18) — toggle bout-en-bout (dont **anti-régression 409**), historique, compteur dashboard (+ rôle Consultation), axe scopé. **Prérequis : promouvoir `overdueDate` dans `api-fixtures.ts` (M1).**
-- [ ] **T8 — Gate complet + CHANGELOG** (AC: 19, 20).
+- [x] **T1 — Wrappers & types `reminders/`** (AC: 1, 2, 3, 17) — `DunningPauseResponse`+requests, `listReminderHistory`/`pauseDunning`/`resumeDunning`, re-exports explicites, vitest.
+- [x] **T2 — Historique sur la fiche facture** (AC: 4, 5) — `ReminderHistory.svelte`, insertion `:621-622`, chargement toléré, `cancelledAt` distingué.
+- [x] **T3 — Toggle suspension** (AC: 6, 7, 8, 9) — badge `dunningPausedAt`, boutons Suspendre/Reprendre, `DunningPauseDialog` (note, anti-double-submit), handlers avec **ré-application de version (piège n°1)** + codes d'erreur.
+- [x] **T4 — Compteur dashboard** (AC: 10, 11) — widget « Factures ouvertes » + 1er fetch (patron bancaire, catch silencieux), garde `canManage` (pas de 403 Consultation), compteur = somme `invoices.length`.
+- [x] **T5 — Liens croisés** (AC: 12, 13) — échéancier → Rappels et retour.
+- [x] **T6 — i18n 4 FTL** (AC: 14).
+- [x] **T7 — E2E + axe** (AC: 15, 16, 18) — toggle bout-en-bout (dont **anti-régression 409**), historique, compteur dashboard (+ rôle Consultation), axe scopé. **Prérequis : promouvoir `overdueDate` dans `api-fixtures.ts` (M1).**
+- [x] **T8 — Gate complet + CHANGELOG** (AC: 19, 20).
 
 ## Dev Notes
 
@@ -219,8 +219,62 @@ Contexte frais, prémunie contre le mode d'échec « auditer la spec comme une i
 
 ### Agent Model Used
 
+Opus 4.8 (1M) — `bmad-dev-story`, 2026-07-19.
+
 ### Debug Log References
+
+Backend E2E lancé en `KESH_TEST_MODE` (port 8181, MockMailer, DB `kesh_e2e` migrée au boot) selon la recette `docs/testing.md`. Aucun 500/panic backend.
 
 ### Completion Notes List
 
+- **T1** — `DunningPauseResponse` / `PauseDunningRequest` / `ResumeDunningRequest` ajoutés à `reminders.types.ts` ; `listReminderHistory` / `pauseDunning` / `resumeDunning` (via `apiClient.get/put`) dans `reminders.api.ts`, re-exports explicites (types + fns) dans `reminders.api.ts` et `index.ts`. `ReminderResponse` réutilisé tel quel pour l'historique. 4 nouveaux tests vitest (chemin/méthode/body) → suite reminders 9/9.
+- **T2** — `ReminderHistory.svelte` (namespace `reminders-*`) : tableau trié tel que reçu (backend `sentAt DESC`), colonnes date/niveau/canal/destinataire/frais, rappel annulé (`cancelledAt !== null`) barré + ligne « Annulé le … », empty-state. Inséré après la table des lignes, gaté `status === 'validated'` (pas d'historique vide sur brouillon). Chargé au `onMount` après `getInvoice`, échec toléré (`loadReminderHistory` catch silencieux).
+- **T3** — `DunningPauseDialog.svelte` (présentationnel, `$props.id()`, textarea `maxlength=500`, reset à l'ouverture, `submitting` en prop). Badge `DunningPausedBadge` (21-6a) affiché si `dunningPausedAt`. Boutons Suspendre (modale) / Reprendre (direct, D-c1) dans la barre `validated`, RBAC `canManage`. Handlers `confirmPause`/`confirmResume` : **ré-application immédiate de `{ version, dunningPausedAt, dunningPausedNote }`** (piège n°1, fix structurel — dans le même handler juste après le retour API). Garde de ré-entrance + modale non-fermable en vol (patron `SendEmailDialog`). Codes d'erreur `OPTIMISTIC_LOCK_CONFLICT` (409 → refetch) et `INVOICE_NOT_PAUSED` (422 → toast + refetch) via `handleToggleError`.
+- **T4** — Dashboard : `canManage` dérivé, `reminderCount`/`reminderLoaded`. `onMount` **ne fetch pas** `/dunning/reminders` si `!canManage` (pas de 403 Consultation), `catch` silencieux. Affichage « N facture(s) à rappeler » + lien `/invoices/reminders` uniquement si `canManage && reminderLoaded && reminderCount > 0`. Compteur = Σ `groups[].invoices.length` (nombre de factures, jamais un montant — L21-8). Wrapper `msg()` étendu pour transmettre les args i18n.
+- **T5** — Lien échéancier → Rappels (`due-dates-link-reminders`) et lien retour Rappels → échéancier (`reminders-link-due-dates`), en-têtes en flex.
+- **T6** — 22 nouvelles clés × 4 locales (FR/DE/IT/EN), traductions réelles : `reminders-history-*`, `reminders-pause-*`, `reminders-resume-*`, `reminders-error-not-paused`, `reminders-link-due-dates`, `homepage-reminders-count`, `due-dates-link-reminders`. Parité FTL validée par `cargo test -p kesh-i18n`. Lint i18n-ownership PASS (composants `features/reminders/` → `reminders-*` uniquement).
+- **T7** — Prérequis M1 : `overdueDate` promue dans `api-fixtures.ts` (export), déclaration locale de `reminders.spec.ts` remplacée par un import (DRY). Describe 21-6c dans `invoices.spec.ts` (toggle bout-en-bout **avec anti-régression 409** : « Marquer payée » après pause réussit ; historique canal manuel ; axe scopé `[data-testid=invoice-detail]` avec `color-contrast`/`button-name` neutralisés pour dettes pré-existantes #253/#256). Nouveau spec `homepage-reminders.spec.ts` (compteur Comptable+ ; Consultation ne fetch pas → `reminderCalls === 0`). **E2E verts** : dashboard 2/2, 21-6c 3/3, régression `invoices.spec.ts`+`reminders.spec.ts` 28/28, échéancier 3/3.
+- **T8** — Gate local complet vert (voir Change Log). CHANGELOG `[Non publié] → Ajouté` : historique + suspension sur la fiche, compteur dashboard, navigation croisée. README inchangé (Epic 21 déjà 🚧). Manuels → 21-8.
+
 ### File List
+
+**Nouveaux**
+- `frontend/src/lib/features/reminders/ReminderHistory.svelte`
+- `frontend/src/lib/features/reminders/DunningPauseDialog.svelte`
+- `frontend/tests/e2e/homepage-reminders.spec.ts`
+
+**Modifiés**
+- `frontend/src/lib/features/reminders/reminders.types.ts`
+- `frontend/src/lib/features/reminders/reminders.api.ts`
+- `frontend/src/lib/features/reminders/reminders.api.test.ts`
+- `frontend/src/lib/features/reminders/index.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`
+- `frontend/src/routes/(app)/+page.svelte`
+- `frontend/src/routes/(app)/invoices/due-dates/+page.svelte`
+- `frontend/src/routes/(app)/invoices/reminders/+page.svelte`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `frontend/tests/e2e/invoices.spec.ts`
+- `frontend/tests/e2e/reminders.spec.ts`
+- `frontend/tests/e2e/helpers/api-fixtures.ts`
+- `CHANGELOG.md`
+
+### Change Log — dev
+
+**bmad-dev-story (Opus 4.8, 2026-07-19)** — T1→T8, frontend pur (aucun `.rs`, aucune migration).
+
+Gate local complet (« Test Locally First ») :
+
+| Check | Résultat |
+|---|---|
+| `npm run check` | 0 erreur (27 warnings pré-existants, hors fichiers de la story) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | 406/406 (dont reminders.api 9/9) |
+| `npm run build` | ✓ |
+| `npm run test:e2e` (ciblé) | dashboard 2/2, 21-6c 3/3, `invoices`+`reminders` régression 28/28, échéancier 3/3 |
+| `cargo fmt --all -- --check` | OK (aucun `.rs` modifié) |
+| `cargo test -p kesh-i18n` | 21/21 (parité FTL 4 locales) |
+
+Note gate : `cargo clippy`/`cargo build` workspace = no-op (zéro delta Rust) ; les seules modifs backend sont les FTL (couvertes par `kesh-i18n`). Déviation : néant. Le **piège n°1** (ré-application de version après pause/resume) est prouvé bout-en-bout par le test anti-régression 409 (« Marquer payée » après pause réussit sans conflit).

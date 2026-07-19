@@ -233,6 +233,124 @@ test.describe('Factures — suspension des rappels (21-6a)', () => {
 	});
 });
 
+/**
+ * Story 21-6c (#231) — Toggle de suspension + historique des rappels sur la
+ * fiche facture. FRONTEND PUR (endpoints livrés 21-5a).
+ *
+ * Le scénario clé est l'**anti-régression du piège n°1** : pause/resume
+ * renvoient un `DunningPauseResponse` (version incrémentée), pas la facture
+ * entière — si la nouvelle version n'est pas ré-appliquée, la prochaine action
+ * (ici « Marquer payée ») prend un 409. Le test le prouve bout-en-bout.
+ */
+test.describe('Factures — suspension & historique sur la fiche (21-6c)', () => {
+	/** Enregistre un rappel manuel (papier) via l'API 21-5a — peuple l'historique. */
+	async function recordManualReminderViaApi(
+		page: import('@playwright/test').Page,
+		invoiceId: number,
+		levelNumber: number,
+		note: string,
+	): Promise<void> {
+		const ctx = await authedApiContext(page);
+		try {
+			const today = new Date().toISOString().slice(0, 10);
+			const res = await ctx.post(`/api/v1/invoices/${invoiceId}/reminders/manual`, {
+				// #249 : sentAt = NaiveDateTime (jamais date nue).
+				data: { levelNumber, sentAt: `${today}T12:00:00`, note },
+			});
+			expect(res.ok(), `manual reminder failed: ${res.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	}
+
+	test('toggle suspension bout-en-bout + pas de 409 sur l’action suivante', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Toggle SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+
+		await page.goto(`/invoices/${invoiceId}`);
+
+		// État initial : active → bouton « Suspendre », pas de badge.
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveCount(0);
+		await page.getByTestId('dunning-pause-button').click();
+
+		// Modale : saisir un motif, confirmer.
+		await page.getByTestId('dunning-pause-note').fill('litige client');
+		await page.getByTestId('dunning-pause-confirm').click();
+
+		// Badge « Suspendu » visible, motif en infobulle, bouton bascule « Reprendre ».
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveAttribute(
+			'title',
+			/litige client/,
+		);
+		await expect(page.getByTestId('dunning-resume-button')).toBeVisible();
+
+		// Anti-régression piège n°1 : après pause (version incrémentée serveur),
+		// une action version-portante DOIT réussir sans 409 → « Marquer payée ».
+		await page.getByRole('button', { name: 'Marquer payée' }).click();
+		await page.getByRole('button', { name: 'Confirmer le paiement' }).click();
+		// Succès prouvé : le bouton bascule en « Dé-marquer payée » (paidAt posé).
+		await expect(page.getByRole('button', { name: 'Dé-marquer payée' })).toBeVisible();
+		// Le badge de suspension persiste (la pause n'a pas été perdue).
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+
+		// Reprise directe (pas de modale, D-c1) → le badge disparaît.
+		await page.getByTestId('dunning-resume-button').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveCount(0);
+		await expect(page.getByTestId('dunning-pause-button')).toBeVisible();
+	});
+
+	test('historique des rappels affiché (canal manuel, ligne visible)', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Histo SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+		// Le manuel n'exige PAS une facture échue, seulement validée + non payée.
+		await recordManualReminderViaApi(page, invoiceId, 1, 'recommandé A+');
+
+		await page.goto(`/invoices/${invoiceId}`);
+
+		const history = page.getByTestId('reminder-history');
+		await expect(history).toBeVisible();
+		const rows = history.getByTestId('reminder-history-row');
+		await expect(rows).toHaveCount(1);
+		await expect(rows.first()).toContainText('Manuel');
+	});
+
+	// axe scopé (AC 18) : sous-arbre de la fiche facture (badge suspendu +
+	// historique + boutons Suspendre/Reprendre). `color-contrast` et `button-name`
+	// désactivés = dettes PRÉ-EXISTANTES #253 (PaymentStatusBadge .unpaid) et #256
+	// (boutons d'action icône seule) neutralisées — hors scope de cette story. Le
+	// badge suspendu (AA 11.4:1) est couvert par le test axe non-neutralisé du
+	// describe 21-6a ; les boutons de cette story portent un libellé texte.
+	test('axe-core sans violations sur la fiche (badge suspendu + historique)', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Axe 6c SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+		await recordManualReminderViaApi(page, invoiceId, 1, 'axe');
+
+		await page.goto(`/invoices/${invoiceId}`);
+		// Suspendre pour rendre le badge présent dans le sous-arbre audité.
+		await page.getByTestId('dunning-pause-button').click();
+		await page.getByTestId('dunning-pause-confirm').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		await expect(page.getByTestId('reminder-history')).toBeVisible();
+		await page.waitForLoadState('networkidle');
+
+		const results = await new AxeBuilder({ page })
+			.include('[data-testid="invoice-detail"]')
+			.disableRules(['color-contrast', 'button-name'])
+			.analyze();
+		expect(results.violations).toEqual([]);
+	});
+});
+
 test.describe('Factures — création brouillon', () => {
 	test('crée une facture avec une ligne libre et la persiste', async ({ page }) => {
 		await login(page);

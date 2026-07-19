@@ -16,6 +16,7 @@ import {
 	createContactWithAddressViaApi,
 	ensurePrimaryBankAccountViaApi,
 	createAndValidateInvoiceViaApi,
+	overdueDate,
 } from './helpers/api-fixtures';
 
 const BACKEND_URL = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1';
@@ -38,13 +39,6 @@ async function login(page: Page, username = 'admin', password = 'admin123') {
 
 function uniq(prefix: string): string {
 	return `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-}
-
-/** Échéance suffisamment passée pour être éligible au niveau 1 (seuil today - 15j). */
-function overdueDate(days = 25): string {
-	const d = new Date();
-	d.setDate(d.getDate() - days);
-	return d.toISOString().slice(0, 10);
 }
 
 async function fetchSentEmails(page: Page): Promise<Array<Record<string, unknown>>> {

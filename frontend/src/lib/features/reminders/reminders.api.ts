@@ -20,6 +20,9 @@ import type {
 	ReminderResponse,
 	SendReminderBatchResponse,
 	ManualReminderRequest,
+	DunningPauseResponse,
+	PauseDunningRequest,
+	ResumeDunningRequest,
 } from './reminders.types';
 
 export type {
@@ -33,6 +36,9 @@ export type {
 	FailedReminder,
 	SendReminderBatchResponse,
 	ManualReminderRequest,
+	DunningPauseResponse,
+	PauseDunningRequest,
+	ResumeDunningRequest,
 } from './reminders.types';
 
 /** Factures à rappeler, groupées par débiteur. Liste vide si dunning désactivé. */
@@ -74,6 +80,40 @@ export async function recordManualReminder(
 ): Promise<ReminderResponse> {
 	return apiClient.post<ReminderResponse>(
 		`/api/v1/invoices/${invoiceId}/reminders/manual`,
+		payload,
+	);
+}
+
+/**
+ * Historique des rappels d'une facture (Story 21-6c). Tri serveur `sentAt DESC`
+ * (plus récent d'abord) — ne pas re-trier côté client. Endpoint tous-rôles-auth.
+ */
+export async function listReminderHistory(invoiceId: number): Promise<ReminderResponse[]> {
+	return apiClient.get<ReminderResponse[]>(`/api/v1/invoices/${invoiceId}/reminders`);
+}
+
+/**
+ * Suspend les rappels d'une facture (Comptable+). ⚠️ Renvoie un
+ * `DunningPauseResponse` (version incrémentée), PAS la facture entière —
+ * ré-appliquer `{ version, dunningPausedAt, dunningPausedNote }` à l'état local.
+ */
+export async function pauseDunning(
+	invoiceId: number,
+	payload: PauseDunningRequest,
+): Promise<DunningPauseResponse> {
+	return apiClient.put<DunningPauseResponse>(
+		`/api/v1/invoices/${invoiceId}/dunning-pause`,
+		payload,
+	);
+}
+
+/** Reprend les rappels d'une facture (Comptable+). Même contrainte de version que `pauseDunning`. */
+export async function resumeDunning(
+	invoiceId: number,
+	payload: ResumeDunningRequest,
+): Promise<DunningPauseResponse> {
+	return apiClient.put<DunningPauseResponse>(
+		`/api/v1/invoices/${invoiceId}/dunning-resume`,
 		payload,
 	);
 }

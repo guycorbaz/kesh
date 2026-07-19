@@ -13,6 +13,9 @@ export type {
 	FailedReminder,
 	SendReminderBatchResponse,
 	ManualReminderRequest,
+	DunningPauseResponse,
+	PauseDunningRequest,
+	ResumeDunningRequest,
 } from './reminders.types';
 export {
 	listReminders,
@@ -20,4 +23,7 @@ export {
 	sendReminder,
 	sendReminderBatch,
 	recordManualReminder,
+	listReminderHistory,
+	pauseDunning,
+	resumeDunning,
 } from './reminders.api';
