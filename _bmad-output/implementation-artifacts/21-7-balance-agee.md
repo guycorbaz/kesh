@@ -134,7 +134,7 @@ Un champ nommé `days_1_30` sérialisé par `#[serde(rename_all = "camelCase")]`
     - **Parité TTC** : `totals.total ==` Σ `invoice_total_ttc` (helper Rust) sur les postes ouverts seedés (réplique de `invoice_ttc_parity.rs`) — au centime.
     - **Scoping** : une facture d'une **autre company** n'apparaît pas.
     - Empty-state : company sans poste ouvert → `rows` vide, `totals` à zéro.
-19. **Tests E2E backend `kesh-api`** — étendre/créer `crates/kesh-api/tests/reports_e2e.rs` (ou `aged_receivables_e2e.rs`) : `GET /aged-receivables` **200 pour Consultation** (vue tous-rôles, D-7b) ; `GET /aged-receivables/export` **403 pour Consultation**, **200 `text/csv`** pour Comptable et Admin (D24) ; scoping cross-tenant (une company ne voit pas l'autre → 404/absence) ; format invalide (`?format=pdf`) → 400.
+19. **Tests E2E backend `kesh-api`** — étendre/créer `crates/kesh-api/tests/reports_e2e.rs` (ou `aged_receivables_e2e.rs`) : `GET /aged-receivables` **200 pour Consultation** (vue tous-rôles, D-7b) ; `GET /aged-receivables/export` **403 pour Consultation**, **200 `text/csv`** pour Comptable et Admin (D24) ; **scoping cross-tenant** — `company_id` vient du JWT (`CurrentUser`), une autre company n'est pas exposable via l'API ; le test seede des factures pour **deux companies distinctes** et vérifie que le rapport de la company A ne contient **QUE** ses contacts/montants (les postes de B absents des `rows`), **HTTP 200 avec `rows` scopées** (pas de 404) ; format invalide (`?format=pdf`) → 400.
 20. **E2E frontend** — `frontend/tests/e2e/reports.spec.ts` : **mettre à jour l'assertion `toHaveCount(7)` → `toHaveCount(8)`** (nouvel onglet). Nouveau scénario : seeder des factures échues (helper `overdueDate` promu 21-6c) → `/reports` → onglet « Balance âgée » → Générer → le tableau affiche des lignes + le total général ; le lien d'un contact pointe vers `/invoices?contactId=` ; **deep-link `/reports?tab=aged-receivables`** ouvre directement l'onglet (D-7c) ; le bouton Export CSV est **visible pour admin**, **absent pour Consultation**. Lien croisé : depuis l'échéancier, `due-dates-link-aged` ouvre l'onglet balance âgée.
 21. **vitest** — `AgedReceivablesView` rend lignes + total + empty-state ; wrappers `reports.api` (AC 11).
 
@@ -264,6 +264,17 @@ Auteur spec : Opus. Panel orthogonal Sonnet. Tous les findings > LOW re-vérifi�
 - **LOW** : `?tab=` lecture one-shot (risque boucle `$effect`) → patché AC 13 + piège #7 ; deep-link `?tab=project-*` documenté acceptable ; piège n°2 serde nuancé (les noms `days_1_to_30` camelCasent déjà correctement — rename explicite = renfort défensif, pas correctif obligatoire) ; `reports-generate` dead-key pré-existante notée (vraie clé `reports-button-generate`).
 
 **~35 citations file:line vérifiées : 1 fausse (C1), le reste exact** (constantes TTC, patron rapport, CSV, routes/RBAC, prédicat postes ouverts, contraintes DB `contacts.name NOT NULL`/`line_total >= 0`, drill-down `?contactId=`, lint i18n, `toHaveCount(7)`). Contradictions internes : aucune. Cohérence planning (items 23/25, D10/D23/D24, L21-1/L21-7) : confirmée.
+
+### Pass 2 (Haiku ×2, contexte frais, 2026-07-19) — 0 CRITICAL/HIGH → **CONVERGÉ**
+
+Panel Haiku orthogonal aux patches Opus. **36 citations re-vérifiées `grep`/`Read` — les 4 correctifs structurels (C1/H1/H2/H3) confirmés exacts et sans régression.** Confirmation clé : `Decimal` Rust → **`string` JSON** (serde projet) → `string` TS — le DTO frontend en `string` (AC 10) est correct (résout l'incertitude LOW du reviewer cohérence).
+
+- **Ground-truth (Haiku)** : 0 finding. Toutes les citations exactes, dont les réfs D10 corrigées, `build_global_filename` (`exports.rs:122`), `TabId` local vs `ReportType`, `validate_format` rejette `None`, `kesh-report → kesh-db` dep.
+- **Cohérence (Haiku)** : READY-FOR-DEV. 1 seul point actionnable → **M-P2 (reclassé LOW)** : AC 19 « cross-tenant → 404/absence » ambigu (le `company_id` vient du JWT → réponse **200 + `rows` scopées**, jamais 404). **Patché** (seed 2 companies, assert scoping en 200). Reclassement documenté : pur libellé de test, zéro impact code/design, aucune régression possible → traité comme LOW. Les autres LOW (piège serde nuancé, `HAVING total<>0`, contact sans nom = invariant schéma, dead-key `reports-generate`) sont documentés/acceptables.
+
+### Trend & décision — validate
+
+**Pass 1 (Sonnet ×2) : 1 CRITICAL + 3 HIGH + 4 MEDIUM → Pass 2 (Haiku ×2) : 0 CRITICAL/HIGH (1 clarification de test reclassée LOW, patchée).** Critère d'arrêt atteint (0 > LOW), budget 2/8. Rotation orthogonale Sonnet→Haiku, tous orthogonaux à l'auteur Opus. Les findings Pass 1 re-vérifiés `grep` avant patch ; Pass 2 a re-confirmé les 4 correctifs structurels sans régression. **Spec scellée, prête pour `bmad-dev-story 21-7`.**
 
 ## Dev Agent Record
 
