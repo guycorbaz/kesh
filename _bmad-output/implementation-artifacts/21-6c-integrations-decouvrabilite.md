@@ -1,6 +1,6 @@
 # Story 21.6c: Intégrations & découvrabilité des rappels (frontend)
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-17 par bmad-create-story. Cartographie ground-truth par 3 agents Explore (fiche facture / dashboard / backend+tests). Dernière sous-story du split 21-6 (2026-07-16). CONSOMME 21-6a (dunningPausedAt exposé sur InvoiceResponse) ET 21-6b (page /invoices/reminders + feature reminders/). FRONTEND PUR : endpoints history/pause/resume livrés par 21-5a, aucun code Rust, aucune migration. Décisions Guy 2026-07-17 : pause via modale (note) + reprise directe ; compteur dans le widget « Factures ouvertes » existant ; liens croisés bidirectionnels échéancier ↔ Rappels. -->
 
@@ -229,6 +229,18 @@ Auteur du code : Opus. Panel orthogonal Sonnet (3 couches // ). Tous les MEDIUM 
 - **Dismiss** : BH-3 (maxlength HTML vs VARCHAR multi-octets — pré-existant, le backend valide en dernier ressort via 400 `VALIDATION_ERROR`) ; AA-1 (historique gaté `status === 'validated'` — intentionnel et documenté, cohérent domaine : pas d'état « paid » distinct dans `InvoiceStatus`).
 
 Gate post-patch : `check` 0 err, `lint-i18n` PASS, vitest reminders 12/12, `build` ✓, `kesh-i18n` OK. **E2E 21-6c 7/7** (dont ghost-invoice + transient-error) + **régression `invoices`+`reminders`+`échéancier` 33/33**.
+
+### Pass 2 (Haiku, même panel 3 couches, diff aplati mono-commit, 2026-07-19) — 0 finding actionnable → **CONVERGÉ**
+
+Diff unique aplati fourni à Haiku (mitigation CLAUDE.md — évite la confusion d'indexation multi-commit). Panel Haiku orthogonal aux patches Opus.
+
+- **Blind Hunter** : 0 finding > LOW. Les 5 patches Pass 1 re-vérifiés présents par `grep` sur les fichiers réels.
+- **Acceptance Auditor** : 100% conforme (AC A→H + les 5 patches Pass 1 vérifiés ground-truth), hors-scope respecté.
+- **Edge Case Hunter** : 1 MEDIUM → **dismiss**. « Le compteur dashboard ne se rafraîchit pas si le rôle passe Consultation→Comptable en session ». Réfuté comme non-actionnable ground-truth : (1) patron `onMount`-only **identique au widget bancaire voisin** (convention dashboard, pas une régression 21-6c — `grep` : aucun `$effect`, `bankAccounts` fetché aussi en `onMount` seul) ; (2) déclencheur non-atteignable — `canManage` dérive du rôle JWT, un changement de rôle exige une ré-authentification (pas de bascule en session sans reload) ; (3) conséquence purement cosmétique, l'agent lui-même la qualifie « <<1%, intentionnel ».
+
+### Trend & décision — code review
+
+**Pass 1 (Sonnet, panel 3 couches) : 3 MEDIUM + 2 LOW → Pass 2 (Haiku, panel 3 couches) : 0 actionnable (1 MEDIUM dismissed ground-truth).** Critère d'arrêt atteint (0 > LOW), budget 2/8. Rotation orthogonale Sonnet→Haiku, tous deux orthogonaux à l'auteur Opus. Les 3 MEDIUM de P1 re-vérifiés `grep`/`Read` avant patch ; le MEDIUM de P2 réfuté `grep` avant dismiss. **Story done.**
 
 ## Dev Agent Record
 
