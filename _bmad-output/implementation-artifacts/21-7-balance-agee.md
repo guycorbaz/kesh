@@ -33,7 +33,7 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 
 ### ⚠️ Piège n°2 — sérialisation camelCase des champs de bucket numérotés
 
-`#[serde(rename_all = "camelCase")]` sur un champ `days_1_30` produit `days130` (ambigu). Les champs de bucket DOIVENT porter un **`#[serde(rename = "…")]` explicite** (AC 1) pour un JSON lisible et stable : `notDue`, `days1To30`, `days31To60`, `days61To90`, `daysOver90`, `total`.
+Un champ nommé `days_1_30` sérialisé par `#[serde(rename_all = "camelCase")]` donne `days130` (ambigu). **Nuance (finding validate P1)** : avec les noms de champs effectivement retenus en AC 1 (`days_1_to_30`, `days_31_to_60`, `days_61_to_90`, `days_over_90` — avec `to`/`over`), `rename_all = "camelCase"` produit **déjà** automatiquement `days1To30`/`days31To60`/`days61To90`/`daysOver90` — les cibles voulues. Le `#[serde(rename = "…")]` explicite reste donc recommandé comme **renfort défensif** (explicite > implicite, protège d'un futur renommage) et pour figer le contrat vis-à-vis du miroir TS, mais ce n'est PAS un correctif obligatoire pour éviter un bug avec ces noms-là. Cible du JSON : `notDue`, `days1To30`, `days31To60`, `days61To90`, `daysOver90`, `total`.
 
 ### Hors scope (garde-fous)
 
@@ -77,13 +77,16 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 
 ### B. Export CSV (backend, `kesh-report`)
 
-6. **`pub fn render_aged_receivables_csv<W: Write>(report: &AgedReceivables, writer: W) -> Result<(), ReportError>`** dans `crates/kesh-report/src/csv.rs` (patron `render_vat_report_csv`) : BOM UTF-8 (`write_bom`), `WriterBuilder` `delimiter(b';')` + `Terminator::CRLF`, montants via le formateur ISO existant (`format_amount_iso`). En-tête : `Contact ; Non échu ; 1-30 ; 31-60 ; 61-90 ; 90+ ; Total` (libellés **traduits** selon la locale — cf. AC 14, ou en-têtes techniques stables si le CSV n'est pas localisé ailleurs ; s'aligner sur ce que font les autres `render_*_csv`). Une ligne par contact, puis une **ligne « Total général »** avec les `totals`. Rapport vide → en-tête seul (patron court-circuit `render_vat_report_csv`).
+6. **`pub fn render_aged_receivables_csv<W: Write>(report: &AgedReceivables, writer: W) -> Result<(), ReportError>`** dans `crates/kesh-report/src/csv.rs` (patron **exact** `render_vat_report_csv`) : BOM UTF-8 (`write_bom`), `WriterBuilder` `delimiter(b';')` + `Terminator::CRLF`, montants via le formateur ISO existant (`format_amount_iso`). **AUCUN paramètre `locale`** (⚠️ finding validate P1 : les `render_*_csv` existants n'ont pas de param locale — en-têtes **français en dur**, ne pas inventer une signature localisée divergente). En-tête littéral FR : `Contact;Non échu;1-30;31-60;61-90;90+;Total`. Une ligne par contact, puis une **ligne « Total général »** avec les `totals`. Rapport vide → en-tête seul (patron court-circuit `render_vat_report_csv`).
 
 ### C. Routes HTTP (backend, `kesh-api`)
 
-7. **Handler JSON `get_aged_receivables`** dans `crates/kesh-api/src/routes/reports.rs` (patron `get_balance_sheet`) : extracteurs `State<AppState>` + `Extension<CurrentUser>` (pas de `Query` — aucun paramètre en v1). Calcule `let as_of = Utc::now().naive_utc().date();`, appelle `generate_aged_receivables(&state.pool, current_user.company_id, as_of)`, renvoie `Json<AgedReceivables>`. Audit best-effort (`emit_report_audit`, patron des autres handlers).
+7. **Handler JSON `get_aged_receivables`** dans `crates/kesh-api/src/routes/reports.rs` (structure calquée sur `get_balance_sheet`) : extracteurs `State<AppState>` + `Extension<CurrentUser>` (pas de `Query` — aucun paramètre en v1). Calcule `let as_of = Utc::now().naive_utc().date();`, appelle `generate_aged_receivables(&state.pool, current_user.company_id, as_of)`, renvoie `Json<AgedReceivables>`. Audit best-effort **DÉDIÉ** `emit_aged_receivables_audit(as_of, …)` (⚠️ NE PAS réutiliser `emit_report_audit` `:1057` — sa signature exige `fiscal_year_id/period_start/period_end`, la modifier casserait ses 4 callers Story 9-1).
 
-8. **Handler export `export_aged_receivables`** (patron `export_balance_sheet`) : `State` + `Extension<CurrentUser>` + `Query<AgedExportQuery { format: Option<String> }>`. Valide `format` (défaut `csv`, seul `csv` accepté ; `pdf`/autre → `AppError::Validation` 400). Bufferise via `render_csv_to_vec` (ou équivalent) et construit la réponse `text/csv; charset=utf-8` + `Content-Disposition` RFC 5987 via `build_export_response_with_locale` (patron existant). Filename `kesh-{slug}-{company}-{asOf}.csv` (clé i18n `reports-filename-aged-receivables` pour le slug via `resolve_type_slug`). Audit export best-effort.
+8. **Handler export `export_aged_receivables`** (structure du corps calquée sur `export_balance_sheet`, MAIS **pas les helpers `ReportPeriod`**) : `State` + `Extension<CurrentUser>` + `Query<AgedExportQuery { format: Option<String> }>`.
+   - **Validation `format` DÉDIÉE** (⚠️ finding validate P1) : NE PAS réutiliser `validate_format` (`reports.rs:124`) — elle **rejette `None`** (400) alors qu'on veut un défaut `csv`. Écrire une garde locale : `None` ou `"csv"` → OK ; toute autre valeur (dont `"pdf"`) → `AppError::Validation` 400.
+   - **Réponse SANS les helpers `ReportPeriod`** (⚠️ finding validate P1) : `build_export_response_with_locale` (`reports.rs:980`) et `build_filename` (`:1007`) prennent un `&ReportPeriod` et composent `..._{periodStart}_{periodEnd}` — **incompatibles** avec un `as_of` unique. Suivre plutôt le **précédent « date unique » de `routes/exports.rs::export_global`** (`:104`, `:122`) : construire le filename via un helper de type `build_global_filename(company_name, as_of)` (nom `kesh-balance-agee-{company_slug}-{asOf}.csv`) puis la `Response` à la main avec `crate::util::build_content_disposition(&filename, locale_bcp47)` + `header::CONTENT_TYPE = "text/csv; charset=utf-8"`. Bufferiser le CSV via `render_aged_receivables_csv` dans un `Vec<u8>`.
+   - **Audit export best-effort DÉDIÉ** : NE PAS appeler `emit_report_export_audit` (`reports.rs:1113`) — sa signature exige `fiscal_year_id/period_start/period_end` (« la modifier briserait les 4 callers Story 9-1 »). Écrire `emit_aged_receivables_export_audit(as_of: NaiveDate, …)` bespoke (details_json snake_case).
 
 9. **Montage des routes** dans `crates/kesh-api/src/lib.rs` — **RBAC divergent (D-7b)** :
    - `GET /api/v1/reports/aged-receivables` → `get_aged_receivables` dans **`authenticated_routes`** (tous rôles).
@@ -92,19 +95,22 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 
 ### D. Frontend — types & wrappers (`features/reports/`)
 
-10. **`frontend/src/lib/features/reports/reports.types.ts`** gagne (miroir camelCase, montants `string`) : `AgedBucketDto { notDue; days1To30; days31To60; days61To90; daysOver90; total }` (tous `string`), `AgedReceivablesRowDto extends AgedBucketDto { contactId: number; contactName: string }`, `AgedReceivablesDto { asOf: string; rows: AgedReceivablesRowDto[]; totals: AgedBucketDto }`. Ajouter `'aged-receivables'` au type d'onglet (`TabId`).
+10. **`frontend/src/lib/features/reports/reports.types.ts`** gagne (miroir camelCase, montants `string`) : `AgedBucketDto { notDue; days1To30; days31To60; days61To90; daysOver90; total }` (tous `string`), `AgedReceivablesRowDto extends AgedBucketDto { contactId: number; contactName: string }`, `AgedReceivablesDto { asOf: string; rows: AgedReceivablesRowDto[]; totals: AgedBucketDto }`.
+    - ⚠️ **NE PAS toucher `ReportType`** (`reports.types.ts:113`, finding validate P1) : `ReportType` est le domaine de `downloadReport`/`getReportExportUrl`/`buildExportFilename`/`TYPE_SLUGS_FALLBACK` qui présupposent tous une `ReportQuery` (`fiscalYearId`/`period*`) — y ajouter `'aged-receivables'` casserait la compilation TS (Record incomplet) et introduirait un type sans query cohérente.
+    - Le type d'onglet **`TabId` est LOCAL** à `frontend/src/routes/(app)/reports/+page.svelte:50` (`type TabId = ReportType | 'project-expenses' | 'project-return'`) — c'est **là** qu'on ajoute `| 'aged-receivables'` (AC 13), PAS dans `reports.types.ts`.
 
-11. **`frontend/src/lib/features/reports/reports.api.ts`** gagne : `getAgedReceivables(): Promise<AgedReceivablesDto>` → `apiClient.get('/api/v1/reports/aged-receivables')` ; `getAgedReceivablesExportUrl(): string` → `/api/v1/reports/aged-receivables/export?format=csv` ; `downloadAgedReceivables(companyName): Promise<void>` (patron `downloadReport` : `apiClient.getBlob` + `triggerDownload`, filename `buildExportFilename('aged-receivables', companyName, …, 'csv')` ou `balance-agee-{today}.csv`). Tests vitest : chaque wrapper appelle le bon chemin/méthode.
+11. **`frontend/src/lib/features/reports/reports.api.ts`** gagne des wrappers **dédiés** (ne PAS réutiliser `downloadReport`/`buildExportFilename`, liés à `ReportType`+`ReportQuery`, cf. AC 10) : `getAgedReceivables(): Promise<AgedReceivablesDto>` → `apiClient.get('/api/v1/reports/aged-receivables')` ; `downloadAgedReceivables(): Promise<void>` (patron `onExportCsv` de l'échéancier `due-dates/+page.svelte:251-282` : `apiClient.getBlob('/api/v1/reports/aged-receivables/export?format=csv')` → `res.blob()` → `<a download>` éphémère, filename **`balance-agee-${today}.csv`** avec `today = new Date().toISOString().slice(0,10)`). Tests vitest : chaque wrapper appelle le bon chemin/méthode.
 
 ### E. Frontend — vue & page
 
 12. **`AgedReceivablesView.svelte`** (sous `features/reports/`, namespace **`reports-*`** uniquement — lint #30) : props `{ dto: AgedReceivablesDto }`. En-tête « Arrêté au {formatSwissDate(dto.asOf)} » + lien vers l'échéancier (`reports-aged-link-due-dates` → `/invoices/due-dates`). Tableau : colonnes Contact | Non échu | 1-30 | 31-60 | 61-90 | 90+ | Total (`reports-aged-col-*`), une ligne par `row` (montants `formatReportAmount`, `font-mono text-right`), **le nom du contact est un lien** vers `/invoices?contactId={row.contactId}` (drill-down — `?contactId=` déjà supporté par `/invoices`). `<tfoot>` = ligne « Total général » (`reports-aged-total-row`) avec `dto.totals`. Empty-state si `rows.length === 0` (`reports-aged-empty`). `data-testid` : `aged-receivables-table`, `aged-receivables-row`, `aged-receivables-total`.
 
 13. **`frontend/src/routes/(app)/reports/+page.svelte`** :
+    - **Type d'onglet** : ajouter `| 'aged-receivables'` au `TabId` **local** `:50` (PAS `ReportType`, cf. AC 10).
     - **Onglet** : ajouter `{ id: 'aged-receivables', labelKey: 'reports-aged-balance', fallback: 'Balance âgée' }` au tableau `tabs` (→ 8 onglets). Stockage DTO `let agedReceivables = $state<AgedReceivablesDto | null>(null)`. Rendu du panneau : `{:else if activeTab === 'aged-receivables' && agedReceivables} <AgedReceivablesView dto={agedReceivables} />`.
-    - **Contrôles conditionnels** (patron `isProjectTab`) : `isAgedTab = $derived(activeTab === 'aged-receivables')` — pour cet onglet, **masquer** `ReportSelector` (FY/période inutiles) et afficher un bloc minimal « Arrêté au {today} » + bouton **Générer**. `generate()` gagne une branche `case 'aged-receivables': agedReceivables = await getAgedReceivables()` (dans le même `genSeq` race-guard).
-    - **Export CSV** : bouton d'export réservé Comptable+ côté client (gate `canManage = role === 'Admin' || role === 'Comptable'`, cohérent D-7b — inutile de montrer un bouton qui prendra 403) → appelle `downloadAgedReceivables`, guard `exporting`. Un rôle Consultation ne voit pas le bouton d'export (mais voit le tableau).
-    - **Synchro URL `?tab=` (D-7c)** : au montage, lire `page.url.searchParams.get('tab')`, valider contre les `id` d'onglets connus (invalide/absent → défaut `balance-sheet`), initialiser `activeTab`. Sur `selectTab`, écrire `?tab=<id>` via `goto('?tab=…', { replaceState: true, keepFocus: true, noScroll: true })`. Ne pas casser la navigation clavier tabs existante ni le `genSeq`.
+    - **Contrôles conditionnels — passer le bloc BINAIRE en TROIS branches** (⚠️ finding validate P1) : le template actuel est `{#if !isProjectTab} <ReportSelector … onExportPdf onExportCsv …/> {:else} <!-- contrôles projet --> {/if}` (`:429-508`). Le transformer en `{#if isProjectTab} … {:else if isAgedTab} … {:else} <ReportSelector …/> {/if}` avec `isAgedTab = $derived(activeTab === 'aged-receivables')`. **Le bloc `isAgedTab` ne branche NI `ReportSelector` NI les exports génériques `onExportPdf`/`onExportCsv`/`canExport`** (liés à `activeReportPeriod()` qui renvoie `null` pour cet onglet) — juste « Arrêté au {today} » + bouton **Générer** + le bouton Export CSV dédié (ci-dessous). `generate()` gagne `case 'aged-receivables': agedReceivables = await getAgedReceivables()` (dans le même `genSeq` race-guard).
+    - **Export CSV dédié** : `reports/+page.svelte` **importe pour la 1re fois** `authState` depuis `$lib/app/stores/auth.svelte` (⚠️ finding validate P1 — aucun état d'auth aujourd'hui) et dérive `const canManage = $derived(authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable')` (patron `reminders/+page.svelte:39-40`). Le bouton Export CSV n'apparaît que si `canManage` (D-7b — inutile d'afficher un bouton qui prendra 403), appelle `downloadAgedReceivables`, guard `exporting`. Un Consultation voit le tableau mais pas le bouton.
+    - **Synchro URL `?tab=` (D-7c)** — **lecture ONE-SHOT au montage, PAS un `$effect` réactif** (⚠️ finding validate P1, risque de boucle) : dans `onMount` (ou un effet gardé par un flag d'initialisation), lire `page.url.searchParams.get('tab')`, le valider contre les `id` connus du tableau `tabs` (invalide/absent → défaut `balance-sheet`), initialiser `activeTab`. **Ne jamais re-lire `page.url` en continu.** Sur `selectTab`, écrire `?tab=<id>` via `goto('?tab=…', { replaceState: true, keepFocus: true, noScroll: true })` (replaceState — ne pas empiler l'historique). Ne pas casser la navigation clavier tabs ni le `genSeq`. **Note** : un deep-link `?tab=project-expenses`/`project-return` ouvre l'onglet projet avec un sélecteur vide (pas de `selectedProjectId` dans l'URL) — pas de crash, UX dégradée acceptable, hors scénarios E2E (seul `?tab=aged-receivables` est testé).
 
 ### F. Liens croisés (frontend)
 
@@ -117,7 +123,7 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 17. **Nouvelles clés dans les 4 FTL** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`), traductions réelles FR/DE/IT/EN :
     - Rapport (`reports-aged-*`) : `reports-aged-balance` (label onglet), `reports-aged-title`, `reports-aged-as-of` (`{ $date }`), `reports-aged-empty`, colonnes `reports-aged-col-contact` / `-col-not-due` / `-col-1-30` / `-col-31-60` / `-col-61-90` / `-col-over-90` / `-col-total`, `reports-aged-total-row`, `reports-aged-link-due-dates`, `reports-filename-aged-receivables` (slug fichier, ex. `balance-agee`).
     - Liens routes : `due-dates-link-aged`, `reminders-link-aged`.
-    - **Placement lint** : `AgedReceivablesView` sous `features/reports/` → clés `reports-*` uniquement (piège #30, respecté par construction). `due-dates-*` / `reminders-*` sont des routes (hors périmètre lint). Réutiliser `reports-export-csv-button` / `reports-generate` / erreurs existantes si présentes.
+    - **Placement lint** : `AgedReceivablesView` sous `features/reports/` → clés `reports-*` uniquement (piège #30, respecté par construction). `due-dates-*` / `reminders-*` sont des routes (hors périmètre lint). Réutiliser `reports-export-csv-button` + le bouton Générer existant. ⚠️ **Note (finding validate P1)** : `+page.svelte:496` appelle `i18nMsg('reports-generate', 'Générer')` mais `reports-generate` est une **dead-key pré-existante** (absente des FTL, seul `reports-button-generate` existe) — hors scope 21-7, ne pas s'appuyer dessus ; utiliser le fallback ou la vraie clé `reports-button-generate`.
 
 ### H. Tests
 
@@ -168,7 +174,7 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 4. **Invariant D10 (D-7e).** Ne PAS ajouter `dunning_paused_at IS NULL` au WHERE postes ouverts. Une facture suspendue reste dans la balance âgée. Test dédié (AC 18).
 5. **`due_date` nullable + frontières.** `NULL` → « Non échu ». Frontières exactes (30/31, 60/61, 90/91) testées (AC 18). `DATEDIFF(as_of, due_date)`, `as_of` bindé (testabilité), UTC partout.
 6. **`ReportPeriod` inadapté.** Les rapports existants prennent une période `[start,end]` + `fiscal_year_id` ; la balance âgée prend un `as_of: NaiveDate` unique — **pas** de `fiscal_year_id`, **pas** de `ReportPeriod`. Signature `generate(pool, company_id, as_of)`.
-7. **Synchro URL `?tab=` (D-7c).** Nouveau comportement transverse à /reports : valider la valeur (fallback défaut), `replaceState` (ne pas empiler l'historique), ne pas casser le `genSeq` ni la navigation clavier. C'est le seul ajout « non-rapport » de la story.
+7. **Synchro URL `?tab=` (D-7c).** Nouveau comportement transverse à /reports : **lecture ONE-SHOT au montage** (jamais un `$effect` qui re-lit `page.url` en continu → risque de boucle/double-écriture pendant un `genSeq` en vol, finding validate P1), valider la valeur contre les `id` connus (fallback défaut), écrire en `replaceState` (ne pas empiler l'historique), ne pas casser le `genSeq` ni la navigation clavier. Seul ajout « non-rapport » de la story.
 
 ### Leçon de review héritée (à appliquer dès le dev)
 
@@ -182,10 +188,13 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 | TTC SQL agrégat | `crates/kesh-db/src/repositories/invoices.rs:154-163` | `INVOICE_TTC_DERIVED_JOIN_SQL` `pub const`, alias `i`, join `lt.ttc` |
 | TTC helper Rust | `crates/kesh-core/src/accounting/vat.rs:62-71` | `invoice_total_ttc((line_total, vat_rate)…)` — parité SQL≡Rust (`invoice_ttc_parity.rs`) |
 | Prédicat postes ouverts | `crates/kesh-db/src/repositories/invoices.rs:309-311` | `status='validated' AND paid_at IS NULL` |
-| Invariant D10 (suspension incluse) | `invoice.rs:44-46`, `invoices.rs:913-921` | balance âgée n'exclut PAS `dunning_paused_at` |
+| Invariant D10 (suspension incluse) | `invoice.rs:44-46`, `invoices.rs:124-131` (doc `PausedFilter`), `:326-333` (application, no-op par défaut) | balance âgée n'exclut PAS `dunning_paused_at` — le défaut `PausedFilter::All` est un no-op délibéré |
 | Groupement/nom contact | `dunning_eligibility.rs:73-90` | `JOIN contacts c`, `c.name`, `ORDER BY c.name, c.id` |
 | Handler rapport | `crates/kesh-api/src/routes/reports.rs:139-169` | `State`+`Extension<CurrentUser>`(+`Query`), `Json<T>`, audit best-effort |
-| Handler export | `reports.rs:278-341` | `render_csv_to_vec` + `build_export_response_with_locale`, `text/csv; charset=utf-8`, Content-Disposition RFC 5987 |
+| Handler export (structure) | `reports.rs:278-341` | calquer la structure, MAIS pas `build_export_response_with_locale`/`build_filename` (`:980`/`:1007`, exigent `&ReportPeriod`) |
+| Précédent export « date unique » | `routes/exports.rs:104`, `:122` (`build_global_filename(company_name, export_date)` + `build_content_disposition`) | **le bon patron** pour un filename à date unique (`as_of`), sans `ReportPeriod` |
+| `validate_format` (à NE PAS réutiliser) | `reports.rs:124` (test `:1270` `rejects_none`) | rejette `None` → 400 ; écrire une garde dédiée « défaut csv » |
+| Audit (à NE PAS réutiliser) | `emit_report_audit:1057`, `emit_report_export_audit:1113` | exigent `fiscal_year_id/period_*` (4 callers Story 9-1) → fns bespoke `as_of` |
 | Montage + RBAC | `crates/kesh-api/src/lib.rs:275`, `:559-561`, `:601-603`, `:755-817` | `comptable_routes` = `require_comptable_role` ; précédent échéancier CSV Comptable+ |
 | CSV rapport | `crates/kesh-report/src/csv.rs:316-376` | `render_vat_report_csv` : BOM+`;`+CRLF, `format_amount_iso`, court-circuit vide |
 | Format formatage | `crates/kesh-report/src/pdf.rs:160-189` | `format_swiss_amount` / `format_swiss_date` (si besoin) |
@@ -197,7 +206,10 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 
 | Élément | Emplacement | Note |
 |---|---|---|
-| Page reports (onglets) | `frontend/src/routes/(app)/reports/+page.svelte` | 7 onglets ARIA, DTO par `$state`, `generate()` sur clic, `genSeq` race-guard, **aucune synchro URL** (à ajouter D-7c) |
+| Page reports (onglets) | `frontend/src/routes/(app)/reports/+page.svelte` | 7 onglets ARIA, DTO par `$state`, `generate()` sur clic, `genSeq` race-guard, **aucune synchro URL** (à ajouter D-7c) ; contrôles binaires `{#if !isProjectTab}` `:429-508` (→ 3 branches) |
+| `TabId` (LOCAL) | `reports/+page.svelte:50` | `type TabId = ReportType \| 'project-expenses' \| 'project-return'` — étendre ICI, PAS `reports.types.ts`. Ne pas toucher `ReportType` (`reports.types.ts:113`) |
+| `canManage` / auth | `reminders/+page.svelte:39-40` (patron) | `import { authState } from '$lib/app/stores/auth.svelte'` + `authState.currentUser?.role === 'Admin'\|'Comptable'` — 1er usage d'auth dans reports |
+| Export CSV client (patron) | `due-dates/+page.svelte:251-282` (`onExportCsv`) | `apiClient.getBlob` + `<a download>` + filename `balance-agee-${today}.csv` |
 | RBAC page | `reports/+page.ts:2` | tous rôles (Admin+Comptable+Consultation) |
 | Contrôles conditionnels | `+page.svelte` (`isProjectTab`) | patron pour `isAgedTab` |
 | Vue rapport (patron) | `features/reports/BalanceSheetView.svelte` | thead/tbody/tfoot, `formatReportAmount`, `formatSwissDate`, `isReportEmpty` |
@@ -237,7 +249,21 @@ Le cycle de suivi débiteurs (Epic 21) a livré les échéances (#245), les mont
 
 ## Change Log — validate
 
-<!-- Rempli par bmad-create-story validate. -->
+### Pass 1 (Sonnet, 2 reviewers : véracité citations + cohérence/sécurité, 2026-07-19) — 1 CRITICAL + 3 HIGH + 4 MEDIUM + LOW → patchés
+
+Auteur spec : Opus. Panel orthogonal Sonnet. Tous les findings > LOW re-vérifiés `grep`/`Read` sur le code réel avant patch.
+
+- **C1 (CRITICAL) — citation D10 fausse.** `invoices.rs:913-921` = gestion `OptimisticLockConflict` (re-query rows==0), **pas** D10. **Patch** : vraies réfs `invoices.rs:124-131` (doc `PausedFilter`) + `:326-333` (application, no-op par défaut).
+- **H1 (HIGH) — helpers export/audit incompatibles `as_of`.** `build_export_response_with_locale`/`build_filename` (`reports.rs:980`/`:1007`) exigent `&ReportPeriod` + filename `{periodStart}_{periodEnd}` ; `emit_report_audit`/`emit_report_export_audit` exigent `fiscal_year_id/period_*` (4 callers Story 9-1). **Patch AC 7/8** : précédent « date unique » `exports.rs::export_global` (`build_global_filename` + `build_content_disposition`) + fns audit **bespoke** `emit_aged_receivables_(export_)audit(as_of)`.
+- **H2 (HIGH) — `TabId` mal localisé + `ReportType` intouchable.** `TabId` est LOCAL (`+page.svelte:50`), absent de `reports.types.ts` ; ajouter `'aged-receivables'` à `ReportType` casserait `TYPE_SLUGS_FALLBACK`/`downloadReport`. **Patch AC 10/13** : étendre le `TabId` local, ne pas toucher `ReportType`.
+- **H3 (HIGH) — wrappers export réutilisés non type-checkables.** `buildExportFilename('aged-receivables',…)` refuse un type hors `ReportType` + exige `{start,end}`. **Patch AC 11** : wrappers dédiés (`getAgedReceivables`/`downloadAgedReceivables`, patron `onExportCsv` échéancier, filename `balance-agee-${today}.csv`).
+- **M1 (MEDIUM) — CSV param locale inexistant.** Les `render_*_csv` n'ont pas de param locale (en-têtes FR en dur). **Patch AC 6** : signature sans locale, en-têtes FR littéraux.
+- **M2 (MEDIUM) — `validate_format` rejette `None`.** Incompatible « défaut csv ». **Patch AC 8** : garde de format dédiée.
+- **M3 (MEDIUM) — bloc de contrôle binaire.** `{#if !isProjectTab}…{:else}` → 3 branches, le bloc aged ne branche pas les exports génériques. **Patch AC 13**.
+- **M4 (MEDIUM) — `canManage` sans source.** `reports/+page.svelte` n'importe aucun auth. **Patch AC 13** : import `authState` + `authState.currentUser?.role`.
+- **LOW** : `?tab=` lecture one-shot (risque boucle `$effect`) → patché AC 13 + piège #7 ; deep-link `?tab=project-*` documenté acceptable ; piège n°2 serde nuancé (les noms `days_1_to_30` camelCasent déjà correctement — rename explicite = renfort défensif, pas correctif obligatoire) ; `reports-generate` dead-key pré-existante notée (vraie clé `reports-button-generate`).
+
+**~35 citations file:line vérifiées : 1 fausse (C1), le reste exact** (constantes TTC, patron rapport, CSV, routes/RBAC, prédicat postes ouverts, contraintes DB `contacts.name NOT NULL`/`line_total >= 0`, drill-down `?contactId=`, lint i18n, `toHaveCount(7)`). Contradictions internes : aucune. Cohérence planning (items 23/25, D10/D23/D24, L21-1/L21-7) : confirmée.
 
 ## Dev Agent Record
 
