@@ -31,6 +31,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Envoi de facture par e-mail désormais journalisé en cas de succès** : jusqu'ici, seuls les **échecs** d'envoi laissaient une trace dans le journal applicatif — un envoi réussi n'en laissait aucune. Un envoi réussi est maintenant journalisé (facture, destinataire, canal), comme les rappels. Utile lorsqu'un client affirme ne pas avoir reçu sa facture. (#231)
 - **Version minimale requise portée à 0.7.0** : cette version introduit une évolution de base de données qui empêche de revenir en arrière vers un binaire antérieur à 0.7.0 (protection anti-downgrade — un ancien binaire ne saurait pas lire les nouveaux modèles de rappel). Sans conséquence pour une mise à jour normale. (#231)
+- **Manuels admin et utilisateur enrichis** : le **manuel utilisateur** documente désormais le cycle de relances (écran Rappels, envoi unitaire/lot/manuel, recommandé pour la mise en demeure, suspension/reprise, historique) et la **balance âgée** ; le **manuel administrateur** documente les réglages de rappels (niveaux, grâce, frais/CGV, frais hors QR-facture) et la rétention légale des rappels (CO 958f, LPD). Un **test E2E de bout en bout** couvre le cycle complet des rappels. (#231)
 
 ## [0.6.0] — 2026-07-11
 

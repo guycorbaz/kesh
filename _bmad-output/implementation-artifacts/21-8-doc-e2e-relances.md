@@ -1,6 +1,6 @@
 # Story 21.8: Documentation & E2E round-trip des rappels débiteurs
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-20 par bmad-create-story. Dernière story de l'Epic 21 (clôture). Cartographie ground-truth par 3 agents Explore (manuels LaTeX / couverture E2E round-trip / refactor A4 credit-notes). Story DOC + TEST : aucune logique métier nouvelle. Consomme 21-3..21-7 (toute la feature rappels + balance âgée est livrée). -->
 
@@ -114,13 +114,13 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Manuel admin : rappels (réglages) + LPD/rétention** (AC: 1, 2) — sous-section réglages (niveaux/grâce/modèles/CGV-frais-hors-QR) + paragraphe rétention `sent_to` CO 958f dans la section conformité.
-- [ ] **T2 — Manuel user : relancer les débiteurs + balance âgée** (AC: 3, 4, 5) — sous-section cycle de relance (écran Rappels, unitaire/lot/manuel, recommandé/mise en demeure, suspension, historique) + correction phrase `:670` + sous-section balance âgée.
-- [ ] **T3 — Régénérer & commiter les 3 PDF** (AC: 6) — `make fr`, commit des `.pdf` (macros version inchangées).
-- [ ] **T4 — Promouvoir `fetchSentEmails`** (AC: 7) — helper partagé + re-pointer `reminders.spec.ts`.
-- [ ] **T5 — E2E round-trip** (AC: 8) — `dunning-roundtrip.spec.ts`, une facture, cycle complet piloté UI, MockMailer.
-- [ ] **T6 — A4 refactor `credit-notes.spec.ts`** (AC: 9) — migration mécanique vers fixtures partagées.
-- [ ] **T7 — CHANGELOG + gate** (AC: 10, 11, 12).
+- [x] **T1 — Manuel admin : rappels (réglages) + LPD/rétention** (AC: 1, 2) — sous-section réglages (niveaux/grâce/modèles/CGV-frais-hors-QR) + paragraphe rétention `sent_to` CO 958f dans la section conformité.
+- [x] **T2 — Manuel user : relancer les débiteurs + balance âgée** (AC: 3, 4, 5) — sous-section cycle de relance (écran Rappels, unitaire/lot/manuel, recommandé/mise en demeure, suspension, historique) + correction phrase `:670` + sous-section balance âgée.
+- [x] **T3 — Régénérer & commiter les 3 PDF** (AC: 6) — `make fr`, commit des `.pdf` (macros version inchangées).
+- [x] **T4 — Promouvoir `fetchSentEmails`** (AC: 7) — helper partagé + re-pointer les 2 specs.
+- [x] **T5 — E2E round-trip** (AC: 8) — `dunning-roundtrip.spec.ts`, une facture, cycle complet piloté UI, MockMailer.
+- [x] **T6 — A4 refactor `credit-notes.spec.ts`** (AC: 9) — migration mécanique vers fixtures partagées.
+- [x] **T7 — CHANGELOG + gate** (AC: 10, 11, 12).
 
 ## Dev Notes
 
@@ -229,8 +229,54 @@ Panel Haiku orthogonal aux patches Opus/Sonnet. Les 4 correctifs P1 (M1/M2/L1/L2
 
 ### Agent Model Used
 
+Opus 4.8 (1M) — `bmad-dev-story`, 2026-07-20.
+
 ### Debug Log References
+
+Backend E2E lancé en `KESH_TEST_MODE` + SMTP factice (MockMailer, port 8181, DB `kesh_e2e`). `xelatex` (TeX Live 2025) présent → `make fr` OK.
 
 ### Completion Notes List
 
+- **T1 (admin)** — `docs/manual/fr/admin-manual.tex` : sous-section « Rappels débiteurs (réglages) » (niveaux délai+frais bornés 0–10'000, 3 niveaux seedés, grâce + échéancier prévisionnel, modèles par niveau en cascade ; `keshwarning` CGV requise pour frais ; `keshnote` frais **affichés non comptabilisés + hors QR-facture**). Sous-section « Rétention des rappels débiteurs » dans §Conformité 958f (historique `invoice_reminders` = preuve de recouvrement, conservation 10 ans, export/backup des 3 tables, `sent_to` = donnée LPD obligation légale). Macros non-dispo (`\enquote`/`\ier`) remplacées par guillemets `« »`/texte simple (polyglossia, pas csquotes).
+- **T2 (user)** — `docs/manual/fr/user-manual.tex` : phrase obsolète `:670` remplacée par renvoi `\S\ref{sec:relances-user}`. Sous-section « Relancer les débiteurs » (écran Rappels, envoi unitaire/lot/manuel, contact sans e-mail, anti-double-envoi, dernier niveau visible ; `keshtip` recommandé/mise en demeure ; suspension/reprise avec motif + `keshwarning` reste dans échéancier/balance âgée ; historique). Sous-section « Balance âgée des créances » dans §Rapports (colonnes Non échu/1-30/31-60/61-90/90+, réconciliation, drill-down, export CSV Comptable+ ; `keshnote` suspendues incluses + TTC).
+- **T3 (PDF)** — `make fr` régénère les 3 PDF (admin 286 KB, user 207 KB, brochure 49 KB). Contenu vérifié rendu (`pdftotext` : §10.7/§14.4 user, §6.5/§11.3 admin). Macros version **inchangées** (D-8a — 0.6.0/v0.6, bump = release).
+- **T4** — `fetchSentEmails` promu dans `helpers/test-state.ts` (via `resolveBackendUrl()` + `expect` importé) ; les copies locales de `reminders.spec.ts` ET `invoice-send-email.spec.ts` supprimées (+ constantes `BACKEND_URL` orphelines retirées).
+- **T5** — `dunning-roundtrip.spec.ts` : 1 test, 8 étapes sur 2 factures (A unitaire+historique+suspension, B lot), piloté UI, MockMailer. Assertions : 3 niveaux seedés, 2 e-mails capturés (unitaire to+PDF, lot), historique canal e-mail, badge suspendu `title` = motif, ligne balance âgée du débiteur A malgré suspension (D10).
+- **T6 (A4)** — `credit-notes.spec.ts` : helpers locaux `createContactViaApi`/`createAndValidateInvoiceViaApi` supprimés, import `api-fixtures` (`createContactWithAddressViaApi`/`createAndValidateInvoiceViaApi`), call-sites renommés, `login`/`uniq` gardés locaux. `authedApiContext`/`disposeContextSafe` conservés (utilisés dans les corps de test).
+- **T7** — CHANGELOG `[Non publié] → Modifié (technique)` (manuels enrichis + E2E round-trip). README inchangé (Epic 21 déjà 🚧). Gate (voir Change Log).
+
+**Rappel #259** (hors scope) : `reminders.spec.ts › rappel manuel` échoue avant midi UTC (bug pré-existant 21-6b `T12:00:00`) — sans rapport avec 21-8 (le round-trip n'utilise pas le rappel manuel ; tous les tests d'e-mail passent).
+
 ### File List
+
+**Nouveaux**
+- `frontend/tests/e2e/dunning-roundtrip.spec.ts`
+
+**Modifiés**
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex`
+- `docs/manual/fr/admin-manual.pdf`, `docs/manual/fr/user-manual.pdf`, `docs/manual/fr/marketing-brochure.pdf` (régénérés)
+- `frontend/tests/e2e/helpers/test-state.ts` (+`fetchSentEmails`)
+- `frontend/tests/e2e/reminders.spec.ts`, `frontend/tests/e2e/invoice-send-email.spec.ts` (import partagé)
+- `frontend/tests/e2e/credit-notes.spec.ts` (A4)
+- `CHANGELOG.md`
+- `_bmad-output/planning-artifacts/epic-21-echeances-relances.md` (correction `:83` 21-9→21-8, validate P1 L2)
+
+### Change Log — dev
+
+**bmad-dev-story (Opus 4.8, 2026-07-20)** — T1→T7. Story DOC + TEST. **Aucun code prod, aucun `.rs`, aucune migration, aucun `data-testid` prod nouveau.**
+
+Gate (« Test Locally First ») :
+
+| Check | Résultat |
+|---|---|
+| Pré-vol `which xelatex` | OK (TeX Live 2025) |
+| `make fr` (3 PDF) | OK (admin 286 KB, user 207 KB, brochure 49 KB), contenu vérifié `pdftotext` |
+| `npm run check` | 0 erreur |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | 411/411 |
+| `npm run build` | ✓ |
+| `npm run test:e2e` (ciblé) | round-trip 3.1s ✓ + credit-notes 2/2 ✓ + 13 tests e-mail (reminders/invoice-send-email) ✓ |
+| `cargo fmt --all -- --check` | OK |
+| `cargo build/clippy/test --workspace` | no-op (0 delta Rust vs 21-7 workspace 1877/0) |
+
+Note E2E : seul échec = `reminders.spec.ts › rappel manuel` = **bug pré-existant #259** (time-of-day < midi UTC), hors scope 21-8.
