@@ -78,7 +78,8 @@ test('round-trip rappels : config → envoi unitaire + lot → historique → su
 		.toBe(before + 1);
 	const unit = (await fetchSentEmails(page)).at(-1)!;
 	expect(unit.to).toBe('debiteur-a@example.ch');
-	expect(String(unit.attachmentFilename)).toMatch(/\.pdf$/);
+	// La PJ du rappel est la QR-facture PDF (backend `facture-{base}.pdf`).
+	expect(String(unit.attachmentFilename)).toMatch(/^facture-.*\.pdf$/);
 
 	// (5) ENVOI LOT (facture B) — la facture A a quitté la liste après son envoi
 	// niveau 1 ; B reste sélectionnable.

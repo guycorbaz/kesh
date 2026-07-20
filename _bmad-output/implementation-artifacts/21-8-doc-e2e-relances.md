@@ -280,3 +280,18 @@ Gate (« Test Locally First ») :
 | `cargo build/clippy/test --workspace` | no-op (0 delta Rust vs 21-7 workspace 1877/0) |
 
 Note E2E : seul échec = `reminders.spec.ts › rappel manuel` = **bug pré-existant #259** (time-of-day < midi UTC), hors scope 21-8.
+
+## Change Log — code review
+
+### Pass 1 (Sonnet, 2 reviewers : fidélité doc + E2E/A4, 2026-07-20) — 1 HIGH + 1 MEDIUM + LOW → patchés
+
+Auteur : Opus. Panel orthogonal Sonnet. Reviewer E2E/A4 : **0 > LOW** (`fetchSentEmails` équivalent + validation URL bonus, A4 sans import mort, round-trip mordant — séquence prouvée `dunning_eligibility.rs`, testids existants, isolation OK). Reviewer doc : 1 HIGH + 1 MEDIUM + 1 LOW (le reste vérifié fidèle ligne à ligne).
+
+- **DOC-1 (HIGH) — garantie de rétention surévaluée.** La sous-section rétention affirmait « 10 ans garantie par la persistance MariaDB », mais la suppression définitive d'une facture (#219, Admin) fait un `ON DELETE CASCADE` sur `invoice_reminders` → efface texte/frais/`sent_to` (seul un résumé audit subsiste). **Patch** : garantie nuancée (« sous réserve d'admin DB + backup ») + `keshwarning` documentant honnêtement l'exception de suppression. **Garde manquante tracée : issue #260** (garde applicative « refuser la suppression si rappels existent », symétrique des gardes payée/créditée).
+- **DOC-2 (MEDIUM) — sémantique du délai imprécise.** La doc présentait « jours depuis l'échéance » comme règle générale ; or seul le niveau 1 se compte depuis l'échéance, les niveaux N>1 depuis la **date d'envoi réelle** du rappel précédent (`dunning_eligibility.rs:118-133`). **Patch** : distinction niveau 1 / niveaux suivants explicitée, échéancier = projection.
+- **DOC-3 (LOW) — libellé de badge cité inexact.** « poursuite à envisager » ≠ libellé réel « Dernier niveau atteint » (`ReminderTerminalBadge.svelte:11`). **Patch** : libellé réel cité.
+- **E2E-LOW — pattern PJ resserré.** `/\.pdf$/` → `/^facture-.*\.pdf$/` (la PJ du rappel est la QR-facture PDF `facture-{base}.pdf`, `invoice_email.rs:509`). Round-trip re-vérifié vert.
+
+**Sections doc vérifiées fidèles (Sonnet)** : bornes frais 0–10'000, 3 niveaux seed lazy, cascade modèles, 4 langues, frais hors compta/hors QR (aucun `journal_entries` dunning, PDF sans frais), export+backup des 3 tables, écran Rappels (unitaire/lot cap 20/manuel/anti-double/terminal/suspension/historique), balance âgée (colonnes/TTC/suspendues incluses/drill-down/CSV Comptable+), LaTeX (macros/labels/ref OK).
+
+Gate post-patch : `make fr` OK (admin 288 KB, user 207 KB, contenu vérifié `pdftotext`), round-trip re-vérifié vert.

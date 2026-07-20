@@ -1183,7 +1183,7 @@ Depuis la version \textbf{v0.7}, Kesh gère un cycle de \textbf{rappels de paiem
 Chaque \textbf{niveau} définit un \textbf{délai} (en jours après l'échéance de la facture) et des \textbf{frais de rappel} (montant fixe en CHF). Trois niveaux par défaut sont fournis d'origine (\emph{seed} automatique au premier accès) : 1er rappel, 2e rappel, dernier rappel avant poursuite. On peut ajouter, modifier ou supprimer des niveaux, et personnaliser le modèle d'e-mail de chaque niveau (ton en escalade, dans les quatre langues).
 
 \begin{itemize}
-    \item \textbf{Délai} : jours écoulés depuis l'échéance avant qu'un niveau ne devienne dû (cumulé avec la période de grâce ci-dessous).
+    \item \textbf{Délai} : le \textbf{niveau 1} devient dû \texttt{échéance + grâce + délai(1)} (compté depuis l'échéance). Les \textbf{niveaux suivants} sont comptés depuis la \textbf{date d'envoi réelle du rappel précédent} (\texttt{dernier rappel + délai(N)}), et non depuis l'échéance : si un rappel part en retard, le suivant se décale d'autant. L'échéancier prévisionnel affiché est donc une \textbf{projection} valable si chaque rappel est envoyé à temps.
     \item \textbf{Frais} : bornés entre 0 et 10\,000.– par niveau.
     \item \textbf{Modèles par niveau} : la page \emph{Modèles d'e-mail} gère plusieurs types (envoi de facture, rappel) ; pour les rappels, un sélecteur de niveau permet de personnaliser objet et corps. La résolution se fait en cascade : modèle du niveau N → modèle générique → défaut fourni.
 \end{itemize}
@@ -1888,10 +1888,14 @@ Synthèse :
 Depuis la v0.7, chaque rappel envoyé (par e-mail ou enregistré comme rappel papier) est \textbf{historisé} dans la table \texttt{invoice\_reminders} avec une \textbf{copie du texte réclamé} et des \textbf{frais snapshotés} au moment de l'envoi. Cet historique constitue une \textbf{preuve de recouvrement} : en cas de poursuite (LP), il documente les relances effectuées, leurs dates et le destinataire.
 
 \begin{itemize}
-    \item \textbf{Conservation} : les rappels suivent la rétention comptable de 10 ans (CO Art. 958f al. 1), garantie par la persistance MariaDB.
+    \item \textbf{Conservation} : les rappels suivent la rétention comptable de 10 ans (CO Art. 958f al. 1), portée par la persistance MariaDB (sous réserve d'une administration DB et d'une sauvegarde appropriées).
     \item \textbf{Export et sauvegarde} : les trois tables du dispositif de rappels (\texttt{dunning\_levels}, \texttt{company\_dunning\_settings}, \texttt{invoice\_reminders}) figurent dans l'\textbf{export de souveraineté} (\keshpath{exports/global.zip}) et dans la \textbf{sauvegarde administrateur} — l'absence des rappels de l'export serait une perte de valeur probatoire.
     \item \textbf{Donnée personnelle (LPD)} : le champ \texttt{sent\_to} (adresse e-mail du débiteur au moment de l'envoi) est une donnée personnelle conservée pour le respect d'une \textbf{obligation légale} (tenue de la comptabilité et preuve de recouvrement, CO Art. 958f), base de licéité admise par la LPD. Elle est conservée 10 ans au même titre que les autres pièces comptables.
 \end{itemize}
+
+\begin{keshwarning}
+La \textbf{suppression définitive} d'une facture validée par un administrateur (réservée à la correction d'une validation erronée ou à la purge d'essais) \textbf{efface aussi l'historique de ses rappels} : le texte réclamé, les frais et le destinataire disparaissent (seule une trace résumée subsiste au journal d'audit). Ne supprimez donc \textbf{jamais} une facture qui a fait l'objet de relances si vous devez en conserver la preuve de recouvrement — utilisez plutôt un \textbf{avoir}. Une garde applicative empêchant cette suppression est prévue (issue GitHub \#260).
+\end{keshwarning}
 
 \subsection{Ordonnance OLICo (RS 221.431)}
 
