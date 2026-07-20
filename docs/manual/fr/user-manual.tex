@@ -667,7 +667,33 @@ les modèles par défaut — rien à configurer.
     \item Factures payées (historique).
 \end{itemize}
 
-Cliquer sur une facture en retard permet de générer un rappel (template configurable).
+Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappels} dédié — voir \S\ref{sec:relances-user}. Une facture suspendue de rappels reste visible dans l'échéancier (rien ne se cache).
+
+\subsection{Relancer les débiteurs}\label{sec:relances-user}
+
+Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}) liste les factures à relancer, groupées par débiteur, avec leur \textbf{prochain niveau} de rappel. Les niveaux, délais et frais se configurent par l'administrateur (\emph{Paramètres → Rappels débiteurs}).
+
+\keshscreenshot{rappels-liste.png}{Écran Rappels : factures à relancer groupées par débiteur, prochain niveau, envoi unitaire ou par lot.}  % TODO capture: page /invoices/reminders
+
+\begin{itemize}
+    \item \textbf{Envoi unitaire} : un aperçu du courrier (dans la langue et le ton du niveau — 1er rappel courtois jusqu'à la mise en demeure) s'affiche, modifiable avant envoi ; la \textbf{QR-facture PDF} est jointe. Le destinataire est \textbf{verrouillé} sur l'e-mail de la fiche contact (sécurité).
+    \item \textbf{Envoi par lot} : sélectionnez plusieurs factures (jusqu'à 20) et envoyez-les d'un coup, chacune à son prochain niveau ; un compte-rendu liste les envois réussis et les échecs par facture.
+    \item \textbf{Rappel manuel} : enregistrez un rappel déjà envoyé hors Kesh (courrier, recommandé) — utile pour tracer un envoi papier. Le saut direct à un niveau élevé (mise en demeure) est autorisé.
+    \item Un contact \textbf{sans adresse e-mail} reste visible (badge « sans e-mail ») : l'envoi e-mail est impossible, mais le rappel papier reste enregistrable.
+    \item Une \textbf{protection anti-double-envoi} empêche qu'un double-clic n'envoie deux fois le même rappel. Une facture arrivée au \textbf{dernier niveau} reste affichée avec le badge « Dernier niveau atteint » (poursuite à envisager) — elle ne disparaît jamais silencieusement.
+\end{itemize}
+
+\begin{keshtip}
+Pour le \textbf{dernier niveau} (mise en demeure), privilégiez un envoi \textbf{recommandé} : il constitue une preuve de la mise en demeure en cas de poursuite. Envoyez le recommandé hors Kesh, puis enregistrez-le via \textbf{« Rappel manuel »} pour en garder la trace dans l'historique.
+\end{keshtip}
+
+\paragraph{Suspendre et reprendre les rappels d'une facture.} Sur la fiche d'une facture, vous pouvez \textbf{suspendre} ses rappels (avec un \textbf{motif} facultatif : litige, arrangement de paiement) puis les \textbf{reprendre}. Un badge \textbf{« Suspendu »} signale l'état (le motif apparaît au survol).
+
+\begin{keshwarning}
+Une facture suspendue \textbf{reste dans l'échéancier et la balance âgée} — elle sort seulement de la liste « à rappeler ». Rien n'est caché : c'est un garde-fou anti-dissimulation.
+\end{keshwarning}
+
+\paragraph{Historique des rappels.} La fiche de chaque facture affiche l'\textbf{historique de ses rappels} : date, niveau, canal (e-mail ou manuel), frais et destinataire. Un rappel annulé (par un administrateur) apparaît barré.
 
 \subsection{Avoirs et notes de crédit}
 \label{sec:avoirs}
@@ -1004,6 +1030,22 @@ Le choix est défini par défaut au niveau de la company, modifiable par rapport
 \subsection{Balance des comptes}
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Balance}. Liste tous les comptes avec leurs soldes débiteurs et créditeurs. Filtres : période, niveau de détail (comptes principaux uniquement, ou tous sous-comptes).
+
+\subsection{Balance âgée des créances}\label{sec:balance-agee}
+
+Depuis la version \textbf{0.7}, l'onglet \emph{Rapports → Balance âgée} répartit l'\textbf{encours débiteur} (le total dû, TVA comprise) par \textbf{client} et par \textbf{tranche d'ancienneté}, arrêté à ce jour. C'est l'outil de pilotage du recouvrement : il montre d'un coup d'œil quelles créances vieillissent et lesquelles prioriser.
+
+\keshscreenshot{balance-agee.png}{Balance âgée : encours débiteur TTC par client et par tranche de retard, avec total général.}  % TODO capture: onglet Rapports/Balance âgée
+
+\begin{itemize}
+    \item \textbf{Colonnes} : \emph{Non échu} \textbar{} \emph{1-30} \textbar{} \emph{31-60} \textbar{} \emph{61-90} \textbar{} \emph{90+} jours de retard. La colonne « Non échu » garantit que le \textbf{total général réconcilie} avec le solde du compte clients (débiteurs) du bilan.
+    \item \textbf{Détail} : une ligne par client, un total par tranche, et un total général. Chaque client renvoie d'un clic vers \textbf{ses factures}.
+    \item \textbf{Export CSV} : réservé aux rôles \emph{Comptable} et \emph{Administrateur} (le rapport lui-même est consultable par tous les rôles).
+\end{itemize}
+
+\begin{keshnote}
+Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la balance âgée (elles ne sortent que de la liste « à rappeler »). Le montant réparti est le \textbf{total dû TTC} de chaque facture, jamais le montant hors taxe.
+\end{keshnote}
 
 \subsection{Journal des écritures}
 

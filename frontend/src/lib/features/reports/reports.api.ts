@@ -5,6 +5,7 @@ import { apiClient } from '$lib/shared/utils/api-client';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 import type {
+	AgedReceivablesDto,
 	BalanceSheetDto,
 	IncomeStatementDto,
 	JournalReportDto,
@@ -288,6 +289,28 @@ export function slugify(input: string, fallback: string): string {
  * @param format — `'pdf'` ou `'csv'`.
  * @param filename — Filename suggéré au browser (construit via `buildExportFilename`).
  */
+// --- Story 21-7 : Balance âgée débiteurs ---
+
+/**
+ * Balance âgée des créances clients, arrêtée à aujourd'hui (v1, pas de paramètre).
+ * Endpoint tous rôles (D-7b). Wrapper dédié (PAS `downloadReport`/`ReportType`
+ * qui présupposent une `ReportQuery` fiscalYearId/période).
+ */
+export async function getAgedReceivables(): Promise<AgedReceivablesDto> {
+	return apiClient.get<AgedReceivablesDto>('/api/v1/reports/aged-receivables');
+}
+
+/**
+ * Télécharge le CSV de la balance âgée (réservé Comptable+ côté serveur, D24).
+ * Filename `balance-agee-{today}.csv` (patron `onExportCsv` échéancier).
+ */
+export async function downloadAgedReceivables(): Promise<void> {
+	const response = await apiClient.getBlob('/api/v1/reports/aged-receivables/export?format=csv');
+	const blob = await response.blob();
+	const today = new Date().toISOString().slice(0, 10);
+	triggerDownload(blob, `balance-agee-${today}.csv`);
+}
+
 export async function downloadReport(
 	type: ReportType,
 	query: ReportQuery | JournalReportQuery,

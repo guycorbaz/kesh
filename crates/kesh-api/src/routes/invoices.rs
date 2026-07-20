@@ -27,7 +27,7 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     contacts,
     invoices::{
-        self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy,
+        self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy, PausedFilter,
         PaymentStatusFilter,
     },
 };
@@ -117,6 +117,9 @@ pub struct ListInvoicesQuery {
     pub date_from: Option<NaiveDate>,
     #[serde(default)]
     pub date_to: Option<NaiveDate>,
+    /// Story 21-6a (D10) — `all` (défaut, no-op) | `paused` | `not-paused`.
+    #[serde(default)]
+    pub paused: Option<PausedParam>,
     #[serde(default)]
     pub sort_by: Option<InvoiceSortBy>,
     #[serde(default)]
@@ -169,6 +172,9 @@ pub struct InvoiceResponse {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// TTC canonique (#246, Story 21-2a) — le montant réellement dû (QR, PDF,
+    /// e-mail l'utilisent). `total_amount` reste le HT comptable (compat).
+    pub total_ttc: Decimal,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
     /// Story 20-3b1 — dernier envoi par e-mail (`null` = jamais envoyée) et
@@ -177,6 +183,12 @@ pub struct InvoiceResponse {
     pub emailed_to: Option<String>,
     /// Projet analytique document-level (Epic 19). `null` = non taguée.
     pub project_id: Option<i64>,
+    /// Story 21-6a (D10) — suspension des rappels. `null` = rappels actifs.
+    /// Posé/levé par `PUT /invoices/{id}/dunning-pause|dunning-resume` (21-5a) ;
+    /// exposé ici car une facture suspendue sort de la liste à rappeler et
+    /// n'était jusqu'alors signalée par aucune surface de lecture.
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
     /// P6 (review pass 2) : `is_overdue` calculé backend (source unique de
     /// vérité pour « aujourd'hui » — évite la désync TZ client/serveur).
     /// `true` ssi `status == 'validated' && paid_at IS NULL && due_date < today_utc`.
@@ -206,6 +218,10 @@ impl InvoiceResponse {
         let today = chrono::Utc::now().naive_utc().date();
         let is_overdue =
             is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
+        // #246 : TTC dérivé des lignes (helper canonique kesh-core).
+        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+            lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        );
         Self {
             id: invoice.id,
             company_id: invoice.company_id,
@@ -216,11 +232,14 @@ impl InvoiceResponse {
             due_date: invoice.due_date,
             payment_terms: invoice.payment_terms,
             total_amount: invoice.total_amount,
+            total_ttc,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
             emailed_at: invoice.emailed_at,
             emailed_to: invoice.emailed_to,
             project_id: invoice.project_id,
+            dunning_paused_at: invoice.dunning_paused_at,
+            dunning_paused_note: invoice.dunning_paused_note,
             is_overdue,
             version: invoice.version,
             created_at: invoice.created_at,
@@ -243,7 +262,19 @@ pub struct InvoiceListItemResponse {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// TTC canonique (#246, Story 21-2a) — colonne SQL calculée de la liste.
+    pub total_ttc: Decimal,
     pub paid_at: Option<NaiveDateTime>,
+    /// Story 21-6a (D10) — suspension des rappels, alimente le badge
+    /// « suspendu » de la liste des factures et le filtre `paused`.
+    ///
+    /// Note : ce type est aussi celui de l'échéancier via l'alias
+    /// `DueDateItemResponse` — les champs y sont donc présents sur le wire.
+    /// C'est **voulu** (invariant anti-dissimulation D10 : une facture
+    /// suspendue reste visible dans l'échéancier) ; seul l'affichage n'est
+    /// pas ajouté à cette page en 21-6a.
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
     /// B22 (review pass 2 G2 B) : exposé sur la liste standard pour cohérence
     /// avec `InvoiceResponse` et `DueDateItemResponse` — le frontend ne doit
     /// jamais recalculer le statut overdue côté client (désync TZ possible).
@@ -268,7 +299,10 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
             due_date: i.due_date,
             payment_terms: i.payment_terms,
             total_amount: i.total_amount,
+            total_ttc: i.total_ttc,
             paid_at: i.paid_at,
+            dunning_paused_at: i.dunning_paused_at,
+            dunning_paused_note: i.dunning_paused_note,
             is_overdue,
             version: i.version,
             created_at: i.created_at,
@@ -371,11 +405,14 @@ fn validate_payment_terms(pt: Option<String>) -> Result<Option<String>, AppError
     Ok(norm)
 }
 
+/// Vérifie le scoping du contact et **retourne l'entité** (Story 21-1) —
+/// le contact y est déjà chargé, `create_invoice` lit ses conditions de
+/// paiement (#245) sans second fetch.
 async fn ensure_contact_belongs_to_company(
     state: &AppState,
     contact_id: i64,
     company_id: i64,
-) -> Result<(), AppError> {
+) -> Result<kesh_db::entities::contact::Contact, AppError> {
     let contact = contacts::find_by_id(&state.pool, contact_id).await?;
     match contact {
         None => Err(AppError::Validation("Contact introuvable".into())),
@@ -383,8 +420,16 @@ async fn ensure_contact_belongs_to_company(
             Err(AppError::Validation("Contact introuvable".into()))
         }
         Some(c) if !c.active => Err(AppError::Validation("Contact archivé".into())),
-        Some(_) => Ok(()),
+        Some(c) => Ok(c),
     }
+}
+
+/// Message d'erreur `due_date < date` (#245) — clé FTL ×4 langues.
+fn due_date_before_date_error() -> AppError {
+    AppError::Validation(crate::errors::t(
+        "error-invoice-due-date-before-date",
+        "L'échéance ne peut pas être antérieure à la date de la facture",
+    ))
 }
 
 fn validate_lines(reqs: Vec<CreateInvoiceLineRequest>) -> Result<Vec<NewInvoiceLine>, AppError> {
@@ -467,6 +512,9 @@ pub async fn list_invoices(
         date_to: params.date_to,
         payment_status: None,
         due_before: None,
+        // Story 21-6a (D10) — seule surface qui expose ce filtre. `None` quand
+        // le client ne fournit rien → `All` → no-op.
+        paused: params.paused.map(PausedFilter::from),
         sort_by: params.sort_by.unwrap_or_default(),
         sort_direction: params.sort_direction.unwrap_or(SortDirection::Desc),
         limit,
@@ -506,20 +554,65 @@ pub async fn create_invoice(
 ) -> Result<(StatusCode, Json<InvoiceResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
+    let contact = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
     let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
+    // #245 : défauts depuis les conditions de paiement du contact — les
+    // valeurs explicites du client ne sont JAMAIS écrasées.
+    // due_date absente : date + délai (jours) du contact, sinon date (défaut
+    // historique Review P6). payment_terms absent : libellé auto-généré dans
+    // la langue du contact (fallback langue d'instance).
+    //
+    // Review Pass 1 ECH-2 : le libellé n'est généré que si l'échéance vient
+    // AUSSI du délai du contact (due_date absente de la requête) — sinon un
+    // client API envoyant une dueDate explicite à 9 jours recevrait un
+    // « Payable à 30 jours net » incohérent, imprimé sur le PDF.
+    let due_from_contact_days =
+        req.due_date.is_none() && contact.default_payment_terms_days.is_some();
+    let due_date = match req.due_date {
+        Some(d) => d,
+        None => match contact.default_payment_terms_days {
+            // Review Pass 1 BH-1 : `+ Duration` panique sur overflow chrono
+            // (date proche de NaiveDate::MAX acceptée par serde) → checked.
+            Some(days) => req
+                .date
+                .checked_add_signed(chrono::Duration::days(i64::from(days)))
+                .ok_or_else(|| {
+                    AppError::Validation(
+                        "Date de facture trop éloignée pour calculer l'échéance".into(),
+                    )
+                })?,
+            None => req.date,
+        },
+    };
+    let payment_terms = payment_terms.or_else(|| {
+        if !due_from_contact_days {
+            return None;
+        }
+        contact.default_payment_terms_days.map(|days| {
+            let language = crate::routes::invoice_email::resolve_language(&contact, &company);
+            crate::routes::contacts::payment_terms_label(
+                days,
+                Locale::from(language.as_str()),
+                &state.i18n,
+            )
+        })
+    });
+
+    // #245 : validation sur la valeur FINALE (une échéance calculée est
+    // toujours ≥ date car days ≥ 0 — seule une valeur explicite peut échouer).
+    if due_date < req.date {
+        return Err(due_date_before_date_error());
+    }
+
     let new = NewInvoice {
         company_id: company.id,
         contact_id: req.contact_id,
         date: req.date,
-        // Review P6 : défaut due_date = invoice.date (Scope §12).
-        // L'utilisateur peut override avec `date + N jours` selon conditions
-        // de paiement. Pas de calcul auto depuis payment_terms (décision Guy).
-        due_date: Some(req.due_date.unwrap_or(req.date)),
+        due_date: Some(due_date),
         payment_terms,
         project_id: req.project_id,
         lines,
@@ -541,17 +634,36 @@ pub async fn update_invoice(
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
+    // #245 : à l'update, AUCUN pré-remplissage depuis le contact (on édite
+    // une facture existante) — le retour de l'entité est ignoré.
+    let _ = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
     let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
+    // Review P6 : défaut due_date = invoice.date si non fournie (Scope §12).
+    let due_date = req.due_date.unwrap_or(req.date);
+
+    // #245 : validation `due_date >= date`, mais SEULEMENT si la paire
+    // (date, due_date) change par rapport à la facture stockée — une facture
+    // legacy avec échéance antérieure à sa date reste éditable sur ses
+    // autres champs (fetch scopé uniquement sur le chemin d'échec, rare).
+    if due_date < req.date {
+        let stored = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+            .await?
+            .ok_or(AppError::Database(DbError::NotFound))?
+            .0;
+        let pair_unchanged = stored.date == req.date && stored.due_date == Some(due_date);
+        if !pair_unchanged {
+            return Err(due_date_before_date_error());
+        }
+    }
+
     let changes = InvoiceUpdate {
         contact_id: req.contact_id,
         date: req.date,
-        // Review P6 : défaut due_date = invoice.date si non fournie (Scope §12).
-        due_date: Some(req.due_date.unwrap_or(req.date)),
+        due_date: Some(due_date),
         payment_terms,
         project_id: req.project_id,
         lines,
@@ -622,6 +734,29 @@ impl From<PaymentStatusParam> for PaymentStatusFilter {
             PaymentStatusParam::Paid => PaymentStatusFilter::Paid,
             PaymentStatusParam::Unpaid => PaymentStatusFilter::Unpaid,
             PaymentStatusParam::Overdue => PaymentStatusFilter::Overdue,
+        }
+    }
+}
+
+/// Story 21-6a (D10) — valeur du query param `?paused=` de `GET /invoices`.
+///
+/// Kebab-case sur le wire (`all` | `paused` | `not-paused`), calqué sur
+/// `PaymentStatusParam` : c'est le précédent d'un enum de **filtre**. Une
+/// valeur inconnue est rejetée par serde → 400, aucune validation handler.
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PausedParam {
+    All,
+    Paused,
+    NotPaused,
+}
+
+impl From<PausedParam> for PausedFilter {
+    fn from(p: PausedParam) -> Self {
+        match p {
+            PausedParam::All => PausedFilter::All,
+            PausedParam::Paused => PausedFilter::Paused,
+            PausedParam::NotPaused => PausedFilter::NotPaused,
         }
     }
 }
@@ -775,6 +910,15 @@ fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, 
                 .unwrap_or(PaymentStatusFilter::Unpaid),
         ),
         due_before: params.due_before,
+        // Story 21-6a (D10) — INVARIANT ANTI-DISSIMULATION : l'échéancier ne
+        // filtre JAMAIS sur la suspension. Une facture suspendue sort de la
+        // liste « à rappeler » (`dunning_eligibility`) et de nulle part
+        // ailleurs. `None` → `PausedFilter::All` → no-op dans
+        // `push_where_clauses`, que les items de cette page traversent via
+        // `list_by_company_paginated`. L'échéancier n'expose aucun `?paused=`.
+        // Ne PAS remplacer par `params.paused` : `ListDueDatesQuery` n'a
+        // volontairement pas ce champ.
+        paused: None,
         sort_by: params.sort_by.unwrap_or(InvoiceSortBy::DueDate),
         sort_direction: params.sort_direction.unwrap_or(SortDirection::Asc),
         limit,
@@ -1037,7 +1181,9 @@ pub async fn export_due_dates_csv_handler(
                 format_date(&inv.date),
                 inv.due_date.as_ref().map(format_date).unwrap_or_default(),
                 csv_sanitize(inv.contact_name.clone()),
-                format_money(&inv.total_amount),
+                // #246 (Story 21-2a) : colonne Total = TTC (montant dû),
+                // cohérente avec les KPI du summary — pas le HT comptable.
+                format_money(&inv.total_ttc),
                 // B19 (review pass 2 G2 B) : défense en profondeur — la valeur
                 // vient d'un fichier FTL contrôlé, mais une compromission
                 // (clé locale altérée) ne doit pas ouvrir un vecteur d'injection.

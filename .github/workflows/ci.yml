@@ -21,7 +21,12 @@ jobs:
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # La suite complète `cargo test --workspace -j1 --test-threads=1` (~1900 tests,
+    # DB sérialisée) dépasse 30 min depuis Epic 21 (CLAUDE.md : ~54 min en local,
+    # mesuré 2026-07-13) + build/clippy all-targets en amont. 30 min timeout-out le job
+    # (annulation à ~30m17s). Marge portée à 120 min. Le vrai levier (squash schéma
+    # test + durabilité relâchée) est suivi dans l'issue #251.
+    timeout-minutes: 120
     services:
       mariadb:
         # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.

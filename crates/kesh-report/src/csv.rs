@@ -15,6 +15,7 @@ use std::io::Write;
 
 use rust_decimal::Decimal;
 
+use crate::aged_receivables::AgedReceivables;
 use crate::balance_sheet::BalanceSheet;
 use crate::errors::ReportError;
 use crate::income_statement::IncomeStatement;
@@ -368,6 +369,65 @@ pub fn render_vat_report_csv<W: Write>(
         "Écart de réconciliation",
         "",
         &format_amount_iso(report.reconciliation_delta),
+    ])
+    .map_err(map_csv_err)?;
+
+    wtr.flush().map_err(map_io_err)?;
+    Ok(())
+}
+
+/// Génère le CSV de la balance âgée des créances clients (Story 21-7, AC 6).
+///
+/// Colonnes : `Contact;Non échu;1-30;31-60;61-90;90+;Total`. Une ligne par
+/// contact, puis une ligne « Total général » (les `totals`). En-têtes **français
+/// en dur** (patron `render_vat_report_csv` — les `render_*_csv` n'ont pas de
+/// paramètre locale, i18n exports déférée v0.2). Rapport vide → en-tête seul.
+pub fn render_aged_receivables_csv<W: Write>(
+    report: &AgedReceivables,
+    mut writer: W,
+) -> Result<(), ReportError> {
+    write_bom(&mut writer)?;
+    let mut wtr = make_writer(writer);
+
+    wtr.write_record([
+        "Contact",
+        "Non échu",
+        "1-30",
+        "31-60",
+        "61-90",
+        "90+",
+        "Total",
+    ])
+    .map_err(map_csv_err)?;
+
+    // Cas rapport vide : header seul, pas de data rows (pattern par renderer).
+    if report.rows.is_empty() {
+        wtr.flush().map_err(map_io_err)?;
+        return Ok(());
+    }
+
+    for row in &report.rows {
+        wtr.write_record([
+            &row.contact_name,
+            &format_amount_iso(row.buckets.not_due),
+            &format_amount_iso(row.buckets.days_1_to_30),
+            &format_amount_iso(row.buckets.days_31_to_60),
+            &format_amount_iso(row.buckets.days_61_to_90),
+            &format_amount_iso(row.buckets.days_over_90),
+            &format_amount_iso(row.buckets.total),
+        ])
+        .map_err(map_csv_err)?;
+    }
+
+    // Ligne « Total général » (les totaux sommés en Rust).
+    wtr.write_record([
+        "Total général",
+        &format_amount_iso(report.totals.not_due),
+        &format_amount_iso(report.totals.days_1_to_30),
+        &format_amount_iso(report.totals.days_31_to_60),
+        &format_amount_iso(report.totals.days_61_to_90),
+        &format_amount_iso(report.totals.days_over_90),
+        &format_amount_iso(report.totals.total),
     ])
     .map_err(map_csv_err)?;
 
@@ -814,5 +874,69 @@ mod tests {
             "NumeroCompte;NomCompte;TotalDebit;TotalCredit;Solde"
         );
         assert!(lines[2].starts_with("Total;"));
+    }
+
+    // Story 21-7 — CSV balance âgée.
+    use crate::aged_receivables::{AgedBucket, AgedReceivables, AgedReceivablesRow};
+
+    fn aged_bucket() -> AgedBucket {
+        AgedBucket {
+            not_due: dec!(110),
+            days_1_to_30: dec!(205),
+            days_31_to_60: dec!(307),
+            days_61_to_90: dec!(409),
+            days_over_90: dec!(1581),
+            total: dec!(2612),
+        }
+    }
+
+    #[test]
+    fn aged_receivables_csv_bom_header_rows_total() {
+        let report = AgedReceivables {
+            as_of: chrono::NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            rows: vec![AgedReceivablesRow {
+                contact_id: 1,
+                contact_name: "Alpha SA".into(),
+                buckets: aged_bucket(),
+            }],
+            totals: aged_bucket(),
+        };
+        let mut buf = Vec::new();
+        render_aged_receivables_csv(&report, &mut buf).unwrap();
+
+        // BOM UTF-8 en tête.
+        assert_eq!(&buf[..3], &[0xEF, 0xBB, 0xBF]);
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lines: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 3, "1 header + 1 contact + 1 total");
+        assert_eq!(lines[0], "Contact;Non échu;1-30;31-60;61-90;90+;Total");
+        assert_eq!(
+            lines[1],
+            "Alpha SA;110.00;205.00;307.00;409.00;1581.00;2612.00"
+        );
+        assert!(lines[2].starts_with("Total général;"));
+        assert!(lines[2].ends_with(";2612.00"));
+    }
+
+    #[test]
+    fn aged_receivables_csv_empty_is_header_only() {
+        let report = AgedReceivables {
+            as_of: chrono::NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            rows: vec![],
+            totals: AgedBucket {
+                not_due: Decimal::ZERO,
+                days_1_to_30: Decimal::ZERO,
+                days_31_to_60: Decimal::ZERO,
+                days_61_to_90: Decimal::ZERO,
+                days_over_90: Decimal::ZERO,
+                total: Decimal::ZERO,
+            },
+        };
+        let mut buf = Vec::new();
+        render_aged_receivables_csv(&report, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lines: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 1, "rapport vide = en-tête seul");
+        assert_eq!(lines[0], "Contact;Non échu;1-30;31-60;61-90;90+;Total");
     }
 }

@@ -74,6 +74,9 @@
 	let formCountry = $state('CH');
 	let formIde = $state('');
 	let formPaymentTerms = $state('');
+	// #245 — délai de paiement en jours ('' = non renseigné). Renseigné →
+	// prime sur le texte libre (libellé auto-généré côté serveur).
+	let formPaymentTermsDays = $state('');
 	// Story 20-3b2 — langue de correspondance ('' = héritée instance) + civilité.
 	let formLanguage = $state<ContactLanguage | ''>('');
 	let formSalutation = $state<Salutation>('Neutre');
@@ -225,6 +228,7 @@
 		formCountry = 'CH';
 		formIde = '';
 		formPaymentTerms = '';
+		formPaymentTermsDays = '';
 		formLanguage = '';
 		formSalutation = 'Neutre';
 		formError = '';
@@ -248,6 +252,7 @@
 		formCountry = c.addressStructured?.country || 'CH';
 		formIde = formatIdeNumber(c.ideNumber);
 		formPaymentTerms = c.defaultPaymentTerms ?? '';
+		formPaymentTermsDays = c.defaultPaymentTermsDays != null ? String(c.defaultPaymentTermsDays) : '';
 		formLanguage = c.language ?? '';
 		formSalutation = c.salutation;
 		formError = '';
@@ -274,8 +279,22 @@
 		if (formIde.trim() && !validateIdeFormat(formIde.trim())) {
 			return i18nMsg('contact-error-ide-invalid', 'Numéro IDE suisse invalide');
 		}
+		// #245 : vide OU entier 0..365 (miroir de la borne backend).
+		if (formPaymentTermsDays.trim() !== '') {
+			const d = Number(formPaymentTermsDays.trim());
+			if (!Number.isInteger(d) || d < 0 || d > 365) {
+				return i18nMsg(
+					'contact-error-payment-terms-days-range',
+					'Le délai de paiement doit être un nombre entier entre 0 et 365 jours'
+				);
+			}
+		}
 		return '';
 	});
+
+	// #245 : préséance jours > texte — quand le délai est renseigné, le texte
+	// libre est désactivé (libellé auto-généré côté serveur).
+	let paymentTermsDaysSet = $derived(formPaymentTermsDays.trim() !== '');
 
 	async function submitForm() {
 		formError = formValidation;
@@ -300,7 +319,13 @@
 					country: formCountry.trim() || 'CH'
 				},
 				ideNumber: normalizeIdeForApi(formIde),
-				defaultPaymentTerms: formPaymentTerms.trim() || null,
+				// #245 (review BH-2) : quand le délai est renseigné, le texte libre
+				// est REMPLACÉ (null) — sinon un texte legacy invisible (champ
+				// désactivé) ressusciterait à l'effacement ultérieur du délai.
+				defaultPaymentTerms: paymentTermsDaysSet ? null : formPaymentTerms.trim() || null,
+				// #245 : null explicite (convention du form), jamais omis.
+				defaultPaymentTermsDays:
+					formPaymentTermsDays.trim() === '' ? null : Number(formPaymentTermsDays.trim()),
 				// Story 20-3b2 : '' = héritée instance → null ; la civilité ne
 				// s'applique qu'aux Personnes (l'Entreprise reçoit la formule
 				// neutre côté backend quoi qu'il arrive).
@@ -734,6 +759,26 @@
 			</div>
 
 			<div>
+				<label for="form-payment-terms-days">
+					{i18nMsg('contact-form-payment-terms-days', 'Délai de paiement (jours)')}
+				</label>
+				<Input
+					id="form-payment-terms-days"
+					type="text"
+					inputmode="numeric"
+					bind:value={formPaymentTermsDays}
+					maxlength={3}
+					placeholder="30"
+				/>
+				<p class="text-xs text-muted-foreground mt-1">
+					{i18nMsg(
+						'contact-form-payment-terms-days-hint',
+						"L'échéance des factures sera pré-calculée et le libellé des conditions généré automatiquement."
+					)}
+				</p>
+			</div>
+
+			<div>
 				<label for="form-payment-terms">
 					{i18nMsg('contact-form-payment-terms', 'Conditions de paiement')}
 				</label>
@@ -742,8 +787,17 @@
 					type="text"
 					bind:value={formPaymentTerms}
 					maxlength={100}
+					disabled={paymentTermsDaysSet}
 					placeholder={i18nMsg('contact-form-payment-terms-placeholder', 'ex: 30 jours net')}
 				/>
+				{#if paymentTermsDaysSet}
+					<p class="text-xs text-muted-foreground mt-1">
+						{i18nMsg(
+							'contact-form-payment-terms-disabled-hint',
+							'Libellé généré automatiquement depuis le délai de paiement.'
+						)}
+					</p>
+				{/if}
 			</div>
 
 			{#if editing && formContactType === 'Entreprise'}

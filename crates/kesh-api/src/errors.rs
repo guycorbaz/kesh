@@ -281,6 +281,48 @@ pub enum AppError {
     #[error("Objet ou corps de l'e-mail vide")]
     InvoiceEmailEmptyContent,
 
+    /// Story 21-5a — enregistrement d'un rappel sur une facture déjà payée. 422.
+    #[error("Facture déjà payée")]
+    InvoiceAlreadyPaid,
+    /// Story 21-5a — niveau de rappel demandé absent de la configuration. 422.
+    #[error("Niveau de rappel inexistant")]
+    DunningLevelNotFound,
+    /// Story 21-5a — date d'envoi d'un rappel manuel dans le futur. 422.
+    #[error("Date de rappel dans le futur")]
+    ReminderDateInFuture,
+    /// Story 21-5a — reprise d'une facture non suspendue. 422.
+    #[error("Facture non suspendue")]
+    InvoiceNotPaused,
+    /// Story 21-5b — rappel sur une facture aux rappels suspendus. 422.
+    #[error("Rappels suspendus pour cette facture")]
+    DunningPaused,
+    /// Story 21-5b — envoi d'un niveau de rappel > prochain attendu (saut interdit,
+    /// ou niveau déjà couvert par un envoi concurrent). 409.
+    #[error("Niveau de rappel déjà couvert")]
+    LevelAlreadySent,
+    /// Story 21-5b — l'e-mail de rappel est PARTI mais la facture a **réellement
+    /// disparu** avant l'enregistrement (#219). 409 — le fait est tracé best-effort
+    /// (audit). Réservé au cas `NotFound` : toute autre panne d'enregistrement
+    /// utilise [`AppError::ReminderSentButNotRecorded`] (review Pass 3 — annoncer
+    /// une facture disparue sur un simple hoquet DB envoyait chercher une
+    /// suppression qui n'avait pas eu lieu).
+    #[error("Rappel envoyé mais facture disparue")]
+    ReminderSentButInvoiceGone,
+    /// Story 21-5b (code review Pass 3) — l'e-mail de rappel est PARTI mais son
+    /// enregistrement a échoué pour une raison **autre** qu'une facture disparue
+    /// (deadlock, timeout de pool, panne au commit). 409 — tracé best-effort.
+    /// Pendant unitaire du code per-facture `RECORD_FAILED_EMAIL_SENT` du lot.
+    #[error("Rappel envoyé mais non enregistré")]
+    ReminderSentButNotRecorded,
+    /// Story 21-5b — envoi par lot dépassant le cap dur (20). 422.
+    #[error("Lot de rappels trop volumineux")]
+    BatchTooLarge,
+    /// Story 21-5b (code review Pass 3) — le lot dépasse le quota d'envoi par
+    /// fenêtre du rate-limiter. 422 et non 429 : aucune attente ne peut le rendre
+    /// acceptable (la fenêtre ne libère jamais plus de `max_attempts` slots).
+    #[error("Lot supérieur au quota d'envoi ({max})")]
+    BatchExceedsSendQuota { max: u32 },
+
     /// Story 20-3b1 (code review Pass 1 ECH-1) — le contact de la facture est
     /// archivé (`active = false`) : le carnet d'adresses le considère « à ne
     /// plus utiliser », on n'envoie pas de facture à son adresse. HTTP 400
@@ -990,6 +1032,87 @@ impl IntoResponse for AppError {
                 &t(
                     "error-contact-email-missing",
                     "Le contact de la facture n'a pas d'adresse e-mail. Renseignez-la sur la fiche contact.",
+                ),
+            ),
+            AppError::InvoiceAlreadyPaid => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVOICE_ALREADY_PAID",
+                &t(
+                    "error-invoice-already-paid",
+                    "La facture est déjà payée — aucun rappel ne peut être enregistré.",
+                ),
+            ),
+            AppError::DunningLevelNotFound => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "DUNNING_LEVEL_NOT_FOUND",
+                &t(
+                    "error-dunning-level-not-found",
+                    "Le niveau de rappel demandé n'existe pas dans la configuration.",
+                ),
+            ),
+            AppError::ReminderDateInFuture => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "REMINDER_DATE_IN_FUTURE",
+                &t(
+                    "error-reminder-date-in-future",
+                    "La date d'un rappel ne peut pas être dans le futur.",
+                ),
+            ),
+            AppError::InvoiceNotPaused => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVOICE_NOT_PAUSED",
+                &t(
+                    "error-invoice-not-paused",
+                    "Cette facture n'est pas suspendue.",
+                ),
+            ),
+            AppError::DunningPaused => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "DUNNING_PAUSED",
+                &t(
+                    "error-dunning-paused",
+                    "Les rappels sont suspendus pour cette facture.",
+                ),
+            ),
+            AppError::LevelAlreadySent => build_response(
+                StatusCode::CONFLICT,
+                "LEVEL_ALREADY_SENT",
+                &t(
+                    "error-level-already-sent",
+                    "Ce niveau de rappel a déjà été traité (envoi concurrent ou saut de niveau interdit).",
+                ),
+            ),
+            AppError::ReminderSentButInvoiceGone => build_response(
+                StatusCode::CONFLICT,
+                "REMINDER_SENT_BUT_INVOICE_GONE",
+                &t(
+                    "error-reminder-sent-but-invoice-gone",
+                    "Le rappel a été envoyé mais la facture a disparu avant l'enregistrement.",
+                ),
+            ),
+            AppError::ReminderSentButNotRecorded => build_response(
+                StatusCode::CONFLICT,
+                "REMINDER_SENT_BUT_NOT_RECORDED",
+                &t(
+                    "error-reminder-sent-but-not-recorded",
+                    "Le rappel a été envoyé mais n'a pas pu être enregistré. \
+                     L'envoi est tracé dans le journal d'audit.",
+                ),
+            ),
+            AppError::BatchTooLarge => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "BATCH_TOO_LARGE",
+                &t(
+                    "error-batch-too-large",
+                    "Trop de factures dans le lot (maximum 20).",
+                ),
+            ),
+            AppError::BatchExceedsSendQuota { max } => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "BATCH_EXCEEDS_SEND_QUOTA",
+                &t(
+                    "error-batch-exceeds-send-quota",
+                    &format!("Le lot dépasse le quota d'envoi ({max} e-mails par fenêtre)."),
                 ),
             ),
             AppError::InvoiceEmailEmptyContent => build_response(

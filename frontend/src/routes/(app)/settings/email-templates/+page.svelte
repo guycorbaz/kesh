@@ -1,4 +1,10 @@
 <script lang="ts">
+	// Story 20-2 (socle) + Story 21-4 (multi-type / multi-niveau).
+	// Le backend renvoie tous les templates effectifs (type × langue × niveau) ;
+	// on les indexe par CLÉ COMPOSITE STRING `${type}:${level}:${lang}` (pas par
+	// langue seule, sinon collision). INVARIANT (bug 20-2) : changer de type, de
+	// niveau OU de langue ne re-fetch JAMAIS et ne perd JAMAIS un brouillon —
+	// `syncDraftFromTemplate` est réservé à load/save/reload-409/restore.
 	import { onMount } from 'svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
@@ -28,55 +34,80 @@
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 
 	type Draft = { subject: string; body: string };
+	const TEMPLATE_TYPES = ['invoice_send', 'invoice_reminder'] as const;
+	type TemplateType = (typeof TEMPLATE_TYPES)[number];
 
-	// Toutes les entrées effectives (v1 : 1 type × 4 langues). Indexées par langue.
-	let templates = $state<Record<EmailTemplateLanguage, EmailTemplateResponse | null>>({
-		FR: null,
-		DE: null,
-		IT: null,
-		EN: null,
-	});
-	// Brouillons éditables par langue (code-review Pass 1 #1) : chaque langue a
-	// son propre état de saisie, préservé au changement d'onglet — pas de perte
-	// silencieuse si on édite FR puis passe à DE sans enregistrer.
-	let drafts = $state<Record<EmailTemplateLanguage, Draft>>({
-		FR: { subject: '', body: '' },
-		DE: { subject: '', body: '' },
-		IT: { subject: '', body: '' },
-		EN: { subject: '', body: '' },
-	});
-	let templateType = $state('invoice_send');
-	let allowedVariables = $state<string[]>([]);
+	/** Clé composite d'indexation : type × niveau × langue. */
+	function ckey(type: string, level: number, lang: EmailTemplateLanguage): string {
+		return `${type}:${level}:${lang}`;
+	}
+
+	let templatesMap = $state<Record<string, EmailTemplateResponse>>({});
+	let drafts = $state<Record<string, Draft>>({});
+	let activeType = $state<TemplateType>('invoice_send');
+	let activeLevel = $state(0);
+	let activeLang = $state<EmailTemplateLanguage>('FR');
 
 	let loading = $state(true);
 	let loadError = $state('');
 	let submitting = $state(false);
-
-	// Onglet langue actif + variables inconnues remontées à la dernière validation.
-	let activeLang = $state<EmailTemplateLanguage>('FR');
 	let unknownVars = $state<string[]>([]);
 
-	// Modale « restaurer le défaut ».
 	let restoreOpen = $state(false);
 	let restoreSubmitting = $state(false);
 	let restoreError = $state('');
 
-	let current = $derived(templates[activeLang]);
+	// Plus grand niveau de rappel présent (sélecteur de niveau 0..maxLevel).
+	let maxLevel = $derived.by(() => {
+		let m = 0;
+		for (const t of Object.values(templatesMap)) {
+			if (t.templateType === 'invoice_reminder' && t.levelNumber > m) m = t.levelNumber;
+		}
+		return m;
+	});
+	let reminderLevels = $derived(Array.from({ length: maxLevel + 1 }, (_, i) => i));
+
+	let activeKey = $derived(ckey(activeType, activeLevel, activeLang));
+	let current = $derived(templatesMap[activeKey]);
 	let isDefault = $derived(current?.isDefault ?? true);
-	let activeDraft = $derived(drafts[activeLang]);
+	let allowedVariables = $derived(current?.allowedVariables ?? []);
 	let canSave = $derived(
-		activeDraft.subject.trim().length > 0 && activeDraft.body.trim().length > 0,
+		(drafts[activeKey]?.subject.trim().length ?? 0) > 0 &&
+			(drafts[activeKey]?.body.trim().length ?? 0) > 0,
 	);
 
-	/** Recopie la valeur serveur d'une langue dans son brouillon (post-load/save/restore). */
-	function syncDraftFromTemplate(lang: EmailTemplateLanguage): void {
-		const t = templates[lang];
-		drafts[lang] = { subject: t?.subject ?? '', body: t?.body ?? '' };
+	function levelLabel(level: number): string {
+		return level === 0
+			? msg('email-templates-level-generic', 'Générique')
+			: i18nMsg('email-templates-level-n', 'Rappel {$n}', { n: level });
+	}
+	function typeLabel(type: string): string {
+		return type === 'invoice_reminder'
+			? msg('email-templates-type-invoice_reminder', 'Rappel de facture')
+			: msg('email-templates-type-invoice_send', 'Envoi de facture');
 	}
 
+	/** Recopie la valeur serveur d'une combinaison dans son brouillon (load/save/reload/restore). */
+	function syncDraftFromTemplate(key: string): void {
+		const t = templatesMap[key];
+		drafts[key] = { subject: t?.subject ?? '', body: t?.body ?? '' };
+	}
+
+	function selectType(type: TemplateType): void {
+		activeType = type;
+		// H1 : invoice_send n'existe qu'au niveau 0 → reset avant tout rendu.
+		if (type === 'invoice_send') activeLevel = 0;
+		unknownVars = [];
+		restoreError = '';
+	}
+	function selectLevel(level: number): void {
+		activeLevel = level;
+		unknownVars = [];
+		restoreError = '';
+	}
 	function selectLang(lang: EmailTemplateLanguage): void {
 		activeLang = lang;
-		// Les brouillons sont préservés par langue → aucune ré-hydratation ici.
+		// Brouillons préservés par combinaison → aucune ré-hydratation ici.
 		unknownVars = [];
 		restoreError = '';
 	}
@@ -85,15 +116,9 @@
 		try {
 			const all = await listEmailTemplates();
 			for (const t of all) {
-				templates[t.language] = t;
-			}
-			// v1 : un seul type ; on prend le type + les variables de la 1re entrée.
-			if (all.length > 0) {
-				templateType = all[0].templateType;
-				allowedVariables = all[0].allowedVariables;
-			}
-			for (const lang of EMAIL_TEMPLATE_LANGUAGES) {
-				syncDraftFromTemplate(lang);
+				const key = ckey(t.templateType, t.levelNumber, t.language);
+				templatesMap[key] = t;
+				drafts[key] = { subject: t.subject, body: t.body };
 			}
 		} catch (err) {
 			loadError = isApiError(err) ? err.message : msg('error-unexpected', 'Erreur de chargement');
@@ -102,29 +127,38 @@
 		}
 	});
 
-	/** Recharge une seule langue depuis le backend et resynchronise son brouillon. */
-	async function reloadLang(lang: EmailTemplateLanguage): Promise<void> {
-		const fresh = await getEmailTemplate(templateType, lang);
-		templates[lang] = fresh;
-		allowedVariables = fresh.allowedVariables;
-		syncDraftFromTemplate(lang);
+	/** Recharge la combinaison active depuis le backend et resynchronise son brouillon. */
+	async function reloadCurrent(): Promise<void> {
+		const type = activeType,
+			level = activeLevel,
+			lang = activeLang;
+		const fresh = await getEmailTemplate(type, lang, level);
+		const key = ckey(type, level, lang);
+		templatesMap[key] = fresh;
+		syncDraftFromTemplate(key);
 	}
 
 	async function save(): Promise<void> {
 		if (submitting || !canSave) return;
 		submitting = true;
 		unknownVars = [];
-		const lang = activeLang;
+		const type = activeType,
+			level = activeLevel,
+			lang = activeLang;
+		const key = ckey(type, level, lang);
 		try {
-			const updated = await updateEmailTemplate(templateType, lang, {
-				subject: drafts[lang].subject.trim(),
-				body: drafts[lang].body.trim(),
-				expectedVersion: templates[lang]?.version ?? null,
-			});
-			templates[lang] = updated;
-			allowedVariables = updated.allowedVariables;
-			// Re-synchronise le brouillon avec la valeur serveur trimée (#4).
-			syncDraftFromTemplate(lang);
+			const updated = await updateEmailTemplate(
+				type,
+				lang,
+				{
+					subject: drafts[key].subject.trim(),
+					body: drafts[key].body.trim(),
+					expectedVersion: templatesMap[key]?.version ?? null,
+				},
+				level,
+			);
+			templatesMap[key] = updated;
+			syncDraftFromTemplate(key);
 			notifySuccess(msg('email-templates-saved', 'Modèle enregistré'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -135,11 +169,9 @@
 						msg('email-templates-unknown-variables', 'Le modèle contient des variables inconnues'),
 					);
 				} else if (err.status === 409) {
-					notifyError(
-						msg('email-templates-conflict', 'Conflit de version — le modèle a été rechargé'),
-					);
+					notifyError(msg('email-templates-conflict', 'Conflit de version — le modèle a été rechargé'));
 					try {
-						await reloadLang(lang);
+						await reloadCurrent();
 					} catch {
 						// on garde le toast d'erreur
 					}
@@ -158,9 +190,11 @@
 		if (restoreSubmitting) return;
 		restoreSubmitting = true;
 		restoreError = '';
-		const lang = activeLang;
+		const type = activeType,
+			level = activeLevel,
+			lang = activeLang;
 		try {
-			await restoreEmailTemplateDefault(templateType, lang);
+			await restoreEmailTemplateDefault(type, lang, level);
 		} catch (err) {
 			restoreError = isApiError(err)
 				? err.message
@@ -168,16 +202,13 @@
 			restoreSubmitting = false;
 			return;
 		}
-		// DELETE acquis : fermer la modale même si le reload échoue ensuite (#3),
-		// sinon l'UI resterait bloquée sur un état déjà restauré côté serveur.
 		restoreSubmitting = false;
 		restoreOpen = false;
 		notifySuccess(msg('email-templates-restored', 'Modèle par défaut restauré'));
 		try {
-			await reloadLang(lang);
+			await reloadCurrent();
 		} catch {
-			// best-effort : le serveur est déjà revenu au défaut ; l'UI se
-			// resynchronisera au prochain chargement/changement d'onglet.
+			// best-effort : le serveur est déjà revenu au défaut.
 		}
 	}
 </script>
@@ -204,9 +235,57 @@
 	<p class="text-sm text-destructive">{loadError}</p>
 {:else}
 	<section class="space-y-4 rounded-lg border border-border bg-white p-6 shadow-sm">
+		<div class="space-y-4" data-testid="email-template-selectors">
+		<!-- Sélecteur de type -->
+		<div
+			class="flex flex-wrap items-center gap-2"
+			role="group"
+			aria-label={msg('email-templates-type-label', 'Type')}
+		>
+			<span class="text-sm font-medium">{msg('email-templates-type-label', 'Type')} :</span>
+			{#each TEMPLATE_TYPES as type (type)}
+				<button
+					type="button"
+					data-testid="email-template-type-{type}"
+					aria-pressed={activeType === type}
+					class="rounded-md border px-3 py-1 text-sm"
+					class:border-primary={activeType === type}
+					class:bg-primary-light={activeType === type}
+					onclick={() => selectType(type)}
+				>
+					{typeLabel(type)}
+				</button>
+			{/each}
+		</div>
+
+		<!-- Sélecteur de niveau (rappels uniquement) -->
+		{#if activeType === 'invoice_reminder'}
+			<div
+				class="flex flex-wrap items-center gap-2"
+				role="group"
+				aria-label={msg('email-templates-level-label', 'Niveau')}
+			>
+				<span class="text-sm font-medium">{msg('email-templates-level-label', 'Niveau')} :</span>
+				{#each reminderLevels as level (level)}
+					<button
+						type="button"
+						data-testid="email-template-level-{level}"
+						aria-pressed={activeLevel === level}
+						class="rounded-md border px-3 py-1 text-sm"
+						class:border-primary={activeLevel === level}
+						class:bg-primary-light={activeLevel === level}
+						onclick={() => selectLevel(level)}
+					>
+						{levelLabel(level)}
+					</button>
+				{/each}
+			</div>
+		{/if}
+		</div>
+
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-semibold">
-				{msg('email-templates-type-invoice_send', 'Envoi de facture')}
+				{typeLabel(activeType)}{activeType === 'invoice_reminder' ? ` — ${levelLabel(activeLevel)}` : ''}
 			</h2>
 			{#if isDefault}
 				<span
@@ -222,7 +301,7 @@
 			{/if}
 		</div>
 
-		<!-- Onglets de langue (pattern fait-main, cf. invoices/due-dates). -->
+		<!-- Onglets de langue -->
 		<div role="tablist" class="flex gap-1" aria-label={msg('email-templates-lang-tablist', 'Langue')}>
 			{#each EMAIL_TEMPLATE_LANGUAGES as lang (lang)}
 				<button
@@ -262,7 +341,7 @@
 					</label>
 					<Input
 						id="{uid}-subject"
-						bind:value={drafts[activeLang].subject}
+						bind:value={drafts[activeKey].subject}
 						data-testid="email-template-subject"
 					/>
 				</div>
@@ -272,7 +351,7 @@
 					</label>
 					<textarea
 						id="{uid}-body"
-						bind:value={drafts[activeLang].body}
+						bind:value={drafts[activeKey].body}
 						rows="10"
 						data-testid="email-template-body"
 						class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
@@ -309,7 +388,7 @@
 				</div>
 			</form>
 
-			<!-- Panneau d'aide : variables autorisées. -->
+			<!-- Panneau d'aide : variables autorisées (selon la combinaison active). -->
 			<aside class="rounded-md border border-border bg-gray-50 p-4">
 				<h3 class="mb-2 text-sm font-semibold">
 					{msg('email-templates-variables-title', 'Variables disponibles')}
@@ -340,7 +419,7 @@
 			<Dialog.Description>
 				{msg(
 					'email-templates-restore-confirm-body',
-					'Votre texte personnalisé pour cette langue sera supprimé et remplacé par le modèle par défaut. Cette action est irréversible.',
+					'Votre texte personnalisé pour cette combinaison sera supprimé et remplacé par le modèle par défaut. Cette action est irréversible.',
 				)}
 			</Dialog.Description>
 		</Dialog.Header>

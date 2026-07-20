@@ -144,6 +144,49 @@ test.describe('Page contacts — CRUD', () => {
 	// Reportés à Story 4.2 ou post-MVP.
 	test.skip('filtre combinés (type + client + search)', async () => {});
 	test.skip('pagination navigation précédent/suivant', async () => {});
+
+	// Story 21-1 (#245) — délai de paiement structuré sur la fiche contact.
+	test('délai de paiement (jours) : saisie, préséance sur le texte libre, persistance', async ({
+		page
+	}) => {
+		await goToContacts(page);
+
+		const uniqueName = `TestContact PTD ${Date.now()}`;
+		await page.getByRole('button', { name: /Nouveau contact/ }).click();
+		await page.fill('#form-name', uniqueName);
+
+		// Le champ texte libre est actif tant que le délai est vide.
+		await expect(page.locator('#form-payment-terms')).toBeEnabled();
+		await page.fill('#form-payment-terms', 'texte libre legacy');
+
+		// Renseigner le délai → le texte libre se désactive (préséance jours).
+		await page.fill('#form-payment-terms-days', '30');
+		await expect(page.locator('#form-payment-terms')).toBeDisabled();
+
+		// Valeur hors bornes → bouton Créer désactivé (validation client).
+		await page.fill('#form-payment-terms-days', '400');
+		await expect(page.getByRole('button', { name: 'Créer' })).toBeDisabled();
+		await page.fill('#form-payment-terms-days', '30');
+		await expect(page.getByRole('button', { name: 'Créer' })).toBeEnabled();
+
+		await page.getByRole('button', { name: 'Créer' }).click();
+		await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
+
+		// Rouvrir en édition : le délai est persisté, le texte libre désactivé
+		// ET remplacé (review BH-2 : pas de résurrection du texte legacy —
+		// le payload envoie null quand le délai est renseigné).
+		const row = page.locator('tr', { hasText: uniqueName }).first();
+		await row.getByRole('button', { name: /Modifier/ }).click();
+		await expect(page.locator('#form-payment-terms-days')).toHaveValue('30');
+		await expect(page.locator('#form-payment-terms')).toBeDisabled();
+		await expect(page.locator('#form-payment-terms')).toHaveValue('');
+		await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
+
+		// Cleanup.
+		await row.getByRole('button', { name: /Archiver/ }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Archiver' }).click();
+		await expect(page.getByText(uniqueName)).toHaveCount(0, { timeout: 5000 });
+	});
 });
 
 test.describe('Page contacts — accessibilité', () => {

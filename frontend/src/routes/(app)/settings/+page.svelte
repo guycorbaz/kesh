@@ -295,6 +295,19 @@
 				{msg('settings-email-templates-link', "Personnalisez le contenu des e-mails envoyés à vos clients (objet et corps, par langue).")}
 			</p>
 		</section>
+
+		<Separator />
+
+		<!-- Section Rappels débiteurs (Story 21-4, Administrateur) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{msg('dunning-title', 'Rappels débiteurs')}</h2>
+				<Button variant="outline" size="sm" href="/settings/dunning" data-testid="settings-dunning-manage-link">{msg('settings-manage', 'Gérer')}</Button>
+			</div>
+			<p class="mt-2 text-sm text-text-muted">
+				{msg('settings-dunning-link', 'Configurez les niveaux de rappel (délais et frais), la période de grâce, et personnalisez les textes d’e-mail de rappel par niveau.')}
+			</p>
+		</section>
 	</div>
 {:else}
 	<p class="text-text-muted">{msg('settings-no-company', 'Aucune organisation configurée. Complétez l\'onboarding.')}</p>

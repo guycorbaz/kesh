@@ -39,10 +39,13 @@ use crate::entities::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType, 
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
-const COLUMNS: &str =
-    "id, company_id, template_type, language, subject, body, version, created_at, updated_at";
+const COLUMNS: &str = "id, company_id, template_type, language, level_number, subject, body, version, created_at, updated_at";
 
 const LANGUAGES: [Language; 4] = [Language::Fr, Language::De, Language::It, Language::En];
+
+/// Nombre de niveaux de rappel garantis (défauts Rust 1..3) — la borne
+/// dynamique de `list_effective_for_company` ne descend jamais en dessous.
+pub const MIN_REMINDER_LEVELS: i16 = 3;
 
 fn template_snapshot_json(t: &EmailTemplate) -> serde_json::Value {
     serde_json::json!({
@@ -50,16 +53,22 @@ fn template_snapshot_json(t: &EmailTemplate) -> serde_json::Value {
         "companyId": t.company_id,
         "templateType": t.template_type.as_str(),
         "language": t.language.as_str(),
+        "levelNumber": t.level_number,
         "subject": t.subject,
         "body": t.body,
         "version": t.version,
     })
 }
 
-fn to_effective_override(row: &EmailTemplate) -> EffectiveEmailTemplate {
+/// Convertit un override persisté en template effectif. `requested_level` = le
+/// SLOT demandé (peut différer de `row.level_number` quand la cascade retombe
+/// sur l'override niveau 0 générique pour un slot N > 0) — cf. sémantique
+/// `EffectiveEmailTemplate::level_number`.
+fn to_effective_override(row: &EmailTemplate, requested_level: i16) -> EffectiveEmailTemplate {
     EffectiveEmailTemplate {
         template_type: row.template_type,
         language: row.language,
+        level_number: requested_level,
         subject: row.subject.clone(),
         body: row.body.clone(),
         version: Some(row.version),
@@ -71,11 +80,13 @@ fn to_effective_override(row: &EmailTemplate) -> EffectiveEmailTemplate {
 fn to_effective_default(
     template_type: EmailTemplateType,
     language: Language,
+    level_number: i16,
 ) -> EffectiveEmailTemplate {
-    let (subject, body) = crate::entities::default_template(template_type, language);
+    let (subject, body) = crate::entities::default_template(template_type, language, level_number);
     EffectiveEmailTemplate {
         template_type,
         language,
+        level_number,
         subject: subject.to_string(),
         body: body.to_string(),
         version: None,
@@ -84,38 +95,51 @@ fn to_effective_default(
     }
 }
 
-/// Résout le template effectif pour `(company_id, template_type, language)` :
-/// l'override en base si présent, sinon le défaut. Jamais d'erreur pour une
-/// combinaison valide.
+/// Résout le template effectif pour `(company_id, template_type, language, level_number)` —
+/// jamais d'erreur pour une combinaison valide (l'absence d'override retombe sur le défaut).
+///
+/// Cascade de résolution (Epic 21) : override DB `(type, langue, N)` → override DB
+/// `(type, langue, 0)` générique → défaut Rust niveau N → défaut Rust générique. Une seule
+/// requête (`level_number IN (N, 0) ORDER BY level_number DESC LIMIT 1`) préfère l'override
+/// de niveau N à l'override générique. Le `level_number` retourné = le SLOT demandé (le
+/// paramètre), pas la source de la cascade. Pour `invoice_send`, passer `level_number = 0`.
 pub async fn get_effective(
     pool: &MySqlPool,
     company_id: i64,
     template_type: EmailTemplateType,
     language: Language,
+    level_number: i16,
 ) -> Result<EffectiveEmailTemplate, DbError> {
     let row = sqlx::query_as::<_, EmailTemplate>(&format!(
-        "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ?"
+        "SELECT {COLUMNS} FROM email_templates \
+         WHERE company_id = ? AND template_type = ? AND language = ? AND level_number IN (?, 0) \
+         ORDER BY level_number DESC LIMIT 1"
     ))
     .bind(company_id)
     .bind(template_type)
     .bind(language)
+    .bind(level_number)
     .fetch_optional(pool)
     .await
     .map_err(map_db_error)?;
 
     Ok(match row {
-        Some(r) => to_effective_override(&r),
-        None => to_effective_default(template_type, language),
+        Some(r) => to_effective_override(&r, level_number),
+        None => to_effective_default(template_type, language, level_number),
     })
 }
 
 /// Résout les templates effectifs pour toutes les combinaisons
-/// `EmailTemplateType::ALL × [FR, DE, IT, EN]` (4 en v1). Une seule requête
-/// pour charger les overrides existants de la company, puis complète avec
-/// les défauts pour les combinaisons sans ligne.
+/// `type × langue × niveau`. `invoice_send` reste au seul niveau 0 ;
+/// `invoice_reminder` expose les niveaux `0..=max(max_reminder_level, 3)`
+/// (0 = générique, 1.. = niveaux configurés + défauts Rust). `max_reminder_level`
+/// est fourni par l'appelant (via `dunning_levels::count_for_company`) — le repo
+/// `email_templates` reste découplé de `dunning_levels`. Une seule requête charge
+/// les overrides, puis complète par la cascade (override niveau N → niveau 0 → défaut).
 pub async fn list_effective_for_company(
     pool: &MySqlPool,
     company_id: i64,
+    max_reminder_level: i16,
 ) -> Result<Vec<EffectiveEmailTemplate>, DbError> {
     let rows = sqlx::query_as::<_, EmailTemplate>(&format!(
         "SELECT {COLUMNS} FROM email_templates WHERE company_id = ?"
@@ -125,16 +149,40 @@ pub async fn list_effective_for_company(
     .await
     .map_err(map_db_error)?;
 
-    let mut out = Vec::with_capacity(EmailTemplateType::ALL.len() * LANGUAGES.len());
+    let reminder_max = max_reminder_level.max(MIN_REMINDER_LEVELS);
+    let mut out = Vec::new();
     for template_type in EmailTemplateType::ALL {
+        let levels: Vec<i16> = match template_type {
+            EmailTemplateType::InvoiceSend => vec![0],
+            EmailTemplateType::InvoiceReminder => (0..=reminder_max).collect(),
+        };
         for language in LANGUAGES {
-            let found = rows
-                .iter()
-                .find(|r| r.template_type == template_type && r.language == language);
-            out.push(match found {
-                Some(r) => to_effective_override(r),
-                None => to_effective_default(template_type, language),
-            });
+            for &level in &levels {
+                // Cascade sur les rows préchargées : override niveau exact,
+                // sinon override niveau 0 générique (pour level > 0), sinon défaut.
+                let found = rows
+                    .iter()
+                    .find(|r| {
+                        r.template_type == template_type
+                            && r.language == language
+                            && r.level_number == level
+                    })
+                    .or_else(|| {
+                        if level != 0 {
+                            rows.iter().find(|r| {
+                                r.template_type == template_type
+                                    && r.language == language
+                                    && r.level_number == 0
+                            })
+                        } else {
+                            None
+                        }
+                    });
+                out.push(match found {
+                    Some(r) => to_effective_override(r, level),
+                    None => to_effective_default(template_type, language, level),
+                });
+            }
         }
     }
     Ok(out)
@@ -206,6 +254,7 @@ pub async fn upsert_override(
     company_id: i64,
     template_type: EmailTemplateType,
     language: Language,
+    level_number: i16,
     expected_version: Option<i32>,
     user_id: i64,
     actor_api_key_id: Option<i64>,
@@ -217,12 +266,13 @@ pub async fn upsert_override(
             let mut tx = pool.begin().await.map_err(map_db_error)?;
 
             let insert_result = sqlx::query(
-                "INSERT INTO email_templates (company_id, template_type, language, subject, body) \
-                 VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO email_templates (company_id, template_type, language, level_number, subject, body) \
+                 VALUES (?, ?, ?, ?, ?, ?)",
             )
             .bind(company_id)
             .bind(template_type)
             .bind(language)
+            .bind(level_number)
             .bind(&subject)
             .bind(&body)
             .execute(&mut *tx)
@@ -265,11 +315,12 @@ pub async fn upsert_override(
             let mut tx = pool.begin().await.map_err(map_db_error)?;
 
             let existing = sqlx::query_as::<_, EmailTemplate>(&format!(
-                "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ? FOR UPDATE"
+                "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ? AND level_number = ? FOR UPDATE"
             ))
             .bind(company_id)
             .bind(template_type)
             .bind(language)
+            .bind(level_number)
             .fetch_optional(&mut *tx)
             .await
             .map_err(map_db_error)?;
@@ -332,17 +383,19 @@ pub async fn restore_default(
     company_id: i64,
     template_type: EmailTemplateType,
     language: Language,
+    level_number: i16,
     user_id: i64,
     actor_api_key_id: Option<i64>,
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let existing = sqlx::query_as::<_, EmailTemplate>(&format!(
-        "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ? FOR UPDATE"
+        "SELECT {COLUMNS} FROM email_templates WHERE company_id = ? AND template_type = ? AND language = ? AND level_number = ? FOR UPDATE"
     ))
     .bind(company_id)
     .bind(template_type)
     .bind(language)
+    .bind(level_number)
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?;

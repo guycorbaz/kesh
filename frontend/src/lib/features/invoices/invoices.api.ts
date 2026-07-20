@@ -27,6 +27,9 @@ function buildQueryString(q: ListInvoicesQuery): string {
 	if (q.contactId !== undefined) p.set('contactId', String(q.contactId));
 	if (q.dateFrom) p.set('dateFrom', q.dateFrom);
 	if (q.dateTo) p.set('dateTo', q.dateTo);
+	// Story 21-6a : `all` est le défaut backend (no-op) → jamais sérialisé,
+	// cohérent avec la convention « on n'écrit que le non-défaut » de syncUrl.
+	if (q.paused && q.paused !== 'all') p.set('paused', q.paused);
 	if (q.sortBy) p.set('sortBy', q.sortBy);
 	if (q.sortDirection) p.set('sortDirection', q.sortDirection);
 	if (q.limit !== undefined) p.set('limit', String(q.limit));

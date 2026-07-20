@@ -82,6 +82,20 @@ cargo test --workspace
 
 Note : la CI utilise `cargo test --workspace -j1 -- --test-threads=1` pour serializer les tests d'intégration DB. En local sans MariaDB démarré, `cargo test --workspace` (parallèle) suffit pour couvrir les tests unitaires sans I/O ; lancer le mode serial uniquement si la modif touche `kesh-db` ou les tests d'intégration.
 
+#### Gate rapide — `cargo-nextest` (recommandé si MariaDB démarré)
+
+Alternative **1,40× plus rapide** au `cargo test -j1 --test-threads=1` (mesuré 2026-07-13 : **54 min → 38 min** sur la suite complète, 1802 tests, 0 flake). Un script enveloppe fmt + clippy + nextest :
+
+```sh
+scripts/test-fast.sh            # fmt + clippy + nextest (défaut)
+scripts/test-fast.sh --no-lint  # nextest seul (itération rapide)
+scripts/test-fast.sh --ci       # profil ci (retries=1, fail-fast off)
+```
+
+Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.nexte.st`) + MariaDB dev démarré. Config dans `.config/nextest.toml`.
+
+**Pourquoi seulement 1,40× et pas 6× ?** Le goulot n'est pas le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894) crée une base éphémère et y **rejoue les 51 migrations** (DDL sérialisé par les metadata-locks). Au-delà de **6 threads la contention devient contre-productive** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé). Le plafond est donc figé à 6 dans la config. Le vrai levier (squash du schéma de test + durabilité MariaDB relâchée sur la DB jetable) est suivi dans l'**issue #251** — tant qu'il n'est pas livré, nextest = gain modeste + stabilité, pas une révolution.
+
 ### Frontend (Svelte)
 
 À lancer depuis `frontend/`. Mêmes étapes que `Frontend (Svelte)` dans la CI.
@@ -285,6 +299,8 @@ Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers 
 **(P1) Définition** : Une migration est **breaking** si elle introduit un état du schéma qu'un binaire Kesh antérieur ne peut **plus** consommer correctement (ex. `DROP COLUMN` d'une colonne lue par un SELECT du binaire antérieur, `RENAME TABLE`, `MODIFY COLUMN` ou `CHANGE COLUMN` introduisant un type incompatible ex. DECIMAL → VARCHAR). La majorité des migrations (`ADD COLUMN` nullable, `ADD INDEX`, `CREATE TABLE` de nouvelle entité) sont **non-breaking** car les anciens binaires les ignorent.
 
 **(P2) Procédure de bump** : Quand une migration breaking est introduite, la migration elle-même DOIT contenir, **en dernière instruction**, un `UPDATE _kesh_version SET kesh_version_min_required = '<version-de-la-PR-qui-introduit-la-migration>' WHERE id = 1;`. La version est figée dans le SQL (pas via paramètre runtime), comme la version d'origine `'0.1.0'` figée dans `crates/kesh-db/migrations/20260522000001_kesh_version.sql`.
+
+**(P2-bis) Le bump `min_required` va TOUJOURS de pair avec le bump de version Cargo du workspace** — codifié 2026-07-14 après un incident réel (Story 21-3, 1er bump `min_required` du repo). Si `min_required` passe à `X.Y.Z`, **tous les crates du workspace** (`crates/*/Cargo.toml`, `version = "…"`) DOIVENT être ≥ `X.Y.Z` **dans le même commit/PR**. Sinon le binaire courant (dont `env!("CARGO_PKG_VERSION")` est encore l'ancienne version) devient **plus ancien que sa propre DB** → `check_downgrade_protection` (`main.rs`) **refuse le boot** ET l'import backup (`admin_backup`, le manifeste porte `min_required`). **Piège de détection** : ce défaut est **invisible en `bmad-create-story validate` (statique)** — il ne se manifeste qu'au **runtime** (boot / import), donc au **gate workspace complet** (les suites `admin_backup_e2e` / `admin_full_import_e2e` / `migrations_fresh_install` l'attrapent). Ne JAMAIS marquer une story avec bump `min_required` « done » sans avoir passé le gate runtime complet. Le bump `min_required` et le bump Cargo sont **les deux moitiés de la même action de version**.
 
 **(P3) Garde-fou code review** : Si une PR introduit une migration `DROP TABLE`, `DROP COLUMN`, `RENAME TABLE`, `RENAME COLUMN`, `MODIFY COLUMN <type>`, ou `CHANGE COLUMN <name> <type>` **sans** UPDATE de `kesh_version_min_required`, c'est un finding **CRITICAL** à remonter en passe `bmad-code-review`. Note dialecte : MariaDB utilise `MODIFY COLUMN <type>` ou `CHANGE COLUMN <old> <new> <type>` pour les changements de type (la syntaxe PostgreSQL `ALTER COLUMN <name> TYPE <type>` n'est **pas** supportée en MariaDB — référence locale `crates/kesh-db/migrations/20260419000002_users_company_id.sql:23` utilise bien `MODIFY COLUMN`). Le rationale : ces opérations sont celles dont l'omission du bump min_required exposerait silencieusement les utilisateurs à un downgrade corrupteur. Inversement, `ADD COLUMN nullable` / `ADD INDEX` / `CREATE TABLE` n'imposent pas de bump.
 

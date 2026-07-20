@@ -43,7 +43,7 @@ const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, uni
 // facture d'origine) — une seule liste de colonnes à maintenir.
 pub(crate) const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
     status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, \
-    emailed_at, emailed_to, project_id, \
+    emailed_at, emailed_to, project_id, dunning_paused_at, dunning_paused_note, \
     version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
 
@@ -121,7 +121,64 @@ pub enum PaymentStatusFilter {
     Overdue,
 }
 
+/// Filtre « rappels suspendus » (Story 21-6a, D10) — dérivé de
+/// `invoices.dunning_paused_at`, non stocké.
+///
+/// `All` est le défaut et un **no-op délibéré** : `push_where_clauses` est
+/// partagé par la liste, son COUNT et l'export CSV, et les items de
+/// l'échéancier passent par `list_by_company_paginated`. Un défaut filtrant
+/// ferait disparaître les factures suspendues de l'échéancier — soit
+/// exactement le défaut D10 que cette story ferme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PausedFilter {
+    #[default]
+    All,
+    Paused,
+    NotPaused,
+}
+
 /// Paramètres de recherche, tri et pagination.
+/// Forme **scalaire par facture** du TTC canonique (#246, Story 21-2a) —
+/// sous-requête corrélée. **Prérequis : alias `i` sur `invoices`.**
+///
+/// Miroir SQL exact de `kesh_core::accounting::vat::invoice_total_ttc` :
+/// `ROUND(x, 2)` MariaDB sur DECIMAL = half-away-from-zero =
+/// `MidpointAwayFromZero` de `line_vat_amount` (arrondi PAR LIGNE, jamais sur
+/// une base agrégée — DC7). Asservie au helper Rust par le test de parité.
+///
+/// `pub` (PAS `pub(crate)`) : consommée par `repositories::reconciliation`
+/// (21-2b) et par `kesh-report` (balance âgée 21-7) — source de vérité unique.
+pub const INVOICE_TTC_SUBQUERY_SQL: &str = "(SELECT COALESCE(SUM(l.line_total + ROUND(l.line_total * l.vat_rate / 100, 2)), 0) \
+     FROM invoice_lines l WHERE l.invoice_id = i.id)";
+
+/// Forme **agrégat multi-factures** du TTC canonique (#246) — table dérivée à
+/// joindre (alias `lt`), puis `SUM(COALESCE(lt.ttc, 0))` côté requête externe.
+/// **Prérequis : alias `i` sur `invoices`.**
+///
+/// Choix de la table dérivée plutôt que la corrélée dans le `SUM()` externe :
+/// raison de **performance** (la corrélée serait ré-évaluée par ligne et par
+/// `CASE`), pas un interdit SQL (MariaDB accepte les deux — vérifié).
+pub const INVOICE_TTC_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id, \
+     SUM(line_total + ROUND(line_total * vat_rate / 100, 2)) AS ttc \
+     FROM invoice_lines GROUP BY invoice_id) lt ON lt.invoice_id = i.id";
+
+/// TTC canonique d'UNE facture (#246) via la forme scalaire — pour les
+/// call-sites qui n'ont pas les lignes chargées (ex. re-score de la
+/// réconciliation, 21-2b). Générique sur l'executor (utilisable en tx).
+/// Renvoie 0 pour une facture sans lignes ; `NotFound` si l'id n'existe pas.
+pub async fn total_ttc<'e, E>(executor: E, invoice_id: i64) -> Result<Decimal, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_scalar::<_, Decimal>(&format!(
+        "SELECT {INVOICE_TTC_SUBQUERY_SQL} FROM invoices i WHERE i.id = ?"
+    ))
+    .bind(invoice_id)
+    .fetch_one(executor)
+    .await
+    .map_err(map_db_error)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct InvoiceListQuery {
     pub search: Option<String>,
@@ -133,6 +190,8 @@ pub struct InvoiceListQuery {
     pub payment_status: Option<PaymentStatusFilter>,
     /// Plafond `due_date <= ?` (Story 5.4).
     pub due_before: Option<NaiveDate>,
+    /// Filtre « rappels suspendus » (Story 21-6a). `None`/`All` = no-op.
+    pub paused: Option<PausedFilter>,
     pub sort_by: InvoiceSortBy,
     pub sort_direction: SortDirection,
     pub limit: i64,
@@ -154,7 +213,21 @@ pub struct InvoiceListItem {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// TTC canonique (#246) — colonne SQL calculée (`INVOICE_TTC_SUBQUERY_SQL`),
+    /// la projection ne charge pas les lignes.
+    pub total_ttc: Decimal,
     pub paid_at: Option<NaiveDateTime>,
+    /// Story 21-6a (D10) — suspension des rappels, exposée en liste (badge).
+    ///
+    /// ⚠️ **Tout ajout de champ ici doit être projeté par les DEUX SELECT qui
+    /// désérialisent vers `InvoiceListItem`** — `list_by_company_paginated` et
+    /// `list_for_export` — dont les listes de colonnes sont des littéraux
+    /// **dupliqués** (pas une constante partagée, contrairement à
+    /// `FIND_INVOICE_SCOPED_SQL`). Un oubli échoue au **runtime**
+    /// (`ColumnNotFound`), pas à la compilation : c'est la régression qu'a
+    /// payée la Story 21-5a sur le struct `Invoice`.
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -247,6 +320,24 @@ fn push_where_clauses<'a>(
             qb.push(
                 " AND i.status = 'validated' AND i.paid_at IS NULL AND i.due_date < UTC_DATE()",
             );
+        }
+    }
+
+    // Story 21-6a (D10) — filtre « rappels suspendus ». SQL littéral (aucune
+    // valeur utilisateur → pas de `push_bind`), calqué sur `payment_status`.
+    //
+    // `All` (défaut) est un no-op : ce helper sert AUSSI l'export CSV et les
+    // items de l'échéancier (`list_due_dates_handler` appelle
+    // `list_by_company_paginated`). Une facture suspendue doit y rester
+    // visible — elle ne sort QUE de la liste « à rappeler »
+    // (`dunning_eligibility`). Verrouillé par un test e2e dédié.
+    match query.paused.unwrap_or_default() {
+        PausedFilter::All => {}
+        PausedFilter::Paused => {
+            qb.push(" AND i.dunning_paused_at IS NOT NULL");
+        }
+        PausedFilter::NotPaused => {
+            qb.push(" AND i.dunning_paused_at IS NULL");
         }
     }
 
@@ -431,6 +522,23 @@ pub async fn create(
     Ok((invoice, lines))
 }
 
+/// Verrouille et retourne une facture scopée company, sous tx (`SELECT … FOR UPDATE`).
+/// Utilisé pour re-vérifier l'état (status/paid_at) sous verrou avant une écriture
+/// dépendante (ex. enregistrement d'un rappel manuel — évite un TOCTOU avec un
+/// `mark_as_paid` concurrent). `None` si absente / cross-tenant.
+pub async fn find_scoped_for_update_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<Invoice>, DbError> {
+    sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
 /// Retourne une facture par ID avec ses lignes, scopée par `company_id`.
 pub async fn find_by_id_with_lines(
     pool: &MySqlPool,
@@ -475,12 +583,14 @@ pub async fn list_by_company_paginated(
         .await
         .map_err(map_db_error)?;
 
-    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, i.paid_at, i.version, i.created_at, i.updated_at \
+         i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
+         i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
+         i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
-    );
+    ));
     push_where_clauses(&mut items_qb, company_id, &query);
     items_qb.push(" ORDER BY ");
     // P7 (review pass 3 A) : NULLs en fin de liste quel que soit le sort.
@@ -544,16 +654,20 @@ pub async fn due_dates_summary(
     company_id: i64,
     query: &InvoiceListQuery,
 ) -> Result<DueDatesSummary, DbError> {
-    let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+    let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
         // DECIMAL par défaut, incompatible avec Rust i64.
+        // #246 (Story 21-2a) : totaux en TTC via la table dérivée `lt`
+        // (INVOICE_TTC_DERIVED_JOIN_SQL) — les KPI de l'échéancier sont des
+        // montants dus, pas des HT comptables.
         "SELECT \
             COUNT(*) AS unpaid_count, \
-            COALESCE(SUM(i.total_amount), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
+            COALESCE(SUM(COALESCE(lt.ttc, 0)), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
             CAST(COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
-            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN i.total_amount ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
-         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
-    );
+            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
+         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id \
+         {INVOICE_TTC_DERIVED_JOIN_SQL}",
+    ));
     qb.push(" WHERE i.company_id = ");
     qb.push_bind(company_id);
     qb.push(" AND i.status = 'validated' AND i.paid_at IS NULL");
@@ -858,7 +972,7 @@ pub async fn delete(
     let current_opt = sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
          payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-         project_id, version, created_at, updated_at \
+         project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
          FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(id)
@@ -1506,6 +1620,122 @@ pub async fn mark_as_paid(
     }
 }
 
+/// Suspend (`paused = true`) ou reprend (`paused = false`) les rappels débiteurs d'une
+/// facture (Story 21-5a, item 10). Calqué sur [`mark_as_paid`] : `SELECT … FOR UPDATE`
+/// scopé company, verrou optimiste `version`, audit dans la même tx. La reprise remet
+/// `dunning_paused_at` ET `dunning_paused_note` à NULL (M4). Une facture suspendue
+/// reste dans la balance âgée / l'échéancier — elle ne sort que de la liste « à rappeler ».
+pub async fn set_dunning_pause(
+    pool: &MySqlPool,
+    user_id: i64,
+    id: i64,
+    company_id: i64,
+    expected_version: i32,
+    paused: bool,
+    note: Option<String>,
+) -> Result<Invoice, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        let before_opt =
+            sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+                .bind(id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+
+        let before = match before_opt {
+            None => return Err(DbError::NotFound),
+            Some(inv) if inv.version != expected_version => {
+                return Err(DbError::OptimisticLockConflict);
+            }
+            Some(inv) => inv,
+        };
+
+        // Garde anti-transition (transpose `alreadyUnpaid`) : reprise d'une facture
+        // non suspendue → InvalidInput (évite un faux 409 + audit spurious).
+        if !paused && before.dunning_paused_at.is_none() {
+            return Err(DbError::InvalidInput("notPaused".to_string()));
+        }
+
+        let rows = if paused {
+            sqlx::query(
+                "UPDATE invoices SET dunning_paused_at = UTC_TIMESTAMP(6), \
+                 dunning_paused_note = ?, version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND version = ?",
+            )
+            .bind(note.as_deref())
+            .bind(id)
+            .bind(company_id)
+            .bind(expected_version)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected()
+        } else {
+            sqlx::query(
+                "UPDATE invoices SET dunning_paused_at = NULL, dunning_paused_note = NULL, \
+                 version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND version = ?",
+            )
+            .bind(id)
+            .bind(company_id)
+            .bind(expected_version)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?
+            .rows_affected()
+        };
+
+        if rows == 0 {
+            return Err(DbError::OptimisticLockConflict);
+        }
+
+        let after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+            .bind(id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        let action = if paused {
+            "invoice.dunning_paused"
+        } else {
+            "invoice.dunning_resumed"
+        };
+        let details = serde_json::json!({
+            "paused": paused,
+            "note": note,
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                action.to_string(),
+                "invoice".to_string(),
+                id,
+                Some(details),
+            ),
+        )
+        .await?;
+
+        Ok(after)
+    }
+    .await;
+
+    match result {
+        Ok(v) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
 /// Marque une facture « envoyée par e-mail » (Story 20-3b1, décision #16
 /// epic-20) : pose `emailed_at = NOW(6)` + `emailed_to` (snapshot du
 /// destinataire réellement utilisé) et écrit l'audit `invoice.emailed`
@@ -1620,12 +1850,14 @@ pub async fn list_for_export(
     let truncated = max_rows > HARD_CAP;
     let effective = max_rows.clamp(1, HARD_CAP);
 
-    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(
+    let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, i.paid_at, i.version, i.created_at, i.updated_at \
+         i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
+         i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
+         i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
-    );
+    ));
     push_where_clauses(&mut items_qb, company_id, query);
     // P13 (review pass 3 A) : défense en profondeur — l'export ne doit
     // jamais fuiter de drafts même si le handler oublie le filtre `status`.
@@ -1655,7 +1887,7 @@ pub async fn list_all_by_company(
     sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
          payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-         project_id, version, created_at, updated_at \
+         project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
          FROM invoices \
          WHERE company_id = ? \
          ORDER BY id",
@@ -1961,6 +2193,7 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: Some("30 jours net".into()),
+                default_payment_terms_days: None,
                 language: None,
                 salutation: crate::entities::contact::Salutation::Neutre,
             },
@@ -3588,10 +3821,11 @@ mod tests {
         .unwrap();
 
         // Summary = unpaid only. Les 2 impayées (overdue + not-overdue), pas la payée.
+        // #246 (21-2a) : totaux en TTC (lignes @ 8.1 %). 100 → 108.10, 50 → 54.05.
         assert_eq!(summary.unpaid_count, 2);
-        assert_eq!(summary.unpaid_total, dec!(150.0000));
+        assert_eq!(summary.unpaid_total, dec!(162.1500));
         assert_eq!(summary.overdue_count, 1);
-        assert_eq!(summary.overdue_total, dec!(100.0000));
+        assert_eq!(summary.overdue_total, dec!(108.1000));
 
         cleanup_invoices(&pool, &[id_overdue, id_unpaid_not_overdue, id_paid]).await;
         cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
@@ -3659,8 +3893,9 @@ mod tests {
         .await
         .unwrap();
 
+        // #246 (21-2a) : TTC (lignes @ 8.1 %). 10 → 10.81, 20 → 21.62.
         assert_eq!(summary.unpaid_count, 2);
-        assert_eq!(summary.unpaid_total, dec!(30.0000));
+        assert_eq!(summary.unpaid_total, dec!(32.4300));
 
         cleanup_invoices(&pool, &[id_unpaid_a, id_unpaid_b, id_paid]).await;
         cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
@@ -4162,6 +4397,7 @@ mod tests {
                 phone: None,
                 ide_number: None,
                 default_payment_terms: Some("30 jours net".into()),
+                default_payment_terms_days: None,
                 language: None,
                 salutation: crate::entities::contact::Salutation::Neutre,
             },
@@ -4281,8 +4517,9 @@ mod tests {
         );
         assert_eq!(
             summary.unpaid_total,
-            dec!(100.0000),
-            "due_dates_summary : unpaid_total = total facture Marie uniquement"
+            // #246 (21-2a) : TTC (100 @ 8.1 % → 108.10).
+            dec!(108.1000),
+            "due_dates_summary : unpaid_total (TTC) = total facture Marie uniquement"
         );
 
         cleanup_invoices(&pool, &[inv_marie.id, inv_pierre.id]).await;

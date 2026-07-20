@@ -14,16 +14,19 @@ pub mod bank_import;
 pub mod bank_profile;
 pub mod bank_transaction;
 pub mod company;
+pub mod company_dunning_settings;
 pub mod company_invoice_settings;
 pub mod contact;
 pub mod contact_person;
 pub mod credit_note;
+pub mod dunning_level;
 pub mod email_template;
 pub mod email_template_defaults;
 pub mod fiscal_year;
 pub mod imported_supplier_invoice;
 pub mod invoice;
 pub mod invoice_number_sequence;
+pub mod invoice_reminder;
 pub mod journal_entry;
 pub mod onboarding;
 pub mod password_reset_token;
@@ -44,9 +47,11 @@ pub use bank_import::{BankImport, BankImportSourceFormat, NewBankImport};
 pub use bank_profile::{BankProfile, NewBankProfile};
 pub use bank_transaction::{BankTransaction, BankTransactionStatus, NewBankTransaction};
 pub use company::{Company, CompanyUpdate, Language, NewCompany, OrgType};
+pub use company_dunning_settings::{CompanyDunningSettings, CompanyDunningSettingsUpdate};
 pub use company_invoice_settings::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate};
 pub use contact::{Contact, ContactType, ContactUpdate, NewContact};
 pub use credit_note::{CreditNote, CreditNoteLine, NewCreditNote};
+pub use dunning_level::{DunningLevel, NewDunningLevel, UpdateDunningLevel};
 pub use email_template::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType};
 pub use email_template_defaults::default_template;
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
@@ -55,6 +60,7 @@ pub use imported_supplier_invoice::{
 };
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use invoice_number_sequence::InvoiceNumberSequence;
+pub use invoice_reminder::{InvoiceReminder, NewInvoiceReminder, ReminderChannel};
 pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,

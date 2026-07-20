@@ -56,10 +56,12 @@
 
 	function handleConfirm() {
 		if (clientError) return;
-		// Convertir YYYY-MM-DD en ISO 8601 datetime à midi UTC explicite (`Z`)
-		// — évite l'ambiguïté naive datetime que les parsers JS/Rust
-		// interprètent comme heure locale.
-		onConfirm(`${paidAt}T12:00:00Z`);
+		// #249 : le backend attend un `NaiveDateTime` (UTC naïf, sans suffixe
+		// de fuseau) — un `Z` final fait échouer la désérialisation (422).
+		// On envoie donc un datetime naïf ; l'heure fixée à midi évite tout
+		// décalage de date à l'affichage. La convention projet est « tout en
+		// UTC naïf » côté serveur.
+		onConfirm(`${paidAt}T12:00:00`);
 	}
 </script>
 

@@ -20,6 +20,7 @@
 		UpdateInvoiceRequest,
 	} from '$lib/features/invoices/invoices.types';
 	import {
+		addDaysIso,
 		computeInvoiceTotal,
 		computeLineTotal,
 		formatInvoiceTotal,
@@ -236,8 +237,13 @@
 		// Efface un éventuel message d'erreur « Impossible de charger le contact
 		// initial » dès que l'utilisateur sélectionne manuellement un contact.
 		errorMsg = '';
-		if (!paymentTerms && c.defaultPaymentTerms) {
-			paymentTerms = c.defaultPaymentTerms;
+		// #245 : pré-remplissages NON destructifs (garde « seulement si vide »).
+		// Le libellé serveur (langue du contact) prime sur le texte libre legacy.
+		if (!paymentTerms && (c.defaultPaymentTermsLabel || c.defaultPaymentTerms)) {
+			paymentTerms = c.defaultPaymentTermsLabel ?? c.defaultPaymentTerms ?? '';
+		}
+		if (!dueDate && date && c.defaultPaymentTermsDays != null) {
+			dueDate = addDaysIso(date, c.defaultPaymentTermsDays);
 		}
 	}
 
@@ -278,6 +284,10 @@
 	function validateClient(): string | null {
 		if (!selectedContact) return 'Veuillez sélectionner un contact';
 		if (!date) return 'La date est obligatoire';
+		// #245 : comparaison lexicographique valide sur ISO YYYY-MM-DD.
+		if (dueDate && dueDate < date) {
+			return "L'échéance ne peut pas être antérieure à la date de la facture";
+		}
 		if (lines.length === 0) return 'Une facture doit contenir au moins une ligne';
 		if (lines.length > MAX_LINES) {
 			return `Une facture doit contenir au plus ${MAX_LINES} lignes`;

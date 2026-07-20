@@ -209,6 +209,20 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/vat-rates/{id}",
             put(routes::vat::update_vat_rate).delete(routes::vat::deactivate_vat_rate),
         )
+        // Story 21-3 : socle rappels (Admin). GET dans les routes authentifiées.
+        .route(
+            "/api/v1/company/dunning-settings",
+            put(routes::company_dunning_settings::update_dunning_settings),
+        )
+        .route(
+            "/api/v1/dunning-levels",
+            post(routes::dunning_levels::create_dunning_level),
+        )
+        .route(
+            "/api/v1/dunning-levels/{id}",
+            put(routes::dunning_levels::update_dunning_level)
+                .delete(routes::dunning_levels::delete_dunning_level),
+        )
         // #219 : suppression définitive d'une facture (brouillon ou validée
         // avec garde-fous) — Admin uniquement. Même path que le PUT
         // (comptable_routes) mais méthode disjointe : les deux MethodRouter
@@ -216,6 +230,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/invoices/{id}",
             delete(routes::invoices::delete_invoice),
+        )
+        // Story 21-5a : annulation (soft) d'un rappel envoyé par erreur — Admin.
+        .route(
+            "/api/v1/invoices/{id}/reminders/{reminderId}/cancel",
+            post(routes::dunning_reminders::cancel_reminder),
         )
         // Story 17-3a : export complet d'installation (.keshbackup, Admin + anti-PAT).
         .route("/api/v1/admin/full-export", get(routes::admin::full_export))
@@ -383,9 +402,47 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/due-dates/export.csv",
             get(routes::invoices::export_due_dates_csv_handler),
         )
+        // Story 21-7 : export CSV de la balance âgée — Comptable+ (D24, anti-
+        // exfiltration débiteurs, symétrique de l'export échéancier ci-dessus).
+        // La VUE JSON reste tous rôles dans `authenticated_routes`.
+        .route(
+            "/api/v1/reports/aged-receivables/export",
+            get(routes::reports::export_aged_receivables),
+        )
         .route(
             "/api/v1/invoices/{id}/mark-paid",
             post(routes::invoices::mark_invoice_paid_handler),
+        )
+        // Story 21-5a — rappels débiteurs (Comptable+) : liste à rappeler groupée
+        // par contact, suspension/reprise par facture, enregistrement d'un rappel manuel.
+        .route(
+            "/api/v1/dunning/reminders",
+            get(routes::dunning_reminders::list_reminders),
+        )
+        .route(
+            "/api/v1/invoices/{id}/dunning-pause",
+            put(routes::dunning_reminders::pause_dunning),
+        )
+        .route(
+            "/api/v1/invoices/{id}/dunning-resume",
+            put(routes::dunning_reminders::resume_dunning),
+        )
+        .route(
+            "/api/v1/invoices/{id}/reminders/manual",
+            post(routes::dunning_reminders::record_manual_reminder),
+        )
+        // Story 21-5b — envoi de rappels par e-mail (Comptable+) : preview, unitaire, lot.
+        .route(
+            "/api/v1/invoices/{id}/reminder-preview",
+            get(routes::invoice_email::preview_reminder_email),
+        )
+        .route(
+            "/api/v1/invoices/{id}/reminders/send",
+            post(routes::invoice_email::send_reminder),
+        )
+        .route(
+            "/api/v1/dunning/reminders/send-batch",
+            post(routes::invoice_email::send_reminder_batch),
         )
         // Story 20-3b1 — envoi de facture par e-mail (preview + send,
         // destinataire verrouillé contacts.email, rate-limité, gate SMTP 412).
@@ -535,6 +592,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route("/api/v1/products/{id}", get(routes::products::get_product))
         // Story 7.2 (KF-003) : lecture taux TVA configurés pour la company.
         .route("/api/v1/vat-rates", get(routes::vat::list_vat_rates))
+        // Story 21-3 : lecture des niveaux de rappel + réglages (tout rôle auth).
+        // Le GET settings déclenche le seed lazy des défauts.
+        .route(
+            "/api/v1/dunning-levels",
+            get(routes::dunning_levels::list_dunning_levels),
+        )
+        .route(
+            "/api/v1/company/dunning-settings",
+            get(routes::company_dunning_settings::get_dunning_settings),
+        )
         // Story 5.1 : lecture factures (tout rôle authentifié)
         .route("/api/v1/invoices", get(routes::invoices::list_invoices))
         // Story 5.4 : échéancier en lecture (segment statique, prioritaire sur {id}).
@@ -546,6 +613,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             get(routes::invoices::list_due_dates_handler),
         )
         .route("/api/v1/invoices/{id}", get(routes::invoices::get_invoice))
+        // Story 21-5a : historique des rappels d'une facture (tout rôle authentifié).
+        .route(
+            "/api/v1/invoices/{id}/reminders",
+            get(routes::dunning_reminders::list_reminder_history),
+        )
         // Story 5.3 : téléchargement PDF QR Bill (tout rôle authentifié)
         .route(
             "/api/v1/invoices/{id}/pdf",
@@ -703,6 +775,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reports/journals",
             get(routes::reports::get_journal_report),
+        )
+        // Story 21-7 : balance âgée débiteurs — VUE JSON tous rôles (D-7b/D24).
+        // L'export CSV est Comptable+ → monté dans `comptable_routes` (ci-dessous).
+        .route(
+            "/api/v1/reports/aged-receivables",
+            get(routes::reports::get_aged_receivables),
         )
         // Story 9-2a : export PDF/CSV des 4 rapports comptables. Routes DOIVENT
         // rester dans `authenticated_routes` AVANT le `;` (Pass 1 BH-H1) sinon

@@ -98,6 +98,340 @@ test.describe('Factures — liste', () => {
 	});
 });
 
+/**
+ * Story 21-6a (#231, D10) — badge « suspendu » + filtre en liste factures.
+ *
+ * Avant cette story, suspendre une facture la faisait disparaître de la liste
+ * à rappeler sans qu'aucune surface de lecture ne la signale : elle devenait
+ * introuvable, donc impossible à réactiver.
+ */
+test.describe('Factures — suspension des rappels (21-6a)', () => {
+	/** Suspend une facture via l'API 21-5a (le toggle UI arrive en 21-6c). */
+	async function pauseInvoiceViaApi(
+		page: import('@playwright/test').Page,
+		invoiceId: number,
+		note: string,
+	): Promise<void> {
+		const ctx = await authedApiContext(page);
+		try {
+			const get = await ctx.get(`/api/v1/invoices/${invoiceId}`);
+			expect(get.ok(), `get invoice failed: ${get.status()}`).toBeTruthy();
+			const { version } = await get.json();
+			const res = await ctx.put(`/api/v1/invoices/${invoiceId}/dunning-pause`, {
+				data: { version, note },
+			});
+			expect(res.ok(), `dunning-pause failed: ${res.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	}
+
+	test('badge « suspendu » visible et filtre tri-état fonctionnel', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const pausedName = uniq('Suspendu SA');
+		const activeName = uniq('Actif SA');
+		const pausedContact = await createContactWithAddressViaApi(page, pausedName);
+		const activeContact = await createContactWithAddressViaApi(page, activeName);
+		const pausedInvoice = await createAndValidateInvoiceViaApi(page, pausedContact);
+		await createAndValidateInvoiceViaApi(page, activeContact);
+
+		await pauseInvoiceViaApi(page, pausedInvoice, 'litige en cours');
+
+		// Sans filtre : les deux factures, et le badge signale la suspendue.
+		await page.goto('/invoices');
+		const pausedRow = page.locator('tbody tr', { hasText: pausedName });
+		const activeRow = page.locator('tbody tr', { hasText: activeName });
+		await expect(pausedRow).toBeVisible();
+		await expect(activeRow).toBeVisible();
+		await expect(pausedRow.getByTestId('invoice-paused-badge')).toBeVisible();
+		await expect(activeRow.getByTestId('invoice-paused-badge')).toHaveCount(0);
+
+		// La note de suspension est lisible en infobulle (seule surface visuelle en v1)…
+		await expect(pausedRow.getByTestId('invoice-paused-badge')).toHaveAttribute(
+			'title',
+			/litige en cours/,
+		);
+		// …ET annoncée aux lecteurs d'écran. `title` seul ne suffit pas : son
+		// annonce est notoirement peu fiable, et un `aria-label` réduit à
+		// « Suspendu » priverait définitivement l'utilisateur non-voyant du
+		// motif de la suspension. Choix délibéré, verrouillé ici (cf. Dev
+		// Agent Record, déviation AC 18).
+		await expect(pausedRow.getByTestId('invoice-paused-badge')).toHaveAttribute(
+			'aria-label',
+			/litige en cours/,
+		);
+
+		// Filtre « Suspendus » → la facture active disparaît.
+		await page.getByTestId('invoice-paused-filter').selectOption('paused');
+		await expect(pausedRow).toBeVisible();
+		await expect(activeRow).toHaveCount(0);
+		await expect(page).toHaveURL(/paused=paused/);
+
+		// Filtre « Actifs » → la suspendue disparaît.
+		await page.getByTestId('invoice-paused-filter').selectOption('not-paused');
+		await expect(activeRow).toBeVisible();
+		await expect(pausedRow).toHaveCount(0);
+		await expect(page).toHaveURL(/paused=not-paused/);
+
+		// Retour à « Tous » → défaut, param absent de l'URL.
+		await page.getByTestId('invoice-paused-filter').selectOption('all');
+		await expect(pausedRow).toBeVisible();
+		await expect(activeRow).toBeVisible();
+		await expect(page).not.toHaveURL(/paused=/);
+	});
+
+	test('le filtre survit à un rechargement (synchro URL bidirectionnelle)', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices?paused=paused');
+		await expect(page.getByTestId('invoice-paused-filter')).toHaveValue('paused');
+	});
+
+	// Changer de filtre depuis une page > 1 doit ramener à la première page :
+	// sinon l'offset survit à un jeu de résultats rétréci et l'utilisateur voit
+	// une liste vide en croyant que le filtre est cassé.
+	test('changer le filtre remet la pagination à zéro', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices?offset=20');
+		await expect(page).toHaveURL(/offset=20/);
+		await page.getByTestId('invoice-paused-filter').selectOption('paused');
+		await expect(page).not.toHaveURL(/offset=/);
+	});
+
+	test('une valeur de filtre invalide dans l’URL retombe sur le défaut', async ({ page }) => {
+		await login(page);
+		await page.goto('/invoices?paused=bogus');
+		// La whitelist client neutralise la valeur : aucun 400, retour à « all ».
+		await expect(page.getByTestId('invoice-paused-filter')).toHaveValue('all');
+	});
+
+	// Étend le test axe historique de ce fichier, qui n'exerçait que l'empty
+	// state (son commentaire demandait explicitement d'aller jusqu'à l'état
+	// peuplé). Ce test a effectivement attrapé un défaut réel du badge 21-6a :
+	// le patron `PaymentStatusBadge` colore le texte avec la MÊME variable que
+	// la teinte de fond → 3.69:1, sous le minimum AA. Corrigé (11.4:1).
+	//
+	// `button-name` est désactivé : dette a11y PRÉ-EXISTANTE (#256) — les
+	// boutons d'action des lignes sont icône seule, `aria-hidden`, sans
+	// `aria-label`. Vérifié hors du diff 21-6a ; la règle de la story interdit
+	// de corriger une dette pré-existante ici. RETIRER ce disableRules à la
+	// fermeture de #256.
+	test('axe-core sans violations sur la liste peuplée (badge suspendu)', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+		const name = uniq('A11y SA');
+		const contact = await createContactWithAddressViaApi(page, name);
+		const invoice = await createAndValidateInvoiceViaApi(page, contact);
+		await pauseInvoiceViaApi(page, invoice, 'contrôle a11y');
+
+		await page.goto('/invoices');
+		await expect(page.getByTestId('invoice-paused-badge').first()).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		const results = await new AxeBuilder({ page }).disableRules(['button-name']).analyze();
+		expect(results.violations).toEqual([]);
+	});
+});
+
+/**
+ * Story 21-6c (#231) — Toggle de suspension + historique des rappels sur la
+ * fiche facture. FRONTEND PUR (endpoints livrés 21-5a).
+ *
+ * Le scénario clé est l'**anti-régression du piège n°1** : pause/resume
+ * renvoient un `DunningPauseResponse` (version incrémentée), pas la facture
+ * entière — si la nouvelle version n'est pas ré-appliquée, la prochaine action
+ * (ici « Marquer payée ») prend un 409. Le test le prouve bout-en-bout.
+ */
+test.describe('Factures — suspension & historique sur la fiche (21-6c)', () => {
+	/** Enregistre un rappel manuel (papier) via l'API 21-5a — peuple l'historique. */
+	async function recordManualReminderViaApi(
+		page: import('@playwright/test').Page,
+		invoiceId: number,
+		levelNumber: number,
+		note: string,
+	): Promise<void> {
+		const ctx = await authedApiContext(page);
+		try {
+			const today = new Date().toISOString().slice(0, 10);
+			const res = await ctx.post(`/api/v1/invoices/${invoiceId}/reminders/manual`, {
+				// #249 : sentAt = NaiveDateTime (jamais date nue).
+				data: { levelNumber, sentAt: `${today}T12:00:00`, note },
+			});
+			expect(res.ok(), `manual reminder failed: ${res.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	}
+
+	test('toggle suspension bout-en-bout + pas de 409 sur l’action suivante', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Toggle SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+
+		await page.goto(`/invoices/${invoiceId}`);
+
+		// État initial : active → bouton « Suspendre », pas de badge.
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveCount(0);
+		await page.getByTestId('dunning-pause-button').click();
+
+		// Modale : saisir un motif, confirmer.
+		await page.getByTestId('dunning-pause-note').fill('litige client');
+		await page.getByTestId('dunning-pause-confirm').click();
+
+		// Badge « Suspendu » visible, motif en infobulle, bouton bascule « Reprendre ».
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveAttribute(
+			'title',
+			/litige client/,
+		);
+		await expect(page.getByTestId('dunning-resume-button')).toBeVisible();
+
+		// Reprise directe (pas de modale, D-c1) → le badge disparaît. Prouve la
+		// ré-application de version À TRAVERS pause→resume (chaque toggle rejoue
+		// une version incrémentée : sans ré-application, le 2e appel prendrait 409).
+		await page.getByTestId('dunning-resume-button').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toHaveCount(0);
+		await expect(page.getByTestId('dunning-pause-button')).toBeVisible();
+
+		// Re-suspendre, puis anti-régression piège n°1 : après pause (version
+		// incrémentée serveur), une action version-portante D'UN AUTRE type DOIT
+		// réussir sans 409 → « Marquer payée ».
+		await page.getByTestId('dunning-pause-button').click();
+		await page.getByTestId('dunning-pause-confirm').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		await page.getByRole('button', { name: 'Marquer payée' }).click();
+		await page.getByRole('button', { name: 'Confirmer le paiement' }).click();
+		// Succès prouvé : le bouton bascule en « Dé-marquer payée » (paidAt posé).
+		await expect(page.getByRole('button', { name: 'Dé-marquer payée' })).toBeVisible();
+		// Le badge de suspension persiste (la pause n'a pas été perdue).
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		// BH1 (review P1) : facture payée = hors dunning → boutons Suspendre/Reprendre masqués.
+		await expect(page.getByTestId('dunning-pause-button')).toHaveCount(0);
+		await expect(page.getByTestId('dunning-resume-button')).toHaveCount(0);
+	});
+
+	test('reprise d’une facture supprimée entre-temps → retour liste (fiche fantôme)', async ({
+		page,
+	}) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Fantôme SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+		// Suspendre via l'API pour que le bouton « Reprendre » soit rendu.
+		const ctxPause = await authedApiContext(page);
+		try {
+			const get = await ctxPause.get(`/api/v1/invoices/${invoiceId}`);
+			const { version } = await get.json();
+			const res = await ctxPause.put(`/api/v1/invoices/${invoiceId}/dunning-pause`, {
+				data: { version, note: 'à supprimer' },
+			});
+			expect(res.ok()).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctxPause);
+		}
+
+		await page.goto(`/invoices/${invoiceId}`);
+		await expect(page.getByTestId('dunning-resume-button')).toBeVisible();
+
+		// La facture est supprimée par un autre acteur (autre onglet/utilisateur).
+		const ctxDel = await authedApiContext(page);
+		try {
+			const del = await ctxDel.delete(`/api/v1/invoices/${invoiceId}`);
+			expect(del.ok(), `delete failed: ${del.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctxDel);
+		}
+
+		// Reprendre → 404 → retour liste (patron fiche fantôme, review P1 ECH1) :
+		// pas de blocage sur une fiche introuvable.
+		await page.getByTestId('dunning-resume-button').click();
+		await expect(page).toHaveURL(/\/invoices$/);
+	});
+
+	test('suspension : une erreur transitoire garde la modale ouverte + préserve le motif', async ({
+		page,
+	}) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Transient SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+
+		await page.goto(`/invoices/${invoiceId}`);
+
+		// Forcer un 500 transitoire sur le PUT dunning-pause (une seule fois).
+		let intercepted = 0;
+		await page.route('**/api/v1/invoices/*/dunning-pause', async (route) => {
+			intercepted += 1;
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({ code: 'INTERNAL', message: 'boom' }),
+			});
+		});
+
+		await page.getByTestId('dunning-pause-button').click();
+		await page.getByTestId('dunning-pause-note').fill('motif précieux');
+		await page.getByTestId('dunning-pause-confirm').click();
+
+		// Review P1 ECH2 : la modale reste ouverte, l'erreur inline s'affiche, et le
+		// motif tapé n'est PAS perdu (pas de fermeture + reset).
+		expect(intercepted).toBeGreaterThan(0);
+		await expect(page.getByTestId('dunning-pause-confirm')).toBeVisible();
+		await expect(page.getByTestId('dunning-pause-note')).toHaveValue('motif précieux');
+	});
+
+	test('historique des rappels affiché (canal manuel, ligne visible)', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Histo SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+		// Le manuel n'exige PAS une facture échue, seulement validée + non payée.
+		await recordManualReminderViaApi(page, invoiceId, 1, 'recommandé A+');
+
+		await page.goto(`/invoices/${invoiceId}`);
+
+		const history = page.getByTestId('reminder-history');
+		await expect(history).toBeVisible();
+		const rows = history.getByTestId('reminder-history-row');
+		await expect(rows).toHaveCount(1);
+		await expect(rows.first()).toContainText('Manuel');
+	});
+
+	// axe scopé (AC 18) : sous-arbre de la fiche facture (badge suspendu +
+	// historique + boutons Suspendre/Reprendre). `color-contrast` et `button-name`
+	// désactivés = dettes PRÉ-EXISTANTES #253 (PaymentStatusBadge .unpaid) et #256
+	// (boutons d'action icône seule) neutralisées — hors scope de cette story. Le
+	// badge suspendu (AA 11.4:1) est couvert par le test axe non-neutralisé du
+	// describe 21-6a ; les boutons de cette story portent un libellé texte.
+	test('axe-core sans violations sur la fiche (badge suspendu + historique)', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+
+		const contact = await createContactWithAddressViaApi(page, uniq('Axe 6c SA'));
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+		await recordManualReminderViaApi(page, invoiceId, 1, 'axe');
+
+		await page.goto(`/invoices/${invoiceId}`);
+		// Suspendre pour rendre le badge présent dans le sous-arbre audité.
+		await page.getByTestId('dunning-pause-button').click();
+		await page.getByTestId('dunning-pause-confirm').click();
+		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
+		await expect(page.getByTestId('reminder-history')).toBeVisible();
+		await page.waitForLoadState('networkidle');
+
+		const results = await new AxeBuilder({ page })
+			.include('[data-testid="invoice-detail"]')
+			.disableRules(['color-contrast', 'button-name'])
+			.analyze();
+		expect(results.violations).toEqual([]);
+	});
+});
+
 test.describe('Factures — création brouillon', () => {
 	test('crée une facture avec une ligne libre et la persiste', async ({ page }) => {
 		await login(page);
@@ -129,6 +463,46 @@ test.describe('Factures — création brouillon', () => {
 		// Persistance : la facture apparaît dans la liste (nom du contact).
 		await page.goto('/invoices');
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
+	});
+
+	// Story 21-1 (#245) — pré-remplissage échéance + libellé depuis le délai
+	// de paiement structuré du contact, à la sélection dans le formulaire.
+	test('pré-remplit échéance et conditions depuis le délai du contact (#245)', async ({
+		page
+	}) => {
+		await login(page);
+		const contactName = uniq('Client PTD');
+		// Contact avec délai structuré 30 jours (helper étendu Story 21-1).
+		await createContactWithAddressViaApi(page, contactName, undefined, undefined, 30);
+
+		await page.goto('/invoices/new');
+		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
+
+		// Avant sélection : échéance et conditions vides.
+		await expect(page.locator('#invoice-due-date')).toHaveValue('');
+		await expect(page.locator('#invoice-payment-terms')).toHaveValue('');
+
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).click();
+		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+
+		// Échéance = date du jour + 30 (calcul UTC identique à addDaysIso).
+		const today = new Date().toISOString().slice(0, 10);
+		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today)!;
+		const expectedDue = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 30))
+			.toISOString()
+			.slice(0, 10);
+		await expect(page.locator('#invoice-due-date')).toHaveValue(expectedDue);
+		// Libellé serveur (langue contact héritée = FR sur le seed E2E).
+		await expect(page.locator('#invoice-payment-terms')).toHaveValue('Payable à 30 jours net');
+
+		// Le garde non-destructif du prefill (`!dueDate`/`!paymentTerms` dans
+		// `onContactSelect`) n'est pas ré-exercé ici : la ré-ouverture du
+		// ContactPicker après une sélection est une interaction E2E fragile
+		// (le dropdown ne se rouvre pas de façon déterministe sur un contact
+		// déjà sélectionné). Le garde est un simple conditionnel — couvert par
+		// le fait qu'en édition de facture (`initialInvoice` peuplé) le prefill
+		// ne tire jamais.
 	});
 
 	test('crée une facture avec projet analytique (Story 19-4)', async ({ page }) => {

@@ -181,6 +181,7 @@ async fn setup(pool: &MySqlPool) -> Ctx {
             phone: None,
             ide_number: None,
             default_payment_terms: Some("30".into()),
+            default_payment_terms_days: None,
             language: None,
             salutation: kesh_db::entities::contact::Salutation::Neutre,
         },

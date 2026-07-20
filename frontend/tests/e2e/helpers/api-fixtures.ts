@@ -11,6 +11,17 @@ import type { Page } from '@playwright/test';
 import { authedApiContext, disposeContextSafe } from './test-state';
 
 /**
+ * Échéance suffisamment passée pour être éligible au niveau 1 (seuil `today - 15j` :
+ * grâce 5 + délai niveau 1 = 10). Story 21-6c — promue depuis `reminders.spec.ts`
+ * (M1) pour être réutilisée par `homepage-reminders.spec.ts` sans duplication.
+ */
+export function overdueDate(days = 25): string {
+	const d = new Date();
+	d.setDate(d.getDate() - days);
+	return d.toISOString().slice(0, 10);
+}
+
+/**
  * Contact `Personne` PDF-ready (adresse structurée #213, firstName/lastName
  * obligatoires). `email`/`salutation` optionnels (Story 20-4 : le round-trip
  * d'envoi exige un contact AVEC e-mail et civilité genrée — le backend
@@ -21,6 +32,7 @@ export async function createContactWithAddressViaApi(
 	name: string,
 	email?: string,
 	salutation?: 'Monsieur' | 'Madame' | 'Neutre',
+	paymentTermsDays?: number,
 ): Promise<number> {
 	const ctx = await authedApiContext(page);
 	try {
@@ -40,6 +52,10 @@ export async function createContactWithAddressViaApi(
 					country: 'CH',
 				},
 				defaultPaymentTerms: '30 jours net',
+				// #245 : délai structuré optionnel (prime sur le texte libre).
+				...(paymentTermsDays !== undefined
+					? { defaultPaymentTermsDays: paymentTermsDays }
+					: {}),
 				...(email !== undefined ? { email } : {}),
 				...(salutation !== undefined ? { salutation } : {}),
 			},
@@ -70,18 +86,31 @@ export async function ensurePrimaryBankAccountViaApi(page: Page): Promise<void> 
 }
 
 /** Crée une facture 1 ligne et la valide. Retourne son id. */
+/**
+ * Crée et valide une facture.
+ *
+ * `dueDate` optionnel (défaut = aujourd'hui) : passer une échéance passée permet
+ * de produire une facture ÉLIGIBLE À UN RAPPEL. Seuil niveau 1 (config seedée
+ * par défaut) = `today - 15j` (grâce 5 + délai niveau 1 = 10). Story 21-6b.
+ *
+ * La date de facture est alignée sur `dueDate` quand celui-ci est fourni : la
+ * validation #245 (`due_date >= date`) rejette une échéance antérieure à la
+ * date de facture — une facture échue est donc émise ET échue dans le passé.
+ */
 export async function createAndValidateInvoiceViaApi(
 	page: Page,
 	contactId: number,
+	dueDate?: string,
 ): Promise<number> {
 	const today = new Date().toISOString().slice(0, 10);
+	const invoiceDate = dueDate ?? today;
 	const ctx = await authedApiContext(page);
 	try {
 		const createRes = await ctx.post('/api/v1/invoices', {
 			data: {
 				contactId,
-				date: today,
-				dueDate: today,
+				date: invoiceDate,
+				dueDate: dueDate ?? today,
 				paymentTerms: '30 jours net',
 				lines: [
 					{

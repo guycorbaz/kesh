@@ -1393,3 +1393,232 @@ async fn journals_preserves_line_order(pool: MySqlPool) {
         assert_eq!(orders, sorted);
     }
 }
+
+// ============================================================
+// Story 21-7 — Balance âgée débiteurs (aged receivables)
+// RBAC : vue tous rôles (D-7b) ; export CSV Comptable+ (D24) ; scoping.
+// ============================================================
+
+/// Configure les réglages facturation (comptes par défaut) puis crée et VALIDE
+/// une facture cliente échue (poste ouvert). Retourne le nom du contact.
+async fn seed_open_invoice_for(pool: &MySqlPool, ctx: &Ctx, contact_name: &str) -> String {
+    use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
+    use kesh_db::entities::{NewInvoice, NewInvoiceLine};
+    use kesh_db::repositories::{contacts, invoices};
+
+    sqlx::query(
+        "INSERT INTO company_invoice_settings \
+         (company_id, default_receivable_account_id, default_revenue_account_id, \
+          default_vat_payable_account_id, default_vat_recoverable_account_id, default_sales_journal) \
+         VALUES (?, ?, ?, ?, ?, 'Ventes')",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.acc_1000_asset)
+    .bind(ctx.acc_4000_revenue)
+    .bind(ctx.acc_2000_liab)
+    .bind(ctx.acc_1000_asset)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let contact_id = contacts::create(
+        pool,
+        ctx.user_id,
+        NewContact {
+            company_id: ctx.company_id,
+            contact_type: ContactType::Entreprise,
+            name: contact_name.into(),
+            first_name: None,
+            last_name: None,
+            is_client: true,
+            is_supplier: false,
+            address: None,
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
+            email: None,
+            phone: None,
+            ide_number: None,
+            default_payment_terms: None,
+            default_payment_terms_days: None,
+            language: None,
+            salutation: Salutation::Neutre,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    // Échéance dans la FY (2026-07-01..2027-06-30), échue avant aujourd'hui.
+    let date = NaiveDate::from_ymd_opt(2026, 7, 5).unwrap();
+    let (inv, _) = invoices::create(
+        pool,
+        ctx.user_id,
+        NewInvoice {
+            company_id: ctx.company_id,
+            contact_id,
+            date,
+            due_date: Some(date),
+            payment_terms: None,
+            project_id: None,
+            lines: vec![NewInvoiceLine {
+                description: "Prestation".into(),
+                quantity: dec!(1),
+                unit_price: dec!(500),
+                vat_rate: Decimal::ZERO,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    invoices::validate_invoice(pool, ctx.company_id, inv.id, ctx.user_id)
+        .await
+        .unwrap();
+
+    contact_name.to_string()
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_view_allowed_for_consultation(pool: MySqlPool) {
+    // Vue tous rôles (D-7b) : un Consultation peut consulter la balance âgée.
+    let ctx = setup_full(&pool, "aged_consult", Role::Consultation).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "vue balance âgée = tous rôles");
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["rows"].is_array());
+    assert!(body["totals"]["total"].is_string());
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_export_forbidden_for_consultation(pool: MySqlPool) {
+    // Export CSV = Comptable+ (D24) : un Consultation reçoit 403.
+    let ctx = setup_full(&pool, "aged_exp_403", Role::Consultation).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables/export?format=csv"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403, "export réservé Comptable+");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_export_ok_for_comptable(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "aged_exp_ok", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables/export?format=csv"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        ct.starts_with("text/csv"),
+        "content-type text/csv, got {ct}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_export_ok_for_admin(pool: MySqlPool) {
+    // D24 : l'export est Comptable+ → Admin (rôle supérieur) l'obtient aussi.
+    let ctx = setup_full(&pool, "aged_exp_admin", Role::Admin).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables/export?format=csv"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        ct.starts_with("text/csv"),
+        "content-type text/csv, got {ct}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_export_rejects_pdf(pool: MySqlPool) {
+    // 21-7 : CSV only. Un format pdf/autre → 400.
+    let ctx = setup_full(&pool, "aged_pdf", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables/export?format=pdf"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "seul csv est supporté");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_scoped_per_company(pool: MySqlPool) {
+    // Isolation cross-tenant : le poste ouvert de A n'apparaît pas dans le
+    // rapport de B (company_id vient du JWT — AC19). Réponse 200 + rows scopées.
+    let ctx_a = setup_full(&pool, "aged_co_a", Role::Comptable).await;
+    let ctx_b = setup_full(&pool, "aged_co_b", Role::Comptable).await;
+    let contact_a = seed_open_invoice_for(&pool, &ctx_a, "Client A SA").await;
+    let app = spawn_app(pool).await;
+
+    // Rapport de A : contient Client A SA.
+    let resp_a = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables"))
+        .bearer_auth(&ctx_a.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp_a.status(), 200);
+    let body_a: Value = resp_a.json().await.unwrap();
+    let rows_a = body_a["rows"].as_array().unwrap();
+    assert_eq!(rows_a.len(), 1);
+    assert_eq!(rows_a[0]["contactName"], contact_a);
+
+    // Rapport de B : vide (ne voit pas le poste ouvert de A).
+    let resp_b = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables"))
+        .bearer_auth(&ctx_b.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp_b.status(), 200);
+    let body_b: Value = resp_b.json().await.unwrap();
+    assert!(
+        body_b["rows"].as_array().unwrap().is_empty(),
+        "B ne doit pas voir les postes ouverts de A"
+    );
+}

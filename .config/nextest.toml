@@ -1,0 +1,44 @@
+# Configuration cargo-nextest — gate rapide (Story 21-2b, 2026-07-13).
+#
+# CONTEXTE / MESURES (machine 32 cœurs, MariaDB dev local `max_connections=100`,
+# durabilité par défaut) — suite backend complète, 1802 tests :
+#
+#   série      (--test-threads=1)  : 53:57  (3237 s)  1802/0
+#   6 threads  (ce défaut)         : 38:25  (2305 s)  1802/0, 0 flake   → 1,40× plus rapide
+#   32 threads (défaut nextest)    : CASSÉ  — contention MariaDB → 3 flakes
+#                                     reconciliation_*_e2e (KF-038 #228) + tests « slow »
+#
+# Le goulot n'est PAS le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894)
+# rejoue les 51 migrations (DDL sérialisé par les metadata-locks). Au-delà de
+# ~6 threads la contention devient contre-productive. Le vrai levier (squash du
+# schéma de test + durabilité relâchée) est suivi dans l'issue #251.
+#
+# Ce fichier remplace le `cargo test --workspace -j1 -- --test-threads=1` de la
+# CI (tout en série) par : plafond à 6 threads + tests lib kesh-db (DB dev
+# partagée) sérialisés. Voir CLAUDE.md §Test Locally First et scripts/test-fast.sh.
+
+[profile.default]
+# Plafond empirique — sweet spot mesuré (voir tableau ci-dessus). Surchargeable
+# ponctuellement via `cargo nextest run --test-threads=N`.
+test-threads = 6
+
+[test-groups]
+# Un seul test à la fois dans ce groupe : ces tests partagent la DB dev `kesh`
+# (via `test_pool()`) et interfèrent sinon (cf. mémoire projet journal_entries).
+shared-db-serial = { max-threads = 1 }
+
+[[profile.default.overrides]]
+# Tests unitaires de la lib kesh-db = les seuls sur la DB partagée.
+filter = 'package(kesh-db) and kind(lib)'
+test-group = 'shared-db-serial'
+
+# Profil CI : mêmes règles + un retry sur les flakes de contention connus (KF-038
+# #228), fail-fast désactivé pour un rapport complet.
+[profile.ci]
+test-threads = 6
+retries = 1
+fail-fast = false
+
+[[profile.ci.overrides]]
+filter = 'package(kesh-db) and kind(lib)'
+test-group = 'shared-db-serial'

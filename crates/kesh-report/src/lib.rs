@@ -13,6 +13,7 @@
 //! - [`pdf`] — 4 fonctions `render_*_pdf` (printpdf 0.7, Helvetica builtin).
 //! - [`csv`] — 4 fonctions `render_*_csv` (csv 1.3, BOM UTF-8, `;` delimiter, CRLF).
 
+pub mod aged_receivables;
 pub mod balance_sheet;
 pub mod csv;
 pub mod errors;
@@ -24,7 +25,11 @@ pub mod project_report;
 pub mod trial_balance;
 pub mod vat_report;
 
+pub use aged_receivables::{
+    AgedBucket, AgedReceivables, AgedReceivablesRow, generate as generate_aged_receivables,
+};
 pub use balance_sheet::{AccountBalance, BalanceSheet, generate as generate_balance_sheet};
+pub use csv::render_aged_receivables_csv;
 pub use errors::ReportError;
 pub use income_statement::{IncomeStatement, generate as generate_income_statement};
 pub use journal_report::{

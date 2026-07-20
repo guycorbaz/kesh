@@ -14,9 +14,16 @@
 		InvoiceListItemResponse,
 		InvoiceSortBy,
 		InvoiceStatus,
+		PausedFilter,
 		SortDirection,
 	} from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
+	import DunningPausedBadge from '$lib/features/invoices/DunningPausedBadge.svelte';
+	// Story 21-6a : seules les chaînes NOUVELLES passent par i18nMsg. Le reste
+	// de la page est en FR codé en dur — dette pré-existante suivie par #255
+	// (les clés `invoice-col-*`/`invoice-filter-*` existent déjà, traduites,
+	// mais ne sont câblées nulle part). Ne pas élargir ici.
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import ContactPicker from '$lib/components/invoices/ContactPicker.svelte';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { getContact } from '$lib/features/contacts/contacts.api';
@@ -31,6 +38,8 @@
 	let contactFilter = $state<ContactResponse | null>(null);
 	let dateFromFilter = $state('');
 	let dateToFilter = $state('');
+	/** Story 21-6a (D10). `all` = défaut, ne filtre rien et n'est pas écrit en URL. */
+	let pausedFilter = $state<PausedFilter>('all');
 	let sortBy = $state<InvoiceSortBy>('Date');
 	let sortDirection = $state<SortDirection>('Desc');
 	let limit = $state(20);
@@ -48,6 +57,7 @@
 	const VALID_STATUS: InvoiceStatus[] = ['draft', 'validated', 'cancelled'];
 	const VALID_SORT_BY: InvoiceSortBy[] = ['Date', 'TotalAmount', 'ContactName', 'CreatedAt'];
 	const VALID_SORT_DIR: SortDirection[] = ['Asc', 'Desc'];
+	const VALID_PAUSED: PausedFilter[] = ['all', 'paused', 'not-paused'];
 
 	async function initFromUrl() {
 		const params = page.url.searchParams;
@@ -59,6 +69,10 @@
 			: '';
 		dateFromFilter = params.get('dateFrom') ?? '';
 		dateToFilter = params.get('dateTo') ?? '';
+		const rawPaused = params.get('paused') ?? 'all';
+		pausedFilter = (VALID_PAUSED as string[]).includes(rawPaused)
+			? (rawPaused as PausedFilter)
+			: 'all';
 		const rawContactId = parseInt(params.get('contactId') ?? '', 10);
 		// Await avant `mounted = true` pour éviter qu'un premier `load()` parte
 		// sans le filtre contact — sinon l'utilisateur voit brièvement une liste
@@ -99,6 +113,10 @@
 			if (effectiveSearch) p.set('search', effectiveSearch);
 			if (statusFilter) p.set('status', statusFilter);
 			if (contactFilter) p.set('contactId', String(contactFilter.id));
+			// Story 21-6a : `paused` doit être écrit dans les DEUX branches de
+			// syncUrl — l'omettre ici perdrait silencieusement le filtre dès
+			// qu'une plage de dates est invalide.
+			if (pausedFilter !== 'all') p.set('paused', pausedFilter);
 			if (sortBy !== 'Date') p.set('sortBy', sortBy);
 			if (sortDirection !== 'Desc') p.set('sortDirection', sortDirection);
 			if (limit !== 20) p.set('limit', String(limit));
@@ -116,6 +134,7 @@
 		if (contactFilter) p.set('contactId', String(contactFilter.id));
 		if (dateFromFilter) p.set('dateFrom', dateFromFilter);
 		if (dateToFilter) p.set('dateTo', dateToFilter);
+		if (pausedFilter !== 'all') p.set('paused', pausedFilter);
 		if (sortBy !== 'Date') p.set('sortBy', sortBy);
 		if (sortDirection !== 'Desc') p.set('sortDirection', sortDirection);
 		if (limit !== 20) p.set('limit', String(limit));
@@ -147,6 +166,7 @@
 				contactId: contactFilter?.id,
 				dateFrom: dateFromFilter || undefined,
 				dateTo: dateToFilter || undefined,
+				paused: pausedFilter,
 				sortBy,
 				sortDirection,
 				limit,
@@ -172,6 +192,7 @@
 		contactFilter;
 		dateFromFilter;
 		dateToFilter;
+		pausedFilter;
 		sortBy;
 		sortDirection;
 		limit;
@@ -275,6 +296,22 @@
 			<option value="cancelled">Annulée</option>
 		</select>
 	</div>
+	<div>
+		<label class="mb-1 block text-xs text-text-muted" for="invoice-paused-filter">
+			{i18nMsg('invoice-paused-filter-label', 'Rappels')}
+		</label>
+		<select
+			id="invoice-paused-filter"
+			data-testid="invoice-paused-filter"
+			bind:value={pausedFilter}
+			onchange={() => (offset = 0)}
+			class="h-9 rounded-md border border-border bg-background px-2 text-sm"
+		>
+			<option value="all">{i18nMsg('invoice-paused-filter-all', 'Tous')}</option>
+			<option value="paused">{i18nMsg('invoice-paused-filter-paused', 'Suspendus')}</option>
+			<option value="not-paused">{i18nMsg('invoice-paused-filter-not-paused', 'Actifs')}</option>
+		</select>
+	</div>
 	<div class="min-w-56">
 		<label class="mb-1 block text-xs text-text-muted" for="invoice-contact-filter">Contact</label>
 		<ContactPicker
@@ -357,7 +394,14 @@
 					<td class="py-2 pr-2">{inv.date}</td>
 					<td class="py-2 pr-2">{inv.contactName}</td>
 					<td class="py-2 pr-2">{inv.invoiceNumber ?? '—'}</td>
-					<td class="py-2 pr-2">{statusLabel(inv.status)}</td>
+					<td class="py-2 pr-2">
+						<span class="inline-flex flex-wrap items-center gap-1.5">
+							{statusLabel(inv.status)}
+							{#if inv.dunningPausedAt !== null}
+								<DunningPausedBadge note={inv.dunningPausedNote} />
+							{/if}
+						</span>
+					</td>
 					<td class="py-2 pr-2 text-right font-mono">
 						{formatInvoiceTotal(inv.totalAmount)}
 					</td>

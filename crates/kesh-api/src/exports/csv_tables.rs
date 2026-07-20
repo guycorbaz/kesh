@@ -26,8 +26,9 @@ use rust_decimal::Decimal;
 use crate::errors::AppError;
 use kesh_db::entities::{
     Account, BankAccount, BankImport, BankProfile, BankTransaction, Company,
-    CompanyInvoiceSettings, Contact, FiscalYear, Invoice, InvoiceLine, JournalEntry,
-    JournalEntryLine, Product, ReconciliationRule, VatRate,
+    CompanyDunningSettings, CompanyInvoiceSettings, Contact, DunningLevel, FiscalYear, Invoice,
+    InvoiceLine, InvoiceReminder, JournalEntry, JournalEntryLine, Product, ReconciliationRule,
+    VatRate,
 };
 
 // ===========================================================================
@@ -320,6 +321,7 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
         "phone",
         "ide_number",
         "default_payment_terms",
+        "default_payment_terms_days",
         "active",
         "version",
         "created_at",
@@ -339,6 +341,9 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
             fmt_opt_str(&c.phone),
             fmt_opt_str(&c.ide_number),
             fmt_opt_str(&c.default_payment_terms),
+            c.default_payment_terms_days
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
             fmt_bool(c.active),
             c.version.to_string(),
             fmt_dt(c.created_at),
@@ -654,6 +659,121 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
         .map_err(|e| map_csv_err("vat_rates", e))?;
     }
     csv.flush().map_err(|e| map_flush_err("vat_rates", e))
+}
+
+/// Sérialise les `DunningLevel` (Story 21-3, #231) — niveaux de rappel configurés.
+pub fn serialize_dunning_levels_csv<W: Write>(
+    rows: &[DunningLevel],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "level_number",
+        "delay_days",
+        "fee_amount",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("dunning_levels", e))?;
+    for l in rows {
+        csv.write_record([
+            l.id.to_string(),
+            l.company_id.to_string(),
+            l.level_number.to_string(),
+            l.delay_days.to_string(),
+            fmt_decimal(l.fee_amount),
+            l.version.to_string(),
+            fmt_dt(l.created_at),
+            fmt_dt(l.updated_at),
+        ])
+        .map_err(|e| map_csv_err("dunning_levels", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("dunning_levels", e))
+}
+
+/// Sérialise un `CompanyDunningSettings` (1 row, lazy-create côté handler).
+pub fn serialize_company_dunning_settings_csv<W: Write>(
+    rows: &[CompanyDunningSettings],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "company_id",
+        "grace_period_days",
+        "seeded_at",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("company_dunning_settings", e))?;
+    for s in rows {
+        csv.write_record([
+            s.company_id.to_string(),
+            s.grace_period_days.to_string(),
+            fmt_opt_dt(s.seeded_at),
+            s.version.to_string(),
+            fmt_dt(s.created_at),
+            fmt_dt(s.updated_at),
+        ])
+        .map_err(|e| map_csv_err("company_dunning_settings", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("company_dunning_settings", e))
+}
+
+/// Sérialise l'historique `invoice_reminders` (Story 21-5a) — append-only, snapshots.
+pub fn serialize_invoice_reminders_csv<W: Write>(
+    rows: &[InvoiceReminder],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "invoice_id",
+        "level_number",
+        "fee_amount",
+        "sent_at",
+        "channel",
+        "sent_to",
+        "subject",
+        "body",
+        "note",
+        "actor_user_id",
+        "cancelled_at",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("invoice_reminders", e))?;
+    for r in rows {
+        csv.write_record([
+            r.id.to_string(),
+            r.company_id.to_string(),
+            r.invoice_id.to_string(),
+            r.level_number.to_string(),
+            fmt_decimal(r.fee_amount),
+            fmt_dt(r.sent_at),
+            r.channel.clone(),
+            r.sent_to.clone().unwrap_or_default(),
+            r.subject.clone(),
+            r.body.clone(),
+            r.note.clone().unwrap_or_default(),
+            r.actor_user_id.map(|v| v.to_string()).unwrap_or_default(),
+            fmt_opt_dt(r.cancelled_at),
+            fmt_dt(r.created_at),
+        ])
+        .map_err(|e| map_csv_err("invoice_reminders", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("invoice_reminders", e))
 }
 
 /// Sérialise un `CompanyInvoiceSettings` (1 row, lazy-create acceptée côté

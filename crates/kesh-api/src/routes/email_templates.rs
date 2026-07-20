@@ -11,13 +11,13 @@
 //! (`company_invoice_settings.rs`) — pas d'extraction `Path<(Enum, Enum)>`
 //! (chemin non éprouvé dans ce codebase).
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateType, Language};
-use kesh_db::repositories::email_templates;
+use kesh_db::repositories::{dunning_levels, email_templates};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -33,6 +33,8 @@ use crate::middleware::auth::CurrentUser;
 pub struct EmailTemplateResponse {
     pub template_type: EmailTemplateType,
     pub language: Language,
+    /// Niveau de rappel (0 = générique / `invoice_send`). Epic 21.
+    pub level_number: i16,
     pub subject: String,
     pub body: String,
     /// `None` quand `is_default = true` (rien à verrouiller).
@@ -46,6 +48,7 @@ impl From<EffectiveEmailTemplate> for EmailTemplateResponse {
         Self {
             template_type: t.template_type,
             language: t.language,
+            level_number: t.level_number,
             subject: t.subject,
             body: t.body,
             version: t.version,
@@ -61,6 +64,7 @@ impl From<EmailTemplate> for EmailTemplateResponse {
             allowed_variables: t.template_type.allowed_variables_owned(),
             template_type: t.template_type,
             language: t.language,
+            level_number: t.level_number,
             subject: t.subject,
             body: t.body,
             version: Some(t.version),
@@ -91,6 +95,31 @@ fn parse_language(raw: &str) -> Result<Language, AppError> {
     raw.parse::<Language>().map_err(AppError::Validation)
 }
 
+/// Query param de niveau de rappel (`?level=<i16>`), défaut 0 (générique /
+/// `invoice_send`). Ajouté Story 21-4 (le sélecteur de niveau côté UI édite les
+/// templates de rappel niveau 1..N).
+#[derive(Debug, Deserialize)]
+pub struct LevelQuery {
+    #[serde(default)]
+    pub level: i16,
+}
+
+/// Valide le niveau demandé pour un type de template. `invoice_send` n'existe qu'au
+/// niveau 0 ; un niveau négatif est toujours invalide.
+fn validate_level(template_type: EmailTemplateType, level: i16) -> Result<i16, AppError> {
+    if level < 0 {
+        return Err(AppError::Validation(
+            "Le niveau de rappel ne peut être négatif.".to_string(),
+        ));
+    }
+    if template_type == EmailTemplateType::InvoiceSend && level != 0 {
+        return Err(AppError::Validation(
+            "Le type « envoi de facture » n'a qu'un niveau 0.".to_string(),
+        ));
+    }
+    Ok(level)
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -102,7 +131,13 @@ pub async fn list_email_templates(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<Vec<EmailTemplateResponse>>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let list = email_templates::list_effective_for_company(&state.pool, company.id).await?;
+    // Borne dynamique des niveaux de rappel exposés = MAX(niveaux configurés, 3).
+    // Calculée par l'appelant pour garder le repo email_templates découplé de dunning_levels.
+    let max_reminder_level =
+        dunning_levels::count_for_company(&state.pool, company.id).await? as i16;
+    let list =
+        email_templates::list_effective_for_company(&state.pool, company.id, max_reminder_level)
+            .await?;
     Ok(Json(list.into_iter().map(Into::into).collect()))
 }
 
@@ -112,13 +147,16 @@ pub async fn get_email_template(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((template_type_raw, language_raw)): Path<(String, String)>,
+    Query(level_q): Query<LevelQuery>,
 ) -> Result<Json<EmailTemplateResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
+    let level = validate_level(template_type, level_q.level)?;
 
     let effective =
-        email_templates::get_effective(&state.pool, company.id, template_type, language).await?;
+        email_templates::get_effective(&state.pool, company.id, template_type, language, level)
+            .await?;
     Ok(Json(effective.into()))
 }
 
@@ -129,11 +167,13 @@ pub async fn update_email_template(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((template_type_raw, language_raw)): Path<(String, String)>,
+    Query(level_q): Query<LevelQuery>,
     Json(req): Json<UpdateEmailTemplateRequest>,
 ) -> Result<Json<EmailTemplateResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
+    let level = validate_level(template_type, level_q.level)?;
 
     let subject = req.subject.trim();
     let body = req.body.trim();
@@ -155,6 +195,7 @@ pub async fn update_email_template(
         company.id,
         template_type,
         language,
+        level,
         req.expected_version,
         current_user.user_id,
         current_user.api_key_id,
@@ -172,16 +213,19 @@ pub async fn restore_email_template_default(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((template_type_raw, language_raw)): Path<(String, String)>,
+    Query(level_q): Query<LevelQuery>,
 ) -> Result<StatusCode, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let template_type = parse_template_type(&template_type_raw)?;
     let language = parse_language(&language_raw)?;
+    let level = validate_level(template_type, level_q.level)?;
 
     email_templates::restore_default(
         &state.pool,
         company.id,
         template_type,
         language,
+        level,
         current_user.user_id,
         current_user.api_key_id,
     )

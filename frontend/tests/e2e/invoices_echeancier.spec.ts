@@ -142,7 +142,9 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		await expect(overdueRow).toHaveCount(0, { timeout: 5000 });
 
 		// Basculer sur "Payées" → la facture réapparaît avec le badge Payée.
-		await page.getByRole('tab', { name: /Payées|Paid|Pagate|Bezahlt/i }).click();
+		// Regex ancrée (^…$) : `/Payées/` non ancré matcherait aussi l'onglet
+		// « Im-payées » (substring) → strict-mode violation à 2 éléments.
+		await page.getByRole('tab', { name: /^(Payées|Paid|Pagate|Bezahlt)$/i }).click();
 		const paidRow = page.locator('tbody tr', { hasText: contactName }).first();
 		await expect(paidRow).toBeVisible({ timeout: 5000 });
 		await expect(paidRow.getByText(/Payée|Paid|Pagata|Bezahlt/i).first()).toBeVisible();
@@ -169,6 +171,22 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		// Sanity : les 2 IDs existent (pas orphelins).
 		expect(overdueId).toBeGreaterThan(0);
 		expect(futureId).toBeGreaterThan(0);
+	});
+
+	// Story 21-2a (#246) — la colonne Total de l'échéancier affiche le TTC.
+	test('la colonne Total affiche le TTC (montant dû), pas le HT', async ({ page }) => {
+		await login(page);
+		const contactName = uniq('EchTtc');
+		const contactId = await createContactViaApi(page, contactName);
+		// 100.00 HT @ 8.1 % → TTC 108.10 (les helpers seedent vatRate 8.10).
+		await createAndValidateInvoice(page, contactId, daysFromToday(-10), daysFromToday(-1), '100.00');
+
+		await page.goto('/invoices/due-dates');
+		const row = page.locator('tbody tr', { hasText: contactName }).first();
+		await expect(row).toBeVisible({ timeout: 5000 });
+		// Le TTC formaté suisse est affiché ; le HT nu ne l'est pas.
+		await expect(row.getByText('108.10')).toBeVisible();
+		await expect(row.getByText(/^100\.00$/)).toHaveCount(0);
 	});
 
 	test('page échéancier exige une session authentifiée', async ({ page }) => {

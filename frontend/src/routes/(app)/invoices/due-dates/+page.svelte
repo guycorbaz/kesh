@@ -296,8 +296,18 @@
 	<title>{i18nMsg('due-dates-title', 'Échéancier')} — Kesh</title>
 </svelte:head>
 
-<div class="mb-6">
+<div class="mb-6 flex items-center justify-between">
 	<h1 class="text-2xl font-semibold text-text">{i18nMsg('due-dates-title', 'Échéancier')}</h1>
+	<div class="flex gap-2">
+		<!-- Story 21-6c (D-c3) : lien croisé vers la page Rappels. -->
+		<Button variant="outline" href="/invoices/reminders" data-testid="due-dates-link-reminders">
+			{i18nMsg('due-dates-link-reminders', 'Voir les rappels')}
+		</Button>
+		<!-- Story 21-7 : lien croisé vers la balance âgée (onglet adressable ?tab=). -->
+		<Button variant="outline" href="/reports?tab=aged-receivables" data-testid="due-dates-link-aged">
+			{i18nMsg('due-dates-link-aged', 'Voir la balance âgée')}
+		</Button>
+	</div>
 </div>
 
 <!-- Summary -->
@@ -417,7 +427,8 @@
 						<a class="underline" href={`/invoices/${inv.id}`}>{inv.invoiceNumber ?? '—'}</a>
 					</td>
 					<td class="py-2 pr-2">{inv.contactName}</td>
-					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalAmount)}</td>
+					<!-- #246 : TTC (montant dû) — cohérent avec les KPI du résumé. -->
+					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalTtc)}</td>
 					<td class="py-2 pr-2">
 						<PaymentStatusBadge status={statusOf(inv)} />
 					</td>

@@ -1,18 +1,18 @@
 //! Story 9-2b T3 — Orchestrateur `build_global_export` + builder ZIP +
 //! struct `GlobalExportMeta` (retournée au handler pour audit + tracing).
 //!
-//! Pipeline (16 tables + 1 manifeste) :
+//! Pipeline (18 tables + 1 manifeste) :
 //! 1. `Instant::now()` start.
-//! 2. Pour chaque table §scope-tables : appel repo (queries 16 SELECTs +
+//! 2. Pour chaque table §scope-tables : appel repo (queries 18 SELECTs +
 //!    JOIN scoping `company_id`).
 //! 3. Pour chaque table : `serialize_<table>_csv(rows, &mut Vec<u8>)` →
 //!    `Vec<u8>` par CSV.
 //! 4. SHA-256 par CSV (sur les bytes décompressés) → `TableMeta`.
 //! 5. `build_metadata_json(...)` → `metadata.json` bytes (camelCase
 //!    + BTreeMap tables alphabétique).
-//! 6. `build_zip(&files)` — 16 CSV puis `metadata.json` (en dernier,
+//! 6. `build_zip(&files)` — 18 CSV puis `metadata.json` (en dernier,
 //!    Pass 1 ECH-LOW-02).
-//! 7. `GlobalExportMeta { byte_size, csv_count: 16, duration_ms }`.
+//! 7. `GlobalExportMeta { byte_size, csv_count: 19, duration_ms }`.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -25,18 +25,19 @@ use crate::errors::AppError;
 use crate::exports::csv_tables::{
     serialize_accounts_csv, serialize_bank_accounts_csv, serialize_bank_imports_csv,
     serialize_bank_profiles_csv, serialize_bank_transactions_csv, serialize_company_csv,
-    serialize_company_invoice_settings_csv, serialize_contacts_csv, serialize_fiscal_years_csv,
-    serialize_invoice_lines_csv, serialize_invoices_csv, serialize_journal_entries_csv,
-    serialize_journal_entry_lines_csv, serialize_products_csv, serialize_reconciliation_rules_csv,
-    serialize_vat_rates_csv,
+    serialize_company_dunning_settings_csv, serialize_company_invoice_settings_csv,
+    serialize_contacts_csv, serialize_dunning_levels_csv, serialize_fiscal_years_csv,
+    serialize_invoice_lines_csv, serialize_invoice_reminders_csv, serialize_invoices_csv,
+    serialize_journal_entries_csv, serialize_journal_entry_lines_csv, serialize_products_csv,
+    serialize_reconciliation_rules_csv, serialize_vat_rates_csv,
 };
 use crate::exports::metadata::{TableMeta, build_metadata_json, sha256_hex};
 
 use kesh_db::entities::Company;
 use kesh_db::repositories::{
     accounts, bank_accounts, bank_imports, bank_profiles, bank_transactions,
-    company_invoice_settings, contacts, fiscal_years, invoices, journal_entries,
-    reconciliation_rules, vat_rates,
+    company_dunning_settings, company_invoice_settings, contacts, dunning_levels, fiscal_years,
+    invoice_reminders, invoices, journal_entries, reconciliation_rules, vat_rates,
 };
 
 // ===========================================================================
@@ -119,7 +120,7 @@ pub async fn build_global_export(
     let start = Instant::now();
     let company_id = company.id;
 
-    // -------- 1. Queries 16 tables (single-fetch each) --------
+    // -------- 1. Queries 18 tables (single-fetch each) --------
     let company_rows = vec![company.clone()];
     let fiscal_years_rows = fiscal_years::list_by_company(pool, company_id)
         .await
@@ -168,6 +169,18 @@ pub async fn build_global_export(
         .await
         .map_err(map_db)?;
     let cis_rows = vec![cis_row];
+    let dunning_levels_rows = dunning_levels::list_all_by_company(pool, company_id)
+        .await
+        .map_err(map_db)?;
+    // lazy-create OK (write idempotent). Le seed lazy des niveaux n'est PAS déclenché
+    // par l'export (souveraineté = photo de l'état réel, pas d'effet de bord métier).
+    let cds_row = company_dunning_settings::get_or_create_default(pool, company_id)
+        .await
+        .map_err(map_db)?;
+    let cds_rows = vec![cds_row];
+    let invoice_reminders_rows = invoice_reminders::list_all_by_company(pool, company_id)
+        .await
+        .map_err(map_db)?;
     let reconciliation_rules_rows = reconciliation_rules::list_all_by_company(pool, company_id)
         .await
         .map_err(map_db)?;
@@ -177,10 +190,10 @@ pub async fn build_global_export(
 
     // -------- 2 & 3 & 4. Serialize + SHA-256 + assemblage ordonné --------
     //
-    // Ordre du Vec = ordre §scope-tables d'écriture dans le ZIP (les 16 CSV).
-    // metadata.json est ajouté en dernier (16e index, après les 16 CSV).
+    // Ordre du Vec = ordre §scope-tables d'écriture dans le ZIP (les 18 CSV).
+    // metadata.json est ajouté en dernier (18e index, après les 18 CSV).
     let mut tables_meta: BTreeMap<String, TableMeta> = BTreeMap::new();
-    let mut files: Vec<(String, Vec<u8>)> = Vec::with_capacity(17);
+    let mut files: Vec<(String, Vec<u8>)> = Vec::with_capacity(20);
 
     macro_rules! push_csv {
         ($name:literal, $rows:expr, $serializer:ident) => {{
@@ -245,6 +258,21 @@ pub async fn build_global_export(
         serialize_company_invoice_settings_csv
     );
     push_csv!(
+        "dunning_levels.csv",
+        dunning_levels_rows,
+        serialize_dunning_levels_csv
+    );
+    push_csv!(
+        "company_dunning_settings.csv",
+        cds_rows,
+        serialize_company_dunning_settings_csv
+    );
+    push_csv!(
+        "invoice_reminders.csv",
+        invoice_reminders_rows,
+        serialize_invoice_reminders_csv
+    );
+    push_csv!(
         "reconciliation_rules.csv",
         reconciliation_rules_rows,
         serialize_reconciliation_rules_csv
@@ -255,8 +283,8 @@ pub async fn build_global_export(
         serialize_bank_profiles_csv
     );
 
-    debug_assert_eq!(files.len(), 16, "16 CSV expected before manifest");
-    debug_assert_eq!(tables_meta.len(), 16, "16 TableMeta expected");
+    debug_assert_eq!(files.len(), 19, "19 CSV expected before manifest");
+    debug_assert_eq!(tables_meta.len(), 19, "19 TableMeta expected");
 
     // -------- 5. Manifest --------
     let manifest_bytes = build_metadata_json(company, locale_bcp47, tables_meta)?;
@@ -271,7 +299,7 @@ pub async fn build_global_export(
         zip_bytes,
         GlobalExportMeta {
             byte_size,
-            csv_count: 16,
+            csv_count: 19,
             duration_ms,
         },
     ))

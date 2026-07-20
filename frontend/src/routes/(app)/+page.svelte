@@ -5,10 +5,22 @@
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { listBankAccounts, type BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { shortIban, formatChfBalance } from '$lib/features/bank-accounts/format';
+	import { authState } from '$lib/app/stores/auth.svelte';
+	import { listReminders } from '$lib/features/reminders/reminders.api';
 
-	function msg(key: string, fallback: string): string {
-		return i18nMsg(key, fallback);
+	function msg(key: string, fallback: string, args?: Record<string, string | number>): string {
+		return i18nMsg(key, fallback, args);
 	}
+
+	// Story 21-6c (D-c2) — compteur « à rappeler » dans le widget Factures ouvertes.
+	// `/dunning/reminders` est Comptable+ : un Consultation prendrait un 403 → ne
+	// PAS fetcher pour ce rôle. Le compteur est un NOMBRE DE FACTURES (somme des
+	// `invoices.length` des groupes), jamais un montant (L21-8 — aucun cumul).
+	let canManage = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
+	);
+	let reminderCount = $state(0);
+	let reminderLoaded = $state(false);
 
 	// Story v014-1 (F5 Pass 1) — basculer vers listBankAccounts() qui retourne
 	// le payload étendu avec `currentBalance` calculé serveur-side.
@@ -22,6 +34,18 @@
 			// API not reachable — graceful degradation (widget caché si vide).
 		} finally {
 			bankLoaded = true;
+		}
+
+		// Compteur « à rappeler » : seulement pour Comptable+ (RBAC endpoint).
+		if (canManage) {
+			try {
+				const res = await listReminders();
+				reminderCount = res.groups.reduce((n, g) => n + g.invoices.length, 0);
+			} catch {
+				// Widget silencieux : un échec ne pollue pas l'accueil (pas de toast).
+			} finally {
+				reminderLoaded = true;
+			}
 		}
 	});
 
@@ -78,7 +102,18 @@
 		<h2 class="text-lg font-semibold text-text">
 			{msg('homepage-invoices-title', 'Factures ouvertes')}
 		</h2>
-		{#if isGuided}
+		{#if canManage && reminderLoaded && reminderCount > 0}
+			<!-- Story 21-6c (D-c2) : N factures à rappeler → lien vers la page Rappels. -->
+			<p class="mt-2 text-sm">
+				<a class="font-medium text-primary underline" href="/invoices/reminders">
+					<span data-testid="homepage-reminders-count">
+						{msg('homepage-reminders-count', '{ $n } facture(s) à rappeler', {
+							n: reminderCount,
+						})}
+					</span>
+				</a>
+			</p>
+		{:else if isGuided}
 			<p class="mt-2 text-sm text-text-muted">
 				{msg('homepage-invoices-empty-guided', 'Aucune facture ouverte. Créez votre première facture pour facturer vos clients.')}
 			</p>

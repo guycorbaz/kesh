@@ -112,6 +112,31 @@ export interface VatReportDto {
 
 export type ReportType = 'balance-sheet' | 'income-statement' | 'trial-balance' | 'journals' | 'vat';
 
+// --- Story 21-7 : Balance âgée débiteurs (montants string, rust_decimal serde-str) ---
+
+/** Montants d'une tranche d'ancienneté (ligne de contact ou total général). */
+export interface AgedBucketDto {
+	notDue: string;
+	days1To30: string;
+	days31To60: string;
+	days61To90: string;
+	daysOver90: string;
+	total: string;
+}
+
+/** Une ligne de la balance âgée : les créances ouvertes d'un contact, ventilées. */
+export interface AgedReceivablesRowDto extends AgedBucketDto {
+	contactId: number;
+	contactName: string;
+}
+
+/** Balance âgée complète, arrêtée à `asOf` (YYYY-MM-DD). */
+export interface AgedReceivablesDto {
+	asOf: string;
+	rows: AgedReceivablesRowDto[];
+	totals: AgedBucketDto;
+}
+
 /** Query params communs (camelCase API). */
 export interface ReportQuery {
 	fiscalYearId: number;

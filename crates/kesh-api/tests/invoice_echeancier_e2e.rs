@@ -135,6 +135,7 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64) -> i64 {
             phone: None,
             ide_number: None,
             default_payment_terms: None,
+            default_payment_terms_days: None,
             language: None,
             salutation: kesh_db::entities::contact::Salutation::Neutre,
         },
@@ -421,10 +422,12 @@ async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     assert_eq!(&bytes[..3], &[0xEF, 0xBB, 0xBF]);
     let text = String::from_utf8_lossy(&bytes);
     // Séparateur ; + montant formaté suisse (apostrophe typographique U+2019
-    // comme séparateur de milliers). P10 (review pass 2) : le total_amount
-    // stocké est unit_price × (1 + vat_rate/100) = 1234.56 × 1.081 ≈ 1334.56,
-    // formaté `1'334.56`. On asserte la présence du séparateur Swiss sur un
-    // nombre > 1000 dans le corps (plus robuste qu'un littéral exact).
+    // comme séparateur de milliers). Corrigé Story 21-2a (#246) : le
+    // commentaire P10 d'origine prétendait à tort que `total_amount` stocké
+    // incluait la TVA — il est HT (1234.56) ; depuis 21-2a la colonne CSV
+    // exporte le TTC dérivé des lignes (1234.56 @ 8.1 % → 1334.56). Dans les
+    // deux cas le nombre dépasse 1000 → l'assertion sur le séparateur U+2019
+    // est robuste (plus qu'un littéral exact).
     assert!(text.contains(';'));
     assert!(
         text.contains("1\u{2019}"),

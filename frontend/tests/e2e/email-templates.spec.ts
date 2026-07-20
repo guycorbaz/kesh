@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { seedTestState, clearAuthStorage } from './helpers/test-state';
 
 /**
@@ -147,5 +148,60 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await expect(
 			page.getByRole('heading', { name: /Modèles d'e-mail/ }),
 		).toBeVisible();
+	});
+
+	test('multi-type/multi-niveau : changer type/niveau/langue préserve les brouillons (Story 21-4, anti-régression bug 20-2)', async ({
+		page,
+	}) => {
+		await goToEmailTemplates(page);
+
+		const subject = page.getByTestId('email-template-subject');
+
+		// Sélectionner type rappel, niveau 2, langue FR ; saisir un brouillon (sans enregistrer).
+		await page.getByTestId('email-template-type-invoice_reminder').click();
+		await page.getByTestId('email-template-level-2').click();
+		await subject.fill('brouillon-niv2-fr');
+
+		// Niveau 1 (même type/langue) : le brouillon niveau 2 ne s'affiche pas.
+		await page.getByTestId('email-template-level-1').click();
+		await expect(subject).not.toHaveValue('brouillon-niv2-fr');
+
+		// Retour niveau 2 : brouillon préservé (pas de re-fetch).
+		await page.getByTestId('email-template-level-2').click();
+		await expect(subject).toHaveValue('brouillon-niv2-fr');
+
+		// Langue DE puis retour FR : brouillon FR:2 toujours là.
+		await page.getByTestId('email-template-lang-tab-DE').click();
+		await expect(subject).not.toHaveValue('brouillon-niv2-fr');
+		await page.getByTestId('email-template-lang-tab-FR').click();
+		await expect(subject).toHaveValue('brouillon-niv2-fr');
+
+		// Type invoice_send (reset niveau, pas de crash) puis retour rappel/niveau 2 : préservé.
+		await page.getByTestId('email-template-type-invoice_send').click();
+		await expect(page.getByTestId('email-template-level-2')).toHaveCount(0);
+		await page.getByTestId('email-template-type-invoice_reminder').click();
+		await page.getByTestId('email-template-level-2').click();
+		await expect(subject).toHaveValue('brouillon-niv2-fr');
+	});
+
+	test('a11y : sélecteurs type/niveau sans violation axe (Story 21-4)', async ({ page }) => {
+		await goToEmailTemplates(page);
+
+		// Afficher le sélecteur de niveau (rappels) pour couvrir les deux toggle-groups.
+		await page.getByTestId('email-template-type-invoice_reminder').click();
+		await expect(page.getByTestId('email-template-level-1')).toBeVisible();
+
+		// Scope aux sélecteurs type/niveau ajoutés par 21-4 (`.include`) : la page
+		// email-templates (Epic 20) porte de la dette a11y pré-existante hors scope
+		// de cette story (landmark `<aside>` imbriqué dans `<main>`). Ce test valide
+		// la sémantique/ARIA que 21-4 introduit (role="group", aria-pressed, labels).
+		// `color-contrast` désactivé : le chip actif `bg-primary-light` (#3b82f6) +
+		// texte foncé échoue au ratio AA (3.97:1) — dette systémique app-wide
+		// (nav, onboarding, Epic 20), suivie par l'issue #253.
+		const results = await new AxeBuilder({ page })
+			.include('[data-testid="email-template-selectors"]')
+			.disableRules(['color-contrast'])
+			.analyze();
+		expect(results.violations).toEqual([]);
 	});
 });

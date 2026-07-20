@@ -43,3 +43,6 @@ docs/manual/**/*.toc
 docs/manual/**/*.xdv
 # (*.log déjà couvert par la règle globale *.log ci-dessus)
 test-results/
+
+# Cache vitest créé si une commande npm tourne depuis la racine (cwd errant)
+/node_modules/
