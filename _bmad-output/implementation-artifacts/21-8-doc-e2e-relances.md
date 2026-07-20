@@ -65,7 +65,7 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 ### D. E2E round-trip Playwright
 
-7. **Promouvoir `fetchSentEmails`** (D-8c) dans un helper partagé (`frontend/tests/e2e/helpers/mailer.ts` **ou** l'ajouter à `helpers/test-state.ts`) : `export async function fetchSentEmails(page): Promise<Array<Record<string, unknown>>>` (corps identique à `reminders.spec.ts:44-51`, `GET ${BACKEND_URL}/api/v1/_test/sent-emails`). Re-pointer **les DEUX** specs sur l'import partagé et supprimer leur copie locale : `reminders.spec.ts:44-51` **ET** `invoice-send-email.spec.ts:49-56` (les 2 corps sont identiques — vérifié validate P1).
+7. **Promouvoir `fetchSentEmails`** (D-8c) **dans `frontend/tests/e2e/helpers/test-state.ts`** (là où vivent les autres helpers de test globaux `seedTestState`/`authedApiContext` — tranché validate P2, PAS un nouveau `mailer.ts`) : `export async function fetchSentEmails(page): Promise<Array<Record<string, unknown>>>` (corps identique à `reminders.spec.ts:44-51`, `GET ${BACKEND_URL}/api/v1/_test/sent-emails`). Re-pointer **les DEUX** specs sur l'import partagé et supprimer leur copie locale : `reminders.spec.ts:44-51` **ET** `invoice-send-email.spec.ts:49-56` (les 2 corps sont identiques — vérifié validate P1).
 8. **Nouveau spec `frontend/tests/e2e/dunning-roundtrip.spec.ts`** — un test unique chaînant **une seule facture** (D-8b), piloté par l'UI, avec `seedTestState('with-company')` + `login` local + fixtures partagées (`createContactWithAddressViaApi` avec e-mail, `createAndValidateInvoiceViaApi(..., overdueDate())`). Étapes vérifiées bout-en-bout :
    - **(config)** `/settings/dunning` affiche les **3 niveaux seedés** + grâce (le seed lazy suffit, D-8b).
    - **(facture échue)** créer contact **avec e-mail** + facture échue (`overdueDate()`), + `ensurePrimaryBankAccountViaApi` (PDF/QR).
@@ -73,7 +73,7 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
    - **(envoi unitaire)** envoi UI (aperçu → confirmer) → **e-mail capturé** (`fetchSentEmails`, +1, `to` = e-mail contact, pièce jointe `.pdf`).
    - **(envoi lot)** une **2e** facture échue du même/deux contacts → sélection + envoi lot UI → rapport `{ accepted }` + **e-mail capturé** (+1).
    - **(historique)** `/invoices/{id}` de la 1re facture : la section **historique** montre le rappel envoyé (canal e-mail).
-   - **(suspension)** toggle **Suspendre** (modale + motif) sur la fiche → badge « Suspendu » ; **la facture reste dans la balance âgée** (étape suivante).
+   - **(suspension)** toggle **Suspendre** (modale + **motif** saisi) sur la fiche → badge « Suspendu » ; **asserter que le motif est bien persisté** (`invoice-paused-badge` `title`/`aria-label` contient le motif — seule surface d'affichage du motif, `DunningPausedBadge.svelte:26`) ; **la facture reste dans la balance âgée** (étape suivante).
    - **(balance âgée)** `/reports?tab=aged-receivables` → Générer → la ligne du contact figure dans le tableau (facture suspendue **incluse**, D10).
    - **data-testid existants réutilisés** (aucun nouveau côté prod) : `dunning-level-row`, `reminder-send-open`/`reminder-send-confirm`, `reminder-batch-*`, `reminder-history`, `dunning-pause-button`/`dunning-pause-confirm`/`invoice-paused-badge`, `aged-report-generate`/`aged-receivables-row`.
 
@@ -94,6 +94,8 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 11. **Gate local** (Test Locally First) :
     ```sh
+    # Pré-vol (AVANT de commencer T1) — la chaîne LaTeX est requise pour T3 (AC 6).
+    which xelatex >/dev/null || { echo "xelatex manquant (apt install texlive-xetex)"; exit 1; }
     # LaTeX — régénération des manuels
     cd docs/manual && make fr        # 3 PDF régénérés (xelatex ×2)
     # Frontend — les 2 specs touchés (credit-notes + round-trip) + reminders (re-pointé fetchSentEmails)
@@ -176,11 +178,12 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 **Nouveaux fichiers** :
 - `frontend/tests/e2e/dunning-roundtrip.spec.ts`
-- `frontend/tests/e2e/helpers/mailer.ts` (ou ajout à `test-state.ts` — `fetchSentEmails`)
+- (pas de nouveau fichier helper : `fetchSentEmails` **ajouté à `helpers/test-state.ts`** existant, tranché validate P2)
 
 **Modifiés** :
 - `docs/manual/fr/admin-manual.tex` + `docs/manual/fr/user-manual.tex`
 - `docs/manual/fr/{admin-manual,user-manual,marketing-brochure}.pdf` (régénérés)
+- `frontend/tests/e2e/helpers/test-state.ts` (+`fetchSentEmails` exporté, D-8c)
 - `frontend/tests/e2e/reminders.spec.ts` + `frontend/tests/e2e/invoice-send-email.spec.ts` (import `fetchSentEmails` partagé, D-8c)
 - `frontend/tests/e2e/credit-notes.spec.ts` (A4)
 - `CHANGELOG.md`
@@ -207,6 +210,20 @@ Auteur spec : Opus. Panel orthogonal Sonnet. **~35 citations file:line vérifié
 - **L2 (LOW) — numérotation obsolète dans l'epic doc.** `epic-21-echeances-relances.md:83` disait « (dans 21-9…) » alors que la ligne 106 assigne A4 à 21-8 (21-9 n'existe pas). **Patch** : ligne 83 corrigée dans l'epic doc.
 
 **Vérifications positives (Sonnet)** : complétude doc vs planning ligne 106 (tous sujets couverts) ; faisabilité round-trip prouvée par le SQL d'éligibilité (`dunning_eligibility.rs:119-133` — après envoi unitaire niveau 1, la facture sort de la liste → 2e facture bien nécessaire pour le lot) ; D10 (suspendue restant dans la balance âgée, `aged_receivables.rs:15`) ; D-8a (macros non bumpées = patron projet constant depuis PR #102, ex. Epic 20 `57fb87f5`→`8985bb33`) ; item 26 export/backup déjà livré (`global.rs:261-273`) ; A4 sans assertion de montant. **Aucun défaut de fond.**
+
+### Pass 2 (Haiku ×2, contexte frais, 2026-07-20) — 0 CRITICAL/HIGH → **CONVERGÉ**
+
+Panel Haiku orthogonal aux patches Opus/Sonnet. Les 4 correctifs P1 (M1/M2/L1/L2) re-vérifiés **présents et cohérents** ; ~45 citations file:line re-spot-checkées, **toutes exactes**.
+
+- **Ground-truth (Haiku)** : **SPEC VALIDE, 0 finding**. Tous les ancrages LaTeX, macros, testids, fixtures, SQL, export/backup confirmés exacts ; patches P1 bien intégrés.
+- **Cohérence (Haiku)** : 0 CRITICAL/HIGH, 3 clarifications de design (« affinage, non-bloquant, production-ready ») → **patchées** (reclassées LOW — pures précisions de spec, zéro impact logique) :
+  - AC 7 : localisation `fetchSentEmails` tranchée → **`helpers/test-state.ts`** (pas de nouveau `mailer.ts`) ; Project Structure Notes + File List alignés.
+  - AC 8 : ajout d'une **assertion de persistance du motif** de suspension (badge `title`/`aria-label`, seule surface d'affichage).
+  - AC 6/Gate : ajout d'un **pré-vol `which xelatex`** avant T1 (évite de découvrir l'absence de la chaîne LaTeX après T1-T5).
+
+### Trend & décision — validate
+
+**Pass 1 (Sonnet ×2) : 2 MEDIUM + 2 LOW → Pass 2 (Haiku ×2) : 0 CRITICAL/HIGH (3 clarifications de design patchées, reclassées LOW).** Critère d'arrêt atteint (0 > LOW substantiel), budget 2/8. Rotation orthogonale Sonnet→Haiku, tous orthogonaux à l'auteur Opus. ~45 citations re-vérifiées ground-truth sur les 2 passes, aucune fausse. Les MEDIUM de fond (DRY partiel, contradiction Hors-scope) traités en P1 ; P2 n'a trouvé que des précisions. **Spec scellée, prête pour `bmad-dev-story 21-8`.**
 
 ## Dev Agent Record
 
