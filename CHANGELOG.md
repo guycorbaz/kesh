@@ -10,10 +10,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+## [0.7.0] — 2026-07-20
+
 ### Corrigé
 
 - **« Marquer payée » ne fonctionnait pas** : cliquer sur *Marquer payée* (page Facturer / Échéancier) restait sans effet — la facture n'était pas enregistrée comme payée (erreur technique 422 côté serveur). Corrigé : le marquage manuel du paiement fonctionne de nouveau. (#249)
 - **Montants TTC corrects sur la QR-facture, le PDF, l'e-mail, l'échéancier et le rapprochement bancaire** : le montant demandé par la **QR-facture**, la ligne **« Total TTC »** du PDF, la variable **`{amount}`** des e-mails, les **totaux de l'échéancier** (KPI « impayées / en retard », colonne Total, export CSV) et le **rapprochement bancaire** présentent désormais le **montant réellement dû, TVA comprise**. Auparavant, pour une entreprise assujettie à la TVA, ces montants affichaient le total **hors taxe** — un client scannant la QR-facture aurait sous-payé, et surtout **le rapprochement automatique ne proposait plus aucune correspondance** (l'encaissement TTC ne correspondait jamais au hors-taxe de la facture). Le montant hors taxe reste utilisé là où c'est correct (comptabilisation du produit). Le détail de TVA par taux sur le PDF (récapitulatif) reste à venir (#151). (#246)
+- **Rappel manuel « aujourd'hui » refusé le matin** : enregistrer un rappel papier daté du jour échouait (erreur technique 422) tant qu'il était avant 14h en Suisse — le système considérait la date comme « dans le futur ». Corrigé : un rappel du jour est accepté à toute heure. (#259)
+- **Accessibilité de la liste des factures** : les boutons d'action (voir / modifier / supprimer), affichés en icône seule, portent désormais un **libellé lisible par lecteur d'écran** incluant la référence de la facture, et le badge **« Impayée »** respecte le contraste minimal recommandé (WCAG AA). (#256)
+- **Suppression d'une facture relancée bloquée** : supprimer une facture qui a déjà fait l'objet de rappels aurait effacé l'historique de relance (preuve de recouvrement). La suppression est désormais **refusée** avec un message clair, comme pour une facture payée ou créditée — pour retirer une telle facture, passer par un avoir. (#260)
+- **Export de souveraineté complet** : l'export CSV des données incluait toutes les factures mais **omettait** la date/adresse du dernier envoi par e-mail et l'état de suspension des rappels. Ces colonnes sont désormais présentes (portabilité intégrale). (#262)
 
 ### Ajouté
 
