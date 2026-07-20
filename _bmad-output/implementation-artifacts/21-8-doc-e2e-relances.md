@@ -24,7 +24,7 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 - **D-8a — Bump des macros version = étape RELEASE, pas 21-8.** Le gate 4-bis (`CLAUDE.md`) impose de bumper `\keshVersion`/`\keshReleaseDate`/`\keshTargetRelease` **à la création de la release**. 21-8 met à jour le **contenu** des manuels + régénère les PDF, mais **ne touche PAS les 3 macros version** (elles restent à `0.6.0`/`v0.6` ; le release Epic 21 les portera à la version publiée + re-régénérera les PDF). Rationale : la date de publication n'est pas connue au moment de 21-8 ; le stamp de version est possédé par la release.
 - **D-8b — Round-trip piloté par l'UI, une seule facture.** Le test suit un parcours utilisateur réel de bout en bout sur **la même facture** (pas des factures séparées par étape comme aujourd'hui). Il s'appuie sur le **seed lazy** des 3 niveaux par défaut (aucune création de niveaux requise ; une étape « ouvrir /settings/dunning et vérifier les 3 niveaux » suffit pour le volet config). Envoi unitaire + lot via l'UI, capture vérifiée via MockMailer.
-- **D-8c — Mutualiser `fetchSentEmails`.** Le helper de capture d'e-mails est aujourd'hui **dupliqué inline** (`reminders.spec.ts:44`, équivalent dans `invoice-send-email.spec.ts`). Le promouvoir dans `frontend/tests/e2e/helpers/` et re-pointer `reminders.spec.ts` dessus (DRY, cohérent A4). Les autres helpers locaux (`pauseInvoiceViaApi`, `recordManualReminderViaApi`) restent locaux (le round-trip exerce ces actions **par l'UI**, pas par API).
+- **D-8c — Mutualiser `fetchSentEmails`.** Le helper de capture d'e-mails est aujourd'hui **dupliqué mot pour mot** dans **DEUX** specs (`reminders.spec.ts:44-51` ET `invoice-send-email.spec.ts:49-56`). Le promouvoir dans `frontend/tests/e2e/helpers/` et re-pointer **les deux** specs dessus (DRY complet, cohérent A4 — ne pas laisser un duplicata nommé). Le helper local `pauseInvoiceViaApi` reste local (le round-trip exerce la suspension **par l'UI**, pas par API — cf. AC8).
 - **D-8d — A4 mécanique.** Remplacer les 2 helpers locaux de `credit-notes.spec.ts` (`createContactViaApi`, `createAndValidateInvoiceViaApi`) par les fixtures partagées ; garder `login`/`uniq` locaux ; aucune assertion à ajuster (aucun montant testé — divergence adresse structurée / HT 1000→900 neutre).
 
 ### Hors scope (garde-fous)
@@ -34,7 +34,8 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 - **Website / brochure marketing** : la synchro `website/` + brochure relève du **doc-sync de release** (`CLAUDE.md` liste de contrôle pré-release). 21-8 se limite aux **manuels admin/user** + CHANGELOG. Ne pas modifier `website/` ici.
 - **Captures d'écran réelles** : le macro `\keshscreenshot` retombe sur `_placeholder.png` (aucune capture réelle n'existe). 21-8 pose les appels `\keshscreenshot{...}{légende}  % TODO capture` (patron existant), **sans** produire les PNG (chantier capture séparé).
 - **Aucune nouvelle logique** : pas d'endpoint, pas de migration, pas de changement de comportement. Si un écart entre la doc et le comportement réel est découvert, c'est un **bug à tracer** (issue GitHub), pas à « corriger dans la doc ».
-- **Promotion de `pauseInvoiceViaApi`/`recordManualReminderViaApi`** en fixtures partagées → hors scope (le round-trip les exerce par l'UI ; leur mutualisation viendra si un futur spec les réutilise).
+- **Promotion de `pauseInvoiceViaApi` en fixture partagée** → hors scope (le round-trip exerce la suspension **par l'UI**, `dunning-pause-*` ; sa mutualisation viendra si un futur spec la réutilise en API).
+- **Étape « rappel manuel » dans le round-trip** → hors scope (déjà couverte par `reminders.spec.ts` ; le round-trip AC8 chaîne envoi **e-mail** unitaire+lot → historique → suspension → balance âgée, PAS le canal manuel). Le helper local `recordManualReminderViaApi` (`invoices.spec.ts:247`) reste donc local et n'est pas touché.
 
 ## Acceptance Criteria
 
@@ -64,7 +65,7 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 ### D. E2E round-trip Playwright
 
-7. **Promouvoir `fetchSentEmails`** (D-8c) dans un helper partagé (`frontend/tests/e2e/helpers/mailer.ts` **ou** l'ajouter à `helpers/test-state.ts`) : `export async function fetchSentEmails(page): Promise<Array<Record<string, unknown>>>` (corps identique à `reminders.spec.ts:44-51`, `GET ${BACKEND_URL}/api/v1/_test/sent-emails`). Re-pointer `reminders.spec.ts` sur l'import partagé (supprimer la copie locale).
+7. **Promouvoir `fetchSentEmails`** (D-8c) dans un helper partagé (`frontend/tests/e2e/helpers/mailer.ts` **ou** l'ajouter à `helpers/test-state.ts`) : `export async function fetchSentEmails(page): Promise<Array<Record<string, unknown>>>` (corps identique à `reminders.spec.ts:44-51`, `GET ${BACKEND_URL}/api/v1/_test/sent-emails`). Re-pointer **les DEUX** specs sur l'import partagé et supprimer leur copie locale : `reminders.spec.ts:44-51` **ET** `invoice-send-email.spec.ts:49-56` (les 2 corps sont identiques — vérifié validate P1).
 8. **Nouveau spec `frontend/tests/e2e/dunning-roundtrip.spec.ts`** — un test unique chaînant **une seule facture** (D-8b), piloté par l'UI, avec `seedTestState('with-company')` + `login` local + fixtures partagées (`createContactWithAddressViaApi` avec e-mail, `createAndValidateInvoiceViaApi(..., overdueDate())`). Étapes vérifiées bout-en-bout :
    - **(config)** `/settings/dunning` affiche les **3 niveaux seedés** + grâce (le seed lazy suffit, D-8b).
    - **(facture échue)** créer contact **avec e-mail** + facture échue (`overdueDate()`), + `ensurePrimaryBankAccountViaApi` (PDF/QR).
@@ -97,9 +98,14 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
     cd docs/manual && make fr        # 3 PDF régénérés (xelatex ×2)
     # Frontend — les 2 specs touchés (credit-notes + round-trip) + reminders (re-pointé fetchSentEmails)
     cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build
-    cd frontend && npm run test:e2e   # dunning-roundtrip.spec + credit-notes.spec + reminders.spec (MockMailer requis)
-    # Backend — aucun code Rust ni FTL touché → fmt/build/clippy triviaux (cache hit), pas de test backend requis
+    cd frontend && npm run test:e2e   # dunning-roundtrip.spec + credit-notes.spec + reminders.spec + invoice-send-email.spec (MockMailer requis)
+    # Backend — aucun code Rust ni FTL touché : les 4 checks CLAUDE.md restent
+    # exécutés par procédure (21-8 touche du TS E2E, pas « doc-only »), mais sont
+    # des no-op cache-hit (0 delta Rust). Pas de gate workspace complet requis.
     cargo fmt --all -- --check
+    cargo build --workspace --all-targets
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace   # (ou -p sur crates touchés — ici aucun ; no-op)
     ```
     ⚠️ E2E : backend `KESH_TEST_MODE` + **SMTP factice** (MockMailer) + `kesh_e2e` migré + `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` + `KESH_COOKIE_SECURE=false` ; `npm run build` avant chaque run ; jamais de pipe sur le runner ; `cd frontend` explicite (cwd errant post-tâche de fond, leçon 21-6b). Le round-trip et `reminders.spec` **exigent le MockMailer** (`GET /_test/sent-emails`).
 12. **Doc-only pour le backend** : aucun `.rs`, aucun `.ftl`, aucune migration → pas de gate workspace complet, pas de bump `min_required`. Le seul livrable « binaire » est les 3 PDF (versionnés).
@@ -175,7 +181,7 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 **Modifiés** :
 - `docs/manual/fr/admin-manual.tex` + `docs/manual/fr/user-manual.tex`
 - `docs/manual/fr/{admin-manual,user-manual,marketing-brochure}.pdf` (régénérés)
-- `frontend/tests/e2e/reminders.spec.ts` (import `fetchSentEmails` partagé)
+- `frontend/tests/e2e/reminders.spec.ts` + `frontend/tests/e2e/invoice-send-email.spec.ts` (import `fetchSentEmails` partagé, D-8c)
 - `frontend/tests/e2e/credit-notes.spec.ts` (A4)
 - `CHANGELOG.md`
 
@@ -191,7 +197,16 @@ L'Epic 21 a livré tout le cycle débiteurs : conditions de paiement (#245), TTC
 
 ## Change Log — validate
 
-<!-- Rempli par bmad-create-story validate. -->
+### Pass 1 (Sonnet ×2 : véracité citations + cohérence/complétude, 2026-07-20) — 2 MEDIUM + 2 LOW → patchés
+
+Auteur spec : Opus. Panel orthogonal Sonnet. **~35 citations file:line vérifiées ground-truth — TOUTES exactes** (ancrages manuels LaTeX, macros, testids E2E, signatures fixtures, endpoints, SQL éligibilité/balance âgée, export/backup, historique git des macros). 0 CRITICAL/HIGH.
+
+- **M1 (MEDIUM) — DRY partiel : `fetchSentEmails` dupliqué dans DEUX specs.** Corps identique mot pour mot dans `reminders.spec.ts:44-51` **et** `invoice-send-email.spec.ts:49-56` ; la spec ne migrait que le 1er. **Patch** : AC7/T4 + D-8c + File List re-pointent **les deux** specs (sinon la justification DRY est bancale).
+- **M2 (MEDIUM) — contradiction Hors-scope vs AC8.** Le Hors-scope affirmait que le round-trip exerce `recordManualReminderViaApi` par l'UI, or AC8 n'a **aucune** étape rappel manuel (canal e-mail seulement). **Patch** : phrase corrigée — `pauseInvoiceViaApi` (suspension UI) reste local ; l'étape rappel manuel est explicitement **hors round-trip** (déjà couverte par `reminders.spec.ts`).
+- **L1 (LOW) — gate AC11 trop étroit.** N'exécutait que `cargo fmt` ; procédure `CLAUDE.md` = 4 checks backend (21-8 touche du TS, pas « doc-only »). **Patch** : les 4 checks explicités (no-op cache-hit, 0 delta Rust).
+- **L2 (LOW) — numérotation obsolète dans l'epic doc.** `epic-21-echeances-relances.md:83` disait « (dans 21-9…) » alors que la ligne 106 assigne A4 à 21-8 (21-9 n'existe pas). **Patch** : ligne 83 corrigée dans l'epic doc.
+
+**Vérifications positives (Sonnet)** : complétude doc vs planning ligne 106 (tous sujets couverts) ; faisabilité round-trip prouvée par le SQL d'éligibilité (`dunning_eligibility.rs:119-133` — après envoi unitaire niveau 1, la facture sort de la liste → 2e facture bien nécessaire pour le lot) ; D10 (suspendue restant dans la balance âgée, `aged_receivables.rs:15`) ; D-8a (macros non bumpées = patron projet constant depuis PR #102, ex. Epic 20 `57fb87f5`→`8985bb33`) ; item 26 export/backup déjà livré (`global.rs:261-273`) ; A4 sans assertion de montant. **Aucun défaut de fond.**
 
 ## Dev Agent Record
 

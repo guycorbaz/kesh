@@ -80,7 +80,7 @@ Verdicts divergents — produit : C renforcée (le marché suisse [Bexio, Abacus
 ### F. Divers hérités
 
 26. **Export souveraineté + backup admin** : les 3 nouvelles tables (`dunning_levels`, `company_dunning_settings`, `invoice_reminders`) entrent dans `exports/global.zip` + `admin_backup` + compteurs de tests (famille « nouvelle table → compteur figé » — 3 régressions de ce type attrapées à l'Epic 20). `invoice_reminders` est une pièce du dossier de recouvrement (preuve de mise en demeure) — son absence de l'export serait une perte juridique. Rétention `sent_to` : CO 958f (10 ans), documenté manuel admin (LPD).
-27. **A4 hérité Epic 20** : re-pointer `credit-notes.spec.ts` sur `api-fixtures.ts` (dans 21-9, story E2E).
+27. **A4 hérité Epic 20** : re-pointer `credit-notes.spec.ts` sur `api-fixtures.ts` (dans 21-8, story doc+E2E — corrigé de « 21-9 » qui n'existe pas, cf. ligne 106).
 28. **`unmark-paid` post-rappel** : la facture redevient éligible immédiatement au niveau suivant (sent_at ancien) — acceptable, documenté d'une ligne.
 
 ## Découpage en stories (révisé post-critique)
