@@ -239,11 +239,12 @@ test.describe('Page Rappels (Story 21-6b)', () => {
 		await page.goto('/invoices/reminders');
 		await expect(page.getByTestId('reminders-list')).toBeVisible();
 		await page.waitForLoadState('networkidle');
-		// Scopé au sous-arbre de la story ; dettes systémiques pré-existantes
-		// neutralisées : color-contrast (#253), button-name (#256).
+		// Scopé au sous-arbre de la story. `button-name` réactivé (#256 clos —
+		// les boutons de la liste portent un `<span class="sr-only">`). Seule
+		// `color-contrast` reste neutralisée : dette systémique #253 encore ouverte.
 		const results = await new AxeBuilder({ page })
 			.include('[data-testid="reminders-list"]')
-			.disableRules(['color-contrast', 'button-name'])
+			.disableRules(['color-contrast'])
 			.analyze();
 		expect(results.violations).toEqual([]);
 	});

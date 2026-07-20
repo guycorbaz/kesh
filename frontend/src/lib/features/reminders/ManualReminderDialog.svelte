@@ -12,6 +12,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { reminderSentAtDateTime } from './reminder-sent-at';
 
 	type Props = {
 		open: boolean;
@@ -81,10 +82,10 @@
 
 	function handleConfirm() {
 		if (submitting || clientError) return;
-		// #249 : `sent_at` est un NaiveDateTime côté backend — une date nue
-		// ("YYYY-MM-DD") est rejetée à la désérialisation. Suffixer T12:00:00
-		// (heure fixée à midi pour éviter tout décalage de date à l'affichage).
-		onConfirm(level, `${sentAt}T12:00:00`, note.trim() || null);
+		// #259/#249 : dérive le NaiveDateTime `sent_at` de la date choisie —
+		// instant courant pour aujourd'hui (jamais futur → plus de 422 avant midi
+		// UTC), midi pour une date passée (anti-décalage d'affichage).
+		onConfirm(level, reminderSentAtDateTime(sentAt), note.trim() || null);
 	}
 </script>
 

@@ -212,11 +212,11 @@ test.describe('Factures — suspension des rappels (21-6a)', () => {
 	// le patron `PaymentStatusBadge` colore le texte avec la MÊME variable que
 	// la teinte de fond → 3.69:1, sous le minimum AA. Corrigé (11.4:1).
 	//
-	// `button-name` est désactivé : dette a11y PRÉ-EXISTANTE (#256) — les
-	// boutons d'action des lignes sont icône seule, `aria-hidden`, sans
-	// `aria-label`. Vérifié hors du diff 21-6a ; la règle de la story interdit
-	// de corriger une dette pré-existante ici. RETIRER ce disableRules à la
-	// fermeture de #256.
+	// #256 CLOS : les boutons d'action des lignes (icône seule, `aria-hidden`)
+	// portent désormais un `aria-label` explicite, et le badge `.unpaid` adopte
+	// le patron AA-safe (texte primaire sur tint neutre). Le `disableRules
+	// (['button-name'])` historique est donc retiré — ce test enforce maintenant
+	// `button-name` ET `color-contrast` sur la liste peuplée (garde anti-régression).
 	test('axe-core sans violations sur la liste peuplée (badge suspendu)', async ({ page }) => {
 		await login(page);
 		await ensurePrimaryBankAccountViaApi(page);
@@ -228,7 +228,7 @@ test.describe('Factures — suspension des rappels (21-6a)', () => {
 		await page.goto('/invoices');
 		await expect(page.getByTestId('invoice-paused-badge').first()).toBeVisible();
 		await page.waitForLoadState('networkidle');
-		const results = await new AxeBuilder({ page }).disableRules(['button-name']).analyze();
+		const results = await new AxeBuilder({ page }).analyze();
 		expect(results.violations).toEqual([]);
 	});
 });

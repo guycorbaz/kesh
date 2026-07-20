@@ -407,7 +407,13 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
         "total_amount",
         "journal_entry_id",
         "paid_at",
+        // #262 : envoi e-mail (Epic 20) — omis jusqu'ici de l'export souveraineté.
+        "emailed_at",
+        "emailed_to",
         "project_id",
+        // #262 : suspension de relance (Story 21-5a) — idem, désormais exportée.
+        "dunning_paused_at",
+        "dunning_paused_note",
         "version",
         "created_at",
         "updated_at",
@@ -426,8 +432,14 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             fmt_decimal(i.total_amount),
             fmt_opt_i64(i.journal_entry_id),
             fmt_opt_dt(i.paid_at),
+            // Dernier envoi e-mail (Epic 20, Story 20-3b1).
+            fmt_opt_dt(i.emailed_at),
+            fmt_opt_str(&i.emailed_to),
             // Tag analytique document-level (Epic 19, Story 19-4).
             fmt_opt_i64(i.project_id),
+            // Suspension de relance débiteur (Story 21-5a).
+            fmt_opt_dt(i.dunning_paused_at),
+            fmt_opt_str(&i.dunning_paused_note),
             i.version.to_string(),
             fmt_dt(i.created_at),
             fmt_dt(i.updated_at),
@@ -969,6 +981,77 @@ mod tests {
             credit: dec!(0.00),
             project_id: None,
         }
+    }
+
+    fn sample_invoice() -> Invoice {
+        Invoice {
+            id: 500,
+            company_id: 42,
+            contact_id: 7,
+            invoice_number: Some("2026-0001".into()),
+            status: "validated".into(),
+            date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            due_date: Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()),
+            payment_terms: Some("30 jours".into()),
+            total_amount: dec!(1234.50),
+            journal_entry_id: Some(10),
+            paid_at: None,
+            emailed_at: Some(naive_dt(2026, 6, 2, 9, 30, 0)),
+            emailed_to: Some("debiteur@example.ch".into()),
+            project_id: None,
+            dunning_paused_at: Some(naive_dt(2026, 6, 15, 14, 0, 0)),
+            dunning_paused_note: Some("litige; \"en cours\"".into()), // RFC 4180 escape
+            version: 3,
+            created_at: naive_dt(2026, 6, 1, 8, 0, 0),
+            updated_at: naive_dt(2026, 6, 15, 14, 0, 0),
+        }
+    }
+
+    // ----- #262 — invoices serializer : complétude des colonnes souveraineté -----
+
+    /// Garde anti-dérive (#262) : le header DOIT lister exactement les 19 colonnes
+    /// de la struct `Invoice`, dans l'ordre. Tout `ADD COLUMN` répercuté dans la
+    /// struct force la mise à jour de l'export ET de ce test — symétrique de la
+    /// discipline P5 (audit idempotence). Empêche qu'un champ (comme `emailed_*` /
+    /// `dunning_paused_*`, jadis oubliés) manque silencieusement de l'export.
+    #[test]
+    fn serialize_invoices_csv_header_exhaustif() {
+        let mut buf = Vec::new();
+        serialize_invoices_csv(&[], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf[3..].to_vec()).expect("utf8"); // skip BOM
+        let header = text.lines().next().expect("header");
+        assert_eq!(
+            header,
+            "id;company_id;contact_id;invoice_number;status;date;due_date;\
+             payment_terms;total_amount;journal_entry_id;paid_at;emailed_at;emailed_to;\
+             project_id;dunning_paused_at;dunning_paused_note;version;created_at;updated_at"
+        );
+    }
+
+    /// #262 : les champs envoi e-mail (Epic 20) et suspension de relance (21-5a),
+    /// jadis omis de l'export souveraineté, sont désormais bien sérialisés.
+    #[test]
+    fn serialize_invoices_csv_inclut_emailed_et_dunning_paused() {
+        let mut buf = Vec::new();
+        serialize_invoices_csv(&[sample_invoice()], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf).expect("utf8");
+        assert!(
+            text.contains("2026-06-02T09:30:00Z"),
+            "emailed_at manquant: {text}"
+        );
+        assert!(
+            text.contains("debiteur@example.ch"),
+            "emailed_to manquant: {text}"
+        );
+        assert!(
+            text.contains("2026-06-15T14:00:00Z"),
+            "dunning_paused_at manquant: {text}"
+        );
+        // Note avec `;` et `"` → double-quoted + `""` interne (RFC 4180).
+        assert!(
+            text.contains("\"litige; \"\"en cours\"\"\""),
+            "dunning_paused_note mal échappée: {text}"
+        );
     }
 
     // ----- AC #30(a) — accounts serializer -----
