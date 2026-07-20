@@ -1,6 +1,6 @@
 # Story 21.8: Documentation & E2E round-trip des rappels débiteurs
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-20 par bmad-create-story. Dernière story de l'Epic 21 (clôture). Cartographie ground-truth par 3 agents Explore (manuels LaTeX / couverture E2E round-trip / refactor A4 credit-notes). Story DOC + TEST : aucune logique métier nouvelle. Consomme 21-3..21-7 (toute la feature rappels + balance âgée est livrée). -->
 
@@ -295,3 +295,14 @@ Auteur : Opus. Panel orthogonal Sonnet. Reviewer E2E/A4 : **0 > LOW** (`fetchSen
 **Sections doc vérifiées fidèles (Sonnet)** : bornes frais 0–10'000, 3 niveaux seed lazy, cascade modèles, 4 langues, frais hors compta/hors QR (aucun `journal_entries` dunning, PDF sans frais), export+backup des 3 tables, écran Rappels (unitaire/lot cap 20/manuel/anti-double/terminal/suspension/historique), balance âgée (colonnes/TTC/suspendues incluses/drill-down/CSV Comptable+), LaTeX (macros/labels/ref OK).
 
 Gate post-patch : `make fr` OK (admin 288 KB, user 207 KB, contenu vérifié `pdftotext`), round-trip re-vérifié vert.
+
+### Pass 2 (Haiku ×2, contexte frais, diff aplati, 2026-07-20) — 0 finding actionnable → **CONVERGÉ**
+
+Panel Haiku orthogonal aux patches Sonnet/Opus.
+
+- **Fidélité doc (Haiku)** : **0 CRITICAL/HIGH, doc conforme**. ~14 affirmations re-vérifiées ground-truth (frais bornés 0–10'000, 3 niveaux seed, délai N1 `échéance+grâce+délai(1)` vs N>1 `dernier rappel+délai(N)` `dunning_eligibility.rs:123/128`, frais hors compta/QR, CASCADE #219, export/backup des 3 tables, colonnes/TTC/suspendues balance âgée, badge « Dernier niveau atteint »). Les 3 correctifs P1 confirmés appliqués et factuels. LaTeX : macros/labels/ref OK, aucun `\ref` cross-document.
+- **E2E/A4 (Haiku)** : **0 > LOW**. `fetchSentEmails` promu (0 `BACKEND_URL` orphelin, 0 def locale résiduelle, imports OK), A4 sans import mort, round-trip mordant (config 3 niveaux, poll e-mails, historique, badge motif, D10, séquence A→B), pas de `.catch` masquant. 1 LOW style (coercition `String()` dans l'assertion PJ — fonctionne correctement, non-défaut) → **dismiss**.
+
+### Trend & décision — code review
+
+**Pass 1 (Sonnet ×2) : 1 HIGH + 1 MEDIUM + LOW → Pass 2 (Haiku ×2) : 0 actionnable.** Critère d'arrêt atteint (0 > LOW), budget 2/8. Rotation orthogonale Sonnet→Haiku, orthogonaux à l'auteur Opus. Le HIGH (rétention surévaluée) + MEDIUM (délai) de P1 corrigés et re-confirmés par la fidélité doc P2. Garde manquante tracée #260. **Story done — Epic 21 complet.**
