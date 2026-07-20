@@ -257,10 +257,16 @@
 <div class="p-4">
 	<div class="mb-4 flex items-center justify-between">
 		<h1 class="text-xl font-semibold">{i18nMsg('reminders-page-title', 'Rappels')}</h1>
-		<!-- Story 21-6c (D-c3) : lien croisé retour vers l'échéancier. -->
-		<Button variant="outline" href="/invoices/due-dates" data-testid="reminders-link-due-dates">
-			{i18nMsg('reminders-link-due-dates', "Voir l'échéancier")}
-		</Button>
+		<div class="flex gap-2">
+			<!-- Story 21-6c (D-c3) : lien croisé retour vers l'échéancier. -->
+			<Button variant="outline" href="/invoices/due-dates" data-testid="reminders-link-due-dates">
+				{i18nMsg('reminders-link-due-dates', "Voir l'échéancier")}
+			</Button>
+			<!-- Story 21-7 : lien croisé vers la balance âgée. -->
+			<Button variant="outline" href="/reports?tab=aged-receivables" data-testid="reminders-link-aged">
+				{i18nMsg('reminders-link-aged', 'Voir la balance âgée')}
+			</Button>
+		</div>
 	</div>
 
 	{#if !canManage}

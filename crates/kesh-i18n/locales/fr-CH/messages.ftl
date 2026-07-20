@@ -528,6 +528,7 @@ error-csv-generation-failed = Échec de la génération du CSV.
 
 # Story 5.4 — Échéancier factures
 due-dates-title = Échéancier
+due-dates-link-aged = Voir la balance âgée
 due-dates-link-reminders = Voir les rappels
 due-dates-filter-all = Toutes
 due-dates-filter-unpaid = Impayées
@@ -950,6 +951,20 @@ reports-loading = Génération du rapport en cours…
 # Story 9-2a — Export PDF & CSV (10 clés)
 reports-export-pdf-button = Export PDF
 reports-export-csv-button = Export CSV
+# Story 21-7 — Balance âgée débiteurs
+reports-aged-balance = Balance âgée
+reports-aged-instruction = Balance âgée arrêtée à ce jour.
+reports-aged-as-of = Arrêté au { $date }
+reports-aged-empty = Aucune créance client ouverte.
+reports-aged-col-contact = Client
+reports-aged-col-not-due = Non échu
+reports-aged-col-1-30 = 1-30 j
+reports-aged-col-31-60 = 31-60 j
+reports-aged-col-61-90 = 61-90 j
+reports-aged-col-over-90 = 90+ j
+reports-aged-col-total = Total
+reports-aged-total-row = Total général
+reports-aged-link-due-dates = Voir l'échéancier
 reports-export-loading = Génération du fichier…
 reports-export-error-generic = Impossible d'exporter le rapport. Vérifiez votre connexion et réessayez.
 reports-filename-balance-sheet = bilan
@@ -1308,3 +1323,4 @@ reminders-pause-success = Rappels suspendus
 reminders-resume-success = Rappels repris
 reminders-error-not-paused = Cette facture n'est plus suspendue.
 reminders-link-due-dates = Voir l'échéancier
+reminders-link-aged = Voir la balance âgée

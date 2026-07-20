@@ -502,6 +502,7 @@ error-csv-generation-failed = CSV generation failed.
 
 # Story 5.4 — Invoice due dates
 due-dates-title = Due dates
+due-dates-link-aged = View aged balance
 due-dates-link-reminders = View reminders
 due-dates-filter-all = All
 due-dates-filter-unpaid = Unpaid
@@ -899,6 +900,20 @@ reports-loading = Generating report…
 # Story 9-2a — Export PDF & CSV (10 keys)
 reports-export-pdf-button = Export PDF
 reports-export-csv-button = Export CSV
+# Story 21-7 — Aged receivables balance
+reports-aged-balance = Aged balance
+reports-aged-instruction = Aged balance as of today.
+reports-aged-as-of = As of { $date }
+reports-aged-empty = No open customer receivables.
+reports-aged-col-contact = Customer
+reports-aged-col-not-due = Not due
+reports-aged-col-1-30 = 1-30 d
+reports-aged-col-31-60 = 31-60 d
+reports-aged-col-61-90 = 61-90 d
+reports-aged-col-over-90 = 90+ d
+reports-aged-col-total = Total
+reports-aged-total-row = Grand total
+reports-aged-link-due-dates = View due dates
 reports-export-loading = Generating file…
 reports-export-error-generic = Unable to export report. Check your connection and try again.
 reports-filename-balance-sheet = balance-sheet
@@ -1216,3 +1231,4 @@ reminders-pause-success = Reminders paused
 reminders-resume-success = Reminders resumed
 reminders-error-not-paused = This invoice is no longer paused.
 reminders-link-due-dates = View due dates
+reminders-link-aged = View aged balance

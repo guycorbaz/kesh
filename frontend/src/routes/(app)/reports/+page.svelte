@@ -4,10 +4,15 @@
 	// Code review Pass 1 patches : P5 (error handler isApiError + Fluent), P6 (ARIA tabs),
 	// P17 (reset dates on FY change), P19 (loading indicator), P20 (race guard).
 
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import ReportSelector from '$lib/features/reports/ReportSelector.svelte';
 	import BalanceSheetView from '$lib/features/reports/BalanceSheetView.svelte';
+	import AgedReceivablesView from '$lib/features/reports/AgedReceivablesView.svelte';
 	import IncomeStatementView from '$lib/features/reports/IncomeStatementView.svelte';
 	import TrialBalanceView from '$lib/features/reports/TrialBalanceView.svelte';
 	import JournalReportView from '$lib/features/reports/JournalReportView.svelte';
@@ -24,6 +29,8 @@
 		getProjectReturn,
 		getTrialBalance,
 		getVatReport,
+		getAgedReceivables,
+		downloadAgedReceivables,
 	} from '$lib/features/reports/reports.api';
 	import ProjectExpensesView from '$lib/features/reports/ProjectExpensesView.svelte';
 	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
@@ -43,11 +50,12 @@
 		ReportType,
 		TrialBalanceDto,
 		VatReportDto,
+		AgedReceivablesDto,
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
-	/** Onglets = rapports comptables classiques + rapports par projet (19-6a/b). */
-	type TabId = ReportType | 'project-expenses' | 'project-return';
+	/** Onglets = rapports comptables classiques + rapports par projet (19-6a/b) + balance âgée (21-7). */
+	type TabId = ReportType | 'project-expenses' | 'project-return' | 'aged-receivables';
 
 	interface PageData {
 		fiscalYears: FiscalYearResponse[];
@@ -72,6 +80,13 @@
 	// True quand l'onglet actif est un rapport par projet (contrôles dédiés).
 	const isProjectTab = $derived(
 		activeTab === 'project-expenses' || activeTab === 'project-return',
+	);
+	// Story 21-7 — balance âgée : onglet à contrôles dédiés (pas de FY/période).
+	const isAgedTab = $derived(activeTab === 'aged-receivables');
+	let agedReceivables = $state<AgedReceivablesDto | null>(null);
+	// Export CSV réservé Comptable+ (D24) — inutile d'afficher un bouton qui prendra 403.
+	const canManage = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
 	);
 	// Un rapport projet a-t-il été généré pour l'onglet actif (gouverne l'export).
 	const hasProjectReport = $derived(
@@ -178,6 +193,21 @@
 	}
 
 	async function generate(): Promise<void> {
+		// Story 21-7 — balance âgée : pas de FY/période (arrêté à aujourd'hui).
+		if (isAgedTab) {
+			const mySeq = ++genSeq;
+			loading = true;
+			errorMsg = null;
+			try {
+				const result = await getAgedReceivables();
+				if (mySeq === genSeq) agedReceivables = result;
+			} catch (e) {
+				if (mySeq === genSeq) errorMsg = formatError(e);
+			} finally {
+				if (mySeq === genSeq) loading = false;
+			}
+			return;
+		}
 		// Story 19-6a/b — branche projet (query différente des rapports classiques).
 		if (isProjectTab) {
 			const q = projectQuery();
@@ -373,6 +403,29 @@
 		await exportReport('csv');
 	}
 
+	/**
+	 * Story 21-7 — export CSV dédié de la balance âgée (endpoint distinct,
+	 * Comptable+). Guard `exporting` re-entrant avant tout await (patron
+	 * `exportReport`).
+	 */
+	async function exportAgedCsv(): Promise<void> {
+		if (exporting) return;
+		exporting = true;
+		errorMsg = null;
+		try {
+			await downloadAgedReceivables();
+		} catch (e) {
+			if (isApiError(e) && e.code) errorMsg = formatError(e);
+			else
+				errorMsg = i18nMsg(
+					'reports-export-error-generic',
+					"Impossible d'exporter le rapport. Vérifiez votre connexion et réessayez.",
+				);
+		} finally {
+			exporting = false;
+		}
+	}
+
 	const tabs: { id: TabId; labelKey: string; fallback: string }[] = [
 		{ id: 'balance-sheet', labelKey: 'reports-balance-sheet', fallback: 'Bilan' },
 		{ id: 'income-statement', labelKey: 'reports-income-statement', fallback: 'Compte de résultat' },
@@ -389,7 +442,18 @@
 			labelKey: 'reports-project-return',
 			fallback: 'Rendement par projet',
 		},
+		{ id: 'aged-receivables', labelKey: 'reports-aged-balance', fallback: 'Balance âgée' },
 	];
+
+	// Story 21-7 (D-7c) — synchro URL de l'onglet. Lecture ONE-SHOT au montage
+	// (jamais un $effect réactif qui re-lit page.url → boucle/double-écriture) ;
+	// écriture en replaceState au changement d'onglet.
+	onMount(() => {
+		const raw = page.url.searchParams.get('tab');
+		if (raw && tabs.some((t) => t.id === raw)) {
+			activeTab = raw as TabId;
+		}
+	});
 
 	// P6 — ARIA tabs : keyboard navigation (ArrowLeft/Right/Home/End).
 	function handleTabKeydown(event: KeyboardEvent, index: number): void {
@@ -415,6 +479,8 @@
 		if (activeTab !== next) {
 			activeTab = next;
 			errorMsg = null;
+			// Story 21-7 (D-7c) — rend l'onglet adressable (replaceState, pas d'empilement).
+			void goto(`?tab=${next}`, { replaceState: true, keepFocus: true, noScroll: true });
 		}
 	}
 </script>
@@ -426,7 +492,7 @@
 <div class="space-y-4 p-4">
 	<h1 class="text-2xl font-bold">{i18nMsg('reports-page-title', 'Rapports comptables')}</h1>
 
-	{#if !isProjectTab}
+	{#if !isProjectTab && !isAgedTab}
 		<ReportSelector
 			fiscalYears={data.fiscalYears}
 			bind:selectedFiscalYearId
@@ -439,7 +505,7 @@
 			{canExport}
 			{exporting}
 		/>
-	{:else}
+	{:else if isProjectTab}
 		<!-- Story 19-6a — contrôles dédiés du rapport « Dépenses par projet ». -->
 		<div class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3" data-testid="project-report-controls">
 			<label class="text-sm">
@@ -514,6 +580,34 @@
 				CSV
 			</button>
 		</div>
+	{:else}
+		<!-- Story 21-7 — contrôles balance âgée : pas de FY/période (arrêté à aujourd'hui).
+		     Ne branche NI ReportSelector NI les exports génériques (activeReportPeriod null). -->
+		<div class="flex flex-wrap items-center gap-3 rounded border border-border bg-surface p-3" data-testid="aged-report-controls">
+			<span class="text-sm text-text-muted">
+				{i18nMsg('reports-aged-instruction', 'Balance âgée arrêtée à ce jour.')}
+			</span>
+			<button
+				type="button"
+				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
+				onclick={generate}
+				disabled={loading}
+				data-testid="aged-report-generate"
+			>
+				{i18nMsg('reports-button-generate', 'Générer')}
+			</button>
+			{#if canManage}
+				<button
+					type="button"
+					class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+					onclick={exportAgedCsv}
+					disabled={exporting || agedReceivables === null}
+					data-testid="aged-report-export-csv"
+				>
+					{i18nMsg('reports-export-csv-button', 'Exporter CSV')}
+				</button>
+			{/if}
+		</div>
 	{/if}
 
 	<div role="tablist" class="flex border-b" aria-label={i18nMsg('reports-page-title', 'Rapports comptables')}>
@@ -563,6 +657,8 @@
 			<ProjectExpensesView report={projectExpenses} />
 		{:else if activeTab === 'project-return' && projectReturn}
 			<ProjectReturnView report={projectReturn} />
+		{:else if activeTab === 'aged-receivables' && agedReceivables}
+			<AgedReceivablesView dto={agedReceivables} />
 		{:else}
 			<p class="text-sm italic text-gray-500">
 				{i18nMsg(

@@ -44,17 +44,16 @@ async function login(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
-test('reports page loads with 5 tabs (AC #27 + #33, + TVA Story 11-2/18-1f)', async ({ page }) => {
+test('reports page loads with 8 tabs (AC #27 + #33, + Balance âgée Story 21-7)', async ({ page }) => {
 	await login(page);
 	await page.goto('/reports');
 
 	await expect(page.getByRole('heading', { name: /rapports/i })).toBeVisible();
 
-	// 7 onglets : + Rendement par projet (19-6b).
-	// (Bilan, Résultat, Balance, Journaux, TVA, Dépenses par projet, Rendement)...
-	// projet (l'onglet projet ajouté en 19-6a ; le compte passe de 5 à 6).
+	// 8 onglets : Bilan, Résultat, Balance, Journaux, TVA, Dépenses par projet,
+	// Rendement par projet (19-6b), + Balance âgée (21-7).
 	const tabs = page.getByRole('tab');
-	await expect(tabs).toHaveCount(7);
+	await expect(tabs).toHaveCount(8);
 });
 
 test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({ page }) => {
@@ -233,6 +232,117 @@ test('reports page generates VAT décompte with TVA due end-to-end (Story 18-1f 
 	await expect(tabpanel.getByText(/Solde/i)).toBeVisible();
 	// Pas d'erreur backend rendue.
 	await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+// ============================================================
+// Story 21-7 — Balance âgée débiteurs (onglet /reports)
+// ============================================================
+
+/** Crée un contact + une facture validée échue (poste ouvert). Retourne le nom du contact. */
+async function createOverdueInvoiceViaApi(page: Page, label: string): Promise<string> {
+	const ctx = await authedApiContext(page);
+	try {
+		const name = `${label} ${Date.now().toString().slice(-6)}`;
+		const contactRes = await ctx.post('/api/v1/contacts', {
+			data: { contactType: 'Entreprise', name, isClient: true, isSupplier: false },
+		});
+		expect(contactRes.ok(), `create contact: ${contactRes.status()}`).toBeTruthy();
+		const contactId = (await contactRes.json()).id as number;
+		// Échéance 40 j dans le passe → bucket 31-60 ; poste ouvert (validée, impayée).
+		const due = new Date();
+		due.setDate(due.getDate() - 40);
+		const dueStr = due.toISOString().slice(0, 10);
+		const invRes = await ctx.post('/api/v1/invoices', {
+			data: {
+				contactId,
+				date: dueStr,
+				dueDate: dueStr,
+				lines: [{ description: 'Prestation', quantity: '1', unitPrice: '500.00', vatRate: '0.00' }],
+			},
+		});
+		expect(invRes.ok(), `create invoice: ${invRes.status()}`).toBeTruthy();
+		const invoiceId = (await invRes.json()).id as number;
+		const valRes = await ctx.post(`/api/v1/invoices/${invoiceId}/validate`);
+		expect(valRes.ok(), `validate: ${valRes.status()}`).toBeTruthy();
+		return name;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+test('reports aged-receivables : génération + drill-down + export CSV (Admin)', async ({ page }) => {
+	await login(page);
+	const contactName = await createOverdueInvoiceViaApi(page, 'Débiteur âgé');
+
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+
+	// Bascule sur l'onglet Balance âgée → contrôles dédiés (pas de sélecteur FY).
+	await page.getByRole('tab', { name: /balance âgée/i }).click();
+	await expect(page.getByTestId('aged-report-controls')).toBeVisible();
+	// L'URL est adressable (?tab=), synchro D-7c.
+	await expect(page).toHaveURL(/\?tab=aged-receivables/);
+
+	await page.getByTestId('aged-report-generate').click();
+
+	// Le tableau affiche au moins la ligne du débiteur créé + le total général.
+	const table = page.getByTestId('aged-receivables-table');
+	await expect(table).toBeVisible({ timeout: 5000 });
+	await expect(page.getByTestId('aged-receivables-total')).toBeVisible();
+	const contactRow = page.getByTestId('aged-receivables-row').filter({ hasText: contactName });
+	await expect(contactRow).toBeVisible();
+	// Drill-down : le nom du contact est un lien vers la liste filtrée ?contactId=.
+	await expect(contactRow.locator('a[href^="/invoices?contactId="]')).toBeVisible();
+
+	// Export CSV visible pour Admin (canManage).
+	await expect(page.getByTestId('aged-report-export-csv')).toBeVisible();
+});
+
+test('reports aged-receivables : deep-link ?tab= ouvre directement l’onglet', async ({ page }) => {
+	await login(page);
+	await page.goto('/reports?tab=aged-receivables');
+	await page.waitForLoadState('networkidle');
+	// L'onglet Balance âgée est actif + ses contrôles dédiés visibles.
+	await expect(page.getByRole('tab', { name: /balance âgée/i })).toHaveAttribute(
+		'aria-selected',
+		'true',
+	);
+	await expect(page.getByTestId('aged-report-controls')).toBeVisible();
+});
+
+test('échéancier : le lien croisé ouvre la balance âgée', async ({ page }) => {
+	await login(page);
+	await page.goto('/invoices/due-dates');
+	await page.getByTestId('due-dates-link-aged').click();
+	await expect(page).toHaveURL(/\/reports\?tab=aged-receivables/);
+	await expect(page.getByTestId('aged-report-controls')).toBeVisible();
+});
+
+test('reports aged-receivables : export CSV absent pour un rôle Consultation', async ({ page }) => {
+	await login(page);
+	// Créer un user Consultation via API (admin connecté).
+	const username = `consult-aged-${Date.now()}`;
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/users', {
+			data: { username, password: 'MotDePasse12345', role: 'Consultation' },
+		});
+		expect(res.ok(), `create user: ${res.status()}`).toBeTruthy();
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await clearAuthStorage(page);
+	await page.goto('/login');
+	await page.fill('#username', username);
+	await page.fill('#password', 'MotDePasse12345');
+	await page.click('button[type="submit"]');
+	await expect(page).toHaveURL('/');
+
+	await page.goto('/reports?tab=aged-receivables');
+	await page.waitForLoadState('networkidle');
+	// La vue est accessible (tous rôles) mais l'export CSV est masqué (Comptable+).
+	await expect(page.getByTestId('aged-report-controls')).toBeVisible();
+	await expect(page.getByTestId('aged-report-export-csv')).toHaveCount(0);
 });
 
 // Issue #90 — AC #34 / T12.4 : ce test reseed la DB avec `with-company-no-fy`

@@ -502,6 +502,7 @@ error-csv-generation-failed = CSV-Erzeugung fehlgeschlagen.
 
 # Story 5.4 — Fälligkeitsplan Rechnungen
 due-dates-title = Fälligkeitsplan
+due-dates-link-aged = Altersstruktur anzeigen
 due-dates-link-reminders = Mahnungen anzeigen
 due-dates-filter-all = Alle
 due-dates-filter-unpaid = Unbezahlt
@@ -899,6 +900,20 @@ reports-loading = Bericht wird generiert…
 # Story 9-2a — Export PDF & CSV (10 Schlüssel)
 reports-export-pdf-button = PDF-Export
 reports-export-csv-button = CSV-Export
+# Story 21-7 — Altersstruktur der Forderungen
+reports-aged-balance = Altersstruktur
+reports-aged-instruction = Altersstruktur per heute.
+reports-aged-as-of = Stand { $date }
+reports-aged-empty = Keine offenen Kundenforderungen.
+reports-aged-col-contact = Kunde
+reports-aged-col-not-due = Nicht fällig
+reports-aged-col-1-30 = 1-30 T
+reports-aged-col-31-60 = 31-60 T
+reports-aged-col-61-90 = 61-90 T
+reports-aged-col-over-90 = 90+ T
+reports-aged-col-total = Total
+reports-aged-total-row = Gesamttotal
+reports-aged-link-due-dates = Fälligkeitsplan anzeigen
 reports-export-loading = Datei wird generiert…
 reports-export-error-generic = Bericht konnte nicht exportiert werden. Verbindung prüfen und erneut versuchen.
 reports-filename-balance-sheet = bilanz
@@ -1216,3 +1231,4 @@ reminders-pause-success = Mahnungen ausgesetzt
 reminders-resume-success = Mahnungen fortgesetzt
 reminders-error-not-paused = Diese Rechnung ist nicht mehr ausgesetzt.
 reminders-link-due-dates = Fälligkeitsplan anzeigen
+reminders-link-aged = Altersstruktur anzeigen

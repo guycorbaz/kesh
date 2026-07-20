@@ -8,6 +8,8 @@ import {
 	getProjectReportExportUrl,
 	getReportExportUrl,
 	slugify,
+	getAgedReceivables,
+	downloadAgedReceivables,
 } from './reports.api';
 
 function fakeJwt(): string {
@@ -256,6 +258,59 @@ describe('reports.api — Story 9-2a', () => {
 					'kesh-bilan-test-2026-01-01_2026-12-31.pdf',
 				),
 			).rejects.toThrow();
+		});
+	});
+
+	// ----------------------------------------------------------------------
+	// Story 21-7 — Balance âgée : wrappers dédiés
+	// ----------------------------------------------------------------------
+	describe('aged receivables (Story 21-7)', () => {
+		let mockFetch: ReturnType<typeof vi.fn>;
+
+		beforeEach(() => {
+			authState.clearSession();
+			authState.login({ userId: '1', username: 'test', role: 'Comptable', expiresIn: 900 });
+			vi.stubGlobal('URL', {
+				createObjectURL: vi.fn().mockReturnValue('blob:http://localhost/x'),
+				revokeObjectURL: vi.fn(),
+			});
+		});
+		afterEach(() => {
+			vi.unstubAllGlobals();
+			authState.clearSession();
+		});
+
+		it('getAgedReceivables GET sur le bon path', async () => {
+			mockFetch = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () =>
+					Promise.resolve({ asOf: '2026-07-20', rows: [], totals: { total: '0.00' } }),
+				headers: new Headers({ 'content-type': 'application/json' }),
+			} as unknown as Response);
+			vi.stubGlobal('fetch', mockFetch);
+
+			const dto = await getAgedReceivables();
+			expect(dto.asOf).toBe('2026-07-20');
+			const url = mockFetch.mock.calls[0][0] as string;
+			expect(url).toContain('/api/v1/reports/aged-receivables');
+			expect(url).not.toContain('/export');
+		});
+
+		it('downloadAgedReceivables GET blob sur le path export?format=csv', async () => {
+			const blob = new Blob(['Contact;Total\r\n'], { type: 'text/csv' });
+			mockFetch = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				blob: () => Promise.resolve(blob),
+				headers: new Headers({ 'content-type': 'text/csv' }),
+			} as unknown as Response);
+			vi.stubGlobal('fetch', mockFetch);
+
+			await downloadAgedReceivables();
+			const url = mockFetch.mock.calls[0][0] as string;
+			expect(url).toContain('/api/v1/reports/aged-receivables/export');
+			expect(url).toContain('format=csv');
 		});
 	});
 });

@@ -502,6 +502,7 @@ error-csv-generation-failed = Generazione CSV fallita.
 
 # Story 5.4 — Scadenziario fatture
 due-dates-title = Scadenziario
+due-dates-link-aged = Vedi scadenziario per età
 due-dates-link-reminders = Vedi i solleciti
 due-dates-filter-all = Tutte
 due-dates-filter-unpaid = Non pagate
@@ -899,6 +900,20 @@ reports-loading = Generazione del rapporto in corso…
 # Story 9-2a — Export PDF & CSV (10 chiavi)
 reports-export-pdf-button = Esporta PDF
 reports-export-csv-button = Esporta CSV
+# Story 21-7 — Scadenziario per età
+reports-aged-balance = Scadenziario per età
+reports-aged-instruction = Scadenziario per età alla data odierna.
+reports-aged-as-of = Al { $date }
+reports-aged-empty = Nessun credito cliente aperto.
+reports-aged-col-contact = Cliente
+reports-aged-col-not-due = Non scaduto
+reports-aged-col-1-30 = 1-30 g
+reports-aged-col-31-60 = 31-60 g
+reports-aged-col-61-90 = 61-90 g
+reports-aged-col-over-90 = 90+ g
+reports-aged-col-total = Totale
+reports-aged-total-row = Totale generale
+reports-aged-link-due-dates = Vedi scadenziario
 reports-export-loading = Generazione del file…
 reports-export-error-generic = Impossibile esportare il rapporto. Verifica la connessione e riprova.
 reports-filename-balance-sheet = bilancio
@@ -1216,3 +1231,4 @@ reminders-pause-success = Solleciti sospesi
 reminders-resume-success = Solleciti ripresi
 reminders-error-not-paused = Questa fattura non è più sospesa.
 reminders-link-due-dates = Vedi scadenziario
+reminders-link-aged = Vedi scadenziario per età

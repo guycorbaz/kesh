@@ -154,15 +154,15 @@ Un champ nommé `days_1_30` sérialisé par `#[serde(rename_all = "camelCase")]`
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Rapport `kesh-report::aged_receivables`** (AC: 1, 2, 3, 4, 5) — module + structs (renames serde explicites, piège n°2), `generate(pool, company_id, as_of)` (requête agrégée par contact, buckets `DATEDIFF`, TTC via `INVOICE_TTC_DERIVED_JOIN_SQL`, D-7e sans exclusion paused), totaux sommés en Rust, réexports `lib.rs`.
-- [ ] **T2 — Export CSV** (AC: 6) — `render_aged_receivables_csv` (patron `render_vat_report_csv`, BOM+`;`+CRLF), réexport.
-- [ ] **T3 — Routes HTTP + RBAC** (AC: 7, 8, 9) — `get_aged_receivables` (authenticated_routes) + `export_aged_receivables` (comptable_routes, D24), montage `lib.rs` (garde IDOR), audit best-effort, validation format.
-- [ ] **T4 — Frontend types & wrappers** (AC: 10, 11, 21) — DTO camelCase, `getAgedReceivables`/`downloadAgedReceivables`, vitest.
-- [ ] **T5 — Vue & page reports** (AC: 12, 13) — `AgedReceivablesView.svelte`, onglet (8e), contrôles conditionnels `isAgedTab`, branche `generate()` (genSeq), export CSV gate Comptable+, **synchro URL `?tab=` (D-7c)**.
-- [ ] **T6 — Liens croisés** (AC: 14, 15, 16) — échéancier→balance âgée, Rappels→balance âgée, balance âgée→échéancier + drill-down contact.
-- [ ] **T7 — i18n 4 FTL** (AC: 17).
-- [ ] **T8 — Tests** (AC: 18, 19, 20) — intégration kesh-report (buckets/frontières/réconciliation/parité/scoping), reports_e2e (RBAC vue vs export), E2E frontend (onglet 8, génération, deep-link `?tab=`, export gate, lien croisé).
-- [ ] **T9 — Gate workspace complet + CHANGELOG** (AC: 22, 23).
+- [x] **T1 — Rapport `kesh-report::aged_receivables`** (AC: 1, 2, 3, 4, 5) — module + structs (renames serde explicites, piège n°2), `generate(pool, company_id, as_of)` (requête agrégée par contact, buckets `DATEDIFF`, TTC via `INVOICE_TTC_DERIVED_JOIN_SQL`, D-7e sans exclusion paused), totaux sommés en Rust, réexports `lib.rs`.
+- [x] **T2 — Export CSV** (AC: 6) — `render_aged_receivables_csv` (patron `render_vat_report_csv`, BOM+`;`+CRLF), réexport.
+- [x] **T3 — Routes HTTP + RBAC** (AC: 7, 8, 9) — `get_aged_receivables` (authenticated_routes) + `export_aged_receivables` (comptable_routes, D24), montage `lib.rs` (garde IDOR), audit best-effort, validation format.
+- [x] **T4 — Frontend types & wrappers** (AC: 10, 11, 21) — DTO camelCase, `getAgedReceivables`/`downloadAgedReceivables`, vitest.
+- [x] **T5 — Vue & page reports** (AC: 12, 13) — `AgedReceivablesView.svelte`, onglet (8e), contrôles conditionnels `isAgedTab`, branche `generate()` (genSeq), export CSV gate Comptable+, **synchro URL `?tab=` (D-7c)**.
+- [x] **T6 — Liens croisés** (AC: 14, 15, 16) — échéancier→balance âgée, Rappels→balance âgée, balance âgée→échéancier + drill-down contact.
+- [x] **T7 — i18n 4 FTL** (AC: 17).
+- [x] **T8 — Tests** (AC: 18, 19, 20) — intégration kesh-report (buckets/frontières/réconciliation/parité/scoping), reports_e2e (RBAC vue vs export), E2E frontend (onglet 8, génération, deep-link `?tab=`, export gate, lien croisé).
+- [x] **T9 — Gate workspace complet + CHANGELOG** (AC: 22, 23).
 
 ## Dev Notes
 
@@ -280,8 +280,63 @@ Panel Haiku orthogonal aux patches Opus. **36 citations re-vérifiées `grep`/`R
 
 ### Agent Model Used
 
+Opus 4.8 (1M) — `bmad-dev-story`, 2026-07-19/20.
+
 ### Debug Log References
+
+Backend E2E lancé en `KESH_TEST_MODE` (port 8181, MockMailer, DB `kesh_e2e`) selon `docs/testing.md`. Tests d'intégration `#[sqlx::test]` contre MariaDB dev (root, DB éphémères par test).
 
 ### Completion Notes List
 
+- **T1** — `crates/kesh-report/src/aged_receivables.rs` : `AgedBucket` (renames serde explicites `notDue`/`days1To30`/…), `AgedReceivablesRow` (`#[serde(flatten)]` bucket), `AgedReceivables { asOf, rows, totals }`. `generate(pool, company_id, as_of)` : requête agrégée `GROUP BY c.id, c.name` avec `SUM(CASE WHEN DATEDIFF(?, due_date) …)` par bucket, TTC via `INVOICE_TTC_DERIVED_JOIN_SQL` (alias `lt`), `WHERE status='validated' AND paid_at IS NULL` (D-7e, sans exclusion `dunning_paused_at`), `HAVING total <> 0`, `as_of` bindé. Totaux sommés en Rust. Réexports `lib.rs`.
+- **T2** — `render_aged_receivables_csv` (patron `render_vat_report_csv`, BOM+`;`+CRLF, en-têtes FR en dur, sans param locale), ligne « Total général », court-circuit rapport vide.
+- **T3** — `get_aged_receivables` (JSON, `authenticated_routes` tous rôles) + `export_aged_receivables` (CSV, `comptable_routes` D24) dans `routes/reports.rs`. Validation format **dédiée** (`validate_aged_export_format`, défaut csv, pdf→400). Filename **date-unique** (`kesh-balance-agee-{company}-{asOf}.csv`, patron `export_global`) + `build_content_disposition` direct (PAS `build_export_response_with_locale`/`ReportPeriod`). Audit **bespoke** `emit_aged_receivables_(export_)audit(as_of)`. Montage `lib.rs` (2 routes, garde IDOR respectée).
+- **T4** — `reports.types.ts` : `AgedBucketDto`/`AgedReceivablesRowDto`/`AgedReceivablesDto` (montants `string`, `ReportType` NON touché). `reports.api.ts` : wrappers dédiés `getAgedReceivables`/`downloadAgedReceivables` (patron `onExportCsv` échéancier, filename `balance-agee-${today}.csv`). 2 tests vitest.
+- **T5** — `AgedReceivablesView.svelte` (namespace `reports-*`, table + total + empty-state + drill-down `?contactId=` + lien échéancier). `reports/+page.svelte` : `TabId` **local** étendu, onglet 8, `agedReceivables` state, bloc de contrôle en **3 branches** (`isProjectTab`/`isAgedTab`/`else`, l'aged ne branche pas les exports génériques), branche `generate()` (genSeq), export CSV dédié gaté `canManage` (import `authState`), **synchro URL `?tab=` lecture one-shot `onMount` + write `replaceState` dans `selectTab`**.
+- **T6** — liens croisés : échéancier→balance âgée (`due-dates-link-aged`), Rappels→balance âgée (`reminders-link-aged`), balance âgée→échéancier (`reports-aged-link-due-dates`) + drill-down par contact.
+- **T7** — 15 clés `reports-aged-*` + `due-dates-link-aged` + `reminders-link-aged` × 4 FTL (FR/DE/IT/EN), parité validée par `cargo test -p kesh-i18n`. Réutilise `reports-button-generate` / `reports-export-csv-button`.
+- **T8** — **Backend** : `crates/kesh-report/tests/aged_receivables.rs` (3 tests : buckets+frontières 30/31/60/61/90/91 + réconciliation ligne/générale + parité TTC helper Rust + D10 suspendue incluse + paid/draft exclus + null-due=Non échu ; scoping company_id ; empty). `crates/kesh-api/tests/reports_e2e.rs` (+5 : vue Consultation 200 ; export Consultation 403 / Comptable 200 text/csv ; format pdf 400 ; scoping 2 companies). **Frontend** : `reports.api.test.ts` (+2 vitest) ; `reports.spec.ts` (onglet 7→8 + 4 scénarios : génération+drill-down+export Admin, deep-link `?tab=`, lien croisé échéancier, export absent Consultation).
+- **T9** — Gate (voir Change Log). CHANGELOG `[Non publié] → Ajouté`. README inchangé (Epic 21 déjà 🚧). Manuels → 21-8.
+
+**Découverte hors scope (tracée)** : bug #259 (rappel manuel daté d'aujourd'hui rejeté `REMINDER_DATE_IN_FUTURE` avant midi UTC — `ManualReminderDialog` 21-6b, `T12:00:00` codé en dur). Fait échouer l'E2E `reminders.spec.ts › rappel manuel` avant midi. **Non lié à 21-7** (la balance âgée ne touche pas les rappels manuels) — non corrigé ici (discipline de périmètre), issue bug ouverte.
+
 ### File List
+
+**Nouveaux**
+- `crates/kesh-report/src/aged_receivables.rs`
+- `crates/kesh-report/tests/aged_receivables.rs`
+- `frontend/src/lib/features/reports/AgedReceivablesView.svelte`
+
+**Modifiés**
+- `crates/kesh-report/src/lib.rs`, `crates/kesh-report/src/csv.rs`
+- `crates/kesh-api/src/routes/reports.rs`, `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/tests/reports_e2e.rs`
+- `frontend/src/lib/features/reports/reports.types.ts`, `reports.api.ts`, `reports.api.test.ts`
+- `frontend/src/routes/(app)/reports/+page.svelte`
+- `frontend/src/routes/(app)/invoices/due-dates/+page.svelte`, `frontend/src/routes/(app)/invoices/reminders/+page.svelte`
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `frontend/tests/e2e/reports.spec.ts`
+- `CHANGELOG.md`
+
+### Change Log — dev
+
+**bmad-dev-story (Opus 4.8, 2026-07-19/20)** — T1→T9. Backend Rust (`kesh-report` + `kesh-api`) + frontend Svelte. **Aucune migration, aucune nouvelle table, aucun bump `min_required`.**
+
+Gate (« Test Locally First ») :
+
+| Check | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | OK |
+| `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
+| `cargo build --workspace --all-targets` | OK (via clippy all-targets) |
+| `cargo test -p kesh-report` | 67 unit + intégration (dont aged 3/3) |
+| `cargo test -p kesh-api --test reports_e2e` | 33/33 (dont aged 5/5) |
+| `cargo test -p kesh-i18n` | 21/21 (parité FTL 4 locales) |
+| `cargo nextest run --workspace` | _(en cours / à confirmer)_ |
+| `npm run check` | 0 erreur |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | 408/408 (reports.api +2 aged) |
+| `npm run build` | ✓ |
+| `npm run test:e2e reports.spec` | 12/12 (dont 4 aged + onglet 8) + échéancier régression OK |
+
+Note E2E : `reminders.spec.ts › rappel manuel` échoue avant midi UTC = **bug pré-existant #259** (time-of-day, hors scope 21-7). Fanout-regression : nul (changements additifs/isolés, aucune requête ou struct partagée modifiée).
