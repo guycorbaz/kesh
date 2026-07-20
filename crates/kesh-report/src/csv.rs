@@ -15,6 +15,7 @@ use std::io::Write;
 
 use rust_decimal::Decimal;
 
+use crate::aged_receivables::AgedReceivables;
 use crate::balance_sheet::BalanceSheet;
 use crate::errors::ReportError;
 use crate::income_statement::IncomeStatement;
@@ -368,6 +369,65 @@ pub fn render_vat_report_csv<W: Write>(
         "Écart de réconciliation",
         "",
         &format_amount_iso(report.reconciliation_delta),
+    ])
+    .map_err(map_csv_err)?;
+
+    wtr.flush().map_err(map_io_err)?;
+    Ok(())
+}
+
+/// Génère le CSV de la balance âgée des créances clients (Story 21-7, AC 6).
+///
+/// Colonnes : `Contact;Non échu;1-30;31-60;61-90;90+;Total`. Une ligne par
+/// contact, puis une ligne « Total général » (les `totals`). En-têtes **français
+/// en dur** (patron `render_vat_report_csv` — les `render_*_csv` n'ont pas de
+/// paramètre locale, i18n exports déférée v0.2). Rapport vide → en-tête seul.
+pub fn render_aged_receivables_csv<W: Write>(
+    report: &AgedReceivables,
+    mut writer: W,
+) -> Result<(), ReportError> {
+    write_bom(&mut writer)?;
+    let mut wtr = make_writer(writer);
+
+    wtr.write_record([
+        "Contact",
+        "Non échu",
+        "1-30",
+        "31-60",
+        "61-90",
+        "90+",
+        "Total",
+    ])
+    .map_err(map_csv_err)?;
+
+    // Cas rapport vide : header seul, pas de data rows (pattern par renderer).
+    if report.rows.is_empty() {
+        wtr.flush().map_err(map_io_err)?;
+        return Ok(());
+    }
+
+    for row in &report.rows {
+        wtr.write_record([
+            &row.contact_name,
+            &format_amount_iso(row.buckets.not_due),
+            &format_amount_iso(row.buckets.days_1_to_30),
+            &format_amount_iso(row.buckets.days_31_to_60),
+            &format_amount_iso(row.buckets.days_61_to_90),
+            &format_amount_iso(row.buckets.days_over_90),
+            &format_amount_iso(row.buckets.total),
+        ])
+        .map_err(map_csv_err)?;
+    }
+
+    // Ligne « Total général » (les totaux sommés en Rust).
+    wtr.write_record([
+        "Total général",
+        &format_amount_iso(report.totals.not_due),
+        &format_amount_iso(report.totals.days_1_to_30),
+        &format_amount_iso(report.totals.days_31_to_60),
+        &format_amount_iso(report.totals.days_61_to_90),
+        &format_amount_iso(report.totals.days_over_90),
+        &format_amount_iso(report.totals.total),
     ])
     .map_err(map_csv_err)?;
 

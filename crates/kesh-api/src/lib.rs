@@ -402,6 +402,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/due-dates/export.csv",
             get(routes::invoices::export_due_dates_csv_handler),
         )
+        // Story 21-7 : export CSV de la balance âgée — Comptable+ (D24, anti-
+        // exfiltration débiteurs, symétrique de l'export échéancier ci-dessus).
+        // La VUE JSON reste tous rôles dans `authenticated_routes`.
+        .route(
+            "/api/v1/reports/aged-receivables/export",
+            get(routes::reports::export_aged_receivables),
+        )
         .route(
             "/api/v1/invoices/{id}/mark-paid",
             post(routes::invoices::mark_invoice_paid_handler),
@@ -768,6 +775,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/reports/journals",
             get(routes::reports::get_journal_report),
+        )
+        // Story 21-7 : balance âgée débiteurs — VUE JSON tous rôles (D-7b/D24).
+        // L'export CSV est Comptable+ → monté dans `comptable_routes` (ci-dessous).
+        .route(
+            "/api/v1/reports/aged-receivables",
+            get(routes::reports::get_aged_receivables),
         )
         // Story 9-2a : export PDF/CSV des 4 rapports comptables. Routes DOIVENT
         // rester dans `authenticated_routes` AVANT le `;` (Pass 1 BH-H1) sinon

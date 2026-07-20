@@ -23,22 +23,23 @@ use axum::{
     http::{StatusCode, header},
     response::Response,
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfLabels};
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
-    BalanceSheet, IncomeStatement, JournalReport, PdfContext, ProjectExpensesReport,
-    ProjectReturnReport, ReportPeriod, TrialBalance, VatReport, generate_balance_sheet,
-    generate_income_statement, generate_journal_report, generate_project_expenses,
-    generate_project_return, generate_trial_balance, generate_vat_report, render_balance_sheet_csv,
-    render_balance_sheet_pdf, render_income_statement_csv, render_income_statement_pdf,
-    render_journal_report_csv, render_journal_report_pdf, render_project_expenses_csv,
-    render_project_expenses_pdf, render_project_return_csv, render_project_return_pdf,
-    render_trial_balance_csv, render_trial_balance_pdf, render_vat_report_csv,
-    render_vat_report_pdf,
+    AgedReceivables, BalanceSheet, IncomeStatement, JournalReport, PdfContext,
+    ProjectExpensesReport, ProjectReturnReport, ReportPeriod, TrialBalance, VatReport,
+    generate_aged_receivables, generate_balance_sheet, generate_income_statement,
+    generate_journal_report, generate_project_expenses, generate_project_return,
+    generate_trial_balance, generate_vat_report, render_aged_receivables_csv,
+    render_balance_sheet_csv, render_balance_sheet_pdf, render_income_statement_csv,
+    render_income_statement_pdf, render_journal_report_csv, render_journal_report_pdf,
+    render_project_expenses_csv, render_project_expenses_pdf, render_project_return_csv,
+    render_project_return_pdf, render_trial_balance_csv, render_trial_balance_pdf,
+    render_vat_report_csv, render_vat_report_pdf,
 };
 use serde::Deserialize;
 use sqlx::MySqlPool;
@@ -337,6 +338,139 @@ pub async fn export_balance_sheet(
         &period,
         &ctx.locale,
     )
+}
+
+// ===========================================================================
+// Story 21-7 — Balance âgée débiteurs (aged receivables)
+// ===========================================================================
+//
+// Divergences délibérées vs les rapports comptables ci-dessus :
+// - **Pas de `ReportPeriod`/`fiscalYearId`** : un rapport « as-of » à date unique
+//   (aujourd'hui, v1). D'où les helpers `emit_aged_receivables_*_audit` /
+//   filename bespoke (les helpers période `emit_report_*`/`build_filename`
+//   exigent un `&ReportPeriod`, cf. validate 21-7 H1).
+// - **RBAC divergent (D24)** : la vue JSON est tous-rôles (`authenticated_routes`),
+//   l'export CSV est Comptable+ (`comptable_routes`, cf. lib.rs).
+
+/// Query de l'export balance âgée : seul le format (CSV) est pertinent.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgedExportQuery {
+    pub format: Option<String>,
+}
+
+/// Valide le format de l'export balance âgée — **défaut `csv`, seul `csv`
+/// accepté** (21-7 : pas de PDF). Distincte de `validate_format` (qui rejette
+/// `None`) : ici `None` retombe sur csv.
+fn validate_aged_export_format(format: &Option<String>) -> Result<(), AppError> {
+    match format.as_deref() {
+        None | Some("csv") => Ok(()),
+        _ => Err(AppError::Validation(
+            "format invalide, seul csv est supporté pour la balance âgée".to_string(),
+        )),
+    }
+}
+
+/// GET /api/v1/reports/aged-receivables — balance âgée arrêtée à aujourd'hui.
+/// Tous rôles (lecture seule, D-7b). Scoping multi-tenant via `company_id`.
+pub async fn get_aged_receivables(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<AgedReceivables>, AppError> {
+    let as_of = Utc::now().naive_utc().date();
+    let report = generate_aged_receivables(&state.pool, current_user.company_id, as_of).await?;
+    emit_aged_receivables_audit(&state.pool, current_user.user_id, as_of).await;
+    Ok(Json(report))
+}
+
+/// GET /api/v1/reports/aged-receivables/export?format=csv — export CSV.
+/// **Comptable+** (D24, monté dans `comptable_routes`).
+pub async fn export_aged_receivables(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<AgedExportQuery>,
+) -> Result<Response, AppError> {
+    validate_aged_export_format(&query.format)?;
+
+    let as_of = Utc::now().naive_utc().date();
+    let report = generate_aged_receivables(&state.pool, current_user.company_id, as_of).await?;
+    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+    let body: Vec<u8> = render_csv_to_vec(|w| render_aged_receivables_csv(&report, w))?;
+
+    emit_aged_receivables_export_audit(&state.pool, current_user.user_id, as_of).await;
+
+    // Filename « date unique » (patron `exports.rs::build_global_filename`, PAS
+    // `build_filename` qui exige un `&ReportPeriod` — validate 21-7 H1).
+    let slug_company = crate::util::slugify(&company_name, "company");
+    let filename = format!(
+        "kesh-balance-agee-{}-{}.csv",
+        slug_company,
+        as_of.format("%Y-%m-%d")
+    );
+    let content_disposition = crate::util::build_content_disposition(&filename, &ctx.locale)?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
+        .header(header::CONTENT_DISPOSITION, content_disposition)
+        .body(Body::from(body))
+        .map_err(|e| AppError::Internal(format!("response build: {e}")))
+}
+
+/// Story 21-7 — audit best-effort génération balance âgée (as_of, pas de période).
+/// Bespoke (ne réutilise pas `emit_report_audit`, signature période).
+async fn emit_aged_receivables_audit(pool: &MySqlPool, user_id: i64, as_of: NaiveDate) {
+    let result = async {
+        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "report.generated",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
+                    "report_type": "aged-receivables",
+                    "as_of": as_of.format("%Y-%m-%d").to_string(),
+                })),
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), kesh_db::errors::DbError>(())
+    }
+    .await;
+    if let Err(e) = result {
+        tracing::warn!(error = ?e, user_id, "audit insert failed (report.generated aged) — non-blocking");
+    }
+}
+
+/// Story 21-7 — audit best-effort export balance âgée (CSV).
+async fn emit_aged_receivables_export_audit(pool: &MySqlPool, user_id: i64, as_of: NaiveDate) {
+    let result = async {
+        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "report.exported",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
+                    "report_type": "aged-receivables",
+                    "format": "csv",
+                    "as_of": as_of.format("%Y-%m-%d").to_string(),
+                })),
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), kesh_db::errors::DbError>(())
+    }
+    .await;
+    if let Err(e) = result {
+        tracing::warn!(error = ?e, user_id, "audit insert failed (report.exported aged) — non-blocking");
+    }
 }
 
 /// GET /api/v1/reports/income-statement/export?format=pdf|csv
