@@ -1,6 +1,6 @@
 # Story 21.7: Balance âgée débiteurs (rapport)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée 2026-07-19 par bmad-create-story. Cartographie ground-truth par 4 agents Explore (patron rapport kesh-report / route+CSV+RBAC / requête postes ouverts+TTC / frontend reports+liens croisés). Consomme 21-2 (helper TTC #246). Indépendante de 21-3..21-6. Décisions Guy 2026-07-19 : vue tous-rôles + export CSV Comptable+ (D24) ; ajout synchro URL ?tab= à /reports (onglets adressables → liens entrants directs). -->
 
@@ -332,7 +332,7 @@ Gate (« Test Locally First ») :
 | `cargo test -p kesh-report` | 67 unit + intégration (dont aged 3/3) |
 | `cargo test -p kesh-api --test reports_e2e` | 33/33 (dont aged 5/5) |
 | `cargo test -p kesh-i18n` | 21/21 (parité FTL 4 locales) |
-| `cargo nextest run --workspace` | _(en cours / à confirmer)_ |
+| `cargo nextest run --workspace` | **1877 passed, 0 failed**, 4 skipped (gate backend complet vert) |
 | `npm run check` | 0 erreur |
 | `npm run lint-i18n-ownership` | PASS |
 | `npm run test:unit` | 408/408 (reports.api +2 aged) |
