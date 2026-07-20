@@ -1017,6 +1017,26 @@ pub async fn delete(
                     "impossible de supprimer une facture créditée par un avoir".into(),
                 ));
             }
+            // Garde 3 (#260) : facture avec historique de rappels → refus. La FK
+            // `invoice_reminders.invoice_id ON DELETE CASCADE` effacerait sinon
+            // silencieusement la preuve de recouvrement (rappels envoyés au
+            // débiteur). Symétrique aux gardes payée/créditée : la suppression #219
+            // ne doit jamais détruire la piste d'audit débiteur. Pour retirer une
+            // facture erronée déjà relancée, passer par un avoir (contre-passation).
+            let reminded: Option<(i64,)> =
+                sqlx::query_as("SELECT id FROM invoice_reminders WHERE invoice_id = ? LIMIT 1")
+                    .bind(id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(map_db_error)?;
+            if reminded.is_some() {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::IllegalStateTransition(
+                    "impossible de supprimer une facture avec un historique de rappels — \
+                     la suppression effacerait la preuve de recouvrement"
+                        .into(),
+                ));
+            }
             inv
         }
         // Tout autre statut (ex. `cancelled`) reste non supprimable.
@@ -2784,6 +2804,56 @@ mod tests {
             .execute(&pool)
             .await
             .ok();
+        cleanup_invoices(&pool, &[id]).await;
+        cleanup_journal_entries(&pool, &[je_id]).await;
+        cleanup_contacts(&pool, &[contact_id]).await;
+    }
+
+    /// #260 garde rappels — une facture validée avec un **historique de rappels**
+    /// (`invoice_reminders`) refuse la suppression : la FK `ON DELETE CASCADE`
+    /// effacerait sinon la preuve de recouvrement. Symétrique payée/créditée.
+    #[tokio::test]
+    async fn test_delete_validated_with_reminders_is_rejected() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+
+        let (id, _v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            today(),
+            None,
+            dec!(10.00),
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO invoice_reminders \
+             (company_id, invoice_id, level_number, fee_amount, sent_at, channel, subject, body) \
+             VALUES (?, ?, 1, 0.00, NOW(6), 'email', 'Rappel 1', 'Corps du rappel')",
+        )
+        .bind(company_id)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let err = delete(&pool, company_id, id, admin_user_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DbError::IllegalStateTransition(_)));
+
+        // Rollback atomique : facture toujours présente (rien n'a CASCADE).
+        let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert!(inv.is_some(), "facture relancée non supprimée");
+
+        // Cleanup : DELETE brut (hors garde) → le rappel CASCADE avec la facture.
         cleanup_invoices(&pool, &[id]).await;
         cleanup_journal_entries(&pool, &[je_id]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
