@@ -42,6 +42,7 @@ pub struct AgedBucket {
     pub days_61_to_90: Decimal,
     #[serde(rename = "daysOver90")]
     pub days_over_90: Decimal,
+    #[serde(rename = "total")]
     pub total: Decimal,
 }
 

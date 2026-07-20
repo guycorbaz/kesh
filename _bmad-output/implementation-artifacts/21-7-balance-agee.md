@@ -340,3 +340,16 @@ Gate (« Test Locally First ») :
 | `npm run test:e2e reports.spec` | 12/12 (dont 4 aged + onglet 8) + échéancier régression OK |
 
 Note E2E : `reminders.spec.ts › rappel manuel` échoue avant midi UTC = **bug pré-existant #259** (time-of-day, hors scope 21-7). Fanout-regression : nul (changements additifs/isolés, aucune requête ou struct partagée modifiée).
+
+## Change Log — code review
+
+### Pass 1 (Sonnet, panel Blind Hunter + Edge Case Hunter + Acceptance Auditor, 2026-07-20) — 1 HIGH + 1 MEDIUM + LOW → patchés / reclassé
+
+Auteur du code : Opus. Panel orthogonal Sonnet (3 couches). Blind Hunter et Edge Case Hunter : **0 CRITICAL/HIGH/MEDIUM** (RBAC réel vérifié, buckets SQL corrects aux frontières, réconciliation testée, scoping OK, avoir/cancelled écartés par CHECK/status, D10 inclus, pas d'injection, pas de dérive TZ, export non-stale). Acceptance Auditor : 1 HIGH + 1 MEDIUM + LOW.
+
+- **AA-1 (HIGH) — vitest `AgedReceivablesView` absent (AC 21).** La spec exige un test de rendu (lignes + total + empty-state) ; seuls les 2 wrappers `reports.api` étaient testés. **Patch** : `frontend/src/lib/features/reports/AgedReceivablesView.test.ts` (3 tests — lignes+total, drill-down `?contactId=`, empty-state), patron `ProjectExpensesView.test.ts`.
+- **AA-2 (MEDIUM) — `reports-aged-title` / `reports-filename-aged-receivables` listées AC 17 mais absentes des FTL.** **Reclassé déviation documentée** (pas de patch) : les deux clés sont **inutilisées par construction** → les ajouter créerait des **dead-keys** (anti-pattern, cf. #255). `reports-aged-title` : la vue n'a pas de titre de section (l'en-tête affiche « Arrêté au {date} » via `reports-aged-as-of`, cohérent AC 12) ; `reports-filename-aged-receivables` : le filename est **codé en dur** `balance-agee-${today}.csv` (décision validate H3, AC 11) → le mécanisme `reports-filename-*`/`resolve_type_slug` n'est pas emprunté. Reliquat de rédaction de la liste AC 17.
+- **LOW patchés** : (a) test unitaire direct `render_aged_receivables_csv` dans `csv.rs` (BOM + en-têtes FR + ligne total + court-circuit vide) — Blind+Auditor ; (b) cas `due_date` **futur** → bucket Non échu (`aged_future_due_date_is_not_due`) — Edge ; (c) variante export **200 Admin** (`aged_receivables_export_ok_for_admin`) — Auditor AC 19 ; (d) `#[serde(rename = "total")]` explicite — Auditor.
+- **Dismiss (LOW)** : `?tab=` non-réactif à la navigation historique (choix documenté one-shot anti-boucle) ; flash cosmétique du tab défaut avant `onMount` sur deep-link ; helper filename inline vs extrait (style/DRY).
+
+Gate post-patch : csv unit 2/2, aged intégration 4/4 (+future-due), reports_e2e aged 6/6 (+admin), vitest reports 28/28 (dont `AgedReceivablesView` 3/3). fmt OK.

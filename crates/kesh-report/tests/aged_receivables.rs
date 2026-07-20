@@ -281,6 +281,25 @@ async fn aged_scoping_filters_by_company(pool: MySqlPool) {
     assert_eq!(other.totals.total, Decimal::ZERO);
 }
 
+/// Une échéance dans le FUTUR (due_date > as_of, `DATEDIFF` négatif) tombe dans
+/// « Non échu » — au même titre que `due_date = as_of` ou `due_date NULL`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_future_due_date_is_not_due(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let c = mk_contact(&pool, &seeded, "Futur SA").await;
+    // Échéance 10 jours APRÈS la date d'arrêté.
+    let future = as_of() + Duration::days(10);
+    mk_validated(&pool, &seeded, c, Some(future), Decimal::ZERO, dec!(250)).await;
+
+    let report = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    assert_eq!(report.rows.len(), 1);
+    let row = &report.rows[0];
+    assert_eq!(row.buckets.not_due, dec!(250), "échéance future = Non échu");
+    assert_eq!(row.buckets.days_1_to_30, Decimal::ZERO);
+    assert_eq!(row.buckets.days_over_90, Decimal::ZERO);
+    assert_eq!(row.buckets.total, dec!(250));
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn aged_empty_when_no_open_items(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();

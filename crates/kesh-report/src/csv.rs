@@ -875,4 +875,68 @@ mod tests {
         );
         assert!(lines[2].starts_with("Total;"));
     }
+
+    // Story 21-7 — CSV balance âgée.
+    use crate::aged_receivables::{AgedBucket, AgedReceivables, AgedReceivablesRow};
+
+    fn aged_bucket() -> AgedBucket {
+        AgedBucket {
+            not_due: dec!(110),
+            days_1_to_30: dec!(205),
+            days_31_to_60: dec!(307),
+            days_61_to_90: dec!(409),
+            days_over_90: dec!(1581),
+            total: dec!(2612),
+        }
+    }
+
+    #[test]
+    fn aged_receivables_csv_bom_header_rows_total() {
+        let report = AgedReceivables {
+            as_of: chrono::NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            rows: vec![AgedReceivablesRow {
+                contact_id: 1,
+                contact_name: "Alpha SA".into(),
+                buckets: aged_bucket(),
+            }],
+            totals: aged_bucket(),
+        };
+        let mut buf = Vec::new();
+        render_aged_receivables_csv(&report, &mut buf).unwrap();
+
+        // BOM UTF-8 en tête.
+        assert_eq!(&buf[..3], &[0xEF, 0xBB, 0xBF]);
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lines: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 3, "1 header + 1 contact + 1 total");
+        assert_eq!(lines[0], "Contact;Non échu;1-30;31-60;61-90;90+;Total");
+        assert_eq!(
+            lines[1],
+            "Alpha SA;110.00;205.00;307.00;409.00;1581.00;2612.00"
+        );
+        assert!(lines[2].starts_with("Total général;"));
+        assert!(lines[2].ends_with(";2612.00"));
+    }
+
+    #[test]
+    fn aged_receivables_csv_empty_is_header_only() {
+        let report = AgedReceivables {
+            as_of: chrono::NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            rows: vec![],
+            totals: AgedBucket {
+                not_due: Decimal::ZERO,
+                days_1_to_30: Decimal::ZERO,
+                days_31_to_60: Decimal::ZERO,
+                days_61_to_90: Decimal::ZERO,
+                days_over_90: Decimal::ZERO,
+                total: Decimal::ZERO,
+            },
+        };
+        let mut buf = Vec::new();
+        render_aged_receivables_csv(&report, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lines: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 1, "rapport vide = en-tête seul");
+        assert_eq!(lines[0], "Contact;Non échu;1-30;31-60;61-90;90+;Total");
+    }
 }

@@ -1542,6 +1542,33 @@ async fn aged_receivables_export_ok_for_comptable(pool: MySqlPool) {
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn aged_receivables_export_ok_for_admin(pool: MySqlPool) {
+    // D24 : l'export est Comptable+ → Admin (rôle supérieur) l'obtient aussi.
+    let ctx = setup_full(&pool, "aged_exp_admin", Role::Admin).await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/reports/aged-receivables/export?format=csv"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        ct.starts_with("text/csv"),
+        "content-type text/csv, got {ct}"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn aged_receivables_export_rejects_pdf(pool: MySqlPool) {
     // 21-7 : CSV only. Un format pdf/autre → 400.
     let ctx = setup_full(&pool, "aged_pdf", Role::Comptable).await;
