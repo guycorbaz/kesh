@@ -23,7 +23,12 @@
  * le helper throw avec un message explicite listant les vérifications.
  */
 
-import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
+import {
+	expect,
+	request as playwrightRequest,
+	type APIRequestContext,
+	type Page,
+} from '@playwright/test';
 
 export type Preset =
 	| 'fresh'
@@ -221,4 +226,22 @@ export async function clearAuthStorage(page: Page): Promise<void> {
 			error instanceof Error ? error.message : String(error),
 		);
 	}
+}
+
+/**
+ * E-mails capturés par le MockMailer (Story 21-8 — promu depuis `reminders.spec.ts`
+ * et `invoice-send-email.spec.ts` où le corps était dupliqué mot pour mot, DRY).
+ *
+ * Endpoint `_test` **non authentifié** exposé uniquement en `KESH_TEST_MODE` avec
+ * SMTP factice (le boot substitue un `MockMailer` capturant). Renvoie le tableau
+ * `emails` (chaque entrée : `to`, `subject`, `body`, `attachmentFilename`, …).
+ * Fail-fast explicite si le backend a été lancé sans SMTP factice (404).
+ */
+export async function fetchSentEmails(page: Page): Promise<Array<Record<string, unknown>>> {
+	const res = await page.request.get(`${resolveBackendUrl()}/api/v1/_test/sent-emails`);
+	expect(
+		res.ok(),
+		`GET /_test/sent-emails → ${res.status()} — backend démarré sans SMTP factice ? (cf. docs/testing.md)`,
+	).toBeTruthy();
+	return (await res.json()).emails;
 }

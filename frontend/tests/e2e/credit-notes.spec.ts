@@ -5,6 +5,11 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+// Story 21-8 (A4) — fixtures partagées (fin de la copie locale des helpers).
+import {
+	createContactWithAddressViaApi,
+	createAndValidateInvoiceViaApi,
+} from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -34,59 +39,10 @@ function uniq(prefix: string): string {
 	return `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-async function createContactViaApi(
-	page: import('@playwright/test').Page,
-	name: string,
-): Promise<number> {
-	const ctx = await authedApiContext(page);
-	try {
-		const res = await ctx.post('/api/v1/contacts', {
-			data: {
-				contactType: 'Personne',
-				name,
-				isClient: true,
-				isSupplier: false,
-				address: 'Rue 1\n1000 Lausanne',
-				defaultPaymentTerms: '30 jours net',
-			},
-		});
-		expect(res.ok(), `createContact failed: ${res.status()}`).toBeTruthy();
-		return (await res.json()).id as number;
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
-async function createAndValidateInvoiceViaApi(
-	page: import('@playwright/test').Page,
-	contactId: number,
-): Promise<number> {
-	const today = new Date().toISOString().slice(0, 10);
-	const ctx = await authedApiContext(page);
-	try {
-		const createRes = await ctx.post('/api/v1/invoices', {
-			data: {
-				contactId,
-				date: today,
-				dueDate: today,
-				paymentTerms: '30 jours net',
-				lines: [{ description: 'Prestation', quantity: '1', unitPrice: '1000.00', vatRate: '8.10' }],
-			},
-		});
-		expect(createRes.ok(), `create invoice failed: ${createRes.status()}`).toBeTruthy();
-		const invoice = await createRes.json();
-		const validateRes = await ctx.post(`/api/v1/invoices/${invoice.id}/validate`);
-		expect(validateRes.ok(), `validate failed: ${validateRes.status()}`).toBeTruthy();
-		return invoice.id as number;
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
 test.describe('Avoirs — création depuis une facture validée', () => {
 	test('crée un avoir, annule la facture, PDF téléchargeable', async ({ page }) => {
 		await login(page);
-		const contactId = await createContactViaApi(page, uniq('Avoir Client'));
+		const contactId = await createContactWithAddressViaApi(page, uniq('Avoir Client'));
 		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
 
 		// Ouvre la facture validée et crée l'avoir.
@@ -124,7 +80,7 @@ test.describe('Avoirs — création depuis une facture validée', () => {
 
 	test('l’avoir apparaît dans la liste des avoirs', async ({ page }) => {
 		await login(page);
-		const contactId = await createContactViaApi(page, uniq('Avoir Liste'));
+		const contactId = await createContactWithAddressViaApi(page, uniq('Avoir Liste'));
 		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
 		const ctx = await authedApiContext(page);
 		try {

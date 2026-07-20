@@ -14,14 +14,18 @@
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
+import {
+	seedTestState,
+	clearAuthStorage,
+	authedApiContext,
+	disposeContextSafe,
+	fetchSentEmails,
+} from './helpers/test-state';
 import {
 	createContactWithAddressViaApi,
 	ensurePrimaryBankAccountViaApi,
 	createAndValidateInvoiceViaApi,
 } from './helpers/api-fixtures';
-
-const BACKEND_URL = process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1';
 
 test.beforeAll(async () => {
 	// Mutations scopées à des rows créées par chaque test → beforeAll
@@ -43,16 +47,6 @@ async function login(page: Page, username = 'admin', password = 'admin123') {
 
 function uniq(prefix: string): string {
 	return `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-}
-
-/** E-mails capturés côté backend (endpoint _test, non authentifié). */
-async function fetchSentEmails(page: Page): Promise<Array<Record<string, unknown>>> {
-	const res = await page.request.get(`${BACKEND_URL}/api/v1/_test/sent-emails`);
-	expect(
-		res.ok(),
-		`GET /_test/sent-emails → ${res.status()} — backend démarré sans SMTP factice ? (cf. docs/testing.md)`,
-	).toBeTruthy();
-	return (await res.json()).emails;
 }
 
 test.describe('Envoi de facture par e-mail — round-trip (Story 20-4)', () => {
