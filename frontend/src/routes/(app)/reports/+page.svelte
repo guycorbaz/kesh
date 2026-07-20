@@ -659,6 +659,12 @@
 			<ProjectReturnView report={projectReturn} />
 		{:else if activeTab === 'aged-receivables' && agedReceivables}
 			<AgedReceivablesView dto={agedReceivables} />
+		{:else if isAgedTab}
+			<!-- Balance âgée : pas d'exercice à sélectionner (arrêté à aujourd'hui) —
+			     message dédié plutôt que « sélectionnez un exercice » (review P2 LOW). -->
+			<p class="text-sm italic text-gray-500">
+				{i18nMsg('reports-aged-instruction-generate', 'Cliquez sur Générer pour afficher la balance âgée arrêtée à ce jour.')}
+			</p>
 		{:else}
 			<p class="text-sm italic text-gray-500">
 				{i18nMsg(

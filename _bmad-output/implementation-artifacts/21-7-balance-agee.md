@@ -1,6 +1,6 @@
 # Story 21.7: Balance âgée débiteurs (rapport)
 
-Status: review
+Status: done
 
 <!-- Créée 2026-07-19 par bmad-create-story. Cartographie ground-truth par 4 agents Explore (patron rapport kesh-report / route+CSV+RBAC / requête postes ouverts+TTC / frontend reports+liens croisés). Consomme 21-2 (helper TTC #246). Indépendante de 21-3..21-6. Décisions Guy 2026-07-19 : vue tous-rôles + export CSV Comptable+ (D24) ; ajout synchro URL ?tab= à /reports (onglets adressables → liens entrants directs). -->
 
@@ -353,3 +353,17 @@ Auteur du code : Opus. Panel orthogonal Sonnet (3 couches). Blind Hunter et Edge
 - **Dismiss (LOW)** : `?tab=` non-réactif à la navigation historique (choix documenté one-shot anti-boucle) ; flash cosmétique du tab défaut avant `onMount` sur deep-link ; helper filename inline vs extrait (style/DRY).
 
 Gate post-patch : csv unit 2/2, aged intégration 4/4 (+future-due), reports_e2e aged 6/6 (+admin), vitest reports 28/28 (dont `AgedReceivablesView` 3/3). fmt OK.
+
+### Pass 2 (Haiku, même panel 3 couches, diff aplati mono-commit, 2026-07-20) — 0 finding actionnable → **CONVERGÉ**
+
+Diff unique aplati fourni à Haiku (mitigation CLAUDE.md — évite la confusion d'indexation multi-commit). Panel Haiku orthogonal aux patches Sonnet/Opus.
+
+- **Blind Hunter** : 0 finding > LOW (« merger »). SQL buckets/binds, RBAC, injection, format, `?tab=` one-shot, gate export, tests — tout re-vérifié grep OK.
+- **Acceptance Auditor** : **22/22 AC PASS**, 0 finding. Les 7 correctifs P1 re-vérifiés présents ; la déviation AA-2 (clés `reports-aged-title`/`reports-filename-aged-receivables` non ajoutées) **re-confirmée correcte** — `grep -rn` = **0 référence** dans tout le code (les ajouter serait des dead-keys).
+- **Edge Case Hunter** : 2 MEDIUM + 1 LOW.
+  - **2 MEDIUM (race `as_of = Utc::now()`) → DISMISS.** Ground-truth exact (les 2 handlers appellent `Utc::now()` indépendamment), mais **non-actionnable** : c'est la sémantique correcte d'un rapport *point-in-time* « arrêté à aujourd'hui » — franchir minuit UTC entre deux appels reflète fidèlement le jour courant (comportement identique à `balance_sheet` / échéancier `UTC_DATE()` / réconciliation). Le paramètre `as_of` explicite (reproductibilité inter-appels) est **reporté v2 (D-7a)**. Le CSV porte l'`asOf` dans son nom → un export cross-minuit reste un snapshot cohérent en soi.
+  - **1 LOW → patché.** Message par défaut « Sélectionnez un exercice et cliquez sur Générer » affiché sur l'onglet aged non-généré (trompeur — pas d'exercice à choisir). Branche `{:else if isAgedTab}` dédiée + clé `reports-aged-instruction-generate` × 4 FTL. Gate : check 0 err, lint-i18n PASS, kesh-i18n 21/21, build ✓.
+
+### Trend & décision — code review
+
+**Pass 1 (Sonnet ×3) : 1 HIGH + 1 MEDIUM + LOW → Pass 2 (Haiku ×3) : 0 actionnable (2 MEDIUM `as_of` dismissed sémantique inhérente, 1 LOW patché).** Critère d'arrêt atteint (0 > LOW actionnable), budget 2/8. Rotation orthogonale Sonnet→Haiku, tous orthogonaux à l'auteur Opus. Blind+Edge Pass 1 avaient déjà 0 CRITICAL/HIGH/MEDIUM ; le HIGH (vitest manquant) + MEDIUM (clés) de l'Auditor P1 corrigés/reclassés, re-confirmés par l'Auditor P2. **Story done.**

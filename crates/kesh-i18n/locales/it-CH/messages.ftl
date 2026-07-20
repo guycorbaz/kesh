@@ -903,6 +903,7 @@ reports-export-csv-button = Esporta CSV
 # Story 21-7 — Scadenziario per età
 reports-aged-balance = Scadenziario per età
 reports-aged-instruction = Scadenziario per età alla data odierna.
+reports-aged-instruction-generate = Clicca su Genera per visualizzare lo scadenziario per età alla data odierna.
 reports-aged-as-of = Al { $date }
 reports-aged-empty = Nessun credito cliente aperto.
 reports-aged-col-contact = Cliente

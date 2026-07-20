@@ -903,6 +903,7 @@ reports-export-csv-button = Export CSV
 # Story 21-7 — Aged receivables balance
 reports-aged-balance = Aged balance
 reports-aged-instruction = Aged balance as of today.
+reports-aged-instruction-generate = Click Generate to display the aged balance as of today.
 reports-aged-as-of = As of { $date }
 reports-aged-empty = No open customer receivables.
 reports-aged-col-contact = Customer

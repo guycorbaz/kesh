@@ -954,6 +954,7 @@ reports-export-csv-button = Export CSV
 # Story 21-7 — Balance âgée débiteurs
 reports-aged-balance = Balance âgée
 reports-aged-instruction = Balance âgée arrêtée à ce jour.
+reports-aged-instruction-generate = Cliquez sur Générer pour afficher la balance âgée arrêtée à ce jour.
 reports-aged-as-of = Arrêté au { $date }
 reports-aged-empty = Aucune créance client ouverte.
 reports-aged-col-contact = Client

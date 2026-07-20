@@ -903,6 +903,7 @@ reports-export-csv-button = CSV-Export
 # Story 21-7 — Altersstruktur der Forderungen
 reports-aged-balance = Altersstruktur
 reports-aged-instruction = Altersstruktur per heute.
+reports-aged-instruction-generate = Klicken Sie auf Erstellen, um die Altersstruktur per heute anzuzeigen.
 reports-aged-as-of = Stand { $date }
 reports-aged-empty = Keine offenen Kundenforderungen.
 reports-aged-col-contact = Kunde
