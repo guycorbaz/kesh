@@ -39,9 +39,15 @@
 		background-color: color-mix(in srgb, var(--color-success, #10b981) 15%, transparent);
 		color: var(--color-success, #10b981);
 	}
+	/*
+	 * #256 : `--color-text-muted` en avant-plan sur son propre tint 15 % passait
+	 * sous le ratio AA (4.5:1) pour du texte xs. On adopte le patron AA-safe déjà
+	 * utilisé par `DunningPausedBadge` : avant-plan = texte primaire (theme-aware),
+	 * tint neutre à 20 %. Reste visuellement « neutre/inactif » vs le vert/orange.
+	 */
 	.unpaid {
-		background-color: color-mix(in srgb, var(--color-text-muted, #6b7280) 15%, transparent);
-		color: var(--color-text-muted, #6b7280);
+		background-color: color-mix(in srgb, var(--color-text-muted, #64748b) 20%, transparent);
+		color: var(--color-text, #1e293b);
 	}
 	.overdue {
 		background-color: color-mix(in srgb, var(--color-warning, #f59e0b) 20%, transparent);

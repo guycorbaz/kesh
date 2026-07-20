@@ -406,14 +406,14 @@
 						{formatInvoiceTotal(inv.totalAmount)}
 					</td>
 					<td class="flex justify-end gap-1 py-2 pr-2">
-						<Button variant="ghost" size="sm" onclick={() => goto(`/invoices/${inv.id}`)}>
+						<Button variant="ghost" size="sm" aria-label={`Voir la facture ${inv.invoiceNumber ?? inv.contactName}`} onclick={() => goto(`/invoices/${inv.id}`)}>
 							<Eye class="h-4 w-4" aria-hidden="true" />
 						</Button>
 						{#if inv.status === 'draft'}
-							<Button variant="ghost" size="sm" onclick={() => goto(`/invoices/${inv.id}/edit`)}>
+							<Button variant="ghost" size="sm" aria-label={`Modifier la facture ${inv.invoiceNumber ?? inv.contactName}`} onclick={() => goto(`/invoices/${inv.id}/edit`)}>
 								<Pencil class="h-4 w-4" aria-hidden="true" />
 							</Button>
-							<Button variant="ghost" size="sm" onclick={() => openDelete(inv)}>
+							<Button variant="ghost" size="sm" aria-label={`Supprimer la facture ${inv.invoiceNumber ?? inv.contactName}`} onclick={() => openDelete(inv)}>
 								<Trash2 class="h-4 w-4" aria-hidden="true" />
 							</Button>
 						{/if}
