@@ -220,8 +220,8 @@ development_status:
   epic-13-retrospective: optional
 
   # Epic 14: Clôture d'Exercice (ex-Epic 12, renumbered 2026-04-20)
-  epic-14: backlog
-  14-1-cloture-report-des-soldes: backlog
+  epic-14: in-progress
+  14-1-cloture-report-des-soldes: ready-for-dev
   epic-14-retrospective: optional
 
   # Epic 15: Justificatifs, Lettrage & Compléments v0.2 (ex-Epic 13, renumbered 2026-04-20)
