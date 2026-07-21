@@ -24,7 +24,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::invoice_pdf_service::{
-    MAX_LINES_PER_PDF, build_i18n, map_qrbill_error, sanitize_filename, split_lines,
+    build_i18n, map_qrbill_error, sanitize_filename, split_lines,
 };
 
 #[derive(Serialize)]
@@ -192,9 +192,11 @@ pub async fn get_credit_note_pdf(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    if lines.len() > MAX_LINES_PER_PDF {
-        return Err(AppError::InvoiceTooManyLinesForPdf(lines.len()));
-    }
+    // Pas de pré-filtre `MAX_LINES_PER_PDF` ici : un avoir n'a PAS de section QR
+    // (pleine page disponible) → sa capacité géométrique réelle est bien plus
+    // haute que celle d'une facture. La garde de `draw_invoice_section`
+    // (plancher = marge basse pour l'avoir) refuse proprement le dépassement en
+    // 400 « trop de lignes » si besoin (#151 code-review).
 
     let contact = contacts::find_by_id(&state.pool, cn.contact_id)
         .await?

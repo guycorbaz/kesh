@@ -285,6 +285,12 @@ pub enum QrBillError {
     InvalidCharset { field: &'static str, codepoint: u32 },
     #[error("Erreur génération PDF: {0}")]
     PdfGeneration(String),
+
+    /// Trop de lignes pour tenir sur un PDF A4 mono-page (avec le récap TVA #151).
+    /// Distinct de `PdfGeneration` : le handler HTTP le mappe en **400** « trop
+    /// de lignes » (actionnable) plutôt qu'un 500 opaque. Le `usize` = nb de lignes.
+    #[error("trop de lignes ({0}) pour un PDF A4 mono-page")]
+    TooManyLines(usize),
     /// Payload SPC malformé (en-tête absent, type de référence inconnu, structure invalide).
     /// Mappé `INVALID_SPC_PAYLOAD` par la couche d'import (Story 12-5).
     #[error("Payload SPC invalide: {0}")]
