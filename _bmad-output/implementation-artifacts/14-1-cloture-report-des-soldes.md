@@ -183,6 +183,18 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 - **LOW** — fixture rendue arithmétiquement close (+200 produit → `equity_result` 200) ; prose `2970`→`2979` corrigée ; dérives d'ancres mineures (fetch_section WHERE L136-137, trial_balance CASE L71-74).
 - **Trend** : Pass 1 (1 CRIT + 3 HIGH + 4 MED) → Pass 2 (0 CRIT, 2 HIGH + 1 MED, cœur confirmé sain) → patchés. **Pass 3 requise** (HIGH trouvés), LLM différent (Haiku), contexte frais.
 
+### Pass 3 (Haiku, contexte frais, 2026-07-21) — grep ground-truth complet → **CONVERGÉ (0 > LOW)**
+
+- Blast-radius tests **complet** (grep : aucun autre test référençant l'exclusion/`2979`/`2800` non couvert).
+- Ancres **toutes justes** (equity_result:75, equation_holds:77, csv 117/122, pdf 497/513, benches:65, report_aggregates Test 6, inline:162).
+- Ancrage `fy_start` **implémentable** (via `ReportPeriod::resolve`/`find_by_id_in_company`).
+- AC **cohérentes** (A vs B), fixture **arithmétiquement close** (15 200 = 10 000 + 5 000 + 200), aucun « decide in dev ».
+- Restent 2 LOW cosmétiques (libellé « Perte reportée » déjà en AC-H, pédagogie period_start) — sans risque gate.
+
+### Décision — validate
+
+**CONVERGÉ en 3 passes** (Sonnet×2 → Opus → Haiku, rotation LLM + contexte frais + grep ground-truth). Critère d'arrêt Review Iteration Rule atteint : **0 CRITICAL/HIGH/MEDIUM**. Cœur du modèle prouvé sain (identité partie double, 0 double-comptage). Spec `ready-for-dev` confirmée. Prochaine étape : `bmad-dev-story`.
+
 ## Dev Agent Record
 
 _(à compléter par `bmad-dev-story`)_
