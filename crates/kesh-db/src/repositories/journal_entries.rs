@@ -106,9 +106,9 @@ pub async fn create_in_tx(
     let line_project_ids: Vec<i64> = new.lines.iter().filter_map(|l| l.project_id).collect();
     super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
 
-    // Étape 1 : re-lock de l'exercice contre une clôture concurrente.
-    let fy_row: Option<(i64, String)> = sqlx::query_as(
-        "SELECT id, status FROM fiscal_years \
+    // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
+    let fy_row: Option<(i64, String, NaiveDate, NaiveDate)> = sqlx::query_as(
+        "SELECT id, status, start_date, end_date FROM fiscal_years \
          WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(fiscal_year_id)
@@ -119,8 +119,20 @@ pub async fn create_in_tx(
 
     match fy_row {
         None => return Err(DbError::NotFound),
-        Some((_, status)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
-        Some(_) => {}
+        Some((_, status, _, _)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
+        Some((_, _, fy_start, fy_end)) => {
+            // Garde défensive symétrique à `update` (:671) — l'invariant
+            // `entry_date ∈ [fy_start, fy_end]` est ce dont dépend l'équation du
+            // bilan cumulatif (Story 14-1 Dev Note 4) : l'actif/passif cumulés
+            // ignorent `fiscal_year_id`, mais `equity_result` (via income_statement)
+            // le garde → l'égalité ne tient que si chaque écriture tombe dans les
+            // bornes de son exercice. Le handler HTTP le garantit déjà via
+            // `find_covering_date`, mais on l'impose ici pour tout caller de
+            // `create_in_tx` (fix structurel : équation vraie par construction).
+            if new.entry_date < fy_start || new.entry_date > fy_end {
+                return Err(DbError::DateOutsideFiscalYear);
+            }
+        }
     }
 
     // Étape 2 : vérifier que tous les comptes existent, appartiennent

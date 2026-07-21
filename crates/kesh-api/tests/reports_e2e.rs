@@ -1328,36 +1328,185 @@ async fn journal_enum_invalid_returns_400(pool: MySqlPool) {
 }
 
 // ============================================================
-// AC #28 / Pass 1 ECH-01 — Empty period returns zero totals + equation holds
+// Story 14-1 — Bilan cumulatif : periodStart SANS EFFET + équation tient
+// (supersède l'ancien `balance_sheet_empty_period_returns_zero_totals_equation_holds`,
+//  dont la prémisse « fenêtre intra-exercice → totaux nuls » contredit le report
+//  à-nouveau virtuel — cf. AC-A / AC-I)
 // ============================================================
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn balance_sheet_empty_period_returns_zero_totals_equation_holds(pool: MySqlPool) {
+async fn balance_sheet_cumulative_ignores_period_start_equation_holds(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_bb", Role::Comptable).await;
     let app = spawn_app(pool).await;
 
-    // Période 1 jour sans écritures (entre 2 écritures réelles)
+    // Date d'arrêté 2026-10-01 : seule E1 (2026-09-15, charge 5000 / dette 2000 = 1000)
+    // est <= arrêté. E2 (2026-12-31) et E3 (2027-03-15) sont après. Cumulatif attendu :
+    // - actifs : aucun (E1 ne touche pas d'actif) → 0
+    // - passifs : 2000 crédit 1000 → total_liabilities 1000
+    // - retained_earnings : aucun exercice antérieur (fy_start 2026-07-01) → 0
+    // - equity_result : P&L [2026-07-01, 2026-10-01] = 0 produits - 1000 charges = -1000
+    // - équation : 0 == 1000 + 0 + (-1000) ✓
+    let fetch = |period_start: Option<&str>| {
+        let ctx = &ctx;
+        let app = &app;
+        let qs = match period_start {
+            Some(s) => format!(
+                "fiscalYearId={}&periodStart={s}&periodEnd=2026-10-01",
+                ctx.fy_id
+            ),
+            None => format!("fiscalYearId={}&periodEnd=2026-10-01", ctx.fy_id),
+        };
+        async move {
+            let resp = app
+                .client
+                .get(app.url(&format!("/api/v1/reports/balance-sheet?{qs}")))
+                .bearer_auth(&ctx.jwt)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 200);
+            resp.json::<Value>().await.unwrap()
+        }
+    };
+
+    // (a) sans periodStart (défaut = fy_start)
+    let body = fetch(None).await;
+    let assets = body["assets"].as_array().unwrap();
+    let liabilities = body["liabilities"].as_array().unwrap();
+    assert_eq!(assets.len(), 0, "aucun actif <= 2026-10-01");
+    assert_eq!(liabilities.len(), 1, "passif 2000 cumulé");
+    assert_eq!(body["equationHolds"], true);
+    let total_assets: Decimal = body["totalAssets"].as_str().unwrap().parse().unwrap();
+    let total_liab: Decimal = body["totalLiabilities"].as_str().unwrap().parse().unwrap();
+    let retained: Decimal = body["retainedEarnings"].as_str().unwrap().parse().unwrap();
+    let equity_result: Decimal = body["equityResult"].as_str().unwrap().parse().unwrap();
+    assert_eq!(total_assets, Decimal::ZERO);
+    assert_eq!(total_liab, dec!(1000));
+    assert_eq!(retained, Decimal::ZERO);
+    assert_eq!(equity_result, dec!(-1000));
+
+    // (b) periodStart mi-exercice → corps IDENTIQUE (period_start sans effet, AC-A)
+    let body_mid = fetch(Some("2026-08-01")).await;
+    assert_eq!(
+        body_mid["totalAssets"], body["totalAssets"],
+        "periodStart ne doit pas déplacer les totaux"
+    );
+    assert_eq!(body_mid["totalLiabilities"], body["totalLiabilities"]);
+    assert_eq!(body_mid["retainedEarnings"], body["retainedEarnings"]);
+    assert_eq!(body_mid["equityResult"], body["equityResult"]);
+}
+
+// ============================================================
+// Story 14-1 — E2E : 2 exercices (N avec activité, N+1 vide) → bilan N+1
+// non nul + équilibré (report à-nouveau virtuel, AC-C/E)
+// ============================================================
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_next_year_reflects_prior_closing_balances(pool: MySqlPool) {
+    let company_id = create_company(&pool, "co_cf").await;
+    let user_id = create_user(&pool, "co_cf_user", Role::Comptable, company_id).await;
+    let fy2025 = create_fy(
+        &pool,
+        user_id,
+        company_id,
+        "FY2025",
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+    )
+    .await;
+    let fy2026 = create_fy(
+        &pool,
+        user_id,
+        company_id,
+        "FY2026",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(
+        &pool,
+        user_id,
+        company_id,
+        "1000",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
+    let liab = create_acc(
+        &pool,
+        user_id,
+        company_id,
+        "2000",
+        "Dettes",
+        AccountType::Liability,
+    )
+    .await;
+    let revenue = create_acc(
+        &pool,
+        user_id,
+        company_id,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+
+    // FY2025 : actif 10 000 / dette 10 000
+    post_entry(
+        &pool,
+        user_id,
+        fy2025,
+        company_id,
+        NaiveDate::from_ymd_opt(2025, 3, 1).unwrap(),
+        Journal::OD,
+        "Dette initiale",
+        asset,
+        liab,
+        dec!(10000.00),
+    )
+    .await;
+    // FY2025 : résultat 4 000 (actif +4 000 / produit)
+    post_entry(
+        &pool,
+        user_id,
+        fy2025,
+        company_id,
+        NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+        Journal::Ventes,
+        "Vente",
+        asset,
+        revenue,
+        dec!(4000.00),
+    )
+    .await;
+
+    let jwt = forge_jwt(user_id, role_str(Role::Comptable), company_id);
+    let app = spawn_app(pool).await;
+
+    // Bilan FY2026 SANS aucune écriture 2026 → non nul + équilibré, reflète clôture N
     let resp = app
         .client
         .get(app.url(&format!(
-            "/api/v1/reports/balance-sheet?fiscalYearId={}&periodStart=2026-10-01&periodEnd=2026-10-01",
-            ctx.fy_id
+            "/api/v1/reports/balance-sheet?fiscalYearId={fy2026}"
         )))
-        .bearer_auth(&ctx.jwt)
+        .bearer_auth(&jwt)
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
+
     let assets = body["assets"].as_array().unwrap();
-    let liabilities = body["liabilities"].as_array().unwrap();
-    assert_eq!(assets.len(), 0);
-    assert_eq!(liabilities.len(), 0);
-    assert_eq!(body["equationHolds"], true);
+    assert!(!assets.is_empty(), "bilan N+1 non nul (soldes reportés)");
     let total_assets: Decimal = body["totalAssets"].as_str().unwrap().parse().unwrap();
+    let total_liab: Decimal = body["totalLiabilities"].as_str().unwrap().parse().unwrap();
+    let retained: Decimal = body["retainedEarnings"].as_str().unwrap().parse().unwrap();
     let equity_result: Decimal = body["equityResult"].as_str().unwrap().parse().unwrap();
-    assert_eq!(total_assets, Decimal::ZERO);
-    assert_eq!(equity_result, Decimal::ZERO);
+    assert_eq!(total_assets, dec!(14000), "10000 + 4000 cumulés");
+    assert_eq!(total_liab, dec!(10000));
+    assert_eq!(retained, dec!(4000), "résultat reporté de FY2025");
+    assert_eq!(equity_result, Decimal::ZERO, "aucune activité 2026");
+    assert_eq!(body["equationHolds"], true, "14000 == 10000 + 4000 + 0");
 }
 
 // ============================================================

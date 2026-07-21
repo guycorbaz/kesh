@@ -68,6 +68,7 @@ fn make_balance_sheet(n: usize) -> BalanceSheet {
         liabilities,
         total_assets,
         total_liabilities,
+        retained_earnings: Decimal::ZERO,
         equity_result: total_assets - total_liabilities,
         equation_holds: true,
     }

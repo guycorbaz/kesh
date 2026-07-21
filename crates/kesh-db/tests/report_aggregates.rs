@@ -399,9 +399,15 @@ async fn partial_period_excludes_outside_entries(pool: MySqlPool) {
     assert_eq!(tb.total_debit, Decimal::ZERO);
 }
 
-/// Test 6 : balance_sheet exclut compte 2979 (Pass 3 ECH3-01)
+/// Test 6 : balance_sheet **inclut** compte 2979 dans les passifs (Story 14-1).
+///
+/// Inverse l'ancien `balance_sheet_excludes_2979_from_liabilities` (Pass 3 ECH3-01) :
+/// le hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` est retiré, plus AUCUNE exclusion par
+/// numéro. Un compte de passif réel posté (2979 ou 2800) est compté une fois, et
+/// l'equity reste juste via le split calculé (retained / equity_result). Le rôle d'un
+/// compte n'est jamais déduit de son numéro.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn balance_sheet_excludes_2979_from_liabilities(pool: MySqlPool) {
+async fn balance_sheet_counts_2979_in_liabilities(pool: MySqlPool) {
     let cid = create_company(&pool, "co6").await;
     let uid = create_user(&pool, "u6", cid).await;
     let fy = create_fy(
@@ -414,13 +420,13 @@ async fn balance_sheet_excludes_2979_from_liabilities(pool: MySqlPool) {
     )
     .await;
     let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
-    // Compte 2979 sémantiquement equity, stocké Liability
+    // Compte 2979 stocké Liability (report à nouveau / capitaux propres migrés)
     let acc_2979 = create_acc(
         &pool,
         uid,
         cid,
         "2979",
-        "Résultat de l'exercice",
+        "Report à nouveau",
         AccountType::Liability,
     )
     .await;
@@ -443,11 +449,353 @@ async fn balance_sheet_excludes_2979_from_liabilities(pool: MySqlPool) {
     let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
         .await
         .unwrap();
-    // Le compte 2979 ne doit PAS apparaître dans liabilities
+    // Le compte 2979 DOIT apparaître dans liabilities et être compté (plus d'exclusion)
     let found_2979 = bs.liabilities.iter().any(|a| a.account_number == "2979");
     assert!(
-        !found_2979,
-        "Compte 2979 doit être exclu de total_liabilities (Pass 3 ECH3-01)"
+        found_2979,
+        "Compte 2979 doit être compté dans total_liabilities (hardcode retiré — Story 14-1)"
+    );
+    assert_eq!(bs.total_liabilities, dec!(500));
+    assert_eq!(bs.total_assets, dec!(500));
+    assert_eq!(bs.retained_earnings, Decimal::ZERO);
+    assert_eq!(bs.equity_result, Decimal::ZERO);
+    assert!(bs.equation_holds);
+}
+
+/// Test 8 : report à-nouveau virtuel cross-exercice (Story 14-1 AC-A/B, fixture AC-I).
+///
+/// FY2025 : actifs 15 000 / passifs 10 000 / résultat net 5 000 (reste vivant dans les
+/// comptes Revenue/Expense — AUCUNE écriture de clôture). FY2026 : une écriture +200 de
+/// produit (débit actif 200 / crédit produit 200). Attendus au bilan FY2026 : actifs
+/// cumulés **15 200**, `retained_earnings` **5 000**, `equity_result` **200**, équation
+/// `15 200 == 10 000 + 5 000 + 200`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_virtual_carryforward_cross_fiscal_year(pool: MySqlPool) {
+    let cid = create_company(&pool, "co8").await;
+    let uid = create_user(&pool, "u8", cid).await;
+    let fy2025 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2025",
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+    )
+    .await;
+    let fy2026 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2026",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    let liab = create_acc(&pool, uid, cid, "2000", "Dettes", AccountType::Liability).await;
+    let revenue = create_acc(&pool, uid, cid, "3000", "Ventes", AccountType::Revenue).await;
+
+    // FY2025 : passifs 10 000 (actif 10 000 en contrepartie)
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 3, 1).unwrap(),
+        Journal::OD,
+        asset,
+        liab,
+        dec!(10000),
+    )
+    .await;
+    // FY2025 : résultat net 5 000 (actif +5 000 / produit 5 000)
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+        Journal::Ventes,
+        asset,
+        revenue,
+        dec!(5000),
+    )
+    .await;
+    // FY2026 : +200 de produit
+    post_entry(
+        &pool,
+        uid,
+        fy2026,
+        cid,
+        NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
+        Journal::Ventes,
+        asset,
+        revenue,
+        dec!(200),
+    )
+    .await;
+
+    // Bilan FY2026
+    let period = ReportPeriod::resolve(&pool, cid, fy2026, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+    assert_eq!(
+        bs.total_assets,
+        dec!(15200),
+        "actifs cumulés depuis l'origine"
+    );
+    assert_eq!(bs.total_liabilities, dec!(10000), "passifs cumulés");
+    assert_eq!(
+        bs.retained_earnings,
+        dec!(5000),
+        "résultat reporté = P&L des exercices antérieurs"
+    );
+    assert_eq!(
+        bs.equity_result,
+        dec!(200),
+        "résultat de l'exercice courant"
+    );
+    assert!(bs.equation_holds, "15200 == 10000 + 5000 + 200");
+
+    // Bilan FY2025 (1er exercice) : retained 0, equity 5000 — AC-D régression zéro
+    let period25 = ReportPeriod::resolve(&pool, cid, fy2025, None, None)
+        .await
+        .unwrap();
+    let bs25 = kesh_report::generate_balance_sheet(&pool, cid, &period25)
+        .await
+        .unwrap();
+    assert_eq!(bs25.total_assets, dec!(15000));
+    assert_eq!(bs25.total_liabilities, dec!(10000));
+    assert_eq!(bs25.retained_earnings, Decimal::ZERO, "1er exercice → 0");
+    assert_eq!(bs25.equity_result, dec!(5000));
+    assert!(bs25.equation_holds);
+}
+
+/// Test 9 : résultat reporté **négatif** (pertes cumulées) + exercice N+1 vide qui
+/// équilibre sans écriture (Story 14-1 AC-C + AC-I cas b).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_negative_retained_and_empty_next_year(pool: MySqlPool) {
+    let cid = create_company(&pool, "co9").await;
+    let uid = create_user(&pool, "u9", cid).await;
+    let fy2025 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2025",
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+    )
+    .await;
+    let fy2026 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2026",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    let liab = create_acc(&pool, uid, cid, "2000", "Dettes", AccountType::Liability).await;
+    let expense = create_acc(&pool, uid, cid, "4000", "Charges", AccountType::Expense).await;
+
+    // FY2025 : actif 10 000 / dette 10 000
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 3, 1).unwrap(),
+        Journal::OD,
+        asset,
+        liab,
+        dec!(10000),
+    )
+    .await;
+    // FY2025 : perte 3 000 (charge 3 000 / actif -3 000)
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 8, 1).unwrap(),
+        Journal::OD,
+        expense,
+        asset,
+        dec!(3000),
+    )
+    .await;
+
+    // Bilan FY2026 SANS aucune écriture 2026 → équilibre + reflète soldes clôture N
+    let period = ReportPeriod::resolve(&pool, cid, fy2026, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+    assert_eq!(bs.total_assets, dec!(7000), "10000 - 3000 cumulés");
+    assert_eq!(bs.total_liabilities, dec!(10000));
+    assert_eq!(bs.retained_earnings, dec!(-3000), "perte reportée");
+    assert_eq!(bs.equity_result, Decimal::ZERO, "aucune écriture 2026");
+    assert!(bs.equation_holds, "7000 == 10000 + (-3000) + 0");
+}
+
+/// Test 10 : `period_start` **sans effet** sur le bilan cumulatif (Story 14-1 AC-A).
+///
+/// Deux appels à la même date d'arrêté (mi-année) mais avec des `period_start`
+/// différents (défaut fy_start vs mi-mars) donnent des soldes et un split fonds propres
+/// **identiques** — l'ancrage est `fy_start`, jamais `period_start` (AC-I cas d).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_period_start_has_no_effect(pool: MySqlPool) {
+    let cid = create_company(&pool, "co10").await;
+    let uid = create_user(&pool, "u10", cid).await;
+    let fy2025 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2025",
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+    )
+    .await;
+    let fy2026 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2026",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    let revenue = create_acc(&pool, uid, cid, "3000", "Ventes", AccountType::Revenue).await;
+    // FY2025 résultat 5000
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+        Journal::Ventes,
+        asset,
+        revenue,
+        dec!(5000),
+    )
+    .await;
+    // FY2026 : produit 100 en février, 100 en avril
+    post_entry(
+        &pool,
+        uid,
+        fy2026,
+        cid,
+        NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
+        Journal::Ventes,
+        asset,
+        revenue,
+        dec!(100),
+    )
+    .await;
+    post_entry(
+        &pool,
+        uid,
+        fy2026,
+        cid,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        Journal::Ventes,
+        asset,
+        revenue,
+        dec!(100),
+    )
+    .await;
+
+    let arrete = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
+    // (a) period_start = défaut (fy_start)
+    let p_default = ReportPeriod::resolve(&pool, cid, fy2026, None, Some(arrete))
+        .await
+        .unwrap();
+    let bs_default = kesh_report::generate_balance_sheet(&pool, cid, &p_default)
+        .await
+        .unwrap();
+    // (b) period_start = mi-mars (après la 1ère écriture de fév.)
+    let p_mid = ReportPeriod::resolve(
+        &pool,
+        cid,
+        fy2026,
+        Some(NaiveDate::from_ymd_opt(2026, 3, 15).unwrap()),
+        Some(arrete),
+    )
+    .await
+    .unwrap();
+    let bs_mid = kesh_report::generate_balance_sheet(&pool, cid, &p_mid)
+        .await
+        .unwrap();
+
+    // period_start sans effet : soldes et split fonds propres identiques
+    assert_eq!(bs_default.total_assets, bs_mid.total_assets);
+    assert_eq!(bs_default.total_liabilities, bs_mid.total_liabilities);
+    assert_eq!(bs_default.retained_earnings, bs_mid.retained_earnings);
+    assert_eq!(bs_default.equity_result, bs_mid.equity_result);
+    // Valeurs attendues : retained 5000 (FY2025), equity_result 200 (YTD 2026), actifs 5200
+    assert_eq!(bs_default.retained_earnings, dec!(5000));
+    assert_eq!(bs_default.equity_result, dec!(200));
+    assert_eq!(bs_default.total_assets, dec!(5200));
+    assert!(bs_default.equation_holds);
+}
+
+/// Test 11 : garde défensive `create_in_tx` — une écriture datée hors des bornes de son
+/// exercice est **rejetée** (Story 14-1 Dev Note 4, invariant dont dépend l'équation).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn journal_entry_out_of_fiscal_year_bounds_rejected(pool: MySqlPool) {
+    use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
+    let cid = create_company(&pool, "co11").await;
+    let uid = create_user(&pool, "u11", cid).await;
+    let fy = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2026",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    let revenue = create_acc(&pool, uid, cid, "3000", "Ventes", AccountType::Revenue).await;
+
+    // entry_date 2027-01-15 hors de [2026-01-01, 2026-12-31]
+    let err = journal_entries::create(
+        &pool,
+        fy,
+        uid,
+        NewJournalEntry {
+            company_id: cid,
+            entry_date: NaiveDate::from_ymd_opt(2027, 1, 15).unwrap(),
+            journal: Journal::OD,
+            description: "hors bornes".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: asset,
+                    debit: dec!(100),
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: revenue,
+                    debit: Decimal::ZERO,
+                    credit: dec!(100),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, kesh_db::errors::DbError::DateOutsideFiscalYear),
+        "écriture hors bornes d'exercice doit être rejetée, got: {err:?}"
     );
 }
 

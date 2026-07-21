@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -113,15 +113,16 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 
 ## Tasks / Subtasks
 
-- [ ] **T1** `kesh-report` : point unique de calcul des soldes cumulés (borne `entry_date <= end_date`, `period_start` sans effet pour bilan) — AC-A/G.
-- [ ] **T2** `balance_sheet` : `fetch_section` Asset/Liability cumulatif **sans exclusion par numéro** ; ajouter `retained_earnings` (cumul P&L antérieur, **date-borné** `entry_date < period.start_date`) ; réviser `equation_holds` — AC-A/B/D/H.
-- [ ] **T3** `trial_balance` reste par période (+ note UI) ; `income_statement` inchangé — AC-F.
-- [ ] **T4** `EXPLAIN` sur l'agrégation (index déjà présents) ; index seulement si scan — AC-G.
-- [ ] **T5** exports : `csv.rs` + `pdf.rs` (formules `total_liab_eq`) + littéraux `BalanceSheet` (csv/pdf tests + `benches/export.rs`) — AC-H.
-- [ ] **T6** API `reports` : `retainedEarnings` (rétro-compat) — AC-H.
-- [ ] **T7** Frontend `BalanceSheetView` : résultat reporté + résultat de l'exercice + libellé perte + i18n 4 langues — AC-H.
-- [ ] **T8** Tests unit (fixtures numériques + 1er exercice + perte + migrant) + réécriture `reports_e2e:1335` + E2E 2 exercices — AC-I.
-- [ ] **T9** Issue snapshot + doc CHANGELOG/README + gate complet — AC-G/I.
+- [x] **T1** `kesh-report` : point unique de calcul des soldes cumulés (borne `entry_date <= end_date`, `period_start` sans effet pour bilan) — AC-A/G. → `fetch_cumulative_section` (couture snapshot documentée).
+- [x] **T2** `balance_sheet` : `fetch_section` Asset/Liability cumulatif **sans exclusion par numéro** ; ajouter `retained_earnings` (cumul P&L antérieur **ancré `fy_start`** via `fetch_retained_earnings`) ; `equation_holds` = `total_assets == total_liabilities + retained_earnings + equity_result` — AC-A/B/D/H. Hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` **retiré**.
+- [x] **T3** `trial_balance` reste par période (+ note UI `reports-trial-balance-period-note` 4 langues) ; `income_statement` inchangé — AC-F.
+- [x] **T4** `EXPLAIN` : `je` en `range` sur `idx_journal_entries_company_date` (« Using index »), `jel` en `ref`, `a` en `eq_ref` PRIMARY → **index-served, pas de migration** — AC-G.
+- [x] **T5** exports : `csv.rs` + `pdf.rs` (formules `total_liab_eq` + ligne « Résultat reporté ») + littéraux `BalanceSheet` (csv/pdf tests + `benches/export.rs`) — AC-H.
+- [x] **T6** API `reports` : `retainedEarnings` (rétro-compat — `Json<BalanceSheet>` sérialise le champ automatiquement) — AC-H.
+- [x] **T7** Frontend `BalanceSheetView` : résultat reporté + résultat de l'exercice + libellé « Perte reportée » + i18n 4 langues — AC-H.
+- [x] **T8** Tests unit (4 inline) + sqlx (`report_aggregates` : Test 6 inversé + carryforward + perte + period_start-inerte + garde date) + réécriture `reports_e2e` cumulatif + E2E 2 exercices — AC-I.
+- [x] **T9** Issue snapshot (#270) + issue liée compte archivé (#269) + CHANGELOG + README (E14 en cours) + gate complet — AC-G/I.
+- [x] **T10** Garde défensive `create_in_tx` (`DateOutsideFiscalYear`, symétrique à `update`) — invariant `entry_date ∈ exercice` dont dépend l'équation (Dev Note 4, fix structurel).
 
 ## Dev Notes
 
@@ -197,4 +198,52 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 
 ## Dev Agent Record
 
-_(à compléter par `bmad-dev-story`)_
+### Implementation Plan (Opus 4.8, 2026-07-21)
+
+Cartographie ground-truth (Read direct des fichiers, ancres spec confirmées) → implémentation red-green par tâche :
+
+1. **Cœur backend** (`balance_sheet.rs`, réécriture) : modèle temps réel virtuel.
+   - `fetch_cumulative_section(pool, company_id, as_of, account_type)` = **point unique** (couture snapshot AC-G) : agrégation Asset/Liability sur `entry_date <= as_of`, **tous exercices confondus** (pas de `fiscal_year_id`, pas de borne basse, **aucune exclusion par numéro**). `HAVING balance != 0` conservé.
+   - `fetch_retained_earnings(pool, company_id, before)` : `Σ(crédit − débit)` sur Revenue+Expense, `entry_date < fy_start`, tous exercices. `COALESCE → 0` (1er exercice, AC-D).
+   - `equity_result` = P&L sur `[fy_start, date d'arrêté]` via `income_statement::generate` sur une `ReportPeriod` **ancrée `fy_start`** (résolu par `find_by_id_in_company(period.fiscal_year_id)`), **PAS** `period.start_date` (Dev Note 4 / AC-A).
+   - Équation : `total_assets == total_liabilities + retained_earnings + equity_result` (identité partie double, prouvée dans le doc module).
+   - Const `EQUITY_RESULT_ACCOUNT_NUMBERS` + test inline `equity_result_constants_present` **supprimés entièrement**.
+2. **Garde structurelle** (`create_in_tx`) : validation `entry_date ∈ [fy_start, fy_end]` → `DateOutsideFiscalYear`, symétrique à `update:671`. Rend l'équation vraie **par construction** (l'invariant Dev Note 4 n'est plus « à espérer »). Le handler HTTP le garantissait déjà via `find_covering_date` ; la garde couvre tout caller de `create_in_tx` (invoices, supplier…).
+3. **Exports** : CSV + PDF émettent 2 lignes fonds propres (« Résultat reporté » + « Résultat de l'exercice ») ; `total_liab_eq += retained_earnings`. Nouveau libellé PDF `retained_result_label`. Littéraux `BalanceSheet` mis à jour (csv/pdf tests + `benches/export.rs`).
+4. **API** : `Json<BalanceSheet>` → champ `retainedEarnings` ajouté automatiquement (rétro-compat).
+5. **Frontend** : `BalanceSheetView` rend la ligne reportée (« Perte reportée » si `< 0`) ; `TrialBalanceView` gagne la note « mouvement de période ≠ solde cumulé » (AC-F) ; DTO `retainedEarnings` ; 6 clés i18n (2 × 3) × 4 langues.
+6. **Perf** : `EXPLAIN` → index-served (pas de migration).
+
+### Completion Notes
+
+- **Gate** : `cargo fmt` ✓, `cargo clippy --workspace --all-targets -D warnings` ✓, `report_aggregates` 11/11 ✓ (dont 5 nouveaux 14-1), `reports_e2e` 35/35 ✓ (dont cumulatif + 2-exercices), frontend `check` 0 err / `lint-i18n` PASS / `test:unit` 415 ✓ / `build` ✓. Gate workspace complet (nextest serial-DB) : voir Change Log.
+- **Décision garde `create_in_tx`** : choisi l'option « garde défensive » de Dev Note 4 (plutôt que « test de garde + filet `equation_holds` seul ») — fix structurel, blast radius couvert par le gate workspace complet.
+- **Fixture AC-I close** : FY2025 actifs 15 000 / passifs 10 000 / résultat 5 000 ; FY2026 +200 → `15 200 == 10 000 + 5 000 + 200` (test `balance_sheet_virtual_carryforward_cross_fiscal_year`).
+- **Snapshot** différé → Issue #270 (`enhancement`+`performance`). Issue connexe #269 (réactiver un compte archivé, rattachée à 14-3).
+
+### File List
+
+**Backend**
+- `crates/kesh-report/src/balance_sheet.rs` — réécriture modèle virtuel + `retained_earnings` + point unique + retrait hardcode
+- `crates/kesh-report/src/csv.rs` — 2 lignes fonds propres + `total_liab_eq`
+- `crates/kesh-report/src/pdf.rs` — `retained_result_label` + rendu 2 lignes + `total_liab_eq`
+- `crates/kesh-report/benches/export.rs` — littéral `BalanceSheet`
+- `crates/kesh-db/src/repositories/journal_entries.rs` — garde `DateOutsideFiscalYear` dans `create_in_tx`
+- `crates/kesh-db/tests/report_aggregates.rs` — Test 6 inversé + Tests 8-11 (carryforward, perte, period_start inerte, garde date)
+- `crates/kesh-api/tests/reports_e2e.rs` — réécriture test cumulatif + E2E 2 exercices
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — `reports-retained-earnings`, `-loss`, `reports-trial-balance-period-note`
+
+**Frontend**
+- `frontend/src/lib/features/reports/reports.types.ts` — `retainedEarnings`
+- `frontend/src/lib/features/reports/BalanceSheetView.svelte` — ligne « Résultat reporté »
+- `frontend/src/lib/features/reports/TrialBalanceView.svelte` — note AC-F
+
+**Docs**
+- `CHANGELOG.md` — entrée [Non publié]
+- `README.md` — feuille de route (E14 en cours, v0.8.0)
+
+## Change Log — dev
+
+### dev-story (Opus 4.8, 2026-07-21) — modèle temps réel virtuel implémenté
+
+Implémentation bout-en-bout des 10 tâches (T1-T10). Modèle « report à-nouveau virtuel » : bilan cumulatif cross-exercice depuis un **point unique** (`fetch_cumulative_section`, couture snapshot), split fonds propres « résultat reporté / résultat de l'exercice » ancré `fy_start`, hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` **retiré**. Garde structurelle `create_in_tx` (`DateOutsideFiscalYear`) → équation vraie par construction. Exports CSV/PDF + frontend + i18n 4 langues + note AC-F trial_balance. `EXPLAIN` : index-served (pas de migration). Issue snapshot #270 créée. Gate : fmt/clippy verts, `report_aggregates` 11/11, `reports_e2e` 35/35, frontend check/lint-i18n/415 unit/build verts.

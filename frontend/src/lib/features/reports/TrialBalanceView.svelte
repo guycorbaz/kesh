@@ -24,6 +24,12 @@
 			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
 		</p>
 	{:else}
+		<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="note">
+			{i18nMsg(
+				'reports-trial-balance-period-note',
+				'La balance de vérification affiche le mouvement de la période (par exercice). Le total par compte n’est pas comparable au solde cumulé du même compte au bilan (report à-nouveau depuis l’origine).',
+			)}
+		</p>
 		<table class="w-full border-collapse">
 			<thead>
 				<tr class="border-b bg-gray-50 text-left text-sm">

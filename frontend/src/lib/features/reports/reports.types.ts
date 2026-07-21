@@ -24,6 +24,8 @@ export interface BalanceSheetDto {
 	liabilities: AccountBalance[];
 	totalAssets: string;
 	totalLiabilities: string;
+	/** Résultat reporté = cumul P&L des exercices antérieurs (Story 14-1). Négatif = perte reportée. */
+	retainedEarnings: string;
 	equityResult: string;
 	equationHolds: boolean;
 }

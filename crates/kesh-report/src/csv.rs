@@ -55,7 +55,8 @@ fn write_bom<W: Write>(writer: &mut W) -> Result<(), ReportError> {
 ///
 /// Colonnes : `Section;NumeroCompte;NomCompte;Solde` où
 /// `Section ∈ {Actifs, Passifs, CapitauxPropres}`. La section `CapitauxPropres`
-/// ne contient qu'**une seule ligne** (Pass 3 BH3-H2) : `equity_result` scalaire.
+/// contient **deux lignes calculées** (Story 14-1) : « Résultat reporté »
+/// (`retained_earnings`) + « Résultat de l'exercice » (`equity_result`).
 pub fn render_balance_sheet_csv<W: Write>(
     bs: &BalanceSheet,
     mut writer: W,
@@ -109,7 +110,16 @@ pub fn render_balance_sheet_csv<W: Write>(
         .map_err(map_csv_err)?;
     }
 
-    // Section Capitaux propres — UNE seule ligne synthétique (Pass 3 BH3-H2)
+    // Section Capitaux propres — modèle temps réel virtuel (Story 14-1) : deux lignes
+    // calculées « Résultat reporté » (report à-nouveau cumulé) + « Résultat de l'exercice ».
+    // Le report à-nouveau DOIT figurer dans l'export sinon le bilan exporté est déséquilibré.
+    wtr.write_record([
+        "CapitauxPropres",
+        "",
+        "Résultat reporté",
+        &format_amount_iso(bs.retained_earnings),
+    ])
+    .map_err(map_csv_err)?;
     wtr.write_record([
         "CapitauxPropres",
         "",
@@ -118,8 +128,8 @@ pub fn render_balance_sheet_csv<W: Write>(
     ])
     .map_err(map_csv_err)?;
 
-    // Ligne finale : somme passifs + capitaux propres (invariant implicite ECH-M4)
-    let total_liab_eq = bs.total_liabilities + bs.equity_result;
+    // Ligne finale : somme passifs + capitaux propres (report + résultat) — invariant ECH-M4
+    let total_liab_eq = bs.total_liabilities + bs.retained_earnings + bs.equity_result;
     wtr.write_record([
         "Total passifs + capitaux propres",
         "",
@@ -601,6 +611,7 @@ mod tests {
             liabilities: vec![],
             total_assets: Decimal::ZERO,
             total_liabilities: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: Decimal::ZERO,
             equation_holds: true,
         };
@@ -624,6 +635,7 @@ mod tests {
             liabilities: vec![],
             total_assets: dec!(100),
             total_liabilities: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: dec!(100),
             equation_holds: true,
         };
@@ -717,6 +729,7 @@ mod tests {
             liabilities: vec![],
             total_assets: dec!(175),
             total_liabilities: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: dec!(175),
             equation_holds: true,
         };
@@ -750,6 +763,7 @@ mod tests {
             liabilities: vec![],
             total_assets: Decimal::ZERO,
             total_liabilities: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: Decimal::ZERO,
             equation_holds: true,
         };

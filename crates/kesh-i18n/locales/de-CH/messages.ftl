@@ -887,6 +887,9 @@ reports-error-no-fiscal-year-available = Kein Geschäftsjahr verfügbar. Erstell
 reports-equity-result-section-title = Periodenergebnis (vor Abschlussbuchung)
 reports-equity-result-profit = Gewinn der Periode
 reports-equity-result-loss = Verlust der Periode
+reports-retained-earnings = Gewinnvortrag
+reports-retained-earnings-loss = Verlustvortrag
+reports-trial-balance-period-note = Die Rohbilanz zeigt die Bewegung der Periode (pro Geschäftsjahr). Die Summe pro Konto ist nicht mit dem kumulierten Saldo desselben Kontos in der Bilanz vergleichbar (Saldovortrag seit Beginn).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Bilanzgleichung ungültig (Quelldaten prüfen).

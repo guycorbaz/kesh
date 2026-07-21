@@ -76,6 +76,8 @@ pub struct SectionLabels {
     pub liabilities: String,
     pub equity: String,
     pub equity_result_label: String,
+    /// Libellé « Résultat reporté » (report à-nouveau cumulé — Story 14-1).
+    pub retained_result_label: String,
     // Sections compte de résultat
     pub revenues: String,
     pub expenses: String,
@@ -110,6 +112,7 @@ impl SectionLabels {
             liabilities: "Passifs".into(),
             equity: "Capitaux propres".into(),
             equity_result_label: "Résultat de l'exercice".into(),
+            retained_result_label: "Résultat reporté".into(),
             revenues: "Produits".into(),
             expenses: "Charges".into(),
             net_result: "Résultat net".into(),
@@ -480,28 +483,36 @@ pub fn render_balance_sheet_pdf(
         bs.total_liabilities,
     );
 
-    // Section Capitaux propres (1 seule ligne synthétique — Pass 3 BH3-H2)
+    // Section Capitaux propres — modèle temps réel virtuel (Story 14-1) : deux lignes
+    // calculées « Résultat reporté » (report à-nouveau cumulé) + « Résultat de l'exercice ».
     builder.write_line(&ctx.section_labels.equity, FONT_SIZE_PT, true, 0.0);
-    builder.ensure_space_for_row();
-    {
+    for (label, amount) in [
+        (
+            &ctx.section_labels.retained_result_label,
+            bs.retained_earnings,
+        ),
+        (&ctx.section_labels.equity_result_label, bs.equity_result),
+    ] {
+        builder.ensure_space_for_row();
         let y = builder.cursor_y;
         let layer = builder.current_layer();
         layer.use_text(
-            &ctx.section_labels.equity_result_label,
+            label,
             FONT_SIZE_PT,
             Mm(MARGIN_LEFT_MM + 25.0),
             Mm(y),
             &builder.font,
         );
         layer.use_text(
-            format_swiss_amount(bs.equity_result),
+            format_swiss_amount(amount),
             FONT_SIZE_PT,
             Mm(PAGE_WIDTH_MM - 45.0),
             Mm(y),
             &builder.font,
         );
+        builder.cursor_y -= LINE_HEIGHT_MM;
     }
-    builder.cursor_y -= LINE_HEIGHT_MM * 1.5;
+    builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
 
     // Pied de page : équation bilan (AC #3).
     //
@@ -510,7 +521,7 @@ pub fn render_balance_sheet_pdf(
     // dupliquait visuellement le montant. L'équation bilan se vérifie par
     // comparaison Total actifs (haut) vs Total passifs + Capitaux propres
     // (bas) — pas besoin de redraw.
-    let total_liab_eq = bs.total_liabilities + bs.equity_result;
+    let total_liab_eq = bs.total_liabilities + bs.retained_earnings + bs.equity_result;
     draw_totals_footer(
         &mut builder,
         &format!(
@@ -1371,6 +1382,7 @@ mod tests {
             },
             total_assets: if empty { Decimal::ZERO } else { dec!(1234.56) },
             total_liabilities: if empty { Decimal::ZERO } else { dec!(500.00) },
+            retained_earnings: Decimal::ZERO,
             equity_result: if empty { Decimal::ZERO } else { dec!(734.56) },
             equation_holds: true,
         }
@@ -1735,6 +1747,7 @@ mod tests {
             liabilities,
             total_assets: dec!(50000),
             total_liabilities: dec!(50000),
+            retained_earnings: Decimal::ZERO,
             equity_result: dec!(0),
             equation_holds: true,
         };

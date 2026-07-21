@@ -10,6 +10,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+### Ajouté
+
+- **Report à-nouveau automatique — votre bilan reste juste d'une année à l'autre** : les soldes du **bilan** (actifs, passifs, capitaux propres) se **reportent automatiquement d'un exercice à l'autre**, calculés en temps réel depuis l'origine — comme dans un logiciel comptable moderne (Odoo/Flectra). Ouvrir un nouvel exercice n'affiche plus « zéro à l'actif » : les soldes de clôture de l'exercice précédent apparaissent d'emblée, **sans aucune écriture de clôture ni de report à passer à la main**. Le bilan expose désormais deux lignes de fonds propres distinctes : **« Résultat reporté »** (cumul des résultats des exercices antérieurs ; « Perte reportée » s'il est négatif) et **« Résultat de l'exercice »** (résultat de l'exercice courant, en cours d'année comme en fin d'exercice). L'équation du bilan reste équilibrée à tout instant. Le **compte de résultat** et la **balance de vérification** restent, eux, calculés **par exercice** (mouvement de la période) — un rappel l'indique sur l'écran de la balance de vérification pour éviter toute confusion avec le solde cumulé du bilan. Les exports **CSV** et **PDF** du bilan incluent le résultat reporté. La clôture d'un exercice reste un simple **verrou** (immutabilité + audit, CO art. 957-964), sans écriture générée.
+- **Le rôle d'un compte ne dépend plus de son numéro** : un correctif important pour les utilisateurs qui **migrent depuis un autre logiciel**. Auparavant, certains numéros de comptes (2800 « capital », 2979) étaient traités de façon particulière au bilan — au risque de faire **disparaître les capitaux propres d'ouverture** saisis lors d'une reprise de comptabilité. Désormais tous les comptes de passif sont comptés normalement, sans exception liée au numéro. (La configuration explicite du rôle de chaque compte arrive dans une prochaine étape.)
+
+### Corrigé
+
+- **Écriture datée hors de son exercice désormais refusée** : par sécurité, une écriture comptable dont la date tombe **en dehors des bornes de son exercice** est rejetée dès la saisie (elle l'était déjà à la modification, elle l'est maintenant aussi à la création) — garantie que chaque écriture reste rattachée au bon exercice, condition de justesse du report à-nouveau.
+
 ## [0.7.0] — 2026-07-20
 
 ### Corrigé

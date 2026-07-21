@@ -41,6 +41,32 @@
 				? i18nMsg('reports-equity-result-loss', "Perte de l'exercice")
 				: i18nMsg('reports-equity-result-section-title', "Résultat de l'exercice (avant clôture)"),
 	);
+
+	// Story 14-1 — Résultat reporté (report à-nouveau virtuel) = cumul P&L des exercices
+	// antérieurs. Négatif → « Perte reportée ».
+	let retainedBig = $derived(
+		(() => {
+			try {
+				return new Big(dto.retainedEarnings);
+			} catch {
+				return new Big(0);
+			}
+		})(),
+	);
+
+	let retainedClass = $derived(
+		retainedBig.gt(0)
+			? 'text-green-700 font-semibold'
+			: retainedBig.lt(0)
+				? 'text-red-700 font-semibold'
+				: 'text-gray-700',
+	);
+
+	let retainedLabel = $derived(
+		retainedBig.lt(0)
+			? i18nMsg('reports-retained-earnings-loss', 'Perte reportée')
+			: i18nMsg('reports-retained-earnings', 'Résultat reporté'),
+	);
 </script>
 
 <section class="space-y-4">
@@ -114,6 +140,12 @@
 								>{i18nMsg('reports-total-liabilities', 'Total passifs')}</td
 							>
 							<td class="px-2 py-1 text-right font-mono">{fmt(dto.totalLiabilities)}</td>
+						</tr>
+						<tr>
+							<td colspan="2" class="px-2 py-1 {retainedClass}">{retainedLabel}</td>
+							<td class="px-2 py-1 text-right font-mono {retainedClass}"
+								>{fmt(dto.retainedEarnings)}</td
+							>
 						</tr>
 						<tr>
 							<td colspan="2" class="px-2 py-1 {equityClass}">{equityLabel}</td>
