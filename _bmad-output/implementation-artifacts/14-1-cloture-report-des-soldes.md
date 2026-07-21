@@ -12,145 +12,165 @@ ready-for-dev
 
 ## Contexte
 
-Aujourd'hui, la clôture d'un exercice (`fiscal_years` `Open → Closed`) existe **uniquement comme verrou** : elle rend les écritures de l'exercice immuables (`DbError::FiscalYearClosed`) et journalise l'audit, mais **ne génère aucune écriture** et **ne reporte aucun solde**. Conséquence : tous les rapports (`balance_sheet`, `income_statement`, `trial_balance`) sont **silotés par exercice** (`WHERE je.fiscal_year_id = ? AND je.entry_date BETWEEN ? AND ?`) → **le bilan d'un nouvel exercice affiche zéro à l'actif/passif** tant qu'aucune écriture d'à-nouveau n'y est saisie. C'est le trou fonctionnel n°1.
+Aujourd'hui, la clôture d'un exercice (`fiscal_years` `Open → Closed`) existe **uniquement comme verrou** (immutabilité + audit) ; elle **ne reporte aucun solde**. Tous les rapports (`balance_sheet`, `income_statement`, `trial_balance`) sont **silotés par exercice** (`WHERE je.fiscal_year_id = ? AND je.entry_date BETWEEN ? AND ?`) → **le bilan d'un nouvel exercice affiche zéro à l'actif/passif**. C'est le trou fonctionnel n°1.
 
-### Décision d'architecture — modèle « temps réel virtuel » (tranché avec Guy, 2026-07-21)
+### Décision d'architecture — modèle « temps réel virtuel » (Guy, 2026-07-21)
 
-On adopte le modèle **Odoo/Flectra** : les soldes sont **calculés en direct** depuis les écritures, **sans écritures physiques de clôture ni d'à-nououveau**.
+Modèle **Odoo/Flectra** : soldes **calculés en direct**, **sans écritures physiques** de clôture/à-nouveau.
 
-- **Comptes de bilan** (Asset + Liability, classes 1-2, capitaux propres compris) : **cumulatifs depuis l'origine** — leur solde au bilan d'un exercice = somme de **toutes** les écritures ≤ date d'arrêté, **tous exercices confondus**. C'est le « report à-nouveau » **calculé**.
-- **Comptes de résultat** (Revenue + Expense, classes 3-9) : **par période** (inchangé) — le compte de résultat reste borné à l'exercice.
-- **Résultat de l'exercice** : déjà calculé à la volée (`balance_sheet.rs:72` `equity_result = income.net_result`).
-- **Résultat reporté** : **calculé** = cumul des résultats nets des exercices **antérieurs** (nouveau).
-- **Clôture** = verrou de période (existe déjà) ; **aucune** écriture auto-générée dans le grand livre.
+- **Comptes de bilan** (Asset + Liability, capitaux propres compris) : **cumulatifs depuis l'origine** — solde = Σ de **toutes** les écritures `entry_date ≤ date d'arrêté`, tous exercices confondus. Report à-nouveau **calculé**.
+- **Comptes de résultat** (Revenue + Expense) : **par période** (inchangé).
+- **Résultat de l'exercice** : calculé à la volée (`income.net_result`).
+- **Résultat reporté** : **calculé** = cumul des résultats nets des exercices **strictement antérieurs**.
+- **Clôture** = verrou (existant) ; **aucune** écriture auto-générée.
 
-### Décision performance — v1 virtuel pur + couture snapshot (tranché avec Guy, 2026-07-21)
+### Décision CRITIQUE (validate Pass 1) — supprimer le hardcode de numéros ; rôles = 14-3
 
-La somme « depuis l'origine » croît avec l'historique. À l'échelle PME (quelques milliers de lignes/an, dizaines/centaines de milliers sur 10-15 ans), une agrégation **servie par index** est de l'ordre de la milliseconde — non-problème (Odoo/Flectra font pareil à plus grande échelle). Donc :
+Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de `total_liabilities` (`balance_sheet.rs:22-27`) pour éviter le double-comptage du résultat calculé. **C'est un piège** : `2800` (capital) / `2970` (report à nouveau) sont de la **vraie equity** ; un utilisateur **migrant** y pose ses capitaux d'ouverture → **exclus des passifs ET absents du « résultat reporté » (dérivé du P&L)** → **les capitaux propres migrés disparaissent, l'équation casse** pour le persona cible de E14.
 
-- **v1 : virtuel pur** (somme depuis l'origine).
-- **Couture obligatoire** : isoler le calcul des soldes d'ouverture derrière **un seul helper** `opening_balances(pool, company_id, as_of)` (voir AC-F), pour pouvoir brancher plus tard un **snapshot de soldes de clôture** (1 ligne/compte/exercice clos, rendu **définitif par l'immutabilité de l'exercice clos**) **sans changer le modèle de données ni l'UX**. Le snapshot n'est PAS implémenté ici — c'est une évolution perf documentée (créer une issue `enhancement` + `performance`).
-- **Interaction réouverture (Story 14-2)** : un exercice peut être **rouvert** (dégiger, Story 14-2). En v1 virtuel pur, rien à invalider (tout est live). Mais le futur snapshot devra **invalider/recalculer** le snapshot d'un exercice rouvert — l'invalidation sera déclenchée par l'événement `fiscal_year.reopened`. À documenter dans l'issue snapshot.
-- **Prérequis** : vérifier que l'agrégation est servie par index (cf. AC-G) ; l'ajouter sinon. C'est le vrai levier, pas l'architecture.
+**Décision (Guy, 2026-07-21) — chaque compte a un rôle explicite, le numéro ne sert JAMAIS à déduire le rôle** :
 
-### Hors scope (garde-fous — NE PAS faire ici)
+- **14-1 supprime le hardcode par numéros.** L'equity est **entièrement virtuelle** : on compte **tous** les comptes de passif cumulés (capital, réserves, report à nouveau inclus, **sans exclusion par numéro**) + on ajoute deux **lignes calculées** « Résultat de l'exercice » et « Résultat reporté ». Aucune magie de numéro.
+- **Pas de double-comptage par construction** : en modèle virtuel, on **ne poste rien** au résultat/report (l'app calcule). Les postings réels à `2970`/`2800` (capital, migration) sont des soldes d'ouverture pré-Kesh, **disjoints** du cumul P&L Kesh → comptés une seule fois. Garde-fou `equation_holds` = filet si l'utilisateur passe malgré tout une écriture de clôture manuelle (déconseillé, cf. Dev Notes).
+- **Durcissement = Story 14-3** (rôles configurables sur `accounts`) : rendra le compte de résultat **non-postable** et permettra une présentation des fonds propres **par rôle** (chart-agnostic), remplaçant définitivement toute logique par numéro.
 
-- ❌ **Aucune écriture physique** de clôture (résultat→capitaux) ni d'à-nououveau : c'est précisément ce que le modèle temps réel élimine.
-- ❌ **Écriture d'affectation du résultat assistée** (CO 958, décision d'AG) : v1 = affectation **entièrement virtuelle** (le résultat des exercices antérieurs s'agrège en « résultat reporté » calculé). L'écriture d'affectation assistée = story future si besoin de tracer une décision d'AG.
-- ❌ **Bilan d'ouverture éditable** (saisie des soldes de départ pour une migration depuis un autre logiciel) : v1 = l'utilisateur saisit une **écriture manuelle OD** datée au 1er jour de son 1er exercice (fonctionne déjà avec `journal_entries`). Un écran dédié = story future (14-2 éventuelle).
-- ❌ **Snapshot** matérialisé (perf) : évolution future, seulement la **couture** est posée ici.
-- ❌ **Réouverture / dégigeage d'un exercice** clos par erreur : **Story 14-2 dédiée** (Admin-only + motif obligatoire + audit `fiscal_year.reopened` + garde-fou d'ordre « interdit si exercice postérieur clos »). Change la décision actuelle « réouverture interdite » (`fiscal_years.rs:600`) — modèle Odoo (verrou réversible **tracé**). Hors 14-1.
-- ❌ **Date de verrouillage ajustable** façon Odoo (lock date globale) : le statut `Closed` par exercice suffit en v1.
-- ❌ Transitoires / régularisations (#232), amortissements (#222) : chantiers séparés.
+### Décision performance — v1 virtuel pur + couture snapshot (Guy, 2026-07-21)
+
+À l'échelle PME, l'agrégation « depuis l'origine » **servie par index** est de l'ordre de la milliseconde (Odoo/Flectra font pareil à plus grande échelle). Donc :
+
+- **v1 : virtuel pur.**
+- **Couture obligatoire** : isoler les soldes d'ouverture derrière **un seul point** (`opening_balances(pool, company_id, as_of)` OU une borne SQL unique `entry_date <= end_date`) pour brancher plus tard un **snapshot de soldes de clôture** (1 ligne/compte/exercice clos, **définitif via l'immutabilité**) **sans changer modèle ni UX**. Snapshot **non** implémenté ici — issue `enhancement`+`performance` à créer.
+- **Interaction réouverture (14-2)** : un snapshot d'exercice **rouvert** devra être invalidé/recalculé (déclenché par `fiscal_year.reopened`). En v1 virtuel pur, rien à invalider. À documenter dans l'issue snapshot.
+- **Index — DÉJÀ EN PLACE** (validate Pass 1) : `idx_journal_entries_company_date (company_id, entry_date DESC)` + `idx_jel_entry (entry_id)` existent (`migrations/20260412000001_journal_entries.sql:33,50`). → **pas de migration** ; juste **vérifier via `EXPLAIN`** que le plan est index-served.
+
+### Hors scope (garde-fous)
+
+- ❌ **Écritures physiques** de clôture / à-nououveau : le modèle virtuel les élimine.
+- ❌ **Hardcode de numéros de comptes** : supprimé ici ; rôles = **14-3**.
+- ❌ **Bilan d'ouverture / soldes de départ éditables** : **Story 14-4** (dépend de 14-3). En v1 de 14-1, un migrant peut poser une écriture OD sur ses comptes de capitaux propres réels (comptés correctement une fois le hardcode retiré) — mais l'écran dédié = 14-4.
+- ❌ **Affectation du résultat assistée** (CO 958) : v1 = virtuel. Écriture d'affectation assistée = story future.
+- ❌ **Réouverture / dégigeage** : **Story 14-2**.
+- ❌ **Snapshot** matérialisé, **date de verrouillage** globale : évolutions futures.
+- ❌ Transitoires (#232), amortissements (#222) : chantiers séparés.
 
 ## Acceptance Criteria
 
 ### A. Report à-nououveau virtuel — bilan cumulatif cross-exercice (`kesh-report::balance_sheet`)
 
-- **Given** un exercice N clos avec des soldes actif/passif non nuls, **When** je génère le **bilan** de l'exercice N+1 (à n'importe quelle date d'arrêté de N+1), **Then** chaque compte de **bilan** (Asset/Liability) affiche son solde **cumulé depuis l'origine** = Σ(débit−crédit selon sens) de **toutes** les écritures dont `entry_date ≤ date d'arrêté`, **tous exercices confondus** — et non les seules écritures de N+1.
-- **And** le compte de **résultat** (`income_statement`) reste **borné à la période** de l'exercice demandé (aucun cumul cross-exercice pour Revenue/Expense).
+- **Given** un exercice N clos avec des soldes actif/passif non nuls, **When** je génère le **bilan** de l'exercice N+1 à une **date d'arrêté** donnée, **Then** chaque compte de **bilan** (Asset/Liability) affiche son solde **cumulé depuis l'origine** = Σ(débit−crédit selon sens) de **toutes** les écritures `entry_date ≤ date d'arrêté`, **tous exercices confondus**.
+- **And** pour le bilan, **`period_start` (borne basse) devient SANS EFFET** sur l'actif/passif : seule la **date d'arrêté = `period_end`** compte (le bilan est une photo « à la date », pas un flux de période). Documenter ce changement de sémantique de l'API.
+- **And** le compte de **résultat** (`income_statement`) reste **borné à la période** (Revenue/Expense par exercice).
 - **And** aucun compte à solde nul n'est listé (`HAVING balance != 0` conservé).
 
-### B. Résultat reporté (fonds propres)
+### B. Résultat de l'exercice + résultat reporté (fonds propres, sans hardcode)
 
-- **Given** des exercices antérieurs clos ou non avec des résultats nets, **When** je consulte les capitaux propres du bilan de l'exercice courant, **Then** le bilan distingue :
-  - **« Résultat de l'exercice »** = résultat net de l'exercice courant (inchangé, `income.net_result`) ;
-  - **« Résultat reporté »** = **cumul des résultats nets des exercices strictement antérieurs** à l'exercice courant (nouveau champ).
-- **And** l'équation du bilan tient **cross-exercice** : `total_assets == total_liabilities + résultat_reporté + résultat_de_l_exercice` (à la place de l'actuel `== total_liabilities + equity_result`).
+- **Given** des exercices avec résultats, **When** je consulte les fonds propres du bilan courant, **Then** le bilan expose **deux lignes calculées** distinctes :
+  - **« Résultat de l'exercice »** = `income.net_result` de la période courante (inchangé) ;
+  - **« Résultat reporté »** = **cumul des résultats nets des exercices strictement antérieurs** (nouveau champ `retained_earnings`).
+- **And** `total_liabilities` compte **tous** les comptes de passif cumulés **sans aucune exclusion par numéro** (capital/réserves/report inclus) — le hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` est **retiré** de la logique.
+- **And** l'équation tient cross-exercice : `total_assets == total_liabilities + retained_earnings + equity_result`.
 
-### C. Équilibre en début d'exercice sans écriture d'à-nououveau
+### C. Équilibre en début d'exercice sans écriture
 
-- **Given** un exercice N+1 **sans aucune écriture** encore saisie, **When** je génère son bilan, **Then** il **équilibre** et reflète les soldes de clôture de N (actif = passif + fonds propres), **sans** qu'aucune écriture d'à-nououveau n'ait été postée.
+- **Given** un exercice N+1 **sans aucune écriture**, **When** je génère son bilan, **Then** il **équilibre** et reflète les soldes de clôture de N, **sans** aucune écriture d'à-nououveau.
 
-### D. Aucune écriture auto-générée
+### D. Premier exercice (cas dégénéré)
 
-- **Given** le modèle temps réel, **When** je clôture un exercice (`POST /fiscal-years/{id}/close`), **Then** le comportement de clôture reste un **pur verrou + audit** (inchangé) et **aucune** écriture de clôture / à-nououveau n'est créée dans le grand livre.
+- **Given** le **tout premier exercice** d'une société (aucun exercice antérieur), **When** je génère son bilan, **Then** `retained_earnings == 0` (aucun résultat antérieur — pas de `NULL`/panic) et le calcul dégénère exactement au comportement mono-exercice actuel (régression zéro).
 
-### E. Compte de résultat & trial balance
+### E. Aucune écriture auto-générée à la clôture
 
-- **Given** l'exercice courant, **When** je génère le **compte de résultat**, **Then** il reste **par période** (inchangé).
-- **Décision** : la **balance de vérification** (`trial_balance`) — préciser en dev si elle passe en mode cumulatif « as-of » pour les comptes de bilan (cohérence avec le bilan) OU reste par période. Défaut proposé : **garder `trial_balance` par période** (c'est un outil de contrôle de saisie de l'exercice) ; documenter la décision.
+- **Given** le modèle temps réel, **When** je clôture un exercice, **Then** la clôture reste un **pur verrou + audit** (inchangé) — **aucune** écriture créée.
 
-### F. Couture perf — helper unique `opening_balances`
+### F. Compte de résultat & balance de vérification
 
-- Le calcul des **soldes d'ouverture** (cumul des comptes de bilan **avant** le début de la période) DOIT être isolé dans **un seul point** réutilisable, p.ex. `opening_balances(pool, company_id, as_of: NaiveDate) -> HashMap<i64, Decimal>` (ou intégré au SQL du bilan via une borne `entry_date <= end_date` unique), de sorte qu'un **snapshot** matérialisé puisse le remplacer plus tard **sans toucher l'API HTTP ni la vue**.
-- **And** créer une issue GitHub `enhancement` + `performance` « Snapshot des soldes de clôture pour borner le report à-nououveau » référencée dans les Dev Notes.
+- Le **compte de résultat** reste **par période** (inchangé).
+- **Décision figée (validate Pass 1)** : la **balance de vérification** (`trial_balance`) reste **par période** (c'est un outil de contrôle de saisie de l'exercice, pas une photo cumulative). **And** l'UI/doc indique clairement que le total par compte de `trial_balance` (mouvement de période) **n'est pas comparable** au solde cumulé du même compte au bilan — pour éviter un faux « bug » perçu.
 
-### G. Performance — index
+### G. Couture perf — point unique + index vérifié
 
-- **Given** l'agrégation cumulative, **When** on l'exécute, **Then** elle est **servie par index** : vérifier qu'un index couvre le motif `journal_entries(company_id, entry_date)` + jointure `journal_entry_lines(entry_id, account_id)`. Ajouter l'index manquant via migration **non-breaking** (`ADD INDEX`) si nécessaire (audit idempotence P5 + doc).
+- Le calcul des soldes cumulés DOIT passer par **un seul point** réutilisable (helper/borne unique, cf. §perf), pour permettre un snapshot futur **sans toucher API/UX**.
+- **And** vérifier via `EXPLAIN` que l'agrégation est **index-served** (les index existent déjà — pas de migration attendue). Si `EXPLAIN` révèle un scan, créer l'index manquant (migration `ADD INDEX` non-breaking + audit idempotence P5).
+- **And** créer une issue GitHub `enhancement`+`performance` « Snapshot des soldes de clôture ».
 
-### H. Chart-agnostique — comptes de capitaux propres / résultat
+### H. Rendus & exports (blast radius — validate Pass 1)
 
-- Le hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` (`balance_sheet.rs:27`) est **Sterchi-PME-spécifique** (flag L70). Le calcul du **résultat reporté** ne doit PAS re-hardcoder des numéros par plan : dériver le résultat reporté du **cumul des Revenue/Expense des exercices antérieurs** (indépendant du plan), pas d'un compte 2970 nommé. Documenter comment l'ancien exclude-list interagit avec le nouveau champ (éviter double-comptage).
+- **API** `GET /api/v1/reports/balance-sheet` : ajouter `retainedEarnings` (contrat **rétro-compatible**, ajout de champ).
+- **CSV** (`kesh-report/src/csv.rs`) : la ligne fonds propres et le total `total_liab_eq` (`csv.rs:~122`) DOIVENT inclure `retained_earnings` (sinon **bilan exporté déséquilibré**).
+- **PDF** (`kesh-report/src/pdf.rs:~513`) : idem `total_liab_eq`.
+- **Constructions `BalanceSheet { … }`** (le champ `retained_earnings` non-`Option` casse la compilation) : mettre à jour les littéraux dans `csv.rs` (tests), `pdf.rs` (tests), et `benches/export.rs`.
+- **Frontend** `BalanceSheetView.svelte` : afficher « Résultat reporté » + « Résultat de l'exercice » ; libellé **« Perte reportée »** si `retained_earnings < 0` (i18n FR/DE/IT/EN). L'équation affichée tient.
 
-### I. Routes HTTP & Frontend
+### I. Tests & gate
 
-- **API** : `GET /api/v1/reports/balance-sheet` expose les nouveaux champs (`retainedEarnings` / `résultat reporté` en plus de `equityResult`). Contrat rétro-compatible (ajout de champs).
-- **Frontend** : `BalanceSheetView.svelte` affiche « Résultat reporté » + « Résultat de l'exercice » dans les fonds propres ; l'équation affichée tient. i18n FR/DE/IT/EN des libellés.
-
-### J. Tests & gate
-
-- Tests unitaires `kesh-report` : (a) bilan N+1 cumule les soldes de N (report à-nououveau), (b) résultat reporté = cumul des résultats antérieurs, (c) équilibre cross-exercice en début d'exercice sans écriture, (d) compte de résultat reste par période.
-- Test E2E `reports_e2e` : 2 exercices (N clos avec activité, N+1 vide) → bilan N+1 non nul + équilibré.
-- Gate complet (backend fmt/clippy/test + frontend check/unit) vert. Doc CHANGELOG + README roadmap (E14 en cours).
+- Tests unit `kesh-report` avec **fixture numérique explicite**, p.ex. : FY2025 actifs 15 000 / passifs 10 000 / résultat net 5 000 ; FY2026 mi-exercice +200 d'actif → **attendus** : actifs cumulés 15 200, `retained_earnings` 5 000, `equity_result` = résultat partiel de la période, `equation_holds == true`. Couvrir aussi : (a) 1er exercice (`retained_earnings==0`), (b) **résultat reporté négatif** (pertes cumulées), (c) migrant posant des capitaux d'ouverture sur un compte de report → `equation_holds==true`.
+- **Réécrire** le test existant `reports_e2e.rs:1335` (`balance_sheet_empty_period_returns_zero_totals_equation_holds`) : sa prémisse (requête intra-exercice → totaux nuls) **contredit** le bilan cumulatif ; l'adapter à la nouvelle sémantique (`period_start` sans effet) ou le superséder.
+- Test E2E `reports_e2e` : 2 exercices (N avec activité, N+1 vide) → bilan N+1 non nul + équilibré.
+- Gate complet (backend fmt/clippy/test + frontend check/unit) vert. Doc CHANGELOG + README (E14 en cours).
 
 ## Tasks / Subtasks
 
-- [ ] **T1** `kesh-report` : introduire le calcul cumulatif des comptes de bilan (helper `opening_balances` OU borne SQL unique `entry_date <= end_date` cross-exercice) — AC-A, AC-F.
-- [ ] **T2** `kesh-report::balance_sheet` : `fetch_section` (Asset/Liability) en mode cumulatif ; ajouter `retained_earnings` (cumul résultats antérieurs) ; réviser `equation_holds` (`== total_liabilities + retained_earnings + equity_result`) — AC-A/B/C/H.
-- [ ] **T3** vérifier `income_statement` & décider `trial_balance` (défaut : par période) — AC-E ; documenter.
-- [ ] **T4** index de perf (vérifier/ajouter migration `ADD INDEX` non-breaking + audit idempotence P5) — AC-G.
-- [ ] **T5** API `reports` : exposer `retainedEarnings` (rétro-compat) — AC-I.
-- [ ] **T6** Frontend `BalanceSheetView` : afficher résultat reporté + résultat de l'exercice + i18n 4 langues — AC-I.
-- [ ] **T7** Tests unit `kesh-report` + E2E `reports_e2e` 2 exercices — AC-J.
-- [ ] **T8** Issue GitHub `enhancement`+`performance` snapshot + doc CHANGELOG/README + gate complet — AC-F/J.
+- [ ] **T1** `kesh-report` : point unique de calcul des soldes cumulés (borne `entry_date <= end_date`, `period_start` sans effet pour bilan) — AC-A/G.
+- [ ] **T2** `balance_sheet` : `fetch_section` Asset/Liability cumulatif **sans exclusion par numéro** ; ajouter `retained_earnings` (cumul P&L antérieur, **date-borné** `entry_date < period.start_date`) ; réviser `equation_holds` — AC-A/B/D/H.
+- [ ] **T3** `trial_balance` reste par période (+ note UI) ; `income_statement` inchangé — AC-F.
+- [ ] **T4** `EXPLAIN` sur l'agrégation (index déjà présents) ; index seulement si scan — AC-G.
+- [ ] **T5** exports : `csv.rs` + `pdf.rs` (formules `total_liab_eq`) + littéraux `BalanceSheet` (csv/pdf tests + `benches/export.rs`) — AC-H.
+- [ ] **T6** API `reports` : `retainedEarnings` (rétro-compat) — AC-H.
+- [ ] **T7** Frontend `BalanceSheetView` : résultat reporté + résultat de l'exercice + libellé perte + i18n 4 langues — AC-H.
+- [ ] **T8** Tests unit (fixtures numériques + 1er exercice + perte + migrant) + réécriture `reports_e2e:1335` + E2E 2 exercices — AC-I.
+- [ ] **T9** Issue snapshot + doc CHANGELOG/README + gate complet — AC-G/I.
 
 ## Dev Notes
 
 ### Pièges, par ordre de coût
 
-1. **Ne PAS générer d'écritures** (clôture/à-nououveau). Tout est calculé. Le grand livre ne contient que les écritures métier.
-2. **Sens des soldes** : Asset = `débit − crédit` ; Liability = `crédit − débit` (cf. `trial_balance.rs:71-75`, `balance_sheet.rs:106-141`). Le cumul cross-exercice conserve ce sens.
-3. **Double-comptage du résultat** : aujourd'hui `equity_result` est calculé du compte de résultat **et** `EQUITY_RESULT_ACCOUNT_NUMBERS` exclut 2979/2800 des passifs pour éviter le double-count. En ajoutant `retained_earnings` (cumul Revenue/Expense antérieurs), s'assurer que les comptes de résultat cumulés **ne** repassent **pas** dans les passifs (les Revenue/Expense ne sont pas des Liability, donc a priori pas de collision — mais valider avec un plan réel + le cas des comptes 9xxx typés `Expense`, cf. quirk ci-dessous).
-4. **Quirk de typage** : `9100`/`9200` (Compte de résultat / Bilan de clôture) sont typés `Expense` dans le plan PME ; `2979` (Résultat de l'exercice) est `Liability`. En modèle temps réel **on ne poste rien** sur ces comptes → le quirk est neutralisé tant qu'aucune écriture n'y va. Ne PAS s'appuyer dessus.
-5. **Zéro-amount lines interdites** en base (`chk_jel_debit_credit_exclusive`) — sans objet ici (aucune écriture générée).
-6. **Chart-agnostique** : dériver le résultat reporté du **cumul des classes de résultat** des exercices antérieurs, pas d'un numéro de compte hardcodé (AC-H).
+1. **Ne PAS générer d'écritures.** Tout est calculé.
+2. **Retrait du hardcode** `EQUITY_RESULT_ACCOUNT_NUMBERS` : ne PAS le remplacer par un autre hardcode. Equity = tous les passifs cumulés + 2 lignes calculées. Le durcissement par rôles = 14-3.
+3. **`period_start` sans effet pour le bilan** — c'est le changement de sémantique qui casse `reports_e2e:1335` ; assumé (AC-A, AC-I).
+4. **`retained_earnings` date-borné** : `entry_date < period.start_date`, filtré `account_type IN (Revenue, Expense)`, calculé **du même point** que les soldes d'ouverture — **PAS** en itérant les lignes `fiscal_years` (les gaps entre exercices et les exercices simultanément `Open` sont permis ; l'invariant `find_covering_date` garantit que tout `entry_date` tombe dans un exercice → la borne date est suffisante et non-ambiguë, sans jointure sur `fiscal_years`).
+5. **Ne pas passer d'écritures de clôture manuelles** en modèle virtuel (l'app calcule le résultat) — sinon double-comptage avec `retained_earnings`. `equation_holds` (warning) reste le filet. À documenter côté utilisateur.
+6. **Sens des soldes** : Asset = `débit − crédit` ; Liability = `crédit − débit` (`trial_balance.rs:70-73`, `balance_sheet.rs:135-141`).
+7. **Quirk typage** `9100`/`9200` = `Expense`, `2979`/`2800` = `Liability` (`pme.json`) : neutralisé tant qu'on ne poste rien dessus. Ne pas s'appuyer dessus.
 
-### Contrats backend (ground-truth, à ne pas re-deviner)
+### Contrats backend (ground-truth — ancres corrigées validate Pass 1)
 
-- `kesh-report/src/balance_sheet.rs` : `generate:61`, `fetch_section` SQL `:106-141` (filtre `je.fiscal_year_id = ? AND entry_date BETWEEN`), `equity_result = income.net_result:72`, `equation_holds:76`, `EQUITY_RESULT_ACCOUNT_NUMBERS:27` (Sterchi-PME, flag L70). Struct `BalanceSheet` (period, assets, liabilities, total_assets, total_liabilities, equity_result, equation_holds).
-- `kesh-report/src/income_statement.rs` : `generate:30`, `net_result = total_revenues − total_expenses:40` = **le** résultat de l'exercice.
-- `kesh-report/src/trial_balance.rs` : `generate:51`, sens des soldes `:71-75` — **meilleur candidat de réutilisation** pour un solde cumulé par compte.
-- `kesh-report/src/period.rs` : `ReportPeriod { fiscal_year_id, start_date, end_date }`.
-- `kesh-db` comptes : `AccountType` = `Asset | Liability | Revenue | Expense` (`entities/account.rs:11`) — **pas de type Equity** (les capitaux propres sont des `Liability`). Bilan = Asset+Liability ; Résultat = Revenue+Expense. Plan PME : classe 1→Asset, 2→Liability, 3→Revenue, 4-9→Expense (`kesh-core/assets/charts/pme.json`).
-- `fiscal_years` : `close:568` (pur flip Open→Closed + audit, **inchangé**), `find_covering_date:422`, `find_overlapping:491`. Plusieurs exercices coexistent, pas de contrainte « exercice N-1 doit être clos ». Immutabilité des écritures d'un exercice clos : `journal_entries.rs:110/659/916` (`FiscalYearClosed`).
-- Écritures (référence pour comprendre les soldes, PAS pour en générer) : `journal_entry_lines(account_id, debit, credit, project_id)` ; `journal_entries(company_id, fiscal_year_id, entry_date, journal)`.
+- `balance_sheet.rs` : `generate:61` ; `fetch_section` SQL, filtre `je.fiscal_year_id = ? AND entry_date BETWEEN` aux **lignes 135-137** ; `let equity_result = income.net_result;` **ligne 75** (pas 72) ; `let equation_holds = ...;` **ligne 77** (pas 76) ; `EQUITY_RESULT_ACCOUNT_NUMBERS:27` (à **retirer** de la logique) ; struct `BalanceSheet` champs 32-40 (ajouter `retained_earnings`).
+- `income_statement.rs:30` `generate`, `:40` `net_result = total_revenues − total_expenses` = résultat de l'exercice.
+- `trial_balance.rs:51` `generate`, sens des soldes **:70-73**.
+- `period.rs` : `ReportPeriod { fiscal_year_id, start_date, end_date }`.
+- Exports : `csv.rs:117` (ligne equity), `csv.rs:122` (`total_liab_eq`) ; `pdf.rs:497`/`pdf.rs:513`. Littéraux `BalanceSheet` : `csv.rs` tests ~604-753, `pdf.rs` tests ~1374/1738, `benches/export.rs:65`.
+- `account.rs:11` : `AccountType = Asset|Liability|Revenue|Expense` (pas de type Equity). Plan PME : classe 1→Asset, 2→Liability, 3→Revenue, 4-9→Expense (`kesh-core/assets/charts/pme.json`).
+- `fiscal_years.rs:568` `close` (pur flip, **inchangé**), `:422` `find_covering_date`, `:491` `find_overlapping`, `:600` « réouverture interdite » (changée par 14-2). Immutabilité écritures : `journal_entries.rs` guards blocs 110/659/916 (throws 122/661/917). Index : `20260412000001_journal_entries.sql:33` (`idx_journal_entries_company_date`), `:50` (`idx_jel_entry`).
+- Test à réécrire : `reports_e2e.rs:1335`.
 
 ### Contrats frontend (ground-truth)
 
-- `frontend/src/lib/features/reports/reports.api.ts` : `getBalanceSheet → /api/v1/reports/balance-sheet:33`. Types `reports.types.ts` (`BalanceSheetDto`). Vue `BalanceSheetView.svelte`. Page `routes/(app)/reports/+page.svelte`.
+- `reports.api.ts:33` `getBalanceSheet`, `reports.types.ts` `BalanceSheetDto`, `BalanceSheetView.svelte` (rend `equityResult`/`totalLiabilities`/`equationHolds`). Page `routes/(app)/reports/+page.svelte`.
 
 ### Leçon de review à appliquer dès le dev
 
-- **Un patch = un test** (memory `feedback_review_patch_needs_test`). Le calcul de solde cumulé est financier → tests unitaires numériques précis (report à-nououveau, résultat reporté, équilibre) **avant** de considérer une tâche done.
-- **Fix structurel > incrémental** sur les invariants d'équilibre (memory) : l'équation du bilan doit tenir par construction, pas par rustines.
+- **Un patch = un test** (`feedback_review_patch_needs_test`) — calcul financier → tests numériques précis avant done.
+- **Fix structurel > incrémental** : l'équation du bilan tient par construction.
 
 ### Références
 
-- Epic 14 (ex-« Epic 13 : Clôture d'Exercice » dans `epics.md`) — ACs FR60/FR61/FR62.
-- Issue #232 (bouclement) — **reformulée** par le modèle temps réel : plus d'« assistant d'écritures de clôture », mais consolidation temps réel + report à-nououveau virtuel. Mettre à jour #232 en conséquence.
-- Cartographie complète (2 agents Explore, 2026-07-21) : moteur comptable + cycle fiscal_year.
-
-## Questions sauvegardées (pour validate/Guy)
-
-1. **`trial_balance`** cumulatif « as-of » ou par période ? (défaut proposé : par période — cf. AC-E).
-2. **Résultat reporté** : le montrer comme **une ligne agrégée** dans les fonds propres, ou ventilé ? (défaut : une ligne « Résultat reporté »).
-3. **Affectation du résultat assistée** (CO 958) : confirmée **hors v1** (virtuel) — OK ?
+- Epic 14 (ex-« Epic 13 : Clôture d'Exercice » `epics.md`) — ACs FR60/FR61/FR62.
+- Issue #232 (bouclement) — **reformulée** par le modèle temps réel ; mettre à jour.
+- Stories liées : **14-2** (réouvrir/dégiger), **14-3** (rôles de comptes, durcit 14-1), **14-4** (bilan d'ouverture, dépend de 14-3).
+- Cartographie (2 agents Explore, 2026-07-21) + validate Pass 1 (2 reviewers Sonnet, 2026-07-21).
 
 ## Change Log — validate
 
-_(à compléter par les passes `bmad-create-story validate`)_
+### Pass 1 (Sonnet ×2 : ancres/faisabilité + comptable/AC, 2026-07-21) — 1 CRITICAL + 3 HIGH + 4 MEDIUM + LOW → patchés
+
+- **CRITICAL** (comptable) — hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` exclut 2800/2970 → capitaux propres migrés disparaissent → équation cassée. **Résolu** : retrait du hardcode, equity virtuelle, décision « rôles explicites » (14-3). Vérité-terrain confirmée (`balance_sheet.rs:22-27`).
+- **HIGH** (ancres) — sémantique `period_start` du bilan cumulatif non spécifiée + test `reports_e2e:1335` cassé. **Résolu** : AC-A (`period_start` sans effet) + AC-I (réécriture du test).
+- **HIGH** (ancres) — rendus CSV/PDF + 4 littéraux `BalanceSheet` (dont `benches/export.rs`) hors scope → bilans exportés déséquilibrés / non-compilation. **Résolu** : AC-H + T5.
+- **HIGH** (comptable) — « bilan d'ouverture hors scope » non sûr (même cause que le CRITICAL). **Résolu** : hardcode retiré + 14-4 en scope épic.
+- **MEDIUM** — décision `trial_balance` (→ figée par période, AC-F) ; AC 1er exercice (→ AC-D) ; règle date-bornée du cumul (→ Dev Note 4) ; 2 dérives d'ancres (75/77, → corrigées).
+- **LOW** — exemple numérique (→ AC-I) ; libellé perte reportée (→ AC-H) ; ranges d'ancres imprécis (→ corrigés).
+- **Faisabilité (positif)** : modèle jugé sain par les 2 ; **index déjà présents** → pas de migration (AC-G).
+- **Trend** : Pass 1 = 1 CRITICAL + 3 HIGH + 4 MEDIUM → patchés. Pass 2 requise (CRITICAL/HIGH trouvés), LLM différent, contexte frais.
 
 ## Dev Agent Record
 
