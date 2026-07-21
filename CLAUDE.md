@@ -98,15 +98,19 @@ Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.n
 
 #### Gate ultra-rapide — MariaDB de test en RAM (`docker-compose.test.yml`)
 
-Le coût du replay DDL est **de l'I/O disque**, pas du CPU. Une MariaDB **datadir en tmpfs (RAM) + durabilité relâchée** (`innodb_flush_log_at_trx_commit=0`, `sync_binlog=0`, `skip-log-bin`, `innodb-doublewrite=0`) élimine cet I/O — **≈13× mesuré** sur la portion DB-bound (42 tests repository : `104 s` disque → `8 s` RAM). La base est **jetable** (perdue au `down`), sur le **port 3307** pour ne PAS toucher la MariaDB de dev (3306, données préservées).
+Le coût du replay DDL est **de l'I/O disque**, pas du CPU. Une MariaDB **datadir en tmpfs (RAM) + durabilité relâchée** (`innodb_flush_log_at_trx_commit=0`, `sync_binlog=0`, `skip-log-bin`, `innodb-doublewrite=0`) élimine cet I/O. Mesuré 2026-07-21 : **suite complète 1898 tests 3494 s (~58 min) disque → 183 s (~3 min) RAM** ; mesure dos-à-dos contrôlée (caches chauds neutralisés) **≈13×** sur 42 tests repository (`104 s → 8 s`). La base est **jetable** (perdue au `down`), sur le **port 3307** pour ne PAS toucher la MariaDB de dev (3306, données préservées). `1898/1898` verts sur tmpfs → **drop-in** (la durabilité relâchée ne change pas la correction, seulement la reprise sur crash).
 
 ```sh
-docker compose -f docker-compose.test.yml up -d          # MariaDB test en RAM (port 3307)
+scripts/test-db-up.sh                                     # up (RAM, 3307) + migrations + seed
 DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3307/kesh" scripts/test-fast.sh --no-lint
-docker compose -f docker-compose.test.yml down           # libère la RAM
+scripts/test-db-down.sh                                   # libère la RAM
 ```
 
-`scripts/test-db-init.sql` (monté dans `/docker-entrypoint-initdb.d/`) élargit les droits de `kesh` à `*.*` — **obligatoire** pour que `#[sqlx::test]` crée ses bases éphémères `_sqlx_test_*` (sinon `ERROR 1044 Access denied`). Le squash de schéma (#251) est **complémentaire** (cumulable avec ce gain).
+Deux prépas nécessaires au drop-in complet, faites par `test-db-up.sh` :
+1. `scripts/test-db-init.sql` (monté dans `/docker-entrypoint-initdb.d/`) élargit les droits de `kesh` à `*.*` — sinon `#[sqlx::test]` ne peut créer ses bases éphémères `_sqlx_test_*` (`ERROR 1044`).
+2. **Migrations + `scripts/test-db-seed.sql`** appliqués à la base `kesh` — les ~84 tests kesh-db legacy (pré-6-4) se connectent directement à `DATABASE_URL` et attendent une base migrée + seedée (1 company + 1 admin + fiscal_year + accounts, aligné `ci.yml`).
+
+Le squash de schéma (#251) est **complémentaire** (cumulable avec ce gain).
 
 ### Frontend (Svelte)
 
