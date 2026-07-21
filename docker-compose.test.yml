@@ -1,0 +1,55 @@
+# MariaDB de TEST — datadir en RAM (tmpfs) + durabilité relâchée.
+#
+# But : accélérer la suite d'intégration `#[sqlx::test]` (~894 tests créant
+# chacun une base éphémère + rejouant les migrations). Le goulot est l'I/O
+# disque du DDL sérialisé, pas le CPU (cf. CLAUDE.md §"Gate rapide" + issue #251).
+#
+# ⚠️ NE CONTIENT AUCUNE DONNÉE PERSISTANTE — le datadir est en tmpfs (RAM) et est
+# PERDU à chaque `down`/redémarrage. À n'utiliser QUE pour lancer les tests.
+# La base de dev (docker-compose.dev.yml, port 3306, volume persistant) reste
+# intacte et séparée.
+#
+# Usage :
+#   docker compose -f docker-compose.test.yml up -d
+#   DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3307/kesh" scripts/test-fast.sh --no-lint
+#   docker compose -f docker-compose.test.yml down     # libère la RAM
+
+services:
+  mariadb-test:
+    image: mariadb:10.11
+    container_name: kesh-mariadb-test
+    ports:
+      # Port 3307 pour ne PAS entrer en collision avec la MariaDB de dev (3306).
+      - "127.0.0.1:3307:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: kesh_dev_root
+      MARIADB_DATABASE: kesh
+      MARIADB_USER: kesh
+      MARIADB_PASSWORD: kesh_dev
+    # datadir en RAM : tout l'I/O des bases éphémères + replay de migrations
+    # se fait sans toucher le disque.
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      # Élargit les droits de `kesh` à *.* pour que `#[sqlx::test]` crée ses
+      # bases éphémères `_sqlx_test_*`. Rejoué à chaque up (datadir tmpfs).
+      - ./scripts/test-db-init.sql:/docker-entrypoint-initdb.d/00-grants.sql:ro
+    command:
+      # --- Durabilité relâchée (acceptable : base jetable, aucune donnée réelle) ---
+      # Ne pas fsync le redo log à chaque commit (le gros coût du replay DDL).
+      - "--innodb-flush-log-at-trx-commit=0"
+      # Pas de fsync du binlog (de toute façon désactivé ci-dessous).
+      - "--sync-binlog=0"
+      # Désactiver le binlog entièrement (inutile pour des tests).
+      - "--skip-log-bin"
+      # Pas de doublewrite buffer (protection anti-torn-page inutile en RAM).
+      - "--innodb-doublewrite=0"
+      # Ne pas fsync les fichiers de données (redondant avec tmpfs, mais explicite).
+      - "--innodb-flush-method=O_DIRECT_NO_FSYNC"
+      # Marge de connexions pour le parallélisme nextest (6 threads × bases).
+      - "--max-connections=256"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 20

@@ -94,7 +94,19 @@ scripts/test-fast.sh --ci       # profil ci (retries=1, fail-fast off)
 
 Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.nexte.st`) + MariaDB dev démarré. Config dans `.config/nextest.toml`.
 
-**Pourquoi seulement 1,40× et pas 6× ?** Le goulot n'est pas le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894) crée une base éphémère et y **rejoue les 51 migrations** (DDL sérialisé par les metadata-locks). Au-delà de **6 threads la contention devient contre-productive** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé). Le plafond est donc figé à 6 dans la config. Le vrai levier (squash du schéma de test + durabilité MariaDB relâchée sur la DB jetable) est suivi dans l'**issue #251** — tant qu'il n'est pas livré, nextest = gain modeste + stabilité, pas une révolution.
+**Pourquoi seulement 1,40× et pas 6× ?** Le goulot n'est pas le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894) crée une base éphémère et y **rejoue les 51 migrations** (DDL sérialisé par les metadata-locks). Au-delà de **6 threads la contention devient contre-productive** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé). Le plafond est donc figé à 6 dans la config. Le vrai levier restant (squash du schéma de test) est suivi dans l'**issue #251**.
+
+#### Gate ultra-rapide — MariaDB de test en RAM (`docker-compose.test.yml`)
+
+Le coût du replay DDL est **de l'I/O disque**, pas du CPU. Une MariaDB **datadir en tmpfs (RAM) + durabilité relâchée** (`innodb_flush_log_at_trx_commit=0`, `sync_binlog=0`, `skip-log-bin`, `innodb-doublewrite=0`) élimine cet I/O — **≈13× mesuré** sur la portion DB-bound (42 tests repository : `104 s` disque → `8 s` RAM). La base est **jetable** (perdue au `down`), sur le **port 3307** pour ne PAS toucher la MariaDB de dev (3306, données préservées).
+
+```sh
+docker compose -f docker-compose.test.yml up -d          # MariaDB test en RAM (port 3307)
+DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3307/kesh" scripts/test-fast.sh --no-lint
+docker compose -f docker-compose.test.yml down           # libère la RAM
+```
+
+`scripts/test-db-init.sql` (monté dans `/docker-entrypoint-initdb.d/`) élargit les droits de `kesh` à `*.*` — **obligatoire** pour que `#[sqlx::test]` crée ses bases éphémères `_sqlx_test_*` (sinon `ERROR 1044 Access denied`). Le squash de schéma (#251) est **complémentaire** (cumulable avec ce gain).
 
 ### Frontend (Svelte)
 
