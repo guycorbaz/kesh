@@ -8,8 +8,8 @@
 
 use chrono::NaiveDate;
 use kesh_qrbill::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillI18n,
-    Reference, generate_qr_bill_pdf_with_date, generator::build_payload,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
+    QrBillI18n, Reference, generate_qr_bill_pdf_with_date, generator::build_payload,
 };
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
@@ -67,7 +67,12 @@ fn sample_invoice() -> InvoicePdfData {
             vat_rate: dec!(7.70),
             line_total: dec!(1234.56),
         }],
-        total: dec!(1234.56),
+        subtotal_ht: dec!(1234.56),
+        vat_lines: vec![InvoiceVatLinePdf {
+            rate_percent: dec!(7.70),
+            amount: dec!(95.06), // 1234.56 × 7.70 % arrondi
+        }],
+        total: dec!(1329.62), // 1234.56 + 95.06
         currency: Currency::Chf,
         origin_reference: None,
     }

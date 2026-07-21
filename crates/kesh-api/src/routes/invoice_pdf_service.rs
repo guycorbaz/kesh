@@ -18,13 +18,30 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::{bank_accounts, contacts, invoices};
 use kesh_i18n::Locale;
 use kesh_qrbill::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillError,
-    QrBillI18n, Reference,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
+    QrBillError, QrBillI18n, Reference,
     validation::{build_qrr, normalize_iban},
 };
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 
 use crate::errors::AppError;
+
+/// #151 : construit le récapitulatif TVA par taux pour le PDF à partir des
+/// paires `(line_total_ht, vat_rate)` d'un document (facture ou avoir).
+/// Délègue l'agrégation (arrondi par ligne DC7) à `kesh_core` — source unique,
+/// pas de logique comptable dupliquée ici ni dans `kesh-qrbill`.
+pub(crate) fn vat_lines_pdf(
+    pairs: impl IntoIterator<Item = (Decimal, Decimal)>,
+) -> Vec<InvoiceVatLinePdf> {
+    kesh_core::accounting::vat::vat_breakdown_by_rate(pairs)
+        .into_iter()
+        .map(|b| InvoiceVatLinePdf {
+            rate_percent: b.rate_percent,
+            amount: b.vat_amount,
+        })
+        .collect()
+}
 
 /// Limite v0.1 : nombre de lignes pouvant tenir sur un PDF A4 mono-page.
 ///
@@ -240,6 +257,10 @@ fn build_qrbill_inputs(
         })
         .collect();
 
+    // #151 : sous-total HT + ventilation TVA par taux (arrondi par ligne DC7).
+    let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let vat_lines = vat_lines_pdf(lines.iter().map(|l| (l.line_total, l.vat_rate)));
+
     let pdf_data = InvoicePdfData {
         invoice_number: invoice
             .invoice_number
@@ -254,6 +275,8 @@ fn build_qrbill_inputs(
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or_default()),
         lines: invoice_lines_pdf,
+        subtotal_ht,
+        vat_lines,
         total: total_ttc,
         currency: Currency::Chf,
         origin_reference: None,

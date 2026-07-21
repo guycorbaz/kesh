@@ -231,6 +231,12 @@ pub async fn get_credit_note_pdf(
     let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
     );
+    // #151 : récap TVA de l'avoir (montants positifs — la contre-passation gère
+    // le signe séparément ; le PDF « Avoir » présente les montants crédités).
+    let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let vat_lines = crate::routes::invoice_pdf_service::vat_lines_pdf(
+        lines.iter().map(|l| (l.line_total, l.vat_rate)),
+    );
 
     let pdf_data = InvoicePdfData {
         invoice_number: cn
@@ -246,6 +252,8 @@ pub async fn get_credit_note_pdf(
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or("")),
         lines: pdf_lines,
+        subtotal_ht,
+        vat_lines,
         total: ttc,
         currency: Currency::Chf,
         origin_reference: origin_number,

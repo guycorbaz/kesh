@@ -349,10 +349,60 @@ fn draw_invoice_section(
         ty -= 5.0;
     }
 
-    // Total.
+    // Total + récapitulatif TVA (#151, obligation LTVA art. 26).
     ty -= 2.0;
     hline(layer, col_unit, PAGE_W - 20.0, ty);
     ty -= 5.0;
+
+    // Bloc récap seulement s'il existe des lignes taxées : Sous-total HT, puis
+    // une ligne « TVA {taux}% » par taux. Sinon (société non assujettie / lignes
+    // 0 %) on n'affiche que le total — comportement rétro-compatible.
+    if !inv.vat_lines.is_empty() {
+        let subtotal = inv
+            .subtotal_ht
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+        layer.use_text(
+            i18n.get("invoice-pdf-subtotal"),
+            9.0,
+            Mm(col_unit),
+            Mm(ty),
+            helv,
+        );
+        layer.use_text(
+            format!("{} {}", inv.currency.code(), format_ch(subtotal, 2)),
+            9.0,
+            Mm(col_tot),
+            Mm(ty),
+            helv,
+        );
+        ty -= 4.5;
+        for v in &inv.vat_lines {
+            let amount = v
+                .amount
+                .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+            layer.use_text(
+                format!(
+                    "{} {}%",
+                    i18n.get("invoice-pdf-vat"),
+                    format_ch(v.rate_percent, 1)
+                ),
+                9.0,
+                Mm(col_unit),
+                Mm(ty),
+                helv,
+            );
+            layer.use_text(
+                format!("{} {}", inv.currency.code(), format_ch(amount, 2)),
+                9.0,
+                Mm(col_tot),
+                Mm(ty),
+                helv,
+            );
+            ty -= 4.5;
+        }
+        ty -= 1.0; // léger espace avant le total en gras
+    }
+
     let total = inv
         .total
         .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
@@ -789,7 +839,9 @@ fn truncate_display(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Address, AddressType, Currency, InvoiceLinePdf, QrBillData};
+    use crate::types::{
+        Address, AddressType, Currency, InvoiceLinePdf, InvoiceVatLinePdf, QrBillData,
+    };
     use rust_decimal_macros::dec;
 
     fn invoice_fixture() -> (QrBillData, InvoicePdfData, QrBillI18n) {
@@ -839,7 +891,12 @@ mod tests {
                 vat_rate: dec!(7.70),
                 line_total: dec!(1200.00),
             }],
-            total: dec!(1234.50),
+            subtotal_ht: dec!(1200.00),
+            vat_lines: vec![InvoiceVatLinePdf {
+                rate_percent: dec!(7.70),
+                amount: dec!(92.40), // 1200.00 × 7.70 %
+            }],
+            total: dec!(1292.40), // 1200.00 + 92.40
             currency: Currency::Chf,
             origin_reference: None,
         };
