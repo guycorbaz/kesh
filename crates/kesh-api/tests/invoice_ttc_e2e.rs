@@ -376,6 +376,31 @@ async fn multi_rate_total_ttc_matches_journal_receivable(pool: MySqlPool) {
     // HT 360.00 ; TVA 8.10 + 5.20 + 1.90 + 0 = 15.20 ; TTC 375.20.
     assert_eq!(invoice["totalTtc"], "375.2000");
 
+    // #151 : récap TVA par taux — 0 % exclu, trié décroissant, arrondi par ligne.
+    let vb = invoice["vatBreakdown"]
+        .as_array()
+        .expect("vatBreakdown array");
+    assert_eq!(vb.len(), 3, "3 taux positifs (0 % exclu)");
+    let rates: Vec<&str> = vb
+        .iter()
+        .map(|v| v["ratePercent"].as_str().unwrap())
+        .collect();
+    assert_eq!(rates, ["8.10", "3.80", "2.60"], "tri taux décroissant");
+    let parse = |v: &serde_json::Value| {
+        v.as_str()
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .unwrap()
+    };
+    // Σ TVA == 15.20 (= TTC − HT).
+    let sum_vat: rust_decimal::Decimal = vb.iter().map(|v| parse(&v["vatAmount"])).sum();
+    assert_eq!(sum_vat, "15.20".parse::<rust_decimal::Decimal>().unwrap());
+    // Taux normal 8.10 % : base 100.00, TVA 8.10.
+    assert_eq!(parse(&vb[0]["baseHt"]), "100.00".parse().unwrap());
+    assert_eq!(parse(&vb[0]["vatAmount"]), "8.10".parse().unwrap());
+    // Taux réduit 2.60 % sur 200.00 → 5.20.
+    assert_eq!(parse(&vb[2]["vatAmount"]), "5.20".parse().unwrap());
+
     // Validation → le débit créance porte exactement le même TTC.
     let resp = app
         .client

@@ -206,9 +206,11 @@ pub enum AppError {
     #[error("Facture non prête pour PDF : {0}")]
     InvoiceNotPdfReady(String),
 
-    /// Trop de lignes pour tenir sur un PDF A4 (v0.1 : limite réelle dans
-    /// `routes::invoice_pdf_service::MAX_LINES_PER_PDF` = 9). Le `usize` est la
-    /// taille effective, affichée dans le message.
+    /// Trop de lignes pour tenir sur un PDF A4 mono-page. La limite réelle est
+    /// **géométrique** (garde de `kesh-qrbill::pdf`) : elle dépend du nombre de
+    /// taux du récap TVA (#151) et du type de document (une facture s'arrête au
+    /// séparateur QR, un avoir dispose de la pleine page). `MAX_LINES_PER_PDF`
+    /// reste un pré-filtre grossier pour les factures. Le `usize` = nb de lignes.
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
 
@@ -1153,13 +1155,13 @@ impl IntoResponse for AppError {
                 build_response(StatusCode::BAD_REQUEST, "INVOICE_NOT_PDF_READY", &msg)
             }
             AppError::InvoiceTooManyLinesForPdf(n) => {
-                let max = crate::routes::invoice_pdf_service::MAX_LINES_PER_PDF;
+                // #151 code-review : le cap n'est plus un nombre fixe (il dépend du
+                // récap TVA et du type de document), donc message sans « max ».
                 let fallback = format!(
-                    "La facture contient {n} lignes — le PDF A4 est limité à {max} lignes en v0.1."
+                    "La facture contient {n} lignes — le PDF A4 mono-page ne peut pas toutes les afficher avec le récapitulatif TVA. Réduisez le nombre de lignes ou scindez la facture."
                 );
                 let mut args = FluentArgs::new();
                 args.set("count", n as i64);
-                args.set("max", max as i64);
                 let msg = t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args);
                 build_response(
                     StatusCode::BAD_REQUEST,

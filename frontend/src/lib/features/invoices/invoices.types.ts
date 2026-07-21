@@ -23,6 +23,16 @@ export interface InvoiceLineResponse {
 	createdAt: string;
 }
 
+/** Une ligne du récapitulatif TVA par taux (#151). Montants string décimale. */
+export interface VatBreakdownLine {
+	/** Taux en pourcent (ex. `"8.10"`). */
+	ratePercent: string;
+	/** Base HT cumulée à ce taux. */
+	baseHt: string;
+	/** Montant de TVA (arrondi par ligne) cumulé à ce taux. */
+	vatAmount: string;
+}
+
 export interface InvoiceResponse {
 	id: number;
 	companyId: number;
@@ -39,6 +49,12 @@ export interface InvoiceResponse {
 	 * Number (convention en tête de fichier).
 	 */
 	totalTtc: string;
+	/**
+	 * Récapitulatif TVA par taux (#151), pour l'affichage « Sous-total HT →
+	 * TVA {taux}% → Total TTC ». Vide si aucune ligne taxée. Montants string
+	 * décimale (jamais Number).
+	 */
+	vatBreakdown: VatBreakdownLine[];
 	journalEntryId: number | null;
 	paidAt: string | null;
 	/** Dernier envoi par e-mail (Story 20-3b2). `null` = jamais envoyée. */

@@ -11,6 +11,7 @@
 use crate::types::Money;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::collections::BTreeMap;
 
 /// Calcule le montant de TVA d'une ligne à partir de sa base HT et de son
 /// taux, arrondi au centime en **arrondi commercial** (`MidpointAwayFromZero`,
@@ -68,6 +69,61 @@ where
         .fold(Decimal::ZERO, |acc, (line_total, vat_rate)| {
             acc + line_total + line_vat_amount(line_total, vat_rate)
         })
+}
+
+/// Une ligne du récapitulatif de TVA d'une facture, agrégée par taux (#151).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VatRateBreakdown {
+    /// Taux en **pourcent** (ex. `dec!(8.10)` pour 8.1 %).
+    pub rate_percent: Decimal,
+    /// Somme des bases HT des lignes à ce taux.
+    pub base_ht: Decimal,
+    /// Somme des **TVA de ligne arrondies** (DC7) des lignes à ce taux.
+    pub vat_amount: Decimal,
+}
+
+/// Ventile la TVA d'une facture **par taux**, pour le récapitulatif du document
+/// (#151 — obligation LTVA art. 26 d'afficher le montant de TVA par taux).
+///
+/// Regroupe les lignes par `vat_rate`, somme les bases HT et les **TVA arrondies
+/// par ligne** (DC7 — cf. [`line_vat_amount`] ; ne JAMAIS arrondir une base
+/// agrégée). La cohérence avec [`invoice_total_ttc`] est garantie : la somme des
+/// `base_ht + vat_amount` de tous les taux, plus les lignes à 0 %, égale le TTC.
+///
+/// N'inclut que les taux **strictement positifs** : une ligne à 0 % (exonérée /
+/// exclue) compte dans le sous-total HT mais ne produit pas de ligne de TVA.
+/// Résultat trié par taux **décroissant** (convention suisse : taux normal avant
+/// taux réduit / hébergement).
+pub fn vat_breakdown_by_rate<I>(lines: I) -> Vec<VatRateBreakdown>
+where
+    I: IntoIterator<Item = (Decimal, Decimal)>,
+{
+    // BTreeMap : clé `Decimal` triée par valeur (8.10 == 8.1 → même taux), agrège
+    // (base_ht, vat_amount) par taux. `line_total`/`vat_rate` viennent du même
+    // schéma DECIMAL(_,2), donc pas d'ambiguïté d'échelle sur la clé.
+    let mut by_rate: BTreeMap<Decimal, (Decimal, Decimal)> = BTreeMap::new();
+    for (line_total, vat_rate) in lines {
+        if vat_rate <= Decimal::ZERO {
+            continue;
+        }
+        let entry = by_rate
+            .entry(vat_rate)
+            .or_insert((Decimal::ZERO, Decimal::ZERO));
+        entry.0 += line_total;
+        entry.1 += line_vat_amount(line_total, vat_rate);
+    }
+    by_rate
+        .into_iter()
+        .rev() // taux décroissant
+        .map(|(rate_percent, (base_ht, vat_amount))| VatRateBreakdown {
+            // Normalisé à 2 décimales : la clé BTreeMap conserve le scale de la
+            // 1re ligne insérée (8.1 vs 8.10 sont égaux par `Ord` mais diffèrent
+            // de scale) — on fige "X.YZ" pour un affichage/sérialisation stable.
+            rate_percent: rate_percent.round_dp(2),
+            base_ht,
+            vat_amount,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -170,5 +226,74 @@ mod tests {
     #[test]
     fn ttc_empty_is_zero() {
         assert_eq!(invoice_total_ttc([]), Decimal::ZERO);
+    }
+
+    // --- vat_breakdown_by_rate (récap TVA, #151) ---
+
+    #[test]
+    fn breakdown_single_rate_sums_base_and_vat() {
+        let b = vat_breakdown_by_rate([(dec!(100.00), dec!(8.1)), (dec!(50.00), dec!(8.1))]);
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].rate_percent, dec!(8.1));
+        assert_eq!(b[0].base_ht, dec!(150.00));
+        assert_eq!(b[0].vat_amount, dec!(12.15)); // 8.10 + 4.05
+    }
+
+    #[test]
+    fn breakdown_rounds_per_line_not_on_aggregate() {
+        // Deux lignes 0.05 @ 8.1 % : TVA par ligne = round(0.00405) = 0.00 chacune
+        // → 0.00 au total (et NON round(0.10 × 8.1 %) = 0.01). Interdit DC7.
+        let b = vat_breakdown_by_rate([(dec!(0.05), dec!(8.1)), (dec!(0.05), dec!(8.1))]);
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].base_ht, dec!(0.10));
+        assert_eq!(b[0].vat_amount, dec!(0.00));
+    }
+
+    #[test]
+    fn breakdown_multi_rates_sorted_descending() {
+        let b = vat_breakdown_by_rate([
+            (dec!(50.00), dec!(2.6)),
+            (dec!(100.00), dec!(8.1)),
+            (dec!(200.00), dec!(3.8)),
+        ]);
+        // Taux décroissant : 8.1, 3.8, 2.6.
+        assert_eq!(
+            b.iter().map(|r| r.rate_percent).collect::<Vec<_>>(),
+            vec![dec!(8.1), dec!(3.8), dec!(2.6)]
+        );
+    }
+
+    #[test]
+    fn breakdown_excludes_zero_rate_lines() {
+        // Une ligne exonérée (0 %) compte au HT mais ne crée pas de ligne TVA.
+        let b = vat_breakdown_by_rate([(dec!(1000.00), dec!(0)), (dec!(100.00), dec!(8.1))]);
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].rate_percent, dec!(8.1));
+    }
+
+    #[test]
+    fn breakdown_reconciles_with_total_ttc() {
+        // Σ(base_ht + vat_amount) des taux + Σ lignes 0 % == invoice_total_ttc.
+        let lines = [
+            (dec!(100.00), dec!(8.1)),
+            (dec!(12345.5), dec!(1.0)),
+            (dec!(50.00), dec!(2.6)),
+            (dec!(10.00), dec!(0)), // exonérée
+        ];
+        let b = vat_breakdown_by_rate(lines);
+        let taxed: Decimal = b.iter().map(|r| r.base_ht + r.vat_amount).sum();
+        let exempt_ht: Decimal = lines
+            .iter()
+            .filter(|(_, r)| *r <= Decimal::ZERO)
+            .map(|(ht, _)| *ht)
+            .sum();
+        assert_eq!(taxed + exempt_ht, invoice_total_ttc(lines));
+    }
+
+    #[test]
+    fn breakdown_empty_is_empty() {
+        assert!(vat_breakdown_by_rate([]).is_empty());
+        // Une facture 100 % exonérée n'a aucun récap TVA.
+        assert!(vat_breakdown_by_rate([(dec!(500.00), dec!(0))]).is_empty());
     }
 }

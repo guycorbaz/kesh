@@ -129,6 +129,13 @@ pub struct InvoicePdfData {
     pub debtor_name: String,
     pub debtor_address_lines: Vec<String>,
     pub lines: Vec<InvoiceLinePdf>,
+    /// Sous-total HT (= Σ des `line_total` HT). Affiché dans le récap TVA (#151).
+    pub subtotal_ht: Decimal,
+    /// Récapitulatif TVA par taux (#151), calculé par le service via
+    /// `kesh_core::accounting::vat::vat_breakdown_by_rate` (arrondi par ligne
+    /// DC7). **Vide** = aucune ligne taxée → pas de bloc TVA (0 % / hors champ),
+    /// on n'affiche alors que le total (rétro-compatible).
+    pub vat_lines: Vec<InvoiceVatLinePdf>,
     /// TTC total, from DB (Decimal(19,4)). Rounded to 2 decimals for display.
     pub total: Decimal,
     pub currency: Currency,
@@ -145,6 +152,17 @@ pub struct InvoiceLinePdf {
     /// VAT rate in percent (e.g. 7.70 for 7.7%).
     pub vat_rate: Decimal,
     pub line_total: Decimal,
+}
+
+/// Une ligne du récapitulatif TVA du PDF (#151) : un taux + le montant de TVA
+/// cumulé à ce taux. Purement présentationnel — l'agrégation (arrondi par ligne
+/// DC7) est faite en amont par `kesh_core::accounting::vat`.
+#[derive(Debug, Clone)]
+pub struct InvoiceVatLinePdf {
+    /// Taux en pourcent (ex. `8.10` pour 8.1 %).
+    pub rate_percent: Decimal,
+    /// Montant de TVA cumulé à ce taux.
+    pub amount: Decimal,
 }
 
 /// Injected translations — the crate has no direct dependency on `kesh-i18n`.
@@ -267,6 +285,12 @@ pub enum QrBillError {
     InvalidCharset { field: &'static str, codepoint: u32 },
     #[error("Erreur génération PDF: {0}")]
     PdfGeneration(String),
+
+    /// Trop de lignes pour tenir sur un PDF A4 mono-page (avec le récap TVA #151).
+    /// Distinct de `PdfGeneration` : le handler HTTP le mappe en **400** « trop
+    /// de lignes » (actionnable) plutôt qu'un 500 opaque. Le `usize` = nb de lignes.
+    #[error("trop de lignes ({0}) pour un PDF A4 mono-page")]
+    TooManyLines(usize),
     /// Payload SPC malformé (en-tête absent, type de référence inconnu, structure invalide).
     /// Mappé `INVALID_SPC_PAYLOAD` par la couche d'import (Story 12-5).
     #[error("Payload SPC invalide: {0}")]

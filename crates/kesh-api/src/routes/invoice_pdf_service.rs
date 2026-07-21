@@ -18,26 +18,48 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::{bank_accounts, contacts, invoices};
 use kesh_i18n::Locale;
 use kesh_qrbill::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillError,
-    QrBillI18n, Reference,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
+    QrBillError, QrBillI18n, Reference,
     validation::{build_qrr, normalize_iban},
 };
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 
 use crate::errors::AppError;
 
-/// Limite v0.1 : nombre de lignes pouvant tenir sur un PDF A4 mono-page.
+/// #151 : construit le récapitulatif TVA par taux pour le PDF à partir des
+/// paires `(line_total_ht, vat_rate)` d'un document (facture ou avoir).
+/// Délègue l'agrégation (arrondi par ligne DC7) à `kesh_core` — source unique,
+/// pas de logique comptable dupliquée ici ni dans `kesh-qrbill`.
+pub(crate) fn vat_lines_pdf(
+    pairs: impl IntoIterator<Item = (Decimal, Decimal)>,
+) -> Vec<InvoiceVatLinePdf> {
+    kesh_core::accounting::vat::vat_breakdown_by_rate(pairs)
+        .into_iter()
+        .map(|b| InvoiceVatLinePdf {
+            rate_percent: b.rate_percent,
+            amount: b.vat_amount,
+        })
+        .collect()
+}
+
+/// Borne v0.1 (grossière) du nombre de lignes d'un PDF A4 mono-page.
 ///
-/// Calcul géométrique (`kesh-qrbill::pdf`) :
-/// - `ty` initial = `PAGE_H - 130 = 167` mm (après header facture)
-/// - pas par ligne = `5` mm
-/// - break défensif si `ty < SEP_Y + 15 = 120` mm
-/// - la check a lieu **avant** le draw → draw N se fait à `ty = 167 - (N-1)*5`
-/// - `167 - (N-1)*5 >= 120` ⇒ `N <= 10.4` ⇒ **9 lignes max tiennent**
+/// C'est un **pré-filtre** : la vérification géométrique **précise** (et
+/// autoritaire) est la garde de `kesh-qrbill::pdf::draw_invoice_section`, qui
+/// tient compte du header ET du bloc récap TVA (#151) :
+/// - `ty` de la 1re ligne = `159` mm (167 après header, − 5 − 3 pour la ligne
+///   de titre du tableau et son filet)
+/// - pas par ligne = `5` mm ; la check a lieu **avant** le draw
+/// - seuil de refus = `SEP_Y + 15 (=120) + réserve_récap`, où `réserve_récap`
+///   = `0` sans TVA, sinon `sous-total (4.5) + n_taux×4.5 + espace (1)`
+/// - sans récap : `159 − (N-1)*5 >= 120` ⇒ **8 lignes** tiennent ; avec un
+///   récap multi-taux, moins (le récap descend le curseur sous le total).
 ///
-/// Le rendu est **défensif** : toute ligne supplémentaire provoque une erreur
-/// `QrBillError::PdfGeneration` plutôt qu'une troncature silencieuse
-/// (cf. `pdf.rs::draw_invoice_section`).
+/// Le rendu est **défensif** : au-delà de la capacité (lignes + récap), la garde
+/// renvoie `QrBillError::PdfGeneration` plutôt que de chevaucher la zone QR ou
+/// tronquer. Cette constante (9) reste un plafond supérieur simple ; un cas qui
+/// la passe mais ne tient pas géométriquement échoue proprement dans `pdf.rs`.
 pub const MAX_LINES_PER_PDF: usize = 9;
 
 /// PDF de facture généré, prêt à être servi (handler HTTP) ou attaché
@@ -240,6 +262,10 @@ fn build_qrbill_inputs(
         })
         .collect();
 
+    // #151 : sous-total HT + ventilation TVA par taux (arrondi par ligne DC7).
+    let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let vat_lines = vat_lines_pdf(lines.iter().map(|l| (l.line_total, l.vat_rate)));
+
     let pdf_data = InvoicePdfData {
         invoice_number: invoice
             .invoice_number
@@ -254,6 +280,8 @@ fn build_qrbill_inputs(
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or_default()),
         lines: invoice_lines_pdf,
+        subtotal_ht,
+        vat_lines,
         total: total_ttc,
         currency: Currency::Chf,
         origin_reference: None,
@@ -306,6 +334,9 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
             "Champ {field} contient un caractère non autorisé par SIX 2.2 (U+{codepoint:04X})"
         )),
         QrBillError::PdfGeneration(msg) => AppError::PdfGenerationFailed(msg),
+        // #151 code-review : la garde géométrique (lignes + récap TVA débordant)
+        // remonte un 400 actionnable, pas un 500 opaque.
+        QrBillError::TooManyLines(n) => AppError::InvoiceTooManyLinesForPdf(n),
         // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
         // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
         QrBillError::InvalidPayload(msg) => AppError::InvoiceNotPdfReady(msg),

@@ -773,12 +773,34 @@
 				{/each}
 			</tbody>
 			<tfoot>
-				<tr>
-					<td colspan="4" class="py-3 text-right font-semibold">Total</td>
-					<td class="py-3 text-right font-mono text-lg font-semibold">
-						{formatInvoiceTotal(invoice.totalAmount)}
-					</td>
-				</tr>
+				<!-- #151 : récap TVA. Si des lignes sont taxées, on affiche
+				     Sous-total HT → TVA {taux}% (par taux) → Total TTC. Sinon
+				     (aucune TVA) un simple « Total » = TTC (== HT). -->
+				{#if invoice.vatBreakdown.length > 0}
+					<tr>
+						<td colspan="4" class="py-1 text-right">Sous-total HT</td>
+						<td class="py-1 text-right font-mono">{formatInvoiceTotal(invoice.totalAmount)}</td>
+					</tr>
+					{#each invoice.vatBreakdown as vb (vb.ratePercent)}
+						<tr>
+							<td colspan="4" class="py-1 text-right">TVA {Number(vb.ratePercent)}%</td>
+							<td class="py-1 text-right font-mono">{formatInvoiceTotal(vb.vatAmount)}</td>
+						</tr>
+					{/each}
+					<tr>
+						<td colspan="4" class="py-3 text-right font-semibold">Total TTC</td>
+						<td class="py-3 text-right font-mono text-lg font-semibold">
+							{formatInvoiceTotal(invoice.totalTtc)}
+						</td>
+					</tr>
+				{:else}
+					<tr>
+						<td colspan="4" class="py-3 text-right font-semibold">Total</td>
+						<td class="py-3 text-right font-mono text-lg font-semibold">
+							{formatInvoiceTotal(invoice.totalTtc)}
+						</td>
+					</tr>
+				{/if}
 			</tfoot>
 		</table>
 

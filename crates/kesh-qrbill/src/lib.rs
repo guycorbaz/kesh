@@ -22,7 +22,7 @@ pub use pdf::{
     generate_qr_bill_pdf_with_date,
 };
 pub use types::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, QrBillData, QrBillError,
-    QrBillI18n, Reference,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
+    QrBillError, QrBillI18n, Reference,
 };
 pub use validation::validate;

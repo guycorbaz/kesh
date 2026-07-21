@@ -160,6 +160,29 @@ impl From<InvoiceLine> for InvoiceLineResponse {
     }
 }
 
+/// Une ligne du récapitulatif de TVA par taux (#151). `Decimal` → string JSON
+/// (feature serde du workspace), cohérent avec les autres montants.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VatBreakdownResponse {
+    /// Taux en pourcent (ex. `"8.10"`).
+    pub rate_percent: Decimal,
+    /// Base HT cumulée des lignes à ce taux.
+    pub base_ht: Decimal,
+    /// Montant de TVA (arrondi par ligne, DC7) cumulé à ce taux.
+    pub vat_amount: Decimal,
+}
+
+impl From<kesh_core::accounting::vat::VatRateBreakdown> for VatBreakdownResponse {
+    fn from(b: kesh_core::accounting::vat::VatRateBreakdown) -> Self {
+        Self {
+            rate_percent: b.rate_percent,
+            base_ht: b.base_ht,
+            vat_amount: b.vat_amount,
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvoiceResponse {
@@ -175,6 +198,9 @@ pub struct InvoiceResponse {
     /// TTC canonique (#246, Story 21-2a) — le montant réellement dû (QR, PDF,
     /// e-mail l'utilisent). `total_amount` reste le HT comptable (compat).
     pub total_ttc: Decimal,
+    /// Récapitulatif TVA par taux (#151), pour l'affichage « Sous-total HT →
+    /// TVA {taux}% → Total TTC ». Vide si aucune ligne taxée (0 % / hors champ).
+    pub vat_breakdown: Vec<VatBreakdownResponse>,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
     /// Story 20-3b1 — dernier envoi par e-mail (`null` = jamais envoyée) et
@@ -222,6 +248,13 @@ impl InvoiceResponse {
         let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
             lines.iter().map(|l| (l.line_total, l.vat_rate)),
         );
+        // #151 : ventilation TVA par taux (même source, arrondi par ligne DC7).
+        let vat_breakdown = kesh_core::accounting::vat::vat_breakdown_by_rate(
+            lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        )
+        .into_iter()
+        .map(VatBreakdownResponse::from)
+        .collect();
         Self {
             id: invoice.id,
             company_id: invoice.company_id,
@@ -233,6 +266,7 @@ impl InvoiceResponse {
             payment_terms: invoice.payment_terms,
             total_amount: invoice.total_amount,
             total_ttc,
+            vat_breakdown,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
             emailed_at: invoice.emailed_at,

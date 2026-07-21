@@ -24,7 +24,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::invoice_pdf_service::{
-    MAX_LINES_PER_PDF, build_i18n, map_qrbill_error, sanitize_filename, split_lines,
+    build_i18n, map_qrbill_error, sanitize_filename, split_lines,
 };
 
 #[derive(Serialize)]
@@ -192,9 +192,11 @@ pub async fn get_credit_note_pdf(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    if lines.len() > MAX_LINES_PER_PDF {
-        return Err(AppError::InvoiceTooManyLinesForPdf(lines.len()));
-    }
+    // Pas de pré-filtre `MAX_LINES_PER_PDF` ici : un avoir n'a PAS de section QR
+    // (pleine page disponible) → sa capacité géométrique réelle est bien plus
+    // haute que celle d'une facture. La garde de `draw_invoice_section`
+    // (plancher = marge basse pour l'avoir) refuse proprement le dépassement en
+    // 400 « trop de lignes » si besoin (#151 code-review).
 
     let contact = contacts::find_by_id(&state.pool, cn.contact_id)
         .await?
@@ -231,6 +233,12 @@ pub async fn get_credit_note_pdf(
     let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
     );
+    // #151 : récap TVA de l'avoir (montants positifs — la contre-passation gère
+    // le signe séparément ; le PDF « Avoir » présente les montants crédités).
+    let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();
+    let vat_lines = crate::routes::invoice_pdf_service::vat_lines_pdf(
+        lines.iter().map(|l| (l.line_total, l.vat_rate)),
+    );
 
     let pdf_data = InvoicePdfData {
         invoice_number: cn
@@ -246,6 +254,8 @@ pub async fn get_credit_note_pdf(
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or("")),
         lines: pdf_lines,
+        subtotal_ht,
+        vat_lines,
         total: ttc,
         currency: Currency::Chf,
         origin_reference: origin_number,

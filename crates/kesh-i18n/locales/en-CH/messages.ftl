@@ -495,7 +495,7 @@ invoices-download-pdf = Download PDF
 invoices-download-pdf-aria-label = Download invoice { $number } as PDF
 
 error-invoice-not-validated = The invoice must be validated before generating a PDF.
-error-invoice-too-many-lines-for-pdf = The invoice contains { $count } lines — the A4 PDF is limited to { $max } lines in v0.1.
+error-invoice-too-many-lines-for-pdf = The invoice contains { $count } lines — the single-page A4 PDF cannot fit them all with the VAT summary. Reduce the number of lines or split the invoice.
 error-pdf-generation-failed = PDF generation failed.
 # Story 9-2a + Pass 1 code-review H1 — dedicated CSV variant.
 error-csv-generation-failed = CSV generation failed.

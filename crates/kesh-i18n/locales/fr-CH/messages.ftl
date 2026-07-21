@@ -520,7 +520,7 @@ invoices-download-pdf-aria-label = Télécharger la facture { $number } au forma
 
 # Fallbacks AppError
 error-invoice-not-validated = La facture doit être validée avant de pouvoir être générée en PDF.
-error-invoice-too-many-lines-for-pdf = La facture contient { $count } lignes — le PDF A4 est limité à { $max } lignes en v0.1.
+error-invoice-too-many-lines-for-pdf = La facture contient { $count } lignes — le PDF A4 mono-page ne peut pas toutes les afficher avec le récapitulatif TVA. Réduisez le nombre de lignes ou scindez la facture.
 error-pdf-generation-failed = Échec de la génération du PDF.
 # Story 9-2a + Pass 1 code-review H1 — variant CSV dédié (au lieu de réutiliser
 # error-pdf-generation-failed qui aurait affiché « Échec PDF » pour un export CSV).

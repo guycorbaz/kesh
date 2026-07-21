@@ -92,7 +92,8 @@ pub fn generate_qr_bill_pdf_with_date(
     let page = doc.get_page(page_idx);
     let layer = page.get_layer(layer_idx);
 
-    draw_invoice_section(&layer, invoice, i18n, &helv, &helv_bold)?;
+    // Facture : le contenu s'arrête au séparateur QR (SEP_Y).
+    draw_invoice_section(&layer, invoice, i18n, &helv, &helv_bold, SEP_Y)?;
     draw_separator(&layer);
     draw_receipt(&layer, data, invoice, i18n, &helv, &helv_bold)?;
     draw_payment_part(&layer, data, invoice, i18n, &helv, &helv_bold, &qr)?;
@@ -144,8 +145,17 @@ pub fn generate_credit_note_pdf_with_date(
     let page = doc.get_page(page_idx);
     let layer = page.get_layer(layer_idx);
 
-    // Pas de QR Bill : uniquement la section document (en-tête + lignes + total).
-    draw_invoice_section(&layer, invoice, i18n, &helv, &helv_bold)?;
+    // Avoir : pas de section QR → le contenu peut descendre jusqu'à la marge
+    // basse (pleine page), pas seulement jusqu'à SEP_Y. Évite de rejeter un
+    // avoir pour une zone QR inexistante (#151 code-review).
+    draw_invoice_section(
+        &layer,
+        invoice,
+        i18n,
+        &helv,
+        &helv_bold,
+        CONTENT_FLOOR_NO_QR,
+    )?;
 
     finalize(doc)
 }
@@ -157,12 +167,25 @@ fn finalize(doc: PdfDocumentReference) -> Result<Vec<u8>, QrBillError> {
 
 // ----- Invoice top section -----
 
+/// Marge basse d'un document **sans section QR** (avoir) : le contenu peut
+/// descendre jusqu'à `CONTENT_FLOOR_NO_QR` mm du bas de page. Pour une facture,
+/// le plancher est `SEP_Y` (le séparateur QR).
+const CONTENT_FLOOR_NO_QR: f32 = 15.0;
+
+/// Dessine la section haute (en-tête + lignes + récap TVA + total).
+///
+/// `content_floor` = ordonnée (mm) sous laquelle le contenu ne doit PAS
+/// descendre : `SEP_Y` pour une facture (la section QR occupe le bas), une
+/// simple marge basse pour un avoir (aucune section QR → pleine page). La garde
+/// de capacité en tient compte, ce qui évite de pénaliser un avoir pour une
+/// zone QR inexistante (#151 code-review).
 fn draw_invoice_section(
     layer: &PdfLayerReference,
     inv: &InvoicePdfData,
     i18n: &QrBillI18n,
     helv: &IndirectFontRef,
     helv_bold: &IndirectFontRef,
+    content_floor: f32,
 ) -> Result<(), QrBillError> {
     let left = 20.0;
     let mut y = PAGE_H - 20.0;
@@ -306,16 +329,25 @@ fn draw_invoice_section(
     hline(layer, left, PAGE_W - 20.0, ty);
     ty -= 3.0;
 
-    for (idx, line) in inv.lines.iter().enumerate() {
-        if ty < SEP_Y + 15.0 {
-            // Défense — si la capacité visuelle est dépassée, on refuse plutôt
-            // que tronquer silencieusement. Le handler HTTP doit garder
-            // `MAX_LINES_PER_PDF` aligné avec cette géométrie.
-            return Err(QrBillError::PdfGeneration(format!(
-                "trop de lignes de facture pour un PDF mono-page ({}+ lignes ; la ligne {} déborde sous la séparation QR)",
-                inv.lines.len(),
-                idx + 1
-            )));
+    // #151 : le bloc récap TVA (sous-total + 1 ligne par taux + espace) est
+    // dessiné APRÈS la boucle et descend le curseur. On réserve sa hauteur dans
+    // le seuil de la garde ci-dessous pour refuser une facture dont lignes +
+    // récap ne tiennent pas au-dessus du séparateur QR (`SEP_Y`), plutôt que de
+    // laisser le récap chevaucher la zone de paiement. `+15` couvrait déjà le
+    // total seul ; on ajoute `sous-total + n×taux + espace` (chaque ligne = 4.5).
+    let recap_reserve = if inv.vat_lines.is_empty() {
+        0.0
+    } else {
+        4.5 + 4.5 * inv.vat_lines.len() as f32 + 1.0
+    };
+
+    for line in &inv.lines {
+        if ty < content_floor + 15.0 + recap_reserve {
+            // Défense — capacité visuelle dépassée (lignes + récap TVA). On refuse
+            // proprement plutôt que tronquer ou chevaucher la zone sous le plancher
+            // (QR pour une facture). Erreur dédiée `TooManyLines` → le handler la
+            // mappe en 400 « trop de lignes » actionnable (et non un 500 opaque).
+            return Err(QrBillError::TooManyLines(inv.lines.len()));
         }
         layer.use_text(
             truncate_display(&line.description, 45),
@@ -349,10 +381,60 @@ fn draw_invoice_section(
         ty -= 5.0;
     }
 
-    // Total.
+    // Total + récapitulatif TVA (#151, obligation LTVA art. 26).
     ty -= 2.0;
     hline(layer, col_unit, PAGE_W - 20.0, ty);
     ty -= 5.0;
+
+    // Bloc récap seulement s'il existe des lignes taxées : Sous-total HT, puis
+    // une ligne « TVA {taux}% » par taux. Sinon (société non assujettie / lignes
+    // 0 %) on n'affiche que le total — comportement rétro-compatible.
+    if !inv.vat_lines.is_empty() {
+        let subtotal = inv
+            .subtotal_ht
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+        layer.use_text(
+            i18n.get("invoice-pdf-subtotal"),
+            9.0,
+            Mm(col_unit),
+            Mm(ty),
+            helv,
+        );
+        layer.use_text(
+            format!("{} {}", inv.currency.code(), format_ch(subtotal, 2)),
+            9.0,
+            Mm(col_tot),
+            Mm(ty),
+            helv,
+        );
+        ty -= 4.5;
+        for v in &inv.vat_lines {
+            let amount = v
+                .amount
+                .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+            layer.use_text(
+                format!(
+                    "{} {}%",
+                    i18n.get("invoice-pdf-vat"),
+                    format_ch(v.rate_percent, 1)
+                ),
+                9.0,
+                Mm(col_unit),
+                Mm(ty),
+                helv,
+            );
+            layer.use_text(
+                format!("{} {}", inv.currency.code(), format_ch(amount, 2)),
+                9.0,
+                Mm(col_tot),
+                Mm(ty),
+                helv,
+            );
+            ty -= 4.5;
+        }
+        ty -= 1.0; // léger espace avant le total en gras
+    }
+
     let total = inv
         .total
         .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
@@ -377,7 +459,7 @@ fn draw_invoice_section(
             format!("{}: {}", i18n.get("invoice-pdf-payment-terms"), terms),
             9.0,
             Mm(col_desc),
-            Mm(ty.max(SEP_Y + 5.0)),
+            Mm(ty.max(content_floor + 5.0)),
             helv,
         );
     }
@@ -789,7 +871,9 @@ fn truncate_display(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Address, AddressType, Currency, InvoiceLinePdf, QrBillData};
+    use crate::types::{
+        Address, AddressType, Currency, InvoiceLinePdf, InvoiceVatLinePdf, QrBillData,
+    };
     use rust_decimal_macros::dec;
 
     fn invoice_fixture() -> (QrBillData, InvoicePdfData, QrBillI18n) {
@@ -839,7 +923,12 @@ mod tests {
                 vat_rate: dec!(7.70),
                 line_total: dec!(1200.00),
             }],
-            total: dec!(1234.50),
+            subtotal_ht: dec!(1200.00),
+            vat_lines: vec![InvoiceVatLinePdf {
+                rate_percent: dec!(7.70),
+                amount: dec!(92.40), // 1200.00 × 7.70 %
+            }],
+            total: dec!(1292.40), // 1200.00 + 92.40
             currency: Currency::Chf,
             origin_reference: None,
         };
@@ -856,6 +945,127 @@ mod tests {
             "PDF suspiciously small: {}",
             bytes.len()
         );
+    }
+
+    /// #151 (code-review HIGH) : une facture dont les lignes **plus** le bloc
+    /// récap TVA multi-taux ne tiennent pas au-dessus du séparateur QR
+    /// (`SEP_Y`) doit être **refusée** (`Err`) plutôt que rendue avec le récap
+    /// chevauchant la zone de paiement. La garde de `draw_invoice_section`
+    /// réserve la hauteur du récap ; sans ce fix le PDF s'imprimait par-dessus le QR.
+    #[test]
+    fn many_lines_plus_vat_recap_errors_instead_of_overprinting_qr() {
+        let (data, base, i18n) = invoice_fixture();
+        // 7 lignes sur 3 taux → réserve récap (3 taux) + lignes dépasse la bande.
+        let lines: Vec<InvoiceLinePdf> = (0..7)
+            .map(|i| {
+                let vat_rate = match i % 3 {
+                    0 => dec!(8.10),
+                    1 => dec!(2.60),
+                    _ => dec!(3.80),
+                };
+                InvoiceLinePdf {
+                    description: format!("Ligne {i}"),
+                    quantity: dec!(1),
+                    unit_price: dec!(100.00),
+                    vat_rate,
+                    line_total: dec!(100.00),
+                }
+            })
+            .collect();
+        let invoice = InvoicePdfData {
+            lines,
+            subtotal_ht: dec!(700.00),
+            vat_lines: vec![
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(8.10),
+                    amount: dec!(24.30),
+                },
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(3.80),
+                    amount: dec!(7.60),
+                },
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(2.60),
+                    amount: dec!(5.20),
+                },
+            ],
+            total: dec!(744.70),
+            ..base
+        };
+        // Erreur DÉDIÉE `TooManyLines` (→ 400 côté handler), pas un `PdfGeneration`
+        // opaque (→ 500). Le handler doit pouvoir donner un message actionnable.
+        assert!(
+            matches!(
+                generate_qr_bill_pdf(&data, &invoice, &i18n),
+                Err(QrBillError::TooManyLines(7))
+            ),
+            "lignes + récap débordant → TooManyLines(7), pas rendu sur le QR ni 500 opaque"
+        );
+    }
+
+    /// #151 (code-review MEDIUM) : test POSITIF — une facture multi-taux qui
+    /// TIENT au-dessus du séparateur QR se rend bien (complète le cas négatif).
+    /// 5 lignes / 2 taux : réserve 14.5 → seuil 134.5 → 5 lignes passent.
+    #[test]
+    fn multi_rate_invoice_that_fits_renders_ok() {
+        let (data, base, i18n) = invoice_fixture();
+        let lines: Vec<InvoiceLinePdf> = (0..5)
+            .map(|i| InvoiceLinePdf {
+                description: format!("Ligne {i}"),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: if i % 2 == 0 { dec!(8.10) } else { dec!(2.60) },
+                line_total: dec!(100.00),
+            })
+            .collect();
+        let invoice = InvoicePdfData {
+            lines,
+            subtotal_ht: dec!(500.00),
+            vat_lines: vec![
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(8.10),
+                    amount: dec!(24.30),
+                },
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(2.60),
+                    amount: dec!(5.20),
+                },
+            ],
+            total: dec!(529.50),
+            ..base
+        };
+        let bytes = generate_qr_bill_pdf(&data, &invoice, &i18n).expect("doit tenir et se rendre");
+        assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    /// #151 (code-review HIGH #2) : un avoir n'a PAS de section QR → pleine page.
+    /// 12 lignes + récap se rendent (auraient été rejetées par l'ancien cap 9
+    /// partagé avec les factures).
+    #[test]
+    fn credit_note_uses_full_page_beyond_invoice_line_cap() {
+        let (_data, base, i18n) = invoice_fixture();
+        let lines: Vec<InvoiceLinePdf> = (0..12)
+            .map(|i| InvoiceLinePdf {
+                description: format!("Prestation créditée {i}"),
+                quantity: dec!(1),
+                unit_price: dec!(50.00),
+                vat_rate: dec!(8.10),
+                line_total: dec!(50.00),
+            })
+            .collect();
+        let avoir = InvoicePdfData {
+            lines,
+            subtotal_ht: dec!(600.00),
+            vat_lines: vec![InvoiceVatLinePdf {
+                rate_percent: dec!(8.10),
+                amount: dec!(48.60),
+            }],
+            total: dec!(648.60),
+            ..base
+        };
+        let bytes = generate_credit_note_pdf(&avoir, &i18n)
+            .expect("avoir 12 lignes doit tenir en pleine page (pas de QR)");
+        assert!(bytes.starts_with(b"%PDF-1."));
     }
 
     #[test]
