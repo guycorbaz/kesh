@@ -26,7 +26,7 @@ Modèle **Odoo/Flectra** : soldes **calculés en direct**, **sans écritures phy
 
 ### Décision CRITIQUE (validate Pass 1) — supprimer le hardcode de numéros ; rôles = 14-3
 
-Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de `total_liabilities` (`balance_sheet.rs:22-27`) pour éviter le double-comptage du résultat calculé. **C'est un piège** : `2800` (capital) / `2970` (report à nouveau) sont de la **vraie equity** ; un utilisateur **migrant** y pose ses capitaux d'ouverture → **exclus des passifs ET absents du « résultat reporté » (dérivé du P&L)** → **les capitaux propres migrés disparaissent, l'équation casse** pour le persona cible de E14.
+Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de `total_liabilities` (`balance_sheet.rs:22-27`) pour éviter le double-comptage du résultat calculé. **C'est un piège** : `2800` est le **capital** (vraie equity), et il est **exclu**. Un utilisateur **migrant** qui pose ses capitaux propres d'ouverture sur `2800` (ou toute écriture réelle vers un compte exclu) → montant **exclu des passifs ET absent du « résultat reporté » (dérivé du P&L)** → **les capitaux propres migrés disparaissent, l'équation casse** pour le persona cible de E14. (NB : `2970` « report à nouveau » n'est PAS dans la liste ; le défaut vient de l'exclusion aveugle par numéro, quel qu'il soit.)
 
 **Décision (Guy, 2026-07-21) — chaque compte a un rôle explicite, le numéro ne sert JAMAIS à déduire le rôle** :
 
@@ -58,15 +58,15 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 ### A. Report à-nououveau virtuel — bilan cumulatif cross-exercice (`kesh-report::balance_sheet`)
 
 - **Given** un exercice N clos avec des soldes actif/passif non nuls, **When** je génère le **bilan** de l'exercice N+1 à une **date d'arrêté** donnée, **Then** chaque compte de **bilan** (Asset/Liability) affiche son solde **cumulé depuis l'origine** = Σ(débit−crédit selon sens) de **toutes** les écritures `entry_date ≤ date d'arrêté`, **tous exercices confondus**.
-- **And** pour le bilan, **`period_start` (borne basse) devient SANS EFFET** sur l'actif/passif : seule la **date d'arrêté = `period_end`** compte (le bilan est une photo « à la date », pas un flux de période). Documenter ce changement de sémantique de l'API.
+- **And** pour le bilan, **`period_start` (borne basse) devient SANS EFFET sur TOUTES les lignes** — actif, passif **ET** le split fonds propres. Seule la **date d'arrêté = `period_end`** compte pour l'actif/passif ; le split « résultat de l'exercice / reporté » est ancré à la **borne d'EXERCICE `fy_start`** (début de l'exercice courant), **jamais** à `period_start`. Ainsi une requête à date d'arrêté en cours d'année ne déplace **pas** le split (validate Pass 2 HIGH). Documenter ce changement de sémantique de l'API.
 - **And** le compte de **résultat** (`income_statement`) reste **borné à la période** (Revenue/Expense par exercice).
 - **And** aucun compte à solde nul n'est listé (`HAVING balance != 0` conservé).
 
 ### B. Résultat de l'exercice + résultat reporté (fonds propres, sans hardcode)
 
 - **Given** des exercices avec résultats, **When** je consulte les fonds propres du bilan courant, **Then** le bilan expose **deux lignes calculées** distinctes :
-  - **« Résultat de l'exercice »** = `income.net_result` de la période courante (inchangé) ;
-  - **« Résultat reporté »** = **cumul des résultats nets des exercices strictement antérieurs** (nouveau champ `retained_earnings`).
+  - **« Résultat de l'exercice »** = résultat net **de l'exercice courant** = P&L sur `[fy_start, date d'arrêté]` (**ancré à `fy_start`, PAS à `period_start`** — validate Pass 2). Pour une date d'arrêté en fin d'exercice = `income.net_result` de l'exercice ; pour une date en cours d'année = résultat **year-to-date** ;
+  - **« Résultat reporté »** = **cumul des résultats nets AVANT `fy_start`** = P&L `entry_date < fy_start`, `account_type IN (Revenue, Expense)` (nouveau champ `retained_earnings`).
 - **And** `total_liabilities` compte **tous** les comptes de passif cumulés **sans aucune exclusion par numéro** (capital/réserves/report inclus) — le hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` est **retiré** de la logique.
 - **And** l'équation tient cross-exercice : `total_assets == total_liabilities + retained_earnings + equity_result`.
 
@@ -103,8 +103,11 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 
 ### I. Tests & gate
 
-- Tests unit `kesh-report` avec **fixture numérique explicite**, p.ex. : FY2025 actifs 15 000 / passifs 10 000 / résultat net 5 000 ; FY2026 mi-exercice +200 d'actif → **attendus** : actifs cumulés 15 200, `retained_earnings` 5 000, `equity_result` = résultat partiel de la période, `equation_holds == true`. Couvrir aussi : (a) 1er exercice (`retained_earnings==0`), (b) **résultat reporté négatif** (pertes cumulées), (c) migrant posant des capitaux d'ouverture sur un compte de report → `equation_holds==true`.
-- **Réécrire** le test existant `reports_e2e.rs:1335` (`balance_sheet_empty_period_returns_zero_totals_equation_holds`) : sa prémisse (requête intra-exercice → totaux nuls) **contredit** le bilan cumulatif ; l'adapter à la nouvelle sémantique (`period_start` sans effet) ou le superséder.
+- Tests unit `kesh-report` avec **fixture numérique explicite et arithmétiquement close**, p.ex. : FY2025 actifs 15 000 / passifs 10 000 / résultat net **5 000** (reste vivant dans les comptes Revenue/Expense — aucune écriture de clôture) ; FY2026 une écriture **+200 de produit** (débit actif 200 / crédit produit 200) → **attendus** : actifs cumulés **15 200**, `retained_earnings` **5 000**, `equity_result` **200**, équation `15 200 == 10 000 + 5 000 + 200` → `equation_holds == true`. Couvrir aussi : (a) 1er exercice (`retained_earnings==0`), (b) **résultat reporté négatif** (pertes cumulées), (c) migrant posant des capitaux d'ouverture sur un compte de report/capital → `equation_holds==true`, (d) **date d'arrêté en cours d'année** : les 2 lignes fonds propres sont **identiques** à l'appel plein-exercice (ancrage `fy_start`, AC-A), (e) invariant `entry_date ∈ exercice` (Dev Note 4).
+- **Tests encodant l'ANCIENNE exclusion — à réécrire/supprimer** (validate Pass 2 HIGH, sinon gate rouge) :
+  - `crates/kesh-db/tests/report_aggregates.rs` Test 6 `balance_sheet_excludes_2979_from_liabilities` (~L402-451) — asserte que 2979 est **exclu** ; à inverser (2979 posté → **compté** dans les passifs, l'equity restant juste via le split calculé).
+  - `crates/kesh-report/src/balance_sheet.rs` test inline `equity_result_constants_present` (~L162-167) — asserte l'existence de la const ; **supprimer** (la const `EQUITY_RESULT_ACCOUNT_NUMBERS` est **retirée entièrement**, pas laissée en code mort).
+  - `crates/kesh-api/tests/reports_e2e.rs:1335` `balance_sheet_empty_period_returns_zero_totals_equation_holds` — prémisse (requête intra-exercice → totaux nuls) **contredit** le bilan cumulatif ; réécrire selon la nouvelle sémantique (`period_start` sans effet) ou superséder.
 - Test E2E `reports_e2e` : 2 exercices (N avec activité, N+1 vide) → bilan N+1 non nul + équilibré.
 - Gate complet (backend fmt/clippy/test + frontend check/unit) vert. Doc CHANGELOG + README (E14 en cours).
 
@@ -127,7 +130,8 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 1. **Ne PAS générer d'écritures.** Tout est calculé.
 2. **Retrait du hardcode** `EQUITY_RESULT_ACCOUNT_NUMBERS` : ne PAS le remplacer par un autre hardcode. Equity = tous les passifs cumulés + 2 lignes calculées. Le durcissement par rôles = 14-3.
 3. **`period_start` sans effet pour le bilan** — c'est le changement de sémantique qui casse `reports_e2e:1335` ; assumé (AC-A, AC-I).
-4. **`retained_earnings` date-borné** : `entry_date < period.start_date`, filtré `account_type IN (Revenue, Expense)`, calculé **du même point** que les soldes d'ouverture — **PAS** en itérant les lignes `fiscal_years` (les gaps entre exercices et les exercices simultanément `Open` sont permis ; l'invariant `find_covering_date` garantit que tout `entry_date` tombe dans un exercice → la borne date est suffisante et non-ambiguë, sans jointure sur `fiscal_years`).
+4. **Ancrage à `fy_start` (borne d'exercice), pas `period_start`** (validate Pass 2 HIGH) : `equity_result` = P&L sur `[fy_start, end_date]` ; `retained_earnings` = P&L `entry_date < fy_start`, `account_type IN (Revenue, Expense)`. `fy_start` = `fiscal_years.start_date` de l'exercice courant (résolu par `find_covering_date` ou par le `fiscal_year_id` de la requête). Calculé **du même point unique** que les soldes d'ouverture — **PAS** en itérant les lignes `fiscal_years` (gaps entre exercices + exercices simultanément `Open` permis ; la borne date est suffisante et non-ambiguë).
+   - **Invariant dont dépend l'équation** (validate Pass 2 MEDIUM) : l'actif/passif cumulés ignorent `fiscal_year_id` mais `equity_result` le garde (via `income_statement`) → l'équation ne tient que si tout `entry_date` d'une écriture tombe **dans** son `fiscal_year_id`. `update` l'impose (`journal_entries.rs:671` `DateOutsideFiscalYear`) mais **`create_in_tx` NON** (`:51` « pré-validé par le caller »). **Tâche** : soit ajouter un test confirmant qu'aucune écriture ne peut être créée hors bornes de son exercice, soit ajouter la garde défensive symétrique à `create_in_tx`. Défaut v1 : test de garde + `equation_holds` comme filet.
 5. **Ne pas passer d'écritures de clôture manuelles** en modèle virtuel (l'app calcule le résultat) — sinon double-comptage avec `retained_earnings`. `equation_holds` (warning) reste le filet. À documenter côté utilisateur.
 6. **Sens des soldes** : Asset = `débit − crédit` ; Liability = `crédit − débit` (`trial_balance.rs:70-73`, `balance_sheet.rs:135-141`).
 7. **Quirk typage** `9100`/`9200` = `Expense`, `2979`/`2800` = `Liability` (`pme.json`) : neutralisé tant qu'on ne poste rien dessus. Ne pas s'appuyer dessus.
@@ -170,7 +174,14 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 - **MEDIUM** — décision `trial_balance` (→ figée par période, AC-F) ; AC 1er exercice (→ AC-D) ; règle date-bornée du cumul (→ Dev Note 4) ; 2 dérives d'ancres (75/77, → corrigées).
 - **LOW** — exemple numérique (→ AC-I) ; libellé perte reportée (→ AC-H) ; ranges d'ancres imprécis (→ corrigés).
 - **Faisabilité (positif)** : modèle jugé sain par les 2 ; **index déjà présents** → pas de migration (AC-G).
-- **Trend** : Pass 1 = 1 CRITICAL + 3 HIGH + 4 MEDIUM → patchés. Pass 2 requise (CRITICAL/HIGH trouvés), LLM différent, contexte frais.
+
+### Pass 2 (Opus, contexte frais, 2026-07-21) — cœur CONFIRMÉ sain (équation = identité partie double, 0 double-comptage) ; 2 HIGH + 1 MEDIUM → patchés
+
+- **HIGH** — blast-radius tests incomplet : `report_aggregates.rs` Test 6 (`balance_sheet_excludes_2979_from_liabilities`) + inline `balance_sheet.rs:162` (`equity_result_constants_present`) encodent l'ancienne exclusion → gate rouge. **Résolu** : AC-I liste ces tests à inverser/supprimer + const retirée entièrement.
+- **HIGH** — `period_start` sans effet **contredisait** le split equity (résultat exercice vs reporté dépendait de `period_start` → mauvais chiffres silencieux en date d'arrêté mi-année, équation tenant quand même). **Résolu** : ancrage du split à `fy_start` (AC-A/B, Dev Note 4) + test (d).
+- **MEDIUM** — l'équation dépend de l'invariant `entry_date ∈ exercice`, non imposé par `create_in_tx` (seul `update`). **Résolu** : Dev Note 4 (test de garde / garde défensive) + test (e).
+- **LOW** — fixture rendue arithmétiquement close (+200 produit → `equity_result` 200) ; prose `2970`→`2979` corrigée ; dérives d'ancres mineures (fetch_section WHERE L136-137, trial_balance CASE L71-74).
+- **Trend** : Pass 1 (1 CRIT + 3 HIGH + 4 MED) → Pass 2 (0 CRIT, 2 HIGH + 1 MED, cœur confirmé sain) → patchés. **Pass 3 requise** (HIGH trouvés), LLM différent (Haiku), contexte frais.
 
 ## Dev Agent Record
 
