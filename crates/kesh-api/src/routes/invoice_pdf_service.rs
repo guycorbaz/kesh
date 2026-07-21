@@ -43,18 +43,23 @@ pub(crate) fn vat_lines_pdf(
         .collect()
 }
 
-/// Limite v0.1 : nombre de lignes pouvant tenir sur un PDF A4 mono-page.
+/// Borne v0.1 (grossière) du nombre de lignes d'un PDF A4 mono-page.
 ///
-/// Calcul géométrique (`kesh-qrbill::pdf`) :
-/// - `ty` initial = `PAGE_H - 130 = 167` mm (après header facture)
-/// - pas par ligne = `5` mm
-/// - break défensif si `ty < SEP_Y + 15 = 120` mm
-/// - la check a lieu **avant** le draw → draw N se fait à `ty = 167 - (N-1)*5`
-/// - `167 - (N-1)*5 >= 120` ⇒ `N <= 10.4` ⇒ **9 lignes max tiennent**
+/// C'est un **pré-filtre** : la vérification géométrique **précise** (et
+/// autoritaire) est la garde de `kesh-qrbill::pdf::draw_invoice_section`, qui
+/// tient compte du header ET du bloc récap TVA (#151) :
+/// - `ty` de la 1re ligne = `159` mm (167 après header, − 5 − 3 pour la ligne
+///   de titre du tableau et son filet)
+/// - pas par ligne = `5` mm ; la check a lieu **avant** le draw
+/// - seuil de refus = `SEP_Y + 15 (=120) + réserve_récap`, où `réserve_récap`
+///   = `0` sans TVA, sinon `sous-total (4.5) + n_taux×4.5 + espace (1)`
+/// - sans récap : `159 − (N-1)*5 >= 120` ⇒ **8 lignes** tiennent ; avec un
+///   récap multi-taux, moins (le récap descend le curseur sous le total).
 ///
-/// Le rendu est **défensif** : toute ligne supplémentaire provoque une erreur
-/// `QrBillError::PdfGeneration` plutôt qu'une troncature silencieuse
-/// (cf. `pdf.rs::draw_invoice_section`).
+/// Le rendu est **défensif** : au-delà de la capacité (lignes + récap), la garde
+/// renvoie `QrBillError::PdfGeneration` plutôt que de chevaucher la zone QR ou
+/// tronquer. Cette constante (9) reste un plafond supérieur simple ; un cas qui
+/// la passe mais ne tient pas géométriquement échoue proprement dans `pdf.rs`.
 pub const MAX_LINES_PER_PDF: usize = 9;
 
 /// PDF de facture généré, prêt à être servi (handler HTTP) ou attaché

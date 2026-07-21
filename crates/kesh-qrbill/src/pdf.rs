@@ -306,13 +306,26 @@ fn draw_invoice_section(
     hline(layer, left, PAGE_W - 20.0, ty);
     ty -= 3.0;
 
+    // #151 : le bloc récap TVA (sous-total + 1 ligne par taux + espace) est
+    // dessiné APRÈS la boucle et descend le curseur. On réserve sa hauteur dans
+    // le seuil de la garde ci-dessous pour refuser une facture dont lignes +
+    // récap ne tiennent pas au-dessus du séparateur QR (`SEP_Y`), plutôt que de
+    // laisser le récap chevaucher la zone de paiement. `+15` couvrait déjà le
+    // total seul ; on ajoute `sous-total + n×taux + espace` (chaque ligne = 4.5).
+    let recap_reserve = if inv.vat_lines.is_empty() {
+        0.0
+    } else {
+        4.5 + 4.5 * inv.vat_lines.len() as f32 + 1.0
+    };
+
     for (idx, line) in inv.lines.iter().enumerate() {
-        if ty < SEP_Y + 15.0 {
-            // Défense — si la capacité visuelle est dépassée, on refuse plutôt
-            // que tronquer silencieusement. Le handler HTTP doit garder
-            // `MAX_LINES_PER_PDF` aligné avec cette géométrie.
+        if ty < SEP_Y + 15.0 + recap_reserve {
+            // Défense — si la capacité visuelle est dépassée (lignes + récap
+            // TVA), on refuse plutôt que tronquer ou chevaucher le QR. Le handler
+            // HTTP borne aussi via `MAX_LINES_PER_PDF`, mais cette garde est la
+            // vérification géométrique précise (elle tient compte du récap).
             return Err(QrBillError::PdfGeneration(format!(
-                "trop de lignes de facture pour un PDF mono-page ({}+ lignes ; la ligne {} déborde sous la séparation QR)",
+                "trop de lignes de facture pour un PDF mono-page ({} lignes + récap TVA ; la ligne {} déborderait sous la séparation QR)",
                 inv.lines.len(),
                 idx + 1
             )));
@@ -912,6 +925,57 @@ mod tests {
             bytes.len() > 1_000,
             "PDF suspiciously small: {}",
             bytes.len()
+        );
+    }
+
+    /// #151 (code-review HIGH) : une facture dont les lignes **plus** le bloc
+    /// récap TVA multi-taux ne tiennent pas au-dessus du séparateur QR
+    /// (`SEP_Y`) doit être **refusée** (`Err`) plutôt que rendue avec le récap
+    /// chevauchant la zone de paiement. La garde de `draw_invoice_section`
+    /// réserve la hauteur du récap ; sans ce fix le PDF s'imprimait par-dessus le QR.
+    #[test]
+    fn many_lines_plus_vat_recap_errors_instead_of_overprinting_qr() {
+        let (data, base, i18n) = invoice_fixture();
+        // 7 lignes sur 3 taux → réserve récap (3 taux) + lignes dépasse la bande.
+        let lines: Vec<InvoiceLinePdf> = (0..7)
+            .map(|i| {
+                let vat_rate = match i % 3 {
+                    0 => dec!(8.10),
+                    1 => dec!(2.60),
+                    _ => dec!(3.80),
+                };
+                InvoiceLinePdf {
+                    description: format!("Ligne {i}"),
+                    quantity: dec!(1),
+                    unit_price: dec!(100.00),
+                    vat_rate,
+                    line_total: dec!(100.00),
+                }
+            })
+            .collect();
+        let invoice = InvoicePdfData {
+            lines,
+            subtotal_ht: dec!(700.00),
+            vat_lines: vec![
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(8.10),
+                    amount: dec!(24.30),
+                },
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(3.80),
+                    amount: dec!(7.60),
+                },
+                InvoiceVatLinePdf {
+                    rate_percent: dec!(2.60),
+                    amount: dec!(5.20),
+                },
+            ],
+            total: dec!(744.70),
+            ..base
+        };
+        assert!(
+            generate_qr_bill_pdf(&data, &invoice, &i18n).is_err(),
+            "lignes + récap TVA débordant doivent être refusés, pas rendus sur le QR"
         );
     }
 

@@ -116,7 +116,10 @@ where
         .into_iter()
         .rev() // taux décroissant
         .map(|(rate_percent, (base_ht, vat_amount))| VatRateBreakdown {
-            rate_percent,
+            // Normalisé à 2 décimales : la clé BTreeMap conserve le scale de la
+            // 1re ligne insérée (8.1 vs 8.10 sont égaux par `Ord` mais diffèrent
+            // de scale) — on fige "X.YZ" pour un affichage/sérialisation stable.
+            rate_percent: rate_percent.round_dp(2),
             base_ht,
             vat_amount,
         })
