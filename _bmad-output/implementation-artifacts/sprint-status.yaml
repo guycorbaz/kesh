@@ -222,6 +222,7 @@ development_status:
   # Epic 14: Clôture d'Exercice (ex-Epic 12, renumbered 2026-04-20)
   epic-14: in-progress
   14-1-cloture-report-des-soldes: ready-for-dev
+  14-2-reouvrir-degiger-exercice: backlog  # Admin-only + motif obligatoire + audit fiscal_year.reopened + garde-fou d'ordre (interdit si exercice postérieur clos) ; change la décision 'réouverture interdite' (fiscal_years.rs:600) — modèle Odoo verrou réversible tracé
   epic-14-retrospective: optional
 
   # Epic 15: Justificatifs, Lettrage & Compléments v0.2 (ex-Epic 13, renumbered 2026-04-20)

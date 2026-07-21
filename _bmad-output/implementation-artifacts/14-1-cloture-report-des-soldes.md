@@ -30,6 +30,7 @@ La somme « depuis l'origine » croît avec l'historique. À l'échelle PME (que
 
 - **v1 : virtuel pur** (somme depuis l'origine).
 - **Couture obligatoire** : isoler le calcul des soldes d'ouverture derrière **un seul helper** `opening_balances(pool, company_id, as_of)` (voir AC-F), pour pouvoir brancher plus tard un **snapshot de soldes de clôture** (1 ligne/compte/exercice clos, rendu **définitif par l'immutabilité de l'exercice clos**) **sans changer le modèle de données ni l'UX**. Le snapshot n'est PAS implémenté ici — c'est une évolution perf documentée (créer une issue `enhancement` + `performance`).
+- **Interaction réouverture (Story 14-2)** : un exercice peut être **rouvert** (dégiger, Story 14-2). En v1 virtuel pur, rien à invalider (tout est live). Mais le futur snapshot devra **invalider/recalculer** le snapshot d'un exercice rouvert — l'invalidation sera déclenchée par l'événement `fiscal_year.reopened`. À documenter dans l'issue snapshot.
 - **Prérequis** : vérifier que l'agrégation est servie par index (cf. AC-G) ; l'ajouter sinon. C'est le vrai levier, pas l'architecture.
 
 ### Hors scope (garde-fous — NE PAS faire ici)
@@ -38,6 +39,7 @@ La somme « depuis l'origine » croît avec l'historique. À l'échelle PME (que
 - ❌ **Écriture d'affectation du résultat assistée** (CO 958, décision d'AG) : v1 = affectation **entièrement virtuelle** (le résultat des exercices antérieurs s'agrège en « résultat reporté » calculé). L'écriture d'affectation assistée = story future si besoin de tracer une décision d'AG.
 - ❌ **Bilan d'ouverture éditable** (saisie des soldes de départ pour une migration depuis un autre logiciel) : v1 = l'utilisateur saisit une **écriture manuelle OD** datée au 1er jour de son 1er exercice (fonctionne déjà avec `journal_entries`). Un écran dédié = story future (14-2 éventuelle).
 - ❌ **Snapshot** matérialisé (perf) : évolution future, seulement la **couture** est posée ici.
+- ❌ **Réouverture / dégigeage d'un exercice** clos par erreur : **Story 14-2 dédiée** (Admin-only + motif obligatoire + audit `fiscal_year.reopened` + garde-fou d'ordre « interdit si exercice postérieur clos »). Change la décision actuelle « réouverture interdite » (`fiscal_years.rs:600`) — modèle Odoo (verrou réversible **tracé**). Hors 14-1.
 - ❌ **Date de verrouillage ajustable** façon Odoo (lock date globale) : le statut `Closed` par exercice suffit en v1.
 - ❌ Transitoires / régularisations (#232), amortissements (#222) : chantiers séparés.
 
